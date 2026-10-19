@@ -22,8 +22,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 552,
-      "edges": 1669,
+      "modules": 557,
+      "edges": 1687,
       "roots": [
         "src",
         "desktop-ui",
@@ -259,6 +259,7 @@
         {
           "module": "desktop-ui/agentAvatar.js",
           "importedBy": [
+            "chat",
             "desktop-shell",
             "settings"
           ]
@@ -527,7 +528,7 @@
       "usedBy": {
         "approvals": 3,
         "channels": 6,
-        "chat": 25,
+        "chat": 26,
         "desktop-shell": 13,
         "memory": 2,
         "platform": 31,
@@ -676,6 +677,7 @@
         "scripts/generate-agent-loop-contract.js",
         "desktop-ui/{activeToolCallsStrip,conversationContext,evidenceTrailMarkup,linkActions,replyDelivery,replyDocument,runSteps,scrollPreservation,threadWindow,transferCopy,turnPresentation}.js",
         "desktop-ui/messageTool*.js",
+        "desktop-ui/features/chat/**",
         "desktop-ui/execution*.js",
         "desktop-ui/execution*.css",
         "desktop-ui/{sendRecovery,newChatComposer}.test.js",
@@ -689,17 +691,11 @@
         "ios/Tests/{AgentLoopTests,ChatGPTTests,ConversationFoundationTests,ConversationHistoryTests,ExecutionPageTests,ExecutionTests,NetworkTests,ParityRegressionTests,ReplyBackgroundTests,RunProgressTests,SSETransportTests,SharedContractTests}.swift"
       ],
       "modules": {
-        "desktop-ui": 19,
+        "desktop-ui": 24,
         "shared": 1,
         "src": 61
       },
       "entryModules": [
-        {
-          "module": "desktop-ui/activeToolCallsStrip.js",
-          "importedBy": [
-            "desktop-shell"
-          ]
-        },
         {
           "module": "desktop-ui/conversationContext.js",
           "importedBy": [
@@ -713,23 +709,17 @@
           ]
         },
         {
+          "module": "desktop-ui/features/chat/index.js",
+          "importedBy": [
+            "desktop-shell"
+          ]
+        },
+        {
           "module": "desktop-ui/linkActions.js",
           "importedBy": [
             "desktop-shell",
             "media",
             "settings"
-          ]
-        },
-        {
-          "module": "desktop-ui/messageToolResults.js",
-          "importedBy": [
-            "desktop-shell"
-          ]
-        },
-        {
-          "module": "desktop-ui/messageToolTrace.js",
-          "importedBy": [
-            "desktop-shell"
           ]
         },
         {
@@ -745,19 +735,7 @@
           ]
         },
         {
-          "module": "desktop-ui/runSteps.js",
-          "importedBy": [
-            "desktop-shell"
-          ]
-        },
-        {
           "module": "desktop-ui/scrollPreservation.js",
-          "importedBy": [
-            "desktop-shell"
-          ]
-        },
-        {
-          "module": "desktop-ui/threadWindow.js",
           "importedBy": [
             "desktop-shell"
           ]
@@ -957,23 +935,23 @@
         }
       ],
       "dependsOn": {
-        "agents": 25,
+        "agents": 26,
         "approvals": 7,
         "channels": 2,
-        "desktop-shell": 9,
-        "knowledge": 4,
-        "media": 20,
+        "desktop-shell": 12,
+        "knowledge": 5,
+        "media": 22,
         "memory": 27,
         "platform": 54,
         "projects": 9,
-        "settings": 6,
+        "settings": 7,
         "sync": 2,
-        "tools": 28
+        "tools": 30
       },
       "usedBy": {
         "agents": 13,
         "channels": 9,
-        "desktop-shell": 16,
+        "desktop-shell": 12,
         "media": 9,
         "memory": 10,
         "platform": 15,
@@ -1003,6 +981,11 @@
         "desktop-ui/executionScene3D.js",
         "desktop-ui/executionTiming.js",
         "desktop-ui/executionViewport.js",
+        "desktop-ui/features/chat/context.js",
+        "desktop-ui/features/chat/controller.js",
+        "desktop-ui/features/chat/index.js",
+        "desktop-ui/features/chat/viewMessage.js",
+        "desktop-ui/features/chat/viewThread.js",
         "desktop-ui/linkActions.js",
         "desktop-ui/messageToolResults.js",
         "desktop-ui/messageToolTrace.js",
@@ -1529,7 +1512,7 @@
         {
           "module": "desktop-ui/videoKnowledge.js",
           "importedBy": [
-            "desktop-shell",
+            "chat",
             "media"
           ]
         },
@@ -1570,8 +1553,8 @@
         "settings": 1
       },
       "usedBy": {
-        "chat": 4,
-        "desktop-shell": 2,
+        "chat": 5,
+        "desktop-shell": 1,
         "media": 1,
         "memory": 3,
         "platform": 2,
@@ -1670,6 +1653,7 @@
         {
           "module": "desktop-ui/modelPresentation.js",
           "importedBy": [
+            "chat",
             "desktop-shell",
             "projects"
           ]
@@ -1791,7 +1775,7 @@
         "agents": 2,
         "approvals": 8,
         "channels": 2,
-        "chat": 6,
+        "chat": 7,
         "desktop-shell": 12,
         "knowledge": 1,
         "media": 7,
@@ -2112,6 +2096,7 @@
         {
           "module": "desktop-ui/viz/vizRenderer.js",
           "importedBy": [
+            "chat",
             "desktop-shell"
           ]
         },
@@ -2378,7 +2363,7 @@
       "usedBy": {
         "agents": 19,
         "approvals": 2,
-        "chat": 28,
+        "chat": 30,
         "desktop-shell": 14,
         "media": 4,
         "memory": 1,
@@ -2586,7 +2571,7 @@
         {
           "module": "desktop-ui/attachmentCards.js",
           "importedBy": [
-            "desktop-shell"
+            "chat"
           ]
         },
         {
@@ -2604,7 +2589,7 @@
         {
           "module": "desktop-ui/videoStatus.js",
           "importedBy": [
-            "desktop-shell"
+            "chat"
           ]
         },
         {
@@ -2729,8 +2714,8 @@
       },
       "usedBy": {
         "channels": 3,
-        "chat": 20,
-        "desktop-shell": 7,
+        "chat": 22,
+        "desktop-shell": 5,
         "memory": 1,
         "platform": 2,
         "settings": 1,
@@ -3330,9 +3315,9 @@
         "agents": 13,
         "approvals": 3,
         "channels": 2,
-        "chat": 16,
-        "knowledge": 2,
-        "media": 7,
+        "chat": 12,
+        "knowledge": 1,
+        "media": 5,
         "memory": 1,
         "platform": 9,
         "projects": 5,
@@ -3344,7 +3329,7 @@
       "usedBy": {
         "agents": 6,
         "approvals": 3,
-        "chat": 9,
+        "chat": 12,
         "media": 4,
         "memory": 6,
         "platform": 2,
@@ -4515,6 +4500,8 @@
       "note": "桌面经 /shared/replyDocument.js 提供给页面。",
       "desktopConsumers": [
         "desktop-ui/app.js",
+        "desktop-ui/features/chat/viewMessage.js",
+        "desktop-ui/features/chat/viewThread.js",
         "shared/replyDocument.js",
         "src/domain/message/messageBlocks.js"
       ],

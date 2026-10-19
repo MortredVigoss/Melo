@@ -10,28 +10,26 @@ import { createActionRegistry } from './features/registry.js';
 import { installMemoryFeature } from './features/memory/index.js';
 import { installProjectsFeature } from './features/projects/index.js';
 import { installAgentsFeature } from './features/agents/index.js';
+import { installChatFeature } from './features/chat/index.js';
 import { renderLocalSettings, installLocalSettings, applyLocalAppearance, shouldSendOnEnter, notifyLocalCompletion, nativeSettings } from './localSettings.js';
 import { installImagePreview } from './imagePreview.js';
 import { renderSyncConflicts } from './syncConflicts.js';
 import { renderConversationContext } from './conversationContext.js';
 import { renderAgentAvatar } from './agentAvatar.js';
-import { renderReplyDocument, replyPlainText } from './replyDocument.js';
+import { renderReplyDocument } from './replyDocument.js';
 import { renderImageSettings, renderImageTaskControls, consumeImageTask, restoreImageTask, clearImageTask, handleImageInput, handleImageAction } from './imageControls.js';
 import { createVoiceInput, voiceInputSupported, voiceInputActive, voiceInputLabel, renderVoiceInput } from './voiceInput.js';
 import { renderLlmConnections, editLlmConnection, handleLlmConnection } from './llmConnections.js';
 import { renderAtomicButton } from './atomicButton.js';
 import { renderExecutionPanel, syncExecutionPanel, receiveExecutionScene, renderSceneReplay, selectedMessagePresentation, liveSceneFor, cancelLiveScene } from './executionPanel.js';
-import { sceneSteps, renderRunSteps } from './runSteps.js';
 import { DEFAULT_MODELS_BY_AUTH_MODE } from '/shared/modelCatalog.js';
-import { modelLabel, modelPanelPosition, conversationAgents, conversationAgent, conversationConnectionReady, renderModelPicker, renderModelReceipt, connectionModelOptions, renderDefaultModelSettings } from './modelPresentation.js';
+import { modelLabel, modelPanelPosition, conversationAgents, conversationAgent, conversationConnectionReady, renderModelPicker, connectionModelOptions, renderDefaultModelSettings } from './modelPresentation.js';
 import { createTurnPresentation, receiveTurnPresentation, turnLabel, chatStreamError } from './turnPresentation.js';
 import { updateNeuralWorkspace, syncNeuralComposer, preserveNeuralRegion } from './neuralDom.js';
 import { resolveWorkspaceStage } from './neuralLayout.js';
 import { captureNeuralLayout, animateNeuralLayout } from './neuralMotion.js';
 import { neuralGroups, groupForSettings, renderNeuralNavigation, renderNeuralOverview, syncNeuralScene } from './neuralShell.js';
 import {
-  renderVizMountHtml,
-  mountVizBlocks,
   isRenderableViz,
 } from './viz/vizRenderer.js';
 import {
@@ -43,21 +41,14 @@ import { promoteTextUrlsToAttachments } from '/shared/urlDetector.js';
 import { extractTextUrls } from '/shared/textUrls.js';
 import { renderCopyLinkButton, copyLinkText } from './linkActions.js';
 import { resolveActiveMinimaxVoiceId } from '/shared/minimaxVoiceResolver.js';
-import { describeAudioExtractionStatus, describeVideoExtractionStatus } from './videoStatus.js';
 import { renderAdvancedPage } from './advancedPage.js';
-import { renderAttachmentCards } from './attachmentCards.js';
 import { createSearchPageRenderer } from './searchPage.js';
 import { createScrollPreservation } from './scrollPreservation.js';
-import { visibleMessageWindow, expandThreadWindow, ensureMessageInThreadWindow } from './threadWindow.js';
-import { isToolTraceMessage, renderToolTraceMessage } from './messageToolTrace.js';
 import { attachmentLimit, makeTransferCopy, uploadVideoFile, MB } from './transferCopy.js';
-import { videoExtraction, videoKnowledgeNote } from './videoKnowledge.js';
 import { renderTeamPanel, collectTeamPlan, noteTeamMemberToggle } from './teamPanel.js';
 import { routeHttpUrlClick } from './anchorRouting.js';
 import { selectTtsBridgeCallback } from './ttsBridgeRouter.js';
 import { createReplyDelivery, receiveReplyDelivery } from './replyDelivery.js';
-import { renderActiveToolCallsStrip as _renderActiveToolCallsStripFromModule } from './activeToolCallsStrip.js';
-import { renderMessageToolResults as _renderMessageToolResultsFromModule } from './messageToolResults.js';
 import {
   UNDO_TOAST_DEFAULT_MS,
   formatUndoToastLabel,
@@ -439,6 +430,18 @@ const agentsFeature = installAgentsFeature({
 });
 featureActions.register(agentsFeature.actions, 'agents');
 featureForms.register(agentsFeature.forms, 'agents');
+const chatFeature = installChatFeature({
+  uiState, app, api, render, showError, applyBootstrap, activeChat, activeChatAgentProfile, escapeHtml, truncate, icon, memoryFeature,
+  renderTextBlock, renderComposerCard, renderWorkspaceExplorer, attachmentLabel, isPdfAttachment, extractTextUrls,
+  liveSceneFor, renderSceneReplay, selectedMessagePresentation, handleSpeakMessage, handleDeleteChat,
+  // createScrollPreservation() runs further down; resolve at call time.
+  captureThreadAnchor: scroller => captureThreadAnchor(scroller),
+  restoreThreadAnchor: anchor => restoreThreadAnchor(anchor),
+});
+featureActions.register(chatFeature.actions, 'chat');
+featureForms.register(chatFeature.forms, 'chat');
+// The send pipeline below still lives here until the composer move.
+const { renderStreamingFast, patchLiveRunSteps } = chatFeature;
 
 const HOME_PROMPT_PRESETS = [
   {
@@ -524,206 +527,8 @@ function thinkingLabel() {
   return `${label} · ${t('已用时 {time}', { time: t('{seconds} 秒', { seconds: elapsedSeconds }) })}`;
 }
 
-function parseRenderableMessageBlocks(value = '') {
-  const blocks = [];
-  const source = String(value || '');
-  const pattern = /```([\w.+-]+)?\n([\s\S]*?)```/g;
-  let lastIndex = 0;
-  let match;
-
-  while ((match = pattern.exec(source))) {
-    const [raw, language = '', block = ''] = match;
-    const before = source.slice(lastIndex, match.index);
-    if (before.trim()) {
-      blocks.push({ type: 'text', value: before });
-    }
-    blocks.push({ type: 'code', language, value: block.trim() });
-    lastIndex = match.index + raw.length;
-  }
-
-  const tail = source.slice(lastIndex);
-  if (tail.trim() || !blocks.length) {
-    blocks.push({ type: 'text', value: tail || source });
-  }
-
-  return blocks;
-}
-
-function normalizeDisplayConversationText(value = '') {
-  // Defense-in-depth: the backend's extractVizSpec() strips the trailer
-  // before persisting, but if one ever slips through (old messages, a
-  // provider that returned partial text, etc.) we still don't want the
-  // raw <viz-spec>…</viz-spec> JSON blob rendered in the chat bubble.
-  const preStripped = String(value || '').replace(/<viz-spec>[\s\S]*?<\/viz-spec>/gi, '');
-  const normalized = preStripped.replace(/\r\n/g, '\n');
-  const strippedLines = normalized
-    .split('\n')
-    .map(line =>
-      line
-        .replace(/^\s{0,3}#{1,6}\s+/, '')
-        .replace(/^\s*>\s?/, '')
-        .replace(/^\s*[-*+]\s+/, '')
-        .replace(/^\s*\d+[.)]\s+/, '')
-        .replace(/^\s*---+\s*$/, ''),
-    )
-    .join('\n');
-
-  return strippedLines
-    .replace(/\*\*([^*\n]+)\*\*/g, '$1')
-    .replace(/__([^_\n]+)__/g, '$1')
-    .replace(
-      /(^|[\s([{"'“‘（【《「『])\*([^*\n]+)\*(?=$|[\s)\]}.,!?;:'"”’）】》」』，。！？；：、])/gu,
-      '$1$2',
-    )
-    .replace(
-      /(^|[\s([{"'“‘（【《「『])_([^_\n]+)_(?=$|[\s)\]}.,!?;:'"”’）】》」』，。！？；：、])/gu,
-      '$1$2',
-    )
-    .replace(/(^|[\s([{"'“‘（【《「『])([*_#~]{1,3})(?=[\p{L}\p{N}\p{Script=Han}])/gu, '$1')
-    .replace(/(?<=[\p{L}\p{N}\p{Script=Han}])([*_#~]{1,3})(?=$|[\s)\]}.,!?;:'"”’）】》」』，。！？；：、])/gu, '')
-    .replace(/`([^`\n]+)`/g, '$1')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
-
 function renderTextBlock(value = '') {
   return renderReplyDocument(String(value).replace(/<viz-spec>[\s\S]*?<\/viz-spec>/gi, ''), renderInlineText, escapeHtml);
-}
-
-function renderRichText(value = '') {
-  return parseRenderableMessageBlocks(value)
-    .map(block => {
-      if (block.type === 'code') {
-        return ui`
-          <div
-            class="message-code-block"
-            data-copyable-surface
-            data-copy-text="${escapeHtml(block.value)}"
-          >
-            ${
-              block.language
-                ? ui`<div class="message-code-label">${escapeHtml(block.language)}</div>`
-                : ''
-            }
-            <pre><code data-language="${escapeHtml(block.language)}">${escapeHtml(block.value)}</code></pre>
-          </div>
-        `;
-      }
-
-      return renderTextBlock(block.value);
-    })
-    .join('');
-}
-
-function normalizeRenderableMessageBlock(block) {
-  if (!block || typeof block !== 'object') {
-    return null;
-  }
-
-  const type = block.type === 'code' ? 'code' : 'text';
-  const text =
-    typeof block.text === 'string'
-      ? block.text
-      : typeof block.value === 'string'
-        ? block.value
-        : '';
-
-  if (!String(text).trim()) {
-    return null;
-  }
-
-  return {
-    type,
-    language:
-      type === 'code'
-        ? String(block.language || '').trim()
-        : '',
-    text,
-  };
-}
-
-function messageBlocksForRender(message) {
-  const persistedBlocks = Array.isArray(message?.blocks)
-    ? message.blocks
-        .map(normalizeRenderableMessageBlock)
-        .filter(Boolean)
-    : [];
-
-  if (persistedBlocks.length) {
-    return persistedBlocks;
-  }
-
-  return parseRenderableMessageBlocks(message?.content || '')
-    .map(block => ({
-      type: block.type === 'code' ? 'code' : 'text',
-      language: block.type === 'code' ? String(block.language || '').trim() : '',
-      text: String(block.value || ''),
-    }))
-    .map(normalizeRenderableMessageBlock)
-    .filter(Boolean);
-}
-
-function renderMessageBlocks(message) {
-  const blocks = messageBlocksForRender(message);
-  if (!blocks.length) {
-    return '';
-  }
-
-  // Collect citations from all text blocks in assistant messages
-  const isAssistant = message?.role === 'assistant';
-  const allCitations = [];
-
-  const renderedBlocks = blocks
-    .map(block => {
-      if (block.type === 'code') {
-        return ui`
-          <div
-            class="message-code-block"
-            data-copyable-surface
-            data-copy-text="${escapeHtml(block.text)}"
-          >
-            ${
-              block.language
-                ? ui`<div class="message-code-label">${escapeHtml(block.language)}</div>`
-                : ''
-            }
-            <pre><code data-language="${escapeHtml(block.language)}">${escapeHtml(
-              block.text,
-            )}</code></pre>
-          </div>
-        `;
-      }
-
-      let textForDisplay = block.text;
-      if (isAssistant) {
-        const { citations, cleanText } = extractSourceCitations(block.text);
-        citations.forEach(c => allCitations.push(c));
-        textForDisplay = cleanText;
-      }
-
-      const displayText = textForDisplay.trim();
-      if (!displayText) {
-        return '';
-      }
-
-      return ui`
-        <div
-          class="message-bubble"
-          data-copyable-surface
-          data-copy-text="${escapeHtml(replyPlainText(displayText))}"
-        >
-          ${renderTextBlock(displayText)}
-        </div>
-      `;
-    })
-    .join('');
-
-  return ui`
-    <div class="message-block-stack">
-      ${renderedBlocks}
-      ${isAssistant ? renderSourceCitationCards(allCitations) : ''}
-    </div>
-  `;
 }
 
 function renderInlineText(value = '') {
@@ -748,63 +553,6 @@ function renderInlineText(value = '') {
 
   html += renderInlineSegmentWithCites(value.slice(cursor), escapeHtml);
   return html.replaceAll('\n', '<br />');
-}
-
-// ─── Web source citation helpers ───────────────────────────────────────────────
-
-/**
- * Extract [source: url] citation markers from text.
- * Returns { citations: [{url, via?}], cleanText }.
- */
-function extractSourceCitations(text = '') {
-  const citations = [];
-  const seen = new Set();
-  // Match [source: url] and optional [via: method] following it
-  const pattern = /\[source:\s*(https?:\/\/[^\]]+)\](?:\s*\[via:\s*([^\]]+)\])?/gi;
-  const cleanText = text.replace(pattern, (_match, url, via) => {
-    const trimmedUrl = url.trim();
-    if (!seen.has(trimmedUrl)) {
-      seen.add(trimmedUrl);
-      citations.push({ url: trimmedUrl, via: (via || '').trim() });
-    }
-    return '';
-  }).trim();
-  return { citations, cleanText };
-}
-
-/**
- * Try to extract a readable hostname label from a URL.
- */
-function citationHostname(url) {
-  try {
-    return new URL(url).hostname.replace(/^www\./, '');
-  } catch {
-    return url.slice(0, 40);
-  }
-}
-
-/**
- * Render citation source cards for web search / fetch_url results.
- */
-function renderSourceCitationCards(citations) {
-  if (!citations.length) return '';
-  return ui`
-    <div class="source-citation-strip">
-      ${citations.map(({ url, via }) => ui`
-        <a
-          class="source-citation-card"
-          href="${escapeHtml(url)}"
-          target="_blank"
-          rel="noreferrer"
-          title="${escapeHtml(url)}"
-        >
-          <span class="citation-icon">🔗</span>
-          <span class="citation-host">${escapeHtml(citationHostname(url))}</span>
-          ${via ? ui`<span class="citation-via">${escapeHtml(via)}</span>` : ''}
-        </a>
-      `).join('')}
-    </div>
-  `;
 }
 
 function splitLines(value = '') {
@@ -1239,10 +987,6 @@ function renderTtsVoicePanel() {
   `;
 }
 
-function renderMessageAttachments(message) {
-  return renderAttachmentCards(message, { savedVideoKnowledge: uiState.savedVideoKnowledge || {}, escapeHtml, truncate, icon, attachmentLabel, isPdfAttachment, describeAudioExtractionStatus, describeVideoExtractionStatus, extractTextUrls });
-}
-
 function getGreeting() {
   const hour = new Date().getHours();
   if (hour < 12) return 'Good morning';
@@ -1320,157 +1064,6 @@ function optimisticChatTitle(message) {
 function resetStreamingAssistant() {
   uiState.streamingChatId = null;
   uiState.streamingAssistantText = '';
-}
-
-function prepareThreadNavigation({ highlightedMessageId = null, autoFollow = true } = {}) {
-  uiState.highlightedMessageId = highlightedMessageId;
-  uiState.lastThreadScrollSignature = '';
-  uiState.lastThreadChatId = null;
-  uiState.threadAutoFollow = autoFollow;
-}
-
-function renderThinkingMessage() {
-  return '';
-}
-
-function renderLiveRunSteps(chat) {
-  const sent = (uiState.supplementsSent || []).map(text => `<p class="run-steps-note">${escapeHtml(t('补充已送达，会在下一步加入：{text}', { text }))}</p>`).join('');
-  return `<div class="run-steps-host" data-run-steps-chat="${escapeHtml(chat?.id || '')}">${renderRunSteps(sceneSteps(liveSceneFor(chat?.id)), escapeHtml, t)}</div>${sent}`;
-}
-
-function patchLiveRunSteps(chatId) {
-  const host = document.querySelector(`[data-run-steps-chat="${CSS.escape(chatId || '')}"]`);
-  if (host) host.innerHTML = renderRunSteps(sceneSteps(liveSceneFor(chatId)), escapeHtml, t);
-}
-
-function renderStreamingAssistantMessage(chat) {
-  if (!uiState.sending || uiState.streamingChatId !== chat?.id) {
-    return '';
-  }
-
-  // Tool calls strip always shown while tools are running (even before text appears).
-  // The live steps of this run (what it is doing now) sit under the newest output so
-  // they stay in view; they are patched in place on scene events.
-  const toolStrip = renderActiveToolCallsStrip();
-  const liveSteps = renderLiveRunSteps(chat);
-
-  if (!uiState.streamingAssistantText) {
-    return toolStrip + renderThinkingMessage() + liveSteps;
-  }
-
-  // Strip any <tool_call>...</tool_call> XML blocks (and partial opening tags)
-  // before display — these are internal model directives, not user-visible text.
-  // Also strip any <viz-spec>...</viz-spec> trailer — complete or partial — so
-  // the raw JSON trailer never flashes in the streaming text on its way to
-  // being turned into a Demon viz card after the stream settles.
-  const displayText = uiState.streamingAssistantText
-    .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
-    .replace(/<tool_call>[\s\S]*$/, '')
-    .replace(/<viz-spec>[\s\S]*?<\/viz-spec>/gi, '')
-    .replace(/<viz-spec>[\s\S]*$/i, '')
-    .trim();
-
-  const { citations: streamCitations, cleanText: streamCleanText } =
-    extractSourceCitations(displayText);
-
-  return ui`
-    ${toolStrip}
-    <article class="message assistant is-streaming">
-      <div class="message-role">${renderAgentAvatar(activeChatAgentProfile() || {name:t("助手")}, escapeHtml, 24)} ${escapeHtml(activeChatAgentProfile()?.name || t("助手"))}</div>
-      <div
-        class="message-bubble"
-        data-copyable-surface
-        data-copy-text="${escapeHtml(replyPlainText(streamCleanText))}"
-      >
-        ${renderRichText(streamCleanText)}
-      </div>
-      ${renderSourceCitationCards(streamCitations)}
-    </article>
-    ${liveSteps}
-  `;
-}
-
-// Surgical DOM update for the streaming-assistant bubble. Why this exists:
-// `render()` does `app.innerHTML = ...`, i.e. it blows away AND rebuilds
-// EVERY node in the page. Doing that on every streamed token makes the
-// whole chat flash (`闪屏`) — every sidebar row, every settled message
-// bubble, every panel gets demolished and re-painted 20-50 times a second.
-//
-// This fast path short-circuits that for the only update 99% of streaming
-// frames actually carry: "the streaming bubble grew by a few tokens." It
-// finds the already-mounted `<article class="message assistant is-streaming">`
-// element and patches just its bubble (and citation strip) in place.
-//
-// Returns true if it handled the update; false if full `render()` is needed
-// (first delta of a reply, tool-strip state changed, different chat is active,
-// node missing because a prior render rebuilt, etc.).
-function renderStreamingFast() {
-  // Sanity: must actually be streaming into the currently-active chat.
-  const chat = activeChat();
-  if (!chat || !uiState.sending || uiState.streamingChatId !== chat.id) return false;
-
-  // First delta of the reply — there's no article yet, do a full render so
-  // the DOM shell gets built.
-  const article = document.querySelector('.message-list .message.assistant.is-streaming');
-  if (!article) return false;
-
-  // The tool-call strip sits OUTSIDE the streaming article (it's a sibling
-  // above it). Its state only changes on tool_calls_start / tool_calls_done
-  // events, which both go through full render(). Here we only have to
-  // assume it's already in sync.
-
-  const bubble = article.querySelector('.message-bubble');
-  if (!bubble) return false;
-
-  // Re-apply the same strip passes the template does so the bubble never
-  // flashes raw `<tool_call>` / `<viz-spec>` JSON mid-stream.
-  const displayText = uiState.streamingAssistantText
-    .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
-    .replace(/<tool_call>[\s\S]*$/, '')
-    .replace(/<viz-spec>[\s\S]*?<\/viz-spec>/gi, '')
-    .replace(/<viz-spec>[\s\S]*$/i, '')
-    .trim();
-
-  const { citations: streamCitations, cleanText: streamCleanText } =
-    extractSourceCitations(displayText);
-
-  // Update bubble text + copy-surface in place. innerHTML swap here is
-  // scoped to ONE small element, not the whole app, so no flash.
-  bubble.innerHTML = renderRichText(streamCleanText);
-  bubble.setAttribute('data-copy-text', replyPlainText(streamCleanText));
-
-  // Update / remove the citation cards under the bubble.
-  const citationHtml = renderSourceCitationCards(streamCitations);
-  let citationHost = article.querySelector('.source-citation-cards');
-  if (citationHtml.trim()) {
-    if (!citationHost) {
-      // First time any citations appear — insert a fresh node at the end.
-      const wrapper = document.createElement('div');
-      wrapper.innerHTML = citationHtml;
-      const node = wrapper.firstElementChild;
-      if (node) article.appendChild(node);
-    } else {
-      // Replace the existing citation strip with freshly rendered markup.
-      const wrapper = document.createElement('div');
-      wrapper.innerHTML = citationHtml;
-      const node = wrapper.firstElementChild;
-      if (node) citationHost.replaceWith(node);
-    }
-  } else if (citationHost) {
-    citationHost.remove();
-  }
-
-  // Autoscroll the thread so the newly appended tokens stay visible. We do
-  // this lightweight version instead of full syncThreadViewport() because the
-  // latter reads layout-affecting state across the whole page.
-  if (uiState.threadAutoFollow) {
-    const scroller = document.querySelector('.thread-scroll-region');
-    if (scroller instanceof HTMLElement) {
-      scroller.scrollTop = scroller.scrollHeight;
-    }
-  }
-
-  return true;
 }
 
 function applyOptimisticUserMessage({ chatId, content, attachments }) {
@@ -2050,7 +1643,7 @@ async function handleOpenSearchResult(result) {
       });
       break;
     case 'open-chat-thread': {
-      prepareThreadNavigation({
+      chatFeature.prepareThreadNavigation({
         highlightedMessageId: null,
         autoFollow: true,
       });
@@ -2066,7 +1659,7 @@ async function handleOpenSearchResult(result) {
       break;
     }
     case 'open-chat-hit': {
-      prepareThreadNavigation({
+      chatFeature.prepareThreadNavigation({
         highlightedMessageId: result.messageId || null,
         autoFollow: false,
       });
@@ -6235,162 +5828,6 @@ function renderComposerCard({ inline = false } = {}) {
   `;
 }
 
-// Render a placeholder mount point for the viz block attached to an
-// assistant message (if any). The real renderer is instantiated AFTER
-// the DOM is swapped, in syncVizBlocks(). Keeping the scaffold in the
-// static HTML means the viz block participates in the normal message
-// layout flow (spacing, scroll anchoring, etc.).
-function renderAssistantVizMount(message) {
-  if (!message || message.role !== 'assistant') return '';
-  const viz = message.viz;
-  if (!viz || typeof viz !== 'object') return '';
-  return renderVizMountHtml(message.id, viz);
-}
-
-// Collect viz specs from the currently active chat's assistant messages
-// and mount them into the DOM. Called once per render() pass, after the
-// innerHTML swap.
-function syncVizBlocks() {
-  const chat = activeChat();
-  if (!chat || !Array.isArray(chat.messages)) return;
-  const specsById = new Map();
-  for (const message of chat.messages) {
-    if (message.role !== 'assistant') continue;
-    if (!message.viz || typeof message.viz !== 'object') continue;
-    specsById.set(message.id, message.viz);
-  }
-  if (!specsById.size) return;
-  mountVizBlocks(app, specsById);
-}
-
-function renderMessageActions(message) {
-  // Bug audit U12: a tool-trace record has nothing to read aloud.
-  if (message.role !== 'assistant' || isToolTraceMessage(message)) return '';
-  const isSpeaking = uiState.ttsSpeakingMessageId === message.id;
-  const isLoading = !isSpeaking && uiState.ttsSpeakingLoadingId === message.id;
-  return ui`
-    <div class="message-actions">
-      <button
-        class="message-action-btn ${isSpeaking ? 'is-speaking' : ''} ${isLoading ? 'is-tts-loading' : ''}"
-        type="button"
-        data-action="speak-message"
-        data-message-id="${escapeHtml(message.id)}"
-        title="${isSpeaking ? 'Stop speaking' : 'Read aloud'}"
-        aria-label="${isSpeaking ? 'Stop speaking' : 'Read aloud'}"
-      >
-        <span class="toolbar-icon">${isSpeaking ? icon.speakOff : icon.speak}</span>
-      </button>
-    </div>
-  `;
-}
-
-// G-1d slice 2 (2026-05-12): renders persisted tool execution metadata
-// under assistant messages in chat history.  Extracted to
-// `./messageToolResults.js` (same pattern as activeToolCallsStrip.js)
-// so the pure-string renderer is testable without a DOM.
-function renderMessageToolResults(message) {
-  return _renderMessageToolResultsFromModule(message, escapeHtml);
-}
-
-// Which slice of `chat.messages` gets rendered. Long threads only render the
-// newest THREAD_RENDER_WINDOW messages plus whatever the user expanded via
-// "加载更早"; a highlighted message (search hit / quote jump) always pulls the
-// window wide enough to include it, and that expansion is persisted so the
-// window doesn't snap back when the highlight is later cleared.
-function activeMessageWindow(chat) {
-  const messages = Array.isArray(chat?.messages) ? chat.messages : [];
-  uiState.threadWindow ||= {};
-  if (uiState.highlightedMessageId) {
-    ensureMessageInThreadWindow(uiState.threadWindow, chat?.id, messages, uiState.highlightedMessageId);
-  }
-  return visibleMessageWindow(messages, {
-    chatId: chat?.id,
-    state: uiState.threadWindow,
-    highlightedMessageId: uiState.highlightedMessageId,
-  });
-}
-
-function renderThreadLoadEarlier(hiddenCount) {
-  if (!hiddenCount) return '';
-  return `<button class="small-button thread-load-earlier" type="button" data-action="thread-load-earlier">${escapeHtml(
-    t('加载更早的 {count} 条', { count: hiddenCount }),
-  )}</button>`;
-}
-
-function renderMessageList(chat) {
-  const { messages: windowed, hiddenCount } = activeMessageWindow(chat);
-  return ui`
-    <div class="message-list">
-      ${renderThreadLoadEarlier(hiddenCount)}
-      ${windowed
-        .map(selectedMessagePresentation)
-        .map(
-          message => ui`
-            <article class="message ${message.role} ${
-              uiState.highlightedMessageId === message.id ? 'is-highlighted' : ''
-            } ${isToolTraceMessage(message) ? 'is-tool-trace' : ''}" data-message-id="${escapeHtml(message.id)}">
-              ${isToolTraceMessage(message) ? ui`${renderToolTraceMessage(message, escapeHtml)}${renderSceneReplay(message)}` : ui`<div class="message-role">
-                ${message.role === 'assistant' ? `${renderAgentAvatar((uiState.bootstrap.customize?.agents || []).find(a=>a.id===message.metadata?.agent?.id) || {name:message.metadata?.agent?.name || 'Melo'}, escapeHtml, 24)} ${escapeHtml(message.metadata?.agent?.name || 'Melo')}` : `${renderAgentAvatar(uiState.bootstrap.profile, escapeHtml, 24)} ${escapeHtml(uiState.bootstrap.profile.name)}`}
-              </div>
-              ${renderMessageBlocks(message)}
-              ${renderAssistantVizMount(message)}
-              ${renderMessageToolResults(message)}
-              ${memoryFeature.renderMessageRefs(message)}
-              ${renderMessageAttachments(message)}
-              ${renderModelReceipt(message, escapeHtml)}
-              ${renderSceneReplay(message)}
-              ${renderMessageActions(message)}`}
-            </article>
-          `,
-        )
-        .join('')}
-      ${renderStreamingAssistantMessage(chat)}
-    </div>
-  `;
-}
-
-function renderThreadArtifactStrip(artifacts) {
-  if (!artifacts.length) {
-    return '';
-  }
-
-  return ui`
-    <section class="surface-card thread-artifact-strip">
-      <div class="header-row">
-        <div>
-          <h2 class="pane-title">本对话成果</h2>
-        </div>
-        <button class="small-button" data-action="open-view" data-view="artifacts">
-          Open shelf
-        </button>
-      </div>
-
-      <div class="card-grid compact-grid">
-        ${artifacts
-          .slice(0, 3)
-          .map(
-            artifact => ui`
-              <button
-                class="artifact-card artifact-mini-card"
-                data-action="open-artifact"
-                data-artifact-id="${artifact.id}"
-              >
-                <div class="thread-meta">
-                  <span class="chip is-accent">${escapeHtml(
-                    artifact.language || artifact.kind,
-                  )}</span>
-                </div>
-                <h3 class="card-title">${escapeHtml(artifact.title)}</h3>
-                <p class="card-summary">${escapeHtml(truncate(artifact.content, 140))}</p>
-              </button>
-            `,
-          )
-          .join('')}
-      </div>
-    </section>
-  `;
-}
-
 function renderAgentSelectorChip() {
   const agent = activeChatAgentProfile();
   if (!agent) return '';
@@ -6422,83 +5859,6 @@ function renderAgentSelectorDropdown() {
         </button>
       `).join('')}
     </div>
-  `;
-}
-
-function renderRegularChatPage() {
-  const chat = activeChat();
-  const project = uiState.bootstrap.projects.find(p=>p.id===chat?.projectId);
-  const chatAgent = conversationAgent(uiState.bootstrap, { newAgentId: uiState.activeChatAgentId, newProjectId: uiState.newChatProjectId });
-
-  if (!chat) {
-    return ui`<section class="page is-chat neural-chat-home"><div class="neural-chat-intro"><div class="neural-overview-kicker">A NEW CONNECTION</div><h1>此刻，你在想什么？</h1><p>与 Melo 一起，把想法延伸下去。</p></div>${renderComposerCard()}</section>`;
-  }
-
-  return ui`
-    <section class="page is-chat">
-      <div class="chat-thread">
-        <div class="thread-header">
-          <div>
-            <h1 class="page-title compact">
-              ${escapeHtml(chat.title)}
-              <span class="thread-title-caret">${icon.chevronDown}</span>
-            </h1>
-            <div class="thread-meta">
-              ${
-                project ? ui`<span class="chip">${escapeHtml(project.name)}</span>` : ''
-              }
-            </div>
-          </div>
-          <div class="inline-actions">
-            <button class="small-button" type="button" data-action="delete-active-chat">删除对话</button>
-            <button
-              class="small-button is-outline"
-              type="button"
-              data-action="save-chat-as-skill"
-              data-chat-id="${chat.id}"
-              title="Draft a reusable skill from this conversation. You confirm before it saves."
-            >
-              Save as skill
-            </button>
-          </div>
-        </div>
-
-        <details class="chat-files-panel" ${uiState.chatFilesOpen ? 'open' : ''}><summary data-action="toggle-chat-files">对话文件</summary>${renderWorkspaceExplorer()}${uiState.bootstrap.workspace.selectedFile ? ui`<pre>${escapeHtml(uiState.bootstrap.workspace.selectedFile.content)}</pre>` : ''}</details>
-        <div class="thread-scroll-region">
-          ${renderMessageList(chat)}
-        </div>
-        <div class="thread-footer">
-          ${
-            // "Jump to latest" floating button — appears only while the user has
-            // scrolled away from the bottom. While AI is still streaming, the
-            // existing updateThreadAutoFollow() keeps threadAutoFollow=false so
-            // their reading position is preserved across each chunk; this
-            // button lets them pull back to the newest output on demand (same
-            // UX as claude.ai). Hidden when the user is already at the bottom
-            // so it doesn't cover the reply.
-            //
-            // Wrapped with the composer in .thread-footer so the button can be
-            // anchored directly above the composer card (bottom: 100% of the
-            // footer) regardless of how tall the composer grows when the user
-            // types multi-line, opens the slash palette, attaches files, etc.
-            !uiState.threadAutoFollow && chat.messages.length
-              ? ui`
-                <button
-                  class="thread-scroll-jump-button"
-                  type="button"
-                  data-action="scroll-thread-to-bottom"
-                  title="Jump to latest"
-                  aria-label="Jump to latest message"
-                >
-                  ${icon.chevronDown}
-                </button>
-              `
-              : ''
-          }
-          ${renderComposerCard({ inline: true })}
-        </div>
-      </div>
-    </section>
   `;
 }
 
@@ -6766,7 +6126,7 @@ function renderCodePage() {
 
             ${
               chat && chat.messages.length
-                ? renderMessageList(chat)
+                ? chatFeature.renderMessageList(chat)
                 : ui`
                   <div class="code-empty">
                     <h2 class="card-title">Ready to work in code mode</h2>
@@ -6784,7 +6144,7 @@ function renderCodePage() {
                 `
             }
 
-            ${renderThreadArtifactStrip(uiState.bootstrap.activeChatArtifacts || [])}
+            ${chatFeature.renderThreadArtifactStrip(uiState.bootstrap.activeChatArtifacts || [])}
             ${renderComposerCard({ inline: true })}
           </section>
         </div>
@@ -8484,7 +7844,7 @@ function renderPage() {
       return renderChatsPage();
     case 'chat':
     default:
-      return renderRegularChatPage();
+      return chatFeature.renderPage();
   }
 }
 
@@ -8749,21 +8109,6 @@ function renderFileSafetyDialog(entry) {
       </div>
     </div>
   `;
-}
-
-// ─── Tool call status strip (shown while tool is executing) ───────────────────
-//
-// G-1f (2026-05-12): extracted to ./activeToolCallsStrip.js so the renderer
-// can be exercised by node --test without a DOM.  This wrapper closes over
-// uiState + the icon table + escapeHtml; the sibling module is pure
-// (deps injected).  The sibling also adds evidence-trail rendering under
-// each pill when the trail is informative (failure path OR multi-tier
-// fallback) — same heuristic as the G-1e prompt-side surfacing.
-function renderActiveToolCallsStrip() {
-  return _renderActiveToolCallsStripFromModule(uiState.activeToolCalls, {
-    escapeHtml,
-    terminalIcon: icon.terminal,
-  });
 }
 
 // ─── Tool permission handlers ─────────────────────────────────────────────────
@@ -9051,7 +8396,7 @@ function render({ background = false, changedSections = null } = {}) {
 
   bindContentScrollbar();
   syncContentScrollbar();
-  syncThreadViewport();
+  chatFeature.syncThreadViewport();
   agentsFeature.restoreScrollAfterRender();
   // Restore AFTER agent-specific restore so the generic path covers the panes
   // the agent logic doesn't know about (e.g. customize-pane on non-agent views).
@@ -9080,7 +8425,7 @@ function render({ background = false, changedSections = null } = {}) {
   // Mount Demon viz blocks (projectile, tree, ...) into the message bubbles
   // that carry a validated `viz` spec. Runs AFTER the DOM swap so it can
   // query freshly rendered `.viz-mount` shells and attach canvases/SVGs.
-  syncVizBlocks();
+  chatFeature.syncVizBlocks();
 
   // Viz cards just grew (projectile SVG, tree layout, scene3d shells). Pin
   // the user's viewport to whatever message they were looking at BEFORE the
@@ -9193,38 +8538,6 @@ function syncContentScrollbar({ forceVisible = false } = {}) {
   }
 }
 
-function updateThreadAutoFollow(scroller) {
-  if (!(scroller instanceof HTMLElement)) {
-    return;
-  }
-
-  if (uiState.bootstrap?.settings?.activeView !== 'chat' || !activeChat()) {
-    return;
-  }
-
-  const maxScroll = Math.max(scroller.scrollHeight - scroller.clientHeight, 0);
-  const distanceFromBottom = Math.max(0, maxScroll - scroller.scrollTop);
-  const nextAutoFollow = distanceFromBottom <= 56;
-  const autoFollowChanged = nextAutoFollow !== uiState.threadAutoFollow;
-  uiState.threadAutoFollow = nextAutoFollow;
-  // Always track the last known scroll position so we can restore it after re-renders
-  uiState.lastKnownScrollTop = scroller.scrollTop;
-
-  // If the auto-follow state flipped (user scrolled away from, or back to, the
-  // bottom), we need a render so the "jump to latest" floating button shows or
-  // hides. Skipping this render means the button only appears on the next
-  // unrelated render — e.g. not until the next streaming chunk arrives — which
-  // feels laggy when the user scrolls up after streaming has finished.
-  //
-  // Marked as `background: true` so the scroll guard above defers it past any
-  // momentum-scroll in flight — jump-to-latest button visibility is allowed
-  // to lag a few hundred ms, but tearing down the scroller mid-momentum kills
-  // the user's swipe and is what they reported as "拉到底跳到这" on 2026-05-05.
-  if (autoFollowChanged) {
-    render({ background: true });
-  }
-}
-
 function bindContentScrollbar() {
   const { scroller } = contentScrollElements();
   if (!(scroller instanceof HTMLElement) || scroller.dataset.scrollbarBound === 'true') {
@@ -9241,7 +8554,7 @@ function bindContentScrollbar() {
       // scroll. See SCROLL_GUARD_WINDOW_MS comment for the user-reported
       // symptom this fixes.
       lastUserScrollAt = Date.now();
-      updateThreadAutoFollow(scroller);
+      chatFeature.updateThreadAutoFollow(scroller);
       syncContentScrollbar({ forceVisible: true });
     },
     { passive: true },
@@ -9266,61 +8579,6 @@ function bindContentScrollbar() {
     },
     { passive: true },
   );
-}
-
-function syncThreadViewport() {
-  const chat = activeChat();
-  if (
-    uiState.bootstrap?.settings?.activeView !== 'chat' ||
-    !chat?.messages?.length
-  ) {
-    uiState.lastThreadScrollSignature = '';
-    uiState.lastThreadChatId = null;
-    uiState.threadAutoFollow = true;
-    return;
-  }
-
-  const isNewThread = uiState.lastThreadChatId !== chat.id;
-  if (isNewThread) {
-    uiState.lastThreadChatId = chat.id;
-    uiState.threadAutoFollow = true;
-  }
-
-  const signature = `${chat.id}:${chat.messages.length}:${chat.updatedAt || ''}:${
-    uiState.highlightedMessageId || ''
-  }:${uiState.streamingChatId === chat.id ? uiState.streamingAssistantText.length : 0}:${
-    uiState.sending && uiState.streamingChatId === chat.id ? 1 : 0
-  }`;
-  if (signature === uiState.lastThreadScrollSignature) {
-    return;
-  }
-
-  uiState.lastThreadScrollSignature = signature;
-  window.requestAnimationFrame(() => {
-    window.requestAnimationFrame(() => {
-      const scroller = document.querySelector('.thread-scroll-region');
-      const highlightedMessage = uiState.highlightedMessageId
-        ? document.querySelector(`[data-message-id="${uiState.highlightedMessageId}"]`)
-        : null;
-      if (highlightedMessage instanceof HTMLElement) {
-        uiState.threadAutoFollow = false;
-        highlightedMessage.scrollIntoView({ block: 'center', behavior: 'auto' });
-        return;
-      }
-
-      if (!uiState.threadAutoFollow) {
-        // Restore the user's saved scroll position — new DOM starts at 0
-        if (scroller instanceof HTMLElement && uiState.lastKnownScrollTop > 0) {
-          scroller.scrollTop = uiState.lastKnownScrollTop;
-        }
-        return;
-      }
-
-      if (scroller instanceof HTMLElement) {
-        scroller.scrollTop = scroller.scrollHeight;
-      }
-    });
-  });
 }
 
 // P3 follow-up #1: after the user opens a search result that pointed at a
@@ -9545,7 +8803,7 @@ document.addEventListener('click', async event => {
   }
 
   const action = trigger.dataset.action;
-  if(action==='toggle-chat-files') {event.preventDefault();uiState.chatFilesOpen=!uiState.chatFilesOpen;trigger.parentElement.open=uiState.chatFilesOpen;return;}
+  if (chatFeature.handleChatFilesToggle(action, trigger, event)) return;
   if (action?.startsWith('image-')) {
     event.preventDefault();
     try { await handleImageAction(action, { config: uiState.bootstrap.settings.config, attachments: uiState.composerAttachments, api, render, refresh: () => loadBootstrap(uiState.searchQuery, { quiet: true }) }); } catch (error) { window.alert(error.message); }
@@ -9646,7 +8904,6 @@ document.addEventListener('click', async event => {
           await handleToggleChatLock(activeRecentContextChatId);
         }
         break;
-      case 'delete-active-chat': if(activeChat()) await handleDeleteChat(activeChat().id); break;
       case 'delete-chat':
         if (activeRecentContextChatId) {
           await handleDeleteChat(activeRecentContextChatId);
@@ -9811,7 +9068,7 @@ document.addEventListener('click', async event => {
         break;
       }
       case 'open-chat': {
-        prepareThreadNavigation({
+        chatFeature.prepareThreadNavigation({
           highlightedMessageId: null,
           autoFollow: true,
         });
@@ -9834,15 +9091,6 @@ document.addEventListener('click', async event => {
           activeView: action === 'focus-project' ? 'projects' : uiState.bootstrap.settings.activeView,
         });
         break;
-      case 'save-video-knowledge': {
-        const message = activeChat()?.messages?.find(m => m.id === trigger.dataset.messageId);
-        const attachment = message?.attachments?.find(a => a.id === trigger.dataset.attachmentId);
-        const entry = message && attachment ? videoExtraction(message, attachment) : null;
-        if (!entry) { showError(t('这段视频还没有处理结果。')); break; }
-        try { applyBootstrap(await api('/api/artifacts', { method: 'POST', body: { ...videoKnowledgeNote(attachment, entry), projectId: activeChat()?.projectId || null } })); (uiState.savedVideoKnowledge ||= {})[attachment.id] = true; render(); }
-        catch (error) { showError(error.message); }
-        break;
-      }
       case 'resolve-sync-conflict': {
         const settings=trigger.dataset.settings==='true', projectMemory=trigger.dataset.settings==='project-memory';
         const row=(projectMemory?uiState.bootstrap.projectMemoryConflicts:settings?uiState.bootstrap.agentSettingsConflicts:uiState.bootstrap.syncConflicts).find(r=>r.kind===trigger.dataset.kind&&r.id===trigger.dataset.id);
@@ -10000,51 +9248,6 @@ document.addEventListener('click', async event => {
           }),
         );
         break;
-      case 'thread-load-earlier': {
-        // Long-thread render window: reveal the next 60 older messages. The
-        // thread signature (chat id / length / updatedAt) does not change, so
-        // render() restores the raw scrollTop — which would now point INTO
-        // the freshly inserted older content. Anchor on the first visible
-        // message instead (same helpers as the viz-hydration path) and shift
-        // scrollTop by the height the new content added above it; fall back
-        // to a plain scrollHeight delta when no anchor is available (e.g.
-        // the scroller was within the auto-follow threshold of the bottom).
-        const chat = activeChat();
-        if (!chat) break;
-        const scroller = document.querySelector('.thread-scroll-region');
-        const anchor = scroller instanceof HTMLElement ? captureThreadAnchor(scroller) : null;
-        const previousHeight = scroller instanceof HTMLElement ? scroller.scrollHeight : 0;
-        const previousTop = scroller instanceof HTMLElement ? scroller.scrollTop : 0;
-        uiState.threadWindow ||= {};
-        expandThreadWindow(uiState.threadWindow, chat.id, 60);
-        render();
-        const nextScroller = document.querySelector('.thread-scroll-region');
-        if (nextScroller instanceof HTMLElement) {
-          if (!(anchor && restoreThreadAnchor(anchor))) {
-            nextScroller.scrollTop = previousTop + (nextScroller.scrollHeight - previousHeight);
-          }
-          uiState.lastKnownScrollTop = nextScroller.scrollTop;
-          // Viz cards (if any) hydrate async and grow above the viewport —
-          // re-pin once the frame after the swap settles.
-          if (anchor) requestAnimationFrame(() => restoreThreadAnchor(anchor));
-        }
-        break;
-      }
-      case 'scroll-thread-to-bottom': {
-        // User clicked the floating "jump to latest" arrow. Re-enable
-        // auto-follow so subsequent streaming chunks keep the view pinned to
-        // the bottom, and snap to bottom immediately (instant, not smooth —
-        // a smooth animation fires scroll events mid-animation that would
-        // briefly flip auto-follow back off and make the button flicker).
-        uiState.threadAutoFollow = true;
-        uiState.lastKnownScrollTop = 0;
-        const scroller = document.querySelector('.thread-scroll-region');
-        if (scroller instanceof HTMLElement) {
-          scroller.scrollTop = scroller.scrollHeight;
-        }
-        render();
-        break;
-      }
       case 'set-skill-filter-tag': {
         // Phase 3.3.2 — empty string ("All tags" chip) clears the tag filter.
         const nextTag = trigger.dataset.tag || '';
@@ -10386,9 +9589,6 @@ document.addEventListener('click', async event => {
         break;
       case 'toggle-voice-input':
         toggleVoiceInput();
-        break;
-      case 'speak-message':
-        await handleSpeakMessage(trigger);
         break;
       case 'toggle-tts-autoplay':
         uiState.ttsVoicePanelOpen = !uiState.ttsVoicePanelOpen;
