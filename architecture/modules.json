@@ -22,8 +22,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 536,
-      "edges": 1633,
+      "modules": 539,
+      "edges": 1645,
       "roots": [
         "src",
         "desktop-ui",
@@ -50,13 +50,14 @@
         "src/services/workspace/**",
         "src/domain/workspacePath.js",
         "desktop-ui/project*.js",
+        "desktop-ui/features/projects/**",
         "desktop-ui/chatFiles.js",
         "desktop-ui/chatFiles.browser.test.js",
         "ios/Melo/PersonalWorkspace.swift",
         "src/desktopStore.projectsDefault.test.js"
       ],
       "modules": {
-        "desktop-ui": 1,
+        "desktop-ui": 4,
         "src": 15
       },
       "entryModules": [
@@ -65,6 +66,24 @@
           "importedBy": [
             "desktop-shell",
             "tools"
+          ]
+        },
+        {
+          "module": "desktop-ui/features/projects/context.js",
+          "importedBy": [
+            "desktop-shell"
+          ]
+        },
+        {
+          "module": "desktop-ui/features/projects/controller.js",
+          "importedBy": [
+            "desktop-shell"
+          ]
+        },
+        {
+          "module": "desktop-ui/features/projects/view.js",
+          "importedBy": [
+            "desktop-shell"
           ]
         },
         {
@@ -146,19 +165,20 @@
         }
       ],
       "dependsOn": {
-        "agents": 2,
+        "agents": 4,
         "approvals": 1,
         "chat": 1,
-        "desktop-shell": 2,
+        "desktop-shell": 4,
         "knowledge": 1,
-        "memory": 1,
+        "memory": 3,
         "platform": 19,
+        "settings": 1,
         "tools": 3
       },
       "usedBy": {
         "approvals": 4,
         "chat": 9,
-        "desktop-shell": 4,
+        "desktop-shell": 7,
         "memory": 1,
         "platform": 5,
         "sync": 1,
@@ -176,7 +196,10 @@
         "POST /api/workspace/select-file ← src/http/domainRoutes.js"
       ],
       "desktopUi": [
-        "desktop-ui/chatFiles.js"
+        "desktop-ui/chatFiles.js",
+        "desktop-ui/features/projects/context.js",
+        "desktop-ui/features/projects/controller.js",
+        "desktop-ui/features/projects/view.js"
       ],
       "iphone": {
         "owned": [
@@ -195,7 +218,7 @@
         ],
         "js": [
           "desktop-ui/chatFiles.browser.test.js",
-          "desktop-ui/projectPresentation.test.js",
+          "desktop-ui/features/projects/view.test.js",
           "desktop-ui/projectR1.browser.test.js",
           "src/desktopStore.projectsDefault.test.js",
           "src/services/project/projectAgentDefaults.test.js",
@@ -210,7 +233,7 @@
         "swift": []
       },
       "implicit": [
-        "source-tests-app-js"
+        "source-tests-self"
       ],
       "notes": [
         "修改入口：src/services/project/projectMutations.js；查询：projectService.js。P1 起项目修改返回提交回执，兼容 HTTP 适配器再组装 bootstrap。",
@@ -276,7 +299,8 @@
         {
           "module": "desktop-ui/teamPanel.js",
           "importedBy": [
-            "desktop-shell"
+            "desktop-shell",
+            "projects"
           ]
         },
         {
@@ -534,7 +558,7 @@
         "desktop-shell": 16,
         "memory": 2,
         "platform": 31,
-        "projects": 2,
+        "projects": 4,
         "settings": 3,
         "sync": 6,
         "tools": 7
@@ -1172,7 +1196,8 @@
         {
           "module": "desktop-ui/features/memory/controller.js",
           "importedBy": [
-            "desktop-shell"
+            "desktop-shell",
+            "projects"
           ]
         },
         {
@@ -1190,7 +1215,7 @@
         {
           "module": "desktop-ui/features/memory/viewProjectBook.js",
           "importedBy": [
-            "desktop-shell"
+            "projects"
           ]
         },
         {
@@ -1397,11 +1422,11 @@
         "agents": 11,
         "channels": 4,
         "chat": 27,
-        "desktop-shell": 5,
+        "desktop-shell": 4,
         "knowledge": 2,
         "media": 1,
         "platform": 19,
-        "projects": 1,
+        "projects": 3,
         "sync": 5,
         "tools": 6
       },
@@ -1683,7 +1708,8 @@
         {
           "module": "desktop-ui/modelPresentation.js",
           "importedBy": [
-            "desktop-shell"
+            "desktop-shell",
+            "projects"
           ]
         },
         {
@@ -1809,6 +1835,7 @@
         "media": 7,
         "memory": 14,
         "platform": 16,
+        "projects": 1,
         "sync": 1,
         "tools": 7,
         "voice": 1
@@ -3336,9 +3363,9 @@
         "chat": 16,
         "knowledge": 2,
         "media": 7,
-        "memory": 5,
+        "memory": 4,
         "platform": 9,
-        "projects": 4,
+        "projects": 7,
         "settings": 12,
         "sync": 2,
         "tools": 14,
@@ -3351,7 +3378,7 @@
         "media": 4,
         "memory": 5,
         "platform": 2,
-        "projects": 2,
+        "projects": 4,
         "settings": 7,
         "sync": 1,
         "tools": 4
@@ -4811,7 +4838,6 @@
         "desktop-ui/connectorDraftDispatch.test.js",
         "desktop-ui/mediaAttachment.source.test.js",
         "desktop-ui/newChatComposer.test.js",
-        "desktop-ui/projectPresentation.test.js",
         "desktop-ui/sendRecovery.test.js",
         "desktop-ui/streamTtsOnToolCall.test.js",
         "desktop-ui/turnPresentation.test.js",
@@ -4823,7 +4849,6 @@
         "chat",
         "desktop-shell",
         "media",
-        "projects",
         "tools",
         "voice"
       ]
@@ -4885,6 +4910,9 @@
           "desktop-ui/features/memory/controller.js",
           "desktop-ui/features/memory/viewPane.js"
         ],
+        "desktop-ui/features/projects/view.test.js": [
+          "desktop-ui/features/projects/view.js"
+        ],
         "desktop-ui/launchScreen.test.js": [
           "desktop-ui/launchScreen.js"
         ],
@@ -4927,6 +4955,7 @@
       "tests": [
         "desktop-ui/executionPanel.test.js",
         "desktop-ui/features/memory/viewPane.source.test.js",
+        "desktop-ui/features/projects/view.test.js",
         "desktop-ui/launchScreen.test.js",
         "desktop-ui/localSettings.test.js",
         "src/agents/skillRuns.crossHome.test.js",
@@ -4944,6 +4973,7 @@
         "desktop-ui/executionPanel.js",
         "desktop-ui/features/memory/controller.js",
         "desktop-ui/features/memory/viewPane.js",
+        "desktop-ui/features/projects/view.js",
         "desktop-ui/launchScreen.js",
         "desktop-ui/localSettings.js",
         "src/agents/skillRuns.js",
@@ -4963,6 +4993,7 @@
         "chat",
         "desktop-shell",
         "memory",
+        "projects",
         "settings",
         "tools"
       ]

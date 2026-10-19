@@ -7,11 +7,13 @@ import { installLanguageControls } from './languageControls.js';
 import { renderExtraFast, editExtraFast, handleExtraFast } from './extraFast.js';
 import { decodeBootstrap, olderBootstrap, changedBootstrapSections, pageAffected } from './bootstrapPatch.js';
 import { createSettingsFormEditors, installUnsavedSettingsGuard } from './settingsEdit.js';
-import { renderProjectMemoryBook } from './features/memory/viewProjectBook.js';
 import { createActionRegistry } from './features/registry.js';
 import { bindMemoryContext } from './features/memory/context.js';
-import { memoryActions, memoryForms, handleMemoryRefsToggle, handleMemoryFactFieldInput, handleMemoryInput, handleMemoryChange, projectBookData, syncProjectDetailView } from './features/memory/controller.js';
+import { memoryActions, memoryForms, handleMemoryRefsToggle, handleMemoryFactFieldInput, handleMemoryInput, handleMemoryChange, syncProjectDetailView } from './features/memory/controller.js';
 import { renderMemoryPane } from './features/memory/viewPane.js';
+import { bindProjectsContext } from './features/projects/context.js';
+import { projectsActions, projectsForms, handleProjectSearchInput, handleProjectDraftInput, handleProjectsChange } from './features/projects/controller.js';
+import { renderProjectsPage } from './features/projects/view.js';
 import { renderLocalSettings, installLocalSettings, applyLocalAppearance, shouldSendOnEnter, notifyLocalCompletion, nativeSettings } from './localSettings.js';
 import { installImagePreview } from './imagePreview.js';
 import { renderSyncConflicts } from './syncConflicts.js';
@@ -348,15 +350,6 @@ const uiState = {
   pendingVizAnchor: null,
 };
 
-// Feature modules (architecture plan P2, desktop-ui/features/README.md):
-// each registers its click actions and form submits once; the click and
-// submit listeners ask these registries before their own switch.
-const featureActions = createActionRegistry('action');
-const featureForms = createActionRegistry('form');
-bindMemoryContext({ uiState, api, render, bgRender, showError, activeProject, escapeHtml });
-featureActions.register(memoryActions, 'memory');
-featureForms.register(memoryForms, 'memory');
-
 let contentScrollbarHideTimer = 0;
 let activeSearchFileSource = null;
 let activeSearchFileSequence = 0;
@@ -468,6 +461,19 @@ const icon = {
   eyeOff:
     '<svg viewBox="0 0 24 24"><path d="M3 3 21 21"/><path d="M10.6 10.7A3 3 0 0 0 13.3 13.4"/><path d="M9.9 5.3A10.8 10.8 0 0 1 12 5c6 0 9.5 7 9.5 7a17.6 17.6 0 0 1-3.2 3.7"/><path d="M6.2 6.2A17.1 17.1 0 0 0 2.5 12s3.5 7 9.5 7c1.5 0 2.8-.3 4-.8"/></svg>',
 };
+
+// Feature modules (architecture plan P2, desktop-ui/features/README.md):
+// each registers its click actions and form submits once; the click and
+// submit listeners ask these registries before their own switch. Bound here,
+// after uiState and icon exist, before any listener or render can run.
+const featureActions = createActionRegistry('action');
+const featureForms = createActionRegistry('form');
+bindMemoryContext({ uiState, api, render, bgRender, showError, activeProject, escapeHtml });
+featureActions.register(memoryActions, 'memory');
+featureForms.register(memoryForms, 'memory');
+bindProjectsContext({ uiState, api, render, showError, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts, startProjectSession, activeProject, activeProjectChats, activeProjectArtifacts, escapeHtml, truncate, icon });
+featureActions.register(projectsActions, 'projects');
+featureForms.register(projectsForms, 'projects');
 
 const HOME_PROMPT_PRESETS = [
   {
@@ -2041,18 +2047,6 @@ function connectorById(connectorId) {
 
 function connectorEnabled(connectorId) {
   return Boolean(connectorById(connectorId)?.enabled);
-}
-
-function filteredProjects() {
-  const query = uiState.projectSearch.trim().toLowerCase();
-  const projects = (uiState.bootstrap?.projects || []).filter(project=>Boolean(project.archived)===uiState.showArchivedProjects);
-  if (!query) return projects;
-
-  return projects.filter(project =>
-    `${project.name}\n${project.summary}\n${project.instructions}\n${project.workspacePath}`
-      .toLowerCase()
-      .includes(query),
-  );
 }
 
 function filteredChats() {
@@ -4952,55 +4946,6 @@ async function handleSpeakMessage(trigger) {
   await speakText(cleanText, messageId);
 }
 
-async function handleCreateProject() {
-  const { name, summary, instructions, tag, workspacePath } = uiState.draftProject;
-  if (!name.trim()) {
-    showError('Project name is required.');
-    return;
-  }
-
-  const payload = await api('/api/projects', {
-    method: 'POST',
-    body: {
-      name,
-      summary,
-      instructions,
-      tag,
-      workspacePath,
-    },
-  });
-
-  uiState.showProjectForm = false;
-  uiState.draftProject = {
-    name: '',
-    tag: '',
-    summary: '',
-    instructions: '',
-    workspacePath: '',
-  };
-  applyBootstrap(payload);
-}
-
-async function handleUpdateProject(form) {
-  const formData = new FormData(form);
-  const payload = await api('/api/projects/update', {
-    method: 'POST',
-    body: {
-      projectId: form.dataset.projectId,
-      patch: {
-        name: String(formData.get('name') || ''),
-        tag: String(formData.get('tag') || ''),
-        summary: String(formData.get('summary') || ''),
-        instructions: String(formData.get('instructions') || ''),
-        workspacePath: String(formData.get('workspacePath') || ''),
-        confirmWorkspace: formData.get('confirmWorkspace') === 'on',
-        knowledgeIds: formData.getAll('knowledgeIds').map(String),
-      },
-    },
-  });
-  applyBootstrap(payload);
-}
-
 async function handleCreateArtifact() {
   const { title, content, language, kind } = uiState.draftArtifact;
   if (!content.trim()) {
@@ -7792,383 +7737,6 @@ function renderChatsPage() {
                   .join('')
               : '<div class="empty-state">No chats match this search yet.</div>'
           }
-        </div>
-      </div>
-    </section>
-  `;
-}
-
-// Projects page is a two-mode view:
-//
-// - Overview: Claude-style grid of project cards (or a full empty state with
-//   a single CTA when there are zero projects). Search + "New project"
-//   sit in a tidy top bar.
-// - Detail: opens when a card is clicked (selectedProjectId is set). Shows a
-//   back button, an edit form, related chats, and artifacts.
-//
-// There's no split "list-on-left, detail-on-right" split anymore — clicking
-// a card navigates into the detail, and a Back button returns to the grid.
-function renderProjectsPage() {
-  const project = activeProject();
-  if (project) {
-    return renderProjectsDetailView(project);
-  }
-  return renderProjectsOverview();
-}
-
-function renderProjectsOverview() {
-  const projects = filteredProjects();
-  const totalProjects = uiState.bootstrap?.projects?.length || 0;
-  const searchActive = uiState.projectSearch.trim().length > 0;
-
-  const createForm = uiState.showProjectForm ? renderProjectCreateForm() : '';
-
-  // Zero projects + no active form → full empty state with a primary CTA.
-  if (totalProjects === 0 && !uiState.showProjectForm) {
-    return ui`
-      <section class="page">
-        <div class="page-grid">
-          <div class="header-row">
-            <div>
-              <h1 class="page-title compact">项目</h1>
-              <p class="page-kicker">把同一目标下的对话、资料与工作要求放在一起。</p>
-            </div>
-          </div>
-
-          <div class="surface-card project-empty-hero">
-            <div class="project-empty-hero__icon">${icon.folder}</div>
-            <h2 class="project-empty-hero__title">还没有项目</h2>
-            <p class="project-empty-hero__body">
-              为一件持续进行的事创建项目，写下目标与要求，再把相关对话放进来。每次继续对话都会带上项目背景。
-            </p>
-            <button class="ghost-button is-primary" data-action="toggle-project-form">
-              <span class="toolbar-icon">${icon.plus}</span>
-              创建第一个项目
-            </button>
-          </div>
-        </div>
-      </section>
-    `;
-  }
-
-  return ui`
-    <section class="page">
-      <div class="page-grid">
-        <div class="header-row project-overview-header">
-          <div>
-            <h1 class="page-title compact">项目</h1>
-            <p class="page-kicker">${totalProjects} 个项目</p>
-          </div>
-
-          <div class="inline-actions">
-            <button class="ghost-button" data-action="toggle-archived-projects">${uiState.showArchivedProjects?'查看进行中的项目':'查看已归档项目'}</button>
-            <button class="ghost-button is-primary" data-action="toggle-project-form">
-              <span class="toolbar-icon">${icon.plus}</span>
-              新建项目
-            </button>
-          </div>
-        </div>
-
-        ${createForm}
-
-        <div class="surface-card project-search-card">
-          <div class="search-row">
-            <input
-              class="search-input"
-              id="project-search"
-              type="search"
-              value="${escapeHtml(uiState.projectSearch)}"
-              placeholder="搜索项目…"
-            />
-          </div>
-        </div>
-
-        ${
-          projects.length
-            ? ui`
-              <div class="project-grid">
-                ${projects.map(renderProjectCard).join('')}
-              </div>
-            `
-            : ui`
-              <div class="surface-card empty-state compact">
-                ${
-                  searchActive
-                    ? `没有匹配“${escapeHtml(uiState.projectSearch)}”的项目。`
-                    : '还没有项目，先创建一个目标。'
-                }
-              </div>
-            `
-        }
-      </div>
-    </section>
-  `;
-}
-
-function renderProjectCard(item) {
-  // A single project card in the overview grid. Clicking anywhere on the
-  // card opens the detail view. Action buttons (开启项目对话 / 处理项目代码)
-  // stop propagation so they don't also trigger the card click.
-  return ui`
-    <button
-      class="project-card"
-      data-action="focus-project"
-      data-project-id="${item.id}"
-    >
-      <div class="project-card__header">
-        <span class="chip is-accent">${escapeHtml(item.tag)}</span>
-        <span class="meta-label">${escapeHtml(item.updatedLabel)}</span>
-      </div>
-      <div class="project-card__title">${escapeHtml(item.name)}</div>
-      <div class="project-card__summary">${escapeHtml(item.summary)}</div>
-      <div class="project-card__footer">
-        <span class="project-card__metric">
-          <span class="toolbar-icon">${icon.bubble}</span>
-          ${item.chatCount} 段对话
-        </span>
-        <span class="project-card__metric">
-          <span class="toolbar-icon">${icon.box}</span>
-          ${item.artifactCount} 份资料与成果
-        </span>
-      </div>
-    </button>
-  `;
-}
-
-function renderProjectCreateForm() {
-  return ui`
-    <form class="project-form-card surface-card" data-form="project-create">
-      <div class="project-form-grid">
-        <label class="label">
-          项目名称
-          <input class="input" name="name" value="${escapeHtml(
-            uiState.draftProject.name,
-          )}" placeholder="例如：旅行规划、产品开发" />
-        </label>
-        <label class="label">
-          分类
-          <input class="input" name="tag" value="${escapeHtml(
-            uiState.draftProject.tag,
-          )}" placeholder="例如：生活、工作" />
-        </label>
-      </div>
-
-      <label class="label">
-        项目文件夹
-        <input class="input" name="workspacePath" value="${escapeHtml(
-          uiState.draftProject.workspacePath,
-        )}" placeholder="可选；留空将创建独立项目文件夹" />
-      </label>
-
-      <label class="label">
-        项目目标
-        <input class="input" name="summary" value="${escapeHtml(
-          uiState.draftProject.summary,
-        )}" placeholder="希望完成什么？" />
-      </label>
-      <label class="label">
-        持续工作要求
-        <textarea class="textarea" name="instructions" placeholder="这个项目里，Melo 应遵守哪些要求？">${escapeHtml(
-          uiState.draftProject.instructions,
-        )}</textarea>
-      </label>
-      <div class="inline-actions">
-        <button class="small-button is-primary" type="submit">创建项目</button>
-        <button class="small-button is-outline" type="button" data-action="toggle-project-form">
-          取消
-        </button>
-      </div>
-    </form>
-  `;
-}
-
-function renderProjectAgentDefaults(project) {
-  const agents = conversationAgents(uiState.bootstrap, {overview:true,newProjectId:project.id});
-  const lead = agents.find(agent => agent.id === (project.defaultAgentId || 'main')) || null;
-  const options = agents.map(agent => `<option value="${escapeHtml(agent.id)}" ${project.defaultAgentId === agent.id ? 'selected' : ''}>${escapeHtml(agent.name || agent.id)}</option>`).join('');
-  return ui`<section class="surface-card project-detail-panel project-agent-defaults">
-    <h2 class="subsection-title">Agent 与协作</h2>
-    <label class="label">默认 Agent<select class="input" data-project-default-agent="${escapeHtml(project.id)}" ${project.archived ? 'disabled' : ''}><option value="">不指定（沿用当前选择）</option>${options}</select></label>
-    <p class="meta-label">在这个项目里开启新对话时使用；团队由这个 Agent 发起。项目内的 Agent 权限只能比全局更严。</p>
-    <h3 class="subsection-title">默认团队</h3>
-    ${renderTeamPanel({scope:'project',target:project.id,lead,agents,plan:project.teamPlan,disabled:project.archived,escapeHtml,open:true})}
-    ${project.teamPlan ? ui`<p class="meta-label">已保存默认团队：${escapeHtml(project.teamPlan.members.map(id => agents.find(agent => agent.id === id)?.name || id).join('、'))}</p><button type="button" class="small-button is-outline" data-action="clear-project-team" data-project-id="${escapeHtml(project.id)}">清除默认团队</button>` : ''}
-  </section>`;
-}
-
-function renderProjectsDetailView(project) {
-  const relatedChats = activeProjectChats();
-  const relatedArtifacts = activeProjectArtifacts();
-
-  return ui`
-    <section class="page">
-      <div class="page-grid project-detail-layout">
-        <div class="header-row project-detail-header">
-          <div class="project-detail-heading">
-            <button
-              class="small-button is-outline project-back-button"
-              type="button"
-              data-action="clear-project-selection"
-            >
-              <span class="toolbar-icon">${icon.chevronLeft}</span>
-              返回项目列表
-            </button>
-            <h1 class="page-title compact">${escapeHtml(project.name)}</h1>
-            ${
-              project.summary
-                ? ui`<p class="page-kicker">${escapeHtml(project.summary)}</p>`
-                : ''
-            }
-          </div>
-
-          <div class="inline-actions">
-            <button
-              class="small-button"
-              data-action="chat-from-project"
-              data-project-id="${project.id}"
-              ${project.archived?'disabled':''}
-            >
-              开启项目对话
-            </button>
-            <button
-              class="small-button is-primary"
-              data-action="code-from-project"
-              data-project-id="${project.id}"
-              ${project.archived?'disabled':''}
-            >
-              处理项目代码
-            </button>
-            <button class="small-button is-outline" data-action="archive-project" data-project-id="${project.id}" data-archived="${!project.archived}">${project.archived?t("恢复项目"):t("归档项目")}</button>
-          </div>
-        </div>
-
-        <div class="chip-row">
-          <span class="chip is-accent">${escapeHtml(project.tag)}</span>
-          ${project.archived?ui`<span class="chip">已归档 · 对话与资料保留</span>`:''}
-          <span class="chip">${project.chatCount ?? relatedChats.length} 段对话</span>
-          <span class="chip">${project.artifactCount ?? relatedArtifacts.length} 份资料与成果</span>
-          ${
-            project.workspacePath
-              ? ui`<span class="chip mono" title="${escapeHtml(project.workspacePath)}">${escapeHtml(project.workspacePath)}</span>`
-              : '<span class="chip mono is-muted">No workspace set</span>'
-          }
-        </div>
-
-        <div class="project-detail-grid">
-          <section class="surface-card project-detail-panel">
-            <h2 class="subsection-title">项目设置</h2>
-            <form
-              class="project-form-card"
-              data-form="project-update"
-              data-project-id="${project.id}"
-            >
-              <div class="project-form-grid">
-                <label class="label">
-                  项目名称
-                  <input class="input" name="name" value="${escapeHtml(project.name)}" />
-                </label>
-                <label class="label">
-                  分类
-                  <input class="input" name="tag" value="${escapeHtml(project.tag)}" />
-                </label>
-              </div>
-              <label class="label">
-                项目文件夹
-                <input
-                  class="input"
-                  name="workspacePath"
-                  value="${escapeHtml(project.workspacePath)}"
-                  placeholder="可选；留空将创建独立项目文件夹"
-                />
-              </label>
-              ${project.workspaceNeedsConfirmation ? ui`<label class="label"><input type="checkbox" name="confirmWorkspace" />确认允许此项目使用 Melo 程序目录；也可以重新选择文件夹。</label>` : ''}
-              <label class="label">
-                项目目标
-                <input
-                  class="input"
-                  name="summary"
-                  value="${escapeHtml(project.summary)}"
-                />
-              </label>
-              <label class="label">
-                持续工作要求
-                <textarea class="textarea" name="instructions">${escapeHtml(
-                  project.instructions,
-                )}</textarea>
-              </label>
-              <fieldset class="context-materials"><legend>项目共享资料</legend><p>资料按问题与上下文预算选取相关片段，全文保留。</p>
-                ${(uiState.bootstrap.artifacts || []).filter(a=>a.content?.trim()).map(a=>ui`<label><input type="checkbox" name="knowledgeIds" value="${escapeHtml(a.id)}" ${(project.knowledgeIds || []).includes(a.id)?'checked':''}>${escapeHtml(a.title)}</label>`).join('') || ui`<p>先在知识分支保存资料。</p>`}
-              </fieldset>
-              <div class="inline-actions">
-                <button class="small-button is-primary" type="submit">
-                  <span class="toolbar-icon">${icon.save}</span>
-                  保存项目
-                </button>
-              </div>
-            </form>
-          </section>
-
-          <aside class="project-detail-aside">
-            ${renderProjectAgentDefaults(project)}
-            ${renderProjectMemoryBook(project, projectBookData(project.id), { busy: uiState.projectBookBusy, feedback: uiState.projectBookFeedback, draft: uiState.projectBookDraft?.projectId === project.id ? uiState.projectBookDraft : null })}
-            <section class="surface-card project-detail-panel">
-              <div class="header-row">
-                <h2 class="subsection-title">相关对话</h2>
-                <span class="meta-label">${relatedChats.length} 段</span>
-              </div>
-              <div class="mini-list">
-                ${
-                  relatedChats.length
-                    ? relatedChats
-                        .slice(0, 6)
-                        .map(
-                          chat => ui`
-                            <button
-                              class="mini-list-item"
-                              data-action="open-chat"
-                              data-chat-id="${chat.id}"
-                            >
-                              <div class="list-row-title">${escapeHtml(chat.title)}</div>
-                              <div class="list-row-meta">${escapeHtml(chat.preview)}</div>
-                            </button>
-                          `,
-                        )
-                        .join('')
-                    : ui`<div class="empty-state compact">还没有相关对话，点击上方开启项目对话。</div>`
-                }
-              </div>
-            </section>
-
-            <section class="surface-card project-detail-panel">
-              <div class="header-row">
-                <h2 class="subsection-title">资料与成果</h2>
-                <span class="meta-label">${relatedArtifacts.length} 份</span>
-              </div>
-              <div class="mini-list">
-                ${
-                  relatedArtifacts.length
-                    ? relatedArtifacts
-                        .slice(0, 6)
-                        .map(
-                          artifact => ui`
-                            <button
-                              class="mini-list-item"
-                              data-action="open-artifact"
-                              data-artifact-id="${artifact.id}"
-                            >
-                              <div class="list-row-title">${escapeHtml(artifact.title)}</div>
-                              <div class="list-row-meta">${escapeHtml(
-                                truncate(artifact.content, 150),
-                              )}</div>
-                            </button>
-                          `,
-                        )
-                        .join('')
-                    : ui`<div class="empty-state compact">还没有保存的资料或成果。</div>`
-                }
-              </div>
-            </section>
-          </aside>
         </div>
       </div>
     </section>
@@ -11371,14 +10939,6 @@ document.addEventListener('click', async event => {
           activeView: action === 'focus-project' ? 'projects' : uiState.bootstrap.settings.activeView,
         });
         break;
-      case 'clear-project-selection':
-        // Return from the detail view to the grid overview. Keep activeView
-        // pinned to 'projects' so we stay on this page.
-        await patchSettings({
-          selectedProjectId: null,
-          activeView: 'projects',
-        });
-        break;
       case 'save-video-knowledge': {
         const message = activeChat()?.messages?.find(m => m.id === trigger.dataset.messageId);
         const attachment = message?.attachments?.find(a => a.id === trigger.dataset.attachmentId);
@@ -11388,21 +10948,6 @@ document.addEventListener('click', async event => {
         catch (error) { showError(error.message); }
         break;
       }
-      case 'save-project-team': {
-        const team=collectTeamPlan(trigger.closest('[data-team-scope]'));
-        if(team.error) {showError(t(team.error));break;}
-        try { applyBootstrap(await api('/api/projects/update',{method:'POST',body:{projectId:trigger.dataset.projectId,patch:{teamPlan:team.plan}}})); } catch(error) { showError(error.message); }
-        break;
-      }
-      case 'clear-project-team':
-        try { applyBootstrap(await api('/api/projects/update',{method:'POST',body:{projectId:trigger.dataset.projectId,patch:{teamPlan:null}}})); } catch(error) { showError(error.message); }
-        break;
-      case 'chat-from-project':
-        await startProjectSession(trigger.dataset.projectId, 'chat');
-        break;
-      case 'code-from-project':
-        await startProjectSession(trigger.dataset.projectId, 'code');
-        break;
       case 'confirm-agent-settings': {
         await api('/api/agent-settings-sync/confirm',{method:'POST',body:{id:trigger.dataset.id,expected:trigger.dataset.expected,accept:trigger.dataset.accept==='true'}});
         applyBootstrap(await api('/api/bootstrap')); break;
@@ -11414,15 +10959,6 @@ document.addEventListener('click', async event => {
         await api(projectMemory?'/api/project-memory-sync/resolve':settings?'/api/agent-settings-sync/resolve':'/api/mobile-sync/resolve',{method:'POST',body:{kind:row.kind,id:row.id,index,expected:row.versions[index]}});
         applyBootstrap(await api('/api/bootstrap')); break;
       }
-      case 'toggle-project-form':
-        uiState.showProjectForm = !uiState.showProjectForm;
-        render();
-        break;
-      case 'toggle-archived-projects':
-        uiState.showArchivedProjects = !uiState.showArchivedProjects; render(); break;
-      case 'archive-project':
-        applyBootstrap(await api('/api/projects/update',{method:'POST',body:{projectId:trigger.dataset.projectId,patch:{archived:trigger.dataset.archived==='true'}}}));
-        break;
       case 'toggle-task-form':
         uiState.showTaskForm = !uiState.showTaskForm;
         render();
@@ -12417,11 +11953,7 @@ document.addEventListener('input', event => {
     return;
   }
 
-  if (target.id === 'project-search') {
-    uiState.projectSearch = target.value;
-    render();
-    return;
-  }
+  if (handleProjectSearchInput(target)) return;
 
   if (target.id === 'chat-search') {
     uiState.chatSearch = target.value;
@@ -12476,10 +12008,7 @@ document.addEventListener('input', event => {
     return;
   }
 
-  if (target.form?.dataset.form === 'project-create') {
-    uiState.draftProject[target.name] = target.value;
-    return;
-  }
+  if (handleProjectDraftInput(target)) return;
 
   if (target.form?.dataset.form === 'artifact-create') {
     uiState.draftArtifact[target.name] = target.value;
@@ -12608,11 +12137,8 @@ document.addEventListener('change', async event => {
   if (target.name === 'team-member' && target.closest?.('[data-team-scope]')) { noteTeamMemberToggle(target); return; }
   const memoryChange = handleMemoryChange(target);
   if (memoryChange) { await memoryChange; return; }
-  if (target.dataset?.projectDefaultAgent) {
-    try { applyBootstrapPreservingDrafts(await api('/api/projects/update',{method:'POST',body:{projectId:target.dataset.projectDefaultAgent,patch:{defaultAgentId:target.value}}})); }
-    catch(error) { showError(error.message); }
-    render(); return;
-  }
+  const projectsChange = handleProjectsChange(target);
+  if (projectsChange) { await projectsChange; return; }
   if (target.dataset?.chatContext) {
     const chat = !uiState.neuralOverview ? activeChat() : null;
     const patch = target.dataset.chatContext === 'project' ? {projectId:target.value || null} : {contextArtifactIds:[...document.querySelectorAll('[data-chat-context="artifact"]:checked')].map(el=>el.value)};
@@ -12945,12 +12471,6 @@ document.addEventListener('submit', async event => {
     switch (form.dataset.form) {
       case 'composer':
         await handleSendMessage();
-        break;
-      case 'project-create':
-        await handleCreateProject();
-        break;
-      case 'project-update':
-        await handleUpdateProject(form);
         break;
       case 'task-pricing': {
         const body=Object.fromEntries(new FormData(form));

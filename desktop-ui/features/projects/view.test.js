@@ -1,14 +1,15 @@
-import { t, ui } from './i18n.js';
+import { t, ui } from '../../i18n.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
-import { renderTeamPanel } from './teamPanel.js';
-import { renderProjectMemoryBook } from './features/memory/viewProjectBook.js';
-const source=readFileSync(new URL('./app.js',import.meta.url),'utf8');
+import { renderTeamPanel } from '../../teamPanel.js';
+import { renderProjectMemoryBook } from '../memory/viewProjectBook.js';
+// The renderers moved from app.js to ./view.js (architecture plan P2).
+const source=readFileSync(new URL('./view.js',import.meta.url),'utf8');
 function renderer(name,bindings) {
  bindings={t,ui,...bindings};
- const start=source.indexOf(`function ${name}(`),end=source.indexOf('\nfunction ',start+1);
+ const start=source.indexOf(`function ${name}(`),next=source.indexOf('\nfunction ',start+1),end=next<0?source.indexOf('\nexport {',start):next;
  return new Function(...Object.keys(bindings), source.slice(start,end)+';return '+name)(...Object.values(bindings));
 }
 test('project detail renders its real chats, artifacts and editable goals',()=>{
