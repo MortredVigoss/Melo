@@ -11,7 +11,7 @@
     },
     "agents": {
       "title": "Agent、技能与团队",
-      "owns": ["src/services/agent/**", "src/domain/agent/**", "src/agents/**", "src/services/skill/**", "src/domain/skill/**", "src/persistence/agentMarkdownFiles.js", "desktop-ui/agent*.js", "desktop-ui/agent*.css", "desktop-ui/features/agents/**", "desktop-ui/teamPanel.js", "ios/Melo/{AgentEditSession,AgentEditor,AgentProfile,AgentTeam,TeamSheet,TeamVerification}.swift", "ios/Tests/{AgentEditTests,AgentTeamTests}.swift", "src/desktopStore.{skills,applySkillProposal,scanSkillProposals,updateAgentProfile,draftFromChat}.test.js", "src/index.saveAsSkill.test.js", "scripts/migrate-agent-capabilities.js"],
+      "owns": ["src/services/agent/**", "src/domain/agent/**", "src/agents/**", "src/services/skill/**", "src/domain/skill/**", "src/persistence/agentMarkdownFiles.js", "desktop-ui/agent*.js", "desktop-ui/features/agents/**", "desktop-ui/teamPanel.js", "ios/Melo/{AgentEditSession,AgentEditor,AgentProfile,AgentTeam,TeamSheet,TeamVerification}.swift", "ios/Tests/{AgentEditTests,AgentTeamTests}.swift", "src/desktopStore.{skills,applySkillProposal,scanSkillProposals,updateAgentProfile,draftFromChat}.test.js", "src/index.saveAsSkill.test.js", "scripts/migrate-agent-capabilities.js"],
       "routes": ["/api/agents/", "/api/skills/", "/api/skill-proposals", "/api/customize/skill-toggle"],
       "testGroups": ["test:markdown-files"],
       "notes": ["修改入口：src/services/agent/agentMutations.js；桌面 Agent 设置页（P2b）：desktop-ui/features/agents/（controller.js 动作、草稿、保存与自动保存；view.js 渲染），app.js 只保留跨页导航 select-agent-profile 与 render() 里的捕获/恢复调用。", "能力按执行设备生效：手机按 Agent 单独授权联网/图片/手机数据，不进同步。"]

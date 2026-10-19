@@ -464,10 +464,6 @@ button {
   grid-template-rows: minmax(0, 1fr);
 }
 
-.page.agent-page {
-  grid-template-rows: minmax(0, 1fr);
-}
-
 .sidebar-footer {
   flex: 0 0 auto;
   padding: 0 10px;
@@ -1320,15 +1316,6 @@ select option {
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.08);
   opacity: 0.7;
-}
-
-.agent-save-button {
-  min-width: 72px;
-  justify-content: center;
-}
-
-.agent-save-button.is-saving {
-  min-width: 88px;
 }
 
 .chip-icon {
@@ -3069,10 +3056,6 @@ select option {
   line-height: 1.65;
 }
 
-.agent-file-editor {
-  margin-top: 10px;
-}
-
 .editor-tab-row {
   display: flex;
   flex-wrap: wrap;
@@ -3465,10 +3448,6 @@ select option {
   background: rgba(255, 255, 255, 0.02);
 }
 
-.agent-layout {
-  grid-template-columns: 280px minmax(0, 1fr);
-}
-
 .customize-pane {
   padding: 24px 22px;
   border-right: 1px solid var(--border);
@@ -3495,287 +3474,11 @@ select option {
   height: 0;
 }
 
-.agent-detail-column {
-  min-width: 0;
-  padding: 24px 22px;
-  min-height: 0;
-  overflow-y: auto;
-  padding-bottom: 28px;
-  scrollbar-width: none;
-}
-
-.agent-page-grid {
-  gap: 18px;
-  min-height: 0;
-  height: 100%;
-  grid-template-rows: auto minmax(0, 1fr);
-}
-
 .page.page-customize > .customize-layout,
 .agent-page-grid > .customize-layout {
   min-height: 0;
   height: 100%;
   max-height: 100%;
-}
-
-.agent-select-label {
-  min-width: 240px;
-}
-
-.agent-workbench-card {
-  display: grid;
-  gap: 18px;
-  min-height: 0;
-  align-content: start;
-  margin-bottom: 2px;
-  padding: 24px 26px 26px;
-}
-
-.agent-create-button {
-  margin-top: 10px;
-  justify-self: start;
-}
-
-.agent-content-editor {
-  min-height: 280px;
-}
-
-.agent-control-editor {
-  min-height: 160px;
-}
-
-.agent-compact-note {
-  margin-top: -4px;
-  color: var(--text-soft);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.agent-editor-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 8px;
-}
-
-.agent-editor-heading {
-  display: grid;
-  gap: 4px;
-}
-
-.agent-editor-heading .meta-block-label {
-  margin-bottom: 0;
-}
-
-.agent-editor-path {
-  padding: 12px 14px;
-  border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--text-soft);
-  font-size: 12px;
-  line-height: 1.6;
-  word-break: break-all;
-}
-
-.agent-channel-grid {
-  display: grid;
-  gap: 16px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-/* Tabs for selecting a single channel to configure at full width. Sits
- * directly above .agent-channel-panel, which renders one channel form at a
- * time so the right column no longer splits into two cramped columns. */
-.agent-channel-tabs {
-  display: flex;
-  gap: 6px;
-  padding: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.025);
-  border-radius: 16px;
-  margin-bottom: 12px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.agent-channel-tabs::-webkit-scrollbar {
-  display: none;
-}
-
-.agent-channel-tab {
-  flex: 1 1 0;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  padding: 10px 14px;
-  border-radius: 12px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.7);
-  cursor: pointer;
-  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
-  font: inherit;
-  text-align: left;
-}
-
-.agent-channel-tab:hover {
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.92);
-}
-
-.agent-channel-tab.is-active {
-  background: rgba(255, 255, 255, 0.08);
-  color: #ffffff;
-  border-color: rgba(255, 255, 255, 0.12);
-}
-
-.agent-channel-tab-label {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-}
-
-.agent-channel-tab-status {
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.agent-channel-tab-status.is-accent {
-  color: var(--accent, #c6b38f);
-}
-
-.agent-channel-panel {
-  display: block;
-}
-
-.agent-channel-panel .agent-channel-card {
-  width: 100%;
-}
-
-.agent-channel-card {
-  display: grid;
-  gap: 14px;
-}
-
-.agent-channel-runtime {
-  display: grid;
-  gap: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.025);
-  border-radius: 22px;
-  padding: 16px 18px;
-}
-
-.agent-channel-runtime-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 8px;
-}
-
-.agent-runtime-metric {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 10px 14px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(0, 0, 0, 0.16);
-}
-
-.agent-runtime-metric-label {
-  flex: 0 0 auto;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: rgba(255, 255, 255, 0.46);
-}
-
-.agent-runtime-metric-value {
-  flex: 1 1 auto;
-  text-align: right;
-  color: rgba(255, 255, 255, 0.88);
-  font-size: 13px;
-  line-height: 1.4;
-  word-break: break-word;
-}
-
-.agent-runtime-preview-stack {
-  display: grid;
-  gap: 10px;
-}
-
-.agent-runtime-preview-card {
-  display: grid;
-  gap: 6px;
-  padding: 12px 13px;
-  border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.agent-runtime-preview-label {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: rgba(255, 255, 255, 0.46);
-}
-
-.agent-runtime-preview-copy {
-  color: rgba(255, 255, 255, 0.82);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.secure-input-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-}
-
-.icon-toggle-button {
-  width: 40px;
-  height: 40px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.82);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition:
-    background 160ms ease,
-    border-color 160ms ease,
-    color 160ms ease,
-    transform 160ms ease;
-}
-
-.icon-toggle-button svg {
-  width: 18px;
-  height: 18px;
-}
-
-.icon-toggle-button:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(163,121,43, 0.28);
-  color: rgba(255, 255, 255, 0.96);
-}
-
-.icon-toggle-button:active {
-  transform: translateY(1px);
-}
-
-.icon-toggle-button:focus-visible {
-  outline: 2px solid rgba(163,121,43, 0.4);
-  outline-offset: 2px;
 }
 
 .checkbox-row {
@@ -5732,10 +5435,6 @@ select option {
 }
 .agent-photo { flex-shrink:0; border-radius:30%; object-fit:cover; vertical-align:middle; }
 .agent-photo-fallback { display:inline-flex; align-items:center; justify-content:center; color:#d2bd8a; background:#c9b27c13; font-size:13px; }
-.agent-avatar-editor { display:flex; align-items:center; flex-wrap:wrap; gap:12px; padding:12px 0; }
-.agent-avatar-editor label { position:relative; overflow:hidden; cursor:pointer; }
-.agent-avatar-editor input { position:absolute; inset:0; opacity:0; cursor:pointer; }
-.agent-avatar-editor > span:last-child { color:var(--text-muted); font-size:11px; }
 .agent-chip-anchor > button { display:inline-flex; align-items:center; gap:6px; }
 .conversation-context { position:relative; color:var(--text-secondary); font-size:12px; }
 .conversation-context > summary { cursor:pointer; list-style:none; padding:8px 10px; border-radius:18px; background:rgba(200,180,130,.07); }
@@ -5766,8 +5465,6 @@ select option {
 .chat-files-panel { max-height: 40vh; overflow: auto; padding: 12px 20px; border-bottom: 1px solid var(--border, #333); }
 .chat-files-panel summary { cursor: pointer; }
 .chat-files-panel pre { overflow: auto; max-height: 24vh; }
-.capability-choice-list { border: 1px solid var(--border, #333); border-radius: 10px; min-width: 0; padding: 12px; max-height: 240px; overflow: auto; }
-.capability-choice-list .checkbox-row { overflow-wrap: anywhere; }
 .management-dialog { width: 580px; max-height: 85vh; overflow: auto; }
 .management-dialog form { display: grid; gap: 12px; }
 .management-output { max-height: 35vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
