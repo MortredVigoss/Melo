@@ -326,20 +326,38 @@ test('orchestrator abort: link fetch cancelled mid-flight', async () => {
   }
 });
 
-test('orchestrator abort: image download cancelled mid-flight (OCR pre-stage)', async () => {
+// Deterministic since 2026-10-19: under the daily gate's parallel load the
+// 200 ms wall-clock budget could expire before the request even reached the
+// server ("image server must have received the request"). The orchestrator's
+// budget timer now runs on node:test mock timers and fires only once the
+// server holds the request; the server holds its response, so only that
+// budget can end the download; the test then waits for the connection close
+// event instead of sleeping 50 ms. Same assertions as before: the request
+// arrived, the budget (not a server reply) ended the extraction promptly, and
+// the client dropped the connection.
+test('orchestrator abort: image download cancelled mid-flight (OCR pre-stage)', { timeout: 15000 }, async t => {
   _setMediaBudgetsForTests({ totalMs: 5000, perAttachmentMs: 200 });
 
   let downloadHit = false;
   let connectionAborted = false;
+  let requestArrived;
+  let connectionClosed;
+  const arrived = new Promise(resolve => { requestArrived = resolve; });
+  const closed = new Promise(resolve => { connectionClosed = resolve; });
   const server = createServer((req, res) => {
     downloadHit = true;
     req.on('close', () => {
       if (req.aborted || !res.writableEnded) connectionAborted = true;
+      connectionClosed();
     });
-    /* hang */
+    requestArrived();
+    /* hold the response: only the orchestrator's budget may end this request */
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address();
+  // Only setTimeout (the orchestrator's per-attachment budget timer); fetch
+  // and the server run on real I/O.
+  t.mock.timers.enable({ apis: ['setTimeout'] });
 
   try {
     const message = {
@@ -354,18 +372,29 @@ test('orchestrator abort: image download cancelled mid-flight (OCR pre-stage)', 
       }],
     };
 
-    const start = Date.now();
     // Force OCR path (modelSupportsVision: false means extractImageContent
     // runs Tesseract instead of returning null immediately). Default for
     // unspecified vision context.
-    await enrichMessageWithMediaContext(message, { modelSupportsVision: false });
-    const elapsed = Date.now() - start;
-
+    let settled = false;
+    const enriched = enrichMessageWithMediaContext(message, { modelSupportsVision: false })
+      .finally(() => { settled = true; });
+    await arrived;
     assert.ok(downloadHit, 'image server must have received the request');
+    assert.equal(settled, false, 'the held download keeps the extraction pending until the budget fires');
+
+    const start = Date.now();
+    t.mock.timers.tick(200);
+    await enriched;
+    const elapsed = Date.now() - start;
     assert.ok(elapsed < 2000, `image download abort took ${elapsed}ms; expected < 2000ms`);
-    await new Promise(r => setTimeout(r, 50));
+
+    t.mock.timers.reset();
+    let guard;
+    await Promise.race([closed, new Promise(resolve => { guard = setTimeout(resolve, 2000); })]);
+    clearTimeout(guard);
     assert.ok(connectionAborted, 'image fetch must be aborted client-side');
   } finally {
+    t.mock.timers.reset();
     server.closeAllConnections?.();
     server.close();
     _setMediaBudgetsForTests();
