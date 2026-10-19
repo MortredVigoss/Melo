@@ -132,7 +132,7 @@ import { createOpenAICompatibleReply } from '../../openai.js';
 import { collectVerificationEvidence } from '../../retrieval/verificationEvidence.js';
 import { fitRequestContext, resolveContextBudget, attachTurnContextToMessages } from './contextBudget.js';
 import { selectToolContextPolicy, requiresSkillToolContext } from '../../retrieval/requestPolicy.js';
-import { createFunctionCallingSession, compactToolChain, toolProtocolFor } from '../../tools/functionCalling.js';
+import { createFunctionCallingSession, compactToolChain, toolProtocolFor, MAX_FUNCTION_CALLS_PER_RESPONSE } from '../../tools/functionCalling.js';
 import { buildToolChainRecord } from '../../tools/toolProtocol.js';
 import { createCoreTurn } from '../../runtime/sharedAgentCore.js';
 import { createHash } from 'node:crypto';
@@ -784,7 +784,7 @@ export async function runChatAgentExecutionGraph({
         const visibleToolIds = new Set(graphState.visibleToolIds || []);
         const allowedToolIdList = filterToolsForSearchPlan(graphState.promptTools, graphState.searchPlan)
           .filter(tool => !/^browser_/u.test(tool.id) || graphState.searchPlan.sharedPlan?.backend === 'browser').map(tool => tool.id);
-        const coreTurn = createCoreTurn({ runId: String(context.requestId), turnId: chat.id, allowedTools: allowedToolIdList, requiredTools: graphState.searchPlan.sharedPlan?.requiredTools, toolDependencies: graphState.searchPlan.sharedPlan?.toolDependencies, limits: { rounds: MAX_TOOL_ITERATIONS, timeoutMs: turnTimeoutMs } });
+        const coreTurn = createCoreTurn({ runId: String(context.requestId), turnId: chat.id, allowedTools: allowedToolIdList, requiredTools: graphState.searchPlan.sharedPlan?.requiredTools, toolDependencies: graphState.searchPlan.sharedPlan?.toolDependencies, limits: { rounds: MAX_TOOL_ITERATIONS, callsPerRound: MAX_FUNCTION_CALLS_PER_RESPONSE, timeoutMs: turnTimeoutMs } });
         let allowedDispatchTools = null;
         let dispatchAgentProfiles = null;
         let dispatchMemberBackground = null;

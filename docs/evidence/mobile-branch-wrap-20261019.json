@@ -1,0 +1,80 @@
+{
+  "date": "2026-10-19",
+  "branch": "codex/mobile-use-features",
+  "baseline": "50d70dc",
+  "upstream": "83654dd1d59e854c3d347924bf604258b44eaab1",
+  "authorization": "Wrap up local work and push the feature branch; do not merge master.",
+  "red": {
+    "batch9": "INVALID_BATCH",
+    "batch32": "INVALID_BATCH",
+    "batch33": "rejected before authorization/effects"
+  },
+  "finalTargeted": {
+    "passed": 128,
+    "failed": 0,
+    "log": ".tmp/mobile-wrap-targeted-final.log"
+  },
+  "dailyBeforeFinalCorrections": {
+    "passed": 3920,
+    "failed": 24,
+    "cancelled": 1,
+    "skipped": 20,
+    "log": ".tmp/mobile-wrap-daily.log",
+    "failures": [
+      "not ok 73 - built-in Agent persona saves once, failed saves retain drafts, and Markdown import stays a draft",
+      "not ok 74 - Agent editor: visible creation, shared routes, saved capabilities/channels and responsive layout",
+      "not ok 75 - sync token cannot approve capability grants; only explicit desktop approval survives cold restart",
+      "not ok 86 - chat composer grows from two to four visual lines and scrolls without losing its draft",
+      "not ok 87 - chat files, explicit deletion decisions and management actions work through the desktop UI",
+      "not ok 170 - real browser loads saved API telemetry through Melo routes, reads summaries and preserves scroll at narrow width",
+      "not ok 171 - chat and task timers advance without events, preserve live DOM, freeze and survive replay at phone width",
+      "not ok 172 - shared popup and dialog materials keep secondary text distinct",
+      "not ok 194 - image preview preserves original downloads, focus, zoom and retry feedback",
+      "not ok 27 - desktop-ui/imagePreview.browser.test.js",
+      "not ok 196 - interface language switches, persists, and never rewrites user content or drafts",
+      "not ok 205 - a running reply shows its steps, keeps controls usable and takes a supplement",
+      "not ok 212 - startup has no MCP dialog or enable requests, and manual disable survives server restart",
+      "not ok 275 - project launch uses one POST; returning home clears membership; source-folder confirmation is explicit",
+      "not ok 315 - Telegram archive survives startup, HTTP tests and Agent edits without deleting history",
+      "not ok 550 - daily CLI executes the selected group, isolates home, and stops on failure before browser jobs",
+      "not ok 2010 - unlinkatChecked: parent rmdir+mkdir → FILE_SAFETY_DENIED, leaf NOT deleted",
+      "not ok 2012 - symlinkatChecked: parent rmdir+mkdir → FILE_SAFETY_DENIED, no link created",
+      "not ok 2428 - main chat executes and pairs all 32 accepted calls before requesting the final answer",
+      "not ok 3466 - fileWriteTool overwrite: rm+recreate same path with same content during approval is rejected (inode mismatch)",
+      "not ok 3510 - round 13 followup: fileMove — post-commit src parent rmdir+mkdir → COMMIT_FAILED (parent-swap)",
+      "not ok 3511 - round 13 followup: fileMove — post-commit dst parent rmdir+mkdir → COMMIT_FAILED (parent-swap)",
+      "not ok 3514 - round 13 followup \\#2: trash final-unlink — parent rmdir+mkdir between backup and unlink → catches via parent {dev,ino}",
+      "not ok 3635 - round 17 Phase 2D followup \\#10: regression — version probes still silent",
+      "not ok 3852 - every registered tool exposes at least one `examples` entry (systemPrompt reads examples[0])"
+    ]
+  },
+  "finalNonBrowser": {
+    "passed": 3921,
+    "failed": 9,
+    "cancelled": 0,
+    "skipped": 20,
+    "log": ".tmp/mobile-wrap-portable.log",
+    "failures": [
+      "not ok 1385 - concurrent runDreamingSweep: second call returns skipped=sweep-already-running",
+      "not ok 1995 - unlinkatChecked: parent rmdir+mkdir → FILE_SAFETY_DENIED, leaf NOT deleted",
+      "not ok 1997 - symlinkatChecked: parent rmdir+mkdir → FILE_SAFETY_DENIED, no link created",
+      "not ok 3164 - restoreArtifact: row that was never soft-deleted throws",
+      "not ok 3451 - fileWriteTool overwrite: rm+recreate same path with same content during approval is rejected (inode mismatch)",
+      "not ok 3495 - round 13 followup: fileMove — post-commit src parent rmdir+mkdir → COMMIT_FAILED (parent-swap)",
+      "not ok 3496 - round 13 followup: fileMove — post-commit dst parent rmdir+mkdir → COMMIT_FAILED (parent-swap)",
+      "not ok 3499 - round 13 followup \\#2: trash final-unlink — parent rmdir+mkdir between backup and unlink → catches via parent {dev,ino}",
+      "not ok 3620 - round 17 Phase 2D followup \\#10: regression — version probes still silent"
+    ]
+  },
+  "checks": {
+    "modifiedJavaScriptSyntax": "passed: 4 files",
+    "agentCoreGeneratedFiles": "verified: 11 modules, 83946 bytes",
+    "diffCheck": "passed"
+  },
+  "limits": [
+    "Full daily gate is not green; browser fixtures require unavailable macOS Chrome path.",
+    "Six final failures are file-identity checks, one is a version-probe environment test, two are dreaming/artifact fixtures requiring triage.",
+    "No Android binary or shared Core source changed; earlier 0.7.1 device/build evidence is historical, not rerun today.",
+    "No merge, mainline edit, phone action, real model API call or git pp."
+  ]
+}

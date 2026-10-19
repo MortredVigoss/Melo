@@ -180,3 +180,28 @@ test('disabled native capabilities are absent from the actual main-turn provider
  for(const {body} of h.requests)assert.ok(!(body.tools||[]).some(tool=>['web_search','web_search_preview','image_generation'].includes(tool.type)));
  assert.equal(h.executions.length,0);assert.equal(h.permissions.length,0);
 });
+
+for (const count of [9, 32]) {
+  test(`main chat executes and pairs all ${count} accepted calls before requesting the final answer`, async t => {
+    const queries = Array.from({ length: count }, (_, i) => `batch-${i}`);
+    const h = await harness(t, round => done(round === 1
+      ? queries.map((query, i) => fn(`batch-call-${i}`, query))
+      : [message]));
+    const result = await h.run();
+    assert.equal(result.normalizedReply.content, '核对完成。');
+    assert.deepEqual([...h.executions].sort(), [...queries].sort(), 'concurrent tools may execute out of order, but each call must execute exactly once');
+    assert.equal(h.permissions.length, count);
+    assert.equal(h.requests.length, 2);
+    const outputs = h.requests[1].body.input.filter(item => item.type === 'function_call_output');
+    assert.deepEqual(outputs.map(item => item.call_id), queries.map((_, i) => `batch-call-${i}`));
+    assert.ok(outputs.every(item => JSON.parse(item.output).ok));
+  });
+}
+
+test('main chat rejects an oversized batch before any authorization or execution', async t => {
+  const h = await harness(t, () => done(Array.from({ length: 33 }, (_, i) => fn(`oversized-${i}`, `query-${i}`))));
+  await assert.rejects(h.run(), /per-response tool call limit/);
+  assert.equal(h.requests.length, 1);
+  assert.equal(h.permissions.length, 0);
+  assert.equal(h.executions.length, 0);
+});

@@ -27,6 +27,7 @@ export function createSharedSearchTool(legacyTool) {
     id: spec.name, name: 'Web Search', category: 'web', description: spec.description,
     parametersSchema: spec.parameters, requiresPermission: false, isConcurrencySafe: false,
     capability: 'network', needsWorkspace: false, uiModule: 'search', inputKeys: ['query'],
+    examples: [{ query: 'Surry Hills restaurants', maxResults: 6 }],
     async run(args, options = {}) {
       // Bind every config, secret and environment dependency before awaiting IO.
       const context = options.requestContext || currentRequestContext();
