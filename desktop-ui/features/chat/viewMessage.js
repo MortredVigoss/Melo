@@ -1,8 +1,9 @@
 // Chat message renderers (architecture plan P2c, 2026-10-19): message blocks
 // and rich text, web source citations, attachment cards, the viz mount, the
 // read-aloud action and persisted tool results. Moved out of desktop-ui/app.js
-// byte-for-byte; DOM, classes, data-attributes, ids and action names are
-// unchanged. renderTextBlock / renderInlineText stay in app.js (the artifacts
+// byte-for-byte first; they now read the feature's own state and the TTS
+// speaking state through the context. DOM, classes, data-attributes, ids and
+// action names are unchanged. renderTextBlock / renderInlineText stay in app.js (the artifacts
 // page renders documents with them too) and arrive through the context.
 import { ui } from '../../i18n.js';
 import { replyPlainText } from '../../replyDocument.js';
@@ -11,7 +12,8 @@ import { describeAudioExtractionStatus, describeVideoExtractionStatus } from '..
 import { renderVizMountHtml } from '../../viz/vizRenderer.js';
 import { isToolTraceMessage } from '../../messageToolTrace.js';
 import { renderMessageToolResults as _renderMessageToolResultsFromModule } from '../../messageToolResults.js';
-import { uiState, escapeHtml, truncate, icon, renderTextBlock, extractTextUrls } from './context.js';
+import { speakingState, escapeHtml, truncate, icon, renderTextBlock, extractTextUrls } from './context.js';
+import { chatState } from './state.js';
 import { attachmentLabel, isPdfAttachment } from './controller.js';
 
 function parseRenderableMessageBlocks(value = '') {
@@ -270,7 +272,7 @@ function renderSourceCitationCards(citations) {
 }
 
 function renderMessageAttachments(message) {
-  return renderAttachmentCards(message, { savedVideoKnowledge: uiState.savedVideoKnowledge || {}, escapeHtml, truncate, icon, attachmentLabel, isPdfAttachment, describeAudioExtractionStatus, describeVideoExtractionStatus, extractTextUrls });
+  return renderAttachmentCards(message, { savedVideoKnowledge: chatState.savedVideoKnowledge || {}, escapeHtml, truncate, icon, attachmentLabel, isPdfAttachment, describeAudioExtractionStatus, describeVideoExtractionStatus, extractTextUrls });
 }
 
 // Render a placeholder mount point for the viz block attached to an
@@ -288,8 +290,8 @@ function renderAssistantVizMount(message) {
 function renderMessageActions(message) {
   // Bug audit U12: a tool-trace record has nothing to read aloud.
   if (message.role !== 'assistant' || isToolTraceMessage(message)) return '';
-  const isSpeaking = uiState.ttsSpeakingMessageId === message.id;
-  const isLoading = !isSpeaking && uiState.ttsSpeakingLoadingId === message.id;
+  const isSpeaking = speakingState().messageId === message.id;
+  const isLoading = !isSpeaking && speakingState().loadingId === message.id;
   return ui`
     <div class="message-actions">
       <button

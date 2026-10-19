@@ -4,7 +4,8 @@
 // streaming assistant bubble with its live run steps and active tool strip,
 // the in-place streaming patch (renderStreamingFast) and the viz mount sync
 // that render() calls after the DOM update. Moved out of desktop-ui/app.js
-// byte-for-byte; DOM, classes, data-attributes, ids and action names are
+// byte-for-byte first; they now read the feature's own state and page data
+// through the context. DOM, classes, data-attributes, ids and action names are
 // unchanged.
 import { t, ui } from '../../i18n.js';
 import { renderAgentAvatar } from '../../agentAvatar.js';
@@ -15,7 +16,8 @@ import { sceneSteps, renderRunSteps } from '../../runSteps.js';
 import { replyPlainText } from '../../replyDocument.js';
 import { mountVizBlocks } from '../../viz/vizRenderer.js';
 import { renderActiveToolCallsStrip as _renderActiveToolCallsStripFromModule } from '../../activeToolCallsStrip.js';
-import { uiState, app, activeChat, activeChatAgentProfile, escapeHtml, truncate, icon, memoryFeature, liveSceneFor, renderSceneReplay, selectedMessagePresentation, renderWorkspaceExplorer } from './context.js';
+import { getBootstrap, app, activeChat, activeChatAgentProfile, newChatSelection, escapeHtml, truncate, icon, renderMessageRefs, liveSceneFor, renderSceneReplay, selectedMessagePresentation, renderWorkspaceExplorer } from './context.js';
+import { chatState } from './state.js';
 import { renderComposerCard } from './viewComposer.js';
 import { renderRichText, renderMessageBlocks, extractSourceCitations, renderSourceCitationCards, renderMessageAttachments, renderAssistantVizMount, renderMessageActions, renderMessageToolResults } from './viewMessage.js';
 
@@ -24,7 +26,7 @@ function renderThinkingMessage() {
 }
 
 function renderLiveRunSteps(chat) {
-  const sent = (uiState.supplementsSent || []).map(text => `<p class="run-steps-note">${escapeHtml(t('补充已送达，会在下一步加入：{text}', { text }))}</p>`).join('');
+  const sent = (chatState.supplementsSent || []).map(text => `<p class="run-steps-note">${escapeHtml(t('补充已送达，会在下一步加入：{text}', { text }))}</p>`).join('');
   return `<div class="run-steps-host" data-run-steps-chat="${escapeHtml(chat?.id || '')}">${renderRunSteps(sceneSteps(liveSceneFor(chat?.id)), escapeHtml, t)}</div>${sent}`;
 }
 
@@ -34,7 +36,7 @@ function patchLiveRunSteps(chatId) {
 }
 
 function renderStreamingAssistantMessage(chat) {
-  if (!uiState.sending || uiState.streamingChatId !== chat?.id) {
+  if (!chatState.sending || chatState.streamingChatId !== chat?.id) {
     return '';
   }
 
@@ -44,7 +46,7 @@ function renderStreamingAssistantMessage(chat) {
   const toolStrip = renderActiveToolCallsStrip();
   const liveSteps = renderLiveRunSteps(chat);
 
-  if (!uiState.streamingAssistantText) {
+  if (!chatState.streamingAssistantText) {
     return toolStrip + renderThinkingMessage() + liveSteps;
   }
 
@@ -53,7 +55,7 @@ function renderStreamingAssistantMessage(chat) {
   // Also strip any <viz-spec>...</viz-spec> trailer — complete or partial — so
   // the raw JSON trailer never flashes in the streaming text on its way to
   // being turned into a Demon viz card after the stream settles.
-  const displayText = uiState.streamingAssistantText
+  const displayText = chatState.streamingAssistantText
     .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
     .replace(/<tool_call>[\s\S]*$/, '')
     .replace(/<viz-spec>[\s\S]*?<\/viz-spec>/gi, '')
@@ -97,7 +99,7 @@ function renderStreamingAssistantMessage(chat) {
 function renderStreamingFast() {
   // Sanity: must actually be streaming into the currently-active chat.
   const chat = activeChat();
-  if (!chat || !uiState.sending || uiState.streamingChatId !== chat.id) return false;
+  if (!chat || !chatState.sending || chatState.streamingChatId !== chat.id) return false;
 
   // First delta of the reply — there's no article yet, do a full render so
   // the DOM shell gets built.
@@ -114,7 +116,7 @@ function renderStreamingFast() {
 
   // Re-apply the same strip passes the template does so the bubble never
   // flashes raw `<tool_call>` / `<viz-spec>` JSON mid-stream.
-  const displayText = uiState.streamingAssistantText
+  const displayText = chatState.streamingAssistantText
     .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
     .replace(/<tool_call>[\s\S]*$/, '')
     .replace(/<viz-spec>[\s\S]*?<\/viz-spec>/gi, '')
@@ -153,7 +155,7 @@ function renderStreamingFast() {
   // Autoscroll the thread so the newly appended tokens stay visible. We do
   // this lightweight version instead of full syncThreadViewport() because the
   // latter reads layout-affecting state across the whole page.
-  if (uiState.threadAutoFollow) {
+  if (chatState.threadAutoFollow) {
     const scroller = document.querySelector('.thread-scroll-region');
     if (scroller instanceof HTMLElement) {
       scroller.scrollTop = scroller.scrollHeight;
@@ -186,14 +188,14 @@ function syncVizBlocks() {
 // window doesn't snap back when the highlight is later cleared.
 function activeMessageWindow(chat) {
   const messages = Array.isArray(chat?.messages) ? chat.messages : [];
-  uiState.threadWindow ||= {};
-  if (uiState.highlightedMessageId) {
-    ensureMessageInThreadWindow(uiState.threadWindow, chat?.id, messages, uiState.highlightedMessageId);
+  chatState.threadWindow ||= {};
+  if (chatState.highlightedMessageId) {
+    ensureMessageInThreadWindow(chatState.threadWindow, chat?.id, messages, chatState.highlightedMessageId);
   }
   return visibleMessageWindow(messages, {
     chatId: chat?.id,
-    state: uiState.threadWindow,
-    highlightedMessageId: uiState.highlightedMessageId,
+    state: chatState.threadWindow,
+    highlightedMessageId: chatState.highlightedMessageId,
   });
 }
 
@@ -214,15 +216,15 @@ function renderMessageList(chat) {
         .map(
           message => ui`
             <article class="message ${message.role} ${
-              uiState.highlightedMessageId === message.id ? 'is-highlighted' : ''
+              chatState.highlightedMessageId === message.id ? 'is-highlighted' : ''
             } ${isToolTraceMessage(message) ? 'is-tool-trace' : ''}" data-message-id="${escapeHtml(message.id)}">
               ${isToolTraceMessage(message) ? ui`${renderToolTraceMessage(message, escapeHtml)}${renderSceneReplay(message)}` : ui`<div class="message-role">
-                ${message.role === 'assistant' ? `${renderAgentAvatar((uiState.bootstrap.customize?.agents || []).find(a=>a.id===message.metadata?.agent?.id) || {name:message.metadata?.agent?.name || 'Melo'}, escapeHtml, 24)} ${escapeHtml(message.metadata?.agent?.name || 'Melo')}` : `${renderAgentAvatar(uiState.bootstrap.profile, escapeHtml, 24)} ${escapeHtml(uiState.bootstrap.profile.name)}`}
+                ${message.role === 'assistant' ? `${renderAgentAvatar((getBootstrap().customize?.agents || []).find(a=>a.id===message.metadata?.agent?.id) || {name:message.metadata?.agent?.name || 'Melo'}, escapeHtml, 24)} ${escapeHtml(message.metadata?.agent?.name || 'Melo')}` : `${renderAgentAvatar(getBootstrap().profile, escapeHtml, 24)} ${escapeHtml(getBootstrap().profile.name)}`}
               </div>
               ${renderMessageBlocks(message)}
               ${renderAssistantVizMount(message)}
               ${renderMessageToolResults(message)}
-              ${memoryFeature.renderMessageRefs(message)}
+              ${renderMessageRefs(message)}
               ${renderMessageAttachments(message)}
               ${renderModelReceipt(message, escapeHtml)}
               ${renderSceneReplay(message)}
@@ -280,8 +282,8 @@ function renderThreadArtifactStrip(artifacts) {
 
 function renderRegularChatPage() {
   const chat = activeChat();
-  const project = uiState.bootstrap.projects.find(p=>p.id===chat?.projectId);
-  const chatAgent = conversationAgent(uiState.bootstrap, { newAgentId: uiState.activeChatAgentId, newProjectId: uiState.newChatProjectId });
+  const project = getBootstrap().projects.find(p=>p.id===chat?.projectId);
+  const chatAgent = conversationAgent(getBootstrap(), { newAgentId: newChatSelection().agentId, newProjectId: newChatSelection().projectId });
 
   if (!chat) {
     return ui`<section class="page is-chat neural-chat-home"><div class="neural-chat-intro"><div class="neural-overview-kicker">A NEW CONNECTION</div><h1>此刻，你在想什么？</h1><p>与 Melo 一起，把想法延伸下去。</p></div>${renderComposerCard()}</section>`;
@@ -316,7 +318,7 @@ function renderRegularChatPage() {
           </div>
         </div>
 
-        <details class="chat-files-panel" ${uiState.chatFilesOpen ? 'open' : ''}><summary data-action="toggle-chat-files">对话文件</summary>${renderWorkspaceExplorer()}${uiState.bootstrap.workspace.selectedFile ? ui`<pre>${escapeHtml(uiState.bootstrap.workspace.selectedFile.content)}</pre>` : ''}</details>
+        <details class="chat-files-panel" ${chatState.chatFilesOpen ? 'open' : ''}><summary data-action="toggle-chat-files">对话文件</summary>${renderWorkspaceExplorer()}${getBootstrap().workspace.selectedFile ? ui`<pre>${escapeHtml(getBootstrap().workspace.selectedFile.content)}</pre>` : ''}</details>
         <div class="thread-scroll-region">
           ${renderMessageList(chat)}
         </div>
@@ -334,7 +336,7 @@ function renderRegularChatPage() {
             // anchored directly above the composer card (bottom: 100% of the
             // footer) regardless of how tall the composer grows when the user
             // types multi-line, opens the slash palette, attaches files, etc.
-            !uiState.threadAutoFollow && chat.messages.length
+            !chatState.threadAutoFollow && chat.messages.length
               ? ui`
                 <button
                   class="thread-scroll-jump-button"
@@ -359,12 +361,12 @@ function renderRegularChatPage() {
 //
 // G-1f (2026-05-12): extracted to ./activeToolCallsStrip.js so the renderer
 // can be exercised by node --test without a DOM.  This wrapper closes over
-// uiState + the icon table + escapeHtml; the sibling module is pure
+// the chat state + the icon table + escapeHtml; the sibling module is pure
 // (deps injected).  The sibling also adds evidence-trail rendering under
 // each pill when the trail is informative (failure path OR multi-tier
 // fallback) — same heuristic as the G-1e prompt-side surfacing.
 function renderActiveToolCallsStrip() {
-  return _renderActiveToolCallsStripFromModule(uiState.activeToolCalls, {
+  return _renderActiveToolCallsStripFromModule(chatState.activeToolCalls, {
     escapeHtml,
     terminalIcon: icon.terminal,
   });

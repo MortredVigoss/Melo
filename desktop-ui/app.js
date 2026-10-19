@@ -16,7 +16,6 @@ import { installImagePreview } from './imagePreview.js';
 import { renderSyncConflicts } from './syncConflicts.js';
 import { renderReplyDocument } from './replyDocument.js';
 import { renderImageSettings, clearImageTask, handleImageInput, handleImageAction } from './imageControls.js';
-import { voiceInputSupported, voiceInputActive } from './voiceInput.js';
 import { renderLlmConnections, editLlmConnection, handleLlmConnection } from './llmConnections.js';
 import { renderExecutionPanel, syncExecutionPanel, receiveExecutionScene, renderSceneReplay, selectedMessagePresentation, liveSceneFor, cancelLiveScene } from './executionPanel.js';
 import { DEFAULT_MODELS_BY_AUTH_MODE } from '/shared/modelCatalog.js';
@@ -25,9 +24,6 @@ import { updateNeuralWorkspace, syncNeuralComposer, preserveNeuralRegion } from 
 import { resolveWorkspaceStage } from './neuralLayout.js';
 import { captureNeuralLayout, animateNeuralLayout } from './neuralMotion.js';
 import { neuralGroups, groupForSettings, renderNeuralNavigation, renderNeuralOverview, syncNeuralScene } from './neuralShell.js';
-import {
-  isRenderableViz,
-} from './viz/vizRenderer.js';
 import {
   renderInlineSegmentWithCites,
   installCitationDrawer,
@@ -83,12 +79,8 @@ const uiState = {
   neuralStill: false,
   bootstrap: null,
   loading: true,
-  sending: false,
-  sendAbortController: null,
-  activeTurn: null,
   modelPickerOpen: false,
   modelPickerSaving: false,
-  thinkingSince: 0,
   searchLoading: false,
   searchFileLoading: false,
   searchFileHits: [],
@@ -102,9 +94,6 @@ const uiState = {
   // group".  We keep this outside of `searchFileHits` because those records
   // are replaced wholesale every time a group re-streams.
   expandedSearchGroups: {},
-  composer: '',
-  composerHistoryIndex: -1,
-  composerHistoryDraft: '',
   chatSearch: '',
   searchQuery: '',
   // Phase 3.3.2 — Customize → Skills filter state. `query` is a free-form
@@ -115,15 +104,6 @@ const uiState = {
     query: '',
     tag: null,
     state: 'all',
-  },
-  // Phase 3.3.3 — slash-command palette for the composer. Shown when the
-  // composer value starts with "/<query>". Lists enabled skills whose id
-  // or name matches the query; clicking an entry inserts "/<skill-id> "
-  // into the composer so the user can keep typing arguments.
-  slashPalette: {
-    open: false,
-    query: '',
-    selectedIndex: 0,
   },
   // Phase 3.3.4 — skill-run telemetry shown in the Customize → Skills
   // health panel. Lazily populated when the user opens the Skills tab;
@@ -212,38 +192,11 @@ const uiState = {
     query: '',
     selectedIndex: 0,
   },
-  voice: {
-    supported: voiceInputSupported(),
-    recording: false,
-    status: 'idle',
-    preview: '',
-    error: '',
-  },
-  composerAttachments: [],
-  composerAttachmentMenuOpen: false,
   // Task panel "Run agent" overflow menu — shows main as the primary
   // button and tucks research/builder/reviewer behind a "⋯" dropdown so
   // the lane row doesn't sprout four equal-weight chips.
   taskLaneOverflowOpen: false,
-  composerDragActive: false,
-  highlightedMessageId: null,
-  // Per-chat "load earlier" expansion of the message render window
-  // (chatId → extra messages beyond THREAD_RENDER_WINDOW). See threadWindow.js.
-  threadWindow: {},
   shouldFocusSearch: false,
-  lastThreadScrollSignature: '',
-  lastThreadChatId: null,
-  threadAutoFollow: true,
-  streamingChatId: null,
-  streamingAssistantText: '',
-  // Pending voice transcript to be pre-attached when auto-submitting a voice message.
-  // Set to null when not in a voice-submit flow.
-  composerVoiceTranscript: null,
-  // Stable id linking the voice audio attachment to its prefilled transcript
-  // entry. describeAudioExtractionStatus matches transcript→attachment by id,
-  // so without this the just-transcribed voice message would mis-render as
-  // "transcript unavailable" (2026-05-23 Codex C 闭环).
-  composerVoiceAttachmentId: null,
   error: '',
   // Tool execution UI state
   // pendingToolPermissions: array of one dialog descriptor per pending request.
@@ -251,8 +204,6 @@ const uiState = {
   //   - tool-runner   { kind: 'tool',         requestId, toolId, args }
   //   - file-safety   { kind: 'file_safety',  requestId, operation, payload }
   pendingToolPermissions: [],
-  // activeToolCalls: array of { id, name, arguments, status:'running'|'ok'|'error', output? }
-  activeToolCalls: [],
   // TTS state
   ttsAutoPlay: localStorage.getItem('melo-tts-autoplay') === '1',
   ttsSpeakingMessageId: null,
@@ -278,13 +229,6 @@ const uiState = {
   newChatModel: null,
   newChatArtifactIds: [],
   newChatProjectId: null,
-  agentSelectorOpen: false,
-  // Scroll position saved before re-render for position restoration
-  lastKnownScrollTop: 0,
-  // Anchor captured before an innerHTML swap so viz cards' async hydration
-  // doesn't pull the user's viewport away from the message they were
-  // reading. { messageId, viewportOffset } — see captureThreadAnchor().
-  pendingVizAnchor: null,
 };
 
 let contentScrollbarHideTimer = 0;
@@ -424,6 +368,44 @@ const agentsFeature = installAgentsFeature({
 });
 featureActions.register(agentsFeature.actions, 'agents');
 featureForms.register(agentsFeature.forms, 'agents');
+const chatFeature = installChatFeature({
+  getBootstrap: () => uiState.bootstrap,
+  // The optimistic user message and the restore after a failed send replace
+  // the page data without a render, exactly as the moved code did.
+  setBootstrap: payload => { uiState.bootstrap = payload; },
+  app, api, render, bgRender, showError, applyBootstrap, applyBootstrapPreservingDrafts,
+  refreshBootstrap: () => loadBootstrap(uiState.searchQuery, { quiet: true }),
+  activeChat,
+  isOverview: () => uiState.neuralOverview,
+  leaveOverview: () => { uiState.neuralOverview = false; uiState.neuralGroup = null; },
+  // The next new chat's Agent, project, knowledge and model (shared with
+  // startProjectSession and the composer's context picker).
+  newChatSelection: () => ({ agentId: uiState.activeChatAgentId, projectId: uiState.newChatProjectId, artifactIds: uiState.newChatArtifactIds, model: uiState.newChatModel }),
+  selectNewChatAgent: agentId => { uiState.activeChatAgentId = agentId; localStorage.setItem('melo-active-chat-agent', agentId); },
+  activeChatAgentProfile, allChatAgentProfiles, composerTeamPlan,
+  modelPicker: () => ({ open: uiState.modelPickerOpen, saving: uiState.modelPickerSaving }),
+  closeModelPicker: () => { uiState.modelPickerOpen = false; },
+  // The approval dialog (app.js) answers the permission requests the reply stream queues.
+  toolPermissions: () => uiState.pendingToolPermissions,
+  setToolPermissions: list => { uiState.pendingToolPermissions = list; },
+  commandPaletteOpen: () => uiState.commandPalette.open,
+  voiceLanguage: () => uiState.voiceLanguage,
+  handleComposerCommand, handleSpeakMessage, handleDeleteChat,
+  speakingState: () => ({ messageId: uiState.ttsSpeakingMessageId, loadingId: uiState.ttsSpeakingLoadingId }),
+  stopCurrentTts, _isTtsActive, _streamTtsStart, _streamTtsPushChunk, _streamTtsOnToolCall, _streamTtsReset, _streamTtsFlush,
+  // _streamTts is declared with the TTS helpers further down; resolve at call time.
+  setStreamTtsBuffer: text => { _streamTts.buffer = text; },
+  notifyLocalCompletion, shouldSendOnEnter, extractTextUrls, promoteTextUrlsToAttachments,
+  renderExecutionPanel, receiveExecutionScene, liveSceneFor, cancelLiveScene, renderSceneReplay, selectedMessagePresentation,
+  renderMessageRefs: message => memoryFeature.renderMessageRefs(message),
+  renderTextBlock, renderWorkspaceExplorer, renderTtsVoicePanel, modelOptionsForAuthMode,
+  // createScrollPreservation() runs further down; resolve at call time.
+  captureThreadAnchor: scroller => captureThreadAnchor(scroller),
+  restoreThreadAnchor: anchor => restoreThreadAnchor(anchor),
+  escapeHtml, truncate, icon,
+});
+featureActions.register(chatFeature.actions, 'chat');
+featureForms.register(chatFeature.forms, 'chat');
 const HOME_PROMPT_PRESETS = [
   {
     id: 'write',
@@ -1315,7 +1297,7 @@ async function handleOpenSearchResult(result) {
   // Record the click so the boost map can re-rank this result next time.
   recordSearchClickBoost(result.id);
 
-  uiState.highlightedMessageId = null;
+  chatFeature.clearHighlightedMessage();
   uiState.shouldFocusSearch = false;
 
   switch (result.action.type) {
@@ -2017,7 +1999,7 @@ async function handleEditableContextAction(action) {
 
 function applyBootstrap(payload) {
   if (olderBootstrap(payload, uiState.bootstrap)) return;
-  if (voiceInputActive(uiState.voice) && ['activeView', 'selectedChatId', 'selectedProjectId'].some(key => payload?.settings?.[key] !== uiState.bootstrap?.settings?.[key])) chatFeature.stopVoiceCapture();
+  if (chatFeature.voiceCaptureActive() && ['activeView', 'selectedChatId', 'selectedProjectId'].some(key => payload?.settings?.[key] !== uiState.bootstrap?.settings?.[key])) chatFeature.stopVoiceCapture();
   const prevProjectId = uiState.bootstrap?.settings?.selectedProjectId || null;
   const nextProjectId = payload?.settings?.selectedProjectId || null;
   uiState.bootstrap = payload;
@@ -2066,24 +2048,7 @@ async function patchSettings(patch) {
 async function handleOpenNewChatHome() {
   uiState.neuralOverview = false;
   uiState.neuralGroup = null;
-  chatFeature.stopVoiceCapture();
-  chatFeature.setVoiceState({
-    recording: false,
-    preview: '',
-    error: '',
-    status: uiState.voice.supported ? 'ready' : 'idle',
-  });
-  uiState.composer = '';
-  chatFeature.resetComposerHistoryNavigation();
-  uiState.composerAttachments = [];
-  // 2026-06-04 audit闭环: also clear pending voice transcript + linking id
-  // (same stale-transcript leak as handleCreateChat) — composerAttachments
-  // reset above drops the audio attachment but the voice fields would
-  // otherwise survive into the next send.
-  uiState.composerVoiceTranscript = null;
-  uiState.composerVoiceAttachmentId = null;
-  uiState.composerAttachmentMenuOpen = false;
-  uiState.composerDragActive = false;
+  chatFeature.resetComposerForNewChatHome();
   uiState.commandPalette.open = false;
   uiState.commandPalette.query = '';
   uiState.commandPalette.selectedIndex = 0;
@@ -3578,18 +3543,14 @@ async function handleUpdateTaskStatus(taskId, status) {
 }
 
 async function handleRunTask(taskId, teamPlan = null) {
-  if (uiState.sending || uiState.preparingTask) throw new Error('请先等待或停止当前执行。');
+  if (chatFeature.isSending() || uiState.preparingTask) throw new Error('请先等待或停止当前执行。');
   uiState.preparingTask = true;
   try {
-  const draft = uiState.composer;
-  const attachments = uiState.composerAttachments;
+  const draft = chatFeature.takeComposerDraft();
   const payload = await api('/api/tasks/prepare', { method: 'POST', body: { taskId, teamPlan } });
   applyBootstrap(payload.bootstrap);
   await chatFeature.sendMessage(payload.execution);
-  if (!uiState.composer || uiState.composer === payload.execution.content) {
-    uiState.composer = draft;
-    uiState.composerAttachments = attachments;
-  }
+  chatFeature.restoreComposerDraft(draft, payload.execution.content);
   render();
   } finally { uiState.preparingTask = false; }
 }
@@ -3674,7 +3635,7 @@ function clientFuzzyScore(query, ...haystacks) {
 }
 
 function filteredComposerCommands() {
-  const input = uiState.composer.trim();
+  const input = chatFeature.composerText().trim();
   if (!input.startsWith('/')) {
     return [];
   }
@@ -3898,7 +3859,7 @@ async function executePaletteCommand(command) {
 }
 
 async function handleComposerCommand() {
-  const raw = uiState.composer.trim();
+  const raw = chatFeature.composerText().trim();
   if (!raw.startsWith('/')) {
     return false;
   }
@@ -4025,7 +3986,7 @@ async function handleComposerCommand() {
       return true;
   }
 
-  uiState.composer = '';
+  chatFeature.setComposerText('');
   bgRender();
   return true;
 }
@@ -4249,7 +4210,7 @@ function modelOptionsForAuthMode(authMode) {
 
 function renderComposerCommandDeck({ inline = false } = {}) {
   const suggestions = filteredComposerCommands();
-  const showSuggestions = uiState.composer.trim().startsWith('/') && suggestions.length;
+  const showSuggestions = chatFeature.composerText().trim().startsWith('/') && suggestions.length;
   if (inline && !showSuggestions) {
     return '';
   }
@@ -4441,7 +4402,7 @@ function renderTaskPanel({ compact = false } = {}) {
                         <span class="meta-label">已执行 ${task.runCount} 次</span>
                       </div>
                       ${task.status === 'blocked' ? ui`<button class="small-button" data-action="task-operations" data-task-id="${task.id}">检查中断操作</button>${(uiState.taskOperations?.[task.id] || []).filter(r=>r.uncertain).map(r=>ui`<p>${escapeHtml(r.toolId)} · 执行效果不明。请先核对目标系统或文件。<button class="small-button" data-action="task-operation-retry" data-task-id="${task.id}" data-key="${r.key}">已核对未产生效果，允许重试</button></p>`).join('')}` : ''}
-                      ${task.status !== 'running' ? renderTeamPanel({scope:'task',target:task.id,lead:taskTeamLead(task),agents:conversationAgents(uiState.bootstrap,{overview:true,newProjectId:task.projectId || null}),disabled:uiState.sending,escapeHtml}) : ''}
+                      ${task.status !== 'running' ? renderTeamPanel({scope:'task',target:task.id,lead:taskTeamLead(task),agents:conversationAgents(uiState.bootstrap,{overview:true,newProjectId:task.projectId || null}),disabled:chatFeature.isSending(),escapeHtml}) : ''}
                       ${task.acceptance?.team ? ui`<details class="quality-details" open><summary>各成员结果与成本</summary>${task.acceptance.team.results.map(r=>ui`<p>${escapeHtml(r.role)} · ${r.ok ? '待核对' : t("失败")} · ${(r.durationMs/1000).toFixed(1)} 秒 · ${r.usage?.unknown || !r.usage?.requests ? '用量未报告' : `${r.usage.input+r.usage.output} tokens`} · ${r.usage?.estimatedCost == null ? '费用未知' : `估算 $${r.usage.estimatedCost.toFixed(5)}`}</p>`).join('')}</details>` : ''}
                       ${task.runHistory?.length ? ui`<details class="quality-details"><summary>历次执行对比 · ${task.runHistory.length}</summary>${task.runHistory.map(r=>ui`<p>${escapeHtml(r.startedAt || r.createdAt)} · ${escapeHtml(r.status)} · ${r.startedAt && r.finishedAt ? ((Date.parse(r.finishedAt)-Date.parse(r.startedAt))/1000).toFixed(1) : '—'} 秒 · ${r.usage?.estimatedCost == null ? '费用未知' : `$${r.usage.estimatedCost.toFixed(5)}`} · ${r.qualityScore == null ? '尚未验收评分' : `${r.qualityScore}/5`}</p>`).join('')}</details>` : ''}
                       ${task.acceptance ? ui`<details class="quality-details" ${task.status === 'review' || task.status === 'blocked' ? 'open' : ''}><summary>验收与恢复 · ${task.acceptance.tools?.length || 0} 条工具记录</summary>
@@ -4453,7 +4414,7 @@ function renderTaskPanel({ compact = false } = {}) {
                       <div class="inline-actions">
                         ${
                           task.status !== 'running'
-                            ? ui`<button class="small-button is-primary" data-action="run-task" data-task-id="${task.id}" ${uiState.sending ? 'disabled' : ''}>${task.runCount ? t("继续 / 修复") : t("开始执行")}</button>`
+                            ? ui`<button class="small-button is-primary" data-action="run-task" data-task-id="${task.id}" ${chatFeature.isSending() ? 'disabled' : ''}>${task.runCount ? t("继续 / 修复") : t("开始执行")}</button>`
                             : ui`<span class="meta-label">在对话中查看进度或停止</span>`
                         }
                         ${task.execution?.chatId ? ui`<button class="small-button" data-action="open-chat" data-chat-id="${escapeHtml(task.execution.chatId)}">查看执行记录</button>` : ''}
@@ -6808,24 +6769,6 @@ async function handleFileSafetyResponse(requestId, granted, scope, confirmInput 
   return submitPermission(requestId, { granted, scope, kind: 'file_safety', confirmInput, persistent });
 }
 
-// The chat feature (features/chat/) is installed here rather than with the
-// features above: its send pipeline feeds the TTS stream helpers declared
-// above (_streamTts). Still before any listener or render that uses it.
-const chatFeature = installChatFeature({
-  uiState, app, api, render, bgRender, showError, applyBootstrap, applyBootstrapPreservingDrafts, loadBootstrap,
-  activeChat, activeChatAgentProfile, allChatAgentProfiles, composerTeamPlan, escapeHtml, truncate, icon, memoryFeature,
-  renderTextBlock, renderWorkspaceExplorer, renderTtsVoicePanel, modelOptionsForAuthMode, handleComposerCommand,
-  handleSpeakMessage, handleDeleteChat,
-  // createScrollPreservation() runs just below; resolve at call time.
-  captureThreadAnchor: scroller => captureThreadAnchor(scroller),
-  restoreThreadAnchor: anchor => restoreThreadAnchor(anchor),
-  stopCurrentTts, _isTtsActive, _streamTts, _streamTtsStart, _streamTtsPushChunk, _streamTtsOnToolCall, _streamTtsReset, _streamTtsFlush,
-  notifyLocalCompletion, shouldSendOnEnter, extractTextUrls, promoteTextUrlsToAttachments,
-  renderExecutionPanel, receiveExecutionScene, liveSceneFor, cancelLiveScene, renderSceneReplay, selectedMessagePresentation,
-});
-featureActions.register(chatFeature.actions, 'chat');
-featureForms.register(chatFeature.forms, 'chat');
-
 window.addEventListener('resize', chatFeature.positionAgentDropdown);
 window.addEventListener('scroll', chatFeature.positionAgentDropdown, { capture: true, passive: true });
 
@@ -6919,70 +6862,17 @@ function render({ background = false, changedSections = null } = {}) {
   // every time a background render fires (autosave, runtime poll, toast
   // expiry). See captureFormTextareaScrolls for the full rationale.
   const _savedTextareaScrolls = captureFormTextareaScrolls();
-  const _savedComposer = document.querySelector('#composer');
-  const _savedComposerScroll = _savedComposer ? { value: _savedComposer.value, top: _savedComposer.scrollTop } : null;
+  // The composer's value and scrollTop (chat feature hook).
+  const _savedComposerScroll = chatFeature.captureComposerBeforeRender();
 
   // Save content scroll position — render() rebuilds the DOM and would reset it to 0
   const _contentScroller = document.querySelector('.content-scroll');
   const _savedContentScroll = _contentScroller instanceof HTMLElement ? _contentScroller.scrollTop : -1;
 
-  // Save thread scroll position separately — .thread-scroll-region is the actual chat scroller
-  const _threadScroller = document.querySelector('.thread-scroll-region');
-  const _savedThreadScroll = _threadScroller instanceof HTMLElement ? _threadScroller.scrollTop : -1;
-
-  // ── Viz-anchored scroll preservation ──────────────────────────────────────
-  // When a message with a Demon viz card is rendered, the viz <div> starts as
-  // a ZERO-HEIGHT shell and only grows after `syncVizBlocks()` hydrates it
-  // into the actual renderer (SVG, canvas, scene3d). For scene3d cards the
-  // WebGL mount is async (queueMicrotask inside Scene3DRenderer; fully
-  // dynamic `import()` for globe-flight) — so the viz can grow hundreds of
-  // pixels AFTER we've already restored scrollTop. That growth, applied
-  // above the user's current viewport, shifts every later message down —
-  // which manifests as "I scrolled to image 2 and the view jumped to image
-  // 3". CSS `overflow-anchor: none` isn't enough in WKWebView.
-  //
-  // The fix: instead of (or in addition to) restoring scrollTop, ANCHOR on
-  // whatever .message article was closest to the top of the viewport before
-  // the swap. After the swap, find the element with the same data-message-id
-  // and shift scrollTop by the delta between its old and new top offsets.
-  // Also stash the anchor on `uiState` so the async viz hydration path can
-  // re-apply it once more after scene3d canvases finish mounting.
-  //
-  // SCOPE: only enable for chats that ACTUALLY contain a viz card. For plain
-  // text chats the anchor system was a strict net-negative — every render
-  // (streaming chunk, autosave, runtime poll, TTS state) ran a 5-retry
-  // restoreThreadAnchor loop AND captureThreadAnchor's per-message
-  // getBoundingClientRect scan, fighting the user's own scroll gestures
-  // ("拖到底跳回中间") and forcing N layout reflows per render at
-  // streaming cadence ("帧数明显不对，有卡顿"). User-reported 2026-05-05.
-  // Use the same `isRenderableViz` predicate that renderVizMountHtml uses,
-  // so a chat carrying ONLY legacy/invalid viz metadata (e.g.
-  // `{ type: 'mermaid', source }` from older threads — preserved by the
-  // hydration layer but never producing a real mount) does NOT erroneously
-  // enable the anchor + 5-retry loop. Codex C-grade gate fix 2026-05-05.
+  // Thread scrollTop, viz anchor and thread signature (chat feature hook;
+  // the viz-anchoring and signature rationale lives with it).
+  const _savedThread = chatFeature.captureThreadBeforeRender();
   const _chat = activeChat();
-  const _chatHasViz = !!(
-    _chat &&
-    Array.isArray(_chat.messages) &&
-    _chat.messages.some(m => m && isRenderableViz(m.viz))
-  );
-  const _vizAnchor = _threadScroller instanceof HTMLElement && _chatHasViz
-    ? captureThreadAnchor(_threadScroller)
-    : null;
-  uiState.pendingVizAnchor = _vizAnchor;
-
-  // Compute whether thread content will change this render — if the signature matches the
-  // last rendered signature it's a UI-only render (voice panel, checkbox, etc.) and we must
-  // restore the thread scroll manually (syncThreadViewport returns early for same-signature).
-  // If the signature differs, syncThreadViewport will scroll the thread; don't interfere.
-  const _threadSig = _chat
-    ? `${_chat.id}:${_chat.messages.length}:${_chat.updatedAt || ''}:${
-        uiState.highlightedMessageId || ''
-      }:${uiState.streamingChatId === _chat.id ? uiState.streamingAssistantText.length : 0}:${
-        uiState.sending && uiState.streamingChatId === _chat.id ? 1 : 0
-      }`
-    : '';
-  const _threadContentUnchanged = _threadSig === uiState.lastThreadScrollSignature;
 
   // Single-scroller mode for chat view: when the active page is .is-chat
   // AND there's an active chat thread (i.e. .thread-scroll-region is the
@@ -7004,18 +6894,18 @@ function render({ background = false, changedSections = null } = {}) {
   const neuralGroup = uiState.neuralGroup || groupForSettings(uiState.bootstrap.settings);
   const neuralBefore = captureNeuralLayout();
   const neuralStage = resolveWorkspaceStage(uiState.neuralOverview, uiState.neuralExpanded);
-  if (uiState.commandPalette.open || uiState.pendingToolPermissions.length) { uiState.modelPickerOpen = false; uiState.agentSelectorOpen = false; }
+  if (uiState.commandPalette.open || uiState.pendingToolPermissions.length) { uiState.modelPickerOpen = false; chatFeature.closeAgentSelector(); }
   const currentPage = app.querySelector('main.content-scroll');
-  const keepPage = background && changedSections && !uiState.neuralOverview && !uiState.sending &&
+  const keepPage = background && changedSections && !uiState.neuralOverview && !chatFeature.isSending() &&
     !pageAffected(uiState.bootstrap.settings.activeView, changedSections) && currentPage;
   const pageHtml = keepPage ? preserveNeuralRegion(currentPage) :
     ui`<main class="content-scroll" data-neural-key="page-${uiState.neuralOverview ? 'overview' : escapeHtml(uiState.bootstrap.settings.activeView + ':' + (uiState.bootstrap.settings.selectedCustomizeSection || ''))}">${uiState.neuralOverview ? renderNeuralOverview(uiState.bootstrap, neuralGroup, { composer: chatFeature.renderComposer() }) : renderPage()}</main>`;
   updateNeuralWorkspace(app, ui`
-    <div data-neural-key="workspace" class="shell neural-shell ${uiState.neuralOverview ? 'is-overview' : 'is-working'}" data-neural-stage="${neuralStage}" data-neural-busy="${uiState.sending}" data-neural-permission="${!!uiState.pendingToolPermissions?.length}" data-neural-group="${neuralGroup}">
+    <div data-neural-key="workspace" class="shell neural-shell ${uiState.neuralOverview ? 'is-overview' : 'is-working'}" data-neural-stage="${neuralStage}" data-neural-busy="${chatFeature.isSending()}" data-neural-permission="${!!uiState.pendingToolPermissions?.length}" data-neural-group="${neuralGroup}">
       <div class="neural-cosmos" aria-hidden="true"></div>
       <div class="neural-core-anchor" aria-hidden="true"></div>
       ${renderNeuralNavigation(uiState.bootstrap, neuralGroup, { overview: uiState.neuralOverview, still: uiState.neuralStill })}
-      <div class="neural-activity" role="status">${uiState.sending ? escapeHtml(chatFeature.thinkingLabel()) : t("本地工作空间")}</div>
+      <div class="neural-activity" role="status">${chatFeature.isSending() ? escapeHtml(chatFeature.thinkingLabel()) : t("本地工作空间")}</div>
       <div class="neural-preview" role="status" aria-live="polite" hidden></div>
       <div data-neural-key="dashboard" class="workspace neural-dashboard">
         ${renderSyncConflicts(uiState.bootstrap.syncConflicts,escapeHtml)}
@@ -7043,7 +6933,7 @@ function render({ background = false, changedSections = null } = {}) {
   `);
 
   settingsFormEditors.decorate(app);
-  syncNeuralComposer(app, uiState.composer);
+  syncNeuralComposer(app, chatFeature.composerText());
   animateNeuralLayout(neuralBefore, uiState.neuralStill);
   syncNeuralScene(uiState.neuralStill);
   syncExecutionPanel({ chat: activeChat(), still: uiState.neuralStill, autoCollapse: uiState.bootstrap.settings.localPreferences?.autoCollapse !== false, onImageRetry: chatFeature.retryMissingImages, onSelectionChanged: bgRender });
@@ -7060,14 +6950,8 @@ function render({ background = false, changedSections = null } = {}) {
     }
   }
 
-  // Restore thread scroll only on UI-only renders (same thread signature).
-  // When thread content changed, syncThreadViewport handles scrolling — don't interfere.
-  if (_savedThreadScroll >= 0 && _threadContentUnchanged) {
-    const _newThread = document.querySelector('.thread-scroll-region');
-    if (_newThread instanceof HTMLElement) {
-      _newThread.scrollTop = _savedThreadScroll;
-    }
-  }
+  // Restore thread scroll only on UI-only renders (chat feature hook).
+  chatFeature.restoreThreadScrollAfterRender(_savedThread);
 
   bindContentScrollbar();
   syncContentScrollbar();
@@ -7085,11 +6969,7 @@ function render({ background = false, changedSections = null } = {}) {
   agentsFeature.syncRuntimeRefresh();
   syncSearchFieldFocus();
   syncFileEditorGoToLine();
-  chatFeature.syncComposerTextareaHeight();
-  const _newComposer = document.querySelector('#composer');
-  if (_newComposer && _savedComposerScroll?.value === _newComposer.value) {
-    _newComposer.scrollTop = _savedComposerScroll.top;
-  }
+  chatFeature.restoreComposerAfterRender(_savedComposerScroll);
   agentsFeature.restoreEditorAfterRender();
   // Put the caret back into whichever input/textarea was focused before the
   // page update. Runs AFTER the Agent editor restore so the agent-specific
@@ -7102,35 +6982,9 @@ function render({ background = false, changedSections = null } = {}) {
   // query freshly rendered `.viz-mount` shells and attach canvases/SVGs.
   chatFeature.syncVizBlocks();
 
-  // Viz cards just grew (projectile SVG, tree layout, scene3d shells). Pin
-  // the user's viewport to whatever message they were looking at BEFORE the
-  // render ran. Scene3d canvases mount one microtask later, and globe-flight
-  // mounts fully async — so we also re-apply the anchor on the next two
-  // animation frames to catch that layout delta. See captureThreadAnchor()
-  // for the "why".
-  if (_vizAnchor) {
-    restoreThreadAnchor(_vizAnchor);
-    // Microtask — covers scene3d `queueMicrotask(build)` path.
-    queueMicrotask(() => restoreThreadAnchor(_vizAnchor));
-    // Two RAFs — covers the first paint after WebGL canvas is attached.
-    requestAnimationFrame(() => {
-      restoreThreadAnchor(_vizAnchor);
-      requestAnimationFrame(() => restoreThreadAnchor(_vizAnchor));
-    });
-    // And one more after the globe-flight lazy import typically resolves
-    // (probe + dynamic import + scene build). 600ms is a conservative upper
-    // bound — if the anchor is already stable, restoreThreadAnchor short-
-    // circuits at the 1px threshold.
-    setTimeout(() => {
-      restoreThreadAnchor(_vizAnchor);
-      // Clear the stashed anchor on uiState so stale references don't
-      // leak — the async globe-flight path reads this to re-pin after it
-      // finishes hydrating.
-      if (uiState.pendingVizAnchor === _vizAnchor) uiState.pendingVizAnchor = null;
-    }, 600);
-  } else {
-    uiState.pendingVizAnchor = null;
-  }
+  // Viz cards just grew: pin the viewport to the message the user was
+  // reading (chat feature hook).
+  chatFeature.restoreVizAnchorAfterRender(_savedThread);
 }
 
 function contentScrollElements() {
@@ -7406,11 +7260,7 @@ document.addEventListener('click', async event => {
     closeAudioContextMenu();
   }
 
-  if (
-    uiState.composerAttachmentMenuOpen &&
-    !event.target.closest('.composer-bottom-left')
-  ) {
-    uiState.composerAttachmentMenuOpen = false;
+  if (chatFeature.closeAttachmentMenuOnOutsideClick(event)) {
     closedAttachmentMenu = true;
   }
 
@@ -7419,10 +7269,7 @@ document.addEventListener('click', async event => {
     render();
   }
 
-  if (uiState.agentSelectorOpen && !event.target.closest('.agent-chip-anchor, #agent-selector-panel')) {
-    uiState.agentSelectorOpen = false;
-    render();
-  }
+  chatFeature.closeAgentSelectorOnOutsideClick(event);
 
   if (
     uiState.ttsVoicePanelOpen &&
@@ -7481,7 +7328,7 @@ document.addEventListener('click', async event => {
   if (chatFeature.handleChatFilesToggle(action, trigger, event)) return;
   if (action?.startsWith('image-')) {
     event.preventDefault();
-    try { await handleImageAction(action, { config: uiState.bootstrap.settings.config, attachments: uiState.composerAttachments, api, render, refresh: () => loadBootstrap(uiState.searchQuery, { quiet: true }) }); } catch (error) { window.alert(error.message); }
+    try { await handleImageAction(action, { config: uiState.bootstrap.settings.config, attachments: chatFeature.composerAttachments(), api, render, refresh: () => loadBootstrap(uiState.searchQuery, { quiet: true }) }); } catch (error) { window.alert(error.message); }
     return;
   }
   if (['new-chat', 'open-chat'].includes(action)) clearImageTask();
@@ -7517,7 +7364,7 @@ document.addEventListener('click', async event => {
       case 'toggle-model-picker':
         uiState.modelPickerOpen = !uiState.modelPickerOpen;
         uiState.ttsVoicePanelOpen = false;
-        uiState.composerAttachmentMenuOpen = false;
+        chatFeature.closeAttachmentMenu();
         render();
         if (uiState.modelPickerOpen) document.querySelector('.model-picker-option.is-selected')?.focus();
         break;
@@ -7591,7 +7438,7 @@ document.addEventListener('click', async event => {
         await handleOpenNewChatHome();
         break;
       case 'open-view':
-        uiState.highlightedMessageId = null;
+        chatFeature.clearHighlightedMessage();
         uiState.shouldFocusSearch = trigger.dataset.view === 'search';
         // Flush any pending agent autosaves before leaving the agent view —
         // otherwise a user typing a Discord token who hits the left sidebar
@@ -7607,7 +7454,7 @@ document.addEventListener('click', async event => {
         break;
       case 'clear-search-query':
         uiState.searchQuery = '';
-        uiState.highlightedMessageId = null;
+        chatFeature.clearHighlightedMessage();
         uiState.shouldFocusSearch = true;
         await loadBootstrap('', { quiet: true });
         break;
@@ -7641,7 +7488,7 @@ document.addEventListener('click', async event => {
         const parentId = trigger.dataset.parentResultId || '';
         if (!filePath) break;
         if (parentId) recordSearchClickBoost(parentId);
-        uiState.highlightedMessageId = null;
+        chatFeature.clearHighlightedMessage();
         uiState.shouldFocusSearch = false;
         await handleSelectWorkspaceFile(filePath, { lineNumber });
         break;
@@ -7712,7 +7559,7 @@ document.addEventListener('click', async event => {
         closeCommandPalette();
         break;
       case 'switch-mode':
-        uiState.highlightedMessageId = null;
+        chatFeature.clearHighlightedMessage();
         uiState.shouldFocusSearch = false;
         await patchSettings({
           activeMode: trigger.dataset.mode,
@@ -7730,7 +7577,7 @@ document.addEventListener('click', async event => {
             activeView: 'chat',
           });
         }
-        uiState.composer = preset.prompt;
+        chatFeature.setComposerText(preset.prompt);
         render();
         chatFeature.focusComposerSoon();
         break;
@@ -8204,7 +8051,7 @@ document.addEventListener('click', async event => {
         render();
         break;
       case 'insert-command':
-        uiState.composer = trigger.dataset.command || '/';
+        chatFeature.setComposerText(trigger.dataset.command || '/');
         render();
         break;
       case 'toggle-tts-autoplay':
@@ -8885,9 +8732,7 @@ window.addEventListener('melo-tts', event => {
 // shift pushes the user's viewport to a later message — "I scrolled to the
 // flight globe but the view jumped to the molecule card below it".
 document.addEventListener('melo:viz:hydrated', () => {
-  if (uiState.pendingVizAnchor) {
-    restoreThreadAnchor(uiState.pendingVizAnchor);
-  }
+  chatFeature.restorePendingVizAnchor();
 });
 
 document.addEventListener('contextmenu', event => {
@@ -8978,6 +8823,6 @@ window.addEventListener('melo-open-settings',()=>patchSettings({activeView:'sett
 
 // A silent provider must still advance the visible wait timer.
 setInterval(() => {
-  if (!uiState.sending || document.hidden) return;
+  if (!chatFeature.isSending() || document.hidden) return;
   for (const node of document.querySelectorAll('.thinking-banner, .neural-activity')) node.textContent = chatFeature.thinkingLabel();
 }, 1000);

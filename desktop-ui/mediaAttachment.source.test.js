@@ -1,6 +1,7 @@
 /**
  * 2026-05-23 Codex C 闭环: source-level wiring guards for the two app.js
- * fixes on the media-attachment UX commit.  handleVoiceMessageAutoSubmit /
+ * fixes on the media-attachment UX commit (the voice half moved to the chat
+ * feature's behaviour tests in P2c; see below).  handleVoiceMessageAutoSubmit /
  * the global click+keydown delegation are DOM- and network-coupled, so they
  * can't be unit-run without a heavy harness — these grep the source for the
  * exact wiring, matching the established desktop-ui/*.source.test.js pattern
@@ -16,82 +17,28 @@ import { dirname, join } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const appSource = readFileSync(join(here, 'app.js'), 'utf8');
-// The composer, voice input, send pipeline and handleCreateChat moved to the
-// chat feature in P2c; handleOpenNewChatHome and the link/PDF cards stay in app.js.
-const chatSource = readFileSync(join(here, 'features', 'chat', 'controller.js'), 'utf8');
 
 // ─── Fix #1: voice transcript ↔ audio attachment id linkage ────────────────
+// Since P2c (2026-10-19) the composer, dictation, send pipeline and chat
+// creation live in desktop-ui/features/chat/ and are pinned by behaviour
+// tests there (features/chat/controller.test.js): dictation only inserts into
+// the draft, the transcript entry carries the audio attachmentId, the voice
+// ids are captured then cleared for a send and restored after a failure, and
+// createChat / the new-chat home reset clear both voice fields. What stays
+// here is the app.js wiring those tests cannot see.
 
-test('dictation inserts into the existing composer and never auto-submits audio', () => {
-  assert.match(chatSource, /onCommit: text => \{\s*appendComposerText\(text\)/);
-  assert.doesNotMatch(chatSource, /function handleVoiceMessageAutoSubmit/);
+test('the new-chat home and every new-chat entry go through the chat feature resets', () => {
+  const home = appSource.slice(appSource.indexOf('async function handleOpenNewChatHome('), appSource.indexOf('\nasync function handleToggleChatLock('));
+  assert.match(home, /chatFeature\.resetComposerForNewChatHome\(\);/, 'handleOpenNewChatHome clears the composer and both voice fields through the chat feature');
   assert.doesNotMatch(appSource, /function handleVoiceMessageAutoSubmit/);
-});
-
-test('voice transcript entry references the audio attachment id (attachmentId linkage)', () => {
-  // The prefilled extractedMedia transcript entry must carry attachmentId =
-  // the same voice attachment id, so describeAudioExtractionStatus matches.
-  assert.match(
-    chatSource,
-    /attachmentId: voiceAttachmentId[\s\S]*?kind: 'transcript'[\s\S]*?source: 'speech-recognition'/,
-    'the prefilled voice transcript entry must link attachmentId to the audio attachment',
-  );
-});
-
-test('voice attachment id is captured-then-cleared in the send path (parallel to voiceTranscript)', () => {
-  assert.match(
-    chatSource,
-    /const voiceAttachmentId = \(prepared \? null : uiState\.composerVoiceAttachmentId\) \|\| null;\s*\n\s*if \(!prepared\) uiState\.composerVoiceAttachmentId = null;/,
-    'send path must capture + clear composerVoiceAttachmentId, mirroring composerVoiceTranscript',
-  );
-});
-
-// 2026-06-04 audit闭环: handleCreateChat + handleOpenNewChatHome must each
-// reset BOTH voice fields, else a recorded-but-unsent voice message leaks a
-// stale extractedMedia transcript (orphan attachmentId) into the next
-// plain-text send. Codex C round-2: lock the SPECIFIC function bodies — a
-// global string count can't catch "removed the clear from one path but
-// another path has two clears". Extract each function body and assert.
-
-function functionBody(src, declRegex) {
-  // Slice from the function declaration to the next top-level `async function`
-  // / `function ` at column 0 (the next sibling). Good enough to scope the
-  // assertions to one function — these are all module-level functions.
-  const start = src.search(declRegex);
-  if (start < 0) return '';
-  const rest = src.slice(start + 1);
-  const nextDecl = rest.search(/\n(async function |function )/);
-  return nextDecl < 0 ? rest : rest.slice(0, nextDecl);
-}
-
-test('handleCreateChat clears BOTH pending voice fields (entry-point-specific)', () => {
-  const body = functionBody(chatSource, /async function handleCreateChat\(/);
-  assert.ok(body, 'handleCreateChat must exist');
-  assert.match(body, /uiState\.composerVoiceTranscript = null;/,
-    'handleCreateChat must clear composerVoiceTranscript');
-  assert.match(body, /uiState\.composerVoiceAttachmentId = null;/,
-    'handleCreateChat must clear composerVoiceAttachmentId');
-});
-
-test('handleOpenNewChatHome clears BOTH pending voice fields (entry-point-specific)', () => {
-  const body = functionBody(appSource, /async function handleOpenNewChatHome\(/);
-  assert.ok(body, 'handleOpenNewChatHome must exist');
-  assert.match(body, /uiState\.composerVoiceTranscript = null;/,
-    'handleOpenNewChatHome must clear composerVoiceTranscript');
-  assert.match(body, /uiState\.composerVoiceAttachmentId = null;/,
-    'handleOpenNewChatHome must clear composerVoiceAttachmentId');
-});
-
-test('all callers of new-chat route through the two reset functions (no unguarded new-chat entry)', () => {
-  // The leak is fixed at the FUNCTION level, so every new-chat trigger must
-  // go through handleCreateChat / handleOpenNewChatHome rather than inlining
-  // its own chat-creation + composer reset. This guards against a future
-  // entry point that creates a chat inline and re-introduces the leak.
-  // Heuristic: there must be no inline POST to /api/chats outside
-  // handleCreateChat.
-  const chatPosts = (appSource.match(/api\('\/api\/chats'/g) || []).length + (chatSource.match(/api\('\/api\/chats'/g) || []).length;
-  assert.equal(chatPosts, 1,
-    `only handleCreateChat may POST /api/chats; found ${chatPosts} sites — a second inline creator would bypass the voice-field reset`);
+  // Only the chat feature creates chats (its createChat resets the voice
+  // fields); a second inline creator would bypass that reset.
+  const chatApi = readFileSync(join(here, 'features', 'chat', 'api.js'), 'utf8');
+  const chatController = readFileSync(join(here, 'features', 'chat', 'controller.js'), 'utf8');
+  const posts = source => (source.match(/api\('\/api\/chats'/g) || []).length;
+  assert.equal(posts(appSource) + posts(chatController), 0, 'app.js and the chat controller never POST /api/chats themselves');
+  assert.equal(posts(chatApi), 1, 'the chat feature api.js is the one /api/chats creator');
+  assert.match(appSource, /await chatFeature\.createChat\(/, 'palette / project new-chat entries use the chat feature');
 });
 
 // ─── Fix #2: keyboard activation for focusable link/PDF cards ───────────────

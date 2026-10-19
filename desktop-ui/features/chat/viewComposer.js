@@ -3,8 +3,10 @@
 // connection alert, thinking banner, attachment menu, team / context / model
 // / voice controls, slash palette, textarea, attachment chips, drop banner),
 // the chat-side Agent picker and the thinking label. Moved out of
-// desktop-ui/app.js byte-for-byte; DOM, classes, data-attributes, ids and
-// action names are unchanged.
+// desktop-ui/app.js byte-for-byte first; they now read the feature's own
+// state and the shared new-chat selection / model picker / permission queue
+// through the context. DOM, classes, data-attributes, ids and action names
+// are unchanged.
 import { t, ui } from '../../i18n.js';
 import { renderAgentAvatar } from '../../agentAvatar.js';
 import { conversationAgents, conversationAgent, conversationConnectionReady, renderModelPicker } from '../../modelPresentation.js';
@@ -14,20 +16,21 @@ import { renderImageTaskControls } from '../../imageControls.js';
 import { renderTeamPanel } from '../../teamPanel.js';
 import { voiceInputSupported, voiceInputActive, voiceInputLabel, renderVoiceInput } from '../../voiceInput.js';
 import { turnLabel } from '../../turnPresentation.js';
-import { uiState, activeChat, activeChatAgentProfile, allChatAgentProfiles, composerTeamPlan, escapeHtml, icon, modelOptionsForAuthMode, renderTtsVoicePanel, renderExecutionPanel } from './context.js';
+import { getBootstrap, isOverview, newChatSelection, modelPicker, toolPermissions, voiceLanguage, activeChat, activeChatAgentProfile, allChatAgentProfiles, composerTeamPlan, escapeHtml, icon, modelOptionsForAuthMode, renderTtsVoicePanel, renderExecutionPanel } from './context.js';
+import { chatState } from './state.js';
 import { attachmentIcon, attachmentLabel, slashPaletteMatches } from './controller.js';
 
 function thinkingLabel() {
-  if (!uiState.sending) {
+  if (!chatState.sending) {
     return '';
   }
 
-  const label = turnLabel(uiState.activeTurn, { permission: uiState.pendingToolPermissions.length > 0, tools: uiState.activeToolCalls.some(tool => tool.status === 'running') });
-  if (!uiState.thinkingSince) return label;
+  const label = turnLabel(chatState.activeTurn, { permission: toolPermissions().length > 0, tools: chatState.activeToolCalls.some(tool => tool.status === 'running') });
+  if (!chatState.thinkingSince) return label;
 
   const elapsedSeconds = Math.max(
     0,
-    Math.floor((Date.now() - uiState.thinkingSince) / 1000),
+    Math.floor((Date.now() - chatState.thinkingSince) / 1000),
   );
   return `${label} · ${t('已用时 {time}', { time: t('{seconds} 秒', { seconds: elapsedSeconds }) })}`;
 }
@@ -68,7 +71,7 @@ function renderAttachmentPreviewList(attachments = []) {
 }
 
 function renderComposerAttachmentMenu() {
-  if (!uiState.composerAttachmentMenuOpen) {
+  if (!chatState.composerAttachmentMenuOpen) {
     return '';
   }
 
@@ -108,19 +111,19 @@ function renderComposerAttachmentMenu() {
 }
 
 function composerHintText({ inline = false } = {}) {
-  if (uiState.attachmentUploading) {
-    return t('正在上传视频「{name}」，完成后可发送。', { name: uiState.attachmentUploading });
+  if (chatState.attachmentUploading) {
+    return t('正在上传视频「{name}」，完成后可发送。', { name: chatState.attachmentUploading });
   }
-  if (uiState.sending) {
+  if (chatState.sending) {
     return t('正在回复。可以继续输入补充要求，会在下一步加入；更换 Agent、模型或项目从下一条消息生效。');
   }
-  if (uiState.voice.recording) {
+  if (chatState.voice.recording) {
     return '正在听写，点击麦克风停止。文字可修改，确认后发送。';
   }
-  if (uiState.voice.preview) {
+  if (chatState.voice.preview) {
     return '转写完成后可编辑，再点击发送。';
   }
-  if (!inline && !uiState.composer.trim()) {
+  if (!inline && !chatState.composer.trim()) {
     return 'Type / for Melo commands, files, projects, and actions.';
   }
   if (inline) {
@@ -134,7 +137,7 @@ function composerPlaceholder() {
     return t("问问 Melo，或输入 / 使用命令…");
   }
 
-  switch (uiState.bootstrap?.settings.activeMode) {
+  switch (getBootstrap()?.settings.activeMode) {
     case 'cowork':
       return 'What are we solving together?';
     case 'code':
@@ -149,17 +152,17 @@ function composerPlaceholder() {
 // composer input frame above the textarea. Returns empty string when the
 // palette isn't open OR there's nothing to show; this is the normal state.
 function renderSlashPalette() {
-  if (!uiState.slashPalette.open) return '';
+  if (!chatState.slashPalette.open) return '';
   const matches = slashPaletteMatches();
   if (!matches.length) {
     return ui`
       <div class="slash-palette" role="listbox">
-        <div class="slash-palette-empty">No skills match /${escapeHtml(uiState.slashPalette.query)}</div>
+        <div class="slash-palette-empty">No skills match /${escapeHtml(chatState.slashPalette.query)}</div>
       </div>
     `;
   }
   const selectedIndex = Math.min(
-    Math.max(0, uiState.slashPalette.selectedIndex | 0),
+    Math.max(0, chatState.slashPalette.selectedIndex | 0),
     matches.length - 1,
   );
   return ui`
@@ -187,14 +190,14 @@ function renderSlashPalette() {
 }
 
 function renderComposerCard({ inline = false } = {}) {
-  const data = uiState.bootstrap;
-  const composerChat = !uiState.neuralOverview ? activeChat() : null;
-  const project = data.projects.find(p=>p.id===(composerChat ? composerChat.projectId : uiState.newChatProjectId));
+  const data = getBootstrap();
+  const composerChat = !isOverview() ? activeChat() : null;
+  const project = data.projects.find(p=>p.id===(composerChat ? composerChat.projectId : newChatSelection().projectId));
   const workspace = data.workspace || {};
   const selectedFile = workspace.selectedFile;
   const voiceSupported = voiceInputSupported();
   const isHomeComposer = !inline;
-  const voicePreviewMarkup = renderVoiceInput(uiState.voice, escapeHtml);
+  const voicePreviewMarkup = renderVoiceInput(chatState.voice, escapeHtml);
   const footerMarkup =
     isHomeComposer || selectedFile
       ? ui`
@@ -213,12 +216,12 @@ function renderComposerCard({ inline = false } = {}) {
 
   return ui`
     <div class="composer-shell">
-      <div class="composer-conversation-choice agent-chip-anchor">${renderAgentSelectorChip()}${uiState.agentSelectionSaving?ui`<span class="list-row-meta" role="status">正在切换Agent…</span>`:''}</div>
-      ${renderImageTaskControls(uiState.composerAttachments)}
+      <div class="composer-conversation-choice agent-chip-anchor">${renderAgentSelectorChip()}${chatState.agentSelectionSaving?ui`<span class="list-row-meta" role="status">正在切换Agent…</span>`:''}</div>
+      ${renderImageTaskControls(chatState.composerAttachments)}
       ${renderExecutionPanel()}
-      ${uiState.composerRetry?.interrupted && uiState.composerRetry.chatId === composerChat?.id ? ui`<div class="alert">上次请求已中断，可能已有部分操作完成。请先核对对话与执行记录。<button type="button" class="small-button" data-action="restart-interrupted-send">已核对，作为新请求重新执行</button></div>` : ''}
+      ${chatState.composerRetry?.interrupted && chatState.composerRetry.chatId === composerChat?.id ? ui`<div class="alert">上次请求已中断，可能已有部分操作完成。请先核对对话与执行记录。<button type="button" class="small-button" data-action="restart-interrupted-send">已核对，作为新请求重新执行</button></div>` : ''}
       ${
-        !conversationConnectionReady(data.settings.config, composerChat ? composerChat.modelSelection : uiState.newChatModel)
+        !conversationConnectionReady(data.settings.config, composerChat ? composerChat.modelSelection : newChatSelection().model)
           ? ui`
             <div class="alert">
               ${
@@ -233,7 +236,7 @@ function renderComposerCard({ inline = false } = {}) {
           : ''
       }
 
-      ${uiState.sending ? ui`<div class="thinking-banner">${escapeHtml(thinkingLabel())}</div>` : ''}
+      ${chatState.sending ? ui`<div class="thinking-banner">${escapeHtml(thinkingLabel())}</div>` : ''}
 
       <div class="composer-card ${inline ? 'is-thread' : ''}">
         <form data-form="composer" class="composer-form">
@@ -254,15 +257,15 @@ function renderComposerCard({ inline = false } = {}) {
               </div>
 
               <div class="composer-bottom-right">
-                ${renderTeamPanel({scope:'chat',lead:activeChatAgentProfile(),agents:conversationAgents(data,{overview:uiState.neuralOverview,newProjectId:uiState.newChatProjectId}),plan:composerTeamPlan(),disabled:false,escapeHtml})}
-                ${renderConversationContext({chat:!uiState.neuralOverview?activeChat():null,projectId:uiState.newChatProjectId,artifactIds:uiState.newChatArtifactIds,projects:data.projects,artifacts:data.artifacts,disabled:false},escapeHtml)}
+                ${renderTeamPanel({scope:'chat',lead:activeChatAgentProfile(),agents:conversationAgents(data,{overview:isOverview(),newProjectId:newChatSelection().projectId}),plan:composerTeamPlan(),disabled:false,escapeHtml})}
+                ${renderConversationContext({chat:!isOverview()?activeChat():null,projectId:newChatSelection().projectId,artifactIds:newChatSelection().artifactIds,projects:data.projects,artifacts:data.artifacts,disabled:false},escapeHtml)}
                 ${renderModelPicker({
                   config: data.settings.config,
-                  selection:!uiState.neuralOverview && activeChat() ? activeChat().modelSelection : uiState.newChatModel,
+                  selection:!isOverview() && activeChat() ? activeChat().modelSelection : newChatSelection().model,
                   models: modelOptionsForAuthMode(data.settings.config.authMode),
-                  agent: conversationAgent(data, { overview: uiState.neuralOverview, newAgentId: uiState.activeChatAgentId, newProjectId: uiState.newChatProjectId }),
-                  open: uiState.modelPickerOpen,
-                  saving: uiState.modelPickerSaving,
+                  agent: conversationAgent(data, { overview: isOverview(), newAgentId: newChatSelection().agentId, newProjectId: newChatSelection().projectId }),
+                  open: modelPicker().open,
+                  saving: modelPicker().saving,
                 }, escapeHtml)}
 
                 <div class="tts-voice-panel-anchor">
@@ -270,23 +273,23 @@ function renderComposerCard({ inline = false } = {}) {
                   ${renderAtomicButton()}
                 </div>
 
-                <select class="voice-language" aria-label="语音识别语言" data-voice-language ${voiceInputActive(uiState.voice) || uiState.agentSelectionSaving ? 'disabled' : ''}>
-                  ${[['zh-CN', t("中文")], ['en-US', 'English'], ['system', t("系统语言")]].map(([value, label]) => ui`<option value="${value}" ${(uiState.voiceLanguage || 'zh-CN') === value ? 'selected' : ''}>${label}</option>`).join('')}
+                <select class="voice-language" aria-label="语音识别语言" data-voice-language ${voiceInputActive(chatState.voice) || chatState.agentSelectionSaving ? 'disabled' : ''}>
+                  ${[['zh-CN', t("中文")], ['en-US', 'English'], ['system', t("系统语言")]].map(([value, label]) => ui`<option value="${value}" ${(voiceLanguage() || 'zh-CN') === value ? 'selected' : ''}>${label}</option>`).join('')}
                 </select>
                 <button
-                  class="composer-icon-button ${uiState.voice.recording ? 'is-recording' : ''}"
+                  class="composer-icon-button ${chatState.voice.recording ? 'is-recording' : ''}"
                   type="button"
                   data-action="toggle-voice-input"
-                  ${uiState.voice.status !== 'stopping' ? '' : 'disabled'}
-                  aria-label="${escapeHtml(voiceInputLabel(uiState.voice))}"
-                  aria-pressed="${voiceInputActive(uiState.voice)}"
-                  title="${voiceSupported ? escapeHtml(voiceInputLabel(uiState.voice)) : '当前浏览器不支持语音识别，点击查看说明'}"
+                  ${chatState.voice.status !== 'stopping' ? '' : 'disabled'}
+                  aria-label="${escapeHtml(voiceInputLabel(chatState.voice))}"
+                  aria-pressed="${voiceInputActive(chatState.voice)}"
+                  title="${voiceSupported ? escapeHtml(voiceInputLabel(chatState.voice)) : '当前浏览器不支持语音识别，点击查看说明'}"
                 >
-                  <span class="toolbar-icon">${uiState.voice.recording ? icon.stop : icon.mic}</span>
+                  <span class="toolbar-icon">${chatState.voice.recording ? icon.stop : icon.mic}</span>
                 </button>
 
                 ${
-                  uiState.sending
+                  chatState.sending
                     ? ui`
                       <button class="composer-icon-button" type="submit" title="补充到正在进行的回复">
                         <span class="toolbar-icon">${icon.send}</span>
@@ -296,7 +299,7 @@ function renderComposerCard({ inline = false } = {}) {
                       </button>
                     `
                     : ui`
-                      <button class="composer-icon-button is-primary" type="submit" title="发送消息" ${voiceInputActive(uiState.voice) || uiState.agentSelectionSaving ? 'disabled' : ''}>
+                      <button class="composer-icon-button is-primary" type="submit" title="发送消息" ${voiceInputActive(chatState.voice) || chatState.agentSelectionSaving ? 'disabled' : ''}>
                         <span class="toolbar-icon">${icon.send}</span>
                       </button>
                     `
@@ -307,8 +310,8 @@ function renderComposerCard({ inline = false } = {}) {
             ${voicePreviewMarkup}
 
             <div
-              class="composer-input-frame ${uiState.voice.recording ? 'is-recording' : ''} ${
-                uiState.composerDragActive ? 'is-drop-target' : ''
+              class="composer-input-frame ${chatState.voice.recording ? 'is-recording' : ''} ${
+                chatState.composerDragActive ? 'is-drop-target' : ''
               }"
             >
               ${renderSlashPalette()}
@@ -316,14 +319,14 @@ function renderComposerCard({ inline = false } = {}) {
                 id="composer"
                 class="composer-textarea"
                 rows="2"
-                placeholder="${escapeHtml(uiState.sending ? t("输入补充要求") : inline ? t("回复…") : composerPlaceholder())}"
+                placeholder="${escapeHtml(chatState.sending ? t("输入补充要求") : inline ? t("回复…") : composerPlaceholder())}"
                 aria-label="消息输入框"
-              >${escapeHtml(uiState.composer)}</textarea>
+              >${escapeHtml(chatState.composer)}</textarea>
             </div>
 
-            ${renderAttachmentPreviewList(uiState.composerAttachments)}
+            ${renderAttachmentPreviewList(chatState.composerAttachments)}
             ${
-              uiState.composerDragActive
+              chatState.composerDragActive
                 ? ui`
                   <div class="composer-drop-banner">
                     Drop image, audio, video, or PDF here. Media extraction runs best-effort before the model sees it.
@@ -342,10 +345,10 @@ function renderAgentSelectorChip() {
   const agent = activeChatAgentProfile();
   if (!agent) return '';
   return ui`
-    <button type="button" class="chip chip-btn ${uiState.agentSelectorOpen ? 'is-active' : ''}"
+    <button type="button" class="chip chip-btn ${chatState.agentSelectorOpen ? 'is-active' : ''}"
             data-action="toggle-agent-selector"
-            aria-haspopup="dialog" aria-expanded="${uiState.agentSelectorOpen}" aria-controls="agent-selector-panel"
-            title="选择对话Agent" aria-label="选择对话 Agent" ${uiState.agentSelectionSaving ? 'disabled' : ''}>
+            aria-haspopup="dialog" aria-expanded="${chatState.agentSelectorOpen}" aria-controls="agent-selector-panel"
+            title="选择对话Agent" aria-label="选择对话 Agent" ${chatState.agentSelectionSaving ? 'disabled' : ''}>
       <span class="agent-selector-caption">Agent</span>${renderAgentAvatar(agent, escapeHtml, 22)} ${escapeHtml(agent.name)}
       <span style="margin-left:4px;opacity:.6;font-size:.75em">▾</span>
     </button>
@@ -353,7 +356,7 @@ function renderAgentSelectorChip() {
 }
 
 function renderAgentSelectorDropdown() {
-  if (!uiState.agentSelectorOpen) return '';
+  if (!chatState.agentSelectorOpen) return '';
   const agents = allChatAgentProfiles();
   if (!agents.length) return '';
   return ui`
@@ -361,7 +364,7 @@ function renderAgentSelectorDropdown() {
       <header><strong>选择对话 Agent</strong><p>默认Agent和你创建的Agent都在这里。切换只影响后续回复。</p></header>
       ${agents.map(agent => ui`
         <button type="button" class="agent-selector-row ${activeChatAgentProfile()?.id === agent.id ? 'is-selected' : ''}" aria-pressed="${activeChatAgentProfile()?.id === agent.id}"
-                data-action="select-chat-agent" ${uiState.agentSelectionSaving?'disabled':''}
+                data-action="select-chat-agent" ${chatState.agentSelectionSaving?'disabled':''}
                 data-agent-id="${escapeHtml(agent.id)}">
           ${renderAgentAvatar(agent, escapeHtml, 28)}<span class="agent-selector-name">${escapeHtml(agent.name)}</span>
 

@@ -1,8 +1,27 @@
-// Chat requests (architecture plan P2c, 2026-10-19): the SSE client for
-// /api/chat/send/stream (parseEventStreamBlock, streamApi: `done` resolves,
-// `error` / a missing `done` reject with chatStreamError, `aborted` rejects
-// with an AbortError). Moved out of desktop-ui/app.js byte-for-byte.
+// Chat requests (architecture plan P2c, 2026-10-19): the only requests the
+// chat feature makes. createChatApi(api) wraps app.js's shared api() (same
+// URLs and bodies as before the move); the reply stream and the supplement
+// go straight to fetch, as they always did: streamApi is the SSE client for
+// /api/chat/send/stream (`done` resolves; `error` or a missing `done` reject
+// with chatStreamError; `aborted` rejects with an AbortError), moved out of
+// desktop-ui/app.js byte-for-byte.
 import { chatStreamError } from '../../turnPresentation.js';
+
+export function createChatApi(api) {
+  return {
+    // New chat with the composer's new-chat selection.
+    createChat: body => api('/api/chats', { method: 'POST', body }),
+    // The chat-side Agent picker (and other per-chat patches).
+    updateChat: (chatId, patch) => api('/api/chats/update', { method: 'POST', body: { chatId, patch } }),
+    // A video's study notes saved as a knowledge artifact.
+    saveArtifact: body => api('/api/artifacts', { method: 'POST', body }),
+    // A stopped or failed reply silences the TTS it started.
+    clearSpeechQueue: () => api('/api/tts/queue-clear', { method: 'POST', body: {} }),
+    stopSpeech: () => api('/api/tts/speak-stop', { method: 'POST', body: {} }),
+    // A supplement for the running reply; the caller reads response.ok.
+    postSupplement: (chatId, content) => fetch('/api/chat/supplement', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chatId, content }) }),
+  };
+}
 
 function parseEventStreamBlock(block) {
   const lines = block
