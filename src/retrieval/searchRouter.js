@@ -2,6 +2,7 @@ import { currentRequestContext, requestEnvironment } from '../runtime/requestSco
 import { getRequestNetworkPolicy, requestUrls } from './requestPolicy.js';
 
 import { extractTextUrls } from '../media/textUrls.js';
+import { publicLookupIntent, publicLookupFollowUp } from './publicLookupIntent.js';
 
 const SOCIAL_HOST_PATTERN = /(?:^|\.)((xiaohongshu|xhslink|douyin|iesdouyin|tiktok)\.com|xhslink\.com)$/i;
 
@@ -120,8 +121,10 @@ export function scoreWebSearchIntent(text = '') {
   if (policy.searchForbidden || policy.localSearch) return 0;
   const query = policy.instruction.trim();
   if (!query) return 0;
+  const intent = publicLookupIntent(query);
+  if (intent === 'app' || intent === 'text') return 0;
 
-  let score = 0;
+  let score = intent === 'recommendation' ? 3 : 0;
   for (const { pattern, weight } of DEFAULT_WEB_SEARCH_TRIGGER_RULES) {
     if (pattern.test(query)) score += weight;
   }
@@ -176,12 +179,26 @@ export function buildSearchPlan({
     const previousText = normalizeMessageContent(previousUsers.at(-1)?.content);
     if (previousText) latestText = previousText;
   }
+  if (!latestPolicy.searchForbidden && !latestPolicy.localSearch && publicLookupFollowUp(latestPolicy.instruction)) {
+    const previous = modelMessages.filter(m => m?.role === 'user').map(m => normalizeMessageContent(m.content));
+    if (previous.at(-1) === latestText) previous.pop();
+    const answers = [latestText];
+    for (const prior of previous.slice(-8).reverse()) {
+      const policy = getRequestNetworkPolicy(prior);
+      if (policy.searchForbidden || policy.localSearch || ['app', 'text'].includes(publicLookupIntent(policy.instruction))) break;
+      if (publicLookupFollowUp(policy.instruction)) { answers.unshift(prior); continue; }
+      if (scoreWebSearchIntent(prior) >= 3) latestText = [prior, ...answers].join('\n');
+      break;
+    }
+  }
   const policy = getRequestNetworkPolicy(latestText);
   const routeText = policy.instruction;
   const urls = requestUrls(latestText);
   const noSearch = reason => ({ route: 'none', reason, nativeWebSearchEnabled: false, exposedNetworkTools: [], urls: [] });
   if (policy.fetchForbidden) return noSearch('user-disabled-network');
   if (policy.localSearch) return noSearch('explicit-workspace-search');
+  const publicIntent = publicLookupIntent(routeText);
+  if (publicIntent === 'app') return noSearch('explicit-app-search');
   const hasUrl = urls.length > 0;
   const hasSocialUrl = urls.some(isSocialLinkUrl);
 
@@ -206,6 +223,7 @@ export function buildSearchPlan({
   }
 
   if (policy.searchForbidden) return noSearch('user-disabled-search');
+  if (publicIntent === 'text') return noSearch('self-contained-text');
 
   if (DEEP_RESEARCH_PATTERN.test(routeText) || EXPLICIT_LOCAL_SEARCH_PATTERN.test(routeText)) {
     return {
@@ -258,10 +276,24 @@ export function filterToolsForSearchPlan(tools = [], searchPlan = {}) {
   });
 }
 
+export function constrainSearchPlan(plan, { toolIds = [], nativeSearch = false } = {}) {
+  const ids = new Set(toolIds);
+  if (plan.route === 'codex-native' && nativeSearch) return plan;
+  if (plan.route === 'none') return plan;
+  const needsFetch = ['fetch-url', 'social-link'].includes(plan.route);
+  const required = needsFetch ? 'fetch_url' : 'web_search';
+  if (ids.has(required)) return { ...plan, route: needsFetch ? plan.route : 'melo-web',
+    nativeWebSearchEnabled: false, exposedNetworkTools: ['web_search', 'fetch_url'].filter(id => ids.has(id) && (!needsFetch || id === 'fetch_url')) };
+  return { ...plan, route: 'unavailable', reason: needsFetch ? 'fetch-unavailable' : 'search-unavailable',
+    nativeWebSearchEnabled: false, exposedNetworkTools: [] };
+}
+
 const SCREENSHOT_HINT = 'To show the user what a page looks like, use `web_screenshot`; to read it, use `fetch_url`.';
 
 export function buildSearchRoutingPrompt(searchPlan = {}) {
   const route = searchPlan?.route || 'none';
+  if (route === 'unavailable') return '## Search Routing\nThe requested lookup is unavailable under the current Agent capabilities and tools (' + searchPlan.reason + '). Explain this limit and which facts remain unverified. Do not invent current facts or take over a phone/app/browser as a fallback.';
+  if (searchPlan.reason === 'explicit-app-search') return '## Search Routing\nThe user requested a search inside a specific app. Use only an available, authorized tool for that app; otherwise explain the missing capability. Do not substitute public web results or take over another device.';
   if (route === 'codex-native') {
     return [
       '## Search Routing',
@@ -277,6 +309,7 @@ export function buildSearchRoutingPrompt(searchPlan = {}) {
       '## Search Routing',
       'This turn is routed to Melo web_search for structured source retrieval.',
       'Use `web_search` for broad web lookup, then answer from the returned sources.',
+      'For recommendations, retrieve public evidence before making current claims, read relevant returned source URLs when needed, and cite those sources. Snippets do not prove full-page contents. If search fails or sources are insufficient, say what could not be verified; never take over a phone screen as a fallback.',
       'If browser automation is unavailable, continue with public web search. Separate confirmed date-specific flight schedules from live fares and report precisely which facts remain unverified.',
       SCREENSHOT_HINT,
     ].join('\n');

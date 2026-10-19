@@ -8,7 +8,12 @@ func agent(_ id: String, canDelegate: Bool? = nil, targets: [String] = []) -> Ag
     if let canDelegate { profile.collaboration = .object(["canDelegate": .bool(canDelegate), "delegateTargets": .array(targets.map { .string($0) })]) }
     return profile
 }
-final class Counter: @unchecked Sendable { var calls: [String] = []; let lock = NSLock(); func add(_ v: String) { lock.lock(); calls.append(v); lock.unlock() } }
+final class Counter: @unchecked Sendable {
+    private var values: [String] = []
+    private let lock = NSLock()
+    var calls: [String] { lock.lock(); defer { lock.unlock() }; return values }
+    func add(_ value: String) { lock.lock(); values.append(value); lock.unlock() }
+}
 
 @main struct AgentTeamTests {
     static func main() async {
@@ -44,14 +49,26 @@ final class Counter: @unchecked Sendable { var calls: [String] = []; let lock = 
         // Summary shares the original deadline, cancels its provider, and does not
         // invoke a provider after expiry. A second request gets no fresh budget.
         let summaryCalls = Counter()
+        let cancellationObserved = AsyncStream<Void>.makeStream()
         let shortDeadline = Date().addingTimeInterval(0.12)
         let summary = try! await AgentTeam.summarize(deadline: shortDeadline) {
             summaryCalls.add("start")
             do { try await Task.sleep(nanoseconds: 5_000_000_000) }
-            catch { summaryCalls.add("cancelled"); throw error }
+            catch {
+                summaryCalls.add("cancelled")
+                cancellationObserved.continuation.yield(())
+                cancellationObserved.continuation.finish()
+                throw error
+            }
             return "late"
         }
         assert(summary.timedOut && summary.text == nil)
+        // Cancellation is issued before the deadline returns, but the provider
+        // handles it on its own task. Await that event with a bound; do not
+        // assert that a separately scheduled catch already ran synchronously.
+        _ = try! await PhoneDeadline.run(seconds: 2) {
+            await cancellationObserved.stream.first(where: { _ in true })
+        }
         assert(summaryCalls.calls == ["start", "cancelled"])
         let expired = try! await AgentTeam.summarize(deadline: shortDeadline) { summaryCalls.add("unexpected"); return "x" }
         assert(expired.timedOut && summaryCalls.calls.count == 2)

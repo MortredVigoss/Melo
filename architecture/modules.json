@@ -22,8 +22,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 564,
-      "edges": 1725,
+      "modules": 565,
+      "edges": 1726,
       "roots": [
         "src",
         "desktop-ui",
@@ -693,7 +693,7 @@
       "modules": {
         "desktop-ui": 27,
         "shared": 1,
-        "src": 61
+        "src": 62
       },
       "entryModules": [
         {
@@ -1050,6 +1050,7 @@
           "src/providers/functionCalling.test.js",
           "src/providers/llmConnections.test.js",
           "src/retrieval/intentRouter.test.js",
+          "src/retrieval/naturalSearch.test.js",
           "src/retrieval/searchRouter.test.js",
           "src/retrieval/selfVerification.test.js",
           "src/runtime/agentLoopContract.test.js",

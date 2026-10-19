@@ -116,6 +116,7 @@ import {
   buildSearchPlan,
   buildSearchRoutingPrompt,
   filterToolsForSearchPlan,
+  constrainSearchPlan,
 } from '../../retrieval/searchRouter.js';
 import {
   buildToolsSystemPrompt,
@@ -298,7 +299,7 @@ export async function runChatAgentExecutionGraph({
           ? toolProtocolFor({ ...config, baseUrl: modelOverrides.baseUrl, toolCalling: env.MELO_FUNCTION_CALLING || config.toolCalling })
           : null;
         let modelMessages = buildModelMessagesFromChat(modelChat(), { windowTokens: contextBudget.windowTokens, toolChainProtocol });
-        const searchPlan = buildSearchPlan({
+        let searchPlan = buildSearchPlan({
           latestUserMessage,
           modelMessages,
           authMode: config.authMode,
@@ -561,6 +562,9 @@ export async function runChatAgentExecutionGraph({
           promptTools = toolsForCapabilityScope([...stableTools, ...skillTools],context.capabilityScope).filter(t=>t.id!=='delegate'||activeAgentProfile.collaboration.canDelegate&&activeAgentProfile.collaboration.delegateTargets.length>0);
           visibleToolIds = new Set(promptTools.map(tool => tool.id).filter(Boolean));
         }
+        searchPlan = constrainSearchPlan(searchPlan, { toolIds: [...visibleToolIds],
+          nativeSearch: config.authMode === 'codex' && nativeFeaturesForScope(context.capabilityScope).nativeWebSearchEnabled });
+        toolsPrompt = buildSearchRoutingPrompt(searchPlan);
         const functionSession = createFunctionCallingSession({ ...config, baseUrl: modelOverrides.baseUrl,
           toolCalling: env.MELO_FUNCTION_CALLING || config.toolCalling }, promptTools);
         toolsPrompt = [toolsPrompt, buildToolsSystemPrompt(promptTools, { includeExamples: false, native: functionSession.native, protocol: functionSession.protocol })].filter(Boolean).join('\n\n');

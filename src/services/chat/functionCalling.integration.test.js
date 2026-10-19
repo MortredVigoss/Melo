@@ -9,7 +9,8 @@ import { once } from 'node:events';
 import { runChatAgentExecutionGraph } from './chatExecutionRunner.js';
 import { createRequestContext } from '../../runtime/requestContext.js';
 import { runWithRequestContext } from '../../runtime/requestScope.js';
-import { registerTool, unregisterTool } from '../../tools/registryCore.js';
+import { registerTool, unregisterTool, getTool } from '../../tools/registryCore.js';
+import { webSearchTool } from '../../tools/builtins/webSearchTool.js';
 import { resolvePermission } from '../../tools/permissions.js';
 import { beginSupplements, addSupplement, usedSupplements, endSupplements } from './supplements.js';
 
@@ -81,6 +82,38 @@ test('main chat sends native definitions, authorizes valid calls and returns all
   assert.equal(JSON.stringify(h.requests).includes('<tool_result'), false);
   assert.ok(h.events.some(e => e.type === 'execution_event' && e.event.status === 'completed' && e.event.name === 'fixture_lookup'));
   assert.equal(result.normalizedReply.content.includes('opaque-fixture'), false);
+});
+
+test('natural recommendation reaches API-key search execution and retains returned sources', async t => {
+  const original = getTool('web_search');
+  let searches = 0;
+  unregisterTool('web_search');
+  registerTool({ ...webSearchTool, requiresPermission: false, run: async () => {
+    searches++;
+    return { ok: true, output: 'Verified fixture venue: https://example.com/venue',
+      meta: { sources: [{ url: 'https://example.com/venue', title: 'Fixture venue' }] } };
+  } });
+  t.after(() => { unregisterTool('web_search'); if (original) registerTool(original); });
+  const searchCall = { ...fn('search', 'Surry Hills brunch', 'web_search'),
+    arguments: JSON.stringify({ query: 'Surry Hills brunch', num_results: null, noCache: null, allowBlockedDomains: null }) };
+  const h = await harness(t, round => done(round === 1 ? [searchCall]
+    : [{ ...message, content: [{ type: 'output_text', text: '[Fixture venue](https://example.com/venue)', annotations: [] }] }]),
+  { text: 'Surry Hills 有什么好吃的饭店？' });
+  const result = await h.run();
+  assert.equal(searches, 1, JSON.stringify(h.requests.at(-1)?.body.input));
+  assert.ok(h.requests[0].body.tools.some(tool => tool.name === 'web_search'));
+  assert.match(JSON.stringify(h.requests[0].body), /retrieve public evidence/);
+  assert.match(JSON.stringify(h.requests[1].body.input), /https:\/\/example.com\/venue/);
+  assert.match(result.normalizedReply.content, /https:\/\/example.com\/venue/);
+});
+
+test('network-disabled Agent gets an honest unavailable plan for a natural recommendation', async t => {
+  const h = await harness(t, () => done([message]), { text: 'Surry Hills 有什么好吃的饭店？', profiles: {
+    main: { id: 'main', name: 'Offline', capabilities: emptyCapabilities(), tools: [], skills: [] },
+  } });
+  await h.run();
+  assert.match(JSON.stringify(h.requests[0].body), /search-unavailable/);
+  assert.ok(!h.requests[0].body.tools?.some(tool => tool.name === 'web_search'));
 });
 
 test('main chat never executes calls from a truncated stream or a cancelled turn', async t => {

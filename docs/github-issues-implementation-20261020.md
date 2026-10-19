@@ -7,8 +7,8 @@
 | 顺序 | Issue | 状态 / 完成条件 |
 | --- | --- | --- |
 | 1 | [#1 文件身份](https://github.com/MortredVigoss/Melo/issues/1) | 已完成：`47da231` 已推送，issue 已关闭；[双平台 CI](https://github.com/MortredVigoss/Melo/actions/runs/39260200905)通过 |
-| 2 | [#4 历史图片](https://github.com/MortredVigoss/Melo/issues/4) | 修复已完成，最终日常已通过，待本条提交推送；稳定图片身份、旧记录恢复与原图回归 |
-| 3 | [#3 自然搜索](https://github.com/MortredVigoss/Melo/issues/3) | 待执行；自然推荐和否定/引用/本地意图边界 |
+| 2 | [#4 历史图片](https://github.com/MortredVigoss/Melo/issues/4) | 已完成：`94e76cb` 已推送，issue 已关闭；稳定图片身份、旧记录恢复与原图回归 |
+| 3 | [#3 自然搜索](https://github.com/MortredVigoss/Melo/issues/3) | 修复与专项 95/95 通过；JS 4098/4098，日常各层通过，待提交推送 |
 | 4 | [#9 跨平台 CI](https://github.com/MortredVigoss/Melo/issues/9)、[#2 记忆库并发](https://github.com/MortredVigoss/Melo/issues/2) | #1 同步加入最小双平台文件安全工作流；完整平台矩阵与并发复现仍待完成 |
 | 5 | [#5 通用循环](https://github.com/MortredVigoss/Melo/issues/5)、[#6 完成条件](https://github.com/MortredVigoss/Melo/issues/6)、[#8 事件](https://github.com/MortredVigoss/Melo/issues/8)、[#7 Android 上下文](https://github.com/MortredVigoss/Melo/issues/7) | 待执行；按 Host 适配与对照验收，不删现有行为 |
 | 6 | [#11 项目生命周期](https://github.com/MortredVigoss/Melo/issues/11)、[#12 后端拆分](https://github.com/MortredVigoss/Melo/issues/12)、[#10 Fold 缓存](https://github.com/MortredVigoss/Melo/issues/10)、[#13 容量基线](https://github.com/MortredVigoss/Melo/issues/13)、[#14 Task Eval](https://github.com/MortredVigoss/Melo/issues/14) | 待执行；小型确定性回放伴随改动，真机/真实模型证据单列 |
@@ -45,3 +45,16 @@
 - 聊天卡片、预览、保存共享 `desktop-ui/imageResource.js`；自动恢复每个图片节点一次，缓存成功解析，下载保留原始字节。错误区分记录缺失、原图丢失、损坏、越界；五语与 iPhone 共用翻译资源同步。
 - 7 项 HTTP 回归覆盖真正 TTL 过期、场景清理、两个真实服务进程重启和换端口、并发回填、越界/跨 home/叶子及祖先软链接；浏览器覆盖历史卡片/弹窗/原生保存桥、原图 SHA/字节一致及失败无重试循环。全部包含在 `image-daily.log` 的 JS 4079/4079 中。
 - 边界：测试使用隔离 home 和临时图片；没有重装应用，没有操作用户历史图片。执行面板仍按既有逻辑在读取场景时更新签名；手机本机图片存储流程不改写。
+
+## #3 实施计划
+
+当前主线已经采用稳定核心工具列表，因此“自然问法完全看不到搜索工具”不能作为当前主聊天结论；缺口是自然推荐/追问没有搜索引导，能力禁止时仍可能提示使用不存在的搜索。对照 Mobile `shared/agent/search.js` 的任务/解释/App 分流思路，补充独立意图分类与当前工具可用性收敛；保持既有核心工具缓存策略。覆盖自然推荐、否定/引用/本地/App 边界、取消/换题与追问，以及真实 HTTP 模型协议夹具中的定义、执行、来源和失败说明。手机分支已有自然推荐路由，本项不合并整条移动分支；通用循环/跨 Host 收敛在 #5 继续。
+
+
+#3 结果：`publicLookupIntent.js` 给公开、时效性的自然推荐提供搜索意图；短追问只继承最近的相关任务，跨否定/取消/换题停止。App 内搜索与纯文本任务独立处理；显式读链接仍优先于翻译/改写。`constrainSearchPlan` 依据本轮真正可用工具/原生搜索修正路由；不可用时明确说明而不接管手机。已有工具列表缓存、能力检查和搜索后端保持。
+
+- 基线 `94e76cb` 的三个原始推荐问法均返回 none/no-web-intent；修复后 API Key→Melo Search、Codex→原生搜索。
+- `search-targeted.log`：95/95，包括否定、引用、本地/App、闲聊、追问边界、链接翻译、真实 localhost Responses 请求中的工具定义→执行一次→来源继续传递、Agent 禁止联网。
+- `search-daily.log`：JS 4098/4098；日常语法/文档/两项设置浏览器通过；共用渲染 4/4 与 32 组 Swift 最终复测通过。搜索结果为受控 HTTP/工具夹具，没有调用付费模型或真实外网搜索；不将夹具当成真实 provider 验收。
+
+完整日常首次暴露 Swift `AgentTeamTests` 的异步取消回执竞态：生产已经发出取消，测试立即读取另一任务的 catch 副作用。改为最多 2 秒等待明确取消事件、计数器读写均加锁；保留取消/超时/无后续请求断言。`search-swift-final.log` 最终共用渲染 4/4 与全部 32 组 Swift 通过。没有改变生产取消语义。

@@ -538,3 +538,10 @@
 - 实际文件：`native/dirfd_ops.cc`、`src/safety/{dirfdOps,fileSafetyGate,backup,trash}.js`、四个文件修改工具；新增身份回归和双平台 `.github/workflows/file-safety.yml`。实施顺序与细证见[实施记录](../github-issues-implementation-20261020.md)。
 - 验证：Linux 容器对原主线 6 项 checked 回归独立复现 2 项失败；最终 Linux 安全组 375/375、macOS 376/376；日常 JS 4070/4070、语法/文档/两项浏览器/共享渲染/32 组 Swift 通过，最后补强已专项复测。源于真实临时文件系统，不接用户数据；不是实体应用/真实模型验收。
 - 下一步：继续 #4/#3，再完成其余已授权项。最小 CI 不能代表完整 #9 已完成；不运行 git pp，不重装应用。
+
+### 2026-10-20 — melo主线（Codex）— GitHub #4 历史图片恢复
+- 线程 ID：`01a13b2e-5446-7042-bb5e-773129746c7e`；用户授权逐项修复、测试、推送并关闭 issues；#1 `47da231` 已完成且双平台 CI 通过。#4 `94e76cb` 已推送并关闭；#3 搜索路由开始实施。
+- 旧签名过期/重启换端口后，聊天卡片、预览、保存改用当前服务按保存记录解析的图片身份；登记保留时间不依赖执行场景清理。缺失或损坏有明确提示；原图、账号及已有消息不改写。
+- 实际入口：`src/media/imageRecords.js`、`src/services/media/savedImages.js`、`src/http/mediaRoutes.js`、`desktop-ui/imageResource.js`；记录/调用链与旧数据边界见[实施记录](../github-issues-implementation-20261020.md)。共用五语资源同步到 iPhone。
+- 验证：最终 JS 4079/4079；覆盖真实服务重启/换端口、TTL、场景清理、路径隔离、并发及浏览器保存原图。语法/文档/两项设置浏览器/共用渲染 4/4 与 32 组 Swift 全通过。隔离 home/图片，不是用户真图与实体应用验收。
+- 下一步：#4 推送并在 GitHub 完成，然后 #3 自然搜索、#9/#2 及余下已授权项。不运行 git pp，不重装应用。
