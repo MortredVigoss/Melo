@@ -22,8 +22,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 546,
-      "edges": 1654,
+      "modules": 549,
+      "edges": 1664,
       "roots": [
         "src",
         "desktop-ui",
@@ -244,7 +244,7 @@
         "src/persistence/agentMarkdownFiles.js",
         "desktop-ui/agent*.js",
         "desktop-ui/agent*.css",
-        "desktop-ui/capabilityChoices.js",
+        "desktop-ui/features/agents/**",
         "desktop-ui/teamPanel.js",
         "ios/Melo/{AgentEditSession,AgentEditor,AgentProfile,AgentTeam,TeamSheet,TeamVerification}.swift",
         "ios/Tests/{AgentEditTests,AgentTeamTests}.swift",
@@ -253,7 +253,7 @@
         "scripts/migrate-agent-capabilities.js"
       ],
       "modules": {
-        "desktop-ui": 6,
+        "desktop-ui": 9,
         "src": 46
       },
       "entryModules": [
@@ -265,25 +265,19 @@
           ]
         },
         {
-          "module": "desktop-ui/agentDraft.js",
+          "module": "desktop-ui/features/agents/context.js",
           "importedBy": [
             "desktop-shell"
           ]
         },
         {
-          "module": "desktop-ui/agentMcpAuthorise.js",
+          "module": "desktop-ui/features/agents/controller.js",
           "importedBy": [
             "desktop-shell"
           ]
         },
         {
-          "module": "desktop-ui/agentProfilePatch.js",
-          "importedBy": [
-            "desktop-shell"
-          ]
-        },
-        {
-          "module": "desktop-ui/capabilityChoices.js",
+          "module": "desktop-ui/features/agents/view.js",
           "importedBy": [
             "desktop-shell"
           ]
@@ -537,7 +531,7 @@
         "approvals": 3,
         "channels": 3,
         "chat": 13,
-        "desktop-shell": 3,
+        "desktop-shell": 5,
         "memory": 11,
         "platform": 37,
         "settings": 2,
@@ -547,7 +541,7 @@
         "approvals": 3,
         "channels": 6,
         "chat": 25,
-        "desktop-shell": 16,
+        "desktop-shell": 15,
         "memory": 2,
         "platform": 31,
         "projects": 4,
@@ -576,11 +570,14 @@
       ],
       "desktopUi": [
         "desktop-ui/agentAvatar.js",
-        "desktop-ui/agentDraft.js",
-        "desktop-ui/agentMcpAuthorise.js",
-        "desktop-ui/agentProfilePatch.js",
         "desktop-ui/agentSettings.css",
-        "desktop-ui/capabilityChoices.js",
+        "desktop-ui/features/agents/agentDraft.js",
+        "desktop-ui/features/agents/agentMcpAuthorise.js",
+        "desktop-ui/features/agents/agentProfilePatch.js",
+        "desktop-ui/features/agents/capabilityChoices.js",
+        "desktop-ui/features/agents/context.js",
+        "desktop-ui/features/agents/controller.js",
+        "desktop-ui/features/agents/view.js",
         "desktop-ui/teamPanel.js"
       ],
       "iphone": {
@@ -604,12 +601,12 @@
           "npm run test:markdown-files"
         ],
         "js": [
-          "desktop-ui/agentDraft.test.js",
-          "desktop-ui/agentMcpAuthorise.test.js",
           "desktop-ui/agentPersona.browser.test.js",
           "desktop-ui/agentSettings.browser.test.js",
           "desktop-ui/agentSettingsSecurity.browser.test.js",
-          "desktop-ui/capabilityChoices.test.js",
+          "desktop-ui/features/agents/agentDraft.test.js",
+          "desktop-ui/features/agents/agentMcpAuthorise.test.js",
+          "desktop-ui/features/agents/capabilityChoices.test.js",
           "desktop-ui/teamPanel.test.js",
           "src/agents/collaboration.test.js",
           "src/agents/memberBackground.test.js",
@@ -657,7 +654,7 @@
         "source-tests-self"
       ],
       "notes": [
-        "修改入口：src/services/agent/agentMutations.js；设置页状态仍在 desktop-ui/app.js（P2 迁出）。",
+        "修改入口：src/services/agent/agentMutations.js；桌面 Agent 设置页（P2b）：desktop-ui/features/agents/（controller.js 动作、草稿、保存与自动保存；view.js 渲染），app.js 只保留跨页导航 select-agent-profile 与 render() 里的捕获/恢复调用。",
         "能力按执行设备生效：手机按 Agent 单独授权联网/图片/手机数据，不进同步。"
       ]
     },
@@ -3336,7 +3333,7 @@
         }
       ],
       "dependsOn": {
-        "agents": 16,
+        "agents": 15,
         "approvals": 3,
         "channels": 2,
         "chat": 16,
@@ -3351,7 +3348,7 @@
         "voice": 3
       },
       "usedBy": {
-        "agents": 3,
+        "agents": 5,
         "approvals": 3,
         "chat": 9,
         "media": 4,

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { buildAgentProfilePatch } from './agentProfilePatch.js';
+import { buildAgentProfilePatch } from './features/agents/agentProfilePatch.js';
 import { renderAttachmentCards } from './attachmentCards.js';
 import { createScrollPreservation } from './scrollPreservation.js';
 import { createSearchPageRenderer } from './searchPage.js';

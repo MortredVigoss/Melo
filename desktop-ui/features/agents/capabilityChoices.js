@@ -1,4 +1,4 @@
-import {t,ui} from './i18n.js';
+import {t,ui} from '../../i18n.js';
 export function renderCapabilityChoices(name,label,selected,options,escapeHtml) {
  const ids=Array.isArray(selected)?selected:String(selected||'').split(',').filter(Boolean);
  const choices=new Map((options||[]).map(o=>[o.id,o]));

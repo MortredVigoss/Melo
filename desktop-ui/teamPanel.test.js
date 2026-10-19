@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {renderTeamPanel, teamLeadState, collectTeamPlan, noteTeamMemberToggle} from './teamPanel.js';
-import {buildAgentProfilePatch} from './agentProfilePatch.js';
+import {buildAgentProfilePatch} from './features/agents/agentProfilePatch.js';
 const esc=s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
 const agents=[{id:'main',name:'Main'},{id:'research',name:'调研员'},{id:'reviewer',name:'<Rev>'},{id:'other',name:'Other'}];
 const lead=(delegate,canDelegate,targets)=>({id:'main',name:'Main',capabilities:{delegate},collaboration:{canDelegate,delegateTargets:targets}});

@@ -1,5 +1,4 @@
 import {handleManagementAction,renderSkillManagement} from './managementActions.js';
-import {renderCapabilityChoices} from './capabilityChoices.js';
 import {askFileDecision} from './chatFiles.js';
 import { isAgentChannelAvailable } from '/shared/channelAvailability.js';
 import { t, ui } from './i18n.js';
@@ -10,11 +9,14 @@ import { createSettingsFormEditors, installUnsavedSettingsGuard } from './settin
 import { createActionRegistry } from './features/registry.js';
 import { installMemoryFeature } from './features/memory/index.js';
 import { installProjectsFeature } from './features/projects/index.js';
+import { bindAgentsContext } from './features/agents/context.js';
+import { agentsActions, agentsForms, handleAgentSectionToggle, handleAgentProfileInput, handleAgentEditorScroll, handleAgentFileChange, handleAgentProfileChange, agentDraftKey, captureAgentEditorState, captureAgentScrollState, restoreAgentScrollState, restoreAgentEditorState, syncAgentRuntimeRefresh, flushPendingAgentMarkdownAutosave, flushPendingAgentChannelAutosave, flushPendingAgentAutosavesOnUnload } from './features/agents/controller.js';
+import { renderAgentPage, renderAgentWorkbench } from './features/agents/view.js';
 import { renderLocalSettings, installLocalSettings, applyLocalAppearance, shouldSendOnEnter, notifyLocalCompletion, nativeSettings } from './localSettings.js';
 import { installImagePreview } from './imagePreview.js';
 import { renderSyncConflicts } from './syncConflicts.js';
 import { renderConversationContext } from './conversationContext.js';
-import { renderAgentAvatar, readAgentAvatar } from './agentAvatar.js';
+import { renderAgentAvatar } from './agentAvatar.js';
 import { renderReplyDocument, replyPlainText } from './replyDocument.js';
 import { renderImageSettings, renderImageTaskControls, consumeImageTask, restoreImageTask, clearImageTask, handleImageInput, handleImageAction } from './imageControls.js';
 import { createVoiceInput, voiceInputSupported, voiceInputActive, voiceInputLabel, renderVoiceInput } from './voiceInput.js';
@@ -50,7 +52,6 @@ import { createSearchPageRenderer } from './searchPage.js';
 import { createScrollPreservation } from './scrollPreservation.js';
 import { visibleMessageWindow, expandThreadWindow, ensureMessageInThreadWindow } from './threadWindow.js';
 import { isToolTraceMessage, renderToolTraceMessage } from './messageToolTrace.js';
-import { buildAgentProfilePatch } from './agentProfilePatch.js';
 import { attachmentLimit, makeTransferCopy, uploadVideoFile, MB } from './transferCopy.js';
 import { videoExtraction, videoKnowledgeNote } from './videoKnowledge.js';
 import { renderTeamPanel, collectTeamPlan, noteTeamMemberToggle } from './teamPanel.js';
@@ -64,11 +65,9 @@ import {
   formatUndoToastLabel,
   nextCountdownTickMs,
 } from './undoToast.js';
-import { agentDocumentWithPreset, agentDraftFromProfile, normalizeChannelsForDraft } from './agentDraft.js';
 import { buildConnectorDraft, pickConnectorField, buildAutosaveBody } from './connectorDraft.js';
 import { applyFormInputToDraft } from './connectorDraftDispatch.js';
 import { credentialChipState, CREDENTIAL_FIELDS, clearCommittedSecrets } from './credentialChip.js';
-import { decideAgentMcpAuthAction } from './agentMcpAuthorise.js';
 import {
   decideFileSafetyPreflight,
   decideFileSafetyResponseAction,
@@ -86,8 +85,7 @@ const settingsFormEditors = createSettingsFormEditors({render,
 });
 settingsFormEditors.install(document);
 document.addEventListener('toggle', event => {
-  const key = event.target.dataset?.agentSection;
-  if (key) uiState.agentOpenSections[key] = event.target.open;
+  handleAgentSectionToggle(event);
   memoryFeature.handleToggle(event);
 }, true);
 installUnsavedSettingsGuard(window);
@@ -325,15 +323,6 @@ let activeEditableContextTarget = null;
 let activeCopyContextTarget = null;
 let activeRecentContextChatId = null;
 let activeAudioContextUrl = null;
-let agentMarkdownAutosaveTimer = 0;
-let agentMarkdownAutosaveSequence = 0;
-let pendingAgentMarkdownAutosave = null;
-let agentMarkdownLastInteractionAt = 0;
-let agentChannelAutosaveTimer = 0;
-let agentChannelAutosaveSequence = 0;
-let pendingAgentChannelAutosave = null;
-let agentRuntimeRefreshTimer = 0;
-const AGENT_MARKDOWN_AUTOSAVE_IDLE_MS = 900;
 
 // ─── Global typing guard ─────────────────────────────────────────────────────
 // Whenever the user hits a key in ANY input/textarea (anywhere in the app),
@@ -450,6 +439,9 @@ const projectsFeature = installProjectsFeature({
 });
 featureActions.register(projectsFeature.actions, 'projects');
 featureForms.register(projectsFeature.forms, 'projects');
+bindAgentsContext({ uiState, app, api, render, bgRender, showError, showFlashToast, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts, loadBootstrap, activeProject, agentProfileById, minimaxTtsConfigPatchForVoice, settingsFormEditors, nativeSettings, isAgentChannelAvailable, escapeHtml, icon });
+featureActions.register(agentsActions, 'agents');
+featureForms.register(agentsForms, 'agents');
 
 const HOME_PROMPT_PRESETS = [
   {
@@ -624,108 +616,6 @@ function renderRichText(value = '') {
       return renderTextBlock(block.value);
     })
     .join('');
-}
-
-function formatRuntimeTimestamp(value, fallback = 'Not yet') {
-  if (!value) {
-    return fallback;
-  }
-
-  const parsed = Date.parse(value);
-  if (Number.isNaN(parsed)) {
-    return fallback;
-  }
-
-  const diffMs = Math.max(0, Date.now() - parsed);
-  const diffSeconds = Math.round(diffMs / 1000);
-  if (diffSeconds < 5) {
-    return 'Just now';
-  }
-  if (diffSeconds < 60) {
-    return `${diffSeconds}s ago`;
-  }
-
-  const diffMinutes = Math.round(diffSeconds / 60);
-  if (diffMinutes < 60) {
-    return `${diffMinutes}m ago`;
-  }
-
-  const diffHours = Math.round(diffMinutes / 60);
-  if (diffHours < 24) {
-    return `${diffHours}h ago`;
-  }
-
-  const diffDays = Math.round(diffHours / 24);
-  return `${diffDays}d ago`;
-}
-
-function renderChannelRuntimeMetric(label, value) {
-  return ui`
-    <div class="agent-runtime-metric">
-      <div class="agent-runtime-metric-label">${escapeHtml(label)}</div>
-      <div class="agent-runtime-metric-value">${escapeHtml(value || '—')}</div>
-    </div>
-  `;
-}
-
-function renderChannelRuntimeCard(channel, { showRoute = false } = {}) {
-  const incomingPreview = channel?.lastIncomingPreview || '';
-  const replyPreview = channel?.lastReplyPreview || '';
-
-  return ui`
-    <div class="agent-channel-runtime">
-      <div class="agent-editor-header">
-        <div class="agent-editor-heading">
-          <div class="meta-block-label">Runtime</div>
-          <div class="list-row-meta">Live polling and recent channel activity for this agent.</div>
-        </div>
-        <span class="chip ${channel?.statusLabel === 'Polling live' ? 'is-accent' : ''}">
-          ${escapeHtml(channel?.runtimeLabel || 'Disabled')}
-        </span>
-      </div>
-      <div class="agent-channel-runtime-grid">
-        ${renderChannelRuntimeMetric('Bot', channel?.botLabel || 'Unknown bot')}
-        ${renderChannelRuntimeMetric('Status', channel?.statusLabel || 'Not checked')}
-        ${renderChannelRuntimeMetric('Last checked', channel?.lastCheckedLabel || formatRuntimeTimestamp(channel?.lastCheckedAt))}
-        ${renderChannelRuntimeMetric('Last poll', channel?.lastPolledLabel || formatRuntimeTimestamp(channel?.lastPolledAt, 'No recent poll'))}
-        ${renderChannelRuntimeMetric('Last incoming', channel?.lastIncomingLabel || formatRuntimeTimestamp(channel?.lastIncomingAt, 'No incoming messages yet'))}
-        ${renderChannelRuntimeMetric('Last reply', channel?.lastReplyLabel || formatRuntimeTimestamp(channel?.lastReplyAt, 'No replies sent yet'))}
-        ${
-          showRoute
-            ? renderChannelRuntimeMetric('Default route', channel?.chatId || channel?.lastRemoteChatId || 'Not pinned')
-            : ''
-        }
-      </div>
-      ${
-        incomingPreview || replyPreview
-          ? ui`
-            <div class="agent-runtime-preview-stack">
-              ${
-                incomingPreview
-                  ? ui`
-                    <div class="agent-runtime-preview-card">
-                      <div class="agent-runtime-preview-label">Last incoming</div>
-                      <div class="agent-runtime-preview-copy">${escapeHtml(incomingPreview)}</div>
-                    </div>
-                  `
-                  : ''
-              }
-              ${
-                replyPreview
-                  ? ui`
-                    <div class="agent-runtime-preview-card">
-                      <div class="agent-runtime-preview-label">Last reply</div>
-                      <div class="agent-runtime-preview-copy">${escapeHtml(replyPreview)}</div>
-                    </div>
-                  `
-                  : ''
-              }
-            </div>
-          `
-          : ''
-      }
-    </div>
-  `;
 }
 
 function normalizeRenderableMessageBlock(block) {
@@ -1690,166 +1580,6 @@ function allChatAgentProfiles() {
   return conversationAgents(uiState.bootstrap, {overview:uiState.neuralOverview,newProjectId:uiState.newChatProjectId});
 }
 
-function selectedAgentProfile() {
-  return agentProfileById(uiState.bootstrap?.settings?.selectedAgentId || 'main');
-}
-
-function selectedAgentScope() {
-  const scope = uiState.bootstrap?.settings?.selectedAgentScope;
-  const project = activeProject();
-  return scope === 'project' && project ? 'project' : 'global';
-}
-
-function agentDraftKey(agentId, scope = selectedAgentScope(), projectId = activeProject()?.id || 'global') {
-  return `${scope}:${scope === 'project' ? projectId : 'global'}:${agentId}`;
-}
-
-function agentSaveKey(
-  agentId,
-  scope = selectedAgentScope(),
-  projectId = activeProject()?.id || 'global',
-) {
-  return `${scope}:${scope === 'project' ? projectId : 'global'}:${agentId}`;
-}
-
-function agentSecretVisibilityKey(agentId, channelId) {
-  return `${agentId}:${channelId}`;
-}
-
-// Server returns agent.channels as an ARRAY ([{id:'telegram',...},{id:'discord',...}])
-// via summarizeAgentProfile, but the server's normalizeAgentChannels on the
-// write path (updateAgentProfile) expects channels as an OBJECT keyed by
-// channel.id. If we clone the array into the draft and then assign
-// `draft.channels.telegram = { ... }`, JSON.stringify drops those string
-// properties on serialization (arrays only serialize numeric indices) and
-// every edit the user makes is silently thrown away — the user sees the
-// checkbox bounce back, the bot token disappear, etc. Normalize to an object
-// at the draft boundary so all downstream code (render, autosave POST, test
-// connection) operates on a plain object.
-function agentDraftFor(agent) {
-  if (!agent) return null;
-  const key = agentDraftKey(agent.id);
-  // The cached uiState.agentDrafts entry wins so the user's in-progress
-  // edits aren't blown away on every render. When there isn't a cache
-  // hit, agentDraftFromProfile() (lifted to ./agentDraft.js for unit-
-  // testability) builds a fresh draft from the profile — including
-  // `enabledMcpServerIds`, which the previous inline copy forgot to
-  // thread through. Codex 2026-04-28 audit caught that omission
-  // silently dropping the per-agent MCP whitelist on save: the
-  // chip-row read draft.enabledMcpServerIds (undefined → empty Set →
-  // no chip is "selected"), the hidden form input submitted '', and
-  // /api/agents/update happily wrote `enabledMcpServerIds: []` over
-  // whatever the profile had.
-  return uiState.agentDrafts[key] || agentDraftFromProfile(agent);
-}
-
-function mergeAgentDraft(agentId, patch) {
-  const draftKey = agentDraftKey(agentId);
-  const currentDraft = {
-    ...(uiState.agentDrafts[draftKey] || agentDraftFor(agentProfileById(agentId)) || {}),
-  };
-  uiState.agentDrafts[draftKey] = {
-    ...currentDraft,
-    ...patch,
-  };
-  return uiState.agentDrafts[draftKey];
-}
-
-function updateAgentChannelDraft(agentId, channelId, patch) {
-  const currentDraft = mergeAgentDraft(agentId, {});
-  // Defensive: if channels is still an array (e.g. draft was hydrated before
-  // normalizeChannelsForDraft was in place, or a server payload shape change
-  // slips through), coerce to object keyed by channel.id. Writing into an
-  // array with a string key silently drops the edit on JSON.stringify.
-  const channels = normalizeChannelsForDraft(currentDraft.channels);
-  channels[channelId] = {
-    ...(channels[channelId] || { id: channelId }),
-    ...patch,
-  };
-  return mergeAgentDraft(agentId, { channels });
-}
-
-function currentAgentScrollKey() {
-  if (uiState.bootstrap?.settings?.activeView !== 'agent' && !(uiState.bootstrap?.settings?.activeView === 'customize' && uiState.bootstrap?.settings?.selectedCustomizeSection === 'agents')) {
-    return null;
-  }
-
-  const selected = selectedAgentProfile();
-  if (!selected) {
-    return null;
-  }
-
-  return `${selectedAgentScope()}:${activeProject()?.id || 'global'}:${selected.id}`;
-}
-
-function currentAgentEditorStateKey() {
-  if (uiState.bootstrap?.settings?.activeView !== 'agent' && !(uiState.bootstrap?.settings?.activeView === 'customize' && uiState.bootstrap?.settings?.selectedCustomizeSection === 'agents')) {
-    return null;
-  }
-
-  const selected = selectedAgentProfile();
-  if (!selected) {
-    return null;
-  }
-
-  const scope = selectedAgentScope();
-  const projectId = scope === 'project' ? activeProject()?.id || 'global' : 'global';
-  return `${scope}:${projectId}:${selected.id}:${uiState.agentEditorTab}`;
-}
-
-function captureAgentEditorState() {
-  if (uiState.bootstrap?.settings?.activeView !== 'agent' && !(uiState.bootstrap?.settings?.activeView === 'customize' && uiState.bootstrap?.settings?.selectedCustomizeSection === 'agents')) {
-    return;
-  }
-
-  const editor = document.querySelector('.agent-content-editor');
-  const stateKey = currentAgentEditorStateKey();
-  if (!(editor instanceof HTMLTextAreaElement) || !stateKey) {
-    return;
-  }
-
-  uiState.agentEditorStates[stateKey] = {
-    scrollTop: editor.scrollTop,
-    selectionStart: editor.selectionStart,
-    selectionEnd: editor.selectionEnd,
-    focused: document.activeElement === editor,
-  };
-}
-
-function captureAgentScrollState() {
-  if (uiState.bootstrap?.settings?.activeView !== 'agent' && !(uiState.bootstrap?.settings?.activeView === 'customize' && uiState.bootstrap?.settings?.selectedCustomizeSection === 'agents')) {
-    return;
-  }
-
-  const listPane = document.querySelector('.agent-list-pane');
-  if (listPane instanceof HTMLElement) {
-    uiState.agentListScrollTop = listPane.scrollTop;
-  }
-
-  const detailPane = document.querySelector('.agent-detail-column');
-  const scrollKey = currentAgentScrollKey();
-  if (detailPane instanceof HTMLElement && scrollKey) {
-    uiState.agentDetailScrollTops[scrollKey] = detailPane.scrollTop;
-  }
-}
-
-function restoreAgentScrollState() {
-  if (uiState.bootstrap?.settings?.activeView !== 'agent' && !(uiState.bootstrap?.settings?.activeView === 'customize' && uiState.bootstrap?.settings?.selectedCustomizeSection === 'agents')) {
-    return;
-  }
-
-  const listPane = document.querySelector('.agent-list-pane');
-  if (listPane instanceof HTMLElement) {
-    listPane.scrollTop = uiState.agentListScrollTop || 0;
-  }
-
-  const detailPane = document.querySelector('.agent-detail-column');
-  const scrollKey = currentAgentScrollKey();
-  if (detailPane instanceof HTMLElement && scrollKey) {
-    detailPane.scrollTop = uiState.agentDetailScrollTops[scrollKey] || 0;
-  }
-}
-
 // Generic form-input focus + caret preservation across the app-wide
 // incremental updates in render(). This fallback also covers replaced pages. Any render
 // triggered mid-typing (autosave spinner, 4-second runtime refresh, toast
@@ -1912,79 +1642,6 @@ function restoreFocusedInputState(state) {
   if (typeof state.scrollTop === 'number' && input instanceof HTMLTextAreaElement) {
     input.scrollTop = state.scrollTop;
   }
-}
-
-function restoreAgentEditorState() {
-  if (uiState.bootstrap?.settings?.activeView !== 'agent') {
-    return;
-  }
-
-  const stateKey = currentAgentEditorStateKey();
-  if (!stateKey) {
-    return;
-  }
-
-  const editorState = uiState.agentEditorStates[stateKey];
-  if (!editorState && !uiState.shouldFocusAgentEditor) {
-    return;
-  }
-
-  window.requestAnimationFrame(() => {
-    const editor = document.querySelector('.agent-content-editor');
-    if (!(editor instanceof HTMLTextAreaElement) || stateKey !== currentAgentEditorStateKey()) {
-      return;
-    }
-    // A user may focus/select text between render and this animation frame.
-    // Never replace that newer selection with the previous render's caret.
-    if (document.activeElement === editor) return;
-
-    if (editorState?.focused) {
-      // CRITICAL: in WKWebView, calling textarea.setSelectionRange(...) has
-      // the side-effect of implicitly focusing the textarea — even though
-      // we're only trying to "remember" where the caret was. That means the
-      // anotherFieldFocused guard below used to be too late: by the time we
-      // checked document.activeElement, setSelectionRange had already
-      // stolen focus from the user's currently-typed input (e.g. the
-      // Discord/Telegram Bot token, Group ID, or Channel ID field that
-      // lives in the same form as IDENTITY.md). We now gate the whole
-      // scroll + setSelectionRange + focus restore behind the same guard,
-      // so a background re-render landing mid-typing doesn't touch the
-      // IDENTITY.md editor at all. The editor's selection will be
-      // re-applied the next time it actually gets focus.
-      const active = document.activeElement;
-      const anotherFieldFocused =
-        active !== editor &&
-        (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement);
-
-      if (!anotherFieldFocused) {
-        editor.scrollTop = editorState.scrollTop || 0;
-        const maxPosition = editor.value.length;
-        const selectionStart = Math.min(editorState.selectionStart ?? maxPosition, maxPosition);
-        const selectionEnd = Math.min(editorState.selectionEnd ?? selectionStart, maxPosition);
-        try {
-          editor.setSelectionRange(selectionStart, selectionEnd);
-        } catch {}
-
-        if (editorState.focused) {
-          editor.focus({ preventScroll: true });
-        }
-      }
-    }
-
-    if (uiState.shouldFocusAgentEditor) {
-      editor.focus({ preventScroll: true });
-      editor.selectionStart = editor.selectionEnd = editor.value.length;
-      uiState.shouldFocusAgentEditor = false;
-    }
-  });
-}
-
-function agentPresetById(presetId) {
-  return uiState.bootstrap?.customize?.agentPresets?.find(preset => preset.id === presetId) || null;
-}
-
-function agentToolOptions() {
-  return uiState.bootstrap?.customize?.agentTools || [];
 }
 
 function selectedCustomizeItem() {
@@ -2760,41 +2417,6 @@ function syncSearchFileStream(query = uiState.searchQuery) {
   source.addEventListener('done', finish);
   source.addEventListener('error', finish);
   render();
-}
-
-function selectedAgentNeedsRuntimeRefresh() {
-  if (uiState.bootstrap?.settings?.activeView !== 'agent') {
-    return false;
-  }
-
-  const selected = selectedAgentProfile();
-  if (!selected) {
-    return false;
-  }
-
-  const discordChannel =
-    selected.channels?.find?.(channel => channel.id === 'discord') ||
-    selected.channels?.discord;
-
-  return Boolean(discordChannel?.enabled);
-}
-
-function syncAgentRuntimeRefresh() {
-  window.clearTimeout(agentRuntimeRefreshTimer);
-
-  if (!selectedAgentNeedsRuntimeRefresh()) {
-    return;
-  }
-
-  agentRuntimeRefreshTimer = window.setTimeout(async () => {
-    if (!selectedAgentNeedsRuntimeRefresh()) {
-      return;
-    }
-
-    try {
-      await loadBootstrap(uiState.searchQuery, { quiet: true });
-    } catch {}
-  }, 4000);
 }
 
 function scheduleSearchRefresh() {
@@ -5163,389 +4785,6 @@ async function handleRefreshModelStatus() {
   await loadBootstrap(uiState.searchQuery, { quiet: true });
 }
 
-async function handleCreateCustomAgent() {
-  if (uiState.agentCreating) return;
-  uiState.agentCreating = true;
-  render();
-  try {
-    const payload = await api('/api/agents/create-custom', { method: 'POST', body: {} });
-    applyBootstrap(payload);
-    const form = app.querySelector('form[data-form="agent-profile-update"]');
-    if (form) settingsFormEditors.begin(form);
-    render();
-    app.querySelector('form[data-form="agent-profile-update"] [name="name"]')?.select();
-  } finally {
-    uiState.agentCreating = false;
-    const button = app.querySelector('[data-action="create-custom-agent"]');
-    if (button) { button.disabled = false; button.textContent = t('新增 Agent'); }
-  }
-}
-
-async function handleUpdateAgentProfile(form) {
-  const formData = new FormData(form);
-  const project = activeProject();
-  const scope = selectedAgentScope();
-  const projectId = scope === 'project' ? project?.id || 'global' : 'global';
-  const saveKey = agentSaveKey(form.dataset.agentId, scope, projectId);
-  const draftKey = agentDraftKey(form.dataset.agentId, scope, project?.id || 'global');
-  const patch = buildAgentProfilePatch(form, formData);
-  const avatarDraft = agentDraftFor(agentProfileById(form.dataset.agentId));
-  if (Object.hasOwn(avatarDraft || {}, 'avatarData')) patch.avatarData=avatarDraft.avatarData;
-
-  const minimumVisibleMs = 100;
-  const waitForMinimumVisibleState = new Promise(resolve => setTimeout(resolve, minimumVisibleMs));
-
-  uiState.agentSaveStates[saveKey] = true;
-  bgRender();
-
-  try {
-    const payload = await api('/api/agents/update', {
-      method: 'POST',
-      body: {
-        agentId: form.dataset.agentId,
-        scope,
-        projectId: scope === 'project' ? project?.id : null,
-        activeView: uiState.bootstrap?.settings?.activeView || 'customize',
-        patch,
-      },
-    });
-    await waitForMinimumVisibleState;
-    delete uiState.agentDrafts[draftKey];
-    applyBootstrap(payload);
-    if (payload.agentExportWarning) showError(payload.agentExportWarning);
-    const activeTtsConfig = uiState.bootstrap?.settings?.config || {};
-    const savedVoiceId = String(patch.minimaxVoiceId || '').trim();
-    if (
-      activeTtsConfig.ttsProvider === 'minimax' &&
-      savedVoiceId &&
-      activeTtsConfig.minimaxVoiceId === savedVoiceId
-    ) {
-      api('/api/settings/model', {
-        method: 'POST',
-        body: minimaxTtsConfigPatchForVoice(savedVoiceId),
-      }).then(nextPayload => applyBootstrapPreservingDrafts(nextPayload)).catch(() => {});
-    }
-  } finally {
-    await waitForMinimumVisibleState;
-    delete uiState.agentSaveStates[saveKey];
-    render();
-  }
-}
-
-async function handleTestAgentChannel(trigger) {
-  const form = trigger.closest('form');
-  if (!(form instanceof HTMLFormElement)) {
-    return;
-  }
-
-  // Test the persisted channel. Drafts are committed only by Save.
-  const channelId = trigger.dataset.channelId;
-  const project = activeProject();
-  const scope = selectedAgentScope();
-  const patch = {};
-
-  const payload = await api('/api/agents/channel/test', {
-    method: 'POST',
-    body: {
-      agentId: form.dataset.agentId,
-      channelId,
-      scope,
-      projectId: scope === 'project' ? project?.id : null,
-      patch,
-    },
-  });
-  applyBootstrap(payload);
-}
-
-async function saveAgentMarkdownSnapshot(snapshot) {
-  if (!snapshot?.agentId) {
-    return;
-  }
-
-  const requestSequence = ++agentMarkdownAutosaveSequence;
-  const payload = await api('/api/agents/update', {
-    method: 'POST',
-    body: {
-      agentId: snapshot.agentId,
-      scope: snapshot.scope,
-      projectId: snapshot.scope === 'project' ? snapshot.projectId : null,
-      activeView: uiState.bootstrap?.settings?.activeView || 'agent',
-      patch: {
-        identity: String(snapshot.identity || '').trim(),
-        'soul.md': String(snapshot.soulMd || '').trim(),
-      },
-    },
-  });
-
-  if (requestSequence !== agentMarkdownAutosaveSequence) {
-    return;
-  }
-
-  uiState.bootstrap = payload;
-  uiState.error = '';
-}
-
-async function saveAgentChannelSnapshot(snapshot) {
-  if (!snapshot?.agentId || !snapshot?.channels) {
-    return;
-  }
-
-  const saveKey = agentSaveKey(
-    snapshot.agentId,
-    snapshot.scope,
-    snapshot.scope === 'project' ? snapshot.projectId || 'global' : 'global',
-  );
-  const minimumVisibleMs = 100;
-  const waitForMinimumVisibleState = new Promise(resolve => setTimeout(resolve, minimumVisibleMs));
-  const requestSequence = ++agentChannelAutosaveSequence;
-  // Mark the save-in-progress flag, but do NOT render here. A render() in the
-  // middle of the save pipeline blows away document.activeElement and the
-  // input caret position, which is exactly what caused "光标会自动跳到最上面
-  // 输入金冬天id的那个输入框" — the user's caret was yanked out of the Discord
-  // Group ID input the moment the 3-second idle timer fired. Any UI that
-  // depends on agentSaveStates (the "Saving…" button label) will pick up the
-  // new flag on the next render triggered by an actual DOM event (keystroke,
-  // scroll, focus), which is visually indistinguishable at human timescales.
-  uiState.agentSaveStates[saveKey] = true;
-
-  // Channel autosave also carries the three voice settings edited on the
-  // channel voice section (voiceReplyMode, edgeTtsVoice, voicePersonality). They are
-  // agent-level, not nested under channels, but they share the same autosave
-  // trigger so the user never has to hit a separate save button. Only include
-  // them when they are present on the snapshot to avoid overwriting a saved
-  // value with undefined on unrelated autosaves.
-  const patch = { channels: snapshot.channels };
-  if (typeof snapshot.voiceReplyMode === 'string') {
-    patch.voiceReplyMode = snapshot.voiceReplyMode;
-  }
-  if (typeof snapshot.edgeTtsVoice === 'string') {
-    patch.edgeTtsVoice = snapshot.edgeTtsVoice;
-  }
-  if (typeof snapshot.voicePersonality === 'string') {
-    patch.voicePersonality = snapshot.voicePersonality;
-  }
-
-  try {
-    const payload = await api('/api/agents/update', {
-      method: 'POST',
-      body: {
-        agentId: snapshot.agentId,
-        scope: snapshot.scope,
-        projectId: snapshot.scope === 'project' ? snapshot.projectId : null,
-        activeView: uiState.bootstrap?.settings?.activeView || 'agent',
-        patch,
-      },
-    });
-
-    if (requestSequence !== agentChannelAutosaveSequence) {
-      return;
-    }
-
-    await waitForMinimumVisibleState;
-    // Use the preserving variant so the user's still-typing draft isn't
-    // discarded when this autosave response lands. Without this, every
-    // 3-second autosave rebuilt the agent form from server-side state and
-    // silently dropped any chars typed during the round-trip.
-    applyBootstrapPreservingDrafts(payload, { background: true });
-  } finally {
-    await waitForMinimumVisibleState;
-    if (requestSequence === agentChannelAutosaveSequence) {
-      delete uiState.agentSaveStates[saveKey];
-      // Background-render: if the user is still typing, the typing guard in
-      // render() will defer until they go idle. Prevents the autosave landing
-      // from yanking the caret out of whatever input they're still editing.
-      render({ background: true });
-    }
-  }
-}
-
-function scheduleAgentChannelAutosave(agentId) {
-  const agent = agentProfileById(agentId);
-  const draft = agentDraftFor(agent);
-  if (!agent || !draft) {
-    return;
-  }
-
-  // Capture the current draft including agent-level voice fields edited on the
-  // channel voice section so saveAgentChannelSnapshot can forward them. Using draft
-  // values (not DOM reads) avoids losing in-flight edits when the autosave
-  // timer fires after the user has moved focus.
-  pendingAgentChannelAutosave = {
-    agentId,
-    scope: selectedAgentScope(),
-    projectId: activeProject()?.id || null,
-    // normalizeChannelsForDraft defends against the server→client array shape
-    // leaking into the POST body. Server expects {telegram:{...}, discord:{...}},
-    // not [{id:'telegram',...}].
-    channels: normalizeChannelsForDraft(draft.channels),
-    voiceReplyMode:
-      typeof draft.voiceReplyMode === 'string' ? draft.voiceReplyMode : undefined,
-    edgeTtsVoice:
-      typeof draft.edgeTtsVoice === 'string' ? draft.edgeTtsVoice : undefined,
-    voicePersonality:
-      typeof draft.voicePersonality === 'string' ? draft.voicePersonality : undefined,
-  };
-
-  window.clearTimeout(agentChannelAutosaveTimer);
-  // 3-second idle debounce. The user explicitly asked for "输入了一半三秒没动作
-  // 就自动保存一下已经输入的内容" — fire only after the user has stopped typing
-  // for 3 full seconds. The old 350ms threshold triggered mid-typing, which
-  // combined with the full-DOM re-render on save response caused caret jumps
-  // and focus loss between keystrokes.
-  agentChannelAutosaveTimer = window.setTimeout(async () => {
-    const snapshot = pendingAgentChannelAutosave;
-    pendingAgentChannelAutosave = null;
-    try {
-      await saveAgentChannelSnapshot(snapshot);
-    } catch (error) {
-      showError(error.message);
-    }
-  }, 3000);
-}
-
-function scheduleAgentMarkdownAutosave(agentId) {
-  const agent = agentProfileById(agentId);
-  const draft = agentDraftFor(agent);
-  if (!agent || !draft) {
-    return;
-  }
-
-  pendingAgentMarkdownAutosave = {
-    agentId,
-    scope: selectedAgentScope(),
-    projectId: activeProject()?.id || null,
-    identity: draft.identity || draft.identify || '',
-    soulMd: draft['soul.md'] || '',
-  };
-
-  agentMarkdownLastInteractionAt = Date.now();
-
-  window.clearTimeout(agentMarkdownAutosaveTimer);
-  const runWhenIdle = async () => {
-    const remainingIdleMs =
-      AGENT_MARKDOWN_AUTOSAVE_IDLE_MS - (Date.now() - agentMarkdownLastInteractionAt);
-    if (remainingIdleMs > 24) {
-      agentMarkdownAutosaveTimer = window.setTimeout(runWhenIdle, remainingIdleMs);
-      return;
-    }
-
-    const snapshot = pendingAgentMarkdownAutosave;
-    pendingAgentMarkdownAutosave = null;
-    try {
-      await saveAgentMarkdownSnapshot(snapshot);
-    } catch (error) {
-      showError(error.message);
-    }
-  };
-
-  agentMarkdownAutosaveTimer = window.setTimeout(runWhenIdle, AGENT_MARKDOWN_AUTOSAVE_IDLE_MS);
-}
-
-async function flushPendingAgentMarkdownAutosave() {
-  if (!pendingAgentMarkdownAutosave) {
-    return;
-  }
-
-  window.clearTimeout(agentMarkdownAutosaveTimer);
-  const snapshot = pendingAgentMarkdownAutosave;
-  pendingAgentMarkdownAutosave = null;
-  await saveAgentMarkdownSnapshot(snapshot);
-}
-
-// Counterpart to flushPendingAgentMarkdownAutosave for the channel (Discord /
-// Telegram token + guildId + channelId + voiceReply + voiceReplyMode +
-// edgeTtsVoice + voicePersonality) autosave pipeline. Without this, any edit
-// the user made in the Discord Bot token / Guild ID / Channel ID inputs
-// during the 3-second idle window was silently dropped when they switched
-// agents, switched scopes, quit the app, or closed the window — matching the
-// recurring "我昨天就配置好了这些参数，为什么今天打开这些东西又没了" report.
-// See feedback_preserve_user_config.md.
-async function flushPendingAgentChannelAutosave() {
-  if (!pendingAgentChannelAutosave) {
-    return;
-  }
-
-  window.clearTimeout(agentChannelAutosaveTimer);
-  const snapshot = pendingAgentChannelAutosave;
-  pendingAgentChannelAutosave = null;
-  await saveAgentChannelSnapshot(snapshot);
-}
-
-// Best-effort, synchronous flush used on page unload. Uses navigator.sendBeacon
-// when possible so the POST makes it to the server even after the window is
-// closed and the event loop stops ticking. sendBeacon is fire-and-forget and
-// cannot surface a response, so we do not update bootstrap here — the next
-// session will load the freshly-persisted state from state.json anyway.
-function flushPendingAgentAutosavesOnUnload() {
-  const channelSnapshot = pendingAgentChannelAutosave;
-  const markdownSnapshot = pendingAgentMarkdownAutosave;
-  pendingAgentChannelAutosave = null;
-  pendingAgentMarkdownAutosave = null;
-
-  if (channelSnapshot?.agentId && channelSnapshot?.channels) {
-    const patch = { channels: channelSnapshot.channels };
-    if (typeof channelSnapshot.voiceReplyMode === 'string') {
-      patch.voiceReplyMode = channelSnapshot.voiceReplyMode;
-    }
-    if (typeof channelSnapshot.edgeTtsVoice === 'string') {
-      patch.edgeTtsVoice = channelSnapshot.edgeTtsVoice;
-    }
-    if (typeof channelSnapshot.voicePersonality === 'string') {
-      patch.voicePersonality = channelSnapshot.voicePersonality;
-    }
-    const body = JSON.stringify({
-      agentId: channelSnapshot.agentId,
-      scope: channelSnapshot.scope,
-      projectId: channelSnapshot.scope === 'project' ? channelSnapshot.projectId : null,
-      activeView: uiState.bootstrap?.settings?.activeView || 'agent',
-      patch,
-    });
-    try {
-      if (navigator.sendBeacon) {
-        navigator.sendBeacon(
-          '/api/agents/update',
-          new Blob([body], { type: 'application/json' }),
-        );
-      } else {
-        fetch('/api/agents/update', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body,
-          keepalive: true,
-        }).catch(() => {});
-      }
-    } catch {}
-  }
-
-  if (markdownSnapshot?.agentId) {
-    const body = JSON.stringify({
-      agentId: markdownSnapshot.agentId,
-      scope: markdownSnapshot.scope,
-      projectId: markdownSnapshot.scope === 'project' ? markdownSnapshot.projectId : null,
-      activeView: uiState.bootstrap?.settings?.activeView || 'agent',
-      patch: {
-        identity: String(markdownSnapshot.identity || '').trim(),
-        'soul.md': String(markdownSnapshot.soulMd || '').trim(),
-      },
-    });
-    try {
-      if (navigator.sendBeacon) {
-        navigator.sendBeacon(
-          '/api/agents/update',
-          new Blob([body], { type: 'application/json' }),
-        );
-      } else {
-        fetch('/api/agents/update', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body,
-          keepalive: true,
-        }).catch(() => {});
-      }
-    } catch {}
-  }
-}
-
 // 3-second idle autosave for the OpenAI connector / model setup form.
 // Mirrors the agent-channel autosave contract (feedback_preserve_user_config.md):
 // the user pastes a key, walks away from the input, and 3 seconds later
@@ -5697,44 +4936,6 @@ function flushAllPendingAutosavesOnUnload() {
 
 window.addEventListener('pagehide', flushAllPendingAutosavesOnUnload);
 window.addEventListener('beforeunload', flushAllPendingAutosavesOnUnload);
-
-async function handleImportAgentPreset(agentId, presetId) {
-  const preset = agentPresetById(presetId);
-  if (!preset) {
-    showError('Preset not found.');
-    return;
-  }
-
-  const previous = agentDraftFor(agentProfileById(agentId));
-  const instructions = agentDocumentWithPreset(previous?.instructions, preset);
-  mergeAgentDraft(agentId, {
-    instructions,
-    identity: preset.identity || preset.identify,
-    'soul.md': preset.soulMd,
-  });
-  render();
-}
-
-async function handleResetProjectAgentOverride(agentId) {
-  const project = activeProject();
-  if (!project) {
-    showError('Choose a project before resetting an override.');
-    return;
-  }
-
-  const payload = await api('/api/agents/update', {
-    method: 'POST',
-    body: {
-      agentId,
-      scope: 'project',
-      projectId: project.id,
-      activeView: uiState.bootstrap?.settings?.activeView || 'customize',
-      clearProjectOverride: true,
-    },
-  });
-  delete uiState.agentDrafts[agentDraftKey(agentId, 'project', project.id)];
-  applyBootstrap(payload);
-}
 
 // Parse the comma-separated skill form fields (folders, allowedAgentIds,
 // toolWhitelist). Pulled out so create + update share the same
@@ -7721,287 +6922,6 @@ function renderChatsPage() {
               : '<div class="empty-state">No chats match this search yet.</div>'
           }
         </div>
-      </div>
-    </section>
-  `;
-}
-
-function renderAgentCapabilities(selected,draft) {
-  const c=draft?.capabilities || selected.capabilities || selected.capabilityMigration?.proposed;
-  if (!c) return '';
-  const value=k=>draft?.['cap_'+k] ?? c[k];
-  const collaboration=draft?.collaboration || selected.collaboration || {};
-  // One visible switch for delegation. Execution requires both stored flags, so
-  // older data where they disagree shows (and behaves) as off.
-  const checked=k=>(value(k)===true||value(k)==='on')&&(k!=='delegate'||draft?.['cap_delegate']!==undefined||collaboration.canDelegate===true);
-  const pending=selected.pendingCapabilityChange;
-  const settingText=value=>typeof value==='boolean'?t(value?'开启':'关闭'):Array.isArray(value)?value.join(', '):String(value);
-  const pendingChanges=pending ? [
-    ...Object.entries(selected.capabilityLabels||{}).filter(([key])=>pending.requested.capabilities[key]&&!selected.capabilities?.[key]).map(([,label])=>label),
-    ...[['mcpServers','MCP 服务'],['skills','技能'],['connectors','连接器']].flatMap(([key,label])=>pending.requested.capabilities[key].filter(id=>!selected.capabilities?.[key]?.includes(id)).map(id=>`${t(label)}: ${id}`)),
-    ...[['delegateTargets','委派对象'],['maxDelegationDepth','委派深度'],['maxIterations','成员轮数'],['maxTokens','成员 token 上限'],['timeoutMs','成员超时（毫秒）']].filter(([key])=>JSON.stringify(pending.baseline.current.collaboration[key])!==JSON.stringify(pending.requested.collaboration[key])).map(([key,label])=>`${t(label)}: ${settingText(pending.baseline.current.collaboration[key])} → ${settingText(pending.requested.collaboration[key])}`),
-    ...[['projects','项目指引'],['knowledge','共享知识'],['memory','记忆']].filter(([key])=>pending.baseline.current.contextSources[key]!==pending.requested.contextSources[key]).map(([,label])=>`${t(label)}: ${t('开启')}`),
-  ] : [];
-  return ui`<details class="agent-settings-section agent-capabilities" data-agent-section="${selected.id}:capabilities" ${pending || !selected.capabilities || uiState.agentOpenSections[`${selected.id}:capabilities`] ? 'open' : ''}><summary>能力范围与协作</summary><p>关闭的能力在工具执行时拒绝；MCP 服务可自行执行命令，请只授权可信服务。</p><p>这些能力只约束这个 Agent 在电脑上的执行。手机上的联网、生成图片和手机数据，在手机的 Agent 页“这台手机上”单独设置。</p>
-    ${selected.editingScope==='project'?`<p>${escapeHtml(t('项目能力与协作设置只能收紧全局设置；需要更多能力时，请先编辑此 Agent 的全局设置。'))}</p>`:''}
-    ${pending?`<section role="status"><strong>${escapeHtml(t('同步权限变更待桌面确认'))}</strong><p>${escapeHtml(t('收紧部分已生效。以下新增能力及协作、上下文变更尚未生效：'))}</p><p>${escapeHtml(pendingChanges.join('、')||t('协作或上下文设置'))}</p><button type="button" class="small-button" data-action="confirm-agent-settings" data-id="${escapeHtml(pending.id)}" data-expected="${escapeHtml(pending.fingerprint)}" data-accept="true" ${!selected.capabilities?'disabled':''}>${escapeHtml(t('确认应用同步设置'))}</button><button type="button" class="small-button" data-action="confirm-agent-settings" data-id="${escapeHtml(pending.id)}" data-expected="${escapeHtml(pending.fingerprint)}" data-accept="false">${escapeHtml(t('拒绝放宽，保留当前权限'))}</button></section>`:''}
-    <input type="hidden" name="capabilityVersion" value="1">
-    ${!selected.capabilities?`<p>迁移预览：${escapeHtml(selected.capabilityMigration.note)}</p><p>将失去的工具：${escapeHtml([...selected.capabilityMigration.lostTools,...(selected.capabilityMigration.lostActions||[])].join(', ') || '无')}</p><input type="hidden" name="capabilityMigrationExpected" value="${escapeHtml(selected.capabilityMigration.fingerprint)}"><label><input type="checkbox" name="confirmCapabilityMigration" ${draft?.confirmCapabilityMigration==='on'?'checked':''}>确认应用这份能力配置；保存后生效</label>`:''}
-    <div class="agent-capability-flags">${Object.entries(selected.capabilityLabels || {}).map(([key,label])=>`<label class="label"><input type="checkbox" name="cap_${key}" ${checked(key)?'checked':''}>${escapeHtml(t(label))}</label>`).join('')}</div>
-    <div class="agent-settings-grid">${[['skills','技能白名单'],['mcpServers','MCP 服务白名单'],['connectors','连接器白名单']].map(([key,label])=>renderCapabilityChoices('cap_'+key,label,value(key),key==='skills'?selected.capabilityOptions:key==='mcpServers'?(uiState.bootstrap.customize.mcpAuthSurface || []).map(o=>({...o,unavailable:!o.enabled || o.unpinned})):uiState.bootstrap.customize.connectors.filter(o=>o.type==='external-mcp'),escapeHtml)).join('')}</div>
-    <p>${escapeHtml(t('开启“委派”后，这个 Agent 可以把任务交给下面勾选的 Agent，也可以发起多 Agent 协作；没勾选的 Agent 不能被委派或组队。'))}</p>
-    <div class="agent-settings-grid">
-    ${renderCapabilityChoices('delegateTargets','委派对象',draft?.delegateTargets ?? collaboration.delegateTargets,uiState.bootstrap.customize.agents.filter(a=>a.id!==selected.id),escapeHtml)}
-    ${[['maxDelegationDepth','委派深度',1,3],['maxIterations','成员轮数',8,20],['maxTokens','成员 token 上限',32000,200000],['timeoutMs','成员超时（毫秒）',180000,900000]].map(([key,label,fallback,max])=>`<label class="label">${escapeHtml(t(label))}<input class="config-input" type="number" min="1" max="${max}" name="${key}" value="${escapeHtml(String(draft?.[key]??collaboration[key]??fallback))}"></label>`).join('')}
-    </div><p>上下文来源</p><div class="agent-capability-flags">${[['projects','项目指引'],['knowledge','共享知识'],['memory','记忆']].map(([key,label])=>`<label class="checkbox-row"><input type="checkbox" name="context_${key}" ${(draft?.['context_'+key]!==undefined?draft['context_'+key]==='on':selected.contextSources?.[key]!==false)?'checked':''}>${escapeHtml(t(label))}</label>`).join('')}
-  </div></details>`;
-}
-
-function renderAgentPersonaFields(selected, draft) {
-  return ui`
-    ${uiState.bootstrap?.syncPendingPersonas?.some(row => row.kind === 'agent' && row.id === selected.id || row.kind === 'project' && row.id === activeProject()?.id && selectedAgentScope() === 'project') ? ui`<p role="status">此 Agent 的新版人设尚未同步。全文已保留在本机，其他聊天继续同步。</p>` : ''}
-    ${!selected.capabilities ? ui`<p role="status">旧版权限待迁移</p>` : ''}
-    <label class="label">Agent 名称<input class="config-input" name="name" value="${escapeHtml(draft?.name ?? selected.name ?? '')}" /></label>
-    <label class="label">一句话定位<textarea class="textarea agent-control-editor" name="description" rows="2">${escapeHtml(draft?.description ?? selected.description ?? '')}</textarea></label>
-    <label class="label">人设与工作要求<textarea class="textarea agent-content-editor" name="instructions" rows="7" placeholder="可分节填写身份、风格和补充要求。">${escapeHtml(draft?.instructions ?? selected.instructions ?? '')}</textarea></label>
-    <div class="inline-actions agent-document-actions">
-      <label class="small-button agent-file-button">导入 Markdown<input type="file" accept=".md,.txt,text/markdown,text/plain" data-agent-document="${escapeHtml(selected.id)}" /></label>
-      <button class="small-button" type="button" data-action="export-agent-document" data-agent-id="${escapeHtml(selected.id)}">导出 Markdown</button>
-      <span class="meta-label">导入后先预览，点击保存修改生效。</span>
-    </div>`;
-}
-
-function renderAgentWorkbench(selected) {
-  if (!selected) {
-    return ui`<section class="surface-card"><div class="empty-state">新增 Agent，设置它的人设与能力。</div></section>`;
-  }
-
-  const project = activeProject();
-  const scope = selectedAgentScope();
-  const draft = agentDraftFor(selected);
-  const formId = `agent-profile-form-${selected.id}`;
-  const telegramChannel = draft?.channels?.telegram || selected.channels?.find?.(channel => channel.id === 'telegram') || selected.channels?.telegram || {};
-  const discordChannel = draft?.channels?.discord || selected.channels?.find?.(channel => channel.id === 'discord') || selected.channels?.discord || {};
-  const discordSecretVisible = Boolean(
-    uiState.agentSecretVisibility[agentSecretVisibilityKey(selected.id, 'discord')],
-  );
-  // Archived channels have no controls; their saved configuration stays in the draft.
-  // The list follows src/shared/channelAvailability.js so archiving a transport
-  // removes its tab, card and form inputs in one place.
-  const VALID_CHANNEL_TABS = ['telegram', 'discord'].filter(id => isAgentChannelAvailable(id));
-  const activeChannelTab = VALID_CHANNEL_TABS.includes(uiState.agentChannelTab[selected.id])
-    ? uiState.agentChannelTab[selected.id]
-    : (VALID_CHANNEL_TABS[0] || null);
-  const channelTabDefs = [
-    {
-      id: 'telegram',
-      label: 'Telegram',
-      status: telegramChannel.statusLabel || telegramChannel.lastStatus || 'idle',
-      connected: telegramChannel.lastStatus === 'connected',
-      enabled: Boolean(telegramChannel.enabled),
-    },
-    {
-      id: 'discord',
-      label: 'Discord',
-      status: discordChannel.statusLabel || discordChannel.lastStatus || 'idle',
-      connected: discordChannel.lastStatus === 'connected',
-      enabled: Boolean(discordChannel.enabled),
-    },
-  ];
-
-  return ui`
-    <section class="surface-card agent-workbench-card">
-      <div class="agent-scope-row">
-        <span class="meta-label">设置范围</span>
-        <div class="chip-row">
-          <button class="chip chip-button ${scope === 'global' ? 'is-accent' : ''}" type="button" data-action="switch-agent-scope" data-scope="global">全局默认</button>
-          ${project ? ui`<button class="chip chip-button ${scope === 'project' ? 'is-accent' : ''}" type="button" data-action="switch-agent-scope" data-scope="project">${escapeHtml(project.name)}</button>` : ''}
-        </div>
-      </div>
-
-      <form
-        id="${formId}"
-        class="config-form"
-        data-form="agent-profile-update"
-        data-agent-id="${selected.id}"
-      >
-        <section class="agent-settings-section agent-identity-section">
-        <div class="agent-avatar-editor">${renderAgentAvatar({...selected,...draft}, escapeHtml, 40)}<label class="small-button agent-file-button">上传头像<input type="file" accept="image/png,image/jpeg,image/webp" data-agent-avatar="${escapeHtml(selected.id)}" aria-label="上传Agent头像"></label>${agentDraftFor(selected)?.avatarData?ui`<button type="button" class="small-button" data-action="clear-agent-avatar" data-agent-id="${escapeHtml(selected.id)}">恢复默认</button>`:''}<span>头像只保存在 Melo，预览后点击保存修改生效。</span></div>
-        ${renderAgentPersonaFields(selected, draft)}
-
-        <label class="label">
-          模型覆盖
-          <input
-            class="config-input"
-            type="text"
-            name="model"
-            value="${escapeHtml(draft?.model || '')}"
-            placeholder="留空使用全局模型"
-          />
-        </label>
-
-        </section>
-        ${renderAgentCapabilities(selected, draft)}
-
-        <details class="agent-settings-section agent-channels" data-agent-section="${selected.id}:channels" ${uiState.agentOpenSections[`${selected.id}:channels`] ? 'open' : ''}>
-          <summary>消息渠道</summary>
-          <p class="agent-section-note">${
-            VALID_CHANNEL_TABS.length
-              ? 'Telegram 已归档，原有配置与历史对话保留。'
-              : 'Telegram 与 Discord 已暂时归档：不轮询、不外发、不加入语音频道；原有 token、ID 与历史对话全部保留，恢复后无需重新配置。'
-          }</p>
-        <section class="selected-file-card agent-channel-voice">
-                  <label class="label">
-                    语音回复模式
-                    <select class="config-select" name="voiceReplyMode">
-                      <option value="summary" ${(draft?.voiceReplyMode || 'summary') === 'summary' ? 'selected' : ''}>简短口述摘要</option>
-                      <option value="full" ${draft?.voiceReplyMode === 'full' ? 'selected' : ''}>朗读完整回复</option>
-                      <option value="off" ${draft?.voiceReplyMode === 'off' ? 'selected' : ''}>不发送语音</option>
-                    </select>
-                  </label>
-                  <label class="label">
-                    Edge TTS 音色
-                    <input class="config-input" name="edgeTtsVoice" value="${escapeHtml(
-                      draft?.edgeTtsVoice || '',
-                    )}" placeholder="自动选择音色" />
-                  </label>
-                  <label class="label">
-                    语音风格要求
-                    <textarea class="textarea" name="voicePersonality" rows="3" placeholder="可选：语气、常用表达或语言要求">${escapeHtml(
-                      draft?.voicePersonality || '',
-                    )}</textarea>
-                  </label>
-        </section>
-
-        <div class="agent-channel-tabs" role="tablist">
-          ${channelTabDefs
-            .filter(tab => isAgentChannelAvailable(tab.id))
-            .map(
-              tab => ui`
-                <button
-                  type="button"
-                  role="tab"
-                  class="agent-channel-tab ${activeChannelTab === tab.id ? 'is-active' : ''} ${tab.enabled ? 'is-enabled' : ''}"
-                  data-action="switch-agent-channel-tab"
-                  data-agent-id="${selected.id}"
-                  data-channel-id="${tab.id}"
-                  aria-selected="${activeChannelTab === tab.id ? 'true' : 'false'}"
-                >
-                  <span class="agent-channel-tab-label">${escapeHtml(tab.label)}</span>
-                  <span class="agent-channel-tab-status ${tab.connected ? 'is-accent' : ''}">${escapeHtml(tab.status)}</span>
-                </button>
-              `,
-            )
-            .join('')}
-        </div>
-
-        <div class="agent-channel-panel">
-          ${!isAgentChannelAvailable('discord') ? '' : ui`
-                <section class="selected-file-card agent-channel-card" ${activeChannelTab === 'discord' ? '' : 'hidden'}>
-                  <div class="agent-editor-header">
-                    <div class="agent-editor-heading">
-                      <div class="meta-block-label">Discord</div>
-                      <div class="list-row-meta">通过 Bot token 连接此 Agent。</div>
-                    </div>
-                    <span class="chip ${discordChannel.lastStatus === 'connected' ? 'is-accent' : ''}">
-                      ${escapeHtml(discordChannel.statusLabel || discordChannel.lastStatus || 'idle')}
-                    </span>
-                  </div>
-                  <label class="checkbox-row">
-                    <input type="checkbox" name="discordEnabled" ${discordChannel.enabled ? 'checked' : ''} />
-                    <span>启用 Discord</span>
-                  </label>
-                  <label class="checkbox-row">
-                    <input type="checkbox" name="discordVoiceReply" ${discordChannel.voiceReply ? 'checked' : ''} />
-                    <span>文字回复后发送语音</span>
-                  </label>
-                  <div class="list-row-meta" style="margin:0 0 8px 0;">
-                    上方语音设置应用于此 Agent。
-                  </div>
-                  <label class="label">
-                    Bot token
-                    <div class="secure-input-row">
-                      <input class="config-input" type="${discordSecretVisible ? 'text' : 'password'}" name="discordBotToken" value="${escapeHtml(
-                        discordChannel.botToken || '',
-                      )}" placeholder="Discord bot token" />
-                      <button
-                        class="icon-toggle-button"
-                        type="button"
-                        data-action="toggle-agent-secret"
-                        data-agent-id="${selected.id}"
-                        data-channel-id="discord"
-                        aria-label="${discordSecretVisible ? t('隐藏 Bot token') : t('显示 Bot token')}"
-                        title="${discordSecretVisible ? t('隐藏 Bot token') : t('显示 Bot token')}"
-                      >
-                        ${discordSecretVisible ? icon.eyeOff : icon.eye}
-                      </button>
-                    </div>
-                  </label>
-                  <label class="label">
-                    Discord 服务器 ID
-                    <input class="config-input" type="text" name="discordGuildId" value="${escapeHtml(
-                      discordChannel.guildId || '',
-                    )}" placeholder="Discord guild id" />
-                  </label>
-                  <label class="label">
-                    Discord 频道 ID
-                    <input class="config-input" type="text" name="discordChannelId" value="${escapeHtml(
-                      discordChannel.channelId || '',
-                    )}" placeholder="Discord channel id" />
-                  </label>
-                  ${
-                    discordChannel.lastError
-                      ? ui`<div class="list-row-meta danger-copy">${escapeHtml(discordChannel.lastError)}</div>`
-                      : ''
-                  }
-                  ${renderChannelRuntimeCard(discordChannel)}
-                  <div class="inline-actions">
-                    <button class="small-button" type="button" data-action="test-agent-channel" data-channel-id="discord">
-                      测试 Discord
-                    </button>
-                  </div>
-                </section>
-          `}
-
-        </div>
-
-        </details>
-        <div class="inline-actions">
-          ${
-            scope === 'project' && selected.hasProjectOverride
-              ? ui`
-                <button
-                  class="small-button"
-                  type="button"
-                  data-action="reset-project-agent-override"
-                  data-agent-id="${selected.id}"
-                >
-                  恢复全局设置
-                </button>
-              `
-              : ''
-          }
-        </div>
-      </form>
-    </section>
-  `;
-}
-
-function renderAgentPage() {
-  const selected = selectedAgentProfile();
-  return ui`
-    <section class="page agent-page">
-      <div class="page-grid agent-page-grid">
-        <div class="header-row agent-page-header">
-          <h1 class="page-title compact">Agent</h1>
-          <div class="inline-actions">
-            <select class="config-select agent-select" data-action="select-agent-profile" aria-label="选择 Agent">
-              ${(uiState.bootstrap?.customize?.agents || []).map(agent => ui`<option value="${agent.id}" ${selected?.id === agent.id ? 'selected' : ''}>${escapeHtml(agent.name)}${!agent.capabilities ? ' · '+t('旧版权限待迁移') : ''}</option>`).join('')}
-            </select>
-            <button class="small-button agent-create-button" type="button" data-action="create-custom-agent" ${uiState.agentCreating ? 'disabled' : ''}>${uiState.agentCreating ? t('正在创建…') : t('新增 Agent')}</button>
-          </div>
-        </div>
-        <div class="agent-detail-column">${renderAgentWorkbench(selected)}</div>
       </div>
     </section>
   `;
@@ -10931,10 +9851,6 @@ document.addEventListener('click', async event => {
         catch (error) { showError(error.message); }
         break;
       }
-      case 'confirm-agent-settings': {
-        await api('/api/agent-settings-sync/confirm',{method:'POST',body:{id:trigger.dataset.id,expected:trigger.dataset.expected,accept:trigger.dataset.accept==='true'}});
-        applyBootstrap(await api('/api/bootstrap')); break;
-      }
       case 'resolve-sync-conflict': {
         const settings=trigger.dataset.settings==='true', projectMemory=trigger.dataset.settings==='project-memory';
         const row=(projectMemory?uiState.bootstrap.projectMemoryConflicts:settings?uiState.bootstrap.agentSettingsConflicts:uiState.bootstrap.syncConflicts).find(r=>r.kind===trigger.dataset.kind&&r.id===trigger.dataset.id);
@@ -11021,178 +9937,6 @@ document.addEventListener('click', async event => {
           selectedAgentId: trigger.dataset.agentId || trigger.value || 'main',
         });
         break;
-      case 'create-custom-agent':
-        await handleCreateCustomAgent();
-        break;
-      case 'switch-agent-scope':
-        await flushPendingAgentMarkdownAutosave();
-        await flushPendingAgentChannelAutosave();
-        await patchSettings({
-          activeView:
-            uiState.bootstrap.settings.activeView === 'agent' ? 'agent' : 'customize',
-          selectedCustomizeSection: 'agents',
-          selectedAgentScope: trigger.dataset.scope === 'project' ? 'project' : 'global',
-        });
-        break;
-      case 'export-agent-document': {
-        const draft = agentDraftFor(agentProfileById(trigger.dataset.agentId));
-        const text = draft?.instructions ?? '';
-        if (window.webkit?.messageHandlers?.meloVoice) {
-          const result = await nativeSettings('savePortableArchive', {text, name:'AGENT.md'});
-          showFlashToast(result.cancelled ? t('已取消导出。') : t('已导出 Markdown。'));
-          return;
-        }
-        const url = URL.createObjectURL(new Blob([text], {type:'text/markdown;charset=utf-8'}));
-        const link = document.createElement('a'); link.href=url; link.download='AGENT.md'; link.click();
-        setTimeout(()=>URL.revokeObjectURL(url),1000);
-        return;
-      }
-      case 'select-agent-editor-tab':
-        await flushPendingAgentMarkdownAutosave();
-        await flushPendingAgentChannelAutosave();
-        uiState.agentEditorTab = trigger.dataset.tab === 'soul' ? 'soul' : 'identity';
-        uiState.shouldFocusAgentEditor = true;
-        render();
-        break;
-      case 'import-agent-preset':
-        await handleImportAgentPreset(trigger.dataset.agentId, trigger.dataset.presetId);
-        break;
-      case 'reset-agent-draft': {
-        const agentId = trigger.dataset.agentId;
-        if (agentId) {
-          delete uiState.agentDrafts[agentDraftKey(agentId)];
-          render();
-        }
-        break;
-      }
-      case 'reset-project-agent-override':
-        await handleResetProjectAgentOverride(trigger.dataset.agentId);
-        break;
-      case 'toggle-agent-tool': {
-        const agentId = trigger.dataset.agentId;
-        const toolId = trigger.dataset.toolId;
-        const draftKey = agentDraftKey(agentId);
-        const currentDraft = {
-          ...(uiState.agentDrafts[draftKey] || agentDraftFor(agentProfileById(agentId)) || {}),
-        };
-        const nextTools = new Set(currentDraft.tools || []);
-        if (nextTools.has(toolId)) {
-          nextTools.delete(toolId);
-        } else {
-          nextTools.add(toolId);
-        }
-        currentDraft.tools = [...nextTools];
-        uiState.agentDrafts[draftKey] = currentDraft;
-        render();
-        break;
-      }
-      case 'toggle-agent-skill': {
-        // Toggle a specific skill ID in the per-agent skill whitelist.
-        // null draft value means "no restriction" — first toggle initialises it to [skillId].
-        const agentId = trigger.dataset.agentId;
-        const skillId = trigger.dataset.skillId;
-        const draftKey = agentDraftKey(agentId);
-        const currentDraft = {
-          ...(uiState.agentDrafts[draftKey] || agentDraftFor(agentProfileById(agentId)) || {}),
-        };
-        const currentIds = Array.isArray(currentDraft.enabledSkillIds)
-          ? new Set(currentDraft.enabledSkillIds)
-          : new Set(); // null → treat as empty set so first click adds the skill
-        if (currentIds.has(skillId)) {
-          currentIds.delete(skillId);
-        } else {
-          currentIds.add(skillId);
-        }
-        currentDraft.enabledSkillIds = [...currentIds];
-        uiState.agentDrafts[draftKey] = currentDraft;
-        render();
-        break;
-      }
-      case 'reset-agent-skill-whitelist': {
-        // Reset to "no restriction" (null = all skills allowed)
-        const agentId = trigger.dataset.agentId;
-        const draftKey = agentDraftKey(agentId);
-        const currentDraft = {
-          ...(uiState.agentDrafts[draftKey] || agentDraftFor(agentProfileById(agentId)) || {}),
-        };
-        currentDraft.enabledSkillIds = null;
-        uiState.agentDrafts[draftKey] = currentDraft;
-        render();
-        break;
-      }
-      case 'toggle-agent-connector': {
-        // Toggle a specific external connector ID in the per-agent connector whitelist.
-        const agentId = trigger.dataset.agentId;
-        const connectorId = trigger.dataset.connectorId;
-        const draftKey = agentDraftKey(agentId);
-        const currentDraft = {
-          ...(uiState.agentDrafts[draftKey] || agentDraftFor(agentProfileById(agentId)) || {}),
-        };
-        const currentIds = Array.isArray(currentDraft.enabledConnectorIds)
-          ? new Set(currentDraft.enabledConnectorIds)
-          : new Set();
-        if (currentIds.has(connectorId)) {
-          currentIds.delete(connectorId);
-        } else {
-          currentIds.add(connectorId);
-        }
-        currentDraft.enabledConnectorIds = [...currentIds];
-        uiState.agentDrafts[draftKey] = currentDraft;
-        render();
-        break;
-      }
-      case 'reset-agent-connector-whitelist': {
-        const agentId = trigger.dataset.agentId;
-        const draftKey = agentDraftKey(agentId);
-        const currentDraft = {
-          ...(uiState.agentDrafts[draftKey] || agentDraftFor(agentProfileById(agentId)) || {}),
-        };
-        currentDraft.enabledConnectorIds = null;
-        uiState.agentDrafts[draftKey] = currentDraft;
-        render();
-        break;
-      }
-      case 'toggle-agent-mcp-server': {
-        // Toggle a specific stdio MCP server id in the per-agent whitelist.
-        // No "All servers" sentinel here — MCP defaults to deny-all, the
-        // user has to add each server explicitly.
-        //
-        // Rules:
-        //   - Removing (whitelist already contains the id) is always
-        //     allowed, even when the server is globally disabled. This
-        //     lets the user revoke stale authorisations after toggling
-        //     a server off in Advanced (without it, a re-enable later
-        //     would silently grant the old access back — Codex 🔵
-        //     2026-04-28 audit).
-        //   - Adding a new authorisation for a globally-disabled
-        //     server is refused with a flash-toast pointing the user
-        //     at Advanced. Better than failing silently.
-        const agentId = trigger.dataset.agentId;
-        const mcpServerId = trigger.dataset.mcpServerId;
-        const presetEnabled = trigger.dataset.presetEnabled === '1';
-        const presetUnpinned = trigger.dataset.presetUnpinned === '1';
-        const draftKey = agentDraftKey(agentId);
-        const currentDraft = {
-          ...(uiState.agentDrafts[draftKey] || agentDraftFor(agentProfileById(agentId)) || {}),
-        };
-        // Decision lives in `desktop-ui/agentMcpAuthorise.js` so node:test
-        // can pin the remove-always-allowed / add-refused-on-disabled-or-
-        // unpinned table without simulating click events.
-        const decision = decideAgentMcpAuthAction({
-          currentIds: currentDraft.enabledMcpServerIds,
-          serverId: mcpServerId,
-          presetEnabled,
-          presetUnpinned,
-        });
-        if (decision.action.startsWith('refused-') || decision.action === 'refused-invalid') {
-          if (decision.toast) showFlashToast(decision.toast);
-          break;
-        }
-        currentDraft.enabledMcpServerIds = decision.nextIds;
-        uiState.agentDrafts[draftKey] = currentDraft;
-        render();
-        break;
-      }
       case 'toggle-mcp-preset': {
         // Advanced page MCP toggle — flip the corresponding `enable*Mcp`
         // config flag and re-bootstrap the MCP servers so the change
@@ -11219,46 +9963,6 @@ document.addEventListener('click', async event => {
         }
         break;
       }
-      case 'toggle-agent-secret': {
-        const agentId = trigger.dataset.agentId;
-        const channelId = trigger.dataset.channelId;
-        if (agentId && channelId) {
-          const key = agentSecretVisibilityKey(agentId, channelId);
-          uiState.agentSecretVisibility[key] = !uiState.agentSecretVisibility[key];
-          render();
-        }
-        break;
-      }
-      case 'switch-agent-channel-tab': {
-        const agentId = trigger.dataset.agentId;
-        const channelId = trigger.dataset.channelId;
-        const VALID_TABS = ['telegram', 'discord'].filter(id => isAgentChannelAvailable(id));
-        if (agentId && VALID_TABS.includes(channelId)) {
-          // Flush any pending debounced autosave before switching tabs so
-          // in-flight edits (e.g. a bot token typed <350ms ago) are not lost
-          // when the re-render discards the draft.
-          if (pendingAgentChannelAutosave && pendingAgentChannelAutosave.agentId === agentId) {
-            if (agentChannelAutosaveTimer) {
-              window.clearTimeout(agentChannelAutosaveTimer);
-              agentChannelAutosaveTimer = null;
-            }
-            const snapshot = pendingAgentChannelAutosave;
-            pendingAgentChannelAutosave = null;
-            try {
-              await saveAgentChannelSnapshot(snapshot);
-            } catch (error) {
-              showError(error.message);
-              return;
-            }
-          }
-          uiState.agentChannelTab[agentId] = channelId;
-          render();
-        }
-        break;
-      }
-      case 'test-agent-channel':
-        await handleTestAgentChannel(trigger);
-        break;
       case 'copy-melo-state-path': {
         const path = trigger.dataset.path || '~/.melo/desktop/state.json';
         if (navigator.clipboard?.writeText) {
@@ -11852,10 +10556,6 @@ document.addEventListener('click', async event => {
         render();
         break;
       }
-      case 'clear-agent-avatar': {
-        mergeAgentDraft(trigger.dataset.agentId,{avatarData:''});
-        render(); break;
-      }
       case 'toggle-agent-selector': {
         uiState.agentSelectorOpen = !uiState.agentSelectorOpen;
         render();
@@ -12044,73 +10744,12 @@ document.addEventListener('input', event => {
     return;
   }
 
-  if (target.form?.dataset.form === 'agent-profile-update') {
-    const agentId = target.form.dataset.agentId;
-    if (['telegramBotToken', 'telegramChatId', 'discordBotToken', 'discordGuildId', 'discordChannelId'].includes(target.name)) {
-      const channelId = target.name.startsWith('telegram') ? 'telegram' : 'discord';
-      const fieldName =
-        target.name === 'telegramBotToken' || target.name === 'discordBotToken'
-          ? 'botToken'
-          : target.name === 'telegramChatId'
-            ? 'chatId'
-            : target.name === 'discordGuildId'
-              ? 'guildId'
-              : 'channelId';
-      updateAgentChannelDraft(agentId, channelId, {
-        [fieldName]: target.value,
-      });
-      // Schedule autosave on every keystroke so the token isn't lost if the
-      // user switches tabs or hits the Test button before the field blurs.
-      // Debounced inside scheduleAgentChannelAutosave (350ms).
-      // Settings are committed only by the explicit Save action.
-      return;
-    }
-
-    // voiceReplyMode / edgeTtsVoice / voicePersonality are agent-level fields
-    // edited on the Telegram panel. Persist them through the same channel
-    // autosave pipeline so they don't get lost when applyBootstrap() clears
-    // agent drafts.
-    if (['voiceReplyMode', 'edgeTtsVoice', 'voicePersonality'].includes(target.name)) {
-      mergeAgentDraft(agentId, {
-        [target.name]: target.hasAttribute('data-capability-choice') ? new FormData(target.form).getAll(target.name) : target.type === 'checkbox' ? (target.checked ? 'on' : '') : target.value,
-      });
-      // Settings are committed only by the explicit Save action.
-      return;
-    }
-
-    const nextDraft = mergeAgentDraft(agentId, {
-      [target.name]: target.hasAttribute('data-capability-choice') ? new FormData(target.form).getAll(target.name) : target.type === 'checkbox' ? (target.checked ? 'on' : '') : target.value,
-    });
-    if (target.name === 'identity') {
-      nextDraft.identify = target.value;
-      captureAgentEditorState();
-      // Settings are committed only by the explicit Save action.
-    } else if (target.name === 'soul.md' || target.name === 'instructions') {
-      captureAgentEditorState();
-      // Settings are committed only by the explicit Save action.
-    }
-  }
+  if (handleAgentProfileInput(target)) return;
 });
 
 document.addEventListener(
   'scroll',
-  event => {
-    const target = event.target;
-    if (target instanceof HTMLTextAreaElement && target.classList.contains('agent-content-editor')) {
-      captureAgentEditorState();
-      if (pendingAgentMarkdownAutosave) {
-        agentMarkdownLastInteractionAt = Date.now();
-      }
-      return;
-    }
-
-    if (target instanceof HTMLElement && target.classList.contains('agent-detail-column')) {
-      captureAgentScrollState();
-      if (pendingAgentMarkdownAutosave) {
-        agentMarkdownLastInteractionAt = Date.now();
-      }
-    }
-  },
+  event => handleAgentEditorScroll(event),
   true,
 );
 
@@ -12139,34 +10778,8 @@ document.addEventListener('change', async event => {
     } catch(error) { showError(error.message); }
     render(); return;
   }
-  if (target instanceof HTMLInputElement && target.dataset.agentDocument) {
-    const agentId = target.dataset.agentDocument;
-    const editIsCurrent = settingsFormEditors.editToken(target.form);
-    const key = agentDraftKey(agentId);
-    try {
-      const file=target.files?.[0]; if(!file) return;
-      if(file.size > 1000000) throw new Error('Markdown 文件过大，请控制在 1 MB 内。');
-      const instructions=await file.text();
-      if(instructions.length > 200100) throw new Error('Agent 人设文档超过 200100 字符。');
-      if(!editIsCurrent()) return;
-      uiState.agentDrafts[key]={...agentDraftFor(agentProfileById(agentId)),instructions};
-      render();
-    } catch(error) { showError(error.message); }
-    return;
-  }
-  if (target instanceof HTMLInputElement && target.dataset.agentAvatar) {
-    const isCurrentEdit=settingsFormEditors.editToken(target.form);
-    const draftKey=agentDraftKey(target.dataset.agentAvatar);
-    const originalDraft=agentDraftFor(agentProfileById(target.dataset.agentAvatar));
-    try {
-      const avatarData = await readAgentAvatar(target.files?.[0]);
-      if(!isCurrentEdit()) return;
-      uiState.agentDrafts[draftKey]={...originalDraft,...uiState.agentDrafts[draftKey],avatarData};
-      render();
-    }
-    catch (error) { showError(error.message); }
-    return;
-  }
+  const agentFileChange = handleAgentFileChange(target);
+  if (agentFileChange) { await agentFileChange; return; }
 
   if (
     !(
@@ -12306,80 +10919,7 @@ document.addEventListener('change', async event => {
       return;
     }
 
-    if (target.form?.dataset.form === 'agent-profile-update') {
-      const agentId = target.form.dataset.agentId;
-      if (['telegramEnabled', 'discordEnabled'].includes(target.name)) {
-        const channelId = target.name === 'telegramEnabled' ? 'telegram' : 'discord';
-        updateAgentChannelDraft(agentId, channelId, {
-          enabled: target.checked,
-        });
-        // Settings are committed only by the explicit Save action.
-        render();
-        return;
-      }
-
-      // Send voice reply checkbox: belongs to the Telegram channel (voiceReply),
-      // not to a top-level agent field. Before this was routed through the
-      // fallthrough below and got written to draft[target.name] as the string
-      // "on" — which made render() read back the stale channels.telegram.voiceReply
-      // and visibly bounce the checkbox back to unchecked.
-      if (target.name === 'telegramVoiceReply' || target.name === 'discordVoiceReply') {
-        const channelId = target.name === 'telegramVoiceReply' ? 'telegram' : 'discord';
-        updateAgentChannelDraft(agentId, channelId, {
-          voiceReply: target.checked,
-        });
-        // Settings are committed only by the explicit Save action.
-        render();
-        return;
-      }
-
-      if (['telegramBotToken', 'telegramChatId', 'discordBotToken', 'discordGuildId', 'discordChannelId'].includes(target.name)) {
-        const channelId = target.name.startsWith('telegram') ? 'telegram' : 'discord';
-        const fieldName =
-          target.name === 'telegramBotToken' || target.name === 'discordBotToken'
-            ? 'botToken'
-            : target.name === 'telegramChatId'
-              ? 'chatId'
-              : target.name === 'discordGuildId'
-                ? 'guildId'
-                : 'channelId';
-        updateAgentChannelDraft(agentId, channelId, {
-          [fieldName]: target.value,
-        });
-        // Settings are committed only by the explicit Save action.
-        return;
-      }
-
-      // voiceReplyMode / edgeTtsVoice / voicePersonality are agent-level (not
-      // channel-level) but the user edits them on the Telegram panel next to
-      // the channel toggles. Route them through the channel autosave so they
-      // persist on change without requiring the user to hit a separate save
-      // button.
-      if (['voiceReplyMode', 'edgeTtsVoice', 'voicePersonality'].includes(target.name)) {
-        mergeAgentDraft(agentId, {
-          [target.name]: target.hasAttribute('data-capability-choice') ? new FormData(target.form).getAll(target.name) : target.type === 'checkbox' ? (target.checked ? 'on' : '') : target.value,
-        });
-        // Settings are committed only by the explicit Save action.
-        // Same rule as the generic branch below (2026-10-17): a text field's
-        // blur fires `change` on the pointerdown of the Save click; a full
-        // render here replaced the button mid-click and swallowed the save.
-        // Only the <select> needs an immediate repaint.
-        if (target instanceof HTMLSelectElement) render();
-        return;
-      }
-
-      const nextDraft = mergeAgentDraft(agentId, {
-        [target.name]: target.hasAttribute('data-capability-choice') ? new FormData(target.form).getAll(target.name) : target.type === 'checkbox' ? (target.checked ? 'on' : '') : target.value,
-      });
-      if (target.name === 'identity') {
-        nextDraft.identify = target.value;
-      }
-      // Text/number blur precedes the Save click. Replacing the form here
-      // detaches that button mid-click and can also reset its input value.
-      if (target instanceof HTMLSelectElement || ['checkbox', 'radio'].includes(target.type)) {
-        render();
-      }
-    }
+    if (handleAgentProfileChange(target)) return;
   } catch (error) {
     showError(error.message);
   }
@@ -12462,9 +11002,6 @@ document.addEventListener('submit', async event => {
         await loadBootstrap(uiState.searchQuery,{quiet:true});
         break;
       }
-      case 'agent-profile-update':
-        await handleUpdateAgentProfile(form);
-        break;
       case 'connector-config':
         await handleSaveConnectorConfig(form);
         break;
