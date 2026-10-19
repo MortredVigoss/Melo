@@ -74,7 +74,7 @@
     },
     "approvals": {
       "title": "授权、审批与任务",
-      "owns": ["src/services/approval/**", "src/domain/approval/**", "src/services/task/**", "src/domain/task/**", "src/tasks/**", "src/reminders/**", "src/safety/**", "src/services/activity/**", "src/domain/activity/**", "desktop-ui/fileSafetyResponse.js"],
+      "owns": ["src/services/approval/**", "src/domain/approval/**", "src/services/task/**", "src/domain/task/**", "src/tasks/**", "src/reminders/**", "src/safety/**", "src/services/activity/**", "src/domain/activity/**", "desktop-ui/fileSafetyResponse.js", "desktop-ui/features/approvals/**"],
       "routes": ["/api/approvals", "/api/tasks", "/api/tools/", "/api/permissions/", "/api/safety/"],
       "testGroups": ["test:audit-fixes"],
       "notes": ["手机审批队列仍在 ChatStore.swift（P4 抽 DeviceApprovalCoordinator）；超时/取消后迟到批准零写入，两端共同约定。"]

@@ -597,19 +597,6 @@ button {
   margin: 0 auto;
 }
 
-/* Anchor wrapper: positions the floating dropdown relative to the chip.
-   inline-flex + align-items:center makes the anchor's height == chip button
-   height exactly, so top:50% on the absolute dropdown resolves to the chip's
-   true vertical midpoint. align-self:center prevents flex-parent stretching. */
-.agent-chip-anchor {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  align-self: center;
-  margin-top: 36px;
-  margin-bottom: 36px;
-}
-
 .greeting {
   display: inline-flex;
   align-items: center;
@@ -630,29 +617,6 @@ button {
   color: #ff8d68;
 }
 
-.composer-shell {
-  width: min(900px, 100%);
-}
-
-.composer-card {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 100%),
-    rgba(255, 255, 255, 0.025);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: var(--shadow);
-  border-radius: var(--radius-xl);
-  padding: 10px;
-}
-
-.composer-card.is-thread {
-  position: relative;
-  bottom: auto;
-  margin-top: 0;
-  background: rgba(32,29,23, 0.96);
-  backdrop-filter: blur(22px);
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.24);
-}
-
 .command-deck {
   display: grid;
   gap: 12px;
@@ -661,133 +625,6 @@ button {
 
 .command-deck.is-inline {
   gap: 10px;
-}
-
-.composer-form {
-  display: grid;
-  gap: 10px;
-}
-
-.composer-core {
-  display: flex;
-  flex-direction: column-reverse;
-  gap: 6px;
-}
-
-.composer-input-frame {
-  display: grid;
-  gap: 10px;
-  padding: 6px 10px;
-  border-radius: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent),
-    rgba(8,8,7, 0.18);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
-}
-
-.composer-input-frame.is-recording {
-  border-color: rgba(164,122,43, 0.34);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.03),
-    0 0 0 1px rgba(164,122,43, 0.16);
-}
-
-.composer-input-frame.is-drop-target {
-  border-color: rgba(164,122,43, 0.4);
-  background:
-    linear-gradient(180deg, rgba(164,122,43, 0.08), transparent),
-    rgba(8,8,7, 0.18);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.03),
-    0 0 0 1px rgba(164,122,43, 0.18),
-    0 18px 34px rgba(65,48,17, 0.18);
-}
-
-/* Phase 3.3.3 — slash-command palette popover inside the composer frame. */
-.slash-palette {
-  display: grid;
-  gap: 2px;
-  background: rgba(24,22,18, 0.98);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
-  padding: 6px;
-  max-height: 260px;
-  overflow-y: auto;
-  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.38);
-}
-
-.slash-palette-item {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  column-gap: 10px;
-  row-gap: 2px;
-  align-items: baseline;
-  text-align: left;
-  padding: 8px 10px;
-  border-radius: 10px;
-  background: transparent;
-  border: none;
-  color: rgba(255, 255, 255, 0.9);
-  cursor: pointer;
-  font: inherit;
-}
-
-.slash-palette-item:hover,
-.slash-palette-item.is-active {
-  background: rgba(164,122,43, 0.12);
-}
-
-.slash-palette-id {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 13px;
-  color: rgba(164,122,43, 0.95);
-  white-space: nowrap;
-}
-
-.slash-palette-name {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.88);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.slash-palette-desc {
-  grid-column: 2;
-  font-size: 12px;
-  color: var(--text-soft);
-  line-height: 1.35;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-
-.slash-palette-empty,
-.slash-palette-hint {
-  font-size: 12px;
-  color: var(--text-soft);
-  padding: 6px 10px;
-}
-
-.slash-palette-hint {
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
-  margin-top: 4px;
-}
-
-.composer-drop-banner {
-  display: inline-flex;
-  align-items: center;
-  width: fit-content;
-  max-width: 100%;
-  padding: 8px 12px;
-  border-radius: 999px;
-  background: rgba(164,122,43, 0.14);
-  border: 1px solid rgba(164,122,43, 0.24);
-  color: rgba(244,240,233, 0.92);
-  font-size: 13px;
-  line-height: 1.4;
 }
 
 .command-chip-row {
@@ -864,25 +701,6 @@ button {
   background: rgba(255, 255, 255, 0.05);
 }
 
-.composer-textarea {
-  width: 100%;
-  /* Two visible lines, growing to four; keep the same bounds in every layout. */
-  min-height: 48px;
-  max-height: 88px;
-  box-sizing: border-box;
-  border: 0;
-  resize: none;
-  overflow-y: hidden;
-  background: transparent;
-  color: var(--text);
-  outline: none;
-  font-size: 13px;
-  line-height: 20px;
-  padding: 4px 6px;
-  overscroll-behavior-y: contain;
-  scrollbar-width: thin;
-}
-
 .composer-textarea::placeholder,
 .search-input::placeholder,
 .input::placeholder {
@@ -905,41 +723,6 @@ button {
   padding: 0 6px;
 }
 
-.composer-footer-copy {
-  color: var(--text-muted);
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-.composer-footer-copy.is-secondary {
-  color: var(--text-soft);
-}
-
-.composer-bottom-left,
-.composer-bottom-right {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-/* The send/stop icon button must never wrap to a second row when
-   the model picker is visible. Keep the bottom-right cluster on one line. */
-.composer-bottom-right {
-  flex-wrap: nowrap;
-  gap: 8px;
-}
-
-.composer-bottom-left {
-  position: relative;
-}
-
-.composer-status-copy {
-  color: var(--text-soft);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
 .composer-model-select-wrap {
   border-radius: 999px;
   border: 1px solid var(--border);
@@ -954,137 +737,11 @@ button {
   min-width: 104px;
 }
 
-.composer-icon-button {
-  width: 42px;
-  height: 42px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(248,247,244, 0.92);
-  border-radius: 14px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-}
-
-.composer-icon-button:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.composer-icon-button.is-recording {
-  background: linear-gradient(135deg, rgba(122,90,32, 0.88), rgba(181,134,48, 0.92));
-  border-color: transparent;
-  box-shadow: 0 12px 24px rgba(164,122,43, 0.26);
-}
-
-.composer-icon-button.is-primary {
-  border-color: transparent;
-  background: linear-gradient(135deg, #7a5a20, #b58630);
-  box-shadow: 0 14px 24px rgba(164,122,43, 0.22);
-}
-
-.composer-icon-button.is-stop {
-  border-color: rgba(255, 255, 255, 0.14);
-  background: rgba(196, 198, 194, 0.82);
-  color: #201d17;
-  box-shadow: 0 12px 22px rgba(0, 0, 0, 0.22);
-}
-
-.composer-icon-button.is-stop:hover:not(:disabled) {
-  background: rgba(217,212,203, 0.9);
-}
-
-.composer-icon-button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.composer-attachment-menu {
-  position: absolute;
-  left: 0;
-  bottom: calc(100% + 10px);
-  min-width: 176px;
-  padding: 8px;
-  display: grid;
-  gap: 6px;
-  border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(26,24,19, 0.96);
-  box-shadow: 0 22px 46px rgba(0, 0, 0, 0.28);
-  z-index: 4;
-}
-
-.composer-menu-item {
-  border: 0;
-  background: transparent;
-  color: inherit;
-  padding: 10px 12px;
-  border-radius: 12px;
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  text-align: left;
-}
-
-.composer-menu-item:hover {
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.composer-menu-item-text {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  line-height: 1.2;
-}
-
-.composer-menu-item-hint {
-  font-size: 11px;
-  color: var(--text-soft);
-}
-
 .media-caption-hint {
   margin-left: 8px;
   font-size: 11px;
   color: var(--text-soft);
   font-style: italic;
-}
-
-.composer-attachment-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.composer-attachment-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  max-width: 100%;
-  padding: 8px 10px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-}
-
-.composer-attachment-label {
-  max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.composer-attachment-remove {
-  border: 0;
-  background: transparent;
-  color: var(--text-soft);
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  border-radius: 999px;
-}
-
-.composer-attachment-remove:hover {
-  background: rgba(255, 255, 255, 0.08);
 }
 
 .voice-preview {
@@ -1115,10 +772,6 @@ button {
 }
 
 .voice-preview small { color: rgba(243,239,232,.55); font-size: 11px; }
-.voice-language { background: transparent; color: inherit; border: 1px solid rgba(164,122,43,.18); border-radius: 10px; padding: 5px; max-width: 84px; font: inherit; font-size: 11px; }
-.voice-language:focus-visible { outline: 1px solid #c6ac78; }
-@media (max-width: 600px) { .voice-language { max-width: 56px; } }
-
 .composer-footer {
   display: flex;
   flex-wrap: wrap;
@@ -1224,112 +877,9 @@ select option {
   letter-spacing: 0.02em;
 }
 
-/* ── Agent selector chip + dropdown ─────────────────────────────────── */
-
-.chip-btn {
-  cursor: pointer;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  transition: background 0.15s, border-color 0.15s;
-}
-
-.chip-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.18);
-}
-
-.chip-btn.is-active {
-  background: rgba(164,122,43, 0.14);
-  border-color: rgba(164,122,43, 0.3);
-  color: rgba(244,240,233, 0.96);
-}
-
-@keyframes agentDropSlideUp {
-  from { opacity: 0; transform: translateY(-6px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-.agent-selector-dropdown {
-  /* Top-layer positioning escapes the spatial workspace's transformed panels. */
-  position: fixed;
-  inset: auto;
-  margin: 0;
-  z-index: 50;
-  background: rgba(37,34,27, 0.97);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  padding: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  width: 300px;
-  max-width: calc(100vw - 32px);
-  box-sizing: border-box;
-  max-height: min(380px, calc(100vh - 40px));
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(12px);
-}
-
-.agent-selector-slide-up {
-  animation: agentDropSlideUp 0.18s ease-out forwards;
-}
-.agent-selector-dropdown::backdrop {background: transparent;}
-
-.agent-selector-row {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 12px;
-  border-radius: 8px;
-  background: transparent;
-  border: none;
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 13px;
-  cursor: pointer;
-  text-align: left;
-  width: 100%;
-  transition: background 0.12s;
-}
-
-.agent-selector-row:hover, .agent-selector-row:focus-visible {
-  background: rgba(255, 255, 255, 0.07);
-}
-
-.agent-selector-row.is-selected {
-  background: rgba(164,122,43, 0.12);
-  color: rgba(244,240,233, 0.96);
-}
-
-.agent-selector-name {
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
-  font-weight: 500;
-}
-
-.agent-selector-tag {
-  font-size: 10px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.08);
-  opacity: 0.7;
-}
-
 .chip-icon {
   width: 14px;
   height: 14px;
-}
-
-.thread-title-caret {
-  display: inline-flex;
-  width: 16px;
-  height: 16px;
-  margin-left: 8px;
-  vertical-align: middle;
-  color: var(--text-soft);
 }
 
 .hidden-file-input {
@@ -1351,105 +901,6 @@ select option {
   margin-top: 14px;
 }
 
-.chat-thread {
-  width: min(980px, 100%);
-  margin: 0 auto;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  gap: 12px;
-  min-height: 100%;
-  height: 100%;
-  min-width: 0;
-}
-
-/* Row 3 of .chat-thread — wraps the composer + the "jump to latest" floating
-   button so the button can be anchored directly above the composer via
-   bottom: 100%. This tracks the composer's height automatically (multi-line
-   input, slash palette open, attachments, etc.) instead of hard-coding an
-   offset from the viewport bottom. */
-.thread-footer {
-  position: relative;
-  display: grid;
-  gap: 0;
-  min-width: 0;
-}
-
-/* Floating "jump to latest message" button. Mirrors the pattern used by
-   claude.ai: only visible while the user has scrolled away from the bottom,
-   and anchored just above the composer so it doesn't cover the last reply. */
-.thread-scroll-jump-button {
-  position: absolute;
-  /* Sit just above the composer card. bottom: 100% is the top edge of
-     .thread-footer, and the composer is the only content in it. */
-  bottom: calc(100% + 12px);
-  left: 50%;
-  transform: translateX(-50%);
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
-  background: var(--surface-elevated, rgba(30, 30, 32, 0.92));
-  color: var(--text-primary, #f3f3f3);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  cursor: pointer;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
-  z-index: 4;
-  opacity: 0.92;
-  transition: opacity 120ms ease, transform 120ms ease, background 120ms ease;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-}
-
-.thread-scroll-jump-button:hover {
-  opacity: 1;
-  transform: translateX(-50%) translateY(-1px);
-}
-
-.thread-scroll-jump-button:active {
-  transform: translateX(-50%) translateY(0);
-}
-
-.thread-scroll-jump-button svg {
-  width: 16px;
-  height: 16px;
-}
-
-.thread-scroll-region {
-  min-height: 0;
-  overflow-y: auto;
-  padding-right: 4px;
-  /* Extra bottom breathing room so tall interactive viz cards aren't
-     hidden behind the composer when the user scrolls to the bottom. */
-  padding-bottom: 16px;
-  scrollbar-width: none;
-  /* Disable browser scroll anchoring in the chat thread. With anchoring ON,
-     the browser tries to keep a visible element pinned in place when layout
-     above it changes — which in our case manifests as "I scroll to the
-     bottom but the page mysteriously jumps up to an earlier viz card's
-     height". Demon viz cards (especially 3D scene3d ones) can grow from 0
-     to ~400px tall as WebGL initializes a tick or two after the first
-     render; anchoring translates that growth into a scroll-up. */
-  overflow-anchor: none;
-  /* Stop scroll chaining: when user hits the bottom of the thread and keeps
-     swiping (trackpad two-finger / wheel), the browser's default "scroll
-     chaining" propagates the unconsumed scroll up to .content-scroll (also
-     overflow-y: auto). That makes .page.is-chat slide up under the topbar,
-     visually = "拉到底跳到中间". `contain` keeps elastic overscroll bounce
-     at the boundary but blocks the propagation. User-reported month-long
-     bug, root cause found 2026-05-05 after 4 wrong fixes — the previous
-     scroll-writer / viz-anchor / scroll-guard work was all upstream of
-     the actual symptom: this single CSS line is what was missing. */
-  overscroll-behavior-y: contain;
-}
-
-.thread-scroll-region::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-}
-
 .thread-header {
   display: flex;
   align-items: flex-end;
@@ -1463,29 +914,6 @@ select option {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-}
-
-.message-list {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
-  align-content: start;
-  min-width: 0;
-}
-
-/* Long-thread render window: "load earlier" sits above the oldest rendered
-   message, centered instead of stretched across the grid column. */
-.message-list > .thread-load-earlier {
-  justify-self: center;
-  cursor: pointer;
-}
-
-.thinking-banner {
-  width: min(860px, 100%);
-  margin: 0 auto;
-  color: var(--text-soft);
-  font-size: 14px;
-  line-height: 1.5;
 }
 
 .thinking-state {
@@ -1517,56 +945,11 @@ select option {
   }
 }
 
-.message {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 7px;
-  max-width: min(760px, 100%);
-  min-width: 0;
-}
-
-.message.user {
-  justify-self: end;
-}
-
-.message.assistant {
-  justify-self: start;
-}
-
 .message.is-highlighted .message-bubble,
 .message.is-highlighted .message-attachment-card,
 .message.is-highlighted .message-code-block {
   border-color: rgba(164,122,43, 0.34);
   box-shadow: 0 0 0 1px rgba(164,122,43, 0.14);
-}
-
-.message-block-stack {
-  display: grid;
-  gap: 12px;
-}
-
-.message-role {
-  font-size: 12px;
-  color: var(--text-soft);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.message-bubble {
-  border-radius: 22px;
-  padding: 10px 14px;
-  line-height: 1.6;
-  font-size: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.message.user .message-bubble {
-  background: rgba(164,122,43, 0.14);
-  border-color: rgba(164,122,43, 0.2);
-}
-
-.message.assistant .message-bubble {
-  background: rgba(255, 255, 255, 0.03);
 }
 
 .message-bubble p {
@@ -1601,11 +984,6 @@ select option {
 .message-code-block pre {
   margin: 0;
   overflow-x: auto;
-}
-
-.message-bubble a {
-  color: rgba(234,227,215, 0.96);
-  text-decoration: underline;
 }
 
 .message-attachments {
@@ -1895,71 +1273,9 @@ select option {
   padding-left: 4px;
 }
 
-/* ── Message action buttons ─────────────────────────────────────────────── */
-
-.message-actions {
-  display: flex;
-  gap: 4px;
-  opacity: 0.35;
-  transition: opacity 0.15s ease;
-  margin-top: 4px;
-}
-
-.message:hover .message-actions,
-.message.is-highlighted .message-actions,
-.message-action-btn.is-speaking,
-.message-action-btn.is-tts-loading {
-  opacity: 1;
-}
-
-.message-action-btn {
-  width: 28px;
-  height: 28px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: transparent;
-  color: rgba(248,247,244, 0.5);
-  border-radius: 8px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
-}
-
-/* Speaking: green tint — audio is actively playing */
-.message-action-btn.is-speaking {
-  background: rgba(210,167,86, 0.15);
-  border-color: rgba(210,167,86, 0.4);
-  color: rgb(210,167,86);
-}
-
-/* Loading: amber pulse — synthesis in progress, ~15s wait */
-@keyframes tts-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.45; }
-}
-.message-action-btn.is-tts-loading {
-  background: rgba(251, 191, 36, 0.12);
-  border-color: rgba(251, 191, 36, 0.35);
-  color: rgb(251, 191, 36);
-  animation: tts-pulse 1.2s ease-in-out infinite;
-}
-
 .message-action-btn .toolbar-icon {
   width: 14px;
   height: 14px;
-}
-
-.message-action-btn:hover {
-  background: rgba(255, 255, 255, 0.07);
-  color: rgba(248,247,244, 0.9);
-}
-
-.message-action-btn.is-speaking {
-  color: rgba(164,122,43, 0.9);
-  border-color: rgba(164,122,43, 0.3);
-  background: rgba(164,122,43, 0.1);
 }
 
 .audio-card {
@@ -2063,10 +1379,6 @@ select option {
 .page-grid {
   display: grid;
   gap: 22px;
-}
-
-.compact-grid {
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
 .header-row {
@@ -2496,12 +1808,6 @@ select option {
   line-height: 1.45;
 }
 
-.card-grid {
-  display: grid;
-  gap: 18px;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-}
-
 /* Chats list — vertical stack of long rows.
  * Because we cap persisted chats at ~10, the grid was both overkill and made
  * each card compete visually with the sidebar. A single-column list reads
@@ -2816,56 +2122,6 @@ select option {
   margin-top: 22px;
 }
 
-.task-lane-row {
-  margin-bottom: 14px;
-}
-
-.task-lane-overflow-anchor {
-  position: relative;
-}
-
-.task-lane-overflow-toggle {
-  min-width: 32px;
-  padding-left: 10px;
-  padding-right: 10px;
-  font-weight: 600;
-  letter-spacing: 1px;
-}
-
-.task-lane-overflow-menu {
-  position: absolute;
-  left: 0;
-  top: calc(100% + 6px);
-  z-index: 40;
-  display: flex;
-  flex-direction: column;
-  min-width: 180px;
-  padding: 6px;
-  border-radius: 12px;
-  background: var(--surface-2, rgba(30, 30, 40, 0.97));
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.32);
-}
-
-.task-lane-overflow-item {
-  appearance: none;
-  background: transparent;
-  border: 0;
-  color: var(--text-primary, #fff);
-  font-size: 13px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.12s;
-}
-
-.task-lane-overflow-item:hover,
-.task-lane-overflow-item:focus-visible {
-  background: rgba(255, 255, 255, 0.06);
-  outline: none;
-}
-
 .subsection-title {
   margin: 0;
   font-size: 18px;
@@ -2901,10 +2157,6 @@ select option {
   gap: 18px;
 }
 
-.compact-surface-card {
-  padding: 18px;
-}
-
 .code-thread-card,
 .inspector-card {
   padding: 22px;
@@ -2916,11 +2168,6 @@ select option {
   background: rgba(255, 255, 255, 0.02);
   padding: 22px;
   margin-bottom: 18px;
-}
-
-.thread-artifact-strip {
-  padding: 20px;
-  margin-top: 18px;
 }
 
 .artifact-mini-card .card-title {
@@ -3955,15 +3202,6 @@ select option {
     align-items: stretch;
   }
 
-  .chat-thread,
-  .composer-shell {
-    width: 100%;
-  }
-
-  .composer-bottom-right {
-    justify-content: flex-end;
-  }
-
   .chat-home .page-kicker,
   .chat-home .chip-row,
   .chat-home .composer-footer {
@@ -3993,529 +3231,6 @@ select option {
   .search-action-meta {
     grid-column: 2;
   }
-}
-
-/* ─── Tool permission dialog ──────────────────────────────────────────────── */
-
-.tool-permission-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(7,7,6, 0.6);
-  backdrop-filter: blur(14px);
-  display: grid;
-  place-items: center;
-  z-index: 60;
-  padding: 24px;
-}
-
-.tool-permission-shell {
-  width: min(520px, calc(100vw - 48px));
-  border-radius: 26px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(24,22,18, 0.97);
-  box-shadow: 0 32px 70px rgba(0, 0, 0, 0.4);
-  overflow: hidden;
-  display: grid;
-  gap: 0;
-}
-
-.tool-permission-header {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 20px 22px 16px;
-  border-bottom: 1px solid var(--border);
-}
-
-.tool-permission-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  background: var(--teal-soft);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.tool-permission-icon svg {
-  width: 20px;
-  height: 20px;
-  stroke: var(--teal);
-  fill: none;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.tool-permission-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.tool-permission-subtitle {
-  font-size: 13px;
-  color: var(--text-muted);
-  margin-top: 2px;
-}
-
-.tool-permission-body {
-  padding: 16px 22px;
-}
-
-.tool-permission-tool-name {
-  font-family: "SF Mono", "Menlo", "Monaco", monospace;
-  font-size: 14px;
-  color: var(--teal);
-  font-weight: 600;
-  margin-bottom: 10px;
-}
-
-.tool-permission-args {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 12px 14px;
-  font-family: "SF Mono", "Menlo", "Monaco", monospace;
-  font-size: 12px;
-  color: var(--text-muted);
-  margin: 0;
-  overflow-x: auto;
-  max-height: 160px;
-  overflow-y: auto;
-  white-space: pre;
-}
-
-.tool-permission-footer {
-  padding: 14px 22px 20px;
-  border-top: 1px solid var(--border);
-}
-
-/* ─── File-safety dialog (kind: 'file_safety') ─────────────────────────────── */
-
-.file-safety-shell {
-  width: min(620px, calc(100vw - 48px));
-}
-
-.file-safety-row {
-  font-size: 13px;
-  color: var(--text);
-  line-height: 1.55;
-  margin-bottom: 8px;
-  word-break: break-all;
-}
-
-.file-safety-row code {
-  font-family: "SF Mono", "Menlo", "Monaco", monospace;
-  font-size: 12px;
-  background: rgba(255, 255, 255, 0.05);
-  padding: 1px 6px;
-  border-radius: 5px;
-  color: var(--text);
-}
-
-.file-safety-warn {
-  font-size: 13px;
-  color: #f6a96b;
-  background: rgba(246, 169, 107, 0.08);
-  border: 1px solid rgba(246, 169, 107, 0.28);
-  border-radius: 10px;
-  padding: 8px 12px;
-  margin: 8px 0;
-}
-
-.file-safety-badge {
-  display: inline-block;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 1px 8px;
-  border-radius: 999px;
-  margin-left: 6px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.file-safety-badge.is-ok {
-  background: rgba(194,154,79, 0.14);
-  color: #c29a4f;
-}
-
-.file-safety-badge.is-warn {
-  background: rgba(246, 169, 107, 0.18);
-  color: #f6a96b;
-}
-
-.file-safety-details {
-  margin-top: 10px;
-}
-
-.file-safety-details > summary {
-  cursor: pointer;
-  font-size: 12px;
-  color: var(--text-muted);
-  padding: 4px 0;
-  user-select: none;
-}
-
-.file-safety-confirm-input {
-  width: 100%;
-  margin-top: 8px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--text);
-  font-family: "SF Mono", "Menlo", "Monaco", monospace;
-  font-size: 13px;
-  outline: none;
-}
-
-.file-safety-confirm-input:focus {
-  border-color: var(--teal);
-  background: rgba(255, 255, 255, 0.06);
-}
-
-/* ─── Safety pane (Customize → Safety) ────────────────────────────────────── */
-
-.safety-rule-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 12px;
-}
-
-.safety-rule-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.02);
-}
-
-.safety-rule-main {
-  flex: 1;
-  min-width: 0;
-}
-
-.safety-rule-op {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
-  margin-bottom: 4px;
-}
-
-.safety-rule-path {
-  word-break: break-all;
-  margin-bottom: 4px;
-  color: var(--text-muted);
-}
-
-/* Domain cookies — Phase 4 */
-.domain-cookie-form {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 16px;
-  padding: 14px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.02);
-}
-
-.domain-cookie-host,
-.domain-cookie-string {
-  width: 100%;
-  padding: 8px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--text);
-  font-family: "SF Mono", "Menlo", "Monaco", monospace;
-  font-size: 13px;
-  outline: none;
-  resize: vertical;
-}
-
-.domain-cookie-host:focus,
-.domain-cookie-string:focus {
-  border-color: var(--teal);
-  background: rgba(255, 255, 255, 0.06);
-}
-
-/* ─── Tool calls status strip ─────────────────────────────────────────────── */
-
-.tool-calls-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 10px 0 4px;
-}
-
-.tool-call-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 6px 12px;
-  border-radius: 20px;
-  font-size: 13px;
-  font-family: "SF Mono", "Menlo", "Monaco", monospace;
-  border: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--text-muted);
-  transition: background 0.2s, border-color 0.2s, color 0.2s;
-}
-
-.tool-call-pill.is-running {
-  border-color: rgba(164,122,43, 0.35);
-  background: rgba(164,122,43, 0.07);
-  color: var(--teal);
-}
-
-.tool-call-pill.is-ok {
-  border-color: rgba(214,176,106, 0.35);
-  background: rgba(214,176,106, 0.07);
-  color: #c8b695;
-}
-
-.tool-call-pill.is-error {
-  border-color: rgba(255, 144, 127, 0.35);
-  background: rgba(255, 144, 127, 0.07);
-  color: var(--danger);
-}
-
-.tool-call-pill-icon svg {
-  width: 14px;
-  height: 14px;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.tool-call-pill-name {
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tool-call-check,
-.tool-call-x {
-  font-size: 13px;
-  font-style: normal;
-}
-
-@keyframes tool-spin {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
-}
-
-/* ─── Evidence trail under tool-call pill (G-1f 2026-05-12) ─────────────────
-   Rendered only when informative (failure OR multi-tier fallback — see
-   activeToolCallsStrip.js shouldRenderTrail).  Visible during the 1.8s
-   post-completion window before uiState.activeToolCalls is filtered.
-
-   Layout: `.tool-call-pill` is the outer card (column flex container).
-   Its FIRST direct child is `.tool-call-pill-main` which keeps the
-   original row layout (icon / name / status indicator on one line).
-   When trail is present, `.tool-call-trail` becomes the second child,
-   stacking under the main row.  Without a trail, the pill renders
-   visually identical to the pre-G-1f design (single row in main).
-
-   Codex C-gate (2026-05-12) caught an earlier draft that switched
-   `.tool-call-pill` to column flex with the icon/name/spinner as DIRECT
-   children — those children then stacked vertically too.  The wrapper
-   below pins first-row horizontal layout no matter what the outer
-   container does. */
-
-.tool-call-pill {
-  flex-direction: column;
-  align-items: flex-start;
-}
-
-.tool-call-pill-main {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 7px;
-}
-
-.tool-call-trail {
-  list-style: none;
-  margin: 6px 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  width: 100%;
-  font-size: 11.5px;
-  color: var(--text-muted);
-  /* Pull back the monospace face slightly — feels too dense at 11px. */
-  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
-}
-
-.tool-call-trail-item {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  line-height: 1.4;
-}
-
-.tool-call-trail-tier {
-  font-weight: 500;
-  color: var(--text);
-  min-width: 70px;
-}
-
-.tool-call-trail-outcome {
-  font-weight: 500;
-  font-size: 10.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
-  padding: 1px 6px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text-muted);
-}
-
-.tool-call-trail-outcome.is-ok {
-  color: #c8b695;
-  background: rgba(200,182,149, 0.1);
-}
-
-.tool-call-trail-outcome.is-fail {
-  color: var(--danger);
-  background: rgba(255, 144, 127, 0.1);
-}
-
-.tool-call-trail-outcome.is-aborted {
-  color: #c9a86e;
-  background: rgba(201, 168, 110, 0.1);
-}
-
-.tool-call-trail-outcome.is-skip {
-  color: var(--text-muted);
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.tool-call-trail-detail {
-  color: var(--text-muted);
-  font-size: 11px;
-  opacity: 0.85;
-}
-
-/* ─── Chat history: tool execution metadata per assistant message (G-1d slice 2) ─
-   Rendered by renderMessageToolResults under the assistant bubble.  Reuses the
-   `.tool-call-trail-*` classes above for the per-tier rows so the live chip
-   strip and historical view look visually identical.  Outer
-   `.message-tool-results` is a tiny stacked block below the text. */
-
-.message-tool-results {
-  margin: 8px 0 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.025);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.message-tool-result {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.message-tool-result-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11.5px;
-  font-family: "SF Mono", "Menlo", "Monaco", monospace;
-  color: var(--text-muted);
-}
-
-.message-tool-result-name {
-  font-weight: 500;
-  color: var(--text);
-}
-
-.message-tool-result.is-ok .message-tool-result-status {
-  color: #c8b695;
-}
-
-.message-tool-result.is-error .message-tool-result-status {
-  color: var(--danger);
-}
-
-.tool-call-spinner {
-  width: 12px;
-  height: 12px;
-  border: 2px solid rgba(164,122,43, 0.3);
-  border-top-color: var(--teal);
-  border-radius: 50%;
-  display: inline-block;
-  animation: tool-spin 0.7s linear infinite;
-  flex-shrink: 0;
-}
-
-/* ─── Source citation cards ──────────────────────────────────────────────────── */
-
-.source-citation-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 10px;
-  padding: 0 2px;
-}
-
-.source-citation-card {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 10px;
-  border-radius: 20px;
-  background: var(--surface-2, rgba(255, 255, 255, 0.05));
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
-  text-decoration: none;
-  color: var(--text-secondary, rgba(255, 255, 255, 0.55));
-  font-size: 11px;
-  line-height: 1.3;
-  max-width: 220px;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
-  cursor: pointer;
-}
-
-.source-citation-card:hover {
-  background: var(--surface-3, rgba(255, 255, 255, 0.09));
-  border-color: var(--teal, #a47a2b);
-  color: var(--teal, #a47a2b);
-}
-
-.citation-icon {
-  font-style: normal;
-  font-size: 11px;
-  flex-shrink: 0;
-}
-
-.citation-host {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 500;
-}
-
-.citation-via {
-  font-size: 10px;
-  opacity: 0.6;
-  white-space: nowrap;
-  flex-shrink: 0;
 }
 
 /* ── Transcript toast ──────────────────────────────────────────────────────── */
@@ -5379,8 +4094,6 @@ select option {
 .quality-details { margin: 12px 0; padding: 12px 0; border-top: 1px solid rgba(150,190,180,.16); overflow-wrap: anywhere; }
 .quality-details > summary { cursor: pointer; font-size: 13px; opacity: .82; padding: 5px 0; }
 .quality-details[open] > summary { margin-bottom: 12px; }
-.permission-actions { border: 0; padding: 0; margin: 0; min-width: 0; }
-.permission-actions[disabled] { opacity: .6; }
 .permission-actions .page-kicker-tip { flex-basis: 100%; line-height: 1.7; }
 
 /* Image controls share the task-space glass and gold language. */
@@ -5424,7 +4137,6 @@ select option {
 .reply-list-item { display:flex; gap:10px; align-items:baseline; }
 .reply-list-item > span { color:#bfa87b; }
 .reply-list-item p { margin:5px 0; }
-.message-bubble blockquote { border-left:2px solid #bba87a55; margin:12px 0; padding-left:14px; color:var(--text-muted); }
 @media(max-width:600px) {
  .reply-table-scroll { overflow:visible; }
  .reply-table,.reply-table tbody,.reply-table tr,.reply-table td { display:block; min-width:0; }
@@ -5435,7 +4147,6 @@ select option {
 }
 .agent-photo { flex-shrink:0; border-radius:30%; object-fit:cover; vertical-align:middle; }
 .agent-photo-fallback { display:inline-flex; align-items:center; justify-content:center; color:#d2bd8a; background:#c9b27c13; font-size:13px; }
-.agent-chip-anchor > button { display:inline-flex; align-items:center; gap:6px; }
 .conversation-context { position:relative; color:var(--text-secondary); font-size:12px; }
 .conversation-context > summary { cursor:pointer; list-style:none; padding:8px 10px; border-radius:18px; background:rgba(200,180,130,.07); }
 .conversation-context-menu { position:absolute; z-index:60; bottom:calc(100% + 10px); right:0; width:min(320px,80vw); max-height:360px; overflow:auto; padding:16px; border:1px solid rgba(220,200,150,.2); border-radius:16px; background:rgba(15,18,23,.97); box-shadow:0 15px 55px #0007; backdrop-filter:blur(24px); }
@@ -5449,8 +4160,6 @@ select option {
 .context-materials { display:grid; gap:10px; margin-top:12px; }
 .context-materials label { display:flex; gap:8px; align-items:start; }
 .context-materials input { accent-color:#cdb786; }
-.message-role { display:flex; align-items:center; gap:7px; }
-.composer-conversation-choice { margin:0 0 10px 8px; width:max-content; max-width:100%; }
 /* The conversation picker shares the header, not the home hero's spacious margins. */
 .thread-meta .agent-chip-anchor { margin:8px 0 0; }
 
@@ -5462,76 +4171,6 @@ select option {
 .chat-file-dialog { max-width: min(620px, 90vw); color: var(--text-primary, #eee); background: var(--panel-bg, #18191b); border: 1px solid var(--border, #444); border-radius: 16px; padding: 24px; }
 .chat-file-dialog::backdrop { background: #0009; }
 .chat-file-dialog .mono { overflow-wrap: anywhere; }
-.chat-files-panel { max-height: 40vh; overflow: auto; padding: 12px 20px; border-bottom: 1px solid var(--border, #333); }
-.chat-files-panel summary { cursor: pointer; }
-.chat-files-panel pre { overflow: auto; max-height: 24vh; }
 .management-dialog { width: 580px; max-height: 85vh; overflow: auto; }
 .management-dialog form { display: grid; gap: 12px; }
 .management-output { max-height: 35vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
-
-/* Live steps of the running reply, inside the chat (see runSteps.js). */
-.run-steps { list-style: none; margin: 6px 0 10px; padding: 8px 12px; display: grid; gap: 4px; border-left: 1px solid rgba(200,180,130,.25); font-size: 12px; color: var(--text-secondary); }
-.run-step { display: grid; grid-template-columns: 16px auto 1fr; gap: 8px; align-items: baseline; min-width: 0; }
-.run-step-title { color: var(--text-primary, inherit); white-space: nowrap; }
-.run-step.is-done .run-step-title, .run-step.is-failed .run-step-title { color: var(--text-secondary); }
-.run-step-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .8; }
-.run-step.is-done .run-step-icon { color: #c8b482; }
-.run-step.is-failed .run-step-icon { color: #e07a6a; }
-.run-step-spinner { display: inline-block; width: 9px; height: 9px; border: 1.5px solid rgba(200,180,130,.35); border-top-color: #c8b482; border-radius: 50%; animation: run-step-spin .9s linear infinite; }
-@keyframes run-step-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .run-step-spinner { animation: none; } }
-.run-steps-note { margin: 0 0 8px; font-size: 12px; color: #c8b482; }
-
-/* ─── Bug audit 2026-10-18 U16: tool-call pill argument digest / duration ───
-   Rendered by activeToolCallsStrip.js inside `.tool-call-pill-main`. */
-.tool-call-pill-args {
-  max-width: 260px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11.5px;
-  opacity: 0.72;
-}
-
-.tool-call-pill-duration {
-  margin-inline-start: 2px;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  opacity: 0.65;
-}
-
-/* ─── Bug audit 2026-10-18 U12: `[工具轨迹]` record (toolTraceReplay.js) ──
-   A stopped run's tool list, kept for the next turn. Compact, no avatar,
-   no receipt, no read-aloud button. */
-.message.is-tool-trace {
-  gap: 4px;
-  max-width: min(640px, 100%);
-}
-
-.message.is-tool-trace .tool-trace-body {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 6px 10px;
-  border-radius: 10px;
-  border: 1px dashed rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.02);
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.message.is-tool-trace .tool-trace-status {
-  flex: 0 0 auto;
-  margin-top: 1px;
-}
-
-.message.is-tool-trace .tool-trace-text {
-  margin: 0;
-  min-width: 0;
-  flex: 1 1 auto;
-  font-family: "SF Mono", "Menlo", "Monaco", monospace;
-  font-size: 11.5px;
-  white-space: pre-wrap;
-  word-break: break-word;
-}

@@ -955,6 +955,7 @@
         "desktop-ui/executionViewport.js",
         "desktop-ui/features/chat/activeToolCallsStrip.js",
         "desktop-ui/features/chat/api.js",
+        "desktop-ui/features/chat/chat.css",
         "desktop-ui/features/chat/context.js",
         "desktop-ui/features/chat/controller.js",
         "desktop-ui/features/chat/conversationContext.js",
@@ -2932,7 +2933,8 @@
         "src/safety/**",
         "src/services/activity/**",
         "src/domain/activity/**",
-        "desktop-ui/fileSafetyResponse.js"
+        "desktop-ui/fileSafetyResponse.js",
+        "desktop-ui/features/approvals/**"
       ],
       "modules": {
         "desktop-ui": 1,
@@ -3173,6 +3175,7 @@
         "POST /api/tools/session-permissions/clear ← src/server.js"
       ],
       "desktopUi": [
+        "desktop-ui/features/approvals/approvals.css",
         "desktop-ui/fileSafetyResponse.js"
       ],
       "iphone": {

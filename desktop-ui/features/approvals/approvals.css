@@ -1,0 +1,315 @@
+/* Approval surfaces (architecture plan P2c, 2026-10-19): the tool
+   permission and file-safety dialogs, Customize → Safety (permission rules,
+   domain cookies) and the task lane menu of the task / approval panels.
+   Their JS (renderToolPermissionDialog, renderFileSafetyDialog,
+   renderSafetyPane, renderDomainCookiesPane, renderTaskPanel) is still in
+   app.js; the rules moved verbatim from styles.css in their old source order
+   and load right after features/chat/chat.css. */
+
+.task-lane-row {
+  margin-bottom: 14px;
+}
+
+.task-lane-overflow-anchor {
+  position: relative;
+}
+
+.task-lane-overflow-toggle {
+  min-width: 32px;
+  padding-left: 10px;
+  padding-right: 10px;
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+
+.task-lane-overflow-menu {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: 6px;
+  border-radius: 12px;
+  background: var(--surface-2, rgba(30, 30, 40, 0.97));
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.32);
+}
+
+.task-lane-overflow-item {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--text-primary, #fff);
+  font-size: 13px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s;
+}
+
+.task-lane-overflow-item:hover,
+.task-lane-overflow-item:focus-visible {
+  background: rgba(255, 255, 255, 0.06);
+  outline: none;
+}
+
+.compact-surface-card {
+  padding: 18px;
+}
+
+/* ─── Tool permission dialog ──────────────────────────────────────────────── */
+
+.tool-permission-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(7,7,6, 0.6);
+  backdrop-filter: blur(14px);
+  display: grid;
+  place-items: center;
+  z-index: 60;
+  padding: 24px;
+}
+
+.tool-permission-shell {
+  width: min(520px, calc(100vw - 48px));
+  border-radius: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(24,22,18, 0.97);
+  box-shadow: 0 32px 70px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+  display: grid;
+  gap: 0;
+}
+
+.tool-permission-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 20px 22px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tool-permission-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--teal-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.tool-permission-icon svg {
+  width: 20px;
+  height: 20px;
+  stroke: var(--teal);
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tool-permission-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.tool-permission-subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.tool-permission-body {
+  padding: 16px 22px;
+}
+
+.tool-permission-tool-name {
+  font-family: "SF Mono", "Menlo", "Monaco", monospace;
+  font-size: 14px;
+  color: var(--teal);
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.tool-permission-args {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-family: "SF Mono", "Menlo", "Monaco", monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0;
+  overflow-x: auto;
+  max-height: 160px;
+  overflow-y: auto;
+  white-space: pre;
+}
+
+.tool-permission-footer {
+  padding: 14px 22px 20px;
+  border-top: 1px solid var(--border);
+}
+
+/* ─── File-safety dialog (kind: 'file_safety') ─────────────────────────────── */
+
+.file-safety-shell {
+  width: min(620px, calc(100vw - 48px));
+}
+
+.file-safety-row {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.55;
+  margin-bottom: 8px;
+  word-break: break-all;
+}
+
+.file-safety-row code {
+  font-family: "SF Mono", "Menlo", "Monaco", monospace;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 1px 6px;
+  border-radius: 5px;
+  color: var(--text);
+}
+
+.file-safety-warn {
+  font-size: 13px;
+  color: #f6a96b;
+  background: rgba(246, 169, 107, 0.08);
+  border: 1px solid rgba(246, 169, 107, 0.28);
+  border-radius: 10px;
+  padding: 8px 12px;
+  margin: 8px 0;
+}
+
+.file-safety-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 999px;
+  margin-left: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.file-safety-badge.is-ok {
+  background: rgba(194,154,79, 0.14);
+  color: #c29a4f;
+}
+
+.file-safety-badge.is-warn {
+  background: rgba(246, 169, 107, 0.18);
+  color: #f6a96b;
+}
+
+.file-safety-details {
+  margin-top: 10px;
+}
+
+.file-safety-details > summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 4px 0;
+  user-select: none;
+}
+
+.file-safety-confirm-input {
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-family: "SF Mono", "Menlo", "Monaco", monospace;
+  font-size: 13px;
+  outline: none;
+}
+
+.file-safety-confirm-input:focus {
+  border-color: var(--teal);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ─── Safety pane (Customize → Safety) ────────────────────────────────────── */
+
+.safety-rule-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.safety-rule-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.safety-rule-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.safety-rule-op {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.safety-rule-path {
+  word-break: break-all;
+  margin-bottom: 4px;
+  color: var(--text-muted);
+}
+
+/* Domain cookies — Phase 4 */
+.domain-cookie-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.domain-cookie-host,
+.domain-cookie-string {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-family: "SF Mono", "Menlo", "Monaco", monospace;
+  font-size: 13px;
+  outline: none;
+  resize: vertical;
+}
+
+.domain-cookie-host:focus,
+.domain-cookie-string:focus {
+  border-color: var(--teal);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.permission-actions { border: 0; padding: 0; margin: 0; min-width: 0; }
+.permission-actions[disabled] { opacity: .6; }
