@@ -1,0 +1,158 @@
+/* Memory feature (desktop-ui/features/memory/, architecture plan P2):
+   Customize → Memory pane, fact conflicts, the reply footer «本回答参考的记忆»
+   and the project page «记忆本». Moved verbatim from styles.css on
+   2026-10-19 and loaded right after it (after projects.css, matching the old
+   source order), so the cascade relative to other stylesheets is unchanged. */
+
+/* ─────────────────────────────────────────────────────────────────
+   Phase 3 — Memory pane (/settings → Customize → Memory)
+   Uses existing .detail-card plus a couple of small tweaks so the
+   meta-grid rows breathe. (The danger hue of the wipe button,
+   .small-button.is-danger, is shared and stays in styles.css.)
+   ─────────────────────────────────────────────────────────────── */
+.memory-card .meta-grid {
+  margin-top: 8px;
+  margin-bottom: 18px;
+}
+
+.memory-card .meta-block-label {
+  margin-top: 18px;
+}
+
+.memory-card .mono.small {
+  font-size: 12px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+/* Memory page: cross-device conflict (design 2026-10-17 §3.4). */
+.memory-conflict-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(220, 120, 40, 0.18);
+  color: #b85c12;
+  font-size: 12px;
+  font-weight: 600;
+}
+.memory-conflict {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(220, 120, 40, 0.45);
+  border-radius: 10px;
+  background: rgba(220, 120, 40, 0.06);
+}
+.memory-conflict p { margin: 4px 0; }
+
+/* ─── Chat history: memories this reply drew on (2026-10-17 design audit M5) ─
+   Rendered by renderMessageMemoryRefs under the assistant bubble, after the
+   tool results block. Collapsed by default; each row offers scope promotion
+   and "stop using" so feedback lands where the memory was noticed. */
+
+.message-memory-refs {
+  margin: 8px 0 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.message-memory-refs > summary {
+  cursor: pointer;
+  font-size: 11.5px;
+  user-select: none;
+}
+
+.message-memory-ref {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.message-memory-ref-kind {
+  flex: 0 0 auto;
+  font-family: "SF Mono", "Menlo", "Monaco", monospace;
+  font-size: 10.5px;
+  opacity: 0.7;
+}
+
+.message-memory-ref-text {
+  flex: 1 1 240px;
+  color: var(--text-primary, inherit);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.message-memory-ref .inline-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 4px;
+}
+
+/* ─── Bug audit 2026-10-18 U16: project page «记忆本» (design 2B) ───────────
+   Rendered by features/memory/viewProjectBook.js inside the project detail aside. */
+.project-memory-book .project-book-section {
+  margin-top: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.project-memory-book .project-book-section > .list-row-title {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+}
+
+.project-book-row {
+  padding: 10px 12px;
+  min-height: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.project-book-row > p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.project-book-row .inline-actions {
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.project-book-row .inline-actions select {
+  font-size: 12px;
+  padding: 2px 6px;
+}
+
+.project-book-create {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  display: grid;
+  gap: 8px;
+}
+
+.project-book-create .textarea {
+  width: 100%;
+  min-height: 56px;
+  resize: vertical;
+}
+
+.project-book-create .inline-actions {
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}

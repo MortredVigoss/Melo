@@ -189,6 +189,7 @@
         "desktop-ui/features/projects/context.js",
         "desktop-ui/features/projects/controller.js",
         "desktop-ui/features/projects/index.js",
+        "desktop-ui/features/projects/projects.css",
         "desktop-ui/features/projects/state.js",
         "desktop-ui/features/projects/view.js"
       ],
@@ -1412,6 +1413,7 @@
         "desktop-ui/features/memory/context.js",
         "desktop-ui/features/memory/controller.js",
         "desktop-ui/features/memory/index.js",
+        "desktop-ui/features/memory/memory.css",
         "desktop-ui/features/memory/state.js",
         "desktop-ui/features/memory/viewFacts.js",
         "desktop-ui/features/memory/viewMessageRefs.js",
