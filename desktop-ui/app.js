@@ -9,9 +9,7 @@ import { createSettingsFormEditors, installUnsavedSettingsGuard } from './settin
 import { createActionRegistry } from './features/registry.js';
 import { installMemoryFeature } from './features/memory/index.js';
 import { installProjectsFeature } from './features/projects/index.js';
-import { bindAgentsContext } from './features/agents/context.js';
-import { agentsActions, agentsForms, handleAgentSectionToggle, handleAgentProfileInput, handleAgentEditorScroll, handleAgentFileChange, handleAgentProfileChange, agentDraftKey, captureAgentEditorState, captureAgentScrollState, restoreAgentScrollState, restoreAgentEditorState, syncAgentRuntimeRefresh, flushPendingAgentMarkdownAutosave, flushPendingAgentChannelAutosave, flushPendingAgentAutosavesOnUnload } from './features/agents/controller.js';
-import { renderAgentPage, renderAgentWorkbench } from './features/agents/view.js';
+import { installAgentsFeature } from './features/agents/index.js';
 import { renderLocalSettings, installLocalSettings, applyLocalAppearance, shouldSendOnEnter, notifyLocalCompletion, nativeSettings } from './localSettings.js';
 import { installImagePreview } from './imagePreview.js';
 import { renderSyncConflicts } from './syncConflicts.js';
@@ -74,18 +72,20 @@ import {
 } from './fileSafetyResponse.js';
 
 const app = document.querySelector('#app');
+// The Agent feature owns the agent-profile-update form's draft (agentsFeature,
+// installed below; these callbacks only run on later events).
 const settingsFormEditors = createSettingsFormEditors({render,
-  ownsDraft: form => form.dataset.form === 'agent-profile-update',
-  scope: form => form.dataset.agentId ? agentDraftKey(form.dataset.agentId) : form.dataset.form==='task-pricing' ? uiState.bootstrap?.settings?.config?.model || '' : '',
+  ownsDraft: form => agentsFeature.ownsFormDraft(form),
+  scope: form => form.dataset.agentId ? agentsFeature.formDraftScope(form) : form.dataset.form==='task-pricing' ? uiState.bootstrap?.settings?.config?.model || '' : '',
   onCancel: form => {
-    if(form.dataset.agentId) delete uiState.agentDrafts[agentDraftKey(form.dataset.agentId)];
+    if(form.dataset.agentId) agentsFeature.discardFormDraft(form);
     if(form.dataset.form==='task-pricing') uiState.taskPricing=null;
     if(['connector-config','model-config'].includes(form.dataset.form)) clearModelFormDraft(form);
   },
 });
 settingsFormEditors.install(document);
 document.addEventListener('toggle', event => {
-  handleAgentSectionToggle(event);
+  agentsFeature.handleToggle(event);
   memoryFeature.handleToggle(event);
 }, true);
 installUnsavedSettingsGuard(window);
@@ -221,16 +221,6 @@ const uiState = {
   },
   modelSetupDraft: null,
   modelCatalogLoading: false,
-  agentEditorTab: 'identity',
-  // Map of agentId → active channel tab ('telegram' | 'discord' | 'lark').
-  // Defaults to 'telegram' on first read. Used by the channels section to
-  // show one channel at a time filling the full panel width.
-  agentChannelTab: {},
-  agentDrafts: {},
-  agentCreating: false,
-  agentOpenSections: {},
-  agentSaveStates: {},
-  agentSecretVisibility: {},
   commandInputs: {},
   commandPalette: {
     open: false,
@@ -259,10 +249,6 @@ const uiState = {
   lastThreadScrollSignature: '',
   lastThreadChatId: null,
   threadAutoFollow: true,
-  agentListScrollTop: 0,
-  agentDetailScrollTops: {},
-  agentEditorStates: {},
-  shouldFocusAgentEditor: false,
   streamingChatId: null,
   streamingAssistantText: '',
   // Pending voice transcript to be pre-attached when auto-submitting a voice message.
@@ -439,9 +425,20 @@ const projectsFeature = installProjectsFeature({
 });
 featureActions.register(projectsFeature.actions, 'projects');
 featureForms.register(projectsFeature.forms, 'projects');
-bindAgentsContext({ uiState, app, api, render, bgRender, showError, showFlashToast, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts, loadBootstrap, activeProject, agentProfileById, minimaxTtsConfigPatchForVoice, settingsFormEditors, nativeSettings, isAgentChannelAvailable, escapeHtml, icon });
-featureActions.register(agentsActions, 'agents');
-featureForms.register(agentsForms, 'agents');
+const agentsFeature = installAgentsFeature({
+  getBootstrap: () => uiState.bootstrap,
+  app, api, render, bgRender, showError, showFlashToast, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts,
+  refreshBootstrap: () => loadBootstrap(uiState.searchQuery, { quiet: true }),
+  // Markdown autosave landing: take the returned page data and clear the
+  // error without a render, exactly as the moved code did.
+  storeBootstrap: payload => { uiState.bootstrap = payload; uiState.error = ''; },
+  activeProject, agentProfileById, minimaxTtsConfigPatchForVoice,
+  beginFormEdit: form => settingsFormEditors.begin(form),
+  formEditToken: form => settingsFormEditors.editToken(form),
+  nativeSettings, isAgentChannelAvailable, escapeHtml, icon,
+});
+featureActions.register(agentsFeature.actions, 'agents');
+featureForms.register(agentsFeature.forms, 'agents');
 
 const HOME_PROMPT_PRESETS = [
   {
@@ -4930,7 +4927,7 @@ function flushPendingConnectorAutosaveOnUnload() {
 }
 
 function flushAllPendingAutosavesOnUnload() {
-  flushPendingAgentAutosavesOnUnload();
+  agentsFeature.flushOnUnload();
   flushPendingConnectorAutosaveOnUnload();
 }
 
@@ -6965,7 +6962,7 @@ function renderConnectorDetails(selected) {
   if (uiState.bootstrap.settings.selectedCustomizeSection==='connectors' && ['local-files','local-command'].includes(selected.id)) return ui`<section class="detail-card"><p>本地文件与命令由 Agent 能力设置控制。</p><button class="small-button" data-action="open-view" data-view="agent">查看 Agent 能力</button></section>`;
 
   if (uiState.bootstrap.settings.selectedCustomizeSection === 'agents') {
-    return renderAgentWorkbench(selected);
+    return agentsFeature.renderWorkbench(selected);
   }
 
   if (uiState.bootstrap.settings.selectedCustomizeSection === 'skills') {
@@ -8089,7 +8086,7 @@ function renderCustomizePage() {
   // new section without an extra click.
   const rawSection = data.settings.selectedCustomizeSection;
   const section = rawSection === 'runtime' ? 'advanced' : rawSection;
-  if (section === 'agents') return renderAgentPage();
+  if (section === 'agents') return agentsFeature.renderPage();
 
   return ui`
     <section class="page page-customize">
@@ -8472,7 +8469,7 @@ function renderPage() {
     case 'projects':
       return projectsFeature.renderPage();
     case 'agent':
-      return renderAgentPage();
+      return agentsFeature.renderPage();
     case 'model':
       return renderModelPage();
     case 'settings':
@@ -8881,8 +8878,7 @@ function render({ background = false, changedSections = null } = {}) {
     return;
   }
 
-  captureAgentScrollState();
-  captureAgentEditorState();
+  agentsFeature.captureBeforeRender();
 
   // Generic focus preservation — app.innerHTML = ... below destroys every DOM
   // node (and therefore document.activeElement). Without this, typing in any
@@ -9056,17 +9052,17 @@ function render({ background = false, changedSections = null } = {}) {
   bindContentScrollbar();
   syncContentScrollbar();
   syncThreadViewport();
-  restoreAgentScrollState();
+  agentsFeature.restoreScrollAfterRender();
   // Restore AFTER agent-specific restore so the generic path covers the panes
   // the agent logic doesn't know about (e.g. customize-pane on non-agent views).
   restoreScrollPositions(_savedNestedScrolls);
   // Restore named-textarea scrollTop for every form textarea we saved above.
-  // Runs BEFORE restoreAgentEditorState so the agent-content-editor's
+  // Runs BEFORE the Agent editor restore so the agent-content-editor's
   // dedicated restore still has the last word for that one textarea (it also
   // restores selection + focus, which this generic path deliberately doesn't
   // touch — we only care about scrollTop here).
   restoreFormTextareaScrolls(_savedTextareaScrolls);
-  syncAgentRuntimeRefresh();
+  agentsFeature.syncRuntimeRefresh();
   syncSearchFieldFocus();
   syncFileEditorGoToLine();
   syncComposerTextareaHeight();
@@ -9074,9 +9070,9 @@ function render({ background = false, changedSections = null } = {}) {
   if (_newComposer && _savedComposerScroll?.value === _newComposer.value) {
     _newComposer.scrollTop = _savedComposerScroll.top;
   }
-  restoreAgentEditorState();
+  agentsFeature.restoreEditorAfterRender();
   // Put the caret back into whichever input/textarea was focused before the
-  // page update. Runs AFTER restoreAgentEditorState so the agent-specific
+  // page update. Runs AFTER the Agent editor restore so the agent-specific
   // textarea restore wins for that one input; this helper covers everything
   // else (Discord Guild ID, Telegram bot token, nickname lists, etc.).
   restoreFocusedInputState(_savedFocusedInput);
@@ -9611,24 +9607,21 @@ document.addEventListener('click', async event => {
       }
       case 'neural-group':
         if (!neuralGroups.some(group => group.id === trigger.dataset.group)) break;
-        await flushPendingAgentMarkdownAutosave();
-        await flushPendingAgentChannelAutosave();
+        await agentsFeature.flushPending();
         uiState.neuralGroup = trigger.dataset.group;
         uiState.neuralExpanded = true;
         uiState.neuralOverview = true;
         render();
         break;
       case 'neural-back':
-        await flushPendingAgentMarkdownAutosave();
-        await flushPendingAgentChannelAutosave();
+        await agentsFeature.flushPending();
         uiState.neuralExpanded = !uiState.neuralOverview;
         uiState.neuralOverview = true;
         render();
         break;
       case 'neural-overview':
         uiState.neuralExpanded = false;
-        await flushPendingAgentMarkdownAutosave();
-        await flushPendingAgentChannelAutosave();
+        await agentsFeature.flushPending();
         uiState.neuralOverview = true;
         render();
         break;
@@ -9680,8 +9673,7 @@ document.addEventListener('click', async event => {
         // before the 3-second idle timer fires will lose the edit. See
         // feedback_preserve_user_config.md.
         if (uiState.bootstrap?.settings?.activeView === 'agent') {
-          await flushPendingAgentMarkdownAutosave();
-          await flushPendingAgentChannelAutosave();
+          await agentsFeature.flushPending();
         }
         await patchSettings({ activeView: trigger.dataset.view });
         if (trigger.dataset.view === 'search' && uiState.searchQuery.trim()) {
@@ -9930,8 +9922,7 @@ document.addEventListener('click', async event => {
         break;
       }
       case 'select-agent-profile':
-        await flushPendingAgentMarkdownAutosave();
-        await flushPendingAgentChannelAutosave();
+        await agentsFeature.flushPending();
         await patchSettings({
           activeView: 'agent',
           selectedAgentId: trigger.dataset.agentId || trigger.value || 'main',
@@ -10744,12 +10735,12 @@ document.addEventListener('input', event => {
     return;
   }
 
-  if (handleAgentProfileInput(target)) return;
+  if (agentsFeature.handleInput(target)) return;
 });
 
 document.addEventListener(
   'scroll',
-  event => handleAgentEditorScroll(event),
+  event => agentsFeature.handleScroll(event),
   true,
 );
 
@@ -10778,7 +10769,7 @@ document.addEventListener('change', async event => {
     } catch(error) { showError(error.message); }
     render(); return;
   }
-  const agentFileChange = handleAgentFileChange(target);
+  const agentFileChange = agentsFeature.handleFileChange(target);
   if (agentFileChange) { await agentFileChange; return; }
 
   if (
@@ -10919,7 +10910,7 @@ document.addEventListener('change', async event => {
       return;
     }
 
-    if (handleAgentProfileChange(target)) return;
+    if (agentsFeature.handleChange(target)) return;
   } catch (error) {
     showError(error.message);
   }

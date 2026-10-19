@@ -22,8 +22,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 549,
-      "edges": 1664,
+      "modules": 552,
+      "edges": 1669,
       "roots": [
         "src",
         "desktop-ui",
@@ -36,7 +36,7 @@
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
-      "detected": 29,
+      "detected": 30,
       "unannotated": []
     }
   },
@@ -253,7 +253,7 @@
         "scripts/migrate-agent-capabilities.js"
       ],
       "modules": {
-        "desktop-ui": 9,
+        "desktop-ui": 12,
         "src": 46
       },
       "entryModules": [
@@ -265,19 +265,7 @@
           ]
         },
         {
-          "module": "desktop-ui/features/agents/context.js",
-          "importedBy": [
-            "desktop-shell"
-          ]
-        },
-        {
-          "module": "desktop-ui/features/agents/controller.js",
-          "importedBy": [
-            "desktop-shell"
-          ]
-        },
-        {
-          "module": "desktop-ui/features/agents/view.js",
+          "module": "desktop-ui/features/agents/index.js",
           "importedBy": [
             "desktop-shell"
           ]
@@ -531,7 +519,7 @@
         "approvals": 3,
         "channels": 3,
         "chat": 13,
-        "desktop-shell": 5,
+        "desktop-shell": 6,
         "memory": 11,
         "platform": 37,
         "settings": 2,
@@ -541,7 +529,7 @@
         "approvals": 3,
         "channels": 6,
         "chat": 25,
-        "desktop-shell": 15,
+        "desktop-shell": 13,
         "memory": 2,
         "platform": 31,
         "projects": 4,
@@ -574,9 +562,12 @@
         "desktop-ui/features/agents/agentDraft.js",
         "desktop-ui/features/agents/agentMcpAuthorise.js",
         "desktop-ui/features/agents/agentProfilePatch.js",
+        "desktop-ui/features/agents/api.js",
         "desktop-ui/features/agents/capabilityChoices.js",
         "desktop-ui/features/agents/context.js",
         "desktop-ui/features/agents/controller.js",
+        "desktop-ui/features/agents/index.js",
+        "desktop-ui/features/agents/state.js",
         "desktop-ui/features/agents/view.js",
         "desktop-ui/teamPanel.js"
       ],
@@ -607,6 +598,7 @@
           "desktop-ui/features/agents/agentDraft.test.js",
           "desktop-ui/features/agents/agentMcpAuthorise.test.js",
           "desktop-ui/features/agents/capabilityChoices.test.js",
+          "desktop-ui/features/agents/controller.test.js",
           "desktop-ui/teamPanel.test.js",
           "src/agents/collaboration.test.js",
           "src/agents/memberBackground.test.js",
@@ -650,6 +642,7 @@
         ]
       },
       "implicit": [
+        "source-tests-app-js",
         "source-tests-cross-module",
         "source-tests-self"
       ],
@@ -3290,6 +3283,7 @@
         {
           "module": "desktop-ui/features/featureContext.js",
           "importedBy": [
+            "agents",
             "memory",
             "projects"
           ]
@@ -3333,7 +3327,7 @@
         }
       ],
       "dependsOn": {
-        "agents": 15,
+        "agents": 13,
         "approvals": 3,
         "channels": 2,
         "chat": 16,
@@ -3348,7 +3342,7 @@
         "voice": 3
       },
       "usedBy": {
-        "agents": 5,
+        "agents": 6,
         "approvals": 3,
         "chat": 9,
         "media": 4,
@@ -4816,6 +4810,7 @@
       "tests": [
         "desktop-ui/committedSave.test.js",
         "desktop-ui/connectorDraftDispatch.test.js",
+        "desktop-ui/features/agents/controller.test.js",
         "desktop-ui/features/registry.test.js",
         "desktop-ui/mediaAttachment.source.test.js",
         "desktop-ui/newChatComposer.test.js",
@@ -4826,6 +4821,7 @@
       ],
       "note": "按源码文本断言 app.js；P2 从 app.js 迁出代码时这些测试需同批改为行为测试或跟随新文件",
       "features": [
+        "agents",
         "approvals",
         "chat",
         "desktop-shell",

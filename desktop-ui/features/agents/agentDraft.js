@@ -10,9 +10,10 @@
 //
 // Lifting the body of that helper here lets node:test exercise the
 // contract end-to-end (profile → draft → chip-row state → submit
-// payload) without a jsdom harness.  app.js still owns the per-key
-// caching layer because that depends on the live `uiState.agentDrafts`
-// map.
+// payload) without a jsdom harness.  ./controller.js owns the per-key
+// caching layer (agentDraftFor) because that depends on the live
+// `agentsState.agentDrafts` map (./state.js; formerly uiState.agentDrafts
+// in app.js).
 
 /**
  * Defensive deep-clone for the channels map.  Falls back to JSON

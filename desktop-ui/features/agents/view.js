@@ -1,12 +1,14 @@
 // Agent settings renderers (architecture plan P2b, 2026-10-19): the Agent
 // page, the shared editor (workbench) with persona, capability/collaboration
-// and channel sections, and the channel runtime card. Step 1 is a
-// byte-for-byte move out of desktop-ui/app.js; DOM, classes, data-attributes,
-// ids and action names are unchanged.
+// and channel sections, and the channel runtime card. Moved out of
+// desktop-ui/app.js byte-for-byte first; they now read the feature's own state
+// and the bootstrap through the context. DOM, classes, data-attributes, ids
+// and action names are unchanged.
 import { t, ui } from '../../i18n.js';
 import { renderAgentAvatar } from '../../agentAvatar.js';
 import { renderCapabilityChoices } from './capabilityChoices.js';
-import { uiState, activeProject, isAgentChannelAvailable, escapeHtml, icon } from './context.js';
+import { getBootstrap, activeProject, isAgentChannelAvailable, escapeHtml, icon } from './context.js';
+import { agentsState } from './state.js';
 import { selectedAgentProfile, selectedAgentScope, agentDraftFor, agentSecretVisibilityKey } from './controller.js';
 
 function formatRuntimeTimestamp(value, fallback = 'Not yet') {
@@ -127,16 +129,16 @@ function renderAgentCapabilities(selected,draft) {
     ...[['delegateTargets','委派对象'],['maxDelegationDepth','委派深度'],['maxIterations','成员轮数'],['maxTokens','成员 token 上限'],['timeoutMs','成员超时（毫秒）']].filter(([key])=>JSON.stringify(pending.baseline.current.collaboration[key])!==JSON.stringify(pending.requested.collaboration[key])).map(([key,label])=>`${t(label)}: ${settingText(pending.baseline.current.collaboration[key])} → ${settingText(pending.requested.collaboration[key])}`),
     ...[['projects','项目指引'],['knowledge','共享知识'],['memory','记忆']].filter(([key])=>pending.baseline.current.contextSources[key]!==pending.requested.contextSources[key]).map(([,label])=>`${t(label)}: ${t('开启')}`),
   ] : [];
-  return ui`<details class="agent-settings-section agent-capabilities" data-agent-section="${selected.id}:capabilities" ${pending || !selected.capabilities || uiState.agentOpenSections[`${selected.id}:capabilities`] ? 'open' : ''}><summary>能力范围与协作</summary><p>关闭的能力在工具执行时拒绝；MCP 服务可自行执行命令，请只授权可信服务。</p><p>这些能力只约束这个 Agent 在电脑上的执行。手机上的联网、生成图片和手机数据，在手机的 Agent 页“这台手机上”单独设置。</p>
+  return ui`<details class="agent-settings-section agent-capabilities" data-agent-section="${selected.id}:capabilities" ${pending || !selected.capabilities || agentsState.agentOpenSections[`${selected.id}:capabilities`] ? 'open' : ''}><summary>能力范围与协作</summary><p>关闭的能力在工具执行时拒绝；MCP 服务可自行执行命令，请只授权可信服务。</p><p>这些能力只约束这个 Agent 在电脑上的执行。手机上的联网、生成图片和手机数据，在手机的 Agent 页“这台手机上”单独设置。</p>
     ${selected.editingScope==='project'?`<p>${escapeHtml(t('项目能力与协作设置只能收紧全局设置；需要更多能力时，请先编辑此 Agent 的全局设置。'))}</p>`:''}
     ${pending?`<section role="status"><strong>${escapeHtml(t('同步权限变更待桌面确认'))}</strong><p>${escapeHtml(t('收紧部分已生效。以下新增能力及协作、上下文变更尚未生效：'))}</p><p>${escapeHtml(pendingChanges.join('、')||t('协作或上下文设置'))}</p><button type="button" class="small-button" data-action="confirm-agent-settings" data-id="${escapeHtml(pending.id)}" data-expected="${escapeHtml(pending.fingerprint)}" data-accept="true" ${!selected.capabilities?'disabled':''}>${escapeHtml(t('确认应用同步设置'))}</button><button type="button" class="small-button" data-action="confirm-agent-settings" data-id="${escapeHtml(pending.id)}" data-expected="${escapeHtml(pending.fingerprint)}" data-accept="false">${escapeHtml(t('拒绝放宽，保留当前权限'))}</button></section>`:''}
     <input type="hidden" name="capabilityVersion" value="1">
     ${!selected.capabilities?`<p>迁移预览：${escapeHtml(selected.capabilityMigration.note)}</p><p>将失去的工具：${escapeHtml([...selected.capabilityMigration.lostTools,...(selected.capabilityMigration.lostActions||[])].join(', ') || '无')}</p><input type="hidden" name="capabilityMigrationExpected" value="${escapeHtml(selected.capabilityMigration.fingerprint)}"><label><input type="checkbox" name="confirmCapabilityMigration" ${draft?.confirmCapabilityMigration==='on'?'checked':''}>确认应用这份能力配置；保存后生效</label>`:''}
     <div class="agent-capability-flags">${Object.entries(selected.capabilityLabels || {}).map(([key,label])=>`<label class="label"><input type="checkbox" name="cap_${key}" ${checked(key)?'checked':''}>${escapeHtml(t(label))}</label>`).join('')}</div>
-    <div class="agent-settings-grid">${[['skills','技能白名单'],['mcpServers','MCP 服务白名单'],['connectors','连接器白名单']].map(([key,label])=>renderCapabilityChoices('cap_'+key,label,value(key),key==='skills'?selected.capabilityOptions:key==='mcpServers'?(uiState.bootstrap.customize.mcpAuthSurface || []).map(o=>({...o,unavailable:!o.enabled || o.unpinned})):uiState.bootstrap.customize.connectors.filter(o=>o.type==='external-mcp'),escapeHtml)).join('')}</div>
+    <div class="agent-settings-grid">${[['skills','技能白名单'],['mcpServers','MCP 服务白名单'],['connectors','连接器白名单']].map(([key,label])=>renderCapabilityChoices('cap_'+key,label,value(key),key==='skills'?selected.capabilityOptions:key==='mcpServers'?(getBootstrap().customize.mcpAuthSurface || []).map(o=>({...o,unavailable:!o.enabled || o.unpinned})):getBootstrap().customize.connectors.filter(o=>o.type==='external-mcp'),escapeHtml)).join('')}</div>
     <p>${escapeHtml(t('开启“委派”后，这个 Agent 可以把任务交给下面勾选的 Agent，也可以发起多 Agent 协作；没勾选的 Agent 不能被委派或组队。'))}</p>
     <div class="agent-settings-grid">
-    ${renderCapabilityChoices('delegateTargets','委派对象',draft?.delegateTargets ?? collaboration.delegateTargets,uiState.bootstrap.customize.agents.filter(a=>a.id!==selected.id),escapeHtml)}
+    ${renderCapabilityChoices('delegateTargets','委派对象',draft?.delegateTargets ?? collaboration.delegateTargets,getBootstrap().customize.agents.filter(a=>a.id!==selected.id),escapeHtml)}
     ${[['maxDelegationDepth','委派深度',1,3],['maxIterations','成员轮数',8,20],['maxTokens','成员 token 上限',32000,200000],['timeoutMs','成员超时（毫秒）',180000,900000]].map(([key,label,fallback,max])=>`<label class="label">${escapeHtml(t(label))}<input class="config-input" type="number" min="1" max="${max}" name="${key}" value="${escapeHtml(String(draft?.[key]??collaboration[key]??fallback))}"></label>`).join('')}
     </div><p>上下文来源</p><div class="agent-capability-flags">${[['projects','项目指引'],['knowledge','共享知识'],['memory','记忆']].map(([key,label])=>`<label class="checkbox-row"><input type="checkbox" name="context_${key}" ${(draft?.['context_'+key]!==undefined?draft['context_'+key]==='on':selected.contextSources?.[key]!==false)?'checked':''}>${escapeHtml(t(label))}</label>`).join('')}
   </div></details>`;
@@ -144,7 +146,7 @@ function renderAgentCapabilities(selected,draft) {
 
 function renderAgentPersonaFields(selected, draft) {
   return ui`
-    ${uiState.bootstrap?.syncPendingPersonas?.some(row => row.kind === 'agent' && row.id === selected.id || row.kind === 'project' && row.id === activeProject()?.id && selectedAgentScope() === 'project') ? ui`<p role="status">此 Agent 的新版人设尚未同步。全文已保留在本机，其他聊天继续同步。</p>` : ''}
+    ${getBootstrap()?.syncPendingPersonas?.some(row => row.kind === 'agent' && row.id === selected.id || row.kind === 'project' && row.id === activeProject()?.id && selectedAgentScope() === 'project') ? ui`<p role="status">此 Agent 的新版人设尚未同步。全文已保留在本机，其他聊天继续同步。</p>` : ''}
     ${!selected.capabilities ? ui`<p role="status">旧版权限待迁移</p>` : ''}
     <label class="label">Agent 名称<input class="config-input" name="name" value="${escapeHtml(draft?.name ?? selected.name ?? '')}" /></label>
     <label class="label">一句话定位<textarea class="textarea agent-control-editor" name="description" rows="2">${escapeHtml(draft?.description ?? selected.description ?? '')}</textarea></label>
@@ -168,14 +170,14 @@ function renderAgentWorkbench(selected) {
   const telegramChannel = draft?.channels?.telegram || selected.channels?.find?.(channel => channel.id === 'telegram') || selected.channels?.telegram || {};
   const discordChannel = draft?.channels?.discord || selected.channels?.find?.(channel => channel.id === 'discord') || selected.channels?.discord || {};
   const discordSecretVisible = Boolean(
-    uiState.agentSecretVisibility[agentSecretVisibilityKey(selected.id, 'discord')],
+    agentsState.agentSecretVisibility[agentSecretVisibilityKey(selected.id, 'discord')],
   );
   // Archived channels have no controls; their saved configuration stays in the draft.
   // The list follows src/shared/channelAvailability.js so archiving a transport
   // removes its tab, card and form inputs in one place.
   const VALID_CHANNEL_TABS = ['telegram', 'discord'].filter(id => isAgentChannelAvailable(id));
-  const activeChannelTab = VALID_CHANNEL_TABS.includes(uiState.agentChannelTab[selected.id])
-    ? uiState.agentChannelTab[selected.id]
+  const activeChannelTab = VALID_CHANNEL_TABS.includes(agentsState.agentChannelTab[selected.id])
+    ? agentsState.agentChannelTab[selected.id]
     : (VALID_CHANNEL_TABS[0] || null);
   const channelTabDefs = [
     {
@@ -228,7 +230,7 @@ function renderAgentWorkbench(selected) {
         </section>
         ${renderAgentCapabilities(selected, draft)}
 
-        <details class="agent-settings-section agent-channels" data-agent-section="${selected.id}:channels" ${uiState.agentOpenSections[`${selected.id}:channels`] ? 'open' : ''}>
+        <details class="agent-settings-section agent-channels" data-agent-section="${selected.id}:channels" ${agentsState.agentOpenSections[`${selected.id}:channels`] ? 'open' : ''}>
           <summary>消息渠道</summary>
           <p class="agent-section-note">${
             VALID_CHANNEL_TABS.length
@@ -381,9 +383,9 @@ function renderAgentPage() {
           <h1 class="page-title compact">Agent</h1>
           <div class="inline-actions">
             <select class="config-select agent-select" data-action="select-agent-profile" aria-label="选择 Agent">
-              ${(uiState.bootstrap?.customize?.agents || []).map(agent => ui`<option value="${agent.id}" ${selected?.id === agent.id ? 'selected' : ''}>${escapeHtml(agent.name)}${!agent.capabilities ? ' · '+t('旧版权限待迁移') : ''}</option>`).join('')}
+              ${(getBootstrap()?.customize?.agents || []).map(agent => ui`<option value="${agent.id}" ${selected?.id === agent.id ? 'selected' : ''}>${escapeHtml(agent.name)}${!agent.capabilities ? ' · '+t('旧版权限待迁移') : ''}</option>`).join('')}
             </select>
-            <button class="small-button agent-create-button" type="button" data-action="create-custom-agent" ${uiState.agentCreating ? 'disabled' : ''}>${uiState.agentCreating ? t('正在创建…') : t('新增 Agent')}</button>
+            <button class="small-button agent-create-button" type="button" data-action="create-custom-agent" ${agentsState.agentCreating ? 'disabled' : ''}>${agentsState.agentCreating ? t('正在创建…') : t('新增 Agent')}</button>
           </div>
         </div>
         <div class="agent-detail-column">${renderAgentWorkbench(selected)}</div>

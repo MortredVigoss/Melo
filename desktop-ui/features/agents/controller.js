@@ -4,16 +4,38 @@
 // avatar preview, channel test, capability/collaboration toggles, the
 // (Markdown / channel) autosave timers with their flush and unload paths, and
 // the editor scroll/caret capture that app.js's render() calls.
-// Step 1 is a byte-for-byte move out of desktop-ui/app.js: every function body
-// below is unchanged; only the action/form registration tables and the
-// input/change/toggle/scroll entry points are new wiring (their bodies are the
-// old `case` / listener branches). See features/README.md.
+// Moved out of desktop-ui/app.js byte-for-byte first (commit 1/5); since then
+// the bodies read the feature's own state (./state.js), the bootstrap through
+// getBootstrap() and send requests through ./api.js (./context.js). app.js's
+// render() keeps its full re-render and its generic protections and calls the
+// hooks below at the positions the Agent calls used to have. See
+// features/README.md.
 import { t } from '../../i18n.js';
 import { readAgentAvatar } from '../../agentAvatar.js';
 import { buildAgentProfilePatch } from './agentProfilePatch.js';
 import { agentDocumentWithPreset, agentDraftFromProfile, normalizeChannelsForDraft } from './agentDraft.js';
 import { decideAgentMcpAuthAction } from './agentMcpAuthorise.js';
-import { uiState, app, api, render, bgRender, showError, showFlashToast, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts, loadBootstrap, activeProject, agentProfileById, minimaxTtsConfigPatchForVoice, settingsFormEditors, nativeSettings, isAgentChannelAvailable } from './context.js';
+import { agentsState, resetAgentsState } from './state.js';
+import { bindAgentsContext, agentsApi, getBootstrap, app, render, bgRender, showError, showFlashToast, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts, refreshBootstrap, storeBootstrap, activeProject, agentProfileById, minimaxTtsConfigPatchForVoice, beginFormEdit, formEditToken, nativeSettings, isAgentChannelAvailable } from './context.js';
+
+// Binds the narrow context and starts from fresh feature state and idle
+// timers. app.js calls this once at startup (through ./index.js); tests call
+// it per case.
+export function installAgentsController(context) {
+  bindAgentsContext(context);
+  resetAgentsState();
+  window.clearTimeout(agentMarkdownAutosaveTimer);
+  window.clearTimeout(agentChannelAutosaveTimer);
+  window.clearTimeout(agentRuntimeRefreshTimer);
+  agentMarkdownAutosaveTimer = 0;
+  agentMarkdownAutosaveSequence = 0;
+  pendingAgentMarkdownAutosave = null;
+  agentMarkdownLastInteractionAt = 0;
+  agentChannelAutosaveTimer = 0;
+  agentChannelAutosaveSequence = 0;
+  pendingAgentChannelAutosave = null;
+  agentRuntimeRefreshTimer = 0;
+}
 
 let agentMarkdownAutosaveTimer = 0;
 let agentMarkdownAutosaveSequence = 0;
@@ -26,11 +48,11 @@ let agentRuntimeRefreshTimer = 0;
 const AGENT_MARKDOWN_AUTOSAVE_IDLE_MS = 900;
 
 function selectedAgentProfile() {
-  return agentProfileById(uiState.bootstrap?.settings?.selectedAgentId || 'main');
+  return agentProfileById(getBootstrap()?.settings?.selectedAgentId || 'main');
 }
 
 function selectedAgentScope() {
-  const scope = uiState.bootstrap?.settings?.selectedAgentScope;
+  const scope = getBootstrap()?.settings?.selectedAgentScope;
   const project = activeProject();
   return scope === 'project' && project ? 'project' : 'global';
 }
@@ -64,7 +86,7 @@ function agentSecretVisibilityKey(agentId, channelId) {
 function agentDraftFor(agent) {
   if (!agent) return null;
   const key = agentDraftKey(agent.id);
-  // The cached uiState.agentDrafts entry wins so the user's in-progress
+  // The cached agentsState.agentDrafts entry wins so the user's in-progress
   // edits aren't blown away on every render. When there isn't a cache
   // hit, agentDraftFromProfile() (lifted to ./agentDraft.js for unit-
   // testability) builds a fresh draft from the profile — including
@@ -75,19 +97,19 @@ function agentDraftFor(agent) {
   // no chip is "selected"), the hidden form input submitted '', and
   // /api/agents/update happily wrote `enabledMcpServerIds: []` over
   // whatever the profile had.
-  return uiState.agentDrafts[key] || agentDraftFromProfile(agent);
+  return agentsState.agentDrafts[key] || agentDraftFromProfile(agent);
 }
 
 function mergeAgentDraft(agentId, patch) {
   const draftKey = agentDraftKey(agentId);
   const currentDraft = {
-    ...(uiState.agentDrafts[draftKey] || agentDraftFor(agentProfileById(agentId)) || {}),
+    ...(agentsState.agentDrafts[draftKey] || agentDraftFor(agentProfileById(agentId)) || {}),
   };
-  uiState.agentDrafts[draftKey] = {
+  agentsState.agentDrafts[draftKey] = {
     ...currentDraft,
     ...patch,
   };
-  return uiState.agentDrafts[draftKey];
+  return agentsState.agentDrafts[draftKey];
 }
 
 function updateAgentChannelDraft(agentId, channelId, patch) {
@@ -105,7 +127,7 @@ function updateAgentChannelDraft(agentId, channelId, patch) {
 }
 
 function currentAgentScrollKey() {
-  if (uiState.bootstrap?.settings?.activeView !== 'agent' && !(uiState.bootstrap?.settings?.activeView === 'customize' && uiState.bootstrap?.settings?.selectedCustomizeSection === 'agents')) {
+  if (getBootstrap()?.settings?.activeView !== 'agent' && !(getBootstrap()?.settings?.activeView === 'customize' && getBootstrap()?.settings?.selectedCustomizeSection === 'agents')) {
     return null;
   }
 
@@ -118,7 +140,7 @@ function currentAgentScrollKey() {
 }
 
 function currentAgentEditorStateKey() {
-  if (uiState.bootstrap?.settings?.activeView !== 'agent' && !(uiState.bootstrap?.settings?.activeView === 'customize' && uiState.bootstrap?.settings?.selectedCustomizeSection === 'agents')) {
+  if (getBootstrap()?.settings?.activeView !== 'agent' && !(getBootstrap()?.settings?.activeView === 'customize' && getBootstrap()?.settings?.selectedCustomizeSection === 'agents')) {
     return null;
   }
 
@@ -129,11 +151,11 @@ function currentAgentEditorStateKey() {
 
   const scope = selectedAgentScope();
   const projectId = scope === 'project' ? activeProject()?.id || 'global' : 'global';
-  return `${scope}:${projectId}:${selected.id}:${uiState.agentEditorTab}`;
+  return `${scope}:${projectId}:${selected.id}:${agentsState.agentEditorTab}`;
 }
 
 function captureAgentEditorState() {
-  if (uiState.bootstrap?.settings?.activeView !== 'agent' && !(uiState.bootstrap?.settings?.activeView === 'customize' && uiState.bootstrap?.settings?.selectedCustomizeSection === 'agents')) {
+  if (getBootstrap()?.settings?.activeView !== 'agent' && !(getBootstrap()?.settings?.activeView === 'customize' && getBootstrap()?.settings?.selectedCustomizeSection === 'agents')) {
     return;
   }
 
@@ -143,7 +165,7 @@ function captureAgentEditorState() {
     return;
   }
 
-  uiState.agentEditorStates[stateKey] = {
+  agentsState.agentEditorStates[stateKey] = {
     scrollTop: editor.scrollTop,
     selectionStart: editor.selectionStart,
     selectionEnd: editor.selectionEnd,
@@ -152,41 +174,41 @@ function captureAgentEditorState() {
 }
 
 function captureAgentScrollState() {
-  if (uiState.bootstrap?.settings?.activeView !== 'agent' && !(uiState.bootstrap?.settings?.activeView === 'customize' && uiState.bootstrap?.settings?.selectedCustomizeSection === 'agents')) {
+  if (getBootstrap()?.settings?.activeView !== 'agent' && !(getBootstrap()?.settings?.activeView === 'customize' && getBootstrap()?.settings?.selectedCustomizeSection === 'agents')) {
     return;
   }
 
   const listPane = document.querySelector('.agent-list-pane');
   if (listPane instanceof HTMLElement) {
-    uiState.agentListScrollTop = listPane.scrollTop;
+    agentsState.agentListScrollTop = listPane.scrollTop;
   }
 
   const detailPane = document.querySelector('.agent-detail-column');
   const scrollKey = currentAgentScrollKey();
   if (detailPane instanceof HTMLElement && scrollKey) {
-    uiState.agentDetailScrollTops[scrollKey] = detailPane.scrollTop;
+    agentsState.agentDetailScrollTops[scrollKey] = detailPane.scrollTop;
   }
 }
 
 function restoreAgentScrollState() {
-  if (uiState.bootstrap?.settings?.activeView !== 'agent' && !(uiState.bootstrap?.settings?.activeView === 'customize' && uiState.bootstrap?.settings?.selectedCustomizeSection === 'agents')) {
+  if (getBootstrap()?.settings?.activeView !== 'agent' && !(getBootstrap()?.settings?.activeView === 'customize' && getBootstrap()?.settings?.selectedCustomizeSection === 'agents')) {
     return;
   }
 
   const listPane = document.querySelector('.agent-list-pane');
   if (listPane instanceof HTMLElement) {
-    listPane.scrollTop = uiState.agentListScrollTop || 0;
+    listPane.scrollTop = agentsState.agentListScrollTop || 0;
   }
 
   const detailPane = document.querySelector('.agent-detail-column');
   const scrollKey = currentAgentScrollKey();
   if (detailPane instanceof HTMLElement && scrollKey) {
-    detailPane.scrollTop = uiState.agentDetailScrollTops[scrollKey] || 0;
+    detailPane.scrollTop = agentsState.agentDetailScrollTops[scrollKey] || 0;
   }
 }
 
 function restoreAgentEditorState() {
-  if (uiState.bootstrap?.settings?.activeView !== 'agent') {
+  if (getBootstrap()?.settings?.activeView !== 'agent') {
     return;
   }
 
@@ -195,8 +217,8 @@ function restoreAgentEditorState() {
     return;
   }
 
-  const editorState = uiState.agentEditorStates[stateKey];
-  if (!editorState && !uiState.shouldFocusAgentEditor) {
+  const editorState = agentsState.agentEditorStates[stateKey];
+  if (!editorState && !agentsState.shouldFocusAgentEditor) {
     return;
   }
 
@@ -242,24 +264,24 @@ function restoreAgentEditorState() {
       }
     }
 
-    if (uiState.shouldFocusAgentEditor) {
+    if (agentsState.shouldFocusAgentEditor) {
       editor.focus({ preventScroll: true });
       editor.selectionStart = editor.selectionEnd = editor.value.length;
-      uiState.shouldFocusAgentEditor = false;
+      agentsState.shouldFocusAgentEditor = false;
     }
   });
 }
 
 function agentPresetById(presetId) {
-  return uiState.bootstrap?.customize?.agentPresets?.find(preset => preset.id === presetId) || null;
+  return getBootstrap()?.customize?.agentPresets?.find(preset => preset.id === presetId) || null;
 }
 
 function agentToolOptions() {
-  return uiState.bootstrap?.customize?.agentTools || [];
+  return getBootstrap()?.customize?.agentTools || [];
 }
 
 function selectedAgentNeedsRuntimeRefresh() {
-  if (uiState.bootstrap?.settings?.activeView !== 'agent') {
+  if (getBootstrap()?.settings?.activeView !== 'agent') {
     return false;
   }
 
@@ -288,24 +310,24 @@ function syncAgentRuntimeRefresh() {
     }
 
     try {
-      await loadBootstrap(uiState.searchQuery, { quiet: true });
+      await refreshBootstrap();
     } catch {}
   }, 4000);
 }
 
 async function handleCreateCustomAgent() {
-  if (uiState.agentCreating) return;
-  uiState.agentCreating = true;
+  if (agentsState.agentCreating) return;
+  agentsState.agentCreating = true;
   render();
   try {
-    const payload = await api('/api/agents/create-custom', { method: 'POST', body: {} });
+    const payload = await agentsApi.createCustom();
     applyBootstrap(payload);
     const form = app.querySelector('form[data-form="agent-profile-update"]');
-    if (form) settingsFormEditors.begin(form);
+    if (form) beginFormEdit(form);
     render();
     app.querySelector('form[data-form="agent-profile-update"] [name="name"]')?.select();
   } finally {
-    uiState.agentCreating = false;
+    agentsState.agentCreating = false;
     const button = app.querySelector('[data-action="create-custom-agent"]');
     if (button) { button.disabled = false; button.textContent = t('新增 Agent'); }
   }
@@ -325,39 +347,33 @@ async function handleUpdateAgentProfile(form) {
   const minimumVisibleMs = 100;
   const waitForMinimumVisibleState = new Promise(resolve => setTimeout(resolve, minimumVisibleMs));
 
-  uiState.agentSaveStates[saveKey] = true;
+  agentsState.agentSaveStates[saveKey] = true;
   bgRender();
 
   try {
-    const payload = await api('/api/agents/update', {
-      method: 'POST',
-      body: {
-        agentId: form.dataset.agentId,
-        scope,
-        projectId: scope === 'project' ? project?.id : null,
-        activeView: uiState.bootstrap?.settings?.activeView || 'customize',
-        patch,
-      },
+    const payload = await agentsApi.update({
+      agentId: form.dataset.agentId,
+      scope,
+      projectId: scope === 'project' ? project?.id : null,
+      activeView: getBootstrap()?.settings?.activeView || 'customize',
+      patch,
     });
     await waitForMinimumVisibleState;
-    delete uiState.agentDrafts[draftKey];
+    delete agentsState.agentDrafts[draftKey];
     applyBootstrap(payload);
     if (payload.agentExportWarning) showError(payload.agentExportWarning);
-    const activeTtsConfig = uiState.bootstrap?.settings?.config || {};
+    const activeTtsConfig = getBootstrap()?.settings?.config || {};
     const savedVoiceId = String(patch.minimaxVoiceId || '').trim();
     if (
       activeTtsConfig.ttsProvider === 'minimax' &&
       savedVoiceId &&
       activeTtsConfig.minimaxVoiceId === savedVoiceId
     ) {
-      api('/api/settings/model', {
-        method: 'POST',
-        body: minimaxTtsConfigPatchForVoice(savedVoiceId),
-      }).then(nextPayload => applyBootstrapPreservingDrafts(nextPayload)).catch(() => {});
+      agentsApi.saveModelSettings(minimaxTtsConfigPatchForVoice(savedVoiceId)).then(nextPayload => applyBootstrapPreservingDrafts(nextPayload)).catch(() => {});
     }
   } finally {
     await waitForMinimumVisibleState;
-    delete uiState.agentSaveStates[saveKey];
+    delete agentsState.agentSaveStates[saveKey];
     render();
   }
 }
@@ -374,15 +390,12 @@ async function handleTestAgentChannel(trigger) {
   const scope = selectedAgentScope();
   const patch = {};
 
-  const payload = await api('/api/agents/channel/test', {
-    method: 'POST',
-    body: {
-      agentId: form.dataset.agentId,
-      channelId,
-      scope,
-      projectId: scope === 'project' ? project?.id : null,
-      patch,
-    },
+  const payload = await agentsApi.testChannel({
+    agentId: form.dataset.agentId,
+    channelId,
+    scope,
+    projectId: scope === 'project' ? project?.id : null,
+    patch,
   });
   applyBootstrap(payload);
 }
@@ -393,17 +406,14 @@ async function saveAgentMarkdownSnapshot(snapshot) {
   }
 
   const requestSequence = ++agentMarkdownAutosaveSequence;
-  const payload = await api('/api/agents/update', {
-    method: 'POST',
-    body: {
-      agentId: snapshot.agentId,
-      scope: snapshot.scope,
-      projectId: snapshot.scope === 'project' ? snapshot.projectId : null,
-      activeView: uiState.bootstrap?.settings?.activeView || 'agent',
-      patch: {
-        identity: String(snapshot.identity || '').trim(),
-        'soul.md': String(snapshot.soulMd || '').trim(),
-      },
+  const payload = await agentsApi.update({
+    agentId: snapshot.agentId,
+    scope: snapshot.scope,
+    projectId: snapshot.scope === 'project' ? snapshot.projectId : null,
+    activeView: getBootstrap()?.settings?.activeView || 'agent',
+    patch: {
+      identity: String(snapshot.identity || '').trim(),
+      'soul.md': String(snapshot.soulMd || '').trim(),
     },
   });
 
@@ -411,8 +421,7 @@ async function saveAgentMarkdownSnapshot(snapshot) {
     return;
   }
 
-  uiState.bootstrap = payload;
-  uiState.error = '';
+  storeBootstrap(payload);
 }
 
 async function saveAgentChannelSnapshot(snapshot) {
@@ -436,7 +445,7 @@ async function saveAgentChannelSnapshot(snapshot) {
   // depends on agentSaveStates (the "Saving…" button label) will pick up the
   // new flag on the next render triggered by an actual DOM event (keystroke,
   // scroll, focus), which is visually indistinguishable at human timescales.
-  uiState.agentSaveStates[saveKey] = true;
+  agentsState.agentSaveStates[saveKey] = true;
 
   // Channel autosave also carries the three voice settings edited on the
   // channel voice section (voiceReplyMode, edgeTtsVoice, voicePersonality). They are
@@ -456,15 +465,12 @@ async function saveAgentChannelSnapshot(snapshot) {
   }
 
   try {
-    const payload = await api('/api/agents/update', {
-      method: 'POST',
-      body: {
-        agentId: snapshot.agentId,
-        scope: snapshot.scope,
-        projectId: snapshot.scope === 'project' ? snapshot.projectId : null,
-        activeView: uiState.bootstrap?.settings?.activeView || 'agent',
-        patch,
-      },
+    const payload = await agentsApi.update({
+      agentId: snapshot.agentId,
+      scope: snapshot.scope,
+      projectId: snapshot.scope === 'project' ? snapshot.projectId : null,
+      activeView: getBootstrap()?.settings?.activeView || 'agent',
+      patch,
     });
 
     if (requestSequence !== agentChannelAutosaveSequence) {
@@ -480,7 +486,7 @@ async function saveAgentChannelSnapshot(snapshot) {
   } finally {
     await waitForMinimumVisibleState;
     if (requestSequence === agentChannelAutosaveSequence) {
-      delete uiState.agentSaveStates[saveKey];
+      delete agentsState.agentSaveStates[saveKey];
       // Background-render: if the user is still typing, the typing guard in
       // render() will defer until they go idle. Prevents the autosave landing
       // from yanking the caret out of whatever input they're still editing.
@@ -627,24 +633,10 @@ function flushPendingAgentAutosavesOnUnload() {
       agentId: channelSnapshot.agentId,
       scope: channelSnapshot.scope,
       projectId: channelSnapshot.scope === 'project' ? channelSnapshot.projectId : null,
-      activeView: uiState.bootstrap?.settings?.activeView || 'agent',
+      activeView: getBootstrap()?.settings?.activeView || 'agent',
       patch,
     });
-    try {
-      if (navigator.sendBeacon) {
-        navigator.sendBeacon(
-          '/api/agents/update',
-          new Blob([body], { type: 'application/json' }),
-        );
-      } else {
-        fetch('/api/agents/update', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body,
-          keepalive: true,
-        }).catch(() => {});
-      }
-    } catch {}
+    agentsApi.beaconUpdate(body);
   }
 
   if (markdownSnapshot?.agentId) {
@@ -652,27 +644,13 @@ function flushPendingAgentAutosavesOnUnload() {
       agentId: markdownSnapshot.agentId,
       scope: markdownSnapshot.scope,
       projectId: markdownSnapshot.scope === 'project' ? markdownSnapshot.projectId : null,
-      activeView: uiState.bootstrap?.settings?.activeView || 'agent',
+      activeView: getBootstrap()?.settings?.activeView || 'agent',
       patch: {
         identity: String(markdownSnapshot.identity || '').trim(),
         'soul.md': String(markdownSnapshot.soulMd || '').trim(),
       },
     });
-    try {
-      if (navigator.sendBeacon) {
-        navigator.sendBeacon(
-          '/api/agents/update',
-          new Blob([body], { type: 'application/json' }),
-        );
-      } else {
-        fetch('/api/agents/update', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body,
-          keepalive: true,
-        }).catch(() => {});
-      }
-    } catch {}
+    agentsApi.beaconUpdate(body);
   }
 }
 
@@ -700,17 +678,14 @@ async function handleResetProjectAgentOverride(agentId) {
     return;
   }
 
-  const payload = await api('/api/agents/update', {
-    method: 'POST',
-    body: {
-      agentId,
-      scope: 'project',
-      projectId: project.id,
-      activeView: uiState.bootstrap?.settings?.activeView || 'customize',
-      clearProjectOverride: true,
-    },
+  const payload = await agentsApi.update({
+    agentId,
+    scope: 'project',
+    projectId: project.id,
+    activeView: getBootstrap()?.settings?.activeView || 'customize',
+    clearProjectOverride: true,
   });
-  delete uiState.agentDrafts[agentDraftKey(agentId, 'project', project.id)];
+  delete agentsState.agentDrafts[agentDraftKey(agentId, 'project', project.id)];
   applyBootstrap(payload);
 }
 
@@ -725,7 +700,7 @@ export const agentsActions = {
     await flushPendingAgentChannelAutosave();
     await patchSettings({
       activeView:
-        uiState.bootstrap.settings.activeView === 'agent' ? 'agent' : 'customize',
+        getBootstrap().settings.activeView === 'agent' ? 'agent' : 'customize',
       selectedCustomizeSection: 'agents',
       selectedAgentScope: trigger.dataset.scope === 'project' ? 'project' : 'global',
     });
@@ -746,8 +721,8 @@ export const agentsActions = {
   'select-agent-editor-tab': async ({ trigger }) => {
     await flushPendingAgentMarkdownAutosave();
     await flushPendingAgentChannelAutosave();
-    uiState.agentEditorTab = trigger.dataset.tab === 'soul' ? 'soul' : 'identity';
-    uiState.shouldFocusAgentEditor = true;
+    agentsState.agentEditorTab = trigger.dataset.tab === 'soul' ? 'soul' : 'identity';
+    agentsState.shouldFocusAgentEditor = true;
     render();
   },
   'import-agent-preset': async ({ trigger }) => {
@@ -756,7 +731,7 @@ export const agentsActions = {
   'reset-agent-draft': ({ trigger }) => {
     const agentId = trigger.dataset.agentId;
     if (agentId) {
-      delete uiState.agentDrafts[agentDraftKey(agentId)];
+      delete agentsState.agentDrafts[agentDraftKey(agentId)];
       render();
     }
   },
@@ -768,7 +743,7 @@ export const agentsActions = {
     const toolId = trigger.dataset.toolId;
     const draftKey = agentDraftKey(agentId);
     const currentDraft = {
-      ...(uiState.agentDrafts[draftKey] || agentDraftFor(agentProfileById(agentId)) || {}),
+      ...(agentsState.agentDrafts[draftKey] || agentDraftFor(agentProfileById(agentId)) || {}),
     };
     const nextTools = new Set(currentDraft.tools || []);
     if (nextTools.has(toolId)) {
@@ -777,7 +752,7 @@ export const agentsActions = {
       nextTools.add(toolId);
     }
     currentDraft.tools = [...nextTools];
-    uiState.agentDrafts[draftKey] = currentDraft;
+    agentsState.agentDrafts[draftKey] = currentDraft;
     render();
   },
   'toggle-agent-skill': ({ trigger }) => {
@@ -787,7 +762,7 @@ export const agentsActions = {
     const skillId = trigger.dataset.skillId;
     const draftKey = agentDraftKey(agentId);
     const currentDraft = {
-      ...(uiState.agentDrafts[draftKey] || agentDraftFor(agentProfileById(agentId)) || {}),
+      ...(agentsState.agentDrafts[draftKey] || agentDraftFor(agentProfileById(agentId)) || {}),
     };
     const currentIds = Array.isArray(currentDraft.enabledSkillIds)
       ? new Set(currentDraft.enabledSkillIds)
@@ -798,7 +773,7 @@ export const agentsActions = {
       currentIds.add(skillId);
     }
     currentDraft.enabledSkillIds = [...currentIds];
-    uiState.agentDrafts[draftKey] = currentDraft;
+    agentsState.agentDrafts[draftKey] = currentDraft;
     render();
   },
   'reset-agent-skill-whitelist': ({ trigger }) => {
@@ -806,10 +781,10 @@ export const agentsActions = {
     const agentId = trigger.dataset.agentId;
     const draftKey = agentDraftKey(agentId);
     const currentDraft = {
-      ...(uiState.agentDrafts[draftKey] || agentDraftFor(agentProfileById(agentId)) || {}),
+      ...(agentsState.agentDrafts[draftKey] || agentDraftFor(agentProfileById(agentId)) || {}),
     };
     currentDraft.enabledSkillIds = null;
-    uiState.agentDrafts[draftKey] = currentDraft;
+    agentsState.agentDrafts[draftKey] = currentDraft;
     render();
   },
   'toggle-agent-connector': ({ trigger }) => {
@@ -818,7 +793,7 @@ export const agentsActions = {
     const connectorId = trigger.dataset.connectorId;
     const draftKey = agentDraftKey(agentId);
     const currentDraft = {
-      ...(uiState.agentDrafts[draftKey] || agentDraftFor(agentProfileById(agentId)) || {}),
+      ...(agentsState.agentDrafts[draftKey] || agentDraftFor(agentProfileById(agentId)) || {}),
     };
     const currentIds = Array.isArray(currentDraft.enabledConnectorIds)
       ? new Set(currentDraft.enabledConnectorIds)
@@ -829,17 +804,17 @@ export const agentsActions = {
       currentIds.add(connectorId);
     }
     currentDraft.enabledConnectorIds = [...currentIds];
-    uiState.agentDrafts[draftKey] = currentDraft;
+    agentsState.agentDrafts[draftKey] = currentDraft;
     render();
   },
   'reset-agent-connector-whitelist': ({ trigger }) => {
     const agentId = trigger.dataset.agentId;
     const draftKey = agentDraftKey(agentId);
     const currentDraft = {
-      ...(uiState.agentDrafts[draftKey] || agentDraftFor(agentProfileById(agentId)) || {}),
+      ...(agentsState.agentDrafts[draftKey] || agentDraftFor(agentProfileById(agentId)) || {}),
     };
     currentDraft.enabledConnectorIds = null;
-    uiState.agentDrafts[draftKey] = currentDraft;
+    agentsState.agentDrafts[draftKey] = currentDraft;
     render();
   },
   'toggle-agent-mcp-server': ({ trigger }) => {
@@ -863,9 +838,9 @@ export const agentsActions = {
     const presetUnpinned = trigger.dataset.presetUnpinned === '1';
     const draftKey = agentDraftKey(agentId);
     const currentDraft = {
-      ...(uiState.agentDrafts[draftKey] || agentDraftFor(agentProfileById(agentId)) || {}),
+      ...(agentsState.agentDrafts[draftKey] || agentDraftFor(agentProfileById(agentId)) || {}),
     };
-    // Decision lives in `desktop-ui/agentMcpAuthorise.js` so node:test
+    // Decision lives in `./agentMcpAuthorise.js` so node:test
     // can pin the remove-always-allowed / add-refused-on-disabled-or-
     // unpinned table without simulating click events.
     const decision = decideAgentMcpAuthAction({
@@ -879,7 +854,7 @@ export const agentsActions = {
       return;
     }
     currentDraft.enabledMcpServerIds = decision.nextIds;
-    uiState.agentDrafts[draftKey] = currentDraft;
+    agentsState.agentDrafts[draftKey] = currentDraft;
     render();
   },
   'toggle-agent-secret': ({ trigger }) => {
@@ -887,7 +862,7 @@ export const agentsActions = {
     const channelId = trigger.dataset.channelId;
     if (agentId && channelId) {
       const key = agentSecretVisibilityKey(agentId, channelId);
-      uiState.agentSecretVisibility[key] = !uiState.agentSecretVisibility[key];
+      agentsState.agentSecretVisibility[key] = !agentsState.agentSecretVisibility[key];
       render();
     }
   },
@@ -913,7 +888,7 @@ export const agentsActions = {
           return;
         }
       }
-      uiState.agentChannelTab[agentId] = channelId;
+      agentsState.agentChannelTab[agentId] = channelId;
       render();
     }
   },
@@ -921,8 +896,8 @@ export const agentsActions = {
     await handleTestAgentChannel(trigger);
   },
   'confirm-agent-settings': async ({ trigger }) => {
-    await api('/api/agent-settings-sync/confirm',{method:'POST',body:{id:trigger.dataset.id,expected:trigger.dataset.expected,accept:trigger.dataset.accept==='true'}});
-    applyBootstrap(await api('/api/bootstrap'));
+    await agentsApi.confirmSettings({id:trigger.dataset.id,expected:trigger.dataset.expected,accept:trigger.dataset.accept==='true'});
+    applyBootstrap(await agentsApi.bootstrap());
   },
   'clear-agent-avatar': ({ trigger }) => {
     mergeAgentDraft(trigger.dataset.agentId,{avatarData:''});
@@ -941,7 +916,7 @@ export const agentsForms = {
 // Agent sections (capabilities / channels) the user opened.
 export function handleAgentSectionToggle(event) {
   const key = event.target.dataset?.agentSection;
-  if (key) uiState.agentOpenSections[key] = event.target.open;
+  if (key) agentsState.agentOpenSections[key] = event.target.open;
 }
 
 // Last branch of app.js's 'input' listener. Returns true when it handled the event.
@@ -1025,31 +1000,31 @@ export function handleAgentFileChange(target) {
 }
 
 async function importAgentDocument(target) {
-    const agentId = target.dataset.agentDocument;
-    const editIsCurrent = settingsFormEditors.editToken(target.form);
-    const key = agentDraftKey(agentId);
-    try {
-      const file=target.files?.[0]; if(!file) return;
-      if(file.size > 1000000) throw new Error('Markdown 文件过大，请控制在 1 MB 内。');
-      const instructions=await file.text();
-      if(instructions.length > 200100) throw new Error('Agent 人设文档超过 200100 字符。');
-      if(!editIsCurrent()) return;
-      uiState.agentDrafts[key]={...agentDraftFor(agentProfileById(agentId)),instructions};
-      render();
-    } catch(error) { showError(error.message); }
+  const agentId = target.dataset.agentDocument;
+  const editIsCurrent = formEditToken(target.form);
+  const key = agentDraftKey(agentId);
+  try {
+    const file=target.files?.[0]; if(!file) return;
+    if(file.size > 1000000) throw new Error('Markdown 文件过大，请控制在 1 MB 内。');
+    const instructions=await file.text();
+    if(instructions.length > 200100) throw new Error('Agent 人设文档超过 200100 字符。');
+    if(!editIsCurrent()) return;
+    agentsState.agentDrafts[key]={...agentDraftFor(agentProfileById(agentId)),instructions};
+    render();
+  } catch(error) { showError(error.message); }
 }
 
 async function previewAgentAvatar(target) {
-    const isCurrentEdit=settingsFormEditors.editToken(target.form);
-    const draftKey=agentDraftKey(target.dataset.agentAvatar);
-    const originalDraft=agentDraftFor(agentProfileById(target.dataset.agentAvatar));
-    try {
-      const avatarData = await readAgentAvatar(target.files?.[0]);
-      if(!isCurrentEdit()) return;
-      uiState.agentDrafts[draftKey]={...originalDraft,...uiState.agentDrafts[draftKey],avatarData};
-      render();
-    }
-    catch (error) { showError(error.message); }
+  const isCurrentEdit=formEditToken(target.form);
+  const draftKey=agentDraftKey(target.dataset.agentAvatar);
+  const originalDraft=agentDraftFor(agentProfileById(target.dataset.agentAvatar));
+  try {
+    const avatarData = await readAgentAvatar(target.files?.[0]);
+    if(!isCurrentEdit()) return;
+    agentsState.agentDrafts[draftKey]={...originalDraft,...agentsState.agentDrafts[draftKey],avatarData};
+    render();
+  }
+  catch (error) { showError(error.message); }
 }
 
 // Last branch inside the 'change' listener's try (agent-profile-update form
@@ -1131,6 +1106,40 @@ export function handleAgentProfileChange(target) {
     return true;
   }
   return false;
+}
+
+// ── Hooks app.js calls (architecture plan P2b) ──────────────────────────────
+// render() keeps its full re-render and generic protections (typing / scroll
+// guards, focused-input caret, nested scroll, textarea scroll, composer,
+// neural regions); the Agent-specific steps run at the positions they had:
+//   captureBeforeRender()       before the DOM update (list/detail scroll + editor caret)
+//   restoreScrollAfterRender()  right after syncThreadViewport(), before the generic scroll restore
+//   syncRuntimeRefresh()        after the textarea scroll restore (4 s Discord runtime poll)
+//   restoreEditorAfterRender()  after the composer restore, before the focused-input restore
+export function captureBeforeRender() {
+  captureAgentScrollState();
+  captureAgentEditorState();
+}
+export const restoreScrollAfterRender = () => restoreAgentScrollState();
+export const syncRuntimeRefresh = () => syncAgentRuntimeRefresh();
+export const restoreEditorAfterRender = () => restoreAgentEditorState();
+
+// Navigation away from the Agent page (neural shell, open-view,
+// select-agent-profile) awaits any pending Markdown / channel autosave first.
+export async function flushPending() {
+  await flushPendingAgentMarkdownAutosave();
+  await flushPendingAgentChannelAutosave();
+}
+// pagehide / beforeunload: synchronous best-effort beacon.
+export const flushOnUnload = () => flushPendingAgentAutosavesOnUnload();
+
+// settingsFormEditors ownership of the agent-profile-update form: this
+// feature keeps that form's draft (agentDrafts), scoped per Agent, scope and
+// project; a cancelled edit discards only that draft.
+export const ownsFormDraft = form => form.dataset.form === 'agent-profile-update';
+export const formDraftScope = form => agentDraftKey(form.dataset.agentId);
+export function discardFormDraft(form) {
+  delete agentsState.agentDrafts[agentDraftKey(form.dataset.agentId)];
 }
 
 export { selectedAgentProfile, selectedAgentScope, agentDraftKey, agentSaveKey, agentSecretVisibilityKey, agentDraftFor, mergeAgentDraft, updateAgentChannelDraft, currentAgentScrollKey, currentAgentEditorStateKey, captureAgentEditorState, captureAgentScrollState, restoreAgentScrollState, restoreAgentEditorState, agentPresetById, agentToolOptions, selectedAgentNeedsRuntimeRefresh, syncAgentRuntimeRefresh, handleCreateCustomAgent, handleUpdateAgentProfile, handleTestAgentChannel, saveAgentMarkdownSnapshot, saveAgentChannelSnapshot, scheduleAgentChannelAutosave, scheduleAgentMarkdownAutosave, flushPendingAgentMarkdownAutosave, flushPendingAgentChannelAutosave, flushPendingAgentAutosavesOnUnload, handleImportAgentPreset, handleResetProjectAgentOverride };
