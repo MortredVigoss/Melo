@@ -135,7 +135,9 @@ test('per-call concurrency: read actions overlap, write actions run one at a tim
   ], { workspacePath: home });
   assert.deepEqual(reads.map(r => r.result.ok), [true, true]);
   assert.equal(track.peak(), 2, 'two read actions should overlap');
-  assert.deepEqual(track.log.slice(0, 2), ['start:read:one', 'start:read:two']);
+  // Concurrent reads may finish their asynchronous setup in either order;
+  // both must start before either ends, but neither has a start-order promise.
+  assert.deepEqual(track.log.slice(0, 2).sort(), ['start:read:one', 'start:read:two']);
   track.log.length = 0;
   const writes = await executeToolCalls([
     { id: 'w1', tool, args: { action: 'write', target: 'one' } },
