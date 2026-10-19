@@ -27,6 +27,7 @@
 | 执行面板 | 桌面多段公开摘要与 API 白名单回执；手机已补独立 Responses/兼容 API/Anthropic 回执并保留历史 | 手机 `2afe9dd`，0.5.18 (24) 已装；协议/持久化/模拟器详情通过，真实服务回执本轮未发请求；v1 同步不传新增 api 字段 |
 | Agent 演进 P0–P4 | 已实现并迁移 6 Agent / 26 成果，14 对话保留；审查修正 `4680530` 已在桌面运行：同步放宽需桌面确认、项目受全局上限、知识只读检索、团队/预算/人设边界修正 | [实施与迁移](docs/agent-evolution-20261015.md) / [审查修正与回执](docs/agent-review-fixes-20261015.md)；仅用户要求 git pp。3554 JS / 23 Swift 日常通过，真实模型协作和真机单列 |
 | 手机 agent loop / 对齐修复 | 七项审计缺口已有实现：安全分页、可中断工具/授权、统一过滤的证据、按容量压缩与原文读取、按问题检索、完整成员配置和项目来源记忆 | [修复记录](docs/mobile-desktop-alignment.md)：代码 `ee8eb3f` / `3ad091c`；3975 JS / 32 Swift 日常、真实桌面 HTTP、模拟器发送与团队通过；[双端安装](docs/dual-reinstall-20261019.md)已覆盖，桌面及手机 0.7.4 (36) 启动/原数据保留通过，实体手机首页与登录标识已核对；真实服务另验 |
+| 架构维护成本 | `83654dd` 静态审计：后端 421 模块无静态循环；桌面 app.js 13,711 行，业务操作仍依赖全局 bootstrap，日常选组偏宽 | [优化方案](docs/architecture-maintainability-plan-20261019.md)：先模块/测试地图、业务与页面解耦试点、桌面页面拆分；尚未实施 |
 | 发布 gate | 当前 `npm test` 为日常按边界检查，`npm run test:full` 为完整发布 gate | 各记录的旧计数只属于当次源码；本次纯文档整理未重跑产品测试 |
 | 项目边界 | A/B 已交付：创建显式归属、执行器绑定能力、无项目聊天按需独立目录；文件面板/每次删除确认/遗留文件管理已合入本地 master `7ae2292` | [架构加固](docs/arch-hardening-20261015.md) / [UI 功能对齐](docs/ui-function-alignment-20261016.md)；项目聚合模型和完整删除级联仍见项目专项 |
 
@@ -114,7 +115,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | 线程（原名） | ID | 最新交接 / 实际范围 | 状态与证据 |
 | --- | --- | --- | --- |
 | melo审计修复（Cowork） | `01a11623-b29c-70c7-8ee0-bb21a1e6eef3` | 10-17 三路只读审计 → 四批修复：TTS 路由、上下文预算/窗口/压缩同源、逐轮上下文入用户消息、Discord 归档、Agent 成员/循环/审批加固、分层 gate 传递闭包、文档对齐 | 沙箱全量 JS 回归与基线一致；用户机器日常 gate 见本次提交；[审计与实施状态](docs/architecture-agent-context-audit-20261017.md) §7 |
-| melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 10-18 GitHub 介绍已发布；10-19 只读审计手机/电脑代码与逻辑，核实共享循环之外的简化和缺口 | [双端审计](docs/mobile-desktop-audit-20261019.md)，基线 `b5d889f`；7 项未修，定向回归与隔离复现，未修改产品代码/安装/推送 |
+| melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 七项双端修复已推送并覆盖两端；10-19 新增架构维护成本审计与分期方案 | [双端修复](docs/mobile-desktop-alignment.md) / [装机保留](docs/dual-reinstall-20261019.md)已验；[架构方案](docs/architecture-maintainability-plan-20261019.md)仅文档 WIP，8 项边界/选组测试通过，未实施重构 |
 | melo主线（历史·2026-10-15） | `01a10bf2-e092-7862-87fe-2f237a8fb6a0` | 架构、审计、记忆、function calling、日常 gate 和手机 OAuth；本次只补遗漏 | 已完成补录；授权核心已提交，相关共享文件仍有他线程 WIP；[build23 回执](docs/handoffs/melo-thread-backfill-20261015.md#historical)，产品任务交新主线 |
 | 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | API 观测、阅读/图片保留共享 WIP；五语/图像质量/MCP 已提交；本轮统一 Agent 设置并清除 Mood | Agent 日常 3573 JS / 23 Swift、浏览器与原生桌面通过，见 `docs/agent-settings-20261016.md`；现有聊天/Agent 保留，手机未重装 |
 | melo ui | `01a10bf3-d7b9-7832-a351-8b0f78e9c552` | 10-16 UI 设计语言审计：主视觉统一，新增浮层/设置/控件接入不完整；仅审计 | 六类差异与手机 Form 待验项见[审计报告](docs/ui-language-audit-20261016.md)；桌面实看/样式采样，手机源码层；此前[银河与留白](docs/galaxy-clarity-20261016.md)验证保留 |
@@ -611,3 +612,10 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 桌面安装源码 `897b77a`、健康检查 clean、原生启动通过；239 份原文件仅派生索引时间/耗时变化，账号配置/聊天/媒体完整保留，14 对话/6 Agent/1 项目。
 - 实体手机已覆盖并回读 0.7.4 (36)；用户解锁后启动 PID 3896，实体首页显示原 ChatGPT 登录状态及 11 对话/6 Agent。28 份既有文件无丢失：26 份字节一致，执行记录仅编码顺序变化、JSON 值一致，运行日志正常更新；11 对话/129 消息/6 Agent/21 图片目录文件保留。详见 [回执](docs/dual-reinstall-20261019.md)。
 - `phone-preservation.json` / `phone-home.png` / 版本与进程回读保存在 `.tmp/dual-reinstall-20261019/`；私有备份不入库，未读取 Keychain 明文。32 Swift、签名构建、双端安装/启动/数据保留通过；真实模型、远端服务部署及长后台未复验。本次只补文档并按既有授权 push，无 git pp。
+
+### 2026-10-19 — melo主线 — 架构维护成本审计与方案
+
+- 用户要求先看架构并出方案；基线 `83654dd`、工作树干净。只写 [专项方案](docs/architecture-maintainability-plan-20261019.md) 和交接，不改产品代码、真实数据或已安装应用，不提交/推送/git pp。
+- 核实桌面主入口 13,711 行、手机 ChatStore 1,052 行、主执行器 76 个直接静态依赖；13 个业务模块仍导入桌面 bootstrap。真实选组证明后端单文件和总览文档均触发 442 个 JS 测试文件及浏览器/Swift。
+- 现有 421 后端模块静态循环为 0，分层及传递边界通过，8 项边界/选组检查通过；证据 `.tmp/architecture-maintainability-20261019/`。静态可达范围不代表每轮执行量，本轮未做新的运行时性能测试。
+- 建议保留现有技术栈/存储，先执行 P0 + 项目业务回执试点 + 项目/Agent 页面拆分，再收敛执行编排与手机协调器；共享契约保证双端行为，数据分页/迁移后置。当前等待用户决定执行范围。
