@@ -2282,7 +2282,1568 @@
         "text": "",
         "expected": 0
       }
-    ]
+    ],
+    "capabilityElevation": {
+      "decisions": [
+        {
+          "name": "own ∩ parent allows the tool",
+          "input": {
+            "toolId": "file_read",
+            "member": {
+              "agentId": "builder",
+              "capabilities": [
+                "readFiles",
+                "writeFiles",
+                "runCommands",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "parent": {
+              "agentId": "main",
+              "capabilities": [
+                "readFiles",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "grants": [],
+            "context": {
+              "surface": true,
+              "runId": "run-1",
+              "projectId": "p1",
+              "chatId": "chat-1",
+              "allowedToolIds": null
+            },
+            "now": 1800000000000
+          },
+          "expected": {
+            "decision": "allowed",
+            "missing": [],
+            "effective": [
+              "readFiles",
+              "network",
+              "knowledgeMemory"
+            ],
+            "grantIds": []
+          }
+        },
+        {
+          "name": "member has it, parent lacks it → elevate beyond parent",
+          "input": {
+            "toolId": "file_write",
+            "member": {
+              "agentId": "builder",
+              "capabilities": [
+                "readFiles",
+                "writeFiles",
+                "runCommands",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "parent": {
+              "agentId": "main",
+              "capabilities": [
+                "readFiles",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "grants": [],
+            "context": {
+              "surface": true,
+              "runId": "run-1",
+              "projectId": "p1",
+              "chatId": "chat-1",
+              "allowedToolIds": null
+            },
+            "now": 1800000000000
+          },
+          "expected": {
+            "decision": "elevate-beyond-parent",
+            "missing": [
+              "writeFiles"
+            ],
+            "effective": [
+              "readFiles",
+              "network",
+              "knowledgeMemory"
+            ],
+            "options": [
+              "run",
+              "project",
+              "deny"
+            ],
+            "projectOptionScope": "project",
+            "grantIds": []
+          }
+        },
+        {
+          "name": "beyond parent without a project offers a 24-hour chat grant",
+          "input": {
+            "toolId": "bash",
+            "member": {
+              "agentId": "builder",
+              "capabilities": [
+                "readFiles",
+                "writeFiles",
+                "runCommands",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "parent": {
+              "agentId": "main",
+              "capabilities": [
+                "readFiles",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "grants": [],
+            "context": {
+              "surface": true,
+              "runId": "run-1",
+              "projectId": null,
+              "chatId": "chat-1",
+              "allowedToolIds": null
+            },
+            "now": 1800000000000
+          },
+          "expected": {
+            "decision": "elevate-beyond-parent",
+            "missing": [
+              "runCommands"
+            ],
+            "effective": [
+              "readFiles",
+              "network",
+              "knowledgeMemory"
+            ],
+            "options": [
+              "run",
+              "project",
+              "deny"
+            ],
+            "projectOptionScope": "chat",
+            "grantIds": []
+          }
+        },
+        {
+          "name": "no surface denies exactly as before",
+          "input": {
+            "toolId": "file_write",
+            "member": {
+              "agentId": "builder",
+              "capabilities": [
+                "readFiles",
+                "writeFiles",
+                "runCommands",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "parent": {
+              "agentId": "main",
+              "capabilities": [
+                "readFiles",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "grants": [],
+            "context": {
+              "surface": false,
+              "runId": "run-1",
+              "projectId": "p1",
+              "chatId": "chat-1",
+              "allowedToolIds": null
+            },
+            "now": 1800000000000
+          },
+          "expected": {
+            "decision": "deny-no-surface",
+            "reason": "no-surface",
+            "wouldPrompt": "elevate-beyond-parent",
+            "missing": [
+              "writeFiles"
+            ],
+            "effective": [
+              "readFiles",
+              "network",
+              "knowledgeMemory"
+            ],
+            "grantIds": []
+          }
+        },
+        {
+          "name": "ceiling: a member lacking the capability gets enable-own, never beyond-parent",
+          "input": {
+            "toolId": "file_write",
+            "member": {
+              "agentId": "research",
+              "capabilities": [
+                "readFiles",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "parent": {
+              "agentId": "main",
+              "capabilities": [
+                "readFiles",
+                "writeFiles",
+                "runCommands",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "grants": [],
+            "context": {
+              "surface": true,
+              "runId": "run-1",
+              "projectId": "p1",
+              "chatId": "chat-1",
+              "allowedToolIds": null
+            },
+            "now": 1800000000000
+          },
+          "expected": {
+            "decision": "enable-own",
+            "missing": [
+              "writeFiles"
+            ],
+            "effective": [
+              "readFiles",
+              "network",
+              "knowledgeMemory"
+            ],
+            "options": [
+              "run",
+              "always",
+              "deny"
+            ],
+            "grantIds": []
+          }
+        },
+        {
+          "name": "top-level Agent missing its own capability → enable-own",
+          "input": {
+            "toolId": "bash",
+            "member": {
+              "agentId": "main",
+              "capabilities": [
+                "readFiles",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "parent": null,
+            "grants": [],
+            "context": {
+              "surface": true,
+              "runId": "run-1",
+              "projectId": "p1",
+              "chatId": "chat-1",
+              "allowedToolIds": null
+            },
+            "now": 1800000000000
+          },
+          "expected": {
+            "decision": "enable-own",
+            "missing": [
+              "runCommands"
+            ],
+            "effective": [
+              "readFiles",
+              "network",
+              "knowledgeMemory"
+            ],
+            "options": [
+              "run",
+              "always",
+              "deny"
+            ],
+            "grantIds": []
+          }
+        },
+        {
+          "name": "run grant of this run allows the member",
+          "input": {
+            "toolId": "file_write",
+            "member": {
+              "agentId": "builder",
+              "capabilities": [
+                "readFiles",
+                "writeFiles",
+                "runCommands",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "parent": {
+              "agentId": "main",
+              "capabilities": [
+                "readFiles",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "grants": [
+              {
+                "id": "g1",
+                "agentId": "builder",
+                "atoms": [
+                  "writeFiles"
+                ],
+                "kind": "elevate-beyond-parent",
+                "scope": "run",
+                "runId": "run-1",
+                "projectId": "p1",
+                "chatId": "chat-1",
+                "createdAt": 1799999999000,
+                "expiresAt": 1800021600000
+              }
+            ],
+            "context": {
+              "surface": true,
+              "runId": "run-1",
+              "projectId": "p1",
+              "chatId": "chat-1",
+              "allowedToolIds": null
+            },
+            "now": 1800000000000
+          },
+          "expected": {
+            "decision": "allowed",
+            "missing": [],
+            "effective": [
+              "readFiles",
+              "writeFiles",
+              "network",
+              "knowledgeMemory"
+            ],
+            "grantIds": [
+              "g1"
+            ]
+          }
+        },
+        {
+          "name": "a run grant does not carry into the next run",
+          "input": {
+            "toolId": "file_write",
+            "member": {
+              "agentId": "builder",
+              "capabilities": [
+                "readFiles",
+                "writeFiles",
+                "runCommands",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "parent": {
+              "agentId": "main",
+              "capabilities": [
+                "readFiles",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "grants": [
+              {
+                "id": "g1",
+                "agentId": "builder",
+                "atoms": [
+                  "writeFiles"
+                ],
+                "kind": "elevate-beyond-parent",
+                "scope": "run",
+                "runId": "run-1",
+                "projectId": "p1",
+                "chatId": "chat-1",
+                "createdAt": 1799999999000,
+                "expiresAt": 1800021600000
+              }
+            ],
+            "context": {
+              "surface": true,
+              "runId": "run-2",
+              "projectId": "p1",
+              "chatId": "chat-1",
+              "allowedToolIds": null
+            },
+            "now": 1800000000000
+          },
+          "expected": {
+            "decision": "elevate-beyond-parent",
+            "missing": [
+              "writeFiles"
+            ],
+            "effective": [
+              "readFiles",
+              "network",
+              "knowledgeMemory"
+            ],
+            "options": [
+              "run",
+              "project",
+              "deny"
+            ],
+            "projectOptionScope": "project",
+            "grantIds": []
+          }
+        },
+        {
+          "name": "project grant applies to later runs in the same project",
+          "input": {
+            "toolId": "file_write",
+            "member": {
+              "agentId": "builder",
+              "capabilities": [
+                "readFiles",
+                "writeFiles",
+                "runCommands",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "parent": {
+              "agentId": "main",
+              "capabilities": [
+                "readFiles",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "grants": [
+              {
+                "id": "g1",
+                "agentId": "builder",
+                "atoms": [
+                  "writeFiles"
+                ],
+                "kind": "elevate-beyond-parent",
+                "scope": "project",
+                "runId": null,
+                "projectId": "p1",
+                "chatId": "chat-1",
+                "createdAt": 1799999999000,
+                "expiresAt": 1800086399000
+              }
+            ],
+            "context": {
+              "surface": true,
+              "runId": "run-9",
+              "projectId": "p1",
+              "chatId": "chat-1",
+              "allowedToolIds": null
+            },
+            "now": 1800000000000
+          },
+          "expected": {
+            "decision": "allowed",
+            "missing": [],
+            "effective": [
+              "readFiles",
+              "writeFiles",
+              "network",
+              "knowledgeMemory"
+            ],
+            "grantIds": [
+              "g1"
+            ]
+          }
+        },
+        {
+          "name": "project grant expires after 24 hours",
+          "input": {
+            "toolId": "file_write",
+            "member": {
+              "agentId": "builder",
+              "capabilities": [
+                "readFiles",
+                "writeFiles",
+                "runCommands",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "parent": {
+              "agentId": "main",
+              "capabilities": [
+                "readFiles",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "grants": [
+              {
+                "id": "g1",
+                "agentId": "builder",
+                "atoms": [
+                  "writeFiles"
+                ],
+                "kind": "elevate-beyond-parent",
+                "scope": "project",
+                "runId": null,
+                "projectId": "p1",
+                "chatId": "chat-1",
+                "createdAt": 1799913600000,
+                "expiresAt": 1800000000000
+              }
+            ],
+            "context": {
+              "surface": true,
+              "runId": "run-9",
+              "projectId": "p1",
+              "chatId": "chat-1",
+              "allowedToolIds": null
+            },
+            "now": 1800000000000
+          },
+          "expected": {
+            "decision": "elevate-beyond-parent",
+            "missing": [
+              "writeFiles"
+            ],
+            "effective": [
+              "readFiles",
+              "network",
+              "knowledgeMemory"
+            ],
+            "options": [
+              "run",
+              "project",
+              "deny"
+            ],
+            "projectOptionScope": "project",
+            "grantIds": []
+          }
+        },
+        {
+          "name": "project grant is bound to its project",
+          "input": {
+            "toolId": "file_write",
+            "member": {
+              "agentId": "builder",
+              "capabilities": [
+                "readFiles",
+                "writeFiles",
+                "runCommands",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "parent": {
+              "agentId": "main",
+              "capabilities": [
+                "readFiles",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "grants": [
+              {
+                "id": "g1",
+                "agentId": "builder",
+                "atoms": [
+                  "writeFiles"
+                ],
+                "kind": "elevate-beyond-parent",
+                "scope": "project",
+                "runId": null,
+                "projectId": "p1",
+                "chatId": "chat-1",
+                "createdAt": 1799999999000,
+                "expiresAt": 1800021600000
+              }
+            ],
+            "context": {
+              "surface": true,
+              "runId": "run-1",
+              "projectId": "p2",
+              "chatId": "chat-1",
+              "allowedToolIds": null
+            },
+            "now": 1800000000000
+          },
+          "expected": {
+            "decision": "elevate-beyond-parent",
+            "missing": [
+              "writeFiles"
+            ],
+            "effective": [
+              "readFiles",
+              "network",
+              "knowledgeMemory"
+            ],
+            "options": [
+              "run",
+              "project",
+              "deny"
+            ],
+            "projectOptionScope": "project",
+            "grantIds": []
+          }
+        },
+        {
+          "name": "chat grant applies in its chat when there is no project",
+          "input": {
+            "toolId": "file_write",
+            "member": {
+              "agentId": "builder",
+              "capabilities": [
+                "readFiles",
+                "writeFiles",
+                "runCommands",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "parent": {
+              "agentId": "main",
+              "capabilities": [
+                "readFiles",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "grants": [
+              {
+                "id": "g1",
+                "agentId": "builder",
+                "atoms": [
+                  "writeFiles"
+                ],
+                "kind": "elevate-beyond-parent",
+                "scope": "chat",
+                "runId": null,
+                "projectId": null,
+                "chatId": "chat-1",
+                "createdAt": 1799999999000,
+                "expiresAt": 1800021600000
+              }
+            ],
+            "context": {
+              "surface": true,
+              "runId": "run-3",
+              "projectId": null,
+              "chatId": "chat-1",
+              "allowedToolIds": null
+            },
+            "now": 1800000000000
+          },
+          "expected": {
+            "decision": "allowed",
+            "missing": [],
+            "effective": [
+              "readFiles",
+              "writeFiles",
+              "network",
+              "knowledgeMemory"
+            ],
+            "grantIds": [
+              "g1"
+            ]
+          }
+        },
+        {
+          "name": "revoked grant is inactive",
+          "input": {
+            "toolId": "file_write",
+            "member": {
+              "agentId": "builder",
+              "capabilities": [
+                "readFiles",
+                "writeFiles",
+                "runCommands",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "parent": {
+              "agentId": "main",
+              "capabilities": [
+                "readFiles",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "grants": [
+              {
+                "id": "g1",
+                "agentId": "builder",
+                "atoms": [
+                  "writeFiles"
+                ],
+                "kind": "elevate-beyond-parent",
+                "scope": "run",
+                "runId": "run-1",
+                "projectId": "p1",
+                "chatId": "chat-1",
+                "createdAt": 1799999999000,
+                "expiresAt": 1800021600000,
+                "revokedAt": 1799999999999
+              }
+            ],
+            "context": {
+              "surface": true,
+              "runId": "run-1",
+              "projectId": "p1",
+              "chatId": "chat-1",
+              "allowedToolIds": null
+            },
+            "now": 1800000000000
+          },
+          "expected": {
+            "decision": "elevate-beyond-parent",
+            "missing": [
+              "writeFiles"
+            ],
+            "effective": [
+              "readFiles",
+              "network",
+              "knowledgeMemory"
+            ],
+            "options": [
+              "run",
+              "project",
+              "deny"
+            ],
+            "projectOptionScope": "project",
+            "grantIds": []
+          }
+        },
+        {
+          "name": "beyond-parent grant never exceeds the member ceiling",
+          "input": {
+            "toolId": "file_write",
+            "member": {
+              "agentId": "builder",
+              "capabilities": [
+                "readFiles",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "parent": {
+              "agentId": "main",
+              "capabilities": [
+                "readFiles",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "grants": [
+              {
+                "id": "g1",
+                "agentId": "builder",
+                "atoms": [
+                  "writeFiles"
+                ],
+                "kind": "elevate-beyond-parent",
+                "scope": "run",
+                "runId": "run-1",
+                "projectId": "p1",
+                "chatId": "chat-1",
+                "createdAt": 1799999999000,
+                "expiresAt": 1800021600000
+              }
+            ],
+            "context": {
+              "surface": true,
+              "runId": "run-1",
+              "projectId": "p1",
+              "chatId": "chat-1",
+              "allowedToolIds": null
+            },
+            "now": 1800000000000
+          },
+          "expected": {
+            "decision": "enable-own",
+            "missing": [
+              "writeFiles"
+            ],
+            "effective": [
+              "readFiles",
+              "network",
+              "knowledgeMemory"
+            ],
+            "options": [
+              "run",
+              "always",
+              "deny"
+            ],
+            "grantIds": []
+          }
+        },
+        {
+          "name": "grant of another Agent does not apply",
+          "input": {
+            "toolId": "file_write",
+            "member": {
+              "agentId": "builder",
+              "capabilities": [
+                "readFiles",
+                "writeFiles",
+                "runCommands",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "parent": {
+              "agentId": "main",
+              "capabilities": [
+                "readFiles",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "grants": [
+              {
+                "id": "g1",
+                "agentId": "reviewer",
+                "atoms": [
+                  "writeFiles"
+                ],
+                "kind": "elevate-beyond-parent",
+                "scope": "run",
+                "runId": "run-1",
+                "projectId": "p1",
+                "chatId": "chat-1",
+                "createdAt": 1799999999000,
+                "expiresAt": 1800021600000
+              }
+            ],
+            "context": {
+              "surface": true,
+              "runId": "run-1",
+              "projectId": "p1",
+              "chatId": "chat-1",
+              "allowedToolIds": null
+            },
+            "now": 1800000000000
+          },
+          "expected": {
+            "decision": "elevate-beyond-parent",
+            "missing": [
+              "writeFiles"
+            ],
+            "effective": [
+              "readFiles",
+              "network",
+              "knowledgeMemory"
+            ],
+            "options": [
+              "run",
+              "project",
+              "deny"
+            ],
+            "projectOptionScope": "project",
+            "grantIds": []
+          }
+        },
+        {
+          "name": "enable-own run grant widens the ceiling for this run only",
+          "input": {
+            "toolId": "file_write",
+            "member": {
+              "agentId": "research",
+              "capabilities": [
+                "readFiles",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "parent": {
+              "agentId": "main",
+              "capabilities": [
+                "readFiles",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "grants": [
+              {
+                "id": "g1",
+                "agentId": "research",
+                "atoms": [
+                  "writeFiles"
+                ],
+                "kind": "enable-own",
+                "scope": "run",
+                "runId": "run-1",
+                "projectId": "p1",
+                "chatId": "chat-1",
+                "createdAt": 1799999999000,
+                "expiresAt": 1800021600000
+              }
+            ],
+            "context": {
+              "surface": true,
+              "runId": "run-1",
+              "projectId": "p1",
+              "chatId": "chat-1",
+              "allowedToolIds": null
+            },
+            "now": 1800000000000
+          },
+          "expected": {
+            "decision": "allowed",
+            "missing": [],
+            "effective": [
+              "readFiles",
+              "writeFiles",
+              "network",
+              "knowledgeMemory"
+            ],
+            "grantIds": [
+              "g1"
+            ]
+          }
+        },
+        {
+          "name": "MCP server in the member settings, not the parent → beyond parent",
+          "input": {
+            "toolId": "mcp:github:create_issue",
+            "member": {
+              "agentId": "builder",
+              "capabilities": [
+                "readFiles",
+                "writeFiles",
+                "runCommands",
+                "network",
+                "knowledgeMemory",
+                "mcpServers:github"
+              ]
+            },
+            "parent": {
+              "agentId": "main",
+              "capabilities": [
+                "readFiles",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "grants": [],
+            "context": {
+              "surface": true,
+              "runId": "run-1",
+              "projectId": "p1",
+              "chatId": "chat-1",
+              "allowedToolIds": null
+            },
+            "now": 1800000000000
+          },
+          "expected": {
+            "decision": "elevate-beyond-parent",
+            "missing": [
+              "mcpServers:github"
+            ],
+            "effective": [
+              "readFiles",
+              "network",
+              "knowledgeMemory"
+            ],
+            "options": [
+              "run",
+              "project",
+              "deny"
+            ],
+            "projectOptionScope": "project",
+            "grantIds": []
+          }
+        },
+        {
+          "name": "MCP server outside the Agent settings → enable-own",
+          "input": {
+            "toolId": "mcp:linear:list",
+            "member": {
+              "agentId": "main",
+              "capabilities": [
+                "readFiles",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "parent": null,
+            "grants": [],
+            "context": {
+              "surface": true,
+              "runId": "run-1",
+              "projectId": "p1",
+              "chatId": "chat-1",
+              "allowedToolIds": null
+            },
+            "now": 1800000000000
+          },
+          "expected": {
+            "decision": "enable-own",
+            "missing": [
+              "mcpServers:linear"
+            ],
+            "effective": [
+              "readFiles",
+              "network",
+              "knowledgeMemory"
+            ],
+            "options": [
+              "run",
+              "always",
+              "deny"
+            ],
+            "grantIds": []
+          }
+        },
+        {
+          "name": "skill outside the Agent settings → enable-own",
+          "input": {
+            "toolId": "skill:weekly-report",
+            "member": {
+              "agentId": "main",
+              "capabilities": [
+                "readFiles",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "parent": null,
+            "grants": [],
+            "context": {
+              "surface": true,
+              "runId": "run-1",
+              "projectId": "p1",
+              "chatId": "chat-1",
+              "allowedToolIds": null
+            },
+            "now": 1800000000000
+          },
+          "expected": {
+            "decision": "enable-own",
+            "missing": [
+              "skills:weekly-report"
+            ],
+            "effective": [
+              "readFiles",
+              "network",
+              "knowledgeMemory"
+            ],
+            "options": [
+              "run",
+              "always",
+              "deny"
+            ],
+            "grantIds": []
+          }
+        },
+        {
+          "name": "tool whitelist is never elevated",
+          "input": {
+            "toolId": "file_write",
+            "member": {
+              "agentId": "builder",
+              "capabilities": [
+                "readFiles",
+                "writeFiles",
+                "runCommands",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "parent": {
+              "agentId": "main",
+              "capabilities": [
+                "readFiles",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "grants": [],
+            "context": {
+              "surface": true,
+              "runId": "run-1",
+              "projectId": "p1",
+              "chatId": "chat-1",
+              "allowedToolIds": [
+                "file_read"
+              ]
+            },
+            "now": 1800000000000
+          },
+          "expected": {
+            "decision": "deny-ceiling",
+            "reason": "whitelist",
+            "missing": [],
+            "effective": [
+              "readFiles",
+              "network",
+              "knowledgeMemory"
+            ],
+            "grantIds": []
+          }
+        },
+        {
+          "name": "unclassified tool cannot be elevated",
+          "input": {
+            "toolId": "unclassified_plugin_tool",
+            "member": {
+              "agentId": "main",
+              "capabilities": [
+                "readFiles",
+                "writeFiles",
+                "runCommands",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "parent": null,
+            "grants": [],
+            "context": {
+              "surface": true,
+              "runId": "run-1",
+              "projectId": "p1",
+              "chatId": "chat-1",
+              "allowedToolIds": null
+            },
+            "now": 1800000000000
+          },
+          "expected": {
+            "decision": "deny-ceiling",
+            "reason": "unclassified",
+            "missing": [],
+            "effective": [
+              "readFiles",
+              "writeFiles",
+              "runCommands",
+              "network",
+              "knowledgeMemory"
+            ],
+            "grantIds": []
+          }
+        },
+        {
+          "name": "remote PDF write needs two capabilities beyond the parent",
+          "input": {
+            "toolId": "pdf",
+            "args": {
+              "action": "write",
+              "output": "a.pdf",
+              "url": "https://example.com/a.pdf"
+            },
+            "member": {
+              "agentId": "builder",
+              "capabilities": [
+                "readFiles",
+                "writeFiles",
+                "runCommands",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "parent": {
+              "agentId": "main",
+              "capabilities": [
+                "readFiles"
+              ]
+            },
+            "grants": [],
+            "context": {
+              "surface": true,
+              "runId": "run-1",
+              "projectId": "p1",
+              "chatId": "chat-1",
+              "allowedToolIds": null
+            },
+            "now": 1800000000000
+          },
+          "expected": {
+            "decision": "elevate-beyond-parent",
+            "missing": [
+              "writeFiles",
+              "network"
+            ],
+            "effective": [
+              "readFiles"
+            ],
+            "options": [
+              "run",
+              "project",
+              "deny"
+            ],
+            "projectOptionScope": "project",
+            "grantIds": []
+          }
+        },
+        {
+          "name": "one missing atom outside the ceiling makes the whole request enable-own",
+          "input": {
+            "toolId": "pdf",
+            "args": {
+              "action": "write",
+              "output": "a.pdf",
+              "url": "https://example.com/a.pdf"
+            },
+            "member": {
+              "agentId": "builder",
+              "capabilities": [
+                "readFiles",
+                "writeFiles"
+              ]
+            },
+            "parent": {
+              "agentId": "main",
+              "capabilities": [
+                "readFiles"
+              ]
+            },
+            "grants": [],
+            "context": {
+              "surface": true,
+              "runId": "run-1",
+              "projectId": "p1",
+              "chatId": "chat-1",
+              "allowedToolIds": null
+            },
+            "now": 1800000000000
+          },
+          "expected": {
+            "decision": "enable-own",
+            "missing": [
+              "writeFiles",
+              "network"
+            ],
+            "effective": [
+              "readFiles"
+            ],
+            "options": [
+              "run",
+              "always",
+              "deny"
+            ],
+            "grantIds": []
+          }
+        },
+        {
+          "name": "declared capability of a tool object decides the requirement",
+          "input": {
+            "toolId": "web_reader",
+            "tool": {
+              "id": "web_reader",
+              "capability": "network"
+            },
+            "member": {
+              "agentId": "main",
+              "capabilities": [
+                "readFiles"
+              ]
+            },
+            "parent": null,
+            "grants": [],
+            "context": {
+              "surface": true,
+              "runId": "run-1",
+              "projectId": "p1",
+              "chatId": "chat-1",
+              "allowedToolIds": null
+            },
+            "now": 1800000000000
+          },
+          "expected": {
+            "decision": "enable-own",
+            "missing": [
+              "network"
+            ],
+            "effective": [
+              "readFiles"
+            ],
+            "options": [
+              "run",
+              "always",
+              "deny"
+            ],
+            "grantIds": []
+          }
+        },
+        {
+          "name": "project override cannot always-enable what the global settings lack",
+          "input": {
+            "toolId": "bash",
+            "member": {
+              "agentId": "main",
+              "capabilities": [
+                "readFiles",
+                "network",
+                "knowledgeMemory"
+              ],
+              "scope": "project",
+              "globalCapabilities": [
+                "readFiles",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "parent": null,
+            "grants": [],
+            "context": {
+              "surface": true,
+              "runId": "run-1",
+              "projectId": "p1",
+              "chatId": "chat-1",
+              "allowedToolIds": null
+            },
+            "now": 1800000000000
+          },
+          "expected": {
+            "decision": "enable-own",
+            "missing": [
+              "runCommands"
+            ],
+            "effective": [
+              "readFiles",
+              "network",
+              "knowledgeMemory"
+            ],
+            "options": [
+              "run",
+              "deny"
+            ],
+            "alwaysUnavailable": true,
+            "grantIds": []
+          }
+        },
+        {
+          "name": "project override can always-enable what only the override lacks",
+          "input": {
+            "toolId": "bash",
+            "member": {
+              "agentId": "main",
+              "capabilities": [
+                "readFiles",
+                "network",
+                "knowledgeMemory"
+              ],
+              "scope": "project",
+              "globalCapabilities": [
+                "readFiles",
+                "writeFiles",
+                "runCommands",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "parent": null,
+            "grants": [],
+            "context": {
+              "surface": true,
+              "runId": "run-1",
+              "projectId": "p1",
+              "chatId": "chat-1",
+              "allowedToolIds": null
+            },
+            "now": 1800000000000
+          },
+          "expected": {
+            "decision": "enable-own",
+            "missing": [
+              "runCommands"
+            ],
+            "effective": [
+              "readFiles",
+              "network",
+              "knowledgeMemory"
+            ],
+            "options": [
+              "run",
+              "always",
+              "deny"
+            ],
+            "grantIds": []
+          }
+        },
+        {
+          "name": "a top-level scope narrowed by its caller is not elevated",
+          "input": {
+            "toolId": "file_write",
+            "member": {
+              "agentId": "main",
+              "capabilities": [
+                "readFiles",
+                "writeFiles",
+                "runCommands",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "parent": null,
+            "base": [
+              "readFiles"
+            ],
+            "grants": [],
+            "context": {
+              "surface": true,
+              "runId": "run-1",
+              "projectId": "p1",
+              "chatId": "chat-1",
+              "allowedToolIds": null
+            },
+            "now": 1800000000000
+          },
+          "expected": {
+            "decision": "deny-ceiling",
+            "reason": "narrowed",
+            "missing": [
+              "writeFiles"
+            ],
+            "effective": [
+              "readFiles"
+            ],
+            "grantIds": []
+          }
+        },
+        {
+          "name": "legacy (unmigrated) Agent keeps its unrestricted behaviour",
+          "input": {
+            "toolId": "bash",
+            "member": {
+              "agentId": "main",
+              "capabilities": null
+            },
+            "parent": null,
+            "grants": [],
+            "context": {
+              "surface": true,
+              "runId": "run-1",
+              "projectId": "p1",
+              "chatId": "chat-1",
+              "allowedToolIds": null
+            },
+            "now": 1800000000000
+          },
+          "expected": {
+            "decision": "allowed",
+            "missing": [],
+            "effective": null,
+            "grantIds": []
+          }
+        },
+        {
+          "name": "an expired run grant is inactive even in its run",
+          "input": {
+            "toolId": "file_write",
+            "member": {
+              "agentId": "builder",
+              "capabilities": [
+                "readFiles",
+                "writeFiles",
+                "runCommands",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "parent": {
+              "agentId": "main",
+              "capabilities": [
+                "readFiles",
+                "network",
+                "knowledgeMemory"
+              ]
+            },
+            "grants": [
+              {
+                "id": "g1",
+                "agentId": "builder",
+                "atoms": [
+                  "writeFiles"
+                ],
+                "kind": "elevate-beyond-parent",
+                "scope": "run",
+                "runId": "run-1",
+                "projectId": "p1",
+                "chatId": "chat-1",
+                "createdAt": 1799999999000,
+                "expiresAt": 1800000000000
+              }
+            ],
+            "context": {
+              "surface": true,
+              "runId": "run-1",
+              "projectId": "p1",
+              "chatId": "chat-1",
+              "allowedToolIds": null
+            },
+            "now": 1800000000000
+          },
+          "expected": {
+            "decision": "elevate-beyond-parent",
+            "missing": [
+              "writeFiles"
+            ],
+            "effective": [
+              "readFiles",
+              "network",
+              "knowledgeMemory"
+            ],
+            "options": [
+              "run",
+              "project",
+              "deny"
+            ],
+            "projectOptionScope": "project",
+            "grantIds": []
+          }
+        }
+      ],
+      "prompts": [
+        {
+          "decision": "elevate-beyond-parent",
+          "agent": "builder",
+          "parent": "main",
+          "atoms": [
+            "writeFiles"
+          ],
+          "expected": "builder 需要『修改文件』，main 没有这个能力"
+        },
+        {
+          "decision": "enable-own",
+          "agent": "main",
+          "parent": null,
+          "atoms": [
+            "runCommands"
+          ],
+          "expected": "此 Agent（main）需要『运行命令』"
+        },
+        {
+          "decision": "elevate-beyond-parent",
+          "agent": "builder",
+          "parent": "main",
+          "atoms": [
+            "writeFiles",
+            "network",
+            "mcpServers:github"
+          ],
+          "expected": "builder 需要『修改文件、联网、MCP 服务「github」』，main 没有这个能力"
+        }
+      ],
+      "expiries": [
+        {
+          "scope": "run",
+          "now": 1800000000000,
+          "expected": 1800021600000
+        },
+        {
+          "scope": "project",
+          "now": 1800000000000,
+          "expected": 1800086400000
+        },
+        {
+          "scope": "chat",
+          "now": 1800000000000,
+          "expected": 1800086400000
+        }
+      ]
+    }
   },
   "contextBudget": {
     "cloud": 160000,
@@ -2294,5 +3855,131 @@
     "chunkMaximum": 45000,
     "chunkMinimum": 4000,
     "margin": 512
+  },
+  "capabilityElevation": {
+    "description": "Temporary capability elevation and just-in-time enabling (2026-10-20). The ceiling is the Agent's own settings: effective = (own ∩ parent) ∪ (own ∩ beyond-parent grants) ∪ own run grants. Capabilities are written as atoms: a boolean capability key, or \"<list>:<id>\" for MCP servers, skills and connectors. Grants live in a desktop-local ledger (phone: its own ledger), never in prompts, memory or sync; only a user decision on a live request creates one.",
+    "decisions": [
+      "allowed",
+      "elevate-beyond-parent",
+      "enable-own",
+      "deny-no-surface",
+      "deny-ceiling"
+    ],
+    "denyReasons": {
+      "whitelist": "tool outside the run's tool whitelist",
+      "unclassified": "no capability combination allows the tool",
+      "narrowed": "the caller narrowed a top-level scope; nothing to elevate",
+      "no-surface": "no interactive surface for a prompt"
+    },
+    "responses": [
+      "run",
+      "project",
+      "always",
+      "deny"
+    ],
+    "options": {
+      "elevate-beyond-parent": [
+        "run",
+        "project",
+        "deny"
+      ],
+      "enable-own": [
+        "run",
+        "always",
+        "deny"
+      ]
+    },
+    "grantKinds": [
+      "elevate-beyond-parent",
+      "enable-own"
+    ],
+    "grantScopes": {
+      "run": {
+        "durationMs": 21600000,
+        "endsWithRun": true
+      },
+      "project": {
+        "durationMs": 86400000,
+        "endsWithRun": false
+      },
+      "chat": {
+        "durationMs": 86400000,
+        "endsWithRun": false
+      }
+    },
+    "promptTimeoutMs": 120000,
+    "booleanCapabilities": [
+      "readFiles",
+      "writeFiles",
+      "runCommands",
+      "network",
+      "knowledgeMemory",
+      "generateMedia",
+      "delegate"
+    ],
+    "listCapabilities": [
+      "mcpServers",
+      "skills",
+      "connectors"
+    ],
+    "jitVisible": [
+      "readFiles",
+      "writeFiles",
+      "runCommands",
+      "network",
+      "knowledgeMemory",
+      "generateMedia"
+    ],
+    "labels": {
+      "capabilities": {
+        "readFiles": "读取文件",
+        "writeFiles": "修改文件",
+        "runCommands": "运行命令",
+        "network": "联网",
+        "knowledgeMemory": "知识与记忆",
+        "generateMedia": "生成媒体",
+        "delegate": "委派"
+      },
+      "lists": {
+        "mcpServers": "MCP 服务「{id}」",
+        "skills": "技能「{id}」",
+        "connectors": "连接器「{id}」"
+      },
+      "separator": "、"
+    },
+    "texts": {
+      "beyondParentPrompt": "{agent} 需要『{capability}』，{parent} 没有这个能力",
+      "enableOwnPrompt": "此 Agent（{agent}）需要『{capability}』",
+      "toolLine": "用于工具 {tool}",
+      "optionLabels": {
+        "elevate-beyond-parent": {
+          "run": "仅本次任务",
+          "project": "本项目 24 小时",
+          "chat": "本对话 24 小时",
+          "deny": "拒绝"
+        },
+        "enable-own": {
+          "run": "仅本次",
+          "always": "一直开启",
+          "deny": "拒绝"
+        }
+      },
+      "alwaysUnavailable": "全局设置没有开启『{capability}』，项目设置不能单独开启；可以选择仅本次。",
+      "deniedOutput": "用户没有允许 {agent} 使用『{capability}』（工具 {tool}）。不要重试这个工具；告诉用户这一步需要这个能力，或换一种不需要它的做法。",
+      "timeoutOutput": "等待授权超时：{agent} 需要『{capability}』才能使用 {tool}。不要重试；告诉用户需要在 Melo 桌面端允许。",
+      "abortedOutput": "运行已停止，{agent} 使用『{capability}』的授权请求已取消。",
+      "runNotice": "本次运行临时允许 {agent} 使用『{capability}』",
+      "auditStage": "临时授权",
+      "auditWaiting": "等待用户决定：{prompt}",
+      "auditGranted": "用户允许 {agent} 使用『{capability}』（{scope}，至 {expires}）",
+      "auditAlways": "用户为 {agent} 一直开启『{capability}』（{settingsScope}设置）",
+      "auditDenied": "用户拒绝 {agent} 使用『{capability}』",
+      "auditTimeout": "等待授权超时，未允许 {agent} 使用『{capability}』",
+      "auditAborted": "运行停止，授权请求已取消",
+      "settingsScopes": {
+        "global": "全局",
+        "project": "项目"
+      }
+    }
   }
 }
