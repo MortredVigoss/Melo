@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { renderMemoryFacts, defaultCategory } from './memoryFacts.js';
+import { renderMemoryFacts, defaultCategory } from './viewFacts.js';
 test('memory management shows source, reversible forgetting and safe scope options',()=>{
   const data={records:[{id:'a',text:'<script>attack</script>',scope:'chat',status:'active',sourceTitle:'来源',sourceText:'用户原话',local:false}],total:1,offset:0,turns:[]};
   const html=renderMemoryFacts(data,{editing:'a'});

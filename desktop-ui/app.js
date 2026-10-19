@@ -6,9 +6,12 @@ import { t, ui } from './i18n.js';
 import { installLanguageControls } from './languageControls.js';
 import { renderExtraFast, editExtraFast, handleExtraFast } from './extraFast.js';
 import { decodeBootstrap, olderBootstrap, changedBootstrapSections, pageAffected } from './bootstrapPatch.js';
-import { EditSession, createSettingsFormEditors, installUnsavedSettingsGuard } from './settingsEdit.js';
-import { renderMemoryFacts, defaultCategory } from './memoryFacts.js';
-import { renderProjectMemoryBook } from './projectMemoryBook.js';
+import { createSettingsFormEditors, installUnsavedSettingsGuard } from './settingsEdit.js';
+import { renderProjectMemoryBook } from './features/memory/viewProjectBook.js';
+import { createActionRegistry } from './features/registry.js';
+import { bindMemoryContext } from './features/memory/context.js';
+import { memoryActions, memoryForms, handleMemoryRefsToggle, handleMemoryFactFieldInput, handleMemoryInput, handleMemoryChange, projectBookData, syncProjectDetailView } from './features/memory/controller.js';
+import { renderMemoryPane } from './features/memory/viewPane.js';
 import { renderLocalSettings, installLocalSettings, applyLocalAppearance, shouldSendOnEnter, notifyLocalCompletion, nativeSettings } from './localSettings.js';
 import { installImagePreview } from './imagePreview.js';
 import { renderSyncConflicts } from './syncConflicts.js';
@@ -48,7 +51,7 @@ import { renderAttachmentCards } from './attachmentCards.js';
 import { createSearchPageRenderer } from './searchPage.js';
 import { createScrollPreservation } from './scrollPreservation.js';
 import { visibleMessageWindow, expandThreadWindow, ensureMessageInThreadWindow } from './threadWindow.js';
-import { renderMessageMemoryRefs, personalTargetId } from './messageMemoryRefs.js';
+import { renderMessageMemoryRefs } from './features/memory/viewMessageRefs.js';
 import { isToolTraceMessage, renderToolTraceMessage } from './messageToolTrace.js';
 import { buildAgentProfilePatch } from './agentProfilePatch.js';
 import { attachmentLimit, makeTransferCopy, uploadVideoFile, MB } from './transferCopy.js';
@@ -75,7 +78,6 @@ import {
 } from './fileSafetyResponse.js';
 
 const app = document.querySelector('#app');
-const memoryFactEdit = new EditSession();
 const settingsFormEditors = createSettingsFormEditors({render,
   ownsDraft: form => form.dataset.form === 'agent-profile-update',
   scope: form => form.dataset.agentId ? agentDraftKey(form.dataset.agentId) : form.dataset.form==='task-pricing' ? uiState.bootstrap?.settings?.config?.model || '' : '',
@@ -89,10 +91,7 @@ settingsFormEditors.install(document);
 document.addEventListener('toggle', event => {
   const key = event.target.dataset?.agentSection;
   if (key) uiState.agentOpenSections[key] = event.target.open;
-  // Bug audit U3: the reply footer «本回答参考的记忆» is rebuilt by every
-  // render; remember which messages the user opened so it does not snap shut.
-  const refsMessageId = event.target.dataset?.messageMemoryRefs;
-  if (refsMessageId) { if (event.target.open) uiState.memoryRefsOpen[refsMessageId] = true; else delete uiState.memoryRefsOpen[refsMessageId]; }
+  handleMemoryRefsToggle(event);
 }, true);
 installUnsavedSettingsGuard(window);
 
@@ -348,6 +347,15 @@ const uiState = {
   // reading. { messageId, viewportOffset } — see captureThreadAnchor().
   pendingVizAnchor: null,
 };
+
+// Feature modules (architecture plan P2, desktop-ui/features/README.md):
+// each registers its click actions and form submits once; the click and
+// submit listeners ask these registries before their own switch.
+const featureActions = createActionRegistry('action');
+const featureForms = createActionRegistry('form');
+bindMemoryContext({ uiState, api, render, bgRender, showError, activeProject, escapeHtml });
+featureActions.register(memoryActions, 'memory');
+featureForms.register(memoryForms, 'memory');
 
 let contentScrollbarHideTimer = 0;
 let activeSearchFileSource = null;
@@ -9107,160 +9115,6 @@ async function handleKillBackgroundTask(runId) {
   }
 }
 
-async function handleMemoryRepairAction(action) {
-  const m = uiState.memoryStatus;
-  if (action === 'memory-pause') { m.pauseRepair = true; return; }
-  if (m.repairBusy) return;
-  const connection = action === 'memory-connect' ? { baseUrl: document.getElementById('memory-embed-url')?.value, model: document.getElementById('memory-embed-model')?.value } : null;
-  m.repairBusy = true; m.pauseRepair = false; bgRender();
-  try {
-    if (action === 'memory-repair') {
-      do {
-        const result = await api('/api/memory/repair', { method: 'POST', body: {} });
-        if (m.snapshot) m.snapshot.repair = result;
-        bgRender();
-        if (result.status !== 'paused') break;
-      } while (!m.pauseRepair);
-      await refreshMemoryStatus();
-      m.diagnosis = null;
-    } else {
-      m.diagnosis = await api(connection ? '/api/memory/connect' : '/api/memory/diagnose', connection ? { method: 'POST', body: connection } : {});
-    }
-  } catch (error) { showError(error.message); }
-  finally { m.repairBusy = false; bgRender(); }
-}
-
-async function handleMemoryFactAction(action, id) {
-  if (uiState.memoryFactBusy) return;
-  if (action === 'memory-fact-edit') { uiState.memoryFactEditing=id; const row=uiState.memoryFacts?.records.find(r=>r.id===id); uiState.memoryFactDraft={text:row?.text||'',scope:row?.scope||'chat',category:defaultCategory(row?.category),pinned:Boolean(row?.pinned)}; memoryFactEdit.begin(); uiState.memoryFactFeedback=null; bgRender(); return; }
-  if (action === 'memory-fact-cancel') { uiState.memoryFactEditing=null; uiState.memoryFactDraft=null; memoryFactEdit.cancel(); bgRender(); return; }
-  if (action === 'memory-fact-search') { uiState.memoryFactQuery=document.getElementById('memory-fact-query')?.value || ''; uiState.memoryFactOffset=0; await refreshMemoryStatus(); return; }
-  if (action === 'memory-fact-prev' || action === 'memory-fact-next') { uiState.memoryFactOffset=Math.max(0,(uiState.memoryFactOffset || 0)+(action.endsWith('next')?50:-50)); await refreshMemoryStatus(); return; }
-  if(action==='memory-fact-save' && !memoryFactEdit.start()) return;
-  // Cross-device conflict (design 2026-10-17 §3.4): 采用桌面版 / 采用手机版.
-  const resolveConflict=action==='memory-fact-resolve-desktop'?'desktop':action==='memory-fact-resolve-mobile'?'mobile':null;
-  const patch=resolveConflict ? {resolveConflict} : action === 'memory-fact-save' ? {...uiState.memoryFactDraft} : {forgotten:action==='memory-fact-forget'};
-  uiState.memoryFactBusy=true; bgRender();
-  // Bug audit U10: acting on row B must not discard row A's unsaved editor.
-  const closesEditor=action==='memory-fact-save'||Boolean(id&&id===uiState.memoryFactEditing);
-  try { await api('/api/memory/facts/update',{method:'POST',body:{id,patch}});if(closesEditor)memoryFactEdit.saved();uiState.memoryFactFeedback={id,message:resolveConflict?(resolveConflict==='desktop'?'已采用桌面版':'已采用手机版'):action==='memory-fact-save'?t("已保存"):action==='memory-fact-forget'?'已停止使用':'已恢复使用'};if(closesEditor){uiState.memoryFactEditing=null;uiState.memoryFactDraft=null;}await refreshMemoryStatus(); }
-  catch(error) { memoryFactEdit.failed(error); showError(error.message); }
-  finally { uiState.memoryFactBusy=false;bgRender(); }
-}
-
-// Project memory book (design 2B): the project page lists the book and lets
-// the user confirm / re-section / stop an auto row or hand-write one.
-// Bug audit U14: render() only reads the cache; loading happens when the
-// project page is entered / refreshed (syncProjectDetailView).
-function projectBookData(projectId) {
-  if (!projectId) return null;
-  return uiState.projectBook?.projectId === projectId ? uiState.projectBook.data || null : null;
-}
-const PROJECT_BOOK_FRESH_MS = 30_000, PROJECT_BOOK_RETRY_MS = 5 * 60_000;
-function loadProjectBook(projectId) {
-  if (!projectId) return;
-  const cached = uiState.projectBook?.projectId === projectId ? uiState.projectBook : null;
-  if (cached?.loadingId === projectId) return;
-  // Auto rows arrive from chats in the background: re-read after 30s, keeping
-  // the stale list on screen meanwhile. After a failure, keep what we have and
-  // do not retry (or alert again) for 5 minutes.
-  if (cached && Date.now() - (cached.loadedAt || 0) < PROJECT_BOOK_FRESH_MS) return;
-  if (cached?.failedAt && Date.now() - cached.failedAt < PROJECT_BOOK_RETRY_MS) return;
-  uiState.projectBook = { ...(cached || { projectId, data: null }), projectId, loadingId: projectId };
-  api(`/api/projects/memory-book?projectId=${encodeURIComponent(projectId)}`)
-    .then(data => { uiState.projectBook = { projectId, data, loadedAt: Date.now() }; bgRender(); })
-    .catch(error => {
-      uiState.projectBook = { projectId, data: cached?.data || { records: [] }, loadedAt: cached?.loadedAt || 0, failedAt: Date.now() };
-      if (!cached?.failedAt) showError(error.message);
-      bgRender();
-    });
-}
-// Bug audit U8 / U14: called whenever a bootstrap lands. Entering a project's
-// page loads its memory book; leaving it drops the hand-written draft, which
-// belongs to that project only.
-let projectDetailKey = null;
-function syncProjectDetailView(bootstrap = uiState.bootstrap) {
-  const key = bootstrap?.settings?.activeView === 'projects' && bootstrap?.activeProject?.id ? bootstrap.activeProject.id : null;
-  if (key !== projectDetailKey) { projectDetailKey = key; uiState.projectBookDraft = null; }
-  if (key) loadProjectBook(key);
-}
-async function refreshProjectBook(projectId) {
-  uiState.projectBook = { projectId, data: await api(`/api/projects/memory-book?projectId=${encodeURIComponent(projectId)}`), loadedAt: Date.now() };
-}
-// Bug audit U7 / U8: the hand-written draft is keyed by the project whose
-// form it was typed into; another project's draft never leaks in.
-function noteProjectBookDraft(form, patch) {
-  const projectId = form?.dataset?.projectId || activeProject()?.id;
-  if (!projectId) return;
-  const current = uiState.projectBookDraft?.projectId === projectId ? uiState.projectBookDraft : {};
-  uiState.projectBookDraft = { ...current, ...patch, projectId };
-}
-async function handleProjectBookAction(action, id, { section = null, form = null } = {}) {
-  const projectId = activeProject()?.id;
-  if (!projectId || uiState.projectBookBusy) return;
-  uiState.projectBookBusy = true; uiState.projectBookFeedback = null; bgRender();
-  try {
-    if (action === 'project-book-create') {
-      const data = new FormData(form);
-      await api('/api/projects/memory-book', { method: 'POST', body: { projectId, text: String(data.get('text') || ''), section: String(data.get('section') || 'convention') } });
-      uiState.projectBookDraft = null; uiState.projectBookFeedback = t('已写入记忆本');
-    } else {
-      const patch = action === 'project-book-confirm' ? { bookStatus: 'confirmed' }
-        : action === 'project-book-section' ? { section }
-        : { forgotten: action === 'project-book-forget' };
-      await api('/api/memory/facts/update', { method: 'POST', body: { id, patch } });
-      uiState.projectBookFeedback = action === 'project-book-confirm' ? t('已确认') : action === 'project-book-section' ? t('已改节') : action === 'project-book-forget' ? t('已停止使用') : t('已恢复使用');
-    }
-    await refreshProjectBook(projectId);
-    if (uiState.memoryFacts) await refreshMemoryStatus();
-  } catch (error) { showError(error.message); }
-  finally { uiState.projectBookBusy = false; bgRender(); }
-}
-
-// Reply-footer memory actions (design audit M5): promote a referenced fact to
-// the project / personal scope, or stop using it, right where it was seen.
-let memoryRefFeedbackTimer = null;
-async function handleMemoryRefAction(action, id, scope, { kind = null, messageId = null } = {}) {
-  if (!id || uiState.memoryFactBusy) return;
-  // Bug audit U15: 记成个人 on a project-book mirror row promotes the underlying
-  // chat fact and leaves the book row alone (the mirror would otherwise vanish
-  // from the book and never be re-created).
-  const targetId = action === 'memory-ref-scope' && scope === 'personal' ? personalTargetId({ id, kind }) : id;
-  if (!targetId) return;
-  const patch = action === 'memory-ref-forget' ? { forgotten: true } : { scope };
-  uiState.memoryFactBusy = true; bgRender();
-  try {
-    await api('/api/memory/facts/update', { method: 'POST', body: { id: targetId, patch } });
-    // Bug audit M14a / U9: the footer feedback is tied to the message it was
-    // clicked in and clears itself after 8 s (it used to persist across chats).
-    uiState.memoryRefFeedback = { id, messageId, message: action === 'memory-ref-forget' ? t('已停止使用') : scope === 'project' ? t('已记到项目') : t('已记成个人') };
-    const shown = uiState.memoryRefFeedback;
-    clearTimeout(memoryRefFeedbackTimer);
-    memoryRefFeedbackTimer = setTimeout(() => { if (uiState.memoryRefFeedback === shown) { uiState.memoryRefFeedback = null; bgRender(); } }, 8000);
-    if (uiState.memoryFacts) await refreshMemoryStatus();
-  } catch (error) { showError(error.message); }
-  finally { uiState.memoryFactBusy = false; bgRender(); }
-}
-
-async function refreshMemoryStatus() {
-  if (uiState.memoryStatus.loading) return;
-  uiState.memoryStatus.loading = true;
-  uiState.memoryStatus.error = null;
-  bgRender();
-  try {
-    const [response, facts] = await Promise.all([api('/api/memory/status'), api(`/api/memory/facts?q=${encodeURIComponent(uiState.memoryFactQuery || '')}&offset=${uiState.memoryFactOffset || 0}`)]);
-    uiState.memoryFacts = facts;
-    uiState.memoryStatus.snapshot = response;
-    if (!uiState.memoryConnection && response.connection) uiState.memoryConnection = response.connection;
-    uiState.memoryStatus.loaded = true;
-  } catch (err) {
-    uiState.memoryStatus.error = err?.message || 'Failed to load memory status';
-  } finally {
-    uiState.memoryStatus.loading = false;
-    bgRender();
-  }
-}
-
 // ── Safety allowlist (Phase 3b/3c) ─────────────────────────────────────
 //
 // Backed by the persistent fileSafetyAllowlist (config-stored).
@@ -9380,47 +9234,6 @@ async function removeDomainCookie(host) {
     uiState.domainCookies.pendingRemoveHost = null;
     render();
   }
-}
-
-async function doWipeEmbeddings() {
-  if (uiState.memoryStatus.wipeInFlight) return;
-  uiState.memoryStatus.wipeInFlight = true;
-  uiState.memoryStatus.wipeResult = null;
-  render();
-  try {
-    const response = await api('/api/memory/wipe-embeddings', {
-      method: 'POST',
-      body: { confirm: 'YES, WIPE EMBEDDINGS' },
-    });
-    uiState.memoryStatus.wipeResult = `Cleared ${response.cleared} embeddings (dims=${response.dims}).`;
-  } catch (err) {
-    uiState.memoryStatus.wipeResult = `Wipe failed: ${err?.message || 'unknown error'}`;
-  } finally {
-    uiState.memoryStatus.wipeInFlight = false;
-    uiState.memoryStatus.wipeConfirmOpen = false;
-    render();
-    // Refresh to reflect the new counts.
-    refreshMemoryStatus();
-  }
-}
-
-function fmtMemoryBytes(n) {
-  if (n == null) return '—';
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / 1024 / 1024).toFixed(2)} MB`;
-}
-
-function fmtMemoryRelTime(ms) {
-  if (ms == null) return '—';
-  const age = Date.now() - ms;
-  const s = Math.floor(age / 1000);
-  if (s < 60) return `${s}s ago`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 48) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
 }
 
 function renderSafetyPane() {
@@ -9598,149 +9411,6 @@ function renderDomainCookiesPane() {
 
     ${list}
   `;
-}
-
-function renderMemoryPane() {
-  const { loading, loaded, snapshot, error, wipeConfirmOpen, wipeInFlight, wipeResult } = uiState.memoryStatus;
-  if (!loaded && !loading && !error) {
-    // Kick off the first fetch; re-render happens inside refreshMemoryStatus.
-    Promise.resolve().then(refreshMemoryStatus);
-  }
-  const content = (() => {
-    if (loading && !snapshot) {
-      return ui`<div class="empty-state compact">正在检查记忆…</div>`;
-    }
-    if (error) {
-      return ui`<div class="alert compact-alert">${escapeHtml(error)}</div>`;
-    }
-    if (!snapshot) {
-      return ui`<div class="empty-state compact">暂无状态，点击刷新检查。</div>`;
-    }
-    const s = snapshot;
-    const drift = s.embedding?.drift || {};
-    const diagnosis = uiState.memoryStatus.diagnosis;
-    const needsRebuild = diagnosis ? diagnosis.issues.some(issue => ['model_changed', 'missing_index'].includes(issue.code)) : drift.hasDrift;
-    const semanticStatus = diagnosis?.available === false ? '暂不可用' : needsRebuild ? '需要重建' : diagnosis?.available ? '检测通过' : drift.inferredProvider ? '已配置 · 待检测' : drift.probeAttempted ? '暂不可用' : '未检测';
-    const metaRows = s.meta
-      ? Object.entries(s.meta)
-          .map(([k, v]) => ui`<div class="meta-label">${escapeHtml(k)}</div><div class="mono">${escapeHtml(String(v))}</div>`)
-          .join('')
-      : '<div class="list-row-meta">(not yet populated)</div>';
-    return ui`
-      <div class="detail-card memory-card">
-        <div class="header-row">
-          <div>
-            <h2 class="pane-title">记忆</h2>
-            <p class="page-kicker">查看 Melo 记住了什么，以及哪些检索能力当前可用。</p>
-          </div>
-          <div class="inline-actions">
-            <button class="small-button" data-action="refresh-memory-status">刷新</button>
-          </div>
-        </div>
-
-        ${s.derivedIndex ? ui`<p class="page-kicker" role="status">${escapeHtml(({ready:'最近保存的内容已进入检索索引',pending:'内容已保存，检索索引正在后台更新',deferred:'内容已保存，索引更新暂缓，稍后自动重试',inline:'当前以本机同步方式更新索引'})[s.derivedIndex.status] || '正在检查索引状态')}</p>` : ''}
-        ${drift.hasDrift ? ui`
-          <div class="alert compact-alert">
-            <strong>Embedding model drift detected.</strong>
-            Stored vectors were written by <span class="mono">${escapeHtml(drift.stored || '?')}</span>
-            but the active provider reports <span class="mono">${escapeHtml(drift.inferredProvider || '?')}</span>.
-            Recall quality may degrade until old vectors are rebuilt.
-          </div>
-        ` : ''}
-
-        <div class="quality-status-grid">
-          <div class="quality-status-card"><span>已保存记忆</span><strong>${s.counts.memories ?? '—'}</strong><small>记录保存在本机</small></div>
-          <div class="quality-status-card"><span>关键词索引</span><strong>${s.counts.memoriesFts == null ? '未确认' : s.counts.memoriesFts > 0 ? '已建立' : '等待内容'}</strong><small>可按文字检索已有记录</small></div>
-          <div class="quality-status-card"><span>语义检索</span><strong>${semanticStatus}</strong><small>${diagnosis?.available === false ? '当前使用关键词检索；已有文字记忆保留' : diagnosis?.available ? '以实际检索结果为准' : '点击检测模型，验证检索是否可用'}</small></div>
-        </div>
-        <section class="quality-details">
-          <h3>检索模型与索引</h3>
-          <p>模型就绪后会在后台分批建立索引。需要修复时可安全重建，原文与旧索引保留到新索引通过验证。</p>
-          <div class="inline-actions"><button class="small-button" data-action="memory-diagnose" ${uiState.memoryStatus.repairBusy ? 'disabled' : ''}>检测模型</button>
-          <button class="small-button" data-action="memory-repair" ${uiState.memoryStatus.repairBusy ? 'disabled' : ''}>${s.repair?.completed && s.repair.status !== 'complete' ? '继续修复' : '安全重建索引'}</button>
-          ${uiState.memoryStatus.repairBusy ? ui`<button class="small-button" data-action="memory-pause">本批完成后暂停</button>` : ''}</div>
-          ${s.repair ? ui`<p role="status">${escapeHtml(s.repair.status === 'complete' ? '已验证并切换' : s.repair.status === 'failed' ? '修复暂停' : '待继续')} · ${s.repair.completed}/${s.repair.total} · ${escapeHtml(s.repair.error || s.repair.note || '')}</p>` : ''}
-          ${uiState.memoryStatus.diagnosis ? ui`<p role="status">${escapeHtml(uiState.memoryStatus.diagnosis.available ? '实际嵌入请求成功' : '关键词检索模式')} · ${escapeHtml(uiState.memoryStatus.diagnosis.issues.map(i => i.message).join(' '))}</p>` : ''}
-          <p>Melo 内置多语言嵌入模型，在本机后台运行，无需安装其他软件。模型资源随应用提供；检索不会自动调用外部服务。</p>
-        </section>
-        ${renderMemoryFacts(uiState.memoryFacts,{query:uiState.memoryFactQuery,editing:uiState.memoryFactEditing,busy:uiState.memoryFactBusy,draft:uiState.memoryFactDraft,session:memoryFactEdit,feedback:uiState.memoryFactFeedback})}
-        <details class="quality-details"><summary>技术详情与维护</summary>
-        <div class="meta-block-label">Store</div>
-        <div class="meta-grid">
-          <div><div class="meta-label">Path</div><div class="mono small">${escapeHtml(s.store.path)}</div></div>
-          <div><div class="meta-label">Exists</div><div>${s.store.exists ? 'yes' : 'no'}</div></div>
-          <div><div class="meta-label">Size</div><div>${fmtMemoryBytes(s.store.sizeBytes)}</div></div>
-          <div><div class="meta-label">Memories</div><div>${s.counts.memories ?? '—'}</div></div>
-          <div><div class="meta-label">FTS rows</div><div>${s.counts.memoriesFts ?? '—'}</div></div>
-          <div><div class="meta-label">Vectors</div><div>${s.counts.vecMemories ?? '—'}</div></div>
-          <div><div class="meta-label">Embed cache</div><div>${s.counts.embeddingCache ?? '—'}</div></div>
-        </div>
-
-        <div class="meta-block-label">Embedding</div>
-        <div class="meta-grid">
-          <div><div class="meta-label">Provider</div><div class="mono">${escapeHtml(s.embedding.provider)}</div></div>
-          <div><div class="meta-label">Dims (configured)</div><div>${s.embedding.dimsConfigured}</div></div>
-          <div><div class="meta-label">Model (stored)</div><div class="mono">${escapeHtml(s.embedding.storedModelId || '(not yet recorded)')}</div></div>
-          <div><div class="meta-label">Model (live)</div><div class="mono">${escapeHtml(drift.inferredProvider || (drift.probeAttempted ? '(provider unavailable)' : '(probe skipped)'))}</div></div>
-        </div>
-
-        <div class="meta-block-label">Recall tuning (env)</div>
-        <div class="meta-grid">
-          <div><div class="meta-label">MMR λ</div><div class="mono">${s.tuning.mmrLambda}</div></div>
-          <div><div class="meta-label">Recency half-life</div><div class="mono">${s.tuning.recencyHalfLifeDays}d</div></div>
-        </div>
-        <p class="list-row-meta">
-          Set <span class="mono">MELO_MMR_LAMBDA</span> and <span class="mono">MELO_RECENCY_HALF_LIFE_DAYS</span>
-          in the launch environment to override.
-        </p>
-
-        <div class="meta-block-label">Dreams</div>
-        <div class="meta-grid">
-          <div><div class="meta-label">Directory</div><div class="mono small">${escapeHtml(s.dreams.dir)}</div></div>
-          <div><div class="meta-label">Count</div><div>${s.dreams.count}</div></div>
-          <div><div class="meta-label">Latest</div><div class="mono">${escapeHtml(s.dreams.latest?.name || '—')}</div></div>
-          <div><div class="meta-label">Last written</div><div>${fmtMemoryRelTime(s.dreams.latest?.mtimeMs)}</div></div>
-        </div>
-
-        <div class="subsection">
-          <div class="meta-block-label">Maintenance</div>
-          <div class="toggle-row">
-            <div>
-              <div class="list-row-title">Wipe stored embeddings</div>
-              <div class="list-row-meta">
-                Clears every <span class="mono">embedding</span> column and drops <span class="mono">vec_memories</span>.
-                The next embed pass repopulates from the current provider's vector space.
-                Memory rows themselves stay; only vectors are cleared. Use this after a deliberate
-                provider swap.
-              </div>
-            </div>
-            <button class="small-button is-danger" data-action="memory-wipe-open" ${wipeInFlight ? 'disabled' : ''}>
-              Wipe embeddings…
-            </button>
-          </div>
-          ${wipeConfirmOpen ? ui`
-            <div class="alert compact-alert">
-              <div><strong>This clears every stored vector.</strong> Memory rows and settings are untouched.</div>
-              <div class="inline-actions" style="margin-top: 8px;">
-                <button class="small-button is-danger" data-action="memory-wipe-confirm" ${wipeInFlight ? 'disabled' : ''}>
-                  ${wipeInFlight ? 'Wiping…' : 'Yes, wipe embeddings'}
-                </button>
-                <button class="small-button" data-action="memory-wipe-cancel" ${wipeInFlight ? 'disabled' : ''}>Cancel</button>
-              </div>
-            </div>
-          ` : ''}
-          ${wipeResult ? ui`<div class="list-row-meta" style="margin-top: 8px;">${escapeHtml(wipeResult)}</div>` : ''}
-        </div>
-
-        <div class="subsection">
-          <div class="meta-block-label">_meta table</div>
-          <div class="meta-grid">${metaRows}</div>
-        </div>
-        </details>
-      </div>
-    `;
-  })();
-  return ui`<div class="customize-pane">${content}</div>`;
 }
 
 // ───────────────────────────────────────────────────────────────────────
@@ -11432,6 +11102,7 @@ document.addEventListener('click', async event => {
 
   try {
     if(await handleManagementAction(action,trigger,{api,data:uiState.bootstrap,applyBootstrap,refresh:refreshAdvancedStatus})) return;
+    if (featureActions.has(action)) { await featureActions.dispatch(action, { action, trigger, event }); return; }
     switch (action) {
       case 'open-chat-files':
       case 'open-retained-files': await api('/api/workspace/open',{method:'POST',body:{chatId:trigger.dataset.chatId,retained:action==='open-retained-files'}});break;
@@ -11766,38 +11437,6 @@ document.addEventListener('click', async event => {
           selectedCustomizeSection: trigger.dataset.section,
         });
         break;
-      case 'memory-fact-search':
-      case 'memory-fact-prev':
-      case 'memory-fact-next':
-      case 'memory-fact-edit':
-      case 'memory-fact-cancel':
-      case 'memory-fact-save':
-      case 'memory-fact-forget':
-      case 'memory-fact-restore':
-      case 'memory-fact-resolve-desktop':
-      case 'memory-fact-resolve-mobile':
-        await handleMemoryFactAction(action,trigger.dataset.id || trigger.closest('[data-memory-record]')?.dataset.memoryRecord);
-        break;
-      case 'memory-ref-scope':
-      case 'memory-ref-forget':
-        await handleMemoryRefAction(action, trigger.dataset.memoryId, trigger.dataset.scope, { kind: trigger.dataset.kind || null, messageId: trigger.closest('[data-message-memory-refs]')?.dataset.messageMemoryRefs || null });
-        break;
-      case 'project-book-confirm':
-      case 'project-book-forget':
-      case 'project-book-restore':
-        await handleProjectBookAction(action, trigger.dataset.id);
-        break;
-      case 'memory-pause':
-      case 'memory-diagnose':
-      case 'memory-connect':
-      case 'memory-repair':
-        await handleMemoryRepairAction(action);
-        break;
-      case 'refresh-memory-status':
-        // Reset cache so re-opening the panel forces a fresh collect.
-        uiState.memoryStatus.loaded = false;
-        await refreshMemoryStatus();
-        break;
       case 'refresh-safety-allowlist':
         uiState.safetyAllowlist.loaded = false;
         await refreshSafetyAllowlist();
@@ -11822,18 +11461,6 @@ document.addEventListener('click', async event => {
       }
       case 'domain-cookie-remove':
         await removeDomainCookie(trigger.dataset.host);
-        break;
-      case 'memory-wipe-open':
-        uiState.memoryStatus.wipeConfirmOpen = true;
-        uiState.memoryStatus.wipeResult = null;
-        render();
-        break;
-      case 'memory-wipe-cancel':
-        uiState.memoryStatus.wipeConfirmOpen = false;
-        render();
-        break;
-      case 'memory-wipe-confirm':
-        await doWipeEmbeddings();
         break;
       case 'skill-detail-tab':
         // Phase 3 — switch between Overview and Markdown tabs for a Skill.
@@ -12746,7 +12373,7 @@ document.addEventListener('click', async event => {
 
 document.addEventListener('input', event => {
   const target = event.target;
-  if(target.id==='memory-fact-text'||target.id==='memory-fact-scope'||target.id==='memory-fact-category'||target.id==='memory-fact-pinned'){if(uiState.memoryFactDraft&&!uiState.memoryFactBusy){const field=target.id.replace('memory-fact-','');uiState.memoryFactDraft[field]=field==='pinned'?target.checked:target.value;memoryFactEdit.change();const button=document.querySelector('[data-action=memory-fact-save]');if(button){button.disabled=false;button.closest('.settings-edit-toolbar').dataset.editStatus='dirty';button.closest('.settings-edit-toolbar').querySelector('.settings-save-status').textContent=t("有未保存的修改");}}return;}
+  if (handleMemoryFactFieldInput(target)) return;
   if (
     !(
       target instanceof HTMLInputElement ||
@@ -12761,9 +12388,7 @@ document.addEventListener('input', event => {
   // background-initiated renders that would otherwise wipe document.activeElement
   // mid-keystroke and cause the "cursor jumped to another input" bug.
   lastUserKeystrokeAt = Date.now();
-  if (target.dataset.memoryConnection) { uiState.memoryConnection ||= {}; uiState.memoryConnection[target.dataset.memoryConnection] = target.value; return; }
-  // Bug audit U7: capture the memory-book draft on every keystroke, not only on blur.
-  if (target.form?.id === 'project-book-create' && target.name === 'text') { noteProjectBookDraft(target.form, { text: target.value }); return; }
+  if (handleMemoryInput(target)) return;
   if (target.dataset.taskPricing) { uiState.taskPricing ||= {}; uiState.taskPricing[target.dataset.taskPricing] = target.value; return; }
   if (handleImageInput(target, uiState.bootstrap?.settings?.config || {})) return;
   if (editExtraFast(target)) return;
@@ -12979,14 +12604,10 @@ document.addEventListener(
 
 document.addEventListener('change', async event => {
   const target = event.target;
-  if(target.id==='memory-fact-text'||target.id==='memory-fact-scope'||target.id==='memory-fact-category'||target.id==='memory-fact-pinned'){if(uiState.memoryFactDraft&&!uiState.memoryFactBusy){const field=target.id.replace('memory-fact-','');uiState.memoryFactDraft[field]=field==='pinned'?target.checked:target.value;memoryFactEdit.change();const button=document.querySelector('[data-action=memory-fact-save]');if(button){button.disabled=false;button.closest('.settings-edit-toolbar').dataset.editStatus='dirty';button.closest('.settings-edit-toolbar').querySelector('.settings-save-status').textContent=t("有未保存的修改");}}return;}
+  if (handleMemoryFactFieldInput(target)) return;
   if (target.name === 'team-member' && target.closest?.('[data-team-scope]')) { noteTeamMemberToggle(target); return; }
-  if (target.dataset?.bookSectionSelect) {
-    const record = target.closest('[data-book-record]')?.dataset.bookRecord;
-    if (record) { await handleProjectBookAction('project-book-section', record, { section: target.value }); return; }
-    noteProjectBookDraft(target.closest('form[data-form="project-book-create"]'), { section: target.value }); return;
-  }
-  if (target.closest?.('form[data-form="project-book-create"]') && target.name === 'text') { noteProjectBookDraft(target.closest('form'), { text: target.value }); return; }
+  const memoryChange = handleMemoryChange(target);
+  if (memoryChange) { await memoryChange; return; }
   if (target.dataset?.projectDefaultAgent) {
     try { applyBootstrapPreservingDrafts(await api('/api/projects/update',{method:'POST',body:{projectId:target.dataset.projectDefaultAgent,patch:{defaultAgentId:target.value}}})); }
     catch(error) { showError(error.message); }
@@ -13320,6 +12941,7 @@ document.addEventListener('submit', async event => {
   let saveError=null;
   if(editTicket) queueMicrotask(()=>render());
   try {
+    if (featureForms.has(form.dataset.form)) { await featureForms.dispatch(form.dataset.form, { form, event }); return; }
     switch (form.dataset.form) {
       case 'composer':
         await handleSendMessage();
@@ -13329,9 +12951,6 @@ document.addEventListener('submit', async event => {
         break;
       case 'project-update':
         await handleUpdateProject(form);
-        break;
-      case 'project-book-create':
-        await handleProjectBookAction('project-book-create', null, { form });
         break;
       case 'task-pricing': {
         const body=Object.fromEntries(new FormData(form));

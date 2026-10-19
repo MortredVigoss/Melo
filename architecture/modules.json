@@ -22,8 +22,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 532,
-      "edges": 1621,
+      "modules": 536,
+      "edges": 1633,
       "roots": [
         "src",
         "desktop-ui",
@@ -36,7 +36,7 @@
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
-      "detected": 29,
+      "detected": 28,
       "unannotated": []
     }
   },
@@ -1152,32 +1152,43 @@
         "src/memory/**",
         "src/services/memory/**",
         "src/runtime/{derivedIndexing,derivedIndexWorker}.js",
-        "desktop-ui/{memoryFacts,messageMemoryRefs,projectMemoryBook}.js",
-        "desktop-ui/memoryPane.source.test.js",
+        "desktop-ui/features/memory/**",
         "ios/Melo/MemoryFacts*.swift",
         "ios/Tests/MemoryFactsTests.swift",
         "scripts/{memory-status,bench-memory,prepare-memory-model}.js",
         "bench/**"
       ],
       "modules": {
-        "desktop-ui": 3,
+        "desktop-ui": 6,
         "src": 56
       },
       "entryModules": [
         {
-          "module": "desktop-ui/memoryFacts.js",
+          "module": "desktop-ui/features/memory/context.js",
           "importedBy": [
             "desktop-shell"
           ]
         },
         {
-          "module": "desktop-ui/messageMemoryRefs.js",
+          "module": "desktop-ui/features/memory/controller.js",
           "importedBy": [
             "desktop-shell"
           ]
         },
         {
-          "module": "desktop-ui/projectMemoryBook.js",
+          "module": "desktop-ui/features/memory/viewMessageRefs.js",
+          "importedBy": [
+            "desktop-shell"
+          ]
+        },
+        {
+          "module": "desktop-ui/features/memory/viewPane.js",
+          "importedBy": [
+            "desktop-shell"
+          ]
+        },
+        {
+          "module": "desktop-ui/features/memory/viewProjectBook.js",
           "importedBy": [
             "desktop-shell"
           ]
@@ -1373,12 +1384,12 @@
         "agents": 2,
         "approvals": 3,
         "chat": 10,
-        "desktop-shell": 3,
+        "desktop-shell": 5,
         "knowledge": 3,
         "media": 1,
         "platform": 24,
         "projects": 1,
-        "settings": 13,
+        "settings": 14,
         "sync": 2,
         "tools": 1
       },
@@ -1386,7 +1397,7 @@
         "agents": 11,
         "channels": 4,
         "chat": 27,
-        "desktop-shell": 3,
+        "desktop-shell": 5,
         "knowledge": 2,
         "media": 1,
         "platform": 19,
@@ -1406,9 +1417,12 @@
         "POST /api/projects/memory-book ← src/http/domainRoutes.js"
       ],
       "desktopUi": [
-        "desktop-ui/memoryFacts.js",
-        "desktop-ui/messageMemoryRefs.js",
-        "desktop-ui/projectMemoryBook.js"
+        "desktop-ui/features/memory/context.js",
+        "desktop-ui/features/memory/controller.js",
+        "desktop-ui/features/memory/viewFacts.js",
+        "desktop-ui/features/memory/viewMessageRefs.js",
+        "desktop-ui/features/memory/viewPane.js",
+        "desktop-ui/features/memory/viewProjectBook.js"
       ],
       "iphone": {
         "owned": [
@@ -1426,10 +1440,10 @@
           "npm run test:dreaming-scheduler"
         ],
         "js": [
-          "desktop-ui/memoryFacts.test.js",
-          "desktop-ui/memoryPane.source.test.js",
-          "desktop-ui/messageMemoryRefs.test.js",
-          "desktop-ui/projectMemoryBook.test.js",
+          "desktop-ui/features/memory/viewFacts.test.js",
+          "desktop-ui/features/memory/viewMessageRefs.test.js",
+          "desktop-ui/features/memory/viewPane.source.test.js",
+          "desktop-ui/features/memory/viewProjectBook.test.js",
           "src/memory/attic.test.js",
           "src/memory/checkpointer.test.js",
           "src/memory/compactLedger.test.js",
@@ -1502,11 +1516,10 @@
       },
       "implicit": [
         "gen-ios-scene",
-        "source-tests-app-js",
         "source-tests-self"
       ],
       "notes": [
-        "P2 首个试点：memoryFacts.js / projectMemoryBook.js / messageMemoryRefs.js 已是纯渲染器，状态与事件处理仍在 desktop-ui/app.js。",
+        "P2 首个试点：桌面记忆页、记忆本与回复页脚的状态、动作与渲染在 desktop-ui/features/memory/（controller.js 注册动作；view*.js 渲染），app.js 只做组合与分发。",
         "SQLite 同时含长期记忆、用户编辑与 memory_hits，不能整库当缓存删除。"
       ]
     },
@@ -1794,7 +1807,7 @@
         "desktop-shell": 12,
         "knowledge": 1,
         "media": 7,
-        "memory": 13,
+        "memory": 14,
         "platform": 16,
         "sync": 1,
         "tools": 7,
@@ -3274,7 +3287,7 @@
         "assets/**"
       ],
       "modules": {
-        "desktop-ui": 19,
+        "desktop-ui": 20,
         "src": 2
       },
       "entryModules": [
@@ -3323,7 +3336,7 @@
         "chat": 16,
         "knowledge": 2,
         "media": 7,
-        "memory": 3,
+        "memory": 5,
         "platform": 9,
         "projects": 4,
         "settings": 12,
@@ -3336,7 +3349,7 @@
         "approvals": 3,
         "chat": 9,
         "media": 4,
-        "memory": 3,
+        "memory": 5,
         "platform": 2,
         "projects": 2,
         "settings": 7,
@@ -3366,6 +3379,7 @@
         "desktop-ui/atomicButton.js",
         "desktop-ui/bootstrapPatch.js",
         "desktop-ui/emerald.css",
+        "desktop-ui/features/registry.js",
         "desktop-ui/i18n.js",
         "desktop-ui/index.html",
         "desktop-ui/launchScreen.css",
@@ -4160,9 +4174,10 @@
     {
       "feature": "memory",
       "desktop": [
-        "desktop-ui/memoryFacts.js",
-        "desktop-ui/projectMemoryBook.js",
-        "desktop-ui/messageMemoryRefs.js",
+        "desktop-ui/features/memory/controller.js",
+        "desktop-ui/features/memory/viewFacts.js",
+        "desktop-ui/features/memory/viewProjectBook.js",
+        "desktop-ui/features/memory/viewMessageRefs.js",
         "src/services/memory/memoryManagement.js"
       ],
       "iphone": [
@@ -4795,7 +4810,6 @@
       "tests": [
         "desktop-ui/connectorDraftDispatch.test.js",
         "desktop-ui/mediaAttachment.source.test.js",
-        "desktop-ui/memoryPane.source.test.js",
         "desktop-ui/newChatComposer.test.js",
         "desktop-ui/projectPresentation.test.js",
         "desktop-ui/sendRecovery.test.js",
@@ -4809,7 +4823,6 @@
         "chat",
         "desktop-shell",
         "media",
-        "memory",
         "projects",
         "tools",
         "voice"
@@ -4868,6 +4881,10 @@
         "desktop-ui/executionPanel.test.js": [
           "desktop-ui/executionPanel.js"
         ],
+        "desktop-ui/features/memory/viewPane.source.test.js": [
+          "desktop-ui/features/memory/controller.js",
+          "desktop-ui/features/memory/viewPane.js"
+        ],
         "desktop-ui/launchScreen.test.js": [
           "desktop-ui/launchScreen.js"
         ],
@@ -4909,6 +4926,7 @@
       "note": "测试读取自身被测模块的源码文本（规则/正则守卫），逐字节移植时保持文本",
       "tests": [
         "desktop-ui/executionPanel.test.js",
+        "desktop-ui/features/memory/viewPane.source.test.js",
         "desktop-ui/launchScreen.test.js",
         "desktop-ui/localSettings.test.js",
         "src/agents/skillRuns.crossHome.test.js",
@@ -4924,6 +4942,8 @@
       ],
       "reads": [
         "desktop-ui/executionPanel.js",
+        "desktop-ui/features/memory/controller.js",
+        "desktop-ui/features/memory/viewPane.js",
         "desktop-ui/launchScreen.js",
         "desktop-ui/localSettings.js",
         "src/agents/skillRuns.js",

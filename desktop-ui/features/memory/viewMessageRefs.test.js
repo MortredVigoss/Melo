@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { renderMessageMemoryRefs } from './messageMemoryRefs.js';
+import { renderMessageMemoryRefs } from './viewMessageRefs.js';
 
 const message = { id: 'm1', role: 'assistant', metadata: { memoryUsage: [
   { id: 'f1', kind: 'session-fact', text: 'prefers pnpm' },
@@ -31,7 +31,7 @@ test('shows feedback in place of actions and disables buttons while busy', () =>
 });
 
 // Bug audit 2026-10-18 M14 / U1 / U9 / U15.
-import { personalTargetId, ACTIONABLE_KINDS } from './messageMemoryRefs.js';
+import { personalTargetId, ACTIONABLE_KINDS } from './viewMessageRefs.js';
 
 test('U1/M14b: footer actions only on kinds the update route accepts; project-book / personal-profile rows hide the no-op scope button', () => {
   const html = renderMessageMemoryRefs({ id: 'm2', role: 'assistant', metadata: { memoryUsage: [

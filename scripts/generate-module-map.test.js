@@ -39,7 +39,7 @@ test('the map covers every requested feature with entries, routes, counterparts,
   const { projects, chat, memory } = map.features;
   assert.ok(projects.entryModules.some(entry => entry.module === 'src/services/project/projectMutations.js'));
   assert.ok(projects.httpRoutes.includes('POST /api/projects/update ← src/http/domainRoutes.js'));
-  assert.ok(memory.desktopUi.includes('desktop-ui/memoryFacts.js'));
+  assert.ok(memory.desktopUi.includes('desktop-ui/features/memory/viewFacts.js'));
   assert.ok(memory.httpRoutes.some(route => route.startsWith('GET /api/projects/memory-book ')));
   assert.ok(chat.sharedContracts.includes('agent-loop'));
   assert.ok(chat.tests.js.includes('src/runtime/agentLoopContract.test.js'));

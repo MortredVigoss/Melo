@@ -12,7 +12,8 @@ const LITERAL = /\bt\(\s*(['"])((?:\\.|(?!\1).)*)\1/g;
 
 export async function scanTranslationLiterals() {
   const found = new Map();
-  for (const file of (await readdir(dir)).sort()) {
+  // Recursive since architecture plan P2 moved page code into features/<name>/.
+  for (const file of (await readdir(dir, { recursive: true })).sort()) {
     if (!file.endsWith('.js') || file.includes('.test.')) continue;
     const source = await readFile(new URL(file, dir), 'utf8');
     for (const match of source.matchAll(LITERAL)) {

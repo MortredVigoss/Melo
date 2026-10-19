@@ -22,12 +22,12 @@ test('a project service change reports its feature, the iPhone counterpart and t
 });
 
 test('a desktop memory page renderer points at the phone memory views and the UI group', async () => {
-  const result = await report('desktop-ui/memoryFacts.js');
+  const result = await report('desktop-ui/features/memory/viewFacts.js');
   assert.equal(result.changed[0].feature, 'memory');
-  assert.ok(result.changed[0].importers.some(item => item.file === 'desktop-ui/app.js'));
+  assert.ok(result.changed[0].importers.some(item => item.file === 'desktop-ui/features/memory/viewPane.js'));
   assert.ok(result.counterparts.flatMap(checks).includes('ios/Melo/MemoryFacts.swift'));
   assert.deepEqual([result.testPlan.fullUnit, result.testPlan.browsers, result.testPlan.ios, result.testPlan.swift], [false, true, true, false]);
-  assert.ok(result.focused.tests.includes('desktop-ui/memoryFacts.test.js'));
+  assert.ok(result.focused.tests.includes('desktop-ui/features/memory/viewFacts.test.js'));
 });
 
 test('the phone agent loop points back at the desktop runner through the shared agent-loop contract', async () => {

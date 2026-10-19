@@ -4,7 +4,7 @@
 // surface never showed it — users could not see what the model was given,
 // nor promote a fact to the project or to their personal profile from the
 // place they noticed it. Pure renderer; actions are handled in app.js.
-import { t, ui } from './i18n.js';
+import { t, ui } from '../../i18n.js';
 
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 

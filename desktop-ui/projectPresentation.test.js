@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { renderTeamPanel } from './teamPanel.js';
-import { renderProjectMemoryBook } from './projectMemoryBook.js';
+import { renderProjectMemoryBook } from './features/memory/viewProjectBook.js';
 const source=readFileSync(new URL('./app.js',import.meta.url),'utf8');
 function renderer(name,bindings) {
  bindings={t,ui,...bindings};

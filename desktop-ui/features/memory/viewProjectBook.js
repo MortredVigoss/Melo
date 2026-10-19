@@ -1,7 +1,7 @@
 // Project page «记忆本» section (design 2026-10-17 §3.4, 2B). Pure renderer:
 // data comes from GET /api/projects/memory-book, actions are dispatched by
 // app.js (data-action="project-book-*").
-import { t, ui } from './i18n.js';
+import { t, ui } from '../../i18n.js';
 
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const BOOK_SECTION_LABELS = Object.freeze({ goal: '目标', convention: '约定', decision: '决定', progress: '进展', todo: '待办', file: '文件' });

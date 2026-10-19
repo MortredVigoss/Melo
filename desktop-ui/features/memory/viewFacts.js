@@ -1,5 +1,5 @@
-import { t, ui } from './i18n.js';
-import { renderEditActions, EditSession } from './settingsEdit.js';
+import { t, ui } from '../../i18n.js';
+import { renderEditActions, EditSession } from '../../settingsEdit.js';
 const escape=value=>String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 // Bug audit U6: static labels go through t() at render time (the interface
 // language is chosen after import). '仅原对话' is a native-catalog key

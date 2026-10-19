@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { renderProjectMemoryBook, groupBookRecords } from './projectMemoryBook.js';
+import { renderProjectMemoryBook, groupBookRecords } from './viewProjectBook.js';
 
 const project = { id: 'P', name: 'Proj' };
 const records = [
