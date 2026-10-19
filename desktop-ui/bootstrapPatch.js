@@ -33,3 +33,30 @@ export function pageAffected(view, sections) {
   if (!Object.hasOwn(fields,view)) return true;
   return [...shared,...fields[view]].some(key=>sections.has(key));
 }
+
+// Architecture plan P1 (src/http/bootstrapAfterCommit.js): a project or Agent
+// save that committed but could not rebuild the page data answers HTTP 200
+// `{ ok: true, receipt, bootstrapError }` instead of a bootstrap.
+export function committedWithoutBootstrap(payload) {
+  return payload?.ok === true && Boolean(payload.bootstrapError) && !payload.settings;
+}
+
+// Called by app.js's api() for every response. Such a receipt is never applied
+// as page data and never reported as a failed save (a retried create would
+// duplicate the project or Agent): reload GET /api/bootstrap instead, keeping
+// the Agent Markdown export warning the old response carried. If that reload
+// fails too, keep the current page data and tell the user the save itself
+// went through.
+export async function settleCommittedSave(payload, { reload, current, notify }) {
+  if (!committedWithoutBootstrap(payload)) return payload;
+  const warning = payload.receipt?.agentExportWarning;
+  let bootstrap;
+  try {
+    bootstrap = await reload();
+  } catch (error) {
+    bootstrap = current();
+    if (!bootstrap) throw error;
+    notify(error);
+  }
+  return warning ? { ...bootstrap, agentExportWarning: warning } : bootstrap;
+}

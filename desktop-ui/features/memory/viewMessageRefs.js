@@ -3,7 +3,7 @@
 // message.metadata.memoryUsage since the memory-feedback work, but the chat
 // surface never showed it — users could not see what the model was given,
 // nor promote a fact to the project or to their personal profile from the
-// place they noticed it. Pure renderer; actions are handled in app.js.
+// place they noticed it. Pure renderer; actions are handled in ./controller.js.
 import { t, ui } from '../../i18n.js';
 
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -17,7 +17,7 @@ export function renderMessageMemoryRefs(message, { feedback = null, busy = false
   // Project-book / personal-profile rows (design 2B) are session facts too.
   const facts = usage.filter(row => ACTIONABLE_KINDS.has(row.kind));
   // Bug audit U3: every render rebuilds the <details>; it stays open when the
-  // user opened it (tracked by app.js) or when its feedback is being shown.
+  // user opened it (tracked by ./controller.js) or when its feedback is being shown.
   const keepOpen = open || (!!feedback?.messageId && feedback.messageId === message.id);
   return ui`<details class="message-memory-refs" data-message-memory-refs="${escape(message.id)}" ${keepOpen ? 'open' : ''}>
     <summary>${escape(t('本回答参考的记忆'))}（${usage.length}）</summary>

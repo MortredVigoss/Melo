@@ -5,15 +5,11 @@ import { isAgentChannelAvailable } from '/shared/channelAvailability.js';
 import { t, ui } from './i18n.js';
 import { installLanguageControls } from './languageControls.js';
 import { renderExtraFast, editExtraFast, handleExtraFast } from './extraFast.js';
-import { decodeBootstrap, olderBootstrap, changedBootstrapSections, pageAffected } from './bootstrapPatch.js';
+import { decodeBootstrap, settleCommittedSave, olderBootstrap, changedBootstrapSections, pageAffected } from './bootstrapPatch.js';
 import { createSettingsFormEditors, installUnsavedSettingsGuard } from './settingsEdit.js';
 import { createActionRegistry } from './features/registry.js';
-import { bindMemoryContext } from './features/memory/context.js';
-import { memoryActions, memoryForms, handleMemoryRefsToggle, handleMemoryFactFieldInput, handleMemoryInput, handleMemoryChange, syncProjectDetailView } from './features/memory/controller.js';
-import { renderMemoryPane } from './features/memory/viewPane.js';
-import { bindProjectsContext } from './features/projects/context.js';
-import { projectsActions, projectsForms, handleProjectSearchInput, handleProjectDraftInput, handleProjectsChange } from './features/projects/controller.js';
-import { renderProjectsPage } from './features/projects/view.js';
+import { installMemoryFeature } from './features/memory/index.js';
+import { installProjectsFeature } from './features/projects/index.js';
 import { renderLocalSettings, installLocalSettings, applyLocalAppearance, shouldSendOnEnter, notifyLocalCompletion, nativeSettings } from './localSettings.js';
 import { installImagePreview } from './imagePreview.js';
 import { renderSyncConflicts } from './syncConflicts.js';
@@ -53,7 +49,6 @@ import { renderAttachmentCards } from './attachmentCards.js';
 import { createSearchPageRenderer } from './searchPage.js';
 import { createScrollPreservation } from './scrollPreservation.js';
 import { visibleMessageWindow, expandThreadWindow, ensureMessageInThreadWindow } from './threadWindow.js';
-import { renderMessageMemoryRefs } from './features/memory/viewMessageRefs.js';
 import { isToolTraceMessage, renderToolTraceMessage } from './messageToolTrace.js';
 import { buildAgentProfilePatch } from './agentProfilePatch.js';
 import { attachmentLimit, makeTransferCopy, uploadVideoFile, MB } from './transferCopy.js';
@@ -93,7 +88,7 @@ settingsFormEditors.install(document);
 document.addEventListener('toggle', event => {
   const key = event.target.dataset?.agentSection;
   if (key) uiState.agentOpenSections[key] = event.target.open;
-  handleMemoryRefsToggle(event);
+  memoryFeature.handleToggle(event);
 }, true);
 installUnsavedSettingsGuard(window);
 
@@ -127,7 +122,6 @@ const uiState = {
   composer: '',
   composerHistoryIndex: -1,
   composerHistoryDraft: '',
-  projectSearch: '',
   chatSearch: '',
   searchQuery: '',
   // Phase 3.3.2 — Customize → Skills filter state. `query` is a free-form
@@ -156,20 +150,6 @@ const uiState = {
     loaded: false,
     skills: [],
     error: null,
-  },
-  // Phase 3 — Customize → Memory panel. Lazily populated on first open.
-  // `snapshot` is the response from /api/memory/status; `wipeConfirmOpen`
-  // gates the destructive wipe-embeddings dialog so a single click can't
-  // drop vectors by accident.  `skillMarkdown` caches per-skill exported
-  // SKILL.md text so switching between tabs doesn't refetch every click.
-  memoryStatus: {
-    loading: false,
-    loaded: false,
-    snapshot: null,
-    error: null,
-    wipeConfirmOpen: false,
-    wipeInFlight: false,
-    wipeResult: null,
   },
   // File-safety persistent allowlist (Phase 3b/3c). Lazy-loaded on first
   // navigation to the Safety section; refresh-on-demand otherwise.
@@ -213,19 +193,11 @@ const uiState = {
   skillDetailTab: 'overview',
   // Cache: skillId → { loading, markdown, error }.  Cleared on import/reload.
   skillMarkdown: {},
-  showProjectForm: false,
   showArtifactForm: false,
   selectedArtifactId: null,
   fileEditMode: false,
   fileDraftPath: null,
   fileDraftContent: '',
-  draftProject: {
-    name: '',
-    tag: '',
-    summary: '',
-    instructions: '',
-    workspacePath: '',
-  },
   draftArtifact: {
     title: '',
     language: 'markdown',
@@ -285,9 +257,6 @@ const uiState = {
   // Per-chat "load earlier" expansion of the message render window
   // (chatId → extra messages beyond THREAD_RENDER_WINDOW). See threadWindow.js.
   threadWindow: {},
-  memoryRefFeedback: null,
-  // Message ids whose «本回答参考的记忆» footer the user opened (bug audit U3).
-  memoryRefsOpen: {},
   shouldFocusSearch: false,
   lastThreadScrollSignature: '',
   lastThreadChatId: null,
@@ -340,7 +309,6 @@ const uiState = {
   newChatModel: null,
   newChatArtifactIds: [],
   newChatProjectId: null,
-  showArchivedProjects: false,
   agentSelectorOpen: false,
   // Scroll position saved before re-render for position restoration
   lastKnownScrollTop: 0,
@@ -462,18 +430,26 @@ const icon = {
     '<svg viewBox="0 0 24 24"><path d="M3 3 21 21"/><path d="M10.6 10.7A3 3 0 0 0 13.3 13.4"/><path d="M9.9 5.3A10.8 10.8 0 0 1 12 5c6 0 9.5 7 9.5 7a17.6 17.6 0 0 1-3.2 3.7"/><path d="M6.2 6.2A17.1 17.1 0 0 0 2.5 12s3.5 7 9.5 7c1.5 0 2.8-.3 4-.8"/></svg>',
 };
 
-// Feature modules (architecture plan P2, desktop-ui/features/README.md):
-// each registers its click actions and form submits once; the click and
-// submit listeners ask these registries before their own switch. Bound here,
-// after uiState and icon exist, before any listener or render can run.
+// Feature modules (architecture plan P2, desktop-ui/features/README.md).
+// Each feature owns its state and gets a narrow context (named accessors and
+// callbacks, never uiState); it registers its click actions and form submits
+// once, and the click / submit listeners ask these registries before their
+// own switch. Installed here, after uiState and icon exist, before any
+// listener or render can run.
 const featureActions = createActionRegistry('action');
 const featureForms = createActionRegistry('form');
-bindMemoryContext({ uiState, api, render, bgRender, showError, activeProject, escapeHtml });
-featureActions.register(memoryActions, 'memory');
-featureForms.register(memoryForms, 'memory');
-bindProjectsContext({ uiState, api, render, showError, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts, startProjectSession, activeProject, activeProjectChats, activeProjectArtifacts, escapeHtml, truncate, icon });
-featureActions.register(projectsActions, 'projects');
-featureForms.register(projectsForms, 'projects');
+const memoryFeature = installMemoryFeature({ api, render, bgRender, showError, activeProject, escapeHtml });
+featureActions.register(memoryFeature.actions, 'memory');
+featureForms.register(memoryFeature.forms, 'memory');
+const projectsFeature = installProjectsFeature({
+  getBootstrap: () => uiState.bootstrap,
+  api, render, showError, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts, startProjectSession,
+  activeProject, activeProjectChats, activeProjectArtifacts,
+  renderMemoryBook: memoryFeature.renderProjectBook,
+  escapeHtml, truncate, icon,
+});
+featureActions.register(projectsFeature.actions, 'projects');
+featureForms.register(projectsFeature.forms, 'projects');
 
 const HOME_PROMPT_PRESETS = [
   {
@@ -2512,7 +2488,14 @@ async function api(path, options = {}) {
     throw new Error(payload.error || 'Request failed.');
   }
 
-  return decodeBootstrap(payload, base);
+  // A project/Agent save that committed but could not rebuild the page data
+  // answers { ok, receipt, bootstrapError } (P1, src/http/bootstrapAfterCommit.js):
+  // reload the bootstrap instead of applying the receipt, for every caller.
+  return settleCommittedSave(decodeBootstrap(payload, base), {
+    reload: () => api('/api/bootstrap'),
+    current: () => uiState.bootstrap,
+    notify: error => showError(`${t('已保存')} · ${error.message}`),
+  });
 }
 
 function parseEventStreamBlock(block) {
@@ -2662,7 +2645,7 @@ async function loadBootstrap(query = uiState.searchQuery, { quiet = false } = {}
     if (olderBootstrap(incoming, uiState.bootstrap)) return;
     changedSections = changedBootstrapSections(uiState.bootstrap, incoming);
     uiState.bootstrap = incoming;
-    syncProjectDetailView();
+    memoryFeature.onBootstrap(uiState.bootstrap);
     if (firstBootstrap) {
       uiState.neuralOverview = uiState.bootstrap.settings.activeView === 'chat' && !uiState.bootstrap.settings.selectedChatId;
     }
@@ -3565,7 +3548,7 @@ function applyBootstrap(payload) {
   const prevProjectId = uiState.bootstrap?.settings?.selectedProjectId || null;
   const nextProjectId = payload?.settings?.selectedProjectId || null;
   uiState.bootstrap = payload;
-  syncProjectDetailView();
+  memoryFeature.onBootstrap(uiState.bootstrap);
   // Drafts belong to each role and scope; only save/cancel may discard them.
   syncSelectedArtifact();
   if (payload?.settings?.activeView !== 'search' || !uiState.searchQuery.trim()) {
@@ -3584,7 +3567,7 @@ function applyBootstrapPreservingDrafts(payload, { background = false } = {}) {
   if (olderBootstrap(payload, uiState.bootstrap)) return;
   const changedSections = changedBootstrapSections(uiState.bootstrap, payload);
   uiState.bootstrap = payload;
-  syncProjectDetailView();
+  memoryFeature.onBootstrap(uiState.bootstrap);
   syncSelectedArtifact();
   if (payload?.settings?.activeView !== 'search' || !uiState.searchQuery.trim()) {
     stopSearchFileStream();
@@ -7154,7 +7137,7 @@ function renderMessageList(chat) {
               ${renderMessageBlocks(message)}
               ${renderAssistantVizMount(message)}
               ${renderMessageToolResults(message)}
-              ${renderMessageMemoryRefs(message, { feedback: uiState.memoryRefFeedback, busy: uiState.memoryFactBusy, open: Boolean(uiState.memoryRefsOpen[message.id]) })}
+              ${memoryFeature.renderMessageRefs(message)}
               ${renderMessageAttachments(message)}
               ${renderModelReceipt(message, escapeHtml)}
               ${renderSceneReplay(message)}
@@ -9263,7 +9246,7 @@ function renderCustomizePage() {
                 approvalPanelHtml: renderApprovalPanel(),
               })
             : section === 'memory'
-              ? renderMemoryPane()
+              ? memoryFeature.renderPane()
             : section === 'safety'
               ? renderSafetyPane()
               : ui`
@@ -9567,7 +9550,7 @@ function renderPage() {
 
   switch (view) {
     case 'projects':
-      return renderProjectsPage();
+      return projectsFeature.renderPage();
     case 'agent':
       return renderAgentPage();
     case 'model':
@@ -11909,7 +11892,7 @@ document.addEventListener('click', async event => {
 
 document.addEventListener('input', event => {
   const target = event.target;
-  if (handleMemoryFactFieldInput(target)) return;
+  if (memoryFeature.handleFieldInput(target)) return;
   if (
     !(
       target instanceof HTMLInputElement ||
@@ -11924,7 +11907,7 @@ document.addEventListener('input', event => {
   // background-initiated renders that would otherwise wipe document.activeElement
   // mid-keystroke and cause the "cursor jumped to another input" bug.
   lastUserKeystrokeAt = Date.now();
-  if (handleMemoryInput(target)) return;
+  if (memoryFeature.handleInput(target)) return;
   if (target.dataset.taskPricing) { uiState.taskPricing ||= {}; uiState.taskPricing[target.dataset.taskPricing] = target.value; return; }
   if (handleImageInput(target, uiState.bootstrap?.settings?.config || {})) return;
   if (editExtraFast(target)) return;
@@ -11953,7 +11936,7 @@ document.addEventListener('input', event => {
     return;
   }
 
-  if (handleProjectSearchInput(target)) return;
+  if (projectsFeature.handleSearchInput(target)) return;
 
   if (target.id === 'chat-search') {
     uiState.chatSearch = target.value;
@@ -12008,7 +11991,7 @@ document.addEventListener('input', event => {
     return;
   }
 
-  if (handleProjectDraftInput(target)) return;
+  if (projectsFeature.handleDraftInput(target)) return;
 
   if (target.form?.dataset.form === 'artifact-create') {
     uiState.draftArtifact[target.name] = target.value;
@@ -12133,11 +12116,11 @@ document.addEventListener(
 
 document.addEventListener('change', async event => {
   const target = event.target;
-  if (handleMemoryFactFieldInput(target)) return;
+  if (memoryFeature.handleFieldInput(target)) return;
   if (target.name === 'team-member' && target.closest?.('[data-team-scope]')) { noteTeamMemberToggle(target); return; }
-  const memoryChange = handleMemoryChange(target);
+  const memoryChange = memoryFeature.handleChange(target);
   if (memoryChange) { await memoryChange; return; }
-  const projectsChange = handleProjectsChange(target);
+  const projectsChange = projectsFeature.handleChange(target);
   if (projectsChange) { await projectsChange; return; }
   if (target.dataset?.chatContext) {
     const chat = !uiState.neuralOverview ? activeChat() : null;

@@ -22,8 +22,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 539,
-      "edges": 1645,
+      "modules": 546,
+      "edges": 1654,
       "roots": [
         "src",
         "desktop-ui",
@@ -36,7 +36,7 @@
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
-      "detected": 28,
+      "detected": 29,
       "unannotated": []
     }
   },
@@ -57,7 +57,7 @@
         "src/desktopStore.projectsDefault.test.js"
       ],
       "modules": {
-        "desktop-ui": 4,
+        "desktop-ui": 7,
         "src": 15
       },
       "entryModules": [
@@ -69,19 +69,7 @@
           ]
         },
         {
-          "module": "desktop-ui/features/projects/context.js",
-          "importedBy": [
-            "desktop-shell"
-          ]
-        },
-        {
-          "module": "desktop-ui/features/projects/controller.js",
-          "importedBy": [
-            "desktop-shell"
-          ]
-        },
-        {
-          "module": "desktop-ui/features/projects/view.js",
+          "module": "desktop-ui/features/projects/index.js",
           "importedBy": [
             "desktop-shell"
           ]
@@ -168,9 +156,9 @@
         "agents": 4,
         "approvals": 1,
         "chat": 1,
-        "desktop-shell": 4,
+        "desktop-shell": 5,
         "knowledge": 1,
-        "memory": 3,
+        "memory": 1,
         "platform": 19,
         "settings": 1,
         "tools": 3
@@ -178,7 +166,7 @@
       "usedBy": {
         "approvals": 4,
         "chat": 9,
-        "desktop-shell": 7,
+        "desktop-shell": 5,
         "memory": 1,
         "platform": 5,
         "sync": 1,
@@ -197,8 +185,11 @@
       ],
       "desktopUi": [
         "desktop-ui/chatFiles.js",
+        "desktop-ui/features/projects/api.js",
         "desktop-ui/features/projects/context.js",
         "desktop-ui/features/projects/controller.js",
+        "desktop-ui/features/projects/index.js",
+        "desktop-ui/features/projects/state.js",
         "desktop-ui/features/projects/view.js"
       ],
       "iphone": {
@@ -218,6 +209,7 @@
         ],
         "js": [
           "desktop-ui/chatFiles.browser.test.js",
+          "desktop-ui/features/projects/controller.test.js",
           "desktop-ui/features/projects/view.test.js",
           "desktop-ui/projectR1.browser.test.js",
           "src/desktopStore.projectsDefault.test.js",
@@ -232,11 +224,10 @@
         ],
         "swift": []
       },
-      "implicit": [
-        "source-tests-self"
-      ],
+      "implicit": [],
       "notes": [
         "修改入口：src/services/project/projectMutations.js；查询：projectService.js。P1 起项目修改返回提交回执，兼容 HTTP 适配器再组装 bootstrap。",
+        "桌面项目页（P2）：desktop-ui/features/projects/（state.js 自有状态、controller.js 动作、view.js 渲染、api.js 请求），app.js 只保留跨页导航 focus-project / select-project 与 startProjectSession。",
         "聊天工作目录生命周期在 src/services/workspace/chatWorkspaceFiles.js；手机项目页在 PersonalWorkspace.swift（ProjectsView）。"
       ]
     },
@@ -1183,39 +1174,14 @@
         "bench/**"
       ],
       "modules": {
-        "desktop-ui": 6,
+        "desktop-ui": 9,
         "src": 56
       },
       "entryModules": [
         {
-          "module": "desktop-ui/features/memory/context.js",
+          "module": "desktop-ui/features/memory/index.js",
           "importedBy": [
             "desktop-shell"
-          ]
-        },
-        {
-          "module": "desktop-ui/features/memory/controller.js",
-          "importedBy": [
-            "desktop-shell",
-            "projects"
-          ]
-        },
-        {
-          "module": "desktop-ui/features/memory/viewMessageRefs.js",
-          "importedBy": [
-            "desktop-shell"
-          ]
-        },
-        {
-          "module": "desktop-ui/features/memory/viewPane.js",
-          "importedBy": [
-            "desktop-shell"
-          ]
-        },
-        {
-          "module": "desktop-ui/features/memory/viewProjectBook.js",
-          "importedBy": [
-            "projects"
           ]
         },
         {
@@ -1409,7 +1375,7 @@
         "agents": 2,
         "approvals": 3,
         "chat": 10,
-        "desktop-shell": 5,
+        "desktop-shell": 6,
         "knowledge": 3,
         "media": 1,
         "platform": 24,
@@ -1422,11 +1388,11 @@
         "agents": 11,
         "channels": 4,
         "chat": 27,
-        "desktop-shell": 4,
+        "desktop-shell": 1,
         "knowledge": 2,
         "media": 1,
         "platform": 19,
-        "projects": 3,
+        "projects": 1,
         "sync": 5,
         "tools": 6
       },
@@ -1442,8 +1408,11 @@
         "POST /api/projects/memory-book ← src/http/domainRoutes.js"
       ],
       "desktopUi": [
+        "desktop-ui/features/memory/api.js",
         "desktop-ui/features/memory/context.js",
         "desktop-ui/features/memory/controller.js",
+        "desktop-ui/features/memory/index.js",
+        "desktop-ui/features/memory/state.js",
         "desktop-ui/features/memory/viewFacts.js",
         "desktop-ui/features/memory/viewMessageRefs.js",
         "desktop-ui/features/memory/viewPane.js",
@@ -1465,9 +1434,10 @@
           "npm run test:dreaming-scheduler"
         ],
         "js": [
+          "desktop-ui/features/memory/controller.test.js",
           "desktop-ui/features/memory/viewFacts.test.js",
           "desktop-ui/features/memory/viewMessageRefs.test.js",
-          "desktop-ui/features/memory/viewPane.source.test.js",
+          "desktop-ui/features/memory/viewPane.test.js",
           "desktop-ui/features/memory/viewProjectBook.test.js",
           "src/memory/attic.test.js",
           "src/memory/checkpointer.test.js",
@@ -3314,10 +3284,17 @@
         "assets/**"
       ],
       "modules": {
-        "desktop-ui": 20,
+        "desktop-ui": 21,
         "src": 2
       },
       "entryModules": [
+        {
+          "module": "desktop-ui/features/featureContext.js",
+          "importedBy": [
+            "memory",
+            "projects"
+          ]
+        },
         {
           "module": "desktop-ui/i18n.js",
           "importedBy": [
@@ -3363,9 +3340,9 @@
         "chat": 16,
         "knowledge": 2,
         "media": 7,
-        "memory": 4,
+        "memory": 1,
         "platform": 9,
-        "projects": 7,
+        "projects": 5,
         "settings": 12,
         "sync": 2,
         "tools": 14,
@@ -3376,9 +3353,9 @@
         "approvals": 3,
         "chat": 9,
         "media": 4,
-        "memory": 5,
+        "memory": 6,
         "platform": 2,
-        "projects": 4,
+        "projects": 5,
         "settings": 7,
         "sync": 1,
         "tools": 4
@@ -3406,6 +3383,7 @@
         "desktop-ui/atomicButton.js",
         "desktop-ui/bootstrapPatch.js",
         "desktop-ui/emerald.css",
+        "desktop-ui/features/featureContext.js",
         "desktop-ui/features/registry.js",
         "desktop-ui/i18n.js",
         "desktop-ui/index.html",
@@ -3449,6 +3427,8 @@
         "js": [
           "desktop-ui/anchorRouting.test.js",
           "desktop-ui/bootstrapPatch.test.js",
+          "desktop-ui/committedSave.test.js",
+          "desktop-ui/features/registry.test.js",
           "desktop-ui/i18n.test.js",
           "desktop-ui/i18nCoverage.test.js",
           "desktop-ui/launchScreen.test.js",
@@ -3477,7 +3457,7 @@
         "source-tests-self"
       ],
       "notes": [
-        "desktop-ui/app.js 是中央入口（导航、uiState、点击分发、render）；src/services/desktop/bootstrap.js 组装整页数据，业务模块不应再导入（P1 gate）。",
+        "desktop-ui/app.js 是中央入口（导航、uiState、点击分发、render）；页面功能逐步迁入 desktop-ui/features/<功能>/（P2：记忆、项目已迁；registry.js 动作注册、featureContext.js 窄上下文，见 features/README.md）；src/services/desktop/bootstrap.js 组装整页数据，业务模块不应再导入（P1 gate）。",
         "神经场景与执行面板源码由 ios/scripts/build-scene.py 打包进手机。"
       ]
     },
@@ -4835,7 +4815,9 @@
         "desktop-ui/app.js"
       ],
       "tests": [
+        "desktop-ui/committedSave.test.js",
         "desktop-ui/connectorDraftDispatch.test.js",
+        "desktop-ui/features/registry.test.js",
         "desktop-ui/mediaAttachment.source.test.js",
         "desktop-ui/newChatComposer.test.js",
         "desktop-ui/sendRecovery.test.js",
@@ -4906,13 +4888,6 @@
         "desktop-ui/executionPanel.test.js": [
           "desktop-ui/executionPanel.js"
         ],
-        "desktop-ui/features/memory/viewPane.source.test.js": [
-          "desktop-ui/features/memory/controller.js",
-          "desktop-ui/features/memory/viewPane.js"
-        ],
-        "desktop-ui/features/projects/view.test.js": [
-          "desktop-ui/features/projects/view.js"
-        ],
         "desktop-ui/launchScreen.test.js": [
           "desktop-ui/launchScreen.js"
         ],
@@ -4954,8 +4929,6 @@
       "note": "测试读取自身被测模块的源码文本（规则/正则守卫），逐字节移植时保持文本",
       "tests": [
         "desktop-ui/executionPanel.test.js",
-        "desktop-ui/features/memory/viewPane.source.test.js",
-        "desktop-ui/features/projects/view.test.js",
         "desktop-ui/launchScreen.test.js",
         "desktop-ui/localSettings.test.js",
         "src/agents/skillRuns.crossHome.test.js",
@@ -4971,9 +4944,6 @@
       ],
       "reads": [
         "desktop-ui/executionPanel.js",
-        "desktop-ui/features/memory/controller.js",
-        "desktop-ui/features/memory/viewPane.js",
-        "desktop-ui/features/projects/view.js",
         "desktop-ui/launchScreen.js",
         "desktop-ui/localSettings.js",
         "src/agents/skillRuns.js",
@@ -4993,7 +4963,6 @@
         "chat",
         "desktop-shell",
         "memory",
-        "projects",
         "settings",
         "tools"
       ]

@@ -1,10 +1,23 @@
-// Transitional wiring for the projects feature (architecture plan P2, step 1:
-// byte-for-byte move out of desktop-ui/app.js). The moved bodies still read
-// these names, so app.js binds them once at startup; ES module imports of
-// them are live bindings. The next step replaces uiState with the feature's
-// own state and narrows this context (features/README.md).
-export let uiState, api, render, showError, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts, startProjectSession, activeProject, activeProjectChats, activeProjectArtifacts, escapeHtml, truncate, icon;
+// The narrow context app.js hands the projects feature (architecture plan P2,
+// features/README.md). No uiState: the bootstrap is read through
+// getBootstrap() and the active-project accessors; navigation, chat creation
+// and bootstrap application are app.js callbacks; the memory book section is
+// rendered by the memory feature (renderMemoryBook). Bound once by
+// installProjectsController(); the feature's modules import these names (ES
+// module live bindings).
+import { checkFeatureContext } from '../featureContext.js';
+import { createProjectsApi } from './api.js';
+
+export const PROJECTS_CONTEXT = Object.freeze([
+  'getBootstrap', 'api', 'render', 'showError', 'patchSettings', 'applyBootstrap', 'applyBootstrapPreservingDrafts',
+  'startProjectSession', 'activeProject', 'activeProjectChats', 'activeProjectArtifacts', 'renderMemoryBook',
+  'escapeHtml', 'truncate', 'icon',
+]);
+
+export let getBootstrap, render, showError, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts, startProjectSession, activeProject, activeProjectChats, activeProjectArtifacts, renderMemoryBook, escapeHtml, truncate, icon, projectsApi;
 
 export function bindProjectsContext(context) {
-  ({ uiState, api, render, showError, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts, startProjectSession, activeProject, activeProjectChats, activeProjectArtifacts, escapeHtml, truncate, icon } = context);
+  checkFeatureContext('projects', context, PROJECTS_CONTEXT);
+  ({ getBootstrap, render, showError, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts, startProjectSession, activeProject, activeProjectChats, activeProjectArtifacts, renderMemoryBook, escapeHtml, truncate, icon } = context);
+  projectsApi = createProjectsApi(context.api);
 }

@@ -1,9 +1,9 @@
-// Customize → Memory pane (architecture plan P2, 2026-10-19). Byte-for-byte
-// move out of desktop-ui/app.js; the bodies still read the transitional
-// context (./context.js) until the feature owns its state.
+// Customize → Memory pane (architecture plan P2, 2026-10-19). Moved out of
+// desktop-ui/app.js byte-for-byte first; it now reads the feature's own state.
 import { ui } from '../../i18n.js';
 import { renderMemoryFacts } from './viewFacts.js';
-import { uiState, escapeHtml } from './context.js';
+import { escapeHtml } from './context.js';
+import { memoryState } from './state.js';
 import { memoryFactEdit, refreshMemoryStatus } from './controller.js';
 
 function fmtMemoryBytes(n) {
@@ -26,7 +26,7 @@ function fmtMemoryRelTime(ms) {
 }
 
 function renderMemoryPane() {
-  const { loading, loaded, snapshot, error, wipeConfirmOpen, wipeInFlight, wipeResult } = uiState.memoryStatus;
+  const { loading, loaded, snapshot, error, wipeConfirmOpen, wipeInFlight, wipeResult } = memoryState.memoryStatus;
   if (!loaded && !loading && !error) {
     // Kick off the first fetch; re-render happens inside refreshMemoryStatus.
     Promise.resolve().then(refreshMemoryStatus);
@@ -43,7 +43,7 @@ function renderMemoryPane() {
     }
     const s = snapshot;
     const drift = s.embedding?.drift || {};
-    const diagnosis = uiState.memoryStatus.diagnosis;
+    const diagnosis = memoryState.memoryStatus.diagnosis;
     const needsRebuild = diagnosis ? diagnosis.issues.some(issue => ['model_changed', 'missing_index'].includes(issue.code)) : drift.hasDrift;
     const semanticStatus = diagnosis?.available === false ? '暂不可用' : needsRebuild ? '需要重建' : diagnosis?.available ? '检测通过' : drift.inferredProvider ? '已配置 · 待检测' : drift.probeAttempted ? '暂不可用' : '未检测';
     const metaRows = s.meta
@@ -81,14 +81,14 @@ function renderMemoryPane() {
         <section class="quality-details">
           <h3>检索模型与索引</h3>
           <p>模型就绪后会在后台分批建立索引。需要修复时可安全重建，原文与旧索引保留到新索引通过验证。</p>
-          <div class="inline-actions"><button class="small-button" data-action="memory-diagnose" ${uiState.memoryStatus.repairBusy ? 'disabled' : ''}>检测模型</button>
-          <button class="small-button" data-action="memory-repair" ${uiState.memoryStatus.repairBusy ? 'disabled' : ''}>${s.repair?.completed && s.repair.status !== 'complete' ? '继续修复' : '安全重建索引'}</button>
-          ${uiState.memoryStatus.repairBusy ? ui`<button class="small-button" data-action="memory-pause">本批完成后暂停</button>` : ''}</div>
+          <div class="inline-actions"><button class="small-button" data-action="memory-diagnose" ${memoryState.memoryStatus.repairBusy ? 'disabled' : ''}>检测模型</button>
+          <button class="small-button" data-action="memory-repair" ${memoryState.memoryStatus.repairBusy ? 'disabled' : ''}>${s.repair?.completed && s.repair.status !== 'complete' ? '继续修复' : '安全重建索引'}</button>
+          ${memoryState.memoryStatus.repairBusy ? ui`<button class="small-button" data-action="memory-pause">本批完成后暂停</button>` : ''}</div>
           ${s.repair ? ui`<p role="status">${escapeHtml(s.repair.status === 'complete' ? '已验证并切换' : s.repair.status === 'failed' ? '修复暂停' : '待继续')} · ${s.repair.completed}/${s.repair.total} · ${escapeHtml(s.repair.error || s.repair.note || '')}</p>` : ''}
-          ${uiState.memoryStatus.diagnosis ? ui`<p role="status">${escapeHtml(uiState.memoryStatus.diagnosis.available ? '实际嵌入请求成功' : '关键词检索模式')} · ${escapeHtml(uiState.memoryStatus.diagnosis.issues.map(i => i.message).join(' '))}</p>` : ''}
+          ${memoryState.memoryStatus.diagnosis ? ui`<p role="status">${escapeHtml(memoryState.memoryStatus.diagnosis.available ? '实际嵌入请求成功' : '关键词检索模式')} · ${escapeHtml(memoryState.memoryStatus.diagnosis.issues.map(i => i.message).join(' '))}</p>` : ''}
           <p>Melo 内置多语言嵌入模型，在本机后台运行，无需安装其他软件。模型资源随应用提供；检索不会自动调用外部服务。</p>
         </section>
-        ${renderMemoryFacts(uiState.memoryFacts,{query:uiState.memoryFactQuery,editing:uiState.memoryFactEditing,busy:uiState.memoryFactBusy,draft:uiState.memoryFactDraft,session:memoryFactEdit,feedback:uiState.memoryFactFeedback})}
+        ${renderMemoryFacts(memoryState.memoryFacts,{query:memoryState.memoryFactQuery,editing:memoryState.memoryFactEditing,busy:memoryState.memoryFactBusy,draft:memoryState.memoryFactDraft,session:memoryFactEdit,feedback:memoryState.memoryFactFeedback})}
         <details class="quality-details"><summary>技术详情与维护</summary>
         <div class="meta-block-label">Store</div>
         <div class="meta-grid">

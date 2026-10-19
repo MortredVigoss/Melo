@@ -1,12 +1,11 @@
-// Projects page renderers (architecture plan P2, 2026-10-19). Byte-for-byte
-// move out of desktop-ui/app.js; the bodies still read the transitional
-// context (./context.js) until the feature owns its state.
+// Projects page renderers (architecture plan P2, 2026-10-19). Moved out of
+// desktop-ui/app.js byte-for-byte first; they now read the feature's own
+// state and reach the bootstrap and the memory book through the context.
 import { t, ui } from '../../i18n.js';
 import { conversationAgents } from '../../modelPresentation.js';
 import { renderTeamPanel } from '../../teamPanel.js';
-import { renderProjectMemoryBook } from '../memory/viewProjectBook.js';
-import { projectBookData } from '../memory/controller.js';
-import { uiState, activeProject, activeProjectChats, activeProjectArtifacts, escapeHtml, truncate, icon } from './context.js';
+import { getBootstrap, activeProject, activeProjectChats, activeProjectArtifacts, renderMemoryBook, escapeHtml, truncate, icon } from './context.js';
+import { projectsState } from './state.js';
 import { filteredProjects } from './controller.js';
 
 // Projects page is a two-mode view:
@@ -29,13 +28,13 @@ function renderProjectsPage() {
 
 function renderProjectsOverview() {
   const projects = filteredProjects();
-  const totalProjects = uiState.bootstrap?.projects?.length || 0;
-  const searchActive = uiState.projectSearch.trim().length > 0;
+  const totalProjects = getBootstrap()?.projects?.length || 0;
+  const searchActive = projectsState.projectSearch.trim().length > 0;
 
-  const createForm = uiState.showProjectForm ? renderProjectCreateForm() : '';
+  const createForm = projectsState.showProjectForm ? renderProjectCreateForm() : '';
 
   // Zero projects + no active form → full empty state with a primary CTA.
-  if (totalProjects === 0 && !uiState.showProjectForm) {
+  if (totalProjects === 0 && !projectsState.showProjectForm) {
     return ui`
       <section class="page">
         <div class="page-grid">
@@ -72,7 +71,7 @@ function renderProjectsOverview() {
           </div>
 
           <div class="inline-actions">
-            <button class="ghost-button" data-action="toggle-archived-projects">${uiState.showArchivedProjects?'查看进行中的项目':'查看已归档项目'}</button>
+            <button class="ghost-button" data-action="toggle-archived-projects">${projectsState.showArchivedProjects?'查看进行中的项目':'查看已归档项目'}</button>
             <button class="ghost-button is-primary" data-action="toggle-project-form">
               <span class="toolbar-icon">${icon.plus}</span>
               新建项目
@@ -88,7 +87,7 @@ function renderProjectsOverview() {
               class="search-input"
               id="project-search"
               type="search"
-              value="${escapeHtml(uiState.projectSearch)}"
+              value="${escapeHtml(projectsState.projectSearch)}"
               placeholder="搜索项目…"
             />
           </div>
@@ -105,7 +104,7 @@ function renderProjectsOverview() {
               <div class="surface-card empty-state compact">
                 ${
                   searchActive
-                    ? `没有匹配“${escapeHtml(uiState.projectSearch)}”的项目。`
+                    ? `没有匹配“${escapeHtml(projectsState.projectSearch)}”的项目。`
                     : '还没有项目，先创建一个目标。'
                 }
               </div>
@@ -153,13 +152,13 @@ function renderProjectCreateForm() {
         <label class="label">
           项目名称
           <input class="input" name="name" value="${escapeHtml(
-            uiState.draftProject.name,
+            projectsState.draftProject.name,
           )}" placeholder="例如：旅行规划、产品开发" />
         </label>
         <label class="label">
           分类
           <input class="input" name="tag" value="${escapeHtml(
-            uiState.draftProject.tag,
+            projectsState.draftProject.tag,
           )}" placeholder="例如：生活、工作" />
         </label>
       </div>
@@ -167,20 +166,20 @@ function renderProjectCreateForm() {
       <label class="label">
         项目文件夹
         <input class="input" name="workspacePath" value="${escapeHtml(
-          uiState.draftProject.workspacePath,
+          projectsState.draftProject.workspacePath,
         )}" placeholder="可选；留空将创建独立项目文件夹" />
       </label>
 
       <label class="label">
         项目目标
         <input class="input" name="summary" value="${escapeHtml(
-          uiState.draftProject.summary,
+          projectsState.draftProject.summary,
         )}" placeholder="希望完成什么？" />
       </label>
       <label class="label">
         持续工作要求
         <textarea class="textarea" name="instructions" placeholder="这个项目里，Melo 应遵守哪些要求？">${escapeHtml(
-          uiState.draftProject.instructions,
+          projectsState.draftProject.instructions,
         )}</textarea>
       </label>
       <div class="inline-actions">
@@ -194,7 +193,7 @@ function renderProjectCreateForm() {
 }
 
 function renderProjectAgentDefaults(project) {
-  const agents = conversationAgents(uiState.bootstrap, {overview:true,newProjectId:project.id});
+  const agents = conversationAgents(getBootstrap(), {overview:true,newProjectId:project.id});
   const lead = agents.find(agent => agent.id === (project.defaultAgentId || 'main')) || null;
   const options = agents.map(agent => `<option value="${escapeHtml(agent.id)}" ${project.defaultAgentId === agent.id ? 'selected' : ''}>${escapeHtml(agent.name || agent.id)}</option>`).join('');
   return ui`<section class="surface-card project-detail-panel project-agent-defaults">
@@ -308,7 +307,7 @@ function renderProjectsDetailView(project) {
                 )}</textarea>
               </label>
               <fieldset class="context-materials"><legend>项目共享资料</legend><p>资料按问题与上下文预算选取相关片段，全文保留。</p>
-                ${(uiState.bootstrap.artifacts || []).filter(a=>a.content?.trim()).map(a=>ui`<label><input type="checkbox" name="knowledgeIds" value="${escapeHtml(a.id)}" ${(project.knowledgeIds || []).includes(a.id)?'checked':''}>${escapeHtml(a.title)}</label>`).join('') || ui`<p>先在知识分支保存资料。</p>`}
+                ${(getBootstrap().artifacts || []).filter(a=>a.content?.trim()).map(a=>ui`<label><input type="checkbox" name="knowledgeIds" value="${escapeHtml(a.id)}" ${(project.knowledgeIds || []).includes(a.id)?'checked':''}>${escapeHtml(a.title)}</label>`).join('') || ui`<p>先在知识分支保存资料。</p>`}
               </fieldset>
               <div class="inline-actions">
                 <button class="small-button is-primary" type="submit">
@@ -321,7 +320,7 @@ function renderProjectsDetailView(project) {
 
           <aside class="project-detail-aside">
             ${renderProjectAgentDefaults(project)}
-            ${renderProjectMemoryBook(project, projectBookData(project.id), { busy: uiState.projectBookBusy, feedback: uiState.projectBookFeedback, draft: uiState.projectBookDraft?.projectId === project.id ? uiState.projectBookDraft : null })}
+            ${renderMemoryBook(project)}
             <section class="surface-card project-detail-panel">
               <div class="header-row">
                 <h2 class="subsection-title">相关对话</h2>
