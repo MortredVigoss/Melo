@@ -1,6 +1,6 @@
 # 架构维护成本审计与优化方案 · 2026-10-19
 
-状态：方案，尚未执行重构。用户要求先审计、先出方案。本轮只写方案与交接，未改产品代码、用户数据或已安装应用；不提交、不推送、不运行 git pp。
+状态：用户已批准执行 P0–P2，执行修订见第 8 节；第 1–7 节为审计时的原方案。审计时：用户要求先审计、先出方案。本轮只写方案与交接，未改产品代码、用户数据或已安装应用；不提交、不推送、不运行 git pp。
 
 审计基线：`83654dd`，开工工作树干净。检查实际源码、已有架构规则、静态依赖图、最近 100 个非合并提交及测试选组结果。证据在本机 `.tmp/architecture-maintainability-20261019/`。
 
@@ -154,3 +154,15 @@ JavaScript 与 Swift 各自执行平台逻辑，继续扩充已经存在的共�
 - `boundary-tests.log`：`node --test scripts/check-dependencies.test.js scripts/test-plan.test.js src/runtime/architectureBoundary.test.js`，8/8 通过。
 - 关键源码：`desktop-ui/app.js:100,10691,11292`；`src/services/project/projectMutations.js:21,47,50,87`；`src/services/desktop/bootstrap.js:229`；`src/services/chat/chatExecutionRunner.js`；`ios/Melo/ChatStore.swift:244,763,877,1016`；`scripts/test-plan.js:7-26`。
 - 保持有效的既有约定：[后端架构](backend-architecture.md)、[性能与分层演进](architecture-performance-2026-10-13.md)、[手机对齐工作流](mobile-alignment-workflow.md)。其中历史格式/计数以当前代码和带日期的验收记录为准。
+
+## 8. 执行修订（2026-10-19，Claude，用户已批准执行 P0–P2）
+
+用户批准按本方案执行 P0–P2，并采纳以下修订；与上文冲突时以本节为准。
+
+1. **纯文档规则范围（修订 a）**：除 `docs/**/*.md`、`README.md`、`PROGRESS.md`、`CLAUDE.md`、`EVALUATION.md` 外，`MELO_OVERVIEW.md`、`AGENTS.md`、`CHANGELOG.md`、`ios/README.md`、`ios/VERIFICATION.md` 与 `docs/handoffs/**` 一并登记为纯说明文件。登记前已 grep 确认 `src/`、`desktop-ui/`、`desktop-app/`、`ios/Melo/`、`mobile-sync/` 与构建脚本均不读取、导入或打包这些路径（`scripts/sync-codex-progress.js` 只把总览写成链接文字）。技能 / 人设 Markdown、协议夹具里的 Markdown、`ios/Melo/` 下可能被打包的文件及任何运行时读取的文件不进入规则，仍按代码改动选组。纯文档改动只做改动文档的相对链接检查，不启动浏览器、Swift 或安装。
+2. **功能地图必须生成（修订 b）**：`architecture/modules.json` 由 `scripts/generate-module-map.js` 生成，复用 `scripts/check-dependencies.js` 导出的 `sourceGraph`（按源码根逐个调用，另补跨根边与 `/shared/*.js` 服务映射）和 `src/server.js`、`src/http/*.js` 的路由登记；只有静态 import 看不到的部分手写在 `architecture/module-annotations.json`：功能归属、路由前缀、生成器（`scripts/generate-sync-contract.js`、`scripts/generate-agent-loop-contract.js`、`ios/scripts/build-scene.py`、`scripts/build-interface-languages.js`）、`desktop-app/*.swift` 原生桥、读源码文本的测试、双端对应文件、`shared/protocol/*.json` 共享契约与 npm 测试组。`npm run generate:module-map -- --check` 在地图过期时失败，检查随 scripts 测试进入日常全量组与发布 gate。
+3. **聊天循环的双端契约（修订 c）**：已存在的 `shared/protocol/agent-loop.json` 与 `src/runtime/agentLoopContract.js`、`ios/Melo/AgentLoopContract.swift`（生成）、生成器及两端测试夹具，作为 chat / agent loop 的桌面↔iPhone 契约登记在地图中。
+4. **P2 试点顺序调整**：记忆页面（`desktop-ui/memoryFacts.js`、`projectMemoryBook.js`、`messageMemoryRefs.js` 已是纯渲染器，状态与事件处理仍在 `app.js`）→ 项目 → Agent 设置 → 聊天状态 / 事件。先从边界最清楚的页面验证 `features/` 结构与 `uiState` 收口方式。
+5. **P3 / P4 的双端约束**：新增或改变双端共同的执行行为时，先扩展 `shared/protocol/agent-loop.json` 及其夹具，再改两端实现；手机 `TurnCoordinator` 包裹现有 `AgentLoop`，不另建循环。
+6. **重构批次的单写者规则**：每个重构批次中，被移动的文件只由一个助手编辑；其他线程在该批次合入前不改这些文件，避免机械搬迁与语义修改交错。
+7. **工具只报告**：`npm run scope -- <文件…>` 输出受影响功能、另一端对应、当前 `scripts/test-plan.js` 选组及原因与命中的隐式依赖，不改变任何测试选择；`npm run boundaries` 输出 bootstrap / stateStore / 扇出 / `uiState` 写入边界报告，不设 gate。按第 4 节原则，经试点对照验证的模块才允许缩小日常组。

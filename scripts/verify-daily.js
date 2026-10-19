@@ -29,6 +29,7 @@ if (args.includes('--plan')) {
     for (const [path, entry] of Object.entries(excluded)) console.log(`QUARANTINED ${path}: ${entry.reason} (expires ${entry.expires})`);
     if (plan.files.length) await run('JS 回归', process.execPath, ['--test', '--test-concurrency=4', '--test-timeout=120000', ...plan.files]);
     if (plan.syntax === null || plan.syntax.length) await run('语法检查', process.execPath, ['scripts/check-syntax.js', ...(plan.syntax === null ? [] : ['--files', ...plan.syntax])]);
+    if (plan.docs?.length) await run('文档链接检查', process.execPath, ['scripts/check-doc-links.js', ...plan.docs]);
     if (plan.browsers) {
       await run('设置浏览器验收', process.execPath, ['scripts/verify-settings-design.mjs']);
       await run('加速设置浏览器验收', process.execPath, ['scripts/verify-extra-fast.mjs']);

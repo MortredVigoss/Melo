@@ -21,6 +21,33 @@ test('daily selection keeps complete UI groups, falls back for cross-boundary ch
   assert.deepEqual(planTests(['desktop-ui/deleted.test.js'],tests).files,tests);
   assert.equal(planTests(['ios/Melo/Models.swift'],tests).swift,true);
 });
+test('registered explanation-only documents run only the link check; runtime-read Markdown stays a code change', () => {
+  const docs = ['MELO_OVERVIEW.md','AGENTS.md','CHANGELOG.md','ios/README.md','ios/VERIFICATION.md','docs/handoffs/overview-history-20261019.md','docs/handoffs/evidence/receipt.json'];
+  for (const path of docs) {
+    const plan = planTests([path], tests);
+    assert.deepEqual(plan.files, [], path);
+    assert.equal(plan.fullUnit, false, path);
+    assert.equal(plan.browsers, false, path); assert.equal(plan.ios, false, path); assert.equal(plan.swift, false, path);
+    assert.deepEqual(plan.syntax, [], path);
+    assert.deepEqual(plan.docs, path.endsWith('.md') ? [path] : [], path);
+    assert.match(plan.reason, /仅文档变化/, path);
+  }
+  const together = planTests(docs, tests);
+  assert.deepEqual(together.files, []); assert.equal(together.swift, false);
+  // Markdown read at runtime (skills/personas), bundled into an app or kept as
+  // a protocol fixture is not an explanation file and keeps the full gate.
+  for (const path of ['src/agents/personas/default.md','mobile-sync/fixtures/v1/README.md','skills/example/SKILL.md']) {
+    const plan = planTests([path], tests);
+    assert.deepEqual(plan.files, tests, path); assert.equal(plan.fullUnit, true, path);
+    assert.equal(plan.swift, true, path); assert.deepEqual(plan.docs, [], path);
+  }
+  // Inside the app source folder a README is bundled-candidate code: the iOS group still runs.
+  const bundled = planTests(['ios/Melo/README.md'], tests);
+  assert.deepEqual(bundled.files, ['ios/Tests/Scene.test.js']); assert.equal(bundled.swift, true); assert.deepEqual(bundled.docs, []);
+  // A document beside a code change is still link-checked; the code decides the tier.
+  const mixed = planTests(['MELO_OVERVIEW.md','src/services/project/projectMutations.js'], tests);
+  assert.deepEqual(mixed.files, tests); assert.deepEqual(mixed.docs, ['MELO_OVERVIEW.md']);
+});
 test('change discovery includes staged, unstaged, untracked, deletion and clean last-commit changes', async () => {
   const root = await mkdtemp(join(tmpdir(),'melo-test-plan-'));
   const git = (...args) => execFileSync('git',args,{cwd:root,encoding:'utf8',stdio:['ignore','pipe','pipe']});
@@ -72,5 +99,28 @@ test('daily CLI executes the selected group, isolates home, and stops on failure
     await writeFile(join(root,'desktop-ui/one.test.js'),'throw Error("deliberate regression");');
     assert.throws(run,error=>error.status===1&&/JS 回归 failed/.test(error.stderr));
     await assert.rejects(readFile(join(root,'jobs.log')), {code:'ENOENT'});
+  } finally {await rm(root,{recursive:true,force:true});}
+});
+
+test('daily CLI runs only the document link check for an overview-only change', async () => {
+  const root=await mkdtemp(join(tmpdir(),'melo-daily-docs-'));
+  const env={...process.env,MELO_HOME:join(root,'must-not-use')};
+  delete env.NODE_TEST_CONTEXT;
+  const script=fileURLToPath(new URL('./verify-daily.js',import.meta.url));
+  const git=(...args)=>execFileSync('git',args,{cwd:root,stdio:'pipe'});
+  try {
+    for(const dir of ['src','desktop-ui','scripts','mobile-sync','ios/Tests','ios/scripts']) await mkdir(join(root,dir),{recursive:true});
+    await writeFile(join(root,'package.json'),'{"type":"module"}');
+    await writeFile(join(root,'scripts/test-quarantine.json'),'{}');
+    await writeFile(join(root,'desktop-ui/ui.test.js'),'throw Error("documentation edits must not run product tests");');
+    for(const name of ['check-syntax.js','verify-settings-design.mjs','verify-extra-fast.mjs','check-doc-links.js']) await writeFile(join(root,'scripts',name),`import {appendFileSync} from 'node:fs';appendFileSync('jobs.log', ['${name}',...process.argv.slice(2)].join(' ')+'\\n');`);
+    await writeFile(join(root,'ios/scripts/test.py'),"from pathlib import Path\nwith Path('jobs.log').open('a') as f: f.write('ios\\n')\n");
+    await writeFile(join(root,'MELO_OVERVIEW.md'),'# old\n');
+    git('init');git('config','user.name','Fixture');git('config','user.email','fixture@example.invalid');
+    git('add','.');git('commit','-m','fixture');
+    await writeFile(join(root,'MELO_OVERVIEW.md'),'# new\n');
+    const output=execFileSync(process.execPath,[script],{cwd:root,env,encoding:'utf8',stdio:'pipe'});
+    assert.match(output,/0\/1 个 JS 测试文件/);
+    assert.equal((await readFile(join(root,'jobs.log'),'utf8')).trim(),'check-doc-links.js MELO_OVERVIEW.md');
   } finally {await rm(root,{recursive:true,force:true});}
 });

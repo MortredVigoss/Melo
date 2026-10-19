@@ -14,6 +14,8 @@
 
 选择规则刻意保守：只改桌面界面，运行全部桌面界面测试、浏览器旅程和 iOS 共用渲染校验；改 iOS 则执行协议测试。只改测试时执行改动测试，删除测试则回退全部 JS。涉及后端、同步协议、共享模块、构建、依赖或未知运行时路径，运行全部 JS 和集成检查。不靠静态 import 推测路由注册和生成文件的隐式依赖，也不自动隔离失败用例。新测试仍由目录自动发现。
 
+纯说明文档（`docs/**/*.md`、`docs/handoffs/**`、根目录 `README.md` / `PROGRESS.md` / `CLAUDE.md` / `EVALUATION.md` / `MELO_OVERVIEW.md` / `AGENTS.md` / `CHANGELOG.md`、`ios/README.md`、`ios/VERIFICATION.md`，见 `scripts/test-plan.js` 的 `DOC_ONLY_FILES`）只运行 `scripts/check-doc-links.js` 检查改动文档的相对链接，不跑 JS、浏览器、Swift 或安装；运行时读取或可能被打包的 Markdown（技能、人设、夹具、`ios/Melo/` 下文件）仍按代码处理。`npm run scope -- <文件…>` 用功能地图 `architecture/modules.json` 解释选组、受影响功能与另一端，只报告，不改变上述规则。
+
 Swift 缓存只省去重复编译，每次都执行每组测试。缓存键包含全部输入源码、测试代码、编译命令、Swift 工具链、SDK 路径和 build version、机器架构。源码或工具链变化会失效；缓存损坏重新编译；编译失败不发布产物；测试失败照常令检查失败。缓存位于 `.tmp/ios-test-cache`，可随时删除做冷启动复核。运行 `npm run test:ios` 可看到缓存命中数及耗时。
 
 语法检查保留覆盖范围，并补充 `.mjs` / `.cjs`；最多同时启动 4 个检查进程，任何一个失败仍返回非零。发布检查没有删减测试或跳过安装启动。

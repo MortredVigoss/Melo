@@ -72,6 +72,9 @@
     "test:architecture-performance": "node --test src/state/residentState.test.js src/runtime/performanceTrace.test.js src/runtime/derivedIndexing.test.js src/http/bootstrapTransport.test.js src/http/routeRegistry.test.js src/services/workspace/workspaceTreeCache.test.js desktop-ui/bootstrapPatch.test.js scripts/check-dependencies.test.js",
     "generate:sync-contract": "node scripts/generate-sync-contract.js",
     "generate:agent-loop-contract": "node scripts/generate-agent-loop-contract.js",
+    "generate:module-map": "node scripts/generate-module-map.js",
+    "scope": "node scripts/scope.js",
+    "boundaries": "node scripts/boundary-report.js",
     "test:sync-contract": "node --test mobile-sync/syncContract.test.js scripts/generate-sync-contract.test.js"
   },
   "dependencies": {
