@@ -59,7 +59,7 @@
 ## 4. 最新交接
 
 ### 2026-10-19 — melo主线（Codex）— 修复已提交保存的页面恢复（R1）
-- 线程 ID：`01a13b2e-5446-7042-bb5e-773129746c7e`；状态：修复与日常选定范围检查完成；代码 `46554b2`、并发测试修正 `6218bac`；本轮按用户授权 git push，未运行 git pp。
+- 线程 ID：`01a13b2e-5446-7042-bb5e-773129746c7e`；状态：修复与日常选定范围检查完成；代码 `46554b2`、并发测试修正 `6218bac`；修复与验收记录已随 `401ae4b` 推送 `origin/master` 并核对远端，未运行 git pp。
 - 行为：创建/更新已提交而页面连续读取失败时，保留回执、草稿和忙碌状态；提供只重读 GET 的刷新入口；不以旧快照完成命令、不重放 POST。创建 Agent 自动编辑须匹配创建 id 和全局表单；项目创建防重复提交。
 - 文件 / 接口：`bootstrapPatch.js`、`sharedApi.js`、`app.js`、Agent/项目控制器、提示样式与翻译；HTTP/同步/存储格式不变；iOS 仅重生成共用语言资源。详见[审计及修复记录](docs/claude-architecture-review-20261019.md)第 4 节。
 - 验证：故障回归先 RED 后 3/3 GREEN；定向 22/22、工具自描述 8/8；待推送范围 456 个 JS 文件 4050/4050、语法 1009 文件通过。修正归档链接后续跑文档、两项浏览器验收、iOS 渲染 4/4 与 32 组 Swift，全过；未重复已通过的 JS。地图/五语资源一致，恢复提示截图核对通过。证据与中途失败/修正轨迹见专项记录和 `.tmp/committed-save-fix-20261019/`。
@@ -148,8 +148,8 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 
 | 线程（原名） | ID | 最新交接 / 实际范围 | 状态与证据 |
 | --- | --- | --- | --- |
-| melo审计修复（Cowork） | `01a11623-b29c-70c7-8ee0-bb21a1e6eef3` | 10-17 三路只读审计 → 四批修复：TTS 路由、上下文预算/窗口/压缩同源、逐轮上下文入用户消息、Discord 归档、Agent 成员/循环/审批加固、分层 gate 传递闭包、文档对齐；10-19 手机 agent loop 对齐桌面（共享 `agent-loop.json`）；10-19 架构方案 P0 执行 → P2a 记忆 / 项目页拆分 → P2b Agent 设置拆分 → P2c 聊天拆分（P2 完成） | 沙箱全量 JS 回归与基线一致；用户机器日常 gate 见本次提交；[审计与实施状态](docs/architecture-agent-context-audit-20261017.md) §7；P2c 见第 4 节最新交接，P2b / P2a / P0 见[历史交接](docs/handoffs/overview-history-20261019.md) |
-| melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 七项双端修复已推送并覆盖两端；10-19 新增架构维护成本审计与分期方案；10-19 GitHub 权限只读核对；10-19 Claude 架构 P0–P2 独立审计与 R1 修复 | [双端修复](docs/mobile-desktop-alignment.md) / [装机保留](docs/dual-reinstall-20261019.md)已验；[架构方案](docs/architecture-maintainability-plan-20261019.md)已本地提交 `db9f7ba`，用户已批准执行 P0–P2（执行修订见方案第 8 节）；本次[审计及修复](docs/claude-architecture-review-20261019.md) R1 已在 `46554b2` 修复，日常选定范围全部通过，本轮用户授权推送 |
+| melo审计修复（Cowork） | `01a11623-b29c-70c7-8ee0-bb21a1e6eef3` | 10-17 三路只读审计 → 四批修复：TTS 路由、上下文预算/窗口/压缩同源、逐轮上下文入用户消息、Discord 归档、Agent 成员/循环/审批加固、分层 gate 传递闭包、文档对齐；10-19 手机 agent loop 对齐桌面（共享 `agent-loop.json`）；10-19 架构方案 P0 执行 → P2a 记忆 / 项目页拆分 → P2b Agent 设置拆分 → P2c 聊天拆分（P2 完成） | 沙箱全量 JS 回归与基线一致；用户机器日常 gate 见本次提交；[审计与实施状态](docs/architecture-agent-context-audit-20261017.md) §7；P2c / P2b / P2a / P0 见[历史交接](docs/handoffs/overview-history-20261019.md) |
+| melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 七项双端修复已推送并覆盖两端；10-19 新增架构维护成本审计与分期方案；10-19 GitHub 权限只读核对；10-19 Claude 架构 P0–P2 独立审计与 R1 修复 | [双端修复](docs/mobile-desktop-alignment.md) / [装机保留](docs/dual-reinstall-20261019.md)已验；[架构方案](docs/architecture-maintainability-plan-20261019.md)已本地提交 `db9f7ba`，用户已批准执行 P0–P2（执行修订见方案第 8 节）；本次[审计及修复](docs/claude-architecture-review-20261019.md) R1 已在 `46554b2` 修复，日常选定范围全部通过，已随 `401ae4b` 推送 |
 | melo主线（历史·2026-10-15） | `01a10bf2-e092-7862-87fe-2f237a8fb6a0` | 架构、审计、记忆、function calling、日常 gate 和手机 OAuth；本次只补遗漏 | 已完成补录；授权核心已提交，当时相关共享文件的他线程 WIP 已于 10-17 收入 `8cd3eff`；[build23 回执](docs/handoffs/melo-thread-backfill-20261015.md#historical)，产品任务交新主线 |
 | 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | API 观测、阅读/图片保留共享 WIP（10-17 已随全部 WIP 收入 `8cd3eff`）；五语/图像质量/MCP 已提交；本轮统一 Agent 设置并清除 Mood | Agent 日常 3573 JS / 23 Swift、浏览器与原生桌面通过，见 `docs/agent-settings-20261016.md`；现有聊天/Agent 保留，手机未重装 |
 | melo ui | `01a10bf3-d7b9-7832-a351-8b0f78e9c552` | 10-16 UI 设计语言审计：主视觉统一，新增浮层/设置/控件接入不完整；仅审计 | 六类差异与手机 Form 待验项见[审计报告](docs/ui-language-audit-20261016.md)；桌面实看/样式采样，手机源码层；此前[银河与留白](docs/galaxy-clarity-20261016.md)验证保留 |
