@@ -16,6 +16,7 @@ export function createProjectsState() {
     showArchivedProjects: false,
     // "New project" form and its draft (kept across background renders).
     showProjectForm: false,
+    projectCreating: false,
     draftProject: emptyDraft(),
   };
 }

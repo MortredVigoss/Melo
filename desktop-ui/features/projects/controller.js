@@ -30,29 +30,37 @@ function filteredProjects() {
 }
 
 async function handleCreateProject() {
+  if (projectsState.projectCreating) return;
   const { name, summary, instructions, tag, workspacePath } = projectsState.draftProject;
   if (!name.trim()) {
     showError('Project name is required.');
     return;
   }
 
-  const payload = await projectsApi.create({
-    name,
-    summary,
-    instructions,
-    tag,
-    workspacePath,
-  });
+  projectsState.projectCreating = true;
+  render();
+  try {
+    const payload = await projectsApi.create({
+      name,
+      summary,
+      instructions,
+      tag,
+      workspacePath,
+    });
 
-  projectsState.showProjectForm = false;
-  projectsState.draftProject = {
-    name: '',
-    tag: '',
-    summary: '',
-    instructions: '',
-    workspacePath: '',
-  };
-  applyBootstrap(payload);
+    projectsState.showProjectForm = false;
+    projectsState.draftProject = {
+      name: '',
+      tag: '',
+      summary: '',
+      instructions: '',
+      workspacePath: '',
+    };
+    applyBootstrap(payload);
+  } finally {
+    projectsState.projectCreating = false;
+    render();
+  }
 }
 
 async function handleUpdateProject(form) {
@@ -95,6 +103,7 @@ export const projectsActions = {
     await startProjectSession(trigger.dataset.projectId, 'code');
   },
   'toggle-project-form': () => {
+    if (projectsState.projectCreating) return;
     projectsState.showProjectForm = !projectsState.showProjectForm;
     render();
   },

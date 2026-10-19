@@ -343,7 +343,7 @@ const icon = {
 // listener or render can run.
 // The shared request layer (sharedApi.js): the one request helper app.js
 // and every feature use. Created before the features below receive it.
-const api = createSharedApi({ getBootstrap: () => uiState.bootstrap, showError: message => showError(message) });
+const api = createSharedApi({ getBootstrap: () => uiState.bootstrap, onRecoveryChange: () => bgRender() });
 const featureActions = createActionRegistry('action');
 const featureForms = createActionRegistry('form');
 const memoryFeature = installMemoryFeature({ api, render, bgRender, showError, activeProject, escapeHtml });
@@ -6904,6 +6904,11 @@ function render({ background = false, changedSections = null } = {}) {
     ${renderRecentContextMenu()}
     ${renderAudioContextMenu()}
     ${renderToolPermissionDialog()}
+    ${api.pendingSaves().length ? ui`<aside class="committed-save-notice surface-card" aria-live="polite">
+      <p>已保存，等待刷新页面</p>
+      <p class="meta-label">刷新只读取已保存的内容。</p>
+      ${api.pendingSaves().map(save => ui`<button type="button" class="small-button" data-action="retry-committed-save" data-save-id="${save.id}" ${save.retrying ? 'disabled' : ''}>${save.retrying ? t('正在刷新…') : t('刷新页面')}</button>`).join('')}
+    </aside>` : ''}
     ${uiState.error ? ui`<div class="toast">${escapeHtml(uiState.error)}</div>` : ''}
   `);
 
@@ -7326,6 +7331,9 @@ document.addEventListener('click', async event => {
     if(await handleManagementAction(action,trigger,{api,data:uiState.bootstrap,applyBootstrap,refresh:refreshAdvancedStatus})) return;
     if (featureActions.has(action)) { await featureActions.dispatch(action, { action, trigger, event }); return; }
     switch (action) {
+      case 'retry-committed-save':
+        await api.retryCommittedSave(trigger.dataset.saveId);
+        break;
       case 'open-chat-files':
       case 'open-retained-files': await api('/api/workspace/open',{method:'POST',body:{chatId:trigger.dataset.chatId,retained:action==='open-retained-files'}});break;
       case 'decide-retained-files': {

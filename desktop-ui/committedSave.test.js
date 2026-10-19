@@ -1,91 +1,122 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { committedWithoutBootstrap, settleCommittedSave } from './bootstrapPatch.js';
+import { committedWithoutBootstrap, committedSaveReceipt, settleCommittedSave } from './bootstrapPatch.js';
 import { createSharedApi } from './sharedApi.js';
 
-// Architecture plan P1 follow-up: a project/Agent save that committed but
-// could not rebuild the page data answers HTTP 200
-// { ok: true, receipt, bootstrapError } (src/http/bootstrapAfterCommit.js).
 const receiptBody = (receipt = { projectId: 'p', revision: 3 }) => ({ ok: true, receipt, bootstrapError: { code: 'BOOTSTRAP_UNAVAILABLE', message: 'Failed to read config' } });
-const page = (extra = {}) => ({ settings: { activeView: 'projects' }, projects: [{ id: 'p' }], ...extra });
+const page = (extra = {}) => ({ settings: { activeView: 'projects' }, projects: [{ id: 'p' }], stateRevision: 3, ...extra });
+const tick = () => new Promise(resolve => setImmediate(resolve));
 
 test('only a committed-save receipt is treated as missing page data', () => {
   assert.equal(committedWithoutBootstrap(receiptBody()), true);
-  assert.equal(committedWithoutBootstrap(page()), false);
-  assert.equal(committedWithoutBootstrap({ ok: true }), false, 'plain ok responses (memory, settings…) pass through');
-  assert.equal(committedWithoutBootstrap({ ok: false, bootstrapError: {} }), false);
-  assert.equal(committedWithoutBootstrap(null), false);
+  for (const payload of [page(), { ok: true }, { ok: false, bootstrapError: {} }, null]) assert.equal(committedWithoutBootstrap(payload), false);
 });
 
-test('a normal response is returned untouched without a reload', async () => {
-  const body = page();
-  let reloads = 0;
-  assert.equal(await settleCommittedSave(body, { reload: async () => { reloads++; }, current: () => null, notify: () => assert.fail() }), body);
-  assert.equal(reloads, 0);
+test('normal responses pass through; recovered page data keeps command identity and export warnings outside transport', async () => {
+  const fresh = page();
+  assert.equal(await settleCommittedSave(fresh, { reload: () => assert.fail(), recover: () => assert.fail() }), fresh);
+  const receipt = { agentId: 'a', revision: 3, agentExportWarning: '已保存，但未能导出 Markdown' };
+  const result = await settleCommittedSave(receiptBody(receipt), { reload: async () => fresh, recover: () => assert.fail() });
+  assert.equal(result.agentExportWarning, receipt.agentExportWarning);
+  assert.equal(committedSaveReceipt(result), receipt);
+  assert.equal(JSON.stringify(result).includes('agentId'), false, 'recovery metadata never becomes page data or a bootstrap baseline');
 });
 
-test('a committed save reloads the bootstrap and keeps the Agent export warning', async () => {
-  const fresh = page({ marker: 'reloaded' });
-  assert.equal(await settleCommittedSave(receiptBody(), { reload: async () => fresh, current: () => page(), notify: () => assert.fail() }), fresh);
-  const warned = await settleCommittedSave(receiptBody({ agentId: 'a', agentExportWarning: '已保存，但未能导出 Markdown' }), { reload: async () => fresh, current: () => null, notify: () => assert.fail() });
-  assert.equal(warned.marker, 'reloaded');
-  assert.equal(warned.agentExportWarning, '已保存，但未能导出 Markdown');
-});
-
-test('if the reload fails too, the save is not reported as failed: current data stays, the user is told', async () => {
-  const current = page({ marker: 'current' });
-  const notes = [];
-  const result = await settleCommittedSave(receiptBody(), { reload: async () => { throw new Error('offline'); }, current: () => current, notify: error => notes.push(error.message) });
-  assert.equal(result, current);
-  assert.deepEqual(notes, ['offline']);
-  await assert.rejects(settleCommittedSave(receiptBody(), { reload: async () => { throw new Error('offline'); }, current: () => null, notify: () => {} }), /offline/, 'no page yet: surface the error');
-});
-
-// The real shared request layer (sharedApi.js, app.js's api() until P2c) with
-// a stubbed fetch: every caller — project create/update/archive/team/default
-// Agent, Agent create/update/channel test, autosaves — goes through it.
-function loadApi({ uiState, responses, errors }) {
-  const requests = [];
-  const request = async (path, init) => {
-    requests.push([path, init.method]);
-    const next = responses.shift();
-    return { ok: next.status < 400, json: async () => next.body };
-  };
-  const api = createSharedApi({ getBootstrap: () => uiState.bootstrap, showError: message => errors.push(message), request });
-  return { api, requests };
-}
-
-test('shared api(): a committed save with bootstrapError re-fetches GET /api/bootstrap instead of applying the receipt', async () => {
-  const errors = [];
-  const { api, requests } = loadApi({ uiState: { bootstrap: page({ marker: 'before' }) }, errors, responses: [
-    { status: 200, body: receiptBody() },
-    { status: 200, body: page({ marker: 'after' }) },
-  ] });
-  const result = await api('/api/projects/update', { method: 'POST', body: { projectId: 'p', patch: { archived: true } } });
-  assert.deepEqual(requests, [['/api/projects/update', 'POST'], ['/api/bootstrap', 'GET']]);
-  assert.equal(result.marker, 'after');
-  assert.ok(result.settings, 'callers apply a real bootstrap');
-  assert.deepEqual(errors, []);
-});
-
-test('shared api(): when the reload fails as well the page keeps its data and says the save went through', async () => {
-  const errors = [];
-  const before = page({ marker: 'before' });
-  const { api, requests } = loadApi({ uiState: { bootstrap: before }, errors, responses: [
-    { status: 200, body: receiptBody() },
-    { status: 500, body: { error: 'Failed to read config' } },
-  ] });
-  assert.equal(await api('/api/projects', { method: 'POST', body: { name: 'x' } }), before);
-  assert.deepEqual(requests.map(([path]) => path), ['/api/projects', '/api/bootstrap']);
-  assert.deepEqual(errors, ['已保存 · Failed to read config']);
-});
-
-test('shared api(): sends the page-data baseline and turns an error answer into an Error', async () => {
-  const seen = [];
-  const bootstrap = { ...page(), _snapshot: { token: 'snap-1' } };
+function harness(responses, bootstrap = page()) {
+  const requests = [], changes = [];
   const api = createSharedApi({
     getBootstrap: () => bootstrap,
-    showError: () => assert.fail('a plain error is thrown to the caller, not toasted here'),
+    onRecoveryChange: () => changes.push(api.pendingSaves()),
+    request: async (path, init) => {
+      requests.push([path, init.method, init.body]);
+      const next = responses.shift();
+      assert.ok(next, 'no unexpected request');
+      if (next instanceof Error) throw next;
+      return { ok: next.status < 400, json: async () => next.body };
+    },
+  });
+  return { api, requests, changes, bootstrap };
+}
+
+test('committed save re-fetches GET /api/bootstrap; ordinary failures still reject and allow retrying POST', async () => {
+  const fresh = page({ marker: 'after' });
+  const h = harness([
+    { status: 200, body: receiptBody() }, { status: 200, body: fresh },
+    { status: 400, body: { error: 'Invalid name' } }, { status: 200, body: fresh },
+  ]);
+  const options = { method: 'POST', body: { name: 'x' } };
+  assert.equal(await h.api('/api/projects', options), fresh);
+  await assert.rejects(h.api('/api/projects', options), /Invalid name/);
+  assert.equal(await h.api('/api/projects', options), fresh);
+  assert.deepEqual(h.requests.map(([path, method]) => [path, method]), [
+    ['/api/projects', 'POST'], ['/api/bootstrap', 'GET'], ['/api/projects', 'POST'], ['/api/projects', 'POST'],
+  ]);
+  assert.deepEqual(h.changes, []);
+});
+
+test('consecutive read failures keep the command pending and coalesce duplicate POSTs; recovery only reads', async () => {
+  const responses = [{ status: 200, body: receiptBody() }, { status: 503, body: { error: 'offline' } }];
+  const h = harness(responses);
+  const before = structuredClone(h.bootstrap);
+  const options = { method: 'POST', body: { name: 'x' } };
+  const save = h.api('/api/projects', options);
+  let finished = false;
+  save.then(() => { finished = true; });
+  await tick();
+  assert.equal(finished, false, 'never resolve with the old bootstrap');
+  assert.deepEqual(h.bootstrap, before);
+  const [pending] = h.api.pendingSaves();
+  assert.equal(pending.receipt.projectId, 'p');
+  assert.equal(h.api('/api/projects', options), save, 'duplicate submit shares the same command');
+  responses.push({ status: 503, body: { error: 'still offline' } });
+  await h.api.retryCommittedSave(pending.id);
+  assert.equal(finished, false);
+  assert.equal(h.api.pendingSaves()[0].retrying, false);
+  assert.equal(h.requests.length, 3, 'no automatic retry loop');
+  const fresh = page({ marker: 'recovered' });
+  responses.push({ status: 200, body: fresh });
+  await Promise.all([h.api.retryCommittedSave(pending.id), h.api.retryCommittedSave(pending.id)]);
+  assert.equal(await save, fresh);
+  assert.deepEqual(h.api.pendingSaves(), []);
+  assert.equal(h.requests.filter(([, method]) => method === 'POST').length, 1);
+  assert.equal(h.requests.length, 4, 'double-clicking refresh starts one GET');
+});
+
+test('a stale or invalid 200 response cannot complete a committed save', async () => {
+  const responses = [{ status: 200, body: receiptBody() }, { status: 200, body: page({ stateRevision: 2 }) }];
+  const h = harness(responses);
+  const save = h.api('/api/projects', { method: 'POST', body: { name: 'x' } });
+  await tick();
+  const id = h.api.pendingSaves()[0].id;
+  responses.push({ status: 200, body: {} });
+  await h.api.retryCommittedSave(id);
+  assert.equal(h.api.pendingSaves().length, 1);
+  responses.push({ status: 200, body: page({ stateRevision: 4 }) });
+  await h.api.retryCommittedSave(id);
+  assert.equal((await save).stateRevision, 4);
+});
+
+test('independent committed saves keep separate receipts and complete independently', async () => {
+  const h = harness([
+    { status: 200, body: receiptBody({ agentId: 'a', revision: 3 }) }, { status: 503, body: {} },
+    { status: 200, body: receiptBody({ projectId: 'p', revision: 4 }) }, { status: 503, body: {} },
+    { status: 200, body: page({ stateRevision: 4 }) }, { status: 200, body: page({ stateRevision: 4 }) },
+  ]);
+  const agent = h.api('/api/agents/create-custom', { method: 'POST', body: {} }); await tick();
+  const project = h.api('/api/projects', { method: 'POST', body: { name: 'p' } }); await tick();
+  const [a, p] = h.api.pendingSaves();
+  await h.api.retryCommittedSave(p.id);
+  assert.equal(committedSaveReceipt(await project).projectId, 'p');
+  assert.deepEqual(h.api.pendingSaves().map(row => row.id), [a.id]);
+  await h.api.retryCommittedSave(a.id);
+  assert.equal(committedSaveReceipt(await agent).agentId, 'a');
+});
+
+test('shared api sends the request baseline and does not turn ordinary failures into committed recovery', async () => {
+  const seen = [];
+  const api = createSharedApi({
+    getBootstrap: () => ({ ...page(), _snapshot: { token: 'snap-1' } }),
+    onRecoveryChange: () => assert.fail(),
     request: async (path, init) => { seen.push([path, init.method, init.headers['x-melo-bootstrap-base'], init.body]); return { ok: false, json: async () => ({ error: 'Nope' }) }; },
   });
   await assert.rejects(api('/api/projects/update', { method: 'POST', body: { projectId: 'p' } }), /Nope/);

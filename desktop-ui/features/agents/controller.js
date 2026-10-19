@@ -11,6 +11,7 @@
 // hooks below at the positions the Agent calls used to have. See
 // features/README.md.
 import { t } from '../../i18n.js';
+import { committedSaveReceipt } from '../../bootstrapPatch.js';
 import { readAgentAvatar } from '../../agentAvatar.js';
 import { buildAgentProfilePatch } from './agentProfilePatch.js';
 import { agentDocumentWithPreset, agentDraftFromProfile, normalizeChannelsForDraft } from './agentDraft.js';
@@ -321,9 +322,14 @@ async function handleCreateCustomAgent() {
   render();
   try {
     const payload = await agentsApi.createCustom();
+    const createdId = committedSaveReceipt(payload)?.agentId || payload.settings?.selectedAgentId;
     applyBootstrap(payload);
     const form = app.querySelector('form[data-form="agent-profile-update"]');
-    if (form) beginFormEdit(form);
+    // A concurrent navigation or a newer bootstrap may have selected another
+    // Agent. Only the record created by this command may be auto-edited.
+    if (!createdId || !payload.customize?.agents?.some(agent => agent.id === createdId) ||
+        form?.dataset.agentId !== createdId || selectedAgentScope() !== 'global') return;
+    beginFormEdit(form);
     render();
     app.querySelector('form[data-form="agent-profile-update"] [name="name"]')?.select();
   } finally {

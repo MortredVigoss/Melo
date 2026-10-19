@@ -1,6 +1,10 @@
 // Authored interface copy only. User messages, names and provider output never enter this catalog.
 // Columns: Chinese source / English / Japanese / Korean / Spanish.
 const rows = [
+["已保存，等待刷新页面", "Saved. Waiting to refresh the page.", "保存済みです。ページの更新をお待ちください。", "저장되었습니다. 페이지 새로 고침을 기다리는 중입니다.", "Guardado. Pendiente de actualizar la página."],
+["刷新只读取已保存的内容。", "Refreshing only reads the saved content.", "更新では保存済みの内容のみを読み込みます。", "새로 고침은 저장된 내용만 읽습니다.", "Al actualizar solo se lee el contenido guardado."],
+["正在刷新…", "Refreshing…", "更新中…", "새로 고치는 중…", "Actualizando…"],
+["刷新页面", "Refresh page", "ページを更新", "페이지 새로 고침", "Actualizar página"],
 ["资料按问题与上下文预算选取相关片段，全文保留。", "Relevant excerpts are selected for the question and context budget; full documents are retained.", "質問とコンテキスト予算に合わせて関連箇所を選び、原文は保持します。", "질문과 문맥 한도에 맞는 부분을 선택하며 원문은 보존됩니다.", "Se eligen fragmentos relevantes según la pregunta y el contexto disponible; se conservan los documentos completos."],
 ["用时未记录", "Time not recorded", "時間未記録", "시간 미기록", "Tiempo no registrado"],
 ["{seconds} 秒", "{seconds} s", "{seconds} 秒", "{seconds}초", "{seconds} s"],

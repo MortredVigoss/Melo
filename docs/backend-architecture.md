@@ -68,7 +68,7 @@ SSE 保留 `started`、`delta`、`reasoning`、`done`、`error`、`aborted` 等�
 
 旧 URL、请求体和成功响应不变：`src/http/bootstrapAfterCommit.js` 在提交后调用 `getDesktopBootstrap()`，必要时并入 `agentExportWarning`。兼容期内这些请求仍有整页组装开销。
 
-提交后构建页面数据失败时，响应仍为 HTTP 200：`{ ok: true, receipt, bootstrapError: { code: 'BOOTSTRAP_UNAVAILABLE', message } }`。不用 5xx，避免客户端把已保存当成失败并重试（重试创建会产生重复项目或 Agent）；客户端应重新读取 `GET /api/bootstrap`。`receipt` 只含 ID、修订号与警告，不含记录正文（Agent 记录含频道凭据）。命令自身的校验或提交错误照旧报错。桌面 UI 自 P2a（2026-10-19）起在共享 `api()` 里统一识别：不把回执当页面数据，改为重新读取 `GET /api/bootstrap`（保留 `receipt.agentExportWarning`）；重新读取也失败时保留当前页面数据并提示“已保存 · 原因”，不报保存失败（`desktop-ui/bootstrapPatch.js` 的 `settleCommittedSave`，测试 `desktop-ui/committedSave.test.js`）。
+提交后构建页面数据失败时，响应仍为 HTTP 200：`{ ok: true, receipt, bootstrapError: { code: 'BOOTSTRAP_UNAVAILABLE', message } }`。不用 5xx，避免客户端把已保存当成失败并重试（重试创建会产生重复项目或 Agent）；客户端应重新读取 `GET /api/bootstrap`。`receipt` 只含 ID、修订号与警告，不含记录正文（Agent 记录含频道凭据）。命令自身的校验或提交错误照旧报错。桌面 UI 自 P2a（2026-10-19）起在共享 `api()` 里统一识别：不把回执当页面数据，改为重新读取 `GET /api/bootstrap`（保留 `receipt.agentExportWarning`）；重新读取也失败时，调用方保留草稿和忙碌状态，显示持久的“已保存，等待刷新页面”，原命令不以旧快照完成。用户点击刷新只重发 GET（单次限时 15 秒、同一回执不并发重读）；读取到至少覆盖回执修订号的快照后才继续完成界面操作。相同进行中的命令去重，新建 Agent 还须匹配创建 id 和全局表单后才能自动编辑。恢复状态仅在当前页面内存中；重开页面读取已提交数据，不重放写请求。见 `desktop-ui/bootstrapPatch.js`、`sharedApi.js`，以及 `committedSave.test.js` / `committedSave.browser.test.js`。
 
 `scripts/check-dependencies.js` 禁止已迁移模块直接或经任何链路（含 `desktopStore.js`）到达 `services/desktop/bootstrap.js`，失败信息列出导入链。仍直接导入它的业务模块列在例外清单中，只能减少：新增直接导入或清单中已不再导入的条目都会使检查失败。
 

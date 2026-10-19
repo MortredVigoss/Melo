@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { createActionRegistry } from '../registry.js';
 import { createSharedApi } from '../../sharedApi.js';
+import { settleCommittedSave } from '../../bootstrapPatch.js';
 import { installAgentsFeature } from './index.js';
 import { scheduleAgentChannelAutosave, scheduleAgentMarkdownAutosave } from './controller.js';
 
@@ -252,7 +253,7 @@ function sharedApi({ uiState, responses, errors }) {
 test('bootstrapError: a committed Agent save goes through the shared api(), reloads the page and keeps the export warning', async () => {
   const apiErrors = [];
   const before = page();
-  const after = page({ marker: 'after' });
+  const after = page({ marker: 'after', stateRevision: 4 });
   const { api, requests } = sharedApi({ uiState: { bootstrap: before }, errors: apiErrors, responses: [
     { status: 200, body: { ok: true, receipt: { agentId: 'research', revision: 4, agentExportWarning: '已保存，但未能导出 Markdown' }, bootstrapError: { code: 'BOOTSTRAP_UNAVAILABLE', message: 'Failed to read config' } } },
     { status: 200, body: after },
@@ -266,4 +267,24 @@ test('bootstrapError: a committed Agent save goes through the shared api(), relo
   assert.deepEqual(h.errors, ['已保存，但未能导出 Markdown']);
   assert.deepEqual(h.feature.getState().agentDrafts, {}, 'the committed draft is cleared');
   assert.deepEqual(apiErrors, []);
+});
+
+// The reload can reflect a newer selection (for example another window).
+// The create receipt, not whichever form is currently visible, owns auto-edit.
+test('recovered create never auto-edits another Agent or a project override', async () => {
+  for (const scope of ['global', 'project']) {
+    const selectedAgentId = scope === 'project' ? 'custom-new' : 'research';
+    const bootstrap = page({ stateRevision: 4, settings: { ...page().settings, selectedAgentId, selectedAgentScope: scope } });
+    const recovered = await settleCommittedSave({ ok: true, receipt: { agentId: 'custom-new', revision: 3 }, bootstrapError: {} }, {
+      reload: async () => ({ ...bootstrap, customize: { ...bootstrap.customize, agents: [...bootstrap.customize.agents, agent('custom-new')] } }),
+      recover: () => assert.fail(),
+    });
+    const h = harness({ bootstrap, project: scope === 'project' ? { id: 'P1' } : null, responses: { '/api/agents/create-custom': recovered } });
+    // Pass through the real recovered object so the local receipt identity is retained.
+    h.context.api = async () => recovered;
+    const feature = installAgentsFeature(h.context);
+    profileForm(selectedAgentId);
+    await feature.actions['create-custom-agent']();
+    assert.deepEqual(h.edits, [], 'the pre-existing form must remain read-only');
+  }
 });

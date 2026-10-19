@@ -520,7 +520,7 @@
         "approvals": 3,
         "channels": 3,
         "chat": 13,
-        "desktop-shell": 6,
+        "desktop-shell": 7,
         "memory": 11,
         "platform": 37,
         "settings": 2,
@@ -3255,6 +3255,12 @@
           ]
         },
         {
+          "module": "desktop-ui/bootstrapPatch.js",
+          "importedBy": [
+            "agents"
+          ]
+        },
+        {
           "module": "desktop-ui/features/featureContext.js",
           "importedBy": [
             "agents",
@@ -3317,7 +3323,7 @@
         "voice": 2
       },
       "usedBy": {
-        "agents": 6,
+        "agents": 7,
         "approvals": 3,
         "chat": 15,
         "media": 4,
@@ -3396,6 +3402,7 @@
         "js": [
           "desktop-ui/anchorRouting.test.js",
           "desktop-ui/bootstrapPatch.test.js",
+          "desktop-ui/committedSave.browser.test.js",
           "desktop-ui/committedSave.test.js",
           "desktop-ui/features/registry.test.js",
           "desktop-ui/i18n.test.js",

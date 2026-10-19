@@ -4,6 +4,8 @@ A brief overview of user-facing updates. Technical details live in the project d
 
 ## 2026-10-19
 
+- Fixed recovery after saving Agents and projects when the page cannot refresh, preventing unintended edits and duplicate creation.
+
 - Desktop app: the chat page and its composer (thread, load earlier, message actions, attachments, voice input, the chat-side Agent picker, sending, streaming, supplements while a reply runs, Stop and retry) now live in their own feature module with their own state, actions, requests and styles, and the approval dialogs got their own stylesheet; nothing changes on screen. A media test that could fail under heavy parallel load is now deterministic.
 - Desktop app: the Agent settings page (the Agent page and Customize → Agents: drafts, saving, project overrides, new Agents, Markdown import/export, avatar, capabilities and collaboration, channel test and pending-save flushes) now lives in its own feature module with its own state, actions, requests and styles; nothing changes on screen. In the project memory book, «手写一条» now saves the typed text even when you pause before clicking 写入记忆本 (it could send an empty row) and empties the box after saving.
 - Desktop app: the memory pages (memory settings, remembered facts, the project memory book and the reply footer) and the projects page now live in their own feature modules with their own state, actions, requests and styles; nothing changes on screen. When a project or Agent save succeeds but the page data cannot be rebuilt, the app now reloads the page data instead of treating the reply as page data, and never reports the committed save as failed.

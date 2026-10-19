@@ -2581,6 +2581,17 @@ select option {
   box-shadow: var(--shadow);
 }
 
+.committed-save-notice {
+  position: fixed;
+  z-index: 1000;
+  right: 24px;
+  bottom: 24px;
+  max-width: min(420px, calc(100vw - 48px));
+  padding: 14px 16px;
+}
+
+.committed-save-notice p { margin: 0 0 10px; }
+
 .edit-context-menu {
   position: fixed;
   left: -9999px;

@@ -151,13 +151,13 @@ function renderProjectCreateForm() {
       <div class="project-form-grid">
         <label class="label">
           项目名称
-          <input class="input" name="name" value="${escapeHtml(
+          <input ${projectsState.projectCreating ? 'disabled' : ''} class="input" name="name" value="${escapeHtml(
             projectsState.draftProject.name,
           )}" placeholder="例如：旅行规划、产品开发" />
         </label>
         <label class="label">
           分类
-          <input class="input" name="tag" value="${escapeHtml(
+          <input ${projectsState.projectCreating ? 'disabled' : ''} class="input" name="tag" value="${escapeHtml(
             projectsState.draftProject.tag,
           )}" placeholder="例如：生活、工作" />
         </label>
@@ -165,26 +165,26 @@ function renderProjectCreateForm() {
 
       <label class="label">
         项目文件夹
-        <input class="input" name="workspacePath" value="${escapeHtml(
+        <input ${projectsState.projectCreating ? 'disabled' : ''} class="input" name="workspacePath" value="${escapeHtml(
           projectsState.draftProject.workspacePath,
         )}" placeholder="可选；留空将创建独立项目文件夹" />
       </label>
 
       <label class="label">
         项目目标
-        <input class="input" name="summary" value="${escapeHtml(
+        <input ${projectsState.projectCreating ? 'disabled' : ''} class="input" name="summary" value="${escapeHtml(
           projectsState.draftProject.summary,
         )}" placeholder="希望完成什么？" />
       </label>
       <label class="label">
         持续工作要求
-        <textarea class="textarea" name="instructions" placeholder="这个项目里，Melo 应遵守哪些要求？">${escapeHtml(
+        <textarea ${projectsState.projectCreating ? 'disabled' : ''} class="textarea" name="instructions" placeholder="这个项目里，Melo 应遵守哪些要求？">${escapeHtml(
           projectsState.draftProject.instructions,
         )}</textarea>
       </label>
       <div class="inline-actions">
-        <button class="small-button is-primary" type="submit">创建项目</button>
-        <button class="small-button is-outline" type="button" data-action="toggle-project-form">
+        <button ${projectsState.projectCreating ? 'disabled' : ''} class="small-button is-primary" type="submit">创建项目</button>
+        <button ${projectsState.projectCreating ? 'disabled' : ''} class="small-button is-outline" type="button" data-action="toggle-project-form">
           取消
         </button>
       </div>

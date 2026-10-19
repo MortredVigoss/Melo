@@ -41,22 +41,33 @@ export function committedWithoutBootstrap(payload) {
   return payload?.ok === true && Boolean(payload.bootstrapError) && !payload.settings;
 }
 
-// Called by app.js's api() for every response. Such a receipt is never applied
-// as page data and never reported as a failed save (a retried create would
-// duplicate the project or Agent): reload GET /api/bootstrap instead, keeping
-// the Agent Markdown export warning the old response carried. If that reload
-// fails too, keep the current page data and tell the user the save itself
-// went through.
-export async function settleCommittedSave(payload, { reload, current, notify }) {
+// Keep command identity outside the page-data / transport format. A recovery
+// may land after the user selected a different Agent in another request.
+const committedReceipts = new WeakMap();
+export const committedSaveReceipt = bootstrap => committedReceipts.get(bootstrap);
+
+// A committed command must not resolve with stale page data. Its caller keeps
+// its busy flag and draft until GET succeeds; recover exposes a read-only
+// retry to the user instead of returning the old snapshot or repeating POST.
+export async function settleCommittedSave(payload, { reload, recover }) {
   if (!committedWithoutBootstrap(payload)) return payload;
   const warning = payload.receipt?.agentExportWarning;
+  const readCommitted = async () => {
+    const next = await reload();
+    if (!next?.settings || committedWithoutBootstrap(next) ||
+        (Number.isFinite(payload.receipt?.revision) &&
+         !(Number(next.stateRevision) >= payload.receipt.revision))) {
+      throw new Error('Saved page data is not available yet.');
+    }
+    return next;
+  };
   let bootstrap;
   try {
-    bootstrap = await reload();
+    bootstrap = await readCommitted();
   } catch (error) {
-    bootstrap = current();
-    if (!bootstrap) throw error;
-    notify(error);
+    bootstrap = await recover({ receipt: payload.receipt, error, reload: readCommitted });
   }
-  return warning ? { ...bootstrap, agentExportWarning: warning } : bootstrap;
+  const result = warning ? { ...bootstrap, agentExportWarning: warning } : bootstrap;
+  committedReceipts.set(result, payload.receipt);
+  return result;
 }
