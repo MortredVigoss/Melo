@@ -8088,7 +8088,7 @@ function renderProjectsDetailView(project) {
                   project.instructions,
                 )}</textarea>
               </label>
-              <fieldset class="context-materials"><legend>项目共享资料</legend><p>这些资料用于项目内所有对话，与对话单独选用的资料去重后合计最多 8 份、24000 字。</p>
+              <fieldset class="context-materials"><legend>项目共享资料</legend><p>资料按问题与上下文预算选取相关片段，全文保留。</p>
                 ${(uiState.bootstrap.artifacts || []).filter(a=>a.content?.trim()).map(a=>ui`<label><input type="checkbox" name="knowledgeIds" value="${escapeHtml(a.id)}" ${(project.knowledgeIds || []).includes(a.id)?'checked':''}>${escapeHtml(a.title)}</label>`).join('') || ui`<p>先在知识分支保存资料。</p>`}
               </fieldset>
               <div class="inline-actions">
@@ -13004,8 +13004,6 @@ document.addEventListener('change', async event => {
         if (projectAgent) uiState.activeChatAgentId = projectAgent;
       }
       else {
-        const notes=uiState.bootstrap.artifacts.filter(a=>patch.contextArtifactIds.includes(a.id));
-        if(notes.length>8 || notes.reduce((sum,n)=>sum+n.content.length,0)>24000) throw new Error('最多选用 8 份、合计 24000 字资料。');
         uiState.newChatArtifactIds=patch.contextArtifactIds;
       }
     } catch(error) { showError(error.message); }

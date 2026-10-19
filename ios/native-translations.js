@@ -1,6 +1,8 @@
 // Native-only authored copy. User names, prompts and model output are never translated.
 // Chinese / English / Japanese / Korean / Spanish.
 const rows = [
+["项目记忆本", "Project memory book", "プロジェクト記憶ノート", "프로젝트 기억 노트", "Cuaderno de memoria del proyecto"],
+["项目记忆冲突", "Project memory conflicts", "プロジェクト記憶の競合", "프로젝트 기억 충돌", "Conflictos de memoria del proyecto"],
 ["本轮用时 %@", "Total time %@", "今回の所要時間 %@", "전체 소요 시간 %@", "Tiempo total %@"],
 ["已用时 %@", "Elapsed %@", "経過 %@", "경과 %@", "Transcurrido %@"],
 ["思考与回复 %@", "Thinking and response %@", "思考と応答 %@", "생각 및 응답 %@", "Razonamiento y respuesta %@"],

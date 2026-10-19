@@ -1,3 +1,5 @@
+import { AGENT_LOOP_CONTRACT } from '../../runtime/agentLoopContract.js';
+const contextDefaults = AGENT_LOOP_CONTRACT.contextBudget;
 import { estimateTextTokens, estimateMessageTokens, estimateMessagesTokens, truncateToTokens } from '../../memory/tokenEstimate.js';
 
 // ─── Budget resolution ──────────────────────────────────────────────────────
@@ -13,10 +15,10 @@ import { estimateTextTokens, estimateMessageTokens, estimateMessagesTokens, trun
 // large window because the user asked for longer single conversations and
 // those models carry 200k–400k contexts; local models stay small because
 // most of them do not. MELO_CONTEXT_BUDGET_TOKENS always wins when set.
-const DEFAULT_CLOUD_BUDGET_TOKENS = 160_000;
-const DEFAULT_LOCAL_BUDGET_TOKENS = 24_000;
-const MAX_BUDGET_TOKENS = 400_000;
-const MIN_BUDGET_TOKENS = 4_096;
+const DEFAULT_CLOUD_BUDGET_TOKENS = contextDefaults.cloud;
+const DEFAULT_LOCAL_BUDGET_TOKENS = contextDefaults.local;
+const MAX_BUDGET_TOKENS = contextDefaults.maximum;
+const MIN_BUDGET_TOKENS = contextDefaults.minimum;
 // Share of the input limit reserved for history; the rest covers the system
 // prompt, tool definitions and recall. Keeping the window below the input
 // limit is what prevents the fitter from dropping messages the trigger
@@ -29,13 +31,13 @@ const HISTORY_WINDOW_SHARE = 0.75;
 // raw history is capped at this many tokens and compaction starts earlier.
 // MELO_HISTORY_WINDOW_TOKENS overrides the cap (raise it for providers whose
 // cache makes long raw history cheap).
-const DEFAULT_NEAR_WINDOW_TOKENS = 64_000;
+const DEFAULT_NEAR_WINDOW_TOKENS = contextDefaults.nearWindow;
 // One summarising request carries at most this much history (final-token
 // scale); the floor keeps local models compacting a few turns at a time.
-const MAX_COMPACT_CHUNK_TOKENS = 45_000;
-const MIN_COMPACT_CHUNK_TOKENS = 4_000;
+const MAX_COMPACT_CHUNK_TOKENS = contextDefaults.chunkMaximum;
+const MIN_COMPACT_CHUNK_TOKENS = contextDefaults.chunkMinimum;
 // Final-token margin kept between the required prompt and the history window.
-const HISTORY_WINDOW_MARGIN = 512;
+const HISTORY_WINDOW_MARGIN = contextDefaults.margin;
 // Per-turn recall sections (session facts, excerpts, memory, dynamic context)
 // share this much at most; each lower-priority block keeps a floor (audit L3).
 const RECALL_BUDGET_TOKENS = 32_000;

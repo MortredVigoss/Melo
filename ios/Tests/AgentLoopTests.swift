@@ -39,6 +39,42 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
         let c = AgentLoopContract.shared
         assert(c.maxIterations == 10 && c.maxCallsPerResponse == 32)
 
+        // Audit A1: hostile finite numbers never trap, neighbours and offsets clamp before conversion.
+        let extremeMessages = (0..<4).map { ChatMessage(id: "m\($0)", role: "user", content: "original") }
+        for number in [1e100, -1e100, Double.greatestFiniteMagnitude, Double.infinity, -Double.infinity, Double.nan] {
+            let range = PhoneReadHistory.slice(extremeMessages, aroundMessageId: "m2", before: number, after: number, limit: number)
+            assert(range.messages.count <= 4)
+        }
+        let hugeOffset = PhoneReadHistory.run(arguments: #"{"fromMessageId":"m0","fromChar":1e100,"limit":1e100}"#, chatID: "c", title: "test", messages: extremeMessages)
+        assert(PhoneToolEnvelope.parse(hugeOffset).ok)
+
+        // Audit A2: deadline returns promptly and cancels work before a delayed side effect.
+        do {
+            var performed = 0
+            let slowTools = AgentLoopTools(definitions: [PhoneReadHistory.definition], instructions: "", perform: { _ in
+                do { try await Task.sleep(nanoseconds: 300_000_000); try PhoneExecutionScope.check(); performed += 1 }
+                catch { return PhoneToolResult(output: PhoneToolEnvelope.failure("ABORTED", "cancelled")) }
+                return PhoneToolResult(output: PhoneToolEnvelope.success("late"))
+            })
+            let start = Date()
+            let result = try await AgentLoop(transport: ScriptedTransport { _ in calls([fc("slow", "read_history")]) }, tools: slowTools, budget: PhoneRunBudget(deadlineMs: 30), latestUserMessage: "q").run()
+            assert(result.stop == .budget && Date().timeIntervalSince(start) < 0.2)
+            try await Task.sleep(nanoseconds: 320_000_000)
+            assert(performed == 0 && result.calls.first?.code == "BUDGET_EXHAUSTED")
+            // A deliberately non-cooperative adapter must not keep the loop waiting.
+            let start2 = Date()
+            do {
+                _ = try await PhoneDeadline.run(seconds: 0.02) {
+                    await withCheckedContinuation { continuation in
+                        DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { continuation.resume(returning: "late") }
+                    }
+                }
+                assertionFailure("deadline missing")
+            } catch is PhoneDeadline.Reached { assert(Date().timeIntervalSince(start2) < 0.2) }
+            let next = try await AgentLoop(transport: ScriptedTransport { _ in answer("next") }, tools: nil, budget: PhoneRunBudget(), latestUserMessage: "q").run()
+            assert(next.text == "next")
+        }
+
         // 1. Ten model calls at most; the limit reply is the shared text, in the question's language.
         do {
             let log = Log()
@@ -191,7 +227,7 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             do { _ = try await task.value; assertionFailure("cancelled turn answered") } catch { assert(error is CancellationError) }
             assert(log.records.count == 2 && transport.requests.count == 1)
             let trace = PhoneToolTrace.text(log.records, status: "cancelled")
-            assert(trace == "[工具轨迹] 本轮已取消，之前已执行 2 次工具调用（可据此继续，不必重复）：\n1. open_url(url=https://example.com/a, page=2) ✓；2. read_history(fromMessageId=m1) ○ empty", trace)
+            assert(trace == "[工具轨迹] 本轮已取消，之前已执行 2 次工具调用（可据此继续，不必重复）：\n1. open_url(url=https://example.com/a, page=2) ✓；2. read_history(fromMessageId=m1) ✗ ABORTED", trace)
             assert(log.records.allSatisfy { $0.argsHash.count == 16 && $0.durationMs >= 0 })
             let message = ChatMessage(role: "assistant", content: trace)
             assert(PhoneToolTrace.isTrace(message) && !PhoneToolTrace.isTrace(ChatMessage(role: "user", content: trace)))
@@ -236,6 +272,39 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             let late = ScriptedTransport { _ in clock = 21 * 60_000; return answer("答案\n[UNCERTAIN: 数字]") }
             let lateOutcome = try await AgentLoop(transport: late, tools: nil, budget: PhoneRunBudget(now: { clock }), latestUserMessage: "q", verification: AgentVerification(question: "q", classification: factual)).run()
             assert(lateOutcome.text == "答案" && late.completions.isEmpty)
+        }
+
+        // A3: the actual verifier request cannot recover disabled source text.
+        do {
+            var agent = AgentProfile(id: "main", name: "main", subtitle: "", symbol: "star", instructions: "persona")
+            agent.contextSources = .object(["knowledge": .bool(false), "projects": .bool(false)])
+            let context = ConversationContext.resolve(agent: agent, project: PersonalProject(id: "p", name: "PRIVATE_PROJECT", goal: "PRIVATE_GOAL"), notes: [KnowledgeNote(id: "secret", title: "private", content: "PRIVATE_KNOWLEDGE")], query: "东京塔多高？")
+            let transport = ScriptedTransport { _ in answer("东京塔高 333 米。\n[UNCERTAIN: 高度]") }
+            transport.completeReply = { _, _ in "{\"verdict\":\"UNVERIFIED\"}" }
+            _ = try await AgentLoop(transport: transport, tools: nil, budget: PhoneRunBudget(), latestUserMessage: "东京塔多高？", verification: AgentVerification(question: "东京塔多高？", classification: PhoneIntent.Classification(taskType: "factual", riskLevel: "normal"), contextBlocks: context.evidence + ["Public evidence: Tokyo Tower is 333 metres high."])).run()
+            assert(transport.completions.count == 1)
+            assert(!transport.completions.flatMap { $0.messages }.contains { $0.content.contains("PRIVATE_") })
+        }
+
+        // A6: limits stop before another request or a side effect, including provider output usage.
+        do {
+            let log = Log(), transport = ScriptedTransport { _ in calls([fc(UUID().uuidString)]) }
+            do {
+                _ = try await PhoneMemberLimits.$current.withValue(.init(iterations: 1, tokens: 10000, timeoutMs: 1000)) {
+                    try await AgentLoop(transport: transport, tools: loopTools(log), budget: PhoneRunBudget(), latestUserMessage: "q").run()
+                }
+                assertionFailure("unfinished member cannot report success")
+            } catch {}
+            assert(transport.requests.count == 1 && log.performed.count == 1)
+            let denied = Log()
+            let expensive = ScriptedTransport { _ in var row = calls([fc("write")]); row.inputTokens = 100; row.outputTokens = 500; return row }
+            do {
+                _ = try await PhoneMemberLimits.$current.withValue(.init(iterations: 8, tokens: 200, timeoutMs: 1000)) {
+                    try await AgentLoop(transport: expensive, tools: loopTools(denied), budget: PhoneRunBudget(), latestUserMessage: "q").run()
+                }
+                assertionFailure("member budget ignored")
+            } catch {}
+            assert(denied.performed.isEmpty && expensive.requests[0].remainingTokens == 200)
         }
 
         // 10. Team members run on a narrowed child of the turn budget; their use lands on the parent.

@@ -1,6 +1,41 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "资料按问题与上下文预算选取相关片段，全文保留。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "资料按问题与上下文预算选取相关片段，全文保留。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relevant excerpts are selected for the question and context budget; full documents are retained."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "質問とコンテキスト予算に合わせて関連箇所を選び、原文は保持します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "질문과 문맥 한도에 맞는 부분을 선택하며 원문은 보존됩니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se eligen fragmentos relevantes según la pregunta y el contexto disponible; se conservan los documentos completos."
+          }
+        }
+      }
+    },
     "用时未记录": {
       "extractionState": "manual",
       "localizations": {
@@ -33282,6 +33317,76 @@
           "stringUnit": {
             "state": "translated",
             "value": "Respondiendo. Puedes añadir indicaciones y se aplicarán en el siguiente paso; los cambios de agente, modelo o proyecto se aplican desde el siguiente mensaje."
+          }
+        }
+      }
+    },
+    "项目记忆本": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "项目记忆本"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Project memory book"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクト記憶ノート"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "프로젝트 기억 노트"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cuaderno de memoria del proyecto"
+          }
+        }
+      }
+    },
+    "项目记忆冲突": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "项目记忆冲突"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Project memory conflicts"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクト記憶の競合"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "프로젝트 기억 충돌"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conflictos de memoria del proyecto"
           }
         }
       }

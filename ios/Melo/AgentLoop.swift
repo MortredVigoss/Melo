@@ -31,6 +31,7 @@ struct AgentRound: @unchecked Sendable {
     var inputTokens: Int? = nil
     /// Request size estimate (body bytes without base64 images / 4) for the budget when usage is missing.
     var estimatedInputTokens = 0
+    var outputTokens: Int? = nil
 }
 
 /// One executed (or refused) tool call as it goes back to the model.
@@ -53,6 +54,7 @@ struct AgentLoopRequest: @unchecked Sendable {
     let transcript: [AgentTranscriptItem]
     /// Seconds left for this request: min(transport cap, run budget remaining).
     let timeout: TimeInterval
+    var remainingTokens: Int? = nil
 }
 
 /// A provider rejected the request as too large (HTTP 413 or a context-length
@@ -144,26 +146,21 @@ final class AgentLoop: @unchecked Sendable {
     // MARK: run
 
     func run() async throws -> AgentLoopOutcome {
+        if let limits = PhoneMemberLimits.current { maxIterations = limits.iterations }
         budget.arm()
         var outcome = try await invokeModel()
+        if PhoneMemberLimits.current != nil, outcome.stop != .answered { throw MeloError.message("成员达到运行上限，结果尚未完成。") }
         if let validate { try validate(outcome) }
         try await finalize(&outcome)
         return outcome
     }
 
-    private struct DeadlineReached: Error {}
-
-    /// Runs one request, cut off at the run deadline.
+    /// Unstructured race: a non-cooperative provider must not hold a structured
+    /// task group open after the deadline. The loser is cancelled; late values
+    /// are discarded. Tool implementations also check this scope before writes.
     private func withDeadline<T>(_ work: @escaping @Sendable () async throws -> T) async throws -> T {
-        let remaining = budget.remainingMs()
-        guard remaining.isFinite, remaining < 86_400_000 else { return try await work() }
-        return try await withThrowingTaskGroup(of: DeadlineBox<T>.self) { group in
-            group.addTask { DeadlineBox(try await work()) }
-            group.addTask { try await Task.sleep(nanoseconds: UInt64(max(0, remaining) * 1_000_000)); return DeadlineBox(nil) }
-            defer { group.cancelAll() }
-            guard let first = try await group.next() else { throw CancellationError() }
-            guard let value = first.value else { throw DeadlineReached() }
-            return value
+        try await PhoneExecutionScope.$budget.withValue(budget) {
+            try await PhoneDeadline.run(seconds: budget.remainingMs() / 1000, work)
         }
     }
 
@@ -186,6 +183,7 @@ final class AgentLoop: @unchecked Sendable {
         var evidence: [PhoneUncertainty.ToolPair] = []
         var seenCallIDs = Set<String>()
         var screenshots = 0
+        var spentTokens = 0
         let guardian = PhoneRepeatGuard()
         let offered = Set((tools?.definitions ?? []).map(\.name))
         let transport = self.transport
@@ -204,7 +202,7 @@ final class AgentLoop: @unchecked Sendable {
             var round = AgentRound()
             var condensed = false
             while true {
-                let request = AgentLoopRequest(iteration: iteration, transcript: transcript, timeout: budget.requestTimeout(cap: transport.timeoutCap))
+                let request = AgentLoopRequest(iteration: iteration, transcript: transcript, timeout: budget.requestTimeout(cap: transport.timeoutCap), remainingTokens: PhoneMemberLimits.current.map { max(0, $0.tokens - spentTokens) })
                 do {
                     round = try await withDeadline { try await transport.round(request) }
                     break
@@ -215,7 +213,7 @@ final class AgentLoop: @unchecked Sendable {
                     guard next.changed else { throw error }
                     transcript = next.transcript; condensed = true
                     await hooks.onStage?("tool-chain:condense:\(iteration)", "工具结果已压缩", "completed", "早期工具输出已压缩以继续本轮。")
-                } catch is DeadlineReached {
+                } catch is PhoneDeadline.Reached {
                     let text = await exhaustedStop(budget.exhausted(at: budget.deadlineAt) ?? PhoneRunBudget.Exhaustion(reason: "deadline", limit: budget.deadlineAt - budget.startedAt, used: budget.deadlineAt - budget.startedAt, usage: budget.used))
                     return AgentLoopOutcome(text: text, stop: .budget, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration)
                 } catch let error as URLError where error.code == .timedOut && !Task.isCancelled && budget.remainingMs() <= 1000 {
@@ -224,7 +222,10 @@ final class AgentLoop: @unchecked Sendable {
                     return AgentLoopOutcome(text: text, stop: .budget, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration)
                 }
             }
-            budget.record(inputTokens: round.inputTokens ?? round.estimatedInputTokens, providerCalls: 1)
+            let inputTokens = round.inputTokens ?? round.estimatedInputTokens
+            budget.record(inputTokens: inputTokens, providerCalls: 1)
+            spentTokens += inputTokens + (round.outputTokens ?? PhoneTokenEstimate.text(round.text + round.calls.map(\.arguments).joined()))
+            if let limit = PhoneMemberLimits.current?.tokens, spentTokens > limit { throw MeloError.message("成员 token 预算已用完，未继续执行工具。") }
             sources += round.sources
             searched = searched || round.searched
             let calls = transport.offersTools && tools != nil ? round.calls : []
@@ -245,6 +246,7 @@ final class AgentLoop: @unchecked Sendable {
                 let started = Date()
                 var outcome: PhoneToolOutcome
                 var executed = false
+                var cancelled = false
                 var image: (Data, String)? = nil
                 if Task.isCancelled {
                     outcome = PhoneToolEnvelope.finalize(ok: false, error: "ABORTED", output: "Aborted before execution.")
@@ -261,9 +263,17 @@ final class AgentLoop: @unchecked Sendable {
                     budget.record(toolCalls: 1)
                     if let tools {
                         await hooks.onStatus?(tools.statusText(call))
-                        let result = await tools.perform(call)
-                        outcome = PhoneToolEnvelope.parse(result.output)
-                        if let jpeg = result.imageJPEG { image = (jpeg, result.imageURL); screenshots += 1 }
+                        do {
+                            let result = try await withDeadline { await tools.perform(call) }
+                            try PhoneExecutionScope.check(deadline: budget)
+                            outcome = PhoneToolEnvelope.parse(result.output)
+                            if let jpeg = result.imageJPEG { image = (jpeg, result.imageURL); screenshots += 1 }
+                        } catch is PhoneDeadline.Reached {
+                            outcome = PhoneToolEnvelope.finalize(ok: false, error: contract.budgetCode, output: "The run deadline expired during this tool call.")
+                        } catch {
+                            cancelled = error is CancellationError
+                            outcome = PhoneToolEnvelope.finalize(ok: false, error: "ABORTED", output: "The tool call was cancelled.")
+                        }
                     } else { outcome = PhoneToolEnvelope.finalize(ok: false, error: "UNKNOWN_TOOL", output: contract.unknownToolOutput) }
                     executed = true
                     guardian.record(call.name, args, outcome)
@@ -271,6 +281,7 @@ final class AgentLoop: @unchecked Sendable {
                 let record = ExecutionToolCall(iteration: iteration, call: call, args: args, outcome: outcome, executed: executed, started: started, finished: Date())
                 records.append(record)
                 await hooks.onToolCall?(record)
+                if cancelled { throw CancellationError() }
                 evidence.append(PhoneUncertainty.ToolPair(callID: call.callID, name: call.name, args: args, ok: outcome.ok, output: outcome.output, receivedAt: record.startedAt))
                 if evidence.count > contract.evidenceMaxToolItems { evidence.removeFirst(evidence.count - contract.evidenceMaxToolItems) }
                 results.append(AgentToolResult(call: call, modelOutput: PhoneToolEnvelope.modelFacing(outcome, maxOutputChars: max(contract.maxModelFacingOutputChars, WebPageText.maxOutputCharacters)), imageJPEG: image?.0, imageURL: image?.1 ?? ""))
@@ -349,7 +360,7 @@ final class AgentLoop: @unchecked Sendable {
         let result = try await PhoneUncertainty.verify(question: verification.question, reply: parsed.cleanReply, claim: parsed.uncertainClaim,
                                                        contextBlocks: verification.contextBlocks, toolEvidence: toolEvidence) { system, messages in
             budget.record(inputTokens: PhoneTokenEstimate.text(system + messages.map(\.content).joined()), providerCalls: 1)
-            return try await transport.complete(system: system, messages: messages, timeout: timeout)
+            return try await self.withDeadline { try await transport.complete(system: system, messages: messages, timeout: timeout) }
         }
         outcome.text = PhoneUncertainty.apply(parsed.cleanReply, result)
         outcome.verification = result
@@ -358,10 +369,68 @@ final class AgentLoop: @unchecked Sendable {
     }
 }
 
-/// Result carrier for the deadline race (task-group results must be Sendable).
-private final class DeadlineBox<T>: @unchecked Sendable {
-    let value: T?
-    init(_ value: T?) { self.value = value }
+/// Shared by the loop, approval queue and the real device/web dispatchers.
+enum PhoneExecutionScope {
+    @TaskLocal static var budget: PhoneRunBudget?
+    static func check(deadline: PhoneRunBudget? = nil) throws {
+        try Task.checkCancellation()
+        if let budget = deadline ?? budget, budget.remainingMs() <= 0 { throw PhoneDeadline.Reached() }
+    }
+}
+
+enum PhoneDeadline {
+    struct Reached: Error {}
+    static func run<T>(seconds: TimeInterval, _ work: @escaping @Sendable () async throws -> T) async throws -> T {
+        try Task.checkCancellation()
+        guard seconds > 0 else { throw Reached() }
+        let race = DeadlineRace<T>()
+        return try await withTaskCancellationHandler(operation: {
+            try await withCheckedThrowingContinuation { continuation in
+                race.install(continuation)
+                race.add(Task {
+                    do { try Task.checkCancellation(); let result = try await work(); try Task.checkCancellation(); race.finish(.success(result)) }
+                    catch { race.finish(.failure(error)) }
+                })
+                race.add(Task {
+                    do {
+                        try await Task.sleep(nanoseconds: UInt64(min(seconds, 86_400) * 1_000_000_000))
+                        race.finish(.failure(Reached()))
+                    } catch { /* The winning request cancelled the timer. */ }
+                })
+            }
+        }, onCancel: { race.finish(.failure(CancellationError())) })
+    }
+}
+
+/// Single resume and loser cancellation, including cancellation before install.
+private final class DeadlineRace<T>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<T, Error>?
+    private var result: Result<T, Error>?
+    private var tasks: [Task<Void, Never>] = []
+    func install(_ value: CheckedContinuation<T, Error>) {
+        lock.lock()
+        let done = result
+        if done == nil { continuation = value }
+        lock.unlock()
+        if let done { value.resume(with: done) }
+    }
+    func add(_ task: Task<Void, Never>) {
+        lock.lock(); let done = result != nil
+        if !done { tasks.append(task) }
+        lock.unlock()
+        if done { task.cancel() }
+    }
+    func finish(_ value: Result<T, Error>) {
+        lock.lock()
+        guard result == nil else { lock.unlock(); return }
+        result = value
+        let pending = continuation, losers = tasks
+        continuation = nil; tasks = []
+        lock.unlock()
+        losers.forEach { $0.cancel() }
+        pending?.resume(with: value)
+    }
 }
 
 /// Supplements typed while a reply runs (src/services/chat/supplements.js).
@@ -381,13 +450,27 @@ private final class DeadlineBox<T>: @unchecked Sendable {
 }
 
 /// Token estimate for a request body when the provider sends no usage:
-/// bytes / 4, with base64 image payloads left out (they are not prose).
+/// shared multilingual estimate, with base64 payloads left out (not prose).
 enum RequestSizeEstimate {
     private static let base64 = try! NSRegularExpression(pattern: #"(?:;base64,|"data":")[A-Za-z0-9+/=]{64,}"#)
     static func tokens(_ body: Data) -> Int {
         guard let text = String(data: body, encoding: .utf8) else { return body.count / 4 }
-        let ns = text as NSString
-        let images = base64.matches(in: text, range: NSRange(location: 0, length: ns.length)).reduce(0) { $0 + $1.range.length }
-        return max(0, ns.length - images) / 4
+        let prose = base64.stringByReplacingMatches(in: text, range: NSRange(location: 0, length: (text as NSString).length), withTemplate: "")
+        return PhoneTokenEstimate.text(prose)
+    }
+}
+
+/// Captured per member; no process-global settings can widen a running child.
+struct PhoneMemberLimits: Sendable {
+    @TaskLocal static var current: PhoneMemberLimits?
+    var iterations: Int
+    var tokens: Int
+    var timeoutMs: Double
+    static func outputAllowance(body: [String: Any], remaining: Int?) throws -> Int? {
+        guard let remaining else { return nil }
+        let data = try JSONSerialization.data(withJSONObject: body)
+        let input = RequestSizeEstimate.tokens(data)
+        guard remaining > input else { throw MeloError.message("成员 token 预算不足，未发起下一次模型请求。") }
+        return remaining - input
     }
 }

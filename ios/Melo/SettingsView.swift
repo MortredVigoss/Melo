@@ -48,6 +48,14 @@ struct SettingsContent: View {
                             }
                         }
                     }
+                    ForEach(store.preferences.projectMemorySync?.conflicts ?? [], id: \.key) { conflict in
+                        DisclosureGroup("项目记忆冲突") {
+                            ForEach(Array(conflict.versions.enumerated()), id: \.offset) { index, version in
+                                Text((try? ProjectMemoryProjection.fact(version.value).text) ?? version.value["content"].string).font(.caption).textSelection(.enabled)
+                                Button("采用版本 \(index + 1)") { store.resolveProjectMemoryConflict(conflict.key, choice: index, expected: version) }.disabled(store.syncing)
+                            }
+                        }
+                    }
                     ForEach(store.preferences.agentSettingsSync?.conflicts ?? [], id: \.key) { conflict in
                         DisclosureGroup("Agent 能力冲突 · \(conflict.label)") {
                             ForEach(Array(conflict.versions.enumerated()),id: \.offset) { index,version in

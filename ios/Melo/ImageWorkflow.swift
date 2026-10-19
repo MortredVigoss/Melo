@@ -130,7 +130,7 @@ struct ImageTaskPlan: Codable, Equatable {
 
 enum ImageRequestBody {
     static func responses(messages: [ChatMessage], inputs: [ImageInput], task: ImageTaskPlan, model: String, instructions: String) -> [String: Any] {
-        let history = task.makesImage ? Array(messages.suffix(1)) : ConversationHistory.recentTurns(messages, reservedBytes: task.instructions(instructions).utf8.count)
+        let history = task.makesImage ? Array(messages.suffix(1)) : PhoneContextBudget.current.recent(messages, instructions: task.instructions(instructions))
         var rows: [[String: Any]] = history.map { ["role":$0.role,"content":$0.content] }
         if let last = history.last, last.role == "user", !inputs.isEmpty || task.makesImage {
             var content: [[String: Any]] = [["type":"input_text","text":task.annotatedPrompt(last.content)]]
@@ -147,7 +147,7 @@ enum ImageRequestBody {
         return result
     }
     static func chat(messages: [ChatMessage], inputs: [ImageInput], anthropic: Bool, instructions: String = "") -> [[String: Any]] {
-        var rows: [[String: Any]] = ConversationHistory.recentTurns(messages, reservedBytes: instructions.utf8.count).map { ["role":$0.role,"content":$0.content] }
+        var rows: [[String: Any]] = PhoneContextBudget.current.recent(messages, instructions: instructions).map { ["role":$0.role,"content":$0.content] }
         if !inputs.isEmpty, rows.last?["role"] as? String == "user" {
             var content: [[String: Any]] = [["type":"text","text":rows.last?["content"] as? String ?? "请分析图片"]]
             content += inputs.map { image in

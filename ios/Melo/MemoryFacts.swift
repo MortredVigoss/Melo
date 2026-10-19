@@ -29,13 +29,15 @@ struct MobileMemoryFact: Codable, Identifiable, Equatable {
     /// synced row survives decode → encode unchanged; the phone never edits them.
     var section: String?
     var bookStatus: String?
+    var origin: String?
+    var isProjectSource: Bool { origin == "project" && chatId.isEmpty && !projectId.isEmpty }
     static let bookSections = ["goal", "convention", "decision", "progress", "todo", "file"]
     static let bookStatuses = ["auto", "confirmed", "user"]
     var effectiveStatus: String {
         if mergedInto?.isEmpty == false { return "historical" }
         return status == "active" && validTo.flatMap(Self.date).map { $0 <= Date() } == true ? "historical" : status
     }
-    private enum CodingKeys: String, CodingKey { case id, memoryID, text, originalFact, scope, status, chatId, messageId, projectId, agentId, sourceText, category, updatedAt, userEdited, validTo, mergedInto, section, bookStatus }
+    private enum CodingKeys: String, CodingKey { case id, memoryID, text, originalFact, scope, status, chatId, messageId, projectId, agentId, sourceText, category, updatedAt, userEdited, validTo, mergedInto, section, bookStatus, origin }
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(id, forKey: .id); try c.encode(memoryID, forKey: .memoryID)
@@ -49,10 +51,11 @@ struct MobileMemoryFact: Codable, Identifiable, Equatable {
         try c.encodeIfPresent(mergedInto, forKey: .mergedInto)
         try c.encodeIfPresent(section, forKey: .section)
         try c.encodeIfPresent(bookStatus, forKey: .bookStatus)
+        try c.encodeIfPresent(origin, forKey: .origin)
     }
     static func identifier(_ memoryID: String) -> String { "memory_" + SHA256.hash(data: Data(memoryID.utf8)).map { String(format: "%02x", $0) }.joined() }
-    func eligible(chat: String, project: String?, agent: String, liveChats: Set<String>) -> Bool {
-        guard effectiveStatus == "active", liveChats.contains(chatId) else { return false }
+    func eligible(chat: String, project: String?, agent: String, liveChats: Set<String>, liveProjects: Set<String> = []) -> Bool {
+        guard effectiveStatus == "active", (isProjectSource ? liveProjects.contains(projectId) : liveChats.contains(chatId)) else { return false }
         switch scope {
         case "chat": return chatId == chat
         case "project": return !projectId.isEmpty && projectId == project
@@ -75,7 +78,7 @@ struct MobileMemoryFact: Codable, Identifiable, Equatable {
               mergedInto == nil || (!mergedInto!.isEmpty && mergedInto!.utf16.count <= 180),
               section == nil || Self.bookSections.contains(section!), bookStatus == nil || Self.bookStatuses.contains(bookStatus!),
               ["chat","project","agent","personal"].contains(scope), ["active","forgotten","historical","unconfirmed"].contains(status),
-              SyncWorkspace.validID(chatId), SyncWorkspace.validID(agentId), projectId.isEmpty || SyncWorkspace.validID(projectId),
+              (isProjectSource ? scope != "chat" : SyncWorkspace.validID(chatId)), origin == nil || isProjectSource, SyncWorkspace.validID(agentId), projectId.isEmpty || SyncWorkspace.validID(projectId),
               scope != "project" || !projectId.isEmpty else { throw MeloError.message("记忆内容或共享范围无效，原记录已保留。") }
         return self
     }
@@ -111,9 +114,9 @@ enum MobileMemoryRecall {
         while !result.isEmpty && instructions(result).utf8.count > remainingBytes { result.removeLast() }
         return result
     }
-    static func recall(_ facts: [MobileMemoryFact], query: String, chatID: String, projectID: String?, agentID: String, liveChats: Set<String>, conflicts: Set<String> = [], hasAttachments: Bool = false) -> (facts: [MobileMemoryFact], semantic: Bool) {
+    static func recall(_ facts: [MobileMemoryFact], query: String, chatID: String, projectID: String?, agentID: String, liveChats: Set<String>, liveProjects: Set<String> = [], conflicts: Set<String> = [], hasAttachments: Bool = false) -> (facts: [MobileMemoryFact], semantic: Bool) {
         guard !isStandaloneGreeting(query, hasAttachments: hasAttachments) else { return ([], false) }
-        let eligible = facts.filter { !conflicts.contains($0.id) && $0.eligible(chat: chatID, project: projectID, agent: agentID, liveChats: liveChats) }
+        let eligible = facts.filter { !conflicts.contains($0.id) && $0.eligible(chat: chatID, project: projectID, agent: agentID, liveChats: liveChats, liveProjects: liveProjects) }
         let language = NLLanguageRecognizer.dominantLanguage(for: query) ?? .simplifiedChinese
         let embedding = NLEmbedding.sentenceEmbedding(for: language)
         let queryVector = embedding?.vector(for: query)
@@ -136,8 +139,13 @@ enum MobileMemoryRecall {
             if fact.category == "user_preference" { score += 0.1 }
             return (fact,score)
         }.sorted { $0.1 == $1.1 ? $0.0.updatedAt > $1.0.updatedAt : $0.1 > $1.1 }
-        var result: [MobileMemoryFact] = [], bytes = 0
-        for (fact, _) in ranked.prefix(12) {
+        // Confirmed project book and personal profile are stable context,
+        // separate from relevance recall (as on desktop). They cannot be pushed
+        // out by twelve recent chat facts. Scope/conflict filtering happened above.
+        let stable = eligible.filter { ($0.scope == "project" && ["user", "confirmed"].contains($0.bookStatus ?? "")) || ($0.scope == "personal" && ["user_preference", "user_profile", "user_identity"].contains($0.category)) }.sorted { $0.id < $1.id }
+        var result = withinBudget(stable, remainingBytes: 12_000), bytes = 0
+        let stableIDs = Set(result.map(\.id))
+        for (fact, _) in ranked.filter({ !stableIDs.contains($0.0.id) }).prefix(12) {
             guard bytes + fact.text.utf8.count <= 6000 else { continue }; bytes += fact.text.utf8.count; result.append(fact)
         }
         return (result, queryVector != nil)

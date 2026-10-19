@@ -6,6 +6,7 @@ struct ChatGPTModel: Decodable, Identifiable {
     let slug: String
     let display_name: String
     let visibility: String?
+    var context_window: Int? = nil
 }
 // Keep the existing connection identifier so conversation selections survive migration.
 // Credentials are exclusively Codex grants in a NEW Keychain entry; SIWC is never reused.
@@ -366,9 +367,9 @@ final class CodexResponsesTransport: AgentModelTransport, @unchecked Sendable {
         return (stream, RequestSizeEstimate.tokens(payload))
     }
     /// Input tokens the service reported for this response, when it did.
-    static func inputTokens(_ stream: ChatGPTStream) -> Int? {
-        guard let usage = stream.observation.pipeline.first(where: { $0.id == "model:response" })?.api?["usage"], case .number(let value) = usage["input"] else { return nil }
-        return Int(value)
+    static func inputTokens(_ stream: ChatGPTStream, key: String = "input") -> Int? {
+        guard let usage = stream.observation.pipeline.first(where: { $0.id == "model:response" })?.api?["usage"], case .number(let value) = usage[key], value.isFinite, value >= 0, value < Double(Int.max) else { return nil }
+        return Network.usageNumber(NSNumber(value: value))
     }
 
     func round(_ input: AgentLoopRequest) async throws -> AgentRound {
@@ -378,6 +379,7 @@ final class CodexResponsesTransport: AgentModelTransport, @unchecked Sendable {
             // The forced web_search (if any) applied to the first round only.
             if body["tool_choice"] != nil { body["tool_choice"] = "auto" }
         }
+        _ = try PhoneMemberLimits.outputAllowance(body: body, remaining: input.remainingTokens)
         var result: (ChatGPTStream, Int)
         do { result = try await stream(body, timeout: input.timeout, observe: true) }
         catch is ImageSizeRejected {
@@ -391,7 +393,7 @@ final class CodexResponsesTransport: AgentModelTransport, @unchecked Sendable {
         let calls = offersTools ? stream.functionCalls : []
         let text = calls.isEmpty ? try stream.result() : stream.text
         return AgentRound(text: text, calls: calls, echo: .responses(stream.outputItems), sources: stream.sources, searched: stream.searched, images: stream.images,
-                          inputTokens: Self.inputTokens(stream), estimatedInputTokens: estimate)
+                          inputTokens: Self.inputTokens(stream), estimatedInputTokens: estimate, outputTokens: Self.inputTokens(stream, key: "output"))
     }
 
     func complete(system: String, messages: [ChatMessage], timeout: TimeInterval) async throws -> String {

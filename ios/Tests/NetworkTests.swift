@@ -45,6 +45,14 @@ final class MockProtocol: URLProtocol {
 func json(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any] ?? [:] }
 @main struct NetworkTests {
     static func main() async throws {
+        assert(Network.usageNumber(NSNumber(value: 1e100)) == 1_000_000_000)
+        assert(Network.usageNumber(NSNumber(value: -1)) == nil)
+        assert(Network.usageInputTokens(["usage": ["input_tokens": 1e100, "cache_read_input_tokens": 1e100]]) == 2_000_000_000)
+
+        let relayExtension = try Network.syncExtension("https://sync.example/v1/sync", name: "project-memory")
+        let desktopExtension = try Network.syncExtension("https://desktop.example/api/mobile-sync", name: "project-memory")
+        assert(relayExtension.path == "/v1/project-memory" && desktopExtension.path == "/api/project-memory-sync")
+
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MockProtocol.self]
         let session = URLSession(configuration: configuration)
@@ -124,7 +132,7 @@ func json(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObject(
             let messages = MockProtocol.requestBody["messages"] as! [[String: String]]
             let turns = native ? messages : Array(messages.dropFirst())
             assert(turns.first?["role"] == "user")
-            assert(turns.map { $0["content"]! } == history.dropFirst(2).map(\.content), "Every transport must send the same complete recent turns")
+            assert(turns.map { $0["content"]! } == history.map(\.content), "Every transport must send the same complete recent turns")
             let instructions = native ? MockProtocol.requestBody["system"] as? String : messages.first?["content"]
             assert(instructions?.contains("Preserve role instructions") == true)
         }

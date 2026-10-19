@@ -20,7 +20,7 @@ struct MemoryFactsView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(fact.text).foregroundStyle(MeloTheme.text)
                         Text("\(scopeName(fact.scope)) · \(statusName(fact.effectiveStatus))").font(.caption).foregroundStyle(meloGold)
-                        Text(store.chats.first { $0.id == fact.chatId }?.title ?? "来源对话不在此设备").font(.caption2).foregroundStyle(.secondary)
+                        Text(sourceName(fact)).font(.caption2).foregroundStyle(.secondary)
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(14).background(MeloTheme.inset, in: RoundedRectangle(cornerRadius: 16))
                 }.buttonStyle(.plain)
             }
@@ -40,8 +40,8 @@ struct MemoryFactsView: View {
             EditableDocument("记忆详情", value: fact, isNew: false, read: { store.preferences.memoryFacts?.first { $0.id == fact.id } }, commit: { value in
                 var value = try value.validated()
                 guard value.mergedInto?.isEmpty != false else { throw MeloError.message("此记录已合并到另一条记忆，请修改合并后的记录。") }
-                guard store.chats.contains(where: { $0.id == value.chatId }) else { throw MeloError.message("来源对话已删除或尚未同步，不能恢复或扩大共享范围。") }
-                guard !(store.preferences.workspaceSync?.conflicts.contains { $0.kind == "memory" && $0.id == value.id } ?? false) else { throw MeloError.message("记忆存在同步冲突，请先在系统页选择版本。") }
+                guard value.isProjectSource ? (store.preferences.projects ?? []).contains(where: { $0.id == value.projectId }) : store.chats.contains(where: { $0.id == value.chatId }) else { throw MeloError.message("来源对话已删除或尚未同步，不能恢复或扩大共享范围。") }
+                guard !(store.preferences.workspaceSync?.conflicts.contains { $0.kind == "memory" && $0.id == value.id } ?? false), !(store.preferences.projectMemorySync?.conflicts.contains { $0.id == value.id } ?? false) else { throw MeloError.message("记忆存在同步冲突，请先在系统页选择版本。") }
                 let prior = store.preferences.memoryFacts?.first { $0.id == value.id }
                 value.userEdited = true; value.updatedAt = timestamp()
                 if value.status != prior?.status {
@@ -54,20 +54,31 @@ struct MemoryFactsView: View {
                 Section("记忆内容") { TextEditor(text: value.text).frame(minHeight: 140) }.disabled(fact.mergedInto?.isEmpty == false)
                 Section("用于哪些对话") {
                     Picker("共享范围", selection: value.scope) {
-                        Text("仅原对话").tag("chat")
+                        if !fact.isProjectSource { Text("仅原对话").tag("chat") }
                         if !fact.projectId.isEmpty { Text("同项目").tag("project") }
                         Text("同Agent").tag("agent"); Text("我的全部本机对话").tag("personal")
                     }
                     Picker("状态", selection: value.status) { Text("启用").tag("active"); Text("停用").tag("forgotten"); if !["active","forgotten"].contains(fact.status) { Text(statusName(fact.effectiveStatus)).tag(fact.status) } }
                 }
                 .disabled(fact.mergedInto?.isEmpty == false)
+                if fact.scope == "project" {
+                    Section("项目记忆本") {
+                        Picker("类别", selection: Binding(get: { value.wrappedValue.section ?? "convention" }, set: { value.wrappedValue.section = $0 })) {
+                            ForEach(MobileMemoryFact.bookSections, id: \.self) { section in Text(["goal":"目标", "convention":"约定", "decision":"决定", "progress":"进展", "todo":"待办", "file":"文件"][section] ?? section).tag(section) }
+                        }
+                    }
+                }
                 Section("原始来源") {
-                    Text(store.chats.first { $0.id == fact.chatId }?.title ?? "来源对话已删除或未同步")
+                    Text(sourceName(fact))
                     Text(fact.sourceText).textSelection(.enabled).font(.subheadline)
                     Text("\(fact.category) · \(fact.updatedAt)").font(.caption).foregroundStyle(.secondary)
                 }
             }
         }
+    }
+    private func sourceName(_ fact: MobileMemoryFact) -> String {
+        if fact.isProjectSource { return "项目 · " + ((store.preferences.projects ?? []).first { $0.id == fact.projectId }?.name ?? "来源项目未同步") }
+        return store.chats.first { $0.id == fact.chatId }?.title ?? "来源对话已删除或未同步"
     }
     private func scopeName(_ scope: String) -> String { ["chat":"原对话", "project":"同项目", "agent":"同Agent", "personal":"本机共享"][scope] ?? "原对话" }
     private func statusName(_ status: String) -> String { ["active":"启用", "forgotten":"停用", "historical":"历史", "unconfirmed":"待确认"][status] ?? status }

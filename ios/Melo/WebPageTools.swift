@@ -80,7 +80,7 @@ enum WebPageLoadError: Error {
     /// for didFinish or the timeout.
     func load(_ url: URL) async throws {
         guard attach() else { throw WebPageLoadError.failed(Self.noWindowMessage) }
-        try Task.checkCancellation()
+        try PhoneExecutionScope.check()
         var request = URLRequest(url: url)
         request.timeoutInterval = Self.timeoutSeconds
         request.setValue("zh-CN,zh;q=0.9,en;q=0.8", forHTTPHeaderField: "Accept-Language")
@@ -203,9 +203,9 @@ enum WebPageLoadError: Error {
         let loader = WebPageLoader()
         defer { loader.detach() }
         do {
-            try Task.checkCancellation()
+            try PhoneExecutionScope.check()
             try await loader.load(url)
-            try Task.checkCancellation()
+            try PhoneExecutionScope.check()
             guard allowed() else { return WebPageToolResult(output: WebPageText.failure("CAPABILITY_DENIED", "The user disabled web access during the request.", url: raw), url: raw) }
             if spec.name == WebPageToolSpec.openURL {
                 // Model-controlled number: 1e20 or NaN must not trap in Int().
@@ -215,7 +215,7 @@ enum WebPageLoadError: Error {
             }
             let fullPage = args["fullPage"] as? Bool ?? false
             let image = try await loader.snapshot(fullPage: fullPage)
-            try Task.checkCancellation()
+            try PhoneExecutionScope.check()
             guard let jpeg = await WebPageLoader.jpeg(image) else { return WebPageToolResult(output: WebPageText.failure("LOAD_FAILED", "The page rendered but the screenshot could not be encoded.", url: raw), url: raw) }
             let title = (try? await loader.extractText().title) ?? ""
             return WebPageToolResult(output: WebPageText.envelope(WebPageText.screenshotResult(url: url.absoluteString, finalURL: loader.finalURL, title: title, status: loader.statusCode)), image: image, jpeg: jpeg, url: url.absoluteString)

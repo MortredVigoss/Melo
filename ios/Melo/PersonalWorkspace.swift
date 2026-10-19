@@ -39,8 +39,6 @@ struct ProjectEditor: View {
     var body: some View {
         EditableDocument("项目设置", value: project, isNew: store.preferences.projects?.contains { $0.id == project.id } != true, read: { store.preferences.projects?.first { $0.id == project.id } }, commit: { value in
             guard !value.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, value.goal.count <= 12000, (value.instructions?.count ?? 0) <= 12000 else { throw MeloError.message("请填写项目名称，目标与要求各不超过 12000 字。") }
-            let notes = (store.preferences.knowledge ?? []).filter { value.knowledgeIds?.contains($0.id) == true && $0.deleted != true && $0.kind != "result" }
-            guard notes.count <= 8 else { throw MeloError.message("项目资料最多 8 份、合计 24000 字。") }
             guard store.updatePreferences({ p in var items = p.projects ?? []; if let i = items.firstIndex(where: { $0.id == value.id }) { items[i] = value } else { items.append(value) }; p.projects = items }, reportFailure: false) else { throw MeloError.message("保存失败，草稿已保留。") }
             return value
         }) { value in
@@ -53,7 +51,7 @@ struct ProjectEditor: View {
                         var ids = value.wrappedValue.knowledgeIds ?? []; if enabled { ids.insert(note.id) } else { ids.remove(note.id) }; value.wrappedValue.knowledgeIds = ids
                     }))
                 }
-                Text("最多 8 份；长资料按预算选取，全文保留。").font(.caption)
+                Text("资料按问题与上下文预算选取相关片段，全文保留。").font(.caption)
             }
         }
     }

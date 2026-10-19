@@ -60,11 +60,11 @@ final class SystemDeviceData: DeviceDataSource {
     }
 
     private func require(_ kind: DeviceDataKind) async throws {
-        try Task.checkCancellation()
+        try PhoneExecutionScope.check()
         guard await requestAccess(kind) else {
             throw MeloError.message("Melo 没有\(kind.label)权限。请在 iPhone 设置 > 隐私与安全性 > \(kind.label) 中允许 Melo 完全访问后重试。")
         }
-        try Task.checkCancellation()
+        try PhoneExecutionScope.check()
     }
 
     private func event(_ item: EKEvent) -> DeviceEvent {

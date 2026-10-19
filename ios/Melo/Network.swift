@@ -30,6 +30,11 @@ enum Network {
         guard let url = URL(string: value.trimmingCharacters(in: .whitespacesAndNewlines)), url.scheme == "https", url.host != nil, url.user == nil, url.password == nil, url.fragment == nil else { throw MeloError.message("请输入完整的 HTTPS 服务地址。") }
         return url
     }
+    static func syncExtension(_ endpoint: String, name: String) throws -> URL {
+        let base = try self.endpoint(endpoint)
+        let suffix = base.lastPathComponent == "mobile-sync" ? name + "-sync" : name
+        return base.deletingLastPathComponent().appendingPathComponent(suffix)
+    }
     static func post(_ url: URL, token: String, body: Data, session: URLSession = Network.session, headers: [String: String] = [:], maxBytes: Int = 8 * 1024 * 1024, timeout: TimeInterval = 120, optionalExtension: Bool = false) async throws -> Data {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -63,12 +68,16 @@ enum Network {
         return "你运行在 Melo 中，使用用户选择的Agent身份与回复要求。你当前在 iPhone 上，可以分析用户提供的图片与文字，并可以调用下面提供的手机工具；除这些工具外不能声称已经操作电脑、读取未提供的文件或执行其他工具。\n" + toolInstructions + "\n"
     }
     /// Provider-reported input tokens of one response (chat-completions or Anthropic, cache reads included).
+    static func usageNumber(_ value: Any?) -> Int? {
+        guard let number = value as? NSNumber, number.doubleValue.isFinite, number.doubleValue >= 0 else { return nil }
+        return Int(min(1_000_000_000, number.doubleValue))
+    }
     static func usageInputTokens(_ receipt: [String: Any]?) -> Int? {
         guard let usage = receipt?["usage"] as? [String: Any] else { return nil }
-        if let input = (usage["input_tokens"] as? NSNumber)?.intValue {
-            return input + ((usage["cache_read_input_tokens"] as? NSNumber)?.intValue ?? 0) + ((usage["cache_creation_input_tokens"] as? NSNumber)?.intValue ?? 0)
+        if let input = usageNumber(usage["input_tokens"]) {
+            return input + (usageNumber(usage["cache_read_input_tokens"]) ?? 0) + (usageNumber(usage["cache_creation_input_tokens"]) ?? 0)
         }
-        return (usage["prompt_tokens"] as? NSNumber)?.intValue
+        return usageNumber(usage["prompt_tokens"])
     }
 
     /// Tool calls of one Chat Completions assistant message.
@@ -218,6 +227,9 @@ final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
         }
         var body = base
         if !input.transcript.isEmpty { body["messages"] = Self.rendered(base["messages"] as? [[String: Any]] ?? [], transcript: input.transcript, anthropic: anthropic) }
+        if let allowance = try PhoneMemberLimits.outputAllowance(body: body, remaining: input.remainingTokens) {
+            body["max_tokens"] = min(allowance, (body["max_tokens"] as? Int) ?? allowance)
+        }
         let payload = try JSONSerialization.data(withJSONObject: body)
         let data = try await Network.post(url, token: token, body: payload, session: session, headers: headers, timeout: max(1, min(timeoutCap, input.timeout)))
         try Task.checkCancellation()
@@ -230,6 +242,8 @@ final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
             await onObservation?(observation)
         }
         let usage = Network.usageInputTokens(receipt), estimate = RequestSizeEstimate.tokens(payload)
+        let usageObject = receipt?["usage"] as? [String: Any]
+        let outputTokens = Network.usageNumber(usageObject?["output_tokens"]) ?? Network.usageNumber(usageObject?["completion_tokens"])
         // Tool round: only a completed tool turn counts; calls cut off by `length` /
         // `max_tokens` are never executed (the truncation is reported below).
         if offersTools, let receipt, finishReason == (anthropic ? "tool_use" : "tool_calls") {
@@ -238,7 +252,7 @@ final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
             let calls = anthropic ? Network.anthropicToolCalls(assistantContent) : Network.chatToolCalls(assistantMessage)
             if !calls.isEmpty {
                 let text = anthropic ? assistantContent.filter { $0["type"] as? String == "text" }.compactMap { $0["text"] as? String }.joined() : assistantMessage["content"] as? String ?? ""
-                return AgentRound(text: text, calls: calls, echo: anthropic ? .anthropic(assistantContent) : .chat(assistantMessage), inputTokens: usage, estimatedInputTokens: estimate)
+                return AgentRound(text: text, calls: calls, echo: anthropic ? .anthropic(assistantContent) : .chat(assistantMessage), inputTokens: usage, estimatedInputTokens: estimate, outputTokens: outputTokens)
             }
         }
         struct Response: Decodable {
@@ -277,7 +291,7 @@ final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
         for source in sources { observation.source(url: source.url, title: source.title, cited: true, provider: "API 回复") }
         observation.stage("reply:format", name: "整理回答与引用", status: "completed", output: "文字与 \(sources.count) 条引用已整理；无搜索调用记录")
         await onObservation?(observation)
-        return AgentRound(text: text, sources: sources, inputTokens: usage, estimatedInputTokens: estimate)
+        return AgentRound(text: text, sources: sources, inputTokens: usage, estimatedInputTokens: estimate, outputTokens: outputTokens)
     }
 
     func complete(system: String, messages: [ChatMessage], timeout: TimeInterval) async throws -> String {

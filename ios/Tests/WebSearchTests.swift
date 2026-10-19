@@ -38,7 +38,7 @@ import Foundation
         let longBody = ChatGPTRequest.body(messages: longHistory, model: "test", instructions: "Keep this role", webSearch: false)
         let input = longBody["input"] as! [[String: String]]
         assert(input.first?["role"] == "user", "Context must not start with an answer whose question was dropped")
-        assert(input.map { $0["content"]! } == longHistory.dropFirst(2).map(\.content), "Keep a contiguous suffix of complete recent turns")
+        assert(input.map { $0["content"]! } == longHistory.map(\.content), "Keep a contiguous suffix of complete recent turns")
         assert((longBody["instructions"] as! String).contains("Keep this role"))
         assert(longHistory == historyBefore, "Request selection must not modify saved history")
         print("Web search request, event status, citation URL safety and Unicode parsing tests passed")

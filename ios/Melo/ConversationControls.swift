@@ -104,7 +104,7 @@ struct ConversationControls: View {
         Array(Set((connection.models ?? []) + [connection.model])).filter { !$0.isEmpty }.sorted()
     }
     private func choose(_ connection: LLMConnection, model: String) {
-        let selection = ConversationModel(connectionID: connection.id, model: model, name: connection.name, baseURL: connection.baseURL, apiProtocol: connection.apiProtocol)
+        let selection = ConversationModel(connectionID: connection.id, model: model, name: connection.name, baseURL: connection.baseURL, apiProtocol: connection.apiProtocol, contextWindow: connection.contextWindows?[model])
         store.selectModel(selection, chatID: chatID)
     }
     private func apiModelButton(_ connection: LLMConnection, model: String) -> some View {
@@ -134,10 +134,17 @@ struct ConversationContextPicker: View {
                         if store.project(for: chatID)?.knowledgeIds?.contains(note.id) == true {
                             Label("\(note.title) · 项目共享", systemImage: "checkmark.circle.fill").foregroundStyle(.secondary)
                         } else {
-                        Toggle(note.title, isOn: Binding(get: { store.preferences.chatKnowledge?[chatID]?.contains(note.id) == true }, set: { enabled in store.updatePreferences { if $0.chatKnowledge == nil { $0.chatKnowledge = [:] }; var ids = $0.chatKnowledge?[chatID] ?? []; if enabled { ids.insert(note.id) } else { ids.remove(note.id) }; let inherited = ($0.projects ?? []).first { $0.id == store.preferences.chatProjects?[chatID] }?.knowledgeIds ?? []; let selected = ($0.knowledge ?? []).filter { $0.deleted != true && $0.kind != "result" && ids.union(inherited).contains($0.id) }; guard selected.count <= 8 else { store.error = "最多选用 8 份、合计 24000 字资料。"; return }; $0.chatKnowledge?[chatID] = ids } }))
+                            Toggle(note.title, isOn: Binding(get: { store.preferences.chatKnowledge?[chatID]?.contains(note.id) == true }, set: { enabled in
+                                store.updatePreferences { p in
+                                    if p.chatKnowledge == nil { p.chatKnowledge = [:] }
+                                    var ids = p.chatKnowledge?[chatID] ?? []
+                                    if enabled { ids.insert(note.id) } else { ids.remove(note.id) }
+                                    p.chatKnowledge?[chatID] = ids
+                                }
+                            }))
                         }
                     }
-                    Text("最多 8 份；长资料按预算选取，全文保留。").font(.caption).foregroundStyle(.secondary)
+                    Text("资料按问题与上下文预算选取相关片段，全文保留。").font(.caption).foregroundStyle(.secondary)
                 }
             }.navigationTitle("项目与资料").toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
         }.presentationBackground(MeloTheme.dialog)

@@ -115,7 +115,7 @@ enum WorkspaceProjection {
         }
         let live = Set(chats.map(\.id))
         holds = holds.filter { $0.value.kind != "conversation" || live.contains($0.value.id) }
-        for fact in preferences.memoryFacts ?? [] where live.contains(fact.chatId) {
+        for fact in preferences.memoryFacts ?? [] where !fact.isProjectSource && live.contains(fact.chatId) {
             let data = try JSONEncoder().encode(fact)
             let value = try JSONDecoder().decode(SyncValue.self, from: data)
             // A re-encoded row that differs from the synced one only by keys

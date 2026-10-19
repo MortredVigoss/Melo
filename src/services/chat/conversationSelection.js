@@ -28,7 +28,6 @@ export function validateConversationSelection(patch, state, config) {
     const ids = [...new Set(patch.contextArtifactIds)];
     const notes = ids.map(id=>state.artifacts.find(a=>a.id===id && isKnowledgeArtifact(a)));
     if (notes.some(n=>!n)) throw new Error('资料已不存在，请重新选择。');
-    if (notes.length > 8) throw new Error('每个对话最多选用 8 份资料。');
     result.contextArtifactIds = ids;
   }
   return result;

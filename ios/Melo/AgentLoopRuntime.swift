@@ -584,26 +584,34 @@ enum PhoneReadHistory {
     }
     static let instructions = "需要早期对话原文（摘要里的“消息 #… … #…”范围、具体数字或措辞）时，调用 read_history 按消息编号读取本对话原文；只能读当前对话。"
 
+    /// Clamp in floating point before converting. Untrusted finite values can still exceed Int.
+    static func boundedInteger(_ value: Double, minimum: Int = 0, maximum: Int) -> Int {
+        guard !value.isNaN else { return Swift.max(minimum, 0) }
+        if value >= Double(maximum) { return maximum }
+        if value <= Double(minimum) { return minimum }
+        return Int(value.rounded(.down))
+    }
+
     struct Slice: Equatable { var messages: [ChatMessage]; var hasMore = false; var nextMessageId = ""; var missing = "" }
     /// `sliceHistory`
     static func slice(_ all: [ChatMessage], fromMessageId: String? = nil, toMessageId: String? = nil, aroundMessageId: String? = nil, before: Double = 0, after: Double = 0, limit: Double? = nil) -> Slice {
         let list = all.filter { !$0.id.isEmpty && ($0.role == "user" || $0.role == "assistant") }
         func index(_ id: String?) -> Int { id.flatMap { id in list.firstIndex { $0.id == id } } ?? -1 }
-        let requested = limit.flatMap { $0.isFinite ? Int($0.rounded(.down)) : nil } ?? 0
+        let requested = boundedInteger(limit ?? 0, minimum: -1, maximum: loopContract.readHistoryMaxLimit)
         let max = Swift.max(1, Swift.min(loopContract.readHistoryMaxLimit, requested == 0 ? loopContract.readHistoryDefaultLimit : requested))
         var start: Int, end: Int
         if let around = aroundMessageId, !around.isEmpty {
             let center = index(around)
             guard center >= 0 else { return Slice(messages: [], missing: around) }
-            start = Swift.max(0, center - Swift.max(0, before.isFinite ? Int(before.rounded(.down)) : 0))
-            end = Swift.min(list.count, center + Swift.max(0, after.isFinite ? Int(after.rounded(.down)) : 0) + 1)
+            start = center - boundedInteger(before, maximum: center)
+            end = center + 1 + boundedInteger(after, maximum: list.count - center - 1)
         } else {
             let from = (fromMessageId?.isEmpty == false) ? index(fromMessageId) : 0
             guard from >= 0 else { return Slice(messages: [], missing: fromMessageId ?? "") }
             let to = (toMessageId?.isEmpty == false) ? index(toMessageId) : -1
             if toMessageId?.isEmpty == false && to < 0 { return Slice(messages: [], missing: toMessageId ?? "") }
             start = from
-            end = to >= 0 ? to + 1 : Swift.min(list.count, from + max)
+            end = to >= 0 ? to + 1 : from + Swift.min(list.count - from, max)
         }
         let requestedEnd = end
         if end - start > max { end = start + max }
@@ -630,7 +638,7 @@ enum PhoneReadHistory {
         if !slice.missing.isEmpty { return PhoneToolEnvelope.failure("NOT_FOUND", "Message \(slice.missing) is not in conversation \(chatID).") }
         if slice.messages.isEmpty { return PhoneToolEnvelope.success("No messages in that range.", empty: true) }
         let budget = loopContract.readHistoryMaxTokens
-        let startChar = (text("fromMessageId")?.isEmpty == false && (text("aroundMessageId") ?? "").isEmpty) ? Swift.max(0, Int(number("fromChar", 0).isFinite ? number("fromChar", 0).rounded(.down) : 0)) : 0
+        let startChar = (text("fromMessageId")?.isEmpty == false && (text("aroundMessageId") ?? "").isEmpty) ? boundedInteger(number("fromChar", 0), maximum: slice.messages.first.map { JSText.length(JSText.trim($0.content)) } ?? 0) : 0
         var rendered: [String] = [], used = 0, truncatedAt = "", continueFromChar = 0
         for (position, message) in slice.messages.enumerated() {
             let offset = position == 0 ? startChar : 0

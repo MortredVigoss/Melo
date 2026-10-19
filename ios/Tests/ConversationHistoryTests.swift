@@ -35,8 +35,8 @@ import Foundation
         assert(longHistory[1].content.count == 200001, "Stored history stays untouched")
         let multibyte = [ChatMessage(role: "user", content: String(repeating: "汉", count: 6000)), ChatMessage(role: "assistant", content: String(repeating: "👋", count: 6000)), message(2, "user")]
         assert(ConversationHistory.recentTurns(multibyte, reservedBytes: 8000) == [multibyte.last!])
-        do { try ConversationHistory.validateCurrentInput(String(repeating: "汉", count: 20000)); fatalError("Oversized current input accepted") } catch {}
-        do { try ConversationHistory.validateCurrentInput("hi", instructions: String(repeating: "x", count: 48000)); fatalError("Instruction budget ignored") } catch {}
+        do { try ConversationHistory.validateCurrentInput(String(repeating: "汉", count: 20000), budget: PhoneContextBudget(capacity: 24000)); fatalError("Oversized current input accepted") } catch {}
+        do { try ConversationHistory.validateCurrentInput("hi", instructions: String(repeating: "x", count: 48000), budget: PhoneContextBudget(capacity: 16000)); fatalError("Instruction budget ignored") } catch {}
         // Date context (2026-10-18): a late-night "今天" is dated when the next
         // message arrives after midnight; same-day conversations get no note.
         let sydney = TimeZone(identifier: "Australia/Sydney")!

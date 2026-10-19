@@ -11,6 +11,7 @@ struct LLMConnection: Codable, Identifiable, Equatable {
     var apiProtocol = "chat-completions"
     var probe: ConnectionProbe?
     var models: [String]?
+    var contextWindows: [String: Int]?
     static let presets: [LLMConnection] = [
         .init(id: "openai", name: "OpenAI API", baseURL: "https://api.openai.com/v1"),
         .init(id: "deepseek", name: "DeepSeek", baseURL: "https://api.deepseek.com"),
@@ -54,7 +55,7 @@ struct LLMConnection: Codable, Identifiable, Equatable {
             try Secrets.write(key, key: "modelKey")
             let defaults = UserDefaults.standard
             defaults.set(endpoint, forKey: "modelEndpoint"); defaults.set(model, forKey: "modelName"); defaults.set(apiProtocol, forKey: "modelProtocol")
-            defaults.set(id, forKey: "activeLLMConnection"); defaults.set("api", forKey: "modelAuthMode")
+            defaults.set(contextWindows?[model], forKey: "modelContextWindow"); defaults.set(id, forKey: "activeLLMConnection"); defaults.set("api", forKey: "modelAuthMode")
         }
     }
 }
@@ -211,6 +212,13 @@ struct LLMConnectionsView: View {
             guard (response as? HTTPURLResponse)?.statusCode == 200, let json = try JSONSerialization.jsonObject(with: data) as? [String: Any], let rows = json["data"] as? [[String: Any]] else { throw MeloError.message("服务不提供模型列表或凭证不可用；可以手填模型 ID 并测试。") }
             models = rows.compactMap { $0["id"] as? String }
             draft.models = models
+            var windows = draft.contextWindows ?? [:]
+            for row in rows {
+                guard let id = row["id"] as? String, let n = (row["context_window"] ?? row["context_length"]) as? NSNumber,
+                      n.doubleValue.isFinite, n.doubleValue >= 4096 else { continue }
+                windows[id] = PhoneReadHistory.boundedInteger(n.doubleValue, minimum: 4096, maximum: 400000)
+            }
+            draft.contextWindows = windows
             status = "读取到 \(models.count) 个模型；保存后可在对话中选择。列表不代表已验证调用权限。"
         } catch { status = error.localizedDescription }
     }

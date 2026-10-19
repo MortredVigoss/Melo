@@ -272,7 +272,7 @@ enum DeviceToolRunner {
         }
         func failure(_ code: String, _ message: String) -> String { PhoneToolEnvelope.failure(code, message) }
         func checkAccess() throws {
-            try Task.checkCancellation()
+            try PhoneExecutionScope.check()
             guard isAllowed?() ?? true else { throw AccessRevoked() }
         }
         guard let spec = DeviceToolSpec.named(call.name) else { return failure("UNKNOWN_TOOL", "This phone tool does not exist.") }
@@ -347,6 +347,8 @@ enum DeviceToolRunner {
             default:
                 return failure("UNKNOWN_TOOL", "This phone tool does not exist.")
             }
+        } catch is PhoneDeadline.Reached {
+            return failure("BUDGET_EXHAUSTED", "The run deadline expired before this operation could finish.")
         } catch is CancellationError {
             return failure("ABORTED", "The request was cancelled.")
         } catch is AccessRevoked {
@@ -459,17 +461,25 @@ struct DeviceToolContext {
     /// Dispatches one call (web tools by name first, then read_history, then
     /// device tools) and reports it for the run record.
     @MainActor func perform(_ call: ResponsesFunctionCall) async -> PhoneToolResult {
+        func aborted() -> PhoneToolResult? {
+            do { try PhoneExecutionScope.check(); return nil }
+            catch { return PhoneToolResult(output: PhoneToolEnvelope.failure("ABORTED", "The tool scope has ended.")) }
+        }
+        if let stopped = aborted() { return stopped }
         if let web, WebPageToolSpec.named(call.name) != nil {
             let result = await web.execute(call)
+            if let stopped = aborted() { return stopped }
             web.onCall?(call, result)
             return result
         }
         if let history, call.name == PhoneReadHistory.name {
             let output = await history.execute(call)
+            if let stopped = aborted() { return stopped }
             history.onCall?(call, output)
             return PhoneToolResult(output: output)
         }
         let output = await execute(call)
+        if let stopped = aborted() { return stopped }
         onCall?(call, output)
         return PhoneToolResult(output: output)
     }

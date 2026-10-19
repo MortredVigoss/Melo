@@ -15,7 +15,7 @@ if '--renderer-only' in sys.argv:
 if platform.system() != 'Darwin':
     print('Swift iOS protocol tests require macOS; JS/renderer gate passed; Swift explicitly skipped')
     raise SystemExit(0)
-shared=['ios/Melo/ImageWorkflow.swift','ios/Melo/ImageLibrary.swift','ios/Melo/ImageNetwork.swift','ios/Melo/Network.swift','ios/Melo/Models.swift','ios/Melo/ConversationHistory.swift','ios/Melo/WebSources.swift','ios/Melo/ExecutionRecord.swift','ios/Melo/ChatGPTProtocol.swift','ios/Melo/DeviceTools.swift','ios/Melo/WebPageText.swift','ios/Melo/ImageContext.swift','ios/Melo/RunProgress.swift','ios/Melo/AgentLoopContract.swift','ios/Melo/AgentLoopRuntime.swift','ios/Melo/AgentLoop.swift']
+shared=['ios/Melo/ImageWorkflow.swift','ios/Melo/ImageLibrary.swift','ios/Melo/ImageNetwork.swift','ios/Melo/Network.swift','ios/Melo/Models.swift','ios/Melo/ConversationHistory.swift','ios/Melo/PhoneContext.swift','ios/Melo/WebSources.swift','ios/Melo/ExecutionRecord.swift','ios/Melo/ChatGPTProtocol.swift','ios/Melo/DeviceTools.swift','ios/Melo/WebPageText.swift','ios/Melo/ImageContext.swift','ios/Melo/RunProgress.swift','ios/Melo/AgentLoopContract.swift','ios/Melo/AgentLoopRuntime.swift','ios/Melo/AgentLoop.swift']
 suites={'main':['ios/Melo/Models.swift'], 'NetworkTests':shared, 'ConnectionProbeTests':['ios/Melo/ConnectionProbe.swift'], 'ChatGPTTests':shared, 'SSETransportTests':shared, 'WebSearchTests':shared, 'ExecutionTests':shared, 'ExecutionPageTests':['ios/Melo/ExecutionPagePolicy.swift']}
 suites['ConversationFoundationTests']=shared+['ios/Melo/AgentProfile.swift','ios/Melo/ReplyDocument.swift','ios/Melo/WorkspaceProjection.swift']
 suites['SyncContractTests']=['ios/Melo/Models.swift']
@@ -28,7 +28,7 @@ suites['VoiceInputTests']=['ios/Melo/VoiceInput.swift']
 suites['ReplyBackgroundTests']=['ios/Melo/ReplyBackgroundLifetime.swift']
 suites['ImageWorkflowTests']=shared
 suites['CodexOAuthTests']=shared+['ios/Melo/CodexOAuth.swift','ios/Melo/ChatGPTAccount.swift','ios/Melo/Keychain.swift']
-suites['ConversationHistoryTests']=['ios/Melo/Models.swift','ios/Melo/ConversationHistory.swift']
+suites['ConversationHistoryTests']=shared
 suites['SpeechTextTests']=['ios/Melo/SpeechText.swift']
 suites['InterfaceLanguageTests']=['ios/Melo/InterfaceLanguage.swift']
 suites['DeviceToolsTests']=shared
@@ -40,6 +40,15 @@ suites['LocalFileAccessTests']=['ios/Melo/LocalFileAccess.swift']
 suites['ImagePhotoSaveTests']=['ios/Melo/ImagePhotoSave.swift']
 suites['WebPageToolsTests']=shared  # WebPageTools.swift needs WebKit/UIKit; only the pure half (WebPageText.swift, envelope in AgentLoopRuntime.swift) compiles here
 suites['AgentLoopTests']=shared+['ios/Melo/AgentProfile.swift','ios/Melo/AgentTeam.swift']  # AgentLoop with a fake transport: limits, budget, guard, supplements, condensation, trace, finalize
+suites['ParityRegressionTests']=shared+['ios/Melo/AgentProfile.swift','ios/Melo/AgentTeam.swift','ios/Melo/WorkspaceProjection.swift']
+# Targeted debugging uses the same compiled sources/cache and always runs tests.
+# No flag keeps the complete suite used by the daily gate.
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument('--suite', action='append', choices=tuple(suites))
+selected = parser.parse_args().suite
+if selected:
+    suites = {name: sources for name, sources in suites.items() if name in selected}
 toolchain = [platform.machine()]
 swift_started = time.monotonic()
 cached = 0

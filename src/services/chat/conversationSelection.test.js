@@ -80,3 +80,12 @@ test('partial context sync cannot silently send with a missing role or project',
  assert.throws(()=>selectedMaterials({artifacts:[]},{agentId:'remote-missing'}),/角色尚未同步/);
  assert.throws(()=>selectedMaterials({artifacts:[]},{agentId:'main',projectId:'remote-project'}),/项目尚未同步/);
 });
+
+
+test('retrieval selection accepts more than eight full documents while rejecting missing references',()=>{
+ const artifacts=Array.from({length:15},(_,i)=>({id:`selected-${i}`,title:`Source ${i}`,content:'original'.repeat(4000)}));
+ const ids=artifacts.map(a=>a.id),state={artifacts};
+ assert.deepEqual(validateConversationSelection({contextArtifactIds:ids},state,{}).contextArtifactIds,ids);
+ assert.equal(artifacts[14].content.length,32000,'selection leaves originals intact');
+ assert.throws(()=>validateConversationSelection({contextArtifactIds:[...ids,'missing']},state,{}),/不存在/);
+});
