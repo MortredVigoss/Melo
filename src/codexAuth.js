@@ -9,14 +9,26 @@ const execFile = promisify(execFileCallback);
 const CREDENTIAL_CACHE_TTL_MS = 60_000;
 const NEGATIVE_CREDENTIAL_CACHE_TTL_MS = 5_000;
 const MIN_TOKEN_VALIDITY_MS = 5 * 60_000;
-const DEFAULT_CODEX_EXECUTABLE_CANDIDATES = Object.freeze([
-  process.env.MELO_CODEX_PATH,
-  process.env.CODEX_CLI_PATH,
-  '/Applications/Codex.app/Contents/Resources/codex',
-  '/usr/local/bin/codex',
-  '/opt/homebrew/bin/codex',
-  'codex',
-]);
+// Codex CLI candidates, first one that actually starts wins. The Codex
+// desktop app has been merged into ChatGPT.app, which bundles the CLI under
+// Contents/Resources/codex-cli (kept current by the app); the old Codex.app
+// paths stay as a fallback for machines that have not updated. An npm global
+// `codex` launcher can lose its native binary and still be "executable"
+// (2026-10-19: spawn ENOENT), so every candidate must answer --version.
+export function codexExecutableCandidates(env = process.env, home = homedir()) {
+  return [
+    env.MELO_CODEX_PATH,
+    env.CODEX_CLI_PATH,
+    env.CODEX_BIN,
+    '/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex',
+    join(home, 'Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex'),
+    '/Applications/Codex.app/Contents/Resources/codex-cli/bin/codex',
+    '/Applications/Codex.app/Contents/Resources/codex',
+    '/usr/local/bin/codex',
+    '/opt/homebrew/bin/codex',
+    'codex',
+  ];
+}
 let cachedCredential = null;
 let cachedCredentialResolvedAt = 0;
 
@@ -291,37 +303,50 @@ export async function getCodexAccessToken() {
   return credential.accessToken;
 }
 
-export async function resolveCodexExecutable() {
-  for (const candidate of DEFAULT_CODEX_EXECUTABLE_CANDIDATES) {
+async function codexStarts(executable, run = execFile) {
+  try {
+    await run(executable, ['--version'], { timeout: 10_000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function resolveCodexExecutable({ candidates = codexExecutableCandidates(), run = execFile, isExecutable } = {}) {
+  const executable = isExecutable || (async path => {
+    try { await access(path, constants.X_OK); return true; } catch { return false; }
+  });
+  for (const candidate of candidates) {
     const normalized = String(candidate || '').trim();
     if (!normalized) {
       continue;
     }
 
-    if (normalized.includes('/')) {
+    let resolved = normalized;
+    if (!normalized.includes('/')) {
       try {
-        await access(normalized, constants.X_OK);
-        return normalized;
+        const { stdout } = await run('which', [normalized]);
+        resolved = stdout
+          .split(/\r?\n/)
+          .map(line => line.trim())
+          .find(Boolean) || '';
       } catch {
         continue;
       }
+      if (!resolved) continue;
     }
 
-    try {
-      const { stdout } = await execFile('which', [normalized]);
-      const resolved = stdout
-        .split(/\r?\n/)
-        .map(line => line.trim())
-        .find(Boolean);
-      if (resolved) {
-        return resolved;
-      }
-    } catch {
-      continue;
+    if (await executable(resolved) && await codexStarts(resolved, run)) {
+      return resolved;
     }
   }
 
   return 'codex';
+}
+
+// Single-quote for /bin/sh (Terminal `do script`), so app paths with spaces work.
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
 
 export async function startCodexOAuthLogin() {
@@ -332,13 +357,13 @@ export async function startCodexOAuthLogin() {
     return {
       launched: false,
       authPath: getCodexAuthPath(),
-      manualCommand: `${codexExecutable} login --device-auth`,
+      manualCommand: `${shellQuote(codexExecutable)} login --device-auth`,
       instructions:
         'Run this command in your terminal, complete the device-auth flow, and then refresh Melo.',
     };
   }
 
-  const command = `${escapeForAppleScript(codexExecutable)} login --device-auth`;
+  const command = escapeForAppleScript(`${shellQuote(codexExecutable)} login --device-auth`);
   await execFile('osascript', [
     '-e',
     'tell application "Terminal"',
