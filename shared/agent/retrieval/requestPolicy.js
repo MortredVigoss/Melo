@@ -1,8 +1,15 @@
 import { extractTextUrls } from '../media/textUrls.js';
+import { AGENT_LOOP_CONTRACT, contractRegExp } from '../loopContract.js';
 
 // Mask quoted data without changing offsets used to extract command arguments.
+// Quoted-text mask and translation patterns are shared with the iPhone intent
+// rules (shared/protocol/agent-loop.json).
+const QUOTED_TEXT_PATTERN = contractRegExp(AGENT_LOOP_CONTRACT.intent.patterns.quotedText, 'g');
+const TRANSLATION_EXCLUDED_PATTERN = contractRegExp(AGENT_LOOP_CONTRACT.intent.patterns.translationExcluded);
+const TRANSLATION_PATTERN = contractRegExp(AGENT_LOOP_CONTRACT.intent.patterns.translation);
+
 export function maskQuotedText(value = '') {
-  return String(value).replace(/```[\s\S]*?```|`[^`\n]*`|"[^"\n]*"|(?<![\p{L}\p{N}])'[^'\n]*'|“[^”\n]*”|‘[^’\n]*’|「[^」\n]*」/gu, match => ' '.repeat(match.length));
+  return String(value).replace(QUOTED_TEXT_PATTERN, match => ' '.repeat(match.length));
 }
 
 const NEGATED_ACTION = /(?:不要|不用|不必|无需|禁止|别|不需要)[^，,。！？;；\n]{0,20}(?:搜|查找|检索|运行|执行|调用|构建|联网|上网|打开|访问)|\b(?:do not|don['’]t|never|without|no need to)\s+(?:\w+\s+){0,3}(?:search|find|grep|run|execute|call|build|browse|fetch|open|access)\b/iu;
@@ -51,8 +58,8 @@ export function isExplicitActionRequest(text = '') {
 
 export function isTranslationRequest(text = '') {
   const instruction = maskQuotedText(text);
-  if (/函数|程序|编写|实现|\b(?:code|function|implement|app|api|service)\b/iu.test(instruction)) return false;
-  return /(?:翻译|译成|\btranslat(?:e|ion)\b)/iu.test(instruction);
+  if (TRANSLATION_EXCLUDED_PATTERN.test(instruction)) return false;
+  return TRANSLATION_PATTERN.test(instruction);
 }
 
 const EXTERNAL_TASK = /https?:\/\/|\b(?:file|pdf|docx|xlsx|csv|workspace|repo|browser|tool|save|send|email|post|publish|calendar|upload|download|execute|run|remind|schedule|image|video|audio)\b|文件|附件|图片|截图|视频|音频|语音|浏览器|工具|工作区|仓库|保存|发送|发给|发到|导出|邮件|日历|上传|下载|运行|执行|生成|提醒|定时/iu;

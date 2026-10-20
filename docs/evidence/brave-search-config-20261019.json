@@ -1,0 +1,219 @@
+{
+  "recordedAt": "2026-10-18T13:25:59.151654+00:00",
+  "behaviorCommit": "1e292e9d8039d398fa591c6d5ea2cc643a9258bb",
+  "installedVersion": "0.7.0 (15)",
+  "device": "Fold6 / Android 16 / One UI property 80500",
+  "latestRun": {
+    "localUiTime": "10-19 00:21:22",
+    "requestClass": "public brunch recommendation",
+    "outcome": "blocked",
+    "plan": "unavailable",
+    "reason": "SEARCH_UNAVAILABLE",
+    "toolCalls": 0,
+    "sources": 0
+  },
+  "observedSettings": {
+    "braveSelected": true,
+    "httpSearchEnabled": false
+  },
+  "offlineReplay": {
+    "disabledRoute": "unavailable",
+    "disabledReason": "SEARCH_UNAVAILABLE",
+    "enabledRoute": "http-search",
+    "enabledTools": [
+      "web_search",
+      "fetch_url"
+    ],
+    "apiRequests": 0
+  },
+  "realSearchRequestsSent": 1,
+  "modelRequestsSent": 3,
+  "credentialsRead": false,
+  "privateDraftRead": false,
+  "pending": null,
+  "limits": [
+    "Initial zero-tool failures came before any HTTP request; user then enabled/saved Search.",
+    "Only one bounded live retry and source retrieval were tested; no Maps navigation, folded mode or posture transition.",
+    "iOS bundle updated identically but native Swift/production Loop not validated or switched.",
+    "Targeted tests only; no full repo release gate, remote CI, git pp or push."
+  ],
+  "subsequentObservation": {
+    "recordedAt": "2026-10-18T13:36:19.940378+00:00",
+    "userSavedConfig": true,
+    "httpSearchEnabled": true,
+    "braveSelected": true,
+    "braveDefaultEndpoint": true,
+    "latestRetryLocalUiTime": "10-19 00:25:31",
+    "latestRetryTextClass": "explicit retry",
+    "latestRetryPlan": "none / conversation / tools=[]",
+    "latestRetryToolCalls": 0,
+    "latestRetrySources": 0,
+    "rootCause": "Shared Router classified only the retry text and failed to continue the preceding user task; no tool definitions reached the model.",
+    "productFix": "Explicit retry/resume resolves the latest concrete user task plus later restrictions, re-evaluates current capability/config, preserves prior app scope, and does not cross cancellation/topic boundaries.",
+    "nodeTargetedPassed": 153,
+    "nativeAndFinalArtifact": "passed; signed 0.7.1 installed and live Search succeeded",
+    "credentialsRead": false,
+    "modelRequestsSentByDebugger": 0
+  },
+  "validation": {
+    "nodePassed": 153,
+    "jvm": {
+      "tests": 117,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "lintErrors": 0,
+    "debugBuild": true,
+    "r8ReleaseBuild": true,
+    "nativeCoverPassed": 18,
+    "nativeUnfoldedPassed": 10,
+    "conformanceFixtures": 49,
+    "threeProtocolRetryAndBraveEncoding": "passed via local HTTP Fixtures",
+    "failureHistory": [
+      "Original routing regression: 8 of 12 new assertions failed before fix.",
+      "Additional app-context assertion exposed context loss in first fix; corrected before final build.",
+      "First instrumentation command referenced a nonexistent SearchAgentFlowTest; corrected to SharedSearchFlowTest. All issued product cases passed; failure log retained."
+    ],
+    "physicalInstallAndRealSearch": "passed"
+  },
+  "resolvedAt": "2026-10-18T13:47:29.975171+00:00",
+  "productCommit": "4b88385c8ec3d8714fc9eb418e8dbeb32ce9ce9c",
+  "artifact": {
+    "version": "0.7.1",
+    "versionCode": 16,
+    "behaviorCommit": "4b88385c8ec3d8714fc9eb418e8dbeb32ce9ce9c",
+    "build": "R8 release preview",
+    "sha256": "95439d3f60e8a06e50f3625548220fa0633a5e966c4c036e544b0a72291298b3",
+    "certificateSha256": "da629e0685cca1745c5ffe6aa80cbc8c07f1e7b5cbe4fc5a82644fc72721d212",
+    "bytes": 4077127,
+    "coreBundleSha256": "1f443dd5f0522d806b29068aa3a76e225ab3bcea99c38608b794dbf9acd53823",
+    "signatureVerified": true,
+    "nativeLibraries16KiBAligned": 4,
+    "physicalInstalled": true
+  },
+  "installation": {
+    "recordedAt": "2026-10-18T13:41:16.504698+00:00",
+    "behaviorCommit": "4b88385c8ec3d8714fc9eb418e8dbeb32ce9ce9c",
+    "version": "0.7.1",
+    "versionCode": 16,
+    "sha256": "95439d3f60e8a06e50f3625548220fa0633a5e966c4c036e544b0a72291298b3",
+    "certificateSha256": "da629e0685cca1745c5ffe6aa80cbc8c07f1e7b5cbe4fc5a82644fc72721d212",
+    "installed": true,
+    "launched": true,
+    "sameCertificateUpdate": true,
+    "uidPreserved": true,
+    "firstInstallTimePreserved": true,
+    "accessibilitySettingsPreserved": true,
+    "accessibilityServiceCount": 2,
+    "countsBefore": "16 段对话 · 1 个角色 · 保存在本机",
+    "countsAfter": "16 段对话 · 1 个角色 · 保存在本机",
+    "processStable": true,
+    "fatalInCurrentProcessCrashBuffer": false,
+    "activeTaskAtEnd": false,
+    "android": "16",
+    "sdk": 36,
+    "oneUiProperty": "80500",
+    "size": "Physical size: 1856x2160",
+    "adbServerProtocol": 41,
+    "adbServerRestartedOnceByClientVersionMismatch": false,
+    "uninstalledOrClearedData": false,
+    "credentialsReadOrReplaced": false,
+    "newQaChatsAdded": 0,
+    "realModelRequestsSent": 0,
+    "searchRequestsSent": 0,
+    "phoneUseTasksStarted": 0,
+    "limitations": [
+      "Install and unfolded launch smoke only.",
+      "No folded mode, posture transition, real-provider Research or Maps task exercised.",
+      "Individual private chat contents, configuration values and Keystore credentials not read."
+    ]
+  },
+  "liveVerification": {
+    "recordedAt": "2026-10-18T13:45:56.600738+00:00",
+    "version": "0.7.1 (16)",
+    "scenario": "retry in the existing brunch Chat; exactly one Search requested, sources only, no navigation/phone",
+    "outcome": "completed",
+    "route": "http-search",
+    "modelRequestsObserved": 3,
+    "modelRequestDurationsMs": [
+      9408,
+      6580,
+      13932
+    ],
+    "searchCalls": 1,
+    "pageFetchCalls": 1,
+    "operations": [
+      {
+        "name": "web_search",
+        "durationMs": 1317,
+        "status": "completed"
+      },
+      {
+        "name": "fetch_url",
+        "durationMs": 204,
+        "status": "completed"
+      }
+    ],
+    "sourcesReturned": 5,
+    "pagesRead": 1,
+    "phoneUseCalls": 0,
+    "newChatsAdded": 0,
+    "debuggerReadCredentials": false,
+    "appUsedExistingDeviceCredentials": true,
+    "uidAndInstallHistoryPreserved": true,
+    "accessibilitySettingsPreserved": true,
+    "currentProcessFatalCrash": false,
+    "activeTaskAtEnd": false,
+    "limits": [
+      "One live Search sample, not a provider performance benchmark.",
+      "Source URLs and one fetched text response were returned; restaurant ranking/ratings accuracy not independently audited.",
+      "No Maps navigation or folded/posture-transition functional test in this run."
+    ]
+  },
+  "pageFetchRequestsSent": 1,
+  "cleanup": {
+    "ownedEmulator5580Stopped": true,
+    "ownedAdb5048Stopped": true,
+    "windowsAdb5037Restarted": false
+  },
+  "logs": [
+    {
+      "path": ".tmp/brave-search-debug-20261019/continuation-red.log",
+      "sha256": "b76a705b73c9636d1736bb377656a98d3749dbad5527983cce962aa4b5173c91"
+    },
+    {
+      "path": ".tmp/brave-search-debug-20261019/continuation-context-red.log",
+      "sha256": "9826b6df041381abb7f848bcae65c097be57a77c43659805d38a8e554a9c1bbd"
+    },
+    {
+      "path": ".tmp/brave-search-debug-20261019/node-final.log",
+      "sha256": "c676d3308d6d8b56ffbd6c79f41bdff1b20d3c244ccaa5d6e0bec3e3b937a52a"
+    },
+    {
+      "path": ".tmp/brave-search-debug-20261019/node-test-command.json",
+      "sha256": "46cae7c241fba1f1d8b894fa40755a5dc74f1aafc61d8f952291e7cf03b37766"
+    },
+    {
+      "path": ".tmp/brave-search-debug-20261019/android-final-build.log",
+      "sha256": "f97ee9706541ffd7ef75cd11703cd79e4c6cec4f2a0635c1fd4d5791694396c3"
+    },
+    {
+      "path": ".tmp/brave-search-debug-20261019/native-cover-initial.log",
+      "sha256": "b9630158cc9dcb3d339f0f9272329f661ba9afcee4a895e2224a01b0cfe28974"
+    },
+    {
+      "path": ".tmp/brave-search-debug-20261019/native-cover.log",
+      "sha256": "d3ecbf9310f184e513b60382b47f32db147070b25d0f52aec9889e94b992c45d"
+    },
+    {
+      "path": ".tmp/brave-search-debug-20261019/native-unfolded.log",
+      "sha256": "79a3a9ef0a0a98177c512a5feaae367947a326895efc0870952fe0d797c5552d"
+    },
+    {
+      "path": ".tmp/brave-search-debug-20261019/apk-validation.log",
+      "sha256": "9bc6000ade302224c8ffb53621f2d2e3ddc47ba60868e506cb47b2378df624ea"
+    }
+  ],
+  "configurationChangedByDebugger": false
+}

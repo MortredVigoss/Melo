@@ -1,0 +1,74 @@
+{
+  "date": "2026-10-17",
+  "version": "0.4.2",
+  "versionCode": 11,
+  "device": "Samsung Galaxy Z Fold6 SM-F956B / API 36 / One UI 8.5",
+  "sha256": "8cfc8231026b522ec628b4b6311c6ff1cadd7b7d380e44ff1660ca9b3b44f06a",
+  "install": {
+    "version": "0.4.2",
+    "sameCertificateUpdate": true,
+    "countsBefore": [
+      "7 段对话 · 1 个角色 · 保存在本机"
+    ],
+    "countsAfter": [
+      "7 段对话 · 1 个角色 · 保存在本机"
+    ],
+    "otherServicesPreserved": true
+  },
+  "folded": {
+    "screenSize": "Physical size: 968x2376",
+    "texts": [
+      "DIAG042FREAD: Open com.tencent.mm. Report if image is readable or black. No tapping typing sending. Finish.",
+      "已验证可见结果 · yrlf－modal · 3 步",
+      "Probe · 模型请求 3 次",
+      "1. observe · 成功 · 执行回执已返回 · com.melo.android · 521×1280 · 23 个节点 · 已截图",
+      "2. open_app · 成功 · 执行回执已返回 · com.tencent.mm · 521×1280 · 0 个节点 · 已截图",
+      "3. finish · 成功 · 已记录明确任务结果 · 已重新检查可见证据",
+      "已打开微信（com.tencent.mm）。屏幕图像清晰可读，不是黑屏；未点击、输入或发送。"
+    ]
+  },
+  "unfolded": {
+    "screenSize": "Physical size: 1856x2160",
+    "texts": [
+      "DIAG042UREAD: Open com.tencent.mm. Report if image is readable or black. No tapping typing sending. Finish.",
+      "已验证可见结果 · yrlf－modal · 3 步",
+      "Probe · 模型请求 3 次",
+      "1. observe · 成功 · 执行回执已返回 · com.melo.android · 1099×1280 · 30 个节点 · 已截图",
+      "2. open_app · 成功 · 执行回执已返回 · com.tencent.mm · 550×1280 · 0 个节点 · 已截图",
+      "3. finish · 成功 · 已记录明确任务结果 · 已重新检查可见证据",
+      "已打开 com.tencent.mm（微信）。截图清晰可读，非黑屏；未点击、输入或发送。"
+    ]
+  },
+  "visualInputFeasibility": {
+    "device": "Fold6",
+    "screen": "folded 968x2376",
+    "backend": "Windows ADB screen capture + input",
+    "target": "WeChat search field",
+    "text": "MELOINPUTPROBE",
+    "clickFromFreshPixels": true,
+    "inputVisuallyVerified": true,
+    "textScope": "ASCII only; Chinese IME input not tested",
+    "enterOrSendUsed": false,
+    "searchClearTapped": true,
+    "messagesSent": 0,
+    "productionMeloIntegration": false
+  },
+  "verification": {
+    "jvm": 99,
+    "androidRuntime": 34,
+    "failures": 0,
+    "skipped": 0,
+    "lintErrors": 0,
+    "debugBuild": true,
+    "r8ReleaseBuild": true,
+    "signatureAnd16KiBAlignment": true
+  },
+  "limits": [
+    "Two read-only forced Probe runs on final APK; no message-sending task rerun.",
+    "WeChat Accessibility tree remains empty in both modes.",
+    "ADB coordinate/ASCII search-field test is external feasibility evidence, not integrated Melo input.",
+    "Chinese IME, AutoInput, Shizuku and MediaProjection have not been integrated or tested.",
+    "Task Cache layout partition between folded and unfolded is still pending.",
+    "No remote CI or full repository release gate. No private UI screenshots committed."
+  ]
+}

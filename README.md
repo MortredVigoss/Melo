@@ -9,6 +9,8 @@ Melo is a local-first AI workspace for macOS and iPhone. Bring the models you us
 
 Use it to research, write, code, and work with images and documents. Customize Agents for different tasks, let them collaborate, and follow their progress in a neural workspace. Conversations, saved knowledge, and memory are stored locally, with optional workspace sync; model requests use the connection you choose.
 
+Native Android development (Kotlin + Jetpack Compose; Samsung Galaxy Z Fold6 / One UI 8.5 target): [build and validation notes](android/README.md).
+
 ## What you can do
 
 - **Choose your models.** Connect Claude, OpenAI, OpenRouter, other supported APIs, or local models, and choose a model for each conversation.

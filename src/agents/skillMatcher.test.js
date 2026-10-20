@@ -422,3 +422,32 @@ test('LRU cache: cache=false disables memoization entirely', () => {
   matchSkillsForMessage(skills, 'python', { cache: false });
   assert.equal(cache.size, 0);
 });
+
+test('matching refreshes same-length skill edits and returns the current registry definition', () => {
+  const cache = createSkillMatchCache();
+  const first = skill('same', { tags: ['always-on'], systemPrompt: 'PROFILE_A', version: 1, toolWhitelist: ['file_read'] });
+  const edited = { ...first, systemPrompt: 'PROFILE_B', toolWhitelist: ['calculator'] };
+  matchSkillsForMessage([first], 'fixture', { cache, cacheScope: 'home-A/main' });
+  const result = matchSkillsForMessage([edited], 'fixture', { cache, cacheScope: 'home-B/main' });
+  assert.equal(result[0], edited);
+  assert.deepEqual(result[0].toolWhitelist, ['calculator']);
+  const copy = { ...edited };
+  assert.equal(matchSkillsForMessage([copy], 'fixture', { cache, cacheScope: 'home-B/main' })[0], copy);
+});
+
+test('matching does not collide for equally long messages with the same 256-character prefix', () => {
+  const cache = createSkillMatchCache();
+  const all = [skill('py', { triggers: ['python'] }), skill('rs', { triggers: ['rust'] })];
+  const options = { cache, minKeep: 1 };
+  const prefix = 'neutral '.repeat(40);
+  assert.deepEqual(matchSkillsForMessage(all, prefix + ' python', options).map(s => s.id), ['py']);
+  assert.deepEqual(matchSkillsForMessage(all, prefix + ' rust  ', options).map(s => s.id), ['rs']);
+});
+
+test('cache keys include scoring options and recency snapshots', () => {
+  const cache = createSkillMatchCache();
+  const all = [skill('py', { triggers: ['python'] }), skill('rs', { triggers: ['rust'] })];
+  const options = { cache, minKeep: 1, maxKeep: 1, now: 100_000_000 };
+  assert.deepEqual(matchSkillsForMessage(all, 'python rust', { ...options, recencyByIdMap: { py: options.now } }).map(s => s.id), ['py']);
+  assert.deepEqual(matchSkillsForMessage(all, 'python rust', { ...options, recencyByIdMap: { rs: options.now } }).map(s => s.id), ['rs']);
+});

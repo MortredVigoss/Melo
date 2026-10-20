@@ -50,7 +50,7 @@ export function renderLlmConnections(config) {
       ${renderEditActions(editSession,{prefix:'llm',disabled:state.busy,saveDisabled:state.conflict})}
       ${state.conflict ? '<p role="alert">此连接已在其他位置更新，当前草稿仍保留。请先载入最新配置，再重新编辑。</p><button type="button" class="small-button" data-action="llm-reload">放弃此草稿并载入最新配置</button>' : ''}
       <fieldset class="settings-connection-fields" ${fieldsDisabled}><label class="label">服务地址<input class="config-input" name="baseUrl" value="${escape(draft.baseUrl)}" ${provider.authMode === 'codex' ? 'readonly' : ''} ${disabled}></label>
-      ${provider.id === 'custom' ? `<label class="label">接口格式<select class="config-select" name="apiProtocol" ${disabled}><option value="chat-completions" ${draft.apiProtocol !== 'anthropic' ? 'selected' : ''}>OpenAI Chat Completions</option><option value="anthropic" ${draft.apiProtocol === 'anthropic' ? 'selected' : ''}>Anthropic Messages</option></select></label>` : ''}
+      ${provider.id === 'custom' ? `<label class="label">接口格式<select class="config-select" name="apiProtocol" ${disabled}><option value="chat-completions" ${!['anthropic','responses'].includes(draft.apiProtocol) ? 'selected' : ''}>OpenAI Chat Completions</option><option value="responses" ${draft.apiProtocol === 'responses' ? 'selected' : ''}>OpenAI Responses</option><option value="anthropic" ${draft.apiProtocol === 'anthropic' ? 'selected' : ''}>Anthropic Messages</option></select></label>` : ''}
       <label class="label">选择模型<select class="config-select" data-action="llm-pick-model">${connectionModelOptions(config, draft).map(m => `<option value="${escape(m)}" ${m === draft.model ? 'selected' : ''}>${escape(modelLabel(m))} · ${escape(m)}</option>`).join('')}<option value="" ${!draft.model ? 'selected' : ''}>手动填写模型 ID</option></select></label>
       <label class="label">模型 ID（可手动填写）<input class="config-input" name="model" value="${escape(draft.model)}" placeholder="${escape(provider.modelHint || '填写模型 ID，或读取模型列表')}" ${disabled}></label>
       ${provider.authMode !== 'codex' ? `<label class="label">API Key${provider.authMode === 'local' ? '（可选）' : ''}<input class="config-input" name="apiKey" type="password" autocomplete="off" value="${escape(draft.apiKey)}" placeholder="${saved?.hasKey ? '已保存；留空保留此连接的密钥' : '只保存到本机'}" ${disabled}></label><label class="list-row-meta"><input type="checkbox" name="clearKey" ${draft.clearKey ? 'checked' : ''} ${disabled}> 清除此连接的已保存密钥</label>` : `<p class="list-row-meta">${config.codexAuth?.loggedIn ? 'ChatGPT 已登录' : '需要先完成 ChatGPT 登录'}；模型请求由 Melo 直接发送。</p>`}
@@ -58,6 +58,7 @@ export function renderLlmConnections(config) {
         <button type="button" class="small-button" data-action="llm-models" ${actionDisabled}>读取模型列表</button>
         <button type="button" class="small-button" data-action="llm-test" ${actionDisabled}>测试实际请求</button>
         <button type="button" class="small-button" data-action="llm-vision" ${actionDisabled}>测试图片识别</button>
+        <button type="button" class="small-button" data-action="llm-search" ${actionDisabled} ${provider.authMode !== 'codex' && draft.apiProtocol !== 'responses' ? 'disabled' : ''}>验证 Hosted Search</button>
         <button type="button" class="small-button is-primary" data-action="llm-activate" ${actionDisabled}>设为当前模型</button>
         ${provider.oauth ? `<button type="button" class="small-button" data-action="llm-oauth" ${actionDisabled}>${provider.id === 'openrouter' ? '登录 OpenRouter' : '登录 ChatGPT'}</button>` : ''}
         ${saved && saved.id !== data.activeId ? `<button type="button" class="small-button" data-action="llm-remove" ${actionDisabled}>移除连接</button>` : ''}
@@ -65,6 +66,7 @@ export function renderLlmConnections(config) {
       ${provider.id === 'openrouter' ? '<p class="list-row-meta">登录授权使用 OpenRouter 额度，也可直接填写 Key。不会使用你的 ChatGPT 或 Claude 订阅额度。</p>' : ''}
       <p role="status" aria-live="polite" class="llm-connection-status">${escape(state.message || (test ? test.ok ? `请求成功 · ${test.latencyMs} ms · 请求模型：${test.requestedModel} · 返回模型：${test.reportedModel || '服务未提供'} · ${test.testedAt}` : `请求失败：${test.error} · ${test.guidance || ""}` : '尚未进行此连接的真实请求测试'))}</p>
       <p class="list-row-meta">图片识别：${saved?.visionTest ? saved.visionTest.ok ? `已实测 · ${escape(saved.visionTest.requestedModel)} · ${escape(saved.visionTest.testedAt)}` : `测试未通过 · ${escape(saved.visionTest.error)}` : '尚未实测；测试会发送一张本机生成的数字图，计入模型用量'}</p>
+      <p class="list-row-meta">Hosted Search：${saved?.searchTest ? saved.searchTest.ok ? `上次验证通过 · ${escape(saved.searchTest.requestedModel)} · ${escape(saved.searchTest.testedAt)}` : `尚未验证通过 · ${escape(saved.searchTest.error)}` : '尚未验证；按钮会发送一次真实搜索请求，计入服务用量。验证绑定当前连接与凭证。'}</p>
       ${state.oauth ? `<div class="inline-actions"><button type="button" class="small-button" data-action="llm-open-oauth">打开授权页面</button><button type="button" class="small-button" data-action="llm-copy-oauth">复制授权链接</button><button type="button" class="small-button" data-action="llm-cancel-oauth">取消授权</button></div>` : ''}
       <details class="list-row-meta"><summary>平台能力说明</summary><p>这里连接模型接口。搜索、文件处理和其他工具仍由 Melo 调度；模型可用性以实际请求为准。Copilot、Gemini CLI、Kimi Code 的代理程序未作为模型通道接入。</p></details>
     </div>
@@ -109,9 +111,9 @@ export async function handleLlmConnection(action, { config, api, render, refresh
       }
       if (action === 'llm-activate') {
         await api('/api/settings/llm/activate', { method: 'POST', body: { id: draft.id } }); state.message = '已设为默认回答模型；额外快速开启时，短判断按加速设置单独分配。Melo 的Agent指令与工具配置保留。';
-      } else if (action === 'llm-test' || action === 'llm-vision' || action === 'llm-models') {
+      } else if (action === 'llm-test' || action === 'llm-vision' || action === 'llm-search' || action === 'llm-models') {
         state.message = action !== 'llm-models' ? '正在发送真实模型请求…' : '正在读取模型列表…'; render();
-        const result = await api(`/api/settings/llm/${action === 'llm-models' ? 'models' : 'test'}`, { method: 'POST', body: { id: draft.id, modality: action === 'llm-vision' ? 'vision' : 'text' } });
+        const result = await api(`/api/settings/llm/${action === 'llm-models' ? 'models' : 'test'}`, { method: 'POST', body: { id: draft.id, modality: action === 'llm-search' ? 'search' : action === 'llm-vision' ? 'vision' : 'text' } });
         state.message = action === 'llm-models' ? `已读取 ${result.models.length} 个模型；选择或手填模型 ID 后可测试。` : result.ok ? `请求成功 · ${result.latencyMs} ms · 请求模型：${result.requestedModel} · 返回模型：${result.reportedModel || '服务未提供'} · 回答：${result.preview}` : `请求失败：${result.error} · ${result.guidance || ""}`;
       } else if (action === 'llm-oauth') {
         if (draft.providerId === 'chatgpt') await chatgptLogin();

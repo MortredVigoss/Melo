@@ -7,6 +7,7 @@ import { atomicWriteJson } from './storage.js';
 import { registerSearchTriggers as registerWebSearchTriggers } from './retrieval/searchRouter.js';
 import { resolveRuntimePaths } from './runtime/paths.js';
 import { DEFAULT_MODEL_CATALOGS, DEFAULT_MODELS_BY_AUTH_MODE } from './shared/modelCatalog.js';
+import { normalizeRuntimeConfig } from '../shared/agent/tools.js';
 
 export const OPENAI_API_BASE_URL = 'https://api.openai.com/v1';
 export const CODEX_OAUTH_BASE_URL = 'https://chatgpt.com/backend-api';
@@ -16,6 +17,7 @@ export { DEFAULT_MODEL_CATALOGS, DEFAULT_MODELS_BY_AUTH_MODE } from './shared/mo
 export const VALID_AUTH_MODES = Object.freeze(['local', 'api-key', 'codex']);
 
 export const DEFAULT_CONFIG = Object.freeze({
+  agentRuntime: normalizeRuntimeConfig(),
   extraFast: Object.freeze({ enabled: false, revision: 0, measurements: {} }),
   provider: 'openai-compatible',
   baseUrl: CODEX_OAUTH_BASE_URL,
@@ -265,6 +267,7 @@ function normalizeConfigShape(config = {}, { skipModelNormalize = false } = {}) 
     ...DEFAULT_CONFIG,
     ...config,
     ...normalizeMcpStartup(config),
+    agentRuntime: normalizeRuntimeConfig(config.agentRuntime),
     authMode,
     baseUrl: String(config.baseUrl || DEFAULT_CONFIG.baseUrl).trim(),
     model: resolvedModel,

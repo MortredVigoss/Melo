@@ -7,7 +7,7 @@ import { dirname, resolve, relative } from 'node:path';
 import { buildModuleMap, ownerOf, matchesGlob, servedModules, loadAnnotations } from './generate-module-map.js';
 
 export const IOS_JS = ['ios/Tests/SceneBridge.test.js', 'ios/Tests/NeuralLayout.test.js'];
-const CORE = /^(?:package(?:-lock)?\.json$|binding\.gyp$|native\/|src\/(?:state\/|persistence\/|runtime\/|safety\/|providers\/|server\.js$|desktopStore\.js$|config\.js$|openai\.js$|tools\/(?:executor|permissions|permissionPersistence|registry)\.|services\/chat\/(?:chatExecutionRunner|sendChatMessage|turnLifecycle|turnScheduler)\.)|shared\/protocol\/|mobile-sync\/.*(?:protocol|Protocol|syncContract))/;
+const CORE = /^(?:package(?:-lock)?\.json$|binding\.gyp$|native\/|src\/(?:state\/|persistence\/|runtime\/|safety\/|providers\/|server\.js$|desktopStore\.js$|config\.js$|openai\.js$|tools\/(?:executor|permissions|permissionPersistence|registry)\.|services\/chat\/(?:chatExecutionRunner|sendChatMessage|turnLifecycle|turnScheduler)\.)|shared\/(?:protocol|agent)\/|mobile-sync\/.*(?:protocol|Protocol|syncContract))/;
 const GATE = /^(?:scripts\/(?:test-(?:plan|impact|discovery|stages)|verify-daily|run-unit-tests|verify-red-green|generate-module-map|check-dependencies)\.js|ios\/scripts\/(?:test|swift_test_cache)\.py)$/;
 const TOOLING = /^(?:architecture\/(?:modules|module-annotations)\.json|scripts\/(?:scope|boundary-report|check-doc-links)\.js)$/;
 const sorted = values => [...new Set(values)].sort();

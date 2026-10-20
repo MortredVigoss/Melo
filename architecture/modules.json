@@ -22,8 +22,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 602,
-      "edges": 1825,
+      "modules": 608,
+      "edges": 1842,
       "roots": [
         "src",
         "desktop-ui",
@@ -551,7 +551,7 @@
       "dependsOn": {
         "approvals": 3,
         "channels": 3,
-        "chat": 17,
+        "chat": 18,
         "desktop-shell": 7,
         "memory": 11,
         "platform": 42,
@@ -730,8 +730,8 @@
       ],
       "modules": {
         "desktop-ui": 27,
-        "shared": 22,
-        "src": 64
+        "shared": 23,
+        "src": 65
       },
       "entryModules": [
         {
@@ -767,7 +767,25 @@
           ]
         },
         {
+          "module": "shared/agent/hostedSearch.js",
+          "importedBy": [
+            "tools"
+          ]
+        },
+        {
+          "module": "shared/agent/media/textUrls.js",
+          "importedBy": [
+            "media"
+          ]
+        },
+        {
           "module": "shared/agent/repeatGuard.js",
+          "importedBy": [
+            "agents"
+          ]
+        },
+        {
+          "module": "shared/agent/skill/skillService.js",
           "importedBy": [
             "agents"
           ]
@@ -776,6 +794,13 @@
           "module": "shared/agent/tokenEstimate.js",
           "importedBy": [
             "memory"
+          ]
+        },
+        {
+          "module": "shared/agent/tools.js",
+          "importedBy": [
+            "settings",
+            "tools"
           ]
         },
         {
@@ -973,26 +998,26 @@
         "channels": 2,
         "desktop-shell": 15,
         "knowledge": 5,
-        "media": 25,
+        "media": 23,
         "memory": 26,
         "platform": 54,
         "projects": 11,
         "settings": 9,
         "sync": 2,
-        "tools": 32,
+        "tools": 33,
         "voice": 3
       },
       "usedBy": {
-        "agents": 17,
+        "agents": 18,
         "channels": 9,
         "desktop-shell": 8,
-        "media": 9,
+        "media": 10,
         "memory": 11,
         "platform": 15,
         "projects": 1,
-        "settings": 5,
+        "settings": 7,
         "sync": 4,
-        "tools": 11,
+        "tools": 14,
         "voice": 2
       },
       "httpRoutes": [
@@ -1173,6 +1198,7 @@
       },
       "implicit": [
         "agent-core-bundle",
+        "gen-agent-core",
         "gen-agent-loop",
         "gen-ios-scene",
         "served-shared-modules",
@@ -1728,7 +1754,8 @@
           "importedBy": [
             "chat",
             "media",
-            "platform"
+            "platform",
+            "tools"
           ]
         },
         {
@@ -1822,11 +1849,12 @@
       "dependsOn": {
         "agents": 3,
         "approvals": 1,
-        "chat": 5,
+        "chat": 7,
         "desktop-shell": 7,
         "media": 1,
         "platform": 22,
-        "sync": 3
+        "sync": 3,
+        "tools": 2
       },
       "usedBy": {
         "agents": 2,
@@ -1840,7 +1868,7 @@
         "platform": 16,
         "projects": 1,
         "sync": 1,
-        "tools": 7,
+        "tools": 8,
         "voice": 1
       },
       "httpRoutes": [
@@ -2126,7 +2154,7 @@
       ],
       "modules": {
         "desktop-ui": 23,
-        "src": 77
+        "src": 80
       },
       "entryModules": [
         {
@@ -2239,6 +2267,13 @@
           ]
         },
         {
+          "module": "src/services/search/hostedSearchCapability.js",
+          "importedBy": [
+            "chat",
+            "settings"
+          ]
+        },
+        {
           "module": "src/services/search/searchResultsBuilder.js",
           "importedBy": [
             "desktop-shell"
@@ -2248,6 +2283,12 @@
           "module": "src/services/search/searchTask.js",
           "importedBy": [
             "chat"
+          ]
+        },
+        {
+          "module": "src/services/search/sharedSearchAdapter.js",
+          "importedBy": [
+            "settings"
           ]
         },
         {
@@ -2416,24 +2457,25 @@
       "dependsOn": {
         "agents": 8,
         "approvals": 33,
-        "chat": 11,
+        "chat": 14,
         "desktop-shell": 4,
         "knowledge": 3,
         "media": 2,
         "memory": 6,
-        "platform": 34,
+        "platform": 35,
         "projects": 5,
-        "settings": 7
+        "settings": 8
       },
       "usedBy": {
         "agents": 20,
         "approvals": 2,
-        "chat": 32,
+        "chat": 33,
         "desktop-shell": 13,
         "media": 4,
         "memory": 1,
         "platform": 14,
-        "projects": 3
+        "projects": 3,
+        "settings": 2
       },
       "httpRoutes": [
         "POST /api/background-tasks/kill ← src/server.js",
@@ -2538,9 +2580,13 @@
           "src/services/export/pdfLibOps.test.js",
           "src/services/export/pdfRender.test.js",
           "src/services/search/apiDirect.test.js",
+          "src/services/search/hostedSearchCapability.test.js",
           "src/services/search/searchResultsBuilder.test.js",
           "src/services/search/searchService.test.js",
+          "src/services/search/searchSettings.test.js",
           "src/services/search/searchTask.test.js",
+          "src/services/search/sharedFetchAdapter.test.js",
+          "src/services/search/sharedSearchAdapter.test.js",
           "src/services/search/socialLinkReader.evidenceTrail.test.js",
           "src/services/search/socialLinkReader.test.js",
           "src/services/search/trailLogger.test.js",
@@ -2778,7 +2824,7 @@
       ],
       "dependsOn": {
         "approvals": 1,
-        "chat": 9,
+        "chat": 10,
         "desktop-shell": 5,
         "knowledge": 1,
         "memory": 1,
@@ -2789,7 +2835,7 @@
       },
       "usedBy": {
         "channels": 3,
-        "chat": 25,
+        "chat": 23,
         "desktop-shell": 5,
         "memory": 1,
         "platform": 2,
@@ -3382,7 +3428,7 @@
         "assets/**"
       ],
       "modules": {
-        "desktop-ui": 22,
+        "desktop-ui": 23,
         "src": 2
       },
       "entryModules": [
@@ -3516,6 +3562,7 @@
         "desktop-ui/neuralShell.js",
         "desktop-ui/runtimePanel.js",
         "desktop-ui/searchPage.js",
+        "desktop-ui/searchSettings.js",
         "desktop-ui/sharedApi.js",
         "desktop-ui/styles.css",
         "desktop-ui/surfaceUnify.css",
@@ -3558,6 +3605,7 @@
           "desktop-ui/neuralScene.test.js",
           "desktop-ui/neuralWorkspace.test.js",
           "desktop-ui/runtimeRefactor.test.js",
+          "desktop-ui/searchSettings.test.js",
           "desktop-ui/synapticBody.test.js",
           "desktop-ui/undoToast.test.js",
           "src/index.cli.test.js",
@@ -3932,7 +3980,7 @@
         "projects": 23,
         "settings": 22,
         "sync": 4,
-        "tools": 34,
+        "tools": 35,
         "voice": 3
       },
       "httpRoutes": [],
@@ -4163,6 +4211,8 @@
           "npm run test:scripts"
         ],
         "js": [
+          "scripts/android-target.test.js",
+          "scripts/android-task-report.test.js",
           "scripts/boundary-report.test.js",
           "scripts/capacity-fixture.test.js",
           "scripts/check-dependencies.test.js",
@@ -4184,6 +4234,7 @@
       "implicit": [
         "agent-core-bundle",
         "bridge-process-shutdown",
+        "gen-agent-core",
         "gen-interface-languages",
         "gen-module-map",
         "source-tests-task-replay",
@@ -4605,7 +4656,6 @@
       "desktopConsumers": [
         "src/domain/agent/capabilityElevation.js",
         "src/retrieval/intentRouter.js",
-        "src/retrieval/requestPolicy.js",
         "src/retrieval/selfVerification.js",
         "src/retrieval/verificationEvidence.js",
         "src/services/chat/chatExecutionRunner.js",
@@ -5292,6 +5342,27 @@
       "note": "B1-6 冻结 app.js 中央 click / submit 分发：新动作经 features/registry.js 登记，不加 case；同时守住功能模块不反向 import app.js。迁出 case 时同批删除测试内 BASELINE 对应名字",
       "features": [
         "desktop-shell"
+      ]
+    },
+    {
+      "id": "gen-agent-core",
+      "kind": "generator",
+      "generator": "scripts/build-agent-core.mjs",
+      "inputs": [
+        "shared/agent/**",
+        "src/shared/replyDocument.js",
+        "src/shared/sessionEvents.js"
+      ],
+      "outputs": [
+        "shared/agent/dist/**",
+        "ios/Melo/AgentCore/**"
+      ],
+      "check": "shared/agent/conformance.test.js",
+      "command": "npm run build:agent-core",
+      "note": "同一纯 JS Core 打包供 Android JavaScriptSandbox 与 iOS JavaScriptCore；Node 直接导入源码",
+      "features": [
+        "chat",
+        "tooling"
       ]
     }
   ]

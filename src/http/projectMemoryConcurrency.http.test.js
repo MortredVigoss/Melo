@@ -95,7 +95,12 @@ test('fresh and existing project memory survives concurrent saves, edits, sync, 
     assert.ok(Atomics.load(barrier, 1) > writesBefore, 'independent index writes overlap requests');
     await stop(); await start();
     const book = await request('/api/projects/memory-book?projectId=' + encodeURIComponent(project.id));
-    assert.equal(book.records.length, expected.size, 'no lost or duplicate memory after restart');
+    let rawDiagnostic = [];
+    if (book.records.length !== expected.size) {
+      const { withMemoryHome, iterateMemoryRecords } = await import('../memory/store.js');
+      rawDiagnostic = withMemoryHome(home, () => [...iterateMemoryRecords()].filter(row => expected.has(row.id)));
+    }
+    assert.equal(book.records.length, expected.size, 'no lost or duplicate memory after restart: ' + JSON.stringify({expected:[...expected],actual:book.records.map(row=>[row.id,row.text]),raw:rawDiagnostic}));
     for (const row of book.records) assert.equal(row.text, expected.get(row.id));
     const synced = await request('/api/project-memory-sync');
     assert.equal(synced.records.length, expected.size);

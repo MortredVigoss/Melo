@@ -73,6 +73,7 @@ test('full gate remains all-tests and daily gate is explicit about release cover
   assert.equal(pkg.scripts['test:full'],pkg.scripts['verify:red-green']);
   const full=await readFile(new URL('./verify-red-green.js',import.meta.url),'utf8');
   assert.match(full,/runCommand\('npm', \['run', 'test:unit'\]\)/);
+  assert.match(full,/runCommand\('npm', \['run', 'check:android'\]\)/);
   assert.doesNotMatch(await readFile(new URL('./run-unit-tests.js',import.meta.url),'utf8'),/currentTestPlan/);
 });
 
@@ -145,4 +146,11 @@ test('a failed resource preflight stops the real CLI before JS, browser or Swift
     assert.equal(await readFile(join(root,'preflight-ran'),'utf8'),'1');
     await assert.rejects(readFile(join(root,'must-not-run')),{code:'ENOENT'});
   } finally {await rm(root,{recursive:true,force:true});}
+});
+
+test('Android integration selects native checks and shared Core changes include Android', () => {
+  const native = planTests(['android/app/src/main/java/com/melo/android/device/DeviceAgent.kt'], tests);
+  assert.equal(native.android, true); assert.equal(native.swift, false); assert.equal(native.browsers, false);
+  for (const path of ['shared/agent/turn.js', 'shared/protocol/sync.schema.json', 'ios/Melo/Scene/scene.js', 'scripts/android.mjs', '.github/workflows/android.yml']) assert.equal(planTests([path], tests).android, true, path);
+  assert.equal(planTests(['src/server.js'], tests).android, false);
 });

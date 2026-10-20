@@ -59,6 +59,13 @@
 
 ## 4. 最新交接
 
+### 2026-10-20 — Android / Shared Core Integration（进行中）
+
+用户批准将 Mobile 整合到最新主线，建立 `codex/integrate-mobile-core-20261020`；父基线为 master `8772e92` 与 Mobile `2d36dbd`。保留主线 UI P2、统一检测、完成回执、Session Events、项目生命周期和历史图片修复，接入 Android 的 Context / Task Cache / 独立 HTTP Search。主线本身尚未合并。
+
+冲突处理保留新主线 Core Host/预算，移动最新 Router 纯函数体到 portable factory，补回 Mobile 的逗号否定边界与“不联网”限制；Node 保留原 Tool Schema，通过 Adapter 使用配置的 HTTP Search，Host 执行许可受共享计划限制。初轮 Core 4 项 RED 已修；Android JVM/Lint/Debug/R8 通过，Node 全量首轮仍有 6 项 RED，正在收敛 Routing 与项目记忆并发；macOS CI 待本分支实际执行。详见 [Integration 回执](docs/mobile-integration-20261020.md)。
+
+
 ### 2026-10-20 — melo主线（Codex）— #4 历史图片修复与原生验收
 - `e4e378a` / `a115577`：图片按可信生成位置恢复，修复既有错误登记；兼容任务回看替换展示附件 ID/URL。入口 `savedImages.js`、`imageRecords.js`；消息、原图及文件工具权限不改写。
 - 最终专项 16 HTTP + 2 浏览器、关联 982 项及完整发布 4356 JS / 35 Swift、安装/启动/浏览器全绿。原生旧图实点、原尺寸、NSSavePanel 保存与冷启动再开均通过；1289 × 1221、2,090,093 字节，副本与原件 SHA 相同。
@@ -143,6 +150,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | 记忆 / 检索 | `src/memory/`、`src/retrieval/`、`src/runtime/derivedIndexing.js` | 内置 ONNX 多语 embedding worker、本地 SQLite/FTS/向量、事实作用域与增量派生；使用记录只计实际进入 prompt |
 | 执行事件 | `src/shared/executionScene.js`、`executionMetadata.js`、`src/services/chat/executionPipeline.js` | 真实工具/模型轮次、公开摘要、结果、token/耗时白名单；未知保持未知，历史查看不重跑 |
 | 手机原生 | `ios/Melo/ChatStore.swift`、`ContentView.swift`、`SettingsView.swift`、`MeloApp.swift` | 本机聊天、角色、草稿、设置、图片和前后台；桌面关机不应阻断独立聊天 |
+| Android 原生 / 手机操作 | `android/app/src/main/java/com/melo/android/`；`device/DeviceAgent.kt`、`DeviceTaskLoop.kt`、`DeviceContextBudget.kt`、`MeloAccessibilityService.kt`、`AppCatalog.kt` | per-Chat 文字 Job；Chat 内显式进入手机操作并捕获角色 / 项目 / 模型，设备独占。完整 App 搜索、有界恢复、原生本步确认、重观察后验证可见结果；取消 / 息屏停止。凭证用本机 Keystore，原始屏幕与 App 列表不落盘同步；各平台分别验收 |
 | 手机授权 | `CodexOAuth.swift`、`ChatGPTAccount.swift`、`CodexLoginView.swift`、`Keychain.swift` | 设备码 / PKCE / 身份签名 / 刷新；新键 `codexAccounts`，连接 ID 保留 `chatgpt`；不复制桌面 token |
 | 手机同步 / 共享渲染 | `mobile-sync/`、`ios/Melo/SyncWorkspace.swift`、`ios/Melo/Scene/`、`ios/scripts/build-scene.py` | schema 生成 JS/Swift 约束与共用样例；共享资源 manifest/hash；同步不是模型登录 |
 | 手机上下文与团队 | `PhoneContext.swift`、`AgentProfile.swift`、`AgentTeam.swift`、`ChatStore.swift` | 与桌面共用容量默认值；消息原文保留、话题卡可回读；同一份过滤证据用于主请求/核实/成员，成员读取项目覆盖并受父级工具范围与自己的预算限制 |
@@ -196,6 +204,12 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 外部跑分证据：`/Users/mortred/Documents/New project/benchmarks/melo-swe-docker-agent-20261014/report.md`。网站旧目录 `site/`、`/Users/mortred/Desktop/melo_web` 与 `melo-universe/` 是不同产物；不能自动互相覆盖。
 
 ## 7. 保留的产品决定
+
+- 2026-10-17 用户要求 Android 与其他端保持一致，避免各端自行维护核心功能。后续通用能力按共享 Core / 平台 Adapter 划分：Skill、Tool 注册与路由、Loop / 取消 / 结果语义须同源维护并共同验证；平台实现差异显式声明。仅共用 Sync Schema 或同名 Tool 不能称为核心已统一；手机独立运行、设备本地权限与凭证边界保留。共享 Runtime 的具体落地方式尚未选定或实现，本约束不等于已完成三端重构。
+
+- 2026-10-17 用户要求统一整条执行逻辑并质疑 Google 浏览器抓取及 Codex 能力解释。已形成[具体设计审阅稿](docs/specs/2026-10-17-shared-agent-search-design.md)：同源本机 JS Core 为推荐路线，Native / HTTP Search 优先，Playwright 仅显式 fallback；这是建议而非用户已选定 Runtime。Hosted Tool 的支持须验证实际连接，不能由 API transport / Function Calling 推断；凭证不因统一配置而自动进入资料同步。
+
+- 2026-10-17 用户认可共用 Agent Core + Platform Adapter，并要求先检查循环、共享状态、Memory / Context 和真实能力清单。方向认可不等于 Runtime spike 或迁移已完成；[当前检查](docs/agent-core-audit-20261017.md)确认的边界应先进入修复与 Conformance。
 
 - 副线统计沿用 `src`、`desktop-ui`、`desktop-app`、`scripts` 下 `js/mjs/cjs/ts/tsx/jsx/swift/sh/applescript/json/html/css` 文件的 `wc -l` 合计，含注释和空行，不含 `ios/` 及目录外内容；不是全平台总代码量，历史结果不代替实时统计。
 - 2026-10-15 用户最新决定：仅用户明确要求才运行 `git pp` 或等价脚本；不自动审查、重审或推送。测试、本地提交、已授权修复持续推进。被要求运行时仍保留推送门禁。
