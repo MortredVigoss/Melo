@@ -1,3 +1,8 @@
+## 2026-10-20 - Android context and original-history recovery
+
+Codex follows issue #7: preserve originals, use shared model budgets and persist excerpt provenance. Source switches filter Host instructions before chat and device handoff. No data replacement or app installation.
+Shared Core 139 tests passed; Android CI pending.
+
 ## 2026-10-20 — #8 让回看与续聊指向同一事件
 
 Codex 复用实际执行记录，保留原有有界详情与来源；中断操作的未知结果不会触发重放。
@@ -106,252 +111,48 @@ iOS 仍缺 macOS 原生验收，Fold6 尚未装 0.6.0；Skill / Context / Memory
 72 项 Core / Router / Chat / 协议 / MCP / Budget 离线回归通过；首次检查发现冲突解析遗漏导出，已修后重跑。Xcode 项目重新生成保留新 SpeechText 与 SharedAgentCore，未做 Swift 编译。
 本轮只做本地整合，不访问真实模型或安装私人手机；Search WIP 将在合并后恢复继续验证，无 push / git pp。
 
-## 2026-10-18 — iPhone 覆盖安装 0.7.0 (32)
 
-用户要求手机也覆盖安装并把版本升到 0.7 开头。`MELO_IOS_VERSION=0.7.0 MELO_IOS_BUILD=32` 走 `ios/scripts/build-personal.sh` 签名构建（日常门禁已过：3857 JS + 29 Swift 套件，含新增 SpeechTextTests 与日期用例），`devicectl` 对连接中的 Mortred (3) 同包覆盖 `com.melo.iphone.mfpiao`，安装后回读版本 0.7.0 (32)，普通启动 PID 36090。未卸载、未清数据。证据 `.tmp/ios-install-0.7.0/`。本次带上手机侧日期上下文、朗读要点化与语种选择、桌面摘要同步。真机 UI 与真实模型回复未在本轮复验。（Claude）
-
-## 2026-10-18 — 跨午夜“今天”被模型更正、手机朗读语言与内容、工具组激活放宽
-
-用户反馈：前一条回复说“今天…”，过了零点再问别的，模型道歉说上一条错了；手机自动朗读只用系统语言、读完整回复连网址一起读。修复：系统提示的当前日期段加“早先消息按各自时间理解，不要更正/道歉”规则，日期变化时本轮加【日期提示】（`src/services/chat/dateContext.js`，turn 段，不动缓存前缀）；iPhone 指令原本完全没有日期，现在带当前本地日期与同样的规则（`ConversationHistory.dateInstructions/dateChangeNote`）。iPhone 朗读新增 `SpeechText.swift`：按桌面 `extractVoiceSummary` 同一套规则去网址/链接/代码/表格/标记并压缩到要点，语音按回复语种 → 语音语言设置 → 系统语言选择。工具组：浏览器组在 `MELO_CDP_ENABLED=1` 时首轮即可用（恢复 A2 之前的语义），媒体/文档组也按对话里已有的附件和更宽的措辞激活。（Claude）
-
-验证：新增 `dateContext.test.js`、Swift `SpeechTextTests`、`ConversationHistoryTests` 日期用例；iOS 模拟器 Debug 构建通过。工具调用的其余反馈（网页搜索、截图、图片预览具体失败方式）待用户补充复现。Final commit: 见本条提交.
-
-## 2026-10-18 — 让 GitHub 首页和更新记录更容易读懂
-
-用户要求先核对整体代码，再重写产品介绍和 GitHub 简介；公开改动说明只说主要变化，不再堆内部实现细节。Codex 保留英文与兼容性定位，详细技术记录仍保留供接手。
-本次授权包含 GitHub 文档与 About 发布；仅做文档链接、命令及 GitHub Markdown 渲染验证，不重跑产品 gate，不运行 git pp，不改账号数据或安装应用。发布回执保留在本地证据目录。
-
-## 2026-10-17 — 设计方案第三批：工具调用记录与回放、远程 SQL 受众、三协议原生工具、MCP 隔离、手机摘要同步与记忆冲突
-
-第三批收尾用户拍板的方案。工具：每次调用生成一条 ToolInvocationRecord 追加到 `desktop/execution-scenes/<runId>.tools.jsonl`（args 脱敏、hash、模型实际看到的输出 ≤8000），`tool_calls_start`/`tool_calls_done`/持久化 `toolResults` 三个投影同源；取消或失败的轮次把工具轨迹（≤600 字纯文本）写回对话，下一轮与压缩都能看到。协议：`functionCalling` 从 `native` 布尔改为 `protocol ∈ responses|anthropic|chat-completions|xml`，Anthropic 原生 `tools/tool_use/tool_result`（含 cache_control）与 chat-completions `tools/tool_calls`（默认仍走 XML，`toolCalling:'native'` 或 `MELO_CHAT_TOOLS=1` 开启），Responses 请求逐字节不变；每轮工具链以协议中立的 IR 存进 `metadata.toolChain`。MCP 工具改进独立 `mcpRegistry`，按 Agent 白名单在 prepare 时合并，函数名可读 `mcp__server__tool`。记忆：召回 SQL 层带 audience（远程渠道在查询里就看不到 `audience=local` 的项目/个人/Agent 行），corrections 组拆为 agentNotes/sharedFacts 各 4 席。手机：工作区 `conversation` 记录带可选 `compact`（边界、计数、摘要 ≤8KB、卡片），计数大者胜；iOS 只取边界后消息并前置摘要；记忆行冲突状态与「采用桌面版 / 采用手机版」。（Claude）
-
-iOS Swift 改动未在本机编译（无 Xcode 环境），`generate-sync-contract --check` 与 contracts 固件已对齐；需要用户在 Xcode 跑一次。Final commit: 见本条提交.
-
-## 2026-10-17 — 继续以固定范围提供源码统计
-
-用户要求统计；Codex 重跑既定四目录及扩展名范围，结果更新总览，保留旧快照的历史边界。
-仅文件计数和文档快照更新，无产品测试、安装或提交，保留其他线程 WIP。
-
-## 2026-10-17 — 设计方案第二批：账本式话题卡 + read_history、项目记忆本 + 个人档案、RunBudget、附件外置
-
-用户拍板后的第二批（1D、2B、C1、附件外置）。长对话：原文近窗收回到 64k（`MELO_HISTORY_WINDOW_TOKENS` 可调），压缩改为只追加话题卡（`chat.compactCards`，`compactSummary` 变成卡片渲染，旧摘要自动迁成历史卡），新增 `read_history` 原文读回工具与话题原文摘录进 turn 段，工具结论进摘要转录。记忆：项目记忆本（自动行带 `[auto]`、同主题替代、user/confirmed 不被 auto 顶掉、项目页「记忆本」、`POST /api/projects/memory-book`）与个人档案进稳定前缀，协议加可选 `section/bookStatus`。工具：每轮一个 RunBudget（20 min / 400k 输入 / 120 次工具，成员/技能/团队取子预算并回记父预算，超限 `BUDGET_EXHAUSTED`）。存储：用户附件 >4KB 的 data URL 落盘 `desktop/attachments/`，消息只存 `/api/media/attachments/<id>` 与 `storage:'file'`，发给模型前再读回；旧对话首次发消息时惰性迁移。（Claude）
-
-设计承诺：`messages[]` 的顺序与集合永不被话题机制改动（与稳定前缀布局兼容）；卡片只增不改、降级卡才被替换；`read_history` 与 `search_history` 共用执行上下文的受众/项目作用域；记忆本只在事实变化时变，不逐轮召回；附件外置任何写失败都保留内联原样。
-
-沙箱相关套件通过，Mac `npm test` 为合并门禁。Final commit: 见本条提交.
-
-## 2026-10-17 — 工具调用 / 长对话 / 跨线程记忆：设计审计与可选方案
-
-用户要求在修复落地后再审计三条链路的设计并出方案。只读三路扫描 6adc270；不重复 bug 层审计，只评估设计并给可选项，等用户拍板后实施。（Claude）
-主要判断：工具数组逐轮变与结果无统一 envelope 是工具线的根；长对话的首因是"全量存储/回传/渲染"而非窗口大小，原版 1B 重排历史与今天的缓存布局冲突，改推 1D（固定近窗 + 账本式话题卡 + read_history）；跨线程记忆推 2A 剩余 + 2B 项目记忆本/个人档案放稳定前缀，2C 只保留为显式工具。
-
-发现一个今天引入的 bug：`upgradeDegradedCompact` 重摘要未传 `previousSummary`，列入第一批修复。六个待用户决定的问题见文档 §6。
-
-纯文档，未改产品代码。见 `docs/tool-conversation-memory-design-20261017.md`。Final commit: 本条文档提交.
-
-## 2026-10-17 — 以本机运行和真实入口验证共享，而不只对齐 Schema
-
-Codex 将同源 Core 接到 Node Main 与 Android Chat / Device Probe；20 个 Conformance Fixtures、34 Emulator runtime、115 JVM / Lint / Debug / R8 通过。关闭某个 Chat 不影响其他 isolate，所有测试只用本地 Fixture。
-广泛 gate 暴露本次静态资源 wrapper 路径回归，已修并复跑浏览器；旧排版失败在独立 baseline 也复现，inode suite 在 tmpfs 71/71，Ruby 缺失仍单列，不将日常 gate 称全绿。
-iOS 仅 bundle / Adapter / 测试源码和 JS renderer gate，缺 macOS 原生验收，暂未切换其生产 Loop；Search executor / 配置与 Memory / Context 等仍待迁移，未装私人手机或推送。
-
-## 2026-10-17 — 先保留原行为，建立可移植 Core 的真实源码入口
-
-按仓库移植约定逐字提取纯决策，旧 Node 入口保留兼容导出；Router 仅以 factory 捕获 Host 依赖。逐字比对已确认，策略改变留给独立提交。
-原有 Search / 请求路由 / URL / Skill 相关离线检查 GREEN；本阶段没有手机新 Search 或共享 Loop，未安装或访问真实服务。
-
-## 2026-10-17 — 先关闭跨作用域定义串用和重复执行，再迁移 Core
-
-用户明确选择 A：三端本机执行同一份 JS Core，手机独立运行；沿用已认可的 Fixture / 本机凭证边界，不重复要求设计或 Key 确认。
-Cache 三反例及 Android 跨轮身份二反例先 RED 后 GREEN，115 JVM 通过；iOS 同类测试源码已补但无 macOS 验证。当前只完成迁移前置保护，尚未接共享 Runtime / 新 Search，未调用真实模型、操作手机或推送。
-
-## 2026-10-17 — 先区分持久化、调用上下文和真正共享的执行逻辑
-
-用户认可共用 Core + Adapter，并要求先检查 Loop / State / Memory / 能力。本轮确认三端尚未共享执行核心；父子任务传递有界上下文和交接，资料 Sync 也不等于共享在途状态。
-65 Node 回归 + 3 Node 诊断、116 JVM（含 3 诊断）通过，复现 Cache 定义串用、有限但无效模型往返及 Android Context / call ID 缺口；诊断 GREEN 不表示修复。首次外加测试源未编译，最终明确核对测试 XML 并清理临时源码。
-当前只完成源码检查、隔离证据和报告；未修生产逻辑、访问真实模型 / 账号 / 手机或推送。先将确认的边界纳入 Core 修复与 Conformance，Runtime spike 和平台迁移仍待做。
-
-## 2026-10-17 — 把统一执行逻辑落实为可审阅的 Runtime 选择
-
-用户要求三端共用业务逻辑，并质疑浏览器搜索及此前 Codex 能力解释。Codex 区分 API transport、Hosted Tool 与应用 Loop，建议同源本机 JS Core 和 Native / HTTP Search 优先，保留手机独立运行。
-具体 Runtime 属新设计选择，已比较三条路线并写成审阅稿；不能把统一 Schema、文档或已声明原生 Tool 当作真实能力验收。按 brainstorming 的设计确认要求，产品迁移待方案认可；不新增收费供应商或同步凭证。
-仅做源码 / 官方资料核对、引用路径与 diff 检查；未改产品 / 安装依赖、调用模型、操作手机、构建安装、推送或运行 git pp。
-
-## 2026-10-17 — 在 Fold6 上保留失败起点，区分安装与最短路径验收
-
-用户连接并解锁手机后，Codex 同签名安装 0.5.1，保留原 10 Chat / 1 角色和辅助服务，沿用已有凭证授权。最终版构建 / 113 JVM / 签名通过，40 runtime 属于版本号更改前的同逻辑基线。
-真实模型首轮 12 步受阻；仅按系统返回退出旧搜索页后，重试 5 步 / 23.806s 完成，均无 list_apps。更正此前按末步推断整轮最短的过早结论，不把受控起点成功外推跨包恢复或所有页面状态。
-首次失败及窗口过期恢复保留，未关闭保护 / 改超时；额外步骤仍是待优化项。只新增一个 QA Chat，无 Key 读取 / 迁移或发布；共享 Core / Search 仍未实现。
-
-## 2026-10-17 — 把 App 解析留在本机，减少无效模型往返
-
-用户指出手机工具像固定先列大量 App；Codex 核对后优先修现有 Android Adapter 的能力使用和回传边界，不将此当作共享 Core 已完成。
-113 JVM / 40 Android 16 runtime、Lint / Debug / R8 Release 通过。新增测试促使精确候选收敛；旧 guard Fixture 改用有效不同目标隔离保护规则，失败记录保留，停止断言未弱化。
-三协议 HTTP Fixture 直接打开需两次子任务模型请求，不能外推真实 provider 或全 Chat 成本；Windows ADB 未发现 Fold6，本轮未读取最近实机记录 / 调真实模型 / 覆盖安装或发布。
-
-## 2026-10-17 — 将跨端一致性作为核心抽取的维护约束
-
-用户明确 Android 与其他端应保持一致，避免各自维护；Codex 核对现有共享契约及三端执行入口后，将此决定写入跨线程共用总览。
-后续聚焦同源 Tool / Router / Skill / Loop，平台差异由 Adapter 声明；保留手机独立运行。共享 Runtime 仍待设计，未把相同 JSON Schema 说成已共享业务核心。
-本轮仅源码核对和文档检查，不新增产品测试结论，未改产品代码 / 操作设备 / 安装或推送。
-
-## 2026-10-17 — 先核实能力缺口，再决定手机查询的路由
-
-用户要求 pull 并指出餐厅查询不应默认占用屏幕，随后提出抽出核心能力。Codex 仅同步与核对源码，没有调用手机或真实模型。
-确认现有 Android 的 Skill 将查询直接路由到 Phone Use，缺少联网检索；桌面搜索并不会随源码合并自动成为 Android 能力。后续应将 Tool Contract / Router 与 UI 分离，通过平台 Adapter 接入 Search 和 Phone Use，保留手机独立运行要求。
-合入 origin/master `6adc270`，双方工作保留；目标 Tool Calling / Search Router / Context Budget / Sync Contract 共 71 tests 通过，Android 源码与 pull 前一致。未重跑完整 gate、未安装新 APK、未推送。
-
-## 2026-10-17 — 用真实 Maps 查询证明手机能力已融入普通 Chat
-
-用户认可自然 invoke 后，Codex 完成普通 Chat 的 Tool Calling，不再要求独立助手 / 模式切换；微信输入按用户要求后置。普通问答不启动设备，当前信息强制实时读取，不能把旧 Cache 结果当现在事实。
-最终 109 JVM / 39 runtime、Lint / Debug / R8 / 签名通过；前两轮夹具失败和 Emulator OOM 保留且未冒充通过。Fold6 同包 Maps 9 步读取当前列表，追问“第二家”5 步重新核对，均原 Chat 续答；7 Chat / 1 角色在安装时保留，另留 QA 对话供回看，无消息发送 / 预订 / 致电。
-产品提交 954b382；Phone Use 开启暂非 Streaming，小红书 / 本版 folded 实测及 Fold Cache 分区待后续。没有新增插件或读取手机 Key，没有推送 / git pp 或整仓 gate。
-
-## 2026-10-17 — 让手机能力成为普通对话中的按需工具
-
-用户明确不希望进入单独手机助手或切换模式，认可内置 Skill + Chat Tool Calling 并要求开始；微信输入后置。Codex 接线后普通问答不读屏，查询要求实时观察，避免把旧 Cache 答案当作当前事实。
-109 JVM 与首轮新增 5 项 Native 链路通过；完整 runtime 曾遇夹具生命周期失败及 Emulator 内存中断，最终包与实机待验，不以局部通过冒充完整验收。沿用既有凭证授权，开发使用 Fixture，无新增插件安装 / 权限或推送。
-
-## 2026-10-17 — 用同一最终 APK 验证 Fold 双屏微信画面
-
-0.4.1 的外屏失败没有被忽略；Codex 修复启动窗口交接后，0.4.2 同包两种模式均用真实模型只读验证，明确可读且目标为微信，不再以“得到截图”冒充窗口正确。
-99 JVM / 34 Android runtime、Lint / Debug / R8 / 签名通过；覆盖安装前后 7 Chat / 1 角色保留。原发送任务未重跑，没有消息发送。
-参考 AutoInput 的可行性讨论另以外部 ADB 在微信搜索框实测坐标点击 / ASCII 输入 / 清除；不等于已接入 Melo 或测试中文。Fold Cache 布局隔离和完整视觉输入仍待做。未推送 / git pp 或整个 repo gate。
-
-## 2026-10-17 — 用 Fold 两种状态的反例约束截图修复结论
-
-用户要求查看微信最新失败并提醒两种屏幕布局；Codex 只读复现，没有重跑消息发送。合成图片验证现有模型可看图，实际误捕获 Samsung 手势窗口。
-0.4.1 的 95 JVM / 34 Android runtime 与 Lint、Debug / R8、签名均通过；实机展开可读，但外屏仍失败，明确保留反例，不能称全修复或归因微信主动限制。
-同证书升级保留资料 / Key，微信首页仍 0 节点；后续继续查启动窗口时序及输入 Backend。用户提出参考 AutoInput，不等于已经安装该插件或授予新权限。未推送 / git pp。
-
-## 2026-10-17 — 工具调用链优化：估算器与请求裁剪无分配化、循环常量上提、config 读缓存
-
-用户追加要求"把工具调用的代码去优化一下"。只读复核整条链（executor → functionCalling → runner 工具循环 → fitter）后，只改热点且输出等价：token 估算与截断改为单次扫描（16× / 60×），10 轮工具循环的请求裁剪 156ms→11ms，循环内每轮重建的分发常量上提，config.json 改 stat 校验缓存。（Claude）
-并发成组 / 串行 flush 的正确性策略与 executor 的每次 realpath/stat 保留不动；顺带修复"编辑语音风格后首次点保存被吞"的既有 UI bug。
-
-沙箱等价性脚本逐样本比对估算/截断结果一致；相关套件通过。Final commit: 见本条提交.
-
-## 2026-10-17 — 审计四批修复全部落地：窗口拉长、缓存友好提示词、Discord 归档、Agent/上下文加固
-
-用户决定：审计报告里的问题"全部修"，Telegram/Discord 暂时归档（保留配置与历史），单条对话窗口拉长（云端模型默认 160k、历史窗口 114k，可用 `MELO_CONTEXT_BUDGET_TOKENS` 覆盖）。（Claude）
-用户另指定：完成后直接合并 master 并 push，不跑 git pp / Codex 审查；之后再单独优化工具调用代码。
-
-设计承诺（diff 看不出的）：窗口、压缩触发、请求上限来自同一个 `resolveContextBudget`，三者不再独立漂移；逐轮段落放进当前用户消息而不是系统提示（`MELO_TURN_CONTEXT_IN_SYSTEM=1` 可回退）；归档只在运行时派生，不改存储里的 enabled；搜索历史的受众/项目作用域来自执行上下文，模型参数不能放宽；分层 gate 改为传递闭包，新增 `services→http` 禁止。
-
-沙箱全量 JS 回归 3628/3649 通过，19 项失败与基线完全一致（Swift/ios 缺目录、Linux inode 语义、无 rg、ORT 非 Mac 二进制），见 `docs/architecture-agent-context-audit-20261017.md` §7。Final commit: 见本条提交.
-
-## 2026-10-17 — 架构 / Agent / 上下文三路只读审计，报告与分批方案
-
-用户要求扫一遍架构问题、Agent 设计问题、上下文处理能力并出报告和方案。只读代码，三路并行扫描，不重复既有审计，只列新发现与"文档说已修 / 代码没修"。（Claude）
-用户另确认金冬天语音人设改为纯中文、不夹韩语（MiniMax 韩语发音差）；已经由运行中实例的 `/api/agents/update` 写入 `agentVoiceSettings`，未手改 state.json。
-
-三条 P0 在运行实例实测或逐行复核：POST `/api/tts/*` 因 `server.js:920` 漏传 `requireLocalOrigin` 全部挂起；窗口 52k 与摘要触发 80k 之间历史静默丢失；`search_history` 不分受众。`agent-loop-audit` 四项只修了 #4。方案分四批，第一批 7 条小修约 1 人日，并说明与 `context-memory-plan` 1B/2B 的先后关系。
-
-纯文档，未改产品代码，未重跑 `npm test`。见 `docs/architecture-agent-context-audit-20261017.md`。Final commit: 本条文档提交.
-
-## 2026-10-17 — 0.6.0 合并、推送并装到手机
-
-用户要求合并、push、安装三项一起做。master 已有 Codex 的 0.5.24 (30) 对齐，先合入分支解决冲突，构建号顺延为 31。（Claude）
-安装前私有备份，覆盖后比对数据保留；桌面原生 app 未在本轮重建。未运行 git pp。
-
-合并后本地 `npm test` GREEN（日常层级，28 个 Swift 套件）。Final commit: `8b84de3`（推送）及本条文档回执.
-
-## 2026-10-17 — 手机版本升到 0.6.0
-
-用户决定：多图逐张、2K/4K、视频、多轮图片上下文和回复中补充一起装机时，版本从 0.5.x 升为 0.6.0，之后小修按 0.6.x 递增。（Claude）
-内部构建号接 master 的 0.5.24 (30) 递增为 31，保证覆盖安装可识别为新版本。
-
-## 2026-10-17 — 回复进行中不再锁按钮，可中途补充，过程在对话里可见
-
-用户指出回复中不能换 Agent / 模型 / 上传是 bug；要求像 ChatGPT 一样中途补充，并在主界面而非只在神经网络里看到“正在干什么”。（Claude）
-平台差异：手机单次请求无法半途插入，补充=停止后带补充重新开始；电脑在工具循环的下一次模型调用前插入，保留已完成的步骤。
-
-补充只在本轮存在，结束时未用的交还客户端作为下一条发送；失败或停止时退回输入框，不静默丢弃。
-
-本地 `npm test` GREEN（日常层级，含 26 个 Swift 套件与新浏览器测试）。Final commit: 见本分支最新提交.
-
-## 2026-10-17 — 完整源码与两台设备使用同一版本
-
-用户补充明确将所有线程未提交改动一起发布；Codex 已统一提交当前产品源码，保留审查文档里尚未修复问题的边界。公开 README 继续只用英文。
-手机同包覆盖 0.5.24 (30)、桌面覆盖并重启均完成，私有备份与前后数据比对通过；账号权限未改。日常检查和原生夹具通过，未重复真实模型与长后台验收。
-产品提交 `8cd3eff`；含英文说明的 `063fd11` 已推送并核对远端与 README，一并纳入此前未提交/未推送产品工作。本条为最终回执；未运行 git pp。
-
-## 2026-10-17 — 对齐手机时同时收敛双端差异
-
-用户明确桌面也要同步，并授权手机覆盖、git push 和英文项目说明更新。用户随后明确把其他线程未提交改动也一起提交推送；本轮统一发布当前完整产品源码，私有备份与构建产物不入库。
-复核 Claude 已合入行为，补团队汇总预算和原生/网页材料差异；不将 iPhone 团队描述成具备桌面文件工具。当前完整树日常 3663 JS / 26 Swift / 浏览器 GREEN；功能夹具与原生 UI 已核对，签名覆盖及桌面更新继续。
-
-## 2026-10-16 — 用真实 Cache 命中减少手机操作模型往返
-
-用户确认 Similar 允许自动改写；Codex 完成 Task Cache，保留旧 Run 无法还原与不稳定目标不能盲录的边界。修改后必须验证，不能直接恢复自动信任。
-91 JVM / 33 Android runtime / 4 viewport UI 与 Lint、Debug、R8、签名 / alignment 通过；Android ICU 专项缺陷由 Native 回归发现并修正。
-Fold6 原资料和 Key 保留；真实入口变化触发安全 Probe 更新后，Exact 0 请求 1.182 秒、Similar 1 请求 7.169 秒，另验 Miss、冷启动、编辑待验证 / 手动运行及删除。首次路径失效明确保留为反例，不算零模型成功。
-JSON 动作修改属 Emulator 证据；实机只读系统导航。未推送、未运行 git pp 或整个 repo 发布 gate，Node WSL 基线另列。
-
-## 2026-10-16 — 将成功操作作为 Task Cache 自动复用
-
-用户明确新目标先查相同 / 相似脚本，未命中才 Probe，成功自动缓存；并确认 Similar Hit 可由 LLM 精简改写，不以只做手动宏替代此意图。缓存仍可编辑 / 删除。
-Codex 首轮生产接线已通过 84 JVM tests；后续 Cache 端到端、新包与实机仍待验，不将旧 0.3.1 的 runtime 或签名包当成新功能证据。
-可信写回与完成结果作为同一资料更新；改写不得发明 selector 或替换用户参数。现有历史 Run 不含可重放参数，明确保留不可转换边界。未推送或运行 git pp。
-
-## 2026-10-16 — 用 Fold6 真实失败修正完成判断与重复执行
-
-用户授权直接实测；Codex 同证书升级 0.3.0 并核对原聊天 / 角色计数保留。真实 Modal 任务已经打开设置，却重复启动并耗尽 30 步，旧 Fixture 通过不能代表实机完成。
-Fold6 展开设置实际由两个独立窗口组成，旧观察只给 active 详情；同时动画像素变化能逃过无进展检测。0.3.1 首份包真实模型 5 步打开设置、10 步进入 Bluetooth，均 finish 重查成功；未切换系统选项。
-测试器不在执行中调用默认 UiAutomation，避免它抑制 AccessibilityService；未读取或迁移用户凭证，未更改系统选项。
-最终 67 JVM / 25 Emulator runtime、Lint / 双变体 / signature / alignment 通过；后加 modal guard 的 gate 与较早实机包分开记录。用户认可的 Task Cache 是下一阶段，未混同已交付行为。
-
-## 2026-10-16 — 用可见证据完成手机任务，并接入当前 Chat
-
-用户认可优先级并要求开始；Codex 先补结果证据、动态目标与有界恢复，再接 Chat，保留当前模型、账号与用户数据。
-最终 59 JVM、24 Emulator runtime、2 viewport UI 与 9 项工程 tests 通过；Lint / 双变体 / signature / 16 KiB alignment 已验。修正旧 Fixture 固定 Prompt 匹配历史 Run 的串线，未增加 Timeout 或跳过断言。
-真实模型、Fold6 与远端 CI 未运行；Node WSL identity 失败不属于 Android runtime，仍保留为独立待修边界。未自动推送或启动 git pp。
-
-## 2026-10-16 — 用实际执行边界和失败证据决定 Mobile Use 下一阶段
-
-用户要求全面审视 repo 并给出下一步；Codex 以当前源码、关键链路及临时 Fixture 形成审视，未开始新产品实现或操作手机。
-全 JS 新跑 3642 项：3608 pass、15 fail、19 skip；8 项缺 Chrome 默认路径、1 项缺 Ruby，6 项文件身份检查在 WSL 独立复现。inode 对照仅代表本机文件系统，不外推其他平台。
-建议先补目标完成语义、动态目标校验和恢复，再接聊天；测试 gate / 平台契约与文件身份问题单列。13 项发现区分代码确认、复现和待验风险，证据与重现入口见 repo 审视文档。
-
-## 2026-10-16 — 在最新主线基础上隔离后续 Mobile Use 开发
-
-用户要求 pull 并为现有工作创建新分支；Codex 保留 Android 历史与未提交修复，合入最新主线后切换到 codex/mobile-use-features。
-说明与进度冲突同时保留双方内容；Android 源码与保存的修复一致，iPhone / sync / shared protocol 与拉取的主线一致。
-本轮 36 JVM、Debug 构建、90 同步与 41 contract 回归通过；未将上轮 runtime 或实机结果当成本轮验证。工作区供下一步 Mobile Use 继续，游戏启动复测仍待完成。
-
-## 2026-10-16 — 保存已验证的 Home 修复，准备继续 Mobile Use
-
-用户要求拉取最新主线并将当前 Mobile 工作转入新分支；Codex 先保存上轮中断前未提交的修复，不丢弃现有 Android 工作。
-0.2.3 上轮已通过 36 项 JVM、17 项 Android runtime、Lint、优化 Release 和签名 / alignment 检查，且已覆盖安装 Fold6；这些是上轮结果，本轮未重跑。
-实机已观察到模型成功回到 Launcher；游戏启动复测随上轮中断，未取得完整结论，不记录为游戏启动成功。
-
-## 2026-10-16 — 多图逐张、2K/4K、大图副本和视频理解，两端一起做
-
-用户在 0.5.23 实机后提出四点并要求按方案顺序全部完成：多图只修第一张、24 MB 上限、视频读取、出图分辨率。（Claude）
-Codex 是否接受指定尺寸未实测，采用“拒绝即降级一次并写明”；视频理解仍是“画面 + 文字稿”，模型不直接收视频文件。
-
-多图与尺寸的判断规则两端共用同一份用例；视频抽帧间隔两端一致。
-
-本地 `npm test` GREEN（日常层级，含 25 个 Swift 套件）。Final commit: 见本分支最新提交.
-
-## 2026-10-16 — 让等待与完成用时可以核对
-
-Codex 按用户要求添加计时和图片进度。百分比以已保存成果为依据，服务未提供的内部进度不按时间猜测；完成记录随历史固定。
-本轮不包含先前循环审查的修复，不运行 git pp、推送或安装；共享 WIP 保留。
-当前树日常 3659 JS / 26 Swift 与浏览器 GREEN；Debug 构建、模拟器原生聊天和任务空间实看通过。只提交本轮功能，证据层级和未提供的服务进度已记录。Final commit: `c0e0725`。
-
-## 2026-10-16 — 按相同口径刷新副线统计
-
-用户再次要求统计；Codex 重跑既定源码范围并更新总览，保留较早快照的时间边界。
-本轮仅文件行数核对和文档快照更新，未测试产品或提交其他线程 WIP。
-
-## 2026-10-16 — 核对 UI 是否仍是同一套设计语言
-
-用户要求审计，Codex 对照规范、当前共享 WIP 与桌面实际显示；明确区分模块身份色、状态语义与意外分叉，不借审计重做界面。
-确认六类组件接入差异，手机 Form 材质仍需原生视觉复核。本轮只有报告和交接；未改产品或用户数据、未安装/推送，其他线程暂存保留。
-验证为原生桌面首页、浏览器页面/浮层及计算样式、双端源码；未跑产品 gate。报告本地提交 `1610519`，交接片段保留 WIP。
-
-## 归档摘要（2026-10-16 及之前的较旧条目）
+## Archived progress (older entries)
+
+- 2026-10-18 — iPhone 覆盖安装 0.7.0 (32) 用户要求手机也覆盖安装并把版本升到 0.7 开头。`MELO_IOS_VERSION=0.7.0 MELO_IOS_BUILD=32` 走 `ios/scripts/build-personal.sh` 签名构建（日常门禁已过：3857 JS + 29 Swift 套件，含新增 SpeechTextTests 与日期用例），`device
+- 2026-10-18 — 跨午夜“今天”被模型更正、手机朗读语言与内容、工具组激活放宽 用户反馈：前一条回复说“今天…”，过了零点再问别的，模型道歉说上一条错了；手机自动朗读只用系统语言、读完整回复连网址一起读。修复：系统提示的当前日期段加“早先消息按各自时间理解，不要更正/道歉”规则，日期变化时本轮加【日期提示】（`src/services/chat/dateContext.js`，turn 段，不动缓存前缀）；iPhon
+- 2026-10-18 — 让 GitHub 首页和更新记录更容易读懂 用户要求先核对整体代码，再重写产品介绍和 GitHub 简介；公开改动说明只说主要变化，不再堆内部实现细节。Codex 保留英文与兼容性定位，详细技术记录仍保留供接手。
+- 2026-10-17 — 设计方案第三批：工具调用记录与回放、远程 SQL 受众、三协议原生工具、MCP 隔离、手机摘要同步与记忆冲突 第三批收尾用户拍板的方案。工具：每次调用生成一条 ToolInvocationRecord 追加到 `desktop/execution-scenes/<runId>.tools.jsonl`（args 脱敏、hash、模型实际看到的输出 ≤8000），`tool_calls_start`/`tool_calls_done`/持久化 `t
+- 2026-10-17 — 继续以固定范围提供源码统计 用户要求统计；Codex 重跑既定四目录及扩展名范围，结果更新总览，保留旧快照的历史边界。
+- 2026-10-17 — 设计方案第二批：账本式话题卡 + read_history、项目记忆本 + 个人档案、RunBudget、附件外置 用户拍板后的第二批（1D、2B、C1、附件外置）。长对话：原文近窗收回到 64k（`MELO_HISTORY_WINDOW_TOKENS` 可调），压缩改为只追加话题卡（`chat.compactCards`，`compactSummary` 变成卡片渲染，旧摘要自动迁成历史卡），新增 `read_history` 原文读回工具与话题原文
+- 2026-10-17 — 工具调用 / 长对话 / 跨线程记忆：设计审计与可选方案 用户要求在修复落地后再审计三条链路的设计并出方案。只读三路扫描 6adc270；不重复 bug 层审计，只评估设计并给可选项，等用户拍板后实施。（Claude） 6adc270, 20261017
+- 2026-10-17 — 以本机运行和真实入口验证共享，而不只对齐 Schema Codex 将同源 Core 接到 Node Main 与 Android Chat / Device Probe；20 个 Conformance Fixtures、34 Emulator runtime、115 JVM / Lint / Debug / R8 通过。关闭某个 Chat 不影响其他 isolate，所有测试只用本地 Fi
+- 2026-10-17 — 先保留原行为，建立可移植 Core 的真实源码入口 按仓库移植约定逐字提取纯决策，旧 Node 入口保留兼容导出；Router 仅以 factory 捕获 Host 依赖。逐字比对已确认，策略改变留给独立提交。
+- 2026-10-17 — 先关闭跨作用域定义串用和重复执行，再迁移 Core 用户明确选择 A：三端本机执行同一份 JS Core，手机独立运行；沿用已认可的 Fixture / 本机凭证边界，不重复要求设计或 Key 确认。
+- 2026-10-17 — 先区分持久化、调用上下文和真正共享的执行逻辑 用户认可共用 Core + Adapter，并要求先检查 Loop / State / Memory / 能力。本轮确认三端尚未共享执行核心；父子任务传递有界上下文和交接，资料 Sync 也不等于共享在途状态。
+- 2026-10-17 — 把统一执行逻辑落实为可审阅的 Runtime 选择 用户要求三端共用业务逻辑，并质疑浏览器搜索及此前 Codex 能力解释。Codex 区分 API transport、Hosted Tool 与应用 Loop，建议同源本机 JS Core 和 Native / HTTP Search 优先，保留手机独立运行。
+- 2026-10-17 — 在 Fold6 上保留失败起点，区分安装与最短路径验收 用户连接并解锁手机后，Codex 同签名安装 0.5.1，保留原 10 Chat / 1 角色和辅助服务，沿用已有凭证授权。最终版构建 / 113 JVM / 签名通过，40 runtime 属于版本号更改前的同逻辑基线。
+- 2026-10-17 — 把 App 解析留在本机，减少无效模型往返 用户指出手机工具像固定先列大量 App；Codex 核对后优先修现有 Android Adapter 的能力使用和回传边界，不将此当作共享 Core 已完成。
+- 2026-10-17 — 将跨端一致性作为核心抽取的维护约束 用户明确 Android 与其他端应保持一致，避免各自维护；Codex 核对现有共享契约及三端执行入口后，将此决定写入跨线程共用总览。
+- 2026-10-17 — 先核实能力缺口，再决定手机查询的路由 用户要求 pull 并指出餐厅查询不应默认占用屏幕，随后提出抽出核心能力。Codex 仅同步与核对源码，没有调用手机或真实模型。 6adc270
+- 2026-10-17 — 用真实 Maps 查询证明手机能力已融入普通 Chat 用户认可自然 invoke 后，Codex 完成普通 Chat 的 Tool Calling，不再要求独立助手 / 模式切换；微信输入按用户要求后置。普通问答不启动设备，当前信息强制实时读取，不能把旧 Cache 结果当现在事实。 954b382
+- 2026-10-17 — 让手机能力成为普通对话中的按需工具 用户明确不希望进入单独手机助手或切换模式，认可内置 Skill + Chat Tool Calling 并要求开始；微信输入后置。Codex 接线后普通问答不读屏，查询要求实时观察，避免把旧 Cache 答案当作当前事实。
+- 2026-10-17 — 用同一最终 APK 验证 Fold 双屏微信画面 0.4.1 的外屏失败没有被忽略；Codex 修复启动窗口交接后，0.4.2 同包两种模式均用真实模型只读验证，明确可读且目标为微信，不再以“得到截图”冒充窗口正确。
+- 2026-10-17 — 用 Fold 两种状态的反例约束截图修复结论 用户要求查看微信最新失败并提醒两种屏幕布局；Codex 只读复现，没有重跑消息发送。合成图片验证现有模型可看图，实际误捕获 Samsung 手势窗口。
+- 2026-10-17 — 工具调用链优化：估算器与请求裁剪无分配化、循环常量上提、config 读缓存 用户追加要求"把工具调用的代码去优化一下"。只读复核整条链（executor → functionCalling → runner 工具循环 → fitter）后，只改热点且输出等价：token 估算与截断改为单次扫描（16× / 60×），10 轮工具循环的请求裁剪 156ms→11ms，循环内每轮重建的分发常量上提，config.js
+- 2026-10-17 — 审计四批修复全部落地：窗口拉长、缓存友好提示词、Discord 归档、Agent/上下文加固 用户决定：审计报告里的问题"全部修"，Telegram/Discord 暂时归档（保留配置与历史），单条对话窗口拉长（云端模型默认 160k、历史窗口 114k，可用 `MELO_CONTEXT_BUDGET_TOKENS` 覆盖）。（Claude） 20261017
+- 2026-10-17 — 架构 / Agent / 上下文三路只读审计，报告与分批方案 用户要求扫一遍架构问题、Agent 设计问题、上下文处理能力并出报告和方案。只读代码，三路并行扫描，不重复既有审计，只列新发现与"文档说已修 / 代码没修"。（Claude） 20261017
+- 2026-10-17 — 0.6.0 合并、推送并装到手机 用户要求合并、push、安装三项一起做。master 已有 Codex 的 0.5.24 (30) 对齐，先合入分支解决冲突，构建号顺延为 31。（Claude） 8b84de3
+- 2026-10-17 — 手机版本升到 0.6.0 用户决定：多图逐张、2K/4K、视频、多轮图片上下文和回复中补充一起装机时，版本从 0.5.x 升为 0.6.0，之后小修按 0.6.x 递增。（Claude）
+- 2026-10-17 — 回复进行中不再锁按钮，可中途补充，过程在对话里可见 用户指出回复中不能换 Agent / 模型 / 上传是 bug；要求像 ChatGPT 一样中途补充，并在主界面而非只在神经网络里看到“正在干什么”。（Claude）
+- 2026-10-17 — 完整源码与两台设备使用同一版本 用户补充明确将所有线程未提交改动一起发布；Codex 已统一提交当前产品源码，保留审查文档里尚未修复问题的边界。公开 README 继续只用英文。 8cd3eff, 063fd11
+- 2026-10-17 — 对齐手机时同时收敛双端差异 用户明确桌面也要同步，并授权手机覆盖、git push 和英文项目说明更新。用户随后明确把其他线程未提交改动也一起提交推送；本轮统一发布当前完整产品源码，私有备份与构建产物不入库。
+- 2026-10-16 — 用真实 Cache 命中减少手机操作模型往返 用户确认 Similar 允许自动改写；Codex 完成 Task Cache，保留旧 Run 无法还原与不稳定目标不能盲录的边界。修改后必须验证，不能直接恢复自动信任。
+- 2026-10-16 — 将成功操作作为 Task Cache 自动复用 用户明确新目标先查相同 / 相似脚本，未命中才 Probe，成功自动缓存；并确认 Similar Hit 可由 LLM 精简改写，不以只做手动宏替代此意图。缓存仍可编辑 / 删除。
+- 2026-10-16 — 用 Fold6 真实失败修正完成判断与重复执行 用户授权直接实测；Codex 同证书升级 0.3.0 并核对原聊天 / 角色计数保留。真实 Modal 任务已经打开设置，却重复启动并耗尽 30 步，旧 Fixture 通过不能代表实机完成。
+- 2026-10-16 — 用可见证据完成手机任务，并接入当前 Chat 用户认可优先级并要求开始；Codex 先补结果证据、动态目标与有界恢复，再接 Chat，保留当前模型、账号与用户数据。
+- 2026-10-16 — 用实际执行边界和失败证据决定 Mobile Use 下一阶段 用户要求全面审视 repo 并给出下一步；Codex 以当前源码、关键链路及临时 Fixture 形成审视，未开始新产品实现或操作手机。
+- 2026-10-16 — 在最新主线基础上隔离后续 Mobile Use 开发 用户要求 pull 并为现有工作创建新分支；Codex 保留 Android 历史与未提交修复，合入最新主线后切换到 codex/mobile-use-features。
+- 2026-10-16 — 保存已验证的 Home 修复，准备继续 Mobile Use 用户要求拉取最新主线并将当前 Mobile 工作转入新分支；Codex 先保存上轮中断前未提交的修复，不丢弃现有 Android 工作。
+- 2026-10-16 — 多图逐张、2K/4K、大图副本和视频理解，两端一起做 用户在 0.5.23 实机后提出四点并要求按方案顺序全部完成：多图只修第一张、24 MB 上限、视频读取、出图分辨率。（Claude）
+- 2026-10-16 — 让等待与完成用时可以核对 Codex 按用户要求添加计时和图片进度。百分比以已保存成果为依据，服务未提供的内部进度不按时间猜测；完成记录随历史固定。 c0e0725
+- 2026-10-16 — 按相同口径刷新副线统计 用户再次要求统计；Codex 重跑既定源码范围并更新总览，保留较早快照的时间边界。
+- 2026-10-16 — 核对 UI 是否仍是同一套设计语言 用户要求审计，Codex 对照规范、当前共享 WIP 与桌面实际显示；明确区分模块身份色、状态语义与意外分叉，不借审计重做界面。 1610519
 
 - 2026-10-16 — 核对 Agent 遇错能否真正停下来：用户要求检查循环设计。（记录 commit `8cd3eff`）
 - 2026-10-16 — 手机也能发起多 Agent 团队，规则与电脑同一份契约：用户要求“手机端团队做完”。（记录 commit `a5a25f7`）
@@ -486,17 +287,6 @@ Codex 按用户要求添加计时和图片进度。百分比以已保存成果�
 - 2026-10-07 — 神经任务空间缩放与五模块总览：- 增加局部滚轮、触摸板捏合事件、缩放按钮与键盘控制；65%–260%，按任务记忆。拉远同时回正镜头，五模块可见，来源卡片淡出并保留选择。
 - 2026-10-07 — 用紫色神经线束与透明浮层统一任务空间：用户明确撤回实心主体方向，要求与背景神经网络相同的细线分叉，用深紫色微光区分；来源卡片要通透，同时保留实际来源和交互。Codex 移除体积表面与实体核心，采用空间细线、节点光晕和原有事件驱动的形变；结束后姿态冻结，仅保留氛围呼吸。
 - 归档摘要（2026-10-08 之前）：完整原文见 [压缩前归档](docs/progress-archive-20261008.md)。 提交：b2c5999, 728ea48, ad32bed, 4acb4e7, ab08afa, edd73eb, 70571dd, f3eca59, 5a7d58a, a96f5e9, 76ef1a5, 5b58c1d, 0d2bb15, 9f2ee49, bb43c7e, 5e82074, 75766c1, fcd83df, f8b6683, f1bc3f3, 0f0d808, 32661f6, 09d7472, b658f2c, 7a13ce6, b73c118, 4ea50ec, f3a7084, 736a1e5, f91c5a9, 6ae464f, c3285d2, 01296a2, 4c3584a, a322aa7, 3b96247, 95386cd, 732bc0e, 4d572de, aaaaeb8, 83b611a, 6d925a4, 1f6b4fb, 8527fff, 1a1fd14, 66c2f91, 987f6e2, 2090e01, 874e798, 3e0496e, c908254, 22262d4, 272a59f, 1e77668, 881da50, 0e4af90, fa7fe74, b5ab01a, 3237e78, d7edbcd, d86150f, 0d6e3ef, 4719c25, 5787a98, 513da09, 82d9084, 8a7657d, 12d4082, 39b246b, f6dcc47, 8094d78, 570a7c6, 0c2be68, 60e828d, 83cf5d4, d7fe057, 6eef4ae, f04248e, e54b12b, d1b76cf, 0db3c1c, 2a8481a, 9f29a16, 12e1358, bc823ac, 9ece26f, 6b3941f, 7b021ad, f5b5646, 270d04c, 28f1346, 5ffca5c, 170eb30, fb99ccf, eb9e541, 6c525a9, 47c08ed, e81fb12, 506814d, 3b5ac4c, 3c2ba41, 22f67e4, 42f80cf, 31a4135, ef0d142, bc923ea, f867ff1, a6ab5e0, d20c733, 3dccb3e, 4cba848, e4eaa32, 9589946, e093cf8, b8356d9, b91a993, bb4d95f, fc6f886, 7e20b88, f73ba46, 5ebf668, 987a536, 4854864, cc3170f, ad0260c, 45e3d16, 789fc55, a4172bc, fc0262b, 1b07201, c6e02b1, 372b251, cd5b2bd, c2bd16f, 96753e0, cd13148, 98a1502, 41d20cf, 94518d0, 2a417b2, 7a871de, d64bfc0, fcafa6d, 2618ec5, 672b2c0, bc640c1, 3ab34b5, 1f17365, e7a7311, 6edfc5e, 28a47b1, 554c079, 479a897, 5a9afa9, 3876cdc, 75f9f72, 6957783, 4d9dc73, 799a9a4, 8778052, 3ae3285, 9f5a87a, 5a888ee, 768d511, e1a8ecf, af2e3b7, 5f9107a, a9aa5a8, 7a6710e, da4e09e, d339782, 9d504b2, dece161, aad4f72, eb74e07, e9eb5b6, 40c747b, 2731e90, 3022905, f20767b, bcc2b09, ae0a964, ab06fca, 424cbe8, aadc7dd, 0ed90fd, 1f29b00, a5d855c, 1dba8b4, 5d33930, adb21ca, 75b9370, 207ea6a, 0a8064a, fac4732, 2777eab, 5419a9b, b997e14, 208e51d, 9721cd1, 55b7630, 9895335, f1ced20, 0a05a30, e7d2872, edd3e76, 66cd1a8, 3c71ee6, 9955870, 46a85b8, b4cc16a, 9c76db9, 91a25d9, 2f52bf2, ce97d12, 7055c17, 12e85aa, f3f61d5, be96ec6, 7866271, b30d563, 8bda000, de7815c, 6e2e171, 6d18e87, 8364a5f, d056e8d, ce56b0c, 5742e66, 2c43ec2, 137c9a6, 5d2c6ac, 559fbae, f3b0f29, 08cfab3, 2063d9e, a104f23, 808db9e, 856aa07, a6c1802, f4bc254, 7b051fa, c332b07, f0b528e, 8ab7817, 2cc94a8, 4d81ef4, 80efd7d, ffc477a, 1f636e2, 8c387a4, 7250cd7, 33aba21, 0f7d2af, 8c03a68, 3fcbdea, 5f128c6, 8fb3cf9, f87c06c。
-
-## 2026-10-20 — Codex：让 Android CI 在窄屏夹具上检验同一行为
-
-远端首次完整 Emulator 运行发现三个测试布局假设；保持安全检查与业务断言，改为显式滚动，避免把目标实际移动误当作纯兄弟内容变化。
-验证：基线 56/59，修正后的远端结果待确认；不以构建通过替代运行测试。
-下一步：完整 CI 通过后关闭 #9。
-
-## 2026-10-20 — Codex：Android CI 实际验收通过
-
-窄屏夹具修正保留原安全断言，远端完整构建与 Emulator 59/59、零跳过通过（39346797733）。#9 可完成；不外推到真机 Fold 或真实供应商。
-## 2026-10-20 — Codex：验证分支先阻断编译问题
-
-#6 首轮 Kotlin 编译拒绝集合重载歧义，已使用显式追加。修正后继续全 CI；正式手机分支与 issue 状态保持，不把未运行的模拟器计为通过。
-
+- 2026-10-20 — Codex：让 Android CI 在窄屏夹具上检验同一行为 远端首次完整 Emulator 运行发现三个测试布局假设；保持安全检查与业务断言，改为显式滚动，避免把目标实际移动误当作纯兄弟内容变化。
+- 2026-10-20 — Codex：Android CI 实际验收通过 窄屏夹具修正保留原安全断言，远端完整构建与 Emulator 59/59、零跳过通过（39346797733）。#9 可完成；不外推到真机 Fold 或真实供应商。 39346797733
+- 2026-10-20 — Codex：验证分支先阻断编译问题 #6 首轮 Kotlin 编译拒绝集合重载歧义，已使用显式追加。修正后继续全 CI；正式手机分支与 issue 状态保持，不把未运行的模拟器计为通过。

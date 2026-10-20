@@ -39,8 +39,7 @@ class ModelClient(private val debug: Boolean, val http: OkHttpClient = OkHttpCli
             return ModelReply(text, "local-fixture", true)
         }
         val url = EndpointPolicy.validate(connection.endpoint, debug)
-        val context = messages.takeLast(60).dropWhile { it.role != "user" }
-        require(context.sumOf { it.content.length } + instructions.length <= 200_000) { "本次对话与资料过长，请减少资料或新建对话；原记录已保留。" }
+        val context = messages.dropWhile { it.role != "user" }
         val requestMessages = buildJsonArray {
             if (connection.protocol == "chat-completions") add(buildJsonObject { put("role", "system"); put("content", instructions) })
             context.forEach { message -> add(buildJsonObject {
@@ -63,8 +62,8 @@ class ModelClient(private val debug: Boolean, val http: OkHttpClient = OkHttpCli
         }
         val payload = buildJsonObject {
             put("model", connection.model); put("stream", connection.stream)
-            if (connection.protocol == "responses") { put("input", requestMessages); put("instructions", instructions); put("store", false) }
-            else { put("messages", requestMessages); if (connection.protocol == "anthropic") { put("system", instructions); put("max_tokens", 8192) } }
+            if (connection.protocol == "responses") { put("input", requestMessages); put("max_output_tokens", minOf(8000, connection.contextTokens / 3)); put("instructions", instructions); put("store", false) }
+            else { put("messages", requestMessages); if (connection.protocol == "anthropic") { put("system", instructions); put("max_tokens", minOf(8000, connection.contextTokens / 3)) } }
         }
         val request = Request.Builder().url(url).post(payload.toString().toRequestBody("application/json".toMediaType()))
             .header("Accept", if (connection.stream) "text/event-stream, application/json" else "application/json")

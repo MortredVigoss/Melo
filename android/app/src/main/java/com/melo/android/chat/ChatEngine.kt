@@ -41,6 +41,7 @@ class ChatEngine(private val context: Context, val repository: Repository) {
         val connectionId = chat?.connectionId ?: state.settings.activeConnection
         val connection = state.settings.connections.find { it.id == connectionId }
         val instructions = chat?.let { repository.instructions(it, state) }.orEmpty()
+        val historyEnabled = state.agents.find { it.id == chat?.agentId }?.source("memory") != false
         val phoneUse = chat?.phoneUseEnabled == true && connection?.protocol != "fixture"
         val capturedAttachments = attachments.toList()
         mutable.update { it.copy(turns = it.turns + (chatId to ChatTurn()), error = null) }
@@ -89,7 +90,9 @@ class ChatEngine(private val context: Context, val repository: Repository) {
                             },
                             onPhase = { phase -> updateTurn(chatId) { it.copy(phase = phase) } },
                             onDelta = { partial -> updateTurn(chatId) { it.copy(partial = partial) } },
-                            previousScenes = state.runs.filter { it.chatId == chatId }.takeLast(3).map { it.sharedScene },
+                            previousScenes = if (historyEnabled) state.runs.filter { it.chatId == chatId }.takeLast(3).map { it.sharedScene } else emptyList(),
+                            historyEnabled = historyEnabled, contextLedger = chat.contextLedger,
+                            onContextLedger = { ledger -> repository.change { current -> current.copy(chats = current.chats.map { if (it.id == chatId) it.copy(contextLedger = ledger) else it }) } },
                             onScene = { scene -> repository.change { current -> current.copy(runs = current.runs.map { if (it.id == run.id && it.status == "running") it.copy(sharedScene = scene) else it }) } },
                         )
                     }

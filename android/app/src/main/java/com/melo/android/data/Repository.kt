@@ -69,7 +69,7 @@ class Repository(private val context: Context) {
     }
     suspend fun draft(chatId: String, text: String) = change { it.copy(drafts = it.drafts + (chatId to text)) }
     suspend fun saveAgent(agent: Agent) = change { current ->
-        val value = MeloJson.encodeToJsonElement(agent).jsonObject.let { JsonObject(it.filterKeys { it != "id" }) }
+        val value = MeloJson.encodeToJsonElement(agent).jsonObject.let { JsonObject(it.filterKeys { it != "id" && it != "contextSources" }) }
         current.copy(agents = current.agents.filterNot { it.id == agent.id } + agent, workspace = portableEdit(current, "agent", agent.id, value))
     }
     suspend fun saveProject(project: Project) = change { current ->
@@ -92,14 +92,15 @@ class Repository(private val context: Context) {
     }
     fun instructions(chat: Conversation, state: AppData = data.value): String {
         val agent = state.agents.find { it.id == chat.agentId } ?: state.agents.first()
-        val project = state.projects.find { it.id == chat.projectId && !it.archived }
-        val notes = state.knowledge.filter { !it.deleted && it.projectId != null && it.projectId == project?.id }
-        val memories = state.memories.filter { fact -> fact.status == "active" && state.chats.any { it.id == fact.chatId } &&
-            when (fact.scope) { "personal" -> true; "agent" -> fact.agentId == chat.agentId; "project" -> fact.projectId != null && fact.projectId == chat.projectId; else -> fact.chatId == chat.id } }
+        val project = state.projects.find { it.id == chat.projectId && !it.archived && agent.source("projects") }
+        val notes = state.knowledge.filter { !it.deleted && agent.source("artifacts") && it.projectId != null && it.projectId == project?.id }
+        val memories = state.memories.filter { fact -> agent.source("memory") && fact.status == "active" && state.chats.any { it.id == fact.chatId } &&
+            when (fact.scope) { "personal" -> true; "agent" -> fact.agentId == chat.agentId; "project" -> agent.source("projects") && fact.projectId != null && fact.projectId == project?.id; else -> fact.chatId == chat.id } }
         return listOf("你运行在 Melo Android 中。只根据实际能力回答；不能声称操作了桌面、读取未提供的文件或运行了不存在的工具。", agent.prompt(), project?.instructions.orEmpty(),
             notes.joinToString("\n\n") { "参考资料：${it.title}\n${it.content}" }, memories.joinToString("\n") { "用户保存的记忆：${it.text}" }).filter(String::isNotBlank).joinToString("\n\n")
     }
     suspend fun saveConnection(connection: Connection, newKey: String?) {
+        require(connection.contextTokens in 4096..400000) { "Context capacity must be between 4096 and 400000 tokens." }
         val replacement = newKey?.trim()?.takeIf(String::isNotBlank)
         val key = replacement ?: if (connection.protocol == "fixture") "" else credential(connection.id)
         ConnectionPolicy.validate(connection, key, BuildConfig.DEBUG)
@@ -160,7 +161,7 @@ class Repository(private val context: Context) {
         input.workspace.records.filter { it.versions.size == 1 }.forEach { record ->
             val value = PortableWorkspace.value(record.kind, record.versions.first().value)
             when (record.kind) {
-                "agent" -> { val row = MeloJson.decodeFromJsonElement<Agent>(JsonObject(value + ("id" to record.id.jp()))); state = state.copy(agents = state.agents.filterNot { it.id == row.id } + row) }
+                "agent" -> { val row = MeloJson.decodeFromJsonElement<Agent>(JsonObject(value + ("id" to record.id.jp()))).copy(contextSources = state.agents.find { it.id == record.id }?.contextSources.orEmpty()); state = state.copy(agents = state.agents.filterNot { it.id == row.id } + row) }
                 "project" -> { val row = MeloJson.decodeFromJsonElement<Project>(JsonObject(value + ("id" to record.id.jp()))); state = state.copy(projects = state.projects.filterNot { it.id == row.id } + row) }
                 "knowledge" -> { val row = MeloJson.decodeFromJsonElement<Knowledge>(JsonObject(value + ("id" to record.id.jp()))); state = state.copy(knowledge = state.knowledge.filterNot { it.id == row.id } + row) }
                 "memory" -> { val row = MeloJson.decodeFromJsonElement<MemoryFact>(value); if (state.chats.any { it.id == row.chatId }) state = state.copy(memories = state.memories.filterNot { it.id == row.id } + row) }

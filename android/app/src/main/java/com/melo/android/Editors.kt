@@ -67,10 +67,16 @@ import com.melo.android.network.HostedSearchAdapter
         var name by remember(original.id) { mutableStateOf(original.name) }; var subtitle by remember(original.id) { mutableStateOf(original.subtitle) }
         var instructions by remember(original.id) { mutableStateOf(original.instructions) }; var identity by remember(original.id) { mutableStateOf(original.identity) }
         var soul by remember(original.id) { mutableStateOf(original.soul) }
+        var contextSources by remember(original.id) { mutableStateOf(original.contextSources) }
         EditorDialog("编辑角色", { editing = null }, { vm.engine.work {
             require(name.isNotBlank()) { "请输入角色名称。" }
-            vm.repository.saveAgent(original.copy(name = name.take(200), subtitle = subtitle, instructions = instructions, identity = identity, soul = soul)); editing = null
-        } }) { Field("名称", name, { name = it }); Field("简介", subtitle, { subtitle = it }); Field("角色指令", instructions, { instructions = it }, 4); Field("身份", identity, { identity = it }, 2); Field("风格", soul, { soul = it }, 2) }
+            vm.repository.saveAgent(original.copy(name = name.take(200), subtitle = subtitle, instructions = instructions, identity = identity, soul = soul, contextSources = contextSources)); editing = null
+        } }) { Field("名称", name, { name = it }); Field("简介", subtitle, { subtitle = it }); Field("角色指令", instructions, { instructions = it }, 4); Field("身份", identity, { identity = it }, 2); Field("风格", soul, { soul = it }, 2)
+            Text("上下文来源（本机）")
+            listOf("projects" to "项目指令", "artifacts" to "项目资料", "memory" to "记忆与历史回读").forEach { (key, label) ->
+                Row(verticalAlignment = Alignment.CenterVertically) { Text(label, Modifier.weight(1f)); Switch(contextSources[key] != false, { enabled -> contextSources = contextSources + (key to enabled) }) }
+            }
+        }
     }
 }
 
@@ -232,12 +238,15 @@ import com.melo.android.network.HostedSearchAdapter
         val hasCredential by produceState<Boolean?>(null, original.id) { value = runCatching { vm.repository.credential(original.id).isNotBlank() }.getOrDefault(false) }
         var probe by remember(original.id) { mutableStateOf<String?>(null) }; var probing by remember { mutableStateOf(false) }
         var searchProof by remember(original.id) { mutableStateOf(original.searchProof) }
+        var contextTokens by remember(original.id) { mutableStateOf(original.contextTokens.toString()) }
         EditorDialog("模型连接", { if (!probing) editing = null }, { vm.engine.work {
-            vm.repository.saveConnection(original.copy(name = name.take(200), endpoint = endpoint.trim(), model = model.trim(), protocol = protocol, stream = stream, searchProof = searchProof), key.takeIf(String::isNotBlank)); editing = null
+            vm.repository.saveConnection(original.copy(name = name.take(200), endpoint = endpoint.trim(), model = model.trim(), protocol = protocol, stream = stream, searchProof = searchProof, contextTokens = contextTokens.toIntOrNull() ?: 0), key.takeIf(String::isNotBlank)); editing = null
         } }) {
             Field("连接名称", name, { name = it }); Field("完整模型 Endpoint", endpoint, { endpoint = it })
             Text("填写完整请求地址，例如 https://example.com/v1/chat/completions；不会自动补充路径。", color = MeloMuted)
             Field("模型名称", model, { model = it })
+            Field("模型上下文容量（tokens，4096–400000）", contextTokens, { contextTokens = it })
+            Text("按服务商提供的模型容量填写；图片、工具与输出预留共同计入。", color = MeloMuted)
             Text("接口协议"); listOf("chat-completions", "responses", "anthropic").forEach { choice -> FilterChip(selected = protocol == choice, onClick = { protocol = choice }, label = { Text(choice) }) }
             if (original.protocol == "fixture") Text("此连接只用于 Debug Fixture，不会联网。", color = MeloGold)
             OutlinedTextField(key, { key = it }, label = { Text(if (hasCredential == true) "新的 API 凭证（留空保留已保存凭证）" else "API 凭证（此设备尚未保存，必填）") }, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth().testTag("connection-key"), singleLine = true)

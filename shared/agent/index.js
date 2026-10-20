@@ -9,6 +9,7 @@ import { parseReplyDocument, inlineSpans, replyPresentation } from '../../src/sh
 import { budgetOperation } from './policyBridge.js';
 import { repeatOperation } from './repeatGuard.js';
 import { completionResult, completionObservation } from './completion.js';
+import { contextCost, contextPlan, contextWirePlan, historyPage } from './context.js';
 
 export function evaluate(input) {
   try {
@@ -16,6 +17,10 @@ export function evaluate(input) {
     let value;
     switch (input.op) {
       case 'hello': value = { version: CORE_VERSION, runtime: 'melo-local-core', portable: true }; break;
+      case 'contextCost': value = contextCost(input.text); break;
+      case 'contextPlan': value = contextPlan(input.context); break;
+      case 'contextWirePlan': value = contextWirePlan(input.context); break;
+      case 'historyPage': value = historyPage(input.page); break;
       case 'budget': value = JSON.parse(JSON.stringify(budgetOperation(input))); break;
       case 'repeat': value = repeatOperation(input); break;
       case 'completion': value = completionResult(input.completion); break;

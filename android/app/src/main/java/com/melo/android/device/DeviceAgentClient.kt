@@ -45,7 +45,7 @@ class DeviceAgentClient(private val debug: Boolean, private val http: OkHttpClie
         fun initial(protocol: String, goal: String) = mutableListOf(buildJsonObject { put("role", "user"); put("content", goal) })
         fun payload(connection: Connection, history: List<JsonObject>, taskInstructions: String = "", chatTools: Boolean = false, toolSpecs: List<JsonObject>? = null, nativeWebSearch: Boolean = false): JsonObject = buildJsonObject {
             require(!nativeWebSearch || connection.protocol == "responses") { "当前 Adapter 尚未实现此协议的 Hosted Search。" }
-            require(taskInstructions.length <= 32_000) { "角色或项目指令超过手机任务预算，请减少资料后重试。" }
+            require(chatTools || taskInstructions.length <= 32_000) { "角色或项目指令超过手机任务预算，请减少资料后重试。" }
             put("model", connection.model); put("stream", false)
             val instructions = if (chatTools) taskInstructions else taskInstructions + "\n\n" + DeviceTools.instructions + "\n" + DeviceTools.completionInstructions + "\nSwipes must move at least 48 image pixels. Use tap for clicks; do not emulate clicks using stationary or tiny swipes."
             val name = if (chatTools) ChatPhoneUse.name else "android_device"
@@ -55,12 +55,12 @@ class DeviceAgentClient(private val debug: Boolean, private val http: OkHttpClie
             val functions = toolSpecs?.map { JsonObject(it + ("strict" to JsonPrimitive(false))) } ?: listOf(function)
             when (connection.protocol) {
                 "responses" -> {
-                    put("instructions", instructions); put("store", false); put("input", JsonArray(history))
+                    put("instructions", instructions); put("max_output_tokens", minOf(8000, connection.contextTokens / 3)); put("store", false); put("input", JsonArray(history))
                     put("parallel_tool_calls", false); put("tools", buildJsonArray { functions.forEach { add(JsonObject(it + ("type" to "function".jp()))) }; if (nativeWebSearch) add(buildJsonObject { put("type", "web_search") }) })
                     if (nativeWebSearch) put("include", buildJsonArray { add("web_search_call.action.sources") })
                 }
                 "anthropic" -> {
-                    put("system", instructions); put("max_tokens", 4096); put("messages", JsonArray(history))
+                    put("system", instructions); put("max_tokens", minOf(4096, connection.contextTokens / 3)); put("messages", JsonArray(history))
                     put("tools", buildJsonArray { functions.forEach { spec -> add(buildJsonObject { put("name", spec.getValue("name")); put("description", spec.getValue("description")); put("input_schema", spec.getValue("parameters")) }) } })
                 }
                 else -> {

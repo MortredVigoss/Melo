@@ -782,3 +782,8 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 ### 2026-10-20 — GitHub #8 Android 事件投影（Codex）
 
 #6 05592af 仍待最终 CI；#8 在独立验证分支准备，正式分支发布保持逐项顺序。Core 同源事件、Native/WebView 标识、历史输入关联、重启废弃过期派生缓存已接；136 项 Node Core 通过，新增模拟器三协议后续请求/零重复动作与原生界面标识检查，等待真实 Android CI。详见 [约定](docs/session-events-20261020.md)。没有修改用户数据或安装应用。
+
+### 2026-10-20 - Codex issue #7 Android context
+- #8 pushed as 5f3d834, CI 39366995591 passed, issue closed.
+- #7 WIP: shared budget/cost planner, scoped read_history, local durable cards, source switches and model capacity editor. Core 139 passed; Android compilation/emulator pending.
+- Details: [Android context](docs/android-context-20261020.md). Production branch remains #8 until validation completes.

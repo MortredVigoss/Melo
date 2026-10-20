@@ -33,8 +33,7 @@ After successful phone_use continue this same conversation with a concise useful
     }
 
     fun history(messages: List<Message>, protocol: String, imageData: (Attachment) -> String): MutableList<JsonObject> {
-        val selected = messages.takeLast(60).dropWhile { it.role != "user" }
-        require(selected.sumOf { it.content.length } <= 160_000) { "本次对话过长，请减少资料或新建对话；原记录已保留。" }
+        val selected = messages.dropWhile { it.role != "user" }
         return selected.map { message -> buildJsonObject {
             put("role", message.role)
             if (message.attachments.isEmpty()) put("content", message.content)

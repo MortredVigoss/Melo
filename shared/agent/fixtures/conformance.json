@@ -4029,5 +4029,77 @@
       "scene": null
     },
     "expected": []
+  },
+  {
+    "name": "context uses common model budget and whole current turn",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "contextPlan",
+      "context": {
+        "capacity": 24000,
+        "messages": [
+          {
+            "id": "m",
+            "role": "user",
+            "tokens": 20
+          }
+        ]
+      }
+    },
+    "expected": {
+      "start": 0,
+      "totalTokens": 24000,
+      "inputLimit": 16000,
+      "windowTokens": 12000,
+      "summary": ""
+    }
+  },
+  {
+    "name": "tool result user role cannot break a native chain",
+    "ok": false,
+    "input": {
+      "version": 1,
+      "op": "contextWirePlan",
+      "context": {
+        "capacity": 4096,
+        "costs": [
+          20,
+          2000,
+          2000
+        ],
+        "roles": [
+          "user",
+          "assistant",
+          "user"
+        ],
+        "chainStart": 0
+      }
+    },
+    "expected": {
+      "code": "CONTEXT_BUDGET_EXCEEDED"
+    }
+  },
+  {
+    "name": "history exact text has original id and advancing cursor",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "historyPage",
+      "page": {
+        "message": {
+          "id": "original",
+          "role": "user",
+          "content": "keep account 427"
+        },
+        "fromChar": 5
+      }
+    },
+    "expected": {
+      "sourceMessageId": "original",
+      "nextOffset": 16,
+      "complete": true,
+      "output": "[#original] user (character 5):\naccount 427"
+    }
   }
 ]
