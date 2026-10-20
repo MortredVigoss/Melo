@@ -59,11 +59,11 @@
 
 ## 4. 最新交接
 
-### 2026-10-21 — Android / Shared Core Integration（最终状态见 PR #15）
+### 2026-10-21 — Android / Shared Core Integration（已合入共同主线）
 
 用户批准将 Mobile 整合到最新主线，分支 `codex/integrate-mobile-core-20261020`；父基线为 master `8772e92` 与 Mobile `2d36dbd`，源码验证点 `009134a`。保留主线 UI P2、统一检测、完成回执、Session Events、项目生命周期和历史图片修复，接入 Android Context / Task Cache / 独立 HTTP Search。Node 保持 Tool Schema，通过 Adapter 使用配置的 HTTP Search；Router 和执行许可共同保留禁止联网/占屏边界。
 
-本机完整 JS：4372 pass、0 fail、13 平台 skip；Desktop 两项独立 Browser 验收通过；Android 124 JVM + 73 Android 16 Runtime 通过，11 个 Node/Android Task Replay 一致；语法/生成物通过，后端 0 cycles。回归发现并修复后台索引用旧来源快照误隔离新记忆的竞态，四份独立并行 Fixture 通过。远端最终 CI、合并和分支清理以 [PR #15](https://github.com/MortredVigoss/Melo/pull/15) 为准；macOS 补齐 Swift / JavaScriptCore / unsigned iOS App 编译。未运行完整安装发布 gate、未操作 Fold6 或真实模型账号。详见 [Integration 回执](docs/mobile-integration-20261020.md)。
+[PR #15](https://github.com/MortredVigoss/Melo/pull/15) 在五项 CI 全绿后以 `6ab1adf` 合入 `master`，合并树与验证 Head `edfccac` 一致。远端 11 条已包含分支以 expected-SHA lease 清理，现只保留 `master`；WSL 本地也已同步。Linux 4384 JS pass / 0 fail / 1 macOS 专用 skip（补齐本机缺 FFmpeg 的 12 项），macOS 35 Swift suites + Native Lifecycle + unsigned iOS App 编译通过；Node/Android/JavaScriptCore 的 11 个 Replay 一致。Android 124 JVM + 73 Android 16 Runtime、两项本机 Desktop Browser、语法/生成物通过，后端 0 cycles。后台索引误隔离新记忆的竞态已修，四份并行 Fixture 通过。未运行完整安装发布 gate、未操作 Fold6 或真实模型账号。详见 [Integration 回执](docs/mobile-integration-20261020.md)。
 
 
 ### 2026-10-20 — melo主线（Codex）— #4 历史图片修复与原生验收

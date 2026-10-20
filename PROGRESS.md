@@ -1,3 +1,9 @@
+## 2026-10-21 — 回到共同主线，清理分支不丢历史
+
+Codex：用户批准的 Integration 已在五项 CI 全绿后通过 PR #15 合并；合并树与验证 Head 完全一致。Linux 补齐本机缺 FFmpeg 的 12 项，最终 4384 JS pass / 0 fail / 1 macOS 专用 skip；macOS 35 Swift suites、11 个跨引擎 Replay、完整无签名 iOS App 编译和原生生命周期通过，Android 73 Runtime 零跳过。
+确认 ancestry 与远端 SHA 后原子删除 11 条已包含分支，远端只保留 master；本地同步并安全清理三条旧 feature branches。历史仍由 merge ancestry 保留，后续从共同主线开分支。
+本轮不等同产品发布/真机/真实供应商验收。合并提交 `6ab1adf`；最后仅补交接文档，按文档范围检查，不重复产品全量。
+
 ## 2026-10-21 — 整合验收按实际平台拆分，保留可追溯边界
 
 Codex：最终本机全部 JS 4372 pass / 0 fail / 13 平台 skip，两项独立 Desktop Browser、Android 124 JVM / 73 Runtime 与 11 个跨引擎 Replay 通过；语法/生成物通过，后端无循环依赖。

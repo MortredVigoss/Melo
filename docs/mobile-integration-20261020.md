@@ -1,6 +1,6 @@
 # Android / Shared Core Integration（2026-10-20）
 
-状态：源码整合与本机回归完成；远端最终检查与合并状态以 [PR #15](https://github.com/MortredVigoss/Melo/pull/15) 为准。只有最新 Head 的所有 CI 通过且主线未发生未验证变化，才允许合并。本文记录源码验证，不代表产品发布。
+状态：已完成。最新 Integration Head `edfccac` 的五项 CI 全绿后，[PR #15](https://github.com/MortredVigoss/Melo/pull/15) 以 Merge Commit `6ab1adf79c317c34ca7e53649581f7b30881832e` 合入 `master`；合并树与通过验证的 Head 完全一致。已清理 11 条被包含的远端分支，远端仅保留 `master`，本地已同步且无产品代码 WIP。本文记录源码验证，不代表产品发布。
 
 ## 基线与范围
 
@@ -42,17 +42,25 @@ PR：[GitHub #15](https://github.com/MortredVigoss/Melo/pull/15)。初轮 Integr
 
 源码验证点：`009134a5dad01833c5487ffbcac6fe61a946987a`。后续仅文档提交不改变产品源码；CI 对 PR 最新 Head 重新执行。基准为上述 master/Mobile 固定 SHA。
 
-- 全部 JS：4385 tests，4372 pass、0 fail/cancelled、13 个明确的平台 skip；包含 Node、HTTP、真实本机 Chromium 与新增竞态回归。日志 `.tmp/integration-all-js-fourth.log`。
+- 全部 JS：4385 tests，4372 pass、0 fail/cancelled、13 个环境或平台 skip；包含 Node、HTTP、真实本机 Chromium 与新增竞态回归。日志 `.tmp/integration-all-js-fourth.log`。
 - Desktop 两项独立 Browser 验收通过：Settings Design（编辑、保存、失败恢复、窄屏等）及 Extra Fast（受控 HTTP Probe、分配、刷新及冲突恢复）。日志 `.tmp/integration-settings-design.log`、`.tmp/integration-extra-fast-browser.log`。
 - Android：124 JVM tests，0 failure/error/skip；Lint、Debug、R8 Release 构建通过。Android 16 Emulator Runtime 73 tests，0 failure/error/skip。日志 `.tmp/integration-android-check.log`、`.tmp/integration-android-runtime-first.log`。
 - Node / Android 确定性 Task Replay 11 个逐项一致；Core bundle SHA-256 `7bd1a5f1342758cc05398037baa8269c6e19d932ee6013c7010ae830e8cb7b03`。报告 `.tmp/integration-task-eval-node-android.json`。
 - Memory / Derived Index / Artifact 28 tests 通过；四份独立并行 Memory HTTP Fixture 均通过，原始误隔离证据和修复后报告保留。报告 `.tmp/integration-memory-parallel-fixed.json`。
 - 语法检查 1106 文件；后端依赖检查 441 modules、0 cycles；Core、Locale、Module Map、Sync/Loop Contract 与共享渲染生成物一致。
 
-Linux CI 已在源码验证点通过；最终 macOS Swift、Node/JavaScriptCore Replay、unsigned iOS Simulator App 编译、macOS native lifecycle、双平台 File Safety 及远端 Android 的检查状态以 PR 最新 Head 为准。完整日常选组已用 `npm run test:plan -- --base 8772e92` 生成，因本机是 WSL，按平台拆分执行并由 macOS CI 补齐 Swift；不声称本机执行完整 `npm test -- --base` 成功。
+最终 Head `edfccac` 的全部 CI 通过：Linux JS 4384 pass / 0 fail / 1 个 macOS 专用 skip，补齐本机因 FFmpeg 缺失跳过的 12 项 Media 测试；macOS 的 35 个 Swift suites（全部实际编译、无编译缓存命中）、11 个 Node/JavaScriptCore Replay、unsigned iOS Simulator App 编译及 1 项 native lifecycle 全部通过；远端 Android 73 Runtime tests 零失败/跳过、11 个 Node/Android Replay 一致；Linux/macOS File Safety 通过。原始 CI：[Cross-platform](https://github.com/MortredVigoss/Melo/actions/runs/39430828299)、[Android](https://github.com/MortredVigoss/Melo/actions/runs/39430828153)、[File Safety](https://github.com/MortredVigoss/Melo/actions/runs/39430828285)。Linux/Android 报告和 macOS 日志已下载到本机 `.tmp/ci-final-*` / `.tmp/integration-ci-macos-final.log`。完整日常选组已用 `npm run test:plan -- --base 8772e92` 生成，因本机是 WSL，按平台拆分执行并由 macOS CI 补齐 Swift；不声称本机执行完整 `npm test -- --base` 成功。
 
 边界：没有运行会安装桌面应用的完整发布 gate，没有签名/安装 iPhone，没有覆盖 Fold6；没有真实 LLM、Search API 或私人同步服务调用。Emulator / Fixture 和无签名编译不能代替真实账号、真机折叠/展开 UI、长后台及产品发布验收。
 
 ## 合并和分支清理约束
 
 PR 使用 Merge Commit 保留两端 ancestry。合并前重新核对远端 master 和 PR Head；有新增未验证提交则先更新和回归。只有确认已被最终 master 包含的阶段分支才可删除，并以预期 SHA 防止误删其他线程刚推送的工作。清理结果在 PR / 本轮交付回执记录，不根据过期分支名推断可删。
+
+## 最终合并与清理回执（2026-10-21）
+
+合并前复核 master 仍为 `8772e92`、PR Head 仍为 `edfccac`，五项 CI 全部 SUCCESS。Merge Commit `6ab1adf` 同时包含原 master、Mobile `2d36dbd` 及最终 Integration Head，文件树与已验证 Head 无差异。
+
+重新读取远端 SHA，并逐条确认是最终 master 的 ancestor 后，用 atomic push 和每分支 expected-SHA lease 删除 9 条阶段分支（agent-evolution、issue-6/7/8/10/11/12/14-main/14-mobile-validation），再删除已合并的 Mobile / Integration 分支，共 11 条；未删除或重写任何提交。远端仅 `master`。本地 master Fast-forward 到合并结果，三条已包含的本地 feature branches 用 `git branch -d` 清理。
+
+后续从共同 `master` 开功能分支。真实 LLM/Search、Fold6 折叠/展开和长期后台仍需独立验收；本轮不重复操作用户设备。最后交接只有文档变化，执行文档范围 gate，不重复产品全量。
