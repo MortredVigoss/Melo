@@ -11,7 +11,7 @@
 | 3 | [#3 自然搜索](https://github.com/MortredVigoss/Melo/issues/3) | 已完成：`1c48b6a` 已推送，issue 已关闭；专项 95/95、JS 4098/4098 与 Swift 通过 |
 | 4 | [#9 跨平台 CI](https://github.com/MortredVigoss/Melo/issues/9)、[#2 记忆库并发](https://github.com/MortredVigoss/Melo/issues/2) | #9 已通过全部远端 gate 并关闭（主线 `6fd2481`、手机 `b1529d0`）；#2 与冷启动补充 `239953b` 已推送并关闭，Mac/Linux 并发与完整日常通过 |
 | 5 | [#5 通用循环](https://github.com/MortredVigoss/Melo/issues/5)、[#6 完成条件](https://github.com/MortredVigoss/Melo/issues/6)、[#8 事件](https://github.com/MortredVigoss/Melo/issues/8)、[#7 Android 上下文](https://github.com/MortredVigoss/Melo/issues/7) | #5 已完成并关闭：主线 d2dcd02、Android 6209a2a，三端验证通过。#6 已完成关闭：主线 4c3ebb5、Android 05592af，见[完成回执](completion-receipts-20261020.md)；#8 a2551cf/5f3d834 已推送关闭，CI 39366995591 全过；#7 主线 fd0dfd7 / ab8240a、Android ef276a5 已验证、推送并关闭 |
-| 6 | [#11 项目生命周期](https://github.com/MortredVigoss/Melo/issues/11)、[#12 后端拆分](https://github.com/MortredVigoss/Melo/issues/12)、[#10 Fold 缓存](https://github.com/MortredVigoss/Melo/issues/10)、[#13 容量基线](https://github.com/MortredVigoss/Melo/issues/13)、[#14 Task Eval](https://github.com/MortredVigoss/Melo/issues/14) | 待执行；小型确定性回放伴随改动，真机/真实模型证据单列 |
+| 6 | [#11 项目生命周期](https://github.com/MortredVigoss/Melo/issues/11)、[#12 后端拆分](https://github.com/MortredVigoss/Melo/issues/12)、[#10 Fold 缓存](https://github.com/MortredVigoss/Melo/issues/10)、[#13 容量基线](https://github.com/MortredVigoss/Melo/issues/13)、[#14 Task Eval](https://github.com/MortredVigoss/Melo/issues/14) | #11 与 #12 已通过本机和跨平台 CI，按序发布关闭；#10 Android CI 验证中，随后 #13/#14。真机/真实模型证据单列 |
 
 ## #1 实施约定与证据
 
@@ -112,3 +112,5 @@ Linux 首次完整回归（临时 Debian 容器）4072 pass / 3 fail / 22 skip�
 ## #11 项目生命周期
 
 行为与跨端证据见[实施约定](project-lifecycle-20261020.md)。主线日常 4331 JS + 35 Swift 与 iPhone simulator 构建通过；Android 第二轮完整 CI 待结果。保留聊天、图片、外部目录与旧运行快照，删除后新身份恢复；旧端离线合并不能复活项目。
+
+#11 最终：主线 89dc1af / Android ee0f66b；Android 39377354163 全过、69/69 模拟器零跳过。#12 39bd465 逐字移植、e64bfe6 接线；4335 JS / 35 Swift 与 Linux/macOS 39377921633 全通过，见 [Schema 拆分](memory-schema-boundary-20261020.md)。按用户授权顺序推送并关闭。

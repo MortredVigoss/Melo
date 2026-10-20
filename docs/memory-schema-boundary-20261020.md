@@ -9,3 +9,5 @@
 实施证据：移植提交 `39bd465`，函数/JSDoc/SQL 均与 `89dc1af` 原位代码逐字相同。新模块只导出内部初始化函数；原 store 公开 export 名称、连接生命周期与调用顺序不变。真实 SQLite 专项 4/4，包括旧缓存保留二进制、命中孤儿清理/级联、request 去重、向量不可用/旧索引保留、跨 handle 与重复重开。
 
 接线后 `memory-schema-daily.log` 完整日常 **4335/4335 JS、35/35 Swift**，生成检查、浏览器与共享 Core 全过（149.7 秒，零 JS 跳过）。包含 cached/captured-path 冷锁、后台 home 绑定、嵌套回滚、取消与恢复既有回归。GitHub 跨平台 CI 待运行；未改数据库内容格式或安装应用。
+
+跨平台回执：`e64bfe6` 的 [CI 39377921633](https://github.com/MortredVigoss/Melo/actions/runs/39377921633) Linux Node/HTTP/Browser 与 macOS Swift/shared rendering 全部通过。按 #11 → #12 顺序发布；不合并 Android 分支或把模拟器结果当作实体设备验收。

@@ -1,3 +1,8 @@
+## 2026-10-20 — 项目生命周期与 Schema 拆分跨平台通过
+
+Codex：#11 Android 第二轮 69/69、零跳过；#12 Linux Node/HTTP/Browser 与 macOS Swift 全过，涵盖同一主线的生命周期实现。
+按用户授权发布 89dc1af / ee0f66b 并关闭 #11，再发布 schema 拆分关闭 #12。后续 #10 独立验证中，真实账号和安装保持。
+
 ## 2026-10-20 — Schema 边界接线已通过完整日常
 
 Codex：逐字移植后删除原函数并接内部 import，连接/事务所有权和公开 API 保持。真实 SQLite 专项 4/4；完整日常 4335 JS、35 Swift 全过。

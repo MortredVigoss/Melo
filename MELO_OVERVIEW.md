@@ -66,8 +66,8 @@
 - 文件/证据：[完成回执](docs/completion-receipts-20261020.md)、[Session Events](docs/session-events-20261020.md)，src/shared/sessionEvents.js、shared/agent/execution.js、Node 记录/上下文、Swift 原生桥和共享执行面板；Node 三协议 HTTP、落盘与零重放计数、Core/DOM 专项 160/160。
 - 边界：隔离工作树、隔离数据与受控 HTTP；真实模型/实体设备未验，未安装应用、运行 git pp 或改真实账号。主线日常 4314 JS + 35 Swift、iPhone simulator 构建通过；Android 5f3d834 的 CI 39366995591 全过。#7 已逐字移植预算，正接原文回读、压缩边界与来源开关，见 [Android 上下文](docs/android-context-20261020.md)。
 - #7：主线 fd0dfd7 / ab8240a、Android ef276a5 已推送且 issue 已关闭；4322 JS / 35 Swift 与 Android CI 39375015622（68/68、零跳过）通过。三次 ART 崩溃证据和修正保留在专项文档。
-- #11：[项目生命周期](docs/project-lifecycle-20261020.md)已接桌面/HTTP/iPhone/Android。主线最终完整日常 4331 JS / 35 Swift 与 iPhone simulator 构建通过；Android 首轮 67/69，修正同名导航定位和旧用例对运行中移动的预期，第二轮 CI 待验，未推生产或关闭。
-- #12：[Memory Schema 边界](docs/memory-schema-boundary-20261020.md)只抽 SQLite schema/迁移，先逐字复制、再行为测试、再接线；#11 等待 Android CI 期间准备；39bd465 逐字移植后已接线，完整日常 4335 JS / 35 Swift 全过，跨平台 CI 待验，尚未发布。
+- #11：[项目生命周期](docs/project-lifecycle-20261020.md)，主线 89dc1af / Android ee0f66b；主线 4331 JS / 35 Swift 与 iPhone simulator 构建、Android CI 39377354163（69/69、零跳过）全过，按授权发布关闭。
+- #12：[Memory Schema 边界](docs/memory-schema-boundary-20261020.md)，39bd465 逐字移植、e64bfe6 接线；4335 JS / 35 Swift 与 Linux/macOS CI 39377921633 全过，按顺序发布关闭。下一项 #10 Android CI 39378706877 验证中，之后 #13/#14。
 
 ### 2026-10-20 — melo审计修复（Cowork / Claude）— 能力临时提升与即时开启（iPhone 端）
 - 接手桌面交接（专项第 9 节）：Swift 判定核心与 35 条共享夹具（0 跳过）、本机账本与请求代理、唯一卡口 `DeviceToolContext.perform`（主回复与团队成员、三条连接）、卡片与「临时授权」列表、新建 Agent 起点。入口与映射、差异见[专项](docs/capability-elevation-20261020.md) 9.1–9.3；契约新增 `capabilityElevation.phone`（只增不改，桌面忽略）。

@@ -1,6 +1,6 @@
 # 项目生命周期实施约定（GitHub #11）
 
-当前处于实现与跨端验证阶段；不能据此关闭 issue。沿用现有提交回执与 v1 同步，不删除聊天、原图或用户外部工作目录。
+实现与跨端回归已完成，按授权顺序发布。沿用现有提交回执与 v1 同步，不删除聊天、原图或用户外部工作目录。
 
 | 操作 | 可观察行为 |
 | --- | --- |
@@ -20,3 +20,5 @@
 最终主线树：`project-lifecycle-daily-release.log` 完整日常 **4331/4331 JS、35/35 Swift**（零 JS 跳过）、89 Core fixtures、浏览器与生成检查全过；`project-lifecycle-ios-build-final.log` iPhone simulator BUILD SUCCEEDED。共用 v1 fixture 被 Node、Swift、Android 读取；任务改属创建新执行聊天，旧运行及原文保留。项目记忆原 namespace 不变，detached 聊天检索不再包含该 namespace。
 
 Android 首轮 `39376098715` 构建/JVM/Lint/R8 通过、模拟器 67/69；两项失败是重建后同名“资料”选择器和旧测试允许运行中项目移动。第二轮改为明确选择“项目”及断言移动拒绝后继续验证上下文捕获。未跳过或减少原执行、取消与数据保留断言，最终 Android CI 待结果，不据此关闭 issue。未安装应用、运行真实模型或改动用户账号数据。
+
+最终 Android `ee0f66b` 的 [CI 39377354163](https://github.com/MortredVigoss/Melo/actions/runs/39377354163) 全通过，模拟器 69/69、零失败/错误/跳过；主线 `89dc1af` 包含在 #12 的 [Linux/macOS CI 39377921633](https://github.com/MortredVigoss/Melo/actions/runs/39377921633) 中且全通过。主线完整日常仍为 4331 JS / 35 Swift，后续纯 schema 拆分完整树为 4335 JS / 35 Swift。按授权推送既有两条生产分支并关闭 #11。
