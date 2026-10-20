@@ -151,14 +151,27 @@ export async function resolveSavedImage(home, reference) {
   const chat = state.chats.find(c => (!reference.chatId || reference.chatId === c.id) && c.messages?.some(m => m.id === reference.messageId));
   const message = chat?.messages.find(m => m.id === reference.messageId);
   if (message?.role !== 'assistant') throw unavailable();
-  const attachment = message.attachments?.find(a => a.kind === 'image' && (a.id === reference.attachmentId || reference.url && a.url === reference.url));
-  if (!attachment) throw unavailable();
   const runId = messageRunId(chat, message);
   let record = await readImageRecords(home, runId);
   if (!record) {
     const scene = await readExecutionScene(home, runId);
     if (scene?.chatId === chat.id) await archiveSceneImages(home, scene, workspaceFor(state, chat, home));
-    else await recoverGeneratedAttachment(home, state, chat, message, attachment, runId);
+    record = await readImageRecords(home, runId);
+  }
+  if (record && record.chatId !== chat.id) throw unavailable();
+  let attachment = message.attachments?.find(a => a.kind === 'image' && (a.id === reference.attachmentId || reference.url && a.url === reference.url));
+  if (!attachment && record) {
+    // Scene replay projects a different id and refreshed URL into the card.
+    // Resolve that alias only through this run's saved artifact AND the
+    // persisted message attachment, never through the supplied URL alone.
+    const projected = record.artifacts.find(a => a.id === reference.attachmentId
+      && (!reference.url || savedUrlMatchesPath(reference.url, a.path)));
+    if (projected) attachment = message.attachments?.find(a => a.kind === 'image'
+      && (a.url === (projected.originalUrl || projected.url) || savedUrlMatchesPath(a.url, projected.path)));
+  }
+  if (!attachment) throw unavailable();
+  if (!record) {
+    await recoverGeneratedAttachment(home, state, chat, message, attachment, runId);
     record = await readImageRecords(home, runId);
   }
   if (!record || record.chatId !== chat.id) throw unavailable();

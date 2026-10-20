@@ -98,6 +98,19 @@ test('cold legacy scene backfill matches the saved URL identity despite re-signi
   assert.deepEqual(Buffer.from(await (await fetch(f.base + image.url)).arrayBuffer()), f.bytes);
 });
 
+test('scene-projected attachment ids and refreshed URLs resolve only their saved message image', async t => {
+  const f = await legacyFixture(t);
+  await rm(f.recordsPath);
+  const projected = { ...f.reference, attachmentId: 'artifact', url: signWorkspaceFileUrl(f.path, { ttlMs: 60000 }) };
+  assert.notEqual(projected.url, f.signedUrl);
+  const response = await f.resolveImage(projected); assert.equal(response.status, 200);
+  assert.deepEqual(Buffer.from(await (await fetch(f.base + (await response.json()).url)).arrayBuffer()), f.bytes);
+  assert.equal((await f.resolveImage({ ...projected, attachmentId: 'unknown' })).status, 404);
+  assert.equal((await f.resolveImage({ ...projected, url: signWorkspaceFileUrl('/private/generated/picture.png') })).status, 404);
+  await updateStateAtomically(state => { state.chats.find(c => c.id === 'chat').messages[0].attachments = []; }, { home: f.home });
+  assert.equal((await f.resolveImage(projected)).status, 404, 'a scene id without the persisted message attachment is insufficient');
+});
+
 test('concurrent legacy recovery binds each image to its own recorded workspace', async t => {
   const f = await legacyFixture(t);
   const secondRoot = join(f.home, 'another-old-project');

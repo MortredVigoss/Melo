@@ -11,10 +11,11 @@ import { launchTestChrome } from '../src/testSupport/testChrome.js';
 import { createMediaRoutes } from '../src/http/mediaRoutes.js';
 import { updateStateAtomically } from '../src/state/stateStore.js';
 import { renderAttachmentCards } from './attachmentCards.js';
+import { archiveSceneImages } from '../src/media/imageRecords.js';
 
-test('historical image cards, preview and native save share bounded recovery and original bytes', { timeout: 30000 }, async t => {
+for (const projected of [false, true]) test(`historical ${projected ? 'scene-projected' : 'saved'} image cards, preview and native save share bounded recovery and original bytes`, { timeout: 30000 }, async t => {
   const home = await realpath(await mkdtemp(join(tmpdir(), 'image-recovery-ui-')));
-  const ws = join(home, 'workspaces', 'chats', 'chat');
+  const ws = projected ? join(home, 'old-project') : join(home, 'workspaces', 'chats', 'chat');
   await mkdir(join(ws, 'generated'), { recursive: true });
   const path = join(ws, 'generated', 'old.png');
   const bytes = await sharp({ create: { width: 320, height: 240, channels: 3, background: '#9e876b' } }).png().toBuffer();
@@ -24,8 +25,13 @@ test('historical image cards, preview and native save share bounded recovery and
   const message = { id: 'reply', role: 'assistant', content: '', metadata: { chatId: 'chat', runId: 'old-run' },
     attachments: [{ id: 'image', kind: 'image', url: oldUrl, title: '旧图片' }] };
   await updateStateAtomically(state => { state.chats.push({ id: 'chat', title: 'fixture', messages: [message] }); }, { home });
+  // selectedMessagePresentation replaces the persisted attachment id and URL
+  // with the scene artifact id and a newly signed URL when replay is loaded.
+  const displayMessage = projected ? { ...message, attachments: [{ ...message.attachments[0], id: 'scene-image', url: oldUrl.replace('e=1', 'e=2') }] } : message;
+  if (projected) await archiveSceneImages(home, { runId: 'old-run', chatId: 'chat',
+    artifacts: [{ id: 'scene-image', kind: 'image', path, url: oldUrl }] }, join(home, 'workspaces', 'chats', 'chat'));
   const esc = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const cards = renderAttachmentCards(message, { escapeHtml: esc, attachmentLabel: a => a.title });
+  const cards = renderAttachmentCards(displayMessage, { escapeHtml: esc, attachmentLabel: a => a.title });
   const media = createMediaRoutes({ home });
   let resolutions = 0;
   const server = createServer(async (req, res) => {
