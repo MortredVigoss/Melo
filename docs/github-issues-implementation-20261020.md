@@ -7,7 +7,7 @@
 | 顺序 | Issue | 状态 / 完成条件 |
 | --- | --- | --- |
 | 1 | [#1 文件身份](https://github.com/MortredVigoss/Melo/issues/1) | 已完成：`47da231` 已推送，issue 已关闭；[双平台 CI](https://github.com/MortredVigoss/Melo/actions/runs/39260200905)通过 |
-| 2 | [#4 历史图片](https://github.com/MortredVigoss/Melo/issues/4) | 已完成：`94e76cb` 已推送，issue 已关闭；稳定图片身份、旧记录恢复与原图回归 |
+| 2 | [#4 历史图片](https://github.com/MortredVigoss/Melo/issues/4) | 二次修复：`e4e378a` / `a115577`；旧工作区与回看引用兼容，原生预览/保存/冷启动及原件 SHA 已验，见专项回执 |
 | 3 | [#3 自然搜索](https://github.com/MortredVigoss/Melo/issues/3) | 已完成：`1c48b6a` 已推送，issue 已关闭；专项 95/95、JS 4098/4098 与 Swift 通过 |
 | 4 | [#9 跨平台 CI](https://github.com/MortredVigoss/Melo/issues/9)、[#2 记忆库并发](https://github.com/MortredVigoss/Melo/issues/2) | #9 已通过全部远端 gate 并关闭（主线 `6fd2481`、手机 `b1529d0`）；#2 与冷启动补充 `239953b` 已推送并关闭，Mac/Linux 并发与完整日常通过 |
 | 5 | [#5 通用循环](https://github.com/MortredVigoss/Melo/issues/5)、[#6 完成条件](https://github.com/MortredVigoss/Melo/issues/6)、[#8 事件](https://github.com/MortredVigoss/Melo/issues/8)、[#7 Android 上下文](https://github.com/MortredVigoss/Melo/issues/7) | #5 已完成并关闭：主线 d2dcd02、Android 6209a2a，三端验证通过。#6 已完成关闭：主线 4c3ebb5、Android 05592af，见[完成回执](completion-receipts-20261020.md)；#8 a2551cf/5f3d834 已推送关闭，CI 39366995591 全过；#7 主线 fd0dfd7 / ab8240a、Android ef276a5 已验证、推送并关闭 |
@@ -34,6 +34,8 @@
 
 
 ## #4 实施与验收
+
+10-20 装机后重新打开的两处缺口已修复，最终完整 gate 与原生实点回执见 [历史图片复验](issue-4-legacy-preview-20261020.md)。以下为首轮实施记录。
 
 由服务器依据已持久化的执行成果或附件登记解析图片身份，生成当前端口下可用的访问入口；聊天卡片、预览和保存使用同一身份。图片登记独立于短期执行场景清理，避免旧成果只剩失效 URL。只从当前 home 的受信记录取路径，拒绝跨 home、越界和软链接，不接受客户端解码 p 后重签。
 
