@@ -42,8 +42,10 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname_test = dirname(fileURLToPath(import.meta.url));
 const RUNNER_SOURCE = readFileSync(join(__dirname_test, 'chatExecutionRunner.js'), 'utf8');
-// Graph nodes moved out of the runner (architecture B2). They are sibling
-// scopes of prepare, so every line in them counts as "outside prepare".
+// Since architecture B2 each graph node lives in its own file under
+// execution/: prepareNode.js is "inside prepare"; the runner and the other
+// node files (sibling scopes of prepare) are "outside".
+const PREPARE_SOURCE = readFileSync(join(__dirname_test, 'execution/prepareNode.js'), 'utf8');
 const MOVED_NODE_SOURCES = ['execution/invokeModelNode.js', 'execution/finalizeNode.js']
   .map(file => [file, readFileSync(join(__dirname_test, file), 'utf8')]);
 
@@ -80,54 +82,30 @@ test('activeAgentProfile references obey scope contract: bare inside prepare, gr
   //
   // Skip in both halves: comments, declaration forms, object-literal
   // key form `activeAgentProfile:`.
-  const lines = RUNNER_SOURCE.split('\n');
-  const prepareStart = lines.findIndex(l => /async\s+'prepare'\s*\(/.test(l));
-  let prepareEnd = -1;
-  for (let i = prepareStart + 1; i < lines.length; i++) {
-    if (/^      \},\s*$/.test(lines[i])) { prepareEnd = i; break; }
-  }
-  assert.ok(prepareStart > 0 && prepareEnd > prepareStart, 'prepare node boundaries must be locatable');
-
   const outsideOffences = []; // bare references outside prepare
   const insideOffences = [];  // graphState. references inside prepare
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+  const scan = (file, source, inPrepare) => source.split('\n').forEach((line, i) => {
     const trimmed = line.trimStart();
-    if (trimmed.startsWith('//') || trimmed.startsWith('*')) continue;
-    const inPrepare = i >= prepareStart && i <= prepareEnd;
-
-    const matches = line.matchAll(/\bactiveAgentProfile\b/g);
-    for (const m of matches) {
-      const idx = m.index;
-      const before = line.slice(0, idx);
-      const after = line.slice(idx + 'activeAgentProfile'.length);
+    if (trimmed.startsWith('//') || trimmed.startsWith('*')) return;
+    for (const m of line.matchAll(/\bactiveAgentProfile\b/g)) {
+      const before = line.slice(0, m.index);
+      const after = line.slice(m.index + 'activeAgentProfile'.length);
       const usesGraphStatePrefix = /graphState\.\s*$/.test(before);
       // skip declarations & object-literal-key forms (both halves)
       if (/^:/.test(after)) continue;
       if (/\b(const|let|var|function)\s+$/.test(before)) continue;
-
       if (inPrepare && usesGraphStatePrefix) {
         // prepare has NO graphState param — would throw at runtime.
-        insideOffences.push(`L${i + 1}: ${line.trim()}`);
+        insideOffences.push(`${file} L${i + 1}: ${line.trim()}`);
       } else if (!inPrepare && !usesGraphStatePrefix) {
-        outsideOffences.push(`L${i + 1}: ${line.trim()}`);
+        outsideOffences.push(`${file} L${i + 1}: ${line.trim()}`);
       }
     }
-  }
-
-  for (const [file, source] of MOVED_NODE_SOURCES) {
-    source.split('\n').forEach((line, i) => {
-      const trimmed = line.trimStart();
-      if (trimmed.startsWith('//') || trimmed.startsWith('*')) return;
-      for (const m of line.matchAll(/\bactiveAgentProfile\b/g)) {
-        const before = line.slice(0, m.index);
-        const after = line.slice(m.index + 'activeAgentProfile'.length);
-        if (/^:/.test(after) || /\b(const|let|var|function)\s+$/.test(before)) continue;
-        if (!/graphState\.\s*$/.test(before)) outsideOffences.push(`${file} L${i + 1}: ${line.trim()}`);
-      }
-    });
-  }
+  });
+  assert.match(PREPARE_SOURCE, /return async function prepare\(\)/, 'prepare node must be locatable and still take no graphState parameter');
+  scan('execution/prepareNode.js', PREPARE_SOURCE, true);
+  scan('chatExecutionRunner.js', RUNNER_SOURCE, false);
+  for (const [file, source] of MOVED_NODE_SOURCES) scan(file, source, false);
 
   assert.deepEqual(
     outsideOffences, [],

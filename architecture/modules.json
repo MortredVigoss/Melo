@@ -22,8 +22,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 604,
-      "edges": 1843,
+      "modules": 605,
+      "edges": 1851,
       "roots": [
         "src",
         "desktop-ui",
@@ -561,7 +561,7 @@
       "usedBy": {
         "approvals": 3,
         "channels": 6,
-        "chat": 33,
+        "chat": 34,
         "desktop-shell": 12,
         "memory": 2,
         "platform": 34,
@@ -731,7 +731,7 @@
       "modules": {
         "desktop-ui": 27,
         "shared": 22,
-        "src": 66
+        "src": 67
       },
       "entryModules": [
         {
@@ -968,14 +968,14 @@
         }
       ],
       "dependsOn": {
-        "agents": 33,
+        "agents": 34,
         "approvals": 7,
         "channels": 2,
         "desktop-shell": 15,
         "knowledge": 5,
         "media": 26,
-        "memory": 26,
-        "platform": 56,
+        "memory": 27,
+        "platform": 58,
         "projects": 11,
         "settings": 9,
         "sync": 2,
@@ -1416,7 +1416,7 @@
       "usedBy": {
         "agents": 11,
         "channels": 4,
-        "chat": 26,
+        "chat": 27,
         "desktop-shell": 1,
         "knowledge": 2,
         "media": 1,
@@ -3924,7 +3924,7 @@
         "agents": 42,
         "approvals": 36,
         "channels": 22,
-        "chat": 56,
+        "chat": 58,
         "desktop-shell": 9,
         "knowledge": 2,
         "media": 9,
@@ -5100,7 +5100,8 @@
         "src/services/chat/chatExecutionRunner.test.js": [
           "src/services/chat/chatExecutionRunner.js",
           "src/services/chat/execution/finalizeNode.js",
-          "src/services/chat/execution/invokeModelNode.js"
+          "src/services/chat/execution/invokeModelNode.js",
+          "src/services/chat/execution/prepareNode.js"
         ],
         "src/services/remote/pollingOffset.source.test.js": [
           "src/services/remote/discordPolling.js",
@@ -5153,6 +5154,7 @@
         "src/services/chat/chatExecutionRunner.js",
         "src/services/chat/execution/finalizeNode.js",
         "src/services/chat/execution/invokeModelNode.js",
+        "src/services/chat/execution/prepareNode.js",
         "src/services/remote/discordPolling.js",
         "src/services/remote/telegramPolling.js",
         "src/services/search/socialLinkReader.js",

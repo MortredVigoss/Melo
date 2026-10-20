@@ -1052,7 +1052,8 @@
         "src/services/chat/chatExecutionRunner.test.js": [
           "src/services/chat/chatExecutionRunner.js",
           "src/services/chat/execution/finalizeNode.js",
-          "src/services/chat/execution/invokeModelNode.js"
+          "src/services/chat/execution/invokeModelNode.js",
+          "src/services/chat/execution/prepareNode.js"
         ],
         "src/services/remote/pollingOffset.source.test.js": [
           "src/services/remote/discordPolling.js",
