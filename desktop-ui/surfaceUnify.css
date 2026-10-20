@@ -131,3 +131,8 @@
  .neural-dashboard .customize-layout {grid-template-columns:minmax(0,1fr);}
  .neural-dashboard .customize-layout > .customize-pane:nth-child(2):not(:last-child) {border-right:0;border-bottom:1px solid var(--space-edge-soft);padding-right:0;}
 }
+
+/* 6. Reply reading rhythm: a paragraph that follows a list gets the same
+   space as a paragraph that precedes one. */
+.message-bubble .reply-list-item + :is(p,h1,h2,h3,h4,pre,blockquote,table) {margin-top:10px;}
+.message-bubble :is(p,pre,blockquote,table) + .reply-list-item {margin-top:4px;}
