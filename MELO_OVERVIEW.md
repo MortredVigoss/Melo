@@ -795,3 +795,5 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 ### 2026-10-20 — melo主线（Codex）— #10 布局兼容缓存
 - [Fold 缓存](docs/fold-cache-20261020.md)：显示/姿态/App 版本筛选、每步环境复查、窗口尺寸限制、变体保留及命中/失配耗时；新 JVM 与真实 Repository emulator 用例待 CI。
 - #11 验证提交 ee0f66b 的 Android CI 39377354163 正在模拟器阶段；#12 主线跨平台 CI 39377921633 已通过。当前 #10 是 WIP，不视为 Fold6 真机通过。
+
+#10 最终：7584df4 / CI 39379418326 构建、JVM、Lint、R8 与 72/72 emulator 全绿。准备依用户授权推送手机正式分支并关闭；无真机或安装验收。#11 已以 ee0f66b 通过 69/69 并发布关闭，#12 已以 e64bfe6 经 Linux/macOS CI 发布关闭。

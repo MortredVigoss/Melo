@@ -9,3 +9,5 @@
 验证：JVM 匹配/未知/版本变化/双变体；真实 Repository 的 emulator 回归覆盖内外布局各自命中、变化后零旧动作、版本失配、原恢复/取消；原生观察返回环境并在姿态改变后拒绝旧 screen_id。CI 不等于 Fold6 真机验收。官方接口参考：https://developer.android.com/reference/android/hardware/Sensor#TYPE_HINGE_ANGLE 。
 
 首轮 CI 39378706877 在 Kotlin 编译阶段检出新增闭包赋值使 nullable recipe 无法 smart cast；在已判定非空的分支显式捕获 requireNotNull，保持执行行为。尚未通过构建，第二轮待验。
+
+最终验证：`7584df4` 的 [Android CI 39379418326](https://github.com/MortredVigoss/Melo/actions/runs/39379418326) 全绿；JVM、Lint、Debug/R8 和 Android 16 emulator 72/72 通过，零失败、零跳过。已核对下载的 XML。没有 Fold6 真机、真实 App 更新或真实模型调用证据，也未安装用户设备。
