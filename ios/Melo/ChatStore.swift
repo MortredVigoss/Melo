@@ -166,8 +166,9 @@ import SwiftUI
         }
         if Date().timeIntervalSince(lastSceneSave) > 0.5 { saveExecutionRecords() }
     }
-    private func finishRun(_ runID: String, state: String, message: ChatMessage? = nil, sources: [WebSource] = []) {
+    private func finishRun(_ runID: String, state: String, message: ChatMessage? = nil, sources: [WebSource] = [], completion: AgentCompletionReceipt? = nil) {
         guard let index = executionRecords.firstIndex(where: { $0.runId == runID }) else { return }
+        executionRecords[index].completion = completion ?? (state == "completed" ? nil : AgentCompletionReceipt.make(goal: executionRecords[index].query, reply: "", terminalReason: state == "cancelled" ? "CANCELLED" : "REQUEST_FAILED"))
         executionRecords[index].finish(state, messageID: message?.id)
         if let message { executionRecords[index].reconcileReferences(message: message, annotations: sources) }
         saveExecutionRecords()
@@ -570,7 +571,7 @@ import SwiftUI
                     if !reply.sources.isEmpty { if preferences.messageSources == nil { preferences.messageSources = [:] }; preferences.messageSources?[message.id] = reply.sources }
                     if reply.searched { if preferences.searchedMessages == nil { preferences.searchedMessages = [] }; preferences.searchedMessages?.insert(message.id) }
                 }
-                finishRun(record.runId, state: "completed", message: message, sources: reply.sources)
+                finishRun(record.runId, state: "completed", message: message, sources: reply.sources, completion: reply.completion)
                 LocalDeviceServices.shared.completed(text: reply.text, background: isBackground)
                 completed = true
                 replyBackground.finish(runID: record.runId, success: true)

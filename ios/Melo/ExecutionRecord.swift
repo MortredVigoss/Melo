@@ -269,6 +269,7 @@ struct ExecutionRecord: Codable, Identifiable, Equatable {
     var startedAt = timestamp()
     var finishedAt: String?
     var status = "running"
+    var completion: AgentCompletionReceipt?
     var sequence = 0
     var operations: [ExecutionOperation] = []
     var pipeline: [ExecutionStage]?

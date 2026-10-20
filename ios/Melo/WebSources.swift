@@ -55,6 +55,7 @@ struct ModelReply {
     var images: [ImagePayload] = []
     /// For per-photo edits: the original each returned image belongs to (same order as images).
     var imageReferences: [[String]]? = nil
+    var completion: AgentCompletionReceipt? = nil
 }
 
 enum WebReplyFormatter {

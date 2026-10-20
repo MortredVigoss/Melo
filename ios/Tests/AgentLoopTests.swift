@@ -39,6 +39,22 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
         let c = AgentLoopContract.shared
         assert(c.maxIterations == 10 && c.maxCallsPerResponse == 32)
 
+        // The shared receipt reads actual page text, never a successful tool flag.
+        for body in ["Sydney brunch menu with breakfast dishes and observed opening hours for this fixture.", "Distant stars and galaxies have different spectra and their light is redshifted.", ""] {
+            let log = Log()
+            let transport = ScriptedTransport { input in input.iteration == 0 ? calls([fc("read", "open_url", #"{"url":"https://fixture.invalid/menu"}"#)]) : answer("Sydney brunch: https://fixture.invalid/menu") }
+            let tools = loopTools(log) { _ in
+                let page: [String: Any] = ["ok": true, "url": "https://fixture.invalid/menu", "text": body]
+                return PhoneToolResult(output: PhoneToolEnvelope.success(String(data: try! JSONSerialization.data(withJSONObject: page), encoding: .utf8)!))
+            }
+            let result = try await AgentLoop(transport: transport, tools: tools, budget: PhoneRunBudget(), latestUserMessage: "Research Sydney brunch").run()
+            assert(log.performed.count == 1 && transport.requests.count == 2 && transport.completions.isEmpty)
+            assert(result.completion?.outcome == (body.hasPrefix("Sydney") ? "completed" : "partial"))
+            assert(result.completion?.goalState == (body.hasPrefix("Sydney") ? "supported" : "unverified"))
+        }
+        let plain = try await AgentLoop(transport: ScriptedTransport { _ in answer("Hello") }, tools: nil, budget: PhoneRunBudget(), latestUserMessage: "Hello").run()
+        assert(plain.completion?.outcome == "completed" && plain.completion?.goalState == "not_applicable")
+
         // Audit A1: hostile finite numbers never trap, neighbours and offsets clamp before conversion.
         let extremeMessages = (0..<4).map { ChatMessage(id: "m\($0)", role: "user", content: "original") }
         for number in [1e100, -1e100, Double.greatestFiniteMagnitude, Double.infinity, -Double.infinity, Double.nan] {

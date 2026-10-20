@@ -167,7 +167,7 @@ enum Network {
                 transport.observation.stage("model:response", name: "模型请求", status: "completed", output: outcome.stop == .toolLimit ? "已达到工具执行上限，本轮停止" : "运行预算已用完，本轮停止")
                 await onObservation?(transport.observation)
             }
-            return ModelReply(text: outcome.text, sources: outcome.finalRound?.sources ?? [])
+            return ModelReply(text: outcome.text, sources: outcome.sources, searched: outcome.searched, completion: outcome.completion)
         } catch {
             let cancelled = error is CancellationError || (error as? URLError)?.code == .cancelled
             transport.observation.stage("model:response", name: "模型请求", status: cancelled ? "cancelled" : "failed", output: cancelled ? "请求已取消" : "未取得完整响应")

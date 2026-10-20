@@ -2018,6 +2018,7 @@ export const webSearchTool = {
         return {
           ok: true,
           output,
+          completionSources: [...fresh.contentMap].map(([url, content]) => ({ url, content })),
           meta: {
             query: q,
             provider: fresh.provider,
@@ -2500,6 +2501,7 @@ export const webSearchTool = {
     return {
       ok: true,
       output,
+      completionSources: [...contentMap].map(([url, content]) => ({ url, content })),
       meta: {
         query: q,
         provider,

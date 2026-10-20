@@ -7,6 +7,7 @@ import { executionScene, executionContext, publicReasoning } from './execution.j
 import { parseReplyDocument, inlineSpans, replyPresentation } from '../../src/shared/replyDocument.js';
 import { budgetOperation } from './policyBridge.js';
 import { repeatOperation } from './repeatGuard.js';
+import { completionResult, completionObservation } from './completion.js';
 
 export function evaluate(input) {
   try {
@@ -16,6 +17,8 @@ export function evaluate(input) {
       case 'hello': value = { version: CORE_VERSION, runtime: 'melo-local-core', portable: true }; break;
       case 'budget': value = JSON.parse(JSON.stringify(budgetOperation(input))); break;
       case 'repeat': value = repeatOperation(input); break;
+      case 'completion': value = completionResult(input.completion); break;
+      case 'completionObservation': value = completionObservation(input.observation); break;
       case 'plan': value = planRequest(input.request); break;
       case 'actionEvidence': value = actionEvidence(input.plan, input.urls); break;
       case 'skills': value = buildSkills(input.enabledIds, input.customSkills); break;

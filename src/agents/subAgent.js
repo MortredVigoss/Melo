@@ -191,7 +191,7 @@ async function runSubAgentLoop({
 
   for (let iteration = 0; ; iteration++) {
     if (signal?.aborted) {
-      return { ok: false, output: 'Sub-agent aborted.', meta: { aborted: true, iteration } };
+      return { ok: false, output: 'Sub-agent aborted.', meta: { aborted: true, iteration, completion: coreTurn.receipt(task, '', 'CANCELLED') } };
     }
 
     if (coreTurn.update('request') !== 'running') break;
@@ -199,11 +199,11 @@ async function runSubAgentLoop({
     const request = fitRequestContext({ sections: [{ id: 'instructions', text: systemPrompt, required: true }],
       messages: loopMessages, toolDefinitions: functionSession.definitions, ...contextBudget });
     const estimatedInput=Math.ceil(estimateTextTokens(systemPrompt+JSON.stringify(request.messages)+JSON.stringify(functionSession.definitions))*4/3)+32;
-    if(usedTokens+estimatedInput>=maxTokens) return {ok:false,output:'Member token budget exhausted before another request.',meta:{budgetExceeded:true,iterations,toolResults}};
+    if(usedTokens+estimatedInput>=maxTokens) return {ok:false,output:'Member token budget exhausted before another request.',meta:{budgetExceeded:true,iterations,toolResults,completion:coreTurn.receipt(task,'','TOKEN_LIMIT')}};
     // Run budget (C1): the child pool derived from the parent turn; spending here is charged upward.
     const runBudget=currentRequestContext()?.budget||null;
     const exhausted=budgetExhausted(runBudget);
-    if(exhausted) return {ok:false,output:`Run budget exhausted (${exhausted.reason}) before another request.`,error:'BUDGET_EXHAUSTED',meta:{budgetExceeded:true,budget:{reason:exhausted.reason,limit:exhausted.limit,used:exhausted.used},iterations,toolResults}};
+    if(exhausted) return {ok:false,output:`Run budget exhausted (${exhausted.reason}) before another request.`,error:'BUDGET_EXHAUSTED',meta:{budgetExceeded:true,budget:{reason:exhausted.reason,limit:exhausted.limit,used:exhausted.used},iterations,toolResults,completion:coreTurn.receipt(task,'','BUDGET_EXHAUSTED')}};
     const tokensBefore=usedTokens;
     const remaining=maxTokens-usedTokens-estimatedInput;
     const configuredLimit=Number(providerConfig.maxOutputTokens||providerConfig.maxTokens);
@@ -369,7 +369,7 @@ async function runSubAgentLoop({
   return {
     ok: !exhausted && deniedTools === 0,
     output: finalOutput,
-    meta: { depth, iterations, toolCalls: totalToolCalls, failedTools, deniedTools, exhausted, stopReason: coreTurn.reason, toolResults },
+    meta: { depth, iterations, toolCalls: totalToolCalls, failedTools, deniedTools, exhausted, stopReason: coreTurn.reason, toolResults, completion: coreTurn.receipt(task, finalOutput) },
   };
 }
 

@@ -2,6 +2,23 @@ import Foundation
 import CryptoKit
 import JavaScriptCore
 
+/// Additive persisted receipt; old records have no receipt and stay unknown.
+struct AgentCompletionReceipt: Codable, Equatable {
+    var version: Int
+    var kind: String
+    var outcome: String
+    var goalState: String
+    var reason: String
+    var evidenceIds: [String]
+    var completedSteps: Int
+    var summary: String
+    static func make(goal: String, reply: String, observations: [[String: Any]] = [], terminalReason: String = "") -> Self? {
+        guard let value = SharedLoopPolicy.value("completion", ["completion": ["goal": goal, "reply": reply, "observations": observations, "terminalReason": terminalReason]]),
+              let data = try? JSONSerialization.data(withJSONObject: value) else { return nil }
+        return try? JSONDecoder().decode(Self.self, from: data)
+    }
+}
+
 enum SharedAgentCoreError: Error { case unavailable, invalidBundle, invalidReply, closed }
 
 /// One serial JSCore context per turn. No native IO functions are exposed.

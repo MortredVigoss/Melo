@@ -22,8 +22,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 581,
-      "edges": 1750,
+      "modules": 582,
+      "edges": 1754,
       "roots": [
         "src",
         "desktop-ui",
@@ -695,7 +695,7 @@
       ],
       "modules": {
         "desktop-ui": 27,
-        "shared": 16,
+        "shared": 17,
         "src": 63
       },
       "entryModules": [
@@ -1058,6 +1058,7 @@
           "desktop-ui/replyDocument.test.js",
           "scripts/generate-agent-loop-contract.test.js",
           "shared/agent/budgetBridge.test.js",
+          "shared/agent/completion.test.js",
           "shared/agent/conformance.test.js",
           "shared/agent/continuation.test.js",
           "shared/agent/execution.test.js",

@@ -243,7 +243,7 @@ struct ImageSizeRejected: Error {}
         }
         let sources = WebReplyFormatter.references(in: "", annotations: outcome.sources)
         let note = transport.sizeFallback ? "服务未接受所选尺寸 \(imageTask?.size ?? "")，已按服务默认尺寸生成；需要 2K/4K 可改用支持该尺寸的图像 API 连接。" : ""
-        return ModelReply(text: [outcome.text, note].filter { !$0.isEmpty }.joined(separator: "\n\n"), sources: sources, searched: outcome.searched, images: images)
+        return ModelReply(text: [outcome.text, note].filter { !$0.isEmpty }.joined(separator: "\n\n"), sources: sources, searched: outcome.searched, images: images, completion: outcome.completion)
     }
     /// Hands parser progress to the main actor at most every 150 ms (and always for the first text and the end).
     final class StreamUpdates: @unchecked Sendable {

@@ -815,6 +815,7 @@ export async function runChatAgentExecutionGraph({
         // Running message list for the tool loop — starts from the prepared window.
         let loopMessages = [...graphState.modelMessages];
         let finalReply = '';
+        let terminalReason = '';
         // G-1d slice 2 (2026-05-12): accumulate per-tool-call structured
         // metadata across loop iterations so the persisted assistant
         // message can carry the evidenceTrail history of all tools that
@@ -906,6 +907,7 @@ export async function runChatAgentExecutionGraph({
           // warning, not a ✓) and limit/used live in `output`, which the scene
           // keeps; a bare `budget` field would be dropped by applyExecutionEvent.
           const emitBudgetExhausted = exhausted => {
+            terminalReason = 'BUDGET_EXHAUSTED';
             const limitText = exhausted.reason === 'deadline' ? `${Math.round(exhausted.used / 1000)}s / ${Math.round(exhausted.limit / 1000)}s` : `${exhausted.used} / ${exhausted.limit}`;
             sseEmitter?.('execution_event', { kind: 'pipeline', id: 'budget:exhausted', module: 'compute', name: '运行预算已用完', status: 'failed',
               output: `已达到运行预算（${describeBudgetReason(exhausted)}，已用 ${limitText}），本轮停止。已用：模型请求 ${exhausted.usage.providerCalls} 次、输入约 ${exhausted.usage.inputTokens} token、工具调用 ${exhausted.usage.toolCalls} 次。`,
@@ -948,7 +950,11 @@ export async function runChatAgentExecutionGraph({
             // user network-off or a non-Codex route keeps it off.
             nativeWebSearchEnabled: nativeFeaturesForScope(context.capabilityScope).nativeWebSearchEnabled && !['user-disabled-network', 'user-disabled-search'].includes(graphState.searchPlan?.reason),
             nativeImageGenerationEnabled: scopeAllowsTool(context.capabilityScope,'image',{action:'generate'}) && imageSettings(config).engine === 'codex-oauth',
-            onExecutionEvent: event => sseEmitter?.('execution_event', { ...event, id: event.id ? `${iteration}:${event.id}` : undefined }),
+            onExecutionEvent: event => {
+              const observed = { ...event, id: event.id ? `${iteration}:${event.id}` : undefined };
+              coreTurn.observeNative(observed);
+              sseEmitter?.('execution_event', observed);
+            },
           });
           } catch (error) {
             // Bug audit T7: the deadline most often lands in the middle of a
@@ -1181,7 +1187,7 @@ export async function runChatAgentExecutionGraph({
         // the finalize node can attach it to normalizedReply → sendChatMessage
         // attaches it to the persisted assistantMessage.  Only emit when
         // non-empty so we don't pollute pure-text replies with empty arrays.
-        const out = { reply: finalReply, hadToolCalls, skipVerification: coreTurn.status === 'blocked', toolEvidence: collectVerificationEvidence(evidencePairs, { query: latestUserMessage }), next: 'finalize' };
+        const out = { completionForReply: reply => coreTurn.receipt(latestUserMessage, reply, terminalReason || coreTurn.reason), reply: finalReply, hadToolCalls, skipVerification: coreTurn.status === 'blocked', toolEvidence: collectVerificationEvidence(evidencePairs, { query: latestUserMessage }), next: 'finalize' };
         if (accumulatedToolResults.length > 0) {
           out.toolResults = accumulatedToolResults;
         }
@@ -1312,6 +1318,7 @@ export async function runChatAgentExecutionGraph({
         // tool-loop node above) onto the normalized reply.  sendChatMessage
         // does the conditional spread onto the persisted assistantMessage —
         // empty / absent arrays produce no `toolResults` key on the message.
+        normalizedReply.completion = graphState.completionForReply?.(preNormalizeText);
         normalizedReply.memoryUsage = graphState.memoryUsage || [];
         if (graphState.team) normalizedReply.team = graphState.team;
         if (Array.isArray(graphState.toolResults) && graphState.toolResults.length > 0) {

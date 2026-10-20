@@ -16,13 +16,14 @@ export function publicReasoning(items = []) {
   return items.filter(item => item?.type === 'reasoning').flatMap(item => Array.isArray(item.summary) ? item.summary : [])
     .filter(item => item?.type === 'summary_text' && typeof item.text === 'string').map(item => text(item.text, 8000)).join('\n').slice(0, 12000);
 }
-export function executionScene({ action, scene, runId, chatId, query, at, event = {}, outcome, reason } = {}) {
+export function executionScene({ action, scene, runId, chatId, query, at, event = {}, outcome, reason, completion } = {}) {
   if (action === 'create') return { version: 1, runId, chatId, query: text(query, 4000), startedAt: at, status: 'running', sequence: 0, operations: [], pipeline: [], sources: [], artifacts: [], events: [], lastModule: 'compute', taskOutcome: 'running' };
   if (!scene || scene.version !== 1) throw new Error('Unknown execution scene.');
   const next = JSON.parse(JSON.stringify(scene));
   if (scene.status !== 'running') return next;
   if (action === 'finish') {
-    next.taskOutcome = ['completed', 'partial', 'blocked', 'needs_user', 'cancelled', 'failed', 'interrupted'].includes(outcome) ? outcome : 'failed';
+    next.taskOutcome = ['completed', 'partial', 'blocked', 'needs_user', 'cancelled', 'budget_exhausted', 'failed', 'interrupted'].includes(outcome) ? outcome : 'failed';
+    if (completion?.version === 1) next.completion = completion;
     next.status = ['completed', 'cancelled', 'interrupted'].includes(next.taskOutcome) ? next.taskOutcome : 'failed';
     next.finishedAt = at; next.stopReason = text(reason, 500);
     for (const row of [...next.operations, ...next.pipeline]) if (row.status === 'running') { row.status = next.status === 'completed' ? 'interrupted' : next.status; row.finishedAt = at; }

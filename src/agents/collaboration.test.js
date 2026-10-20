@@ -43,7 +43,7 @@ test('forged targets, missing capability, cycle and depth cap fail without start
 });
 test('token budget prevents a provider request when required context is already too large',async()=>{
  let calls=0;const result=await runSubAgent({task:'work',agentProfile:profile('member'),maxTokens:1,config:{model:'fixture'},replyFn:async()=>{calls++;return 'should not run';}});
- assert.equal(calls,0);assert.equal(result.meta.budgetExceeded,true);
+ assert.equal(calls,0);assert.equal(result.meta.budgetExceeded,true);assert.equal(result.meta.completion.outcome,'budget_exhausted');
 });
 
 test('a cancelled executor keeps its workspace writer lease until the real tool settles',async()=>{

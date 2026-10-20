@@ -233,3 +233,15 @@ test('T15: pruneExecutionScenes drops runs older than 14 days or beyond the newe
   assert.deepEqual(await pruneExecutionScenes(join(home, 'nope')), { removedRuns: 0, removedFiles: 0 });
   await rm(home, { recursive: true, force: true });
 });
+
+test('completion receipt survives scene persistence separately from delivery status', async t => {
+  const home = await mkdtemp(join(tmpdir(), 'melo-completion-scene-'));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const completion = { version: 1, kind: 'action', outcome: 'partial', goalState: 'unverified', reason: 'GOAL_TERMINAL_EVIDENCE_MISSING', evidenceIds: [], completedSteps: 1, summary: 'Partially completed' };
+  const recorder = createExecutionRecorder({ home, runId: 'completion-run', chatId: 'completion-chat' }, 'Create a file');
+  await recorder.finish('completed', { id: 'assistant', content: 'Done', metadata: { completion } });
+  const restored = await readExecutionScene(home, 'completion-run');
+  assert.equal(restored.status, 'completed');
+  assert.equal(restored.taskOutcome, 'partial');
+  assert.deepEqual(restored.completion, completion);
+});

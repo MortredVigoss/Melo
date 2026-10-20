@@ -27,7 +27,7 @@ async function harness(t, respond, options={}) {
     let raw = ''; for await (const chunk of req) raw += chunk;
     const body = JSON.parse(raw); requests.push({ path: req.url, body });
     res.setHeader('content-type', 'text/event-stream');
-    res.end(respond(requests.length));
+    res.end(respond(requests.length, body));
   });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   registerTool({ id: 'fixture_lookup', name: 'Fixture lookup', description: 'Read the requested fixture entry.',
@@ -212,4 +212,32 @@ test('shared main loop rejects 33 calls atomically before permission', async t =
   const bad = await harness(t, () => done(Array.from({ length: 33 }, (_, i) => fn(`bad-${i}`, 'A'))));
   await assert.rejects(bad.run(), /32|batch|limit|calls/i);
   assert.equal(bad.executions.length, 0); assert.equal(bad.permissions.length, 0);
+});
+
+for (const evidence of ['read', 'snippet', 'unrelated', 'empty']) test('completion receipt uses actual research bodies: ' + evidence, async t => {
+  const original = getTool('web_search'); let searches = 0;
+  unregisterTool('web_search');
+  registerTool({ ...webSearchTool, requiresPermission: false, run: async () => {
+    searches++;
+    return { ok: true, output: 'Query Research Sydney brunch; https://fixture.invalid/menu', completionSources: evidence === 'empty' ? [] : [{ url: 'https://fixture.invalid/menu', reading: evidence === 'snippet' ? 'snippet' : 'extracted', content: evidence === 'unrelated' ? 'Distant stars and galaxies have different spectra and their light is redshifted.' : 'Sydney brunch menu with breakfast dishes and observed opening hours for this fixture.' }] };
+  } });
+  t.after(() => { unregisterTool('web_search'); if (original) registerTool(original); });
+  const call = { ...fn('research-read', 'Sydney brunch', 'web_search'), arguments: JSON.stringify({ query: 'Sydney brunch', num_results: null, noCache: null, allowBlockedDomains: null }) };
+  let modelTurns = 0;
+  const h = await harness(t, (_, body) => {
+    if (!body.tools?.length) return done([{ ...message, content: [{ type: 'output_text', text: 'factual', annotations: [] }] }]);
+    return done(++modelTurns === 1 ? [call] : [{ ...message, content: [{ type: 'output_text', text: 'Sydney brunch: https://fixture.invalid/menu', annotations: [] }] }]);
+  }, { text: 'Research Sydney brunch' });
+  const result = await h.run();
+  assert.equal(searches, 1); assert.equal(modelTurns, 2, 'no additional judge or action replay');
+  assert.equal(result.normalizedReply.completion.outcome, evidence === 'read' ? 'completed' : 'partial');
+  assert.equal(result.normalizedReply.completion.goalState, evidence === 'read' ? 'supported' : 'unverified');
+  assert.equal(JSON.stringify(result.normalizedReply.completion).includes('breakfast dishes'), false);
+});
+test('tool ok and final prose are not goal verification', async t => {
+  const h = await harness(t, round => done(round === 1 ? [fn('effect', 'A')] : [message]));
+  const result = await h.run();
+  assert.equal(h.executions.length, 1); assert.equal(h.requests.length, 2);
+  assert.equal(result.normalizedReply.completion.outcome, 'partial');
+  assert.equal(result.normalizedReply.completion.reason, 'GOAL_TERMINAL_EVIDENCE_MISSING');
 });

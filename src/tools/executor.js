@@ -243,6 +243,9 @@ async function runObservedTool(tool, args, options = {}) {
         error: rawResult.error,
         meta: rawResult.meta ?? {},
       };
+      // Ephemeral page bodies for completion evidence; trace/persistence use
+      // their existing allowlists and deliberately never store this field.
+      if (tool.id === 'web_search' && Array.isArray(rawResult.completionSources)) result.completionSources = rawResult.completionSources;
       // Bug audit T1 (2026-10-18): the B1 envelope fields a tool sets itself
       // (`status:'empty'`, `code:'NO_RESULTS'`) must survive normalisation,
       // otherwise finalizeToolResult sees a plain `ok:true` and the model

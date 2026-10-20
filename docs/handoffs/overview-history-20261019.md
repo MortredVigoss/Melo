@@ -595,3 +595,10 @@
 - 后续日常发现 #2 冷启动配置 WAL 前未设置 busy_timeout，后台写入时偶发锁失败；issue 已重开，确定性 cached/disposable 两路径红转绿，Mac/Linux 各 5/5、完整日常已过，补丁 `239953b` 待推送。
 - 收尾：预算额度原子预留、设备进展共享判定及 7 个新 fixture 已接；共享 JS 106/106、完整日常 JS 4213/4213 与 Swift 34 组通过；simulator 应用再次编译成功。Android 首轮 60/61 的具体拒绝码回归已修，第二轮 CI 39356581051 待实际结果。
 - 下一步：等第二轮 Android CI 与主线日常复核 #5 验收，才推主线并关闭；随后 #6/#8/#7 等。[实施入口](../github-issues-implementation-20261020.md)，日志 `.tmp/github-issues-fix-20261020/core-loop-*`；不运行 git pp。
+
+### 2026-10-20 — melo主线（Codex）— GitHub #5 完成，继续 #6
+- 线程 ID：`01a13b2e-5446-7042-bb5e-773129746c7e`。#1/#4/#3/#9/#2/#5 均已推送并在 GitHub 关闭；#2 冷启动补充 `239953b` 也已关闭。
+- 发布：主线 `d2dcd02`；Android 手机分支 `6209a2a`，保留双分支版本差异，不整体覆盖主线。另一个线程在原 master 的能力升级/版本 WIP 未改。
+- 架构：Node 主聊天/子 Agent/技能、Swift AgentLoop 与 Kotlin Host 消费同一个 shared/agent Core 的轮数、许可、批次/重复 ID、重复失败、进展、父子预算及终止策略。Host 保留 HTTP、原生 I/O、schema、审批、取消和记录。Swift/Kotlin 原子预留工具额度。
+- 验证：完整日常 JS 4213/4213、34 组 Swift；真实 JSCore/Android/Node 同一组 68 fixture；iOS simulator app 编译成功；Android JVM/Lint/Debug/R8 与模拟器 64/64 零跳过。远端 Linux/macOS、文件安全与 Android CI 全绿；证据见[实施账本](../github-issues-implementation-20261020.md)及[循环实施](../shared-loop-hardening-20261020.md)。真实账号、安装与设备数据未改。
+- 下一步：#6 的[完成回执约定](../completion-receipts-20261020.md)已写；独立新策略草稿 7 项边界测试通过，尚未接生产或提交。随后 #8/#7/#11/#12/#10/#13/#14；不自动运行 git pp。

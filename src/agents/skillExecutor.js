@@ -238,7 +238,7 @@ async function runSkillLoop({
 
   for (let iteration = 0; ; iteration++) {
     if (signal?.aborted) {
-      const aborted = { ok: false, output: 'Skill aborted.', error: 'ABORTED', meta: { aborted: true, iteration } };
+      const aborted = { ok: false, output: 'Skill aborted.', error: 'ABORTED', meta: { aborted: true, iteration, completion: coreTurn.receipt(task, '', 'CANCELLED') } };
       recordTelemetry(false, aborted);
       return aborted;
     }
@@ -252,7 +252,7 @@ async function runSkillLoop({
     const exhausted = budgetExhausted(runBudget);
     if (exhausted) {
       const stopped = { ok: false, output: `Run budget exhausted (${exhausted.reason}) before another request; the skill is incomplete.`, error: 'BUDGET_EXHAUSTED',
-        meta: { skillId: skill.id, iterations, toolCalls: totalToolCalls, depth, budget: { reason: exhausted.reason, limit: exhausted.limit, used: exhausted.used } } };
+        meta: { skillId: skill.id, iterations, toolCalls: totalToolCalls, depth, completion: coreTurn.receipt(task, '', 'BUDGET_EXHAUSTED'), budget: { reason: exhausted.reason, limit: exhausted.limit, used: exhausted.used } } };
       recordTelemetry(false, stopped);
       return stopped;
     }
@@ -390,12 +390,14 @@ async function runSkillLoop({
     if (coreTurn.results(allResults) !== 'running') break;
   }
 
+  const completion = coreTurn.receipt(task, finalOutput);
   const finalResult = {
     ok: completed && Boolean(finalOutput),
     output: finalOutput || (coreTurn.status === 'blocked' ? coreTurn.reply(task) : completed ? 'Skill returned no answer.' : 'Skill reached its tool iteration limit before producing a final answer; the task is incomplete.'),
     ...(!completed ? { error: coreTurn.reason === 'ROUND_LIMIT' ? 'SKILL_ITERATION_LIMIT' : coreTurn.reason || 'SKILL_ITERATION_LIMIT' } : !finalOutput ? { error: 'EMPTY_SKILL_REPLY' } : {}),
     meta: {
       skillId: skill.id,
+      completion,
       iterations,
       toolCalls: totalToolCalls,
       depth,

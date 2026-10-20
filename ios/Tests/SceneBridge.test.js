@@ -58,6 +58,9 @@ test('phone adapter replays local evidence, persists the view and opens sources 
   assert.equal(document.querySelectorAll('.execution-scroll').length,0);
   assert.ok(!timers.some(timer=>timer.ms===2600),'Full-screen results must not disappear on completion');
   assert.ok(!document.querySelector('#execution-panel').classList.contains('is-collapsed'));
+  const receipt = {version:1,outcome:'partial',goalState:'unverified',summary:'部分完成 · 尚无目标完成证据'};
+  window.meloReceive({...payload,scenes:[{...scene,status:'completed',sequence:3,completion:receipt}]});
+  assert.equal(document.querySelector('.execution-status').textContent,receipt.summary,'Transport completion must not erase the task evidence gap');
   document.querySelector('[data-execution-action="overview"]').click();
   assert.equal(document.querySelector('.execution-panel-stage').dataset.zoom,'1.000');
   // Phone two-finger gestures share the desktop picker, but the second finger

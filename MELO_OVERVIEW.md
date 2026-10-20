@@ -59,12 +59,12 @@
 
 ## 4. 最新交接
 
-### 2026-10-20 — melo主线（Codex）— GitHub #5 完成，继续 #6
-- 线程 ID：`01a13b2e-5446-7042-bb5e-773129746c7e`。#1/#4/#3/#9/#2/#5 均已推送并在 GitHub 关闭；#2 冷启动补充 `239953b` 也已关闭。
-- 发布：主线 `d2dcd02`；Android 手机分支 `6209a2a`，保留双分支版本差异，不整体覆盖主线。另一个线程在原 master 的能力升级/版本 WIP 未改。
-- 架构：Node 主聊天/子 Agent/技能、Swift AgentLoop 与 Kotlin Host 消费同一个 shared/agent Core 的轮数、许可、批次/重复 ID、重复失败、进展、父子预算及终止策略。Host 保留 HTTP、原生 I/O、schema、审批、取消和记录。Swift/Kotlin 原子预留工具额度。
-- 验证：完整日常 JS 4213/4213、34 组 Swift；真实 JSCore/Android/Node 同一组 68 fixture；iOS simulator app 编译成功；Android JVM/Lint/Debug/R8 与模拟器 64/64 零跳过。远端 Linux/macOS、文件安全与 Android CI 全绿；证据见[实施账本](docs/github-issues-implementation-20261020.md)及[循环实施](docs/shared-loop-hardening-20261020.md)。真实账号、安装与设备数据未改。
-- 下一步：#6 的[完成回执约定](docs/completion-receipts-20261020.md)已写；独立新策略草稿 7 项边界测试通过，尚未接生产或提交。随后 #8/#7/#11/#12/#10/#13/#14；不自动运行 git pp。
+### 2026-10-20 — melo主线（Codex）— GitHub #6 完成回执接线
+- 状态：WIP；#1/#4/#3/#9/#2/#5 已发布关闭，#6 待完整验证，随后 #8/#7/#11/#12/#10/#13/#14。用户再次授权逐项测试后推送关闭，不逐条询问。
+- 行为：执行器返回文字/工具 ok 与任务证据分开；五类终态、已读来源和目标未知状态由共享 Core 计算。Node 主聊天/成员/技能、当前 iPhone AgentLoop、Android SharedChatAgent 与执行面板接线。
+- 文件及边界：shared/agent/completion.js、三端循环和持久执行记录；[完成回执约定](docs/completion-receipts-20261020.md)。只保留证据 ID；词语匹配不是事实核实，通用文件/MCP 操作缺少独立终态时保持未知。
+- 验证：Node/Core/真实 localhost HTTP 115/115；84 个同源 fixture 在 Node/JSCore 通过；执行记录落盘回读与共享 DOM 通过。固定版本完整日常 4242/4242 JS、34 Swift 和 iOS 编译通过。远端能力授权/测试选组更新 `ceb6667` 待合并复验；Android 验证分支第二轮 CI 进行中，手机正式分支未推进。
+- 账号、数据及已安装应用未改；不运行 git pp；保留原 master 他线程 WIP。
 
 此前交接（原文见[历史交接](docs/handoffs/overview-history-20261019.md)，新者在后）：10-19 双端逻辑只读审计 → 七项修复与最终日常 → 双端覆盖安装与数据保留 → 架构维护成本审计与方案 → GitHub 权限只读核对 → 架构方案 P0 执行 → 架构方案 P2a 记忆页与项目页 → 架构方案 P2b Agent 设置 → 架构方案 P2c 聊天拆分 → Claude 架构 P0–P2 独立审计 → 已提交保存恢复 R1 修复。
 
@@ -150,7 +150,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | 线程（原名） | ID | 最新交接 / 实际范围 | 状态与证据 |
 | --- | --- | --- | --- |
 | melo审计修复（Cowork） | `01a11623-b29c-70c7-8ee0-bb21a1e6eef3` | 10-17 三路只读审计 → 四批修复：TTS 路由、上下文预算/窗口/压缩同源、逐轮上下文入用户消息、Discord 归档、Agent 成员/循环/审批加固、分层 gate 传递闭包、文档对齐；10-19 手机 agent loop 对齐桌面（共享 `agent-loop.json`）；10-19 架构方案 P0 执行 → P2a 记忆 / 项目页拆分 → P2b Agent 设置拆分 → P2c 聊天拆分（P2 完成） | 沙箱全量 JS 回归与基线一致；用户机器日常 gate 见本次提交；[审计与实施状态](docs/architecture-agent-context-audit-20261017.md) §7；P2c / P2b / P2a / P0 见[历史交接](docs/handoffs/overview-history-20261019.md) |
-| melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 七项双端修复已推送并覆盖两端；10-19 新增架构维护成本审计与分期方案；10-19 GitHub 权限只读核对；10-19 Claude 架构 P0–P2 独立审计与 R1 修复；10-20 核对并按序实施 yrlf 的 14 条 issues | [双端修复](docs/mobile-desktop-alignment.md) / [装机保留](docs/dual-reinstall-20261019.md)已验；[架构方案](docs/architecture-maintainability-plan-20261019.md)已本地提交 `db9f7ba`，用户已批准执行 P0–P2（执行修订见方案第 8 节）；本次[审计及修复](docs/claude-architecture-review-20261019.md) R1 已在 `46554b2` 修复，日常选定范围全部通过，已随 `401ae4b` 推送；[14 条 issues 核对](docs/github-issues-review-20261020.md)已转入[按序实施](docs/github-issues-implementation-20261020.md)，#1 修复 `47da231` 已推送、issue 已关闭，双平台 CI 通过；#4 `94e76cb` 已推送、issue 已关闭；#3 `1c48b6a` 已推送、issue 已关闭；#9 实施中 |
+| melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 七项双端修复已推送并覆盖两端；10-19 新增架构维护成本审计与分期方案；10-19 GitHub 权限只读核对；10-19 Claude 架构 P0–P2 独立审计与 R1 修复；10-20 核对并按序实施 yrlf 的 14 条 issues | [双端修复](docs/mobile-desktop-alignment.md) / [装机保留](docs/dual-reinstall-20261019.md)已验；[架构方案](docs/architecture-maintainability-plan-20261019.md)已本地提交 `db9f7ba`，用户已批准执行 P0–P2（执行修订见方案第 8 节）；本次[审计及修复](docs/claude-architecture-review-20261019.md) R1 已在 `46554b2` 修复，日常选定范围全部通过，已随 `401ae4b` 推送；[14 条 issues 核对](docs/github-issues-review-20261020.md)已转入[按序实施](docs/github-issues-implementation-20261020.md)，#1 修复 `47da231` 已推送、issue 已关闭，双平台 CI 通过；#4 `94e76cb` 已推送、issue 已关闭；#3 `1c48b6a` 已推送、issue 已关闭；#9/#2/#5 已推送关闭；#6 完成回执验证中 |
 | melo主线（历史·2026-10-15） | `01a10bf2-e092-7862-87fe-2f237a8fb6a0` | 架构、审计、记忆、function calling、日常 gate 和手机 OAuth；本次只补遗漏 | 已完成补录；授权核心已提交，当时相关共享文件的他线程 WIP 已于 10-17 收入 `8cd3eff`；[build23 回执](docs/handoffs/melo-thread-backfill-20261015.md#historical)，产品任务交新主线 |
 | 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | API 观测、阅读/图片保留共享 WIP（10-17 已随全部 WIP 收入 `8cd3eff`）；五语/图像质量/MCP 已提交；本轮统一 Agent 设置并清除 Mood | Agent 日常 3573 JS / 23 Swift、浏览器与原生桌面通过，见 `docs/agent-settings-20261016.md`；现有聊天/Agent 保留，手机未重装 |
 | melo ui | `01a10bf3-d7b9-7832-a351-8b0f78e9c552` | 10-16 UI 设计语言审计：主视觉统一，新增浮层/设置/控件接入不完整；仅审计 | 六类差异与手机 Form 待验项见[审计报告](docs/ui-language-audit-20261016.md)；桌面实看/样式采样，手机源码层；此前[银河与留白](docs/galaxy-clarity-20261016.md)验证保留 |

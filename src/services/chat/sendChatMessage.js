@@ -1,3 +1,4 @@
+import { completionResult } from '../../../shared/agent/completion.js';
 import { usedSupplements } from './supplements.js';
 import { hasPerformanceTrace, withPerformanceTrace } from '../../runtime/performanceTrace.js';
 import { conversationConfig, selectedMaterials } from './conversationSelection.js';
@@ -147,7 +148,8 @@ export function sendChatMessage(options) {
           try { await interruptChatRun(context, error); }
           catch (secondError) { recordFailure('chat:interrupt-run', secondError || firstError); }
         });
-        await executionRecorder.finish(status, partialReply);
+        const completion = completionResult({ goal: options.content, reply: partialReply?.content || '', terminalReason: status === 'cancelled' ? 'CANCELLED' : error?.code === 'CONTEXT_BUDGET_EXCEEDED' ? error.code : 'REQUEST_FAILED' });
+        await executionRecorder.finish(status, { ...partialReply, metadata: { ...partialReply?.metadata, completion } });
         throw error;
       }
     });
@@ -471,6 +473,7 @@ async function executeChatTurn({
     ...{ metadata: {
           ...requestIdentity(context),
           memoryUsage: normalizedReply.memoryUsage || [],
+          ...(normalizedReply.completion ? { completion: normalizedReply.completion } : {}),
           ...(partialImageMessage ? {imageDelivery:{...partialImageMessage.metadata.imageDelivery,status:'completed'}} : {}),
           agent: {id:effectiveAgentId, name:activeAgentProfile.name},
           ...(normalizedReply.team ? {team:normalizedReply.team} : {}),

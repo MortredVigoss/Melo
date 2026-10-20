@@ -133,6 +133,7 @@ function updateButtons() {
 }
 function headerStatus(scene) {
   if (!scene) return t("待机 · 氛围动画");
+  if (sceneFinished(scene) && scene.completion?.summary) return scene.completion.summary;
   if (sceneFinished(scene)) return `${statusNames[scene.status]} · 回看记录，未在执行`;
   const running = scene.operations.filter(op => op.status === 'running');
   if (running.length > 1) return `${running.length} 项真实调用并行执行`;

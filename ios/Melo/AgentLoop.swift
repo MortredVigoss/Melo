@@ -103,6 +103,7 @@ struct AgentLoopOutcome {
     var iterations: Int
     var unusedSupplements: [String] = []
     var verification: PhoneUncertainty.Verification?
+    var completion: AgentCompletionReceipt?
 }
 
 /// Observers; all run on the main actor.
@@ -127,6 +128,8 @@ final class AgentLoop: @unchecked Sendable {
     var maxIterations = AgentLoopContract.shared.maxIterations
     var maxCallsPerResponse = AgentLoopContract.shared.maxCallsPerResponse
     private var contract: AgentLoopContract { .shared }
+    private var completionObservations: [[String: Any]] = []
+    private var completionTerminalReason = ""
 
     init(transport: AgentModelTransport, tools: AgentLoopTools?, budget: PhoneRunBudget, latestUserMessage: String, verification: AgentVerification? = nil, hooks: AgentLoopHooks = AgentLoopHooks()) {
         self.transport = transport; self.tools = tools; self.budget = budget
@@ -152,6 +155,8 @@ final class AgentLoop: @unchecked Sendable {
         if PhoneMemberLimits.current != nil, outcome.stop != .answered { throw MeloError.message("成员达到运行上限，结果尚未完成。") }
         if let validate { try validate(outcome) }
         try await finalize(&outcome)
+        outcome.completion = AgentCompletionReceipt.make(goal: latestUserMessage, reply: outcome.text, observations: completionObservations, terminalReason: outcome.stop == .budget ? "BUDGET_EXHAUSTED" : completionTerminalReason)
+        if let receipt = outcome.completion { await hooks.onStage?("completion", "目标回执", receipt.outcome == "completed" ? "completed" : "failed", receipt.summary) }
         return outcome
     }
 
@@ -191,6 +196,7 @@ final class AgentLoop: @unchecked Sendable {
             return AgentLoopOutcome(text: text, stop: .budget, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: 0)
         }
         let core = try PhoneCoreTurn(tools: Array(offered), rounds: maxIterations, callsPerRound: maxCallsPerResponse)
+        defer { completionTerminalReason = core.completed ? "" : core.reason }
         var iteration = 0
         while true {
             if iteration > 0 {
@@ -236,6 +242,7 @@ final class AgentLoop: @unchecked Sendable {
             spentTokens += inputTokens + (round.outputTokens ?? PhoneTokenEstimate.text(round.text + round.calls.map(\.arguments).joined()))
             if let limit = PhoneMemberLimits.current?.tokens, spentTokens > limit { throw MeloError.message("成员 token 预算已用完，未继续执行工具。") }
             sources += round.sources
+            if round.searched { completionObservations.append(["id": "hosted-search:\(iteration)", "name": "web_search", "type": "tool", "ok": true, "executed": true]) }
             searched = searched || round.searched
             let calls = transport.offersTools && tools != nil ? round.calls : []
             if calls.isEmpty {
@@ -286,6 +293,10 @@ final class AgentLoop: @unchecked Sendable {
                 }
                 let record = ExecutionToolCall(iteration: iteration, call: call, args: args, outcome: outcome, executed: executed, started: started, finished: Date())
                 records.append(record)
+                if let rows = SharedLoopPolicy.value("completionObservation", ["observation": ["id": call.callID, "name": call.name, "ok": outcome.ok, "executed": executed, "output": outcome.output]]) as? [[String: Any]] {
+                    completionObservations.append(contentsOf: rows)
+                    if completionObservations.count > 128 { completionObservations.removeFirst(completionObservations.count - 128) }
+                }
                 await hooks.onToolCall?(record)
                 if cancelled { _ = try? core.event("cancel"); throw CancellationError() }
                 if core.active {
