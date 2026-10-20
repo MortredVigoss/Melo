@@ -259,3 +259,5 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - #14 11 项同源任务在 Node / JavaScriptCore / Android JavaScriptSandbox 的完整事件、回执、成本相同；修正了拒绝工具导致研究误判为操作的问题。脚本/数据/验收见 [专项](docs/task-replay-20261020.md)。
 - 主线 4356/4356 JS、35/35 Swift；远端 CI 39391968956 Linux/macOS 通过。Android CI 39394944470 JVM/Lint/Debug/R8、73/73 emulator 和本轮报告收集/比较通过，下载 XML 与报告再次核对。
 - #10 布局缓存、#11 生命周期、#12 SQLite 边界、#13 容量基线已在对应专项留记录。真实模型质量、Fold6/iPhone 实体设备及安装验证另计；账号和数据未变，无 git pp。
+
+最终发布回执：GitHub #1–#14 均已关闭，实时 open issue 查询为 0；#14 完成评论 https://github.com/MortredVigoss/Melo/issues/14#issuecomment-6287315760 。主线 8175263、手机 379db49 已推送，后续提交仅补本条文档回执。代码与 CI 验证点仍为 aa83db2 / a11183b，无未完 issue 工作。
