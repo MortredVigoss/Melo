@@ -951,7 +951,7 @@ function planRequest({ text = '', messages = [], capabilities = {}, config = {} 
   if (available('web_search') && runtimeConfig.search.backend === 'http' && runtimeConfig.search.endpoint) return { ...searchBase, route: 'http-search', tools: ['web_search', ...readingTools, ...phoneTools], requiredTools: ['web_search', ...phoneTools], toolDependencies: research.navigate ? { phone_use: ['web_search'] } : {}, backend: 'http' };
   if (available('web_search') && capabilities.legacyReader === true && runtimeConfig.search.backend === 'legacy-reader') return { ...base, route: 'legacy-search', tools: ['web_search'], backend: 'legacy-reader', instructions: guidance };
   if (available('web_search') && capabilities.browserSearch === true && runtimeConfig.search.browserFallback) return { ...base, route: 'browser-search', tools: ['web_search'], backend: 'browser', instructions: guidance };
-  return { ...base, route: 'unavailable', reason: 'SEARCH_UNAVAILABLE', instructions: 'No verified hosted search or configured search backend is available. Explain the missing search capability. Do not invent current facts or open phone apps as a fallback.' };
+  return { ...base, route: 'unavailable', reason: 'SEARCH_UNAVAILABLE', instructions: 'No verified hosted search or configured search backend is available to retrieve public evidence. Explain the missing search capability. Do not invent current facts or open phone apps as a fallback.' };
 }
 
 return { actionEvidence, planRequest };
