@@ -25,28 +25,11 @@ import { bindAgentsContext, agentsApi, getBootstrap, app, render, bgRender, show
 export function installAgentsController(context) {
   bindAgentsContext(context);
   resetAgentsState();
-  window.clearTimeout(agentMarkdownAutosaveTimer);
-  window.clearTimeout(agentChannelAutosaveTimer);
   window.clearTimeout(agentRuntimeRefreshTimer);
-  agentMarkdownAutosaveTimer = 0;
-  agentMarkdownAutosaveSequence = 0;
-  pendingAgentMarkdownAutosave = null;
-  agentMarkdownLastInteractionAt = 0;
-  agentChannelAutosaveTimer = 0;
-  agentChannelAutosaveSequence = 0;
-  pendingAgentChannelAutosave = null;
   agentRuntimeRefreshTimer = 0;
 }
 
-let agentMarkdownAutosaveTimer = 0;
-let agentMarkdownAutosaveSequence = 0;
-let pendingAgentMarkdownAutosave = null;
-let agentMarkdownLastInteractionAt = 0;
-let agentChannelAutosaveTimer = 0;
-let agentChannelAutosaveSequence = 0;
-let pendingAgentChannelAutosave = null;
 let agentRuntimeRefreshTimer = 0;
-const AGENT_MARKDOWN_AUTOSAVE_IDLE_MS = 900;
 
 function selectedAgentProfile() {
   return agentProfileById(getBootstrap()?.settings?.selectedAgentId || 'main');
@@ -410,260 +393,6 @@ async function handleTestAgentChannel(trigger) {
   applyBootstrap(payload);
 }
 
-async function saveAgentMarkdownSnapshot(snapshot) {
-  if (!snapshot?.agentId) {
-    return;
-  }
-
-  const requestSequence = ++agentMarkdownAutosaveSequence;
-  const payload = await agentsApi.update({
-    agentId: snapshot.agentId,
-    scope: snapshot.scope,
-    projectId: snapshot.scope === 'project' ? snapshot.projectId : null,
-    activeView: getBootstrap()?.settings?.activeView || 'agent',
-    patch: {
-      identity: String(snapshot.identity || '').trim(),
-      'soul.md': String(snapshot.soulMd || '').trim(),
-    },
-  });
-
-  if (requestSequence !== agentMarkdownAutosaveSequence) {
-    return;
-  }
-
-  storeBootstrap(payload);
-}
-
-async function saveAgentChannelSnapshot(snapshot) {
-  if (!snapshot?.agentId || !snapshot?.channels) {
-    return;
-  }
-
-  const saveKey = agentSaveKey(
-    snapshot.agentId,
-    snapshot.scope,
-    snapshot.scope === 'project' ? snapshot.projectId || 'global' : 'global',
-  );
-  const minimumVisibleMs = 100;
-  const waitForMinimumVisibleState = new Promise(resolve => setTimeout(resolve, minimumVisibleMs));
-  const requestSequence = ++agentChannelAutosaveSequence;
-  // Mark the save-in-progress flag, but do NOT render here. A render() in the
-  // middle of the save pipeline blows away document.activeElement and the
-  // input caret position, which is exactly what caused "光标会自动跳到最上面
-  // 输入金冬天id的那个输入框" — the user's caret was yanked out of the Discord
-  // Group ID input the moment the 3-second idle timer fired. Any UI that
-  // depends on agentSaveStates (the "Saving…" button label) will pick up the
-  // new flag on the next render triggered by an actual DOM event (keystroke,
-  // scroll, focus), which is visually indistinguishable at human timescales.
-  agentsState.agentSaveStates[saveKey] = true;
-
-  // Channel autosave also carries the three voice settings edited on the
-  // channel voice section (voiceReplyMode, edgeTtsVoice, voicePersonality). They are
-  // agent-level, not nested under channels, but they share the same autosave
-  // trigger so the user never has to hit a separate save button. Only include
-  // them when they are present on the snapshot to avoid overwriting a saved
-  // value with undefined on unrelated autosaves.
-  const patch = { channels: snapshot.channels };
-  if (typeof snapshot.voiceReplyMode === 'string') {
-    patch.voiceReplyMode = snapshot.voiceReplyMode;
-  }
-  if (typeof snapshot.edgeTtsVoice === 'string') {
-    patch.edgeTtsVoice = snapshot.edgeTtsVoice;
-  }
-  if (typeof snapshot.voicePersonality === 'string') {
-    patch.voicePersonality = snapshot.voicePersonality;
-  }
-
-  try {
-    const payload = await agentsApi.update({
-      agentId: snapshot.agentId,
-      scope: snapshot.scope,
-      projectId: snapshot.scope === 'project' ? snapshot.projectId : null,
-      activeView: getBootstrap()?.settings?.activeView || 'agent',
-      patch,
-    });
-
-    if (requestSequence !== agentChannelAutosaveSequence) {
-      return;
-    }
-
-    await waitForMinimumVisibleState;
-    // Use the preserving variant so the user's still-typing draft isn't
-    // discarded when this autosave response lands. Without this, every
-    // 3-second autosave rebuilt the agent form from server-side state and
-    // silently dropped any chars typed during the round-trip.
-    applyBootstrapPreservingDrafts(payload, { background: true });
-  } finally {
-    await waitForMinimumVisibleState;
-    if (requestSequence === agentChannelAutosaveSequence) {
-      delete agentsState.agentSaveStates[saveKey];
-      // Background-render: if the user is still typing, the typing guard in
-      // render() will defer until they go idle. Prevents the autosave landing
-      // from yanking the caret out of whatever input they're still editing.
-      render({ background: true });
-    }
-  }
-}
-
-function scheduleAgentChannelAutosave(agentId) {
-  const agent = agentProfileById(agentId);
-  const draft = agentDraftFor(agent);
-  if (!agent || !draft) {
-    return;
-  }
-
-  // Capture the current draft including agent-level voice fields edited on the
-  // channel voice section so saveAgentChannelSnapshot can forward them. Using draft
-  // values (not DOM reads) avoids losing in-flight edits when the autosave
-  // timer fires after the user has moved focus.
-  pendingAgentChannelAutosave = {
-    agentId,
-    scope: selectedAgentScope(),
-    projectId: activeProject()?.id || null,
-    // normalizeChannelsForDraft defends against the server→client array shape
-    // leaking into the POST body. Server expects {telegram:{...}, discord:{...}},
-    // not [{id:'telegram',...}].
-    channels: normalizeChannelsForDraft(draft.channels),
-    voiceReplyMode:
-      typeof draft.voiceReplyMode === 'string' ? draft.voiceReplyMode : undefined,
-    edgeTtsVoice:
-      typeof draft.edgeTtsVoice === 'string' ? draft.edgeTtsVoice : undefined,
-    voicePersonality:
-      typeof draft.voicePersonality === 'string' ? draft.voicePersonality : undefined,
-  };
-
-  window.clearTimeout(agentChannelAutosaveTimer);
-  // 3-second idle debounce. The user explicitly asked for "输入了一半三秒没动作
-  // 就自动保存一下已经输入的内容" — fire only after the user has stopped typing
-  // for 3 full seconds. The old 350ms threshold triggered mid-typing, which
-  // combined with the full-DOM re-render on save response caused caret jumps
-  // and focus loss between keystrokes.
-  agentChannelAutosaveTimer = window.setTimeout(async () => {
-    const snapshot = pendingAgentChannelAutosave;
-    pendingAgentChannelAutosave = null;
-    try {
-      await saveAgentChannelSnapshot(snapshot);
-    } catch (error) {
-      showError(error.message);
-    }
-  }, 3000);
-}
-
-function scheduleAgentMarkdownAutosave(agentId) {
-  const agent = agentProfileById(agentId);
-  const draft = agentDraftFor(agent);
-  if (!agent || !draft) {
-    return;
-  }
-
-  pendingAgentMarkdownAutosave = {
-    agentId,
-    scope: selectedAgentScope(),
-    projectId: activeProject()?.id || null,
-    identity: draft.identity || draft.identify || '',
-    soulMd: draft['soul.md'] || '',
-  };
-
-  agentMarkdownLastInteractionAt = Date.now();
-
-  window.clearTimeout(agentMarkdownAutosaveTimer);
-  const runWhenIdle = async () => {
-    const remainingIdleMs =
-      AGENT_MARKDOWN_AUTOSAVE_IDLE_MS - (Date.now() - agentMarkdownLastInteractionAt);
-    if (remainingIdleMs > 24) {
-      agentMarkdownAutosaveTimer = window.setTimeout(runWhenIdle, remainingIdleMs);
-      return;
-    }
-
-    const snapshot = pendingAgentMarkdownAutosave;
-    pendingAgentMarkdownAutosave = null;
-    try {
-      await saveAgentMarkdownSnapshot(snapshot);
-    } catch (error) {
-      showError(error.message);
-    }
-  };
-
-  agentMarkdownAutosaveTimer = window.setTimeout(runWhenIdle, AGENT_MARKDOWN_AUTOSAVE_IDLE_MS);
-}
-
-async function flushPendingAgentMarkdownAutosave() {
-  if (!pendingAgentMarkdownAutosave) {
-    return;
-  }
-
-  window.clearTimeout(agentMarkdownAutosaveTimer);
-  const snapshot = pendingAgentMarkdownAutosave;
-  pendingAgentMarkdownAutosave = null;
-  await saveAgentMarkdownSnapshot(snapshot);
-}
-
-// Counterpart to flushPendingAgentMarkdownAutosave for the channel (Discord /
-// Telegram token + guildId + channelId + voiceReply + voiceReplyMode +
-// edgeTtsVoice + voicePersonality) autosave pipeline. Without this, any edit
-// the user made in the Discord Bot token / Guild ID / Channel ID inputs
-// during the 3-second idle window was silently dropped when they switched
-// agents, switched scopes, quit the app, or closed the window — matching the
-// recurring "我昨天就配置好了这些参数，为什么今天打开这些东西又没了" report.
-// See feedback_preserve_user_config.md.
-async function flushPendingAgentChannelAutosave() {
-  if (!pendingAgentChannelAutosave) {
-    return;
-  }
-
-  window.clearTimeout(agentChannelAutosaveTimer);
-  const snapshot = pendingAgentChannelAutosave;
-  pendingAgentChannelAutosave = null;
-  await saveAgentChannelSnapshot(snapshot);
-}
-
-// Best-effort, synchronous flush used on page unload. Uses navigator.sendBeacon
-// when possible so the POST makes it to the server even after the window is
-// closed and the event loop stops ticking. sendBeacon is fire-and-forget and
-// cannot surface a response, so we do not update bootstrap here — the next
-// session will load the freshly-persisted state from state.json anyway.
-function flushPendingAgentAutosavesOnUnload() {
-  const channelSnapshot = pendingAgentChannelAutosave;
-  const markdownSnapshot = pendingAgentMarkdownAutosave;
-  pendingAgentChannelAutosave = null;
-  pendingAgentMarkdownAutosave = null;
-
-  if (channelSnapshot?.agentId && channelSnapshot?.channels) {
-    const patch = { channels: channelSnapshot.channels };
-    if (typeof channelSnapshot.voiceReplyMode === 'string') {
-      patch.voiceReplyMode = channelSnapshot.voiceReplyMode;
-    }
-    if (typeof channelSnapshot.edgeTtsVoice === 'string') {
-      patch.edgeTtsVoice = channelSnapshot.edgeTtsVoice;
-    }
-    if (typeof channelSnapshot.voicePersonality === 'string') {
-      patch.voicePersonality = channelSnapshot.voicePersonality;
-    }
-    const body = JSON.stringify({
-      agentId: channelSnapshot.agentId,
-      scope: channelSnapshot.scope,
-      projectId: channelSnapshot.scope === 'project' ? channelSnapshot.projectId : null,
-      activeView: getBootstrap()?.settings?.activeView || 'agent',
-      patch,
-    });
-    agentsApi.beaconUpdate(body);
-  }
-
-  if (markdownSnapshot?.agentId) {
-    const body = JSON.stringify({
-      agentId: markdownSnapshot.agentId,
-      scope: markdownSnapshot.scope,
-      projectId: markdownSnapshot.scope === 'project' ? markdownSnapshot.projectId : null,
-      activeView: getBootstrap()?.settings?.activeView || 'agent',
-      patch: {
-        identity: String(markdownSnapshot.identity || '').trim(),
-        'soul.md': String(markdownSnapshot.soulMd || '').trim(),
-      },
-    });
-    agentsApi.beaconUpdate(body);
-  }
-}
-
 async function handleImportAgentPreset(agentId, presetId) {
   const preset = agentPresetById(presetId);
   if (!preset) {
@@ -706,8 +435,6 @@ export const agentsActions = {
     await handleCreateCustomAgent();
   },
   'switch-agent-scope': async ({ trigger }) => {
-    await flushPendingAgentMarkdownAutosave();
-    await flushPendingAgentChannelAutosave();
     await patchSettings({
       activeView:
         getBootstrap().settings.activeView === 'agent' ? 'agent' : 'customize',
@@ -729,8 +456,6 @@ export const agentsActions = {
     return;
   },
   'select-agent-editor-tab': async ({ trigger }) => {
-    await flushPendingAgentMarkdownAutosave();
-    await flushPendingAgentChannelAutosave();
     agentsState.agentEditorTab = trigger.dataset.tab === 'soul' ? 'soul' : 'identity';
     agentsState.shouldFocusAgentEditor = true;
     render();
@@ -881,23 +606,6 @@ export const agentsActions = {
     const channelId = trigger.dataset.channelId;
     const VALID_TABS = ['telegram', 'discord'].filter(id => isAgentChannelAvailable(id));
     if (agentId && VALID_TABS.includes(channelId)) {
-      // Flush any pending debounced autosave before switching tabs so
-      // in-flight edits (e.g. a bot token typed <350ms ago) are not lost
-      // when the re-render discards the draft.
-      if (pendingAgentChannelAutosave && pendingAgentChannelAutosave.agentId === agentId) {
-        if (agentChannelAutosaveTimer) {
-          window.clearTimeout(agentChannelAutosaveTimer);
-          agentChannelAutosaveTimer = null;
-        }
-        const snapshot = pendingAgentChannelAutosave;
-        pendingAgentChannelAutosave = null;
-        try {
-          await saveAgentChannelSnapshot(snapshot);
-        } catch (error) {
-          showError(error.message);
-          return;
-        }
-      }
       agentsState.agentChannelTab[agentId] = channelId;
       render();
     }
@@ -946,9 +654,6 @@ export function handleAgentProfileInput(target) {
       updateAgentChannelDraft(agentId, channelId, {
         [fieldName]: target.value,
       });
-      // Schedule autosave on every keystroke so the token isn't lost if the
-      // user switches tabs or hits the Test button before the field blurs.
-      // Debounced inside scheduleAgentChannelAutosave (350ms).
       // Settings are committed only by the explicit Save action.
       return true;
     }
@@ -986,17 +691,11 @@ export function handleAgentEditorScroll(event) {
   const target = event.target;
   if (target instanceof HTMLTextAreaElement && target.classList.contains('agent-content-editor')) {
     captureAgentEditorState();
-    if (pendingAgentMarkdownAutosave) {
-      agentMarkdownLastInteractionAt = Date.now();
-    }
     return;
   }
 
   if (target instanceof HTMLElement && target.classList.contains('agent-detail-column')) {
     captureAgentScrollState();
-    if (pendingAgentMarkdownAutosave) {
-      agentMarkdownLastInteractionAt = Date.now();
-    }
   }
 }
 
@@ -1145,14 +844,6 @@ export const restoreScrollAfterRender = () => restoreAgentScrollState();
 export const syncRuntimeRefresh = () => syncAgentRuntimeRefresh();
 export const restoreEditorAfterRender = () => restoreAgentEditorState();
 
-// Navigation away from the Agent page (neural shell, open-view,
-// select-agent-profile) awaits any pending Markdown / channel autosave first.
-export async function flushPending() {
-  await flushPendingAgentMarkdownAutosave();
-  await flushPendingAgentChannelAutosave();
-}
-// pagehide / beforeunload: synchronous best-effort beacon.
-export const flushOnUnload = () => flushPendingAgentAutosavesOnUnload();
 
 // settingsFormEditors ownership of the agent-profile-update form: this
 // feature keeps that form's draft (agentDrafts), scoped per Agent, scope and
@@ -1163,4 +854,4 @@ export function discardFormDraft(form) {
   delete agentsState.agentDrafts[agentDraftKey(form.dataset.agentId)];
 }
 
-export { selectedAgentProfile, selectedAgentScope, agentDraftKey, agentSaveKey, agentSecretVisibilityKey, agentDraftFor, mergeAgentDraft, updateAgentChannelDraft, currentAgentScrollKey, currentAgentEditorStateKey, captureAgentEditorState, captureAgentScrollState, restoreAgentScrollState, restoreAgentEditorState, agentPresetById, agentToolOptions, selectedAgentNeedsRuntimeRefresh, syncAgentRuntimeRefresh, handleCreateCustomAgent, handleUpdateAgentProfile, handleTestAgentChannel, saveAgentMarkdownSnapshot, saveAgentChannelSnapshot, scheduleAgentChannelAutosave, scheduleAgentMarkdownAutosave, flushPendingAgentMarkdownAutosave, flushPendingAgentChannelAutosave, flushPendingAgentAutosavesOnUnload, handleImportAgentPreset, handleResetProjectAgentOverride };
+export { selectedAgentProfile, selectedAgentScope, agentDraftKey, agentSaveKey, agentSecretVisibilityKey, agentDraftFor, mergeAgentDraft, updateAgentChannelDraft, currentAgentScrollKey, currentAgentEditorStateKey, captureAgentEditorState, captureAgentScrollState, restoreAgentScrollState, restoreAgentEditorState, agentPresetById, agentToolOptions, selectedAgentNeedsRuntimeRefresh, syncAgentRuntimeRefresh, handleCreateCustomAgent, handleUpdateAgentProfile, handleTestAgentChannel, handleImportAgentPreset, handleResetProjectAgentOverride };

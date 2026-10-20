@@ -5,7 +5,6 @@ import { createActionRegistry } from '../registry.js';
 import { createSharedApi } from '../../sharedApi.js';
 import { settleCommittedSave } from '../../bootstrapPatch.js';
 import { installAgentsFeature } from './index.js';
-import { scheduleAgentChannelAutosave, scheduleAgentMarkdownAutosave } from './controller.js';
 
 // Architecture plan P2b: the Agent settings page owns its state (drafts, save
 // flags, scroll/caret capture), reads the bootstrap only through
@@ -167,34 +166,25 @@ test('save: a project override posts scope + project, clears only that draft and
   assert.deepEqual(Object.keys(state.agentDrafts), ['global:global:research']);
 });
 
-test('autosave hooks: flushPending sends the queued channel / Markdown snapshot once; unload uses the beacon', async t => {
+// Since 10-17 the Agent page commits only through the explicit Save action
+// (settingsEdit). The idle autosave and its flush / unload hooks were dead
+// code and are gone (architecture B1, 2026-10-20); this pins that design.
+test('Agent edits stay drafts until explicit Save: typing, idle time and navigation send no update', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const h = harness();
-  h.feature.getState().agentDrafts['global:global:research'] = { ...h.context.agentProfileById('research'), channels: { discord: { id: 'discord', botToken: 'tok' } }, voiceReplyMode: 'full' };
-  scheduleAgentChannelAutosave('research');
-  assert.deepEqual(h.calls, [], 'nothing is sent before the idle timer or a flush');
-  const flushed = h.feature.flushPending();
-  await new Promise(resolve => setImmediate(resolve)); // the save is in flight, its 100 ms minimum-visible timer armed
-  t.mock.timers.tick(100);
-  await flushed;
-  assert.equal(h.calls.length, 1);
-  assert.deepEqual(h.calls[0][2], { agentId: 'research', scope: 'global', projectId: null, activeView: 'agent', patch: { channels: { discord: { id: 'discord', botToken: 'tok' } }, voiceReplyMode: 'full' } });
-  assert.equal(h.preserved.length, 1, 'the channel autosave keeps the still-typing drafts');
-  t.mock.timers.tick(3000);
-  assert.equal(h.calls.length, 1, 'the cancelled 3 s timer does not save a second time');
-  h.feature.getState().agentDrafts['global:global:research'].identity = 'Who I am';
-  scheduleAgentMarkdownAutosave('research');
-  await h.feature.flushPending();
-  assert.deepEqual(h.calls[1][2].patch, { identity: 'Who I am', 'soul.md': '' });
-  assert.equal(h.stored.length, 1, 'the Markdown autosave stores the page data without a render');
-  scheduleAgentChannelAutosave('research');
-  beacons.length = 0;
-  h.feature.flushOnUnload();
-  assert.equal(beacons.length, 1);
-  assert.equal(beacons[0][0], '/api/agents/update');
-  assert.equal(JSON.parse(await beacons[0][1].text()).agentId, 'research');
-  await h.feature.flushPending();
-  assert.equal(h.calls.length, 2, 'the unload flush consumed the snapshot');
+  const form = profileForm('research', '<input name="discordBotToken" value="">');
+  const token = form.querySelector('[name=discordBotToken]');
+  token.value = 'tok-123';
+  assert.equal(h.feature.handleInput(token), true, 'the channel field is handled by the Agent feature');
+  t.mock.timers.tick(10_000);
+  await click(h, 'switch-agent-scope', '<button data-scope="global"></button>');
+  await click(h, 'select-agent-editor-tab', '<button data-tab="soul"></button>');
+  t.mock.timers.tick(10_000);
+  assert.deepEqual(h.calls.filter(([path]) => path.startsWith('/api/agents/update')), [], 'no Agent update leaves without the explicit Save action');
+  assert.deepEqual(beacons, [], 'nothing is beaconed either');
+  assert.equal(h.feature.getState().agentDrafts['global:global:research']?.channels?.discord?.botToken, 'tok-123', 'the typed token stays in the draft');
+  assert.equal('flushPending' in h.feature, false);
+  assert.equal('flushOnUnload' in h.feature, false);
 });
 
 test('render hooks: list/detail scroll and the editor caret survive a full re-render', async () => {

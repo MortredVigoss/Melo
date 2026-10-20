@@ -17,8 +17,6 @@ import {
   restoreScrollAfterRender,
   syncRuntimeRefresh,
   restoreEditorAfterRender,
-  flushPending,
-  flushOnUnload,
   ownsFormDraft,
   formDraftScope,
   discardFormDraft,
@@ -50,9 +48,6 @@ export function installAgentsFeature(context) {
     restoreScrollAfterRender,
     syncRuntimeRefresh,
     restoreEditorAfterRender,
-    // Leaving the page / closing the window.
-    flushPending,
-    flushOnUnload,
     renderPage: renderAgentPage,
     // Customize → Agents detail (renderConnectorDetails).
     renderWorkbench: renderAgentWorkbench,

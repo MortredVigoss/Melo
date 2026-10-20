@@ -3389,7 +3389,6 @@ function flushPendingConnectorAutosaveOnUnload() {
 }
 
 function flushAllPendingAutosavesOnUnload() {
-  agentsFeature.flushOnUnload();
   flushPendingConnectorAutosaveOnUnload();
 }
 
@@ -7366,21 +7365,18 @@ document.addEventListener('click', async event => {
       }
       case 'neural-group':
         if (!neuralGroups.some(group => group.id === trigger.dataset.group)) break;
-        await agentsFeature.flushPending();
         uiState.neuralGroup = trigger.dataset.group;
         uiState.neuralExpanded = true;
         uiState.neuralOverview = true;
         render();
         break;
       case 'neural-back':
-        await agentsFeature.flushPending();
         uiState.neuralExpanded = !uiState.neuralOverview;
         uiState.neuralOverview = true;
         render();
         break;
       case 'neural-overview':
         uiState.neuralExpanded = false;
-        await agentsFeature.flushPending();
         uiState.neuralOverview = true;
         render();
         break;
@@ -7419,13 +7415,6 @@ document.addEventListener('click', async event => {
       case 'open-view':
         chatFeature.clearHighlightedMessage();
         uiState.shouldFocusSearch = trigger.dataset.view === 'search';
-        // Flush any pending agent autosaves before leaving the agent view —
-        // otherwise a user typing a Discord token who hits the left sidebar
-        // before the 3-second idle timer fires will lose the edit. See
-        // feedback_preserve_user_config.md.
-        if (uiState.bootstrap?.settings?.activeView === 'agent') {
-          await agentsFeature.flushPending();
-        }
         await patchSettings({ activeView: trigger.dataset.view });
         if (trigger.dataset.view === 'search' && uiState.searchQuery.trim()) {
           await loadBootstrap(uiState.searchQuery, { quiet: true });
@@ -7664,7 +7653,6 @@ document.addEventListener('click', async event => {
         break;
       }
       case 'select-agent-profile':
-        await agentsFeature.flushPending();
         await patchSettings({
           activeView: 'agent',
           selectedAgentId: trigger.dataset.agentId || trigger.value || 'main',
