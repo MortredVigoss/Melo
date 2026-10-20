@@ -22,8 +22,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 605,
-      "edges": 1852,
+      "modules": 609,
+      "edges": 1863,
       "roots": [
         "src",
         "desktop-ui",
@@ -1681,7 +1681,8 @@
         {
           "module": "desktop-ui/credentialChip.js",
           "importedBy": [
-            "desktop-shell"
+            "desktop-shell",
+            "tools"
           ]
         },
         {
@@ -1841,7 +1842,7 @@
         "platform": 16,
         "projects": 1,
         "sync": 1,
-        "tools": 7,
+        "tools": 8,
         "voice": 1
       },
       "httpRoutes": [
@@ -2116,6 +2117,7 @@
         "src/plugins/**",
         "scripts/{inspect-search-trail,mock-external-connector}.js",
         "desktop-ui/{advancedPage,managementActions}.js",
+        "desktop-ui/features/customize/**",
         "desktop-ui/connectorDraft*.js",
         "desktop-ui/viz/**",
         "desktop-ui/mcpStartup.browser.test.js",
@@ -2126,16 +2128,10 @@
         "ios/Tests/{DeviceToolsTests,LocalFileAccessTests,WebPageToolsTests,WebSearchTests}.swift"
       ],
       "modules": {
-        "desktop-ui": 23,
+        "desktop-ui": 27,
         "src": 77
       },
       "entryModules": [
-        {
-          "module": "desktop-ui/advancedPage.js",
-          "importedBy": [
-            "desktop-shell"
-          ]
-        },
         {
           "module": "desktop-ui/connectorDraft.js",
           "importedBy": [
@@ -2144,6 +2140,12 @@
         },
         {
           "module": "desktop-ui/connectorDraftDispatch.js",
+          "importedBy": [
+            "desktop-shell"
+          ]
+        },
+        {
+          "module": "desktop-ui/features/customize/index.js",
           "importedBy": [
             "desktop-shell"
           ]
@@ -2418,13 +2420,14 @@
         "agents": 8,
         "approvals": 33,
         "chat": 11,
-        "desktop-shell": 4,
+        "desktop-shell": 5,
         "knowledge": 3,
         "media": 2,
         "memory": 6,
         "platform": 34,
         "projects": 5,
-        "settings": 7
+        "settings": 8,
+        "voice": 1
       },
       "usedBy": {
         "agents": 20,
@@ -2466,6 +2469,10 @@
         "desktop-ui/advancedPage.js",
         "desktop-ui/connectorDraft.js",
         "desktop-ui/connectorDraftDispatch.js",
+        "desktop-ui/features/customize/context.js",
+        "desktop-ui/features/customize/controller.js",
+        "desktop-ui/features/customize/index.js",
+        "desktop-ui/features/customize/view.js",
         "desktop-ui/managementActions.js",
         "desktop-ui/viz/citationRenderer.js",
         "desktop-ui/viz/renderers/circuitOhm.js",
@@ -2604,6 +2611,7 @@
         ]
       },
       "implicit": [
+        "served-shared-modules",
         "source-tests-app-js",
         "source-tests-self"
       ],
@@ -2950,7 +2958,7 @@
         {
           "module": "src/shared/minimaxVoiceResolver.js",
           "importedBy": [
-            "desktop-shell"
+            "tools"
           ]
         },
         {
@@ -2971,9 +2979,10 @@
       "usedBy": {
         "channels": 5,
         "chat": 3,
-        "desktop-shell": 2,
+        "desktop-shell": 1,
         "media": 1,
-        "platform": 2
+        "platform": 2,
+        "tools": 1
       },
       "httpRoutes": [
         "POST /api/audio/transcribe ← src/http/ttsRoutes.js",
@@ -3364,6 +3373,7 @@
         "source-tests-app-js",
         "source-tests-chat-feature",
         "source-tests-cross-module",
+        "source-tests-customize-feature",
         "source-tests-self"
       ],
       "notes": [
@@ -3461,7 +3471,7 @@
         "settings": 12,
         "sync": 2,
         "tools": 13,
-        "voice": 2
+        "voice": 1
       },
       "usedBy": {
         "agents": 7,
@@ -3473,7 +3483,7 @@
         "projects": 5,
         "settings": 7,
         "sync": 1,
-        "tools": 4
+        "tools": 5
       },
       "httpRoutes": [
         "GET /api/bootstrap ← src/server.js",
@@ -4924,7 +4934,7 @@
           "url": "/shared/minimaxVoiceResolver.js",
           "target": "src/shared/minimaxVoiceResolver.js",
           "importers": [
-            "desktop-ui/app.js"
+            "desktop-ui/features/customize/controller.js"
           ]
         },
         {
@@ -4978,6 +4988,7 @@
         "desktop-ui/app.js",
         "desktop-ui/executionPanel.js",
         "desktop-ui/executionScene3D.js",
+        "desktop-ui/features/customize/controller.js",
         "desktop-ui/localSettings.js"
       ],
       "features": [
@@ -4987,6 +4998,7 @@
         "media",
         "platform",
         "settings",
+        "tools",
         "voice"
       ]
     },
@@ -5302,6 +5314,20 @@
       "note": "B1-6 冻结 app.js 中央 click / submit 分发：新动作经 features/registry.js 登记，不加 case；同时守住功能模块不反向 import app.js。迁出 case 时同批删除测试内 BASELINE 对应名字",
       "features": [
         "desktop-shell"
+      ]
+    },
+    {
+      "id": "source-tests-customize-feature",
+      "kind": "source-reading-test",
+      "reads": [
+        "desktop-ui/features/customize/**/*.js"
+      ],
+      "tests": [
+        "src/safety/fileSafetyGate.production.test.js"
+      ],
+      "note": "B3：自定义页（安全分区、域名 Cookie）从 app.js 迁出后，按源码断言安全分区入口、授权刷新 / 撤销与 Cookie 表单动作仍由 features/customize 提供；Cookie 输入同步仍在 app.js 的 input 监听器",
+      "features": [
+        "approvals"
       ]
     }
   ]

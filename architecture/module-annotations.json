@@ -235,6 +235,7 @@
         "src/plugins/**",
         "scripts/{inspect-search-trail,mock-external-connector}.js",
         "desktop-ui/{advancedPage,managementActions}.js",
+        "desktop-ui/features/customize/**",
         "desktop-ui/connectorDraft*.js",
         "desktop-ui/viz/**",
         "desktop-ui/mcpStartup.browser.test.js",
@@ -1182,6 +1183,17 @@
         "desktop-ui/appSwitchFreeze.test.js"
       ],
       "note": "B1-6 冻结 app.js 中央 click / submit 分发：新动作经 features/registry.js 登记，不加 case；同时守住功能模块不反向 import app.js。迁出 case 时同批删除测试内 BASELINE 对应名字"
+    },
+    {
+      "id": "source-tests-customize-feature",
+      "kind": "source-reading-test",
+      "reads": [
+        "desktop-ui/features/customize/**/*.js"
+      ],
+      "tests": [
+        "src/safety/fileSafetyGate.production.test.js"
+      ],
+      "note": "B3：自定义页（安全分区、域名 Cookie）从 app.js 迁出后，按源码断言安全分区入口、授权刷新 / 撤销与 Cookie 表单动作仍由 features/customize 提供；Cookie 输入同步仍在 app.js 的 input 监听器"
     }
   ]
 }

@@ -25,6 +25,10 @@ const serverSrc = readFileSync(join(repoRoot, 'src', 'server.js'), 'utf8');
 const appSrc = readFileSync(join(repoRoot, 'desktop-ui', 'app.js'), 'utf8');
 // The send pipeline (SSE tool_permission handling) moved to the chat feature (P2c).
 const chatSrc = readFileSync(join(repoRoot, 'desktop-ui', 'features', 'chat', 'controller.js'), 'utf8');
+// The Customize page (Safety section, domain cookies) moved out of app.js into
+// desktop-ui/features/customize/ (architecture B3); its renderers and action
+// table are checked there.
+const customizeSrc = ['view.js', 'controller.js'].map(file => readFileSync(join(repoRoot, 'desktop-ui', 'features', 'customize', file), 'utf8')).join('\n');
 
 test('server.js imports resolveFileSafety from fileSafetyGate', () => {
   const ok = /import\s*\{\s*resolveFileSafety\s*\}\s*from\s*['"]\.\/safety\/fileSafetyGate\.js['"]/.test(serverSrc);
@@ -84,13 +88,13 @@ test('desktop-ui/app.js renders a file-safety dialog for kind === "file_safety" 
     'renderToolPermissionDialog must dispatch to renderFileSafetyDialog for file_safety entries');
 });
 
-test('desktop-ui/app.js exposes the Safety customize section + Refresh/Revoke actions', () => {
+test('the Customize feature exposes the Safety section + Refresh/Revoke actions', () => {
   // Phase 3c management UI. If a future Customize-pane refactor drops
   // the section button, users lose the only path to revoke persistent
   // grants short of editing config.json.
-  assert.ok(/data-section="safety"/.test(appSrc), 'safety section button missing');
-  assert.ok(/refresh-safety-allowlist/.test(appSrc), 'refresh-safety-allowlist action missing');
-  assert.ok(/safety-allowlist-remove/.test(appSrc), 'safety-allowlist-remove action missing');
+  assert.ok(/data-section="safety"/.test(customizeSrc), 'safety section button missing');
+  assert.ok(/refresh-safety-allowlist/.test(customizeSrc), 'refresh-safety-allowlist action missing');
+  assert.ok(/safety-allowlist-remove/.test(customizeSrc), 'safety-allowlist-remove action missing');
 });
 
 // ── Phase 4 — domain cookies + image-intent gate ──────────────────────
@@ -155,12 +159,14 @@ test('openai.js Phase 4 gate uses latestUserMessageHasImage (not history-wide)',
   );
 });
 
-test('desktop-ui/app.js wires the domain-cookie form actions + input handlers', () => {
-  assert.ok(/data-action="domain-cookie-save"/.test(appSrc), 'save button missing');
-  assert.ok(/data-action="domain-cookie-remove"/.test(appSrc), 'remove button missing');
-  assert.ok(/data-action="refresh-domain-cookies"/.test(appSrc), 'refresh button missing');
-  assert.ok(/data-domain-cookie-host/.test(appSrc), 'host input data attr missing');
-  assert.ok(/data-domain-cookie-string/.test(appSrc), 'cookie input data attr missing');
+test('the Customize feature wires the domain-cookie form actions; app.js keeps the input handlers', () => {
+  assert.ok(/data-action="domain-cookie-save"/.test(customizeSrc), 'save button missing');
+  assert.ok(/data-action="domain-cookie-remove"/.test(customizeSrc), 'remove button missing');
+  assert.ok(/data-action="refresh-domain-cookies"/.test(customizeSrc), 'refresh button missing');
+  assert.ok(/'domain-cookie-save': async/.test(customizeSrc) && /'domain-cookie-remove': async/.test(customizeSrc), 'domain-cookie actions are not registered by the feature');
+  assert.ok(/data-domain-cookie-host/.test(customizeSrc), 'host input data attr missing');
+  assert.ok(/data-domain-cookie-string/.test(customizeSrc), 'cookie input data attr missing');
+  assert.ok(/dataset\.domainCookieHost/.test(appSrc) && /dataset\.domainCookieString/.test(appSrc), 'app.js input listener no longer syncs the cookie fields');
 });
 
 test('openai.js wires the image-intent gate into createCodexResponsesReply', () => {
