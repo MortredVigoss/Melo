@@ -1,12 +1,12 @@
 .local-settings{max-width:880px;margin:0 auto;padding:28px 24px 48px;color:var(--text-primary,#ded7c9)}
 .local-settings header h1{font-size:28px;margin:9px 0}.local-settings p{font-size:13px;line-height:1.75;color:var(--text-secondary,#a6a49f)}
 .local-settings-tabs,.local-settings-links,.local-actions{display:flex;flex-wrap:wrap;gap:8px;margin:20px 0}
-.local-settings-card{padding:24px;border:1px solid rgba(204,171,112,.18);border-radius:20px;background:linear-gradient(140deg,rgba(32,36,37,.64),rgba(9,15,18,.46));box-shadow:0 18px 46px #0002}
+.local-settings-card{padding:24px;border:1px solid rgba(204,171,112,.18);border-radius:20px;background:linear-gradient(140deg,rgba(38,35,30,.64),rgba(13,13,14,.46));box-shadow:0 18px 46px #0002}
 .local-settings-card h2{font-size:18px;margin:0 0 22px}.local-settings-card h3{font-size:14px;margin:24px 0 8px}
 .local-setting-row{display:flex;align-items:center;justify-content:space-between;gap:18px;min-height:64px;border-bottom:1px solid #bcad9414;font-size:14px}
 .local-setting-row small{display:block;font-size:12px;color:#9a9b99;margin-top:5px}.local-setting-row select{max-width:55%;width:auto}.local-setting-row input[type=checkbox]{width:18px;height:18px;accent-color:#ba9c64;flex-shrink:0}
 .local-profile-edit{display:flex;align-items:center;gap:22px;margin:18px 0 28px}.local-profile-edit img{object-fit:cover;border-radius:28px}.local-profile-edit .small-button{display:inline-flex;margin:0 8px 8px 0;cursor:pointer}.local-profile-edit .agent-photo{flex-shrink:0}
-.local-name{display:grid;gap:10px;max-width:380px}.local-import-preview{padding:16px;background:#baa26a12;border-radius:12px}.local-error{color:#ecaaa1!important}.local-notice{color:#bed5bb!important}.local-about{text-align:center;padding:20px}.local-about .neural-brand-mark{font-size:40px}
+.local-name{display:grid;gap:10px;max-width:380px}.local-import-preview{padding:16px;background:#baa26a12;border-radius:12px}.local-error{color:#ecaaa1!important}.local-notice{color:var(--state-ok,#d6c08e)!important}.local-about{text-align:center;padding:20px}.local-about .neural-brand-mark{font-size:40px}
 .neural-nav-footer .local-profile-trigger{display:flex;gap:8px;align-items:center;min-height:38px;max-width:100%;text-align:left}.local-profile-trigger img{border-radius:10px;object-fit:cover}.local-profile-trigger span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 html[data-melo-text-size=small]{--melo-chat-size:13px}html[data-melo-text-size=standard]{--melo-chat-size:14px}html[data-melo-text-size=large]{--melo-chat-size:18px}html[data-melo-text-size=larger]{--melo-chat-size:20px}
 html .message-bubble,html .message-content,html .reply-document,html .message-body{font-size:var(--melo-chat-size,14px)}

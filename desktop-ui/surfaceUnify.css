@@ -1,0 +1,133 @@
+/* Desktop surface unification (2026-10-20 global UI audit).
+   Loaded last. Only presentation: no handler, state or markup contract changes.
+   Tokens here are desktop-only aliases so ios/scripts/sync-theme.py, which
+   reads neuralGlass.css, keeps generating the same phone theme. */
+:root {
+ --accent:var(--space-gold);
+ --panel-bg:#151412;
+ --surface-elevated:var(--space-floating);
+ --state-ok:#d6c08e;
+ --state-ok-soft:rgba(214,192,142,.12);
+ --state-ok-edge:rgba(214,192,142,.32);
+ --state-busy:#cdbfa6;
+ --state-warn:#e2ad6a;
+ --state-error:#eba092;
+ --type-body:13px;
+ --type-small:12px;
+ --type-section:15px;
+ --type-pane:17px;
+}
+
+/* 1. The working surface is a reading surface: nearly opaque, so nested
+   cards no longer pick up uneven star light through stacked alpha. */
+.neural-shell:not(.is-overview) .neural-dashboard.workspace {
+ background:radial-gradient(ellipse at 0 0,rgba(174,145,100,.06),transparent 52%),linear-gradient(145deg,rgba(23,22,20,.95),rgba(10,11,14,.97));
+}
+.neural-dashboard .surface-card .surface-card,
+.neural-dashboard .detail-card .surface-card,
+.neural-dashboard .surface-card .detail-card {
+ background:rgba(255,246,228,.022);box-shadow:none;border-color:var(--space-edge-soft);
+}
+
+/* 2. One type scale. Unsized text used to inherit the browser's 16px, so
+   descriptions were larger than the titles above them. Zero-specificity
+   :where() keeps every explicitly sized component (chat text size setting,
+   composer, page titles) exactly as it was. */
+.neural-dashboard .content-scroll {font-size:var(--type-body);line-height:1.65;}
+:where(.neural-dashboard .page) :where(h2) {font-size:var(--type-pane);font-weight:600;line-height:1.4;margin:0 0 8px;}
+:where(.neural-dashboard .page) :where(h3) {font-size:var(--type-section);font-weight:600;line-height:1.45;margin:4px 0 8px;}
+:where(.neural-dashboard .page) :where(p) {margin:0 0 10px;}
+:where(.neural-dashboard .page) :where(p:last-child) {margin-bottom:0;}
+.neural-dashboard .pane-title {font-size:var(--type-pane);line-height:1.4;}
+.neural-dashboard .subsection-title {font-size:var(--type-section);}
+.neural-dashboard .page-kicker {font-size:var(--type-body);line-height:1.7;color:var(--space-muted);margin-top:6px;}
+.neural-dashboard .page-title + .page-kicker,
+.neural-dashboard .header-row .page-title ~ .page-kicker {font-size:14px;margin-top:8px;}
+.neural-dashboard :is(.list-row-meta,.page-kicker-tip) {color:var(--space-muted);line-height:1.7;}
+.neural-dashboard .empty-state.compact {font-size:var(--type-body);border-radius:var(--space-radius-control);}
+.neural-dashboard .empty-state {border-radius:var(--space-radius-card);}
+.neural-dashboard summary {font-size:var(--type-body);}
+
+/* 3. Breathing room. Cards stacked in one column get one gap; a card's own
+   content never touches its edge. */
+.neural-dashboard .detail-card {display:grid;gap:16px;align-content:start;grid-auto-rows:minmax(min-content,auto);padding:var(--space-inset-size);}
+.neural-dashboard .detail-card > :is(p,h2,h3,.quality-details,.subsection) {margin:0;}
+.neural-dashboard .detail-card > .meta-block-label {margin:8px 0 -8px;}
+.neural-dashboard .detail-card > .header-row {align-items:flex-start;}
+.neural-dashboard .detail-card > :is(.small-button,.ghost-button,.pill-button) {justify-self:start;}
+.neural-dashboard :is([class="surface-card"],[class="surface-card "],.compact-surface-card) {padding:16px;display:grid;gap:12px;align-content:start;}
+.neural-dashboard :is([class="surface-card"],[class="surface-card "],.compact-surface-card) > :is(.chip-row,.inline-actions) {justify-self:start;}
+.neural-dashboard .subsection {gap:12px;}
+.neural-dashboard details > summary + :is(.empty-state,.surface-card,section,div,p,form) {margin-top:10px;}
+.neural-dashboard .chat-files-panel > summary + .empty-state {margin-top:8px;}
+.neural-dashboard .header-row + :is(.empty-state,.surface-card,section) {margin-top:4px;}
+.neural-dashboard :is(.inline-actions,.chip-row) {flex-wrap:wrap;row-gap:8px;}
+.neural-dashboard .header-row > .inline-actions {flex-wrap:nowrap;}
+.neural-dashboard .inline-actions + :is(p,.list-row-meta,.empty-state) {margin-top:10px;}
+
+/* 4. Controls. Bare fields used the browser's grey square box; selects were
+   transparent text with no affordance. Editable fields share one inset well
+   and a chevron; read-only (disabled) values still read as quiet text. */
+:where(.neural-dashboard .page) :where(input:not([type=checkbox],[type=radio],[type=range],[type=color],[type=file],[type=hidden]),textarea,select):where(:not(.composer-textarea)) {
+ min-height:36px;padding:7px 10px;box-sizing:border-box;border:1px solid var(--space-edge);border-radius:var(--space-radius-control);
+ background-color:var(--space-inset);color:var(--space-text);font-size:var(--type-body);line-height:1.5;
+}
+:where(.neural-dashboard .page) :where(input,textarea)::placeholder {color:var(--space-soft);}
+:where(.neural-dashboard .page) :where(input,textarea,select):focus-visible {outline:none;border-color:var(--space-gold);box-shadow:0 0 0 2px rgba(209,178,125,.12);}
+.neural-dashboard :is(.config-select,.agent-select):not(:disabled),
+:where(.neural-dashboard .page) :where(select):not(:disabled) {
+ appearance:none;-webkit-appearance:none;min-height:36px;padding:7px 32px 7px 10px;
+ border:1px solid var(--space-edge);border-radius:var(--space-radius-control);background-color:var(--space-inset);
+ background-image:linear-gradient(45deg,transparent 50%,var(--space-muted) 50%),linear-gradient(135deg,var(--space-muted) 50%,transparent 50%);
+ background-position:calc(100% - 16px) 50%,calc(100% - 11px) 50%;background-size:5px 5px;background-repeat:no-repeat;
+ color:var(--space-text);cursor:pointer;
+}
+.neural-dashboard :is(.config-select,.agent-select):not(:disabled):hover {border-color:var(--space-edge-raised);}
+.neural-dashboard .agent-page-header .agent-select {max-width:260px;text-overflow:ellipsis;}
+.neural-dashboard .config-select:disabled {min-height:24px;padding:2px 0;color:var(--space-text);opacity:1;}
+.neural-dashboard .label > :is(input:not([type=checkbox],[type=radio]),select,textarea) {width:100%;}
+.neural-dashboard .inline-actions > label {display:inline-flex;align-items:center;gap:8px;color:var(--space-muted);font-size:var(--type-small);}
+.neural-dashboard .inline-actions > label > select {width:auto;min-width:96px;}
+.neural-dashboard input[type=checkbox] {accent-color:#b99a5f;}
+
+/* 5. Page skeletons. Every management page starts at the same left edge,
+   uses the same title size and the same 16px card. */
+.neural-dashboard .local-settings {max-width:none;margin:0;padding:var(--space-inset-size);}
+.neural-dashboard .local-settings header .eyebrow {display:none;}
+.neural-dashboard .local-settings header h1 {font-size:26px;line-height:1.35;letter-spacing:-.025em;font-weight:500;margin:0;}
+.neural-dashboard .local-settings header p {font-size:14px;color:var(--space-muted);margin:8px 0 0;}
+.neural-dashboard .local-settings-tabs {margin:20px 0 16px;}
+.neural-dashboard .local-settings-links {margin:16px 0 0;}
+.neural-dashboard .local-settings-card {
+ padding:var(--space-inset-size);border:1px solid var(--space-edge-soft);border-radius:var(--space-radius-card);
+ background:var(--space-card);box-shadow:inset 1px 1px #f4deba09,inset -1px -1px #0003,0 4px 12px #0001;
+}
+.neural-dashboard .local-settings-card h2 {font-size:var(--type-pane);margin:0 0 12px;}
+.neural-dashboard .local-setting-row {min-height:56px;font-size:var(--type-body);}
+.neural-dashboard .local-setting-row small {font-size:var(--type-small);color:var(--space-soft);}
+.neural-dashboard .local-setting-row select:disabled {text-align:right;text-align-last:right;}
+.neural-dashboard .local-settings-card > p {margin:12px 0 0;font-size:var(--type-small);color:var(--space-muted);}
+
+.neural-dashboard .model-page-titlebar,
+.neural-dashboard .model-connection-summary {max-width:none;margin-inline:0;}
+.neural-dashboard .model-connection-summary {margin:16px 0;padding:var(--space-inset-size);}
+.neural-dashboard .page-model > .surface-card,
+.neural-dashboard :is(.llm-connections,.extra-fast-settings,.default-model-settings,.image-settings) {padding:var(--space-inset-size);margin:0 0 16px;}
+.neural-dashboard :is(.llm-connections,.default-model-settings,.extra-fast-settings) .config-form {max-width:none;}
+.neural-dashboard .page-model details + .surface-card,
+.neural-dashboard .page-model .surface-card + details {margin-top:12px;}
+.neural-dashboard .settings-edit-toolbar {padding:10px 0;margin-bottom:12px;border-color:var(--space-edge-soft);}
+
+/* Connectors / skills: the list column was 160px, so filters, tags and
+   import buttons were cut off. */
+.neural-dashboard .customize-layout {grid-template-columns:minmax(220px,250px) minmax(0,1fr);gap:0;}
+.neural-dashboard .customize-layout > .customize-pane:nth-child(2):not(:last-child) {border-right:1px solid var(--space-edge-soft);padding-right:16px;}
+.neural-dashboard .customize-pane :is(.chip,.pill-button,.small-button) {max-width:100%;}
+.neural-dashboard .customize-pane :is(.chip-row,.inline-actions,.search-row) {flex-wrap:wrap;gap:6px;}
+.neural-dashboard .customize-pane .search-row > * {flex:1 1 100%;min-width:0;}
+.neural-dashboard .skill-filter-row {display:grid;grid-template-columns:minmax(0,1fr);gap:8px;}
+.neural-dashboard .skill-filter-row > * {width:100%;min-width:0;}
+@container workspace (max-width:760px) {
+ .neural-dashboard .customize-layout {grid-template-columns:minmax(0,1fr);}
+ .neural-dashboard .customize-layout > .customize-pane:nth-child(2):not(:last-child) {border-right:0;border-bottom:1px solid var(--space-edge-soft);padding-right:0;}
+}
