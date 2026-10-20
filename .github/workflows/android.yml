@@ -48,6 +48,8 @@ jobs:
           arch: x86_64
           disable-animations: true
           script: npm run test:android:connected
+      - name: Compare Android task events with Node
+        run: npm run eval:tasks -- --compare .tmp/agent-task-eval-android.json --out .tmp/agent-task-eval-node.json
       - uses: actions/upload-artifact@v7.0.2
         if: always()
         with:
@@ -58,4 +60,6 @@ jobs:
             android/app/build/reports/
             android/app/build/outputs/androidTest-results/
             .tmp/android-fixture-logcat.log
+            .tmp/agent-task-eval-android.json
+            .tmp/agent-task-eval-node.json
             android/app/build/outputs/apk/debug/*.apk

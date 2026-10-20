@@ -1,0 +1,876 @@
+{
+  "version": 1,
+  "kind": "fixture",
+  "id": "melo-minimal-tasks-v1",
+  "tasks": [
+    {
+      "id": "natural-search",
+      "request": {
+        "text": "Find Surry Hills restaurants",
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ]
+        },
+        "config": {
+          "search": {
+            "backend": "http",
+            "endpoint": "https://fixture.invalid/search"
+          }
+        }
+      },
+      "frames": [
+        {
+          "type": "model",
+          "inputTokens": 10,
+          "outputTokens": 2,
+          "latencyMs": 5,
+          "calls": [
+            {
+              "id": "search",
+              "name": "web_search",
+              "arguments": {
+                "query": "Surry Hills restaurants"
+              },
+              "receipt": {
+                "ok": true
+              }
+            }
+          ]
+        },
+        {
+          "type": "model",
+          "inputTokens": 10,
+          "outputTokens": 2,
+          "latencyMs": 5,
+          "calls": [
+            {
+              "id": "read",
+              "name": "fetch_url",
+              "arguments": {
+                "url": "https://fixture.invalid/restaurants"
+              },
+              "receipt": {
+                "ok": true,
+                "data": {
+                  "url": "https://fixture.invalid/restaurants",
+                  "text": "Surry Hills restaurants serve lunch and dinner. This synthetic page describes restaurant menus and opening details for the fixture only."
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "model",
+          "inputTokens": 10,
+          "outputTokens": 2,
+          "latencyMs": 5,
+          "reply": "Surry Hills restaurants: https://fixture.invalid/restaurants"
+        }
+      ],
+      "expected": {
+        "route": "http-search",
+        "outcome": "completed",
+        "reason": "RELEVANT_SOURCES_READ",
+        "executedTools": [
+          "web_search",
+          "fetch_url"
+        ],
+        "rejected": [],
+        "protocolErrors": [],
+        "modelCalls": 3,
+        "attemptedCalls": 2,
+        "maxRepeat": 1,
+        "readSources": 1,
+        "fixtureInputTokens": 30,
+        "fixtureOutputTokens": 6,
+        "simulatedElapsedMs": 15
+      }
+    },
+    {
+      "id": "retry-with-phone-denied",
+      "request": {
+        "text": "再试一次，不要操作手机",
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ]
+        },
+        "config": {
+          "search": {
+            "backend": "http",
+            "endpoint": "https://fixture.invalid/search"
+          }
+        },
+        "messages": [
+          {
+            "role": "user",
+            "content": "推荐 Surry Hills brunch，然后导航"
+          }
+        ]
+      },
+      "frames": [
+        {
+          "type": "model",
+          "inputTokens": 10,
+          "outputTokens": 2,
+          "latencyMs": 5,
+          "calls": [
+            {
+              "id": "search",
+              "name": "web_search",
+              "arguments": {
+                "query": "Surry Hills restaurants"
+              },
+              "receipt": {
+                "ok": true
+              }
+            },
+            {
+              "id": "phone",
+              "name": "phone_use",
+              "arguments": {
+                "goal": "navigate",
+                "purpose": "action"
+              },
+              "receipt": {
+                "ok": true
+              }
+            }
+          ]
+        },
+        {
+          "type": "model",
+          "inputTokens": 10,
+          "outputTokens": 2,
+          "latencyMs": 5,
+          "reply": "Fixture answer."
+        }
+      ],
+      "expected": {
+        "route": "http-search",
+        "outcome": "partial",
+        "reason": "RELEVANT_READ_SOURCE_MISSING",
+        "executedTools": [
+          "web_search"
+        ],
+        "rejected": [
+          "UNKNOWN_TOOL"
+        ],
+        "protocolErrors": [],
+        "modelCalls": 2,
+        "attemptedCalls": 2,
+        "maxRepeat": 1,
+        "readSources": 0,
+        "fixtureInputTokens": 20,
+        "fixtureOutputTokens": 4,
+        "simulatedElapsedMs": 10
+      }
+    },
+    {
+      "id": "mixed-tool-batch",
+      "request": {
+        "text": "Find Surry Hills restaurants",
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ]
+        },
+        "config": {
+          "search": {
+            "backend": "http",
+            "endpoint": "https://fixture.invalid/search"
+          }
+        }
+      },
+      "frames": [
+        {
+          "type": "model",
+          "inputTokens": 10,
+          "outputTokens": 2,
+          "latencyMs": 5,
+          "calls": [
+            {
+              "id": "search",
+              "name": "web_search",
+              "arguments": {
+                "query": "Surry Hills restaurants"
+              },
+              "receipt": {
+                "ok": true
+              }
+            },
+            {
+              "id": "unknown",
+              "name": "invented_tool",
+              "arguments": {
+                "query": "Surry Hills restaurants"
+              },
+              "receipt": {
+                "ok": true
+              }
+            }
+          ]
+        },
+        {
+          "type": "model",
+          "inputTokens": 10,
+          "outputTokens": 2,
+          "latencyMs": 5,
+          "calls": [
+            {
+              "id": "read",
+              "name": "fetch_url",
+              "arguments": {
+                "url": "https://fixture.invalid/restaurants"
+              },
+              "receipt": {
+                "ok": true,
+                "data": {
+                  "url": "https://fixture.invalid/restaurants",
+                  "text": "Surry Hills restaurants serve lunch and dinner. This synthetic page describes restaurant menus and opening details for the fixture only."
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "model",
+          "inputTokens": 10,
+          "outputTokens": 2,
+          "latencyMs": 5,
+          "reply": "Surry Hills restaurants: https://fixture.invalid/restaurants"
+        }
+      ],
+      "expected": {
+        "route": "http-search",
+        "outcome": "completed",
+        "reason": "RELEVANT_SOURCES_READ",
+        "executedTools": [
+          "web_search",
+          "fetch_url"
+        ],
+        "rejected": [
+          "UNKNOWN_TOOL"
+        ],
+        "protocolErrors": [],
+        "modelCalls": 3,
+        "attemptedCalls": 3,
+        "maxRepeat": 1,
+        "readSources": 1,
+        "fixtureInputTokens": 30,
+        "fixtureOutputTokens": 6,
+        "simulatedElapsedMs": 15
+      }
+    },
+    {
+      "id": "duplicate-batch-is-atomic",
+      "request": {
+        "text": "Find Surry Hills restaurants",
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ]
+        },
+        "config": {
+          "search": {
+            "backend": "http",
+            "endpoint": "https://fixture.invalid/search"
+          }
+        }
+      },
+      "frames": [
+        {
+          "type": "model",
+          "inputTokens": 10,
+          "outputTokens": 2,
+          "latencyMs": 5,
+          "calls": [
+            {
+              "id": "same",
+              "name": "web_search",
+              "arguments": {
+                "query": "Surry Hills restaurants"
+              },
+              "receipt": {
+                "ok": true
+              }
+            },
+            {
+              "id": "same",
+              "name": "fetch_url",
+              "arguments": {
+                "url": "https://fixture.invalid/restaurants"
+              },
+              "receipt": {
+                "ok": true,
+                "data": {
+                  "url": "https://fixture.invalid/restaurants",
+                  "text": "Surry Hills restaurants serve lunch and dinner. This synthetic page describes restaurant menus and opening details for the fixture only."
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "route": "http-search",
+        "outcome": "blocked",
+        "reason": "DUPLICATE_CALL_ID",
+        "executedTools": [],
+        "rejected": [],
+        "protocolErrors": [
+          "DUPLICATE_CALL_ID"
+        ],
+        "modelCalls": 1,
+        "attemptedCalls": 2,
+        "maxRepeat": 0,
+        "readSources": 0,
+        "fixtureInputTokens": 10,
+        "fixtureOutputTokens": 2,
+        "simulatedElapsedMs": 5
+      }
+    },
+    {
+      "id": "repeated-failure-stops",
+      "request": {
+        "text": "Find Surry Hills restaurants",
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ]
+        },
+        "config": {
+          "search": {
+            "backend": "http",
+            "endpoint": "https://fixture.invalid/search"
+          }
+        }
+      },
+      "frames": [
+        {
+          "type": "model",
+          "inputTokens": 10,
+          "outputTokens": 2,
+          "latencyMs": 5,
+          "calls": [
+            {
+              "id": "bad-0",
+              "name": "web_search",
+              "arguments": {
+                "query": "Surry Hills restaurants"
+              },
+              "receipt": {
+                "ok": false,
+                "code": "TEMPORARY_FAILURE"
+              }
+            }
+          ]
+        },
+        {
+          "type": "model",
+          "inputTokens": 10,
+          "outputTokens": 2,
+          "latencyMs": 5,
+          "calls": [
+            {
+              "id": "bad-1",
+              "name": "web_search",
+              "arguments": {
+                "query": "Surry Hills restaurants"
+              },
+              "receipt": {
+                "ok": false,
+                "code": "TEMPORARY_FAILURE"
+              }
+            }
+          ]
+        },
+        {
+          "type": "model",
+          "inputTokens": 10,
+          "outputTokens": 2,
+          "latencyMs": 5,
+          "calls": [
+            {
+              "id": "bad-2",
+              "name": "web_search",
+              "arguments": {
+                "query": "Surry Hills restaurants"
+              },
+              "receipt": {
+                "ok": false,
+                "code": "TEMPORARY_FAILURE"
+              }
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "route": "http-search",
+        "outcome": "blocked",
+        "reason": "REPEATED_TOOL_FAILURE",
+        "executedTools": [
+          "web_search",
+          "web_search"
+        ],
+        "rejected": [
+          "REPEATED_FAILURE"
+        ],
+        "protocolErrors": [],
+        "modelCalls": 3,
+        "attemptedCalls": 3,
+        "maxRepeat": 2,
+        "readSources": 0,
+        "fixtureInputTokens": 30,
+        "fixtureOutputTokens": 6,
+        "simulatedElapsedMs": 15
+      }
+    },
+    {
+      "id": "search-snippet-is-not-read",
+      "request": {
+        "text": "Find Surry Hills restaurants",
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ]
+        },
+        "config": {
+          "search": {
+            "backend": "http",
+            "endpoint": "https://fixture.invalid/search"
+          }
+        }
+      },
+      "frames": [
+        {
+          "type": "model",
+          "inputTokens": 10,
+          "outputTokens": 2,
+          "latencyMs": 5,
+          "calls": [
+            {
+              "id": "search",
+              "name": "web_search",
+              "arguments": {
+                "query": "Surry Hills restaurants"
+              },
+              "receipt": {
+                "ok": true,
+                "sources": [
+                  {
+                    "url": "https://fixture.invalid/restaurants",
+                    "text": "Surry Hills restaurants serve lunch and dinner. This synthetic page describes restaurant menus and opening details for the fixture only.",
+                    "reading": "snippet"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "type": "model",
+          "inputTokens": 10,
+          "outputTokens": 2,
+          "latencyMs": 5,
+          "reply": "Surry Hills restaurants: https://fixture.invalid/restaurants"
+        }
+      ],
+      "expected": {
+        "route": "http-search",
+        "outcome": "partial",
+        "reason": "RELEVANT_READ_SOURCE_MISSING",
+        "executedTools": [
+          "web_search"
+        ],
+        "rejected": [],
+        "protocolErrors": [],
+        "modelCalls": 2,
+        "attemptedCalls": 1,
+        "maxRepeat": 1,
+        "readSources": 0,
+        "fixtureInputTokens": 20,
+        "fixtureOutputTokens": 4,
+        "simulatedElapsedMs": 10
+      }
+    },
+    {
+      "id": "tool-ok-is-not-terminal",
+      "request": {
+        "text": "打开手机设置",
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ]
+        },
+        "config": {
+          "search": {
+            "backend": "http",
+            "endpoint": "https://fixture.invalid/search"
+          }
+        }
+      },
+      "frames": [
+        {
+          "type": "model",
+          "inputTokens": 10,
+          "outputTokens": 2,
+          "latencyMs": 5,
+          "calls": [
+            {
+              "id": "open",
+              "name": "phone_use",
+              "arguments": {
+                "goal": "打开手机设置",
+                "purpose": "action"
+              },
+              "receipt": {
+                "ok": true
+              }
+            }
+          ]
+        },
+        {
+          "type": "model",
+          "inputTokens": 10,
+          "outputTokens": 2,
+          "latencyMs": 5,
+          "reply": "已打开"
+        }
+      ],
+      "expected": {
+        "route": "phone",
+        "outcome": "partial",
+        "reason": "GOAL_TERMINAL_EVIDENCE_MISSING",
+        "executedTools": [
+          "phone_use"
+        ],
+        "rejected": [],
+        "protocolErrors": [],
+        "modelCalls": 2,
+        "attemptedCalls": 1,
+        "maxRepeat": 1,
+        "readSources": 0,
+        "fixtureInputTokens": 20,
+        "fixtureOutputTokens": 4,
+        "simulatedElapsedMs": 10
+      }
+    },
+    {
+      "id": "cancel-rejects-late-call",
+      "request": {
+        "text": "Find Surry Hills restaurants",
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ]
+        },
+        "config": {
+          "search": {
+            "backend": "http",
+            "endpoint": "https://fixture.invalid/search"
+          }
+        }
+      },
+      "frames": [
+        {
+          "type": "cancel"
+        },
+        {
+          "type": "late-calls",
+          "calls": [
+            {
+              "id": "late",
+              "name": "web_search",
+              "arguments": {
+                "query": "Surry Hills restaurants"
+              },
+              "receipt": {
+                "ok": true
+              }
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "route": "http-search",
+        "outcome": "cancelled",
+        "reason": "CANCELLED",
+        "executedTools": [],
+        "rejected": [],
+        "protocolErrors": [
+          "TURN_CLOSED"
+        ],
+        "modelCalls": 0,
+        "attemptedCalls": 0,
+        "maxRepeat": 0,
+        "readSources": 0,
+        "fixtureInputTokens": 0,
+        "fixtureOutputTokens": 0,
+        "simulatedElapsedMs": 0
+      }
+    },
+    {
+      "id": "input-budget-blocks-tools",
+      "request": {
+        "text": "Find Surry Hills restaurants",
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ]
+        },
+        "config": {
+          "search": {
+            "backend": "http",
+            "endpoint": "https://fixture.invalid/search"
+          }
+        }
+      },
+      "frames": [
+        {
+          "type": "model",
+          "inputTokens": 10,
+          "outputTokens": 2,
+          "latencyMs": 5,
+          "calls": [
+            {
+              "id": "never",
+              "name": "web_search",
+              "arguments": {
+                "query": "Surry Hills restaurants"
+              },
+              "receipt": {
+                "ok": true
+              }
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "route": "http-search",
+        "outcome": "budget_exhausted",
+        "reason": "BUDGET_INPUT_TOKENS",
+        "executedTools": [],
+        "rejected": [],
+        "protocolErrors": [],
+        "modelCalls": 1,
+        "attemptedCalls": 0,
+        "maxRepeat": 0,
+        "readSources": 0,
+        "fixtureInputTokens": 10,
+        "fixtureOutputTokens": 2,
+        "simulatedElapsedMs": 5
+      },
+      "budget": {
+        "maxInputTokens": 10
+      }
+    },
+    {
+      "id": "deadline-blocks-model",
+      "request": {
+        "text": "Find Surry Hills restaurants",
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ]
+        },
+        "config": {
+          "search": {
+            "backend": "http",
+            "endpoint": "https://fixture.invalid/search"
+          }
+        }
+      },
+      "frames": [
+        {
+          "type": "model",
+          "inputTokens": 10,
+          "outputTokens": 2,
+          "latencyMs": 5,
+          "calls": [
+            {
+              "id": "never",
+              "name": "web_search",
+              "arguments": {
+                "query": "Surry Hills restaurants"
+              },
+              "receipt": {
+                "ok": true
+              }
+            }
+          ],
+          "delayMs": 100
+        }
+      ],
+      "expected": {
+        "route": "http-search",
+        "outcome": "budget_exhausted",
+        "reason": "BUDGET_DEADLINE",
+        "executedTools": [],
+        "rejected": [],
+        "protocolErrors": [],
+        "modelCalls": 0,
+        "attemptedCalls": 0,
+        "maxRepeat": 0,
+        "readSources": 0,
+        "fixtureInputTokens": 0,
+        "fixtureOutputTokens": 0,
+        "simulatedElapsedMs": 100
+      },
+      "budget": {
+        "deadlineMs": 50
+      }
+    },
+    {
+      "id": "tool-budget-admits-once",
+      "request": {
+        "text": "Find Surry Hills restaurants",
+        "capabilities": {
+          "executors": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ],
+          "grants": [
+            "web_search",
+            "fetch_url",
+            "phone_use"
+          ]
+        },
+        "config": {
+          "search": {
+            "backend": "http",
+            "endpoint": "https://fixture.invalid/search"
+          }
+        }
+      },
+      "frames": [
+        {
+          "type": "model",
+          "inputTokens": 10,
+          "outputTokens": 2,
+          "latencyMs": 5,
+          "calls": [
+            {
+              "id": "search",
+              "name": "web_search",
+              "arguments": {
+                "query": "Surry Hills restaurants"
+              },
+              "receipt": {
+                "ok": true
+              }
+            },
+            {
+              "id": "read",
+              "name": "fetch_url",
+              "arguments": {
+                "url": "https://fixture.invalid/restaurants"
+              },
+              "receipt": {
+                "ok": true,
+                "data": {
+                  "url": "https://fixture.invalid/restaurants",
+                  "text": "Surry Hills restaurants serve lunch and dinner. This synthetic page describes restaurant menus and opening details for the fixture only."
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "route": "http-search",
+        "outcome": "budget_exhausted",
+        "reason": "BUDGET_EXHAUSTED",
+        "executedTools": [
+          "web_search"
+        ],
+        "rejected": [
+          "BUDGET_EXHAUSTED"
+        ],
+        "protocolErrors": [],
+        "modelCalls": 1,
+        "attemptedCalls": 2,
+        "maxRepeat": 1,
+        "readSources": 0,
+        "fixtureInputTokens": 10,
+        "fixtureOutputTokens": 2,
+        "simulatedElapsedMs": 5
+      },
+      "budget": {
+        "maxToolCalls": 1
+      }
+    }
+  ]
+}

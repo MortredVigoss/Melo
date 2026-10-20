@@ -78,7 +78,8 @@
     "test:function-calling": "node --test src/tools/functionCalling.test.js src/tools/functionCalling.execution.test.js src/providers/functionCalling.test.js src/services/chat/functionCalling.integration.test.js src/agents/skillExecutor.test.js",
     "test:architecture-performance": "node --test src/state/residentState.test.js src/runtime/performanceTrace.test.js src/runtime/derivedIndexing.test.js src/http/bootstrapTransport.test.js src/http/routeRegistry.test.js src/services/workspace/workspaceTreeCache.test.js desktop-ui/bootstrapPatch.test.js scripts/check-dependencies.test.js",
     "generate:sync-contract": "node scripts/generate-sync-contract.js",
-    "test:sync-contract": "node --test mobile-sync/syncContract.test.js scripts/generate-sync-contract.test.js"
+    "test:sync-contract": "node --test mobile-sync/syncContract.test.js scripts/generate-sync-contract.test.js",
+    "eval:tasks": "node scripts/eval-agent-tasks.js"
   },
   "dependencies": {
     "@discordjs/voice": "^0.17.0",

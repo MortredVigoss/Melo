@@ -797,3 +797,8 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - #11 验证提交 ee0f66b 的 Android CI 39377354163 正在模拟器阶段；#12 主线跨平台 CI 39377921633 已通过。当前 #10 是 WIP，不视为 Fold6 真机通过。
 
 #10 最终：7584df4 / CI 39379418326 构建、JVM、Lint、R8 与 72/72 emulator 全绿。准备依用户授权推送手机正式分支并关闭；无真机或安装验收。#11 已以 ee0f66b 通过 69/69 并发布关闭，#12 已以 e64bfe6 经 Linux/macOS CI 发布关闭。
+
+### 2026-10-20 — #14 同源任务回放（Codex）
+- shared/agent/taskReplay.js + taskScore.js 与公开 11 项任务，Android native 导出完整事件及 hash，CI 与 Node 比较。Node Core 已过，Android 等待验证分支 CI。
+- 同步混合批次完成类型修正，未知工具明确未执行时不误推断操作；其余权限/终态规则保留。详见 docs/task-replay-20261020.md。
+- 手机分支缺主线日常选择器/module map 脚本，因此用已有 Core/JVM/Lint/Debug/R8/emulator 完整 Android gate，不伪报 test:plan 成功。

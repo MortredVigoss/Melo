@@ -1,3 +1,8 @@
+## 2026-10-20 — Android 与其他 Host 比较相同任务事件
+
+Codex：复用同一 Runner 和 dataset；原生测试比较手写语义预期及完整事件，并导出带 bundle/data hash 的报告。真实 LLM 质量另测，未动账号。
+Core 本地通过，Android CI 待验；不是安装/真机验收。
+
 ## 2026-10-20 — 布局缓存完成自动验证
 
 Codex：首轮编译问题修复后，第二轮完整 Android CI 39379418326 通过，72/72 emulator 零跳过。按用户授权发布 #10；不外推 Fold6 真机或真实服务。

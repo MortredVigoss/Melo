@@ -1,0 +1,1490 @@
+{
+  "version": 1,
+  "kind": "fixture",
+  "datasetId": "melo-minimal-tasks-v1",
+  "qualityClaim": "deterministic-contract-only",
+  "tokensAndLatency": "declared fixture usage and virtual time; not provider measurements",
+  "tasks": [
+    {
+      "id": "natural-search",
+      "route": "http-search",
+      "allowedTools": [
+        "web_search",
+        "fetch_url"
+      ],
+      "completion": {
+        "version": 1,
+        "kind": "research",
+        "outcome": "completed",
+        "goalState": "supported",
+        "reason": "RELEVANT_SOURCES_READ",
+        "evidenceIds": [
+          "read:source:0"
+        ],
+        "completedSteps": 2,
+        "summary": "Relevant sources read; conclusions are not independently verified"
+      },
+      "metrics": {
+        "modelCalls": 3,
+        "attemptedCalls": 2,
+        "executedTools": [
+          "web_search",
+          "fetch_url"
+        ],
+        "rejected": [],
+        "protocolErrors": [],
+        "maxRepeat": 1,
+        "fixtureInputTokens": 30,
+        "fixtureOutputTokens": 6,
+        "simulatedElapsedMs": 15,
+        "readSources": 1
+      },
+      "events": [
+        {
+          "version": 1,
+          "eventId": "eval-natural-search/turn/turn/started",
+          "runId": "eval-natural-search",
+          "turnId": "eval-natural-search",
+          "kind": "turn",
+          "operationId": "turn",
+          "phase": "started",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.000Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-natural-search/model/model%3A1/started",
+          "runId": "eval-natural-search",
+          "turnId": "eval-natural-search",
+          "kind": "model",
+          "operationId": "model:1",
+          "phase": "started",
+          "model": "fixture",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.000Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-natural-search/model/model%3A1/finished",
+          "runId": "eval-natural-search",
+          "turnId": "eval-natural-search",
+          "kind": "model",
+          "operationId": "model:1",
+          "phase": "finished",
+          "model": "fixture",
+          "status": "completed",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-natural-search/model/model%3A2/started",
+          "runId": "eval-natural-search",
+          "turnId": "eval-natural-search",
+          "kind": "model",
+          "operationId": "model:2",
+          "phase": "started",
+          "model": "fixture",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-natural-search/model/model%3A2/finished",
+          "runId": "eval-natural-search",
+          "turnId": "eval-natural-search",
+          "kind": "model",
+          "operationId": "model:2",
+          "phase": "finished",
+          "model": "fixture",
+          "status": "completed",
+          "at": "2023-11-14T22:13:21.010Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-natural-search/model/model%3A3/started",
+          "runId": "eval-natural-search",
+          "turnId": "eval-natural-search",
+          "kind": "model",
+          "operationId": "model:3",
+          "phase": "started",
+          "model": "fixture",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.010Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-natural-search/model/model%3A3/finished",
+          "runId": "eval-natural-search",
+          "turnId": "eval-natural-search",
+          "kind": "model",
+          "operationId": "model:3",
+          "phase": "finished",
+          "model": "fixture",
+          "status": "completed",
+          "at": "2023-11-14T22:13:21.015Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-natural-search/tool/1%3Asearch/started",
+          "runId": "eval-natural-search",
+          "turnId": "eval-natural-search",
+          "kind": "tool",
+          "operationId": "1:search",
+          "phase": "started",
+          "name": "web_search",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-natural-search/tool/1%3Asearch/result",
+          "runId": "eval-natural-search",
+          "turnId": "eval-natural-search",
+          "kind": "tool",
+          "operationId": "1:search",
+          "phase": "result",
+          "name": "web_search",
+          "status": "completed",
+          "resultState": "returned",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-natural-search/tool/2%3Aread/started",
+          "runId": "eval-natural-search",
+          "turnId": "eval-natural-search",
+          "kind": "tool",
+          "operationId": "2:read",
+          "phase": "started",
+          "name": "fetch_url",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.010Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-natural-search/tool/2%3Aread/result",
+          "runId": "eval-natural-search",
+          "turnId": "eval-natural-search",
+          "kind": "tool",
+          "operationId": "2:read",
+          "phase": "result",
+          "name": "fetch_url",
+          "status": "completed",
+          "resultState": "returned",
+          "at": "2023-11-14T22:13:21.010Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-natural-search/terminal/turn/finished",
+          "runId": "eval-natural-search",
+          "turnId": "eval-natural-search",
+          "kind": "terminal",
+          "operationId": "turn",
+          "phase": "finished",
+          "status": "completed",
+          "outcome": "completed",
+          "reason": "RELEVANT_SOURCES_READ",
+          "at": "2023-11-14T22:13:21.015Z"
+        }
+      ],
+      "score": {
+        "passed": true,
+        "failures": []
+      }
+    },
+    {
+      "id": "retry-with-phone-denied",
+      "route": "http-search",
+      "allowedTools": [
+        "web_search",
+        "fetch_url"
+      ],
+      "completion": {
+        "version": 1,
+        "kind": "research",
+        "outcome": "partial",
+        "goalState": "unverified",
+        "reason": "RELEVANT_READ_SOURCE_MISSING",
+        "evidenceIds": [],
+        "completedSteps": 1,
+        "summary": "部分完成 · 尚无目标完成证据"
+      },
+      "metrics": {
+        "modelCalls": 2,
+        "attemptedCalls": 2,
+        "executedTools": [
+          "web_search"
+        ],
+        "rejected": [
+          "UNKNOWN_TOOL"
+        ],
+        "protocolErrors": [],
+        "maxRepeat": 1,
+        "fixtureInputTokens": 20,
+        "fixtureOutputTokens": 4,
+        "simulatedElapsedMs": 10,
+        "readSources": 0
+      },
+      "events": [
+        {
+          "version": 1,
+          "eventId": "eval-retry-with-phone-denied/turn/turn/started",
+          "runId": "eval-retry-with-phone-denied",
+          "turnId": "eval-retry-with-phone-denied",
+          "kind": "turn",
+          "operationId": "turn",
+          "phase": "started",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.000Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-retry-with-phone-denied/model/model%3A1/started",
+          "runId": "eval-retry-with-phone-denied",
+          "turnId": "eval-retry-with-phone-denied",
+          "kind": "model",
+          "operationId": "model:1",
+          "phase": "started",
+          "model": "fixture",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.000Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-retry-with-phone-denied/model/model%3A1/finished",
+          "runId": "eval-retry-with-phone-denied",
+          "turnId": "eval-retry-with-phone-denied",
+          "kind": "model",
+          "operationId": "model:1",
+          "phase": "finished",
+          "model": "fixture",
+          "status": "completed",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-retry-with-phone-denied/model/model%3A2/started",
+          "runId": "eval-retry-with-phone-denied",
+          "turnId": "eval-retry-with-phone-denied",
+          "kind": "model",
+          "operationId": "model:2",
+          "phase": "started",
+          "model": "fixture",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-retry-with-phone-denied/model/model%3A2/finished",
+          "runId": "eval-retry-with-phone-denied",
+          "turnId": "eval-retry-with-phone-denied",
+          "kind": "model",
+          "operationId": "model:2",
+          "phase": "finished",
+          "model": "fixture",
+          "status": "completed",
+          "at": "2023-11-14T22:13:21.010Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-retry-with-phone-denied/tool/1%3Asearch/started",
+          "runId": "eval-retry-with-phone-denied",
+          "turnId": "eval-retry-with-phone-denied",
+          "kind": "tool",
+          "operationId": "1:search",
+          "phase": "started",
+          "name": "web_search",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-retry-with-phone-denied/tool/1%3Asearch/result",
+          "runId": "eval-retry-with-phone-denied",
+          "turnId": "eval-retry-with-phone-denied",
+          "kind": "tool",
+          "operationId": "1:search",
+          "phase": "result",
+          "name": "web_search",
+          "status": "completed",
+          "resultState": "returned",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-retry-with-phone-denied/tool/1%3Aphone/started",
+          "runId": "eval-retry-with-phone-denied",
+          "turnId": "eval-retry-with-phone-denied",
+          "kind": "tool",
+          "operationId": "1:phone",
+          "phase": "started",
+          "name": "phone_use",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-retry-with-phone-denied/tool/1%3Aphone/result",
+          "runId": "eval-retry-with-phone-denied",
+          "turnId": "eval-retry-with-phone-denied",
+          "kind": "tool",
+          "operationId": "1:phone",
+          "phase": "result",
+          "name": "phone_use",
+          "status": "failed",
+          "resultState": "not_executed",
+          "code": "UNKNOWN_TOOL",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-retry-with-phone-denied/terminal/turn/finished",
+          "runId": "eval-retry-with-phone-denied",
+          "turnId": "eval-retry-with-phone-denied",
+          "kind": "terminal",
+          "operationId": "turn",
+          "phase": "finished",
+          "status": "failed",
+          "outcome": "partial",
+          "reason": "RELEVANT_READ_SOURCE_MISSING",
+          "at": "2023-11-14T22:13:21.010Z"
+        }
+      ],
+      "score": {
+        "passed": true,
+        "failures": []
+      }
+    },
+    {
+      "id": "mixed-tool-batch",
+      "route": "http-search",
+      "allowedTools": [
+        "web_search",
+        "fetch_url"
+      ],
+      "completion": {
+        "version": 1,
+        "kind": "research",
+        "outcome": "completed",
+        "goalState": "supported",
+        "reason": "RELEVANT_SOURCES_READ",
+        "evidenceIds": [
+          "read:source:0"
+        ],
+        "completedSteps": 2,
+        "summary": "Relevant sources read; conclusions are not independently verified"
+      },
+      "metrics": {
+        "modelCalls": 3,
+        "attemptedCalls": 3,
+        "executedTools": [
+          "web_search",
+          "fetch_url"
+        ],
+        "rejected": [
+          "UNKNOWN_TOOL"
+        ],
+        "protocolErrors": [],
+        "maxRepeat": 1,
+        "fixtureInputTokens": 30,
+        "fixtureOutputTokens": 6,
+        "simulatedElapsedMs": 15,
+        "readSources": 1
+      },
+      "events": [
+        {
+          "version": 1,
+          "eventId": "eval-mixed-tool-batch/turn/turn/started",
+          "runId": "eval-mixed-tool-batch",
+          "turnId": "eval-mixed-tool-batch",
+          "kind": "turn",
+          "operationId": "turn",
+          "phase": "started",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.000Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-mixed-tool-batch/model/model%3A1/started",
+          "runId": "eval-mixed-tool-batch",
+          "turnId": "eval-mixed-tool-batch",
+          "kind": "model",
+          "operationId": "model:1",
+          "phase": "started",
+          "model": "fixture",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.000Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-mixed-tool-batch/model/model%3A1/finished",
+          "runId": "eval-mixed-tool-batch",
+          "turnId": "eval-mixed-tool-batch",
+          "kind": "model",
+          "operationId": "model:1",
+          "phase": "finished",
+          "model": "fixture",
+          "status": "completed",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-mixed-tool-batch/model/model%3A2/started",
+          "runId": "eval-mixed-tool-batch",
+          "turnId": "eval-mixed-tool-batch",
+          "kind": "model",
+          "operationId": "model:2",
+          "phase": "started",
+          "model": "fixture",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-mixed-tool-batch/model/model%3A2/finished",
+          "runId": "eval-mixed-tool-batch",
+          "turnId": "eval-mixed-tool-batch",
+          "kind": "model",
+          "operationId": "model:2",
+          "phase": "finished",
+          "model": "fixture",
+          "status": "completed",
+          "at": "2023-11-14T22:13:21.010Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-mixed-tool-batch/model/model%3A3/started",
+          "runId": "eval-mixed-tool-batch",
+          "turnId": "eval-mixed-tool-batch",
+          "kind": "model",
+          "operationId": "model:3",
+          "phase": "started",
+          "model": "fixture",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.010Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-mixed-tool-batch/model/model%3A3/finished",
+          "runId": "eval-mixed-tool-batch",
+          "turnId": "eval-mixed-tool-batch",
+          "kind": "model",
+          "operationId": "model:3",
+          "phase": "finished",
+          "model": "fixture",
+          "status": "completed",
+          "at": "2023-11-14T22:13:21.015Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-mixed-tool-batch/tool/1%3Asearch/started",
+          "runId": "eval-mixed-tool-batch",
+          "turnId": "eval-mixed-tool-batch",
+          "kind": "tool",
+          "operationId": "1:search",
+          "phase": "started",
+          "name": "web_search",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-mixed-tool-batch/tool/1%3Asearch/result",
+          "runId": "eval-mixed-tool-batch",
+          "turnId": "eval-mixed-tool-batch",
+          "kind": "tool",
+          "operationId": "1:search",
+          "phase": "result",
+          "name": "web_search",
+          "status": "completed",
+          "resultState": "returned",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-mixed-tool-batch/tool/1%3Aunknown/started",
+          "runId": "eval-mixed-tool-batch",
+          "turnId": "eval-mixed-tool-batch",
+          "kind": "tool",
+          "operationId": "1:unknown",
+          "phase": "started",
+          "name": "invented_tool",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-mixed-tool-batch/tool/1%3Aunknown/result",
+          "runId": "eval-mixed-tool-batch",
+          "turnId": "eval-mixed-tool-batch",
+          "kind": "tool",
+          "operationId": "1:unknown",
+          "phase": "result",
+          "name": "invented_tool",
+          "status": "failed",
+          "resultState": "not_executed",
+          "code": "UNKNOWN_TOOL",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-mixed-tool-batch/tool/2%3Aread/started",
+          "runId": "eval-mixed-tool-batch",
+          "turnId": "eval-mixed-tool-batch",
+          "kind": "tool",
+          "operationId": "2:read",
+          "phase": "started",
+          "name": "fetch_url",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.010Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-mixed-tool-batch/tool/2%3Aread/result",
+          "runId": "eval-mixed-tool-batch",
+          "turnId": "eval-mixed-tool-batch",
+          "kind": "tool",
+          "operationId": "2:read",
+          "phase": "result",
+          "name": "fetch_url",
+          "status": "completed",
+          "resultState": "returned",
+          "at": "2023-11-14T22:13:21.010Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-mixed-tool-batch/terminal/turn/finished",
+          "runId": "eval-mixed-tool-batch",
+          "turnId": "eval-mixed-tool-batch",
+          "kind": "terminal",
+          "operationId": "turn",
+          "phase": "finished",
+          "status": "completed",
+          "outcome": "completed",
+          "reason": "RELEVANT_SOURCES_READ",
+          "at": "2023-11-14T22:13:21.015Z"
+        }
+      ],
+      "score": {
+        "passed": true,
+        "failures": []
+      }
+    },
+    {
+      "id": "duplicate-batch-is-atomic",
+      "route": "http-search",
+      "allowedTools": [
+        "web_search",
+        "fetch_url"
+      ],
+      "completion": {
+        "version": 1,
+        "kind": "research",
+        "outcome": "blocked",
+        "goalState": "unverified",
+        "reason": "DUPLICATE_CALL_ID",
+        "evidenceIds": [],
+        "completedSteps": 0,
+        "summary": "Blocked · Goal completion is unverified"
+      },
+      "metrics": {
+        "modelCalls": 1,
+        "attemptedCalls": 2,
+        "executedTools": [],
+        "rejected": [],
+        "protocolErrors": [
+          "DUPLICATE_CALL_ID"
+        ],
+        "maxRepeat": 0,
+        "fixtureInputTokens": 10,
+        "fixtureOutputTokens": 2,
+        "simulatedElapsedMs": 5,
+        "readSources": 0
+      },
+      "events": [
+        {
+          "version": 1,
+          "eventId": "eval-duplicate-batch-is-atomic/turn/turn/started",
+          "runId": "eval-duplicate-batch-is-atomic",
+          "turnId": "eval-duplicate-batch-is-atomic",
+          "kind": "turn",
+          "operationId": "turn",
+          "phase": "started",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.000Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-duplicate-batch-is-atomic/model/model%3A1/started",
+          "runId": "eval-duplicate-batch-is-atomic",
+          "turnId": "eval-duplicate-batch-is-atomic",
+          "kind": "model",
+          "operationId": "model:1",
+          "phase": "started",
+          "model": "fixture",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.000Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-duplicate-batch-is-atomic/model/model%3A1/finished",
+          "runId": "eval-duplicate-batch-is-atomic",
+          "turnId": "eval-duplicate-batch-is-atomic",
+          "kind": "model",
+          "operationId": "model:1",
+          "phase": "finished",
+          "model": "fixture",
+          "status": "completed",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-duplicate-batch-is-atomic/terminal/turn/finished",
+          "runId": "eval-duplicate-batch-is-atomic",
+          "turnId": "eval-duplicate-batch-is-atomic",
+          "kind": "terminal",
+          "operationId": "turn",
+          "phase": "finished",
+          "status": "failed",
+          "outcome": "blocked",
+          "reason": "DUPLICATE_CALL_ID",
+          "at": "2023-11-14T22:13:21.005Z"
+        }
+      ],
+      "score": {
+        "passed": true,
+        "failures": []
+      }
+    },
+    {
+      "id": "repeated-failure-stops",
+      "route": "http-search",
+      "allowedTools": [
+        "web_search",
+        "fetch_url"
+      ],
+      "completion": {
+        "version": 1,
+        "kind": "research",
+        "outcome": "blocked",
+        "goalState": "unverified",
+        "reason": "REPEATED_TOOL_FAILURE",
+        "evidenceIds": [],
+        "completedSteps": 0,
+        "summary": "Blocked · Goal completion is unverified"
+      },
+      "metrics": {
+        "modelCalls": 3,
+        "attemptedCalls": 3,
+        "executedTools": [
+          "web_search",
+          "web_search"
+        ],
+        "rejected": [
+          "REPEATED_FAILURE"
+        ],
+        "protocolErrors": [],
+        "maxRepeat": 2,
+        "fixtureInputTokens": 30,
+        "fixtureOutputTokens": 6,
+        "simulatedElapsedMs": 15,
+        "readSources": 0
+      },
+      "events": [
+        {
+          "version": 1,
+          "eventId": "eval-repeated-failure-stops/turn/turn/started",
+          "runId": "eval-repeated-failure-stops",
+          "turnId": "eval-repeated-failure-stops",
+          "kind": "turn",
+          "operationId": "turn",
+          "phase": "started",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.000Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-repeated-failure-stops/model/model%3A1/started",
+          "runId": "eval-repeated-failure-stops",
+          "turnId": "eval-repeated-failure-stops",
+          "kind": "model",
+          "operationId": "model:1",
+          "phase": "started",
+          "model": "fixture",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.000Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-repeated-failure-stops/model/model%3A1/finished",
+          "runId": "eval-repeated-failure-stops",
+          "turnId": "eval-repeated-failure-stops",
+          "kind": "model",
+          "operationId": "model:1",
+          "phase": "finished",
+          "model": "fixture",
+          "status": "completed",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-repeated-failure-stops/model/model%3A2/started",
+          "runId": "eval-repeated-failure-stops",
+          "turnId": "eval-repeated-failure-stops",
+          "kind": "model",
+          "operationId": "model:2",
+          "phase": "started",
+          "model": "fixture",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-repeated-failure-stops/model/model%3A2/finished",
+          "runId": "eval-repeated-failure-stops",
+          "turnId": "eval-repeated-failure-stops",
+          "kind": "model",
+          "operationId": "model:2",
+          "phase": "finished",
+          "model": "fixture",
+          "status": "completed",
+          "at": "2023-11-14T22:13:21.010Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-repeated-failure-stops/model/model%3A3/started",
+          "runId": "eval-repeated-failure-stops",
+          "turnId": "eval-repeated-failure-stops",
+          "kind": "model",
+          "operationId": "model:3",
+          "phase": "started",
+          "model": "fixture",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.010Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-repeated-failure-stops/model/model%3A3/finished",
+          "runId": "eval-repeated-failure-stops",
+          "turnId": "eval-repeated-failure-stops",
+          "kind": "model",
+          "operationId": "model:3",
+          "phase": "finished",
+          "model": "fixture",
+          "status": "completed",
+          "at": "2023-11-14T22:13:21.015Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-repeated-failure-stops/tool/1%3Abad-0/started",
+          "runId": "eval-repeated-failure-stops",
+          "turnId": "eval-repeated-failure-stops",
+          "kind": "tool",
+          "operationId": "1:bad-0",
+          "phase": "started",
+          "name": "web_search",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-repeated-failure-stops/tool/1%3Abad-0/result",
+          "runId": "eval-repeated-failure-stops",
+          "turnId": "eval-repeated-failure-stops",
+          "kind": "tool",
+          "operationId": "1:bad-0",
+          "phase": "result",
+          "name": "web_search",
+          "status": "failed",
+          "resultState": "error_returned",
+          "code": "TEMPORARY_FAILURE",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-repeated-failure-stops/tool/2%3Abad-1/started",
+          "runId": "eval-repeated-failure-stops",
+          "turnId": "eval-repeated-failure-stops",
+          "kind": "tool",
+          "operationId": "2:bad-1",
+          "phase": "started",
+          "name": "web_search",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.010Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-repeated-failure-stops/tool/2%3Abad-1/result",
+          "runId": "eval-repeated-failure-stops",
+          "turnId": "eval-repeated-failure-stops",
+          "kind": "tool",
+          "operationId": "2:bad-1",
+          "phase": "result",
+          "name": "web_search",
+          "status": "failed",
+          "resultState": "error_returned",
+          "code": "TEMPORARY_FAILURE",
+          "at": "2023-11-14T22:13:21.010Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-repeated-failure-stops/tool/3%3Abad-2/started",
+          "runId": "eval-repeated-failure-stops",
+          "turnId": "eval-repeated-failure-stops",
+          "kind": "tool",
+          "operationId": "3:bad-2",
+          "phase": "started",
+          "name": "web_search",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.015Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-repeated-failure-stops/tool/3%3Abad-2/result",
+          "runId": "eval-repeated-failure-stops",
+          "turnId": "eval-repeated-failure-stops",
+          "kind": "tool",
+          "operationId": "3:bad-2",
+          "phase": "result",
+          "name": "web_search",
+          "status": "failed",
+          "resultState": "not_executed",
+          "code": "REPEATED_FAILURE",
+          "at": "2023-11-14T22:13:21.015Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-repeated-failure-stops/terminal/turn/finished",
+          "runId": "eval-repeated-failure-stops",
+          "turnId": "eval-repeated-failure-stops",
+          "kind": "terminal",
+          "operationId": "turn",
+          "phase": "finished",
+          "status": "failed",
+          "outcome": "blocked",
+          "reason": "REPEATED_TOOL_FAILURE",
+          "at": "2023-11-14T22:13:21.015Z"
+        }
+      ],
+      "score": {
+        "passed": true,
+        "failures": []
+      }
+    },
+    {
+      "id": "search-snippet-is-not-read",
+      "route": "http-search",
+      "allowedTools": [
+        "web_search",
+        "fetch_url"
+      ],
+      "completion": {
+        "version": 1,
+        "kind": "research",
+        "outcome": "partial",
+        "goalState": "unverified",
+        "reason": "RELEVANT_READ_SOURCE_MISSING",
+        "evidenceIds": [],
+        "completedSteps": 1,
+        "summary": "Partially completed · Goal completion is unverified"
+      },
+      "metrics": {
+        "modelCalls": 2,
+        "attemptedCalls": 1,
+        "executedTools": [
+          "web_search"
+        ],
+        "rejected": [],
+        "protocolErrors": [],
+        "maxRepeat": 1,
+        "fixtureInputTokens": 20,
+        "fixtureOutputTokens": 4,
+        "simulatedElapsedMs": 10,
+        "readSources": 0
+      },
+      "events": [
+        {
+          "version": 1,
+          "eventId": "eval-search-snippet-is-not-read/turn/turn/started",
+          "runId": "eval-search-snippet-is-not-read",
+          "turnId": "eval-search-snippet-is-not-read",
+          "kind": "turn",
+          "operationId": "turn",
+          "phase": "started",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.000Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-search-snippet-is-not-read/model/model%3A1/started",
+          "runId": "eval-search-snippet-is-not-read",
+          "turnId": "eval-search-snippet-is-not-read",
+          "kind": "model",
+          "operationId": "model:1",
+          "phase": "started",
+          "model": "fixture",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.000Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-search-snippet-is-not-read/model/model%3A1/finished",
+          "runId": "eval-search-snippet-is-not-read",
+          "turnId": "eval-search-snippet-is-not-read",
+          "kind": "model",
+          "operationId": "model:1",
+          "phase": "finished",
+          "model": "fixture",
+          "status": "completed",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-search-snippet-is-not-read/model/model%3A2/started",
+          "runId": "eval-search-snippet-is-not-read",
+          "turnId": "eval-search-snippet-is-not-read",
+          "kind": "model",
+          "operationId": "model:2",
+          "phase": "started",
+          "model": "fixture",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-search-snippet-is-not-read/model/model%3A2/finished",
+          "runId": "eval-search-snippet-is-not-read",
+          "turnId": "eval-search-snippet-is-not-read",
+          "kind": "model",
+          "operationId": "model:2",
+          "phase": "finished",
+          "model": "fixture",
+          "status": "completed",
+          "at": "2023-11-14T22:13:21.010Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-search-snippet-is-not-read/tool/1%3Asearch/started",
+          "runId": "eval-search-snippet-is-not-read",
+          "turnId": "eval-search-snippet-is-not-read",
+          "kind": "tool",
+          "operationId": "1:search",
+          "phase": "started",
+          "name": "web_search",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-search-snippet-is-not-read/tool/1%3Asearch/result",
+          "runId": "eval-search-snippet-is-not-read",
+          "turnId": "eval-search-snippet-is-not-read",
+          "kind": "tool",
+          "operationId": "1:search",
+          "phase": "result",
+          "name": "web_search",
+          "status": "completed",
+          "resultState": "returned",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-search-snippet-is-not-read/terminal/turn/finished",
+          "runId": "eval-search-snippet-is-not-read",
+          "turnId": "eval-search-snippet-is-not-read",
+          "kind": "terminal",
+          "operationId": "turn",
+          "phase": "finished",
+          "status": "failed",
+          "outcome": "partial",
+          "reason": "RELEVANT_READ_SOURCE_MISSING",
+          "at": "2023-11-14T22:13:21.010Z"
+        }
+      ],
+      "score": {
+        "passed": true,
+        "failures": []
+      }
+    },
+    {
+      "id": "tool-ok-is-not-terminal",
+      "route": "phone",
+      "allowedTools": [
+        "phone_use"
+      ],
+      "completion": {
+        "version": 1,
+        "kind": "action",
+        "outcome": "partial",
+        "goalState": "unverified",
+        "reason": "GOAL_TERMINAL_EVIDENCE_MISSING",
+        "evidenceIds": [],
+        "completedSteps": 1,
+        "summary": "部分完成 · 尚无目标完成证据"
+      },
+      "metrics": {
+        "modelCalls": 2,
+        "attemptedCalls": 1,
+        "executedTools": [
+          "phone_use"
+        ],
+        "rejected": [],
+        "protocolErrors": [],
+        "maxRepeat": 1,
+        "fixtureInputTokens": 20,
+        "fixtureOutputTokens": 4,
+        "simulatedElapsedMs": 10,
+        "readSources": 0
+      },
+      "events": [
+        {
+          "version": 1,
+          "eventId": "eval-tool-ok-is-not-terminal/turn/turn/started",
+          "runId": "eval-tool-ok-is-not-terminal",
+          "turnId": "eval-tool-ok-is-not-terminal",
+          "kind": "turn",
+          "operationId": "turn",
+          "phase": "started",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.000Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-tool-ok-is-not-terminal/model/model%3A1/started",
+          "runId": "eval-tool-ok-is-not-terminal",
+          "turnId": "eval-tool-ok-is-not-terminal",
+          "kind": "model",
+          "operationId": "model:1",
+          "phase": "started",
+          "model": "fixture",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.000Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-tool-ok-is-not-terminal/model/model%3A1/finished",
+          "runId": "eval-tool-ok-is-not-terminal",
+          "turnId": "eval-tool-ok-is-not-terminal",
+          "kind": "model",
+          "operationId": "model:1",
+          "phase": "finished",
+          "model": "fixture",
+          "status": "completed",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-tool-ok-is-not-terminal/model/model%3A2/started",
+          "runId": "eval-tool-ok-is-not-terminal",
+          "turnId": "eval-tool-ok-is-not-terminal",
+          "kind": "model",
+          "operationId": "model:2",
+          "phase": "started",
+          "model": "fixture",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-tool-ok-is-not-terminal/model/model%3A2/finished",
+          "runId": "eval-tool-ok-is-not-terminal",
+          "turnId": "eval-tool-ok-is-not-terminal",
+          "kind": "model",
+          "operationId": "model:2",
+          "phase": "finished",
+          "model": "fixture",
+          "status": "completed",
+          "at": "2023-11-14T22:13:21.010Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-tool-ok-is-not-terminal/tool/1%3Aopen/started",
+          "runId": "eval-tool-ok-is-not-terminal",
+          "turnId": "eval-tool-ok-is-not-terminal",
+          "kind": "tool",
+          "operationId": "1:open",
+          "phase": "started",
+          "name": "phone_use",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-tool-ok-is-not-terminal/tool/1%3Aopen/result",
+          "runId": "eval-tool-ok-is-not-terminal",
+          "turnId": "eval-tool-ok-is-not-terminal",
+          "kind": "tool",
+          "operationId": "1:open",
+          "phase": "result",
+          "name": "phone_use",
+          "status": "completed",
+          "resultState": "returned",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-tool-ok-is-not-terminal/terminal/turn/finished",
+          "runId": "eval-tool-ok-is-not-terminal",
+          "turnId": "eval-tool-ok-is-not-terminal",
+          "kind": "terminal",
+          "operationId": "turn",
+          "phase": "finished",
+          "status": "failed",
+          "outcome": "partial",
+          "reason": "GOAL_TERMINAL_EVIDENCE_MISSING",
+          "at": "2023-11-14T22:13:21.010Z"
+        }
+      ],
+      "score": {
+        "passed": true,
+        "failures": []
+      }
+    },
+    {
+      "id": "cancel-rejects-late-call",
+      "route": "http-search",
+      "allowedTools": [
+        "web_search",
+        "fetch_url"
+      ],
+      "completion": {
+        "version": 1,
+        "kind": "research",
+        "outcome": "cancelled",
+        "goalState": "unverified",
+        "reason": "CANCELLED",
+        "evidenceIds": [],
+        "completedSteps": 0,
+        "summary": "Cancelled · Goal completion is unverified"
+      },
+      "metrics": {
+        "modelCalls": 0,
+        "attemptedCalls": 0,
+        "executedTools": [],
+        "rejected": [],
+        "protocolErrors": [
+          "TURN_CLOSED"
+        ],
+        "maxRepeat": 0,
+        "fixtureInputTokens": 0,
+        "fixtureOutputTokens": 0,
+        "simulatedElapsedMs": 0,
+        "readSources": 0
+      },
+      "events": [
+        {
+          "version": 1,
+          "eventId": "eval-cancel-rejects-late-call/turn/turn/started",
+          "runId": "eval-cancel-rejects-late-call",
+          "turnId": "eval-cancel-rejects-late-call",
+          "kind": "turn",
+          "operationId": "turn",
+          "phase": "started",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.000Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-cancel-rejects-late-call/terminal/turn/finished",
+          "runId": "eval-cancel-rejects-late-call",
+          "turnId": "eval-cancel-rejects-late-call",
+          "kind": "terminal",
+          "operationId": "turn",
+          "phase": "finished",
+          "status": "cancelled",
+          "outcome": "cancelled",
+          "reason": "CANCELLED",
+          "at": "2023-11-14T22:13:21.000Z"
+        }
+      ],
+      "score": {
+        "passed": true,
+        "failures": []
+      }
+    },
+    {
+      "id": "input-budget-blocks-tools",
+      "route": "http-search",
+      "allowedTools": [
+        "web_search",
+        "fetch_url"
+      ],
+      "completion": {
+        "version": 1,
+        "kind": "research",
+        "outcome": "budget_exhausted",
+        "goalState": "unverified",
+        "reason": "BUDGET_INPUT_TOKENS",
+        "evidenceIds": [],
+        "completedSteps": 0,
+        "summary": "Budget exhausted · Goal completion is unverified"
+      },
+      "metrics": {
+        "modelCalls": 1,
+        "attemptedCalls": 0,
+        "executedTools": [],
+        "rejected": [],
+        "protocolErrors": [],
+        "maxRepeat": 0,
+        "fixtureInputTokens": 10,
+        "fixtureOutputTokens": 2,
+        "simulatedElapsedMs": 5,
+        "readSources": 0
+      },
+      "events": [
+        {
+          "version": 1,
+          "eventId": "eval-input-budget-blocks-tools/turn/turn/started",
+          "runId": "eval-input-budget-blocks-tools",
+          "turnId": "eval-input-budget-blocks-tools",
+          "kind": "turn",
+          "operationId": "turn",
+          "phase": "started",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.000Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-input-budget-blocks-tools/model/model%3A1/started",
+          "runId": "eval-input-budget-blocks-tools",
+          "turnId": "eval-input-budget-blocks-tools",
+          "kind": "model",
+          "operationId": "model:1",
+          "phase": "started",
+          "model": "fixture",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.000Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-input-budget-blocks-tools/model/model%3A1/finished",
+          "runId": "eval-input-budget-blocks-tools",
+          "turnId": "eval-input-budget-blocks-tools",
+          "kind": "model",
+          "operationId": "model:1",
+          "phase": "finished",
+          "model": "fixture",
+          "status": "completed",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-input-budget-blocks-tools/terminal/turn/finished",
+          "runId": "eval-input-budget-blocks-tools",
+          "turnId": "eval-input-budget-blocks-tools",
+          "kind": "terminal",
+          "operationId": "turn",
+          "phase": "finished",
+          "status": "failed",
+          "outcome": "budget_exhausted",
+          "reason": "BUDGET_INPUT_TOKENS",
+          "at": "2023-11-14T22:13:21.005Z"
+        }
+      ],
+      "score": {
+        "passed": true,
+        "failures": []
+      }
+    },
+    {
+      "id": "deadline-blocks-model",
+      "route": "http-search",
+      "allowedTools": [
+        "web_search",
+        "fetch_url"
+      ],
+      "completion": {
+        "version": 1,
+        "kind": "research",
+        "outcome": "budget_exhausted",
+        "goalState": "unverified",
+        "reason": "BUDGET_DEADLINE",
+        "evidenceIds": [],
+        "completedSteps": 0,
+        "summary": "Budget exhausted · Goal completion is unverified"
+      },
+      "metrics": {
+        "modelCalls": 0,
+        "attemptedCalls": 0,
+        "executedTools": [],
+        "rejected": [],
+        "protocolErrors": [],
+        "maxRepeat": 0,
+        "fixtureInputTokens": 0,
+        "fixtureOutputTokens": 0,
+        "simulatedElapsedMs": 100,
+        "readSources": 0
+      },
+      "events": [
+        {
+          "version": 1,
+          "eventId": "eval-deadline-blocks-model/turn/turn/started",
+          "runId": "eval-deadline-blocks-model",
+          "turnId": "eval-deadline-blocks-model",
+          "kind": "turn",
+          "operationId": "turn",
+          "phase": "started",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.000Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-deadline-blocks-model/terminal/turn/finished",
+          "runId": "eval-deadline-blocks-model",
+          "turnId": "eval-deadline-blocks-model",
+          "kind": "terminal",
+          "operationId": "turn",
+          "phase": "finished",
+          "status": "failed",
+          "outcome": "budget_exhausted",
+          "reason": "BUDGET_DEADLINE",
+          "at": "2023-11-14T22:13:21.100Z"
+        }
+      ],
+      "score": {
+        "passed": true,
+        "failures": []
+      }
+    },
+    {
+      "id": "tool-budget-admits-once",
+      "route": "http-search",
+      "allowedTools": [
+        "web_search",
+        "fetch_url"
+      ],
+      "completion": {
+        "version": 1,
+        "kind": "research",
+        "outcome": "budget_exhausted",
+        "goalState": "unverified",
+        "reason": "BUDGET_EXHAUSTED",
+        "evidenceIds": [],
+        "completedSteps": 1,
+        "summary": "Budget exhausted · Goal completion is unverified"
+      },
+      "metrics": {
+        "modelCalls": 1,
+        "attemptedCalls": 2,
+        "executedTools": [
+          "web_search"
+        ],
+        "rejected": [
+          "BUDGET_EXHAUSTED"
+        ],
+        "protocolErrors": [],
+        "maxRepeat": 1,
+        "fixtureInputTokens": 10,
+        "fixtureOutputTokens": 2,
+        "simulatedElapsedMs": 5,
+        "readSources": 0
+      },
+      "events": [
+        {
+          "version": 1,
+          "eventId": "eval-tool-budget-admits-once/turn/turn/started",
+          "runId": "eval-tool-budget-admits-once",
+          "turnId": "eval-tool-budget-admits-once",
+          "kind": "turn",
+          "operationId": "turn",
+          "phase": "started",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.000Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-tool-budget-admits-once/model/model%3A1/started",
+          "runId": "eval-tool-budget-admits-once",
+          "turnId": "eval-tool-budget-admits-once",
+          "kind": "model",
+          "operationId": "model:1",
+          "phase": "started",
+          "model": "fixture",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.000Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-tool-budget-admits-once/model/model%3A1/finished",
+          "runId": "eval-tool-budget-admits-once",
+          "turnId": "eval-tool-budget-admits-once",
+          "kind": "model",
+          "operationId": "model:1",
+          "phase": "finished",
+          "model": "fixture",
+          "status": "completed",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-tool-budget-admits-once/tool/1%3Asearch/started",
+          "runId": "eval-tool-budget-admits-once",
+          "turnId": "eval-tool-budget-admits-once",
+          "kind": "tool",
+          "operationId": "1:search",
+          "phase": "started",
+          "name": "web_search",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-tool-budget-admits-once/tool/1%3Asearch/result",
+          "runId": "eval-tool-budget-admits-once",
+          "turnId": "eval-tool-budget-admits-once",
+          "kind": "tool",
+          "operationId": "1:search",
+          "phase": "result",
+          "name": "web_search",
+          "status": "completed",
+          "resultState": "returned",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-tool-budget-admits-once/tool/1%3Aread/started",
+          "runId": "eval-tool-budget-admits-once",
+          "turnId": "eval-tool-budget-admits-once",
+          "kind": "tool",
+          "operationId": "1:read",
+          "phase": "started",
+          "name": "fetch_url",
+          "status": "running",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-tool-budget-admits-once/tool/1%3Aread/result",
+          "runId": "eval-tool-budget-admits-once",
+          "turnId": "eval-tool-budget-admits-once",
+          "kind": "tool",
+          "operationId": "1:read",
+          "phase": "result",
+          "name": "fetch_url",
+          "status": "failed",
+          "resultState": "not_executed",
+          "code": "BUDGET_EXHAUSTED",
+          "at": "2023-11-14T22:13:21.005Z"
+        },
+        {
+          "version": 1,
+          "eventId": "eval-tool-budget-admits-once/terminal/turn/finished",
+          "runId": "eval-tool-budget-admits-once",
+          "turnId": "eval-tool-budget-admits-once",
+          "kind": "terminal",
+          "operationId": "turn",
+          "phase": "finished",
+          "status": "failed",
+          "outcome": "budget_exhausted",
+          "reason": "BUDGET_EXHAUSTED",
+          "at": "2023-11-14T22:13:21.005Z"
+        }
+      ],
+      "score": {
+        "passed": true,
+        "failures": []
+      }
+    }
+  ],
+  "passed": true
+}

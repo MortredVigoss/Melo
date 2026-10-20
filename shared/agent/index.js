@@ -1,3 +1,4 @@
+import { runTaskReplay } from './taskReplay.js';
 import { CORE_VERSION, startTurn, advanceTurn, turnStopReply } from './turn.js';
 import { planRequest, actionEvidence } from './search.js';
 import { buildSkills } from './skill/skillService.js';
@@ -16,6 +17,7 @@ export function evaluate(input) {
     if (!input || input.version !== CORE_VERSION) throw Object.assign(new Error('Unsupported Core protocol.'), { code: 'PROTOCOL_VERSION' });
     let value;
     switch (input.op) {
+      case 'taskReplay': value = runTaskReplay(input.dataset); break;
       case 'hello': value = { version: CORE_VERSION, runtime: 'melo-local-core', portable: true }; break;
       case 'contextCost': value = contextCost(input.text); break;
       case 'contextPlan': value = contextPlan(input.context); break;

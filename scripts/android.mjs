@@ -59,7 +59,15 @@ try {
     });
     if (status !== 0) break;
   }
+  if (process.argv[2] === 'connected' && status === 0) {
+    const replay = spawnSync(adb, ['exec-out', 'run-as', 'com.melo.android', 'cat', 'cache/agent-task-eval-android.json'], { env, encoding: 'utf8', maxBuffer: 2 * 1024 * 1024 });
+    if (replay.status !== 0) throw new Error('The passing fixture emulator did not provide its task evaluation report.');
+    const report = JSON.parse(replay.stdout);
+    if (report.report?.passed !== true || report.host !== 'Android-JavaScriptSandbox') throw new Error('Invalid emulator task evaluation report.');
+    await writeFile(resolve(root, '.tmp/agent-task-eval-android.json'), JSON.stringify(report, null, 2));
+  }
 } catch (error) {
+  status = 1;
   console.error(error.message);
 } finally {
   // The HTML report can omit instrumentation-process crash stacks. Capture

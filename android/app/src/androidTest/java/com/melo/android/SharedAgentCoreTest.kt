@@ -31,6 +31,31 @@ class SharedAgentCoreTest {
         }
     }
 
+    @Test fun taskDatasetMatchesCanonicalEventsAndEmitsComparableReport() = runBlocking {
+        val assets = InstrumentationRegistry.getInstrumentation().context.assets
+        val source = assets.open("tasks.json").use { it.readBytes() }
+        val dataset = Json.parseToJsonElement(source.toString(Charsets.UTF_8)).jsonObject
+        val expected = assets.open("tasks.expected.json").bufferedReader().use { Json.parseToJsonElement(it.readText()) }
+        SharedCoreRuntime.open(app).use { runtime ->
+            val started = System.nanoTime()
+            val reply = runtime.evaluate(buildJsonObject {
+                put("version", 1); put("op", "taskReplay"); put("dataset", dataset)
+            })
+            val elapsed = (System.nanoTime() - started) / 1_000_000.0
+            assertEquals(true, reply["ok"]?.jsonPrimitive?.boolean)
+            val result = reply.getValue("value").jsonObject
+            assertEquals(true, result["passed"]?.jsonPrimitive?.boolean)
+            assertEquals("Shared task events, tools, provenance and fixture costs", expected, result)
+            val digest = java.security.MessageDigest.getInstance("SHA-256").digest(source).joinToString("") { "%02x".format(it) }
+            val report = buildJsonObject {
+                put("version", 1); put("host", "Android-JavaScriptSandbox")
+                put("datasetSha256", digest); put("bundleSha256", runtime.bundleHash)
+                put("replayElapsedMs", elapsed); put("report", result)
+            }
+            java.io.File(app.cacheDir, "agent-task-eval-android.json").writeText(report.toString())
+        }
+    }
+
     @Test fun namedDataPreservesChineseAndCannotExecuteMessageContents() = runBlocking {
         SharedCoreRuntime.open(app).use { runtime ->
             val result = runtime.evaluate(buildJsonObject {
