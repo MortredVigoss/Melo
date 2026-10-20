@@ -49,10 +49,18 @@ class SharedAgentCoreTest {
             val digest = java.security.MessageDigest.getInstance("SHA-256").digest(source).joinToString("") { "%02x".format(it) }
             val report = buildJsonObject {
                 put("version", 1); put("host", "Android-JavaScriptSandbox")
+                put("evaluationId", requireNotNull(InstrumentationRegistry.getArguments().getString("taskEvaluationId")))
                 put("datasetSha256", digest); put("bundleSha256", runtime.bundleHash)
                 put("replayElapsedMs", elapsed); put("report", result)
             }
-            java.io.File(app.cacheDir, "agent-task-eval-android.json").writeText(report.toString())
+            // Use AGP's additional-output protocol while the fixture APK exists.
+            val outputDirectory = requireNotNull(app.externalMediaDirs.firstOrNull())
+            check(outputDirectory.isDirectory || outputDirectory.mkdirs())
+            val output = java.io.File(outputDirectory, "agent-task-eval-android.json")
+            output.writeText(report.toString())
+            InstrumentationRegistry.getInstrumentation().sendStatus(2, android.os.Bundle().apply {
+                putString("additionalTestOutputFile_melo_task_eval", output.absolutePath)
+            })
         }
     }
 

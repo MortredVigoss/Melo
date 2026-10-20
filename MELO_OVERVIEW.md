@@ -801,4 +801,6 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 ### 2026-10-20 — #14 同源任务回放（Codex）
 - shared/agent/taskReplay.js + taskScore.js 与公开 11 项任务，Android native 导出完整事件及 hash，CI 与 Node 比较。Node Core 已过，Android 等待验证分支 CI。
 - 同步混合批次完成类型修正，未知工具明确未执行时不误推断操作；其余权限/终态规则保留。详见 docs/task-replay-20261020.md。
-- 手机分支缺主线日常选择器/module map 脚本，因此用已有 Core/JVM/Lint/Debug/R8/emulator 完整 Android gate，不伪报 test:plan 成功。
+- 手机分支 test:plan 生成了旧版全量计划，但缺主线 module map 脚本；实际验收使用 Core、JVM/Lint/Debug/R8/emulator 完整 Android gate。
+
+#14 首轮 Android：73/73 emulator 零跳过；失败发生在 Gradle 已卸载夹具 APK 后 run-as 导出缓存。改用 AGP additionalTestOutputFile 协议，并以本轮 UUID 排除旧报告；新增收集器回归。保留 CI 红色，待第二轮验证。

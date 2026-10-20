@@ -3,6 +3,8 @@ import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { randomUUID } from 'node:crypto';
+import { readAndroidTaskReport } from './android-task-report.js';
 import { fixtureEmulator } from './android-target.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -29,6 +31,7 @@ let reversePort;
 const sdk = env.ANDROID_HOME || env.ANDROID_SDK_ROOT;
 const adb = sdk ? resolve(sdk, 'platform-tools', windows ? 'adb.exe' : 'adb') : 'adb';
 let status = 1;
+const evaluationId = randomUUID();
 try {
   if (process.argv[2] === 'connected') {
     const devices = spawnSync(adb, ['devices'], {env, encoding: 'utf8'});
@@ -43,6 +46,7 @@ try {
     reversePort = `tcp:${server.address().port}`;
     const reverse = spawnSync(adb, ['reverse', reversePort, reversePort], { env, stdio: 'inherit' });
     if (reverse.status !== 0) throw new Error('ADB reverse failed; connect an Emulator and set ANDROID_SERIAL if needed.');
+    selected.push(`-Pandroid.testInstrumentationRunnerArguments.taskEvaluationId=${evaluationId}`);
     selected.push(`-Pandroid.testInstrumentationRunnerArguments.syncEndpoint=http://127.0.0.1:${server.address().port}/v1/sync`);
     console.log('Using the existing Node mobile-sync server with isolated local fixture storage.');
   }
@@ -60,10 +64,7 @@ try {
     if (status !== 0) break;
   }
   if (process.argv[2] === 'connected' && status === 0) {
-    const replay = spawnSync(adb, ['exec-out', 'run-as', 'com.melo.android', 'cat', 'cache/agent-task-eval-android.json'], { env, encoding: 'utf8', maxBuffer: 2 * 1024 * 1024 });
-    if (replay.status !== 0) throw new Error('The passing fixture emulator did not provide its task evaluation report.');
-    const report = JSON.parse(replay.stdout);
-    if (report.report?.passed !== true || report.host !== 'Android-JavaScriptSandbox') throw new Error('Invalid emulator task evaluation report.');
+    const report = await readAndroidTaskReport(resolve(root, 'android/app/build/outputs'), evaluationId);
     await writeFile(resolve(root, '.tmp/agent-task-eval-android.json'), JSON.stringify(report, null, 2));
   }
 } catch (error) {

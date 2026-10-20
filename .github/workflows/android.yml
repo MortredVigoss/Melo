@@ -31,7 +31,7 @@ jobs:
           log-accepted-android-sdk-licenses: false
       - run: npm ci --ignore-scripts
       - name: Shared agent source and generated bundle
-        run: npm run check:agent-core && npm run test:agent-core
+        run: npm run check:agent-core && npm run test:agent-core && node --test scripts/android-task-report.test.js scripts/android-target.test.js
       - run: sdkmanager 'platforms;android-37.0' 'build-tools;36.0.0'
       - name: JVM, Lint and both APK variants
         run: npm run check:android
@@ -59,6 +59,7 @@ jobs:
           path: |
             android/app/build/reports/
             android/app/build/outputs/androidTest-results/
+            android/app/build/outputs/connected_android_test_additional_output/
             .tmp/android-fixture-logcat.log
             .tmp/agent-task-eval-android.json
             .tmp/agent-task-eval-node.json
