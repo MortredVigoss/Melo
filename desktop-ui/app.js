@@ -1268,12 +1268,12 @@ function searchBucketsForRender() {
       },
       {
         id: 'recent-skills',
-        title: 'Skills',
+        title: t('技能'),
         items: results.skills || [],
       },
       {
         id: 'recent-connectors',
-        title: 'Connectors',
+        title: t('连接器'),
         items: results.connectors || [],
       },
       {
@@ -1292,8 +1292,8 @@ function searchBucketsForRender() {
   return [
     { id: 'features', title: 'Functions', items: results.features || [] },
     { id: 'prompt-history', title: 'Prompt history', items: results.promptHistory || [] },
-    { id: 'skills', title: 'Skills', items: results.skills || [] },
-    { id: 'connectors', title: 'Connectors', items: results.connectors || [] },
+    { id: 'skills', title: t('技能'), items: results.skills || [] },
+    { id: 'connectors', title: t('连接器'), items: results.connectors || [] },
     { id: 'chat-threads', title: 'Chats', items: results.chatThreads || [] },
     { id: 'chat-hits', title: 'Messages', items: results.chatHits || [] },
     { id: 'memory-items', title: 'Memory', items: results.memoryItems || [] },
@@ -4686,7 +4686,7 @@ function renderProjectArtifactShelf() {
   }
 
   if (!artifacts.length) {
-    return '<div class="empty-state compact">No project artifacts yet. Save one from Artifacts to reuse it here.</div>';
+    return `<div class="empty-state compact">${t('还没有项目成果。在成果中保存一项后即可在这里复用。')}</div>`;
   }
 
   return ui`
@@ -4966,10 +4966,10 @@ function renderConnectorDetails(selected) {
             <p class="page-kicker">${escapeHtml(selected.description)}</p>
           </div>
           <div class="chip-row">
-            <span class="chip ${isCustomSkill ? 'is-accent' : ''}">${escapeHtml(selected.sourceLabel || 'Built-in skill')}</span>
-            <span class="chip ${isExecutable ? 'is-accent' : ''}">${isExecutable ? 'Executable' : 'Prompt'}</span>
-            <span class="chip">${isGlobalSkill ? 'Global' : `Scoped to ${allowedAgentIds.length} agent(s)`}</span>
-            ${selected._suspicious ? '<span class="chip is-danger">⚠ suspicious</span>' : ''}
+            <span class="chip ${isCustomSkill ? 'is-accent' : ''}">${isCustomSkill ? t('自定义技能') : t('内置技能')}</span>
+            <span class="chip ${isExecutable ? 'is-accent' : ''}">${isExecutable ? t('可执行') : t('提示词')}</span>
+            <span class="chip">${isGlobalSkill ? t('全局') : t('仅限 {count} 个 Agent', { count: allowedAgentIds.length })}</span>
+            ${selected._suspicious ? `<span class="chip is-danger">⚠ ${t('可疑')}</span>` : ''}
           </div>
         </div>
 
@@ -4977,20 +4977,20 @@ function renderConnectorDetails(selected) {
 
         <div class="meta-grid">
           <div>
-            <div class="meta-block-label">Added by</div>
+            <div class="meta-block-label">添加者</div>
             <div>${escapeHtml(selected.addedBy)}</div>
           </div>
           <div>
-            <div class="meta-block-label">Invoked by</div>
+            <div class="meta-block-label">调用方</div>
             <div>${escapeHtml(selected.invokedBy)}</div>
           </div>
           <div>
-            <div class="meta-block-label">Max iterations</div>
+            <div class="meta-block-label">最多迭代次数</div>
             <div>${Number(selected.maxIterations || 6)}</div>
           </div>
           <div>
-            <div class="meta-block-label">Tool whitelist</div>
-            <div>${toolWhitelist ? escapeHtml(toolWhitelist.join(', ')) : '(all tools)'}</div>
+            <div class="meta-block-label">工具白名单</div>
+            <div>${toolWhitelist ? escapeHtml(toolWhitelist.join(', ')) : t('（全部工具）')}</div>
           </div>
         </div>
 
@@ -5004,7 +5004,7 @@ function renderConnectorDetails(selected) {
           ${
             !isGlobalSkill
               ? ui`<div class="chip-row">
-                   <span class="meta-label">Only visible to:</span>
+                   <span class="meta-label">仅对以下 Agent 可见：</span>
                    ${allowedAgentIds
                      .map(aid => ui`<span class="chip">${escapeHtml(aid)}</span>`)
                      .join('')}
@@ -5015,8 +5015,8 @@ function renderConnectorDetails(selected) {
 
         <div class="toggle-row">
           <div>
-            <div class="list-row-title">Enabled</div>
-            <div class="list-row-meta">Make this skill discoverable to agents that have skills turned on.</div>
+            <div class="list-row-title">开启</div>
+            <div class="list-row-meta">让已开启技能的 Agent 能发现这个技能。</div>
           </div>
           <button
             class="toggle-switch ${selected.enabled ? 'is-on' : ''}"
@@ -5028,59 +5028,59 @@ function renderConnectorDetails(selected) {
         ${isCustomSkill ? ui`
           <form id="skill-custom-update-form-${selected.id}" class="config-form" data-form="skill-custom-update" data-skill-id="${selected.id}">
             <div class="detail-meta">
-              <div class="meta-block-label">Edit custom skill</div>
+              <div class="meta-block-label">编辑自定义技能</div>
             </div>
             <label class="label">
-              Name
+              名称
               <input class="input" name="name" value="${escapeHtml(selected.name)}" required />
             </label>
             <label class="label">
-              Description
+              描述
               <input class="input" name="description" value="${escapeHtml(selected.description || '')}" />
             </label>
             <label class="label">
-              Added by
+              添加者
               <input class="input" name="addedBy" value="${escapeHtml(selected.addedBy || '')}" />
             </label>
             <label class="label">
-              Invoked by
+              调用方
               <input class="input" name="invokedBy" value="${escapeHtml(selected.invokedBy || '')}" />
             </label>
             <label class="label">
-              System prompt
+              系统提示词
               <textarea class="config-textarea" name="systemPrompt">${escapeHtml(selected.systemPrompt || '')}</textarea>
             </label>
             <label class="label">
-              Type
+              类型
               <select class="input" name="type">
-                <option value="executable" ${selected.type === 'executable' ? 'selected' : ''}>Executable — callable as a tool via the loop</option>
-                <option value="prompt" ${selected.type === 'prompt' ? 'selected' : ''}>Prompt — injected verbatim into the system prompt</option>
+                <option value="executable" ${selected.type === 'executable' ? 'selected' : ''}>可执行 — 作为工具在循环中调用</option>
+                <option value="prompt" ${selected.type === 'prompt' ? 'selected' : ''}>提示词 — 原样注入系统提示词</option>
               </select>
             </label>
             <label class="label">
-              Max iterations (executable only)
+              最多迭代次数（仅可执行）
               <input class="input" type="number" name="maxIterations" min="1" max="16" value="${Number(selected.maxIterations || 6)}" />
             </label>
             <label class="label">
-              Allowed agents (comma-separated IDs — leave empty for all)
+              允许的 Agent（逗号分隔 ID，留空表示全部）
               <input class="input mono" name="allowedAgentIds" value="${escapeHtml((selected.allowedAgentIds || []).join(', '))}" />
             </label>
             <label class="label">
-              Tool whitelist (comma-separated tool IDs — leave empty for all)
+              工具白名单（逗号分隔工具 ID，留空表示全部）
               <input class="input mono" name="toolWhitelist" value="${escapeHtml((selected.toolWhitelist || []).join(', '))}" />
             </label>
             <label class="label">
-              Folders (comma-separated)
+              文件夹（逗号分隔）
               <input class="input" name="folders" value="${escapeHtml((selected.folders || []).join(', '))}" />
             </label>
             <div class="inline-actions">
-              <button class="small-button is-primary" type="submit">Save changes</button>
+              <button class="small-button is-primary" type="submit">保存修改</button>
               <button
                 class="small-button is-danger"
                 type="button"
                 data-action="remove-custom-skill"
                 data-skill-id="${selected.id}"
-              >Remove skill</button>
+              >移除技能</button>
             </div>
           </form>
         ` : ''}
@@ -5147,61 +5147,54 @@ function renderConnectorDetails(selected) {
       <button type="button" class="small-button" data-action="open-view" data-view="model">打开模型连接</button>
       <form id="connector-config-form" class="config-form" data-form="connector-config">
         <div class="detail-meta">
-          <div class="meta-block-label">Whisper transcription</div>
-          <div>
-            Used for audio and voice-message transcription.<br>
-            <b>API key mode</b>: automatically uses your main API key — no extra config needed.<br>
-            <b>Local mode</b>: automatically uses your local Ollama endpoint — no auth needed.<br>
-            <b>Codex OAuth mode</b>: automatically tries local Ollama (<code>http://127.0.0.1:11434/v1</code>). Run <code>ollama serve</code> to enable, or set a dedicated Whisper key below.<br>
-            The fields below override automatic selection for any mode.
-          </div>
+          <div class="meta-block-label">语音转写（Whisper）</div>
+          <div>用于音频和语音消息转写。</div>
+          <div>API 密钥模式：自动使用主 API 密钥，无需额外配置。</div>
+          <div>本地模式：自动使用本机 Ollama 地址，无需授权。</div>
+          <div>Codex OAuth 模式：自动尝试本机 Ollama（http://127.0.0.1:11434/v1），运行 ollama serve 后可用；也可以在下方单独设置 Whisper 密钥。</div>
+          <div>下方字段会覆盖任何模式的自动选择。</div>
         </div>
         <label class="label">
-          <span class="label-row">Whisper API key (optional override) ${credentialChip('whisperApiKey')}</span>
+          <span class="label-row"><span>Whisper API 密钥（可选覆盖）</span>${credentialChip('whisperApiKey')}</span>
           <input
             class="input"
             name="whisperApiKey"
             type="password"
             value=""
-            placeholder="${escapeHtml(selected.config.maskedWhisperApiKey || 'Leave blank to use auto-detected key')}"
+            placeholder="${escapeHtml(selected.config.maskedWhisperApiKey || t('留空则使用自动检测的密钥'))}"
           />
         </label>
         <div class="list-row-meta">
-          ${selected.config.hasWhisperKey ? `Override key saved: ${escapeHtml(selected.config.maskedWhisperApiKey)}` : 'No override key — using automatic detection per auth mode.'}
-          Leave blank to keep the current setting.
+          ${selected.config.hasWhisperKey ? t('已保存覆盖密钥：{key}', { key: escapeHtml(selected.config.maskedWhisperApiKey) }) : t('没有覆盖密钥，按授权模式自动检测。')}
+          <span>留空保持当前设置。</span>
         </div>
         <label class="label">
-          Whisper base URL (optional override)
+          Whisper 服务地址（可选覆盖）
           <input
             class="input"
             name="whisperBaseUrl"
             value="${escapeHtml(draft.whisperBaseUrl || '')}"
-            placeholder="Leave blank to use auto-detected endpoint"
+            placeholder="留空则使用自动检测的地址"
           />
         </label>
 
         <div class="detail-meta">
-          <div class="meta-block-label">MiniMax T2A V2 (cloned voice TTS)</div>
-          <div>
-            Powers the "自定义语音" option in the voice panel.
-            Sign up at <code>minimaxi.com</code>, create or clone a voice,
-            then paste the credentials below. Use the test button to verify
-            without leaving this page.
-          </div>
+          <div class="meta-block-label">MiniMax T2A V2（克隆音色朗读）</div>
+          <div>为语音面板中的“自定义语音”提供声音。在 minimaxi.com 创建或克隆音色后，把凭据粘贴到下方，可用试听按钮直接验证。</div>
         </div>
         <label class="label">
-          <span class="label-row">MiniMax API key ${credentialChip('minimaxApiKey')}</span>
+          <span class="label-row"><span>MiniMax API 密钥</span>${credentialChip('minimaxApiKey')}</span>
           <input
             class="input"
             name="minimaxApiKey"
             type="password"
             value=""
-            placeholder="${escapeHtml(selected.config.maskedMinimaxApiKey || 'Leave blank to keep current')}"
+            placeholder="${escapeHtml(selected.config.maskedMinimaxApiKey || t('留空保持当前值'))}"
           />
         </label>
         <div class="list-row-meta">
-          ${selected.config.hasMinimaxKey ? `Saved key: ${escapeHtml(selected.config.maskedMinimaxApiKey)}` : 'No MiniMax key — TTS will fall back to OpenAI / Edge.'}
-          Leave blank to preserve the current value.
+          ${selected.config.hasMinimaxKey ? t('已保存密钥：{key}', { key: escapeHtml(selected.config.maskedMinimaxApiKey) }) : t('没有 MiniMax 密钥，朗读会回退到 OpenAI / Edge。')}
+          <span>留空保持当前值。</span>
         </div>
         <label class="label">
           MiniMax Group ID
@@ -5209,16 +5202,16 @@ function renderConnectorDetails(selected) {
             class="input"
             name="minimaxGroupId"
             value="${escapeHtml(draft.minimaxGroupId || '')}"
-            placeholder="From the MiniMax dashboard"
+            placeholder="在 MiniMax 控制台中查看"
           />
         </label>
         <label class="label">
-          Default Voice ID
+          默认音色 ID
           <input
             class="input"
             name="minimaxVoiceId"
             value="${escapeHtml(draft.minimaxVoiceId || '')}"
-            placeholder="moss_audio_… or any cloned voice id"
+            placeholder="moss_audio_… 或任意克隆音色 ID"
           />
         </label>
         <div class="chip-row">
@@ -5227,25 +5220,25 @@ function renderConnectorDetails(selected) {
             type="button"
             data-action="test-minimax-tts"
           >
-            Test playback
+            试听
           </button>
           <span class="meta-label" data-tts-test-status></span>
         </div>
 
         <button class="small-button is-primary" type="submit">
-          Save connector settings
+          保存连接器设置
         </button>
       </form>
     `;
   } else if (selected.id === 'local-files') {
     extra = ui`
       <div class="detail-meta">
-        <div class="meta-block-label">Workspace root</div>
+        <div class="meta-block-label">工作区根目录</div>
         <div class="mono">${escapeHtml(selected.config.workspaceRoot || '(none)')}</div>
       </div>
       <div class="chip-row">
-        <span class="chip is-accent">${selected.config.fileCount || 0} files</span>
-        <span class="chip">${selected.config.exists ? 'Available' : 'Unavailable'}</span>
+        <span class="chip is-accent">${selected.config.fileCount || 0} 个文件</span>
+        <span class="chip">${selected.config.exists ? t('可用') : t('不可用')}</span>
         ${
           selected.config.selectedFilePath
             ? ui`<span class="chip">${escapeHtml(selected.config.selectedFilePath)}</span>`
@@ -5265,13 +5258,13 @@ function renderConnectorDetails(selected) {
           )
           .join('')}
       </div>
-      ${(workspace.commandRuns || []).length ? renderCommandRunner() : '<div class="empty-state compact">No command runs yet.</div>'}
+      ${(workspace.commandRuns || []).length ? renderCommandRunner() : `<div class="empty-state compact">${t('还没有命令运行记录。')}</div>`}
     `;
   } else if (selected.id === 'artifacts') {
     extra = ui`
       <div class="chip-row">
-        <span class="chip is-accent">${selected.config.totalArtifacts} total</span>
-        <span class="chip">${selected.config.projectArtifacts} in active project</span>
+        <span class="chip is-accent">共 ${selected.config.totalArtifacts} 个</span>
+        <span class="chip">当前项目 ${selected.config.projectArtifacts} 个</span>
       </div>
       ${renderProjectArtifactShelf()}
     `;
@@ -5301,8 +5294,8 @@ function renderConnectorDetails(selected) {
 
       <div class="toggle-row">
         <div>
-          <div class="list-row-title">Enabled</div>
-          <div class="list-row-meta">Expose this connector in Melo Desktop and prompt context.</div>
+          <div class="list-row-title">开启</div>
+          <div class="list-row-meta">在 Melo 桌面端和提示上下文中提供此连接器。</div>
         </div>
         <button
           class="toggle-switch ${selected.enabled ? 'is-on' : ''}"
@@ -5332,17 +5325,17 @@ function renderSkillFilterBar() {
         <input
           class="input skill-filter-query"
           type="search"
-          placeholder="Search skills by name, tag, or trigger…"
+          placeholder="按名称、标签或触发词搜索技能…"
           value="${escapeHtml(query)}"
           data-action="set-skill-filter-query"
         />
         <select class="input skill-filter-state" data-action="set-skill-filter-state">
-          <option value="all"      ${state === 'all' ? 'selected' : ''}>All</option>
-          <option value="enabled"  ${state === 'enabled' ? 'selected' : ''}>Enabled</option>
-          <option value="disabled" ${state === 'disabled' ? 'selected' : ''}>Disabled</option>
-          <option value="builtin"  ${state === 'builtin' ? 'selected' : ''}>Built-in</option>
-          <option value="custom"   ${state === 'custom' ? 'selected' : ''}>Custom</option>
-          <option value="disk"     ${state === 'disk' ? 'selected' : ''}>On disk</option>
+          <option value="all"      ${state === 'all' ? 'selected' : ''}>全部</option>
+          <option value="enabled"  ${state === 'enabled' ? 'selected' : ''}>已启用</option>
+          <option value="disabled" ${state === 'disabled' ? 'selected' : ''}>已停用</option>
+          <option value="builtin"  ${state === 'builtin' ? 'selected' : ''}>内置</option>
+          <option value="custom"   ${state === 'custom' ? 'selected' : ''}>自定义</option>
+          <option value="disk"     ${state === 'disk' ? 'selected' : ''}>磁盘上</option>
         </select>
       </div>
       ${tags.length
@@ -5353,7 +5346,7 @@ function renderSkillFilterBar() {
               class="chip chip-button ${!tag ? 'is-accent' : ''}"
               data-action="set-skill-filter-tag"
               data-tag=""
-            >All tags</button>
+            >全部标签</button>
             ${tags
               .map(
                 t => ui`
@@ -5371,8 +5364,8 @@ function renderSkillFilterBar() {
         : ''}
       <div class="skill-filter-status">
         ${isFiltering
-          ? ui`Showing ${filteredCount} of ${totalCount} skills · <button type="button" class="link-button" data-action="reset-skill-filter">reset</button>`
-          : `${totalCount} skills`}
+          ? ui`显示 ${filteredCount} / ${totalCount} 个技能 · <button type="button" class="link-button" data-action="reset-skill-filter">重置</button>`
+          : t('{count} 个技能', { count: totalCount })}
       </div>
     </div>
   `;
@@ -5383,7 +5376,7 @@ function renderCustomSkillCreateCard() {
     <div class="detail-card create-connector-card">
       <div class="header-row">
         <div>
-          <h2 class="pane-title">Add custom skill</h2>
+          <h2 class="pane-title">添加自定义技能</h2>
         </div>
       </div>
 
@@ -5393,50 +5386,50 @@ function renderCustomSkillCreateCard() {
           <input class="input mono" name="id" placeholder="my-skill" required />
         </label>
         <label class="label">
-          Name
+          名称
           <input class="input" name="name" placeholder="My Skill" required />
         </label>
         <label class="label">
-          Description
-          <input class="input" name="description" placeholder="What this skill does." />
+          描述
+          <input class="input" name="description" placeholder="这个技能做什么。" />
         </label>
         <label class="label">
-          Added by
+          添加者
           <input class="input" name="addedBy" placeholder="User" value="User" />
         </label>
         <label class="label">
-          Invoked by
+          调用方
           <input class="input" name="invokedBy" placeholder="User or Melo" value="User or Melo" />
         </label>
         <label class="label">
-          System prompt
-          <textarea class="config-textarea" name="systemPrompt" placeholder="Instructions injected into the agent system prompt when this skill is active."></textarea>
+          系统提示词
+          <textarea class="config-textarea" name="systemPrompt" placeholder="启用此技能时注入 Agent 系统提示词的说明。"></textarea>
         </label>
         <label class="label">
-          Type
+          类型
           <select class="input" name="type">
-            <option value="executable" selected>Executable — callable as a tool via the loop</option>
-            <option value="prompt">Prompt — injected verbatim into the system prompt</option>
+            <option value="executable" selected>可执行 — 作为工具在循环中调用</option>
+            <option value="prompt">提示词 — 原样注入系统提示词</option>
           </select>
         </label>
         <label class="label">
-          Max iterations (executable only)
+          最多迭代次数（仅可执行）
           <input class="input" type="number" name="maxIterations" min="1" max="16" value="6" />
         </label>
         <label class="label">
-          Allowed agents (comma-separated IDs — leave empty for all)
+          允许的 Agent（逗号分隔 ID，留空表示全部）
           <input class="input mono" name="allowedAgentIds" placeholder="main, planner" />
         </label>
         <label class="label">
-          Tool whitelist (comma-separated tool IDs — leave empty for all)
+          工具白名单（逗号分隔工具 ID，留空表示全部）
           <input class="input mono" name="toolWhitelist" placeholder="web_search, read_file" />
         </label>
         <label class="label">
-          Folders (comma-separated)
+          文件夹（逗号分隔）
           <input class="input" name="folders" placeholder="plans, references" />
         </label>
         <div class="inline-actions">
-          <button class="small-button is-primary" type="submit">Create skill</button>
+          <button class="small-button is-primary" type="submit">创建技能</button>
         </div>
       </form>
     </div>
@@ -5766,11 +5759,7 @@ function renderSafetyPane() {
       ${body}
       ${approvalsFeature.renderGrantList()}
       <details class="quality-details"><summary>最近授权使用记录 · ${audit.length}</summary>${audit.slice(0,80).map(e=>ui`<p>${escapeHtml(e.at)} · ${escapeHtml(e.operation)} · ${escapeHtml(e.decision)} · ${escapeHtml(e.reason)} · ${escapeHtml(e.role || '未指定Agent')}${e.path ? ` · ${escapeHtml(e.path)}` : ''}</p>`).join('') || ui`<p>尚无记录。</p>`}</details>
-      <p class="list-row-meta" style="margin-top: 16px;">
-        Sensitive paths (~/.ssh, /etc, MELO_HOME, …) are <strong>never</strong> allow-listable
-        — the dialog only offers Allow once / Deny for them. Move and delete operations are
-        also excluded from "Always allow" by design.
-      </p>
+      <p class="list-row-meta">敏感路径（~/.ssh、/etc、MELO_HOME 等）永远不能加入长期授权，弹窗只提供“允许一次”或“拒绝”。移动和删除操作也按设计不提供“始终允许”。</p>
 
       ${renderDomainCookiesPane()}
     </div>
@@ -5785,7 +5774,7 @@ function renderDomainCookiesPane() {
 
   const list = (() => {
     if (loading && !loaded) {
-      return ui`<div class="empty-state compact">Loading…</div>`;
+      return ui`<div class="empty-state compact">加载中…</div>`;
     }
     if (error) {
       return ui`<div class="alert compact-alert">${escapeHtml(error)}</div>`;
@@ -5793,8 +5782,7 @@ function renderDomainCookiesPane() {
     if (!hosts.length) {
       return ui`
         <div class="empty-state compact">
-          No domain cookies configured. Add one for sites that need an authenticated session
-          (Xiaohongshu, Douyin, Bilibili, …) — yt-dlp / fetch_url will pick it up automatically.
+          还没有配置域名 Cookie。需要登录状态的网站（小红书、抖音、哔哩哔哩等）添加后，yt-dlp 和 fetch_url 会自动使用。
         </div>
       `;
     }
@@ -5805,14 +5793,14 @@ function renderDomainCookiesPane() {
             <div class="safety-rule-main">
               <div class="safety-rule-op">${escapeHtml(entry.host)}</div>
               <div class="list-row-meta">
-                Cookie length: ${entry.length}${entry.fingerprint ? ui` · fingerprint <code>${escapeHtml(entry.fingerprint)}</code>` : ''}
+                Cookie 长度：${entry.length}${entry.fingerprint ? ui` · 指纹 <code>${escapeHtml(entry.fingerprint)}</code>` : ''}
               </div>
             </div>
             <button class="small-button is-danger"
               data-action="domain-cookie-remove"
               data-host="${escapeHtml(entry.host)}"
               ${pendingRemoveHost === entry.host ? 'disabled' : ''}>
-              ${pendingRemoveHost === entry.host ? 'Removing…' : 'Remove'}
+              ${pendingRemoveHost === entry.host ? t('正在移除…') : t('移除')}
             </button>
           </div>
         `).join('')}
@@ -5821,31 +5809,21 @@ function renderDomainCookiesPane() {
   })();
 
   return ui`
-    <div class="meta-block-label" style="margin-top: 24px;">Web-fetch cookies</div>
-    <p class="list-row-meta" style="margin-bottom: 8px;">
-      Per-domain Cookie strings sent with web-fetch (fetch_url) and platform extractors
-      (yt-dlp). The list never displays the saved value — only its length + a sha256
-      fingerprint — so session tokens stay out of the rendered DOM. Hostname only
-      (no protocol / no path).
-    </p>
-    <p class="list-row-meta" style="margin-bottom: 12px;">
-      <strong>Recommended hosts to add</strong> (Phase 6 social-link extractor uses
-      these for authenticated reads — without them, posts behind login walls return
-      OpenGraph preview only):<br>
-      <code>xiaohongshu.com</code> · <code>xhslink.com</code> · <code>douyin.com</code>
-      · <code>v.douyin.com</code> · <code>iesdouyin.com</code> · <code>bilibili.com</code>
-    </p>
+    <div class="meta-block-label">网页抓取 Cookie</div>
+    <p class="list-row-meta">按域名保存的 Cookie 会随网页抓取（fetch_url）和平台提取（yt-dlp）一起发送。列表只显示长度和 sha256 指纹，不显示保存的值，会话令牌不会出现在页面中。只填写主机名，不含协议和路径。</p>
+    <p class="list-row-meta">建议添加：社交链接提取会用这些站点读取需要登录的内容；未配置时，登录后才能看的帖子只返回 OpenGraph 预览。</p>
+    <p class="list-row-meta mono">xiaohongshu.com · xhslink.com · douyin.com · v.douyin.com · iesdouyin.com · bilibili.com</p>
 
     <div class="domain-cookie-form">
       <input type="text"
         class="domain-cookie-host"
-        placeholder="hostname (e.g. xiaohongshu.com)"
+        placeholder="主机名（例如 xiaohongshu.com）"
         value="${escapeHtml(addHost)}"
         data-domain-cookie-host
         ${addInFlight ? 'disabled' : ''} />
       <textarea
         class="domain-cookie-string"
-        placeholder='Cookie header value: "name1=val1; name2=val2; …"'
+        placeholder="${escapeHtml(t('Cookie 请求头的值，例如 name1=val1; name2=val2'))}"
         data-domain-cookie-string
         rows="2"
         ${addInFlight ? 'disabled' : ''}>${escapeHtml(addCookie)}</textarea>
@@ -5853,9 +5831,9 @@ function renderDomainCookiesPane() {
         <button class="small-button is-primary"
           data-action="domain-cookie-save"
           ${addInFlight ? 'disabled' : ''}>
-          ${addInFlight ? 'Saving…' : 'Save cookie'}
+          ${addInFlight ? t('正在保存…') : t('保存 Cookie')}
         </button>
-        <button class="small-button" data-action="refresh-domain-cookies">Refresh list</button>
+        <button class="small-button" data-action="refresh-domain-cookies">刷新列表</button>
       </div>
       ${addError ? ui`<div class="alert compact-alert" style="margin-top: 8px;">${escapeHtml(addError)}</div>` : ''}
     </div>
@@ -5876,7 +5854,7 @@ function renderSkillDetailTabs(selected, activeTab) {
         data-action="skill-detail-tab"
         data-skill-id="${escapeHtml(selected.id)}"
         data-tab="overview"
-      >Overview</button>
+      >概览</button>
       <button
         class="skill-tab ${activeTab === 'markdown' ? 'is-active' : ''}"
         data-action="skill-detail-tab"
@@ -6040,7 +6018,7 @@ function renderSkillProposalsPanel() {
                   class="small-button is-primary"
                   data-action="promote-skill-proposal"
                   data-seed-id="${escapeHtml(p.seedId)}"
-                >Save as skill</button>
+                >存为技能</button>
                 <button
                   class="small-button"
                   data-action="dismiss-skill-proposal"
@@ -6085,15 +6063,15 @@ function renderCustomizePage() {
               data-action="open-customize-section"
               data-section="skills"
             >
-              <div class="list-row-title">Skills</div>
-              <div class="list-row-meta">Shape role-level behavior and prompt strategy.</div>
+              <div class="list-row-title">技能</div>
+              <div class="list-row-meta">塑造角色行为与提示策略。</div>
             </button>
             <button
               class="section-button ${section === 'agents' ? 'is-active' : ''}"
               data-action="open-customize-section"
               data-section="agents"
             >
-              <div class="list-row-title">Agents</div>
+              <div class="list-row-title">Agent</div>
               <div class="list-row-meta">设置 Agent 的人设、能力与消息渠道</div>
             </button>
             <button
@@ -6101,8 +6079,8 @@ function renderCustomizePage() {
               data-action="open-customize-section"
               data-section="connectors"
             >
-              <div class="list-row-title">Connectors</div>
-              <div class="list-row-meta">Model access, files, commands, projects, and artifacts.</div>
+              <div class="list-row-title">连接器</div>
+              <div class="list-row-meta">模型接入、文件、命令、项目与成果。</div>
             </button>
             <button
               class="section-button ${section === 'advanced' ? 'is-active' : ''}"
@@ -6153,7 +6131,7 @@ function renderCustomizePage() {
         <div class="customize-pane">
           <div class="customize-pane-header">
             <h2 class="pane-title">${
-              section === 'skills' ? 'Skills' : section === 'agents' ? 'Agents' : 'Connectors'
+              section === 'skills' ? t('技能') : section === 'agents' ? 'Agent' : t('连接器')
             }</h2>
           </div>
 

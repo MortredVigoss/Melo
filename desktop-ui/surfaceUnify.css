@@ -136,3 +136,7 @@
    space as a paragraph that precedes one. */
 .message-bubble .reply-list-item + :is(p,h1,h2,h3,h4,pre,blockquote,table) {margin-top:10px;}
 .message-bubble :is(p,pre,blockquote,table) + .reply-list-item {margin-top:4px;}
+
+/* Section labels are now authored in Chinese; forced capitals only turned
+   embedded product names into WHISPER / COOKIE. */
+.neural-dashboard .meta-block-label {text-transform:none;letter-spacing:.02em;}

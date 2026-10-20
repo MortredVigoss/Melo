@@ -311,9 +311,9 @@ function renderRegularChatPage() {
               type="button"
               data-action="save-chat-as-skill"
               data-chat-id="${chat.id}"
-              title="Draft a reusable skill from this conversation. You confirm before it saves."
+              title="从这段对话起草一个可复用技能，保存前会先让你确认。"
             >
-              Save as skill
+              存为技能
             </button>
           </div>
         </div>
