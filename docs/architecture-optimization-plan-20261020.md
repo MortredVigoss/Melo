@@ -47,8 +47,8 @@ npm test -- --base <本批起点提交>   # 日常选组，批次结束时跑
 | --- | --- | --- |
 | 产品代码规模 | 730 文件 / 153,925 行 | 不含测试、生成物、夹具 |
 | 静态依赖 | 432 模块、0 循环 | `node scripts/check-dependencies.js` |
-| `desktop-ui/app.js` | 8,807 行；3 个 `switch (action)`（1875、1921、7329 行）共 180 个 case；38 个 `render*`、37 个 `handle*`；`uiState` 写入 275 处 | P2 结束时 case 为 105，之后又涨了 75 |
-| 自动保存实现 | 3 套：连接器在 `app.js:3257-3397`；Agent 渠道 `features/agents/controller.js:508-551,609`；Agent Markdown 同文件 `552-608`；关窗 flush 各一份（`app.js:3365-3397`、`controller.js:620-640,1154`） | 相关符号 14 个 |
+| `desktop-ui/app.js` | 8,807 行；中央 click 分发（7329 行 `switch (action)`）106 个 case，submit 分发（`switch (form.dataset.form)`）11 个；38 个 `render*`、37 个 `handle*`；`uiState` 写入 275 处 | **更正（10-20 执行时）**：原写“180 个 case、P2 后涨 75”是把全文件所有 switch（右键菜单、命令面板、视图路由等）的 case 一起数了；中央分发 P2 结束 105，现 106，只涨 1 |
+| 自动保存实现 | **更正（10-20 执行时）：三套调度函数均无调用者，是死代码**——连接器自 10-14 `b96c48a`、Agent 两套自 10-17 起；设置页已改为 `settingsEdit.js` 的“只读 → 编辑 → 保存”，并有测试断言“设置输入保持本地草稿直到显式保存”。原记录：3 套：连接器在 `app.js:3257-3397`；Agent 渠道 `features/agents/controller.js:508-551,609`；Agent Markdown 同文件 `552-608`；关窗 flush 各一份（`app.js:3365-3397`、`controller.js:620-640,1154`） | 相关符号 14 个 |
 | 已有共享编辑器 | `desktop-ui/settingsEdit.js`（`EditSession`、`createSettingsFormEditors`、`installUnsavedSettingsGuard`）| 模型/安全/连接器页的只读→编辑→保存用它，没有 idle 自动保存 |
 | 动作注册表 | `desktop-ui/features/registry.js` `createActionRegistry()`：`register / has / dispatch / names / owner` | app.js 在 switch 前先问注册表 |
 | 聊天执行 | `src/services/chat/chatExecutionRunner.js` 1,352 行，单一导出 `runChatAgentExecutionGraph`（152 行起）。176–236 行定义 ~14 个外层局部量（`env, firstToken, originalDelta, modelResponses, replyProvider, observedReply, budget, createReply, embedQuery, contextBudget, turnContextPlacement, promptDebug, modelOverrides, isRemoteChannel`），237 行起 `createStateGraph` 三个节点闭包：`prepare`（253–737，484 行）、`invoke-model`（744–1196，452 行）、`finalize`（1202–1337，135 行），1341 行 `runStateGraph` | 78 个 import |
@@ -80,6 +80,8 @@ npm test -- --base <本批起点提交>   # 日常选组，批次结束时跑
 
 ### B1-1 读现状
 读 `app.js:3257-3397`、`features/agents/controller.js:20-50,500-640,1150-1160`、`settingsEdit.js` 全文、`desktop-ui/features/README.md` 的 "Shared request layer" 一节。列出三套实现各自的：idle 毫秒数、snapshot 形状、saver 调用、切换前 flush 的触发点、关窗 beacon 的 URL 和 body。把这张表写进 `.tmp/b1-autosave/inventory.md`。
+
+> **B1-2 ~ B1-5 暂停（10-20）**：前提不成立，见上表更正与 §10。按原文执行会重新引入自动保存，属用户可见行为改变，待用户决定方向后改写本节。
 
 ### B1-2 新模块（不接线）
 新建 `desktop-ui/configAutosave.js`，导出：
@@ -262,8 +264,8 @@ chatExecutionRunner.js  只剩：参数校验 → createTurnContext → createSt
 
 | 指标 | 基线（0e79fb1） | 目标 |
 | --- | --- | --- |
-| `app.js` 行数 / switch case 数 | 8,807 / 180 | B3 后 < 5,000 / < 105 |
-| `pendingXxxAutosave` + `XxxAutosaveTimer` 符号数 | 14 | B1 后 0 |
+| `app.js` 行数 / 中央 click case 数 | 8,807 / 106（B1-6 已冻结） | B3 后 < 5,000 / < 80 |
+| 死自动保存代码（调度 / flush / 定时器符号） | 14 | 待用户决定（删除或恢复） |
 | `runChatAgentExecutionGraph` 行数 | 1,200 | B2 后 < 150 |
 | `services/**` 导入 `desktop/bootstrap` 的模块数 | 2 | B4 后 0 |
 | CSS 文件数 / 总行数 | 11 / 7,495 | B3 后 ≤ 8 / < 5,600 |
@@ -276,3 +278,7 @@ chatExecutionRunner.js  只剩：参数校验 → createTurnContext → createSt
 ## 10. 发现但未处理
 
 执行者在此追加（日期、位置、一句话）。
+
+- 2026-10-20（Claude Opus，B1）：三套 idle 自动保存无调用者；`AGENT_MARKDOWN_AUTOSAVE_IDLE_MS` 为 900ms 而非 3s；Agent 渠道为单槽（非按 Agent）。项目记忆里“全部输入框 3 秒自动保存”的规则早于 10-14 显式编辑设计，二者冲突，待用户确认现行规则。
+- 2026-10-20（Claude Opus，B1）：`connectorDraftDispatch.test.js` 有 5 项按源码文本钉住死代码形状（`pendingConnectorAutosave = { body }` 等）；删死代码时需同批改写这些断言，不能直接删测试。
+- 2026-10-20（Claude Opus，B1）：`agentsFeature.flushPending()` 在 app.js 被调用 5 次（切视图等），当前永远无 pending，是空操作。
