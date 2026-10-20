@@ -8,6 +8,6 @@
 
 验收覆盖同一调用 ID 跨轮、供应商切换、取消/重启、未知副作用、重复回看、脱敏白名单、落盘恢复及三个运行引擎。工具计数器证明回看/构建历史零执行；真实设备和真实模型不作为夹具证据。
 
-已完成 Node 三协议真实 localhost 请求、落盘后 UI/模型同 ID、未知副作用、跨 run/iteration/member 去重、白名单与无动作回看专项 160/160。首轮跨引擎检查捕获 undefined 字段的 JSON 差异，已在投影入口省略未定义字段；Responses 夹具改为该 API 所需的 completed SSE，保留断言。最终整批日常（基准 4c3ebb5）4314/4314 JS、5 项生成预检、35 Swift 全过，551.2 秒；86 个同源 fixture 在 JSCore 通过，iPhone simulator BUILD SUCCEEDED。Android 5f3d834 的独立验证 run 39366995591 仍在运行。Android 原有有界脱敏执行详情保留，额外引用规范事件 ID，不以此重发工具调用。
+已完成 Node 三协议真实 localhost 请求、落盘后 UI/模型同 ID、未知副作用、跨 run/iteration/member 去重、白名单与无动作回看专项 160/160。首轮跨引擎检查捕获 undefined 字段的 JSON 差异，已在投影入口省略未定义字段；Responses 夹具改为该 API 所需的 completed SSE，保留断言。最终整批日常（基准 4c3ebb5）4314/4314 JS、5 项生成预检、35 Swift 全过，551.2 秒；86 个同源 fixture 在 JSCore 通过，iPhone simulator BUILD SUCCEEDED。Android 5f3d834 的独立验证 run 39366995591 全过（JVM/Lint/Debug/R8/模拟器），已推正式手机分支；主线 a2551cf 已推，#8 已关闭。Android 原有有界脱敏执行详情保留，额外引用规范事件 ID，不以此重发工具调用。
 
 完整日常首次检出旧 trace 测试禁止在所有请求文本出现调用 ID；规范事件需要该身份。保留 legacy trace 不携带调用 ID 的原断言，补充规范 ID 出现且递归检查无 function_call/tool_use 等协议对象，证明不重发动作。修正后专项 17/17 与完整日常全部通过。证据：`.tmp/github-issues-fix-20261020/events-{targeted-final,daily-final,ios-build,swift}.log`。

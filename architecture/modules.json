@@ -22,8 +22,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 593,
-      "edges": 1796,
+      "modules": 596,
+      "edges": 1801,
       "roots": [
         "src",
         "desktop-ui",
@@ -714,7 +714,7 @@
       ],
       "modules": {
         "desktop-ui": 27,
-        "shared": 17,
+        "shared": 20,
         "src": 64
       },
       "entryModules": [
@@ -754,6 +754,12 @@
           "module": "shared/agent/repeatGuard.js",
           "importedBy": [
             "agents"
+          ]
+        },
+        {
+          "module": "shared/agent/tokenEstimate.js",
+          "importedBy": [
+            "memory"
           ]
         },
         {
@@ -952,7 +958,7 @@
         "desktop-shell": 15,
         "knowledge": 5,
         "media": 25,
-        "memory": 27,
+        "memory": 26,
         "platform": 54,
         "projects": 10,
         "settings": 9,
@@ -965,7 +971,7 @@
         "channels": 9,
         "desktop-shell": 8,
         "media": 9,
-        "memory": 10,
+        "memory": 11,
         "platform": 15,
         "projects": 1,
         "settings": 5,
@@ -1080,6 +1086,7 @@
           "shared/agent/budgetBridge.test.js",
           "shared/agent/completion.test.js",
           "shared/agent/conformance.test.js",
+          "shared/agent/context.test.js",
           "shared/agent/continuation.test.js",
           "shared/agent/execution.test.js",
           "shared/agent/research.test.js",
@@ -1378,7 +1385,7 @@
       "dependsOn": {
         "agents": 2,
         "approvals": 3,
-        "chat": 10,
+        "chat": 11,
         "desktop-shell": 6,
         "knowledge": 3,
         "media": 1,
@@ -1391,7 +1398,7 @@
       "usedBy": {
         "agents": 11,
         "channels": 4,
-        "chat": 27,
+        "chat": 26,
         "desktop-shell": 1,
         "knowledge": 2,
         "media": 1,
@@ -4568,7 +4575,6 @@
         "src/retrieval/selfVerification.js",
         "src/retrieval/verificationEvidence.js",
         "src/services/chat/chatExecutionRunner.js",
-        "src/services/chat/contextBudget.js",
         "src/services/chat/supplements.js",
         "src/services/chat/toolTraceReplay.js",
         "src/tools/builtins/readHistoryTool.js",

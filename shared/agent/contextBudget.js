@@ -49,7 +49,7 @@ function defaultBudgetFor(config) {
   return DEFAULT_CLOUD_BUDGET_TOKENS;
 }
 
-export function resolveContextBudget(env = process.env, { config = null } = {}) {
+export function resolveContextBudget(env = {}, { config = null } = {}) {
   const bounded = (value, fallback, min, max) => Number.isFinite(Number(value)) && Number(value) >= min
     ? Math.min(max, Math.floor(Number(value))) : fallback;
   const totalTokens = bounded(env.MELO_CONTEXT_BUDGET_TOKENS, defaultBudgetFor(config), MIN_BUDGET_TOKENS, MAX_BUDGET_TOKENS);
