@@ -810,3 +810,5 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 ### 2026-10-20 — #14 最终验收（Codex）
 - a11183b / CI 39394944470 全绿：Core、真实 HTTP 收集、JVM/Lint/Debug/R8、73/73 emulator，以及本轮 Android/Node 报告比较。实际下载 XML 和带 UUID 报告后，主线又与 Node/JavaScriptCore 逐字段核对 11 项一致。
 - 主线 aa83db2 的 4356/4356 JS、35/35 Swift、Linux/macOS CI 已通过；文档见 docs/task-replay-20261020.md。用户已授权逐项推送关闭，当前准备发布 #14，账号/实体设备未改。
+
+最终发布：#1–#14 全部关闭，open issue 为 0；手机 379db49、主线 8175263 已推送，后续仅文档回执。产品验证点 a11183b / aa83db2；CI 39394944470 / 39391968956 全绿，无剩余 issue 工作。
