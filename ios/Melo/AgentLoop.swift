@@ -181,13 +181,18 @@ final class AgentLoop: @unchecked Sendable {
         var sources: [WebSource] = [], searched = false
         var records: [ExecutionToolCall] = []
         var evidence: [PhoneUncertainty.ToolPair] = []
-        var seenCallIDs = Set<String>()
+
         var screenshots = 0
         var spentTokens = 0
-        let guardian = PhoneRepeatGuard()
         let offered = Set((tools?.definitions ?? []).map(\.name))
         let transport = self.transport
-        for iteration in 0..<maxIterations {
+        if let exhausted = budget.exhausted() {
+            let text = await exhaustedStop(exhausted)
+            return AgentLoopOutcome(text: text, stop: .budget, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: 0)
+        }
+        let core = try PhoneCoreTurn(tools: Array(offered), rounds: maxIterations, callsPerRound: maxCallsPerResponse)
+        var iteration = 0
+        while true {
             if iteration > 0 {
                 let supplements = await takeSupplements()
                 if !supplements.isEmpty {
@@ -198,6 +203,10 @@ final class AgentLoop: @unchecked Sendable {
             if let exhausted = budget.exhausted() {
                 let text = await exhaustedStop(exhausted)
                 return AgentLoopOutcome(text: text, stop: .budget, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration)
+            }
+            if try !core.event("request") {
+                lastEvidence = evidence
+                return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration)
             }
             var round = AgentRound()
             var condensed = false
@@ -230,16 +239,17 @@ final class AgentLoop: @unchecked Sendable {
             searched = searched || round.searched
             let calls = transport.offersTools && tools != nil ? round.calls : []
             if calls.isEmpty {
+                try core.event("complete")
+                if !core.completed { return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration + 1) }
                 lastEvidence = evidence
                 return AgentLoopOutcome(text: round.text, stop: .answered, finalRound: round, sources: sources, searched: searched, calls: records, iterations: iteration + 1)
             }
-            // Validate the whole batch before any side effect.
-            guard calls.count <= maxCallsPerResponse else { throw MeloError.message("模型一次请求了过多工具调用（超过 \(maxCallsPerResponse) 个），已全部拦截，未执行任何操作。") }
-            var batchIDs = Set<String>()
-            for call in calls where call.callID.isEmpty || call.callID.count > 256 || !batchIDs.insert(call.callID).inserted || seenCallIDs.contains(call.callID) {
-                throw MeloError.message("模型返回的工具调用编号无效，已全部拦截，未执行任何操作。")
-            }
-            seenCallIDs.formUnion(batchIDs)
+            // The shared reducer validates the whole batch before any OS effect.
+            try core.event("calls", ["calls": calls.map { call -> [String: Any] in
+                let args = OrderedJSON.arguments(call.arguments)
+                return ["id": call.callID, "name": call.name, "fingerprint": PhoneCoreTurn.fingerprint(call.name + args.canonicalJSON)]
+            }])
+            if !core.active { return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration + 1) }
             var results: [AgentToolResult] = []
             for call in calls {
                 let args = OrderedJSON.arguments(call.arguments)
@@ -250,15 +260,13 @@ final class AgentLoop: @unchecked Sendable {
                 var image: (Data, String)? = nil
                 if Task.isCancelled {
                     outcome = PhoneToolEnvelope.finalize(ok: false, error: "ABORTED", output: "Aborted before execution.")
-                } else if !offered.contains(call.name) {
-                    outcome = PhoneToolEnvelope.finalize(ok: false, error: "UNKNOWN_TOOL", output: contract.unknownToolOutput)
-                } else if let rejected = guardian.check(call.name, args) {
-                    outcome = rejected
+                } else if !core.permits(call.callID) {
+                    let rejected = core.rejection(call.callID)
+                    outcome = PhoneToolEnvelope.finalize(ok: false, error: rejected.code, output: rejected.code == "UNKNOWN_TOOL" ? contract.unknownToolOutput : rejected.output)
                 } else if call.name == WebPageToolSpec.screenshot, screenshots >= WebPageText.maxScreenshotsPerReply {
                     outcome = PhoneToolEnvelope.parse(WebPageText.tooManyScreenshots(url: call.urlArgument))
                 } else if let exhausted = budget.exhausted() {
                     outcome = PhoneToolEnvelope.finalize(ok: false, error: contract.budgetCode, output: AgentLoopContract.fill(contract.budgetToolSkippedTemplate, ["reason": exhausted.reason, "tool": call.name]))
-                    guardian.record(call.name, args, outcome)
                 } else {
                     budget.record(toolCalls: 1)
                     if let tools {
@@ -276,12 +284,15 @@ final class AgentLoop: @unchecked Sendable {
                         }
                     } else { outcome = PhoneToolEnvelope.finalize(ok: false, error: "UNKNOWN_TOOL", output: contract.unknownToolOutput) }
                     executed = true
-                    guardian.record(call.name, args, outcome)
                 }
                 let record = ExecutionToolCall(iteration: iteration, call: call, args: args, outcome: outcome, executed: executed, started: started, finished: Date())
                 records.append(record)
                 await hooks.onToolCall?(record)
-                if cancelled { throw CancellationError() }
+                if cancelled { _ = try? core.event("cancel"); throw CancellationError() }
+                if core.active {
+                    try core.event("result", ["callId": call.callID, "ok": outcome.ok, "code": outcome.code as Any? ?? NSNull(), "output": JSText.prefix(outcome.output, 500),
+                        "progressKey": PhoneCoreTurn.fingerprint(call.name + args.canonicalJSON + outcome.status + outcome.output)])
+                }
                 evidence.append(PhoneUncertainty.ToolPair(callID: call.callID, name: call.name, args: args, ok: outcome.ok, output: outcome.output, receivedAt: record.startedAt))
                 if evidence.count > contract.evidenceMaxToolItems { evidence.removeFirst(evidence.count - contract.evidenceMaxToolItems) }
                 results.append(AgentToolResult(call: call, modelOutput: PhoneToolEnvelope.modelFacing(outcome, maxOutputChars: max(contract.maxModelFacingOutputChars, WebPageText.maxOutputCharacters)), imageJPEG: image?.0, imageURL: image?.1 ?? ""))
@@ -291,10 +302,12 @@ final class AgentLoop: @unchecked Sendable {
             // A cancelled turn stops here: its records are already reported for the tool trace.
             try Task.checkCancellation()
             lastEvidence = evidence
+            iteration += 1
+            if !core.active {
+                await hooks.onStage?("core:stop", "执行已停止", "failed", core.reason)
+                return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration)
+            }
         }
-        // Exhaustion is not success; never publish a tool-call block as an answer.
-        lastEvidence = evidence
-        return AgentLoopOutcome(text: contract.toolLimitReply(for: latestUserMessage), stop: .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: maxIterations)
     }
     private var lastEvidence: [PhoneUncertainty.ToolPair] = []
 
@@ -332,7 +345,7 @@ final class AgentLoop: @unchecked Sendable {
     // MARK: finalize
 
     private func finalize(_ outcome: inout AgentLoopOutcome) async throws {
-        guard let verification else { return }
+        guard outcome.stop == .answered, let verification else { return }
         let parsed = PhoneUncertainty.parse(outcome.text)
         outcome.text = parsed.cleanReply
         guard parsed.hasMarker else { return }

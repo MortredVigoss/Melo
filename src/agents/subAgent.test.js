@@ -331,7 +331,9 @@ test('a member that keeps repeating the same failing call is stopped locally aft
     assert.equal(calls.length, 2, 'the tool actually ran only twice');
     const repeated = res.meta.toolResults.filter(r => r.errorCode === 'REPEATED_FAILURE' || /not run again/.test(r.output || ''));
     assert.ok(repeated.length >= 1, 'later identical calls were answered locally');
-    assert.match(res.output, /giving up/);
+    assert.equal(res.ok, false);
+    assert.equal(res.meta.stopReason, 'REPEATED_TOOL_FAILURE');
+    assert.equal(reply.callLog.length, 3, 'Core stops without spending two more failing rounds and a prose round');
   } finally {
     unregisterTool?.('flaky_tool');
   }

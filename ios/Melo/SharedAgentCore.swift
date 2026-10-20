@@ -82,3 +82,36 @@ enum SharedLoopPolicy {
         return reply["value"]
     }
 }
+
+/// Native ownership for the portable reducer. The Host retains transport,
+/// cancellation, approvals and persistence; no decision is reimplemented here.
+final class PhoneCoreTurn {
+    private var state: [String: Any]
+    private static func clock() -> Double { ProcessInfo.processInfo.systemUptime * 1000 }
+    var completed: Bool { state["status"] as? String == "completed" }
+    var active: Bool { state["status"] as? String == "running" }
+    var reason: String { state["reason"] as? String ?? "LOOP_STOPPED" }
+    init(tools: [String], rounds: Int, callsPerRound: Int) throws {
+        let turn: [String: Any] = ["runId": UUID().uuidString, "turnId": UUID().uuidString, "now": Self.clock(),
+            "allowedTools": tools, "hostToolSchemas": true, "limits": ["rounds": rounds, "callsPerRound": callsPerRound]]
+        guard let value = SharedLoopPolicy.value("start", ["turn": turn]) as? [String: Any] else { throw SharedAgentCoreError.unavailable }
+        state = value
+    }
+    @discardableResult func event(_ type: String, _ fields: [String: Any] = [:]) throws -> Bool {
+        var event = fields; event["type"] = type; event["runId"] = state["runId"]; event["turnId"] = state["turnId"]
+        guard let value = SharedLoopPolicy.value("advance", ["state": state, "event": event, "now": Self.clock()]) as? [String: Any] else {
+            state["status"] = "blocked"; state["reason"] = "INVALID_LOOP_EVENT"
+            throw SharedAgentCoreError.invalidReply
+        }
+        state = value
+        return active
+    }
+    func permits(_ id: String) -> Bool { active && (state["permitted"] as? [String] ?? []).contains(id) && (state["pending"] as? [String] ?? []).contains(id) }
+    func rejection(_ id: String) -> (code: String, output: String) {
+        let code = (state["rejections"] as? [String: String])?[id] ?? "TOOL_NOT_PERMITTED"
+        let result = (state["rejectionResults"] as? [String: [String: Any]])?[id]
+        return (code, result?["output"] as? String ?? "Tool request rejected by the shared loop policy: \(code)")
+    }
+    func reply(_ text: String) -> String { SharedLoopPolicy.value("stopReply", ["reason": reason, "text": text]) as? String ?? "共享运行策略不可用，本轮已停止。" }
+    static func fingerprint(_ text: String) -> String { SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined() }
+}

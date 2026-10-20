@@ -234,27 +234,28 @@ enum PhoneToolEnvelope {
 // MARK: Repeat guard (src/agents/repeatGuard.js)
 
 final class PhoneRepeatGuard {
-    private var failures: [String: (count: Int, errorClass: String)] = [:]
+    private var entries: [Any] = []
     private let limit: Int
+    private var available = true
     init(limit: Int = AgentLoopContract.shared.repeatLimit) { self.limit = limit }
-    private static func key(_ name: String, _ args: OrderedJSON) -> String { OrderedJSON.array([.string(name), args]).canonicalJSON }
-    private static func errorClass(_ outcome: PhoneToolOutcome) -> String {
-        if let code = outcome.code, !JSText.trim(code).isEmpty { return JSText.trim(code) }
-        return JSText.prefix(JSText.collapse(outcome.output), loopContract.repeatErrorClassMaxChars)
+    private static func key(_ name: String, _ args: OrderedJSON) -> String {
+        SHA256.hash(data: Data(OrderedJSON.array([.string(name), args]).canonicalJSON.utf8)).map { String(format: "%02x", $0) }.joined()
     }
-    /// A rejection when this exact call already failed `limit` times with the same error.
     func check(_ name: String, _ args: OrderedJSON) -> PhoneToolOutcome? {
-        guard let entry = failures[Self.key(name, args)], entry.count >= limit else { return nil }
-        let output = AgentLoopContract.fill(loopContract.repeatOutputTemplate, ["name": name, "count": String(entry.count), "errorClass": entry.errorClass.isEmpty ? loopContract.repeatSameErrorFallback : entry.errorClass])
-        return PhoneToolEnvelope.finalize(ok: false, error: loopContract.repeatCode, output: output)
+        let result = SharedLoopPolicy.value("repeat", ["action": "check", "entries": entries, "limit": limit, "key": Self.key(name, args), "name": name])
+        if available, result is NSNull { return nil }
+        guard available, let value = result as? [String: Any], let code = value["error"] as? String, let output = value["output"] as? String else {
+            available = false
+            return PhoneToolEnvelope.finalize(ok: false, error: "SHARED_POLICY_UNAVAILABLE", output: "共享运行策略不可用，工具未执行。")
+        }
+        return PhoneToolEnvelope.finalize(ok: false, error: code, output: output)
     }
     func record(_ name: String, _ args: OrderedJSON, _ outcome: PhoneToolOutcome) {
-        let key = Self.key(name, args)
-        if !outcome.ok {
-            let cls = Self.errorClass(outcome)
-            let current = failures[key]
-            failures[key] = (current?.errorClass == cls ? (current?.count ?? 0) + 1 : 1, cls)
-        } else { failures[key] = nil }
+        guard available else { return }
+        let result = SharedLoopPolicy.value("repeat", ["action": "record", "entries": entries, "limit": limit, "key": Self.key(name, args), "name": name,
+            "result": ["ok": outcome.ok, "code": outcome.code as Any? ?? NSNull(), "output": outcome.output]])
+        guard let value = result as? [Any] else { available = false; return }
+        entries = value
     }
 }
 

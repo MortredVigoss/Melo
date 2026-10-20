@@ -23,7 +23,7 @@
     ],
     "graph": {
       "modules": 581,
-      "edges": 1746,
+      "edges": 1750,
       "roots": [
         "src",
         "desktop-ui",
@@ -521,7 +521,7 @@
       "dependsOn": {
         "approvals": 3,
         "channels": 3,
-        "chat": 13,
+        "chat": 15,
         "desktop-shell": 7,
         "memory": 11,
         "platform": 37,
@@ -839,6 +839,12 @@
           ]
         },
         {
+          "module": "src/runtime/sharedAgentCore.js",
+          "importedBy": [
+            "agents"
+          ]
+        },
+        {
           "module": "src/services/chat/chatDeletion.js",
           "importedBy": [
             "platform",
@@ -935,7 +941,7 @@
         "voice": 3
       },
       "usedBy": {
-        "agents": 13,
+        "agents": 15,
         "channels": 9,
         "desktop-shell": 8,
         "media": 9,

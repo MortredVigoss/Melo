@@ -53,3 +53,11 @@
 第二阶段 B 最终：`core-budget-swift-daily.log` 日常 JS 4187/4187、34 组 Swift、浏览器/语法/文档全通过，431.8 秒；未安装或访问用户数据。
 
 重复守卫移植：原 repeatGuard 整段逐字移入 shared/agent，仅改契约 import，原 Node 入口重导出。暂不加入 bundle（原 SHA1 仍为 Node crypto）；下一提交才拆开 Host 指纹与便携状态。逐字校验、契约/守卫 12/12、真实子 Agent/技能 32/32 通过；没有混入行为修改。
+
+生产接线 WIP：Node 主聊天/子 Agent/技能与 Swift AgentLoop 已接 turn reducer；旧 Host 只保留协议、schema、真实执行/审批/取消、上下文和记录。重复守卫可在便携运行时执行；Core 同时约束连续整批失败与重复成功无进展。统一默认 10 轮 / 32 调用 / 20 分钟；成员/技能/设备可收紧各自限额。Host 提供实际 schema 边界，保留桌面 NULL 参数与工具扩展字段。
+
+验证：共享 JS 98/98，JSCore 61 相同 fixture；生产主聊天真实 HTTP 与子 Agent/技能 45/45；Swift 3 组包含有效 32 / 无副作用 33、重复失败两次实际执行、无进展六轮、缺失资源零请求、原取消/压缩/补充/预算/核实。首轮全 JS 4202/4203 唯一旧无进展夹具仍期待 10 轮，按新策略改断言为 6 轮且保留不得返回原工具块；完整日常重跑中。
+
+手机分支 1af5377 已推送 CI：与主线相同 Core/bundle/61 fixture，Kotlin Native 持有共享预算父对象及 mutex，工具额度原子预留，模型使用实际 usage 或请求文本估计；Chat→Phone 预算传递；通用聊天 32 调用与配对错误、屏幕操作单步/终态验证保留。Android 需实际 JVM/Lint/APK/Emulator 结果，不以 JS 专项代替。主线 iOS simulator 编译进行中，不安装、不读取真实账号数据。
+
+生产接线主线最终：`core-loop-daily-final.log` 完整日常 JS 4203/4203、零跳过，34 组 Swift、浏览器/语法/文档全部通过（471.4 秒）。Network/Codex OAuth 的十轮夹具改为每轮带新结果，继续锁定十轮上限；另有真实 Host 无进展六轮回归。`core-loop-ios-build.log` simulator Debug 双架构编译成功，app 中实际含与主线相同 Core/manifest；未签名安装。Android 1af5377 的 JVM/Lint/Debug/R8 已过，Emulator 运行中。最终验收继续核对设备进展策略及并发预算额度预留，不提前关闭。

@@ -90,7 +90,7 @@ import {
   matchSkillsForMessage,
 } from '../../agents/skillMatcher.js';
 import { getSkillLastRunMap } from '../../agents/skillRuns.js';
-import { createRepeatGuard } from '../../agents/repeatGuard.js';
+import { createCoreTurn } from '../../runtime/sharedAgentCore.js';
 import { wantedToolGroups, nextActivatedGroups, selectStableTools } from '../../tools/toolGroups.js';
 import { persistChatRuntimeFields, persistCompactFailure } from './derivedState.js';
 import { buildMemberBackground } from '../../agents/memberBackground.js';
@@ -830,7 +830,6 @@ export async function runChatAgentExecutionGraph({
         const evidencePairs = [];
         // agent-loop-audit #1: identical failing calls are answered locally
         // after two consecutive failures instead of re-executed.
-        const repeatGuard = createRepeatGuard();
         // Per-turn constants for tool dispatch (2026-10-17 tool-path
         // optimisation): these used to be rebuilt on every loop iteration —
         // including an effectiveAgentProfile merge for every agent and the
@@ -840,6 +839,8 @@ export async function runChatAgentExecutionGraph({
         const mcpToolsByName = indexMcpTools(graphState.mcpTools || []);
         const visibleToolIds = new Set(graphState.visibleToolIds || []);
         const allowedToolIdList = [...visibleToolIds];
+        const coreTurn = createCoreTurn({ runId: String(context.requestId), turnId: chat.id,
+          allowedTools: allowedToolIdList, limits: { rounds: MAX_TOOL_ITERATIONS, timeoutMs: Math.max(1, Math.ceil(remainingMs(budget))) } });
         let allowedDispatchTools = null;
         let dispatchAgentProfiles = null;
         let dispatchMemberBackground = null;
@@ -850,7 +851,7 @@ export async function runChatAgentExecutionGraph({
           return { allowedDispatchTools, dispatchAgentProfiles, dispatchMemberBackground };
         };
 
-        for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
+        for (let iteration = 0; ; iteration++) {
           // On subsequent iterations, we're streaming "thinking" not the final
           // reply, so suppress onDelta to avoid emitting partial tool-loop text.
           const isFirstIteration = iteration === 0;
@@ -916,6 +917,7 @@ export async function runChatAgentExecutionGraph({
             finalReply = budgetExhaustedReply(exhausted);
             break;
           }
+          if (coreTurn.update('request') !== 'running') { finalReply = coreTurn.reply(latestUserMessage); break; }
           let rawReply;
           try {
             rawReply = await createReply({
@@ -968,9 +970,13 @@ export async function runChatAgentExecutionGraph({
 
           // No tool calls → this is the final response
           if (!toolCalls.length) {
-            finalReply = turn.text;
+            coreTurn.update('complete');
+            finalReply = coreTurn.status === 'completed' ? turn.text : coreTurn.reply(latestUserMessage);
             break;
           }
+
+          coreTurn.update('calls', { calls: toolCalls.map(call => ({ ...call, name: mcpToolsByName.get(call.name)?.id || call.name })) });
+          if (coreTurn.status !== 'running') { finalReply = coreTurn.reply(latestUserMessage); break; }
 
           // Emit SSE event so the UI can show tool execution status
           if (typeof sseEmitter === 'function') {
@@ -1006,8 +1012,7 @@ export async function runChatAgentExecutionGraph({
           const { allowedDispatchTools, dispatchAgentProfiles, dispatchMemberBackground } = dispatchConstants();
           for (const tc of toolCalls) {
             if (tc.rejectedResult) continue;
-            const repeated = repeatGuard.check(tc.name, tc.arguments);
-            if (repeated) tc.rejectedResult = repeated;
+            if (!coreTurn.permits(tc.id)) tc.rejectedResult = coreTurn.rejectionResult(tc.id);
           }
           const executableCalls = toolCalls.map(tc => {
             let tool = tc.rejectedResult ? null : skillToolsById.get(tc.name) || mcpToolsByName.get(tc.name) || getTool(tc.name);
@@ -1053,10 +1058,6 @@ export async function runChatAgentExecutionGraph({
           const callsById = new Map(toolCalls.map(tc => [tc.id, tc]));
           const resultsById = new Map(execResults.map(r => [r.id, r]));
           for(const execution of execResults) if(execution.result?.meta?.receipts) modelResponses.push(...execution.result.meta.receipts);
-          for (const execution of execResults) {
-            const call = callsById.get(execution.id);
-            if (call) repeatGuard.record(call.name, call.arguments, execution.result);
-          }
           // Also handle unresolved tool names (not in registry)
           const allResults = toolCalls.map(tc => {
             if (tc.rejectedResult) return { call: tc, result: tc.rejectedResult };
@@ -1155,6 +1156,12 @@ export async function runChatAgentExecutionGraph({
           // A cancelled turn stops here: its records are on disk for the
           // tool-trace replay (D2) and no further model request is sent.
           signal?.throwIfAborted();
+          coreTurn.results(allResults);
+          if (coreTurn.status !== 'running') {
+            sseEmitter?.('execution_event', { kind: 'pipeline', id: 'core:stop', module: 'compute', name: '执行已停止', status: 'failed', output: coreTurn.reason });
+            finalReply = coreTurn.reply(latestUserMessage);
+            break;
+          }
 
           // If the last iteration was tool calls only, the next pass will produce
           // the final prose reply. Continue loop.
@@ -1174,7 +1181,7 @@ export async function runChatAgentExecutionGraph({
         // the finalize node can attach it to normalizedReply → sendChatMessage
         // attaches it to the persisted assistantMessage.  Only emit when
         // non-empty so we don't pollute pure-text replies with empty arrays.
-        const out = { reply: finalReply, hadToolCalls, toolEvidence: collectVerificationEvidence(evidencePairs, { query: latestUserMessage }), next: 'finalize' };
+        const out = { reply: finalReply, hadToolCalls, skipVerification: coreTurn.status === 'blocked', toolEvidence: collectVerificationEvidence(evidencePairs, { query: latestUserMessage }), next: 'finalize' };
         if (accumulatedToolResults.length > 0) {
           out.toolResults = accumulatedToolResults;
         }
@@ -1197,7 +1204,7 @@ export async function runChatAgentExecutionGraph({
         const channelKind = isRemoteChannel ? 'remote' : 'desktop';
         const parsed = parseUncertaintyMarker(graphState.reply);
         const shouldVerify =
-          parsed.hasMarker &&
+          !graphState.skipVerification && parsed.hasMarker &&
           intentRequiresVerification(graphState.classification || graphState.intent);
 
         if (env.MELO_VERIFY_DEBUG === '1') {

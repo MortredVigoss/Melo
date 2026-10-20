@@ -10,7 +10,7 @@
 | 2 | [#4 历史图片](https://github.com/MortredVigoss/Melo/issues/4) | 已完成：`94e76cb` 已推送，issue 已关闭；稳定图片身份、旧记录恢复与原图回归 |
 | 3 | [#3 自然搜索](https://github.com/MortredVigoss/Melo/issues/3) | 已完成：`1c48b6a` 已推送，issue 已关闭；专项 95/95、JS 4098/4098 与 Swift 通过 |
 | 4 | [#9 跨平台 CI](https://github.com/MortredVigoss/Melo/issues/9)、[#2 记忆库并发](https://github.com/MortredVigoss/Melo/issues/2) | #9 已通过全部远端 gate 并关闭（主线 `6fd2481`、手机 `b1529d0`）；#2 `00cf231` 已推送并关闭，完整日常通过 |
-| 5 | [#5 通用循环](https://github.com/MortredVigoss/Melo/issues/5)、[#6 完成条件](https://github.com/MortredVigoss/Melo/issues/6)、[#8 事件](https://github.com/MortredVigoss/Melo/issues/8)、[#7 Android 上下文](https://github.com/MortredVigoss/Melo/issues/7) | #5 第一阶段逐字移植中，生产尚未切换；按 Host 适配与对照验收，不删现有行为 |
+| 5 | [#5 通用循环](https://github.com/MortredVigoss/Melo/issues/5)、[#6 完成条件](https://github.com/MortredVigoss/Melo/issues/6)、[#8 事件](https://github.com/MortredVigoss/Melo/issues/8)、[#7 Android 上下文](https://github.com/MortredVigoss/Melo/issues/7) | #5 已接 Node/Swift 生产循环，Android 1af5377 待远端验证；未达全项验收，不关闭 |
 | 6 | [#11 项目生命周期](https://github.com/MortredVigoss/Melo/issues/11)、[#12 后端拆分](https://github.com/MortredVigoss/Melo/issues/12)、[#10 Fold 缓存](https://github.com/MortredVigoss/Melo/issues/10)、[#13 容量基线](https://github.com/MortredVigoss/Melo/issues/13)、[#14 Task Eval](https://github.com/MortredVigoss/Melo/issues/14) | 待执行；小型确定性回放伴随改动，真机/真实模型证据单列 |
 
 ## #1 实施约定与证据
@@ -89,4 +89,4 @@ Linux 首次完整回归（临时 Debian 容器）4072 pass / 3 fail / 22 skip�
 
 ## #5 共享循环
 
-按[实施约定](shared-loop-hardening-20261020.md)分离逐字移植与后续行为迁移。当前 Core/桥与 bundle 已进入主线工作树并通过专项；完整日常进行中，不能据此关闭 #5。
+按[实施约定](shared-loop-hardening-20261020.md)分离逐字移植与后续行为迁移。Core/预算/守卫已独立移植，Node/Swift 已接生产循环并通过专项；Android 1af5377 为远端验证节点。完整日常、iOS 编译及 Android CI 进行中，不能据此关闭 #5。

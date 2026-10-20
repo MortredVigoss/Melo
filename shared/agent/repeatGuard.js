@@ -9,7 +9,6 @@
 // calls locally with REPEATED_FAILURE instead of executing them, telling the
 // model to change approach or stop. Successful calls reset their fingerprint.
 
-import { createHash } from 'node:crypto';
 import { AGENT_LOOP_CONTRACT, fillTemplate } from './loopContract.js';
 
 // Limit, code and the model-facing text are shared with the iPhone loop
@@ -33,15 +32,15 @@ function errorClass(result) {
 
 export function toolCallFingerprint(name, args) {
   const payload = JSON.stringify([String(name || ''), canonical(args ?? {})]);
-  return createHash('sha1').update(payload).digest('hex').slice(0, 24);
+  return payload;
 }
 
-export function createRepeatGuard({ limit = DEFAULT_LIMIT } = {}) {
-  const failures = new Map(); // fingerprint → { count, errorClass, name }
+export function createRepeatGuard({ limit = DEFAULT_LIMIT, fingerprint = toolCallFingerprint, entries = [] } = {}) {
+  const failures = new Map(entries); // fingerprint → { count, errorClass, name }
   return {
     /** Returns a rejection result when this call should not be executed again. */
     check(name, args) {
-      const entry = failures.get(toolCallFingerprint(name, args));
+      const entry = failures.get(fingerprint(name, args));
       if (!entry || entry.count < limit) return null;
       return {
         ok: false,
@@ -51,7 +50,7 @@ export function createRepeatGuard({ limit = DEFAULT_LIMIT } = {}) {
     },
     /** Record an executed call's outcome. */
     record(name, args, result) {
-      const key = toolCallFingerprint(name, args);
+      const key = fingerprint(name, args);
       if (result?.ok === false) {
         const current = failures.get(key);
         const cls = errorClass(result);
@@ -61,5 +60,15 @@ export function createRepeatGuard({ limit = DEFAULT_LIMIT } = {}) {
       }
     },
     get size() { return failures.size; },
+    get entries() { return [...failures]; },
   };
+}
+
+// Native Hosts supply an opaque canonical argument fingerprint; no platform
+// crypto, native objects or tool content is retained by the policy.
+export function repeatOperation({ action, entries = [], limit = DEFAULT_LIMIT, key, name, result }) {
+  const guard = createRepeatGuard({ limit, entries, fingerprint: () => key });
+  if (action === 'check') return guard.check(name, null);
+  if (action === 'record') { guard.record(name, null, result); return guard.entries; }
+  throw Object.assign(new Error('Unknown repeat operation.'), { code: 'UNKNOWN_OPERATION' });
 }

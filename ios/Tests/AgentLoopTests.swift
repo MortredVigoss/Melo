@@ -79,14 +79,23 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
         do {
             let log = Log()
             var n = 0
-            let transport = ScriptedTransport { _ in n += 1; return calls([fc("c\(n)")]) }
+            let transport = ScriptedTransport { _ in n += 1; return calls([fc("c\(n)", "open_url", #"{"url":"https://a.example/\#(n)"}"#)]) }
             let outcome = try await AgentLoop(transport: transport, tools: loopTools(log), budget: PhoneRunBudget(), latestUserMessage: "一直查", hooks: hooks(log)).run()
             assert(outcome.stop == .toolLimit && outcome.text == c.toolLimitReplyZH && transport.requests.count == 10 && log.performed.count == 10 && log.records.count == 10)
-            let english = try await AgentLoop(transport: ScriptedTransport { _ in n += 1; return calls([fc("e\(n)")]) }, tools: loopTools(Log()), budget: PhoneRunBudget(), latestUserMessage: "keep going").run()
+            let english = try await AgentLoop(transport: ScriptedTransport { _ in n += 1; return calls([fc("e\(n)", "open_url", #"{"url":"https://a.example/\#(n)"}"#)]) }, tools: loopTools(Log()), budget: PhoneRunBudget(), latestUserMessage: "keep going").run()
             assert(english.text == c.toolLimitReplyEN)
             // Every round after the first carries the earlier tool rounds; results are envelopes.
             if case .toolRound(_, let results)? = transport.requests[1].transcript.last { assert(object(results[0].modelOutput)["status"] as? String == "ok" && object(results[0].modelOutput)["output"] as? String == #"{"title":"page"}"#) } else { assertionFailure("tool round missing") }
             assert(log.statuses.contains("正在打开网页…") && log.statuses.last == "正在思考…")
+        }
+
+        do {
+            let log = Log()
+            var n = 0
+            let transport = ScriptedTransport { _ in n += 1; return calls([fc("same\(n)")]) }
+            let outcome = try await AgentLoop(transport: transport, tools: loopTools(log), budget: PhoneRunBudget(), latestUserMessage: "keep reading", hooks: hooks(log)).run()
+            assert(outcome.stop == .toolLimit && outcome.text.contains("NO_PROGRESS"))
+            assert(transport.requests.count == 6 && log.performed.count == 6 && log.records.count == 6)
         }
 
         // 2. 32 calls per response run; 33 are refused before any side effect; a reused call id is refused.
@@ -139,11 +148,8 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             var n = 0
             let transport = ScriptedTransport { _ in n += 1; return n <= 3 ? calls([fc("r\(n)")]) : answer("换个方法") }
             let outcome = try await AgentLoop(transport: transport, tools: loopTools(log) { _ in PhoneToolResult(output: PhoneToolEnvelope.failure("TIMEOUT", "slow")) }, budget: PhoneRunBudget(), latestUserMessage: "q", hooks: hooks(log)).run()
-            assert(outcome.text == "换个方法" && log.performed.count == 2 && log.records.map(\.code) == ["TIMEOUT", "TIMEOUT", "REPEATED_FAILURE"])
-            if case .toolRound(_, let results)? = transport.requests[3].transcript.last {
-                let envelope = object(results[0].modelOutput)
-                assert(envelope["code"] as? String == "REPEATED_FAILURE" && (envelope["output"] as? String)?.contains("already failed 2 times") == true)
-            } else { assertionFailure("third round missing") }
+            assert(outcome.stop == .toolLimit && outcome.text.contains("REPEATED_TOOL_FAILURE") && log.performed.count == 2 && log.records.map(\.code) == ["TIMEOUT", "TIMEOUT", "REPEATED_FAILURE"])
+            assert(transport.requests.count == 3, "failure termination must not spend another model request")
         }
 
         // 5. Envelopes for legacy and refused calls; unknown tools and the screenshot cap never reach a tool.

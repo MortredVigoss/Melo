@@ -280,7 +280,7 @@ final class CodexFixture: URLProtocol, @unchecked Sendable {
         // error): 10 model calls, then the shared tool-limit reply instead of a fabricated answer.
         toolRounds=0; executed=0
         CodexFixture.handler={ _ in toolRounds+=1; return (200,try sse([["type":"function_call","call_id":"call_\(toolRounds)","name":"calendar_list_events","arguments":"{}","status":"completed"]])) }
-        let looping=DeviceToolContext(policy:DeviceToolPolicy(enabled:[.calendar]),execute:{ _ in executed+=1; return "{\"ok\":true}" })
+        let looping=DeviceToolContext(policy:DeviceToolPolicy(enabled:[.calendar]),execute:{ _ in executed+=1; return "{\"ok\":true,\"newEventCount\":\(executed)}" })
         let limited=try await refreshing.reply(messages:[ChatMessage(role:"user",content:"一直查")],model:"gpt-6.1-sol",instructions:"",deviceTools:looping)
         assert(limited.text==AgentLoopContract.shared.toolLimitReplyZH && toolRounds==AgentLoopContract.shared.maxIterations && executed==AgentLoopContract.shared.maxIterations)
         // Audit I8: a time-sensitive question keeps the forced web_search on the first round even when

@@ -1,4 +1,4 @@
-import { createRepeatGuard } from './repeatGuard.js';
+import { createCoreTurn } from '../runtime/sharedAgentCore.js';
 import {resolveCapabilityContext} from '../services/agent/capabilityContext.js';
 import {currentRequestContext,runWithRequestContext} from '../runtime/requestScope.js';
 import {narrowCapabilityScope,missingCapabilityScope,toolsForCapabilityScope,nativeFeaturesForScope} from '../domain/agent/capabilityScope.js';
@@ -232,17 +232,18 @@ async function runSkillLoop({
 
   let finalOutput = '';
   let totalToolCalls = 0;
-  const repeatGuard = createRepeatGuard();
+  const coreTurn = createCoreTurn({ allowedTools: allowedTools.map(t => t.id), limits: { rounds: maxIterations } });
   let completed = false;
   let iterations = 0;
 
-  for (let iteration = 0; iteration < maxIterations; iteration++) {
+  for (let iteration = 0; ; iteration++) {
     if (signal?.aborted) {
       const aborted = { ok: false, output: 'Skill aborted.', error: 'ABORTED', meta: { aborted: true, iteration } };
       recordTelemetry(false, aborted);
       return aborted;
     }
 
+    if (coreTurn.update('request') !== 'running') break;
     iterations++;
     const request = fitRequestContext({ sections: [{ id: 'instructions', text: systemPrompt, required: true }],
       messages: loopMessages, toolDefinitions: functionSession.definitions, ...contextBudget });
@@ -283,10 +284,15 @@ async function runSkillLoop({
     const { toolCalls } = turn;
 
     if (!toolCalls.length) {
+      coreTurn.update('complete');
+      if (coreTurn.status !== 'completed') break;
       finalOutput = cleanReplyForParent(turn.text);
       completed = true;
       break;
     }
+
+    coreTurn.update('calls', { calls: toolCalls });
+    if (coreTurn.status !== 'running') break;
 
     if (typeof sseEmitter === 'function') {
       sseEmitter('tool_calls_start', {
@@ -305,8 +311,7 @@ async function runSkillLoop({
     const allowSet = new Set(allowedTools.map(t => t.id));
     for (const tc of toolCalls) {
       if (tc.rejectedResult) continue;
-      const repeated = repeatGuard.check(tc.name, tc.arguments);
-      if (repeated) tc.rejectedResult = repeated;
+      if (!coreTurn.permits(tc.id) && coreTurn.rejection(tc.id) !== 'UNKNOWN_TOOL') tc.rejectedResult = coreTurn.rejectionResult(tc.id);
     }
     const executableCalls = toolCalls.map(tc => {
       if (tc.rejectedResult) return { id: tc.id, tool: null, args: tc.arguments, callRef: tc };
@@ -358,7 +363,6 @@ async function runSkillLoop({
         result: { ok: false, output: `Unknown tool: "${tc.name}"`, error: 'UNKNOWN_TOOL' },
       };
     });
-    for (const { call, result } of allResults) if (result?.error !== 'REPEATED_FAILURE') repeatGuard.record(call.name, call.arguments, result);
 
     if (typeof sseEmitter === 'function') {
       // G-1d slice 1.5: forward evidenceTrail to UI (same pattern as
@@ -383,12 +387,13 @@ async function runSkillLoop({
     }
 
     loopMessages = functionSession.append(loopMessages, turn, allResults);
+    if (coreTurn.results(allResults) !== 'running') break;
   }
 
   const finalResult = {
     ok: completed && Boolean(finalOutput),
-    output: finalOutput || (completed ? 'Skill returned no answer.' : 'Skill reached its tool iteration limit before producing a final answer; the task is incomplete.'),
-    ...(!completed ? { error: 'SKILL_ITERATION_LIMIT' } : !finalOutput ? { error: 'EMPTY_SKILL_REPLY' } : {}),
+    output: finalOutput || (coreTurn.status === 'blocked' ? coreTurn.reply(task) : completed ? 'Skill returned no answer.' : 'Skill reached its tool iteration limit before producing a final answer; the task is incomplete.'),
+    ...(!completed ? { error: coreTurn.reason === 'ROUND_LIMIT' ? 'SKILL_ITERATION_LIMIT' : coreTurn.reason || 'SKILL_ITERATION_LIMIT' } : !finalOutput ? { error: 'EMPTY_SKILL_REPLY' } : {}),
     meta: {
       skillId: skill.id,
       iterations,

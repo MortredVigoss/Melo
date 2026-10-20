@@ -1,4 +1,6 @@
 import { COMMON_TOOLS, validateCommonTool } from './tools.js';
+import { AGENT_LOOP_CONTRACT } from './loopContract.js';
+import { createRepeatGuard, toolCallFingerprint } from './repeatGuard.js';
 
 // Portable turn state. All time and identity come from the owning Host.
 export const CORE_VERSION = 1;
@@ -13,14 +15,15 @@ function identity(value) {
   return typeof value === 'string' && value.trim().length > 0 && value.length <= 256;
 }
 
-export function startTurn({ runId, turnId, allowedTools = [], requiredTools = [], toolDependencies = {}, now, limits = {} }) {
+export function startTurn({ runId, turnId, allowedTools = [], requiredTools = [], toolDependencies = {}, now, limits = {}, hostToolSchemas = false }) {
   if (!identity(runId) || !identity(turnId) || !Number.isFinite(now)) fail('INVALID_TURN', 'Invalid turn identity or clock.');
   const bounded = (key, fallback, max) => Number.isInteger(limits[key]) && limits[key] > 0 && limits[key] <= max ? limits[key] : fallback;
   return {
     version: CORE_VERSION, runId, turnId, status: 'running', startedAt: now, lastNow: now,
-    deadline: now + bounded('timeoutMs', 600_000, 3_600_000),
-    limits: { rounds: bounded('rounds', 10, 64), callsPerRound: bounded('callsPerRound', 8, 32), errors: bounded('errors', 3, 10), stagnant: bounded('stagnant', 5, 20) },
+    deadline: now + bounded('timeoutMs', AGENT_LOOP_CONTRACT.budget.deadlineMs, Number.MAX_SAFE_INTEGER - now),
+    limits: { rounds: Number.isFinite(limits.rounds) ? Math.max(0, Math.min(64, Math.floor(limits.rounds))) : AGENT_LOOP_CONTRACT.loop.maxIterations, callsPerRound: bounded('callsPerRound', AGENT_LOOP_CONTRACT.loop.maxCallsPerResponse, AGENT_LOOP_CONTRACT.loop.maxCallsPerResponse), errors: bounded('errors', 3, 10), stagnant: bounded('stagnant', 5, 20) },
     allowedTools: [...new Set(allowedTools.filter(identity))], requiredTools: [...new Set(requiredTools.filter(identity))], toolDependencies: Object.fromEntries(Object.entries(toolDependencies).filter(([name, needs]) => identity(name) && Array.isArray(needs)).map(([name, needs]) => [name, needs.filter(identity).slice(0, 16)])), successfulTools: [], pendingTools: {}, rounds: 0, awaitingModel: false,
+    hostToolSchemas: hostToolSchemas === true, failures: [], pendingFingerprints: {}, rejectionResults: {},
     callIds: [], pending: [], permitted: [], phoneTasks: [], rejections: {}, errors: 0, roundSucceeded: false, stagnant: 0, progressKeys: [], reason: null,
   };
 }
@@ -30,9 +33,9 @@ export function advanceTurn(previous, event, now) {
   if (!Number.isFinite(now) || now < previous.lastNow) fail('INVALID_CLOCK', 'The Host clock must be monotonic.');
   if (event?.runId !== previous.runId || event?.turnId !== previous.turnId) fail('TURN_MISMATCH', 'The event belongs to another turn.');
   if (previous.status !== 'running') fail('TURN_CLOSED', 'The turn has ended; late events cannot issue effects.');
-  const state = { ...previous, lastNow: now, callIds: [...previous.callIds], pending: [...previous.pending], progressKeys: [...previous.progressKeys], phoneTasks: [...(previous.phoneTasks || [])], successfulTools: [...(previous.successfulTools || [])], pendingTools: { ...previous.pendingTools } };
-  const stop = reason => ({ ...state, status: 'blocked', reason, awaitingModel: false, pending: [] });
-  if (event.type === 'cancel') return { ...state, status: 'cancelled', reason: 'CANCELLED', pending: [], awaitingModel: false };
+  const state = { ...previous, lastNow: now, callIds: [...previous.callIds], pending: [...previous.pending], progressKeys: [...previous.progressKeys], phoneTasks: [...(previous.phoneTasks || [])], successfulTools: [...(previous.successfulTools || [])], pendingTools: { ...previous.pendingTools }, pendingFingerprints: { ...previous.pendingFingerprints } };
+  const stop = reason => ({ ...state, status: 'blocked', reason, awaitingModel: false, pending: [], permitted: [] });
+  if (event.type === 'cancel') return { ...state, status: 'cancelled', reason: 'CANCELLED', pending: [], permitted: [], awaitingModel: false };
   if (now >= state.deadline) return stop('DEADLINE_EXCEEDED');
   switch (event.type) {
     case 'request':
@@ -57,14 +60,21 @@ export function advanceTurn(previous, event, now) {
       // Unknown tools still receive paired error receipts; they never get an
       // effect permit. One hallucinated name must not drop a valid sibling.
       state.rejections = {};
+      state.rejectionResults = {};
+      const guard = createRepeatGuard({ entries: state.failures, fingerprint: (_name, key) => key });
       state.permitted = calls.filter(call => {
         if (!state.allowedTools.includes(call.name)) { state.rejections[call.id] = 'UNKNOWN_TOOL'; return false; }
         if ((state.toolDependencies?.[call.name] || []).some(name => !state.successfulTools.includes(name))) { state.rejections[call.id] = 'PREREQUISITE_MISSING'; return false; }
-        if (COMMON_TOOLS.some(tool => tool.name === call.name)) {
+        if (!state.hostToolSchemas && COMMON_TOOLS.some(tool => tool.name === call.name)) {
           try { validateCommonTool(call.name, call.arguments); }
           catch { state.rejections[call.id] = 'INVALID_TOOL_ARGUMENTS'; return false; }
         }
+        const fingerprint = typeof call.fingerprint === 'string' && call.fingerprint ? call.fingerprint : toolCallFingerprint(call.name, call.arguments);
+        state.pendingFingerprints[call.id] = fingerprint;
+        const repeated = guard.check(call.name, fingerprint);
+        if (repeated) { state.rejections[call.id] = repeated.error; state.rejectionResults[call.id] = repeated; return false; }
         if (call.name === 'phone_use') {
+          if (typeof call.arguments?.goal !== 'string' || typeof call.arguments?.purpose !== 'string') { state.rejections[call.id] = 'INVALID_TOOL_ARGUMENTS'; return false; }
           const task = call.arguments.purpose + ':' + call.arguments.goal.trim().toLowerCase();
           if (state.phoneTasks.includes(task)) { state.rejections[call.id] = 'REPEATED_TASK'; return false; }
           if (state.phoneTasks.length >= 3) { state.rejections[call.id] = 'PHONE_TASK_LIMIT'; return false; }
@@ -84,11 +94,18 @@ export function advanceTurn(previous, event, now) {
       if (typeof event.ok !== 'boolean') fail('INVALID_RESULT', 'A tool result must report success explicitly.');
       state.pending = state.pending.filter(id => id !== event.callId);
       const toolName = state.pendingTools[event.callId];
+      const permitted = state.permitted.includes(event.callId);
+      if (permitted) {
+        const guard = createRepeatGuard({ entries: state.failures, fingerprint: (_name, key) => key });
+        guard.record(toolName, state.pendingFingerprints[event.callId], { ok: event.ok, code: event.code, error: event.error, output: event.output });
+        state.failures = guard.entries;
+      }
+      delete state.pendingFingerprints[event.callId];
       if (event.ok && state.permitted.includes(event.callId) && toolName && !state.successfulTools.includes(toolName)) state.successfulTools.push(toolName);
       delete state.pendingTools[event.callId];
-      state.roundSucceeded = state.roundSucceeded || event.ok;
+      state.roundSucceeded = state.roundSucceeded || (event.ok && permitted);
       if (!state.pending.length) state.errors = state.roundSucceeded ? 0 : state.errors + 1;
-      if (typeof event.progressKey === 'string' && event.progressKey.length <= 256 && event.progressKey) {
+      if (event.ok && permitted && typeof event.progressKey === 'string' && event.progressKey.length <= 256 && event.progressKey) {
         state.stagnant = state.progressKeys.includes(event.progressKey) ? state.stagnant + 1 : 0;
         if (!state.progressKeys.includes(event.progressKey)) state.progressKeys.push(event.progressKey);
       }
@@ -103,4 +120,12 @@ export function advanceTurn(previous, event, now) {
       return { ...state, status: 'completed', awaitingModel: false };
     default: fail('UNKNOWN_EVENT', 'Unknown turn event.');
   }
+}
+
+export function turnStopReply(reason, text = '') {
+  const cjk = new RegExp(AGENT_LOOP_CONTRACT.cjkPattern.source, AGENT_LOOP_CONTRACT.cjkPattern.flags).test(text);
+  if (reason === 'ROUND_LIMIT') return AGENT_LOOP_CONTRACT.loop.toolLimitReply[cjk ? 'zh' : 'en'];
+  return cjk
+    ? `本轮已停止（${reason || 'LOOP_STOPPED'}）。已有操作和回执已保留，尚未确认任务完成；请调整目标或补充信息后继续。`
+    : `This turn stopped (${reason || 'LOOP_STOPPED'}). Existing actions and receipts are preserved; task completion is unverified. Please adjust the request or supply more information.`;
 }

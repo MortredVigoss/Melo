@@ -1,4 +1,4 @@
-import { createRepeatGuard } from './repeatGuard.js';
+import { createCoreTurn } from '../runtime/sharedAgentCore.js';
 import { renderAgentIdentity } from '../domain/agent/agentIdentity.js';
 import {resolveCapabilityContext} from '../services/agent/capabilityContext.js';
 import {currentRequestContext,runWithRequestContext} from '../runtime/requestScope.js';
@@ -185,15 +185,16 @@ async function runSubAgentLoop({
   let iterations = 0;
   let failedTools = 0;
   let deniedTools = 0;
-  const repeatGuard = createRepeatGuard();
+  const coreTurn = createCoreTurn({ allowedTools: allowedTools.map(t => t.id), limits: { rounds: Math.min(20, maxIterations) } });
   const toolResults = [];
   let usedTokens=0;
 
-  for (let iteration = 0; iteration < Math.min(20,maxIterations); iteration++) {
+  for (let iteration = 0; ; iteration++) {
     if (signal?.aborted) {
       return { ok: false, output: 'Sub-agent aborted.', meta: { aborted: true, iteration } };
     }
 
+    if (coreTurn.update('request') !== 'running') break;
     iterations++;
     const request = fitRequestContext({ sections: [{ id: 'instructions', text: systemPrompt, required: true }],
       messages: loopMessages, toolDefinitions: functionSession.definitions, ...contextBudget });
@@ -237,9 +238,14 @@ async function runSubAgentLoop({
     const { toolCalls } = turn;
 
     if (!toolCalls.length) {
+      coreTurn.update('complete');
+      if (coreTurn.status !== 'completed') break;
       finalOutput = cleanReplyForParent(turn.text);
       break;
     }
+
+    coreTurn.update('calls', { calls: toolCalls });
+    if (coreTurn.status !== 'running') break;
 
     // Emit sub-agent tool calls to parent SSE stream with depth marker so UI
     // can render nesting.
@@ -256,8 +262,7 @@ async function runSubAgentLoop({
     const allowSet = new Set(allowedTools.map(t => t.id));
     for (const tc of toolCalls) {
       if (tc.rejectedResult) continue;
-      const repeated = repeatGuard.check(tc.name, tc.arguments);
-      if (repeated) tc.rejectedResult = repeated;
+      if (!coreTurn.permits(tc.id) && coreTurn.rejection(tc.id) !== 'UNKNOWN_TOOL') tc.rejectedResult = coreTurn.rejectionResult(tc.id);
     }
     const executableCalls = toolCalls.map(tc => {
       if (tc.rejectedResult) return { id: tc.id, tool: null, args: tc.arguments, callRef: tc };
@@ -336,16 +341,17 @@ async function runSubAgentLoop({
     }
 
     toolResults.push(...allResults.map(({call,result})=>projectToolResultForPersist(call,result)));
-    for (const { call, result } of allResults) if (result?.error !== 'REPEATED_FAILURE') repeatGuard.record(call.name, call.arguments, result);
     failedTools += allResults.filter(r=>r.result.ok === false).length;
     // Scope violations are not ordinary failures: a member that tried to call
     // a tool outside its whitelist or capability scope stays a failed role
     // even after a prose reply, so the parent can see the attempt.
     deniedTools += allResults.filter(r=>r.result.ok === false && ['TOOL_NOT_WHITELISTED','CAPABILITY_DENIED','PERMISSION_DENIED','DELEGATION_DENIED'].includes(r.result.error)).length;
     loopMessages = functionSession.append(loopMessages, turn, allResults);
+    if (coreTurn.results(allResults) !== 'running') break;
   }
 
-  const exhausted = !finalOutput;
+  const exhausted = !finalOutput || coreTurn.status !== 'completed';
+  if (coreTurn.status === 'blocked') finalOutput = coreTurn.reply(task);
   if (!finalOutput) {
     // Iteration budget exhausted without a terminal prose reply. Use the last
     // assistant message but scrub tool-call XML and thinking blocks so the
@@ -363,7 +369,7 @@ async function runSubAgentLoop({
   return {
     ok: !exhausted && deniedTools === 0,
     output: finalOutput,
-    meta: { depth, iterations, toolCalls: totalToolCalls, failedTools, deniedTools, exhausted, toolResults },
+    meta: { depth, iterations, toolCalls: totalToolCalls, failedTools, deniedTools, exhausted, stopReason: coreTurn.reason, toolResults },
   };
 }
 

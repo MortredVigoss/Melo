@@ -1,4 +1,4 @@
-import { CORE_VERSION, startTurn, advanceTurn } from './turn.js';
+import { CORE_VERSION, startTurn, advanceTurn, turnStopReply } from './turn.js';
 import { planRequest, actionEvidence } from './search.js';
 import { buildSkills } from './skill/skillService.js';
 import { toolCatalog, validateCommonTool, normalizeRuntimeConfig, normalizeSearchResponse, normalizeFetchedPage, searchRequest } from './tools.js';
@@ -6,6 +6,7 @@ import { connectionIdentity, hostedCapability, hostedSearchReceipt, hostedSearch
 import { executionScene, executionContext, publicReasoning } from './execution.js';
 import { parseReplyDocument, inlineSpans, replyPresentation } from '../../src/shared/replyDocument.js';
 import { budgetOperation } from './policyBridge.js';
+import { repeatOperation } from './repeatGuard.js';
 
 export function evaluate(input) {
   try {
@@ -14,6 +15,7 @@ export function evaluate(input) {
     switch (input.op) {
       case 'hello': value = { version: CORE_VERSION, runtime: 'melo-local-core', portable: true }; break;
       case 'budget': value = budgetOperation(input); break;
+      case 'repeat': value = repeatOperation(input); break;
       case 'plan': value = planRequest(input.request); break;
       case 'actionEvidence': value = actionEvidence(input.plan, input.urls); break;
       case 'skills': value = buildSkills(input.enabledIds, input.customSkills); break;
@@ -33,6 +35,7 @@ export function evaluate(input) {
       case 'hostedCapability': value = hostedCapability(input.proof, input.fingerprint, input.now); break;
       case 'hostedReceipt': value = hostedSearchReceipt(input.response); break;
       case 'hostedProof': value = hostedSearchProof(input); break;
+      case 'stopReply': value = turnStopReply(input.reason, input.text); break;
       case 'start': value = startTurn(input.turn); break;
       case 'advance': value = advanceTurn(input.state, input.event, input.now); break;
       default: throw Object.assign(new Error('Unknown Core operation.'), { code: 'UNKNOWN_OPERATION' });

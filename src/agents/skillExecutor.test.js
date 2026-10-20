@@ -226,9 +226,9 @@ test('runSkill: reaching maxIterations reports incomplete work without raw tool 
   try {
     const reply = makeFakeReply();
     // Always emit a tool call so the loop hits the budget.
-    const makeCall = () =>
-      '<tool_call>{"id":"loop","name":"tool_a","arguments":{}}</tool_call>';
-    for (let i = 0; i < 10; i++) reply.queue.push(makeCall());
+    const makeCall = i =>
+      `<tool_call>{"id":"loop-${i}","name":"tool_a","arguments":{}}</tool_call>`;
+    for (let i = 0; i < 10; i++) reply.queue.push(makeCall(i));
 
     const res = await runSkill({
       skill: executableSkill({ toolWhitelist: ['tool_a'], maxIterations: 2 }),

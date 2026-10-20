@@ -1698,5 +1698,1303 @@
         "phone_use"
       ]
     }
+  },
+  {
+    "name": "production-loop: shared defaults",
+    "input": {
+      "version": 1,
+      "op": "start",
+      "turn": {
+        "runId": "shared-run",
+        "turnId": "shared-turn",
+        "allowedTools": [
+          "read",
+          "write",
+          "web_search"
+        ],
+        "now": 1000
+      }
+    },
+    "ok": true,
+    "expected": {
+      "deadline": 1201000,
+      "limits": {
+        "rounds": 10,
+        "callsPerRound": 32,
+        "errors": 3,
+        "stagnant": 5
+      }
+    }
+  },
+  {
+    "name": "production-loop: zero rounds is exhausted",
+    "input": {
+      "version": 1,
+      "op": "advance",
+      "state": {
+        "version": 1,
+        "runId": "shared-run",
+        "turnId": "shared-turn",
+        "status": "running",
+        "startedAt": 1000,
+        "lastNow": 1000,
+        "deadline": 1201000,
+        "limits": {
+          "rounds": 0,
+          "callsPerRound": 32,
+          "errors": 3,
+          "stagnant": 5
+        },
+        "allowedTools": [
+          "read",
+          "write",
+          "web_search"
+        ],
+        "requiredTools": [],
+        "toolDependencies": {},
+        "successfulTools": [],
+        "pendingTools": {},
+        "rounds": 0,
+        "awaitingModel": false,
+        "hostToolSchemas": false,
+        "failures": [],
+        "pendingFingerprints": {},
+        "rejectionResults": {},
+        "callIds": [],
+        "pending": [],
+        "permitted": [],
+        "phoneTasks": [],
+        "rejections": {},
+        "errors": 0,
+        "roundSucceeded": false,
+        "stagnant": 0,
+        "progressKeys": [],
+        "reason": null
+      },
+      "event": {
+        "type": "request",
+        "runId": "shared-run",
+        "turnId": "shared-turn"
+      },
+      "now": 1000
+    },
+    "ok": true,
+    "expected": {
+      "status": "blocked",
+      "reason": "ROUND_LIMIT",
+      "rounds": 0
+    }
+  },
+  {
+    "name": "production-loop: 32 sibling permits",
+    "input": {
+      "version": 1,
+      "op": "advance",
+      "state": {
+        "version": 1,
+        "runId": "shared-run",
+        "turnId": "shared-turn",
+        "status": "running",
+        "startedAt": 1000,
+        "lastNow": 1000,
+        "deadline": 1201000,
+        "limits": {
+          "rounds": 10,
+          "callsPerRound": 32,
+          "errors": 3,
+          "stagnant": 5
+        },
+        "allowedTools": [
+          "read",
+          "write",
+          "web_search"
+        ],
+        "requiredTools": [],
+        "toolDependencies": {},
+        "successfulTools": [],
+        "pendingTools": {},
+        "rounds": 1,
+        "awaitingModel": true,
+        "hostToolSchemas": false,
+        "failures": [],
+        "pendingFingerprints": {},
+        "rejectionResults": {},
+        "callIds": [],
+        "pending": [],
+        "permitted": [],
+        "phoneTasks": [],
+        "rejections": {},
+        "errors": 0,
+        "roundSucceeded": false,
+        "stagnant": 0,
+        "progressKeys": [],
+        "reason": null
+      },
+      "event": {
+        "type": "calls",
+        "runId": "shared-run",
+        "turnId": "shared-turn",
+        "calls": [
+          {
+            "id": "c0",
+            "name": "read",
+            "arguments": {
+              "page": 0
+            }
+          },
+          {
+            "id": "c1",
+            "name": "read",
+            "arguments": {
+              "page": 1
+            }
+          },
+          {
+            "id": "c2",
+            "name": "read",
+            "arguments": {
+              "page": 2
+            }
+          },
+          {
+            "id": "c3",
+            "name": "read",
+            "arguments": {
+              "page": 3
+            }
+          },
+          {
+            "id": "c4",
+            "name": "read",
+            "arguments": {
+              "page": 4
+            }
+          },
+          {
+            "id": "c5",
+            "name": "read",
+            "arguments": {
+              "page": 5
+            }
+          },
+          {
+            "id": "c6",
+            "name": "read",
+            "arguments": {
+              "page": 6
+            }
+          },
+          {
+            "id": "c7",
+            "name": "read",
+            "arguments": {
+              "page": 7
+            }
+          },
+          {
+            "id": "c8",
+            "name": "read",
+            "arguments": {
+              "page": 8
+            }
+          },
+          {
+            "id": "c9",
+            "name": "read",
+            "arguments": {
+              "page": 9
+            }
+          },
+          {
+            "id": "c10",
+            "name": "read",
+            "arguments": {
+              "page": 10
+            }
+          },
+          {
+            "id": "c11",
+            "name": "read",
+            "arguments": {
+              "page": 11
+            }
+          },
+          {
+            "id": "c12",
+            "name": "read",
+            "arguments": {
+              "page": 12
+            }
+          },
+          {
+            "id": "c13",
+            "name": "read",
+            "arguments": {
+              "page": 13
+            }
+          },
+          {
+            "id": "c14",
+            "name": "read",
+            "arguments": {
+              "page": 14
+            }
+          },
+          {
+            "id": "c15",
+            "name": "read",
+            "arguments": {
+              "page": 15
+            }
+          },
+          {
+            "id": "c16",
+            "name": "read",
+            "arguments": {
+              "page": 16
+            }
+          },
+          {
+            "id": "c17",
+            "name": "read",
+            "arguments": {
+              "page": 17
+            }
+          },
+          {
+            "id": "c18",
+            "name": "read",
+            "arguments": {
+              "page": 18
+            }
+          },
+          {
+            "id": "c19",
+            "name": "read",
+            "arguments": {
+              "page": 19
+            }
+          },
+          {
+            "id": "c20",
+            "name": "read",
+            "arguments": {
+              "page": 20
+            }
+          },
+          {
+            "id": "c21",
+            "name": "read",
+            "arguments": {
+              "page": 21
+            }
+          },
+          {
+            "id": "c22",
+            "name": "read",
+            "arguments": {
+              "page": 22
+            }
+          },
+          {
+            "id": "c23",
+            "name": "read",
+            "arguments": {
+              "page": 23
+            }
+          },
+          {
+            "id": "c24",
+            "name": "read",
+            "arguments": {
+              "page": 24
+            }
+          },
+          {
+            "id": "c25",
+            "name": "read",
+            "arguments": {
+              "page": 25
+            }
+          },
+          {
+            "id": "c26",
+            "name": "read",
+            "arguments": {
+              "page": 26
+            }
+          },
+          {
+            "id": "c27",
+            "name": "read",
+            "arguments": {
+              "page": 27
+            }
+          },
+          {
+            "id": "c28",
+            "name": "read",
+            "arguments": {
+              "page": 28
+            }
+          },
+          {
+            "id": "c29",
+            "name": "read",
+            "arguments": {
+              "page": 29
+            }
+          },
+          {
+            "id": "c30",
+            "name": "read",
+            "arguments": {
+              "page": 30
+            }
+          },
+          {
+            "id": "c31",
+            "name": "read",
+            "arguments": {
+              "page": 31
+            }
+          }
+        ]
+      },
+      "now": 1000
+    },
+    "ok": true,
+    "expected": {
+      "permitted": [
+        "c0",
+        "c1",
+        "c2",
+        "c3",
+        "c4",
+        "c5",
+        "c6",
+        "c7",
+        "c8",
+        "c9",
+        "c10",
+        "c11",
+        "c12",
+        "c13",
+        "c14",
+        "c15",
+        "c16",
+        "c17",
+        "c18",
+        "c19",
+        "c20",
+        "c21",
+        "c22",
+        "c23",
+        "c24",
+        "c25",
+        "c26",
+        "c27",
+        "c28",
+        "c29",
+        "c30",
+        "c31"
+      ],
+      "pending": [
+        "c0",
+        "c1",
+        "c2",
+        "c3",
+        "c4",
+        "c5",
+        "c6",
+        "c7",
+        "c8",
+        "c9",
+        "c10",
+        "c11",
+        "c12",
+        "c13",
+        "c14",
+        "c15",
+        "c16",
+        "c17",
+        "c18",
+        "c19",
+        "c20",
+        "c21",
+        "c22",
+        "c23",
+        "c24",
+        "c25",
+        "c26",
+        "c27",
+        "c28",
+        "c29",
+        "c30",
+        "c31"
+      ]
+    }
+  },
+  {
+    "name": "production-loop: 33 denied atomically",
+    "input": {
+      "version": 1,
+      "op": "advance",
+      "state": {
+        "version": 1,
+        "runId": "shared-run",
+        "turnId": "shared-turn",
+        "status": "running",
+        "startedAt": 1000,
+        "lastNow": 1000,
+        "deadline": 1201000,
+        "limits": {
+          "rounds": 10,
+          "callsPerRound": 32,
+          "errors": 3,
+          "stagnant": 5
+        },
+        "allowedTools": [
+          "read",
+          "write",
+          "web_search"
+        ],
+        "requiredTools": [],
+        "toolDependencies": {},
+        "successfulTools": [],
+        "pendingTools": {},
+        "rounds": 1,
+        "awaitingModel": true,
+        "hostToolSchemas": false,
+        "failures": [],
+        "pendingFingerprints": {},
+        "rejectionResults": {},
+        "callIds": [],
+        "pending": [],
+        "permitted": [],
+        "phoneTasks": [],
+        "rejections": {},
+        "errors": 0,
+        "roundSucceeded": false,
+        "stagnant": 0,
+        "progressKeys": [],
+        "reason": null
+      },
+      "event": {
+        "type": "calls",
+        "runId": "shared-run",
+        "turnId": "shared-turn",
+        "calls": [
+          {
+            "id": "c0",
+            "name": "read",
+            "arguments": {
+              "page": 0
+            }
+          },
+          {
+            "id": "c1",
+            "name": "read",
+            "arguments": {
+              "page": 1
+            }
+          },
+          {
+            "id": "c2",
+            "name": "read",
+            "arguments": {
+              "page": 2
+            }
+          },
+          {
+            "id": "c3",
+            "name": "read",
+            "arguments": {
+              "page": 3
+            }
+          },
+          {
+            "id": "c4",
+            "name": "read",
+            "arguments": {
+              "page": 4
+            }
+          },
+          {
+            "id": "c5",
+            "name": "read",
+            "arguments": {
+              "page": 5
+            }
+          },
+          {
+            "id": "c6",
+            "name": "read",
+            "arguments": {
+              "page": 6
+            }
+          },
+          {
+            "id": "c7",
+            "name": "read",
+            "arguments": {
+              "page": 7
+            }
+          },
+          {
+            "id": "c8",
+            "name": "read",
+            "arguments": {
+              "page": 8
+            }
+          },
+          {
+            "id": "c9",
+            "name": "read",
+            "arguments": {
+              "page": 9
+            }
+          },
+          {
+            "id": "c10",
+            "name": "read",
+            "arguments": {
+              "page": 10
+            }
+          },
+          {
+            "id": "c11",
+            "name": "read",
+            "arguments": {
+              "page": 11
+            }
+          },
+          {
+            "id": "c12",
+            "name": "read",
+            "arguments": {
+              "page": 12
+            }
+          },
+          {
+            "id": "c13",
+            "name": "read",
+            "arguments": {
+              "page": 13
+            }
+          },
+          {
+            "id": "c14",
+            "name": "read",
+            "arguments": {
+              "page": 14
+            }
+          },
+          {
+            "id": "c15",
+            "name": "read",
+            "arguments": {
+              "page": 15
+            }
+          },
+          {
+            "id": "c16",
+            "name": "read",
+            "arguments": {
+              "page": 16
+            }
+          },
+          {
+            "id": "c17",
+            "name": "read",
+            "arguments": {
+              "page": 17
+            }
+          },
+          {
+            "id": "c18",
+            "name": "read",
+            "arguments": {
+              "page": 18
+            }
+          },
+          {
+            "id": "c19",
+            "name": "read",
+            "arguments": {
+              "page": 19
+            }
+          },
+          {
+            "id": "c20",
+            "name": "read",
+            "arguments": {
+              "page": 20
+            }
+          },
+          {
+            "id": "c21",
+            "name": "read",
+            "arguments": {
+              "page": 21
+            }
+          },
+          {
+            "id": "c22",
+            "name": "read",
+            "arguments": {
+              "page": 22
+            }
+          },
+          {
+            "id": "c23",
+            "name": "read",
+            "arguments": {
+              "page": 23
+            }
+          },
+          {
+            "id": "c24",
+            "name": "read",
+            "arguments": {
+              "page": 24
+            }
+          },
+          {
+            "id": "c25",
+            "name": "read",
+            "arguments": {
+              "page": 25
+            }
+          },
+          {
+            "id": "c26",
+            "name": "read",
+            "arguments": {
+              "page": 26
+            }
+          },
+          {
+            "id": "c27",
+            "name": "read",
+            "arguments": {
+              "page": 27
+            }
+          },
+          {
+            "id": "c28",
+            "name": "read",
+            "arguments": {
+              "page": 28
+            }
+          },
+          {
+            "id": "c29",
+            "name": "read",
+            "arguments": {
+              "page": 29
+            }
+          },
+          {
+            "id": "c30",
+            "name": "read",
+            "arguments": {
+              "page": 30
+            }
+          },
+          {
+            "id": "c31",
+            "name": "read",
+            "arguments": {
+              "page": 31
+            }
+          },
+          {
+            "id": "c32",
+            "name": "read",
+            "arguments": {
+              "page": 32
+            }
+          }
+        ]
+      },
+      "now": 1000
+    },
+    "ok": false,
+    "expected": {
+      "code": "INVALID_BATCH"
+    }
+  },
+  {
+    "name": "production-loop: deadline grants no effects",
+    "input": {
+      "version": 1,
+      "op": "advance",
+      "state": {
+        "version": 1,
+        "runId": "shared-run",
+        "turnId": "shared-turn",
+        "status": "running",
+        "startedAt": 1000,
+        "lastNow": 1000,
+        "deadline": 1201000,
+        "limits": {
+          "rounds": 10,
+          "callsPerRound": 32,
+          "errors": 3,
+          "stagnant": 5
+        },
+        "allowedTools": [
+          "read",
+          "write",
+          "web_search"
+        ],
+        "requiredTools": [],
+        "toolDependencies": {},
+        "successfulTools": [],
+        "pendingTools": {},
+        "rounds": 1,
+        "awaitingModel": true,
+        "hostToolSchemas": false,
+        "failures": [],
+        "pendingFingerprints": {},
+        "rejectionResults": {},
+        "callIds": [],
+        "pending": [],
+        "permitted": [],
+        "phoneTasks": [],
+        "rejections": {},
+        "errors": 0,
+        "roundSucceeded": false,
+        "stagnant": 0,
+        "progressKeys": [],
+        "reason": null
+      },
+      "event": {
+        "type": "calls",
+        "runId": "shared-run",
+        "turnId": "shared-turn",
+        "calls": [
+          {
+            "id": "c0",
+            "name": "read",
+            "arguments": {
+              "page": 0
+            }
+          }
+        ]
+      },
+      "now": 1201000
+    },
+    "ok": true,
+    "expected": {
+      "status": "blocked",
+      "reason": "DEADLINE_EXCEEDED",
+      "permitted": []
+    }
+  },
+  {
+    "name": "production-loop: cancelled rejects late call",
+    "input": {
+      "version": 1,
+      "op": "advance",
+      "state": {
+        "version": 1,
+        "runId": "shared-run",
+        "turnId": "shared-turn",
+        "status": "cancelled",
+        "startedAt": 1000,
+        "lastNow": 1000,
+        "deadline": 1201000,
+        "limits": {
+          "rounds": 10,
+          "callsPerRound": 32,
+          "errors": 3,
+          "stagnant": 5
+        },
+        "allowedTools": [
+          "read",
+          "write",
+          "web_search"
+        ],
+        "requiredTools": [],
+        "toolDependencies": {},
+        "successfulTools": [],
+        "pendingTools": {},
+        "rounds": 1,
+        "awaitingModel": false,
+        "hostToolSchemas": false,
+        "failures": [],
+        "pendingFingerprints": {},
+        "rejectionResults": {},
+        "callIds": [],
+        "pending": [],
+        "permitted": [],
+        "phoneTasks": [],
+        "rejections": {},
+        "errors": 0,
+        "roundSucceeded": false,
+        "stagnant": 0,
+        "progressKeys": [],
+        "reason": "CANCELLED"
+      },
+      "event": {
+        "type": "calls",
+        "runId": "shared-run",
+        "turnId": "shared-turn",
+        "calls": [
+          {
+            "id": "c0",
+            "name": "read",
+            "arguments": {
+              "page": 0
+            }
+          }
+        ]
+      },
+      "now": 1000
+    },
+    "ok": false,
+    "expected": {
+      "code": "TURN_CLOSED"
+    }
+  },
+  {
+    "name": "production-loop: Host keeps actual schema",
+    "input": {
+      "version": 1,
+      "op": "advance",
+      "state": {
+        "version": 1,
+        "runId": "shared-run",
+        "turnId": "shared-turn",
+        "status": "running",
+        "startedAt": 1000,
+        "lastNow": 1000,
+        "deadline": 1201000,
+        "limits": {
+          "rounds": 10,
+          "callsPerRound": 32,
+          "errors": 3,
+          "stagnant": 5
+        },
+        "allowedTools": [
+          "read",
+          "write",
+          "web_search"
+        ],
+        "requiredTools": [],
+        "toolDependencies": {},
+        "successfulTools": [],
+        "pendingTools": {},
+        "rounds": 1,
+        "awaitingModel": true,
+        "hostToolSchemas": true,
+        "failures": [],
+        "pendingFingerprints": {},
+        "rejectionResults": {},
+        "callIds": [],
+        "pending": [],
+        "permitted": [],
+        "phoneTasks": [],
+        "rejections": {},
+        "errors": 0,
+        "roundSucceeded": false,
+        "stagnant": 0,
+        "progressKeys": [],
+        "reason": null
+      },
+      "event": {
+        "type": "calls",
+        "runId": "shared-run",
+        "turnId": "shared-turn",
+        "calls": [
+          {
+            "id": "nullable",
+            "name": "web_search",
+            "arguments": {
+              "query": "test",
+              "num_results": null,
+              "noCache": null
+            }
+          }
+        ]
+      },
+      "now": 1000
+    },
+    "ok": true,
+    "expected": {
+      "permitted": [
+        "nullable"
+      ]
+    }
+  },
+  {
+    "name": "production-loop: two identical failures deny third effect",
+    "input": {
+      "version": 1,
+      "op": "advance",
+      "state": {
+        "version": 1,
+        "runId": "shared-run",
+        "turnId": "shared-turn",
+        "status": "running",
+        "startedAt": 1000,
+        "lastNow": 1000,
+        "deadline": 1201000,
+        "limits": {
+          "rounds": 10,
+          "callsPerRound": 32,
+          "errors": 3,
+          "stagnant": 5
+        },
+        "allowedTools": [
+          "read",
+          "write",
+          "web_search"
+        ],
+        "requiredTools": [],
+        "toolDependencies": {},
+        "successfulTools": [],
+        "pendingTools": {},
+        "rounds": 3,
+        "awaitingModel": true,
+        "hostToolSchemas": false,
+        "failures": [
+          [
+            "[\"read\",{}]",
+            {
+              "count": 2,
+              "errorClass": "NOT_FOUND",
+              "name": "read"
+            }
+          ]
+        ],
+        "pendingFingerprints": {},
+        "rejectionResults": {},
+        "callIds": [
+          "failure0",
+          "failure1"
+        ],
+        "pending": [],
+        "permitted": [
+          "failure1"
+        ],
+        "phoneTasks": [],
+        "rejections": {},
+        "errors": 2,
+        "roundSucceeded": false,
+        "stagnant": 0,
+        "progressKeys": [],
+        "reason": null
+      },
+      "event": {
+        "type": "calls",
+        "runId": "shared-run",
+        "turnId": "shared-turn",
+        "calls": [
+          {
+            "id": "third",
+            "name": "read",
+            "arguments": {}
+          }
+        ]
+      },
+      "now": 1000
+    },
+    "ok": true,
+    "expected": {
+      "permitted": [],
+      "rejections": {
+        "third": "REPEATED_FAILURE"
+      }
+    }
+  },
+  {
+    "name": "production-loop: three failed batches end turn",
+    "input": {
+      "version": 1,
+      "op": "advance",
+      "state": {
+        "version": 1,
+        "runId": "shared-run",
+        "turnId": "shared-turn",
+        "status": "running",
+        "startedAt": 1000,
+        "lastNow": 1000,
+        "deadline": 1201000,
+        "limits": {
+          "rounds": 10,
+          "callsPerRound": 32,
+          "errors": 3,
+          "stagnant": 5
+        },
+        "allowedTools": [
+          "read",
+          "write",
+          "web_search"
+        ],
+        "requiredTools": [],
+        "toolDependencies": {},
+        "successfulTools": [],
+        "pendingTools": {
+          "third": "read"
+        },
+        "rounds": 3,
+        "awaitingModel": false,
+        "hostToolSchemas": false,
+        "failures": [
+          [
+            "[\"read\",{}]",
+            {
+              "count": 2,
+              "errorClass": "NOT_FOUND",
+              "name": "read"
+            }
+          ]
+        ],
+        "pendingFingerprints": {
+          "third": "[\"read\",{}]"
+        },
+        "rejectionResults": {
+          "third": {
+            "ok": false,
+            "error": "REPEATED_FAILURE",
+            "output": "Tool \"read\" already failed 2 times with identical arguments (NOT_FOUND). It was not run again. Change the arguments or the approach, or tell the user what is blocking you."
+          }
+        },
+        "callIds": [
+          "failure0",
+          "failure1",
+          "third"
+        ],
+        "pending": [
+          "third"
+        ],
+        "permitted": [],
+        "phoneTasks": [],
+        "rejections": {
+          "third": "REPEATED_FAILURE"
+        },
+        "errors": 2,
+        "roundSucceeded": false,
+        "stagnant": 0,
+        "progressKeys": [],
+        "reason": null
+      },
+      "event": {
+        "type": "result",
+        "runId": "shared-run",
+        "turnId": "shared-turn",
+        "callId": "third",
+        "ok": false,
+        "code": "REPEATED_FAILURE"
+      },
+      "now": 1000
+    },
+    "ok": true,
+    "expected": {
+      "status": "blocked",
+      "reason": "REPEATED_TOOL_FAILURE",
+      "pending": []
+    }
+  },
+  {
+    "name": "production-loop: unchanged success is bounded",
+    "input": {
+      "version": 1,
+      "op": "advance",
+      "state": {
+        "version": 1,
+        "runId": "shared-run",
+        "turnId": "shared-turn",
+        "status": "running",
+        "startedAt": 1000,
+        "lastNow": 1000,
+        "deadline": 1201000,
+        "limits": {
+          "rounds": 10,
+          "callsPerRound": 32,
+          "errors": 3,
+          "stagnant": 5
+        },
+        "allowedTools": [
+          "read",
+          "write",
+          "web_search"
+        ],
+        "requiredTools": [],
+        "toolDependencies": {},
+        "successfulTools": [
+          "read"
+        ],
+        "pendingTools": {
+          "sixth": "read"
+        },
+        "rounds": 6,
+        "awaitingModel": false,
+        "hostToolSchemas": false,
+        "failures": [],
+        "pendingFingerprints": {
+          "sixth": "[\"read\",{}]"
+        },
+        "rejectionResults": {},
+        "callIds": [
+          "same0",
+          "same1",
+          "same2",
+          "same3",
+          "same4",
+          "sixth"
+        ],
+        "pending": [
+          "sixth"
+        ],
+        "permitted": [
+          "sixth"
+        ],
+        "phoneTasks": [],
+        "rejections": {},
+        "errors": 0,
+        "roundSucceeded": false,
+        "stagnant": 4,
+        "progressKeys": [
+          "same-evidence"
+        ],
+        "reason": null
+      },
+      "event": {
+        "type": "result",
+        "runId": "shared-run",
+        "turnId": "shared-turn",
+        "callId": "sixth",
+        "ok": true,
+        "progressKey": "same-evidence"
+      },
+      "now": 1000
+    },
+    "ok": true,
+    "expected": {
+      "status": "blocked",
+      "reason": "NO_PROGRESS"
+    }
+  },
+  {
+    "name": "production-loop: new evidence recovers progress",
+    "input": {
+      "version": 1,
+      "op": "advance",
+      "state": {
+        "version": 1,
+        "runId": "shared-run",
+        "turnId": "shared-turn",
+        "status": "running",
+        "startedAt": 1000,
+        "lastNow": 1000,
+        "deadline": 1201000,
+        "limits": {
+          "rounds": 10,
+          "callsPerRound": 32,
+          "errors": 3,
+          "stagnant": 5
+        },
+        "allowedTools": [
+          "read",
+          "write",
+          "web_search"
+        ],
+        "requiredTools": [],
+        "toolDependencies": {},
+        "successfulTools": [
+          "read"
+        ],
+        "pendingTools": {
+          "sixth": "read"
+        },
+        "rounds": 6,
+        "awaitingModel": false,
+        "hostToolSchemas": false,
+        "failures": [],
+        "pendingFingerprints": {
+          "sixth": "[\"read\",{}]"
+        },
+        "rejectionResults": {},
+        "callIds": [
+          "same0",
+          "same1",
+          "same2",
+          "same3",
+          "same4",
+          "sixth"
+        ],
+        "pending": [
+          "sixth"
+        ],
+        "permitted": [
+          "sixth"
+        ],
+        "phoneTasks": [],
+        "rejections": {},
+        "errors": 0,
+        "roundSucceeded": false,
+        "stagnant": 4,
+        "progressKeys": [
+          "same-evidence"
+        ],
+        "reason": null
+      },
+      "event": {
+        "type": "result",
+        "runId": "shared-run",
+        "turnId": "shared-turn",
+        "callId": "sixth",
+        "ok": true,
+        "progressKey": "new-evidence"
+      },
+      "now": 1000
+    },
+    "ok": true,
+    "expected": {
+      "status": "running",
+      "stagnant": 0
+    }
+  },
+  {
+    "name": "production-loop: parent budget binds every Host",
+    "input": {
+      "version": 1,
+      "op": "budget",
+      "action": "exhausted",
+      "now": 1000,
+      "budget": {
+        "startedAt": 1000,
+        "deadlineAt": 1201000,
+        "maxInputTokens": 20,
+        "maxToolCalls": 1,
+        "used": {
+          "inputTokens": 0,
+          "toolCalls": 0,
+          "providerCalls": 0
+        },
+        "parent": {
+          "startedAt": 1000,
+          "deadlineAt": 1201000,
+          "maxInputTokens": 20,
+          "maxToolCalls": 1,
+          "used": {
+            "inputTokens": 20,
+            "toolCalls": 0,
+            "providerCalls": 0
+          },
+          "parent": null
+        }
+      }
+    },
+    "ok": true,
+    "expected": {
+      "reason": "input-tokens",
+      "limit": 20,
+      "used": 20
+    }
   }
 ]

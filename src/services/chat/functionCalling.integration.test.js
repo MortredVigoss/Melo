@@ -33,7 +33,7 @@ async function harness(t, respond, options={}) {
   registerTool({ id: 'fixture_lookup', name: 'Fixture lookup', description: 'Read the requested fixture entry.',
     parametersSchema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
     requiresPermission: true, isConcurrencySafe: true,
-    run: async args => { executions.push(args.query); return { ok: true, output: `found ${args.query}` }; } });
+    run: async args => { executions.push(args.query); return options.toolResult?.(args) ?? { ok: true, output: `found ${args.query}` }; } });
   t.after(async () => { unregisterTool('fixture_lookup'); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await rm(home, { recursive: true, force: true }); });
   const config = { authMode: 'api-key', apiProtocol: 'responses', apiKey: 'fixture-key', model: 'fixture-model',
     baseUrl: `http://127.0.0.1:${server.address().port}/v1`, activeLlmProfileId: 'fixture', conversationModelSelected: true };
@@ -190,4 +190,26 @@ test('disabled native capabilities are absent from the actual main-turn provider
  await h.run();assert.ok(h.requests.length>0);
  for(const {body} of h.requests)assert.ok(!(body.tools||[]).some(tool=>['web_search','web_search_preview','image_generation'].includes(tool.type)));
  assert.equal(h.executions.length,0);assert.equal(h.permissions.length,0);
+});
+
+for (const failing of [false, true]) test(`shared main loop bounds ${failing ? 'permanent failures' : 'unchanged successful reads'} before another model or permission request`, async t => {
+  const h = await harness(t, round => done([fn(`repeat-${round}`, 'A')]), failing
+    ? { toolResult: () => ({ ok: false, error: 'NOT_FOUND', output: 'missing' }) } : {});
+  const result = await h.run();
+  assert.equal(h.requests.length, failing ? 3 : 6);
+  assert.equal(h.executions.length, failing ? 2 : 6);
+  assert.equal(h.permissions.length, failing ? 2 : 6);
+  assert.match(result.normalizedReply.content, failing ? /REPEATED_TOOL_FAILURE/ : /NO_PROGRESS/);
+  assert.equal(h.events.filter(e => e.type === 'tool_calls_done').length, failing ? 3 : 6, 'all executed and locally refused batches keep receipts');
+});
+
+test('shared main loop admits 32 sibling calls', async t => {
+  const h = await harness(t, round => done(round === 1 ? Array.from({ length: 32 }, (_, i) => fn(`batch-${i}`, `entry-${i}`)) : [message]));
+  await h.run(); assert.equal(h.executions.length, 32);
+});
+
+test('shared main loop rejects 33 calls atomically before permission', async t => {
+  const bad = await harness(t, () => done(Array.from({ length: 33 }, (_, i) => fn(`bad-${i}`, 'A'))));
+  await assert.rejects(bad.run(), /32|batch|limit|calls/i);
+  assert.equal(bad.executions.length, 0); assert.equal(bad.permissions.length, 0);
 });
