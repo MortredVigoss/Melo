@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Worker } from 'node:worker_threads';
 import { once } from 'node:events';
 import { DatabaseSync } from 'node:sqlite';
-import { withTransaction, _resetStoreForTests } from './store.js';
+import { withTransaction, _resetStoreForTests, patchMemories } from './store.js';
 import { createUserBookRow, listProjectBook } from './projectBook.js';
 import { indexKnowledgeDocuments } from './knowledgeIndex.js';
 import { runWithRequestContext } from '../runtime/requestScope.js';
@@ -81,4 +81,46 @@ test('a failed nested book write rolls back atomically and releases its writer r
     _resetStoreForTests();
     assert.equal(listProjectBook('P').length, 2);
   });
+});
+
+// A cold process may meet a writer before WAL/schema setup. The timeout must
+// already be installed before the first PRAGMA that needs a database lock.
+for (const disposable of [false, true]) test(`cold ${disposable ? 'captured-path' : 'cached'} memory open waits for an independent writer`, { timeout: 15000 }, async t => {
+  const home = await mkdtemp(join(tmpdir(), 'melo-memory-cold-lock-'));
+  const path = join(home, 'desktop', 'store.sqlite');
+  await mkdir(join(home, 'desktop'));
+  const seed = new DatabaseSync(path);
+  seed.exec("CREATE TABLE startup_probe(value TEXT); INSERT INTO startup_probe VALUES ('before')");
+  seed.close();
+  let worker;
+  t.after(async () => { if (worker) await worker.terminate(); _resetStoreForTests(); await rm(home, { recursive: true, force: true }); });
+  _resetStoreForTests();
+  worker = new Worker(`
+    const {parentPort,workerData} = require('node:worker_threads');
+    const {DatabaseSync} = require('node:sqlite');
+    const db = new DatabaseSync(workerData);
+    db.exec('BEGIN EXCLUSIVE');
+    parentPort.postMessage('locked');
+    parentPort.once('message', () => setTimeout(() => {
+      db.exec("UPDATE startup_probe SET value='after'; COMMIT"); db.close(); parentPort.postMessage('committed');
+    }, 300));
+  `, { eval: true, workerData: path });
+  assert.equal((await once(worker, 'message'))[0], 'locked');
+  const committed = once(worker, 'message');
+  worker.postMessage('open');
+  let failure;
+  try {
+    runWithRequestContext({ env: { ...process.env, MELO_HOME: home } }, () => {
+      if (disposable) patchMemories([], { storePath: path });
+      else assert.deepEqual(listProjectBook('P'), []);
+    });
+  } catch (error) { failure = error; }
+  assert.equal((await committed)[0], 'committed');
+  if (failure) throw failure;
+  _resetStoreForTests();
+  const check = new DatabaseSync(path, { readOnly: true });
+  try {
+    assert.equal(check.prepare('SELECT value FROM startup_probe').get().value, 'after');
+    assert.equal(check.prepare('SELECT count(*) AS n FROM memories').get().n, 0);
+  } finally { check.close(); }
 });

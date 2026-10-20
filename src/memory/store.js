@@ -91,8 +91,8 @@ function tryLoadVec(database) {
 function applyMemoryStoreSchema(database, vecLoaded) {
   let vecAvailable = false;
   database.exec(`
-    PRAGMA journal_mode = WAL;
     PRAGMA busy_timeout = 5000;
+    PRAGMA journal_mode = WAL;
     PRAGMA foreign_keys = ON;
     CREATE TABLE IF NOT EXISTS memories (
       id TEXT PRIMARY KEY,
@@ -285,11 +285,11 @@ function withDisposableStoreAt(storePath, work) {
   // extension loaded successfully, CREATE VIRTUAL TABLE vec_memories can
   // still fail; downstream `_runReplaceMemoriesOn` prepares statements
   // against `vec_memories` based on this flag, so we must not over-claim.
-  const { vecAvailable } = applyMemoryStoreSchema(tempDb, vecLoadedHere);
   try {
+    const { vecAvailable } = applyMemoryStoreSchema(tempDb, vecLoadedHere);
     tempDb.exec(`
-      PRAGMA journal_mode = WAL;
       PRAGMA busy_timeout = 5000;
+      PRAGMA journal_mode = WAL;
       PRAGMA foreign_keys = ON;
     `);
     return work(tempDb, vecAvailable);
@@ -327,21 +327,30 @@ function getDb() {
   _openedStorePath = storePath;
   mkdirSync(dirname(storePath), { recursive: true });
   db = new DatabaseSync(storePath, { allowExtension: true });
-  tryLoadVec(db);
+  try {
+    tryLoadVec(db);
 
-  db.exec(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA busy_timeout = 5000;
-    PRAGMA foreign_keys = ON;
-  `);
+    db.exec(`
+      PRAGMA busy_timeout = 5000;
+      PRAGMA journal_mode = WAL;
+      PRAGMA foreign_keys = ON;
+    `);
 
-  // fix-8: applyMemoryStoreSchema returns whether vec_memories actually
-  // exists on the handle after the schema apply. If CREATE VIRTUAL TABLE
-  // failed, mirror that back into the module-level flag so subsequent
-  // reads/writes avoid vec paths.
-  const { vecAvailable } = applyMemoryStoreSchema(db, _vecLoaded);
-  if (_vecLoaded && !vecAvailable) {
+    // fix-8: applyMemoryStoreSchema returns whether vec_memories actually
+    // exists on the handle after the schema apply. If CREATE VIRTUAL TABLE
+    // failed, mirror that back into the module-level flag so subsequent
+    // reads/writes avoid vec paths.
+    const { vecAvailable } = applyMemoryStoreSchema(db, _vecLoaded);
+    if (_vecLoaded && !vecAvailable) {
+      _vecLoaded = false;
+    }
+  } catch (error) {
+    // Do not cache a half-initialized handle after startup/migration fails.
+    try { db.close(); } catch {}
+    db = null;
     _vecLoaded = false;
+    _openedStorePath = null;
+    throw error;
   }
 
   return db;

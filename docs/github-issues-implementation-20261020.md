@@ -9,7 +9,7 @@
 | 1 | [#1 文件身份](https://github.com/MortredVigoss/Melo/issues/1) | 已完成：`47da231` 已推送，issue 已关闭；[双平台 CI](https://github.com/MortredVigoss/Melo/actions/runs/39260200905)通过 |
 | 2 | [#4 历史图片](https://github.com/MortredVigoss/Melo/issues/4) | 已完成：`94e76cb` 已推送，issue 已关闭；稳定图片身份、旧记录恢复与原图回归 |
 | 3 | [#3 自然搜索](https://github.com/MortredVigoss/Melo/issues/3) | 已完成：`1c48b6a` 已推送，issue 已关闭；专项 95/95、JS 4098/4098 与 Swift 通过 |
-| 4 | [#9 跨平台 CI](https://github.com/MortredVigoss/Melo/issues/9)、[#2 记忆库并发](https://github.com/MortredVigoss/Melo/issues/2) | #9 已通过全部远端 gate 并关闭（主线 `6fd2481`、手机 `b1529d0`）；#2 `00cf231` 已推送并关闭，完整日常通过 |
+| 4 | [#9 跨平台 CI](https://github.com/MortredVigoss/Melo/issues/9)、[#2 记忆库并发](https://github.com/MortredVigoss/Melo/issues/2) | #9 已通过全部远端 gate 并关闭（主线 `6fd2481`、手机 `b1529d0`）；#2 `00cf231` 已推送；后续冷启动锁回归重新打开，补丁待推送 |
 | 5 | [#5 通用循环](https://github.com/MortredVigoss/Melo/issues/5)、[#6 完成条件](https://github.com/MortredVigoss/Melo/issues/6)、[#8 事件](https://github.com/MortredVigoss/Melo/issues/8)、[#7 Android 上下文](https://github.com/MortredVigoss/Melo/issues/7) | #5 已接 Node/Swift 生产循环，Android 1af5377 待远端验证；未达全项验收，不关闭 |
 | 6 | [#11 项目生命周期](https://github.com/MortredVigoss/Melo/issues/11)、[#12 后端拆分](https://github.com/MortredVigoss/Melo/issues/12)、[#10 Fold 缓存](https://github.com/MortredVigoss/Melo/issues/10)、[#13 容量基线](https://github.com/MortredVigoss/Melo/issues/13)、[#14 Task Eval](https://github.com/MortredVigoss/Melo/issues/14) | 待执行；小型确定性回放伴随改动，真机/真实模型证据单列 |
 
@@ -90,3 +90,7 @@ Linux 首次完整回归（临时 Debian 容器）4072 pass / 3 fail / 22 skip�
 ## #5 共享循环
 
 按[实施约定](shared-loop-hardening-20261020.md)分离逐字移植与后续行为迁移。Core/预算/守卫已独立移植，Node/Swift 已接生产循环并通过专项；Android 1af5377 为远端验证节点。完整日常、iOS 编译及 Android CI 进行中，不能据此关闭 #5。
+
+### #2 冷启动并发补充
+
+#5 全量日常检出后台索引写入期间冷重启锁失败：首次 PRAGMA journal_mode 早于 busy_timeout，disposable schema 也在 finally 之外。已先安装等待策略，所有初始化失败关闭句柄，缓存不保留半初始化数据库。新增独立进程持有锁的确定性回归，cached/captured-path 两条启动路径修复前均失败，修复后连同原事务与真实 HTTP 并发/重启 5/5 通过。未加入盲重试。`memory-cold-lock-red.log` / `memory-cold-lock-green.log`；#2 已重新打开，待 Linux 与日常实际结果后发布关闭。
