@@ -36,7 +36,7 @@
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
-      "detected": 28,
+      "detected": 29,
       "unannotated": []
     }
   },
@@ -3543,6 +3543,7 @@
         ],
         "js": [
           "desktop-ui/anchorRouting.test.js",
+          "desktop-ui/appSwitchFreeze.test.js",
           "desktop-ui/bootstrapPatch.test.js",
           "desktop-ui/capabilityElevation.browser.test.js",
           "desktop-ui/committedSave.browser.test.js",
@@ -3570,6 +3571,7 @@
         "gen-interface-languages",
         "gen-ios-scene",
         "served-shared-modules",
+        "source-tests-app-dispatch-freeze",
         "source-tests-app-js",
         "source-tests-cross-module",
         "source-tests-index-html",
@@ -5275,6 +5277,21 @@
       "features": [
         "chat",
         "tooling"
+      ]
+    },
+    {
+      "id": "source-tests-app-dispatch-freeze",
+      "kind": "source-reading-test",
+      "reads": [
+        "desktop-ui/app.js",
+        "desktop-ui/features/**/*.js"
+      ],
+      "tests": [
+        "desktop-ui/appSwitchFreeze.test.js"
+      ],
+      "note": "B1-6 冻结 app.js 中央 click / submit 分发：新动作经 features/registry.js 登记，不加 case；同时守住功能模块不反向 import app.js。迁出 case 时同批删除测试内 BASELINE 对应名字",
+      "features": [
+        "desktop-shell"
       ]
     }
   ]

@@ -1164,6 +1164,18 @@
         "scripts/eval-agent-tasks.test.js"
       ],
       "note": "共用任务集、完整事件 golden、隔离 bundle 和 CLI 成本/证据比较；数据变化必须重跑。"
+    },
+    {
+      "id": "source-tests-app-dispatch-freeze",
+      "kind": "source-reading-test",
+      "reads": [
+        "desktop-ui/app.js",
+        "desktop-ui/features/**/*.js"
+      ],
+      "tests": [
+        "desktop-ui/appSwitchFreeze.test.js"
+      ],
+      "note": "B1-6 冻结 app.js 中央 click / submit 分发：新动作经 features/registry.js 登记，不加 case；同时守住功能模块不反向 import app.js。迁出 case 时同批删除测试内 BASELINE 对应名字"
     }
   ]
 }
