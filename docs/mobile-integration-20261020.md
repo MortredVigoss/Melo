@@ -35,3 +35,5 @@ Search 的最新主线纯函数体迁入 portable factory，Node 保持原导出
 Artifact Fixture 改走 State Store 的保存入口，避免直接改 state.json 后仍命中常驻快照。Memory 并发 Fixture 保留原进度/数据断言，通过 Atomics 通知等待独立 Worker 的实际进度。授权卡测试以注入 Clock 控制预算到期，保留 BUDGET_EXHAUSTED 和卡片关闭断言；不把机器调度耗时混入 20ms 的测试前置条件。
 
 PR：[GitHub #15](https://github.com/MortredVigoss/Melo/pull/15)。初轮 Integration CI：Linux Node/HTTP/Browser 和 Linux/macOS File Safety 已通过；macOS 尚未全绿，本分支仍处于验证阶段。
+
+验证补充：Android Runtime 共 73 项，0 失败/跳过；Node 与 Android 的 11 个 Task Replay 结果逐项一致。Memory 修复后四份独立并行 HTTP 场景均通过。第三轮本机全 JS 只剩 Backup 排序 Fixture 的 5ms 墙钟假设失败，已改为给持久 Manifest 写入明确的先后时间，原排序断言保留；18 项 Backup 专项通过。CI 增加 unsigned iOS Simulator App 编译，不签名、不安装，避免只验 Swift 小套件而漏掉原生项目集成。
