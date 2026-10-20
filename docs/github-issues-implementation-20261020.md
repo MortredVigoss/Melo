@@ -10,7 +10,7 @@
 | 2 | [#4 历史图片](https://github.com/MortredVigoss/Melo/issues/4) | 已完成：`94e76cb` 已推送，issue 已关闭；稳定图片身份、旧记录恢复与原图回归 |
 | 3 | [#3 自然搜索](https://github.com/MortredVigoss/Melo/issues/3) | 已完成：`1c48b6a` 已推送，issue 已关闭；专项 95/95、JS 4098/4098 与 Swift 通过 |
 | 4 | [#9 跨平台 CI](https://github.com/MortredVigoss/Melo/issues/9)、[#2 记忆库并发](https://github.com/MortredVigoss/Melo/issues/2) | #9 已通过全部远端 gate 并关闭（主线 `6fd2481`、手机 `b1529d0`）；#2 与冷启动补充 `239953b` 已推送并关闭，Mac/Linux 并发与完整日常通过 |
-| 5 | [#5 通用循环](https://github.com/MortredVigoss/Melo/issues/5)、[#6 完成条件](https://github.com/MortredVigoss/Melo/issues/6)、[#8 事件](https://github.com/MortredVigoss/Melo/issues/8)、[#7 Android 上下文](https://github.com/MortredVigoss/Melo/issues/7) | #5 已完成并关闭：主线 d2dcd02、Android 6209a2a，三端验证通过。#6 已完成关闭：主线 4c3ebb5、Android 05592af，见[完成回执](completion-receipts-20261020.md)；#8 a2551cf/5f3d834 已推送关闭，CI 39366995591 全过；#7 实施中 |
+| 5 | [#5 通用循环](https://github.com/MortredVigoss/Melo/issues/5)、[#6 完成条件](https://github.com/MortredVigoss/Melo/issues/6)、[#8 事件](https://github.com/MortredVigoss/Melo/issues/8)、[#7 Android 上下文](https://github.com/MortredVigoss/Melo/issues/7) | #5 已完成并关闭：主线 d2dcd02、Android 6209a2a，三端验证通过。#6 已完成关闭：主线 4c3ebb5、Android 05592af，见[完成回执](completion-receipts-20261020.md)；#8 a2551cf/5f3d834 已推送关闭，CI 39366995591 全过；#7 主线 fd0dfd7 / Android ef276a5 验证通过，推送关闭中 |
 | 6 | [#11 项目生命周期](https://github.com/MortredVigoss/Melo/issues/11)、[#12 后端拆分](https://github.com/MortredVigoss/Melo/issues/12)、[#10 Fold 缓存](https://github.com/MortredVigoss/Melo/issues/10)、[#13 容量基线](https://github.com/MortredVigoss/Melo/issues/13)、[#14 Task Eval](https://github.com/MortredVigoss/Melo/issues/14) | 待执行；小型确定性回放伴随改动，真机/真实模型证据单列 |
 
 ## #1 实施约定与证据
@@ -104,3 +104,7 @@ Linux 首次完整回归（临时 Debian 容器）4072 pass / 3 fail / 22 skip�
 ### #6 完成回执
 
 主线 `4c3ebb5` 完整日常 4303 JS + 35 Swift、iPhone simulator 构建及 Linux/macOS CI `39364201758` 全过；Android `05592af` 的 CI `39365644626` JVM/Lint/Debug/R8、模拟器 66/66、零跳过。完成条件、证据与未知边界见 [专项](completion-receipts-20261020.md)。按用户授权已推送并关闭 #6，#8 已推送并关闭，见 [事件投影](session-events-20261020.md)。
+
+### #7 完成验证
+
+见 [Android 上下文](android-context-20261020.md)。主线 4322 JS / 35 Swift 全过；Android CI `39375015622` Core/JVM/Lint/Debug/R8 与模拟器 68/68、零跳过全部通过。保留原始失败证据，拆分每请求协程后恢复取消/重试；没有调用真实模型或操作实体设备。按用户授权推送两条既有生产分支，再关闭对应 issue。

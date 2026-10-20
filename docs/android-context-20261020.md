@@ -11,3 +11,13 @@
 Android 的 `read_history` 只读取本轮捕获的当前对话原文，支持消息 ID、关键词、连续字符游标。摘录卡保存消息区间，原文不覆盖；本机 Room 保存压缩边界，旧数据默认空卡。规则摘录不会冒充云模型摘要。项目、资料、记忆开关为本机 Agent 设置；v1 导出不添加新字段，旧端同步不能重置本机开关。手机执行器收到同一份已过滤的指令。
 
 主线 `context-daily.log`：基准 a2551cf，4322/4322 JS、5 项生成预检、35 Swift（89 共享 fixture）通过，147.7 秒。Android 初版 `91f2f95` 的 Core 139/139，远端 run 39370040626 验证中；后续补充图片对象替换时工具链边界回归，必须以最终提交的 CI 为准。未重装、未操作真实数据。
+
+## 最终验收
+
+主线实现 `fd0dfd7`（前置逐字移植 `ae95e5d`）日常 **4322 JS + 35 Swift** 通过；Core 89 条跨运行时 fixture。Android 实现包含 `91f2f95`、`71d56ea`、`284a642`、`ef276a5`，最后的 [CI 39375015622](https://github.com/MortredVigoss/Melo/actions/runs/39375015622)全部通过：Core/JVM/Lint/Debug/R8、Android 16 Emulator **68/68，零失败、零跳过**。
+
+前三次模拟器检出 ART 在恢复 `SharedChatAgent.reply` 大协程时的 SIGSEGV，未跳过失败。APK DEX 检查显示原方法 84,848 code units、311 registers；仅拆 JSON builder 未解决。最终使用每请求独立 ReplySession，分离准备、请求和执行，公共 reply 降为 804 units、50 registers，原取消/重试及新三协议长历史/Room 重开用例全部通过。工具顺序、预算、来源、取消及资源关闭策略保留。
+
+证据：`.tmp/github-issues-fix-20261020/context-daily.log`、`context-android-final-ci.log`、`context-android-final-report/`。失败原始 logcat 与 APK 同样保留；没有用降低 Android API、跳过或重试测试掩盖失败。原文回读只读当前聊天；摘要标为规则摘录、保留原文定位，不声称模型语义总结。
+
+验证使用隔离账号状态和受控 HTTP，没有真实模型或实体 Fold 验收，没有安装用户应用。Android 仍发布到既有手机分支，主线共享 Core 同步到 iPhone bundle。
