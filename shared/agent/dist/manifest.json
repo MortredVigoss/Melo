@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "sha256": "1f443dd5f0522d806b29068aa3a76e225ab3bcea99c38608b794dbf9acd53823",
+  "sha256": "47d25ea0e43eb955bc1ff9be85622266a9aae6e767c26dfffdd74657ec8ac354",
   "sources": {
-    "shared/agent/index.js": "736a27927dcee993ef6ed62a1629cdfce5b5dc37c7121e2c9b95f1db111771fb",
+    "shared/agent/index.js": "bb1a888bc0cd01f9956d8468e83da434ba06b82e9fc34efd0cc6b1812da75d23",
     "shared/agent/turn.js": "5d4e828fa1d2ce06355e6abd41c05dafdd7c4aee5185229af088aef14f4be568",
     "shared/agent/tools.js": "d10a7113f6cca1240603c8a5c0004a689dc85163ebde300459ff4d8f454db5da",
     "shared/agent/search.js": "ee339f81da4a99c0d3d682de24269b60b78958bf0c07743bc3115d99ab197418",
@@ -12,6 +12,9 @@
     "shared/agent/skill/skillService.js": "d6dbbde1f4ce3f4a7fd3fd89de23eb688c9f80d4de43780f806e46f26f4f8644",
     "shared/agent/hostedSearch.js": "75d1a1be8b0350ae05fba5602b17704857f3b85cb13f0bf38982413ba442226a",
     "shared/agent/execution.js": "e76531b1747495cde0573a8f8e1e554b35d229485bd46b0981868be04f40e3a2",
-    "src/shared/replyDocument.js": "824fa3e1fe139e41d690a450ab2995a09ee5a3b9f575174087aa154dae96032d"
+    "src/shared/replyDocument.js": "824fa3e1fe139e41d690a450ab2995a09ee5a3b9f575174087aa154dae96032d",
+    "shared/agent/policyBridge.js": "2e702b58c84c4c99beac76831cac690174bdecbf465f8d6413b547607be053f8",
+    "shared/agent/runBudget.js": "255abb304224c654ba4d563dc1404b7a96ced321c0ef73826c598e25fa52e12b",
+    "shared/agent/loopContract.js": "cb867412c651008a1ab8de6cd3b71d4fa60ce68332d93eb013018cabaa4c08ea"
   }
 }

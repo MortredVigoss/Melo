@@ -19,7 +19,7 @@ final class PhoneRunBudget: @unchecked Sendable {
         let limit: Double
         let used: Double
         let usage: Usage
-        var reasonText: String { loopContract.budgetReasonText[reason] ?? reason }
+        var reasonText: String { reason == "policy-unavailable" ? "共享运行策略不可用" : loopContract.budgetReasonText[reason] ?? reason }
     }
     private static let lock = NSLock()
     static func wallClock() -> Double { Date().timeIntervalSince1970 * 1000 }
@@ -32,61 +32,88 @@ final class PhoneRunBudget: @unchecked Sendable {
     let parent: PhoneRunBudget?
     let now: () -> Double
 
-    init(deadlineMs: Double? = nil, maxInputTokens: Int? = nil, maxToolCalls: Int? = nil, now: @escaping () -> Double = PhoneRunBudget.wallClock) {
-        self.now = now
-        startedAt = now()
-        deadlineAt = startedAt + (deadlineMs ?? loopContract.deadlineMs)
-        self.maxInputTokens = maxInputTokens ?? loopContract.maxInputTokens
-        self.maxToolCalls = maxToolCalls ?? loopContract.maxToolCalls
-        parent = nil
+    private var policyAvailable = true
+    private var available: Bool { policyAvailable && (parent?.available ?? true) }
+    private func invalidatePolicy() {
+        var node: PhoneRunBudget? = self
+        while let current = node { current.policyAvailable = false; node = current.parent }
     }
-    private init(parent: PhoneRunBudget, startedAt: Double, deadlineAt: Double, maxInputTokens: Int, maxToolCalls: Int) {
+
+    init(deadlineMs: Double? = nil, maxInputTokens: Int? = nil, maxToolCalls: Int? = nil, now: @escaping () -> Double = PhoneRunBudget.wallClock) {
+        self.now = now; parent = nil
+        startedAt = now(); deadlineAt = startedAt; self.maxInputTokens = 0; self.maxToolCalls = 0
+        var options: [String: Any] = [:]
+        if let deadlineMs { options["deadlineMs"] = deadlineMs }
+        if let maxInputTokens { options["maxInputTokens"] = maxInputTokens }
+        if let maxToolCalls { options["maxToolCalls"] = maxToolCalls }
+        apply(Self.operation("create", time: startedAt, fields: ["options": options]) as? [String: Any])
+    }
+    private init(parent: PhoneRunBudget, state: [String: Any]?) {
         self.parent = parent; now = parent.now
-        self.startedAt = startedAt; self.deadlineAt = deadlineAt
-        self.maxInputTokens = maxInputTokens; self.maxToolCalls = maxToolCalls
+        startedAt = now(); deadlineAt = startedAt; maxInputTokens = 0; maxToolCalls = 0
+        apply(state, ancestors: false)
+    }
+    private static func operation(_ action: String, time: Double, fields: [String: Any] = [:]) -> Any? {
+        var input = fields; input["action"] = action; input["now"] = time
+        return SharedLoopPolicy.value("budget", input)
+    }
+    // Called while the native ownership lock is held. The JS policy receives
+    // a value snapshot, and never holds or mutates native objects itself.
+    private func snapshot() -> [String: Any] {
+        ["startedAt": startedAt, "deadlineAt": deadlineAt, "maxInputTokens": maxInputTokens, "maxToolCalls": maxToolCalls,
+         "used": ["inputTokens": usedValue.inputTokens, "toolCalls": usedValue.toolCalls, "providerCalls": usedValue.providerCalls],
+         "parent": parent.map { $0.snapshot() } as Any? ?? NSNull()]
+    }
+    private func apply(_ state: [String: Any]?, ancestors: Bool = true) {
+        guard let state, let start = state["startedAt"] as? Double, let deadline = state["deadlineAt"] as? Double,
+              let tokens = state["maxInputTokens"] as? Int, let calls = state["maxToolCalls"] as? Int,
+              let usage = state["used"] as? [String: Int] else { invalidatePolicy(); return }
+        startedAt = start; deadlineAt = deadline; maxInputTokens = tokens; maxToolCalls = calls
+        usedValue = Usage(inputTokens: usage["inputTokens"] ?? 0, toolCalls: usage["toolCalls"] ?? 0, providerCalls: usage["providerCalls"] ?? 0)
+        if ancestors, let parent { parent.apply(state["parent"] as? [String: Any]) }
     }
     var used: Usage { Self.lock.lock(); defer { Self.lock.unlock() }; return usedValue }
 
-    /// `armBudget`: re-base an untouched root budget to now.
     func arm() {
         Self.lock.lock(); defer { Self.lock.unlock() }
-        guard parent == nil, usedValue == Usage() else { return }
-        let time = now()
-        deadlineAt = time + (deadlineAt - startedAt); startedAt = time
+        guard available else { return }
+        apply(Self.operation("arm", time: now(), fields: ["budget": snapshot()]) as? [String: Any])
     }
-    func remainingMs(at time: Double? = nil) -> Double { max(0, deadlineAt - (time ?? now())) }
-    /// Provider request timeout: min(cap, remaining), in seconds.
-    func requestTimeout(cap: TimeInterval) -> TimeInterval { max(0, min(cap, min(loopContract.requestTimeoutCapMs, remainingMs()) / 1000)) }
-    /// `recordUsage`: this budget and every ancestor.
+    func remainingMs(at time: Double? = nil) -> Double {
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        guard available else { return 0 }
+        return Self.operation("remaining", time: time ?? now(), fields: ["budget": snapshot()]) as? Double ?? 0
+    }
+    func requestTimeout(cap: TimeInterval) -> TimeInterval {
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        guard available else { return 0 }
+        let milliseconds = Self.operation("timeout", time: now(), fields: ["budget": snapshot()]) as? Double ?? 0
+        return min(cap, milliseconds / 1000)
+    }
     func record(inputTokens: Int = 0, toolCalls: Int = 0, providerCalls: Int = 0) {
         Self.lock.lock(); defer { Self.lock.unlock() }
-        var node: PhoneRunBudget? = self
-        while let current = node {
-            current.usedValue.inputTokens += max(0, inputTokens)
-            current.usedValue.toolCalls += max(0, toolCalls)
-            current.usedValue.providerCalls += max(0, providerCalls)
-            node = current.parent
-        }
+        guard available else { return }
+        apply(Self.operation("record", time: now(), fields: ["budget": snapshot(), "usage": ["inputTokens": inputTokens, "toolCalls": toolCalls, "providerCalls": providerCalls]]) as? [String: Any])
     }
-    /// `budgetExhausted`: nil while the run may continue; a child is also exhausted when an ancestor is.
     func exhausted(at time: Double? = nil) -> Exhaustion? {
-        let time = time ?? now()
-        let usage = used
-        if time >= deadlineAt { return Exhaustion(reason: "deadline", limit: deadlineAt - startedAt, used: time - startedAt, usage: usage) }
-        if usage.inputTokens >= maxInputTokens { return Exhaustion(reason: "input-tokens", limit: Double(maxInputTokens), used: Double(usage.inputTokens), usage: usage) }
-        if usage.toolCalls >= maxToolCalls { return Exhaustion(reason: "tool-calls", limit: Double(maxToolCalls), used: Double(usage.toolCalls), usage: usage) }
-        return parent?.exhausted(at: time)
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        let unavailable = Exhaustion(reason: "policy-unavailable", limit: 0, used: 0, usage: usedValue)
+        guard available else { return unavailable }
+        let result = Self.operation("exhausted", time: time ?? now(), fields: ["budget": snapshot()])
+        if result is NSNull { return nil }
+        guard let value = result as? [String: Any], let reason = value["reason"] as? String,
+              let limit = value["limit"] as? Double, let spent = value["used"] as? Double,
+              let usage = value["usage"] as? [String: Int] else { invalidatePolicy(); return unavailable }
+        return Exhaustion(reason: reason, limit: limit, used: spent, usage: Usage(inputTokens: usage["inputTokens"] ?? 0, toolCalls: usage["toolCalls"] ?? 0, providerCalls: usage["providerCalls"] ?? 0))
     }
-    /// `narrowBudget`: limits are min(child, parent remaining); the deadline is shared or earlier.
     func narrowed(deadlineMs: Double? = nil, maxInputTokens: Int? = nil, maxToolCalls: Int? = nil) -> PhoneRunBudget {
-        let start = now()
-        var deadline = deadlineAt
-        if let deadlineMs, deadlineMs > 0 { deadline = min(deadline, start + deadlineMs) }
-        let usage = used
-        func limit(_ own: Int?, _ remaining: Int) -> Int { max(0, min(own.flatMap { $0 > 0 ? $0 : nil } ?? Int.max, remaining)) }
-        return PhoneRunBudget(parent: self, startedAt: start, deadlineAt: deadline,
-                              maxInputTokens: limit(maxInputTokens, self.maxInputTokens - usage.inputTokens),
-                              maxToolCalls: limit(maxToolCalls, self.maxToolCalls - usage.toolCalls))
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        var options: [String: Any] = [:]
+        if let deadlineMs { options["deadlineMs"] = deadlineMs }
+        if let maxInputTokens { options["maxInputTokens"] = maxInputTokens }
+        if let maxToolCalls { options["maxToolCalls"] = maxToolCalls }
+        let result = available ? Self.operation("narrow", time: now(), fields: ["budget": snapshot(), "options": options]) as? [String: Any] : nil
+        return PhoneRunBudget(parent: self, state: result)
     }
     /// `describeBudgetReason`
     static func describe(_ exhausted: Exhaustion) -> String {

@@ -5,6 +5,7 @@ import { toolCatalog, validateCommonTool, normalizeRuntimeConfig, normalizeSearc
 import { connectionIdentity, hostedCapability, hostedSearchReceipt, hostedSearchProof } from './hostedSearch.js';
 import { executionScene, executionContext, publicReasoning } from './execution.js';
 import { parseReplyDocument, inlineSpans, replyPresentation } from '../../src/shared/replyDocument.js';
+import { budgetOperation } from './policyBridge.js';
 
 export function evaluate(input) {
   try {
@@ -12,6 +13,7 @@ export function evaluate(input) {
     let value;
     switch (input.op) {
       case 'hello': value = { version: CORE_VERSION, runtime: 'melo-local-core', portable: true }; break;
+      case 'budget': value = budgetOperation(input); break;
       case 'plan': value = planRequest(input.request); break;
       case 'actionEvidence': value = actionEvidence(input.plan, input.urls); break;
       case 'skills': value = buildSkills(input.enabledIds, input.customSkills); break;

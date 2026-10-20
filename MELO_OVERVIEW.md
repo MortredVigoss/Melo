@@ -59,13 +59,12 @@
 
 ## 4. 最新交接
 
-### 2026-10-20 — melo主线（Codex）— GitHub #5 共享循环与预算移植
-- 线程 ID：`01a13b2e-5446-7042-bb5e-773129746c7e`；#1/#4/#3/#9/#2 已推送并在 GitHub 关闭。#2 `00cf231` 日常 JS 4101/4101、32 组 Swift、Linux 专项 12/12；#9 各平台远端实际通过。
-- 入口：`shared/agent/`、`src/runtime/sharedAgentCore.js`、`ios/Melo/SharedAgentCore.swift` 与生成器，逐字移植手机 `9522cb9`；Xcode 增加 JS bundle 资源，测试发现/地图收录 Core。原有主线生产循环尚未替换。
-- 状态：第一阶段 `9748e51` 本地提交，25 个文件按原 blob 比对；`src/shared/replyDocument.js` 保留全部原前缀，只追加既有手机展示函数。没有整条分支合并，没有搬动用户数据。
-- 验证：Core JS 84/84、JSCore 49 fixtures、打包散列/隔离和 JSON 注入边界通过；发现/地图与 gate 夹具 11/11；完整日常 JS 4185/4185、33 组 Swift 与浏览器等全过。详情见[共享循环实施约定](docs/shared-loop-hardening-20261020.md)。
-- 预算：现行 `runBudget.js` 逐字移到 `shared/agent/runBudget.js`，原 Node 入口只重导出；JSON 生成便携契约，专项 21/21，完整日常 JS 4185/4185、33 组 Swift 与浏览器等通过；此阶段独立本地提交。
-- 下一步：预算逐字移植独立提交后，同源化通用策略并接主聊天/子 Agent/技能/Swift/Kotlin 生产入口。#5 未完成，保持打开；不运行 git pp。
+### 2026-10-20 — melo主线（Codex）— GitHub #5 同源预算接入
+- 线程 ID：`01a13b2e-5446-7042-bb5e-773129746c7e`；#1/#4/#3/#9/#2 已推送并关闭；#2 远端完整与安全 CI 均通过（39348412983 / 39348412944）。
+- 状态：独立 `.tmp/github-issues-main` 工作树；Core/桥 `9748e51`、预算实现 `153f1d9` 已本地提交，未推送；保留共享主树其他线程权限改动。
+- 行为：Swift `PhoneRunBudget` 的创建、收紧、用量、截止和停止判断已调用便携预算实现；Native 保留锁、父对象与时钟。`SharedAgentCore.swift` 只从应用资源加载，工作目录回退仅在测试编译开启；缺失时停止请求与工具。
+- 验证：预算桥与原 Core 57/57；Swift 契约 130 fixture、生产 AgentLoop 及缺失资源零模型调用共 3 组通过。完整日常 JS 4187/4187、34 组 Swift、浏览器/语法/文档全通过（431.8 秒）；证据 `.tmp/github-issues-fix-20261020/core-swift-budget-final.log` / `core-budget-swift-daily.log`。
+- 未完：重复失败/无进展/终态接主聊天、子 Agent、技能、Swift、Kotlin；#5 保持打开。[实施与证据](docs/github-issues-implementation-20261020.md)；不运行 git pp、不安装、不改真实数据。
 
 此前交接（原文见[历史交接](docs/handoffs/overview-history-20261019.md)，新者在后）：10-19 双端逻辑只读审计 → 七项修复与最终日常 → 双端覆盖安装与数据保留 → 架构维护成本审计与方案 → GitHub 权限只读核对 → 架构方案 P0 执行 → 架构方案 P2a 记忆页与项目页 → 架构方案 P2b Agent 设置 → 架构方案 P2c 聊天拆分 → Claude 架构 P0–P2 独立审计 → 已提交保存恢复 R1 修复。
 

@@ -47,3 +47,7 @@
 后续接线注意：桌面 web_search/fetch_url 与便携 Core 的最小工具 schema 不同，迁移必须保留现行字段/NULL/32 调用边界，不能因为碰巧同名被旧便携 schema 拒绝。Swift 的 JS bundle 初始化失败必须明确停止，测试资源通过专门测试入口注入，不能在产品里从工作目录加载脚本。Host 保留真实取消、并行调度、父级记账和审批；决策改从同源代码取结果。
 
 第二阶段 A 最终：`core-budget-port-daily.log` 日常 JS 4185/4185、33 组 Swift、浏览器/语法/文档全通过（174.5 秒）；未改变用户数据或应用安装。此预算实现移植独立提交，随后再改 Host 接口。
+
+第二阶段 B：已新增预算 JSON 操作，Swift PhoneRunBudget 生产调用同源创建/截止/父子收紧/记账/停止逻辑，Native 仍拥有锁与父预算。bundle 只从签名应用资源加载，测试目录回退受 MELO_TEST 编译标志限制；缺失/损坏使当前及祖先预算停止。预算桥与 Core 57/57；Swift 3 组（契约 130 fixture、AgentLoop、资源缺失零调用）通过。证据 `core-budget-bridge.log`、`core-swift-budget-final.log`，完整日常进行中。
+
+第二阶段 B 最终：`core-budget-swift-daily.log` 日常 JS 4187/4187、34 组 Swift、浏览器/语法/文档全通过，431.8 秒；未安装或访问用户数据。

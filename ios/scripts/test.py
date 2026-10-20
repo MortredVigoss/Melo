@@ -16,7 +16,7 @@ if '--renderer-only' in sys.argv:
 if platform.system() != 'Darwin':
     print('Swift iOS protocol tests require macOS; JS/renderer gate passed; Swift explicitly skipped')
     raise SystemExit(0)
-shared=['ios/Melo/ImageWorkflow.swift','ios/Melo/ImageLibrary.swift','ios/Melo/ImageNetwork.swift','ios/Melo/Network.swift','ios/Melo/Models.swift','ios/Melo/ConversationHistory.swift','ios/Melo/PhoneContext.swift','ios/Melo/WebSources.swift','ios/Melo/ExecutionRecord.swift','ios/Melo/ChatGPTProtocol.swift','ios/Melo/DeviceTools.swift','ios/Melo/WebPageText.swift','ios/Melo/ImageContext.swift','ios/Melo/RunProgress.swift','ios/Melo/AgentLoopContract.swift','ios/Melo/AgentLoopRuntime.swift','ios/Melo/AgentLoop.swift']
+shared=['ios/Melo/ImageWorkflow.swift','ios/Melo/ImageLibrary.swift','ios/Melo/ImageNetwork.swift','ios/Melo/Network.swift','ios/Melo/Models.swift','ios/Melo/ConversationHistory.swift','ios/Melo/PhoneContext.swift','ios/Melo/WebSources.swift','ios/Melo/ExecutionRecord.swift','ios/Melo/ChatGPTProtocol.swift','ios/Melo/DeviceTools.swift','ios/Melo/WebPageText.swift','ios/Melo/ImageContext.swift','ios/Melo/RunProgress.swift','ios/Melo/AgentLoopContract.swift','ios/Melo/AgentLoopRuntime.swift','ios/Melo/AgentLoop.swift','ios/Melo/SharedAgentCore.swift']
 suites={'main':['ios/Melo/Models.swift'], 'NetworkTests':shared, 'ConnectionProbeTests':['ios/Melo/ConnectionProbe.swift'], 'ChatGPTTests':shared, 'SSETransportTests':shared, 'WebSearchTests':shared, 'ExecutionTests':shared, 'ExecutionPageTests':['ios/Melo/ExecutionPagePolicy.swift']}
 suites['ConversationFoundationTests']=shared+['ios/Melo/AgentProfile.swift','ios/Melo/ReplyDocument.swift','ios/Melo/WorkspaceProjection.swift']
 suites['SyncContractTests']=['ios/Melo/Models.swift']
@@ -39,6 +39,7 @@ suites['VideoStudyTests']=shared+['ios/Melo/AgentProfile.swift','ios/Melo/VideoS
 suites['RunProgressTests']=shared
 suites['LocalFileAccessTests']=['ios/Melo/LocalFileAccess.swift']
 suites['SharedAgentCoreTests']=['ios/Melo/SharedAgentCore.swift']
+suites['SharedPolicyUnavailableTests']=shared+['ios/Melo/AgentProfile.swift','ios/Melo/AgentTeam.swift']
 suites['ImagePhotoSaveTests']=['ios/Melo/ImagePhotoSave.swift']
 suites['WebPageToolsTests']=shared  # WebPageTools.swift needs WebKit/UIKit; only the pure half (WebPageText.swift, envelope in AgentLoopRuntime.swift) compiles here
 suites['AgentLoopTests']=shared+['ios/Melo/AgentProfile.swift','ios/Melo/AgentTeam.swift']  # AgentLoop with a fake transport: limits, budget, guard, supplements, condensation, trace, finalize
@@ -61,5 +62,5 @@ for name, sources in suites.items():
     if name in ['EditDraftTests','EditDraftStorageTests','AgentEditTests']: sources = sources + ['ios/Melo/DraftMerge.swift']
     if 'ios/Melo/Models.swift' in sources: sources = sources + ['ios/Melo/SyncWorkspace.swift','ios/Melo/MemoryFacts.swift']
     cached += cached_suite(root, root/'.tmp/ios-test-cache', name, sources+['ios/Tests/'+name+'.swift'],
-                           toolchain, ['xcrun','swiftc'])
+                           toolchain, ['xcrun','swiftc'] + (['-D','MELO_TEST'] if 'ios/Melo/SharedAgentCore.swift' in sources else []))
 print(f'All {len(suites)} Swift suites passed; {cached} cached compilations; {time.monotonic()-swift_started:.2f}s',flush=True)

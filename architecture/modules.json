@@ -22,8 +22,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 579,
-      "edges": 1743,
+      "modules": 580,
+      "edges": 1745,
       "roots": [
         "src",
         "desktop-ui",
@@ -696,7 +696,7 @@
       ],
       "modules": {
         "desktop-ui": 27,
-        "shared": 14,
+        "shared": 15,
         "src": 63
       },
       "entryModules": [
@@ -1047,6 +1047,7 @@
           "desktop-ui/replyDelivery.test.js",
           "desktop-ui/replyDocument.test.js",
           "scripts/generate-agent-loop-contract.test.js",
+          "shared/agent/budgetBridge.test.js",
           "shared/agent/conformance.test.js",
           "shared/agent/continuation.test.js",
           "shared/agent/execution.test.js",
@@ -3520,7 +3521,8 @@
           "ios/Tests/SceneBridge.test.js"
         ],
         "swift": [
-          "ios/Tests/LifecycleJournalTests.swift"
+          "ios/Tests/LifecycleJournalTests.swift",
+          "ios/Tests/SharedPolicyUnavailableTests.swift"
         ]
       },
       "implicit": [
