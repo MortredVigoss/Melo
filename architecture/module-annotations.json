@@ -444,7 +444,7 @@
         "test:scripts"
       ],
       "notes": [
-        "npm test = verify-daily.js（按 scripts/test-plan.js 选组）；npm run test:full 为发布 gate。npm run scope 只报告，不改选组。"
+        "npm test = verify-daily.js（test-plan.js / test-impact.js 按功能、反向依赖及隐式边选组）；npm run test:full 为发布 gate。scope 使用相同选组器，只输出报告。"
       ]
     }
   },
@@ -1116,6 +1116,19 @@
         "shared/agent/conformance.test.js"
       ],
       "note": "运行源码与隔离 bundle 对照，并校验逐源文件散列和 iOS 原样打包"
+    },
+    {
+      "id": "tooling-ios-tests",
+      "kind": "source-reading-test",
+      "reads": [
+        "ios/scripts/test.py",
+        "ios/scripts/swift_test_cache.py"
+      ],
+      "tests": [
+        "scripts/ios-test-selection.test.js",
+        "scripts/swift-test-cache.test.js"
+      ],
+      "note": "手机 suite 清单、资源预检、组合门禁去重与编译缓存的执行契约"
     }
   ]
 }
