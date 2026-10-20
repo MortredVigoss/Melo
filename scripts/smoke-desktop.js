@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { buildConversationContinuityContext } from '../src/desktopStore.js';
 
@@ -682,111 +683,35 @@ async function main() {
     '/api/search/files?q=' + encodeURIComponent(smokeArtifactBody) +
       `&projectId=${encodeURIComponent(projectId)}`,
   );
-  let telegramRoundTripTitle = null;
-  let telegramRoundTripReply = null;
-  let telegramRoundTripAgentId = null;
-  let telegramRoundTripCount = 0;
-  let telegramTypingCount = 0;
-  let telegramImageRoundTripReply = null;
-  let telegramImageRoundTripCount = 0;
-
+  let telegramArchived = false;
+  let telegramConfigurationPreserved = false;
+  let telegramBlockedStatus = null;
+  let telegramApiRequests = null;
   if (telegramMockUrl) {
-    await requestTelegramMock('/__reset', {
-      method: 'POST',
-    });
-
-    const createdTelegramAgent = await request('/api/agents/create-custom', {
-      method: 'POST',
-    });
-    telegramRoundTripAgentId = createdTelegramAgent.settings?.selectedAgentId || null;
-
-    if (telegramRoundTripAgentId) {
-      await request('/api/agents/update', {
-        method: 'POST',
-        body: {
-          agentId: telegramRoundTripAgentId,
-          scope: 'global',
-          patch: {
-            name: 'Telegram smoke agent',
-            description: 'Used to verify Telegram round-trips in the smoke suite.',
-            channels: {
-              telegram: {
-                enabled: true,
-                botToken: telegramMockToken,
-                chatId: 'telegram-smoke',
-              },
-              discord: {
-                enabled: false,
-                botToken: '',
-                guildId: '',
-                channelId: '',
-              },
-            },
-          },
-        },
-      });
-
-      telegramRoundTripTitle = 'Telegram smoke ping';
-      await requestTelegramMock('/__seed-update', {
-        method: 'POST',
-        body: {
-          chatId: 'telegram-smoke',
-          text: telegramRoundTripTitle,
-        },
-      });
-
-      const deadline = Date.now() + 12000;
-      while (Date.now() < deadline) {
-        const sentPayload = await requestTelegramMock('/__sent');
-        telegramRoundTripCount = Array.isArray(sentPayload.sentMessages)
-          ? sentPayload.sentMessages.length
-          : 0;
-        telegramTypingCount = Array.isArray(sentPayload.sentActions)
-          ? sentPayload.sentActions.filter(action => action.action === 'typing').length
-          : 0;
-        if (telegramRoundTripCount > 0) {
-          telegramRoundTripReply = sentPayload.sentMessages[telegramRoundTripCount - 1]?.text || null;
-          break;
-        }
-
-        await new Promise(resolve => setTimeout(resolve, 350));
-      }
-
-      if (!telegramRoundTripReply) {
-        throw new Error('Telegram mock did not receive a reply from Melo.');
-      }
-
-      if (telegramTypingCount < 1) {
-        throw new Error('Telegram mock did not observe a typing indicator.');
-      }
-
-      await requestTelegramMock('/__seed-update', {
-        method: 'POST',
-        body: {
-          chatId: 'telegram-smoke',
-          photo: true,
-        },
-      });
-
-      const imageDeadline = Date.now() + 12000;
-      while (Date.now() < imageDeadline) {
-        const sentPayload = await requestTelegramMock('/__sent');
-        const sentMessages = Array.isArray(sentPayload.sentMessages)
-          ? sentPayload.sentMessages
-          : [];
-        if (sentMessages.length > telegramRoundTripCount) {
-          telegramImageRoundTripCount = sentMessages.length;
-          telegramImageRoundTripReply = sentMessages[sentMessages.length - 1]?.text || null;
-          break;
-        }
-
-        await new Promise(resolve => setTimeout(resolve, 350));
-      }
-
-      if (!telegramImageRoundTripReply) {
-        throw new Error('Telegram mock did not receive a reply to a photo-only update from Melo.');
-      }
-    }
+    await requestTelegramMock('/__reset', { method: 'POST' });
+    const created = await request('/api/agents/create-custom', { method: 'POST' });
+    const agentId = created.settings.selectedAgentId;
+    const saved = await request('/api/agents/update', { method: 'POST', body: {
+      agentId, scope: 'global', patch: { name: 'Archived Telegram smoke agent',
+        channels: { telegram: { enabled: true, botToken: telegramMockToken, chatId: 'telegram-smoke' } },
+      },
+    } });
+    const channel = saved.customize.agents.find(agent => agent.id === agentId).channels.find(channel => channel.id === 'telegram');
+    telegramArchived = channel.archived === true;
+    telegramConfigurationPreserved = channel.enabled === true && channel.botToken === telegramMockToken && channel.chatId === 'telegram-smoke';
+    assert.equal(telegramArchived, true, 'Telegram must remain archived');
+    assert.equal(telegramConfigurationPreserved, true, 'Archiving must retain channel configuration');
+    await requestTelegramMock('/__seed-update', { method: 'POST', body: { chatId: 'telegram-smoke', text: 'Archived text must not trigger a reply' } });
+    await requestTelegramMock('/__seed-update', { method: 'POST', body: { chatId: 'telegram-smoke', photo: true } });
+    const blocked = await fetch(`${baseUrl}/api/agents/channel/test`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ agentId, channelId: 'telegram' }) });
+    telegramBlockedStatus = blocked.status;
+    assert.equal(telegramBlockedStatus, 410);
+    assert.equal((await blocked.json()).code, 'CHANNEL_ARCHIVED');
+    const sent = await requestTelegramMock('/__sent');
+    telegramApiRequests = sent.apiRequests;
+    assert.equal(telegramApiRequests, 0, 'Archived channels must not poll or call the bot API');
+    assert.deepEqual(sent.sentMessages, [], 'Neither text nor photo updates cause outbound replies');
+    assert.deepEqual(sent.sentActions, [], 'Archived channels do not send typing indicators');
   }
 
   const approval = await request('/api/approvals', {
@@ -978,13 +903,10 @@ async function main() {
     agentSoulMatches:
       Boolean(mainUpdatedAgent?.soulMd) &&
       soulFileContent.trim() === String(mainUpdatedAgent.soulMd).trim(),
-    telegramRoundTripTitle,
-    telegramRoundTripReply,
-    telegramRoundTripAgentId,
-    telegramRoundTripCount,
-    telegramTypingCount,
-    telegramImageRoundTripReply,
-    telegramImageRoundTripCount,
+    telegramArchived,
+    telegramConfigurationPreserved,
+    telegramBlockedStatus,
+    telegramApiRequests,
   };
 
   process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);

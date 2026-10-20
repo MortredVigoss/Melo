@@ -15,6 +15,7 @@ const state = {
   updates: [],
   sentMessages: [],
   sentActions: [],
+  apiRequests: 0,
   nextUpdateId: 1,
   files: new Map(),
 };
@@ -118,6 +119,7 @@ const server = createServer(async (request, response) => {
       state.updates = [];
       state.sentMessages = [];
       state.sentActions = [];
+      state.apiRequests = 0;
       state.nextUpdateId = 1;
       state.files = new Map();
       sendJson(response, 200, { ok: true });
@@ -152,10 +154,12 @@ const server = createServer(async (request, response) => {
         ok: true,
         sentMessages: state.sentMessages,
         sentActions: state.sentActions,
+        apiRequests: state.apiRequests,
       });
       return;
     }
 
+    state.apiRequests++;
     if (!ensureTokenMatch(url.pathname)) {
       sendJson(response, 404, { ok: false, description: 'Unknown bot token.' });
       return;

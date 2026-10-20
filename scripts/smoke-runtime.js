@@ -48,10 +48,11 @@ try {
   await page.goto(baseUrl);
   assert.equal(await page.getByRole('dialog', { name: 'Productivity MCP consent' }).count(), 0);
   const form = page.locator(`form[data-form="agent-profile-update"][data-agent-id="${agentId}"]`);
-  assert.equal(await form.locator('[name="minimaxVoiceId"]').isDisabled(),true,'Role settings start read-only');
+  assert.equal(await form.locator('[name="voicePersonality"]').isDisabled(),true,'Agent settings start read-only');
   await form.locator('[data-action="form-settings-edit"]').click();
-  await form.locator('[name="minimaxVoiceId"]').fill('smoke-voice-after');
-  await form.locator('[name="ttsSpeed"]').fill('1.1');
+  await form.locator('.agent-channels > summary').click();
+  await form.locator('[name="voicePersonality"]').fill('Keep the voice calm and concise.');
+  await form.locator('[name="voiceReplyMode"]').selectOption('full');
   assert.equal(await form.evaluate(element => element.checkValidity()), true, 'Regression inputs must satisfy existing form constraints');
   await Promise.all([
     page.waitForResponse(response => response.url().endsWith('/api/agents/update') && response.request().method() === 'POST', { timeout: 10000 }),
@@ -61,8 +62,10 @@ try {
   await form.waitFor();
   assert.equal(await form.locator('[name="name"]').inputValue(), 'Runtime regression agent');
   assert.equal(await form.locator('[name="instructions"]').inputValue(), 'Preserve this role during voice-only edits.');
-  assert.equal(await form.locator('[name="minimaxVoiceId"]').inputValue(), 'smoke-voice-after');
-  assert.equal(Number(await form.locator('[name="ttsSpeed"]').inputValue()), 1.1);
+  assert.equal(await form.locator('[name="voicePersonality"]').inputValue(), 'Keep the voice calm and concise.');
+  assert.equal(await form.locator('[name="voiceReplyMode"]').inputValue(), 'full');
+  const savedAgent = (await request('/api/bootstrap')).customize.agents.find(agent => agent.id === agentId);
+  assert.equal(savedAgent.minimaxVoiceId, 'smoke-voice-before', 'Editing visible voice settings preserves the stored provider voice ID');
 
   const createdChat = await request('/api/chats', { mode: 'chat', agentId });
   const chatId = createdChat.settings.selectedChatId;
