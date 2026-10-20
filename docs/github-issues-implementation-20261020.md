@@ -9,8 +9,8 @@
 | 1 | [#1 文件身份](https://github.com/MortredVigoss/Melo/issues/1) | 已完成：`47da231` 已推送，issue 已关闭；[双平台 CI](https://github.com/MortredVigoss/Melo/actions/runs/39260200905)通过 |
 | 2 | [#4 历史图片](https://github.com/MortredVigoss/Melo/issues/4) | 已完成：`94e76cb` 已推送，issue 已关闭；稳定图片身份、旧记录恢复与原图回归 |
 | 3 | [#3 自然搜索](https://github.com/MortredVigoss/Melo/issues/3) | 已完成：`1c48b6a` 已推送，issue 已关闭；专项 95/95、JS 4098/4098 与 Swift 通过 |
-| 4 | [#9 跨平台 CI](https://github.com/MortredVigoss/Melo/issues/9)、[#2 记忆库并发](https://github.com/MortredVigoss/Melo/issues/2) | #9 已通过全部远端 gate 并关闭（主线 `6fd2481`、手机 `b1529d0`）；#2 已复现修正，完整日常通过，本提交交付 |
-| 5 | [#5 通用循环](https://github.com/MortredVigoss/Melo/issues/5)、[#6 完成条件](https://github.com/MortredVigoss/Melo/issues/6)、[#8 事件](https://github.com/MortredVigoss/Melo/issues/8)、[#7 Android 上下文](https://github.com/MortredVigoss/Melo/issues/7) | 待执行；按 Host 适配与对照验收，不删现有行为 |
+| 4 | [#9 跨平台 CI](https://github.com/MortredVigoss/Melo/issues/9)、[#2 记忆库并发](https://github.com/MortredVigoss/Melo/issues/2) | #9 已通过全部远端 gate 并关闭（主线 `6fd2481`、手机 `b1529d0`）；#2 `00cf231` 已推送并关闭，完整日常通过 |
+| 5 | [#5 通用循环](https://github.com/MortredVigoss/Melo/issues/5)、[#6 完成条件](https://github.com/MortredVigoss/Melo/issues/6)、[#8 事件](https://github.com/MortredVigoss/Melo/issues/8)、[#7 Android 上下文](https://github.com/MortredVigoss/Melo/issues/7) | #5 第一阶段逐字移植中，生产尚未切换；按 Host 适配与对照验收，不删现有行为 |
 | 6 | [#11 项目生命周期](https://github.com/MortredVigoss/Melo/issues/11)、[#12 后端拆分](https://github.com/MortredVigoss/Melo/issues/12)、[#10 Fold 缓存](https://github.com/MortredVigoss/Melo/issues/10)、[#13 容量基线](https://github.com/MortredVigoss/Melo/issues/13)、[#14 Task Eval](https://github.com/MortredVigoss/Melo/issues/14) | 待执行；小型确定性回放伴随改动，真机/真实模型证据单列 |
 
 ## #1 实施约定与证据
@@ -86,3 +86,7 @@ Linux 首次完整回归（临时 Debian 容器）4072 pass / 3 fail / 22 skip�
 #9 最终：Android [run 39346797733](https://github.com/MortredVigoss/Melo/actions/runs/39346797733) 全部通过，含 Shared Core、JVM、Lint、Debug/R8、Android 16 Emulator；与主线两个成功 run 共同完成矩阵。`b1529d0` 只修窄屏测试定位/夹具，不削弱目标身份检查。完成后在 GitHub 评论并关闭 #9；这不是发布/安装或真机验收。
 
 #2 最终回执：`memory-daily-final.log` 的 JS **4101/4101**、零跳过，语法、文档、两项设置浏览器、共享渲染 4/4 与 **32 组 Swift** 全通过（534.2 秒）。初次日常仅生成地图过期；已重新生成 `architecture/modules.json`，并为新工作树显式提供只读内置模型路径，再完整复测。该路径是公开模型资源，未使用账号或真实 home。Linux 专项 12/12。提交推送后评论关闭 #2；不称真实数据迁移或应用安装验收。
+
+## #5 共享循环
+
+按[实施约定](shared-loop-hardening-20261020.md)分离逐字移植与后续行为迁移。当前 Core/桥与 bundle 已进入主线工作树并通过专项；完整日常进行中，不能据此关闭 #5。

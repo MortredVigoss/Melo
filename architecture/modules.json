@@ -22,8 +22,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 565,
-      "edges": 1726,
+      "modules": 577,
+      "edges": 1742,
       "roots": [
         "src",
         "desktop-ui",
@@ -36,7 +36,7 @@
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
-      "detected": 25,
+      "detected": 26,
       "unannotated": []
     }
   },
@@ -688,12 +688,16 @@
         "ios/Melo/RunProgress*.swift",
         "ios/Melo/Execution*.swift",
         "ios/Melo/{ChatGPTProtocol,PhoneContext,HistoryView,Network,IOSReplyBackground,BackgroundReplyStorage,ParityVerification,ConcurrencyVerification,InteractionVerification}.swift",
-        "ios/Tests/{AgentLoopTests,ChatGPTTests,ConversationFoundationTests,ConversationHistoryTests,ExecutionPageTests,ExecutionTests,NetworkTests,ParityRegressionTests,ReplyBackgroundTests,RunProgressTests,SSETransportTests,SharedContractTests}.swift"
+        "ios/Tests/{AgentLoopTests,ChatGPTTests,ConversationFoundationTests,ConversationHistoryTests,ExecutionPageTests,ExecutionTests,NetworkTests,ParityRegressionTests,ReplyBackgroundTests,RunProgressTests,SSETransportTests,SharedContractTests}.swift",
+        "shared/agent/**",
+        "src/runtime/sharedAgentCore.js",
+        "ios/Melo/SharedAgentCore.swift",
+        "ios/Tests/SharedAgentCoreTests.swift"
       ],
       "modules": {
         "desktop-ui": 27,
-        "shared": 1,
-        "src": 62
+        "shared": 12,
+        "src": 63
       },
       "entryModules": [
         {
@@ -1004,7 +1008,8 @@
           "ios/Melo/ReplyContentView.swift",
           "ios/Melo/ReplyDocument.swift",
           "ios/Melo/RunProgress.swift",
-          "ios/Melo/RunProgressView.swift"
+          "ios/Melo/RunProgressView.swift",
+          "ios/Melo/SharedAgentCore.swift"
         ],
         "counterparts": []
       },
@@ -1017,7 +1022,8 @@
         "groups": [
           "npm run test:prompt-pipeline",
           "npm run test:function-calling",
-          "npm run test:architecture"
+          "npm run test:architecture",
+          "npm run test:agent-core"
         ],
         "js": [
           "desktop-ui/chatDensity.browser.test.js",
@@ -1041,6 +1047,11 @@
           "desktop-ui/replyDelivery.test.js",
           "desktop-ui/replyDocument.test.js",
           "scripts/generate-agent-loop-contract.test.js",
+          "shared/agent/conformance.test.js",
+          "shared/agent/continuation.test.js",
+          "shared/agent/execution.test.js",
+          "shared/agent/research.test.js",
+          "shared/agent/tools.test.js",
           "src/judge/fastJudge.test.js",
           "src/judge/fastTransport.test.js",
           "src/openai.codex-inline-image.test.js",
@@ -1099,13 +1110,16 @@
           "ios/Tests/ReplyBackgroundTests.swift",
           "ios/Tests/RunProgressTests.swift",
           "ios/Tests/SSETransportTests.swift",
+          "ios/Tests/SharedAgentCoreTests.swift",
           "ios/Tests/SharedContractTests.swift"
         ]
       },
       "implicit": [
+        "agent-core-bundle",
         "gen-agent-loop",
         "gen-ios-scene",
         "served-shared-modules",
+        "source-tests-agent-core",
         "source-tests-chat-feature",
         "source-tests-cross-module",
         "source-tests-index-html",
@@ -1113,7 +1127,8 @@
       ],
       "notes": [
         "执行顺序 prepare → invoke-model → finalize：桌面 src/services/chat/chatExecutionRunner.js，手机 ios/Melo/AgentLoop.swift，限额/预算/重复拦截/工具信封只在 shared/protocol/agent-loop.json 定义。",
-        "P3/P4 扩展 agent-loop.json；手机 TurnCoordinator 包裹现有 AgentLoop，不另建循环。ChatStore.swift 仍是手机发送入口（iphone 功能）。"
+        "P3/P4 扩展 agent-loop.json；手机 TurnCoordinator 包裹现有 AgentLoop，不另建循环。ChatStore.swift 仍是手机发送入口（iphone 功能）。",
+        "#5 第一阶段逐字移植 mobile shared/agent 与 Node/JSCore 桥；生产主循环迁移另做，不能将打包与桥验收当成同源迁移完成。"
       ]
     },
     "memory": {
@@ -3512,6 +3527,7 @@
         "bridge-ios-scene",
         "gen-interface-languages",
         "gen-ios-scene",
+        "source-tests-agent-core",
         "source-tests-cross-module"
       ],
       "notes": [
@@ -4045,6 +4061,7 @@
         "swift": []
       },
       "implicit": [
+        "agent-core-bundle",
         "bridge-process-shutdown",
         "gen-interface-languages",
         "gen-module-map",
@@ -4534,6 +4551,7 @@
         "desktop-ui/app.js",
         "desktop-ui/features/chat/viewMessage.js",
         "desktop-ui/features/chat/viewThread.js",
+        "shared/agent/index.js",
         "shared/replyDocument.js",
         "src/domain/message/messageBlocks.js"
       ],
@@ -5026,6 +5044,46 @@
       "note": "gate 接线测试读取脚本与 package.json",
       "features": [
         "tooling"
+      ]
+    },
+    {
+      "id": "agent-core-bundle",
+      "kind": "generator",
+      "generator": "scripts/build-agent-core.mjs",
+      "inputs": [
+        "shared/agent/**/*.js",
+        "src/shared/replyDocument.js"
+      ],
+      "outputs": [
+        "shared/agent/dist/**",
+        "ios/Melo/AgentCore/**"
+      ],
+      "check": "shared/agent/conformance.test.js",
+      "command": "npm run build:agent-core",
+      "note": "相同便携源码打包供 Kotlin/Swift bridge；生成散列必须一致",
+      "features": [
+        "chat",
+        "tooling"
+      ]
+    },
+    {
+      "id": "source-tests-agent-core",
+      "kind": "source-reading-test",
+      "reads": [
+        "shared/agent/dist/agent-core.js",
+        "shared/agent/dist/manifest.json",
+        "shared/agent/fixtures/conformance.json",
+        "ios/Melo/AgentCore/agent-core.js",
+        "shared/agent/**/*.js",
+        "src/shared/replyDocument.js"
+      ],
+      "tests": [
+        "shared/agent/conformance.test.js"
+      ],
+      "note": "运行源码与隔离 bundle 对照，并校验逐源文件散列和 iOS 原样打包",
+      "features": [
+        "chat",
+        "iphone"
       ]
     }
   ]

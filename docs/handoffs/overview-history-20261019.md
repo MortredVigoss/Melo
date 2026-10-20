@@ -560,3 +560,11 @@
 - 入口：主线 `.github/workflows/{file-safety,verification}.yml`；手机分支 `.github/workflows/android.yml`。环境依赖、门禁层级和失败语义见[测试工作流](../testing-workflow.md)。修正流式 UI 测试的固定时长竞态，生产行为不变。
 - 验证：Mac/Linux 浏览器专项通过；Android Core 84/84、bundle 与 YAML 校验通过，`6c4ab6b` 对应 run `39344901902` 运行中。Linux 全量 4095 pass / 0 fail / 2 平台或 root skip；附件写权限普通用户补跑与 Mac 原生退出补跑均通过；[实施证据](../github-issues-implementation-20261020.md)。不把工作流已写入或已推送称为远端通过。
 - 下一步：等待/修复远端各 gate；再完成 #2 记忆库并发及余项。不运行 git pp，不重装应用、不动真实手机数据。
+
+
+### 2026-10-20 — melo主线（Codex）— GitHub #9 回执 / #2 并发修复
+- 线程 ID：`01a13b2e-5446-7042-bb5e-773129746c7e`；#1/#4/#3 已完成并关闭。#9 主线 `6fd2481` 的完整 Linux/macOS 与文件安全远端全通过；Android 构建通过，三项窄屏夹具修正 `b1529d0` 已推，`39346797733` 全部通过，#9 已评论并关闭。
+- 工作树：主线 `.tmp/github-issues-main`、手机 `.tmp/github-issues-mobile`，保留原 master 权限线程的提交/WIP；手机仅推回其原分支。
+- #2 行为：真实并发复现 WAL 读快照升级的 database is locked；`src/memory/store.js` 的外层写事务使用 BEGIN IMMEDIATE，SAVEPOINT/回滚保留，无盲目重试；本提交交付。
+- 验证：项目专项 22/22；Linux 并发/回滚与向量事务 12/12；全新/旧项目各并发保存、编辑、同步和冷重启逐条核对。完整日常 JS 4101/4101、语法/文档/浏览器、共享渲染 4/4 与 32 组 Swift 全通过，详见[实施证据](../github-issues-implementation-20261020.md)。
+- 下一步：#2 提交/推送/关闭；再按[通用循环实施约定](../shared-loop-hardening-20261020.md)实施 #5 及其余项。不运行 git pp、不重装、不改真实数据。

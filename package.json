@@ -11,6 +11,9 @@
   },
   "scripts": {
     "build": "node scripts/check-syntax.js",
+    "build:agent-core": "node scripts/build-agent-core.mjs",
+    "check:agent-core": "node scripts/build-agent-core.mjs --check",
+    "test:agent-core": "node --test shared/agent/*.test.js",
     "build:native": "node-gyp rebuild",
     "build:desktop": "zsh scripts/build-desktop-app.sh",
     "install:desktop": "zsh scripts/install-desktop-app.sh",

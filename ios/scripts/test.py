@@ -4,6 +4,7 @@ from pathlib import Path
 import hashlib, json, platform, subprocess, sys, time
 from swift_test_cache import cached_suite
 root=Path(__file__).resolve().parents[2]
+subprocess.run(['node','scripts/build-agent-core.mjs','--check'],cwd=root,check=True)
 subprocess.run(['node','--test','ios/Tests/SceneBridge.test.js','ios/Tests/NeuralLayout.test.js'],cwd=root,check=True)
 manifest=json.loads((root/'ios/Melo/Scene/desktop-manifest.json').read_text())
 for name,expected in manifest.items():
@@ -37,6 +38,7 @@ suites['AgentTeamTests']=shared+['ios/Melo/AgentProfile.swift','ios/Melo/AgentTe
 suites['VideoStudyTests']=shared+['ios/Melo/AgentProfile.swift','ios/Melo/VideoStudy.swift']
 suites['RunProgressTests']=shared
 suites['LocalFileAccessTests']=['ios/Melo/LocalFileAccess.swift']
+suites['SharedAgentCoreTests']=['ios/Melo/SharedAgentCore.swift']
 suites['ImagePhotoSaveTests']=['ios/Melo/ImagePhotoSave.swift']
 suites['WebPageToolsTests']=shared  # WebPageTools.swift needs WebKit/UIKit; only the pure half (WebPageText.swift, envelope in AgentLoopRuntime.swift) compiles here
 suites['AgentLoopTests']=shared+['ios/Melo/AgentProfile.swift','ios/Melo/AgentTeam.swift']  # AgentLoop with a fake transport: limits, budget, guard, supplements, condensation, trace, finalize

@@ -59,12 +59,12 @@
 
 ## 4. 最新交接
 
-### 2026-10-20 — melo主线（Codex）— GitHub #9 回执 / #2 并发修复
-- 线程 ID：`01a13b2e-5446-7042-bb5e-773129746c7e`；#1/#4/#3 已完成并关闭。#9 主线 `6fd2481` 的完整 Linux/macOS 与文件安全远端全通过；Android 构建通过，三项窄屏夹具修正 `b1529d0` 已推，`39346797733` 全部通过，#9 已评论并关闭。
-- 工作树：主线 `.tmp/github-issues-main`、手机 `.tmp/github-issues-mobile`，保留原 master 权限线程的提交/WIP；手机仅推回其原分支。
-- #2 行为：真实并发复现 WAL 读快照升级的 database is locked；`src/memory/store.js` 的外层写事务使用 BEGIN IMMEDIATE，SAVEPOINT/回滚保留，无盲目重试；本提交交付。
-- 验证：项目专项 22/22；Linux 并发/回滚与向量事务 12/12；全新/旧项目各并发保存、编辑、同步和冷重启逐条核对。完整日常 JS 4101/4101、语法/文档/浏览器、共享渲染 4/4 与 32 组 Swift 全通过，详见[实施证据](docs/github-issues-implementation-20261020.md)。
-- 下一步：#2 提交/推送/关闭；再按[通用循环实施约定](docs/shared-loop-hardening-20261020.md)实施 #5 及其余项。不运行 git pp、不重装、不改真实数据。
+### 2026-10-20 — melo主线（Codex）— GitHub #5 共享循环第一阶段
+- 线程 ID：`01a13b2e-5446-7042-bb5e-773129746c7e`；#1/#4/#3/#9/#2 已推送并在 GitHub 关闭。#2 `00cf231` 日常 JS 4101/4101、32 组 Swift、Linux 专项 12/12；#9 各平台远端实际通过。
+- 入口：`shared/agent/`、`src/runtime/sharedAgentCore.js`、`ios/Melo/SharedAgentCore.swift` 与生成器，逐字移植手机 `9522cb9`；Xcode 增加 JS bundle 资源，测试发现/地图收录 Core。原有主线生产循环尚未替换。
+- 状态：第一阶段本地提交，25 个文件按原 blob 比对；`src/shared/replyDocument.js` 保留全部原前缀，只追加既有手机展示函数。没有整条分支合并，没有搬动用户数据。
+- 验证：Core JS 84/84、JSCore 49 fixtures、打包散列/隔离和 JSON 注入边界通过；发现/地图与 gate 夹具 11/11；完整日常 JS 4185/4185、33 组 Swift 与浏览器等全过。详情见[共享循环实施约定](docs/shared-loop-hardening-20261020.md)。
+- 下一步：本阶段独立 byte-for-byte port 提交后，同源化通用策略并接主聊天/子 Agent/技能/Swift/Kotlin 生产入口。#5 未完成，保持打开；不运行 git pp。
 
 此前交接（原文见[历史交接](docs/handoffs/overview-history-20261019.md)，新者在后）：10-19 双端逻辑只读审计 → 七项修复与最终日常 → 双端覆盖安装与数据保留 → 架构维护成本审计与方案 → GitHub 权限只读核对 → 架构方案 P0 执行 → 架构方案 P2a 记忆页与项目页 → 架构方案 P2b Agent 设置 → 架构方案 P2c 聊天拆分 → Claude 架构 P0–P2 独立审计 → 已提交保存恢复 R1 修复。
 

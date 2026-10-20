@@ -1,7 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { resolve, relative } from 'node:path';
 
-export const TEST_ROOTS = ['src','desktop-ui','mobile-sync','scripts','ios/Tests'];
+export const TEST_ROOTS = ['src','desktop-ui','mobile-sync','scripts','ios/Tests','shared/agent'];
 export async function discoverTests(root = resolve('.'), roots = TEST_ROOTS) {
   const files=[];
   async function walk(dir) {

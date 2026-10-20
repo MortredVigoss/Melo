@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 
 const run = promisify(execFile);
 const ROOT = process.cwd();
-const TARGET_DIRS = ['src', 'scripts', 'desktop-ui'];
+const TARGET_DIRS = ['src', 'scripts', 'desktop-ui', 'shared/agent'];
 
 async function collectJavaScriptFiles(dirPath) {
   let entries;

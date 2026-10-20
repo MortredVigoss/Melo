@@ -6,6 +6,7 @@ import {join} from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {planTests, changedPaths, currentTestPlan} from './test-plan.js';
+import {TEST_ROOTS} from './test-discovery.js';
 
 const tests = ['src/server.test.js','desktop-ui/one.test.js','desktop-ui/new.test.js','mobile-sync/one.test.js','ios/Tests/Scene.test.js'];
 test('daily selection keeps complete UI groups, falls back for cross-boundary changes, and never silently drops deleted tests', () => {
@@ -82,7 +83,7 @@ test('daily CLI executes the selected group, isolates home, and stops on failure
   const run=()=>execFileSync(process.execPath,[script],{cwd:root,env,encoding:'utf8',stdio:'pipe'});
   const git=(...args)=>execFileSync('git',args,{cwd:root,stdio:'pipe'});
   try {
-    for(const dir of ['src','desktop-ui','scripts','mobile-sync','ios/Tests','ios/scripts']) await mkdir(join(root,dir),{recursive:true});
+    for(const dir of [...TEST_ROOTS,'ios/scripts']) await mkdir(join(root,dir),{recursive:true});
     await writeFile(join(root,'package.json'),'{"type":"module"}');
     await writeFile(join(root,'scripts/test-quarantine.json'),'{}');
     await writeFile(join(root,'src/unrelated.test.js'),'throw Error("unrelated backend must not run for UI-only edits");');
@@ -109,7 +110,7 @@ test('daily CLI runs only the document link check for an overview-only change', 
   const script=fileURLToPath(new URL('./verify-daily.js',import.meta.url));
   const git=(...args)=>execFileSync('git',args,{cwd:root,stdio:'pipe'});
   try {
-    for(const dir of ['src','desktop-ui','scripts','mobile-sync','ios/Tests','ios/scripts']) await mkdir(join(root,dir),{recursive:true});
+    for(const dir of [...TEST_ROOTS,'ios/scripts']) await mkdir(join(root,dir),{recursive:true});
     await writeFile(join(root,'package.json'),'{"type":"module"}');
     await writeFile(join(root,'scripts/test-quarantine.json'),'{}');
     await writeFile(join(root,'desktop-ui/ui.test.js'),'throw Error("documentation edits must not run product tests");');

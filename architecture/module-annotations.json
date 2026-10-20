@@ -4,165 +4,1111 @@
   "features": {
     "projects": {
       "title": "项目与工作区",
-      "owns": ["src/services/project/**", "src/domain/project/**", "src/services/workspace/**", "src/domain/workspacePath.js", "desktop-ui/project*.js", "desktop-ui/features/projects/**", "desktop-ui/chatFiles.js", "desktop-ui/chatFiles.browser.test.js", "ios/Melo/PersonalWorkspace.swift", "src/desktopStore.projectsDefault.test.js"],
-      "routes": ["/api/projects", "/api/workspace/", "/api/chats/delete-preview"],
-      "testGroups": ["test:conversation-foundations"],
-      "notes": ["修改入口：src/services/project/projectMutations.js；查询：projectService.js。P1 起项目修改返回提交回执，兼容 HTTP 适配器再组装 bootstrap。", "桌面项目页（P2）：desktop-ui/features/projects/（state.js 自有状态、controller.js 动作、view.js 渲染、api.js 请求），app.js 只保留跨页导航 focus-project / select-project 与 startProjectSession。", "聊天工作目录生命周期在 src/services/workspace/chatWorkspaceFiles.js；手机项目页在 PersonalWorkspace.swift（ProjectsView）。"]
+      "owns": [
+        "src/services/project/**",
+        "src/domain/project/**",
+        "src/services/workspace/**",
+        "src/domain/workspacePath.js",
+        "desktop-ui/project*.js",
+        "desktop-ui/features/projects/**",
+        "desktop-ui/chatFiles.js",
+        "desktop-ui/chatFiles.browser.test.js",
+        "ios/Melo/PersonalWorkspace.swift",
+        "src/desktopStore.projectsDefault.test.js"
+      ],
+      "routes": [
+        "/api/projects",
+        "/api/workspace/",
+        "/api/chats/delete-preview"
+      ],
+      "testGroups": [
+        "test:conversation-foundations"
+      ],
+      "notes": [
+        "修改入口：src/services/project/projectMutations.js；查询：projectService.js。P1 起项目修改返回提交回执，兼容 HTTP 适配器再组装 bootstrap。",
+        "桌面项目页（P2）：desktop-ui/features/projects/（state.js 自有状态、controller.js 动作、view.js 渲染、api.js 请求），app.js 只保留跨页导航 focus-project / select-project 与 startProjectSession。",
+        "聊天工作目录生命周期在 src/services/workspace/chatWorkspaceFiles.js；手机项目页在 PersonalWorkspace.swift（ProjectsView）。"
+      ]
     },
     "agents": {
       "title": "Agent、技能与团队",
-      "owns": ["src/services/agent/**", "src/domain/agent/**", "src/agents/**", "src/services/skill/**", "src/domain/skill/**", "src/persistence/agentMarkdownFiles.js", "desktop-ui/agent*.js", "desktop-ui/features/agents/**", "desktop-ui/teamPanel.js", "ios/Melo/{AgentEditSession,AgentEditor,AgentProfile,AgentTeam,TeamSheet,TeamVerification}.swift", "ios/Tests/{AgentEditTests,AgentTeamTests}.swift", "src/desktopStore.{skills,applySkillProposal,scanSkillProposals,updateAgentProfile,draftFromChat}.test.js", "src/index.saveAsSkill.test.js", "scripts/migrate-agent-capabilities.js"],
-      "routes": ["/api/agents/", "/api/skills/", "/api/skill-proposals", "/api/customize/skill-toggle"],
-      "testGroups": ["test:markdown-files"],
-      "notes": ["修改入口：src/services/agent/agentMutations.js；桌面 Agent 设置页（P2b）：desktop-ui/features/agents/（controller.js 动作、草稿、保存与自动保存；view.js 渲染），app.js 只保留跨页导航 select-agent-profile 与 render() 里的捕获/恢复调用。", "能力按执行设备生效：手机按 Agent 单独授权联网/图片/手机数据，不进同步。"]
+      "owns": [
+        "src/services/agent/**",
+        "src/domain/agent/**",
+        "src/agents/**",
+        "src/services/skill/**",
+        "src/domain/skill/**",
+        "src/persistence/agentMarkdownFiles.js",
+        "desktop-ui/agent*.js",
+        "desktop-ui/features/agents/**",
+        "desktop-ui/teamPanel.js",
+        "ios/Melo/{AgentEditSession,AgentEditor,AgentProfile,AgentTeam,TeamSheet,TeamVerification}.swift",
+        "ios/Tests/{AgentEditTests,AgentTeamTests}.swift",
+        "src/desktopStore.{skills,applySkillProposal,scanSkillProposals,updateAgentProfile,draftFromChat}.test.js",
+        "src/index.saveAsSkill.test.js",
+        "scripts/migrate-agent-capabilities.js"
+      ],
+      "routes": [
+        "/api/agents/",
+        "/api/skills/",
+        "/api/skill-proposals",
+        "/api/customize/skill-toggle"
+      ],
+      "testGroups": [
+        "test:markdown-files"
+      ],
+      "notes": [
+        "修改入口：src/services/agent/agentMutations.js；桌面 Agent 设置页（P2b）：desktop-ui/features/agents/（controller.js 动作、草稿、保存与自动保存；view.js 渲染），app.js 只保留跨页导航 select-agent-profile 与 render() 里的捕获/恢复调用。",
+        "能力按执行设备生效：手机按 Agent 单独授权联网/图片/手机数据，不进同步。"
+      ]
     },
     "chat": {
       "title": "聊天与 agent loop",
-      "owns": ["src/services/chat/**", "src/services/message/**", "src/domain/message/**", "src/domain/chat/**", "src/providers/**", "src/openai.js", "src/prompts.js", "src/agentGraph.js", "src/retrieval/**", "src/judge/**", "src/runtime/agentLoopContract.js", "src/runtime/runBudget.js", "src/persistence/turnArchive.js", "src/shared/{executionMetadata,executionScene,replyDocument}.js", "src/http/{chatRoutes,executionRoutes}.js", "shared/replyDocument.js", "shared/protocol/agent-loop.json", "shared/protocol/contracts.json", "scripts/generate-agent-loop-contract.js", "desktop-ui/{linkActions,replyDelivery,replyDocument,scrollPreservation}.js", "desktop-ui/features/chat/**", "desktop-ui/execution*.js", "desktop-ui/execution*.css", "desktop-ui/{liveRun,chatDensity}.browser.test.js", "ios/Melo/AgentLoop*.swift", "ios/Melo/Conversation*.swift", "ios/Melo/Reply*.swift", "ios/Melo/RunProgress*.swift", "ios/Melo/Execution*.swift", "ios/Melo/{ChatGPTProtocol,PhoneContext,HistoryView,Network,IOSReplyBackground,BackgroundReplyStorage,ParityVerification,ConcurrencyVerification,InteractionVerification}.swift", "ios/Tests/{AgentLoopTests,ChatGPTTests,ConversationFoundationTests,ConversationHistoryTests,ExecutionPageTests,ExecutionTests,NetworkTests,ParityRegressionTests,ReplyBackgroundTests,RunProgressTests,SSETransportTests,SharedContractTests}.swift"],
-      "routes": ["/api/chat/", "/api/chats"],
-      "testGroups": ["test:prompt-pipeline", "test:function-calling", "test:architecture"],
-      "notes": ["执行顺序 prepare → invoke-model → finalize：桌面 src/services/chat/chatExecutionRunner.js，手机 ios/Melo/AgentLoop.swift，限额/预算/重复拦截/工具信封只在 shared/protocol/agent-loop.json 定义。", "P3/P4 扩展 agent-loop.json；手机 TurnCoordinator 包裹现有 AgentLoop，不另建循环。ChatStore.swift 仍是手机发送入口（iphone 功能）。"]
+      "owns": [
+        "src/services/chat/**",
+        "src/services/message/**",
+        "src/domain/message/**",
+        "src/domain/chat/**",
+        "src/providers/**",
+        "src/openai.js",
+        "src/prompts.js",
+        "src/agentGraph.js",
+        "src/retrieval/**",
+        "src/judge/**",
+        "src/runtime/agentLoopContract.js",
+        "src/runtime/runBudget.js",
+        "src/persistence/turnArchive.js",
+        "src/shared/{executionMetadata,executionScene,replyDocument}.js",
+        "src/http/{chatRoutes,executionRoutes}.js",
+        "shared/replyDocument.js",
+        "shared/protocol/agent-loop.json",
+        "shared/protocol/contracts.json",
+        "scripts/generate-agent-loop-contract.js",
+        "desktop-ui/{linkActions,replyDelivery,replyDocument,scrollPreservation}.js",
+        "desktop-ui/features/chat/**",
+        "desktop-ui/execution*.js",
+        "desktop-ui/execution*.css",
+        "desktop-ui/{liveRun,chatDensity}.browser.test.js",
+        "ios/Melo/AgentLoop*.swift",
+        "ios/Melo/Conversation*.swift",
+        "ios/Melo/Reply*.swift",
+        "ios/Melo/RunProgress*.swift",
+        "ios/Melo/Execution*.swift",
+        "ios/Melo/{ChatGPTProtocol,PhoneContext,HistoryView,Network,IOSReplyBackground,BackgroundReplyStorage,ParityVerification,ConcurrencyVerification,InteractionVerification}.swift",
+        "ios/Tests/{AgentLoopTests,ChatGPTTests,ConversationFoundationTests,ConversationHistoryTests,ExecutionPageTests,ExecutionTests,NetworkTests,ParityRegressionTests,ReplyBackgroundTests,RunProgressTests,SSETransportTests,SharedContractTests}.swift",
+        "shared/agent/**",
+        "src/runtime/sharedAgentCore.js",
+        "ios/Melo/SharedAgentCore.swift",
+        "ios/Tests/SharedAgentCoreTests.swift"
+      ],
+      "routes": [
+        "/api/chat/",
+        "/api/chats"
+      ],
+      "testGroups": [
+        "test:prompt-pipeline",
+        "test:function-calling",
+        "test:architecture",
+        "test:agent-core"
+      ],
+      "notes": [
+        "执行顺序 prepare → invoke-model → finalize：桌面 src/services/chat/chatExecutionRunner.js，手机 ios/Melo/AgentLoop.swift，限额/预算/重复拦截/工具信封只在 shared/protocol/agent-loop.json 定义。",
+        "P3/P4 扩展 agent-loop.json；手机 TurnCoordinator 包裹现有 AgentLoop，不另建循环。ChatStore.swift 仍是手机发送入口（iphone 功能）。",
+        "#5 第一阶段逐字移植 mobile shared/agent 与 Node/JSCore 桥；生产主循环迁移另做，不能将打包与桥验收当成同源迁移完成。"
+      ]
     },
     "memory": {
       "title": "记忆",
-      "owns": ["src/memory/**", "src/services/memory/**", "src/runtime/{derivedIndexing,derivedIndexWorker}.js", "desktop-ui/features/memory/**", "ios/Melo/MemoryFacts*.swift", "ios/Tests/MemoryFactsTests.swift", "scripts/{memory-status,bench-memory,prepare-memory-model}.js", "bench/**"],
-      "routes": ["/api/memory/", "/api/projects/memory-book"],
-      "testGroups": ["test:memory", "test:dreaming-scheduler"],
-      "notes": ["P2 首个试点：桌面记忆页、记忆本与回复页脚的状态、动作与渲染在 desktop-ui/features/memory/（controller.js 注册动作；view*.js 渲染），app.js 只做组合与分发。", "SQLite 同时含长期记忆、用户编辑与 memory_hits，不能整库当缓存删除。"]
+      "owns": [
+        "src/memory/**",
+        "src/services/memory/**",
+        "src/runtime/{derivedIndexing,derivedIndexWorker}.js",
+        "desktop-ui/features/memory/**",
+        "ios/Melo/MemoryFacts*.swift",
+        "ios/Tests/MemoryFactsTests.swift",
+        "scripts/{memory-status,bench-memory,prepare-memory-model}.js",
+        "bench/**"
+      ],
+      "routes": [
+        "/api/memory/",
+        "/api/projects/memory-book"
+      ],
+      "testGroups": [
+        "test:memory",
+        "test:dreaming-scheduler"
+      ],
+      "notes": [
+        "P2 首个试点：桌面记忆页、记忆本与回复页脚的状态、动作与渲染在 desktop-ui/features/memory/（controller.js 注册动作；view*.js 渲染），app.js 只做组合与分发。",
+        "SQLite 同时含长期记忆、用户编辑与 memory_hits，不能整库当缓存删除。"
+      ]
     },
     "knowledge": {
       "title": "知识资料与成果",
-      "owns": ["src/memory/knowledgeIndex.js", "src/services/chat/knowledgeContext.js", "src/services/artifact/**", "src/domain/artifact/**", "src/tools/builtins/knowledgeTool.js", "desktop-ui/videoKnowledge.js"],
-      "routes": ["/api/artifacts"],
+      "owns": [
+        "src/memory/knowledgeIndex.js",
+        "src/services/chat/knowledgeContext.js",
+        "src/services/artifact/**",
+        "src/domain/artifact/**",
+        "src/tools/builtins/knowledgeTool.js",
+        "desktop-ui/videoKnowledge.js"
+      ],
+      "routes": [
+        "/api/artifacts"
+      ],
       "testGroups": [],
-      "notes": ["本机分段索引（SQLite FTS + 本地 embedding），按对话/项目开关过滤；手机检索在 AgentProfile.swift（MobileKnowledge / ConversationContext.resolve），无独立 Swift 文件。"]
+      "notes": [
+        "本机分段索引（SQLite FTS + 本地 embedding），按对话/项目开关过滤；手机检索在 AgentProfile.swift（MobileKnowledge / ConversationContext.resolve），无独立 Swift 文件。"
+      ]
     },
     "settings": {
       "title": "设置、模型连接与账号",
-      "owns": ["src/services/settings/**", "src/domain/settings/**", "src/config.js", "src/codexAuth.js", "src/providers/openRouterOAuth.js", "src/shared/{llmProviders,modelCatalog,fastGeneration}.js", "desktop-ui/localSettings.*", "desktop-ui/settingsEdit.*", "desktop-ui/modelPresentation.*", "desktop-ui/language*.*", "desktop-ui/{llmConnections,extraFast,credentialChip}.js", "ios/Melo/{ChatGPTAccount,CodexOAuth,CodexLoginView,OAuthLoopback,Keychain,LLMConnections,ModelSettingsSections,ConnectionProbe,SettingsView,InterfaceLanguage,LanguagePicker,RuntimeDiagnosticsView,DraftMerge,EditableSection,EditableDocument}.swift", "ios/Melo/LocalSettings*.swift", "ios/Melo/EditDraft*.swift", "ios/Melo/Localizable.xcstrings", "ios/Tests/{CodexOAuthTests,ConnectionProbeTests,EditDraftStorageTests,EditDraftTests,InterfaceLanguageTests}.swift"],
-      "routes": ["/api/settings"],
-      "testGroups": ["test:models", "test:extra-fast", "test:settings-design"],
-      "notes": ["设置卡片草稿与保存：桌面 settingsEdit.js，手机 EditDraft.swift / EditableSection.swift（同一编辑/保存约定）。凭证只存本机 Keychain/配置，不进同步。"]
+      "owns": [
+        "src/services/settings/**",
+        "src/domain/settings/**",
+        "src/config.js",
+        "src/codexAuth.js",
+        "src/providers/openRouterOAuth.js",
+        "src/shared/{llmProviders,modelCatalog,fastGeneration}.js",
+        "desktop-ui/localSettings.*",
+        "desktop-ui/settingsEdit.*",
+        "desktop-ui/modelPresentation.*",
+        "desktop-ui/language*.*",
+        "desktop-ui/{llmConnections,extraFast,credentialChip}.js",
+        "ios/Melo/{ChatGPTAccount,CodexOAuth,CodexLoginView,OAuthLoopback,Keychain,LLMConnections,ModelSettingsSections,ConnectionProbe,SettingsView,InterfaceLanguage,LanguagePicker,RuntimeDiagnosticsView,DraftMerge,EditableSection,EditableDocument}.swift",
+        "ios/Melo/LocalSettings*.swift",
+        "ios/Melo/EditDraft*.swift",
+        "ios/Melo/Localizable.xcstrings",
+        "ios/Tests/{CodexOAuthTests,ConnectionProbeTests,EditDraftStorageTests,EditDraftTests,InterfaceLanguageTests}.swift"
+      ],
+      "routes": [
+        "/api/settings"
+      ],
+      "testGroups": [
+        "test:models",
+        "test:extra-fast",
+        "test:settings-design"
+      ],
+      "notes": [
+        "设置卡片草稿与保存：桌面 settingsEdit.js，手机 EditDraft.swift / EditableSection.swift（同一编辑/保存约定）。凭证只存本机 Keychain/配置，不进同步。"
+      ]
     },
     "sync": {
       "title": "双端同步",
-      "owns": ["mobile-sync/**", "src/services/remote/mobileSync.js", "src/http/mobileSyncRoutes.js", "src/services/chat/{portableWorkspace,portableMemory,projectMemorySync}.js", "shared/protocol/{sync.schema.json,swift-validator.template,fixtures.json}", "scripts/generate-sync-contract.js", "desktop-ui/syncConflicts.js", "ios/Melo/{SyncWorkspace,WorkspaceProjection,SyncAuditVerification}.swift", "ios/Tests/SyncContractTests.swift"],
-      "routes": ["/api/mobile-sync", "/api/agent-settings-sync", "/api/project-memory-sync"],
-      "testGroups": ["test:mobile-sync", "test:sync-contract"],
-      "notes": ["v1 线协议冻结；新能力走可选通道（/v1/agent-settings、/v1/project-memory），旧服务 404 时只该扩展待同步。同步不是模型登录。"]
+      "owns": [
+        "mobile-sync/**",
+        "src/services/remote/mobileSync.js",
+        "src/http/mobileSyncRoutes.js",
+        "src/services/chat/{portableWorkspace,portableMemory,projectMemorySync}.js",
+        "shared/protocol/{sync.schema.json,swift-validator.template,fixtures.json}",
+        "scripts/generate-sync-contract.js",
+        "desktop-ui/syncConflicts.js",
+        "ios/Melo/{SyncWorkspace,WorkspaceProjection,SyncAuditVerification}.swift",
+        "ios/Tests/SyncContractTests.swift"
+      ],
+      "routes": [
+        "/api/mobile-sync",
+        "/api/agent-settings-sync",
+        "/api/project-memory-sync"
+      ],
+      "testGroups": [
+        "test:mobile-sync",
+        "test:sync-contract"
+      ],
+      "notes": [
+        "v1 线协议冻结；新能力走可选通道（/v1/agent-settings、/v1/project-memory），旧服务 404 时只该扩展待同步。同步不是模型登录。"
+      ]
     },
     "tools": {
       "title": "工具、MCP、连接器与网页",
-      "owns": ["src/tools/**", "src/mcp/**", "src/services/connector/**", "src/domain/connector/**", "src/services/browser/**", "src/services/search/**", "src/search/**", "src/web/**", "src/services/command/**", "src/services/export/**", "src/services/viz/**", "src/plugins/**", "scripts/{inspect-search-trail,mock-external-connector}.js", "desktop-ui/{advancedPage,managementActions}.js", "desktop-ui/connectorDraft*.js", "desktop-ui/viz/**", "desktop-ui/mcpStartup.browser.test.js", "ios/Melo/DeviceData*.swift", "ios/Melo/WebPage*.swift", "ios/Melo/LocalFile*.swift", "ios/Melo/{DeviceTools,WebSources,SourceBrowser,LocalFilesView,LocalPermissionsView}.swift", "ios/Tests/{DeviceToolsTests,LocalFileAccessTests,WebPageToolsTests,WebSearchTests}.swift"],
-      "routes": ["/api/connectors/", "/api/customize/connector-toggle", "/api/mcp/", "/api/plugins", "/api/command/", "/api/background-tasks/", "/api/search/", "/api/settings/domain-cookies"],
-      "testGroups": ["test:tools-evidence-trail", "test:browser-tools", "test:tool-consistency", "test:external-readers"],
-      "notes": ["工具结果信封 {ok,status,code,output,hint} 由 agent-loop 契约约束；手机设备工具（日历/通讯录/定位/网页）与桌面文件/命令工具是有意的平台差异。"]
+      "owns": [
+        "src/tools/**",
+        "src/mcp/**",
+        "src/services/connector/**",
+        "src/domain/connector/**",
+        "src/services/browser/**",
+        "src/services/search/**",
+        "src/search/**",
+        "src/web/**",
+        "src/services/command/**",
+        "src/services/export/**",
+        "src/services/viz/**",
+        "src/plugins/**",
+        "scripts/{inspect-search-trail,mock-external-connector}.js",
+        "desktop-ui/{advancedPage,managementActions}.js",
+        "desktop-ui/connectorDraft*.js",
+        "desktop-ui/viz/**",
+        "desktop-ui/mcpStartup.browser.test.js",
+        "ios/Melo/DeviceData*.swift",
+        "ios/Melo/WebPage*.swift",
+        "ios/Melo/LocalFile*.swift",
+        "ios/Melo/{DeviceTools,WebSources,SourceBrowser,LocalFilesView,LocalPermissionsView}.swift",
+        "ios/Tests/{DeviceToolsTests,LocalFileAccessTests,WebPageToolsTests,WebSearchTests}.swift"
+      ],
+      "routes": [
+        "/api/connectors/",
+        "/api/customize/connector-toggle",
+        "/api/mcp/",
+        "/api/plugins",
+        "/api/command/",
+        "/api/background-tasks/",
+        "/api/search/",
+        "/api/settings/domain-cookies"
+      ],
+      "testGroups": [
+        "test:tools-evidence-trail",
+        "test:browser-tools",
+        "test:tool-consistency",
+        "test:external-readers"
+      ],
+      "notes": [
+        "工具结果信封 {ok,status,code,output,hint} 由 agent-loop 契约约束；手机设备工具（日历/通讯录/定位/网页）与桌面文件/命令工具是有意的平台差异。"
+      ]
     },
     "media": {
       "title": "图片、视频与附件",
-      "owns": ["src/media/**", "src/images/**", "src/domain/media/**", "src/services/chat/image*.js", "src/tools/builtins/imageTool.js", "src/shared/imageRequestIntent.js", "src/http/mediaRoutes.js", "desktop-ui/image*.js", "desktop-ui/{attachmentCards,videoStatus}.js", "desktop-ui/media*.test.js", "src/desktopStore.vision.test.js", "ios/Melo/Image*.swift", "ios/Melo/{MediaVerification,VideoStudy}.swift", "ios/Tests/{ImagePhotoSaveTests,ImageWorkflowTests,VideoStudyTests}.swift"],
-      "routes": ["/api/media/", "/api/files/signed", "/api/chat/scenes/select-image"],
-      "testGroups": ["test:image-workflow", "test:media-cache"],
-      "notes": ["分析/生成/编辑意图明确、绑定真实原图；语言模型名不是图片型号。原件/衍生/缓存生命周期见 docs/image-capacity-plan-20261015.md。"]
+      "owns": [
+        "src/media/**",
+        "src/images/**",
+        "src/domain/media/**",
+        "src/services/chat/image*.js",
+        "src/tools/builtins/imageTool.js",
+        "src/shared/imageRequestIntent.js",
+        "src/http/mediaRoutes.js",
+        "desktop-ui/image*.js",
+        "desktop-ui/{attachmentCards,videoStatus}.js",
+        "desktop-ui/media*.test.js",
+        "src/desktopStore.vision.test.js",
+        "ios/Melo/Image*.swift",
+        "ios/Melo/{MediaVerification,VideoStudy}.swift",
+        "ios/Tests/{ImagePhotoSaveTests,ImageWorkflowTests,VideoStudyTests}.swift"
+      ],
+      "routes": [
+        "/api/media/",
+        "/api/files/signed",
+        "/api/chat/scenes/select-image"
+      ],
+      "testGroups": [
+        "test:image-workflow",
+        "test:media-cache"
+      ],
+      "notes": [
+        "分析/生成/编辑意图明确、绑定真实原图；语言模型名不是图片型号。原件/衍生/缓存生命周期见 docs/image-capacity-plan-20261015.md。"
+      ]
     },
     "voice": {
       "title": "语音输入与朗读",
-      "owns": ["src/tts.js", "src/services/tts/**", "src/services/media/**", "src/http/ttsRoutes.js", "src/shared/minimaxVoiceResolver.js", "desktop-ui/{voiceInput,ttsBridgeRouter}.js", "desktop-ui/streamTtsOnToolCall.test.js", "src/desktopStore.minimaxVoiceConfig.test.js", "check-voice.{js,cjs}", "ios/Melo/{VoiceInput,SystemSpeechInput,SpeechText,SpeechPlaybackVerification}.swift", "ios/Tests/{SpeechTextTests,VoiceInputTests}.swift"],
-      "routes": ["/api/tts/", "/api/audio/"],
-      "testGroups": ["test:tts"],
-      "notes": ["朗读要点化：桌面 src/services/media/voiceRewrite.js 的 extractVoiceSummary，手机 SpeechText.swift 按同一规则。"]
+      "owns": [
+        "src/tts.js",
+        "src/services/tts/**",
+        "src/services/media/**",
+        "src/http/ttsRoutes.js",
+        "src/shared/minimaxVoiceResolver.js",
+        "desktop-ui/{voiceInput,ttsBridgeRouter}.js",
+        "desktop-ui/streamTtsOnToolCall.test.js",
+        "src/desktopStore.minimaxVoiceConfig.test.js",
+        "check-voice.{js,cjs}",
+        "ios/Melo/{VoiceInput,SystemSpeechInput,SpeechText,SpeechPlaybackVerification}.swift",
+        "ios/Tests/{SpeechTextTests,VoiceInputTests}.swift"
+      ],
+      "routes": [
+        "/api/tts/",
+        "/api/audio/"
+      ],
+      "testGroups": [
+        "test:tts"
+      ],
+      "notes": [
+        "朗读要点化：桌面 src/services/media/voiceRewrite.js 的 extractVoiceSummary，手机 SpeechText.swift 按同一规则。"
+      ]
     },
     "approvals": {
       "title": "授权、审批与任务",
-      "owns": ["src/services/approval/**", "src/domain/approval/**", "src/services/task/**", "src/domain/task/**", "src/tasks/**", "src/reminders/**", "src/safety/**", "src/services/activity/**", "src/domain/activity/**", "desktop-ui/fileSafetyResponse.js", "desktop-ui/features/approvals/**"],
-      "routes": ["/api/approvals", "/api/tasks", "/api/tools/", "/api/permissions/", "/api/safety/"],
-      "testGroups": ["test:audit-fixes"],
-      "notes": ["手机审批队列仍在 ChatStore.swift（P4 抽 DeviceApprovalCoordinator）；超时/取消后迟到批准零写入，两端共同约定。"]
+      "owns": [
+        "src/services/approval/**",
+        "src/domain/approval/**",
+        "src/services/task/**",
+        "src/domain/task/**",
+        "src/tasks/**",
+        "src/reminders/**",
+        "src/safety/**",
+        "src/services/activity/**",
+        "src/domain/activity/**",
+        "desktop-ui/fileSafetyResponse.js",
+        "desktop-ui/features/approvals/**"
+      ],
+      "routes": [
+        "/api/approvals",
+        "/api/tasks",
+        "/api/tools/",
+        "/api/permissions/",
+        "/api/safety/"
+      ],
+      "testGroups": [
+        "test:audit-fixes"
+      ],
+      "notes": [
+        "手机审批队列仍在 ChatStore.swift（P4 抽 DeviceApprovalCoordinator）；超时/取消后迟到批准零写入，两端共同约定。"
+      ]
     },
     "desktop-shell": {
       "title": "桌面壳与界面框架",
-      "owns": ["desktop-app/**", "desktop-ui/**", "src/index.js", "src/services/desktop/**", "scripts/{build-desktop-app.sh,install-desktop-app.sh,MeloLauncher.applescript,build-interface-languages.js,build-launch-screen.js,smoke-desktop.js,render-app-icons.mjs,render-icon.swift,render-mark-options.swift}", "Melo.command", "assets/**"],
-      "routes": ["/api/health", "/api/diagnostics", "/api/bootstrap", "/api/launch/", "/vendor/", "/shared/"],
-      "testGroups": ["test:ui", "test:architecture-performance"],
-      "notes": ["desktop-ui/app.js 是中央入口（导航、uiState、点击分发、render）；页面功能逐步迁入 desktop-ui/features/<功能>/（P2：记忆、项目已迁；registry.js 动作注册、featureContext.js 窄上下文，见 features/README.md）；src/services/desktop/bootstrap.js 组装整页数据，业务模块不应再导入（P1 gate）。", "神经场景与执行面板源码由 ios/scripts/build-scene.py 打包进手机。"]
+      "owns": [
+        "desktop-app/**",
+        "desktop-ui/**",
+        "src/index.js",
+        "src/services/desktop/**",
+        "scripts/{build-desktop-app.sh,install-desktop-app.sh,MeloLauncher.applescript,build-interface-languages.js,build-launch-screen.js,smoke-desktop.js,render-app-icons.mjs,render-icon.swift,render-mark-options.swift}",
+        "Melo.command",
+        "assets/**"
+      ],
+      "routes": [
+        "/api/health",
+        "/api/diagnostics",
+        "/api/bootstrap",
+        "/api/launch/",
+        "/vendor/",
+        "/shared/"
+      ],
+      "testGroups": [
+        "test:ui",
+        "test:architecture-performance"
+      ],
+      "notes": [
+        "desktop-ui/app.js 是中央入口（导航、uiState、点击分发、render）；页面功能逐步迁入 desktop-ui/features/<功能>/（P2：记忆、项目已迁；registry.js 动作注册、featureContext.js 窄上下文，见 features/README.md）；src/services/desktop/bootstrap.js 组装整页数据，业务模块不应再导入（P1 gate）。",
+        "神经场景与执行面板源码由 ios/scripts/build-scene.py 打包进手机。"
+      ]
     },
     "iphone": {
       "title": "iPhone 应用壳",
-      "owns": ["ios/**"],
+      "owns": [
+        "ios/**"
+      ],
       "routes": [],
-      "testGroups": ["test:ios"],
-      "notes": ["ChatStore.swift 同时协调存档、执行、审批、图片、团队与同步；P4 按 ConversationRepository / TurnCoordinator / DeviceApprovalCoordinator / WorkspaceSyncCoordinator / ExecutionRecordStore 拆分，保留公开表面。"]
+      "testGroups": [
+        "test:ios"
+      ],
+      "notes": [
+        "ChatStore.swift 同时协调存档、执行、审批、图片、团队与同步；P4 按 ConversationRepository / TurnCoordinator / DeviceApprovalCoordinator / WorkspaceSyncCoordinator / ExecutionRecordStore 拆分，保留公开表面。"
+      ]
     },
     "platform": {
       "title": "运行时、状态与传输",
       "kind": "support",
-      "owns": ["src/**"],
+      "owns": [
+        "src/**"
+      ],
       "routes": [],
-      "testGroups": ["test:architecture", "test:state-hydration", "test:store-atomic", "test:runtime"],
-      "notes": ["src/state/stateStore.js 事务、src/runtime/requestScope.js 入口身份、src/http/routeRegistry.js 声明式路由；src/desktopStore.js 为兼容入口。"]
+      "testGroups": [
+        "test:architecture",
+        "test:state-hydration",
+        "test:store-atomic",
+        "test:runtime"
+      ],
+      "notes": [
+        "src/state/stateStore.js 事务、src/runtime/requestScope.js 入口身份、src/http/routeRegistry.js 声明式路由；src/desktopStore.js 为兼容入口。"
+      ]
     },
     "channels": {
       "title": "远程渠道（Telegram / Discord，已归档）",
       "kind": "support",
-      "owns": ["src/services/remote/**", "src/shared/channelAvailability.js", "scripts/mock-telegram.js", "src/desktopStore.{discord,offlineBacklog}.test.js", "desktop-ui/telegramArchive.browser.test.js"],
+      "owns": [
+        "src/services/remote/**",
+        "src/shared/channelAvailability.js",
+        "scripts/mock-telegram.js",
+        "src/desktopStore.{discord,offlineBacklog}.test.js",
+        "desktop-ui/telegramArchive.browser.test.js"
+      ],
       "routes": [],
-      "testGroups": ["test:polling-offset"],
-      "notes": ["2026-10-16/17 按用户决定归档：配置与历史保留，入口和轮询关闭；政策入口 src/shared/channelAvailability.js。手机无对应。"]
+      "testGroups": [
+        "test:polling-offset"
+      ],
+      "notes": [
+        "2026-10-16/17 按用户决定归档：配置与历史保留，入口和轮询关闭；政策入口 src/shared/channelAvailability.js。手机无对应。"
+      ]
     },
     "tooling": {
       "title": "构建、测试与架构工具",
       "kind": "support",
-      "owns": ["scripts/**", "architecture/**", "package.json", "package-lock.json", "binding.gyp", "native/**"],
+      "owns": [
+        "scripts/**",
+        "architecture/**",
+        "package.json",
+        "package-lock.json",
+        "binding.gyp",
+        "native/**"
+      ],
       "routes": [],
-      "testGroups": ["test:scripts"],
-      "notes": ["npm test = verify-daily.js（按 scripts/test-plan.js 选组）；npm run test:full 为发布 gate。npm run scope 只报告，不改选组。"]
+      "testGroups": [
+        "test:scripts"
+      ],
+      "notes": [
+        "npm test = verify-daily.js（按 scripts/test-plan.js 选组）；npm run test:full 为发布 gate。npm run scope 只报告，不改选组。"
+      ]
     }
   },
   "counterparts": [
-    {"feature": "chat", "desktop": ["src/services/chat/chatExecutionRunner.js", "src/runtime/agentLoopContract.js"], "iphone": ["ios/Melo/AgentLoop.swift", "ios/Melo/AgentLoopRuntime.swift", "ios/Melo/AgentLoopContract.swift"], "contract": "agent-loop", "note": "同一聊天循环：prepare → invoke-model → finalize，限额与工具信封共用契约"},
-    {"feature": "chat", "desktop": ["src/services/chat/contextBudget.js", "src/services/chat/conversationSelection.js"], "iphone": ["ios/Melo/PhoneContext.swift", "ios/Melo/ConversationHistory.swift"], "contract": "agent-loop", "note": "上下文容量默认值与窗口/压缩触发计算一致；原文保留可回读"},
-    {"feature": "chat", "desktop": ["src/tools/builtins/readHistoryTool.js", "src/services/chat/toolTraceReplay.js"], "iphone": ["ios/Melo/ConversationHistory.swift", "ios/Melo/AgentLoopRuntime.swift"], "contract": "agent-loop", "note": "read_history 分页与工具轨迹前缀两端一致"},
-    {"feature": "chat", "desktop": ["src/services/chat/executionPipeline.js", "src/shared/executionMetadata.js"], "iphone": ["ios/Melo/ExecutionRecord.swift", "ios/Melo/RunProgress.swift"], "note": "执行记录、公开摘要与用量白名单；手机 API 回执只存本机"},
-    {"feature": "chat", "desktop": ["src/shared/replyDocument.js", "desktop-ui/replyDocument.js"], "iphone": ["ios/Melo/ReplyDocument.swift", "ios/Melo/ReplyContentView.swift"], "contract": "reply-document", "note": "回复正文分块/表格解析"},
-    {"feature": "agents", "desktop": ["src/services/agent/agentMutations.js", "src/domain/agent/agentDocument.js", "src/domain/agent/capabilities.js"], "iphone": ["ios/Melo/AgentProfile.swift", "ios/Melo/AgentEditSession.swift", "ios/Melo/AgentEditor.swift"], "contract": "sync-schema", "note": "人设文档与能力定义；手机经 /v1/agent-settings 同步并只读展示能力"},
-    {"feature": "agents", "desktop": ["src/agents/team.js", "src/agents/memberBackground.js"], "iphone": ["ios/Melo/AgentTeam.swift", "ios/Melo/TeamSheet.swift"], "contract": "cross-platform", "note": "团队计划、顺序与交接同一规则（contracts.json teamPlans/teamSchedule/teamHandoff）"},
-    {"feature": "projects", "desktop": ["src/services/project/projectMutations.js", "src/services/project/projectService.js", "src/domain/project/projectService.js"], "iphone": ["ios/Melo/PersonalWorkspace.swift", "ios/Melo/WorkspaceProjection.swift"], "contract": "sync-schema", "note": "项目编辑与同步投影；手机项目在 preferences.projects"},
-    {"feature": "memory", "desktop": ["desktop-ui/features/memory/controller.js", "desktop-ui/features/memory/viewFacts.js", "desktop-ui/features/memory/viewProjectBook.js", "desktop-ui/features/memory/viewMessageRefs.js", "src/services/memory/memoryManagement.js"], "iphone": ["ios/Melo/MemoryFacts.swift", "ios/Melo/MemoryFactsView.swift"], "contract": "sync-schema", "note": "记忆事实与项目记忆本（section/bookStatus）两端字段一致"},
-    {"feature": "knowledge", "desktop": ["src/services/chat/knowledgeContext.js", "src/memory/knowledgeIndex.js"], "iphone": ["ios/Melo/AgentProfile.swift", "ios/Melo/PersonalWorkspace.swift", "ios/Melo/ConversationControls.swift"], "note": "按问题切段检索（1200/150）、开关过滤；手机语义向量实现不同，检索/预算/开关契约一致"},
-    {"feature": "sync", "desktop": ["mobile-sync/workspaceProtocol.js", "src/services/remote/mobileSync.js", "src/services/chat/portableWorkspace.js"], "iphone": ["ios/Melo/SyncWorkspace.swift", "ios/Melo/WorkspaceProjection.swift"], "contract": "sync-schema", "note": "schema 生成 JS/Swift 校验；tombstone、冲突与待恢复日志"},
-    {"feature": "sync", "desktop": ["mobile-sync/projectMemoryProtocol.js", "src/services/chat/projectMemorySync.js"], "iphone": ["ios/Melo/MemoryFacts.swift", "ios/Melo/SyncWorkspace.swift"], "note": "项目来源记忆独立可选通道 /v1/project-memory"},
-    {"feature": "settings", "desktop": ["src/services/settings/llmConnections.js", "desktop-ui/llmConnections.js"], "iphone": ["ios/Melo/LLMConnections.swift", "ios/Melo/ModelSettingsSections.swift"], "note": "API 连接独立；凭证不复制"},
-    {"feature": "settings", "desktop": ["desktop-ui/settingsEdit.js", "desktop-ui/localSettings.js"], "iphone": ["ios/Melo/EditDraft.swift", "ios/Melo/EditableSection.swift", "ios/Melo/LocalSettingsView.swift"], "note": "设置默认只读、显式编辑保存，失败/冲突保留草稿"},
-    {"feature": "settings", "desktop": ["desktop-ui/i18n.js", "desktop-ui/translations.js"], "iphone": ["ios/Melo/InterfaceLanguage.swift", "ios/Melo/Localizable.xcstrings"], "note": "五语词条由 build-interface-languages.js 生成手机目录"},
-    {"feature": "tools", "desktop": ["src/tools/executor.js", "src/tools/toolResult.js"], "iphone": ["ios/Melo/DeviceTools.swift", "ios/Melo/WebPageTools.swift", "ios/Melo/WebPageText.swift"], "contract": "agent-loop", "note": "工具信封与错误码共用；手机为设备/网页工具，桌面为文件/命令/MCP"},
-    {"feature": "tools", "desktop": ["src/shared/executionScene.js", "src/tools/urlSafety.js"], "iphone": ["ios/Melo/WebSources.swift", "ios/Melo/WebPageText.swift"], "contract": "cross-platform", "note": "来源身份与链接提取（contracts.json proseUrls/sourceIdentity）"},
-    {"feature": "media", "desktop": ["src/images/imageGen.js", "src/services/chat/imageTask.js", "desktop-ui/imagePreview.js"], "iphone": ["ios/Melo/ImageWorkflow.swift", "ios/Melo/ImageViews.swift", "ios/Melo/ImageLibrary.swift"], "note": "图片意图、原图绑定、失败保留与保存"},
-    {"feature": "voice", "desktop": ["desktop-ui/voiceInput.js", "src/services/media/voiceRewrite.js"], "iphone": ["ios/Melo/VoiceInput.swift", "ios/Melo/SpeechText.swift"], "note": "语音输入与朗读要点化"},
-    {"feature": "approvals", "desktop": ["src/services/approval/approvalService.js", "src/tools/permissions.js"], "iphone": ["ios/Melo/ChatStore.swift", "ios/Melo/DeviceTools.swift"], "note": "审批截止/撤销与写入前复查；手机审批队列在 ChatStore"},
-    {"feature": "desktop-shell", "desktop": ["desktop-ui/neuralScene.js", "desktop-ui/neuralScene3D.js", "desktop-ui/executionPanel.js"], "iphone": ["ios/SceneSource/mobile.js", "ios/Melo/NeuralField.swift", "ios/Melo/NeuralWebView.swift"], "note": "桌面神经/执行渲染器原样打包进手机 Scene（build-scene.py）"},
-    {"feature": "iphone", "desktop": ["desktop-ui/app.js", "src/services/desktop/bootstrap.js"], "iphone": ["ios/Melo/ChatStore.swift", "ios/Melo/ContentView.swift"], "note": "两端界面协调层：桌面 uiState/app.js，手机 ChatStore；P2/P4 分别拆分"}
+    {
+      "feature": "chat",
+      "desktop": [
+        "src/services/chat/chatExecutionRunner.js",
+        "src/runtime/agentLoopContract.js"
+      ],
+      "iphone": [
+        "ios/Melo/AgentLoop.swift",
+        "ios/Melo/AgentLoopRuntime.swift",
+        "ios/Melo/AgentLoopContract.swift"
+      ],
+      "contract": "agent-loop",
+      "note": "同一聊天循环：prepare → invoke-model → finalize，限额与工具信封共用契约"
+    },
+    {
+      "feature": "chat",
+      "desktop": [
+        "src/services/chat/contextBudget.js",
+        "src/services/chat/conversationSelection.js"
+      ],
+      "iphone": [
+        "ios/Melo/PhoneContext.swift",
+        "ios/Melo/ConversationHistory.swift"
+      ],
+      "contract": "agent-loop",
+      "note": "上下文容量默认值与窗口/压缩触发计算一致；原文保留可回读"
+    },
+    {
+      "feature": "chat",
+      "desktop": [
+        "src/tools/builtins/readHistoryTool.js",
+        "src/services/chat/toolTraceReplay.js"
+      ],
+      "iphone": [
+        "ios/Melo/ConversationHistory.swift",
+        "ios/Melo/AgentLoopRuntime.swift"
+      ],
+      "contract": "agent-loop",
+      "note": "read_history 分页与工具轨迹前缀两端一致"
+    },
+    {
+      "feature": "chat",
+      "desktop": [
+        "src/services/chat/executionPipeline.js",
+        "src/shared/executionMetadata.js"
+      ],
+      "iphone": [
+        "ios/Melo/ExecutionRecord.swift",
+        "ios/Melo/RunProgress.swift"
+      ],
+      "note": "执行记录、公开摘要与用量白名单；手机 API 回执只存本机"
+    },
+    {
+      "feature": "chat",
+      "desktop": [
+        "src/shared/replyDocument.js",
+        "desktop-ui/replyDocument.js"
+      ],
+      "iphone": [
+        "ios/Melo/ReplyDocument.swift",
+        "ios/Melo/ReplyContentView.swift"
+      ],
+      "contract": "reply-document",
+      "note": "回复正文分块/表格解析"
+    },
+    {
+      "feature": "agents",
+      "desktop": [
+        "src/services/agent/agentMutations.js",
+        "src/domain/agent/agentDocument.js",
+        "src/domain/agent/capabilities.js"
+      ],
+      "iphone": [
+        "ios/Melo/AgentProfile.swift",
+        "ios/Melo/AgentEditSession.swift",
+        "ios/Melo/AgentEditor.swift"
+      ],
+      "contract": "sync-schema",
+      "note": "人设文档与能力定义；手机经 /v1/agent-settings 同步并只读展示能力"
+    },
+    {
+      "feature": "agents",
+      "desktop": [
+        "src/agents/team.js",
+        "src/agents/memberBackground.js"
+      ],
+      "iphone": [
+        "ios/Melo/AgentTeam.swift",
+        "ios/Melo/TeamSheet.swift"
+      ],
+      "contract": "cross-platform",
+      "note": "团队计划、顺序与交接同一规则（contracts.json teamPlans/teamSchedule/teamHandoff）"
+    },
+    {
+      "feature": "projects",
+      "desktop": [
+        "src/services/project/projectMutations.js",
+        "src/services/project/projectService.js",
+        "src/domain/project/projectService.js"
+      ],
+      "iphone": [
+        "ios/Melo/PersonalWorkspace.swift",
+        "ios/Melo/WorkspaceProjection.swift"
+      ],
+      "contract": "sync-schema",
+      "note": "项目编辑与同步投影；手机项目在 preferences.projects"
+    },
+    {
+      "feature": "memory",
+      "desktop": [
+        "desktop-ui/features/memory/controller.js",
+        "desktop-ui/features/memory/viewFacts.js",
+        "desktop-ui/features/memory/viewProjectBook.js",
+        "desktop-ui/features/memory/viewMessageRefs.js",
+        "src/services/memory/memoryManagement.js"
+      ],
+      "iphone": [
+        "ios/Melo/MemoryFacts.swift",
+        "ios/Melo/MemoryFactsView.swift"
+      ],
+      "contract": "sync-schema",
+      "note": "记忆事实与项目记忆本（section/bookStatus）两端字段一致"
+    },
+    {
+      "feature": "knowledge",
+      "desktop": [
+        "src/services/chat/knowledgeContext.js",
+        "src/memory/knowledgeIndex.js"
+      ],
+      "iphone": [
+        "ios/Melo/AgentProfile.swift",
+        "ios/Melo/PersonalWorkspace.swift",
+        "ios/Melo/ConversationControls.swift"
+      ],
+      "note": "按问题切段检索（1200/150）、开关过滤；手机语义向量实现不同，检索/预算/开关契约一致"
+    },
+    {
+      "feature": "sync",
+      "desktop": [
+        "mobile-sync/workspaceProtocol.js",
+        "src/services/remote/mobileSync.js",
+        "src/services/chat/portableWorkspace.js"
+      ],
+      "iphone": [
+        "ios/Melo/SyncWorkspace.swift",
+        "ios/Melo/WorkspaceProjection.swift"
+      ],
+      "contract": "sync-schema",
+      "note": "schema 生成 JS/Swift 校验；tombstone、冲突与待恢复日志"
+    },
+    {
+      "feature": "sync",
+      "desktop": [
+        "mobile-sync/projectMemoryProtocol.js",
+        "src/services/chat/projectMemorySync.js"
+      ],
+      "iphone": [
+        "ios/Melo/MemoryFacts.swift",
+        "ios/Melo/SyncWorkspace.swift"
+      ],
+      "note": "项目来源记忆独立可选通道 /v1/project-memory"
+    },
+    {
+      "feature": "settings",
+      "desktop": [
+        "src/services/settings/llmConnections.js",
+        "desktop-ui/llmConnections.js"
+      ],
+      "iphone": [
+        "ios/Melo/LLMConnections.swift",
+        "ios/Melo/ModelSettingsSections.swift"
+      ],
+      "note": "API 连接独立；凭证不复制"
+    },
+    {
+      "feature": "settings",
+      "desktop": [
+        "desktop-ui/settingsEdit.js",
+        "desktop-ui/localSettings.js"
+      ],
+      "iphone": [
+        "ios/Melo/EditDraft.swift",
+        "ios/Melo/EditableSection.swift",
+        "ios/Melo/LocalSettingsView.swift"
+      ],
+      "note": "设置默认只读、显式编辑保存，失败/冲突保留草稿"
+    },
+    {
+      "feature": "settings",
+      "desktop": [
+        "desktop-ui/i18n.js",
+        "desktop-ui/translations.js"
+      ],
+      "iphone": [
+        "ios/Melo/InterfaceLanguage.swift",
+        "ios/Melo/Localizable.xcstrings"
+      ],
+      "note": "五语词条由 build-interface-languages.js 生成手机目录"
+    },
+    {
+      "feature": "tools",
+      "desktop": [
+        "src/tools/executor.js",
+        "src/tools/toolResult.js"
+      ],
+      "iphone": [
+        "ios/Melo/DeviceTools.swift",
+        "ios/Melo/WebPageTools.swift",
+        "ios/Melo/WebPageText.swift"
+      ],
+      "contract": "agent-loop",
+      "note": "工具信封与错误码共用；手机为设备/网页工具，桌面为文件/命令/MCP"
+    },
+    {
+      "feature": "tools",
+      "desktop": [
+        "src/shared/executionScene.js",
+        "src/tools/urlSafety.js"
+      ],
+      "iphone": [
+        "ios/Melo/WebSources.swift",
+        "ios/Melo/WebPageText.swift"
+      ],
+      "contract": "cross-platform",
+      "note": "来源身份与链接提取（contracts.json proseUrls/sourceIdentity）"
+    },
+    {
+      "feature": "media",
+      "desktop": [
+        "src/images/imageGen.js",
+        "src/services/chat/imageTask.js",
+        "desktop-ui/imagePreview.js"
+      ],
+      "iphone": [
+        "ios/Melo/ImageWorkflow.swift",
+        "ios/Melo/ImageViews.swift",
+        "ios/Melo/ImageLibrary.swift"
+      ],
+      "note": "图片意图、原图绑定、失败保留与保存"
+    },
+    {
+      "feature": "voice",
+      "desktop": [
+        "desktop-ui/voiceInput.js",
+        "src/services/media/voiceRewrite.js"
+      ],
+      "iphone": [
+        "ios/Melo/VoiceInput.swift",
+        "ios/Melo/SpeechText.swift"
+      ],
+      "note": "语音输入与朗读要点化"
+    },
+    {
+      "feature": "approvals",
+      "desktop": [
+        "src/services/approval/approvalService.js",
+        "src/tools/permissions.js"
+      ],
+      "iphone": [
+        "ios/Melo/ChatStore.swift",
+        "ios/Melo/DeviceTools.swift"
+      ],
+      "note": "审批截止/撤销与写入前复查；手机审批队列在 ChatStore"
+    },
+    {
+      "feature": "desktop-shell",
+      "desktop": [
+        "desktop-ui/neuralScene.js",
+        "desktop-ui/neuralScene3D.js",
+        "desktop-ui/executionPanel.js"
+      ],
+      "iphone": [
+        "ios/SceneSource/mobile.js",
+        "ios/Melo/NeuralField.swift",
+        "ios/Melo/NeuralWebView.swift"
+      ],
+      "note": "桌面神经/执行渲染器原样打包进手机 Scene（build-scene.py）"
+    },
+    {
+      "feature": "iphone",
+      "desktop": [
+        "desktop-ui/app.js",
+        "src/services/desktop/bootstrap.js"
+      ],
+      "iphone": [
+        "ios/Melo/ChatStore.swift",
+        "ios/Melo/ContentView.swift"
+      ],
+      "note": "两端界面协调层：桌面 uiState/app.js，手机 ChatStore；P2/P4 分别拆分"
+    }
   ],
   "sharedContracts": [
-    {"id": "agent-loop", "path": "shared/protocol/agent-loop.json", "title": "聊天 agent loop 双端契约（限额、预算、重复拦截、工具信封、补充、轨迹、核实、read_history、上下文预算）", "desktop": ["src/runtime/agentLoopContract.js"], "iphone": ["ios/Melo/AgentLoopContract.swift", "ios/Melo/AgentLoop.swift", "ios/Melo/AgentLoopRuntime.swift"], "generator": "scripts/generate-agent-loop-contract.js", "tests": ["src/runtime/agentLoopContract.test.js", "scripts/generate-agent-loop-contract.test.js", "ios/Tests/SharedContractTests.swift", "ios/Tests/AgentLoopTests.swift"], "note": "桌面运行时读取 JSON，手机内嵌生成副本（不含 fixtures）；两端跑同一批 fixtures。P3/P4 新增双端行为先扩展此文件。"},
-    {"id": "sync-schema", "path": "shared/protocol/sync.schema.json", "title": "工作区同步 schema（v1 冻结 + 可选扩展）", "desktop": ["mobile-sync/syncContract.generated.js", "mobile-sync/schemaValidator.js"], "iphone": ["ios/Melo/SyncWorkspace.swift"], "generator": "scripts/generate-sync-contract.js", "tests": ["scripts/generate-sync-contract.test.js", "mobile-sync/syncContract.test.js", "ios/Tests/SyncContractTests.swift"], "note": "Swift 校验器模板 shared/protocol/swift-validator.template；共用样例 shared/protocol/fixtures.json。"},
-    {"id": "cross-platform", "path": "shared/protocol/contracts.json", "title": "跨端行为样例（链接提取、来源键、工具回放、团队交接/计划/顺序、压缩同步）", "desktop": [], "iphone": ["ios/Melo/AgentTeam.swift", "ios/Melo/WebSources.swift", "ios/Melo/AgentProfile.swift"], "tests": ["mobile-sync/crossPlatformContracts.test.js", "ios/Tests/SharedContractTests.swift"], "note": "两端测试读同一 JSON；不生成代码。"},
-    {"id": "reply-document", "path": "shared/replyDocument.js", "title": "回复正文解析（桌面共用模块，手机 Swift 移植）", "desktop": ["src/shared/replyDocument.js", "desktop-ui/replyDocument.js"], "iphone": ["ios/Melo/ReplyDocument.swift"], "tests": ["desktop-ui/replyDocument.test.js", "ios/Tests/ConversationFoundationTests.swift"], "note": "桌面经 /shared/replyDocument.js 提供给页面。"}
+    {
+      "id": "agent-loop",
+      "path": "shared/protocol/agent-loop.json",
+      "title": "聊天 agent loop 双端契约（限额、预算、重复拦截、工具信封、补充、轨迹、核实、read_history、上下文预算）",
+      "desktop": [
+        "src/runtime/agentLoopContract.js"
+      ],
+      "iphone": [
+        "ios/Melo/AgentLoopContract.swift",
+        "ios/Melo/AgentLoop.swift",
+        "ios/Melo/AgentLoopRuntime.swift"
+      ],
+      "generator": "scripts/generate-agent-loop-contract.js",
+      "tests": [
+        "src/runtime/agentLoopContract.test.js",
+        "scripts/generate-agent-loop-contract.test.js",
+        "ios/Tests/SharedContractTests.swift",
+        "ios/Tests/AgentLoopTests.swift"
+      ],
+      "note": "桌面运行时读取 JSON，手机内嵌生成副本（不含 fixtures）；两端跑同一批 fixtures。P3/P4 新增双端行为先扩展此文件。"
+    },
+    {
+      "id": "sync-schema",
+      "path": "shared/protocol/sync.schema.json",
+      "title": "工作区同步 schema（v1 冻结 + 可选扩展）",
+      "desktop": [
+        "mobile-sync/syncContract.generated.js",
+        "mobile-sync/schemaValidator.js"
+      ],
+      "iphone": [
+        "ios/Melo/SyncWorkspace.swift"
+      ],
+      "generator": "scripts/generate-sync-contract.js",
+      "tests": [
+        "scripts/generate-sync-contract.test.js",
+        "mobile-sync/syncContract.test.js",
+        "ios/Tests/SyncContractTests.swift"
+      ],
+      "note": "Swift 校验器模板 shared/protocol/swift-validator.template；共用样例 shared/protocol/fixtures.json。"
+    },
+    {
+      "id": "cross-platform",
+      "path": "shared/protocol/contracts.json",
+      "title": "跨端行为样例（链接提取、来源键、工具回放、团队交接/计划/顺序、压缩同步）",
+      "desktop": [],
+      "iphone": [
+        "ios/Melo/AgentTeam.swift",
+        "ios/Melo/WebSources.swift",
+        "ios/Melo/AgentProfile.swift"
+      ],
+      "tests": [
+        "mobile-sync/crossPlatformContracts.test.js",
+        "ios/Tests/SharedContractTests.swift"
+      ],
+      "note": "两端测试读同一 JSON；不生成代码。"
+    },
+    {
+      "id": "reply-document",
+      "path": "shared/replyDocument.js",
+      "title": "回复正文解析（桌面共用模块，手机 Swift 移植）",
+      "desktop": [
+        "src/shared/replyDocument.js",
+        "desktop-ui/replyDocument.js"
+      ],
+      "iphone": [
+        "ios/Melo/ReplyDocument.swift"
+      ],
+      "tests": [
+        "desktop-ui/replyDocument.test.js",
+        "ios/Tests/ConversationFoundationTests.swift"
+      ],
+      "note": "桌面经 /shared/replyDocument.js 提供给页面。"
+    }
   ],
   "implicit": [
-    {"id": "gen-agent-loop", "kind": "generator", "generator": "scripts/generate-agent-loop-contract.js", "inputs": ["shared/protocol/agent-loop.json"], "outputs": ["ios/Melo/AgentLoopContract.swift"], "check": "scripts/generate-agent-loop-contract.test.js", "command": "npm run generate:agent-loop-contract", "note": "改 agent-loop.json 后重新生成手机副本"},
-    {"id": "gen-sync-contract", "kind": "generator", "generator": "scripts/generate-sync-contract.js", "inputs": ["shared/protocol/sync.schema.json", "shared/protocol/swift-validator.template"], "outputs": ["mobile-sync/syncContract.generated.js", "ios/Melo/SyncWorkspace.swift"], "check": "scripts/generate-sync-contract.test.js", "command": "npm run generate:sync-contract", "note": "同一 schema 生成 JS 与 Swift 校验"},
-    {"id": "gen-ios-scene", "kind": "generator", "generator": "ios/scripts/build-scene.py", "inputs": "parse", "outputs": ["ios/Melo/Scene/**", "ios/Melo/MeloTheme.swift"], "check": "ios/scripts/test.py", "command": "npm run build:ios-scene", "note": "桌面渲染器原样打包进手机；desktop-manifest.json 记录输入散列，ios/scripts/test.py 校验"},
-    {"id": "gen-interface-languages", "kind": "generator", "generator": "scripts/build-interface-languages.js", "inputs": ["desktop-ui/translations.js", "ios/native-translations.js"], "outputs": ["ios/Melo/Localizable.xcstrings"], "check": "scripts/native-translations.test.js", "command": "node scripts/build-interface-languages.js", "note": "五语词条；--check 校验手机目录"},
-    {"id": "gen-module-map", "kind": "generator", "generator": "scripts/generate-module-map.js", "inputs": ["architecture/module-annotations.json", "scripts/check-dependencies.js"], "outputs": ["architecture/modules.json"], "check": "scripts/generate-module-map.test.js", "command": "npm run generate:module-map", "note": "静态 import 图 + 路由登记 + 本注释文件；新增文件/路由/跨功能 import 后重新生成"},
-    {"id": "bridge-desktop-native", "kind": "native-bridge", "from": ["desktop-ui/localSettings.js", "desktop-ui/voiceInput.js", "desktop-ui/launchScreen.js", "desktop-ui/app.js"], "to": ["desktop-app/main.swift"], "tests": ["desktop-ui/localSettings.test.js", "desktop-ui/launchScreen.test.js"], "note": "window.webkit.messageHandlers.meloVoice（nativeSettings、保存图片、语音、回复完成通知）由 main.swift 的 WKScriptMessageHandler 处理"},
-    {"id": "bridge-process-shutdown", "kind": "native-bridge", "from": ["desktop-app/ProcessShutdown.swift"], "to": ["src/server.js"], "tests": ["scripts/native-shutdown.test.js"], "note": "原生壳关停后端进程的信号与锁约定"},
-    {"id": "bridge-ios-scene", "kind": "native-bridge", "from": ["ios/SceneSource/mobile.js"], "to": ["ios/Melo/NeuralField.swift", "ios/Melo/NeuralWebView.swift"], "tests": ["ios/Tests/SceneBridge.test.js"], "note": "webkit.messageHandlers.meloScene：共享场景与原生视图互通"},
-    {"id": "served-shared-modules", "kind": "served-module", "served": {"/shared/channelAvailability.js": "src/shared/channelAvailability.js", "/shared/minimaxVoiceResolver.js": "src/shared/minimaxVoiceResolver.js", "/shared/modelCatalog.js": "src/shared/modelCatalog.js", "/shared/executionScene.js": "src/shared/executionScene.js", "/shared/executionMetadata.js": "src/shared/executionMetadata.js", "/shared/replyDocument.js": "src/shared/replyDocument.js", "/shared/urlDetector.js": "src/media/urlDetector.js", "/shared/textUrls.js": "src/media/textUrls.js", "/shared/localPreferences.js": "src/domain/settings/localPreferences.js"}, "to": ["src/server.js"], "note": "页面 import '/shared/*.js' 由 src/server.js 的路由映射到后端源码；这些后端模块必须保持浏览器可运行（无 node: 依赖）"},
-    {"id": "source-tests-app-js", "kind": "source-reading-test", "reads": ["desktop-ui/app.js"], "tests": ["desktop-ui/connectorDraftDispatch.test.js", "desktop-ui/features/registry.test.js", "desktop-ui/mediaAttachment.source.test.js", "desktop-ui/streamTtsOnToolCall.test.js", "src/safety/fileSafetyGate.production.test.js"], "note": "按源码文本断言 app.js 里仍在的代码：连接器 / 模型表单监听接线、registry 结构守卫（不留 case / uiState 字段）、新建对话与链接卡片接线、TTS 工具调用守卫、文件安全对话框与安全设置；迁出 app.js 时同批改为行为测试或跟随新文件（P2c 已把 api() 与聊天相关断言改为行为测试）"},
-    {"id": "source-tests-chat-feature", "kind": "source-reading-test", "reads": ["desktop-ui/features/chat/controller.js", "desktop-ui/features/chat/api.js"], "tests": ["desktop-ui/mediaAttachment.source.test.js", "src/safety/fileSafetyGate.production.test.js"], "note": "按源码文本检查聊天功能的接线（新建对话唯一入口、file_safety 分支）；发送、草稿与语音行为由 features/chat/controller.test.js 覆盖"},
-    {"id": "source-tests-cross-module", "kind": "source-reading-test", "pairs": {"src/services/agent/markdownFiles.test.js": ["src/services/agent/agentMutations.js"], "src/services/tts/nativeStopEndpointsGuard.test.js": ["src/http/ttsRoutes.js"], "ios/Tests/SceneBridge.test.js": ["desktop-ui/executionPanel.js", "ios/SceneSource/mobile.js"], "src/safety/fileSafetyGate.production.test.js": ["desktop-ui/app.js", "desktop-ui/features/chat/controller.js", "src/openai.js", "src/server.js"]}, "note": "测试读取另一模块源码文本，移动/改名被读文件时须同批更新"},
-    {"id": "source-tests-self", "kind": "source-reading-test", "pairs": {"desktop-ui/executionPanel.test.js": ["desktop-ui/executionPanel.js"], "desktop-ui/launchScreen.test.js": ["desktop-ui/launchScreen.js"], "desktop-ui/localSettings.test.js": ["desktop-ui/localSettings.js"], "src/services/chat/chatExecutionRunner.test.js": ["src/services/chat/chatExecutionRunner.js"], "src/services/remote/pollingOffset.source.test.js": ["src/services/remote/discordPolling.js", "src/services/remote/telegramPolling.js"], "src/services/search/socialLinkReader.evidenceTrail.test.js": ["src/services/search/socialLinkReader.js"], "src/tools/builtins/fetchUrlTool.socialRoute.test.js": ["src/tools/builtins/fetchUrlTool.js"], "src/tools/builtins/phase2d.bashTool.test.js": ["src/tools/builtins/bashTool.js"], "src/tools/builtins/webSearchTool.crossHome.test.js": ["src/tools/builtins/webSearchTool.js"], "src/tools/builtins/webSearchTool.helpers.test.js": ["src/tools/builtins/webSearchTool.js"], "src/web/externalReaders.test.js": ["src/web/externalReaders.js"], "src/agents/skillRuns.crossHome.test.js": ["src/agents/skillRuns.js"], "src/memory/conversationIndex.crossHome.test.js": ["src/memory/conversationIndex.js"]}, "note": "测试读取自身被测模块的源码文本（规则/正则守卫），逐字节移植时保持文本"},
-    {"id": "source-tests-index-html", "kind": "source-reading-test", "reads": ["desktop-ui/index.html", "desktop-ui/**/*.css"], "tests": ["desktop-ui/executionTelemetry.browser.test.js", "desktop-ui/executionTiming.browser.test.js"], "note": "浏览器测试从 index.html 读取 importmap 与样式表清单；新增/改名页面模块或 CSS 时同步 index.html"},
-    {"id": "tooling-test-plan", "kind": "source-reading-test", "reads": ["package.json", "scripts/verify-red-green.js", "scripts/run-unit-tests.js"], "tests": ["scripts/test-plan.test.js", "scripts/test-discovery.test.js"], "note": "gate 接线测试读取脚本与 package.json"}
+    {
+      "id": "gen-agent-loop",
+      "kind": "generator",
+      "generator": "scripts/generate-agent-loop-contract.js",
+      "inputs": [
+        "shared/protocol/agent-loop.json"
+      ],
+      "outputs": [
+        "ios/Melo/AgentLoopContract.swift"
+      ],
+      "check": "scripts/generate-agent-loop-contract.test.js",
+      "command": "npm run generate:agent-loop-contract",
+      "note": "改 agent-loop.json 后重新生成手机副本"
+    },
+    {
+      "id": "gen-sync-contract",
+      "kind": "generator",
+      "generator": "scripts/generate-sync-contract.js",
+      "inputs": [
+        "shared/protocol/sync.schema.json",
+        "shared/protocol/swift-validator.template"
+      ],
+      "outputs": [
+        "mobile-sync/syncContract.generated.js",
+        "ios/Melo/SyncWorkspace.swift"
+      ],
+      "check": "scripts/generate-sync-contract.test.js",
+      "command": "npm run generate:sync-contract",
+      "note": "同一 schema 生成 JS 与 Swift 校验"
+    },
+    {
+      "id": "gen-ios-scene",
+      "kind": "generator",
+      "generator": "ios/scripts/build-scene.py",
+      "inputs": "parse",
+      "outputs": [
+        "ios/Melo/Scene/**",
+        "ios/Melo/MeloTheme.swift"
+      ],
+      "check": "ios/scripts/test.py",
+      "command": "npm run build:ios-scene",
+      "note": "桌面渲染器原样打包进手机；desktop-manifest.json 记录输入散列，ios/scripts/test.py 校验"
+    },
+    {
+      "id": "gen-interface-languages",
+      "kind": "generator",
+      "generator": "scripts/build-interface-languages.js",
+      "inputs": [
+        "desktop-ui/translations.js",
+        "ios/native-translations.js"
+      ],
+      "outputs": [
+        "ios/Melo/Localizable.xcstrings"
+      ],
+      "check": "scripts/native-translations.test.js",
+      "command": "node scripts/build-interface-languages.js",
+      "note": "五语词条；--check 校验手机目录"
+    },
+    {
+      "id": "gen-module-map",
+      "kind": "generator",
+      "generator": "scripts/generate-module-map.js",
+      "inputs": [
+        "architecture/module-annotations.json",
+        "scripts/check-dependencies.js"
+      ],
+      "outputs": [
+        "architecture/modules.json"
+      ],
+      "check": "scripts/generate-module-map.test.js",
+      "command": "npm run generate:module-map",
+      "note": "静态 import 图 + 路由登记 + 本注释文件；新增文件/路由/跨功能 import 后重新生成"
+    },
+    {
+      "id": "bridge-desktop-native",
+      "kind": "native-bridge",
+      "from": [
+        "desktop-ui/localSettings.js",
+        "desktop-ui/voiceInput.js",
+        "desktop-ui/launchScreen.js",
+        "desktop-ui/app.js"
+      ],
+      "to": [
+        "desktop-app/main.swift"
+      ],
+      "tests": [
+        "desktop-ui/localSettings.test.js",
+        "desktop-ui/launchScreen.test.js"
+      ],
+      "note": "window.webkit.messageHandlers.meloVoice（nativeSettings、保存图片、语音、回复完成通知）由 main.swift 的 WKScriptMessageHandler 处理"
+    },
+    {
+      "id": "bridge-process-shutdown",
+      "kind": "native-bridge",
+      "from": [
+        "desktop-app/ProcessShutdown.swift"
+      ],
+      "to": [
+        "src/server.js"
+      ],
+      "tests": [
+        "scripts/native-shutdown.test.js"
+      ],
+      "note": "原生壳关停后端进程的信号与锁约定"
+    },
+    {
+      "id": "bridge-ios-scene",
+      "kind": "native-bridge",
+      "from": [
+        "ios/SceneSource/mobile.js"
+      ],
+      "to": [
+        "ios/Melo/NeuralField.swift",
+        "ios/Melo/NeuralWebView.swift"
+      ],
+      "tests": [
+        "ios/Tests/SceneBridge.test.js"
+      ],
+      "note": "webkit.messageHandlers.meloScene：共享场景与原生视图互通"
+    },
+    {
+      "id": "served-shared-modules",
+      "kind": "served-module",
+      "served": {
+        "/shared/channelAvailability.js": "src/shared/channelAvailability.js",
+        "/shared/minimaxVoiceResolver.js": "src/shared/minimaxVoiceResolver.js",
+        "/shared/modelCatalog.js": "src/shared/modelCatalog.js",
+        "/shared/executionScene.js": "src/shared/executionScene.js",
+        "/shared/executionMetadata.js": "src/shared/executionMetadata.js",
+        "/shared/replyDocument.js": "src/shared/replyDocument.js",
+        "/shared/urlDetector.js": "src/media/urlDetector.js",
+        "/shared/textUrls.js": "src/media/textUrls.js",
+        "/shared/localPreferences.js": "src/domain/settings/localPreferences.js"
+      },
+      "to": [
+        "src/server.js"
+      ],
+      "note": "页面 import '/shared/*.js' 由 src/server.js 的路由映射到后端源码；这些后端模块必须保持浏览器可运行（无 node: 依赖）"
+    },
+    {
+      "id": "source-tests-app-js",
+      "kind": "source-reading-test",
+      "reads": [
+        "desktop-ui/app.js"
+      ],
+      "tests": [
+        "desktop-ui/connectorDraftDispatch.test.js",
+        "desktop-ui/features/registry.test.js",
+        "desktop-ui/mediaAttachment.source.test.js",
+        "desktop-ui/streamTtsOnToolCall.test.js",
+        "src/safety/fileSafetyGate.production.test.js"
+      ],
+      "note": "按源码文本断言 app.js 里仍在的代码：连接器 / 模型表单监听接线、registry 结构守卫（不留 case / uiState 字段）、新建对话与链接卡片接线、TTS 工具调用守卫、文件安全对话框与安全设置；迁出 app.js 时同批改为行为测试或跟随新文件（P2c 已把 api() 与聊天相关断言改为行为测试）"
+    },
+    {
+      "id": "source-tests-chat-feature",
+      "kind": "source-reading-test",
+      "reads": [
+        "desktop-ui/features/chat/controller.js",
+        "desktop-ui/features/chat/api.js"
+      ],
+      "tests": [
+        "desktop-ui/mediaAttachment.source.test.js",
+        "src/safety/fileSafetyGate.production.test.js"
+      ],
+      "note": "按源码文本检查聊天功能的接线（新建对话唯一入口、file_safety 分支）；发送、草稿与语音行为由 features/chat/controller.test.js 覆盖"
+    },
+    {
+      "id": "source-tests-cross-module",
+      "kind": "source-reading-test",
+      "pairs": {
+        "src/services/agent/markdownFiles.test.js": [
+          "src/services/agent/agentMutations.js"
+        ],
+        "src/services/tts/nativeStopEndpointsGuard.test.js": [
+          "src/http/ttsRoutes.js"
+        ],
+        "ios/Tests/SceneBridge.test.js": [
+          "desktop-ui/executionPanel.js",
+          "ios/SceneSource/mobile.js"
+        ],
+        "src/safety/fileSafetyGate.production.test.js": [
+          "desktop-ui/app.js",
+          "desktop-ui/features/chat/controller.js",
+          "src/openai.js",
+          "src/server.js"
+        ]
+      },
+      "note": "测试读取另一模块源码文本，移动/改名被读文件时须同批更新"
+    },
+    {
+      "id": "source-tests-self",
+      "kind": "source-reading-test",
+      "pairs": {
+        "desktop-ui/executionPanel.test.js": [
+          "desktop-ui/executionPanel.js"
+        ],
+        "desktop-ui/launchScreen.test.js": [
+          "desktop-ui/launchScreen.js"
+        ],
+        "desktop-ui/localSettings.test.js": [
+          "desktop-ui/localSettings.js"
+        ],
+        "src/services/chat/chatExecutionRunner.test.js": [
+          "src/services/chat/chatExecutionRunner.js"
+        ],
+        "src/services/remote/pollingOffset.source.test.js": [
+          "src/services/remote/discordPolling.js",
+          "src/services/remote/telegramPolling.js"
+        ],
+        "src/services/search/socialLinkReader.evidenceTrail.test.js": [
+          "src/services/search/socialLinkReader.js"
+        ],
+        "src/tools/builtins/fetchUrlTool.socialRoute.test.js": [
+          "src/tools/builtins/fetchUrlTool.js"
+        ],
+        "src/tools/builtins/phase2d.bashTool.test.js": [
+          "src/tools/builtins/bashTool.js"
+        ],
+        "src/tools/builtins/webSearchTool.crossHome.test.js": [
+          "src/tools/builtins/webSearchTool.js"
+        ],
+        "src/tools/builtins/webSearchTool.helpers.test.js": [
+          "src/tools/builtins/webSearchTool.js"
+        ],
+        "src/web/externalReaders.test.js": [
+          "src/web/externalReaders.js"
+        ],
+        "src/agents/skillRuns.crossHome.test.js": [
+          "src/agents/skillRuns.js"
+        ],
+        "src/memory/conversationIndex.crossHome.test.js": [
+          "src/memory/conversationIndex.js"
+        ]
+      },
+      "note": "测试读取自身被测模块的源码文本（规则/正则守卫），逐字节移植时保持文本"
+    },
+    {
+      "id": "source-tests-index-html",
+      "kind": "source-reading-test",
+      "reads": [
+        "desktop-ui/index.html",
+        "desktop-ui/**/*.css"
+      ],
+      "tests": [
+        "desktop-ui/executionTelemetry.browser.test.js",
+        "desktop-ui/executionTiming.browser.test.js"
+      ],
+      "note": "浏览器测试从 index.html 读取 importmap 与样式表清单；新增/改名页面模块或 CSS 时同步 index.html"
+    },
+    {
+      "id": "tooling-test-plan",
+      "kind": "source-reading-test",
+      "reads": [
+        "package.json",
+        "scripts/verify-red-green.js",
+        "scripts/run-unit-tests.js"
+      ],
+      "tests": [
+        "scripts/test-plan.test.js",
+        "scripts/test-discovery.test.js"
+      ],
+      "note": "gate 接线测试读取脚本与 package.json"
+    },
+    {
+      "id": "agent-core-bundle",
+      "kind": "generator",
+      "generator": "scripts/build-agent-core.mjs",
+      "inputs": [
+        "shared/agent/**/*.js",
+        "src/shared/replyDocument.js"
+      ],
+      "outputs": [
+        "shared/agent/dist/**",
+        "ios/Melo/AgentCore/**"
+      ],
+      "check": "shared/agent/conformance.test.js",
+      "command": "npm run build:agent-core",
+      "note": "相同便携源码打包供 Kotlin/Swift bridge；生成散列必须一致"
+    },
+    {
+      "id": "source-tests-agent-core",
+      "kind": "source-reading-test",
+      "reads": [
+        "shared/agent/dist/agent-core.js",
+        "shared/agent/dist/manifest.json",
+        "shared/agent/fixtures/conformance.json",
+        "ios/Melo/AgentCore/agent-core.js",
+        "shared/agent/**/*.js",
+        "src/shared/replyDocument.js"
+      ],
+      "tests": [
+        "shared/agent/conformance.test.js"
+      ],
+      "note": "运行源码与隔离 bundle 对照，并校验逐源文件散列和 iOS 原样打包"
+    }
   ]
 }
