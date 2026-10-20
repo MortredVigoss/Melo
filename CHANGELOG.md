@@ -2,6 +2,10 @@
 
 A brief overview of user-facing updates. Technical details live in the project documentation and commit history.
 
+## 2026-10-20
+
+- Agents can ask for a capability at the moment they need it. A delegated member may get something its parent lacks — only within its own settings — for this task or for 24 hours in the project (or chat); an Agent missing a capability can have it just this once or turned on for good. Nothing is allowed silently: a card in the chat asks you, remote channels and background runs are refused as before, and active temporary permissions are listed and revocable on each Agent's page and in Permissions & privacy. New custom Agents start read-only (read files, network, knowledge and memory) and can copy another Agent's settings at creation, optionally with its identity, persona and voice; channels and bot tokens are never copied.
+
 ## 2026-10-19
 
 - Fixed recovery after saving Agents and projects when the page cannot refresh, preventing unintended edits and duplicate creation.

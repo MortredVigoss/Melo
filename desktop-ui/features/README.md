@@ -2,7 +2,7 @@
 
 Architecture plan P2 (`docs/architecture-maintainability-plan-20261019.md` §3.2 and §8): page code moves out of `desktop-ui/app.js` one feature at a time. `app.js` keeps navigation, composition and the top-level lifecycle (`uiState`, `render()` with all its focus / caret / scroll / IME / neural-scene / Agent-editor / draft protections, the document listeners, bootstrap loading). A feature owns its state, actions, requests, renderers and styles.
 
-Done (P2 complete, 2026-10-19): `memory/` and `projects/` (P2a), `agents/` (P2b), `chat/` (P2c). `approvals/` holds only the approval surfaces' stylesheet so far (their JS is still in app.js). Next is P3 (execution orchestration, server side); what is still in app.js is listed per feature below and in “Shared app state”.
+Done (P2 complete, 2026-10-19): `memory/` and `projects/` (P2a), `agents/` (P2b), `chat/` (P2c). `approvals/` holds the approval surfaces' stylesheet and, since 2026-10-20, the capability-elevation prompt card and «临时授权» list (the tool permission and file-safety dialogs' JS is still in app.js). Next is P3 (execution orchestration, server side); what is still in app.js is listed per feature below and in “Shared app state”.
 
 ## Layout of one feature
 
@@ -72,7 +72,13 @@ The chat page and the composer: the thread (windowed message list with «加载�
 
 ## Approval surfaces (`approvals/`)
 
-Stylesheet only: `approvals.css` holds the rules of the tool permission and file-safety dialogs, Customize → Safety (rule list, domain cookie form), the task lane menu and compact task / approval cards, moved verbatim from `styles.css`. Their JS (`renderToolPermissionDialog`, `renderFileSafetyDialog`, `submitPermission`, `renderSafetyPane`, `renderDomainCookiesPane`, `renderTaskPanel`, `renderApprovalPanel`) is still in `app.js`. Settings and knowledge styles stay in `styles.css`: their rules are grouped with the Agent, skills, advanced and project page layouts.
+Capability elevation (2026-10-20, `docs/capability-elevation-20261020.md`): `controller.js`, `view.js`, `state.js`, `context.js`, `api.js`, `index.js`.
+
+- Context: `getBootstrap` (Agent names), `app` (focus), `api`, `render`, `bgRender`, `showFlashToast`, `refreshBootstrap` (after «一直开启»), `toolPermissions` / `setToolPermissions` (the shared permission queue the chat stream fills with `kind: 'capability'` entries), `escapeHtml`, `icon`.
+- Handle: `actions` (capability-request-respond, capability-grant-revoke, capability-grants-refresh), `renderCapabilityPrompt(entry)` (app.js's `renderToolPermissionDialog()` hands it queued capability entries), `renderGrantList({ agentId })` (Customize → Safety without an id; the Agent settings page through the agents context name `renderCapabilityGrants`, rendered after the read-only-until-edit form), the render hook `focusPromptAfterRender()` (after `restoreFocusedInputState`), `reloadGrants()`, `getState()`.
+- The chat feature only queues `capability_request` and drops entries on `capability_request_closed` or at the end of the turn, exactly like `tool_permission`.
+
+Styles: `approvals.css` holds the rules of the tool permission and file-safety dialogs, Customize → Safety (rule list, domain cookie form), the task lane menu and compact task / approval cards, moved verbatim from `styles.css`. Their JS (`renderToolPermissionDialog`, `renderFileSafetyDialog`, `submitPermission`, `renderSafetyPane`, `renderDomainCookiesPane`, `renderTaskPanel`, `renderApprovalPanel`) is still in `app.js`. Settings and knowledge styles stay in `styles.css`: their rules are grouped with the Agent, skills, advanced and project page layouts.
 
 ## Shared app state the features still reach (read-only, through the context)
 

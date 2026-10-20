@@ -1014,11 +1014,21 @@
         "desktop-ui/executionPanel.test.js": [
           "desktop-ui/executionPanel.js"
         ],
+        "desktop-ui/features/approvals/controller.test.js": [
+          "desktop-ui/features/approvals/view.js",
+          "shared/protocol/agent-loop.json"
+        ],
         "desktop-ui/launchScreen.test.js": [
           "desktop-ui/launchScreen.js"
         ],
         "desktop-ui/localSettings.test.js": [
           "desktop-ui/localSettings.js"
+        ],
+        "src/agents/skillRuns.crossHome.test.js": [
+          "src/agents/skillRuns.js"
+        ],
+        "src/memory/conversationIndex.crossHome.test.js": [
+          "src/memory/conversationIndex.js"
         ],
         "src/services/chat/chatExecutionRunner.test.js": [
           "src/services/chat/chatExecutionRunner.js"
@@ -1044,12 +1054,6 @@
         ],
         "src/web/externalReaders.test.js": [
           "src/web/externalReaders.js"
-        ],
-        "src/agents/skillRuns.crossHome.test.js": [
-          "src/agents/skillRuns.js"
-        ],
-        "src/memory/conversationIndex.crossHome.test.js": [
-          "src/memory/conversationIndex.js"
         ]
       },
       "note": "测试读取自身被测模块的源码文本（规则/正则守卫），逐字节移植时保持文本"
