@@ -40,3 +40,16 @@ test('JSON bridge preserves zero remaining child limits and never extends a chil
   assert.equal(extended.budget.maxToolCalls, 0);
   assert.equal(evaluate({ version: 1, op: 'budget', action: 'create' }).error.code, 'INVALID_CLOCK');
 });
+
+test('effect admission returns a charged parent snapshot or a refusal without charging', () => {
+  const parent = op('create', { options: { maxToolCalls: 1 } });
+  const child = op('narrow', { budget: parent });
+  const granted = op('admitTool', { budget: child });
+  assert.equal(granted.allowed, true);
+  assert.equal(granted.budget.parent.used.toolCalls, 1);
+  const denied = op('admitTool', { budget: granted.budget });
+  assert.equal(denied.allowed, false);
+  assert.equal(denied.budget.parent.used.toolCalls, 1);
+  assert.equal(denied.exhausted.reason, 'tool-calls');
+  assert.equal(evaluate({ version: 1, op: 'budget', action: 'admitTool', now: 1000 }).error.code, 'BUDGET_MISSING');
+});

@@ -14,7 +14,7 @@ export function evaluate(input) {
     let value;
     switch (input.op) {
       case 'hello': value = { version: CORE_VERSION, runtime: 'melo-local-core', portable: true }; break;
-      case 'budget': value = budgetOperation(input); break;
+      case 'budget': value = JSON.parse(JSON.stringify(budgetOperation(input))); break;
       case 'repeat': value = repeatOperation(input); break;
       case 'plan': value = planRequest(input.request); break;
       case 'actionEvidence': value = actionEvidence(input.plan, input.urls); break;

@@ -58,7 +58,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                     val id = "model:${++modelSequence}"
                     journal.event(id, "模型请求", model = connection.model)
                     turn.request()
-                    val estimate = (history.sumOf { it.toString().length.toLong() } + taskInstructions.length + specs.sumOf { it.toString().length }) / 2 + 32
+                    val estimate = SharedRunBudget.estimateInput(history, taskInstructions, specs)
                     val reply = turn.budget.model(estimate, { it.inputTokens }) { transport.next(connection, key, history, taskInstructions, true, specs, nativeWebSearch = nativeSearch) }
                     journal.event(id, "模型请求", model = connection.model, returnedModel = reply.model, output = if (reply.calls.isEmpty()) "已收到文字回复" else "请求 ${reply.calls.joinToString { it.name }}", status = "completed")
                     val summary = runtime.value("publicReasoning", buildJsonObject { put("items", JsonArray(reply.wire)) }).jsonPrimitive.content
@@ -91,7 +91,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                     journal.event("model:reply", "模型回复", model = connection.model)
                     onPhase(if (plan.text("reason") == "execution-explanation") "正在核对上轮执行记录…" else "正在生成回复…")
                     turn.request()
-                    val answer = turn.budget.model((messages.sumOf { it.content.length.toLong() } + taskInstructions.length) / 2 + 32) { client.reply(connection, key, messages, taskInstructions, imageData, onDelta) }
+                    val answer = turn.budget.model(SharedRunBudget.estimateInput(history, taskInstructions)) { client.reply(connection, key, messages, taskInstructions, imageData, onDelta) }
                     turn.event("complete")
                     if (!turn.completed) return finish("本轮已停止（${turn.reason}），尚未确认完成。", answer.model, "blocked", turn.reason)
                     journal.event("model:reply", "模型回复", model = connection.model, returnedModel = answer.model, output = "回复已返回", status = "completed")
@@ -112,6 +112,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                     turn.calls(reply.calls.map { it.id to it.name }, reply.calls.associate { it.id to it.arguments }, requireAll = false)
                     history += reply.wire
                     var phoneFailure: String? = null
+                    var phoneFailureCode = "PHONE_TASK_FAILED"
                     for (call in reply.calls) {
                         currentCoroutineContext().ensureActive()
                         val started = SystemClock.elapsedRealtime()
@@ -143,9 +144,12 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                         if (turn.active) turn.result(call.id, result.ok, fingerprint, result.data.text("code"), result.data.toString())
                         succeeded = succeeded || result.ok
                         DeviceAgentClient.appendResult(history, connection.protocol, call, result)
-                        if (call.name == "phone_use" && !result.ok) phoneFailure = result.data.text("error").ifBlank { result.data.text("summary") }
+                        if (call.name == "phone_use" && !result.ok && phoneFailure == null) {
+                            phoneFailure = result.data.text("error").ifBlank { result.data.text("summary") }
+                            phoneFailureCode = result.data.text("code").ifBlank { "PHONE_TASK_FAILED" }
+                        }
                     }
-                    if (phoneFailure != null) return finish("手机任务未完成：$phoneFailure", reply.model, if (succeeded) "partial" else "blocked", "PHONE_TASK_FAILED")
+                    if (phoneFailure != null) return finish("手机任务未完成：$phoneFailure", reply.model, if (succeeded) "partial" else "blocked", phoneFailureCode)
                 }
                 return finish("本轮已停止（${turn.reason}）。已有操作保留，尚未确认任务完成。", connection.model, if (succeeded) "partial" else "blocked", turn.reason)
             }

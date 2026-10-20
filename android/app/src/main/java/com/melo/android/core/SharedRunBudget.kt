@@ -54,13 +54,24 @@ class SharedRunBudget private constructor(
     }
     suspend fun <T> effect(work: suspend () -> T): T {
         mutex.withLock {
-            val exhausted = operation("exhausted")
-            check(exhausted == JsonNull) { "工具未执行：运行预算已用完。" }
-            apply(operation("record", buildJsonObject { put("usage", buildJsonObject { put("toolCalls", 1) }) }).jsonObject)
+            val admission = operation("admitTool").jsonObject
+            apply(admission.getValue("budget").jsonObject)
+            check(admission.getValue("allowed").jsonPrimitive.boolean) { "工具未执行：运行预算已用完。" }
         }
         return withTimeout(remaining()) { work() }
     }
     companion object {
+        // Host measurement fallback when the provider omits usage. Image bytes
+        // are transport payload, not text tokens; count image parts separately.
+        fun estimateInput(history: List<JsonObject>, instructions: String, tools: List<JsonObject> = emptyList()): Long {
+            fun bytes(value: JsonElement): Long = when (value) {
+                is JsonObject -> if (value["type"]?.jsonPrimitive?.content in setOf("input_image", "image_url", "image")) 6000L
+                    else value.entries.sumOf { it.key.length.toLong() + bytes(it.value) }
+                is JsonArray -> value.sumOf { bytes(it) }
+                else -> value.toString().toByteArray(Charsets.UTF_8).size.toLong()
+            }
+            return (history.sumOf { bytes(it) } + instructions.toByteArray(Charsets.UTF_8).size + tools.sumOf { bytes(it) } + 2) / 3 + 32
+        }
         suspend fun open(runtime: SharedCoreRuntime, parent: SharedRunBudget? = null, options: JsonObject = buildJsonObject {}): SharedRunBudget {
             val mutex = parent?.mutex ?: Mutex()
             return mutex.withLock {

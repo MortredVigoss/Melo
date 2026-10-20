@@ -80,6 +80,17 @@ class DeviceAgentClientTest {
             }
         }
     }
+    @Test fun missingUsageEstimateDoesNotChargeBase64AsMillionsOfTextTokens() {
+        val pixels = "a".repeat(2_000_000)
+        for (type in listOf("input_image", "image_url", "image")) {
+            val history = listOf(buildJsonObject { put("role", "user"); put("content", buildJsonArray {
+                add(buildJsonObject { put("type", "text"); put("text", "观察当前画面") })
+                add(buildJsonObject { put("type", type); put("image_url", "data:image/jpeg;base64,$pixels") })
+            }) })
+            val estimate = com.melo.android.core.SharedRunBudget.estimateInput(history, "instructions")
+            assertTrue(estimate in 2000L..4000L)
+        }
+    }
     @Test fun genericChatAdmits32CallsAndUsageButDeviceActionsStaySingle() {
         fun batch(size: Int) = buildJsonObject {
             put("status", "completed"); put("usage", buildJsonObject { put("input_tokens", 123) })

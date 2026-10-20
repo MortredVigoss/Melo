@@ -162,7 +162,7 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
                         val budget = SharedRunBudget.open(policy, parent = binding?.budget, options = kotlinx.serialization.json.buildJsonObject { put("deadlineMs", kotlinx.serialization.json.JsonPrimitive(600_000)) })
                         activeBudget = budget
                         SharedCoreTurn.open(context, started.id, chatId ?: started.id, listOf("android_device"), rounds = 30, callsPerRound = 1, budget = budget).use { core -> DeviceTaskLoop(selected.protocol,
-                            next = { history -> countRequest(); budget.model((history.sumOf { it.toString().length.toLong() } + instructions.length) / 2 + 32, { it.inputTokens }) { client.next(selected, key, history, instructions) } },
+                            next = { history -> countRequest(); budget.model(SharedRunBudget.estimateInput(history, instructions), { it.inputTokens }) { client.next(selected, key, history, instructions) } },
                             execute = executeDevice,
                             onStep = { step -> run = run!!.copy(steps = run!!.steps + step); save(run!!) },
                             onPhase = { phase -> mutable.update { it.copy(phase = phase) } },

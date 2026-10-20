@@ -32,6 +32,9 @@ class SharedCoreTurn private constructor(private val runtime: SharedCoreRuntime,
     suspend fun result(id: String, ok: Boolean, progressKey: String? = null, code: String? = null, output: String = "") {
         event("result", buildJsonObject { put("callId", id); put("ok", ok); code?.let { put("code", it) }; put("output", output.take(500)); progressKey?.let { put("progressKey", it) } })
     }
+    suspend fun observeDevice(action: String, ok: Boolean, progressKey: String) {
+        event("device-observation", buildJsonObject { put("action", action); put("ok", ok); put("progressKey", progressKey) })
+    }
     override fun close() = runtime.close()
 
     companion object {

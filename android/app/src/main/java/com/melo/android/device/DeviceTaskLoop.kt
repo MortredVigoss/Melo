@@ -34,26 +34,15 @@ object DeviceCompletion {
 }
 
 /** In-memory hashes only; UI text and action arguments never enter persisted traces. */
-class DeviceProgress {
-    private val seen = mutableSetOf<String>()
-    private var unchanged = 0
-    private var unresolvedErrors = 0
-    fun record(action: String, result: DeviceToolResult): String? {
-        if (!result.ok) unresolvedErrors++
-        else if (action in setOf("tap", "type_text", "swipe", "back", "home", "open_app")) unresolvedErrors = 0
+object DeviceProgress {
+    fun fingerprint(result: DeviceToolResult): String {
         val content = JsonObject(result.data.filterKeys { it !in setOf("screen_id", "window_id", "screenshot_error", "stable", "action") })
         val digest = MessageDigest.getInstance("SHA-256")
         digest.update(content.toString().toByteArray())
         // Games may expose no nodes while their rendered screen is changing.
         // Keep only a hash; neither pixels nor tree text are persisted here.
         result.jpeg?.let { digest.update(it.toByteArray()) }
-        val next = digest.digest().joinToString("") { "%02x".format(it) }
-        unchanged = if (seen.add(next)) 0 else unchanged + 1
-        return when {
-            unresolvedErrors >= 3 -> "多次动作失败，观察成功也未解决阻塞；已停止，请检查目标和权限。"
-            unchanged >= 5 -> "连续操作没有产生可确认的进展，已停止；请缩小目标或提供更多线索。"
-            else -> null
-        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
     }
 }
 
@@ -70,7 +59,6 @@ class DeviceTaskLoop(
 ) {
     suspend fun run(goal: String): DeviceOutcome {
         val history = DeviceAgentClient.initial(protocol, goal)
-        val progress = DeviceProgress()
         val launches = DeviceLaunchGuard()
         val callIds = mutableSetOf<String>()
         var latestScreen: DeviceToolResult? = null
@@ -150,8 +138,10 @@ class DeviceTaskLoop(
             previous = result
             if (result.data.text("code") == "user_declined") return DeviceOutcome("needs_user", error = "本步操作未获允许；已停止，未自动重试。")
             if (result.data.text("screen_id").isNotBlank() && result.ok) latestScreen = result
+            if (core?.active == false) return DeviceOutcome("blocked", error = "共享 Agent 已停止（${core.reason}）。已有步骤保留。")
             if (action == "finish" && result.ok) return DeviceOutcome(call.arguments.text("outcome"), call.arguments.text("summary"), verification = result.data.text("verification").ifBlank { null })
-            progress.record(action, result)?.let { return DeviceOutcome("blocked", error = it) }
+            core?.observeDevice(action, result.ok, DeviceProgress.fingerprint(result))
+            if (core?.active == false) return DeviceOutcome("blocked", error = "共享 Agent 已停止（${core.reason}）。已有步骤保留。")
         }
         return DeviceOutcome("blocked", error = "达到 $maxSteps 步上限，已停止；已执行步骤保留。")
     }

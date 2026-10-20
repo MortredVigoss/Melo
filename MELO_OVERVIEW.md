@@ -762,3 +762,5 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 远端 `39344901902` 环境、Core、JVM、Lint、Debug/R8 构建通过，Emulator 59 项中 3 项失败：窄屏 LazyColumn 未组合列表项、滚动后点击屏外折叠按钮、无关长文案换行改变目标位置。测试显式滚入目标、兄弟文案使用同一行高度；节点变化拒绝和折叠/凭证断言保留。`Editors.kt` 只补测试定位标签。修正后重新跑完整远端 gate；没有真机或真实服务证据。
 
 #9 最终回执：`b1529d0` 的 [Android run 39346797733](https://github.com/MortredVigoss/Melo/actions/runs/39346797733) 全绿，Emulator 59/59、零跳过；主线 Linux/macOS 与文件安全亦通过。GitHub #9 已提交完成回执；后续通用 Core / Android 上下文 / 缓存仍是独立未完成项。本手机分支未整体合并 master，未安装用户设备。
+
+10-20 #5 第二轮交接：首轮 Android 模拟器 60/61，构建通过。正在复验原始拒绝码、同源屏幕进展及图像预算估算，具体证据见 docs/shared-loop-android-20261020.md；真实设备/用户数据未动。

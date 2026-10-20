@@ -9,3 +9,5 @@
 - 主线由 generator 从 `shared/protocol/agent-loop.json` 生成 `shared/agent/loopContract.js`；本分支复制同源文件，构建时核对 JSON 与便携策略一致，禁止手改副本。bundle 源散列和 Android 资源打包仍逐项校验。
 
 这是 CI 验证节点；#5 仍未完成，不关闭、不宣称真机或真实供应商验收。后续结果追加本页。
+
+第二轮：1af5377 的构建/JVM/Lint 已过，模拟器 60/61；唯一失败为导航无证据已正确拒绝但原因变成 PHONE_TASK_FAILED。保留原始拒绝码和实际零动作断言。设备进展计数改由同源 Core 判定，三项回归移到真实 Android JS 引擎；Kotlin 仅提供屏幕内容/像素指纹。预算采用共享原子 admission，图像 base64 不计作文本 token，新增大图回归。106 项共享 JS 与 bundle 一致性通过后推送重跑完整 Android CI；尚未关闭 #5。

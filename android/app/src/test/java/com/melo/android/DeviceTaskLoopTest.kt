@@ -100,33 +100,12 @@ class DeviceTaskLoopTest {
         val unstable = DeviceToolResult(JsonObject(screen().data + ("stable" to JsonPrimitive(false))))
         assertFalse(DeviceCompletion.verify(finish(), screen(), unstable).ok)
     }
-    @Test fun observationCannotResetRepeatedActionErrors() = runBlocking {
-        var index = 0; var executed = 0
-        // Distinct valid targets isolate the error streak from duplicate-launch protection.
-        val result = DeviceTaskLoop("chat-completions", { turn("c${index}", args(if (index++ % 2 == 0) "open_app" else "observe", "app_name" to "Missing$index")) }, {
-            executed++; if (it.text("action") == "observe") screen() else DeviceToolResult.error("not found", "app_not_found")
-        }, {}).run("goal")
-        assertEquals("blocked", result.status); assertEquals(5, executed)
-        assertTrue(result.error!!.contains("多次动作失败"))
-    }
-    @Test fun repeatedSuccessfulObservationStopsWithoutBurningAllThirtySteps() = runBlocking {
-        var calls = 0
-        val result = DeviceTaskLoop("chat-completions", { turn("o${calls++}", args("observe")) }, { screen(id = newId()) }, {}).run("goal")
-        assertEquals("blocked", result.status); assertEquals(6, calls)
-    }
-    @Test fun alternatingAlreadySeenScreensAndCatalogsStillCountsAsNoProgress() = runBlocking {
-        var calls = 0
-        val result = DeviceTaskLoop("chat-completions", { turn("c${calls}", args(if (calls++ % 2 == 0) "observe" else "list_apps", "query" to "Fixture")) }, {
-            if (it.text("action") == "observe") screen(id = newId()) else DeviceToolResult(buildJsonObject { put("ok", true); put("apps", JsonArray(emptyList())) })
-        }, {}).run("goal")
-        assertEquals("blocked", result.status); assertTrue(calls <= 8)
-    }
-    @Test fun changingGamePixelsAreNotMistakenForAnUnchangedEmptyNodeTree() {
-        val progress = DeviceProgress()
+    @Test fun progressIdentityIncludesGamePixelsButIgnoresVolatileScreenIds() {
         val data = buildJsonObject { put("ok", true); put("package_name", "fixture.game"); put("nodes", JsonArray(emptyList())) }
-        repeat(8) { assertNull(progress.record("observe", DeviceToolResult(data, "fixture-frame-$it"))) }
-        repeat(4) { assertNull(progress.record("observe", DeviceToolResult(data, "fixture-frame-7"))) }
-        assertNotNull(progress.record("observe", DeviceToolResult(data, "fixture-frame-7")))
+        val frames = (0..7).map { DeviceProgress.fingerprint(DeviceToolResult(data, "fixture-frame-$it")) }
+        assertEquals(8, frames.toSet().size)
+        assertEquals(frames.last(), DeviceProgress.fingerprint(DeviceToolResult(data, "fixture-frame-7")))
+        assertEquals(DeviceProgress.fingerprint(screen("a")), DeviceProgress.fingerprint(screen("b")))
     }
     @Test fun declinedNativeConfirmationStopsWithoutInvitingAnotherClick() = runBlocking {
         var modelCalls = 0
