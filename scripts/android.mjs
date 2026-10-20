@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fixtureEmulator } from './android-target.js';
@@ -62,6 +62,12 @@ try {
 } catch (error) {
   console.error(error.message);
 } finally {
+  // The HTML report can omit instrumentation-process crash stacks. Capture
+  // logs before the isolated fixture emulator is terminated; never physical targets.
+  if (reversePort) {
+    const log = spawnSync(adb, ['logcat', '-d', '-v', 'threadtime'], { env, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+    await writeFile(resolve(root, '.tmp/android-fixture-logcat.log'), log.stdout || log.stderr || '');
+  }
   if (reversePort) spawnSync(adb, ['reverse', '--remove', reversePort], { env, stdio: 'inherit' });
   if (server) await new Promise(accept => server.close(accept));
 }

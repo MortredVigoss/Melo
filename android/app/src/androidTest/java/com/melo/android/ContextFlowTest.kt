@@ -69,7 +69,7 @@ class ContextFlowTest {
         } finally { app.deleteDatabase(name) }
     }
 
-    @Test fun disabledSourcesStayOutOfInstructionsAndDeviceHandoff() = runBlocking {
+    @Test fun disabledSourcesStayOutOfInstructionsAndHistoryBudgetsStayBounded() = runBlocking {
         val chat = Conversation(projectId = "p")
         val state = AppData(chats = listOf(chat),
             agents = listOf(Agent(id = "main", name = "Melo", contextSources = mapOf("projects" to false, "artifacts" to false, "memory" to false))),
@@ -92,6 +92,12 @@ class ContextFlowTest {
             }
             val image = Message(role = "user", content = "Describe", attachments = List(3) { Attachment(name = "x", mime = "image/png", file = "unused") })
             assertTrue(runCatching { ChatContext(runtime, 4096).prepare(listOf(image), "", emptyList(), buildJsonObject {}, true) }.isFailure)
+            val wire = ChatPhoneUse.history(listOf(image.copy(attachments = image.attachments.take(1))), "chat-completions") { "fixture-base64" }
+            var boundary = policy.fit(wire, 0, "", emptyList())
+            // appendResult can replace rows when demoting historical screenshots.
+            wire[0] = JsonObject(wire[0].toMap())
+            boundary = policy.fit(wire, boundary, "", emptyList())
+            assertEquals(0, boundary)
             assertTrue(runCatching { runtime.value("contextWirePlan", buildJsonObject { put("context", buildJsonObject {
                 put("capacity", 4096); put("costs", buildJsonArray { add(10); add(2000); add(2000) })
                 put("roles", buildJsonArray { add("user"); add("assistant"); add("user") }); put("chainStart", 0)

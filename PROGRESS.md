@@ -1,3 +1,8 @@
+## 2026-10-20 — 保留模拟器原始失败证据
+
+Codex 的 #7 首轮 Android 构建全过，但模拟器只报告七项中的取消/重试失败，HTML 没有堆栈。增加退出前 logcat 与 UTP 原始结果归档，原断言和失败出口保持。
+同时补上图片处理替换请求对象后的工具链定位回归；最终验证仍待执行，不能据旧 Core 绿灯关闭 issue。
+
 ## 2026-10-20 - Android context and original-history recovery
 
 Codex follows issue #7: preserve originals, use shared model budgets and persist excerpt provenance. Source switches filter Host instructions before chat and device handoff. No data replacement or app installation.

@@ -51,8 +51,7 @@ class ChatContext(private val runtime: SharedCoreRuntime, private val capacity: 
         is JsonArray -> JsonArray(value.map { normalized(it, images) })
         else -> value
     }
-    suspend fun fit(history: MutableList<JsonObject>, originalRequest: JsonObject, instructions: String, specs: List<JsonObject>) {
-        val chainStart = history.indexOfFirst { it === originalRequest }
+    suspend fun fit(history: MutableList<JsonObject>, chainStart: Int, instructions: String, specs: List<JsonObject>): Int {
         check(chainStart >= 0) { "Original request identity is missing; request stopped." }
         val costs = buildJsonArray { for (row in history) {
             val images = intArrayOf(0)
@@ -64,7 +63,9 @@ class ChatContext(private val runtime: SharedCoreRuntime, private val capacity: 
             put("capacity", capacity); put("fixedTokens", fixed); put("costs", costs)
             put("roles", JsonArray(history.map { it.text("role").jp() })); put("chainStart", chainStart)
         }) }).jsonObject
-        repeat(plan.getValue("start").jsonPrimitive.int) { history.removeAt(0) }
+        val removed = plan.getValue("start").jsonPrimitive.int
+        repeat(removed) { history.removeAt(0) }
+        return chainStart - removed
     }
 
     suspend fun read(messages: List<Message>, args: JsonObject): DeviceToolResult {

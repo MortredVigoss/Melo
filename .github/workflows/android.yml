@@ -53,6 +53,9 @@ jobs:
         with:
           name: android-verification
           retention-days: 7
+          include-hidden-files: true
           path: |
             android/app/build/reports/
+            android/app/build/outputs/androidTest-results/
+            .tmp/android-fixture-logcat.log
             android/app/build/outputs/apk/debug/*.apk
