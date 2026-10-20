@@ -112,7 +112,7 @@ class ChatEngine(private val context: Context, val repository: Repository) {
                 val cancelled = error is CancellationException
                 withContext(NonCancellable) {
                     val partial = mutable.value.turns[chatId]?.partial.orEmpty()
-                    val persistence = runCatching { record?.let { run -> repository.change { current -> current.copy(runs = current.runs.map { if (it.id == run.id) it.copy(status = if (cancelled) "cancelled" else "failed", finishedAt = now(), partial = partial, error = if (cancelled) "请求已取消，提问和部分文字已保留。" else error.message) else it }) } } }.exceptionOrNull()
+                    val persistence = runCatching { record?.let { run -> repository.change { current -> current.copy(runs = current.runs.map { if (it.id == run.id) it.copy(status = it.sharedScene?.get("completion")?.jsonObject?.text("outcome")?.takeIf(String::isNotBlank) ?: if (cancelled) "cancelled" else "failed", finishedAt = now(), partial = partial, error = if (cancelled) "请求已取消，提问和部分文字已保留。" else error.message) else it }) } } }.exceptionOrNull()
                     mutable.update { it.copy(error = if (persistence != null) "本次请求状态无法写入本机存储；已保存的提问仍保留，请检查剩余空间后重启。" else if (cancelled) null else error.message ?: "请求失败，原记录已保留。") }
                 }
             } finally {
@@ -121,7 +121,7 @@ class ChatEngine(private val context: Context, val repository: Repository) {
                 mutable.update { it.copy(turns = it.turns - chatId) }
                 if (turns.isEmpty()) context.stopService(Intent(context, ReplyService::class.java))
             }
-            if (repository.data.value.settings.autoSync && repository.data.value.runs.any { it.id == record?.id && it.status == "completed" }) synchronize()
+            if (repository.data.value.settings.autoSync && repository.data.value.runs.any { it.id == record?.id && it.finishedAt != null }) synchronize()
         }
         turns[chatId] = turn; turn.start(); return true
     }

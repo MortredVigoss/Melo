@@ -58,7 +58,7 @@ After successful phone_use continue this same conversation with a concise useful
         put("ok", run.status == "achieved"); put("status", run.status); put("run_id", run.id)
         put("summary", run.answer.take(2000)); run.error?.let { put("error", it.take(500)) }
         put("observed_at", run.finishedAt.orEmpty()); put("live_research", research && run.executionMode == "probe")
-        put("execution_mode", run.executionMode); put("verification", run.verification.orEmpty())
+        put("execution_mode", run.executionMode); put("verification", run.verification.orEmpty()); put("goal", run.goal)
         put("evidence_scope", "Only the requested visible task was checked; verify research facts from the returned summary and retain uncertainties.")
     })
 }

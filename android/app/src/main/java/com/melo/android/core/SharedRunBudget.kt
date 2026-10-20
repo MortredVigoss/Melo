@@ -8,6 +8,8 @@ import kotlinx.serialization.json.*
 import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.CoroutineContext
 
+class SharedBudgetExhausted : IllegalStateException("Run budget exhausted; completed steps are preserved.")
+
 /** Native ledger ownership only; every limit/accounting decision runs in Core. */
 class SharedRunBudget private constructor(
     private val runtime: SharedCoreRuntime, private var state: JsonObject,
@@ -32,7 +34,7 @@ class SharedRunBudget private constructor(
     }
     suspend fun check() = mutex.withLock {
         val exhausted = operation("exhausted")
-        check(exhausted == JsonNull) { "运行预算已用完（${exhausted.jsonObject["reason"]}），已停止；已有操作保留。" }
+        if (exhausted != JsonNull) throw SharedBudgetExhausted()
     }
     suspend fun remaining(): Long = mutex.withLock { operation("remaining").jsonPrimitive.double.toLong().coerceAtLeast(0) }
     private suspend fun timeout(): Long = mutex.withLock { operation("timeout").jsonPrimitive.double.toLong().coerceAtLeast(0) }
@@ -56,7 +58,7 @@ class SharedRunBudget private constructor(
         mutex.withLock {
             val admission = operation("admitTool").jsonObject
             apply(admission.getValue("budget").jsonObject)
-            check(admission.getValue("allowed").jsonPrimitive.boolean) { "工具未执行：运行预算已用完。" }
+            if (!admission.getValue("allowed").jsonPrimitive.boolean) throw SharedBudgetExhausted()
         }
         return withTimeout(remaining()) { work() }
     }

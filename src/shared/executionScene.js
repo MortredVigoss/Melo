@@ -193,6 +193,7 @@ export function finishExecutionScene(scene, { status = 'completed', message, cit
   scene.finishedAt = at;
   scene.sequence++;
   scene.messageId = message?.id || null;
+  if (message?.metadata?.completion) { scene.completion = message.metadata.completion; scene.taskOutcome = scene.completion.outcome; }
   const citations = new Set(citedUrls.map(sceneSourceUrl).filter(Boolean));
   scene.sources.forEach(source => { source.cited = citations.has(sceneSourceUrl(source.url)); });
   for (const op of scene.operations) {

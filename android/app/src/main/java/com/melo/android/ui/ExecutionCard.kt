@@ -19,7 +19,7 @@ import java.time.format.DateTimeFormatter
 
 fun executionStatus(value: String): String = when (value) {
     "running" -> "进行中"; "completed", "achieved" -> "完成"; "partial" -> "部分完成"; "blocked" -> "受阻"; "needs_user" -> "需要处理"
-    "cancelled" -> "已取消"; "interrupted" -> "已中断"; "failed" -> "失败"; else -> value
+    "budget_exhausted" -> "预算已用完"; "cancelled" -> "已取消"; "interrupted" -> "已中断"; "failed" -> "失败"; else -> value
 }
 
 /** The card is a projection of persisted observations, never a synthetic progress log. */
@@ -36,7 +36,7 @@ fun executionStatus(value: String): String = when (value) {
         Column(Modifier.padding(10.dp)) {
             Column(Modifier.fillMaxWidth().clickable { expanded = !expanded }.testTag("execution-toggle-${run.id}").padding(4.dp)) {
                 Text("${if (expanded) "收起" else "展开"}执行过程 · ${executionStatus(run.status)}", color = MeloGold, style = MaterialTheme.typography.labelLarge)
-                Text(summary, color = MeloMuted, style = MaterialTheme.typography.labelSmall)
+                Text(scene?.get("completion")?.jsonObject?.text("summary")?.takeIf(String::isNotBlank) ?: summary, color = MeloMuted, style = MaterialTheme.typography.labelSmall)
                 if (run.status == "running" && phase.isNotBlank()) Text(phase, color = MeloMuted, style = MaterialTheme.typography.bodySmall)
             }
             if (expanded) Column(Modifier.testTag("execution-content-${run.id}"), verticalArrangement = Arrangement.spacedBy(9.dp)) {

@@ -3552,5 +3552,416 @@
         }
       }
     }
+  },
+  {
+    "name": "completion: plain answer",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "completion",
+      "completion": {
+        "goal": "hello",
+        "reply": "hello"
+      }
+    },
+    "expected": {
+      "outcome": "completed",
+      "goalState": "not_applicable"
+    }
+  },
+  {
+    "name": "completion: empty answer",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "completion",
+      "completion": {
+        "goal": "hello",
+        "reply": ""
+      }
+    },
+    "expected": {
+      "outcome": "blocked",
+      "reason": "NO_FINAL_ANSWER"
+    }
+  },
+  {
+    "name": "completion: research actual body",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "completion",
+      "completion": {
+        "goal": "Research Sydney brunch",
+        "kind": "research",
+        "reply": "Sydney brunch: https://fixture.invalid/menu",
+        "observations": [
+          {
+            "id": "read-1",
+            "type": "source",
+            "executed": true,
+            "ok": true,
+            "url": "https://fixture.invalid/menu",
+            "reading": "extracted",
+            "text": "Sydney brunch menu with breakfast dishes and observed opening hours for this fixture."
+          }
+        ]
+      }
+    },
+    "expected": {
+      "outcome": "completed",
+      "goalState": "supported",
+      "evidenceIds": [
+        "read-1"
+      ]
+    }
+  },
+  {
+    "name": "completion: research irrelevant body",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "completion",
+      "completion": {
+        "goal": "Research Sydney brunch",
+        "kind": "research",
+        "reply": "Sydney brunch: https://fixture.invalid/menu",
+        "observations": [
+          {
+            "id": "read-1",
+            "type": "source",
+            "executed": true,
+            "ok": true,
+            "url": "https://fixture.invalid/menu",
+            "reading": "extracted",
+            "text": "Distant stars and galaxies have different spectra and their light is redshifted."
+          }
+        ]
+      }
+    },
+    "expected": {
+      "outcome": "partial",
+      "goalState": "unverified"
+    }
+  },
+  {
+    "name": "completion: research only snippet",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "completion",
+      "completion": {
+        "goal": "Research Sydney brunch",
+        "kind": "research",
+        "reply": "Sydney brunch: https://fixture.invalid/menu",
+        "observations": [
+          {
+            "id": "read-1",
+            "type": "source",
+            "executed": true,
+            "ok": true,
+            "url": "https://fixture.invalid/menu",
+            "reading": "snippet",
+            "text": "Sydney brunch menu with breakfast dishes and observed opening hours for this fixture."
+          }
+        ]
+      }
+    },
+    "expected": {
+      "outcome": "partial",
+      "reason": "RELEVANT_READ_SOURCE_MISSING"
+    }
+  },
+  {
+    "name": "completion: research empty result",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "completion",
+      "completion": {
+        "goal": "Research Sydney brunch",
+        "kind": "research",
+        "reply": "Sydney brunch: https://fixture.invalid/menu",
+        "observations": []
+      }
+    },
+    "expected": {
+      "outcome": "blocked",
+      "reason": "RELEVANT_READ_SOURCE_MISSING"
+    }
+  },
+  {
+    "name": "completion: research invented citation",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "completion",
+      "completion": {
+        "goal": "Research Sydney brunch",
+        "kind": "research",
+        "reply": "See https://invented.invalid/menu",
+        "observations": [
+          {
+            "id": "read-1",
+            "type": "source",
+            "executed": true,
+            "ok": true,
+            "url": "https://fixture.invalid/menu",
+            "reading": "extracted",
+            "text": "Sydney brunch menu with breakfast dishes and observed opening hours for this fixture."
+          }
+        ]
+      }
+    },
+    "expected": {
+      "outcome": "partial",
+      "reason": "RELEVANT_READ_SOURCE_MISSING"
+    }
+  },
+  {
+    "name": "completion: research query echo only",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "completion",
+      "completion": {
+        "goal": "Research Sydney brunch",
+        "kind": "research",
+        "reply": "Sydney brunch: https://fixture.invalid/menu",
+        "observations": [
+          {
+            "id": "read-1",
+            "type": "source",
+            "executed": true,
+            "ok": true,
+            "url": "https://fixture.invalid/menu",
+            "reading": "extracted",
+            "text": "",
+            "query": "Research Sydney brunch",
+            "title": "Research Sydney brunch"
+          }
+        ]
+      }
+    },
+    "expected": {
+      "outcome": "partial",
+      "reason": "RELEVANT_READ_SOURCE_MISSING"
+    }
+  },
+  {
+    "name": "completion: write success not achieved",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "completion",
+      "completion": {
+        "goal": "Create a file",
+        "reply": "Done",
+        "observations": [
+          {
+            "id": "write",
+            "name": "file_write",
+            "type": "tool",
+            "ok": true,
+            "executed": true
+          }
+        ]
+      }
+    },
+    "expected": {
+      "outcome": "partial",
+      "kind": "action",
+      "goalState": "unverified"
+    }
+  },
+  {
+    "name": "completion: exact host verified target",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "completion",
+      "completion": {
+        "goal": "Open Settings",
+        "kind": "action",
+        "reply": "Settings visible",
+        "verifiedActions": [
+          {
+            "type": "device-visible-facts",
+            "checked": true,
+            "goal": "Open Settings",
+            "evidenceId": "device-1"
+          }
+        ]
+      }
+    },
+    "expected": {
+      "outcome": "completed",
+      "goalState": "verified"
+    }
+  },
+  {
+    "name": "completion: different verified subtask",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "completion",
+      "completion": {
+        "goal": "Open Calendar",
+        "kind": "action",
+        "reply": "Settings visible",
+        "verifiedActions": [
+          {
+            "type": "device-visible-facts",
+            "checked": true,
+            "goal": "Open Settings",
+            "evidenceId": "device-1"
+          }
+        ]
+      }
+    },
+    "expected": {
+      "outcome": "blocked",
+      "goalState": "unverified"
+    }
+  },
+  {
+    "name": "completion: CANCELLED",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "completion",
+      "completion": {
+        "goal": "Research Sydney brunch",
+        "kind": "research",
+        "reply": "Sydney brunch: https://fixture.invalid/menu",
+        "observations": [
+          {
+            "id": "read-1",
+            "type": "source",
+            "executed": true,
+            "ok": true,
+            "url": "https://fixture.invalid/menu",
+            "reading": "extracted",
+            "text": "Sydney brunch menu with breakfast dishes and observed opening hours for this fixture."
+          }
+        ],
+        "terminalReason": "CANCELLED"
+      }
+    },
+    "expected": {
+      "outcome": "cancelled"
+    }
+  },
+  {
+    "name": "completion: BUDGET_EXHAUSTED",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "completion",
+      "completion": {
+        "goal": "Research Sydney brunch",
+        "kind": "research",
+        "reply": "Sydney brunch: https://fixture.invalid/menu",
+        "observations": [
+          {
+            "id": "read-1",
+            "type": "source",
+            "executed": true,
+            "ok": true,
+            "url": "https://fixture.invalid/menu",
+            "reading": "extracted",
+            "text": "Sydney brunch menu with breakfast dishes and observed opening hours for this fixture."
+          }
+        ],
+        "terminalReason": "BUDGET_EXHAUSTED"
+      }
+    },
+    "expected": {
+      "outcome": "budget_exhausted"
+    }
+  },
+  {
+    "name": "completion: DEADLINE_EXCEEDED",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "completion",
+      "completion": {
+        "goal": "Research Sydney brunch",
+        "kind": "research",
+        "reply": "Sydney brunch: https://fixture.invalid/menu",
+        "observations": [
+          {
+            "id": "read-1",
+            "type": "source",
+            "executed": true,
+            "ok": true,
+            "url": "https://fixture.invalid/menu",
+            "reading": "extracted",
+            "text": "Sydney brunch menu with breakfast dishes and observed opening hours for this fixture."
+          }
+        ],
+        "terminalReason": "DEADLINE_EXCEEDED"
+      }
+    },
+    "expected": {
+      "outcome": "budget_exhausted"
+    }
+  },
+  {
+    "name": "completion: ROUND_LIMIT",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "completion",
+      "completion": {
+        "goal": "Research Sydney brunch",
+        "kind": "research",
+        "reply": "Sydney brunch: https://fixture.invalid/menu",
+        "observations": [
+          {
+            "id": "read-1",
+            "type": "source",
+            "executed": true,
+            "ok": true,
+            "url": "https://fixture.invalid/menu",
+            "reading": "extracted",
+            "text": "Sydney brunch menu with breakfast dishes and observed opening hours for this fixture."
+          }
+        ],
+        "terminalReason": "ROUND_LIMIT"
+      }
+    },
+    "expected": {
+      "outcome": "budget_exhausted"
+    }
+  },
+  {
+    "name": "completion: NO_PROGRESS",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "completion",
+      "completion": {
+        "goal": "Research Sydney brunch",
+        "kind": "research",
+        "reply": "Sydney brunch: https://fixture.invalid/menu",
+        "observations": [
+          {
+            "id": "read-1",
+            "type": "source",
+            "executed": true,
+            "ok": true,
+            "url": "https://fixture.invalid/menu",
+            "reading": "extracted",
+            "text": "Sydney brunch menu with breakfast dishes and observed opening hours for this fixture."
+          }
+        ],
+        "terminalReason": "NO_PROGRESS"
+      }
+    },
+    "expected": {
+      "outcome": "partial"
+    }
   }
 ]

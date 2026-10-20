@@ -19,6 +19,13 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                       onPhase: (String) -> Unit, onScene: suspend (JsonObject) -> Unit = {}, previousScenes: List<JsonObject?> = emptyList(),
                       onDelta: (String) -> Unit = onPhase): ModelReply = SharedCoreRuntime.open(context).use { runtime ->
         val journal = ChatJournal.create(runtime, runId, chatId, messages.lastOrNull { it.role == "user" }?.content.orEmpty(), onScene)
+        val goal = messages.lastOrNull { it.role == "user" }?.content.orEmpty()
+        val observations = mutableListOf<JsonElement>()
+        val verifiedActions = mutableListOf<JsonElement>()
+        suspend fun receipt(reply: String, reason: String? = null, plan: JsonObject? = null) = runtime.value("completion", buildJsonObject { put("completion", buildJsonObject {
+            put("goal", goal); put("reply", reply); put("observations", JsonArray(observations)); put("verifiedActions", JsonArray(verifiedActions))
+            reason?.let { put("terminalReason", it) }; plan?.let { put("plan", it) }
+        }) }).jsonObject
         try {
             val capturedConfig = runtime.value("config", buildJsonObject { put("config", config) }).jsonObject
             val hosted = if (connection.protocol == "responses") HostedSearchAdapter.capability(runtime, connection, key) else "unknown"
@@ -34,8 +41,9 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
             }) }).jsonObject
             journal.event("plan", "请求规划", output = "${plan.text("route")} · ${plan.text("reason")} · tools=${plan["tools"]}", status = "completed")
             suspend fun finish(text: String, model: String?, outcome: String = "completed", reason: String? = null): ModelReply {
-                journal.finish(outcome, reason)
-                return ModelReply(text, model, outcome = outcome, stopReason = reason)
+                val completion = receipt(text, reason ?: if (outcome == "completed") null else "TASK_INCOMPLETE", plan)
+                journal.finish(completion.text("outcome"), completion.text("reason"), completion)
+                return ModelReply(text, model, outcome = completion.text("outcome"), stopReason = if (completion.text("outcome") == "completed") null else completion.text("reason"))
             }
             if (plan.text("route") == "unavailable") return finish(when (plan.text("reason")) {
                 "MISSING_URL" -> "请提供要读取的完整 URL，或指出对话中的具体链接。"
@@ -77,6 +85,9 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                         journal.event("hosted-search-$index", "native_web_search", module = "search", operation = true, sources = sources,
                             output = if (verified) receipt.text("answer").take(4000) else "Search 未完成", status = if (item.text("status") == "completed") "completed" else "failed")
                     }
+                    if (verified) observations += runtime.value("completionObservation", buildJsonObject { put("observation", buildJsonObject {
+                        put("id", "hosted-search-request"); put("name", "web_search"); put("ok", true); put("executed", true); put("sources", JsonArray(sources))
+                    }) }).jsonArray
                     if (!verified) return finish("本轮未收到可核对的 Search completed 与来源回执，无法确认已完成实时检索；未操作手机屏幕。", response.model, "blocked", "MISSING_HOSTED_EVIDENCE")
                     if (plan["research"]?.jsonObject?.get("navigate")?.jsonPrimitive?.boolean != true) {
                         turn.event("complete")
@@ -96,8 +107,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                     if (!turn.completed) return finish("本轮已停止（${turn.reason}），尚未确认完成。", answer.model, "blocked", turn.reason)
                     journal.event("model:reply", "模型回复", model = connection.model, returnedModel = answer.model, output = "回复已返回", status = "completed")
                     answer.publicSummary?.takeIf(String::isNotBlank)?.let { journal.event("model:reply:summary", "模型公开摘要", output = it, status = "completed", channel = "reasoning-summary") }
-                    journal.finish(answer.outcome, answer.stopReason)
-                    return answer
+                    return finish(answer.text, answer.model, answer.outcome, answer.stopReason)
                 }
                 val specs = runtime.value("catalog", buildJsonObject { put("names", JsonArray(names.map { JsonPrimitive(it) })) }).jsonArray.map { it.jsonObject }
                 var succeeded = plan.text("route") == "hosted-search"
@@ -119,7 +129,9 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                         val module = if (call.name in setOf("web_search", "fetch_url")) "search" else "tools"
                         journal.event(call.id, call.name, module = module, operation = true, input = call.arguments.toString())
                         onPhase(when (call.name) { "phone_use" -> "正在执行请求的手机任务…"; "fetch_url" -> "正在核对来源网页…"; else -> "正在搜索公开来源…" })
+                        var executed = false
                         val result = if (phoneFailure != null) DeviceToolResult.error("Previous phone action failed; remaining sibling action was not executed.", "PRIOR_ACTION_FAILED") else if (!turn.permits(call.id)) DeviceToolResult.error("本步未执行：${turn.rejection(call.id)}；请先完成前置检索。", turn.rejection(call.id)) else turn.budget.effect {
+                            executed = true
                             runtime.value("validateTool", buildJsonObject { put("name", call.name); put("arguments", call.arguments) })
                             when (call.name) {
                                 "web_search" -> search.search(runtime, call.arguments, capturedConfig, searchCredential(capturedConfig.getValue("search").jsonObject))
@@ -132,6 +144,15 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                             }
                         }
                         currentCoroutineContext().ensureActive()
+                        observations += runtime.value("completionObservation", buildJsonObject { put("observation", buildJsonObject {
+                            put("id", call.id); put("name", call.name); put("ok", result.ok); put("executed", executed); put("data", result.data)
+                        }) }).jsonArray
+                        while (observations.size > 128) observations.removeAt(0)
+                        // Only the native DeviceCompletion receipt can verify an action.
+                        // It certifies its exact goal; a successful subtask cannot certify a broader user task.
+                        if (call.name == "phone_use" && executed && result.ok && result.data.text("status") == "achieved" && result.data.text("verification") == "visible_facts" && result.data.text("run_id").isNotBlank()) {
+                            verifiedActions += buildJsonObject { put("type", "device-visible-facts"); put("checked", true); put("goal", result.data.text("goal")); put("evidenceId", result.data.text("run_id")) }
+                        }
                         val sources = when (call.name) {
                             "web_search" -> result.data["results"]?.jsonArray.orEmpty().map { JsonObject(it.jsonObject + ("reading" to JsonPrimitive("snippet"))) }
                             "fetch_url" -> if (result.ok) listOf(buildJsonObject { put("url", result.data.text("url")); put("accessed", true) }) else emptyList()
@@ -154,7 +175,11 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                 return finish("本轮已停止（${turn.reason}）。已有操作保留，尚未确认任务完成。", connection.model, if (succeeded) "partial" else "blocked", turn.reason)
             }
         } catch (error: Throwable) {
-            withContext(NonCancellable) { journal.finish(if (error is CancellationException) "cancelled" else "failed", if (error is CancellationException) "CANCELLED" else "REQUEST_FAILED") }
+            withContext(NonCancellable) {
+                val reason = when (error) { is SharedBudgetExhausted -> "BUDGET_EXHAUSTED"; is TimeoutCancellationException -> "DEADLINE_EXCEEDED"; is SharedTurnStopped -> error.reason; is CancellationException -> "CANCELLED"; else -> "REQUEST_FAILED" }
+                val completion = receipt("", reason)
+                journal.finish(completion.text("outcome"), reason, completion)
+            }
             throw error
         }
     }
@@ -171,7 +196,7 @@ private class ChatJournal(private val runtime: SharedCoreRuntime, private var sc
             durationMs?.let { put("durationMs", it) }; channel?.let { put("channel", it) }; deviceRunId?.let { put("deviceRunId", it) }; put("sources", JsonArray(sources))
         }) })
     }
-    suspend fun finish(outcome: String, reason: String?) = update("finish", buildJsonObject { put("outcome", outcome); reason?.let { put("reason", it) } })
+    suspend fun finish(outcome: String, reason: String?, completion: JsonObject? = null) = update("finish", buildJsonObject { put("outcome", outcome); reason?.let { put("reason", it) }; completion?.let { put("completion", it) } })
     private suspend fun update(action: String, fields: JsonObject) {
         scene = runtime.value("scene", JsonObject(fields + buildJsonObject { put("action", action); put("scene", scene); put("at", now()) })).jsonObject
         save(scene)

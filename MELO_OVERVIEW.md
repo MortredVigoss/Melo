@@ -766,3 +766,13 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 10-20 #5 第二轮交接：首轮 Android 模拟器 60/61，构建通过。正在复验原始拒绝码、同源屏幕进展及图像预算估算，具体证据见 docs/shared-loop-android-20261020.md；真实设备/用户数据未动。
 
 #5 第二轮实际结果：共享 Core、预算、设备进展均过，Android 63/64；唯一旧 UI 取消夹具存在定时竞态，已改为可控本地 HTTP 请求再跑全 CI，未放宽断言。
+
+
+#5 最终：6209a2a 的 Android CI 39358209565 通过，模拟器 64/64 零跳过，GitHub #5 已关闭。
+
+### 2026-10-20 — melo主线（Codex）— GitHub #6 完成回执接线
+- 状态：WIP；#1/#4/#3/#9/#2/#5 已发布关闭，#6 待完整验证，随后 #8/#7/#11/#12/#10/#13/#14。用户再次授权逐项测试后推送关闭，不逐条询问。
+- 行为：执行器返回文字/工具 ok 与任务证据分开；五类终态、已读来源和目标未知状态由共享 Core 计算。Node 主聊天/成员/技能、当前 iPhone AgentLoop、Android SharedChatAgent 与执行面板接线。
+- 文件及边界：shared/agent/completion.js、三端循环和持久执行记录；[完成回执约定](docs/completion-receipts-20261020.md)。只保留证据 ID；词语匹配不是事实核实，通用文件/MCP 操作缺少独立终态时保持未知。
+- 验证：Node/Core/真实 localhost HTTP 115/115；84 个同源 fixture 在 Node/JSCore 通过；三组 Swift、执行记录落盘回读与共享 DOM 通过。日常 gate、iOS 编译、Android CI 仍待最终结果。
+- 账号、数据及已安装应用未改；不运行 git pp；保留原 master 他线程 WIP。

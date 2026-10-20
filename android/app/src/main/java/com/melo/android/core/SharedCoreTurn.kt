@@ -7,6 +7,8 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.serialization.json.*
 
+class SharedTurnStopped(val reason: String) : IllegalStateException("Shared Agent stopped: $reason")
+
 /** Transport / lifecycle only; turn decisions live in the installed JS Core. */
 class SharedCoreTurn private constructor(private val runtime: SharedCoreRuntime, private var state: JsonObject, val budget: SharedRunBudget) : AutoCloseable {
     val completed get() = state["status"]?.jsonPrimitive?.content == "completed"
@@ -22,7 +24,7 @@ class SharedCoreTurn private constructor(private val runtime: SharedCoreRuntime,
         state = reply.getValue("value").jsonObject
         return state
     }
-    suspend fun request() { budget.check(); event("request"); check(active) { "共享 Agent 已停止（$reason）；已有操作保留。" } }
+    suspend fun request() { budget.check(); event("request"); if (!active) throw SharedTurnStopped(reason) }
     fun permits(id: String) = active && state.getValue("pending").jsonArray.any { it.jsonPrimitive.content == id } && state.getValue("permitted").jsonArray.any { it.jsonPrimitive.content == id }
     fun rejection(id: String) = state["rejections"]?.jsonObject?.text(id).orEmpty()
     suspend fun calls(calls: List<Pair<String, String>>, arguments: Map<String, JsonObject> = emptyMap(), requireAll: Boolean = true) {

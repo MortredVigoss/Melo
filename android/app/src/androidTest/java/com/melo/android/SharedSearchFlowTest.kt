@@ -64,7 +64,8 @@ class SharedSearchFlowTest {
             val deviceCount = app.repository.data.value.deviceRuns.size
             val id = chat(model, protocol, config)
             val run = send(id, "搜索 Surry Hills 当前营业的餐厅")
-            assertEquals(run.error, "completed", run.status)
+            assertEquals(run.error, "partial", run.status)
+            assertEquals("RELEVANT_READ_SOURCE_MISSING", run.sharedScene?.get("completion")?.jsonObject?.text("reason"))
             assertTrue(run.partial.contains("营业状态未知")); assertTrue(run.sources.contains("https://fixture.invalid/menu"))
             assertEquals(deviceCount, app.repository.data.value.deviceRuns.size); assertFalse(app.deviceAgent.runtime.value.running)
             val first = model.takeRequest(2, TimeUnit.SECONDS)!!.body.readUtf8()
@@ -75,6 +76,27 @@ class SharedSearchFlowTest {
             assertTrue(follow.contains("search-1")); assertTrue(follow.contains("Fixture A")); assertTrue(follow.contains("freshness"))
             assertFalse(follow.contains("fixture-search-key")); assertFalse(run.partial.contains("fixture-search-key"))
             assertEquals(2, model.requestCount); assertEquals(1, backend.requestCount)
+        } }
+    }
+
+    @Test fun completionUsesActualReadBodiesAndPersistsTheEvidenceBoundary() = runBlocking {
+        for (body in listOf("Sydney brunch menu with breakfast dishes and observed opening hours for this fixture.", "Distant stars and galaxies have different spectra and their light is redshifted.", "")) MockWebServer().use { model -> MockWebServer().use { backend ->
+            backend.start()
+            val page = backend.url("/menu").toString()
+            backend.enqueue(MockResponse().setHeader("Content-Type", "application/json").setBody(buildJsonObject { put("results", buildJsonArray { add(buildJsonObject { put("title", "Fixture"); put("url", page); put("snippet", "Sydney brunch summary") }) }) }.toString()))
+            backend.enqueue(MockResponse().setHeader("Content-Type", "text/plain").setBody(body))
+            model.enqueue(tool("chat-completions"))
+            model.enqueue(MockResponse().setBody(buildJsonObject { put("choices", buildJsonArray { add(buildJsonObject { put("finish_reason", "tool_calls"); put("message", buildJsonObject { put("role", "assistant"); put("tool_calls", buildJsonArray { add(buildJsonObject { put("id", "read-1"); put("type", "function"); put("function", buildJsonObject { put("name", "fetch_url"); put("arguments", buildJsonObject { put("url", page) }.toString()) }) }) }) }) }) }) }.toString()))
+            model.enqueue(MockResponse().setBody(buildJsonObject { put("choices", buildJsonArray { add(buildJsonObject { put("finish_reason", "stop"); put("message", buildJsonObject { put("role", "assistant"); put("content", "Sydney brunch: $page") }) }) }) }.toString()))
+            model.start()
+            val config = buildJsonObject { put("search", buildJsonObject { put("backend", "http"); put("endpoint", backend.url("/search").toString()) }) }
+            val id = chat(model, config = config)
+            val run = send(id, "搜索 Sydney brunch")
+            val completion = run.sharedScene!!.getValue("completion").jsonObject
+            assertEquals(if (body.startsWith("Sydney")) "completed" else "partial", run.status)
+            assertEquals(if (body.startsWith("Sydney")) "supported" else "unverified", completion.text("goalState"))
+            assertEquals(3, model.requestCount); assertEquals(2, backend.requestCount)
+            assertFalse(completion.toString().contains("breakfast dishes"))
         } }
     }
 
@@ -124,7 +146,7 @@ class SharedSearchFlowTest {
             app.repository.saveConnection(connection.copy(searchProof = proof), null)
             val deviceCount = app.repository.data.value.deviceRuns.size
             val run = send(id, "搜索 Surry Hills 餐厅")
-            assertEquals(run.error, "completed", run.status); assertTrue(run.sources.contains("https://fixture.invalid/menu"))
+            assertEquals(run.error, "partial", run.status); assertTrue(run.sources.contains("https://fixture.invalid/menu"))
             assertEquals(deviceCount, app.repository.data.value.deviceRuns.size)
             repeat(2) {
                 val body = MeloJson.parseToJsonElement(model.takeRequest(2, TimeUnit.SECONDS)!!.body.readUtf8()).jsonObject
