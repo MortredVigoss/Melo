@@ -1,3 +1,9 @@
+## 2026-10-21 — 后台索引只能用当前来源清单清理记忆
+
+Codex 在整合回归中复现后台 Worker 用旧项目快照误隔离新记忆；原记录仍在，来源标记错误。确定性回归覆盖迟到索引、真实删除及缺失清单；在同一 memory 事务中读取当前来源后再清理。
+Artifact 测试改经公开 State Store 建 Fixture，避免绕过常驻状态；并发夹具用 Worker 进度通知替代调度速度假设，原断言保留。macOS 授权卡 Deadline 用受控 Clock，仍验证预算到期与关闭状态。
+PR #15 保持 Draft；初轮 Linux CI、双平台 File Safety 和本机 Android Runtime 已通过，macOS 首轮暴露授权卡测试时钟问题，继续复验，不据旧结果合并。
+
 ## 2026-10-20 — 两条工作线先在独立分支验证，再回到共同主线
 
 用户批准 Integration / PR / 验证后收敛分支；Codex 固定两端最新 SHA，保留主线新接口及 Mobile 功能，未直接修改 master。

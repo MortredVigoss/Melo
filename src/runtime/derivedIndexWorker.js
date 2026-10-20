@@ -6,7 +6,7 @@ import { performance } from 'node:perf_hooks';
 import { loadState } from '../state/stateStore.js';
 import { syncDerivedSnapshot } from '../memory/derivedIndex.js';
 import {warmKnowledgeIndex} from '../memory/knowledgeIndex.js';
-import { reconcileLegacyFacts, quarantineDeletedChatFacts } from '../memory/factRecords.js';
+import { reconcileDerivedFacts } from './reconcileDerivedFacts.js';
 import { createRequestContext } from './requestContext.js';
 import { runWithRequestContext } from './requestScope.js';
 import { atomicWriteJson } from '../storage.js';
@@ -34,10 +34,8 @@ async function run() {
       // Embedding is optional background work, outside prompt retrieval and
       // outside the durable source/index acknowledgement path.
       void warmKnowledgeIndex({home}).catch(()=>{});
-      if (!initialized) { reconcileLegacyFacts(state); initialized = true; }
-      const chatIds = new Set(state.chats.map(chat => chat.id));
-      quarantineDeletedChatFacts([...previousChatIds].filter(id => !chatIds.has(id)));
-      previousChatIds = chatIds;
+      previousChatIds = reconcileDerivedFacts({ home, snapshot: state, initialize: !initialized, previousChatIds });
+      initialized = true;
       const committed = { revision: state._revision || 0, manifestHash: createHash('sha256').update(raw).digest('hex'),
         indexedAt: new Date().toISOString(), durationMs: Math.round((performance.now()-started)*1000)/1000 };
       // Manifest revision is the durable outbox. Acknowledgement advances only

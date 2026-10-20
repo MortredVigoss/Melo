@@ -209,7 +209,12 @@ func code(_ envelope: String?) -> String? { envelope.map { PhoneToolEnvelope.par
         let quick = Harness(file: nil, clock: clock, timeout: 30)
         gate = await quick.authorize("contacts_search", melo)
         assert(code(gate.denial) == "CAPABILITY_DENIED" && gate.denial!.contains("这台 iPhone") && quick.closed.last?.status == .timeout && quick.broker.grants.isEmpty && quick.audits.last!.status == "failed")
-        gate = await hc.authorize("contacts_search", binding("melo", "Melo", own: { meloOwn.value }, run: "run-d", budget: PhoneRunBudget(deadlineMs: 20)))
+        let deadlineClock = Clock()
+        let deadlineBudget = PhoneRunBudget(deadlineMs: 20, now: deadlineClock.read)
+        let deadlineWait = Task { await hc.authorize("contacts_search", binding("melo", "Melo", own: { meloOwn.value }, run: "run-d", budget: deadlineBudget)) }
+        await until("the budget-bound card") { hc.broker.pendingRequests.count == 1 }
+        deadlineClock.now += 21
+        gate = await deadlineWait.value
         assert(code(gate.denial) == "BUDGET_EXHAUSTED" && hc.closed.last?.status == .budget, "the run deadline still applies while a card waits")
         let cancelled = Task { await hc.authorize("contacts_search", binding("melo", "Melo", own: { meloOwn.value }, run: "run-e")) }
         await until("the card to cancel") { hc.broker.pendingRequests.count == 1 }

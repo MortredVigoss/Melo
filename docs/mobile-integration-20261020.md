@@ -27,3 +27,11 @@ Search 的最新主线纯函数体迁入 portable factory，Node 保持原导出
 - 最新主线上游 CI 已存在失败：Locale 生成物过期、VoiceInputTests 固定 100ms 等待，以及 Mobile CI 的 KSP Plugin 解析失败。原始日志保存在 `.tmp/integration-baseline-ci-*.log`；本分支不能把这些失败忽略或静默重试为成功。
 
 后续：定位并发记录缺失，完成最终 Node / Browser、Android Runtime 和 macOS Swift / 跨引擎 Eval；CI / 未验证边界在 PR 明确列出。尚未操作用户设备或真实模型服务。
+
+## 2026-10-21 定位与修正
+
+并行运行四份独立 Memory HTTP Fixture 时，其中一份稳定观测到旧 Worker 初始快照把七条有效记录设为 `quarantined/sourceDeleted`。修正为在 Memory 写事务内重新读取当前 manifest 的 Project/Chat 身份，再执行首次迁移及删除来源隔离；索引投影仍可用原快照，下一轮追上最新 Revision。新增确定性回归覆盖新来源不误隔离、真实删除不复活、清单缺失不修改记录。
+
+Artifact Fixture 改走 State Store 的保存入口，避免直接改 state.json 后仍命中常驻快照。Memory 并发 Fixture 保留原进度/数据断言，通过 Atomics 通知等待独立 Worker 的实际进度。授权卡测试以注入 Clock 控制预算到期，保留 BUDGET_EXHAUSTED 和卡片关闭断言；不把机器调度耗时混入 20ms 的测试前置条件。
+
+PR：[GitHub #15](https://github.com/MortredVigoss/Melo/pull/15)。初轮 Integration CI：Linux Node/HTTP/Browser 和 Linux/macOS File Safety 已通过；macOS 尚未全绿，本分支仍处于验证阶段。

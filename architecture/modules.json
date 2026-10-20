@@ -22,8 +22,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 608,
-      "edges": 1842,
+      "modules": 609,
+      "edges": 1844,
       "roots": [
         "src",
         "desktop-ui",
@@ -1433,7 +1433,7 @@
         "desktop-shell": 6,
         "knowledge": 3,
         "media": 1,
-        "platform": 25,
+        "platform": 26,
         "projects": 1,
         "settings": 14,
         "sync": 2,
@@ -1446,7 +1446,7 @@
         "desktop-shell": 1,
         "knowledge": 2,
         "media": 1,
-        "platform": 19,
+        "platform": 21,
         "projects": 1,
         "sync": 5,
         "tools": 6
@@ -3697,7 +3697,7 @@
         "src/**"
       ],
       "modules": {
-        "src": 50
+        "src": 51
       },
       "entryModules": [
         {
@@ -3787,6 +3787,12 @@
           "module": "src/runtime/processOwnership.js",
           "importedBy": [
             "tools"
+          ]
+        },
+        {
+          "module": "src/runtime/reconcileDerivedFacts.js",
+          "importedBy": [
+            "memory"
           ]
         },
         {
@@ -3961,7 +3967,7 @@
         "desktop-shell": 2,
         "knowledge": 2,
         "media": 2,
-        "memory": 19,
+        "memory": 21,
         "projects": 6,
         "settings": 16,
         "sync": 2,
@@ -3976,7 +3982,7 @@
         "desktop-shell": 9,
         "knowledge": 2,
         "media": 9,
-        "memory": 25,
+        "memory": 26,
         "projects": 23,
         "settings": 22,
         "sync": 4,
@@ -4028,6 +4034,7 @@
           "src/runtime/performanceTrace.test.js",
           "src/runtime/postTurnTasks.test.js",
           "src/runtime/processOwnership.test.js",
+          "src/runtime/reconcileDerivedFacts.test.js",
           "src/runtime/searchCacheEvidence.test.js",
           "src/runtime/serverLock.test.js",
           "src/runtime/storageInventory.test.js",

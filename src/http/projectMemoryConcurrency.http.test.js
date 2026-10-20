@@ -61,6 +61,7 @@ test('fresh and existing project memory survives concurrent saves, edits, sync, 
         do {
           indexKnowledgeDocuments({home: workerData.home, documents: [{id:'fixture', content:'Concurrent index revision ' + n}]});
           Atomics.add(barrier, 1, 1);
+          Atomics.notify(barrier, 1);
           if (n++ === 0) parentPort.postMessage('ready');
           await new Promise(resolve => setTimeout(resolve, 5));
         } while (!Atomics.load(barrier, 0));
@@ -71,8 +72,17 @@ test('fresh and existing project memory survives concurrent saves, edits, sync, 
   assert.equal((await once(worker, 'message'))[0], 'ready');
   const indexed = once(worker, 'message');
   const expected = new Map();
+  async function indexAdvancedSince(before) {
+    const deadline = Date.now() + 10_000;
+    while (Atomics.load(barrier, 1) <= before) {
+      const remaining = deadline - Date.now();
+      assert.ok(remaining > 0, 'independent index worker must make progress during the concurrent phase');
+      await Atomics.waitAsync(barrier, 1, before, remaining).value;
+    }
+  }
   for (let phase = 0; phase < 2; phase++) {
     const writesBefore = Atomics.load(barrier, 1);
+    const indexProgress = indexAdvancedSince(writesBefore);
     const rows = await Promise.all(Array.from({ length: 8 }, (_, i) => request('/api/projects/memory-book', {
       projectId: project.id, text: `Phase ${phase} original memory ${i}`, section: 'convention',
     })));
@@ -86,6 +96,7 @@ test('fresh and existing project memory survives concurrent saves, edits, sync, 
     }), 'phone');
     expected.set(rows[0].id, remoteText);
     await Promise.all([
+      indexProgress,
       request('/api/project-memory-sync', wire),
       ...rows.slice(1).map((row, i) => {
         const text = `Phase ${phase} desktop edit ${i}`; expected.set(row.id, text);

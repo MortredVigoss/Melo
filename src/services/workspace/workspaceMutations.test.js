@@ -31,8 +31,12 @@ function freshHome() {
   return dir;
 }
 
-function seed(home, state) {
-  writeFileSync(join(home, 'desktop', 'state.json'), JSON.stringify(state));
+async function seed(home, state) {
+  // Use the state-store API so fixture replacement also invalidates resident
+  // projections and checkpoints left by the preceding mutation test.
+  const { runWithRequestContext } = await import('../../runtime/requestScope.js');
+  const { saveState } = await import('../../state/stateStore.js');
+  await runWithRequestContext({ env: { ...process.env, MELO_HOME: home } }, () => saveState(state));
 }
 
 function readPersistedState(home) {
@@ -108,7 +112,7 @@ const baseArtifact = {
 // ─── updateArtifact ─────────────────────────────────────────────────────────
 
 test('updateArtifact: patches title only, preserves content + identity fields', async () => {
-  seed(TEST_HOME, fixtureState({
+  await seed(TEST_HOME, fixtureState({
     artifacts: [{ ...baseArtifact }],
     projects: [{ id: 'proj-x', name: 'demo', workspacePath: '/tmp/x', summary: '', tag: '', instructions: '', createdAt: '2025-01-01T00:00:00.000Z', updatedAt: '2025-01-01T00:00:00.000Z' }],
   }));
@@ -130,7 +134,7 @@ test('updateArtifact: patches title only, preserves content + identity fields', 
 });
 
 test('updateArtifact: empty / whitespace content rejected', async () => {
-  seed(TEST_HOME, fixtureState({ artifacts: [{ ...baseArtifact, id: 'art-empty' }] }));
+  await seed(TEST_HOME, fixtureState({ artifacts: [{ ...baseArtifact, id: 'art-empty' }] }));
 
   await assert.rejects(
     () => updateArtifact('art-empty', { content: '   \n\t  ' }),
@@ -143,7 +147,7 @@ test('updateArtifact: empty / whitespace content rejected', async () => {
 });
 
 test('updateArtifact: unknown id throws Artifact not found', async () => {
-  seed(TEST_HOME, fixtureState());
+  await seed(TEST_HOME, fixtureState());
   await assert.rejects(
     () => updateArtifact('does-not-exist', { title: 'x' }),
     /Artifact not found/,
@@ -155,7 +159,7 @@ test('updateArtifact: rejects soft-deleted rows (id reachable but tombstoned)', 
   // a defence-in-depth test — but a stale id round-tripping through a
   // long-lived chat / external caller must not be allowed to mutate
   // a tombstone (Codex 2026-04-27 audit).
-  seed(TEST_HOME, fixtureState({
+  await seed(TEST_HOME, fixtureState({
     artifacts: [{ ...baseArtifact, id: 'art-tomb', deletedAt: '2026-04-26T12:00:00.000Z' }],
   }));
 
@@ -176,7 +180,7 @@ test('updateArtifact: missing artifactId throws', async () => {
 });
 
 test('updateArtifact: language + kind + content all patched together, identity preserved', async () => {
-  seed(TEST_HOME, fixtureState({ artifacts: [{ ...baseArtifact, id: 'art-multi' }] }));
+  await seed(TEST_HOME, fixtureState({ artifacts: [{ ...baseArtifact, id: 'art-multi' }] }));
 
   await updateArtifact('art-multi', {
     title: 'Renamed',
@@ -200,7 +204,7 @@ test('updateArtifact: language + kind + content all patched together, identity p
 // ─── deleteArtifact (now soft-delete) ───────────────────────────────────────
 
 test('deleteArtifact: stamps deletedAt instead of dropping the row + bumps the owner project', async () => {
-  seed(TEST_HOME, fixtureState({
+  await seed(TEST_HOME, fixtureState({
     artifacts: [
       { ...baseArtifact, id: 'art-del' },
       { ...baseArtifact, id: 'art-keep', title: 'Keeper' },
@@ -225,7 +229,7 @@ test('deleteArtifact: stamps deletedAt instead of dropping the row + bumps the o
 });
 
 test('deleteArtifact: bootstrap response hides soft-deleted rows', async () => {
-  seed(TEST_HOME, fixtureState({
+  await seed(TEST_HOME, fixtureState({
     artifacts: [
       { ...baseArtifact, id: 'art-hidden' },
       { ...baseArtifact, id: 'art-visible', title: 'Visible' },
@@ -240,7 +244,7 @@ test('deleteArtifact: bootstrap response hides soft-deleted rows', async () => {
 });
 
 test('deleteArtifact: unknown id throws Artifact not found', async () => {
-  seed(TEST_HOME, fixtureState({ artifacts: [{ ...baseArtifact, id: 'art-only' }] }));
+  await seed(TEST_HOME, fixtureState({ artifacts: [{ ...baseArtifact, id: 'art-only' }] }));
 
   await assert.rejects(
     () => deleteArtifact('does-not-exist'),
@@ -254,7 +258,7 @@ test('deleteArtifact: unknown id throws Artifact not found', async () => {
 });
 
 test('deleteArtifact: double-delete throws Artifact not found (already soft-deleted)', async () => {
-  seed(TEST_HOME, fixtureState({
+  await seed(TEST_HOME, fixtureState({
     artifacts: [{ ...baseArtifact, id: 'art-once', deletedAt: '2025-01-02T00:00:00.000Z' }],
   }));
 
@@ -272,7 +276,7 @@ test('deleteArtifact: missing artifactId throws', async () => {
 // ─── restoreArtifact ────────────────────────────────────────────────────────
 
 test('restoreArtifact: clears deletedAt + bumps owner project', async () => {
-  seed(TEST_HOME, fixtureState({
+  await seed(TEST_HOME, fixtureState({
     artifacts: [{ ...baseArtifact, id: 'art-r', deletedAt: '2025-01-02T00:00:00.000Z' }],
     projects: [{ id: 'proj-x', name: 'demo', workspacePath: '/tmp/x', summary: '', tag: '', instructions: '', createdAt: '2025-01-01T00:00:00.000Z', updatedAt: '2025-01-01T00:00:00.000Z' }],
   }));
@@ -290,12 +294,12 @@ test('restoreArtifact: clears deletedAt + bumps owner project', async () => {
 });
 
 test('restoreArtifact: unknown id throws Artifact not found', async () => {
-  seed(TEST_HOME, fixtureState({ artifacts: [{ ...baseArtifact, id: 'art-only' }] }));
+  await seed(TEST_HOME, fixtureState({ artifacts: [{ ...baseArtifact, id: 'art-only' }] }));
   await assert.rejects(() => restoreArtifact('nope'), /Artifact not found/);
 });
 
 test('restoreArtifact: row that was never soft-deleted throws', async () => {
-  seed(TEST_HOME, fixtureState({ artifacts: [{ ...baseArtifact, id: 'art-live' }] }));
+  await seed(TEST_HOME, fixtureState({ artifacts: [{ ...baseArtifact, id: 'art-live' }] }));
   await assert.rejects(() => restoreArtifact('art-live'), /not soft-deleted/);
 });
 
@@ -310,7 +314,7 @@ test('purgeStaleSoftDeletes: drops rows whose deletedAt is older than the cutoff
   const recentIso = '2026-04-26T12:00:00.000Z'; // 1 day before nowMs
   const nowMs = Date.parse('2026-04-27T12:00:00.000Z');
 
-  seed(TEST_HOME, fixtureState({
+  await seed(TEST_HOME, fixtureState({
     artifacts: [
       { ...baseArtifact, id: 'old',    deletedAt: oldIso },
       { ...baseArtifact, id: 'recent', deletedAt: recentIso },
@@ -331,7 +335,7 @@ test('purgeStaleSoftDeletes: idempotent — second run drops nothing', async () 
   const oldIso = '2025-01-01T00:00:00.000Z';
   const nowMs = Date.parse('2026-04-27T12:00:00.000Z');
 
-  seed(TEST_HOME, fixtureState({
+  await seed(TEST_HOME, fixtureState({
     artifacts: [{ ...baseArtifact, id: 'old', deletedAt: oldIso }],
   }));
 
@@ -342,7 +346,7 @@ test('purgeStaleSoftDeletes: idempotent — second run drops nothing', async () 
 });
 
 test('purgeStaleSoftDeletes: keeps rows with unparseable deletedAt (defensive)', async () => {
-  seed(TEST_HOME, fixtureState({
+  await seed(TEST_HOME, fixtureState({
     artifacts: [{ ...baseArtifact, id: 'broken', deletedAt: 'not-a-date' }],
   }));
 
@@ -360,7 +364,7 @@ test('applyArtifactToWorkspaceFile: rejects soft-deleted artifact ids', async ()
   // 2026-04-27 🔵 finding).  The pre-flight check throws before
   // applyArtifactContentToWorkspaceService is reached, so no file IO
   // happens — we only need to assert the error path here.
-  seed(TEST_HOME, fixtureState({
+  await seed(TEST_HOME, fixtureState({
     artifacts: [{ ...baseArtifact, id: 'art-deleted', deletedAt: '2026-04-26T12:00:00.000Z' }],
   }));
 
@@ -371,7 +375,7 @@ test('applyArtifactToWorkspaceFile: rejects soft-deleted artifact ids', async ()
 });
 
 test('applyArtifactToWorkspaceFile: unknown id throws Artifact not found', async () => {
-  seed(TEST_HOME, fixtureState({ artifacts: [] }));
+  await seed(TEST_HOME, fixtureState({ artifacts: [] }));
   await assert.rejects(
     () => applyArtifactToWorkspaceFile({ artifactId: 'nope' }),
     /Artifact not found/,

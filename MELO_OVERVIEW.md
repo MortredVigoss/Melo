@@ -59,11 +59,11 @@
 
 ## 4. 最新交接
 
-### 2026-10-20 — Android / Shared Core Integration（进行中）
+### 2026-10-21 — Android / Shared Core Integration（进行中）
 
 用户批准将 Mobile 整合到最新主线，建立 `codex/integrate-mobile-core-20261020`；父基线为 master `8772e92` 与 Mobile `2d36dbd`。保留主线 UI P2、统一检测、完成回执、Session Events、项目生命周期和历史图片修复，接入 Android 的 Context / Task Cache / 独立 HTTP Search。主线本身尚未合并。
 
-冲突处理保留新主线 Core Host/预算，移动最新 Router 纯函数体到 portable factory，补回 Mobile 的逗号否定边界与“不联网”限制；Node 保留原 Tool Schema，通过 Adapter 使用配置的 HTTP Search，Host 执行许可受共享计划限制。初轮 Core 4 项 RED 已修；Android JVM/Lint/Debug/R8 通过，Node 全量首轮仍有 6 项 RED，正在收敛 Routing 与项目记忆并发；macOS CI 待本分支实际执行。详见 [Integration 回执](docs/mobile-integration-20261020.md)。
+冲突处理保留新主线 Core Host/预算，移动最新 Router 纯函数体到 portable factory，补回 Mobile 的逗号否定边界与“不联网”限制；Node 保留原 Tool Schema，通过 Adapter 使用配置的 HTTP Search，Host 执行许可受共享计划限制。初轮 Core 4 项 RED 已修；Android JVM/Lint/Debug/R8 通过，Node 全量首轮仍有 6 项 RED，正在收敛 Routing 与项目记忆并发；初轮 Linux CI / 双平台 File Safety / 本机 Android Runtime 已通过；macOS 首轮授权卡测试时钟失败已修夹具待复验。后台索引误隔离新记忆已定位，并以当前来源清单的事务核对修复。PR #15 保持 Draft。详见 [Integration 回执](docs/mobile-integration-20261020.md)。
 
 
 ### 2026-10-20 — melo主线（Codex）— #4 历史图片修复与原生验收
