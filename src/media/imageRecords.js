@@ -21,13 +21,34 @@ export async function readImageRecords(home, runId) {
 }
 
 const writes = new Map();
-export async function archiveSceneImages(home, scene, workspacePath = null) {
-  const snapshot = structuredClone(scene);
-  const key = `${home}\0${scene?.runId}`;
-  const pending = (writes.get(key) || Promise.resolve()).catch(() => {}).then(() => writeSceneImages(home, snapshot, workspacePath));
+async function queueImageWrite(home, runId, write) {
+  const key = `${home}\0${runId}`;
+  const pending = (writes.get(key) || Promise.resolve()).catch(() => {}).then(write);
   writes.set(key, pending);
   try { return await pending; }
   finally { if (writes.get(key) === pending) writes.delete(key); }
+}
+
+export async function archiveSceneImages(home, scene, workspacePath = null) {
+  const snapshot = structuredClone(scene);
+  return queueImageWrite(home, snapshot?.runId, () => writeSceneImages(home, snapshot, workspacePath));
+}
+
+// The resource service verifies the saved attachment, recorded path and bytes
+// before requesting a binding. Share the archival lock to avoid lost updates.
+export async function bindImageWorkspace(home, runId, artifact, binding) {
+  const expected = structuredClone(artifact), pinned = structuredClone(binding);
+  return queueImageWrite(home, runId, async () => {
+    const record = await readImageRecords(home, runId);
+    const current = record?.artifacts.find(a => a.key === expected.key);
+    if (!current || current.path !== expected.path || current.originalUrl !== expected.originalUrl) return null;
+    if (!current.workspacePath) {
+      current.workspacePath = pinned.workspacePath;
+      current.canonicalRoot = pinned.canonicalRoot;
+      await writeRecord(home, runId, record);
+    }
+    return record;
+  });
 }
 
 async function writeSceneImages(home, scene, workspacePath) {
@@ -40,12 +61,22 @@ async function writeSceneImages(home, scene, workspacePath) {
     version: 1, homeScope: imageHomeScope(home), runId: scene.runId, chatId: scene.chatId,
     workspacePath: previous?.workspacePath || workspacePath,
     canonicalRoot: previous?.canonicalRoot || canonicalRoot,
-    artifacts: [...new Map([...(previous?.artifacts || []), ...images.map(artifact => ({
-      id: artifact.id, key: imageRecordId(artifact), path: artifact.path,
-      url: artifact.url, originalUrl: artifact.originalUrl || artifact.url,
-      title: artifact.title || 'Melo-image',
-    }))].map(artifact => [artifact.key, artifact])).values()],
+    artifacts: [...new Map([...(previous?.artifacts || []), ...images.map(artifact => {
+      const key = imageRecordId(artifact);
+      const prior = previous?.artifacts.find(a => a.key === key && a.path === artifact.path);
+      return {
+        id: artifact.id, key, path: artifact.path,
+        url: artifact.url, originalUrl: prior?.originalUrl || artifact.originalUrl || artifact.url,
+        title: artifact.title || 'Melo-image',
+        ...(prior?.workspacePath ? { workspacePath: prior.workspacePath, canonicalRoot: prior.canonicalRoot } : {}),
+      };
+    })].map(artifact => [artifact.key, artifact])).values()],
   };
+  await writeRecord(home, scene.runId, record);
+}
+
+async function writeRecord(home, runId, record) {
+  const file = fileFor(home, runId);
   await mkdir(directory(home), { recursive: true, mode: 0o700 });
   const temporary = `${file}.${randomUUID()}.tmp`;
   try {

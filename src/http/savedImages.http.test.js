@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { spawn } from 'node:child_process';
-import { mkdtemp, realpath, mkdir, rm, writeFile, readFile, symlink } from 'node:fs/promises';
+import { mkdtemp, realpath, mkdir, rm, writeFile, readFile, symlink, rename } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -11,12 +11,12 @@ import sharp from 'sharp';
 import { createMediaRoutes } from './mediaRoutes.js';
 import { updateStateAtomically } from '../state/stateStore.js';
 import { createExecutionRecorder, pruneExecutionScenes } from '../services/chat/executionScenes.js';
-import { readImageRecords, imageHomeScope } from '../media/imageRecords.js';
+import { readImageRecords, imageHomeScope, archiveSceneImages } from '../media/imageRecords.js';
 import { signWorkspaceFileUrl, verifySignedFileUrl } from '../web/urlSigning.js';
 
-async function fixture(t) {
+async function fixture(t, { legacyWorkspace = false } = {}) {
   const home = await realpath(await mkdtemp(join(tmpdir(), 'saved-image-')));
-  const ws = join(home, 'workspaces', 'chats', 'chat');
+  const ws = legacyWorkspace ? join(home, 'old-project') : join(home, 'workspaces', 'chats', 'chat');
   await mkdir(join(ws, 'generated'), { recursive: true });
   const path = join(ws, 'generated', 'picture.png');
   const bytes = await sharp({ create: { width: 32, height: 24, channels: 3, background: '#af9864' } }).png().toBuffer();
@@ -42,6 +42,128 @@ async function fixture(t) {
   const resolveImage = ref => fetch(`${base}/api/media/images/resolve?${new URLSearchParams(ref || reference)}`);
   return { home, ws, path, bytes, signedUrl, reference, base, resolveImage };
 }
+
+async function legacyFixture(t) {
+  const f = await fixture(t, { legacyWorkspace: true });
+  f.recordsPath = join(f.home, 'desktop', 'image-records', 'run.json');
+  f.scenePath = join(f.home, 'desktop', 'execution-scenes', 'run.json');
+  const record = JSON.parse(await readFile(f.recordsPath, 'utf8'));
+  // Reproduce the already-written bad registration in the installed app.
+  record.workspacePath = join(f.home, 'workspaces', 'chats', 'chat');
+  record.canonicalRoot = null;
+  for (const artifact of record.artifacts) {
+    delete artifact.workspacePath;
+    delete artifact.canonicalRoot;
+  }
+  await writeFile(f.recordsPath, JSON.stringify(record));
+  return f;
+}
+
+test('legacy workspace repairs an existing wrong registration without changing originals or messages', async t => {
+  const f = await legacyFixture(t);
+  const stateBefore = await readFile(join(f.home, 'desktop', 'state.json'));
+  const result = await f.resolveImage(); assert.equal(result.status, 200);
+  const image = await result.json();
+  assert.deepEqual(Buffer.from(await (await fetch(f.base + image.url)).arrayBuffer()), f.bytes);
+  assert.deepEqual(await readFile(f.path), f.bytes);
+  assert.deepEqual(await readFile(join(f.home, 'desktop', 'state.json')), stateBefore);
+  assert.equal((await readImageRecords(f.home, 'run')).artifacts[0].workspacePath, f.ws);
+  // Later telemetry archival must not undo the recovered image binding.
+  const scene = JSON.parse(await readFile(f.scenePath, 'utf8'));
+  await archiveSceneImages(f.home, scene, join(f.home, 'workspaces', 'chats', 'chat'));
+  assert.deepEqual(Buffer.from(await (await fetch(f.base + image.url)).arrayBuffer()), f.bytes);
+});
+
+test('old scenes recover after a chat moves to another project and keep working after scene pruning', async t => {
+  const f = await legacyFixture(t);
+  await rm(f.recordsPath);
+  await updateStateAtomically(state => {
+    state.projects.push({ id: 'new-project', name: 'new', workspacePath: join(f.home, 'new-project') });
+    state.chats.find(c => c.id === 'chat').projectId = 'new-project';
+  }, { home: f.home });
+  // Archiving a scene during pruning used to leave no trustworthy workspace.
+  await pruneExecutionScenes(f.home, { now: Date.now() + 30 * 86400000 });
+  await assert.rejects(readFile(f.scenePath), { code: 'ENOENT' });
+  const response = await f.resolveImage(); assert.equal(response.status, 200);
+  const image = await response.json();
+  assert.deepEqual(Buffer.from(await (await fetch(f.base + image.url)).arrayBuffer()), f.bytes);
+});
+
+test('cold legacy scene backfill matches the saved URL identity despite re-signing', async t => {
+  const f = await legacyFixture(t);
+  await rm(f.recordsPath);
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() + 2000 });
+  const result = await f.resolveImage(); assert.equal(result.status, 200);
+  const image = await result.json();
+  assert.deepEqual(Buffer.from(await (await fetch(f.base + image.url)).arrayBuffer()), f.bytes);
+});
+
+test('concurrent legacy recovery binds each image to its own recorded workspace', async t => {
+  const f = await legacyFixture(t);
+  const secondRoot = join(f.home, 'another-old-project');
+  await mkdir(join(secondRoot, 'generated'), { recursive: true });
+  const secondPath = join(secondRoot, 'generated', 'second.png');
+  const secondBytes = await sharp(f.bytes).resize(16, 12).png().toBuffer();
+  await writeFile(secondPath, secondBytes);
+  const secondUrl = signWorkspaceFileUrl(secondPath);
+  await archiveSceneImages(f.home, { runId: 'run', chatId: 'chat',
+    artifacts: [{ id: 'second', kind: 'image', path: secondPath, url: secondUrl }] });
+  await updateStateAtomically(state => {
+    state.chats.find(c => c.id === 'chat').messages[0].attachments.push({ id: 'second', kind: 'image', url: secondUrl });
+  }, { home: f.home });
+  const results = await Promise.all(Array.from({ length: 8 }, (_, i) =>
+    f.resolveImage(i % 2 ? { ...f.reference, attachmentId: 'second' } : f.reference)));
+  for (const [i, response] of results.entries()) {
+    assert.equal(response.status, 200);
+    assert.deepEqual(Buffer.from(await (await fetch(f.base + (await response.json()).url)).arrayBuffer()), i % 2 ? secondBytes : f.bytes);
+  }
+  const record = await readImageRecords(f.home, 'run');
+  assert.deepEqual(record.artifacts.map(a => a.workspacePath), [f.ws, secondRoot]);
+});
+
+test('legacy recovery refuses unrelated paths, attachment mismatches and symlinks before binding', async t => {
+  const f = await legacyFixture(t);
+  const initial = await readFile(f.recordsPath, 'utf8');
+  const outside = join(f.home, 'private', 'generated', 'picture.png');
+  await mkdir(join(f.home, 'private', 'generated'), { recursive: true });
+  await writeFile(outside, f.bytes);
+  const tampered = JSON.parse(initial);
+  tampered.artifacts[0].path = outside;
+  await writeFile(f.recordsPath, JSON.stringify(tampered));
+  assert.notEqual((await f.resolveImage()).status, 200, 'a path alone is not authority');
+  await writeFile(f.recordsPath, initial);
+  await updateStateAtomically(state => {
+    state.chats.find(c => c.id === 'chat').messages[0].attachments[0].url = signWorkspaceFileUrl(outside);
+  }, { home: f.home });
+  assert.notEqual((await f.resolveImage()).status, 200, 'matching an id alone cannot authorize a different URL');
+  await updateStateAtomically(state => {
+    state.chats.find(c => c.id === 'chat').messages[0].attachments[0].url = f.signedUrl;
+  }, { home: f.home });
+  await rm(f.path); await symlink(outside, f.path);
+  assert.equal((await f.resolveImage()).status, 403);
+  assert.equal((await readImageRecords(f.home, 'run')).artifacts[0].workspacePath, undefined);
+  await rm(join(f.ws, 'generated'), { recursive: true });
+  await symlink(join(f.home, 'private', 'generated'), join(f.ws, 'generated'));
+  assert.equal((await f.resolveImage()).status, 403, 'ancestor links are not rebound');
+});
+
+test('a recovered workspace stays pinned when its root is replaced by a symlink', async t => {
+  const f = await legacyFixture(t);
+  const response = await f.resolveImage(); assert.equal(response.status, 200);
+  const image = await response.json();
+  await rename(f.ws, f.ws + '-moved');
+  await symlink(f.ws + '-moved', f.ws);
+  assert.equal((await f.resolveImage()).status, 403);
+  assert.equal((await fetch(f.base + image.url)).status, 403);
+});
+
+test('an unregistered legacy root cannot be authorized through a symlink', async t => {
+  const f = await legacyFixture(t);
+  await rename(f.ws, f.ws + '-moved');
+  await symlink(f.ws + '-moved', f.ws);
+  assert.equal((await f.resolveImage()).status, 403);
+  assert.equal((await readImageRecords(f.home, 'run')).artifacts[0].workspacePath, undefined);
+});
 
 test('expired signatures and pruned execution history still resolve original image bytes', async t => {
   const f = await fixture(t);
@@ -140,8 +262,8 @@ test('concurrent legacy image recovery keeps every attachment in the durable rec
   assert.equal((await readImageRecords(f.home, 'run')).artifacts.length, 2);
 });
 
-test('real server cold restarts and port changes preserve image preview and save', { timeout: 60000 }, async t => {
-  const f = await fixture(t);
+for (const legacy of [false, true]) test(`real server cold restarts and port changes preserve ${legacy ? 'legacy' : 'current'} image preview and save`, { timeout: 60000 }, async t => {
+  const f = legacy ? await legacyFixture(t) : await fixture(t);
   let child, exited;
   async function stop() {
     if (!child) return;

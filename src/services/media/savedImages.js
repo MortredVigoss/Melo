@@ -7,7 +7,7 @@ import { loadState } from '../../state/stateStore.js';
 import { readExecutionScene } from '../chat/executionScenes.js';
 import { chatWorkspacePath } from '../workspace/toolWorkspace.js';
 import { atomicOpenLeaf, C } from '../../safety/dirfdOps.js';
-import { archiveSceneImages, readImageRecords, imageHomeScope, validRunId } from '../../media/imageRecords.js';
+import { archiveSceneImages, bindImageWorkspace, readImageRecords, imageHomeScope, validRunId } from '../../media/imageRecords.js';
 
 const MAX_BYTES = 64 * 1024 * 1024;
 const MIME = { png: 'image/png', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', avif: 'image/avif', heif: 'image/heic' };
@@ -18,6 +18,62 @@ const inRoot = (root, path) => { const part = relative(root, path); return part 
 function workspaceFor(state, chat, home) {
   return chat.projectId ? state.projects.find(project => project.id === chat.projectId)?.workspacePath
     : chatWorkspacePath(home, chat.id);
+}
+
+function messageRunId(chat, message) {
+  return validRunId(message.metadata?.runId) ? message.metadata.runId
+    : 'legacy-' + createHash('sha256').update(`${chat.id}\0${message.id}`).digest('hex').slice(0, 32);
+}
+
+function savedUrlMatchesPath(value, path) {
+  try {
+    const url = new URL(value);
+    return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password
+      && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)
+      && decodeURIComponent(url.pathname) === `/api/files/signed/${basename(path)}`
+      && url.searchParams.getAll('p').length === 1
+      && url.searchParams.get('p') === Buffer.from(path).toString('base64url');
+  } catch { return false; }
+}
+
+function matchesAttachment(artifact, attachment) {
+  return attachment.kind === 'image' && (artifact.id === attachment.id
+    || [artifact.url, artifact.originalUrl].includes(attachment.url)
+    || savedUrlMatchesPath(attachment.url, artifact.path));
+}
+
+async function imageBytes(home, chat, record, artifact, fallbackRoot) {
+  try { return await originalBytes(record, artifact, fallbackRoot); }
+  catch (error) {
+    // A recovered binding is immutable. A changed canonical root must remain
+    // denied rather than being accepted as another legacy recovery.
+    if (artifact.workspacePath || !['IMAGE_FILE_MISSING', 'IMAGE_PATH_DENIED'].includes(error.code)) throw error;
+    const path = artifact.path;
+    if (!isAbsolute(path) || resolve(path) !== path || basename(dirname(path)) !== 'generated'
+      || !/\.(?:png|jpe?g|webp|gif|avif|heic)$/i.test(path)
+      || !savedUrlMatchesPath(artifact.originalUrl || artifact.url, path)) throw error;
+    const attachment = chat.messages?.filter(m => m.role === 'assistant' && messageRunId(chat, m) === record.runId)
+      .flatMap(m => m.attachments || []).find(a => a.kind === 'image' && savedUrlMatchesPath(a.url, path));
+    if (!attachment) throw error;
+    // Derive the historical root from the locally recorded artifact, never
+    // from a request URL or its encoded p parameter. Only direct generated
+    // images attested by this chat's saved assistant reply can be recovered.
+    const root = dirname(dirname(path));
+    if (record.canonicalRoot && record.workspacePath && resolve(record.workspacePath) === root) throw error;
+    const canonicalRoot = await realpath(root).catch(() => null);
+    if (!canonicalRoot) throw error;
+    // Unlike an explicitly chosen workspace, an inferred legacy root has no
+    // prior authorization for symlinks. Permit only macOS's system aliases.
+    const systemAlias = process.platform === 'darwin' && /^\/(?:tmp|var)(?:\/|$)/.test(root) ? `/private${root}` : root;
+    if (canonicalRoot !== root && canonicalRoot !== systemAlias) {
+      throw failure('IMAGE_PATH_DENIED', 403, '图片路径包含软链接，无法安全打开。');
+    }
+    const binding = { workspacePath: root, canonicalRoot };
+    const image = await originalBytes(binding, artifact, root);
+    const repaired = await bindImageWorkspace(home, record.runId, artifact, binding);
+    if (!repaired) throw unavailable();
+    return image;
+  }
 }
 
 // Older telemetry may already have been pruned. Recover only a persisted
@@ -45,14 +101,15 @@ async function recoverGeneratedAttachment(home, state, chat, message, attachment
 }
 
 async function originalBytes(record, artifact, fallbackRoot) {
-  const root = record.workspacePath || fallbackRoot;
+  const binding = artifact.workspacePath ? artifact : record;
+  const root = binding.workspacePath || fallbackRoot;
   if (!root || !isAbsolute(root)) {
     throw failure('IMAGE_PATH_DENIED', 403, '图片位置不在已登记的工作目录内。');
   }
   let canonicalRoot;
   try { canonicalRoot = await realpath(root); }
   catch { throw failure('IMAGE_FILE_MISSING', 404, '图片原文件已不存在。'); }
-  if (record.canonicalRoot && record.canonicalRoot !== canonicalRoot) {
+  if (binding.canonicalRoot && binding.canonicalRoot !== canonicalRoot) {
     throw failure('IMAGE_PATH_DENIED', 403, '图片工作目录已变化，无法安全打开。');
   }
   // Canonicalize only the approved root (e.g. /tmp → /private/tmp). The
@@ -96,8 +153,7 @@ export async function resolveSavedImage(home, reference) {
   if (message?.role !== 'assistant') throw unavailable();
   const attachment = message.attachments?.find(a => a.kind === 'image' && (a.id === reference.attachmentId || reference.url && a.url === reference.url));
   if (!attachment) throw unavailable();
-  const runId = validRunId(message.metadata?.runId) ? message.metadata.runId
-    : 'legacy-' + createHash('sha256').update(`${chat.id}\0${message.id}`).digest('hex').slice(0, 32);
+  const runId = messageRunId(chat, message);
   let record = await readImageRecords(home, runId);
   if (!record) {
     const scene = await readExecutionScene(home, runId);
@@ -106,14 +162,14 @@ export async function resolveSavedImage(home, reference) {
     record = await readImageRecords(home, runId);
   }
   if (!record || record.chatId !== chat.id) throw unavailable();
-  let artifact = record.artifacts.find(a => a.id === attachment.id || [a.url, a.originalUrl].includes(attachment.url));
+  let artifact = record.artifacts.find(a => matchesAttachment(a, attachment));
   if (!artifact) {
     await recoverGeneratedAttachment(home, state, chat, message, attachment, runId);
     record = await readImageRecords(home, runId);
-    artifact = record?.artifacts.find(a => a.id === attachment.id || [a.url, a.originalUrl].includes(attachment.url));
+    artifact = record?.artifacts.find(a => matchesAttachment(a, attachment));
   }
   if (!artifact) throw unavailable();
-  const image = await originalBytes(record, artifact, workspaceFor(state, chat, home));
+  const image = await imageBytes(home, chat, record, artifact, workspaceFor(state, chat, home));
   return { url: `/api/media/images/${record.homeScope}/${runId}/${artifact.key}`, type: image.type, width: image.width, height: image.height };
 }
 
@@ -126,5 +182,5 @@ export async function readSavedImage(home, pathname) {
   const state = await loadState({ home });
   const chat = state.chats.find(c => c.id === record.chatId);
   if (!chat) throw unavailable();
-  return originalBytes(record, artifact, workspaceFor(state, chat, home));
+  return imageBytes(home, chat, record, artifact, workspaceFor(state, chat, home));
 }
