@@ -23,7 +23,7 @@
     ],
     "graph": {
       "modules": 605,
-      "edges": 1851,
+      "edges": 1852,
       "roots": [
         "src",
         "desktop-ui",

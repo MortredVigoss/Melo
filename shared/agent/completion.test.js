@@ -58,3 +58,41 @@ test('explicitly refused unknown tools do not turn completed research into an ac
     assert.equal(unknown.reason, 'GOAL_TERMINAL_EVIDENCE_MISSING');
   }
 });
+
+test('a connectivity reply is delivered without inventing a research requirement', () => {
+  for (const goal of [
+    '这是更新后的连通性检查。请只回复：更新验证通过。不要调用工具。',
+    '连通性检查，请回复 OK',
+    '请检查这句话的语法：“I is ready.”',
+    '请核查这个计算：2 + 2 = 4',
+    'Do not use tools. Only reply: current weather.',
+    '不用任何工具，只根据已有知识回答：为什么会下雨？',
+  ]) {
+    const result = completionResult({ goal, reply: '已回答。' });
+    assert.equal(result.kind, 'answer', goal);
+    assert.equal(result.outcome, 'completed', goal);
+    assert.equal(result.goalState, 'not_applicable', goal);
+    assert.equal(result.reason, 'ANSWER_DELIVERED', goal);
+  }
+});
+
+test('reply formatting and tool restrictions never fabricate external completion evidence', () => {
+  for (const goal of [
+    '请搜索今天的新闻，只回复一句。',
+    '查一下悉尼早午餐，只回复餐厅名字。',
+    '创建文件 result.txt，不要调用工具，只回复完成。',
+    'Please search current weather. The example phrase is "do not use tools".',
+  ]) {
+    const result = completionResult({ goal, reply: '完成。' });
+    assert.equal(result.outcome, 'blocked', goal);
+    assert.equal(result.goalState, 'unverified', goal);
+  }
+  const goal = '连通性检查，请只回复 OK，不要调用工具';
+  for (const terminalReason of ['CANCELLED', 'DEADLINE_EXCEEDED', 'REQUEST_FAILED']) {
+    assert.notEqual(completionResult({ goal, reply: 'OK', terminalReason }).outcome, 'completed');
+  }
+  assert.equal(completionResult({ goal, reply: '' }).reason, 'NO_FINAL_ANSWER');
+  assert.equal(completionResult({ goal, reply: 'OK', observations: [
+    { id: 'write', name: 'file_write', type: 'tool', executed: true, ok: true },
+  ] }).reason, 'GOAL_TERMINAL_EVIDENCE_MISSING');
+});

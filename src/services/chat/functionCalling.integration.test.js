@@ -61,6 +61,21 @@ async function harness(t, respond, options={}) {
   return { requests, events, executions, permissions, run };
 }
 
+test('a real HTTP connectivity reply finishes as an answer with no tools or approvals', async t => {
+  const text = '这是更新后的连通性检查。请只回复：更新验证通过。不要调用工具。';
+  const h = await harness(t, () => done([{ ...message, content: [
+    { type: 'output_text', text: '更新验证通过。', annotations: [] },
+  ] }]), { text });
+  const { normalizedReply } = await h.run();
+  assert.equal(normalizedReply.content, '更新验证通过。');
+  assert.equal(normalizedReply.completion.kind, 'answer');
+  assert.equal(normalizedReply.completion.outcome, 'completed');
+  assert.equal(normalizedReply.completion.summary, '回答已交付');
+  assert.equal(h.requests.length, 2, 'one intent classification and one answer; no verification retry');
+  assert.equal(h.executions.length, 0);
+  assert.equal(h.permissions.length, 0);
+});
+
 test('main chat sends native definitions, authorizes valid calls and returns all outputs across three real HTTP turns', async t => {
   const h = await harness(t, round => done(round === 1
     ? [reasoning('rs-1'), fn('a', 'A'), fn('b', 'B'), fn('bad', 9), fn('hidden', 'secret', 'not_in_role')]

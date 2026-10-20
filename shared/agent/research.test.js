@@ -6,6 +6,19 @@ const capabilities = { executors: ['web_search', 'fetch_url', 'phone_use'], gran
 const config = { search: { backend: 'http', endpoint: 'https://search.fixture.invalid' } };
 const plan = (text, extra = {}) => planRequest({ text, capabilities, config, ...extra });
 
+test('checking supplied text is not a web lookup, while real lookup verbs remain research', () => {
+  for (const text of ['连通性检查，请回复 OK', '请检查一下这句话的语法', '审查这个计算：2 + 2 = 4']) {
+    assert.equal(plan(text).route, 'none', text);
+  }
+  for (const text of ['查一下悉尼 brunch', '帮我查悉尼 brunch', '搜索 OpenAI 文档', '查询最新新闻']) {
+    assert.equal(plan(text).route, 'http-search', text);
+  }
+  for (const text of ['不要调用工具，今天的天气', '不用任何工具，打开 https://example.com', 'No tools. Current weather.']) {
+    assert.equal(plan(text).route, 'none', text);
+    assert.deepEqual(plan(text).requiredTools, [], text);
+  }
+});
+
 test('brunch recommendation plus navigation exposes research then an explicitly authorized phone action', () => {
   const result = plan('推荐一下有什么好的 Surry Hill 的 brunch，然后给我导航到那里。你先不用管有没有开门，我主要是测试一下你的能力。');
   assert.equal(result.route, 'http-search');

@@ -381,6 +381,9 @@ function maskQuotedText(value = '') {
 const NEGATED_ACTION = /(?:不要|不用|不必|无需|禁止|别|不需要)[^，,。！？;；\n]{0,20}(?:搜|查找|检索|运行|执行|调用|构建|联网|上网|打开|访问)|\b(?:do not|don['’]t|never|without|no need to)\s+(?:\w+\s+){0,3}(?:search|find|grep|run|execute|call|build|browse|fetch|open|access)\b/iu;
 const SEARCH_DENIAL = /(?:不要|不用|不必|无需|禁止|别|不需要)[^，,。！？;；\n]{0,20}(?:搜|查找|检索)|\b(?:do not|don['’]t|never|without|no need to)\s+(?:\w+\s+){0,3}(?:search|find|google|look up)\b/iu;
 const NETWORK_DENIAL = /不联网|不上网|(?:不要|不用|不必|无需|禁止|别|不需要)\s*(?:再|去|调用)?\s*(?:联网|上网|浏览网页|访问网络|打开(?:链接|网址|网页)?|访问|读取(?:链接|网址|网页))|\b(?:do not|don['’]t|never|without)\s+(?:browse|go online|access|fetch|open|read)\b/iu;
+// A blanket tool prohibition also excludes hosted search and URL reads.
+// Match instructions only (quoted examples have already been masked).
+const TOOLS_DENIAL = /(?:不要|不用|不必|无需|禁止|别|不需要)\s*(?:(?:再|去|调用|使用|用)\s*)*(?:任何|所有|一切)?\s*工具|\b(?:(?:do not|don['’]t|never|without)\s+(?:(?:use|using|call|calling|invoke|invoking)\s+)?(?:(?:any|the)\s+)?tools?|no tools?)\b/iu;
 const CONTEXT_ONLY = /(?:仅|只)(?:凭|根据|依据|基于|使用).{0,16}(?:对话|上下文|基础知识|已给出的文字|提供的文本|提供的正文)|\b(?:only (?:use|using)|based only on)\s+(?:(?:this|our)\s+(?:chat|conversation|text)|the (?:provided|supplied)\s+(?:text|transcript))\b/iu;
 const LOCAL_SEARCH = /^(?:(?:please|can you|could you)\s+)?(?:rg|grep|ripgrep)\b|\b(?:search|find)\s+(?:the |this )?(?:workspace|repo(?:sitory)?|codebase|local files)\b|\b(?:search|find)\b[^\n]*\b(?:in|within)\s+(?:the |this )?(?:workspace|repo(?:sitory)?|codebase)\b|(?:在|从|对)(?:当前|这个|本地)?(?:工作区|仓库|项目|代码库|本地文件)[^。！？\n]{0,16}(?:搜|查找|检索)|(?:搜索|查找|检索)(?:当前|这个|本地)?(?:工作区|仓库|代码库)/iu;
 
@@ -396,7 +399,7 @@ function isExplicitLocalSearch(text = '') {
 function getRequestNetworkPolicy(text = '') {
   const instruction = maskQuotedText(text);
   const contextOnly = CONTEXT_ONLY.test(instruction);
-  const fetchForbidden = NETWORK_DENIAL.test(instruction) || contextOnly;
+  const fetchForbidden = NETWORK_DENIAL.test(instruction) || TOOLS_DENIAL.test(instruction) || contextOnly;
   return {
     instruction,
     contextOnly,
@@ -481,8 +484,9 @@ const DEFAULT_WEB_SEARCH_TRIGGER_RULES = Object.freeze([
   { pattern: /最新(新闻|消息|价格|动态|行情|报道)/u, weight: 3 },
   { pattern: /(今天|现在|明天|这周)的?(天气|股价|新闻|头条|行情|温度|气温)/u, weight: 3 },
   { pattern: /(股价|股票|汇率|油价|金价)(是|多少|怎么样)/u, weight: 3 },
-  { pattern: /查一?下.+?(的|最新|当前)/u, weight: 2 },
-  { pattern: /(帮我|请)?(查|搜|搜索|搜一下|查一下|找一下)/u, weight: 2 },
+  { pattern: /(?:^|[\s，,。.!！？?；;：:]|请|帮我|帮忙|麻烦|顺便|再|去)查一?下.+?(的|最新|当前)/u, weight: 2 },
+  // Bare 查 must be a request verb, not the suffix of 检查 / 核查 / 审查.
+  { pattern: /搜索|搜一下|查找|查询|找一下|(?:^|[\s，,。.!！？?；;：:]|请|帮我|帮忙|麻烦|顺便|再|去)(?:查|搜)/u, weight: 2 },
   { pattern: /(天气|几度|多少度|下雨|气温|温度)/u, weight: 3 },
   { pattern: /(怎么去|在哪|地址|电话|营业时间|开放时间)/u, weight: 2 },
   { pattern: /(多少钱|价格|票价|费用|报价)/u, weight: 2 },
@@ -502,7 +506,7 @@ function searchPlanGoverns(tool, id) {
   if (typeof tool?.capability === 'string' && typeof tool?.uiModule === 'string') return tool.capability === 'network' && tool.uiModule === 'search';
   return SEARCH_NETWORK_TOOL_IDS.has(id);
 }
-const EXPLICIT_SEARCH = /\b(?:search|look up|find|google)\b|搜索|搜一下|查一下|查找/iu;
+const EXPLICIT_SEARCH = /\b(?:search|look up|find|google)\b|搜索|搜一下|查找|(?:^|[\s，,。.!！？?；;：:]|请|帮我|帮忙|麻烦|顺便|再|去)查一下/iu;
 
 let extraWebSearchTriggers = [];
 

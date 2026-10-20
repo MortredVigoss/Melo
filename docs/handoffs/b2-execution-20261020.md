@@ -35,3 +35,7 @@
 - runner 仍有 3 个搬迁前就无人引用的 import（selectedMaterials、requestEnvironment、filterToolsForSearchPlan），留给 B4 lint。
 - `turn` 字段类型暂写 `{*}`，B4-4 边界类型检查时细化。
 - 未合入 master，未推送，未运行 git pp。
+
+## 2026-10-20 Codex 复核更新
+
+上述未合入/未推送描述为原交接时状态。当前主线已包含本批提交；B1 已随 8772e92 推送，B2 至 c714352 已在本地 master。本次按用户要求重新核对与测试，证据和后续发布状态统一见[完成状态与架构核对](../completion-status-fix-20261020.md)。

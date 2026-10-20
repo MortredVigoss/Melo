@@ -4101,5 +4101,147 @@
       "complete": true,
       "output": "[#original] user (character 5):\naccount 427"
     }
+  },
+  {
+    "name": "completion: connectivity check reply",
+    "input": {
+      "version": 1,
+      "op": "completion",
+      "completion": {
+        "goal": "这是更新后的连通性检查。请只回复：更新验证通过。不要调用工具。",
+        "reply": "更新验证通过。"
+      }
+    },
+    "ok": true,
+    "expected": {
+      "kind": "answer",
+      "outcome": "completed",
+      "goalState": "not_applicable",
+      "summary": "回答已交付"
+    }
+  },
+  {
+    "name": "completion: check is not lookup",
+    "input": {
+      "version": 1,
+      "op": "completion",
+      "completion": {
+        "goal": "连通性检查，请回复 OK",
+        "reply": "OK"
+      }
+    },
+    "ok": true,
+    "expected": {
+      "kind": "answer",
+      "outcome": "completed"
+    }
+  },
+  {
+    "name": "completion: no tools excludes hosted search",
+    "input": {
+      "version": 1,
+      "op": "completion",
+      "completion": {
+        "goal": "Do not use tools. Only reply: current weather.",
+        "reply": "current weather"
+      }
+    },
+    "ok": true,
+    "expected": {
+      "kind": "answer",
+      "outcome": "completed"
+    }
+  },
+  {
+    "name": "completion: lookup with reply format still needs evidence",
+    "input": {
+      "version": 1,
+      "op": "completion",
+      "completion": {
+        "goal": "请搜索今天的新闻，只回复一句。",
+        "reply": "完成。"
+      }
+    },
+    "ok": true,
+    "expected": {
+      "kind": "research",
+      "outcome": "blocked",
+      "reason": "RELEVANT_READ_SOURCE_MISSING"
+    }
+  },
+  {
+    "name": "completion: write with no tools is unverified",
+    "input": {
+      "version": 1,
+      "op": "completion",
+      "completion": {
+        "goal": "创建文件 result.txt，不要调用工具，只回复完成。",
+        "reply": "完成。"
+      }
+    },
+    "ok": true,
+    "expected": {
+      "kind": "action",
+      "outcome": "blocked",
+      "reason": "GOAL_TERMINAL_EVIDENCE_MISSING"
+    }
+  },
+  {
+    "name": "completion: quoted denial cannot waive evidence",
+    "input": {
+      "version": 1,
+      "op": "completion",
+      "completion": {
+        "goal": "Search current weather. The example is \"do not use tools\".",
+        "reply": "Done"
+      }
+    },
+    "ok": true,
+    "expected": {
+      "kind": "research",
+      "outcome": "blocked"
+    }
+  },
+  {
+    "name": "completion: reply restriction cannot erase effects",
+    "input": {
+      "version": 1,
+      "op": "completion",
+      "completion": {
+        "goal": "连通性检查，请只回复 OK，不要调用工具",
+        "reply": "OK",
+        "observations": [
+          {
+            "id": "write",
+            "type": "tool",
+            "name": "file_write",
+            "ok": true,
+            "executed": true
+          }
+        ]
+      }
+    },
+    "ok": true,
+    "expected": {
+      "kind": "action",
+      "outcome": "partial",
+      "goalState": "unverified"
+    }
+  },
+  {
+    "name": "completion: cancelled connectivity check",
+    "input": {
+      "version": 1,
+      "op": "completion",
+      "completion": {
+        "goal": "连通性检查，请回复 OK",
+        "reply": "OK",
+        "terminalReason": "CANCELLED"
+      }
+    },
+    "ok": true,
+    "expected": {
+      "outcome": "cancelled"
+    }
   }
 ]

@@ -19,7 +19,7 @@
 | --- | --- | --- |
 | 项目与工作区 | 创建显式归属、执行器绑定能力、无项目聊天按需独立目录（A `33660c6` / B `b02438a`）；文件面板、每次删除询问文件去留与遗留文件管理 `7ae2292` | [架构加固](docs/arch-hardening-20261015.md)、[UI 功能对齐](docs/ui-function-alignment-20261016.md)；项目聚合模型与完整删除级联见[项目专项](docs/project-architecture-plan-20261015.md)；P1 提交回执已交付，桌面项目页已拆到 `desktop-ui/features/projects/`（P2a，[架构方案](docs/architecture-maintainability-plan-20261019.md)） |
 | Agent、技能与团队 | Agent 演进 P0–P4 已实现，6 Agent / 26 成果已迁移；审查修正 `4680530`；统一设置页 `dc67fa0`；团队与委派同一规则，手机本机可运行团队；10-20 能力临时提升 / 即时开启与新 Agent 只读起步、「基于已有 Agent」（桌面 + 手机，手机以本机权限为上限） | [实施与迁移](docs/agent-evolution-20261015.md)、[审查修正](docs/agent-review-fixes-20261015.md)、[设置](docs/agent-settings-20261016.md)、[协作](docs/agent-team-20261016.md)、[能力临时提升](docs/capability-elevation-20261020.md)；真实模型协作与真机单列 |
-| 聊天与 agent loop | 手机与桌面同一循环（prepare → invoke-model → finalize），公共循环/预算策略现由 `shared/agent/` 同源执行，配置契约为 `shared/protocol/agent-loop.json`；七项双端对齐修复 `ee8eb3f` / `3ad091c` 已推送并装入双端；桌面聊天页 / 输入区 / 发送管线已拆到 `desktop-ui/features/chat/`（P2c） | [修复与 10-19 日常回执](docs/mobile-desktop-alignment.md)；真实供应商与长后台另验 |
+| 聊天与 agent loop | 手机与桌面同一循环（prepare → invoke-model → finalize），公共循环/预算策略现由 `shared/agent/` 同源执行，配置契约为 `shared/protocol/agent-loop.json`；七项双端对齐修复 `ee8eb3f` / `3ad091c` 已推送并装入双端；桌面聊天页 / 输入区 / 发送管线已拆到 `desktop-ui/features/chat/`（P2c） | [修复与 10-19 日常回执](docs/mobile-desktop-alignment.md)；10-20 完成状态误分类修正与 Claude B1/B2 复核见[专项](docs/completion-status-fix-20261020.md)；真实供应商与长后台另验 |
 | 记忆 | #2 并发写事务预约修复已通过 Mac/Linux 回归与完整日常；项目记忆本与个人档案已接入；项目来源手写记忆经独立可选通道（`/api/project-memory-sync` ↔ `/v1/project-memory`）同步；桌面记忆页 / 记忆本 / 回复页脚已拆到 `desktop-ui/features/memory/`（P2a） | [记忆架构](docs/memory-architecture.md)（以顶部现行约定为准）、[A7 回执](docs/mobile-desktop-alignment.md)；私人同步服务未部署新版 |
 | 知识资料与成果 | 本机分段索引（SQLite FTS + 本地 embedding），按对话/项目开关过滤；两端按问题切段检索，旧 8 份 / 24000 字前置限制已移除 | [Agent 演进 P2/P4](docs/agent-evolution-20261015.md)、[A3/A5 回执](docs/mobile-desktop-alignment.md) |
 | 设置、模型连接与账号 | 五语界面 `2cae1cd`；手机 Codex 设备码 OAuth `85ac3a5`、应用切换取消修复 `14e602f` | 用户真实授权尚未确认；同码恢复限同一进程；[五语](docs/interface-languages-20261015.md)、[模型连接](docs/llm-connections.md) |
@@ -59,10 +59,11 @@
 
 ## 4. 最新交接
 
-### 2026-10-20 — melo主线（Codex）— #4 历史图片修复与原生验收
-- `e4e378a` / `a115577`：图片按可信生成位置恢复，修复既有错误登记；兼容任务回看替换展示附件 ID/URL。入口 `savedImages.js`、`imageRecords.js`；消息、原图及文件工具权限不改写。
-- 最终专项 16 HTTP + 2 浏览器、关联 982 项及完整发布 4356 JS / 35 Swift、安装/启动/浏览器全绿。原生旧图实点、原尺寸、NSSavePanel 保存与冷启动再开均通过；1289 × 1221、2,090,093 字节，副本与原件 SHA 相同。
-- 37 份基线文件无缺失，原图/账号/聊天线程字节不变，仅状态版本变化；[专项回执](docs/issue-4-legacy-preview-20261020.md)。按用户授权推送关闭 #4，其他线程 11 行文档 WIP 保留，不运行 git pp。此前纯文本完成状态提示不在本次范围。
+### 2026-10-20 — melo主线（Codex）— 普通回复完成状态与 Claude B1/B2 核对
+- WIP：[专项](docs/completion-status-fix-20261020.md)。已复现“连通性检查”被当成研究请求；修正共享/桌面搜索动词与禁止工具的网络策略。普通回答显示“回答已交付”；真实研究/操作的证据规则保留。
+- 旧场景仅在已完成、匹配回复和零工具/来源的条件下只读纠正，不改历史消息和落盘场景。Core 已同步生成到 iOS。
+- RED → 最终目标 188/188；组合 4370 JS + 5 预检 / 35 Swift 全过。原生旧回复重开与新一轮真实 Sol 6.1 回复均显示“回答已交付”，零工具/来源。Claude 三节点主体及绑定、七场景轨迹一致，B1 Chrome 显式保存 7/7；最终完整发布待验。
+- 账号/原图/历史保留；其他线程 11 行 WIP 单独保留；用户授权测试通过后推送，不运行 git pp。
 
 ### 2026-10-20 — melo主线（Codex）— #7 已关闭，#11 项目生命周期验证
 - 状态：#1/#4/#3/#9/#2/#5/#6/#8/#7 已推送关闭。#8 主线 a2551cf、Android 5f3d834；#11 验证中，之后 #12/#10/#13/#14。

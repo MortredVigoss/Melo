@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createExecutionScene, applyExecutionEvent, finishExecutionScene, visibleSceneSources, moduleActivity, sourceReadingLabel, moduleForOperation, requestedImageCount } from '../../shared/executionScene.js';
@@ -13,6 +13,47 @@ import { renderSessionEvents } from '../../../desktop-ui/executionDetails.js';
 import { appendToolInvocationRecord, buildToolInvocationRecord } from '../../tools/toolInvocationRecord.js';
 import { readCodexSseResponse } from '../../providers/streams.js';
 import { signWorkspaceFileUrl, verifySignedFileUrl } from '../../web/urlSigning.js';
+
+test('old false research blockage is corrected on read without rewriting the saved scene or message', async t => {
+  const home = await mkdtemp(join(tmpdir(), 'melo-answer-recovery-'));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const query = '这是更新后的连通性检查。请只回复：更新验证通过。不要调用工具。';
+  const completion = { version: 1, kind: 'research', outcome: 'blocked', goalState: 'unverified',
+    reason: 'RELEVANT_READ_SOURCE_MISSING', completedSteps: 0, evidenceIds: [], summary: '受阻 · 尚无目标完成证据' };
+  const message = { id: 'answer', role: 'assistant', content: '更新验证通过。', metadata: { completion } };
+  const scene = createExecutionScene({ runId: 'old-answer', chatId: 'chat', query });
+  finishExecutionScene(scene, { message });
+  await mkdir(join(home, 'desktop', 'execution-scenes'), { recursive: true });
+  await saveExecutionScene(home, scene);
+  const before = JSON.stringify({ scene, message });
+  const recovered = await readExecutionScene(home, scene.runId, { message });
+  assert.equal(recovered.completion.outcome, 'completed');
+  assert.equal(recovered.completion.kind, 'answer');
+  assert.equal(recovered.completion.summary, '回答已交付');
+  assert.equal(recovered.taskOutcome, 'completed');
+  assert.deepEqual(recovered.events, scene.events);
+  assert.equal(JSON.stringify({ scene, message }), before);
+  assert.equal((await readExecutionScene(home, scene.runId)).completion.reason, completion.reason, 'disk remains unchanged');
+  for (const changed of [
+    { query: '搜索今天的新闻' }, { status: 'cancelled' }, { status: 'failed' },
+    { query: '' }, { query: query.padEnd(4000, ' ') },
+    { completion: { ...completion, reason: 'NO_FINAL_ANSWER' } },
+    { completion: { ...completion, kind: 'action' } },
+    { completion: { ...completion, completedSteps: 1 } },
+    { completion: { ...completion, evidenceIds: ['source'] } },
+    { operations: [{ id: 'call', name: 'file_write', status: 'completed' }] },
+    { toolCalls: [{ callId: 'call', toolId: 'file_write' }] },
+    { artifacts: [{ id: 'image', kind: 'image', url: 'https://example.com/image.png' }] },
+    { previews: [{ id: 'image', url: 'https://example.com/image.png' }] },
+    { sources: [{ id: 'read', url: 'https://example.com', reading: 'unknown' }] },
+  ]) {
+    const original = { ...scene, ...changed };
+    assert.deepEqual(recoverSceneObservations(original, { message }).completion, original.completion, JSON.stringify(changed));
+  }
+  for (const invalid of [{ ...message, content: '' }, { ...message, id: 'another' }, { ...message, role: 'user' }]) {
+    assert.deepEqual(recoverSceneObservations(scene, { message: invalid }).completion, completion);
+  }
+});
 
 test('persisted tool records drive matching UI and model event IDs after interruption without repeating effects', async t => {
   const home = await mkdtemp(join(tmpdir(), 'melo-events-')); t.after(() => rm(home, { recursive: true, force: true }));

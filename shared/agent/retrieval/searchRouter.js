@@ -15,8 +15,9 @@ const DEFAULT_WEB_SEARCH_TRIGGER_RULES = Object.freeze([
   { pattern: /最新(新闻|消息|价格|动态|行情|报道)/u, weight: 3 },
   { pattern: /(今天|现在|明天|这周)的?(天气|股价|新闻|头条|行情|温度|气温)/u, weight: 3 },
   { pattern: /(股价|股票|汇率|油价|金价)(是|多少|怎么样)/u, weight: 3 },
-  { pattern: /查一?下.+?(的|最新|当前)/u, weight: 2 },
-  { pattern: /(帮我|请)?(查|搜|搜索|搜一下|查一下|找一下)/u, weight: 2 },
+  { pattern: /(?:^|[\s，,。.!！？?；;：:]|请|帮我|帮忙|麻烦|顺便|再|去)查一?下.+?(的|最新|当前)/u, weight: 2 },
+  // Bare 查 must be a request verb, not the suffix of 检查 / 核查 / 审查.
+  { pattern: /搜索|搜一下|查找|查询|找一下|(?:^|[\s，,。.!！？?；;：:]|请|帮我|帮忙|麻烦|顺便|再|去)(?:查|搜)/u, weight: 2 },
   { pattern: /(天气|几度|多少度|下雨|气温|温度)/u, weight: 3 },
   { pattern: /(怎么去|在哪|地址|电话|营业时间|开放时间)/u, weight: 2 },
   { pattern: /(多少钱|价格|票价|费用|报价)/u, weight: 2 },
@@ -36,7 +37,7 @@ function searchPlanGoverns(tool, id) {
   if (typeof tool?.capability === 'string' && typeof tool?.uiModule === 'string') return tool.capability === 'network' && tool.uiModule === 'search';
   return SEARCH_NETWORK_TOOL_IDS.has(id);
 }
-const EXPLICIT_SEARCH = /\b(?:search|look up|find|google)\b|搜索|搜一下|查一下|查找/iu;
+const EXPLICIT_SEARCH = /\b(?:search|look up|find|google)\b|搜索|搜一下|查找|(?:^|[\s，,。.!！？?；;：:]|请|帮我|帮忙|麻烦|顺便|再|去)查一下/iu;
 
 let extraWebSearchTriggers = [];
 

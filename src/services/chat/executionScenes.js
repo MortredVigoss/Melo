@@ -8,6 +8,7 @@ import { observeShellWeb } from '../../tools/shellWebObservation.js';
 import { archiveSceneImages } from '../../media/imageRecords.js';
 import { sessionContext } from '../../shared/sessionEvents.js';
 import { readToolInvocationRecords } from '../../tools/toolInvocationRecord.js';
+import { completionResult } from '../../../shared/agent/completion.js';
 
 const live = new Map();
 const keyFor = (home, runId) => `${home}\0${runId}`;
@@ -73,6 +74,24 @@ export function recoverSceneObservations(scene, { message, searchContext = '' } 
   mergeSceneSources(copyScene, citations);
   const cited = new Set(citations.map(s => sceneSourceUrl(s.url)));
   if (message) copyScene.sources.forEach(s => { s.cited = cited.has(sceneSourceUrl(s.url)); });
+  // Older routing treated the 查 in 检查 as a research request. Correct only
+  // that class of evidence-free, successfully delivered answer on projection;
+  // never rewrite history, retry tools, or certify a recorded external action.
+  const receipt = scene.completion;
+  if (terminalStatus === 'completed' && receipt?.kind === 'research' && receipt.outcome === 'blocked' &&
+      receipt.reason === 'RELEVANT_READ_SOURCE_MISSING' && receipt.completedSteps === 0 &&
+      !receipt.evidenceIds?.length && !scene.operations?.length && !scene.toolCalls?.length &&
+      !scene.artifacts?.length && !scene.previews?.length &&
+      // createExecutionScene truncates at 4000; a hidden task suffix is unknown.
+      typeof scene.query === 'string' && scene.query.length < 4000 && scene.query.trim() &&
+      !copyScene.sources.length && message?.role === 'assistant' && message.id === scene.messageId &&
+      typeof message.content === 'string' && message.content.trim()) {
+    const corrected = completionResult({ goal: scene.query, reply: message.content });
+    if (corrected.kind === 'answer' && corrected.outcome === 'completed') {
+      copyScene.completion = corrected;
+      copyScene.taskOutcome = corrected.outcome;
+    }
+  }
   copyScene.status = terminalStatus; copyScene.events = events.slice(0, scene.events.length);
   copyScene.sequence = scene.sequence;
   if (isDeepStrictEqual(copyScene, scene)) return scene;

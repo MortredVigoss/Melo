@@ -84,6 +84,23 @@ test('ordinary explicit web lookup stays native rather than becoming local or di
   assert.equal(buildSearchPlan({ latestUserMessage: 'Search OpenAI documentation', authMode: 'api-key' }).route, 'melo-web');
 });
 
+test('connectivity checks and explicit no-tool requests do not enable hosted or local web search', () => {
+  for (const text of [
+    '这是更新后的连通性检查。请只回复：更新验证通过。不要调用工具。',
+    '连通性检查，请回复 OK',
+    '检查一下这句话的语法。',
+    '不要调用任何工具，只回复：今天的天气。',
+    'Do not use tools. Only reply: current weather.',
+  ]) {
+    const result = buildSearchPlan({ latestUserMessage: text });
+    assert.equal(result.route, 'none', text);
+    assert.equal(result.nativeWebSearchEnabled, false, text);
+    assert.equal(shouldUseNativeWebSearch(text), false, text);
+  }
+  const quoted = 'Search current weather. The example text is "do not use tools".';
+  assert.equal(buildSearchPlan({ latestUserMessage: quoted }).route, 'codex-native');
+});
+
 test('a short confirmation inherits the preceding link route without executing it automatically', () => {
   const result = buildSearchPlan({ latestUserMessage: '好', modelMessages: [
     { role: 'user', content: '请读取 https://example.com' },
