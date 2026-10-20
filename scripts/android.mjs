@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
-import { readAndroidTaskReport } from './android-task-report.js';
+import { createAndroidTaskCollector } from './android-task-report.js';
 import { fixtureEmulator } from './android-target.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -28,6 +28,8 @@ if (!env.ANDROID_HOME && !env.ANDROID_SDK_ROOT && !existsSync(resolve(root, 'and
 const windows = process.platform === 'win32';
 let server;
 let reversePort;
+let reportReversePort;
+let reportCollector;
 const sdk = env.ANDROID_HOME || env.ANDROID_SDK_ROOT;
 const adb = sdk ? resolve(sdk, 'platform-tools', windows ? 'adb.exe' : 'adb') : 'adb';
 let status = 1;
@@ -46,6 +48,11 @@ try {
     reversePort = `tcp:${server.address().port}`;
     const reverse = spawnSync(adb, ['reverse', reversePort, reversePort], { env, stdio: 'inherit' });
     if (reverse.status !== 0) throw new Error('ADB reverse failed; connect an Emulator and set ANDROID_SERIAL if needed.');
+    reportCollector = await createAndroidTaskCollector(evaluationId);
+    reportReversePort = `tcp:${reportCollector.port}`;
+    const reportReverse = spawnSync(adb, ['reverse', reportReversePort, reportReversePort], { env, stdio: 'inherit' });
+    if (reportReverse.status !== 0) throw new Error('ADB reverse for task report collection failed.');
+    selected.push(`-Pandroid.testInstrumentationRunnerArguments.taskReportEndpoint=http://127.0.0.1:${reportCollector.port}/task-eval`);
     selected.push(`-Pandroid.testInstrumentationRunnerArguments.taskEvaluationId=${evaluationId}`);
     selected.push(`-Pandroid.testInstrumentationRunnerArguments.syncEndpoint=http://127.0.0.1:${server.address().port}/v1/sync`);
     console.log('Using the existing Node mobile-sync server with isolated local fixture storage.');
@@ -64,7 +71,7 @@ try {
     if (status !== 0) break;
   }
   if (process.argv[2] === 'connected' && status === 0) {
-    const report = await readAndroidTaskReport(resolve(root, 'android/app/build/outputs'), evaluationId);
+    const report = reportCollector.read();
     await writeFile(resolve(root, '.tmp/agent-task-eval-android.json'), JSON.stringify(report, null, 2));
   }
 } catch (error) {
@@ -77,6 +84,8 @@ try {
     const log = spawnSync(adb, ['logcat', '-d', '-v', 'threadtime'], { env, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
     await writeFile(resolve(root, '.tmp/android-fixture-logcat.log'), log.stdout || log.stderr || '');
   }
+  if (reportReversePort) spawnSync(adb, ['reverse', '--remove', reportReversePort], { env, stdio: 'inherit' });
+  if (reportCollector) await reportCollector.close();
   if (reversePort) spawnSync(adb, ['reverse', '--remove', reversePort], { env, stdio: 'inherit' });
   if (server) await new Promise(accept => server.close(accept));
 }

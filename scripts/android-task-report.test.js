@@ -1,21 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
-import { readAndroidTaskReport } from './android-task-report.js';
-test('AGP report collection rejects stale, missing, failed or ambiguous output', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'melo-android-report-'));
-  const report = { version: 1, evaluationId: 'current', host: 'Android-JavaScriptSandbox', report: { passed: true } };
-  async function put(dir, value) { await mkdir(join(root, dir), { recursive: true }); await writeFile(join(root, dir, 'agent-task-eval-android.json'), JSON.stringify(value)); }
+import { createAndroidTaskCollector } from './android-task-report.js';
+test('real localhost report upload rejects stale, failed, missing, oversized and duplicate reports', async () => {
+  const id = 'current-fixture-only', collector = await createAndroidTaskCollector(id);
+  const report = { version: 1, evaluationId: id, host: 'Android-JavaScriptSandbox', report: { passed: true } };
+  const upload = (body, token = id) => fetch(`http://127.0.0.1:${collector.port}/task-eval`, { method: 'POST', headers: { 'x-melo-evaluation': token }, body: typeof body === 'string' ? body : JSON.stringify(body) });
   try {
-    await put('old', { ...report, evaluationId: 'old' });
-    await assert.rejects(readAndroidTaskReport(root, 'current'));
-    await put('connected/device', report);
-    assert.deepEqual(await readAndroidTaskReport(root, 'current'), report);
-    await put('duplicate', report); await assert.rejects(readAndroidTaskReport(root, 'current'));
-    await rm(join(root, 'duplicate'), { recursive: true });
-    await put('connected/device', { ...report, report: { passed: false } });
-    await assert.rejects(readAndroidTaskReport(root, 'current'));
-  } finally { await rm(root, { recursive: true, force: true }); }
+    assert.throws(() => collector.read());
+    assert.equal((await upload(report, 'stale')).status, 403);
+    assert.equal((await upload({ ...report, evaluationId: 'stale' })).status, 422);
+    assert.equal((await upload({ ...report, report: { passed: false } })).status, 422);
+    assert.equal((await upload('{invalid')).status, 400);
+    assert.equal((await upload('x'.repeat(2_000_001))).status, 413);
+    const responses = await Promise.all([upload(report), upload(report)]);
+    assert.deepEqual(responses.map(row => row.status).sort(), [204, 409]);
+    assert.deepEqual(collector.read(), report);
+  } finally { await collector.close(); }
 });

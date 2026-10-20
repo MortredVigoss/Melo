@@ -59,7 +59,6 @@ jobs:
           path: |
             android/app/build/reports/
             android/app/build/outputs/androidTest-results/
-            android/app/build/outputs/connected_android_test_additional_output/
             .tmp/android-fixture-logcat.log
             .tmp/agent-task-eval-android.json
             .tmp/agent-task-eval-node.json

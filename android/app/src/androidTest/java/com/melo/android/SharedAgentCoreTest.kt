@@ -8,6 +8,10 @@ import com.melo.android.core.SharedCoreRuntime
 import com.melo.android.core.SharedRunBudget
 import kotlinx.coroutines.*
 import kotlinx.serialization.json.*
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -53,14 +57,13 @@ class SharedAgentCoreTest {
                 put("datasetSha256", digest); put("bundleSha256", runtime.bundleHash)
                 put("replayElapsedMs", elapsed); put("report", result)
             }
-            // Use AGP's additional-output protocol while the fixture APK exists.
-            val outputDirectory = requireNotNull(app.externalMediaDirs.firstOrNull())
-            check(outputDirectory.isDirectory || outputDirectory.mkdirs())
-            val output = java.io.File(outputDirectory, "agent-task-eval-android.json")
-            output.writeText(report.toString())
-            InstrumentationRegistry.getInstrumentation().sendStatus(2, android.os.Bundle().apply {
-                putString("additionalTestOutputFile_melo_task_eval", output.absolutePath)
-            })
+            val endpoint = requireNotNull(InstrumentationRegistry.getArguments().getString("taskReportEndpoint"))
+            val request = Request.Builder().url(endpoint)
+                .header("X-Melo-Evaluation", report.getValue("evaluationId").jsonPrimitive.content)
+                .post(report.toString().toRequestBody("application/json".toMediaType())).build()
+            OkHttpClient().newCall(request).execute().use { response ->
+                assertEquals("The fixture Host must receive this run's actual report", 204, response.code)
+            }
         }
     }
 

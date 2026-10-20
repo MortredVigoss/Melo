@@ -26,3 +26,5 @@
 Node 专项 25/25；11 项任务在 Node/独立 VM/JavaScriptCore 的事件与指标一致；89 个原有 Core conformance 和 Swift 数据桥通过。Android、完整日常及跨平台 CI 待最终回执。未触碰真实账号、用户状态或安装应用；不运行 git pp。
 
 Android 首轮 39382785730：JVM/Lint/Debug/R8 与 73/73 emulator 全过，失败在测试完成后导出报告，APK 已被 Gradle 卸载。改用 AndroidX 所用的 [additionalTestOutputFile 协议](https://android.googlesource.com/platform/frameworks/support/+/207170cd913e67b742f91814b84fd680bfd35c39/benchmark/benchmark-common/src/main/java/androidx/benchmark/InstrumentationResults.kt)，由 AGP 卸载前复制；每轮 UUID 避免误取旧报告。收集器拒绝缺失/重复/失败报告，第二轮 CI 待验。
+
+第二轮 39392779228 仍是 73/73 通过，但当前 AGP 未收集附加文件。最终改为测试存活期间经 ADB reverse 的独立 localhost 收集端提交实际报告，校验本轮 UUID、大小和成功状态，拒绝重复/旧结果，结束即关闭。真实 HTTP 回归覆盖这些拒绝分支；不是远程服务，也不读取用户内容。第三轮 CI 待验。

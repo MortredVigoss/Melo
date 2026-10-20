@@ -1,24 +1,33 @@
-import { readdir, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { createServer } from 'node:http';
 
-// AGP copies additional instrumentation outputs before uninstalling fixture APKs.
-// A per-run ID excludes stale files from previous connected-test invocations.
-export async function readAndroidTaskReport(root, evaluationId) {
-  const found = [];
-  async function visit(directory, depth = 0) {
-    if (depth > 12) throw Error('Unexpected Android test output nesting.');
-    for (const row of await readdir(directory, { withFileTypes: true })) {
-      const path = join(directory, row.name);
-      if (row.isDirectory()) await visit(path, depth + 1);
-      else if (row.isFile() && row.name === 'agent-task-eval-android.json') {
-        const text = await readFile(path, 'utf8');
-        if (text.length > 2_000_000) throw Error('Oversized Android task evaluation report.');
-        const report = JSON.parse(text);
-        if (report.evaluationId === evaluationId) found.push(report);
+// Receive only synthetic reports while the test APK is alive. Loopback plus a
+// per-run identifier avoids stale filesystem output and APK uninstall timing.
+export async function createAndroidTaskCollector(evaluationId) {
+  if (typeof evaluationId !== 'string' || evaluationId.length < 8) throw Error('A per-run identifier is required.');
+  let report;
+  const server = createServer(async (request, response) => {
+    const reply = status => { response.writeHead(status); response.end(); };
+    if (request.method !== 'POST' || request.url !== '/task-eval') return reply(404);
+    if (request.headers['x-melo-evaluation'] !== evaluationId) return reply(403);
+    if (report) return reply(409);
+    try {
+      let size = 0; const chunks = [];
+      for await (const chunk of request) {
+        size += chunk.length;
+        if (size > 2_000_000) return reply(413);
+        chunks.push(chunk);
       }
-    }
-  }
-  await visit(root);
-  if (found.length !== 1 || found[0].version !== 1 || found[0].host !== 'Android-JavaScriptSandbox' || found[0].report?.passed !== true) throw Error('A unique passing report from this emulator run is required.');
-  return found[0];
+      const candidate = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      if (candidate.evaluationId !== evaluationId || candidate.version !== 1 || candidate.host !== 'Android-JavaScriptSandbox' || candidate.report?.passed !== true) return reply(422);
+      // Two uploads may overlap while their bodies arrive. Recheck at commit.
+      if (report) return reply(409);
+      report = candidate;
+      reply(204);
+    } catch { reply(400); }
+  });
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+  return { port: server.address().port,
+    read() { if (!report) throw Error('The emulator did not deliver a passing task report for this run.'); return report; },
+    async close() { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); },
+  };
 }
