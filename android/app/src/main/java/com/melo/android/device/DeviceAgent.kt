@@ -1,6 +1,8 @@
 package com.melo.android.device
 
 import com.melo.android.core.SharedCoreTurn
+import com.melo.android.core.SharedRunBudget
+import com.melo.android.core.SharedCoreRuntime
 
 import android.content.Context
 import android.widget.Toast
@@ -15,7 +17,7 @@ import kotlinx.serialization.json.JsonObject
 
 data class DeviceApproval(val id: String = newId(), val action: String)
 data class DeviceRuntime(val running: Boolean = false, val runId: String? = null, val phase: String = "", val error: String? = null, val approval: DeviceApproval? = null, val chatId: String? = null, val scriptId: String? = null)
-internal data class ChatDeviceContext(val chat: Conversation, val connection: com.melo.android.data.Connection, val key: String, val instructions: String, val parentRunId: String)
+internal data class ChatDeviceContext(val chat: Conversation, val connection: com.melo.android.data.Connection, val key: String, val instructions: String, val parentRunId: String, val budget: SharedRunBudget? = null)
 
 class DeviceAgent(private val context: Context, private val repository: Repository,
                   private val client: DeviceAgentClient = DeviceAgentClient(BuildConfig.DEBUG)) {
@@ -116,9 +118,10 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
                 mutable.update { it.copy(running = true, runId = started.id, phase = "正在检查操作缓存…", chatId = chatId, scriptId = source?.id) }
                 device.begin(displayId, screenshots && lookup.exact == null && lookup.similar.isEmpty()); begun = true
                 val outcome = withTimeout(10 * 60 * 1000L) {
+                    var activeBudget = binding?.budget
                     val executeDevice: suspend (JsonObject) -> DeviceToolResult = { arguments ->
                         check(chatId == null || repository.data.value.chats.any { it.id == chatId }) { "关联对话已被删除，手机操作已停止。" }
-                        device.execute(arguments)
+                        activeBudget?.effect { device.execute(arguments) } ?: device.execute(arguments)
                     }
                     val trace: suspend (DeviceStep) -> Unit = { step -> run = run!!.copy(steps = run!!.steps + step); save(run!!) }
                     val phase: (String) -> Unit = { text -> mutable.update { it.copy(phase = text) } }
@@ -155,14 +158,18 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
                     device.configureScreenshots(screenshots)
                     val recorder = ScriptRecorder(trimmed, prefix, prefixValues)
                     val probeGoal = if (prefix.isEmpty()) trimmed else trimmed + "\nHost recovery: ${prefix.size} script steps have ALREADY executed (${prefix.joinToString { it.action }}). Continue only from the current observed page. Do not replay prior effects or restart the script. Verify before finishing."
-                    val result = SharedCoreTurn.open(context, started.id, chatId ?: started.id, listOf("android_device"), rounds = 30).use { core -> DeviceTaskLoop(selected.protocol,
-                        next = { history -> countRequest(); client.next(selected, key, history, instructions) },
-                        execute = executeDevice,
-                        onStep = { step -> run = run!!.copy(steps = run!!.steps + step); save(run!!) },
-                        onPhase = { phase -> mutable.update { it.copy(phase = phase) } },
-                        onResult = recorder::record,
-                        core = core,
-                    ).run(probeGoal) }
+                    val result = SharedCoreRuntime.open(context).use { policy ->
+                        val budget = SharedRunBudget.open(policy, parent = binding?.budget, options = kotlinx.serialization.json.buildJsonObject { put("deadlineMs", kotlinx.serialization.json.JsonPrimitive(600_000)) })
+                        activeBudget = budget
+                        SharedCoreTurn.open(context, started.id, chatId ?: started.id, listOf("android_device"), rounds = 30, callsPerRound = 1, budget = budget).use { core -> DeviceTaskLoop(selected.protocol,
+                            next = { history -> countRequest(); budget.model((history.sumOf { it.toString().length.toLong() } + instructions.length) / 2 + 32, { it.inputTokens }) { client.next(selected, key, history, instructions) } },
+                            execute = executeDevice,
+                            onStep = { step -> run = run!!.copy(steps = run!!.steps + step); save(run!!) },
+                            onPhase = { phase -> mutable.update { it.copy(phase = phase) } },
+                            onResult = recorder::record,
+                            core = core,
+                        ).run(probeGoal) }
+                    }
                     if (result.status == "achieved" && cacheEnabled) {
                         pendingCache = recorder.compile(cacheScope, started.id)
                         if (pendingCache == null) run = run!!.copy(cacheNote = "任务成功；未缓存：${recorder.unsupported.ifBlank { "缺少可重放步骤。" }}")

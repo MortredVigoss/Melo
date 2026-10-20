@@ -14,6 +14,8 @@
 
 ## 2. 当前交付与阻塞
 
+2026-10-20 — Codex #5 共享循环 WIP：主线 Core/预算/重复守卫已移植并接 Node 与 Swift；本手机工作树接同一 bundle（61 个跨引擎 fixture）。Android 通用聊天接预算、32 调用与停止规则，手机操作保留单步及屏幕终态检查；委派预算绑定父对话。`SharedRunBudget.kt` 拥有 Native 锁/父对象，决策只调用 Core。Node 共享专项 98/98、bundle/源码一致性通过；JVM/Lint/APK/Emulator 待本分支远端 CI，不提前关闭 #5。未改真实设备或账号数据；[实施记录](docs/shared-loop-android-20261020.md)。
+
 2026-10-20 — GitHub #9 CI 修复进行中（Codex melo主线）：本机隔离工作树 `.tmp/github-issues-mobile` 基于本分支 `22db576`，只修 CI，不合并全部主线。原 Android run `39253909144` 失败于旧 setup-android 默认安装已下架的 `tools`；更新 action、显式 platform-tools、Node 22.22.2，增加共享 Core 源码/生成一致性检查和正确的路径触发范围。共享 Core 84/84 与 bundle 检查通过；JVM/Lint/APK/Emulator 以本次远端 run 为准，尚待执行。未操作真实 Fold6/账号/数据。
 
 2026-10-19 GitHub Backlog 已发布：用户授权后创建并回读确认 14 个 Open Issues（#1–#14），[编号索引与状态修订](docs/github-issue-index-20261019.md)。核对最新 `master@b64fe54`：UI P2 已完成；项目记忆 HTTP/独立保存本轮通过，A02 降为并发调查；A05 已修不建单，A13 仅跟踪剩余 Backend。文件身份两项 RED 仍复现；未实现产品改动或合并主线。

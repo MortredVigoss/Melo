@@ -1,0 +1,76 @@
+package com.melo.android.core
+
+import android.os.SystemClock
+import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.json.*
+import kotlin.coroutines.AbstractCoroutineContextElement
+import kotlin.coroutines.CoroutineContext
+
+/** Native ledger ownership only; every limit/accounting decision runs in Core. */
+class SharedRunBudget private constructor(
+    private val runtime: SharedCoreRuntime, private var state: JsonObject,
+    private val parent: SharedRunBudget?, private val mutex: Mutex,
+) {
+    class Scope(val budget: SharedRunBudget) : AbstractCoroutineContextElement(Key) {
+        companion object Key : CoroutineContext.Key<Scope>
+    }
+    private var available = true
+    private fun healthy(): Boolean = available && (parent?.healthy() ?: true)
+    private fun invalidate() { available = false; parent?.invalidate() }
+    private fun snapshot(): JsonObject = JsonObject(state + ("parent" to (parent?.snapshot() ?: JsonNull)))
+    private fun apply(value: JsonObject) {
+        state = value
+        parent?.apply(value.getValue("parent").jsonObject)
+    }
+    private suspend fun operation(action: String, fields: JsonObject = buildJsonObject {}): JsonElement {
+        check(healthy()) { "共享预算策略不可用，已停止执行。" }
+        return try { runtime.value("budget", JsonObject(fields + buildJsonObject {
+            put("action", action); put("now", SystemClock.elapsedRealtime()); put("budget", snapshot())
+        })) } catch (error: Throwable) { invalidate(); throw error }
+    }
+    suspend fun check() = mutex.withLock {
+        val exhausted = operation("exhausted")
+        check(exhausted == JsonNull) { "运行预算已用完（${exhausted.jsonObject["reason"]}），已停止；已有操作保留。" }
+    }
+    suspend fun remaining(): Long = mutex.withLock { operation("remaining").jsonPrimitive.double.toLong().coerceAtLeast(0) }
+    private suspend fun timeout(): Long = mutex.withLock { operation("timeout").jsonPrimitive.double.toLong().coerceAtLeast(0) }
+    suspend fun record(inputTokens: Long = 0, toolCalls: Int = 0, providerCalls: Int = 0) = mutex.withLock {
+        apply(operation("record", buildJsonObject { put("usage", buildJsonObject {
+            put("inputTokens", inputTokens); put("toolCalls", toolCalls); put("providerCalls", providerCalls)
+        }) }).jsonObject)
+    }
+    suspend fun <T> model(estimatedInput: Long, usage: (T) -> Long? = { null }, work: suspend () -> T): T {
+        check()
+        var input = estimatedInput.coerceAtLeast(0)
+        try {
+            val result = withTimeout(timeout()) { work() }
+            input = usage(result)?.coerceAtLeast(0) ?: input
+            return result
+        } finally {
+            withContext(NonCancellable) { record(inputTokens = input, providerCalls = 1) }
+        }
+    }
+    suspend fun <T> effect(work: suspend () -> T): T {
+        mutex.withLock {
+            val exhausted = operation("exhausted")
+            check(exhausted == JsonNull) { "工具未执行：运行预算已用完。" }
+            apply(operation("record", buildJsonObject { put("usage", buildJsonObject { put("toolCalls", 1) }) }).jsonObject)
+        }
+        return withTimeout(remaining()) { work() }
+    }
+    companion object {
+        suspend fun open(runtime: SharedCoreRuntime, parent: SharedRunBudget? = null, options: JsonObject = buildJsonObject {}): SharedRunBudget {
+            val mutex = parent?.mutex ?: Mutex()
+            return mutex.withLock {
+                check(parent?.healthy() != false) { "上级预算不可用，子任务未开始。" }
+                val state = runtime.value("budget", buildJsonObject {
+                    put("action", if (parent == null) "create" else "narrow"); put("now", SystemClock.elapsedRealtime()); put("options", options)
+                    parent?.let { put("budget", it.snapshot()) }
+                }).jsonObject
+                SharedRunBudget(runtime, state, parent, mutex)
+            }
+        }
+    }
+}

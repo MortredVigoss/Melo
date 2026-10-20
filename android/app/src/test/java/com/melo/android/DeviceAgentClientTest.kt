@@ -80,6 +80,19 @@ class DeviceAgentClientTest {
             }
         }
     }
+    @Test fun genericChatAdmits32CallsAndUsageButDeviceActionsStaySingle() {
+        fun batch(size: Int) = buildJsonObject {
+            put("status", "completed"); put("usage", buildJsonObject { put("input_tokens", 123) })
+            put("output", buildJsonArray { repeat(size) { i -> add(buildJsonObject {
+                put("type", "function_call"); put("call_id", "c$i"); put("name", if (i == 0) "unknown" else "web_search"); put("arguments", "{\"query\":\"test\"}")
+            }) } })
+        }
+        val result = DeviceAgentClient.decode(batch(32), "responses", toolNames = setOf("web_search"))
+        assertEquals(32, result.calls.size); assertEquals(123L, result.inputTokens)
+        assertTrue(runCatching { DeviceAgentClient.decode(batch(33), "responses", toolNames = setOf("web_search")) }.isFailure)
+        assertTrue(runCatching { DeviceAgentClient.decode(batch(2), "responses") }.isFailure)
+    }
+
     @Test fun oldScreenImagesAreRemovedWhileToolReceiptsRemain() {
         for (protocol in protocols) {
             val history = DeviceAgentClient.initial(protocol, "fixture")

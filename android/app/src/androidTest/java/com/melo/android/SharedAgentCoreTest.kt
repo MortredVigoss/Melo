@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.ServiceTestRule
 import com.melo.android.core.SharedCoreRuntime
+import com.melo.android.core.SharedRunBudget
 import kotlinx.coroutines.*
 import kotlinx.serialization.json.*
 import org.junit.Assert.*
@@ -55,4 +56,33 @@ class SharedAgentCoreTest {
         val result = withTimeout(15_000) { binder.evaluate("{\"version\":1,\"op\":\"hello\"}").await() }
         assertTrue(result.contains("melo-local-core"))
     }
+    @Test fun childBudgetsChargeParentAndAtomicAdmissionDoesNotOverrunTools() = runBlocking {
+        SharedCoreRuntime.open(app).use { runtime ->
+            val parent = SharedRunBudget.open(runtime, options = buildJsonObject { put("maxToolCalls", 1) })
+            val first = SharedRunBudget.open(runtime, parent, buildJsonObject { put("maxToolCalls", 20) })
+            val second = SharedRunBudget.open(runtime, parent)
+            val effects = java.util.concurrent.atomic.AtomicInteger()
+            val results = listOf(first, second).map { budget -> async { runCatching { budget.effect { effects.incrementAndGet() } }.isSuccess } }.awaitAll()
+            assertEquals(1, effects.get())
+            assertEquals(1, results.count { it })
+            assertTrue(runCatching { parent.check() }.isFailure)
+            assertTrue(runCatching { first.check() }.isFailure)
+        }
+    }
+
+    @Test fun unavailableBudgetPolicyAndDeadlineNeverPermitEffects() = runBlocking {
+        val runtime = SharedCoreRuntime.open(app)
+        val budget = SharedRunBudget.open(runtime)
+        runtime.close()
+        var effects = 0
+        assertTrue(runCatching { budget.effect { effects++ } }.isFailure)
+        assertEquals(0, effects)
+        SharedCoreRuntime.open(app).use { live ->
+            val short = SharedRunBudget.open(live, options = buildJsonObject { put("deadlineMs", 1) })
+            delay(20)
+            assertTrue(runCatching { short.model(10) { effects++ } }.isFailure)
+            assertEquals(0, effects)
+        }
+    }
+
 }

@@ -2,8 +2,11 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, relative, isAbsolute } from 'node:path';
 import { createHash } from 'node:crypto';
+import { AGENT_LOOP_CONTRACT } from '../shared/agent/loopContract.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
+const { fixtures: loopFixtures, ...loopPolicy } = JSON.parse(await readFile(resolve(root, 'shared/protocol/agent-loop.json'), 'utf8'));
+if (JSON.stringify(loopPolicy) !== JSON.stringify(AGENT_LOOP_CONTRACT)) throw new Error('Portable loop policy is stale; regenerate it from shared/protocol/agent-loop.json');
 const modules = new Map();
 const hashes = {};
 async function visit(path) {

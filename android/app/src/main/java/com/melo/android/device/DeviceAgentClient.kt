@@ -98,9 +98,15 @@ class DeviceAgentClient(private val debug: Boolean, private val http: OkHttpClie
                     require((choice.text("finish_reason") == "tool_calls") == calls.isNotEmpty()) { "工具回执不完整。" }
                 }
             }
-            require(calls.size <= 1 && calls.all { it.id.isNotBlank() && it.name in (toolNames ?: setOf(toolName)) }) { "模型必须每次只调用一个已注册工具。" }
+            // Device actions remain serial single-call steps. Generic chat may return
+            // 32 siblings; the shared reducer pairs unknown names with errors.
+            require(calls.size <= (if (toolNames == null) 1 else 32) && calls.all { it.id.isNotBlank() && it.id.length <= 256 } && calls.map { it.id }.toSet().size == calls.size) { "模型返回了无效或过多的工具调用。" }
+            if (toolNames == null) require(calls.all { it.name == toolName }) { "手机操作工具未注册。" }
             require(calls.isNotEmpty() || text.isNotBlank()) { "模型没有返回可执行工具或回答。" }
-            return DeviceTurn(text, calls, wire, value.text("model").ifBlank { null })
+            val usage = value["usage"]?.takeIf { it is JsonObject }?.jsonObject
+            val input = usage?.get(if (protocol == "chat-completions") "prompt_tokens" else "input_tokens")?.jsonPrimitive?.longOrNull
+            val totalInput = input?.let { it + (if (protocol == "anthropic") (usage["cache_read_input_tokens"]?.jsonPrimitive?.longOrNull ?: 0) + (usage["cache_creation_input_tokens"]?.jsonPrimitive?.longOrNull ?: 0) else 0) }
+            return DeviceTurn(text, calls, wire, value.text("model").ifBlank { null }, totalInput)
         }
         private fun arguments(raw: String): JsonObject { require(raw.length <= 12_000) { "工具参数过长。" }; return MeloJson.parseToJsonElement(raw).jsonObject }
         fun appendResult(history: MutableList<JsonObject>, protocol: String, call: DeviceCall, result: DeviceToolResult) {

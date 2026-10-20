@@ -1,3 +1,8 @@
+## 2026-10-20 — 共享循环要进入 Android 生产路径
+
+用户要求按序解决已核对 issues；Codex 继续 #5，将主线同源预算和守卫接入本分支 Android Host，保留屏幕操作的更严格单步契约和结果校验。
+共享 JS 98/98 与 bundle 检查通过；此提交为远端 Android CI 验证节点，尚未达到 issue 关闭条件。不合并旧手机分支覆盖主线 iOS/Node，不访问真实 Fold 数据。
+
 ## 2026-10-20 — 让 Android CI 真正到达构建与设备回归
 
 用户授权按序修复 GitHub issues 并逐项完成，#9 需要修复目前在 SDK 环境准备就失败的工作流。（Codex melo主线）

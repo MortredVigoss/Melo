@@ -80,7 +80,7 @@ class ChatEngine(private val context: Context, val repository: Repository) {
                                 val research = args.text("purpose") == "research"
                                 val researchInstructions = if (research) "\nThis is a live research task. Read the requested facts from current pages and return the findings, app/source, any visible useful links/addresses, and uncertainties in finish.summary (up to 2000 characters). Opening an app alone is not the research goal. Do not send messages, book, purchase or modify account/settings. Never fabricate facts or links. Current device time: ${java.time.ZonedDateTime.now()}." else ""
                                 val receipt = (context.applicationContext as com.melo.android.MeloApplication).deviceAgent.invoke(
-                                    args.text("goal"), research, ChatDeviceContext(chat, connection, key, instructions + researchInstructions, run.id))
+                                    args.text("goal"), research, ChatDeviceContext(chat, connection, key, instructions + researchInstructions, run.id, currentCoroutineContext()[com.melo.android.core.SharedRunBudget.Scope]?.budget))
                                 currentCoroutineContext().ensureActive()
                                 if (research && receipt.ok) withContext(Dispatchers.Main) {
                                     runCatching { context.startActivity(Intent(context, com.melo.android.MainActivity::class.java).putExtra("melo_chat_id", chatId).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)) }

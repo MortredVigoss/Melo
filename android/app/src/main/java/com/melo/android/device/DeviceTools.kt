@@ -12,7 +12,7 @@ data class DeviceToolResult(val data: JsonObject, val jpeg: String? = null) {
     }
 }
 data class DeviceCall(val id: String, val name: String, val arguments: JsonObject)
-data class DeviceTurn(val text: String, val calls: List<DeviceCall>, val wire: List<JsonObject>, val model: String? = null)
+data class DeviceTurn(val text: String, val calls: List<DeviceCall>, val wire: List<JsonObject>, val model: String? = null, val inputTokens: Long? = null)
 @Serializable data class DeviceStep(val action: String, val ok: Boolean, val detail: String, val at: String = now(), val callId: String = "", val durationMs: Long = 0, val code: String = "", val recoveryCount: Int = 0)
 @Serializable data class DeviceTaskContext(val chatId: String, val agentId: String, val projectId: String? = null, val connectionId: String)
 @Serializable data class DeviceRun(val id: String = newId(), val goal: String, val connectionName: String, val status: String = "running", val startedAt: String = now(), val finishedAt: String? = null, val steps: List<DeviceStep> = emptyList(), val answer: String = "", val error: String? = null, val taskContext: DeviceTaskContext? = null, val verification: String? = null,

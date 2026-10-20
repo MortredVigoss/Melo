@@ -105,14 +105,15 @@ class DeviceTaskLoop(
                 return DeviceOutcome(if (previous?.ok == false) "blocked" else "needs_user", turn.text.take(2000), "模型未提交可校验结果，未标记为完成。")
             }
             val call = turn.calls.single()
-            core?.calls(turn.calls.map { it.id to it.name })
+            core?.calls(turn.calls.map { it.id to it.name }, turn.calls.associate { it.id to it.arguments }, requireAll = false)
             val action = call.arguments.text("action")
             onPhase("第 $step 步 · $action")
             val started = System.nanoTime()
             val repeatedLaunch = action == "open_app" && launches.count(call.arguments) >= 2
             val result = try {
                 DeviceTools.validate(call.arguments)
-                if (repeatedLaunch) DeviceToolResult.error("同一 App 已反复请求打开；已停止重复执行。请检查现有页面或缩小目标。", "repeated_launch")
+                if (core != null && !core.permits(call.id)) DeviceToolResult.error("Shared loop refused this operation.", core.rejection(call.id))
+                else if (repeatedLaunch) DeviceToolResult.error("同一 App 已反复请求打开；已停止重复执行。请检查现有页面或缩小目标。", "repeated_launch")
                 else if (action == "finish") {
                     if (call.arguments.text("outcome") != "achieved" && previous?.data?.text("code") == "app_not_found" && !discoveryRecovery) {
                         discoveryRecovery = true
@@ -141,7 +142,7 @@ class DeviceTaskLoop(
             onStep(DeviceStep(action, result.ok, detail, callId = call.id, durationMs = (System.nanoTime() - started) / 1_000_000, code = result.data.text("code"), recoveryCount = recovery))
             DeviceAgentClient.appendResult(history, protocol, call, result)
             onResult(call.arguments, result)
-            core?.result(call.id, result.ok)
+            if (core?.active == true) core.result(call.id, result.ok, code = result.data.text("code"), output = result.data.toString())
             launches.record(call.arguments, result)
             if (result.data.text("code") == "foreground_window_unavailable") return DeviceOutcome("needs_user", error = result.data.text("error"))
             if (repeatedLaunch) return DeviceOutcome("blocked", error = result.data.text("error"))
