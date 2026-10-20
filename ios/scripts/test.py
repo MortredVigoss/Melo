@@ -33,6 +33,7 @@ suites['ImagePhotoSaveTests']=['ios/Melo/ImagePhotoSave.swift']
 suites['WebPageToolsTests']=shared  # WebPageTools.swift needs WebKit/UIKit; only the pure half (WebPageText.swift, envelope in AgentLoopRuntime.swift) compiles here
 suites['AgentLoopTests']=shared+['ios/Melo/AgentProfile.swift','ios/Melo/AgentTeam.swift']  # AgentLoop with a fake transport: limits, budget, guard, supplements, condensation, trace, finalize
 suites['ParityRegressionTests']=shared+['ios/Melo/AgentProfile.swift','ios/Melo/AgentTeam.swift','ios/Melo/WorkspaceProjection.swift']
+suites['CapabilityElevationTests']=shared+['ios/Melo/AgentProfile.swift','ios/Melo/AgentTeam.swift','ios/Melo/CapabilityElevationRuntime.swift','ios/Melo/AgentStarter.swift']  # phone decision table, device-local ledger, broker (cards, collapse, timeout, revoke), choke point + run record, starter set
 
 # The same manifest feeds execution and daily selection. Never duplicate source
 # lists in JavaScript: a new suite must become discoverable automatically.
