@@ -1,0 +1,273 @@
+/* Customize page (architecture B3 step 3, 2026-10-20): rules whose selectors
+   are used only by features/customize (skills filter bar / health / tabs /
+   markdown, connectors create card, section nav, customize layout, toggle
+   switch, management dialog), moved verbatim from styles.css in source order.
+   Loads right after approvals.css, before the theme sheets. */
+
+.label-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.detail-meta {
+  display: grid;
+  gap: 14px;
+  margin: 18px 0;
+  color: var(--text-muted);
+  line-height: 1.7;
+}
+
+.toggle-switch {
+  width: 52px;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.08);
+  position: relative;
+}
+
+.toggle-switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.85);
+  transition: transform 120ms ease;
+}
+
+.toggle-switch.is-on {
+  background: rgba(164,122,43, 0.26);
+  border-color: rgba(164,122,43, 0.32);
+}
+
+.toggle-switch.is-on::after {
+  transform: translateX(21px);
+  background: white;
+}
+
+.list-stack,
+.section-nav {
+  display: grid;
+  gap: 10px;
+}
+
+.create-connector-card {
+  padding: 22px;
+}
+
+.customize-layout {
+  display: grid;
+  /* Narrower nav + middle list, wider detail panel.
+     Total minimum width 700px (200 + 220 + 280). Sized to fit even
+     the narrowest desktop envelope where the layout still renders as
+     three columns: at the 1101px shell breakpoint, viewport - 278px
+     full sidebar - 76px .page padding = 747px content, leaving a
+     47px buffer over the 700px minimum. On wider screens the right
+     column gets `1fr` and grows generously (506px @ 1280px content,
+     666px @ 1440px). The shell's existing 1100px @media collapses
+     this layout to a single column for narrower viewports. */
+  grid-template-columns: 200px 220px minmax(280px, 1fr);
+  gap: 0;
+  border-radius: 28px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
+  align-self: stretch;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.customize-pane-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.section-nav {
+  display: grid;
+  gap: 8px;
+}
+
+.list-stack {
+  display: grid;
+  gap: 8px;
+}
+
+/* Phase 3.3.2 — Customize → Skills filter bar (search + tag chips + state). */
+.skill-filter-bar {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.skill-filter-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.skill-filter-query {
+  flex: 1;
+  min-width: 0;
+}
+
+.skill-filter-state {
+  flex: 0 0 auto;
+  width: auto;
+}
+
+.skill-filter-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.skill-filter-status {
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: rgba(164,122,43, 0.95);
+  cursor: pointer;
+  text-decoration: underline;
+  font: inherit;
+}
+
+/* Phase 3.3.4 — Skill health panel. */
+.skill-health-card {
+  /* Top margin gives breathing room between this panel and the
+     enabled-toggle pillbox above it; bottom keeps existing spacing
+     to subsequent panels (skill proposals, custom skill create). */
+  margin-top: 18px;
+  margin-bottom: 12px;
+}
+
+.skill-health-row.is-degraded {
+  border-left: 3px solid #e28a4f;
+}
+
+.skill-health-errors {
+  margin-top: 8px;
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.skill-health-error {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  color: var(--text-soft);
+}
+
+.skill-tab-strip {
+  display: flex;
+  gap: 6px;
+  margin: 16px 0 4px;
+}
+
+.skill-tab {
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+/* SKILL.md preformatted view — scrollable, monospaced, readable. */
+.skill-markdown-block {
+  margin: 14px 0 0;
+  padding: 16px 18px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  color: var(--text);
+  font-family: "SFMono-Regular", "Menlo", "Monaco", Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 560px;
+  overflow: auto;
+}
+
+.detail-meta {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  color: var(--text-muted);
+}
+
+.toggle-switch {
+  position: relative;
+  width: 52px;
+  height: 30px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.toggle-switch::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: white;
+  transition: transform 140ms ease;
+}
+
+.toggle-switch.is-on {
+  background: linear-gradient(135deg, #75571f, #ac802e);
+}
+
+.toggle-switch.is-on::after {
+  transform: translateX(22px);
+}
+
+.ghost-link {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--accent, rgba(164,122,43, 1));
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 4px;
+  transition: opacity 0.12s;
+}
+
+.ghost-link:hover,
+.ghost-link:focus-visible {
+  opacity: 0.75;
+  outline: none;
+}
+
+.management-dialog { width: 580px; max-height: 85vh; overflow: auto; }
+
+.management-dialog form { display: grid; gap: 12px; }
+
+.management-output { max-height: 35vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+@media (min-width: 1101px) {
+.customize-layout > .page-advanced {
+    grid-column: 2 / -1;
+  }
+}

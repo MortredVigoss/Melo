@@ -2470,6 +2470,7 @@
         "desktop-ui/connectorDraftDispatch.js",
         "desktop-ui/features/customize/context.js",
         "desktop-ui/features/customize/controller.js",
+        "desktop-ui/features/customize/customize.css",
         "desktop-ui/features/customize/index.js",
         "desktop-ui/features/customize/state.js",
         "desktop-ui/features/customize/view.js",
