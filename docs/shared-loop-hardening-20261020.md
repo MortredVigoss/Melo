@@ -51,3 +51,5 @@
 第二阶段 B：已新增预算 JSON 操作，Swift PhoneRunBudget 生产调用同源创建/截止/父子收紧/记账/停止逻辑，Native 仍拥有锁与父预算。bundle 只从签名应用资源加载，测试目录回退受 MELO_TEST 编译标志限制；缺失/损坏使当前及祖先预算停止。预算桥与 Core 57/57；Swift 3 组（契约 130 fixture、AgentLoop、资源缺失零调用）通过。证据 `core-budget-bridge.log`、`core-swift-budget-final.log`，完整日常进行中。
 
 第二阶段 B 最终：`core-budget-swift-daily.log` 日常 JS 4187/4187、34 组 Swift、浏览器/语法/文档全通过，431.8 秒；未安装或访问用户数据。
+
+重复守卫移植：原 repeatGuard 整段逐字移入 shared/agent，仅改契约 import，原 Node 入口重导出。暂不加入 bundle（原 SHA1 仍为 Node crypto）；下一提交才拆开 Host 指纹与便携状态。逐字校验、契约/守卫 12/12、真实子 Agent/技能 32/32 通过；没有混入行为修改。

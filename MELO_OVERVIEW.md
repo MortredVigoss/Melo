@@ -64,6 +64,7 @@
 - 状态：独立 `.tmp/github-issues-main` 工作树；Core/桥 `9748e51`、预算实现 `153f1d9` 已本地提交，未推送；保留共享主树其他线程权限改动。
 - 行为：Swift `PhoneRunBudget` 的创建、收紧、用量、截止和停止判断已调用便携预算实现；Native 保留锁、父对象与时钟。`SharedAgentCore.swift` 只从应用资源加载，工作目录回退仅在测试编译开启；缺失时停止请求与工具。
 - 验证：预算桥与原 Core 57/57；Swift 契约 130 fixture、生产 AgentLoop 及缺失资源零模型调用共 3 组通过。完整日常 JS 4187/4187、34 组 Swift、浏览器/语法/文档全通过（431.8 秒）；证据 `.tmp/github-issues-fix-20261020/core-swift-budget-final.log` / `core-budget-swift-daily.log`。
+- 移植：重复失败守卫逐字移入 `shared/agent/repeatGuard.js`，原入口重导出，专项 12/12 + 子 Agent/技能 32/32；便携 bundle 接入在下一行为提交。
 - 未完：重复失败/无进展/终态接主聊天、子 Agent、技能、Swift、Kotlin；#5 保持打开。[实施与证据](docs/github-issues-implementation-20261020.md)；不运行 git pp、不安装、不改真实数据。
 
 此前交接（原文见[历史交接](docs/handoffs/overview-history-20261019.md)，新者在后）：10-19 双端逻辑只读审计 → 七项修复与最终日常 → 双端覆盖安装与数据保留 → 架构维护成本审计与方案 → GitHub 权限只读核对 → 架构方案 P0 执行 → 架构方案 P2a 记忆页与项目页 → 架构方案 P2b Agent 设置 → 架构方案 P2c 聊天拆分 → Claude 架构 P0–P2 独立审计 → 已提交保存恢复 R1 修复。

@@ -22,8 +22,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 580,
-      "edges": 1745,
+      "modules": 581,
+      "edges": 1746,
       "roots": [
         "src",
         "desktop-ui",
@@ -587,7 +587,6 @@
         "counterparts": []
       },
       "sharedContracts": [
-        "agent-loop",
         "cross-platform",
         "sync-schema"
       ],
@@ -696,7 +695,7 @@
       ],
       "modules": {
         "desktop-ui": 27,
-        "shared": 15,
+        "shared": 16,
         "src": 63
       },
       "entryModules": [
@@ -730,6 +729,12 @@
           "module": "desktop-ui/scrollPreservation.js",
           "importedBy": [
             "desktop-shell"
+          ]
+        },
+        {
+          "module": "shared/agent/repeatGuard.js",
+          "importedBy": [
+            "agents"
           ]
         },
         {
@@ -822,7 +827,6 @@
         {
           "module": "src/runtime/agentLoopContract.js",
           "importedBy": [
-            "agents",
             "tools"
           ]
         },
@@ -4458,7 +4462,6 @@
       ],
       "note": "桌面运行时读取 JSON，手机内嵌生成副本（不含 fixtures）；两端跑同一批 fixtures。P3/P4 新增双端行为先扩展此文件。",
       "desktopConsumers": [
-        "src/agents/repeatGuard.js",
         "src/retrieval/intentRouter.js",
         "src/retrieval/requestPolicy.js",
         "src/retrieval/selfVerification.js",
@@ -4475,7 +4478,6 @@
         "src/tools/toolResult.js"
       ],
       "features": [
-        "agents",
         "chat",
         "tools"
       ]
