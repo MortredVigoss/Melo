@@ -22,8 +22,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 603,
-      "edges": 1830,
+      "modules": 604,
+      "edges": 1843,
       "roots": [
         "src",
         "desktop-ui",
@@ -561,7 +561,7 @@
       "usedBy": {
         "approvals": 3,
         "channels": 6,
-        "chat": 31,
+        "chat": 33,
         "desktop-shell": 12,
         "memory": 2,
         "platform": 34,
@@ -731,7 +731,7 @@
       "modules": {
         "desktop-ui": 27,
         "shared": 22,
-        "src": 65
+        "src": 66
       },
       "entryModules": [
         {
@@ -968,18 +968,18 @@
         }
       ],
       "dependsOn": {
-        "agents": 31,
+        "agents": 33,
         "approvals": 7,
         "channels": 2,
         "desktop-shell": 15,
         "knowledge": 5,
-        "media": 25,
+        "media": 26,
         "memory": 26,
-        "platform": 54,
+        "platform": 56,
         "projects": 11,
         "settings": 9,
         "sync": 2,
-        "tools": 33,
+        "tools": 37,
         "voice": 3
       },
       "usedBy": {
@@ -2428,7 +2428,7 @@
       "usedBy": {
         "agents": 20,
         "approvals": 2,
-        "chat": 33,
+        "chat": 37,
         "desktop-shell": 13,
         "media": 4,
         "memory": 1,
@@ -2789,7 +2789,7 @@
       },
       "usedBy": {
         "channels": 3,
-        "chat": 25,
+        "chat": 26,
         "desktop-shell": 5,
         "memory": 1,
         "platform": 2,
@@ -3924,7 +3924,7 @@
         "agents": 42,
         "approvals": 36,
         "channels": 22,
-        "chat": 54,
+        "chat": 56,
         "desktop-shell": 9,
         "knowledge": 2,
         "media": 9,
@@ -4608,7 +4608,7 @@
         "src/retrieval/requestPolicy.js",
         "src/retrieval/selfVerification.js",
         "src/retrieval/verificationEvidence.js",
-        "src/services/chat/chatExecutionRunner.js",
+        "src/services/chat/execution/invokeModelNode.js",
         "src/services/chat/supplements.js",
         "src/services/chat/toolTraceReplay.js",
         "src/tools/builtins/readHistoryTool.js",
@@ -5099,7 +5099,8 @@
         ],
         "src/services/chat/chatExecutionRunner.test.js": [
           "src/services/chat/chatExecutionRunner.js",
-          "src/services/chat/execution/finalizeNode.js"
+          "src/services/chat/execution/finalizeNode.js",
+          "src/services/chat/execution/invokeModelNode.js"
         ],
         "src/services/remote/pollingOffset.source.test.js": [
           "src/services/remote/discordPolling.js",
@@ -5151,6 +5152,7 @@
         "src/memory/conversationIndex.js",
         "src/services/chat/chatExecutionRunner.js",
         "src/services/chat/execution/finalizeNode.js",
+        "src/services/chat/execution/invokeModelNode.js",
         "src/services/remote/discordPolling.js",
         "src/services/remote/telegramPolling.js",
         "src/services/search/socialLinkReader.js",

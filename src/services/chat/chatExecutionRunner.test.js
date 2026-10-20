@@ -44,7 +44,7 @@ const __dirname_test = dirname(fileURLToPath(import.meta.url));
 const RUNNER_SOURCE = readFileSync(join(__dirname_test, 'chatExecutionRunner.js'), 'utf8');
 // Graph nodes moved out of the runner (architecture B2). They are sibling
 // scopes of prepare, so every line in them counts as "outside prepare".
-const MOVED_NODE_SOURCES = ['execution/finalizeNode.js']
+const MOVED_NODE_SOURCES = ['execution/invokeModelNode.js', 'execution/finalizeNode.js']
   .map(file => [file, readFileSync(join(__dirname_test, file), 'utf8')]);
 
 // ─── Phase 6 follow-up (2026-05-05) — scope contract for activeAgentProfile ─
