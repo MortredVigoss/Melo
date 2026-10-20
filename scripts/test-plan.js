@@ -17,15 +17,20 @@ export function planTests(changed, files, impact = null) {
   const code = paths.filter(path => !isDocOnly(path));
   const testsOnly = code.length > 0 && code.every(path => path.endsWith('.test.js'));
   const deletedTest = testsOnly && code.some(path => !files.includes(path));
+  const androidPath = path => /^(android\/|scripts\/android(?:\.mjs|-target(?:\.test)?\.js)$|\.github\/workflows\/android\.yml$)/.test(path);
+  const android = code.some(path => androidPath(path) || /^(shared\/(agent|protocol)\/|ios\/Melo\/Scene\/|src\/shared\/(replyDocument|sessionEvents)\.js$)/.test(path));
+  const androidOnly = code.length > 0 && code.every(androidPath);
   let plan;
-  if (!code.length) {
+  if (androidOnly) {
+    plan = {files:files.filter(path => /^scripts\/android.*\.test\.js$/.test(path)), fullUnit:false, reason:'Android 本机 Gate 与构建脚本回归', reasons:[], browsers:false, ios:false, swift:false, renderer:false, swiftSuites:[], preflightTests:[]};
+  } else if (!code.length) {
     plan = {files:[], fullUnit:false, reason:'仅文档变化，无运行时代码改动；只检查改动文档的相对链接', reasons:[], browsers:false, ios:false, swift:false, renderer:false, swiftSuites:[], preflightTests:[]};
   } else if (testsOnly && !deletedTest) {
     plan = {files:files.filter(path => code.includes(path)), fullUnit:false, reason:'仅测试文件变化，运行改动的测试', reasons:[], browsers:false, ios:false, swift:false, renderer:false, swiftSuites:[], preflightTests:[]};
   } else {
     plan = impactedPlan(code, files, impact);
   }
-  return {...plan, changed:paths, docs:paths.filter(path=>isDocOnly(path)&&path.endsWith('.md')),
+  return {...plan, android, changed:paths, docs:paths.filter(path=>isDocOnly(path)&&path.endsWith('.md')),
     syntax:plan.fullUnit ? null : code.filter(path=>/\.[cm]?js$/.test(path))};
 }
 

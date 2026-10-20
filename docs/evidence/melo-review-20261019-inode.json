@@ -1,0 +1,77 @@
+{
+  "scope": "isolated Linux / WSL tmp fixtures; not a remote exploit test",
+  "trials": [
+    {
+      "trial": 1,
+      "devReused": true,
+      "inodeReused": true,
+      "birthtimeChanged": false,
+      "rejected": false,
+      "code": null,
+      "filePreserved": false
+    },
+    {
+      "trial": 2,
+      "devReused": true,
+      "inodeReused": true,
+      "birthtimeChanged": false,
+      "rejected": false,
+      "code": null,
+      "filePreserved": false
+    },
+    {
+      "trial": 3,
+      "devReused": true,
+      "inodeReused": true,
+      "birthtimeChanged": false,
+      "rejected": false,
+      "code": null,
+      "filePreserved": false
+    },
+    {
+      "trial": 4,
+      "devReused": true,
+      "inodeReused": true,
+      "birthtimeChanged": false,
+      "rejected": false,
+      "code": null,
+      "filePreserved": false
+    },
+    {
+      "trial": 5,
+      "devReused": true,
+      "inodeReused": true,
+      "birthtimeChanged": false,
+      "rejected": false,
+      "code": null,
+      "filePreserved": false
+    },
+    {
+      "trial": 6,
+      "devReused": true,
+      "inodeReused": true,
+      "birthtimeChanged": true,
+      "rejected": false,
+      "code": null,
+      "filePreserved": false
+    },
+    {
+      "trial": 7,
+      "devReused": true,
+      "inodeReused": true,
+      "birthtimeChanged": false,
+      "rejected": false,
+      "code": null,
+      "filePreserved": false
+    },
+    {
+      "trial": 8,
+      "devReused": true,
+      "inodeReused": true,
+      "birthtimeChanged": true,
+      "rejected": false,
+      "code": null,
+      "filePreserved": false
+    }
+  ]
+}

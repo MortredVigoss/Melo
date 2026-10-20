@@ -4,16 +4,20 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=18"
+    "node": ">=22.13.0"
   },
   "bin": {
     "melo": "./src/index.js"
   },
   "scripts": {
-    "build": "node scripts/check-syntax.js",
     "build:agent-core": "node scripts/build-agent-core.mjs",
     "check:agent-core": "node scripts/build-agent-core.mjs --check",
     "test:agent-core": "node --test shared/agent/*.test.js",
+    "build:android": "node scripts/android.mjs build",
+    "test:android": "node scripts/android.mjs test",
+    "check:android": "node scripts/android.mjs check",
+    "test:android:connected": "node scripts/android.mjs connected",
+    "build": "node scripts/check-syntax.js",
     "build:native": "node-gyp rebuild",
     "build:desktop": "zsh scripts/build-desktop-app.sh",
     "install:desktop": "zsh scripts/install-desktop-app.sh",

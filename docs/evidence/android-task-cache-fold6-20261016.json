@@ -1,0 +1,107 @@
+{
+  "device": "Samsung Galaxy Z Fold6 SM-F956B",
+  "androidApi": 36,
+  "oneUiProperty": "80500",
+  "version": "0.4.0",
+  "versionCode": 9,
+  "apkSha256": "180949a7334378c407250899e23e699a19d45c32027f85ff23e9e513d05e3cde",
+  "chat": "TaskCacheFold6QA",
+  "install": {
+    "version": "0.4.0",
+    "sameCertificateUpdate": true,
+    "countsBefore": [
+      "5 段对话 · 1 个角色 · 保存在本机"
+    ],
+    "countsAfter": [
+      "5 段对话 · 1 个角色 · 保存在本机"
+    ],
+    "otherServicesPreserved": true
+  },
+  "probe": {
+    "goal": "Open Android Settings main page and stop. Do not change any setting.",
+    "verified": true,
+    "mode": "Probe · 模型请求 8 次 · 46.577s",
+    "modelRequests": 8,
+    "stepsLabel": "yrlf－modal · 8 步 · 仅本机记录",
+    "notes": [
+      "Probe 已验证成功并自动写入操作 Cache。"
+    ]
+  },
+  "entryChangedFallback": {
+    "goal": "Open Android Settings main page and stop. Do not change any setting.",
+    "verified": true,
+    "mode": "Probe · 模型请求 2 次 · 15.716s",
+    "modelRequests": 2,
+    "stepsLabel": "yrlf－modal · 4 步 · 仅本机记录",
+    "notes": [
+      "Probe 已验证成功并自动写入操作 Cache。"
+    ]
+  },
+  "exact": {
+    "goal": "Open Android Settings main page and stop. Do not change any setting.",
+    "verified": true,
+    "mode": "Cache Hit · 模型请求 0 次 · 1.182s",
+    "modelRequests": 0,
+    "stepsLabel": "本机缓存 · 2 步 · 仅本机记录",
+    "notes": [
+      "本机重放与终态校验成功；没有调用模型。"
+    ]
+  },
+  "similar": {
+    "goal": "Please open the Android Settings main page and stop. Do not change any setting.",
+    "verified": true,
+    "mode": "Similar Hit · 模型请求 1 次 · 7.169s",
+    "modelRequests": 1,
+    "stepsLabel": "yrlf－modal · 2 步 · 仅本机记录",
+    "notes": [
+      "相似脚本已验证并写入 Cache。"
+    ]
+  },
+  "miss": {
+    "goal": "Wait for one second and finish without touching any app.",
+    "verified": true,
+    "mode": "Probe · 模型请求 2 次 · 10.542s",
+    "modelRequests": 2,
+    "stepsLabel": "yrlf－modal · 2 步 · 仅本机记录",
+    "notes": [
+      "Probe 已验证成功并自动写入操作 Cache。"
+    ]
+  },
+  "restart": {
+    "cacheNamesPreserved": true,
+    "entryNames": [
+      "Open Android Settings main page and stop. Do not change any setting.",
+      "Please open the Android Settings main page and stop. Do not change any setting.",
+      "Wait for one second and finish without touching any app."
+    ],
+    "priorServiceRestored": true
+  },
+  "afterRestart": {
+    "goal": "Open Android Settings main page and stop. Do not change any setting.",
+    "verified": true,
+    "mode": "Cache Hit · 模型请求 0 次 · 1.284s",
+    "modelRequests": 0,
+    "stepsLabel": "本机缓存 · 2 步 · 仅本机记录",
+    "notes": [
+      "本机重放与终态校验成功；没有调用模型。"
+    ]
+  },
+  "edit": {
+    "renamed": true,
+    "requiresValidation": true
+  },
+  "manualEdited": {
+    "goal": "Open Android Settings main page and stop. Do not change any setting.",
+    "verified": true,
+    "mode": "本机脚本 · 模型请求 0 次 · 1.192s",
+    "modelRequests": 0,
+    "stepsLabel": "本机缓存 · 2 步 · 仅本机记录",
+    "notes": [
+      "本机重放与终态校验成功；没有调用模型。"
+    ]
+  },
+  "delete": {
+    "deletedOwnedBaseEntry": true
+  },
+  "scope": "Existing authorized Modal connection; read-only Settings navigation, no system option toggles; cache JSON step editing verified separately on Emulator."
+}

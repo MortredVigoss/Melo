@@ -1,0 +1,62 @@
+{
+  "date": "2026-10-18",
+  "behaviorCommit": "3bce381",
+  "version": "0.6.0",
+  "versionCode": 14,
+  "build": "R8 release preview",
+  "apkSha256": "501063e22e1a2802ba6b6eab9a41fcf5c672db702522c9cae958dd893a861fba",
+  "certificateSha256": "da629e0685cca1745c5ffe6aa80cbc8c07f1e7b5cbe4fc5a82644fc72721d212",
+  "coreBundleSha256": "39129bb94579a2f4e0c72a322e8b9e599a40bf3b947c5db934f62824e587e0d3",
+  "device": {
+    "model": "Samsung Galaxy Z Fold6 SM-F956B",
+    "android": "16",
+    "sdk": 36,
+    "oneUiProperty": "80500",
+    "layout": "unfolded",
+    "physicalSize": "1856x2160",
+    "unlocked": true,
+    "activeTaskBeforeInstall": false
+  },
+  "artifactChecks": {
+    "installed051CertificateMatched": true,
+    "previousPreviewCertificateMatched": true,
+    "apkSignatureVerified": true,
+    "nativeLibraries16KiBAligned": 4,
+    "packagedCoreBundleMatched": true
+  },
+  "install": {
+    "method": "Same-package pm install -r over existing Windows ADB SmartSocket",
+    "previousVersion": "0.5.1 (13)",
+    "result": "Success",
+    "installedVersionReadBack": true,
+    "installedApkHashMatched": true,
+    "uidPreserved": true,
+    "firstInstallTimePreserved": true,
+    "countsBefore": "11 段对话 · 1 个角色 · 保存在本机",
+    "countsAfter": "11 段对话 · 1 个角色 · 保存在本机",
+    "allAccessibilitySettingsPreserved": true,
+    "accessibilityServiceCount": 2,
+    "uninstalledOrClearedData": false,
+    "credentialsReadOrReplaced": false,
+    "newQaChatsAdded": 0,
+    "adbServerProtocol": 40,
+    "adbServerRestarted": false
+  },
+  "launchSmoke": {
+    "mainActivityStarted": true,
+    "homeCountsReadBack": true,
+    "foregroundPackage": "com.melo.android",
+    "processStableAcrossChecks": true,
+    "fatalCrashInProcessCrashBuffer": false,
+    "modelRequestsSent": 0,
+    "searchRequestsSent": 0,
+    "phoneUseTasksStarted": 0
+  },
+  "limitations": [
+    "Install and launch smoke only; no real-provider Search, Chat or Phone Use executed.",
+    "Native Shared Core / JavaScriptEngine execution was not exercised on Fold6 in this run.",
+    "No folded-mode or fold/unfold transition test in this run.",
+    "Counts, package identity and install history were compared; individual chat contents, configuration values and Keystore credentials were not read.",
+    "No iOS validation, remote CI, push or full release gate in this installation-only run."
+  ]
+}

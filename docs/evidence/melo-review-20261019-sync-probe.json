@@ -1,0 +1,19 @@
+{
+  "scope": "Fresh temporary home, localhost fixtures only",
+  "steps": [
+    {
+      "path": "/api/projects",
+      "status": 200
+    },
+    {
+      "path": "/api/projects/memory-book",
+      "status": 500,
+      "error": "database is locked",
+      "code": "ERR_SQLITE_ERROR"
+    },
+    {
+      "path": "/api/project-memory-sync",
+      "status": 200
+    }
+  ]
+}

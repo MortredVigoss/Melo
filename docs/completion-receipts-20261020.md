@@ -31,3 +31,11 @@
 合并 `ceb6667` 的组合版本：`completion-merged-daily.log` 完整日常通过（4303 项 JS + 5 项生成器预检、35 组 Swift，517.2 秒）；`completion-merged-ios-build.log` 为 iPhone simulator Debug 构建成功。Android 最终同源契约 `d96f88a` 在验证分支运行 `39363915271`，完成前 issue 保持打开。前一 Android run 因最终版本接替被取消，不计模拟器通过。
 
 最终回执：主线 `4c3ebb5`、Android `05592af` 已推送。主线 CI `39364201758` 与文件安全 `39364201720` 全绿；Android `39365644626` 的 JVM/Lint/Debug/R8 与模拟器 **66/66、零跳过**（147.55 秒）通过。#6 已在 GitHub 更新验收与关闭；进入 #8。原图、账户与用户真实数据保持，未安装应用。
+
+### Android / Mobile 分支补充（整合时保留）
+
+Android 首次验证分支 `8b57654`：Core 129/129 通过；CI `39362453557` 在 Kotlin 编译拒绝 `MutableList += JsonArray` 的重载歧义，模拟器尚未运行。改为显式 `addAll`，第二轮仍在独立验证分支；不能据此关闭 #6 或宣称 Android 已验收。
+
+主线集成了其他线程的能力协议，Android 同步同源 Core 的附加契约与生成 bundle（不搬入旧分支不具备的 Swift Host）。Node Core 129/129 再次通过；最终组合版本需独立 Android CI。
+
+Android `39363915271` 为 63/65、零跳过；两项旧研究夹具只提供未核验导航或摘要，却断言目标 completed。按新合同改为明确 partial/未核验，同时保留所有真实调用成功、顺序、来源与计数断言；另补三协议 exact/subtask/unverified 的 Host 终态回执正反用例。不是放宽产品完成条件。

@@ -1,0 +1,100 @@
+{
+  "date": "2026-10-18",
+  "branch": "codex/mobile-use-features",
+  "upstream": "84abfa92cd00d860f38ec2d5e4d788fee6c9d30b",
+  "mergeCommit": "7a668c7",
+  "androidVersion": {
+    "name": "0.6.0",
+    "code": 14
+  },
+  "core": {
+    "sha256": "39129bb94579a2f4e0c72a322e8b9e599a40bf3b947c5db934f62824e587e0d3",
+    "sources": {
+      "shared/agent/index.js": "6507bd9c1cb400ace0e974b9fa5d1d9701877e08eace3f596de8d2a1a4d1b731",
+      "shared/agent/turn.js": "1714f9cf48d8e5638110ee8039807e20eeceab19df5dea39830b561a3093e07b",
+      "shared/agent/tools.js": "d10a7113f6cca1240603c8a5c0004a689dc85163ebde300459ff4d8f454db5da",
+      "shared/agent/search.js": "7a2f96a68a12e41286b72df749ccc6174427e336a78501a0186a3286deaa16b3",
+      "shared/agent/retrieval/requestPolicy.js": "a2d08ee01b30b35db08689033d2427dde3854de6c1e9e9ffcc3f423199865512",
+      "shared/agent/media/textUrls.js": "a18784bbc35025e156184f896f0b5fd1ccaccde18a94a36acf6e2003fefa22c6",
+      "shared/agent/retrieval/searchRouter.js": "97b7493923820443f6956ac08c0fd02f0069d200c7b47c2fa370e115c923cd40",
+      "shared/agent/skill/skillService.js": "d6dbbde1f4ce3f4a7fd3fd89de23eb688c9f80d4de43780f806e46f26f4f8644",
+      "shared/agent/hostedSearch.js": "75d1a1be8b0350ae05fba5602b17704857f3b85cb13f0bf38982413ba442226a"
+    },
+    "fixtures": 42,
+    "node": true,
+    "android": true,
+    "iosNative": "not_run"
+  },
+  "checks": {
+    "nodeTargeted": 314,
+    "nodeRelated": 203,
+    "uiFinal": 16,
+    "syntaxFiles": 951,
+    "jvm": 115,
+    "lintErrors": 0,
+    "debugBuild": true,
+    "r8ReleaseBuild": true,
+    "debugSignature": true,
+    "native16KiBLibraries": 4,
+    "runtime": [
+      {
+        "viewport": "968x2376",
+        "density": 420,
+        "tests": 43
+      },
+      {
+        "viewport": "1856x2160",
+        "density": 420,
+        "tests": 9
+      }
+    ]
+  },
+  "scope": {
+    "fixtureOnly": true,
+    "liveProviderRequests": 0,
+    "privatePhoneAccess": false,
+    "fold6Installed": false,
+    "iosSwiftExecuted": false,
+    "releaseRuntimeExecuted": false,
+    "fullReleaseGateExecuted": false,
+    "push": false,
+    "gitPp": false,
+    "ownedEmulatorStopped": true,
+    "isolatedAdbPort": 5048,
+    "ownedBrowserStopped": true,
+    "ownedUiServerStopped": true
+  },
+  "failuresRetained": [
+    "search-runtime-red-20261018.log",
+    "search-runtime-unfolded-final-20261018.log"
+  ],
+  "logs": {
+    ".tmp/agent-core-audit-20261017/search-post-pull.log": "c7de5b594c03b4a9bc3f85f61aa9de12d8f2074c3319789d2e17a844273ea9cd",
+    ".tmp/agent-core-audit-20261017/search-related-regression-20261018.log": "05c23c008c06ed3132f8208a5e0bd64a3dd62671f5474b927c9138bb07b4ff29",
+    ".tmp/agent-core-audit-20261017/search-ui-final-20261018.log": "fa6498a830ec9812b86b872430aedfae218601d027169b26e19f3ef308a9f6f7",
+    ".tmp/agent-core-audit-20261017/search-runtime-cover-final-20261018.log": "0942655cfb3a4e7ad81572225d778c9741b29d189d5ad0b8cbe4811f0e28b140",
+    ".tmp/agent-core-audit-20261017/search-runtime-unfolded-green-20261018.log": "c0f9e1169a0eec561ae7fda14c7b7a0b588a8b651753fda684051fa284a3cb2e",
+    ".tmp/agent-core-audit-20261017/search-android-release-final-20261018.log": "7a72094ebff416901d5662fe7df944891137170eeb6c47b4c57e86f88847dc68",
+    ".tmp/agent-core-audit-20261017/search-apk-verification-20261018.log": "8e5ca0483b943d1dc9ab8c0f44ec609be697d70760ffadb834fdbf068d6621d6",
+    ".tmp/agent-core-audit-20261017/search-ios-source-20261018.log": "f619001d0545396bb5c7d18ab3fd9dd9f94054467d049954b3d63ab7aa59ad7c",
+    ".tmp/agent-core-audit-20261017/search-syntax-20261018.log": "753c3db0c819129338ea8e011c60f10c018f8340a6eae8677c570749dcb78816"
+  },
+  "sha256": {
+    "android/app/build/outputs/apk/debug/app-debug.apk": "a9d7edeb46e04b9884dff624ddf87a7c954112197f8ae88da86c7f6d9467fa0e",
+    "android/app/build/outputs/apk/release/app-release-unsigned.apk": "7ad232d0756ac470efaeb7978fe3cbe76a1336b2158aebbe55a999fc9f75e69a",
+    "android/app/src/main/java/com/melo/android/chat/SharedChatAgent.kt": "a1c0661ecfbf0f5a512c5b94d16bd8eaf123849544a736416a0ab812d5bf1735",
+    "android/app/src/main/java/com/melo/android/core/SharedCoreRuntime.kt": "5a4f40c47e2fad10fc6b304171a3dc6e98e19b18fa97ff7f142e452d04c38b60",
+    "android/app/src/main/java/com/melo/android/network/SharedSearchAdapter.kt": "2e41def7ce8dfd76e4fb66ee5a5223280d13fdc992e49904037bdbe2fefc8c08",
+    "android/app/src/main/java/com/melo/android/network/HostedSearchAdapter.kt": "e9edd6a3981252625600d13dd44252fbd0db560e0dc55af9ddcd1000d0d6fece",
+    "src/services/chat/chatExecutionRunner.js": "a95bd66c2ea29187630ce1048e26a2ebe2354b64b1abdfab48fee21c98fe7584",
+    "src/services/search/hostedSearchCapability.js": "ce12e315a144c1aa29c761086fca8c9e77a7958a440302c998e6f16894b10ec1",
+    "src/services/search/sharedSearchAdapter.js": "dfef4259943947b0d03661a6967273587d420e0707522251a45ad61405757f02",
+    "src/services/search/sharedFetchAdapter.js": "3de092e7b72253be6c4e8455974f2b0e009b38744a872d70238bf49394458d7f",
+    "shared/agent/fixtures/conformance.json": "c5445f50ce9b682fe8e40eb09b998bf465385155fed426f9a5a711408ae11895"
+  },
+  "screenshots": [
+    ".tmp/agent-core-audit-20261017/search-settings-cover-20261018.png",
+    ".tmp/agent-core-audit-20261017/search-settings-unfolded-20261018.png",
+    "output/playwright/search-settings-20261018.png"
+  ]
+}

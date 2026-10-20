@@ -23,7 +23,8 @@ import { globTool } from './builtins/globTool.js';
 import { grepTool } from './builtins/grepTool.js';
 import { agentTool } from '../agents/subAgent.js';
 import { fetchUrlTool } from './builtins/fetchUrlTool.js';
-import { webSearchTool } from './builtins/webSearchTool.js';
+import { webSearchTool as legacyWebSearchTool } from './builtins/webSearchTool.js';
+import { createCompatibleSearchTool } from '../services/search/sharedSearchAdapter.js';
 import { webScreenshotTool } from './builtins/webScreenshotTool.js';
 import { mediaInfoTool } from './builtins/mediaInfoTool.js';
 import { mediaApiTool } from './builtins/mediaApiTool.js';
@@ -51,6 +52,7 @@ export { registerTool, registerTools, getTool, getAllTools, getToolsByCategory, 
 // ─── Bootstrap built-in tools ─────────────────────────────────────────────────
 
 let _bootstrapped = false;
+const webSearchTool = createCompatibleSearchTool(legacyWebSearchTool);
 
 /**
  * Register all built-in tools.  Safe to call multiple times (idempotent).

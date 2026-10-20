@@ -234,9 +234,14 @@ test('listBackups returns entries newest-first', async () => {
     const target = join(home, 'a.txt');
     await writeFile(target, '1', 'utf8');
     const a = await snapshotBeforeWrite(target);
-    await new Promise(r => setTimeout(r, 5));
     await writeFile(target, '2', 'utf8');
     const b = await snapshotBeforeWrite(target);
+    // Sorting is a persisted-timestamp contract, not a wall-clock/timer test.
+    for (const [entry, timestamp] of [[a, '2026-01-01T00:00:00.000Z'], [b, '2026-01-02T00:00:00.000Z']]) {
+      const path = join(entry.opDir, 'manifest.json');
+      const manifest = JSON.parse(await readFile(path, 'utf8'));
+      await writeFile(path, JSON.stringify({ ...manifest, snapshotAt: timestamp }));
+    }
     const list = await listBackups();
     assert.equal(list.length, 2);
     assert.equal(list[0].operationId, b.operationId, 'newest first');

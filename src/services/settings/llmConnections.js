@@ -7,6 +7,7 @@ import { currentRequestContext, runWithRequestContext } from '../../runtime/requ
 import { createRequestContext } from '../../runtime/requestContext.js';
 import { createOpenAICompatibleReply, discoverAvailableModels } from '../../openai.js';
 import { llmProvider, normalizeLlmBaseUrl, publicLlmConnections } from '../../shared/llmProviders.js';
+import { probeHostedSearch } from '../search/hostedSearchCapability.js';
 
 const profileFields = ['authMode', 'baseUrl', 'model', 'apiKey', 'apiProtocol'];
 const scoped = work => currentRequestContext() ? work() : runWithRequestContext(createRequestContext(), work);
@@ -49,7 +50,7 @@ export function saveLlmProfile(patch, { oauthKey, expectedRevision, signal } = {
     }
     if (oauthKey && (provider.id !== 'openrouter' || baseUrl !== provider.baseUrl)) throw new Error('授权密钥只能保存到 OpenRouter 官方地址。');
     const apiProtocol = patch.apiProtocol || previous?.apiProtocol || provider.apiProtocol;
-    if (!['chat-completions', 'anthropic'].includes(apiProtocol)) throw new Error('不支持的模型协议。');
+    if (!['chat-completions', 'anthropic', 'responses'].includes(apiProtocol)) throw new Error('不支持的模型协议。');
     const model = String(patch.model ?? previous?.model ?? provider.model).trim();
     if (model.length > 200 || /[\r\n\0]/.test(model)) throw new Error('模型 ID 无效。');
     const next = {
@@ -58,10 +59,10 @@ export function saveLlmProfile(patch, { oauthKey, expectedRevision, signal } = {
       apiKey: provider.authMode === 'codex' || patch.clearKey ? '' : incomingKey || previous?.apiKey || '',
       authKind: oauthKey ? 'oauth' : incomingKey || patch.clearKey ? 'api-key' : previous?.authKind || 'api-key',
       models: previous?.baseUrl === baseUrl ? previous.models || [] : [],
-      revision: (previous?.revision || 0) + 1, test: null,
+      revision: (previous?.revision || 0) + 1, test: null, searchTest: null,
     };
     // A no-op save before activation must not erase the successful probe.
-    if (previous && profileFields.every(field => (previous[field] || '') === (next[field] || ''))) { next.test = previous.test || null; next.visionTest = previous.visionTest || null; }
+    if (previous && profileFields.every(field => (previous[field] || '') === (next[field] || ''))) { next.test = previous.test || null; next.visionTest = previous.visionTest || null; next.searchTest = previous.searchTest || null; }
     profiles[id] = next;
     // Merely saving another provider must not disable a legacy env-based connection.
     let updated = { ...config, llmProfiles: profiles, autosaveRevision: Date.now() };
@@ -108,6 +109,8 @@ export function testLlmProfile(id, { signal, reply = createOpenAICompatibleReply
       if (catalogOnly) {
         const models = await discover({ ...profile, signal });
         result = { models };
+      } else if (modality === 'search') {
+        result = { ...await probeHostedSearch(profile, { reply, signal }), modality, requestedModel: profile.model, testedAt: new Date().toISOString(), latencyMs: Date.now() - start };
       } else {
         if (!profile.model) throw new Error('请填写要测试的模型 ID。');
         let metadata = {};
@@ -134,7 +137,7 @@ export function testLlmProfile(id, { signal, reply = createOpenAICompatibleReply
       const config = await loadConfig({ skipModelNormalize: true });
       const current = requireProfile(config, id);
       if (current.revision !== profile.revision) throw new Error('测试期间连接已更改，结果未保存，请重新测试。');
-      const updatedProfile = catalogOnly ? { ...current, models: result.models } : { ...current, [modality === 'vision' ? 'visionTest' : 'test']: result };
+      const updatedProfile = catalogOnly ? { ...current, models: result.models } : { ...current, [modality === 'search' ? 'searchTest' : modality === 'vision' ? 'visionTest' : 'test']: result };
       let updated = { ...config, llmProfiles: { ...config.llmProfiles, [id]: updatedProfile } };
       if (catalogOnly && updated.activeLlmProfileId === id) updated = applyProfile(updated, id, updatedProfile);
       await saveConfig(updated, { skipModelNormalize: true });

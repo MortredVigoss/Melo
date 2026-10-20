@@ -6,6 +6,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+defaults:
+  run:
+    shell: bash
+
 permissions:
   contents: read
 concurrency:
@@ -91,6 +95,9 @@ jobs:
           python3 ios/scripts/test.py 2>&1 | tee .tmp/ci/swift-tests.log
       - name: Compare JavaScriptCore task events with Node
         run: npm run eval:tasks -- --compare .tmp/agent-task-eval-jscore.json --out .tmp/ci/agent-task-eval-node.json
+      - name: Compile iOS Simulator app without signing or installation
+        run: |
+          xcodebuild -project ios/Melo.xcodeproj -scheme Melo -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath .tmp/ci/ios-build CODE_SIGNING_ALLOWED=NO build 2>&1 | tee .tmp/ci/ios-build.log
       - name: macOS native shell lifecycle
         run: node --test scripts/native-shutdown.test.js 2>&1 | tee .tmp/ci/native-shell.log
       - uses: actions/upload-artifact@v7.0.2

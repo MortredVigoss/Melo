@@ -1,0 +1,40 @@
+{
+  "version": "0.4.1",
+  "sha256": "69e487bb969efbb8f1a0dfd32c635a88ff39347ba681f53714de1a740abdfbdc",
+  "install": {
+    "version": "0.4.1",
+    "sameCertificateUpdate": true,
+    "countsBefore": [
+      "6 段对话 · 1 个角色 · 保存在本机"
+    ],
+    "countsAfter": [
+      "6 段对话 · 1 个角色 · 保存在本机"
+    ],
+    "otherServicesPreserved": true
+  },
+  "unfolded": {
+    "screenSize": "Physical size: 1856x2160",
+    "texts": [
+      "缓存命中使用本机步骤。Similar 发送目标和候选脚本；Probe 才提供当前 Display 的界面文字和截图。可随时点击悬浮「停止 Melo」。Probe 最多 30 步、脚本最多 60 步，每次 10 分钟。",
+      "DIAG_WECHAT_041_READONLY: First call open_app with package_name com.tencent.mm, even though the initial observation shows Melo. Inspect only the screen returned by that launch. Report in Chinese the captured package, whether screenshot pixels show readable WeChat UI or black/blank, and whether node labels exist. Do not quote contact names or messages. Do not tap, type, send, open chats, change settings, use home/back/list_apps or keep retrying. Finish after inspecting the launched app.",
+      "已验证可见结果 · yrlf－modal · 3 步",
+      "Probe · 模型请求 3 次",
+      "1. observe · 成功 · 执行回执已返回 · com.melo.android · 1099×1280 · 23 个节点 · 已截图",
+      "2. open_app · 成功 · 执行回执已返回 · com.tencent.mm · 549×1280 · 0 个节点 · 已截图",
+      "3. finish · 成功 · 已记录明确任务结果 · 已重新检查可见证据",
+      "已检查启动返回的屏幕：捕获包名为 com.tencent.mm；截图像素显示可读的微信界面，并非黑屏或空白；节点列表为空（nodes=[]），没有节点标签。未点击或执行其他界面操作，未引用联系人姓名或消息。"
+    ]
+  },
+  "folded": {
+    "screenSize": "Physical size: 968x2376",
+    "texts": [
+      "DIAG_WECHAT_041_FOLDED_READONLY: First call open_app with package_name com.tencent.mm, even though the initial observation shows Melo. Inspect only the screen returned by that launch. Report in Chinese the captured package, whether screenshot pixels show readable WeChat UI or black/blank, and whether node labels exist. Do not quote contact names or messages. Do not tap, type, send, open chats, change settings, use home/back/list_apps or keep retrying. Finish after inspecting the launched app.",
+      "任务受阻 · yrlf－modal · 2 步",
+      "Probe · 模型请求 2 次",
+      "1. open_app · 成功 · 执行回执已返回 · com.samsung.android.sidegesturepad · 56×1280 · 0 个节点 · 已截图",
+      "2. finish · 成功 · 已记录明确任务结果",
+      "已按要求调用启动 com.tencent.mm，并仅检查该次返回画面。捕获的包名为 com.samsung.android.sidegesturepad；截图为黑色，无可读微信界面；节点列表为空，无节点标签。启动请求已派发，但无法据此确认微信界面已显示。未进行其他导航或操作。"
+    ]
+  },
+  "summary": "Unfolded screenshot readable, zero UI nodes; folded still captures Samsung sidegesturepad and finishes blocked. Read-only only; no message sent."
+}
