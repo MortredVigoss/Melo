@@ -249,3 +249,13 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - Node 专项 25/25，Node/VM/JavaScriptCore 一致；Android 及完整日常待验。#13 已推送关闭；当前只剩 #14。没有安装或用户数据变动。
 
 #14 主线集成回执：基于 6a5a171 的完整日常 4356/4356 JS、35/35 Swift 通过，零跳过；图片预览等待实际 fit 初始化后全套通过。Node/JavaScriptCore 的 11 项任务及事件一致。Android 首轮 CI 39382785730 在 emulator 阶段失败，正在读报告，尚未发布或关闭 #14。
+
+#14 主线远端：aa83db2 / CI 39391968956 Linux 与 macOS 全绿；三份已下载报告与本机逐字段对比一致。Android 首轮实际 73/73 用例通过，失败仅在卸载后的报告收集；b6f375d 第二轮 39392779228 正在 emulator 阶段。生产分支尚未发布 #14。
+
+#14 Android 报告链路：前两轮均 73/73，报告文件导出失败；最终 a11183b 改运行期 localhost/ADB reverse 上报并校验本轮 UUID，真实 HTTP 收集回归通过。CI 39394944470 待验；正式分支仍保持已完成的 #13/#10，不提前关闭 #14。
+
+### 2026-10-20 — melo主线（Codex）— GitHub 剩余问题最终验收
+- #1–#13 已逐项验证、推送并关闭；#14 实现/验证完成，准备正式推送关闭。主线产品 aa83db2，手机产品 a11183b；保留原共享工作树的他线程 WIP。
+- #14 11 项同源任务在 Node / JavaScriptCore / Android JavaScriptSandbox 的完整事件、回执、成本相同；修正了拒绝工具导致研究误判为操作的问题。脚本/数据/验收见 [专项](docs/task-replay-20261020.md)。
+- 主线 4356/4356 JS、35/35 Swift；远端 CI 39391968956 Linux/macOS 通过。Android CI 39394944470 JVM/Lint/Debug/R8、73/73 emulator 和本轮报告收集/比较通过，下载 XML 与报告再次核对。
+- #10 布局缓存、#11 生命周期、#12 SQLite 边界、#13 容量基线已在对应专项留记录。真实模型质量、Fold6/iPhone 实体设备及安装验证另计；账号和数据未变，无 git pp。
