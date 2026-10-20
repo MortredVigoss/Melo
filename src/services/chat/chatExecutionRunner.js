@@ -17,9 +17,10 @@ import { estimateMessagesTokens, estimateTextTokens } from '../../memory/tokenEs
 //
 // All upstream dependencies live in dedicated leaf modules (every other
 // 7d-5* commit was prep work for exactly this — the runner imports zero
-// symbols from desktopStore.js). The lone module-private singleton
-// `getSharedSkillIndex` is also co-located here: its sole caller was
-// always this runner, and Node's module cache keeps the singleton stable.
+// symbols from desktopStore.js). Since architecture B2 (2026-10-20) each
+// node lives in ./execution/<name>Node.js as a factory over the turn object
+// built below; the skill-index singleton moved with its only user,
+// prepareNode.js.
 
 import {
   createStateGraph,
@@ -120,10 +121,81 @@ export async function runChatAgentExecutionGraph({
   const isRemoteChannel = background && Boolean(channelContext?.channelId);
 
 
-  // Turn-level bindings the graph nodes read (architecture B2). Built after
-  // every reassignment above (context, home, onDelta), so each node sees the
-  // same values its former closure did.
-  const turn = { _dependencies, agentId, background, budget, channelContext, chat, config, connectors, context, contextBudget, createReply, embedQuery, env, home, imageTask, isRemoteChannel, latestUserMessage, modelOverrides, modelResponses, onDelta, onImageProgress, onImageTaskResolved, onReasoningDelta, promptDebug, providerProfile, signal, skills, sseEmitter, state, teamPlan, turnContextPlacement, workspace };
+  /**
+   * Turn-level bindings the graph nodes read (architecture B2). Built after
+   * every reassignment above (context, home, onDelta), so each node sees the
+   * same values its former closure did. Nodes destructure what they use and
+   * never assign back (enforced when they were moved; see B2 in
+   * docs/architecture-optimization-plan-20261020.md).
+   * @typedef {object} TurnContext
+   * @property {*} context request context: env, budget, capability scope, request identity
+   * @property {*} home Melo home of this request
+   * @property {*} env context.env
+   * @property {*} config model / connector configuration snapshot
+   * @property {*} state persisted desktop state snapshot
+   * @property {*} chat the conversation being answered
+   * @property {*} workspace workspace snapshot (root path, files, command templates)
+   * @property {*} connectors available connectors (filtered per agent inside prepare)
+   * @property {*} skills available skills (filtered per agent inside prepare)
+   * @property {*} latestUserMessage text of the turn being answered
+   * @property {*} agentId requested agent id
+   * @property {*} imageTask pre-resolved image task, or null
+   * @property {*} teamPlan pre-resolved team plan, or null
+   * @property {*} onImageTaskResolved image task callback
+   * @property {*} onImageProgress image progress callback
+   * @property {*} background true for remote-channel / background turns
+   * @property {*} channelContext remote channel routing context, or null
+   * @property {*} isRemoteChannel background && channelContext.channelId
+   * @property {*} signal AbortSignal of the request
+   * @property {*} onDelta streaming text callback (wrapped to stop the first-token timer)
+   * @property {*} onReasoningDelta streaming reasoning callback
+   * @property {*} sseEmitter (type, value) => void progress / reply event sink
+   * @property {*} providerProfile provider tuning profile name
+   * @property {*} _dependencies test injection: createReply, getEmbedding
+   * @property {*} budget armed run budget shared by the whole turn
+   * @property {*} createReply metered model call (budget accounting, first-token timer, receipts into modelResponses)
+   * @property {*} modelResponses provider receipts of this turn (appended by createReply)
+   * @property {*} embedQuery embedding function (injectable)
+   * @property {*} contextBudget resolved prompt / history token budget
+   * @property {*} turnContextPlacement 'message' (default) or 'system'
+   * @property {*} promptDebug MELO_PROMPT_DEBUG=1
+   * @property {*} modelOverrides { apiKey, baseUrl, model, verifier } after env / profile resolution
+   * @type {TurnContext}
+   */
+  const turn = {
+    context,
+    home,
+    env,
+    config,
+    state,
+    chat,
+    workspace,
+    connectors,
+    skills,
+    latestUserMessage,
+    agentId,
+    imageTask,
+    teamPlan,
+    onImageTaskResolved,
+    onImageProgress,
+    background,
+    channelContext,
+    isRemoteChannel,
+    signal,
+    onDelta,
+    onReasoningDelta,
+    sseEmitter,
+    providerProfile,
+    _dependencies,
+    budget,
+    createReply,
+    modelResponses,
+    embedQuery,
+    contextBudget,
+    turnContextPlacement,
+    promptDebug,
+    modelOverrides,
+  };
 
   const graph = createStateGraph({
     start: 'prepare',

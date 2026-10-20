@@ -1131,6 +1131,7 @@
           "src/services/chat/dateContext.test.js",
           "src/services/chat/derivedState.test.js",
           "src/services/chat/dynamicContext.test.js",
+          "src/services/chat/execution/finalizeNode.test.js",
           "src/services/chat/executionDetail.test.js",
           "src/services/chat/executionPipeline.test.js",
           "src/services/chat/executionScenes.test.js",
