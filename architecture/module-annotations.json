@@ -738,6 +738,23 @@
         "ios/Melo/ContentView.swift"
       ],
       "note": "两端界面协调层：桌面 uiState/app.js，手机 ChatStore；P2/P4 分别拆分"
+    },
+    {
+      "feature": "approvals",
+      "desktop": [
+        "src/domain/agent/capabilityElevation.js",
+        "src/services/agent/capabilityElevation.js",
+        "src/persistence/capabilityGrantLedger.js",
+        "desktop-ui/features/approvals/view.js"
+      ],
+      "iphone": [
+        "ios/Melo/CapabilityElevation.swift",
+        "ios/Melo/CapabilityElevationRuntime.swift",
+        "ios/Melo/CapabilityElevationViews.swift",
+        "ios/Melo/AgentStarter.swift"
+      ],
+      "contract": "agent-loop",
+      "note": "能力临时提升 / 即时开启：同一判定、原子、时长与文案（agent-loop.json capabilityElevation，手机映射在其 phone 节）；两端各自账本，不同步；手机卡口 DeviceToolContext.perform"
     }
   ],
   "sharedContracts": [
@@ -751,14 +768,16 @@
       "iphone": [
         "ios/Melo/AgentLoopContract.swift",
         "ios/Melo/AgentLoop.swift",
-        "ios/Melo/AgentLoopRuntime.swift"
+        "ios/Melo/AgentLoopRuntime.swift",
+        "ios/Melo/CapabilityElevation.swift"
       ],
       "generator": "scripts/generate-agent-loop-contract.js",
       "tests": [
         "src/runtime/agentLoopContract.test.js",
         "scripts/generate-agent-loop-contract.test.js",
         "ios/Tests/SharedContractTests.swift",
-        "ios/Tests/AgentLoopTests.swift"
+        "ios/Tests/AgentLoopTests.swift",
+        "ios/Tests/CapabilityElevationTests.swift"
       ],
       "note": "桌面运行时读取 JSON，手机内嵌生成副本（不含 fixtures）；两端跑同一批 fixtures。P3/P4 新增双端行为先扩展此文件。"
     },

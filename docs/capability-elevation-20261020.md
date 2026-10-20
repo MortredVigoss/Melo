@@ -1,6 +1,6 @@
-# Agent 能力临时提升与即时开启（2026-10-20，桌面端 + 共享规则）
+# Agent 能力临时提升与即时开启（2026-10-20，桌面端 + 共享规则 + iPhone）
 
-范围：桌面端实现与双端共享的规则契约。iPhone 端由下一位工程师按第 9 节交接实现。入口：[总览](../MELO_OVERVIEW.md)、[后端架构](backend-architecture.md)。
+范围：桌面端实现、双端共享的规则契约，以及 iPhone 端实现（第 9 节，同日由接手工程师完成）。入口：[总览](../MELO_OVERVIEW.md)、[后端架构](backend-architecture.md)。
 
 ## 1. 用户拍板的规则
 
@@ -111,7 +111,6 @@ HTTP（`src/http/capabilityRoutes.js`）：
 
 - 图片任务快速路径（`chatExecutionRunner` 内的图片任务分支）与供应商原生工具（原生网页搜索、原生生图）在模型请求前按基础能力决定，不弹卡片；函数工具 `web_search`、`image` 照常可申请。
 - 用户在界面上显式启动的团队（team plan），主 Agent 没有委派能力时仍直接拒绝。
-- 手机端实现（第 9 节）。
 
 ## 8. 测试
 
@@ -125,25 +124,56 @@ HTTP（`src/http/capabilityRoutes.js`）：
 | HTTP | `src/http/capabilityRoutes.http.test.js` | 校验、404/400/403、真实服务分发 |
 | 新建 Agent | `src/services/agent/agentCreateStarter.test.js`、`src/domain/agent/capabilities.test.js` | 起步集、「基于已有 Agent」复制范围、不复制渠道/令牌、之后独立、已有 Agent 不变 |
 | 界面 | `desktop-ui/features/approvals/controller.test.js`、`features/agents/controller.test.js`、`features/chat/controller.test.js` | 卡片、无障碍、决定、错误、列表与撤销、语言切换、与契约文案一致、新建流程、事件入队出队 |
+| 手机契约 | `ios/Tests/SharedContractTests.swift` | 全部 `fixtures.capabilityElevation`（29 条判定、3 条文案、3 条到期）经 Swift 判定核心；手机工具表与手机权限一一对应 |
+| 手机运行时 | `ios/Tests/CapabilityElevationTests.swift` | 手机判定表、账本（文件、重启、24 小时到期、损坏、不备份）、撤销下一次生效、并发合并、无界面拒绝、上限、团队成员超出主 Agent、超时 / 运行截止 / 取消、「一直开启」、提示注入、卡口与运行记录、新 Agent 起步集与「基于已有 Agent」、同步能力放宽 |
 | 浏览器（Mac） | `desktop-ui/capabilityElevation.browser.test.js` | main 委派 Builder → Builder 需要『知识与记忆』→ 卡片 → 本对话 24 小时 → `search_history` 运行 → Builder 设置页列出 → 撤销 → 账本为空；无页面错误 |
 
-## 9. 手机交接（下一位工程师）
+## 9. iPhone 端（2026-10-20 实现）
 
-契约：`shared/protocol/agent-loop.json` → `capabilityElevation`（已嵌入 `ios/Melo/AgentLoopContract.swift`，`AgentLoopContract.shared.raw["capabilityElevation"]`），夹具 `fixtures.capabilityElevation.{decisions,prompts,expiries}`。
+原交接要求（契约 `capabilityElevation` 与夹具、判定顺序、公式、时长、不烘焙授权、可见性、无界面拒绝、契约文案、手机自己的账本、起步集、「一直开启」遇到同步设置走待桌面确认）全部落实如下。
 
-手机必须对齐的决定：
+### 9.1 实现
 
-1. 判定顺序与结果词表完全按第 3 节；`decisions` 夹具里的 `input` 用原子数组表示能力，期望值 `effective`、`missing` 是按契约顺序（布尔键顺序，然后 MCP 服务、技能、连接器按 ID）排列的原子数组。
-2. 有效能力公式、授权生效条件（同 Agent；`run` 同运行、`project` 同项目、`chat` 无项目时同对话；未撤销；`expiresAt > now`）、`grantExpiry` 时长（运行级 6 小时兜底，项目/对话 24 小时）。
-3. 授权不烘焙进 scope；每次工具调用实时判定；成员从父级的无授权基础能力起算。
-4. 可见性：只有能弹卡片时才显示可申请的工具（`jitVisible` 不含委派；上限外的列表能力不显示）。
-5. 没有交互界面（后台、快捷指令、远程）时与现在逐字相同地拒绝。
-6. 选项与文案用契约原文；五种语言的界面文案已在 `ios/Melo/Localizable.xcstrings`（与桌面同一份目录）。
-7. 手机自己的账本：本机文件（建议 `Application Support/…/capability-grants.json`，完全保护类），不进 iCloud/同步、不进提示词和记忆，只能由用户点击产生。
-8. 新 Agent 起步集 `newAgentStarter`；「基于已有 Agent」的复制范围同桌面（能力、协作、上下文来源、模型；勾选才复制身份/人设/声音；从不复制渠道、令牌、头像、名称）。注意手机的「这台手机上」设备能力（联网、生成图片、手机数据）是独立的手机授权，不由本契约改变。
-9. 手机上的「一直开启」若修改的是桌面同步来的 Agent 设置，仍走现有「手机提出的放宽需桌面确认」流程；本机运行可先用运行级授权继续。
+| 部分 | 文件 | 要点 |
+| --- | --- | --- |
+| 判定核心 | `ios/Melo/CapabilityElevation.swift` | 纯 Foundation；结果词表、原子语法与顺序、授权有效性、`effective = base ∪ (ceiling ∩ 超出父级授权) ∪ 即时开启授权`、最小缺失集合、选项、时长、文案全部读契约；授权从不写进 scope |
+| 手机映射 | 契约 `capabilityElevation.phone` | 手机布尔（日历、提醒事项、通讯录、当前位置）、手机权限原子、手机工具 → 原子表、手机措辞（超时文案、「这台手机上的」设置）；桌面忽略此节 |
+| 账本与请求 | `ios/Melo/CapabilityElevationRuntime.swift` | `Application Support/Melo/capability-grants.json`；原子写入、`completeUntilFirstUserAuthentication`、排除备份；读取逐条校验（未知原子、非用户决定一律丢弃），清理过期与上次启动的运行级授权，损坏文件改名 `.corrupt-<time>` 后按空处理；请求注册表、合并、超时、取消；唯一写入者是私有的 `respond → createGrant` |
+| 卡口 | `DeviceToolContext.perform`（`ios/Melo/DeviceTools.swift`） | 主回复与团队成员、Codex / Chat Completions / Anthropic 三条连接的每个手机工具调用都先经 `gate`；写入类工具批准后与执行中途的复查也用实时判定 |
+| 接线 | `ios/Melo/ChatStore.swift` | 上限 = 该 Agent 的手机权限（运行开始快照 ∩ 当前）；成员以主 Agent 为父级；卡片进入与设备写入确认共用的审批队列；运行结束释放运行级授权并关闭未答卡片；「一直开启」经与 Agent 页开关相同的路径写手机权限并加运行级授权 |
+| 界面 | `ContentView.swift`、`CapabilityElevationViews.swift`、`AgentEditor.swift`、`LocalPermissionsView.swift` | 卡片沿用设备写入确认的系统弹窗（标题、说明、契约选项按钮）；「临时授权」列表在 Agent 页「这台手机上」下方与 设置 > 权限与文件；新建 Agent 的起点选择 |
+| 新建 Agent | `ios/Melo/AgentStarter.swift` | 同步能力写起步集；「基于已有 Agent」复制能力、协作（去掉自己作为委派对象）、上下文来源、模型；勾选才复制身份 / 人设（指令文档、描述、mood）；从不复制 ID、名称、头像、图标 |
+| 记录 | `ExecutionRecord` 阶段「临时授权」 + `ExecutionToolCall.capability` | 等待、允许（范围、到期）、一直开启、拒绝、超时、取消；被拒调用标记为未执行；阶段 ID 用独立审计 ID，不用请求 ID |
 
-TODO（手机）：在 `ios/Tests/SharedContractTests.swift` 增加 `capabilityElevation` 夹具运行器（需要先有 Swift 版 `decideCapability`）；`ChatStore` 审批队列接入卡片；手机账本与撤销界面。
+### 9.2 能力映射
+
+| 手机能力（`PhoneCapability`） | 原子 | 走卡口的手机工具 | 说明 |
+| --- | --- | --- | --- |
+| 联网搜索 `network` | `network`（契约布尔） | `open_url`、`web_screenshot` | 托管网页搜索（Codex `web_search`、团队成员搜索）是供应商原生工具，按基础权限决定、不弹卡片（同第 7 节） |
+| 生成与修改图片 `generateMedia` | `generateMedia`（契约布尔） | 无 | 图片任务路径与原生生图在请求前按基础权限决定（同第 7 节） |
+| 日历 `calendar` | `calendar`（手机布尔） | `calendar_list_events`、`calendar_create_event` | 设备「手机数据」开关（含系统权限）是外层边界，授权不能绕过 |
+| 提醒事项 `reminders` | `reminders` | `reminders_list`、`reminders_create`、`reminders_complete` | 同上；写入仍逐次确认 |
+| 通讯录 `contacts` | `contacts` | `contacts_search` | 同上 |
+| 当前位置 `location` | `location` | `location_current` | 同上 |
+| — | — | `read_history` | 不受能力门控：手机上由同步来的上下文来源 `memory` 决定（上下文设置，不是能力） |
+| 同步来的桌面能力（读取文件…委派、MCP / 技能 / 连接器） | 契约原子 | 无 | 手机循环不以它们门控；判定核心与夹具覆盖；若将来手机工具需要，「一直开启」写入本机同步设置，成为桌面待确认的放宽（`AgentCapabilityWidening`），本次运行用运行级授权继续 |
+
+### 9.3 与桌面的差异及原因
+
+1. **上限来源**：手机执行一直由本机按 Agent 的权限（「这台手机上」）决定，同步来的桌面能力只约束桌面执行；所以上限是 `PhoneAgentPermissions`，快照取运行开始时（中途放宽从下一次运行生效，撤销下一次调用生效，与原手机行为一致）。
+2. **手机原子**：多四个手机布尔，排在契约布尔之后；可见性 = 契约 `jitVisible` ∪ 手机布尔，并且仍受设备开关（手机数据开关与系统权限、实时搜索开关）约束；这些开关关闭时与以前逐字拒绝，不弹卡片。
+3. **交互界面**：应用在前台即有界面，每次判定实时检查；运行开始时在后台则不显示可申请的工具（同桌面无界面）。卡片打开后切到后台，卡片保留，回来仍可回答；系统收回后台时间或停止回复时卡片关闭并取消。
+4. **「一直开启」作用域**：手机权限没有全局 / 项目之分，审计写「这台手机上的设置」；项目覆盖不能单独开启的规则（`alwaysUnavailable`）只在同步能力路径出现。
+5. **超时文案**：桌面原文让模型告诉用户「在 Melo 桌面端允许」，手机改用契约 `phone.texts.timeoutOutput`（「在这台 iPhone 弹出的授权卡片中允许」）。其余模型可见文案与审计文案为契约原文。
+6. **卡片形态**：系统 alert（与设备写入确认相同），按钮即契约选项，「拒绝」为取消角色；iOS alert 自带焦点与无障碍，无需桌面的焦点 / 图例处理。界面文字用桌面同一份目录词条，手机新增 3 行在 `ios/native-translations.js`。
+7. **新建 Agent**：手机的「这台手机上」权限不复制、也不由起步集改变（交接第 8 点），新 Agent 保持手机默认；手机没有每 Agent 的声音、渠道与令牌，勾选复制的是身份与人设；图标与头像一样不复制。
+8. **账本位置与保护**：与聊天数据同目录、同保护级别（锁屏后台回复期间仍可读，避免运行中项目授权失效），排除 iCloud 备份；iOS 沙箱代替桌面的 0600 / 0700。
+9. **夹具**：29 条判定夹具全部用 Swift 核心判定；夹具里的桌面工具 ID 经测试内的 `toolCapabilityAllowed` 移植换成需求（手机运行时只用自己的工具表）；跳过清单机制保留，目前为空。
+
+### 9.4 未做 / 边界
+
+- 没有真实模型、真实团队委派或实体手机上的卡片交互验收；模拟器构建、离线 Swift 套件与日常 gate 见第 10 节。
+- 桌面同步通道收到手机提出的能力放宽仍按既有流程待桌面确认；手机目前没有工具会触发这条路径。
 
 ## 10. 验证记录（2026-10-20，用户 Mac）
 
@@ -151,3 +181,4 @@ TODO（手机）：在 `ios/Tests/SharedContractTests.swift` 增加 `capabilityE
 - 真实浏览器（Mac Chrome）：`capabilityElevation.browser.test.js` 通过；`agentSettings`、`agentSettingsSecurity`、`agentPersona`、`committedSave`、`language`、`liveRun` 浏览器回归通过。
 - 在线只读检查：退出并重新打开用户的 Melo（确认只有一个 `MeloDesktop` 与一个 `node src/server.js`，健康检查通过）；用浏览器打开 Agent 页、切换「基于「Main agent」」、打开 自定义 → 权限与隐私，所有非 GET 请求在浏览器内拦截（实际 0 次），页面导航只改写 `GET /api/bootstrap` 的返回。结果：0 控制台错误、0 页面错误、0 失败响应；用户现有 6 个 Agent 均出现在起点选择中；用户数据未被写入。
 - 隔离 home 与 fixture 模型；没有用真实模型、真实委派或实体手机验收。
+- iPhone 端（同日，接手工程师）：`SharedContractTests` 35 条能力提升夹具（29 判定 + 3 文案 + 3 到期，0 跳过）；新套件 `CapabilityElevationTests` 与全部 33 组 Swift 通过；模拟器 Debug 构建成功、无新增警告；日常 `npm test -- --base 5872d7d` 选定范围通过（JS 4147/4159，12 跳过；语法、文档链接、生成器与依赖预检、共享渲染预检、两项设置浏览器验收、33 组 Swift）。签名构建 0.7.5 (37) 停在 Mac 钥匙串授权（codesign 等待超过 3 分钟，未代为确认），实体手机 Mortred (3) 当时 unavailable，未安装；没有真实模型或真机卡片交互验收。
