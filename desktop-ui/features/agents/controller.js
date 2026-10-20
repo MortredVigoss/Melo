@@ -1,9 +1,9 @@
 // Agent settings feature controller (architecture plan P2b, 2026-10-19): the
 // Agent page / Customize → Agents editor — selection and scope, per-Agent
 // drafts, save and create flows, project overrides, Markdown import/export,
-// avatar preview, channel test, capability/collaboration toggles, the
-// (Markdown / channel) autosave timers with their flush and unload paths, and
-// the editor scroll/caret capture that app.js's render() calls.
+// avatar preview, channel test, capability/collaboration toggles, and the
+// editor scroll/caret capture that app.js's render() calls. Settings commit
+// only through the explicit Save action (idle autosave removed 2026-10-20).
 // Moved out of desktop-ui/app.js byte-for-byte first (commit 1/5); since then
 // the bodies read the feature's own state (./state.js), the bootstrap through
 // getBootstrap() and send requests through ./api.js (./context.js). app.js's
@@ -17,7 +17,7 @@ import { buildAgentProfilePatch } from './agentProfilePatch.js';
 import { agentDocumentWithPreset, agentDraftFromProfile, normalizeChannelsForDraft } from './agentDraft.js';
 import { decideAgentMcpAuthAction } from './agentMcpAuthorise.js';
 import { agentsState, resetAgentsState } from './state.js';
-import { bindAgentsContext, agentsApi, getBootstrap, app, render, bgRender, showError, showFlashToast, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts, refreshBootstrap, storeBootstrap, activeProject, agentProfileById, minimaxTtsConfigPatchForVoice, beginFormEdit, formEditToken, nativeSettings, isAgentChannelAvailable } from './context.js';
+import { bindAgentsContext, agentsApi, getBootstrap, app, render, bgRender, showError, showFlashToast, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts, refreshBootstrap, activeProject, agentProfileById, minimaxTtsConfigPatchForVoice, beginFormEdit, formEditToken, nativeSettings, isAgentChannelAvailable } from './context.js';
 
 // Binds the narrow context and starts from fresh feature state and idle
 // timers. app.js calls this once at startup (through ./index.js); tests call
@@ -659,9 +659,7 @@ export function handleAgentProfileInput(target) {
     }
 
     // voiceReplyMode / edgeTtsVoice / voicePersonality are agent-level fields
-    // edited on the Telegram panel. Persist them through the same channel
-    // autosave pipeline so they don't get lost when applyBootstrap() clears
-    // agent drafts.
+    // edited on the Telegram panel; they stay on the draft until Save.
     if (['voiceReplyMode', 'edgeTtsVoice', 'voicePersonality'].includes(target.name)) {
       mergeAgentDraft(agentId, {
         [target.name]: target.hasAttribute('data-capability-choice') ? new FormData(target.form).getAll(target.name) : target.type === 'checkbox' ? (target.checked ? 'on' : '') : target.value,
@@ -796,9 +794,7 @@ export function handleAgentProfileChange(target) {
 
     // voiceReplyMode / edgeTtsVoice / voicePersonality are agent-level (not
     // channel-level) but the user edits them on the Telegram panel next to
-    // the channel toggles. Route them through the channel autosave so they
-    // persist on change without requiring the user to hit a separate save
-    // button.
+    // the channel toggles; they stay on the draft until Save.
     if (['voiceReplyMode', 'edgeTtsVoice', 'voicePersonality'].includes(target.name)) {
       mergeAgentDraft(agentId, {
         [target.name]: target.hasAttribute('data-capability-choice') ? new FormData(target.form).getAll(target.name) : target.type === 'checkbox' ? (target.checked ? 'on' : '') : target.value,

@@ -375,9 +375,6 @@ const agentsFeature = installAgentsFeature({
   getBootstrap: () => uiState.bootstrap,
   app, api, render, bgRender, showError, showFlashToast, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts,
   refreshBootstrap: () => loadBootstrap(uiState.searchQuery, { quiet: true }),
-  // Markdown autosave landing: take the returned page data and clear the
-  // error without a render, exactly as the moved code did.
-  storeBootstrap: payload => { uiState.bootstrap = payload; uiState.error = ''; },
   activeProject, agentProfileById, minimaxTtsConfigPatchForVoice,
   beginFormEdit: form => settingsFormEditors.begin(form),
   formEditToken: form => settingsFormEditors.editToken(form),

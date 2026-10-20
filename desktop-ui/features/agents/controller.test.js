@@ -27,7 +27,7 @@ const page = (extra = {}) => ({
 });
 
 function harness({ bootstrap = page(), project = null, api = null, responses = {} } = {}) {
-  const calls = [], applied = [], preserved = [], stored = [], errors = [], toasts = [], settings = [], edits = [];
+  const calls = [], applied = [], preserved = [], errors = [], toasts = [], settings = [], edits = [];
   let renders = 0, refreshes = 0;
   const state = { bootstrap };
   const context = {
@@ -46,7 +46,6 @@ function harness({ bootstrap = page(), project = null, api = null, responses = {
     applyBootstrap: payload => { applied.push(payload); state.bootstrap = payload; },
     applyBootstrapPreservingDrafts: payload => { preserved.push(payload); state.bootstrap = payload; },
     refreshBootstrap: async () => { refreshes++; },
-    storeBootstrap: payload => { stored.push(payload); state.bootstrap = payload; },
     activeProject: () => project,
     agentProfileById: id => state.bootstrap?.customize?.agents?.find(a => a.id === id) || null,
     minimaxTtsConfigPatchForVoice: voiceId => ({ minimaxVoiceId: voiceId }),
@@ -63,7 +62,7 @@ function harness({ bootstrap = page(), project = null, api = null, responses = {
   actions.register(feature.actions, 'agents');
   const forms = createActionRegistry('form');
   forms.register(feature.forms, 'agents');
-  return { feature, actions, forms, context, state, calls, applied, preserved, stored, errors, toasts, settings, edits, renders: () => renders, refreshes: () => refreshes };
+  return { feature, actions, forms, context, state, calls, applied, preserved, errors, toasts, settings, edits, renders: () => renders, refreshes: () => refreshes };
 }
 const element = html => { const host = document.createElement('div'); host.innerHTML = html; document.body.replaceChildren(host); return host.firstElementChild; };
 const click = (h, action, html) => h.actions.dispatch(action, { action, trigger: html ? element(html) : null, event: null });
@@ -72,8 +71,8 @@ const profileForm = (agentId = 'research', fields = '<input name="name" value="R
 test('the Agent feature takes a narrow context (no uiState) and starts from its own state', async () => {
   const { context } = harness();
   assert.throws(() => installAgentsFeature({ ...context, uiState: {} }), /not uiState/);
-  const { formEditToken, storeBootstrap, ...rest } = context;
-  assert.throws(() => installAgentsFeature(rest), /missing context storeBootstrap, formEditToken/);
+  const { formEditToken, refreshBootstrap, ...rest } = context;
+  assert.throws(() => installAgentsFeature(rest), /missing context refreshBootstrap, formEditToken/);
   const first = harness();
   await click(first, 'toggle-agent-secret', '<button data-action="toggle-agent-secret" data-agent-id="research" data-channel-id="discord"></button>');
   const firstState = first.feature.getState();
