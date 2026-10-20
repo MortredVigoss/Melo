@@ -84,13 +84,20 @@ import com.melo.android.network.HostedSearchAdapter
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var project by remember { mutableStateOf<Project?>(null) }; var note by remember { mutableStateOf<Knowledge?>(null) }; var memory by remember { mutableStateOf<MemoryFact?>(null) }
     var selectedProject by rememberSaveable { mutableStateOf<String?>(null) }
+    var showDeletedProjects by rememberSaveable { mutableStateOf(false) }
+    var deletingProject by remember { mutableStateOf<Project?>(null) }
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         FlowRow { listOf("项目", "资料", "记忆", "冲突").forEachIndexed { index, label -> FilterChip(selected = tab == index, onClick = { tab = index }, label = { Text(label) }, modifier = Modifier.padding(end = 8.dp)) } }
         when (tab) {
             0 -> LazyColumn {
                 item { TextButton(onClick = { project = Project(name = "") }) { Text("新建项目") } }
                 if (data.projects.isEmpty()) item { EmptyPage("为对话组织资料", "项目指令和所属资料会用于绑定该项目的对话。") }
-                items(data.projects, key = { it.id }) { row -> ListItem(headlineContent = { Text(row.name + if (row.archived) " · 已归档" else "") }, supportingContent = { Text(row.instructions.take(100)) }, modifier = Modifier.clickable { project = row }, trailingContent = { TextButton(onClick = { onChat(row.id) }, enabled = !row.archived) { Text("对话") } }) }
+                item { Row(verticalAlignment = Alignment.CenterVertically) { Text("已删除项目", Modifier.weight(1f)); Switch(showDeletedProjects, { showDeletedProjects = it }, modifier = Modifier.testTag("deleted-projects")) } }
+                items(data.projects.filter { (it.deletedAt != null) == showDeletedProjects }, key = { it.id }) { row ->
+                    if (row.deletedAt != null) ListItem(headlineContent = { Text(row.name) }, supportingContent = { Text("聊天、资料和图片保留；原项目记忆隔离，旧审批不恢复。") }, trailingContent = {
+                        TextButton(onClick = { vm.engine.work { vm.repository.restoreProject(row.id) } }, modifier = Modifier.testTag("restore-project-${row.id}")) { Text("恢复为新项目") }
+                    }) else ListItem(headlineContent = { Text(row.name + if (row.archived) " · 已归档" else "") }, supportingContent = { Text(row.instructions.take(100)) }, modifier = Modifier.clickable { project = row }, trailingContent = { TextButton(onClick = { onChat(row.id) }, enabled = !row.archived) { Text("对话") } })
+                }
             }
             1 -> LazyColumn {
                 item { TextButton(onClick = { note = Knowledge(title = "", content = "", projectId = selectedProject) }) { Text("添加文字资料") }; ProjectPicker(data, selectedProject) { selectedProject = it } }
@@ -113,11 +120,15 @@ import com.melo.android.network.HostedSearchAdapter
             }
         }
     }
+    deletingProject?.let { deleted -> AlertDialog(onDismissRequest = { deletingProject = null }, title = { Text("确认删除项目") }, text = { Text("聊天将解除归属，资料、图片和外部文件夹保留；项目记忆隔离保存，待审批失效。") }, confirmButton = {
+        TextButton(onClick = { vm.engine.work { vm.repository.deleteProject(deleted.id); deletingProject = null; project = null } }, modifier = Modifier.testTag("confirm-delete-project")) { Text("确认删除项目") }
+    }, dismissButton = { TextButton(onClick = { deletingProject = null }, modifier = Modifier.testTag("cancel-delete-project")) { Text("取消") } }) }
     project?.let { original ->
         var name by remember(original.id) { mutableStateOf(original.name) }; var instructions by remember(original.id) { mutableStateOf(original.instructions) }; var archived by remember(original.id) { mutableStateOf(original.archived) }
         EditorDialog("项目", { project = null }, { vm.engine.work { require(name.isNotBlank()); vm.repository.saveProject(original.copy(name = name.take(200), instructions = instructions, archived = archived)); project = null } }) {
             Field("项目名称", name, { name = it }); Field("项目指令", instructions, { instructions = it }, 4)
             Row(verticalAlignment = Alignment.CenterVertically) { Text("归档", Modifier.weight(1f)); Switch(archived, { archived = it }) }
+            if (data.projects.any { it.id == original.id }) TextButton(onClick = { deletingProject = original }, modifier = Modifier.testTag("delete-project")) { Text("删除项目") }
         }
     }
     note?.let { original ->

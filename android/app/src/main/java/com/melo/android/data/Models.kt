@@ -17,7 +17,7 @@ fun now(): String = Instant.now().toString()
     fun source(name: String): Boolean = contextSources[name] != false
     fun prompt(): String = listOf(identity, soul, systemPrompt, instructions).filter(String::isNotBlank).joinToString("\n")
 }
-@Serializable data class Project(val id: String = newId(), val name: String, val instructions: String = "", val archived: Boolean = false)
+@Serializable data class Project(val id: String = newId(), val name: String, val instructions: String = "", val archived: Boolean = false, val deletedAt: String? = null, val restoredProjectId: String? = null, val deletedSnapshot: JsonObject? = null)
 @Serializable data class Knowledge(val id: String = newId(), val title: String, val content: String, val projectId: String? = null, val deleted: Boolean = false)
 @Serializable data class MemoryFact(val id: String = newId(), val text: String, val chatId: String, val agentId: String = "main", val scope: String = "chat", val status: String = "active", val projectId: String? = null, val updatedAt: String = now())
 @Serializable data class Connection(val id: String = newId(), val name: String = "新连接", val endpoint: String = "https://api.openai.com/v1/chat/completions", val model: String = "", val protocol: String = "chat-completions", val stream: Boolean = true, val searchProof: JsonObject = buildJsonObject {}, val contextTokens: Int = 160000)

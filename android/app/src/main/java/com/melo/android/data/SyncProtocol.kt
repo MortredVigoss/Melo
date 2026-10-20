@@ -111,6 +111,7 @@ object SyncProtocol {
             chat.messages.forEach { date(it.createdAt) }
         }
         snapshot.deletedChats.forEach { date(it.deletedAt) }
+        ProjectLifecycle.markers(snapshot.workspace)
         require(snapshot.workspace.records.map { "${it.kind}:${it.id}" }.distinct().size == snapshot.workspace.records.size) { "同步记录身份重复。" }
     }
     private fun canonical(value: JsonElement): String = when (value) {
@@ -128,7 +129,7 @@ object SyncProtocol {
         return result.sortedBy { canonical(MeloJson.encodeToJsonElement(it)) }
     }
     fun mergeWorkspace(a: Workspace, b: Workspace, deleted: Set<String> = emptySet()): Workspace {
-        val rows = (a.records + b.records).filterNot { it.kind == "conversation" && it.id in deleted || it.kind in setOf("message", "memory") && it.versions.any { version -> version.value.text("chatId") in deleted } }
+        val rows = ProjectLifecycle.workspace(Workspace(records = a.records + b.records)).records.filterNot { it.kind == "conversation" && it.id in deleted || it.kind in setOf("message", "memory") && it.versions.any { version -> version.value.text("chatId") in deleted } }
         return Workspace(records = rows.groupBy { "${it.kind}:${it.id}" }.toSortedMap().values.map { rowsForId -> rowsForId.first().copy(versions = versions(rowsForId.flatMap { row -> row.versions.map { it.copy(value = PortableWorkspace.value(row.kind, it.value)) } })) })
     }
     fun put(workspace: Workspace, kind: String, id: String, value: JsonObject, device: String, resolveIndex: Int? = null): Workspace {

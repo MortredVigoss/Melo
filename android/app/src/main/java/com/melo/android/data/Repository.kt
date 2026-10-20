@@ -39,7 +39,10 @@ class Repository(private val context: Context) {
     suspend fun saveCredential(id: String, value: String) = withContext(Dispatchers.IO) { storage.credentials.set(id, value) }
     suspend fun newChat(agentId: String = "main", projectId: String? = null): String {
         val chat = Conversation(agentId = agentId, projectId = projectId)
-        change { current -> current.copy(chats = listOf(chat) + current.chats, workspace = chatRecord(current, chat)) }
+        change { current ->
+            require(projectId == null || current.projects.any { it.id == projectId && !it.archived && it.deletedAt == null }) { "项目不可用，请重新选择。" }
+            current.copy(chats = listOf(chat) + current.chats, workspace = chatRecord(current, chat))
+        }
         return chat.id
     }
     private fun portableEdit(data: AppData, kind: String, id: String, fields: JsonObject): Workspace {
@@ -56,7 +59,12 @@ class Repository(private val context: Context) {
         }) else put("model", JsonNull)
     })
     suspend fun editChat(id: String, transform: (Conversation) -> Conversation) = change { current ->
-        val edited = transform(current.chats.first { it.id == id }).copy(updatedAt = now())
+        val original = current.chats.first { it.id == id }
+        val edited = transform(original).copy(updatedAt = now())
+        if (edited.projectId != original.projectId) {
+            require(current.runs.none { it.chatId == id && it.status == "running" } && current.deviceRuns.none { it.taskContext?.chatId == id && it.status == "running" }) { "请先停止当前任务再移动对话。" }
+            require(edited.projectId == null || current.projects.any { it.id == edited.projectId && it.deletedAt == null }) { "项目已删除，请重新选择。" }
+        }
         current.copy(chats = current.chats.map { if (it.id == id) edited else it }, workspace = chatRecord(current, edited))
     }
     suspend fun deleteChat(id: String) = change { current ->
@@ -72,7 +80,10 @@ class Repository(private val context: Context) {
         val value = MeloJson.encodeToJsonElement(agent).jsonObject.let { JsonObject(it.filterKeys { it != "id" && it != "contextSources" }) }
         current.copy(agents = current.agents.filterNot { it.id == agent.id } + agent, workspace = portableEdit(current, "agent", agent.id, value))
     }
+    suspend fun deleteProject(id: String) = change { ProjectLifecycle.delete(it, id) }
+    suspend fun restoreProject(id: String) = change { ProjectLifecycle.restore(it, id) }
     suspend fun saveProject(project: Project) = change { current ->
+        require(current.projects.find { it.id == project.id }?.deletedAt == null && project.deletedAt == null) { "项目已删除，请从删除记录恢复。" }
         val value = buildJsonObject { put("name", project.name); put("instructions", project.instructions); put("archived", project.archived) }
         current.copy(projects = current.projects.filterNot { it.id == project.id } + project, workspace = portableEdit(current, "project", project.id, value))
     }
@@ -153,8 +164,12 @@ class Repository(private val context: Context) {
             (old ?: Conversation(id = wire.id, createdAt = wire.createdAt)).copy(title = wire.title, updatedAt = wire.updatedAt,
                 messages = wire.messages.map { message -> messages[message.id] ?: Message(message.id, message.role, message.content, message.createdAt) })
         }
-        return project(current.copy(chats = chats, deletedChats = merged.deletedChats, workspace = merged.workspace, tasks = merged.tasks, handoffs = merged.handoffs,
-            memories = current.memories.filter { fact -> chats.any { it.id == fact.chatId } }, drafts = current.drafts.filterKeys { id -> chats.any { it.id == id } }))
+        val projected = ProjectLifecycle.apply(current, merged.workspace)
+        val next = project(projected.copy(chats = chats.map { chat -> if (chat.projectId in ProjectLifecycle.markers(merged.workspace)) chat.copy(projectId = null) else chat }, deletedChats = merged.deletedChats, workspace = projected.workspace, tasks = merged.tasks, handoffs = merged.handoffs,
+            memories = projected.memories.filter { fact -> chats.any { it.id == fact.chatId } }, drafts = current.drafts.filterKeys { id -> chats.any { it.id == id } }))
+        val moved = next.chats.filter { oldChats[it.id]?.projectId != it.projectId }.map { it.id }.toSet()
+        require(current.runs.none { it.chatId in moved && it.status == "running" } && current.deviceRuns.none { it.taskContext?.chatId in moved && it.status == "running" }) { "项目归属同步等待当前任务结束。" }
+        return next
     }
     private fun project(input: AppData): AppData {
         var state = input
@@ -163,7 +178,7 @@ class Repository(private val context: Context) {
             when (record.kind) {
                 "agent" -> { val row = MeloJson.decodeFromJsonElement<Agent>(JsonObject(value + ("id" to record.id.jp()))).copy(contextSources = state.agents.find { it.id == record.id }?.contextSources.orEmpty()); state = state.copy(agents = state.agents.filterNot { it.id == row.id } + row) }
                 "project" -> { val row = MeloJson.decodeFromJsonElement<Project>(JsonObject(value + ("id" to record.id.jp()))); state = state.copy(projects = state.projects.filterNot { it.id == row.id } + row) }
-                "knowledge" -> { val row = MeloJson.decodeFromJsonElement<Knowledge>(JsonObject(value + ("id" to record.id.jp()))); state = state.copy(knowledge = state.knowledge.filterNot { it.id == row.id } + row) }
+                "knowledge" -> { if (record.id.startsWith("pld_")) return@forEach; val row = MeloJson.decodeFromJsonElement<Knowledge>(JsonObject(value + ("id" to record.id.jp()))); state = state.copy(knowledge = state.knowledge.filterNot { it.id == row.id } + row) }
                 "memory" -> { val row = MeloJson.decodeFromJsonElement<MemoryFact>(value); if (state.chats.any { it.id == row.chatId }) state = state.copy(memories = state.memories.filterNot { it.id == row.id } + row) }
                 "conversation" -> state = state.copy(chats = state.chats.map { if (it.id == record.id) it.copy(agentId = value.text("agentId", "main"), projectId = value.text("projectId").ifBlank { null }) else it })
                 "message" -> {

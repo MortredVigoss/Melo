@@ -787,3 +787,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - #8 pushed as 5f3d834, CI 39366995591 passed, issue closed.
 - #7 WIP: shared budget/cost planner, scoped read_history, local durable cards, source switches and model capacity editor. Core 139 passed; Android compilation/emulator pending.
 - Details: [Android context](docs/android-context-20261020.md). Production branch remains #8 until validation completes.
+
+### 2026-10-20 — melo主线 — Android 项目生命周期验证节点
+- #7 ART 崩溃修正 ef276a5 在独立验证分支复测；正式手机分支仍为 #8，不据此关闭。
+- #11 接入 v1 删除标记、离线 remove-wins、删除确认与恢复新 ID；保留聊天/原图/旧记忆范围、运行期间禁止改变归属。JVM 三项与真实 Repository/Compose 确认/取消/重开/同步/恢复测试已加入，等待 CI，不代表真机或发布。

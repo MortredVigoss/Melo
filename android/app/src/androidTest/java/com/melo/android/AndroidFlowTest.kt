@@ -158,6 +158,45 @@ class AndroidFlowTest {
             assertEquals(2, server.requestCount)
         }
     }
+    @Test fun projectDeletionConfirmationRestoreAndOfflineMergePreserveOriginals() {
+        ready()
+        val project = Project(name = "Lifecycle ${newId().take(8)}")
+        val chatId = runBlocking { app.repository.saveProject(project); app.repository.newChat(projectId = project.id) }
+        val original = java.io.File(app.cacheDir, "lifecycle-${project.id}.png").apply { writeBytes(byteArrayOf(0, 17, -1, 9)) }
+        runBlocking {
+            app.repository.editChat(chatId) { it.copy(messages = listOf(Message(role = "assistant", content = "Original reply"))) }
+            app.repository.saveKnowledge(Knowledge(title = "Original knowledge", content = "Keep exact text", projectId = project.id))
+        }
+        val offline = app.repository.snapshot()
+        val messages = app.repository.data.value.chats.first { it.id == chatId }.messages
+        compose.onAllNodesWithText("资料").onFirst().performClick()
+        compose.onNodeWithText(project.name).performScrollTo().performClick()
+        compose.onNodeWithTag("delete-project").performScrollTo().performClick()
+        assertNull(app.repository.data.value.projects.first { it.id == project.id }.deletedAt)
+        compose.onNodeWithTag("cancel-delete-project").performClick()
+        assertEquals(project.id, app.repository.data.value.chats.first { it.id == chatId }.projectId)
+        compose.onNodeWithTag("delete-project").performScrollTo().performClick()
+        compose.onNodeWithTag("confirm-delete-project").performClick()
+        compose.waitUntil(5000) { app.repository.data.value.projects.first { it.id == project.id }.deletedAt != null }
+        assertNull(app.repository.data.value.chats.first { it.id == chatId }.projectId)
+        runBlocking {
+            val reopened = Repository(app); reopened.initialize()
+            assertNotNull(reopened.data.value.projects.first { it.id == project.id }.deletedAt)
+            app.repository.acceptSnapshot(offline)
+        }
+        assertEquals(messages, app.repository.data.value.chats.first { it.id == chatId }.messages)
+        assertArrayEquals(byteArrayOf(0, 17, -1, 9), original.readBytes())
+        compose.activityRule.scenario.recreate()
+        compose.onAllNodesWithText("资料").onFirst().performClick()
+        compose.onNodeWithTag("deleted-projects").performClick()
+        compose.onNodeWithTag("restore-project-${project.id}").performScrollTo().performClick()
+        compose.waitUntil(5000) { app.repository.data.value.projects.first { it.id == project.id }.restoredProjectId != null }
+        val replacement = app.repository.data.value.projects.first { it.id == project.id }.restoredProjectId
+        assertNotEquals(project.id, replacement)
+        assertNull(app.repository.data.value.chats.first { it.id == chatId }.projectId)
+        assertTrue(ProjectLifecycle.markers(app.repository.snapshot().workspace).containsKey(project.id))
+        assertArrayEquals(byteArrayOf(0, 17, -1, 9), original.readBytes())
+    }
     @Test fun credentialsAreEncryptedAndExcludedFromPortableState() {
         ready()
         val fixtureSecret = "instrumentation-only-not-a-real-key"
