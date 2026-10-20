@@ -22,8 +22,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 581,
-      "edges": 1750,
+      "modules": 591,
+      "edges": 1786,
       "roots": [
         "src",
         "desktop-ui",
@@ -32,11 +32,11 @@
       ],
       "note": "静态 import/re-export，含 desktop-ui 对 /shared/*.js 的服务映射；不含动态 import 与外部包"
     },
-    "routes": 153,
+    "routes": 156,
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
-      "detected": 26,
+      "detected": 27,
       "unannotated": []
     }
   },
@@ -255,7 +255,7 @@
       ],
       "modules": {
         "desktop-ui": 12,
-        "src": 46
+        "src": 48
       },
       "entryModules": [
         {
@@ -431,6 +431,12 @@
           ]
         },
         {
+          "module": "src/domain/agent/capabilityElevation.js",
+          "importedBy": [
+            "platform"
+          ]
+        },
+        {
           "module": "src/domain/agent/capabilityScope.js",
           "importedBy": [
             "chat",
@@ -480,6 +486,14 @@
           ]
         },
         {
+          "module": "src/services/agent/capabilityElevation.js",
+          "importedBy": [
+            "chat",
+            "platform",
+            "tools"
+          ]
+        },
+        {
           "module": "src/services/agent/capabilityMigration.js",
           "importedBy": [
             "desktop-shell"
@@ -521,24 +535,24 @@
       "dependsOn": {
         "approvals": 3,
         "channels": 3,
-        "chat": 15,
+        "chat": 17,
         "desktop-shell": 7,
         "memory": 11,
-        "platform": 37,
+        "platform": 42,
         "settings": 2,
-        "tools": 19
+        "tools": 20
       },
       "usedBy": {
         "approvals": 3,
         "channels": 6,
-        "chat": 29,
+        "chat": 31,
         "desktop-shell": 12,
         "memory": 2,
-        "platform": 31,
+        "platform": 34,
         "projects": 4,
         "settings": 3,
         "sync": 6,
-        "tools": 7
+        "tools": 8
       },
       "httpRoutes": [
         "POST /api/agents/channel/test ← src/http/domainRoutes.js",
@@ -587,6 +601,7 @@
         "counterparts": []
       },
       "sharedContracts": [
+        "agent-loop",
         "cross-platform",
         "sync-schema"
       ],
@@ -629,14 +644,18 @@
           "src/domain/agent/agentDocument.test.js",
           "src/domain/agent/agentIdentity.test.js",
           "src/domain/agent/capabilities.test.js",
+          "src/domain/agent/capabilityElevation.test.js",
           "src/index.saveAsSkill.test.js",
           "src/services/agent/agentColdRestart.test.js",
+          "src/services/agent/agentCreateStarter.test.js",
           "src/services/agent/agentMemoryContext.slots.test.js",
           "src/services/agent/agentMemoryContext.tieredGate.test.js",
           "src/services/agent/agentMutations.test.js",
           "src/services/agent/agentPersistence.test.js",
           "src/services/agent/agentProfileService.test.js",
           "src/services/agent/agentTools.test.js",
+          "src/services/agent/capabilityElevation.boundary.test.js",
+          "src/services/agent/capabilityElevation.test.js",
           "src/services/agent/markdownFiles.test.js"
         ],
         "swift": [
@@ -827,6 +846,7 @@
         {
           "module": "src/runtime/agentLoopContract.js",
           "importedBy": [
+            "agents",
             "tools"
           ]
         },
@@ -926,7 +946,7 @@
         }
       ],
       "dependsOn": {
-        "agents": 29,
+        "agents": 31,
         "approvals": 7,
         "channels": 2,
         "desktop-shell": 15,
@@ -941,7 +961,7 @@
         "voice": 3
       },
       "usedBy": {
-        "agents": 15,
+        "agents": 17,
         "channels": 9,
         "desktop-shell": 8,
         "media": 9,
@@ -2357,7 +2377,7 @@
         }
       ],
       "dependsOn": {
-        "agents": 7,
+        "agents": 8,
         "approvals": 33,
         "chat": 11,
         "desktop-shell": 4,
@@ -2369,7 +2389,7 @@
         "settings": 7
       },
       "usedBy": {
-        "agents": 19,
+        "agents": 20,
         "approvals": 2,
         "chat": 31,
         "desktop-shell": 13,
@@ -2512,6 +2532,7 @@
           "src/tools/builtins/webSearchTool.jinaAbort.test.js",
           "src/tools/builtins/webSearchTool.swrAbort.test.js",
           "src/tools/executor.cancellation.test.js",
+          "src/tools/executor.capabilityElevation.test.js",
           "src/tools/executor.capabilityScope.test.js",
           "src/tools/executor.emptyResult.test.js",
           "src/tools/executor.evidenceTrail.test.js",
@@ -2991,10 +3012,16 @@
         "desktop-ui/features/approvals/**"
       ],
       "modules": {
-        "desktop-ui": 1,
+        "desktop-ui": 7,
         "src": 34
       },
       "entryModules": [
+        {
+          "module": "desktop-ui/features/approvals/index.js",
+          "importedBy": [
+            "desktop-shell"
+          ]
+        },
         {
           "module": "desktop-ui/fileSafetyResponse.js",
           "importedBy": [
@@ -3186,7 +3213,7 @@
       "dependsOn": {
         "agents": 3,
         "channels": 3,
-        "desktop-shell": 3,
+        "desktop-shell": 6,
         "platform": 36,
         "projects": 4,
         "settings": 8,
@@ -3195,7 +3222,7 @@
       "usedBy": {
         "agents": 3,
         "chat": 7,
-        "desktop-shell": 3,
+        "desktop-shell": 4,
         "knowledge": 3,
         "media": 1,
         "memory": 3,
@@ -3209,6 +3236,9 @@
         "POST /api/approvals ← src/http/domainRoutes.js",
         "POST /api/approvals/execute ← src/http/domainRoutes.js",
         "POST /api/approvals/reject ← src/http/domainRoutes.js",
+        "GET /api/capability-grants ← src/http/capabilityRoutes.js",
+        "POST /api/capability-grants/revoke ← src/http/capabilityRoutes.js",
+        "POST /api/capability-requests/respond ← src/http/capabilityRoutes.js",
         "GET /api/permissions/audit ← src/http/domainRoutes.js",
         "POST /api/permissions/command/remove ← src/http/domainRoutes.js",
         "GET /api/safety/file-allowlist ← src/server.js",
@@ -3231,22 +3261,35 @@
         "POST /api/tools/session-permissions/clear ← src/server.js"
       ],
       "desktopUi": [
+        "desktop-ui/features/approvals/api.js",
         "desktop-ui/features/approvals/approvals.css",
+        "desktop-ui/features/approvals/context.js",
+        "desktop-ui/features/approvals/controller.js",
+        "desktop-ui/features/approvals/index.js",
+        "desktop-ui/features/approvals/state.js",
+        "desktop-ui/features/approvals/view.js",
         "desktop-ui/fileSafetyResponse.js"
       ],
       "iphone": {
         "owned": [],
         "counterparts": [
+          "ios/Melo/AgentStarter.swift",
+          "ios/Melo/CapabilityElevation.swift",
+          "ios/Melo/CapabilityElevationRuntime.swift",
+          "ios/Melo/CapabilityElevationViews.swift",
           "ios/Melo/ChatStore.swift",
           "ios/Melo/DeviceTools.swift"
         ]
       },
-      "sharedContracts": [],
+      "sharedContracts": [
+        "agent-loop"
+      ],
       "tests": {
         "groups": [
           "npm run test:audit-fixes"
         ],
         "js": [
+          "desktop-ui/features/approvals/controller.test.js",
           "desktop-ui/fileSafetyResponse.test.js",
           "src/reminders/delivery.test.js",
           "src/reminders/scheduler.test.js",
@@ -3282,7 +3325,8 @@
       "implicit": [
         "source-tests-app-js",
         "source-tests-chat-feature",
-        "source-tests-cross-module"
+        "source-tests-cross-module",
+        "source-tests-self"
       ],
       "notes": [
         "手机审批队列仍在 ChatStore.swift（P4 抽 DeviceApprovalCoordinator）；超时/取消后迟到批准零写入，两端共同约定。"
@@ -3321,6 +3365,7 @@
           "module": "desktop-ui/features/featureContext.js",
           "importedBy": [
             "agents",
+            "approvals",
             "chat",
             "memory",
             "projects"
@@ -3330,6 +3375,7 @@
           "module": "desktop-ui/i18n.js",
           "importedBy": [
             "agents",
+            "approvals",
             "chat",
             "media",
             "memory",
@@ -3366,7 +3412,7 @@
       ],
       "dependsOn": {
         "agents": 12,
-        "approvals": 3,
+        "approvals": 4,
         "channels": 2,
         "chat": 8,
         "knowledge": 1,
@@ -3381,7 +3427,7 @@
       },
       "usedBy": {
         "agents": 7,
-        "approvals": 3,
+        "approvals": 6,
         "chat": 15,
         "media": 5,
         "memory": 6,
@@ -3434,6 +3480,7 @@
         "desktop-ui/searchPage.js",
         "desktop-ui/sharedApi.js",
         "desktop-ui/styles.css",
+        "desktop-ui/surfaceUnify.css",
         "desktop-ui/synapticBody.js",
         "desktop-ui/translations.js",
         "desktop-ui/undoToast.js",
@@ -3459,6 +3506,7 @@
         "js": [
           "desktop-ui/anchorRouting.test.js",
           "desktop-ui/bootstrapPatch.test.js",
+          "desktop-ui/capabilityElevation.browser.test.js",
           "desktop-ui/committedSave.browser.test.js",
           "desktop-ui/committedSave.test.js",
           "desktop-ui/features/registry.test.js",
@@ -3508,6 +3556,10 @@
       "desktopUi": [],
       "iphone": {
         "owned": [
+          "ios/Melo/AgentStarter.swift",
+          "ios/Melo/CapabilityElevation.swift",
+          "ios/Melo/CapabilityElevationRuntime.swift",
+          "ios/Melo/CapabilityElevationViews.swift",
           "ios/Melo/ChatStore.swift",
           "ios/Melo/ContentView.swift",
           "ios/Melo/LifecycleJournal.swift",
@@ -3521,7 +3573,9 @@
         ],
         "counterparts": []
       },
-      "sharedContracts": [],
+      "sharedContracts": [
+        "agent-loop"
+      ],
       "tests": {
         "groups": [
           "npm run test:ios"
@@ -3531,6 +3585,7 @@
           "ios/Tests/SceneBridge.test.js"
         ],
         "swift": [
+          "ios/Tests/CapabilityElevationTests.swift",
           "ios/Tests/LifecycleJournalTests.swift",
           "ios/Tests/SharedPolicyUnavailableTests.swift"
         ]
@@ -3540,7 +3595,8 @@
         "gen-interface-languages",
         "gen-ios-scene",
         "source-tests-agent-core",
-        "source-tests-cross-module"
+        "source-tests-cross-module",
+        "tooling-ios-tests"
       ],
       "notes": [
         "ChatStore.swift 同时协调存档、执行、审批、图片、团队与同步；P4 按 ConversationRepository / TurnCoordinator / DeviceApprovalCoordinator / WorkspaceSyncCoordinator / ExecutionRecordStore 拆分，保留公开表面。"
@@ -3553,7 +3609,7 @@
         "src/**"
       ],
       "modules": {
-        "src": 48
+        "src": 50
       },
       "entryModules": [
         {
@@ -3585,6 +3641,12 @@
             "media",
             "sync",
             "voice"
+          ]
+        },
+        {
+          "module": "src/persistence/capabilityGrantLedger.js",
+          "importedBy": [
+            "agents"
           ]
         },
         {
@@ -3804,7 +3866,7 @@
         }
       ],
       "dependsOn": {
-        "agents": 31,
+        "agents": 34,
         "approvals": 18,
         "channels": 6,
         "chat": 15,
@@ -3819,7 +3881,7 @@
         "voice": 2
       },
       "usedBy": {
-        "agents": 37,
+        "agents": 42,
         "approvals": 36,
         "channels": 22,
         "chat": 54,
@@ -3854,6 +3916,7 @@
           "src/desktopStore.error-messaging.test.js",
           "src/http/bootstrapAfterCommit.test.js",
           "src/http/bootstrapTransport.test.js",
+          "src/http/capabilityRoutes.http.test.js",
           "src/http/memoryBookRoute.test.js",
           "src/http/mobileSyncScenes.test.js",
           "src/http/projectAgentRoutes.http.test.js",
@@ -3862,6 +3925,7 @@
           "src/http/routeRegistry.test.js",
           "src/http/savedImages.http.test.js",
           "src/modelAlignment.test.js",
+          "src/persistence/capabilityGrantLedger.test.js",
           "src/runtime/architectureBoundary.test.js",
           "src/runtime/auditFixes.http.test.js",
           "src/runtime/auditLifecycle.http.test.js",
@@ -4063,11 +4127,13 @@
           "scripts/check-doc-links.test.js",
           "scripts/check-syntax.test.js",
           "scripts/generate-module-map.test.js",
+          "scripts/ios-test-selection.test.js",
           "scripts/native-shutdown.test.js",
           "scripts/native-translations.test.js",
           "scripts/scope.test.js",
           "scripts/swift-test-cache.test.js",
           "scripts/test-discovery.test.js",
+          "scripts/test-impact.test.js",
           "scripts/test-plan.test.js"
         ],
         "swift": []
@@ -4077,10 +4143,11 @@
         "bridge-process-shutdown",
         "gen-interface-languages",
         "gen-module-map",
+        "tooling-ios-tests",
         "tooling-test-plan"
       ],
       "notes": [
-        "npm test = verify-daily.js（按 scripts/test-plan.js 选组）；npm run test:full 为发布 gate。npm run scope 只报告，不改选组。"
+        "npm test = verify-daily.js（test-plan.js / test-impact.js 按功能、反向依赖及隐式边选组）；npm run test:full 为发布 gate。scope 使用相同选组器，只输出报告。"
       ]
     }
   },
@@ -4444,6 +4511,28 @@
       "desktopFeatures": [
         "desktop-shell"
       ]
+    },
+    {
+      "feature": "approvals",
+      "desktop": [
+        "src/domain/agent/capabilityElevation.js",
+        "src/services/agent/capabilityElevation.js",
+        "src/persistence/capabilityGrantLedger.js",
+        "desktop-ui/features/approvals/view.js"
+      ],
+      "iphone": [
+        "ios/Melo/CapabilityElevation.swift",
+        "ios/Melo/CapabilityElevationRuntime.swift",
+        "ios/Melo/CapabilityElevationViews.swift",
+        "ios/Melo/AgentStarter.swift"
+      ],
+      "contract": "agent-loop",
+      "note": "能力临时提升 / 即时开启：同一判定、原子、时长与文案（agent-loop.json capabilityElevation，手机映射在其 phone 节）；两端各自账本，不同步；手机卡口 DeviceToolContext.perform",
+      "desktopFeatures": [
+        "agents",
+        "approvals",
+        "platform"
+      ]
     }
   ],
   "sharedContracts": [
@@ -4457,17 +4546,20 @@
       "iphone": [
         "ios/Melo/AgentLoopContract.swift",
         "ios/Melo/AgentLoop.swift",
-        "ios/Melo/AgentLoopRuntime.swift"
+        "ios/Melo/AgentLoopRuntime.swift",
+        "ios/Melo/CapabilityElevation.swift"
       ],
       "generator": "scripts/generate-agent-loop-contract.js",
       "tests": [
         "src/runtime/agentLoopContract.test.js",
         "scripts/generate-agent-loop-contract.test.js",
         "ios/Tests/SharedContractTests.swift",
-        "ios/Tests/AgentLoopTests.swift"
+        "ios/Tests/AgentLoopTests.swift",
+        "ios/Tests/CapabilityElevationTests.swift"
       ],
       "note": "桌面运行时读取 JSON，手机内嵌生成副本（不含 fixtures）；两端跑同一批 fixtures。P3/P4 新增双端行为先扩展此文件。",
       "desktopConsumers": [
+        "src/domain/agent/capabilityElevation.js",
         "src/retrieval/intentRouter.js",
         "src/retrieval/requestPolicy.js",
         "src/retrieval/selfVerification.js",
@@ -4484,7 +4576,9 @@
         "src/tools/toolResult.js"
       ],
       "features": [
+        "agents",
         "chat",
+        "iphone",
         "tools"
       ]
     },
@@ -4943,11 +5037,21 @@
         "desktop-ui/executionPanel.test.js": [
           "desktop-ui/executionPanel.js"
         ],
+        "desktop-ui/features/approvals/controller.test.js": [
+          "desktop-ui/features/approvals/view.js",
+          "shared/protocol/agent-loop.json"
+        ],
         "desktop-ui/launchScreen.test.js": [
           "desktop-ui/launchScreen.js"
         ],
         "desktop-ui/localSettings.test.js": [
           "desktop-ui/localSettings.js"
+        ],
+        "src/agents/skillRuns.crossHome.test.js": [
+          "src/agents/skillRuns.js"
+        ],
+        "src/memory/conversationIndex.crossHome.test.js": [
+          "src/memory/conversationIndex.js"
         ],
         "src/services/chat/chatExecutionRunner.test.js": [
           "src/services/chat/chatExecutionRunner.js"
@@ -4973,17 +5077,12 @@
         ],
         "src/web/externalReaders.test.js": [
           "src/web/externalReaders.js"
-        ],
-        "src/agents/skillRuns.crossHome.test.js": [
-          "src/agents/skillRuns.js"
-        ],
-        "src/memory/conversationIndex.crossHome.test.js": [
-          "src/memory/conversationIndex.js"
         ]
       },
       "note": "测试读取自身被测模块的源码文本（规则/正则守卫），逐字节移植时保持文本",
       "tests": [
         "desktop-ui/executionPanel.test.js",
+        "desktop-ui/features/approvals/controller.test.js",
         "desktop-ui/launchScreen.test.js",
         "desktop-ui/localSettings.test.js",
         "src/agents/skillRuns.crossHome.test.js",
@@ -4999,8 +5098,10 @@
       ],
       "reads": [
         "desktop-ui/executionPanel.js",
+        "desktop-ui/features/approvals/view.js",
         "desktop-ui/launchScreen.js",
         "desktop-ui/localSettings.js",
+        "shared/protocol/agent-loop.json",
         "src/agents/skillRuns.js",
         "src/memory/conversationIndex.js",
         "src/services/chat/chatExecutionRunner.js",
@@ -5014,6 +5115,7 @@
       ],
       "features": [
         "agents",
+        "approvals",
         "channels",
         "chat",
         "desktop-shell",
@@ -5094,6 +5196,23 @@
       "features": [
         "chat",
         "iphone"
+      ]
+    },
+    {
+      "id": "tooling-ios-tests",
+      "kind": "source-reading-test",
+      "reads": [
+        "ios/scripts/test.py",
+        "ios/scripts/swift_test_cache.py"
+      ],
+      "tests": [
+        "scripts/ios-test-selection.test.js",
+        "scripts/swift-test-cache.test.js"
+      ],
+      "note": "手机 suite 清单、资源预检、组合门禁去重与编译缓存的执行契约",
+      "features": [
+        "iphone",
+        "tooling"
       ]
     }
   ]
