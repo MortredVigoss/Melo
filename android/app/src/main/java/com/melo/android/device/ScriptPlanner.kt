@@ -17,7 +17,7 @@ class ScriptPlanner(private val client: ModelClient) {
             "wait" -> false
             "home" -> known.none { it.action == "home" }
             "open_app" -> known.none { it.action == "open_app" && it.packageName == step.packageName }
-            else -> known.none { it.action == step.action && it.packageName == step.packageName && it.windowTitle == step.windowTitle && it.selector == step.selector && it.direction == step.direction && (step.action != "type_text" || step.parameter.isNotBlank() || it.text == step.text) }
+            else -> known.none { it.action == step.action && it.packageName == step.packageName && it.windowTitle == step.windowTitle && it.windowWidth == step.windowWidth && it.windowHeight == step.windowHeight && it.selector == step.selector && it.direction == step.direction && (step.action != "type_text" || step.parameter.isNotBlank() || it.text == step.text) }
         } }) return false
         // Do not weaken a page-specific receipt into a package-only claim.
         return candidates.any { it.completion == script.completion }

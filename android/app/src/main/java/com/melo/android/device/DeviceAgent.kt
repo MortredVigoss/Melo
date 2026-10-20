@@ -99,7 +99,15 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
                     return selected to key
                 }
                 val device = executor ?: error("请先在 Android 设置中启用 Melo 手机助手的 Accessibility Service。")
-                val lookup = if (manualScript != null) CacheLookup(exact = CacheMatch(manualScript, supplied)) else if (forceProbe) CacheLookup() else TaskCacheRouter.lookup(trimmed, state.deviceScripts, cacheScope)
+                val lookupStarted = System.nanoTime()
+                val environment = device.cacheEnvironment(displayId, state.deviceScripts.flatMap { it.packages() }.toSet())
+                val lookup = if (manualScript != null) CacheLookup(exact = CacheMatch(manualScript, supplied)) else if (forceProbe) CacheLookup() else TaskCacheRouter.lookup(trimmed, state.deviceScripts, cacheScope, environment)
+                val lookupMs = (System.nanoTime() - lookupStarted) / 1_000_000
+                fun bindEnvironment(script: DeviceScript): DeviceScript? {
+                    val current = device.cacheEnvironment(displayId, script.packages()) ?: return null
+                    val bound = script.copy(environment = current)
+                    return bound.takeIf { current.layout == environment?.layout && current.supports(bound) }
+                }
                 // A miss needs valid model access before clearing the user's draft;
                 // an exact/manual hit must never read credentials at all.
                 val modelAccess = if (lookup.exact == null) {
@@ -109,7 +117,9 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
                 val source = lookup.exact?.script ?: lookup.similar.firstOrNull()
                 val mode = when { manualScript != null -> "manual"; lookup.exact != null -> "exact"; lookup.similar.isNotEmpty() -> "similar"; else -> "probe" }
                 val started = DeviceRun(goal = trimmed, connectionName = if (lookup.exact != null) "本机缓存" else connection?.name ?: "未配置模型", taskContext = taskContext,
-                    executionMode = mode, modelRequests = 0, scriptId = source?.id, scriptRevision = source?.revision, parentRunId = binding?.parentRunId)
+                    executionMode = mode, modelRequests = 0, scriptId = source?.id, scriptRevision = source?.revision, parentRunId = binding?.parentRunId,
+                    cacheLookupMs = lookupMs, cacheIncompatible = lookup.incompatible,
+                    cacheNote = if (lookup.incompatible > 0) "已排除 ${lookup.incompatible} 个布局、姿态、App 版本不兼容或缺少环境记录的缓存。" else "")
                 run = started
                 repository.change { current ->
                     require(chatId == null || current.chats.any { it.id == chatId }) { "对话已删除。" }
@@ -132,14 +142,19 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
                         phase("Similar Hit · 正在精简改写候选脚本…")
                         val (selected, key) = modelAccess ?: credentials()
                         val plan = ScriptPlanner(ModelClient(BuildConfig.DEBUG)).adapt(selected, key, trimmed, lookup.similar, cacheScope, instructions, ::countRequest)
-                        if (plan != null) { recipe = CacheMatch(plan.script, plan.parameters); adapted = true }
+                        if (plan != null) { bindEnvironment(plan.script)?.let { recipe = CacheMatch(it, plan.parameters); adapted = true } }
                         else { run = run!!.copy(cacheNote = "相似脚本无法可靠改写，已转入 Probe。"); save(run!!) }
                     }
                     var prefix: List<ScriptStep> = emptyList()
                     var prefixValues: Map<String, String> = emptyMap()
                     if (recipe != null) {
                         val match = recipe
-                        val replay = ScriptRunner(executeDevice, trace, phase).run(match.script, match.parameters)
+                        val replayStarted = System.nanoTime()
+                        val replay = ScriptRunner(executeDevice, trace, phase, compatible = {
+                            if (match.script.environment == null) manualScript != null
+                            else device.cacheEnvironment(displayId, match.script.packages())?.supports(match.script) == true
+                        }).run(match.script, match.parameters)
+                        run = run!!.copy(cacheReplayMs = (System.nanoTime() - replayStarted) / 1_000_000)
                         if (!adapted && replay.outcome.status != "achieved") repository.invalidateDeviceScript(match.script, replay.outcome.error.orEmpty())
                         if (replay.outcome.status == "achieved") {
                             if (adapted) pendingCache = match.script.copy(sourceRunId = started.id, scope = cacheScope) else replaySuccess = match.script
@@ -157,6 +172,7 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
                     currentCoroutineContext().ensureActive()
                     device.configureScreenshots(screenshots)
                     val recorder = ScriptRecorder(trimmed, prefix, prefixValues)
+                    val probeStarted = System.nanoTime()
                     val probeGoal = if (prefix.isEmpty()) trimmed else trimmed + "\nHost recovery: ${prefix.size} script steps have ALREADY executed (${prefix.joinToString { it.action }}). Continue only from the current observed page. Do not replay prior effects or restart the script. Verify before finishing."
                     val result = SharedCoreRuntime.open(context).use { policy ->
                         val budget = SharedRunBudget.open(policy, parent = binding?.budget, options = kotlinx.serialization.json.buildJsonObject { put("deadlineMs", kotlinx.serialization.json.JsonPrimitive(600_000)) })
@@ -170,8 +186,9 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
                             core = core,
                         ).run(probeGoal) }
                     }
+                    run = run!!.copy(cacheFallbackMs = (System.nanoTime() - probeStarted) / 1_000_000)
                     if (result.status == "achieved" && cacheEnabled) {
-                        pendingCache = recorder.compile(cacheScope, started.id)
+                        pendingCache = recorder.compile(cacheScope, started.id)?.let(::bindEnvironment)
                         if (pendingCache == null) run = run!!.copy(cacheNote = "任务成功；未缓存：${recorder.unsupported.ifBlank { "缺少可重放步骤。" }}")
                     }
                     result

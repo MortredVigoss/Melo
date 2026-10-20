@@ -9,6 +9,10 @@ import android.content.Context
 import android.content.IntentFilter
 import android.graphics.*
 import android.hardware.display.DisplayManager
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.os.*
 import android.util.Base64
 import android.view.*
@@ -28,6 +32,7 @@ object DeviceAccess {
 }
 
 interface DeviceExecutor {
+    fun cacheEnvironment(displayId: Int, packages: Set<String>): CacheEnvironment? = null
     suspend fun begin(displayId: Int, screenshots: Boolean)
     suspend fun execute(arguments: JsonObject): DeviceToolResult
     fun configureScreenshots(enabled: Boolean) { }
@@ -54,6 +59,15 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
     private var confirmationButton: Button? = null
     private var sessionApps: AppCatalog? = null
     private var lastLaunchTarget = ""
+    private var posture = "unavailable"
+    private var observedLayout: String? = null
+    private val hingeListener = object : SensorEventListener {
+        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+        override fun onSensorChanged(event: SensorEvent) {
+            val next = hingePosture(event.values.firstOrNull())
+            if (posture != next) { posture = next; invalidateObservation() }
+        }
+    }
     private val screenOff = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (authorized && intent?.action == Intent.ACTION_SCREEN_OFF) { (application as MeloApplication).deviceAgent.cancel(); end() }
@@ -65,7 +79,16 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(screenOff, IntentFilter(Intent.ACTION_SCREEN_OFF), Context.RECEIVER_NOT_EXPORTED)
         else registerReceiver(screenOff, IntentFilter(Intent.ACTION_SCREEN_OFF))
     }
-    override fun onServiceConnected() { DeviceAccess.service = this; DeviceAccess.connected.value = true }
+    override fun onServiceConnected() {
+        DeviceAccess.service = this; DeviceAccess.connected.value = true
+        if (Build.VERSION.SDK_INT >= 30) {
+            val manager = getSystemService(SensorManager::class.java)
+            manager.getDefaultSensor(Sensor.TYPE_HINGE_ANGLE)?.let { sensor ->
+                posture = "hinge-pending"
+                manager.registerListener(hingeListener, sensor, SensorManager.SENSOR_DELAY_NORMAL)
+            }
+        }
+    }
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         // Background windows / our stop overlay must not invalidate the observed app.
         // Window identity and bounds are independently checked immediately before acting.
@@ -73,12 +96,31 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
     }
     override fun onInterrupt() { (application as MeloApplication).deviceAgent.cancel(); end() }
     override fun onDestroy() {
+        getSystemService(SensorManager::class.java).unregisterListener(hingeListener)
         (application as MeloApplication).deviceAgent.cancel(); end()
         if (DeviceAccess.service === this) { DeviceAccess.service = null; DeviceAccess.connected.value = false }
         unregisterReceiver(screenOff)
         super.onDestroy()
     }
     fun displays(): List<Pair<Int, String>> = getSystemService(DisplayManager::class.java).displays.map { it.displayId to "Display ${it.displayId} · ${it.name}" }
+    private fun layoutKey(displayId: Int): String? {
+        val display = getSystemService(DisplayManager::class.java).getDisplay(displayId) ?: return null
+        val metrics = android.util.DisplayMetrics()
+        @Suppress("DEPRECATION")
+        display.getRealMetrics(metrics)
+        val config = createDisplayContext(display).resources.configuration
+        return "$displayId|${metrics.widthPixels}x${metrics.heightPixels}|${display.rotation}|${metrics.densityDpi}|${config.fontScale}|${config.screenLayout}|$posture"
+    }
+    override fun cacheEnvironment(displayId: Int, packages: Set<String>): CacheEnvironment? {
+        val layout = layoutKey(displayId) ?: return null
+        return CacheEnvironment(layout, packages.mapNotNull { pkg ->
+            runCatching {
+                @Suppress("DEPRECATION")
+                val info = packageManager.getPackageInfo(pkg, 0)
+                pkg to info.longVersionCode
+            }.getOrNull()
+        }.toMap())
+    }
 
     override suspend fun begin(displayId: Int, screenshots: Boolean) = withContext(Dispatchers.Main.immediate) {
         check(!authorized) { "已有手机助手在运行。" }
@@ -106,7 +148,7 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
     }
     override fun configureScreenshots(enabled: Boolean) { checkSession(); screenshots = enabled; invalidateObservation() }
     private fun invalidateObservation() {
-        screenId = ""; nodes.values.forEach { @Suppress("DEPRECATION") it.recycle() }; nodes.clear(); targets.clear()
+        screenId = ""; observedLayout = null; nodes.values.forEach { @Suppress("DEPRECATION") it.recycle() }; nodes.clear(); targets.clear()
     }
     private fun checkSession() {
         check(authorized) { "手机助手尚未开始，或已停止。" }
@@ -138,6 +180,7 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
             ?: throw DeviceExecutionException("stale_screen", "所选窗口已不可见或不属于前台 App，请重新 observe。")
     }
     private fun requireFresh(arguments: JsonObject, contentSensitive: Boolean = true) {
+        if (observedLayout != layoutKey(selectedDisplay)) throw DeviceExecutionException("stale_screen", "显示布局或折叠姿态已改变，请重新 observe。")
         if (!(arguments.text("screen_id") == screenId && screenId.isNotBlank() && (!contentSensitive || observedGeneration == generation) && SystemClock.elapsedRealtime() - observedAt < 90_000)) throw DeviceExecutionException("stale_screen", "屏幕已变化或 observation 已过期，请重新 observe。")
         val current = selectedWindow(windowId); val currentBounds = Rect().also(current::getBoundsInScreen)
         if (current.id != windowId || currentBounds != bounds) throw DeviceExecutionException("stale_screen", "窗口或尺寸已改变，请重新 observe。")
@@ -304,6 +347,7 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
         // Bounded quiet wait: animated pages remain usable through node validation.
         for (attempt in 0 until 5) { val before = generation; delay(120); if (generation == before) break }
         checkSession(); invalidateObservation()
+        val layoutAtStart = layoutKey(selectedDisplay)
         val window = selectedWindow(requestedWindowId); val root = window.root ?: error("窗口内容不可读。")
         windowId = window.id; bounds = Rect().also(window::getBoundsInScreen)
         require(bounds.width() > 0 && bounds.height() > 0) { "窗口没有可见内容。" }
@@ -335,10 +379,12 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
         }
         var screenshotError: String? = null
         val jpeg = if (screenshots) try { screenshot(windowId) } catch (e: CancellationException) { throw e } catch (e: Exception) { screenshotError = e.message ?: "截图不可用。"; null } else null
-        screenId = newId(); observedGeneration = before; observedAt = SystemClock.elapsedRealtime()
+        if (layoutAtStart != layoutKey(selectedDisplay)) throw DeviceExecutionException("stale_screen", "观察期间显示布局已改变，请重新 observe。")
+        screenId = newId(); observedGeneration = before; observedAt = SystemClock.elapsedRealtime(); observedLayout = layoutAtStart
         return DeviceObservation(buildJsonObject {
             put("screen_id", screenId); put("display_id", selectedDisplay); put("window_id", windowId); put("package_name", root.packageName?.toString().orEmpty())
             put("window_title", window.title?.toString().orEmpty().take(160))
+            put("window_width", bounds.width()); put("window_height", bounds.height())
             put("screenshot_scope", "selected_window_only")
             put("related_windows", buildJsonArray {
                 for (related in readableWindows().filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION && DeviceWindowPolicy.sameApp(identity(window), identity(it)) }) add(buildJsonObject {

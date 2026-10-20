@@ -71,6 +71,12 @@ class ScriptRecorder(private val goal: String, seedSteps: List<ScriptStep> = emp
                 }
             }
         } catch (e: Exception) { unsupported = e.message ?: "本次探索包含无法重放的动作。" }
+        // Bind semantic steps to the window geometry where they were verified.
+        if (result.ok && before != null && action in setOf("tap", "type_text", "swipe", "back") && unsupported.isBlank() && steps.isNotEmpty()) {
+            val last = steps.last()
+            steps[steps.lastIndex] = last.copy(windowWidth = before["window_width"]?.jsonPrimitive?.intOrNull ?: 0,
+                windowHeight = before["window_height"]?.jsonPrimitive?.intOrNull ?: 0)
+        }
         if (result.ok && result.data.text("screen_id").isNotBlank()) screen = result.data
     }
     fun compile(scope: String, runId: String): DeviceScript? {

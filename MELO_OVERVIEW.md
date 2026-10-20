@@ -791,3 +791,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 ### 2026-10-20 — melo主线 — Android 项目生命周期验证节点
 - #7 ART 崩溃修正 ef276a5 在独立验证分支复测；正式手机分支仍为 #8，不据此关闭。
 - #11 接入 v1 删除标记、离线 remove-wins、删除确认与恢复新 ID；保留聊天/原图/旧记忆范围、运行期间禁止改变归属。JVM 三项与真实 Repository/Compose 确认/取消/重开/同步/恢复测试已加入，等待 CI，不代表真机或发布。
+
+### 2026-10-20 — melo主线（Codex）— #10 布局兼容缓存
+- [Fold 缓存](docs/fold-cache-20261020.md)：显示/姿态/App 版本筛选、每步环境复查、窗口尺寸限制、变体保留及命中/失配耗时；新 JVM 与真实 Repository emulator 用例待 CI。
+- #11 验证提交 ee0f66b 的 Android CI 39377354163 正在模拟器阶段；#12 主线跨平台 CI 39377921633 已通过。当前 #10 是 WIP，不视为 Fold6 真机通过。

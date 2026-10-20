@@ -23,6 +23,7 @@ class TaskCacheFlowTest {
     @get:Rule val ui = createAndroidComposeRule<MainActivity>()
     private val app get() = ApplicationProvider.getApplicationContext<MeloApplication>()
     private var before: AppData? = null
+    private val environment = CacheEnvironment("fixture-layout", mapOf("fixture.settings" to 1L))
     private val cacheScope get() = MessageDigest.getInstance("SHA-256").digest("||0|".toByteArray()).joinToString("") { "%02x".format(it) }
 
     @Before fun prepareFixtureOnlyOnEmulator() = runBlocking {
@@ -51,6 +52,8 @@ class TaskCacheFlowTest {
     })
     private open inner class FixtureDevice : DeviceExecutor {
         var taps = 0; var ended = false
+        var cacheEnvironment = environment
+        override fun cacheEnvironment(displayId: Int, packages: Set<String>) = cacheEnvironment
         override suspend fun begin(displayId: Int, screenshots: Boolean) { }
         override suspend fun execute(arguments: JsonObject): DeviceToolResult { if (arguments.text("action") == "tap") taps++; return screen(arguments.text("action")) }
         override fun end() { ended = true }
@@ -79,7 +82,7 @@ class TaskCacheFlowTest {
         return app.repository.data.value.deviceRuns.last { it.id !in ids && it.goal == goal }
     }
     private fun cached(goal: String = "Fixture ${newId()}", steps: List<ScriptStep> = listOf(ScriptStep("open_app", "fixture.settings"))) = DeviceScript(
-        name = "Fixture cache", goalTemplate = goal, steps = steps, completion = ScriptAssertion("fixture.settings", "Fixture", "Ready"), scope = cacheScope, verified = true)
+        name = "Fixture cache", goalTemplate = goal, steps = steps, completion = ScriptAssertion("fixture.settings", "Fixture", "Ready"), scope = cacheScope, verified = true, environment = environment)
 
     @Test fun probePublishesCacheThenExactHitWorksWithoutAnyConnectionOrKey() = runBlocking {
         MockWebServer().use { server ->
@@ -114,6 +117,52 @@ class TaskCacheFlowTest {
             assertEquals(4, server.requestCount)
             val learned = app.repository.data.value.deviceScripts.single { it.id == result.cacheId }
             assertTrue(learned.verified); assertEquals(next, learned.goalTemplate); assertNotEquals(source.id, learned.id)
+        }
+    }
+    @Test fun innerAndOuterVariantsSurviveReopenAndEachHitWithoutAKeyOrModel() = runBlocking {
+        val outer = cached()
+        val innerEnvironment = environment.copy(layout = "fixture-inner-flat")
+        val inner = outer.copy(id = newId(), environment = innerEnvironment)
+        val seeded = DeviceRun(goal = inner.goalTemplate, connectionName = "fixture", status = "achieved", verification = "visible_facts")
+        app.repository.change { it.copy(deviceScripts = listOf(outer), deviceRuns = it.deviceRuns + seeded, settings = it.settings.copy(activeConnection = null, connections = emptyList())) }
+        app.repository.commitDeviceOutcome(seeded, inner, listOf(outer), null)
+        assertEquals(2, app.repository.data.value.deviceScripts.size)
+        val reopened = Repository(app); reopened.initialize()
+        assertEquals(2, reopened.data.value.deviceScripts.size)
+        for ((env, expected) in listOf(environment to outer.id, innerEnvironment to inner.id)) {
+            val device = FixtureDevice().apply { cacheEnvironment = env }
+            val result = run(outer.goalTemplate, device)
+            assertEquals("achieved", result.status); assertEquals("exact", result.executionMode)
+            assertEquals(expected, result.scriptId); assertEquals(0, result.modelRequests)
+            assertEquals(1, result.cacheIncompatible); assertTrue(result.cacheLookupMs >= 0); assertTrue(result.cacheReplayMs >= 0)
+        }
+    }
+    @Test fun postureChangeAfterOneClickStopsWithoutASecondEffectOrProbe() = runBlocking {
+        val recipe = cached(steps = listOf(ScriptStep("tap", "fixture.settings", "Fixture", NodeSelector(text = "Target")),
+            ScriptStep("tap", "fixture.settings", "Fixture", NodeSelector(text = "Target"))))
+        app.repository.change { it.copy(deviceScripts = listOf(recipe), settings = it.settings.copy(activeConnection = null, connections = emptyList())) }
+        val device = object : FixtureDevice() {
+            override suspend fun execute(arguments: JsonObject): DeviceToolResult {
+                val result = super.execute(arguments)
+                if (arguments.text("action") == "tap") cacheEnvironment = environment.copy(layout = "changed-posture")
+                return result
+            }
+        }
+        val result = run(recipe.goalTemplate, device)
+        assertEquals("needs_user", result.status); assertEquals(1, device.taps); assertEquals(0, result.modelRequests)
+        assertTrue(result.steps.any { it.code == "cache_environment_changed" })
+    }
+    @Test fun appUpdateExcludesOldCacheAndPerformsOneControlledProbe() = runBlocking {
+        MockWebServer().use { server ->
+            queueProbe(server); server.start(); connection(server)
+            val recipe = cached()
+            app.repository.change { it.copy(deviceScripts = listOf(recipe)) }
+            val device = FixtureDevice().apply { cacheEnvironment = environment.copy(appVersions = mapOf("fixture.settings" to 2L)) }
+            val result = run(recipe.goalTemplate, device)
+            assertEquals("achieved", result.status); assertEquals("probe", result.executionMode)
+            assertEquals(3, result.modelRequests); assertEquals(1, result.cacheIncompatible); assertEquals(3, server.requestCount)
+            assertEquals(0, device.taps)
+            assertEquals(setOf(1L, 2L), app.repository.data.value.deviceScripts.map { it.environment!!.appVersions.getValue("fixture.settings") }.toSet())
         }
     }
     @Test fun failedCacheAfterAPotentialWriteStopsWithoutAProbeOrSecondClick() = runBlocking {
@@ -179,6 +228,6 @@ class TaskCacheFlowTest {
         assertEquals(mapOf("query" to "WiFi"), GoalTemplate.bind("Search {{query}}", "Search WiFi"))
         assertEquals("{{b}}/literal", GoalTemplate.render("{{a}}/{{b}}", mapOf("a" to "{{b}}", "b" to "literal")))
         val recipe = cached("打开系统设置")
-        assertEquals(recipe.id, TaskCacheRouter.lookup("打开手机设置", listOf(recipe), cacheScope).similar.single().id)
+        assertEquals(recipe.id, TaskCacheRouter.lookup("打开手机设置", listOf(recipe), cacheScope, environment).similar.single().id)
     }
 }

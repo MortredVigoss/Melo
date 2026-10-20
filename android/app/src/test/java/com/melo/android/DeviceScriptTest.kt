@@ -8,6 +8,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class DeviceScriptTest {
+    private val environment = CacheEnvironment("fixture-layout", mapOf("fixture.app" to 1L, "com.android.settings" to 1L))
     private fun args(action: String, vararg values: Pair<String, String>) = buildJsonObject { put("action", action); values.forEach { put(it.first, it.second) } }
     private fun node(id: String = "fresh-node", text: String = "Target", editable: Boolean = false) = buildJsonObject {
         put("node_id", id); put("text", text); put("view_id", "fixture.app:id/target"); put("description", ""); put("class_name", if (editable) "android.widget.EditText" else "android.widget.Button")
@@ -18,15 +19,15 @@ class DeviceScriptTest {
         put("image_width", 1000); put("image_height", 1000); put("nodes", JsonArray(nodes + buildJsonObject { put("text", text) }))
     })
     private fun script(goal: String = "Open fixture", steps: List<ScriptStep> = listOf(ScriptStep("open_app", "fixture.app"))) = DeviceScript(
-        name = "Fixture", goalTemplate = goal, steps = steps, completion = ScriptAssertion("fixture.app", "Main", "Ready"), scope = "scope", verified = true)
+        name = "Fixture", goalTemplate = goal, steps = steps, completion = ScriptAssertion("fixture.app", "Main", "Ready"), scope = "scope", verified = true, environment = environment)
     private fun done(text: String = "Ready") = args("finish", "outcome" to "achieved", "screen_id" to "fresh-screen", "expected_package" to "fixture.app", "visible_text" to text)
     private fun verified(text: String = "Ready") = DeviceToolResult(JsonObject(screen(text = text).data + ("verification" to "visible_facts".jp())))
 
     @Test fun exactHitNormalizesRepresentationWithoutMergingDifferentIntent() {
         val cached = script("打开蓝牙页面")
-        assertEquals(cached.id, TaskCacheRouter.lookup("  打开蓝牙页面  ", listOf(cached), "scope").exact!!.script.id)
-        assertNull(TaskCacheRouter.lookup("打开蓝牙开关", listOf(cached), "scope").exact)
-        assertNull(TaskCacheRouter.lookup("打开蓝牙页面", listOf(cached), "another-owner").exact)
+        assertEquals(cached.id, TaskCacheRouter.lookup("  打开蓝牙页面  ", listOf(cached), "scope", environment).exact!!.script.id)
+        assertNull(TaskCacheRouter.lookup("打开蓝牙开关", listOf(cached), "scope", environment).exact)
+        assertNull(TaskCacheRouter.lookup("打开蓝牙页面", listOf(cached), "another-owner", environment).exact)
     }
     @Test fun templatesPreserveParameterCaseAndRejectAnExtendedGoal() {
         assertEquals(mapOf("query" to "WiFi"), GoalTemplate.bind("Search {{query}} in Settings", "Search WiFi in Settings"))
@@ -36,17 +37,17 @@ class DeviceScriptTest {
     }
     @Test fun similarityIsOnlyACandidateAndEditedOrInvalidatedEntriesCannotAutoRun() {
         val cached = script("打开系统设置")
-        val similar = TaskCacheRouter.lookup("打开手机设置", listOf(cached), "scope")
+        val similar = TaskCacheRouter.lookup("打开手机设置", listOf(cached), "scope", environment)
         assertNull(similar.exact); assertEquals(1, similar.similar.size)
-        assertNull(TaskCacheRouter.lookup(cached.goalTemplate, listOf(cached.copy(verified = false)), "scope").exact)
-        assertNull(TaskCacheRouter.lookup(cached.goalTemplate, listOf(cached.copy(invalidated = true)), "scope").exact)
-        assertTrue(TaskCacheRouter.lookup(cached.goalTemplate, listOf(cached.copy(invalidated = true)), "scope").similar.isEmpty())
-        assertNull(TaskCacheRouter.lookup(cached.goalTemplate, listOf(cached.copy(enabled = false)), "scope").exact)
+        assertNull(TaskCacheRouter.lookup(cached.goalTemplate, listOf(cached.copy(verified = false)), "scope", environment).exact)
+        assertNull(TaskCacheRouter.lookup(cached.goalTemplate, listOf(cached.copy(invalidated = true)), "scope", environment).exact)
+        assertTrue(TaskCacheRouter.lookup(cached.goalTemplate, listOf(cached.copy(invalidated = true)), "scope", environment).similar.isEmpty())
+        assertNull(TaskCacheRouter.lookup(cached.goalTemplate, listOf(cached.copy(enabled = false)), "scope", environment).exact)
         val bilingual = script("Open Android Settings").copy(steps = listOf(ScriptStep("open_app", "com.android.settings")), completion = ScriptAssertion("com.android.settings", "设置", "设置"))
-        assertEquals(bilingual.id, TaskCacheRouter.lookup("打开设置", listOf(bilingual), "scope").similar.single().id)
+        assertEquals(bilingual.id, TaskCacheRouter.lookup("打开设置", listOf(bilingual), "scope", environment).similar.single().id)
     }
     @Test fun ambiguousExactMatchesRequirePlanningInsteadOfPickingTheFirst() {
-        assertNull(TaskCacheRouter.lookup("Open fixture", listOf(script(), script()), "scope").exact)
+        assertNull(TaskCacheRouter.lookup("Open fixture", listOf(script(), script()), "scope", environment).exact)
     }
     @Test fun unsupportedActionsCoordinatesUnknownFieldsAndFutureFormatsAreRejected() {
         assertTrue(runCatching { ScriptValidator.validate(script(steps = listOf(ScriptStep("bash", "fixture.app")))) }.isFailure)

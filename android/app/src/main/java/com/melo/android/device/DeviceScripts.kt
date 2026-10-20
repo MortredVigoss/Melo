@@ -14,12 +14,14 @@ import java.text.Normalizer
         node["enabled"]?.jsonPrimitive?.booleanOrNull != false
 }
 @Serializable data class ScriptStep(val action: String, val packageName: String = "", val windowTitle: String = "", val selector: NodeSelector? = null,
-    val parameter: String = "", val text: String = "", val direction: String = "", val durationMs: Int = 600, val timeoutMs: Int = 5000)
+    val parameter: String = "", val text: String = "", val direction: String = "", val durationMs: Int = 600, val timeoutMs: Int = 5000,
+    val windowWidth: Int = 0, val windowHeight: Int = 0)
 @Serializable data class ScriptAssertion(val packageName: String, val windowTitle: String = "", val visibleText: String = "", val parameter: String = "")
 @Serializable data class DeviceScript(val id: String = newId(), val name: String, val goalTemplate: String, val steps: List<ScriptStep>, val completion: ScriptAssertion,
     val parameters: List<String> = emptyList(), val scope: String = "", val sourceRunId: String = "", val revision: Int = 1,
     val enabled: Boolean = true, val verified: Boolean = false, val createdAt: String = now(), val updatedAt: String = createdAt,
-    val hits: Int = 0, val successes: Int = 0, val failures: Int = 0, val lastError: String = "", val invalidated: Boolean = false, val schemaVersion: Int = 1)
+    val hits: Int = 0, val successes: Int = 0, val failures: Int = 0, val lastError: String = "", val invalidated: Boolean = false, val schemaVersion: Int = 1,
+    val environment: CacheEnvironment? = null)
 
 object ScriptValidator {
     const val MAX_BYTES = 96_000
@@ -29,10 +31,14 @@ object ScriptValidator {
         require(script.schemaVersion == 1) { "此脚本格式版本不受支持。" }
         require(script.name.isNotBlank() && script.name.length <= 100 && script.goalTemplate.isNotBlank() && script.goalTemplate.length <= 4000) { "请输入脚本名称和目标模板。" }
         require(script.steps.size in 1..60 && script.revision > 0) { "脚本需要 1–60 个步骤。" }
+        script.environment?.let { env ->
+            require(env.layout.length in 1..500 && env.appVersions.size <= 61 && env.appVersions.all { (pkg, version) -> packagePattern.matches(pkg) && version >= 0 }) { "缓存环境记录无效。" }
+        }
         require(script.parameters.size <= 12 && script.parameters.distinct() == script.parameters && script.parameters.all { it.matches(Regex("[A-Za-z][A-Za-z0-9_]{0,39}")) }) { "输入参数名称重复或无效。" }
         for (step in script.steps) {
             require(step.action in setOf("open_app", "tap", "type_text", "swipe", "home", "back", "wait")) { "脚本动作不受支持。" }
             require(step.durationMs in 100..3000 && step.timeoutMs in 100..10_000 && step.windowTitle.length <= 160) { "步骤等待时间或窗口名称超出范围。" }
+            require(step.windowWidth in 0..32000 && step.windowHeight in 0..32000) { "缓存窗口尺寸无效。" }
             require(step.action in setOf("home", "wait") || packagePattern.matches(step.packageName)) { "步骤需要确切 App package。" }
             require(step.parameter.isBlank() || step.parameter in script.parameters) { "步骤引用了未声明的输入参数。" }
             require(step.text.length <= 4000 && (step.parameter.isBlank() || step.text.isEmpty())) { "输入参数不能与固定文字同时出现。" }
@@ -98,7 +104,7 @@ object GoalTemplate {
 }
 
 data class CacheMatch(val script: DeviceScript, val parameters: Map<String, String>)
-data class CacheLookup(val exact: CacheMatch? = null, val similar: List<DeviceScript> = emptyList())
+data class CacheLookup(val exact: CacheMatch? = null, val similar: List<DeviceScript> = emptyList(), val incompatible: Int = 0)
 object TaskCacheRouter {
     private fun tokens(text: String): Set<String> {
         val normalized = Normalizer.normalize(text, Normalizer.Form.NFKC).lowercase().replace(Regex("打开|启动|进入|帮我|麻烦|手机|系统|应用|页面|一下|请"), " ")
@@ -109,12 +115,14 @@ object TaskCacheRouter {
         }.filterNot { it in stopWords }.toSet()
         return words
     }
-    fun lookup(goal: String, scripts: List<DeviceScript>, scope: String): CacheLookup {
-        val eligible = scripts.filter { it.enabled && it.verified && !it.invalidated && it.scope == scope && runCatching { ScriptValidator.validate(it) }.isSuccess }
+    fun lookup(goal: String, scripts: List<DeviceScript>, scope: String, environment: CacheEnvironment?): CacheLookup {
+        val owned = scripts.filter { it.enabled && it.verified && !it.invalidated && it.scope == scope && runCatching { ScriptValidator.validate(it) }.isSuccess }
+        val eligible = owned.filter { environment?.supports(it) == true }
+        val incompatible = owned.size - eligible.size
         val exact = eligible.filterNot { it.invalidated }.mapNotNull { script ->
             GoalTemplate.bind(script.goalTemplate, goal)?.takeIf { bindings -> script.parameters.all { it in bindings } }?.let { CacheMatch(script, it) }
         }
-        if (exact.size == 1) return CacheLookup(exact.single())
+        if (exact.size == 1) return CacheLookup(exact.single(), incompatible = incompatible)
         val wanted = tokens(goal)
         val ranked = eligible.map { script ->
             val other = tokens(script.goalTemplate)
@@ -123,6 +131,6 @@ object TaskCacheRouter {
             val targetScore = if (wanted.isEmpty()) 0.0 else 0.6 * wanted.intersect(keywords).size / wanted.size
             script to maxOf(goalScore, targetScore)
         }.filter { it.second >= 0.2 }.sortedByDescending { it.second }.take(3).map { it.first }
-        return CacheLookup(similar = ranked)
+        return CacheLookup(similar = ranked, incompatible = incompatible)
     }
 }

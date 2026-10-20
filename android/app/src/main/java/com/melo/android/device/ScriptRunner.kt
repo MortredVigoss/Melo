@@ -8,7 +8,8 @@ data class ScriptReplay(val outcome: DeviceOutcome, val completedSteps: Int, val
 
 /** No model dependency: every target is resolved against a new native observation. */
 class ScriptRunner(private val execute: suspend (JsonObject) -> DeviceToolResult,
-    private val onStep: suspend (DeviceStep) -> Unit = {}, private val onPhase: (String) -> Unit = {}, private val completionTimeoutMs: Int = 10_000) {
+    private val onStep: suspend (DeviceStep) -> Unit = {}, private val onPhase: (String) -> Unit = {}, private val completionTimeoutMs: Int = 10_000,
+    private val compatible: () -> Boolean = { true }) {
     init { require(completionTimeoutMs in 100..10_000) }
     private class ReplayFailure(val code: String, override val message: String) : Exception(message)
     private fun expand(text: String, values: Map<String, String>): String {
@@ -22,6 +23,7 @@ class ScriptRunner(private val execute: suspend (JsonObject) -> DeviceToolResult
         var lastError = "目标页面或节点尚未出现。"
         do {
             currentCoroutineContext().ensureActive()
+            ensureCompatible()
             var screen = observe()
             val title = expand(step.windowTitle, values)
             if (screen.ok && (step.packageName.isBlank() || screen.data.text("package_name") == step.packageName)) {
@@ -31,6 +33,9 @@ class ScriptRunner(private val execute: suspend (JsonObject) -> DeviceToolResult
                     if (panes.size == 1) screen = observe(panes.single().jsonObject["window_id"]!!.jsonPrimitive.int)
                 }
                 if (screen.ok && (title.isBlank() || screen.data.text("window_title") == title) && (step.packageName.isBlank() || screen.data.text("package_name") == step.packageName)) {
+                    if (step.windowWidth > 0 && step.windowHeight > 0 &&
+                        (screen.data["window_width"]?.jsonPrimitive?.intOrNull != step.windowWidth || screen.data["window_height"]?.jsonPrimitive?.intOrNull != step.windowHeight))
+                        throw ReplayFailure("cache_layout_changed", "窗口布局已改变，未使用旧布局脚本。")
                     val selector = step.selector?.let { it.copy(text = expand(it.text, values), description = expand(it.description, values)) }
                     if (selector == null) return screen to null
                     val nodes = screen.data["nodes"]?.jsonArray.orEmpty().map { it.jsonObject }.filter(selector::matches)
@@ -42,6 +47,9 @@ class ScriptRunner(private val execute: suspend (JsonObject) -> DeviceToolResult
             delay(minOf(250L, ((until - System.nanoTime()) / 1_000_000).coerceAtLeast(1)))
         } while (System.nanoTime() < until)
         throw ReplayFailure("target_not_found", lastError)
+    }
+    private fun ensureCompatible() {
+        if (!compatible()) throw ReplayFailure("cache_environment_changed", "显示姿态或 App 版本已改变，缓存重放已停止。")
     }
     private fun swipe(step: ScriptStep, screen: JsonObject, node: JsonObject): JsonObject {
         val box = node["bounds"]?.jsonArray?.map { it.jsonPrimitive.int } ?: throw ReplayFailure("invalid_bounds", "滚动容器没有可用范围。")
@@ -68,6 +76,7 @@ class ScriptRunner(private val execute: suspend (JsonObject) -> DeviceToolResult
                 val deadline = started + step.timeoutMs * 1_000_000L
                 var receipt: DeviceToolResult? = null
                 for (attempt in 0..1) {
+                    ensureCompatible()
                     val prepared = if (step.action in setOf("open_app", "wait")) null else prepare(step, parameters, deadline)
                     val args = when (step.action) {
                         "open_app" -> buildJsonObject { put("action", "open_app"); put("package_name", step.packageName) }
@@ -81,6 +90,7 @@ class ScriptRunner(private val execute: suspend (JsonObject) -> DeviceToolResult
                     }
                     DeviceTools.validate(args)
                     val previouslyUnsafe = unsafe
+                    ensureCompatible()
                     if (step.action in setOf("tap", "type_text", "swipe", "back")) unsafe = true
                     receipt = execute(args)
                     if (!receipt.ok && receipt.data.text("code") in setOf("stale_screen", "stale_target", "user_declined", "invalid_arguments")) unsafe = previouslyUnsafe
@@ -104,7 +114,10 @@ class ScriptRunner(private val execute: suspend (JsonObject) -> DeviceToolResult
             while ((!visible() || previous.data["stable"]?.jsonPrimitive?.booleanOrNull == false) && System.nanoTime() < until) { delay(250); if (System.nanoTime() < until) previous = prepare(target, parameters, until).first }
             val claim = buildJsonObject { put("action", "finish"); put("outcome", "achieved"); put("summary", "本机脚本已执行并重新检查终态。"); put("screen_id", previous.data.text("screen_id")); put("expected_package", assertion.packageName); if (text.isNotBlank()) put("visible_text", text) }
             val started = System.nanoTime()
-            val verified = DeviceCompletion.verify(claim, previous, observe(previous.data["window_id"]?.jsonPrimitive?.intOrNull))
+            ensureCompatible()
+            val fresh = observe(previous.data["window_id"]?.jsonPrimitive?.intOrNull)
+            ensureCompatible()
+            val verified = DeviceCompletion.verify(claim, previous, fresh)
             onStep(DeviceStep("finish", verified.ok, if (verified.ok) "本机脚本终态已重新校验" else "终态不匹配，未标记完成", durationMs = (System.nanoTime() - started) / 1_000_000, code = verified.data.text("code")))
             return ScriptReplay(if (verified.ok) DeviceOutcome("achieved", claim.text("summary"), verification = "visible_facts") else DeviceOutcome("blocked", error = verified.data.text("error")), completed, unsafe)
         } catch (e: CancellationException) { throw e }
