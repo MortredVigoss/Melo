@@ -103,6 +103,9 @@ export async function updateAgentProfile(agentId, patch = {}, options = {}) {
       }
       state.agentProfiles = normalizeAgentProfiles(profiles);
     }
+    // A change made from elsewhere (the chat's "一直开启" capability prompt)
+    // must not navigate the user's page.
+    if (options.preserveSelection === true) return state;
     state.settings.selectedCustomizeSection = 'agents';
     state.settings.selectedAgentScope = scope;
     if (projectId) state.settings.selectedProjectId = projectId;
