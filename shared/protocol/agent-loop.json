@@ -3985,6 +3985,45 @@
         "global": "全局",
         "project": "项目"
       }
+    },
+    "phone": {
+      "description": "iPhone mapping (2026-10-20). Phone execution is governed by this iPhone's per-Agent permissions (device-local, never synced), not by the synced desktop capabilities. Phone atoms are the contract booleans plus these phone-only booleans (canonical order: contract booleans, phone booleans, then lists). Tools map to one atom; null means no capability gate. Provider-native tools (hosted web search, image generation) and the image-task path keep deciding by the base permission without a prompt, as on the desktop.",
+      "booleanCapabilities": [
+        "calendar",
+        "reminders",
+        "contacts",
+        "location"
+      ],
+      "labels": {
+        "calendar": "日历",
+        "reminders": "提醒事项",
+        "contacts": "通讯录",
+        "location": "当前位置"
+      },
+      "permissionAtoms": [
+        "network",
+        "generateMedia",
+        "calendar",
+        "reminders",
+        "contacts",
+        "location"
+      ],
+      "toolCapabilities": {
+        "open_url": "network",
+        "web_screenshot": "network",
+        "calendar_list_events": "calendar",
+        "calendar_create_event": "calendar",
+        "reminders_list": "reminders",
+        "reminders_create": "reminders",
+        "reminders_complete": "reminders",
+        "contacts_search": "contacts",
+        "location_current": "location",
+        "read_history": null
+      },
+      "texts": {
+        "timeoutOutput": "等待授权超时：{agent} 需要『{capability}』才能使用 {tool}。不要重试；告诉用户需要在这台 iPhone 弹出的授权卡片中允许。",
+        "settingsScope": "这台手机上的"
+      }
     }
   }
 }

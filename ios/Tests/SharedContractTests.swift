@@ -90,7 +90,135 @@ import Foundation
         assert(ConversationHistory.recentTurns(compactMessages, afterMessageId: "missing") == ConversationHistory.recentTurns(compactMessages), "an unknown boundary keeps the full history")
 
         let loopCases = agentLoopContract()
-        print("Shared contract passed: \(prose.count) prose URL cases, \(identities.count) source identities, tool-call replay, \(handoffs.count) handoffs, \(plans.count) team plans, \(schedules.count) team schedules, compact sync, \(loopCases) agent-loop fixtures")
+        let elevation = capabilityElevationContract()
+        print("Shared contract passed: \(prose.count) prose URL cases, \(identities.count) source identities, tool-call replay, \(handoffs.count) handoffs, \(plans.count) team plans, \(schedules.count) team schedules, compact sync, \(loopCases) agent-loop fixtures, \(elevation.cases) capability-elevation fixtures (\(elevation.skipped.count) skipped\(elevation.skipped.isEmpty ? "" : ": " + elevation.skipped.joined(separator: "; ")))")
+    }
+
+    /// Fixture adapter for capability elevation: desktop tool id (+ args, + the
+    /// tool's declared capability) → requirement. A port of
+    /// src/domain/agent/capabilities.js `toolCapabilityAllowed`, used only to
+    /// feed the desktop fixtures to the phone decision core; the phone runtime
+    /// classifies its own tools with `CapabilityRequirement.phoneTool`.
+    static func desktopRequirement(_ id: String, args: OrderedJSON?, tool: OrderedJSON?) -> CapabilityRequirement {
+        let desktopKeys = CapabilityElevation.contract.booleanKeys
+        let args = args.flatMap { $0 == .null ? nil : $0 }
+        func action() -> String? { args?["action"]?.stringValue }
+        if id.hasPrefix("mcp:") {
+            let rest = id.dropFirst(4)
+            guard let separator = rest.firstIndex(of: ":"), separator != rest.startIndex else { return .unclassified }
+            let server = String(rest[..<separator])
+            guard !rest[rest.index(after: separator)...].isEmpty, server.range(of: "^[A-Za-z0-9_-]+$", options: .regularExpression) != nil else { return .unclassified }
+            return .atom("mcpServers:" + server)
+        }
+        if id.hasPrefix("skill:") { let skill = String(id.dropFirst(6)); return skill.isEmpty ? .unclassified : .atom("skills:" + skill) }
+        if let tool, tool["id"]?.stringValue == id, let declared = tool["capability"] {
+            switch declared {
+            case .null: return .ungated
+            case .string(let key): return desktopKeys.contains(key) ? .atom(key) : .unclassified
+            case .array(let values):
+                let keys = values.compactMap(\.stringValue)
+                return keys.count == values.count && keys.allSatisfy(desktopKeys.contains) ? .all(keys) : .unclassified
+            case .object:
+                let keys = declared["anyOf"]?.items.compactMap(\.stringValue).filter(desktopKeys.contains) ?? []
+                return CapabilityRequirement(allows: { set in keys.contains(where: set.contains) })
+            default: return .unclassified
+            }
+        }
+        func when(_ test: @escaping (Set<String>) -> Bool) -> CapabilityRequirement { CapabilityRequirement(allows: test) }
+        if ["file_read", "glob", "grep", "media_info"].contains(id) { return .atom("readFiles") }
+        if ["file_write", "file_edit", "file_delete", "file_move", "file_mkdir", "xlsx"].contains(id) { return .atom("writeFiles") }
+        if ["web_search", "fetch_url", "web_screenshot", "media_api", "translate", "browser_open", "browser_snapshot", "browser_click", "browser_fill", "browser_wait_for", "browser_close"].contains(id) { return .atom("network") }
+        if id == "bash" { return .atom("runCommands") }
+        if id == "agent" || id == "delegate" { return .atom("delegate") }
+        if id == "calculator" { return .ungated }
+        if ["search_history", "read_history", "reminder"].contains(id) { return .atom("knowledgeMemory") }
+        if id == "knowledge" { return when { $0.contains("knowledgeMemory") && (args == nil || action() != "index" || $0.contains("readFiles")) } }
+        if id == "clipboard" { return when { c in args == nil ? c.contains("readFiles") || c.contains("writeFiles") : c.contains(action() == "read" ? "readFiles" : "writeFiles") } }
+        if id == "pdf" {
+            guard let args else { return when { $0.contains("readFiles") || $0.contains("writeFiles") } }
+            let read = action() == "read"
+            let remote: Bool = { if case .object(let fields) = args { return fields.contains { $0.1.stringValue?.range(of: "^https?://", options: [.regularExpression, .caseInsensitive]) != nil } }; return false }()
+            let known = read || ["write", "structured", "from_spec"].contains(action() ?? "")
+            return when { c in c.contains(read ? "readFiles" : "writeFiles") && (!remote || c.contains("network")) && (known || c.contains("readFiles")) }
+        }
+        if id == "image" {
+            guard args != nil else { return when { $0.contains("readFiles") || $0.contains("generateMedia") } }
+            if ["info", "ocr"].contains(action() ?? "") { return .atom("readFiles") }
+            let output: Bool = {
+                switch args?["output"] {
+                case nil, .null?: return false
+                case .string(let value)?: return !value.isEmpty
+                case .bool(let value)?: return value
+                case .number(let value)?: return value != 0 && !value.isNaN
+                default: return true
+                }
+            }()
+            let process = action() == "process"
+            return when { c in c.contains("generateMedia") && (!output || c.contains("writeFiles")) && (!process || c.contains("readFiles") && c.contains("writeFiles")) }
+        }
+        return .unclassified // New/plugin tool identifiers need an explicit mapping (desktop parity).
+    }
+
+    /// Capability elevation (2026-10-20): `fixtures.capabilityElevation`, the
+    /// same cases src/domain/agent/capabilityElevation.test.js runs.
+    static func capabilityElevationContract() -> (cases: Int, skipped: [String]) {
+        let text = try! String(contentsOfFile: "shared/protocol/agent-loop.json", encoding: .utf8)
+        let F = OrderedJSON.parse(text)!["fixtures"]!["capabilityElevation"]!
+        let c = CapabilityElevation.contract
+        // Fixtures the phone cannot evaluate, by name, with the reason. Empty:
+        // every desktop tool id the fixtures use has a requirement above, and the
+        // atoms are the contract's own. A new fixture whose decision the phone
+        // core gets wrong fails here instead of being skipped silently.
+        let phoneSkips: [String: String] = [:]
+        var count = 0, skipped: [String] = []
+        func atoms(_ value: OrderedJSON?) -> Set<String>? {
+            guard let value, value != .null else { return nil }
+            return Set(value.items.compactMap(\.stringValue))
+        }
+        func strings(_ value: OrderedJSON?) -> [String] { value?.items.compactMap(\.stringValue) ?? [] }
+        func optional(_ value: OrderedJSON?) -> String? { value?.stringValue }
+        assert(c.decisions == ["allowed", "elevate-beyond-parent", "enable-own", "deny-no-surface", "deny-ceiling"] && c.booleanKeys.count == 7 && c.listKeys == ["mcpServers", "skills", "connectors"])
+        assert(c.allBooleans == c.booleanKeys + ["calendar", "reminders", "contacts", "location"], "phone booleans follow the contract booleans")
+        // The phone table covers exactly the phone's function tools and permissions.
+        let phoneTools = Set(DeviceToolSpec.all.map(\.name) + WebPageToolSpec.all.map(\.name) + [PhoneReadHistory.name])
+        assert(Set(c.phoneTools.keys) == phoneTools, "capabilityElevation.phone.toolCapabilities must list every phone tool: \(phoneTools.symmetricDifference(c.phoneTools.keys))")
+        assert(Set(c.phonePermissionAtoms) == Set(PhoneCapability.allCases.map(\.rawValue)), "phone permission atoms are the PhoneCapability cases")
+        for row in F["decisions"]!.items {
+            let name = row["name"]!.stringValue!
+            if let reason = phoneSkips[name] { skipped.append("\(name) (\(reason))"); continue }
+            let input = row["input"]!, expected = row["expected"]!
+            let m = input["member"]!
+            let member = CapabilityParty(agentId: m["agentId"]!.stringValue!, capabilities: atoms(m["capabilities"]), scope: optional(m["scope"]), globalCapabilities: atoms(m["globalCapabilities"]))
+            let parent: CapabilityParty? = input["parent"].flatMap { $0 == .null ? nil : CapabilityParty(agentId: $0["agentId"]!.stringValue!, capabilities: atoms($0["capabilities"])) }
+            let grants = try! JSONDecoder().decode([CapabilityGrant].self, from: Data((input["grants"] ?? .array([])).json.utf8))
+            let x = input["context"]!
+            let context = CapabilityContext(surface: x["surface"]?.boolValue == true, runId: optional(x["runId"]), projectId: optional(x["projectId"]), chatId: optional(x["chatId"]),
+                                            allowedToolIds: x["allowedToolIds"].flatMap { $0 == .null ? nil : strings($0) })
+            let toolId = input["toolId"]!.stringValue!
+            let d = CapabilityElevation.decide(toolId: toolId, requirement: desktopRequirement(toolId, args: input["args"], tool: input["tool"]), member: member, parent: parent,
+                                               base: atoms(input["base"]), grants: grants, context: context, now: input["now"]!.numberValue!)
+            let label = "capability fixture «\(name)»"
+            assert(d.decision == expected["decision"]!.stringValue!, "\(label): decision \(d.decision)")
+            assert(d.missing == strings(expected["missing"]), "\(label): missing \(d.missing)")
+            if expected["effective"] == .null { assert(d.effective == nil, "\(label): effective must be null") }
+            else { assert(d.effective.map { CapabilityElevation.sort($0) } == strings(expected["effective"]), "\(label): effective \(CapabilityElevation.sort(d.effective ?? []))") }
+            assert(d.grantIds == strings(expected["grantIds"]), "\(label): grantIds \(d.grantIds)")
+            if let reason = expected["reason"] { assert(d.reason == reason.stringValue, "\(label): reason \(String(describing: d.reason))") }
+            assert(d.options == expected["options"].map { strings($0) }, "\(label): options \(String(describing: d.options))")
+            assert(d.projectOptionScope == optional(expected["projectOptionScope"]), "\(label): projectOptionScope")
+            assert(d.wouldPrompt == optional(expected["wouldPrompt"]), "\(label): wouldPrompt")
+            assert(d.alwaysUnavailable == (expected["alwaysUnavailable"]?.boolValue == true), "\(label): alwaysUnavailable")
+            count += 1
+        }
+        for row in F["prompts"]!.items {
+            let actual = CapabilityElevation.promptText(decision: row["decision"]!.stringValue!, agent: row["agent"]!.stringValue!, parent: optional(row["parent"]), atoms: strings(row["atoms"]))
+            assert(actual == row["expected"]!.stringValue!, "capability prompt differs: \(actual)"); count += 1
+        }
+        for row in F["expiries"]!.items {
+            assert(CapabilityElevation.grantExpiry(row["scope"]!.stringValue!, now: row["now"]!.numberValue!) == row["expected"]!.numberValue!, "grant expiry differs for \(row["scope"]!.stringValue!)"); count += 1
+        }
+        assert(CapabilityElevation.grantExpiry("forever", now: 0) == nil)
+        return (count, skipped)
     }
     /// Agent-loop half (2026-10-19): shared/protocol/agent-loop.json fixtures, the
     /// same ones src/runtime/agentLoopContract.test.js runs against the desktop.
