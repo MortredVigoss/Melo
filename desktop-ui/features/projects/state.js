@@ -14,6 +14,9 @@ export function createProjectsState() {
     // Overview search box and archived / active switch.
     projectSearch: '',
     showArchivedProjects: false,
+    showDeletedProjects: false,
+    pendingDeleteProjectId: null,
+    lifecycleBusy: false,
     // "New project" form and its draft (kept across background renders).
     showProjectForm: false,
     projectCreating: false,

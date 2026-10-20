@@ -1,4 +1,5 @@
 import {ownedChatDirectory} from '../workspace/chatWorkspaceFiles.js';
+import { moveChatProject } from '../../domain/project/projectLifecycle.js';
 import {creationProjectId} from '../../domain/project/projectMembership.js';
 import { mergeDeletedChats } from '../../../mobile-sync/protocol.js';
 import { assertChatDeletable, stageChatDeletion, finishChatDeletions } from './chatDeletion.js';
@@ -54,6 +55,9 @@ export async function updateChat(chatId, patch = {}) {
     const currentChat = state.chats[chatIndex];
     if ((Object.hasOwn(patch, 'agentId') || Object.hasOwn(patch, 'modelSelection') || Object.hasOwn(patch, 'projectId') || Object.hasOwn(patch, 'contextArtifactIds')) && state.chatRuns?.some(run=>run.chatId===chatId && run.status==='running')) throw new Error('请等待当前回复结束后再切换角色或模型。');
     const selection = validateConversationSelection(patch, state, selectionConfig);
+    if (Object.hasOwn(selection, 'projectId') && selection.projectId !== currentChat.projectId) {
+      moveChatProject(state, currentChat, selection.projectId, new Date().toISOString());
+    }
     if (Object.hasOwn(selection, 'projectId') && state.settings.selectedChatId === chatId && state.settings.activeView === 'chat') state.settings.selectedProjectId = selection.projectId;
     state.chats[chatIndex] = {
       ...currentChat,

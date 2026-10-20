@@ -7,22 +7,32 @@ struct ProjectsView: View {
     @State private var editing: PersonalProject?
     @State private var tasks = false
     @State private var showArchived = false
+    @State private var showDeleted = false
+    @State private var deleting: PersonalProject?
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 PageHeading(eyebrow: "PROJECTS", title: "项目", detail: "把同一个目标的对话放在一起，后续讨论继续沿用项目目标。")
                 Button { editing = PersonalProject(name: "", goal: "") } label: { Label("新建项目", systemImage: "plus").frame(maxWidth: .infinity).padding(15) }.buttonStyle(.bordered)
                 Toggle("查看已归档项目", isOn: $showArchived).font(.caption)
+                Toggle("已删除项目", isOn: $showDeleted).font(.caption)
                 if (store.preferences.projects ?? []).isEmpty { Text("例如：旅行计划、学习一门语言、开发一个产品。项目不是另一种 Agent，而是一组相关工作的容器。").font(.subheadline).foregroundStyle(.secondary).meloPanel() }
-                ForEach((store.preferences.projects ?? []).filter { ($0.archived == true) == showArchived }) { project in
+                ForEach((store.preferences.projects ?? []).filter { showDeleted ? $0.deletedAt != nil : $0.deletedAt == nil && ($0.archived == true) == showArchived }) { project in
                     VStack(alignment: .leading, spacing: 14) {
-                        HStack { Text(project.name).font(.title3); Spacer(); Button("查看") { editing = project }.font(.caption) }
+                        HStack { Text(project.name).font(.title3); Spacer(); if project.deletedAt == nil { Button("查看") { editing = project }.font(.caption) } }
                         if !project.contextGoal.isEmpty { Text(project.contextGoal).font(.subheadline).foregroundStyle(.secondary) }
                         let chats = store.chats.filter { store.preferences.chatProjects?[$0.id] == project.id }
                         Text("\(chats.count) 段对话 · \(project.knowledgeIds?.count ?? 0) 份共享资料\(project.archived == true ? " · 已归档" : "")").font(.caption).foregroundStyle(meloGold)
                         ForEach(chats) { chat in Button { open(chat.id) } label: { Label(chat.title, systemImage: "bubble.left").font(.subheadline).frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 5) } }
                         if project.archived != true { Button { if let id = store.newChat(projectID: project.id) { open(id) } } label: { Label("在项目中开始对话", systemImage: "plus.bubble") }.font(.subheadline) }
+                        if project.deletedAt != nil {
+                            Text("项目已删除；聊天、资料、图片和原文件夹保留。").font(.caption)
+                            Text("原项目记忆保留在旧范围，旧审批不会恢复。").font(.caption)
+                            Button("恢复为新项目") { store.restoreProject(project.id) }.font(.caption)
+                        } else {
+                        Button("删除项目", role: .destructive) { deleting = project }.font(.caption)
                         Button(project.archived == true ? "恢复项目" : "归档项目") { store.updatePreferences { p in if let index = p.projects?.firstIndex(where: { $0.id == project.id }) { p.projects?[index].archived = project.archived != true } } }.font(.caption)
+                        }
                     }.meloPanel()
                 }
                 DisclosureGroup("桌面任务与接力（\(store.taskCheckpoints.count)）", isExpanded: $tasks) {
@@ -31,6 +41,10 @@ struct ProjectsView: View {
                 Text("归档保留对话与资料，可随时恢复。配置同步服务后，项目与共享资料会一起同步。").font(.caption).foregroundStyle(.secondary)
             }.padding(20)
         }.sheet(item: $editing) { project in ProjectEditor(project: project) }
+        .confirmationDialog("确认删除项目", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
+            Button("确认删除项目", role: .destructive) { if let project = deleting { store.deleteProject(project.id) }; deleting = nil }
+            Button("取消", role: .cancel) { deleting = nil }
+        } message: { Text("聊天将解除项目归属，资料、图片与外部文件夹保留；项目记忆隔离保存，待审批失效。") }
     }
 }
 struct ProjectEditor: View {
@@ -38,6 +52,7 @@ struct ProjectEditor: View {
     let project: PersonalProject
     var body: some View {
         EditableDocument("项目设置", value: project, isNew: store.preferences.projects?.contains { $0.id == project.id } != true, read: { store.preferences.projects?.first { $0.id == project.id } }, commit: { value in
+            guard store.preferences.projects?.first(where: { $0.id == value.id })?.deletedAt == nil else { throw MeloError.message("项目已删除，请从删除记录恢复。") }
             guard !value.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, value.goal.count <= 12000, (value.instructions?.count ?? 0) <= 12000 else { throw MeloError.message("请填写项目名称，目标与要求各不超过 12000 字。") }
             guard store.updatePreferences({ p in var items = p.projects ?? []; if let i = items.firstIndex(where: { $0.id == value.id }) { items[i] = value } else { items.append(value) }; p.projects = items }, reportFailure: false) else { throw MeloError.message("保存失败，草稿已保留。") }
             return value

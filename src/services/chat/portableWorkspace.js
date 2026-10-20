@@ -1,4 +1,6 @@
 import {emptyCapabilities} from '../../domain/agent/capabilities.js';
+import { projectDeletionMarkers } from '../../../mobile-sync/projectLifecycle.js';
+import { assertProjectIdle, deleteProjectState, moveChatProject } from '../../domain/project/projectLifecycle.js';
 import { encodeV1Persona, decodeV1Persona } from '../../../mobile-sync/agentCompatibility.js';
 import { withoutDeletedChatContext } from '../../../mobile-sync/protocol.js';
 import { randomUUID } from 'node:crypto';
@@ -185,7 +187,7 @@ export function refreshPortableWorkspace(state,{config={},scenes=new Map()}={}) 
     if (value) put('agent',id,value);
     else { hold('agent',id,profile.name); if (!previousValue(state,'agent',id)) unavailableAgents.add(id); }
   }
-  for(const project of state.projects || []) {
+  for(const project of (state.projects || []).filter(row => !row.deletedAt)) {
     const previous = previousValue(state,'project',project.id), agentOverrides={};
     for(const id of Object.keys(state.projectAgentOverrides?.[project.id] || {})) agentOverrides[id]=agentValue(effectiveAgentProfile(state,id,project.id),previous?.agentOverrides?.[id]);
     if (Object.values(agentOverrides).some(value=>!value)) {
@@ -223,6 +225,14 @@ export function applyPortableWorkspace(state,workspace,{config={},home,resolvedK
   workspace=validateWorkspace(workspace);
   if(!workspace)return state;
   state.agentProfiles ||= {};state.projects ||= [];state.artifacts ||= [];state.projectAgentOverrides ||= {};
+  const deletedProjects = projectDeletionMarkers(workspace);
+  for (const id of deletedProjects.keys()) if (!state.projects.find(row => row.id === id)?.deletedAt) assertProjectIdle(state, id);
+  // Capture original membership before applying the detached wire projection,
+  // so approvals without their own projectId are also invalidated and reported.
+  for (const marker of deletedProjects.values()) {
+    if (!state.projects.some(row => row.id === marker.projectId)) state.projects.push({ id: marker.projectId, name: '已删除的项目', workspacePath: '', knowledgeIds: [], createdAt: marker.deletedAt });
+    deleteProjectState(state, { ...marker, timestamp: marker.deletedAt, device: state.mobileWorkspaceDevice || randomUUID() });
+  }
   const held = new Set(pendingPersonaRecords(state).map(row => `${row.kind}:${row.id}`));
   for (const key of resolvedKeys) {
     const row = workspace.records.find(row => `${row.kind}:${row.id}` === key && row.versions.length === 1);
@@ -248,6 +258,7 @@ export function applyPortableWorkspace(state,workspace,{config={},home,resolvedK
       state.projectAgentOverrides[r.id]={...restrictions,...Object.fromEntries(Object.entries(v.agentOverrides).map(([id,a])=>[id,{...state.projectAgentOverrides[r.id]?.[id],portableIdentity:true,name:a.name,description:a.subtitle,instructions:decodeV1Persona(a),identity:a.identity,soulMd:a.soul,systemPrompt:a.systemPrompt,mood:a.mood,model:a.model,symbol:a.symbol,avatarData:a.avatarData?'data:image/jpeg;base64,'+a.avatarData:''}]))};
     }
     if(r.kind==='knowledge') {
+      if (r.id.startsWith('pld_')) continue;
       let note=state.artifacts.find(n=>n.id===r.id);
       if(!note){note={id:r.id,chatId:null,createdAt:now};state.artifacts.push(note);}
       Object.assign(note,{title:v.title,content:v.content,kind:v.kind,language:v.language,projectId:v.projectId});
@@ -257,6 +268,7 @@ export function applyPortableWorkspace(state,workspace,{config={},home,resolvedK
   for(const r of records){const v=r.versions[0].value;
     if(r.kind==='conversation') {
       const chat=state.chats.find(c=>c.id===r.id&&!c.externalThreadKey);if(!chat)continue;
+      moveChatProject(state, chat, v.projectId, now);
       Object.assign(chat,{agentId:v.agentId,projectId:v.projectId,contextArtifactIds:v.knowledgeIds,modelSelection:importModelSelection(v.model,config)});
       if(v.compact)applyCompact(chat,v.compact);
     }

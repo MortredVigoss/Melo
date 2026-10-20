@@ -48,7 +48,7 @@ enum WorkspaceProjection {
     static func pending(_ preferences: MobilePreferences) -> Set<String> {
         var held = Set((preferences.personaSyncHolds ?? [:]).keys)
         for a in preferences.agents where agent(a,previous:previous(preferences,"agent",a.id)) == nil { held.insert("agent:" + a.id) }
-        for p in preferences.projects ?? [] {
+        for p in preferences.projects ?? [] where p.deletedAt == nil {
             let before = previous(preferences,"project",p.id)
             if (preferences.projectAgents?[p.id] ?? [:]).contains(where: { agent($0.value,previous:before["agentOverrides"][$0.key]) == nil }) { held.insert("project:" + p.id) }
         }
@@ -131,7 +131,7 @@ enum WorkspaceProjection {
             if let value = agent(a,previous:before) { try put("agent",a.id,value) }
             else { hold("agent",a.id,a.name); if before == .null { unavailableAgents.insert(a.id) } }
         }
-        for p in preferences.projects ?? [] {
+        for p in preferences.projects ?? [] where p.deletedAt == nil {
             let before = previous(preferences,"project",p.id)
             var overrides: [String: Any] = [:], blocked = false
             for (id,a) in preferences.projectAgents?[p.id] ?? [:] {
@@ -162,6 +162,45 @@ enum WorkspaceProjection {
         }
         return (try workspace.validated(), holds)
     }
+    static func assertProjectMovementIdle(_ before: MobilePreferences, _ after: MobilePreferences, activeChats: Set<String>) throws {
+        guard !activeChats.contains(where: { before.chatProjects?[$0] != after.chatProjects?[$0] }) else { throw MeloError.message("请等待当前任务结束后再移动对话。") }
+    }
+    static func applyDeletions(_ workspace: SyncWorkspace, preferences: inout MobilePreferences) throws {
+        let deleted = try ProjectDeletion.markers(workspace)
+        for index in (preferences.projects ?? []).indices {
+            if let marker = deleted[preferences.projects![index].id] {
+                preferences.projects?[index].deletedAt = marker["deletedAt"].string
+                preferences.projects?[index].archived = true
+            }
+        }
+        preferences.chatProjects = preferences.chatProjects?.filter { deleted[$0.value] == nil }
+        for index in (preferences.knowledge ?? []).indices where deleted[preferences.knowledge?[index].projectId ?? ""] != nil { preferences.knowledge?[index].projectId = nil }
+        for index in (preferences.memoryFacts ?? []).indices {
+            if let fact = preferences.memoryFacts?[index], fact.scope == "project", fact.status == "active", deleted[fact.projectId] != nil { preferences.memoryFacts?[index].status = "historical" }
+        }
+    }
+    static func deleteProject(_ id: String, preferences: inout MobilePreferences, device: String, at: String, operation: String) throws {
+        guard preferences.projects?.contains(where: { $0.id == id }) == true else { throw MeloError.message("项目不存在。") }
+        var workspace = preferences.workspaceSync ?? SyncWorkspace()
+        if try ProjectDeletion.markers(workspace)[id] == nil {
+            workspace.put(kind:"knowledge",id:ProjectDeletion.id(id),value:try ProjectDeletion.value(project:id,operation:operation,at:at),device:device)
+        }
+        workspace = try workspace.validated()
+        try applyDeletions(workspace,preferences:&preferences)
+        preferences.workspaceSync = workspace
+    }
+    static func restoreProject(_ id: String, preferences: inout MobilePreferences, replacement: String) throws -> String {
+        guard let index = preferences.projects?.firstIndex(where: { $0.id == id }), var original = preferences.projects?[index], original.deletedAt != nil else { throw MeloError.message("项目没有删除记录。") }
+        if let existing = original.restoredProjectId {
+            guard preferences.projects?.contains(where: { $0.id == existing && $0.deletedAt == nil }) == true else { throw MeloError.message("请从最近的删除记录恢复。") }
+            return existing
+        }
+        guard SyncWorkspace.validID(replacement), preferences.projects?.contains(where: { $0.id == replacement }) != true else { throw MeloError.message("项目恢复身份无效。") }
+        original.id = replacement; original.deletedAt = nil; original.archived = false; original.restoredProjectId = nil
+        preferences.projects?[index].restoredProjectId = replacement
+        preferences.projects?.append(original)
+        return replacement
+    }
     static func readAgent(_ id: String, _ v: SyncValue, previous: AgentProfile? = nil) -> AgentProfile {
         var result = AgentProfile(id:id,name:v["name"].string,subtitle:v["subtitle"].string,symbol:v["symbol"].string,instructions:document(v),avatarData:Data(base64Encoded:v["avatarData"].string),mood:v["mood"].string,model:v["model"].string)
         result.capabilities=previous?.capabilities; result.collaboration=previous?.collaboration; result.contextSources=previous?.contextSources
@@ -169,7 +208,7 @@ enum WorkspaceProjection {
     }
 
     static func apply(_ workspace: SyncWorkspace, preferences: inout MobilePreferences, records: inout [ExecutionRecord], connections: [PortableConnection], resolvedKeys: Set<String> = []) throws {
-        _ = try workspace.validated()
+        let workspace = try workspace.validated()
         var held = pending(preferences)
         for key in resolvedKeys where held.contains(key) {
             guard let row = workspace.records.first(where: { $0.key == key && $0.versions.count == 1 }) else { continue }
@@ -200,6 +239,7 @@ enum WorkspaceProjection {
                 preferences.projectAgents?[row.id] = Dictionary(uniqueKeysWithValues:v["agentOverrides"].object.map { id,value in (id,readAgent(id,value,previous:previousAgents[id])) })
                 for id in preferences.projectAgents?[row.id]?.keys.map({$0}) ?? [] { preferences.projectAgents?[row.id]?[id]?.id = id }
             case "knowledge":
+                if row.id.hasPrefix("pld_") { continue }
                 let n = KnowledgeNote(id:row.id,title:v["title"].string,content:v["content"].string,deleted:v["deleted"].bool,kind:v["kind"].string,language:v["language"].string,projectId:v["projectId"] == .null ? nil : v["projectId"].string)
                 var notes = preferences.knowledge ?? []; if let index = notes.firstIndex(where: { $0.id == row.id }) { notes[index] = n } else { notes.append(n) }; preferences.knowledge = notes
             case "conversation":
@@ -250,6 +290,7 @@ enum WorkspaceProjection {
             default: break
             }
         }
+        try applyDeletions(workspace, preferences: &preferences)
         preferences.workspaceSync = workspace
     }
 }

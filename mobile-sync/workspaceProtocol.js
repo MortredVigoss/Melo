@@ -1,4 +1,5 @@
 import { validMessageID } from './identifiers.js';
+import { projectLifecycleWorkspace } from './projectLifecycle.js';
 import { syncSchema } from './syncContract.generated.js';
 import { validateSchema } from './schemaValidator.js';
 // Portable user context. Credentials, machine paths and execution permissions
@@ -136,13 +137,14 @@ export function validateWorkspace(v) {
   validateSchema(v, syncSchema.$defs.workspace, syncSchema);
   if(v.version!==1||!Array.isArray(v.records))throw new Error('Invalid workspace sync');
   const seen=new Set();
-  return {version:1,records:v.records.map(r=>{
+  const projected = projectLifecycleWorkspace({version:1,records:v.records.map(r=>{
     const key=`${r.kind}:${r.id}`;
     if(!(r.kind==='message'?validMessageID(r.id):safeID(r.id))||seen.has(key)||!Array.isArray(r.versions)||!r.versions.length||r.versions.length>20)throw new Error('Invalid workspace register');
     seen.add(key);
     const versions=coalesce(r.versions.map(version=>({clock:clock(version.clock),value:portableValue(r.kind,version.value)})));
     return {kind:r.kind,id:r.id,versions:r.kind==='conversation'?coalesceConversation(versions):versions};
-  }).sort((a,b)=>`${a.kind}:${a.id}`.localeCompare(`${b.kind}:${b.id}`))};
+  }).sort((a,b)=>`${a.kind}:${a.id}`.localeCompare(`${b.kind}:${b.id}`))});
+  return {...projected,records:projected.records.map(row=>({...row,versions:row.kind==='conversation'?coalesceConversation(coalesce(row.versions)):coalesce(row.versions)}))};
 }
 export function mergeWorkspaces(a,b) {
   const records=new Map();

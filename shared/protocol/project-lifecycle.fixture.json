@@ -1,0 +1,14 @@
+{
+  "projectId": "lifecycle-interoperability",
+  "operationId": "delete-once",
+  "deletedAt": "2026-10-20T00:00:00.000Z",
+  "markerId": "pld_f4503557640f3a72685b0f9b8e12cebb4ff46c5cd231078b03763c43f76cacba",
+  "markerValue": {
+    "title": "Deleted project",
+    "kind": "project-lifecycle-v1",
+    "language": "json",
+    "projectId": null,
+    "deleted": true,
+    "content": "{\"version\":1,\"projectId\":\"lifecycle-interoperability\",\"operationId\":\"delete-once\",\"deletedAt\":\"2026-10-20T00:00:00.000Z\"}"
+  }
+}

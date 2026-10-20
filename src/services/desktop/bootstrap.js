@@ -250,7 +250,8 @@ export async function getDesktopBootstrap(query = '', { skipModelNormalize = fal
   const state = ensureSelectedEntities(rawState);
   const chats = sortChats(state.chats);
   const selectedChat = chats.find(chat => chat.id === state.settings.selectedChatId) || null;
-  const activeProject = findProjectById(state, state.settings.selectedProjectId);
+  const selectedProject = findProjectById(state, state.settings.selectedProjectId);
+  const activeProject = selectedProject?.deletedAt ? null : selectedProject;
   const workspace = await buildWorkspaceSnapshot(state, selectedChat ? findProjectById(state, selectedChat.projectId) : activeProject, {chat:selectedChat,home:ctx.home});
   const connectors = buildConnectors(state.settings.enabledConnectorIds, config, workspace, state, activeProject);
 

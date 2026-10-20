@@ -108,3 +108,27 @@ test('overview search and the archived switch filter the bootstrap projects with
   assert.deepEqual(titles(), ['Old trip']);
   assert.equal(h.feature.handleSearchInput(element('<input id="global-search">')), false);
 });
+
+test('project deletion needs its own preview; deleted projects have a restore entry and stay out of ordinary lists', async () => {
+  const h = harness({ projects: [card('live', 'Live'), card('gone', 'Gone', { archived: true, deletedAt: '2026-10-20T00:00:00Z' })], artifacts: [] });
+  await click(h, 'confirm-delete-project', '<button data-project-id="live"></button>');
+  assert.equal(h.calls.length, 0, 'no mutation without the matching confirmation');
+  await click(h, 'preview-delete-project', '<button data-project-id="live"></button>');
+  await click(h, 'cancel-delete-project');
+  await click(h, 'confirm-delete-project', '<button data-project-id="live"></button>');
+  assert.equal(h.calls.length, 0);
+  await click(h, 'preview-delete-project', '<button data-project-id="live"></button>');
+  await click(h, 'confirm-delete-project', '<button data-project-id="live"></button>');
+  assert.equal(h.calls.length, 1);
+  assert.equal(h.calls[0][0], '/api/projects/lifecycle');
+  assert.equal(h.calls[0][2].action, 'delete');
+  assert.ok(h.calls[0][2].operationId);
+  assert.equal(h.feature.getState().pendingDeleteProjectId, null);
+  assert.doesNotMatch(h.feature.renderPage(), /data-project-id="gone"/);
+  await click(h, 'toggle-deleted-projects');
+  assert.match(h.feature.renderPage(), /restore-deleted-project/);
+  assert.match(h.feature.renderPage(), /旧审批不会恢复/);
+  await click(h, 'restore-deleted-project', '<button data-project-id="gone"></button>');
+  assert.equal(h.calls[1][2].action, 'restore');
+  assert.equal(h.calls[1][2].projectId, 'gone');
+});

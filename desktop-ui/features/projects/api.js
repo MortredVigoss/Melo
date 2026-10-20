@@ -6,5 +6,6 @@ export function createProjectsApi(request) {
   return {
     create: body => request('/api/projects', { method: 'POST', body }),
     update: (projectId, patch) => request('/api/projects/update', { method: 'POST', body: { projectId, patch } }),
+    lifecycle: (projectId, action, operationId) => request('/api/projects/lifecycle', { method: 'POST', body: { projectId, action, operationId } }),
   };
 }

@@ -163,6 +163,8 @@ struct PersonalProject: Codable, Identifiable, Equatable {
     var instructions: String?
     var knowledgeIds: Set<String>?
     var archived: Bool?
+    var deletedAt: String?
+    var restoredProjectId: String?
     // Match desktop projectText: hide only exact historical placeholders.
     // Keep stored/synchronized text intact, including user-authored variants.
     private static let legacyText: Set<String> = ["归拢相关对话、资料与目标。", "A local Melo project.", "Keep this project focused, actionable, and easy to continue later."]
@@ -187,14 +189,14 @@ struct PortableModelReceipt: Codable, Equatable {
 }
 enum KnowledgeCollection {
     static func items(_ notes: [KnowledgeNote], results: Bool, deleted: Bool, query: String) -> [KnowledgeNote] {
-        notes.filter { ($0.deleted == true) == deleted && ($0.kind == "result") == results && (query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || $0.content.localizedCaseInsensitiveContains(query)) }
+        notes.filter { $0.kind != "project-lifecycle-v1" && !$0.id.hasPrefix("pld_") && ($0.deleted == true) == deleted && ($0.kind == "result") == results && (query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || $0.content.localizedCaseInsensitiveContains(query)) }
     }
 }
 enum ConversationContext {
     static func validateNewProject(_ id: String?, preferences: MobilePreferences) throws {
         guard let id else { return }
         guard let project = preferences.projects?.first(where: { $0.id == id }) else { throw MeloError.message("本对话所属项目未同步完成，请同步或重新选择项目。") }
-        guard project.archived != true else { throw MeloError.message("请先恢复此项目，再创建对话。") }
+        guard project.deletedAt == nil, project.archived != true else { throw MeloError.message("请先恢复此项目，再创建对话。") }
     }
     static func notes(preferences: MobilePreferences, chatID: String) -> [KnowledgeNote] {
         let project = preferences.projects?.first { $0.id == preferences.chatProjects?[chatID] }

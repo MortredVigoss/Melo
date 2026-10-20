@@ -59,12 +59,14 @@
 
 ## 4. 最新交接
 
-### 2026-10-20 — melo主线（Codex）— #8 已关闭，#7 Android 上下文接线
-- 状态：#1/#4/#3/#9/#2/#5/#6/#8 已推送关闭。#8 主线 a2551cf、Android 5f3d834；#7 WIP，之后 #11/#12/#10/#13/#14。
+### 2026-10-20 — melo主线（Codex）— #7 已关闭，#11 项目生命周期验证
+- 状态：#1/#4/#3/#9/#2/#5/#6/#8/#7 已推送关闭。#8 主线 a2551cf、Android 5f3d834；#11 验证中，之后 #12/#10/#13/#14。
 - #6：组合主线完整日常 4303 JS + 35 Swift 与 iPhone simulator 构建成功。Android 05592af 已推送，CI 39365644626 全绿，模拟器 66/66；详见完成回执。
 - #8：复用 ExecutionScene/ToolInvocationRecord/ExecutionRecord，同源生成稳定事件 ID；UI 和模型历史对得上。无回执的副作用保持 unknown，回看不执行；参数正文不进入规范事件，既有 Android 有界脱敏详情继续保留并关联事件 ID。
 - 文件/证据：[完成回执](docs/completion-receipts-20261020.md)、[Session Events](docs/session-events-20261020.md)，src/shared/sessionEvents.js、shared/agent/execution.js、Node 记录/上下文、Swift 原生桥和共享执行面板；Node 三协议 HTTP、落盘与零重放计数、Core/DOM 专项 160/160。
 - 边界：隔离工作树、隔离数据与受控 HTTP；真实模型/实体设备未验，未安装应用、运行 git pp 或改真实账号。主线日常 4314 JS + 35 Swift、iPhone simulator 构建通过；Android 5f3d834 的 CI 39366995591 全过。#7 已逐字移植预算，正接原文回读、压缩边界与来源开关，见 [Android 上下文](docs/android-context-20261020.md)。
+- #7：主线 fd0dfd7 / ab8240a、Android ef276a5 已推送且 issue 已关闭；4322 JS / 35 Swift 与 Android CI 39375015622（68/68、零跳过）通过。三次 ART 崩溃证据和修正保留在专项文档。
+- #11：[项目生命周期](docs/project-lifecycle-20261020.md)已接桌面/HTTP/iPhone/Android。主线最终完整日常 4331 JS / 35 Swift 与 iPhone simulator 构建通过；Android 首轮 67/69，修正同名导航定位和旧用例对运行中移动的预期，第二轮 CI 待验，未推生产或关闭。
 
 ### 2026-10-20 — melo审计修复（Cowork / Claude）— 能力临时提升与即时开启（iPhone 端）
 - 接手桌面交接（专项第 9 节）：Swift 判定核心与 35 条共享夹具（0 跳过）、本机账本与请求代理、唯一卡口 `DeviceToolContext.perform`（主回复与团队成员、三条连接）、卡片与「临时授权」列表、新建 Agent 起点。入口与映射、差异见[专项](docs/capability-elevation-20261020.md) 9.1–9.3；契约新增 `capabilityElevation.phone`（只增不改，桌面忽略）。
@@ -175,7 +177,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | 线程（原名） | ID | 最新交接 / 实际范围 | 状态与证据 |
 | --- | --- | --- | --- |
 | melo审计修复（Cowork） | `01a11623-b29c-70c7-8ee0-bb21a1e6eef3` | 10-17 三路只读审计 → 四批修复：TTS 路由、上下文预算/窗口/压缩同源、逐轮上下文入用户消息、Discord 归档、Agent 成员/循环/审批加固、分层 gate 传递闭包、文档对齐；10-19 手机 agent loop 对齐桌面（共享 `agent-loop.json`）；10-19 架构方案 P0 执行 → P2a 记忆 / 项目页拆分 → P2b Agent 设置拆分 → P2c 聊天拆分（P2 完成）；10-20 Agent 能力临时提升与即时开启（桌面 + 共享规则 + 手机端） | 沙箱全量 JS 回归与基线一致；用户机器日常 gate 见本次提交；[审计与实施状态](docs/architecture-agent-context-audit-20261017.md) §7；P2c / P2b / P2a / P0 见[历史交接](docs/handoffs/overview-history-20261019.md) |
-| melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 七项双端修复已推送并覆盖两端；10-19 新增架构维护成本审计与分期方案；10-19 GitHub 权限只读核对；10-19 Claude 架构 P0–P2 独立审计与 R1 修复；10-20 核对并按序实施 yrlf 的 14 条 issues | [双端修复](docs/mobile-desktop-alignment.md) / [装机保留](docs/dual-reinstall-20261019.md)已验；[架构方案](docs/architecture-maintainability-plan-20261019.md)已本地提交 `db9f7ba`，用户已批准执行 P0–P2（执行修订见方案第 8 节）；本次[审计及修复](docs/claude-architecture-review-20261019.md) R1 已在 `46554b2` 修复，日常选定范围全部通过，已随 `401ae4b` 推送；[14 条 issues 核对](docs/github-issues-review-20261020.md)已转入[按序实施](docs/github-issues-implementation-20261020.md)，#1 修复 `47da231` 已推送、issue 已关闭，双平台 CI 通过；#4 `94e76cb` 已推送、issue 已关闭；#3 `1c48b6a` 已推送、issue 已关闭；#9/#2/#5 已推送关闭；#6 已关闭，#8 已关闭，#7 Android 上下文实施中 |
+| melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 七项双端修复已推送并覆盖两端；10-19 新增架构维护成本审计与分期方案；10-19 GitHub 权限只读核对；10-19 Claude 架构 P0–P2 独立审计与 R1 修复；10-20 核对并按序实施 yrlf 的 14 条 issues | [双端修复](docs/mobile-desktop-alignment.md) / [装机保留](docs/dual-reinstall-20261019.md)已验；[架构方案](docs/architecture-maintainability-plan-20261019.md)已本地提交 `db9f7ba`，用户已批准执行 P0–P2（执行修订见方案第 8 节）；本次[审计及修复](docs/claude-architecture-review-20261019.md) R1 已在 `46554b2` 修复，日常选定范围全部通过，已随 `401ae4b` 推送；[14 条 issues 核对](docs/github-issues-review-20261020.md)已转入[按序实施](docs/github-issues-implementation-20261020.md)，#1 修复 `47da231` 已推送、issue 已关闭，双平台 CI 通过；#4 `94e76cb` 已推送、issue 已关闭；#3 `1c48b6a` 已推送、issue 已关闭；#9/#2/#5 已推送关闭；#6 已关闭，#8 已关闭，#7 已关闭；#11 跨端验证中 |
 | melo主线（历史·2026-10-15） | `01a10bf2-e092-7862-87fe-2f237a8fb6a0` | 架构、审计、记忆、function calling、日常 gate 和手机 OAuth；本次只补遗漏 | 已完成补录；授权核心已提交，当时相关共享文件的他线程 WIP 已于 10-17 收入 `8cd3eff`；[build23 回执](docs/handoffs/melo-thread-backfill-20261015.md#historical)，产品任务交新主线 |
 | 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | 五语 / 图像质量 / MCP / Agent 设置已完成；10-20 测试选组审计后按用户授权完成漏选修复、功能 / 平台选组、预检去重与统一开发规范 | [实施与验证](docs/test-selection-implementation-20261020.md)：工具 29/29，隔离全日常与 32 Swift 通过；产品业务和其他线程 WIP 保留，本地提交未推送。历史 Agent 验收见 `docs/agent-settings-20261016.md` |
 | melo ui | `01a10bf3-d7b9-7832-a351-8b0f78e9c552` | 10-16 UI 设计语言审计：主视觉统一，新增浮层/设置/控件接入不完整；仅审计 | 六类差异与手机 Form 待验项见[审计报告](docs/ui-language-audit-20261016.md)；桌面实看/样式采样，手机源码层；此前[银河与留白](docs/galaxy-clarity-20261016.md)验证保留 |

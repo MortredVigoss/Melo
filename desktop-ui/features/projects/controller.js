@@ -19,7 +19,7 @@ export function installProjectsController(context) {
 
 function filteredProjects() {
   const query = projectsState.projectSearch.trim().toLowerCase();
-  const projects = (getBootstrap()?.projects || []).filter(project=>Boolean(project.archived)===projectsState.showArchivedProjects);
+  const projects = (getBootstrap()?.projects || []).filter(project=>projectsState.showDeletedProjects ? Boolean(project.deletedAt) : !project.deletedAt && Boolean(project.archived)===projectsState.showArchivedProjects);
   if (!query) return projects;
 
   return projects.filter(project =>
@@ -108,7 +108,29 @@ export const projectsActions = {
     render();
   },
   'toggle-archived-projects': () => {
+    projectsState.showDeletedProjects = false;
     projectsState.showArchivedProjects = !projectsState.showArchivedProjects; render();
+  },
+  'toggle-deleted-projects': () => {
+    projectsState.showDeletedProjects = !projectsState.showDeletedProjects; render();
+  },
+  'preview-delete-project': ({ trigger }) => {
+    projectsState.pendingDeleteProjectId = trigger.dataset.projectId; render();
+  },
+  'cancel-delete-project': () => { projectsState.pendingDeleteProjectId = null; render(); },
+  'confirm-delete-project': async ({ trigger }) => {
+    if (projectsState.lifecycleBusy || projectsState.pendingDeleteProjectId !== trigger.dataset.projectId) return;
+    projectsState.lifecycleBusy = true;
+    try {
+      applyBootstrap(await projectsApi.lifecycle(trigger.dataset.projectId, 'delete', crypto.randomUUID()));
+      projectsState.pendingDeleteProjectId = null;
+    } finally { projectsState.lifecycleBusy = false; render(); }
+  },
+  'restore-deleted-project': async ({ trigger }) => {
+    if (projectsState.lifecycleBusy) return;
+    projectsState.lifecycleBusy = true;
+    try { applyBootstrap(await projectsApi.lifecycle(trigger.dataset.projectId, 'restore', crypto.randomUUID())); }
+    finally { projectsState.lifecycleBusy = false; render(); }
   },
   'archive-project': async ({ trigger }) => {
     applyBootstrap(await projectsApi.update(trigger.dataset.projectId,{archived:trigger.dataset.archived==='true'}));

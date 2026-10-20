@@ -53,9 +53,9 @@ export function ensureSelectedEntities(state) {
   const selectedProjectId =
     persistedProjectId == null
       ? null
-      : state.projects.some(project => project.id === persistedProjectId)
+      : state.projects.some(project => project.id === persistedProjectId && !project.deletedAt)
         ? persistedProjectId
-        : state.projects[0]?.id || null;
+        : state.projects.find(project => !project.deletedAt)?.id || null;
   const selectedAgentScope =
     state.settings.selectedAgentScope === 'project' && selectedProjectId ? 'project' : 'global';
   const selectedCustomizeSection = [

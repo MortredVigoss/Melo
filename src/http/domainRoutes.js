@@ -1,4 +1,5 @@
 import {previewChatDeletion,listChatFiles,decideChatFiles,openChatFiles} from '../services/workspace/chatWorkspaceFiles.js';
+import { changeProjectLifecycle } from '../services/project/projectLifecycle.js';
 import { createRouteRegistry } from './routeRegistry.js';
 import { saveExtraFast, testExtraFast } from '../services/settings/extraFast.js';
 import { memoryFacts, updateMemoryFact, projectMemoryBook, createProjectMemoryBookEntry } from '../services/memory/memoryManagement.js';
@@ -26,6 +27,7 @@ import { getEmbeddingProvider } from '../memory/embedProviders/createEmbeddingPr
 
 
 const router = createRouteRegistry([
+    {method:'POST',paths:['/api/projects/lifecycle'],auth:'local-write',handler:async({request,response})=>sendBootstrapAfterCommit(response,await changeProjectLifecycle(await readJsonBody(request)))},
     {method:'POST',paths:['/api/chats/delete-preview'],auth:'local-write',handler:async({request,response})=>sendJson(response,200,await previewChatDeletion((await readJsonBody(request)).chatId))},
     {method:'GET',paths:['/api/workspace/retained'],auth:'local-read',handler:async({response})=>sendJson(response,200,await listChatFiles())},
     {method:'POST',paths:['/api/workspace/retained'],auth:'local-write',handler:async({request,response})=>sendJson(response,200,await decideChatFiles(await readJsonBody(request)))},

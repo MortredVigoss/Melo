@@ -22,8 +22,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 596,
-      "edges": 1801,
+      "modules": 599,
+      "edges": 1813,
       "roots": [
         "src",
         "desktop-ui",
@@ -32,7 +32,7 @@
       ],
       "note": "静态 import/re-export，含 desktop-ui 对 /shared/*.js 的服务映射；不含动态 import 与外部包"
     },
-    "routes": 157,
+    "routes": 158,
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
@@ -58,7 +58,7 @@
       ],
       "modules": {
         "desktop-ui": 7,
-        "src": 15
+        "src": 17
       },
       "entryModules": [
         {
@@ -72,6 +72,13 @@
           "module": "desktop-ui/features/projects/index.js",
           "importedBy": [
             "desktop-shell"
+          ]
+        },
+        {
+          "module": "src/domain/project/projectLifecycle.js",
+          "importedBy": [
+            "chat",
+            "sync"
           ]
         },
         {
@@ -100,6 +107,12 @@
           "importedBy": [
             "approvals",
             "chat"
+          ]
+        },
+        {
+          "module": "src/services/project/projectLifecycle.js",
+          "importedBy": [
+            "platform"
           ]
         },
         {
@@ -160,23 +173,25 @@
         "desktop-shell": 5,
         "knowledge": 1,
         "memory": 1,
-        "platform": 19,
+        "platform": 23,
         "settings": 1,
+        "sync": 2,
         "tools": 3
       },
       "usedBy": {
         "approvals": 4,
-        "chat": 10,
+        "chat": 11,
         "desktop-shell": 5,
         "memory": 1,
-        "platform": 5,
-        "sync": 1,
+        "platform": 6,
+        "sync": 2,
         "tools": 5,
         "voice": 1
       },
       "httpRoutes": [
         "POST /api/chats/delete-preview ← src/http/domainRoutes.js",
         "POST /api/projects ← src/http/domainRoutes.js",
+        "POST /api/projects/lifecycle ← src/http/domainRoutes.js",
         "POST /api/projects/update ← src/http/domainRoutes.js",
         "POST /api/workspace/citation-preview ← src/http/domainRoutes.js",
         "POST /api/workspace/open ← src/http/domainRoutes.js",
@@ -217,6 +232,7 @@
           "desktop-ui/projectR1.browser.test.js",
           "src/desktopStore.projectsDefault.test.js",
           "src/services/project/projectAgentDefaults.test.js",
+          "src/services/project/projectLifecycle.test.js",
           "src/services/project/projectMemoryBook.test.js",
           "src/services/project/projectMutations.test.js",
           "src/services/workspace/chatWorkspaceFiles.test.js",
@@ -960,7 +976,7 @@
         "media": 25,
         "memory": 26,
         "platform": 54,
-        "projects": 10,
+        "projects": 11,
         "settings": 9,
         "sync": 2,
         "tools": 32,
@@ -1939,7 +1955,7 @@
       ],
       "modules": {
         "desktop-ui": 1,
-        "mobile-sync": 19,
+        "mobile-sync": 20,
         "src": 5
       },
       "entryModules": [
@@ -1947,6 +1963,12 @@
           "module": "desktop-ui/syncConflicts.js",
           "importedBy": [
             "desktop-shell"
+          ]
+        },
+        {
+          "module": "mobile-sync/projectLifecycle.js",
+          "importedBy": [
+            "projects"
           ]
         },
         {
@@ -1959,7 +1981,8 @@
         {
           "module": "mobile-sync/workspaceProtocol.js",
           "importedBy": [
-            "memory"
+            "memory",
+            "projects"
           ]
         },
         {
@@ -1996,7 +2019,7 @@
         "desktop-shell": 1,
         "memory": 5,
         "platform": 4,
-        "projects": 1,
+        "projects": 2,
         "settings": 1
       },
       "usedBy": {
@@ -2004,6 +2027,7 @@
         "desktop-shell": 2,
         "memory": 2,
         "platform": 2,
+        "projects": 2,
         "settings": 3
       },
       "httpRoutes": [
@@ -2048,6 +2072,7 @@
           "mobile-sync/desktop.test.js",
           "mobile-sync/http.test.js",
           "mobile-sync/memory.test.js",
+          "mobile-sync/projectLifecycle.test.js",
           "mobile-sync/protocol.test.js",
           "mobile-sync/syncContract.test.js",
           "mobile-sync/taskProtocol.test.js",
@@ -3884,7 +3909,7 @@
         "knowledge": 2,
         "media": 2,
         "memory": 19,
-        "projects": 5,
+        "projects": 6,
         "settings": 16,
         "sync": 2,
         "tools": 14,
@@ -3899,7 +3924,7 @@
         "knowledge": 2,
         "media": 9,
         "memory": 24,
-        "projects": 19,
+        "projects": 23,
         "settings": 22,
         "sync": 4,
         "tools": 34,
@@ -3930,6 +3955,7 @@
           "src/http/memoryBookRoute.test.js",
           "src/http/mobileSyncScenes.test.js",
           "src/http/projectAgentRoutes.http.test.js",
+          "src/http/projectLifecycle.http.test.js",
           "src/http/projectMemoryConcurrency.http.test.js",
           "src/http/projectMemorySync.http.test.js",
           "src/http/routeRegistry.test.js",

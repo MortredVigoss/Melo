@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 indirect enum SyncValue: Codable, Equatable {
     case string(String), number(Double), bool(Bool), array([SyncValue]), object([String: SyncValue]), null
@@ -81,7 +82,7 @@ struct SyncWorkspace: Codable, Equatable {
                 try Self.validateLinks(value.value, kind: row.kind)
             }
         }
-        return self
+        return try ProjectDeletion.project(self)
     }
     private static func validateLinks(_ value: SyncValue, kind: String) throws {
         func url(_ text: String, endpoint: Bool = false) throws {
@@ -112,14 +113,14 @@ struct SyncWorkspace: Codable, Equatable {
         return rows.filter { v in !rows.contains { other in other.value != v.value && dominates(other.clock, v.clock) && !dominates(v.clock, other.clock) } }.sorted { $0.value.canonical < $1.value.canonical }
     }
     func merging(_ remote: SyncWorkspace) throws -> SyncWorkspace {
-        _ = try validated(); _ = try remote.validated()
+        let local = try validated(), remote = try remote.validated()
         var rows: [String: SyncRegister] = [:]
-        for row in records + remote.records {
+        for row in local.records + remote.records {
             var merged = row
             merged.versions = Self.coalesced((rows[row.key]?.versions ?? []) + row.versions)
             rows[row.key] = merged
         }
-        return .init(records: rows.values.sorted { $0.key < $1.key })
+        return try SyncWorkspace(records: rows.values.sorted { $0.key < $1.key }).validated()
     }
     mutating func put(kind: String, id: String, value: SyncValue, device: String) {
         if let index = records.firstIndex(where: { $0.kind == kind && $0.id == id }) {
@@ -133,6 +134,59 @@ struct SyncWorkspace: Codable, Equatable {
         let value = records[index].versions[choice].value
         var clock = Self.joined(records[index].versions); clock[device, default: 0] += 1
         records[index].versions = [.init(clock: clock, value: value)]
+    }
+}
+
+// An immutable v1 knowledge envelope carries remove-wins project tombstones.
+// Paths, permissions, images and executable content never enter this envelope.
+enum ProjectDeletion {
+    private static func validDate(_ at: String) -> Bool {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if formatter.date(from: at) != nil { return true }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: at) != nil
+    }
+    static func id(_ project: String) -> String {
+        "pld_" + SHA256.hash(data: Data(project.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+    static func value(project: String, operation: String, at: String) throws -> SyncValue {
+        guard SyncWorkspace.validID(project), SyncWorkspace.validID(operation), validDate(at) else { throw MeloError.message("项目删除记录无效。") }
+        let content = try SyncValue.from(["version":1,"projectId":project,"operationId":operation,"deletedAt":at]).canonical
+        return try .from(["title":"Deleted project","kind":"project-lifecycle-v1","language":"json","projectId":NSNull(),"deleted":true,"content":content])
+    }
+    static func markers(_ workspace: SyncWorkspace) throws -> [String: SyncValue] {
+        var result: [String: SyncValue] = [:]
+        for row in workspace.records where row.kind == "knowledge" && row.id.hasPrefix("pld_") {
+            for version in row.versions {
+                let v = version.value
+                guard v["kind"].string == "project-lifecycle-v1", v["deleted"].bool, v["projectId"] == .null, v["content"].string.utf16.count <= 2000 else { throw MeloError.message("项目删除记录不可修改。") }
+                let marker = try JSONDecoder().decode(SyncValue.self, from: Data(v["content"].string.utf8))
+                guard marker["version"] == .number(1), Set(marker.object.keys) == Set(["version","projectId","operationId","deletedAt"]), row.id == id(marker["projectId"].string) else { throw MeloError.message("项目删除记录身份不匹配。") }
+                _ = try value(project:marker["projectId"].string,operation:marker["operationId"].string,at:marker["deletedAt"].string)
+                let project = marker["projectId"].string
+                if result[project] == nil || marker["deletedAt"].string < result[project]!["deletedAt"].string { result[project] = marker }
+            }
+        }
+        return result
+    }
+    static func project(_ workspace: SyncWorkspace) throws -> SyncWorkspace {
+        let removed = try markers(workspace)
+        guard !removed.isEmpty else { return workspace }
+        return SyncWorkspace(records: workspace.records.filter { $0.kind != "project" || removed[$0.id] == nil }.map { row in
+            var row = row
+            if ["conversation","knowledge","memory"].contains(row.kind) {
+                row.versions = SyncWorkspace.coalesced(row.versions.map { version in
+                    guard removed[version.value["projectId"].string] != nil else { return version }
+                    var version = version, fields = version.value.object
+                    if row.kind == "memory" {
+                        if version.value["scope"].string == "project" && version.value["status"].string == "active" { fields["status"] = .string("historical") }
+                    } else { fields["projectId"] = .null }
+                    version.value = .object(fields); return version
+                })
+            }
+            return row
+        })
     }
 }
 

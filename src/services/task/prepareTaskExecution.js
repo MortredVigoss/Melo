@@ -14,9 +14,12 @@ export async function prepareTaskExecution(taskId, { skipBootstrap = false, team
   await updateStateAtomically(state => {
     const task = state.tasks.find(t => t.id === taskId);
     if (!task) throw new Error('找不到任务。');
+    if (task.projectId && state.projects?.find(project => project.id === task.projectId)?.deletedAt) throw new Error('所属项目已删除，请重新分配任务后再执行。');
     if (task.status === 'running') throw new Error('任务正在执行，请先停止当前执行。');
     let chat = state.chats.find(c => c.id === task.execution?.chatId);
-    if (!chat) {
+    // Reassignment creates a fresh execution chat; the previous run keeps its
+    // original conversation and workspace snapshot.
+    if (!chat || (chat.projectId || null) !== (task.projectId || null)) {
       assertCanCreateChat(state);
       chat = createChatRecord({ mode: 'chat', projectId: task.projectId, agentId: task.owner });
       chat.title = task.title;

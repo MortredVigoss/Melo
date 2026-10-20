@@ -23,6 +23,42 @@ import Foundation
     for id in ["missing", "archived"] {
         do { try ConversationContext.validateNewProject(id,preferences:projectPreferences); assertionFailure("invalid project accepted") } catch { }
     }
+    let deletionFixture = try JSONDecoder().decode(SyncValue.self,from:Data(contentsOf:URL(fileURLWithPath:"shared/protocol/project-lifecycle.fixture.json")))
+    assert(ProjectDeletion.id(deletionFixture["projectId"].string) == deletionFixture["markerId"].string)
+    let deletionWire = try SyncWorkspace(records:[.init(kind:"knowledge",id:deletionFixture["markerId"].string,versions:[.init(clock:["desktop":1],value:deletionFixture["markerValue"])])]).validated()
+    let interoperableMarkers = try ProjectDeletion.markers(deletionWire)
+    assert(interoperableMarkers[deletionFixture["projectId"].string]?["operationId"].string == "delete-once")
+    var lifecycle = projectPreferences
+    lifecycle.chatProjects = ["chat":"legacy-project"]
+    lifecycle.knowledge = [.init(id:"asset",title:"Original",content:"keep exact",projectId:"legacy-project")]
+    let offline = try WorkspaceProjection.refreshed(lifecycle,chats:[],records:[],connections:[],device:"old-phone")
+    try WorkspaceProjection.deleteProject("legacy-project",preferences:&lifecycle,device:"phone",at:"2026-10-20T01:00:00Z",operation:"once")
+    do { try WorkspaceProjection.assertProjectMovementIdle(projectPreferences,lifecycle,activeChats:["chat"])
+    } catch { assertionFailure("original had no membership to change") }
+    var activeBefore = projectPreferences; activeBefore.chatProjects = ["chat":"legacy-project"]
+    do { try WorkspaceProjection.assertProjectMovementIdle(activeBefore,lifecycle,activeChats:["chat"]); assertionFailure("active project moved") } catch { }
+    try WorkspaceProjection.assertProjectMovementIdle(activeBefore,lifecycle,activeChats:[])
+    let deleted = lifecycle.workspaceSync!
+    assert(lifecycle.chatProjects?["chat"] == nil && lifecycle.knowledge?.first?.content == "keep exact")
+    assert(lifecycle.projects?.first?.deletedAt != nil)
+    let reopenedLifecycle = try JSONDecoder().decode(MobilePreferences.self,from:JSONEncoder().encode(lifecycle))
+    assert(reopenedLifecycle.projects == lifecycle.projects && reopenedLifecycle.workspaceSync == lifecycle.workspaceSync)
+    for merged in [try deleted.merging(offline), try offline.merging(deleted)] {
+        assert(!merged.records.contains { $0.kind == "project" && $0.id == "legacy-project" })
+        var current = projectPreferences, records: [ExecutionRecord] = []
+        try WorkspaceProjection.apply(merged,preferences:&current,records:&records,connections:[])
+        assert(current.projects?.first?.deletedAt != nil)
+    }
+    let restoredID = try WorkspaceProjection.restoreProject("legacy-project",preferences:&lifecycle,replacement:"restored")
+    assert(restoredID == "restored" && lifecycle.chatProjects?["chat"] == nil)
+    let repeatedRestore = try WorkspaceProjection.restoreProject("legacy-project",preferences:&lifecycle,replacement:"retry")
+    assert(repeatedRestore == "restored")
+    let refreshedLifecycle = try WorkspaceProjection.refreshed(lifecycle,chats:[],records:[],connections:[],device:"phone")
+    assert(refreshedLifecycle.records.contains { $0.kind == "project" && $0.id == "restored" })
+    assert(!refreshedLifecycle.records.contains { $0.kind == "project" && $0.id == "legacy-project" })
+    var corrupted = deleted
+    corrupted.records[0].versions[0].value = .object(["kind":.string("note"),"content":.string("not a tombstone")])
+    do { _ = try corrupted.validated(); assertionFailure("tombstone replacement accepted") } catch { }
     let legacyPreview: SyncValue = .object(["name":.string("Original"),"mood":.string("sharp"),"symbol":.string("star")])
     assert(!legacyPreview.preview.contains("sharp") && legacyPreview.preview.contains("star"), "retired mood must not appear in conflict previews")
     let mixedNotes = [KnowledgeNote(id:"note",title:"知识",content:"reference"), KnowledgeNote(id:"result",title:"成果",content:"original code",kind:"result"), KnowledgeNote(id:"deleted-result",title:"已删除",content:"retained",deleted:true,kind:"result")]

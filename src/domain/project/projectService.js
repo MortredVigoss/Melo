@@ -61,6 +61,7 @@ export function normalizeProject(project, deps) {
     teamPlan: normalizeProjectTeamPlan(project?.teamPlan),
     ...(project?.deleted === true ? {deleted:true} : {}),
     ...(project?.deletedAt ? {deletedAt:project.deletedAt} : {}),
+    ...(project?.lifecycle && typeof project.lifecycle === 'object' ? { lifecycle: structuredClone(project.lifecycle) } : {}),
     ...(project?.workspaceConfirmation?.path ? {workspaceConfirmation:{...project.workspaceConfirmation}} : {}),
     createdAt: coerceIso(project?.createdAt, defaultProjectTime),
     updatedAt: coerceIso(project?.updatedAt, defaultProjectTime),

@@ -201,11 +201,27 @@ import SwiftUI
         guard storageReady else { return false }
         var next = preferences; change(&next)
         do {
+            try WorkspaceProjection.assertProjectMovementIdle(preferences,next,activeChats:sendingChats)
             try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
             try BackgroundReplyStorage.write(JSONEncoder().encode(next), to: preferencesFile)
             preferences = next
             return true
         } catch { if reportFailure { self.error = "无法保存手机设置，原设置已保留。" }; return false }
+    }
+    func deleteProject(_ id: String) {
+        guard !sendingChats.contains(where: { preferences.chatProjects?[$0] == id }) else { error = "请等待项目中的任务结束后再删除。"; return }
+        do {
+            var next = preferences
+            try WorkspaceProjection.deleteProject(id,preferences:&next,device:syncDevice,at:timestamp(),operation:UUID().uuidString)
+            _ = updatePreferences { $0 = next }
+        } catch { self.error = error.localizedDescription }
+    }
+    func restoreProject(_ id: String) {
+        do {
+            var next = preferences
+            _ = try WorkspaceProjection.restoreProject(id,preferences:&next,replacement:UUID().uuidString)
+            _ = updatePreferences { $0 = next }
+        } catch { self.error = error.localizedDescription }
     }
     func agent(for chatID: String) -> AgentProfile {
         let agents = AgentTeam.effectiveAgents(preferences, projectID: preferences.chatProjects?[chatID])
@@ -1042,6 +1058,8 @@ import SwiftUI
                 nextPreferences.personaSyncHolds = prepared.holds
                 let current = prepared.workspace
                 let merged = try current.excluding(nextDeleted).merging(remoteWorkspace.excluding(nextDeleted))
+                let deletedProjects = try ProjectDeletion.markers(merged)
+                guard !sendingChats.contains(where: { deletedProjects[preferences.chatProjects?[$0] ?? ""] != nil }) else { throw MeloError.message("项目删除同步等待当前任务结束，现有执行保持不变。") }
                 try WorkspaceProjection.apply(merged, preferences: &nextPreferences, records: &nextRecords, connections: connections)
             }
             nextPreferences.workspaceSync = nextPreferences.workspaceSync?.excluding(nextDeleted)
@@ -1145,6 +1163,7 @@ import SwiftUI
     }
     private struct SyncRecovery: Codable { var snapshot: SyncSnapshot; var preferences: MobilePreferences; var records: [ExecutionRecord]; var removedMessageIDs: Set<String>?; var protectedImageIDs: Set<String>? }
     private func commitSync(_ value: SyncRecovery) throws {
+        try WorkspaceProjection.assertProjectMovementIdle(preferences,value.preferences,activeChats:sendingChats)
         var recovery = value
         let deleted = Set((value.snapshot.deletedChats ?? []).map(\.id))
         recovery.removedMessageIDs = Set(chats.filter { deleted.contains($0.id) }.flatMap(\.messages).map(\.id))

@@ -72,6 +72,7 @@ function renderProjectsOverview() {
 
           <div class="inline-actions">
             <button class="ghost-button" data-action="toggle-archived-projects">${projectsState.showArchivedProjects?'查看进行中的项目':'查看已归档项目'}</button>
+            <button class="ghost-button" data-action="toggle-deleted-projects">${projectsState.showDeletedProjects?'返回项目':'已删除项目'}</button>
             <button class="ghost-button is-primary" data-action="toggle-project-form">
               <span class="toolbar-icon">${icon.plus}</span>
               新建项目
@@ -116,6 +117,11 @@ function renderProjectsOverview() {
 }
 
 function renderProjectCard(item) {
+  if (item.deletedAt) return ui`<section class="project-card">
+    <h2>${escapeHtml(item.name)}</h2><p>项目已删除；聊天、资料、图片和原文件夹保留。</p>
+    <p>原项目记忆保留在旧范围，旧审批不会恢复。</p>
+    <button class="small-button" data-action="restore-deleted-project" data-project-id="${escapeHtml(item.id)}" ${projectsState.lifecycleBusy?'disabled':''}>恢复为新项目</button>
+  </section>`;
   // A single project card in the overview grid. Clicking anywhere on the
   // card opens the detail view. Action buttons (开启项目对话 / 处理项目代码)
   // stop propagation so they don't also trigger the card click.
@@ -249,6 +255,12 @@ function renderProjectsDetailView(project) {
               处理项目代码
             </button>
             <button class="small-button is-outline" data-action="archive-project" data-project-id="${project.id}" data-archived="${!project.archived}">${project.archived?t("恢复项目"):t("归档项目")}</button>
+            <button class="small-button is-outline" data-action="preview-delete-project" data-project-id="${project.id}">删除项目</button>
+            ${projectsState.pendingDeleteProjectId===project.id?ui`<div role="alert">
+              <p>聊天将解除项目归属，资料、图片与外部文件夹保留；项目记忆隔离保存，待审批失效。</p>
+              <button class="small-button" data-action="confirm-delete-project" data-project-id="${project.id}" ${projectsState.lifecycleBusy?'disabled':''}>确认删除项目</button>
+              <button class="small-button is-outline" data-action="cancel-delete-project">取消</button>
+            </div>`:''}
           </div>
         </div>
 

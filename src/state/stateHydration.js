@@ -614,7 +614,7 @@ export function hydrateState(parsed = {}) {
       ? parsed.settings.selectedProjectId
       : defaults.settings.selectedProjectId;
   const selectedProjectId = projects.some(
-    project => project.id === persistedSelectedProjectId,
+    project => project.id === persistedSelectedProjectId && !project.deletedAt,
   )
     ? persistedSelectedProjectId
     : null;

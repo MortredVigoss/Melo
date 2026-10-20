@@ -76,7 +76,7 @@ export async function updateProject(projectId, patch) {
   const committed = await updateStateAtomically(async state => {
     before = recordSnapshot(state.projects);
     const project = findProjectById(state, projectId);
-    if (!project) {
+    if (!project || project.deletedAt) {
       throw new Error('Project not found.');
     }
     if (Object.hasOwn(patch, 'knowledgeIds')) {
@@ -84,6 +84,7 @@ export async function updateProject(projectId, patch) {
     }
 
     const safePatch={...patch};
+    delete safePatch.deleted; delete safePatch.deletedAt; delete safePatch.lifecycle;
     delete safePatch.workspaceConfirmation;delete safePatch.confirmWorkspace;
     const agentIds=allAgentIdsFromProfiles(state.agentProfiles);
     if (Object.hasOwn(patch,'defaultAgentId') && patch.defaultAgentId && !agentIds.includes(patch.defaultAgentId)) throw new Error('默认 Agent 不存在。');
