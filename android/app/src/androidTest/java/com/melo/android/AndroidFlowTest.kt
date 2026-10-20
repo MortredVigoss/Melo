@@ -22,6 +22,9 @@ import org.junit.Test
 import org.junit.Assume.assumeNotNull
 import kotlinx.serialization.json.*
 import java.util.concurrent.atomic.AtomicReference
+import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.SocketPolicy
 
 class AndroidFlowTest {
     @get:Rule val permission: GrantPermissionRule = GrantPermissionRule.grant(Manifest.permission.POST_NOTIFICATIONS)
@@ -129,17 +132,31 @@ class AndroidFlowTest {
         SyncProtocol.validate(app.repository.snapshot(), app.repository.schema)
         compose.activityRule.scenario.recreate()
         compose.waitUntil(8000) { compose.onAllNodesWithTag("composer").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithTag("composer").performTextInput(retryPrompt)
-        compose.onNodeWithContentDescription("发送").performClick()
-        compose.waitUntil(5000) { compose.onAllNodesWithContentDescription("停止生成").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithContentDescription("停止生成").performClick()
-        compose.waitUntil(5000) { app.repository.data.value.runs.last { it.chatId == chatId }.status == "cancelled" }
-        assertEquals(1, app.repository.data.value.chats.first { it.id == chat.id }.messages.count { it.content == retryPrompt })
-        compose.onNodeWithText("重试这次提问").performScrollTo().performClick()
-        compose.waitUntil(15_000) { app.repository.data.value.runs.last { it.chatId == chatId }.status == "completed" }
-        val final = app.repository.data.value.chats.first { it.id == chat.id }
-        assertEquals(1, final.messages.count { it.content == retryPrompt })
-        assertEquals(2, final.messages.count { it.role == "assistant" })
+        // Hold a real local HTTP response until cancellation. The ordinary
+        // fixture completes on a timer, which raced Compose's separate find
+        // and click steps on busy CI emulators.
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+            server.enqueue(MockResponse().setHeader("Content-Type", "application/json").setBody("""{"model":"local-fixture","choices":[{"message":{"role":"assistant","content":"Controlled retry completed"},"finish_reason":"stop"}]}"""))
+            server.start()
+            runBlocking {
+                val controlled = Connection(id = "controlled-cancellation", name = "Controlled local HTTP", endpoint = server.url("/model").toString(), model = "local-fixture", protocol = "chat-completions", stream = false)
+                app.repository.saveConnection(controlled, "local-fixture-key")
+                app.repository.editChat(chatId) { it.copy(connectionId = controlled.id) }
+            }
+            compose.onNodeWithTag("composer").performTextInput(retryPrompt)
+            compose.onNodeWithContentDescription("发送").performClick()
+            compose.waitUntil(15_000) { server.requestCount == 1 && compose.onAllNodesWithContentDescription("停止生成").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithContentDescription("停止生成").performClick()
+            compose.waitUntil(5000) { app.repository.data.value.runs.last { it.chatId == chatId }.status == "cancelled" }
+            assertEquals(1, app.repository.data.value.chats.first { it.id == chat.id }.messages.count { it.content == retryPrompt })
+            compose.onNodeWithText("重试这次提问").performScrollTo().performClick()
+            compose.waitUntil(15_000) { app.repository.data.value.runs.last { it.chatId == chatId }.status == "completed" }
+            val final = app.repository.data.value.chats.first { it.id == chat.id }
+            assertEquals(1, final.messages.count { it.content == retryPrompt })
+            assertEquals(2, final.messages.count { it.role == "assistant" })
+            assertEquals(2, server.requestCount)
+        }
     }
     @Test fun credentialsAreEncryptedAndExcludedFromPortableState() {
         ready()

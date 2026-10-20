@@ -764,3 +764,5 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 #9 最终回执：`b1529d0` 的 [Android run 39346797733](https://github.com/MortredVigoss/Melo/actions/runs/39346797733) 全绿，Emulator 59/59、零跳过；主线 Linux/macOS 与文件安全亦通过。GitHub #9 已提交完成回执；后续通用 Core / Android 上下文 / 缓存仍是独立未完成项。本手机分支未整体合并 master，未安装用户设备。
 
 10-20 #5 第二轮交接：首轮 Android 模拟器 60/61，构建通过。正在复验原始拒绝码、同源屏幕进展及图像预算估算，具体证据见 docs/shared-loop-android-20261020.md；真实设备/用户数据未动。
+
+#5 第二轮实际结果：共享 Core、预算、设备进展均过，Android 63/64；唯一旧 UI 取消夹具存在定时竞态，已改为可控本地 HTTP 请求再跑全 CI，未放宽断言。
