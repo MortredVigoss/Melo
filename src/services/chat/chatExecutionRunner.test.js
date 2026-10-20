@@ -42,6 +42,10 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname_test = dirname(fileURLToPath(import.meta.url));
 const RUNNER_SOURCE = readFileSync(join(__dirname_test, 'chatExecutionRunner.js'), 'utf8');
+// Graph nodes moved out of the runner (architecture B2). They are sibling
+// scopes of prepare, so every line in them counts as "outside prepare".
+const MOVED_NODE_SOURCES = ['execution/finalizeNode.js']
+  .map(file => [file, readFileSync(join(__dirname_test, file), 'utf8')]);
 
 // ─── Phase 6 follow-up (2026-05-05) — scope contract for activeAgentProfile ─
 //
@@ -110,6 +114,19 @@ test('activeAgentProfile references obey scope contract: bare inside prepare, gr
         outsideOffences.push(`L${i + 1}: ${line.trim()}`);
       }
     }
+  }
+
+  for (const [file, source] of MOVED_NODE_SOURCES) {
+    source.split('\n').forEach((line, i) => {
+      const trimmed = line.trimStart();
+      if (trimmed.startsWith('//') || trimmed.startsWith('*')) return;
+      for (const m of line.matchAll(/\bactiveAgentProfile\b/g)) {
+        const before = line.slice(0, m.index);
+        const after = line.slice(m.index + 'activeAgentProfile'.length);
+        if (/^:/.test(after) || /\b(const|let|var|function)\s+$/.test(before)) continue;
+        if (!/graphState\.\s*$/.test(before)) outsideOffences.push(`${file} L${i + 1}: ${line.trim()}`);
+      }
+    });
   }
 
   assert.deepEqual(

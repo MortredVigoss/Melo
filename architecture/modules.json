@@ -22,8 +22,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 602,
-      "edges": 1825,
+      "modules": 603,
+      "edges": 1830,
       "roots": [
         "src",
         "desktop-ui",
@@ -731,7 +731,7 @@
       "modules": {
         "desktop-ui": 27,
         "shared": 22,
-        "src": 64
+        "src": 65
       },
       "entryModules": [
         {
@@ -979,7 +979,7 @@
         "projects": 11,
         "settings": 9,
         "sync": 2,
-        "tools": 32,
+        "tools": 33,
         "voice": 3
       },
       "usedBy": {
@@ -2428,7 +2428,7 @@
       "usedBy": {
         "agents": 20,
         "approvals": 2,
-        "chat": 32,
+        "chat": 33,
         "desktop-shell": 13,
         "media": 4,
         "memory": 1,
@@ -5098,7 +5098,8 @@
           "src/memory/conversationIndex.js"
         ],
         "src/services/chat/chatExecutionRunner.test.js": [
-          "src/services/chat/chatExecutionRunner.js"
+          "src/services/chat/chatExecutionRunner.js",
+          "src/services/chat/execution/finalizeNode.js"
         ],
         "src/services/remote/pollingOffset.source.test.js": [
           "src/services/remote/discordPolling.js",
@@ -5149,6 +5150,7 @@
         "src/agents/skillRuns.js",
         "src/memory/conversationIndex.js",
         "src/services/chat/chatExecutionRunner.js",
+        "src/services/chat/execution/finalizeNode.js",
         "src/services/remote/discordPolling.js",
         "src/services/remote/telegramPolling.js",
         "src/services/search/socialLinkReader.js",
