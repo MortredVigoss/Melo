@@ -754,3 +754,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 产品 `4b88385`，签名 R8 0.7.1 (16) 已同证书覆盖 Fold6 / One UI 8.5；原 16 Chat / 1 角色、UID / 首次安装历史与两项 Accessibility 设置保留，当前进程无 Fatal，Windows ADB 5037 未重启。
 - 用户自行修正开关后，剩余根因是 retry 丢失工具作用域；共享修复 153 Node / 117 JVM、Lint / Debug / R8、49 Fixtures、外屏 18 + 展开 10 次 Emulator 执行通过。首轮类名命令错误及 RED 证据保留。
 - 原 Chat 限定一次 Search、列来源、不导航/操作手机：实机 completed，Search 1317ms / fetch 204ms、5 个来源、已读 1 页、3 次模型请求，无 phone_use、无新 QA Chat；调试器未读 Key。单次来源检索不代替推荐评分、Maps、外屏/姿态或完整发布验收。[交付与回执](docs/brave-search-retry-fix-20261019.md)。自有 Emulator / 5048 已关闭，无 push / git pp。
+
+## 2026-10-20 — #9 Android CI 夹具收敛
+
+远端 `39344901902` 环境、Core、JVM、Lint、Debug/R8 构建通过，Emulator 59 项中 3 项失败：窄屏 LazyColumn 未组合列表项、滚动后点击屏外折叠按钮、无关长文案换行改变目标位置。测试显式滚入目标、兄弟文案使用同一行高度；节点变化拒绝和折叠/凭证断言保留。`Editors.kt` 只补测试定位标签。修正后重新跑完整远端 gate；没有真机或真实服务证据。

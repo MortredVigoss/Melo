@@ -62,7 +62,8 @@ class AndroidFlowTest {
         ready()
         val connectionName = "Credential regression ${newId().take(8)}"
         compose.onAllNodesWithText("系统").onFirst().performClick()
-        compose.onNodeWithText("添加模型连接").performScrollTo().performClick()
+        compose.onNodeWithTag("settings-list").performScrollToNode(hasText("添加模型连接"))
+        compose.onNodeWithText("添加模型连接").assertIsDisplayed().performClick()
         compose.onNodeWithText("连接名称").performTextReplacement(connectionName)
         compose.onNodeWithText("模型名称").performTextInput("fixture-model")
         compose.onNodeWithText("保存").performClick()
@@ -74,7 +75,8 @@ class AndroidFlowTest {
         compose.waitUntil(5000) { app.repository.data.value.settings.connections.any { it.name == connectionName } }
         compose.onNode(hasText(connectionName) and hasText("本机凭证已保存 · 服务需发送请求验证", substring = true)).assertExists()
         val connection = app.repository.data.value.settings.connections.first { it.name == connectionName }
-        compose.onNodeWithText(connectionName).performScrollTo().performClick()
+        compose.onNodeWithTag("settings-list").performScrollToNode(hasText(connectionName))
+        compose.onNodeWithText(connectionName).assertIsDisplayed().performClick()
         assertEquals("", compose.onNodeWithTag("connection-key").fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
         compose.onNodeWithText("保存").performClick()
         runBlocking {

@@ -152,7 +152,7 @@ import com.melo.android.network.HostedSearchAdapter
     val context = LocalContext.current
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri -> uri?.let { vm.engine.work { vm.repository.exportTo(it); tested = "文字资料已导出，不含凭证与图片文件。" } } }
     val import = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { vm.engine.work { vm.repository.importFrom(it); tested = "资料已合并导入。" } } }
-    LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp), contentPadding = PaddingValues(bottom = 30.dp)) {
+    LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp).testTag("settings-list"), contentPadding = PaddingValues(bottom = 30.dp)) {
         item { TextButton(onClick = onPhoneSettings) { Text("手机控制设置与诊断") } }
         item { SectionLabel("模型连接"); Text("凭证仅在这台设备加密保存，不进入资料同步或导出。", color = MeloMuted) }
         items(data.settings.connections, key = { it.id }) { connection ->

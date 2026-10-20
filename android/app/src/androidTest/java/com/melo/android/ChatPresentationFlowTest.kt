@@ -62,7 +62,8 @@ class ChatPresentationFlowTest {
         ui.onNodeWithTag("execution-content-${run.id}").assertDoesNotExist()
         ui.onNodeWithText("1 次工具调用 · 1 个来源").assertExists()
         assertTrue(ui.onNodeWithTag("execution-card-${run.id}").fetchSemanticsNode().boundsInRoot.bottom <= ui.onNodeWithText("Fixture answer").fetchSemanticsNode().boundsInRoot.top)
-        ui.onNodeWithTag("execution-toggle-${run.id}").performClick()
+        scrollToTag("execution-toggle-${run.id}")
+        ui.onNodeWithTag("execution-toggle-${run.id}").assertIsDisplayed().performClick()
         ui.onNodeWithTag("execution-content-${run.id}").assertExists()
         ui.onNodeWithText("web_search · 完成 · 12 ms").assertExists()
         ui.onNodeWithText("仅来源 / 搜索摘要 · 未记录网页全文读取").assertExists()
@@ -70,7 +71,8 @@ class ChatPresentationFlowTest {
         scrollToTag("execution-content-${run.id}")
         ui.onNodeWithText("停止原因：PHONE_UNAVAILABLE").assertExists()
         File(app.cacheDir,"chat-execution-card.png").outputStream().use { ui.onRoot().captureToImage().asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG,100,it) }
-        ui.onNodeWithTag("execution-toggle-${run.id}").performClick()
+        scrollToTag("execution-toggle-${run.id}")
+        ui.onNodeWithTag("execution-toggle-${run.id}").assertIsDisplayed().performClick()
         ui.onNodeWithTag("execution-content-${run.id}").assertDoesNotExist()
     }
 
@@ -91,7 +93,8 @@ class ChatPresentationFlowTest {
         ui.onNodeWithText("Page was read").assertIsDisplayed()
         File(app.cacheDir,"chat-markdown.png").outputStream().use { ui.onRoot().captureToImage().asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG,100,it) }
         scrollToTag("execution-toggle-${run.id}");ui.onNodeWithText("未记录工具明细").assertExists()
-        ui.onNodeWithTag("execution-toggle-${run.id}").performClick()
+        scrollToTag("execution-toggle-${run.id}")
+        ui.onNodeWithTag("execution-toggle-${run.id}").assertIsDisplayed().performClick()
         ui.onNodeWithText("这条旧记录没有保存工具细节，无法据此推断是否检索或操作过手机。").assertExists()
         assertEquals(before!!.settings.connections,app.repository.data.value.settings.connections)
     }

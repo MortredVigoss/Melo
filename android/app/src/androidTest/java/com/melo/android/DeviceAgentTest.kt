@@ -163,7 +163,9 @@ class DeviceAgentTest {
             val buttonId = node(screen, "Target button").text("node_id")
             scenario.onActivity { activity ->
                 val content = activity.findViewById<android.view.ViewGroup>(android.R.id.content).getChildAt(0) as android.view.ViewGroup
-                (content.getChildAt(0) as android.widget.TextView).text = "Unrelated changing progress"
+                // Keep the sibling on one line on narrow emulators. Wrapping it
+                // moves the target, which must correctly invalidate a saved tap.
+                (content.getChildAt(0) as android.widget.TextView).text = "Count 9"
             }
             delay(500)
             val tapped = service.execute(buildJsonObject { put("action", "tap"); put("screen_id", screen.data.text("screen_id")); put("node_id", buttonId) })
