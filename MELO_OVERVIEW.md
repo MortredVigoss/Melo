@@ -806,3 +806,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 #14 首轮 Android：73/73 emulator 零跳过；失败发生在 Gradle 已卸载夹具 APK 后 run-as 导出缓存。改用 AGP additionalTestOutputFile 协议，并以本轮 UUID 排除旧报告；新增收集器回归。保留 CI 红色，待第二轮验证。
 
 #14 第二轮同样 73/73 通过，AGP 未产出附加文件。改为运行期 localhost 报告收集（独立 reverse / UUID / 大小限制 / 重复拒绝 / 测试结束关闭），真实 HTTP 回归通过；等待第三轮完整 Android CI。
+
+### 2026-10-20 — #14 最终验收（Codex）
+- a11183b / CI 39394944470 全绿：Core、真实 HTTP 收集、JVM/Lint/Debug/R8、73/73 emulator，以及本轮 Android/Node 报告比较。实际下载 XML 和带 UUID 报告后，主线又与 Node/JavaScriptCore 逐字段核对 11 项一致。
+- 主线 aa83db2 的 4356/4356 JS、35/35 Swift、Linux/macOS CI 已通过；文档见 docs/task-replay-20261020.md。用户已授权逐项推送关闭，当前准备发布 #14，账号/实体设备未改。
