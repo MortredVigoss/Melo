@@ -40,3 +40,10 @@
 验证：`core-port-js.log` 84/84；`core-port-swift.log` 49 个相同 conformance fixtures 在真实 JSCore 通过，另含资源散列、隔离和 JSON 数据注入边界。`core-port-wiring-final.log` 测试发现/代码地图与 gate 夹具 11/11。完整日常正在运行；逐文件原样比对记录在 `.tmp/github-issues-fix-20261020/core-port-files.json`。
 
 第一阶段最终：`core-port-daily-final.log` 日常 **4185/4185 JS**、零跳过，语法、文档、两项浏览器、共享渲染及 **33 组 Swift** 全通过（151.8 秒）。首轮三项 gate 失败已按新增目录补齐源码读取登记及隔离仓库夹具，不跳过测试。25 个引入文件再次与 `9522cb9` 的 blob 逐字比对全等。准备独立移植提交，生产迁移仍待实施。
+
+
+第二阶段 A：`src/runtime/runBudget.js` 的实现逐字移到 `shared/agent/runBudget.js`（唯一代码差异是契约 import 路径）；原入口只重导出原公共符号。`generate-agent-loop-contract.js` 同时从现有 JSON 生成便携、深冻结的 `loopContract.js`，不另维护默认值。Node 现有调用已使用这份实现；Swift/Kotlin 生产仍待桥接。`core-budget-port-targeted.log` 21/21，包含祖先记账、限额收紧、deadline、计划扩容及契约；完整日常进行中。
+
+后续接线注意：桌面 web_search/fetch_url 与便携 Core 的最小工具 schema 不同，迁移必须保留现行字段/NULL/32 调用边界，不能因为碰巧同名被旧便携 schema 拒绝。Swift 的 JS bundle 初始化失败必须明确停止，测试资源通过专门测试入口注入，不能在产品里从工作目录加载脚本。Host 保留真实取消、并行调度、父级记账和审批；决策改从同源代码取结果。
+
+第二阶段 A 最终：`core-budget-port-daily.log` 日常 JS 4185/4185、33 组 Swift、浏览器/语法/文档全通过（174.5 秒）；未改变用户数据或应用安装。此预算实现移植独立提交，随后再改 Host 接口。

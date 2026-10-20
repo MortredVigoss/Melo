@@ -9,6 +9,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const SWIFT_PATH = 'ios/Melo/AgentLoopContract.swift';
+export const JS_PATH = 'shared/agent/loopContract.js';
 const BEGIN = '// BEGIN GENERATED AGENT LOOP CONTRACT';
 const END = '// END GENERATED AGENT LOOP CONTRACT';
 
@@ -26,6 +27,11 @@ export async function generateAgentLoopContract({ check = false, root = process.
   if (check) {
     if (current !== next) throw new Error(`${SWIFT_PATH} is stale; run npm run generate:agent-loop-contract`);
   } else if (current !== next) await writeFile(path, next);
+  const portable = `// Generated from shared/protocol/agent-loop.json; do not edit.\nfunction deepFreeze(value) {\n  if (value && typeof value === 'object' && !Object.isFrozen(value)) {\n    Object.freeze(value);\n    for (const item of Object.values(value)) deepFreeze(item);\n  }\n  return value;\n}\nexport const AGENT_LOOP_CONTRACT = deepFreeze(${json});\nexport function fillTemplate(template, values = {}) {\n  return String(template).replace(/\\{([A-Za-z]+)\\}/g, (match, key) => (Object.hasOwn(values, key) ? String(values[key]) : match));\n}\n`;
+  const portablePath = resolve(root, JS_PATH);
+  if (check) {
+    if (await readFile(portablePath, 'utf8') !== portable) throw new Error(`${JS_PATH} is stale; run npm run generate:agent-loop-contract`);
+  } else await writeFile(portablePath, portable);
   return { bytes: json.length };
 }
 

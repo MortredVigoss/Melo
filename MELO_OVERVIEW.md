@@ -59,12 +59,13 @@
 
 ## 4. 最新交接
 
-### 2026-10-20 — melo主线（Codex）— GitHub #5 共享循环第一阶段
+### 2026-10-20 — melo主线（Codex）— GitHub #5 共享循环与预算移植
 - 线程 ID：`01a13b2e-5446-7042-bb5e-773129746c7e`；#1/#4/#3/#9/#2 已推送并在 GitHub 关闭。#2 `00cf231` 日常 JS 4101/4101、32 组 Swift、Linux 专项 12/12；#9 各平台远端实际通过。
 - 入口：`shared/agent/`、`src/runtime/sharedAgentCore.js`、`ios/Melo/SharedAgentCore.swift` 与生成器，逐字移植手机 `9522cb9`；Xcode 增加 JS bundle 资源，测试发现/地图收录 Core。原有主线生产循环尚未替换。
-- 状态：第一阶段本地提交，25 个文件按原 blob 比对；`src/shared/replyDocument.js` 保留全部原前缀，只追加既有手机展示函数。没有整条分支合并，没有搬动用户数据。
+- 状态：第一阶段 `9748e51` 本地提交，25 个文件按原 blob 比对；`src/shared/replyDocument.js` 保留全部原前缀，只追加既有手机展示函数。没有整条分支合并，没有搬动用户数据。
 - 验证：Core JS 84/84、JSCore 49 fixtures、打包散列/隔离和 JSON 注入边界通过；发现/地图与 gate 夹具 11/11；完整日常 JS 4185/4185、33 组 Swift 与浏览器等全过。详情见[共享循环实施约定](docs/shared-loop-hardening-20261020.md)。
-- 下一步：本阶段独立 byte-for-byte port 提交后，同源化通用策略并接主聊天/子 Agent/技能/Swift/Kotlin 生产入口。#5 未完成，保持打开；不运行 git pp。
+- 预算：现行 `runBudget.js` 逐字移到 `shared/agent/runBudget.js`，原 Node 入口只重导出；JSON 生成便携契约，专项 21/21，完整日常 JS 4185/4185、33 组 Swift 与浏览器等通过；此阶段独立本地提交。
+- 下一步：预算逐字移植独立提交后，同源化通用策略并接主聊天/子 Agent/技能/Swift/Kotlin 生产入口。#5 未完成，保持打开；不运行 git pp。
 
 此前交接（原文见[历史交接](docs/handoffs/overview-history-20261019.md)，新者在后）：10-19 双端逻辑只读审计 → 七项修复与最终日常 → 双端覆盖安装与数据保留 → 架构维护成本审计与方案 → GitHub 权限只读核对 → 架构方案 P0 执行 → 架构方案 P2a 记忆页与项目页 → 架构方案 P2b Agent 设置 → 架构方案 P2c 聊天拆分 → Claude 架构 P0–P2 独立审计 → 已提交保存恢复 R1 修复。
 

@@ -22,8 +22,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 577,
-      "edges": 1742,
+      "modules": 579,
+      "edges": 1743,
       "roots": [
         "src",
         "desktop-ui",
@@ -696,7 +696,7 @@
       ],
       "modules": {
         "desktop-ui": 27,
-        "shared": 12,
+        "shared": 14,
         "src": 63
       },
       "entryModules": [
@@ -4461,7 +4461,6 @@
         "src/retrieval/requestPolicy.js",
         "src/retrieval/selfVerification.js",
         "src/retrieval/verificationEvidence.js",
-        "src/runtime/runBudget.js",
         "src/services/chat/chatExecutionRunner.js",
         "src/services/chat/contextBudget.js",
         "src/services/chat/supplements.js",
@@ -4570,11 +4569,12 @@
         "shared/protocol/agent-loop.json"
       ],
       "outputs": [
-        "ios/Melo/AgentLoopContract.swift"
+        "ios/Melo/AgentLoopContract.swift",
+        "shared/agent/loopContract.js"
       ],
       "check": "scripts/generate-agent-loop-contract.test.js",
       "command": "npm run generate:agent-loop-contract",
-      "note": "改 agent-loop.json 后重新生成手机副本",
+      "note": "同一 JSON 生成 Swift 与便携 JS 契约副本",
       "features": [
         "chat"
       ]

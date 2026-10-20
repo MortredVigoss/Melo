@@ -822,11 +822,12 @@
         "shared/protocol/agent-loop.json"
       ],
       "outputs": [
-        "ios/Melo/AgentLoopContract.swift"
+        "ios/Melo/AgentLoopContract.swift",
+        "shared/agent/loopContract.js"
       ],
       "check": "scripts/generate-agent-loop-contract.test.js",
       "command": "npm run generate:agent-loop-contract",
-      "note": "改 agent-loop.json 后重新生成手机副本"
+      "note": "同一 JSON 生成 Swift 与便携 JS 契约副本"
     },
     {
       "id": "gen-sync-contract",
