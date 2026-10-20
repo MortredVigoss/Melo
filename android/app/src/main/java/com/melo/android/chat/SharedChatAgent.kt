@@ -11,6 +11,14 @@ import kotlinx.serialization.json.*
 import java.security.MessageDigest
 import java.time.ZonedDateTime
 
+// Keep JSON builders out of the coroutine state machine. Inlining every nested
+// builder made reply exceed 85 KB of DEX bytecode; Android 16's interpreter
+// crashed while resuming it. These builders cannot suspend or return from reply.
+private fun buildJsonObject(builder: JsonObjectBuilder.() -> Unit): JsonObject =
+    kotlinx.serialization.json.buildJsonObject(builder)
+private fun buildJsonArray(builder: JsonArrayBuilder.() -> Unit): JsonArray =
+    kotlinx.serialization.json.buildJsonArray(builder)
+
 /** Host effects and observations only; planning, evidence and scene projection use Core. */
 class SharedChatAgent(private val context: Context, private val client: ModelClient, private val debug: Boolean) {
     suspend fun reply(connection: Connection, key: String, messages: List<Message>, instructions: String,
