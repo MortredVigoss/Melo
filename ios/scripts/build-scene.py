@@ -6,7 +6,7 @@ root=Path(__file__).resolve().parents[2]
 subprocess.run(['python3', str(root/'ios/scripts/sync-theme.py')], check=True)
 work=root/'.tmp/ios-scene-src'; work.mkdir(parents=True,exist_ok=True)
 out=root/'ios/Melo/Scene';out.mkdir(parents=True,exist_ok=True)
-paths=['desktop-ui/i18n.js','desktop-ui/translations.js','desktop-ui/neuralScene3D.js','desktop-ui/neuralScene.js','desktop-ui/neuralSatellite.js','desktop-ui/executionTiming.js','desktop-ui/executionDetails.js','desktop-ui/executionPanel.js','desktop-ui/executionScene3D.js','desktop-ui/executionViewport.js','desktop-ui/executionPicking.js','desktop-ui/synapticBody.js','desktop-ui/executionPanel.css','desktop-ui/neuralGlass.css','src/shared/executionScene.js','src/shared/executionMetadata.js']
+paths=['desktop-ui/i18n.js','desktop-ui/translations.js','desktop-ui/neuralScene3D.js','desktop-ui/neuralScene.js','desktop-ui/neuralSatellite.js','desktop-ui/executionTiming.js','desktop-ui/executionDetails.js','desktop-ui/executionPanel.js','desktop-ui/executionScene3D.js','desktop-ui/executionViewport.js','desktop-ui/executionPicking.js','desktop-ui/synapticBody.js','desktop-ui/executionPanel.css','desktop-ui/neuralGlass.css','src/shared/executionScene.js','src/shared/executionMetadata.js','src/shared/sessionEvents.js']
 manifest={}
 for name in paths:
     path=root/name; content=path.read_text(); manifest[name]=hashlib.sha256(path.read_bytes()).hexdigest()

@@ -1,3 +1,4 @@
+export { sessionEvents } from './sessionEvents.js';
 import { executionMetadata, publicSummaryText } from './executionMetadata.js';
 
 // Browser/server contract. Only observations enter this state; animation has

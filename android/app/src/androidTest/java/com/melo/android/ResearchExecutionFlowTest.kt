@@ -60,9 +60,24 @@ class ResearchExecutionFlowTest {
             SharedCoreRuntime.open(app).use { runtime ->
                 val context = runtime.value("executionContext", buildJsonObject { put("scenes", buildJsonArray { add(restored) }) }).jsonPrimitive.content
                 assertTrue(context.contains("web_search")); assertTrue(context.contains("fetch_url")); assertTrue(context.contains("phone_use"))
+                val events = runtime.value("sessionEvents", buildJsonObject { put("scene", restored) }).jsonArray
+                assertEquals(events, restored.getValue("sessionEvents"))
+                assertTrue(events.any { it.jsonObject.text("kind") == "terminal" })
+                events.forEach { assertTrue(context.contains(it.jsonObject.text("eventId"))) }
+                assertEquals(1, phoneCalls)
+                assertEquals(4, model.requestCount); assertEquals(2, backend.requestCount)
             }
             assertEquals(4, model.requestCount); assertEquals(2, backend.requestCount)
             repeat(4) { assertFalse(model.takeRequest(2, TimeUnit.SECONDS)!!.body.readUtf8().contains("fixture-only-key")) }
+            model.enqueue(final(protocol))
+            val follow = SharedChatAgent(app, ModelClient(true), true).reply(connection, "fixture-only-key",
+                listOf(Message(role = "user", content = "Write one short greeting.")), "", config, { "" }, true,
+                "follow-r", "research-c", { "" }, invokePhone = { error("History must not replay a phone action") },
+                onPhase = {}, previousScenes = listOf(restored))
+            assertEquals("completed", follow.outcome)
+            val followRequest = model.takeRequest(2, TimeUnit.SECONDS)!!.body.readUtf8()
+            assertTrue(followRequest.contains("research-r/tool/p/result"))
+            assertEquals(1, phoneCalls); assertEquals(5, model.requestCount); assertEquals(2, backend.requestCount)
         } }
     }
 

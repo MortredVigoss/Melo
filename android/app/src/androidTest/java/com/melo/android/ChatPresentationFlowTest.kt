@@ -65,6 +65,8 @@ class ChatPresentationFlowTest {
         scrollToTag("execution-toggle-${run.id}")
         ui.onNodeWithTag("execution-toggle-${run.id}").assertIsDisplayed().performClick()
         ui.onNodeWithTag("execution-content-${run.id}").assertExists()
+        ui.waitUntil(10_000) { ui.onAllNodesWithTag("session-event-presentation-r/tool/s/result").fetchSemanticsNodes().isNotEmpty() }
+        ui.onNodeWithTag("session-event-presentation-r/tool/s/result").assertExists()
         ui.onNodeWithText("web_search · 完成 · 12 ms").assertExists()
         ui.onNodeWithText("仅来源 / 搜索摘要 · 未记录网页全文读取").assertExists()
         ui.activityRule.scenario.recreate();ui.waitForIdle()

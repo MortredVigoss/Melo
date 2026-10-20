@@ -13,6 +13,9 @@ import androidx.compose.ui.unit.dp
 import com.melo.android.data.*
 import com.melo.android.openUrl
 import kotlinx.serialization.json.*
+import com.melo.android.core.SharedCoreRuntime
+import com.melo.android.core.value
+import kotlinx.coroutines.CancellationException
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -30,6 +33,16 @@ fun executionStatus(value: String): String = when (value) {
     val stages = (scene?.get("pipeline") as? JsonArray).orEmpty().map { it.jsonObject }
     val sources = (scene?.get("sources") as? JsonArray).orEmpty().map { it.jsonObject }
     val context = LocalContext.current
+    var canonical by remember(scene) { mutableStateOf((scene?.get("sessionEvents") as? JsonArray).orEmpty().map { it.jsonObject }) }
+    LaunchedEffect(scene, expanded) {
+        if (expanded && scene != null && scene["sessionEvents"] == null) {
+            try {
+                SharedCoreRuntime.open(context).use { runtime ->
+                    canonical = runtime.value("sessionEvents", buildJsonObject { put("scene", scene) }).jsonArray.map { it.jsonObject }
+                }
+            } catch (error: Exception) { if (error is CancellationException) throw error }
+        }
+    }
     val summary = if (scene == null) "未记录工具明细" else "${operations.size} 次工具调用 · ${sources.size} 个来源" +
         if (sources.any { it["accessed"]?.jsonPrimitive?.booleanOrNull == true }) " · 已读取 ${sources.count { it["accessed"]?.jsonPrimitive?.booleanOrNull == true }} 页" else ""
     Surface(color = MeloGold.copy(alpha = .045f), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().testTag("execution-card-${run.id}")) {
@@ -50,6 +63,13 @@ fun executionStatus(value: String): String = when (value) {
                             TextButton(onClick = { openUrl(context, source.text("url")) }, contentPadding = PaddingValues(0.dp)) { Text(source.text("title").ifBlank { source.text("url") }, maxLines = 3) }
                             Text(if (source["accessed"]?.jsonPrimitive?.booleanOrNull == true) "已读取网页 · 内容是否最新仍需核对" else "仅来源 / 搜索摘要 · 未记录网页全文读取", color = MeloMuted, style = MaterialTheme.typography.labelSmall)
                         }
+                    }
+                    if (canonical.isNotEmpty()) {
+                        Text("执行记录标识", style = MaterialTheme.typography.labelMedium, color = MeloGold)
+                        for (event in canonical) Text(
+                            event.text("eventId") + if (event.text("resultState") == "unknown") " · 结果未知，请先核对再继续" else "",
+                            modifier = Modifier.testTag("session-event-${event.text("eventId")}"),
+                            color = MeloMuted, style = MaterialTheme.typography.labelSmall)
                     }
                     scene.text("stopReason").takeIf(String::isNotBlank)?.let { Text("停止原因：$it", color = MaterialTheme.colorScheme.error) }
                 }

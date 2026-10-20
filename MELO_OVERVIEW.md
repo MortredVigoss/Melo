@@ -778,3 +778,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 文件及边界：shared/agent/completion.js、三端循环和持久执行记录；[完成回执约定](docs/completion-receipts-20261020.md)。只保留证据 ID；词语匹配不是事实核实，通用文件/MCP 操作缺少独立终态时保持未知。
 - 验证：Node/Core/真实 localhost HTTP 115/115；84 个同源 fixture 在 Node/JSCore 通过；三组 Swift、执行记录落盘回读与共享 DOM 通过。日常 gate、iOS 编译、Android CI 仍待最终结果。
 - 账号、数据及已安装应用未改；不运行 git pp；保留原 master 他线程 WIP。
+
+### 2026-10-20 — GitHub #8 Android 事件投影（Codex）
+
+#6 05592af 仍待最终 CI；#8 在独立验证分支准备，正式分支发布保持逐项顺序。Core 同源事件、Native/WebView 标识、历史输入关联、重启废弃过期派生缓存已接；136 项 Node Core 通过，新增模拟器三协议后续请求/零重复动作与原生界面标识检查，等待真实 Android CI。详见 [约定](docs/session-events-20261020.md)。没有修改用户数据或安装应用。

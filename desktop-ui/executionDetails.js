@@ -60,3 +60,8 @@ export function renderExecutionDetail(op, status) {
     ${change ? ui`<p>${escape(change.path)} · ${change.kind === 'replacement' ? t("实际替换片段") : change.kind === 'created' ? t("新建文件") : t("文件覆盖")}${change.truncated ? ' · 长内容已截断' : ''}</p><div class="execution-diff"><section><b>修改前</b><pre>${escape(change.before || t("（空）"))}</pre></section><section><b>修改后</b><pre>${escape(change.after || t("（空）"))}</pre></section></div>` : ''}
     ${summary ? '' : output}`;
 }
+
+export function renderSessionEvents(events = []) {
+  if (!events.length) return '';
+  return ui`<details class="execution-delivery-details execution-session-events"><summary>执行记录</summary>${events.map(event => `<p data-session-event-id="${escape(event.eventId)}"><b>${escape(event.name || event.kind)} · ${escape(event.status)}</b>${event.resultState === 'unknown' ? ' · 结果未知，请先核对再继续' : ''}<br><small>${escape(event.eventId)}</small></p>`).join('')}</details>`;
+}

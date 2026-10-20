@@ -1,3 +1,4 @@
+import { sessionContext, sessionEventId } from '../../src/shared/sessionEvents.js';
 // Portable observations using the existing ExecutionScene projection contract.
 // Hosts supply identity/time; this module has no effects or credential access.
 const text = (value, max = 2000) => String(value ?? '')
@@ -59,8 +60,22 @@ export function executionScene({ action, scene, runId, chatId, query, at, event 
   return next;
 }
 export function executionContext(scenes = []) {
-  return scenes.slice(-3).map(scene => {
-    if (!scene || scene.version !== 1) return 'Historical request has no recorded tool details; do not infer which tools ran.';
-    return JSON.stringify({ query: text(scene.query, 1000), outcome: scene.taskOutcome || scene.status, reason: text(scene.stopReason, 500), tools: (scene.operations || []).slice(0, 20).map(row => ({ name: text(row.name, 100), status: row.status, input: text(row.input, 800), result: text(row.output, 1200) })), sources: (scene.sources || []).slice(0, 8).map(source => ({ url: observationUrl(source.url), accessed: source.accessed === true, reading: source.reading })) });
-  }).join('\n').slice(0, 16000);
+  const details = scenes.slice(-3).filter(scene => scene?.version === 1).map(scene => ({
+    runId: scene.runId, query: text(scene.query, 1000),
+    tools: (scene.operations || []).slice(0, 20).map(row => ({
+      eventId: sessionEventId(scene.runId, 'tool', row.id, 'result'), name: text(row.name, 100),
+      input: text(row.input, 800), result: text(row.output, 1200),
+    })),
+    sources: (scene.sources || []).slice(0, 8).map(source => ({ url: observationUrl(source.url), accessed: source.accessed === true, reading: source.reading })),
+  }));
+  // Preserve the existing Android evidence detail, now explicitly linked to
+  // the same event IDs. These are observations, never replayable tool calls.
+  while (JSON.stringify(details).length > 8000) {
+    const row = details.find(item => item.tools.length);
+    if (row) { row.tools.shift(); continue; }
+    const sourceRow = details.find(item => item.sources.length);
+    if (!sourceRow) break;
+    sourceRow.sources.shift();
+  }
+  return sessionContext(scenes, { maxChars: 7500 }) + (details.length ? '\nRecorded details by event ID: ' + JSON.stringify(details) : '');
 }

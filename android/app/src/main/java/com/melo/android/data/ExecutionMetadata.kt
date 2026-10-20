@@ -4,7 +4,7 @@ import kotlinx.serialization.json.*
 
 /** Process death is a Host observation; it must not leave persisted steps running. */
 fun RunRecord.interrupted(at: String = now()): RunRecord {
-    val recovered = sharedScene?.let { scene -> JsonObject(scene + buildJsonObject {
+    val recovered = sharedScene?.let { scene -> JsonObject((scene - "sessionEvents") + buildJsonObject {
         put("status", "interrupted"); put("taskOutcome", "interrupted"); put("finishedAt", at); put("stopReason", "PROCESS_INTERRUPTED")
         for (key in listOf("operations", "pipeline")) put(key, JsonArray((scene[key] as? JsonArray).orEmpty().map { value ->
             val row = value.jsonObject

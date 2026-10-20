@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "sha256": "a74135fd5781427b09703d6e9ce270eeb0185c851fffe714634d7e7b14c3e91b",
+  "sha256": "bc2e3e556ee0018ad8c045296777750a7e533d216d391b205a6bfbcb7d6d9078",
   "sources": {
-    "shared/agent/index.js": "d4a9028c948e251877d2d9d555c9a9ea7c83bc41c4b26d7b9f22e266faf7e290",
+    "shared/agent/index.js": "ad2bc3b2fd47d72997b8a7c3c05d52301d238b2f9172d14645244c6256c831f7",
     "shared/agent/turn.js": "5ba5dcc1fac88efea6b2bcf4387a2e29011d8cd7528a96fcd6bb6dc3d46dd3d5",
     "shared/agent/tools.js": "d10a7113f6cca1240603c8a5c0004a689dc85163ebde300459ff4d8f454db5da",
     "shared/agent/loopContract.js": "607657b2bb9e5490f493eeac7cb1c3b4dfdfc7efb447bba16c34d23f135de427",
@@ -13,7 +13,8 @@
     "shared/agent/retrieval/searchRouter.js": "97b7493923820443f6956ac08c0fd02f0069d200c7b47c2fa370e115c923cd40",
     "shared/agent/skill/skillService.js": "d6dbbde1f4ce3f4a7fd3fd89de23eb688c9f80d4de43780f806e46f26f4f8644",
     "shared/agent/hostedSearch.js": "75d1a1be8b0350ae05fba5602b17704857f3b85cb13f0bf38982413ba442226a",
-    "shared/agent/execution.js": "89dad43fbfcefdc673dad8c176665abf5904a56dba7abdf8d5933c8864508dc1",
+    "shared/agent/execution.js": "977e291f0b193d82a8c19537aa008f5503e3131fdc6d6b710392d40bf4396c98",
+    "src/shared/sessionEvents.js": "e2d586bbe52b8b6eb6e0ea50c2af09eb2c1901b4a6e7c4460504271a1cd050f3",
     "src/shared/replyDocument.js": "824fa3e1fe139e41d690a450ab2995a09ee5a3b9f575174087aa154dae96032d",
     "shared/agent/policyBridge.js": "3506b45d82092d6132d06d1792582ad1c60ea043b42a12183f5838b5c52367e7",
     "shared/agent/runBudget.js": "255abb304224c654ba4d563dc1404b7a96ced321c0ef73826c598e25fa52e12b",
