@@ -95,6 +95,14 @@ struct ContentView: View {
                     Button("允许") { store.resolveDeviceAction(true) }
                     Button("拒绝", role: .cancel) { store.resolveDeviceAction(false) }
                 } message: { request in Text(verbatim: request.detail + "\n\n") + Text("Melo 请求在你的 iPhone 上执行这项操作。") }
+                // Capability elevation card (same alert as the device-write approval): the
+                // buttons are the contract's options; a tap answers this live request id only.
+                .alert(Text(verbatim: store.pendingCapabilityRequest.map(CapabilityCopy.title) ?? ""), isPresented: Binding(get: { store.pendingCapabilityRequest != nil }, set: { _ in }), presenting: store.pendingCapabilityRequest) { request in
+                    let choices = request.options.filter { $0 != "deny" }
+                    if choices.count > 0 { Button(CapabilityCopy.option(request, choices[0])) { store.respondCapability(request.id, choices[0]) } }
+                    if choices.count > 1 { Button(CapabilityCopy.option(request, choices[1])) { store.respondCapability(request.id, choices[1]) } }
+                    Button(CapabilityCopy.option(request, "deny"), role: .cancel) { store.respondCapability(request.id, "deny") }
+                } message: { request in Text(verbatim: CapabilityCopy.message(request)) }
             }
         }
         .coordinateSpace(name: "neuralHeader").onPreferenceChange(ModuleFrameKey.self) { moduleFrames = $0 }.background(meloBackground.ignoresSafeArea()).tint(meloAccent)
@@ -220,7 +228,7 @@ struct AgentsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 PageHeading(eyebrow: "AGENTS", title: "不同Agent，同样默契。", detail: "为每一种工作，选择合适的思考方式。")
-                Button { editing = AgentProfile(name: "", subtitle: "", symbol: "person.crop.square", instructions: "") } label: { Label("创建你的Agent", systemImage: "plus").font(.subheadline.weight(.medium)).frame(maxWidth: .infinity).padding(20).background(meloAccent.opacity(0.1), in: RoundedRectangle(cornerRadius: 20)) }
+                Button { editing = AgentStarter.newAgent() } label: { Label("创建你的Agent", systemImage: "plus").font(.subheadline.weight(.medium)).frame(maxWidth: .infinity).padding(20).background(meloAccent.opacity(0.1), in: RoundedRectangle(cornerRadius: 20)) }
                     .accessibilityIdentifier("agents.create")
                 ForEach(store.preferences.agents) { agent in
                     VStack(alignment: .leading, spacing: 18) {

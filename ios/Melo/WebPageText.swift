@@ -32,6 +32,8 @@ struct PhoneToolResult: Equatable {
     var imageJPEG: Data? = nil
     /// Address the screenshot shows; used for the model's caption and the run record.
     var imageURL: String = ""
+    /// Capability-elevation decision for the run record (never model-facing).
+    var capability: CapabilityAudit? = nil
 }
 
 struct WebPageToolSpec {
