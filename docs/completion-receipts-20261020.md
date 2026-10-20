@@ -27,3 +27,5 @@
 - 分支边界：主线负责当前 Node/iPhone；手机分支负责 Android 和同源 Core/共享展示资源，不整体合并手机分支内旧 Node/iPhone 源码。没有改用户配置、账号、真实数据库或安装应用。
 
 Android 首次验证分支 `8b57654`：Core 129/129 通过；CI `39362453557` 在 Kotlin 编译拒绝 `MutableList += JsonArray` 的重载歧义，模拟器尚未运行。改为显式 `addAll`，第二轮仍在独立验证分支；不能据此关闭 #6 或宣称 Android 已验收。
+
+主线集成了其他线程的能力协议，Android 同步同源 Core 的附加契约与生成 bundle（不搬入旧分支不具备的 Swift Host）。Node Core 129/129 再次通过；最终组合版本需独立 Android CI。
