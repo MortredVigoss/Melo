@@ -14,6 +14,8 @@ import { recordFailure } from '../../runtime/failureCounters.js';
 import { precompactIfNeeded } from './compactScheduler.js';
 import { imageFollowUpAttachments, restoreImageRetry, persistResolvedImageTask, persistImageProgress, finishPartialImageReply } from './imageTurnState.js';
 import { persistToolTrace, readToolTraceText, buildToolTraceMessage } from './toolTraceReplay.js';
+import { withElevationSurface } from '../../domain/agent/capabilityScope.js';
+import { releaseRunGrants } from '../agent/capabilityElevation.js';
 // sendChatMessage entry — sub-phase 7d-5δ commit 8f of the desktopStore
 // decomposition. byte-for-byte port (CLAUDE.md §5).
 //
@@ -125,7 +127,10 @@ export function sendChatMessage(options) {
         workspacePath: turnBinding.workspace?.workspacePath || chatWorkspacePath(context.home, context.chatId),
       }, options.content, emit);
       try {
-        const turnContext=Object.freeze({ ...context, turnBinding, capabilityScope:turnBinding.capabilityScope });
+        // Capability elevation (2026-10-20): only a live desktop stream can show
+        // a capability prompt; remote channels, tasks and the JSON route deny as before.
+        const capabilityScope=withElevationSurface(turnBinding.capabilityScope, typeof options.sseEmitter === 'function' && !options.background);
+        const turnContext=Object.freeze({ ...context, turnBinding:Object.freeze({ ...turnBinding, capabilityScope }), capabilityScope });
         const result = await runWithRequestContext(turnContext,()=>executeChatTurn({ ...options, home: context.home, context: turnContext, configPromise, executionRecorder,
           sseEmitter: (event, data) => {
             if (event === 'execution_event') executionRecorder.event(data);
@@ -151,6 +156,10 @@ export function sendChatMessage(options) {
         const completion = completionResult({ goal: options.content, reply: partialReply?.content || '', terminalReason: status === 'cancelled' ? 'CANCELLED' : error?.code === 'CONTEXT_BUDGET_EXCEEDED' ? error.code : 'REQUEST_FAILED' });
         await executionRecorder.finish(status, { ...partialReply, metadata: { ...partialReply?.metadata, completion } });
         throw error;
+      } finally {
+        // Run-scoped capability grants end with the run, whatever its outcome;
+        // a capability prompt still open for this run is closed.
+        releaseRunGrants(context.runId, { home: context.home });
       }
     });
   });

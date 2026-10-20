@@ -29,6 +29,12 @@ import SwiftUI
         return RunProgress.steps(record)
     }
     @Published private(set) var pendingDeviceAction: DeviceActionRequest?
+    /// Capability elevation card (2026-10-20); shares the approval queue with device writes.
+    @Published private(set) var pendingCapabilityRequest: CapabilityRequest?
+    /// Bumped when the grant ledger changes, so «临时授权» lists refresh.
+    @Published private(set) var capabilityGrantsRevision = 0
+    /// This iPhone's own grant ledger and open capability requests (never synced).
+    let capabilityBroker: CapabilityElevationBroker
     @Published private(set) var activeImageActions: [String: ImageAction] = [:]
     func activeImageAction(for chatID: String) -> ImageAction? { activeImageActions[chatID] }
     @Published private(set) var replyBackgroundStatus = ""
@@ -53,7 +59,8 @@ import SwiftUI
     private var runs: [String: ActiveRun] = [:]
     private var injectedBackground: ReplyBackgroundLifetime?
     private var expiredRuns: Set<String> = []
-    private struct ApprovalRequest { let chatID: String?; let request: DeviceActionRequest; let continuation: CheckedContinuation<Bool, Never> }
+    private enum ApprovalItem { case device(DeviceActionRequest, CheckedContinuation<Bool, Never>), capability(CapabilityRequest) }
+    private struct ApprovalRequest { let chatID: String?; let item: ApprovalItem }
     private var approvalQueue: [ApprovalRequest] = []
     private var isBackground = false
     private let replyLoader: (([ChatMessage], String) async throws -> ModelReply)?
@@ -68,6 +75,7 @@ import SwiftUI
         imageLibrary = ImageLibrary(directory: (directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Melo")).appendingPathComponent("Images"))
         injectedBackground = background
         file = (directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Melo")).appendingPathComponent("conversations.json")
+        capabilityBroker = CapabilityElevationBroker(file: file.deletingLastPathComponent().appendingPathComponent(CapabilityElevationBroker.fileName))
         do {
             try BackgroundReplyStorage.prepare([file, preferencesFile, sceneFile])
             if FileManager.default.fileExists(atPath: syncRecoveryFile.path) {
@@ -103,6 +111,7 @@ import SwiftUI
             } catch { self.error = error.localizedDescription }
         }
         migrateLegacyReferences()
+        wireCapabilityBroker()
     }
     private func scheduleDraftSave() {
         guard draftsReady else { return }
@@ -277,6 +286,10 @@ import SwiftUI
         // Phone execution is governed by this iPhone's per-Agent permissions;
         // desktop capability settings govern desktop execution only.
         let phonePermissions = PhoneAgentPermissions.load()
+        // Capability elevation: the run-start snapshot of the lead's permissions, and
+        // whether a card can be shown (decides which tools the model may ask for).
+        let leadSnapshot = phonePermissions.allowed(selectedAgent.id)
+        let surfaceAtStart = !isBackground
         if plan.makesImage && !phonePermissions.allows(selectedAgent.id, .generateMedia) {
             fail("当前 Agent 在这台手机上未开启“生成与修改图片”。可在 Agent 页的本机权限中开启；要求和图片已保留。"); return
         }
@@ -427,9 +440,16 @@ import SwiftUI
             let limits = AgentTeam.limits(agent)
             let child = teamBudget.narrowed(deadlineMs: limits.timeoutMs)
             let messages = [ChatMessage(role: "user", content: user)]
-            let tools = self.deviceToolContext(runID: record.runId, agentID: agent.id, chatID: chatID, screenshots: teamScreenshots,
-                                              readHistory: selectedAgent.contextSources?["memory"].bool != false && agent.contextSources?["memory"].bool != false, parentAgentID: selectedAgent.id, inheritedGrants: phonePermissions.allowed(selectedAgent.id))
-            let writer = [PhoneCapability.calendar, .reminders].contains { phonePermissions.allows(selectedAgent.id, $0) && phonePermissions.allows(agent.id, $0) }
+            // Members use the same check with the lead as parent; the lead's own summary step has none.
+            let binding = self.elevationBinding(runID: record.runId, agent: agent, parent: agent.id == selectedAgent.id ? nil : selectedAgent, chatID: chatID,
+                                                ownSnapshot: phonePermissions.allowed(agent.id), parentSnapshot: leadSnapshot, budget: child)
+            let tools = self.deviceToolContext(runID: record.runId, binding: binding, surfaceAtStart: surfaceAtStart, chatID: chatID, screenshots: teamScreenshots,
+                                              readHistory: selectedAgent.contextSources?["memory"].bool != false && agent.contextSources?["memory"].bool != false)
+            // Writers queue; with a surface any member may be granted a write kind the device allows.
+            let deviceKinds = DeviceToolPolicy.load().enabled
+            let writer = [PhoneCapability.calendar, .reminders].contains { kind in
+                surfaceAtStart ? deviceKinds.contains(DeviceDataKind(rawValue: kind.rawValue)!) : phonePermissions.allows(selectedAgent.id, kind) && phonePermissions.allows(agent.id, kind)
+            }
             let callID = UUID().uuidString
             let memberHooks = AgentLoopHooks(
                 onStage: { [weak self] id, name, status, output in
@@ -472,6 +492,8 @@ import SwiftUI
                 sendingChats.remove(chatID); activeImageActions[chatID] = nil; expiredRuns.remove(record.runId)
                 if completed && !isBackground { scheduleAutomaticSync() }
                 endSupplements(supplements, chatID: chatID, finished: completed)
+                // Run grants end with the run; its open cards close.
+                capabilityBroker.releaseRun(record.runId)
             }
             do {
                 try Task.checkCancellation()
@@ -521,8 +543,8 @@ import SwiftUI
                 let reply: ModelReply
                 let screenshots = CapturedScreenshots()
                 // The same phone tools (device data + web pages) on every connection.
-                let phoneTools = plan.makesImage ? nil : deviceToolContext(runID: record.runId, agentID: selectedAgent.id, chatID: chatID, screenshots: screenshots,
-                                                                           readHistory: selectedAgent.contextSources?["memory"].bool != false, inheritedGrants: phonePermissions.allowed(selectedAgent.id))
+                let phoneTools = plan.makesImage ? nil : deviceToolContext(runID: record.runId, binding: elevationBinding(runID: record.runId, agent: selectedAgent, parent: nil, chatID: chatID, ownSnapshot: leadSnapshot, parentSnapshot: nil, budget: runBudget),
+                                                                           surfaceAtStart: surfaceAtStart, chatID: chatID, screenshots: screenshots, readHistory: selectedAgent.contextSources?["memory"].bool != false)
                 if plan.separately == true && plan.references.count > 1 { reply = try await editEachPhoto(plan, prompt: clean, history: modelHistory, instructions: instructions, runID: record.runId, useChatGPT: useChatGPT, codexModel: chatGPTModel, endpoint: endpoint, key: key) }
                 else if let teamPlan { reply = try await runTeam(teamPlan, task: clean, lead: selectedAgent, runID: record.runId, permissions: phonePermissions, budget: teamBudget, agents: teamAgents, context: resolvedContext, memory: memoryText, background: AgentTeam.background(messages: modelHistory, compact: ""), compact: compactSummary, ask: ask) }
                 else if let replyLoader { reply = try await replyLoader(modelHistory, instructions) }
@@ -761,19 +783,39 @@ import SwiftUI
     /// Screenshots taken by web_screenshot during one reply; bound to the
     /// assistant message once the answer is saved.
     final class CapturedScreenshots { var items: [(jpeg: Data, url: String)] = [] }
-    private func deviceToolContext(runID: String, agentID: String, chatID: String? = nil, screenshots: CapturedScreenshots? = nil, readHistory: Bool = false, parentAgentID: String? = nil, inheritedGrants: Set<PhoneCapability>? = nil) -> DeviceToolContext? {
-        let permissions = PhoneAgentPermissions.load()
-        func allowed(_ kind: PhoneCapability) -> Bool {
-            let current = PhoneAgentPermissions.load()
-            return (inheritedGrants?.contains(kind) ?? true) && permissions.allows(agentID, kind) && current.allows(agentID, kind) && (parentAgentID.map { current.allows($0, kind) } ?? true)
+    /// Decision context of one Agent's phone tools in a run (capability
+    /// elevation, 2026-10-20): its own phone permissions — the run-start
+    /// snapshot ∩ the current switches, so a revocation applies to the next
+    /// call and a widening to the next run — as the ceiling and, for a team
+    /// member, the lead's as the parent. Grants are read per call by the broker.
+    private func elevationBinding(runID: String, agent: AgentProfile, parent: AgentProfile?, chatID: String, ownSnapshot: Set<PhoneCapability>, parentSnapshot: Set<PhoneCapability>?, budget: PhoneRunBudget?) -> PhoneElevationBinding {
+        let agentID = agent.id
+        let atoms: @MainActor (Set<PhoneCapability>, String) -> Set<String> = { snapshot, id in Set(snapshot.intersection(PhoneAgentPermissions.load().allowed(id)).map(\.rawValue)) }
+        var binding = PhoneElevationBinding(agentID: agentID, agentName: agent.name, runID: runID, chatID: chatID, projectID: project(for: chatID)?.id,
+                                            ceiling: { atoms(ownSnapshot, agentID) },
+                                            surface: { [weak self] in self.map { !$0.isBackground } ?? false }, budget: budget)
+        if let parent {
+            let parentID = parent.id, snapshot = parentSnapshot ?? []
+            binding.parentAgentID = parentID; binding.parentName = parent.name
+            binding.parent = { atoms(snapshot, parentID) }
         }
-        var policy = permissions.devicePolicy(for: agentID, device: DeviceToolPolicy.load())
-        policy.enabled = policy.enabled.filter { allowed(PhoneCapability(rawValue: $0.rawValue)!) }
+        return binding
+    }
+    private func deviceToolContext(runID: String, binding: PhoneElevationBinding, surfaceAtStart: Bool, chatID: String? = nil, screenshots: CapturedScreenshots? = nil, readHistory: Bool = false) -> DeviceToolContext? {
+        let broker = capabilityBroker
+        let ceiling = binding.ceiling(), base = binding.parent.map { ceiling.intersection($0()) } ?? ceiling
+        // The tools the model sees (desktop requestableCapabilities): what this
+        // Agent may use now, plus — only when a card can be shown — what it could ask for.
+        let visible = CapabilityElevation.requestable(base, ceiling: ceiling, surface: surfaceAtStart, jitVisible: CapabilityElevation.contract.phoneJitVisible) ?? base
+        // The device switches (with their OS permission) bound every Agent; no grant bypasses them.
+        var policy = DeviceToolPolicy.load()
+        policy.enabled = policy.enabled.filter { visible.contains($0.rawValue) }
+        let allowedNow: @MainActor (String) -> Bool = { name in broker.allowsNow(toolID: name, requirement: .phoneTool(name), binding: binding) }
         // Web page tools share the Agent's network switch with web search and
         // the device-wide "实时搜索与天气" switch (SettingsView webSearchEnabled); read-only, no dialog.
-        let webAllowed = { allowed(.network) && (UserDefaults.standard.object(forKey: "webSearchEnabled") as? Bool ?? true) }
-        let web: WebToolContext? = webAllowed() ? WebToolContext(execute: { call in
-            await WebPageToolRunner.run(call: call, allowed: webAllowed).phoneResult
+        let webSwitch = { UserDefaults.standard.object(forKey: "webSearchEnabled") as? Bool ?? true }
+        let web: WebToolContext? = visible.contains("network") && webSwitch() ? WebToolContext(execute: { call in
+            await WebPageToolRunner.run(call: call, allowed: { webSwitch() && allowedNow(call.name) }).phoneResult
         }, onCall: { [weak self] call, result in
             let summary = WebPageText.summary(result)
             let name = WebPageToolSpec.named(call.name)?.recordName ?? "网页 · \(call.name)"
@@ -789,6 +831,7 @@ import SwiftUI
             self?.stage(runID, id: "history:\(call.callID)", name: "早期对话 · 读取原文", status: outcome.ok ? "completed" : "failed", output: outcome.ok ? (outcome.status == "empty" ? "该范围没有消息" : "已读取原文") : "读取失败（\(outcome.code ?? "UNKNOWN")）")
         }) } : nil
         guard !policy.enabled.isEmpty || web != nil || history != nil else { return nil }
+        let agentID = binding.agentID
         return DeviceToolContext(policy: policy, execute: { [weak self] call in
             guard let self else { return PhoneToolEnvelope.failure("ABORTED", "The request was cancelled.") }
             return await DeviceToolRunner.run(call, policy: policy, source: SystemDeviceData.shared,
@@ -796,47 +839,131 @@ import SwiftUI
                 let titled = DeviceActionRequest(tool: request.tool, title: (self.preferences.agents.first { $0.id == agentID }?.name ?? agentID) + " · " + request.title, detail: request.detail)
                 return await self.requestDeviceApproval(titled, chatID: chatID)
             }, isAllowed: {
-                // Re-read both switches: either may be revoked while the reply runs.
+                // Re-read the device switch and the live decision (permissions and
+                // grants): either may be revoked while the call runs.
                 guard let kind = DeviceToolSpec.named(call.name)?.kind else { return false }
-                return allowed(PhoneCapability(rawValue: kind.rawValue)!) && DeviceToolPolicy.load().enabled.contains(kind)
+                return DeviceToolPolicy.load().enabled.contains(kind) && allowedNow(call.name)
             })
         }, onCall: { [weak self] call, output in
             let summary = DeviceToolSummary.of(output)
             let name = DeviceToolSpec.named(call.name).map { "手机数据 · \($0.actionLabel)" } ?? "手机数据 · \(call.name)"
             self?.stage(runID, id: "device:\(call.callID)", name: name, status: summary.ok ? "completed" : "failed", output: summary.text)
-        }, web: web, history: history)
+        }, web: web, history: history, gate: { call in
+            // A device kind or the web switch turned off denies exactly as before: a card could not change it.
+            if let kind = DeviceToolSpec.named(call.name)?.kind, !DeviceToolPolicy.load().enabled.contains(kind) {
+                return CapabilityGate(denial: PhoneToolEnvelope.failure("CAPABILITY_DENIED", "The user has not enabled \(kind.label) access for Melo on this iPhone."), audit: nil)
+            }
+            if WebPageToolSpec.named(call.name) != nil, !webSwitch() {
+                return CapabilityGate(denial: PhoneToolEnvelope.failure("CAPABILITY_DENIED", "The user has not allowed web access for this Agent on this iPhone."), audit: nil)
+            }
+            return await broker.authorize(toolID: call.name, requirement: .phoneTool(call.name), binding: binding)
+        })
     }
-    /// Write confirmations are shown one at a time; a second conversation's request
-    /// waits for the first to be answered instead of being refused.
+    /// Write confirmations and capability cards are shown one at a time; a
+    /// second conversation's request waits for the first to be answered instead of being refused.
     func requestDeviceApproval(_ request: DeviceActionRequest, chatID: String? = nil) async -> Bool {
         guard anySending, !Task.isCancelled else { return false }
         return await withTaskCancellationHandler(operation: {
             await withCheckedContinuation { continuation in
                 guard !Task.isCancelled, (try? PhoneExecutionScope.check()) != nil else { continuation.resume(returning: false); return }
-                approvalQueue.append(ApprovalRequest(chatID: chatID, request: request, continuation: continuation))
-                if approvalQueue.count == 1 { pendingDeviceAction = request }
+                approvalQueue.append(ApprovalRequest(chatID: chatID, item: .device(request, continuation)))
+                showFirstApproval()
             }
         }, onCancel: { [weak self] in
             Task { @MainActor in
-                guard let self, let index = self.approvalQueue.firstIndex(where: { $0.request.id == request.id }) else { return }
-                let cancelled = self.approvalQueue.remove(at: index)
-                self.pendingDeviceAction = self.approvalQueue.first?.request
-                cancelled.continuation.resume(returning: false)
+                guard let self, let index = self.approvalQueue.firstIndex(where: { if case .device(let queued, _) = $0.item { return queued.id == request.id }; return false }),
+                      case .device(_, let continuation) = self.approvalQueue.remove(at: index).item else { return }
+                self.showFirstApproval()
+                continuation.resume(returning: false)
             }
         })
     }
     func resolveDeviceAction(_ allowed: Bool) {
-        guard !approvalQueue.isEmpty else { pendingDeviceAction = nil; return }
-        let current = approvalQueue.removeFirst()
-        pendingDeviceAction = approvalQueue.first?.request
-        current.continuation.resume(returning: allowed)
+        guard case .device(_, let continuation)? = approvalQueue.first?.item else { showFirstApproval(); return }
+        approvalQueue.removeFirst()
+        showFirstApproval()
+        continuation.resume(returning: allowed)
+    }
+    private func showFirstApproval() {
+        switch approvalQueue.first?.item {
+        case .device(let request, _)?: pendingCapabilityRequest = nil; pendingDeviceAction = request
+        case .capability(let request)?: pendingDeviceAction = nil; pendingCapabilityRequest = request
+        case nil: pendingDeviceAction = nil; pendingCapabilityRequest = nil
+        }
     }
     private func rejectApprovals(chatID: String) {
         let rejected = approvalQueue.filter { $0.chatID == chatID }
         guard !rejected.isEmpty else { return }
         approvalQueue.removeAll { $0.chatID == chatID }
-        pendingDeviceAction = approvalQueue.first?.request
-        for item in rejected { item.continuation.resume(returning: false) }
+        showFirstApproval()
+        for item in rejected {
+            switch item.item {
+            case .device(_, let continuation): continuation.resume(returning: false)
+            case .capability(let request): capabilityBroker.abort(request.id)
+            }
+        }
+    }
+
+    // MARK: Capability elevation (2026-10-20, docs/capability-elevation-20261020.md §9)
+
+    private func wireCapabilityBroker() {
+        capabilityBroker.onRequest = { [weak self] request in
+            guard let self else { return }
+            self.approvalQueue.append(ApprovalRequest(chatID: request.chatID, item: .capability(request)))
+            self.showFirstApproval()
+        }
+        capabilityBroker.onClose = { [weak self] request, _ in
+            guard let self else { return }
+            self.approvalQueue.removeAll { if case .capability(let queued) = $0.item { return queued.id == request.id }; return false }
+            self.showFirstApproval()
+        }
+        capabilityBroker.onAudit = { [weak self] request, status, text in
+            self?.stage(request.runID, id: "capability:\(request.auditID)", name: CapabilityElevation.text("auditStage"), status: status, output: text)
+            self?.saveExecutionRecords()
+        }
+        capabilityBroker.onGrantsChanged = { [weak self] in self?.capabilityGrantsRevision += 1 }
+        capabilityBroker.enableAlways = { [weak self] request in
+            guard let self else { throw CapabilityRequestError.ended }
+            return try self.enableAlways(request)
+        }
+    }
+    /// The card's buttons — the only way a grant is created: the id of a
+    /// request that is still open and one of the options that card offered.
+    func respondCapability(_ requestID: String, _ decision: String) {
+        do { try capabilityBroker.respond(requestID: requestID, decision: decision) }
+        catch let failure as CapabilityRequestError where failure != .notOffered { self.error = CapabilityCopy.localized(failure.errorDescription ?? "") }
+        catch { self.error = CapabilityCopy.template("授权没有保存：{reason}", ["reason": error.localizedDescription]) }
+    }
+    /// Grants in force on this iPhone, newest first (one Agent, or all).
+    func capabilityGrants(agentID: String? = nil) -> [CapabilityGrant] { capabilityBroker.list(agentID: agentID) }
+    @discardableResult func revokeCapabilityGrant(_ id: String) -> Bool {
+        do { try capabilityBroker.revoke(id); return true }
+        catch { self.error = CapabilityCopy.template("撤销没有完成：{reason}", ["reason": error.localizedDescription]); return false }
+    }
+    /// «一直开启» on this iPhone. Phone permissions change through the same path
+    /// as the Agent page's switches (device-local, immediate). A synced (desktop)
+    /// capability is proposed as a widening of the Agent's synced settings,
+    /// which the desktop holds until the user confirms it there; this run
+    /// continues on its run grant. (No phone tool needs a synced capability today.)
+    private func enableAlways(_ request: CapabilityRequest) throws -> String {
+        let phoneAtoms = Set(CapabilityElevation.contract.phonePermissionAtoms)
+        let local = request.atoms.compactMap { phoneAtoms.contains($0) ? PhoneCapability(rawValue: $0) : nil }
+        let synced = request.atoms.filter { !phoneAtoms.contains($0) }
+        var permissions = PhoneAgentPermissions.load()
+        let device = DeviceToolPolicy.load()
+        guard local.allSatisfy({ permissions.canEdit(request.agentID, $0, device: device) }) else { throw MeloError.message(CapabilityCopy.localized("设置中尚未开启")) }
+        var scope = "phone"
+        if !synced.isEmpty {
+            var next = preferences
+            scope = try AgentCapabilityWidening.propose(synced, agentID: request.agentID, projectID: request.projectID, preferences: &next)
+            guard updatePreferences({ $0 = next }) else { throw MeloError.message("无法保存手机设置，原设置已保留。") }
+            scheduleAutomaticSync()
+        }
+        if !local.isEmpty {
+            for capability in local { permissions.set(request.agentID, capability, true) }
+            permissions.save()
+        }
+        return scope
     }
     func enteredBackground() {
         isBackground = true

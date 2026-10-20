@@ -660,7 +660,7 @@ async function main() {
     results.push(await runStep('Settings design browser journeys', () => runCommand('npm', ['run', 'test:settings-design'])));
     results.push(await runStep('Extra fast browser journey', () => runCommand('npm', ['run', 'test:extra-fast-browser'])));
 
-    results.push(await runStep('iPhone protocol and shared renderer (test:ios)', () => runCommand('npm', ['run', 'test:ios'])));
+    results.push(await runStep('iPhone protocol and shared renderer (test:ios)', () => runCommand('npm', ['run', 'test:ios', ...(results[0].status === 'GREEN' ? ['--', '--skip-js'] : [])])));
 
     results.push(await runStep('Build syntax check', () => runCommand('npm', ['run', 'build'])));
     results.push(

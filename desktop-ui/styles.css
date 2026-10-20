@@ -3815,9 +3815,9 @@ select option {
   padding: 0 5px;
   margin: 0 2px;
   border-radius: 9px;
-  border: 1px solid rgba(120, 170, 255, 0.6);
-  background: rgba(120, 170, 255, 0.14);
-  color: rgba(200, 220, 255, 0.95);
+  border: 1px solid rgba(209, 178, 125, 0.55);
+  background: rgba(209, 178, 125, 0.14);
+  color: rgba(240, 224, 194, 0.95);
   font-size: 10px;
   font-weight: 600;
   line-height: 1;
@@ -3827,7 +3827,7 @@ select option {
 }
 
 .cite-pill:hover {
-  background: rgba(120, 170, 255, 0.28);
+  background: rgba(209, 178, 125, 0.28);
   border-color: rgba(223,212,192, 0.85);
 }
 
@@ -3930,7 +3930,7 @@ select option {
   padding: 10px 16px;
   font-size: 12px;
   color: rgba(220, 230, 245, 0.82);
-  background: rgba(120, 170, 255, 0.07);
+  background: rgba(209, 178, 125, 0.07);
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   font-style: italic;
   line-height: 1.45;
@@ -3976,7 +3976,7 @@ select option {
 }
 
 .citation-drawer-line.is-highlighted {
-  background: rgba(120, 170, 255, 0.14);
+  background: rgba(209, 178, 125, 0.14);
   border-left-color: rgba(223,212,192, 0.9);
 }
 
@@ -4099,10 +4099,10 @@ select option {
 
 /* Product status surfaces: readable summaries with inspectable evidence. */
 .quality-status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 12px; margin: 18px 0; }
-.quality-status-card { display: flex; flex-direction: column; gap: 9px; padding: 18px; border: 1px solid rgba(150, 190, 180, .18); background: rgba(50, 90, 78, .08); border-radius: 16px; min-width: 0; }
+.quality-status-card { display: flex; flex-direction: column; gap: 9px; padding: 18px; border: 1px solid rgba(211, 188, 148, .16); background: rgba(60, 52, 38, .10); border-radius: 16px; min-width: 0; }
 .quality-status-card > span, .quality-status-card small { opacity: .72; font-size: 12px; line-height: 1.6; }
 .quality-status-card > strong { font-size: 17px; line-height: 1.45; }
-.quality-details { margin: 12px 0; padding: 12px 0; border-top: 1px solid rgba(150,190,180,.16); overflow-wrap: anywhere; }
+.quality-details { margin: 12px 0; padding: 12px 0; border-top: 1px solid rgba(211,188,148,.12); overflow-wrap: anywhere; }
 .quality-details > summary { cursor: pointer; font-size: 13px; opacity: .82; padding: 5px 0; }
 .quality-details[open] > summary { margin-bottom: 12px; }
 .permission-actions .page-kicker-tip { flex-basis: 100%; line-height: 1.7; }

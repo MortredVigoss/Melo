@@ -2,6 +2,11 @@
 
 A brief overview of user-facing updates. Technical details live in the project documentation and commit history.
 
+## 2026-10-20
+
+- iPhone: the same just-in-time capability rules now apply to replies and teams on the phone. A team member may get a phone capability the lead lacks — only within its own “On this iPhone” permissions — for this task or for 24 hours in the project (or chat), and an Agent missing a phone capability (web pages, calendar, reminders, contacts, location) can have it just this once or turned on for good. A card asks you each time; background runs, timeouts and stopped replies are refused as before, and the phone-data switches and system permissions still apply. Temporary permissions stay on this iPhone only (never synced or backed up), end with the task or after 24 hours, and can be revoked on each Agent's page and in Settings > Permissions and files. New Agents created on the phone start read-only and can be based on an existing Agent.
+- Agents can ask for a capability at the moment they need it. A delegated member may get something its parent lacks — only within its own settings — for this task or for 24 hours in the project (or chat); an Agent missing a capability can have it just this once or turned on for good. Nothing is allowed silently: a card in the chat asks you, remote channels and background runs are refused as before, and active temporary permissions are listed and revocable on each Agent's page and in Permissions & privacy. New custom Agents start read-only (read files, network, knowledge and memory) and can copy another Agent's settings at creation, optionally with its identity, persona and voice; channels and bot tokens are never copied.
+
 ## 2026-10-19
 
 - Fixed recovery after saving Agents and projects when the page cannot refresh, preventing unintended edits and duplicate creation.

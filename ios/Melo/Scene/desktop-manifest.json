@@ -1,6 +1,6 @@
 {
   "desktop-ui/i18n.js": "3c69314c66d65d77063b192c2f7cf9df6f2da81d88c06fc1791b82c6b43e41fe",
-  "desktop-ui/translations.js": "7d2a0a2494d319e0fa02c2063950f505bb9d19ccc8d9e40e6d7799337fb70c8f",
+  "desktop-ui/translations.js": "4aa9b5a6a03d7ce8dc09567449920e07b46a51e44f471a09dd094dd5ff8b7953",
   "desktop-ui/neuralScene3D.js": "020e8dbe4697f4c0ec53fed8936deede947a9edc48f942a2735882ad493681d8",
   "desktop-ui/neuralScene.js": "0c66032eb0dc83bb38c4dccd798465f7f4a7e4a2fdd79eafa85dfe2efae2f3b6",
   "desktop-ui/neuralSatellite.js": "2a89fce4ea91acaf3516a2d5028543af9986ba1dcf8f040c3c8f17322510f92e",
@@ -11,7 +11,7 @@
   "desktop-ui/executionViewport.js": "2f251b217e014d09e02d28482d562191966b23a656f8bd5619b35124daca7813",
   "desktop-ui/executionPicking.js": "0759469c287ea127528c6a812c56d29afc3e7037967c961f1a44832f4a7ced00",
   "desktop-ui/synapticBody.js": "f31dc07edc2cb5affaf58931f11bbf52f5e074e2b8868e0c24ee70f2f4d083f8",
-  "desktop-ui/executionPanel.css": "c3bb9ebcbb4e72a7820a20fef6981872866b8103afd76df8e28e0a250032789a",
+  "desktop-ui/executionPanel.css": "69f1ff619daba1b19eca170554d08a5a2151c5603b10ec20c663e9305b8bb69b",
   "desktop-ui/neuralGlass.css": "4906d1b30a87f670ce1eae33aa3f82973388c38fd605a21c7cf2684927e912c8",
   "src/shared/executionScene.js": "d2fec1353890494d99ba93ce8934ba77f10a6a8c87b6d08cc2186879576e6efd",
   "src/shared/executionMetadata.js": "bea7ba046b40c8318049f90a6e87d7fc9f4863f6115424190e25a54e201b5220",

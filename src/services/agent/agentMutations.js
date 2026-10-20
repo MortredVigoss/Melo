@@ -103,6 +103,9 @@ export async function updateAgentProfile(agentId, patch = {}, options = {}) {
       }
       state.agentProfiles = normalizeAgentProfiles(profiles);
     }
+    // A change made from elsewhere (the chat's "一直开启" capability prompt)
+    // must not navigate the user's page.
+    if (options.preserveSelection === true) return state;
     state.settings.selectedCustomizeSection = 'agents';
     state.settings.selectedAgentScope = scope;
     if (projectId) state.settings.selectedProjectId = projectId;
@@ -113,16 +116,25 @@ export async function updateAgentProfile(agentId, patch = {}, options = {}) {
   return receiptAfterExport(committed,{home,agentId:normalizedAgentId,scope,projectId},before);
 }
 
-/** @returns {Promise<AgentCommitReceipt>} */
-export async function createCustomAgent() {
+/**
+ * New custom Agent: the read-only starter set, or a copy of an existing Agent's
+ * settings ("基于已有 Agent"; persona only with `copyPersona`).
+ * @param {{basedOn?: string|null, copyPersona?: boolean}} [options]
+ * @returns {Promise<AgentCommitReceipt>}
+ */
+export async function createCustomAgent(options = {}) {
   if (!currentRequestContext()) return runWithRequestContext(createRequestContext(), () => createCustomAgent(...arguments));
   const home = currentRequestContext().home;
+  const basedOnId = options?.basedOn == null || options.basedOn === '' ? null : normalizeAgentStorageId(options.basedOn);
+  if (options?.basedOn != null && options.basedOn !== '' && !basedOnId) throw Object.assign(new Error('Unknown Agent to copy from.'), { statusCode: 400 });
   let createdId;
   let before;
   const committed = await updateStateAtomically(latestState => {
     const state = ensureSelectedEntities(latestState);
     before = recordSnapshot(state.agentProfiles);
-    const {agentId,profile} = buildNewCustomAgent(state.agentProfiles);
+    if (basedOnId && !Object.hasOwn(state.agentProfiles || {}, basedOnId)) throw Object.assign(new Error('Unknown Agent to copy from.'), { statusCode: 400 });
+    const basedOn = basedOnId ? normalizeAgentProfiles(state.agentProfiles)[basedOnId] : null;
+    const {agentId,profile} = buildNewCustomAgent(state.agentProfiles, { basedOn, copyPersona: options?.copyPersona === true });
     createdId = agentId;
     state.agentProfiles = {...state.agentProfiles,[agentId]:profile};
     state.settings.selectedCustomizeSection = 'agents';

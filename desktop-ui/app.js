@@ -12,6 +12,7 @@ import { installMemoryFeature } from './features/memory/index.js';
 import { installProjectsFeature } from './features/projects/index.js';
 import { installAgentsFeature } from './features/agents/index.js';
 import { installChatFeature } from './features/chat/index.js';
+import { installApprovalsFeature } from './features/approvals/index.js';
 import { renderLocalSettings, installLocalSettings, applyLocalAppearance, shouldSendOnEnter, notifyLocalCompletion, nativeSettings } from './localSettings.js';
 import { installImagePreview } from './imagePreview.js';
 import { renderSyncConflicts } from './syncConflicts.js';
@@ -358,6 +359,18 @@ const projectsFeature = installProjectsFeature({
 });
 featureActions.register(projectsFeature.actions, 'projects');
 featureForms.register(projectsFeature.forms, 'projects');
+// Capability elevation (2026-10-20): the capability prompt card answers the
+// entries of kind 'capability' the reply stream puts into the permission queue;
+// the «临时授权» list appears in Agent settings and Customize → Safety.
+const approvalsFeature = installApprovalsFeature({
+  getBootstrap: () => uiState.bootstrap,
+  app, api, render, bgRender, showFlashToast,
+  refreshBootstrap: () => loadBootstrap(uiState.searchQuery, { quiet: true }),
+  toolPermissions: () => uiState.pendingToolPermissions,
+  setToolPermissions: list => { uiState.pendingToolPermissions = list; },
+  escapeHtml, icon,
+});
+featureActions.register(approvalsFeature.actions, 'approvals');
 const agentsFeature = installAgentsFeature({
   getBootstrap: () => uiState.bootstrap,
   app, api, render, bgRender, showError, showFlashToast, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts,
@@ -369,6 +382,7 @@ const agentsFeature = installAgentsFeature({
   beginFormEdit: form => settingsFormEditors.begin(form),
   formEditToken: form => settingsFormEditors.editToken(form),
   nativeSettings, isAgentChannelAvailable, escapeHtml, icon,
+  renderCapabilityGrants: agentId => approvalsFeature.renderGrantList({ agentId }),
 });
 featureActions.register(agentsFeature.actions, 'agents');
 featureForms.register(agentsFeature.forms, 'agents');
@@ -5750,6 +5764,7 @@ function renderSafetyPane() {
       </div>
       <div class="inline-actions">${[['role',t("Agent"),r=>r.permissionScope?.role || r.role || 'global'],['project',t("项目"),r=>r.permissionScope?.project || r.project || 'none'],['operation',t("操作"),r=>r.operation]].map(([key,label,get])=>ui`<label>${label}<select data-permission-filter="${key}"><option value="">全部</option>${[...new Set([...allRules,...(uiState.safetyAllowlist.audit || [])].map(get))].filter(Boolean).map(value=>ui`<option value="${escapeHtml(value)}" ${filters[key]===value ? 'selected' : ''}>${escapeHtml(value)}</option>`).join('')}</select></label>`).join('')}</div>
       ${body}
+      ${approvalsFeature.renderGrantList()}
       <details class="quality-details"><summary>最近授权使用记录 · ${audit.length}</summary>${audit.slice(0,80).map(e=>ui`<p>${escapeHtml(e.at)} · ${escapeHtml(e.operation)} · ${escapeHtml(e.decision)} · ${escapeHtml(e.reason)} · ${escapeHtml(e.role || '未指定Agent')}${e.path ? ` · ${escapeHtml(e.path)}` : ''}</p>`).join('') || ui`<p>尚无记录。</p>`}</details>
       <p class="list-row-meta" style="margin-top: 16px;">
         Sensitive paths (~/.ssh, /etc, MELO_HOME, …) are <strong>never</strong> allow-listable
@@ -6514,6 +6529,7 @@ function renderToolPermissionDialog() {
   if (entry.kind === 'file_safety') {
     return renderFileSafetyDialog(entry);
   }
+  if (entry.kind === 'capability') return approvalsFeature.renderCapabilityPrompt(entry);
 
   const { requestId, toolId, args } = entry;
   const argsText = args && Object.keys(args).length
@@ -6956,6 +6972,8 @@ function render({ background = false, changedSections = null } = {}) {
   // textarea restore wins for that one input; this helper covers everything
   // else (Discord Guild ID, Telegram bot token, nickname lists, etc.).
   restoreFocusedInputState(_savedFocusedInput);
+  // A capability prompt that just appeared takes keyboard focus once (approvals hook).
+  approvalsFeature.focusPromptAfterRender();
   chatFeature.positionAgentDropdown();
   // Mount Demon viz blocks (projectile, tree, ...) into the message bubbles
   // that carry a validated `viz` spec. Runs AFTER the DOM swap so it can

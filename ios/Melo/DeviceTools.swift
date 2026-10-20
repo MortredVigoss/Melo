@@ -247,7 +247,7 @@ enum DeviceToolRunner {
     /// approved this exact call.
     static func run(_ call: ResponsesFunctionCall, policy: DeviceToolPolicy, source: DeviceDataSource,
                     approve: (DeviceActionRequest) async -> Bool, timeZone: TimeZone = .current,
-                    isAllowed: (() -> Bool)? = nil) async -> String {
+                    isAllowed: (@MainActor () -> Bool)? = nil) async -> String {
         func encode(_ object: [String: Any]) -> String {
             var bounded = object
             bounded.removeValue(forKey: "ok")
@@ -271,9 +271,9 @@ enum DeviceToolRunner {
             return PhoneToolEnvelope.failure("UNKNOWN", "The result could not be encoded.")
         }
         func failure(_ code: String, _ message: String) -> String { PhoneToolEnvelope.failure(code, message) }
-        func checkAccess() throws {
+        func checkAccess() async throws {
             try PhoneExecutionScope.check()
-            guard isAllowed?() ?? true else { throw AccessRevoked() }
+            if let isAllowed, !(await isAllowed()) { throw AccessRevoked() }
         }
         guard let spec = DeviceToolSpec.named(call.name) else { return failure("UNKNOWN_TOOL", "This phone tool does not exist.") }
         guard policy.enabled.contains(spec.kind) else { return failure("CAPABILITY_DENIED", "The user has not enabled \(spec.kind.label) access for Melo on this iPhone.") }
@@ -281,14 +281,14 @@ enum DeviceToolRunner {
               let args = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return failure("INVALID_ARGS", "Arguments must be a JSON object.") }
         let date = { (date: Date) in format(date, timeZone: timeZone) }
         do {
-            try checkAccess()
+            try await checkAccess()
             switch spec.name {
             case "calendar_list_events":
                 guard let start = parseDate(args["start"]), let end = parseDate(args["end"]), end > start else { throw DeviceToolError.invalid("start and end must be ISO 8601 dates and end must be after start.") }
                 guard end.timeIntervalSince(start) <= 92 * 86_400 else { throw DeviceToolError.invalid("The range may not exceed 92 days.") }
                 let query = text(args["query"]).lowercased()
                 var events = try await source.events(from: start, to: end)
-                try checkAccess()
+                try await checkAccess()
                 if !query.isEmpty { events = events.filter { ($0.title + " " + $0.location + " " + $0.notes).lowercased().contains(query) } }
                 let rows = events.prefix(100).map { ["id": $0.id, "title": $0.title, "start": date($0.start), "end": date($0.end), "allDay": $0.allDay, "location": $0.location, "calendar": $0.calendar, "notes": String($0.notes.prefix(300))] as [String: Any] }
                 return encode(["ok": true, "count": events.count, "events": rows])
@@ -298,14 +298,14 @@ enum DeviceToolRunner {
                 let location = text(args["location"], limit: 200), notes = text(args["notes"], limit: 2000)
                 let detail = "\(title)\n\(date(start)) – \(date(end))" + (location.isEmpty ? "" : "\n地点：\(location)") + (notes.isEmpty ? "" : "\n备注：\(notes)")
                 guard await approve(DeviceActionRequest(tool: spec.name, title: "新建日程", detail: detail)) else { return failure("PERMISSION_DENIED", "The user declined to create this event.") }
-                try checkAccess()
+                try await checkAccess()
                 let event = try await source.createEvent(title: title, start: start, end: end, location: location, notes: notes)
                 return encode(["ok": true, "event": ["id": event.id, "title": event.title, "start": date(event.start), "end": date(event.end), "calendar": event.calendar]])
             case "reminders_list":
                 let includeCompleted = args["includeCompleted"] as? Bool ?? false
                 let query = text(args["query"]).lowercased()
                 var items = try await source.reminders(includeCompleted: includeCompleted)
-                try checkAccess()
+                try await checkAccess()
                 if !query.isEmpty { items = items.filter { ($0.title + " " + $0.notes).lowercased().contains(query) } }
                 let rows = items.prefix(100).map { item -> [String: Any] in
                     var row: [String: Any] = ["id": item.id, "title": item.title, "completed": item.completed, "list": item.list, "notes": String(item.notes.prefix(300))]
@@ -321,28 +321,28 @@ enum DeviceToolRunner {
                 let notes = text(args["notes"], limit: 2000)
                 let detail = title + (due.map { "\n截止：\(date($0))" } ?? "") + (notes.isEmpty ? "" : "\n备注：\(notes)")
                 guard await approve(DeviceActionRequest(tool: spec.name, title: "新建提醒", detail: detail)) else { return failure("PERMISSION_DENIED", "The user declined to create this reminder.") }
-                try checkAccess()
+                try await checkAccess()
                 let item = try await source.createReminder(title: title, due: due, notes: notes)
                 return encode(["ok": true, "reminder": ["id": item.id, "title": item.title, "list": item.list]])
             case "reminders_complete":
                 let id = text(args["id"], limit: 300)
                 guard !id.isEmpty else { throw DeviceToolError.invalid("id is required.") }
                 let current = try await source.reminders(includeCompleted: true).first { $0.id == id }
-                try checkAccess()
+                try await checkAccess()
                 guard let current else { throw DeviceToolError.invalid("No reminder has this id. Call reminders_list first.") }
                 guard await approve(DeviceActionRequest(tool: spec.name, title: "完成提醒", detail: current.title)) else { return failure("PERMISSION_DENIED", "The user declined to complete this reminder.") }
-                try checkAccess()
+                try await checkAccess()
                 let item = try await source.completeReminder(id: id)
                 return encode(["ok": true, "reminder": ["id": item.id, "title": item.title, "completed": item.completed]])
             case "contacts_search":
                 let query = text(args["query"], limit: 100)
                 guard !query.isEmpty else { throw DeviceToolError.invalid("query is required.") }
                 let people = try await source.contacts(matching: query)
-                try checkAccess()
+                try await checkAccess()
                 return encode(["ok": true, "count": people.count, "contacts": people.prefix(20).map { ["name": $0.name, "organization": $0.organization, "phones": $0.phones, "emails": $0.emails] as [String: Any] }])
             case "location_current":
                 let place = try await source.currentPlace()
-                try checkAccess()
+                try await checkAccess()
                 return encode(["ok": true, "latitude": place.latitude, "longitude": place.longitude, "accuracyMeters": place.accuracy, "place": place.name])
             default:
                 return failure("UNKNOWN_TOOL", "This phone tool does not exist.")
@@ -447,6 +447,10 @@ struct DeviceToolContext {
     var onCall: (@MainActor (ResponsesFunctionCall, String) -> Void)? = nil
     var web: WebToolContext? = nil
     var history: HistoryToolContext? = nil
+    /// Capability elevation (2026-10-20): every call is decided here, before
+    /// any dispatch, with the live permissions and grant ledger
+    /// (CapabilityElevationBroker.authorize). nil = no capability gate.
+    var gate: (@MainActor (ResponsesFunctionCall) async -> CapabilityGate)? = nil
 
     /// Protocol-neutral definitions: device tools first, then web tools, then read_history.
     var definitions: [PhoneToolDefinition] { policy.tools.map(\.definition) + (web?.tools.map(\.definition) ?? []) + (history == nil ? [] : [PhoneReadHistory.definition]) }
@@ -466,22 +470,31 @@ struct DeviceToolContext {
             catch { return PhoneToolResult(output: PhoneToolEnvelope.failure("ABORTED", "The tool scope has ended.")) }
         }
         if let stopped = aborted() { return stopped }
+        // The single capability choke point for phone tools (main reply and team members).
+        var audit: CapabilityAudit? = nil
+        if let gate {
+            let verdict = await gate(call)
+            if let denial = verdict.denial { return PhoneToolResult(output: denial, capability: verdict.audit) }
+            if let stopped = aborted() { return stopped }
+            audit = verdict.audit
+        }
         if let web, WebPageToolSpec.named(call.name) != nil {
-            let result = await web.execute(call)
+            var result = await web.execute(call)
             if let stopped = aborted() { return stopped }
             web.onCall?(call, result)
+            result.capability = audit
             return result
         }
         if let history, call.name == PhoneReadHistory.name {
             let output = await history.execute(call)
             if let stopped = aborted() { return stopped }
             history.onCall?(call, output)
-            return PhoneToolResult(output: output)
+            return PhoneToolResult(output: output, capability: audit)
         }
         let output = await execute(call)
         if let stopped = aborted() { return stopped }
         onCall?(call, output)
-        return PhoneToolResult(output: output)
+        return PhoneToolResult(output: output, capability: audit)
     }
     /// The same tools for the API-key protocols in Network.reply.
     var toolSet: PhoneToolSet { PhoneToolSet(definitions: definitions, instructions: instructions, perform: perform, statusText: statusText) }

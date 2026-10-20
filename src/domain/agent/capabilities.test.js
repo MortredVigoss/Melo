@@ -8,9 +8,12 @@ import {buildNewCustomAgent} from '../../services/agent/agentProfileService.js';
 import {normalizeAgentProfile,effectiveAgentProfile} from '../../state/agentProfiles.js';
 import {capabilityMigrationPreview} from '../../services/agent/capabilityMigration.js';
 
-test('new custom Agent denies tools and intersections never widen parent permissions',()=>{
- const c=buildNewCustomAgent({}).profile.capabilities;assert.deepEqual(c,emptyCapabilities());
- assert.equal(toolCapabilityAllowed('file_write',c),false);
+test('new custom Agent starts read-only and intersections never widen parent permissions',()=>{
+ // Capability elevation rule 6 (2026-10-20): read files, network, knowledge & memory; writing, commands, media and delegation are asked for.
+ const c=buildNewCustomAgent({}).profile.capabilities;assert.deepEqual(c,normalizeCapabilities({readFiles:true,network:true,knowledgeMemory:true}));
+ for (const id of ['file_write','bash','delegate']) assert.equal(toolCapabilityAllowed(id,c),false,id);
+ assert.equal(toolCapabilityAllowed('image',c,{action:'generate'}),false);
+ assert.equal(toolCapabilityAllowed('mcp:any:tool',c),false);
  const a=normalizeCapabilities({readFiles:true,mcpServers:['safe'],skills:['s']}),b=normalizeCapabilities({readFiles:true,writeFiles:true,mcpServers:['safe','evil'],skills:['other']});
  assert.deepEqual(intersectCapabilities(a,b),normalizeCapabilities({readFiles:true,mcpServers:['safe']}));
  assert.equal(toolCapabilityAllowed('mcp:safe/evil:tool',a),false);

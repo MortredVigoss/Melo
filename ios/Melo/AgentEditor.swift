@@ -7,6 +7,8 @@ struct AgentEditor: View {
     private let draftKey: String
     @State private var draftError: String?
     @State private var confirmDiscard = false
+    @State private var startSource: String?
+    @State private var copyPersona = false
     @FocusState private var fieldFocused: Bool
 
     init(agent: AgentProfile, isNew: Bool = false) {
@@ -45,8 +47,9 @@ struct AgentEditor: View {
                             .accessibilityIdentifier("role.keepDraft")
                     }
                 }
+                if session.isNew { startingPoint }
                 if session.isEditing { editableFields } else { details }
-                if !session.isNew { PhoneAgentPermissionsSection(agentID: session.draft.id) }
+                if !session.isNew { PhoneAgentPermissionsSection(agentID: session.draft.id); CapabilityGrantsSection(agentID: session.draft.id) }
                 capabilityDetails
             }
             .scrollDismissesKeyboard(.interactively)
@@ -88,6 +91,29 @@ struct AgentEditor: View {
         .onChange(of: current) { _, value in if let value { session.refresh(value) } }
         .onChange(of: session) { _, _ in _ = preserveDraft() }
         .onDisappear { _ = preserveDraft() }
+    }
+    /// Capability elevation rule 6: a new Agent starts read-only, or «基于已有 Agent»
+    /// (settings copied now; identity/persona only when ticked; never the name or avatar).
+    @ViewBuilder private var startingPoint: some View {
+        Section {
+            Picker("新 Agent 的起点", selection: Binding(get: { startSource ?? "" }, set: { applyStart(source: $0.isEmpty ? nil : $0, copy: copyPersona) })) {
+                Text("只读起步（推荐）").tag("")
+                ForEach(store.preferences.agents.filter { $0.id != session.draft.id }) { agent in
+                    Text(verbatim: CapabilityCopy.template("基于「{name}」", ["name": agent.name])).tag(agent.id)
+                }
+            }.accessibilityIdentifier("role.startingPoint")
+            Toggle("同时复制身份、人设与声音", isOn: Binding(get: { copyPersona }, set: { applyStart(source: startSource, copy: $0) }))
+                .disabled(startSource == nil).accessibilityIdentifier("role.copyPersona")
+            Text(LocalizedStringKey(startSource == nil ? "新 Agent 默认只开启读取文件、联网、知识与记忆；修改文件、运行命令、生成媒体和委派会在需要时询问你。" : "新 Agent 复制所选 Agent 的能力、协作与模型设置，之后两者各自独立；消息渠道和机器人令牌不会复制。"))
+                .font(.caption).foregroundStyle(.secondary)
+            Text("这台手机上的联网、图片和手机数据权限不会复制；新 Agent 使用手机默认设置，保存后可在 Agent 页单独开启。").font(.caption).foregroundStyle(.secondary)
+        }
+    }
+    private func applyStart(source: String?, copy: Bool) {
+        let agents = store.preferences.agents
+        let previous = startSource.flatMap { id in agents.first { $0.id == id } }, next = source.flatMap { id in agents.first { $0.id == id } }
+        session.draft = AgentStarter.apply(session.draft, source: next, copyPersona: next != nil && copy, previousSource: previous, previousCopy: copyPersona)
+        startSource = next?.id; copyPersona = next != nil && copy
     }
     @ViewBuilder private var capabilityDetails: some View {
         Section("电脑执行能力") {

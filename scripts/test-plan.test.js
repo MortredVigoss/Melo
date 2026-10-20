@@ -9,10 +9,10 @@ import {planTests, changedPaths, currentTestPlan} from './test-plan.js';
 import {TEST_ROOTS} from './test-discovery.js';
 
 const tests = ['src/server.test.js','desktop-ui/one.test.js','desktop-ui/new.test.js','mobile-sync/one.test.js','ios/Tests/Scene.test.js'];
-test('daily selection keeps complete UI groups, falls back for cross-boundary changes, and never silently drops deleted tests', () => {
+test('missing dependency context conservatively expands runtime changes, and never silently drops deleted tests', () => {
   const ui = planTests(['desktop-ui/one.js'], tests);
-  assert.deepEqual(ui.files, tests.filter(f => !f.startsWith('src/') && !f.startsWith('mobile-sync/')));
-  assert.equal(ui.browsers, true); assert.equal(ui.ios, true); assert.equal(ui.swift, false);
+  assert.deepEqual(ui.files, tests);
+  assert.equal(ui.browsers, true); assert.equal(ui.ios, true); assert.equal(ui.swift, true);
   for (const path of ['src/shared/example.js','src/services/chat/prompt.js','package-lock.json','scripts/new-tool.js','shared/contract.json','mobile-sync/protocol.js','unknown.config','skills/example/SKILL.md','assets/prompt.txt']) {
     const plan = planTests([path], tests);
     assert.deepEqual(plan.files, tests, path); assert.equal(plan.swift, true); assert.equal(plan.browsers, true);
@@ -44,7 +44,7 @@ test('registered explanation-only documents run only the link check; runtime-rea
   }
   // Inside the app source folder a README is bundled-candidate code: the iOS group still runs.
   const bundled = planTests(['ios/Melo/README.md'], tests);
-  assert.deepEqual(bundled.files, ['ios/Tests/Scene.test.js']); assert.equal(bundled.swift, true); assert.deepEqual(bundled.docs, []);
+  assert.deepEqual(bundled.files, tests); assert.equal(bundled.swift, true); assert.deepEqual(bundled.docs, []);
   // A document beside a code change is still link-checked; the code decides the tier.
   const mixed = planTests(['MELO_OVERVIEW.md','src/services/project/projectMutations.js'], tests);
   assert.deepEqual(mixed.files, tests); assert.deepEqual(mixed.docs, ['MELO_OVERVIEW.md']);
@@ -58,6 +58,9 @@ test('change discovery includes staged, unstaged, untracked, deletion and clean 
     assert.equal(currentTestPlan(root,tests).fullUnit,true,'initial commit cannot skip');
     await writeFile(join(root,'second'),'b'); git('add','second'); git('commit','-m','second');
     assert.deepEqual(changedPaths(root).paths,['second']);
+    await mkdir(join(root,'nested'));
+    assert.throws(()=>changedPaths(join(root,'nested')), /not the Git worktree root/);
+    assert.equal(currentTestPlan(join(root,'nested'),tests).fullUnit,true);
     await writeFile(join(root,'first'),'changed'); git('add','first');
     await rm(join(root,'second')); await writeFile(join(root,'third'),'untracked');
     assert.deepEqual(changedPaths(root).paths.sort(),['first','second','third']);
@@ -80,7 +83,7 @@ test('daily CLI executes the selected group, isolates home, and stops on failure
   // inherits the parent test worker's internal context marker.
   delete env.NODE_TEST_CONTEXT;
   const script=fileURLToPath(new URL('./verify-daily.js',import.meta.url));
-  const run=()=>execFileSync(process.execPath,[script],{cwd:root,env,encoding:'utf8',stdio:'pipe'});
+  const run=()=>execFileSync(process.execPath,[script,'--files','desktop-ui/one.test.js','desktop-ui/two.test.js'],{cwd:root,env,encoding:'utf8',stdio:'pipe'});
   const git=(...args)=>execFileSync('git',args,{cwd:root,stdio:'pipe'});
   try {
     for(const dir of [...TEST_ROOTS,'ios/scripts']) await mkdir(join(root,dir),{recursive:true});
@@ -95,11 +98,11 @@ test('daily CLI executes the selected group, isolates home, and stops on failure
     git('add','package.json','src','desktop-ui','scripts','ios');git('commit','-m','fixture');
     await writeFile(join(root,'desktop-ui/changed.js'),'// UI change');
     assert.match(run(),/2\/3 个 JS 测试文件/);
-    const jobs=await readFile(join(root,'jobs.log'),'utf8');assert.equal(jobs.trim().split('\n').length,4);
+    const jobs=await readFile(join(root,'jobs.log'),'utf8');assert.equal(jobs.trim().split('\n').length,1);
     await rm(join(root,'jobs.log')); // Keep the next Git range confined to UI.
     await writeFile(join(root,'desktop-ui/one.test.js'),'throw Error("deliberate regression");');
     assert.throws(run,error=>error.status===1&&/JS 回归 failed/.test(error.stderr));
-    await assert.rejects(readFile(join(root,'jobs.log')), {code:'ENOENT'});
+    assert.equal((await readFile(join(root,'jobs.log'),'utf8')).trim(),'check-syntax.js', 'syntax preflight may run; browser jobs must not');
   } finally {await rm(root,{recursive:true,force:true});}
 });
 
@@ -123,5 +126,23 @@ test('daily CLI runs only the document link check for an overview-only change', 
     const output=execFileSync(process.execPath,[script],{cwd:root,env,encoding:'utf8',stdio:'pipe'});
     assert.match(output,/0\/1 个 JS 测试文件/);
     assert.equal((await readFile(join(root,'jobs.log'),'utf8')).trim(),'check-doc-links.js MELO_OVERVIEW.md');
+  } finally {await rm(root,{recursive:true,force:true});}
+});
+
+test('a failed resource preflight stops the real CLI before JS, browser or Swift execution', async()=>{
+  const root=await mkdtemp(join(tmpdir(),'melo-preflight-cli-'));
+  const env={...process.env};delete env.NODE_TEST_CONTEXT;
+  const script=fileURLToPath(new URL('./verify-daily.js',import.meta.url));
+  try {
+    for(const dir of ['src','desktop-ui','scripts','mobile-sync','ios/Tests','ios/scripts'])await mkdir(join(root,dir),{recursive:true});
+    await writeFile(join(root,'package.json'),'{"type":"module"}');
+    await writeFile(join(root,'scripts/test-quarantine.json'),'{}');
+    await writeFile(join(root,'src/marker.test.js'),"import {writeFileSync} from 'node:fs';writeFileSync('must-not-run','JS ran');");
+    await writeFile(join(root,'scripts/check-syntax.js'),'// fixture syntax already checked');
+    for(const name of ['verify-settings-design.mjs','verify-extra-fast.mjs'])await writeFile(join(root,'scripts',name),"import {writeFileSync} from 'node:fs';writeFileSync('must-not-run','browser ran');");
+    await writeFile(join(root,'ios/scripts/test.py'),"import sys\nfrom pathlib import Path\nassert '--check-renderer' in sys.argv\nPath('preflight-ran').write_text('1')\nraise SystemExit(1)\n");
+    assert.throws(()=>execFileSync(process.execPath,[script,'--files','package.json'],{cwd:root,env,encoding:'utf8',stdio:'pipe'}),error=>error.status===1&&/共享渲染资源预检 failed/.test(error.stderr));
+    assert.equal(await readFile(join(root,'preflight-ran'),'utf8'),'1');
+    await assert.rejects(readFile(join(root,'must-not-run')),{code:'ENOENT'});
   } finally {await rm(root,{recursive:true,force:true});}
 });

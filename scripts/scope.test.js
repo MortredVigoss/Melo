@@ -9,15 +9,15 @@ const cache = {};
 const report = path => scopeReport([path], process.cwd(), cache);
 const checks = item => item.check;
 
-test('a project service change reports its feature, the iPhone counterpart and the unchanged full daily tier', async () => {
+test('a project service change reports its feature, the iPhone counterpart and the dependency-selected daily tier', async () => {
   const result = await report('src/services/project/projectMutations.js');
   assert.equal(result.changed[0].feature, 'projects');
   assert.ok(result.affectedFeatures.some(feature => feature.id === 'projects'));
   assert.ok(result.counterparts.flatMap(checks).includes('ios/Melo/PersonalWorkspace.swift'));
-  assert.equal(result.testPlan.fullUnit, true);
-  assert.match(result.testPlan.tier, /日常全量/);
+  assert.equal(result.testPlan.fullUnit, false);
+  assert.match(result.testPlan.tier, /功能与依赖/);
   // Report only: the tier is exactly what scripts/test-plan.js selects.
-  assert.equal(result.testPlan.selected, result.testPlan.discovered);
+  assert.ok(result.testPlan.selected < result.testPlan.discovered);
   assert.match(formatScope(result), /只报告，不改变 npm test 的选组/);
 });
 
@@ -26,7 +26,7 @@ test('a desktop memory page renderer points at the phone memory views and the UI
   assert.equal(result.changed[0].feature, 'memory');
   assert.ok(result.changed[0].importers.some(item => item.file === 'desktop-ui/features/memory/viewPane.js'));
   assert.ok(result.counterparts.flatMap(checks).includes('ios/Melo/MemoryFacts.swift'));
-  assert.deepEqual([result.testPlan.fullUnit, result.testPlan.browsers, result.testPlan.ios, result.testPlan.swift], [false, true, true, false]);
+  assert.deepEqual([result.testPlan.fullUnit, result.testPlan.browsers, result.testPlan.ios, result.testPlan.swift], [false, false, true, true]);
   assert.ok(result.focused.tests.includes('desktop-ui/features/memory/viewFacts.test.js'));
 });
 

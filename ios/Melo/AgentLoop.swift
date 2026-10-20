@@ -265,6 +265,7 @@ final class AgentLoop: @unchecked Sendable {
                 var executed = false
                 var cancelled = false
                 var image: (Data, String)? = nil
+                var capability: CapabilityAudit? = nil
                 if Task.isCancelled {
                     outcome = PhoneToolEnvelope.finalize(ok: false, error: "ABORTED", output: "Aborted before execution.")
                 } else if !core.permits(call.callID) {
@@ -279,6 +280,7 @@ final class AgentLoop: @unchecked Sendable {
                         await hooks.onStatus?(tools.statusText(call))
                         do {
                             let result = try await withDeadline { await tools.perform(call) }
+                            capability = result.capability
                             try PhoneExecutionScope.check(deadline: budget)
                             outcome = PhoneToolEnvelope.parse(result.output)
                             if let jpeg = result.imageJPEG { image = (jpeg, result.imageURL); screenshots += 1 }
@@ -289,9 +291,11 @@ final class AgentLoop: @unchecked Sendable {
                             outcome = PhoneToolEnvelope.finalize(ok: false, error: "ABORTED", output: "The tool call was cancelled.")
                         }
                     } else { outcome = PhoneToolEnvelope.finalize(ok: false, error: "UNKNOWN_TOOL", output: contract.unknownToolOutput) }
-                    executed = true
+                    // A call the capability check refused never reached the tool.
+                    executed = capability?.allowed != false
                 }
-                let record = ExecutionToolCall(iteration: iteration, call: call, args: args, outcome: outcome, executed: executed, started: started, finished: Date())
+                var record = ExecutionToolCall(iteration: iteration, call: call, args: args, outcome: outcome, executed: executed, started: started, finished: Date())
+                record.capability = capability
                 records.append(record)
                 if let rows = SharedLoopPolicy.value("completionObservation", ["observation": ["id": call.callID, "name": call.name, "ok": outcome.ok, "executed": executed, "output": outcome.output]]) as? [[String: Any]] {
                     completionObservations.append(contentsOf: rows)

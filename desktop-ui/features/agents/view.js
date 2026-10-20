@@ -7,7 +7,10 @@
 import { t, ui } from '../../i18n.js';
 import { renderAgentAvatar } from '../../agentAvatar.js';
 import { renderCapabilityChoices } from './capabilityChoices.js';
-import { getBootstrap, activeProject, isAgentChannelAvailable, escapeHtml, icon } from './context.js';
+import { getBootstrap, activeProject, isAgentChannelAvailable, escapeHtml, icon, renderCapabilityGrants } from './context.js';
+// renderCapabilityGrants (the approvals feature's «临时授权» list) sits after the
+// form: the settings editor keeps form controls read-only until editing, and
+// revoking a grant must never wait for an edit.
 import { agentsState } from './state.js';
 import { selectedAgentProfile, selectedAgentScope, agentDraftFor, agentSecretVisibilityKey } from './controller.js';
 
@@ -370,6 +373,7 @@ function renderAgentWorkbench(selected) {
           }
         </div>
       </form>
+      ${renderCapabilityGrants(selected.id)}
     </section>
   `;
 }
@@ -385,9 +389,19 @@ function renderAgentPage() {
             <select class="config-select agent-select" data-action="select-agent-profile" aria-label="选择 Agent">
               ${(getBootstrap()?.customize?.agents || []).map(agent => ui`<option value="${agent.id}" ${selected?.id === agent.id ? 'selected' : ''}>${escapeHtml(agent.name)}${!agent.capabilities ? ' · '+t('旧版权限待迁移') : ''}</option>`).join('')}
             </select>
-            <button class="small-button agent-create-button" type="button" data-action="create-custom-agent" ${agentsState.agentCreating ? 'disabled' : ''}>${agentsState.agentCreating ? t('正在创建…') : t('新增 Agent')}</button>
+            <span class="agent-create-group" role="group" aria-label="${escapeHtml(t('新增 Agent'))}">
+              <select class="config-select agent-create-base" data-agent-create-base aria-label="${escapeHtml(t('新 Agent 的起点'))}">
+                <option value="" ${agentsState.agentCreateBase ? '' : 'selected'}>${escapeHtml(t('只读起步（推荐）'))}</option>
+                ${(getBootstrap()?.customize?.agents || []).map(agent => `<option value="${escapeHtml(agent.id)}" ${agentsState.agentCreateBase === agent.id ? 'selected' : ''}>${escapeHtml(t('基于「{name}」', { name: agent.name }))}</option>`).join('')}
+              </select>
+              ${agentsState.agentCreateBase ? `<label class="checkbox-row agent-create-persona"><input type="checkbox" data-agent-create-persona ${agentsState.agentCreateCopyPersona ? 'checked' : ''}>${escapeHtml(t('同时复制身份、人设与声音'))}</label>` : ''}
+              <button class="small-button agent-create-button" type="button" data-action="create-custom-agent" ${agentsState.agentCreating ? 'disabled' : ''}>${agentsState.agentCreating ? t('正在创建…') : t('新增 Agent')}</button>
+            </span>
           </div>
         </div>
+        <p class="page-kicker-tip agent-create-hint">${escapeHtml(agentsState.agentCreateBase
+          ? t('新 Agent 复制所选 Agent 的能力、协作与模型设置，之后两者各自独立；消息渠道和机器人令牌不会复制。')
+          : t('新 Agent 默认只开启读取文件、联网、知识与记忆；修改文件、运行命令、生成媒体和委派会在需要时询问你。'))}</p>
         <div class="agent-detail-column">${renderAgentWorkbench(selected)}</div>
       </div>
     </section>

@@ -4,6 +4,11 @@
 .agent-page .agent-page-header .inline-actions {flex-wrap:nowrap;min-width:0;}
 .agent-page .agent-select {min-width:100px;width:180px;max-width:100%;}
 .agent-page .agent-create-button {margin:0;white-space:nowrap;color:var(--space-gold);border-color:var(--space-edge-raised);}
+/* Create flow (capability elevation rule 6): starting point + optional persona copy. */
+.agent-page .agent-create-group {display:inline-flex;align-items:center;gap:8px;min-width:0;}
+.agent-page .agent-create-base {width:150px;min-width:0;max-width:100%;}
+.agent-page .agent-create-persona {white-space:nowrap;font-size:12px;margin:0;}
+.agent-page .agent-create-hint {margin:-6px 0 0;}
 .agent-page .agent-detail-column {padding:0 4px 12px 0;overflow:auto;scrollbar-width:thin;scrollbar-color:var(--space-edge-raised) transparent;}
 .agent-page .agent-detail-column::-webkit-scrollbar {width:5px;}
 .agent-page .agent-detail-column::-webkit-scrollbar-thumb {background:var(--space-edge-raised);border-radius:8px;}
@@ -39,7 +44,9 @@
 .agent-page .agent-capabilities section[role=status] button {margin:4px 8px 0 0;}
 @container workspace (max-width:520px) {
   .agent-page .agent-page-header {align-items:flex-start;flex-direction:column;}
-  .agent-page .agent-page-header .inline-actions {width:100%;}
+  .agent-page .agent-page-header .inline-actions {width:100%;flex-wrap:wrap;}
+  .agent-page .agent-create-group {width:100%;flex-wrap:wrap;}
+  .agent-page .agent-create-base {width:0;flex:1;}
   .agent-page .agent-select {width:0;flex:1;}
   .agent-page .agent-workbench-card {padding:12px;}
   .agent-page .agent-settings-section {padding:12px;}

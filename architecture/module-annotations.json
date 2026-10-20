@@ -341,7 +341,9 @@
         "/api/tasks",
         "/api/tools/",
         "/api/permissions/",
-        "/api/safety/"
+        "/api/safety/",
+        "/api/capability-requests",
+        "/api/capability-grants"
       ],
       "testGroups": [
         "test:audit-fixes"
@@ -442,7 +444,7 @@
         "test:scripts"
       ],
       "notes": [
-        "npm test = verify-daily.js（按 scripts/test-plan.js 选组）；npm run test:full 为发布 gate。npm run scope 只报告，不改选组。"
+        "npm test = verify-daily.js（test-plan.js / test-impact.js 按功能、反向依赖及隐式边选组）；npm run test:full 为发布 gate。scope 使用相同选组器，只输出报告。"
       ]
     }
   },
@@ -736,6 +738,23 @@
         "ios/Melo/ContentView.swift"
       ],
       "note": "两端界面协调层：桌面 uiState/app.js，手机 ChatStore；P2/P4 分别拆分"
+    },
+    {
+      "feature": "approvals",
+      "desktop": [
+        "src/domain/agent/capabilityElevation.js",
+        "src/services/agent/capabilityElevation.js",
+        "src/persistence/capabilityGrantLedger.js",
+        "desktop-ui/features/approvals/view.js"
+      ],
+      "iphone": [
+        "ios/Melo/CapabilityElevation.swift",
+        "ios/Melo/CapabilityElevationRuntime.swift",
+        "ios/Melo/CapabilityElevationViews.swift",
+        "ios/Melo/AgentStarter.swift"
+      ],
+      "contract": "agent-loop",
+      "note": "能力临时提升 / 即时开启：同一判定、原子、时长与文案（agent-loop.json capabilityElevation，手机映射在其 phone 节）；两端各自账本，不同步；手机卡口 DeviceToolContext.perform"
     }
   ],
   "sharedContracts": [
@@ -749,14 +768,16 @@
       "iphone": [
         "ios/Melo/AgentLoopContract.swift",
         "ios/Melo/AgentLoop.swift",
-        "ios/Melo/AgentLoopRuntime.swift"
+        "ios/Melo/AgentLoopRuntime.swift",
+        "ios/Melo/CapabilityElevation.swift"
       ],
       "generator": "scripts/generate-agent-loop-contract.js",
       "tests": [
         "src/runtime/agentLoopContract.test.js",
         "scripts/generate-agent-loop-contract.test.js",
         "ios/Tests/SharedContractTests.swift",
-        "ios/Tests/AgentLoopTests.swift"
+        "ios/Tests/AgentLoopTests.swift",
+        "ios/Tests/CapabilityElevationTests.swift"
       ],
       "note": "桌面运行时读取 JSON，手机内嵌生成副本（不含 fixtures）；两端跑同一批 fixtures。P3/P4 新增双端行为先扩展此文件。"
     },
@@ -1012,11 +1033,21 @@
         "desktop-ui/executionPanel.test.js": [
           "desktop-ui/executionPanel.js"
         ],
+        "desktop-ui/features/approvals/controller.test.js": [
+          "desktop-ui/features/approvals/view.js",
+          "shared/protocol/agent-loop.json"
+        ],
         "desktop-ui/launchScreen.test.js": [
           "desktop-ui/launchScreen.js"
         ],
         "desktop-ui/localSettings.test.js": [
           "desktop-ui/localSettings.js"
+        ],
+        "src/agents/skillRuns.crossHome.test.js": [
+          "src/agents/skillRuns.js"
+        ],
+        "src/memory/conversationIndex.crossHome.test.js": [
+          "src/memory/conversationIndex.js"
         ],
         "src/services/chat/chatExecutionRunner.test.js": [
           "src/services/chat/chatExecutionRunner.js"
@@ -1042,12 +1073,6 @@
         ],
         "src/web/externalReaders.test.js": [
           "src/web/externalReaders.js"
-        ],
-        "src/agents/skillRuns.crossHome.test.js": [
-          "src/agents/skillRuns.js"
-        ],
-        "src/memory/conversationIndex.crossHome.test.js": [
-          "src/memory/conversationIndex.js"
         ]
       },
       "note": "测试读取自身被测模块的源码文本（规则/正则守卫），逐字节移植时保持文本"
@@ -1110,6 +1135,19 @@
         "shared/agent/conformance.test.js"
       ],
       "note": "运行源码与隔离 bundle 对照，并校验逐源文件散列和 iOS 原样打包"
+    },
+    {
+      "id": "tooling-ios-tests",
+      "kind": "source-reading-test",
+      "reads": [
+        "ios/scripts/test.py",
+        "ios/scripts/swift_test_cache.py"
+      ],
+      "tests": [
+        "scripts/ios-test-selection.test.js",
+        "scripts/swift-test-cache.test.js"
+      ],
+      "note": "手机 suite 清单、资源预检、组合门禁去重与编译缓存的执行契约"
     }
   ]
 }

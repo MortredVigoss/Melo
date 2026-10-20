@@ -11,7 +11,9 @@ export async function discoverTests(root = resolve('.'), roots = TEST_ROOTS) {
       else if(entry.isFile()&&entry.name.endsWith('.test.js'))files.push(relative(root,path));
     }
   }
-  for(const dir of roots)await walk(resolve(root,dir));
+  // A root that does not exist in this checkout (e.g. a trimmed fixture tree)
+  // contributes no tests; any other read error still fails discovery.
+  for(const dir of roots){try{await walk(resolve(root,dir));}catch(error){if(error?.code!=='ENOENT'||resolve(error.path||'')!==resolve(root,dir))throw error;}}
   return files.sort();
 }
 export async function discoverRunnableTests(root = resolve('.')) {

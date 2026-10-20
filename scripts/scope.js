@@ -10,6 +10,7 @@ import { readFile, access } from 'node:fs/promises';
 import { resolve, relative, isAbsolute, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { planTests, isDocOnly, changedPaths } from './test-plan.js';
+import { buildTestImpact } from './test-impact.js';
 import { discoverRunnableTests, discoverTests, TEST_ROOTS } from './test-discovery.js';
 import { buildModuleMap, reverseGraph, reach, matchesGlob, ownerOf, MAP_PATH } from './generate-module-map.js';
 
@@ -47,7 +48,7 @@ function tierOf(plan) {
   if (!code.length) return '纯文档：只检查改动文档的相对链接';
   if (plan.fullUnit) return '日常全量：全部 JS 测试 + 语法 + 设置浏览器验收 + iOS 协议/渲染与 Swift';
   if (plan.files.length && plan.changed.every(path => isDocOnly(path) || path.endsWith('.test.js'))) return '仅运行改动的测试文件';
-  return `界面 / iOS 整组${plan.browsers ? ' + 设置浏览器验收' : ''}${plan.ios ? (plan.swift ? ' + iOS 协议/渲染与 Swift' : ' + iOS 共用渲染（不编译 Swift）') : ''}`;
+  return `功能与依赖选组${plan.browsers ? ' + 设置浏览器验收' : ''}${plan.renderer ? ' + iOS 共用渲染' : ''}${plan.swift ? ' + Swift' : ''}`;
 }
 
 function implicitRoles(entry, path) {
@@ -89,7 +90,8 @@ export async function scopeReport(changed, root = process.cwd(), cache = {}) {
   const ownerFeature = path => owners.get(path) ?? null;
   const paths = unique(changed.map(path => normalize(root, path))).sort();
   const { files: tests, note: discoveryNote } = cache.discovered ||= await discoverForPlan(root);
-  const plan = planTests(paths, tests);
+  const impact = cache.impact ||= await buildTestImpact(root, built);
+  const plan = planTests(paths, tests, impact);
 
   // Tests that import a changed module directly (static, report only).
   const testImports = new Map();
@@ -178,7 +180,7 @@ export async function scopeReport(changed, root = process.cwd(), cache = {}) {
     counterparts,
     sharedContracts: [...contracts.values()],
     implicit: [...implicitHits.values()],
-    testPlan: { tier: tierOf(plan), reason: plan.reason, selected: plan.files.length, discovered: tests.length, fullUnit: plan.fullUnit, browsers: plan.browsers, ios: plan.ios, swift: plan.swift, syntax: plan.syntax === null ? 'all' : plan.syntax, docs: plan.docs, discoveryNote },
+    testPlan: { tier: tierOf(plan), reason: plan.reason, selected: plan.files.length, discovered: tests.length, fullUnit: plan.fullUnit, browsers: plan.browsers, ios: plan.ios, swift: plan.swift, swiftSuites: plan.swiftSuites, renderer: plan.renderer, reasons: plan.reasons, preflightTests: plan.preflightTests, syntax: plan.syntax === null ? 'all' : plan.syntax, docs: plan.docs, discoveryNote },
     focused: { tests: focused, groups, note: '不替代上面的日常选组' },
     moduleMap: mapStatus,
   };
@@ -206,7 +208,9 @@ export function formatScope(report) {
   const plan = report.testPlan;
   lines.push(`- ${plan.tier}`);
   lines.push(`- 原因：${plan.reason}`);
-  lines.push(`- JS 测试 ${plan.selected}/${plan.discovered} 个文件；浏览器 ${plan.browsers ? '是' : '否'}；iOS ${plan.ios ? (plan.swift ? '协议/渲染 + Swift' : '仅共用渲染') : '否'}；语法 ${plan.syntax === 'all' ? '全部' : `${plan.syntax.length} 个文件`}${plan.docs.length ? `；文档链接 ${plan.docs.length} 个文件` : ''}`);
+  lines.push(`- JS 测试 ${plan.selected}/${plan.discovered} 个文件；浏览器 ${plan.browsers ? '是' : '否'}；iOS ${plan.ios ? [plan.renderer ? '共用渲染' : '', plan.swift ? 'Swift' : ''].filter(Boolean).join(' + ') : '否'}；语法 ${plan.syntax === 'all' ? '全部' : `${plan.syntax.length} 个文件`}${plan.docs.length ? `；文档链接 ${plan.docs.length} 个文件` : ''}`);
+  for (const reason of plan.reasons || []) lines.push(`- 选组依据：${reason}`);
+  if (plan.swift) lines.push(`- Swift：${plan.swiftSuites === null ? '全部组' : plan.swiftSuites.join('、')}`);
   if (plan.discoveryNote) lines.push(`- ${plan.discoveryNote}`);
   lines.push('', '## 命中的隐式依赖');
   if (!report.implicit.length) lines.push('- 无');

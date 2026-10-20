@@ -1,6 +1,6 @@
 # Melo 后端架构约定
 
-更新：2026-10-19。范围：业务、存储、执行与 HTTP/SSE；UI 由独立任务维护。现状入口见 [Melo 总览](../MELO_OVERVIEW.md)，2026-10-13 性能/增量索引演进见 [架构验收](architecture-performance-2026-10-13.md)。本文早期夹具数字保留其原验证口径。
+更新：2026-10-20。范围：业务、存储、执行与 HTTP/SSE；UI 由独立任务维护。现状入口见 [Melo 总览](../MELO_OVERVIEW.md)，2026-10-13 性能/增量索引演进见 [架构验收](architecture-performance-2026-10-13.md)。本文早期夹具数字保留其原验证口径。
 
 ## 设计决定
 
@@ -71,6 +71,12 @@ SSE 保留 `started`、`delta`、`reasoning`、`done`、`error`、`aborted` 等�
 提交后构建页面数据失败时，响应仍为 HTTP 200：`{ ok: true, receipt, bootstrapError: { code: 'BOOTSTRAP_UNAVAILABLE', message } }`。不用 5xx，避免客户端把已保存当成失败并重试（重试创建会产生重复项目或 Agent）；客户端应重新读取 `GET /api/bootstrap`。`receipt` 只含 ID、修订号与警告，不含记录正文（Agent 记录含频道凭据）。命令自身的校验或提交错误照旧报错。桌面 UI 自 P2a（2026-10-19）起在共享 `api()` 里统一识别：不把回执当页面数据，改为重新读取 `GET /api/bootstrap`（保留 `receipt.agentExportWarning`）；重新读取也失败时，调用方保留草稿和忙碌状态，显示持久的“已保存，等待刷新页面”，原命令不以旧快照完成。用户点击刷新只重发 GET（单次限时 15 秒、同一回执不并发重读）；读取到至少覆盖回执修订号的快照后才继续完成界面操作。相同进行中的命令去重，新建 Agent 还须匹配创建 id 和全局表单后才能自动编辑。恢复状态仅在当前页面内存中；重开页面读取已提交数据，不重放写请求。见 `desktop-ui/bootstrapPatch.js`、`sharedApi.js`，以及 `committedSave.test.js` / `committedSave.browser.test.js`。
 
 `scripts/check-dependencies.js` 禁止已迁移模块直接或经任何链路（含 `desktopStore.js`）到达 `services/desktop/bootstrap.js`，失败信息列出导入链。仍直接导入它的业务模块列在例外清单中，只能减少：新增直接导入或清单中已不再导入的条目都会使检查失败。
+
+## 能力临时提升（2026-10-20）
+
+规则与安全推理见[专项](capability-elevation-20261020.md)。卡口是执行器的能力检查：每次工具调用先按不含授权的基础能力判断，被拒时才实时读取该 Agent 的有效授权，或在有交互界面（桌面 SSE 流）时发出 `capability_request` 并在 `min(120 s, 运行剩余)` 内等待用户决定；取消、运行截止、超时各自结束请求。授权不写进 scope，因此撤销对下一次调用生效，成员也不会继承父级的授权。
+
+授权账本是独立文件 `desktop/capability-grants.json`（版本 1，原子替换，0600），不是 `state.json` 集合：不推进修订号、不进同步/提示词/bootstrap/导出；唯一写入者是 `services/agent/capabilityElevation.js`，且只在用户对进行中请求做出决定时写入。路由：`POST /api/capability-requests/respond`、`GET /api/capability-grants`、`POST /api/capability-grants/revoke`（local-write / local-read）。「一直开启」经 `updateAgentProfile`（P1 回执，`preserveSelection`）写本对话生效的设置作用域。决定记入执行场景阶段与工具记录的 `meta.capabilityElevation`。
 
 ## 存储提交与迁移
 

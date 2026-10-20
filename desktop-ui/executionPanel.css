@@ -20,7 +20,7 @@
 .execution-module small {grid-column:2;font-size:8px;color:#7c8a96;}
 .execution-module[data-status=running] {box-shadow:0 0 20px color-mix(in srgb,var(--module-color) 22%,transparent);}
 .execution-module[data-status=running]>i {opacity:1;box-shadow:0 0 7px 2px var(--module-color);}
-.execution-module[data-status=completed] small {color:#a9c3b3;}.execution-module[data-status=failed] small {color:#edaa97;}
+.execution-module[data-status=completed] small {color:#cdbd9c;}.execution-module[data-status=failed] small {color:#edaa97;}
 .execution-panel-stage[data-wide=false][data-focus]:not([data-focus=""]) .execution-module {opacity:.18;pointer-events:none;}
 .execution-panel:not(.is-fallback) .execution-panel-stage[data-wide=true] .execution-source,
 .execution-panel:not(.is-fallback) .execution-panel-stage[data-wide=true] .execution-extra {opacity:0;visibility:hidden!important;pointer-events:none;}
@@ -106,7 +106,7 @@
 .execution-pipeline {display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:9px;}
 .execution-pipeline button {text-align:left;display:grid;grid-template-columns:1fr auto;gap:5px;padding:10px;border-color:#a38bb83b;background:#21182d40;backdrop-filter:blur(2px);}
 .execution-pipeline strong {font-size:10px;color:#d1b4e0;font-weight:500;}
-.execution-pipeline span {font-size:8px;color:#a6b8bd;}
+.execution-pipeline span {font-size:8px;color:#b8ac97;}
 .execution-pipeline small {grid-column:1/-1;font-size:9px;line-height:1.6;color:#9ea7b5;overflow-wrap:anywhere;}
 .execution-pipeline [data-stage-status=running] {border-color:#b482dc88;box-shadow:0 0 18px #a366d51c;}
 .execution-pipeline [data-stage-status=failed] span {color:#eda998;}
@@ -115,7 +115,7 @@
 .execution-diff section { min-width:0; padding:12px; background:#a5927410; border:1px solid #cab28b20; border-radius:10px; }
 .execution-diff pre, .execution-detail-output { white-space:pre-wrap; overflow-wrap:anywhere; }
 .execution-diff section:first-child { border-color:#9d657033; }
-.execution-diff section:last-child { border-color:#779b8533; }
+.execution-diff section:last-child { border-color:#c9a86a40; }
 @media(max-width:650px) { .execution-diff { grid-template-columns:1fr; } }
 .execution-preview { opacity:.8; border-style:dashed; }
 .execution-preview img { width:100%; object-fit:contain; border-radius:12px; }

@@ -33916,6 +33916,1581 @@
         }
       }
     },
+    "、": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "、"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": ", "
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "、"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": ", "
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": ", "
+          }
+        }
+      }
+    },
+    "MCP 服务「{id}」": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MCP 服务「{id}」"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MCP server “{id}”"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MCP サーバー「{id}」"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MCP 서버 「{id}」"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "servidor MCP «{id}»"
+          }
+        }
+      }
+    },
+    "技能「{id}」": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "技能「{id}」"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "skill “{id}”"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スキル「{id}」"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스킬 「{id}」"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "habilidad «{id}»"
+          }
+        }
+      }
+    },
+    "连接器「{id}」": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接器「{id}」"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "connector “{id}”"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コネクタ「{id}」"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "커넥터 「{id}」"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "conector «{id}»"
+          }
+        }
+      }
+    },
+    "仅本次任务": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅本次任务"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This task only"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今回のタスクのみ"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이번 작업만"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Solo esta tarea"
+          }
+        }
+      }
+    },
+    "本对话 24 小时": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本对话 24 小时"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This chat for 24 hours"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この会話で 24 時間"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 대화에서 24시간"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta conversación durante 24 horas"
+          }
+        }
+      }
+    },
+    "本项目 24 小时": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本项目 24 小时"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This project for 24 hours"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このプロジェクトで 24 時間"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 프로젝트에서 24시간"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este proyecto durante 24 horas"
+          }
+        }
+      }
+    },
+    "仅本次": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅本次"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Just this once"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今回のみ"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이번만"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Solo esta vez"
+          }
+        }
+      }
+    },
+    "一直开启": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一直开启"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Always on"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "常にオン"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "항상 켜기"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activar siempre"
+          }
+        }
+      }
+    },
+    "{agent} 需要『{capability}』，{parent} 没有这个能力": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{agent} 需要『{capability}』，{parent} 没有这个能力"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{agent} needs “{capability}”, which {parent} does not have"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{agent} は『{capability}』が必要ですが、{parent} にはこの機能がありません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{agent}에 『{capability}』이(가) 필요하지만 {parent}에는 이 기능이 없습니다"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{agent} necesita «{capability}», que {parent} no tiene"
+          }
+        }
+      }
+    },
+    "此 Agent（{agent}）需要『{capability}』": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此 Agent（{agent}）需要『{capability}』"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This agent ({agent}) needs “{capability}”"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この Agent（{agent}）には『{capability}』が必要です"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Agent({agent})에 『{capability}』이(가) 필요합니다"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este agente ({agent}) necesita «{capability}»"
+          }
+        }
+      }
+    },
+    "需要临时授权": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要临时授权"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Temporary permission needed"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一時的な許可が必要です"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "임시 권한이 필요합니다"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se necesita un permiso temporal"
+          }
+        }
+      }
+    },
+    "需要开启能力": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要开启能力"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A capability needs to be turned on"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "機能をオンにする必要があります"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기능을 켜야 합니다"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hay que activar una capacidad"
+          }
+        }
+      }
+    },
+    "超出发起者的能力，仍在这个 Agent 自己的设置范围内": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "超出发起者的能力，仍在这个 Agent 自己的设置范围内"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beyond what the requesting agent has, but within this agent’s own settings"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "依頼元の機能を超えますが、この Agent 自身の設定の範囲内です"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "요청한 쪽의 기능을 넘지만 이 Agent 자체 설정 범위 안입니다"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supera lo que tiene quien lo pidió, pero está dentro de los ajustes de este agente"
+          }
+        }
+      }
+    },
+    "这个 Agent 自己的设置没有开启这个能力": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个 Agent 自己的设置没有开启这个能力"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This agent’s own settings do not include this capability"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この Agent 自身の設定ではこの機能がオフです"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Agent 자체 설정에서 이 기능이 꺼져 있습니다"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los ajustes de este agente no incluyen esta capacidad"
+          }
+        }
+      }
+    },
+    "用于工具 {tool}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用于工具 {tool}"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "For the tool {tool}"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ツール {tool} のため"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "도구 {tool}용"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Para la herramienta {tool}"
+          }
+        }
+      }
+    },
+    "全局设置没有开启『{capability}』，项目设置不能单独开启；可以选择仅本次。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全局设置没有开启『{capability}』，项目设置不能单独开启；可以选择仅本次。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The global settings do not include “{capability}”, so the project settings cannot turn it on alone; you can allow it just this once."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "グローバル設定で『{capability}』がオフのため、プロジェクト設定だけではオンにできません。今回のみ許可できます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전역 설정에서 『{capability}』이(가) 꺼져 있어 프로젝트 설정만으로는 켤 수 없습니다. 이번만 허용할 수 있습니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los ajustes globales no incluyen «{capability}», así que los del proyecto no pueden activarla por sí solos; puedes permitirla solo esta vez."
+          }
+        }
+      }
+    },
+    "授权只对这个 Agent 有效，可在 Agent 设置或「权限与隐私」里随时撤销；撤销从下一次工具调用起生效。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "授权只对这个 Agent 有效，可在 Agent 设置或「权限与隐私」里随时撤销；撤销从下一次工具调用起生效。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The permission applies to this agent only. Revoke it any time in Agent settings or Permissions & privacy; revoking takes effect from the next tool call."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "許可はこの Agent にのみ有効です。Agent 設定または「権限とプライバシー」でいつでも取り消せます。取り消しは次のツール呼び出しから有効です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "권한은 이 Agent에만 적용됩니다. Agent 설정이나 「권한 및 개인정보」에서 언제든 철회할 수 있으며, 철회는 다음 도구 호출부터 적용됩니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El permiso solo vale para este agente. Puedes revocarlo cuando quieras en los ajustes del agente o en Permisos y privacidad; la revocación se aplica desde la siguiente llamada a una herramienta."
+          }
+        }
+      }
+    },
+    "「一直开启」会修改这个 Agent 的全局设置；「仅本次」只在这次任务中有效。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「一直开启」会修改这个 Agent 的全局设置；「仅本次」只在这次任务中有效。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“Always on” changes this agent’s global settings; “Just this once” lasts for this task only."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「常にオン」はこの Agent のグローバル設定を変更します。「今回のみ」はこのタスクの間だけ有効です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「항상 켜기」는 이 Agent의 전역 설정을 변경합니다. 「이번만」은 이번 작업에서만 유효합니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "«Activar siempre» cambia los ajustes globales de este agente; «Solo esta vez» dura solo esta tarea."
+          }
+        }
+      }
+    },
+    "「一直开启」会修改这个 Agent 在本项目的设置；「仅本次」只在这次任务中有效。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「一直开启」会修改这个 Agent 在本项目的设置；「仅本次」只在这次任务中有效。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“Always on” changes this agent’s settings for this project; “Just this once” lasts for this task only."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「常にオン」はこのプロジェクトでのこの Agent の設定を変更します。「今回のみ」はこのタスクの間だけ有効です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「항상 켜기」는 이 프로젝트에서 이 Agent의 설정을 변경합니다. 「이번만」은 이번 작업에서만 유효합니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "«Activar siempre» cambia los ajustes de este agente en este proyecto; «Solo esta vez» dura solo esta tarea."
+          }
+        }
+      }
+    },
+    "选择授权范围": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择授权范围"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose how long to allow it"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "許可の範囲を選択"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "허용 범위 선택"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige el alcance del permiso"
+          }
+        }
+      }
+    },
+    "任务结束时失效": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务结束时失效"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ends with the task"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タスク終了時に失効"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업이 끝나면 만료"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Termina con la tarea"
+          }
+        }
+      }
+    },
+    "到期 {time}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "到期 {time}"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Expires {time}"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "期限 {time}"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "만료 {time}"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Caduca {time}"
+          }
+        }
+      }
+    },
+    "超出自身设置": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "超出自身设置"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beyond its own settings"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自身の設定を超える"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "자체 설정 초과"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fuera de sus ajustes"
+          }
+        }
+      }
+    },
+    "超出发起者": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "超出发起者"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beyond the requesting agent"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "依頼元を超える"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "요청한 쪽 초과"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Más allá de quien lo pidió"
+          }
+        }
+      }
+    },
+    "撤销 {agent} 的『{capability}』临时授权": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "撤销 {agent} 的『{capability}』临时授权"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revoke the temporary “{capability}” permission of {agent}"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{agent} の『{capability}』一時許可を取り消す"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{agent}의 『{capability}』 임시 권한 철회"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revocar el permiso temporal de «{capability}» de {agent}"
+          }
+        }
+      }
+    },
+    "撤销中…": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "撤销中…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revoking…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取り消し中…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "철회 중…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revocando…"
+          }
+        }
+      }
+    },
+    "这个 Agent 目前没有临时授权。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个 Agent 目前没有临时授权。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This agent has no temporary permissions right now."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この Agent には現在一時的な許可がありません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Agent에는 현재 임시 권한이 없습니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este agente no tiene permisos temporales ahora."
+          }
+        }
+      }
+    },
+    "目前没有临时授权。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目前没有临时授权。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No temporary permissions right now."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現在、一時的な許可はありません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "현재 임시 권한이 없습니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No hay permisos temporales ahora."
+          }
+        }
+      }
+    },
+    "临时授权": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "临时授权"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Temporary permissions"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一時的な許可"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "임시 권한"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permisos temporales"
+          }
+        }
+      }
+    },
+    "对话中临时允许的能力。任务结束、到期或撤销后失效；撤销从下一次工具调用起生效。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对话中临时允许的能力。任务结束、到期或撤销后失效；撤销从下一次工具调用起生效。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Capabilities allowed temporarily during a chat. They end with the task, when they expire or when revoked; revoking takes effect from the next tool call."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会話中に一時的に許可した機能です。タスク終了、期限切れ、取り消しで失効します。取り消しは次のツール呼び出しから有効です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대화 중 임시로 허용한 기능입니다. 작업 종료, 만료 또는 철회 시 효력을 잃으며, 철회는 다음 도구 호출부터 적용됩니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Capacidades permitidas temporalmente en una conversación. Terminan con la tarea, al caducar o al revocarlas; la revocación se aplica desde la siguiente llamada a una herramienta."
+          }
+        }
+      }
+    },
+    "临时授权读取失败：{reason}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "临时授权读取失败：{reason}"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not load temporary permissions: {reason}"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一時的な許可を読み込めませんでした：{reason}"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "임시 권한을 불러오지 못했습니다: {reason}"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudieron cargar los permisos temporales: {reason}"
+          }
+        }
+      }
+    },
+    "全局设置没有开启这个能力，项目设置不能单独开启；可以选择仅本次。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全局设置没有开启这个能力，项目设置不能单独开启；可以选择仅本次。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The global settings do not include this capability, so the project settings cannot turn it on alone; you can allow it just this once."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "グローバル設定でこの機能がオフのため、プロジェクト設定だけではオンにできません。今回のみ許可できます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전역 설정에서 이 기능이 꺼져 있어 프로젝트 설정만으로는 켤 수 없습니다. 이번만 허용할 수 있습니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los ajustes globales no incluyen esta capacidad, así que los del proyecto no pueden activarla por sí solos; puedes permitirla solo esta vez."
+          }
+        }
+      }
+    },
+    "请先在 Agent 设置里完成能力迁移。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先在 Agent 设置里完成能力迁移。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finish the capability migration in Agent settings first."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先に Agent 設定で機能の移行を完了してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "먼저 Agent 설정에서 기능 마이그레이션을 완료하세요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Primero completa la migración de capacidades en los ajustes del agente."
+          }
+        }
+      }
+    },
+    "正在保存上一次选择，请稍候。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在保存上一次选择，请稍候。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saving your previous choice. Please wait."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前回の選択を保存しています。お待ちください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이전 선택을 저장하는 중입니다. 잠시 기다려 주세요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Guardando tu elección anterior. Espera un momento."
+          }
+        }
+      }
+    },
+    "这个授权请求已经结束，没有保存任何授权。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个授权请求已经结束，没有保存任何授权。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This request has already ended; no permission was saved."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この許可リクエストは終了しています。許可は保存されていません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 권한 요청은 이미 끝났으며 저장된 권한은 없습니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta solicitud ya terminó; no se guardó ningún permiso."
+          }
+        }
+      }
+    },
+    "授权没有保存：{reason}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "授权没有保存：{reason}"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The permission was not saved: {reason}"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "許可は保存されませんでした：{reason}"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "권한이 저장되지 않았습니다: {reason}"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se guardó el permiso: {reason}"
+          }
+        }
+      }
+    },
+    "已撤销临时授权，下一次工具调用起生效。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已撤销临时授权，下一次工具调用起生效。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Temporary permission revoked; it takes effect from the next tool call."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一時的な許可を取り消しました。次のツール呼び出しから有効です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "임시 권한을 철회했습니다. 다음 도구 호출부터 적용됩니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permiso temporal revocado; se aplica desde la siguiente llamada a una herramienta."
+          }
+        }
+      }
+    },
+    "撤销没有完成：{reason}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "撤销没有完成：{reason}"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not revoke: {reason}"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取り消せませんでした：{reason}"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "철회하지 못했습니다: {reason}"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo revocar: {reason}"
+          }
+        }
+      }
+    },
+    "新 Agent 的起点": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新 Agent 的起点"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starting point for the new agent"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しい Agent の起点"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 Agent의 시작점"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Punto de partida del nuevo agente"
+          }
+        }
+      }
+    },
+    "只读起步（推荐）": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只读起步（推荐）"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Read-only start (recommended)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読み取り専用で開始（推奨）"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "읽기 전용으로 시작(권장)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Empezar en solo lectura (recomendado)"
+          }
+        }
+      }
+    },
+    "基于「{name}」": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "基于「{name}」"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Based on “{name}”"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「{name}」をもとに作成"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「{name}」 기반"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Basado en «{name}»"
+          }
+        }
+      }
+    },
+    "同时复制身份、人设与声音": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同时复制身份、人设与声音"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Also copy identity, persona and voice"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "身元・ペルソナ・声もコピー"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "정체성, 페르소나, 음성도 복사"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copiar también identidad, personalidad y voz"
+          }
+        }
+      }
+    },
+    "新 Agent 复制所选 Agent 的能力、协作与模型设置，之后两者各自独立；消息渠道和机器人令牌不会复制。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新 Agent 复制所选 Agent 的能力、协作与模型设置，之后两者各自独立；消息渠道和机器人令牌不会复制。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The new agent copies the chosen agent’s capabilities, collaboration and model settings; afterwards the two are independent. Message channels and bot tokens are never copied."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しい Agent は選んだ Agent の機能・連携・モデル設定をコピーし、その後は互いに独立します。メッセージチャネルとボットトークンはコピーされません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 Agent는 선택한 Agent의 기능, 협업, 모델 설정을 복사하며 이후에는 서로 독립적입니다. 메시지 채널과 봇 토큰은 복사되지 않습니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El nuevo agente copia las capacidades, la colaboración y el modelo del agente elegido; después son independientes. Los canales de mensajes y los tokens de bot nunca se copian."
+          }
+        }
+      }
+    },
+    "新 Agent 默认只开启读取文件、联网、知识与记忆；修改文件、运行命令、生成媒体和委派会在需要时询问你。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新 Agent 默认只开启读取文件、联网、知识与记忆；修改文件、运行命令、生成媒体和委派会在需要时询问你。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A new agent starts with reading files, network access, and knowledge and memory only; it asks you when it needs to modify files, run commands, generate media or delegate."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しい Agent は既定でファイルの読み取り・ネットワーク接続・知識と記憶だけがオンです。ファイル編集・コマンド実行・メディア生成・委任が必要なときは確認します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 Agent는 기본적으로 파일 읽기, 네트워크 접근, 지식 및 기억만 켜져 있으며, 파일 수정·명령 실행·미디어 생성·위임이 필요하면 물어봅니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un agente nuevo empieza solo con leer archivos, acceso a la red y conocimiento y memoria; te pregunta cuando necesita modificar archivos, ejecutar comandos, generar medios o delegar."
+          }
+        }
+      }
+    },
     "项目记忆本": {
       "extractionState": "manual",
       "localizations": {
@@ -45147,6 +46722,111 @@
           "stringUnit": {
             "state": "translated",
             "value": "Añadido: %@"
+          }
+        }
+      }
+    },
+    "授权只对这个 Agent 有效，可在 Agent 页“这台手机上”下方或设置 > 权限与文件里随时撤销；撤销从下一次工具调用起生效。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "授权只对这个 Agent 有效，可在 Agent 页“这台手机上”下方或设置 > 权限与文件里随时撤销；撤销从下一次工具调用起生效。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The permission applies to this agent only. Revoke it any time below “On this iPhone” on its Agent page or in Settings > Permissions and files; revoking takes effect from the next tool call."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "許可はこの Agent にのみ有効です。Agent ページの「この iPhone」の下、または設定 > 権限とファイルでいつでも取り消せます。取り消しは次のツール呼び出しから有効です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "권한은 이 Agent에만 적용됩니다. Agent 페이지의 '이 iPhone에서' 아래나 설정 > 권한 및 파일에서 언제든 철회할 수 있으며, 철회는 다음 도구 호출부터 적용됩니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El permiso solo vale para este agente. Puedes revocarlo cuando quieras debajo de «En este iPhone» en su página o en Ajustes > Permisos y archivos; la revocación se aplica desde la siguiente llamada a una herramienta."
+          }
+        }
+      }
+    },
+    "「一直开启」会修改这个 Agent 在这台手机上的权限；「仅本次」只在这次任务中有效。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「一直开启」会修改这个 Agent 在这台手机上的权限；「仅本次」只在这次任务中有效。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“Always on” changes this agent’s permissions on this iPhone; “Just this once” lasts for this task only."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「常にオン」はこの iPhone でのこの Agent の権限を変更します。「今回のみ」はこのタスクの間だけ有効です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「항상 켜기」는 이 iPhone에서 이 Agent의 권한을 변경합니다. 「이번만」은 이번 작업에서만 유효합니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "«Activar siempre» cambia los permisos de este agente en este iPhone; «Solo esta vez» dura solo esta tarea."
+          }
+        }
+      }
+    },
+    "这台手机上的联网、图片和手机数据权限不会复制；新 Agent 使用手机默认设置，保存后可在 Agent 页单独开启。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台手机上的联网、图片和手机数据权限不会复制；新 Agent 使用手机默认设置，保存后可在 Agent 页单独开启。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Web, image and phone-data permissions on this iPhone are not copied; the new agent starts with the phone defaults, which you can change on its Agent page after saving."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この iPhone での Web、画像、iPhone データの権限はコピーされません。新しい Agent は iPhone の既定の設定で始まり、保存後に Agent ページで個別にオンにできます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 iPhone의 웹, 이미지, iPhone 데이터 권한은 복사되지 않습니다. 새 Agent는 iPhone 기본 설정으로 시작하며, 저장 후 Agent 페이지에서 따로 켤 수 있습니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los permisos de web, imágenes y datos del iPhone no se copian; el nuevo agente empieza con los valores predeterminados del teléfono, que puedes cambiar en su página después de guardar."
           }
         }
       }

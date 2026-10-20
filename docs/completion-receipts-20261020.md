@@ -27,3 +27,5 @@
 - 分支边界：主线负责当前 Node/iPhone；手机分支负责 Android 和同源 Core/共享展示资源，不整体合并手机分支内旧 Node/iPhone 源码。没有改用户配置、账号、真实数据库或安装应用。
 
 主线基于 `fc07cb3` 的固定版本检查：完整日常 JS 4242/4242、34 组 Swift 通过（474.4 秒），iOS simulator Debug 构建成功；日志 `completion-daily-final.log`、`completion-ios-build.log`。首轮因编译期间修改 Swift 源文件中止，未算通过，固定版本后重跑。远端已加入能力授权与测试选组更新，接续合并 `ceb6667` 并重新验证组合版本后才发布。
+
+合并 `ceb6667` 的组合版本：`completion-merged-daily.log` 完整日常通过（4303 项 JS + 5 项生成器预检、35 组 Swift，517.2 秒）；`completion-merged-ios-build.log` 为 iPhone simulator Debug 构建成功。Android 最终同源契约 `d96f88a` 在验证分支运行 `39363915271`，完成前 issue 保持打开。前一 Android run 因最终版本接替被取消，不计模拟器通过。

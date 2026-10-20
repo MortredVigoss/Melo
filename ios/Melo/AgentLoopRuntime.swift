@@ -356,6 +356,8 @@ struct ExecutionToolCall: Codable, Equatable, Identifiable {
     var executed: Bool
     var startedAt: String
     var durationMs: Double
+    /// Capability elevation (2026-10-20): the decision when the grant-free view did not allow the call.
+    var capability: CapabilityAudit? = nil
 
     init(iteration: Int, call: ResponsesFunctionCall, args: OrderedJSON, outcome: PhoneToolOutcome, executed: Bool, started: Date, finished: Date) {
         self.iteration = iteration; callId = call.callID; toolId = call.name
