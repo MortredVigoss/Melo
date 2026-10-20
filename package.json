@@ -79,7 +79,8 @@
     "scope": "node scripts/scope.js",
     "boundaries": "node scripts/boundary-report.js",
     "test:sync-contract": "node --test mobile-sync/syncContract.test.js scripts/generate-sync-contract.test.js",
-    "bench:capacity": "node scripts/bench-capacity.js"
+    "bench:capacity": "node scripts/bench-capacity.js",
+    "eval:tasks": "node scripts/eval-agent-tasks.js"
   },
   "dependencies": {
     "@discordjs/voice": "^0.17.0",

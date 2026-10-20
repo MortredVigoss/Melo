@@ -242,3 +242,10 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 #13 回执：基于 4d8e871 的完整日常 147.2 秒通过，35 Swift 组全绿，新增实际 CLI 回归已接自动发现；准备按授权推送关闭。容量测量与原始样本已入库，暂未改分页，具体决定见专项文档。
 
 #13 验证补充：初次日常 4337 通过、内置模型缺失导致 1 跳过；已按固定 hash 准备资产并补跑 3/3 零跳过。提交 27285c3 已到 master，准备关闭 #13。
+
+### 2026-10-20 — melo主线（Codex）— #14 共用任务评测
+- [任务回放](docs/task-replay-20261020.md)：11 项任务、同源 Runner/Scorer、完整 SessionEvent 比较与固定数据/bundle hash；独立标记 fixture token/虚拟时间，不宣称真实 LLM 成功率。
+- 回放检出并修正：明确未执行的未知工具不再把研究误判为操作；实际/未知副作用仍保守。真实文件 shared/agent/taskReplay.js、taskScore.js、completion.js 和原生测试/CI。
+- Node 专项 25/25，Node/VM/JavaScriptCore 一致；Android 及完整日常待验。#13 已推送关闭；当前只剩 #14。没有安装或用户数据变动。
+
+#14 主线集成回执：基于 6a5a171 的完整日常 4356/4356 JS、35/35 Swift 通过，零跳过；图片预览等待实际 fit 初始化后全套通过。Node/JavaScriptCore 的 11 项任务及事件一致。Android 首轮 CI 39382785730 在 emulator 阶段失败，正在读报告，尚未发布或关闭 #14。

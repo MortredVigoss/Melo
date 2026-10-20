@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { completionReceipt as receipt, completionSummary } from './completion.js';
+import { completionReceipt as receipt, completionSummary, completionResult } from './completion.js';
 const goal = 'Research Sydney brunch';
 const source = { id: 'read-1', type: 'source', executed: true, ok: true, url: 'https://fixture.invalid/menu', reading: 'extracted', text: 'Sydney brunch menu with breakfast dishes and observed opening hours for this fixture.' };
 const input = { goal, kind: 'research', reply: 'Sydney brunch: https://fixture.invalid/menu', observations: [source] };
@@ -44,4 +44,17 @@ test('cancellation and budget exhaustion are distinct from successful delivery',
   for (const terminalReason of ['BUDGET_EXHAUSTED', 'DEADLINE_EXCEEDED', 'ROUND_LIMIT']) assert.equal(receipt({ ...input, terminalReason }).outcome, 'budget_exhausted');
   assert.equal(receipt({ ...input, terminalReason: 'NO_PROGRESS' }).outcome, 'partial');
   assert.equal(receipt({ ...input, observations: [], terminalReason: 'NO_PROGRESS' }).outcome, 'blocked');
+});
+
+test('explicitly refused unknown tools do not turn completed research into an action', () => {
+  const observations = [source, { id: 'refused', type: 'tool', name: 'invented_tool', ok: false, executed: false }];
+  const result = completionResult({ goal, reply: input.reply, observations });
+  assert.equal(result.kind, 'research');
+  assert.equal(result.outcome, 'completed');
+  for (const executed of [true, undefined]) {
+    const possibleEffect = { ...observations[1], executed };
+    const unknown = completionResult({ goal, reply: input.reply, observations: [source, possibleEffect] });
+    assert.equal(unknown.kind, 'research-action');
+    assert.equal(unknown.reason, 'GOAL_TERMINAL_EVIDENCE_MISSING');
+  }
 });

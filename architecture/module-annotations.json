@@ -1148,6 +1148,22 @@
         "scripts/swift-test-cache.test.js"
       ],
       "note": "手机 suite 清单、资源预检、组合门禁去重与编译缓存的执行契约"
+    },
+    {
+      "id": "source-tests-task-replay",
+      "kind": "source-reading-test",
+      "reads": [
+        "shared/agent/fixtures/tasks.json",
+        "shared/agent/fixtures/tasks.expected.json",
+        "shared/agent/dist/agent-core.js",
+        "shared/agent/**/*.js",
+        "scripts/eval-agent-tasks.js"
+      ],
+      "tests": [
+        "shared/agent/taskReplay.test.js",
+        "scripts/eval-agent-tasks.test.js"
+      ],
+      "note": "共用任务集、完整事件 golden、隔离 bundle 和 CLI 成本/证据比较；数据变化必须重跑。"
     }
   ]
 }

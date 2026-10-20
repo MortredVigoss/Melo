@@ -83,7 +83,7 @@ export function completionKind({ goal = '', plan, observations = [] } = {}) {
     observations.some(row => row.type === 'source' || ['web_search', 'fetch_url', 'open_url'].includes(row.name));
   const readTools = /^(?:file_read|glob|grep|read_history|search_history|web_search|fetch_url|open_url|media_info|knowledge|browser_snapshot|browser_read|browser_screenshot)$/u;
   const action = intent.route === 'phone' || intent.research?.navigate === true || intent.reason === 'PHONE_UNAVAILABLE' ||
-    observations.some(row => row.type === 'tool' && !readTools.test(row.name || '')) ||
+    observations.some(row => row.type === 'tool' && row.executed !== false && !readTools.test(row.name || '')) ||
     /(?:创建|修改|删除|保存|写入|移动).{0,20}(?:文件|目录)|(?:发送|发出).{0,16}(?:邮件|消息)|\b(?:create|edit|delete|save|move|write)\b.{0,30}\b(?:file|directory|folder)\b|\bsend\b.{0,20}\b(?:email|message)\b/iu.test(goal);
   return research ? (action ? 'research-action' : 'research') : action ? 'action' : 'answer';
 }

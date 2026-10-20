@@ -22,8 +22,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 600,
-      "edges": 1816,
+      "modules": 602,
+      "edges": 1825,
       "roots": [
         "src",
         "desktop-ui",
@@ -36,7 +36,7 @@
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
-      "detected": 27,
+      "detected": 28,
       "unannotated": []
     }
   },
@@ -730,7 +730,7 @@
       ],
       "modules": {
         "desktop-ui": 27,
-        "shared": 20,
+        "shared": 22,
         "src": 64
       },
       "entryModules": [
@@ -1106,6 +1106,7 @@
           "shared/agent/continuation.test.js",
           "shared/agent/execution.test.js",
           "shared/agent/research.test.js",
+          "shared/agent/taskReplay.test.js",
           "shared/agent/tools.test.js",
           "src/judge/fastJudge.test.js",
           "src/judge/fastTransport.test.js",
@@ -1179,7 +1180,8 @@
         "source-tests-chat-feature",
         "source-tests-cross-module",
         "source-tests-index-html",
-        "source-tests-self"
+        "source-tests-self",
+        "source-tests-task-replay"
       ],
       "notes": [
         "执行顺序 prepare → invoke-model → finalize：桌面 src/services/chat/chatExecutionRunner.js，手机 ios/Melo/AgentLoop.swift，限额/预算/重复拦截/工具信封只在 shared/protocol/agent-loop.json 定义。",
@@ -4164,6 +4166,7 @@
           "scripts/check-dependencies.test.js",
           "scripts/check-doc-links.test.js",
           "scripts/check-syntax.test.js",
+          "scripts/eval-agent-tasks.test.js",
           "scripts/generate-module-map.test.js",
           "scripts/ios-test-selection.test.js",
           "scripts/native-shutdown.test.js",
@@ -4181,6 +4184,7 @@
         "bridge-process-shutdown",
         "gen-interface-languages",
         "gen-module-map",
+        "source-tests-task-replay",
         "tooling-ios-tests",
         "tooling-test-plan"
       ],
@@ -5250,6 +5254,26 @@
       "note": "手机 suite 清单、资源预检、组合门禁去重与编译缓存的执行契约",
       "features": [
         "iphone",
+        "tooling"
+      ]
+    },
+    {
+      "id": "source-tests-task-replay",
+      "kind": "source-reading-test",
+      "reads": [
+        "shared/agent/fixtures/tasks.json",
+        "shared/agent/fixtures/tasks.expected.json",
+        "shared/agent/dist/agent-core.js",
+        "shared/agent/**/*.js",
+        "scripts/eval-agent-tasks.js"
+      ],
+      "tests": [
+        "shared/agent/taskReplay.test.js",
+        "scripts/eval-agent-tasks.test.js"
+      ],
+      "note": "共用任务集、完整事件 golden、隔离 bundle 和 CLI 成本/证据比较；数据变化必须重跑。",
+      "features": [
+        "chat",
         "tooling"
       ]
     }

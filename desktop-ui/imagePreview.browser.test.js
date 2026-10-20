@@ -35,7 +35,13 @@ test('image preview preserves original downloads, focus, zoom and retry feedback
     await page.goto(base); await page.waitForFunction(() => window.previewReady);
     const trigger = page.locator('[data-image-preview]'), dialog = page.getByRole('dialog', { name: '图片预览' });
     await trigger.focus(); await page.keyboard.press('Enter');
-    await dialog.waitFor(); await page.waitForFunction(() => document.querySelector('.image-preview-stage img').naturalWidth === 2000);
+    await dialog.waitFor();
+    // Intrinsic metadata can arrive before the load listener applies the fitted
+    // dimensions. Wait for that real initialization, then keep the bounds check.
+    await page.waitForFunction(() => {
+      const image = document.querySelector('.image-preview-stage img');
+      return image.complete && image.naturalWidth === 2000 && image.style.width !== '';
+    });
     const fit = await dialog.locator('img').boundingBox();
     assert.ok(fit.width <= 1152 && fit.height <= 700, 'whole image fits inside preview');
     await page.screenshot({ path: resolve(proof, 'image-preview-desktop.png') });

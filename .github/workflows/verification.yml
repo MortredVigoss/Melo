@@ -51,6 +51,8 @@ jobs:
         run: |
           mkdir -p .tmp/ci
           npm run test:unit 2>&1 | tee .tmp/ci/linux-tests.log
+      - name: Deterministic task replay report
+        run: npm run eval:tasks -- --out .tmp/ci/agent-task-eval-node.json
       - name: Syntax and generated contracts
         run: |
           npm run build
@@ -62,7 +64,10 @@ jobs:
         if: always()
         with:
           name: linux-verification
-          path: .tmp/ci/
+          include-hidden-files: true
+          path: |
+            .tmp/ci/
+            .tmp/agent-task-eval-jscore.json
           retention-days: 7
 
   swift:
@@ -84,11 +89,16 @@ jobs:
         run: |
           mkdir -p .tmp/ci
           python3 ios/scripts/test.py 2>&1 | tee .tmp/ci/swift-tests.log
+      - name: Compare JavaScriptCore task events with Node
+        run: npm run eval:tasks -- --compare .tmp/agent-task-eval-jscore.json --out .tmp/ci/agent-task-eval-node.json
       - name: macOS native shell lifecycle
         run: node --test scripts/native-shutdown.test.js 2>&1 | tee .tmp/ci/native-shell.log
       - uses: actions/upload-artifact@v7.0.2
         if: always()
         with:
           name: swift-verification
-          path: .tmp/ci/
+          include-hidden-files: true
+          path: |
+            .tmp/ci/
+            .tmp/agent-task-eval-jscore.json
           retention-days: 7

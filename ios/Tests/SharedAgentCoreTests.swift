@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 @main struct SharedAgentCoreTests {
     static func main() async throws {
@@ -23,6 +24,21 @@ import Foundation
                 assert(NSDictionary(dictionary: [key: actual]).isEqual(to: [key: expected]), "\(fixture["name"]!): \(key)")
             }
         }
+        let taskData = try Data(contentsOf: root.appendingPathComponent("shared/agent/fixtures/tasks.json"))
+        let taskDataset = try JSONSerialization.jsonObject(with: taskData) as! [String: Any]
+        let taskStart = Date()
+        let taskReply = try await core.evaluate(["version": 1, "op": "taskReplay", "dataset": taskDataset])
+        assert(taskReply["ok"] as? Bool == true)
+        let taskResult = taskReply["value"] as! [String: Any]
+        assert(taskResult["passed"] as? Bool == true)
+        let golden = try JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent("shared/agent/fixtures/tasks.expected.json"))) as! [String: Any]
+        assert(NSDictionary(dictionary: taskResult).isEqual(to: golden), "Task replay events and metrics must match the shared dataset")
+        let bundleData = try Data(contentsOf: root.appendingPathComponent("shared/agent/dist/agent-core.js"))
+        func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
+        let taskReport: [String: Any] = ["version": 1, "host": "JavaScriptCore", "datasetSha256": digest(taskData), "bundleSha256": digest(bundleData), "replayElapsedMs": Date().timeIntervalSince(taskStart) * 1000, "report": taskResult]
+        try FileManager.default.createDirectory(at: root.appendingPathComponent(".tmp"), withIntermediateDirectories: true)
+        try JSONSerialization.data(withJSONObject: taskReport, options: [.sortedKeys]).write(to: root.appendingPathComponent(".tmp/agent-task-eval-jscore.json"))
+        print("Shared task replay: \((golden["tasks"] as! [Any]).count) tasks; canonical events and fixture metrics verified")
         let independent = try runtime()
         defer { independent.close() }
         core.close()
