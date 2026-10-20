@@ -742,6 +742,22 @@ async function handleSendMessage(prepared = null) {
             });
             render();
           }
+        } else if (message.event === 'capability_request') {
+          // Capability elevation (2026-10-20): the same queue as tool permissions;
+          // the approvals feature renders and answers entries of kind 'capability'.
+          const payload = message.payload || {};
+          if (payload.requestId) {
+            setToolPermissions(toolPermissions().filter(p => p.requestId !== payload.requestId));
+            toolPermissions().push({ ...payload, kind: 'capability' });
+            render();
+          }
+        } else if (message.event === 'capability_request_closed') {
+          // Timed out, cancelled, budget ended or answered: the card goes away.
+          const requestId = message.payload?.requestId;
+          if (requestId && toolPermissions().some(p => p.requestId === requestId)) {
+            setToolPermissions(toolPermissions().filter(p => p.requestId !== requestId));
+            render();
+          }
         } else if (message.event === 'reply_text') {
           // Speech is handled by replyDelivery only after the finalized event.
         } else if (message.event === 'tool_calls_start') {

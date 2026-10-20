@@ -313,3 +313,35 @@
 
 .permission-actions { border: 0; padding: 0; margin: 0; min-width: 0; }
 .permission-actions[disabled] { opacity: .6; }
+
+/* Capability elevation (2026-10-20): the prompt card reuses the tool
+   permission dialog above; the «临时授权» list reuses the Safety rule rows. */
+.capability-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.capability-prompt-shell .tool-permission-tool-name { white-space: normal; }
+.capability-prompt-note { margin: 8px 0; }
+.capability-grants {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0;
+}
+.capability-grants-header { align-items: center; }
+.capability-grants-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.capability-grant-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}

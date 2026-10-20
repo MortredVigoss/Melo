@@ -395,6 +395,27 @@ test('parallel tool permissions stay independently answerable', async () => {
   assert.deepEqual(h.state.permissions, [], 'the queue empties when the turn ends');
 });
 
+test('capability requests join the permission queue and leave it when closed or when the turn ends', async () => {
+  const sse = server();
+  const h = harness();
+  h.chat().composer = 'build it';
+  const sending = h.send();
+  await flush();
+  sse.send('capability_request', { requestId: 'cap-1', decision: 'elevate-beyond-parent', agentId: 'builder', capabilities: ['writeFiles'], options: [{ id: 'run' }, { id: 'project' }, { id: 'deny' }] });
+  sse.send('capability_request', { requestId: 'cap-2', decision: 'enable-own', agentId: 'main', capabilities: ['runCommands'], options: [{ id: 'run' }, { id: 'always' }, { id: 'deny' }] });
+  sse.send('tool_permission', { requestId: 'tool-1', toolId: 'bash', args: {} });
+  await flush();
+  assert.deepEqual(h.state.permissions.map(p => [p.kind, p.requestId]), [['capability', 'cap-1'], ['capability', 'cap-2'], ['tool', 'tool-1']]);
+  assert.equal(h.feature.thinkingLabel().startsWith('等待你的确认'), true);
+  sse.send('capability_request_closed', { requestId: 'cap-1', reason: 'timeout' });
+  await flush();
+  assert.deepEqual(h.state.permissions.map(p => p.requestId), ['cap-2', 'tool-1']);
+  sse.send('done', {});
+  sse.close();
+  await sending;
+  assert.deepEqual(h.state.permissions, [], 'open capability prompts end with the turn');
+});
+
 test('disconnect preserves the voice transcript; an unchanged resend reuses the request identity and transcript linkage', async () => {
   const sse = server();
   const h = harness();

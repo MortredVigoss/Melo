@@ -7,7 +7,10 @@
 import { t, ui } from '../../i18n.js';
 import { renderAgentAvatar } from '../../agentAvatar.js';
 import { renderCapabilityChoices } from './capabilityChoices.js';
-import { getBootstrap, activeProject, isAgentChannelAvailable, escapeHtml, icon } from './context.js';
+import { getBootstrap, activeProject, isAgentChannelAvailable, escapeHtml, icon, renderCapabilityGrants } from './context.js';
+// renderCapabilityGrants (the approvals feature's «临时授权» list) sits after the
+// form: the settings editor keeps form controls read-only until editing, and
+// revoking a grant must never wait for an edit.
 import { agentsState } from './state.js';
 import { selectedAgentProfile, selectedAgentScope, agentDraftFor, agentSecretVisibilityKey } from './controller.js';
 
@@ -370,6 +373,7 @@ function renderAgentWorkbench(selected) {
           }
         </div>
       </form>
+      ${renderCapabilityGrants(selected.id)}
     </section>
   `;
 }

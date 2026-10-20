@@ -57,6 +57,7 @@ function harness({ bootstrap = page(), project = null, api = null, responses = {
     isAgentChannelAvailable: () => false,
     escapeHtml: value => String(value ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])),
     icon: { eye: '', eyeOff: '' },
+    renderCapabilityGrants: agentId => `<section data-grants-for="${agentId}"></section>`,
   };
   const feature = installAgentsFeature(context);
   const actions = createActionRegistry('action');

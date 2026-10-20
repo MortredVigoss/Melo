@@ -94,7 +94,9 @@ async function executeScopedTool(tool,args,options) {
       waiting = true;
       recordTaskApproval(requestContext,options.taskId,id,payload.operation || tool.id,true).catch(()=>{});
     }
-    options.sseEmitter?.(type,{...payload,agentId:options.agentId || requestContext?.turnBinding?.role});
+    // An event raised inside a member (its prompts bubble up through the parent's
+    // delegate call) keeps the member's Agent id; the executing Agent fills it otherwise.
+    options.sseEmitter?.(type,{...payload,agentId:payload?.agentId || options.agentId || requestContext?.turnBinding?.role});
   };
   observe('queued');
   try {

@@ -5,7 +5,8 @@
 // settingsFormEditors edit boundary is reached through beginFormEdit /
 // formEditToken. /shared/channelAvailability.js and localSettings.js'
 // nativeSettings arrive here too, so the feature stays importable from node
-// tests. Bound once by installAgentsController(); the feature's modules import
+// tests. renderCapabilityGrants is the approvals feature's «临时授权» list
+// (capability elevation, 2026-10-20). Bound once by installAgentsController(); the feature's modules import
 // these names (ES module live bindings).
 import { checkFeatureContext } from '../featureContext.js';
 import { createAgentsApi } from './api.js';
@@ -14,13 +15,13 @@ export const AGENTS_CONTEXT = Object.freeze([
   'getBootstrap', 'app', 'api', 'render', 'bgRender', 'showError', 'showFlashToast',
   'patchSettings', 'applyBootstrap', 'applyBootstrapPreservingDrafts', 'refreshBootstrap', 'storeBootstrap',
   'activeProject', 'agentProfileById', 'minimaxTtsConfigPatchForVoice', 'beginFormEdit', 'formEditToken',
-  'nativeSettings', 'isAgentChannelAvailable', 'escapeHtml', 'icon',
+  'nativeSettings', 'isAgentChannelAvailable', 'escapeHtml', 'icon', 'renderCapabilityGrants',
 ]);
 
-export let getBootstrap, app, render, bgRender, showError, showFlashToast, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts, refreshBootstrap, storeBootstrap, activeProject, agentProfileById, minimaxTtsConfigPatchForVoice, beginFormEdit, formEditToken, nativeSettings, isAgentChannelAvailable, escapeHtml, icon, agentsApi;
+export let getBootstrap, app, render, bgRender, showError, showFlashToast, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts, refreshBootstrap, storeBootstrap, activeProject, agentProfileById, minimaxTtsConfigPatchForVoice, beginFormEdit, formEditToken, nativeSettings, isAgentChannelAvailable, escapeHtml, icon, renderCapabilityGrants, agentsApi;
 
 export function bindAgentsContext(context) {
   checkFeatureContext('agents', context, AGENTS_CONTEXT);
-  ({ getBootstrap, app, render, bgRender, showError, showFlashToast, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts, refreshBootstrap, storeBootstrap, activeProject, agentProfileById, minimaxTtsConfigPatchForVoice, beginFormEdit, formEditToken, nativeSettings, isAgentChannelAvailable, escapeHtml, icon } = context);
+  ({ getBootstrap, app, render, bgRender, showError, showFlashToast, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts, refreshBootstrap, storeBootstrap, activeProject, agentProfileById, minimaxTtsConfigPatchForVoice, beginFormEdit, formEditToken, nativeSettings, isAgentChannelAvailable, escapeHtml, icon, renderCapabilityGrants } = context);
   agentsApi = createAgentsApi(context.api);
 }

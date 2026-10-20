@@ -5,7 +5,7 @@ export function createTurnPresentation(requestId) {
 export function receiveTurnPresentation(turn, event, payload = {}) {
   if (!turn) return;
   // Approval requestId belongs to the approval, not the chat submission.
-  const identity = event === 'tool_permission' ? payload.turnRequestId : payload.turnRequestId || payload.requestId;
+  const identity = event === 'tool_permission' || event === 'capability_request' ? payload.turnRequestId : payload.turnRequestId || payload.requestId;
   if (identity && identity !== turn.requestId) return;
   if (payload.runId) turn.runId = payload.runId;
   if (event === 'started') turn.phase = 'waiting';
@@ -13,7 +13,7 @@ export function receiveTurnPresentation(turn, event, payload = {}) {
   else if (event === 'reasoning' || event === 'speech_policy') turn.phase = 'thinking';
   else if (event === 'tool_calls_start') turn.phase = 'tools';
   else if (event === 'tool_calls_done') turn.phase = 'thinking';
-  else if (event === 'tool_permission') turn.phase = 'permission';
+  else if (event === 'tool_permission' || event === 'capability_request') turn.phase = 'permission';
   else if (event === 'reply_text' && payload.final) turn.phase = 'finishing';
   else if (event === 'done') turn.phase = 'complete';
   else if (event === 'error') turn.phase = 'error';
