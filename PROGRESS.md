@@ -1,3 +1,12 @@
+## 2026-10-20 — 架构优化 B2：聊天执行的三个节点各成模块
+
+用户批准继续 B2；runner 只剩初始化、turn 对象与建图，prepare / invoke-model / finalize 逐字节搬进 `src/services/chat/execution/`，节点改为 `createXNode(turn)` 工厂。（Claude Opus）
+偏差：B2-1 并入 B2-2（原写法与递归早退冲突）；B2-6 未做（手机没有这三个节点边界，不为其发明共享契约）。
+
+搬迁前作用域分析确认节点不写外层绑定，故与闭包等价；七场景执行轨迹（模型请求、SSE、delta、返回值）三次搬迁后逐字节一致，五组专项通过数不变；activeAgentProfile 作用域约定测试改为按文件区分并有双向反向对照；finalize 首次可隔离单测。
+
+批次 `npm test -- --base 8772e92` GREEN（JS 4360 / 0 败、设置与加速设置浏览器、Swift 35 套件）；首轮抓到 agent-loop 契约消费者测试写死 runner 路径，已改为跟随 invokeModelNode.js 并把三节点补进手机配对。分支 `claude/arch-b2-20261020`，未合入 master、未推送。交接见 docs/handoffs/b2-execution-20261020.md。Final commit: 本条提交。
+
 ## 2026-10-20 — 历史图片在真实点击后完成闭环
 
 Codex：用户授权修复 #4、保留原图数据并测试后推送关闭。首次 gate 通过后实点仍失败，继续查出回看替换展示引用，补红绿回归后再跑全部检查；不把接口成功冒充界面成功。

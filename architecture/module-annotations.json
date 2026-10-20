@@ -112,7 +112,7 @@
         "test:agent-core"
       ],
       "notes": [
-        "执行顺序 prepare → invoke-model → finalize：桌面 src/services/chat/chatExecutionRunner.js，手机 ios/Melo/AgentLoop.swift，限额/预算/重复拦截/工具信封只在 shared/protocol/agent-loop.json 定义。",
+        "执行顺序 prepare → invoke-model → finalize：桌面 src/services/chat/chatExecutionRunner.js（初始化与建图）+ src/services/chat/execution/{prepare,invokeModel,finalize}Node.js（三个节点，2026-10-20 B2 逐字节拆出），手机 ios/Melo/AgentLoop.swift，限额/预算/重复拦截/工具信封只在 shared/protocol/agent-loop.json 定义。",
         "P3/P4 扩展 agent-loop.json；手机 TurnCoordinator 包裹现有 AgentLoop，不另建循环。ChatStore.swift 仍是手机发送入口（iphone 功能）。",
         "#5 第一阶段逐字移植 mobile shared/agent 与 Node/JSCore 桥；生产主循环迁移另做，不能将打包与桥验收当成同源迁移完成。"
       ]
@@ -453,6 +453,9 @@
       "feature": "chat",
       "desktop": [
         "src/services/chat/chatExecutionRunner.js",
+        "src/services/chat/execution/prepareNode.js",
+        "src/services/chat/execution/invokeModelNode.js",
+        "src/services/chat/execution/finalizeNode.js",
         "src/runtime/agentLoopContract.js"
       ],
       "iphone": [
