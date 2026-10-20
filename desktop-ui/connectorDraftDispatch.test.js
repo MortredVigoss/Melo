@@ -23,7 +23,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { applyFormInputToDraft, FORMS_OWNED_BY_CONNECTOR_DRAFT } from './connectorDraftDispatch.js';
@@ -330,232 +330,26 @@ test('wiring — settings keystrokes keep drafts local until explicit Save', () 
   assert.ok(changeStart>inputStart);
 });
 
-test('wiring — flushPendingConnectorAutosaveOnUnload is registered on pagehide / beforeunload', () => {
-  // sendBeacon flush — closing the window mid-paste must still ship
-  // the typed key to the server. Mirrors the agent autosave flush
-  // pattern (line 5256-ish).
-  assert.match(
-    APP_SRC,
-    /flushAllPendingAutosavesOnUnload|flushPendingConnectorAutosaveOnUnload/,
-    'unload flush helper must be defined',
-  );
-  assert.match(
-    APP_SRC,
-    /addEventListener\('pagehide',\s*flush(All|Pending)/,
-    "pagehide must call the unified or connector-specific autosave flush",
-  );
+// User decision 2026-10-20 (architecture B1): settings commit only through
+// the explicit edit -> Save flow. The idle autosave paths (connector since
+// 10-14, Agent channel / Markdown since 10-17) were unreachable and are
+// deleted; this guards against reintroducing one by accident. Credential
+// clearing in particular must stay an explicit Save, never an idle side
+// effect (an authMode=codex patch forces apiKey='' server-side).
+test('wiring — settings have no idle autosave or unload beacon (explicit Save only)', () => {
+  const featureDir = join(HERE, 'features');
+  const walk = dir => readdirSync(dir, { withFileTypes: true }).flatMap(entry => entry.isDirectory() ? walk(join(dir, entry.name)) : entry.name.endsWith('.js') && !entry.name.endsWith('.test.js') ? [join(dir, entry.name)] : []);
+  const sources = [['app.js', APP_SRC], ...walk(featureDir).map(path => [path.slice(HERE.length + 1), readFileSync(path, 'utf8')])];
+  for (const [name, source] of sources) {
+    assert.doesNotMatch(source, /\b(?:schedule\w*Autosave|pending\w*Autosave|inflight\w*Autosave|\w*AutosaveTimer|flush\w*Autosave\w*)\b/, `${name} declares an idle autosave path`);
+    assert.doesNotMatch(source, /sendBeacon\([^)]*['"`]\/api\/(?:settings\/model|agents\/update)/, `${name} beacons a settings save on unload`);
+  }
 });
 
 test('wiring — changing model authentication stays in the editable draft', () => {
   const start=APP_SRC.indexOf("case 'set-model-auth-mode':");
   const end=APP_SRC.indexOf("\n      case '",start+1);
   assert.doesNotMatch(APP_SRC.slice(start,end),/scheduleConnectorAutosave\(/);
-});
-
-test('wiring — scheduleConnectorAutosave cancels pending timer on codex skip', () => {
-  // Codex C 第八轮 (2026-04-28): user pastes an api-key, schedule
-  // queues a pending body + 3-second timer. Within those 3 seconds
-  // the user clicks the OAuth button — set-model-auth-mode action
-  // re-enters scheduleConnectorAutosave, but this time
-  // buildAutosaveBody returns null (codex skip). Without an
-  // explicit cancel, the original timer fires and posts the stale
-  // api-key body, undoing the user's just-selected OAuth.
-  //
-  // Static check: the null-body branch must drop pending and
-  // clear the debounce timer before returning. Behaviour test
-  // would need fake timers + a injectable scheduler — left as a
-  // future refactor (Codex ⚪ follow-up). String wiring proves the
-  // cancel exists and is colocated with `if (!body)`.
-  const fnStart = APP_SRC.indexOf('function scheduleConnectorAutosave');
-  assert.ok(fnStart >= 0);
-  const fnSnippet = APP_SRC.slice(fnStart, fnStart + 2500);
-  // Find the `if (!body)` block, then assert pending cleared + timer cleared inside it.
-  const nullBranchIdx = fnSnippet.search(/if \(!body\)/);
-  assert.ok(nullBranchIdx >= 0, 'scheduleConnectorAutosave must guard against a null body from buildAutosaveBody');
-  // Body of the if block — bounded by the matching `}` at brace
-  // depth 0 starting from the `{` after `if (!body)`. Walk the
-  // braces so we don't accidentally undercut by a long inline
-  // explanation comment, and don't overshoot into the rest of the
-  // function.
-  const openBrace = fnSnippet.indexOf('{', nullBranchIdx);
-  let depth = 0;
-  let closeBrace = -1;
-  for (let i = openBrace; i < fnSnippet.length; i += 1) {
-    const c = fnSnippet[i];
-    if (c === '{') depth += 1;
-    else if (c === '}') {
-      depth -= 1;
-      if (depth === 0) { closeBrace = i; break; }
-    }
-  }
-  assert.ok(closeBrace > openBrace, 'failed to locate the close of the !body branch');
-  const branchBody = fnSnippet.slice(openBrace, closeBrace + 1);
-  assert.match(
-    branchBody,
-    /pendingConnectorAutosave\s*=\s*null/,
-    'codex skip must drop the queued pending body so an old api-key autosave does not fire after the user switched modes',
-  );
-  assert.match(
-    branchBody,
-    /clearTimeout\(connectorAutosaveTimer\)/,
-    'codex skip must clear the debounce timer so the queued body never gets dispatched',
-  );
-});
-
-test('wiring — autosave unload flush picks pending over inflight (priority rule)', () => {
-  // Two-snapshot model: `pending` is by definition newer than
-  // `inflight` (pending refills only after inflight moved out).
-  // sendBeacon doesn't guarantee delivery order, so beaconing
-  // BOTH lets the older inflight body race to land last and
-  // overwrite the newer pending body server-side. Codex C 第十轮
-  // (2026-04-28): the unload flush must pick exactly one body,
-  // and pending must win when present.
-  assert.match(
-    APP_SRC,
-    /pendingConnectorAutosave/,
-    'must declare a pending snapshot',
-  );
-  assert.match(
-    APP_SRC,
-    /inflightConnectorAutosave/,
-    'must declare an inflight snapshot',
-  );
-  const fnStart = APP_SRC.indexOf('function flushPendingConnectorAutosaveOnUnload');
-  assert.ok(fnStart >= 0);
-  // Body of the function — matched-brace walk so we don't undershoot
-  // by a long inline rationale comment.
-  const openBrace = APP_SRC.indexOf('{', fnStart);
-  let depth = 0;
-  let closeBrace = -1;
-  for (let i = openBrace; i < APP_SRC.length; i += 1) {
-    const c = APP_SRC[i];
-    if (c === '{') depth += 1;
-    else if (c === '}') {
-      depth -= 1;
-      if (depth === 0) { closeBrace = i; break; }
-    }
-  }
-  assert.ok(closeBrace > openBrace);
-  const fnBody = APP_SRC.slice(openBrace, closeBrace + 1);
-
-  assert.match(
-    fnBody,
-    /pendingConnectorAutosave/,
-    'unload flush must read pending snapshot',
-  );
-  assert.match(
-    fnBody,
-    /inflightConnectorAutosave/,
-    'unload flush must read inflight snapshot (as a fallback for the inflight-only case)',
-  );
-  // Priority rule: pending || inflight — pending wins when present,
-  // inflight is only the fallback. The earlier "for-of [pending,
-  // inflight]" design beaconed both and lost newest-wins semantics.
-  assert.match(
-    fnBody,
-    /pending\s*\|\|\s*inflight/,
-    'unload flush MUST pick exactly one body via `pending || inflight` priority — beaconing both lets older inflight race to land last and clobber newest typing',
-  );
-  assert.doesNotMatch(
-    fnBody,
-    /for\s*\(\s*const\s+\w+\s+of\s*\[\s*pending\s*,\s*inflight\s*\]/,
-    'unload flush must NOT iterate [pending, inflight]; that beacons both and loses newest-wins',
-  );
-  assert.match(
-    fnBody,
-    /sendBeacon/,
-    'unload flush must use sendBeacon (or keepalive fetch) so the request survives unload',
-  );
-});
-
-test('wiring — scheduleConnectorAutosave attaches _autosaveRevision to the body before queuing', () => {
-  // Codex C 第十一轮 (2026-04-28): server-side ordering depends on
-  // every autosave/flush body carrying a monotonic revision so that
-  // an older inflight POST can't race a newer pending POST and
-  // overwrite the user's latest typing. The schedule path must
-  // attach Date.now() *before* the body is stored on
-  // pendingConnectorAutosave (so unload flush also picks it up).
-  const fnStart = APP_SRC.indexOf('function scheduleConnectorAutosave');
-  assert.ok(fnStart >= 0);
-  const openBrace = APP_SRC.indexOf('{', fnStart);
-  let depth = 0;
-  let closeBrace = -1;
-  for (let i = openBrace; i < APP_SRC.length; i += 1) {
-    const c = APP_SRC[i];
-    if (c === '{') depth += 1;
-    else if (c === '}') {
-      depth -= 1;
-      if (depth === 0) { closeBrace = i; break; }
-    }
-  }
-  assert.ok(closeBrace > openBrace);
-  const fnBody = APP_SRC.slice(openBrace, closeBrace + 1);
-
-  assert.match(
-    fnBody,
-    /body\._autosaveRevision\s*=\s*Date\.now\(\)/,
-    'scheduleConnectorAutosave must stamp body._autosaveRevision = Date.now() so the server can reject older bodies',
-  );
-  // Stamp must precede the assignment to pendingConnectorAutosave.
-  const stampIdx = fnBody.search(/body\._autosaveRevision\s*=\s*Date\.now\(\)/);
-  const queueIdx = fnBody.search(/pendingConnectorAutosave\s*=\s*\{\s*body\s*\}/);
-  assert.ok(
-    stampIdx >= 0 && queueIdx >= 0 && stampIdx < queueIdx,
-    'revision must be stamped BEFORE the body is queued, so unload flush sees it too',
-  );
-});
-
-test('wiring — scheduleConnectorAutosave invokes clearCommittedSecrets with snapshot.body after successful POST', () => {
-  // Codex C 第十九轮 (2026-04-29): the post-save secret sweep
-  // can't be unconditional — that's the in-flight race that
-  // wipes a newer paste when an older response lands. The fix
-  // lives in `clearCommittedSecrets(draft, submittedBody)` —
-  // it only clears a credential field when the live draft
-  // value still equals what THIS request shipped. The wiring
-  // assertion below pins:
-  //   1. clearCommittedSecrets is invoked (not an inline loop)
-  //   2. it runs AFTER applyBootstrapPreservingDrafts
-  //   3. it gets the in-flight `snapshot.body`, not the latest
-  //      pendingConnectorAutosave (which would defeat the race
-  //      check)
-  const fnStart = APP_SRC.indexOf('function scheduleConnectorAutosave');
-  assert.ok(fnStart >= 0);
-  const openBrace = APP_SRC.indexOf('{', fnStart);
-  let depth = 0;
-  let closeBrace = -1;
-  for (let i = openBrace; i < APP_SRC.length; i += 1) {
-    const c = APP_SRC[i];
-    if (c === '{') depth += 1;
-    else if (c === '}') {
-      depth -= 1;
-      if (depth === 0) { closeBrace = i; break; }
-    }
-  }
-  assert.ok(closeBrace > openBrace);
-  const fnBody = APP_SRC.slice(openBrace, closeBrace + 1);
-
-  // Use lastIndexOf so an explanatory comment that names
-  // `applyBootstrapPreservingDrafts()` doesn't mask the real
-  // call site's position.
-  const applyIdx = fnBody.lastIndexOf('applyBootstrapPreservingDrafts(');
-  const clearIdx = fnBody.lastIndexOf('clearCommittedSecrets(');
-  // ORDER MATTERS: clear MUST run BEFORE apply (Codex C 第二十轮
-  // audit 2026-04-29). applyBootstrapPreservingDrafts synchronously
-  // calls render({background:true}); the chip's pending-vs-saved
-  // state is computed at THAT render. Clearing after the apply
-  // would leave the draft still holding the freshly-saved secret
-  // when render runs, so the chip would paint "● 待保存" and the
-  // post-clear update wouldn't trigger another render — chip
-  // permanently stuck yellow.
-  assert.ok(
-    clearIdx >= 0 && applyIdx > clearIdx,
-    'clearCommittedSecrets must run BEFORE applyBootstrapPreservingDrafts — the apply triggers render() and the chip is computed from the draft at that render time',
-  );
-  assert.match(
-    fnBody,
-    /clearCommittedSecrets\(\s*uiState\.modelSetupDraft\s*,\s*snapshot\.body\s*\)/,
-    'clearCommittedSecrets must receive the current modelSetupDraft AND the in-flight snapshot.body — using the latest pending body would defeat the in-flight race check',
-  );
 });
 
 test('wiring — handleSaveConnectorConfig deliberately does NOT attach _autosaveRevision (force-write)', () => {

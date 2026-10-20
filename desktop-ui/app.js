@@ -46,9 +46,9 @@ import {
   formatUndoToastLabel,
   nextCountdownTickMs,
 } from './undoToast.js';
-import { buildConnectorDraft, pickConnectorField, buildAutosaveBody } from './connectorDraft.js';
+import { buildConnectorDraft, pickConnectorField } from './connectorDraft.js';
 import { applyFormInputToDraft } from './connectorDraftDispatch.js';
-import { credentialChipState, CREDENTIAL_FIELDS, clearCommittedSecrets } from './credentialChip.js';
+import { credentialChipState, CREDENTIAL_FIELDS } from './credentialChip.js';
 import {
   decideFileSafetyPreflight,
   decideFileSafetyResponseAction,
@@ -3244,157 +3244,6 @@ async function handleRefreshModelStatus() {
   await loadBootstrap(uiState.searchQuery, { quiet: true });
 }
 
-// 3-second idle autosave for the OpenAI connector / model setup form.
-// Mirrors the agent-channel autosave contract (feedback_preserve_user_config.md):
-// the user pastes a key, walks away from the input, and 3 seconds later
-// the value lands on the server without an explicit Save click. The save
-// path uses applyBootstrapPreservingDrafts so the still-typing draft is
-// not wiped — explicit Save (handleSaveConnectorConfig) uses applyBootstrap
-// for "submit & reset" semantics, but the silent background save must not
-// yank values mid-edit.
-//
-// Two snapshots track the autosave lifecycle (Codex 2026-04-28 audit):
-//   - `pendingConnectorAutosave`: body queued by the debounce timer,
-//     not yet sent. Replaced on every keystroke.
-//   - `inflightConnectorAutosave`: body of the request currently in
-//     flight. Set when the timer fires, cleared once the response
-//     lands. The earlier single-snapshot design nulled the snapshot
-//     the moment the POST started, so a window-close mid-flight let
-//     the browser cancel the request and unload flush had nothing
-//     to beacon.
-let pendingConnectorAutosave = null;
-let inflightConnectorAutosave = null;
-let connectorAutosaveTimer = null;
-let connectorAutosaveSequence = 0;
-
-function scheduleConnectorAutosave(form) {
-  if (!form) return;
-  const body = buildAutosaveBody({
-    formData: new FormData(form),
-    draft: uiState.modelSetupDraft || {},
-  });
-  if (!body) {
-    // codex skip path: buildAutosaveBody refuses to ship authMode='codex'
-    // (would force server-side apiKey=''). If the user just switched
-    // FROM api-key TO codex while a 3-second timer was still counting
-    // down, the old api-key body is still queued in pendingConnectorAutosave.
-    // Cancel it so the stale authMode doesn't get written back over the
-    // user's just-selected codex. In-flight requests are NOT aborted —
-    // their body reflects the user's intent up to ~100ms ago, the
-    // race window is tiny, and aborting could discard a credential
-    // the user actually wanted to save. Codex audit 2026-04-28.
-    pendingConnectorAutosave = null;
-    window.clearTimeout(connectorAutosaveTimer);
-    return;
-  }
-  // Monotonic revision so the server can reject older bodies that
-  // race a newer one. Date.now() is unique enough at human input
-  // cadence (3-second debounce floor) — concurrent same-millisecond
-  // schedules just trigger the "stale or equal" branch on the
-  // server, which is no worse than the previous overwrite. The
-  // explicit Save path (handleSaveConnectorConfig) deliberately
-  // does NOT attach this field, so the server treats it as a
-  // force-write and bumps the saved revision past every in-flight
-  // autosave. Codex C 第十一轮 (2026-04-28).
-  body._autosaveRevision = Date.now();
-  pendingConnectorAutosave = { body };
-
-  window.clearTimeout(connectorAutosaveTimer);
-  // 3-second idle debounce — fire only after the user has stopped
-  // typing for 3 full seconds. Matches the pattern the user explicitly
-  // asked for ("输入了一半三秒没动作就自动保存一下已经输入的内容") and
-  // already in use for agent channel / markdown autosave.
-  connectorAutosaveTimer = window.setTimeout(async () => {
-    const snapshot = pendingConnectorAutosave;
-    pendingConnectorAutosave = null;
-    if (!snapshot) return;
-    inflightConnectorAutosave = snapshot;
-    const requestSequence = ++connectorAutosaveSequence;
-    try {
-      const payload = await api('/api/settings/model', {
-        method: 'POST',
-        body: snapshot.body,
-      });
-      // Stale-response guard: if a newer autosave fired while this
-      // request was in flight, the newer response wins.
-      if (requestSequence !== connectorAutosaveSequence) return;
-      // ORDER MATTERS: clear the committed secrets from the draft
-      // FIRST, then apply the new bootstrap.
-      // `applyBootstrapPreservingDrafts()` synchronously calls
-      // `render({background:true})`, and the credential chip's
-      // "pending vs saved" state is computed from the draft AT
-      // THAT RENDER. If we cleared after the apply, render would
-      // see the old draft (still holding the freshly-saved
-      // secret) and paint "● 待保存" instead of "✓ 已保存" —
-      // exactly the regression Codex C 第二十轮 caught. The
-      // sweep itself is still race-safe (only matches values
-      // the user hasn't moved past) so doing it before the
-      // bootstrap apply has no extra risk.
-      clearCommittedSecrets(uiState.modelSetupDraft, snapshot.body);
-      applyBootstrapPreservingDrafts(payload, { background: true });
-    } catch {
-      // Silent — autosave should not interrupt typing. Errors surface
-      // when the user clicks Save explicitly.
-    } finally {
-      // Only clear in-flight if we're still the latest in-flight; a
-      // newer schedule could have replaced us during the await above.
-      if (inflightConnectorAutosave === snapshot) {
-        inflightConnectorAutosave = null;
-      }
-    }
-  }, 3000);
-}
-
-// pagehide / beforeunload flush — beacon ONE body. Priority rule
-// (Codex audit 2026-04-28):
-//
-//   pending supersedes inflight
-//
-// `pending` is by definition newer than `inflight`: pending only
-// gets repopulated after inflight has been moved out of pending,
-// which means any keystroke captured into pending happened AFTER
-// inflight started. sendBeacon does NOT guarantee delivery order,
-// so beaconing both lets the older inflight body race to land
-// last and overwrite the newer pending body server-side. Picking
-// just one — the newer — makes the unload-time write deterministic.
-//
-// If only inflight exists (timer fired, no further keystrokes),
-// fall back to it so the user's last typed value still gets a
-// final chance to land in case the in-flight fetch was canceled
-// by the unload itself.
-function flushPendingConnectorAutosaveOnUnload() {
-  const pending = pendingConnectorAutosave;
-  const inflight = inflightConnectorAutosave;
-  pendingConnectorAutosave = null;
-  inflightConnectorAutosave = null;
-  window.clearTimeout(connectorAutosaveTimer);
-  const snapshot = pending || inflight;
-  if (!snapshot?.body) return;
-  const body = JSON.stringify(snapshot.body);
-  try {
-    if (navigator.sendBeacon) {
-      navigator.sendBeacon(
-        '/api/settings/model',
-        new Blob([body], { type: 'application/json' }),
-      );
-    } else {
-      fetch('/api/settings/model', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body,
-        keepalive: true,
-      }).catch(() => {});
-    }
-  } catch {}
-}
-
-function flushAllPendingAutosavesOnUnload() {
-  flushPendingConnectorAutosaveOnUnload();
-}
-
-window.addEventListener('pagehide', flushAllPendingAutosavesOnUnload);
-window.addEventListener('beforeunload', flushAllPendingAutosavesOnUnload);
-
 // Parse the comma-separated skill form fields (folders, allowedAgentIds,
 // toolWhitelist). Pulled out so create + update share the same
 // interpretation and tests can pin the behavior in one place.
@@ -5123,10 +4972,9 @@ function renderConnectorDetails(selected) {
     // confirmation).  The pure state machine lives in
     // `desktop-ui/credentialChip.js` so it's covered by node:test;
     // we only translate the state here into the visible chip
-    // markup. The "saved" state is reached when autosave clears
-    // the secret from `modelSetupDraft` (handled in
-    // `scheduleConnectorAutosave` post-fetch) — without that
-    // clear the chip would stay stuck on "pending" forever.
+    // markup. The "saved" state is reached when the explicit Save
+    // clears the field from `modelSetupDraft` (clearModelFormDraft)
+    // — without that clear the chip would stay stuck on "pending".
     const credentialChip = fieldName => {
       const { state, masked } = credentialChipState(
         fieldName,
@@ -7498,22 +7346,7 @@ document.addEventListener('click', async event => {
           model: modelOptionsForAuthMode(nextAuthMode)[0] || defaults.model,
         };
         render();
-        // Settings → Model 用按钮切换 authMode（不是 <select>），所以
-        // input/change listener 都不会触发新增的 connector autosave。
-        // 直接走同一管线，让 "切到 api-key 后等 3 秒切走" 也能保存。
-        // scheduleConnectorAutosave 内部已经过滤 authMode='codex'（避免
-        // 把已保存 OAuth 切换的瞬间清掉用户存的 OpenAI key），所以这里
-        // 无脑接入即可。
-        //
-        // ⚠️ render() 之上的 `trigger` 节点已被 app.innerHTML 重建
-        // 从 DOM detach；走 trigger 的 closest-form 查找会拿到 orphan
-        // form 或直接 null，scheduleConnectorAutosave 的 FormData 就
-        // 读不到新 SSR 值，整条接线静默失败。改用稳定 id 在 render
-        // 之后重新查 *活的* form 节点。Codex audit 2026-04-28。
-        const authForm = document.getElementById('model-config-form');
-        if (authForm instanceof HTMLFormElement) {
-          // Settings are committed only by the explicit Save action.
-        }
+        // Settings are committed only by the explicit Save action.
         break;
       }
       case 'load-model-options': {
@@ -8318,9 +8151,6 @@ document.addEventListener('input', event => {
       // doesn't reach here, so authMode never matches. Keep the
       // gate anyway so the helper contract stays one-way.
       if (dispatch.shouldRender) render();
-      // 3-second idle autosave: snapshot the submit body now (in
-      // case the form gets unmounted by a page switch before the
-      // timer fires) and queue the actual POST.
       // Settings are committed only by the explicit Save action.
     }
     return;
@@ -8491,8 +8321,6 @@ document.addEventListener('change', async event => {
     if (draftDispatch) {
       uiState.modelSetupDraft = draftDispatch.nextDraft;
       if (draftDispatch.shouldRender) render();
-      // Same 3-second idle autosave as the input listener — covers
-      // the authMode <select>, which doesn't fire `input` events.
       // Settings are committed only by the explicit Save action.
       return;
     }

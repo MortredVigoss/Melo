@@ -8,32 +8,12 @@ export function createAgentsApi(request) {
   return {
     // {} = the read-only starter set; { basedOn, copyPersona } = «基于已有 Agent».
     createCustom: (body = {}) => request('/api/agents/create-custom', { method: 'POST', body }),
-    // Save (global or project override), Markdown / channel autosaves and
-    // clearProjectOverride all use this route.
+    // Save (global or project override) and clearProjectOverride use this route.
     update: body => request('/api/agents/update', { method: 'POST', body }),
     testChannel: body => request('/api/agents/channel/test', { method: 'POST', body }),
     confirmSettings: body => request('/api/agent-settings-sync/confirm', { method: 'POST', body }),
     bootstrap: () => request('/api/bootstrap'),
     // Re-applies the saved MiniMax voice's tuning to the global TTS settings.
     saveModelSettings: body => request('/api/settings/model', { method: 'POST', body }),
-    // Unload path (pagehide / beforeunload): fire-and-forget, so it cannot go
-    // through request(). `body` is the JSON string.
-    beaconUpdate: body => {
-      try {
-        if (navigator.sendBeacon) {
-          navigator.sendBeacon(
-            '/api/agents/update',
-            new Blob([body], { type: 'application/json' }),
-          );
-        } else {
-          fetch('/api/agents/update', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body,
-            keepalive: true,
-          }).catch(() => {});
-        }
-      } catch {}
-    },
   };
 }

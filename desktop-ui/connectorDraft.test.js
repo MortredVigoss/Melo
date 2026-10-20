@@ -9,7 +9,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildConnectorDraft, pickConnectorField, buildAutosaveBody } from './connectorDraft.js';
+import { buildConnectorDraft, pickConnectorField } from './connectorDraft.js';
 
 // ─── buildConnectorDraft ────────────────────────────────────────────────────
 
@@ -157,91 +157,6 @@ test('pickConnectorField tolerates a FormData-like object with a missing get()',
 });
 
 // ─── End-to-end regression: paste-then-render-then-submit ──────────────────
-
-// ─── buildAutosaveBody — 3-second idle save body builder ────────────────────
-
-test('buildAutosaveBody returns null when authMode is codex', () => {
-  // src/desktopStore.js::updateModelConfig forces apiKey="" on any
-  // patch with authMode==='codex'. Letting an idle 3-second autosave
-  // POST that body would silently wipe the user's saved OpenAI key
-  // the moment they click the OAuth button and walk away. The helper
-  // explicitly suppresses codex submits so credential clearing stays
-  // an explicit Save action only. (Codex audit 2026-04-28.)
-  const fd = fakeFormData({ authMode: 'codex' });
-  assert.equal(buildAutosaveBody({ formData: fd, draft: {} }), null);
-  // Default authMode is also codex when nothing is provided.
-  assert.equal(buildAutosaveBody({ formData: fakeFormData({}), draft: {} }), null);
-});
-
-test('buildAutosaveBody returns a full body for api-key / local authMode', () => {
-  const fd = fakeFormData({
-    authMode: 'api-key',
-    baseUrl: 'https://api.openai.com/v1',
-    model: 'gpt-5.5',
-    systemPrompt: 'be terse',
-    whisperBaseUrl: 'http://127.0.0.1:11434/v1',
-    minimaxGroupId: '12345',
-    minimaxVoiceId: 'moss_audio_abc',
-  });
-  const body = buildAutosaveBody({ formData: fd, draft: {} });
-  assert.ok(body, 'api-key authMode must produce a body');
-  assert.equal(body.authMode, 'api-key');
-  assert.equal(body.baseUrl, 'https://api.openai.com/v1');
-  assert.equal(body.model, 'gpt-5.5');
-  assert.equal(body.systemPrompt, 'be terse');
-  assert.equal(body.whisperBaseUrl, 'http://127.0.0.1:11434/v1');
-  assert.equal(body.minimaxGroupId, '12345');
-  assert.equal(body.minimaxVoiceId, 'moss_audio_abc');
-});
-
-test('buildAutosaveBody attaches apiKey only on api-key / local mode, never on codex', () => {
-  // codex case is already null by the rule above; double-check api-key
-  // and local both honour the apiKey attachment.
-  const fdApiKey = fakeFormData({ authMode: 'api-key', apiKey: 'sk-from-form' });
-  const fdLocal = fakeFormData({ authMode: 'local', apiKey: 'sk-local-key' });
-  assert.equal(buildAutosaveBody({ formData: fdApiKey, draft: {} }).apiKey, 'sk-from-form');
-  assert.equal(buildAutosaveBody({ formData: fdLocal, draft: {} }).apiKey, 'sk-local-key');
-});
-
-test('buildAutosaveBody pulls draft values over FormData (paste-then-render-then-autosave)', () => {
-  // The whole point of the autosave path: a freshly-pasted MiniMax
-  // key lives on the draft, not on the masked password input. The
-  // 3-second timer fire reads the draft so the body carries the
-  // real key.
-  const fd = fakeFormData({
-    authMode: 'api-key',
-    minimaxApiKey: '', // mask
-  });
-  const draft = {
-    minimaxApiKey: 'sk-fresh-paste-99999',
-    minimaxGroupId: 'group-from-draft',
-  };
-  const body = buildAutosaveBody({ formData: fd, draft });
-  assert.equal(body.minimaxApiKey, 'sk-fresh-paste-99999');
-  assert.equal(body.minimaxGroupId, 'group-from-draft');
-});
-
-test('buildAutosaveBody tolerates missing inputs without throwing', () => {
-  assert.equal(buildAutosaveBody(), null);
-  assert.equal(buildAutosaveBody({}), null);
-  assert.equal(buildAutosaveBody({ formData: null, draft: null }), null);
-});
-
-test('buildAutosaveBody does NOT bake in _autosaveRevision (caller stamps it)', () => {
-  // The revision is wall-clock, so it must be attached at the
-  // schedule callsite — not by this pure helper. Otherwise the
-  // helper's output would change every millisecond and equality
-  // tests would be flaky. The schedule path
-  // (scheduleConnectorAutosave) stamps body._autosaveRevision
-  // = Date.now() AFTER calling this helper.
-  const fd = fakeFormData({ authMode: 'api-key', baseUrl: 'http://x.local' });
-  const body = buildAutosaveBody({ formData: fd, draft: {} });
-  assert.equal(
-    '_autosaveRevision' in body,
-    false,
-    'buildAutosaveBody is pure — revision attachment is the caller\'s responsibility',
-  );
-});
 
 test('regression — paste a MiniMax key, simulate a background render, submit picks the right value', () => {
   // 1. User opens Customize → Connectors → OpenAI. Saved config
