@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "sha256": "f0394192fb4e18b5026780b955c00cfe5f40b6a717446007ab5b2dfa7fb65fa0",
+  "sha256": "ba633b5189a2255881c2a483791792b6d2f080a76d801ea3c384c4bfac7ee375",
   "sources": {
-    "shared/agent/index.js": "dcfcfd2fe8998312769092d0b0d96a2876ae07ece5782d70c83812fbd0027f50",
-    "shared/agent/turn.js": "3f7400bd56926caf1f3f5d0885047def714d28549ee25f5550e82d1c4ec75e5d",
+    "shared/agent/index.js": "f90044db16a21a654be66355aa14097706683a80df7a4f20eec9e5f9ffec87c6",
+    "shared/agent/turn.js": "5ba5dcc1fac88efea6b2bcf4387a2e29011d8cd7528a96fcd6bb6dc3d46dd3d5",
     "shared/agent/tools.js": "d10a7113f6cca1240603c8a5c0004a689dc85163ebde300459ff4d8f454db5da",
     "shared/agent/loopContract.js": "cb867412c651008a1ab8de6cd3b71d4fa60ce68332d93eb013018cabaa4c08ea",
     "shared/agent/repeatGuard.js": "eca1d776e713fb7a59e05c1d16f78fb9d71877ad6ebb10cb23e2a4ad5bf78382",
@@ -15,7 +15,7 @@
     "shared/agent/hostedSearch.js": "75d1a1be8b0350ae05fba5602b17704857f3b85cb13f0bf38982413ba442226a",
     "shared/agent/execution.js": "e76531b1747495cde0573a8f8e1e554b35d229485bd46b0981868be04f40e3a2",
     "src/shared/replyDocument.js": "824fa3e1fe139e41d690a450ab2995a09ee5a3b9f575174087aa154dae96032d",
-    "shared/agent/policyBridge.js": "2e702b58c84c4c99beac76831cac690174bdecbf465f8d6413b547607be053f8",
+    "shared/agent/policyBridge.js": "3506b45d82092d6132d06d1792582ad1c60ea043b42a12183f5838b5c52367e7",
     "shared/agent/runBudget.js": "255abb304224c654ba4d563dc1404b7a96ced321c0ef73826c598e25fa52e12b"
   }
 }

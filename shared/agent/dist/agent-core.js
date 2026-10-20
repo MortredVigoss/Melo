@@ -312,6 +312,18 @@ function advanceTurn(previous, event, now) {
       if (!state.pending.length && state.stagnant >= state.limits.stagnant) return stop('NO_PROGRESS');
       return state;
     }
+    case 'device-observation': {
+      if (state.pending.length || state.awaitingModel) fail('PENDING_EFFECT', 'A device observation must follow its paired result.');
+      if (typeof event.ok !== 'boolean' || !identity(event.progressKey) || !identity(event.action)) fail('INVALID_RESULT', 'Invalid device observation.');
+      const prior = state.deviceProgress || { seen: [], unchanged: 0, unresolvedErrors: 0 };
+      const resolves = ['tap', 'type_text', 'swipe', 'back', 'home', 'open_app'].includes(event.action);
+      const unresolvedErrors = !event.ok ? prior.unresolvedErrors + 1 : resolves ? 0 : prior.unresolvedErrors;
+      const repeated = prior.seen.includes(event.progressKey);
+      state.deviceProgress = { seen: repeated ? prior.seen : [...prior.seen, event.progressKey], unchanged: repeated ? prior.unchanged + 1 : 0, unresolvedErrors };
+      if (unresolvedErrors >= state.limits.errors) return stop('REPEATED_DEVICE_FAILURE');
+      if (state.deviceProgress.unchanged >= state.limits.stagnant) return stop('NO_PROGRESS');
+      return state;
+    }
     case 'complete':
       if (!state.awaitingModel || state.pending.length) fail('PENDING_EFFECT', 'A final answer cannot drop pending tools.');
       if ((state.requiredTools || []).some(name => !state.successfulTools.includes(name))) return stop('MISSING_TOOL_EVIDENCE');
@@ -1680,6 +1692,12 @@ function budgetOperation({ action, budget = null, now, options = {}, usage = {},
     case 'remaining': return remainingMs(state, now);
     case 'timeout': return requestTimeoutMs(state, { ...options, now });
     case 'record': return recordUsage(state, usage);
+    case 'admitTool': {
+      if (!state) throw Object.assign(new Error('A run budget is required.'), { code: 'BUDGET_MISSING' });
+      const exhausted = budgetExhausted(state, now);
+      if (exhausted) return { allowed: false, budget: state, exhausted };
+      return { allowed: true, budget: recordUsage(state, { toolCalls: 1 }), exhausted: null };
+    }
     case 'exhausted': return budgetExhausted(state, now);
     case 'narrow': return narrowBudget(state, options);
     case 'extend': return { changes: extendBudget(state, options, now), budget: state };
@@ -1709,7 +1727,7 @@ function evaluate(input) {
     let value;
     switch (input.op) {
       case 'hello': value = { version: CORE_VERSION, runtime: 'melo-local-core', portable: true }; break;
-      case 'budget': value = budgetOperation(input); break;
+      case 'budget': value = JSON.parse(JSON.stringify(budgetOperation(input))); break;
       case 'repeat': value = repeatOperation(input); break;
       case 'plan': value = planRequest(input.request); break;
       case 'actionEvidence': value = actionEvidence(input.plan, input.urls); break;

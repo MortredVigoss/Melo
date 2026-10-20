@@ -61,3 +61,11 @@
 手机分支 1af5377 已推送 CI：与主线相同 Core/bundle/61 fixture，Kotlin Native 持有共享预算父对象及 mutex，工具额度原子预留，模型使用实际 usage 或请求文本估计；Chat→Phone 预算传递；通用聊天 32 调用与配对错误、屏幕操作单步/终态验证保留。Android 需实际 JVM/Lint/APK/Emulator 结果，不以 JS 专项代替。主线 iOS simulator 编译进行中，不安装、不读取真实账号数据。
 
 生产接线主线最终：`core-loop-daily-final.log` 完整日常 JS 4203/4203、零跳过，34 组 Swift、浏览器/语法/文档全部通过（471.4 秒）。Network/Codex OAuth 的十轮夹具改为每轮带新结果，继续锁定十轮上限；另有真实 Host 无进展六轮回归。`core-loop-ios-build.log` simulator Debug 双架构编译成功，app 中实际含与主线相同 Core/manifest；未签名安装。Android 1af5377 的 JVM/Lint/Debug/R8 已过，Emulator 运行中。最终验收继续核对设备进展策略及并发预算额度预留，不提前关闭。
+
+收尾第二轮：共享预算新增原子 admission；Swift 同一锁内检查并预留祖先额度，32 个并发子预算争最后一个名额仅一个获准。设备进展也收进 Core，Kotlin 只散列屏幕内容/像素，观察成功不能清除失败动作。新增 7 个跨引擎 fixture（共 68），共享 JS 106/106；Swift AgentLoop/契约两组通过。完整日常再次执行中。
+
+Android 首轮 60/61：导航无证据实际零动作，但接线把具体拒绝码改成笼统 PHONE_TASK_FAILED；已保留具体原因和原断言。截图输入估计不再把 base64 字节当成文本 token。第二轮提交 795f2fc，CI 39356581051 运行中；DeviceProgress 的三项策略测试已移至真实 Android Core 引擎，JVM 仍验证屏幕指纹。用户账号、安装、数据均未改。
+
+第二轮日常 JS 4210/4211：失败为 #2 原真实 HTTP 并发/重启夹具抓到冷启动 journal_mode 先于 busy_timeout 的窗口，与 Core 逻辑无关但不可跳过。已重新打开 #2，确定性双路径启动锁回归红转绿；主线全日常重跑。
+
+第二轮主线最终：`core-loop-and-cold-lock-daily.log` 日常 JS 4213/4213、零跳过，34 组 Swift（实际 JSCore 68 fixture）、浏览器/语法/文档全部通过，433.7 秒。`core-loop-admission-ios-build.log` 再次 simulator Debug 编译成功。#2 启动锁补充在 Mac/Linux 各 5/5（Linux 8.2 秒）通过。Android 795f2fc 已过 JVM/Lint/Debug/R8，模拟器尚待结束；正式推送关闭仍等实际结果。

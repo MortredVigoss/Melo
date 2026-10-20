@@ -75,6 +75,20 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             assert(next.text == "next")
         }
 
+        // Atomic admission shares the last tool slot across concurrent members.
+        do {
+            let parent = PhoneRunBudget(maxToolCalls: 1)
+            let children = (0..<32).map { _ in parent.narrowed(maxToolCalls: 8) }
+            let admitted = await withTaskGroup(of: Bool.self) { group in
+                for child in children { group.addTask { child.admitTool() == nil } }
+                var total = 0
+                for await value in group { if value { total += 1 } }
+                return total
+            }
+            assert(admitted == 1 && parent.used.toolCalls == 1)
+            assert(children.allSatisfy { $0.exhausted()?.reason == "tool-calls" })
+        }
+
         // 1. Ten model calls at most; the limit reply is the shared text, in the question's language.
         do {
             let log = Log()

@@ -2996,5 +2996,561 @@
       "limit": 20,
       "used": 20
     }
+  },
+  {
+    "name": "device observations do not erase unresolved action failures",
+    "input": {
+      "version": 1,
+      "op": "advance",
+      "state": {
+        "version": 1,
+        "runId": "device-fixture",
+        "turnId": "turn-fixture",
+        "status": "running",
+        "startedAt": 1000,
+        "lastNow": 1000,
+        "deadline": 1201000,
+        "limits": {
+          "rounds": 30,
+          "callsPerRound": 1,
+          "errors": 3,
+          "stagnant": 5
+        },
+        "allowedTools": [
+          "android_device"
+        ],
+        "requiredTools": [],
+        "toolDependencies": {},
+        "successfulTools": [
+          "android_device"
+        ],
+        "pendingTools": {},
+        "rounds": 5,
+        "awaitingModel": false,
+        "hostToolSchemas": true,
+        "failures": [
+          [
+            "[\"android_device\",{\"action\":\"open_app\",\"target\":\"target0\"}]",
+            {
+              "count": 1,
+              "errorClass": "app_not_found",
+              "name": "android_device"
+            }
+          ],
+          [
+            "[\"android_device\",{\"action\":\"open_app\",\"target\":\"target2\"}]",
+            {
+              "count": 1,
+              "errorClass": "app_not_found",
+              "name": "android_device"
+            }
+          ],
+          [
+            "[\"android_device\",{\"action\":\"open_app\",\"target\":\"new\"}]",
+            {
+              "count": 1,
+              "errorClass": "app_not_found",
+              "name": "android_device"
+            }
+          ]
+        ],
+        "pendingFingerprints": {},
+        "rejectionResults": {},
+        "callIds": [
+          "d0",
+          "d1",
+          "d2",
+          "d3",
+          "last"
+        ],
+        "pending": [],
+        "permitted": [
+          "last"
+        ],
+        "phoneTasks": [],
+        "rejections": {},
+        "errors": 1,
+        "roundSucceeded": false,
+        "stagnant": 0,
+        "progressKeys": [],
+        "reason": null,
+        "deviceProgress": {
+          "seen": [
+            "error",
+            "screen"
+          ],
+          "unchanged": 2,
+          "unresolvedErrors": 2
+        }
+      },
+      "now": 1000,
+      "event": {
+        "runId": "device-fixture",
+        "turnId": "turn-fixture",
+        "type": "device-observation",
+        "action": "open_app",
+        "ok": false,
+        "progressKey": "error"
+      }
+    },
+    "ok": true,
+    "expected": {
+      "status": "blocked",
+      "reason": "REPEATED_DEVICE_FAILURE",
+      "permitted": []
+    }
+  },
+  {
+    "name": "device identical pixels stop after bounded observations",
+    "input": {
+      "version": 1,
+      "op": "advance",
+      "state": {
+        "version": 1,
+        "runId": "device-fixture",
+        "turnId": "turn-fixture",
+        "status": "running",
+        "startedAt": 1000,
+        "lastNow": 1000,
+        "deadline": 1201000,
+        "limits": {
+          "rounds": 30,
+          "callsPerRound": 1,
+          "errors": 3,
+          "stagnant": 5
+        },
+        "allowedTools": [
+          "android_device"
+        ],
+        "requiredTools": [],
+        "toolDependencies": {},
+        "successfulTools": [
+          "android_device"
+        ],
+        "pendingTools": {},
+        "rounds": 5,
+        "awaitingModel": false,
+        "hostToolSchemas": true,
+        "failures": [],
+        "pendingFingerprints": {},
+        "rejectionResults": {},
+        "callIds": [
+          "d0",
+          "d1",
+          "d2",
+          "d3",
+          "d4"
+        ],
+        "pending": [],
+        "permitted": [
+          "d4"
+        ],
+        "phoneTasks": [],
+        "rejections": {},
+        "errors": 0,
+        "roundSucceeded": true,
+        "stagnant": 0,
+        "progressKeys": [],
+        "reason": null,
+        "deviceProgress": {
+          "seen": [
+            "same-pixels"
+          ],
+          "unchanged": 4,
+          "unresolvedErrors": 0
+        }
+      },
+      "now": 1000,
+      "event": {
+        "runId": "device-fixture",
+        "turnId": "turn-fixture",
+        "type": "device-observation",
+        "action": "observe",
+        "ok": true,
+        "progressKey": "same-pixels"
+      }
+    },
+    "ok": true,
+    "expected": {
+      "status": "blocked",
+      "reason": "NO_PROGRESS",
+      "permitted": []
+    }
+  },
+  {
+    "name": "device changing pixels keep an empty node tree progressing",
+    "input": {
+      "version": 1,
+      "op": "advance",
+      "state": {
+        "version": 1,
+        "runId": "device-fixture",
+        "turnId": "turn-fixture",
+        "status": "running",
+        "startedAt": 1000,
+        "lastNow": 1000,
+        "deadline": 1201000,
+        "limits": {
+          "rounds": 30,
+          "callsPerRound": 1,
+          "errors": 3,
+          "stagnant": 5
+        },
+        "allowedTools": [
+          "android_device"
+        ],
+        "requiredTools": [],
+        "toolDependencies": {},
+        "successfulTools": [
+          "android_device"
+        ],
+        "pendingTools": {},
+        "rounds": 8,
+        "awaitingModel": false,
+        "hostToolSchemas": true,
+        "failures": [],
+        "pendingFingerprints": {},
+        "rejectionResults": {},
+        "callIds": [
+          "d0",
+          "d1",
+          "d2",
+          "d3",
+          "d4",
+          "d5",
+          "d6",
+          "d7"
+        ],
+        "pending": [],
+        "permitted": [
+          "d7"
+        ],
+        "phoneTasks": [],
+        "rejections": {},
+        "errors": 0,
+        "roundSucceeded": true,
+        "stagnant": 0,
+        "progressKeys": [],
+        "reason": null,
+        "deviceProgress": {
+          "seen": [
+            "pixels0",
+            "pixels1",
+            "pixels2",
+            "pixels3",
+            "pixels4",
+            "pixels5",
+            "pixels6",
+            "pixels7"
+          ],
+          "unchanged": 0,
+          "unresolvedErrors": 0
+        }
+      },
+      "now": 1000,
+      "event": {
+        "runId": "device-fixture",
+        "turnId": "turn-fixture",
+        "type": "device-observation",
+        "action": "observe",
+        "ok": true,
+        "progressKey": "pixels8"
+      }
+    },
+    "ok": true,
+    "expected": {
+      "status": "running",
+      "deviceProgress": {
+        "seen": [
+          "pixels0",
+          "pixels1",
+          "pixels2",
+          "pixels3",
+          "pixels4",
+          "pixels5",
+          "pixels6",
+          "pixels7",
+          "pixels8"
+        ],
+        "unchanged": 0,
+        "unresolvedErrors": 0
+      }
+    }
+  },
+  {
+    "name": "device successful navigation resolves previous action errors",
+    "input": {
+      "version": 1,
+      "op": "advance",
+      "state": {
+        "version": 1,
+        "runId": "device-fixture",
+        "turnId": "turn-fixture",
+        "status": "running",
+        "startedAt": 1000,
+        "lastNow": 1000,
+        "deadline": 1201000,
+        "limits": {
+          "rounds": 30,
+          "callsPerRound": 1,
+          "errors": 3,
+          "stagnant": 5
+        },
+        "allowedTools": [
+          "android_device"
+        ],
+        "requiredTools": [],
+        "toolDependencies": {},
+        "successfulTools": [],
+        "pendingTools": {},
+        "rounds": 1,
+        "awaitingModel": false,
+        "hostToolSchemas": true,
+        "failures": [
+          [
+            "[\"android_device\",{\"action\":\"open_app\",\"target\":\"target0\"}]",
+            {
+              "count": 1,
+              "errorClass": "app_not_found",
+              "name": "android_device"
+            }
+          ]
+        ],
+        "pendingFingerprints": {},
+        "rejectionResults": {},
+        "callIds": [
+          "d0"
+        ],
+        "pending": [],
+        "permitted": [
+          "d0"
+        ],
+        "phoneTasks": [],
+        "rejections": {},
+        "errors": 1,
+        "roundSucceeded": false,
+        "stagnant": 0,
+        "progressKeys": [],
+        "reason": null,
+        "deviceProgress": {
+          "seen": [
+            "error"
+          ],
+          "unchanged": 0,
+          "unresolvedErrors": 1
+        }
+      },
+      "now": 1000,
+      "event": {
+        "runId": "device-fixture",
+        "turnId": "turn-fixture",
+        "type": "device-observation",
+        "action": "tap",
+        "ok": true,
+        "progressKey": "new-screen"
+      }
+    },
+    "ok": true,
+    "expected": {
+      "status": "running",
+      "deviceProgress": {
+        "seen": [
+          "error",
+          "new-screen"
+        ],
+        "unchanged": 0,
+        "unresolvedErrors": 0
+      }
+    }
+  },
+  {
+    "name": "device observation cannot bypass pending effects",
+    "input": {
+      "version": 1,
+      "op": "advance",
+      "state": {
+        "version": 1,
+        "runId": "device-fixture",
+        "turnId": "turn-fixture",
+        "status": "running",
+        "startedAt": 1000,
+        "lastNow": 1000,
+        "deadline": 1201000,
+        "limits": {
+          "rounds": 30,
+          "callsPerRound": 1,
+          "errors": 3,
+          "stagnant": 5
+        },
+        "allowedTools": [
+          "android_device"
+        ],
+        "requiredTools": [],
+        "toolDependencies": {},
+        "successfulTools": [],
+        "pendingTools": {},
+        "rounds": 1,
+        "awaitingModel": true,
+        "hostToolSchemas": true,
+        "failures": [],
+        "pendingFingerprints": {},
+        "rejectionResults": {},
+        "callIds": [],
+        "pending": [],
+        "permitted": [],
+        "phoneTasks": [],
+        "rejections": {},
+        "errors": 0,
+        "roundSucceeded": false,
+        "stagnant": 0,
+        "progressKeys": [],
+        "reason": null
+      },
+      "now": 1000,
+      "event": {
+        "runId": "device-fixture",
+        "turnId": "turn-fixture",
+        "type": "device-observation",
+        "action": "observe",
+        "ok": true,
+        "progressKey": "screen"
+      }
+    },
+    "ok": false,
+    "expected": {
+      "code": "PENDING_EFFECT"
+    }
+  },
+  {
+    "name": "atomic tool admission reserves the ancestor slot",
+    "input": {
+      "version": 1,
+      "op": "budget",
+      "action": "admitTool",
+      "now": 1000,
+      "budget": {
+        "startedAt": 1000,
+        "deadlineAt": 1201000,
+        "maxInputTokens": 400000,
+        "maxToolCalls": 1,
+        "used": {
+          "inputTokens": 0,
+          "toolCalls": 0,
+          "providerCalls": 0
+        },
+        "parent": {
+          "startedAt": 1000,
+          "deadlineAt": 1201000,
+          "maxInputTokens": 400000,
+          "maxToolCalls": 1,
+          "used": {
+            "inputTokens": 0,
+            "toolCalls": 0,
+            "providerCalls": 0
+          },
+          "parent": null
+        }
+      }
+    },
+    "ok": true,
+    "expected": {
+      "allowed": true,
+      "exhausted": null,
+      "budget": {
+        "startedAt": 1000,
+        "deadlineAt": 1201000,
+        "maxInputTokens": 400000,
+        "maxToolCalls": 1,
+        "used": {
+          "inputTokens": 0,
+          "toolCalls": 1,
+          "providerCalls": 0
+        },
+        "parent": {
+          "startedAt": 1000,
+          "deadlineAt": 1201000,
+          "maxInputTokens": 400000,
+          "maxToolCalls": 1,
+          "used": {
+            "inputTokens": 0,
+            "toolCalls": 1,
+            "providerCalls": 0
+          },
+          "parent": null
+        }
+      }
+    }
+  },
+  {
+    "name": "atomic admission refuses exhausted ancestor without double charge",
+    "input": {
+      "version": 1,
+      "op": "budget",
+      "action": "admitTool",
+      "now": 1000,
+      "budget": {
+        "startedAt": 1000,
+        "deadlineAt": 1201000,
+        "maxInputTokens": 400000,
+        "maxToolCalls": 1,
+        "used": {
+          "inputTokens": 0,
+          "toolCalls": 1,
+          "providerCalls": 0
+        },
+        "parent": {
+          "startedAt": 1000,
+          "deadlineAt": 1201000,
+          "maxInputTokens": 400000,
+          "maxToolCalls": 1,
+          "used": {
+            "inputTokens": 0,
+            "toolCalls": 1,
+            "providerCalls": 0
+          },
+          "parent": null
+        }
+      }
+    },
+    "ok": true,
+    "expected": {
+      "allowed": false,
+      "budget": {
+        "startedAt": 1000,
+        "deadlineAt": 1201000,
+        "maxInputTokens": 400000,
+        "maxToolCalls": 1,
+        "used": {
+          "inputTokens": 0,
+          "toolCalls": 1,
+          "providerCalls": 0
+        },
+        "parent": {
+          "startedAt": 1000,
+          "deadlineAt": 1201000,
+          "maxInputTokens": 400000,
+          "maxToolCalls": 1,
+          "used": {
+            "inputTokens": 0,
+            "toolCalls": 1,
+            "providerCalls": 0
+          },
+          "parent": null
+        }
+      },
+      "exhausted": {
+        "code": "BUDGET_EXHAUSTED",
+        "reason": "tool-calls",
+        "limit": 1,
+        "used": 1,
+        "reasonText": "工具调用次数",
+        "elapsedMs": 0,
+        "usage": {
+          "inputTokens": 0,
+          "toolCalls": 1,
+          "providerCalls": 0
+        }
+      }
+    }
   }
 ]

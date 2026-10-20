@@ -90,6 +90,21 @@ final class PhoneRunBudget: @unchecked Sendable {
         let milliseconds = Self.operation("timeout", time: now(), fields: ["budget": snapshot()]) as? Double ?? 0
         return min(cap, milliseconds / 1000)
     }
+    /// Reserve one effect under the same native lock that owns ancestor usage.
+    /// Two members cannot both observe the last remaining slot as available.
+    func admitTool() -> Exhaustion? {
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        let unavailable = Exhaustion(reason: "policy-unavailable", limit: 0, used: 0, usage: usedValue)
+        guard available, let result = Self.operation("admitTool", time: now(), fields: ["budget": snapshot()]) as? [String: Any],
+              let allowed = result["allowed"] as? Bool else { invalidatePolicy(); return unavailable }
+        apply(result["budget"] as? [String: Any])
+        guard available else { return unavailable }
+        if allowed { return nil }
+        guard let value = result["exhausted"] as? [String: Any], let reason = value["reason"] as? String,
+              let limit = value["limit"] as? Double, let spent = value["used"] as? Double,
+              let usage = value["usage"] as? [String: Int] else { invalidatePolicy(); return unavailable }
+        return Exhaustion(reason: reason, limit: limit, used: spent, usage: Usage(inputTokens: usage["inputTokens"] ?? 0, toolCalls: usage["toolCalls"] ?? 0, providerCalls: usage["providerCalls"] ?? 0))
+    }
     func record(inputTokens: Int = 0, toolCalls: Int = 0, providerCalls: Int = 0) {
         Self.lock.lock(); defer { Self.lock.unlock() }
         guard available else { return }

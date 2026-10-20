@@ -16,6 +16,12 @@ export function budgetOperation({ action, budget = null, now, options = {}, usag
     case 'remaining': return remainingMs(state, now);
     case 'timeout': return requestTimeoutMs(state, { ...options, now });
     case 'record': return recordUsage(state, usage);
+    case 'admitTool': {
+      if (!state) throw Object.assign(new Error('A run budget is required.'), { code: 'BUDGET_MISSING' });
+      const exhausted = budgetExhausted(state, now);
+      if (exhausted) return { allowed: false, budget: state, exhausted };
+      return { allowed: true, budget: recordUsage(state, { toolCalls: 1 }), exhausted: null };
+    }
     case 'exhausted': return budgetExhausted(state, now);
     case 'narrow': return narrowBudget(state, options);
     case 'extend': return { changes: extendBudget(state, options, now), budget: state };

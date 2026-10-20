@@ -265,10 +265,9 @@ final class AgentLoop: @unchecked Sendable {
                     outcome = PhoneToolEnvelope.finalize(ok: false, error: rejected.code, output: rejected.code == "UNKNOWN_TOOL" ? contract.unknownToolOutput : rejected.output)
                 } else if call.name == WebPageToolSpec.screenshot, screenshots >= WebPageText.maxScreenshotsPerReply {
                     outcome = PhoneToolEnvelope.parse(WebPageText.tooManyScreenshots(url: call.urlArgument))
-                } else if let exhausted = budget.exhausted() {
+                } else if let exhausted = budget.admitTool() {
                     outcome = PhoneToolEnvelope.finalize(ok: false, error: contract.budgetCode, output: AgentLoopContract.fill(contract.budgetToolSkippedTemplate, ["reason": exhausted.reason, "tool": call.name]))
                 } else {
-                    budget.record(toolCalls: 1)
                     if let tools {
                         await hooks.onStatus?(tools.statusText(call))
                         do {
