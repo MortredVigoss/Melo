@@ -96,7 +96,12 @@ class ChatPhoneUseFlowTest {
             val first = withContext(Dispatchers.IO) { server.takeRequest(5, TimeUnit.SECONDS) }!!
             assertTrue(first.body.clone().readUtf8().contains("phone_use"))
             app.repository.draft(id, "next-message-draft-must-survive")
-            app.repository.editChat(id) { it.copy(agentId = "main", projectId = null, connectionId = null, phoneUseEnabled = false) }
+            val capturedProject = app.repository.data.value.projects.first { it.id == app.repository.data.value.chats.first { chat -> chat.id == id }.projectId }
+            val moveError = runCatching { app.repository.editChat(id) { it.copy(projectId = null) } }.exceptionOrNull()
+            assertTrue("Running project movement must fail before changing membership", moveError is IllegalArgumentException)
+            assertEquals(capturedProject.id, app.repository.data.value.chats.first { it.id == id }.projectId)
+            app.repository.editChat(id) { it.copy(agentId = "main", connectionId = null, phoneUseEnabled = false) }
+            app.repository.saveProject(capturedProject.copy(instructions = "future-turn-project-marker"))
             complete(id); delay(600)
             val saved = app.repository.data.value
             val run = saved.deviceRuns.single { it.taskContext?.chatId == id }
@@ -108,6 +113,7 @@ class ChatPhoneUseFlowTest {
             repeat(3) {
                 val body = withContext(Dispatchers.IO) { server.takeRequest(5, TimeUnit.SECONDS) }!!.body.readUtf8()
                 assertTrue(body.contains("captured-model")); assertTrue(body.contains("captured-agent-marker")); assertTrue(body.contains("captured-project-marker"))
+                assertFalse(body.contains("future-turn-project-marker"))
                 assertFalse(body.contains("local-fixture-key"))
             }
             assertEquals(4, server.requestCount); assertFalse(app.deviceAgent.runtime.value.running)

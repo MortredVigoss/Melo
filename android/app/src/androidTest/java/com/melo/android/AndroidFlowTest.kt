@@ -187,7 +187,9 @@ class AndroidFlowTest {
         assertEquals(messages, app.repository.data.value.chats.first { it.id == chatId }.messages)
         assertArrayEquals(byteArrayOf(0, 17, -1, 9), original.readBytes())
         compose.activityRule.scenario.recreate()
-        compose.onAllNodesWithText("资料").onFirst().performClick()
+        // The top-level Workspace page survives recreation. Its "资料" chip
+        // has the same label as navigation, so select the project tab explicitly.
+        compose.onNodeWithText("项目").performClick()
         compose.onNodeWithTag("deleted-projects").performClick()
         compose.onNodeWithTag("restore-project-${project.id}").performScrollTo().performClick()
         compose.waitUntil(5000) { app.repository.data.value.projects.first { it.id == project.id }.restoredProjectId != null }
