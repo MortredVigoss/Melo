@@ -148,7 +148,7 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
                     var prefix: List<ScriptStep> = emptyList()
                     var prefixValues: Map<String, String> = emptyMap()
                     if (recipe != null) {
-                        val match = recipe
+                        val match = requireNotNull(recipe)
                         val replayStarted = System.nanoTime()
                         val replay = ScriptRunner(executeDevice, trace, phase, compatible = {
                             if (match.script.environment == null) manualScript != null

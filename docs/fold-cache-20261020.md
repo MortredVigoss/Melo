@@ -7,3 +7,5 @@
 记录命中/失配原因、查找和回放/Probe 时间。相同布局与版本的 Exact Hit 仍零 LLM；不兼容布局可由受控 Probe 生成独立变体。保留原本权限确认、取消和有副作用后不得重放的规则。
 
 验证：JVM 匹配/未知/版本变化/双变体；真实 Repository 的 emulator 回归覆盖内外布局各自命中、变化后零旧动作、版本失配、原恢复/取消；原生观察返回环境并在姿态改变后拒绝旧 screen_id。CI 不等于 Fold6 真机验收。官方接口参考：https://developer.android.com/reference/android/hardware/Sensor#TYPE_HINGE_ANGLE 。
+
+首轮 CI 39378706877 在 Kotlin 编译阶段检出新增闭包赋值使 nullable recipe 无法 smart cast；在已判定非空的分支显式捕获 requireNotNull，保持执行行为。尚未通过构建，第二轮待验。
