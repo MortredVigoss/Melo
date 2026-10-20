@@ -52,6 +52,7 @@ import {
   decideFileSafetyResponseAction,
 } from './fileSafetyResponse.js';
 import { installCustomizeFeature } from './features/customize/index.js';
+import { resolveActiveMinimaxVoiceId } from '/shared/minimaxVoiceResolver.js';
 
 const app = document.querySelector('#app');
 // The Agent feature owns the agent-profile-update form's draft (agentsFeature,
@@ -97,66 +98,6 @@ const uiState = {
   expandedSearchGroups: {},
   chatSearch: '',
   searchQuery: '',
-  // Phase 3.3.2 — Customize → Skills filter state. `query` is a free-form
-  // search over name/description/tags/triggers. `tag` narrows to skills
-  // that carry a specific tag (null = no tag filter). `state` is one of
-  // 'all' | 'enabled' | 'disabled' | 'custom' | 'builtin' | 'disk'.
-  skillFilter: {
-    query: '',
-    tag: null,
-    state: 'all',
-  },
-  // Phase 3.3.4 — skill-run telemetry shown in the Customize → Skills
-  // health panel. Lazily populated when the user opens the Skills tab;
-  // `loading` guards concurrent refetches.
-  skillRunStats: {
-    loading: false,
-    loaded: false,
-    skills: [],
-    error: null,
-  },
-  // File-safety persistent allowlist (Phase 3b/3c). Lazy-loaded on first
-  // navigation to the Safety section; refresh-on-demand otherwise.
-  safetyAllowlist: {
-    loading: false,
-    loaded: false,
-    rules: [],
-    error: null,
-    pendingRemoveId: null,
-  },
-  // Domain cookies (Phase 4 — Xiaohongshu/Douyin extraction reliability).
-  // Lives in the Safety section alongside the file-safety allowlist
-  // because both are persistent grants the user trades for capability.
-  // The list-side never returns cookie values — only host + length +
-  // tail preview — so the DOM never holds the session secret.
-  domainCookies: {
-    loading: false,
-    loaded: false,
-    hosts: [],
-    error: null,
-    addHost: '',
-    addCookie: '',
-    addInFlight: false,
-    addError: '',
-    pendingRemoveHost: null,
-  },
-  // Advanced page (developer / experimental ops). Caches CLI MCP server
-  // names, plugin registry, and background-task list — none of these
-  // ride on bootstrap, so we lazy-fetch on first navigation and keep the
-  // values around until an explicit Refresh.
-  advanced: {
-    loading: false,
-    loaded: false,
-    error: null,
-    cliServers: [],
-    plugins: [],
-    tasks: [],
-    diagnostics: null,
-  },
-  // Phase 3 — Skill detail tab: 'overview' (default) or 'markdown'.
-  skillDetailTab: 'overview',
-  // Cache: skillId → { loading, markdown, error }.  Cleared on import/reload.
-  skillMarkdown: {},
   showArtifactForm: false,
   selectedArtifactId: null,
   fileEditMode: false,
@@ -421,7 +362,16 @@ const chatFeature = installChatFeature({
 featureActions.register(chatFeature.actions, 'chat');
 featureForms.register(chatFeature.forms, 'chat');
 // Customize page (architecture B3): skills, connectors, safety and Tools & Tasks sections.
-const customizeFeature = installCustomizeFeature({ agentsFeature, allChatAgentProfiles, api, applyBootstrap, applyBootstrapPreservingDrafts, approvalsFeature, bgRender, effectiveModelSetupDraft, escapeHtml, loadBootstrap, memoryFeature, minimaxTtsConfigPatchForVoice, patchSettings, refreshAdvancedStatus, render, renderApprovalPanel, renderCommandRunner, renderProjectArtifactShelf, renderSelectedFilePreview, renderTaskPanel, showError, uiState });
+const customizeFeature = installCustomizeFeature({
+  agentsFeature, approvalsFeature, memoryFeature, allChatAgentProfiles, api, applyBootstrap, applyBootstrapPreservingDrafts, bgRender, render, showError, escapeHtml,
+  patchSettings, minimaxTtsConfigPatchForVoice, effectiveModelSetupDraft, resolveActiveMinimaxVoiceId, renderApprovalPanel, renderCommandRunner, renderProjectArtifactShelf, renderSelectedFilePreview, renderTaskPanel,
+  getBootstrap: () => uiState.bootstrap,
+  modelSetupDraft: () => uiState.modelSetupDraft,
+  refreshBootstrap: () => loadBootstrap(uiState.searchQuery, { quiet: true }),
+  setError: message => { uiState.error = message; },
+  ttsVoice: () => ({ customVoiceId: uiState.ttsCustomVoiceId, engine: uiState.ttsEngine }),
+  setTtsVoice: ({ customVoiceId, engine }) => { if (customVoiceId !== undefined) uiState.ttsCustomVoiceId = customVoiceId; if (engine !== undefined) uiState.ttsEngine = engine; },
+});
 featureActions.register(customizeFeature.actions, 'customize');
 featureForms.register(customizeFeature.forms, 'customize');
 const HOME_PROMPT_PRESETS = [
@@ -4647,53 +4597,11 @@ function renderModelPage() {
 // Phase 3 — Memory panel
 // ───────────────────────────────────────────────────────────────────────
 
-async function refreshAdvancedStatus() {
-  if (uiState.advanced.loading) return;
-  uiState.advanced.loading = true;
-  uiState.advanced.error = null;
-  bgRender();
-  try {
-    // Fan out — three independent endpoints, none of which block the
-    // others, so a slow one doesn't gate the rest.
-    const [serversResp, pluginsResp, tasksResp, diagnosticsResp, retainedResp] = await Promise.all([
-      api('/api/mcp/servers').catch(err => ({ _error: err?.message || 'mcp/servers failed' })),
-      api('/api/plugins').catch(err => ({ _error: err?.message || 'plugins failed' })),
-      api('/api/background-tasks/list').catch(err => ({ _error: err?.message || 'background-tasks/list failed' })),
-      api('/api/diagnostics?storage=1').catch(err => ({ _error: err?.message || 'diagnostics failed' })),
-      api('/api/workspace/retained').catch(err=>({_error:err.message})),
-    ]);
-    const errors = [serversResp, pluginsResp, tasksResp, diagnosticsResp, retainedResp]
-      .filter(r => r && r._error)
-      .map(r => r._error);
-    if (errors.length === 5) {
-      uiState.advanced.error = errors.join(' · ');
-    } else {
-      uiState.advanced.cliServers = Array.isArray(serversResp?.servers) ? serversResp.servers : [];
-      uiState.advanced.plugins = Array.isArray(pluginsResp?.plugins) ? pluginsResp.plugins : [];
-      uiState.advanced.tasks = Array.isArray(tasksResp?.runs) ? tasksResp.runs : [];
-      uiState.advanced.diagnostics = diagnosticsResp?._error ? null : diagnosticsResp;
-      uiState.advanced.retainedFiles = retainedResp?._error ? null : retainedResp;
-      uiState.advanced.loaded = true;
-      // Surface partial errors without blanking the panel.
-      if (errors.length > 0) {
-        uiState.advanced.error = `Partial load: ${errors.join(' · ')}`;
-      }
-    }
-  } catch (err) {
-    uiState.advanced.error = err?.message || 'Failed to load advanced status';
-  } finally {
-    uiState.advanced.loading = false;
-    render();
-  }
-}
-
-
-
 async function handleKillBackgroundTask(runId) {
   if (!runId) return;
   try {
     await api('/api/background-tasks/kill', { method: 'POST', body: { runId } });
-    await refreshAdvancedStatus();
+    await customizeFeature.refreshAdvancedStatus();
   } catch (err) {
     showError(`Kill task failed: ${err?.message || err}`);
   }
@@ -5866,7 +5774,7 @@ document.addEventListener('click', async event => {
   }
 
   try {
-    if(await handleManagementAction(action,trigger,{api,data:uiState.bootstrap,applyBootstrap,refresh:refreshAdvancedStatus})) return;
+    if(await handleManagementAction(action,trigger,{api,data:uiState.bootstrap,applyBootstrap,refresh:customizeFeature.refreshAdvancedStatus})) return;
     if (featureActions.has(action)) { await featureActions.dispatch(action, { action, trigger, event }); return; }
     switch (action) {
       case 'retry-committed-save':
@@ -5877,9 +5785,9 @@ document.addEventListener('click', async event => {
       case 'decide-retained-files': {
         const files=await api('/api/workspace/retained');
         const record=files.directories.find(r=>r.chatId===trigger.dataset.chatId);
-        if(!record) {await refreshAdvancedStatus();break;}
+        if(!record) {await customizeFeature.refreshAdvancedStatus();break;}
         const decision=await askFileDecision({...record,retained:true});
-        if(decision!=='cancel') {await api('/api/workspace/retained',{method:'POST',body:{chatId:record.chatId,decision,token:record.token}});await refreshAdvancedStatus();}
+        if(decision!=='cancel') {await api('/api/workspace/retained',{method:'POST',body:{chatId:record.chatId,decision,token:record.token}});await customizeFeature.refreshAdvancedStatus();}
         break;
       }
       case 'toggle-model-picker':
@@ -6236,7 +6144,7 @@ document.addEventListener('click', async event => {
         await handleDeleteArtifact(trigger.dataset.artifactId);
         break;
       case 'refresh-advanced-status':
-        await refreshAdvancedStatus();
+        await customizeFeature.refreshAdvancedStatus();
         break;
       case 'kill-background-task':
         await handleKillBackgroundTask(trigger.dataset.runId);
@@ -6452,14 +6360,7 @@ document.addEventListener('input', event => {
     return;
   }
 
-  // Phase 3.3.2 — skill filter query. Select handling lives in the 'change'
-  // listener below because this 'input' handler is typed to inputs/textareas
-  // only and excludes <select>.
-  if (target.dataset?.action === 'set-skill-filter-query') {
-    uiState.skillFilter.query = target.value;
-    render();
-    return;
-  }
+  if (customizeFeature.handleInput(target)) return;
 
   if (target.id === 'global-search') {
     uiState.searchQuery = target.value;
@@ -6485,19 +6386,6 @@ document.addEventListener('input', event => {
     return;
   }
 
-  // Phase 4 — domain cookie form. Sync to state so render() doesn't
-  // wipe user input mid-typing. No render() call here: the typing
-  // guard above defers re-renders, and the form value already lives
-  // in DOM, so the next render-from-elsewhere will reflect the same
-  // value through `${escapeHtml(addHost/addCookie)}`.
-  if (target.dataset.domainCookieHost !== undefined) {
-    uiState.domainCookies.addHost = target.value;
-    return;
-  }
-  if (target.dataset.domainCookieString !== undefined) {
-    uiState.domainCookies.addCookie = target.value;
-    return;
-  }
 
   if (projectsFeature.handleDraftInput(target)) return;
 
@@ -6598,7 +6486,7 @@ document.addEventListener('change', async event => {
 
   if (target.dataset.taskPricing) { uiState.taskPricing ||= {}; uiState.taskPricing[target.dataset.taskPricing] = target.value; return; }
   if (target.dataset.taskCheck) { uiState.taskChecks ||= {}; const task=activeTasks().find(t=>t.id===target.dataset.taskCheck); uiState.taskChecks[target.dataset.taskCheck] ||= {}; Object.assign(uiState.taskChecks[target.dataset.taskCheck],{runId:task?.execution?.runId,[target.dataset.criterion]:target.checked}); return; }
-  if (target.dataset.permissionFilter) { uiState.safetyAllowlist.filters ||= {}; uiState.safetyAllowlist.filters[target.dataset.permissionFilter] = target.value; render(); return; }
+  if (customizeFeature.handleChange(target)) return;
   if (handleImageInput(target, uiState.bootstrap?.settings?.config || {})) { render(); return; }
   if (editExtraFast(target)) return;
   if (editLlmConnection(target, uiState.bootstrap?.settings?.config || {})) { render(); return; }
@@ -6610,13 +6498,7 @@ document.addEventListener('change', async event => {
       return;
     }
 
-    // Phase 3.3.2 — skill state filter select.
-    if (target.dataset.action === 'set-skill-filter-state') {
-      const allowed = new Set(['all', 'enabled', 'disabled', 'builtin', 'custom', 'disk']);
-      uiState.skillFilter.state = allowed.has(target.value) ? target.value : 'all';
-      render();
-      return;
-    }
+    if (customizeFeature.handleSkillFilterStateChange(target)) return;
 
     if (target.dataset.action === 'select-project') {
       await patchSettings({ selectedProjectId: target.value });

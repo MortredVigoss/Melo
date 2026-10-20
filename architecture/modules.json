@@ -22,8 +22,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 609,
-      "edges": 1863,
+      "modules": 610,
+      "edges": 1867,
       "roots": [
         "src",
         "desktop-ui",
@@ -2128,7 +2128,7 @@
         "ios/Tests/{DeviceToolsTests,LocalFileAccessTests,WebPageToolsTests,WebSearchTests}.swift"
       ],
       "modules": {
-        "desktop-ui": 27,
+        "desktop-ui": 28,
         "src": 77
       },
       "entryModules": [
@@ -2420,14 +2420,13 @@
         "agents": 8,
         "approvals": 33,
         "chat": 11,
-        "desktop-shell": 5,
+        "desktop-shell": 6,
         "knowledge": 3,
         "media": 2,
         "memory": 6,
         "platform": 34,
         "projects": 5,
-        "settings": 8,
-        "voice": 1
+        "settings": 8
       },
       "usedBy": {
         "agents": 20,
@@ -2472,6 +2471,7 @@
         "desktop-ui/features/customize/context.js",
         "desktop-ui/features/customize/controller.js",
         "desktop-ui/features/customize/index.js",
+        "desktop-ui/features/customize/state.js",
         "desktop-ui/features/customize/view.js",
         "desktop-ui/managementActions.js",
         "desktop-ui/viz/citationRenderer.js",
@@ -2526,6 +2526,7 @@
           "desktop-ui/advancedPage.test.js",
           "desktop-ui/connectorDraft.test.js",
           "desktop-ui/connectorDraftDispatch.test.js",
+          "desktop-ui/features/customize/controller.test.js",
           "desktop-ui/mcpStartup.browser.test.js",
           "desktop-ui/viz/citationRenderer.test.js",
           "desktop-ui/viz/vizRenderer.test.js",
@@ -2611,7 +2612,6 @@
         ]
       },
       "implicit": [
-        "served-shared-modules",
         "source-tests-app-js",
         "source-tests-self"
       ],
@@ -2958,7 +2958,7 @@
         {
           "module": "src/shared/minimaxVoiceResolver.js",
           "importedBy": [
-            "tools"
+            "desktop-shell"
           ]
         },
         {
@@ -2979,10 +2979,9 @@
       "usedBy": {
         "channels": 5,
         "chat": 3,
-        "desktop-shell": 1,
+        "desktop-shell": 2,
         "media": 1,
-        "platform": 2,
-        "tools": 1
+        "platform": 2
       },
       "httpRoutes": [
         "POST /api/audio/transcribe ← src/http/ttsRoutes.js",
@@ -3416,7 +3415,8 @@
             "approvals",
             "chat",
             "memory",
-            "projects"
+            "projects",
+            "tools"
           ]
         },
         {
@@ -3471,7 +3471,7 @@
         "settings": 12,
         "sync": 2,
         "tools": 13,
-        "voice": 1
+        "voice": 2
       },
       "usedBy": {
         "agents": 7,
@@ -3483,7 +3483,7 @@
         "projects": 5,
         "settings": 7,
         "sync": 1,
-        "tools": 5
+        "tools": 6
       },
       "httpRoutes": [
         "GET /api/bootstrap ← src/server.js",
@@ -4934,7 +4934,7 @@
           "url": "/shared/minimaxVoiceResolver.js",
           "target": "src/shared/minimaxVoiceResolver.js",
           "importers": [
-            "desktop-ui/features/customize/controller.js"
+            "desktop-ui/app.js"
           ]
         },
         {
@@ -4988,7 +4988,6 @@
         "desktop-ui/app.js",
         "desktop-ui/executionPanel.js",
         "desktop-ui/executionScene3D.js",
-        "desktop-ui/features/customize/controller.js",
         "desktop-ui/localSettings.js"
       ],
       "features": [
@@ -4998,7 +4997,6 @@
         "media",
         "platform",
         "settings",
-        "tools",
         "voice"
       ]
     },
@@ -5015,7 +5013,7 @@
         "desktop-ui/streamTtsOnToolCall.test.js",
         "src/safety/fileSafetyGate.production.test.js"
       ],
-      "note": "按源码文本断言 app.js 里仍在的代码：连接器 / 模型表单监听接线、registry 结构守卫（不留 case / uiState 字段）、新建对话与链接卡片接线、TTS 工具调用守卫、文件安全对话框与安全设置；迁出 app.js 时同批改为行为测试或跟随新文件（P2c 已把 api() 与聊天相关断言改为行为测试）",
+      "note": "按源码文本断言 app.js 里仍在的代码：连接器 / 模型表单监听接线、registry 结构守卫（不留 case / uiState 字段）、新建对话与链接卡片接线、TTS 工具调用守卫、文件安全对话框；安全设置已随 Customize 页迁到 features/customize（见 source-tests-customize-feature）；迁出 app.js 时同批改为行为测试或跟随新文件（P2c 已把 api() 与聊天相关断言改为行为测试）",
       "features": [
         "approvals",
         "desktop-shell",

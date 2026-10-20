@@ -159,14 +159,15 @@ test('openai.js Phase 4 gate uses latestUserMessageHasImage (not history-wide)',
   );
 });
 
-test('the Customize feature wires the domain-cookie form actions; app.js keeps the input handlers', () => {
+test('the Customize feature wires the domain-cookie form actions and syncs the inputs; app.js calls its handleInput', () => {
   assert.ok(/data-action="domain-cookie-save"/.test(customizeSrc), 'save button missing');
   assert.ok(/data-action="domain-cookie-remove"/.test(customizeSrc), 'remove button missing');
   assert.ok(/data-action="refresh-domain-cookies"/.test(customizeSrc), 'refresh button missing');
   assert.ok(/'domain-cookie-save': async/.test(customizeSrc) && /'domain-cookie-remove': async/.test(customizeSrc), 'domain-cookie actions are not registered by the feature');
   assert.ok(/data-domain-cookie-host/.test(customizeSrc), 'host input data attr missing');
   assert.ok(/data-domain-cookie-string/.test(customizeSrc), 'cookie input data attr missing');
-  assert.ok(/dataset\.domainCookieHost/.test(appSrc) && /dataset\.domainCookieString/.test(appSrc), 'app.js input listener no longer syncs the cookie fields');
+  assert.ok(/dataset\.domainCookieHost/.test(customizeSrc) && /dataset\.domainCookieString/.test(customizeSrc), 'the feature\x27s handleInput no longer syncs the cookie fields');
+  assert.ok(/customizeFeature\.handleInput\(target\)/.test(appSrc), 'app.js input listener no longer delegates to the Customize feature');
 });
 
 test('openai.js wires the image-intent gate into createCodexResponsesReply', () => {

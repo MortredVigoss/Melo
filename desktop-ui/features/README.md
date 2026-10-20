@@ -2,7 +2,7 @@
 
 Architecture plan P2 (`docs/architecture-maintainability-plan-20261019.md` §3.2 and §8): page code moves out of `desktop-ui/app.js` one feature at a time. `app.js` keeps navigation, composition and the top-level lifecycle (`uiState`, `render()` with all its focus / caret / scroll / IME / neural-scene / Agent-editor / draft protections, the document listeners, bootstrap loading). A feature owns its state, actions, requests, renderers and styles.
 
-Done (P2 complete, 2026-10-19): `memory/` and `projects/` (P2a), `agents/` (P2b), `chat/` (P2c). `approvals/` holds the approval surfaces' stylesheet and, since 2026-10-20, the capability-elevation prompt card and «临时授权» list (the tool permission and file-safety dialogs' JS is still in app.js). Next is P3 (execution orchestration, server side); what is still in app.js is listed per feature below and in “Shared app state”.
+Done (P2 complete, 2026-10-19): `memory/` and `projects/` (P2a), `agents/` (P2b), `chat/` (P2c). `customize/` (architecture B3, 2026-10-20): skills, connectors, Safety / domain cookies and the Tools & Tasks section of the Customize page. `approvals/` holds the approval surfaces' stylesheet and, since 2026-10-20, the capability-elevation prompt card and «临时授权» list (the tool permission and file-safety dialogs' JS is still in app.js). Next is P3 (execution orchestration, server side); what is still in app.js is listed per feature below and in “Shared app state”.
 
 ## Layout of one feature
 
@@ -80,6 +80,15 @@ Capability elevation (2026-10-20, `docs/capability-elevation-20261020.md`): `con
 
 Styles: `approvals.css` holds the rules of the tool permission and file-safety dialogs, Customize → Safety (rule list, domain cookie form), the task lane menu and compact task / approval cards, moved verbatim from `styles.css`. Their JS (`renderToolPermissionDialog`, `renderFileSafetyDialog`, `submitPermission`, `renderSafetyPane`, `renderDomainCookiesPane`, `renderTaskPanel`, `renderApprovalPanel`) is still in `app.js`. Settings and knowledge styles stay in `styles.css`: their rules are grouped with the Agent, skills, advanced and project page layouts.
 
+## Customize (`customize/`)
+
+Customize → Skills (filter bar, list, detail with Overview / SKILL.md tabs, health and proposals panels, custom-skill create / update / remove), → Connectors (list, detail, enable toggle, ping, MCP preset toggles, reload / disconnect), → Safety (long-lived grants list and revoke, domain cookies), → Tools & Tasks (the `advancedPage.js` section; its status cache `advanced` and `refreshAdvancedStatus()` live here).
+
+- Context: `getBootstrap`, `modelSetupDraft` (raw in-flight connector edits, for the credential chip), `effectiveModelSetupDraft` (saved config merged with the draft), `api`, `render`, `bgRender`, `showError`, `setError` (the top-level error line, used by the MCP preset toggle), `patchSettings`, `applyBootstrap`, `applyBootstrapPreservingDrafts`, `refreshBootstrap`, `escapeHtml`, `allChatAgentProfiles`, `minimaxTtsConfigPatchForVoice`, `resolveActiveMinimaxVoiceId` (served `/shared/minimaxVoiceResolver.js`), `ttsVoice` / `setTtsVoice` (the MiniMax voice test / activate actions read and set app.js's TTS voice selection), the `agentsFeature` / `approvalsFeature` / `memoryFeature` handles (Agents workbench, «临时授权» list and the Memory pane render inside this page), and the Tools & Tasks panel renderers still owned by app.js (`renderTaskPanel`, `renderApprovalPanel`, `renderSelectedFilePreview`, `renderCommandRunner`, `renderProjectArtifactShelf`).
+- Handle: `actions` (open-customize-section, select-customize-item, toggle-skill, set-skill-filter-tag, reset-skill-filter, refresh-skill-runs, skill-detail-tab, copy-skill-markdown, dismiss-/promote-skill-proposal, save-chat-as-skill, remove-custom-skill, toggle-connector, ping-connector, toggle-mcp-preset, reload-mcp-servers, disconnect-mcp-server, refresh-safety-allowlist, safety-allowlist-remove, refresh-domain-cookies, domain-cookie-save / -remove, test-minimax-tts, activate-minimax-voice), `forms` (skill-custom-create, skill-custom-update), `handleInput` (skills search box, domain-cookie host / cookie inputs), `handleChange` (safety allowlist filter selects), `handleSkillFilterStateChange` (skill state select, inside the change listener's try block), `refreshAdvancedStatus`, `renderPage`, `getState` (tests).
+- State (`state.js`): `skillFilter`, `skillRunStats`, `safetyAllowlist`, `domainCookies`, `advanced`, `skillDetailTab`, `skillMarkdown` — moved out of app.js's `uiState` with their initialisers.
+- Stays in `app.js`: the Tools & Tasks management actions that are not page state (`handleManagementAction`, kill-background-task, decide-retained-files, refresh-advanced-status — they call `customizeFeature.refreshAdvancedStatus()`), the Settings → Model page, and the file-safety / tool-permission dialogs (approvals).
+
 ## Shared app state the features still reach (read-only, through the context)
 
 | uiState field | Used by | How |
@@ -89,6 +98,7 @@ Styles: `approvals.css` holds the rules of the tool permission and file-safety d
 | `activeChatAgentId`, `newChatModel`, … (chat creation) | projects | only inside app.js's `startProjectSession` callback |
 | `bootstrap` (customize.agents / agentPresets / agentTools / mcpAuthSurface / connectors, settings.selectedAgentId / selectedAgentScope / activeView / selectedCustomizeSection / config, syncPendingPersonas, activeProject) | agents | `getBootstrap()`, `agentProfileById()`, `activeProject()` |
 | `bootstrap`, `error` (written) | agents | only through app.js callbacks: `applyBootstrap*`, `patchSettings` |
+| `bootstrap`, `modelSetupDraft`, `error` (written), `ttsCustomVoiceId` / `ttsEngine` (written) | customize | `getBootstrap()`, `modelSetupDraft()` / `effectiveModelSetupDraft()`; writes only through `setError`, `setTtsVoice`, `applyBootstrap*`, `patchSettings`, `refreshBootstrap` |
 | `searchQuery` | agents | only inside app.js's `refreshBootstrap` callback (4 s Discord runtime poll) |
 | `bootstrap` (activeChat, chats, recents, settings.selectedChatId / activeMode / activeView / selectedAgentId / config / localPreferences / promptHistory, customize.agents / skills, projects, artifacts, workspace, profile) | chat | `getBootstrap()`, `activeChat()`; written only through `setBootstrap` (optimistic message, failed-send restore), `applyBootstrap*`, `refreshBootstrap` |
 | `neuralOverview` / `neuralGroup` | chat | `isOverview()`; `leaveOverview()` when a send starts |

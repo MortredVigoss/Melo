@@ -992,7 +992,7 @@
         "desktop-ui/streamTtsOnToolCall.test.js",
         "src/safety/fileSafetyGate.production.test.js"
       ],
-      "note": "按源码文本断言 app.js 里仍在的代码：连接器 / 模型表单监听接线、registry 结构守卫（不留 case / uiState 字段）、新建对话与链接卡片接线、TTS 工具调用守卫、文件安全对话框与安全设置；迁出 app.js 时同批改为行为测试或跟随新文件（P2c 已把 api() 与聊天相关断言改为行为测试）"
+      "note": "按源码文本断言 app.js 里仍在的代码：连接器 / 模型表单监听接线、registry 结构守卫（不留 case / uiState 字段）、新建对话与链接卡片接线、TTS 工具调用守卫、文件安全对话框；安全设置已随 Customize 页迁到 features/customize（见 source-tests-customize-feature）；迁出 app.js 时同批改为行为测试或跟随新文件（P2c 已把 api() 与聊天相关断言改为行为测试）"
     },
     {
       "id": "source-tests-chat-feature",

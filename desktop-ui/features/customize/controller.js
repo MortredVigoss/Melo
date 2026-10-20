@@ -5,9 +5,9 @@
 // handlers below (one indentation level less, top-level `break;` → `return;`,
 // equivalent because nothing followed the switch inside its try block).
 // app.js names they read come from ./context.js (transitional, live bindings).
-import { resolveActiveMinimaxVoiceId } from '/shared/minimaxVoiceResolver.js';
 import { pickConnectorField } from '../../connectorDraft.js';
-import { allChatAgentProfiles, api, applyBootstrap, applyBootstrapPreservingDrafts, bgRender, loadBootstrap, minimaxTtsConfigPatchForVoice, patchSettings, refreshAdvancedStatus, render, showError, uiState } from './context.js';
+import { allChatAgentProfiles, api, applyBootstrap, applyBootstrapPreservingDrafts, bgRender, getBootstrap, minimaxTtsConfigPatchForVoice, modelSetupDraft, patchSettings, refreshBootstrap, render, resolveActiveMinimaxVoiceId, setError, setTtsVoice, showError, ttsVoice } from './context.js';
+import { customizeState } from './state.js';
 
 // Parse the comma-separated skill form fields (folders, allowedAgentIds,
 // toolWhitelist). Pulled out so create + update share the same
@@ -103,18 +103,18 @@ async function handlePingExternalConnector(connectorId) {
  * lazily on first render; a refresh button re-queries.
  */
 async function refreshSkillRunStats() {
-  if (uiState.skillRunStats.loading) return;
-  uiState.skillRunStats.loading = true;
-  uiState.skillRunStats.error = null;
+  if (customizeState.skillRunStats.loading) return;
+  customizeState.skillRunStats.loading = true;
+  customizeState.skillRunStats.error = null;
   bgRender();
   try {
     const response = await api('/api/skills/runs/stats');
-    uiState.skillRunStats.skills = Array.isArray(response?.skills) ? response.skills : [];
-    uiState.skillRunStats.loaded = true;
+    customizeState.skillRunStats.skills = Array.isArray(response?.skills) ? response.skills : [];
+    customizeState.skillRunStats.loaded = true;
   } catch (err) {
-    uiState.skillRunStats.error = err?.message || 'Failed to load skill runs';
+    customizeState.skillRunStats.error = err?.message || 'Failed to load skill runs';
   } finally {
-    uiState.skillRunStats.loading = false;
+    customizeState.skillRunStats.loading = false;
     bgRender();
   }
 }
@@ -122,8 +122,8 @@ async function refreshSkillRunStats() {
 async function handleReloadMcpServers() {
   try {
     const resp = await api('/api/mcp/reload', { method: 'POST' });
-    uiState.advanced.cliServers = Array.isArray(resp?.servers) ? resp.servers : [];
-    showError(`Reloaded ${uiState.advanced.cliServers.length} MCP server(s).`);
+    customizeState.advanced.cliServers = Array.isArray(resp?.servers) ? resp.servers : [];
+    showError(`Reloaded ${customizeState.advanced.cliServers.length} MCP server(s).`);
     render();
   } catch (err) {
     showError(`MCP reload failed: ${err?.message || err}`);
@@ -142,29 +142,29 @@ async function handleDisconnectMcpServer(name) {
 }
 
 async function refreshSafetyAllowlist() {
-  if (uiState.safetyAllowlist.loading) return;
-  uiState.safetyAllowlist.loading = true;
-  uiState.safetyAllowlist.error = null;
+  if (customizeState.safetyAllowlist.loading) return;
+  customizeState.safetyAllowlist.loading = true;
+  customizeState.safetyAllowlist.error = null;
   bgRender();
   try {
     const [response, tools, audit] = await Promise.all([api('/api/safety/file-allowlist'), api('/api/tools/permission-rules'), api('/api/permissions/audit')]);
-    uiState.safetyAllowlist.audit = audit.events || [];
-    uiState.safetyAllowlist.rules = [...(response.rules || []), ...(tools.rules || []).map(r => ({ ...r, id: `tool:${r.id || r.toolId}`, toolId: r.toolId, operation: r.action, scope: 'tool', realPath: r.toolId })), ...(audit.commands || []).map(r=>({...r,id:`command:${r.id}`,commandRuleId:r.id,operation:'bash',scope:'command',realPath:`${r.template.command} · ${r.template.cwd}`}))];
-    uiState.safetyAllowlist.loaded = true;
+    customizeState.safetyAllowlist.audit = audit.events || [];
+    customizeState.safetyAllowlist.rules = [...(response.rules || []), ...(tools.rules || []).map(r => ({ ...r, id: `tool:${r.id || r.toolId}`, toolId: r.toolId, operation: r.action, scope: 'tool', realPath: r.toolId })), ...(audit.commands || []).map(r=>({...r,id:`command:${r.id}`,commandRuleId:r.id,operation:'bash',scope:'command',realPath:`${r.template.command} · ${r.template.cwd}`}))];
+    customizeState.safetyAllowlist.loaded = true;
   } catch (err) {
-    uiState.safetyAllowlist.error = err?.message || 'Failed to load safety rules';
+    customizeState.safetyAllowlist.error = err?.message || 'Failed to load safety rules';
   } finally {
-    uiState.safetyAllowlist.loading = false;
+    customizeState.safetyAllowlist.loading = false;
     bgRender();
   }
 }
 
 async function removeSafetyAllowlistRule(id) {
-  if (!id || uiState.safetyAllowlist.pendingRemoveId === id) return;
-  uiState.safetyAllowlist.pendingRemoveId = id;
+  if (!id || customizeState.safetyAllowlist.pendingRemoveId === id) return;
+  customizeState.safetyAllowlist.pendingRemoveId = id;
   bgRender();
   try {
-    const selectedRule = uiState.safetyAllowlist.rules.find(r => r.id === id);
+    const selectedRule = customizeState.safetyAllowlist.rules.find(r => r.id === id);
     if (selectedRule?.commandRuleId) { await api('/api/permissions/command/remove',{method:'POST',body:{id:selectedRule.commandRuleId}}); await refreshSafetyAllowlist(); return; }
     const toolId = selectedRule?.toolId;
     await api(toolId ? '/api/tools/permission-rules/remove' : '/api/safety/file-allowlist/remove', {
@@ -172,98 +172,98 @@ async function removeSafetyAllowlistRule(id) {
     });
     await refreshSafetyAllowlist();
   } catch (err) {
-    uiState.safetyAllowlist.error = err?.message || 'Failed to revoke rule';
+    customizeState.safetyAllowlist.error = err?.message || 'Failed to revoke rule';
   } finally {
-    uiState.safetyAllowlist.pendingRemoveId = null;
+    customizeState.safetyAllowlist.pendingRemoveId = null;
     render();
   }
 }
 
 async function refreshDomainCookies() {
-  if (uiState.domainCookies.loading) return;
-  uiState.domainCookies.loading = true;
-  uiState.domainCookies.error = null;
+  if (customizeState.domainCookies.loading) return;
+  customizeState.domainCookies.loading = true;
+  customizeState.domainCookies.error = null;
   bgRender();
   try {
     const response = await api('/api/settings/domain-cookies');
-    uiState.domainCookies.hosts = Array.isArray(response.hosts) ? response.hosts : [];
-    uiState.domainCookies.loaded = true;
+    customizeState.domainCookies.hosts = Array.isArray(response.hosts) ? response.hosts : [];
+    customizeState.domainCookies.loaded = true;
   } catch (err) {
-    uiState.domainCookies.error = err?.message || 'Failed to load cookies';
+    customizeState.domainCookies.error = err?.message || 'Failed to load cookies';
   } finally {
-    uiState.domainCookies.loading = false;
+    customizeState.domainCookies.loading = false;
     bgRender();
   }
 }
 
 async function upsertDomainCookie() {
-  if (uiState.domainCookies.addInFlight) return;
-  const host = String(uiState.domainCookies.addHost || '').trim();
-  const cookieString = String(uiState.domainCookies.addCookie || '').trim();
+  if (customizeState.domainCookies.addInFlight) return;
+  const host = String(customizeState.domainCookies.addHost || '').trim();
+  const cookieString = String(customizeState.domainCookies.addCookie || '').trim();
   if (!host) {
-    uiState.domainCookies.addError = 'Host is required.';
+    customizeState.domainCookies.addError = 'Host is required.';
     bgRender();
     return;
   }
   if (!cookieString) {
-    uiState.domainCookies.addError = 'Cookie string is required.';
+    customizeState.domainCookies.addError = 'Cookie string is required.';
     bgRender();
     return;
   }
-  uiState.domainCookies.addInFlight = true;
-  uiState.domainCookies.addError = '';
+  customizeState.domainCookies.addInFlight = true;
+  customizeState.domainCookies.addError = '';
   render();
   try {
     await api('/api/settings/domain-cookies/upsert', {
       method: 'POST',
       body: { host, cookieString },
     });
-    uiState.domainCookies.addHost = '';
-    uiState.domainCookies.addCookie = '';
-    uiState.domainCookies.loaded = false;
+    customizeState.domainCookies.addHost = '';
+    customizeState.domainCookies.addCookie = '';
+    customizeState.domainCookies.loaded = false;
     await refreshDomainCookies();
   } catch (err) {
-    uiState.domainCookies.addError = err?.message || 'Failed to save cookie';
+    customizeState.domainCookies.addError = err?.message || 'Failed to save cookie';
   } finally {
-    uiState.domainCookies.addInFlight = false;
+    customizeState.domainCookies.addInFlight = false;
     render();
   }
 }
 
 async function removeDomainCookie(host) {
-  if (!host || uiState.domainCookies.pendingRemoveHost === host) return;
-  uiState.domainCookies.pendingRemoveHost = host;
+  if (!host || customizeState.domainCookies.pendingRemoveHost === host) return;
+  customizeState.domainCookies.pendingRemoveHost = host;
   render();
   try {
     await api('/api/settings/domain-cookies/remove', {
       method: 'POST',
       body: { host },
     });
-    uiState.domainCookies.loaded = false;
+    customizeState.domainCookies.loaded = false;
     await refreshDomainCookies();
   } catch (err) {
-    uiState.domainCookies.error = err?.message || 'Failed to remove cookie';
+    customizeState.domainCookies.error = err?.message || 'Failed to remove cookie';
   } finally {
-    uiState.domainCookies.pendingRemoveHost = null;
+    customizeState.domainCookies.pendingRemoveHost = null;
     render();
   }
 }
 
 async function refreshSkillMarkdown(skillId) {
-  const current = uiState.skillMarkdown[skillId] || {};
+  const current = customizeState.skillMarkdown[skillId] || {};
   if (current.loading) return;
-  uiState.skillMarkdown[skillId] = { ...current, loading: true, error: null };
+  customizeState.skillMarkdown[skillId] = { ...current, loading: true, error: null };
   bgRender();
   try {
     const response = await api(`/api/skills/export?id=${encodeURIComponent(skillId)}`);
-    uiState.skillMarkdown[skillId] = {
+    customizeState.skillMarkdown[skillId] = {
       loading: false,
       markdown: response?.markdown || '',
       error: null,
       copyToast: null,
     };
   } catch (err) {
-    uiState.skillMarkdown[skillId] = {
+    customizeState.skillMarkdown[skillId] = {
       loading: false,
       markdown: '',
       error: err?.message || 'Failed to load SKILL.md',
@@ -271,6 +271,90 @@ async function refreshSkillMarkdown(skillId) {
   } finally {
     bgRender();
   }
+}
+
+// Moved from app.js (B3 step 2): the Tools & Tasks status cache is feature state.
+async function refreshAdvancedStatus() {
+  if (customizeState.advanced.loading) return;
+  customizeState.advanced.loading = true;
+  customizeState.advanced.error = null;
+  bgRender();
+  try {
+    // Fan out — three independent endpoints, none of which block the
+    // others, so a slow one doesn't gate the rest.
+    const [serversResp, pluginsResp, tasksResp, diagnosticsResp, retainedResp] = await Promise.all([
+      api('/api/mcp/servers').catch(err => ({ _error: err?.message || 'mcp/servers failed' })),
+      api('/api/plugins').catch(err => ({ _error: err?.message || 'plugins failed' })),
+      api('/api/background-tasks/list').catch(err => ({ _error: err?.message || 'background-tasks/list failed' })),
+      api('/api/diagnostics?storage=1').catch(err => ({ _error: err?.message || 'diagnostics failed' })),
+      api('/api/workspace/retained').catch(err=>({_error:err.message})),
+    ]);
+    const errors = [serversResp, pluginsResp, tasksResp, diagnosticsResp, retainedResp]
+      .filter(r => r && r._error)
+      .map(r => r._error);
+    if (errors.length === 5) {
+      customizeState.advanced.error = errors.join(' · ');
+    } else {
+      customizeState.advanced.cliServers = Array.isArray(serversResp?.servers) ? serversResp.servers : [];
+      customizeState.advanced.plugins = Array.isArray(pluginsResp?.plugins) ? pluginsResp.plugins : [];
+      customizeState.advanced.tasks = Array.isArray(tasksResp?.runs) ? tasksResp.runs : [];
+      customizeState.advanced.diagnostics = diagnosticsResp?._error ? null : diagnosticsResp;
+      customizeState.advanced.retainedFiles = retainedResp?._error ? null : retainedResp;
+      customizeState.advanced.loaded = true;
+      // Surface partial errors without blanking the panel.
+      if (errors.length > 0) {
+        customizeState.advanced.error = `Partial load: ${errors.join(' · ')}`;
+      }
+    }
+  } catch (err) {
+    customizeState.advanced.error = err?.message || 'Failed to load advanced status';
+  } finally {
+    customizeState.advanced.loading = false;
+    render();
+  }
+}
+
+// app.js's 'input' listener branches for this page, at their old positions:
+// the skills search box, then the domain-cookie host / cookie inputs.
+// Returns true when it handled the event.
+export function handleInput(target) {
+  if (target.dataset?.action === 'set-skill-filter-query') {
+    customizeState.skillFilter.query = target.value;
+    render();
+    return true;
+  }
+  // Phase 4 — domain cookie form. Sync to state so render() doesn't
+  // wipe user input mid-typing. No render() call here: the typing
+  // guard above defers re-renders, and the form value already lives
+  // in DOM, so the next render-from-elsewhere will reflect the same
+  // value through `${escapeHtml(addHost/addCookie)}`.
+  if (target.dataset.domainCookieHost !== undefined) {
+    customizeState.domainCookies.addHost = target.value;
+    return true;
+  }
+  if (target.dataset.domainCookieString !== undefined) {
+    customizeState.domainCookies.addCookie = target.value;
+    return true;
+  }
+  return false;
+}
+
+// app.js's 'change' listener branches, at their old positions: the safety
+// allowlist filter selects (before the image / LLM-connection editors) and,
+// inside the try block, the skill state filter select.
+export function handleChange(target) {
+  if (target.dataset.permissionFilter) { customizeState.safetyAllowlist.filters ||= {}; customizeState.safetyAllowlist.filters[target.dataset.permissionFilter] = target.value; render(); return true; }
+  return false;
+}
+export function handleSkillFilterStateChange(target) {
+  // Phase 3.3.2 — skill state filter select.
+  if (target.dataset.action === 'set-skill-filter-state') {
+    const allowed = new Set(['all', 'enabled', 'disabled', 'builtin', 'custom', 'disk']);
+    customizeState.skillFilter.state = allowed.has(target.value) ? target.value : 'all';
+    render();
+    return true;
+  }
+  return false;
 }
 
 export const customizeActions = {
@@ -282,7 +366,7 @@ export const customizeActions = {
       return;
   },
   'refresh-safety-allowlist': async ({ action, trigger, event }) => {
-      uiState.safetyAllowlist.loaded = false;
+      customizeState.safetyAllowlist.loaded = false;
       await refreshSafetyAllowlist();
       return;
   },
@@ -291,7 +375,7 @@ export const customizeActions = {
       return;
   },
   'refresh-domain-cookies': async ({ action, trigger, event }) => {
-      uiState.domainCookies.loaded = false;
+      customizeState.domainCookies.loaded = false;
       await refreshDomainCookies();
       return;
   },
@@ -301,8 +385,8 @@ export const customizeActions = {
       // the DOM directly here ensures we don't miss the last char.
       const hostInput = document.querySelector('[data-domain-cookie-host]');
       const cookieInput = document.querySelector('[data-domain-cookie-string]');
-      if (hostInput) uiState.domainCookies.addHost = hostInput.value || '';
-      if (cookieInput) uiState.domainCookies.addCookie = cookieInput.value || '';
+      if (hostInput) customizeState.domainCookies.addHost = hostInput.value || '';
+      if (cookieInput) customizeState.domainCookies.addCookie = cookieInput.value || '';
       await upsertDomainCookie();
       return;
   },
@@ -311,11 +395,11 @@ export const customizeActions = {
       return;
   },
   'skill-detail-tab': async ({ action, trigger, event }) => {
-      uiState.skillDetailTab = trigger.dataset.tab || 'overview';
+      customizeState.skillDetailTab = trigger.dataset.tab || 'overview';
       render();
-      if (uiState.skillDetailTab === 'markdown') {
+      if (customizeState.skillDetailTab === 'markdown') {
         const id = trigger.dataset.skillId;
-        if (id && !uiState.skillMarkdown[id]?.markdown) {
+        if (id && !customizeState.skillMarkdown[id]?.markdown) {
           refreshSkillMarkdown(id);
         }
       }
@@ -323,20 +407,20 @@ export const customizeActions = {
   },
   'copy-skill-markdown': async ({ action, trigger, event }) => {
       const id = trigger.dataset.skillId;
-      const cached = id ? uiState.skillMarkdown[id]?.markdown : null;
+      const cached = id ? customizeState.skillMarkdown[id]?.markdown : null;
       if (cached && navigator.clipboard?.writeText) {
         try {
           await navigator.clipboard.writeText(cached);
-          uiState.skillMarkdown[id] = { ...uiState.skillMarkdown[id], copyToast: 'Copied' };
+          customizeState.skillMarkdown[id] = { ...customizeState.skillMarkdown[id], copyToast: 'Copied' };
           render();
           setTimeout(() => {
-            if (uiState.skillMarkdown[id]) {
-              uiState.skillMarkdown[id] = { ...uiState.skillMarkdown[id], copyToast: null };
+            if (customizeState.skillMarkdown[id]) {
+              customizeState.skillMarkdown[id] = { ...customizeState.skillMarkdown[id], copyToast: null };
               bgRender();
             }
           }, 1500);
         } catch (err) {
-          uiState.skillMarkdown[id] = { ...uiState.skillMarkdown[id], copyToast: 'Copy failed' };
+          customizeState.skillMarkdown[id] = { ...customizeState.skillMarkdown[id], copyToast: 'Copy failed' };
           render();
         }
       }
@@ -358,13 +442,13 @@ export const customizeActions = {
         // Refresh the bootstrap so mcpPresets[].enabled reflects the new
         // flag values; also clear the Advanced cache so the connected-
         // tools count updates on the next render.
-        uiState.advanced = { ...uiState.advanced, loaded: false };
-        await loadBootstrap(uiState.searchQuery, { quiet: true });
+        customizeState.advanced = { ...customizeState.advanced, loaded: false };
+        await refreshBootstrap();
         await refreshAdvancedStatus();
       } catch (err) {
-        uiState.error = `Toggle failed: ${err?.message || err}`;
+        setError(`Toggle failed: ${err?.message || err}`);
         render();
-        setTimeout(() => { uiState.error = null; render(); }, 4000);
+        setTimeout(() => { setError(null); render(); }, 4000);
       }
       return;
   },
@@ -402,12 +486,12 @@ export const customizeActions = {
   'set-skill-filter-tag': async ({ action, trigger, event }) => {
       // Phase 3.3.2 — empty string ("All tags" chip) clears the tag filter.
       const nextTag = trigger.dataset.tag || '';
-      uiState.skillFilter.tag = nextTag ? nextTag : null;
+      customizeState.skillFilter.tag = nextTag ? nextTag : null;
       render();
       return;
   },
   'reset-skill-filter': async ({ action, trigger, event }) => {
-      uiState.skillFilter = { query: '', tag: null, state: 'all' };
+      customizeState.skillFilter = { query: '', tag: null, state: 'all' };
       render();
       return;
   },
@@ -422,9 +506,9 @@ export const customizeActions = {
       });
       // Drop the proposal from the in-memory bootstrap immediately so the
       // user sees it vanish without waiting for a full refresh.
-      if (uiState.bootstrap?.customize?.skillProposals) {
-        uiState.bootstrap.customize.skillProposals =
-          uiState.bootstrap.customize.skillProposals.filter(
+      if (getBootstrap()?.customize?.skillProposals) {
+        getBootstrap().customize.skillProposals =
+          getBootstrap().customize.skillProposals.filter(
             p => p.seedId !== trigger.dataset.seedId,
           );
         render();
@@ -438,7 +522,7 @@ export const customizeActions = {
       // the UI path is a "seed the form" shortcut so the user finishes
       // the wording themselves.
       const seedId = trigger.dataset.seedId;
-      const proposal = (uiState.bootstrap?.customize?.skillProposals || []).find(
+      const proposal = (getBootstrap()?.customize?.skillProposals || []).find(
         p => p.seedId === seedId,
       );
       await patchSettings({
@@ -452,8 +536,8 @@ export const customizeActions = {
           method: 'POST',
           body: { seedId },
         });
-        uiState.bootstrap.customize.skillProposals =
-          uiState.bootstrap.customize.skillProposals.filter(p => p.seedId !== seedId);
+        getBootstrap().customize.skillProposals =
+          getBootstrap().customize.skillProposals.filter(p => p.seedId !== seedId);
         // Populate the create-skill form with a starting point.
         setTimeout(() => {
           const form = document.querySelector('[data-form="skill-custom-create"]');
@@ -503,15 +587,15 @@ export const customizeActions = {
       const form = trigger.closest('form#connector-config-form');
       const status = form?.querySelector('[data-tts-test-status]');
       const fd = form ? new FormData(form) : null;
-      const draft = uiState.modelSetupDraft || {};
+      const draft = modelSetupDraft() || {};
       const apiKey  = pickConnectorField(draft, fd, 'minimaxApiKey');
       const groupId = pickConnectorField(draft, fd, 'minimaxGroupId');
       const voiceId = pickConnectorField(draft, fd, 'minimaxVoiceId');
       // Pre-flight: at least one path (form or saved) must yield a key
       // and a voice id. The server re-checks both via getResolvedConfig
       // so the UI message stays advisory.
-      const savedKey   = Boolean(uiState.bootstrap?.settings?.config?.hasMinimaxKey);
-      const savedVoice = Boolean(uiState.bootstrap?.settings?.config?.minimaxVoiceId);
+      const savedKey   = Boolean(getBootstrap()?.settings?.config?.hasMinimaxKey);
+      const savedVoice = Boolean(getBootstrap()?.settings?.config?.minimaxVoiceId);
       if (!apiKey && !savedKey) {
         if (status) status.textContent = 'Enter or save a MiniMax API key first';
         return;
@@ -550,9 +634,9 @@ export const customizeActions = {
       const agentVoiceIds = allChatAgentProfiles()
         .map(a => a.minimaxVoiceId)
         .filter(Boolean);
-      const savedDefault = uiState.bootstrap?.settings?.config?.minimaxVoiceId || '';
+      const savedDefault = getBootstrap()?.settings?.config?.minimaxVoiceId || '';
       const { voiceId, droppedStaleCache } = resolveActiveMinimaxVoiceId({
-        cachedId: uiState.ttsCustomVoiceId,
+        cachedId: ttsVoice().customVoiceId,
         agentVoiceIds,
         savedDefault,
       });
@@ -561,7 +645,7 @@ export const customizeActions = {
       // both in-memory and in localStorage — so a future activation
       // doesn't see the stale value again.
       if (droppedStaleCache) {
-        uiState.ttsCustomVoiceId = '';
+        setTtsVoice({ customVoiceId: '' });
         localStorage.removeItem('melo-tts-custom-voice-id');
       }
 
@@ -570,10 +654,10 @@ export const customizeActions = {
         return;
       }
 
-      uiState.ttsEngine = 'api';
+      setTtsVoice({ engine: 'api' });
       localStorage.setItem('melo-tts-engine', 'api');
-      if (uiState.ttsCustomVoiceId !== voiceId) {
-        uiState.ttsCustomVoiceId = voiceId;
+      if (ttsVoice().customVoiceId !== voiceId) {
+        setTtsVoice({ customVoiceId: voiceId });
         localStorage.setItem('melo-tts-custom-voice-id', voiceId);
       }
       api('/api/settings/model', {
@@ -599,4 +683,4 @@ export const customizeForms = {
   },
 };
 
-export { handleCreateCustomSkill, handleDisconnectMcpServer, handlePingExternalConnector, handleReloadMcpServers, handleRemoveCustomSkill, handleUpdateCustomSkill, normalizeSkillFormBody, parseSkillCsvList, refreshDomainCookies, refreshSafetyAllowlist, refreshSkillMarkdown, refreshSkillRunStats, removeDomainCookie, removeSafetyAllowlistRule, upsertDomainCookie };
+export { handleCreateCustomSkill, handleDisconnectMcpServer, handlePingExternalConnector, handleReloadMcpServers, handleRemoveCustomSkill, handleUpdateCustomSkill, normalizeSkillFormBody, parseSkillCsvList, refreshAdvancedStatus, refreshDomainCookies, refreshSafetyAllowlist, refreshSkillMarkdown, refreshSkillRunStats, removeDomainCookie, removeSafetyAllowlistRule, upsertDomainCookie };

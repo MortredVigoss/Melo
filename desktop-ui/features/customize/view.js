@@ -9,32 +9,33 @@ import { renderSkillManagement } from '../../managementActions.js';
 import { t, ui } from '../../i18n.js';
 import { renderAdvancedPage } from '../../advancedPage.js';
 import { credentialChipState } from '../../credentialChip.js';
-import { agentsFeature, approvalsFeature, effectiveModelSetupDraft, escapeHtml, memoryFeature, refreshAdvancedStatus, renderApprovalPanel, renderCommandRunner, renderProjectArtifactShelf, renderSelectedFilePreview, renderTaskPanel, uiState } from './context.js';
-import { refreshDomainCookies, refreshSafetyAllowlist, refreshSkillMarkdown } from './controller.js';
+import { agentsFeature, approvalsFeature, effectiveModelSetupDraft, escapeHtml, getBootstrap, memoryFeature, modelSetupDraft, renderApprovalPanel, renderCommandRunner, renderProjectArtifactShelf, renderSelectedFilePreview, renderTaskPanel } from './context.js';
+import { customizeState } from './state.js';
+import { refreshAdvancedStatus, refreshDomainCookies, refreshSafetyAllowlist, refreshSkillMarkdown } from './controller.js';
 
 function selectedCustomizeItem() {
-  if (!uiState.bootstrap) return null;
-  if (uiState.bootstrap.settings.selectedCustomizeSection === 'agents') {
-    return uiState.bootstrap.customize.agents.find(
-      agent => agent.id === uiState.bootstrap.settings.selectedAgentId,
+  if (!getBootstrap()) return null;
+  if (getBootstrap().settings.selectedCustomizeSection === 'agents') {
+    return getBootstrap().customize.agents.find(
+      agent => agent.id === getBootstrap().settings.selectedAgentId,
     );
   }
-  if (uiState.bootstrap.settings.selectedCustomizeSection === 'skills') {
-    return uiState.bootstrap.customize.skills.find(
-      skill => skill.id === uiState.bootstrap.settings.selectedSkillId,
+  if (getBootstrap().settings.selectedCustomizeSection === 'skills') {
+    return getBootstrap().customize.skills.find(
+      skill => skill.id === getBootstrap().settings.selectedSkillId,
     );
   }
 
-  return uiState.bootstrap.customize.connectors.find(
-    connector => connector.id === uiState.bootstrap.settings.selectedConnectorId,
+  return getBootstrap().customize.connectors.find(
+    connector => connector.id === getBootstrap().settings.selectedConnectorId,
   );
 }
 
 // Phase 3.3.2 — apply Customize → Skills filter state (query + tag + state)
 // to the full skill list. Returns a new array; does not mutate bootstrap.
 function filteredSkills() {
-  const all = uiState.bootstrap?.customize?.skills || [];
-  const { query, tag, state } = uiState.skillFilter;
+  const all = getBootstrap()?.customize?.skills || [];
+  const { query, tag, state } = customizeState.skillFilter;
   const q = (query || '').trim().toLowerCase();
 
   return all.filter(skill => {
@@ -75,7 +76,7 @@ function filteredSkills() {
 // All unique tags across the current skill set, sorted alphabetically.
 // Used to render the tag-filter chip row.
 function allSkillTags() {
-  const all = uiState.bootstrap?.customize?.skills || [];
+  const all = getBootstrap()?.customize?.skills || [];
   const set = new Set();
   for (const skill of all) {
     for (const tag of skill.tags || []) {
@@ -90,20 +91,20 @@ function renderConnectorDetails(selected) {
     return '<div class="empty-state">Select a skill, agent, or connector to inspect it.</div>';
   }
 
-  if (uiState.bootstrap.settings.selectedCustomizeSection==='connectors' && ['local-files','local-command'].includes(selected.id)) return ui`<section class="detail-card"><p>本地文件与命令由 Agent 能力设置控制。</p><button class="small-button" data-action="open-view" data-view="agent">查看 Agent 能力</button></section>`;
+  if (getBootstrap().settings.selectedCustomizeSection==='connectors' && ['local-files','local-command'].includes(selected.id)) return ui`<section class="detail-card"><p>本地文件与命令由 Agent 能力设置控制。</p><button class="small-button" data-action="open-view" data-view="agent">查看 Agent 能力</button></section>`;
 
-  if (uiState.bootstrap.settings.selectedCustomizeSection === 'agents') {
+  if (getBootstrap().settings.selectedCustomizeSection === 'agents') {
     return agentsFeature.renderWorkbench(selected);
   }
 
-  if (uiState.bootstrap.settings.selectedCustomizeSection === 'skills') {
+  if (getBootstrap().settings.selectedCustomizeSection === 'skills') {
     const isCustomSkill = selected.source === 'custom';
     const isExecutable = selected.type === 'executable';
     const allowedAgentIds = Array.isArray(selected.allowedAgentIds) ? selected.allowedAgentIds : null;
     const isGlobalSkill = !allowedAgentIds || allowedAgentIds.length === 0;
     const toolWhitelist = Array.isArray(selected.toolWhitelist) ? selected.toolWhitelist : null;
     // Phase 3 — Overview | Markdown tabs.
-    const activeTab = uiState.skillDetailTab || 'overview';
+    const activeTab = customizeState.skillDetailTab || 'overview';
     if (activeTab === 'markdown') {
       return renderSkillMarkdownTab(selected);
     }
@@ -237,7 +238,7 @@ function renderConnectorDetails(selected) {
     `;
   }
 
-  const workspace = uiState.bootstrap.workspace;
+  const workspace = getBootstrap().workspace;
   let extra = '';
 
   if (selected.type === 'external-mcp') {
@@ -279,7 +280,7 @@ function renderConnectorDetails(selected) {
     const credentialChip = fieldName => {
       const { state, masked } = credentialChipState(
         fieldName,
-        uiState.modelSetupDraft,
+        modelSetupDraft(),
         selected.config,
       );
       if (state === 'pending') {
@@ -461,9 +462,9 @@ function renderConnectorDetails(selected) {
 // controls: free-text search input, a horizontally scrollable row of tag
 // chips (with an "All tags" reset chip), and a select for state.
 function renderSkillFilterBar() {
-  const { query, tag, state } = uiState.skillFilter;
+  const { query, tag, state } = customizeState.skillFilter;
   const tags = allSkillTags();
-  const totalCount = (uiState.bootstrap?.customize?.skills || []).length;
+  const totalCount = (getBootstrap()?.customize?.skills || []).length;
   const filteredCount = filteredSkills().length;
   const isFiltering = Boolean(query || tag || state !== 'all');
 
@@ -606,12 +607,12 @@ function formatLastRunAt(epochMs) {
 }
 
 function renderSafetyPane() {
-  const { loading, loaded, error, pendingRemoveId } = uiState.safetyAllowlist;
-  const filters = uiState.safetyAllowlist.filters || {};
+  const { loading, loaded, error, pendingRemoveId } = customizeState.safetyAllowlist;
+  const filters = customizeState.safetyAllowlist.filters || {};
   const matches = row => (!filters.role || (row.permissionScope?.role || row.role || 'global') === filters.role) && (!filters.project || (row.permissionScope?.project || row.project || 'none') === filters.project) && (!filters.operation || row.operation === filters.operation);
-  const allRules = uiState.safetyAllowlist.rules || [];
+  const allRules = customizeState.safetyAllowlist.rules || [];
   const rules = allRules.filter(matches);
-  const audit = (uiState.safetyAllowlist.audit || []).filter(matches);
+  const audit = (customizeState.safetyAllowlist.audit || []).filter(matches);
   if (!loaded && !loading && !error) {
     Promise.resolve().then(refreshSafetyAllowlist);
   }
@@ -681,7 +682,7 @@ function renderSafetyPane() {
           <button class="small-button" data-action="refresh-safety-allowlist">刷新</button>
         </div>
       </div>
-      <div class="inline-actions">${[['role',t("Agent"),r=>r.permissionScope?.role || r.role || 'global'],['project',t("项目"),r=>r.permissionScope?.project || r.project || 'none'],['operation',t("操作"),r=>r.operation]].map(([key,label,get])=>ui`<label>${label}<select data-permission-filter="${key}"><option value="">全部</option>${[...new Set([...allRules,...(uiState.safetyAllowlist.audit || [])].map(get))].filter(Boolean).map(value=>ui`<option value="${escapeHtml(value)}" ${filters[key]===value ? 'selected' : ''}>${escapeHtml(value)}</option>`).join('')}</select></label>`).join('')}</div>
+      <div class="inline-actions">${[['role',t("Agent"),r=>r.permissionScope?.role || r.role || 'global'],['project',t("项目"),r=>r.permissionScope?.project || r.project || 'none'],['operation',t("操作"),r=>r.operation]].map(([key,label,get])=>ui`<label>${label}<select data-permission-filter="${key}"><option value="">全部</option>${[...new Set([...allRules,...(customizeState.safetyAllowlist.audit || [])].map(get))].filter(Boolean).map(value=>ui`<option value="${escapeHtml(value)}" ${filters[key]===value ? 'selected' : ''}>${escapeHtml(value)}</option>`).join('')}</select></label>`).join('')}</div>
       ${body}
       ${approvalsFeature.renderGrantList()}
       <details class="quality-details"><summary>最近授权使用记录 · ${audit.length}</summary>${audit.slice(0,80).map(e=>ui`<p>${escapeHtml(e.at)} · ${escapeHtml(e.operation)} · ${escapeHtml(e.decision)} · ${escapeHtml(e.reason)} · ${escapeHtml(e.role || '未指定Agent')}${e.path ? ` · ${escapeHtml(e.path)}` : ''}</p>`).join('') || ui`<p>尚无记录。</p>`}</details>
@@ -693,7 +694,7 @@ function renderSafetyPane() {
 }
 
 function renderDomainCookiesPane() {
-  const { loading, loaded, hosts, error, addHost, addCookie, addInFlight, addError, pendingRemoveHost } = uiState.domainCookies;
+  const { loading, loaded, hosts, error, addHost, addCookie, addInFlight, addError, pendingRemoveHost } = customizeState.domainCookies;
   if (!loaded && !loading && !error) {
     Promise.resolve().then(refreshDomainCookies);
   }
@@ -789,7 +790,7 @@ function renderSkillDetailTabs(selected, activeTab) {
 
 function renderSkillMarkdownTab(selected) {
   const activeTab = 'markdown';
-  const cached = uiState.skillMarkdown[selected.id] || {};
+  const cached = customizeState.skillMarkdown[selected.id] || {};
   const body = (() => {
     if (cached.loading) return ui`<div class="empty-state compact">Loading SKILL.md…</div>`;
     if (cached.error) return ui`<div class="alert compact-alert">${escapeHtml(cached.error)}</div>`;
@@ -822,9 +823,9 @@ function renderSkillMarkdownTab(selected) {
 }
 
 function renderSkillHealthPanel() {
-  const { loading, loaded, skills, error } = uiState.skillRunStats;
+  const { loading, loaded, skills, error } = customizeState.skillRunStats;
   const nameFor = id => {
-    const found = (uiState.bootstrap?.customize?.skills || []).find(s => s.id === id);
+    const found = (getBootstrap()?.customize?.skills || []).find(s => s.id === id);
     return found?.name || id;
   };
   return ui`
@@ -881,7 +882,7 @@ function renderSkillHealthPanel() {
 }
 
 function renderSkillProposalsPanel() {
-  const proposals = uiState.bootstrap?.customize?.skillProposals || [];
+  const proposals = getBootstrap()?.customize?.skillProposals || [];
   if (proposals.length === 0) return '';
   return ui`
     <div class="detail-card skill-proposals-card">
@@ -932,7 +933,7 @@ function renderSkillProposalsPanel() {
 }
 
 function renderCustomizePage() {
-  const data = uiState.bootstrap;
+  const data = getBootstrap();
   const selected = selectedCustomizeItem();
   // Old saved settings may still carry 'runtime' from before the
   // Advanced page replaced it — coerce here so the user lands on the
@@ -1006,12 +1007,12 @@ function renderCustomizePage() {
         ${
           section === 'advanced'
             ? renderAdvancedPage({
-                data: uiState.bootstrap,
-                adv: uiState.advanced,
+                data: getBootstrap(),
+                adv: customizeState.advanced,
                 escapeHtml,
                 scheduleRefresh: () => Promise.resolve().then(refreshAdvancedStatus),
-                statePathHint: uiState.advanced.diagnostics?.paths?.configPath || '',
-                mcpPresets: uiState.bootstrap?.customize?.mcpPresets || [],
+                statePathHint: customizeState.advanced.diagnostics?.paths?.configPath || '',
+                mcpPresets: getBootstrap()?.customize?.mcpPresets || [],
                 taskPanelHtml: renderTaskPanel(),
                 approvalPanelHtml: renderApprovalPanel(),
               })
