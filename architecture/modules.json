@@ -22,8 +22,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 599,
-      "edges": 1813,
+      "modules": 600,
+      "edges": 1816,
       "roots": [
         "src",
         "desktop-ui",
@@ -1202,7 +1202,7 @@
       ],
       "modules": {
         "desktop-ui": 9,
-        "src": 56
+        "src": 57
       },
       "entryModules": [
         {
@@ -1405,7 +1405,7 @@
         "desktop-shell": 6,
         "knowledge": 3,
         "media": 1,
-        "platform": 24,
+        "platform": 25,
         "projects": 1,
         "settings": 14,
         "sync": 2,
@@ -1530,6 +1530,7 @@
           "src/memory/store.snapshotVectors.test.js",
           "src/memory/store.validateContext.test.js",
           "src/memory/store.vecRewrite.test.js",
+          "src/memory/storeSchema.test.js",
           "src/memory/threadContext.test.js",
           "src/runtime/derivedIndexing.test.js",
           "src/services/memory/personalProfile.test.js"
@@ -3923,7 +3924,7 @@
         "desktop-shell": 9,
         "knowledge": 2,
         "media": 9,
-        "memory": 24,
+        "memory": 25,
         "projects": 23,
         "settings": 22,
         "sync": 4,
