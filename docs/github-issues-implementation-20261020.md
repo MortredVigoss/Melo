@@ -9,8 +9,8 @@
 | 1 | [#1 文件身份](https://github.com/MortredVigoss/Melo/issues/1) | 已完成：`47da231` 已推送，issue 已关闭；[双平台 CI](https://github.com/MortredVigoss/Melo/actions/runs/39260200905)通过 |
 | 2 | [#4 历史图片](https://github.com/MortredVigoss/Melo/issues/4) | 已完成：`94e76cb` 已推送，issue 已关闭；稳定图片身份、旧记录恢复与原图回归 |
 | 3 | [#3 自然搜索](https://github.com/MortredVigoss/Melo/issues/3) | 已完成：`1c48b6a` 已推送，issue 已关闭；专项 95/95、JS 4098/4098 与 Swift 通过 |
-| 4 | [#9 跨平台 CI](https://github.com/MortredVigoss/Melo/issues/9)、[#2 记忆库并发](https://github.com/MortredVigoss/Melo/issues/2) | #9 已通过全部远端 gate 并关闭（主线 `6fd2481`、手机 `b1529d0`）；#2 `00cf231` 已推送；后续冷启动锁回归重新打开，补丁待推送 |
-| 5 | [#5 通用循环](https://github.com/MortredVigoss/Melo/issues/5)、[#6 完成条件](https://github.com/MortredVigoss/Melo/issues/6)、[#8 事件](https://github.com/MortredVigoss/Melo/issues/8)、[#7 Android 上下文](https://github.com/MortredVigoss/Melo/issues/7) | #5 已接 Node/Swift 生产循环，Android 1af5377 待远端验证；未达全项验收，不关闭 |
+| 4 | [#9 跨平台 CI](https://github.com/MortredVigoss/Melo/issues/9)、[#2 记忆库并发](https://github.com/MortredVigoss/Melo/issues/2) | #9 已通过全部远端 gate 并关闭（主线 `6fd2481`、手机 `b1529d0`）；#2 与冷启动补充 `239953b` 已推送并关闭，Mac/Linux 并发与完整日常通过 |
+| 5 | [#5 通用循环](https://github.com/MortredVigoss/Melo/issues/5)、[#6 完成条件](https://github.com/MortredVigoss/Melo/issues/6)、[#8 事件](https://github.com/MortredVigoss/Melo/issues/8)、[#7 Android 上下文](https://github.com/MortredVigoss/Melo/issues/7) | #5 已完成并关闭：主线 d2dcd02、Android 6209a2a，三端验证通过。#6 按[完成回执约定](completion-receipts-20261020.md)接续，#8/#7 待执行 |
 | 6 | [#11 项目生命周期](https://github.com/MortredVigoss/Melo/issues/11)、[#12 后端拆分](https://github.com/MortredVigoss/Melo/issues/12)、[#10 Fold 缓存](https://github.com/MortredVigoss/Melo/issues/10)、[#13 容量基线](https://github.com/MortredVigoss/Melo/issues/13)、[#14 Task Eval](https://github.com/MortredVigoss/Melo/issues/14) | 待执行；小型确定性回放伴随改动，真机/真实模型证据单列 |
 
 ## #1 实施约定与证据
@@ -94,3 +94,9 @@ Linux 首次完整回归（临时 Debian 容器）4072 pass / 3 fail / 22 skip�
 ### #2 冷启动并发补充
 
 #5 全量日常检出后台索引写入期间冷重启锁失败：首次 PRAGMA journal_mode 早于 busy_timeout，disposable schema 也在 finally 之外。已先安装等待策略，所有初始化失败关闭句柄，缓存不保留半初始化数据库。新增独立进程持有锁的确定性回归，cached/captured-path 两条启动路径修复前均失败，修复后连同原事务与真实 HTTP 并发/重启 5/5 通过。未加入盲重试。`memory-cold-lock-red.log` / `memory-cold-lock-green.log`；#2 已重新打开，待 Linux 与日常实际结果后发布关闭。
+
+### #5 完成回执
+
+主线 `d2dcd02` 已推送；[Linux/macOS CI](https://github.com/MortredVigoss/Melo/actions/runs/39358246710)、[文件安全 CI](https://github.com/MortredVigoss/Melo/actions/runs/39358246703)通过。手机分支 `6209a2a` 的 [Android CI](https://github.com/MortredVigoss/Melo/actions/runs/39358209565)全部通过：JVM/Lint/Debug/R8，模拟器 64/64、零跳过（109.8 秒），含同一组 68 个共享 fixture。第二轮唯一 UI 取消夹具竞态改用可控真实 HTTP，原生命周期/消息数断言保留。[#5 GitHub 回执](https://github.com/MortredVigoss/Melo/issues/5#issuecomment-6281957125)已更新验收项并关闭。用户数据及安装保持，真实供应商与实体设备不作为本次测试结果。
+
+#2 冷启动补丁也已推送并重新关闭：[补充回执](https://github.com/MortredVigoss/Melo/issues/2#issuecomment-6281816676)。

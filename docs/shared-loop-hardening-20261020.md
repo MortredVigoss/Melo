@@ -2,7 +2,11 @@
 
 用户已授权依次完成 GitHub 工作项。此文先明确迁移边界，接现有架构计划，不另换整个 Agent 框架。开始代码迁移前完成 #9/#2；每条只在实际验收后关闭。
 
-## 当前事实
+## 已交付状态
+
+主线 d2dcd02、Android 6209a2a 已推送，#5 已关闭。JS 4213/4213、Swift 34 组、跨引擎 68 fixture、Android 模拟器 64/64，以及 Linux/macOS CI、APK/iOS simulator 构建均通过。具体见[完成回执](github-issues-implementation-20261020.md)。下文保留实施过程，较早的待验证记录不代表现行状态。
+
+## 开始时的事实
 
 主线 Node 主聊天、subAgent、skillExecutor 与 Swift AgentLoop 分别控制模型/工具轮次；同用 JSON 契约、预算和工具信封，但实现尚未同源。手机分支已有 `shared/agent/turn.js` 生产 reducer、Node wrapper、Kotlin SharedCoreTurn 与 JS 沙盒；Swift SharedAgentCore 仅桥和一致性测试，尚未接生产 AgentLoop。不能用已有 bundle 或 Git 合并当作 iPhone 已完成。
 

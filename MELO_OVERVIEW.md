@@ -19,7 +19,7 @@
 | --- | --- | --- |
 | 项目与工作区 | 创建显式归属、执行器绑定能力、无项目聊天按需独立目录（A `33660c6` / B `b02438a`）；文件面板、每次删除询问文件去留与遗留文件管理 `7ae2292` | [架构加固](docs/arch-hardening-20261015.md)、[UI 功能对齐](docs/ui-function-alignment-20261016.md)；项目聚合模型与完整删除级联见[项目专项](docs/project-architecture-plan-20261015.md)；P1 提交回执已交付，桌面项目页已拆到 `desktop-ui/features/projects/`（P2a，[架构方案](docs/architecture-maintainability-plan-20261019.md)） |
 | Agent、技能与团队 | Agent 演进 P0–P4 已实现，6 Agent / 26 成果已迁移；审查修正 `4680530`；统一设置页 `dc67fa0`；团队与委派同一规则，手机本机可运行团队 | [实施与迁移](docs/agent-evolution-20261015.md)、[审查修正](docs/agent-review-fixes-20261015.md)、[设置](docs/agent-settings-20261016.md)、[协作](docs/agent-team-20261016.md)；真实模型协作与真机单列 |
-| 聊天与 agent loop | 手机与桌面同一循环（prepare → invoke-model → finalize），限额/预算/工具信封只在 `shared/protocol/agent-loop.json` 定义；七项双端对齐修复 `ee8eb3f` / `3ad091c` 已推送并装入双端；桌面聊天页 / 输入区 / 发送管线已拆到 `desktop-ui/features/chat/`（P2c） | [修复与 10-19 日常回执](docs/mobile-desktop-alignment.md)；真实供应商与长后台另验 |
+| 聊天与 agent loop | 手机与桌面同一循环（prepare → invoke-model → finalize），公共循环/预算策略现由 `shared/agent/` 同源执行，配置契约为 `shared/protocol/agent-loop.json`；七项双端对齐修复 `ee8eb3f` / `3ad091c` 已推送并装入双端；桌面聊天页 / 输入区 / 发送管线已拆到 `desktop-ui/features/chat/`（P2c） | [修复与 10-19 日常回执](docs/mobile-desktop-alignment.md)；真实供应商与长后台另验 |
 | 记忆 | #2 并发写事务预约修复已通过 Mac/Linux 回归与完整日常；项目记忆本与个人档案已接入；项目来源手写记忆经独立可选通道（`/api/project-memory-sync` ↔ `/v1/project-memory`）同步；桌面记忆页 / 记忆本 / 回复页脚已拆到 `desktop-ui/features/memory/`（P2a） | [记忆架构](docs/memory-architecture.md)（以顶部现行约定为准）、[A7 回执](docs/mobile-desktop-alignment.md)；私人同步服务未部署新版 |
 | 知识资料与成果 | 本机分段索引（SQLite FTS + 本地 embedding），按对话/项目开关过滤；两端按问题切段检索，旧 8 份 / 24000 字前置限制已移除 | [Agent 演进 P2/P4](docs/agent-evolution-20261015.md)、[A3/A5 回执](docs/mobile-desktop-alignment.md) |
 | 设置、模型连接与账号 | 五语界面 `2cae1cd`；手机 Codex 设备码 OAuth `85ac3a5`、应用切换取消修复 `14e602f` | 用户真实授权尚未确认；同码恢复限同一进程；[五语](docs/interface-languages-20261015.md)、[模型连接](docs/llm-connections.md) |
@@ -59,15 +59,12 @@
 
 ## 4. 最新交接
 
-### 2026-10-20 — melo主线（Codex）— GitHub #5 生产循环接线
-- 线程 ID：`01a13b2e-5446-7042-bb5e-773129746c7e`；#1/#4/#3/#9/#2 已推送并关闭。#5 仍打开，按实际平台验证收尾。
-- 状态：主线隔离 `.tmp/github-issues-main`：Core `9748e51`、预算 `153f1d9`、Swift 预算 `fa4afb9`、守卫移植 `5e977b5` 为本地提交，生产接线 `a1a4527`；收尾 admission/设备进展已验证，待提交推送；手机分支 `795f2fc` 已推送，仅用于 Android CI，不整体覆盖主线。
-- 行为：主聊天、subAgent、skillExecutor、Swift AgentLoop 已消费 shared/agent/turn.js 的轮数、32 调用批次、重复 ID、许可、重复失败、无进展和终态；实际 schema/审批/执行/取消/记录由 Host 保留。预算同源，资源不可用则停止；主线用户数据与安装未变。
-- 验证：共享 JS 98/98；真实 JSCore 61 相同 fixture；主聊天 HTTP/子 Agent/技能 45/45，Swift 契约/AgentLoop/缺失资源 3 组。第一轮全 JS 4202/4203，唯一旧夹具仍期待重复成功跑 10 轮，已改为新 NO_PROGRESS 6 轮；最终完整日常 JS 4203/4203、34 组 Swift、浏览器/语法/文档全通过（471.4 秒）；iOS 模拟器应用编译成功，共享资源已打包。
-- Android：通用聊天允许 32 调用，设备操作保持单步；父子预算、用量与取消已接，资源/期限/并发额度回归待远端实际执行。源码与 bundle 相同；[分支实施](https://github.com/MortredVigoss/Melo/blob/codex/mobile-use-features/docs/shared-loop-android-20261020.md)。
-- 后续日常发现 #2 冷启动配置 WAL 前未设置 busy_timeout，后台写入时偶发锁失败；issue 已重开，确定性 cached/disposable 两路径红转绿，Mac/Linux 各 5/5、完整日常已过，补丁 `239953b` 待推送。
-- 收尾：预算额度原子预留、设备进展共享判定及 7 个新 fixture 已接；共享 JS 106/106、完整日常 JS 4213/4213 与 Swift 34 组通过；simulator 应用再次编译成功。Android 首轮 60/61 的具体拒绝码回归已修，第二轮 CI 39356581051 待实际结果。
-- 下一步：等第二轮 Android CI 与主线日常复核 #5 验收，才推主线并关闭；随后 #6/#8/#7 等。[实施入口](docs/github-issues-implementation-20261020.md)，日志 `.tmp/github-issues-fix-20261020/core-loop-*`；不运行 git pp。
+### 2026-10-20 — melo主线（Codex）— GitHub #5 完成，继续 #6
+- 线程 ID：`01a13b2e-5446-7042-bb5e-773129746c7e`。#1/#4/#3/#9/#2/#5 均已推送并在 GitHub 关闭；#2 冷启动补充 `239953b` 也已关闭。
+- 发布：主线 `d2dcd02`；Android 手机分支 `6209a2a`，保留双分支版本差异，不整体覆盖主线。另一个线程在原 master 的能力升级/版本 WIP 未改。
+- 架构：Node 主聊天/子 Agent/技能、Swift AgentLoop 与 Kotlin Host 消费同一个 shared/agent Core 的轮数、许可、批次/重复 ID、重复失败、进展、父子预算及终止策略。Host 保留 HTTP、原生 I/O、schema、审批、取消和记录。Swift/Kotlin 原子预留工具额度。
+- 验证：完整日常 JS 4213/4213、34 组 Swift；真实 JSCore/Android/Node 同一组 68 fixture；iOS simulator app 编译成功；Android JVM/Lint/Debug/R8 与模拟器 64/64 零跳过。远端 Linux/macOS、文件安全与 Android CI 全绿；证据见[实施账本](docs/github-issues-implementation-20261020.md)及[循环实施](docs/shared-loop-hardening-20261020.md)。真实账号、安装与设备数据未改。
+- 下一步：#6 的[完成回执约定](docs/completion-receipts-20261020.md)已写；独立新策略草稿 7 项边界测试通过，尚未接生产或提交。随后 #8/#7/#11/#12/#10/#13/#14；不自动运行 git pp。
 
 此前交接（原文见[历史交接](docs/handoffs/overview-history-20261019.md)，新者在后）：10-19 双端逻辑只读审计 → 七项修复与最终日常 → 双端覆盖安装与数据保留 → 架构维护成本审计与方案 → GitHub 权限只读核对 → 架构方案 P0 执行 → 架构方案 P2a 记忆页与项目页 → 架构方案 P2b Agent 设置 → 架构方案 P2c 聊天拆分 → Claude 架构 P0–P2 独立审计 → 已提交保存恢复 R1 修复。
 

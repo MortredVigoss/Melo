@@ -584,3 +584,14 @@
 - 验证：预算桥与原 Core 57/57；Swift 契约 130 fixture、生产 AgentLoop 及缺失资源零模型调用共 3 组通过。完整日常 JS 4187/4187、34 组 Swift、浏览器/语法/文档全通过（431.8 秒）；证据 `.tmp/github-issues-fix-20261020/core-swift-budget-final.log` / `core-budget-swift-daily.log`。
 - 移植：重复失败守卫逐字移入 `shared/agent/repeatGuard.js`，原入口重导出，专项 12/12 + 子 Agent/技能 32/32；便携 bundle 接入在下一行为提交。
 - 未完：重复失败/无进展/终态接主聊天、子 Agent、技能、Swift、Kotlin；#5 保持打开。[实施与证据](../github-issues-implementation-20261020.md)；不运行 git pp、不安装、不改真实数据。
+
+
+### 2026-10-20 — melo主线（Codex）— GitHub #5 生产循环接线
+- 线程 ID：`01a13b2e-5446-7042-bb5e-773129746c7e`；#1/#4/#3/#9/#2 已推送并关闭。#5 仍打开，按实际平台验证收尾。
+- 状态：主线隔离 `.tmp/github-issues-main`：Core `9748e51`、预算 `153f1d9`、Swift 预算 `fa4afb9`、守卫移植 `5e977b5` 为本地提交，生产接线 `a1a4527`；收尾 admission/设备进展已验证，待提交推送；手机分支 `795f2fc` 已推送，仅用于 Android CI，不整体覆盖主线。
+- 行为：主聊天、subAgent、skillExecutor、Swift AgentLoop 已消费 shared/agent/turn.js 的轮数、32 调用批次、重复 ID、许可、重复失败、无进展和终态；实际 schema/审批/执行/取消/记录由 Host 保留。预算同源，资源不可用则停止；主线用户数据与安装未变。
+- 验证：共享 JS 98/98；真实 JSCore 61 相同 fixture；主聊天 HTTP/子 Agent/技能 45/45，Swift 契约/AgentLoop/缺失资源 3 组。第一轮全 JS 4202/4203，唯一旧夹具仍期待重复成功跑 10 轮，已改为新 NO_PROGRESS 6 轮；最终完整日常 JS 4203/4203、34 组 Swift、浏览器/语法/文档全通过（471.4 秒）；iOS 模拟器应用编译成功，共享资源已打包。
+- Android：通用聊天允许 32 调用，设备操作保持单步；父子预算、用量与取消已接，资源/期限/并发额度回归待远端实际执行。源码与 bundle 相同；[分支实施](https://github.com/MortredVigoss/Melo/blob/codex/mobile-use-features/docs/shared-loop-android-20261020.md)。
+- 后续日常发现 #2 冷启动配置 WAL 前未设置 busy_timeout，后台写入时偶发锁失败；issue 已重开，确定性 cached/disposable 两路径红转绿，Mac/Linux 各 5/5、完整日常已过，补丁 `239953b` 待推送。
+- 收尾：预算额度原子预留、设备进展共享判定及 7 个新 fixture 已接；共享 JS 106/106、完整日常 JS 4213/4213 与 Swift 34 组通过；simulator 应用再次编译成功。Android 首轮 60/61 的具体拒绝码回归已修，第二轮 CI 39356581051 待实际结果。
+- 下一步：等第二轮 Android CI 与主线日常复核 #5 验收，才推主线并关闭；随后 #6/#8/#7 等。[实施入口](../github-issues-implementation-20261020.md)，日志 `.tmp/github-issues-fix-20261020/core-loop-*`；不运行 git pp。
