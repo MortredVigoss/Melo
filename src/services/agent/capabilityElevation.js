@@ -141,7 +141,7 @@ function agentInfo(state, agentId, projectId) {
 
 function deniedResult(scope, tool, extra = {}, output) {
   return {
-    ok: false, error: 'CAPABILITY_DENIED',
+    ok: false, error: 'CAPABILITY_DENIED', code: 'CAPABILITY_DENIED',
     output: output || `Agent ${scope.agentId} is not allowed to execute ${tool.id}.`,
     meta: { denied: true, executionStarted: false, ...extra },
   };
@@ -214,7 +214,7 @@ export async function requestCapabilityElevation({ scope, tool, args, context, s
       meta: { executionStarted: false, denied: true, aborted: true, capabilityElevation: meta } } };
   }
   const textKey = outcome.status === 'timeout' ? 'timeoutOutput' : 'deniedOutput';
-  return { allowed: false, result: deniedResult(scope, tool, { capabilityElevation: meta, ...(outcome.status === 'timeout' ? { timedOut: true } : {}) },
+  return { allowed: false, result: deniedResult(scope, tool, { capabilityElevation: meta, ...(outcome.status === 'timeout' ? { promptTimedOut: true } : {}) },
     elevationText(textKey, { agent: info.name, capability: label, tool: tool.id })) };
 }
 
@@ -261,7 +261,7 @@ function awaitDecision({ scope, tool, context, signal, sseEmitter, home, clock, 
       prompt, reason: elevationText('toolLine', { tool: tool.id }),
       options: decision.options.map(option => ({ id: option, label: capabilityOptionLabel(decision.decision, option, request.projectOptionScope || 'project') })),
       ...(request.alwaysUnavailable ? { note: elevationText('alwaysUnavailable', { capability: label }) } : {}),
-      settingsScope: info.settingsScope, chatId: binding.chatId, runId: binding.runId, turnRequestId: context.requestId || null,
+      projectOptionScope: request.projectOptionScope, settingsScope: info.settingsScope, chatId: binding.chatId, runId: binding.runId, turnRequestId: context.requestId || null,
       projectId: binding.projectId, expiresAt: request.expiresAt,
     });
   } catch {}

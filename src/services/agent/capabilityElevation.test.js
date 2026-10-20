@@ -160,7 +160,7 @@ test('timeout, budget deadline and cancel all end the prompt without a grant', a
   const home = await makeHome(t);
   const timeout = await requestCapabilityElevation({ scope: builderScope(), tool: writeTool, args: {}, context: context(home, { timeoutMs: 30 }), sseEmitter: recorder().emit });
   assert.equal(timeout.result.error, 'CAPABILITY_DENIED');
-  assert.equal(timeout.result.meta.timedOut, true);
+  assert.equal(timeout.result.meta.promptTimedOut, true);
   assert.match(timeout.result.output, /等待授权超时/);
 
   const budget = await requestCapabilityElevation({ scope: builderScope(), tool: writeTool, args: {}, context: context(home, { runId: 'run-b', deadlineMs: 40 }), sseEmitter: recorder().emit });

@@ -1,5 +1,5 @@
 import {resolveCapabilityContext} from '../services/agent/capabilityContext.js';
-import {narrowCapabilityScope,missingCapabilityScope,scopeAllowsTool} from '../domain/agent/capabilityScope.js';
+import {narrowCapabilityScope,missingCapabilityScope,scopeAllowsTool,visibleCapabilities} from '../domain/agent/capabilityScope.js';
 import {randomUUID} from 'node:crypto';
 import {runSubAgent} from './subAgent.js';
 import {toolCapabilityAllowed,normalizeCapabilities,intersectCapabilities,normalizeCollaboration,filterToolsByCapabilities,emptyCapabilities} from '../domain/agent/capabilities.js';
@@ -14,12 +14,20 @@ export async function runConfiguredMember({profile,parentCapabilities,allowedToo
  if(!normalizeCapabilities(profile.capabilities))return {ok:false,error:'AGENT_MIGRATION_REQUIRED',output:`请先在桌面完成 Agent「${profile.name||profile.id}」的能力迁移，再启动协作。`};
  const parent=await resolveCapabilityContext(currentRequestContext());
  if(!parent)return missingCapabilityScope();
- const capabilityScope=narrowCapabilityScope(parent.capabilityScope,{capabilities:intersectCapabilities(profile.capabilities,parentCapabilities),allowedToolIds,agentId:profile.id,source:'member'});
+ // Rule 1 (capability elevation): the member's own settings are its ceiling;
+ // its base is own ∩ the parent's grant-free scope. Grants are per Agent and
+ // checked live by the executor, so a parent's grant is never inherited.
+ const parentScope=parent.capabilityScope;
+ const parentBase=intersectCapabilities(parentScope.elevation?.base ?? parentScope.capabilities,parentCapabilities);
+ const capabilityScope=narrowCapabilityScope(parentScope,{capabilities:intersectCapabilities(profile.capabilities,parentBase),allowedToolIds,agentId:profile.id,source:'member',
+  member:{ceiling:profile.capabilities,parent:parentBase,parentAgentId:parentScope.agentId}});
  const capabilities=capabilityScope.capabilities;
+ // What the member may see or ask for (its ceiling, with an interactive surface).
+ const requestable=visibleCapabilities(capabilityScope);
  const settings=normalizeCollaboration(profile.collaboration);
  extraTools=extraTools.filter(t=>!t.allowedAgentIds?.length||t.allowedAgentIds.includes(profile.id));
  const toolObject=id=>extraTools.find(t=>t.id===id)||getTool(id)||undefined;
- const toolIds=(Array.isArray(allowedToolIds)?allowedToolIds:[...getAllTools(),...extraTools].map(t=>t.id)).filter(id=>toolCapabilityAllowed(id,capabilities,undefined,toolObject(id)));
+ const toolIds=(Array.isArray(allowedToolIds)?allowedToolIds:[...getAllTools(),...extraTools].map(t=>t.id)).filter(id=>toolCapabilityAllowed(id,requestable,undefined,toolObject(id)));
  const controller=new AbortController();const abort=()=>controller.abort(signal?.reason);signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)abort();
  // Run budget (C1): the member gets a child pool — its own timeoutMs cut to
  // the parent's remaining time, token/tool limits = parent remaining — and
@@ -31,7 +39,8 @@ export async function runConfiguredMember({profile,parentCapabilities,allowedToo
  const emit=(type,event)=>sseEmitter?.(type,type==='execution_event'?{...event,id:`member:${memberId}:${event.id}`,name:`${profile.name} · ${event.name || ''}`}:{...event,agentId:profile.id});
  const invoke=()=>run({extraTools,task,instructions,background,agentProfile:profile,config:{...config,model:profile.model || config.model,modelResolvedForTurn:true},workspacePath,signal:controller.signal,sseEmitter:emit,chatId,depth,allowedToolIds:toolIds,capabilities,roleId:profile.id,agentProfiles,collaboration:settings,ancestry:[...ancestry,profile.id],maxDepth,maxIterations:settings.maxIterations,maxTokens:settings.maxTokens,chatSource,projectId,onProviderResponse:r=>{if(!controller.signal.aborted)receipts.push(r);}});
  const scoped=()=>parent?runWithRequestContext(Object.freeze({...parent,agentId:profile.id,capabilityScope,...(budget?{budget}:{})}),invoke):invoke();
- const writer=capabilities.writeFiles||capabilities.runCommands||capabilities.generateMedia||capabilities.mcpServers.length>0||capabilities.connectors.length>0;
+ // A member that may be granted a writing capability mid-run takes the writer lease up front.
+ const writer=requestable.writeFiles||requestable.runCommands||requestable.generateMedia||requestable.mcpServers.length>0||requestable.connectors.length>0;
  emit('execution_event',{kind:'pipeline',id:'handoff',name:'成员执行',module:'compute',status:'running',input:task});
  let outcome, stopWaiting;
  const cancelled=new Promise((_,reject)=>{stopWaiting=()=>reject(controller.signal.reason || Object.assign(new Error('Member cancelled'),{code:'ABORTED'}));controller.signal.addEventListener('abort',stopWaiting,{once:true});});

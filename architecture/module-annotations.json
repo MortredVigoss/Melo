@@ -341,7 +341,9 @@
         "/api/tasks",
         "/api/tools/",
         "/api/permissions/",
-        "/api/safety/"
+        "/api/safety/",
+        "/api/capability-requests",
+        "/api/capability-grants"
       ],
       "testGroups": [
         "test:audit-fixes"

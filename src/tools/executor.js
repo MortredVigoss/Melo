@@ -1,7 +1,8 @@
 import {workspaceForTool,ownedWorkspaceSafety} from '../services/workspace/toolWorkspace.js';
 import {trackWorkspaceWork} from '../agents/workspaceScheduling.js';
-import {narrowCapabilityScope,scopeAllowsTool,missingCapabilityScope} from '../domain/agent/capabilityScope.js';
+import {narrowCapabilityScope,scopeAllowsTool,missingCapabilityScope,liveCapabilityScope} from '../domain/agent/capabilityScope.js';
 import {resolveCapabilityContext} from '../services/agent/capabilityContext.js';
+import {requestCapabilityElevation} from '../services/agent/capabilityElevation.js';
 import { recordTaskApproval } from '../services/task/taskApprovalCheckpoint.js';
 import { operationScope } from '../safety/permissionContext.js';
 import { reserveTaskOperation } from '../services/task/operationLedger.js';
@@ -51,9 +52,20 @@ export async function executeTool(tool, args, options = {}) {
   const ambient=currentRequestContext();
   const resolved=await resolveCapabilityContext(ambient || options.requestContext);
   if (!resolved) return missingCapabilityScope();
-  const capabilityScope=narrowCapabilityScope(resolved.capabilityScope,{capabilities:options.capabilities,allowedToolIds:options.allowedToolIds});
+  // Grants are never baked into a scope: every call is checked against the
+  // grant-free view, and live grants (or a user prompt) are consulted only when
+  // that view denies — so a revocation applies to the very next call.
+  let capabilityScope=liveCapabilityScope(narrowCapabilityScope(resolved.capabilityScope,{capabilities:options.capabilities,allowedToolIds:options.allowedToolIds}));
+  let capabilityElevation=null;
   if (!scopeAllowsTool(capabilityScope,tool,args)) {
-    return finalizeToolResult({ok:false,error:'CAPABILITY_DENIED',output:`Agent ${capabilityScope.agentId} is not allowed to execute ${tool.id}.`,meta:{denied:true,executionStarted:false}});
+    // Capability elevation (2026-10-20): beyond-parent / just-in-time prompts on
+    // an interactive surface; otherwise the same CAPABILITY_DENIED as before.
+    let outcome;
+    try { outcome=await requestCapabilityElevation({scope:capabilityScope,tool,args,context:resolved,sseEmitter:options.sseEmitter,signal:options.signal}); }
+    catch { outcome={allowed:false}; }
+    if (!outcome.allowed) return finalizeToolResult(outcome.result || {ok:false,error:'CAPABILITY_DENIED',output:`Agent ${capabilityScope.agentId} is not allowed to execute ${tool.id}.`,meta:{denied:true,executionStarted:false}});
+    capabilityScope=outcome.scope;
+    capabilityElevation=outcome.meta;
   }
   let workspacePath;
   try {workspacePath=await workspaceForTool(resolved,tool,args,options.workspacePath);}
@@ -63,7 +75,9 @@ export async function executeTool(tool, args, options = {}) {
   const requestContext=Object.freeze({...resolved,workspacePath,ownedWorkspace,capabilityScope,permissionScope});
   const scopedOptions={...options,workspacePath,requestContext,capabilities:capabilityScope.capabilities,agentId:capabilityScope.agentId,
     allowedToolIds:capabilityScope.allowedToolIds,taskId:resolved.turnBinding?.taskId || null};
-  return runWithRequestContext(requestContext,()=>executeScopedTool(tool,args,scopedOptions));
+  const result=await runWithRequestContext(requestContext,()=>executeScopedTool(tool,args,scopedOptions));
+  // Audit (rule 7): the decision travels with the result into the tool record.
+  return capabilityElevation && result && typeof result==='object' ? {...result,meta:{...result.meta,capabilityElevation}} : result;
 }
 
 async function executeScopedTool(tool,args,options) {
