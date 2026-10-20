@@ -9,7 +9,7 @@
 | 1 | [#1 文件身份](https://github.com/MortredVigoss/Melo/issues/1) | 已完成：`47da231` 已推送，issue 已关闭；[双平台 CI](https://github.com/MortredVigoss/Melo/actions/runs/39260200905)通过 |
 | 2 | [#4 历史图片](https://github.com/MortredVigoss/Melo/issues/4) | 已完成：`94e76cb` 已推送，issue 已关闭；稳定图片身份、旧记录恢复与原图回归 |
 | 3 | [#3 自然搜索](https://github.com/MortredVigoss/Melo/issues/3) | 已完成：`1c48b6a` 已推送，issue 已关闭；专项 95/95、JS 4098/4098 与 Swift 通过 |
-| 4 | [#9 跨平台 CI](https://github.com/MortredVigoss/Melo/issues/9)、[#2 记忆库并发](https://github.com/MortredVigoss/Melo/issues/2) | #1 同步加入最小双平台文件安全工作流；完整平台矩阵与并发复现仍待完成 |
+| 4 | [#9 跨平台 CI](https://github.com/MortredVigoss/Melo/issues/9)、[#2 记忆库并发](https://github.com/MortredVigoss/Melo/issues/2) | #9 已通过全部远端 gate 并关闭（主线 `6fd2481`、手机 `b1529d0`）；#2 已复现修正，完整日常通过，本提交交付 |
 | 5 | [#5 通用循环](https://github.com/MortredVigoss/Melo/issues/5)、[#6 完成条件](https://github.com/MortredVigoss/Melo/issues/6)、[#8 事件](https://github.com/MortredVigoss/Melo/issues/8)、[#7 Android 上下文](https://github.com/MortredVigoss/Melo/issues/7) | 待执行；按 Host 适配与对照验收，不删现有行为 |
 | 6 | [#11 项目生命周期](https://github.com/MortredVigoss/Melo/issues/11)、[#12 后端拆分](https://github.com/MortredVigoss/Melo/issues/12)、[#10 Fold 缓存](https://github.com/MortredVigoss/Melo/issues/10)、[#13 容量基线](https://github.com/MortredVigoss/Melo/issues/13)、[#14 Task Eval](https://github.com/MortredVigoss/Melo/issues/14) | 待执行；小型确定性回放伴随改动，真机/真实模型证据单列 |
 
@@ -70,3 +70,19 @@ Android 源码仅在 `codex/mobile-use-features`，在隔离 `.tmp/github-issues
 Linux 首次完整回归（临时 Debian 容器）4072 pass / 3 fail / 22 skip；缺环境的 skip 不作为完成依据。三个浏览器失败分别为 CJK 字体缺失、C locale 下 Chromium 把中文下载名降成 download，以及固定 4 秒回复窗口下的补充动作竞态。安装字体、UTF-8 locale 后前两项原断言通过；流式夹具改为等待补充提交事件，Mac/Linux 都通过。补齐 FFmpeg、ripgrep、内置模型与完整源码后重新跑全量；日志 `linux-full-final.log`。没有改产品的下载命名或布局，也未降低断言。
 
 #9 本机最终：Debian Node 22.23.3 完整 JS 4095 pass / 0 fail / 2 平台或 root skip；其中附件写权限回归改以普通 node 用户单独通过，macOS 原生退出在 Mac 单独通过。未豁免任何失败。Linux 三个浏览器问题的原断言全过，Mac 流式专项通过。远端固定 Node 22.22.2，最终结论仍以远端 run 为准。
+
+## #2 并发复现计划（#9 远端运行期间准备）
+
+在隔离 home 中覆盖真实 HTTP 保存/编辑/同步/重启，同时让独立线程执行生产知识索引写入。另用可控并发窗口检查项目记忆的“先读再写”事务：读到项目记录后另一连接提交索引，再写记忆，验证是否出现 WAL 读快照升级失败；先记录基线，只有复现后才改事务行为。不加入盲目重试，不操作真实数据。
+
+#9 远端回执：主线 `6fd2481` 的 [完整 Linux/macOS](https://github.com/MortredVigoss/Melo/actions/runs/39345422927) 与 [双平台文件安全](https://github.com/MortredVigoss/Melo/actions/runs/39345423148) 全通过。Android `39344901902` 构建通过、模拟器 56/59；三项失败为测试的窄屏定位/换行假设，`b1529d0` 修正夹具并保留原断言，run `39346797733` 待结果。#9 保持打开。
+
+#2 已复现与修正：`memoryConcurrency.test.js` 用真实独立知识索引连接控制 WAL 交错。原 `BEGIN` 读快照后索引提交，随后项目保存稳定抛出 `database is locked`（`memory-concurrency-red.log`）。写事务改为 `BEGIN IMMEDIATE` 在读取前保留写资格，嵌套仍用 SAVEPOINT；不加入自动重试。修正错误的异步事务文档，调用保持同步。
+
+- `memory-concurrency-targeted.log`：项目记忆/同步及新受控并发测试 22/22。真实 HTTP 夹具在全新与已存在项目分别并发保存 8 条、修改、手机同步，同时独立线程持续写索引；每阶段重启并逐条比对原文和同步版本，无丢失、重复或伪冲突。
+- 新增嵌套失败回滚/释放写资格测试；`memory-linux.log`：Linux 三项新增并发/回滚 + 原 HTTP 与向量事务回归 12/12。
+- 完整日常 `memory-daily.log` 运行中；未操作真实 home、账号、记忆或安装。#9 关闭后再提交本项完成回执。
+
+#9 最终：Android [run 39346797733](https://github.com/MortredVigoss/Melo/actions/runs/39346797733) 全部通过，含 Shared Core、JVM、Lint、Debug/R8、Android 16 Emulator；与主线两个成功 run 共同完成矩阵。`b1529d0` 只修窄屏测试定位/夹具，不削弱目标身份检查。完成后在 GitHub 评论并关闭 #9；这不是发布/安装或真机验收。
+
+#2 最终回执：`memory-daily-final.log` 的 JS **4101/4101**、零跳过，语法、文档、两项设置浏览器、共享渲染 4/4 与 **32 组 Swift** 全通过（534.2 秒）。初次日常仅生成地图过期；已重新生成 `architecture/modules.json`，并为新工作树显式提供只读内置模型路径，再完整复测。该路径是公开模型资源，未使用账号或真实 home。Linux 专项 12/12。提交推送后评论关闭 #2；不称真实数据迁移或应用安装验收。

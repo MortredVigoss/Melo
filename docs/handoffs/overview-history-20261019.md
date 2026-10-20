@@ -552,3 +552,11 @@
 - 文件：`src/retrieval/{publicLookupIntent,searchRouter}.js`、`src/services/chat/chatExecutionRunner.js`，新增意图与 HTTP 执行回归；未改稳定工具列表或权限。手机分支已有自己的自然推荐实现，#5 再进行跨 Host 收敛；没有合并整条 Android 分支。
 - 验证：专项 95/95，日常 JS 4098/4098；日常语法/文档/两项设置浏览器通过；共用渲染 4/4 与 32 组 Swift 最终复测通过。[实施证据](../github-issues-implementation-20261020.md)。测试为隔离模型 HTTP / Search fixture，不是外网真实模型验收。
 - 下一步：#3 验证推送后关闭；#9 跨平台 CI，随后 #2 记忆库并发和其余已授权项。不运行 git pp、不重装应用。
+
+
+### 2026-10-20 — melo主线（Codex）— GitHub #9 跨平台 CI
+- 线程 ID：`01a13b2e-5446-7042-bb5e-773129746c7e`；#1 `47da231`、#4 `94e76cb`、#3 `1c48b6a` 已推送并关闭。#9 实施中，全部远端 gate 完成后才关闭。
+- 工作树：主线 `.tmp/github-issues-main`、手机 `.tmp/github-issues-mobile`，保留原 master 上另一权限线程的提交/WIP。Android 仅推回 `codex/mobile-use-features`，没有合并全部手机产品代码。
+- 入口：主线 `.github/workflows/{file-safety,verification}.yml`；手机分支 `.github/workflows/android.yml`。环境依赖、门禁层级和失败语义见[测试工作流](../testing-workflow.md)。修正流式 UI 测试的固定时长竞态，生产行为不变。
+- 验证：Mac/Linux 浏览器专项通过；Android Core 84/84、bundle 与 YAML 校验通过，`6c4ab6b` 对应 run `39344901902` 运行中。Linux 全量 4095 pass / 0 fail / 2 平台或 root skip；附件写权限普通用户补跑与 Mac 原生退出补跑均通过；[实施证据](../github-issues-implementation-20261020.md)。不把工作流已写入或已推送称为远端通过。
+- 下一步：等待/修复远端各 gate；再完成 #2 记忆库并发及余项。不运行 git pp，不重装应用、不动真实手机数据。

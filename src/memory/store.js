@@ -305,7 +305,7 @@ function withDisposableStoreAt(storePath, work) {
  * handle has no concept of "outer transaction" in this codebase.
  */
 function runInTransactionOn(database, work) {
-  database.exec('BEGIN');
+  database.exec('BEGIN IMMEDIATE');
   try {
     const result = work(database);
     database.exec('COMMIT');
@@ -1021,7 +1021,10 @@ function runInTransaction(work) {
   const depth = _txDepth;
   const savepoint = depth > 0 ? `melo_sp_${depth}` : null;
   if (savepoint) database.exec(`SAVEPOINT ${savepoint}`);
-  else database.exec('BEGIN');
+  // Reserve the writer before any read. With a deferred BEGIN, a background
+  // knowledge-index connection can commit after our read snapshot and make
+  // the subsequent write fail with SQLITE_BUSY_SNAPSHOT (timeout cannot help).
+  else database.exec('BEGIN IMMEDIATE');
   _txDepth += 1;
   try {
     const result = work(database);
@@ -1053,10 +1056,9 @@ function runInTransaction(work) {
  * `runInTransaction` — they fall through to SAVEPOINTs automatically when
  * called inside `withTransaction`.
  *
- * The callback may be async, but keep in mind that holding a SQLite tx
- * across an await serialises every other write on the same connection
- * until the promise resolves.  Prefer to finish all async work (LLM calls,
- * network fetches) BEFORE entering `withTransaction`.
+ * The callback must be synchronous. Finish all async work (LLM calls,
+ * network fetches) BEFORE entering `withTransaction`; the writer reservation
+ * lasts only until the callback returns.
  *
  * @template T
  * @param {() => T} work

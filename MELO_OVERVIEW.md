@@ -20,7 +20,7 @@
 | 项目与工作区 | 创建显式归属、执行器绑定能力、无项目聊天按需独立目录（A `33660c6` / B `b02438a`）；文件面板、每次删除询问文件去留与遗留文件管理 `7ae2292` | [架构加固](docs/arch-hardening-20261015.md)、[UI 功能对齐](docs/ui-function-alignment-20261016.md)；项目聚合模型与完整删除级联见[项目专项](docs/project-architecture-plan-20261015.md)；P1 提交回执已交付，桌面项目页已拆到 `desktop-ui/features/projects/`（P2a，[架构方案](docs/architecture-maintainability-plan-20261019.md)） |
 | Agent、技能与团队 | Agent 演进 P0–P4 已实现，6 Agent / 26 成果已迁移；审查修正 `4680530`；统一设置页 `dc67fa0`；团队与委派同一规则，手机本机可运行团队 | [实施与迁移](docs/agent-evolution-20261015.md)、[审查修正](docs/agent-review-fixes-20261015.md)、[设置](docs/agent-settings-20261016.md)、[协作](docs/agent-team-20261016.md)；真实模型协作与真机单列 |
 | 聊天与 agent loop | 手机与桌面同一循环（prepare → invoke-model → finalize），限额/预算/工具信封只在 `shared/protocol/agent-loop.json` 定义；七项双端对齐修复 `ee8eb3f` / `3ad091c` 已推送并装入双端；桌面聊天页 / 输入区 / 发送管线已拆到 `desktop-ui/features/chat/`（P2c） | [修复与 10-19 日常回执](docs/mobile-desktop-alignment.md)；真实供应商与长后台另验 |
-| 记忆 | 项目记忆本与个人档案已接入；项目来源手写记忆经独立可选通道（`/api/project-memory-sync` ↔ `/v1/project-memory`）同步；桌面记忆页 / 记忆本 / 回复页脚已拆到 `desktop-ui/features/memory/`（P2a） | [记忆架构](docs/memory-architecture.md)（以顶部现行约定为准）、[A7 回执](docs/mobile-desktop-alignment.md)；私人同步服务未部署新版 |
+| 记忆 | #2 并发写事务预约修复已通过 Mac/Linux 回归与完整日常；项目记忆本与个人档案已接入；项目来源手写记忆经独立可选通道（`/api/project-memory-sync` ↔ `/v1/project-memory`）同步；桌面记忆页 / 记忆本 / 回复页脚已拆到 `desktop-ui/features/memory/`（P2a） | [记忆架构](docs/memory-architecture.md)（以顶部现行约定为准）、[A7 回执](docs/mobile-desktop-alignment.md)；私人同步服务未部署新版 |
 | 知识资料与成果 | 本机分段索引（SQLite FTS + 本地 embedding），按对话/项目开关过滤；两端按问题切段检索，旧 8 份 / 24000 字前置限制已移除 | [Agent 演进 P2/P4](docs/agent-evolution-20261015.md)、[A3/A5 回执](docs/mobile-desktop-alignment.md) |
 | 设置、模型连接与账号 | 五语界面 `2cae1cd`；手机 Codex 设备码 OAuth `85ac3a5`、应用切换取消修复 `14e602f` | 用户真实授权尚未确认；同码恢复限同一进程；[五语](docs/interface-languages-20261015.md)、[模型连接](docs/llm-connections.md) |
 | 双端同步 | v1 线协议冻结；Agent 能力与项目记忆走可选通道，旧服务只让扩展待同步，聊天同步照常 | [双端修复](docs/mobile-desktop-alignment.md)；私人同步服务需部署本版代码后启用新通道 |
@@ -59,12 +59,12 @@
 
 ## 4. 最新交接
 
-### 2026-10-20 — melo主线（Codex）— GitHub #9 跨平台 CI
-- 线程 ID：`01a13b2e-5446-7042-bb5e-773129746c7e`；#1 `47da231`、#4 `94e76cb`、#3 `1c48b6a` 已推送并关闭。#9 实施中，全部远端 gate 完成后才关闭。
-- 工作树：主线 `.tmp/github-issues-main`、手机 `.tmp/github-issues-mobile`，保留原 master 上另一权限线程的提交/WIP。Android 仅推回 `codex/mobile-use-features`，没有合并全部手机产品代码。
-- 入口：主线 `.github/workflows/{file-safety,verification}.yml`；手机分支 `.github/workflows/android.yml`。环境依赖、门禁层级和失败语义见[测试工作流](docs/testing-workflow.md)。修正流式 UI 测试的固定时长竞态，生产行为不变。
-- 验证：Mac/Linux 浏览器专项通过；Android Core 84/84、bundle 与 YAML 校验通过，`6c4ab6b` 对应 run `39344901902` 运行中。Linux 全量 4095 pass / 0 fail / 2 平台或 root skip；附件写权限普通用户补跑与 Mac 原生退出补跑均通过；[实施证据](docs/github-issues-implementation-20261020.md)。不把工作流已写入或已推送称为远端通过。
-- 下一步：等待/修复远端各 gate；再完成 #2 记忆库并发及余项。不运行 git pp，不重装应用、不动真实手机数据。
+### 2026-10-20 — melo主线（Codex）— GitHub #9 回执 / #2 并发修复
+- 线程 ID：`01a13b2e-5446-7042-bb5e-773129746c7e`；#1/#4/#3 已完成并关闭。#9 主线 `6fd2481` 的完整 Linux/macOS 与文件安全远端全通过；Android 构建通过，三项窄屏夹具修正 `b1529d0` 已推，`39346797733` 全部通过，#9 已评论并关闭。
+- 工作树：主线 `.tmp/github-issues-main`、手机 `.tmp/github-issues-mobile`，保留原 master 权限线程的提交/WIP；手机仅推回其原分支。
+- #2 行为：真实并发复现 WAL 读快照升级的 database is locked；`src/memory/store.js` 的外层写事务使用 BEGIN IMMEDIATE，SAVEPOINT/回滚保留，无盲目重试；本提交交付。
+- 验证：项目专项 22/22；Linux 并发/回滚与向量事务 12/12；全新/旧项目各并发保存、编辑、同步和冷重启逐条核对。完整日常 JS 4101/4101、语法/文档/浏览器、共享渲染 4/4 与 32 组 Swift 全通过，详见[实施证据](docs/github-issues-implementation-20261020.md)。
+- 下一步：#2 提交/推送/关闭；再按[通用循环实施约定](docs/shared-loop-hardening-20261020.md)实施 #5 及其余项。不运行 git pp、不重装、不改真实数据。
 
 此前交接（原文见[历史交接](docs/handoffs/overview-history-20261019.md)，新者在后）：10-19 双端逻辑只读审计 → 七项修复与最终日常 → 双端覆盖安装与数据保留 → 架构维护成本审计与方案 → GitHub 权限只读核对 → 架构方案 P0 执行 → 架构方案 P2a 记忆页与项目页 → 架构方案 P2b Agent 设置 → 架构方案 P2c 聊天拆分 → Claude 架构 P0–P2 独立审计 → 已提交保存恢复 R1 修复。
 
