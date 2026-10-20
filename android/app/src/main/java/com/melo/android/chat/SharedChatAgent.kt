@@ -85,9 +85,9 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                         journal.event("hosted-search-$index", "native_web_search", module = "search", operation = true, sources = sources,
                             output = if (verified) receipt.text("answer").take(4000) else "Search 未完成", status = if (item.text("status") == "completed") "completed" else "failed")
                     }
-                    if (verified) observations += runtime.value("completionObservation", buildJsonObject { put("observation", buildJsonObject {
+                    if (verified) observations.addAll(runtime.value("completionObservation", buildJsonObject { put("observation", buildJsonObject {
                         put("id", "hosted-search-request"); put("name", "web_search"); put("ok", true); put("executed", true); put("sources", JsonArray(sources))
-                    }) }).jsonArray
+                    }) }).jsonArray)
                     if (!verified) return finish("本轮未收到可核对的 Search completed 与来源回执，无法确认已完成实时检索；未操作手机屏幕。", response.model, "blocked", "MISSING_HOSTED_EVIDENCE")
                     if (plan["research"]?.jsonObject?.get("navigate")?.jsonPrimitive?.boolean != true) {
                         turn.event("complete")
@@ -144,9 +144,9 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                             }
                         }
                         currentCoroutineContext().ensureActive()
-                        observations += runtime.value("completionObservation", buildJsonObject { put("observation", buildJsonObject {
+                        observations.addAll(runtime.value("completionObservation", buildJsonObject { put("observation", buildJsonObject {
                             put("id", call.id); put("name", call.name); put("ok", result.ok); put("executed", executed); put("data", result.data)
-                        }) }).jsonArray
+                        }) }).jsonArray)
                         while (observations.size > 128) observations.removeAt(0)
                         // Only the native DeviceCompletion receipt can verify an action.
                         // It certifies its exact goal; a successful subtask cannot certify a broader user task.

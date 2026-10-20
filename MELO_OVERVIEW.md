@@ -770,6 +770,8 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 
 #5 最终：6209a2a 的 Android CI 39358209565 通过，模拟器 64/64 零跳过，GitHub #5 已关闭。
 
+#6 首轮验证分支 8b57654：Core 129/129，Kotlin 编译发现集合重载歧义，已改为 addAll 后复验。手机正式分支仍为 6209a2a；模拟器未开始，issue 保持打开。
+
 ### 2026-10-20 — melo主线（Codex）— GitHub #6 完成回执接线
 - 状态：WIP；#1/#4/#3/#9/#2/#5 已发布关闭，#6 待完整验证，随后 #8/#7/#11/#12/#10/#13/#14。用户再次授权逐项测试后推送关闭，不逐条询问。
 - 行为：执行器返回文字/工具 ok 与任务证据分开；五类终态、已读来源和目标未知状态由共享 Core 计算。Node 主聊天/成员/技能、当前 iPhone AgentLoop、Android SharedChatAgent 与执行面板接线。

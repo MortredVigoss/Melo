@@ -25,3 +25,5 @@
 - UI 共用回执摘要；成员原有执行/交接状态仍表示成员是否返回，另展示目标回执。Swift 成员通过已有执行阶段保留回执，桌面成员通过交接记录保留。
 - 目前通过：Node/Core/真实 localhost 模型 HTTP 115/115；JSCore 同一组 84 fixture；Swift AgentLoop、Execution 三组通过；另已验证执行记录落盘回读与共享桌面/iPhone DOM 展示。完整日常、iOS 编译、Android JVM/模拟器正在验证；#6 尚未关闭。
 - 分支边界：主线负责当前 Node/iPhone；手机分支负责 Android 和同源 Core/共享展示资源，不整体合并手机分支内旧 Node/iPhone 源码。没有改用户配置、账号、真实数据库或安装应用。
+
+Android 首次验证分支 `8b57654`：Core 129/129 通过；CI `39362453557` 在 Kotlin 编译拒绝 `MutableList += JsonArray` 的重载歧义，模拟器尚未运行。改为显式 `addAll`，第二轮仍在独立验证分支；不能据此关闭 #6 或宣称 Android 已验收。
