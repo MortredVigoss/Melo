@@ -321,7 +321,11 @@ async function handleCreateCustomAgent() {
   agentsState.agentCreating = true;
   render();
   try {
-    const payload = await agentsApi.createCustom();
+    // Capability elevation rule 6: the read-only starter set, or a copy of an
+    // existing Agent's settings (persona only when ticked). The plain create
+    // keeps its original empty body.
+    const basedOn = agentsState.agentCreateBase || '';
+    const payload = await agentsApi.createCustom(basedOn ? { basedOn, copyPersona: agentsState.agentCreateCopyPersona === true } : {});
     const createdId = committedSaveReceipt(payload)?.agentId || payload.settings?.selectedAgentId;
     applyBootstrap(payload);
     const form = app.querySelector('form[data-form="agent-profile-update"]');
@@ -1036,6 +1040,17 @@ async function previewAgentAvatar(target) {
 // Last branch inside the 'change' listener's try (agent-profile-update form
 // fields). Synchronous; returns true when it handled the event.
 export function handleAgentProfileChange(target) {
+  // New-Agent starting point («基于已有 Agent») and the persona tick: page state only.
+  if (target.matches?.('[data-agent-create-base]')) {
+    agentsState.agentCreateBase = String(target.value || '');
+    if (!agentsState.agentCreateBase) agentsState.agentCreateCopyPersona = false;
+    render();
+    return true;
+  }
+  if (target.matches?.('[data-agent-create-persona]')) {
+    agentsState.agentCreateCopyPersona = target.checked === true;
+    return true;
+  }
   if (target.form?.dataset.form === 'agent-profile-update') {
     const agentId = target.form.dataset.agentId;
     if (['telegramEnabled', 'discordEnabled'].includes(target.name)) {

@@ -562,7 +562,13 @@ const router = createRouteRegistry([
     } },
 
     { method: 'POST', paths: ["/api/agents/create-custom"], auth: 'local-write', handler: async ({ request, response, url, requireLocalOrigin }) => {
-      await sendBootstrapAfterCommit(response, await createCustomAgent());
+      // Capability elevation rule 6: the read-only starter set, or "基于已有 Agent".
+      const body = await readJsonBody(request, { maxBytes: 4096 });
+      if ((body.basedOn != null && typeof body.basedOn !== 'string') || (body.copyPersona !== undefined && typeof body.copyPersona !== 'boolean')) {
+        sendJson(response, 400, { ok: false, error: 'basedOn must be an Agent id and copyPersona a boolean.' });
+        return;
+      }
+      await sendBootstrapAfterCommit(response, await createCustomAgent({ basedOn: body.basedOn ?? null, copyPersona: body.copyPersona === true }));
       return;
     } },
 

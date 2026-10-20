@@ -6,7 +6,8 @@
 // what the page sent before the move.
 export function createAgentsApi(request) {
   return {
-    createCustom: () => request('/api/agents/create-custom', { method: 'POST', body: {} }),
+    // {} = the read-only starter set; { basedOn, copyPersona } = «基于已有 Agent».
+    createCustom: (body = {}) => request('/api/agents/create-custom', { method: 'POST', body }),
     // Save (global or project override), Markdown / channel autosaves and
     // clearProjectOverride all use this route.
     update: body => request('/api/agents/update', { method: 'POST', body }),

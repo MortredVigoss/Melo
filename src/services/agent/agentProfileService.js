@@ -1,4 +1,5 @@
-import { emptyCapabilities, normalizeCapabilities, normalizeCollaboration } from '../../domain/agent/capabilities.js';
+import { normalizeCapabilities, normalizeCollaboration } from '../../domain/agent/capabilities.js';
+import { CAPABILITY_ELEVATION, capabilitiesFromAtoms } from '../../domain/agent/capabilityElevation.js';
 import { estimateTextTokens } from '../../memory/tokenEstimate.js';
 
 // Below the default cloud input limit (160k − 8k reserve, see contextBudget.js)
@@ -217,15 +218,31 @@ export function mergeChannelsWithStaleDraftGuard(incomingChannelsRaw, persistedC
 // 3. Default custom-agent profile builder
 // ────────────────────────────────────────────────────────────────────────────
 
+// Rule 6 of capability elevation (2026-10-20): a new Agent starts read-only —
+// the shared contract's starter set (readFiles, network, knowledgeMemory);
+// writing, commands, media and delegation are asked for when needed.
+export const starterCapabilities = () => capabilitiesFromAtoms(CAPABILITY_ELEVATION.newAgentStarter);
+
+// "基于已有 Agent": what is copied at creation time (afterwards the two are
+// independent). Persona-like fields (instructions, description, mood, voice)
+// only when the user ticks it; channels / bot tokens, avatar, name and the
+// portable-identity flag never.
+const BASED_ON_SETTINGS = ['collaboration', 'contextSources', 'model', 'tools', 'enabledSkillIds', 'enabledConnectorIds', 'enabledMcpServerIds'];
+const BASED_ON_PERSONA = ['instructions', 'rolePrompt', 'identity', 'soulMd', 'systemPrompt', 'description', 'laneLabel', 'mood',
+  'voiceReplyMode', 'voicePersonality', 'minimaxVoiceId', 'edgeTtsVoice', 'ttsSpeed', 'ttsPitch', 'ttsVol'];
+
 /**
  * Allocate the next custom agent id (based on existing profiles) and build
  * a normalized default profile for it. Caller splats `{ [agentId]: profile }`
  * onto `state.agentProfiles` and runs its own markdown sync + saveState.
  *
  * @param {object} existingProfiles  - current state.agentProfiles map
+ * @param {object} [options]
+ * @param {object} [options.basedOn]   normalized global profile to copy settings from
+ * @param {boolean} [options.copyPersona] also copy instructions, description, mood and voice
  * @returns {{ agentId: string, displayName: string, profile: object }}
  */
-export function buildNewCustomAgent(existingProfiles = {}) {
+export function buildNewCustomAgent(existingProfiles = {}, { basedOn = null, copyPersona = false } = {}) {
   const agentId = nextCustomAgentId(existingProfiles);
   const idSuffix = agentId.split('-').pop();
   const displayName = `Custom agent ${idSuffix}`;
@@ -233,7 +250,7 @@ export function buildNewCustomAgent(existingProfiles = {}) {
     'Stay adaptive, clear, and dependable. Use the configured tools and channels deliberately, and keep collaboration smooth.';
   const profile = normalizeAgentProfile(agentId, {
     isCustom: true,
-    capabilities: emptyCapabilities(),
+    capabilities: starterCapabilities(),
     name: displayName,
     laneLabel: 'Custom lane',
     description:
@@ -246,5 +263,10 @@ export function buildNewCustomAgent(existingProfiles = {}) {
     mood: 'calm',
     tools: [...DEFAULT_AGENT_TOOL_IDS],
   });
-  return { agentId, displayName, profile };
+  if (!basedOn) return { agentId, displayName, profile };
+  const copied = { capabilities: normalizeCapabilities(basedOn.capabilities) || starterCapabilities() };
+  for (const key of BASED_ON_SETTINGS) if (basedOn[key] !== undefined) copied[key] = structuredClone(basedOn[key]);
+  if (copied.collaboration) copied.collaboration = { ...copied.collaboration, delegateTargets: (copied.collaboration.delegateTargets || []).filter(id => id !== agentId) };
+  if (copyPersona) for (const key of BASED_ON_PERSONA) if (basedOn[key] !== undefined && basedOn[key] !== null) copied[key] = structuredClone(basedOn[key]);
+  return { agentId, displayName, profile: normalizeAgentProfile(agentId, { ...profile, ...copied, name: displayName, channels: profile.channels, avatarData: '', portableIdentity: false }) };
 }

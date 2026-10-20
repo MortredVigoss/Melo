@@ -289,3 +289,27 @@ test('recovered create never auto-edits another Agent or a project override', as
     assert.deepEqual(h.edits, [], 'the pre-existing form must remain read-only');
   }
 });
+
+test('create flow: read-only start by default; «基于已有 Agent» sends basedOn and the persona tick', async () => {
+  const h = harness({ responses: { '/api/agents/create-custom': page() } });
+  let doc = new JSDOM(h.feature.renderPage()).window.document;
+  assert.deepEqual([...doc.querySelectorAll('[data-agent-create-base] option')].map(o => o.value), ['', 'main', 'research']);
+  assert.equal(doc.querySelector('[data-agent-create-base]').getAttribute('aria-label'), '新 Agent 的起点');
+  assert.equal(doc.querySelector('[data-agent-create-persona]'), null, 'nothing to copy from a read-only start');
+  assert.match(doc.querySelector('.agent-create-hint').textContent, /默认只开启读取文件、联网、知识与记忆/);
+  assert.ok(doc.querySelector('[data-grants-for="research"]'), 'the selected Agent shows its temporary grants');
+  await h.actions.dispatch('create-custom-agent', { action: 'create-custom-agent', trigger: null, event: null });
+  assert.deepEqual(h.calls.at(-1), ['/api/agents/create-custom', 'POST', {}], 'the plain create keeps its empty body');
+  assert.equal(h.feature.handleChange(element('<select data-agent-create-base><option value="main" selected>Melo</option></select>')), true);
+  doc = new JSDOM(h.feature.renderPage()).window.document;
+  assert.equal(doc.querySelector('[data-agent-create-base]').value, 'main');
+  assert.ok(doc.querySelector('[data-agent-create-persona]'));
+  assert.match(doc.querySelector('.agent-create-hint').textContent, /消息渠道和机器人令牌不会复制/);
+  await h.actions.dispatch('create-custom-agent', { action: 'create-custom-agent', trigger: null, event: null });
+  assert.deepEqual(h.calls.at(-1)[2], { basedOn: 'main', copyPersona: false });
+  assert.equal(h.feature.handleChange(element('<input type="checkbox" data-agent-create-persona checked>')), true);
+  await h.actions.dispatch('create-custom-agent', { action: 'create-custom-agent', trigger: null, event: null });
+  assert.deepEqual(h.calls.at(-1)[2], { basedOn: 'main', copyPersona: true });
+  h.feature.handleChange(element('<select data-agent-create-base><option value="" selected>x</option></select>'));
+  assert.equal(h.feature.getState().agentCreateCopyPersona, false, 'going back to the read-only start clears the tick');
+});
