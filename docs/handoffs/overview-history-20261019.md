@@ -545,3 +545,10 @@
 - 实际入口：`src/media/imageRecords.js`、`src/services/media/savedImages.js`、`src/http/mediaRoutes.js`、`desktop-ui/imageResource.js`；记录/调用链与旧数据边界见[实施记录](../github-issues-implementation-20261020.md)。共用五语资源同步到 iPhone。
 - 验证：最终 JS 4079/4079；覆盖真实服务重启/换端口、TTL、场景清理、路径隔离、并发及浏览器保存原图。语法/文档/两项设置浏览器/共用渲染 4/4 与 32 组 Swift 全通过。隔离 home/图片，不是用户真图与实体应用验收。
 - 下一步：#4 推送并在 GitHub 完成，然后 #3 自然搜索、#9/#2 及余下已授权项。不运行 git pp，不重装应用。
+
+### 2026-10-20 — melo主线（Codex）— GitHub #3 自然搜索路由
+- 线程 ID：`01a13b2e-5446-7042-bb5e-773129746c7e`；#1 `47da231`、#4 `94e76cb` 均已推送并关闭，远端安全 CI 通过；#3 当前本线程 WIP。
+- 自然餐饮/住宿/产品推荐进入公开搜索；相关短追问保留任务但不跨否定、取消、换题或 App 边界。搜索引导按本轮真实可用工具收敛，无能力时说明；显式链接翻译仍可读取链接。
+- 文件：`src/retrieval/{publicLookupIntent,searchRouter}.js`、`src/services/chat/chatExecutionRunner.js`，新增意图与 HTTP 执行回归；未改稳定工具列表或权限。手机分支已有自己的自然推荐实现，#5 再进行跨 Host 收敛；没有合并整条 Android 分支。
+- 验证：专项 95/95，日常 JS 4098/4098；日常语法/文档/两项设置浏览器通过；共用渲染 4/4 与 32 组 Swift 最终复测通过。[实施证据](../github-issues-implementation-20261020.md)。测试为隔离模型 HTTP / Search fixture，不是外网真实模型验收。
+- 下一步：#3 验证推送后关闭；#9 跨平台 CI，随后 #2 记忆库并发和其余已授权项。不运行 git pp、不重装应用。

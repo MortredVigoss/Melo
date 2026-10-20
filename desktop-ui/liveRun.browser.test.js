@@ -17,20 +17,23 @@ test('a running reply shows its steps, keeps controls usable and takes a supplem
  const proof='.tmp/live-run-20261017/screenshots';await mkdir(proof,{recursive:true});
  const requests=[];
  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
- // Fixture model: streams slowly enough for the browser to act mid-reply.
+ let releaseReply,releaseTool,heldReply=false;
+ const replyGate=new Promise(resolve=>{releaseReply=resolve;}),toolGate=new Promise(resolve=>{releaseTool=resolve;});
+ // Hold the actual model response until the browser submits its supplement.
+ // A slow CI browser must not race against a fixed streaming duration.
  const model=createServer(async(req,res)=>{let raw='';for await(const chunk of req)raw+=chunk;const body=raw?JSON.parse(raw):{};
   requests.push({path:req.url,body:JSON.stringify(body),toolResults:(body.input||[]).filter(item=>item.type==='function_call_output').length});
   res.setHeader('content-type','text/event-stream');
   const pieces=['床前','明月','光，','疑是','地上','霜。'];
   if(req.url.endsWith('/responses')&&raw.includes('查一下以前的诗')&&raw.includes('search_history')&&!(body.input||[]).some(item=>item.type==='function_call_output')){
    // Step 1 of a two-step turn: a slow tool call, so the browser can add a supplement mid-turn.
-   await sleep(3000);
+   await toolGate;
    res.end(`data: ${JSON.stringify({type:'response.completed',response:{id:'fixture-tool',model:'fixture-model',status:'completed',output:[{type:'function_call',id:'item-poems',call_id:'call_poems',name:'search_history',arguments:JSON.stringify({query:'诗'}),status:'completed'}]}})}\n\n`);
   } else if(req.url.endsWith('/responses')){
-   for(const delta of pieces){res.write(`data: ${JSON.stringify({type:'response.output_text.delta',delta})}\n\n`);await sleep(700);}
+   for(const delta of pieces){res.write(`data: ${JSON.stringify({type:'response.output_text.delta',delta})}\n\n`);if(!heldReply){heldReply=true;await replyGate;}}
    res.end(`data: ${JSON.stringify({type:'response.completed',response:{id:'fixture',model:'fixture-model',status:'completed',output:[{type:'message',role:'assistant',id:'m',status:'completed',content:[{type:'output_text',text:pieces.join(''),annotations:[]}]}]}})}\n\n`);
   } else {
-   for(const content of pieces){res.write(`data: ${JSON.stringify({choices:[{index:0,delta:{content}}]})}\n\n`);await sleep(700);}
+   for(const content of pieces){res.write(`data: ${JSON.stringify({choices:[{index:0,delta:{content}}]})}\n\n`);if(!heldReply){heldReply=true;await replyGate;}}
    res.end('data: [DONE]\n\n');
   }
  });model.listen(0,'127.0.0.1');await once(model,'listening');
@@ -40,7 +43,7 @@ test('a running reply shows its steps, keeps controls usable and takes a supplem
   MELO_AUTH_MODE:'api-key',MELO_BASE_URL:`http://127.0.0.1:${model.address().port}/v1`,MELO_API_KEY:'fixture-key',MELO_MODEL:'fixture-model'},stdio:['ignore','pipe','pipe']});
  const closed=once(child,'exit');
  // The server is stopped (and awaited) even when closing the browser fails, so a failed run never orphans it.
- t.after(async()=>{try{await browser?.close();}finally{model.closeAllConnections();model.close();const kill=setTimeout(()=>child.kill('SIGKILL'),5000);child.kill('SIGTERM');await closed;clearTimeout(kill);await rm(home,{recursive:true,force:true,maxRetries:5});}});
+ t.after(async()=>{releaseReply();releaseTool();try{await browser?.close();}finally{model.closeAllConnections();model.close();const kill=setTimeout(()=>child.kill('SIGKILL'),5000);child.kill('SIGTERM');await closed;clearTimeout(kill);await rm(home,{recursive:true,force:true,maxRetries:5});}});
  const base=await new Promise((resolve,reject)=>{let log='';const timer=setTimeout(()=>reject(Error('Startup timeout '+log)),15000);child.stdout.on('data',chunk=>{log+=chunk;const m=log.match(/listening at (http:\/\/[^\s]+)/i)||log.match(/(http:\/\/127\.0\.0\.1:\d+)/);if(m){clearTimeout(timer);resolve(m[1].replace(/\/$/,''));}});child.stderr.on('data',chunk=>{log+=chunk;});});
  const post=async(path,body)=>{const r=await fetch(base+path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});assert.equal(r.status,200,path);return r.json();};
  const chatId=(await post('/api/chats',{projectId:null,mode:'chat'})).activeChat.id;
@@ -64,6 +67,7 @@ test('a running reply shows its steps, keeps controls usable and takes a supplem
  await page.locator('.run-steps-note').filter({hasText:'改成五言'}).waitFor({timeout:5000});
  await page.locator('.run-steps-note').scrollIntoViewIfNeeded();
  assert.equal(await composer.inputValue(),'','the composer is cleared after a supplement');
+ releaseReply();
  await page.screenshot({path:join(proof,'supplement-sent.png')});
  // The reply had no further step, so the supplement is sent as the next message.
  const boot=async()=>(await fetch(base+'/api/bootstrap')).json();
@@ -79,6 +83,7 @@ test('a running reply shows its steps, keeps controls usable and takes a supplem
  await page.locator('[data-action=stop-send]').waitFor();
  await composer.fill('只要五言');await composer.press('Enter');
  await page.locator('.run-steps-note').filter({hasText:'只要五言'}).waitFor({timeout:5000});
+ releaseTool();
  for(let i=0;i<200;i++){chat=(await boot()).activeChat;if((chat?.messages||[]).length>=6)break;await sleep(100);}
  assert.deepEqual(chat.messages.map(m=>m.role),['user','assistant','user','assistant','user','assistant'],'used in the same turn, not sent as another message');
  assert.equal(chat.messages[4].content,'查一下以前的诗\n\n补充：只要五言');

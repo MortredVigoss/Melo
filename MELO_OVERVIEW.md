@@ -59,12 +59,12 @@
 
 ## 4. 最新交接
 
-### 2026-10-20 — melo主线（Codex）— GitHub #3 自然搜索路由
-- 线程 ID：`01a13b2e-5446-7042-bb5e-773129746c7e`；#1 `47da231`、#4 `94e76cb` 均已推送并关闭，远端安全 CI 通过；#3 当前本线程 WIP。
-- 自然餐饮/住宿/产品推荐进入公开搜索；相关短追问保留任务但不跨否定、取消、换题或 App 边界。搜索引导按本轮真实可用工具收敛，无能力时说明；显式链接翻译仍可读取链接。
-- 文件：`src/retrieval/{publicLookupIntent,searchRouter}.js`、`src/services/chat/chatExecutionRunner.js`，新增意图与 HTTP 执行回归；未改稳定工具列表或权限。手机分支已有自己的自然推荐实现，#5 再进行跨 Host 收敛；没有合并整条 Android 分支。
-- 验证：专项 95/95，日常 JS 4098/4098；日常语法/文档/两项设置浏览器通过；共用渲染 4/4 与 32 组 Swift 最终复测通过。[实施证据](docs/github-issues-implementation-20261020.md)。测试为隔离模型 HTTP / Search fixture，不是外网真实模型验收。
-- 下一步：#3 验证推送后关闭；#9 跨平台 CI，随后 #2 记忆库并发和其余已授权项。不运行 git pp、不重装应用。
+### 2026-10-20 — melo主线（Codex）— GitHub #9 跨平台 CI
+- 线程 ID：`01a13b2e-5446-7042-bb5e-773129746c7e`；#1 `47da231`、#4 `94e76cb`、#3 `1c48b6a` 已推送并关闭。#9 实施中，全部远端 gate 完成后才关闭。
+- 工作树：主线 `.tmp/github-issues-main`、手机 `.tmp/github-issues-mobile`，保留原 master 上另一权限线程的提交/WIP。Android 仅推回 `codex/mobile-use-features`，没有合并全部手机产品代码。
+- 入口：主线 `.github/workflows/{file-safety,verification}.yml`；手机分支 `.github/workflows/android.yml`。环境依赖、门禁层级和失败语义见[测试工作流](docs/testing-workflow.md)。修正流式 UI 测试的固定时长竞态，生产行为不变。
+- 验证：Mac/Linux 浏览器专项通过；Android Core 84/84、bundle 与 YAML 校验通过，`6c4ab6b` 对应 run `39344901902` 运行中。Linux 全量 4095 pass / 0 fail / 2 平台或 root skip；附件写权限普通用户补跑与 Mac 原生退出补跑均通过；[实施证据](docs/github-issues-implementation-20261020.md)。不把工作流已写入或已推送称为远端通过。
+- 下一步：等待/修复远端各 gate；再完成 #2 记忆库并发及余项。不运行 git pp，不重装应用、不动真实手机数据。
 
 此前交接（原文见[历史交接](docs/handoffs/overview-history-20261019.md)，新者在后）：10-19 双端逻辑只读审计 → 七项修复与最终日常 → 双端覆盖安装与数据保留 → 架构维护成本审计与方案 → GitHub 权限只读核对 → 架构方案 P0 执行 → 架构方案 P2a 记忆页与项目页 → 架构方案 P2b Agent 设置 → 架构方案 P2c 聊天拆分 → Claude 架构 P0–P2 独立审计 → 已提交保存恢复 R1 修复。
 
@@ -150,7 +150,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | 线程（原名） | ID | 最新交接 / 实际范围 | 状态与证据 |
 | --- | --- | --- | --- |
 | melo审计修复（Cowork） | `01a11623-b29c-70c7-8ee0-bb21a1e6eef3` | 10-17 三路只读审计 → 四批修复：TTS 路由、上下文预算/窗口/压缩同源、逐轮上下文入用户消息、Discord 归档、Agent 成员/循环/审批加固、分层 gate 传递闭包、文档对齐；10-19 手机 agent loop 对齐桌面（共享 `agent-loop.json`）；10-19 架构方案 P0 执行 → P2a 记忆 / 项目页拆分 → P2b Agent 设置拆分 → P2c 聊天拆分（P2 完成） | 沙箱全量 JS 回归与基线一致；用户机器日常 gate 见本次提交；[审计与实施状态](docs/architecture-agent-context-audit-20261017.md) §7；P2c / P2b / P2a / P0 见[历史交接](docs/handoffs/overview-history-20261019.md) |
-| melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 七项双端修复已推送并覆盖两端；10-19 新增架构维护成本审计与分期方案；10-19 GitHub 权限只读核对；10-19 Claude 架构 P0–P2 独立审计与 R1 修复；10-20 核对并按序实施 yrlf 的 14 条 issues | [双端修复](docs/mobile-desktop-alignment.md) / [装机保留](docs/dual-reinstall-20261019.md)已验；[架构方案](docs/architecture-maintainability-plan-20261019.md)已本地提交 `db9f7ba`，用户已批准执行 P0–P2（执行修订见方案第 8 节）；本次[审计及修复](docs/claude-architecture-review-20261019.md) R1 已在 `46554b2` 修复，日常选定范围全部通过，已随 `401ae4b` 推送；[14 条 issues 核对](docs/github-issues-review-20261020.md)已转入[按序实施](docs/github-issues-implementation-20261020.md)，#1 修复 `47da231` 已推送、issue 已关闭，双平台 CI 通过；#4 `94e76cb` 已推送、issue 已关闭；#3 实施与专项通过，日常各层通过，待提交推送 |
+| melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 七项双端修复已推送并覆盖两端；10-19 新增架构维护成本审计与分期方案；10-19 GitHub 权限只读核对；10-19 Claude 架构 P0–P2 独立审计与 R1 修复；10-20 核对并按序实施 yrlf 的 14 条 issues | [双端修复](docs/mobile-desktop-alignment.md) / [装机保留](docs/dual-reinstall-20261019.md)已验；[架构方案](docs/architecture-maintainability-plan-20261019.md)已本地提交 `db9f7ba`，用户已批准执行 P0–P2（执行修订见方案第 8 节）；本次[审计及修复](docs/claude-architecture-review-20261019.md) R1 已在 `46554b2` 修复，日常选定范围全部通过，已随 `401ae4b` 推送；[14 条 issues 核对](docs/github-issues-review-20261020.md)已转入[按序实施](docs/github-issues-implementation-20261020.md)，#1 修复 `47da231` 已推送、issue 已关闭，双平台 CI 通过；#4 `94e76cb` 已推送、issue 已关闭；#3 `1c48b6a` 已推送、issue 已关闭；#9 实施中 |
 | melo主线（历史·2026-10-15） | `01a10bf2-e092-7862-87fe-2f237a8fb6a0` | 架构、审计、记忆、function calling、日常 gate 和手机 OAuth；本次只补遗漏 | 已完成补录；授权核心已提交，当时相关共享文件的他线程 WIP 已于 10-17 收入 `8cd3eff`；[build23 回执](docs/handoffs/melo-thread-backfill-20261015.md#historical)，产品任务交新主线 |
 | 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | API 观测、阅读/图片保留共享 WIP（10-17 已随全部 WIP 收入 `8cd3eff`）；五语/图像质量/MCP 已提交；本轮统一 Agent 设置并清除 Mood | Agent 日常 3573 JS / 23 Swift、浏览器与原生桌面通过，见 `docs/agent-settings-20261016.md`；现有聊天/Agent 保留，手机未重装 |
 | melo ui | `01a10bf3-d7b9-7832-a351-8b0f78e9c552` | 10-16 UI 设计语言审计：主视觉统一，新增浮层/设置/控件接入不完整；仅审计 | 六类差异与手机 Form 待验项见[审计报告](docs/ui-language-audit-20261016.md)；桌面实看/样式采样，手机源码层；此前[银河与留白](docs/galaxy-clarity-20261016.md)验证保留 |

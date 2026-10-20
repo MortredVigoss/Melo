@@ -1,0 +1,94 @@
+name: Cross-platform verification
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: verification-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Linux Node, HTTP and browser
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '22.22.2'
+          cache: npm
+      - name: Environment and dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ruby ffmpeg ripgrep fonts-noto-cjk
+          npm ci --ignore-scripts
+          npm run build:native
+          node scripts/prepare-memory-model.js
+          npx playwright-core install --with-deps chromium
+          node --input-type=module -e "import {chromium} from 'playwright-core'; console.log('MELO_TEST_CHROME=' + chromium.executablePath())" >> "$GITHUB_ENV"
+      - name: Environment preflight
+        run: |
+          node --version
+          python3 --version
+          ruby --version
+          ffmpeg -version
+          ffprobe -version
+          rg --version
+          test -x "$MELO_TEST_CHROME"
+          node -e "require('./build/Release/dirfd_ops.node')"
+          node -e "require('onnxruntime-node')"
+          node --input-type=module -e "import {BuiltinEmbedProvider} from './src/memory/embedProviders/BuiltinEmbedProvider.js'; if (!await new BuiltinEmbedProvider().isAvailable()) process.exit(2)"
+      - name: All JavaScript tests, including native and browser regressions
+        run: |
+          mkdir -p .tmp/ci
+          npm run test:unit 2>&1 | tee .tmp/ci/linux-tests.log
+      - name: Syntax and generated contracts
+        run: |
+          npm run build
+          node scripts/generate-module-map.js --check
+          node scripts/generate-sync-contract.js --check
+          node scripts/generate-agent-loop-contract.js --check
+          node scripts/build-interface-languages.js --check
+      - uses: actions/upload-artifact@v7.0.2
+        if: always()
+        with:
+          name: linux-verification
+          path: .tmp/ci/
+          retention-days: 7
+
+  swift:
+    name: macOS Swift and shared rendering
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '22.22.2'
+          cache: npm
+      - name: Environment and dependencies
+        run: |
+          npm ci --ignore-scripts
+          xcrun swift --version
+          python3 --version
+      - name: Shared rendering and all Swift suites
+        run: |
+          mkdir -p .tmp/ci
+          python3 ios/scripts/test.py 2>&1 | tee .tmp/ci/swift-tests.log
+      - name: macOS native shell lifecycle
+        run: node --test scripts/native-shutdown.test.js 2>&1 | tee .tmp/ci/native-shell.log
+      - uses: actions/upload-artifact@v7.0.2
+        if: always()
+        with:
+          name: swift-verification
+          path: .tmp/ci/
+          retention-days: 7

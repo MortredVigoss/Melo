@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | 1 | [#1 文件身份](https://github.com/MortredVigoss/Melo/issues/1) | 已完成：`47da231` 已推送，issue 已关闭；[双平台 CI](https://github.com/MortredVigoss/Melo/actions/runs/39260200905)通过 |
 | 2 | [#4 历史图片](https://github.com/MortredVigoss/Melo/issues/4) | 已完成：`94e76cb` 已推送，issue 已关闭；稳定图片身份、旧记录恢复与原图回归 |
-| 3 | [#3 自然搜索](https://github.com/MortredVigoss/Melo/issues/3) | 修复与专项 95/95 通过；JS 4098/4098，日常各层通过，待提交推送 |
+| 3 | [#3 自然搜索](https://github.com/MortredVigoss/Melo/issues/3) | 已完成：`1c48b6a` 已推送，issue 已关闭；专项 95/95、JS 4098/4098 与 Swift 通过 |
 | 4 | [#9 跨平台 CI](https://github.com/MortredVigoss/Melo/issues/9)、[#2 记忆库并发](https://github.com/MortredVigoss/Melo/issues/2) | #1 同步加入最小双平台文件安全工作流；完整平台矩阵与并发复现仍待完成 |
 | 5 | [#5 通用循环](https://github.com/MortredVigoss/Melo/issues/5)、[#6 完成条件](https://github.com/MortredVigoss/Melo/issues/6)、[#8 事件](https://github.com/MortredVigoss/Melo/issues/8)、[#7 Android 上下文](https://github.com/MortredVigoss/Melo/issues/7) | 待执行；按 Host 适配与对照验收，不删现有行为 |
 | 6 | [#11 项目生命周期](https://github.com/MortredVigoss/Melo/issues/11)、[#12 后端拆分](https://github.com/MortredVigoss/Melo/issues/12)、[#10 Fold 缓存](https://github.com/MortredVigoss/Melo/issues/10)、[#13 容量基线](https://github.com/MortredVigoss/Melo/issues/13)、[#14 Task Eval](https://github.com/MortredVigoss/Melo/issues/14) | 待执行；小型确定性回放伴随改动，真机/真实模型证据单列 |
@@ -58,3 +58,15 @@
 - `search-daily.log`：JS 4098/4098；日常语法/文档/两项设置浏览器通过；共用渲染 4/4 与 32 组 Swift 最终复测通过。搜索结果为受控 HTTP/工具夹具，没有调用付费模型或真实外网搜索；不将夹具当成真实 provider 验收。
 
 完整日常首次暴露 Swift `AgentTeamTests` 的异步取消回执竞态：生产已经发出取消，测试立即读取另一任务的 catch 副作用。改为最多 2 秒等待明确取消事件、计数器读写均加锁；保留取消/超时/无后续请求断言。`search-swift-final.log` 最终共用渲染 4/4 与全部 32 组 Swift 通过。没有改变生产取消语义。
+
+## #9 实施计划
+
+主线增加 Linux 全部 Node/HTTP/浏览器回归与 macOS Swift 独立工作流；沿用 #1 的双平台原生安全门禁。新 checkout 显式准备 Node、Python、Ruby、原生 addon 和 Chrome，不使用本机安装路径。环境准备单列步骤，测试失败保持红色，不用 skip/重试伪装通过；不运行安装用户应用的发布 gate。
+Android 源码仅在 `codex/mobile-use-features`，在隔离 `.tmp/github-issues-mobile` 工作树修正该分支工作流并回推同一远端分支；不捆绑合并所有 Android 产品代码。旧 run 39253909144 在 setup-android v3 默认安装失效的 tools 包时失败；升级 action 并显式列依赖，随后执行 JVM/Lint/Debug/R8 与隔离 Emulator。远端各 gate 真正完成后才关闭 #9。
+
+
+#9 进展：Android `6c4ab6b` 已推送到原手机分支，run `39344901902` 已越过环境准备并进入 JVM/Lint/APK 构建；待实际 Emulator 结果。主线验证使用独立 `.tmp/github-issues-main`（基于 `1c48b6a`），避免把共享 master 的另一个权限线程提交带入本项。
+
+Linux 首次完整回归（临时 Debian 容器）4072 pass / 3 fail / 22 skip；缺环境的 skip 不作为完成依据。三个浏览器失败分别为 CJK 字体缺失、C locale 下 Chromium 把中文下载名降成 download，以及固定 4 秒回复窗口下的补充动作竞态。安装字体、UTF-8 locale 后前两项原断言通过；流式夹具改为等待补充提交事件，Mac/Linux 都通过。补齐 FFmpeg、ripgrep、内置模型与完整源码后重新跑全量；日志 `linux-full-final.log`。没有改产品的下载命名或布局，也未降低断言。
+
+#9 本机最终：Debian Node 22.23.3 完整 JS 4095 pass / 0 fail / 2 平台或 root skip；其中附件写权限回归改以普通 node 用户单独通过，macOS 原生退出在 Mac 单独通过。未豁免任何失败。Linux 三个浏览器问题的原断言全过，Mac 流式专项通过。远端固定 Node 22.22.2，最终结论仍以远端 run 为准。
