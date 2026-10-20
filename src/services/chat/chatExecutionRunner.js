@@ -1,3 +1,4 @@
+import { readExecutionContext } from './executionScenes.js';
 import {resolveCapabilityContext} from '../agent/capabilityContext.js';
 import {scopeAllowsTool,toolsForCapabilityScope,nativeFeaturesForScope,missingCapabilityScope} from '../../domain/agent/capabilityScope.js';
 import {retrieveKnowledgeContext} from './knowledgeContext.js';
@@ -643,6 +644,7 @@ export async function runChatAgentExecutionGraph({
 
         const selectedMaterials = isRemoteChannel || activeAgentProfile.contextSources?.knowledge === false ? '' : await retrieveKnowledgeContext({state,chat,home:context.home,query:latestUserMessage,signal,onRetrieved:rows=>sseEmitter?.('execution_event',{kind:'pipeline',id:'knowledge:retrieval',module:'compute',name:'知识片段检索',status:'completed',output:rows.map(r=>`${r.title} [${r.start}-${r.end}]`).join('\n')})});
         refreshCompactContext({ readHistory: visibleToolIds.has('read_history') });
+        const executionHistory = await readExecutionContext(context.home, chat, { excludedRunId: context.runId, enabled: !isRemoteChannel && activeAgentProfile.contextSources?.memory !== false });
         const buildPromptSections = () => buildReActPromptSections({
           config,
           profile: activeAgentProfile,
@@ -668,7 +670,7 @@ export async function runChatAgentExecutionGraph({
           kind: 'chat',
           isRemoteChannel,
           intent: classification,
-        });
+        }).concat(executionHistory ? [{ id: 'execution-history', text: executionHistory, required: false, placement: 'turn', priority: 95, maxTokens: 4000 }] : []);
         let promptSections = buildPromptSections();
         // Budget math (audit L4): measure what the request needs before any
         // history — required sections plus tool definitions — and shrink the
@@ -1110,6 +1112,7 @@ export async function runChatAgentExecutionGraph({
               parallelGroup: execution?.parallelGroup ?? null,
             });
             appendToolInvocationRecord(record, { home: context.home });
+            sseEmitter?.('tool_record', { record });
             return { call, result, record };
           });
 

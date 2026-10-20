@@ -133,6 +133,7 @@ export function sendChatMessage(options) {
         const turnContext=Object.freeze({ ...context, turnBinding:Object.freeze({ ...turnBinding, capabilityScope }), capabilityScope });
         const result = await runWithRequestContext(turnContext,()=>executeChatTurn({ ...options, home: context.home, context: turnContext, configPromise, executionRecorder,
           sseEmitter: (event, data) => {
+            if (event === 'tool_record') { executionRecorder.recordTool(data.record); return; }
             if (event === 'execution_event') executionRecorder.event(data);
             emit(event, data);
           },

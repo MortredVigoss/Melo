@@ -61,6 +61,8 @@ test('phone adapter replays local evidence, persists the view and opens sources 
   const receipt = {version:1,outcome:'partial',goalState:'unverified',summary:'部分完成 · 尚无目标完成证据'};
   window.meloReceive({...payload,scenes:[{...scene,status:'completed',sequence:3,completion:receipt}]});
   assert.equal(document.querySelector('.execution-status').textContent,receipt.summary,'Transport completion must not erase the task evidence gap');
+  assert.ok(document.querySelector('[data-session-event-id="r/tool/o/result"]'), 'The native scene and desktop inspector share canonical tool IDs');
+  assert.ok(document.querySelector('[data-session-event-id="r/terminal/turn/finished"]'));
   document.querySelector('[data-execution-action="overview"]').click();
   assert.equal(document.querySelector('.execution-panel-stage').dataset.zoom,'1.000');
   // Phone two-finger gestures share the desktop picker, but the second finger

@@ -602,3 +602,10 @@
 - 架构：Node 主聊天/子 Agent/技能、Swift AgentLoop 与 Kotlin Host 消费同一个 shared/agent Core 的轮数、许可、批次/重复 ID、重复失败、进展、父子预算及终止策略。Host 保留 HTTP、原生 I/O、schema、审批、取消和记录。Swift/Kotlin 原子预留工具额度。
 - 验证：完整日常 JS 4213/4213、34 组 Swift；真实 JSCore/Android/Node 同一组 68 fixture；iOS simulator app 编译成功；Android JVM/Lint/Debug/R8 与模拟器 64/64 零跳过。远端 Linux/macOS、文件安全与 Android CI 全绿；证据见[实施账本](../github-issues-implementation-20261020.md)及[循环实施](../shared-loop-hardening-20261020.md)。真实账号、安装与设备数据未改。
 - 下一步：#6 的[完成回执约定](../completion-receipts-20261020.md)已写；独立新策略草稿 7 项边界测试通过，尚未接生产或提交。随后 #8/#7/#11/#12/#10/#13/#14；不自动运行 git pp。
+
+### 2026-10-20 — melo主线（Codex）— GitHub #6 完成回执接线
+- 状态：主线 #6 组合版本已通过完整日常与 iPhone 构建；#1/#4/#3/#9/#2/#5 已发布关闭，#6 待 Android 最终 CI，随后 #8/#7/#11/#12/#10/#13/#14。用户再次授权逐项测试后推送关闭，不逐条询问。
+- 行为：执行器返回文字/工具 ok 与任务证据分开；五类终态、已读来源和目标未知状态由共享 Core 计算。Node 主聊天/成员/技能、当前 iPhone AgentLoop、Android SharedChatAgent 与执行面板接线。
+- 文件及边界：shared/agent/completion.js、三端循环和持久执行记录；[完成回执约定](../completion-receipts-20261020.md)。只保留证据 ID；词语匹配不是事实核实，通用文件/MCP 操作缺少独立终态时保持未知。
+- 验证：Node/Core/真实 localhost HTTP 115/115；84 个同源 fixture 在 Node/JSCore 通过；执行记录落盘回读与共享 DOM 通过。固定版本完整日常 4242/4242 JS、34 Swift 和 iOS 编译通过。远端能力授权/测试选组更新 `ceb6667` 待合并复验；Android 验证分支第二轮 CI 进行中，手机正式分支未推进。
+- 账号、数据及已安装应用未改；不运行 git pp；保留原 master 他线程 WIP。

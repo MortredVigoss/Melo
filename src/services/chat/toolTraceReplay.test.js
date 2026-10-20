@@ -101,5 +101,13 @@ test('cancel after one file_read → chat holds a tool-trace line with the file 
   assert.match(result.normalizedReply.content, /接着/);
   const serialized = JSON.stringify(requestMessages);
   assert.ok(serialized.includes(TOOL_TRACE_PREFIX) && serialized.includes('notes/plan.md'), 'next turn prompt history includes the tool trace with the file name');
-  assert.ok(!serialized.includes('read-1'), 'the trace is plain text: no call ids cross turns');
+  assert.ok(!JSON.stringify(history).includes('read-1'), 'the legacy trace remains plain text with no call IDs');
+  assert.ok(serialized.includes(`${trace.metadata.runId}/tool/0%3Aread-1/result`), 'canonical history links to the saved UI event');
+  function assertNoReplay(value) {
+    if (!value || typeof value !== 'object') return;
+    assert.ok(!['function_call', 'function_call_output', 'tool_use', 'tool_result'].includes(value.type), 'history must not reconstruct executable protocol objects');
+    assert.ok(!Object.hasOwn(value, 'call_id') && !Object.hasOwn(value, 'tool_call_id') && !Object.hasOwn(value, 'tool_calls'));
+    for (const child of Object.values(value)) assertNoReplay(child);
+  }
+  assertNoReplay(requestMessages);
 });

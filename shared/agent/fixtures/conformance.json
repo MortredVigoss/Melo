@@ -3963,5 +3963,71 @@
     "expected": {
       "outcome": "partial"
     }
+  },
+  {
+    "name": "canonical cancelled effects stay unknown with stable IDs",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "sessionEvents",
+      "scene": {
+        "version": 1,
+        "runId": "run",
+        "status": "cancelled",
+        "operations": [
+          {
+            "id": "0:call",
+            "name": "send_message",
+            "status": "cancelled",
+            "output": "Bearer PRIVATE_SECRET"
+          }
+        ]
+      }
+    },
+    "expected": [
+      {
+        "version": 1,
+        "eventId": "run/turn/turn/started",
+        "runId": "run",
+        "turnId": "run",
+        "kind": "turn",
+        "operationId": "turn",
+        "phase": "started",
+        "status": "running"
+      },
+      {
+        "version": 1,
+        "eventId": "run/tool/0%3Acall/result",
+        "runId": "run",
+        "turnId": "run",
+        "kind": "tool",
+        "operationId": "0:call",
+        "phase": "result",
+        "name": "send_message",
+        "status": "cancelled",
+        "resultState": "unknown"
+      },
+      {
+        "version": 1,
+        "eventId": "run/terminal/turn/finished",
+        "runId": "run",
+        "turnId": "run",
+        "kind": "terminal",
+        "operationId": "turn",
+        "phase": "finished",
+        "status": "cancelled",
+        "outcome": "cancelled"
+      }
+    ]
+  },
+  {
+    "name": "canonical events do not invent history for legacy missing records",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "sessionEvents",
+      "scene": null
+    },
+    "expected": []
   }
 ]

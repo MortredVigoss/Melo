@@ -290,6 +290,17 @@ struct ExecutionRecord: Codable, Identifiable, Equatable {
     /// Phone tool calls of this run (redacted digest, hash, status/code, timing).
     /// Local only: the frozen v1 sync scene does not carry them.
     var toolCalls: [ExecutionToolCall]?
+    static func executionHistory(_ records: [ExecutionRecord], chatID: String, enabled: Bool = true) -> String {
+        guard enabled else { return "" }
+        let scenes: [[String: Any]] = records.filter { $0.chatId == chatID }.suffix(3).compactMap { record in
+            var snapshot = record
+            if !snapshot.terminal { snapshot.status = "interrupted" }
+            guard let data = try? JSONEncoder().encode(snapshot) else { return nil }
+            return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        }
+        guard !scenes.isEmpty else { return "" }
+        return SharedLoopPolicy.value("executionContext", ["scenes": scenes]) as? String ?? ""
+    }
     var terminal: Bool { ["completed", "failed", "cancelled", "interrupted"].contains(status) }
     func elapsedMilliseconds(now: Date = Date()) -> Double? {
         guard !runId.hasPrefix("legacy-") else { return nil }

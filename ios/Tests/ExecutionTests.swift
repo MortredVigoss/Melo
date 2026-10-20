@@ -162,6 +162,13 @@ import Foundation
         oldJSON["sources"] = (oldJSON["sources"] as! [[String: Any]]).map { item -> [String: Any] in var value = item; value.removeValue(forKey: "citationUrl"); value.removeValue(forKey: "citationLabel"); return value }
         let decodedOld = try JSONDecoder().decode(ExecutionRecord.self, from: JSONSerialization.data(withJSONObject: oldJSON))
         assert(decodedOld == beforeRepair, "Existing installs must decode without the new optional metadata")
+        let eventHistory = ExecutionRecord.executionHistory([cancelled, interrupted], chatID: "cancelled")
+        assert(eventHistory.contains(cancelled.runId + "/model/model%3Aresponse/started"))
+        assert(eventHistory.contains(cancelled.runId + "/terminal/turn/finished"))
+        assert(!eventHistory.contains(interrupted.runId))
+        assert(ExecutionRecord.executionHistory([cancelled], chatID: "cancelled", enabled: false).isEmpty)
+        let restoredCancelled = try JSONDecoder().decode(ExecutionRecord.self, from: JSONEncoder().encode(cancelled))
+        assert(ExecutionRecord.executionHistory([restoredCancelled], chatID: "cancelled") == eventHistory)
         let history = [ChatMessage(role:"user",content:"查一下墨尔本到悉尼的机票"),ChatMessage(role:"assistant",content:"哪一天？"),ChatMessage(role:"user",content:"10月31号")]
         assert(ChatGPTRequest.requiresSearch(history))
         assert(!ChatGPTRequest.requiresSearch(history + [ChatMessage(role:"user",content:"不用查了，帮我写首诗")]))

@@ -7,9 +7,43 @@ import { createExecutionScene, applyExecutionEvent, finishExecutionScene, visibl
 import {executeToolCalls} from '../../testSupport/directAgentFixture.js';
 import { calculatorTool } from '../../tools/builtins/calculatorTool.js';
 import { observeTool, observeNativeItem } from '../../tools/executionObservation.js';
-import { createExecutionRecorder, readExecutionScene, selectSceneImage, saveExecutionScene, recoverSceneObservations } from './executionScenes.js';
+import { createExecutionRecorder, readExecutionScene, selectSceneImage, saveExecutionScene, recoverSceneObservations, readExecutionContext } from './executionScenes.js';
+import { sessionEvents } from '../../shared/sessionEvents.js';
+import { renderSessionEvents } from '../../../desktop-ui/executionDetails.js';
+import { appendToolInvocationRecord, buildToolInvocationRecord } from '../../tools/toolInvocationRecord.js';
 import { readCodexSseResponse } from '../../providers/streams.js';
 import { signWorkspaceFileUrl, verifySignedFileUrl } from '../../web/urlSigning.js';
+
+test('persisted tool records drive matching UI and model event IDs after interruption without repeating effects', async t => {
+  const home = await mkdtemp(join(tmpdir(), 'melo-events-')); t.after(() => rm(home, { recursive: true, force: true }));
+  const recorder = createExecutionRecorder({ home, runId: 'r', chatId: 'c' }, 'perform one action');
+  let effects = 0;
+  await executeToolCalls([{ id: '0:a', args: {}, tool: { id: 'effect-fixture', requiresPermission: false,
+    run: async () => { effects++; return { ok: true, output: 'Bearer secret-token-value' }; } } }], {
+    sseEmitter: (kind, event) => { if (kind === 'execution_event') recorder.event(event); },
+  });
+  const record = buildToolInvocationRecord({ runId: 'r', iteration: 0, call: { id: 'a', name: 'effect-fixture' },
+    result: { ok: true, output: 'private result' }, modelFacingOutput: 'Bearer secret-token-value' });
+  appendToolInvocationRecord(record, { home }); recorder.recordTool(record);
+  recorder.event({ kind: 'operation', id: '1:b', name: 'send_message', status: 'running' });
+  // The process died after recording start but before receiving this result.
+  await recorder.finish('interrupted');
+  const chat = { id: 'c', messages: [{ role: 'user', metadata: { runId: 'r' } }] };
+  const restored = await readExecutionScene(home, 'r');
+  const events = sessionEvents(restored), html = renderSessionEvents(events);
+  const context = await readExecutionContext(home, chat);
+  for (const event of events) {
+    assert.ok(html.includes(event.eventId));
+    assert.ok(context.includes(event.eventId));
+  }
+  assert.equal(events.filter(event => event.operationId === '0:a' && event.phase === 'result').length, 1);
+  assert.equal(events.find(event => event.operationId === '1:b' && event.phase === 'result').resultState, 'unknown');
+  for (let i = 0; i < 3; i++) assert.equal(await readExecutionContext(home, chat), context);
+  assert.equal(effects, 1, 'reopening records and projecting model history cannot invoke the executor');
+  assert.doesNotMatch(context + html, /secret-token-value|private result/);
+  assert.equal(await readExecutionContext(home, chat, { enabled: false }), '');
+  assert.doesNotMatch(await readExecutionContext(home, { ...chat, id: 'other-chat' }), /effect-fixture/);
+});
 
 test('source identity, unknown reading and five/ten limit survive citation selection', () => {
   const scene = createExecutionScene({ runId: 'r', query: 'orbital mission' });

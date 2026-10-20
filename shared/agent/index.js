@@ -4,6 +4,7 @@ import { buildSkills } from './skill/skillService.js';
 import { toolCatalog, validateCommonTool, normalizeRuntimeConfig, normalizeSearchResponse, normalizeFetchedPage, searchRequest } from './tools.js';
 import { connectionIdentity, hostedCapability, hostedSearchReceipt, hostedSearchProof } from './hostedSearch.js';
 import { executionScene, executionContext, publicReasoning } from './execution.js';
+import { sessionEvents } from '../../src/shared/sessionEvents.js';
 import { parseReplyDocument, inlineSpans, replyPresentation } from '../../src/shared/replyDocument.js';
 import { budgetOperation } from './policyBridge.js';
 import { repeatOperation } from './repeatGuard.js';
@@ -27,6 +28,7 @@ export function evaluate(input) {
       case 'config': value = normalizeRuntimeConfig(input.config); break;
       case 'scene': value = executionScene(input); break;
       case 'executionContext': value = executionContext(input.scenes); break;
+      case 'sessionEvents': value = sessionEvents(input.scene); break;
       case 'publicReasoning': value = publicReasoning(input.items); break;
       case 'replyDocument': value = parseReplyDocument(input.text); break;
       case 'replyPresentation': value = replyPresentation(input.text); break;

@@ -347,6 +347,7 @@ enum PhoneToolArgs {
 struct ExecutionToolCall: Codable, Equatable, Identifiable {
     var id: String { callId }
     var iteration: Int
+    var scopeId: String? = nil
     var callId: String
     var toolId: String
     var argsDigest: String

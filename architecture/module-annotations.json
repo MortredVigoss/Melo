@@ -78,7 +78,7 @@
         "src/runtime/agentLoopContract.js",
         "src/runtime/runBudget.js",
         "src/persistence/turnArchive.js",
-        "src/shared/{executionMetadata,executionScene,replyDocument}.js",
+        "src/shared/{executionMetadata,executionScene,replyDocument,sessionEvents,sessionEvents.test}.js",
         "src/http/{chatRoutes,executionRoutes}.js",
         "shared/replyDocument.js",
         "shared/protocol/agent-loop.json",

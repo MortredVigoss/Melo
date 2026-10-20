@@ -6,6 +6,8 @@ import { extractTextUrls } from '../../media/textUrls.js';
 import { signWorkspaceFileUrl } from '../../web/urlSigning.js';
 import { observeShellWeb } from '../../tools/shellWebObservation.js';
 import { archiveSceneImages } from '../../media/imageRecords.js';
+import { sessionContext } from '../../shared/sessionEvents.js';
+import { readToolInvocationRecords } from '../../tools/toolInvocationRecord.js';
 
 const live = new Map();
 const keyFor = (home, runId) => `${home}\0${runId}`;
@@ -164,6 +166,18 @@ export function createExecutionRecorder(context, query, emit) {
       scene.sequence++; publish();
     },
     event(event) { if (!closed && applyExecutionEvent(scene, event)) publish(); },
+    recordTool(record) {
+      if (closed || record?.runId !== context.runId) return;
+      // Keep the authoritative record identity and result only. Full redacted
+      // payloads already live in the tool jsonl, not in this UI projection.
+      scene.toolCalls ||= [];
+      const call = projectToolCall(record);
+      const index = scene.toolCalls.findIndex(row => row.iteration === call.iteration && row.callId === call.callId);
+      if (index >= 0) scene.toolCalls[index] = call;
+      else if (scene.toolCalls.length < 160) scene.toolCalls.push(call);
+      scene.sequence++;
+      publish();
+    },
     async finish(status, message) {
       if (closed) return copy(scene);
       closed = true;
@@ -192,12 +206,34 @@ export async function readExecutionScene(home, runId, history = {}) {
   try {
     const scene = JSON.parse(await readFile(fileFor(home, runId), 'utf8'));
     if (scene.version !== 1 || scene.runId !== runId) return null;
+    const records = await readToolInvocationRecords(runId, { home });
+    if (records.length) scene.toolCalls = records.slice(0, 160).map(projectToolCall);
     if (!sceneFinished(scene)) finishExecutionScene(scene, { status: 'interrupted' });
     return refreshArtifactUrls(recoverSceneObservations(scene, history));
   } catch (error) {
     if (error.statusCode) throw error;
     return null;
   }
+}
+
+function projectToolCall(record) {
+  return { iteration: record.iteration, callId: record.callId, toolId: record.toolId,
+    argsHash: record.argsHash, status: record.resultEnvelope?.status, code: record.resultEnvelope?.code,
+    executed: record.resultEnvelope?.meta?.executionStarted === false ? false : undefined,
+    startedAt: record.startedAt, finishedAt: record.finishedAt };
+}
+
+export async function readExecutionContext(home, chat, { excludedRunId, enabled = true } = {}) {
+  if (!enabled || !chat?.id) return '';
+  // User messages also carry run IDs, so interrupted turns without an
+  // assistant reply remain discoverable. Do not enumerate other chats.
+  const ids = [...new Set((chat.messages || []).map(message => message.metadata?.runId)
+    .filter(id => validId(id) && id !== excludedRunId))].slice(-3);
+  const scenes = await Promise.all(ids.map(async id => {
+    const scene = await readExecutionScene(home, id);
+    return scene?.chatId === chat.id ? scene : null;
+  }));
+  return sessionContext(scenes);
 }
 
 export function selectSceneImage(scene, artifactId, slot = 0) {

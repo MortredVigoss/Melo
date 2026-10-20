@@ -18,6 +18,7 @@ import { runWithRequestContext } from '../../runtime/requestScope.js';
 import { registerTool, unregisterTool } from '../../tools/registryCore.js';
 import { resolvePermission } from '../../tools/permissions.js';
 import { toRequestMessages } from '../../tools/toolProtocol.js';
+import { createExecutionRecorder } from './executionScenes.js';
 
 async function harness(t, { config: configOverrides, respond, env = {}, toolResult = null }) {
   const home = await mkdtemp(join(tmpdir(), 'melo-tool-protocol-'));
@@ -26,8 +27,8 @@ async function harness(t, { config: configOverrides, respond, env = {}, toolResu
     let raw = ''; for await (const chunk of req) raw += chunk;
     const body = JSON.parse(raw); requests.push({ path: req.url, headers: req.headers, body });
     const reply = respond(requests.length, body);
-    res.setHeader('content-type', 'application/json');
-    res.end(JSON.stringify(reply));
+    res.setHeader('content-type', typeof reply === 'string' ? 'text/event-stream' : 'application/json');
+    res.end(typeof reply === 'string' ? reply : JSON.stringify(reply));
   });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   registerTool({ id: 'fixture_lookup', name: 'Fixture lookup', description: 'Read the requested fixture entry.',
@@ -58,7 +59,7 @@ async function harness(t, { config: configOverrides, respond, env = {}, toolResu
       }
     },
   }));
-  return { requests, events, executions, permissions, run, chat };
+  return { requests, events, executions, permissions, run, chat, home, state };
 }
 
 // The persisted chain of one protocol must rebuild for the others.
@@ -351,4 +352,29 @@ test('chat-completions: id-less tool_calls and empty arguments survive; strict e
   assert.match(outputs[1].output, /query|required|Correct the tool arguments/);
   assert.doesNotMatch(outputs[1].output, /complete JSON object/);
   assert.equal(result.normalizedReply.toolChain, undefined, 'T15: no toolChain persisted while replay is off');
+});
+
+for (const protocol of ['responses', 'anthropic', 'chat-completions']) test(`canonical interrupted history reaches ${protocol} without replaying actions`, async t => {
+  const h = await harness(t, { config: { apiProtocol: protocol, toolCalling: 'native', model: 'switched-provider' },
+    respond: () => protocol === 'anthropic'
+      ? { id: 'switched', type: 'message', role: 'assistant', model: 'switched-provider', stop_reason: 'end_turn', content: [{ type: 'text', text: '记录已保留。' }] }
+      : protocol === 'chat-completions'
+        ? { id: 'switched', model: 'switched-provider', choices: [{ index: 0, message: { role: 'assistant', content: '记录已保留。' }, finish_reason: 'stop' }] }
+        : 'data: ' + JSON.stringify({ type: 'response.completed', response: { id: 'switched', model: 'switched-provider', status: 'completed', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: '记录已保留。' }] }] } }) + '\n\n',
+  });
+  const recorder = createExecutionRecorder({ home: h.home, runId: 'prior', chatId: h.chat.id }, 'old request');
+  recorder.event({ kind: 'operation', id: '0:effect', name: 'send_message', status: 'running', output: 'Bearer old-private-secret' });
+  await recorder.finish('interrupted');
+  h.chat.messages.unshift({ id: 'old-user', role: 'user', content: 'old request', metadata: { runId: 'prior' } });
+  await h.run();
+  const payload = JSON.stringify(h.requests.map(row => row.body));
+  assert.match(payload, /prior\/tool\/0%3Aeffect\/result/);
+  assert.match(payload, /unknown/);
+  assert.doesNotMatch(payload, /old-private-secret/);
+  assert.equal(h.executions.length, 0, 'historical tool effects never enter the dispatcher');
+  assert.equal(h.permissions.length, 0);
+  h.requests.length = 0;
+  h.state.agentProfiles.main.contextSources = { memory: false };
+  await h.run();
+  assert.doesNotMatch(JSON.stringify(h.requests.map(row => row.body)), /prior\/tool\/0%3Aeffect/);
 });

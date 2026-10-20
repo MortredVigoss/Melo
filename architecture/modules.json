@@ -22,8 +22,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 592,
-      "edges": 1790,
+      "modules": 593,
+      "edges": 1796,
       "roots": [
         "src",
         "desktop-ui",
@@ -32,7 +32,7 @@
       ],
       "note": "静态 import/re-export，含 desktop-ui 对 /shared/*.js 的服务映射；不含动态 import 与外部包"
     },
-    "routes": 156,
+    "routes": 157,
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
@@ -689,7 +689,7 @@
         "src/runtime/agentLoopContract.js",
         "src/runtime/runBudget.js",
         "src/persistence/turnArchive.js",
-        "src/shared/{executionMetadata,executionScene,replyDocument}.js",
+        "src/shared/{executionMetadata,executionScene,replyDocument,sessionEvents,sessionEvents.test}.js",
         "src/http/{chatRoutes,executionRoutes}.js",
         "shared/replyDocument.js",
         "shared/protocol/agent-loop.json",
@@ -715,7 +715,7 @@
       "modules": {
         "desktop-ui": 27,
         "shared": 17,
-        "src": 63
+        "src": 64
       },
       "entryModules": [
         {
@@ -957,7 +957,7 @@
         "projects": 10,
         "settings": 9,
         "sync": 2,
-        "tools": 31,
+        "tools": 32,
         "voice": 3
       },
       "usedBy": {
@@ -1128,7 +1128,8 @@
           "src/services/chat/topicExcerpts.test.js",
           "src/services/chat/turnArchive.test.js",
           "src/services/chat/turnLifecycle.test.js",
-          "src/services/chat/turnScheduler.test.js"
+          "src/services/chat/turnScheduler.test.js",
+          "src/shared/sessionEvents.test.js"
         ],
         "swift": [
           "ios/Tests/AgentLoopTests.swift",
@@ -2392,7 +2393,7 @@
       "usedBy": {
         "agents": 20,
         "approvals": 2,
-        "chat": 31,
+        "chat": 32,
         "desktop-shell": 13,
         "media": 4,
         "memory": 1,
@@ -3450,6 +3451,7 @@
         "GET /shared/minimaxVoiceResolver.js ← src/server.js",
         "GET /shared/modelCatalog.js ← src/server.js",
         "GET /shared/replyDocument.js ← src/server.js",
+        "GET /shared/sessionEvents.js ← src/server.js",
         "GET /shared/textUrls.js ← src/server.js",
         "GET /shared/urlDetector.js ← src/server.js",
         "GET /vendor/three/* ← src/server.js"
@@ -4732,7 +4734,8 @@
         "ios/scripts/sync-theme.py",
         "src/memory/offline/extractor.js",
         "src/shared/executionMetadata.js",
-        "src/shared/executionScene.js"
+        "src/shared/executionScene.js",
+        "src/shared/sessionEvents.js"
       ],
       "outputs": [
         "ios/Melo/Scene/**",

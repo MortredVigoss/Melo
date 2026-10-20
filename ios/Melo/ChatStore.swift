@@ -332,6 +332,7 @@ import SwiftUI
         var instructions = resolvedContext.instructions
         // Current local date + continuity rule (2026-10-18).
         instructions += "\n\n" + ConversationHistory.dateInstructions()
+        instructions += "\n\n" + ExecutionRecord.executionHistory(executionRecords, chatID: chatID, enabled: selectedAgent.contextSources?["memory"].bool != false)
         // The final instructions — desktop compact summary, date lines and
         // recalled memory — are assembled now, before the pre-check and before
         // the question is stored, so reply() can never reject what the
@@ -455,7 +456,9 @@ import SwiftUI
                 onStage: { [weak self] id, name, status, output in
                     self?.stage(record.runId, id: "member:\(callID):\(id)", name: "\(agent.name) · \(name)", status: status, output: output)
                 },
-                onToolCall: { [weak self] call in self?.recordToolCall(call, runID: record.runId) })
+                onToolCall: { [weak self] call in
+                    var scoped = call; scoped.scopeId = callID
+                    self?.recordToolCall(scoped, runID: record.runId) })
             let result = try await PhoneDeadline.run(seconds: child.remainingMs() / 1000) {
                 try await PhoneMemberWriters.run(enabled: writer) {
                     try await PhoneMemberLimits.$current.withValue(limits) {
