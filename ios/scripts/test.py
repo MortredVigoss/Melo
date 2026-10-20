@@ -76,7 +76,6 @@ def main():
         check_renderer()
         return
     if not args.skip_renderer:
-        check_agent_core()
         check_renderer()
     if not args.skip_js:
         subprocess.run(['node','--test','ios/Tests/SceneBridge.test.js','ios/Tests/NeuralLayout.test.js'],cwd=root,check=True)
@@ -86,6 +85,9 @@ def main():
     if platform.system() != 'Darwin':
         print('Swift iOS protocol tests require macOS; Swift explicitly skipped')
         return
+    # SharedAgentCore.swift embeds the bundled agent core; a stale bundle would
+    # make the Swift suites test old code, so verify it before compiling.
+    check_agent_core()
     selected = {name: sources for name, sources in catalog.items() if not args.suite or name in args.suite}
     toolchain = [platform.machine()]
     swift_started = time.monotonic()
