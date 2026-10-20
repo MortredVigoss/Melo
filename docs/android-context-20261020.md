@@ -7,3 +7,5 @@
 验收：多语言/图片/工具预算、早期约束回读、整轮与工具链保留、原文分页推进、跨聊天拒绝、来源关闭与执行器传参、保存重启、三协议 localhost 请求和 Android Emulator。无真实账号或实体 Fold 验收。
 
 Android CI `39370040626`、`39371375480` 未通过：取消/重试夹具尚未完成时应用进程发生 SIGSEGV。第二次保留 logcat/UTP 后定位到 Android 16 ART 的 `SharedChatAgent.reply` 恢复栈，日志报告该方法约 85 KB 字节码。把嵌套 JSON builder 从 coroutine 内联改为普通函数边界，数据字段和流程原样保留；需要原套件实际复测，不能把旧失败当作通过。
+
+第三轮 `39373484371` 仍在同一 ART 栈崩溃。直接读取 APK 的 DEX：原 reply 为 84,848 code units / 169,696 bytes / 311 registers；仅隔离 builder 后仍为 84,084 units / 322 registers，未解决。后续改为每请求独立 ReplySession，分离准备、请求与执行协程，保持原来的工具顺序、取消、预算、证据和关闭流程；原失败夹具全部保留，等待完整 CI。
