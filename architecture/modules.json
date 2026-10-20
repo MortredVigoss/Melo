@@ -4160,6 +4160,7 @@
         ],
         "js": [
           "scripts/boundary-report.test.js",
+          "scripts/capacity-fixture.test.js",
           "scripts/check-dependencies.test.js",
           "scripts/check-doc-links.test.js",
           "scripts/check-syntax.test.js",

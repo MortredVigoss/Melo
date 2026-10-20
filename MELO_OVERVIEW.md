@@ -233,3 +233,10 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | UI / 架构 | `npm run test:ui`、`npm run test:architecture`、`npm run test:architecture-performance` |
 | 记忆 / 同步 | `npm run test:memory`、`npm run test:mobile-sync`、`npm run test:sync-contract` |
 | 模型 / 工具 / 图片 | `npm run test:models`、`npm run test:function-calling`、`npm run test:image-workflow` |
+
+### 2026-10-20 — melo主线（Codex）— #10 发布与 #13 容量基线
+- #10 手机正式分支 db69337 已推送；7584df4 的 CI 39379418326 JVM/Lint/Debug/R8 和 emulator 72/72 通过，GitHub 已关闭。[布局缓存](docs/fold-cache-20261020.md)，不等于 Fold6 真机验收。
+- #13 WIP：[容量基线](docs/capacity-baseline-20261020.md)、scripts/bench-capacity.js 与 capacity-fixture.js，隔离 home 1k/10k/50k 消息；原始报告 bench/capacity/baseline-20261020.json。冷线程 hydrate 为主要成本，暂不改分页语义。
+- 统计与实际 CLI 回归 3/3；完整日常待验。未修改用户数据或安装应用。下一步完成 #13 发布，再做 #14 共用任务评测。
+
+#13 回执：基于 4d8e871 的完整日常 147.2 秒通过，35 Swift 组全绿，新增实际 CLI 回归已接自动发现；准备按授权推送关闭。容量测量与原始样本已入库，暂未改分页，具体决定见专项文档。
