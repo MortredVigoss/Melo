@@ -71,9 +71,9 @@ Swift suite 的输入列表只在 `ios/scripts/test.py` 定义。`--list-suites`
 | --- | --- | --- |
 | File safety | Linux / macOS，Node 22.22.2，本机编译 dirfd addon；全部 safety 与文件工具回归 | 两个平台的真实临时文件系统；不安装产品 |
 | Linux Node / HTTP / Browser | 新 checkout；Node、Python、Ruby、FFmpeg/ffprobe、ripgrep、CJK 字体、UTF-8；固定 Playwright 版本的 Chromium；带校验的内置 embedding 模型；全部发现的 JS 测试 | 模型/外网多数使用夹具；内置 embedding 是实际本地推理；不依赖开发机 Chrome 路径 |
-| macOS Swift | 全部 Swift 套件、共用渲染、native shell shutdown | 编译及本机夹具，不等于 iPhone 设备/账号验收 |
-| Android（`codex/mobile-use-features`） | Core 源码与 bundle、JVM、Lint、Debug/R8、Android 16 Emulator | 手机分支独立 gate；不能据此称已合并主线或 Fold6 真机通过 |
+| macOS Swift | 全部 Swift 套件、共用渲染、JavaScriptCore Replay、unsigned iOS Simulator App 编译、native shell shutdown | 编译及本机夹具，不等于 iPhone 设备/账号验收 |
+| Android | Core 源码与 bundle、JVM、Lint、Debug/R8、Android 16 Emulator | 与共享 Core 变更联动；不等于 Fold6 真机通过 |
 
-主线定义在 `.github/workflows/verification.yml`、`.github/workflows/file-safety.yml`；Android 定义在其分支的 `.github/workflows/android.yml`。环境准备与 preflight 单列：缺依赖先修环境，产品断言失败保留红色；不增加 continue-on-error、不对失败测试静默重试。所有 job 输出日志保留 7 天。平台专用测试只在对应系统运行，Linux 不执行的原生 Swift 壳测试在 macOS 明确运行。
+主线定义在 `.github/workflows/verification.yml`、`.github/workflows/file-safety.yml`；Android 定义在 `.github/workflows/android.yml`。环境准备与 preflight 单列：缺依赖先修环境，产品断言失败保留红色；不增加 continue-on-error、不对失败测试静默重试。所有 job 输出日志保留 7 天。平台专用测试只在对应系统运行，Linux 不执行的原生 Swift 壳测试在 macOS 明确运行。
 
 跨平台 UI 夹具需要中文字体与 UTF-8 locale；流式补充回归由受控事件释放模型响应，不假定浏览器能在固定 4 秒内完成动作。工作流不运行 `test:full`，不打包安装桌面/iPhone 应用，也不访问用户账号与数据。

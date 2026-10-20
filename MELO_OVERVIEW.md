@@ -1,10 +1,10 @@
 # Melo 总览：当前事实、功能索引与接手入口
 
-更新时间：2026-10-20（Australia/Melbourne）。这是所有 Melo 工作线程共用的人工维护入口：顶部依次是当前事实、功能索引和最新交接；按日期的阶段过程（含日期、提交与当次验证数字）在 [总览历史交接](docs/handoffs/overview-history-20261019.md)。
+更新时间：2026-10-21（Australia/Sydney）。这是所有 Melo 工作线程共用的人工维护入口：顶部依次是当前事实、功能索引和最新交接；按日期的阶段过程（含日期、提交与当次验证数字）在 [总览历史交接](docs/handoffs/overview-history-20261019.md)。
 
 ## 1. 先看这里
 
-- 真正产品仓库：`/Users/mortred/Desktop/melo/Melo Desktop Project`。Codex 当前保存项目 `New project` 指向 `/Users/mortred/Documents/New project`，不能混淆。
+- Mac 工作仓库：`/Users/mortred/Desktop/melo/Melo Desktop Project`；Android Integration 的 WSL 工作仓库：`/home/zhouy/workplace/Melo`。Codex 的独立任务目录不一定是实际 Git checkout，接手必须核对 `git rev-parse --show-toplevel`。
 - 本文保存当前事实、功能索引、架构边界、跨线程登记和最新交接；`PROGRESS.md` 保存意图时间线；专项文档保存详细证据；Git 保存代码历史；`architecture/modules.json` 是生成的功能地图。`codex.md` 是自动生成快照，不手改。
 - 接手顺序：本文 → `CLAUDE.md` → `git status --short` → `npm run scope -- <改动文件>`（只报告受影响功能、另一端与选组）→ 本次模块的实际 diff / 源码与证据。正常工作不用完整回读线程。
 - 记录缺失、线程更新时间晚于交接、源码与文档冲突时，只定向读该线程近期相关轮次，再补本文；不要靠旧总结覆盖新代码。
@@ -59,11 +59,11 @@
 
 ## 4. 最新交接
 
-### 2026-10-21 — Android / Shared Core Integration（进行中）
+### 2026-10-21 — Android / Shared Core Integration（最终状态见 PR #15）
 
-用户批准将 Mobile 整合到最新主线，建立 `codex/integrate-mobile-core-20261020`；父基线为 master `8772e92` 与 Mobile `2d36dbd`。保留主线 UI P2、统一检测、完成回执、Session Events、项目生命周期和历史图片修复，接入 Android 的 Context / Task Cache / 独立 HTTP Search。主线本身尚未合并。
+用户批准将 Mobile 整合到最新主线，分支 `codex/integrate-mobile-core-20261020`；父基线为 master `8772e92` 与 Mobile `2d36dbd`，源码验证点 `009134a`。保留主线 UI P2、统一检测、完成回执、Session Events、项目生命周期和历史图片修复，接入 Android Context / Task Cache / 独立 HTTP Search。Node 保持 Tool Schema，通过 Adapter 使用配置的 HTTP Search；Router 和执行许可共同保留禁止联网/占屏边界。
 
-冲突处理保留新主线 Core Host/预算，移动最新 Router 纯函数体到 portable factory，补回 Mobile 的逗号否定边界与“不联网”限制；Node 保留原 Tool Schema，通过 Adapter 使用配置的 HTTP Search，Host 执行许可受共享计划限制。初轮 Core 4 项 RED 已修；Android JVM/Lint/Debug/R8 通过，Node 全量首轮仍有 6 项 RED，正在收敛 Routing 与项目记忆并发；初轮 Linux CI / 双平台 File Safety / 本机 Android Runtime 已通过；macOS 首轮授权卡测试时钟失败已修夹具待复验。后台索引误隔离新记忆已定位，并以当前来源清单的事务核对修复。PR #15 保持 Draft。详见 [Integration 回执](docs/mobile-integration-20261020.md)。
+本机完整 JS：4372 pass、0 fail、13 平台 skip；Desktop 两项独立 Browser 验收通过；Android 124 JVM + 73 Android 16 Runtime 通过，11 个 Node/Android Task Replay 一致；语法/生成物通过，后端 0 cycles。回归发现并修复后台索引用旧来源快照误隔离新记忆的竞态，四份独立并行 Fixture 通过。远端最终 CI、合并和分支清理以 [PR #15](https://github.com/MortredVigoss/Melo/pull/15) 为准；macOS 补齐 Swift / JavaScriptCore / unsigned iOS App 编译。未运行完整安装发布 gate、未操作 Fold6 或真实模型账号。详见 [Integration 回执](docs/mobile-integration-20261020.md)。
 
 
 ### 2026-10-20 — melo主线（Codex）— #4 历史图片修复与原生验收

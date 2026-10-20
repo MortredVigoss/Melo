@@ -1,3 +1,9 @@
+## 2026-10-21 — 整合验收按实际平台拆分，保留可追溯边界
+
+Codex：最终本机全部 JS 4372 pass / 0 fail / 13 平台 skip，两项独立 Desktop Browser、Android 124 JVM / 73 Runtime 与 11 个跨引擎 Replay 通过；语法/生成物通过，后端无循环依赖。
+Linux CI 已通过；最新 Head 的 macOS / Android CI 与合并状态以 PR #15 为准，不把 WSL 的部分执行称为完整日常或发布验收。仅删除 ancestry 已包含且远端 SHA 未改变的阶段分支。
+未访问真实模型/账号、未操作用户设备；本轮 Emulator 已关闭。验证源码 `009134a`，文档不重复运行产品全量，最终 CI 仍须绿色后合并。
+
 ## 2026-10-21 — 原生项目也需编译，不以协议小套件替代整合
 
 Codex 已完成 73 项 Android Runtime 和 11 个 Node/Android Replay 一致性核对；Memory 修复后四份并行 HTTP 场景通过。继续等待最终整树与 macOS CI，不据单端绿色直接合并。
