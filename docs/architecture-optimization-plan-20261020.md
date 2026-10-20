@@ -282,3 +282,5 @@ chatExecutionRunner.js  只剩：参数校验 → createTurnContext → createSt
 - 2026-10-20（Claude Opus，B1）：三套 idle 自动保存无调用者；`AGENT_MARKDOWN_AUTOSAVE_IDLE_MS` 为 900ms 而非 3s；Agent 渠道为单槽（非按 Agent）。项目记忆里“全部输入框 3 秒自动保存”的规则早于 10-14 显式编辑设计，二者冲突，待用户确认现行规则。
 - 2026-10-20（Claude Opus，B1）：`connectorDraftDispatch.test.js` 有 5 项按源码文本钉住死代码形状（`pendingConnectorAutosave = { body }` 等）；删死代码时需同批改写这些断言，不能直接删测试。
 - 2026-10-20（Claude Opus，B1）：`agentsFeature.flushPending()` 在 app.js 被调用 5 次（切视图等），当前永远无 pending，是空操作。
+- 2026-10-20（Claude Opus，B2）：B2-1 原写法（把 176–236 行搬进 `turnContext.js`）不可行——这段含 `runWithRequestContext(... runChatAgentExecutionGraph ...)` 递归早退和对 `context/home/onDelta` 的重新赋值。改为：初始化留在 runner，建图前组装 `turn` 对象；每个节点搬成 `createXNode(turn)` 工厂，在工厂顶部按原名解构所需绑定，节点主体逐字节不改（仅缩进少一级）。acorn + eslint-scope 分析确认三个节点均不写任何外层绑定、不用 this/arguments，故与原闭包等价。B2-1 并入 B2-2。
+- 2026-10-20（Claude Opus，B2）：等价性证据用七场景执行轨迹（审批早退、纯文本、工具一轮、预算耗尽、中途取消、codex 搜索路由、历史追问；记录每次模型请求、SSE 事件、delta、返回值，规范化后逐字节比对），比原计划的“SSE 事件序列”更严；脚本在工作树 `.tmp/b2-execution/`。runner 原有 3 个无人引用的 import（selectedMaterials、requestEnvironment、filterToolsForSearchPlan）留给 B4 lint，不在搬迁提交里清理。
