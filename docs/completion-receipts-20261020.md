@@ -29,3 +29,5 @@
 Android 首次验证分支 `8b57654`：Core 129/129 通过；CI `39362453557` 在 Kotlin 编译拒绝 `MutableList += JsonArray` 的重载歧义，模拟器尚未运行。改为显式 `addAll`，第二轮仍在独立验证分支；不能据此关闭 #6 或宣称 Android 已验收。
 
 主线集成了其他线程的能力协议，Android 同步同源 Core 的附加契约与生成 bundle（不搬入旧分支不具备的 Swift Host）。Node Core 129/129 再次通过；最终组合版本需独立 Android CI。
+
+Android `39363915271` 为 63/65、零跳过；两项旧研究夹具只提供未核验导航或摘要，却断言目标 completed。按新合同改为明确 partial/未核验，同时保留所有真实调用成功、顺序、来源与计数断言；另补三协议 exact/subtask/unverified 的 Host 终态回执正反用例。不是放宽产品完成条件。

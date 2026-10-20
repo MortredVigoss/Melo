@@ -47,8 +47,10 @@ class ResearchExecutionFlowTest {
             val scenes = mutableListOf<JsonObject>(); var phoneCalls = 0
             val answer = SharedChatAgent(app, ModelClient(true), true).reply(connection, "fixture-only-key", listOf(Message(role = "user", content = "推荐 Surry Hills brunch 然后导航到那里")), "", config, { "" }, true, "research-r", "research-c", { "" },
                 invokePhone = { assertEquals(2, backend.requestCount); phoneCalls++; DeviceToolResult(buildJsonObject { put("ok", true); put("status", "achieved"); put("run_id", "fixture-phone"); put("summary", "Fixture navigation page observed; no real Maps or trip") }) }, onPhase = {}, onScene = { scenes.add(it) })
-            assertEquals("completed", answer.outcome); assertEquals(1, phoneCalls)
-            val scene = scenes.last(); assertEquals("completed", scene.text("status")); assertEquals("completed", scene.text("taskOutcome"))
+            assertEquals("partial", answer.outcome); assertEquals("RELEVANT_READ_SOURCE_MISSING", answer.stopReason); assertEquals(1, phoneCalls)
+            val scene = scenes.last(); assertEquals("failed", scene.text("status")); assertEquals("partial", scene.text("taskOutcome"))
+            assertTrue(scene.getValue("operations").jsonArray.all { it.jsonObject.text("status") == "completed" })
+            assertEquals("unverified", scene.getValue("completion").jsonObject.text("goalState"))
             assertEquals(listOf("web_search", "fetch_url", "phone_use"), scene.getValue("operations").jsonArray.map { it.jsonObject.text("name") })
             assertTrue(scene.getValue("sources").jsonArray.single().jsonObject.getValue("accessed").jsonPrimitive.boolean)
             assertTrue(scenes.any { it.getValue("operations").jsonArray.any { row -> row.jsonObject.text("status") == "running" } })
@@ -110,7 +112,7 @@ class ResearchExecutionFlowTest {
             val messages=listOf(goal,Message(role="assistant",content="I have no search or phone tools."),Message(role="user",content="再试一次，只做检索并列出来源，先不要导航。"))
             val scenes=mutableListOf<JsonObject>()
             val result=agent.reply(connection,"fixture-model-key",messages,"",config(true),{"fixture-brave-key"},true,"retry-after-r","retry-c",{""},{error("Retry denied navigation")},{},onScene={scenes.add(it)})
-            assertEquals("completed",result.outcome);assertEquals(2,model.requestCount);assertEquals(1,backend.requestCount)
+            assertEquals("partial",result.outcome);assertEquals("RELEVANT_READ_SOURCE_MISSING",result.stopReason);assertEquals(2,model.requestCount);assertEquals(1,backend.requestCount)
             val search=backend.takeRequest(2,TimeUnit.SECONDS)!!
             assertEquals("GET",search.method);assertEquals("fixture-brave-key",search.getHeader("X-Subscription-Token"));assertNull(search.getHeader("Authorization"))
             assertTrue(search.path!!.contains("q=Surry%20Hills%20brunch"))
@@ -119,6 +121,33 @@ class ResearchExecutionFlowTest {
             val scene=scenes.last();assertEquals(listOf("web_search"),scene.getValue("operations").jsonArray.map{it.jsonObject.text("name")})
             assertEquals(1,scene.getValue("sources").jsonArray.size);assertFalse(scene.toString().contains("fixture-brave-key"))
         } }
+    }
+
+    @Test fun onlyHostVerifiedReceiptForTheExactGoalCompletesAnAction() = runBlocking {
+        for (protocol in listOf("chat-completions", "responses", "anthropic")) for (proof in listOf("exact", "subtask", "unverified")) MockWebServer().use { model ->
+            model.start()
+            val goal = "在手机上打开设置应用"
+            model.enqueue(tool(protocol, "phone_use", "action", buildJsonObject { put("goal", goal); put("purpose", "action") }))
+            model.enqueue(final(protocol))
+            val scenes = mutableListOf<JsonObject>(); var effects = 0
+            val result = SharedChatAgent(app, ModelClient(true), true).reply(
+                Connection(endpoint = model.url("/model").toString(), model = "fixture", protocol = protocol, stream = false),
+                "fixture-key", listOf(Message(role = "user", content = goal)), "", buildJsonObject {}, { "" }, true,
+                "proof-$proof", "proof-chat", { "" }, invokePhone = {
+                    effects++
+                    DeviceToolResult(buildJsonObject {
+                        put("ok", true); put("status", "achieved"); put("run_id", "visible-fixture")
+                        put("goal", if (proof == "subtask") "打开桌面" else goal)
+                        if (proof != "unverified") put("verification", "visible_facts")
+                    })
+                }, onPhase = {}, onScene = { scenes.add(it) })
+            assertEquals(1, effects); assertEquals(2, model.requestCount)
+            assertEquals(if (proof == "exact") "completed" else "partial", result.outcome)
+            val receipt = scenes.last().getValue("completion").jsonObject
+            assertEquals(if (proof == "exact") "verified" else "unverified", receipt.text("goalState"))
+            if (proof == "exact") assertTrue(receipt.getValue("evidenceIds").jsonArray.contains(JsonPrimitive("visible-fixture")))
+            else assertEquals("GOAL_TERMINAL_EVIDENCE_MISSING", receipt.text("reason"))
+        }
     }
 
 }
