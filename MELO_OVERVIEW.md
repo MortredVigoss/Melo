@@ -59,6 +59,10 @@
 
 ## 4. 最新交接
 
+### 2026-10-21 — melo主线（Codex）— GitHub 简介与简要更新日志
+- 用户要求更新 GitHub 简介和更新日志；延续英文、兼容多模型、简述改动的既定口径。About / README 补 Android 当前开发状态，README 更新到 10-21；CHANGELOG 补本轮功能与修复，旧长段压缩为用户可读摘要。
+- 本轮仅文档与仓库简介，未改产品代码、账号或数据；`npm test -- --files README.md CHANGELOG.md MELO_OVERVIEW.md PROGRESS.md` 通过（4 文件 / 102 相对链接）；发布后回读远端。不重跑安装 gate、不运行 git pp，其他线程 11 行文档 WIP 保留。
+
 ### 2026-10-21 — melo主线（Codex）— Claude B3 / context2 与主线最终组合
 - 用户授权最终检查、修复、更新文档并一起推送；合并 `2b62830`、`d21bd04`，测试修正 `2076271`。B1/B2/B3 与远端 `5e1e3af`、Claude 最终 `27bc8f7` 都已核对，未合入重复的旧 context 分支。
 - 修复手机 `TopicDividers` 同步/等长编辑缓存失效、`ChatStore → ChatGPTAccount / Network` 参考内容污染搜索和完成判断，以及看图分析丢失本轮时间；原文决定政策，参考仍送模型。详见[组合回执](docs/claude-final-integration-20261021.md)。

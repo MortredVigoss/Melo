@@ -5,11 +5,9 @@
 <h1 align="center">Melo</h1>
 <p align="center"><strong>One workspace for your models, projects, and memory.</strong></p>
 
-Melo is a local-first AI workspace for macOS and iPhone. Bring the models you use, organize work into projects, and carry useful context from one conversation to the next.
+Melo is a local-first AI workspace for macOS, iPhone, and Android. Connect Claude, OpenAI, OpenRouter, or a compatible local model, organize work into projects, and keep useful context across conversations.
 
 Use it to research, write, code, and work with images and documents. Customize Agents for different tasks, let them collaborate, and follow their progress in a neural workspace. Conversations, saved knowledge, and memory are stored locally, with optional workspace sync; model requests use the connection you choose.
-
-Native Android development (Kotlin + Jetpack Compose; Samsung Galaxy Z Fold6 / One UI 8.5 target): [build and validation notes](android/README.md).
 
 ## What you can do
 
@@ -39,17 +37,19 @@ Model access, tool use, and media features depend on the selected provider, mode
 
 - **macOS:** the full workspace for conversations, projects, memory, files, and tool execution.
 - **iPhone:** a native app with its own model connections, conversations, media workflows, and text-based Agent teams. Independent chat works while the Mac is off; workspace synchronization is optional and configured separately.
+- **Android (in active development):** a native app with chat, shared context, web search, and phone actions controlled by local permissions. See the [Android build and validation notes](android/README.md).
 - **Terminal:** interactive chat, single prompts, history search, and diagnostics.
 
 Melo is actively developed, and the available tools differ by platform. Telegram and Discord integrations are temporarily archived; existing settings and conversation history are preserved.
 
 ## Recent updates
 
-**October 17, 2026**
+**October 21, 2026**
 
-- Improved tool compatibility, execution controls, and activity history.
-- Better context recall in long conversations and shared project memory.
-- Improved iPhone conversation sync and attachment storage.
+- Android integration with shared Agent behavior and execution records.
+- Topic navigation and better handling of long conversations on mobile.
+- More accurate completion status and reliable previews of older images.
+- Refined desktop settings, permissions, and cross-device consistency.
 
 See the [changelog](CHANGELOG.md) for a brief update history.
 
@@ -85,7 +85,7 @@ Built-in memory retrieval runs locally. When you use a cloud model, the context 
 
 ## Development
 
-The desktop and CLI share a modular Node.js core. The iPhone app uses SwiftUI and its own model connection path, with an optional service for workspace sync.
+The desktop and CLI use a modular Node.js backend; iPhone uses SwiftUI, and Android uses Kotlin and Jetpack Compose. Shared Agent logic keeps execution rules consistent, while each client handles its own model connections and platform tools. Workspace sync is optional.
 
 ```bash
 npm run test:plan    # preview checks for your changes
@@ -100,6 +100,7 @@ The full gate includes build, install, and native launch checks. See the [testin
 - [Memory architecture](docs/memory-architecture.md)
 - [Image setup](docs/generation-setup.md)
 - [iPhone development](ios/README.md)
+- [Android development](android/README.md)
 - [UI design language](docs/ui-design-language.md)
 
 Found a problem? Open a [GitHub issue](https://github.com/MortredVigoss/Melo/issues) with your platform and steps to reproduce. Remove credentials and private conversations from shared logs.
