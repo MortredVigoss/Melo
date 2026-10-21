@@ -1,4 +1,6 @@
-:root { color-scheme: dark; }
+:root {
+  color-scheme: dark;
+}
 html:has(.melo-launch), body:has(.melo-launch) { margin: 0; min-height: 100%; background: #08090b; }
 .melo-launch {
   --launch-text: var(--space-text, #ede8df);

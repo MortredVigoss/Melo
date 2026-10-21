@@ -3532,6 +3532,7 @@
         "desktop-ui/styles.css",
         "desktop-ui/surfaceUnify.css",
         "desktop-ui/synapticBody.js",
+        "desktop-ui/tokens.css",
         "desktop-ui/translations.js",
         "desktop-ui/undoToast.js",
         "desktop-app/ProcessShutdown.swift",

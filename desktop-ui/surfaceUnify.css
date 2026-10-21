@@ -1,22 +1,3 @@
-/* Desktop surface unification (2026-10-20 global UI audit).
-   Loaded last. Only presentation: no handler, state or markup contract changes.
-   Tokens here are desktop-only aliases so ios/scripts/sync-theme.py, which
-   reads neuralGlass.css, keeps generating the same phone theme. */
-:root {
- --accent:var(--space-gold);
- --panel-bg:#151412;
- --surface-elevated:var(--space-floating);
- --state-ok:#d6c08e;
- --state-ok-soft:rgba(214,192,142,.12);
- --state-ok-edge:rgba(214,192,142,.32);
- --state-busy:#cdbfa6;
- --state-warn:#e2ad6a;
- --state-error:#eba092;
- --type-body:13px;
- --type-small:12px;
- --type-section:15px;
- --type-pane:17px;
-}
 
 /* 1. The working surface is a reading surface: nearly opaque, so nested
    cards no longer pick up uneven star light through stacked alpha. */

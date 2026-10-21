@@ -1,0 +1,51 @@
+/* Design tokens (architecture B3 step 4a, 2026-10-20). The one place the
+   desktop defines CSS custom properties. Each value below is the one the
+   cascade resolved to before the merge (the last sheet to define it wins);
+   the sheet in each heading is where that value came from. Loaded first.
+   neuralGlass.css keeps its own :root (the --space-* theme shared with the
+   phone: ios/scripts/build-scene.py bundles that sheet and sync-theme.py
+   reads it); it loads after this file, so the --text / --border / --radius-*
+   values it also defines still win exactly as before. */
+:root {
+  /* Black-gold palette (emerald.css) */
+  --bg: #0c0b09;
+  --bg-elevated: #14120f;
+  --bg-panel: #181612;
+  --bg-soft: #221e18;
+  --bg-hover: #2a261e;
+  --border: rgba(196,185,165,.09);
+  --border-strong: rgba(196,185,165,.18);
+  --teal: #b38f4b;
+  --teal-soft: rgba(179,143,75,.12);
+  --sidebar-width: 230px;
+
+  /* Neural shell (neural.css) */
+  --text: #e6e2dc;
+  --text-muted: #b3a895;
+  --text-soft: #9f927a;
+  --topbar-height: 66px;
+
+  /* Layout and legacy palette (styles.css) */
+  --danger: #ff907f;
+  --shadow: 0 18px 44px rgba(0, 0, 0, 0.28);
+  --radius-xl: 28px;
+  --radius-lg: 22px;
+  --radius-md: 16px;
+  --body-font: "Avenir Next", "Helvetica Neue", "Segoe UI", sans-serif;
+  --serif-font: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+
+  /* Desktop work-surface aliases and state colours (surfaceUnify.css) */
+  --accent: var(--space-gold);
+  --panel-bg: #151412;
+  --surface-elevated: var(--space-floating);
+  --state-ok: #d6c08e;
+  --state-ok-soft: rgba(214,192,142,.12);
+  --state-ok-edge: rgba(214,192,142,.32);
+  --state-busy: #cdbfa6;
+  --state-warn: #e2ad6a;
+  --state-error: #eba092;
+  --type-body: 13px;
+  --type-small: 12px;
+  --type-section: 15px;
+  --type-pane: 17px;
+}
