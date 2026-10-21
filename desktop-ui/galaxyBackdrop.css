@@ -1,6 +1,6 @@
 /* The working panel shares the neural field's night sky (user request
    2026-10-21): a little more see-through, with a slowly turning spiral galaxy
-   (drawn by galaxyBackdrop.js) behind the content and a soft reading veil over
+   (drawn by galaxyBackdrop.js: a bright centre and an outer ring) behind the content and a soft reading veil over
    the text area so long settings and conversations stay as legible as before.
    Loaded after surfaceUnify.css and replaces its near-opaque panel surface. */
 .neural-shell:not(.is-overview) .neural-dashboard.workspace {
@@ -10,15 +10,15 @@
     linear-gradient(145deg, rgba(20,19,17,.86), rgba(8,9,12,.9));
 }
 
-/* The galaxy: centred towards the lower right so the busiest text area (top
-   left) sits over its quiet outer halo; one full turn every seven minutes. */
+/* The galaxy: centred a little right of and below the middle, sized so the
+   whole ring stays in view; one full turn every seven minutes. */
 .neural-shell:not(.is-overview) .neural-dashboard.workspace::before {
   content: "";
   position: absolute;
   z-index: -1;
-  left: 68%;
-  top: 64%;
-  width: max(150%, 1400px);
+  left: 64%;
+  top: 58%;
+  width: max(115%, 1050px);
   aspect-ratio: 1;
   pointer-events: none;
   background: var(--melo-galaxy, none) center / contain no-repeat;
@@ -29,7 +29,7 @@
   will-change: transform;
 }
 html[data-melo-galaxy="ready"] .neural-shell:not(.is-overview) .neural-dashboard.workspace::before {
-  opacity: .82;
+  opacity: .58;
 }
 
 /* Reading veil: darkest where most text is, fading towards the galaxy core. */

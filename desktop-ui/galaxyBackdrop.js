@@ -19,40 +19,39 @@ function seeded(seed) {
   };
 }
 
-// Points of a two-armed logarithmic spiral with a bright core and a faint
-// scattered halo, in unit coordinates (-1…1). Pure: no DOM.
-export function galaxyParticles({ seed = 20261021, count = 5200, arms = 2, twist = 2.6 } = {}) {
+// A bright centre and one outer ring of stars (user request 2026-10-21), with
+// a quiet gap between them and a sparse halo, in unit coordinates (-1…1).
+// Pure: no DOM.
+export const RING_RADIUS = 0.62;
+export function galaxyParticles({ seed = 20261021, count = 14000 } = {}) {
   const random = seeded(seed);
   const gauss = () => (random() + random() + random() - 1.5) / 1.5;
   const points = [];
   for (let index = 0; index < count; index += 1) {
     const kind = random();
-    let x, y, radius;
-    if (kind < 0.16) {
-      // Core: dense, warm.
-      radius = Math.abs(gauss()) * 0.16;
-      const angle = random() * Math.PI * 2;
-      x = Math.cos(angle) * radius; y = Math.sin(angle) * radius * 0.82;
-    } else if (kind < 0.84) {
-      // Arms: logarithmic spiral with spread growing outward.
-      radius = 0.08 + Math.pow(random(), 0.8) * 0.9;
-      const arm = Math.floor(random() * arms);
-      const angle = arm * (Math.PI * 2 / arms) + Math.log(1 + radius * 6) * twist + gauss() * (0.16 + radius * 0.22);
-      x = Math.cos(angle) * radius; y = Math.sin(angle) * radius * 0.82;
+    const angle = random() * Math.PI * 2;
+    let radius, part;
+    if (kind < 0.3) {
+      // Centre: dense and warm, thinning outward.
+      radius = Math.abs(gauss()) * 0.17; part = 'core';
+    } else if (kind < 0.86) {
+      // Outer ring: a soft band, slightly uneven so it reads as stars, not a line.
+      radius = RING_RADIUS + gauss() * (0.055 + 0.02 * Math.sin(angle * 3)); part = 'ring';
     } else {
-      // Halo: sparse field stars.
-      radius = Math.sqrt(random());
-      const angle = random() * Math.PI * 2;
-      x = Math.cos(angle) * radius; y = Math.sin(angle) * radius;
+      // Halo: sparse field stars across the whole disc.
+      radius = Math.sqrt(random()); part = 'halo';
     }
-    const near = Math.max(0, 1 - radius);
-    const tone = radius < 0.2 ? (random() < 0.7 ? 0 : 1) : 1 + Math.floor(random() * (PALETTE.length - 1));
-    points.push({ x, y, size: 0.35 + random() * (kind < 0.84 ? 1.1 : 0.7) + near * 0.4, alpha: 0.18 + random() * 0.5 + near * 0.25, color: PALETTE[tone] });
+    radius = Math.min(Math.abs(radius), 1);
+    const x = Math.cos(angle) * radius, y = Math.sin(angle) * radius * (part === 'halo' ? 1 : 0.9);
+    const tone = part === 'core' ? (random() < 0.75 ? 0 : 1) : 1 + Math.floor(random() * (PALETTE.length - 1));
+    const size = part === 'core' ? 0.3 + random() * 0.9 : part === 'ring' ? 0.3 + random() * 0.85 : 0.25 + random() * 0.55;
+    const alpha = part === 'core' ? 0.2 + random() * 0.45 : part === 'ring' ? 0.14 + random() * 0.4 : 0.08 + random() * 0.3;
+    points.push({ x, y, size, alpha, color: PALETTE[tone], part });
   }
   return points;
 }
 
-// Draws the galaxy into a square canvas and returns a data URL (browser only).
+// Draws the galaxy (centre + ring) into a square canvas and returns a data URL (browser only).
 export function drawGalaxy(documentRef = document, size = 1400) {
   const canvas = documentRef.createElement('canvas');
   canvas.width = size; canvas.height = size;
@@ -60,10 +59,13 @@ export function drawGalaxy(documentRef = document, size = 1400) {
   if (!context) return '';
   const center = size / 2;
   // Soft core glow and arm dust under the stars.
-  const glow = context.createRadialGradient(center, center, 0, center, center, size * 0.42);
-  glow.addColorStop(0, 'rgba(255,232,196,0.34)');
-  glow.addColorStop(0.08, 'rgba(214,170,110,0.18)');
-  glow.addColorStop(0.3, 'rgba(150,120,190,0.06)');
+  const glow = context.createRadialGradient(center, center, 0, center, center, size * 0.5);
+  glow.addColorStop(0, 'rgba(255,232,196,0.22)');
+  glow.addColorStop(0.08, 'rgba(214,170,110,0.1)');
+  glow.addColorStop(0.2, 'rgba(0,0,0,0)');
+  glow.addColorStop(RING_RADIUS * 0.96 - 0.06, 'rgba(0,0,0,0)');
+  glow.addColorStop(RING_RADIUS * 0.96, 'rgba(169,139,217,0.045)');
+  glow.addColorStop(RING_RADIUS * 0.96 + 0.06, 'rgba(0,0,0,0)');
   glow.addColorStop(1, 'rgba(0,0,0,0)');
   context.fillStyle = glow;
   context.fillRect(0, 0, size, size);
