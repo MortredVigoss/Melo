@@ -23,7 +23,7 @@ function seeded(seed) {
 // a quiet gap between them and a sparse halo, in unit coordinates (-1…1).
 // Pure: no DOM.
 export const RING_RADIUS = 0.62;
-export function galaxyParticles({ seed = 20261021, count = 14000 } = {}) {
+export function galaxyParticles({ seed = 20261021, count = 19000 } = {}) {
   const random = seeded(seed);
   const gauss = () => (random() + random() + random() - 1.5) / 1.5;
   const points = [];
@@ -31,21 +31,22 @@ export function galaxyParticles({ seed = 20261021, count = 14000 } = {}) {
     const kind = random();
     const angle = random() * Math.PI * 2;
     let radius, part;
-    if (kind < 0.3) {
+    if (kind < 0.26) {
       // Centre: dense and warm, thinning outward.
       radius = Math.abs(gauss()) * 0.17; part = 'core';
-    } else if (kind < 0.86) {
+    } else if (kind < 0.72) {
       // Outer ring: a soft band, slightly uneven so it reads as stars, not a line.
       radius = RING_RADIUS + gauss() * (0.055 + 0.02 * Math.sin(angle * 3)); part = 'ring';
     } else {
-      // Halo: sparse field stars across the whole disc.
+      // Field: faint stars spread evenly over the whole disc, so the gap between
+      // centre and ring and the space outside it are not empty.
       radius = Math.sqrt(random()); part = 'halo';
     }
     radius = Math.min(Math.abs(radius), 1);
     const x = Math.cos(angle) * radius, y = Math.sin(angle) * radius * (part === 'halo' ? 1 : 0.9);
     const tone = part === 'core' ? (random() < 0.75 ? 0 : 1) : 1 + Math.floor(random() * (PALETTE.length - 1));
-    const size = part === 'core' ? 0.3 + random() * 0.9 : part === 'ring' ? 0.3 + random() * 0.85 : 0.25 + random() * 0.55;
-    const alpha = part === 'core' ? 0.2 + random() * 0.45 : part === 'ring' ? 0.14 + random() * 0.4 : 0.08 + random() * 0.3;
+    const size = part === 'core' ? 0.3 + random() * 0.9 : part === 'ring' ? 0.3 + random() * 0.85 : 0.45 + random() * 0.75;
+    const alpha = part === 'core' ? 0.2 + random() * 0.45 : part === 'ring' ? 0.14 + random() * 0.4 : 0.3 + random() * 0.45;
     points.push({ x, y, size, alpha, color: PALETTE[tone], part });
   }
   return points;

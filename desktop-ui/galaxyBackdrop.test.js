@@ -7,7 +7,7 @@ test('the galaxy is the same on every launch: a bright centre and an outer ring 
   const first = galaxyParticles(), second = galaxyParticles();
   assert.deepEqual(first, second, 'seeded: identical sky each launch');
   assert.notDeepEqual(galaxyParticles({ seed: 7 }).slice(0, 5), first.slice(0, 5));
-  assert.equal(first.length, 14000);
+  assert.equal(first.length, 19000);
   for (const point of first) {
     assert.ok(Math.hypot(point.x, point.y) <= 1.0001, 'inside the unit disc');
     assert.ok(point.size > 0 && point.alpha > 0 && point.alpha <= 1);
@@ -17,8 +17,10 @@ test('the galaxy is the same on every launch: a bright centre and an outer ring 
   const density = (from, to) => first.filter(p => { const r = Math.hypot(p.x, p.y / (p.part === 'halo' ? 1 : 0.9)); return r >= from && r < to; }).length / (to * to - from * from);
   const centre = density(0, 0.15), gap = density(0.3, 0.45), ring = density(RING_RADIUS - 0.06, RING_RADIUS + 0.06), outside = density(0.82, 1);
   assert.ok(centre > ring * 2, `the centre is the densest (${centre} vs ring ${ring})`);
-  assert.ok(ring > gap * 4, `the ring stands out from the gap (${ring} vs ${gap})`);
-  assert.ok(ring > outside * 4, `and from the space outside it (${ring} vs ${outside})`);
+  assert.ok(ring > gap * 3, `the ring stands out from the gap (${ring} vs ${gap})`);
+  assert.ok(ring > outside * 3, `and from the space outside it (${ring} vs ${outside})`);
+  // The empty-looking areas still carry field stars (user request 2026-10-21).
+  assert.ok(gap > 1500 && outside > 1500, `gap and outside are sprinkled (${gap}, ${outside} per unit area)`);
 });
 
 test('the galaxy assets load after the surface they replace and never block clicks', () => {
