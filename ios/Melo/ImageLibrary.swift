@@ -65,7 +65,7 @@ final class ImageLibrary {
         return try refs.map { ref in
             guard let image = index.assets[ref.id] else { throw MeloError.message("参考图已不存在，请重新选择。") }
             var bytes = try data(image), mimeType = image.mimeType
-            if bytes.count > 6*1024*1024 || max(image.width, image.height) > maxDimension {
+            if bytes.count > 6*1024*1024 || max(image.width, image.height) > maxDimension || Self.orientation(bytes) != 1 {
                 let copy = try Self.decoded(bytes, maxDimension: maxDimension)
                 let jpeg = !Self.hasAlpha(copy)
                 bytes = try Self.encoded(copy, jpeg: jpeg); mimeType = jpeg ? "image/jpeg" : "image/png"
@@ -121,6 +121,30 @@ final class ImageLibrary {
     }
     static func hasAlpha(_ image: CGImage) -> Bool {
         ![.none, .noneSkipFirst, .noneSkipLast].contains(image.alphaInfo)
+    }
+    static func orientation(_ data: Data) -> Int {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] else { return 1 }
+        return properties[kCGImagePropertyOrientation] as? Int ?? 1
+    }
+    /// Keep the full-resolution JPEG delivered by the native camera. Preview
+    /// and provider inputs are bounded copies; neither rewrites this original.
+    func storeCameraPhoto(_ data: Data) throws -> LocalImage {
+        guard ready, data.count <= Self.storedLimit,
+              let source = CGImageSourceCreateWithData(data as CFData, nil),
+              CGImageSourceGetType(source) as String? == UTType.jpeg.identifier,
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int else { throw MeloError.message("无法保存拍摄的照片。") }
+        _ = try Self.decoded(data, maxDimension: 512)
+        let rotated = (5...8).contains(Self.orientation(data))
+        let asset = LocalImage(id:UUID().uuidString, width:rotated ? height : width, height:rotated ? width : height, mimeType:"image/jpeg", title:"拍摄的照片")
+        try FileManager.default.createDirectory(at:directory, withIntermediateDirectories:true)
+        let file = try url(asset)
+        try Self.write(data, to:file)
+        var next = index; next.assets[asset.id] = asset
+        do { try commit(next) } catch { try? FileManager.default.removeItem(at:file); throw error }
+        return asset
     }
     func store(_ image: CGImage, title: String, references: [String] = [], reportedModel: String = "", revisedPrompt: String = "", jpeg: Bool = false) throws -> LocalImage {
         let bytes = try Self.encoded(image, jpeg: jpeg)

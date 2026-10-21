@@ -1,5 +1,7 @@
 import Foundation
 import CoreGraphics
+import ImageIO
+import UniformTypeIdentifiers
 
 @main struct ImageWorkflowTests {
     static func main() async throws {
@@ -23,6 +25,36 @@ import CoreGraphics
         let data=try ImageLibrary.encoded(context.makeImage()!)
         let library=ImageLibrary(directory:root)
         let original=try library.store(data,title:"fixture")
+        let originalStoredBytes = try library.data(original)
+        // Native capture originals survive storage, preview, orientation fixes
+        // and request downsampling byte-for-byte, including after cold reload.
+        let captured = try ImageLibrary.encoded(context.makeImage()!, jpeg:true)
+        let camera = try library.storeCameraPhoto(captured)
+        try check(try library.data(camera) == captured)
+        try check(try ImageLibrary(directory:root).data(camera) == captured)
+        let rotatedData = NSMutableData()
+        let destination = CGImageDestinationCreateWithData(rotatedData, UTType.jpeg.identifier as CFString, 1, nil)!
+        CGImageDestinationAddImage(destination, context.makeImage()!, [kCGImagePropertyOrientation:6] as CFDictionary)
+        assert(CGImageDestinationFinalize(destination))
+        let rotatedPhoto = try library.storeCameraPhoto(rotatedData as Data)
+        try check(rotatedPhoto.width == 64 && rotatedPhoto.height == 96)
+        let orientedInput = try library.inputs([ImageReference(id:rotatedPhoto.id)])[0]
+        let oriented = try ImageLibrary.decoded(orientedInput.data)
+        try check(oriented.width == 64 && oriented.height == 96)
+        try check(ImageLibrary.orientation(orientedInput.data) == 1)
+        try check(try library.data(rotatedPhoto) == rotatedData as Data)
+        let wideContext = CGContext(data:nil,width:5000,height:20,bitsPerComponent:8,bytesPerRow:0,space:CGColorSpaceCreateDeviceRGB(),bitmapInfo:CGImageAlphaInfo.noneSkipLast.rawValue)!
+        let fullSize = try ImageLibrary.encoded(wideContext.makeImage()!,jpeg:true)
+        let fullPhoto = try library.storeCameraPhoto(fullSize)
+        try check(fullPhoto.width == 5000)
+        let reduced = try library.inputs([ImageReference(id:fullPhoto.id)],maxDimension:1024)[0]
+        try check(try ImageLibrary.decoded(reduced.data).width == 1024)
+        try check(try library.data(fullPhoto) == fullSize)
+        let beforeInvalid = library.index.assets.count
+        try check((try? library.storeCameraPhoto(Data("not a JPEG".utf8))) == nil)
+        try check((try? library.storeCameraPhoto(data)) == nil, "Only native JPEG captures use the original-preserving entry point")
+        try check(library.index.assets.count == beforeInvalid)
+        try check(try library.data(original) == originalStoredBytes, "Existing image bytes must remain untouched")
         let uploaded = ImageTaskPlan(references:[ImageReference(id:original.id)])
         let fixtures = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: "ios/Tests/Fixtures/image-natural-intent.json"))) as! [[String:Any]]
         for fixture in fixtures {

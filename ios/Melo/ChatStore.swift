@@ -769,6 +769,11 @@ import SwiftUI
     func importImage(_ data: Data, title: String = "参考图片") throws -> LocalImage {
         let image = try imageLibrary.store(data, title: title, photo: true); imageRevision += 1; return image
     }
+    func importCameraPhoto(_ data: Data) throws -> LocalImage {
+        let image = try imageLibrary.storeCameraPhoto(data)
+        imageRevision += 1
+        return image
+    }
     func transformImage(_ image: LocalImage, operation: String) throws -> LocalImage {
         let result = try imageLibrary.transformed(image, operation: operation); imageRevision += 1; return result
     }

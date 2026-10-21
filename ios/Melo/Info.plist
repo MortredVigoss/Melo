@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <key>NSCameraUsageDescription</key>
+    <string>在对话中拍照，确认后加入草稿；发送时才交给模型。</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>当你点保存图片时，将 Melo 的图片添加到照片。</string>
 	<key>NSMicrophoneUsageDescription</key>

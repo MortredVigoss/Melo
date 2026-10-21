@@ -48,7 +48,7 @@
 
 ## 执行顺序与去重
 
-日常依次运行：语法 → 文档链接 → 生成器 / 地图预检 → 手机资源 manifest → 剩余 JS → 相关设置浏览器 → 选中的 Swift。失败立即停止；资源过期应在昂贵测试之前报错。
+日常依次运行：语法 → 文档链接 → 生成器 / 地图预检 → 手机资源 manifest → 按范围选择的 Android 检查 → 剩余 JS → 相关设置浏览器 → 选中的 Swift。失败立即停止；资源过期应在昂贵测试之前报错。
 
 每项检查只有一个执行阶段：生成器测试从后续 JS 清单移除；两份 iOS JS 在 JS 阶段执行；manifest 在预检执行；后续 Python 只执行 Swift。发布流程仅在全部 JS 已成功时省去 Python 的重复 JS，失败时仍完整执行手机阶段。独立 `test:ios` 默认不省略任何检查。
 
@@ -73,8 +73,8 @@ Swift suite 的输入列表只在 `ios/scripts/test.py` 定义。`--list-suites`
 | Gate | 环境与执行 | 证据边界 |
 | --- | --- | --- |
 | File safety | Linux / macOS，Node 22.22.2，本机编译 dirfd addon；全部 safety 与文件工具回归 | 两个平台的真实临时文件系统；不安装产品 |
-| Linux Node / HTTP / Browser | 新 checkout；Node、Python、Ruby、FFmpeg/ffprobe、ripgrep、CJK 字体、UTF-8；固定 Playwright 版本的 Chromium；带校验的内置 embedding 模型；全部发现的 JS 测试 | 模型/外网多数使用夹具；内置 embedding 是实际本地推理；不依赖开发机 Chrome 路径 |
-| macOS Swift | 全部 Swift 套件、共用渲染、JavaScriptCore Replay、unsigned iOS Simulator App 编译、native shell shutdown | 编译及本机夹具，不等于 iPhone 设备/账号验收 |
+| Linux Node / HTTP / Browser | 新 checkout；Node、Python、Ruby、FFmpeg/ffprobe、ripgrep、CJK 字体、UTF-8；固定 Playwright 版本的 Chromium；带校验的内置 embedding 模型；计划选中的 JS，公共/未知边界执行全部 | 模型/外网多数使用夹具；内置 embedding 是实际本地推理；不依赖开发机 Chrome 路径 |
+| macOS Swift | 计划选中的 Swift 套件（公共/未知边界全部）、共用渲染、相关 JavaScriptCore Replay、unsigned iOS Simulator App 编译、native shell shutdown | 编译及本机夹具，不等于 iPhone 设备/账号验收 |
 | Android | Core 源码与 bundle、JVM、Lint、Debug/R8、Android 16 Emulator | 与共享 Core 变更联动；不等于 Fold6 真机通过 |
 
 主线定义在 `.github/workflows/verification.yml`、`.github/workflows/file-safety.yml`；Android 定义在 `.github/workflows/android.yml`。环境准备与 preflight 单列：缺依赖先修环境，产品断言失败保留红色；不增加 continue-on-error、不对失败测试静默重试。所有 job 输出日志保留 7 天。平台专用测试只在对应系统运行，Linux 不执行的原生 Swift 壳测试在 macOS 明确运行。

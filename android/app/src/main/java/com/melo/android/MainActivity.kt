@@ -34,6 +34,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.melo.android.chat.*
+import com.melo.android.camera.CameraCaptureDialog
 import com.melo.android.data.*
 import com.melo.android.device.*
 import com.melo.android.ui.*
@@ -167,6 +168,11 @@ private data class ChatTimelineItem(val id: String, val at: String, val message:
         save = { MeloJson.encodeToString(it) }, restore = { MeloJson.decodeFromString<List<Attachment>>(it) }
     )) { mutableStateOf<List<Attachment>>(emptyList()) }
     var options by remember { mutableStateOf(false) }
+    var photoMenu by remember(chat.id) { mutableStateOf(false) }
+    var camera by remember(chat.id) { mutableStateOf(false) }
+    var importingPhoto by remember(chat.id) { mutableStateOf(false) }
+    val draftActive = remember(chat.id) { java.util.concurrent.atomic.AtomicBoolean(true) }
+    DisposableEffect(chat.id) { onDispose { draftActive.set(false) } }
     val context = LocalContext.current
     val focus = LocalFocusManager.current
     val turn = runtime.turns[chat.id]
@@ -237,7 +243,13 @@ private data class ChatTimelineItem(val id: String, val at: String, val message:
         }
         if (images.isNotEmpty()) Row(Modifier.padding(horizontal = 12.dp)) { Text("已选 ${images.size} 张图片", color = MeloGold); TextButton(onClick = { images = emptyList() }) { Text("移除") } }
         Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.Bottom) {
-            IconButton(onClick = { photos.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, enabled = !busy) { Icon(Icons.Outlined.AddPhotoAlternate, "添加图片") }
+            Box {
+                IconButton(onClick = { photoMenu = true }, enabled = !busy && !importingPhoto) { Icon(Icons.Outlined.AddPhotoAlternate, "添加图片") }
+                DropdownMenu(expanded = photoMenu, onDismissRequest = { photoMenu = false }) {
+                    DropdownMenuItem(text = { Text("拍照") }, enabled = images.size < 4, onClick = { photoMenu = false; camera = true })
+                    DropdownMenuItem(text = { Text("从相册选择") }, onClick = { photoMenu = false; photos.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) })
+                }
+            }
             OutlinedTextField(draft, { draft = it }, placeholder = { Text("输入消息…") }, modifier = Modifier.weight(1f).testTag("composer"), maxLines = 6, shape = RoundedCornerShape(20.dp))
             IconButton(onClick = { try { dictation.launch(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM).putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)) } catch (_: Exception) { vm.engine.work { error("此设备没有可用的系统语音输入服务，可使用键盘麦克风。") } } }, enabled = !busy) { Icon(Icons.Outlined.MicNone, "语音输入") }
             IconButton(onClick = {
@@ -246,10 +258,20 @@ private data class ChatTimelineItem(val id: String, val at: String, val message:
                     turn != null -> vm.engine.cancel(chat.id)
                     else -> onSend(draft, images)
                 }
-            }, enabled = busy || draft.isNotBlank() || images.isNotEmpty()) { Icon(if (busy) Icons.Outlined.StopCircle else Icons.AutoMirrored.Outlined.Send, if (busy) "停止生成" else "发送", tint = MeloGold) }
+            }, enabled = !importingPhoto && (busy || draft.isNotBlank() || images.isNotEmpty())) { Icon(if (busy) Icons.Outlined.StopCircle else Icons.AutoMirrored.Outlined.Send, if (busy) "停止生成" else "发送", tint = MeloGold) }
         }
     }
     if (options) ChatOptions(chat, data, vm) { options = false }
+    if (camera) CameraCaptureDialog(onDismiss = { camera = false }, onConfirm = { file ->
+        camera = false; importingPhoto = true
+        vm.engine.work {
+            try {
+                val attachment = vm.repository.importCameraPhoto(file)
+                if (draftActive.get() && images.size < 4) images = images + attachment
+                else vm.repository.discardUnattachedCameraPhoto(attachment)
+            } finally { file.delete(); importingPhoto = false }
+        }
+    })
     if (scriptLibrary) DeviceScriptLibrary(data, deviceAgent, { scriptLibrary = false }) { script, values ->
         deviceAgent.start(script.goalTemplate, 0, true, chatId = chat.id, scriptId = script.id, parameters = values)
     }

@@ -329,6 +329,11 @@ const rows = [
 ["这台手机上的联网、图片和手机数据权限不会复制；新 Agent 使用手机默认设置，保存后可在 Agent 页单独开启。", "Web, image and phone-data permissions on this iPhone are not copied; the new agent starts with the phone defaults, which you can change on its Agent page after saving.", "この iPhone での Web、画像、iPhone データの権限はコピーされません。新しい Agent は iPhone の既定の設定で始まり、保存後に Agent ページで個別にオンにできます。", "이 iPhone의 웹, 이미지, iPhone 데이터 권한은 복사되지 않습니다. 새 Agent는 iPhone 기본 설정으로 시작하며, 저장 후 Agent 페이지에서 따로 켤 수 있습니다.", "Los permisos de web, imágenes y datos del iPhone no se copian; el nuevo agente empieza con los valores predeterminados del teléfono, que puedes cambiar en su página después de guardar."],
 ["话题：%@", "Topic: %@", "トピック：%@", "주제: %@", "Tema: %@"],
 ["回到话题：%@", "Back to topic: %@", "トピックに戻る：%@", "주제로 돌아가기: %@", "De vuelta al tema: %@"],
+["拍照", "Take photo", "写真を撮る", "사진 촬영", "Hacer foto"],
+["相机", "Camera", "カメラ", "카메라", "Cámara"],
+["此设备没有可用相机，请从相册选择图片。", "No camera is available on this device. Choose a photo from your library.", "この端末ではカメラを利用できません。写真ライブラリから選んでください。", "이 기기에서 카메라를 사용할 수 없습니다. 앨범에서 사진을 선택하세요.", "Este dispositivo no tiene una cámara disponible. Elige una foto de tu biblioteca."],
+["允许相机后即可拍照，也可以返回选择相册。", "Allow camera access to take a photo, or go back to choose from your library.", "撮影するにはカメラを許可してください。戻って写真ライブラリから選ぶこともできます。", "사진을 촬영하려면 카메라를 허용하거나 돌아가서 앨범에서 선택하세요.", "Permite el acceso a la cámara para hacer una foto, o vuelve para elegir de tu biblioteca."],
+["确认照片后加入草稿，点击发送才会交给模型。", "Confirmed photos join your draft. They reach the model only when you send.", "確認した写真を下書きに追加します。送信するまでモデルには渡されません。", "확인한 사진은 초안에 추가되며 전송을 눌러야 모델에 전달됩니다.", "Las fotos confirmadas se añaden al borrador. Solo se envían al modelo cuando pulsas Enviar."],
 ];
 if (new Set(rows.map(row => row[0])).size !== rows.length) throw new Error('Duplicate native translation key');
 export const nativeTranslations = Object.fromEntries(rows.map(([source,en,ja,ko,es]) => [source,{'zh-CN':source,en,ja,ko,es}]));

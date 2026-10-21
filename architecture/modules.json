@@ -3669,6 +3669,7 @@
       "iphone": {
         "owned": [
           "ios/Melo/AgentStarter.swift",
+          "ios/Melo/CameraCaptureView.swift",
           "ios/Melo/CapabilityElevation.swift",
           "ios/Melo/CapabilityElevationRuntime.swift",
           "ios/Melo/CapabilityElevationViews.swift",

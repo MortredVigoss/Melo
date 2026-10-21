@@ -22,6 +22,7 @@ enum LocalPermissionState: Equatable {
 }
 
 @MainActor final class LocalPermissions: ObservableObject {
+    @Published var camera: LocalPermissionState = .unknown
     @Published var microphone: LocalPermissionState = .unknown
     @Published var speech: LocalPermissionState = .unknown
     @Published var addPhotos: LocalPermissionState = .unknown
@@ -29,6 +30,13 @@ enum LocalPermissionState: Equatable {
     @Published var requesting = false
     @Published var error: String?
     func refresh() async {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .notDetermined: camera = .notRequested
+        case .authorized: camera = .allowed
+        case .denied: camera = .denied
+        case .restricted: camera = .restricted
+        @unknown default: camera = .unknown
+        }
         switch AVAudioApplication.shared.recordPermission {
         case .undetermined: microphone = .notRequested
         case .granted: microphone = .allowed
@@ -58,10 +66,11 @@ enum LocalPermissionState: Equatable {
         @unknown default: notifications = .unknown
         }
     }
-    enum Kind { case microphone, speech, photos, notifications }
+    enum Kind { case camera, microphone, speech, photos, notifications }
     func request(_ kind: Kind) async {
         guard !requesting else { return }; requesting = true; defer { requesting = false }
         switch kind {
+        case .camera: _ = await AVCaptureDevice.requestAccess(for: .video)
         case .microphone: _ = await AVAudioApplication.requestRecordPermission()
         case .speech: _ = await withCheckedContinuation { (continuation: CheckedContinuation<SFSpeechRecognizerAuthorizationStatus, Never>) in SFSpeechRecognizer.requestAuthorization { continuation.resume(returning: $0) } }
         case .photos: _ = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
@@ -115,6 +124,7 @@ struct LocalPermissionsView: View {
                         Text("预览在本机完成。添加为知识资料并在对话中选用后，相关文字才会随请求发送给模型；已配置的资料同步也适用。").font(.caption).foregroundStyle(.secondary)
                     }.meloPanel()
                     permissionRow("麦克风", symbol: "mic", state: permissions.microphone, detail: Text("仅用于点击语音输入后的录音。自动朗读不需要麦克风。"), kind: .microphone)
+                    permissionRow("相机", symbol: "camera", state: permissions.camera, detail: Text("确认照片后加入草稿，点击发送才会交给模型。"), kind: .camera)
                     permissionRow("语音识别", symbol: "waveform", state: permissions.speech, detail: Text("把说话内容转为可编辑文字。依语言和设备情况，Apple 识别服务可能联网处理音频。"), kind: .speech)
                     VStack(alignment: .leading, spacing: 10) {
                         Label("选择照片", systemImage: "photo.on.rectangle").font(.headline)

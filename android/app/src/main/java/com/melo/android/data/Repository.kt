@@ -218,7 +218,42 @@ class Repository(private val context: Context) {
     fun imageData(attachment: Attachment): String {
         val root = File(context.filesDir, "images").canonicalFile
         val file = File(root, attachment.file).canonicalFile
+        if (file.name.endsWith("-camera.jpg")) {
+            require(file.parentFile == root && file.isFile && file.length() <= 64 * 1024 * 1024) { "图片引用无效。" }
+            // The full-resolution camera JPEG stays on disk. Only the bounded,
+            // orientation-correct copy enters the existing model request.
+            val bitmap = cameraBitmap(file, 2048)
+            val bytes = try {
+                val output = java.io.ByteArrayOutputStream()
+                check(bitmap.compress(Bitmap.CompressFormat.JPEG, 85, output))
+                output.toByteArray().also { require(it.size <= 4 * 1024 * 1024) { "照片传输副本过大，请减少图片。" } }
+            } finally { bitmap.recycle() }
+            return Base64.encodeToString(bytes, Base64.NO_WRAP)
+        }
         require(file.parentFile == root && file.length() <= 4 * 1024 * 1024) { "图片引用无效。" }
         return Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
+    }
+    suspend fun importCameraPhoto(source: File): Attachment = withContext(Dispatchers.IO) {
+        require(source.canonicalFile.parentFile == File(context.cacheDir, "camera-captures").canonicalFile && source.isFile && source.length() in 1..(64L * 1024 * 1024)) { "拍摄的照片无效。" }
+        cameraBitmap(source, 512).recycle()
+        val id = newId()
+        val file = File(context.filesDir, "images/$id-camera.jpg").apply { parentFile!!.mkdirs() }
+        try {
+            source.copyTo(file)
+            currentCoroutineContext().ensureActive()
+            Attachment(id, "拍摄的照片", "image/jpeg", file.name)
+        } catch (error: Exception) { file.delete(); throw error }
+    }
+    fun discardUnattachedCameraPhoto(attachment: Attachment) {
+        if (mutable.value.chats.any { chat -> chat.messages.any { message -> message.attachments.any { it.id == attachment.id } } }) return
+        val root = File(context.filesDir, "images").canonicalFile
+        val file = File(root, attachment.file).canonicalFile
+        if (file.parentFile == root && file.name == "${attachment.id}-camera.jpg") file.delete()
+    }
+    private fun cameraBitmap(file: File, maxDimension: Int): Bitmap = ImageDecoder.decodeBitmap(ImageDecoder.createSource(file)) { decoder, info, _ ->
+        require(info.size.width > 0 && info.size.height > 0 && info.size.width.toLong() * info.size.height <= 80_000_000) { "照片尺寸过大。" }
+        val scale = maxOf(info.size.width, info.size.height) / maxDimension.toDouble()
+        if (scale > 1) decoder.setTargetSize((info.size.width / scale).toInt().coerceAtLeast(1), (info.size.height / scale).toInt().coerceAtLeast(1))
+        decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
     }
 }

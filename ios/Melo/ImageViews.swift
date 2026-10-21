@@ -30,6 +30,7 @@ struct ImageComposerBar: View {
     @State private var imageConnections: [LLMConnection] = []
     private var loading: Bool { importID != nil }
     @State private var gallery = false
+    @State private var camera: CameraDraftRequest?
     @State private var loadTask: Task<Void, Never>?
     @State private var videoItem: PhotosPickerItem?
     @State private var studyingVideo = false
@@ -62,6 +63,8 @@ struct ImageComposerBar: View {
                 }.frame(height:100)
             }
             HStack(spacing:14) {
+                Button { camera = CameraDraftRequest(chatID: chatID) } label: { Image(systemName:"camera").frame(minWidth:32,minHeight:32) }
+                    .accessibilityLabel("拍照").disabled(loading || plan.references.count >= ImageTaskPlan.maxReferences)
                 PhotosPicker(selection:$photos,maxSelectionCount:ImageTaskPlan.maxReferences,matching:.images,photoLibrary:.shared()) { Label("照片",systemImage:"photo.on.rectangle").font(.caption) }.disabled(loading)
                 Button { importing=true } label:{ Image(systemName:"folder").frame(minWidth:32,minHeight:32) }.accessibilityLabel("从文件选择图片").disabled(loading)
                 PhotosPicker(selection:$videoItem,matching:.videos,photoLibrary:.shared()) { Label("视频",systemImage:"film").font(.caption) }.disabled(studyingVideo).accessibilityLabel("选择视频，10 分钟以内在手机上抽取画面和文字稿")
@@ -94,6 +97,21 @@ struct ImageComposerBar: View {
             }
         }
         .onDisappear { loadTask?.cancel(); videoTask?.cancel() }
+        .onChange(of:chatID) { _,_ in camera = nil }
+        .fullScreenCover(item:$camera) { request in
+            CameraCaptureView { result in
+                // A dismissed camera, replaced request or switched conversation
+                // must never import into the next chat's draft.
+                guard camera?.id == request.id, chatID == request.chatID else { return }
+                camera = nil
+                do {
+                    guard let data = try result.get() else { return }
+                    guard plan.references.count < ImageTaskPlan.maxReferences else { throw MeloError.message("一次最多选择八张图片。") }
+                    let image = try store.importCameraPhoto(data)
+                    plan.references.append(ImageReference(id:image.id))
+                } catch { store.error = error.localizedDescription }
+            }
+        }
         .onChange(of:videoItem) { _,item in
             guard let item else { return }
             let target=chatID
