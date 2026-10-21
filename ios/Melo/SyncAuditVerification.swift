@@ -106,7 +106,9 @@ import AVFoundation
 
             let bounded = ChatStore(directory: root.appendingPathComponent("budget"), replyLoader: { _, _ in throw MeloError.message("Unexpected transport call") })
             let boundedID = bounded.newChat()!
-            bounded.send(String(repeating: "汉", count: 20000), chatID: boundedID)
+            // Larger than the per-model budget (20 000 characters now fits a 160k-token model; it also
+            // used to crash the system language model during recall before the guard ran).
+            bounded.send(String(repeating: "汉", count: PhoneContextBudget().input + 1), chatID: boundedID)
             try check(!bounded.anySending && bounded.chats.first?.messages.isEmpty == true && bounded.error?.contains("太长") == true, "Oversized draft was sent or persisted as a failed turn")
             result["inputBudget"] = "passed: preflight before network/persistence"
 

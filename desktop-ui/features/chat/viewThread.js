@@ -18,6 +18,7 @@ import { mountVizBlocks } from '../../viz/vizRenderer.js';
 import { renderActiveToolCallsStrip as _renderActiveToolCallsStripFromModule } from './activeToolCallsStrip.js';
 import { getBootstrap, app, activeChat, activeChatAgentProfile, newChatSelection, escapeHtml, truncate, icon, renderMessageRefs, liveSceneFor, renderSceneReplay, selectedMessagePresentation, renderWorkspaceExplorer } from './context.js';
 import { chatState } from './state.js';
+import { topicDividers } from '../../../shared/conversationTopics.js';
 import { renderComposerCard } from './viewComposer.js';
 import { renderRichText, renderMessageBlocks, extractSourceCitations, renderSourceCitationCards, renderMessageAttachments, renderAssistantVizMount, renderMessageActions, renderMessageToolResults } from './viewMessage.js';
 
@@ -206,8 +207,18 @@ function renderThreadLoadEarlier(hiddenCount) {
   )}</button>`;
 }
 
+// A thin marker where the conversation moves to another topic; a move back links to
+// where that topic began. Same rule and placement as the iPhone (shared module).
+function renderTopicDivider(divider) {
+  if (!divider) return '';
+  return divider.returnsTo
+    ? ui`<div class="topic-divider is-return" role="separator"><button type="button" data-action="jump-to-topic" data-message-id="${escapeHtml(divider.returnsTo)}" title="跳到这个话题开始处">${escapeHtml(t('回到话题：{label}', { label: divider.label }))}</button></div>`
+    : ui`<div class="topic-divider" role="separator"><span>${escapeHtml(t('话题：{label}', { label: divider.label }))}</span></div>`;
+}
+
 function renderMessageList(chat) {
   const { messages: windowed, hiddenCount } = activeMessageWindow(chat);
+  const dividers = new Map(topicDividers(chat?.messages || []).map(divider => [divider.messageId, divider]));
   return ui`
     <div class="message-list">
       ${renderThreadLoadEarlier(hiddenCount)}
@@ -215,6 +226,7 @@ function renderMessageList(chat) {
         .map(selectedMessagePresentation)
         .map(
           message => ui`
+            ${renderTopicDivider(dividers.get(message.id))}
             <article class="message ${message.role} ${
               chatState.highlightedMessageId === message.id ? 'is-highlighted' : ''
             } ${isToolTraceMessage(message) ? 'is-tool-trace' : ''}" data-message-id="${escapeHtml(message.id)}">

@@ -987,5 +987,8 @@ const rows = [
 ["模型接入、文件、命令、项目与成果。","Model access, files, commands, projects and artifacts.","モデル接続、ファイル、コマンド、プロジェクト、成果。","모델 접속, 파일, 명령, 프로젝트, 결과물.","Acceso a modelos, archivos, comandos, proyectos y resultados."],
 ["存为技能","Save as skill","スキルとして保存","스킬로 저장","Guardar como habilidad"],
 ["从这段对话起草一个可复用技能，保存前会先让你确认。","Draft a reusable skill from this conversation. You confirm before it is saved.","この会話から再利用できるスキルを下書きします。保存前に確認します。","이 대화에서 재사용 가능한 스킬 초안을 만듭니다. 저장 전에 확인합니다.","Crea un borrador de habilidad reutilizable a partir de esta conversación. Lo confirmas antes de guardarlo."],
+["话题：{label}", "Topic: {label}", "トピック：{label}", "주제: {label}", "Tema: {label}"],
+["回到话题：{label}", "Back to topic: {label}", "トピックに戻る：{label}", "주제로 돌아가기: {label}", "De vuelta al tema: {label}"],
+["跳到这个话题开始处", "Jump to where this topic started", "このトピックの最初へ移動", "이 주제의 시작으로 이동", "Ir al inicio de este tema"],
 ];
 export const translations = Object.freeze(Object.fromEntries(rows.map(([key,en,ja,ko,es]) => [key, Object.freeze({ 'zh-CN':key,en,ja,ko,es })])));

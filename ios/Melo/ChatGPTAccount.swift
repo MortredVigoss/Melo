@@ -171,7 +171,7 @@ struct ImageSizeRejected: Error {}
             if !revoked { error="已退出此手机，但未确认远端撤销。可在 ChatGPT 的安全设置中检查授权。" }
         } catch { self.error=error.localizedDescription }
     }
-    func reply(messages: [ChatMessage], model: String, instructions: String, imageInputs: [ImageInput] = [], imageTask: ImageTaskPlan? = nil, deviceTools: DeviceToolContext? = nil, allowWebSearch: Bool = true, allowImageTool: Bool = false, statusKey: String? = nil, budget: PhoneRunBudget? = nil, verification: AgentVerification? = nil, hooks: AgentLoopHooks = AgentLoopHooks(), onObservation: ((ExecutionObservation) -> Void)? = nil, onReceiving: (() -> Void)? = nil) async throws -> ModelReply {
+    func reply(messages: [ChatMessage], model: String, instructions: String, imageInputs: [ImageInput] = [], imageTask: ImageTaskPlan? = nil, deviceTools: DeviceToolContext? = nil, allowWebSearch: Bool = true, allowImageTool: Bool = false, statusKey: String? = nil, cacheKey: String? = nil, budget: PhoneRunBudget? = nil, verification: AgentVerification? = nil, hooks: AgentLoopHooks = AgentLoopHooks(), onObservation: ((ExecutionObservation) -> Void)? = nil, onReceiving: (() -> Void)? = nil) async throws -> ModelReply {
         if imageTask?.makesImage != true { try ConversationHistory.validateCurrentInput(messages.last(where: { $0.role == "user" })?.content ?? "", instructions: instructions) }
         let expectedEpoch = epoch
         func setStatus(_ value: String) {
@@ -186,7 +186,7 @@ struct ImageSizeRejected: Error {}
         let sessionID = UUID().uuidString
         // The device-wide switch and this Agent's phone permission must both allow search.
         let webSearch = allowWebSearch && imageTask?.makesImage != true && (defaults.object(forKey: "webSearchEnabled") as? Bool ?? true)
-        var body = ChatGPTRequest.body(messages: messages, model: model, instructions: instructions, webSearch: webSearch)
+        var body = ChatGPTRequest.body(messages: messages, model: model, instructions: instructions, webSearch: webSearch, cacheKey: cacheKey)
         if !imageInputs.isEmpty || imageTask?.makesImage == true {
             let imageBody = ImageRequestBody.responses(messages: messages, inputs: imageInputs, task: imageTask ?? ImageTaskPlan(action: .analyze), model: model, instructions: instructions)
             body["input"] = imageBody["input"]

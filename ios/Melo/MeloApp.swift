@@ -13,6 +13,7 @@ import SwiftUI
         #if DEBUG && targetEnvironment(simulator)
         if ProcessInfo.processInfo.arguments.contains("-melo-preview-device-approval") { return DeviceDataVerification.approvalStore() }
         if ProcessInfo.processInfo.arguments.contains("-melo-preview-team") { return TeamVerification.previewStore() }
+        if ProcessInfo.processInfo.arguments.contains("-melo-preview-topics") { return TopicPreview.store() }
         #endif
         return ChatStore()
     }()

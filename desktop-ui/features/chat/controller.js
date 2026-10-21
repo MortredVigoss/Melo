@@ -1045,6 +1045,11 @@ export const chatActions = {
       if (anchor) requestAnimationFrame(() => restoreThreadAnchor(anchor));
     }
   },
+  'jump-to-topic': ({ trigger }) => {
+    // A "回到话题" marker: bring the topic's first message into the window and scroll to it.
+    prepareThreadNavigation({ highlightedMessageId: trigger.dataset.messageId, autoFollow: false });
+    render();
+  },
   'scroll-thread-to-bottom': () => {
     // User clicked the floating "jump to latest" arrow. Re-enable
     // auto-follow so subsequent streaming chunks keep the view pinned to

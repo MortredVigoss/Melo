@@ -19,7 +19,7 @@ async function visit(path) {
     if (!entry[2].startsWith('.')) throw new Error('Core cannot import external modules: ' + entry[2]);
     const target = resolve(dirname(path), entry[2]);
     const withinCore = relative(resolve(root, 'shared/agent'), target);
-    const sharedPresentation = ['src/shared/replyDocument.js', 'src/shared/sessionEvents.js'].some(file => target === resolve(root, file));
+    const sharedPresentation = ['src/shared/replyDocument.js', 'src/shared/sessionEvents.js', 'src/shared/conversationTopics.js'].some(file => target === resolve(root, file));
     if (!sharedPresentation && (withinCore.startsWith('..') || isAbsolute(withinCore))) throw new Error('Core import escapes its portable boundary.');
     const dependency = await visit(target);
     source = source.replace(entry[0], `const {${entry[1]}} = modules[${JSON.stringify(dependency)}];\n`);

@@ -267,3 +267,9 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - #10 布局缓存、#11 生命周期、#12 SQLite 边界、#13 容量基线已在对应专项留记录。真实模型质量、Fold6/iPhone 实体设备及安装验证另计；账号和数据未变，无 git pp。
 
 最终发布回执：GitHub #1–#14 均已关闭，实时 open issue 查询为 0；#14 完成评论 https://github.com/MortredVigoss/Melo/issues/14#issuecomment-6287315760 。主线 8175263、手机 379db49 已推送，后续提交仅补本条文档回执。代码与 CI 验证点仍为 aa83db2 / a11183b，无未完 issue 工作。
+
+### 2026-10-21 — Claude — 手机缓存前缀、话题分隔、长文闪退（分支 `claude/context2-20261021`，未合并）
+
+- 用户选 1B+2B；主体（逐轮内容后置、search_history 隔离、话题卡 + read_history + 原文摘录、记忆本 + 个人档案）已由他线程 10-17 落地。旧分支 `claude/context-20261017` 重复，不合并。
+- 本轮补：手机指令只留稳定内容、逐题内容与时间后置、按对话缓存键；对话中话题分隔（共享 `src/shared/conversationTopics.js`，手机经 agent core）；手机长文（约 2 万汉字）在记忆召回中闪退的修复。详见 [方案第七节](docs/context-memory-plan-20261017.md)。
+- 与 B5（拆 `ChatStore.swift`）可能冲突：本轮在 ChatStore 只改发送前的组装几行，逻辑放在新文件。未验证：真实账号下手机缓存命中率、实体机。

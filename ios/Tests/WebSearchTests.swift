@@ -38,7 +38,16 @@ import Foundation
         let longBody = ChatGPTRequest.body(messages: longHistory, model: "test", instructions: "Keep this role", webSearch: false)
         let input = longBody["input"] as! [[String: String]]
         assert(input.first?["role"] == "user", "Context must not start with an answer whose question was dropped")
-        assert(input.map { $0["content"]! } == longHistory.map(\.content), "Keep a contiguous suffix of complete recent turns")
+        assert(input.dropLast().map { $0["content"]! } == longHistory.dropLast().map(\.content), "Keep a contiguous suffix of complete recent turns")
+        assert(input.last!["content"]!.hasPrefix(longHistory.last!.content) && input.last!["content"]!.contains("当前时间"), "The current time rides on the newest message")
+        // The instructions are a cacheable prefix: identical at different times, keyed per chat.
+        let early = ChatGPTRequest.body(messages: longHistory, model: "test", instructions: "Keep this role", webSearch: false, now: Date(timeIntervalSince1970: 1_800_000_000), cacheKey: ChatGPTRequest.cacheKey(chatID: "a", agentID: "melo"))
+        let later = ChatGPTRequest.body(messages: longHistory, model: "test", instructions: "Keep this role", webSearch: false, now: Date(timeIntervalSince1970: 1_800_000_777), cacheKey: ChatGPTRequest.cacheKey(chatID: "a", agentID: "melo"))
+        assert(early["instructions"] as! String == later["instructions"] as! String, "Time must not change the instructions")
+        assert(!(early["instructions"] as! String).contains("当前时间"))
+        assert(early["prompt_cache_key"] as? String == later["prompt_cache_key"] as? String && (early["prompt_cache_key"] as? String)?.hasPrefix("melo-ios-") == true)
+        assert(ChatGPTRequest.cacheKey(chatID: "a", agentID: "melo") != ChatGPTRequest.cacheKey(chatID: "b", agentID: "melo"))
+        assert(longBody["prompt_cache_key"] == nil)
         assert((longBody["instructions"] as! String).contains("Keep this role"))
         assert(longHistory == historyBefore, "Request selection must not modify saved history")
         print("Web search request, event status, citation URL safety and Unicode parsing tests passed")

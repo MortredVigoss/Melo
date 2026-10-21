@@ -432,7 +432,7 @@ const coreRoutes = createRouteRegistry([
       }
       return;
     } },
-  { method: 'GET', paths: ["/shared/channelAvailability.js","/shared/minimaxVoiceResolver.js","/shared/modelCatalog.js","/shared/executionScene.js","/shared/executionMetadata.js","/shared/replyDocument.js","/shared/sessionEvents.js"], auth: 'local-read', handler: async ({request,response,url,requireLocalOrigin}) => {
+  { method: 'GET', paths: ["/shared/channelAvailability.js","/shared/minimaxVoiceResolver.js","/shared/modelCatalog.js","/shared/executionScene.js","/shared/executionMetadata.js","/shared/replyDocument.js","/shared/sessionEvents.js","/shared/conversationTopics.js"], auth: 'local-read', handler: async ({request,response,url,requireLocalOrigin}) => {
       const absPath = join(rootDir, 'src', 'shared', url.pathname.split('/').at(-1));
       try {
         const fileStat = await stat(absPath);
