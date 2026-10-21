@@ -11,13 +11,14 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const tasks = {
   build: [':app:assembleDebug'],
   test: [':app:testDebugUnitTest'],
+  daily: [':app:testDebugUnitTest', ':app:lintDebug', ':app:assembleDebug'],
   check: [':app:testDebugUnitTest', ':app:lintDebug', ':app:assembleDebug', ':app:assembleRelease'],
   connected: [':app:connectedDebugAndroidTest'],
   release: [':app:assembleRelease'],
 };
 const selected = tasks[process.argv[2]];
 if (!selected || process.argv.length !== 3) {
-  console.error('Usage: node scripts/android.mjs build|test|check|connected|release');
+  console.error('Usage: node scripts/android.mjs build|test|daily|check|connected|release');
   process.exit(2);
 }
 const env = { ...process.env };
@@ -62,8 +63,11 @@ try {
     ? [[':app:testDebugUnitTest'], [':app:lintDebug', ':app:assembleDebug'], [':app:assembleRelease']]
     : [selected];
   for (const batch of batches) {
+    // Reuse compilation, but execute the selected JVM tests on every check.
+    // Gradle's task-local --rerun avoids rebuilding unrelated compilation tasks.
+    const invocation = batch.flatMap(task => task === ':app:testDebugUnitTest' ? [task, '--rerun'] : [task]);
     status = await new Promise((accept, reject) => {
-      const child = spawn(windows ? 'gradlew.bat' : './gradlew', batch, {
+      const child = spawn(windows ? 'gradlew.bat' : './gradlew', invocation, {
         cwd: resolve(root, 'android'), env, stdio: 'inherit', shell: windows,
       });
       child.once('error', reject); child.once('exit', code => accept(code ?? 1));

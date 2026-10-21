@@ -4249,6 +4249,7 @@
           "scripts/check-dependencies.test.js",
           "scripts/check-doc-links.test.js",
           "scripts/check-syntax.test.js",
+          "scripts/ci-test-plan.test.js",
           "scripts/eval-agent-tasks.test.js",
           "scripts/generate-module-map.test.js",
           "scripts/ios-test-selection.test.js",
@@ -4258,13 +4259,15 @@
           "scripts/swift-test-cache.test.js",
           "scripts/test-discovery.test.js",
           "scripts/test-impact.test.js",
-          "scripts/test-plan.test.js"
+          "scripts/test-plan.test.js",
+          "scripts/test-stage-runner.test.js"
         ],
         "swift": []
       },
       "implicit": [
         "agent-core-bundle",
         "bridge-process-shutdown",
+        "ci-workflow-selection",
         "gen-agent-core",
         "gen-interface-languages",
         "gen-module-map",
@@ -5451,6 +5454,22 @@
       "note": "同一纯 JS Core 打包供 Android JavaScriptSandbox 与 iOS JavaScriptCore；Node 直接导入源码",
       "features": [
         "chat",
+        "tooling"
+      ]
+    },
+    {
+      "id": "ci-workflow-selection",
+      "kind": "source-reading-test",
+      "reads": [
+        ".github/workflows/verification.yml",
+        ".github/workflows/file-safety.yml",
+        ".github/workflows/android.yml"
+      ],
+      "tests": [
+        "scripts/ci-test-plan.test.js"
+      ],
+      "note": "CI must plan before expensive jobs and fail closed when planning fails.",
+      "features": [
         "tooling"
       ]
     }

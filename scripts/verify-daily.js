@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { createStageRunner } from './test-stage-runner.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, relative, isAbsolute } from 'node:path';
@@ -47,13 +47,7 @@ if(preview) {
 } else {
   const home=await mkdtemp(join(tmpdir(),'melo-daily-'));
   const started=Date.now();
-  async function run(label,command,argv) {
-    const start=Date.now();console.log(`▶ ${label}`);
-    const child=spawn(command,argv,{stdio:'inherit',env:{...env,MELO_HOME:home,MELO_TEST_MODE:'1'}});
-    const code=await new Promise((resolve,reject)=>{child.once('error',reject);child.once('exit',code=>resolve(code??1));});
-    if(code)throw Error(`${label} failed (${code})`);
-    console.log(`✓ ${label} ${(Date.now()-start)/1000}s`);
-  }
+  const {run}=await createStageRunner({root,env:{...env,MELO_HOME:home,MELO_TEST_MODE:'1'}});
   try {
     for(const [path,entry] of Object.entries(excluded))console.log(`QUARANTINED ${path}: ${entry.reason} (expires ${entry.expires})`);
     for(const stage of dailyStages(plan))await run(stage.label,stage.command,stage.args);

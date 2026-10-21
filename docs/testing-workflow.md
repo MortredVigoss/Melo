@@ -30,11 +30,12 @@
 | --- | --- |
 | 注册的纯说明文档 | 改动 Markdown 的相对链接 |
 | 架构地图 / 注释、scope 等开发元数据 | 脚本测试与地图一致性，无产品浏览器 / Swift |
-| 局部桌面页面 | 所属功能测试、反向依赖测试、源码读取与桥接测试；公共 UI / 设置触发设置浏览器 |
+| 局部桌面页面 | 所属功能的整个 UI 测试组，加反向依赖、源码读取与桥接测试；公共 UI / 设置触发设置浏览器 |
 | 桌面独有 CSS | 所属界面组；不因在 desktop-ui 目录就触发手机 |
 | 后端普通功能 | 整个所属功能组，加反向调用、动态 import、源码读取、共享契约相关测试 |
 | 手机场景资源 | JS 桥接 / 渲染与 manifest；不编译无关 Swift |
 | Swift 文件 | 按真实编译输入选 suite；共享契约补对应测试；未纳入独立编译组的原生源码扩大 Swift |
+| Android 本地 `.kt` / 资源 `.xml` | JVM、Lint、Debug；Manifest、构建配置、Core 或混合平台集成仍跑 Release/R8 |
 | 仅现有 `.test.js` | 改动测试文件及语法；不能用它替代同时发生的产品改动 |
 | 状态持久化、权限、执行核心、共享协议、依赖 / 构建、测试门禁自身 | 完整日常 |
 | 未知路径、删除 / 重命名、无法确认依赖、地图过期或登记不完整 | 明确说明原因并扩大；预检失败须修复，不能关掉检查 |
@@ -54,6 +55,8 @@
 Swift suite 的输入列表只在 `ios/scripts/test.py` 定义。`--list-suites` 返回实际编译输入，不运行测试、不调用编译器；JS 选择器读取该清单，不维护第二份容易过期的列表。显式的 `--skip-js` / `--skip-renderer` 只供已负责这些阶段的组合门禁使用，不能拿来回避失败。
 
 ## 缓存和扩大检查的边界
+
+完整日志保存在 `.tmp/test-runs/run-*/`，`report.json` 列出每阶段命令、耗时、退出码与日志路径。终端只显示阶段结果和失败日志尾部，失败完整输出仍保留；不缓存通过结果、不自动重试、不吞掉非零退出码。
 
 保留 Swift 编译缓存；键含源码、测试、编译命令、工具链、SDK 路径 / build version 与机器架构。缓存损坏重编译；编译和测试失败仍使检查失败。每次仍真实执行选定测试，不缓存“通过”结果。没有上次绿色就自动跳过的机制，也不将不同工作树、依赖或环境的旧结果算作本次成功。
 
@@ -77,3 +80,11 @@ Swift suite 的输入列表只在 `ios/scripts/test.py` 定义。`--list-suites`
 主线定义在 `.github/workflows/verification.yml`、`.github/workflows/file-safety.yml`；Android 定义在 `.github/workflows/android.yml`。环境准备与 preflight 单列：缺依赖先修环境，产品断言失败保留红色；不增加 continue-on-error、不对失败测试静默重试。所有 job 输出日志保留 7 天。平台专用测试只在对应系统运行，Linux 不执行的原生 Swift 壳测试在 macOS 明确运行。
 
 跨平台 UI 夹具需要中文字体与 UTF-8 locale；流式补充回归由受控事件释放模型响应，不假定浏览器能在固定 4 秒内完成动作。工作流不运行 `test:full`，不打包安装桌面/iPhone 应用，也不访问用户账号与数据。
+
+### CI 先计划、后准备环境（2026-10-21）
+
+三个工作流先用 Node 运行 `scripts/ci-test-plan.js`，复用本地选择器。push 比较 `before..HEAD`，PR 使用目标基准的 merge-base，重命名两端均计入；缺基准、历史不全和手动运行保守扩大。纯文档只查链接，不安装 npm、浏览器、Java 或启动 macOS / Android 重型任务。工作流本身仍产生状态，保留原 required job 名称；计划失败会使对应 gate 失败。
+
+局部 UI 保留整个功能 UI 测试组，再通过真实依赖补选后端测试（包括文件安全）；后端仍保留整功能组。Swift 按真实编译输入选组，相关时才执行 JavaScriptCore Replay；原生 shell 测试仍在 macOS 执行。共享 / 未知 / 检测基础设施变更保留跨平台全检，File safety 的两个操作系统不去重。Android CI 仍保留 Release/R8 与模拟器。三个工作流均取消同分支过时运行。
+
+Swift 只复用编译缓存和 DerivedData，按操作系统、架构、Xcode、源文件和依赖标识隔离；测试每次真实执行。当前选组对比（相同源码基线，JS 文件数，非耗时承诺）：customize/view.js 103 → 26，chat/controller.js 98 → 40，chat.css 80 → 22。证据见 `.tmp/test-cost-camera-20261021/selection-after.json`；专项和完整校准结果见 [本轮计划与验收](test-cost-camera-plan-20261021.md)。

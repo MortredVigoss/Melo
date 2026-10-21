@@ -13,8 +13,34 @@ defaults:
 permissions:
   contents: read
 
+concurrency:
+  group: file-safety-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  plan:
+    name: Test impact plan
+    runs-on: ubuntu-latest
+    outputs:
+      linux: ${{ steps.plan.outputs.linux }}
+      swift: ${{ steps.plan.outputs.swift }}
+      safety: ${{ steps.plan.outputs.safety }}
+      android: ${{ steps.plan.outputs.android }}
+      full: ${{ steps.plan.outputs.full }}
+      replay: ${{ steps.plan.outputs.replay }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '22.22.2'
+      - id: plan
+        run: node scripts/ci-test-plan.js
+
   safety:
+    needs: plan
+    if: ${{ always() && (needs.plan.result != 'success' || needs.plan.outputs.safety == 'true') }}
     strategy:
       fail-fast: false
       matrix:
@@ -22,7 +48,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
+      - name: Require a valid plan
+        run: test "${{ needs.plan.result }}" = success
       - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v7.1.0
         with:
           node-version: '22.22.2'

@@ -19,6 +19,22 @@ test('UI edits include the existing backend safety source reader',()=>{
     assert.equal(p.fullUnit,false);
   }
 });
+test('UI whole-feature coverage retains reverse consumers without unrelated backend feature tests',()=>{
+  const p=plan('desktop-ui/features/chat/controller.js');
+  assert.ok(p.files.includes('desktop-ui/features/chat/controller.test.js'));
+  assert.ok(p.files.includes('desktop-ui/features/chat/threadWindow.test.js'));
+  assert.ok(p.files.includes('src/safety/fileSafetyGate.production.test.js'));
+  assert.ok(!p.files.includes('src/services/chat/chatExecutionRunner.test.js'));
+  const css=plan('desktop-ui/features/chat/chat.css');
+  assert.ok(css.files.includes('desktop-ui/executionTiming.browser.test.js'),'implicit stylesheet consumer stays');
+  assert.ok(!css.files.includes('src/services/chat/chatExecutionRunner.test.js'));
+});
+test('local Android source iteration avoids R8, while manifests, builds and shared changes keep it',()=>{
+  const local=plan('android/app/src/main/java/com/melo/android/MainActivity.kt');
+  assert.equal(local.androidMode,'daily');
+  assert.deepEqual(dailyStages(local).find(s=>s.args[0]==='scripts/android.mjs').args,['scripts/android.mjs','daily']);
+  for(const path of ['android/app/src/main/AndroidManifest.xml','android/app/build.gradle.kts','shared/agent/turn.js'])assert.equal(plan(path).androidMode,'check',path);
+});
 test('backend leaf covers its whole feature and literal dynamic-import tests without unrelated native work',()=>{
   const p=plan('src/services/search/searchResultsBuilder.js');
   assert.ok(p.files.includes('src/services/search/searchResultsBuilder.test.js'));

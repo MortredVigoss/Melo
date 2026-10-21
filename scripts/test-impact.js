@@ -8,7 +8,7 @@ import { buildModuleMap, ownerOf, matchesGlob, servedModules, loadAnnotations } 
 
 export const IOS_JS = ['ios/Tests/SceneBridge.test.js', 'ios/Tests/NeuralLayout.test.js'];
 const CORE = /^(?:package(?:-lock)?\.json$|binding\.gyp$|native\/|src\/(?:state\/|persistence\/|runtime\/|safety\/|providers\/|server\.js$|desktopStore\.js$|config\.js$|openai\.js$|tools\/(?:executor|permissions|permissionPersistence|registry)\.|services\/chat\/(?:chatExecutionRunner|sendChatMessage|turnLifecycle|turnScheduler)\.)|shared\/(?:protocol|agent)\/|mobile-sync\/.*(?:protocol|Protocol|syncContract))/;
-const GATE = /^(?:scripts\/(?:test-(?:plan|impact|discovery|stages)|verify-daily|run-unit-tests|verify-red-green|generate-module-map|check-dependencies)\.js|ios\/scripts\/(?:test|swift_test_cache)\.py)$/;
+const GATE = /^(?:scripts\/(?:test-(?:plan|impact|discovery|stages|stage-runner)|ci-test-plan|verify-daily|run-unit-tests|verify-red-green|generate-module-map|check-dependencies)\.js|ios\/scripts\/(?:test|swift_test_cache)\.py|\.github\/workflows\/.*\.ya?ml)$/;
 const TOOLING = /^(?:architecture\/(?:modules|module-annotations)\.json|scripts\/(?:scope|boundary-report|check-doc-links)\.js)$/;
 const sorted = values => [...new Set(values)].sort();
 const list = value => Array.isArray(value) ? value : value ? [value] : [];
@@ -114,7 +114,12 @@ export function impactedPlan(code, files, impact) {
     }
     if(path==='ios/Melo/Localizable.xcstrings'||path==='ios/native-translations.js') {add(['scripts/native-translations.test.js']);continue;}
     if(/^desktop-ui\/.*\.(js|css|html)$/.test(path)) {
-      const id=owner(path);feature(id,`${path}：${id} 界面测试`);
+      const id=owner(path);
+      // Keep the entire feature's UI group. Backend consumers, source readers
+      // (including file safety) and shared/native contracts are added below
+      // by the same transitive graph, rather than by unrelated feature labels.
+      if(id)selectedFeatures.add(id);
+      add((built.map.features[id]?.tests.js||[]).filter(test=>test.startsWith('desktop-ui/')),`${path}：${id} 界面测试`);
       if(id==='desktop-shell')add(files.filter(p=>p.startsWith('desktop-ui/')));
       if(id==='settings'||id==='desktop-shell')browsers=true;
       continue;

@@ -30,7 +30,8 @@ export function planTests(changed, files, impact = null) {
   } else {
     plan = impactedPlan(code, files, impact);
   }
-  return {...plan, android, changed:paths, docs:paths.filter(path=>isDocOnly(path)&&path.endsWith('.md')),
+  const androidMode = androidOnly && code.every(path=>/^android\/app\/src\/(?:main|test)\/.*\.(?:kt|xml)$/.test(path) && !path.endsWith('/AndroidManifest.xml')) ? 'daily' : 'check';
+  return {...plan, android, androidMode, changed:paths, docs:paths.filter(path=>isDocOnly(path)&&path.endsWith('.md')),
     syntax:plan.fullUnit ? null : code.filter(path=>/\.[cm]?js$/.test(path))};
 }
 

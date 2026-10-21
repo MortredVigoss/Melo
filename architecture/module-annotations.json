@@ -1232,6 +1232,19 @@
       "check": "shared/agent/conformance.test.js",
       "command": "npm run build:agent-core",
       "note": "同一纯 JS Core 打包供 Android JavaScriptSandbox 与 iOS JavaScriptCore；Node 直接导入源码"
+    },
+    {
+      "id": "ci-workflow-selection",
+      "kind": "source-reading-test",
+      "reads": [
+        ".github/workflows/verification.yml",
+        ".github/workflows/file-safety.yml",
+        ".github/workflows/android.yml"
+      ],
+      "tests": [
+        "scripts/ci-test-plan.test.js"
+      ],
+      "note": "CI must plan before expensive jobs and fail closed when planning fails."
     }
   ]
 }

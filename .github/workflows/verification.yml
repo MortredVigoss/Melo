@@ -17,7 +17,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  plan:
+    name: Test impact plan
+    runs-on: ubuntu-latest
+    outputs:
+      linux: ${{ steps.plan.outputs.linux }}
+      swift: ${{ steps.plan.outputs.swift }}
+      safety: ${{ steps.plan.outputs.safety }}
+      android: ${{ steps.plan.outputs.android }}
+      full: ${{ steps.plan.outputs.full }}
+      replay: ${{ steps.plan.outputs.replay }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '22.22.2'
+      - id: plan
+        run: node scripts/ci-test-plan.js
+
   linux:
+    needs: plan
+    if: ${{ always() && (needs.plan.result != 'success' || needs.plan.outputs.linux == 'true') }}
     name: Linux Node, HTTP and browser
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -25,7 +47,11 @@ jobs:
       LANG: C.UTF-8
       LC_ALL: C.UTF-8
     steps:
+      - name: Require a valid plan
+        run: test "${{ needs.plan.result }}" = success
       - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v7.1.0
         with:
           node-version: '22.22.2'
@@ -51,13 +77,15 @@ jobs:
           node -e "require('./build/Release/dirfd_ops.node')"
           node -e "require('onnxruntime-node')"
           node --input-type=module -e "import {BuiltinEmbedProvider} from './src/memory/embedProviders/BuiltinEmbedProvider.js'; if (!await new BuiltinEmbedProvider().isAvailable()) process.exit(2)"
-      - name: All JavaScript tests, including native and browser regressions
+      - name: Selected JavaScript, HTTP and browser regressions
         run: |
           mkdir -p .tmp/ci
-          npm run test:unit 2>&1 | tee .tmp/ci/linux-tests.log
+          node scripts/ci-test-plan.js linux 2>&1 | tee .tmp/ci/linux-tests.log
       - name: Deterministic task replay report
+        if: needs.plan.outputs.replay == 'true'
         run: npm run eval:tasks -- --out .tmp/ci/agent-task-eval-node.json
       - name: Syntax and generated contracts
+        if: needs.plan.outputs.full == 'true'
         run: |
           npm run build
           node scripts/generate-module-map.js --check
@@ -71,15 +99,22 @@ jobs:
           include-hidden-files: true
           path: |
             .tmp/ci/
+            .tmp/test-runs/
             .tmp/agent-task-eval-jscore.json
           retention-days: 7
 
   swift:
+    needs: plan
+    if: ${{ always() && (needs.plan.result != 'success' || needs.plan.outputs.swift == 'true') }}
     name: macOS Swift and shared rendering
     runs-on: macos-latest
     timeout-minutes: 25
     steps:
+      - name: Require a valid plan
+        run: test "${{ needs.plan.result }}" = success
       - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v7.1.0
         with:
           node-version: '22.22.2'
@@ -89,17 +124,26 @@ jobs:
           npm ci --ignore-scripts
           xcrun swift --version
           python3 --version
-      - name: Shared rendering and all Swift suites
+      - name: Compiler cache identity
+        id: toolchain
+        run: echo "id=$(xcodebuild -version | shasum -a 256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .tmp/ios-test-cache
+            .tmp/ci/ios-build
+          key: swift-build-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-${{ hashFiles('ios/**', 'shared/**', 'package-lock.json') }}
+          restore-keys: swift-build-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-
+      - name: Selected Swift suites
         run: |
           mkdir -p .tmp/ci
-          python3 ios/scripts/test.py 2>&1 | tee .tmp/ci/swift-tests.log
+          node scripts/ci-test-plan.js swift 2>&1 | tee .tmp/ci/swift-tests.log
       - name: Compare JavaScriptCore task events with Node
+        if: needs.plan.outputs.replay == 'true'
         run: npm run eval:tasks -- --compare .tmp/agent-task-eval-jscore.json --out .tmp/ci/agent-task-eval-node.json
       - name: Compile iOS Simulator app without signing or installation
         run: |
           xcodebuild -project ios/Melo.xcodeproj -scheme Melo -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath .tmp/ci/ios-build CODE_SIGNING_ALLOWED=NO build 2>&1 | tee .tmp/ci/ios-build.log
-      - name: macOS native shell lifecycle
-        run: node --test scripts/native-shutdown.test.js 2>&1 | tee .tmp/ci/native-shell.log
       - uses: actions/upload-artifact@v7.0.2
         if: always()
         with:
@@ -107,5 +151,6 @@ jobs:
           include-hidden-files: true
           path: |
             .tmp/ci/
+            .tmp/test-runs/
             .tmp/agent-task-eval-jscore.json
           retention-days: 7
