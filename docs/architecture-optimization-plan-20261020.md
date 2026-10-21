@@ -68,7 +68,7 @@ npm test -- --base <本批起点提交>   # 日常选组，批次结束时跑
 | --- | --- | --- | --- |
 | B1 | 共享自动保存钩子；冻结中央 switch | 无 | 低 |
 | B2 | 聊天执行三节点拆成三个模块 + 显式 turn 对象 | B1 | 中高 |
-| B3 | 模型 / 连接器 / 技能 / 安全四页迁入 `features/customize/`；样式合并为 token → base → features 三层 | B1 | 中 |
+| B3 | **已完成（10-21，按实际结构修正）**：自定义页（技能 / 连接器 / 安全与 Cookie / 工具与任务）一个功能 `features/customize/`；专属样式迁出；桌面 token 合一；模型页死代码清除（模型页不再单拆，见 §10） | B1 | 中 |
 | B4 | 业务操作返回提交回执；最薄工具链（ESLint + 边界 JSDoc） | B2、B3 | 中 |
 | B5 | 手机 `ChatStore.swift` 拆分 | B2 | 中高，需要 Mac 跑模拟器 |
 
@@ -264,12 +264,12 @@ chatExecutionRunner.js  只剩：参数校验 → createTurnContext → createSt
 
 | 指标 | 基线（0e79fb1） | 目标 |
 | --- | --- | --- |
-| `app.js` 行数 / 中央 click case 数 | 8,807 / 106（B1-6 已冻结） | B3 后 < 5,000 / < 80 |
+| `app.js` 行数 / 中央 click case 数 | 8,807 / 106（B1-6 已冻结） | **B3 后 6,807 / 79**（原定 < 5,000 未达：剩余主要是聊天以外的代码页、命令面板、任务 / 审批面板与监听器，见 §10） |
 | 死自动保存代码（调度 / flush / 定时器符号） | 14 | 待用户决定（删除或恢复） |
 | `runChatAgentExecutionGraph` 行数 | 1,200 | **B2 已完成**：187（含 66 行 TurnContext 文档与字段），三节点各成模块 |
 | `services/**` 导入 `desktop/bootstrap` 的模块数 | 2 | B4 后 0 |
-| CSS 文件数 / 总行数 | 11 / 7,495 | B3 后 ≤ 8 / < 5,600 |
-| `!important` 数 | 24 | B3 后 0 |
+| CSS 文件数 / 总行数 | 11 / 7,495 | **B3 后 20 / 7,521**（按功能拆出文件、单一 token 表；三层重排未做，见 §10） |
+| `!important` 数 | 24 | **未动，仍 24**（需全页面探针兜底，见 §10） |
 | ESLint 告警 | 无工具 | B4 后 0 |
 | 静态依赖循环 | 0 | 始终 0 |
 
@@ -285,3 +285,9 @@ chatExecutionRunner.js  只剩：参数校验 → createTurnContext → createSt
 - 2026-10-20（Claude Opus，B2）：B2-1 原写法（把 176–236 行搬进 `turnContext.js`）不可行——这段含 `runWithRequestContext(... runChatAgentExecutionGraph ...)` 递归早退和对 `context/home/onDelta` 的重新赋值。改为：初始化留在 runner，建图前组装 `turn` 对象；每个节点搬成 `createXNode(turn)` 工厂，在工厂顶部按原名解构所需绑定，节点主体逐字节不改（仅缩进少一级）。acorn + eslint-scope 分析确认三个节点均不写任何外层绑定、不用 this/arguments，故与原闭包等价。B2-1 并入 B2-2。
 - 2026-10-20（Claude Opus，B2）：等价性证据用七场景执行轨迹（审批早退、纯文本、工具一轮、预算耗尽、中途取消、codex 搜索路由、历史追问；记录每次模型请求、SSE 事件、delta、返回值，规范化后逐字节比对），比原计划的“SSE 事件序列”更严；脚本在工作树 `.tmp/b2-execution/`。runner 原有 3 个无人引用的 import（selectedMaterials、requestEnvironment、filterToolsForSearchPlan）留给 B4 lint，不在搬迁提交里清理。
 - 2026-10-20（Claude Opus，B2）：B2-6 未做——手机 `AgentLoop` 没有 prepare / invoke / finalize 节点边界，把三段 graphState 加进共享 `agent-loop.json` 等于为手机发明契约；现有 130 个共享夹具覆盖两端共同循环行为，B2 无行为变化。prepare / invoke-model 未加隔离单测（依赖面过大），由执行轨迹与原 runner 测试端到端覆盖；finalize 已有隔离单测。B5 拆 `ChatStore.swift` 时如需阶段对照，再按手机实际结构定义夹具。
+- 2026-10-21（Claude Opus，B3）：B3 原按“模型 / 连接器 / 技能 / 安全四页”切分与代码不符——技能、连接器、安全（含 Cookie）、工具与任务共用 `renderCustomizePage` 骨架、选中项与详情面板，故合为一个 `features/customize/`（逐字节迁出 → 状态归功能 → 专属样式迁出，三个提交）。验证：28→33 步真实 Chrome 交互轨迹（DOM、请求、状态摘要）前后一致；计算样式探针 75 场景 × 9,023 元素 0 差异。
+- 2026-10-21（Claude Opus，B3）：模型页不再单独成功能。真正的模型页逻辑早在 `llmConnections.js` / `extraFast.js` / `imageControls.js` / `modelPresentation.js`；app.js 只剩约 80 行围绕共享草稿 `modelSetupDraft` 的胶水（该草稿被模型页表单、Customize 连接器表单、凭据标记、设置编辑会话取消恢复四处使用，是历史上“token 被抹掉”的源头）。包成功能只增加间接、不减耦合。改为删除旧“模型设置卡”的 4 个无渲染动作及只被它们调用的 2 个函数。
+- 2026-10-21（Claude Opus，B3）：规范原写“删除 emerald.css”不成立——它有基础 token 和 9 条组件规则。`neuralGlass.css` 的 `:root` 被 `ios/scripts/build-scene.py` 打包进手机场景、`sync-theme.py` 由其生成 `MeloTheme.swift`，是双端契约，故 token 合一只合并四个桌面专属表（34 个变量），neuralGlass 保留。
+- 2026-10-21（Claude Opus，B3）：“token → base → features 三层、取消最后覆盖”未做。`surfaceUnify.css` 实际就是最后加载的统一覆盖层；把它移到前面需要逐条抬高其他规则的优先级，属于设计改造，无法作为机械步骤证明等价；`!important` 24 处同理。前置条件是一个覆盖全部页面（总览、项目、Agent、记忆、知识、设置、模型、成果、搜索）的计算样式探针，现有探针覆盖聊天 / 代码 / 审批 / 自定义。
+- 2026-10-21（Claude Opus，B3）：计算样式探针要把鼠标停到窗口外（-10,-10）再测量；否则会测到上一次点击留下的 :hover 状态，停在左上角还会触发神经导航的悬停动画（本批据此排除了两处假差异）。
+- 2026-10-21（Claude Opus，B3）：app.js 早有 7 个无引用名字（renderSidebar、getGreeting、renderComposerCommandDeck、minimaxTtsParamsForAgent、renderMinimaxTtsParameterInputs、decideFileSafetyPreflight、CREDENTIAL_FIELDS import），留给 B4 lint；未使用的 `__meloUiInternals__` 测试钩子随技能表单函数原样迁到 features/customize/controller.js，同样留给 B4。
