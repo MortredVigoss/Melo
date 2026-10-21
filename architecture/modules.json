@@ -22,8 +22,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 610,
-      "edges": 1867,
+      "modules": 617,
+      "edges": 1887,
       "roots": [
         "src",
         "desktop-ui",
@@ -551,7 +551,7 @@
       "dependsOn": {
         "approvals": 3,
         "channels": 3,
-        "chat": 17,
+        "chat": 18,
         "desktop-shell": 7,
         "memory": 11,
         "platform": 42,
@@ -730,8 +730,8 @@
       ],
       "modules": {
         "desktop-ui": 27,
-        "shared": 22,
-        "src": 67
+        "shared": 23,
+        "src": 68
       },
       "entryModules": [
         {
@@ -767,7 +767,25 @@
           ]
         },
         {
+          "module": "shared/agent/hostedSearch.js",
+          "importedBy": [
+            "tools"
+          ]
+        },
+        {
+          "module": "shared/agent/media/textUrls.js",
+          "importedBy": [
+            "media"
+          ]
+        },
+        {
           "module": "shared/agent/repeatGuard.js",
+          "importedBy": [
+            "agents"
+          ]
+        },
+        {
+          "module": "shared/agent/skill/skillService.js",
           "importedBy": [
             "agents"
           ]
@@ -776,6 +794,13 @@
           "module": "shared/agent/tokenEstimate.js",
           "importedBy": [
             "memory"
+          ]
+        },
+        {
+          "module": "shared/agent/tools.js",
+          "importedBy": [
+            "settings",
+            "tools"
           ]
         },
         {
@@ -973,26 +998,26 @@
         "channels": 2,
         "desktop-shell": 15,
         "knowledge": 5,
-        "media": 26,
+        "media": 24,
         "memory": 27,
         "platform": 58,
         "projects": 11,
         "settings": 9,
         "sync": 2,
-        "tools": 37,
+        "tools": 38,
         "voice": 3
       },
       "usedBy": {
-        "agents": 17,
+        "agents": 18,
         "channels": 9,
         "desktop-shell": 8,
-        "media": 9,
+        "media": 10,
         "memory": 11,
         "platform": 15,
         "projects": 1,
-        "settings": 5,
+        "settings": 7,
         "sync": 4,
-        "tools": 11,
+        "tools": 14,
         "voice": 2
       },
       "httpRoutes": [
@@ -1174,6 +1199,7 @@
       },
       "implicit": [
         "agent-core-bundle",
+        "gen-agent-core",
         "gen-agent-loop",
         "gen-ios-scene",
         "served-shared-modules",
@@ -1408,7 +1434,7 @@
         "desktop-shell": 6,
         "knowledge": 3,
         "media": 1,
-        "platform": 25,
+        "platform": 26,
         "projects": 1,
         "settings": 14,
         "sync": 2,
@@ -1421,7 +1447,7 @@
         "desktop-shell": 1,
         "knowledge": 2,
         "media": 1,
-        "platform": 19,
+        "platform": 21,
         "projects": 1,
         "sync": 5,
         "tools": 6
@@ -1730,7 +1756,8 @@
           "importedBy": [
             "chat",
             "media",
-            "platform"
+            "platform",
+            "tools"
           ]
         },
         {
@@ -1824,11 +1851,12 @@
       "dependsOn": {
         "agents": 3,
         "approvals": 1,
-        "chat": 5,
+        "chat": 7,
         "desktop-shell": 7,
         "media": 1,
         "platform": 22,
-        "sync": 3
+        "sync": 3,
+        "tools": 2
       },
       "usedBy": {
         "agents": 2,
@@ -1842,7 +1870,7 @@
         "platform": 16,
         "projects": 1,
         "sync": 1,
-        "tools": 8,
+        "tools": 9,
         "voice": 1
       },
       "httpRoutes": [
@@ -2129,7 +2157,7 @@
       ],
       "modules": {
         "desktop-ui": 28,
-        "src": 77
+        "src": 80
       },
       "entryModules": [
         {
@@ -2242,6 +2270,13 @@
           ]
         },
         {
+          "module": "src/services/search/hostedSearchCapability.js",
+          "importedBy": [
+            "chat",
+            "settings"
+          ]
+        },
+        {
           "module": "src/services/search/searchResultsBuilder.js",
           "importedBy": [
             "desktop-shell"
@@ -2251,6 +2286,12 @@
           "module": "src/services/search/searchTask.js",
           "importedBy": [
             "chat"
+          ]
+        },
+        {
+          "module": "src/services/search/sharedSearchAdapter.js",
+          "importedBy": [
+            "settings"
           ]
         },
         {
@@ -2419,24 +2460,25 @@
       "dependsOn": {
         "agents": 8,
         "approvals": 33,
-        "chat": 11,
+        "chat": 14,
         "desktop-shell": 6,
         "knowledge": 3,
         "media": 2,
         "memory": 6,
-        "platform": 34,
+        "platform": 35,
         "projects": 5,
-        "settings": 8
+        "settings": 9
       },
       "usedBy": {
         "agents": 20,
         "approvals": 2,
-        "chat": 37,
+        "chat": 38,
         "desktop-shell": 13,
         "media": 4,
         "memory": 1,
         "platform": 14,
-        "projects": 3
+        "projects": 3,
+        "settings": 2
       },
       "httpRoutes": [
         "POST /api/background-tasks/kill ← src/server.js",
@@ -2548,9 +2590,13 @@
           "src/services/export/pdfLibOps.test.js",
           "src/services/export/pdfRender.test.js",
           "src/services/search/apiDirect.test.js",
+          "src/services/search/hostedSearchCapability.test.js",
           "src/services/search/searchResultsBuilder.test.js",
           "src/services/search/searchService.test.js",
+          "src/services/search/searchSettings.test.js",
           "src/services/search/searchTask.test.js",
+          "src/services/search/sharedFetchAdapter.test.js",
+          "src/services/search/sharedSearchAdapter.test.js",
           "src/services/search/socialLinkReader.evidenceTrail.test.js",
           "src/services/search/socialLinkReader.test.js",
           "src/services/search/trailLogger.test.js",
@@ -2788,7 +2834,7 @@
       ],
       "dependsOn": {
         "approvals": 1,
-        "chat": 9,
+        "chat": 10,
         "desktop-shell": 5,
         "knowledge": 1,
         "memory": 1,
@@ -2799,7 +2845,7 @@
       },
       "usedBy": {
         "channels": 3,
-        "chat": 26,
+        "chat": 24,
         "desktop-shell": 5,
         "memory": 1,
         "platform": 2,
@@ -3393,7 +3439,7 @@
         "assets/**"
       ],
       "modules": {
-        "desktop-ui": 22,
+        "desktop-ui": 23,
         "src": 2
       },
       "entryModules": [
@@ -3528,6 +3574,7 @@
         "desktop-ui/neuralShell.js",
         "desktop-ui/runtimePanel.js",
         "desktop-ui/searchPage.js",
+        "desktop-ui/searchSettings.js",
         "desktop-ui/sharedApi.js",
         "desktop-ui/styles.css",
         "desktop-ui/surfaceUnify.css",
@@ -3571,6 +3618,7 @@
           "desktop-ui/neuralScene.test.js",
           "desktop-ui/neuralWorkspace.test.js",
           "desktop-ui/runtimeRefactor.test.js",
+          "desktop-ui/searchSettings.test.js",
           "desktop-ui/synapticBody.test.js",
           "desktop-ui/undoToast.test.js",
           "src/index.cli.test.js",
@@ -3662,7 +3710,7 @@
         "src/**"
       ],
       "modules": {
-        "src": 50
+        "src": 51
       },
       "entryModules": [
         {
@@ -3752,6 +3800,12 @@
           "module": "src/runtime/processOwnership.js",
           "importedBy": [
             "tools"
+          ]
+        },
+        {
+          "module": "src/runtime/reconcileDerivedFacts.js",
+          "importedBy": [
+            "memory"
           ]
         },
         {
@@ -3926,7 +3980,7 @@
         "desktop-shell": 2,
         "knowledge": 2,
         "media": 2,
-        "memory": 19,
+        "memory": 21,
         "projects": 6,
         "settings": 16,
         "sync": 2,
@@ -3941,11 +3995,11 @@
         "desktop-shell": 9,
         "knowledge": 2,
         "media": 9,
-        "memory": 25,
+        "memory": 26,
         "projects": 23,
         "settings": 22,
         "sync": 4,
-        "tools": 34,
+        "tools": 35,
         "voice": 3
       },
       "httpRoutes": [],
@@ -3993,6 +4047,7 @@
           "src/runtime/performanceTrace.test.js",
           "src/runtime/postTurnTasks.test.js",
           "src/runtime/processOwnership.test.js",
+          "src/runtime/reconcileDerivedFacts.test.js",
           "src/runtime/searchCacheEvidence.test.js",
           "src/runtime/serverLock.test.js",
           "src/runtime/storageInventory.test.js",
@@ -4176,6 +4231,8 @@
           "npm run test:scripts"
         ],
         "js": [
+          "scripts/android-target.test.js",
+          "scripts/android-task-report.test.js",
           "scripts/boundary-report.test.js",
           "scripts/capacity-fixture.test.js",
           "scripts/check-dependencies.test.js",
@@ -4197,6 +4254,7 @@
       "implicit": [
         "agent-core-bundle",
         "bridge-process-shutdown",
+        "gen-agent-core",
         "gen-interface-languages",
         "gen-module-map",
         "source-tests-task-replay",
@@ -4621,9 +4679,9 @@
       "desktopConsumers": [
         "src/domain/agent/capabilityElevation.js",
         "src/retrieval/intentRouter.js",
-        "src/retrieval/requestPolicy.js",
         "src/retrieval/selfVerification.js",
         "src/retrieval/verificationEvidence.js",
+        "src/services/chat/chatExecutionRunner.js",
         "src/services/chat/execution/invokeModelNode.js",
         "src/services/chat/supplements.js",
         "src/services/chat/toolTraceReplay.js",
@@ -5328,6 +5386,27 @@
       "note": "B3：自定义页（安全分区、域名 Cookie）从 app.js 迁出后，按源码断言安全分区入口、授权刷新 / 撤销与 Cookie 表单动作仍由 features/customize 提供；Cookie 输入同步仍在 app.js 的 input 监听器",
       "features": [
         "approvals"
+      ]
+    },
+    {
+      "id": "gen-agent-core",
+      "kind": "generator",
+      "generator": "scripts/build-agent-core.mjs",
+      "inputs": [
+        "shared/agent/**",
+        "src/shared/replyDocument.js",
+        "src/shared/sessionEvents.js"
+      ],
+      "outputs": [
+        "shared/agent/dist/**",
+        "ios/Melo/AgentCore/**"
+      ],
+      "check": "shared/agent/conformance.test.js",
+      "command": "npm run build:agent-core",
+      "note": "同一纯 JS Core 打包供 Android JavaScriptSandbox 与 iOS JavaScriptCore；Node 直接导入源码",
+      "features": [
+        "chat",
+        "tooling"
       ]
     }
   ]

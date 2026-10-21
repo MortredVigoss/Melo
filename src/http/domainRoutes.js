@@ -75,7 +75,7 @@ const router = createRouteRegistry([
         const abort = new AbortController();
         const closed = () => { if (!response.writableEnded) abort.abort(); };
         response.on('close', closed);
-        try { sendJson(response, 200, await testLlmProfile(body.id, { signal: abort.signal, catalogOnly: action === 'models', modality: body.modality === 'vision' ? 'vision' : 'text' })); }
+        try { sendJson(response, 200, await testLlmProfile(body.id, { signal: abort.signal, catalogOnly: action === 'models', modality: ['vision', 'search'].includes(body.modality) ? body.modality : 'text' })); }
         finally { response.off('close', closed); }
       }
       return;

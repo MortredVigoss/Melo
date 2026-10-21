@@ -38,7 +38,10 @@ final class FakeSpeech: SpeechInputEngine {
         voice.start(id: "fourth", commit: commit)
         engine.callbacks[3](.listening)
         engine.callbacks[3](.transcript("计时结束", final: false))
-        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        let deadline = Date().addingTimeInterval(2)
+        while voice.state.active && Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        }
         assert(commits == 3 && !voice.state.active && !voice.state.notice.isEmpty)
         voice.start(id: "fifth", commit: commit)
         engine.callbacks[4](.transcript("", final: true))

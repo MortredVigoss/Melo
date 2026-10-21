@@ -1,3 +1,8 @@
+## 2026-10-21 — 在真实共同主线上验证 Claude 的最终重构
+
+Codex：用户解除等待，授权核对 Claude 最终改动并在组合测试后推送；fetch 发现远端新增手机集成，先保留双方行为再验收，不能只检查 B3 快照。
+目标回归 225/225；地图预检发现新增导入后生成物过期，重新生成。当前仍待完整组合与发布验收；其他线程文档 WIP 已备份保留，不运行 git pp。
+
 ## 2026-10-21 — 架构优化 B3：自定义页成为独立功能，桌面 token 合一，清除模型页死代码
 
 用户批准 B3 三步。按代码真实结构修正切法：技能 / 连接器 / 安全与 Cookie / 工具与任务共用一个骨架，合为 `features/customize/`（逐字节迁出 → 状态归功能、窄上下文 → 专属样式迁出）。（Claude Opus）
@@ -18,6 +23,35 @@ Codex：用户要求修复正常回复却标受阻，同时核对 Claude 的架�
 搬迁前作用域分析确认节点不写外层绑定，故与闭包等价；七场景执行轨迹（模型请求、SSE、delta、返回值）三次搬迁后逐字节一致，五组专项通过数不变；activeAgentProfile 作用域约定测试改为按文件区分并有双向反向对照；finalize 首次可隔离单测。
 
 批次 `npm test -- --base 8772e92` GREEN（JS 4360 / 0 败、设置与加速设置浏览器、Swift 35 套件）；首轮抓到 agent-loop 契约消费者测试写死 runner 路径，已改为跟随 invokeModelNode.js 并把三节点补进手机配对。分支 `claude/arch-b2-20261020`，未合入 master、未推送。交接见 docs/handoffs/b2-execution-20261020.md。Final commit: 本条提交。
+
+## 2026-10-21 — 回到共同主线，清理分支不丢历史
+
+Codex：用户批准的 Integration 已在五项 CI 全绿后通过 PR #15 合并；合并树与验证 Head 完全一致。Linux 补齐本机缺 FFmpeg 的 12 项，最终 4384 JS pass / 0 fail / 1 macOS 专用 skip；macOS 35 Swift suites、11 个跨引擎 Replay、完整无签名 iOS App 编译和原生生命周期通过，Android 73 Runtime 零跳过。
+确认 ancestry 与远端 SHA 后原子删除 11 条已包含分支，远端只保留 master；本地同步并安全清理三条旧 feature branches。历史仍由 merge ancestry 保留，后续从共同主线开分支。
+本轮不等同产品发布/真机/真实供应商验收。合并提交 `6ab1adf`；最后仅补交接文档，按文档范围检查，不重复产品全量。
+
+## 2026-10-21 — 整合验收按实际平台拆分，保留可追溯边界
+
+Codex：最终本机全部 JS 4372 pass / 0 fail / 13 平台 skip，两项独立 Desktop Browser、Android 124 JVM / 73 Runtime 与 11 个跨引擎 Replay 通过；语法/生成物通过，后端无循环依赖。
+Linux CI 已通过；最新 Head 的 macOS / Android CI 与合并状态以 PR #15 为准，不把 WSL 的部分执行称为完整日常或发布验收。仅删除 ancestry 已包含且远端 SHA 未改变的阶段分支。
+未访问真实模型/账号、未操作用户设备；本轮 Emulator 已关闭。验证源码 `009134a`，文档不重复运行产品全量，最终 CI 仍须绿色后合并。
+
+## 2026-10-21 — 原生项目也需编译，不以协议小套件替代整合
+
+Codex 已完成 73 项 Android Runtime 和 11 个 Node/Android Replay 一致性核对；Memory 修复后四份并行 HTTP 场景通过。继续等待最终整树与 macOS CI，不据单端绿色直接合并。
+Backup 排序测试改用显式持久时间，保留顺序断言，避免 WSL 墙钟/5ms 等待影响 Fixture。CI 加 unsigned iOS Simulator 编译，只验证项目接线，不签名、安装或使用账号。
+
+## 2026-10-21 — 后台索引只能用当前来源清单清理记忆
+
+Codex 在整合回归中复现后台 Worker 用旧项目快照误隔离新记忆；原记录仍在，来源标记错误。确定性回归覆盖迟到索引、真实删除及缺失清单；在同一 memory 事务中读取当前来源后再清理。
+Artifact 测试改经公开 State Store 建 Fixture，避免绕过常驻状态；并发夹具用 Worker 进度通知替代调度速度假设，原断言保留。macOS 授权卡 Deadline 用受控 Clock，仍验证预算到期与关闭状态。
+PR #15 保持 Draft；初轮 Linux CI、双平台 File Safety 和本机 Android Runtime 已通过，macOS 首轮暴露授权卡测试时钟问题，继续复验，不据旧结果合并。
+
+## 2026-10-20 — 两条工作线先在独立分支验证，再回到共同主线
+
+用户批准 Integration / PR / 验证后收敛分支；Codex 固定两端最新 SHA，保留主线新接口及 Mobile 功能，未直接修改 master。
+初轮冲突后已通过 Core 专项 240 与 Android 本机构建/Lint；Node 全量首轮发现 6 项 RED，Routing 正修复、记忆并发仍调查，不能报告合并就绪。
+上游 CI 原有 locale 生成物和语音定时失败已记录；日志管道明确使用 pipefail，不以 tee 的成功掩盖测试失败。未使用真实模型凭证或操作用户手机。
 
 ## 2026-10-20 — 历史图片在真实点击后完成闭环
 

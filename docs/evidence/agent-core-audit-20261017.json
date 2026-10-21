@@ -1,0 +1,257 @@
+{
+  "scope": "Isolated fixtures against current production functions; no external model, personal data or device access. PASS confirms observed limitations, not fixes.",
+  "tools": [
+    {
+      "id": "bash",
+      "name": "Bash",
+      "category": "system"
+    },
+    {
+      "id": "file_read",
+      "name": "File Read",
+      "category": "filesystem"
+    },
+    {
+      "id": "file_edit",
+      "name": "File Edit",
+      "category": "filesystem"
+    },
+    {
+      "id": "file_write",
+      "name": "File Write",
+      "category": "filesystem"
+    },
+    {
+      "id": "file_delete",
+      "name": "File Delete",
+      "category": "filesystem"
+    },
+    {
+      "id": "file_move",
+      "name": "File Move",
+      "category": "filesystem"
+    },
+    {
+      "id": "file_mkdir",
+      "name": "File Mkdir",
+      "category": "filesystem"
+    },
+    {
+      "id": "glob",
+      "name": "Glob",
+      "category": "filesystem"
+    },
+    {
+      "id": "grep",
+      "name": "Grep",
+      "category": "filesystem"
+    },
+    {
+      "id": "delegate",
+      "name": "Delegate",
+      "category": "agent"
+    },
+    {
+      "id": "agent",
+      "name": "Agent (legacy alias)",
+      "category": "agent"
+    },
+    {
+      "id": "fetch_url",
+      "name": "Fetch URL",
+      "category": "web"
+    },
+    {
+      "id": "web_search",
+      "name": "Web Search",
+      "category": "web"
+    },
+    {
+      "id": "media_info",
+      "name": "Media Info (yt-dlp)",
+      "category": "media"
+    },
+    {
+      "id": "media_api",
+      "name": "Media API",
+      "category": "media"
+    },
+    {
+      "id": "search_history",
+      "name": "Search Conversation History",
+      "category": "memory"
+    },
+    {
+      "id": "pdf",
+      "name": "PDF",
+      "category": "filesystem"
+    },
+    {
+      "id": "xlsx",
+      "name": "Spreadsheet",
+      "category": "filesystem"
+    },
+    {
+      "id": "calculator",
+      "name": "Calculator",
+      "category": "utility"
+    },
+    {
+      "id": "clipboard",
+      "name": "Clipboard",
+      "category": "utility"
+    },
+    {
+      "id": "translate",
+      "name": "Translate",
+      "category": "utility"
+    },
+    {
+      "id": "image",
+      "name": "Image",
+      "category": "filesystem"
+    },
+    {
+      "id": "reminder",
+      "name": "Reminder",
+      "category": "utility"
+    },
+    {
+      "id": "knowledge",
+      "name": "Knowledge",
+      "category": "utility"
+    },
+    {
+      "id": "browser_open",
+      "name": "Browser Open",
+      "category": "web"
+    },
+    {
+      "id": "browser_snapshot",
+      "name": "Browser Snapshot",
+      "category": "web"
+    },
+    {
+      "id": "browser_close",
+      "name": "Browser Close",
+      "category": "web"
+    },
+    {
+      "id": "browser_click",
+      "name": "Browser Click",
+      "category": "web"
+    },
+    {
+      "id": "browser_fill",
+      "name": "Browser Fill",
+      "category": "web"
+    },
+    {
+      "id": "browser_wait_for",
+      "name": "Browser Wait For",
+      "category": "web"
+    }
+  ],
+  "builtinSkills": [
+    {
+      "id": "skill-creator",
+      "description": "Create new skills, refine prompts, and turn repeated workflows into reusable operating patterns.",
+      "type": "executable",
+      "maxIterations": 6
+    },
+    {
+      "id": "project-planner",
+      "description": "Break work into milestones, map features to architecture layers, and keep plans practical.",
+      "type": "executable",
+      "maxIterations": 6
+    },
+    {
+      "id": "connector-builder",
+      "description": "Model how tools, APIs, and local data sources should be exposed inside the app.",
+      "type": "executable",
+      "maxIterations": 6
+    },
+    {
+      "id": "artifact-curator",
+      "description": "Promote reusable code blocks, plans, and outputs into durable artifacts the user can revisit.",
+      "type": "executable",
+      "maxIterations": 6
+    }
+  ],
+  "probes": {
+    "skillCacheCollision": {
+      "reproduced": true,
+      "cachedHomeB": "PROFILE_A: scope A",
+      "freshHomeB": "PROFILE_B: scope B",
+      "cachedWhitelist": [
+        "file_read"
+      ],
+      "freshWhitelist": [
+        "calculator"
+      ]
+    },
+    "failedLoop": {
+      "modelRequests": 10,
+      "toolExecutions": 2,
+      "finalText": "本轮已达到工具执行上限，尚未完成核实。请缩小问题范围后继续；我不会把未完成的尝试当成结果。",
+      "rejectedResults": 10
+    },
+    "successLoop": {
+      "modelRequests": 10,
+      "toolExecutions": 10,
+      "finalText": "本轮已达到工具执行上限，尚未完成核实。请缩小问题范围后继续；我不会把未完成的尝试当成结果。",
+      "rejectedResults": 0
+    }
+  },
+  "existingNodeTests": {
+    "tests": 65,
+    "failures": 0,
+    "skipped": 0
+  },
+  "androidJvm": {
+    "tests": 116,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "diagnosticTests": 3,
+    "diagnosticCases": [
+      "olderConstraintIsAbsentAfterSixtyMessageWindowWithoutSummary",
+      "highLevelLoopAcceptsReusedCallIdForDistinctTasks",
+      "accumulatedInstructionsCanRejectEvenAShortCurrentQuestion"
+    ]
+  },
+  "date": "2026-10-17",
+  "baseline": "bb9a9c3",
+  "branch": "codex/mobile-use-features",
+  "productionChanges": false,
+  "liveModelOrDeviceAccess": false,
+  "swiftRuntimeTested": false,
+  "firstGradleInjectionAttempt": "Source was not compiled; not counted as new diagnostic evidence. Final XML confirms all three JVM diagnostic cases.",
+  "sourceSha256": {
+    "src/agents/skillMatcher.js": "1ebbd18898de594fecf3be6c5e81ff678ed59aa2a74a0aa7f8fbf2335ba19363",
+    "src/agents/skillMatchCache.js": "5edca7d3ca3c9237cc8469dab140b6b13b95175452b0d753e8c3c10043fee5d6",
+    "src/agents/repeatGuard.js": "12ccc0cfd79341171d3103504823943b321ff81cff8ee33033ac8c4533cc9870",
+    "src/services/chat/chatExecutionRunner.js": "4637dc6004422cd20e807a118ae83ac968061db30d44b1d5ee9a1709a6658f6f",
+    "src/services/chat/contextBudget.js": "9192d02e2f0b7ef5d8c7f3c641f83ee31225ef9d47b7cb9c3fdda8ea455b2edc",
+    "src/services/chat/sendChatMessage.js": "c3e641e76a2178db56c13ffb1ef0df72eb1adad3bd3d2ec5b56426e01a0f3b84",
+    "src/tools/functionCalling.js": "856980670b223cbc8d82fe16df8af266aaf23dfbe83ffce44f65d4209c492f5c",
+    "src/tools/registry.js": "be9af154fbbf3c6519de35e4b4921da9122d3a337ef4ff8f0a6efc1bbc22893c",
+    "src/domain/skill/skillService.js": "d6dbbde1f4ce3f4a7fd3fd89de23eb688c9f80d4de43780f806e46f26f4f8644",
+    "src/state/stateStore.js": "1b76765cd77965bd20116d66b9e018c65f8af72adcc0a08548e26a63e7dbec0e",
+    "src/memory/store.js": "085d94fe3e25f603856e4de5c245011315ac2eb382b26647601a4c65d744d7c7",
+    "android/app/src/main/java/com/melo/android/chat/ChatPhoneUse.kt": "62722b6d910d0ca11f1d33b3d45ee288c98b2e91dd2605cb0d4de80c93b4c009",
+    "android/app/src/main/java/com/melo/android/chat/ChatEngine.kt": "2404cd44f33f2be13a2443e9d753a3c68adde1d084ccd37af7f04caa4345864c",
+    "android/app/src/main/java/com/melo/android/data/Repository.kt": "78ae68544cf9e2c1617db47c1bc9a0de47ad5dece04c66ada16afbc9af913b8f",
+    "android/app/src/main/java/com/melo/android/data/Storage.kt": "08f71bbdc7013f25c4c54e88cc26e342b73b3a02cd9d6ce8b7b003cedf33e71e",
+    "android/app/src/main/java/com/melo/android/network/ModelClient.kt": "df2e5f87c64242dd9a50a79981ac961ab5406f66a996db3de2cd24c5e2d6a9ee",
+    "android/app/src/main/java/com/melo/android/device/DeviceAgentClient.kt": "6684503cd53efcf10d219435794685d4564cfc2f50ab54ef3fb25d0febb2c375",
+    "android/app/src/main/java/com/melo/android/device/DeviceTaskLoop.kt": "453adbfd554bcce414fcfa21f304b6c67ac1ab581177609e1dae21483b9c0e9f",
+    "ios/Melo/DeviceTools.swift": "bb6376900e882604069f799f0a75aa6aac4003bf38efcb7ed3b2b3393bd5dfe9",
+    "ios/Melo/ChatGPTAccount.swift": "4450351f13ed16123a45cd8034283ac05e356a97fd073ad44e5244c7463f7fea"
+  },
+  "canvas": {
+    "typescriptNoEmit": "PASS using SDK declarations and real React types",
+    "visualHostPreview": "not verified; open request queued",
+    "typescriptVersion": "7.0.2"
+  }
+}

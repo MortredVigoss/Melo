@@ -115,8 +115,13 @@ const AGENT_LOOP_CONTRACT = deepFreeze({"version":1,"description":"Agent-loop co
 function fillTemplate(template, values = {}) {
   return String(template).replace(/\{([A-Za-z]+)\}/g, (match, key) => (Object.hasOwn(values, key) ? String(values[key]) : match));
 }
+/** RegExp from a contract `{ source, flags }` entry; `extraFlags` (e.g. 'g') are appended. */
+function contractRegExp(entry, extraFlags = '') {
+  const flags = [...new Set(`${entry.flags || ''}${extraFlags}`)].join('');
+  return new RegExp(entry.source, flags);
+}
 
-return { AGENT_LOOP_CONTRACT, fillTemplate };
+return { AGENT_LOOP_CONTRACT, fillTemplate, contractRegExp };
 })();
 
 modules["shared/agent/repeatGuard.js"] = (() => {
@@ -372,10 +377,17 @@ return { extractTextUrls };
 
 modules["shared/agent/retrieval/requestPolicy.js"] = (() => {
 const { extractTextUrls } = modules["shared/agent/media/textUrls.js"];
+const { AGENT_LOOP_CONTRACT, contractRegExp } = modules["shared/agent/loopContract.js"];
 
 // Mask quoted data without changing offsets used to extract command arguments.
+// Quoted-text mask and translation patterns are shared with the iPhone intent
+// rules (shared/protocol/agent-loop.json).
+const QUOTED_TEXT_PATTERN = contractRegExp(AGENT_LOOP_CONTRACT.intent.patterns.quotedText, 'g');
+const TRANSLATION_EXCLUDED_PATTERN = contractRegExp(AGENT_LOOP_CONTRACT.intent.patterns.translationExcluded);
+const TRANSLATION_PATTERN = contractRegExp(AGENT_LOOP_CONTRACT.intent.patterns.translation);
+
 function maskQuotedText(value = '') {
-  return String(value).replace(/```[\s\S]*?```|`[^`\n]*`|"[^"\n]*"|(?<![\p{L}\p{N}])'[^'\n]*'|“[^”\n]*”|‘[^’\n]*’|「[^」\n]*」/gu, match => ' '.repeat(match.length));
+  return String(value).replace(QUOTED_TEXT_PATTERN, match => ' '.repeat(match.length));
 }
 
 const NEGATED_ACTION = /(?:不要|不用|不必|无需|禁止|别|不需要)[^，,。！？;；\n]{0,20}(?:搜|查找|检索|运行|执行|调用|构建|联网|上网|打开|访问)|\b(?:do not|don['’]t|never|without|no need to)\s+(?:\w+\s+){0,3}(?:search|find|grep|run|execute|call|build|browse|fetch|open|access)\b/iu;
@@ -427,8 +439,8 @@ function isExplicitActionRequest(text = '') {
 
 function isTranslationRequest(text = '') {
   const instruction = maskQuotedText(text);
-  if (/函数|程序|编写|实现|\b(?:code|function|implement|app|api|service)\b/iu.test(instruction)) return false;
-  return /(?:翻译|译成|\btranslat(?:e|ion)\b)/iu.test(instruction);
+  if (TRANSLATION_EXCLUDED_PATTERN.test(instruction)) return false;
+  return TRANSLATION_PATTERN.test(instruction);
 }
 
 const EXTERNAL_TASK = /https?:\/\/|\b(?:file|pdf|docx|xlsx|csv|workspace|repo|browser|tool|save|send|email|post|publish|calendar|upload|download|execute|run|remind|schedule|image|video|audio)\b|文件|附件|图片|截图|视频|音频|语音|浏览器|工具|工作区|仓库|保存|发送|发给|发到|导出|邮件|日历|上传|下载|运行|执行|生成|提醒|定时/iu;
@@ -466,11 +478,38 @@ function selectToolContextPolicy({ text = '', chat, searchPlan, hasExecutableSki
 return { maskQuotedText, hasNegatedAction, isExplicitLocalSearch, getRequestNetworkPolicy, requestUrls, isExplicitActionRequest, isTranslationRequest, requiresSkillToolContext, selectToolContextPolicy };
 })();
 
+modules["shared/agent/retrieval/publicLookupIntent.js"] = (() => {
+// Public recommendations need fresh evidence; mentioning a venue alone does
+// not authorize a lookup. Input is the quote-masked current user instruction.
+// App/phone tasks stay with their explicitly requested host, never a search
+// fallback that takes over a device. Mirrors the mobile planner's boundaries.
+const APP_SEARCH = /(?:在|用|使用|打开)\s*(?:小红书|微信|抖音|美团|大众点评|Google Maps|谷歌地图|(?:这个|该)\s*App)[^。！？\n]{0,50}(?:搜|找|查|推荐)|\b(?:search|find|look up).{0,50}\b(?:in|on|using)\s+(?:the\s+)?(?:app|wechat|xiaohongshu|tiktok|google maps)\b/iu;
+const EXPLANATION = /(?:为什么|为何).{0,40}(?:没有|没|未|不|调用)|(?:如何|怎么).{0,12}(?:实现|设计)|(?:解释|分析).{0,24}(?:流程|功能|实现)|\b(?:why (?:did|didn't|did not)|how (?:does|would).{0,40}(?:work|implement)|what does .{0,24} mean)\b/iu;
+const WRITING = /(?:翻译|润色|改写|编写|写一|虚构|小说|算法)|\b(?:translate|rewrite|proofread|fictional|algorithm|implement|write)\b/iu;
+const PUBLIC_SUBJECT = /餐厅|餐馆|饭店|吃饭|好吃|咖啡|早午餐|酒店|住宿|景点|好玩|旅游|游玩|笔记本|手机|相机|耳机|餐饮|\b(?:brunch|restaurants?|caf[eé]s?|hotels?|accommodation|places? to (?:eat|visit|stay)|laptops?|headphones?|cameras?)\b/iu;
+const RECOMMEND = /推荐|有什么|有啥|哪些|哪家|哪间|哪个好|哪款|哪里|附近|值得|适合|去哪|\b(?:recommend|recommendations?|best|good|where|which|nearby|suggest|suggestions?|any)\b/iu;
+const NEW_ACTION = /(?:^|[。！？;；\n])\s*(?:现在|这次|请|帮我|please|now).{0,60}(?:搜索|查找|推荐|\bsearch\b|\brecommend\b)/iu;
+
+function publicLookupIntent(instruction = '') {
+  if (APP_SEARCH.test(instruction)) return 'app';
+  if (!NEW_ACTION.test(instruction) && (EXPLANATION.test(instruction) || WRITING.test(instruction))) return 'text';
+  return PUBLIC_SUBJECT.test(instruction) && RECOMMEND.test(instruction) ? 'recommendation' : null;
+}
+
+function publicLookupFollowUp(instruction = '') {
+  return instruction.length <= 120 && /^(?:那|这家|那家|它|他们|第[一二三四五六七八九十\d]+家|what about|how about|and (?:the|near)|does (?:it|that)|that one|the (?:first|second|third) one)/iu.test(instruction.trim());
+}
+
+return { publicLookupIntent, publicLookupFollowUp };
+})();
+
 modules["shared/agent/retrieval/searchRouter.js"] = (() => {
 const { getRequestNetworkPolicy, requestUrls } = modules["shared/agent/retrieval/requestPolicy.js"];
-const { extractTextUrls } = modules["shared/agent/media/textUrls.js"];
 
-// Legacy routing, byte-for-byte function bodies; Host dependencies are captured.
+const { extractTextUrls } = modules["shared/agent/media/textUrls.js"];
+const { publicLookupIntent, publicLookupFollowUp } = modules["shared/agent/retrieval/publicLookupIntent.js"];
+
+// Latest main function bodies; the Host supplies request identity and environment.
 function createSearchRouter({ currentRequestContext, requestEnvironment }) {
 const SOCIAL_HOST_PATTERN = /(?:^|\.)((xiaohongshu|xhslink|douyin|iesdouyin|tiktok)\.com|xhslink\.com)$/i;
 
@@ -502,7 +541,12 @@ const LINK_READ_PATTERN = /(?:\b(?:open|read|fetch|summari[sz]e|parse|extract)\s
 // the plan; the id set is the fallback for undeclared tools. Browser tools are
 // gated by MELO_CDP_ENABLED above instead, never by the plan.
 const SEARCH_NETWORK_TOOL_IDS = new Set(['web_search', 'fetch_url']);
+// web_screenshot is a web tool too, but no route "exposes" it: like the
+// browser tools it is only withheld when the user turned networking off for
+// the turn, and the routing prompt says when to prefer it over fetch_url.
+const NETWORK_OFF_ONLY_TOOL_IDS = new Set(['web_screenshot']);
 function searchPlanGoverns(tool, id) {
+  if (NETWORK_OFF_ONLY_TOOL_IDS.has(id)) return false;
   if (typeof tool?.capability === 'string' && typeof tool?.uiModule === 'string') return tool.capability === 'network' && tool.uiModule === 'search';
   return SEARCH_NETWORK_TOOL_IDS.has(id);
 }
@@ -585,8 +629,10 @@ function scoreWebSearchIntent(text = '') {
   if (policy.searchForbidden || policy.localSearch) return 0;
   const query = policy.instruction.trim();
   if (!query) return 0;
+  const intent = publicLookupIntent(query);
+  if (intent === 'app' || intent === 'text') return 0;
 
-  let score = 0;
+  let score = intent === 'recommendation' ? 3 : 0;
   for (const { pattern, weight } of DEFAULT_WEB_SEARCH_TRIGGER_RULES) {
     if (pattern.test(query)) score += weight;
   }
@@ -641,12 +687,26 @@ function buildSearchPlan({
     const previousText = normalizeMessageContent(previousUsers.at(-1)?.content);
     if (previousText) latestText = previousText;
   }
+  if (!latestPolicy.searchForbidden && !latestPolicy.localSearch && publicLookupFollowUp(latestPolicy.instruction)) {
+    const previous = modelMessages.filter(m => m?.role === 'user').map(m => normalizeMessageContent(m.content));
+    if (previous.at(-1) === latestText) previous.pop();
+    const answers = [latestText];
+    for (const prior of previous.slice(-8).reverse()) {
+      const policy = getRequestNetworkPolicy(prior);
+      if (policy.searchForbidden || policy.localSearch || ['app', 'text'].includes(publicLookupIntent(policy.instruction))) break;
+      if (publicLookupFollowUp(policy.instruction)) { answers.unshift(prior); continue; }
+      if (scoreWebSearchIntent(prior) >= 3) latestText = [prior, ...answers].join('\n');
+      break;
+    }
+  }
   const policy = getRequestNetworkPolicy(latestText);
   const routeText = policy.instruction;
   const urls = requestUrls(latestText);
   const noSearch = reason => ({ route: 'none', reason, nativeWebSearchEnabled: false, exposedNetworkTools: [], urls: [] });
   if (policy.fetchForbidden) return noSearch('user-disabled-network');
   if (policy.localSearch) return noSearch('explicit-workspace-search');
+  const publicIntent = publicLookupIntent(routeText);
+  if (publicIntent === 'app') return noSearch('explicit-app-search');
   const hasUrl = urls.length > 0;
   const hasSocialUrl = urls.some(isSocialLinkUrl);
 
@@ -671,6 +731,7 @@ function buildSearchPlan({
   }
 
   if (policy.searchForbidden) return noSearch('user-disabled-search');
+  if (publicIntent === 'text') return noSearch('self-contained-text');
 
   if (DEEP_RESEARCH_PATTERN.test(routeText) || EXPLICIT_LOCAL_SEARCH_PATTERN.test(routeText)) {
     return {
@@ -717,13 +778,30 @@ function filterToolsForSearchPlan(tools = [], searchPlan = {}) {
     const id = String(tool?.id || '');
     if (/^browser_/u.test(id) && requestEnvironment().MELO_CDP_ENABLED !== '1') return false;
     if (/^browser_/u.test(id)) return searchPlan.reason !== 'user-disabled-network';
+    if (NETWORK_OFF_ONLY_TOOL_IDS.has(id)) return searchPlan.reason !== 'user-disabled-network';
     if (!searchPlanGoverns(tool, id)) return true;
     return exposed.has(id);
   });
 }
 
+function constrainSearchPlan(plan, { toolIds = [], nativeSearch = false } = {}) {
+  const ids = new Set(toolIds);
+  if (plan.route === 'codex-native' && nativeSearch) return plan;
+  if (plan.route === 'none') return plan;
+  const needsFetch = ['fetch-url', 'social-link'].includes(plan.route);
+  const required = needsFetch ? 'fetch_url' : 'web_search';
+  if (ids.has(required)) return { ...plan, route: needsFetch ? plan.route : 'melo-web',
+    nativeWebSearchEnabled: false, exposedNetworkTools: ['web_search', 'fetch_url'].filter(id => ids.has(id) && (!needsFetch || id === 'fetch_url')) };
+  return { ...plan, route: 'unavailable', reason: needsFetch ? 'fetch-unavailable' : 'search-unavailable',
+    nativeWebSearchEnabled: false, exposedNetworkTools: [] };
+}
+
+const SCREENSHOT_HINT = 'To show the user what a page looks like, use `web_screenshot`; to read it, use `fetch_url`.';
+
 function buildSearchRoutingPrompt(searchPlan = {}) {
   const route = searchPlan?.route || 'none';
+  if (route === 'unavailable') return '## Search Routing\nThe requested lookup is unavailable under the current Agent capabilities and tools (' + searchPlan.reason + '). Explain this limit and which facts remain unverified. Do not invent current facts or take over a phone/app/browser as a fallback.';
+  if (searchPlan.reason === 'explicit-app-search') return '## Search Routing\nThe user requested a search inside a specific app. Use only an available, authorized tool for that app; otherwise explain the missing capability. Do not substitute public web results or take over another device.';
   if (route === 'codex-native') {
     return [
       '## Search Routing',
@@ -739,7 +817,9 @@ function buildSearchRoutingPrompt(searchPlan = {}) {
       '## Search Routing',
       'This turn is routed to Melo web_search for structured source retrieval.',
       'Use `web_search` for broad web lookup, then answer from the returned sources.',
+      'For recommendations, retrieve public evidence before making current claims, read relevant returned source URLs when needed, and cite those sources. Snippets do not prove full-page contents. If search fails or sources are insufficient, say what could not be verified; never take over a phone screen as a fallback.',
       'If browser automation is unavailable, continue with public web search. Separate confirmed date-specific flight schedules from live fares and report precisely which facts remain unverified.',
+      SCREENSHOT_HINT,
     ].join('\n');
   }
   if (route === 'fetch-url') {
@@ -747,6 +827,7 @@ function buildSearchRoutingPrompt(searchPlan = {}) {
       '## Search Routing',
       'This turn is routed to `fetch_url` because the user is asking about a specific link/page.',
       'Use `fetch_url` for the pasted URL. Do not use `web_search` for this turn.',
+      SCREENSHOT_HINT,
     ].join('\n');
   }
   if (route === 'social-link') {
@@ -754,15 +835,16 @@ function buildSearchRoutingPrompt(searchPlan = {}) {
       '## Search Routing',
       'This turn is routed to `fetch_url`; social links are handled by Melo\'s dedicated social preview reader.',
       'Use `fetch_url` for the pasted social URL. Do not use `web_search` for this turn.',
+      SCREENSHOT_HINT,
     ].join('\n');
   }
   if (searchPlan.reason === 'user-disabled-network' || searchPlan.reason === 'user-disabled-search') {
-    return '## Search Routing\nThe user forbids web lookup for this turn. Answer from available context; if it is insufficient, say so. Do not invent current facts or replace web search with a local command unless the user separately requested that local action.';
+    return '## Search Routing\nThe user forbids web lookup for this turn. Answer from available context; if it is insufficient, say so. Do not invent current facts or replace web search with a local command unless the user separately requested that local action. Do not call `web_screenshot` either.';
   }
   return '';
 }
 
-return { registerSearchTriggers, clearSearchTriggers, normalizeMessageContent, latestUserMessageText, extractUrlsFromText, isSocialLinkUrl, scoreWebSearchIntent, shouldUseNativeWebSearch, buildSearchPlan, filterToolsForSearchPlan, buildSearchRoutingPrompt };
+return { extractUrlsFromText, registerSearchTriggers, clearSearchTriggers, normalizeMessageContent, latestUserMessageText, isSocialLinkUrl, scoreWebSearchIntent, shouldUseNativeWebSearch, buildSearchPlan, filterToolsForSearchPlan, constrainSearchPlan, buildSearchRoutingPrompt };
 }
 
 return { createSearchRouter };
@@ -863,7 +945,7 @@ function planRequest({ text = '', messages = [], capabilities = {}, config = {} 
   const research = { depth: /深度|深入|多来源|交叉核对|\b(?:deep research|compare sources|multiple sources)\b/iu.test(instruction) ? 'deep' : 'standard', navigate: lookup && navigation };
   const readingTools = available('fetch_url') ? ['fetch_url'] : [];
   const phoneTools = research.navigate && available('phone_use') ? ['phone_use'] : [];
-  const guidance = 'Search public sources first, then use fetch_url on relevant returned source URLs when details are needed to support recommendations. Search snippets are not full page reads. Compare evidence and cite returned URLs; report insufficient, conflicting or stale sources and unknown opening hours. Do not fabricate facts or require an arbitrary number of sources. ' +
+  const guidance = 'Search public sources first to retrieve public evidence, then use fetch_url on relevant returned source URLs when details are needed to support recommendations. Search snippets are not full page reads. Compare evidence and cite returned URLs; report insufficient, conflicting or stale sources and unknown opening hours. Do not fabricate facts or require an arbitrary number of sources. ' +
     (research.depth === 'deep' ? 'This is deep research: refine queries and cross-check material claims against independent sources; explain remaining gaps. ' : 'Keep standard recommendations proportionate; read the material needed for the recommendation. ') +
     (research.navigate ? 'Research and choose a grounded destination before calling phone_use for navigation. Resolve the destination from the research, preserve native confirmations, and report navigation separately from research. ' : '') +
     'Search failure does not authorize taking over the phone screen.';
@@ -873,7 +955,7 @@ function planRequest({ text = '', messages = [], capabilities = {}, config = {} 
   if (available('web_search') && runtimeConfig.search.backend === 'http' && runtimeConfig.search.endpoint) return { ...searchBase, route: 'http-search', tools: ['web_search', ...readingTools, ...phoneTools], requiredTools: ['web_search', ...phoneTools], toolDependencies: research.navigate ? { phone_use: ['web_search'] } : {}, backend: 'http' };
   if (available('web_search') && capabilities.legacyReader === true && runtimeConfig.search.backend === 'legacy-reader') return { ...base, route: 'legacy-search', tools: ['web_search'], backend: 'legacy-reader', instructions: guidance };
   if (available('web_search') && capabilities.browserSearch === true && runtimeConfig.search.browserFallback) return { ...base, route: 'browser-search', tools: ['web_search'], backend: 'browser', instructions: guidance };
-  return { ...base, route: 'unavailable', reason: 'SEARCH_UNAVAILABLE', instructions: 'No verified hosted search or configured search backend is available. Explain the missing search capability. Do not invent current facts or open phone apps as a fallback.' };
+  return { ...base, route: 'unavailable', reason: 'SEARCH_UNAVAILABLE', instructions: 'No verified hosted search or configured search backend is available to retrieve public evidence. Explain the missing search capability. Do not invent current facts or open phone apps as a fallback.' };
 }
 
 return { actionEvidence, planRequest };

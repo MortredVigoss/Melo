@@ -1,3 +1,4 @@
+import { hostedSearchReceipt } from '../../../../shared/agent/hostedSearch.js';
 // Chat execution graph — `invoke-model` node (architecture B2, 2026-10-20).
 // Mechanical move out of chatExecutionRunner.js: the body below is the
 // original node body, unchanged except for one indentation level. The
@@ -133,6 +134,8 @@ export function createInvokeModelNode(turn) {
     // redacted projection; outputs are bounded by buildToolChainRecord.
     const toolChainTurns = [];
     const evidencePairs = [];
+    const hostedItems = [];
+    let missingHostedEvidence = false;
     // agent-loop-audit #1: identical failing calls are answered locally
     // after two consecutive failures instead of re-executed.
     // Per-turn constants for tool dispatch (2026-10-17 tool-path
@@ -143,9 +146,9 @@ export function createInvokeModelNode(turn) {
     // MCP tools resolve by id (`mcp:s:t`, XML prompt) or wire name (`mcp__s__t`).
     const mcpToolsByName = indexMcpTools(graphState.mcpTools || []);
     const visibleToolIds = new Set(graphState.visibleToolIds || []);
-    const allowedToolIdList = [...visibleToolIds];
+    const allowedToolIdList = [...visibleToolIds].filter(id => !/^browser_/u.test(id) || graphState.searchPlan.sharedPlan?.backend === 'browser');
     const coreTurn = createCoreTurn({ runId: String(context.requestId), turnId: chat.id,
-      allowedTools: allowedToolIdList, limits: { rounds: MAX_TOOL_ITERATIONS, timeoutMs: Math.max(1, Math.ceil(remainingMs(budget))) } });
+      allowedTools: allowedToolIdList, requiredTools: graphState.searchPlan.sharedPlan?.requiredTools, toolDependencies: graphState.searchPlan.sharedPlan?.toolDependencies, limits: { rounds: MAX_TOOL_ITERATIONS, timeoutMs: Math.max(1, Math.ceil(remainingMs(budget))) } });
     let allowedDispatchTools = null;
     let dispatchAgentProfiles = null;
     let dispatchMemberBackground = null;
@@ -252,7 +255,7 @@ export function createInvokeModelNode(turn) {
         // present whenever the agent may use the network; whether to use
         // it this turn is said in the routing prompt. Only an explicit
         // user network-off or a non-Codex route keeps it off.
-        nativeWebSearchEnabled: nativeFeaturesForScope(context.capabilityScope).nativeWebSearchEnabled && !['user-disabled-network', 'user-disabled-search'].includes(graphState.searchPlan?.reason),
+        nativeWebSearchEnabled: nativeFeaturesForScope(context.capabilityScope).nativeWebSearchEnabled && graphState.searchPlan?.nativeWebSearchEnabled === true,
         nativeImageGenerationEnabled: scopeAllowsTool(context.capabilityScope,'image',{action:'generate'}) && imageSettings(config).engine === 'codex-oauth',
         onExecutionEvent: event => {
           const observed = { ...event, id: event.id ? `${iteration}:${event.id}` : undefined };
@@ -275,6 +278,8 @@ export function createInvokeModelNode(turn) {
         break;
       }
 
+      signal.throwIfAborted();
+      if (graphState.searchPlan?.nativeWebSearchEnabled) hostedItems.push(...(rawReply?.responseItems || []).filter(item => ['message', 'web_search_call'].includes(item?.type)));
       const turn = functionSession.parse(rawReply);
       const { thinking, toolCalls } = turn;
 
@@ -282,6 +287,13 @@ export function createInvokeModelNode(turn) {
       if (!toolCalls.length) {
         coreTurn.update('complete');
         finalReply = coreTurn.status === 'completed' ? turn.text : coreTurn.reply(latestUserMessage);
+        if (coreTurn.status === 'completed' && graphState.searchPlan?.nativeWebSearchEnabled) {
+          const receipt = hostedSearchReceipt({ items: hostedItems, text: turn.text });
+          missingHostedEvidence = !receipt.verified || !receipt.sources.length;
+          finalReply = missingHostedEvidence
+            ? '本轮未收到可核对的 Search completed 与来源回执，无法确认已完成实时检索。请重新验证 Hosted Search 或配置 HTTP Search Backend。'
+            : receipt.answer;
+        }
         break;
       }
 
@@ -492,7 +504,7 @@ export function createInvokeModelNode(turn) {
     // the finalize node can attach it to normalizedReply → sendChatMessage
     // attaches it to the persisted assistantMessage.  Only emit when
     // non-empty so we don't pollute pure-text replies with empty arrays.
-    const out = { completionForReply: reply => coreTurn.receipt(latestUserMessage, reply, terminalReason || coreTurn.reason), reply: finalReply, hadToolCalls, skipVerification: coreTurn.status === 'blocked', toolEvidence: collectVerificationEvidence(evidencePairs, { query: latestUserMessage }), next: 'finalize' };
+    const out = { completionForReply: reply => coreTurn.receipt(latestUserMessage, reply, terminalReason || coreTurn.reason), reply: finalReply, hadToolCalls, skipVerification: coreTurn.status === 'blocked' || missingHostedEvidence || graphState.searchPlan.sharedPlan?.route === 'unavailable', toolEvidence: collectVerificationEvidence(evidencePairs, { query: latestUserMessage }), next: 'finalize' };
     if (accumulatedToolResults.length > 0) {
       out.toolResults = accumulatedToolResults;
     }

@@ -21,3 +21,9 @@ Android 的 `read_history` 只读取本轮捕获的当前对话原文，支持�
 证据：`.tmp/github-issues-fix-20261020/context-daily.log`、`context-android-final-ci.log`、`context-android-final-report/`。失败原始 logcat 与 APK 同样保留；没有用降低 Android API、跳过或重试测试掩盖失败。原文回读只读当前聊天；摘要标为规则摘录、保留原文定位，不声称模型语义总结。
 
 验证使用隔离账号状态和受控 HTTP，没有真实模型或实体 Fold 验收，没有安装用户应用。Android 仍发布到既有手机分支，主线共享 Core 同步到 iPhone bundle。
+
+### Android / Mobile 分支补充（整合时保留）
+
+Android CI `39370040626`、`39371375480` 未通过：取消/重试夹具尚未完成时应用进程发生 SIGSEGV。第二次保留 logcat/UTP 后定位到 Android 16 ART 的 `SharedChatAgent.reply` 恢复栈，日志报告该方法约 85 KB 字节码。把嵌套 JSON builder 从 coroutine 内联改为普通函数边界，数据字段和流程原样保留；需要原套件实际复测，不能把旧失败当作通过。
+
+第三轮 `39373484371` 仍在同一 ART 栈崩溃。直接读取 APK 的 DEX：原 reply 为 84,848 code units / 169,696 bytes / 311 registers；仅隔离 builder 后仍为 84,084 units / 322 registers，未解决。后续改为每请求独立 ReplySession，分离准备、请求与执行协程，保持原来的工具顺序、取消、预算、证据和关闭流程；原失败夹具全部保留，等待完整 CI。

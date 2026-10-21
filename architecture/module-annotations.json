@@ -1194,6 +1194,23 @@
         "src/safety/fileSafetyGate.production.test.js"
       ],
       "note": "B3：自定义页（安全分区、域名 Cookie）从 app.js 迁出后，按源码断言安全分区入口、授权刷新 / 撤销与 Cookie 表单动作仍由 features/customize 提供；Cookie 输入同步仍在 app.js 的 input 监听器"
+    },
+    {
+      "id": "gen-agent-core",
+      "kind": "generator",
+      "generator": "scripts/build-agent-core.mjs",
+      "inputs": [
+        "shared/agent/**",
+        "src/shared/replyDocument.js",
+        "src/shared/sessionEvents.js"
+      ],
+      "outputs": [
+        "shared/agent/dist/**",
+        "ios/Melo/AgentCore/**"
+      ],
+      "check": "shared/agent/conformance.test.js",
+      "command": "npm run build:agent-core",
+      "note": "同一纯 JS Core 打包供 Android JavaScriptSandbox 与 iOS JavaScriptCore；Node 直接导入源码"
     }
   ]
 }

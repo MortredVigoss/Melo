@@ -37,7 +37,7 @@ export function publicLlmConnections(config) {
       id, providerId: p.providerId, name: p.name, authMode: p.authMode,
       apiProtocol: p.apiProtocol || 'chat-completions', baseUrl: p.baseUrl,
       model: p.model, hasKey: Boolean(p.apiKey), authKind: p.authKind || 'api-key',
-      models: p.models || [], revision: p.revision || 0, test: p.test || null, visionTest: p.visionTest || null,
+      models: p.models || [], revision: p.revision || 0, test: p.test || null, visionTest: p.visionTest || null, searchTest: p.searchTest || null,
     })),
   };
 }

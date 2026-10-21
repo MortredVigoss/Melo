@@ -5,7 +5,8 @@ import { selectedMaterials } from './conversationSelection.js';
 import { observeModelReplies } from './executionPipeline.js';
 import { createRequestContext } from '../../runtime/requestContext.js';
 import { currentRequestContext, requestEnvironment, runWithRequestContext } from '../../runtime/requestScope.js';
-import { armBudget, recordUsage, receiptInputTokens, requestTimeoutMs } from '../../runtime/runBudget.js';
+import { armBudget, recordUsage, receiptInputTokens, requestTimeoutMs, remainingMs } from '../../runtime/runBudget.js';
+import { AGENT_LOOP_CONTRACT } from '../../runtime/agentLoopContract.js';
 import { estimateMessagesTokens, estimateTextTokens } from '../../memory/tokenEstimate.js';
 // Chat agent execution graph runner — sub-phase 7d-5δ commit 7b of the
 // desktopStore decomposition. byte-for-byte port (CLAUDE.md §5).
@@ -82,6 +83,9 @@ export async function runChatAgentExecutionGraph({
   // the same wrapper), the tool executor and member/skill sub-loops. The
   // context was created when the request arrived; the clock starts here.
   const budget = armBudget(context.budget || null);
+  const requestedTimeout = Number.isFinite(_dependencies.turnTimeoutMs) ? _dependencies.turnTimeoutMs : AGENT_LOOP_CONTRACT.budget.deadlineMs;
+  const turnTimeoutMs = Math.max(1, Math.ceil(Math.min(requestedTimeout, budget ? remainingMs(budget) : requestedTimeout)));
+  signal = AbortSignal.any([signal, AbortSignal.timeout(turnTimeoutMs)].filter(Boolean));
   const createReply = async options => {
     const endFirstToken = typeof options.onDelta === 'function' ? startStage('model.first_token') : null;
     let accounted = false;

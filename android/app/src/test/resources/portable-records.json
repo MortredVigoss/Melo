@@ -1,0 +1,488 @@
+[
+  {
+    "kind": "agent",
+    "input": {
+      "name": "蓝鲸",
+      "subtitle": "简短",
+      "instructions": "先说收到",
+      "symbol": "sparkles",
+      "avatarData": "",
+      "identity": "身份",
+      "soul": "风格",
+      "systemPrompt": "",
+      "mood": "warm",
+      "model": ""
+    },
+    "expected": {
+      "name": "蓝鲸",
+      "subtitle": "简短",
+      "instructions": "先说收到",
+      "symbol": "sparkles",
+      "avatarData": "",
+      "identity": "身份",
+      "soul": "风格",
+      "systemPrompt": "",
+      "mood": "warm",
+      "model": ""
+    }
+  },
+  {
+    "kind": "conversation",
+    "input": {
+      "agentId": "custom",
+      "projectId": "project",
+      "knowledgeIds": [],
+      "model": {
+        "connectionID": "desktop-api",
+        "name": "测试服务",
+        "model": "chosen",
+        "authMode": "api-key",
+        "baseURL": "https://example.com/v1",
+        "apiProtocol": "chat-completions"
+      }
+    },
+    "expected": {
+      "agentId": "custom",
+      "projectId": "project",
+      "knowledgeIds": [],
+      "model": {
+        "connectionID": "desktop-api",
+        "name": "测试服务",
+        "model": "chosen",
+        "authMode": "api-key",
+        "baseURL": "https://example.com/v1",
+        "apiProtocol": "chat-completions"
+      }
+    }
+  },
+  {
+    "kind": "knowledge",
+    "input": {
+      "title": "偏好",
+      "content": "二十分钟",
+      "deleted": false,
+      "kind": "note",
+      "language": "text",
+      "projectId": null
+    },
+    "expected": {
+      "title": "偏好",
+      "content": "二十分钟",
+      "deleted": false,
+      "kind": "note",
+      "language": "text",
+      "projectId": null
+    }
+  },
+  {
+    "kind": "message",
+    "input": {
+      "chatId": "chat",
+      "agent": {
+        "agentID": "custom",
+        "name": "蓝鲸",
+        "symbol": "sparkles"
+      },
+      "models": [
+        {
+          "requestedModel": "chosen",
+          "reportedModel": "actual",
+          "simulated": false
+        }
+      ],
+      "scene": {
+        "runId": "run",
+        "status": "completed",
+        "query": "问题",
+        "startedAt": "2026-10-09T00:00:00.000Z",
+        "finishedAt": "2026-10-09T00:01:00.000Z",
+        "lastModule": "",
+        "requestedModel": "",
+        "returnedModel": "",
+        "sourceDevice": "desktop",
+        "operations": [
+          {
+            "id": "call",
+            "module": "search",
+            "name": "web_search",
+            "status": "completed",
+            "provider": "实际搜索服务",
+            "input": "问题",
+            "output": "已返回",
+            "query": "问题",
+            "resultSummary": "",
+            "model": "",
+            "returnedModel": "",
+            "channel": "",
+            "startedAt": "",
+            "finishedAt": ""
+          }
+        ],
+        "pipeline": [
+          {
+            "id": "model-response",
+            "module": "create",
+            "name": "模型返回",
+            "status": "completed",
+            "provider": "",
+            "input": "",
+            "output": "",
+            "query": "",
+            "resultSummary": "",
+            "model": "chosen",
+            "returnedModel": "actual",
+            "channel": "",
+            "startedAt": "",
+            "finishedAt": ""
+          }
+        ],
+        "sources": [
+          {
+            "id": "source-0",
+            "url": "https://example.com/page",
+            "title": "来源",
+            "titleProvided": false,
+            "order": 0,
+            "rank": 0,
+            "reading": "partial",
+            "appeared": false,
+            "accessed": true,
+            "opened": false,
+            "cited": true,
+            "providers": [
+              "实际搜索服务"
+            ],
+            "queries": []
+          }
+        ]
+      }
+    },
+    "expected": {
+      "chatId": "chat",
+      "agent": {
+        "agentID": "custom",
+        "name": "蓝鲸",
+        "symbol": "sparkles"
+      },
+      "models": [
+        {
+          "requestedModel": "chosen",
+          "reportedModel": "actual",
+          "simulated": false
+        }
+      ],
+      "scene": {
+        "runId": "run",
+        "status": "completed",
+        "query": "问题",
+        "startedAt": "2026-10-09T00:00:00.000Z",
+        "finishedAt": "2026-10-09T00:01:00.000Z",
+        "lastModule": "",
+        "requestedModel": "",
+        "returnedModel": "",
+        "sourceDevice": "desktop",
+        "operations": [
+          {
+            "id": "call",
+            "module": "search",
+            "name": "web_search",
+            "status": "completed",
+            "provider": "实际搜索服务",
+            "input": "问题",
+            "output": "已返回",
+            "query": "问题",
+            "resultSummary": "",
+            "model": "",
+            "returnedModel": "",
+            "channel": "",
+            "startedAt": "",
+            "finishedAt": ""
+          }
+        ],
+        "pipeline": [
+          {
+            "id": "model-response",
+            "module": "create",
+            "name": "模型返回",
+            "status": "completed",
+            "provider": "",
+            "input": "",
+            "output": "",
+            "query": "",
+            "resultSummary": "",
+            "model": "chosen",
+            "returnedModel": "actual",
+            "channel": "",
+            "startedAt": "",
+            "finishedAt": ""
+          }
+        ],
+        "sources": [
+          {
+            "id": "source-0",
+            "url": "https://example.com/page",
+            "title": "来源",
+            "titleProvided": false,
+            "order": 0,
+            "rank": 0,
+            "reading": "partial",
+            "appeared": false,
+            "accessed": true,
+            "opened": false,
+            "cited": true,
+            "providers": [
+              "实际搜索服务"
+            ],
+            "queries": []
+          }
+        ]
+      }
+    }
+  },
+  {
+    "kind": "project",
+    "input": {
+      "name": "阅读",
+      "goal": "读书",
+      "instructions": "坚持",
+      "archived": true,
+      "knowledgeIds": [
+        "note"
+      ],
+      "agentOverrides": {}
+    },
+    "expected": {
+      "name": "阅读",
+      "goal": "读书",
+      "instructions": "坚持",
+      "archived": true,
+      "knowledgeIds": [
+        "note"
+      ],
+      "agentOverrides": {}
+    }
+  },
+  {
+    "kind": "agent",
+    "input": {
+      "name": null,
+      "identity": "fixture",
+      "model": null
+    },
+    "expected": {
+      "name": "",
+      "subtitle": "",
+      "instructions": "",
+      "symbol": "person.crop.square",
+      "avatarData": "",
+      "identity": "fixture",
+      "soul": "",
+      "systemPrompt": "",
+      "mood": "warm",
+      "model": ""
+    }
+  },
+  {
+    "kind": "project",
+    "input": {
+      "name": "project",
+      "knowledgeIds": [
+        "b",
+        "a",
+        "a"
+      ],
+      "agentOverrides": {
+        "main": {
+          "name": "role"
+        }
+      }
+    },
+    "expected": {
+      "name": "project",
+      "goal": "",
+      "instructions": "",
+      "archived": false,
+      "knowledgeIds": [
+        "a",
+        "b"
+      ],
+      "agentOverrides": {
+        "main": {
+          "name": "role",
+          "subtitle": "",
+          "instructions": "",
+          "symbol": "person.crop.square",
+          "avatarData": "",
+          "identity": "",
+          "soul": "",
+          "systemPrompt": "",
+          "mood": "warm",
+          "model": ""
+        }
+      }
+    }
+  },
+  {
+    "kind": "knowledge",
+    "input": {
+      "title": null,
+      "content": "text",
+      "projectId": "invalid/id"
+    },
+    "expected": {
+      "title": "",
+      "content": "text",
+      "deleted": false,
+      "kind": "note",
+      "language": "text",
+      "projectId": null
+    }
+  },
+  {
+    "kind": "conversation",
+    "input": {
+      "agentId": null,
+      "knowledgeIds": [
+        "b",
+        "a"
+      ],
+      "model": {
+        "name": "API",
+        "baseURL": "https://example.com/v1"
+      }
+    },
+    "expected": {
+      "agentId": "main",
+      "projectId": null,
+      "knowledgeIds": [
+        "a",
+        "b"
+      ],
+      "model": {
+        "connectionID": "",
+        "name": "API",
+        "model": "",
+        "authMode": "api-key",
+        "baseURL": "https://example.com/v1",
+        "apiProtocol": "chat-completions"
+      }
+    }
+  },
+  {
+    "kind": "memory",
+    "input": {
+      "id": "fact",
+      "memoryID": "memory",
+      "chatId": "chat",
+      "agentId": "main",
+      "scope": "chat",
+      "status": "active",
+      "text": "remember",
+      "updatedAt": "2026-10-14T00:00:00Z",
+      "validTo": null
+    },
+    "expected": {
+      "id": "fact",
+      "memoryID": "memory",
+      "text": "remember",
+      "originalFact": "",
+      "scope": "chat",
+      "status": "active",
+      "chatId": "chat",
+      "messageId": "",
+      "projectId": "",
+      "agentId": "main",
+      "sourceText": "",
+      "category": "",
+      "updatedAt": "2026-10-14T00:00:00Z",
+      "userEdited": false,
+      "validTo": null
+    }
+  },
+  {
+    "kind": "message",
+    "input": {
+      "chatId": "chat",
+      "models": [
+        {
+          "requestedModel": "fixture",
+          "simulated": true
+        }
+      ],
+      "scene": {
+        "runId": "run",
+        "status": "completed",
+        "operations": [
+          {
+            "module": "compute",
+            "status": "completed"
+          }
+        ],
+        "sources": [
+          {
+            "url": "https://example.com/doc",
+            "cited": true
+          }
+        ]
+      }
+    },
+    "expected": {
+      "chatId": "chat",
+      "agent": null,
+      "models": [
+        {
+          "requestedModel": "fixture",
+          "reportedModel": "",
+          "simulated": true
+        }
+      ],
+      "scene": {
+        "runId": "run",
+        "status": "completed",
+        "query": "",
+        "startedAt": "",
+        "finishedAt": "",
+        "lastModule": "",
+        "requestedModel": "",
+        "returnedModel": "",
+        "sourceDevice": "",
+        "operations": [
+          {
+            "id": "",
+            "module": "compute",
+            "name": "",
+            "status": "completed",
+            "provider": "",
+            "input": "",
+            "output": "",
+            "query": "",
+            "resultSummary": "",
+            "model": "",
+            "returnedModel": "",
+            "channel": "",
+            "startedAt": "",
+            "finishedAt": ""
+          }
+        ],
+        "pipeline": [],
+        "sources": [
+          {
+            "id": "source-0",
+            "url": "https://example.com/doc",
+            "title": "",
+            "titleProvided": false,
+            "order": 0,
+            "rank": 0,
+            "reading": "unknown",
+            "appeared": false,
+            "accessed": false,
+            "opened": false,
+            "cited": true,
+            "providers": [],
+            "queries": []
+          }
+        ]
+      }
+    }
+  }
+]

@@ -10,3 +10,8 @@ export const AGENT_LOOP_CONTRACT = deepFreeze({"version":1,"description":"Agent-
 export function fillTemplate(template, values = {}) {
   return String(template).replace(/\{([A-Za-z]+)\}/g, (match, key) => (Object.hasOwn(values, key) ? String(values[key]) : match));
 }
+/** RegExp from a contract `{ source, flags }` entry; `extraFlags` (e.g. 'g') are appended. */
+export function contractRegExp(entry, extraFlags = '') {
+  const flags = [...new Set(`${entry.flags || ''}${extraFlags}`)].join('');
+  return new RegExp(entry.source, flags);
+}

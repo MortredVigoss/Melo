@@ -1,3 +1,5 @@
+import { buildSharedSearchPlan } from '../../../retrieval/sharedSearchPlan.js';
+import { resolveHostedSearchCapability } from '../../search/hostedSearchCapability.js';
 // Chat execution graph — `prepare` node (architecture B2, 2026-10-20).
 // Mechanical move out of chatExecutionRunner.js: the body below is the
 // original node body, unchanged except for one indentation level. The
@@ -6,7 +8,7 @@
 // node (checked by scope analysis before the move), so this is equivalent to
 // the closure it replaces.
 import { readExecutionContext } from '../executionScenes.js';
-import { toolsForCapabilityScope, nativeFeaturesForScope } from '../../../domain/agent/capabilityScope.js';
+import { toolsForCapabilityScope, nativeFeaturesForScope, scopeAllowsTool } from '../../../domain/agent/capabilityScope.js';
 import { retrieveKnowledgeContext } from '../knowledgeContext.js';
 import { measureStage, measureStageSync } from '../../../runtime/performanceTrace.js';
 import { resolveSessionFacts } from '../../../memory/factRecords.js';
@@ -47,7 +49,7 @@ import { buildSkillTool } from '../../../agents/skillExecutor.js';
 import { planIncrementalCompact, compactConversationDetailed, formatCompactContextBlock, buildRecentWindow } from '../../../memory/contextCompact.js';
 import { formatSessionMemoryBlock, selectSessionMemoryFacts } from '../../../memory/sessionMemory.js';
 import { classifyRequest } from '../../../retrieval/intentRouter.js';
-import { buildSearchPlan, buildSearchRoutingPrompt, constrainSearchPlan } from '../../../retrieval/searchRouter.js';
+import { buildSearchRoutingPrompt, constrainSearchPlan } from '../../../retrieval/searchRouter.js';
 import { buildToolsSystemPrompt, shouldInjectToolsPrompt } from '../../../tools/systemPrompt.js';
 import { appendCompactCard, replaceCardSummary, ledgerCards, ledgerDigest, renderCompactLedger, degradedCardForUpgrade, noteCardUpgradeAttempt } from '../../../memory/compactLedger.js';
 import { buildTopicExcerpts } from '../topicExcerpts.js';
@@ -131,11 +133,13 @@ export function createPrepareNode(turn) {
       ? toolProtocolFor({ ...config, baseUrl: modelOverrides.baseUrl, toolCalling: env.MELO_FUNCTION_CALLING || config.toolCalling })
       : null;
     let modelMessages = buildModelMessagesFromChat(modelChat(), { windowTokens: contextBudget.windowTokens, toolChainProtocol });
-    let searchPlan = buildSearchPlan({
-      latestUserMessage,
-      modelMessages,
-      authMode: config.authMode,
-    });
+    const searchCapability = _dependencies.searchCapability || await resolveHostedSearchCapability({ ...config,
+      apiKey: modelOverrides.apiKey ?? config.apiKey, baseUrl: modelOverrides.baseUrl || config.baseUrl,
+      model: modelOverrides.model || activeAgentProfile.model || config.model });
+    let searchPlan = buildSharedSearchPlan({ latestUserMessage, modelMessages, config,
+      capabilities: { executors: getAllTools().filter(tool => scopeAllowsTool(context.capabilityScope, tool.id)).map(tool => tool.id),
+        grants: getAllTools().filter(tool => scopeAllowsTool(context.capabilityScope, tool.id)).map(tool => tool.id),
+        hostedSearch: searchCapability.status, browserSearch: true } });
 
     // ── 2. Async fan-out ───────────────────────────────────────────────
     // classifyIntent and buildDynamicContext are the only two operations
@@ -394,7 +398,7 @@ export function createPrepareNode(turn) {
       promptTools = toolsForCapabilityScope([...stableTools, ...skillTools],context.capabilityScope).filter(t=>t.id!=='delegate'||activeAgentProfile.collaboration.canDelegate&&activeAgentProfile.collaboration.delegateTargets.length>0);
       visibleToolIds = new Set(promptTools.map(tool => tool.id).filter(Boolean));
     }
-    searchPlan = constrainSearchPlan(searchPlan, { toolIds: [...visibleToolIds],
+    if (!searchPlan.sharedPlan) searchPlan = constrainSearchPlan(searchPlan, { toolIds: [...visibleToolIds],
       nativeSearch: config.authMode === 'codex' && nativeFeaturesForScope(context.capabilityScope).nativeWebSearchEnabled });
     toolsPrompt = buildSearchRoutingPrompt(searchPlan);
     const functionSession = createFunctionCallingSession({ ...config, baseUrl: modelOverrides.baseUrl,

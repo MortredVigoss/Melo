@@ -1,0 +1,190 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-18T11:30:58Z",
+  "branch": "codex/mobile-use-features",
+  "behaviorCommit": "1e292e9d8039d398fa591c6d5ea2cc643a9258bb",
+  "version": "0.7.0",
+  "versionCode": 15,
+  "targetSdk": 36,
+  "core": {
+    "sha256": "3f494860518213f568e0c069d1037d8dbccb9c8d6a4cac44238a1f0a345417ed",
+    "bytes": 81828,
+    "modules": 11,
+    "conformanceFixtures": 45
+  },
+  "artifact": {
+    "filename": "Melo-Android-0.7.0-preview.apk",
+    "sha256": "6b5807f8054c7919c2974af607d378986cdb697e94551341bf7e505760d58b34",
+    "bytes": 4073031,
+    "certificateSha256": "da629e0685cca1745c5ffe6aa80cbc8c07f1e7b5cbe4fc5a82644fc72721d212",
+    "sameCertificateAs060": true,
+    "signatureVerified": true,
+    "zipAndElf16KiBVerifiedNativeLibraries": 4
+  },
+  "validation": {
+    "node": {
+      "passed": 147,
+      "failed": 0,
+      "skipped": 0,
+      "scope": "targeted offline tests; not full repo gate"
+    },
+    "jvm": {
+      "passed": 117,
+      "failed": 0,
+      "skipped": 0
+    },
+    "build": {
+      "debug": true,
+      "r8Release": true,
+      "testApk": true,
+      "lintErrors": 0
+    },
+    "native": {
+      "androidApi": 36,
+      "device": "owned Android 16 Emulator, read-only AVD overlay",
+      "cover": {
+        "pixels": [
+          968,
+          2376
+        ],
+        "density": 420,
+        "passed": 48,
+        "batches": [
+          22,
+          26
+        ]
+      },
+      "unfolded": {
+        "pixels": [
+          1856,
+          2160
+        ],
+        "density": 420,
+        "passed": 10
+      },
+      "finalTestExecutions": 58,
+      "r8FixtureSeedExecutions": 2,
+      "protocols": [
+        "chat-completions",
+        "responses",
+        "anthropic"
+      ],
+      "compoundFixture": "HTTP web_search -> fetch_url -> fixture phone_use -> reply; no actual Maps navigation",
+      "accessibilityRegression": "actual Emulator Service/Device regressions separately exercised by PhoneUse/Device suites",
+      "warnings": "viewport sizes are not Samsung fold hardware validation"
+    },
+    "releaseSmoke": {
+      "installedSha256": "6b5807f8054c7919c2974af607d378986cdb697e94551341bf7e505760d58b34",
+      "dataIdenticalAcrossUpdate": true,
+      "chatsBeforeAndAfter": 18,
+      "runsBeforeAndAfter": 10,
+      "agentsBeforeAndAfter": 5,
+      "uidPreserved": true,
+      "firstInstallTimePreserved": true,
+      "accessibilitySettingPreserved": true,
+      "accessibilityServiceEnabledForThisSmoke": false,
+      "checks": [
+        "unfolded Release Markdown rendered from packaged shared parser",
+        "persisted observed trace survived Debug to R8 update and process restart; default collapsed, expands actual source/tool/partial reason",
+        "unfolded to cover resizing kept trace chat and no crash",
+        "cover Release Markdown and legacy trace render",
+        "no fatal exception in current owned Release process crash buffer"
+      ],
+      "privateData": "all smoke chats are owned fixtures in disposable Emulator overlay"
+    },
+    "screenshots": [
+      {
+        "path": ".tmp/research-chat-20261018/r8-markdown-cover.png",
+        "sha256": "c61de4fc6c7c1f685e6a0c5f8e78daa58fce5e53d56f19a70edb6016119141cd",
+        "visuallyInspected": true
+      },
+      {
+        "path": ".tmp/research-chat-20261018/r8-markdown-unfolded.png",
+        "sha256": "b7309506f9e508bbacd21558e981eae7e0335420a5baa9c39100b72b60a47db1",
+        "visuallyInspected": true
+      },
+      {
+        "path": ".tmp/research-chat-20261018/r8-trace-cover.png",
+        "sha256": "3ce480b1a75c1ec10cb93ffd8b4ba09e8cfb6a22a6d611df21eb8bd60139fa9b",
+        "visuallyInspected": true
+      },
+      {
+        "path": ".tmp/research-chat-20261018/r8-trace-expanded-unfolded.png",
+        "sha256": "30b11b9e2e5bef1f717d32fdb72dcaa7130ddb0832ca128362e2b058beef5022",
+        "visuallyInspected": true
+      }
+    ]
+  },
+  "failureHistory": [
+    "Initial Kotlin fixture/teardown compile issues corrected before final build.",
+    "Old Node expectations adjusted for optional fetch_url contract; behavior assertions retained.",
+    "Initial native batch had three ActivityScenario lifecycle failures caused by test Intent replacement; fixed test to use real Chat history UI, original failure log retained.",
+    "R8 inspection helper initially assumed userId instead of Android 16 appId; helper corrected before install."
+  ],
+  "boundaries": [
+    "No real model or Search provider request; existing device credentials untouched.",
+    "Fold6 not detected by Windows ADB; 0.7.0 not installed on physical phone.",
+    "iOS bundle packaged identically, native Swift/production Loop and UI not validated or migrated in this task.",
+    "Router remains lexical; arbitrary natural language planning and all-platform Skill/Context/Memory/Cache unification remain separate work.",
+    "Source fetch supports static text/HTML, no redirects; online freshness/opening hours require actual evidence.",
+    "Phone-unavailable compound requests currently preflight-block; clarification without required tools may still get MISSING_TOOL_EVIDENCE.",
+    "Public summary only when supplied by provider; hidden CoT is never exposed.",
+    "Markdown is the repository subset, not all CommonMark or raw HTML.",
+    "No push, git pp, remote CI or full repo release gate."
+  ],
+  "cleanup": {
+    "ownedEmulator5580Stopped": true,
+    "ownedAdb5048Stopped": true,
+    "windowsAdb5037LeftRunning": true
+  },
+  "localEvidence": [
+    {
+      "path": ".tmp/research-chat-20261018/node-147-final.log",
+      "sha256": "966a4e8b08983ad876b823123d8fe9d0330cbd5cd840e8d44d3c1d8c72e4d9e9"
+    },
+    {
+      "path": ".tmp/research-chat-20261018/android-final-build.log",
+      "sha256": "8299e82d5a7aaa6037487d7823417b7c0f9bb3cc49f5f5b5820baee3e1927314"
+    },
+    {
+      "path": ".tmp/research-chat-20261018/native-cover-final.log",
+      "sha256": "40a9096b81b22017770f60a743f26d8d13004c7528c846cd6f6f5f94d5764b58"
+    },
+    {
+      "path": ".tmp/research-chat-20261018/native-cover-regressions.log",
+      "sha256": "1fffad368352abf6d42b6285bfe6f507bbbe44d6058f4ccefb19775ed1be3a49"
+    },
+    {
+      "path": ".tmp/research-chat-20261018/native-unfolded-final.log",
+      "sha256": "1f8b96abee06239d4e3c0f77838ea25e694da219d75f2722afebc413669fa5e4"
+    },
+    {
+      "path": ".tmp/research-chat-20261018/native-r8-ui-seed.log",
+      "sha256": "a0801efda9c0c8a32343edddf991b052ab4f72ebef8e182a4a1366ed8edf4038"
+    },
+    {
+      "path": ".tmp/research-chat-20261018/r8-smoke-ui.log",
+      "sha256": "bcf5e6cd06f002c6c3a176dd0ed9ce014ce889f5f0708179dfbd4c9ff463dffe"
+    },
+    {
+      "path": ".tmp/research-chat-20261018/r8-smoke.json",
+      "sha256": "6ccf9a924c57f1a12cff49a1b62ea19f3330255f5081271e4019bee2dd1e403f"
+    },
+    {
+      "path": ".tmp/research-chat-20261018/native-cover-initial.log",
+      "sha256": "6d1759de4cebd30dabbb056c40d1f23b0a93ec7aeaea5dae732959796dfe487f"
+    },
+    {
+      "path": ".tmp/research-chat-20261018/ui-hang-full.log",
+      "sha256": "37bc6c0af50ebd0258dc2de852369c535577749d18d6faae2d339bbac68e0d93"
+    },
+    {
+      "path": ".tmp/research-chat-20261018/routing-red.log",
+      "sha256": "94cb069b1c0cca1686729441c111a4400e1ec26cf53868c0d73bd20dd4f0c761"
+    },
+    {
+      "path": ".tmp/research-chat-20261018/node-regression.log",
+      "sha256": "09150d5df2372c72bbec0ee68486f528a91cf9114f4b56188f111bbc5a67553c"
+    }
+  ]
+}

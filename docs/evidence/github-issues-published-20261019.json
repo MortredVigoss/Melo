@@ -1,0 +1,145 @@
+{
+  "date": "2026-10-19",
+  "main": "b64fe5450478995d82ae2f6c11f5e3f27fc05ccb",
+  "mobile": "3614fbd740fc5523afd85f61c26468f588f2a6b1",
+  "verified": {
+    "count": 14,
+    "state": "OPEN",
+    "bodiesMatchDrafts": true,
+    "labelsMatch": true,
+    "unresolvedDependencies": 0
+  },
+  "excluded": {
+    "A05": "Fixed in Mobile 3614fbd; no open issue created"
+  },
+  "revisions": {
+    "A02": "Latest HTTP regression passes; fresh-home POST project/book + GET sync all 200. Open as P2 investigation, not currently reproduced P1.",
+    "A10": "Acknowledge new Chrome helper/environment override and cleanup fix. CI/environment/fixture work remains.",
+    "A13": "Acknowledge completed UI P2; narrow to remaining Backend boundaries."
+  },
+  "currentMainProbe": {
+    "passed": 5,
+    "failed": 2,
+    "memoryHttp": "passed, includes sync and cold restart",
+    "dirfd": "4 passed / 2 failed on parent delete-recreate checks",
+    "manualMemoryHttp": [
+      200,
+      200,
+      200
+    ]
+  },
+  "issues": [
+    {
+      "id": "A01",
+      "number": 1,
+      "url": "https://github.com/MortredVigoss/Melo/issues/1",
+      "title": "[P1][A01] 修复 inode 复用导致的文件身份校验失效",
+      "label": "bug",
+      "reused": false
+    },
+    {
+      "id": "A02",
+      "number": 2,
+      "url": "https://github.com/MortredVigoss/Melo/issues/2",
+      "title": "[P2][A02] 核实 Memory Book 的 SQLite Lock 并补齐并发回归",
+      "label": "question",
+      "reused": false
+    },
+    {
+      "id": "A03",
+      "number": 3,
+      "url": "https://github.com/MortredVigoss/Melo/issues/3",
+      "title": "[P1][A03] 让自然推荐请求获得正确的 Search 能力",
+      "label": "bug",
+      "reused": false
+    },
+    {
+      "id": "A04",
+      "number": 4,
+      "url": "https://github.com/MortredVigoss/Melo/issues/4",
+      "title": "[P1][A04] 修复历史图片短期签名过期后的预览和下载",
+      "label": "bug",
+      "reused": false
+    },
+    {
+      "id": "A06",
+      "number": 5,
+      "url": "https://github.com/MortredVigoss/Melo/issues/5",
+      "title": "[P2][A06] 统一 Loop 决策与 Tool 执行接口，保留平台 Adapter",
+      "label": "enhancement",
+      "reused": false
+    },
+    {
+      "id": "A07",
+      "number": 6,
+      "url": "https://github.com/MortredVigoss/Melo/issues/6",
+      "title": "[P2][A07] 把任务完成条件与工具调用成功分开表达",
+      "label": "enhancement",
+      "reused": false
+    },
+    {
+      "id": "A08",
+      "number": 7,
+      "url": "https://github.com/MortredVigoss/Melo/issues/7",
+      "title": "[P2][A08] 让 Android 使用统一的 Context Budget 与原文回读策略",
+      "label": "enhancement",
+      "reused": false
+    },
+    {
+      "id": "A09",
+      "number": 8,
+      "url": "https://github.com/MortredVigoss/Melo/issues/8",
+      "title": "[P2][A09] 统一 Session Events 及模型 Context、UI 的投影",
+      "label": "enhancement",
+      "reused": false
+    },
+    {
+      "id": "A10",
+      "number": 9,
+      "url": "https://github.com/MortredVigoss/Melo/issues/9",
+      "title": "[P2][A10] 建立跨平台 Test Gates 与 CI，收敛环境和 Fixture 差异",
+      "label": "enhancement",
+      "reused": false
+    },
+    {
+      "id": "A11",
+      "number": 10,
+      "url": "https://github.com/MortredVigoss/Melo/issues/10",
+      "title": "[P2][A11] 为 Task Cache 增加布局与 App 版本的变体策略",
+      "label": "enhancement",
+      "reused": false
+    },
+    {
+      "id": "A12",
+      "number": 11,
+      "url": "https://github.com/MortredVigoss/Melo/issues/11",
+      "title": "[P2][A12] 完成项目移动、删除和恢复的生命周期设计",
+      "label": "enhancement",
+      "reused": false
+    },
+    {
+      "id": "A13",
+      "number": 12,
+      "url": "https://github.com/MortredVigoss/Melo/issues/12",
+      "title": "[P3][A13] 继续收敛 Backend 大模块边界，承接已完成的 UI Refactor",
+      "label": "enhancement",
+      "reused": false
+    },
+    {
+      "id": "A14",
+      "number": 13,
+      "url": "https://github.com/MortredVigoss/Melo/issues/13",
+      "title": "[P2][A14] 建立大历史容量与首字等待基线，再决定分页边界",
+      "label": "enhancement",
+      "reused": false
+    },
+    {
+      "id": "A15",
+      "number": 14,
+      "url": "https://github.com/MortredVigoss/Melo/issues/14",
+      "title": "[P2][A15] 从已知失败建立最小 Task Replay / Eval 集",
+      "label": "enhancement",
+      "reused": false
+    }
+  ]
+}

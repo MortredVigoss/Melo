@@ -154,6 +154,8 @@ func call(_ name: String, _ args: String, id: String = "c1") -> ResponsesFunctio
         do { try DeviceToolLoop.validateBatch((0..<32).map { call("a", "{}", id: "id\($0)") }) } catch { assert(false, "32 calls are allowed") }
         do { try DeviceToolLoop.validateBatch([call("a", "{}", id: "")]); assert(false, "empty id") } catch {}
         do { try DeviceToolLoop.validateBatch([call("a", "{}", id: "1"), call("b", "{}", id: "2")]) } catch { assert(false, "valid batch") }
+        do { try DeviceToolLoop.validateBatch([call("b", "{}", id: "previous")], previousCallIDs: ["previous"]); assert(false, "reused ID across rounds") } catch {}
+        do { try DeviceToolLoop.validateBatch([call("b", "{}", id: "next")], previousCallIDs: ["previous"]) } catch { assert(false, "fresh ID across rounds") }
 
         // Responses parsing: a completed response with a function call and no text.
         var stream = ChatGPTStream()

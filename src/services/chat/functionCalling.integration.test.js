@@ -27,13 +27,13 @@ async function harness(t, respond, options={}) {
     let raw = ''; for await (const chunk of req) raw += chunk;
     const body = JSON.parse(raw); requests.push({ path: req.url, body });
     res.setHeader('content-type', 'text/event-stream');
-    res.end(respond(requests.length, body));
+    res.end(await respond(requests.length, body));
   });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   registerTool({ id: 'fixture_lookup', name: 'Fixture lookup', description: 'Read the requested fixture entry.',
     parametersSchema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
     requiresPermission: true, isConcurrencySafe: true,
-    run: async args => { executions.push(args.query); return options.toolResult?.(args) ?? { ok: true, output: `found ${args.query}` }; } });
+    run: async args => { executions.push(args.query); return options.toolResult?.(args) ?? options.outcome ?? { ok: true, output: `found ${args.query}` }; } });
   t.after(async () => { unregisterTool('fixture_lookup'); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await rm(home, { recursive: true, force: true }); });
   const config = { authMode: 'api-key', apiProtocol: 'responses', apiKey: 'fixture-key', model: 'fixture-model',
     baseUrl: `http://127.0.0.1:${server.address().port}/v1`, activeLlmProfileId: 'fixture', conversationModelSelected: true };
@@ -49,7 +49,7 @@ async function harness(t, respond, options={}) {
     turnBinding: { role: 'main', project: null, taskId: null } });
   const run = signal => runWithRequestContext(context, () => runChatAgentExecutionGraph({ context, config, state, chat, signal, teamPlan:options.teamPlan,
     workspace: { rootPath: home, exists: false, entries: [], filePaths: [], fileCount: 0, commandTemplates: [], commandRuns: [] },
-    connectors: [], skills: [], latestUserMessage: text, agentId: 'main', _dependencies: { getEmbedding: async () => null },
+    connectors: [], skills: [], latestUserMessage: text, agentId: 'main', _dependencies: { getEmbedding: async () => null, turnTimeoutMs: options.turnTimeoutMs },
     sseEmitter(type, event) {
       events.push({ type, event });
       if (type === 'tool_permission') {
@@ -139,6 +139,28 @@ test('main chat never executes calls from a truncated stream or a cancelled turn
   await assert.rejects(h.run(AbortSignal.abort()), /abort/i);
   assert.equal(h.requests.length, requests, 'cancelled turn performs no model request');
   assert.equal(h.executions.length, 0); assert.equal(h.permissions.length, 0);
+});
+
+test('shared Core ends the production loop after repeated permanent failure receipts', async t => {
+  const h = await harness(t, round => done([fn('failure-' + round, 'A')]), { outcome: { ok: false, output: 'fixture unavailable', error: 'FIXTURE_UNAVAILABLE' } });
+  const result = await h.run();
+  assert.equal(h.requests.length, 3);
+  assert.equal(h.executions.length, 2, 'existing repeat guard suppresses the third identical failing effect');
+  assert.match(result.normalizedReply.content, /REPEATED_TOOL_FAILURE/);
+});
+
+test('shared Core ends identical successful reads before the old ten-round cap', async t => {
+  const h = await harness(t, round => done([fn('read-' + round, 'A')]));
+  const result = await h.run();
+  assert.equal(h.requests.length, 6); assert.equal(h.executions.length, 6);
+  assert.match(result.normalizedReply.content, /NO_PROGRESS/);
+});
+
+test('a turn deadline aborts an in-flight model request without executing a late tool', async t => {
+  const h = await harness(t, async () => { await new Promise(resolve => setTimeout(resolve, 150)); return done([fn('late', 'A')]); }, { turnTimeoutMs: 80 });
+  await assert.rejects(h.run(), /timeout|abort/i);
+  assert.equal(h.executions.length, 0);
+  assert.ok(h.requests.length <= 1);
 });
 
 
@@ -255,4 +277,29 @@ test('tool ok and final prose are not goal verification', async t => {
   assert.equal(h.executions.length, 1); assert.equal(h.requests.length, 2);
   assert.equal(result.normalizedReply.completion.outcome, 'partial');
   assert.equal(result.normalizedReply.completion.reason, 'GOAL_TERMINAL_EVIDENCE_MISSING');
+});
+
+for (const count of [9, 32]) {
+  test(`main chat executes and pairs all ${count} accepted calls before requesting the final answer`, async t => {
+    const queries = Array.from({ length: count }, (_, i) => `batch-${i}`);
+    const h = await harness(t, round => done(round === 1
+      ? queries.map((query, i) => fn(`batch-call-${i}`, query))
+      : [message]));
+    const result = await h.run();
+    assert.equal(result.normalizedReply.content, '核对完成。');
+    assert.deepEqual([...h.executions].sort(), [...queries].sort(), 'concurrent tools may execute out of order, but each call must execute exactly once');
+    assert.equal(h.permissions.length, count);
+    assert.equal(h.requests.length, 2);
+    const outputs = h.requests[1].body.input.filter(item => item.type === 'function_call_output');
+    assert.deepEqual(outputs.map(item => item.call_id), queries.map((_, i) => `batch-call-${i}`));
+    assert.ok(outputs.every(item => JSON.parse(item.output).ok));
+  });
+}
+
+test('main chat rejects an oversized batch before any authorization or execution', async t => {
+  const h = await harness(t, () => done(Array.from({ length: 33 }, (_, i) => fn(`oversized-${i}`, `query-${i}`))));
+  await assert.rejects(h.run(), /per-response tool call limit/);
+  assert.equal(h.requests.length, 1);
+  assert.equal(h.permissions.length, 0);
+  assert.equal(h.executions.length, 0);
 });
