@@ -127,7 +127,6 @@ const uiState = {
     kind: 'task',
   },
   modelSetupDraft: null,
-  modelCatalogLoading: false,
   commandInputs: {},
   commandPalette: {
     open: false,
@@ -3063,53 +3062,6 @@ function clearModelFormDraft(form) {
   for (const key of keys) if (uiState.modelSetupDraft) delete uiState.modelSetupDraft[key];
 }
 
-async function handleLoadModelOptions(form) {
-  // Same draft-first read as handleSaveConnectorConfig — masked password
-  // inputs always submit "" through FormData, so any background render
-  // between paste and click would otherwise drop the API key the user
-  // pasted before pressing "Read available models" (Codex B follow-up,
-  // 2026-04-28).
-  const formData = new FormData(form);
-  const draft = uiState.modelSetupDraft || {};
-  const pick = name => pickConnectorField(draft, formData, name);
-  const authMode = pick('authMode') || 'codex';
-  const apiKey = pick('apiKey');
-  const body = {
-    authMode,
-    baseUrl: pick('baseUrl'),
-    model: pick('model'),
-    systemPrompt: pick('systemPrompt'),
-  };
-
-  if ((authMode === 'api-key' || authMode === 'local') && apiKey) {
-    body.apiKey = apiKey;
-  }
-
-  uiState.modelCatalogLoading = true;
-  render();
-  try {
-    const payload = await api('/api/settings/model/options', {
-      method: 'POST',
-      body,
-    });
-    // Preserve modelSetupDraft after refresh (Codex C 第十四轮 audit
-    // 2026-04-28). The server-side refreshModelCatalog is now
-    // catalog-only — it does NOT persist the form's authMode /
-    // baseUrl / model / apiKey / systemPrompt. If we cleared the
-    // draft here, the user's pasted-but-unsaved API key would
-    // vanish from the form the moment they clicked "Read
-    // available models", and the next Save would silently
-    // submit the old saved values. Keep the draft so the form
-    // continues to render the user's typing; applyBootstrap
-    // refreshes the catalog map so the model dropdown reflects
-    // the freshly-discovered options without stomping the rest
-    // of the form.
-    applyBootstrapPreservingDrafts(payload);
-  } finally {
-    uiState.modelCatalogLoading = false;
-    render();
-  }
-}
 
 async function handleStartModelOAuthLogin() {
   await api('/api/settings/model/oauth/start', {
@@ -3118,17 +3070,6 @@ async function handleStartModelOAuthLogin() {
   });
   showError('OpenAI sign-in was opened in Terminal. Finish the browser authorization, then click Refresh status.');
 }
-
-async function handleRefreshModelStatus() {
-  uiState.modelSetupDraft = null;
-  await loadBootstrap(uiState.searchQuery, { quiet: true });
-}
-
-
-
-
-
-
 
 
 function creationContext() {
@@ -5916,12 +5857,6 @@ document.addEventListener('click', async event => {
         uiState.shouldFocusSearch = false;
         openCommandPalette();
         break;
-      case 'start-model-oauth':
-        await handleStartModelOAuthLogin();
-        break;
-      case 'refresh-model-status':
-        await handleRefreshModelStatus();
-        break;
       case 'submit-agent-profile': {
         const formId = trigger.dataset.formId;
         const form = formId ? document.getElementById(formId) : null;
@@ -5936,26 +5871,6 @@ document.addEventListener('click', async event => {
               }),
             );
           }
-        }
-        break;
-      }
-      case 'set-model-auth-mode': {
-        const nextAuthMode = trigger.dataset.authMode || 'codex';
-        const defaults = modelDefaultsForAuthMode(nextAuthMode);
-        uiState.modelSetupDraft = {
-          ...(uiState.modelSetupDraft || effectiveModelSetupDraft()),
-          authMode: nextAuthMode,
-          baseUrl: defaults.baseUrl,
-          model: modelOptionsForAuthMode(nextAuthMode)[0] || defaults.model,
-        };
-        render();
-        // Settings are committed only by the explicit Save action.
-        break;
-      }
-      case 'load-model-options': {
-        const form = trigger.closest('form');
-        if (form instanceof HTMLFormElement) {
-          await handleLoadModelOptions(form);
         }
         break;
       }

@@ -346,12 +346,6 @@ test('wiring — settings have no idle autosave or unload beacon (explicit Save 
   }
 });
 
-test('wiring — changing model authentication stays in the editable draft', () => {
-  const start=APP_SRC.indexOf("case 'set-model-auth-mode':");
-  const end=APP_SRC.indexOf("\n      case '",start+1);
-  assert.doesNotMatch(APP_SRC.slice(start,end),/scheduleConnectorAutosave\(/);
-});
-
 test('wiring — handleSaveConnectorConfig deliberately does NOT attach _autosaveRevision (force-write)', () => {
   // The explicit Save path stays revision-free: server treats a
   // request without _autosaveRevision as a force-write that bumps
@@ -379,61 +373,6 @@ test('wiring — handleSaveConnectorConfig deliberately does NOT attach _autosav
     fnBody,
     /_autosaveRevision/,
     'handleSaveConnectorConfig must NOT carry _autosaveRevision; explicit Save is a force-write that bumps the saved revision past all in-flight autosaves',
-  );
-});
-
-test('wiring — handleLoadModelOptions does NOT clear modelSetupDraft after refresh', () => {
-  // Codex C 第十四轮 (2026-04-28): server-side refreshModelCatalog
-  // is now catalog-only — it does NOT persist authMode / baseUrl /
-  // model / apiKey / systemPrompt. If the client cleared
-  // modelSetupDraft after the response landed, every paste-then-
-  // click-Read-models sequence would silently reset the form back
-  // to old saved values, and the user's next Save would submit
-  // those stale values. handleLoadModelOptions MUST keep the
-  // draft so the form continues to render the user's typing.
-  const fnStart = APP_SRC.indexOf('async function handleLoadModelOptions');
-  assert.ok(fnStart >= 0);
-  const openBrace = APP_SRC.indexOf('{', fnStart);
-  let depth = 0;
-  let closeBrace = -1;
-  for (let i = openBrace; i < APP_SRC.length; i += 1) {
-    const c = APP_SRC[i];
-    if (c === '{') depth += 1;
-    else if (c === '}') {
-      depth -= 1;
-      if (depth === 0) { closeBrace = i; break; }
-    }
-  }
-  assert.ok(closeBrace > openBrace);
-  const fnBody = APP_SRC.slice(openBrace, closeBrace + 1);
-
-  assert.doesNotMatch(
-    fnBody,
-    /uiState\.modelSetupDraft\s*=\s*null/,
-    'handleLoadModelOptions must NOT clear modelSetupDraft — refresh is catalog-only and clearing the draft would silently revert the form to old saved values',
-  );
-  // Should also use the preserving variant of applyBootstrap so
-  // background-render typing guards apply.
-  assert.match(
-    fnBody,
-    /applyBootstrapPreservingDrafts\(/,
-    'handleLoadModelOptions must apply via applyBootstrapPreservingDrafts so modelSetupDraft survives the response',
-  );
-});
-
-test('wiring — handleLoadModelOptions reads via pickConnectorField, not raw FormData', () => {
-  // Codex B-grade follow-up (2026-04-28): the "Read available models"
-  // button used `FormData.get('apiKey')` directly, so any background
-  // render between paste and click would drop the key. Save path was
-  // already fixed; this asserts the load path uses the same helper.
-  const fnStart = APP_SRC.indexOf('async function handleLoadModelOptions');
-  assert.ok(fnStart >= 0, 'handleLoadModelOptions must exist');
-  // Look at roughly the next ~40 lines — the body is small.
-  const fnSnippet = APP_SRC.slice(fnStart, fnStart + 2000);
-  assert.match(
-    fnSnippet,
-    /pickConnectorField\(/,
-    'handleLoadModelOptions must use pickConnectorField for the same draft-first read as the save path',
   );
 });
 

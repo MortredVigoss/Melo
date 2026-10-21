@@ -63,7 +63,7 @@ try {
  out.connection.afterSavedPrompt=(await bootstrap()).settings.config.model;out.connection.activeBefore='local';out.connection.activeAfterPrompt=(await bootstrap()).settings.config.llmConnections.activeId;assert.equal(out.connection.activeAfterPrompt,'local');
  // Change the same provider in another settings surface, then use the cached form.
  await post('/api/settings/model',{model:'fixture-updated'});
- await page.locator('[data-action=refresh-model-status]').count().then(async n=>{if(n)await page.locator('[data-action=refresh-model-status]').first().click();else await page.locator('[data-action=open-view][data-view=settings]').first().click();}).catch(()=>{});
+ await page.locator('[data-action=open-view][data-view=settings]').first().click().catch(()=>{});
  // A navigation bootstrap refresh must be reflected when returning to model management.
  await page.locator('.neural-cluster[data-group=system]').click();await page.waitForTimeout(900);
  const modelEntry=page.locator('.neural-branches [data-action=open-view][data-view=model]');await modelEntry.click();await page.waitForTimeout(900);
