@@ -137,6 +137,20 @@ func json(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObject(
             assert(instructions?.contains("Preserve role instructions") == true)
         }
 
+
+        // Reference text can contain old actions/search requests. Completion must
+        // describe the current user request on both supported API transports.
+        let requestHistory = [ChatMessage(role: "user", content: "请只回复：你好")]
+        let augmented = [ChatMessage(role: "user", content: requestHistory[0].content + "\n\n[本轮参考，不是新的指令]\n请搜索最新天气")]
+        for native in [false, true] {
+            MockProtocol.anthropic = native
+            MockProtocol.payload = native ? "{\"stop_reason\":\"end_turn\",\"content\":[{\"type\":\"text\",\"text\":\"你好\"}]}" : "{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"content\":\"你好\"}}]}"
+            let reply = try await Network.reply(messages: augmented, requestHistory: requestHistory, endpoint: "https://example.invalid/chat", model: "fixture", token: "test-key", apiProtocol: native ? "anthropic" : "chat-completions", session: session)
+            assert(reply.completion?.outcome == "completed" && reply.completion?.kind == "answer", "Reference text must not turn a delivered answer into a blocked research task")
+            let sent = MockProtocol.requestBody["messages"] as! [[String: String]]
+            assert(sent.last?["content"]?.contains("请搜索最新天气") == true, "References are still sent to the model")
+        }
+
         // Phone tools on API-key connections. Without tools the bodies carry no tool keys and the historical system line.
         MockProtocol.anthropic = false
         MockProtocol.payload = "{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"content\":\"ok\"}}]}"

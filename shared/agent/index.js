@@ -7,6 +7,7 @@ import { connectionIdentity, hostedCapability, hostedSearchReceipt, hostedSearch
 import { executionScene, executionContext, publicReasoning } from './execution.js';
 import { sessionEvents } from '../../src/shared/sessionEvents.js';
 import { parseReplyDocument, inlineSpans, replyPresentation } from '../../src/shared/replyDocument.js';
+import { topicDividers } from '../../src/shared/conversationTopics.js';
 import { budgetOperation } from './policyBridge.js';
 import { repeatOperation } from './repeatGuard.js';
 import { completionResult, completionObservation } from './completion.js';
@@ -38,6 +39,7 @@ export function evaluate(input) {
       case 'sessionEvents': value = sessionEvents(input.scene); break;
       case 'publicReasoning': value = publicReasoning(input.items); break;
       case 'replyDocument': value = parseReplyDocument(input.text); break;
+      case 'topicDividers': value = topicDividers(input.messages); break;
       case 'replyPresentation': value = replyPresentation(input.text); break;
       case 'inlineSpans': value = inlineSpans(input.text); break;
       case 'searchResult': value = normalizeSearchResponse(input.result, input.observation); break;

@@ -78,9 +78,10 @@
         "src/runtime/agentLoopContract.js",
         "src/runtime/runBudget.js",
         "src/persistence/turnArchive.js",
-        "src/shared/{executionMetadata,executionScene,replyDocument,sessionEvents,sessionEvents.test}.js",
+        "src/shared/{executionMetadata,executionScene,replyDocument,sessionEvents,sessionEvents.test,conversationTopics,conversationTopics.test}.js",
         "src/http/{chatRoutes,executionRoutes}.js",
         "shared/replyDocument.js",
+        "shared/conversationTopics.js",
         "shared/protocol/agent-loop.json",
         "shared/protocol/contracts.json",
         "scripts/generate-agent-loop-contract.js",
@@ -88,14 +89,14 @@
         "desktop-ui/features/chat/**",
         "desktop-ui/execution*.js",
         "desktop-ui/execution*.css",
-        "desktop-ui/{liveRun,chatDensity}.browser.test.js",
+        "desktop-ui/{liveRun,chatDensity,topics}.browser.test.js",
         "ios/Melo/AgentLoop*.swift",
         "ios/Melo/Conversation*.swift",
         "ios/Melo/Reply*.swift",
         "ios/Melo/RunProgress*.swift",
         "ios/Melo/Execution*.swift",
-        "ios/Melo/{ChatGPTProtocol,PhoneContext,HistoryView,Network,IOSReplyBackground,BackgroundReplyStorage,ParityVerification,ConcurrencyVerification,InteractionVerification}.swift",
-        "ios/Tests/{AgentLoopTests,ChatGPTTests,ConversationFoundationTests,ConversationHistoryTests,ExecutionPageTests,ExecutionTests,NetworkTests,ParityRegressionTests,ReplyBackgroundTests,RunProgressTests,SSETransportTests,SharedContractTests}.swift",
+        "ios/Melo/{ChatGPTProtocol,PhoneContext,PhoneTurnContext,TopicDividers,TopicDividerView,TopicPreview,HistoryView,Network,IOSReplyBackground,BackgroundReplyStorage,ParityVerification,ConcurrencyVerification,InteractionVerification}.swift",
+        "ios/Tests/{AgentLoopTests,ChatGPTTests,ConversationFoundationTests,ConversationHistoryTests,ExecutionPageTests,ExecutionTests,NetworkTests,ParityRegressionTests,PhoneTurnContextTests,ReplyBackgroundTests,RunProgressTests,SSETransportTests,SharedContractTests,TopicDividersTests}.swift",
         "shared/agent/**",
         "src/runtime/sharedAgentCore.js",
         "ios/Melo/SharedAgentCore.swift",
@@ -836,6 +837,23 @@
         "ios/Tests/ConversationFoundationTests.swift"
       ],
       "note": "桌面经 /shared/replyDocument.js 提供给页面。"
+    },
+    {
+      "id": "conversation-topics",
+      "path": "shared/conversationTopics.js",
+      "title": "对话话题分隔（桌面页面与手机共用同一 JS，经 agent core 运行）",
+      "desktop": [
+        "src/shared/conversationTopics.js",
+        "desktop-ui/features/chat/viewThread.js"
+      ],
+      "iphone": [
+        "ios/Melo/TopicDividers.swift"
+      ],
+      "tests": [
+        "src/shared/conversationTopics.test.js",
+        "ios/Tests/TopicDividersTests.swift"
+      ],
+      "note": "两端读同一用例 ios/Tests/Fixtures/conversation-topics.json；桌面经 /shared/conversationTopics.js 提供给页面。"
     }
   ],
   "implicit": [
@@ -970,6 +988,7 @@
         "/shared/executionScene.js": "src/shared/executionScene.js",
         "/shared/executionMetadata.js": "src/shared/executionMetadata.js",
         "/shared/replyDocument.js": "src/shared/replyDocument.js",
+        "/shared/conversationTopics.js": "src/shared/conversationTopics.js",
         "/shared/urlDetector.js": "src/media/urlDetector.js",
         "/shared/textUrls.js": "src/media/textUrls.js",
         "/shared/localPreferences.js": "src/domain/settings/localPreferences.js"
@@ -1117,7 +1136,8 @@
       "generator": "scripts/build-agent-core.mjs",
       "inputs": [
         "shared/agent/**/*.js",
-        "src/shared/replyDocument.js"
+        "src/shared/replyDocument.js",
+        "src/shared/conversationTopics.js"
       ],
       "outputs": [
         "shared/agent/dist/**",
@@ -1136,7 +1156,8 @@
         "shared/agent/fixtures/conformance.json",
         "ios/Melo/AgentCore/agent-core.js",
         "shared/agent/**/*.js",
-        "src/shared/replyDocument.js"
+        "src/shared/replyDocument.js",
+        "src/shared/conversationTopics.js"
       ],
       "tests": [
         "shared/agent/conformance.test.js"

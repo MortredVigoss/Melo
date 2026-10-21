@@ -119,7 +119,8 @@ enum MobileMemoryRecall {
         let eligible = facts.filter { !conflicts.contains($0.id) && $0.eligible(chat: chatID, project: projectID, agent: agentID, liveChats: liveChats, liveProjects: liveProjects) }
         let language = NLLanguageRecognizer.dominantLanguage(for: query) ?? .simplifiedChinese
         let embedding = NLEmbedding.sentenceEmbedding(for: language)
-        let queryVector = embedding?.vector(for: query)
+        // The system language model aborts on very long input; relevance needs only the opening.
+        let queryVector = embedding?.vector(for: String(query.prefix(1000)))
         let q = tokens(query)
         // Bound expensive embedding work after scope and cheap relevance selection.
         let candidates = eligible.sorted {
@@ -142,13 +143,17 @@ enum MobileMemoryRecall {
         // Confirmed project book and personal profile are stable context,
         // separate from relevance recall (as on desktop). They cannot be pushed
         // out by twelve recent chat facts. Scope/conflict filtering happened above.
-        let stable = eligible.filter { ($0.scope == "project" && ["user", "confirmed"].contains($0.bookStatus ?? "")) || ($0.scope == "personal" && ["user_preference", "user_profile", "user_identity"].contains($0.category)) }.sorted { $0.id < $1.id }
+        let stable = eligible.filter(isStable).sorted { $0.id < $1.id }
         var result = withinBudget(stable, remainingBytes: 12_000), bytes = 0
         let stableIDs = Set(result.map(\.id))
         for (fact, _) in ranked.filter({ !stableIDs.contains($0.0.id) }).prefix(12) {
             guard bytes + fact.text.utf8.count <= 6000 else { continue }; bytes += fact.text.utf8.count; result.append(fact)
         }
         return (result, queryVector != nil)
+    }
+    /// Confirmed project book rows and personal profile facts: the same every turn.
+    static func isStable(_ fact: MobileMemoryFact) -> Bool {
+        (fact.scope == "project" && ["user", "confirmed"].contains(fact.bookStatus ?? "")) || (fact.scope == "personal" && ["user_preference", "user_profile", "user_identity"].contains(fact.category))
     }
     static func tokens(_ text: String) -> Set<String> {
         let lower = text.lowercased()

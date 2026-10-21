@@ -168,7 +168,7 @@ test('the chat feature takes a narrow context (no uiState) and starts from its o
 test('registry: chat actions and the composer form are registered once; cross-page navigation stays in app.js', async () => {
   const h = harness();
   assert.deepEqual(Object.keys(h.feature.actions).sort(), [
-    'add-link-attachment', 'cancel-voice-input', 'delete-active-chat', 'pick-composer-attachment', 'pick-slash-skill',
+    'add-link-attachment', 'cancel-voice-input', 'delete-active-chat', 'jump-to-topic', 'pick-composer-attachment', 'pick-slash-skill',
     'remove-composer-attachment', 'restart-interrupted-send', 'run-chat-team', 'save-video-knowledge', 'scroll-thread-to-bottom',
     'select-chat-agent', 'speak-message', 'stop-send', 'thread-load-earlier', 'toggle-agent-selector', 'toggle-composer-attachment-menu',
     'toggle-voice-input',

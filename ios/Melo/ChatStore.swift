@@ -345,10 +345,13 @@ import SwiftUI
         let explicitCodexImage = plan.makesImage && plan.connectionID == "chatgpt"
         let chatGPTModel = explicitCodexImage && choice?.connectionID != "chatgpt" ? defaultCodexModel : choice?.model ?? (roleModel.isEmpty ? defaultCodexModel : roleModel)
         let resolvedContext = ConversationContext.resolve(agent: selectedAgent, project: project(for: chatID), notes: knowledge(for: chatID), query: clean)
-        var instructions = resolvedContext.instructions
+        // Stable prefix (instructions) vs. per-question material (turnParts, joined to the newest
+        // user message at send time) — see PhoneTurnContext.
+        var instructions = ([resolvedContext.persona, resolvedContext.project]).filter { !$0.isEmpty }.joined(separator: "\n\n")
+        var turnParts = [resolvedContext.knowledge]
         // Current local date + continuity rule (2026-10-18).
         instructions += "\n\n" + ConversationHistory.dateInstructions()
-        instructions += "\n\n" + ExecutionRecord.executionHistory(executionRecords, chatID: chatID, enabled: selectedAgent.contextSources?["memory"].bool != false)
+        turnParts.append(ExecutionRecord.executionHistory(executionRecords, chatID: chatID, enabled: selectedAgent.contextSources?["memory"].bool != false))
         // The final instructions — desktop compact summary, date lines and
         // recalled memory — are assembled now, before the pre-check and before
         // the question is stored, so reply() can never reject what the
@@ -358,7 +361,7 @@ import SwiftUI
         let question = ChatMessage(role: "user", content: video.map { clean + "\n" + VideoStudy.chatLine($0) } ?? clean)
         let prospectiveMessages = retry ? PhoneToolTrace.retryOrder(chats[index].messages) : chats[index].messages + [question]
         let dateNote = ConversationHistory.dateChangeNote(prospectiveMessages)
-        if !dateNote.isEmpty { instructions += "\n\n" + dateNote }
+        if !dateNote.isEmpty { turnParts.append(dateNote) }
         // Desktop compact sync (design 2026-10-17 手机对齐): only the turns after the
         // synced boundary go to the model; the desktop summary (≤8 KB) leads the instructions.
         let contextBudget = PhoneContextBudget(capacity: useChatGPT ? (account.models.first { $0.slug == chatGPTModel }?.context_window ?? choice?.contextWindow) : contextCapacity, local: choice?.authMode == "local")
@@ -366,19 +369,23 @@ import SwiftUI
         // rules join the instructions and whether finalize verifies the answer.
         let runsLoop = replyLoader == nil && teamPlan == nil && !plan.makesImage && !(plan.separately == true && plan.references.count > 1)
         let classification = runsLoop ? AgentLoop.classify(clean, history: prospectiveMessages) : nil
-        instructions = AgentLoop.prepareInstructions(instructions, classification: classification)
+        turnParts.append(AgentLoop.prepareInstructions("", classification: classification))
         var recalled: (facts: [MobileMemoryFact], semantic: Bool) = (plan.makesImage || selectedAgent.contextSources?["memory"].bool == false) ? ([], false) : MobileMemoryRecall.recall(preferences.memoryFacts ?? [], query: clean, chatID: chatID, projectID: project(for: chatID)?.id, agentID: selectedAgent.id, liveChats: Set(chats.map(\.id)), liveProjects: Set((preferences.projects ?? []).map(\.id)), conflicts: Set((preferences.workspaceSync?.conflicts ?? []).filter { $0.kind == "memory" }.map(\.id) + (preferences.projectMemorySync?.conflicts ?? []).map(\.id)), hasAttachments: !plan.references.isEmpty)
-        let memoryBudget = max(0, contextBudget.input * 2 - ConversationHistory.instructionReserve - clean.utf8.count - instructions.utf8.count - 64)
+        let memoryBudget = max(0, contextBudget.input * 2 - ConversationHistory.instructionReserve - clean.utf8.count - instructions.utf8.count - PhoneTurnContext.note(turnParts).utf8.count - 64)
         recalled.facts = plan.makesImage ? [] : MobileMemoryRecall.withinBudget(recalled.facts, remainingBytes: memoryBudget)
         let memoryText = MobileMemoryRecall.instructions(recalled.facts)
-        instructions += memoryText
+        instructions += MobileMemoryRecall.instructions(recalled.facts.filter(MobileMemoryRecall.isStable))
+        turnParts.append(MobileMemoryRecall.instructions(recalled.facts.filter { !MobileMemoryRecall.isStable($0) }))
         let compactPlan = plan.makesImage || selectedAgent.contextSources?["memory"].bool == false
             ? PhoneCompact.Plan(value: nil, pending: [])
-            : PhoneCompact.plan(messages: prospectiveMessages, existing: preferences.chatCompact?[chatID], budget: contextBudget, instructions: instructions, attempts: preferences.compactRetryCounts ?? [:])
-        let compact = ConversationHistory.compactContext(compactPlan.value, messages: prospectiveMessages, query: clean, summaryLimit: contextBudget.summaryCharacters)
+            : PhoneCompact.plan(messages: prospectiveMessages, existing: preferences.chatCompact?[chatID], budget: contextBudget, instructions: instructions + PhoneTurnContext.note(turnParts), attempts: preferences.compactRetryCounts ?? [:])
+        // The summary is rendered the same way every turn; the card most related to this question joins the turn.
+        let compact = ConversationHistory.compactContext(compactPlan.value, messages: prospectiveMessages, summaryLimit: contextBudget.summaryCharacters)
         if !compact.summary.isEmpty { instructions = compact.summary + "\n\n" + instructions }
+        turnParts.append(PhoneTurnContext.relevantCard(compactPlan.value, query: clean, shownIn: compact.summary))
+        let turnNote = PhoneTurnContext.note(turnParts)
         if !plan.makesImage {
-            do { try ConversationHistory.validateCurrentInput(clean, instructions: instructions, budget: contextBudget) }
+            do { try ConversationHistory.validateCurrentInput(clean, instructions: instructions + turnNote, budget: contextBudget) }
             catch { fail(error.localizedDescription); return }
         }
         if replyLoader == nil {
@@ -433,6 +440,8 @@ import SwiftUI
         }
         if let lastPosition = modelHistory.indices.last, !plan.references.isEmpty, catalog.contains(where: { $0.messageID != modelHistory[lastPosition].id && plan.references.map(\.id).contains($0.id) }),
            let note = ImageContext.attachmentNote(plan.references.map(\.id), catalog: catalog) { modelHistory[lastPosition].content += "\n" + note }
+        // Image requests keep everything in their instructions (their prompt is built from the request alone).
+        if plan.makesImage { if !turnNote.isEmpty { instructions += "\n\n" + turnNote } } else { modelHistory = PhoneTurnContext.attach(turnNote, to: modelHistory) }
         let modelImages = imageInputs + (video?.frames.map { ImageInput(data: $0, mimeType: "image/jpeg") } ?? [])
         guard history.last?.role == "user" else { return }
         var record = ExecutionRecord(chatId: chatID, query: history.last?.content ?? "", requestedModel: useChatGPT ? chatGPTModel : plan.makesImage ? plan.model : model)
@@ -567,12 +576,12 @@ import SwiftUI
                 if plan.separately == true && plan.references.count > 1 { reply = try await editEachPhoto(plan, prompt: clean, history: modelHistory, instructions: instructions, runID: record.runId, useChatGPT: useChatGPT, codexModel: chatGPTModel, endpoint: endpoint, key: key) }
                 else if let teamPlan { reply = try await runTeam(teamPlan, task: clean, lead: selectedAgent, runID: record.runId, permissions: phonePermissions, budget: teamBudget, agents: teamAgents, context: resolvedContext, memory: memoryText, background: AgentTeam.background(messages: modelHistory, compact: ""), compact: compactSummary, ask: ask) }
                 else if let replyLoader { reply = try await replyLoader(modelHistory, instructions) }
-                else if useChatGPT { reply = try await account.reply(messages: modelHistory, model: chatGPTModel, instructions: instructions, imageInputs: modelImages, imageTask: plan, deviceTools: phoneTools, allowWebSearch: phonePermissions.allows(selectedAgent.id, .network), allowImageTool: phonePermissions.allows(selectedAgent.id, .generateMedia), statusKey: chatID, budget: runBudget, verification: verification, hooks: loopHooks, onObservation: { observation in self.observe(observation, runID: record.runId) }, onReceiving: { replyBackground.update(runID: record.runId, completed: 1, subtitle: "正在接收回答") }) }
+                else if useChatGPT { reply = try await account.reply(messages: modelHistory, requestHistory: history, model: chatGPTModel, instructions: instructions, imageInputs: modelImages, imageTask: plan, deviceTools: phoneTools, allowWebSearch: phonePermissions.allows(selectedAgent.id, .network), allowImageTool: phonePermissions.allows(selectedAgent.id, .generateMedia), statusKey: chatID, cacheKey: ChatGPTRequest.cacheKey(chatID: chatID, agentID: selectedAgent.id), budget: runBudget, verification: verification, hooks: loopHooks, onObservation: { observation in self.observe(observation, runID: record.runId) }, onReceiving: { replyBackground.update(runID: record.runId, completed: 1, subtitle: "正在接收回答") }) }
                 else if plan.makesImage {
                     reply = try await ImageNetwork.reply(prompt: clean, task: plan, inputs: imageInputs, endpoint: endpoint, token: key, onObservation: { self.observe($0, runID: record.runId) })
                 } else {
                     defer { account.setReplyStatus(nil, for: chatID) }
-                    reply = try await Network.reply(messages: modelHistory, endpoint: endpoint, model: model, token: key, instructions: instructions, apiProtocol: apiProtocol, imageInputs: modelImages, tools: phoneTools?.toolSet, budget: runBudget, verification: verification, hooks: loopHooks, onObservation: { observation in self.observe(observation, runID: record.runId) }, onStatus: { status in self.account.setReplyStatus(status, for: chatID) })
+                    reply = try await Network.reply(messages: modelHistory, requestHistory: history, endpoint: endpoint, model: model, token: key, instructions: instructions, apiProtocol: apiProtocol, imageInputs: modelImages, tools: phoneTools?.toolSet, budget: runBudget, verification: verification, hooks: loopHooks, onObservation: { observation in self.observe(observation, runID: record.runId) }, onStatus: { status in self.account.setReplyStatus(status, for: chatID) })
                 }
                 try Task.checkCancellation()
                 replyBackground.update(runID: record.runId, completed: 2, subtitle: "正在保存完整回答")

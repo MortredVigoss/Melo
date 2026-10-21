@@ -22,8 +22,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 617,
-      "edges": 1887,
+      "modules": 619,
+      "edges": 1890,
       "roots": [
         "src",
         "desktop-ui",
@@ -32,7 +32,7 @@
       ],
       "note": "静态 import/re-export，含 desktop-ui 对 /shared/*.js 的服务映射；不含动态 import 与外部包"
     },
-    "routes": 158,
+    "routes": 159,
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
@@ -705,9 +705,10 @@
         "src/runtime/agentLoopContract.js",
         "src/runtime/runBudget.js",
         "src/persistence/turnArchive.js",
-        "src/shared/{executionMetadata,executionScene,replyDocument,sessionEvents,sessionEvents.test}.js",
+        "src/shared/{executionMetadata,executionScene,replyDocument,sessionEvents,sessionEvents.test,conversationTopics,conversationTopics.test}.js",
         "src/http/{chatRoutes,executionRoutes}.js",
         "shared/replyDocument.js",
+        "shared/conversationTopics.js",
         "shared/protocol/agent-loop.json",
         "shared/protocol/contracts.json",
         "scripts/generate-agent-loop-contract.js",
@@ -715,14 +716,14 @@
         "desktop-ui/features/chat/**",
         "desktop-ui/execution*.js",
         "desktop-ui/execution*.css",
-        "desktop-ui/{liveRun,chatDensity}.browser.test.js",
+        "desktop-ui/{liveRun,chatDensity,topics}.browser.test.js",
         "ios/Melo/AgentLoop*.swift",
         "ios/Melo/Conversation*.swift",
         "ios/Melo/Reply*.swift",
         "ios/Melo/RunProgress*.swift",
         "ios/Melo/Execution*.swift",
-        "ios/Melo/{ChatGPTProtocol,PhoneContext,HistoryView,Network,IOSReplyBackground,BackgroundReplyStorage,ParityVerification,ConcurrencyVerification,InteractionVerification}.swift",
-        "ios/Tests/{AgentLoopTests,ChatGPTTests,ConversationFoundationTests,ConversationHistoryTests,ExecutionPageTests,ExecutionTests,NetworkTests,ParityRegressionTests,ReplyBackgroundTests,RunProgressTests,SSETransportTests,SharedContractTests}.swift",
+        "ios/Melo/{ChatGPTProtocol,PhoneContext,PhoneTurnContext,TopicDividers,TopicDividerView,TopicPreview,HistoryView,Network,IOSReplyBackground,BackgroundReplyStorage,ParityVerification,ConcurrencyVerification,InteractionVerification}.swift",
+        "ios/Tests/{AgentLoopTests,ChatGPTTests,ConversationFoundationTests,ConversationHistoryTests,ExecutionPageTests,ExecutionTests,NetworkTests,ParityRegressionTests,PhoneTurnContextTests,ReplyBackgroundTests,RunProgressTests,SSETransportTests,SharedContractTests,TopicDividersTests}.swift",
         "shared/agent/**",
         "src/runtime/sharedAgentCore.js",
         "ios/Melo/SharedAgentCore.swift",
@@ -730,8 +731,8 @@
       ],
       "modules": {
         "desktop-ui": 27,
-        "shared": 23,
-        "src": 68
+        "shared": 24,
+        "src": 69
       },
       "entryModules": [
         {
@@ -1080,18 +1081,23 @@
           "ios/Melo/Network.swift",
           "ios/Melo/ParityVerification.swift",
           "ios/Melo/PhoneContext.swift",
+          "ios/Melo/PhoneTurnContext.swift",
           "ios/Melo/ReplyBackgroundLifetime.swift",
           "ios/Melo/ReplyBackgroundVerification.swift",
           "ios/Melo/ReplyContentView.swift",
           "ios/Melo/ReplyDocument.swift",
           "ios/Melo/RunProgress.swift",
           "ios/Melo/RunProgressView.swift",
-          "ios/Melo/SharedAgentCore.swift"
+          "ios/Melo/SharedAgentCore.swift",
+          "ios/Melo/TopicDividerView.swift",
+          "ios/Melo/TopicDividers.swift",
+          "ios/Melo/TopicPreview.swift"
         ],
         "counterparts": []
       },
       "sharedContracts": [
         "agent-loop",
+        "conversation-topics",
         "cross-platform",
         "reply-document"
       ],
@@ -1123,6 +1129,7 @@
           "desktop-ui/liveRun.browser.test.js",
           "desktop-ui/replyDelivery.test.js",
           "desktop-ui/replyDocument.test.js",
+          "desktop-ui/topics.browser.test.js",
           "scripts/generate-agent-loop-contract.test.js",
           "shared/agent/budgetBridge.test.js",
           "shared/agent/completion.test.js",
@@ -1179,6 +1186,7 @@
           "src/services/chat/turnArchive.test.js",
           "src/services/chat/turnLifecycle.test.js",
           "src/services/chat/turnScheduler.test.js",
+          "src/shared/conversationTopics.test.js",
           "src/shared/sessionEvents.test.js"
         ],
         "swift": [
@@ -1190,11 +1198,13 @@
           "ios/Tests/ExecutionTests.swift",
           "ios/Tests/NetworkTests.swift",
           "ios/Tests/ParityRegressionTests.swift",
+          "ios/Tests/PhoneTurnContextTests.swift",
           "ios/Tests/ReplyBackgroundTests.swift",
           "ios/Tests/RunProgressTests.swift",
           "ios/Tests/SSETransportTests.swift",
           "ios/Tests/SharedAgentCoreTests.swift",
-          "ios/Tests/SharedContractTests.swift"
+          "ios/Tests/SharedContractTests.swift",
+          "ios/Tests/TopicDividersTests.swift"
         ]
       },
       "implicit": [
@@ -3538,6 +3548,7 @@
         "GET /api/health ← src/server.js",
         "GET /api/launch/reset ← src/server.js",
         "GET /shared/channelAvailability.js ← src/server.js",
+        "GET /shared/conversationTopics.js ← src/server.js",
         "GET /shared/executionMetadata.js ← src/server.js",
         "GET /shared/executionScene.js ← src/server.js",
         "GET /shared/localPreferences.js ← src/server.js",
@@ -4779,6 +4790,32 @@
         "chat",
         "desktop-shell"
       ]
+    },
+    {
+      "id": "conversation-topics",
+      "path": "shared/conversationTopics.js",
+      "title": "对话话题分隔（桌面页面与手机共用同一 JS，经 agent core 运行）",
+      "desktop": [
+        "src/shared/conversationTopics.js",
+        "desktop-ui/features/chat/viewThread.js"
+      ],
+      "iphone": [
+        "ios/Melo/TopicDividers.swift"
+      ],
+      "tests": [
+        "src/shared/conversationTopics.test.js",
+        "ios/Tests/TopicDividersTests.swift"
+      ],
+      "note": "两端读同一用例 ios/Tests/Fixtures/conversation-topics.json；桌面经 /shared/conversationTopics.js 提供给页面。",
+      "desktopConsumers": [
+        "desktop-ui/features/chat/controller.js",
+        "desktop-ui/features/chat/index.js",
+        "shared/agent/index.js",
+        "shared/conversationTopics.js"
+      ],
+      "features": [
+        "chat"
+      ]
     }
   ],
   "implicit": [
@@ -4974,6 +5011,7 @@
         "/shared/executionScene.js": "src/shared/executionScene.js",
         "/shared/executionMetadata.js": "src/shared/executionMetadata.js",
         "/shared/replyDocument.js": "src/shared/replyDocument.js",
+        "/shared/conversationTopics.js": "src/shared/conversationTopics.js",
         "/shared/urlDetector.js": "src/media/urlDetector.js",
         "/shared/textUrls.js": "src/media/textUrls.js",
         "/shared/localPreferences.js": "src/domain/settings/localPreferences.js"
@@ -5020,6 +5058,11 @@
         {
           "url": "/shared/replyDocument.js",
           "target": "src/shared/replyDocument.js",
+          "importers": []
+        },
+        {
+          "url": "/shared/conversationTopics.js",
+          "target": "src/shared/conversationTopics.js",
           "importers": []
         },
         {
@@ -5288,7 +5331,8 @@
       "generator": "scripts/build-agent-core.mjs",
       "inputs": [
         "shared/agent/**/*.js",
-        "src/shared/replyDocument.js"
+        "src/shared/replyDocument.js",
+        "src/shared/conversationTopics.js"
       ],
       "outputs": [
         "shared/agent/dist/**",
@@ -5311,7 +5355,8 @@
         "shared/agent/fixtures/conformance.json",
         "ios/Melo/AgentCore/agent-core.js",
         "shared/agent/**/*.js",
-        "src/shared/replyDocument.js"
+        "src/shared/replyDocument.js",
+        "src/shared/conversationTopics.js"
       ],
       "tests": [
         "shared/agent/conformance.test.js"

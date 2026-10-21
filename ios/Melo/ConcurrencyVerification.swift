@@ -15,7 +15,8 @@ import Foundation
         var result: [String: Any] = ["passed": false]
         let log = Log()
         let store = ChatStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent("concurrency-verify-" + UUID().uuidString), replyLoader: { messages, _ in
-            let question = messages.last?.content ?? ""
+            // The question itself, without the per-turn note the transport appends after it.
+            let question = (messages.last?.content ?? "").components(separatedBy: "\n\n[本轮参考").first ?? ""
             log.add("start:" + question)
             try await Task.sleep(nanoseconds: question.contains("慢") ? 1_500_000_000 : 500_000_000)
             log.add("end:" + question)

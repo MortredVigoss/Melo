@@ -138,7 +138,7 @@ enum Network {
     /// One reply on an API-key connection (chat-completions or Anthropic). The
     /// request body without tools is unchanged; with phone tools the turn runs
     /// through AgentLoop (same limits, budget, envelopes and finalize as the desktop).
-    static func reply(messages: [ChatMessage], endpoint: String, model: String, token: String, instructions: String = "", apiProtocol: String = "chat-completions", imageInputs: [ImageInput] = [], tools: PhoneToolSet? = nil, session: URLSession = Network.session, budget: PhoneRunBudget? = nil, verification: AgentVerification? = nil, hooks: AgentLoopHooks = AgentLoopHooks(), onObservation: (@MainActor (ExecutionObservation) -> Void)? = nil, onStatus: (@MainActor (String) -> Void)? = nil) async throws -> ModelReply {
+    static func reply(messages: [ChatMessage], requestHistory: [ChatMessage]? = nil, endpoint: String, model: String, token: String, instructions: String = "", apiProtocol: String = "chat-completions", imageInputs: [ImageInput] = [], tools: PhoneToolSet? = nil, session: URLSession = Network.session, budget: PhoneRunBudget? = nil, verification: AgentVerification? = nil, hooks: AgentLoopHooks = AgentLoopHooks(), onObservation: (@MainActor (ExecutionObservation) -> Void)? = nil, onStatus: (@MainActor (String) -> Void)? = nil) async throws -> ModelReply {
         try ConversationHistory.validateCurrentInput(messages.last(where: { $0.role == "user" })?.content ?? "", instructions: instructions)
         guard !token.isEmpty, !model.trimmingCharacters(in: .whitespaces).isEmpty else { throw MeloError.message("先在设置中填写模型服务和 API 密钥。") }
         let loopTools = (tools?.definitions.isEmpty ?? true) ? nil : tools?.loopTools
@@ -160,7 +160,7 @@ enum Network {
         await onObservation?(transport.observation)
         var loopHooks = hooks
         if loopHooks.onStatus == nil { loopHooks.onStatus = onStatus }
-        let loop = AgentLoop(transport: transport, tools: loopTools, budget: budget ?? PhoneRunBudget(), latestUserMessage: messages.last(where: { $0.role == "user" })?.content ?? "", verification: verification, hooks: loopHooks)
+        let loop = AgentLoop(transport: transport, tools: loopTools, budget: budget ?? PhoneRunBudget(), latestUserMessage: (requestHistory ?? messages).last(where: { $0.role == "user" })?.content ?? "", verification: verification, hooks: loopHooks)
         do {
             let outcome = try await loop.run()
             if outcome.stop != .answered {

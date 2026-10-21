@@ -12,7 +12,7 @@ import Foundation
         let loader: ([ChatMessage], String) async throws -> ModelReply = { messages, system in
             await MainActor.run { requests.append((messages, system)) }
             if system == PhoneCompact.instruction { return ModelReply(text: "Earlier verified plan: keep compatibility; original IDs remain available.") }
-            if messages.last?.content == "wait for approval" { try await Task.sleep(nanoseconds: 600_000_000) }
+            if messages.last?.content.hasPrefix("wait for approval") == true { try await Task.sleep(nanoseconds: 600_000_000) }
             return ModelReply(text: "fixture reply")
         }
         let store = ChatStore(directory: directory, replyLoader: loader)

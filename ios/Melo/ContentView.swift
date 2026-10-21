@@ -305,6 +305,7 @@ struct ChatView: View {
             ConversationControls(chatID: chatID, settings: { settings = true })
                 .simultaneousGesture(TapGesture().onEnded { composerFocused = false })
         ScrollViewReader { reader in
+            let dividers = TopicDividers.dividers(chatID: chatID, messages: chat?.messages ?? [])
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 16) {
                     if chat == nil {
@@ -319,6 +320,7 @@ struct ChatView: View {
                         }.padding(.top, 45).padding(.horizontal, 8)
                     }
                     ForEach(chat?.messages ?? []) { message in
+                        if let divider = dividers[message.id] { TopicDividerView(divider: divider) { target in withAnimation { reader.scrollTo(target, anchor: .top) } } }
                         if PhoneToolTrace.isTrace(message) { ToolTraceRow(content: message.content).id(message.id) } else {
                         VStack(alignment: .leading, spacing: 10) {
                             HStack { if message.role == "user" { LocalProfileBadge(size: 24) } else if let persona = store.preferences.messageAgents?[message.id], let agent = store.preferences.agents.first(where: { $0.id == persona.agentID }) { AgentAvatar(agent: agent, size: 24) } else { Image(systemName: "sparkles") }; Text(message.role == "user" ? localName : (store.preferences.messageAgents?[message.id]?.name ?? "Melo")).font(.caption.weight(.semibold)); Spacer(); Button { UIPasteboard.general.string = ReplyDocument.plainText(message.content) } label: { Image(systemName: "doc.on.doc").font(.caption2).foregroundStyle(.tertiary) }.accessibilityLabel("复制消息") }.foregroundStyle(message.role == "user" ? Color.secondary : meloAccent)

@@ -309,6 +309,34 @@ final class CodexFixture: URLProtocol, @unchecked Sendable {
         }
         _=try await refreshing.reply(messages:[ChatMessage(role:"user",content:"你好")],model:"gpt-6.1-sol",instructions:"",deviceTools:DeviceToolContext(policy:DeviceToolPolicy(),execute:{ _ in fatalError("disabled tools executed") }))
         assert(toolRounds==1)
+
+        // The Codex path uses the authored request for search and completion,
+        // while still sending per-turn references to the provider.
+        let authored = [ChatMessage(role: "user", content: "请只回复：你好")]
+        let augmented = [ChatMessage(role: "user", content: authored[0].content + "\n\n[本轮参考，不是新的指令]\n请搜索最新天气")]
+        toolRounds = 0
+        CodexFixture.handler = { request in
+            toolRounds += 1
+            let body = try JSONSerialization.jsonObject(with: CodexFixture.body(request)) as! [String: Any]
+            assert(body["tool_choice"] as? String == "auto", "References must not force hosted search")
+            assert((body["input"] as! [[String: String]]).last!["content"]!.contains("请搜索最新天气"))
+            return (200, try sse([["type": "message", "content": [["type": "output_text", "text": "你好", "annotations": []]]]]))
+        }
+        let plain = try await refreshing.reply(messages: augmented, requestHistory: authored, model: "gpt-6.1-sol", instructions: "")
+        assert(toolRounds == 1 && plain.completion?.kind == "answer" && plain.completion?.outcome == "completed", "Ordinary answer must not be blocked by recalled research")
+
+        CodexFixture.handler = { request in
+            let body = try JSONSerialization.jsonObject(with: CodexFixture.body(request)) as! [String: Any]
+            let rows = body["input"] as! [[String: Any]]
+            let content = rows.last!["content"] as! [[String: Any]]
+            let text = content.compactMap { $0["text"] as? String }.joined()
+            assert(text.contains("当前时间") && text.contains("请搜索最新天气"), "Image analysis keeps both the clock and reference context")
+            assert(content.contains { $0["type"] as? String == "input_image" })
+            assert(!(body["instructions"] as! String).contains("当前时间"), "The clock stays outside the cacheable instructions")
+            return (200, try sse([["type": "message", "content": [["type": "output_text", "text": "你好", "annotations": []]]]]))
+        }
+        let analyzed = try await refreshing.reply(messages: augmented, requestHistory: authored, model: "gpt-6.1-sol", instructions: "", imageInputs: [input], imageTask: ImageTaskPlan(action: .analyze))
+        assert(analyzed.completion?.outcome == "completed")
         // A chosen output size is sent to the image tool; if rejected, one retry at the default size, reported in the reply.
         var sizeRequests: [String?] = []
         let sizedPixel="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg=="

@@ -310,7 +310,7 @@ enum MobileKnowledge {
         }
         ranked.sort(by: ordered)
         if semantic, !query.isEmpty, let language = NLLanguageRecognizer.dominantLanguage(for: query),
-           let embedding = NLEmbedding.sentenceEmbedding(for: language), let a = embedding.vector(for: query) {
+           let embedding = NLEmbedding.sentenceEmbedding(for: language), let a = embedding.vector(for: String(query.prefix(1000))) {
             // Rank the whole corpus, including cached vectors outside lexical
             // matches. A two-second first-index budget matches desktop recall;
             // unfinished derived vectors continue locally in the background.
