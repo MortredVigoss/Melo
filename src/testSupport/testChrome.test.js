@@ -27,7 +27,11 @@ async function fakeBrowser(t, dir) {
   await chmod(path, 0o755);
   const helpers = [];
   t.after(() => { for (const pid of helpers) { try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ } } });
-  return { path, trackHelper: async () => helpers.push(Number(await readFile(pidFile, 'utf8'))) };
+  return { path, trackHelper: async () => {
+    const pid = Number(await readFile(pidFile, 'utf8'));
+    helpers.push(pid);
+    return pid;
+  } };
 }
 
 // Same stdio layout as Playwright's pipe launch; resolves how the run ended.
@@ -54,11 +58,13 @@ test('a helper that outlives the browser keeps a plain launch open, but not one 
 
   const trampoline = testChromeExecutable(fake.path);
   assert.equal(testChromeExecutable(fake.path), trampoline, 'one trampoline per binary');
-  const started = Date.now();
   const wrapped = await run(trampoline, ['--headless', 'two words', "it's"]);
-  await fake.trackHelper();
+  const helperPID = await fake.trackHelper();
   assert.equal(wrapped.ending, 'closed', 'stdout/stderr no longer depend on the helper');
-  assert.ok(Date.now() - started < 1000);
+  // run() bounds the close event after browser exit. Check the cause directly:
+  // the helper is still alive, so it cannot be its exit that released the pipe.
+  // Process startup and reading its PID can be delayed by concurrent builds.
+  assert.doesNotThrow(() => process.kill(helperPID, 0), 'the pipe closed while the helper remained alive');
   assert.equal(wrapped.stdout, '', "the browser's own output goes to the log file");
   assert.equal(wrapped.cdp(), 'cdp-ok', 'fd 4 (the remote-debugging pipe) still reaches the parent');
   const log = await readFile(trampoline.replace(/\.sh$/, '.log'), 'utf8');
