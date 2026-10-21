@@ -6,7 +6,7 @@
 
 | 平台 | 实际入口与数据流 | 已验证 | 待验收 |
 | --- | --- | --- | --- |
-| iPhone | `ImageComposerBar` 拍照按钮 → `CameraCaptureView` → 系统内嵌静态拍照/重拍/确认 → `ChatStore.importCameraPhoto` → `ImageLibrary.storeCameraPhoto` → 追加当前草稿；原有发送链处理图片 | 图片存储、旋转、传输缩小和冷加载回归；unsigned Simulator App 编译；隔离模拟器实点权限拒绝、取消返回、相册选图和原草稿保留 | 真实 iPhone 的前后镜头、拍摄画质及后台恢复；未替用户重装 |
+| iPhone | `ImageComposerBar` 拍照按钮 → `CameraCaptureView` → 系统内嵌静态拍照/重拍/确认 → `ChatStore.importCameraPhoto` → `ImageLibrary.storeCameraPhoto` → 追加当前草稿；原有发送链处理图片 | 图片存储、旋转、传输缩小和冷加载回归；unsigned Simulator App 编译；隔离模拟器实点权限拒绝、取消返回、相册选图和原草稿保留 | 10-21 已覆盖 0.7.8（40），用户确认后置拍照/重拍/确认/取消四流程，原图与数据保留；详见[装机回执](phone-camera-install-20261021.md)。前后镜头切换、画质和后台恢复另验 |
 | Android | 对话“添加图片”菜单 → 拍照 → `CameraCaptureDialog`/CameraX → `PhotoCaptureDraft` → `Repository.importCameraPhoto` → 追加当前草稿；原有模型图片请求使用传输副本 | JVM 文件所有权回归；隔离 Android 16 模拟相机真实跑两条界面测试：拍照/重拍/确认入库/原件保留、取消清理；0 失败/0 忽略；127 条 JVM、Debug/Release/R8、Lint 与测试 APK 编译 | 实体 Android 镜头/厂商系统后台恢复 |
 
 行为边界：确认前不入库、不发送；只申请相机权限。iPhone 原生控制器负责前后镜头和确认，`request.id + chatID` 拦截取消/切换后的回调；Android 的临时文件状态机拒绝重复确认和过期回调，退出时解绑 CameraX。Android 的模拟器 CI 明确使用 emulated 前后镜头，不读取主机摄像头。
@@ -26,7 +26,7 @@ API 依据：[Apple 原始照片回调](https://developer.apple.com/documentatio
 - 仅用户打开相机时申请相机权限，不附带申请麦克风；确认照片进入当前草稿，手动发送才提交给模型。取消、权限拒绝、切换聊天和延迟回调需要覆盖。
 - 不覆盖原账号、历史图片或聊天，不自行安装或推送。
 
-用户澄清：架构优化的实际目标是降低测试成本，同时希望手机可直接拍照。初始方案基线为 `2ee8da7`。随后用户授权先完成测试降本，再实施双端应用内拍照；实时语音、连续画面解答暂缓。后续用户授权推送并将手机安装留到晚上：`8304aab`、`6fba8db` 已在 `origin/master`；墨尔本 10-21 20:00 单次跟进设备状态，备份后覆盖安装，当前尚未动真机。
+用户澄清：架构优化的实际目标是降低测试成本，同时希望手机可直接拍照。初始方案基线为 `2ee8da7`。随后用户授权先完成测试降本，再实施双端应用内拍照；实时语音、连续画面解答暂缓。后续用户授权推送并将手机安装留到晚上：`8304aab`、`6fba8db` 已在 `origin/master`；墨尔本 10-21 20:00 单次跟进设备状态，备份后已完成原位覆盖与用户真机确认，见[装机回执](phone-camera-install-20261021.md)。
 
 ## 1. 测试成本：初始基线与实施选择
 

@@ -620,3 +620,8 @@
 - `e4e378a` / `a115577`：图片按可信生成位置恢复，修复既有错误登记；兼容任务回看替换展示附件 ID/URL。入口 `savedImages.js`、`imageRecords.js`；消息、原图及文件工具权限不改写。
 - 最终专项 16 HTTP + 2 浏览器、关联 982 项及完整发布 4356 JS / 35 Swift、安装/启动/浏览器全绿。原生旧图实点、原尺寸、NSSavePanel 保存与冷启动再开均通过；1289 × 1221、2,090,093 字节，副本与原件 SHA 相同。
 - 37 份基线文件无缺失，原图/账号/聊天线程字节不变，仅状态版本变化；[专项回执](../issue-4-legacy-preview-20261020.md)。按用户授权推送关闭 #4，其他线程 11 行文档 WIP 保留，不运行 git pp。此前纯文本完成状态提示不在本次范围。
+
+### 2026-10-21 — melo主线（Codex）— 测试降本后实施应用内拍照
+- 用户授权先降测试成本，再做双端应用内拍照；实时语音/连续画面解答暂缓。`test-impact.js` 保留整组 UI 与依赖闭包；`ci-test-plan.js` 让三个工作流先计划再准备重型环境；`test-stage-runner.js` 保留完整日志并缩短终端输出；Android 日常保留 JVM/Lint/Debug，核心/构建与 CI 保留 Release/R8。
+- 工具专项 25/25、完整日常校准通过（JS 阶段 4421/4421、37 Swift、两组浏览器、Android 检查，209.6 秒）。Android 随后确认只重跑 JVM 测试、复用编译；代表 UI 选组 103→26、98→40、80→22，未删测试。证据 `.tmp/test-cost-camera-20261021/`；[方案与验收](../test-cost-camera-plan-20261021.md)、[检测规则](../testing-workflow.md)。
+- 测试降本 `8304aab` 与相机 `6fba8db` 已按用户新指令推送 `origin/master`，远端 SHA 回读一致；GitHub CI 结果另核，已有证据为本地重放与组合回归。相机通过 `CameraCaptureView.swift` / Android `camera/` 接入草稿，iPhone 图片原件/方向/副本回归和编译通过；Android 127 JVM、Lint/Debug/Release、2 条模拟相机界面测试通过。iPhone 隔离模拟器实点权限拒绝、返回、相册选图及草稿保留。最终组合回归通过：4421 JS、37 Swift、两组浏览器及 Android 检查，9 阶段均 exit 0（1061.1 秒，`.tmp/test-runs/run-s8QN1n/report.json`）；用户要求手机安装留到晚上，已设 10-21 20:00（墨尔本）单次跟进；先核对连接与解锁、备份账号/聊天/图片后覆盖安装。20:13 晚间跟进：实体 iPhone 只有配对记录，`devicectl device info details` 明确返回无法建立连接（Device State: unavailable）；已提醒连接数据线并解锁，停在备份前，未安装或改动手机。证据 `.tmp/camera-phone-install-20261021/device-details.json`；等待用户回复后继续，不轮询。真机镜头与后台恢复待验。账号、历史图片及他线程 WIP 保留。
