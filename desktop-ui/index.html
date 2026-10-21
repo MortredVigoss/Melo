@@ -27,6 +27,7 @@
     <link rel="stylesheet" href="/settingsEdit.css" />
     <link rel="stylesheet" href="/features/agents/agentSettings.css" />
     <link rel="stylesheet" href="/surfaceUnify.css" />
+    <link rel="stylesheet" href="/galaxyBackdrop.css" />
     <!-- Importmap so the Demon 3D renderer can say `import * as THREE from 'three'`
          and `import { OrbitControls } from 'three/addons/controls/OrbitControls.js'`
          without a bundler. The server serves these from node_modules under
@@ -43,6 +44,7 @@
   <body>
     <div id="app"></div>
     <script src="/launchScreen.js"></script>
+    <script type="module" src="/galaxyBackdrop.js"></script>
     <script type="module" src="/app.js" onerror="window.MeloLaunch?.show({phase:'error',detail:'界面资源未能载入，请重新打开 Melo。'})"></script>
   </body>
 </html>

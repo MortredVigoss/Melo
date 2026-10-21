@@ -22,7 +22,7 @@
       "tooling"
     ],
     "graph": {
-      "modules": 619,
+      "modules": 620,
       "edges": 1890,
       "roots": [
         "src",
@@ -36,7 +36,7 @@
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
-      "detected": 29,
+      "detected": 30,
       "unannotated": []
     }
   },
@@ -3449,7 +3449,7 @@
         "assets/**"
       ],
       "modules": {
-        "desktop-ui": 23,
+        "desktop-ui": 24,
         "src": 2
       },
       "entryModules": [
@@ -3569,6 +3569,8 @@
         "desktop-ui/emerald.css",
         "desktop-ui/features/featureContext.js",
         "desktop-ui/features/registry.js",
+        "desktop-ui/galaxyBackdrop.css",
+        "desktop-ui/galaxyBackdrop.js",
         "desktop-ui/i18n.js",
         "desktop-ui/index.html",
         "desktop-ui/launchScreen.css",
@@ -3620,6 +3622,8 @@
           "desktop-ui/committedSave.browser.test.js",
           "desktop-ui/committedSave.test.js",
           "desktop-ui/features/registry.test.js",
+          "desktop-ui/galaxyBackdrop.browser.test.js",
+          "desktop-ui/galaxyBackdrop.test.js",
           "desktop-ui/i18n.test.js",
           "desktop-ui/i18nCoverage.test.js",
           "desktop-ui/launchScreen.test.js",
@@ -3646,6 +3650,7 @@
         "source-tests-app-dispatch-freeze",
         "source-tests-app-js",
         "source-tests-cross-module",
+        "source-tests-galaxy-backdrop",
         "source-tests-index-html",
         "source-tests-self"
       ],
@@ -4615,6 +4620,9 @@
     {
       "feature": "desktop-shell",
       "desktop": [
+        "desktop-ui/galaxyBackdrop.js",
+        "desktop-ui/galaxyBackdrop.css",
+        "desktop-ui/galaxyBackdrop.test.js",
         "desktop-ui/neuralScene.js",
         "desktop-ui/neuralScene3D.js",
         "desktop-ui/executionPanel.js"
@@ -5105,6 +5113,21 @@
         "platform",
         "settings",
         "voice"
+      ]
+    },
+    {
+      "id": "source-tests-galaxy-backdrop",
+      "kind": "source-reading-test",
+      "reads": [
+        "desktop-ui/galaxyBackdrop.css",
+        "desktop-ui/index.html"
+      ],
+      "tests": [
+        "desktop-ui/galaxyBackdrop.test.js"
+      ],
+      "note": "工作面板星空背景：样式在 surfaceUnify.css 之后载入、装饰层不拦截点击；转动与静态模式由 galaxyBackdrop.browser.test.js 在真实页面验证",
+      "features": [
+        "desktop-shell"
       ]
     },
     {
