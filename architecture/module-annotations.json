@@ -721,6 +721,9 @@
     {
       "feature": "desktop-shell",
       "desktop": [
+        "desktop-ui/galaxyBackdrop.js",
+        "desktop-ui/galaxyBackdrop.css",
+        "desktop-ui/galaxyBackdrop.test.js",
         "desktop-ui/neuralScene.js",
         "desktop-ui/neuralScene3D.js",
         "desktop-ui/executionPanel.js"
@@ -997,6 +1000,18 @@
         "src/server.js"
       ],
       "note": "页面 import '/shared/*.js' 由 src/server.js 的路由映射到后端源码；这些后端模块必须保持浏览器可运行（无 node: 依赖）"
+    },
+    {
+      "id": "source-tests-galaxy-backdrop",
+      "kind": "source-reading-test",
+      "reads": [
+        "desktop-ui/galaxyBackdrop.css",
+        "desktop-ui/index.html"
+      ],
+      "tests": [
+        "desktop-ui/galaxyBackdrop.test.js"
+      ],
+      "note": "工作面板星空背景：样式在 surfaceUnify.css 之后载入、装饰层不拦截点击；转动与静态模式由 galaxyBackdrop.browser.test.js 在真实页面验证"
     },
     {
       "id": "source-tests-app-js",
