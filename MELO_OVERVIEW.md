@@ -27,7 +27,7 @@
 | 工具、MCP 与网页 | 免费 MCP 默认启动 `f3dba1a`；连接器 / MCP / 会话授权 / 技能管理 `7ae2292`；手机系统数据工具 `2e47868`（默认全关）；两端网页打开与截图（10-18） | [MCP 启动](docs/mcp-startup-20261015.md)、[手机系统数据](docs/ios-device-data-20261016.md)；实体数据调用与真机 WKWebView 待验 |
 | 搜索路由 | 自然餐饮/住宿/产品推荐与相关追问进入搜索；禁止联网、引用、闲聊、本地/App 边界保留，按当前能力说明不可用 | [#3 实施](docs/github-issues-implementation-20261020.md)；受控 HTTP 测试，真实供应商另验 |
 | 图片、视频与附件 | 10-21 双端已接应用内拍照、确认进入草稿、原件与传输副本分开；[实现与验收](docs/test-cost-camera-plan-20261021.md)，实时会话暂缓；iPhone 后置拍照四流程已由用户真机确认，见[装机回执](docs/phone-camera-install-20261021.md)。桌面/手机请求 `quality: high`，10-15 单次实测 Codex 服务回报 low；手机图片链与保存防重复已接生产入口；多图逐张、2K/4K、视频抽帧已合入主线 | 10-20 #4 二次修复旧工作区归属与回看图片引用；原生预览/原尺寸/保存/冷启动重开均通过，原件 SHA 不变；[修复回执](docs/issue-4-legacy-preview-20261020.md)、[实施证据](docs/github-issues-implementation-20261020.md)；见[图片承载计划](docs/image-capacity-plan-20261015.md)；[图片体验](docs/image-ux-20261016.md)、[多图与视频](docs/image-video-plan-20261016.md)；真实账号画质待验 |
-| 语音 | TTS 路由与停止修复（10-17 审计）；手机朗读要点化并按回复语种选声（10-18） | [审计与实施状态](docs/architecture-agent-context-audit-20261017.md)；真机朗读待验 |
+| 语音 | TTS 路由与停止修复（10-17 审计）；手机朗读要点化并按回复语种选声（10-18）；桌面朗读按 Agent 卡片模式 / 音色 / 风格，已知 Agent 默认概要（10-22） | [审计与实施状态](docs/architecture-agent-context-audit-20261017.md)；真机朗读待验 |
 | 授权、审批与任务 | #1 审批期间持有文件身份，阻止 inode 复用（`47da231` 已推送，[实施](docs/github-issues-implementation-20261020.md)）； 模型 / 工具 / 授权共用截止与取消，超时后迟到批准零写入（A2）；手机权限首次迁移与撤销修正 `85c51f7`；桌面审批界面样式在 `desktop-ui/features/approvals/approvals.css`（工具/文件审批 JS 仍在 app.js，P2c）；能力请求卡片与「临时授权」列表在 `desktop-ui/features/approvals/`（10-20）；手机卡片进 `ChatStore` 审批队列，账本与判定在 `ios/Melo/CapabilityElevation{,Runtime,Views}.swift`（10-20） | [A2 回执](docs/mobile-desktop-alignment.md)、[手机权限](docs/phone-permission-fix-20261016.md) |
 | 桌面壳与界面 | 当前安装源码 `897b77a`，原生启动与数据保留通过；神经总览 `22bcd1b`；双端低饱和黑金 M 图标；10-15 记录的阅读 / 预览 / 文件 WIP 已于 10-17 收入 `8cd3eff`；10-20 桌面工作面统一（`surfaceUnify.css` 最后载入：间距、13px 基准字号、控件、工作面不透明度、去旧绿色），手机未动、知识青灰身份色待用户决定 | [10-20 统一](docs/ui-unify-20261020.md)、[双端安装](docs/dual-reinstall-20261019.md)、[银河与留白](docs/galaxy-clarity-20261016.md)、[图标](docs/design/logo-muted-20261016/README.md)；`desktop-ui/app.js` 仍是中央入口（导航、组合、render() 保护、设置 / 资料 / 审批 / TTS 等页面）；记忆 / 项目页（P2a）、Agent 设置（P2b）、聊天（P2c）已拆到 `desktop-ui/features/` |
 | 桌面宠物 | 10-22 并入 `Melo.app`（方案 C）：`desktop-pet/` 独立包、仓库外媒体钉哈希、`DesktopPet.swift` 启停、系统设置「桌面宠物」开关与真实状态；真包冷启动 / 对话 / 开关 / 退出联动已验 | [并入文档](docs/desktop-pet-integration-20261022.md)、[桌宠说明](desktop-pet/README.md)；素材生产线仍在 `/Users/mortred/Documents/New project/desktop-pet` |
@@ -59,6 +59,12 @@
 基础设施另列 `platform`（`src/state/`、`src/runtime/`、`src/http/` 传输）、`channels`（已归档渠道）、`tooling`（脚本与 gate）。
 
 ## 4. 最新交接
+
+### 2026-10-22 — Melo 主线（Claude）— 桌面与手机对齐：Agent 语音风格、本机定位开关、翻译门禁
+- 线程 ID：e02f4818；状态：已提交并合入 master（`1b01739` / `691b628` / 进度 `ce8399d`），已推送 origin/master；桌宠线程 `c7ccbd7`–`ae43446` 同批推送。
+- 行为：桌面朗读 旧=只念全文 → 新=按 Agent 卡片模式 / 音色 / 风格（概要：整段到齐后 `/api/tts/voice-text` 提炼再念；全文：逐句流式；关闭：不自动念），已知 Agent 默认概要；定位 旧=逐次弹窗 → 新=Agent 页「这台电脑上」设备本地开关，默认关、不同步（`localPreferences.agentDevice`），保存失败勾选回退；权限弹窗中文按钮、联网搜索设置走共享编辑条、手机 Agent 页字段名改中文、翻译门禁 `desktop-ui/i18nCoverage.test.js`（ui 模板未翻译中文直接红灯）。跨端：手机不变，本机开关与「这台手机上」同义。
+- 验证：完整日常（JS 4506、两组设置浏览器、Swift 37）GREEN；两遍满负载各 7 个服务启动超时隔离复测全过；桌宠皮肤测试需主检出的非 Git 资产（主检出 7/7）；证据 `.tmp/ui-consistency-20261022/.tmp/test-runs/run-jTYqLR`、`run-Raez5K`、`run-gwQwms`。
+- 未完 / 下一步：用户 22:00 手机覆盖安装（Xcode）并自测定位；桌面端由主线从 master 重装；安卓桌宠 PR #16 CI 红（功能地图未重新生成）未合；配置：桌面自动朗读默认改为概要，无数据 / 凭证影响。
 
 ### 2026-10-22 — 桌宠并入 Melo 安装包（方案 C）：Melo 管理启停，系统设置加「桌面宠物」开关
 - 桌宠代码（控制进程、Melo 桥接、对话窗口、原版 host 适配、测试、`PC2005-cloud/dsh-pet` v0.3.7 全部源码与 MIT 许可）进入仓库 `desktop-pet/`（独立 CommonJS 包，`package.json` 钉 Electron 37.10.3）。大文件不入 Git：金冬天 WebM、关键帧审计与大肥鱼原版 WebM 放仓库旁 `../desktop-pet-assets`，`npm run import:pet-skin` 校验后导入并链接，`skins/winter/manifest.json` + `assets.lock.json` 钉住哈希（本次 `winter-106-12keys-sr-flow-fe6cf9b45399`，皮肤包重建后再跑一次导入即可）。Git LFS 未安装，按任务备选方案处理。
