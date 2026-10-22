@@ -5,3 +5,5 @@ local.properties
 *.jks
 *.keystore
 captures/
+# Desktop pet media is fetched from the release bundle recorded in app/src/main/assets/pet/catalog.json
+app/src/main/assets/pet/skins/

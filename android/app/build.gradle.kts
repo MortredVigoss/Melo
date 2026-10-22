@@ -1,4 +1,9 @@
+import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
 import java.security.MessageDigest
+import java.util.zip.ZipInputStream
 
 plugins {
     id("com.android.application")
@@ -14,8 +19,8 @@ android {
         applicationId = "com.melo.android"
         minSdk = 28
         targetSdk = 36
-        versionCode = 16
-        versionName = "0.7.1"
+        versionCode = 17
+        versionName = "0.8.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true; buildConfig = true }
@@ -61,6 +66,68 @@ abstract class PrepareSharedAssets : DefaultTask() {
         coreInput.get().asFile.copyRecursively(outputDirectory.dir("agent-core").get().asFile, overwrite = true)
     }
 }
+/**
+ * Desktop-pet media (VP9+alpha WebM skins) never enters Git. The committed
+ * catalog.json lists every file with its SHA-256 and the GitHub Release bundle
+ * that carries them; this task verifies the ignored skins directory and fetches
+ * the bundle when files are missing or stale, so CI and fresh clones build the
+ * same APK as the machine that ran android/scripts/import-pet-skins.mjs.
+ */
+abstract class PreparePetAssets : DefaultTask() {
+    @get:InputFile abstract val catalog: RegularFileProperty
+    @get:Internal abstract val assetsDirectory: DirectoryProperty
+    @get:Internal abstract val downloadDirectory: DirectoryProperty
+    @get:OutputFile abstract val stamp: RegularFileProperty
+    @TaskAction fun prepare() {
+        val root = assetsDirectory.get().asFile
+        @Suppress("UNCHECKED_CAST") val parsed = groovy.json.JsonSlurper().parse(catalog.get().asFile) as Map<String, Any?>
+        @Suppress("UNCHECKED_CAST") val skins = parsed["skins"] as Map<String, Map<String, Any?>>
+        val files = skins.values.flatMap { skin -> @Suppress("UNCHECKED_CAST") (skin["clips"] as Map<String, Map<String, Any?>>).values.map { Triple(it["file"] as String, it["sha256"] as String, (it["bytes"] as Number).toLong()) } }
+        require(files.isNotEmpty()) { "pet catalog lists no media" }
+        fun stale() = files.filter { (file, sha, bytes) -> val target = root.resolve(file); !target.isFile || target.length() != bytes || sha256(target) != sha }.map { it.first }
+        var missing = stale()
+        if (missing.isNotEmpty()) {
+            @Suppress("UNCHECKED_CAST") val bundle = parsed["bundle"] as Map<String, Any?>
+            val url = bundle["url"] as? String ?: ""
+            require(url.startsWith("https://")) { "${missing.size} pet media file(s) are missing or stale under $root and catalog.json records no bundle URL. Run `node android/scripts/import-pet-skins.mjs import` where the desktop-pet source exists, then `bundle --tag <tag>` and publish the release (android/README.md → 桌宠)." }
+            val zip = downloadDirectory.get().asFile.resolve(bundle["file"] as String).apply { parentFile.mkdirs() }
+            if (!zip.isFile || sha256(zip) != bundle["sha256"]) {
+                logger.lifecycle("Downloading pet media bundle ${bundle["file"]} (${(bundle["bytes"] as Number).toLong() / 1048576} MiB) from $url")
+                val client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build()
+                val response = client.send(HttpRequest.newBuilder(URI(url)).GET().build(), HttpResponse.BodyHandlers.ofFile(zip.toPath()))
+                require(response.statusCode() == 200) { "Pet media bundle download failed: HTTP ${response.statusCode()} for $url" }
+                require(sha256(zip) == bundle["sha256"]) { "Pet media bundle sha256 mismatch for $url" }
+            }
+            ZipInputStream(zip.inputStream().buffered()).use { input ->
+                while (true) {
+                    val entry = input.nextEntry ?: break
+                    if (entry.isDirectory || !entry.name.startsWith("skins/")) continue
+                    val target = root.resolve(entry.name).canonicalFile
+                    require(target.toPath().startsWith(root.canonicalFile.toPath())) { "Unsafe zip entry ${entry.name}" }
+                    target.parentFile.mkdirs()
+                    target.outputStream().use { input.copyTo(it) }
+                }
+            }
+            missing = stale()
+            require(missing.isEmpty()) { "Pet media still differs from catalog.json after fetching the bundle: ${missing.take(5)}" }
+        }
+        stamp.get().asFile.apply { parentFile.mkdirs(); writeText(files.joinToString("\n") { "${it.first} ${it.second}" } + "\n") }
+    }
+    private fun sha256(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().buffered().use { input -> val buffer = ByteArray(1 shl 16); while (true) { val read = input.read(buffer); if (read < 0) break; digest.update(buffer, 0, read) } }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+}
+val petAssets = tasks.register<PreparePetAssets>("preparePetAssets") {
+    catalog.set(layout.projectDirectory.file("src/main/assets/pet/catalog.json"))
+    assetsDirectory.set(layout.projectDirectory.dir("src/main/assets/pet"))
+    downloadDirectory.set(layout.buildDirectory.dir("pet-assets"))
+    stamp.set(layout.buildDirectory.file("pet-assets/verified.txt"))
+    outputs.upToDateWhen { false }
+}
+tasks.named("preBuild") { dependsOn(petAssets) }
+
 val sharedAssets = tasks.register<PrepareSharedAssets>("prepareSharedAssets") {
     sceneInput.set(layout.projectDirectory.dir("../../ios/Melo/Scene"))
     schemaInput.set(layout.projectDirectory.file("../../shared/protocol/sync.schema.json"))

@@ -37,6 +37,7 @@ import com.melo.android.chat.*
 import com.melo.android.camera.CameraCaptureDialog
 import com.melo.android.data.*
 import com.melo.android.device.*
+import com.melo.android.pet.*
 import com.melo.android.ui.*
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.*
@@ -44,26 +45,36 @@ import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     private var chatRequest by mutableStateOf<Pair<String, Int>?>(null)
+    private var pageRequest by mutableStateOf<Pair<String, Int>?>(null)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); enableEdgeToEdge(statusBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT), navigationBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
         readChatRequest(intent)
-        setContent { MeloTheme { MeloApp(requestedChat = chatRequest) } }
+        setContent { MeloTheme { MeloApp(requestedChat = chatRequest, requestedPage = pageRequest) } }
     }
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); readChatRequest(intent) }
-    private fun readChatRequest(intent: Intent) { chatRequest = intent.getStringExtra("melo_chat_id")?.let { it to ((chatRequest?.second ?: 0) + 1) } }
+    override fun onResume() {
+        super.onResume()
+        // The pet stays enabled across process restarts; bring it back from the foreground where starting a service is always allowed.
+        val pet = (application as MeloApplication).petPreferences.value
+        if (pet.enabled && PetOverlayService.canDraw(this) && !PetOverlayService.state.value.attached) runCatching { PetOverlayService.start(this) }
+    }
+    private fun readChatRequest(intent: Intent) {
+        chatRequest = intent.getStringExtra("melo_chat_id")?.let { it to ((chatRequest?.second ?: 0) + 1) }
+        pageRequest = intent.getStringExtra("melo_page")?.let { it to ((pageRequest?.second ?: 0) + 1) }
+    }
 }
 class MeloViewModel(application: Application) : AndroidViewModel(application) {
     val engine = (application as MeloApplication).engine
     val repository = engine.repository
 }
 
-private enum class Page { Home, Chats, Agents, Workspace, Settings, Tasks, Device }
+private enum class Page { Home, Chats, Agents, Workspace, Settings, Tasks, Device, Pet }
 private data class NavItem(val page: Page, val label: String, val icon: ImageVector)
 private val navigation = listOf(NavItem(Page.Home, "中枢", Icons.Outlined.Hub), NavItem(Page.Chats, "对话", Icons.AutoMirrored.Outlined.Chat), NavItem(Page.Agents, "角色", Icons.Outlined.PersonOutline), NavItem(Page.Workspace, "资料", Icons.Outlined.FolderOpen), NavItem(Page.Settings, "系统", Icons.Outlined.Tune))
 private data class ChatTimelineItem(val id: String, val at: String, val message: Message? = null, val device: DeviceRun? = null, val run: RunRecord? = null)
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable fun MeloApp(vm: MeloViewModel = viewModel(), requestedChat: Pair<String, Int>? = null) {
+@Composable fun MeloApp(vm: MeloViewModel = viewModel(), requestedChat: Pair<String, Int>? = null, requestedPage: Pair<String, Int>? = null) {
     val data by vm.repository.data.collectAsStateWithLifecycle()
     val runtime by vm.engine.runtime.collectAsStateWithLifecycle()
     val deviceAgent = (LocalContext.current.applicationContext as MeloApplication).deviceAgent
@@ -77,11 +88,12 @@ private data class ChatTimelineItem(val id: String, val at: String, val message:
         val target = requestedChat?.first
         if (runtime.initialized && target != null && data.chats.any { it.id == target }) { chatId = target; pageName = Page.Chats.name; showHistory = false; executionChat = null }
     }
+    LaunchedEffect(requestedPage) { if (requestedPage?.first == "pet") { pageName = Page.Pet.name; executionChat = null } }
     val context = LocalContext.current
     val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     fun newChat(agentId: String = "main", projectId: String? = null) { vm.engine.work { chatId = vm.repository.newChat(agentId, projectId); pageName = Page.Chats.name; showHistory = false } }
     BackHandler(enabled = page != Page.Home || executionChat != null || showHistory) {
-        when { executionChat != null -> executionChat = null; showHistory -> showHistory = false; else -> pageName = Page.Home.name }
+        when { executionChat != null -> executionChat = null; showHistory -> showHistory = false; page == Page.Pet -> pageName = Page.Settings.name; else -> pageName = Page.Home.name }
     }
     val keyboard = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     val expanded = LocalConfiguration.current.screenWidthDp >= 600
@@ -95,9 +107,9 @@ private data class ChatTimelineItem(val id: String, val at: String, val message:
             navigation.forEach { item -> NavigationBarItem(selected = page == item.page, onClick = { pageName = item.page.name }, icon = { Icon(item.icon, null) }, label = { Text(item.label) }) }
         } },
         topBar = { if (page != Page.Home) TopAppBar(title = { Text(if (executionChat != null) "任务空间" else when (page) {
-            Page.Chats -> data.chats.find { it.id == chatId }?.title ?: "对话"; Page.Agents -> "角色"; Page.Workspace -> "工作区"; Page.Settings -> "系统"; Page.Tasks -> "任务与执行"; Page.Device -> "手机助手"; else -> "Melo"
+            Page.Chats -> data.chats.find { it.id == chatId }?.title ?: "对话"; Page.Agents -> "角色"; Page.Workspace -> "工作区"; Page.Settings -> "系统"; Page.Tasks -> "任务与执行"; Page.Device -> "手机助手"; Page.Pet -> "桌宠"; else -> "Melo"
         }, maxLines = 1) }, colors = TopAppBarDefaults.topAppBarColors(containerColor = MeloBackground), navigationIcon = {
-            IconButton(onClick = { if (executionChat != null) executionChat = null else if (page == Page.Chats) showHistory = !showHistory else pageName = Page.Home.name }) {
+            IconButton(onClick = { if (executionChat != null) executionChat = null else if (page == Page.Chats) showHistory = !showHistory else pageName = if (page == Page.Pet) Page.Settings.name else Page.Home.name }) {
                 Icon(if (page == Page.Chats && executionChat == null) Icons.Outlined.History else Icons.AutoMirrored.Outlined.ArrowBack, "返回或历史")
             }
         }, actions = { if (page == Page.Chats) { IconButton(onClick = { newChat() }) { Icon(Icons.Outlined.Add, "新对话") }; IconButton(onClick = { executionChat = chatId }) { Icon(Icons.Outlined.Hub, "任务空间") } } }) }
@@ -119,8 +131,9 @@ private data class ChatTimelineItem(val id: String, val at: String, val message:
                     }
                     Page.Agents -> AgentsScreen(data, vm, onChat = { newChat(it) })
                     Page.Workspace -> WorkspaceScreen(data, vm, onChat = { newChat(projectId = it) })
-                    Page.Settings -> SettingsScreen(data, runtime, vm) { pageName = Page.Device.name }
+                    Page.Settings -> SettingsScreen(data, runtime, vm, onPhoneSettings = { pageName = Page.Device.name }, onPetSettings = { pageName = Page.Pet.name })
                     Page.Device -> DeviceAgentScreen(data)
+                    Page.Pet -> PetSettingsScreen(data, onChat = { chatId = it; pageName = Page.Chats.name; showHistory = false; executionChat = null })
                     Page.Tasks -> TasksScreen(data, vm, onChat = { chatId = it; pageName = Page.Chats.name }, onExecution = { executionChat = it })
                 }
                 runtime.error?.let { message -> AlertDialog(onDismissRequest = vm.engine::dismissError, title = { Text("未完成") }, text = { Text(message) }, confirmButton = { TextButton(onClick = vm.engine::dismissError) { Text("知道了") } }) }

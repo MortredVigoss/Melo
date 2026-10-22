@@ -1,0 +1,3430 @@
+{
+ "version": 1,
+ "generatedAt": "2026-10-22T05:37:14.219Z",
+ "stage": {
+  "width": 480,
+  "height": 270
+ },
+ "encode": {
+  "codec": "libvpx-vp9",
+  "pixelFormat": "yuva420p",
+  "crf": 32
+ },
+ "actionCount": 106,
+ "animations": {
+  "idle": [
+   "待机呼吸休闲"
+  ],
+  "turn": [
+   "东张西望"
+  ],
+  "drag": [
+   "被鼠标拖拽悬空反馈"
+  ],
+  "clicks": [
+   "点击回应-开心跃动",
+   "点击回应-害羞惊讶",
+   "点击回应-傲娇生气",
+   "点击回应-挠痒咯咯笑",
+   "点击回应-元气挥手"
+  ],
+  "moves": {
+   "default": {
+    "minDist": 60,
+    "maxDist": 240,
+    "margin": 20,
+    "leadSec": 2,
+    "tailSec": 2
+   },
+   "actions": [
+    {
+     "name": "螃蟹走路"
+    },
+    {
+     "name": "原地漂浮踏步",
+     "params": {
+      "minDist": 40,
+      "maxDist": 120
+     }
+    },
+    {
+     "name": "原地左转奔跑",
+     "params": {
+      "minDist": 120,
+      "maxDist": 320,
+      "leadSec": 1.75,
+      "tailSec": 4.8
+     }
+    }
+   ]
+  },
+  "categories": [
+   {
+    "id": "小动作",
+    "weight": 20,
+    "actions": [
+     "悠闲哼歌",
+     "超大伸懒腰",
+     "原地敲击桌面互动",
+     "原地重力下蹲压缩",
+     "哈欠连天",
+     "原地小憩沉眠",
+     "女仆屈膝礼仪",
+     "被吓一跳",
+     "小幅度原地360度旋转展示",
+     "偷吃零食被抓住",
+     "用鲸鱼尾巴拍打地面",
+     "打瞌睡被惊醒",
+     "照镜子",
+     "整体换装试色",
+     "轻快记录",
+     "写代码",
+     "摇扇纳凉",
+     "晨间刷牙"
+    ]
+   },
+   {
+    "id": "玩耍",
+    "weight": 20,
+    "actions": [
+     "原地专心玩魔方",
+     "原地蹲下玩玩具汽车",
+     "鲸鱼吐泡泡特效",
+     "原地跳跃抓碎头顶物品",
+     "玩游戏气急败坏",
+     "玩水枪",
+     "小提琴演奏",
+     "蓝鲸现世",
+     "优雅女仆舞",
+     "轻快摇摆舞",
+     "可爱宅舞",
+     "吹气球",
+     "动物环绕",
+     "放风筝",
+     "拆礼物",
+     "变鸽子",
+     "扑克魔术",
+     "抽陀螺",
+     "吹笛子",
+     "蝴蝶蜜蜂环绕头顶开花",
+     "撸猫",
+     "凭空生花",
+     "骑木马",
+     "三球抛接",
+     "踢毽子",
+     "下五子棋",
+     "荡秋千"
+    ]
+   },
+   {
+    "id": "吃什么",
+    "weight": 16,
+    "actions": [
+     "吃白饭",
+     "大口吃零食",
+     "吃Token",
+     "吃早餐",
+     "吃午餐",
+     "吃晚餐",
+     "吃冰淇淋融化",
+     "吃大闸蟹",
+     "吃糖葫芦",
+     "吃长寿面",
+     "吃西瓜",
+     "涮火锅"
+    ]
+   },
+   {
+    "id": "时节",
+    "weight": 14,
+    "actions": [
+     "被落叶淹没",
+     "中秋赏月吃月饼",
+     "堆雪人",
+     "放烟花",
+     "吃粽子",
+     "吃年糕",
+     "吃青团",
+     "吃腊八粥",
+     "吃重阳糕",
+     "收红包",
+     "写福字",
+     "穿针乞巧",
+     "舞狮头",
+     "讨糖南瓜灯",
+     "插茱萸赏菊",
+     "放河灯",
+     "萌化小幽灵",
+     "装点圣诞树",
+     "放孔明灯",
+     "吃汤圆",
+     "吃饺子"
+    ]
+   },
+   {
+    "id": "文字",
+    "weight": 10,
+    "noMirror": true,
+    "actions": [
+     "是啊，吃什么",
+     "深度思考碎碎念"
+    ]
+   }
+  ],
+  "events": {
+   "balance": [
+    "余额-钱袋满溢",
+    "余额-金袋叮当",
+    "余额-钱袋如常",
+    "余额-数金皱眉",
+    "余额-袋空如洗",
+    "余额-分文不剩"
+   ],
+   "whisper": [
+    "碎碎念-擦桌碎碎念",
+    "碎碎念-发呆碎碎念",
+    "碎碎念-对屏碎碎念"
+   ],
+   "workStatus": [
+    "工作状态-思考冒泡",
+    "工作状态-忙碌点按",
+    "工作状态-清点归档",
+    "工作状态-原地踱步张望",
+    "工作状态-雀跃庆祝",
+    "工作状态-垂头叹气冒汗"
+   ]
+  }
+ },
+ "workStatusTexts": [
+  [
+   "思考中"
+  ],
+  [
+   "处理中"
+  ],
+  [
+   "继续处理"
+  ],
+  [
+   "等待确认"
+  ],
+  [
+   "已完成"
+  ],
+  [
+   "未完成"
+  ]
+ ],
+ "skins": {
+  "winter": {
+   "id": "winter",
+   "name": "金冬天",
+   "sourceRevision": "winter-106-12keys-sr-flow-fe6cf9b45399",
+   "sourceGeneratedAt": "2026-10-22T04:58:41.250Z",
+   "source": "skins/winter/winter-animation",
+   "license": null,
+   "clipCount": 106,
+   "totalBytes": 78215780,
+   "clips": {
+    "被落叶淹没": {
+     "file": "skins/winter/w001.webm",
+     "sha256": "c8fae038e62a3f25ca3c7ce59d464489361b6e88d44dd6f55b0ed724fed43abf",
+     "bytes": 974638,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 128,
+      "y": 54,
+      "w": 216,
+      "h": 192,
+      "measured": true
+     },
+     "sourceSha256": "06b6dbe8966ebb434c98fbdb49b79d81f31b502760bbdc4fd10142d9d00f1e5e"
+    },
+    "被鼠标拖拽悬空反馈": {
+     "file": "skins/winter/w002.webm",
+     "sha256": "68ba2aa92034e1fda80deb9b86d41a2d716be73adf555e59fc9f00c7d3783e70",
+     "bytes": 727655,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 152,
+      "y": 56,
+      "w": 176,
+      "h": 190,
+      "measured": true
+     },
+     "sourceSha256": "8debdb956348623195609bf46a0708b9097488a0176dd495680fd77814246ada"
+    },
+    "被吓一跳": {
+     "file": "skins/winter/w003.webm",
+     "sha256": "02b26df88bf61de371b59ff7264213fcd32344582e9fef79bb2d41b47527966a",
+     "bytes": 711054,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 150,
+      "y": 44,
+      "w": 182,
+      "h": 198,
+      "measured": true
+     },
+     "sourceSha256": "9c571f852b6bc7cb9144ffff0f58afb75f08973e257808f81ab54b1d87747a63"
+    },
+    "变鸽子": {
+     "file": "skins/winter/w004.webm",
+     "sha256": "0d992977ec10c2a26963587d437e002ed265b9aaeed334aa99c6aaf7b08ba320",
+     "bytes": 812514,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 136,
+      "y": 54,
+      "w": 232,
+      "h": 180,
+      "measured": true
+     },
+     "sourceSha256": "792910aed6318e97a06ae6046cb13e16b110a0034e20bfd6b52bc4780017b72a"
+    },
+    "插茱萸赏菊": {
+     "file": "skins/winter/w005.webm",
+     "sha256": "3369c7edb60e72ef7bd63cd5b6557a29a71c1ebd00193b95225cbd51da12bea6",
+     "bytes": 770772,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 154,
+      "y": 62,
+      "w": 178,
+      "h": 184,
+      "measured": true
+     },
+     "sourceSha256": "d32b180c339d8a0fd7fc451f76e5fdb6b8f021958cbe4e6b742ff74f61b9dc2f"
+    },
+    "拆礼物": {
+     "file": "skins/winter/w006.webm",
+     "sha256": "d67b0236099f624aa6457fe7f94a37970f052eb1cd911d345117d8df16f5af34",
+     "bytes": 728167,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 158,
+      "y": 52,
+      "w": 168,
+      "h": 180,
+      "measured": true
+     },
+     "sourceSha256": "b7dfd57dfed5c61c06fa5d5658bcc64f0d37d469bd68d7cdec7afef028c7d0cc"
+    },
+    "超大伸懒腰": {
+     "file": "skins/winter/w007.webm",
+     "sha256": "68ccca6935f5b20da8df0cc76615c0cb1e99eb82c56febd9d5d2c250b00512ff",
+     "bytes": 937026,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 148,
+      "y": 56,
+      "w": 186,
+      "h": 186,
+      "measured": true
+     },
+     "sourceSha256": "81923a74efb2ed68f34b95b0a1c4d2b0085a62ef070f45ef3977bd8334b3dc4c"
+    },
+    "晨间刷牙": {
+     "file": "skins/winter/w008.webm",
+     "sha256": "cf9f6437bb90344849376749f974904b40c384f6081f61e507e5185041cb65f3",
+     "bytes": 620528,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 160,
+      "y": 60,
+      "w": 164,
+      "h": 186,
+      "measured": true
+     },
+     "sourceSha256": "2fe19ec7d5417859d3b5d096d6096d783f84d25a19416beeb13f0165c0d0e9c0"
+    },
+    "吃白饭": {
+     "file": "skins/winter/w009.webm",
+     "sha256": "d5a57447a3c51b616f1252de1b73eef0e9583db8b3818fa3ded20199395ef436",
+     "bytes": 600195,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 158,
+      "y": 52,
+      "w": 162,
+      "h": 194,
+      "measured": true
+     },
+     "sourceSha256": "2e0e0bfc5fa6bc839ece051aaaa284022c0c2b8f3a3c02c1a32af447af8e1522"
+    },
+    "吃冰淇淋融化": {
+     "file": "skins/winter/w010.webm",
+     "sha256": "3d3d2b708f987d50d6adf9e7617a6fe3754cbb26feee0fc270f73420516a813b",
+     "bytes": 630940,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 158,
+      "y": 54,
+      "w": 166,
+      "h": 192,
+      "measured": true
+     },
+     "sourceSha256": "0d02126e6eaf76f010b918774e8cfede9b82444495ded6dad6dcb604b45154a4"
+    },
+    "吃大闸蟹": {
+     "file": "skins/winter/w011.webm",
+     "sha256": "5c3f6366b3494790ebdbd00ee21010fc15833194699ebc1a0a4fa4fe7e6fc52d",
+     "bytes": 682509,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 156,
+      "y": 52,
+      "w": 168,
+      "h": 192,
+      "measured": true
+     },
+     "sourceSha256": "5dc18b489f5cf485de1fcd0e531fc3b516dc152b5a31619f463c3fd3afc04168"
+    },
+    "吃饺子": {
+     "file": "skins/winter/w012.webm",
+     "sha256": "093741c655d9aa141bea8c5db55c9743d935338275576d178e5a0c91e7bdcdfa",
+     "bytes": 696316,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 158,
+      "y": 48,
+      "w": 166,
+      "h": 196,
+      "measured": true
+     },
+     "sourceSha256": "8c18fa9106f0a26f7affeed62b96f4ff3242f1977cc8f23606924defd5d26f41"
+    },
+    "吃腊八粥": {
+     "file": "skins/winter/w013.webm",
+     "sha256": "feb1da3da970ee29e64252f3e5f564758bbbca68a8d3b65924a1ac44473740a2",
+     "bytes": 620884,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 158,
+      "y": 52,
+      "w": 166,
+      "h": 196,
+      "measured": true
+     },
+     "sourceSha256": "90f424c82355f037b1e75f5b4c371e0ebd719c4726cc03d2e8cf53cc6969df32"
+    },
+    "吃年糕": {
+     "file": "skins/winter/w014.webm",
+     "sha256": "16bc0e3c6fea30adf491aab2655eab51188ab55e240906eaab16c159fb80caa0",
+     "bytes": 618438,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 158,
+      "y": 52,
+      "w": 164,
+      "h": 194,
+      "measured": true
+     },
+     "sourceSha256": "4e098e2f1263be09215fe17082f3f6e561099d8d2580614e0b9b55b64b797a41"
+    },
+    "吃青团": {
+     "file": "skins/winter/w015.webm",
+     "sha256": "64ecb0dccd04b936fb32f923d63151a76db2ae2a65d28e9fe184ea02ac5ba3ff",
+     "bytes": 619658,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 158,
+      "y": 50,
+      "w": 166,
+      "h": 196,
+      "measured": true
+     },
+     "sourceSha256": "474e69528a7b2626c965c896fe0669a7ef52a9440848ad94db95b37db3184a54"
+    },
+    "吃汤圆": {
+     "file": "skins/winter/w016.webm",
+     "sha256": "43ab1d272c4505425cf80b0c36135cee4ab318e880c2d20f39b87b9b7921bd88",
+     "bytes": 649652,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 160,
+      "y": 48,
+      "w": 166,
+      "h": 174,
+      "measured": true
+     },
+     "sourceSha256": "f4733363ae292ed8cc31141fbb2987b0610b287e2e8fb30502c434bc973f545d"
+    },
+    "吃糖葫芦": {
+     "file": "skins/winter/w017.webm",
+     "sha256": "9f72e40e2065e9d91524264140be5f50161ccbef8ba2d7c672772844f23273c0",
+     "bytes": 528601,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 166,
+      "y": 62,
+      "w": 150,
+      "h": 184,
+      "measured": true
+     },
+     "sourceSha256": "c4218f84957dbe7a44aea7cdc147afa04a3358d1660e5f818ab5d8075d1b639d"
+    },
+    "吃晚餐": {
+     "file": "skins/winter/w018.webm",
+     "sha256": "2ecd8941ea18fc6c13d09b5a3aabc28190d62920a3844df0a4f6712f5745b165",
+     "bytes": 695571,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 154,
+      "y": 46,
+      "w": 172,
+      "h": 200,
+      "measured": true
+     },
+     "sourceSha256": "738291718fef3bda2b77d19d326c727fd96657d69942a518340c249742284b26"
+    },
+    "吃午餐": {
+     "file": "skins/winter/w019.webm",
+     "sha256": "ce80c0580ddd1bdeeeafa34e371cf5c99e7f733687fbd29b03935c02255bcde0",
+     "bytes": 660753,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 158,
+      "y": 48,
+      "w": 166,
+      "h": 200,
+      "measured": true
+     },
+     "sourceSha256": "57a36bb27f1fdd28541d71fa37e0032feb558d2b3e23ed891f7879d050d5db82"
+    },
+    "吃西瓜": {
+     "file": "skins/winter/w020.webm",
+     "sha256": "615ea1575e19a71ce5e5dec23b0572d70a0172d55d4703e8dcb20e53bbcfa7a4",
+     "bytes": 510467,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 162,
+      "y": 62,
+      "w": 156,
+      "h": 184,
+      "measured": true
+     },
+     "sourceSha256": "29c798eade1f79b4d2cf6ac7211ce08bb77239182f673d81906eed4f76ea8d38"
+    },
+    "吃早餐": {
+     "file": "skins/winter/w021.webm",
+     "sha256": "ea34e841d915a8c362c45b2bb8b6b524ae6d1b52ea54d1559fa06bf7a7b2d504",
+     "bytes": 658434,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 156,
+      "y": 48,
+      "w": 168,
+      "h": 198,
+      "measured": true
+     },
+     "sourceSha256": "bd485efbb912e47d3f5f794ab46d5b4fc8f3f58896a42f1c6075309cb1375504"
+    },
+    "吃长寿面": {
+     "file": "skins/winter/w022.webm",
+     "sha256": "02e2925e189bd04a8cf7692526e8c961308fe22dd7afefcf8ada9e28baf8adc7",
+     "bytes": 563633,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 164,
+      "y": 64,
+      "w": 152,
+      "h": 182,
+      "measured": true
+     },
+     "sourceSha256": "6cefc9e6d487419181afd7e19bf57339e401936262ad33d876472941516b496b"
+    },
+    "吃重阳糕": {
+     "file": "skins/winter/w023.webm",
+     "sha256": "d2fa96b0505109a8bf50f59af5391576859b2d89f628697b769d0269d0dbe2e1",
+     "bytes": 603147,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 158,
+      "y": 52,
+      "w": 164,
+      "h": 194,
+      "measured": true
+     },
+     "sourceSha256": "cdc735d61302edbbb07a92c6e0799d0353776d8fbf7eb632f90a01b5b9521971"
+    },
+    "吃粽子": {
+     "file": "skins/winter/w024.webm",
+     "sha256": "39e80d2b7d0b7bd90ee333b07b318fc8084ed3a74eb9df8977ca7557253c8140",
+     "bytes": 631079,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 156,
+      "y": 46,
+      "w": 168,
+      "h": 200,
+      "measured": true
+     },
+     "sourceSha256": "024d52787943de5f49934bfd066b60a2577ea3ea89bf891deb662d51ea8e9704"
+    },
+    "吃Token": {
+     "file": "skins/winter/w025.webm",
+     "sha256": "3a84b78c165d8853dc3d179441424992b742340a428da4d66331b274929989ad",
+     "bytes": 666471,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 156,
+      "y": 50,
+      "w": 168,
+      "h": 196,
+      "measured": true
+     },
+     "sourceSha256": "8660efccdbc2791dfc3cd64b0e10639c286b381394093c5895ceacb4b9ac8a10"
+    },
+    "抽陀螺": {
+     "file": "skins/winter/w026.webm",
+     "sha256": "4afc460acfbbf0c74f3d66d7f10c99e1ad18d5435145fb5e17f2e4478f3171bd",
+     "bytes": 766116,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 138,
+      "y": 58,
+      "w": 188,
+      "h": 172,
+      "measured": true
+     },
+     "sourceSha256": "2143eaa7ff9332f3cb64bd9ddee66c55fbde6550257aa16b8a6d971c399c29ac"
+    },
+    "穿针乞巧": {
+     "file": "skins/winter/w027.webm",
+     "sha256": "bf4c0f121a6021cf688331f57674a9e59a7bfd3181880a9a4b47378a99875817",
+     "bytes": 630668,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 158,
+      "y": 44,
+      "w": 166,
+      "h": 194,
+      "measured": true
+     },
+     "sourceSha256": "2bd440086f8952388b4d34963a3aba863cdad75393c30755726b42ab48f3cb6c"
+    },
+    "吹笛子": {
+     "file": "skins/winter/w028.webm",
+     "sha256": "7e7026b6e2371e96ae23437eb52fe2b4d61559b1f84ade1195e09bdc5fac0ba9",
+     "bytes": 907973,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 132,
+      "y": 42,
+      "w": 234,
+      "h": 182,
+      "measured": true
+     },
+     "sourceSha256": "1c3aac2da8cbd923b47e25f4ca286a8c004d22cca7ffe77588b043cc98855ac6"
+    },
+    "吹气球": {
+     "file": "skins/winter/w029.webm",
+     "sha256": "e8dcd536523c92826326a08dfb52fafd8f11d61de7faf1e8d150ed008633a703",
+     "bytes": 651069,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 160,
+      "y": 68,
+      "w": 166,
+      "h": 178,
+      "measured": true
+     },
+     "sourceSha256": "a0bf52d191cdbad42a565b910c82b16e1c753c0974f49998fb4c4f773d81fbea"
+    },
+    "打瞌睡被惊醒": {
+     "file": "skins/winter/w030.webm",
+     "sha256": "34b519cc4925a64feacfe632224eb833ac79d810ea7fbf55e604b38747428369",
+     "bytes": 617597,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 154,
+      "y": 52,
+      "w": 174,
+      "h": 188,
+      "measured": true
+     },
+     "sourceSha256": "bf3543945875be54065fe71dfc01ca67fe856abd2cc1d55ce3b15e2ce896eefd"
+    },
+    "大口吃零食": {
+     "file": "skins/winter/w031.webm",
+     "sha256": "32f8e6860cb7aa6a2de94b28f7b3393cbf6e0adbb8a9df2089d2a56a3bcce261",
+     "bytes": 648556,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 156,
+      "y": 54,
+      "w": 168,
+      "h": 192,
+      "measured": true
+     },
+     "sourceSha256": "4c0036cdea2c33a5e74d77a6966b25ee3d0411da8d32433aa34986a1cb8774cf"
+    },
+    "待机呼吸休闲": {
+     "file": "skins/winter/w032.webm",
+     "sha256": "ab6699c10d55d13285502369e5ae44b13aee03eac2c48b3b87b50085a0c62ccb",
+     "bytes": 292008,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 162,
+      "y": 56,
+      "w": 158,
+      "h": 190,
+      "measured": true
+     },
+     "sourceSha256": "f61db37ffe5aba332e6170e623cb020a38ed857bc129f83d6fb7df54a40dfa40"
+    },
+    "荡秋千": {
+     "file": "skins/winter/w033.webm",
+     "sha256": "f67907b0ef6ea9e037205967cc744a76a1b93285d045c19bc98f86e076381688",
+     "bytes": 1032741,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 146,
+      "y": 46,
+      "w": 184,
+      "h": 180,
+      "measured": true
+     },
+     "sourceSha256": "c83883367d74ebd52662a465c86b142a43dd3e3f429af721c941a598c5671a1b"
+    },
+    "点击回应-傲娇生气": {
+     "file": "skins/winter/w034.webm",
+     "sha256": "5ea19da42f106493d26535fb3aba4e2540c1cdebcf58b0d74836d81e1a58615b",
+     "bytes": 706590,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 150,
+      "y": 52,
+      "w": 178,
+      "h": 188,
+      "measured": true
+     },
+     "sourceSha256": "f70f56f74afa9e49dafbcef4eeeb30b67835b6957cfe4cb072d9c8c53dfd9553"
+    },
+    "点击回应-害羞惊讶": {
+     "file": "skins/winter/w035.webm",
+     "sha256": "00bbda9654160b9c0f8121f4c0879285a8682ab682af31f01ea218c1fbe3164b",
+     "bytes": 683158,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 160,
+      "y": 60,
+      "w": 172,
+      "h": 186,
+      "measured": true
+     },
+     "sourceSha256": "23f906e9ea60300539fc5aafe987c5ed10e5170d81f907998e3429eee23b36b0"
+    },
+    "点击回应-开心跃动": {
+     "file": "skins/winter/w036.webm",
+     "sha256": "64f46e4887426661860369993a88f0588f045d1f65dbaeac213cd59bfcddc88e",
+     "bytes": 833082,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 148,
+      "y": 40,
+      "w": 186,
+      "h": 204,
+      "measured": true
+     },
+     "sourceSha256": "4e9ca1f57624b3952bbad74bacda72177162fcd14004a5ab85358b01acc4f63c"
+    },
+    "点击回应-挠痒咯咯笑": {
+     "file": "skins/winter/w037.webm",
+     "sha256": "b43331eee2027acb29a63e5a5a54b746097279dd7b01823d4a936c087e8f7390",
+     "bytes": 928433,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 146,
+      "y": 60,
+      "w": 192,
+      "h": 180,
+      "measured": true
+     },
+     "sourceSha256": "9db24f1318515c6402d1a28e0a739a241bd54a5af87052e9db4246ed71d719c1"
+    },
+    "点击回应-元气挥手": {
+     "file": "skins/winter/w038.webm",
+     "sha256": "cf3dfe7887131d367bf517e314f8ce266ee37f62573ac4293e056a49fadfbd15",
+     "bytes": 874085,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 152,
+      "y": 38,
+      "w": 188,
+      "h": 188,
+      "measured": true
+     },
+     "sourceSha256": "ec3204f72bd615a5b4eb09d852d747bca25b57733947b182f8a338d2f3befa2e"
+    },
+    "东张西望": {
+     "file": "skins/winter/w039.webm",
+     "sha256": "15fb875b9042714269558941c53c931600b6c87fb7c412d99261b666eca1c05b",
+     "bytes": 696170,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 156,
+      "y": 58,
+      "w": 168,
+      "h": 188,
+      "measured": true
+     },
+     "sourceSha256": "c7328b033e01a967e802b130f272d69c6b3511554d6cc165334bf5e41b26cfdc"
+    },
+    "动物环绕": {
+     "file": "skins/winter/w040.webm",
+     "sha256": "7034faf142b613f6b323d8efaf1496204bc89d07912da5b5b3ca84dee982c5b1",
+     "bytes": 870219,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 110,
+      "y": 64,
+      "w": 258,
+      "h": 174,
+      "measured": true
+     },
+     "sourceSha256": "3960be1044d0e7eaf8015bec1abe98bfc040ca9114b0421a8372a7e482324632"
+    },
+    "堆雪人": {
+     "file": "skins/winter/w041.webm",
+     "sha256": "811c80602c6853eab41c0784b0265cb2ce86d37e9e16824aab3ff62229467427",
+     "bytes": 689682,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 140,
+      "y": 74,
+      "w": 190,
+      "h": 168,
+      "measured": true
+     },
+     "sourceSha256": "9eb30925330cd5ac97a27069d9acac0f999630ec66f71cab9cda68a6efb58d5f"
+    },
+    "放风筝": {
+     "file": "skins/winter/w042.webm",
+     "sha256": "be0efe1a4fb8006f5b14976b4a2b4d481d3f9dd821317065bc813142bcfe3d4f",
+     "bytes": 818437,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 98,
+      "y": 52,
+      "w": 246,
+      "h": 184,
+      "measured": true
+     },
+     "sourceSha256": "13d25c0a9ba8cd787bc61cf2ba194f522ea48da80e496ef89d3b97f7fa56a57f"
+    },
+    "放河灯": {
+     "file": "skins/winter/w043.webm",
+     "sha256": "9a53134d36f010380ed68f1b39bfc096c90f5d1264c185e14f5c9eb78bf669b6",
+     "bytes": 672569,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 166,
+      "y": 60,
+      "w": 164,
+      "h": 184,
+      "measured": true
+     },
+     "sourceSha256": "1ea65189d51ca0483d6a2dfd8adb0229e483271adb7e0a5becb485be0f4c1ce6"
+    },
+    "放孔明灯": {
+     "file": "skins/winter/w044.webm",
+     "sha256": "7ae12f7168b923b8f9a0c02a545246203dacae54b80c5c64e03d31efdd6f155b",
+     "bytes": 746180,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 116,
+      "y": 30,
+      "w": 206,
+      "h": 204,
+      "measured": true
+     },
+     "sourceSha256": "5af6fa77e5e82c72b4fc2d5f364ce6d8c5715dc5d6e17bb3b4083428f5e719a9"
+    },
+    "放烟花": {
+     "file": "skins/winter/w045.webm",
+     "sha256": "3d26a3079b7a61e0b80098e096106e829e6b5e585fa8f6686a82dc17ba31b2b3",
+     "bytes": 1062333,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 118,
+      "y": 40,
+      "w": 198,
+      "h": 196,
+      "measured": true
+     },
+     "sourceSha256": "a61d953d7a5e4c4707d9ec01f19c0bf519ef9b3e0bb0de99aca40c04c670b50a"
+    },
+    "工作状态-垂头叹气冒汗": {
+     "file": "skins/winter/w046.webm",
+     "sha256": "2eb6c203a475784ff9f12da4eeb2f784f06597eac9f21d626f25201833bfc4f9",
+     "bytes": 243653,
+     "duration": 4.933,
+     "fps": 30,
+     "box": {
+      "x": 166,
+      "y": 70,
+      "w": 152,
+      "h": 176,
+      "measured": true
+     },
+     "sourceSha256": "e78174542b0f3ddf15e7d8094cf87e2a5fdcb1268bdb2d1fa1105e3e740e60af"
+    },
+    "工作状态-忙碌点按": {
+     "file": "skins/winter/w047.webm",
+     "sha256": "73d0e16e36767ed0eb8d7c1bd23a13cfc9477c4cdafec2aab1b8e73dd8337574",
+     "bytes": 634945,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 162,
+      "y": 70,
+      "w": 178,
+      "h": 172,
+      "measured": true
+     },
+     "sourceSha256": "162ac875cf75be1bac3045a82a2e54908288ff3d39ecb15fa332663edbac9c1d"
+    },
+    "工作状态-清点归档": {
+     "file": "skins/winter/w048.webm",
+     "sha256": "4a7c413db6eb73be9c6258e91af7630b3b13f8fb46cd4f27ed788bf004332063",
+     "bytes": 695684,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 158,
+      "y": 72,
+      "w": 160,
+      "h": 164,
+      "measured": true
+     },
+     "sourceSha256": "63b7423546f54aa7147b06233a6f3a0c0e1b91350ecb6a216a75b32eaa8b0e2c"
+    },
+    "工作状态-雀跃庆祝": {
+     "file": "skins/winter/w049.webm",
+     "sha256": "7c78a084a07d380019a360835508516cf1b7cf748f1c35e2494ad360764009d2",
+     "bytes": 968878,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 148,
+      "y": 46,
+      "w": 180,
+      "h": 200,
+      "measured": true
+     },
+     "sourceSha256": "da9e95be08048311fb9184560c5c7e8055ec35c6bec2140451725bfcaab9dbab"
+    },
+    "工作状态-思考冒泡": {
+     "file": "skins/winter/w050.webm",
+     "sha256": "72dd3fa7d04a15edf64a8d32698e57b37532c6ac30dea9cd131096b502bef1ce",
+     "bytes": 831299,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 110,
+      "y": 44,
+      "w": 210,
+      "h": 196,
+      "measured": true
+     },
+     "sourceSha256": "b600bf92262a0d2c05233ed663264935586b7c9bc634440a6fb4f90647d3b1bb"
+    },
+    "工作状态-原地踱步张望": {
+     "file": "skins/winter/w051.webm",
+     "sha256": "527524183b1769c71db4137aa2597622f2e6f94925e4d5c98655c3445e5ef042",
+     "bytes": 913573,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 156,
+      "y": 12,
+      "w": 170,
+      "h": 198,
+      "measured": true
+     },
+     "sourceSha256": "9996cf7cfa77fc06875b4a72ccdf8e6e4cd2f060bde9ba6ce92a6e03bcd9ee6c"
+    },
+    "哈欠连天": {
+     "file": "skins/winter/w052.webm",
+     "sha256": "134b7a522193ce6d5de53057112a0eb312030bbad8070bc8bf2e5ef2220499f7",
+     "bytes": 789995,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 154,
+      "y": 36,
+      "w": 176,
+      "h": 190,
+      "measured": true
+     },
+     "sourceSha256": "e312ecbfb764a80bd6f2c5b26fdf80e7bccb5e33cc98be6deb1f45c8a4c1abb7"
+    },
+    "蝴蝶蜜蜂环绕头顶开花": {
+     "file": "skins/winter/w053.webm",
+     "sha256": "8f2f0f51a2f73d00be109702a5ac529cc5ea493f42a28eb3da8e8e89bd6a2977",
+     "bytes": 1140968,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 156,
+      "y": 32,
+      "w": 166,
+      "h": 214,
+      "measured": true
+     },
+     "sourceSha256": "56a113d2b19b3e2bcdf96f9d44da839c676fdc9e253ed4c3dee47ba099a5e3d0"
+    },
+    "鲸鱼吐泡泡特效": {
+     "file": "skins/winter/w054.webm",
+     "sha256": "0f526963ed64a58f276015c20faddb8ebeec9bddead92016606cab629803feaa",
+     "bytes": 893889,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 122,
+      "y": 54,
+      "w": 242,
+      "h": 182,
+      "measured": true
+     },
+     "sourceSha256": "eb0223864abb93a74ed3fa4d321d563d3b1351ffe7911877a147e810af90756d"
+    },
+    "可爱宅舞": {
+     "file": "skins/winter/w055.webm",
+     "sha256": "debfa42fb3bd9bd96fc124e4b8cfd96ce7b81b5b01cd6fb9eaf56e7150ffc9a9",
+     "bytes": 770249,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 152,
+      "y": 56,
+      "w": 176,
+      "h": 180,
+      "measured": true
+     },
+     "sourceSha256": "49f024c4187241129d88fa22eab79af910ff50d04c206bb32777e967914b9a80"
+    },
+    "蓝鲸现世": {
+     "file": "skins/winter/w056.webm",
+     "sha256": "ca818b7db9319a6119d6d46bd7ecdcc208b180898ac668586680929e1f2d852b",
+     "bytes": 1510802,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 126,
+      "y": 18,
+      "w": 242,
+      "h": 228,
+      "measured": true
+     },
+     "sourceSha256": "f2354f4fefe8d838d0fb72f3b46a5a2e2b265321fa0ee0d4cc494063efcad9f3"
+    },
+    "撸猫": {
+     "file": "skins/winter/w057.webm",
+     "sha256": "b9eb48992e54b76fd30dc0265419acaa0ffa9651b74f3fca6d58a899d5855704",
+     "bytes": 752256,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 140,
+      "y": 82,
+      "w": 184,
+      "h": 164,
+      "measured": true
+     },
+     "sourceSha256": "2ecb39b823e3384f257c6c1a36324aae9e6e95ce7aa11fc043556b4ec1929c0f"
+    },
+    "萌化小幽灵": {
+     "file": "skins/winter/w058.webm",
+     "sha256": "51671d8dc5df82173f7d5f0b8b12ee305bf7efa6dea0f8b5396f9740c51f3550",
+     "bytes": 848088,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 144,
+      "y": 52,
+      "w": 192,
+      "h": 194,
+      "measured": true
+     },
+     "sourceSha256": "92d5e105378f11150e5627fe92ff91643edf57de14fbe3b61f0487808aab985d"
+    },
+    "女仆屈膝礼仪": {
+     "file": "skins/winter/w059.webm",
+     "sha256": "8ae7b75e7a9dfe88ab505caea985ea1f0fc238ae65dd1ed1cf9ffb671fcd2fd6",
+     "bytes": 613115,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 162,
+      "y": 50,
+      "w": 160,
+      "h": 190,
+      "measured": true
+     },
+     "sourceSha256": "30d4faae513a6978f8c25106cbf0ddec6fc6ae8085cdffa1b9a24481336cd4d0"
+    },
+    "螃蟹走路": {
+     "file": "skins/winter/w060.webm",
+     "sha256": "8dc4e54ab76c6c7ab27b5d9222d135233f56d0f7fd00f0efa16cbd1943b8a552",
+     "bytes": 718632,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 158,
+      "y": 60,
+      "w": 168,
+      "h": 180,
+      "measured": true
+     },
+     "sourceSha256": "a6d8d79b986e4fd59ece67c32ee4727ef6d0bc31989486a76f6f13e965d0a32e"
+    },
+    "凭空生花": {
+     "file": "skins/winter/w061.webm",
+     "sha256": "fdaf35643978ab4b286883cf7f1077e9cdc48bbe2f5a15e23d335b13fcf5cb0f",
+     "bytes": 741182,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 148,
+      "y": 76,
+      "w": 176,
+      "h": 170,
+      "measured": true
+     },
+     "sourceSha256": "169a6c3ec0a2fcdac59554b693a32fab1cb95f92ac7814b68528b31bf31b581a"
+    },
+    "扑克魔术": {
+     "file": "skins/winter/w062.webm",
+     "sha256": "851befa1a0e473dc656a53351c7dd222919e8456d404902f301553c688f83172",
+     "bytes": 780415,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 164,
+      "y": 52,
+      "w": 210,
+      "h": 182,
+      "measured": true
+     },
+     "sourceSha256": "732c073ef33b159fb9c5e4be500f555c25d671e98fb2e619d1133832a2d107d2"
+    },
+    "骑木马": {
+     "file": "skins/winter/w063.webm",
+     "sha256": "0cdb09e76ba44c7b8511e40b66996a90f23d90075ad0a3fc346c432efa65e73a",
+     "bytes": 798645,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 150,
+      "y": 52,
+      "w": 178,
+      "h": 194,
+      "measured": true
+     },
+     "sourceSha256": "cb1a51b2456f661ff1f230b78b1327cebe45b9f8314b257680382a174501e1c9"
+    },
+    "轻快记录": {
+     "file": "skins/winter/w064.webm",
+     "sha256": "5fce23e3ae3b1c23dc8feff6d18ef1884a60d6d67c57527a6351eb7dee08aacc",
+     "bytes": 696763,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 156,
+      "y": 56,
+      "w": 170,
+      "h": 190,
+      "measured": true
+     },
+     "sourceSha256": "f377ff9ab1473084deae90099ce01a908bee438100bc8d2b4d6fcfdbb6c476b0"
+    },
+    "轻快摇摆舞": {
+     "file": "skins/winter/w065.webm",
+     "sha256": "22dec2034ceb0ad61aaf69835ccdd09abe01e62bfa145f74c83db5adcee63670",
+     "bytes": 805177,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 152,
+      "y": 72,
+      "w": 176,
+      "h": 172,
+      "measured": true
+     },
+     "sourceSha256": "51083eafdb5556e31e20d17eb4f7dfc2fca8588ce03b992bd4bb647fbf67ee8b"
+    },
+    "三球抛接": {
+     "file": "skins/winter/w066.webm",
+     "sha256": "7dc0c005b5a0921f5e334331c696c7149f58c744cdd3e26824efe0e9e4ac1a5e",
+     "bytes": 743978,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 164,
+      "y": 62,
+      "w": 152,
+      "h": 184,
+      "measured": true
+     },
+     "sourceSha256": "2c55c30b1f56716bb4ac9d75570300ae88627f84b373b0a6e44384eec21b89ac"
+    },
+    "深度思考碎碎念": {
+     "file": "skins/winter/w067.webm",
+     "sha256": "ec5cc140234c8ba760057ac8be56b40770a9e0be2f17b474232725378563308c",
+     "bytes": 695151,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 160,
+      "y": 54,
+      "w": 182,
+      "h": 190,
+      "measured": true
+     },
+     "sourceSha256": "b33579d785066524669bdd4b9f14717c3618c1d5dadcabbcfb49f43c41b2b381"
+    },
+    "是啊，吃什么": {
+     "file": "skins/winter/w068.webm",
+     "sha256": "93779bfe2bfa95e4ec81c20004bc9e81d3f040cf226572e0871247ac47c2ec6c",
+     "bytes": 806066,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 110,
+      "y": 64,
+      "w": 262,
+      "h": 182,
+      "measured": true
+     },
+     "sourceSha256": "7409c571196f1cb3d464059ae995f2815be6e51a1e7744536c4477577690fcfc"
+    },
+    "收红包": {
+     "file": "skins/winter/w069.webm",
+     "sha256": "eba2b902b54d77f92cce6c206e576d7f3a2862b5c35eb3ae5b2eb366854e7ebe",
+     "bytes": 697883,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 156,
+      "y": 48,
+      "w": 172,
+      "h": 198,
+      "measured": true
+     },
+     "sourceSha256": "420bd2a9b6f3c0fe0fda2beebce1030b6e1c8d73d365127a79e5c080f9cd4543"
+    },
+    "涮火锅": {
+     "file": "skins/winter/w070.webm",
+     "sha256": "279d486bd6f54de1bc2b0773de6231061d372ae7f75376451e03c126b2bc1bb5",
+     "bytes": 577243,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 162,
+      "y": 62,
+      "w": 156,
+      "h": 180,
+      "measured": true
+     },
+     "sourceSha256": "a769afadc0c677461079c02627d00d7030ad03ae2530c71409abe830f62b4847"
+    },
+    "碎碎念-擦桌碎碎念": {
+     "file": "skins/winter/w071.webm",
+     "sha256": "a1672bb1973289948ff6e2b36cd489cb9196ff87bf2eac5a617a71dc38d46751",
+     "bytes": 691410,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 156,
+      "y": 70,
+      "w": 168,
+      "h": 174,
+      "measured": true
+     },
+     "sourceSha256": "20d32e463d9d534bdc7815d1560e5d641ea2ab16a6b9b67a80983f1a577d963d"
+    },
+    "碎碎念-对屏碎碎念": {
+     "file": "skins/winter/w072.webm",
+     "sha256": "08881c8fe0d59960a7b83ae4959ff2ea06ad57ed0aea6ec4242e60ae5474bd17",
+     "bytes": 686448,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 146,
+      "y": 62,
+      "w": 176,
+      "h": 174,
+      "measured": true
+     },
+     "sourceSha256": "6e324f16364932b049033cffc28dd1831d36f1c86c122badebd40a5730feca6a"
+    },
+    "碎碎念-发呆碎碎念": {
+     "file": "skins/winter/w073.webm",
+     "sha256": "6cf85a2ddc8b0c372c32fd0d56eeeae296f247ae5c90a24da24a2983ea51a142",
+     "bytes": 704086,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 160,
+      "y": 56,
+      "w": 162,
+      "h": 190,
+      "measured": true
+     },
+     "sourceSha256": "bcc79f23cacbbe69b0ee60d5680a5c7c20316de4bb3e382a9cefabde446bd835"
+    },
+    "讨糖南瓜灯": {
+     "file": "skins/winter/w074.webm",
+     "sha256": "585d5294bd43af1c1a78eb897d80dd3babd16810bc8afc21ac1a09de222eaac1",
+     "bytes": 776458,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 116,
+      "y": 72,
+      "w": 280,
+      "h": 174,
+      "measured": true
+     },
+     "sourceSha256": "7b7b292521d260d44ac45cf15ebf4dcfec63d2406f5d506cea044109d49ceaac"
+    },
+    "踢毽子": {
+     "file": "skins/winter/w075.webm",
+     "sha256": "080eb397b4981f559d1979fd6b3ea68d383a28b15f9f31dd2f5bfb19ef41526c",
+     "bytes": 760820,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 134,
+      "y": 70,
+      "w": 188,
+      "h": 176,
+      "measured": true
+     },
+     "sourceSha256": "2c2a0b772ba8b49d5042894f7c9d314c4d6a8eaea639f93b024876bd093fedaf"
+    },
+    "偷吃零食被抓住": {
+     "file": "skins/winter/w076.webm",
+     "sha256": "6bfba8444e9720065c62bf75c06c594ac6d5a35fb90dc7c8751b735dabf42b74",
+     "bytes": 625880,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 162,
+      "y": 48,
+      "w": 160,
+      "h": 190,
+      "measured": true
+     },
+     "sourceSha256": "0c449398a1ce4142b9bd76fc1fb32028ac2561cbedb0a9b13de664c26097b38d"
+    },
+    "玩水枪": {
+     "file": "skins/winter/w077.webm",
+     "sha256": "1415f63fb47d54691c4f1452a6947e5f07fd206df912831dbe5a16480f1842d5",
+     "bytes": 941628,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 148,
+      "y": 66,
+      "w": 232,
+      "h": 180,
+      "measured": true
+     },
+     "sourceSha256": "0e4a797fbc5c56ab1ec49fc619a41e65fb0aa77e8c56c67026c6050bd48f5586"
+    },
+    "玩游戏气急败坏": {
+     "file": "skins/winter/w078.webm",
+     "sha256": "6f8d01fcd98e715ac5d3410833b675199b8b5292fe87b84be3c67aa113027960",
+     "bytes": 704120,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 162,
+      "y": 70,
+      "w": 158,
+      "h": 174,
+      "measured": true
+     },
+     "sourceSha256": "fb2bc12f5ec1da1222347244426e076457a6c05c4c2f6dd2b37b4f776fca3264"
+    },
+    "舞狮头": {
+     "file": "skins/winter/w079.webm",
+     "sha256": "28016c2382c40165baddcce3ba9df10d361d747ede69b9163384b5beb0337901",
+     "bytes": 1102231,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 156,
+      "y": 36,
+      "w": 168,
+      "h": 210,
+      "measured": true
+     },
+     "sourceSha256": "68dd94a40de5f53c40a841d6f02a427eb8064819e2e986afd136fd674c10cc43"
+    },
+    "下五子棋": {
+     "file": "skins/winter/w080.webm",
+     "sha256": "b473d3d114fe181734c2ad8f0852dcfc14627213d02d12fd555d4022b88f6446",
+     "bytes": 550607,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 162,
+      "y": 98,
+      "w": 162,
+      "h": 148,
+      "measured": true
+     },
+     "sourceSha256": "3d3d6944bdddf06f7180bb10b0450a48c354b3f5e8a8d0156105344fedc0df61"
+    },
+    "小幅度原地360度旋转展示": {
+     "file": "skins/winter/w081.webm",
+     "sha256": "7d7f688039dd598849648d953b50a7fc94cd5bc7cbeda3d3477d8a44a810dfbb",
+     "bytes": 741619,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 154,
+      "y": 56,
+      "w": 170,
+      "h": 190,
+      "measured": true
+     },
+     "sourceSha256": "5ceb5954fb64c3854a05daa65d7be17f3e4c6cf2b49a31fedf9fbfaf262f4a10"
+    },
+    "小提琴演奏": {
+     "file": "skins/winter/w082.webm",
+     "sha256": "5336a61c63bb44be8e3f73447996754d26018f984c30fbfa11c8a0f7dab3555f",
+     "bytes": 772424,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 158,
+      "y": 60,
+      "w": 184,
+      "h": 186,
+      "measured": true
+     },
+     "sourceSha256": "468664f4a123b4b5ad27fb934d1359f66492b18d109a694713d94e20b4f966cc"
+    },
+    "写代码": {
+     "file": "skins/winter/w083.webm",
+     "sha256": "00046a3bf32526e0e52be6f23651534d0d24fe8de3de5dae1c406e7c863bff20",
+     "bytes": 606622,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 160,
+      "y": 62,
+      "w": 162,
+      "h": 184,
+      "measured": true
+     },
+     "sourceSha256": "e0ef0215ba55f2afafa38a3e0784e78d9925af010f759c5210e710f486f7c586"
+    },
+    "写福字": {
+     "file": "skins/winter/w084.webm",
+     "sha256": "ab3a3e6b945316681a564a8fef98a84e4be703a54d1fc1548537f5df96703db5",
+     "bytes": 634321,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 156,
+      "y": 58,
+      "w": 170,
+      "h": 192,
+      "measured": true
+     },
+     "sourceSha256": "97a27aff93a842eef59abfc51fe53ecac192708d9bd0bc6c8212143a0b74a92f"
+    },
+    "摇扇纳凉": {
+     "file": "skins/winter/w085.webm",
+     "sha256": "5964b07904efab1133e5b8f1054c8247e0c80dd8e0e5d668a091b446338263b4",
+     "bytes": 758108,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 156,
+      "y": 58,
+      "w": 176,
+      "h": 188,
+      "measured": true
+     },
+     "sourceSha256": "ff14f69e9c9b81f69cdcd04d0125059d1478217c7236d44297952eab94de5e95"
+    },
+    "用鲸鱼尾巴拍打地面": {
+     "file": "skins/winter/w086.webm",
+     "sha256": "083daa377091ab0323e23e1b14f94ec57d27921003b3f0f3e6f6bb46994dd878",
+     "bytes": 679658,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 128,
+      "y": 52,
+      "w": 194,
+      "h": 186,
+      "measured": true
+     },
+     "sourceSha256": "032b1314cad955ffb6159321388ff1cc23291cb5db01d72060f802a897ef3e2a"
+    },
+    "优雅女仆舞": {
+     "file": "skins/winter/w087.webm",
+     "sha256": "a061ebd2d43b17a5014d50fdc677a76eed209694d432206e0abce5e1753c7489",
+     "bytes": 826660,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 154,
+      "y": 74,
+      "w": 176,
+      "h": 172,
+      "measured": true
+     },
+     "sourceSha256": "e30e51ba18b61a895fa05bc0fef883f7c7142a7ff5569fe9d00dd68f83fa4c1e"
+    },
+    "悠闲哼歌": {
+     "file": "skins/winter/w088.webm",
+     "sha256": "1899d9d40049c2b7c1896132db4712ed804cfae859e4d20078f614ddb2ba5590",
+     "bytes": 894654,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 150,
+      "y": 58,
+      "w": 182,
+      "h": 184,
+      "measured": true
+     },
+     "sourceSha256": "14e5b3489fa641bc87017c0652099e2d35badf14b619000eff143908d90d6220"
+    },
+    "余额-袋空如洗": {
+     "file": "skins/winter/w089.webm",
+     "sha256": "4cd901177d1686d1896873cd614270115e32346e399b37f4dde40e7ec96a7268",
+     "bytes": 684353,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 148,
+      "y": 40,
+      "w": 180,
+      "h": 192,
+      "measured": true
+     },
+     "sourceSha256": "63567c2ff5db1a4ef28b6f1938b9859bbf60b7fcb5c9186ed7bc323682ca5593"
+    },
+    "余额-分文不剩": {
+     "file": "skins/winter/w090.webm",
+     "sha256": "f2f5099ee956a6c6eb67398f9264d19f1c7162577cd4056eff55831796c7f489",
+     "bytes": 692394,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 164,
+      "y": 66,
+      "w": 158,
+      "h": 178,
+      "measured": true
+     },
+     "sourceSha256": "74a76be763fb9fbb35a4005098a77fac950c38703b6cee05d0034d2dc4d02482"
+    },
+    "余额-金袋叮当": {
+     "file": "skins/winter/w091.webm",
+     "sha256": "f508a4b011ee9a4a9a0d2e530b853a7fb10cd2e13ae4e502a7570dbf00d8e618",
+     "bytes": 732645,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 148,
+      "y": 60,
+      "w": 188,
+      "h": 186,
+      "measured": true
+     },
+     "sourceSha256": "045766451b99a9c77505281d9daa476a24dd5f7526ea3846f6eda4fda8c131f5"
+    },
+    "余额-钱袋满溢": {
+     "file": "skins/winter/w092.webm",
+     "sha256": "fe45fa660b24102a0906a696a456c2af4e77663fa2f1a6005091f33058f23dfb",
+     "bytes": 1215971,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 120,
+      "y": 54,
+      "w": 236,
+      "h": 192,
+      "measured": true
+     },
+     "sourceSha256": "287cc4c149f93bd7859e8986e0cb550e504c6be5f011fc24f515a9b1ecc0c9b6"
+    },
+    "余额-钱袋如常": {
+     "file": "skins/winter/w093.webm",
+     "sha256": "a2d9d0f6481a39d5d378163bc6244b44f9fa850bc6da18ffe55d0868e126effc",
+     "bytes": 635851,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 162,
+      "y": 54,
+      "w": 158,
+      "h": 190,
+      "measured": true
+     },
+     "sourceSha256": "69a01bdcd82cf80d2db9da3a071dc5e714d8c584433442e2e123c8800586e01a"
+    },
+    "余额-数金皱眉": {
+     "file": "skins/winter/w094.webm",
+     "sha256": "148832ad6ca3a7389be965a7263be74860561ce202028c04c330f40e0d2babcd",
+     "bytes": 617472,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 164,
+      "y": 60,
+      "w": 154,
+      "h": 184,
+      "measured": true
+     },
+     "sourceSha256": "e1d1c673aba6765127fa27e32c88a5034b50d5758e08c37ab9275c913d4c3126"
+    },
+    "原地蹲下玩玩具汽车": {
+     "file": "skins/winter/w095.webm",
+     "sha256": "78d9368b636938b613dae5ced353c4bf8b10d31cd3c65569b1e23c4544250d7f",
+     "bytes": 673129,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 134,
+      "y": 94,
+      "w": 202,
+      "h": 146,
+      "measured": true
+     },
+     "sourceSha256": "c63ef398052f925109607f2fba771231cf5a74543e98b3ed6390656d69307f96"
+    },
+    "原地漂浮踏步": {
+     "file": "skins/winter/w096.webm",
+     "sha256": "d42c1393d2b29b105ee5a7a917bd81a80c25d2c310a51045c7db8a53124d745f",
+     "bytes": 777972,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 152,
+      "y": 58,
+      "w": 182,
+      "h": 184,
+      "measured": true
+     },
+     "sourceSha256": "835ce1472889fff2285a4f0e62f3fe80aa039e836af36833aca7c88d7899dd61"
+    },
+    "原地敲击桌面互动": {
+     "file": "skins/winter/w097.webm",
+     "sha256": "142e0670fbb7cd9ecd0b33424b3d9393c38fff6e801c0f977c48cf0fa85e9e23",
+     "bytes": 584033,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 160,
+      "y": 66,
+      "w": 166,
+      "h": 162,
+      "measured": true
+     },
+     "sourceSha256": "f103f6301e0bed26d63dc75ded398a217a6f804c06d636965ed5324e9e4808fc"
+    },
+    "原地跳跃抓碎头顶物品": {
+     "file": "skins/winter/w098.webm",
+     "sha256": "f756e8dd458d87513c676ff659aef5530bc0ce3ff7526495134b920f1e212ef2",
+     "bytes": 759837,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 134,
+      "y": 16,
+      "w": 208,
+      "h": 230,
+      "measured": true
+     },
+     "sourceSha256": "69df8dc62f58eb7fd767ee0190d9993c33d7c18056b695eb9bd5c5c75cee3180"
+    },
+    "原地小憩沉眠": {
+     "file": "skins/winter/w099.webm",
+     "sha256": "feae9e76865752576ebb19a8d6f1a0e6526e7ae73728224992dd3afd48d1fdf9",
+     "bytes": 552929,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 148,
+      "y": 80,
+      "w": 192,
+      "h": 154,
+      "measured": true
+     },
+     "sourceSha256": "bdd60e95418022c1b1d0a1f66b31f749a2399cfdfde07637a31ce4163dfac869"
+    },
+    "原地重力下蹲压缩": {
+     "file": "skins/winter/w100.webm",
+     "sha256": "6a20ff1e8850e22d4a12d60f6432cd74ccb295c3ac36ed6e05224305d6c87c48",
+     "bytes": 817691,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 152,
+      "y": 58,
+      "w": 176,
+      "h": 184,
+      "measured": true
+     },
+     "sourceSha256": "6dec0d0c388475b2f1073095e197d4930e17b4fc8ccd27a1d86e797f8bfcc539"
+    },
+    "原地专心玩魔方": {
+     "file": "skins/winter/w101.webm",
+     "sha256": "f14e7e880ff184a7d7632d0b8098defef4f136dfa274130e0e9ff9f04f0e5314",
+     "bytes": 634910,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 162,
+      "y": 68,
+      "w": 166,
+      "h": 178,
+      "measured": true
+     },
+     "sourceSha256": "9fe6021f8be8c2955c606512e56d732b1659b975deac8c0a1de69d88d75c00c3"
+    },
+    "原地左转奔跑": {
+     "file": "skins/winter/w102.webm",
+     "sha256": "2390a506589d67aa1f8c64a7a0039b855058058ad826853b2798f5574a83a970",
+     "bytes": 716198,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 170,
+      "y": 64,
+      "w": 176,
+      "h": 178,
+      "measured": true
+     },
+     "sourceSha256": "6d5d3bd8949a417c30214d644322522f9ee8c6423b5f6da5db669bba23c05043"
+    },
+    "照镜子": {
+     "file": "skins/winter/w103.webm",
+     "sha256": "d249b5619ed17040cb57545253334fe3af73e88381f39ea9a8ead16052a4f9e6",
+     "bytes": 702136,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 156,
+      "y": 42,
+      "w": 168,
+      "h": 194,
+      "measured": true
+     },
+     "sourceSha256": "5d35ba1d26825cb92e5830be5ea5570a98e66675742cfe27dd07ee2fa1092302"
+    },
+    "整体换装试色": {
+     "file": "skins/winter/w104.webm",
+     "sha256": "90c2e047ba6dbd9799ee6d8831a5060fc70f7f6029808fdd970fd831d5d117d7",
+     "bytes": 930119,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 156,
+      "y": 40,
+      "w": 170,
+      "h": 206,
+      "measured": true
+     },
+     "sourceSha256": "23616e8b84bdc726c9cf60247de3feaa44c2737ec46b56aa29f82d5e3b19772e"
+    },
+    "中秋赏月吃月饼": {
+     "file": "skins/winter/w105.webm",
+     "sha256": "ad19d470a95d3ca55d32d4da626a8ab3df21868404879b04fbb8a31a451a9cdf",
+     "bytes": 677874,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 168,
+      "y": 62,
+      "w": 164,
+      "h": 184,
+      "measured": true
+     },
+     "sourceSha256": "6255bbfbe0fe92a04b8d232105f047672626d2482e8d99ddd759a4d0ecd40738"
+    },
+    "装点圣诞树": {
+     "file": "skins/winter/w106.webm",
+     "sha256": "aa0e376af1886852629c63adefa8457efc45035c355fddfccc1251c8616b108a",
+     "bytes": 637215,
+     "duration": 10.033,
+     "fps": 30,
+     "box": {
+      "x": 162,
+      "y": 66,
+      "w": 146,
+      "h": 178,
+      "measured": true
+     },
+     "sourceSha256": "6ca1d74090da5567ba101db3124e70b08be97bd18465a09f4a9837c4838f538d"
+    }
+   }
+  },
+  "fish": {
+   "id": "fish",
+   "name": "大肥鱼",
+   "sourceRevision": "dsh-pet v0.3.7 90ddd827fd9661958752855e899da452063ceaa5",
+   "sourceGeneratedAt": null,
+   "source": "upstream/assets/webm",
+   "license": "MIT (PC2005-cloud/dsh-pet)",
+   "clipCount": 106,
+   "totalBytes": 61218665,
+   "clips": {
+    "被落叶淹没": {
+     "file": "skins/fish/f001.webm",
+     "sha256": "193dd22d0c5b0f40f78abe3e569b85b53ac262e50259461931d2cfa4828dc1a3",
+     "bytes": 826144,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 24,
+      "y": 26,
+      "w": 434,
+      "h": 244,
+      "measured": true
+     },
+     "sourceSha256": "91fc8e3dbfcd24546bc30366beb120fb5de7823ed67986dd8032c9c1b29ff079"
+    },
+    "被鼠标拖拽悬空反馈": {
+     "file": "skins/fish/f002.webm",
+     "sha256": "1543b49eb9152b729894c344c9c55c7ccea0119a8dff17e83f3aab009790addf",
+     "bytes": 528590,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 154,
+      "y": 20,
+      "w": 182,
+      "h": 228,
+      "measured": true
+     },
+     "sourceSha256": "31373a86026636eecc890db763760309360310eb095cf5575b13c9ca2a6cc80e"
+    },
+    "被吓一跳": {
+     "file": "skins/fish/f003.webm",
+     "sha256": "887714bd73ac51da6d06f1da2c91758afcbe5fe7af7ae0a64ebc2725956ec7cc",
+     "bytes": 326541,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 156,
+      "y": 36,
+      "w": 170,
+      "h": 210,
+      "measured": true
+     },
+     "sourceSha256": "537dde496e0f776e775dec1bb7bfe3fbc5eebf89112469a1a910ad0433ccde66"
+    },
+    "变鸽子": {
+     "file": "skins/fish/f004.webm",
+     "sha256": "98d536d114a632c739c1b9f5f78cbb16b5369bb5da61ba3dfc69955ca85f2fc4",
+     "bytes": 570172,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 90,
+      "y": 18,
+      "w": 302,
+      "h": 228,
+      "measured": true
+     },
+     "sourceSha256": "796eba8ebe705e9339035e533e4f913fb8b9810432dcd6e7ae4fc1602e9ce3cf"
+    },
+    "插茱萸赏菊": {
+     "file": "skins/fish/f005.webm",
+     "sha256": "2e9ab8304a7a5adf0a013d9cd68c7149875db9250f34e216b189edf5753367c6",
+     "bytes": 546518,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 158,
+      "y": 48,
+      "w": 170,
+      "h": 200,
+      "measured": true
+     },
+     "sourceSha256": "4e1ba56724da3663e2f5480001ab1141a82e8618c316e6e81e3dae84998452f3"
+    },
+    "拆礼物": {
+     "file": "skins/fish/f006.webm",
+     "sha256": "fac1c4600252b7a43d7179feba2d7427c229f9174a73685edca86c7cb66900bb",
+     "bytes": 596249,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 120,
+      "y": 34,
+      "w": 230,
+      "h": 220,
+      "measured": true
+     },
+     "sourceSha256": "6f781e7eac2b295417c80ff9468902280fdcf3ae5921d59977daa8dab537940c"
+    },
+    "超大伸懒腰": {
+     "file": "skins/fish/f007.webm",
+     "sha256": "5667acd33a493cfb67e8366ed244427157421de5f83111a48fe61e3f31f20685",
+     "bytes": 454910,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 160,
+      "y": 44,
+      "w": 162,
+      "h": 202,
+      "measured": true
+     },
+     "sourceSha256": "0ac66d918cc5efd49be1273c3830de73eae5f9bdcd5fcb968d1b2f9b487705ad"
+    },
+    "晨间刷牙": {
+     "file": "skins/fish/f008.webm",
+     "sha256": "b013f44a67fd9848419ecd2bfbb607a87b222be0cb489211379dc67180f177bb",
+     "bytes": 489047,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 150,
+      "y": 46,
+      "w": 176,
+      "h": 212,
+      "measured": true
+     },
+     "sourceSha256": "017e384e7e13732fb12428d024ef686e79df5b79bfab0d83faa7fa50653d1bc4"
+    },
+    "吃白饭": {
+     "file": "skins/fish/f009.webm",
+     "sha256": "066b4754355922489857803747cd22e83f78aa16892dfb3c8e965957b0991e0b",
+     "bytes": 528795,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 154,
+      "y": 48,
+      "w": 172,
+      "h": 204,
+      "measured": true
+     },
+     "sourceSha256": "b620413d6fa303a0ed9168dc71453c3bddc10141a0b7edeff87dc2e6e054d502"
+    },
+    "吃冰淇淋融化": {
+     "file": "skins/fish/f010.webm",
+     "sha256": "a7d3ea8918c2895309e0c989d8b1019e95647ad9641c4e6a7a0ccd3f93a2331f",
+     "bytes": 580456,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 158,
+      "y": 46,
+      "w": 164,
+      "h": 204,
+      "measured": true
+     },
+     "sourceSha256": "17d73682926d6ce4203ad12d9049527e604d448bcc5c82ac5b12950b4ceb0447"
+    },
+    "吃大闸蟹": {
+     "file": "skins/fish/f011.webm",
+     "sha256": "e25d23603b1feccdd239e4ece93af732ed2f5f2a3fa64d14e2228f5436b3d22d",
+     "bytes": 619260,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 154,
+      "y": 48,
+      "w": 184,
+      "h": 206,
+      "measured": true
+     },
+     "sourceSha256": "fbd0f445c15fda1f827e6eb485270ddf9025ac29b3edcac28a5eff7d9aa80f46"
+    },
+    "吃饺子": {
+     "file": "skins/fish/f012.webm",
+     "sha256": "024cd3185bd8aec8eeefbe37b0df62760f53cb2604ebb52076b483f652ae5c7d",
+     "bytes": 630857,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 146,
+      "y": 28,
+      "w": 192,
+      "h": 226,
+      "measured": true
+     },
+     "sourceSha256": "a607391c206cb2a1a977d72f318a6b5bfe95aee4da9b11c9de8724bd9981cc06"
+    },
+    "吃腊八粥": {
+     "file": "skins/fish/f013.webm",
+     "sha256": "08d73613b2e307fcd856f83d6be6f6aef5a8c7a779afd9e03427e695b9bf6976",
+     "bytes": 536402,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 152,
+      "y": 48,
+      "w": 170,
+      "h": 198,
+      "measured": true
+     },
+     "sourceSha256": "f821527812875262cc0dda50fe023c603fc89ec566172777c6bff4fa45943011"
+    },
+    "吃年糕": {
+     "file": "skins/fish/f014.webm",
+     "sha256": "1495c1bb8d085422781823907be78a2991d1db78add225fad900f6ea039c4148",
+     "bytes": 521487,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 154,
+      "y": 48,
+      "w": 168,
+      "h": 200,
+      "measured": true
+     },
+     "sourceSha256": "ba0c86988687801a5b19d055d728bb182c8a95a0bdd7071dea16b83c1162135c"
+    },
+    "吃青团": {
+     "file": "skins/fish/f015.webm",
+     "sha256": "5065bf74dde3c320430ea25494e97f89dbc5e85504b030fc29a4d150d3e4c277",
+     "bytes": 446083,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 158,
+      "y": 48,
+      "w": 166,
+      "h": 200,
+      "measured": true
+     },
+     "sourceSha256": "0d99393dd64ddf0b1ec4ab4cf392c86092ab5edf58d12f5b72e325035da23606"
+    },
+    "吃汤圆": {
+     "file": "skins/fish/f016.webm",
+     "sha256": "e46be997ddbbd61e863a5baa63239089a53333f5e8267222c7a9cd2874fc6d09",
+     "bytes": 501646,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 160,
+      "y": 50,
+      "w": 164,
+      "h": 196,
+      "measured": true
+     },
+     "sourceSha256": "53a0f93612bb59c7279010f993a1101b033fc01df1998dd9874d8aea175afa6f"
+    },
+    "吃糖葫芦": {
+     "file": "skins/fish/f017.webm",
+     "sha256": "15ccb6470bdddabab8b310b9ecda87ae3cba40c4d3e4030776baa34349642ae1",
+     "bytes": 538511,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 154,
+      "y": 46,
+      "w": 174,
+      "h": 200,
+      "measured": true
+     },
+     "sourceSha256": "6900468dc166bfb90e1cfb73de9b41a08c62513483ce1300658340cf942be3cd"
+    },
+    "吃晚餐": {
+     "file": "skins/fish/f018.webm",
+     "sha256": "ebb1f68174c2abf67c5cafecfca4edc967e4be7365fe88eadcb0c8a501b0b2f9",
+     "bytes": 813277,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 80,
+      "y": 46,
+      "w": 318,
+      "h": 206,
+      "measured": true
+     },
+     "sourceSha256": "8902602fb012c29d33392822ab534ed119a136610f6bc2e8c0c51d60afec673a"
+    },
+    "吃午餐": {
+     "file": "skins/fish/f019.webm",
+     "sha256": "2994681ec25a7d695b725e34d95e75a38b54e5e918115333a068470de65e1910",
+     "bytes": 576267,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 156,
+      "y": 46,
+      "w": 166,
+      "h": 202,
+      "measured": true
+     },
+     "sourceSha256": "e48a70e61d93195c611c2d4041be32a26a114f78c835ff6b2345459ae39a90ce"
+    },
+    "吃西瓜": {
+     "file": "skins/fish/f020.webm",
+     "sha256": "32b0590fdd6bd504eb7ab46abc33f4b0fea7504153775b8ec7fd097a8ee67ffe",
+     "bytes": 559302,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 156,
+      "y": 46,
+      "w": 170,
+      "h": 202,
+      "measured": true
+     },
+     "sourceSha256": "0dd992fb7fb51d707d6589cb813a450437a2bd54046709f424a73353e2d7f78d"
+    },
+    "吃早餐": {
+     "file": "skins/fish/f021.webm",
+     "sha256": "2e667c5f8dcc0f92da28df6a2bc8c95500c163af9603f540186dc7e4e96e046c",
+     "bytes": 513781,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 160,
+      "y": 46,
+      "w": 162,
+      "h": 200,
+      "measured": true
+     },
+     "sourceSha256": "893b61587aeda8ca146e32b596b00903461aab04684a146d84b31965968d60e4"
+    },
+    "吃长寿面": {
+     "file": "skins/fish/f022.webm",
+     "sha256": "5f78a172ce27d66b4c59385ab9cd622a613b8d6e0a32cb8898b57c970a9e3f1a",
+     "bytes": 560998,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 96,
+      "y": 46,
+      "w": 232,
+      "h": 200,
+      "measured": true
+     },
+     "sourceSha256": "2881e1cd4ca31fd56ca578ce2ee73d21222f0006f237c865d9b2dc1ebc436edd"
+    },
+    "吃重阳糕": {
+     "file": "skins/fish/f023.webm",
+     "sha256": "946cd6d2b4a3ac8a3283031be66e66baed5238f5125186da40bea29129c46dc5",
+     "bytes": 543125,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 160,
+      "y": 48,
+      "w": 166,
+      "h": 200,
+      "measured": true
+     },
+     "sourceSha256": "d2b6b466fcb1ee689ae130680bf38311e9988d995879ca3b5b1d9aa0b5438058"
+    },
+    "吃粽子": {
+     "file": "skins/fish/f024.webm",
+     "sha256": "9ed6a2d80e0fb6ba14187684a7932ee6c27e0c7734403484a3f5f0f2b15a8d94",
+     "bytes": 510284,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 160,
+      "y": 48,
+      "w": 166,
+      "h": 200,
+      "measured": true
+     },
+     "sourceSha256": "f3af3217674427fdc5609bf50b170f69669c84cf229cd7b44261c00da7876ade"
+    },
+    "吃Token": {
+     "file": "skins/fish/f025.webm",
+     "sha256": "566880d5e28c83a21114f07182256c492d831be74c926751456bb00c5d425ce2",
+     "bytes": 654042,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 108,
+      "y": 46,
+      "w": 264,
+      "h": 202,
+      "measured": true
+     },
+     "sourceSha256": "d46ef798fb189cd7652f63d03a35e6f314e5a598b4a65f76202ec95852eb719c"
+    },
+    "抽陀螺": {
+     "file": "skins/fish/f026.webm",
+     "sha256": "16b87a524a00b5211752fc1e526fab9e1f3047ef552e1a061da593117efa3a3a",
+     "bytes": 582761,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 126,
+      "y": 50,
+      "w": 202,
+      "h": 204,
+      "measured": true
+     },
+     "sourceSha256": "693689d7b4d02ae8cda53f8d580de5087287fc339360dd20909342f566e969ba"
+    },
+    "穿针乞巧": {
+     "file": "skins/fish/f027.webm",
+     "sha256": "b191861561fb428ed82c40a314fa27c041d08533d1245bffe5d6ae109a9adf4a",
+     "bytes": 541639,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 138,
+      "y": 36,
+      "w": 262,
+      "h": 212,
+      "measured": true
+     },
+     "sourceSha256": "cf16647ec4cb5634e4ff022bfc139a2233cd8be82f2391472bc842f7014ddc90"
+    },
+    "吹笛子": {
+     "file": "skins/fish/f028.webm",
+     "sha256": "8d0073c8d1d01fe313ada37826ac5df4350d3bbe84352e6d554cce6a3d118819",
+     "bytes": 841346,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 60,
+      "y": 22,
+      "w": 344,
+      "h": 228,
+      "measured": true
+     },
+     "sourceSha256": "9c8b754a3256778cddd88fbb073b649d5b1d2e5f96e70231bc2c3bee06fa7c78"
+    },
+    "吹气球": {
+     "file": "skins/fish/f029.webm",
+     "sha256": "2f19ae77885c4288991ab847b06ccbbb7ce4fc8ef9d851dcf12d27995d9f8c19",
+     "bytes": 827483,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 16,
+      "y": 26,
+      "w": 440,
+      "h": 244,
+      "measured": true
+     },
+     "sourceSha256": "3258f91b2000d949ba38f34c1f161b0d5fa148ecffb5a95eb8a3e10b5df7fc87"
+    },
+    "打瞌睡被惊醒": {
+     "file": "skins/fish/f030.webm",
+     "sha256": "7c44bfac19da30327e2820605387b401b3f35a54968657d98ebe5815c3b534ea",
+     "bytes": 517333,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 152,
+      "y": 32,
+      "w": 182,
+      "h": 214,
+      "measured": true
+     },
+     "sourceSha256": "7e10c87cfcbd63b20b5a3787be71b0500381d54ea04a5ac0e9d99f59ed49a6d7"
+    },
+    "大口吃零食": {
+     "file": "skins/fish/f031.webm",
+     "sha256": "af9e3178f117ff42ad2544cf9315ee3e825f12a7285c7ef9058a019141c8fea9",
+     "bytes": 876022,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 28,
+      "y": 32,
+      "w": 414,
+      "h": 234,
+      "measured": true
+     },
+     "sourceSha256": "fdacb534a828b0c669f22a54e8da9bb9b5d731e0132dd5ea946f7badc9229a39"
+    },
+    "待机呼吸休闲": {
+     "file": "skins/fish/f032.webm",
+     "sha256": "7ccb6806f0abae53d70e0165ae0b1becc13bbfd627708c66e17aa2e6091741f6",
+     "bytes": 503599,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 148,
+      "y": 46,
+      "w": 178,
+      "h": 200,
+      "measured": true
+     },
+     "sourceSha256": "deb965d05a85dacf5ff4a20faa757846f0d11679598c3ec578a5571487660395"
+    },
+    "荡秋千": {
+     "file": "skins/fish/f033.webm",
+     "sha256": "137a6942ec60b353e4ddb2c6516a5555edf44e985d83a3b0f0ed485b477d9791",
+     "bytes": 722625,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 144,
+      "y": 14,
+      "w": 212,
+      "h": 234,
+      "measured": true
+     },
+     "sourceSha256": "f32ea98e9c04553ae39939cd76c469192ebc19d98b90ebf93ec4b88bf95b25c9"
+    },
+    "点击回应-傲娇生气": {
+     "file": "skins/fish/f034.webm",
+     "sha256": "3de52db676c4c60f3aaab09258251d6d7ce041230470f1e662b08814fec31688",
+     "bytes": 430393,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 154,
+      "y": 46,
+      "w": 166,
+      "h": 202,
+      "measured": true
+     },
+     "sourceSha256": "6b7176b98408cb649d1d37b6a6222a21aa6b128187e3e0b2d18550d35ab81064"
+    },
+    "点击回应-害羞惊讶": {
+     "file": "skins/fish/f035.webm",
+     "sha256": "07522fdeeb0aa98be82291fc6306601d7746f3d2124218c711ce8ab7f079c167",
+     "bytes": 604063,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 158,
+      "y": 48,
+      "w": 168,
+      "h": 200,
+      "measured": true
+     },
+     "sourceSha256": "a04968bbc46d1ebea07f81e5dabd93b0b67a9d07f1371e9887b33075134ad00d"
+    },
+    "点击回应-开心跃动": {
+     "file": "skins/fish/f036.webm",
+     "sha256": "4e88f9d018f53e96d7a74af1ee58304a1ad0884bd1a78c81bbfe387ef1ba1afb",
+     "bytes": 589633,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 138,
+      "y": 14,
+      "w": 204,
+      "h": 234,
+      "measured": true
+     },
+     "sourceSha256": "86dcb0c3dd7b651de9c107e927d57a5c4224599101706dbdcc782fa48bcd0ad7"
+    },
+    "点击回应-挠痒咯咯笑": {
+     "file": "skins/fish/f037.webm",
+     "sha256": "b7f023d61c6d02caea7f05486f17db9e89a8fd4716b0f81877927e7825315759",
+     "bytes": 481877,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 154,
+      "y": 44,
+      "w": 174,
+      "h": 204,
+      "measured": true
+     },
+     "sourceSha256": "f228279219f4084323ca1bfef1604f7c77bb3f505d45a8d1747b5ac3f9f2393b"
+    },
+    "点击回应-元气挥手": {
+     "file": "skins/fish/f038.webm",
+     "sha256": "495170d21386e6057caee60c1e0ae29bf64150f3e15c0346fa2d1a67be3fb9bd",
+     "bytes": 483617,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 158,
+      "y": 30,
+      "w": 164,
+      "h": 216,
+      "measured": true
+     },
+     "sourceSha256": "48cd729ccdcf746369942ea954d242e9afdd5643e1dac3827fa5e67450eb8776"
+    },
+    "东张西望": {
+     "file": "skins/fish/f039.webm",
+     "sha256": "580b0c91611f7223a3942ec84c5d9bbea6a3bf01b7c957030a2d45b8a3e7991a",
+     "bytes": 480113,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 156,
+      "y": 48,
+      "w": 174,
+      "h": 198,
+      "measured": true
+     },
+     "sourceSha256": "a20ed02ccc5e72075a3ca83fabb57d9aac5ded699f52d00ec6de72069799fcd5"
+    },
+    "动物环绕": {
+     "file": "skins/fish/f040.webm",
+     "sha256": "4b4655663c434d9c44cc8a27a1c452bbfa8eeb2351aefc037ebd7d42ceac919d",
+     "bytes": 1060342,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 60,
+      "y": 24,
+      "w": 348,
+      "h": 234,
+      "measured": true
+     },
+     "sourceSha256": "814d41e7d619f9a61f38e5494a0cfd703f8bcfd829a14fa921e1c59acf3ce872"
+    },
+    "堆雪人": {
+     "file": "skins/fish/f041.webm",
+     "sha256": "f00be3e9f7b75cabccfdd59bfe86c32c57798fcca71b19f621b000e890ea06e7",
+     "bytes": 579745,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 150,
+      "y": 48,
+      "w": 214,
+      "h": 208,
+      "measured": true
+     },
+     "sourceSha256": "478bdc31cc60e55e3efa139b81c7d8680a8cf83aca2304495e6da50a20a09cf5"
+    },
+    "放风筝": {
+     "file": "skins/fish/f042.webm",
+     "sha256": "70806f03840ee87d25963d37590776de54e54e2dee26eed6def5164dd281dca7",
+     "bytes": 853177,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 78,
+      "y": 0,
+      "w": 302,
+      "h": 248,
+      "measured": true
+     },
+     "sourceSha256": "9d9ac75871b1c70a77fc4aaa63dd24778d79cbf492c2c5df42167199c7dd2132"
+    },
+    "放河灯": {
+     "file": "skins/fish/f043.webm",
+     "sha256": "df5026e470c7850278dfeb832ae1f88747eb1d2882ba992574e15d9a2c21c776",
+     "bytes": 430375,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 158,
+      "y": 48,
+      "w": 166,
+      "h": 200,
+      "measured": true
+     },
+     "sourceSha256": "af744bed1ff20cc1b0492247add45f2b16433fde0b0897c31d6b0579429b788d"
+    },
+    "放孔明灯": {
+     "file": "skins/fish/f044.webm",
+     "sha256": "bbfd3fa5b2de456157999718a98fbe34b3969610c3201854faf54504e32ae0f5",
+     "bytes": 654549,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 128,
+      "y": 2,
+      "w": 198,
+      "h": 250,
+      "measured": true
+     },
+     "sourceSha256": "cc6540b4651f6603363dd326801921d6ba220ecaaf00828b42d248eb28beeb31"
+    },
+    "放烟花": {
+     "file": "skins/fish/f045.webm",
+     "sha256": "409e54c461d1264d87b583c5b00b6f49a2ce280c8d0f3d38bf937432137bb794",
+     "bytes": 1399819,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 20,
+      "y": 0,
+      "w": 438,
+      "h": 270,
+      "measured": true
+     },
+     "sourceSha256": "539ac09ae29ed0a11bd828df096f3e72f606529b3c59e29a5fcf3b051779a4d0"
+    },
+    "工作状态-垂头叹气冒汗": {
+     "file": "skins/fish/f046.webm",
+     "sha256": "bb7fe2cf2164caaf9dcc06473fb222d40a8c1cf920f5e6dcd80835d9224484d6",
+     "bytes": 215689,
+     "duration": 4.917,
+     "fps": 24,
+     "box": {
+      "x": 122,
+      "y": 38,
+      "w": 196,
+      "h": 208,
+      "measured": true
+     },
+     "sourceSha256": "ab00c844e62221905574b4c070e0d7b6fa14fb2afa1064c27a160f10e25f7196"
+    },
+    "工作状态-忙碌点按": {
+     "file": "skins/fish/f047.webm",
+     "sha256": "0572627758fe6af57f4588649565142e9f56638ee4f67fcea319f20f1b131a44",
+     "bytes": 538277,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 134,
+      "y": 8,
+      "w": 198,
+      "h": 240,
+      "measured": true
+     },
+     "sourceSha256": "b5d702e0c04adb7b255ac702001c24da36c8bf95efc891f693f4976986ab2435"
+    },
+    "工作状态-清点归档": {
+     "file": "skins/fish/f048.webm",
+     "sha256": "656215240480ef9958aa5c1766fc4d10fda9d50f1ca0f57b8976252dcb27aa91",
+     "bytes": 415819,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 162,
+      "y": 48,
+      "w": 158,
+      "h": 198,
+      "measured": true
+     },
+     "sourceSha256": "8c84f58f3a9e7b912e1cbfd89f77eb3652053fc9b2844295c8440cb636305d3b"
+    },
+    "工作状态-雀跃庆祝": {
+     "file": "skins/fish/f049.webm",
+     "sha256": "c8d0c5fb7013143692a554f1a8c4b87085041a55d3e803a9b59802a12514b8e8",
+     "bytes": 541085,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 134,
+      "y": 14,
+      "w": 212,
+      "h": 234,
+      "measured": true
+     },
+     "sourceSha256": "3ff681051a0bb4f152d7535d64b7f3194c30298bf56d41e521216a278f135d3e"
+    },
+    "工作状态-思考冒泡": {
+     "file": "skins/fish/f050.webm",
+     "sha256": "5198e1e55090d9cefec1cb7696fc0dc0c6bc24537bd6ae46897101a34970441a",
+     "bytes": 461683,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 140,
+      "y": 42,
+      "w": 184,
+      "h": 206,
+      "measured": true
+     },
+     "sourceSha256": "b4a36cfa28ea5d7089e362a01972c6e880297c6dcd0d39f1994efd889a3c1be5"
+    },
+    "工作状态-原地踱步张望": {
+     "file": "skins/fish/f051.webm",
+     "sha256": "c2601b930e4820e547476a25cde03a7e2fe65962f00491d12399fcdb7708879f",
+     "bytes": 528774,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 140,
+      "y": 32,
+      "w": 188,
+      "h": 216,
+      "measured": true
+     },
+     "sourceSha256": "a56c17ef901fa531324a46a04def2381f65922d319ec83dadde34d2a4669e411"
+    },
+    "哈欠连天": {
+     "file": "skins/fish/f052.webm",
+     "sha256": "41e4f95a8569bf4fc40402b037231188fdec739907aa19b63da8a2225409d716",
+     "bytes": 499177,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 156,
+      "y": 46,
+      "w": 168,
+      "h": 202,
+      "measured": true
+     },
+     "sourceSha256": "2b23372e1ff2bc2f9078c09740708c960d4ea021f9fc3cca294d9df11e393ec8"
+    },
+    "蝴蝶蜜蜂环绕头顶开花": {
+     "file": "skins/fish/f053.webm",
+     "sha256": "f9f100e975a80a841d63255fbcdc4863cb45761dd408cc9613f90d53c7e81cc0",
+     "bytes": 928531,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 6,
+      "y": 6,
+      "w": 466,
+      "h": 244,
+      "measured": true
+     },
+     "sourceSha256": "fd286c78001fe57fc093c06a4b79ef077ade2dacd2a77e011d3f393f587707ec"
+    },
+    "鲸鱼吐泡泡特效": {
+     "file": "skins/fish/f054.webm",
+     "sha256": "86448fe6a723b03875379d03c01634b263ce138fd3080087ae60c68343d327e6",
+     "bytes": 513194,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 88,
+      "y": 28,
+      "w": 234,
+      "h": 218,
+      "measured": true
+     },
+     "sourceSha256": "d64d02059dc1602f7de5aa3135d381351363f021b2bceed47655db322cc71db3"
+    },
+    "可爱宅舞": {
+     "file": "skins/fish/f055.webm",
+     "sha256": "931cc1eccf5ae09b4c9142301ac85a6107c498ea9a171f23a1ef9053913762cb",
+     "bytes": 643969,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 158,
+      "y": 42,
+      "w": 174,
+      "h": 206,
+      "measured": true
+     },
+     "sourceSha256": "4f737e44ea67c20368bdce474b951902c87c37991fb0750da8ed7794df6ec55c"
+    },
+    "蓝鲸现世": {
+     "file": "skins/fish/f056.webm",
+     "sha256": "11d913e8a1a2b71391e6a012291e4c32489dec5ea44710b70b8e645e04d1e210",
+     "bytes": 547652,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 98,
+      "y": 28,
+      "w": 262,
+      "h": 220,
+      "measured": true
+     },
+     "sourceSha256": "ed72f0ede7c6cd9482d44aa31002214d461b833c456f3ea40a52c3a0ddc20230"
+    },
+    "撸猫": {
+     "file": "skins/fish/f057.webm",
+     "sha256": "c4db69685e84f88faaf64f6bf805b9d00872522ee0f3fe2e6802f6807189f04f",
+     "bytes": 411859,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 160,
+      "y": 48,
+      "w": 164,
+      "h": 198,
+      "measured": true
+     },
+     "sourceSha256": "068d84e944dfce17de1c5a2ee2a4bc391e2848dad88a7df4877ebf23cf38bcec"
+    },
+    "萌化小幽灵": {
+     "file": "skins/fish/f058.webm",
+     "sha256": "18175404b21e41c513e91df95c15d51341551a7a5b906b596e11d1349c511de8",
+     "bytes": 480308,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 122,
+      "y": 38,
+      "w": 246,
+      "h": 214,
+      "measured": true
+     },
+     "sourceSha256": "ac2012601d05bf7de7c7cced415b8793b0be3b7cfa569da06c2325f135f7e94f"
+    },
+    "女仆屈膝礼仪": {
+     "file": "skins/fish/f059.webm",
+     "sha256": "100e9a3a5e3b0f13770bfe50df49fe6fc20ee52cb1328f9725c7230739fce804",
+     "bytes": 417420,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 160,
+      "y": 48,
+      "w": 160,
+      "h": 202,
+      "measured": true
+     },
+     "sourceSha256": "6536fb519ba73bbc338d30cf7286b14ffde1278b6d469c64573536dc0f896918"
+    },
+    "螃蟹走路": {
+     "file": "skins/fish/f060.webm",
+     "sha256": "61db9c67081e5b4787a2096f83819b64c80ff07809d903c20cf23522f11012d0",
+     "bytes": 658176,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 140,
+      "y": 48,
+      "w": 196,
+      "h": 200,
+      "measured": true
+     },
+     "sourceSha256": "5696b0878be38cc450d6eaace837aef1c1b5834f1382bc6c11c2de582f284673"
+    },
+    "凭空生花": {
+     "file": "skins/fish/f061.webm",
+     "sha256": "982405f5025af1a87901ec2c8f3b8a7eb6f191a232aeea12b5f9f237ad8098c1",
+     "bytes": 681923,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 110,
+      "y": 20,
+      "w": 290,
+      "h": 234,
+      "measured": true
+     },
+     "sourceSha256": "d1c336bc54c57a282bec180859c7b7b58912b70b5bca7b2f49495cd30cc7d5d6"
+    },
+    "扑克魔术": {
+     "file": "skins/fish/f062.webm",
+     "sha256": "73ea21982b624fb31ffc8e8f913ef882f79d89c72f59ca2eccbbd0ce6f571999",
+     "bytes": 525617,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 136,
+      "y": 48,
+      "w": 190,
+      "h": 198,
+      "measured": true
+     },
+     "sourceSha256": "1d44a7624fb027e5f615c747014ab040ddc497f6bdbcb67194a23a53a5dba78c"
+    },
+    "骑木马": {
+     "file": "skins/fish/f063.webm",
+     "sha256": "c58c3ce767d4b66c011e1560736ae9abafa8e28e22aa39dbdd753303f96d067c",
+     "bytes": 778777,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 116,
+      "y": 12,
+      "w": 254,
+      "h": 258,
+      "measured": true
+     },
+     "sourceSha256": "5f54a98ccac97eac000d799043411f4fc0732096dc51a2ad766552737578f313"
+    },
+    "轻快记录": {
+     "file": "skins/fish/f064.webm",
+     "sha256": "3e12338886adf9e3617ce39a8b5f9bba49e14288e781b5469a6dfb280583ced0",
+     "bytes": 511343,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 146,
+      "y": 46,
+      "w": 178,
+      "h": 200,
+      "measured": true
+     },
+     "sourceSha256": "1da04162fed5cd52bd4a6a6027a6902f50bda0969d34465bc2d332cf3679bbd5"
+    },
+    "轻快摇摆舞": {
+     "file": "skins/fish/f065.webm",
+     "sha256": "d049928c9c380aff1daa60964e05bc632fb9d84997786bd04b5cb43d8136e47f",
+     "bytes": 612870,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 146,
+      "y": 46,
+      "w": 206,
+      "h": 202,
+      "measured": true
+     },
+     "sourceSha256": "c621d00e1b959b991df8fc420e409b569e768fad7f75d1fb489375d101fee630"
+    },
+    "三球抛接": {
+     "file": "skins/fish/f066.webm",
+     "sha256": "2c786d01c5e29e7560dca45bb904fd7e70df52deef3c363392651be65f0905ae",
+     "bytes": 628453,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 158,
+      "y": 28,
+      "w": 168,
+      "h": 220,
+      "measured": true
+     },
+     "sourceSha256": "a64c08a4b7e5c3549616faf9dcd418e17f156b4b72d906646e4d57067df70d23"
+    },
+    "深度思考碎碎念": {
+     "file": "skins/fish/f067.webm",
+     "sha256": "70707a5d166f963337bb5f5904f5d7568e31a60ac781c46af9f252606afb401a",
+     "bytes": 520969,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 72,
+      "y": 42,
+      "w": 340,
+      "h": 206,
+      "measured": true
+     },
+     "sourceSha256": "db66867cd1f5bf68b0638fe1f966d0fdf95d1573523e60c77aa8913706118e82"
+    },
+    "是啊，吃什么": {
+     "file": "skins/fish/f068.webm",
+     "sha256": "da5bab7610fc6eee1291225bc2338fa6be7fdc08f198400e68807143cd9f6702",
+     "bytes": 672349,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 42,
+      "y": 34,
+      "w": 412,
+      "h": 214,
+      "measured": true
+     },
+     "sourceSha256": "94e1d69e05cc66cc1dc8bf6986efc51dfd71fe22fd34166f9efe7ca2d21c1e8c"
+    },
+    "收红包": {
+     "file": "skins/fish/f069.webm",
+     "sha256": "d79d0fd0679a5bc17fc12fbbdb26a4393de05e3d20f92d25c9cdbafd10556446",
+     "bytes": 540919,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 158,
+      "y": 48,
+      "w": 170,
+      "h": 200,
+      "measured": true
+     },
+     "sourceSha256": "a0e7a9a5997aff1357c76eeaaad7a01503c320f7017766dd5a42e643daa505c1"
+    },
+    "涮火锅": {
+     "file": "skins/fish/f070.webm",
+     "sha256": "1155b495ce2793439bd6d6f56c6f41107e85951f1cb9f91743f70ac7e44b54f3",
+     "bytes": 540360,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 158,
+      "y": 48,
+      "w": 168,
+      "h": 210,
+      "measured": true
+     },
+     "sourceSha256": "f0b345c22cf2841137d215a7b9d50252b8be0ede64887e91fdc9bd09843e3c8f"
+    },
+    "碎碎念-擦桌碎碎念": {
+     "file": "skins/fish/f071.webm",
+     "sha256": "4c022eb1dd03acf7f4c167c3f2615caded0b42d22e77ac196b2e21c5268f1d04",
+     "bytes": 409778,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 152,
+      "y": 48,
+      "w": 172,
+      "h": 198,
+      "measured": true
+     },
+     "sourceSha256": "bfb616a3e6ed7375826d8fd00b41b9476d2e4bd65e10abddfb98f04c734e30e6"
+    },
+    "碎碎念-对屏碎碎念": {
+     "file": "skins/fish/f072.webm",
+     "sha256": "c60f055dee7812e1f8ad141b7913f11690cba39c2ef4801ff4143ddf54fc92d6",
+     "bytes": 416367,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 162,
+      "y": 46,
+      "w": 158,
+      "h": 202,
+      "measured": true
+     },
+     "sourceSha256": "fda85ca286e173b7cf868c91829c3445e55c395e0c788b6be310a855b9b37973"
+    },
+    "碎碎念-发呆碎碎念": {
+     "file": "skins/fish/f073.webm",
+     "sha256": "7feec5b490b2c8057a015d8535e48a3adc14b886ed28d989526344cb61c5295c",
+     "bytes": 376391,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 158,
+      "y": 38,
+      "w": 164,
+      "h": 210,
+      "measured": true
+     },
+     "sourceSha256": "02da8cc2194250ae9708b137a3deff43fed2ebd40a7aa4a033b6262c3485eb5b"
+    },
+    "讨糖南瓜灯": {
+     "file": "skins/fish/f074.webm",
+     "sha256": "f28328facb81109fc2050714503effc0b3fe64a2bc4f3d09c6a4a397827385ac",
+     "bytes": 552861,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 152,
+      "y": 48,
+      "w": 182,
+      "h": 200,
+      "measured": true
+     },
+     "sourceSha256": "9535d1a29f780aa2d78ffaabd7ee1765952bf34b2b380e9edc25dc6a3003070b"
+    },
+    "踢毽子": {
+     "file": "skins/fish/f075.webm",
+     "sha256": "27347599c1cc37198cc38b100aaa8dd192de7ae45a23fac2bf5db33f0a88ace2",
+     "bytes": 607936,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 146,
+      "y": 24,
+      "w": 190,
+      "h": 224,
+      "measured": true
+     },
+     "sourceSha256": "68937b619a44e9ca7ccdfe77e5657f7a9bfa238beb33768378b6f254a16f3dbd"
+    },
+    "偷吃零食被抓住": {
+     "file": "skins/fish/f076.webm",
+     "sha256": "2b9699b45f060cd06e0781b519a6e177919c4b83125b57ac2890621a992752c0",
+     "bytes": 499782,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 160,
+      "y": 24,
+      "w": 168,
+      "h": 224,
+      "measured": true
+     },
+     "sourceSha256": "c3b783351ad38fdd931e80b188ecb12d273f21e4794aed2c41f267bdb75ff897"
+    },
+    "玩水枪": {
+     "file": "skins/fish/f077.webm",
+     "sha256": "ba1e3a6d4a42d99a06a6dfa8b04c02cf8494995ad3202d5f3b8905a7ce7999c9",
+     "bytes": 586068,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 26,
+      "y": 48,
+      "w": 418,
+      "h": 220,
+      "measured": true
+     },
+     "sourceSha256": "448f732417ac4dcb6ca140cd3d73896aaea7f5dac2876a9a0f7c0776478d7128"
+    },
+    "玩游戏气急败坏": {
+     "file": "skins/fish/f078.webm",
+     "sha256": "68d6e1cdc850575e4e84189cc6ddd910c9ea17558116e986f573b7fa16db40fd",
+     "bytes": 596272,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 126,
+      "y": 44,
+      "w": 210,
+      "h": 212,
+      "measured": true
+     },
+     "sourceSha256": "8e406bc52cf2a20c9d288867367c4df7c45a5dc78443bc5c2fdc83835ac0b4c3"
+    },
+    "舞狮头": {
+     "file": "skins/fish/f079.webm",
+     "sha256": "8a570aefa86453042042c2401a01e04d424647c3ac7a9e7b859e789f3235e860",
+     "bytes": 709028,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 152,
+      "y": 26,
+      "w": 180,
+      "h": 222,
+      "measured": true
+     },
+     "sourceSha256": "6d2006b4023d44087cf4c7dc055d1d8f2a8cec32e22610807a2dfea7bb0dc367"
+    },
+    "下五子棋": {
+     "file": "skins/fish/f080.webm",
+     "sha256": "af62c43c829ae8eab3832b119ec1c84f74215e8633d1229938d3fc86e22c5fbf",
+     "bytes": 584710,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 154,
+      "y": 38,
+      "w": 176,
+      "h": 216,
+      "measured": true
+     },
+     "sourceSha256": "0802b6b808f44846b3d194a857fb0ffd38bdea2d7cdb91c9e5e6f311e44f1953"
+    },
+    "小幅度原地360度旋转展示": {
+     "file": "skins/fish/f081.webm",
+     "sha256": "87e70f4ab1b67cb5fedf4f444eb5e96ba3dbb0a5358dcf46e34f8eae819259e7",
+     "bytes": 639834,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 144,
+      "y": 36,
+      "w": 206,
+      "h": 212,
+      "measured": true
+     },
+     "sourceSha256": "9f1a927f63c73e3c35ee5f4d2eb58f4a46ac7eca2af69388f320d10cdef8d29c"
+    },
+    "小提琴演奏": {
+     "file": "skins/fish/f082.webm",
+     "sha256": "d3a6faa18e17c63700d5f3e72d242b293f67793e34eec247f90627a47d6d8916",
+     "bytes": 665613,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 106,
+      "y": 48,
+      "w": 246,
+      "h": 204,
+      "measured": true
+     },
+     "sourceSha256": "03816be0fcd499b63ed667e8b87c234094e64c59f1cd222455cf6a27ac832d1c"
+    },
+    "写代码": {
+     "file": "skins/fish/f083.webm",
+     "sha256": "1b8bb9b387f48b105c7444ea277be7ee29f932e0f52ba5b985bd5dd0d362aa0f",
+     "bytes": 443245,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 160,
+      "y": 46,
+      "w": 162,
+      "h": 200,
+      "measured": true
+     },
+     "sourceSha256": "0441287737cdbb993ce90dfa74c67ea4ea3549d8c8ea98946604668464589ed7"
+    },
+    "写福字": {
+     "file": "skins/fish/f084.webm",
+     "sha256": "7acaee6b27e2bb5ff132d6f1acfbca5ad2924f77d29e2b69c9542520edf17b40",
+     "bytes": 571217,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 132,
+      "y": 48,
+      "w": 192,
+      "h": 200,
+      "measured": true
+     },
+     "sourceSha256": "7841a47a6997bb7c90d81671d524c44b1afc87ca2e8fceb17d06d99003a67181"
+    },
+    "摇扇纳凉": {
+     "file": "skins/fish/f085.webm",
+     "sha256": "af05348bb7caf418b9064e10ac338c048fde457eec899fa77b1f20ec36fcd0f3",
+     "bytes": 586880,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 118,
+      "y": 40,
+      "w": 232,
+      "h": 208,
+      "measured": true
+     },
+     "sourceSha256": "87d4b9454692484e4809b45071751b2144fc82fd8696fafabb32e19af98350f2"
+    },
+    "用鲸鱼尾巴拍打地面": {
+     "file": "skins/fish/f086.webm",
+     "sha256": "659c77b47789083c53284f2af2a9532df82ae46bde652f87165e59a58e7296e8",
+     "bytes": 416898,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 158,
+      "y": 48,
+      "w": 192,
+      "h": 200,
+      "measured": true
+     },
+     "sourceSha256": "e3f92df2cf182fdcb109ad0a865689d66e0a0d10db14c1528e5b3cb2f0bf090d"
+    },
+    "优雅女仆舞": {
+     "file": "skins/fish/f087.webm",
+     "sha256": "df3a2853e4ea273915955bd612e71194d15f0e04f2c21a07b90fcb7d63b11096",
+     "bytes": 640024,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 154,
+      "y": 42,
+      "w": 194,
+      "h": 206,
+      "measured": true
+     },
+     "sourceSha256": "74209c4c668545ab1e2366e0d1c0709b7bea0312eeba7e89b553d5b977bfe649"
+    },
+    "悠闲哼歌": {
+     "file": "skins/fish/f088.webm",
+     "sha256": "d144d66b6e71d835993e301fb12bd93b2ddea2d33d03f2e8fd6507dda11a1487",
+     "bytes": 653413,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 108,
+      "y": 6,
+      "w": 258,
+      "h": 240,
+      "measured": true
+     },
+     "sourceSha256": "358905afc2c81a9ed478bcf121a8f2f19276766b1d382d0067456bd57d1d7dbb"
+    },
+    "余额-袋空如洗": {
+     "file": "skins/fish/f089.webm",
+     "sha256": "e86cf315d59fdbfcaa47211dfcc4fe14d63c5cf2bbd04bdfb20b6f86236df937",
+     "bytes": 439699,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 150,
+      "y": 46,
+      "w": 174,
+      "h": 208,
+      "measured": true
+     },
+     "sourceSha256": "3db780bbc96bb362ced36078fecacfb63b9d292c06b533cfb61797adb553a7f8"
+    },
+    "余额-分文不剩": {
+     "file": "skins/fish/f090.webm",
+     "sha256": "1a118deabf32d73c07d854cb84d070dd68361bd2ee3fa276cd0e8bcec7c3d832",
+     "bytes": 545209,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 114,
+      "y": 46,
+      "w": 220,
+      "h": 204,
+      "measured": true
+     },
+     "sourceSha256": "b232349bdbd962bad7f3a15cfce539c6fadadfd0a286b7f03b03e59cf7aca7a8"
+    },
+    "余额-金袋叮当": {
+     "file": "skins/fish/f091.webm",
+     "sha256": "02373e0250a2f93bb7fb3a6a820c58eae23862c3f6dc675495d5fabc5b768e7a",
+     "bytes": 598364,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 104,
+      "y": 26,
+      "w": 282,
+      "h": 230,
+      "measured": true
+     },
+     "sourceSha256": "6fda0c4ae013cf7906afa1cb846717d097db576343dab11006f14ca5c7a9a34f"
+    },
+    "余额-钱袋满溢": {
+     "file": "skins/fish/f092.webm",
+     "sha256": "7403d639db2934498a71e030ce8bb6fffca0aee5c75a16c65603daa54c0ad970",
+     "bytes": 691332,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 92,
+      "y": 26,
+      "w": 334,
+      "h": 236,
+      "measured": true
+     },
+     "sourceSha256": "dddd6ffc4e763b77360e49c0ccee0987a43c3d253a23e3133c334aabb598b362"
+    },
+    "余额-钱袋如常": {
+     "file": "skins/fish/f093.webm",
+     "sha256": "0bf6f1404b87029fc5e4320535334763fa1f819fbdecb291da5d9963fd3c4299",
+     "bytes": 451279,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 108,
+      "y": 44,
+      "w": 216,
+      "h": 204,
+      "measured": true
+     },
+     "sourceSha256": "f6cb9aa1c829fcbc62478dbddd0e0fcd7beb47433cea751d18b81ccccbec95d3"
+    },
+    "余额-数金皱眉": {
+     "file": "skins/fish/f094.webm",
+     "sha256": "72e3ece447e09edf32792afc76cc0a59803acee11aa2eb3faf80dde5ced76e2c",
+     "bytes": 376783,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 158,
+      "y": 48,
+      "w": 166,
+      "h": 198,
+      "measured": true
+     },
+     "sourceSha256": "94a7e0ee8e1012aadec33492301c893c2d1c5df7e36049dbada8c4a264bf1810"
+    },
+    "原地蹲下玩玩具汽车": {
+     "file": "skins/fish/f095.webm",
+     "sha256": "625f64ba24a1a6443337ab8415df7b70200f6da846fb813e0205bf6c5638dd2d",
+     "bytes": 557541,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 130,
+      "y": 48,
+      "w": 198,
+      "h": 208,
+      "measured": true
+     },
+     "sourceSha256": "3ec9978ce3663d9bc4bfe5f5223f0a4e3d9ea6fcd0a6acdbaa802e0cfba36bf2"
+    },
+    "原地漂浮踏步": {
+     "file": "skins/fish/f096.webm",
+     "sha256": "c25105d79a4f9d8cb9d5b118c14e2bcda64a26139bb84062d9a2e703cb23c41b",
+     "bytes": 673326,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 160,
+      "y": 46,
+      "w": 162,
+      "h": 204,
+      "measured": true
+     },
+     "sourceSha256": "7dee1c14672f1f99bebe5e6f1a52d6664b851ed95f9958ac6c12b753a5e5cc81"
+    },
+    "原地敲击桌面互动": {
+     "file": "skins/fish/f097.webm",
+     "sha256": "ad6773bbdb91da0b9ea8d2cbee7095f0ed37fd4d8632738f6249acc207b7eaa0",
+     "bytes": 467891,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 154,
+      "y": 48,
+      "w": 166,
+      "h": 198,
+      "measured": true
+     },
+     "sourceSha256": "a40f481e89abcc726c89f30b01d085ca8c17a090e71facdd5e7f747e771093eb"
+    },
+    "原地跳跃抓碎头顶物品": {
+     "file": "skins/fish/f098.webm",
+     "sha256": "b8873ef545d822ae16afb2fecf78e3624630ae8e7b3c99cdbdd6286f0a91b4f0",
+     "bytes": 667167,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 90,
+      "y": 0,
+      "w": 300,
+      "h": 248,
+      "measured": true
+     },
+     "sourceSha256": "ccb906c677c7b739eb0dbf5307160e66583562c2a6caec72a9d3d14a202fcccd"
+    },
+    "原地小憩沉眠": {
+     "file": "skins/fish/f099.webm",
+     "sha256": "c49ca08b35aa9654e52c38263753616208db399b2aaeec3a3bf0c4862ebcaa2c",
+     "bytes": 493346,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 156,
+      "y": 22,
+      "w": 166,
+      "h": 224,
+      "measured": true
+     },
+     "sourceSha256": "31d4a6b36a29b2a4fe097384173d3bbeb3fa2f40f526b13191791456bf7507a1"
+    },
+    "原地重力下蹲压缩": {
+     "file": "skins/fish/f100.webm",
+     "sha256": "6c969d62259028c1a6d2c80f9cf50d7e3b0160d5aa763db89704454e1b27db79",
+     "bytes": 242327,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 156,
+      "y": 36,
+      "w": 182,
+      "h": 216,
+      "measured": true
+     },
+     "sourceSha256": "1c8972478a7f347818165db62b468f1624ec11d0862f38aec3078e3870831d24"
+    },
+    "原地专心玩魔方": {
+     "file": "skins/fish/f101.webm",
+     "sha256": "f918cb94e13729da7c5fab581fb0c8e81ee4800b33a9767c0ed59d81c4e492d9",
+     "bytes": 506270,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 140,
+      "y": 50,
+      "w": 184,
+      "h": 196,
+      "measured": true
+     },
+     "sourceSha256": "ad54da175ba86b19a84b73b3169fb418b2df016560bb274283f200aca351e712"
+    },
+    "原地左转奔跑": {
+     "file": "skins/fish/f102.webm",
+     "sha256": "75b53f13bfa36c03e4f829f5d75a7747d04cddfbe77983a56b52912d9b391c73",
+     "bytes": 662550,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 92,
+      "y": 44,
+      "w": 258,
+      "h": 206,
+      "measured": true
+     },
+     "sourceSha256": "79882aedd7b77caaacce1a34dece68e2f001a3dbfa5f9d049c1ce2fc04518d52"
+    },
+    "照镜子": {
+     "file": "skins/fish/f103.webm",
+     "sha256": "728048a2e32ca27d6df6182f01d797c3b0b1600d06408402eb3720771bf33f75",
+     "bytes": 575114,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 150,
+      "y": 42,
+      "w": 194,
+      "h": 204,
+      "measured": true
+     },
+     "sourceSha256": "13dc61c003e500d906b6526765072b7a78c0709491a397d4e70a88ec7ea63310"
+    },
+    "整体换装试色": {
+     "file": "skins/fish/f104.webm",
+     "sha256": "c246d7a9d4d8ce08317fba847e187d4580b4ae801d14485af9bb9276e21872c3",
+     "bytes": 579327,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 144,
+      "y": 42,
+      "w": 210,
+      "h": 204,
+      "measured": true
+     },
+     "sourceSha256": "e8e599b12da7f3437c98425f6b192dd0c81a6b63bbba5e7927f53c22f757b094"
+    },
+    "中秋赏月吃月饼": {
+     "file": "skins/fish/f105.webm",
+     "sha256": "40a1e2ea94a717539a4d3720c3112d3d80b1a5a00d54471912790df5e871f301",
+     "bytes": 583112,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 150,
+      "y": 40,
+      "w": 286,
+      "h": 208,
+      "measured": true
+     },
+     "sourceSha256": "3f64003262d3f129470721495695ecd231795d859693a748914c02c6e3883a3a"
+    },
+    "装点圣诞树": {
+     "file": "skins/fish/f106.webm",
+     "sha256": "040a12be5bbca14f72ab472e30bd7f0d6e07f7b3294207b998d69ef7c99ae45f",
+     "bytes": 903263,
+     "duration": 10.042,
+     "fps": 24,
+     "box": {
+      "x": 70,
+      "y": 36,
+      "w": 302,
+      "h": 228,
+      "measured": true
+     },
+     "sourceSha256": "25da448acdbba49c2d4b209d24053b6dd1b79e656273d1f3e659385dc2bc3759"
+    }
+   }
+  }
+ },
+ "bundle": {
+  "file": "melo-pet-assets-480x270-b02313a23eb8.zip",
+  "sha256": "e25cf3726898dd8be710eaf02b65b79bbc797017fd7e5f96b01eb37547545e8d",
+  "bytes": 139459483,
+  "url": "https://github.com/MortredVigoss/Melo/releases/download/android-pet-assets-1/melo-pet-assets-480x270-b02313a23eb8.zip"
+ }
+}
