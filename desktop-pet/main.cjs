@@ -8,6 +8,7 @@ const { pathToFileURL } = require('node:url');
 const { MeloClient } = require('./melo-client.cjs');
 const { createControlServer } = require('./control-server.cjs');
 const { writeRuntimeInfo, removeRuntimeInfo } = require('./runtime-info.cjs');
+const { watchOwnerPipe } = require('./owner-pipe.cjs');
 
 const root = __dirname;
 const profile = process.env.MELO_PET_PROFILE || path.join(app.getPath('appData'), 'melo-desktop-pet-dsh');
@@ -204,6 +205,8 @@ if (primary) {
   app.on('window-all-closed', () => {});
   app.on('before-quit', event => { if (!shutdownComplete) { event.preventDefault(); void shutdown(); } });
   process.on('SIGTERM', () => { void shutdown(); });
+  // Melo's owner pipe: a killed or crashed Melo closes it and the pet follows.
+  watchOwnerPipe(process.stdin, process.env, () => { void shutdown(); });
   process.on('SIGINT', () => { void shutdown(); });
   process.on('exit', () => { signalHostTree('SIGTERM'); try { removeRuntimeInfo(runtimeFile, process.pid); } catch {} });
   app.whenReady().then(async () => {

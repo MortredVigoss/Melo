@@ -26,6 +26,8 @@ final class DesktopPetManager {
   private var stopRequested = false
   private var starting = false
   private var watchdog: DispatchSourceTimer?
+  /// The only write end of the pet's stdin pipe; when this process dies the kernel closes it and the pet stops on EOF.
+  private var ownerPipe: Pipe?
   /// Main thread. The pet Melo expected to be running is gone and Melo did not stop it.
   var onUnexpectedExit: (() -> Void)?
 
@@ -98,8 +100,15 @@ final class DesktopPetManager {
     // The pet connects to this Melo, whatever port it bound (see prepareLaunchPort in main.swift).
     environment["MELO_BASE_URL"] = baseURL.absoluteString
     environment.removeValue(forKey: "ELECTRON_RUN_AS_NODE")
+    // Same guard as the server's owner pipe (main.swift): a SIGKILLed or crashed
+    // Melo closes the write end and desktop-pet/owner-pipe.cjs stops the pet.
+    // Close-on-exec keeps the write end out of the pet and its helpers.
+    environment["MELO_PET_OWNER_PIPE"] = "1"
     process.environment = environment
-    process.standardInput = FileHandle.nullDevice
+    let pipe = Pipe()
+    _ = fcntl(pipe.fileHandleForWriting.fileDescriptor, F_SETFD, FD_CLOEXEC)
+    process.standardInput = pipe
+    ownerPipe = pipe
     try? FileManager.default.createDirectory(atPath: profileDirectory, withIntermediateDirectories: true)
     FileManager.default.createFile(atPath: logPath, contents: nil, attributes: [.posixPermissions: 0o600])
     if let log = FileHandle(forWritingAtPath: logPath) {
@@ -156,7 +165,7 @@ final class DesktopPetManager {
     let recordedAlive = info.map { DesktopPetManager.isAlive($0.pid) } ?? false
     guard childRunning || recordedAlive else { process = nil; completion(); return }
     let pid = childRunning ? child!.processIdentifier : info!.pid
-    let finish: () -> Void = { [weak self] in self?.process = nil; completion() }
+    let finish: () -> Void = { [weak self] in self?.process = nil; self?.ownerPipe = nil; completion() }
     let escalate: () -> Void = {
       if let child, child.isRunning { ProcessShutdown.stop(child, timeout: 6) { finish() }; return }
       kill(pid, SIGTERM)

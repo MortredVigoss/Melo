@@ -13,7 +13,7 @@ import { join, resolve, relative, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { verifyAssets, PET_ROOT, STORE } from './desktop-pet-assets.js';
 
-const RUNTIME_FILES = ['package.json', 'main.cjs', 'runtime-info.cjs', 'melo-client.cjs', 'control-server.cjs', 'README.md', 'dialog'];
+const RUNTIME_FILES = ['package.json', 'main.cjs', 'runtime-info.cjs', 'owner-pipe.cjs', 'melo-client.cjs', 'control-server.cjs', 'README.md', 'dialog'];
 const UPSTREAM_FILES = ['LICENSE', 'UPSTREAM-README.md', 'README.md', 'package.json', 'lib', 'runtime', 'assets/config.jsonc', 'assets/fonts', 'assets/logo.png', 'assets/memes', 'assets/pic'];
 const run = (file, args, options = {}) => execFileSync(file, args, { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', ...options });
 const ditto = (from, to) => { mkdirSync(dirname(to), { recursive: true }); run('ditto', [from, to]); };
@@ -37,6 +37,15 @@ export function bundleDesktopPet(destination, { petRoot = PET_ROOT, log = consol
   for (const name of ['manifest.json', 'winter-config.json']) ditto(join(petRoot, 'skins/winter', name), join(destination, 'skins/winter', name));
   ditto(realpathSync(join(petRoot, 'skins/winter/winter-animation')), join(destination, 'skins/winter/winter-animation'));
   ditto(realpathSync(join(petRoot, 'upstream/assets/webm')), join(destination, 'upstream/assets/webm'));
+  // Every local require of the controller must have travelled; a missing module would leave
+  // Electron on its error dialog with no runtime record (2026-10-22, owner-pipe.cjs).
+  for (const file of ['main.cjs', 'melo-client.cjs', 'control-server.cjs', 'runtime-info.cjs', 'owner-pipe.cjs']) {
+    const source = readFileSync(join(destination, file), 'utf8');
+    for (const match of source.matchAll(/require\(\s*['"](\.[^'"]+)['"]\s*\)/g)) {
+      const target = join(destination, match[1]);
+      if (!existsSync(target)) throw new Error(`${file} requires ${match[1]} but it is not staged; add it to RUNTIME_FILES`);
+    }
+  }
   // Production dependencies only (zod, @electron/get and what they need); Electron and esbuild stay out.
   const packages = run('npm', ['ls', '--omit=dev', '--parseable', '--all'], { cwd: petRoot }).split('\n').map(line => line.trim()).filter(line => line.includes('/node_modules/'));
   if (!packages.length) throw new Error('npm ls found no production dependencies');

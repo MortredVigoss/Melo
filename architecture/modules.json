@@ -3708,6 +3708,7 @@
         "js": [
           "desktop-pet/tests/control-server.test.js",
           "desktop-pet/tests/melo-client.test.js",
+          "desktop-pet/tests/owner-pipe.test.js",
           "desktop-pet/tests/runtime-info.test.js",
           "desktop-pet/tests/skin-store.test.js",
           "desktop-pet/tests/winter-idle-cadence.test.js",
@@ -5124,15 +5125,17 @@
         "desktop-pet/main.cjs",
         "desktop-pet/control-server.cjs",
         "desktop-pet/runtime-info.cjs",
+        "desktop-pet/owner-pipe.cjs",
         "desktop-ui/localSettings.js"
       ],
       "tests": [
         "desktop-pet/tests/control-server.test.js",
         "desktop-pet/tests/runtime-info.test.js",
+        "desktop-pet/tests/owner-pipe.test.js",
         "desktop-ui/localSettings.desktopPet.test.js",
         "desktop-ui/localSettings.test.js"
       ],
-      "note": "原生壳用桌宠 profile 的 runtime.json（pid、控制地址、口令）判断运行状态并 POST /quit；启动时以 MELO_BASE_URL 传实际端口。记录文件字段或控制路由改动须同步 DesktopPet.swift",
+      "note": "原生壳用桌宠 profile 的 runtime.json（pid、控制地址、口令）判断运行状态并 POST /quit；启动时以 MELO_BASE_URL 传实际端口。记录文件字段或控制路由改动须同步 DesktopPet.swift；Melo 以只持写端的 stdin 管道启动桌宠（MELO_PET_OWNER_PIPE），被强杀或崩溃时桌宠读到 EOF 自行退出",
       "features": [
         "desktop-pet",
         "desktop-shell",

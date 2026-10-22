@@ -27,6 +27,7 @@ Git LFS 未安装；按任务给出的替代方案采用仓库外固定目录 + 
 - 桌宠控制服务起来后写 `~/Library/Application Support/melo-desktop-pet-dsh/runtime.json`（0600：进程号、host 进程号、控制地址、口令、Melo 地址），退出时删除。Melo 以「记录存在且进程存活」判断运行状态；设置行的状态文字来自这里，不是偏好。
 - 桌宠自己退出（右键 / 应用菜单「退出桌宠」或崩溃）：子进程结束回调或 2 秒看门狗把偏好改为关，并向页面派发 `melo-local-settings-changed`，设置行无需刷新即改为「未运行 / 关闭」。
 - Melo 退出（Cmd+Q、关闭窗口退出、SIGTERM）：先 `/quit` 桌宠再停服务，沿用原有有界停子进程路径；`MELO_DESKTOP_PET_DISABLED=1` 让真包冒烟的替身壳永不启动用户的桌宠。
+- Melo 被强杀或崩溃（没有任何退出处理）：Melo 以只持写端（close-on-exec）的 stdin 管道启动桌宠并设 `MELO_PET_OWNER_PIPE=1`，`desktop-pet/owner-pipe.cjs` 读到 EOF 即走同一个 `shutdown()`，与 Melo 给自己服务的 owner pipe 同一机制。本轮曾观察到一次 Melo 在测试期间无退出记录地消失、桌宠以孤儿继续运行（下一次 Melo 启动会接管并可正常关闭），因此补上此守卫。
 - profile 目录、皮肤选择、位置、尺寸、对话记录原样保留；本轮安装后 profile 仍是 winter 皮肤、原对话 id 与 9 条历史。
 
 ## 验收（2026-10-22，本机）
@@ -42,6 +43,7 @@ Git LFS 未安装；按任务给出的替代方案采用仓库外固定目录 + 
 | 偏好开后冷启动 | 服务就绪 3 秒内桌宠作为 Melo 子进程出现，`runtime.json` 0600、`/health` 带口令 200 / 不带 401、`MELO_BASE_URL=http://127.0.0.1:43127` | 终端、`screen-pet-running.png` |
 | 打开对话并真实回复 | 应用菜单「与 Melo 对话」打开原对话窗口，发送一句测试，Melo 主助手回复「收到。」，写入桌宠 `conversation.json`（source melo）并出现在 Melo 自己的对话列表 | `pet-chat-melo-replied.jpg` |
 | 设置页下拉 → 保存（真机 UI） | 「开启 → 关闭」保存后桌宠经 `/quit` 退出、记录删除、偏好 0，行变「未运行 / 关闭」；「关闭 → 开启」保存后桌宠作为 Melo 子进程重新出现、记录回来、偏好 1，行变「运行中 / 开启」 | `ui-dropdown-open.jpg`、`ui-saved-off-not-running.jpg`、`ui-saved-on-running.jpg` |
+| Melo 被 `kill -9` → 桌宠 | 桌宠 stdin 为 Melo 持有的管道（`lsof` 可见 PIPE、环境含 `MELO_PET_OWNER_PIPE=1`）；强杀 Melo 后 1 秒内桌宠退出、记录删除，无遗留 host / helper 进程，服务也经自己的 owner pipe 退出 | 终端 |
 | 桌宠自行退出 → 开关 | 应用菜单「退出桌宠」后记录删除、无桌宠进程、`melo.desktopPet` 变 0，设置行实时变「未运行 / 关闭」 | `settings-row-after-pet-menu-quit.jpg` |
 | Melo 退出 → 桌宠退出 | `tell application "Melo" to quit` 后 1 秒内 Melo 与桌宠都结束，记录删除，偏好保持开 | 终端 |
 | 重开 Melo → 恢复 | 偏好开时重开，3 秒内桌宠回来 | 终端 |
@@ -53,3 +55,4 @@ Git LFS 未安装；按任务给出的替代方案采用仓库外固定目录 + 
 - 第一次重开 Melo 时 `StaleServer.lockHolder` 的 `open()` 在主目录锁文件上阻塞约 2 分钟后才继续（采样见终端），与本轮改动无关（发生在桌宠逻辑之前），后续两次重开 3 秒内就绪；未深究，留作观察。
 - 旧入口 `~/Desktop/melo桌宠.app` 仍指向原项目与外部 Electron，本轮只在验收前把它启动的桌宠正常停止（SIGTERM），没有删除；同一 profile 单实例，两边不能同时运行。
 - CI 没有仓库外媒体：`winter-pack` 两项在 CI 记为显式跳过，本机与发布 gate 照常执行。
+- 装包脚本曾漏掉新增的 `owner-pipe.cjs`：Electron 在主进程 require 失败时停在错误对话框、不写运行记录，留下一个无用的控制进程。`bundle-desktop-pet.js` 现在在装包后核对控制进程所有本地 `require` 都已复制，缺一即失败。
