@@ -42,6 +42,9 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
   ) ?? 43127
   private var port = 43127
   private var hasLoadedServer = false
+  private var launchingServer = false
+  private var stoppedStaleServerPID: pid_t?
+  private var terminationSignalSources: [DispatchSourceSignal] = []
   private var launchAttempt = UUID()
   private var launchRequest: URLSessionDataTask?
   private var resolvedNodePath: String?
@@ -84,6 +87,7 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
   // Lets the Node.js backend request on-device SFSpeechRecognizer transcription
   // for Telegram voice notes and other remote audio without needing a Whisper API key.
   private var transcriptionServerFd: Int32 = -1
+  private var nativeTranscriptionStarted = false
   private var transcriptionPort: Int { port + 1 }
 
   private var serverURL: URL {
@@ -114,15 +118,21 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
     projectDir + "/.tmp/melo-home"
   }
 
+  private var serverScriptPath: String {
+    projectDir + "/src/server.js"
+  }
+
   func applicationDidFinishLaunching(_ notification: Notification) {
+    // Installed before the server child exists, so no signal can orphan it.
+    terminationSignalSources = ProcessShutdown.onTerminationSignals { [weak self] signal in
+      self?.terminateAfterSignal(signal)
+    }
     installMainMenu()
     buildWindow()
     window.isReleasedWhenClosed = false
     writeDebug("status=launching")
     loadPlaceholder()
     startServerIfNeeded()
-    startNativeTranscriptionServer()
-    pollServerAndLoad()
     NSApp.activate(ignoringOtherApps: true)
   }
 
@@ -139,6 +149,20 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
     launchRequest?.cancel()
     ProcessShutdown.stop(serverProcess) {
       sender.reply(toApplicationShouldTerminate: true)
+    }
+  }
+
+  // SIGTERM/SIGINT/SIGHUP skip applicationShouldTerminate, including its
+  // unsaved-settings prompt: stop the server child within the same bound as a
+  // normal quit, release native children, then end as the signal asked.
+  private func terminateAfterSignal(_ signal: Int32) {
+    // A quit already in progress owns the child's shutdown and exits after it.
+    guard !terminatingServer else { return }
+    terminatingServer = true
+    launchRequest?.cancel()
+    ProcessShutdown.stop(serverProcess) { [weak self] in
+      self?.releaseNativeResources()
+      ProcessShutdown.exit(after: signal)
     }
   }
 
@@ -177,6 +201,10 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
   }
 
   func applicationWillTerminate(_ notification: Notification) {
+    releaseNativeResources()
+  }
+
+  private func releaseNativeResources() {
     voiceInput.cancel()
     launchRequest?.cancel()
     // Without these calls a `say` child or AVAudioPlayer can keep playing for
@@ -307,6 +335,42 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
   }
 
   private func startServerIfNeeded() {
+    guard !launchingServer, !terminatingServer else { return }
+    launchingServer = true
+    // Capture before leaving the main thread; the wait never blocks the launch page.
+    let home = runtimeMeloHomePath
+    let serverScript = serverScriptPath
+    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+      let outcome = StaleServer.reclaim(home: home, serverScript: serverScript)
+      DispatchQueue.main.async { self?.launchServer(after: outcome) }
+    }
+  }
+
+  private func launchServer(after outcome: StaleServer.Outcome) {
+    launchingServer = false
+    guard !terminatingServer else { return }
+    stoppedStaleServerPID = nil
+    switch outcome {
+    case .busy(let holderPID):
+      // The new server could not take the home lock either; never move it to
+      // another port next to a server it would collide with.
+      writeDebug("status=server-home-busy\nholderPid=\(holderPID)\nmeloHome=\(runtimeMeloHomePath)")
+      loadErrorPage(message: "另一个 Melo 服务（进程 \(holderPID)）正在使用这个工作空间。\n请先退出它，再点击重试。")
+      return
+    case .stopped(let stalePID):
+      stoppedStaleServerPID = stalePID
+    case .clear:
+      break
+    }
+    spawnServer()
+    if !nativeTranscriptionStarted, serverProcess?.isRunning == true {
+      nativeTranscriptionStarted = true
+      startNativeTranscriptionServer()
+    }
+    pollServerAndLoad()
+  }
+
+  private func spawnServer() {
     prepareLaunchPort()
     prepareRuntimeMeloHome()
 
@@ -389,6 +453,8 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
         serverURL=\(serverURL.absoluteString)
         projectDir=\(projectDir)
         nodePath=\(nodeExecutable)
+        serverPid=\(process.processIdentifier)
+        staleServerStopped=\(stoppedStaleServerPID.map(String.init) ?? "none")
         """
       )
     } catch {
@@ -487,9 +553,13 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
   }
 
   private func prepareLaunchPort() {
+    // A retry keeps the port paired with the native service already bound at port + 1.
+    if nativeTranscriptionStarted && isPortAvailable(port) { return }
+    // Only an unrelated listener moves Melo off its port (a stale Melo server
+    // was stopped before this), and the native service needs port + 1 as well.
     let candidatePorts = [configuredPort] + Array((configuredPort + 1)...(configuredPort + 6))
     for candidate in candidatePorts {
-      if isPortAvailable(candidate) {
+      if isPortAvailable(candidate) && isPortAvailable(candidate + 1) {
         port = candidate
         return
       }
@@ -557,8 +627,8 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
     case "retryLaunch":
       guard !hasLoadedServer else { return }
       loadPlaceholder()
-      if serverProcess?.isRunning != true { startServerIfNeeded() }
-      pollServerAndLoad()
+      // A fresh launch polls once its stale-server check has finished.
+      if serverProcess?.isRunning == true { pollServerAndLoad() } else { startServerIfNeeded() }
     case "toggle":
       if voiceInput.state.active { voiceInput.stop() }
       else {

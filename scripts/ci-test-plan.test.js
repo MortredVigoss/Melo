@@ -14,6 +14,9 @@ test('CI docs use local selection and start no expensive product jobs; runtime d
     const jobs=ciJobs(planTests([path],files));
     for(const key of ['linux','swift','safety','android','full'])assert.equal(jobs[key],true,`${path}: ${key}`);
   }
+  // Linux skips the native shell tests, so a change to one alone still needs the macOS job.
+  const nativeFiles=['scripts/native-shutdown.test.js','scripts/desktop-server-lifecycle.test.js'];
+  for(const path of nativeFiles)assert.equal(ciJobs(planTests([path],nativeFiles)).swift,true,path);
 });
 
 test('CI range includes entire push, PR merge base and both sides of rename; missing history widens',async()=>{

@@ -36,7 +36,7 @@
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
-      "detected": 30,
+      "detected": 31,
       "unannotated": []
     }
   },
@@ -3600,6 +3600,7 @@
         "desktop-ui/undoToast.js",
         "desktop-app/NativeLocation.swift",
         "desktop-app/ProcessShutdown.swift",
+        "desktop-app/StaleServer.swift",
         "desktop-app/main.swift"
       ],
       "iphone": {
@@ -3648,12 +3649,14 @@
       "implicit": [
         "bridge-desktop-native",
         "bridge-process-shutdown",
+        "bridge-stale-server",
         "gen-interface-languages",
         "gen-ios-scene",
         "served-shared-modules",
         "source-tests-app-dispatch-freeze",
         "source-tests-app-js",
         "source-tests-cross-module",
+        "source-tests-desktop-shell-lifecycle",
         "source-tests-galaxy-backdrop",
         "source-tests-index-html",
         "source-tests-self"
@@ -4096,6 +4099,7 @@
       },
       "implicit": [
         "bridge-process-shutdown",
+        "bridge-stale-server",
         "served-shared-modules",
         "source-tests-cross-module"
       ],
@@ -4260,6 +4264,7 @@
           "scripts/check-doc-links.test.js",
           "scripts/check-syntax.test.js",
           "scripts/ci-test-plan.test.js",
+          "scripts/desktop-server-lifecycle.test.js",
           "scripts/eval-agent-tasks.test.js",
           "scripts/generate-module-map.test.js",
           "scripts/ios-test-selection.test.js",
@@ -4277,10 +4282,12 @@
       "implicit": [
         "agent-core-bundle",
         "bridge-process-shutdown",
+        "bridge-stale-server",
         "ci-workflow-selection",
         "gen-agent-core",
         "gen-interface-languages",
         "gen-module-map",
+        "source-tests-desktop-shell-lifecycle",
         "source-tests-task-replay",
         "tooling-ios-tests",
         "tooling-test-plan"
@@ -4996,6 +5003,43 @@
       "features": [
         "desktop-shell",
         "platform",
+        "tooling"
+      ]
+    },
+    {
+      "id": "bridge-stale-server",
+      "kind": "native-bridge",
+      "from": [
+        "desktop-app/StaleServer.swift",
+        "desktop-app/ProcessShutdown.swift"
+      ],
+      "to": [
+        "src/runtime/serverLock.js",
+        "src/server.js"
+      ],
+      "tests": [
+        "scripts/desktop-server-lifecycle.test.js"
+      ],
+      "note": "原生壳收到 SIGTERM/SIGINT/SIGHUP 先停子服务再退出；启动时按 SQLite 主目录锁的内核持有者识别、只停止本项目被遗弃的服务。锁文件名或加锁方式改动须同步 StaleServer.swift",
+      "features": [
+        "desktop-shell",
+        "platform",
+        "tooling"
+      ]
+    },
+    {
+      "id": "source-tests-desktop-shell-lifecycle",
+      "kind": "source-reading-test",
+      "reads": [
+        "desktop-app/main.swift",
+        "scripts/build-desktop-app.sh"
+      ],
+      "tests": [
+        "scripts/desktop-server-lifecycle.test.js"
+      ],
+      "note": "接线守卫：信号处理先于首个子进程安装、每次启动服务前先回收孤儿服务、构建脚本编入 StaleServer.swift；行为由同文件的进程级用例与 smoke-desktop-lifecycle.js 真包验证",
+      "features": [
+        "desktop-shell",
         "tooling"
       ]
     },

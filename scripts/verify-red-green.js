@@ -657,6 +657,14 @@ async function main() {
     results.push(
       await runStep('Build desktop app bundle', () => runCommand('npm', ['run', 'build:desktop'])),
     );
+    // Runs the fresh build before install, on a stand-in project, home and port.
+    if (process.env.MELO_SKIP_NATIVE_LAUNCH === '1') {
+      results.push({ name: 'Desktop shell server lifecycle (signals, stale server)', status: 'YELLOW', durationMs: 0, detail: 'Explicitly skipped: launches the native shell.' });
+    } else {
+      results.push(
+        await runStep('Desktop shell server lifecycle (signals, stale server)', () => runCommand('node', [join(projectDir, 'scripts/smoke-desktop-lifecycle.js'), nativeAppPath], { timeoutMs: 180000 })),
+      );
+    }
     results.push(
       await runStep('Install desktop app bundle', () => runCommand('npm', ['run', 'install:desktop'])),
     );

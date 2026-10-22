@@ -21,10 +21,13 @@ export function ciChangedPaths(root, eventName, event) {
   } catch { return ['package.json']; }
 }
 
+// Native shell tests compile desktop-app/ sources, so only the macOS job runs them.
+const NATIVE_SHELL_TESTS=['scripts/native-shutdown.test.js','scripts/desktop-server-lifecycle.test.js'];
+
 export function ciJobs(plan) {
   return {
     linux: Boolean(plan.files.length||plan.syntax===null||plan.syntax.length||plan.browsers||plan.renderer),
-    swift: Boolean(plan.swift||plan.files.includes('scripts/native-shutdown.test.js')),
+    swift: Boolean(plan.swift||plan.files.some(path=>NATIVE_SHELL_TESTS.includes(path))),
     safety: Boolean(plan.fullUnit||plan.files.some(p=>p.startsWith('src/safety/')||p==='src/tools/builtins/phase2a.fileTools.test.js')),
     android: Boolean(plan.android||plan.fullUnit),
     full: Boolean(plan.fullUnit),
@@ -64,7 +67,8 @@ async function main() {
       const swift=stage.label==='Swift 回归';
       if((mode==='swift')===swift)await runner.run(stage.label,stage.command,stage.args);
     }
-    if(mode==='swift'&&plan.files.includes('scripts/native-shutdown.test.js'))await runner.run('macOS native shell lifecycle',process.execPath,['--test','scripts/native-shutdown.test.js']);
+    const nativeShellTests=plan.files.filter(path=>NATIVE_SHELL_TESTS.includes(path));
+    if(mode==='swift'&&nativeShellTests.length)await runner.run('macOS native shell lifecycle',process.execPath,['--test',...nativeShellTests]);
   } finally {await rm(home,{recursive:true,force:true});}
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))main().catch(error=>{console.error(error);process.exitCode=1;});

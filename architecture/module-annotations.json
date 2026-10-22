@@ -967,6 +967,34 @@
       "note": "原生壳关停后端进程的信号与锁约定"
     },
     {
+      "id": "bridge-stale-server",
+      "kind": "native-bridge",
+      "from": [
+        "desktop-app/StaleServer.swift",
+        "desktop-app/ProcessShutdown.swift"
+      ],
+      "to": [
+        "src/runtime/serverLock.js",
+        "src/server.js"
+      ],
+      "tests": [
+        "scripts/desktop-server-lifecycle.test.js"
+      ],
+      "note": "原生壳收到 SIGTERM/SIGINT/SIGHUP 先停子服务再退出；启动时按 SQLite 主目录锁的内核持有者识别、只停止本项目被遗弃的服务。锁文件名或加锁方式改动须同步 StaleServer.swift"
+    },
+    {
+      "id": "source-tests-desktop-shell-lifecycle",
+      "kind": "source-reading-test",
+      "reads": [
+        "desktop-app/main.swift",
+        "scripts/build-desktop-app.sh"
+      ],
+      "tests": [
+        "scripts/desktop-server-lifecycle.test.js"
+      ],
+      "note": "接线守卫：信号处理先于首个子进程安装、每次启动服务前先回收孤儿服务、构建脚本编入 StaleServer.swift；行为由同文件的进程级用例与 smoke-desktop-lifecycle.js 真包验证"
+    },
+    {
       "id": "bridge-ios-scene",
       "kind": "native-bridge",
       "from": [

@@ -29,6 +29,7 @@ swiftc \
   -framework CoreLocation \
   "$PROJECT_DIR/desktop-app/main.swift" \
   "$PROJECT_DIR/desktop-app/ProcessShutdown.swift" \
+  "$PROJECT_DIR/desktop-app/StaleServer.swift" \
   "$PROJECT_DIR/desktop-app/NativeLocation.swift" \
   "$PROJECT_DIR/ios/Melo/VoiceInput.swift" \
   "$PROJECT_DIR/ios/Melo/SystemSpeechInput.swift" \
