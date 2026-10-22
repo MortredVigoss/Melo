@@ -162,54 +162,55 @@ export const BUILTIN_CONNECTORS = [
     id: 'openai-compatible',
     name: 'OpenAI',
     category: 'Model',
+    // Built-in texts are authored Chinese; the desktop translates them (translations.js).
     description:
-      'Use either local Codex/ChatGPT OAuth or an OpenAI API key to power Melo chat.',
+      '使用本机 Codex/ChatGPT OAuth 或 OpenAI API Key 驱动 Melo 对话。',
     details:
-      'This connector powers the live model call path. Codex mode uses your local Codex login; API key mode uses the configured base URL, model, and system prompt.',
+      '这个连接器负责实时模型请求：Codex 模式使用本机的 Codex 登录；API Key 模式使用配置的服务地址、模型和系统提示。',
     prompt:
       'OpenAI is connected. Use the configured OpenAI model when the user sends a prompt.',
   },
   {
     id: 'projects',
-    name: 'Projects',
+    name: '项目',
     category: 'Workspace',
     description:
-      'Attach chats to projects, keep project-specific instructions, and group recent work.',
+      '把对话归入项目，保留项目专属指引，并归组最近的工作。',
     details:
-      'Project context is appended to the system prompt and shapes titles, summaries, and search results.',
+      '项目上下文会附加到系统提示，影响标题、摘要和搜索结果。',
     prompt:
       'Project context is available. Prefer project-aware answers when a chat belongs to a project.',
   },
   {
     id: 'artifacts',
-    name: 'Artifacts',
+    name: '成果库',
     category: 'Workspace',
     description:
-      'Save code blocks and durable outputs into an artifacts shelf for later reuse.',
+      '把代码块和可复用的输出保存到成果架，供日后复用。',
     details:
-      'Generated code fences become artifacts, and artifacts can also be created manually from the desktop UI.',
+      '回复中的代码块会成为成果；也可以在桌面界面手动创建成果。',
     prompt:
       'Artifacts are enabled. Durable code or plans may be captured for reuse.',
   },
   {
     id: 'local-files',
-    name: 'Local Files',
+    name: '本地文件',
     category: 'Connector',
     description:
-      'Browse the active project workspace, preview files, and pull selected file context into code mode.',
+      '浏览当前项目工作区、预览文件，并把选中的文件上下文带入代码模式。',
     details:
-      'This connector surfaces a local file tree, selected file preview, and file context inside the code assistant.',
+      '这个连接器在代码助手里提供本地文件树、选中文件预览和文件上下文。',
     prompt:
       'Local file browsing is enabled. Use selected workspace files and project structure when answering code requests.',
   },
   {
     id: 'local-command',
-    name: 'Local Command',
+    name: '本地命令',
     category: 'Connector',
     description:
-      'Run curated local commands like git status, build, and ripgrep inside the active project workspace.',
+      '在当前项目工作区里运行 git status、构建、ripgrep 等受控的本地命令。',
     details:
-      'This connector exposes a controlled command runner for project diagnostics and build checks.',
+      '这个连接器提供受控的命令运行器，用于项目诊断和构建检查。',
     prompt:
       'Local command execution is enabled. Recent command outputs may help answer code questions.',
   },

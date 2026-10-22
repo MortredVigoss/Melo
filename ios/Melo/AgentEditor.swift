@@ -123,7 +123,11 @@ struct AgentEditor: View {
                     HStack { Text(LocalizedStringKey(["readFiles":"读取文件","writeFiles":"修改文件","runCommands":"运行命令","network":"联网","knowledgeMemory":"知识与记忆","generateMedia":"生成媒体","delegate":"委派"][key] ?? key)); Spacer(); Image(systemName:caps[key].bool ? "checkmark.circle" : "minus.circle").foregroundStyle(caps[key].bool ? .green : .secondary) }
                 }
                 ForEach(["mcpServers","skills","connectors"],id: \.self) { key in
-                    if !caps[key].array.isEmpty { Text(key + ": " + caps[key].array.map(\.string).joined(separator:", ")).font(.caption).textSelection(.enabled) }
+                    if !caps[key].array.isEmpty {
+                        // Labels, not field names (audit 2026-10-22); the ids themselves stay as they are.
+                        (Text(LocalizedStringKey(["mcpServers":"MCP 服务","skills":"技能","connectors":"连接器"][key] ?? key)) + Text(verbatim: "：" + caps[key].array.map(\.string).joined(separator:", ")))
+                            .font(.caption).textSelection(.enabled)
+                    }
                 }
             } else { Text("能力设置尚未从电脑同步") }
         }

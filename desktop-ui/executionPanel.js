@@ -68,8 +68,8 @@ function observeRenderedMessages(chat) {
     if (!rendered) continue;
     let saved;
     try { saved = JSON.parse(localStorage.getItem(`melo-scene-presented:${runId}`) || 'null'); } catch {}
-    const presentation = saved?.messageId === message.id ? saved : { id: 'reply:render', module: 'create', name: '本机聊天渲染', status: 'completed',
-      messageId: message.id, output: '回答已渲染到当前设备的聊天界面；不代表用户已阅读', finishedAt: new Date().toISOString() };
+    const presentation = saved?.messageId === message.id ? saved : { id: 'reply:render', module: 'create', name: t('本机聊天渲染'), status: 'completed',
+      messageId: message.id, output: t('回答已渲染到当前设备的聊天界面；不代表用户已阅读'), finishedAt: new Date().toISOString() };
     presentations.set(runId, presentation);
     try { localStorage.setItem(`melo-scene-presented:${runId}`, JSON.stringify(presentation)); } catch {}
   }
@@ -134,10 +134,10 @@ function updateButtons() {
 function headerStatus(scene) {
   if (!scene) return t("待机 · 氛围动画");
   if (sceneFinished(scene) && scene.completion?.summary) return scene.completion.summary;
-  if (sceneFinished(scene)) return `${statusNames[scene.status]} · 回看记录，未在执行`;
+  if (sceneFinished(scene)) return t('{status} · 回看记录，未在执行', { status: statusNames[scene.status] });
   const running = scene.operations.filter(op => op.status === 'running');
-  if (running.length > 1) return `${running.length} 项真实调用并行执行`;
-  if (running.length === 1) return `${EXECUTION_MODULES.find(m => m.id === running[0].module)?.name} · 执行中`;
+  if (running.length > 1) return t('{count} 项真实调用并行执行', { count: running.length });
+  if (running.length === 1) return t('{module} · 执行中', { module: EXECUTION_MODULES.find(m => m.id === running[0].module)?.name });
   if (scene.operations.some(op => op.status === 'waiting')) return t("等待许可 · 尚未执行");
   const stage = (scene.pipeline || []).filter(item => item.status === 'running').at(-1);
   if (stage) return `${stage.name} · ${stage.channel === 'reasoning-summary' ? t("公开摘要更新中") : stage.output || t("执行中")}`;
@@ -162,7 +162,7 @@ function renderDetails(scene, items) {
     const linkUrl = source.citationUrl || source.url;
     const sourceUrl = new URL(linkUrl);
     const title = source.titleProvided ? source.title : source.citationLabel || (sourceUrl.pathname === '/' ? sourceUrl.hostname : sourceUrl.pathname.split('/').filter(Boolean).slice(-2).join('/'));
-    const reading = sourceReadingLabel(source), citation = source.cited ? '已被最终引用' : '未被最终引用';
+    const reading = sourceReadingLabel(source), citation = source.cited ? t('已被最终引用') : t('未被最终引用');
     return ui`<a class="execution-label execution-source" data-node-id="${escape(source.id)}" data-priority="${index < 5 ? 'primary' : 'secondary'}" data-cited="${source.cited}" href="${escape(linkUrl)}" data-external-url="${escape(linkUrl)}" target="_blank" rel="noopener noreferrer" title="${escape(`${source.titleProvided ? source.title : '页面标题未提供'}\n${linkUrl}\n${reading}\n${citation}\n服务：${source.providers.join('、') || '未报告'}${source.recovered ? '\n从截断记录与最终引用恢复；正文范围未知' : ''}`)}"><span class="execution-source-rank">${String(index + 1).padStart(2, '0')} · ${source.cited ? '回答引用' : index < 5 ? '相关来源' : '更多候选'}</span><strong>${escape(title)}</strong><small>${escape(new URL(source.url).hostname)}</small><small>${escape(reading)}</small><small>${source.cited ? '✦ 已引用' : '未引用 · 点击检查'}</small></a>`;
   }).join('');
   return items.map(op => ui`<button class="execution-label execution-source execution-operation" data-node-id="${escape(op.id)}" data-execution-action="inspect" data-operation="${escape(op.id)}" title="${escape(`${op.input || ''}\n${op.output || ''}`)}"><strong>${escape(op.result ?? op.expression ?? op.name)}</strong><small>${escape(op.channel === 'reasoning-summary' ? (op.output || '').slice(-100) : focus === 'tools' ? `归属：${EXECUTION_MODULES.find(m => m.id === op.module)?.name || t("工具调用")} · ${op.provider || op.name}` : op.expression || op.input || op.name)}</small><small>${escape(statusNames[op.status])}</small></button>`).join('');
@@ -240,7 +240,7 @@ function paint() {
     gpu?.update(scene, focus, items, zoom);
   }
   const images = scene?.artifacts.filter(a => a.kind === 'image') || [];
-  const deficit = scene?.operations.some(op => ['image', 'image_edit', 'native_image_generation'].includes(op.name)) && sceneFinished(scene) && images.length < scene.requestedImages ? ` · 图片 ${images.length}/${scene.requestedImages} 张成功` : '';
+  const deficit = scene?.operations.some(op => ['image', 'image_edit', 'native_image_generation'].includes(op.name)) && sceneFinished(scene) && images.length < scene.requestedImages ? ` · ${t('图片 {done}/{total} 张成功', { done: images.length, total: scene.requestedImages })}` : '';
   host.querySelector('.execution-panel-footer').innerHTML = ui`<span>${escape(selectionError || scene?.persistenceError || scene?.observationNote || (sceneFinished(scene) ? '执行已停止 · 神经脉冲是低强度氛围动画' : scene ? '只展示已记录的执行 · 不代表模型内部思维' : '准备就绪 · 尚未搜索、计算或调用工具'))}${escape(deficit)}</span><span>${scene?.operations.length || 0} 次工具调用 · ${scene?.pipeline?.length || 0} 条执行记录 · ${scene?.sources.length || 0} 条来源</span>`;
   updateButtons(); syncZoomControls(); paintTiming();
   if (opened && !gpu && !loading) {

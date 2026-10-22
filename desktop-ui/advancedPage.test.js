@@ -45,11 +45,12 @@ test('renderAdvancedPage shows system status and collapsed technical controls', 
   const html = renderAdvancedPage(freshState());
   assert.match(html, /<h2[^>]*>[\s\S]*?系统状态/);
   assert.match(html, /本机工作空间/);
-  assert.match(html, /Built-in MCP servers/);
-  assert.match(html, /External MCP connectors/);
-  assert.match(html, /CLI \/ stdio MCP servers/);
-  assert.match(html, /Plugins/);
-  assert.match(html, /Background shell tasks/);
+  // Authored Chinese keys (translations.js carries the other languages).
+  assert.match(html, /内置 MCP 服务/);
+  assert.match(html, /外部 MCP 连接器/);
+  assert.match(html, /CLI \/ stdio MCP 服务/);
+  assert.match(html, /插件/);
+  assert.match(html, /后台命令任务/);
 });
 
 test('renderAdvancedPage exposes the safe-ops actions used by the page', () => {
@@ -68,7 +69,7 @@ test('system tools page keeps unresolved approvals outside collapsed technical c
 
 test('renderAdvancedPage never invents a legacy path before diagnostics resolves the home', () => {
   const html = renderAdvancedPage(freshState());
-  assert.match(html, /Configuration path will appear after refresh/);
+  assert.match(html, /刷新后显示配置文件路径。/);
   assert.doesNotMatch(html, /data-action="copy-melo-state-path"/);
   assert.doesNotMatch(html, /~\/\.melo/);
 });
@@ -117,7 +118,7 @@ test('renderAdvancedPage renders one toggle row per built-in MCP preset', () => 
   // Enabled row gets the Disable button.
   assert.match(html, /data-action="toggle-mcp-preset"[^>]*data-preset-id="markdown2pdf"[^>]*data-next-enabled="0"/);
   // Header summary reflects 1-of-2 enabled.
-  assert.match(html, /1 of 2 enabled/);
+  assert.match(html, /1 \/ 2 已启用/);
 });
 
 test('renderAdvancedPage MCP presets section escapes hostile fields', () => {
@@ -135,7 +136,7 @@ test('renderAdvancedPage MCP presets section escapes hostile fields', () => {
 
 test('renderAdvancedPage shows enabled count in header even for empty presets', () => {
   const html = renderAdvancedPage(freshState({ mcpPresets: [] }));
-  assert.match(html, /0 of 0 enabled/);
+  assert.match(html, /0 \/ 0 已启用/);
 });
 
 test('renderAdvancedPage unpinned+enabled (legacy 假启用) — chip = 假启用, button = clickable Disable (cleanup path)', () => {
@@ -158,7 +159,7 @@ test('renderAdvancedPage unpinned+enabled (legacy 假启用) — chip = 假启�
   // The "假启用" warning chip surfaces.
   assert.match(html, /假启用 · 未锁定版本/);
   // Cleanup-aware label.
-  assert.match(html, /Disable \(清理假启用\)/);
+  assert.match(html, /停用（清理假启用）/);
   // Pull out the actual <button> tag for browserless and assert it
   // is clickable AND points at disable.
   const browserlessButton = html.match(/<button[^>]*data-preset-id="browserless"[^>]*>/);
@@ -168,7 +169,7 @@ test('renderAdvancedPage unpinned+enabled (legacy 假启用) — chip = 假启�
   // The click must drive enabled → disabled, not the other way.
   assert.match(browserlessButton[0], /data-next-enabled="0"/);
   // Cleanup hint text replaces the "toggle disabled" copy.
-  assert.match(html, /click <strong>Disable<\/strong> to clear the legacy/);
+  assert.match(html, /点击「停用」清除旧的 enable\*Mcp:true 配置。/);
 });
 
 test('renderAdvancedPage marks unpinned preset as unavailable + disables its toggle', () => {
@@ -191,10 +192,10 @@ test('renderAdvancedPage marks unpinned preset as unavailable + disables its tog
   }));
   // Unpinned row shows the "未锁定版本" status chip and a disabled
   // button labelled "Unavailable".
-  assert.match(html, /unavailable.*未锁定版本/);
+  assert.match(html, /不可用 · 未锁定版本/);
   assert.match(html, /data-preset-id="browserless"[^>]*disabled/);
-  assert.match(html, /Unavailable/);
-  assert.match(html, /not yet pinned to an exact version/);
+  assert.match(html, /不可用/);
+  assert.match(html, /npm 包尚未锁定到精确版本/);
   // Pinned mermaid row stays normal.
   assert.match(
     html,

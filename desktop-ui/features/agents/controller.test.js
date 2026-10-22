@@ -89,7 +89,7 @@ test('registry: every Agent action is registered once; scope switch flushes then
     'clear-agent-avatar', 'confirm-agent-settings', 'create-custom-agent', 'export-agent-document', 'import-agent-preset',
     'reset-agent-connector-whitelist', 'reset-agent-draft', 'reset-agent-skill-whitelist', 'reset-project-agent-override',
     'select-agent-editor-tab', 'switch-agent-channel-tab', 'switch-agent-scope', 'test-agent-channel', 'toggle-agent-connector',
-    'toggle-agent-mcp-server', 'toggle-agent-secret', 'toggle-agent-skill', 'toggle-agent-tool',
+    'toggle-agent-device-permission', 'toggle-agent-mcp-server', 'toggle-agent-secret', 'toggle-agent-skill', 'toggle-agent-tool',
   ]);
   assert.deepEqual(Object.keys(h.feature.forms), ['agent-profile-update']);
   assert.equal(h.actions.has('select-agent-profile'), false, 'cross-page navigation stays in app.js');

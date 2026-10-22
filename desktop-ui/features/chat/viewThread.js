@@ -262,7 +262,7 @@ function renderThreadArtifactStrip(artifacts) {
           <h2 class="pane-title">本对话成果</h2>
         </div>
         <button class="small-button" data-action="open-view" data-view="artifacts">
-          Open shelf
+          打开成果架
         </button>
       </div>
 
@@ -317,7 +317,7 @@ function renderRegularChatPage() {
             </div>
           </div>
           <div class="inline-actions">
-            <button class="small-button" type="button" data-action="delete-active-chat">删除对话</button>
+            <button class="small-button" type="button" data-action="delete-active-chat">删除此对话</button>
             <button
               class="small-button is-outline"
               type="button"

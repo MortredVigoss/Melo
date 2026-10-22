@@ -621,6 +621,10 @@ export const agentsActions = {
     mergeAgentDraft(trigger.dataset.agentId,{avatarData:''});
     render();
   },
+  // 这台电脑上: device-local, saved at once like the phone's 这台手机上; never part of the synced profile.
+  'toggle-agent-device-permission': async ({ trigger }) => {
+    applyBootstrap(await agentsApi.updateLocalPreferences({ agentDevice: { [trigger.dataset.agentId]: { [trigger.dataset.permission]: trigger.checked === true } } }));
+  },
 };
 
 // Form submits (formerly `case` branches of app.js's submit listener).

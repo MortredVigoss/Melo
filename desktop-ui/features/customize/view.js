@@ -7,6 +7,9 @@
 // app.js names they read come from ./context.js (transitional, live bindings).
 import { renderSkillManagement } from '../../managementActions.js';
 import { t, ui } from '../../i18n.js';
+// Built-in connectors are authored Chinese (stateHydration BUILTIN_CONNECTORS) and
+// translated here; an external connector shows the user's own text.
+const connectorText = (connector, field) => connector?.type === 'external-mcp' ? String(connector?.[field] || '') : t(String(connector?.[field] || ''));
 import { renderAdvancedPage } from '../../advancedPage.js';
 import { credentialChipState } from '../../credentialChip.js';
 import { agentsFeature, approvalsFeature, effectiveModelSetupDraft, escapeHtml, getBootstrap, memoryFeature, modelSetupDraft, renderApprovalPanel, renderCommandRunner, renderProjectArtifactShelf, renderSelectedFilePreview, renderTaskPanel } from './context.js';
@@ -251,9 +254,9 @@ function renderConnectorDetails(selected) {
         <div class="header-row">
           <div>
             <h2 class="pane-title">${escapeHtml(selected.name)}</h2>
-            <p class="page-kicker">External MCP connectors moved to Customize → Advanced.</p>
+            <p class="page-kicker">外部 MCP 连接器已移至 自定义 → 高级。</p>
           </div>
-          <span class="chip is-accent">Experimental</span>
+          <span class="chip is-accent">实验性</span>
         </div>
         <div class="detail-meta">
           <div>Status, reload, and disconnect are available there. Configuration editing is deferred until the dedicated MCP UI lands.</div>
@@ -432,13 +435,13 @@ function renderConnectorDetails(selected) {
     <div class="detail-card">
       <div class="header-row">
         <div>
-          <h2 class="pane-title">${escapeHtml(selected.name)}</h2>
-          <p class="page-kicker">${escapeHtml(selected.description)}</p>
+          <h2 class="pane-title">${escapeHtml(connectorText(selected, 'name'))}</h2>
+          <p class="page-kicker">${escapeHtml(connectorText(selected, 'description'))}</p>
         </div>
       </div>
 
       <div class="detail-meta">
-        <div>${escapeHtml(selected.details)}</div>
+        <div>${escapeHtml(connectorText(selected, 'details'))}</div>
       </div>
 
       <div class="toggle-row">
@@ -643,8 +646,7 @@ function renderSafetyPane() {
     if (!rules.length) {
       return ui`
         <div class="empty-state compact">
-          还没有长期授权。
-          点击权限弹窗中的 <strong>Always allow</strong> 后，可在这里查看和撤销。
+          还没有长期授权。点击权限弹窗中的「始终允许」后，可在这里查看和撤销。
         </div>
       `;
     }
@@ -675,7 +677,7 @@ function renderSafetyPane() {
         <div>
           <h2 class="pane-title">权限与隐私</h2>
           <p class="page-kicker">
-            管理你通过 Always allow 保存的工具与文件授权。撤销后，下次操作将重新询问。
+            管理你通过「始终允许」保存的工具与文件授权。撤销后，下次操作将重新询问。
           </p>
         </div>
         <div class="inline-actions">
@@ -832,8 +834,8 @@ function renderSkillHealthPanel() {
     <div class="detail-card skill-health-card">
       <div class="header-row">
         <div>
-          <h2 class="pane-title">Skill health</h2>
-          <p class="page-kicker">Last 30 days — success rate, speed, and recent errors per skill.</p>
+          <h2 class="pane-title">技能健康度</h2>
+          <p class="page-kicker">最近 30 天：每个技能的成功率、速度和最近错误。</p>
         </div>
         <button class="small-button" data-action="refresh-skill-runs">
           ${loading ? 'Loading…' : loaded ? 'Refresh' : 'Load'}
@@ -888,8 +890,8 @@ function renderSkillProposalsPanel() {
     <div class="detail-card skill-proposals-card">
       <div class="header-row">
         <div>
-          <h2 class="pane-title">Skill proposals</h2>
-          <p class="page-kicker">Workflows you've repeated recently. Save the useful ones, dismiss the rest.</p>
+          <h2 class="pane-title">技能建议</h2>
+          <p class="page-kicker">最近重复出现的工作流程。保存有用的，忽略其余的。</p>
         </div>
         <span class="chip is-accent">${proposals.length}</span>
       </div>
@@ -922,7 +924,7 @@ function renderSkillProposalsPanel() {
                   class="small-button"
                   data-action="dismiss-skill-proposal"
                   data-seed-id="${escapeHtml(p.seedId)}"
-                >Dismiss</button>
+                >忽略</button>
               </div>
             </div>
           `)
@@ -947,7 +949,7 @@ function renderCustomizePage() {
       <div class="customize-layout">
         <div class="customize-pane">
           <div class="customize-pane-header">
-            <h2 class="pane-title">Customize</h2>
+            <h2 class="pane-title">自定义设置</h2>
           </div>
 
           <div class="section-nav">
@@ -999,7 +1001,7 @@ function renderCustomizePage() {
               data-section="safety"
             >
               <div class="list-row-title">权限与隐私</div>
-              <div class="list-row-meta">Persistent file-access rules — review and revoke "Always allow" grants.</div>
+              <div class="list-row-meta">查看并撤销通过「始终允许」保存的工具与文件授权。</div>
             </button>
           </div>
         </div>
@@ -1051,11 +1053,11 @@ function renderCustomizePage() {
                     data-id="${item.id}"
                   >
                     <div class="list-row-title">
-                      ${escapeHtml(item.name)}
+                      ${escapeHtml(section === 'connectors' ? connectorText(item, 'name') : item.name)}
                       ${section==='agents' && !item.capabilities ? ui`<span class="chip">旧版权限待迁移</span>` : ''}
                     </div>
                     <div class="list-row-meta">${escapeHtml(
-                      section === 'agents' ? item.laneLabel : item.description,
+                      section === 'agents' ? item.laneLabel : section === 'connectors' ? connectorText(item, 'description') : item.description,
                     )}</div>
                   </button>
                 `;

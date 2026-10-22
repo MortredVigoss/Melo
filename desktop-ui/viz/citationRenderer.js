@@ -1,3 +1,4 @@
+import { ui } from '../i18n.js';
 // ─── Citation renderer + side drawer ────────────────────────────────────────
 // Companion to vizRenderer.js. Handles the NotebookLM-style feature where the
 // assistant can wrap factual claims in inline `<cite>` tags, each of which is
@@ -171,12 +172,12 @@ export function installCitationDrawer({ fetchPreview }) {
   const drawer = document.createElement('aside');
   drawer.className = 'citation-drawer';
   drawer.setAttribute('aria-hidden', 'true');
-  drawer.innerHTML = `
+  drawer.innerHTML = ui`
     <div class="citation-drawer-backdrop" data-cite-close></div>
     <div class="citation-drawer-panel" role="dialog" aria-label="Source citation preview">
       <header class="citation-drawer-header">
         <div class="citation-drawer-header-main">
-          <div class="citation-drawer-title" data-cite-title>Source</div>
+          <div class="citation-drawer-title" data-cite-title>来源</div>
           <div class="citation-drawer-meta" data-cite-meta></div>
         </div>
         <button type="button" class="citation-drawer-close" data-cite-close aria-label="Close">×</button>

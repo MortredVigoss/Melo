@@ -15,5 +15,7 @@ export function createAgentsApi(request) {
     bootstrap: () => request('/api/bootstrap'),
     // Re-applies the saved MiniMax voice's tuning to the global TTS settings.
     saveModelSettings: body => request('/api/settings/model', { method: 'POST', body }),
+    // Device-local preferences (这台电脑上): per-Agent permissions for this computer.
+    updateLocalPreferences: preferences => request('/api/settings/local', { method: 'POST', body: { preferences } }),
   };
 }

@@ -48,7 +48,10 @@
   gap: 18px;
   min-height: 0;
   height: 100%;
-  grid-template-rows: auto minmax(0, 1fr);
+  /* Header, the create hint, then the scrolling editor. Two rows for three
+     children gave the hint a 0px row, so a two-line hint overlapped the
+     editor's sticky toolbar (audit 2026-10-22). */
+  grid-template-rows: auto auto minmax(0, 1fr);
 }
 
 .agent-select-label {
@@ -317,4 +320,7 @@
 .agent-avatar-editor > span:last-child { color:var(--text-muted); font-size:11px; }
 
 .capability-choice-list { border: 1px solid var(--border, #333); border-radius: 10px; min-width: 0; padding: 12px; max-height: 240px; overflow: auto; }
-.capability-choice-list .checkbox-row { overflow-wrap: anywhere; }
+/* Long ids wrap between words and before the badge, never inside a word
+   ("playwri / ght" in the English editor, audit 2026-10-22). */
+.capability-choice-list .checkbox-row { overflow-wrap: break-word; word-break: keep-all; flex-wrap: wrap; row-gap: 2px; }
+.capability-choice-list .checkbox-row .chip { margin-left: auto; white-space: nowrap; }

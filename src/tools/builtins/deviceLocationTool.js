@@ -7,12 +7,15 @@
  * its own location tool; this gives desktop Agents the same ability for
  * "near me", local weather, time zone and nearby places.
  *
- * Privacy: location is personal data, so like the clipboard every use asks
- * the user first (the phone keeps it off per Agent for the same reason), and
- * channels without an approval surface are refused. Coordinates are rounded
- * to two decimals (about 1 km) before they reach the model; macOS asks for its
- * own permission on first use.
+ * Privacy: location is personal data. Like the phone's per-Agent location
+ * switch (这台手机上), it is off until the user turns it on for this Agent on
+ * this computer (Agent settings → 这台电脑上; a device-local preference that
+ * never syncs), so no approval dialog is needed per use. Coordinates are
+ * rounded to two decimals (about 1 km) before they reach the model; macOS asks
+ * for its own permission on first use.
  */
+import { loadState } from '../../state/stateStore.js';
+import { agentDevicePermission } from '../../domain/settings/localPreferences.js';
 
 // Longer than the shell's own wait (15 s fix + 5 s place name), so a slow fix
 // is reported by the shell as a timeout instead of being cut off here.
@@ -32,6 +35,7 @@ export function formatLocation(value = {}) {
 }
 
 const FAILURES = {
+  notEnabled: ['LOCATION_NOT_ENABLED', 'Location is off for this Agent on this computer. The user can turn it on in this Agent\'s settings under "On this computer" (这台电脑上), then ask again; or ask the user for the city or area instead.'],
   denied: ['LOCATION_DENIED', 'Location access is off for Melo. The user can allow it in System Settings → Privacy & Security → Location Services → Melo, then ask again.'],
   restricted: ['LOCATION_DENIED', 'Location access is restricted on this Mac.'],
   disabled: ['LOCATION_DISABLED', 'Location Services are turned off on this Mac (System Settings → Privacy & Security → Location Services).'],
@@ -46,19 +50,26 @@ export const deviceLocationTool = {
   description:
     "Get this computer's current approximate location (city, region, country, rounded coordinates, time zone) from macOS Location Services. " +
     "Use it when the user asks about something near them, local weather or local time without naming a place. " +
-    'Each use asks the user for approval; if it is declined or access is off, say so and ask for the city instead.',
+    'The user turns it on per Agent in the Agent\'s settings (这台电脑上); if it is off, say so and ask for the city instead.',
   capability: 'network',
   needsWorkspace: false,
   isConcurrencySafe: true,
-  requiresPermission: true,
+  // The per-Agent switch is the consent, as on the phone; no dialog per use.
+  requiresPermission: false,
   parametersSchema: { type: 'object', properties: {}, additionalProperties: false },
   examples: [{}],
 
   async run(_args = {}, context = {}) {
-    // Bind the port before any await (CLAUDE.md §6).
+    // Bind the port, home and Agent before any await (CLAUDE.md §6).
     const env = context.requestContext?.env || process.env;
     const port = Number(env.MELO_DESKTOP_PORT || 43127) + 1;
+    const home = context.meloHome || context.requestContext?.home;
+    const agentId = String(context.agentId || context.requestContext?.turnBinding?.role || 'main');
     const fetchImpl = context.fetchImpl || fetch;
+    const state = await loadState(home ? { home } : {});
+    if (!agentDevicePermission(state?.settings?.localPreferences, agentId, 'location')) {
+      return { ok: false, error: FAILURES.notEnabled[0], output: FAILURES.notEnabled[1] };
+    }
     const timeout = AbortSignal.timeout(context.locationTimeoutMs ?? LOCATION_TIMEOUT_MS);
     const signal = AbortSignal.any([context.signal, timeout].filter(Boolean));
     let reply;

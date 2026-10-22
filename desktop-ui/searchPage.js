@@ -227,10 +227,9 @@ function renderSearchPage() {
                       </div>
                     </div>`
                   : ui`<div class="empty-state">
-                      <div class="empty-state-title">Start typing to search.</div>
+                      <div class="empty-state-title">输入关键词开始搜索。</div>
                       <div class="empty-state-meta">
-                        Looks across chats, messages, memory, artifacts, projects, and workspace files.
-                        A file path, a project name, or a phrase you remember from a past chat all work.
+                        搜索范围包括对话、消息、记忆、成果、项目和工作区文件；文件路径、项目名称，或你记得的某句话都可以。
                       </div>
                     </div>`
             }

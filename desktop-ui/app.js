@@ -349,7 +349,7 @@ const chatFeature = installChatFeature({
   speakingState: () => ({ messageId: uiState.ttsSpeakingMessageId, loadingId: uiState.ttsSpeakingLoadingId }),
   stopCurrentTts, _isTtsActive, _streamTtsStart, _streamTtsPushChunk, _streamTtsOnToolCall, _streamTtsReset, _streamTtsFlush,
   // _streamTts is declared with the TTS helpers further down; resolve at call time.
-  setStreamTtsBuffer: text => { _streamTts.buffer = text; },
+  setStreamTtsBuffer: text => { if (_streamTts.deferred) _streamTts.fullText = text; else _streamTts.buffer = text; },
   notifyLocalCompletion, shouldSendOnEnter, extractTextUrls, promoteTextUrlsToAttachments,
   renderExecutionPanel, receiveExecutionScene, liveSceneFor, cancelLiveScene, renderSceneReplay, selectedMessagePresentation,
   renderMessageRefs: message => memoryFeature.renderMessageRefs(message),
@@ -617,7 +617,7 @@ function renderTtsVoicePanel() {
   const otherVoices = browserVoices.filter(v => !v.lang.startsWith('en'));
 
   const browserVoiceOptions = [
-    ui`<option value="">System default</option>`,
+    ui`<option value="">系统默认</option>`,
     ...enVoices.map(v =>
       ui`<option value="${escapeHtml(v.name)}" ${uiState.ttsBrowserVoiceName === v.name ? 'selected' : ''}>${escapeHtml(v.name)} (${escapeHtml(v.lang)})</option>`
     ),
@@ -672,8 +672,9 @@ function renderTtsVoicePanel() {
 
       <label class="tts-panel-row checkbox-row">
         <input type="checkbox" data-action="toggle-tts-enable" ${uiState.ttsAutoPlay ? 'checked' : ''} />
-        <span>Auto-speak replies</span>
+        <span>自动朗读回复</span>
       </label>
+      <p class="tts-panel-hint">按每个 Agent 的语音设置朗读：模式、音色和风格在 Agent 页设置。</p>
 
       <div class="tts-panel-divider"></div>
       <div class="tts-panel-section-label">Voice source</div>
@@ -1521,13 +1522,13 @@ function homePromptPresetById(presetId) {
 function renderEditContextMenu() {
   return ui`
     <div id="edit-context-menu" class="edit-context-menu" aria-hidden="true">
-      <button class="edit-context-item" type="button" data-action="editable-undo">Undo</button>
-      <button class="edit-context-item" type="button" data-action="editable-redo">Redo</button>
+      <button class="edit-context-item" type="button" data-action="editable-undo">撤销编辑</button>
+      <button class="edit-context-item" type="button" data-action="editable-redo">重做</button>
       <div class="edit-context-divider"></div>
-      <button class="edit-context-item" type="button" data-action="editable-cut">Cut</button>
-      <button class="edit-context-item" type="button" data-action="editable-copy">Copy</button>
-      <button class="edit-context-item" type="button" data-action="editable-paste">Paste</button>
-      <button class="edit-context-item" type="button" data-action="editable-select-all">Select all</button>
+      <button class="edit-context-item" type="button" data-action="editable-cut">剪切</button>
+      <button class="edit-context-item" type="button" data-action="editable-copy">复制</button>
+      <button class="edit-context-item" type="button" data-action="editable-paste">粘贴</button>
+      <button class="edit-context-item" type="button" data-action="editable-select-all">全选</button>
     </div>
   `;
 }
@@ -1535,9 +1536,9 @@ function renderEditContextMenu() {
 function renderCopyContextMenu() {
   return ui`
     <div id="copy-context-menu" class="edit-context-menu" aria-hidden="true">
-      <button class="edit-context-item" type="button" data-action="copy-surface-selection">Copy</button>
-      <button class="edit-context-item" type="button" data-action="copy-surface-all">Copy all</button>
-      <button class="edit-context-item" type="button" data-action="copy-surface-select-all">Select all</button>
+      <button class="edit-context-item" type="button" data-action="copy-surface-selection">复制</button>
+      <button class="edit-context-item" type="button" data-action="copy-surface-all">复制全部</button>
+      <button class="edit-context-item" type="button" data-action="copy-surface-select-all">全选</button>
     </div>
   `;
 }
@@ -1548,11 +1549,11 @@ function renderRecentContextMenu() {
   return ui`
     <div id="recent-context-menu" class="edit-context-menu" aria-hidden="true">
       <button class="edit-context-item" type="button" data-action="toggle-chat-lock">
-        ${isLocked ? 'Unlock' : 'Lock'}
+        ${isLocked ? t('解锁') : t('锁定')}
       </button>
       <div class="edit-context-divider"></div>
       <button class="edit-context-item is-danger" type="button" data-action="delete-chat">
-        Delete
+        删除
       </button>
     </div>
   `;
@@ -1561,7 +1562,7 @@ function renderRecentContextMenu() {
 function renderAudioContextMenu() {
   return ui`
     <div id="audio-context-menu" class="edit-context-menu" aria-hidden="true">
-      <button class="edit-context-item" type="button" data-action="transcribe-audio-message">Transcribe</button>
+      <button class="edit-context-item" type="button" data-action="transcribe-audio-message">转写</button>
     </div>
   `;
 }
@@ -2087,8 +2088,8 @@ function showTranscriptToast(text) {
   toast.className = 'transcript-toast';
   toast.innerHTML = ui`
     <div class="transcript-toast-header">
-      <span>Transcript</span>
-      <button class="transcript-toast-close" type="button" aria-label="Close">&#x2715;</button>
+      <span>转写文本</span>
+      <button class="transcript-toast-close" type="button" aria-label="关闭提示">&#x2715;</button>
     </div>
     <div class="transcript-toast-body">${escapeHtml(text)}</div>
     <button class="transcript-toast-copy" type="button">Copy text</button>
@@ -2437,6 +2438,13 @@ const _streamTts = {
   hasToolCalls: false,
   sentToQueue: false,   // true when sentences were already queued during streaming
   queuedChars: 0,       // total characters sent to queue during streaming (for timeout estimate)
+  // Per-Agent voice (2026-10-22): the replying Agent, its voice reply mode and,
+  // when the mode is not 'full', the whole reply collected for the spoken
+  // summary instead of being streamed sentence by sentence.
+  agentId: '',
+  mode: 'full',
+  deferred: false,
+  fullText: '',
   // Browser voice in WKWebView (desktop app) routes through the Swift
   // native bridge, which terminates any in-flight `say` before starting
   // a new one — calling it per-sentence during streaming would only let
@@ -2452,6 +2460,31 @@ const _SENTENCE_BREAK = /[。！？\n]|[.!?](?=\s|$)/;
 
 // One-time auto-speak flag: set when a voice message is sent, cleared after the response
 let _oneTimeAutoSpeak = false;
+
+// The Agent card's 语音回复模式, as the server applies it (services/media/
+// agentVoice.js): a known Agent defaults to 'summary'; no Agent means 'full'.
+const VOICE_REPLY_MODES = new Set(['summary', 'full', 'off']);
+function agentVoiceMode(profile) {
+  if (!profile) return 'full';
+  return VOICE_REPLY_MODES.has(profile.voiceReplyMode) ? profile.voiceReplyMode : 'summary';
+}
+
+// Speaks `text` the way its Agent wants: 'summary' first asks the server for
+// the spoken summary (restyled by the Agent's voice style instructions), and
+// every engine then reads with the Agent's voice where it has one. Falls back
+// to the plain text when the server cannot answer.
+async function speakAgentVoice(text, messageId, agentId, mode) {
+  let spoken = text;
+  if (mode === 'summary') {
+    try {
+      const result = await api('/api/tts/voice-text', { method: 'POST', body: { text: text.slice(0, 8000), agentId }, signal: AbortSignal.timeout(45_000) });
+      if (result?.ok && result.text) spoken = result.text;
+    } catch (err) {
+      console.warn('voice-text failed, reading the reply as written:', err?.message || err);
+    }
+  }
+  await speakText(spoken, messageId, agentId);
+}
 
 // Strip everything TTS should NOT read aloud. The user's rule is: "don't read
 // the tool-call/thinking-process junk, don't read URLs, don't read weird stuff
@@ -2510,6 +2543,10 @@ function _streamTtsReset() {
   _streamTts.hasToolCalls = false;
   _streamTts.sentToQueue = false;
   _streamTts.queuedChars = 0;
+  _streamTts.agentId = '';
+  _streamTts.mode = 'full';
+  _streamTts.deferred = false;
+  _streamTts.fullText = '';
   _oneTimeAutoSpeak = false;
 }
 
@@ -2520,6 +2557,13 @@ async function _streamTtsStart() {
   _streamTts.sentToQueue = false;
   _streamTts.queuedChars = 0;
   _streamTts.browserBatch = '';
+  // 'full' streams sentence by sentence as before; 'summary' and 'off' wait
+  // for the whole reply (nothing is spoken mid-stream).
+  const profile = activeChatAgentProfile();
+  _streamTts.agentId = profile?.id || '';
+  _streamTts.mode = agentVoiceMode(profile);
+  _streamTts.deferred = _streamTts.mode !== 'full';
+  _streamTts.fullText = '';
   // Stop any leftover playback from the previous response — covers all
   // three engines:
   //   - server TTS via speak-stop / queue-clear (API + macOS say paths)
@@ -2571,6 +2615,9 @@ function _streamTtsOnToolCall() {
   // listener should hear it, even if it's about a forthcoming tool action).
   _streamTts.hasToolCalls = true;
   _streamTts.buffer = '';
+  // Narration before a tool call is not the answer: the collected reply
+  // starts over (the final reply_text arrives after the tools anyway).
+  _streamTts.fullText = '';
   // Intentionally do NOT clear `_streamTts.browserBatch` — see comment above.
 }
 
@@ -2583,6 +2630,7 @@ function _streamTtsPushChunk(delta) {
   // Strip any <tool_call> XML — e.g. the model sometimes emits it mid-stream
   const cleaned = delta.replace(/<tool_call>[\s\S]*/g, '');
   if (!cleaned) return;
+  if (_streamTts.deferred) { _streamTts.fullText += cleaned; return; }
   _streamTts.buffer += cleaned;
 
   const isApi = uiState.ttsEngine === 'api' || uiState.ttsEngine === 'auto';
@@ -2630,6 +2678,17 @@ function _streamTtsPushChunk(delta) {
 }
 
 async function _streamTtsFlush() {
+  // Per-Agent voice: a reply collected whole is read once the turn is over —
+  // the spoken summary for 'summary', nothing for 'off'.
+  if (_streamTts.deferred) {
+    const { mode, agentId } = _streamTts;
+    const text = _stripForTts(_streamTts.fullText || _streamTts.buffer);
+    _streamTtsReset();
+    if (mode === 'off' || text.length < 2) return;
+    await speakAgentVoice(text.slice(0, 8000), null, agentId, mode);
+    return;
+  }
+  const agentId = _streamTts.agentId;
   // Called when streaming ends — send any remaining buffered tail to TTS
   const tail = _stripUrlsForTts(_streamTts.buffer.trim());
   _streamTts.buffer = '';
@@ -2678,7 +2737,7 @@ async function _streamTtsFlush() {
       _ttsAudio = audio;
       api('/api/tts/speak-text', {
         method: 'POST',
-        body: { text: input, voice: uiState.ttsApiVoice },
+        body: { text: input, voice: uiState.ttsApiVoice, agentId },
       }).catch(() => {});
     }
   } else if (useMacos) {
@@ -2715,7 +2774,7 @@ function _streamTtsEnqueue(sentence) {
   if (useApi) {
     api('/api/tts/queue-add', {
       method: 'POST',
-      body: { text: sentence, voice: uiState.ttsApiVoice },
+      body: { text: sentence, voice: uiState.ttsApiVoice, agentId: _streamTts.agentId },
     }).catch(() => {});
   } else if (useMacos) {
     const lang = _detectLang(sentence);
@@ -2728,7 +2787,9 @@ function _streamTtsEnqueue(sentence) {
   }
 }
 
-async function speakText(text, messageId = null) {
+// `agentId` lets the server read with that Agent's voice (Edge TTS / MiniMax
+// engines); the macOS and browser voices have no per-Agent setting.
+async function speakText(text, messageId = null, agentId = '') {
   // Await stop so speak-stop reaches server before speak-text (prevents race condition).
   await stopCurrentTts();
   const input = _stripUrlsForTts(String(text || '').trim());
@@ -2746,7 +2807,7 @@ async function speakText(text, messageId = null) {
       // Responds immediately (fire-and-forget playback on host via afplay)
       const result = await api('/api/tts/speak-text', {
         method: 'POST',
-        body: { text: input.slice(0, 4096), voice: uiState.ttsApiVoice },
+        body: { text: input.slice(0, 4096), voice: uiState.ttsApiVoice, agentId },
         signal: AbortSignal.timeout(10_000),
       });
       if (result?.ok) {
@@ -2887,7 +2948,11 @@ async function handleSpeakMessage(trigger) {
     _updateTtsSpeakingUI(null);
     return;
   }
-  await speakText(cleanText, messageId);
+  // The message's own Agent decides the voice; an explicit "read aloud" on an
+  // Agent set to 'off' still reads the reply in full.
+  const agentId = message.metadata?.agent?.id || chat.agentId || '';
+  const mode = agentVoiceMode(agentProfileById(agentId));
+  await speakAgentVoice(cleanText, messageId, agentId, mode === 'off' ? 'full' : mode);
 }
 
 async function handleCreateArtifact() {
@@ -3673,7 +3738,7 @@ function renderSidebar() {
           <button class="nav-item ${isNewChatActive ? 'is-active' : ''}" data-action="new-chat">
             <span class="nav-icon">${icon.plus}</span>
             <span class="nav-copy">
-              <span class="nav-title">New chat</span>
+              <span class="nav-title">新对话</span>
             </span>
           </button>
           ${navItem('open-view', icon.search, 'Search', 'search')}
@@ -3687,7 +3752,7 @@ function renderSidebar() {
       </div>
 
       <div class="sidebar-recents">
-        <div class="recent-section-title">Recents</div>
+        <div class="recent-section-title">最近</div>
         <div class="recent-list">
           ${
             data.recents.length
@@ -3846,7 +3911,7 @@ async function previewTaskBackup(operationId) {
   try { uiState.taskRestore = await api('/api/tasks/restore-preview', {method:'POST',body:{operationId}}); render(); } catch(error) { showError(error.message); }
 }
 async function confirmTaskRestore(token) {
-  try { const result = await api('/api/tasks/restore-confirm', {method:'POST',body:{token}}); uiState.taskRestore = null; showFlashToast(`已恢复；恢复前的内容也已备份：${result.safetyBackupId}`); render(); } catch(error) { showError(error.message); }
+  try { const result = await api('/api/tasks/restore-confirm', {method:'POST',body:{token}}); uiState.taskRestore = null; showFlashToast(t('已恢复；恢复前的内容也已备份：{path}', { path: result.safetyBackupId })); render(); } catch(error) { showError(error.message); }
 }
 function renderTaskPanel({ compact = false } = {}) {
   const tasks = activeTasks();
@@ -4166,7 +4231,7 @@ function renderSelectedFilePreview() {
         }
         ${
           isEditing
-            ? '<span class="chip">Editing</span>'
+            ? ui`<span class="chip">编辑中</span>`
             : ''
         }
       </div>
@@ -4176,7 +4241,7 @@ function renderSelectedFilePreview() {
           isEditing
             ? ui`
               <button class="small-button is-primary" type="submit" form="file-save-form">
-                Queue save
+                排队保存
               </button>
               <button class="small-button" data-action="cancel-edit-file">
                 Discard
@@ -4239,7 +4304,7 @@ function renderCommandRunner() {
                   `
                   : ''
               }
-              <button class="small-button is-primary" type="submit">Queue run</button>
+              <button class="small-button is-primary" type="submit">排队运行</button>
             </form>
           `,
         )
@@ -4343,9 +4408,9 @@ function renderCodePage() {
                 ? chatFeature.renderMessageList(chat)
                 : ui`
                   <div class="code-empty">
-                    <h2 class="card-title">Ready to work in code mode</h2>
+                    <h2 class="card-title">代码模式已就绪</h2>
                     <p class="card-summary">
-                      Browse files, run safe local commands, and keep artifacts beside the conversation.
+                      浏览文件、运行安全的本地命令，并把成果放在对话旁边。
                     </p>
                     <div class="chip-row">
                       <span class="chip">${escapeHtml(
@@ -4394,7 +4459,7 @@ function renderCodePage() {
             <div class="inspector-header">
               <div>
                 <div class="eyebrow">Workspace</div>
-                <h2 class="pane-title">Files</h2>
+                <h2 class="pane-title">工作区文件</h2>
               </div>
               <span class="chip">${workspace.fileCount || 0}</span>
             </div>
@@ -4405,7 +4470,7 @@ function renderCodePage() {
             <div class="inspector-header">
               <div>
                 <div class="eyebrow">Context</div>
-                <h2 class="pane-title">Selected file</h2>
+                <h2 class="pane-title">选中的文件</h2>
               </div>
             </div>
             ${renderSelectedFilePreview()}
@@ -4415,7 +4480,7 @@ function renderCodePage() {
             <div class="inspector-header">
               <div>
                 <div class="eyebrow">Diagnostics</div>
-                <h2 class="pane-title">Command runner</h2>
+                <h2 class="pane-title">命令运行器</h2>
               </div>
             </div>
             ${renderCommandRunner()}
@@ -4429,10 +4494,10 @@ function renderCodePage() {
             <div class="inspector-header">
               <div>
                 <div class="eyebrow">Reusable outputs</div>
-                <h2 class="pane-title">Project artifacts</h2>
+                <h2 class="pane-title">项目成果</h2>
               </div>
               <button class="small-button" data-action="open-view" data-view="artifacts">
-                Manage
+                管理
               </button>
             </div>
             ${renderProjectArtifactShelf()}
@@ -4450,7 +4515,7 @@ function renderChatsPage() {
       <div class="page-grid">
         <div class="header-row">
           <div>
-            <h1 class="page-title compact">Chats</h1>
+            <h1 class="page-title compact">对话</h1>
           </div>
         </div>
 
@@ -4596,7 +4661,7 @@ function renderArtifactsPage() {
       <div class="page-grid">
         <div class="header-row">
           <div>
-            <h1 class="page-title compact">${uiState.artifactCollection==='results'?'成果':'知识库'}</h1><p class="page-kicker">知识由你主动保存和选用。成果来自回复中的代码块，不自动加入知识上下文。</p><div class="inline-actions"><button class="small-button" data-action="artifact-collection" data-collection="knowledge">知识</button><button class="small-button" data-action="artifact-collection" data-collection="results">成果</button></div>
+            <h1 class="page-title compact">${uiState.artifactCollection==='results'?t('成果库'):t('知识库')}</h1><p class="page-kicker">知识由你主动保存和选用。成果来自回复中的代码块，不自动加入知识上下文。</p><div class="inline-actions"><button class="small-button" data-action="artifact-collection" data-collection="knowledge">知识库</button><button class="small-button" data-action="artifact-collection" data-collection="results">成果库</button></div>
           </div>
 
           <div class="inline-actions">
@@ -4920,7 +4985,7 @@ function renderToolPermissionDialog() {
         <div class="tool-permission-body">
           <div class="tool-permission-tool-name">${escapeHtml(entry.agentId || 'Agent')} · ${escapeHtml(toolId)}</div>
           ${entry.confirmError ? ui`<div class="file-safety-warn" role="alert">${escapeHtml(entry.confirmError)}</div>` : ''}
-          <p class="page-kicker-tip">Allow once 仅限本次；Always allow 保存到当前Agent、项目与真实工作目录。无项目时仅限当前Agent的非项目对话。可在权限页撤销；文件与命令仍按具体操作检查。</p>
+          <p class="page-kicker-tip">「仅本次」只放行这一次；「始终允许」保存到当前 Agent、项目与真实工作目录，无项目时仅限这个 Agent 的非项目对话。可在「权限与隐私」撤销；文件与命令仍按具体操作检查。</p>
           <pre class="tool-permission-args">${escapeHtml(argsText)}</pre>
         </div>
         <div class="tool-permission-footer">
@@ -4929,19 +4994,19 @@ function renderToolPermissionDialog() {
               data-action="tool-permission-allow-once"
               data-request-id="${escapeHtml(requestId)}"
               data-tool-id="${escapeHtml(toolId)}">
-              Allow once
+              仅本次
             </button>
             <button class="small-button"
               data-action="tool-permission-deny"
               data-request-id="${escapeHtml(requestId)}"
               data-tool-id="${escapeHtml(toolId)}">
-              Deny
+              拒绝
             </button>
             <button class="small-button"
               data-action="tool-permission-allow-always"
               data-request-id="${escapeHtml(requestId)}"
               data-tool-id="${escapeHtml(toolId)}">
-              Always allow
+              始终允许
             </button>
           </fieldset>
         </div>
@@ -5015,14 +5080,14 @@ function _fileSafetyBody(operation, payload) {
         <div class="file-safety-row"><strong>Path:</strong> <code>${escapeHtml(payload.path || '')}</code> ${wsBadge}</div>
         ${symlinkWarn(payload.hasSymlinkInChain, payload.realPath)}
         ${payload.contentSize != null ? ui`<div class="file-safety-row"><strong>New size:</strong> ${payload.contentSize} bytes</div>` : ''}
-        ${payload.diffPreview ? ui`<details class="file-safety-details" open><summary>Diff preview</summary><pre class="tool-permission-args">${escapeHtml(payload.diffPreview)}</pre></details>` : (payload.contentPreview ? ui`<details class="file-safety-details"><summary>Content preview</summary><pre class="tool-permission-args">${escapeHtml(payload.contentPreview)}</pre></details>` : '')}
+        ${payload.diffPreview ? ui`<details class="file-safety-details" open><summary>差异预览</summary><pre class="tool-permission-args">${escapeHtml(payload.diffPreview)}</pre></details>` : (payload.contentPreview ? ui`<details class="file-safety-details"><summary>Content preview</summary><pre class="tool-permission-args">${escapeHtml(payload.contentPreview)}</pre></details>` : '')}
       `;
     case 'edit':
       return ui`
         <div class="file-safety-row"><strong>Path:</strong> <code>${escapeHtml(payload.path || '')}</code> ${wsBadge}</div>
         ${symlinkWarn(payload.hasSymlinkInChain, payload.realPath)}
-        ${payload.diffPreview ? ui`<details class="file-safety-details" open><summary>Diff</summary><pre class="tool-permission-args">${escapeHtml(payload.diffPreview)}</pre></details>` : ''}
-        ${(!payload.diffPreview && (payload.oldExcerpt || payload.newExcerpt)) ? ui`<details class="file-safety-details"><summary>Replacement</summary><pre class="tool-permission-args">- ${escapeHtml(payload.oldExcerpt || '')}\n+ ${escapeHtml(payload.newExcerpt || '')}</pre></details>` : ''}
+        ${payload.diffPreview ? ui`<details class="file-safety-details" open><summary>差异</summary><pre class="tool-permission-args">${escapeHtml(payload.diffPreview)}</pre></details>` : ''}
+        ${(!payload.diffPreview && (payload.oldExcerpt || payload.newExcerpt)) ? ui`<details class="file-safety-details"><summary>替换内容</summary><pre class="tool-permission-args">- ${escapeHtml(payload.oldExcerpt || '')}\n+ ${escapeHtml(payload.newExcerpt || '')}</pre></details>` : ''}
       `;
     case 'move':
       return ui`
@@ -5064,10 +5129,10 @@ function _fileSafetyButtons(operation, payload, requestId) {
   const confirm = operation === 'delete' && payload?.stage === 'confirm';
   const persistent = payload?.persistentAllowed === true;
   return ui`
-    <button class="small-button is-primary" data-action="${confirm ? 'file-safety-confirm-delete' : 'file-safety-allow'}" data-scope="once" data-request-id="${escapeHtml(requestId)}">Allow once</button>
-    <button class="small-button" data-action="file-safety-deny" data-request-id="${escapeHtml(requestId)}">Deny</button>
-    <button class="small-button" data-action="file-safety-allow" data-scope="file" data-persistent="1" data-request-id="${escapeHtml(requestId)}" ${persistent ? '' : 'disabled'}>Always allow</button>
-    <p class="page-kicker-tip">${persistent ? (operation === 'bash' ? '只保存此固定 npm 命令、Agent与真实工作目录；package.json 变化后重新确认，不放行其他命令。' : '长期授权仅限当前文件、操作、Agent与项目，重启后仍有效，可在权限页撤销。') : '此操作需要逐次确认，不支持长期授权。'}${operation === 'delete' ? ' 删除仍需输入文件名确认。' : ''}</p>`;
+    <button class="small-button is-primary" data-action="${confirm ? 'file-safety-confirm-delete' : 'file-safety-allow'}" data-scope="once" data-request-id="${escapeHtml(requestId)}">仅本次</button>
+    <button class="small-button" data-action="file-safety-deny" data-request-id="${escapeHtml(requestId)}">拒绝</button>
+    <button class="small-button" data-action="file-safety-allow" data-scope="file" data-persistent="1" data-request-id="${escapeHtml(requestId)}" ${persistent ? '' : 'disabled'}>始终允许</button>
+    <p class="page-kicker-tip">${persistent ? (operation === 'bash' ? t('只保存此固定 npm 命令、Agent与真实工作目录；package.json 变化后重新确认，不放行其他命令。') : t('长期授权仅限当前文件、操作、Agent与项目，重启后仍有效，可在权限页撤销。')) : t('此操作需要逐次确认，不支持长期授权。')}${operation === 'delete' ? ' ' + t('删除仍需输入文件名确认。') : ''}</p>`;
 }
 
 function renderFileSafetyDialog(entry) {
@@ -5088,7 +5153,7 @@ function renderFileSafetyDialog(entry) {
           <span class="tool-permission-icon">${icon.chip}</span>
           <div>
             <div class="tool-permission-title">${escapeHtml(title)}</div>
-            <div class="tool-permission-subtitle">File-safety approval required</div>
+            <div class="tool-permission-subtitle">文件操作需要你的确认</div>
           </div>
         </div>
         <div class="tool-permission-body">
@@ -5273,7 +5338,7 @@ function render({ background = false, changedSections = null } = {}) {
         ${renderSyncConflicts(uiState.bootstrap.syncConflicts,escapeHtml)}
         ${renderSyncConflicts(uiState.bootstrap.agentSettingsConflicts,escapeHtml,true)}
         ${renderSyncConflicts(uiState.bootstrap.projectMemoryConflicts,escapeHtml,'project-memory')}
-        ${uiState.bootstrap.agentPersonaRecoveries?.length ? `<details><summary>本机人设恢复副本</summary><p>冲突选择前保留的全文；可复制到 Agent 编辑器后明确保存。</p>${uiState.bootstrap.agentPersonaRecoveries.map(row=>`<details><summary>${escapeHtml(row.key)} · ${escapeHtml(row.createdAt)}</summary><pre tabindex="0">${escapeHtml(JSON.stringify(row.agents,null,2))}</pre></details>`).join('')}</details>` : ''}
+        ${uiState.bootstrap.agentPersonaRecoveries?.length ? ui`<details><summary>本机人设恢复副本</summary><p>冲突选择前保留的全文；可复制到 Agent 编辑器后明确保存。</p>${uiState.bootstrap.agentPersonaRecoveries.map(row=>`<details><summary>${escapeHtml(row.key)} · ${escapeHtml(row.createdAt)}</summary><pre tabindex="0">${escapeHtml(JSON.stringify(row.agents,null,2))}</pre></details>`).join('')}</details>` : ''}
         <div class="neural-dashboard-label"><span>${uiState.neuralOverview ? 'CONSTELLATION / OVERVIEW' : 'WORKSPACE / '+neuralGroup.toUpperCase()}</span><button data-action="neural-back">${neuralStage==='detail'?t("返回分支"):t("返回总览")} ↗</button></div>
         <div class="content-shell${_isChatView ? ' is-chat-view' : ''}">
           ${pageHtml}

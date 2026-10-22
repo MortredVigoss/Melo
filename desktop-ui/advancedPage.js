@@ -126,7 +126,7 @@ export function renderAdvancedPage({
             ${isRunning
               ? ui`<div class="inline-actions">
                   <button class="small-button is-danger" type="button" data-action="kill-background-task" data-run-id="${escapeHtml(t.runId)}">
-                    Kill
+                    结束任务
                   </button>
                 </div>`
               : ''}
@@ -164,11 +164,11 @@ export function renderAdvancedPage({
         const stateChip = unpinned
           ? (isLegacyEnableOnUnpinned
               ? ui`<span class="chip is-warning">假启用 · 未锁定版本</span>`
-              : ui`<span class="chip">unavailable · 未锁定版本</span>`)
-          : ui`<span class="chip ${enabled ? 'is-accent' : ''}">${enabled ? 'enabled' : 'disabled'}</span>`;
+              : ui`<span class="chip">不可用 · 未锁定版本</span>`)
+          : ui`<span class="chip ${enabled ? 'is-accent' : ''}">${enabled ? t('已启用') : t('已停用')}</span>`;
         const buttonLabel = unpinned
-          ? (isLegacyEnableOnUnpinned ? 'Disable (清理假启用)' : 'Unavailable')
-          : (enabled ? 'Disable' : 'Enable');
+          ? (isLegacyEnableOnUnpinned ? t('停用（清理假启用）') : t('不可用'))
+          : (enabled ? t('停用此服务') : t('启用此服务'));
         const buttonClass = unpinned
           ? (isLegacyEnableOnUnpinned ? 'small-button is-danger' : 'small-button')
           : `small-button${enabled ? ' is-danger' : ' is-primary'}`;
@@ -183,9 +183,9 @@ export function renderAdvancedPage({
             <div class="list-row-meta">${escapeHtml(preset?.description || '')}</div>
             <div class="list-row-meta mono">${escapeHtml(cmdSummary)}</div>
             ${unpinned
-              ? ui`<div class="list-row-meta" style="opacity: 0.78;">npm package not yet pinned to an exact version — ${
+              ? ui`<div class="list-row-meta" style="opacity: 0.78;">npm 包尚未锁定到精确版本 — ${
                   isLegacyEnableOnUnpinned
-                    ? 'click <strong>Disable</strong> to clear the legacy <code>enable*Mcp:true</code> config flag.'
+                    ? ui`点击「停用」清除旧的 enable*Mcp:true 配置。`
                     : 'toggle disabled until a version lands in <code>PINNED_VERSIONS</code>.'
                 }</div>`
               : ''}
@@ -235,11 +235,11 @@ export function renderAdvancedPage({
         <details class="quality-details"><summary>扩展与连接管理</summary>
         <div class="subsection">
           <div class="header-row">
-            <h3 class="subsection-title">Built-in MCP servers</h3>
-            <span class="meta-label">${(mcpPresets || []).filter(p => p?.enabled).length} of ${(mcpPresets || []).length} enabled</span>
+            <h3 class="subsection-title">内置 MCP 服务</h3>
+            <span class="meta-label">${(mcpPresets || []).filter(p => p?.enabled).length} / ${(mcpPresets || []).length} 已启用</span>
           </div>
           <p class="page-kicker-tip">
-            Stdio MCPs run local processes; agents must opt-in to each server in Customize → Agents.
+            stdio MCP 会运行本机进程；每个 Agent 需在 自定义 → Agent 里逐个勾选。
           </p>
           <div class="list-stack">
             ${presetRows}
@@ -248,8 +248,8 @@ export function renderAdvancedPage({
 
         <div class="subsection">
           <div class="header-row">
-            <h3 class="subsection-title">External MCP connectors</h3><button class="small-button" data-action="manage-new-connector">新增连接器</button>
-            <span class="meta-label">${externalMcps.length} configured</span>
+            <h3 class="subsection-title">外部 MCP 连接器</h3><button class="small-button" data-action="manage-new-connector">新增连接器</button>
+            <span class="meta-label">${externalMcps.length} 个已配置</span>
           </div>
           <div class="list-stack">
             ${externalMcpRows}
@@ -258,11 +258,11 @@ export function renderAdvancedPage({
 
         <div class="subsection">
           <div class="header-row">
-            <h3 class="subsection-title">CLI / stdio MCP servers</h3>
-            <span class="meta-label">${adv.cliServers.length} active</span>
+            <h3 class="subsection-title">CLI / stdio MCP 服务</h3>
+            <span class="meta-label">${adv.cliServers.length} 个运行中</span>
           </div>
           <div class="inline-actions">
-            <button class="small-button" type="button" data-action="reload-mcp-servers">Reload all</button>
+            <button class="small-button" type="button" data-action="reload-mcp-servers">全部重新连接</button>
           </div>
           <div class="list-stack">
             ${cliServerRows}
@@ -271,8 +271,8 @@ export function renderAdvancedPage({
 
         <div class="subsection">
           <div class="header-row">
-            <h3 class="subsection-title">Plugins</h3>
-            <span class="meta-label">${adv.plugins.length} registered</span>
+            <h3 class="subsection-title">插件</h3>
+            <span class="meta-label">${adv.plugins.length} 个已注册</span>
           </div>
           <div class="list-stack">
             ${pluginRows}
@@ -281,8 +281,8 @@ export function renderAdvancedPage({
 
         <div class="subsection">
           <div class="header-row">
-            <h3 class="subsection-title">Background shell tasks</h3>
-            <span class="meta-label">${adv.tasks.length} runs</span>
+            <h3 class="subsection-title">后台命令任务</h3>
+            <span class="meta-label">${adv.tasks.length} 次运行</span>
           </div>
           <div class="list-stack">
             ${taskRows}
@@ -290,12 +290,12 @@ export function renderAdvancedPage({
         </div>
         </details>
         <details class="quality-details"><summary>技术详情</summary>            <p class="page-kicker page-kicker-tip">
-              ${statePathHint ? ui`Model configuration: <code>${escapeHtml(statePathHint)}</code>.
+              ${statePathHint ? ui`配置文件：<code>${escapeHtml(statePathHint)}</code>
               <button class="ghost-link" type="button"
                       data-action="copy-melo-state-path"
                       data-path="${escapeHtml(statePathHint)}">
-                Copy path
-              </button>` : 'Configuration path will appear after refresh.'}
+                复制路径
+              </button>` : t('刷新后显示配置文件路径。')}
             </p>
         </details>
       </div>

@@ -33,6 +33,20 @@ test('Agent editor: visible creation, shared routes, saved capabilities/channels
   assert.equal(await form.locator('[name=model]').inputValue(),'fixture-model');
   const add=page.locator('[data-action=create-custom-agent]');
   const bounds=await add.boundingBox();assert.ok(bounds&&bounds.y>=0&&bounds.y+bounds.height<1000,'Creation is visible without scrolling');
+  // Audit 2026-10-22: the create hint has its own grid row, so it never sits on the editor's sticky toolbar.
+  const hint=await page.locator('.agent-create-hint').boundingBox(),column=await page.locator('.agent-detail-column').boundingBox();
+  assert.ok(hint&&hint.height>0&&hint.y+hint.height<=column.y+1,`hint ${JSON.stringify(hint)} overlaps the editor at ${column?.y}`);
+  // 这台电脑上: a device-local switch outside the edit session, saved at once, never synced.
+  await page.locator('.agent-device-section>summary').click();
+  const location=page.locator('[data-action=toggle-agent-device-permission][data-permission=location]');
+  assert.equal(await location.isChecked(),false,'location is off until the user turns it on');
+  await location.click();
+  await page.waitForFunction(()=>document.querySelector('[data-action=toggle-agent-device-permission][data-permission=location]')?.checked===true);
+  assert.deepEqual((await boot()).settings.localPreferences.agentDevice,{research:{location:true}});
+  assert.equal((await boot()).customize.agents.find(a=>a.id==='research').capabilities.network,initial.capabilities.network,'the synced capability set is untouched');
+  await location.click();
+  await page.waitForFunction(()=>document.querySelector('[data-action=toggle-agent-device-permission][data-permission=location]')?.checked===false);
+  assert.deepEqual((await boot()).settings.localPreferences.agentDevice,{});
   // Rename with collapsed capability/channel sections: all saved configuration survives.
   await form.locator('[data-action=form-settings-edit]').click();
   await form.locator('[name=name]').fill('Research renamed');

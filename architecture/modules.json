@@ -23,8 +23,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 624,
-      "edges": 1901,
+      "modules": 625,
+      "edges": 1915,
       "roots": [
         "src",
         "desktop-ui",
@@ -33,7 +33,7 @@
       ],
       "note": "静态 import/re-export，含 desktop-ui 对 /shared/*.js 的服务映射；不含动态 import 与外部包"
     },
-    "routes": 159,
+    "routes": 160,
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
@@ -553,7 +553,7 @@
         "approvals": 3,
         "channels": 3,
         "chat": 18,
-        "desktop-shell": 7,
+        "desktop-shell": 8,
         "memory": 11,
         "platform": 42,
         "settings": 3,
@@ -630,6 +630,7 @@
           "desktop-ui/agentPersona.browser.test.js",
           "desktop-ui/agentSettings.browser.test.js",
           "desktop-ui/agentSettingsSecurity.browser.test.js",
+          "desktop-ui/agentVoice.browser.test.js",
           "desktop-ui/features/agents/agentDraft.test.js",
           "desktop-ui/features/agents/agentMcpAuthorise.test.js",
           "desktop-ui/features/agents/capabilityChoices.test.js",
@@ -1793,7 +1794,8 @@
         {
           "module": "src/domain/settings/localPreferences.js",
           "importedBy": [
-            "platform"
+            "platform",
+            "tools"
           ]
         },
         {
@@ -1865,7 +1867,7 @@
         "agents": 3,
         "approvals": 1,
         "chat": 7,
-        "desktop-shell": 7,
+        "desktop-shell": 9,
         "media": 1,
         "platform": 22,
         "sync": 3,
@@ -1876,14 +1878,14 @@
         "approvals": 8,
         "channels": 2,
         "chat": 9,
-        "desktop-shell": 12,
+        "desktop-shell": 13,
         "knowledge": 1,
         "media": 7,
         "memory": 14,
         "platform": 17,
         "projects": 1,
         "sync": 1,
-        "tools": 9,
+        "tools": 10,
         "voice": 1
       },
       "httpRoutes": [
@@ -1963,6 +1965,7 @@
           "desktop-ui/settingsEdit.test.js",
           "src/codexAuth.executable.test.js",
           "src/config.codexCatalogMigration.test.js",
+          "src/services/settings/agentDevicePermissions.test.js",
           "src/services/settings/extraFast.test.js",
           "src/services/settings/localData.test.js",
           "src/services/settings/localSettings.test.js"
@@ -2482,13 +2485,13 @@
         "agents": 8,
         "approvals": 33,
         "chat": 14,
-        "desktop-shell": 6,
+        "desktop-shell": 7,
         "knowledge": 3,
         "media": 2,
         "memory": 6,
-        "platform": 35,
+        "platform": 36,
         "projects": 5,
-        "settings": 9
+        "settings": 10
       },
       "usedBy": {
         "agents": 21,
@@ -2980,7 +2983,7 @@
       ],
       "modules": {
         "desktop-ui": 2,
-        "src": 8
+        "src": 9
       },
       "entryModules": [
         {
@@ -3041,8 +3044,9 @@
       "dependsOn": {
         "approvals": 1,
         "chat": 2,
+        "desktop-shell": 1,
         "media": 1,
-        "platform": 3,
+        "platform": 4,
         "projects": 1,
         "settings": 1
       },
@@ -3065,7 +3069,8 @@
         "POST /api/tts/speak-play ← src/http/ttsRoutes.js",
         "POST /api/tts/speak-stop ← src/http/ttsRoutes.js",
         "POST /api/tts/speak-text ← src/http/ttsRoutes.js",
-        "POST /api/tts/test-minimax ← src/http/ttsRoutes.js"
+        "POST /api/tts/test-minimax ← src/http/ttsRoutes.js",
+        "POST /api/tts/voice-text ← src/http/ttsRoutes.js"
       ],
       "desktopUi": [
         "desktop-ui/ttsBridgeRouter.js",
@@ -3091,6 +3096,7 @@
           "desktop-ui/voiceInput.test.js",
           "src/desktopStore.minimaxVoiceConfig.test.js",
           "src/http/ttsRoutes.http.test.js",
+          "src/services/media/agentVoice.test.js",
           "src/services/tts/nativeSayQueue.test.js",
           "src/services/tts/nativeStopEndpointsGuard.test.js",
           "src/shared/minimaxVoiceResolver.test.js",
@@ -3329,7 +3335,7 @@
       "dependsOn": {
         "agents": 3,
         "channels": 3,
-        "desktop-shell": 6,
+        "desktop-shell": 7,
         "platform": 36,
         "projects": 4,
         "settings": 8,
@@ -3500,7 +3506,8 @@
             "projects",
             "settings",
             "sync",
-            "tools"
+            "tools",
+            "voice"
           ]
         },
         {
@@ -3538,22 +3545,23 @@
         "memory": 1,
         "platform": 9,
         "projects": 5,
-        "settings": 12,
+        "settings": 13,
         "sync": 2,
         "tools": 13,
         "voice": 2
       },
       "usedBy": {
-        "agents": 7,
-        "approvals": 6,
+        "agents": 8,
+        "approvals": 7,
         "chat": 15,
         "media": 5,
         "memory": 6,
         "platform": 2,
         "projects": 5,
-        "settings": 7,
+        "settings": 9,
         "sync": 1,
-        "tools": 6
+        "tools": 7,
+        "voice": 1
       },
       "httpRoutes": [
         "GET /api/bootstrap ← src/server.js",
@@ -3961,7 +3969,8 @@
             "chat",
             "desktop-shell",
             "memory",
-            "sync"
+            "sync",
+            "voice"
           ]
         },
         {
@@ -4086,8 +4095,8 @@
         "projects": 23,
         "settings": 22,
         "sync": 4,
-        "tools": 35,
-        "voice": 3
+        "tools": 36,
+        "voice": 4
       },
       "httpRoutes": [],
       "desktopUi": [],
@@ -4119,6 +4128,7 @@
           "src/http/projectMemorySync.http.test.js",
           "src/http/routeRegistry.test.js",
           "src/http/savedImages.http.test.js",
+          "src/http/ttsVoiceText.http.test.js",
           "src/modelAlignment.test.js",
           "src/persistence/capabilityGrantLedger.test.js",
           "src/runtime/architectureBoundary.test.js",

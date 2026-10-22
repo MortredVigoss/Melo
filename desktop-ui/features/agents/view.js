@@ -132,11 +132,11 @@ function renderAgentCapabilities(selected,draft) {
     ...[['delegateTargets','委派对象'],['maxDelegationDepth','委派深度'],['maxIterations','成员轮数'],['maxTokens','成员 token 上限'],['timeoutMs','成员超时（毫秒）']].filter(([key])=>JSON.stringify(pending.baseline.current.collaboration[key])!==JSON.stringify(pending.requested.collaboration[key])).map(([key,label])=>`${t(label)}: ${settingText(pending.baseline.current.collaboration[key])} → ${settingText(pending.requested.collaboration[key])}`),
     ...[['projects','项目指引'],['knowledge','共享知识'],['memory','记忆']].filter(([key])=>pending.baseline.current.contextSources[key]!==pending.requested.contextSources[key]).map(([,label])=>`${t(label)}: ${t('开启')}`),
   ] : [];
-  return ui`<details class="agent-settings-section agent-capabilities" data-agent-section="${selected.id}:capabilities" ${pending || !selected.capabilities || agentsState.agentOpenSections[`${selected.id}:capabilities`] ? 'open' : ''}><summary>能力范围与协作</summary><p>关闭的能力在工具执行时拒绝；MCP 服务可自行执行命令，请只授权可信服务。</p><p>${escapeHtml(t('「联网」包含网页搜索、读取网页和本机定位。'))}</p><p>这些能力只约束这个 Agent 在电脑上的执行。手机上的联网、生成图片和手机数据，在手机的 Agent 页“这台手机上”单独设置。</p>
+  return ui`<details class="agent-settings-section agent-capabilities" data-agent-section="${selected.id}:capabilities" ${pending || !selected.capabilities || agentsState.agentOpenSections[`${selected.id}:capabilities`] ? 'open' : ''}><summary>能力范围与协作</summary><p>关闭的能力在工具执行时拒绝；MCP 服务可自行执行命令，请只授权可信服务。</p><p>${escapeHtml(t('「联网」包含网页搜索和读取网页；本机定位在下方「这台电脑上」单独开启。'))}</p><p>这些能力只约束这个 Agent 在电脑上的执行。手机上的联网、生成图片和手机数据，在手机的 Agent 页“这台手机上”单独设置。</p>
     ${selected.editingScope==='project'?`<p>${escapeHtml(t('项目能力与协作设置只能收紧全局设置；需要更多能力时，请先编辑此 Agent 的全局设置。'))}</p>`:''}
     ${pending?`<section role="status"><strong>${escapeHtml(t('同步权限变更待桌面确认'))}</strong><p>${escapeHtml(t('收紧部分已生效。以下新增能力及协作、上下文变更尚未生效：'))}</p><p>${escapeHtml(pendingChanges.join('、')||t('协作或上下文设置'))}</p><button type="button" class="small-button" data-action="confirm-agent-settings" data-id="${escapeHtml(pending.id)}" data-expected="${escapeHtml(pending.fingerprint)}" data-accept="true" ${!selected.capabilities?'disabled':''}>${escapeHtml(t('确认应用同步设置'))}</button><button type="button" class="small-button" data-action="confirm-agent-settings" data-id="${escapeHtml(pending.id)}" data-expected="${escapeHtml(pending.fingerprint)}" data-accept="false">${escapeHtml(t('拒绝放宽，保留当前权限'))}</button></section>`:''}
     <input type="hidden" name="capabilityVersion" value="1">
-    ${!selected.capabilities?`<p>迁移预览：${escapeHtml(selected.capabilityMigration.note)}</p><p>将失去的工具：${escapeHtml([...selected.capabilityMigration.lostTools,...(selected.capabilityMigration.lostActions||[])].join(', ') || '无')}</p><input type="hidden" name="capabilityMigrationExpected" value="${escapeHtml(selected.capabilityMigration.fingerprint)}"><label><input type="checkbox" name="confirmCapabilityMigration" ${draft?.confirmCapabilityMigration==='on'?'checked':''}>确认应用这份能力配置；保存后生效</label>`:''}
+    ${!selected.capabilities?ui`<p>迁移预览：${escapeHtml(selected.capabilityMigration.note)}</p><p>将失去的工具：${escapeHtml([...selected.capabilityMigration.lostTools,...(selected.capabilityMigration.lostActions||[])].join(', ') || t('无'))}</p><input type="hidden" name="capabilityMigrationExpected" value="${escapeHtml(selected.capabilityMigration.fingerprint)}"><label><input type="checkbox" name="confirmCapabilityMigration" ${draft?.confirmCapabilityMigration==='on'?'checked':''}>确认应用这份能力配置；保存后生效</label>`:''}
     <div class="agent-capability-flags">${Object.entries(selected.capabilityLabels || {}).map(([key,label])=>`<label class="label"><input type="checkbox" name="cap_${key}" ${checked(key)?'checked':''}>${escapeHtml(t(label))}</label>`).join('')}</div>
     <div class="agent-settings-grid">${[['skills','技能白名单'],['mcpServers','MCP 服务白名单'],['connectors','连接器白名单']].map(([key,label])=>renderCapabilityChoices('cap_'+key,label,value(key),key==='skills'?selected.capabilityOptions:key==='mcpServers'?(getBootstrap().customize.mcpAuthSurface || []).map(o=>({...o,unavailable:!o.enabled || o.unpinned})):getBootstrap().customize.connectors.filter(o=>o.type==='external-mcp'),escapeHtml)).join('')}</div>
     <p>${escapeHtml(t('开启“委派”后，这个 Agent 可以把任务交给下面勾选的 Agent，也可以发起多 Agent 协作；没勾选的 Agent 不能被委派或组队。'))}</p>
@@ -234,7 +234,8 @@ function renderAgentWorkbench(selected) {
         ${renderAgentCapabilities(selected, draft)}
 
         <details class="agent-settings-section agent-channels" data-agent-section="${selected.id}:channels" ${agentsState.agentOpenSections[`${selected.id}:channels`] ? 'open' : ''}>
-          <summary>消息渠道</summary>
+          <summary>语音与消息渠道</summary>
+          <p class="agent-section-note">桌面的自动朗读和消息朗读按这里的模式、音色与风格进行；Telegram / Discord 语音回复使用同一套设置。风格要求只在「简短口述摘要」模式下生效；音色在对应引擎（Edge TTS、MiniMax）下生效。</p>
           <p class="agent-section-note">${
             VALID_CHANNEL_TABS.length
               ? 'Telegram 已归档，原有配置与历史对话保留。'
@@ -246,7 +247,7 @@ function renderAgentWorkbench(selected) {
                     <select class="config-select" name="voiceReplyMode">
                       <option value="summary" ${(draft?.voiceReplyMode || 'summary') === 'summary' ? 'selected' : ''}>简短口述摘要</option>
                       <option value="full" ${draft?.voiceReplyMode === 'full' ? 'selected' : ''}>朗读完整回复</option>
-                      <option value="off" ${draft?.voiceReplyMode === 'off' ? 'selected' : ''}>不发送语音</option>
+                      <option value="off" ${draft?.voiceReplyMode === 'off' ? 'selected' : ''}>不自动朗读</option>
                     </select>
                   </label>
                   <label class="label">
@@ -373,9 +374,22 @@ function renderAgentWorkbench(selected) {
           }
         </div>
       </form>
+      ${renderAgentDeviceSection(selected)}
       ${renderCapabilityGrants(selected.id)}
     </section>
   `;
+}
+
+// Per-Agent permissions for this computer (the phone's 这台手机上, 2026-10-22):
+// saved at once through local preferences, never synced, outside the edit
+// session. Today only location, which stays off until the user turns it on.
+function renderAgentDeviceSection(selected) {
+  const on = getBootstrap()?.settings?.localPreferences?.agentDevice?.[selected.id]?.location === true;
+  return ui`<details class="agent-settings-section agent-device-section" data-agent-section="${selected.id}:device" ${agentsState.agentOpenSections[`${selected.id}:device`] ? 'open' : ''}><summary>这台电脑上</summary>
+    <p>只在这台电脑上生效，立即保存，不同步；与上方同步的能力范围无关。</p>
+    <label class="checkbox-row"><input type="checkbox" data-action="toggle-agent-device-permission" data-agent-id="${escapeHtml(selected.id)}" data-permission="location" ${on ? 'checked' : ''}><span>定位</span></label>
+    <p>需要时读取一次当前位置，用于“附近”“我在哪”这类问题；坐标取整到约 1 公里，首次使用时 macOS 会再询问一次。</p>
+  </details>`;
 }
 
 function renderAgentPage() {

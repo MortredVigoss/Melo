@@ -15,6 +15,19 @@ async function _getNativeSayQueue() {
   return _nativeSayQueue;
 }
 
+// Per-Agent voice (services/media/agentVoice.js, 2026-10-22): a request that
+// names the Agent whose reply is being read gets that Agent's voice and
+// MiniMax tuning instead of the global TTS settings.
+async function _ttsConfigFor(body) {
+  const { getResolvedConfig } = await import('../config.js');
+  const config = await getResolvedConfig();
+  const agentId = String(body?.agentId || '').trim();
+  if (!agentId) return config;
+  const { loadState } = await import('../state/stateStore.js');
+  const { agentVoiceProfile, agentTtsConfig } = await import('../services/media/agentVoice.js');
+  return agentTtsConfig(config, agentVoiceProfile(await loadState(), agentId));
+}
+
 function _concatWavBuffers(wavBuffers) {
   if (!wavBuffers.length) return Buffer.alloc(0);
   let sampleRate = 24000, numChannels = 1, bitsPerSample = 16;
@@ -184,9 +197,8 @@ const router = createRouteRegistry([
         sendJson(response, 400, { ok: false, error: 'text is required.' });
         return;
       }
-      const { getResolvedConfig } = await import('../config.js');
       const { synthesizeSpeech, getTtsUnavailableReason } = await import('../tts.js');
-      const config = await getResolvedConfig();
+      const config = await _ttsConfigFor(body);
       const unavailable = getTtsUnavailableReason(config);
       if (unavailable) {
         sendJson(response, 422, { ok: false, error: unavailable });
@@ -219,9 +231,8 @@ const router = createRouteRegistry([
       const body = await readJsonBody(request);
       const text = String(body?.text || '').trim();
       if (!text) { sendJson(response, 400, { ok: false, error: 'text required' }); return; }
-      const { getResolvedConfig } = await import('../config.js');
       const { getTtsUnavailableReason } = await import('../tts.js');
-      const config = await getResolvedConfig();
+      const config = await _ttsConfigFor(body);
       const unavailable = getTtsUnavailableReason(config);
       if (unavailable) { sendJson(response, 422, { ok: false, error: unavailable }); return; }
       // Start synthesis immediately; add its Promise to ordered playback queue.
@@ -297,9 +308,8 @@ const router = createRouteRegistry([
         sendJson(response, 400, { ok: false, error: 'text is required.' });
         return;
       }
-      const { getResolvedConfig } = await import('../config.js');
-      const { synthesizeSpeech, getTtsUnavailableReason } = await import('../tts.js');
-      const config = await getResolvedConfig();
+      const { getTtsUnavailableReason } = await import('../tts.js');
+      const config = await _ttsConfigFor(body);
       const unavailable = getTtsUnavailableReason(config);
       if (unavailable) {
         sendJson(response, 422, { ok: false, error: unavailable });
@@ -326,9 +336,8 @@ const router = createRouteRegistry([
       const body = await readJsonBody(request);
       const text = String(body?.text || '').trim();
       if (!text) { sendJson(response, 400, { ok: false, error: 'text required' }); return; }
-      const { getResolvedConfig } = await import('../config.js');
       const { getTtsUnavailableReason } = await import('../tts.js');
-      const config = await getResolvedConfig();
+      const config = await _ttsConfigFor(body);
 
       // ── Edge TTS fast path ────────────────────────────────────────────────
       if (config.ttsProvider === 'edge') {
@@ -428,6 +437,24 @@ const router = createRouteRegistry([
           }
         }
       })();
+      return;
+    } },
+
+    // ── voice-text: what this Agent says out loud for a reply ────────────────
+    // The desktop asks before reading a reply (services/media/agentVoice.js):
+    // 'summary' returns the spoken summary, restyled when the Agent has voice
+    // style instructions; 'full' returns the text as sent; 'off' tells the
+    // caller not to speak automatically. Unknown Agents behave like 'full'.
+    { method: 'POST', paths: ["/api/tts/voice-text"], auth: 'local-write', handler: async ({ request, response, url, requireLocalOrigin }) => {
+      const body = await readJsonBody(request);
+      const text = String(body?.text || '').trim().slice(0, 8000);
+      if (!text) { sendJson(response, 400, { ok: false, error: 'text required' }); return; }
+      const { getResolvedConfig } = await import('../config.js');
+      const { loadState } = await import('../state/stateStore.js');
+      const { agentVoiceProfile, voiceTextForAgent } = await import('../services/media/agentVoice.js');
+      const profile = agentVoiceProfile(await loadState(), body?.agentId);
+      const result = await voiceTextForAgent({ text, profile, config: await getResolvedConfig() });
+      sendJson(response, 200, { ok: true, ...result });
       return;
     } },
 

@@ -74,7 +74,7 @@ export function renderModelPicker({ config, models, agent, selection, open, savi
     ${open ? ui`<section id="model-picker-panel" class="model-picker-panel" popover="manual" aria-label="对话模型选择">
       <header><div><small>MODEL / CONNECTION</small><h3>选择本对话的模型</h3></div></header>
       <p class="model-picker-context">${agent?.model ? `${escape(agent.name)} 单独指定了 ${escape(modelLabel(agent.model))}。` : t("未单独选择时沿用默认模型。")} 更改只影响本对话之后的请求。</p>
-      <p class="model-picker-context">这里选择文字对话模型；图片理解与生成可在系统中另行配置。搜索、文件及电脑工具由 Melo 按Agent权限执行，所需服务未配置时不会自动获得能力。</p>
+      <p class="model-picker-context">这里选择文字对话模型；图片理解与生成可在系统中另行配置。网页搜索、文件及电脑工具由 Melo 按 Agent 权限执行，网页搜索无需额外配置。</p>
       <div class="model-picker-options" role="group" aria-label="可选模型">
         <button type="button" class="model-picker-option ${!selection?'is-selected':''}" data-action="pick-default-model" data-model="" aria-pressed="${!selection}" ${saving?'disabled':''}>沿用Agent / 系统默认</button>
         ${choices.map(profile=>ui`<small>${escape(profile.name)}</small>${profile.models.map(model=>ui`<button type="button" class="model-picker-option ${selection?.model===model&&selection?.profileId===profile.id?'is-selected':''}" data-action="pick-default-model" data-model="${escape(model)}" data-profile-id="${escape(profile.id)}" aria-pressed="${selection?.model===model&&selection?.profileId===profile.id}" ${saving?'disabled':''}><span><strong>${escape(modelLabel(model))}</strong><small>${escape(model)}</small></span></button>`).join('')}`).join('')}
@@ -89,7 +89,7 @@ export function renderModelReceipt(message, escape) {
   if (!receipts.length) return '';
   const names = [...new Set(receipts.map(row => row.reportedModel).filter(Boolean))];
   const simulated = receipts.some(row => row.simulated);
-  const summary = simulated ? t("模拟回复") : names.length === 1 ? modelLabel(names[0]) : names.length > 1 ? `${names.length} 个模型` : t("服务端未返回标识");
+  const summary = simulated ? t("模拟回复") : names.length === 1 ? modelLabel(names[0]) : names.length > 1 ? t('{count} 个模型', { count: names.length }) : t("服务端未返回标识");
   return ui`<details class="model-receipt" data-neural-key="model-receipt-${escape(message.id)}">
     <summary><span aria-hidden="true">◇</span> 模型记录 <span>${escape(summary)}</span></summary>
     <div class="model-receipt-body"><p>以下是这条回复的调用记录，当前默认模型不会改写历史记录。</p>

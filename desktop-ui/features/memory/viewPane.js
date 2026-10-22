@@ -1,6 +1,6 @@
 // Customize → Memory pane (architecture plan P2, 2026-10-19). Moved out of
 // desktop-ui/app.js byte-for-byte first; it now reads the feature's own state.
-import { ui } from '../../i18n.js';
+import { t, ui } from '../../i18n.js';
 import { renderMemoryFacts } from './viewFacts.js';
 import { escapeHtml } from './context.js';
 import { memoryState } from './state.js';
@@ -66,16 +66,14 @@ function renderMemoryPane() {
         ${s.derivedIndex ? ui`<p class="page-kicker" role="status">${escapeHtml(({ready:'最近保存的内容已进入检索索引',pending:'内容已保存，检索索引正在后台更新',deferred:'内容已保存，索引更新暂缓，稍后自动重试',inline:'当前以本机同步方式更新索引'})[s.derivedIndex.status] || '正在检查索引状态')}</p>` : ''}
         ${drift.hasDrift ? ui`
           <div class="alert compact-alert">
-            <strong>Embedding model drift detected.</strong>
-            Stored vectors were written by <span class="mono">${escapeHtml(drift.stored || '?')}</span>
-            but the active provider reports <span class="mono">${escapeHtml(drift.inferredProvider || '?')}</span>.
-            Recall quality may degrade until old vectors are rebuilt.
+            <strong>检测到嵌入模型变更。</strong>
+            ${escapeHtml(t('已存向量由 {stored} 写入，当前服务报告为 {provider}。旧向量重建前，召回质量可能下降。', { stored: drift.stored || '?', provider: drift.inferredProvider || '?' }))}
           </div>
         ` : ''}
 
         <div class="quality-status-grid">
           <div class="quality-status-card"><span>已保存记忆</span><strong>${s.counts.memories ?? '—'}</strong><small>记录保存在本机</small></div>
-          <div class="quality-status-card"><span>关键词索引</span><strong>${s.counts.memoriesFts == null ? '未确认' : s.counts.memoriesFts > 0 ? '已建立' : '等待内容'}</strong><small>可按文字检索已有记录</small></div>
+          <div class="quality-status-card"><span>关键词索引</span><strong>${s.counts.memoriesFts == null ? t('未确认') : s.counts.memoriesFts > 0 ? t('已建立') : t('等待内容')}</strong><small>可按文字检索已有记录</small></div>
           <div class="quality-status-card"><span>语义检索</span><strong>${semanticStatus}</strong><small>${diagnosis?.available === false ? '当前使用关键词检索；已有文字记忆保留' : diagnosis?.available ? '以实际检索结果为准' : '点击检测模型，验证检索是否可用'}</small></div>
         </div>
         <section class="quality-details">
@@ -145,12 +143,12 @@ function renderMemoryPane() {
           </div>
           ${wipeConfirmOpen ? ui`
             <div class="alert compact-alert">
-              <div><strong>This clears every stored vector.</strong> Memory rows and settings are untouched.</div>
+              <div><strong>这会清空所有已存向量。</strong> 记忆条目和设置不受影响。</div>
               <div class="inline-actions" style="margin-top: 8px;">
                 <button class="small-button is-danger" data-action="memory-wipe-confirm" ${wipeInFlight ? 'disabled' : ''}>
-                  ${wipeInFlight ? 'Wiping…' : 'Yes, wipe embeddings'}
+                  ${wipeInFlight ? t('正在清空…') : t('确认清空向量')}
                 </button>
-                <button class="small-button" data-action="memory-wipe-cancel" ${wipeInFlight ? 'disabled' : ''}>Cancel</button>
+                <button class="small-button" data-action="memory-wipe-cancel" ${wipeInFlight ? 'disabled' : ''}>取消</button>
               </div>
             </div>
           ` : ''}

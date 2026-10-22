@@ -272,7 +272,7 @@ function renderProjectsDetailView(project) {
           ${
             project.workspacePath
               ? ui`<span class="chip mono" title="${escapeHtml(project.workspacePath)}">${escapeHtml(project.workspacePath)}</span>`
-              : '<span class="chip mono is-muted">No workspace set</span>'
+              : ui`<span class="chip mono is-muted">未设置工作目录</span>`
           }
         </div>
 

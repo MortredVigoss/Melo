@@ -88,7 +88,7 @@ export function installLocalSettings(options) {
     }catch(e){
       const pending=steps.filter(step=>!session.appliedLabels.includes(step.label)).map(step=>step.label).join('、');
       session.failed(e);
-      error=session.appliedLabels.length ? `已保存：${session.appliedLabels.join('、')}。尚未完成：${pending}。重试只保存剩余修改；放弃只丢弃未保存部分。` : t("未完成保存，修改内容已保留。请重试。");
+      error=session.appliedLabels.length ? t('已保存：{applied}。尚未完成：{pending}。重试只保存剩余修改；放弃只丢弃未保存部分。',{applied:session.appliedLabels.join('、'),pending}) : t("未完成保存，修改内容已保留。请重试。");
     }
     finally{busy=false;deps.render();}
   };
@@ -122,7 +122,7 @@ export function installLocalSettings(options) {
     const el=event.target.closest('[data-action^="settings-"]');if(!el)return;event.preventDefault();event.stopImmediatePropagation();const action=el.dataset.action;
     if(busy)return;
     if(action==='settings-edit') {edit().begin();edit().appliedLabels=[];draft={profile:{...deps.uiState.bootstrap.profile},prefs:normalizeLocalPreferences(deps.uiState.bootstrap.settings?.localPreferences),native:{...nativeState},autoSpeak:!!deps.uiState.ttsAutoPlay};notice=error='';deps.render();return;}
-    if(action==='settings-cancel') {const applied=edit().appliedLabels||[];edit().cancel();draft=null;document.querySelector('.local-settings fieldset')?.remove();notice=applied.length?`已放弃未保存部分。已保存的${applied.join('、')}仍然生效。`:t("已取消修改。");edit().appliedLabels=[];error='';deps.render();return;}
+    if(action==='settings-cancel') {const applied=edit().appliedLabels||[];edit().cancel();draft=null;document.querySelector('.local-settings fieldset')?.remove();notice=applied.length?t('已放弃未保存部分。已保存的{applied}仍然生效。',{applied:applied.join('、')}):t("已取消修改。");edit().appliedLabels=[];error='';deps.render();return;}
     if(action==='settings-save'){save();return;}
     if(action==='settings-avatar-pick'){if(edit().editing)document.querySelector('[data-local-avatar]')?.click();return;}
     if(action==='settings-import-pick'){document.querySelector('[data-local-import]')?.click();return;}
@@ -134,7 +134,7 @@ export function installLocalSettings(options) {
     perform(async()=>{
       if(action==='settings-export') {const archive=await deps.api('/api/settings/export');await downloadArchive(archive);exportReady=!bridge();notice=bridge()?t("资料文件已保存。"):t("已请求浏览器下载，可在下载列表中查看。");}
       if(action==='settings-import-confirm'&&pendingImport){await deps.api('/api/settings/import',{method:'POST',body:pendingImport.archive});pendingImport=null;await deps.reload();notice="资料已合并，现有模型连接和设备权限保留。";}
-      if(action==='settings-cache-clear'){const result=await deps.api('/api/settings/cache/clear',{method:'POST',body:{}});cache=await deps.api('/api/settings/cache');notice=`已清理 ${result.removed} 个解析缓存。`;}
+      if(action==='settings-cache-clear'){const result=await deps.api('/api/settings/cache/clear',{method:'POST',body:{}});cache=await deps.api('/api/settings/cache');notice=t('已清理 {count} 个解析缓存。',{count:result.removed});}
       if(action==='settings-conflicts'){const panel=document.querySelector('.sync-conflicts');if(panel){panel.open=true;panel.scrollIntoView({block:'nearest'});}else notice="当前没有同步冲突。";}
       if(action==='settings-login-items')await nativeSettings('openLoginItems');
       if(action==='settings-microphone')await nativeSettings('openMicrophoneSettings');

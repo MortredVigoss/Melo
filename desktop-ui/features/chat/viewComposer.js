@@ -79,27 +79,27 @@ function renderComposerAttachmentMenu() {
     <div class="composer-attachment-menu">
       <button class="composer-menu-item" type="button" data-action="pick-composer-attachment" data-accept="image/*">
         <span class="chip-icon">${icon.image}</span>
-        Image
+        图片文件
       </button>
       <button class="composer-menu-item" type="button" data-action="pick-composer-attachment" data-accept="video/*" title="Direct video files are parsed best-effort: audio is transcribed and keyframes are sent when the media is accessible. Platform links may fall back to preview text.">
         <span class="chip-icon">${icon.video}</span>
         <span class="composer-menu-item-text">
-          <span>Video</span>
-          <span class="composer-menu-item-hint">best-effort transcript + keyframes</span>
+          <span>视频文件</span>
+          <span class="composer-menu-item-hint">尽力转写并提取关键画面</span>
         </span>
       </button>
       <button class="composer-menu-item" type="button" data-action="pick-composer-attachment" data-accept="audio/*" title="Audio is transcribed first, then the transcript is sent to the model. Raw audio is only used when the selected backend supports it.">
         <span class="chip-icon">${icon.audio}</span>
         <span class="composer-menu-item-text">
-          <span>Audio</span>
-          <span class="composer-menu-item-hint">transcribed first</span>
+          <span>音频</span>
+          <span class="composer-menu-item-hint">先转写文字再发送</span>
         </span>
       </button>
       <button class="composer-menu-item" type="button" data-action="pick-composer-attachment" data-accept="application/pdf,.pdf" title="Text-based PDFs are extracted via pdf-parse and the text is sent to the model. Scanned image-only PDFs may need OCR.">
         <span class="chip-icon">${icon.file}</span>
         <span class="composer-menu-item-text">
           <span>PDF</span>
-          <span class="composer-menu-item-hint">text-based PDFs</span>
+          <span class="composer-menu-item-hint">仅限文字型 PDF</span>
         </span>
       </button>
       <button class="composer-menu-item" type="button" data-action="add-link-attachment">

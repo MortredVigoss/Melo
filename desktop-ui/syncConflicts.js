@@ -1,23 +1,24 @@
 import { t, ui } from './i18n.js';
-const labels={agent:'Agent',project:'项目',knowledge:'资料',conversation:'对话设置',message:'回复来源'};
-const fields={name:'名称',title:'标题',subtitle:'一句话描述',content:'内容',instructions:'回复要求 / 项目指引',goal:'目标',identity:'身份',soul:'回复风格',systemPrompt:'补充要求',symbol:'图标',model:'模型',agentId:'Agent',projectId:'项目',chatId:'对话'};
+const labels={agent:'Agent',project:'项目',knowledge:'知识资料',conversation:'对话设置',message:'回复来源'};
+const fields={name:'名称',title:'标题',subtitle:'一句话描述',content:'内容',instructions:'回复要求 / 项目指引',goal:'目标',identity:'身份',soul:'回复风格',systemPrompt:'补充要求',symbol:'图标样式',model:'模型',agentId:'Agent',projectId:'项目',chatId:'对话'};
+// Both tables are authored Chinese keys; translate at use (desktop-ui/translations.js has every value).
 export function describeSyncVersion(value) {
   if(value.kind==='project-memory-v1') {
     try {const fact=JSON.parse(value.content);return `${fact.text}\n${fact.scope} · ${fact.status}\n${fact.updatedAt}`;}catch{}
   }
   const lines=[];
-  for(const [key,label] of Object.entries(fields))if(typeof value[key]==='string'&&value[key])lines.push(`${label}：${value[key]}`);
-  if(Object.hasOwn(value,'deleted'))lines.push(`资料状态：${value.deleted?'已删除':'可选用'}`);
-  if(Object.hasOwn(value,'archived'))lines.push(`项目状态：${value.archived?'已归档':t("进行中")}`);
-  if(value.avatarData)lines.push('头像：已保存自定义头像');
-  if(value.knowledgeIds?.length)lines.push(`选用资料：${value.knowledgeIds.join('、')}`);
-  if(value.model&&typeof value.model==='object')lines.push(`连接：${value.model.name || value.model.baseURL || '本机连接'}\n模型：${value.model.model}`);
-  if(value.agentOverrides&&Object.keys(value.agentOverrides).length)lines.push(`项目Agent：${Object.values(value.agentOverrides).map(a=>describeSyncVersion(a)).join('\n')}`);
-  if(value.agent)lines.push(`回复Agent：${value.agent.name}`);
-  for(const model of value.models || [])lines.push(`请求模型：${model.requestedModel}\n服务返回：${model.reportedModel || '未提供'}`);
-  if(value.scene)lines.push(`执行状态：${value.scene.status}\n来源：${value.scene.sources.map(s=>`${s.title} · ${s.url}${s.cited?'（已引用）':''}`).join('\n')}`);
+  for(const [key,label] of Object.entries(fields))if(typeof value[key]==='string'&&value[key])lines.push(t('{label}：{value}',{label:t(label),value:value[key]}));
+  if(Object.hasOwn(value,'deleted'))lines.push(t('资料状态：{state}',{state:value.deleted?t('已删除'):t('可选用')}));
+  if(Object.hasOwn(value,'archived'))lines.push(t('项目状态：{state}',{state:value.archived?t('项目已归档'):t("进行中")}));
+  if(value.avatarData)lines.push(t('头像：已保存自定义头像'));
+  if(value.knowledgeIds?.length)lines.push(t('选用资料：{items}',{items:value.knowledgeIds.join('、')}));
+  if(value.model&&typeof value.model==='object')lines.push(t('连接：{connection}',{connection:value.model.name || value.model.baseURL || t('本机连接')})+'\n'+t('模型：{model}',{model:value.model.model}));
+  if(value.agentOverrides&&Object.keys(value.agentOverrides).length)lines.push(t('项目Agent：{agents}',{agents:Object.values(value.agentOverrides).map(a=>describeSyncVersion(a)).join('\n')}));
+  if(value.agent)lines.push(t('回复Agent：{agent}',{agent:value.agent.name}));
+  for(const model of value.models || [])lines.push(t('请求模型：{requested}',{requested:model.requestedModel})+'\n'+t('服务返回：{reported}',{reported:model.reportedModel || t('未提供')}));
+  if(value.scene)lines.push(t('执行状态：{status}',{status:value.scene.status})+'\n'+t('来源：{sources}',{sources:value.scene.sources.map(s=>`${s.title} · ${s.url}${s.cited?t('（已引用）'):''}`).join('\n')}));
   for(const stage of [...(value.scene?.operations || []),...(value.scene?.pipeline || [])])lines.push(`${stage.name} · ${stage.status}\n${stage.input || ''}\n${stage.output || stage.resultSummary || ''}`);
-  return lines.join('\n\n') || '没有附加内容';
+  return lines.join('\n\n') || t('没有附加内容');
 }
 export function renderSyncConflicts(records=[],escape,settings=false) {
   if(!records.length)return '';

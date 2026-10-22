@@ -16,7 +16,14 @@ export async function updateLocalProfile(body = {}) {
   const prefs = body.preferences === undefined ? null : validateLocalPreferencePatch(body.preferences);
   await updateStateAtomically(state => {
     state.settings.localProfile = { ...state.settings.localProfile, ...patch };
-    if (prefs) state.settings.localPreferences = normalizeLocalPreferences({ ...state.settings.localPreferences, ...prefs });
+    if (prefs) {
+      const current = normalizeLocalPreferences(state.settings.localPreferences);
+      const merged = { ...current, ...prefs };
+      // Per-Agent device permissions merge per Agent: a patch for one Agent
+      // never clears what the others have on.
+      if (prefs.agentDevice) merged.agentDevice = { ...current.agentDevice, ...Object.fromEntries(Object.entries(prefs.agentDevice).map(([agentId, grants]) => [agentId, { ...current.agentDevice[agentId], ...grants }])) };
+      state.settings.localPreferences = normalizeLocalPreferences(merged);
+    }
     return state;
   });
   return getDesktopBootstrap();

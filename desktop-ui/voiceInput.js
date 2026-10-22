@@ -1,3 +1,4 @@
+import { t, ui } from './i18n.js';
 export const voiceInputActive = state => ['requesting', 'listening', 'stopping'].includes(state?.status);
 export const voiceInputSupported = (env = globalThis) => Boolean(
   env.webkit?.messageHandlers?.meloVoice ||
@@ -24,7 +25,7 @@ export function createVoiceInput({ env = globalThis, getContext, onChange, onCom
     clearTimers();
     const finalText = String(text || '').trim();
     // Mark terminal before abort, which can synchronously trigger onerror/onend.
-    state = { ...state, status: error ? 'error' : 'ready', recording: false, preview: '', error, notice: notice || (!finalText && !error ? '没有识别到文字，请重试。' : '') };
+    state = { ...state, status: error ? 'error' : 'ready', recording: false, preview: '', error, notice: notice || (!finalText && !error ? t('没有识别到文字，请重试。') : '') };
     const old = recognition; recognition = null;
     old?.abort();
     if (finalText) onCommit(finalText);
@@ -47,7 +48,7 @@ export function createVoiceInput({ env = globalThis, getContext, onChange, onCom
     env.clearTimeout(finalTimer);
     finalTimer = env.setTimeout(() => {
       if (bridge) bridge.postMessage({ action: 'cancelVoice', sessionID: id });
-      complete(id, state.preview, '', '已保留当前转写，请核对文字。');
+      complete(id, state.preview, '', t('已保留当前转写，请核对文字。'));
     }, finalWaitMs);
   }
 
@@ -79,7 +80,7 @@ export function createVoiceInput({ env = globalThis, getContext, onChange, onCom
   function start(language = 'zh-CN') {
     if (voiceInputActive(state)) return;
     if (!voiceInputSupported(env)) {
-      emit({ status: 'error', error: '当前浏览器不支持语音识别，请使用支持的浏览器、系统键盘听写或 Melo 桌面版。' }); return;
+      emit({ status: 'error', error: t('当前浏览器不支持语音识别，请使用支持的浏览器、系统键盘听写或 Melo 桌面版。') }); return;
     }
     owner = getContext();
     const id = env.crypto.randomUUID();
@@ -106,19 +107,19 @@ export function createVoiceInput({ env = globalThis, getContext, onChange, onCom
       };
       engine.onerror = event => {
         const errors = {
-          'not-allowed': '麦克风或语音识别未获授权，请检查浏览器的网站权限。',
-          'service-not-allowed': '浏览器的语音识别服务不可用，请使用系统键盘听写或桌面版。',
-          'audio-capture': '没有可用的麦克风，请检查输入设备。',
-          'no-speech': '没有检测到语音，请重试。',
-          network: '语音识别网络连接失败，已保留识别到的文字。',
-          'language-not-supported': '语音识别不支持当前语言，请更换语言。',
+          'not-allowed': t('麦克风或语音识别未获授权，请检查浏览器的网站权限。'),
+          'service-not-allowed': t('浏览器的语音识别服务不可用，请使用系统键盘听写或桌面版。'),
+          'audio-capture': t('没有可用的麦克风，请检查输入设备。'),
+          'no-speech': t('没有检测到语音，请重试。'),
+          network: t('语音识别网络连接失败，已保留识别到的文字。'),
+          'language-not-supported': t('语音识别不支持当前语言，请更换语言。'),
         };
-        complete(id, state.preview, errors[event.error] || `语音识别中断（${event.error || 'unknown'}）`);
+        complete(id, state.preview, errors[event.error] || t('语音识别中断（{reason}）', { reason: event.error || 'unknown' }));
       };
-      engine.onend = () => complete(id, state.preview, '', hasInterim ? '已保留当前转写，请核对文字。' : '');
+      engine.onend = () => complete(id, state.preview, '', hasInterim ? t('已保留当前转写，请核对文字。') : '');
       engine.start();
     } catch (error) {
-      complete(id, '', `无法启动语音输入：${error.message}`);
+      complete(id, '', t('无法启动语音输入：{error}', { error: error.message }));
     }
   }
 
@@ -126,19 +127,19 @@ export function createVoiceInput({ env = globalThis, getContext, onChange, onCom
 }
 
 export function voiceInputLabel(state) {
-  if (state.status === 'requesting') return '等待麦克风授权 · 点击取消';
-  if (state.status === 'listening') return '正在听写 · 点击停止';
-  if (state.status === 'stopping') return '正在完成转写…';
-  return '语音输入 · 转为文字后确认发送';
+  if (state.status === 'requesting') return t('等待麦克风授权 · 点击取消');
+  if (state.status === 'listening') return t('正在听写 · 点击停止');
+  if (state.status === 'stopping') return t('正在完成转写…');
+  return t('语音输入 · 转为文字后确认发送');
 }
 
 export function renderVoiceInput(state, escapeHtml) {
   const active = voiceInputActive(state);
   if (!active && !state.error && !state.notice) return '';
-  return `<div class="voice-preview" role="status" aria-live="polite">
-    <div class="voice-preview-title">${escapeHtml(active ? voiceInputLabel(state) : '语音输入')}
-      ${active ? '<button type="button" class="ghost-button" data-action="cancel-voice-input">取消</button>' : ''}</div>
-    <div class="voice-preview-body">${escapeHtml(state.preview || state.error || state.notice || '识别内容将进入输入框，不会自动发送。')}</div>
-    ${active ? '<small>最长 60 秒 · 使用系统或浏览器语音识别，服务可能需要联网。</small>' : ''}
+  return ui`<div class="voice-preview" role="status" aria-live="polite">
+    <div class="voice-preview-title">${escapeHtml(active ? voiceInputLabel(state) : t('语音输入'))}
+      ${active ? ui`<button type="button" class="ghost-button" data-action="cancel-voice-input">取消</button>` : ''}</div>
+    <div class="voice-preview-body">${escapeHtml(state.preview || state.error || state.notice || t('识别内容将进入输入框，不会自动发送。'))}</div>
+    ${active ? ui`<small>最长 60 秒 · 使用系统或浏览器语音识别，服务可能需要联网。</small>` : ''}
   </div>`;
 }
