@@ -27,9 +27,10 @@
 | 工具、MCP 与网页 | 免费 MCP 默认启动 `f3dba1a`；连接器 / MCP / 会话授权 / 技能管理 `7ae2292`；手机系统数据工具 `2e47868`（默认全关）；两端网页打开与截图（10-18） | [MCP 启动](docs/mcp-startup-20261015.md)、[手机系统数据](docs/ios-device-data-20261016.md)；实体数据调用与真机 WKWebView 待验 |
 | 搜索路由 | 自然餐饮/住宿/产品推荐与相关追问进入搜索；禁止联网、引用、闲聊、本地/App 边界保留，按当前能力说明不可用 | [#3 实施](docs/github-issues-implementation-20261020.md)；受控 HTTP 测试，真实供应商另验 |
 | 图片、视频与附件 | 10-21 双端已接应用内拍照、确认进入草稿、原件与传输副本分开；[实现与验收](docs/test-cost-camera-plan-20261021.md)，实时会话暂缓；iPhone 后置拍照四流程已由用户真机确认，见[装机回执](docs/phone-camera-install-20261021.md)。桌面/手机请求 `quality: high`，10-15 单次实测 Codex 服务回报 low；手机图片链与保存防重复已接生产入口；多图逐张、2K/4K、视频抽帧已合入主线 | 10-20 #4 二次修复旧工作区归属与回看图片引用；原生预览/原尺寸/保存/冷启动重开均通过，原件 SHA 不变；[修复回执](docs/issue-4-legacy-preview-20261020.md)、[实施证据](docs/github-issues-implementation-20261020.md)；见[图片承载计划](docs/image-capacity-plan-20261015.md)；[图片体验](docs/image-ux-20261016.md)、[多图与视频](docs/image-video-plan-20261016.md)；真实账号画质待验 |
-| 语音 | TTS 路由与停止修复（10-17 审计）；手机朗读要点化并按回复语种选声（10-18） | [审计与实施状态](docs/architecture-agent-context-audit-20261017.md)；真机朗读待验 |
+| 语音 | TTS 路由与停止修复（10-17 审计）；手机朗读要点化并按回复语种选声（10-18）；桌面朗读按 Agent 卡片模式 / 音色 / 风格，已知 Agent 默认概要（10-22） | [审计与实施状态](docs/architecture-agent-context-audit-20261017.md)；真机朗读待验 |
 | 授权、审批与任务 | #1 审批期间持有文件身份，阻止 inode 复用（`47da231` 已推送，[实施](docs/github-issues-implementation-20261020.md)）； 模型 / 工具 / 授权共用截止与取消，超时后迟到批准零写入（A2）；手机权限首次迁移与撤销修正 `85c51f7`；桌面审批界面样式在 `desktop-ui/features/approvals/approvals.css`（工具/文件审批 JS 仍在 app.js，P2c）；能力请求卡片与「临时授权」列表在 `desktop-ui/features/approvals/`（10-20）；手机卡片进 `ChatStore` 审批队列，账本与判定在 `ios/Melo/CapabilityElevation{,Runtime,Views}.swift`（10-20） | [A2 回执](docs/mobile-desktop-alignment.md)、[手机权限](docs/phone-permission-fix-20261016.md) |
 | 桌面壳与界面 | 当前安装源码 `897b77a`，原生启动与数据保留通过；神经总览 `22bcd1b`；双端低饱和黑金 M 图标；10-15 记录的阅读 / 预览 / 文件 WIP 已于 10-17 收入 `8cd3eff`；10-20 桌面工作面统一（`surfaceUnify.css` 最后载入：间距、13px 基准字号、控件、工作面不透明度、去旧绿色），手机未动、知识青灰身份色待用户决定 | [10-20 统一](docs/ui-unify-20261020.md)、[双端安装](docs/dual-reinstall-20261019.md)、[银河与留白](docs/galaxy-clarity-20261016.md)、[图标](docs/design/logo-muted-20261016/README.md)；`desktop-ui/app.js` 仍是中央入口（导航、组合、render() 保护、设置 / 资料 / 审批 / TTS 等页面）；记忆 / 项目页（P2a）、Agent 设置（P2b）、聊天（P2c）已拆到 `desktop-ui/features/` |
+| 桌面宠物 | 10-22 并入 `Melo.app`（方案 C）：`desktop-pet/` 独立包、仓库外媒体钉哈希、`DesktopPet.swift` 启停、系统设置「桌面宠物」开关与真实状态；真包冷启动 / 对话 / 开关 / 退出联动已验 | [并入文档](docs/desktop-pet-integration-20261022.md)、[桌宠说明](desktop-pet/README.md)；素材生产线仍在 `/Users/mortred/Documents/New project/desktop-pet` |
 | iPhone | 实体机 0.7.8 (40) 已覆盖并启动，原 12 对话 / 137 消息 / 6 Agent、账号偏好和 21 张原图经两次回读保留；用户确认拍照四流程与实际回复正常 | [10-21 拍照版安装](docs/phone-camera-install-20261021.md)；个人签名到期 10-28 20:52（Melbourne）；镜头切换和后台恢复另验 |
 | Android 桌宠 | 10-22 分支 `feature/android-desktop-pet`（0.8.0 (17)）：「系统 → 桌宠」开关后金冬天 / 大肥鱼以自有前台服务常驻其他 App 之上，窗口只按当前动作的不透明包围盒布局；拖动贴边、单击换动作、双击系统语音识别 → 专用「桌宠」对话 → 朗读与气泡、长按菜单；自动动作沿用桌面「优先待机、动作后休息 30–60 秒」；素材不进 Git，`assets/pet/catalog.json` 记录 hash 与 Release `android-pet-assets-1`，Gradle `preparePetAssets` 构建时校验 / 下载 | [android/README.md → 桌宠](android/README.md)、[verification.md](android/verification.md)；JVM 144、Lint 零 Error、Debug / R8、Emulator `PetOverlayFlowTest` 2/2 通过；Fold6 真机（朋友测试）、三星省电、真实语音未验，PR 待用户决定合入 |
 | 远程渠道 | Telegram（10-16）、Discord（10-17）按用户决定归档，配置与历史保留 | [Telegram 归档](docs/telegram-archive-20261016.md)、[Discord 归档](docs/discord-archive-20261017.md) |
@@ -60,16 +61,37 @@
 
 ## 4. 最新交接
 
-### 2026-10-22 — 安卓桌宠（Claude）— 金冬天悬浮在其他 App 上，双击与 Melo 对话
-- 分支 `feature/android-desktop-pet`（worktree `.tmp/android-pet-20261022`，基于 `77679bb`），PR [#16](https://github.com/MortredVigoss/Melo/pull/16)；素材 Release [`android-pet-assets-1`](https://github.com/MortredVigoss/Melo/releases/tag/android-pet-assets-1)（zip 133 MiB，构建时 `preparePetAssets` 按 catalog hash 自动下载），测试包 Release [`android-pet-test-1`](https://github.com/MortredVigoss/Melo/releases/tag/android-pet-test-1)（debug 签名 APK 219.5 MB，需允许未知来源 + 悬浮窗 / 通知 / 麦克风 / 电池优化）。
-- 实现：`android/app/src/main/java/com/melo/android/pet/`（`PetOverlayService` 前台服务 + 三个 `TYPE_APPLICATION_OVERLAY` 窗口、`PetScheduler` 纯 Kotlin 动作链、`PetSettingsScreen`「系统 → 桌宠」、`PetPreferences` 本机偏好、`PetSpeechInput` / `PetDialogue` / `PetChat`），`assets/pet/player.html` 双 `<video>` 播 VP9+alpha，`android/scripts/import-pet-skins.mjs` + `scripts/android-pet-assets.js` 可重跑导入（480×270、CRF 32、alpha 包围盒），`catalog.json` 提交、`skins/` 忽略。版本 0.8.0 (17)。说明见 [android/README.md → 桌宠](android/README.md)。
-- 验证：JVM 144、Lint 零 Error、Debug / R8；Emulator Android 16 `PetOverlayFlowTest` 2/2（解码 / 单击 / 拖动贴边 / 长按菜单 / 双击 → Fixture 识别 → Fixture 模型 → 气泡与专用对话 / 换肤 / 关闭重建）；手工截图确认桌宠在系统桌面之上。日常 `npm test -- --files …` GREEN；PR #16 对 `28e1410` 的 CI：Android（含 x86_64 Emulator 完整套件）、File safety、macOS Swift 通过，Linux 因 `architecture/modules.json` 未随新脚本重生成而失败，本次文档提交一并补上。详见 [android/verification.md](android/verification.md)。
-- 未验 / 下一步：Fold6 真机（朋友测试）、三星省电、真实语音识别与朗读、锁屏恢复；移动类动作在手机上原地播放不挪窗口；PR 合入由用户决定。桌面端并入与 `desktop-pet/` 目录由另一线程负责，本线程未动。
+### 2026-10-22 — Melo 主线（Claude）— 桌面与手机对齐：Agent 语音风格、本机定位开关、翻译门禁
+- 线程 ID：e02f4818；状态：已提交并合入 master（`1b01739` / `691b628` / 进度 `ce8399d`），已推送 origin/master；桌宠线程 `c7ccbd7`–`ae43446` 同批推送。
+- 行为：桌面朗读 旧=只念全文 → 新=按 Agent 卡片模式 / 音色 / 风格（概要：整段到齐后 `/api/tts/voice-text` 提炼再念；全文：逐句流式；关闭：不自动念），已知 Agent 默认概要；定位 旧=逐次弹窗 → 新=Agent 页「这台电脑上」设备本地开关，默认关、不同步（`localPreferences.agentDevice`），保存失败勾选回退；权限弹窗中文按钮、联网搜索设置走共享编辑条、手机 Agent 页字段名改中文、翻译门禁 `desktop-ui/i18nCoverage.test.js`（ui 模板未翻译中文直接红灯）。跨端：手机不变，本机开关与「这台手机上」同义。
+- 验证：完整日常（JS 4506、两组设置浏览器、Swift 37）GREEN；两遍满负载各 7 个服务启动超时隔离复测全过；桌宠皮肤测试需主检出的非 Git 资产（主检出 7/7）；证据 `.tmp/ui-consistency-20261022/.tmp/test-runs/run-jTYqLR`、`run-Raez5K`、`run-gwQwms`。
+- 未完 / 下一步：用户 22:00 手机覆盖安装（Xcode）并自测定位；桌面端由主线从 master 重装；安卓桌宠 PR #16 CI 红（功能地图未重新生成）未合；配置：桌面自动朗读默认改为概要，无数据 / 凭证影响。
+
+### 2026-10-22 — 桌宠并入 Melo 安装包（方案 C）：Melo 管理启停，系统设置加「桌面宠物」开关
+- 桌宠代码（控制进程、Melo 桥接、对话窗口、原版 host 适配、测试、`PC2005-cloud/dsh-pet` v0.3.7 全部源码与 MIT 许可）进入仓库 `desktop-pet/`（独立 CommonJS 包，`package.json` 钉 Electron 37.10.3）。大文件不入 Git：金冬天 WebM、关键帧审计与大肥鱼原版 WebM 放仓库旁 `../desktop-pet-assets`，`npm run import:pet-skin` 校验后导入并链接，`skins/winter/manifest.json` + `assets.lock.json` 钉住哈希（本次 `winter-106-12keys-sr-flow-fe6cf9b45399`，皮肤包重建后再跑一次导入即可）。Git LFS 未安装，按任务备选方案处理。
+- `npm run build:desktop` 经 `scripts/bundle-desktop-pet.js` 把代码、生产依赖、两套皮肤和带桌宠身份的 `runtime/DSHPet.app` 装进 `Melo.app/Contents/Resources/desktop-pet/`，外层签名与启动不变；包体 130MB → 808MB。`desktop-app/DesktopPet.swift` 负责启停与状态：`UserDefaults melo.desktopPet` 开则服务就绪后用包内 Electron 带起（`MELO_BASE_URL` 传实际端口），关则 POST 控制服务 `/quit`；桌宠在 profile 写 0600 的 `runtime.json`（进程号、控制地址、口令），自行退出时 Melo 把开关同步为关并通知页面实时刷新；Melo 退出先停桌宠再停服务。设置行在「通用与外观」本机一组末尾，状态文字取真实运行状态，五语词条已补，网页版不显示。
+- 验收（本机真包，`~/Applications/Melo.app` 已覆盖安装）：桌宠测试新位置 35/35（原 33 + 运行记录 2）、导入脚本 3/3、设置行 3/3；冷启动偏好关不启动；偏好开 3 秒内桌宠作为 Melo 子进程出现，`/health` 带口令 200 / 不带 401；菜单打开对话发一句真实消息，主助手回复「收到。」；设置页下拉「关闭」保存后桌宠经 `/quit` 退出、偏好 0，再改「开启」保存后桌宠回来、行变「运行中」；桌宠自己「退出桌宠」后开关实时变关；Melo 退出 1 秒内桌宠一起结束；重开按开关恢复。证据与边界见[桌宠并入文档](docs/desktop-pet-integration-20261022.md)。
+- 强杀 / 崩溃守卫：Melo 以只持写端的 stdin 管道启动桌宠（`MELO_PET_OWNER_PIPE`），`owner-pipe.cjs` 读到 EOF 即退出；真机 `kill -9` Melo 后 1 秒内桌宠与服务都结束、无遗留进程。装包脚本新增「控制进程本地 require 必须已复制」校验（曾漏装该文件，Electron 停在错误对话框）。
+- 日常回归（任务文件全列，扩大为完整日常）：JS 4484 项在满负载下 8 失败 + 5 取消（超时类、非本任务文件），隔离复测后剩 3 个浏览器旅程，空载 3/3 通过；两组设置浏览器旅程通过；Swift 37/37；Android 阶段本机无 Java 为环境红灯（CI 覆盖）。发布 gate 新增媒体校验步骤。未验证：桌宠右键菜单退出（本轮点的是应用菜单，同一 `shutdown()`）、双击打开对话（本轮用应用菜单）、Android 阶段（本机无 Java，CI 覆盖）。旧入口 `~/Desktop/melo桌宠.app` 与 `melo桌宠.command` 已按用户要求移入废纸篓（10-22 18:08），以后只用 Melo 里的开关；素材生产线目录不受影响。其他线程文档 WIP 保留。
+
+
+### 2026-10-22 — 桌宠：大肥鱼命名、金冬天待机间隔与12帧动作
+- 正式项目 `/Users/mortred/Documents/New project/desktop-pet`；基于 `PC2005-cloud/dsh-pet` v0.3.7 / `90ddd827fd9661958752855e899da452063ceaa5`，保留原host/config/physics/renderer和原皮肤，默认名「大肥鱼」。桌面两个入口共用单实例；原错误壳、旧七动作/四帧/慢速包分别备份于外部 `desktop-pet-backups/`。
+- 用户纠正：要减少自动触发频率，不是动画减速；上一轮慢放已撤回。`upstream/runtime/electron-helper/sprite.js` 仅对winter启动和非待机动作结束设置30–60秒冷却，随机链在待机片段结束时检查截止时间；冷却期间持续待机，之后仍可能随机抽中额外待机。点击/右键/API点播和工作状态不受此门槛影响，大肥鱼保持上游调度。
+- `skins/winter/` 升级到 `winter-106-12keys-4c22ac51e3f2`：106组各12张绘制帧，共1272张，30fps短alpha过渡封装；普通动作恢复1.6秒循环，待机呼吸6.4秒循环。完整图集/关键帧/内置image_gen提示词与源路径在 `animation-work-v3/`；仍是关键帧动画，不等同连续视频级流畅度。版本迁移保留位置/尺寸/选肤并备份旧包。
+- 本轮30/30回归（含5项真实PetSprite原型冷却/手动绕过/大肥鱼不变等状态机检查）；106段完整解码/alpha/时长通过；从桌面入口重启后的106个实际安装哈希一致。真实renderer七个Winter动作及大肥鱼挥手共8项ended，最终恢复Winter并原生可见待机。[当前验收](/Users/mortred/Documents/New%20project/desktop-pet/evidence/ANIMATION-V3-20261022.md)、[完整交接](/Users/mortred/Documents/New%20project/desktop-pet/TASK-HANDOFF.md)。
+- Melo对话继续由 `main.cjs` / `melo-client.cjs` / `dialog/` 双击或右键打开，直通主助手 `/api/chat/send/stream` 与工具/审批/取消，换肤不重建聊天；本轮未改桥接或Melo运行时代码/账号/安装包，也未重复真实模型调用。前轮工具/同对话验收保留历史证据；DSH专属服务、多屏/音频/全部106项人工审美和长期稳定性未新增验收。外部非Git WIP，产品只改文档，其他线程工作保留，无提交推送。
+
 ### 2026-10-21 — melo主线（Codex）— 拍照版 iPhone 保留数据覆盖安装
 - 线程 `01a13b2e-5446-7042-bb5e-773129746c7e`；测试降本 `8304aab` 与双端拍照 `6fba8db` 已推送。按晚间授权，实体 iPhone 同标识原位覆盖到 0.7.8（40），未卸载；本阶段仅版本元数据与文档本地提交，无 git pp / 新推送。
 - 安装前完整私有备份，安装后与使用后回读：原 12 对话 / 137 消息 / 6 Agent、4 个账号偏好指纹及 21 张原图全部保留；新增拍照 JPEG 4032×3024 留在草稿。旧聊天与登录态直接观察通过，拍照四流程和实际回复由用户在实体手机确认；镜像黑屏与输入限制、存档证据边界如实记录。
 - 验证：本轮 4421 JS、37 Swift、两组浏览器及 Release 签名、安装、启动、数据回读通过；[安装回执](docs/phone-camera-install-20261021.md)，证据 `.tmp/camera-phone-install-20261021/` 与 `.tmp/test-runs/run-rpfIe6/`。个人签名到期 10-28 20:52（Melbourne）。
 - 本次单次安装已完成，不重复安装；前后镜头切换、相机后台恢复及照片发送识别另验。实时语音/连续画面继续暂缓；后续文档 push 取消前一代码 CI 的覆盖缺口单独跟进，不能称远端全量代码 CI 已通过。其他线程文档 WIP 保留。
+### 2026-10-22 — 安卓桌宠（Claude）— 金冬天悬浮在其他 App 上，双击与 Melo 对话
+- 分支 `feature/android-desktop-pet`（worktree `.tmp/android-pet-20261022`，基于 `77679bb`），PR [#16](https://github.com/MortredVigoss/Melo/pull/16)；素材 Release [`android-pet-assets-1`](https://github.com/MortredVigoss/Melo/releases/tag/android-pet-assets-1)（zip 133 MiB，构建时 `preparePetAssets` 按 catalog hash 自动下载），测试包 Release [`android-pet-test-1`](https://github.com/MortredVigoss/Melo/releases/tag/android-pet-test-1)（debug 签名 APK 219.5 MB，需允许未知来源 + 悬浮窗 / 通知 / 麦克风 / 电池优化）。
+- 实现：`android/app/src/main/java/com/melo/android/pet/`（`PetOverlayService` 前台服务 + 三个 `TYPE_APPLICATION_OVERLAY` 窗口、`PetScheduler` 纯 Kotlin 动作链、`PetSettingsScreen`「系统 → 桌宠」、`PetPreferences` 本机偏好、`PetSpeechInput` / `PetDialogue` / `PetChat`），`assets/pet/player.html` 双 `<video>` 播 VP9+alpha，`android/scripts/import-pet-skins.mjs` + `scripts/android-pet-assets.js` 可重跑导入（480×270、CRF 32、alpha 包围盒），`catalog.json` 提交、`skins/` 忽略。版本 0.8.0 (17)。说明见 [android/README.md → 桌宠](android/README.md)。
+- 验证：JVM 144、Lint 零 Error、Debug / R8；Emulator Android 16 `PetOverlayFlowTest` 2/2（解码 / 单击 / 拖动贴边 / 长按菜单 / 双击 → Fixture 识别 → Fixture 模型 → 气泡与专用对话 / 换肤 / 关闭重建）；手工截图确认桌宠在系统桌面之上。日常 `npm test -- --files …` GREEN；PR #16 对 `28e1410` 的 CI：Android（含 x86_64 Emulator 完整套件）、File safety、macOS Swift 通过，Linux 因 `architecture/modules.json` 未随新脚本重生成而失败，`08215be` 已补；本分支尚未合入主线代码：MELO_OVERVIEW.md / PROGRESS.md 以及两份桌面桌宠文档（`docs/desktop-pet-integration-20261022.md`、`desktop-pet/README.md`）按 master `fc68a9f` 逐字同步，只为让 PR 无冲突、相对链接可查（`git merge-tree` 对 master 干净）；CI 以 PR 合并引用为准。详见 [android/verification.md](android/verification.md)。
+- 未验 / 下一步：Fold6 真机（朋友测试）、三星省电、真实语音识别与朗读、锁屏恢复；移动类动作在手机上原地播放不挪窗口；PR 合入由用户决定。桌面端并入与 `desktop-pet/` 目录由另一线程负责，本线程未动。
 ### 2026-10-21 — melo主线（Codex）— 代码拆分现状核对
 - 用户询问现有拆分质量；以 `2ee8da7` 静态核对 B2/B3、共享核心与剩余 B4/B5。入口已变薄，聊天上下文仍有 56 项、11 个业务服务仍依赖整页组装；跨目录图发现聊天 controller/view 的 1 个循环组，未当作已复现运行故障。
 - [核对记录与建议顺序](docs/architecture-split-review-20261021.md)；后端依赖检查通过，完整图 619 模块的循环已逐条确认。此静态核对文档已随 `8304aab` 本地提交；未实施 B4/B5，后续按用户决定。
@@ -231,6 +253,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | 读取 melo ui 方案 | `01a1103d-0c3b-77d4-96dc-ea499d455020` | 2026-10-06 读取、单次成功派发、按指定 turn 只读跟进与 Library 截图交付；2026-10-15 补历史证据 | 辅助线程无产品代码/提交；288/291 项为旧轮次结果，详细边界见[辅助线程回执](docs/handoffs/melo-thread-backfill-20261015.md#ui-helper) |
 | melo iphone | `01a11116-8469-74a2-9815-8ce59b702afa` | 10-16 三线程功能/UI 对齐，Agent 首屏新建/移除旧语气、项目校验及新黑金 M，已覆盖 0.5.19 (25) | 本地 `5c975aa`；3575 JS/23 Swift/90 专项及模拟器通过；实体安装/启动/数据保留已验，实体 UI/真实模型未复验；`docs/ios-align-install-20261016.md` |
 | melo副线 | `019d5db3-d2cd-70c2-bc8f-955d36099219` | 固定源码统计口径、早期 pre-push evaluation 协议；OpenClaw/桌宠历史工作独立 | 2026-10-21 再统计 205,993 行（含空行/注释，不含 ios）；既定四目录及扩展名 `find` / `wc -l` 退出码 0；仅文档 WIP 与快照更新，无产品验收或提交；桌宠入口见[副线回执](docs/handoffs/melo-thread-backfill-20261015.md#secondary) |
+| melo全量代码统计（Claude Code） | `46a2bdcb-e8d9-4826-bf92-2fde11eff56a` | 2026-10-22 用户要求统计全部 Melo 代码含桌宠；新增全量口径，与副线四目录口径并列，不替代 | HEAD `7750d8f` + 未忽略 WIP：自写代码 258,612 行（非空 240,931，1,528 文件；测试 91,581），其中产品仓库 249,790、外部 8,822（旧站 site 4,691、桌宠素材线去重 1,861、melo-universe 1,158、跑分自写脚本 1,112）。口径：`git ls-files --cached --others --exclude-standard` 下 js/mjs/cjs/jsx/ts/tsx/swift/kt/kts/py/sh/command/applescript/cc/gyp/html/css；排除 dsh-pet 上游 37,957、生成 bundle（`ios/Melo/Scene/`、两份 `agent-core.js`、`upstream/lib/melo-host.mjs`、`shared-core.js`）、JSON/xcstrings/YAML、外部 venv/SWE-bench/requests 副本与桌宠旧工作目录。同时副线四目录口径为 208,937。只读统计，无产品验收或提交 |
 | melo网站 | `019dce6e-faae-7850-a8bb-db48b737b928` | 2026-10-15 核对神经网络四区、外放标签和连续镜头源码/快照差异；首页有界轴向转动，非各层无限自转 | 独立本地 WIP，无 Git 元数据/可核实提交；历史 13 单元/22 浏览器未重跑；本轮静态核对旧站 9/9 散列与桌面副本一致；详见[网站交接](</Users/mortred/Documents/New project/melo-universe/HANDOFF-20261015.md>)，Safari/用户验收/发布待验 |
 | Benchmark Melo on a major platform | `01a139e9-2509-7623-8cb7-4df16b2d0c86` | Melo 核心在 Mac，六个编码工具经外部适配接 Docker；2026-10-15 核对历史证据与当前 diff | 历史3/3、目标3/3/回归158/158、对照0/3；Requests81项非计分错误；外部WIP未产品化；非当前树验收；详见[跑分回执](docs/handoffs/melo-thread-backfill-20261015.md#benchmark)与外部 HANDOFF；GitHub英文README/About/12标签已发布 `39cc759` |
 
@@ -254,6 +277,12 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 保护聊天、角色、草稿、图片、设置和凭证；覆盖安装前后检查数据。源码/夹具/真实服务/签名安装/用户验收分层报告。
 
 ## 8. 所有线程的更新协议（用户于 2026-10-15 要求）
+
+### 2026-10-20 — melo副线 — Codex 累计 token 粗估
+- 线程 `019d5db3-d2cd-70c2-bc8f-955d36099219`；只读查询本机 `~/.codex/state_5.sqlite`，按 name/title/cwd 的 Melo 关联、已知 OAuth 调查及递归子任务筛选 628 条，累计字段合计约 2,236,775,048 token（统计期间本任务仍增长）。
+- 15 条现存日志末尾累计记录合计约 1,416,798,675；其余 613 条约 819,976,373 依赖数据库，缺少可用末尾日志。旧记录存在总数与分项不一致的占位值，未做请求级重算或 fork 继承去重，故不能称精确净消费或严格下限。
+- 范围包含网站、跑分、审查及早期混合 OpenClaw 内容；不含 Claude 自身开发用量，不统计 Melo 应用运行时调用。缓存为输入子集，推理为输出子集，不重复相加；本数字不是实际账单或订阅额度折算。
+- 本轮仅本地只读统计与文档 WIP / 快照更新，无模型服务调用、账号操作、产品 gate、提交或推送；下一步如需精确归因，应取得旧日志并处理跨任务继承与混合任务边界。
 
 1. 开工读本文并核对 git status；认领相关模块与文件。发现未记录改动先标“待归属”，不能按线程名猜作者。
 2. 每个可验证步骤或改变架构/行为/接口/数据/视觉后，更新第 2 节对应功能的现行状态和线程行，再在第 4 节“最新交接”追加简短交接，上一条最新交接原文移入 `docs/handoffs/overview-history-*.md`（保留日期 / 提交，详细证据放专项或归档文档）；失败、回退、取消与未完也要记录。
