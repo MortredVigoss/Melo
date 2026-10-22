@@ -567,3 +567,27 @@ test('hygiene contract: closeSoon is a no-op when nothing is open', async () => 
   // close() with browser never opened is a no-op too — must not throw.
   await session.close();
 });
+
+// 2026-10-22: "Location: Melbourne" alone let the model doubt the city and
+// refuse the forecast; the report now names region and country and dates each day.
+test('formatWttrReport names the region and country and dates today and tomorrow', async () => {
+  const { formatWttrReport } = await import('./webSearchTool.js');
+  const hour = (time, tempC, rain) => ({ time, tempC, chanceofrain: String(rain), weatherDesc: [{ value: 'Sunny' }] });
+  const data = {
+    nearest_area: [{ areaName: [{ value: 'Melbourne' }], region: [{ value: 'Victoria' }], country: [{ value: 'Australia' }] }],
+    current_condition: [{ temp_C: '28', FeelsLikeC: '26', weatherDesc: [{ value: 'Sunny' }], humidity: '30', windspeedKmph: '12', winddir16Point: 'N', visibility: '10', uvIndex: '7' }],
+    weather: [
+      { date: '2026-10-22', mintempC: '14', maxtempC: '31', astronomy: [{ sunrise: '06:26 AM', sunset: '07:44 PM' }], hourly: [hour('0', 16, 11), hour('1200', 29, 0)] },
+      { date: '2026-10-23', mintempC: '19', maxtempC: '30', hourly: [hour('0', 20, 5), hour('300', 19, 40), hour('600', 19, 10), hour('900', 24, 0), hour('1200', 30, 0)] },
+    ],
+  };
+  const report = formatWttrReport('墨尔本 明天 天气', data, '墨尔本');
+  assert.match(report, /\*\*Location:\*\* Melbourne, Victoria, Australia/);
+  assert.match(report, /\*\*Today range \(2026-10-22\):\*\* 14°C ~ 31°C/);
+  assert.match(report, /\*\*Tomorrow \(2026-10-23\):\*\* 19°C ~ 30°C, Sunny, rain up to 40%/);
+  // Repeated parts are not doubled; the query's own place is the fallback.
+  const singapore = { ...data, nearest_area: [{ areaName: [{ value: 'Singapore' }], region: [{ value: 'Singapore' }], country: [{ value: 'Singapore' }] }] };
+  assert.match(formatWttrReport('Singapore weather', singapore, 'Singapore'), /\*\*Location:\*\* Singapore\n/);
+  assert.match(formatWttrReport('x', { ...data, nearest_area: [] }, '墨尔本'), /\*\*Location:\*\* 墨尔本\n/);
+  assert.equal(formatWttrReport('x', { weather: [] }, 'x'), null, 'no current conditions, no report');
+});

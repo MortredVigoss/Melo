@@ -1610,6 +1610,56 @@ function extractWeatherLocation(query) {
   return null;
 }
 
+// Pure: the wttr.in report the model reads (exported for tests). Null when
+// the response has no current conditions.
+export function formatWttrReport(query, data, location) {
+  const cur = data?.current_condition?.[0];
+  const today = data?.weather?.[0];
+  if (!cur) return null;
+
+  // Region and country too: "Melbourne" alone let the model doubt which city
+  // it was (Australia or Florida) and refuse the forecast (2026-10-22).
+  const area = data?.nearest_area?.[0];
+  const place = [area?.areaName?.[0]?.value || location, area?.region?.[0]?.value, area?.country?.[0]?.value]
+    .filter((part, index, parts) => part && parts.indexOf(part) === index)
+    .join(', ');
+  const lines = [
+    `Weather data for: "${query}" [via: wttr.in]`,
+    '',
+    `**Location:** ${place}`,
+    `**Current temperature:** ${cur.temp_C}°C (feels like ${cur.FeelsLikeC}°C)`,
+    `**Weather:** ${cur.weatherDesc?.[0]?.value || 'N/A'}`,
+    `**Humidity:** ${cur.humidity}%`,
+    `**Wind:** ${cur.windspeedKmph} km/h ${cur.winddir16Point || ''}`,
+    `**Visibility:** ${cur.visibility} km`,
+    `**UV Index:** ${cur.uvIndex}`,
+  ];
+
+  if (today) {
+    lines.push('');
+    lines.push(`**Today range${today.date ? ` (${today.date})` : ''}:** ${today.mintempC}°C ~ ${today.maxtempC}°C`);
+    lines.push(`**Sunrise:** ${today.astronomy?.[0]?.sunrise || 'N/A'} | **Sunset:** ${today.astronomy?.[0]?.sunset || 'N/A'}`);
+    const hours = today.hourly || [];
+    if (hours.length) {
+      lines.push('');
+      lines.push('**Hourly forecast:**');
+      for (const h of hours) {
+        const hr = String(parseInt(h.time, 10) / 100).padStart(2, '0') + ':00';
+        lines.push(`  ${hr} — ${h.tempC}°C, ${h.weatherDesc?.[0]?.value || ''}, rain ${h.chanceofrain}%`);
+      }
+    }
+  }
+
+  const tomorrow = data?.weather?.[1];
+  if (tomorrow) {
+    lines.push('');
+    const rain = Math.max(0, ...(tomorrow.hourly || []).map(hour => Number(hour.chanceofrain) || 0));
+    lines.push(`**Tomorrow${tomorrow.date ? ` (${tomorrow.date})` : ''}:** ${tomorrow.mintempC}°C ~ ${tomorrow.maxtempC}°C, ${tomorrow.hourly?.[4]?.weatherDesc?.[0]?.value || ''}, rain up to ${rain}%`);
+  }
+
+  return lines.join('\n');
+}
+
 async function fetchWeatherFastPath(query, signal) {
   const location = extractWeatherLocation(query);
   if (!location) return null;
@@ -1625,46 +1675,12 @@ async function fetchWeatherFastPath(query, signal) {
     if (!res.ok) return null;
     const data = await res.json();
 
-    const cur = data?.current_condition?.[0];
-    const today = data?.weather?.[0];
-    if (!cur) return null;
-
-    const lines = [
-      `Weather data for: "${query}" [via: wttr.in]`,
-      '',
-      `**Location:** ${data?.nearest_area?.[0]?.areaName?.[0]?.value || location}`,
-      `**Current temperature:** ${cur.temp_C}°C (feels like ${cur.FeelsLikeC}°C)`,
-      `**Weather:** ${cur.weatherDesc?.[0]?.value || 'N/A'}`,
-      `**Humidity:** ${cur.humidity}%`,
-      `**Wind:** ${cur.windspeedKmph} km/h ${cur.winddir16Point || ''}`,
-      `**Visibility:** ${cur.visibility} km`,
-      `**UV Index:** ${cur.uvIndex}`,
-    ];
-
-    if (today) {
-      lines.push('');
-      lines.push(`**Today range:** ${today.mintempC}°C ~ ${today.maxtempC}°C`);
-      lines.push(`**Sunrise:** ${today.astronomy?.[0]?.sunrise || 'N/A'} | **Sunset:** ${today.astronomy?.[0]?.sunset || 'N/A'}`);
-      const hours = today.hourly || [];
-      if (hours.length) {
-        lines.push('');
-        lines.push('**Hourly forecast:**');
-        for (const h of hours) {
-          const hr = String(parseInt(h.time, 10) / 100).padStart(2, '0') + ':00';
-          lines.push(`  ${hr} — ${h.tempC}°C, ${h.weatherDesc?.[0]?.value || ''}, rain ${h.chanceofrain}%`);
-        }
-      }
-    }
-
-    const tomorrow = data?.weather?.[1];
-    if (tomorrow) {
-      lines.push('');
-      lines.push(`**Tomorrow:** ${tomorrow.mintempC}°C ~ ${tomorrow.maxtempC}°C, ${tomorrow.hourly?.[4]?.weatherDesc?.[0]?.value || ''}`);
-    }
+    const output = formatWttrReport(query, data, location);
+    if (!output) return null;
 
     return {
       ok: true,
-      output: lines.join('\n'),
+      output,
       meta: { query, provider: 'wttr.in', resultCount: 1, contentFetched: 1, results: [] },
     };
   } catch (error) {
