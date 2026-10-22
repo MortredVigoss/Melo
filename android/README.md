@@ -6,7 +6,7 @@
 
 已验证：JDK 21、Gradle 9.6.0、AGP 9.4.1、Kotlin / Compose Compiler 2.4.21、KSP 2.3.12、Compose BOM 2026.09.00、Room 2.8.5、Lifecycle 2.11.0、Activity 1.13.0、WebKit 1.17.1、Coroutines / Serialization 1.11.0、OkHttp 5.5.0。所有版本固定，无动态版本或 preview 依赖。
 
-`compileSdk 37`，`targetSdk 36`（Android 16），`minSdk 28`。SDK Manager 中安装 `platforms;android-37.0`、`build-tools;36.0.0` 和 `platform-tools`。设置 `ANDROID_HOME`，或用 Android Studio 打开本目录并配置 SDK。Gradle Wrapper 校验下载 SHA-256。
+`compileSdk 37`，`targetSdk 36`（Android 16），`minSdk 28`。SDK Manager 中安装 `platforms;android-37.0`、`build-tools;36.0.0` 和 `platform-tools`。设置 `ANDROID_HOME`，或用 Android Studio 打开本目录并配置 SDK。Gradle Wrapper 校验下载 SHA-256。Mac 上用 Homebrew（`brew install openjdk@21 android-commandlinetools`，再 `sdkmanager` 装上述包）时还要 `export JAVA_HOME=/opt/homebrew/opt/openjdk@21`，否则 `gradlew`、`apksigner` 和 npm 的 Android gate 都找不到 Java；模拟器验证另装 `emulator` 与 `system-images;android-36;google_apis;arm64-v8a`。
 
 ```bash
 # 在仓库根目录运行；Android 构建本身不依赖 npm install

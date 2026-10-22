@@ -4259,6 +4259,7 @@
           "npm run test:scripts"
         ],
         "js": [
+          "scripts/android-pet-assets.test.js",
           "scripts/android-target.test.js",
           "scripts/android-task-report.test.js",
           "scripts/boundary-report.test.js",

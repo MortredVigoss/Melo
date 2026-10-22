@@ -1,6 +1,6 @@
 # Melo 总览：当前事实、功能索引与接手入口
 
-更新时间：2026-10-21（Australia/Sydney）。这是所有 Melo 工作线程共用的人工维护入口：顶部依次是当前事实、功能索引和最新交接；按日期的阶段过程（含日期、提交与当次验证数字）在 [总览历史交接](docs/handoffs/overview-history-20261019.md)。
+更新时间：2026-10-22（Australia/Sydney）。这是所有 Melo 工作线程共用的人工维护入口：顶部依次是当前事实、功能索引和最新交接；按日期的阶段过程（含日期、提交与当次验证数字）在 [总览历史交接](docs/handoffs/overview-history-20261019.md)。
 
 ## 1. 先看这里
 
@@ -31,6 +31,7 @@
 | 授权、审批与任务 | #1 审批期间持有文件身份，阻止 inode 复用（`47da231` 已推送，[实施](docs/github-issues-implementation-20261020.md)）； 模型 / 工具 / 授权共用截止与取消，超时后迟到批准零写入（A2）；手机权限首次迁移与撤销修正 `85c51f7`；桌面审批界面样式在 `desktop-ui/features/approvals/approvals.css`（工具/文件审批 JS 仍在 app.js，P2c）；能力请求卡片与「临时授权」列表在 `desktop-ui/features/approvals/`（10-20）；手机卡片进 `ChatStore` 审批队列，账本与判定在 `ios/Melo/CapabilityElevation{,Runtime,Views}.swift`（10-20） | [A2 回执](docs/mobile-desktop-alignment.md)、[手机权限](docs/phone-permission-fix-20261016.md) |
 | 桌面壳与界面 | 当前安装源码 `897b77a`，原生启动与数据保留通过；神经总览 `22bcd1b`；双端低饱和黑金 M 图标；10-15 记录的阅读 / 预览 / 文件 WIP 已于 10-17 收入 `8cd3eff`；10-20 桌面工作面统一（`surfaceUnify.css` 最后载入：间距、13px 基准字号、控件、工作面不透明度、去旧绿色），手机未动、知识青灰身份色待用户决定 | [10-20 统一](docs/ui-unify-20261020.md)、[双端安装](docs/dual-reinstall-20261019.md)、[银河与留白](docs/galaxy-clarity-20261016.md)、[图标](docs/design/logo-muted-20261016/README.md)；`desktop-ui/app.js` 仍是中央入口（导航、组合、render() 保护、设置 / 资料 / 审批 / TTS 等页面）；记忆 / 项目页（P2a）、Agent 设置（P2b）、聊天（P2c）已拆到 `desktop-ui/features/` |
 | iPhone | 实体机 0.7.8 (40) 已覆盖并启动，原 12 对话 / 137 消息 / 6 Agent、账号偏好和 21 张原图经两次回读保留；用户确认拍照四流程与实际回复正常 | [10-21 拍照版安装](docs/phone-camera-install-20261021.md)；个人签名到期 10-28 20:52（Melbourne）；镜头切换和后台恢复另验 |
+| Android 桌宠 | 10-22 分支 `feature/android-desktop-pet`（0.8.0 (17)）：「系统 → 桌宠」开关后金冬天 / 大肥鱼以自有前台服务常驻其他 App 之上，窗口只按当前动作的不透明包围盒布局；拖动贴边、单击换动作、双击系统语音识别 → 专用「桌宠」对话 → 朗读与气泡、长按菜单；自动动作沿用桌面「优先待机、动作后休息 30–60 秒」；素材不进 Git，`assets/pet/catalog.json` 记录 hash 与 Release `android-pet-assets-1`，Gradle `preparePetAssets` 构建时校验 / 下载 | [android/README.md → 桌宠](android/README.md)、[verification.md](android/verification.md)；JVM 144、Lint 零 Error、Debug / R8、Emulator `PetOverlayFlowTest` 2/2 通过；Fold6 真机（朋友测试）、三星省电、真实语音未验，PR 待用户决定合入 |
 | 远程渠道 | Telegram（10-16）、Discord（10-17）按用户决定归档，配置与历史保留 | [Telegram 归档](docs/telegram-archive-20261016.md)、[Discord 归档](docs/discord-archive-20261017.md) |
 | 架构维护 | B2 执行节点、B3 自定义页与桌面 token 已合入；当前拆分质量与剩余 B4/B5 见[10-21 核对](docs/architecture-split-review-20261021.md)。方案已获批执行 P0–P2；P0 已交付：生成的功能地图、`npm run scope`、`npm run boundaries`、纯文档选组纠正与本总览重整；P1 项目 / Agent 提交回执已交付；P2 完成：P2a 记忆页、项目页拆入 `desktop-ui/features/` 并补齐 `bootstrapError` 重新拉取；P2b Agent 设置；P2c 聊天状态 / 事件与其余 CSS，`render()` 只调功能钩子，共享请求层为 `sharedApi.js` | [方案与第 8 节执行修订](docs/architecture-maintainability-plan-20261019.md)；P1 / P2 状态以最新交接为准；[独立审计](docs/claude-architecture-review-20261019.md)确认的提交后刷新失败回归已在 `46554b2` 修复，日常选定范围通过 |
 | 发布 gate | 10-21 降本已本地提交 `8304aab`：[实现与校准](docs/test-cost-camera-plan-20261021.md)；纯文档 CI 先计划并省去重型任务，局部 UI 按整组和实际依赖选取，Swift 复用编译但每次执行测试；日常按功能、反向依赖、隐式边与平台选组；任务 `--files` / 集成 `--base` / 强制 `--all`；先预检、JS / 资源 / Swift 去重；公共 / 未知边界保留扩大，发布完整 gate 保留 | [统一检测规则](docs/testing-workflow.md)（AGENTS / CLAUDE 共用）、[实施验证](docs/test-selection-implementation-20261020.md)：最终工具 29/29，隔离完整日常、两项浏览器与 32 Swift 通过；本地模型资源项补测 3/3 |
@@ -59,6 +60,11 @@
 
 ## 4. 最新交接
 
+### 2026-10-22 — 安卓桌宠（Claude）— 金冬天悬浮在其他 App 上，双击与 Melo 对话
+- 分支 `feature/android-desktop-pet`（worktree `.tmp/android-pet-20261022`，基于 `77679bb`），PR [#16](https://github.com/MortredVigoss/Melo/pull/16)；素材 Release [`android-pet-assets-1`](https://github.com/MortredVigoss/Melo/releases/tag/android-pet-assets-1)（zip 133 MiB，构建时 `preparePetAssets` 按 catalog hash 自动下载），测试包 Release [`android-pet-test-1`](https://github.com/MortredVigoss/Melo/releases/tag/android-pet-test-1)（debug 签名 APK 219.5 MB，需允许未知来源 + 悬浮窗 / 通知 / 麦克风 / 电池优化）。
+- 实现：`android/app/src/main/java/com/melo/android/pet/`（`PetOverlayService` 前台服务 + 三个 `TYPE_APPLICATION_OVERLAY` 窗口、`PetScheduler` 纯 Kotlin 动作链、`PetSettingsScreen`「系统 → 桌宠」、`PetPreferences` 本机偏好、`PetSpeechInput` / `PetDialogue` / `PetChat`），`assets/pet/player.html` 双 `<video>` 播 VP9+alpha，`android/scripts/import-pet-skins.mjs` + `scripts/android-pet-assets.js` 可重跑导入（480×270、CRF 32、alpha 包围盒），`catalog.json` 提交、`skins/` 忽略。版本 0.8.0 (17)。说明见 [android/README.md → 桌宠](android/README.md)。
+- 验证：JVM 144、Lint 零 Error、Debug / R8；Emulator Android 16 `PetOverlayFlowTest` 2/2（解码 / 单击 / 拖动贴边 / 长按菜单 / 双击 → Fixture 识别 → Fixture 模型 → 气泡与专用对话 / 换肤 / 关闭重建）；手工截图确认桌宠在系统桌面之上。日常 `npm test -- --files …` GREEN；PR #16 对 `28e1410` 的 CI：Android（含 x86_64 Emulator 完整套件）、File safety、macOS Swift 通过，Linux 因 `architecture/modules.json` 未随新脚本重生成而失败，本次文档提交一并补上。详见 [android/verification.md](android/verification.md)。
+- 未验 / 下一步：Fold6 真机（朋友测试）、三星省电、真实语音识别与朗读、锁屏恢复；移动类动作在手机上原地播放不挪窗口；PR 合入由用户决定。桌面端并入与 `desktop-pet/` 目录由另一线程负责，本线程未动。
 ### 2026-10-21 — melo主线（Codex）— 拍照版 iPhone 保留数据覆盖安装
 - 线程 `01a13b2e-5446-7042-bb5e-773129746c7e`；测试降本 `8304aab` 与双端拍照 `6fba8db` 已推送。按晚间授权，实体 iPhone 同标识原位覆盖到 0.7.8（40），未卸载；本阶段仅版本元数据与文档本地提交，无 git pp / 新推送。
 - 安装前完整私有备份，安装后与使用后回读：原 12 对话 / 137 消息 / 6 Agent、4 个账号偏好指纹及 21 张原图全部保留；新增拍照 JPEG 4032×3024 留在草稿。旧聊天与登录态直接观察通过，拍照四流程和实际回复由用户在实体手机确认；镜像黑屏与输入限制、存档证据边界如实记录。
@@ -216,6 +222,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 
 | 线程（原名） | ID | 最新交接 / 实际范围 | 状态与证据 |
 | --- | --- | --- | --- |
+| 安卓桌宠（Claude Code） | worktree `.tmp/android-pet-20261022` · 分支 `feature/android-desktop-pet` | 10-22 Android 悬浮桌宠：前台服务悬浮窗、纯 Kotlin 动作链、「系统 → 桌宠」设置页、双击语音对话与朗读、可重跑素材导入与 Release 包、Gradle 自动拉取 | PR [#16](https://github.com/MortredVigoss/Melo/pull/16)、测试包 [`android-pet-test-1`](https://github.com/MortredVigoss/Melo/releases/tag/android-pet-test-1)；JVM 144 / Lint 0 Error / Debug / R8 / Emulator 2 项 UI flow 通过；真机由朋友测试，未装 Fold6 |
 | melo审计修复（Cowork） | `01a11623-b29c-70c7-8ee0-bb21a1e6eef3` | 10-17 三路只读审计 → 四批修复：TTS 路由、上下文预算/窗口/压缩同源、逐轮上下文入用户消息、Discord 归档、Agent 成员/循环/审批加固、分层 gate 传递闭包、文档对齐；10-19 手机 agent loop 对齐桌面（共享 `agent-loop.json`）；10-19 架构方案 P0 执行 → P2a 记忆 / 项目页拆分 → P2b Agent 设置拆分 → P2c 聊天拆分（P2 完成）；10-20 Agent 能力临时提升与即时开启（桌面 + 共享规则 + 手机端） | 沙箱全量 JS 回归与基线一致；用户机器日常 gate 见本次提交；[审计与实施状态](docs/architecture-agent-context-audit-20261017.md) §7；P2c / P2b / P2a / P0 见[历史交接](docs/handoffs/overview-history-20261019.md) |
 | melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 10-21 测试降本 `8304aab`、双端原生拍照 `6fba8db` 已推送；iPhone 0.7.8（40）覆盖、数据保留、用户真机拍照及回复确认（[安装回执](docs/phone-camera-install-20261021.md)）；[拆分静态核对](docs/architecture-split-review-20261021.md)；七项双端对齐、架构审计与 GitHub issue 修复；10-20 双端覆盖更新与真实使用检查 | [14 条问题实施](docs/github-issues-implementation-20261020.md)此前全部关闭，装机后 #4 重新打开并完成二次修复，见[原生验收](docs/issue-4-legacy-preview-20261020.md)；[双端更新](docs/dual-update-20261020.md)：桌面 abe1d20 / iPhone 0.7.7 (39)，数据保留、完整发布 gate 与真实回复已核对；其他线程 WIP 保留 |
 | melo主线（历史·2026-10-15） | `01a10bf2-e092-7862-87fe-2f237a8fb6a0` | 架构、审计、记忆、function calling、日常 gate 和手机 OAuth；本次只补遗漏 | 已完成补录；授权核心已提交，当时相关共享文件的他线程 WIP 已于 10-17 收入 `8cd3eff`；[build23 回执](docs/handoffs/melo-thread-backfill-20261015.md#historical)，产品任务交新主线 |
@@ -275,6 +282,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | 日常变更 | `npm run test:plan`、`npm test`；按 `docs/testing-workflow.md` 确认范围；纯说明文档只做相对链接检查 |
 | 完整发布 | `npm run test:full`；含构建、安装和启动阶段，注意并行线程/运行中用户任务 |
 | 手机 | `npm run test:ios`，再独立记录编译、签名、安装、数据核对、真机 UI 和真实服务 |
+| Android 桌宠 | `npm run check:android`；`ANDROID_SERIAL=emulator-5554 npm run test:android:connected`（含 `PetOverlayFlowTest`，需 `appops`/`pm grant` 由测试自行授予）；素材 `node android/scripts/import-pet-skins.mjs verify`，重导入 `import`、发布 `bundle --tag` |
 | UI / 架构 | `npm run test:ui`、`npm run test:architecture`、`npm run test:architecture-performance` |
 | 记忆 / 同步 | `npm run test:memory`、`npm run test:mobile-sync`、`npm run test:sync-contract` |
 | 模型 / 工具 / 图片 | `npm run test:models`、`npm run test:function-calling`、`npm run test:image-workflow` |
