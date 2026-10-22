@@ -23,7 +23,7 @@
     ],
     "graph": {
       "modules": 621,
-      "edges": 1891,
+      "edges": 1892,
       "roots": [
         "src",
         "desktop-ui",
@@ -1169,6 +1169,7 @@
           "src/services/chat/executionScenes.test.js",
           "src/services/chat/executionTelemetry.test.js",
           "src/services/chat/functionCalling.integration.test.js",
+          "src/services/chat/headlessApproval.test.js",
           "src/services/chat/messageBuilder.test.js",
           "src/services/chat/portableCompact.test.js",
           "src/services/chat/projectMemoryBook.scenario.test.js",

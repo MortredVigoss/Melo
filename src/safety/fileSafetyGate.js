@@ -37,6 +37,7 @@ import { permissionReceipt, rememberPermissionDecision } from './permissionRecei
 import { currentRequestContext, runWithRequestContext } from '../runtime/requestScope.js';
 import { createRequestContext } from '../runtime/requestContext.js';
 import { resolveRuntimePaths } from '../runtime/paths.js';
+import { hasApprovalSurface } from './permissionContext.js';
 import { randomUUID } from 'node:crypto';
 import { stat, realpath } from 'node:fs/promises';
 import { isAbsolute, normalize, resolve, sep, basename } from 'node:path';
@@ -163,7 +164,7 @@ function _prompt({ payload, sseEmitter, signal, chatId, kind, expectedConfirmati
   // approval surface the request can never be answered, so fail now instead
   // of holding the caller — and the whole polling loop behind it — for the
   // full timeout. `permissionSurface: 'headless'` opts back into waiting.
-  if (typeof sseEmitter !== 'function' && context?.permissionSurface !== 'headless') {
+  if (!hasApprovalSurface(sseEmitter, context) && context?.permissionSurface !== 'headless') {
     const error = denyError(`File operation "${kind}" needs user approval, but this channel has no approval surface. Ask the user to run it from the Melo desktop app.`);
     error.code = 'PERMISSION_NO_SURFACE';
     return Promise.reject(error);

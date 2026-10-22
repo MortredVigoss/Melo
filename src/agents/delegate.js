@@ -10,7 +10,10 @@ import {withWorkspaceWriter} from './workspaceScheduling.js';
 import {createHandoff,HANDOFF_INSTRUCTION} from './handoff.js';
 import {narrowBudget,remainingMs} from '../runtime/runBudget.js';
 
-const PARALLEL_READER=normalizeCapabilities({readFiles:true,network:true,knowledgeMemory:true});
+// Members researching side by side give up only what takes the workspace lease
+// for the whole run (see `writer` below); their MCP servers, skills and
+// connectors stay (an MCP or connector member still takes the lease, as before).
+const parallelReader=capabilities=>normalizeCapabilities({...normalizeCapabilities(capabilities),writeFiles:false,runCommands:false,generateMedia:false});
 
 export async function runConfiguredMember({concurrentReader=false,profile,parentCapabilities,allowedToolIds,config,task,instructions='',background='',workspacePath,signal,sseEmitter,chatId,depth=1,agentProfiles,ancestry=[],maxDepth=1,extraTools=[],run=runSubAgent,chatSource,projectId}) {
  if(!normalizeCapabilities(profile.capabilities))return {ok:false,error:'AGENT_MIGRATION_REQUIRED',output:`请先在桌面完成 Agent「${profile.name||profile.id}」的能力迁移，再启动协作。`};
@@ -21,10 +24,10 @@ export async function runConfiguredMember({concurrentReader=false,profile,parent
  // checked live by the executor, so a parent's grant is never inherited.
  const parentScope=parent.capabilityScope;
  const parentBase=intersectCapabilities(parentScope.elevation?.base ?? parentScope.capabilities,parentCapabilities);
- // Members researching in parallel only read (files, web, knowledge): every
- // Agent has the full base set since 2026-10-22, and a member that may write
- // holds the workspace lease for its whole run, which would serialise them.
- const own=concurrentReader?intersectCapabilities(profile.capabilities,PARALLEL_READER):profile.capabilities;
+ // Members researching in parallel do not write that round: every Agent has
+ // the full base set since 2026-10-22, and a member that may write holds the
+ // workspace lease for its whole run, which would serialise them.
+ const own=concurrentReader?parallelReader(profile.capabilities):profile.capabilities;
  const capabilityScope=narrowCapabilityScope(parentScope,{capabilities:intersectCapabilities(own,parentBase),allowedToolIds,agentId:profile.id,source:'member',
   member:{ceiling:own,parent:parentBase,parentAgentId:parentScope.agentId}});
  const capabilities=capabilityScope.capabilities;

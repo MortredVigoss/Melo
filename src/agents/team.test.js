@@ -14,6 +14,27 @@ test('bounded concurrency, isolated role failures and reported cost',async()=>{
   assert.equal(peak,2);assert.equal(order[2][0],'reviewer');assert.equal(order[2][1],1);assert.match(order[2][2],/evidence/);assert.match(order[2][2],/fixture failure/);
   assert.equal(team.ok,false);assert.equal(team.results[0].ok,true);assert.match(team.results[1].output,/fixture failure/);assert.ok(team.usage.estimatedCost>0);
 });
+// Audit 2026-10-22: overlapping researchers stop writing that round (the
+// workspace lease would serialise them) but keep their MCP servers and skills;
+// a researcher that runs alone keeps everything.
+test('parallel researchers keep MCP servers and skills and only stop writing; a lone researcher keeps everything',async()=>{
+  const {normalizeCapabilities}=await import('../domain/agent/capabilities.js');
+  const {normalizeAgentProfile}=await import('../state/agentProfiles.js');
+  const full={readFiles:true,writeFiles:true,runCommands:true,network:true,knowledgeMemory:true,generateMedia:true,mcpServers:['playwright'],skills:['project-planner']};
+  const agentProfiles=Object.fromEntries(['research','builder','reviewer'].map(id=>[id,{...normalizeAgentProfile(id,{}),capabilities:normalizeCapabilities(full)}]));
+  const capabilities=normalizeCapabilities({...full,delegate:true});
+  const seen={};
+  const run=async({roleId,capabilities})=>{seen[roleId]=capabilities;return {ok:true,output:'checked'};};
+  await runAgentTeam({plan:{members:['research','builder','reviewer'],mode:'parallel',concurrency:2},task:'t',config:{},agentProfiles,capabilities,run});
+  for(const id of ['research','builder']) {
+    assert.deepEqual([seen[id].writeFiles,seen[id].runCommands,seen[id].generateMedia],[false,false,false],`${id} does not write while overlapping`);
+    assert.deepEqual([seen[id].readFiles,seen[id].network,seen[id].knowledgeMemory],[true,true,true]);
+    assert.deepEqual([seen[id].mcpServers,seen[id].skills],[['playwright'],['project-planner']],`${id} keeps its MCP servers and skills`);
+  }
+  assert.equal(seen.reviewer.writeFiles,true,'the reviewer runs alone with its full set');
+  await runAgentTeam({plan:{members:['research','reviewer'],mode:'parallel',concurrency:2},task:'t',config:{},agentProfiles,capabilities,run});
+  assert.deepEqual([seen.research.writeFiles,seen.research.runCommands,seen.research.generateMedia],[true,true,true],'one researcher has nothing to overlap with');
+});
 test('cancellation stops queued roles and reaches running child',async()=>{
   const controller=new AbortController();let invoked=0;
   const team=await runAgentTeam({plan:{roles:['research','builder','reviewer'],concurrency:2},task:'fixture',config:{},signal:controller.signal,run:async({signal})=>{invoked++;controller.abort();assert.equal(signal.aborted,true);throw new Error('aborted');}});

@@ -16,3 +16,11 @@ export function scopeMatches(saved, current) {
   if (!current || saved.workspace?.unavailable || current.workspace?.unavailable) return false;
   return JSON.stringify(saved) === JSON.stringify(current);
 }
+// Whether an approval prompt (tool permission, file safety) can be answered.
+// Every chat turn wraps its emitter to record execution, so an emitter alone
+// cannot tell the live desktop stream from Telegram / Discord / the JSON route;
+// sendChatMessage marks those turns `permissionSurface: 'none'` and members
+// inherit the request context. Unmarked callers keep the emitter rule.
+export function hasApprovalSurface(sseEmitter, context) {
+  return typeof sseEmitter === 'function' && context?.permissionSurface !== 'none';
+}

@@ -7,11 +7,16 @@
  * its own location tool; this gives desktop Agents the same ability for
  * "near me", local weather, time zone and nearby places.
  *
- * Privacy: coordinates are rounded to two decimals (about 1 km) before they
- * reach the model; macOS asks the user for permission on first use.
+ * Privacy: location is personal data, so like the clipboard every use asks
+ * the user first (the phone keeps it off per Agent for the same reason), and
+ * channels without an approval surface are refused. Coordinates are rounded
+ * to two decimals (about 1 km) before they reach the model; macOS asks for its
+ * own permission on first use.
  */
 
-const LOCATION_TIMEOUT_MS = 20_000;
+// Longer than the shell's own wait (15 s fix + 5 s place name), so a slow fix
+// is reported by the shell as a timeout instead of being cut off here.
+export const LOCATION_TIMEOUT_MS = 25_000;
 const round = value => Math.round(Number(value) * 100) / 100;
 
 export function formatLocation(value = {}) {
@@ -41,11 +46,11 @@ export const deviceLocationTool = {
   description:
     "Get this computer's current approximate location (city, region, country, rounded coordinates, time zone) from macOS Location Services. " +
     "Use it when the user asks about something near them, local weather or local time without naming a place. " +
-    'The first use shows the system permission prompt; if access is off, say so and ask for the city instead.',
+    'Each use asks the user for approval; if it is declined or access is off, say so and ask for the city instead.',
   capability: 'network',
   needsWorkspace: false,
   isConcurrencySafe: true,
-  requiresPermission: false,
+  requiresPermission: true,
   parametersSchema: { type: 'object', properties: {}, additionalProperties: false },
   examples: [{}],
 
@@ -54,13 +59,15 @@ export const deviceLocationTool = {
     const env = context.requestContext?.env || process.env;
     const port = Number(env.MELO_DESKTOP_PORT || 43127) + 1;
     const fetchImpl = context.fetchImpl || fetch;
-    const signal = AbortSignal.any([context.signal, AbortSignal.timeout(LOCATION_TIMEOUT_MS)].filter(Boolean));
+    const timeout = AbortSignal.timeout(context.locationTimeoutMs ?? LOCATION_TIMEOUT_MS);
+    const signal = AbortSignal.any([context.signal, timeout].filter(Boolean));
     let reply;
     try {
       const response = await fetchImpl(`http://127.0.0.1:${port}/location`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-melo-native': 'location' }, body: '{}', signal });
       reply = await response.json();
     } catch (error) {
       if (context.signal?.aborted) throw context.signal.reason;
+      if (timeout.aborted) return { ok: false, error: FAILURES.timeout[0], output: FAILURES.timeout[1] };
       return { ok: false, error: 'DESKTOP_SHELL_UNAVAILABLE', output: 'Location needs the Melo desktop app (it reads macOS Location Services); it is not available here. Ask the user for the city or area instead.' };
     }
     if (reply?.ok === true && Number.isFinite(Number(reply.latitude)) && Number.isFinite(Number(reply.longitude))) {

@@ -32,8 +32,11 @@ final class NativeLocation: NSObject, CLLocationManagerDelegate {
     return header == "location" && ["127.0.0.1:\(port)", "localhost:\(port)"].contains(host)
   }
 
-  /// Called from a background thread; blocks for at most `timeout` seconds.
+  /// Called from a background thread; blocks for at most `timeout` seconds
+  /// plus up to 5 s for the place name.
   func currentJSON(timeout: TimeInterval = 15) -> String {
+    // Apple: this check can block, so it stays off the main thread.
+    guard CLLocationManager.locationServicesEnabled() else { return Self.json(["ok": false, "error": Failure.disabled.rawValue]) }
     let done = DispatchSemaphore(value: 0)
     var outcome: Result<CLLocation, Failure> = .failure(.timeout)
     DispatchQueue.main.async {
@@ -52,26 +55,33 @@ final class NativeLocation: NSObject, CLLocationManagerDelegate {
         "timestamp": ISO8601DateFormatter().string(from: location.timestamp),
       ]
       // Place name is a best effort: the coordinates are still useful without it.
+      // A late answer must not touch `body` while it is being encoded, so the
+      // callback hands its result over under a lock.
       let named = DispatchSemaphore(value: 0)
+      let lock = NSLock()
+      var place: [String: String] = [:]
       DispatchQueue.main.async {
         CLGeocoder().reverseGeocodeLocation(location) { placemarks, _ in
-          if let place = placemarks?.first {
-            if let city = place.locality { body["city"] = city }
-            if let region = place.administrativeArea { body["region"] = region }
-            if let country = place.country { body["country"] = country }
-            if let zone = place.timeZone?.identifier { body["timeZone"] = zone }
+          var found: [String: String] = [:]
+          if let mark = placemarks?.first {
+            if let city = mark.locality { found["city"] = city }
+            if let region = mark.administrativeArea { found["region"] = region }
+            if let country = mark.country { found["country"] = country }
+            if let zone = mark.timeZone?.identifier { found["timeZone"] = zone }
           }
+          lock.lock(); place = found; lock.unlock()
           named.signal()
         }
       }
       _ = named.wait(timeout: .now() + 5)
+      lock.lock(); let placeName = place; lock.unlock()
+      for (key, value) in placeName { body[key] = value }
       return Self.json(body)
     }
   }
 
   // Main thread only.
   private func request(_ done: @escaping (Result<CLLocation, Failure>) -> Void) {
-    guard CLLocationManager.locationServicesEnabled() else { done(.failure(.disabled)); return }
     let manager = self.manager ?? CLLocationManager()
     self.manager = manager
     manager.delegate = self
