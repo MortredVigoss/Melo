@@ -1,0 +1,19 @@
+{
+  "name": "melo-desktop-pet-dsh",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Melo desktop pet: the original PC2005-cloud/dsh-pet v0.3.7 host and renderer with the Melo chat bridge. Bundled into Melo.app by scripts/bundle-desktop-pet.js.",
+  "main": "main.cjs",
+  "scripts": {
+    "build": "node build.cjs",
+    "test": "node --test tests/*.test.js"
+  },
+  "dependencies": {
+    "@electron/get": "5.1.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "electron": "37.10.3",
+    "esbuild": "0.28.2"
+  }
+}

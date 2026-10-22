@@ -31,6 +31,7 @@ swiftc \
   "$PROJECT_DIR/desktop-app/ProcessShutdown.swift" \
   "$PROJECT_DIR/desktop-app/StaleServer.swift" \
   "$PROJECT_DIR/desktop-app/NativeLocation.swift" \
+  "$PROJECT_DIR/desktop-app/DesktopPet.swift" \
   "$PROJECT_DIR/ios/Melo/VoiceInput.swift" \
   "$PROJECT_DIR/ios/Melo/SystemSpeechInput.swift" \
   -o "$BUILD_DIR/$BIN_NAME"
@@ -91,5 +92,10 @@ mkdir -p "$APP_DIR/Contents/Resources/models"
 cp "$PROJECT_DIR/assets/memory-model-NOTICE.txt" "$APP_DIR/Contents/Resources/models/NOTICE.txt"
 ditto "$PROJECT_DIR/assets/models/multilingual-e5-small" "$APP_DIR/Contents/Resources/models/multilingual-e5-small"
 node "$PROJECT_DIR/scripts/build-launch-screen.js" "$APP_DIR/Contents/Resources/Launch.html"
+# The desktop pet travels inside Melo.app with its own pinned Electron and both
+# skins. Its media come from the verified store outside Git (npm run
+# import:pet-skin); the nested DSHPet.app is ad-hoc signed on its own and the
+# outer seal below covers the whole tree. See scripts/bundle-desktop-pet.js.
+node "$PROJECT_DIR/scripts/bundle-desktop-pet.js" "$APP_DIR/Contents/Resources/desktop-pet"
 codesign --force --sign - "$APP_DIR"
 codesign --verify --deep --strict "$APP_DIR"

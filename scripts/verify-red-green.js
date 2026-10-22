@@ -654,6 +654,8 @@ async function main() {
     results.push(await runStep('Android JVM, Lint, Debug and Release (check:android)', () => runCommand('npm', ['run', 'check:android'])));
 
     results.push(await runStep('Build syntax check', () => runCommand('npm', ['run', 'build'])));
+    // The pet's media live outside Git; a build must never ship a pack that differs from the committed pins.
+    results.push(await runStep('Desktop pet media store (verify:pet-skin)', () => runCommand('npm', ['run', 'verify:pet-skin'])));
     results.push(
       await runStep('Build desktop app bundle', () => runCommand('npm', ['run', 'build:desktop'])),
     );

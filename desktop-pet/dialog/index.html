@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>与 Melo 对话</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header><div><strong>Melo</strong><span>对话</span></div><button id="hide" type="button" aria-label="收起对话" title="收起对话（Esc）">×</button></header>
+  <main id="messages" aria-label="对话记录" aria-live="polite"></main>
+  <section id="permissions" aria-label="操作授权"></section>
+  <div id="status" role="status"></div>
+  <form id="composer"><textarea id="input" rows="2" placeholder="给 Melo 发消息…" aria-label="消息"></textarea><div class="composer-actions"><span>Enter 发送 · Shift+Enter 换行</span><button id="stop" type="button" hidden>停止</button><button id="send" type="submit">发送</button></div></form>
+  <script src="dialog.js"></script>
+</body>
+</html>

@@ -35,6 +35,7 @@
 | 后端普通功能 | 整个所属功能组，加反向调用、动态 import、源码读取、共享契约相关测试 |
 | 手机场景资源 | JS 桥接 / 渲染与 manifest；不编译无关 Swift |
 | Swift 文件 | 按真实编译输入选 suite；共享契约补对应测试；未纳入独立编译组的原生源码扩大 Swift |
+| 桌面宠物 `desktop-pet/` | 整个 `desktop-pet` 测试组（`desktop-pet/tests/*.test.js`，CommonJS）加 `DesktopPet.swift` ↔ `main.cjs` 原生桥接测试；`node_modules/`、`runtime/`、皮肤动画与大肥鱼 WebM 是构建输入，不选测试。金冬天包与关键帧审计只在本机（`npm run import:pet-skin`）与发布 gate 校验，CI 没有这些媒体时 `winter-pack` 记为显式跳过 |
 | Android 本地 `.kt` / 资源 `.xml` | JVM、Lint、Debug；Manifest、构建配置、Core 或混合平台集成仍跑 Release/R8 |
 | 仅现有 `.test.js` | 改动测试文件及语法；不能用它替代同时发生的产品改动 |
 | 状态持久化、权限、执行核心、共享协议、依赖 / 构建、测试门禁自身 | 完整日常 |

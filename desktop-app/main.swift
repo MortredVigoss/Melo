@@ -12,6 +12,13 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
   private var window: NSWindow!
   private var webView: WKWebView!
   private var serverProcess: Process?
+  // The bundled desktop pet (DesktopPet.swift): started after the server is
+  // ready when the "桌面宠物" preference is on, stopped together with the server.
+  private lazy var desktopPet: DesktopPetManager = {
+    let manager = DesktopPetManager(projectDir: projectDir)
+    manager.onUnexpectedExit = { [weak self] in self?.desktopPetExited() }
+    return manager
+  }()
   private lazy var projectDir: String = {
     if let envDir = ProcessInfo.processInfo.environment["MELO_PROJECT_DIR"], !envDir.isEmpty {
       return envDir
@@ -147,8 +154,11 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
     guard !terminatingServer else { return }
     terminatingServer = true
     launchRequest?.cancel()
-    ProcessShutdown.stop(serverProcess) {
-      sender.reply(toApplicationShouldTerminate: true)
+    // The pet first (its /quit returns at once), then the server; both completions arrive on the main run loop.
+    desktopPet.stop { [self] in
+      ProcessShutdown.stop(serverProcess) {
+        sender.reply(toApplicationShouldTerminate: true)
+      }
     }
   }
 
@@ -160,9 +170,11 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
     guard !terminatingServer else { return }
     terminatingServer = true
     launchRequest?.cancel()
-    ProcessShutdown.stop(serverProcess) { [weak self] in
-      self?.releaseNativeResources()
-      ProcessShutdown.exit(after: signal)
+    desktopPet.stop { [self] in
+      ProcessShutdown.stop(serverProcess) { [weak self] in
+        self?.releaseNativeResources()
+        ProcessShutdown.exit(after: signal)
+      }
     }
   }
 
@@ -216,6 +228,7 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
     sayProcess?.terminate()
     sayProcess = nil
     if serverProcess?.isRunning == true { serverProcess?.terminate() }
+    desktopPet.terminateChildIfRunning()
     if transcriptionServerFd >= 0 {
       close(transcriptionServerFd)
       transcriptionServerFd = -1
@@ -555,6 +568,7 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
         self.hasLoadedServer = true
         self.writeDebug("status=server-ready\nbundlePath=\(self.bundlePath)\nserverURL=\(origin.absoluteString)\nprojectDir=\(self.projectDir)")
         self.webView.load(URLRequest(url: origin))
+        self.startDesktopPetIfEnabled(origin: origin)
       }
     }
     launchRequest?.resume()
@@ -767,7 +781,10 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
           "notifications": UserDefaults.standard.bool(forKey: "melo.notifications") && status == .authorized,
           "notificationStatus": status == .authorized ? "系统已允许" : status == .denied ? "系统未允许，可前往 macOS 通知设置更改" : "开启时申请系统授权",
           "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "未知",
-          "build": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "未知"
+          "build": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "未知",
+          "desktopPet": UserDefaults.standard.bool(forKey: DesktopPetManager.preferenceKey),
+          "desktopPetAvailable": self.desktopPet.isAvailable,
+          "desktopPetRunning": self.desktopPet.isRunning()
         ]
         if #available(macOS 13, *) {
           value["launchAtLogin"] = SMAppService.mainApp.status == .enabled
@@ -800,6 +817,8 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
           UserDefaults.standard.set(allowed, forKey: "melo.notifications")
           self.localSettingsReply(requestID, extra: allowed ? [:] : ["error": error?.localizedDescription ?? "系统未允许通知，请在 macOS 通知设置中允许 Melo。"])
         }
+      } else if key == "desktopPet", let enabled = DesktopPetManager.boolValue(payload["value"]) {
+        setDesktopPet(enabled, requestID: requestID)
       } else { localSettingsReply(requestID, extra: ["error": "设备设置无效。"] ) }
     case "openLoginItems":
       if #available(macOS 13, *) { SMAppService.openSystemSettingsLoginItems() }
@@ -841,6 +860,34 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
       UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
     default: break
     }
+  }
+
+  // MARK: desktop pet
+
+  /// On: start now and on every later launch. Off: ask the pet to quit and stop auto-starting.
+  /// The reply carries the real state (desktopPetRunning) once the action has finished.
+  private func setDesktopPet(_ enabled: Bool, requestID: String) {
+    guard desktopPet.isAvailable else { localSettingsReply(requestID, extra: ["error": "当前安装未包含桌面宠物。"]); return }
+    UserDefaults.standard.set(enabled, forKey: DesktopPetManager.preferenceKey)
+    if enabled {
+      desktopPet.start(baseURL: serverURL) { [weak self] error in
+        self?.localSettingsReply(requestID, extra: error.map { ["error": $0] } ?? [:])
+      }
+    } else {
+      desktopPet.stop { [weak self] in self?.localSettingsReply(requestID) }
+    }
+  }
+
+  private func startDesktopPetIfEnabled(origin: URL) {
+    guard desktopPet.isAvailable, UserDefaults.standard.bool(forKey: DesktopPetManager.preferenceKey) else { return }
+    desktopPet.start(baseURL: origin) { error in NSLog("Melo desktop pet: %@", error ?? "started") }
+  }
+
+  /// The pet quit on its own (its menu, a crash): keep the preference and the settings page truthful.
+  private func desktopPetExited() {
+    UserDefaults.standard.set(false, forKey: DesktopPetManager.preferenceKey)
+    NSLog("Melo desktop pet: exited on its own; auto-start switched off")
+    webView?.evaluateJavaScript("window.dispatchEvent(new Event('melo-local-settings-changed'));")
   }
 
   private func emitVoiceEvent(_ state: VoiceInputSnapshot) {

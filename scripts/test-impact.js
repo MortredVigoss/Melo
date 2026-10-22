@@ -65,7 +65,9 @@ export async function buildTestImpact(root = process.cwd(), built = null) {
   const reverse = new Map();
   const edge=(input,consumer)=>{if(!reverse.has(input))reverse.set(input,new Set());reverse.get(input).add(consumer);};
   for(const [consumer,inputs] of graph) for(const input of inputs) edge(input,consumer);
-  const candidates=sorted([...paths,...Object.values(built.map.features).flatMap(f=>[...f.desktopUi,...f.iphone.owned,...f.tests.swift])]);
+  // Pet runtime files are bridge candidates (desktop-app/DesktopPet.swift ↔ desktop-pet/main.cjs)
+  // but not graph paths: their dynamic requires must not widen unrelated plans.
+  const candidates=sorted([...paths,...Object.values(built.map.features).flatMap(f=>[...f.desktopUi,...f.iphone.owned,...f.tests.swift]),...await jsFiles(root,'desktop-pet')]);
   for(const item of built.map.implicit) {
     if(item.kind==='source-reading-test') {
       const pairs=item.pairs||Object.fromEntries(list(item.tests).map(test=>[test,list(item.reads)]));
@@ -113,6 +115,12 @@ export function impactedPlan(code, files, impact) {
       continue;
     }
     if(path==='ios/Melo/Localizable.xcstrings'||path==='ios/native-translations.js') {add(['scripts/native-translations.test.js']);continue;}
+    if(path.startsWith('desktop-pet/')) {
+      // The pet is a self-contained CommonJS package: its whole test group plus the
+      // native-bridge tests reached below. Media, runtime and node_modules are build inputs.
+      if(/^desktop-pet\/(?:node_modules|runtime|skins\/winter\/winter-animation|upstream\/assets\/webm)\//.test(path)) {reasons.push(`${path}：桌宠构建输入，不选测试`);continue;}
+      feature('desktop-pet',`${path}：desktop-pet 功能组`);continue;
+    }
     if(/^desktop-ui\/.*\.(js|css|html)$/.test(path)) {
       const id=owner(path);
       // Keep the entire feature's UI group. Backend consumers, source readers

@@ -382,6 +382,25 @@
         "神经场景与执行面板源码由 ios/scripts/build-scene.py 打包进手机。"
       ]
     },
+    "desktop-pet": {
+      "title": "桌面宠物（大肥鱼 / 金冬天，随 Melo.app 分发）",
+      "owns": [
+        "desktop-pet/**",
+        "desktop-app/DesktopPet.swift",
+        "scripts/{desktop-pet-assets,bundle-desktop-pet}.js",
+        "scripts/desktop-pet-assets.test.js",
+        "desktop-ui/localSettings.desktopPet.test.js"
+      ],
+      "routes": [],
+      "testGroups": [
+        "test:desktop-pet"
+      ],
+      "notes": [
+        "独立 CommonJS 包：main.cjs 控制进程（单实例、本机控制服务、runtime.json 0600 运行记录）、melo-client.cjs 直通主助手、adapters/ 原版 DSH host 适配；upstream/ 为 PC2005-cloud/dsh-pet v0.3.7（MIT，LICENSE 与 UPSTREAM-README.md 保留）。",
+        "大文件不入 Git：金冬天 WebM、关键帧审计与大肥鱼原版 WebM 放在仓库旁 ../desktop-pet-assets（npm run import:pet-skin），Electron 由 desktop-pet/package.json 钉版本（npm run install:desktop-pet）；scripts/bundle-desktop-pet.js 在 build:desktop 时校验并装入 Melo.app/Contents/Resources/desktop-pet。",
+        "启停由 desktop-app/DesktopPet.swift 管理：系统设置「桌面宠物」开关（UserDefaults melo.desktopPet），Melo 启动后带起、退出时经控制服务 /quit 关闭，桌宠自行退出时开关同步为关。"
+      ]
+    },
     "iphone": {
       "title": "iPhone 应用壳",
       "owns": [
@@ -999,6 +1018,39 @@
       "note": "原生壳把只由自己持有写端的管道作为子服务 stdin 并设置标志；窗口被 SIGKILL 或崩溃时内核关闭管道，服务读到 EOF 后按正常流程关停。标志名两端须一致"
     },
     {
+      "id": "bridge-desktop-pet",
+      "kind": "native-bridge",
+      "from": [
+        "desktop-app/DesktopPet.swift",
+        "desktop-app/main.swift"
+      ],
+      "to": [
+        "desktop-pet/main.cjs",
+        "desktop-pet/control-server.cjs",
+        "desktop-pet/runtime-info.cjs",
+        "desktop-ui/localSettings.js"
+      ],
+      "tests": [
+        "desktop-pet/tests/control-server.test.js",
+        "desktop-pet/tests/runtime-info.test.js",
+        "desktop-ui/localSettings.desktopPet.test.js",
+        "desktop-ui/localSettings.test.js"
+      ],
+      "note": "原生壳用桌宠 profile 的 runtime.json（pid、控制地址、口令）判断运行状态并 POST /quit；启动时以 MELO_BASE_URL 传实际端口。记录文件字段或控制路由改动须同步 DesktopPet.swift"
+    },
+    {
+      "id": "source-tests-desktop-pet",
+      "kind": "source-reading-test",
+      "pairs": {
+        "desktop-pet/tests/winter-idle-cadence.test.js": [
+          "desktop-pet/upstream/runtime/electron-helper/shared-core.js",
+          "desktop-pet/upstream/runtime/electron-helper/sprite.js",
+          "desktop-pet/skins/winter/winter-config.json"
+        ]
+      },
+      "note": "金冬天待机冷却用真实 PetSprite 原型（vm 载入 helper 源码）验证；shared-core.js 为 desktop-pet/build.cjs 生成产物"
+    },
+    {
       "id": "source-tests-desktop-shell-lifecycle",
       "kind": "source-reading-test",
       "reads": [
@@ -1122,8 +1174,15 @@
         "desktop-ui/launchScreen.test.js": [
           "desktop-ui/launchScreen.js"
         ],
+        "desktop-ui/localSettings.desktopPet.test.js": [
+          "desktop-ui/localSettings.js"
+        ],
         "desktop-ui/localSettings.test.js": [
           "desktop-ui/localSettings.js"
+        ],
+        "scripts/desktop-pet-assets.test.js": [
+          "scripts/desktop-pet-assets.js",
+          "desktop-pet/assets-store.cjs"
         ],
         "src/agents/skillRuns.crossHome.test.js": [
           "src/agents/skillRuns.js"

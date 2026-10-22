@@ -50,3 +50,13 @@ generated/
 
 # Pinned embedding weights are verified and bundled by prepare-memory-model.js.
 /assets/models/multilingual-e5-small/
+
+# Desktop pet (desktop-pet/): large media and the Electron runtime are build
+# inputs that live outside Git. `npm run import:pet-skin` fills the fixed
+# directory next to the repository (../desktop-pet-assets) and links it here;
+# `npm run install:desktop-pet` fetches the pinned Electron into node_modules.
+desktop-pet/runtime/
+desktop-pet/skins/winter/winter-animation
+desktop-pet/upstream/assets/webm
+desktop-pet/upstream/assets/preview
+desktop-pet/upstream/node_modules

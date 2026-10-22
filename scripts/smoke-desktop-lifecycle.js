@@ -25,7 +25,8 @@ async function launchShell({ project, home, port }, { expect = READY } = {}) {
   const debugPath = join(project, '.tmp/desktop-app-debug.txt');
   await unlink(debugPath).catch(() => {});
   const shell = spawn(binary, [], {
-    env: fixtureEnv(home, { MELO_PROJECT_DIR: project, MELO_DESKTOP_PORT: String(port), MELO_NODE_PATH: process.execPath }),
+    // The stand-in shell must never start the user's real desktop pet (same bundle id, same UserDefaults).
+    env: fixtureEnv(home, { MELO_PROJECT_DIR: project, MELO_DESKTOP_PORT: String(port), MELO_NODE_PATH: process.execPath, MELO_DESKTOP_PET_DISABLED: '1' }),
     stdio: 'ignore',
   });
   const exited = new Promise(resolve => shell.once('exit', (code, signal) => resolve({ code, signal })));

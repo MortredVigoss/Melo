@@ -7,7 +7,7 @@ import { impactedPlan } from './test-impact.js';
 // build script reads, imports or bundles these paths. Markdown that runtime
 // code or tests read (skills, personas, fixtures, anything bundled into an
 // app) must never be added here; it stays a code change.
-export const DOC_ONLY_FILES = Object.freeze(['README.md','PROGRESS.md','CLAUDE.md','EVALUATION.md','MELO_OVERVIEW.md','AGENTS.md','CHANGELOG.md','ios/README.md','ios/VERIFICATION.md','desktop-ui/features/README.md']);
+export const DOC_ONLY_FILES = Object.freeze(['README.md','PROGRESS.md','CLAUDE.md','EVALUATION.md','MELO_OVERVIEW.md','AGENTS.md','CHANGELOG.md','ios/README.md','ios/VERIFICATION.md','desktop-ui/features/README.md','desktop-pet/README.md']);
 export const isDocOnly = path => /^docs\/.*\.md$/.test(path) || /^docs\/handoffs\//.test(path) || DOC_ONLY_FILES.includes(path);
 
 // The pure selection function also serves scope and fixture tests. Without a

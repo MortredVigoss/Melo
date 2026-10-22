@@ -5,7 +5,9 @@ import { promisify } from 'node:util';
 
 const run = promisify(execFile);
 const ROOT = process.cwd();
-const TARGET_DIRS = ['src', 'scripts', 'desktop-ui', 'shared/agent'];
+// desktop-pet: the controller, bridge, adapters, tests and the bundled upstream
+// runtime (CommonJS under its own package.json; node_modules is skipped below).
+const TARGET_DIRS = ['src', 'scripts', 'desktop-ui', 'shared/agent', 'desktop-pet'];
 
 async function collectJavaScriptFiles(dirPath) {
   let entries;
@@ -23,6 +25,7 @@ async function collectJavaScriptFiles(dirPath) {
     const fullPath = join(dirPath, entry.name);
 
     if (entry.isDirectory()) {
+      if (entry.name === 'node_modules') continue;
       files.push(...(await collectJavaScriptFiles(fullPath)));
       continue;
     }

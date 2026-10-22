@@ -1,7 +1,8 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { resolve, relative } from 'node:path';
 
-export const TEST_ROOTS = ['src','desktop-ui','mobile-sync','scripts','ios/Tests','shared/agent'];
+// desktop-pet/tests only: the pet package root holds its own node_modules and the upstream tree.
+export const TEST_ROOTS = ['src','desktop-ui','mobile-sync','scripts','ios/Tests','shared/agent','desktop-pet/tests'];
 export async function discoverTests(root = resolve('.'), roots = TEST_ROOTS) {
   const files=[];
   async function walk(dir) {

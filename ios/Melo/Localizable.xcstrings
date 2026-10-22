@@ -14736,37 +14736,37 @@
         }
       }
     },
-    "开机启动、关闭窗口和系统通知可在桌面应用中设置。": {
+    "开机启动、关闭窗口、系统通知和桌面宠物可在桌面应用中设置。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "开机启动、关闭窗口和系统通知可在桌面应用中设置。"
+            "value": "开机启动、关闭窗口、系统通知和桌面宠物可在桌面应用中设置。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Configure startup, window closing and notifications in the desktop app."
+            "value": "Configure startup, window closing, notifications and the desktop pet in the desktop app."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "起動、ウィンドウ終了、通知はデスクトップアプリで設定できます。"
+            "value": "起動、ウィンドウ終了、通知、デスクトップペットはデスクトップアプリで設定できます。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "시작, 창 닫기 및 알림은 데스크톱 앱에서 설정할 수 있습니다."
+            "value": "시작, 창 닫기, 알림 및 데스크톱 펫은 데스크톱 앱에서 설정할 수 있습니다."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Configura el inicio, cierre de ventanas y notificaciones en la app de escritorio."
+            "value": "Configura el inicio, el cierre de ventanas, las notificaciones y la mascota de escritorio en la app de escritorio."
           }
         }
       }
@@ -39197,6 +39197,181 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ir al inicio de este tema"
+          }
+        }
+      }
+    },
+    "桌面宠物": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "桌面宠物"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desktop pet"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デスクトップペット"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "데스크톱 펫"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mascota de escritorio"
+          }
+        }
+      }
+    },
+    "运行中": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行中"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Running"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実行中"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행 중"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En ejecución"
+          }
+        }
+      }
+    },
+    "未运行": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未运行"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not running"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止中"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행 중 아님"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detenida"
+          }
+        }
+      }
+    },
+    "当前安装未包含桌面宠物": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前安装未包含桌面宠物"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This installation does not include the desktop pet"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このインストールにはデスクトップペットが含まれていません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 설치에는 데스크톱 펫이 포함되어 있지 않습니다"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta instalación no incluye la mascota de escritorio"
+          }
+        }
+      }
+    },
+    "读取状态中…": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "读取状态中…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reading status…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "状態を確認中…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "상태 확인 중…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Consultando estado…"
           }
         }
       }
