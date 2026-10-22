@@ -302,3 +302,20 @@ test('create flow: read-only start by default; «基于已有 Agent» sends base
   h.feature.handleChange(element('<select data-agent-create-base><option value="" selected>x</option></select>'));
   assert.equal(h.feature.getState().agentCreateCopyPersona, false, 'going back to the read-only start clears the tick');
 });
+
+// 这台电脑上: the checkbox flips natively on the click, so a saved switch takes
+// the server's bootstrap and a failed save turns the box back before reporting.
+test('device permission: a saved switch applies the bootstrap; a failed save turns the box back', async () => {
+  const saved = page({ settings: { ...page().settings, localPreferences: { agentDevice: { research: { location: true } } } } });
+  const ok = harness({ responses: { '/api/settings/local': saved } });
+  const box = '<input type="checkbox" data-action="toggle-agent-device-permission" data-agent-id="research" data-permission="location" checked>';
+  await click(ok, 'toggle-agent-device-permission', box);
+  assert.deepEqual(ok.calls, [['/api/settings/local', 'POST', { preferences: { agentDevice: { research: { location: true } } } }]]);
+  assert.deepEqual(ok.applied.at(-1).settings.localPreferences.agentDevice, { research: { location: true } });
+  const failing = harness({ responses: { '/api/settings/local': new Error('fixture save failed') } });
+  const trigger = element(box);
+  assert.equal(trigger.checked, true, 'the click already flipped the box');
+  await assert.rejects(failing.actions.dispatch('toggle-agent-device-permission', { action: 'toggle-agent-device-permission', trigger, event: null }), /fixture save failed/);
+  assert.equal(trigger.checked, false, 'the box shows what this computer saved, not the click');
+  assert.deepEqual(failing.applied, [], 'nothing is applied from a failed save');
+});

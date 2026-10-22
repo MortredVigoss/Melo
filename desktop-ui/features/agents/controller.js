@@ -623,7 +623,13 @@ export const agentsActions = {
   },
   // 这台电脑上: device-local, saved at once like the phone's 这台手机上; never part of the synced profile.
   'toggle-agent-device-permission': async ({ trigger }) => {
-    applyBootstrap(await agentsApi.updateLocalPreferences({ agentDevice: { [trigger.dataset.agentId]: { [trigger.dataset.permission]: trigger.checked === true } } }));
+    try {
+      applyBootstrap(await agentsApi.updateLocalPreferences({ agentDevice: { [trigger.dataset.agentId]: { [trigger.dataset.permission]: trigger.checked === true } } }));
+    } catch (error) {
+      // The box flipped natively on the click; a failed save must not leave it showing a state the computer never saved.
+      trigger.checked = !trigger.checked;
+      throw error;
+    }
   },
 };
 

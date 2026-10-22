@@ -37,16 +37,21 @@ test('Agent editor: visible creation, shared routes, saved capabilities/channels
   const hint=await page.locator('.agent-create-hint').boundingBox(),column=await page.locator('.agent-detail-column').boundingBox();
   assert.ok(hint&&hint.height>0&&hint.y+hint.height<=column.y+1,`hint ${JSON.stringify(hint)} overlaps the editor at ${column?.y}`);
   // 这台电脑上: a device-local switch outside the edit session, saved at once, never synced.
+  // The checkbox flips natively on the click; the invariant is what the server has saved, so wait for that.
+  const deviceSaved=async expected=>{
+    for(let i=0;i<50;i++){if(JSON.stringify((await boot()).settings.localPreferences.agentDevice)===JSON.stringify(expected))return;await new Promise(r=>setTimeout(r,100));}
+    assert.deepEqual((await boot()).settings.localPreferences.agentDevice,expected);
+  };
   await page.locator('.agent-device-section>summary').click();
   const location=page.locator('[data-action=toggle-agent-device-permission][data-permission=location]');
   assert.equal(await location.isChecked(),false,'location is off until the user turns it on');
   await location.click();
-  await page.waitForFunction(()=>document.querySelector('[data-action=toggle-agent-device-permission][data-permission=location]')?.checked===true);
-  assert.deepEqual((await boot()).settings.localPreferences.agentDevice,{research:{location:true}});
+  await deviceSaved({research:{location:true}});
+  assert.equal(await location.isChecked(),true);
   assert.equal((await boot()).customize.agents.find(a=>a.id==='research').capabilities.network,initial.capabilities.network,'the synced capability set is untouched');
   await location.click();
-  await page.waitForFunction(()=>document.querySelector('[data-action=toggle-agent-device-permission][data-permission=location]')?.checked===false);
-  assert.deepEqual((await boot()).settings.localPreferences.agentDevice,{});
+  await deviceSaved({});
+  assert.equal(await location.isChecked(),false);
   // Rename with collapsed capability/channel sections: all saved configuration survives.
   await form.locator('[data-action=form-settings-edit]').click();
   await form.locator('[name=name]').fill('Research renamed');
