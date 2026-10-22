@@ -1,5 +1,17 @@
 # Android verification — 2026-10-18
 
+## 2026-10-22 — 0.8.0 (17) 桌宠悬浮窗（分支 `feature/android-desktop-pet`，未合入 master）
+
+本机首次搭建 Android 工具链（Homebrew openjdk@21、android-commandlinetools：platforms;android-37.0、build-tools;36.0.0、platform-tools、emulator、system-images;android-36;google_apis;arm64-v8a），新建 AVD `melo_pet_qa_20261022`（pixel_7，API 36，`-no-window -gpu swiftshader_indirect -noaudio`）。144 JVM JVM、Lint 零 Error、Debug / R8 Release 构建通过；`python3 android/scripts/verify-apk.py` 对 Debug APK 签名与 16 KiB alignment 通过。Debug APK 219.5 MB（素材 133 MiB 未压缩打包）。
+
+Emulator `PetOverlayFlowTest` 2/2 通过（17.0 s + 4.3 s）：`appops` 授予 `SYSTEM_ALERT_WINDOW` 后由测试进程启动前台服务；断言真实 `TYPE_APPLICATION_OVERLAY` 窗口只覆盖身体包围盒、WebView 回报首段 VP9+alpha 解码为 480×270；注入手指触摸：单击 → 点击回应动作、拖动 → 拖拽动作 / 窗口移动 / 松手贴右边并持久化、长按 → 菜单窗口 / 外部触摸关闭、双击 → 「我在听…」→ Fixture 识别器回传文字 → 本地 Fixture 模型 → 气泡显示回复开头、专用「桌宠」对话两条消息、第二次提问复用同一对话；换成大肥鱼后继续解码；通知「关闭桌宠」动作移除全部窗口并关掉开关，重新开启后重建。首轮长按失败是测试只注入 DOWN/UP 不带 MOVE，改为带采样的手指手势后通过；并行跑 Lint / R8 时 WebView 初始化超过 25 秒导致一次超时，已把首次解码等待放宽到 150 秒，不放宽断言。
+
+完整 Emulator 套件（`npm run test:android:connected`，含 Node mobile-sync Fixture）本机 77 项：75 通过，2 失败——`AndroidFlowTest.foregroundReplyContinuesWhileActivityIsStopped`（回前台时旧 Activity 尚未 STOPPED，ActivityScenario 未接管新实例）与 `DeviceAgentTest.launchableAppsAreDiscoverableAndOpenOnTheSelectedDisplay`（前台窗口为 systemui）。两者与桌宠代码无交互：DeviceAgentTest 单独重跑通过；前者在本分支与未改动的 origin/master（临时 worktree，同一模拟器）各单独运行 2 次均通过，属于按完成时机重启 Activity 的时序竞争，只在整套顺序运行时出现。本机未把整套结果视为通过，以 PR CI 的 x86_64 Emulator 完整运行为准。
+
+手工核对：模拟器上「系统 → 桌宠」页按 Melo 设计语言渲染，打开开关后金冬天悬浮在系统桌面右缘（窗口 205×243 px），`adb input` 单击换动作、长按出现关闭 / 换肤 / 打开 Melo 菜单，点外部关闭；截图在本会话 scratchpad。模拟器 `-noaudio`，真实 `SpeechRecognizer`（google_apis 镜像有 AiAi 识别服务与 Google TTS）未能用真声验证，双击链路只以 Fixture 识别器证明。
+
+边界：Fold6 / One UI 8.5 真机、三星省电是否杀前台服务、真实语音识别与朗读、Android 14+ 后台切换麦克风前台类型的实际策略、锁屏后恢复、CI 的 x86_64 Emulator 时序均未验；没有 git pp / 真实模型请求 / 用户数据改动。
+
 ## 2026-10-19 — 0.7.1 (16) Brave 与重试续接
 
 153 Node / 117 JVM、Lint 零 Error、Debug / R8 / test APK、49 同源 Fixtures、Emulator 外屏 18 + 展开 10 次最终执行通过。13 项续接回归覆盖当前配置生效、连续重试、限制保持、换题/取消、此前 App 上下文及缺权限/Backend；三协议真实 Android Host + HTTP Fixture 验证重试确实发出 Brave GET 和认证 Header。首轮测试类名错误和此前断言失败保留，未放宽行为。

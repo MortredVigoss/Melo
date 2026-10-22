@@ -151,7 +151,7 @@ import com.melo.android.network.HostedSearchAdapter
     Column { Text("所属项目"); FilterChip(selected = selected == null, onClick = { change(null) }, label = { Text("未绑定") }); data.projects.filterNot { it.archived }.forEach { project -> FilterChip(selected = selected == project.id, onClick = { change(project.id) }, label = { Text(project.name) }) } }
 }
 
-@Composable fun SettingsScreen(data: AppData, runtime: ChatRuntime, vm: MeloViewModel, onPhoneSettings: () -> Unit = {}) {
+@Composable fun SettingsScreen(data: AppData, runtime: ChatRuntime, vm: MeloViewModel, onPhoneSettings: () -> Unit = {}, onPetSettings: () -> Unit = {}) {
     var editing by remember { mutableStateOf<Connection?>(null) }
     var syncEndpoint by remember(data.settings.syncEndpoint) { mutableStateOf(data.settings.syncEndpoint) }
     var syncKey by remember { mutableStateOf("") }
@@ -170,7 +170,7 @@ import com.melo.android.network.HostedSearchAdapter
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri -> uri?.let { vm.engine.work { vm.repository.exportTo(it); tested = "文字资料已导出，不含凭证与图片文件。" } } }
     val import = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { vm.engine.work { vm.repository.importFrom(it); tested = "资料已合并导入。" } } }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp).testTag("settings-list"), contentPadding = PaddingValues(bottom = 30.dp)) {
-        item { TextButton(onClick = onPhoneSettings) { Text("手机控制设置与诊断") } }
+        item { Row { TextButton(onClick = onPhoneSettings) { Text("手机控制设置与诊断") }; TextButton(onClick = onPetSettings, modifier = Modifier.testTag("open-pet-settings")) { Text("桌宠") } } }
         item { SectionLabel("模型连接"); Text("凭证仅在这台设备加密保存，不进入资料同步或导出。", color = MeloMuted) }
         items(data.settings.connections, key = { it.id }) { connection ->
             val credentialStatus by produceState("正在检查本机凭证…", connection.id, editing) {

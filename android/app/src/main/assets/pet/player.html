@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Melo 桌宠</title>
+<style>
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
+  #stage { position: relative; width: 100%; height: 100%; }
+  video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; opacity: 0; pointer-events: none; background: transparent; }
+  video.front { opacity: 1; }
+  video.mirror { transform: scaleX(-1); }
+</style>
+</head>
+<body>
+<div id="stage">
+  <video id="a" playsinline muted preload="auto" disableremoteplayback></video>
+  <video id="b" playsinline muted preload="auto" disableremoteplayback></video>
+</div>
+<script>
+(function () {
+  // Two <video> elements alternate so a clip change never shows an empty frame:
+  // the next clip is loaded and started behind the current one, then brought to front.
+  var videos = [document.getElementById('a'), document.getElementById('b')];
+  var front = 0;
+  var active = null;
+  function report(type, extra) {
+    var payload = Object.assign({ type: type }, extra || {});
+    try { if (window.PetBridge) PetBridge.onEvent(JSON.stringify(payload)); } catch (error) { /* bridge unavailable in a plain browser */ }
+  }
+  function detach(video) { video.oncanplay = null; video.onplaying = null; video.onended = null; video.onerror = null; }
+  function play(file, token, mirror) {
+    var back = videos[1 - front];
+    var old = videos[front];
+    active = { token: token, file: file };
+    detach(back);
+    back.classList.toggle('mirror', !!mirror);
+    back.oncanplay = function () {
+      if (!active || active.token !== token) return;
+      back.oncanplay = null;
+      var started = back.play();
+      if (started && started.catch) started.catch(function (error) { report('error', { token: token, message: String(error) }); });
+    };
+    back.onplaying = function () {
+      if (!active || active.token !== token) return;
+      back.onplaying = null;
+      back.classList.add('front');
+      old.classList.remove('front');
+      detach(old);
+      old.pause();
+      front = 1 - front;
+      report('playing', { token: token, width: back.videoWidth, height: back.videoHeight, duration: back.duration });
+    };
+    back.onended = function () { if (active && active.token === token) report('ended', { token: token }); };
+    back.onerror = function () {
+      var detail = back.error || {};
+      report('error', { token: token, code: detail.code || 0, message: detail.message || 'media error' });
+    };
+    back.src = file;
+    back.load();
+  }
+  function stop() { active = null; videos.forEach(function (video) { detach(video); video.pause(); }); }
+  window.petPlayer = { play: play, stop: stop };
+  report('ready', { userAgent: navigator.userAgent });
+})();
+</script>
+</body>
+</html>

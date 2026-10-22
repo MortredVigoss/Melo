@@ -6,7 +6,7 @@
 
 已验证：JDK 21、Gradle 9.6.0、AGP 9.4.1、Kotlin / Compose Compiler 2.4.21、KSP 2.3.12、Compose BOM 2026.09.00、Room 2.8.5、Lifecycle 2.11.0、Activity 1.13.0、WebKit 1.17.1、Coroutines / Serialization 1.11.0、OkHttp 5.5.0。所有版本固定，无动态版本或 preview 依赖。
 
-`compileSdk 37`，`targetSdk 36`（Android 16），`minSdk 28`。SDK Manager 中安装 `platforms;android-37.0`、`build-tools;36.0.0` 和 `platform-tools`。设置 `ANDROID_HOME`，或用 Android Studio 打开本目录并配置 SDK。Gradle Wrapper 校验下载 SHA-256。
+`compileSdk 37`，`targetSdk 36`（Android 16），`minSdk 28`。SDK Manager 中安装 `platforms;android-37.0`、`build-tools;36.0.0` 和 `platform-tools`。设置 `ANDROID_HOME`，或用 Android Studio 打开本目录并配置 SDK。Gradle Wrapper 校验下载 SHA-256。Mac 上用 Homebrew（`brew install openjdk@21 android-commandlinetools`，再 `sdkmanager` 装上述包）时还要 `export JAVA_HOME=/opt/homebrew/opt/openjdk@21`，否则 `gradlew`、`apksigner` 和 npm 的 Android gate 都找不到 Java；模拟器验证另装 `emulator` 与 `system-images;android-36;google_apis;arm64-v8a`。
 
 ```bash
 # 在仓库根目录运行；Android 构建本身不依赖 npm install
@@ -93,6 +93,34 @@ Search Key 本机 Keystore 加密、绑定具体 endpoint，不使用模型 Key�
 共享 schema 和 8 MiB budget 会在数据进入本机前校验。删除使用 tombstone；workspace 并发版本保留到显式处理；消息、任务与接力的身份冲突会拒绝合并并保留原数据。Credentials、图片文件和本机偏好不参与 portable snapshot。文字资料 import 是合并操作。
 
 运行中的 user prompt 先落盘，assistant 仅在有效 completion receipt 后落盘；partial 内容单独记录。Activity recreation 不取消请求，后台请求使用带取消按钮的 Foreground Service。系统终止进程后，下次启动标记 interrupted，允许显式重试；不会自动重新发起计费请求。
+
+## 桌宠（0.8.0）
+
+「系统 → 桌宠」打开开关后，金冬天（默认）或大肥鱼常驻在其他 App 上面，Melo 退到后台也留在屏幕上，直到在同一页关闭、长按菜单选「关闭桌宠」或点常驻通知的「关闭桌宠」。实现是 `pet/PetOverlayService.kt`：`SYSTEM_ALERT_WINDOW` + `TYPE_APPLICATION_OVERLAY` 的自有前台服务（`foregroundServiceType="specialUse|microphone"`，清单 `<property>` 写明用途），不依赖无障碍服务。
+
+- **窗口只有她身体那么大**：导入脚本用 alpha 通道量出每段动作的不透明包围盒，悬浮窗按当前动作的包围盒（加 6 px 边）布局，WebView 舞台在窗口内偏移；待机时窗口约 158×190（舞台 480×270 单位），放烟花等大动作时临时放大，其余屏幕照常点击。气泡和长按菜单是另外两个窗口（气泡不可点）。
+- **触摸**：拖动移动，松手贴最近的左右边并记住位置（`PetPreferences`，SharedPreferences，不进同步/导出）；单击从 5 个点击回应里随机播一个；双击开始语音输入：播「东张西望」并出「我在听…」气泡，`SpeechRecognizer` 在服务里监听（前台服务临时加 `microphone` 类型），识别结果发到专用「桌宠」对话（记住 id，删除或归档后重建，用当前默认模型连接），回复用 `TextToSpeech` 朗读并在气泡显示开头（超过 80 字提示到 Melo 看全文），朗读时单击停止；长按菜单：关闭桌宠 / 换成另一皮肤 / 打开 Melo / 停止朗读。思考、等流式回复、出错分别播「工作状态-思考冒泡 / 忙碌点按 / 垂头叹气冒汗」，收到回复播「雀跃庆祝」。
+- **自动动作**（`PetScheduler`，纯 Kotlin，JVM 测试）：按桌面版规则优先待机；启动、点击与非待机动作结束后休息 30–60 秒（设置页可改基准）只播待机，到期按权重 idle 10 / turn 5 / move 5 / 其余按类别权重随机抽；「东张西望」播完翻转朝向，文字类动作不镜像。
+- **动画播放**：悬浮窗里的透明 `WebView` 加载 `assets/pet/player.html`，两个 `<video>` 交替播放打包的 VP9+alpha WebM（Chromium 内核软解），JS 把 ready / playing / ended / error 回传给服务决定下一段。
+- **设置页**：开关（先引导「显示在其他应用上层」，再请求通知与麦克风权限）、皮肤、大小、自动动作与间隔、识别语言、朗读开关、后台运行（跳系统电池优化与应用信息，三星 One UI 需在应用信息「电池」选「不受限制」）。锁屏不显示悬浮窗是系统限制。
+
+### 素材：导入、打包与 Git 边界
+
+素材不进 Git。`android/app/src/main/assets/pet/catalog.json`（提交）记录动作目录、两套皮肤每段的文件名 / SHA-256 / 时长 / 包围盒、来源 revision 和 Release 包；`assets/pet/skins/`（忽略）放实际 WebM。
+
+```bash
+# 在有桌宠源目录（/Users/mortred/Documents/New project/desktop-pet）的机器上重新导入；可重复，源 revision 变化时按 hash 增量重编
+node android/scripts/import-pet-skins.mjs import [--width 480] [--crf 32] [--jobs 3] [--skins winter,fish] [--force]
+node android/scripts/import-pet-skins.mjs verify      # 本地媒体与 catalog 是否一致
+node android/scripts/import-pet-skins.mjs bundle --tag android-pet-assets-1   # 打 zip 并把 Release URL 写进 catalog
+gh release upload android-pet-assets-1 .tmp/android-pet-assets/<zip>          # 发布后其他机器 / CI 自动下载
+```
+
+金冬天来自 `skins/winter/winter-animation/*.webm`（960×540 → 480×270，30fps，libvpx-vp9 CRF 32，alpha 保留；导入时核对 `manifest.json` 的 revision 与每段 hash，源包重建中会拒绝）；大肥鱼来自 `upstream/assets/webm/`（dsh-pet v0.3.7 `90ddd827`，MIT；640×360 → 480×270，24fps）。当前 catalog：金冬天 74.6 MiB、大肥鱼 58.4 MiB，zip 133 MiB，Release `android-pet-assets-1`。
+
+Gradle 任务 `preparePetAssets`（`preBuild` 依赖）每次构建按 catalog 校验本地媒体的大小和 SHA-256；缺失或不一致时从 catalog 记录的 Release URL 下载 zip（校验 zip SHA-256 后解压，只接受 `skins/` 下条目），没有 URL 就报错并提示先导入。CI（`.github/workflows/android.yml`）不需要额外步骤。仓库没有 git-lfs，这是替代方案。
+
+纯 JS 导入逻辑在 `scripts/android-pet-assets.js`，测试 `scripts/android-pet-assets.test.js` 由日常 gate 自动发现；Kotlin 侧 `PetSchedulerTest` / `PetDialogueTest` / `PetCatalogTest`（含「catalog 必须记录可下载的 Release 包」）随 `testDebugUnitTest` 运行；`PetOverlayFlowTest` 在 Emulator 上用真实悬浮窗、注入触摸和 Fixture 识别器验证解码、单击 / 拖动 / 长按 / 双击 → Fixture 模型回复 → 气泡与专用对话，以及换肤与关闭。真实语音识别、三星省电与真机未在本机验证，见 [verification.md](verification.md)。
 
 ## Samsung / Fold 验证边界
 

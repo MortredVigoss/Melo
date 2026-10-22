@@ -44,6 +44,14 @@ Claude：用户要求补上上一轮留下的缺口并推送：信号处理拦�
 
 本地 `npm test`（扩大范围：4448 JS、37 Swift、两组浏览器）GREEN。Final commit: `30607c0`.
 
+## 2026-10-22 — 安卓桌宠：金冬天真正悬浮在其他 App 上，双击就能和 Melo 说话
+
+Claude：用户决定 iPhone 不做桌宠、桌面版另线并入，安卓要做成真正常驻在其他 App 上面的桌宠，动画播放选 WebView 方案，并授权推到 GitHub 给朋友真机测试。本轮在 `feature/android-desktop-pet` 分支实现「系统 → 桌宠」开关、自有前台服务悬浮窗、拖动 / 单击 / 双击语音 / 长按菜单、专用「桌宠」对话与朗读，以及可重跑的素材导入。
+设计承诺：悬浮窗只按当前动作的不透明包围盒布局（导入时用 alpha 量出），不整块舞台挡屏；不依赖无障碍服务；自动动作沿用桌面版「优先待机、动作后休息 30–60 秒」的规则并做成纯 Kotlin 状态机；素材不进 Git，catalog 记录 hash 与 Release 包，Gradle 构建时校验或下载，CI 无需改动。
+
+验证：Android JVM 144 项 / Lint 零 Error / Debug 与 R8 Release 构建；Emulator（Android 16）真实悬浮窗 `PetOverlayFlowTest` 2/2，覆盖 VP9+alpha 解码、单击 / 拖动贴边 / 长按菜单 / 双击 → Fixture 识别 → Fixture 模型 → 气泡与专用对话、换肤与关闭；手工在模拟器上截图核对桌宠悬浮在桌面之上。真实语音识别、三星省电与 Fold6 真机未验。
+本地 `npm test -- --files <任务文件>` GREEN（含新脚本测试与 Android check）；文档 + 地图提交触发的扩大回归中 512 JS、两组浏览器、Android 通过，Swift 仅 `CodexOAuthTests` 时序断言一次失败、单独重跑通过，PR CI 的 macOS Swift 与 Android 完整 Emulator 套件通过。Final commit: `28e1410`.
+
 ## 2026-10-22 — 桌面壳被信号结束不再留下孤儿服务，启动时回收而不是换端口
 
 Claude：用户观察到 `pkill -TERM` 结束 Melo 后子服务仍占默认端口，下次启动挪到 +1 端口，撞上原生服务的端口约定、新旧两版服务并存；同日"打不开"也由孤儿服务引起。
