@@ -22,8 +22,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 622,
-      "edges": 1893,
+      "modules": 623,
+      "edges": 1894,
       "roots": [
         "src",
         "desktop-ui",
@@ -2168,7 +2168,7 @@
       ],
       "modules": {
         "desktop-ui": 28,
-        "src": 81
+        "src": 82
       },
       "entryModules": [
         {
