@@ -53,6 +53,6 @@ Git LFS 未安装；按任务给出的替代方案采用仓库外固定目录 + 
 - 设置页的下拉在后台自动化下改不了值，最终由用户批准屏幕控制后在前台完成了两个方向的真机操作；此前的冷启动用 `defaults write` 置偏好作为等价入口。
 - 桌宠右键菜单「退出」与应用菜单「退出桌宠」走同一个 `shutdown()`；真机点的是应用菜单。双击打开对话的路径沿用前轮验收，本轮用应用菜单打开。
 - 第一次重开 Melo 时 `StaleServer.lockHolder` 的 `open()` 在主目录锁文件上阻塞约 2 分钟后才继续（采样见终端），与本轮改动无关（发生在桌宠逻辑之前），后续两次重开 3 秒内就绪；未深究，留作观察。
-- 旧入口 `~/Desktop/melo桌宠.app` 仍指向原项目与外部 Electron，本轮只在验收前把它启动的桌宠正常停止（SIGTERM），没有删除；同一 profile 单实例，两边不能同时运行。
+- 旧入口 `~/Desktop/melo桌宠.app` 与 `melo桌宠.command`（只是启动外部 Electron 的壳）已按用户要求移入废纸篓；验收前曾把它启动的桌宠正常停止（SIGTERM）。桌宠现在只由 Melo 的开关管理；素材生产线 `/Users/mortred/Documents/New project/desktop-pet` 原样保留。
 - CI 没有仓库外媒体：`winter-pack` 两项在 CI 记为显式跳过，本机与发布 gate 照常执行。
 - 装包脚本曾漏掉新增的 `owner-pipe.cjs`：Electron 在主进程 require 失败时停在错误对话框、不写运行记录，留下一个无用的控制进程。`bundle-desktop-pet.js` 现在在装包后核对控制进程所有本地 `require` 都已复制，缺一即失败。
