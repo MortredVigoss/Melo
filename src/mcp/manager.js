@@ -27,7 +27,7 @@ import { registerMcpTool, unregisterMcpServer, getMcpTool, mcpFunctionName } fro
 import { getMeloHome } from '../config.js';
 import { formatMcpToolId, isValidMcpServerId } from './toolId.js';
 import { buildEffectiveMcpServers } from './presets.js';
-export { mcpPresetToggleRefusalReason, getBuiltinMcpPresets, buildEffectiveMcpServers } from './presets.js';
+export { mcpPresetToggleRefusalReason, getBuiltinMcpPresets, buildEffectiveMcpServers, usableMcpServerIds } from './presets.js';
 
 /**
  * Resolve the **default working directory** for a per-server MCP child

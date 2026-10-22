@@ -60,7 +60,10 @@ test('Agent editor: visible creation, shared routes, saved capabilities/channels
   await form.locator('[name=instructions]').fill('My instructions');
   await form.locator('.agent-capabilities>summary').click();
   await form.locator('[name=cap_readFiles]').check();
-  await form.locator('[name=cap_mcpServers][value=playwright]').check();
+  // A new Agent arrives equipped with the MCP servers the install has on (2026-10-22);
+  // the whitelist still edits it.
+  for (const server of ['antv-chart','markdown2pdf','mermaid','playwright']) assert.equal(await form.locator(`[name=cap_mcpServers][value=${server}]`).isChecked(),true,server);
+  await form.locator('[name=cap_mcpServers][value=mermaid]').uncheck();
   await form.locator('[name=cap_delegate]').check();
   await form.locator('[name=cap_delegate]').uncheck();
   await form.locator('.agent-channels>summary').click();
@@ -74,7 +77,7 @@ test('Agent editor: visible creation, shared routes, saved capabilities/channels
   await form.locator('[data-action=form-settings-save]').click();await form.locator('[data-edit-status=saved]').waitFor();
   const saved=(await boot()).customize.agents.find(a=>a.id===id);
   assert.equal(saved.name,'Settings regression');assert.equal(saved.instructions,'My instructions');
-  assert.equal(saved.capabilities.readFiles,true);assert.deepEqual(saved.capabilities.mcpServers,['playwright']);
+  assert.equal(saved.capabilities.readFiles,true);assert.deepEqual(saved.capabilities.mcpServers,['antv-chart','markdown2pdf','playwright']);
   assert.equal(saved.collaboration.canDelegate,false);
   assert.equal(saved.channels.find(c=>c.id==='telegram').archived,true);
   assert.equal(saved.channels.find(c=>c.id==='discord').archived,true);

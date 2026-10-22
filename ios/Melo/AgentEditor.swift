@@ -104,7 +104,7 @@ struct AgentEditor: View {
             }.accessibilityIdentifier("role.startingPoint")
             Toggle("同时复制身份、人设与声音", isOn: Binding(get: { copyPersona }, set: { applyStart(source: startSource, copy: $0) }))
                 .disabled(startSource == nil).accessibilityIdentifier("role.copyPersona")
-            Text(LocalizedStringKey(startSource == nil ? "新 Agent 默认只开启读取文件、联网、知识与记忆；修改文件、运行命令、生成媒体和委派会在需要时询问你。" : "新 Agent 复制所选 Agent 的能力、协作与模型设置，之后两者各自独立；消息渠道和机器人令牌不会复制。"))
+            Text(LocalizedStringKey(startSource == nil ? "新 Agent 默认开启全部基础能力（「联网」即可网页搜索）；委派需要单独开启。" : "新 Agent 复制所选 Agent 的能力、协作与模型设置，之后两者各自独立；消息渠道和机器人令牌不会复制。"))
                 .font(.caption).foregroundStyle(.secondary)
             Text("这台手机上的联网、图片和手机数据权限不会复制；新 Agent 使用手机默认设置，保存后可在 Agent 页单独开启。").font(.caption).foregroundStyle(.secondary)
         }

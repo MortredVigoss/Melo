@@ -11,6 +11,8 @@ import { mergeAgentInstructions } from '../../domain/agent/agentDocument.js';
 import { normalizeAgentUpdatePatch, mergeChannelsWithStaleDraftGuard, buildNewCustomAgent } from './agentProfileService.js';
 import { normalizeAgentProfiles, normalizeAgentOverride, normalizeProjectAgentOverrides, dedupeAgentChannelTokenOwners, effectiveAgentProfile } from '../../state/agentProfiles.js';
 import { exportCommittedAgent } from './agentExport.js';
+import { installedEquipment } from './agentEquipment.js';
+import { loadConfig } from '../../config.js';
 
 // Architecture plan P1 (2026-10-19): Agent commands return a commit receipt
 // instead of the desktop bootstrap. Legacy HTTP responses are rebuilt by
@@ -129,12 +131,14 @@ export async function createCustomAgent(options = {}) {
   if (options?.basedOn != null && options.basedOn !== '' && !basedOnId) throw Object.assign(new Error('Unknown Agent to copy from.'), { statusCode: 400 });
   let createdId;
   let before;
+  // Loaded before the write queue: MCP servers come from the config.
+  const config = await loadConfig();
   const committed = await updateStateAtomically(latestState => {
     const state = ensureSelectedEntities(latestState);
     before = recordSnapshot(state.agentProfiles);
     if (basedOnId && !Object.hasOwn(state.agentProfiles || {}, basedOnId)) throw Object.assign(new Error('Unknown Agent to copy from.'), { statusCode: 400 });
     const basedOn = basedOnId ? normalizeAgentProfiles(state.agentProfiles)[basedOnId] : null;
-    const {agentId,profile} = buildNewCustomAgent(state.agentProfiles, { basedOn, copyPersona: options?.copyPersona === true });
+    const {agentId,profile} = buildNewCustomAgent(state.agentProfiles, { basedOn, copyPersona: options?.copyPersona === true, equipment: installedEquipment(state, config) });
     createdId = agentId;
     state.agentProfiles = {...state.agentProfiles,[agentId]:profile};
     state.settings.selectedCustomizeSection = 'agents';

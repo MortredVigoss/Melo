@@ -205,14 +205,17 @@ export function filterConnectorsForAgent(connectors, profile) {
 
 // Returns only the skills this agent is allowed to use.
 // Two filter gates apply in sequence:
-//   1. Agent's own enabledSkillIds — if set, skill must be in that list
-//      (opt-in scoping from the agent side).
+//   1. The agent side: its capability set's skill whitelist (the editor's
+//      技能白名单); profiles not yet migrated use the legacy enabledSkillIds.
 //   2. Skill's allowedAgentIds — if set, the current agent id must be in
 //      that list (opt-in scoping from the skill side). A null/empty
 //      allowedAgentIds means the skill is global.
 export function filterSkillsForAgent(skills, profile) {
   if (!agentUsesTool(profile, 'skills')) return [];
-  const profileSkillIds = normalizeIdWhitelist(profile?.enabledSkillIds);
+  // Like MCP servers and connectors, a capability set is the only authority:
+  // a stale legacy `enabledSkillIds: []` used to hide every skill the editor
+  // showed as ticked (user report 2026-10-22).
+  const profileSkillIds = profile?.capabilities ? null : normalizeIdWhitelist(profile?.enabledSkillIds);
   const agentId = profile?.id || null;
   return skills.filter(skill => {
     if (profile?.capabilities && !profile.capabilities.skills.includes(skill.id)) return false;

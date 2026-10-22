@@ -1,6 +1,8 @@
 import {normalizeHandoff} from '../agents/handoff.js';
 import {migrateLegacyResults} from '../domain/artifact/artifactService.js';
 import { recommendedCapabilities } from '../domain/agent/capabilities.js';
+import { usableMcpServerIds } from '../mcp/presets.js';
+import { DEFAULT_CONFIG } from '../config.js';
 import { hydrateAgentRecords, hydrateProjectAgentRecords } from '../domain/agent/agentState.js';
 import { isDeepStrictEqual } from 'node:util';
 import { serializeChatForPersistence } from './chatManifest.js';
@@ -506,6 +508,10 @@ export async function hydrateChatThreads(state, { threadsDir, previousChats = []
   return repaired;
 }
 
+// Built-in skills a fresh install has on; every default Agent starts with
+// them and with the MCP presets the default config enables (2026-10-22).
+const DEFAULT_ENABLED_SKILL_IDS = Object.freeze(['skill-creator', 'project-planner', 'connector-builder', 'artifact-curator']);
+
 export function createDefaultState() {
   return {
     settings: {
@@ -518,12 +524,7 @@ export function createDefaultState() {
       selectedAgentId: 'main',
       selectedSkillId: BUILTIN_SKILLS[0].id,
       selectedConnectorId: BUILTIN_CONNECTORS[0].id,
-      enabledSkillIds: [
-        'skill-creator',
-        'project-planner',
-        'connector-builder',
-        'artifact-curator',
-      ],
+      enabledSkillIds: [...DEFAULT_ENABLED_SKILL_IDS],
       customSkills: [],
       enabledConnectorIds: [
         'openai-compatible',
@@ -544,7 +545,7 @@ export function createDefaultState() {
     commandRuns: [],
     externalConnectors: [],
     externalToolRuns: [],
-    agentProfiles: Object.fromEntries(Object.entries(normalizeAgentProfiles()).map(([id,p])=>[id,{...p,capabilities:recommendedCapabilities(id),collaboration:{...p.collaboration,canDelegate:id==='main',delegateTargets:id==='main'?['research','builder','reviewer']:[]}}])),
+    agentProfiles: Object.fromEntries(Object.entries(normalizeAgentProfiles()).map(([id,p])=>[id,{...p,capabilities:recommendedCapabilities(id,{skills:DEFAULT_ENABLED_SKILL_IDS,mcpServers:usableMcpServerIds(DEFAULT_CONFIG)}),collaboration:{...p.collaboration,canDelegate:id==='main',delegateTargets:id==='main'?['research','builder','reviewer']:[]}}])),
     projectAgentOverrides: {},
     tasks: [],
     approvals: [],

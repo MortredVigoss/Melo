@@ -241,9 +241,11 @@ const BASED_ON_PERSONA = ['instructions', 'rolePrompt', 'identity', 'soulMd', 's
  * @param {object} [options]
  * @param {object} [options.basedOn]   normalized global profile to copy settings from
  * @param {boolean} [options.copyPersona] also copy instructions, description, mood and voice
+ * @param {object} [options.equipment] skills / mcpServers / connectors the install has on
+ *   (agentEquipment.js); a fresh Agent starts with all of them
  * @returns {{ agentId: string, displayName: string, profile: object }}
  */
-export function buildNewCustomAgent(existingProfiles = {}, { basedOn = null, copyPersona = false } = {}) {
+export function buildNewCustomAgent(existingProfiles = {}, { basedOn = null, copyPersona = false, equipment = {} } = {}) {
   const agentId = nextCustomAgentId(existingProfiles);
   const idSuffix = agentId.split('-').pop();
   const displayName = `Custom agent ${idSuffix}`;
@@ -251,7 +253,7 @@ export function buildNewCustomAgent(existingProfiles = {}, { basedOn = null, cop
     'Stay adaptive, clear, and dependable. Use the configured tools and channels deliberately, and keep collaboration smooth.';
   const profile = normalizeAgentProfile(agentId, {
     isCustom: true,
-    capabilities: starterCapabilities(),
+    capabilities: normalizeCapabilities({ ...starterCapabilities(), skills: equipment.skills, mcpServers: equipment.mcpServers, connectors: equipment.connectors }),
     name: displayName,
     laneLabel: 'Custom lane',
     description:

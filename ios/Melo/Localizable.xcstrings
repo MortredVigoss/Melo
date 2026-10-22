@@ -35456,37 +35456,107 @@
         }
       }
     },
-    "新 Agent 默认只开启读取文件、联网、知识与记忆；修改文件、运行命令、生成媒体和委派会在需要时询问你。": {
+    "新 Agent 默认开启全部基础能力（「联网」即可网页搜索）；委派需要单独开启。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "新 Agent 默认只开启读取文件、联网、知识与记忆；修改文件、运行命令、生成媒体和委派会在需要时询问你。"
+            "value": "新 Agent 默认开启全部基础能力（「联网」即可网页搜索）；委派需要单独开启。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "A new agent starts with reading files, network access, and knowledge and memory only; it asks you when it needs to modify files, run commands, generate media or delegate."
+            "value": "A new agent starts with every base ability (with Network on, it can search the web); delegation is switched on separately."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "新しい Agent は既定でファイルの読み取り・ネットワーク接続・知識と記憶だけがオンです。ファイル編集・コマンド実行・メディア生成・委任が必要なときは確認します。"
+            "value": "新しい Agent はすべての基本機能で始まります（「ネットワーク接続」でウェブ検索できます）。委任は個別にオンにします。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "새 Agent는 기본적으로 파일 읽기, 네트워크 접근, 지식 및 기억만 켜져 있으며, 파일 수정·명령 실행·미디어 생성·위임이 필요하면 물어봅니다."
+            "value": "새 Agent는 모든 기본 기능으로 시작합니다(「네트워크 접근」으로 웹 검색 가능). 위임은 따로 켜야 합니다."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Un agente nuevo empieza solo con leer archivos, acceso a la red y conocimiento y memoria; te pregunta cuando necesita modificar archivos, ejecutar comandos, generar medios o delegar."
+            "value": "Un agente nuevo empieza con todas las capacidades básicas (con Acceso a la red puede buscar en la web); la delegación se activa por separado."
+          }
+        }
+      }
+    },
+    "已启用的技能和 MCP 服务也会默认带上；新的技能或 MCP 可随时在白名单里添加。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已启用的技能和 MCP 服务也会默认带上；新的技能或 MCP 可随时在白名单里添加。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": " The skills and MCP servers already enabled here come too; new skills or MCP servers can be added in the whitelists at any time."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この端末で有効なスキルと MCP サーバーも最初から使えます。新しいスキルや MCP はいつでもホワイトリストで追加できます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": " 이 기기에서 켜 둔 스킬과 MCP 서버도 기본으로 포함됩니다. 새 스킬이나 MCP는 언제든 화이트리스트에서 추가할 수 있습니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": " También vienen las habilidades y los servidores MCP ya activados aquí; puedes añadir nuevas habilidades o MCP en las listas permitidas cuando quieras."
+          }
+        }
+      }
+    },
+    "「联网」包含网页搜索、读取网页和本机定位。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「联网」包含网页搜索、读取网页和本机定位。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“Network access” covers web search, reading web pages and this computer’s location."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「ネットワーク接続」にはウェブ検索、ウェブページの読み取り、このコンピュータの位置情報が含まれます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「네트워크 접근」에는 웹 검색, 웹 페이지 읽기, 이 컴퓨터의 위치가 포함됩니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "«Acceso a la red» incluye la búsqueda web, la lectura de páginas web y la ubicación de este ordenador."
           }
         }
       }

@@ -3,6 +3,8 @@
 // 2026-10-22) so lower layers can read presets without reaching the tool
 // registry that manager.js imports; manager.js re-exports the public API.
 
+import { isValidMcpServerId } from './toolId.js';
+
 // ─── First-class browser MCPs ─────────────────────────────────────────────────
 
 /**
@@ -224,4 +226,22 @@ export function buildEffectiveMcpServers(mcpServers = {}, flags = {}) {
   }
 
   return effective;
+}
+
+/**
+ * Server ids an Agent can actually use under `config`: built-in presets whose
+ * flag is on plus the user's own `config.mcpServers`, minus disabled entries
+ * and presets `connectMcpServer` refuses (`unpinned`). New Agents start with
+ * all of them (user decision 2026-10-22); each Agent's MCP whitelist can still
+ * add or remove servers.
+ *
+ * @param {Object} config  loaded config (preset flags + optional mcpServers)
+ * @returns {string[]} sorted server ids
+ */
+export function usableMcpServerIds(config = {}) {
+  const user = config?.mcpServers && typeof config.mcpServers === 'object' ? config.mcpServers : {};
+  return Object.entries(buildEffectiveMcpServers(user, config || {}))
+    .filter(([id, server]) => isValidMcpServerId(id) && !server?.disabled && !server?.unpinned)
+    .map(([id]) => id)
+    .sort();
 }

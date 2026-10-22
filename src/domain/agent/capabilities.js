@@ -9,8 +9,10 @@ export function normalizeCapabilities(value) {
 export const emptyCapabilities = () => normalizeCapabilities({});
 // Every Agent shares the full base set (user decision 2026-10-22: sub-agents were
 // "useless" without web search and media); only the main Agent delegates by default.
-export function recommendedCapabilities(id) {
-  return normalizeCapabilities({readFiles:true,writeFiles:true,runCommands:true,network:true,knowledgeMemory:true,generateMedia:true,delegate:id==='main'});
+// `equipment` is what the install already has on (skills, MCP servers,
+// connectors): Agents start with all of it, and each whitelist can change later.
+export function recommendedCapabilities(id,{skills=[],mcpServers=[],connectors=[]}={}) {
+  return normalizeCapabilities({readFiles:true,writeFiles:true,runCommands:true,network:true,knowledgeMemory:true,generateMedia:true,delegate:id==='main',skills,mcpServers,connectors});
 }
 export function intersectCapabilities(a,b) {
   a=normalizeCapabilities(a);b=normalizeCapabilities(b);

@@ -132,7 +132,7 @@ function renderAgentCapabilities(selected,draft) {
     ...[['delegateTargets','委派对象'],['maxDelegationDepth','委派深度'],['maxIterations','成员轮数'],['maxTokens','成员 token 上限'],['timeoutMs','成员超时（毫秒）']].filter(([key])=>JSON.stringify(pending.baseline.current.collaboration[key])!==JSON.stringify(pending.requested.collaboration[key])).map(([key,label])=>`${t(label)}: ${settingText(pending.baseline.current.collaboration[key])} → ${settingText(pending.requested.collaboration[key])}`),
     ...[['projects','项目指引'],['knowledge','共享知识'],['memory','记忆']].filter(([key])=>pending.baseline.current.contextSources[key]!==pending.requested.contextSources[key]).map(([,label])=>`${t(label)}: ${t('开启')}`),
   ] : [];
-  return ui`<details class="agent-settings-section agent-capabilities" data-agent-section="${selected.id}:capabilities" ${pending || !selected.capabilities || agentsState.agentOpenSections[`${selected.id}:capabilities`] ? 'open' : ''}><summary>能力范围与协作</summary><p>关闭的能力在工具执行时拒绝；MCP 服务可自行执行命令，请只授权可信服务。</p><p>这些能力只约束这个 Agent 在电脑上的执行。手机上的联网、生成图片和手机数据，在手机的 Agent 页“这台手机上”单独设置。</p>
+  return ui`<details class="agent-settings-section agent-capabilities" data-agent-section="${selected.id}:capabilities" ${pending || !selected.capabilities || agentsState.agentOpenSections[`${selected.id}:capabilities`] ? 'open' : ''}><summary>能力范围与协作</summary><p>关闭的能力在工具执行时拒绝；MCP 服务可自行执行命令，请只授权可信服务。</p><p>${escapeHtml(t('「联网」包含网页搜索、读取网页和本机定位。'))}</p><p>这些能力只约束这个 Agent 在电脑上的执行。手机上的联网、生成图片和手机数据，在手机的 Agent 页“这台手机上”单独设置。</p>
     ${selected.editingScope==='project'?`<p>${escapeHtml(t('项目能力与协作设置只能收紧全局设置；需要更多能力时，请先编辑此 Agent 的全局设置。'))}</p>`:''}
     ${pending?`<section role="status"><strong>${escapeHtml(t('同步权限变更待桌面确认'))}</strong><p>${escapeHtml(t('收紧部分已生效。以下新增能力及协作、上下文变更尚未生效：'))}</p><p>${escapeHtml(pendingChanges.join('、')||t('协作或上下文设置'))}</p><button type="button" class="small-button" data-action="confirm-agent-settings" data-id="${escapeHtml(pending.id)}" data-expected="${escapeHtml(pending.fingerprint)}" data-accept="true" ${!selected.capabilities?'disabled':''}>${escapeHtml(t('确认应用同步设置'))}</button><button type="button" class="small-button" data-action="confirm-agent-settings" data-id="${escapeHtml(pending.id)}" data-expected="${escapeHtml(pending.fingerprint)}" data-accept="false">${escapeHtml(t('拒绝放宽，保留当前权限'))}</button></section>`:''}
     <input type="hidden" name="capabilityVersion" value="1">
@@ -401,7 +401,7 @@ function renderAgentPage() {
         </div>
         <p class="page-kicker-tip agent-create-hint">${escapeHtml(agentsState.agentCreateBase
           ? t('新 Agent 复制所选 Agent 的能力、协作与模型设置，之后两者各自独立；消息渠道和机器人令牌不会复制。')
-          : t('新 Agent 默认只开启读取文件、联网、知识与记忆；修改文件、运行命令、生成媒体和委派会在需要时询问你。'))}</p>
+          : `${t('新 Agent 默认开启全部基础能力（「联网」即可网页搜索）；委派需要单独开启。')}${t('已启用的技能和 MCP 服务也会默认带上；新的技能或 MCP 可随时在白名单里添加。')}`)}</p>
         <div class="agent-detail-column">${renderAgentWorkbench(selected)}</div>
       </div>
     </section>

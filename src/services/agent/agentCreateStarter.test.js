@@ -20,13 +20,15 @@ async function inHome(t, work) {
   return runWithRequestContext(createRequestContext({ home, env: { MELO_TEST_MODE: '1' } }), () => work(home));
 }
 
-test('the starter set is the contract one: every base ability except delegation; no MCP/skills/connectors', () => {
+test('the starter set is the contract one: every base ability except delegation, plus the equipment the install has on', () => {
   assert.deepEqual(CAPABILITY_ELEVATION.newAgentStarter, ['readFiles', 'writeFiles', 'runCommands', 'network', 'knowledgeMemory', 'generateMedia']);
   assert.deepEqual(starterCapabilities(), normalizeCapabilities({ readFiles: true, writeFiles: true, runCommands: true, network: true, knowledgeMemory: true, generateMedia: true }));
   const { profile } = buildNewCustomAgent({});
   assert.deepEqual(profile.capabilities, starterCapabilities());
   assert.equal(profile.capabilities.delegate, false, 'delegation is switched on per Agent');
-  assert.deepEqual([profile.capabilities.mcpServers, profile.capabilities.skills, profile.capabilities.connectors], [[], [], []]);
+  assert.deepEqual([profile.capabilities.mcpServers, profile.capabilities.skills, profile.capabilities.connectors], [[], [], []], 'nothing installed, nothing listed');
+  const equipped = buildNewCustomAgent({}, { equipment: { skills: ['skill-creator'], mcpServers: ['playwright'], connectors: ['ext-1'] } }).profile.capabilities;
+  assert.deepEqual(equipped, normalizeCapabilities({ ...starterCapabilities(), skills: ['skill-creator'], mcpServers: ['playwright'], connectors: ['ext-1'] }));
 });
 
 test('create: starter by default; "基于已有 Agent" copies settings, never channels, tokens, name or avatar; persona only when ticked', t => inHome(t, async home => {
@@ -44,7 +46,9 @@ test('create: starter by default; "基于已有 Agent" copies settings, never ch
   }, { home });
 
   const plain = await createCustomAgent();
-  assert.deepEqual(plain.agent.capabilities, starterCapabilities());
+  // Starter set plus what this home has on (default skills and MCP presets; agentEquipment.test.js).
+  assert.deepEqual({ ...plain.agent.capabilities, skills: [], mcpServers: [], connectors: [] }, starterCapabilities());
+  assert.ok(plain.agent.capabilities.skills.length > 0 && plain.agent.capabilities.mcpServers.length > 0);
 
   const copied = await createCustomAgent({ basedOn: 'builder' });
   const builder = (await loadState({ home })).agentProfiles.builder;

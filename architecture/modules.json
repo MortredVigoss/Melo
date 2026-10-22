@@ -22,8 +22,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 623,
-      "edges": 1894,
+      "modules": 624,
+      "edges": 1901,
       "roots": [
         "src",
         "desktop-ui",
@@ -271,7 +271,7 @@
       ],
       "modules": {
         "desktop-ui": 12,
-        "src": 48
+        "src": 49
       },
       "entryModules": [
         {
@@ -555,8 +555,8 @@
         "desktop-shell": 7,
         "memory": 11,
         "platform": 42,
-        "settings": 2,
-        "tools": 20
+        "settings": 3,
+        "tools": 21
       },
       "usedBy": {
         "approvals": 3,
@@ -664,6 +664,7 @@
           "src/index.saveAsSkill.test.js",
           "src/services/agent/agentColdRestart.test.js",
           "src/services/agent/agentCreateStarter.test.js",
+          "src/services/agent/agentEquipment.test.js",
           "src/services/agent/agentMemoryContext.slots.test.js",
           "src/services/agent/agentMemoryContext.tieredGate.test.js",
           "src/services/agent/agentMutations.test.js",
@@ -1870,7 +1871,7 @@
         "tools": 2
       },
       "usedBy": {
-        "agents": 2,
+        "agents": 3,
         "approvals": 8,
         "channels": 2,
         "chat": 9,
@@ -1878,7 +1879,7 @@
         "knowledge": 1,
         "media": 7,
         "memory": 14,
-        "platform": 16,
+        "platform": 17,
         "projects": 1,
         "sync": 1,
         "tools": 9,
@@ -2227,6 +2228,13 @@
           ]
         },
         {
+          "module": "src/mcp/presets.js",
+          "importedBy": [
+            "agents",
+            "platform"
+          ]
+        },
+        {
           "module": "src/mcp/toolId.js",
           "importedBy": [
             "agents",
@@ -2481,13 +2489,13 @@
         "settings": 9
       },
       "usedBy": {
-        "agents": 20,
+        "agents": 21,
         "approvals": 2,
         "chat": 38,
         "desktop-shell": 13,
         "media": 4,
         "memory": 1,
-        "platform": 14,
+        "platform": 15,
         "projects": 3,
         "settings": 2
       },
@@ -4007,9 +4015,9 @@
         "media": 2,
         "memory": 21,
         "projects": 6,
-        "settings": 16,
+        "settings": 17,
         "sync": 2,
-        "tools": 14,
+        "tools": 15,
         "voice": 2
       },
       "usedBy": {

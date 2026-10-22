@@ -18,6 +18,7 @@ const {
   mcpServerWorkspaceDir,
   buildMcpTool,
   reconcileMcpLifecycle,
+  usableMcpServerIds,
 } = await import('./manager.js');
 
 after(() => {
@@ -442,4 +443,15 @@ test('reconcileMcpLifecycle: works without a disconnect function (pure read)', (
     activeNames: ['orphan'],
   });
   assert.deepEqual(stale, [{ name: 'orphan', reason: 'removed' }]);
+});
+
+// 2026-10-22: Agents start with every MCP server they could actually use.
+test('usableMcpServerIds: enabled presets and user servers, never disabled, refused (unpinned) or malformed ones', () => {
+  assert.deepEqual(usableMcpServerIds({ enablePlaywrightMcp: true, enableAntvChartMcp: true, enableMarkdown2PdfMcp: true, enableMermaidMcp: true }),
+    ['antv-chart', 'markdown2pdf', 'mermaid', 'playwright']);
+  assert.deepEqual(usableMcpServerIds({ enablePlaywrightMcp: false, enableMermaidMcp: true }), ['mermaid'], 'a preset switched off is not offered');
+  const browserless = getBuiltinMcpPresets().find(preset => preset.id === 'browserless');
+  if (browserless?.unpinned) assert.deepEqual(usableMcpServerIds({ enableBrowserlessMcp: true }), [], 'connectMcpServer refuses an unpinned preset, so no Agent gets it');
+  assert.deepEqual(usableMcpServerIds({ mcpServers: { 'my-tool': { command: 'x' }, 'off-tool': { command: 'y', disabled: true }, 'bad id!': { command: 'z' } } }), ['my-tool']);
+  assert.deepEqual(usableMcpServerIds(), []);
 });

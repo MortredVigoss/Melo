@@ -12,9 +12,11 @@ import {runConfiguredMember} from '../testSupport/directAgentFixture.js';
 import {runSubAgent} from '../testSupport/directAgentFixture.js';
 const member=id=>({id,name:id,capabilities:recommendedCapabilities(id)});
 test('fresh disk and empty manifest have recommended capabilities; real legacy records keep migration preview',async()=>{
+ // Fresh installs also start with the skills and MCP presets they have on (2026-10-22).
+ const fresh=recommendedCapabilities('main',{skills:['artifact-curator','connector-builder','project-planner','skill-creator'],mcpServers:['antv-chart','markdown2pdf','mermaid','playwright']});
  const home=await mkdtemp(join(tmpdir(),'melo-agent-fresh-'));
- try {assert.deepEqual((await readStateSnapshot({home})).agentProfiles.main.capabilities,recommendedCapabilities('main'));}finally{await rm(home,{recursive:true,force:true});}
- assert.deepEqual(hydrateState({}).agentProfiles.main.capabilities,recommendedCapabilities('main'));
+ try {assert.deepEqual((await readStateSnapshot({home})).agentProfiles.main.capabilities,fresh);}finally{await rm(home,{recursive:true,force:true});}
+ assert.deepEqual(hydrateState({}).agentProfiles.main.capabilities,fresh);
  assert.equal(hydrateState({agentProfiles:{main:{tools:['local-files']}}}).agentProfiles.main.capabilities,null);
 });
 test('team preflight rejects every unmigrated member before any model call',async()=>{

@@ -285,7 +285,7 @@ test('create flow: read-only start by default; «基于已有 Agent» sends base
   assert.deepEqual([...doc.querySelectorAll('[data-agent-create-base] option')].map(o => o.value), ['', 'main', 'research']);
   assert.equal(doc.querySelector('[data-agent-create-base]').getAttribute('aria-label'), '新 Agent 的起点');
   assert.equal(doc.querySelector('[data-agent-create-persona]'), null, 'nothing to copy from a read-only start');
-  assert.match(doc.querySelector('.agent-create-hint').textContent, /默认只开启读取文件、联网、知识与记忆/);
+  assert.match(doc.querySelector('.agent-create-hint').textContent, /默认开启全部基础能力（「联网」即可网页搜索）.*已启用的技能和 MCP 服务也会默认带上/);
   assert.ok(doc.querySelector('[data-grants-for="research"]'), 'the selected Agent shows its temporary grants');
   await h.actions.dispatch('create-custom-agent', { action: 'create-custom-agent', trigger: null, event: null });
   assert.deepEqual(h.calls.at(-1), ['/api/agents/create-custom', 'POST', {}], 'the plain create keeps its empty body');
