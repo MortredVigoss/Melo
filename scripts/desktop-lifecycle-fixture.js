@@ -8,9 +8,11 @@ import { createServer, connect } from 'node:net';
 import { join } from 'node:path';
 
 const lockModule = new URL('../src/runtime/serverLock.js', import.meta.url);
+const ownerModule = new URL('../src/runtime/desktopOwner.js', import.meta.url);
 
 const SERVER_SOURCE = `import { createServer } from 'node:http';
 import { acquireServerHomeLock } from './runtime/serverLock.js';
+import { stopWhenDesktopOwnerExits } from './runtime/desktopOwner.js';
 const option = name => process.argv[process.argv.indexOf(name) + 1];
 const home = process.env.MELO_HOME;
 const lock = await acquireServerHomeLock(home);
@@ -22,18 +24,17 @@ const server = createServer((request, response) => {
     : api ? '{}' : '<!doctype html><title>Melo lifecycle fixture</title><p>fixture</p>');
 });
 server.listen(Number(option('--port')), option('--host'), () => console.log('ready ' + process.pid));
-const stop = () => {
-  if (process.env.MELO_FIXTURE_IGNORE_TERM === '1') return;
-  server.close();
-  lock.release().finally(() => process.exit(0));
-};
+const release = () => { server.close(); lock.release().finally(() => process.exit(0)); };
+const stop = () => { if (process.env.MELO_FIXTURE_IGNORE_TERM !== '1') release(); };
 for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(signal, stop);
+stopWhenDesktopOwnerExits({ onOwnerGone: release });
 `;
 
 export async function writeFixtureProject(project) {
-  // The real lock module, at the same path the real server imports it from.
+  // The real runtime modules, at the paths the real server imports them from.
   await mkdir(join(project, 'src/runtime'), { recursive: true });
   await copyFile(lockModule, join(project, 'src/runtime/serverLock.js'));
+  await copyFile(ownerModule, join(project, 'src/runtime/desktopOwner.js'));
   await mkdir(join(project, 'desktop-ui'), { recursive: true });
   await writeFile(join(project, 'src/server.js'), SERVER_SOURCE);
   await writeFile(join(project, 'desktop-ui/index.html'), '<!doctype html><title>fixture</title>');

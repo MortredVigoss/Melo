@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
 import { acquireServerHomeLock } from '../src/runtime/serverLock.js';
+import { DESKTOP_OWNER_PIPE_ENV } from '../src/runtime/desktopOwner.js';
 import {
   writeFixtureProject, fixtureEnv, serverArgs, startOrphanServer, waitFor, isAlive, parentPid,
   processesMatching, killMatching, portAccepts, freePortPair,
@@ -190,6 +191,9 @@ test('desktop shell stops its server child on signals and only reclaims its own 
       assert.equal(calls.length, 2, 'one definition and one call');
       assert.ok(calls[0] > launchServer && calls[0] < main.indexOf('private func spawnServer()'), 'only the post-reclaim path spawns');
       assert.match(await readFile('scripts/build-desktop-app.sh', 'utf8'), /desktop-app\/StaleServer\.swift/);
+      // SIGKILL runs no handler: the server needs the flag and a pipe only the window holds.
+      assert.ok(main.includes(`"${DESKTOP_OWNER_PIPE_ENV}": "1"`), 'the window flags its server as owned');
+      assert.match(main, /fcntl\(ownerPipe\.fileHandleForWriting\.fileDescriptor, F_SETFD, FD_CLOEXEC\)[\s\S]*?process\.standardInput = ownerPipe/);
     });
   } finally {
     for (const child of spawned) { try { child.kill('SIGKILL'); } catch {} }

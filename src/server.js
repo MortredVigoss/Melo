@@ -25,6 +25,7 @@ import { createRequestContext } from './runtime/requestContext.js';
 import { currentRequestContext, runWithRequestContext } from './runtime/requestScope.js';
 import { errorPayload } from './services/chat/requestContract.js';
 import { acquireServerHomeLock } from './runtime/serverLock.js';
+import { stopWhenDesktopOwnerExits } from './runtime/desktopOwner.js';
 import { createServer } from 'node:http';
 import { createReadStream } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
@@ -1319,6 +1320,8 @@ function shutdown() {
 
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
+// A killed or crashed desktop window sends no signal; its closed pipe does.
+stopWhenDesktopOwnerExits({ onOwnerGone: shutdown });
 
 // uncaughtException / unhandledRejection — emergency-exit path.
 // (Codex P2 from review #11/#12, 2026-05-04: hygiene cleanup

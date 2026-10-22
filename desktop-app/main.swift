@@ -414,6 +414,8 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
       // var. Without it those reads fall back to 43127 and miss the actual
       // listener on 43128/43129/...
       "MELO_DESKTOP_PORT": String(port),
+      // See ownerPipe below; src/runtime/desktopOwner.js reads this flag.
+      "MELO_DESKTOP_OWNER_PIPE": "1",
       "PATH": [
         "/opt/homebrew/bin",
         "/usr/local/bin",
@@ -424,6 +426,12 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
       ].joined(separator: ":"),
     ], uniquingKeysWith: { _, launchValue in launchValue })
 
+    // A SIGKILL or crash skips every handler here; the kernel then closes this
+    // pipe's write end and the server stops on EOF. Nothing is written to it.
+    // Close-on-exec keeps the write end out of the server and every other child.
+    let ownerPipe = Pipe()
+    _ = fcntl(ownerPipe.fileHandleForWriting.fileDescriptor, F_SETFD, FD_CLOEXEC)
+    process.standardInput = ownerPipe
     let outputPipe = Pipe()
     process.standardOutput = outputPipe
     process.standardError = outputPipe

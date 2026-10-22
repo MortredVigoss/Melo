@@ -22,8 +22,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 621,
-      "edges": 1892,
+      "modules": 622,
+      "edges": 1893,
       "roots": [
         "src",
         "desktop-ui",
@@ -3648,6 +3648,7 @@
       },
       "implicit": [
         "bridge-desktop-native",
+        "bridge-desktop-owner-pipe",
         "bridge-process-shutdown",
         "bridge-stale-server",
         "gen-interface-languages",
@@ -3734,7 +3735,7 @@
         "src/**"
       ],
       "modules": {
-        "src": 51
+        "src": 52
       },
       "entryModules": [
         {
@@ -4065,6 +4066,7 @@
           "src/runtime/boundedLog.test.js",
           "src/runtime/capabilities.test.js",
           "src/runtime/chatContract.http.test.js",
+          "src/runtime/desktopOwner.test.js",
           "src/runtime/identity.test.js",
           "src/runtime/nativeSearchEvidence.test.js",
           "src/runtime/paths.test.js",
@@ -4098,6 +4100,7 @@
         "swift": []
       },
       "implicit": [
+        "bridge-desktop-owner-pipe",
         "bridge-process-shutdown",
         "bridge-stale-server",
         "served-shared-modules",
@@ -4281,6 +4284,7 @@
       },
       "implicit": [
         "agent-core-bundle",
+        "bridge-desktop-owner-pipe",
         "bridge-process-shutdown",
         "bridge-stale-server",
         "ci-workflow-selection",
@@ -5021,6 +5025,27 @@
         "scripts/desktop-server-lifecycle.test.js"
       ],
       "note": "原生壳收到 SIGTERM/SIGINT/SIGHUP 先停子服务再退出；启动时按 SQLite 主目录锁的内核持有者识别、只停止本项目被遗弃的服务。锁文件名或加锁方式改动须同步 StaleServer.swift",
+      "features": [
+        "desktop-shell",
+        "platform",
+        "tooling"
+      ]
+    },
+    {
+      "id": "bridge-desktop-owner-pipe",
+      "kind": "native-bridge",
+      "from": [
+        "desktop-app/main.swift"
+      ],
+      "to": [
+        "src/runtime/desktopOwner.js",
+        "src/server.js"
+      ],
+      "tests": [
+        "src/runtime/desktopOwner.test.js",
+        "scripts/desktop-server-lifecycle.test.js"
+      ],
+      "note": "原生壳把只由自己持有写端的管道作为子服务 stdin 并设置标志；窗口被 SIGKILL 或崩溃时内核关闭管道，服务读到 EOF 后按正常流程关停。标志名两端须一致",
       "features": [
         "desktop-shell",
         "platform",

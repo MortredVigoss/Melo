@@ -1,6 +1,6 @@
-// Real-bundle check for the desktop shell's server lifecycle: a signalled
-// Melo window leaves no server behind, and a server orphaned by a killed
-// window is replaced on the same port instead of shifting to port + 1. It runs
+// Real-bundle check for the desktop shell's server lifecycle: a signalled or
+// SIGKILLed Melo window leaves no server behind, and a server orphaned by an
+// older window is replaced on the same port instead of shifting to port + 1. It runs
 // a built Melo.app against a stand-in project, home and port, so the user's
 // own Melo, home and 43127 are never touched.
 //   node scripts/smoke-desktop-lifecycle.js [path/to/Melo.app]
@@ -44,6 +44,8 @@ async function signalShell({ shell, exited, serverPid }, { project, port }, sign
   process.kill(shell.pid, signal);
   const result = await Promise.race([exited, new Promise((_, reject) => setTimeout(() => reject(new Error(`${signal}: Melo did not exit`)), 15000))]);
   assert.equal(result.signal, signal, `${signal}: Melo ends with the signal it received`);
+  // SIGKILL runs no handler: the server follows through its closed owner pipe.
+  if (signal === 'SIGKILL') await waitFor(() => !isAlive(serverPid), { timeoutMs: 10000, what: `SIGKILL: server ${serverPid} to follow Melo` });
   assert.equal(isAlive(serverPid), false, `${signal}: server ${serverPid} outlived Melo`);
   assert.equal(await portAccepts(port), false, `${signal}: ${port} still served`);
   assert.equal(await portAccepts(port + 1), false, `${signal}: native service on ${port + 1} still served`);
@@ -57,7 +59,7 @@ async function main() {
   try {
     const project = join(root, 'project');
     const script = await writeFixtureProject(project);
-    for (const signal of ['SIGTERM', 'SIGINT']) {
+    for (const signal of ['SIGTERM', 'SIGINT', 'SIGKILL']) {
       const context = { project, home: join(root, `home-${signal}`), port: await freePortPair() };
       const running = await launchShell(context);
       assert.equal(parentPid(running.serverPid), running.shell.pid, 'the server is the window\'s own child');
