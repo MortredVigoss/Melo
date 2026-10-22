@@ -304,7 +304,7 @@ async function handleCreateCustomAgent() {
   agentsState.agentCreating = true;
   render();
   try {
-    // Capability elevation rule 6: the read-only starter set, or a copy of an
+    // Capability elevation rule 6: the full base starter set, or a copy of an
     // existing Agent's settings (persona only when ticked). The plain create
     // keeps its original empty body.
     const basedOn = agentsState.agentCreateBase || '';

@@ -22,8 +22,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 620,
-      "edges": 1890,
+      "modules": 621,
+      "edges": 1891,
       "roots": [
         "src",
         "desktop-ui",
@@ -2167,7 +2167,7 @@
       ],
       "modules": {
         "desktop-ui": 28,
-        "src": 80
+        "src": 81
       },
       "entryModules": [
         {
@@ -2600,6 +2600,7 @@
           "src/services/export/pdfLibOps.test.js",
           "src/services/export/pdfRender.test.js",
           "src/services/search/apiDirect.test.js",
+          "src/services/search/defaultSearch.test.js",
           "src/services/search/hostedSearchCapability.test.js",
           "src/services/search/searchResultsBuilder.test.js",
           "src/services/search/searchService.test.js",
@@ -2613,6 +2614,7 @@
           "src/services/viz/citation.test.js",
           "src/services/viz/vizSpec.test.js",
           "src/tools/builtins/browserTools.test.js",
+          "src/tools/builtins/deviceLocationTool.test.js",
           "src/tools/builtins/fetchUrlTool.cdpChrome.test.js",
           "src/tools/builtins/fetchUrlTool.evidenceTrail.test.js",
           "src/tools/builtins/fetchUrlTool.socialRoute.test.js",
@@ -3595,6 +3597,7 @@
         "desktop-ui/tokens.css",
         "desktop-ui/translations.js",
         "desktop-ui/undoToast.js",
+        "desktop-app/NativeLocation.swift",
         "desktop-app/ProcessShutdown.swift",
         "desktop-app/main.swift"
       ],

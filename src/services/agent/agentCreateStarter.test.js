@@ -1,6 +1,6 @@
-// Capability elevation rule 6 (2026-10-20): new custom Agents start from a
-// read-only starter set, or copy an existing Agent's settings at creation
-// time ("基于已有 Agent"); existing Agents keep their settings untouched.
+// Capability elevation rule 6: new custom Agents start from the contract's
+// starter set — every base ability except delegation since 2026-10-22 (user
+// decision) — or copy an existing Agent's settings ("基于已有 Agent").
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -20,12 +20,12 @@ async function inHome(t, work) {
   return runWithRequestContext(createRequestContext({ home, env: { MELO_TEST_MODE: '1' } }), () => work(home));
 }
 
-test('the starter set is the contract one: read files, network, knowledge & memory; nothing else, no MCP/skills/connectors', () => {
-  assert.deepEqual(CAPABILITY_ELEVATION.newAgentStarter, ['readFiles', 'network', 'knowledgeMemory']);
-  assert.deepEqual(starterCapabilities(), normalizeCapabilities({ readFiles: true, network: true, knowledgeMemory: true }));
+test('the starter set is the contract one: every base ability except delegation; no MCP/skills/connectors', () => {
+  assert.deepEqual(CAPABILITY_ELEVATION.newAgentStarter, ['readFiles', 'writeFiles', 'runCommands', 'network', 'knowledgeMemory', 'generateMedia']);
+  assert.deepEqual(starterCapabilities(), normalizeCapabilities({ readFiles: true, writeFiles: true, runCommands: true, network: true, knowledgeMemory: true, generateMedia: true }));
   const { profile } = buildNewCustomAgent({});
   assert.deepEqual(profile.capabilities, starterCapabilities());
-  for (const key of ['writeFiles', 'runCommands', 'generateMedia', 'delegate']) assert.equal(profile.capabilities[key], false, key);
+  assert.equal(profile.capabilities.delegate, false, 'delegation is switched on per Agent');
   assert.deepEqual([profile.capabilities.mcpServers, profile.capabilities.skills, profile.capabilities.connectors], [[], [], []]);
 });
 

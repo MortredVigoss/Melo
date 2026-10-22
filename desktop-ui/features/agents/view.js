@@ -391,7 +391,7 @@ function renderAgentPage() {
             </select>
             <span class="agent-create-group" role="group" aria-label="${escapeHtml(t('新增 Agent'))}">
               <select class="config-select agent-create-base" data-agent-create-base aria-label="${escapeHtml(t('新 Agent 的起点'))}">
-                <option value="" ${agentsState.agentCreateBase ? '' : 'selected'}>${escapeHtml(t('只读起步（推荐）'))}</option>
+                <option value="" ${agentsState.agentCreateBase ? '' : 'selected'}>${escapeHtml(t('全部基础能力（推荐）'))}</option>
                 ${(getBootstrap()?.customize?.agents || []).map(agent => `<option value="${escapeHtml(agent.id)}" ${agentsState.agentCreateBase === agent.id ? 'selected' : ''}>${escapeHtml(t('基于「{name}」', { name: agent.name }))}</option>`).join('')}
               </select>
               ${agentsState.agentCreateBase ? `<label class="checkbox-row agent-create-persona"><input type="checkbox" data-agent-create-persona ${agentsState.agentCreateCopyPersona ? 'checked' : ''}>${escapeHtml(t('同时复制身份、人设与声音'))}</label>` : ''}

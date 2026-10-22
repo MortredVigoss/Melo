@@ -880,7 +880,7 @@ const rows = [
 ["撤销没有完成：{reason}", "Could not revoke: {reason}", "取り消せませんでした：{reason}", "철회하지 못했습니다: {reason}", "No se pudo revocar: {reason}"],
 // Capability elevation rule 6 (2026-10-20): the new-Agent starting point (features/agents/).
 ["新 Agent 的起点", "Starting point for the new agent", "新しい Agent の起点", "새 Agent의 시작점", "Punto de partida del nuevo agente"],
-["只读起步（推荐）", "Read-only start (recommended)", "読み取り専用で開始（推奨）", "읽기 전용으로 시작(권장)", "Empezar en solo lectura (recomendado)"],
+["全部基础能力（推荐）", "All base abilities (recommended)", "すべての基本機能（推奨）", "모든 기본 기능(권장)", "Todas las capacidades básicas (recomendado)"],
 ["基于「{name}」", "Based on “{name}”", "「{name}」をもとに作成", "「{name}」 기반", "Basado en «{name}»"],
 ["同时复制身份、人设与声音", "Also copy identity, persona and voice", "身元・ペルソナ・声もコピー", "정체성, 페르소나, 음성도 복사", "Copiar también identidad, personalidad y voz"],
 ["新 Agent 复制所选 Agent 的能力、协作与模型设置，之后两者各自独立；消息渠道和机器人令牌不会复制。", "The new agent copies the chosen agent’s capabilities, collaboration and model settings; afterwards the two are independent. Message channels and bot tokens are never copied.", "新しい Agent は選んだ Agent の機能・連携・モデル設定をコピーし、その後は互いに独立します。メッセージチャネルとボットトークンはコピーされません。", "새 Agent는 선택한 Agent의 기능, 협업, 모델 설정을 복사하며 이후에는 서로 독립적입니다. 메시지 채널과 봇 토큰은 복사되지 않습니다.", "El nuevo agente copia las capacidades, la colaboración y el modelo del agente elegido; después son independientes. Los canales de mensajes y los tokens de bot nunca se copian."],

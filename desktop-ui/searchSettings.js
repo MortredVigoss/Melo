@@ -5,7 +5,7 @@ export function renderSearchSettings(config) {
   if (!state.editing) state.draft = { ...(config.agentRuntime?.search || {}), apiKey: '', clearKey: false };
   const draft = state.draft || {}, disabled = !state.editing || state.busy ? 'disabled' : '';
   return `<section class="surface-card search-settings" data-search-settings>
-    <h2 class="pane-title">Web Search</h2><p class="page-kicker">公开信息优先通过已验证的 Hosted Search 或 Search API 检索。没有可用服务时提示不可用，不自动启动浏览器。</p>
+    <h2 class="pane-title">Web Search</h2><p class="page-kicker">公开信息优先通过已验证的 Hosted Search 或配置的 Search API 检索；两者都没有时使用内置网页检索（无需密钥，可在下方关闭）。</p>
     <div class="config-form">
     <div class="inline-actions">
       <button type="button" class="small-button" data-action="search-settings-edit" ${state.busy ? 'disabled' : ''}>编辑</button>
@@ -19,7 +19,7 @@ export function renderSearchSettings(config) {
       <label class="list-row-meta"><input type="checkbox" name="usesKey" ${draft.credentialRef || draft.provider === 'brave' ? 'checked' : ''}> 使用本机 Search 凭证</label>
       <label class="label">新的 Search API Key<input class="config-input" name="apiKey" type="password" autocomplete="off" value="${escape(draft.apiKey)}" placeholder="留空保留这个地址原有的密钥"></label>
       <label class="list-row-meta"><input type="checkbox" name="clearKey" ${draft.clearKey ? 'checked' : ''}> 清除此地址已保存的 Search Key</label>
-      <label class="list-row-meta"><input type="checkbox" name="browserFallback" ${draft.browserFallback ? 'checked' : ''}> 允许浏览器检索（Legacy，默认关闭）</label>
+      <label class="list-row-meta"><input type="checkbox" name="browserFallback" ${draft.browserFallback ? 'checked' : ''}> 允许内置网页检索（无需密钥，默认开启）</label>
     </fieldset>
     <p class="list-row-meta">Search 凭证仅保存于本机，并绑定该地址。保存配置不会发送搜索请求，也不代表服务已验证。</p>
     <p role="status">${escape(state.message)}</p>

@@ -15,7 +15,7 @@ export function createAgentsState() {
     // separate. Only save / cancel / reset discard one.
     agentDrafts: {},
     agentCreating: false,
-    // Create flow (capability elevation rule 6): '' = read-only starter set,
+    // Create flow (capability elevation rule 6): '' = the full base starter set,
     // otherwise the Agent id whose settings the new Agent copies; the persona
     // (instructions, description, mood, voice) is copied only when ticked.
     agentCreateBase: '',

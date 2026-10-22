@@ -16,8 +16,15 @@ export const LOCAL_MODEL_BASE_URL = 'http://127.0.0.1:11434/v1';
 export { DEFAULT_MODEL_CATALOGS, DEFAULT_MODELS_BY_AUTH_MODE } from './shared/modelCatalog.js';
 export const VALID_AUTH_MODES = Object.freeze(['local', 'api-key', 'codex']);
 
+// Until the user saves their own search settings, the desktop searches the
+// public web with its built-in keyless search (DuckDuckGo / browser / reader)
+// whenever no verified hosted search or configured HTTP backend is available.
+// Since 2026-10-18 the default was "none", which left web search unavailable
+// for everyone who never opened the search settings (user report 2026-10-22).
+export const DEFAULT_AGENT_RUNTIME = Object.freeze({ search: Object.freeze({ backend: 'none', browserFallback: true }) });
+
 export const DEFAULT_CONFIG = Object.freeze({
-  agentRuntime: normalizeRuntimeConfig(),
+  agentRuntime: normalizeRuntimeConfig(DEFAULT_AGENT_RUNTIME),
   extraFast: Object.freeze({ enabled: false, revision: 0, measurements: {} }),
   provider: 'openai-compatible',
   baseUrl: CODEX_OAUTH_BASE_URL,
@@ -267,7 +274,7 @@ function normalizeConfigShape(config = {}, { skipModelNormalize = false } = {}) 
     ...DEFAULT_CONFIG,
     ...config,
     ...normalizeMcpStartup(config),
-    agentRuntime: normalizeRuntimeConfig(config.agentRuntime),
+    agentRuntime: normalizeRuntimeConfig(config.agentRuntime ?? DEFAULT_AGENT_RUNTIME),
     authMode,
     baseUrl: String(config.baseUrl || DEFAULT_CONFIG.baseUrl).trim(),
     model: resolvedModel,

@@ -3932,8 +3932,11 @@
     ],
     "newAgentStarter": [
       "readFiles",
+      "writeFiles",
+      "runCommands",
       "network",
-      "knowledgeMemory"
+      "knowledgeMemory",
+      "generateMedia"
     ],
     "labels": {
       "capabilities": {

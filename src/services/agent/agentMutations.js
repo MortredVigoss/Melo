@@ -117,7 +117,7 @@ export async function updateAgentProfile(agentId, patch = {}, options = {}) {
 }
 
 /**
- * New custom Agent: the read-only starter set, or a copy of an existing Agent's
+ * New custom Agent: the full base starter set, or a copy of an existing Agent's
  * settings ("基于已有 Agent"; persona only with `copyPersona`).
  * @param {{basedOn?: string|null, copyPersona?: boolean}} [options]
  * @returns {Promise<AgentCommitReceipt>}

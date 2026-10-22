@@ -6,7 +6,7 @@ import Foundation
 // Pure; the create form in AgentEditor.swift applies it to its draft.
 
 enum AgentStarter {
-    /// The contract's starter set (`newAgentStarter`: 读取文件, 联网, 知识与记忆)
+    /// The contract's starter set (`newAgentStarter`: 读取 / 修改文件, 运行命令, 联网, 知识与记忆, 生成媒体)
     /// in the synced capability shape; MCP servers, skills and connectors empty.
     static var capabilities: SyncValue {
         var object = AgentSettingsProjection.emptyCapabilities.object

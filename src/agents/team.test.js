@@ -93,7 +93,8 @@ test('the team time budget cancels a running member and starts no more',async t=
  t.mock.timers.enable({apis:['setTimeout']});
  let started=0,sawAbort=false;
  const pending=runAgentTeam({plan:{members:['research','reviewer'],maxMinutes:1},task:'t',config:{},run:({signal})=>{started++;return new Promise(resolve=>signal.addEventListener('abort',()=>{sawAbort=true;resolve({ok:false,output:'stopped',meta:{aborted:true}});},{once:true}));}});
- await new Promise(r=>setImmediate(r));
+ // The first member may take the workspace lease first (a real filesystem check); wait until it runs.
+ for(let i=0;i<200&&started===0;i++)await new Promise(r=>setImmediate(r));
  t.mock.timers.tick(60000);
  const team=await pending;
  assert.equal(started,1);assert.equal(sawAbort,true);assert.equal(team.budgetExceeded,true);assert.equal(team.cancelled,false);
@@ -106,7 +107,8 @@ test('the original team deadline covers summary and ignores late text and receip
  const pending=runAgentTeam({plan:{members:['research'],maxMinutes:1},task:'t',lead,config:{},
   run:async()=>({ok:true,output:handoffOutput('verified finding')}),
   replyFn:options=>{summaries++;summarySignal=options.signal;return new Promise(resolve=>{release=()=>{options.onProviderResponse({usage:{input:5,output:5}});resolve('Late success');};});}});
- await new Promise(r=>setImmediate(r));
+ // The member holds the workspace lease (real realpath I/O) before the summary starts.
+ for(let i=0;i<200&&summaries===0;i++)await new Promise(r=>setImmediate(r));
  assert.equal(summaries,1);t.mock.timers.tick(60001);
  const team=await pending;
  assert.equal(summarySignal.aborted,true);assert.equal(team.budgetExceeded,true);assert.equal(team.ok,false);assert.equal(team.cancelled,false);
@@ -119,7 +121,8 @@ test('stopping during summary cancels it and never reports a successful team',as
  const pending=runAgentTeam({plan:{members:['research']},task:'t',lead,config:{},signal:controller.signal,
   run:async()=>({ok:true,output:handoffOutput('finding')}),
   replyFn:({signal})=>{summaries++;return new Promise(resolve=>signal.addEventListener('abort',()=>{sawAbort=true;resolve('Should be discarded');},{once:true}));}});
- await new Promise(r=>setImmediate(r));controller.abort();const team=await pending;
+ for(let i=0;i<200&&summaries===0;i++)await new Promise(r=>setImmediate(r));
+ controller.abort();const team=await pending;
  assert.equal(summaries,1);assert.equal(sawAbort,true);assert.equal(team.cancelled,true);assert.equal(team.ok,false);assert.match(team.summary,/团队已停止/);
 });
 test('the final member exhausting the token budget also prevents a summary request',async()=>{

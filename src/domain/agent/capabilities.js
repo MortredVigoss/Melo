@@ -7,8 +7,10 @@ export function normalizeCapabilities(value) {
   return {version:1,...Object.fromEntries(Object.keys(CAPABILITY_LABELS).map(key=>[key,value[key]===true])),mcpServers:list(value.mcpServers),skills:list(value.skills),connectors:list(value.connectors)};
 }
 export const emptyCapabilities = () => normalizeCapabilities({});
+// Every Agent shares the full base set (user decision 2026-10-22: sub-agents were
+// "useless" without web search and media); only the main Agent delegates by default.
 export function recommendedCapabilities(id) {
-  return normalizeCapabilities({readFiles:true,writeFiles:['main','builder'].includes(id),runCommands:['main','builder'].includes(id),network:true,knowledgeMemory:true,generateMedia:id==='main',delegate:id==='main'});
+  return normalizeCapabilities({readFiles:true,writeFiles:true,runCommands:true,network:true,knowledgeMemory:true,generateMedia:true,delegate:id==='main'});
 }
 export function intersectCapabilities(a,b) {
   a=normalizeCapabilities(a);b=normalizeCapabilities(b);

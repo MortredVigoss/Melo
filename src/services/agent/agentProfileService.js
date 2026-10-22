@@ -218,9 +218,10 @@ export function mergeChannelsWithStaleDraftGuard(incomingChannelsRaw, persistedC
 // 3. Default custom-agent profile builder
 // ────────────────────────────────────────────────────────────────────────────
 
-// Rule 6 of capability elevation (2026-10-20): a new Agent starts read-only —
-// the shared contract's starter set (readFiles, network, knowledgeMemory);
-// writing, commands, media and delegation are asked for when needed.
+// Rule 6 of capability elevation: a new Agent starts from the shared contract's
+// starter set. Since 2026-10-22 (user decision) that is every base ability —
+// files, commands, network, knowledge & memory, media — and only delegation is
+// still switched on per Agent.
 export const starterCapabilities = () => capabilitiesFromAtoms(CAPABILITY_ELEVATION.newAgentStarter);
 
 // "基于已有 Agent": what is copied at creation time (afterwards the two are

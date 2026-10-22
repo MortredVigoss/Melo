@@ -26,8 +26,10 @@ swiftc \
   -framework AVFoundation \
   -framework Speech \
   -framework WebKit \
+  -framework CoreLocation \
   "$PROJECT_DIR/desktop-app/main.swift" \
   "$PROJECT_DIR/desktop-app/ProcessShutdown.swift" \
+  "$PROJECT_DIR/desktop-app/NativeLocation.swift" \
   "$PROJECT_DIR/ios/Melo/VoiceInput.swift" \
   "$PROJECT_DIR/ios/Melo/SystemSpeechInput.swift" \
   -o "$BUILD_DIR/$BIN_NAME"
@@ -72,6 +74,10 @@ cat > "$APP_DIR/Contents/Info.plist" <<'PLIST'
     <string>Melo uses the microphone when you choose voice input in the desktop composer.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
     <string>Melo uses speech recognition to turn your voice into chat input.</string>
+    <key>NSLocationUsageDescription</key>
+    <string>Melo uses your location only when you ask about something near you, such as local weather or nearby places.</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>Melo uses your location only when you ask about something near you, such as local weather or nearby places.</string>
   </dict>
 </plist>
 PLIST

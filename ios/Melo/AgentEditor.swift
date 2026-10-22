@@ -97,7 +97,7 @@ struct AgentEditor: View {
     @ViewBuilder private var startingPoint: some View {
         Section {
             Picker("新 Agent 的起点", selection: Binding(get: { startSource ?? "" }, set: { applyStart(source: $0.isEmpty ? nil : $0, copy: copyPersona) })) {
-                Text("只读起步（推荐）").tag("")
+                Text("全部基础能力（推荐）").tag("")
                 ForEach(store.preferences.agents.filter { $0.id != session.draft.id }) { agent in
                     Text(verbatim: CapabilityCopy.template("基于「{name}」", ["name": agent.name])).tag(agent.id)
                 }

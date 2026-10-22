@@ -33,6 +33,7 @@ import { readHistoryTool } from './builtins/readHistoryTool.js';
 import { pdfTool } from './builtins/pdfTool.js';
 import { calculatorTool } from './builtins/calculatorTool.js';
 import { clipboardTool } from './builtins/clipboardTool.js';
+import { deviceLocationTool } from './builtins/deviceLocationTool.js';
 import { translateTool } from './builtins/translateTool.js';
 import { imageTool } from './builtins/imageTool.js';
 import { reminderTool } from './builtins/reminderTool.js';
@@ -60,5 +61,5 @@ const webSearchTool = createCompatibleSearchTool(legacyWebSearchTool);
 export function bootstrapBuiltinTools() {
   if (_bootstrapped) return;
   _bootstrapped = true;
-  registerTools([bashTool, fileReadTool, fileEditTool, fileWriteTool, fileDeleteTool, fileMoveTool, fileMkdirTool, globTool, grepTool, delegateTool, {...delegateTool,id:'agent',name:'Agent (legacy alias)',run:delegateTask}, fetchUrlTool, webSearchTool, webScreenshotTool, mediaInfoTool, mediaApiTool, searchHistoryTool, readHistoryTool, pdfTool, xlsxTool, calculatorTool, clipboardTool, translateTool, imageTool, reminderTool, knowledgeTool, browserOpenTool, browserSnapshotTool, browserCloseTool, browserClickTool, browserFillTool, browserWaitForTool]);
+  registerTools([bashTool, fileReadTool, fileEditTool, fileWriteTool, fileDeleteTool, fileMoveTool, fileMkdirTool, globTool, grepTool, delegateTool, {...delegateTool,id:'agent',name:'Agent (legacy alias)',run:delegateTask}, fetchUrlTool, webSearchTool, webScreenshotTool, mediaInfoTool, mediaApiTool, searchHistoryTool, readHistoryTool, pdfTool, xlsxTool, calculatorTool, clipboardTool, deviceLocationTool, translateTool, imageTool, reminderTool, knowledgeTool, browserOpenTool, browserSnapshotTool, browserCloseTool, browserClickTool, browserFillTool, browserWaitForTool]);
 }

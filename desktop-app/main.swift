@@ -1069,6 +1069,16 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
       return
     }
 
+    // Device location for the device_location tool (NativeLocation.swift).
+    if requestStr.hasPrefix("POST /location ") {
+      guard NativeLocation.allowed(request: String(requestStr[..<sepRange.lowerBound]), port: transcriptionPort) else {
+        sendTranscriptionResponse(fd: fd, status: 403, body: #"{"ok":false,"error":"forbidden"}"#)
+        return
+      }
+      sendTranscriptionResponse(fd: fd, status: 200, body: NativeLocation.shared.currentJSON())
+      return
+    }
+
     let bodyStr = String(requestStr[sepRange.upperBound...])
     guard let bodyData = bodyStr.data(using: .utf8),
           let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: String],
@@ -1151,7 +1161,7 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
   }
 
   private func sendTranscriptionResponse(fd: Int32, status: Int, body: String) {
-    let statusText = status == 200 ? "OK" : "Bad Request"
+    let statusText = status == 200 ? "OK" : status == 403 ? "Forbidden" : "Bad Request"
     let response = "HTTP/1.1 \(status) \(statusText)\r\nContent-Type: application/json\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n\(body)"
     if let data = response.data(using: .utf8) {
       _ = data.withUnsafeBytes { ptr in

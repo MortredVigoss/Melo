@@ -5,7 +5,7 @@ import Foundation
 // corrupt file, never backed up), revocation before the next call, collapse of
 // concurrent requests, no-surface denial, ceiling, team member beyond the lead,
 // timeout / run deadline / cancellation, «一直开启», prompt injection, the tool
-// choke point and its run record, the read-only starter set and «基于已有 Agent».
+// choke point and its run record, the full base starter set and «基于已有 Agent».
 // The desktop fixtures themselves run in SharedContractTests.
 
 final class Clock: @unchecked Sendable {
@@ -245,10 +245,10 @@ func code(_ envelope: String?) -> String? { envelope.map { PhoneToolEnvelope.par
         let legacy = try JSONDecoder().decode(ExecutionToolCall.self, from: Data(legacyRecord.utf8))
         assert(legacy.capability == nil, "older records stay readable")
 
-        // 10. New Agents: read-only starter set and «基于已有 Agent».
+        // 10. New Agents: the full base starter set (2026-10-22) and «基于已有 Agent».
         let starter = AgentStarter.newAgent()
         for key in c.booleanKeys { assert(starter.capabilities?[key].bool == c.newAgentStarter.contains(key), "starter \(key)") }
-        assert(c.newAgentStarter == ["readFiles", "network", "knowledgeMemory"] && starter.capabilities?["mcpServers"].array.isEmpty == true && starter.name.isEmpty)
+        assert(c.newAgentStarter == ["readFiles", "writeFiles", "runCommands", "network", "knowledgeMemory", "generateMedia"] && starter.capabilities?["delegate"].bool == false && starter.capabilities?["mcpServers"].array.isEmpty == true && starter.name.isEmpty)
         var draft = AgentStarter.newAgent(); draft.name = "新助手"
         var source = AgentProfile(id: "builder", name: "Builder", subtitle: "建造", symbol: "hammer", instructions: "写代码", avatarData: Data([1, 2, 3]), identity: "工程师", mood: "focused", model: "gpt-x")
         source.capabilities = AgentCapabilityWidening.widened(AgentSettingsProjection.emptyCapabilities, with: ["readFiles", "writeFiles", "mcpServers:github"])
@@ -265,8 +265,8 @@ func code(_ envelope: String?) -> String? { envelope.map { PhoneToolEnvelope.par
         assert(unticked.instructions.isEmpty && unticked.description.isEmpty && unticked.capabilities == source.capabilities)
         var edited = persona; edited.instructions += "\n我的修改"
         assert(AgentStarter.apply(edited, source: source, copyPersona: false, previousSource: source, previousCopy: true).instructions == edited.instructions, "edited persona text is kept")
-        let readOnly = AgentStarter.apply(persona, source: nil, copyPersona: false, previousSource: source, previousCopy: true)
-        assert(readOnly.capabilities == AgentStarter.capabilities && readOnly.collaboration == nil && readOnly.contextSources == nil && readOnly.model == nil && readOnly.instructions.isEmpty)
+        let fresh = AgentStarter.apply(persona, source: nil, copyPersona: false, previousSource: source, previousCopy: true)
+        assert(fresh.capabilities == AgentStarter.capabilities && fresh.collaboration == nil && fresh.contextSources == nil && fresh.model == nil && fresh.instructions.isEmpty)
         source.capabilities = AgentSettingsProjection.emptyCapabilities
         assert(based.capabilities?["writeFiles"].bool == true, "afterwards the two Agents are independent")
 

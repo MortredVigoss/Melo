@@ -130,7 +130,7 @@ async function runAgentTeamScoped({plan,task,config,workspacePath,signal,sseEmit
  const teamTimeoutMs=Math.max(1,Math.min(plan.maxMinutes*60000,remainingMs(teamBudget)));
  const budgetTimer=setTimeout(()=>{budgetExceeded=true;teamController.abort(Object.assign(new Error('Team time budget exhausted'),{code:'TEAM_BUDGET'}));},teamTimeoutMs);
  const inTeamBudget=work=>teamBudget&&teamContext?runWithRequestContext(Object.freeze({...teamContext,budget:teamBudget}),work):work();
- async function member(id,prior,round=1) {
+ async function member(id,prior,round=1,concurrentReader=false) {
   if(!teamController.signal.aborted&&(usedTokens>=plan.maxTokens||budgetExhausted(teamBudget)))budgetExceeded=true;
   if(teamController.signal.aborted||budgetExceeded){
    const overBudget=budgetExceeded&&!signal?.aborted;
@@ -139,7 +139,7 @@ async function runAgentTeamScoped({plan,task,config,workspacePath,signal,sseEmit
   }
   // Old plans without a profile map are supported for callers predating Agent definitions.
   const inherited=!agentProfiles&&id!=='builder'?inheritableReadToolIds(extraTools).filter(id=>!Array.isArray(allowedToolIds)||allowedToolIds.includes(id)):allowedToolIds;
-  const r=await inTeamBudget(()=>runConfiguredMember({extraTools,profile:profiles[id],parentCapabilities:capabilities,allowedToolIds:inherited,config,task,instructions:prior.length?`前序交接记录（需要独立核对）：\n${JSON.stringify(prior)}`:'',background,workspacePath,signal:teamController.signal,sseEmitter,chatId,depth:1,maxDepth:1,agentProfiles:profiles,run,chatSource,projectId}));
+  const r=await inTeamBudget(()=>runConfiguredMember({concurrentReader,extraTools,profile:profiles[id],parentCapabilities:capabilities,allowedToolIds:inherited,config,task,instructions:prior.length?`前序交接记录（需要独立核对）：\n${JSON.stringify(prior)}`:'',background,workspacePath,signal:teamController.signal,sseEmitter,chatId,depth:1,maxDepth:1,agentProfiles:profiles,run,chatSource,projectId}));
   usedTokens+=(Number(r.usage?.input)||0)+(Number(r.usage?.output)||0);
   if(budgetExceeded&&r.handoff&&!signal?.aborted)r.handoff={...r.handoff,status:'budget-exceeded'};
   r.round=round;results.push(r);return r;
@@ -150,7 +150,7 @@ async function runAgentTeamScoped({plan,task,config,workspacePath,signal,sseEmit
    // Everyone but the last member researches in parallel; the last one reviews all of it.
    const researchers=plan.members.length>1?plan.members.slice(0,-1):plan.members;
    let cursor=0;const ordered=new Array(researchers.length);
-   await Promise.all(Array.from({length:Math.min(plan.concurrency,researchers.length)},async()=>{while(cursor<researchers.length){const index=cursor++;ordered[index]=await member(researchers[index],[]);}}));
+   await Promise.all(Array.from({length:Math.min(plan.concurrency,researchers.length)},async()=>{while(cursor<researchers.length){const index=cursor++;ordered[index]=await member(researchers[index],[],1,plan.members.length>1);}}));
    results.splice(0,results.length,...ordered);
    if(plan.members.length>1)await member(plan.members.at(-1),ordered.map(r=>r.handoff).filter(Boolean));
   } else if(plan.mode==='review-loop') {

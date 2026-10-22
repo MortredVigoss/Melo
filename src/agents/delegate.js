@@ -10,7 +10,9 @@ import {withWorkspaceWriter} from './workspaceScheduling.js';
 import {createHandoff,HANDOFF_INSTRUCTION} from './handoff.js';
 import {narrowBudget,remainingMs} from '../runtime/runBudget.js';
 
-export async function runConfiguredMember({profile,parentCapabilities,allowedToolIds,config,task,instructions='',background='',workspacePath,signal,sseEmitter,chatId,depth=1,agentProfiles,ancestry=[],maxDepth=1,extraTools=[],run=runSubAgent,chatSource,projectId}) {
+const PARALLEL_READER=normalizeCapabilities({readFiles:true,network:true,knowledgeMemory:true});
+
+export async function runConfiguredMember({concurrentReader=false,profile,parentCapabilities,allowedToolIds,config,task,instructions='',background='',workspacePath,signal,sseEmitter,chatId,depth=1,agentProfiles,ancestry=[],maxDepth=1,extraTools=[],run=runSubAgent,chatSource,projectId}) {
  if(!normalizeCapabilities(profile.capabilities))return {ok:false,error:'AGENT_MIGRATION_REQUIRED',output:`请先在桌面完成 Agent「${profile.name||profile.id}」的能力迁移，再启动协作。`};
  const parent=await resolveCapabilityContext(currentRequestContext());
  if(!parent)return missingCapabilityScope();
@@ -19,8 +21,12 @@ export async function runConfiguredMember({profile,parentCapabilities,allowedToo
  // checked live by the executor, so a parent's grant is never inherited.
  const parentScope=parent.capabilityScope;
  const parentBase=intersectCapabilities(parentScope.elevation?.base ?? parentScope.capabilities,parentCapabilities);
- const capabilityScope=narrowCapabilityScope(parentScope,{capabilities:intersectCapabilities(profile.capabilities,parentBase),allowedToolIds,agentId:profile.id,source:'member',
-  member:{ceiling:profile.capabilities,parent:parentBase,parentAgentId:parentScope.agentId}});
+ // Members researching in parallel only read (files, web, knowledge): every
+ // Agent has the full base set since 2026-10-22, and a member that may write
+ // holds the workspace lease for its whole run, which would serialise them.
+ const own=concurrentReader?intersectCapabilities(profile.capabilities,PARALLEL_READER):profile.capabilities;
+ const capabilityScope=narrowCapabilityScope(parentScope,{capabilities:intersectCapabilities(own,parentBase),allowedToolIds,agentId:profile.id,source:'member',
+  member:{ceiling:own,parent:parentBase,parentAgentId:parentScope.agentId}});
  const capabilities=capabilityScope.capabilities;
  // What the member may see or ask for (its ceiling, with an interactive surface).
  const requestable=visibleCapabilities(capabilityScope);
