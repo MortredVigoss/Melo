@@ -150,7 +150,9 @@ async function runAgentTeamScoped({plan,task,config,workspacePath,signal,sseEmit
    // Everyone but the last member researches in parallel; the last one reviews all of it.
    const researchers=plan.members.length>1?plan.members.slice(0,-1):plan.members;
    let cursor=0;const ordered=new Array(researchers.length);
-   await Promise.all(Array.from({length:Math.min(plan.concurrency,researchers.length)},async()=>{while(cursor<researchers.length){const index=cursor++;ordered[index]=await member(researchers[index],[],1,plan.members.length>1);}}));
+   // Read-only only when researchers really overlap (see runConfiguredMember).
+   const lanes=Math.min(plan.concurrency,researchers.length),overlap=lanes>1;
+   await Promise.all(Array.from({length:lanes},async()=>{while(cursor<researchers.length){const index=cursor++;ordered[index]=await member(researchers[index],[],1,overlap);}}));
    results.splice(0,results.length,...ordered);
    if(plan.members.length>1)await member(plan.members.at(-1),ordered.map(r=>r.handoff).filter(Boolean));
   } else if(plan.mode==='review-loop') {

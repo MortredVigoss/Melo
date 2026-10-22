@@ -1,4 +1,4 @@
-import { scopeMatches } from '../safety/permissionContext.js';
+import { scopeMatches, hasApprovalSurface } from '../safety/permissionContext.js';
 import { recordPermission } from '../safety/permissionAudit.js';
 import { permissionReceipt, rememberPermissionDecision } from '../safety/permissionReceipts.js';
 import { currentRequestContext, runWithRequestContext } from '../runtime/requestScope.js';
@@ -128,7 +128,7 @@ export async function requestPermission(toolId, args, sseEmitter, signal, chatId
   // time out, blocking the whole polling loop meanwhile (2026-10-17 audit B-3).
   // Pass `context.permissionSurface = 'headless'` to opt back into waiting
   // (tests and future CLI prompts resolve via resolvePermission()).
-  if (typeof sseEmitter !== 'function' && context?.permissionSurface !== 'headless') {
+  if (!hasApprovalSurface(sseEmitter, context) && context?.permissionSurface !== 'headless') {
     const error = new Error(`Tool "${toolId}" needs user approval, but this channel has no approval surface. Ask the user to run this action from the Melo desktop app instead.`);
     error.code = 'PERMISSION_NO_SURFACE';
     throw error;

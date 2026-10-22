@@ -129,8 +129,12 @@ export function sendChatMessage(options) {
       try {
         // Capability elevation (2026-10-20): only a live desktop stream can show
         // a capability prompt; remote channels, tasks and the JSON route deny as before.
-        const capabilityScope=withElevationSurface(turnBinding.capabilityScope, typeof options.sseEmitter === 'function' && !options.background);
-        const turnContext=Object.freeze({ ...context, turnBinding:Object.freeze({ ...turnBinding, capabilityScope }), capabilityScope });
+        const liveSurface=typeof options.sseEmitter === 'function' && !options.background;
+        const capabilityScope=withElevationSurface(turnBinding.capabilityScope, liveSurface);
+        // Tool and file approvals follow the same rule: without the live stream a
+        // prompt can never be answered, so it is refused at once (audit B-3,
+        // re-fixed 2026-10-22: the wrapped emitter below hid the missing surface).
+        const turnContext=Object.freeze({ ...context, turnBinding:Object.freeze({ ...turnBinding, capabilityScope }), capabilityScope, ...(liveSurface?{}:{permissionSurface:'none'}) });
         const result = await runWithRequestContext(turnContext,()=>executeChatTurn({ ...options, home: context.home, context: turnContext, configPromise, executionRecorder,
           sseEmitter: (event, data) => {
             if (event === 'tool_record') { executionRecorder.recordTool(data.record); return; }

@@ -37,3 +37,27 @@ test('a permission request with no approval surface fails at once instead of wai
     error => error.code === 'PERMISSION_NO_SURFACE' && /desktop app/.test(error.message));
   assert.ok(Date.now() - started < 1000);
 });
+
+// Audit 2026-10-22: every chat turn wraps its emitter to record execution, so
+// Telegram / Discord turns reached here with a function and waited the full
+// 120 s. sendChatMessage now marks such turns `permissionSurface: 'none'`.
+test('a wrapped emitter on a turn marked without a live desktop stream still fails at once', async t => {
+  const home = await mkdtemp(join(tmpdir(), 'melo-permission-surface-'));
+  t.after(async () => { clearSessionPermissions(); await rm(home, { recursive: true, force: true }); });
+  const sent = [];
+  let prompted;
+  const promptShown = new Promise(r => { prompted = r; });
+  const wrapped = type => { sent.push(type); prompted(); };
+  const remote = Object.freeze({ ...createRequestContext({ home, chatId: 'remote-chat', runId: 'run-remote' }), permissionSurface: 'none' });
+  const started = Date.now();
+  await assert.rejects(requestPermission('surface-tool', {}, wrapped, undefined, 'remote-chat', remote), error => error.code === 'PERMISSION_NO_SURFACE');
+  assert.ok(Date.now() - started < 1000);
+  assert.deepEqual(sent, [], 'no prompt is sent to a channel that cannot answer it');
+  // An unmarked caller with an emitter (the desktop stream) still gets its prompt.
+  const controller = new AbortController();
+  const pending = requestPermission('surface-tool', {}, wrapped, controller.signal, 'desktop-chat', createRequestContext({ home, chatId: 'desktop-chat', runId: 'run-desktop' }));
+  await promptShown;
+  assert.deepEqual(sent, ['tool_permission']);
+  controller.abort();
+  await assert.rejects(pending);
+});
