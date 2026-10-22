@@ -191,9 +191,15 @@ function startHost() {
     });
     hostProcess.stdout.on('data', chunk => process.stdout.write(chunk));
     hostProcess.stderr.on('data', chunk => process.stderr.write(chunk));
-    hostProcess.on('error', error => { run.error = `DSH 启动失败：${error.message}`; broadcast(); console.error('[melo-pet-controller]', run.error); });
+    // Without the host there is no pet on screen. A controller that lingered here kept
+    // runtime.json alive, so Melo showed 运行中 and re-enabling could not rebuild the host.
+    // Ending the controller removes the record: Melo clears its switch and a re-enable
+    // starts a fresh pet.
+    hostProcess.on('error', error => { run.error = `DSH 启动失败：${error.message}`; broadcast(); console.error('[melo-pet-controller]', run.error); void shutdown(); });
     hostProcess.on('exit', (code, signal) => {
-      if (!shuttingDown) { run.error = `DSH 已退出（${signal || code}）。请重新打开桌宠。`; broadcast(); console.error('[melo-pet-controller]', run.error); }
+      if (shuttingDown) return;
+      run.error = `DSH 已退出（${signal || code}）。请在 Melo 设置里重新开启桌宠。`; broadcast(); console.error('[melo-pet-controller]', run.error);
+      void shutdown();
     });
     writeRuntimeInfo(runtimeFile, { pid: process.pid, hostPid: hostProcess.pid, controlUrl: server.url, token, meloBaseUrl, profile, startedAt: new Date().toISOString() });
     console.log('[melo-pet-controller]', JSON.stringify({ event: 'ready', controlUrl: server.url, pid: process.pid, hostPid: hostProcess.pid, profile, runtimeFile }));
