@@ -85,8 +85,9 @@ test('main chat sends native definitions, authorizes valid calls and returns all
   assert.deepEqual(h.executions, ['A', 'C']);
   assert.equal(h.permissions.length, 3, 'invalid/unknown calls never reach the authorization gate');
   assert.equal(new Set(h.permissions.map(p => p.requestId)).size, 3);
-  assert.equal(h.requests.length, 3);
-  assert.ok(h.requests.every(r => r.path === '/v1/responses' && r.body.tools.some(t => t.name === 'fixture_lookup' && t.strict)));
+  assert.equal(h.requests.length, 4);
+  assert.ok(h.requests.slice(0, 3).every(r => r.path === '/v1/responses' && r.body.tools.some(t => t.name === 'fixture_lookup' && t.strict)));
+  assert.equal(h.requests[3].body.tools, undefined, 'the goal check has no tool definitions');
   const input = h.requests[2].body.input;
   const outputs = input.filter(i => i.type === 'function_call_output');
   assert.deepEqual(outputs.map(i => i.call_id), ['a', 'b', 'bad', 'hidden', 'c']);
@@ -175,15 +176,16 @@ test('a supplement typed during a tool step reaches the very next model request,
   t.after(() => endSupplements('fixture-chat'));
   const result = await h.run();
   assert.equal(result.normalizedReply.content, '核对完成。');
-  assert.equal(h.requests.length, 2);
+  assert.equal(h.requests.length, 3);
   assert.equal(JSON.stringify(h.requests[0].body).includes('只核对 C'), false);
   const next = JSON.stringify(h.requests[1].body.input);
   assert.ok(next.includes('只核对 C，不要 A'), 'the next model request carries the supplement');
   assert.ok(next.includes('found A'), 'the finished tool step is kept');
   assert.deepEqual(h.executions, ['A']);
   assert.ok(h.events.some(e => e.type === 'execution_event' && e.event.id?.startsWith('supplement:') && e.event.output === '只核对 C，不要 A'));
-  assert.deepEqual(usedSupplements('fixture-chat').map(e => e.text), ['只核对 C，不要 A']);
-  assert.deepEqual(endSupplements('fixture-chat').map(e => e.text), ['最后再写个总结'], 'no further step: returned to be sent next');
+  assert.deepEqual(usedSupplements('fixture-chat').map(e => e.text), ['只核对 C，不要 A', '最后再写个总结']);
+  assert.match(JSON.stringify(h.requests[2].body), /最后再写个总结/);
+  assert.deepEqual(endSupplements('fixture-chat'), [], 'both supplements reached the bounded goal check');
 });
 
 test('manual chat team reaches real member HTTP requests with own models, persona, handoffs and inherited capabilities',async t=>{
@@ -262,11 +264,16 @@ for (const evidence of ['read', 'snippet', 'unrelated', 'empty']) test('completi
   const call = { ...fn('research-read', 'Sydney brunch', 'web_search'), arguments: JSON.stringify({ query: 'Sydney brunch', num_results: null, noCache: null, allowBlockedDomains: null }) };
   let modelTurns = 0;
   const h = await harness(t, (_, body) => {
+    if (JSON.stringify(body).includes("You are Melo's task completion checker")) {
+      assert.equal(body.tools?.length || 0, 0);
+      const checked = evidence === 'read';
+      return done([{ ...message, content: [{ type: 'output_text', text: JSON.stringify({ decision: checked ? 'complete' : 'partial', reasonType: checked ? 'fulfilled' : 'unavailable', reason: 'Fixture review of supplied page evidence', requirements: [{ text: 'Research Sydney brunch', status: checked ? 'met' : 'missing', evidenceIds: checked ? ['research-read:source:0'] : [] }] }), annotations: [] }] }]);
+    }
     if (!body.tools?.length) return done([{ ...message, content: [{ type: 'output_text', text: 'factual', annotations: [] }] }]);
     return done(++modelTurns === 1 ? [call] : [{ ...message, content: [{ type: 'output_text', text: 'Sydney brunch: https://fixture.invalid/menu', annotations: [] }] }]);
   }, { text: 'Research Sydney brunch' });
   const result = await h.run();
-  assert.equal(searches, 1); assert.equal(modelTurns, 2, 'no additional judge or action replay');
+  assert.equal(searches, 1); assert.equal(modelTurns, 2, 'the separate goal check cannot replay actions');
   assert.equal(result.normalizedReply.completion.outcome, evidence === 'read' ? 'completed' : 'partial');
   assert.equal(result.normalizedReply.completion.goalState, evidence === 'read' ? 'supported' : 'unverified');
   assert.equal(JSON.stringify(result.normalizedReply.completion).includes('breakfast dishes'), false);
@@ -274,9 +281,9 @@ for (const evidence of ['read', 'snippet', 'unrelated', 'empty']) test('completi
 test('tool ok and final prose are not goal verification', async t => {
   const h = await harness(t, round => done(round === 1 ? [fn('effect', 'A')] : [message]));
   const result = await h.run();
-  assert.equal(h.executions.length, 1); assert.equal(h.requests.length, 2);
+  assert.equal(h.executions.length, 1); assert.equal(h.requests.length, 3);
   assert.equal(result.normalizedReply.completion.outcome, 'partial');
-  assert.equal(result.normalizedReply.completion.reason, 'GOAL_TERMINAL_EVIDENCE_MISSING');
+  assert.equal(result.normalizedReply.completion.reason, 'GOAL_CHECK_UNAVAILABLE');
 });
 
 for (const count of [9, 32]) {
@@ -289,7 +296,7 @@ for (const count of [9, 32]) {
     assert.equal(result.normalizedReply.content, '核对完成。');
     assert.deepEqual([...h.executions].sort(), [...queries].sort(), 'concurrent tools may execute out of order, but each call must execute exactly once');
     assert.equal(h.permissions.length, count);
-    assert.equal(h.requests.length, 2);
+    assert.equal(h.requests.length, 3);
     const outputs = h.requests[1].body.input.filter(item => item.type === 'function_call_output');
     assert.deepEqual(outputs.map(item => item.call_id), queries.map((_, i) => `batch-call-${i}`));
     assert.ok(outputs.every(item => JSON.parse(item.output).ok));
@@ -302,4 +309,75 @@ test('main chat rejects an oversized batch before any authorization or execution
   assert.equal(h.requests.length, 1);
   assert.equal(h.permissions.length, 0);
   assert.equal(h.executions.length, 0);
+});
+
+const goalReviewBody = body => JSON.stringify(body).includes("You are Melo's task completion checker");
+const goalReport = (decision, evidenceIds = [], reasonType = 'lookup_missing') => JSON.stringify({ decision, reasonType, reason: decision === 'complete' ? '已回答演唱会当天天气' : '还缺场馆和天气', nextStep: '根据演出名称查询公开场馆，再查询演出当天天气', requirements: [{ text: '演唱会当天天气', status: decision === 'complete' ? 'met' : 'missing', evidenceIds }] });
+const textReply = text => done([{ ...message, content: [{ type: 'output_text', text, annotations: [] }] }]);
+
+test('calendar intermediate answer continues through venue and weather in one metered HTTP turn', async t => {
+  const original = getTool('web_search'); let calendars = 0; const queries = [];
+  registerTool({ id: 'calendar_list_events', name: 'Calendar fixture', description: 'Read the calendar fixture', readOnly: true, requiresPermission: false,
+    parametersSchema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
+    run: async () => { calendars++; return { ok: true, output: 'BigBang concert, 31 October 2026. Venue not recorded.' }; } });
+  unregisterTool('web_search');
+  registerTool({ ...webSearchTool, requiresPermission: false, run: async args => { queries.push(args.query); return { ok: true, output: queries.length === 1 ? 'Official event: Example Arena, Sydney, 31 October 2026.' : 'Weather at Example Arena on 31 October 2026: 18 C, rain probability 20%.', completionSources: [{ url: `https://fixture.invalid/${queries.length === 1 ? 'venue' : 'weather'}`, reading: 'extracted', content: queries.length === 1 ? 'Official event BigBang at Example Arena, Sydney, 31 October 2026.' : 'Forecast for Sydney Example Arena on 31 October 2026: 18 C, rain probability 20%.' }] }; } });
+  t.after(() => { unregisterTool('calendar_list_events'); unregisterTool('web_search'); if (original) registerTool(original); });
+  let work = 0, checks = 0;
+  const h = await harness(t, (_, body) => {
+    if (goalReviewBody(body)) { checks++; assert.equal(body.tools, undefined); assert.match(JSON.stringify(body), /下周演唱会当天/); return textReply(goalReport(checks === 1 ? 'continue' : 'complete', checks === 1 ? [] : ['weather:source:0'], checks === 1 ? 'lookup_missing' : 'fulfilled')); }
+    if (!body.tools?.length) return textReply('factual');
+    work++;
+    if (work === 1) return done([fn('calendar', 'next concert', 'calendar_list_events')]);
+    if (work === 2) return textReply('找到了演唱会，请告诉我场馆地址。');
+    if (work === 3 || work === 4) return done([{ ...fn(work === 3 ? 'venue' : 'weather', work === 3 ? 'BigBang 31 October official venue' : 'Example Arena Sydney 31 October weather', 'web_search'), arguments: JSON.stringify({ query: work === 3 ? 'BigBang 31 October official venue' : 'Example Arena Sydney 31 October weather', num_results: null, noCache: null, allowBlockedDomains: null }) }]);
+    return textReply('演唱会在 Example Arena，当天约 18 度，降雨概率 20%。');
+  }, { text: '帮我看看日历，下周演唱会当天的天气怎么样？' });
+  const result = await h.run();
+  assert.equal(calendars, 1); assert.equal(queries.length, 2); assert.equal(work, 5); assert.equal(checks, 2);
+  assert.equal(h.requests.length, work + checks, 'all checks use the original metered request path');
+  assert.equal(result.normalizedReply.completion.outcome, 'completed');
+  assert.equal(result.normalizedReply.completion.task.corrections, 1);
+  assert.match(result.normalizedReply.content, /18 度/); assert.doesNotMatch(result.normalizedReply.content, /告诉我场馆/);
+});
+
+for (const mode of ['ambiguity', 'malformed', 'attempted-tool', 'repeated-missing']) test('goal review stops safely: ' + mode, async t => {
+  let work = 0, checks = 0;
+  const h = await harness(t, (_, body) => {
+    if (goalReviewBody(body)) {
+      checks++; assert.equal(body.tools, undefined);
+      if (mode === 'ambiguity') return textReply(goalReport('needs_user', [], 'ambiguity'));
+      if (mode === 'attempted-tool') return done([fn('forbidden-review-call', 'extra')]);
+      if (mode === 'repeated-missing') return textReply(goalReport('continue'));
+      return textReply('not valid JSON');
+    }
+    return ++work === 1 ? done([fn('initial', 'A')]) : textReply('已有内容保留。');
+  });
+  const result = await h.run();
+  assert.deepEqual(h.executions, ['A']); assert.equal(h.permissions.length, 1);
+  assert.equal(result.normalizedReply.content, '已有内容保留。');
+  assert.equal(checks, mode === 'repeated-missing' ? 3 : 1);
+  assert.equal(result.normalizedReply.completion.outcome, mode === 'ambiguity' ? 'needs_user' : 'partial');
+  if (mode === 'repeated-missing') { assert.equal(result.normalizedReply.completion.reason, 'GOAL_CORRECTION_LIMIT'); assert.equal(h.requests.length, 7); }
+});
+
+test('a provider failure during the tool-free check preserves the candidate and executes nothing else', async t => {
+  let work = 0;
+  const h = await harness(t, (_, body) => goalReviewBody(body) ? 'data: broken-json\n\n' : ++work === 1 ? done([fn('initial', 'A')]) : textReply('已经取得的结果。'));
+  const result = await h.run();
+  assert.equal(result.normalizedReply.content, '已经取得的结果。');
+  assert.equal(result.normalizedReply.completion.outcome, 'partial');
+  assert.equal(h.executions.length, 1); assert.equal(h.requests.length, 3);
+});
+
+test('cancelling during a goal check cannot continue tools or publish a fabricated completion', async t => {
+  const controller = new AbortController(); let work = 0;
+  const h = await harness(t, (_, body) => {
+    if (goalReviewBody(body)) { controller.abort(new Error('stop goal check')); return textReply(goalReport('continue')); }
+    return ++work === 1 ? done([fn('initial', 'A')]) : textReply('candidate');
+  });
+  await assert.rejects(h.run(controller.signal));
+  assert.deepEqual(h.executions, ['A']); assert.equal(h.permissions.length, 1);
+  assert.equal(h.requests.length, 3);
+  assert.equal(h.events.filter(row => row.type === 'reply_text').length, 0);
 });

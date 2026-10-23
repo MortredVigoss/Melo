@@ -12,6 +12,12 @@ struct TeamHandoff: Codable, Equatable {
     var unfinished: [String]
     var status: String
     var review: String?
+    var completion: AgentCompletionReceipt? = nil
+}
+
+struct TeamReply: Sendable {
+    var text: String
+    var completion: AgentCompletionReceipt? = nil
 }
 
 struct TeamCall {
@@ -132,24 +138,26 @@ enum AgentTeam {
         guard let list = value as? [Any] else { return [] }
         return list.compactMap { $0 as? String }.prefix(limit).map { utf16Prefix($0, 200) }
     }
-    static func handoff(task: String, output: String, ok: Bool, cancelled: Bool = false) -> TeamHandoff {
+    static func handoff(task: String, output: String, ok: Bool, cancelled: Bool = false, completion: AgentCompletionReceipt? = nil) -> TeamHandoff {
         let stripped = output.replacingOccurrences(of: #"^```(?:json)?\s*|\s*```$"#, with: "", options: .regularExpression)
         let supplied = ((try? JSONSerialization.jsonObject(with: Data(stripped.utf8), options: [.fragmentsAllowed])) as? [String: Any]) ?? [:]
         let conclusionValue: Any = truthy(supplied["conclusion"]) ? supplied["conclusion"]! : output
         var files: [String] = []
         for file in strings(supplied["changedFiles"]) where !files.contains(file) { files.append(file) }
-        let unfinished: [Any] = truthy(supplied["unfinished"]) ? (supplied["unfinished"] as? [Any] ?? []) : (ok ? [] : [output])
+        let delivered = ok && (completion == nil || completion?.outcome == "completed") && supplied["status"] as? String != "failed"
+        var unfinished: [Any] = truthy(supplied["unfinished"]) ? (supplied["unfinished"] as? [Any] ?? []) : (delivered ? [] : [output])
+        if let completion, completion.outcome != "completed" { unfinished.insert(completion.summary, at: 0) }
         let review = supplied["review"] as? String
         return TeamHandoff(subtask: utf16Prefix(task, 1000), conclusion: utf16Prefix(conclusionValue as? String ?? "", 4000),
                            evidence: strings(truthy(supplied["evidence"]) ? supplied["evidence"] : []), changedFiles: strings(files),
-                           unfinished: strings(unfinished), status: cancelled ? "cancelled" : ok ? "completed" : "failed",
-                           review: review == "approve" || review == "revise" ? review : nil)
+                           unfinished: strings(unfinished), status: cancelled ? "cancelled" : delivered ? "completed" : "failed",
+                           review: review == "approve" || review == "revise" ? review : nil, completion: completion)
     }
 
     // MARK: Orchestration
 
     /// Runs one member with the team deadline; a late member is cancelled and reported as over budget.
-    private static func member(_ id: String, round: Int, prior: [TeamHandoff], task: String, deadline: Date, call: @escaping (TeamCall) async throws -> String) async -> (TeamMemberResult, timedOut: Bool) {
+    private static func member(_ id: String, round: Int, prior: [TeamHandoff], task: String, deadline: Date, call: @escaping (TeamCall) async throws -> TeamReply) async -> (TeamMemberResult, timedOut: Bool) {
         if Task.isCancelled { return (TeamMemberResult(memberID: id, round: round, ok: false, output: "已取消，未启动此成员。", handoff: handoff(task: task, output: "已取消，未执行。", ok: false, cancelled: true)), false) }
         let remaining = deadline.timeIntervalSinceNow
         if remaining <= 0 {
@@ -157,7 +165,7 @@ enum AgentTeam {
             return (TeamMemberResult(memberID: id, round: round, ok: false, output: "团队已用完总预算，未启动此成员。", handoff: h), true)
         }
         let request = TeamCall(kind: .member, memberID: id, round: round, prior: prior)
-        enum Race { case done(Result<String, Error>), late }
+        enum Race { case done(Result<TeamReply, Error>), late }
         let outcome: Race
         do { outcome = .done(.success(try await PhoneDeadline.run(seconds: remaining) { try await call(request) })) }
         catch is PhoneDeadline.Reached { outcome = .late }
@@ -166,8 +174,9 @@ enum AgentTeam {
         case .late:
             var h = handoff(task: task, output: "团队预算已用完，成员被停止。", ok: false); h.status = "budget-exceeded"
             return (TeamMemberResult(memberID: id, round: round, ok: false, output: "团队预算已用完，成员被停止。", handoff: h), true)
-        case .done(.success(let output)):
-            return (TeamMemberResult(memberID: id, round: round, ok: true, output: output, handoff: handoff(task: task, output: output, ok: true)), false)
+        case .done(.success(let reply)):
+            let record = handoff(task: task, output: reply.text, ok: true, completion: reply.completion)
+            return (TeamMemberResult(memberID: id, round: round, ok: record.status == "completed", output: reply.text, handoff: record), false)
         case .done(.failure(let error)):
             let cancelled = Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled
             let text = cancelled ? "已取消。" : error.localizedDescription
@@ -176,6 +185,10 @@ enum AgentTeam {
     }
 
     static func run(_ plan: Plan, task: String, deadline: Date = Date().addingTimeInterval(timeBudget), call: @escaping (TeamCall) async throws -> String, onResult: ((TeamMemberResult) -> Void)? = nil) async -> TeamOutcome {
+        await runChecked(plan, task: task, deadline: deadline, call: { TeamReply(text: try await call($0)) }, onResult: onResult)
+    }
+
+    static func runChecked(_ plan: Plan, task: String, deadline: Date = Date().addingTimeInterval(timeBudget), call: @escaping (TeamCall) async throws -> TeamReply, onResult: ((TeamMemberResult) -> Void)? = nil) async -> TeamOutcome {
         var results: [TeamMemberResult] = [], timedOut = false
         func step(_ id: String, round: Int = 1, prior: [TeamHandoff]) async -> TeamMemberResult {
             let (result, late) = await member(id, round: round, prior: prior, task: task, deadline: deadline, call: call)
@@ -270,7 +283,7 @@ enum AgentTeam {
     private struct Waiter { let id: UUID; let continuation: CheckedContinuation<Void, Error> }
     private static var active: UUID?
     private static var waiting: [Waiter] = []
-    static func run(enabled: Bool, work: @escaping @MainActor () async throws -> String) async throws -> String {
+    static func run<T>(enabled: Bool, work: @escaping @MainActor () async throws -> T) async throws -> T {
         guard enabled else { return try await work() }
         let id = UUID()
         try await withTaskCancellationHandler(operation: {

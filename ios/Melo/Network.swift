@@ -161,6 +161,7 @@ enum Network {
         var loopHooks = hooks
         if loopHooks.onStatus == nil { loopHooks.onStatus = onStatus }
         let loop = AgentLoop(transport: transport, tools: loopTools, budget: budget ?? PhoneRunBudget(), latestUserMessage: (requestHistory ?? messages).last(where: { $0.role == "user" })?.content ?? "", verification: verification, hooks: loopHooks)
+        loop.goalHistory = requestHistory ?? messages
         do {
             let outcome = try await loop.run()
             if outcome.stop != .answered {
@@ -226,7 +227,11 @@ final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
             await onObservation?(observation)
         }
         var body = base
-        if !input.transcript.isEmpty { body["messages"] = Self.rendered(base["messages"] as? [[String: Any]] ?? [], transcript: input.transcript, anthropic: anthropic) }
+        if let review = input.goalReview {
+            let messages = review["messages"] as? [[String: Any]] ?? []
+            let system = review["systemPrompt"] as? String ?? ""
+            body = anthropic ? ["model": model, "stream": false, "max_tokens": 2048, "system": system, "messages": messages] : ["model": model, "stream": false, "messages": [["role": "system", "content": system]] + messages]
+        } else if !input.transcript.isEmpty { body["messages"] = Self.rendered(base["messages"] as? [[String: Any]] ?? [], transcript: input.transcript, anthropic: anthropic) }
         if let allowance = try PhoneMemberLimits.outputAllowance(body: body, remaining: input.remainingTokens) {
             body["max_tokens"] = min(allowance, (body["max_tokens"] as? Int) ?? allowance)
         }
@@ -246,7 +251,7 @@ final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
         let outputTokens = Network.usageNumber(usageObject?["output_tokens"]) ?? Network.usageNumber(usageObject?["completion_tokens"])
         // Tool round: only a completed tool turn counts; calls cut off by `length` /
         // `max_tokens` are never executed (the truncation is reported below).
-        if offersTools, let receipt, finishReason == (anthropic ? "tool_use" : "tool_calls") {
+        if input.goalReview == nil, offersTools, let receipt, finishReason == (anthropic ? "tool_use" : "tool_calls") {
             let assistantMessage = ((receipt["choices"] as? [[String: Any]])?.first?["message"] as? [String: Any]) ?? [:]
             let assistantContent = receipt["content"] as? [[String: Any]] ?? []
             let calls = anthropic ? Network.anthropicToolCalls(assistantContent) : Network.chatToolCalls(assistantMessage)

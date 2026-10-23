@@ -1,4 +1,6 @@
 import { planRequest } from './search.js';
+import { toolEffect } from './toolEffects.js';
+import { startGoal, goalSnapshot } from './goal.js';
 
 // Observable completion, separate from transport success and tool ok. Hosts
 // supply actual receipts; model-authored claims are never verification inputs.
@@ -25,14 +27,20 @@ function relevant(source, goal) {
   return keys.length > 0 && matched.length >= Math.min(2, keys.length) && matched.length / keys.length >= 0.75;
 }
 
-export function completionReceipt({ goal = '', kind = 'answer', reply = '', observations = [], terminalReason = '', verifiedActions = [] } = {}) {
+export function completionReceipt({ goal = '', kind = 'answer', reply = '', observations = [], terminalReason = '', verifiedActions = [], task } = {}) {
   const rows = Array.isArray(observations) ? observations.slice(0, 128) : [];
   const performed = rows.filter(row => row?.ok === true && row.executed === true);
-  const base = { version: 1, kind, outcome: 'blocked', goalState: 'unverified', reason: '', evidenceIds: [], completedSteps: new Set(performed.map(row => String(row.id).split(':source:')[0])).size };
+  const base = { version: 1, kind, outcome: 'blocked', goalState: 'unverified', reason: '', evidenceIds: [], completedSteps: new Set(performed.map(row => String(row.id).split(':source:')[0])).size, ...(task ? { task } : {}) };
   if (terminalReason === 'CANCELLED') return { ...base, outcome: 'cancelled', reason: terminalReason };
   if (/BUDGET|DEADLINE|ROUND_LIMIT|TOKEN_LIMIT/u.test(terminalReason)) return { ...base, outcome: 'budget_exhausted', reason: terminalReason };
   if (terminalReason) return { ...base, outcome: performed.length ? 'partial' : 'blocked', reason: terminalReason };
   if (!String(reply).trim()) return { ...base, outcome: performed.length ? 'partial' : 'blocked', reason: 'NO_FINAL_ANSWER' };
+  if (task?.decision && task.decision !== 'deliver') {
+    const evidenceIds = [...new Set((task.requirements || []).flatMap(row => row.evidenceIds || []))];
+    const supported = task.decision === 'complete' && evidenceIds.length && evidenceIds.every(id => performed.some(row => row.id === id));
+    return { ...base, outcome: supported ? 'completed' : task.decision === 'needs_user' ? 'needs_user' : performed.length ? 'partial' : 'blocked', goalState: supported ? 'supported' : 'unverified', reason: supported ? 'GOAL_DELIVERY_SUPPORTED' : task.reason || 'GOAL_COVERAGE_MISSING', evidenceIds };
+  }
+  if (task?.decision === 'deliver' && kind === 'research' && !performed.length) return { ...base, outcome: 'completed', goalState: 'unverified', reason: 'ANSWERED_WITHOUT_SOURCES' };
   if (kind === 'answer') return { ...base, outcome: 'completed', goalState: 'not_applicable', reason: 'ANSWER_DELIVERED' };
   const needsResearch = kind === 'research' || kind === 'research-action';
   const needsAction = kind === 'action' || kind === 'research-action';
@@ -58,8 +66,9 @@ export function completionReceipt({ goal = '', kind = 'answer', reply = '', obse
 // Tool-specific adapters pass actual bodies, never a formatted search answer
 // (which may contain an echoed query). These bounded rows are ephemeral; only
 // the final receipt and evidence IDs may be persisted.
-export function completionObservation({ id, name, ok, executed, output = '', data = {}, sources = [] } = {}) {
-  const rows = [{ id: String(id || '').slice(0, 256), name, type: 'tool', ok: ok === true, executed: executed === true }];
+export function completionObservation({ id, name, ok, executed, output = '', data = {}, sources = [], arguments: args = {}, declaration = {} } = {}) {
+  const effect = toolEffect(name, args, declaration);
+  const rows = [{ id: String(id || '').slice(0, 256), name, type: 'tool', effect, ok: ok === true, executed: executed === true, output: String(output || data.text || '').slice(0, 4000) }];
   if (ok !== true || executed !== true) return rows;
   let page = data;
   if (name === 'open_url') {
@@ -81,9 +90,8 @@ export function completionKind({ goal = '', plan, observations = [] } = {}) {
   const intent = plan || planRequest({ text: goal, capabilities: { executors: names, grants: names }, config: {} });
   const research = !!intent.research || /search|fetch-url|social-link/u.test(intent.route || '') || /SEARCH|FETCH/u.test(intent.reason || '') ||
     observations.some(row => row.type === 'source' || ['web_search', 'fetch_url', 'open_url'].includes(row.name));
-  const readTools = /^(?:file_read|glob|grep|read_history|search_history|web_search|fetch_url|open_url|media_info|knowledge|browser_snapshot|browser_read|browser_screenshot)$/u;
   const action = intent.route === 'phone' || intent.research?.navigate === true || intent.reason === 'PHONE_UNAVAILABLE' ||
-    observations.some(row => row.type === 'tool' && row.executed !== false && !readTools.test(row.name || '')) ||
+    observations.some(row => row.type === 'tool' && row.executed !== false && !['read', 'compute'].includes(row.effect || toolEffect(row.name))) ||
     /(?:创建|修改|删除|保存|写入|移动).{0,20}(?:文件|目录)|(?:发送|发出).{0,16}(?:邮件|消息)|\b(?:create|edit|delete|save|move|write)\b.{0,30}\b(?:file|directory|folder)\b|\bsend\b.{0,20}\b(?:email|message)\b/iu.test(goal);
   return research ? (action ? 'research-action' : 'research') : action ? 'action' : 'answer';
 }
@@ -93,13 +101,31 @@ export function completionResult(input = {}) {
   return { ...receipt, summary: completionSummary(receipt, input.goal) };
 }
 
+// Host-owned receipts, not the lead's prose, determine team delivery. Only
+// each member's final attempt counts; earlier attempts remain in history.
+export function teamCompletion({ goal = '', reply = '', members = [], accepted = true, cancelled = false, budgetExceeded = false } = {}) {
+  const latest = [...new Map(members.map(row => [row.id, row])).values()];
+  const delivered = latest.length > 0 && accepted && latest.every(row => row.ok && row.status === 'completed' && row.completion?.outcome === 'completed');
+  const outcome = cancelled ? 'cancelled' : budgetExceeded ? 'budget_exhausted' : delivered && reply.trim() ? 'completed' : 'partial';
+  const requirements = latest.map(row => ({ text: String(row.id).slice(0, 200), status: row.ok && row.status === 'completed' && row.completion?.outcome === 'completed' ? 'met' : 'missing', evidenceIds: row.completion?.evidenceIds || [] }));
+  return { version: 1, kind: 'answer', outcome, goalState: outcome === 'completed' ? 'supported' : 'unverified', reason: outcome === 'completed' ? 'TEAM_DELIVERIES_SUMMARIZED' : 'TEAM_DELIVERY_INCOMPLETE', evidenceIds: [...new Set(requirements.flatMap(row => row.evidenceIds))], completedSteps: requirements.filter(row => row.status === 'met').length,
+    task: { ...goalSnapshot(startGoal(goal)), decision: outcome === 'completed' ? 'complete' : 'partial', requirements },
+    summary: /[\u3400-\u9fff]/u.test(goal) ? (outcome === 'completed' ? '已汇总成员交付；详见各成员回执' : '团队尚未全部完成；详见各成员回执') : (outcome === 'completed' ? 'Member deliveries summarized; see individual receipts' : 'Team delivery is incomplete; see member receipts') };
+}
+
 export function completionSummary(receipt, text = '') {
   const zh = /[\u3400-\u9fff]/u.test(text);
   const labels = zh
-    ? { completed: '已完成', partial: '部分完成', blocked: '受阻', cancelled: '已取消', budget_exhausted: '预算已用完' }
-    : { completed: 'Completed', partial: 'Partially completed', blocked: 'Blocked', cancelled: 'Cancelled', budget_exhausted: 'Budget exhausted' };
+    ? { completed: '已完成', partial: '部分完成', blocked: '受阻', needs_user: '等待补充', cancelled: '已取消', budget_exhausted: '预算已用完' }
+    : { completed: 'Completed', partial: 'Partially completed', blocked: 'Blocked', needs_user: 'Needs your input', cancelled: 'Cancelled', budget_exhausted: 'Budget exhausted' };
   const label = labels[receipt?.outcome] || (zh ? '完成状态未知' : 'Completion unknown');
   if (receipt?.goalState === 'not_applicable') return zh ? '回答已交付' : 'Answer delivered';
+  if (receipt?.reason === 'ANSWERED_WITHOUT_SOURCES') return zh ? '已回答；未检索来源' : 'Answered without retrieving sources';
+  if (receipt?.reason === 'GOAL_CHECK_BUDGET') return zh ? '回答已保留；剩余预算不足，尚未完成交付检查' : 'Answer preserved; insufficient budget to check delivery';
+  if (['GOAL_CHECK_TRUNCATED', 'GOAL_CHECK_CONTEXT'].includes(receipt?.reason)) return zh ? '回答已保留；内容超过本次核对范围，完成情况未确认' : 'Answer preserved; content exceeds the scope of this delivery check';
+  if (['GOAL_CHECK_UNAVAILABLE', 'GOAL_CHECK_INVALID', 'GOAL_EVIDENCE_INVALID'].includes(receipt?.reason)) return zh ? '回答已保留；交付检查未能完成，结论待核对' : 'Answer preserved; delivery check unavailable, conclusions remain unchecked';
+  if (receipt?.reason === 'GOAL_DELIVERY_SUPPORTED') return zh ? '已核对交付要求与执行依据；事实未独立复核' : 'Delivery checked against recorded evidence; facts not independently verified';
+  if (receipt?.task?.explanation) return label + ' · ' + receipt.task.explanation.slice(0, 240);
   if (receipt?.goalState === 'supported') return zh ? '已读取相关来源；结论未独立核实' : 'Relevant sources read; conclusions are not independently verified';
   return label + (receipt?.goalState === 'verified' ? (zh ? ' · 已核对目标状态' : ' · Target state verified') : (zh ? ' · 尚无目标完成证据' : ' · Goal completion is unverified'));
 }

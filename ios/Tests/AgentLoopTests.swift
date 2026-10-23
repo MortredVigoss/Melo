@@ -42,18 +42,75 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
         // The shared receipt reads actual page text, never a successful tool flag.
         for body in ["Sydney brunch menu with breakfast dishes and observed opening hours for this fixture.", "Distant stars and galaxies have different spectra and their light is redshifted.", ""] {
             let log = Log()
-            let transport = ScriptedTransport { input in input.iteration == 0 ? calls([fc("read", "open_url", #"{"url":"https://fixture.invalid/menu"}"#)]) : answer("Sydney brunch: https://fixture.invalid/menu") }
+            let transport = ScriptedTransport { input in
+                if input.goalReview != nil {
+                    let good = body.hasPrefix("Sydney")
+                    let report: [String: Any] = ["decision": good ? "complete" : "partial", "reasonType": good ? "fulfilled" : "unavailable", "requirements": [["text": "Research Sydney brunch", "status": good ? "met" : "missing", "evidenceIds": good ? ["read:source:0"] : []]]]
+                    return answer(String(decoding: try JSONSerialization.data(withJSONObject: report), as: UTF8.self))
+                }
+                return input.iteration == 0 ? calls([fc("read", "open_url", #"{"url":"https://fixture.invalid/menu"}"#)]) : answer("Sydney brunch: https://fixture.invalid/menu")
+            }
             let tools = loopTools(log) { _ in
                 let page: [String: Any] = ["ok": true, "url": "https://fixture.invalid/menu", "text": body]
                 return PhoneToolResult(output: PhoneToolEnvelope.success(String(data: try! JSONSerialization.data(withJSONObject: page), encoding: .utf8)!))
             }
             let result = try await AgentLoop(transport: transport, tools: tools, budget: PhoneRunBudget(), latestUserMessage: "Research Sydney brunch").run()
-            assert(log.performed.count == 1 && transport.requests.count == 2 && transport.completions.isEmpty)
+            assert(log.performed.count == 1 && transport.requests.count == 3 && transport.requests.last?.goalReview != nil && transport.completions.isEmpty)
             assert(result.completion?.outcome == (body.hasPrefix("Sydney") ? "completed" : "partial"))
             assert(result.completion?.goalState == (body.hasPrefix("Sydney") ? "supported" : "unverified"))
         }
         let plain = try await AgentLoop(transport: ScriptedTransport { _ in answer("Hello") }, tools: nil, budget: PhoneRunBudget(), latestUserMessage: "Hello").run()
         assert(plain.completion?.outcome == "completed" && plain.completion?.goalState == "not_applicable")
+
+        // Calendar discovery must not terminate a weather request: one bounded
+        // check resumes the same turn, with the original goal and tool evidence.
+        do {
+            let log = Log(), budget = PhoneRunBudget()
+            let transport = ScriptedTransport { input in
+                switch input.iteration {
+                case 0: return calls([fc("calendar", "calendar_list_events", #"{"start":"2026-10-23T00:00:00+11:00","end":"2026-11-01T00:00:00+11:00"}"#)])
+                case 1: return answer("演唱会已找到，请告诉我场馆地址。")
+                case 2:
+                    assert(input.goalReview != nil)
+                    return answer(#"{"decision":"continue","reasonType":"lookup_missing","reason":"还缺公开场馆和天气","nextStep":"查场馆后查当天预报","requirements":[{"text":"演唱会当天天气","status":"missing","evidenceIds":[]}]}"#)
+                case 3: assert(input.repairing); return calls([fc("venue", "open_url", #"{"url":"https://fixture.invalid/venue"}"#)])
+                case 4: return calls([fc("weather", "open_url", #"{"url":"https://fixture.invalid/weather"}"#)])
+                case 5: return answer("31 日演出在 Example Arena，当天约 18 度，降雨概率 20%。")
+                default:
+                    assert(input.goalReview != nil)
+                    return answer(#"{"decision":"complete","reasonType":"fulfilled","requirements":[{"text":"演唱会当天天气","status":"met","evidenceIds":["weather:source:0"]}]}"#)
+                }
+            }
+            let tools = AgentLoopTools(definitions: DeviceToolSpec.all.map(\.definition) + WebPageToolSpec.all.map(\.definition), instructions: "", perform: { call in
+                log.performed.append(call)
+                let value = call.name == "calendar_list_events" ? #"{"events":[{"title":"BigBang","date":"2026-10-31"}]}"# : call.callID == "venue" ? #"{"url":"https://fixture.invalid/venue","text":"BigBang at Example Arena on 31 October 2026."}"# : #"{"url":"https://fixture.invalid/weather","text":"Example Arena on 31 October 2026: 18 C, rain probability 20%."}"#
+                return PhoneToolResult(output: PhoneToolEnvelope.success(value))
+            })
+            let result = try await AgentLoop(transport: transport, tools: tools, budget: budget, latestUserMessage: "下周演唱会当天的天气如何？").run()
+            assert(log.performed.map(\.callID) == ["calendar", "venue", "weather"])
+            assert(transport.requests.count == 7 && budget.used.providerCalls == 7 && budget.used.toolCalls == 3)
+            assert(result.text.contains("18 度") && result.completion?.outcome == "completed")
+            assert(result.completion?.task?.original == "下周演唱会当天的天气如何？" && result.completion?.task?.corrections == 1)
+        }
+        for mode in ["ambiguity", "invalid", "tool-attempt", "failure", "limit"] {
+            let log = Log(), budget = PhoneRunBudget()
+            var checks = 0
+            let transport = ScriptedTransport { input in
+                if input.goalReview != nil {
+                    checks += 1
+                    if mode == "failure" { throw URLError(.cannotConnectToHost) }
+                    if mode == "tool-attempt" { return calls([fc("forbidden")]) }
+                    if mode == "invalid" { return answer("invalid JSON") }
+                    return answer(mode == "ambiguity" ? #"{"decision":"needs_user","reasonType":"ambiguity","reason":"同日有两场，请选择","requirements":[{"text":"场次天气","status":"missing","evidenceIds":[]}]}"# : #"{"decision":"continue","reasonType":"lookup_missing","nextStep":"核对剩余事实","requirements":[{"text":"完整回答","status":"missing","evidenceIds":[]}]}"#)
+                }
+                return input.iteration == 0 ? calls([fc("initial")]) : answer("已有结果保留。")
+            }
+            let result = try await AgentLoop(transport: transport, tools: loopTools(log), budget: budget, latestUserMessage: "读这个页面").run()
+            assert(log.performed.count == 1 && result.text == "已有结果保留。")
+            assert(checks == (mode == "limit" ? 3 : 1))
+            assert(result.completion?.outcome == (mode == "ambiguity" ? "needs_user" : "partial"))
+            assert(budget.used.providerCalls == transport.requests.count)
+        }
 
         // Audit A1: hostile finite numbers never trap, neighbours and offsets clamp before conversion.
         let extremeMessages = (0..<4).map { ChatMessage(id: "m\($0)", role: "user", content: "original") }
@@ -354,7 +411,7 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             var n = 0
             let transport = ScriptedTransport { _ in n += 1; return n <= 2 ? calls([fc("mm\(n)")]) : answer("成员完成") }
             let outcome = try await AgentLoop(transport: transport, tools: loopTools(Log()), budget: member, latestUserMessage: "q").run()
-            assert(outcome.text == "成员完成" && turn.used.toolCalls == 6 && turn.used.providerCalls == 3 && team.used.toolCalls == 2)
+            assert(outcome.text == "成员完成" && turn.used.toolCalls == 6 && turn.used.providerCalls == 4 && team.used.toolCalls == 2)
             now = 16 * 60_000
             assert(member.exhausted()?.reason == "deadline" && turn.exhausted() == nil, "the team deadline stops members, not the turn")
             let stopped = try await AgentLoop(transport: ScriptedTransport { _ in answer("late") }, tools: nil, budget: team.narrowed(), latestUserMessage: "q").run()

@@ -232,7 +232,7 @@ async function runSkillLoop({
 
   let finalOutput = '';
   let totalToolCalls = 0;
-  const coreTurn = createCoreTurn({ allowedTools: allowedTools.map(t => t.id), limits: { rounds: maxIterations } });
+  const coreTurn = createCoreTurn({ goal: firstUserContent, tools: allowedTools, allowedTools: allowedTools.map(t => t.id), limits: { rounds: maxIterations } });
   let completed = false;
   let iterations = 0;
 
@@ -245,13 +245,22 @@ async function runSkillLoop({
 
     if (coreTurn.update('request') !== 'running') break;
     iterations++;
-    const request = fitRequestContext({ sections: [{ id: 'instructions', text: systemPrompt, required: true }],
-      messages: loopMessages, toolDefinitions: functionSession.definitions, ...contextBudget });
+    const checkingGoal = coreTurn.checking;
+    const review = checkingGoal ? coreTurn.reviewRequest() : null;
+    let request;
+    try { request = fitRequestContext({ sections: [{ id: 'instructions', text: review?.systemPrompt || systemPrompt, required: true }],
+      messages: review?.messages || loopMessages, toolDefinitions: checkingGoal ? [] : functionSession.definitions, ...contextBudget }); } catch (error) {
+      if (!checkingGoal) throw error;
+      coreTurn.stopReview('GOAL_CHECK_CONTEXT'); coreTurn.update('complete');
+      finalOutput = cleanReplyForParent(coreTurn.candidateReply);
+      completed = coreTurn.status === 'completed';
+      break;
+    }
     // Run budget (C1): stop before another request once the turn's pool is gone.
     const runBudget = currentRequestContext()?.budget || null;
     const exhausted = budgetExhausted(runBudget);
     if (exhausted) {
-      const stopped = { ok: false, output: `Run budget exhausted (${exhausted.reason}) before another request; the skill is incomplete.`, error: 'BUDGET_EXHAUSTED',
+      const stopped = { ok: false, output: coreTurn.candidateReply || `Run budget exhausted (${exhausted.reason}) before another request; the skill is incomplete.`, error: 'BUDGET_EXHAUSTED',
         meta: { skillId: skill.id, iterations, toolCalls: totalToolCalls, depth, completion: coreTurn.receipt(task, '', 'BUDGET_EXHAUSTED'), budget: { reason: exhausted.reason, limit: exhausted.limit, used: exhausted.used } } };
       recordTelemetry(false, stopped);
       return stopped;
@@ -264,7 +273,7 @@ async function runSkillLoop({
     };
     let rawReply;
     try { rawReply = await replyFn({
-      ...functionSession.requestOptions(),
+      ...(checkingGoal ? { maxTokens: 2048 } : functionSession.requestOptions()),
       timeoutMs: runBudget ? requestTimeoutMs(runBudget) : undefined,
       onProviderResponse: account,
       authMode: config.authMode,
@@ -272,18 +281,40 @@ async function runSkillLoop({
       apiKey: providerConfig.apiKey,
       baseUrl: providerConfig.baseUrl,
       model: providerConfig.model,
-      systemPrompt,
+      systemPrompt: review?.systemPrompt || systemPrompt,
       messages: request.messages,
-      nativeWebSearchEnabled: nativeFeaturesForScope(currentRequestContext().capabilityScope).nativeWebSearchEnabled,
-      nativeImageGenerationEnabled: nativeFeaturesForScope(currentRequestContext().capabilityScope).nativeImageGenerationEnabled,
+      nativeWebSearchEnabled: !checkingGoal && nativeFeaturesForScope(currentRequestContext().capabilityScope).nativeWebSearchEnabled,
+      nativeImageGenerationEnabled: !checkingGoal && !coreTurn.repairing && nativeFeaturesForScope(currentRequestContext().capabilityScope).nativeImageGenerationEnabled,
+      onExecutionEvent: event => coreTurn.observeNative(event),
       signal,
     }); }
+    catch (error) {
+      if (!checkingGoal || signal?.aborted) throw error;
+      coreTurn.stopReview(); coreTurn.update('complete');
+      finalOutput = cleanReplyForParent(coreTurn.candidateReply);
+      completed = coreTurn.status === 'completed';
+      break;
+    }
     finally { account(null); }
 
     const turn = functionSession.parse(rawReply);
     const { toolCalls } = turn;
 
+    if (checkingGoal) {
+      const decision = coreTurn.review(toolCalls.length ? '' : turn.text);
+      if (decision.decision === 'continue') {
+        coreTurn.update('feedback', { repair: true });
+        loopMessages.push({ role: 'assistant', content: coreTurn.candidateReply }, { role: 'user', content: decision.feedback });
+        continue;
+      }
+      coreTurn.update('complete');
+      finalOutput = cleanReplyForParent(coreTurn.candidateReply);
+      completed = coreTurn.status === 'completed';
+      break;
+    }
+
     if (!toolCalls.length) {
+      if (coreTurn.candidate(turn.text, { research: true, nativeSearch: nativeFeaturesForScope(currentRequestContext().capabilityScope).nativeWebSearchEnabled })) { coreTurn.update('feedback'); continue; }
       coreTurn.update('complete');
       if (coreTurn.status !== 'completed') break;
       finalOutput = cleanReplyForParent(turn.text);
@@ -392,9 +423,9 @@ async function runSkillLoop({
 
   const completion = coreTurn.receipt(task, finalOutput);
   const finalResult = {
-    ok: completed && Boolean(finalOutput),
+    ok: completed && Boolean(finalOutput) && completion.outcome === 'completed',
     output: finalOutput || (coreTurn.status === 'blocked' ? coreTurn.reply(task) : completed ? 'Skill returned no answer.' : 'Skill reached its tool iteration limit before producing a final answer; the task is incomplete.'),
-    ...(!completed ? { error: coreTurn.reason === 'ROUND_LIMIT' ? 'SKILL_ITERATION_LIMIT' : coreTurn.reason || 'SKILL_ITERATION_LIMIT' } : !finalOutput ? { error: 'EMPTY_SKILL_REPLY' } : {}),
+    ...(!completed ? { error: coreTurn.reason === 'ROUND_LIMIT' ? 'SKILL_ITERATION_LIMIT' : coreTurn.reason || 'SKILL_ITERATION_LIMIT' } : !finalOutput ? { error: 'EMPTY_SKILL_REPLY' } : completion.outcome !== 'completed' ? { error: 'GOAL_INCOMPLETE' } : {}),
     meta: {
       skillId: skill.id,
       completion,

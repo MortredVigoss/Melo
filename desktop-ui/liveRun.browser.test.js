@@ -25,7 +25,11 @@ test('a running reply shows its steps, keeps controls usable and takes a supplem
   requests.push({path:req.url,body:JSON.stringify(body),toolResults:(body.input||[]).filter(item=>item.type==='function_call_output').length});
   res.setHeader('content-type','text/event-stream');
   const pieces=['床前','明月','光，','疑是','地上','霜。'];
-  if(req.url.endsWith('/responses')&&raw.includes('查一下以前的诗')&&raw.includes('search_history')&&!(body.input||[]).some(item=>item.type==='function_call_output')){
+  if(raw.includes("You are Melo's task completion checker")){
+   assert.equal(body.tools,undefined,'delivery checks cannot execute tools');
+   const report=JSON.stringify({decision:'partial',reasonType:'unavailable',reason:'Fixture history is empty',nextStep:'',requirements:[{text:'找出以前的五言诗',status:'unavailable',evidenceIds:[]}]});
+   res.end(`data: ${JSON.stringify({type:'response.completed',response:{id:'fixture-check',model:'fixture-model',status:'completed',output:[{type:'message',role:'assistant',id:'check',status:'completed',content:[{type:'output_text',text:report,annotations:[]}]}]}})}\n\n`);
+  } else if(req.url.endsWith('/responses')&&raw.includes('查一下以前的诗')&&raw.includes('search_history')&&!(body.input||[]).some(item=>item.type==='function_call_output')){
    // Step 1 of a two-step turn: a slow tool call, so the browser can add a supplement mid-turn.
    await toolGate;
    res.end(`data: ${JSON.stringify({type:'response.completed',response:{id:'fixture-tool',model:'fixture-model',status:'completed',output:[{type:'function_call',id:'item-poems',call_id:'call_poems',name:'search_history',arguments:JSON.stringify({query:'诗'}),status:'completed'}]}})}\n\n`);
@@ -88,9 +92,11 @@ test('a running reply shows its steps, keeps controls usable and takes a supplem
  assert.deepEqual(chat.messages.map(m=>m.role),['user','assistant','user','assistant','user','assistant'],'used in the same turn, not sent as another message');
  assert.equal(chat.messages[4].content,'查一下以前的诗\n\n补充：只要五言');
  const turn=requests.filter(r=>r.body.includes('查一下以前的诗'));
- assert.equal(turn.length,2,'tool step plus one follow-up request');
+ assert.equal(turn.length,3,'tool step, follow-up request and tool-free delivery check');
  assert.equal(turn[0].body.includes('只要五言'),false);assert.equal(turn[0].toolResults,0);
  assert.ok(turn[1].body.includes('只要五言')&&turn[1].toolResults===1,'the follow-up request carries the tool result and the supplement');
+ assert.ok(turn[2].body.includes("You are Melo's task completion checker")&&turn[2].body.includes('只要五言'),'the delivery check retains the supplement');
+ assert.equal(JSON.parse(turn[2].body).tools,undefined);
  await page.locator('[data-action=stop-send]').waitFor({state:'detached',timeout:15000});
  assert.deepEqual(errors,[]);
 });

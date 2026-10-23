@@ -9,12 +9,12 @@ const user=content=>({role:'user',content});
 const assistant=content=>({role:'assistant',content});
 test('retry restores the previous compound task with current configured capabilities',()=>{
  const p=ask('再试一次',[user(goal),assistant('Search was unavailable.'),user('再试一次')]);
- assert.equal(p.route,'http-search');assert.deepEqual(p.tools,['web_search','fetch_url','phone_use']);assert.deepEqual(p.requiredTools,['web_search','phone_use']);
+ assert.equal(p.route,'http-search');assert.deepEqual(p.tools,['web_search','fetch_url','phone_use']);assert.deepEqual(p.requiredTools,['phone_use']);
  assert.deepEqual(p.toolDependencies,{phone_use:['web_search']});assert.match(p.instructions,/retry/i);
 });
 test('retry uses current capability instead of an assistant claim that no tools exist',()=>{
  const p=ask('Try again',[user('Recommend brunch in Surry Hills'),assistant('I cannot search or operate the phone.')]);
- assert.equal(p.route,'http-search');assert.deepEqual(p.requiredTools,['web_search']);
+ assert.equal(p.route,'http-search');assert.deepEqual(p.requiredTools,[]);
 });
 test('multiple retries keep the original task',()=>{
  const p=ask('再试一次',[user(goal),assistant('Unavailable'),user('再试一次'),assistant('No tools'),user('再试一次')]);
@@ -27,7 +27,7 @@ test('retry chains retain user restrictions introduced in an earlier retry',()=>
 });
 test('current retry restrictions narrow the earlier device task',()=>{
  const p=ask('再试一次，只做检索并列出来源，先不要导航。',[user(goal)]);
- assert.equal(p.route,'http-search');assert.deepEqual(p.requiredTools,['web_search']);assert.ok(!p.tools.includes('phone_use'));
+ assert.equal(p.route,'http-search');assert.deepEqual(p.requiredTools,[]);assert.ok(!p.tools.includes('phone_use'));
 });
 test('explicit continuations preserve the active task',()=>{
  for(const text of ['继续','请继续执行','你再试一次。','重新尝试一次','retry','continue','go ahead'])assert.equal(ask(text,[user('搜索 Surry Hills brunch')]).route,'http-search',text);

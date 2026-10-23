@@ -98,6 +98,11 @@ final class Counter: @unchecked Sendable {
         assert(AgentTeam.summaryInput(task: "整理", outcome: mixed, name: { $0 }).contains("三处来源"))
         assert(AgentTeam.usableSummary("团队已经完成") && !AgentTeam.usableSummary(#" {"a":1}"#) && !AgentTeam.usableSummary("  "))
 
+        let partialReceipt = AgentCompletionReceipt(version: 1, kind: "research", outcome: "partial", goalState: "unverified", reason: "GOAL_INCOMPLETE", evidenceIds: [], completedSteps: 1, summary: "天气尚未取得")
+        let incomplete = await AgentTeam.runChecked(plan, task: "查天气") { _ in TeamReply(text: #"{"conclusion":"done","status":"completed","unfinished":[]}"#, completion: partialReceipt) }
+        assert(!incomplete.ok && incomplete.results.allSatisfy { !$0.ok && $0.handoff.status == "failed" && $0.handoff.completion?.outcome == "partial" })
+        assert(incomplete.results.first?.handoff.unfinished.first == "天气尚未取得")
+
         // Parallel researchers overlap at most two at a time; the reviewer runs last and alone.
         final class Peak: @unchecked Sendable { var running = 0, peak = 0, order: [String] = []; let lock = NSLock() }
         let peak = Peak()

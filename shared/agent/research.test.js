@@ -23,7 +23,7 @@ test('brunch recommendation plus navigation exposes research then an explicitly 
   const result = plan('推荐一下有什么好的 Surry Hill 的 brunch，然后给我导航到那里。你先不用管有没有开门，我主要是测试一下你的能力。');
   assert.equal(result.route, 'http-search');
   assert.deepEqual(result.tools, ['web_search', 'fetch_url', 'phone_use']);
-  assert.deepEqual(result.requiredTools, ['web_search', 'phone_use']);
+  assert.deepEqual(result.requiredTools, ['phone_use']);
   assert.equal(result.research.depth, 'standard');
   assert.match(result.instructions, /before.*phone_use/is);
 });
@@ -33,7 +33,7 @@ test('recommendations read sources without claiming that every recommendation ne
     const result = plan(text);
     assert.equal(result.route, 'http-search', text);
     assert.deepEqual(result.tools, ['web_search', 'fetch_url']);
-    assert.deepEqual(result.requiredTools, ['web_search']);
+    assert.deepEqual(result.requiredTools, []);
   }
   assert.equal(plan('深入调研比较 Surry Hills 的 brunch，多来源核对菜单').research.depth, 'deep');
 });

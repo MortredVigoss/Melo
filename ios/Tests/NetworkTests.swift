@@ -172,11 +172,15 @@ func json(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObject(
         MockProtocol.requestBodies = []
         MockProtocol.payloads = [
             "{\"choices\":[{\"finish_reason\":\"tool_calls\",\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"call_a\",\"type\":\"function\",\"function\":{\"name\":\"open_url\",\"arguments\":\"{\\\"url\\\":\\\"https://a.example\\\"}\"}},{\"id\":\"call_b\",\"type\":\"function\",\"function\":{\"name\":\"web_screenshot\",\"arguments\":\"{\\\"url\\\":\\\"https://a.example\\\"}\"}}]}}]}",
-            "{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"role\":\"assistant\",\"content\":\"页面说 page text\"}}]}"]
+            "{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"role\":\"assistant\",\"content\":\"页面说 page text\"}}]}",
+            String(data: try JSONSerialization.data(withJSONObject: ["choices": [["finish_reason": "stop", "message": ["content": #"{"decision":"complete","reasonType":"fulfilled","reason":"已查看页面","nextStep":"","requirements":[{"text":"查看页面","status":"met","evidenceIds":["call_a"]}]}"#]]]]), encoding: .utf8)!]
         let chatAnswer = try await Network.reply(messages: [ChatMessage(role: "user", content: "看看 https://a.example")], endpoint: "https://example.invalid/chat", model: "fixture", token: "test-key", instructions: "Role", tools: toolSet, session: session)
         assert(chatAnswer.text == "页面说 page text" && performed.map(\.name) == ["open_url", "web_screenshot"] && performed.map(\.callID) == ["call_a", "call_b"])
         assert(performed[0].arguments == #"{"url":"https://a.example"}"#)
-        assert(MockProtocol.requestBodies.count == 2)
+        assert(MockProtocol.requestBodies.count == 3 && chatAnswer.completion?.outcome == "completed")
+        let chatCheck = MockProtocol.requestBodies[2]
+        assert(chatCheck["tools"] == nil && chatCheck["tool_choice"] == nil)
+        assert(((chatCheck["messages"] as? [[String: Any]])?.first?["content"] as? String)?.contains("task completion checker") == true)
         let firstChat = MockProtocol.requestBodies[0]
         assert((firstChat["tools"] as? [[String: Any]])?.count == 2 && firstChat["tool_choice"] as? String == "auto")
         assert(((firstChat["tools"] as? [[String: Any]])?.first?["function"] as? [String: Any])?["name"] as? String == "open_url")
@@ -199,9 +203,13 @@ func json(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObject(
         MockProtocol.requestBodies = []; performed = []
         MockProtocol.payloads = [
             "{\"stop_reason\":\"tool_use\",\"content\":[{\"type\":\"text\",\"text\":\"我来看看\"},{\"type\":\"tool_use\",\"id\":\"toolu_1\",\"name\":\"web_screenshot\",\"input\":{\"url\":\"https://a.example\",\"fullPage\":true}}]}",
-            "{\"stop_reason\":\"end_turn\",\"content\":[{\"type\":\"text\",\"text\":\"截图已附上\"}]}"]
+            "{\"stop_reason\":\"end_turn\",\"content\":[{\"type\":\"text\",\"text\":\"截图已附上\"}]}",
+            String(data: try JSONSerialization.data(withJSONObject: ["stop_reason": "end_turn", "content": [["type": "text", "text": #"{"decision":"complete","reasonType":"fulfilled","reason":"截图已提供","nextStep":"","requirements":[{"text":"查看截图","status":"met","evidenceIds":["toolu_1"]}]}"#]]]), encoding: .utf8)!]
         let claudeAnswer = try await Network.reply(messages: [ChatMessage(role: "user", content: "截图 https://a.example")], endpoint: "https://example.invalid/v1/messages", model: "claude", token: "test-key", apiProtocol: "anthropic", tools: toolSet, session: session)
         assert(claudeAnswer.text == "截图已附上" && performed.count == 1 && performed[0].callID == "toolu_1")
+        assert(MockProtocol.requestBodies.count == 3 && claudeAnswer.completion?.outcome == "completed")
+        assert(MockProtocol.requestBodies[2]["tools"] == nil && MockProtocol.requestBodies[2]["tool_choice"] == nil)
+        assert((MockProtocol.requestBodies[2]["system"] as? String)?.contains("task completion checker") == true)
         assert(json(performed[0].arguments)["fullPage"] as? Bool == true && json(performed[0].arguments)["url"] as? String == "https://a.example")
         let firstClaude = MockProtocol.requestBodies[0]
         assert((firstClaude["tools"] as? [[String: Any]])?.first?["input_schema"] != nil && firstClaude["tool_choice"] == nil)

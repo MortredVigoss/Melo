@@ -206,17 +206,13 @@ struct ImageSizeRejected: Error {}
         let imageMode = imageTask?.makesImage == true || offersImageTool
         // Phone tools (device data + web pages + read_history) are offered only for ordinary replies, never image generation.
         let phoneTools = imageTask?.makesImage == true ? [] : (deviceTools?.definitions ?? [])
-        let mustSearch = webSearch && DeviceToolLoop.requiresWebSearch(requestHistory ?? messages, policy: deviceTools?.policy ?? DeviceToolPolicy())
         var loopTools: AgentLoopTools?
         if !phoneTools.isEmpty, let deviceTools {
             let tools = AgentLoopTools(definitions: phoneTools, instructions: deviceTools.instructions, perform: deviceTools.perform, statusText: deviceTools.statusText)
             loopTools = tools
             body["tools"] = ((body["tools"] as? [[String: Any]]) ?? []) + phoneTools.map(\.responsesDefinition)
-            // Allow phone data before a web lookup (e.g. nearby weather, "查一下日程"):
-            // a generic "look up" wording is not forced to web_search. A question that
-            // DeviceToolLoop still deems time-sensitive keeps the forced web_search on
-            // the first round; phone tools are freely offered from the follow-up round.
-            if !mustSearch || body["tool_choice"] == nil || body["tool_choice"] as? String == "auto" { body["tool_choice"] = "auto" }
+            // Let the model resolve local context before a public lookup.
+            body["tool_choice"] = "auto"
             let include = (body["include"] as? [String]) ?? []
             body["include"] = include.contains("reasoning.encrypted_content") ? include : include + ["reasoning.encrypted_content"]
             body["instructions"] = ((body["instructions"] as? String) ?? "") + "\n" + tools.instructionsWithContract
@@ -228,12 +224,13 @@ struct ImageSizeRejected: Error {}
         if loopHooks.onStatus == nil { loopHooks.onStatus = { setStatus($0) } }
         let loop = AgentLoop(transport: transport, tools: loopTools, budget: budget ?? PhoneRunBudget(), latestUserMessage: (requestHistory ?? messages).last(where: { $0.role == "user" })?.content ?? "", verification: imageTask?.makesImage == true ? nil : verification, hooks: loopHooks)
         let makesImage = imageTask?.makesImage == true
+        loop.nativeSearchAvailable = webSearch
+        loop.goalHistory = requestHistory ?? messages
         loop.validate = { outcome in
             guard outcome.stop == .answered else { return }
             if makesImage && (outcome.finalRound?.images.isEmpty ?? true) { throw MeloError.message("服务未返回完整图片，请确认当前账号或模型支持图片生成。要求和参考图已保留。") }
-            // A page actually fetched by open_url/web_screenshot counts as real web access.
-            let openedWebPage = outcome.calls.contains { $0.executed && $0.status != "error" && WebPageToolSpec.named($0.toolId) != nil }
-            if mustSearch && !outcome.searched && !openedWebPage { throw MeloError.message("这次没有取得实际联网搜索结果，请重试或切换支持搜索的模型。消息已保留。") }
+            // Missing search evidence is handled by the shared goal check;
+            // preserve the candidate and expose its incomplete receipt.
         }
         let outcome = try await loop.run()
         try Task.checkCancellation()
@@ -293,9 +290,9 @@ struct ImageSizeRejected: Error {}
 
 /// Codex Responses (streaming, store:false) as a single-round AgentLoop
 /// transport. Round 1 sends the body built by ChatGPTAccount.reply unchanged
-/// (forced web_search, `reasoning.encrypted_content`, image items); later
+/// (available web_search, `reasoning.encrypted_content`, image items); later
 /// rounds replay every output item verbatim, one function_call_output per call
-/// and this round's screenshots, with the forced search reset to "auto".
+/// and this round's screenshots. Completion checks use a separate tool-free body.
 final class CodexResponsesTransport: AgentModelTransport, @unchecked Sendable {
     let account: CodexRegistration, session: URLSession, sessionID: String, model: String
     private(set) var base: [String: Any]
@@ -376,15 +373,17 @@ final class CodexResponsesTransport: AgentModelTransport, @unchecked Sendable {
 
     func round(_ input: AgentLoopRequest) async throws -> AgentRound {
         var body = base
-        if !input.transcript.isEmpty {
+        if let review = input.goalReview {
+            body = ["model": model, "stream": true, "store": false, "instructions": review["systemPrompt"] as? String ?? "", "input": review["messages"] as? [[String: Any]] ?? []]
+        } else if !input.transcript.isEmpty {
             body["input"] = Self.rendered(base["input"] as? [Any] ?? [], transcript: input.transcript)
-            // The forced web_search (if any) applied to the first round only.
             if body["tool_choice"] != nil { body["tool_choice"] = "auto" }
         }
+        if input.repairing { body["tools"] = (body["tools"] as? [[String: Any]])?.filter { $0["type"] as? String != "image_generation" } }
         _ = try PhoneMemberLimits.outputAllowance(body: body, remaining: input.remainingTokens)
         var result: (ChatGPTStream, Int)
-        do { result = try await stream(body, timeout: input.timeout, observe: true) }
-        catch is ImageSizeRejected {
+        do { result = try await stream(body, timeout: input.timeout, observe: input.goalReview == nil) }
+        catch is ImageSizeRejected where input.goalReview == nil && !input.repairing {
             // Retry once at the service's default size; the reply says so.
             base["tools"] = ((base["tools"] as? [[String: Any]]) ?? []).map { var tool = $0; if tool["type"] as? String == "image_generation" { tool["size"] = nil }; return tool }
             body["tools"] = base["tools"]
@@ -392,7 +391,7 @@ final class CodexResponsesTransport: AgentModelTransport, @unchecked Sendable {
             result = try await stream(body, timeout: input.timeout, observe: true)
         }
         let (stream, estimate) = result
-        let calls = offersTools ? stream.functionCalls : []
+        let calls = input.goalReview == nil && offersTools ? stream.functionCalls : []
         let text = calls.isEmpty ? try stream.result() : stream.text
         return AgentRound(text: text, calls: calls, echo: .responses(stream.outputItems), sources: stream.sources, searched: stream.searched, images: stream.images,
                           inputTokens: Self.inputTokens(stream), estimatedInputTokens: estimate, outputTokens: Self.inputTokens(stream, key: "output"))

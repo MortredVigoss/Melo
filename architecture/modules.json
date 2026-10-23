@@ -23,8 +23,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 625,
-      "edges": 1915,
+      "modules": 627,
+      "edges": 1925,
       "roots": [
         "src",
         "desktop-ui",
@@ -734,7 +734,7 @@
       ],
       "modules": {
         "desktop-ui": 27,
-        "shared": 24,
+        "shared": 26,
         "src": 69
       },
       "entryModules": [
@@ -1140,6 +1140,7 @@
           "shared/agent/context.test.js",
           "shared/agent/continuation.test.js",
           "shared/agent/execution.test.js",
+          "shared/agent/goal.test.js",
           "shared/agent/research.test.js",
           "shared/agent/taskReplay.test.js",
           "shared/agent/tools.test.js",

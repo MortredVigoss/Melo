@@ -10,7 +10,9 @@ import { parseReplyDocument, inlineSpans, replyPresentation } from '../../src/sh
 import { topicDividers } from '../../src/shared/conversationTopics.js';
 import { budgetOperation } from './policyBridge.js';
 import { repeatOperation } from './repeatGuard.js';
-import { completionResult, completionObservation } from './completion.js';
+import { completionResult, completionObservation, teamCompletion } from './completion.js';
+import { goalOperation } from './goal.js';
+import { toolEffect } from './toolEffects.js';
 import { contextCost, contextPlan, contextWirePlan, historyPage } from './context.js';
 
 export function evaluate(input) {
@@ -27,6 +29,9 @@ export function evaluate(input) {
       case 'budget': value = JSON.parse(JSON.stringify(budgetOperation(input))); break;
       case 'repeat': value = repeatOperation(input); break;
       case 'completion': value = completionResult(input.completion); break;
+      case 'teamCompletion': value = teamCompletion(input.team); break;
+      case 'goal': value = goalOperation(input); break;
+      case 'toolEffect': value = toolEffect(input.name, input.arguments, input.declaration); break;
       case 'completionObservation': value = completionObservation(input.observation); break;
       case 'plan': value = planRequest(input.request); break;
       case 'actionEvidence': value = actionEvidence(input.plan, input.urls); break;

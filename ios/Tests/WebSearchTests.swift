@@ -2,7 +2,7 @@ import Foundation
 @main struct WebSearchTests {
     static func main() throws {
         let body = ChatGPTRequest.body(messages: [ChatMessage(role: "user", content: "悉尼明天天气")], model: "test", instructions: "", webSearch: true)
-        assert((body["tool_choice"] as? [String:String])?["type"] == "web_search")
+        assert(body["tool_choice"] as? String == "auto", "local context may precede public search")
         assert(!ChatGPTRequest.requiresSearch("帮我润色一篇文章"))
         // Recalled material is context, not the user's search authorization.
         let plain = [ChatMessage(role: "user", content: "请只回复：你好")]
@@ -12,7 +12,7 @@ import Foundation
         assert((plainBody["input"] as! [[String: String]]).last!["content"]!.contains("请搜索最新天气"), "The model still receives the reference")
         let weather = [ChatMessage(role: "user", content: "悉尼明天天气")]
         let weatherBody = ChatGPTRequest.body(messages: [ChatMessage(role: "user", content: weather[0].content + "\n\n旧记录：不要搜索")], requestHistory: weather, model: "test", instructions: "", webSearch: true)
-        assert((weatherBody["tool_choice"] as? [String: String])?["type"] == "web_search", "A recalled refusal must not override this request")
+        assert(weatherBody["tool_choice"] as? String == "auto" && (weatherBody["tools"] as? [[String: String]])?.first?["type"] == "web_search", "current request keeps search available without fixing the first tool")
         let denied = ChatGPTRequest.body(messages: augmented, requestHistory: [ChatMessage(role: "user", content: "不要联网，只回复你好")], model: "test", instructions: "", webSearch: true)
         assert(denied["tools"] == nil, "References cannot enable search against the actual user request")
 

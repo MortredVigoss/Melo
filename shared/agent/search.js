@@ -32,12 +32,16 @@ function continuedRequest(text, messages) {
   return null;
 }
 
+export function resolvedRequestGoal(text = '', messages = []) {
+  return continuedRequest(text, messages)?.task || text;
+}
+
 // Requests and capability/config snapshots are data; this module does no IO.
 export function planRequest({ text = '', messages = [], capabilities = {}, config = {} } = {}) {
   const continued = continuedRequest(text, messages);
   if (continued) {
     const plan = planRequest({ text: continued.task, messages: continued.messages, capabilities, config });
-    return { ...plan, continuation: 'explicit-retry', instructions: plan.instructions + '\nThis turn explicitly retries or resumes the previous user task using the CURRENT tool definitions, permissions and backend configuration. Earlier assistant claims that a capability is unavailable are historical statements, not the current capability state. Keep all user restrictions and report actual execution evidence.\nResolved user task for this retry:\n' + continued.task };
+    return { ...plan, resolvedGoal: continued.task, continuation: 'explicit-retry', instructions: plan.instructions + '\nThis turn explicitly retries or resumes the previous user task using the CURRENT tool definitions, permissions and backend configuration. Earlier assistant claims that a capability is unavailable are historical statements, not the current capability state. Keep all user restrictions and report actual execution evidence.\nResolved user task for this retry:\n' + continued.task };
   }
   const runtimeConfig = normalizeRuntimeConfig(config);
   const policy = getRequestNetworkPolicy(text);
@@ -92,14 +96,14 @@ export function planRequest({ text = '', messages = [], capabilities = {}, confi
   const research = { depth: /深度|深入|多来源|交叉核对|\b(?:deep research|compare sources|multiple sources)\b/iu.test(instruction) ? 'deep' : 'standard', navigate: lookup && navigation };
   const readingTools = available('fetch_url') ? ['fetch_url'] : [];
   const phoneTools = research.navigate && available('phone_use') ? ['phone_use'] : [];
-  const guidance = 'Search public sources first to retrieve public evidence, then use fetch_url on relevant returned source URLs when details are needed to support recommendations. Search snippets are not full page reads. Compare evidence and cite returned URLs; report insufficient, conflicting or stale sources and unknown opening hours. Do not fabricate facts or require an arbitrary number of sources. ' +
+  const guidance = 'Retrieve public evidence when needed for the requested result. Choose the next tool from the actual information gap: local calendar, location, knowledge or history may need to be read before searching. Do not impose an arbitrary first tool. Use fetch_url on relevant source URLs when details are needed. Search snippets are not full page reads. Compare evidence and cite returned URLs; report insufficient, conflicting or stale sources and unknown opening hours. Do not fabricate facts or require an arbitrary number of sources. ' +
     (research.depth === 'deep' ? 'This is deep research: refine queries and cross-check material claims against independent sources; explain remaining gaps. ' : 'Keep standard recommendations proportionate; read the material needed for the recommendation. ') +
     (research.navigate ? 'Research and choose a grounded destination before calling phone_use for navigation. Resolve the destination from the research, preserve native confirmations, and report navigation separately from research. ' : '') +
     'Search failure does not authorize taking over the phone screen.';
   const searchBase = { ...base, research, instructions: guidance };
   if (research.navigate && !available('phone_use')) return { ...base, route: 'unavailable', reason: 'PHONE_UNAVAILABLE' };
   if (capabilities.hostedSearch === 'verified') return { ...searchBase, route: 'hosted-search', backend: 'hosted', tools: [...readingTools, ...phoneTools], requiredTools: phoneTools };
-  if (available('web_search') && runtimeConfig.search.backend === 'http' && runtimeConfig.search.endpoint) return { ...searchBase, route: 'http-search', tools: ['web_search', ...readingTools, ...phoneTools], requiredTools: ['web_search', ...phoneTools], toolDependencies: research.navigate ? { phone_use: ['web_search'] } : {}, backend: 'http' };
+  if (available('web_search') && runtimeConfig.search.backend === 'http' && runtimeConfig.search.endpoint) return { ...searchBase, route: 'http-search', tools: ['web_search', ...readingTools, ...phoneTools], requiredTools: phoneTools, toolDependencies: phoneTools.length ? { phone_use: ['web_search'] } : {}, backend: 'http' };
   if (available('web_search') && capabilities.legacyReader === true && runtimeConfig.search.backend === 'legacy-reader') return { ...base, route: 'legacy-search', tools: ['web_search'], backend: 'legacy-reader', instructions: guidance };
   if (available('web_search') && capabilities.browserSearch === true && runtimeConfig.search.browserFallback) return { ...base, route: 'browser-search', tools: ['web_search'], backend: 'browser', instructions: guidance };
   return { ...base, route: 'unavailable', reason: 'SEARCH_UNAVAILABLE', instructions: 'No verified hosted search or configured search backend is available to retrieve public evidence. Explain the missing search capability. Do not invent current facts or open phone apps as a fallback.' };

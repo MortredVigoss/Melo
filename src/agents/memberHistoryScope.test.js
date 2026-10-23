@@ -75,7 +75,9 @@ test('T5: skills forward the conversation scope to their tools too', async () =>
   try {
     const skill = { id: 'reader', name: 'Reader', type: 'executable', systemPrompt: 'read', toolWhitelist: ['read_history'], maxIterations: 2 };
     const result = await runSkill({ skill, task: 'read', config, chatId: 'own', chatSource: 'desktop', projectId: 'p1', allowedToolIds: ['read_history'], replyFn: replyWith(call({ chatId: 'same', limit: 1 })) });
-    assert.equal(result.ok, true, result.output);
+    assert.equal(result.ok, false, 'the two-round fixture has no remaining round for delivery verification');
+    assert.equal(result.output, 'done', 'the candidate answer is retained');
+    assert.equal(result.meta.completion.reason, 'GOAL_CHECK_BUDGET');
   } finally { registered.run = original; }
   assert.deepEqual(seen, [{ chatSource: 'desktop', projectId: 'p1' }]);
 });

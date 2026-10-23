@@ -55,6 +55,8 @@ struct AgentLoopRequest: @unchecked Sendable {
     /// Seconds left for this request: min(transport cap, run budget remaining).
     let timeout: TimeInterval
     var remainingTokens: Int? = nil
+    var goalReview: [String: Any]? = nil
+    var repairing = false
 }
 
 /// A provider rejected the request as too large (HTTP 413 or a context-length
@@ -130,6 +132,9 @@ final class AgentLoop: @unchecked Sendable {
     private var contract: AgentLoopContract { .shared }
     private var completionObservations: [[String: Any]] = []
     private var completionTerminalReason = ""
+    private var goalState: PhoneGoalState?
+    var nativeSearchAvailable = false
+    var goalHistory: [ChatMessage] = []
 
     init(transport: AgentModelTransport, tools: AgentLoopTools?, budget: PhoneRunBudget, latestUserMessage: String, verification: AgentVerification? = nil, hooks: AgentLoopHooks = AgentLoopHooks()) {
         self.transport = transport; self.tools = tools; self.budget = budget
@@ -155,7 +160,7 @@ final class AgentLoop: @unchecked Sendable {
         if PhoneMemberLimits.current != nil, outcome.stop != .answered { throw MeloError.message("成员达到运行上限，结果尚未完成。") }
         if let validate { try validate(outcome) }
         try await finalize(&outcome)
-        outcome.completion = AgentCompletionReceipt.make(goal: latestUserMessage, reply: outcome.text, observations: completionObservations, terminalReason: outcome.stop == .budget ? "BUDGET_EXHAUSTED" : completionTerminalReason)
+        outcome.completion = AgentCompletionReceipt.make(goal: latestUserMessage, reply: outcome.text, observations: completionObservations, terminalReason: outcome.stop == .budget ? "BUDGET_EXHAUSTED" : completionTerminalReason, task: goalState?.snapshot)
         if let receipt = outcome.completion { await hooks.onStage?("completion", "目标回执", receipt.outcome == "completed" ? "completed" : "failed", receipt.summary) }
         return outcome
     }
@@ -196,32 +201,38 @@ final class AgentLoop: @unchecked Sendable {
             return AgentLoopOutcome(text: text, stop: .budget, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: 0)
         }
         let core = try PhoneCoreTurn(tools: Array(offered), rounds: maxIterations, callsPerRound: maxCallsPerResponse)
+        let goal = try PhoneGoalState(latestUserMessage, history: goalHistory.map { ["role": $0.role, "content": $0.content] })
+        goalState = goal
+        var candidateRound: AgentRound?
         defer { completionTerminalReason = core.completed ? "" : core.reason }
         var iteration = 0
         while true {
             if iteration > 0 {
                 let supplements = await takeSupplements()
                 if !supplements.isEmpty {
+                    try goal.update("amend", ["amendment": contract.supplementMessage(supplements)])
                     transcript.append(.userText(contract.supplementMessage(supplements)))
                     await hooks.onSupplementsJoined?(supplements)
                 }
             }
             if let exhausted = budget.exhausted() {
                 let text = await exhaustedStop(exhausted)
-                return AgentLoopOutcome(text: text, stop: .budget, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration)
+                return AgentLoopOutcome(text: candidateRound?.text ?? text, stop: .budget, finalRound: candidateRound, sources: sources, searched: searched, calls: records, iterations: iteration)
             }
             if try !core.event("request") {
                 lastEvidence = evidence
                 return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration)
             }
             var round = AgentRound()
+            let checkingGoal = goal.checking
             var condensed = false
             while true {
-                let request = AgentLoopRequest(iteration: iteration, transcript: transcript, timeout: budget.requestTimeout(cap: transport.timeoutCap), remainingTokens: PhoneMemberLimits.current.map { max(0, $0.tokens - spentTokens) })
+                let review = checkingGoal ? try goal.update("request", ["observations": completionObservations]) : nil
+                let request = AgentLoopRequest(iteration: iteration, transcript: transcript, timeout: budget.requestTimeout(cap: transport.timeoutCap), remainingTokens: PhoneMemberLimits.current.map { max(0, $0.tokens - spentTokens) }, goalReview: review, repairing: goal.repairing)
                 do {
                     round = try await withDeadline { try await transport.round(request) }
                     break
-                } catch let error as RequestTooLarge {
+                } catch let error as RequestTooLarge where !checkingGoal {
                     // audit C-8 parity: condense older tool outputs once and retry; never on the first call.
                     guard iteration > 0, !condensed else { throw error }
                     let next = Self.condense(transcript)
@@ -230,22 +241,52 @@ final class AgentLoop: @unchecked Sendable {
                     await hooks.onStage?("tool-chain:condense:\(iteration)", "工具结果已压缩", "completed", "早期工具输出已压缩以继续本轮。")
                 } catch is PhoneDeadline.Reached {
                     let text = await exhaustedStop(budget.exhausted(at: budget.deadlineAt) ?? PhoneRunBudget.Exhaustion(reason: "deadline", limit: budget.deadlineAt - budget.startedAt, used: budget.deadlineAt - budget.startedAt, usage: budget.used))
-                    return AgentLoopOutcome(text: text, stop: .budget, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration)
+                    return AgentLoopOutcome(text: candidateRound?.text ?? text, stop: .budget, finalRound: candidateRound, sources: sources, searched: searched, calls: records, iterations: iteration)
                 } catch let error as URLError where error.code == .timedOut && !Task.isCancelled && budget.remainingMs() <= 1000 {
                     // The deadline landed inside the request: that is the budget, not a provider failure.
                     let text = await exhaustedStop(budget.exhausted(at: budget.deadlineAt) ?? PhoneRunBudget.Exhaustion(reason: "deadline", limit: budget.deadlineAt - budget.startedAt, used: budget.deadlineAt - budget.startedAt, usage: budget.used))
-                    return AgentLoopOutcome(text: text, stop: .budget, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration)
+                    return AgentLoopOutcome(text: candidateRound?.text ?? text, stop: .budget, finalRound: candidateRound, sources: sources, searched: searched, calls: records, iterations: iteration)
+                } catch {
+                    try Task.checkCancellation()
+                    guard checkingGoal, let candidate = candidateRound else { throw error }
+                    if (error as? URLError)?.code == .cancelled { throw error }
+                    budget.record(inputTokens: 0, providerCalls: 1)
+                    try goal.update("stop")
+                    try core.event("complete")
+                    lastEvidence = evidence
+                    return AgentLoopOutcome(text: candidate.text, stop: .answered, finalRound: candidate, sources: sources, searched: searched, calls: records, iterations: iteration + 1)
                 }
             }
             let inputTokens = round.inputTokens ?? round.estimatedInputTokens
             budget.record(inputTokens: inputTokens, providerCalls: 1)
             spentTokens += inputTokens + (round.outputTokens ?? PhoneTokenEstimate.text(round.text + round.calls.map(\.arguments).joined()))
             if let limit = PhoneMemberLimits.current?.tokens, spentTokens > limit { throw MeloError.message("成员 token 预算已用完，未继续执行工具。") }
+            if checkingGoal, let candidate = candidateRound {
+                let decision = try goal.update("review", ["response": round.calls.isEmpty ? round.text : "", "observations": completionObservations])
+                await hooks.onStage?("goal-check:\(iteration)", "核对任务交付", decision["decision"] as? String == "complete" ? "completed" : "failed", decision["explanation"] as? String ?? decision["reason"] as? String ?? "")
+                if decision["decision"] as? String == "continue" {
+                    try core.event("feedback", ["repair": true])
+                    transcript.append(.userText(decision["feedback"] as? String ?? ""))
+                    iteration += 1
+                    continue
+                }
+                try core.event("complete")
+                lastEvidence = evidence
+                return AgentLoopOutcome(text: candidate.text, stop: .answered, finalRound: candidate, sources: sources, searched: searched, calls: records, iterations: iteration + 1)
+            }
             sources += round.sources
             if round.searched { completionObservations.append(["id": "hosted-search:\(iteration)", "name": "web_search", "type": "tool", "ok": true, "executed": true]) }
+            if round.searched {
+                for (index, source) in round.sources.enumerated() {
+                    completionObservations.append(["id": "hosted-search:\(iteration):source:\(index)", "type": "source", "ok": true, "executed": true, "url": source.url, "reading": "provider", "text": String(round.text.prefix(4000))])
+                }
+            }
             searched = searched || round.searched
             let calls = transport.offersTools && tools != nil ? round.calls : []
             if calls.isEmpty {
+                candidateRound = round
+                try goal.update("candidate", ["observations": completionObservations, "candidate": ["reply": round.text, "tools": Array(offered) + (nativeSearchAvailable ? ["native_web_search"] : []), "research": ChatGPTRequest.requiresSearch(latestUserMessage), "roundsLeft": maxIterations - iteration - 1]])
+                if goal.checking { try core.event("feedback"); iteration += 1; continue }
                 try core.event("complete")
                 if !core.completed { return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration + 1) }
                 lastEvidence = evidence
@@ -254,7 +295,7 @@ final class AgentLoop: @unchecked Sendable {
             // The shared reducer validates the whole batch before any OS effect.
             try core.event("calls", ["calls": calls.map { call -> [String: Any] in
                 let args = OrderedJSON.arguments(call.arguments)
-                return ["id": call.callID, "name": call.name, "fingerprint": PhoneCoreTurn.fingerprint(call.name + args.canonicalJSON)]
+                return ["id": call.callID, "name": call.name, "effect": PhoneCoreTurn.effect(call.name, arguments: call.arguments), "fingerprint": PhoneCoreTurn.fingerprint(call.name + args.canonicalJSON)]
             }])
             if !core.active { return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration + 1) }
             var results: [AgentToolResult] = []
@@ -297,7 +338,7 @@ final class AgentLoop: @unchecked Sendable {
                 var record = ExecutionToolCall(iteration: iteration, call: call, args: args, outcome: outcome, executed: executed, started: started, finished: Date())
                 record.capability = capability
                 records.append(record)
-                if let rows = SharedLoopPolicy.value("completionObservation", ["observation": ["id": call.callID, "name": call.name, "ok": outcome.ok, "executed": executed, "output": outcome.output]]) as? [[String: Any]] {
+                if let rows = SharedLoopPolicy.value("completionObservation", ["observation": ["id": call.callID, "name": call.name, "ok": outcome.ok, "executed": executed, "output": outcome.output, "declaration": ["effect": PhoneCoreTurn.effect(call.name, arguments: call.arguments)]]]) as? [[String: Any]] {
                     completionObservations.append(contentsOf: rows)
                     if completionObservations.count > 128 { completionObservations.removeFirst(completionObservations.count - 128) }
                 }

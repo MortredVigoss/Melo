@@ -152,6 +152,7 @@ test('runSkill: skill.toolWhitelist narrows the tool set', async () => {
       ].join('\n'),
     );
     reply.queue.push('done');
+    reply.queue.push(JSON.stringify({ decision: 'complete', reasonType: 'fulfilled', requirements: [{ text: 'Fixture task', status: 'met', evidenceIds: ['1'] }] }));
 
     const res = await runSkill({
       skill: executableSkill({ toolWhitelist: ['tool_a'] }),
@@ -186,6 +187,7 @@ test('runSkill: caller allowedToolIds further narrows skill whitelist', async ()
       ].join('\n'),
     );
     reply.queue.push('done');
+    reply.queue.push(JSON.stringify({ decision: 'complete', reasonType: 'fulfilled', requirements: [{ text: 'Fixture task', status: 'met', evidenceIds: ['1'] }] }));
 
     // Skill whitelist has both; caller only permits tool_a. Intersection = [tool_a].
     const res = await runSkill({
@@ -309,7 +311,7 @@ test('skill captures the request connection once across tool-loop awaits',async(
   await runWithRequestContext(createRequestContext({env:{MELO_MODEL:'bound-model',MELO_API_KEY:'bound-key'}}),()=>runSkill({skill:executableSkill(),config:validConfig(),allowedToolIds:['env_probe'],replyFn:async options=>{
    assert.equal(options.model,'bound-model');assert.equal(options.apiKey,'bound-key');process.env.MELO_MODEL='mutated';
    return count++===0?'<tool_call>{"id":"probe","name":"env_probe","arguments":{}}</tool_call>':'done';
-  }}));assert.equal(count,2);
+  }}));assert.equal(count,3, 'two execution requests and one tool-free goal check share the captured connection');
  }finally{unregisterTool(tool.id);if(before===undefined)delete process.env.MELO_MODEL;else process.env.MELO_MODEL=before;}
 });
 

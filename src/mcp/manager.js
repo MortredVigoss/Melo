@@ -388,6 +388,7 @@ export function buildMcpTool(serverName, mcpTool, client) {
     functionName: mcpFunctionName(serverName, mcpTool?.name),
     description: mcpTool.description || `MCP tool from ${serverName}`,
     category: 'mcp',
+    readOnly: mcpTool.annotations?.readOnlyHint === true,
     parametersSchema,
     // MCP tools require permission unless they're clearly read-only
     requiresPermission: true,

@@ -140,7 +140,7 @@ export async function classifyIntent(userMessage, { config, signal, onDecision, 
 
   // An OAuth classifier must use the configured, working model unless explicitly overridden.
   const classifierModel = config?.activeLlmProfileId ? config.model : process.env.MELO_CLASSIFIER_MODEL ||
-    (config?.authMode === 'codex' ? (process.env.MELO_MODEL || config.model) : 'gpt-4o-mini');
+    (config?.authMode === 'codex' ? (process.env.MELO_MODEL || config.model) : config?.model);
   const cacheKey = JSON.stringify([config?.authMode, config?.baseUrl, classifierModel, text]);
   const cached = lruGet(INTENT_CACHE, cacheKey);
   if (cached !== undefined) {

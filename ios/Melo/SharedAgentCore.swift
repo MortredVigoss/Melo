@@ -3,7 +3,7 @@ import CryptoKit
 import JavaScriptCore
 
 /// Additive persisted receipt; old records have no receipt and stay unknown.
-struct AgentCompletionReceipt: Codable, Equatable {
+struct AgentCompletionReceipt: Codable, Equatable, Sendable {
     var version: Int
     var kind: String
     var outcome: String
@@ -12,10 +12,44 @@ struct AgentCompletionReceipt: Codable, Equatable {
     var evidenceIds: [String]
     var completedSteps: Int
     var summary: String
-    static func make(goal: String, reply: String, observations: [[String: Any]] = [], terminalReason: String = "") -> Self? {
-        guard let value = SharedLoopPolicy.value("completion", ["completion": ["goal": goal, "reply": reply, "observations": observations, "terminalReason": terminalReason]]),
+    var task: AgentGoalSnapshot? = nil
+    var dictionary: [String: Any]? {
+        guard let data = try? JSONEncoder().encode(self) else { return nil }
+        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+    }
+    static func team(goal: String, reply: String, members: [[String: Any]], accepted: Bool, cancelled: Bool, budgetExceeded: Bool) -> Self? {
+        guard let value = SharedLoopPolicy.value("teamCompletion", ["team": ["goal": goal, "reply": reply, "members": members, "accepted": accepted, "cancelled": cancelled, "budgetExceeded": budgetExceeded]]), let data = try? JSONSerialization.data(withJSONObject: value) else { return nil }
+        return try? JSONDecoder().decode(Self.self, from: data)
+    }
+    static func make(goal: String, reply: String, observations: [[String: Any]] = [], terminalReason: String = "", task: [String: Any]? = nil) -> Self? {
+        var input: [String: Any] = ["goal": goal, "reply": reply, "observations": observations, "terminalReason": terminalReason]
+        if let task { input["task"] = task }
+        guard let value = SharedLoopPolicy.value("completion", ["completion": input]),
               let data = try? JSONSerialization.data(withJSONObject: value) else { return nil }
         return try? JSONDecoder().decode(Self.self, from: data)
+    }
+}
+
+struct AgentGoalSnapshot: Codable, Equatable, Sendable {
+    struct Requirement: Codable, Equatable, Sendable { var text: String; var status: String; var evidenceIds: [String] }
+    var version: Int; var id: String; var original: String; var amendments: [String]; var revision: Int
+    var corrections: Int; var requirements: [Requirement]; var decision: String?; var reason: String; var explanation: String?
+}
+
+final class PhoneGoalState {
+    private var state: [String: Any]
+    init(_ goal: String, history: [[String: String]] = []) throws {
+        guard let initial = SharedLoopPolicy.value("goal", ["action": "start", "goal": goal, "messages": history, "id": UUID().uuidString]) as? [String: Any] else { throw SharedAgentCoreError.unavailable }
+        state = initial
+    }
+    var checking: Bool { state["phase"] as? String == "checking" }
+    var repairing: Bool { (state["corrections"] as? Int ?? 0) > 0 }
+    var snapshot: [String: Any]? { SharedLoopPolicy.value("goal", ["action": "snapshot", "state": state]) as? [String: Any] }
+    @discardableResult func update(_ action: String, _ fields: [String: Any] = [:]) throws -> [String: Any] {
+        var input = fields; input["action"] = action; input["state"] = state
+        guard let next = SharedLoopPolicy.value("goal", input) as? [String: Any] else { throw SharedAgentCoreError.invalidReply }
+        if action != "request" { state = next }
+        return next
     }
 }
 
@@ -103,6 +137,10 @@ enum SharedLoopPolicy {
 /// Native ownership for the portable reducer. The Host retains transport,
 /// cancellation, approvals and persistence; no decision is reimplemented here.
 final class PhoneCoreTurn {
+    static func effect(_ name: String, arguments: String) -> String {
+        let args = (try? JSONSerialization.jsonObject(with: Data(arguments.utf8))) as? [String: Any] ?? [:]
+        return SharedLoopPolicy.value("toolEffect", ["name": name, "arguments": args]) as? String ?? "unknown"
+    }
     private var state: [String: Any]
     private static func clock() -> Double { ProcessInfo.processInfo.systemUptime * 1000 }
     var completed: Bool { state["status"] as? String == "completed" }

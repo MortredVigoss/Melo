@@ -112,7 +112,9 @@ test('sub-agent and skill execute native same-tool batches through real local HT
     let raw = ''; for await (const chunk of req) raw += chunk;
     const body = JSON.parse(raw); requests.push({ url: req.url, body });
     const round = requests.length;
-    const output = round === 1 ? [reason, { ...call('a', 'A'), name: toolName }, { ...call('b', 'B'), name: toolName }]
+    const output = JSON.stringify(body).includes("You are Melo's task completion checker")
+      ? [message(JSON.stringify({ decision: 'complete', reasonType: 'fulfilled', requirements: [{ text: 'Read three fixture entries', status: 'met', evidenceIds: ['a','b','c'] }] }))]
+      : round === 1 ? [reason, { ...call('a', 'A'), name: toolName }, { ...call('b', 'B'), name: toolName }]
       : round === 2 ? [{ ...reason, id: 'rs-2' }, { ...call('c', 'C'), name: toolName }] : [message('done')];
     res.setHeader('content-type', 'text/event-stream'); res.end(eventText([complete(output)]));
   });
@@ -131,7 +133,9 @@ test('sub-agent and skill execute native same-tool batches through real local HT
       assert.equal(result.output, 'done'); assert.equal(result.ok, true);
       assert.deepEqual(executions, ['A', 'B', 'C']);
       assert.ok(requests.every(r => r.url === '/v1/responses'));
-      assert.ok(requests.every(r => r.body.tools.length === 1 && r.body.tools[0].name === toolName));
+      assert.equal(requests.length, 4, 'three work requests plus one bounded goal check');
+      assert.ok(requests.slice(0, 3).every(r => r.body.tools.length === 1 && r.body.tools[0].name === toolName));
+      assert.equal(requests[3].body.tools, undefined);
       const input = requests[2].body.input;
       assert.deepEqual(input.filter(i => i.type === 'function_call_output').map(i => i.call_id), ['a', 'b', 'c']);
       assert.deepEqual(input.filter(i => i.type === 'reasoning').map(i => i.id), ['rs-1', 'rs-2']);

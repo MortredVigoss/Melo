@@ -614,12 +614,12 @@ test('main tool dispatch carries its MCP whitelist and resolved role model into 
   const state=fixtureState(),chat=fixtureChat({messages:[{id:'probe-user',role:'user',content:'Read the local file for this task'}]});
   state.chats=[chat];state.agentProfiles.main.model='role-selected-model';state.agentProfiles.main.enabledMcpServerIds=[];
   await saveState(state);
-  let effects=0,dispatched,skillReplies=0;
+  let effects=0,dispatched,skillReplies=0;const skillRequests=[];
   const forbidden={id:'mcp:blocked:probe',name:'probe',description:'must be blocked',parametersSchema:{type:'object',properties:{}},requiresPermission:false,run:async()=>{effects++;return {ok:true,output:'ran'};}};
   const probe={...forbidden,id:'scope_probe',run:async(_,context)=>{
     dispatched=context;
     return runSkill({skill:{id:'audit',type:'executable',name:'audit'},task:'probe',config:context.config,allowedToolIds:context.allowedToolIds,
-      replyFn:async()=>skillReplies++===0?'<tool_call>{"id":"child","name":"mcp:blocked:probe","arguments":{}}</tool_call>':'done'});
+      replyFn:async request=>{skillRequests.push(request);return skillReplies++===0?'<tool_call>{"id":"child","name":"mcp:blocked:probe","arguments":{}}</tool_call>':'done';}});
   }};
   registerTool(forbidden);registerTool(probe);
   try {
@@ -627,7 +627,9 @@ test('main tool dispatch carries its MCP whitelist and resolved role model into 
     await runChatAgentExecutionGraph({config:fixtureConfig,state,chat,workspace:fixtureWorkspace(),connectors:[],skills:[],latestUserMessage:'Read the local file for this task',agentId:'main',
       _dependencies:{getEmbedding:async()=>null,createReply:async()=>replies++===0?'<tool_call>{"id":"parent","name":"scope_probe","arguments":{}}</tool_call>':'finished'}});
     assert.ok(dispatched,'probe must actually execute');assert.ok(Array.isArray(dispatched.allowedToolIds));assert.ok(!dispatched.allowedToolIds.includes(forbidden.id));
-    assert.equal(dispatched.config.model,'role-selected-model');assert.equal(skillReplies,2);assert.equal(effects,0);
+    assert.equal(dispatched.config.model,'role-selected-model');assert.equal(skillReplies,3);assert.equal(effects,0);
+    assert.match(skillRequests[2].systemPrompt,/task completion checker/);assert.equal(skillRequests[2].tools,undefined);
+    assert.equal(skillRequests[2].nativeWebSearchEnabled,false);assert.equal(skillRequests[2].nativeImageGenerationEnabled,false);
   } finally {unregisterTool(forbidden.id);unregisterTool(probe.id);}
 });
 
@@ -676,9 +678,11 @@ test('shared search policy keeps stable browser definitions but denies screen ef
       _dependencies: { getEmbedding: async () => null, createReply: async () => calls++ === 0
         ? '<tool_call>{"id":"browser-1","name":"browser_open","arguments":{"url":"https://google.com"}}</tool_call><tool_call>{"id":"probe-1","name":"policy_probe","arguments":{}}</tool_call>' : 'I searched and found the best restaurant.' } });
     assert.ok(result.visibleToolIds.includes('browser_open'), 'upstream stable definitions are preserved');
-    assert.equal(effects, 0); assert.equal(calls, 2);
+    assert.equal(effects, 0); assert.equal(calls, 3);
     assert.ok(inherited.includes('web_search')); assert.equal(inherited.includes('browser_open'), false, 'nested Skill / Agent permissions cannot widen the parent search policy');
-    assert.match(result.reply, /MISSING_TOOL_EVIDENCE/);
+    assert.equal(result.reply, 'I searched and found the best restaurant.');
+    assert.equal(result.normalizedReply.completion.outcome, 'partial');
+    assert.equal(result.normalizedReply.completion.reason, 'GOAL_CHECK_UNAVAILABLE');
   } finally { unregisterTool('policy_probe'); unregisterTool('browser_open'); registerTool(original); }
 });
 
@@ -691,7 +695,7 @@ test('Hosted Search final replies use the same completed/source receipt contract
       _dependencies: { searchCapability: { status: 'verified' }, getEmbedding: async () => null,
         createReply: async () => ({ protocol: 'responses', text: 'Fixture answer', responseItems: items }) } });
     if (accepted) { assert.match(result.reply, /https:\/\/fixture.invalid\/verified/); assert.match(result.reply, /Fixture answer/); }
-    else { assert.match(result.reply, /未收到可核对的 Search completed/); assert.doesNotMatch(result.reply, /Fixture answer/); }
+    else { assert.equal(result.reply, 'Fixture answer'); assert.equal(result.normalizedReply.completion.goalState, 'unverified'); assert.notEqual(result.normalizedReply.completion.outcome, 'completed'); }
   }
 });
 
@@ -864,10 +868,11 @@ test('tool invocation records (D1): 3 calls → 3 jsonl lines whose modelFacingO
       _dependencies: { getEmbedding: async () => null,
         createReply: async options => {
           if (replies++ === 0) return { protocol: 'responses', text: '', responseItems: [call('c1', 'a.md'), call('c2', 'missing.md'), call('c3', 'b.md')] };
+          if (options.systemPrompt.includes("You are Melo's task completion checker")) return '{"decision":"partial","reasonType":"unavailable","requirements":[{"text":"读三个文件","status":"missing","evidenceIds":[]}]}';
           sentOutputs = options.messages.find(m => Array.isArray(m.functionCallOutputs)).functionCallOutputs;
           return { protocol: 'responses', text: '读完了', responseItems: [] };
         } } });
-    assert.equal(replies, 2);
+    assert.equal(replies, 3);
     assert.equal(sentOutputs.length, 3);
     const records = await readToolInvocationRecords(context.runId, { home: TEST_HOME });
     assert.equal(records.length, 3, 'one jsonl line per call');

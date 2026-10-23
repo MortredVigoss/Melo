@@ -455,3 +455,10 @@ test('usableMcpServerIds: enabled presets and user servers, never disabled, refu
   assert.deepEqual(usableMcpServerIds({ mcpServers: { 'my-tool': { command: 'x' }, 'off-tool': { command: 'y', disabled: true }, 'bad id!': { command: 'z' } } }), ['my-tool']);
   assert.deepEqual(usableMcpServerIds(), []);
 });
+
+test('MCP readOnlyHint is descriptive and never removes approval or concurrency guards', () => {
+  const tool = buildMcpTool('lookup', { name: 'read', annotations: { readOnlyHint: true } }, { callTool: async () => ({ content: [] }) });
+  assert.equal(tool.readOnly, true);
+  assert.equal(tool.requiresPermission, true);
+  assert.equal(tool.isConcurrencySafe, false);
+});

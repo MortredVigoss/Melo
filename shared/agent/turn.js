@@ -1,6 +1,7 @@
 import { COMMON_TOOLS, validateCommonTool } from './tools.js';
 import { AGENT_LOOP_CONTRACT } from './loopContract.js';
 import { createRepeatGuard, toolCallFingerprint } from './repeatGuard.js';
+import { toolEffect } from './toolEffects.js';
 
 // Portable turn state. All time and identity come from the owning Host.
 export const CORE_VERSION = 1;
@@ -19,7 +20,7 @@ export function startTurn({ runId, turnId, allowedTools = [], requiredTools = []
   if (!identity(runId) || !identity(turnId) || !Number.isFinite(now)) fail('INVALID_TURN', 'Invalid turn identity or clock.');
   const bounded = (key, fallback, max) => Number.isInteger(limits[key]) && limits[key] > 0 && limits[key] <= max ? limits[key] : fallback;
   return {
-    version: CORE_VERSION, runId, turnId, status: 'running', startedAt: now, lastNow: now,
+    version: CORE_VERSION, runId, turnId, status: 'running', startedAt: now, lastNow: now, successfulEffects: [], repairing: false,
     deadline: now + bounded('timeoutMs', AGENT_LOOP_CONTRACT.budget.deadlineMs, Number.MAX_SAFE_INTEGER - now),
     limits: { rounds: Number.isFinite(limits.rounds) ? Math.max(0, Math.min(64, Math.floor(limits.rounds))) : AGENT_LOOP_CONTRACT.loop.maxIterations, callsPerRound: bounded('callsPerRound', AGENT_LOOP_CONTRACT.loop.maxCallsPerResponse, AGENT_LOOP_CONTRACT.loop.maxCallsPerResponse), errors: bounded('errors', 3, 10), stagnant: bounded('stagnant', 5, 20) },
     allowedTools: [...new Set(allowedTools.filter(identity))], requiredTools: [...new Set(requiredTools.filter(identity))], toolDependencies: Object.fromEntries(Object.entries(toolDependencies).filter(([name, needs]) => identity(name) && Array.isArray(needs)).map(([name, needs]) => [name, needs.filter(identity).slice(0, 16)])), successfulTools: [], pendingTools: {}, rounds: 0, awaitingModel: false,
@@ -33,7 +34,7 @@ export function advanceTurn(previous, event, now) {
   if (!Number.isFinite(now) || now < previous.lastNow) fail('INVALID_CLOCK', 'The Host clock must be monotonic.');
   if (event?.runId !== previous.runId || event?.turnId !== previous.turnId) fail('TURN_MISMATCH', 'The event belongs to another turn.');
   if (previous.status !== 'running') fail('TURN_CLOSED', 'The turn has ended; late events cannot issue effects.');
-  const state = { ...previous, lastNow: now, callIds: [...previous.callIds], pending: [...previous.pending], progressKeys: [...previous.progressKeys], phoneTasks: [...(previous.phoneTasks || [])], successfulTools: [...(previous.successfulTools || [])], pendingTools: { ...previous.pendingTools }, pendingFingerprints: { ...previous.pendingFingerprints } };
+  const state = { ...previous, lastNow: now, callIds: [...previous.callIds], pending: [...previous.pending], progressKeys: [...previous.progressKeys], phoneTasks: [...(previous.phoneTasks || [])], successfulTools: [...(previous.successfulTools || [])], pendingTools: { ...previous.pendingTools }, pendingFingerprints: { ...previous.pendingFingerprints }, pendingEffects: { ...previous.pendingEffects } };
   const stop = reason => ({ ...state, status: 'blocked', reason, awaitingModel: false, pending: [], permitted: [] });
   if (event.type === 'cancel') return { ...state, status: 'cancelled', reason: 'CANCELLED', pending: [], permitted: [], awaitingModel: false };
   if (now >= state.deadline) return stop('DEADLINE_EXCEEDED');
@@ -70,7 +71,9 @@ export function advanceTurn(previous, event, now) {
           catch { state.rejections[call.id] = 'INVALID_TOOL_ARGUMENTS'; return false; }
         }
         const fingerprint = typeof call.fingerprint === 'string' && call.fingerprint ? call.fingerprint : toolCallFingerprint(call.name, call.arguments);
+        if (state.repairing && (state.successfulEffects || []).includes(fingerprint)) { state.rejections[call.id] = 'ALREADY_EXECUTED'; return false; }
         state.pendingFingerprints[call.id] = fingerprint;
+        state.pendingEffects = { ...state.pendingEffects, [call.id]: /^mcp[:_]/u.test(call.name) || !['read', 'compute'].includes(call.effect || toolEffect(call.name, call.arguments)) };
         const repeated = guard.check(call.name, fingerprint);
         if (repeated) { state.rejections[call.id] = repeated.error; state.rejectionResults[call.id] = repeated; return false; }
         if (call.name === 'phone_use') {
@@ -88,6 +91,7 @@ export function advanceTurn(previous, event, now) {
     case 'feedback':
       if (!state.awaitingModel || state.pending.length) fail('PENDING_EFFECT', 'Only an unverified model answer can receive feedback.');
       state.awaitingModel = false;
+      if (event.repair === true) state.repairing = true;
       return state;
     case 'result': {
       if (!state.pending.includes(event.callId)) fail('UNKNOWN_RESULT', 'The result has no pending call in this turn.');
@@ -96,11 +100,13 @@ export function advanceTurn(previous, event, now) {
       const toolName = state.pendingTools[event.callId];
       const permitted = state.permitted.includes(event.callId);
       if (permitted) {
+        if (event.ok && state.pendingEffects?.[event.callId]) state.successfulEffects = [...new Set([...(state.successfulEffects || []), state.pendingFingerprints[event.callId]])];
         const guard = createRepeatGuard({ entries: state.failures, fingerprint: (_name, key) => key });
         guard.record(toolName, state.pendingFingerprints[event.callId], { ok: event.ok, code: event.code, error: event.error, output: event.output });
         state.failures = guard.entries;
       }
       delete state.pendingFingerprints[event.callId];
+      delete state.pendingEffects[event.callId];
       if (event.ok && state.permitted.includes(event.callId) && toolName && !state.successfulTools.includes(toolName)) state.successfulTools.push(toolName);
       delete state.pendingTools[event.callId];
       state.roundSucceeded = state.roundSucceeded || (event.ok && permitted);

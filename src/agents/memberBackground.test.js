@@ -35,3 +35,10 @@ test('a member that reaches a conclusion is ok even when a tool failed; its own 
   const cancelled = createHandoff('t', { ok: true, output: JSON.stringify({ status: 'completed' }), meta: { aborted: true } }, null);
   assert.equal(cancelled.status, 'cancelled', 'runner facts beat self-reported status');
 });
+
+test('host completion receipt overrides a member self-report of success', () => {
+  const handoff = createHandoff('weather', { ok: true, output: JSON.stringify({ conclusion: 'done', status: 'completed', unfinished: [] }), meta: { completion: { version: 1, outcome: 'partial', goalState: 'unverified', summary: 'Weather still missing', reason: 'GOAL_INCOMPLETE', evidenceIds: [] } } }, null);
+  assert.equal(handoff.status, 'failed');
+  assert.deepEqual(handoff.unfinished, ['Weather still missing']);
+  assert.equal(handoff.completion.outcome, 'partial');
+});

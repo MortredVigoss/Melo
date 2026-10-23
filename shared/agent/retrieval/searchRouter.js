@@ -300,7 +300,7 @@ function buildSearchRoutingPrompt(searchPlan = {}) {
     return [
       '## Search Routing',
       'This turn is routed to Codex OAuth native web_search as the primary web source.',
-      'Use the native web_search capability for current public web facts.',
+      'Use native web_search when the answer needs current public facts. Stable knowledge can be answered directly; say which external facts were not checked. Read local context first when it identifies what to search.',
       'A browser tool failure does not mean public information is unavailable. Continue with native web_search; do not describe a disabled browser capability as a user permission denial.',
       'For flights, distinguish date-specific schedules (flight number, airports, local departure/arrival times) from live fares. Retrieve public schedules even if prices cannot be verified. Cite the exact travel dates and sources; never use generic route schedules or cached starting fares as a confirmed dated offer.',
       'Do not emit XML tool calls for `web_search` or `fetch_url` in this turn.',
@@ -310,7 +310,7 @@ function buildSearchRoutingPrompt(searchPlan = {}) {
     return [
       '## Search Routing',
       'This turn is routed to Melo web_search for structured source retrieval.',
-      'Use `web_search` for broad web lookup, then answer from the returned sources.',
+      'Use `web_search` when broad public lookup is needed. Stable knowledge can be answered directly; say which external facts were not checked. Read local context first when it identifies what to search.',
       'For recommendations, retrieve public evidence before making current claims, read relevant returned source URLs when needed, and cite those sources. Snippets do not prove full-page contents. If search fails or sources are insufficient, say what could not be verified; never take over a phone screen as a fallback.',
       'If browser automation is unavailable, continue with public web search. Separate confirmed date-specific flight schedules from live fares and report precisely which facts remain unverified.',
       SCREENSHOT_HINT,

@@ -73,7 +73,7 @@ test('retired Demon ignores legacy flags and strips new specs while file citatio
 
 test('real runner tool loop verifies fresh evidence before emitting the only final speech text', async () => {
   let calls = 0;
-  let verifierCalls = 0;
+  let verifierCalls = 0, goalChecks = 0;
   const events = [];
   const delivery = createReplyDelivery();
   const spoken = [];
@@ -86,6 +86,7 @@ test('real runner tool loop verifies fresh evidence before emitting the only fin
       if (next.finalSpeechText) spoken.push(next.finalSpeechText);
     },
     _dependencies: { getEmbedding: async () => null, createReply: async request => {
+      if (request.systemPrompt.startsWith("You are Melo's task completion checker")) { goalChecks++; assert.equal(request.tools, undefined); return '{"decision":"partial","reasonType":"unavailable","requirements":[{"text":"release year","status":"missing","evidenceIds":[]}]}'; }
       if (request.systemPrompt.startsWith('Review factual claims')) {
         verifierCalls += 1;
         assert.equal(events.some(event => event.event === 'reply_text'), false);
@@ -102,6 +103,7 @@ test('real runner tool loop verifies fresh evidence before emitting the only fin
   });
   assert.equal(calls, 2);
   assert.equal(verifierCalls, 1);
+  assert.equal(goalChecks, 1);
   assert.equal(result.normalizedReply.content, 'It shipped in 2024. Keep the receipt.');
   assert.deepEqual(spoken, [result.normalizedReply.content]);
   assert.equal(events.filter(event => event.event === 'reply_text').length, 1);

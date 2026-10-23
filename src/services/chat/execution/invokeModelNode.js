@@ -1,3 +1,4 @@
+import { teamCompletion } from '../../../../shared/agent/completion.js';
 import { hostedSearchReceipt } from '../../../../shared/agent/hostedSearch.js';
 // Chat execution graph — `invoke-model` node (architecture B2, 2026-10-20).
 // Mechanical move out of chatExecutionRunner.js: the body below is the
@@ -55,7 +56,7 @@ export function createInvokeModelNode(turn) {
       const team = await runAgentTeam({extraTools:[...(graphState.skillTools||[]),...(graphState.mcpTools||[])],plan:teamTask?.execution.teamPlan || teamPlan,task:teamTask?.execution.content || latestUserMessage,config:delegatedModelConfig,workspacePath:workspace?.rootPath,signal,sseEmitter,chatId:chat.id,allowedToolIds:graphState.visibleToolIds || [],capabilities:context.capabilityScope.capabilities,agentProfiles:Object.fromEntries(Object.keys(state.agentProfiles).map(id=>[id,effectiveAgentProfile(state,id,chat.projectId)])),lead:graphState.activeAgentProfile,background:buildMemberBackground({chat,projectContext:graphState.projectContext}),chatSource:chat.source || 'desktop',projectId:chat.projectId});
       modelResponses.push(...team.results.flatMap(r=>r.receipts),...team.summaryReceipts);
       // The lead's summary is the reply; member handoffs stay in the execution record.
-      return {reply:team.summary,team,toolResults:[...team.results.map(r=>({toolCallId:`team:${r.role}:${r.round||1}`,toolName:`成员 ${r.name||r.role}`,ok:r.ok,...(!r.ok ? {errorCode:r.cancelled?'ABORTED':'ROLE_FAILED'} : {})})),...team.results.flatMap(r=>(r.meta?.toolResults || []).map(t=>({...t,toolCallId:`team:${r.role}:${t.toolCallId}`})))],next:'finalize'};
+      return {reply:team.summary,team,completionForReply:reply=>teamCompletion({goal:latestUserMessage,reply,accepted:team.accepted,cancelled:team.cancelled,budgetExceeded:team.budgetExceeded,members:team.results.map(r=>({id:r.agentId||r.role,ok:r.ok,status:r.handoff?.status,completion:r.meta?.completion}))}),toolResults:[...team.results.map(r=>({toolCallId:`team:${r.role}:${r.round||1}`,toolName:`成员 ${r.name||r.role}`,ok:r.ok,...(!r.ok ? {errorCode:r.cancelled?'ABORTED':'ROLE_FAILED'} : {})})),...team.results.flatMap(r=>(r.meta?.toolResults || []).map(t=>({...t,toolCallId:`team:${r.role}:${t.toolCallId}`})))],next:'finalize'};
     }
     if (env.MELO_DEBUG_VISION === '1') {
       for (const [index, message] of graphState.modelMessages.entries()) {
@@ -148,6 +149,7 @@ export function createInvokeModelNode(turn) {
     const visibleToolIds = new Set(graphState.visibleToolIds || []);
     const allowedToolIdList = [...visibleToolIds].filter(id => !/^browser_/u.test(id) || graphState.searchPlan.sharedPlan?.backend === 'browser');
     const coreTurn = createCoreTurn({ runId: String(context.requestId), turnId: chat.id,
+      goal: graphState.searchPlan.sharedPlan?.resolvedGoal || latestUserMessage, tools: graphState.promptTools,
       allowedTools: allowedToolIdList, requiredTools: graphState.searchPlan.sharedPlan?.requiredTools, toolDependencies: graphState.searchPlan.sharedPlan?.toolDependencies, limits: { rounds: MAX_TOOL_ITERATIONS, timeoutMs: Math.max(1, Math.ceil(remainingMs(budget))) } });
     let allowedDispatchTools = null;
     let dispatchAgentProfiles = null;
@@ -168,15 +170,19 @@ export function createInvokeModelNode(turn) {
       if (!isFirstIteration) {
         const supplements = takeSupplements(chat.id);
         if (supplements.length) {
+          coreTurn.amend(supplementMessage(supplements));
           loopMessages = [...loopMessages, { role: 'user', content: supplementMessage(supplements), isSupplement: true }];
           for (const entry of supplements) sseEmitter?.('execution_event', { kind: 'pipeline', id: `supplement:${entry.id}`, name: '收到补充', module: 'compute', status: 'completed', output: entry.text });
         }
       }
 
       let request;
+      const checkingGoal = coreTurn.checking;
       try {
-        request = fitRequestContext({ sections: loopSections, messages: loopMessages, toolDefinitions: functionSession.definitions, ...contextBudget, turnContextPlacement });
+        const review = checkingGoal ? coreTurn.reviewRequest() : null;
+        request = fitRequestContext({ sections: review ? [{ id: 'goal-check', text: review.systemPrompt, required: true }] : loopSections, messages: review?.messages || loopMessages, toolDefinitions: checkingGoal ? [] : functionSession.definitions, ...contextBudget, turnContextPlacement });
       } catch (error) {
+        if (checkingGoal) { coreTurn.stopReview('GOAL_CHECK_CONTEXT'); finalReply = coreTurn.candidateReply; break; }
         // audit C-8: a long tool loop must not die after the tools already
         // ran. Condense older tool outputs in this turn's chain and retry
         // once; only then surface the budget error.
@@ -223,14 +229,14 @@ export function createInvokeModelNode(turn) {
       const exhausted = budgetExhausted(budget);
       if (exhausted) {
         emitBudgetExhausted(exhausted);
-        finalReply = budgetExhaustedReply(exhausted);
+        finalReply = coreTurn.candidateReply || budgetExhaustedReply(exhausted);
         break;
       }
       if (coreTurn.update('request') !== 'running') { finalReply = coreTurn.reply(latestUserMessage); break; }
       let rawReply;
       try {
         rawReply = await createReply({
-        ...functionSession.requestOptions(),
+        ...(checkingGoal ? { maxTokens: 2048 } : functionSession.requestOptions()),
         authMode: vision?.authMode || config.authMode,
         apiProtocol: vision?.apiProtocol || config.apiProtocol,
         apiKey: vision?.apiKey ?? modelOverrides.apiKey,
@@ -240,8 +246,8 @@ export function createInvokeModelNode(turn) {
         messages: attachTurnContextToMessages(request.messages, request.turnContext),
         cacheScope: `${agentId}:${chat.id}`,
         signal,
-        onDelta: isFirstIteration ? onDelta : undefined,
-        onReasoningDelta,
+        onDelta: !checkingGoal && isFirstIteration ? onDelta : undefined,
+        onReasoningDelta: checkingGoal ? undefined : onReasoningDelta,
         providerProfile,
         // Workspace path enables inline image generation through the
         // Codex OAuth chat stream (createCodexResponsesReply adds the
@@ -250,13 +256,13 @@ export function createInvokeModelNode(turn) {
         // providers this parameter is currently ignored.
         //
         // Native provider features obey the Agent capability snapshot.
-        workspacePath: workspace?.rootPath || null,
+        workspacePath: checkingGoal ? null : workspace?.rootPath || null,
         // Stable across turns (A2): the native web_search definition is
         // present whenever the agent may use the network; whether to use
         // it this turn is said in the routing prompt. Only an explicit
         // user network-off or a non-Codex route keeps it off.
-        nativeWebSearchEnabled: nativeFeaturesForScope(context.capabilityScope).nativeWebSearchEnabled && graphState.searchPlan?.nativeWebSearchEnabled === true,
-        nativeImageGenerationEnabled: scopeAllowsTool(context.capabilityScope,'image',{action:'generate'}) && imageSettings(config).engine === 'codex-oauth',
+        nativeWebSearchEnabled: !checkingGoal && nativeFeaturesForScope(context.capabilityScope).nativeWebSearchEnabled && graphState.searchPlan?.nativeWebSearchEnabled === true,
+        nativeImageGenerationEnabled: !checkingGoal && !coreTurn.repairing && scopeAllowsTool(context.capabilityScope,'image',{action:'generate'}) && imageSettings(config).engine === 'codex-oauth',
         onExecutionEvent: event => {
           const observed = { ...event, id: event.id ? `${iteration}:${event.id}` : undefined };
           coreTurn.observeNative(observed);
@@ -272,27 +278,51 @@ export function createInvokeModelNode(turn) {
         if (signal?.aborted) throw error;
         const timedOut = error?.name === 'TimeoutError' || error?.code === 'ETIMEDOUT';
         const exhaustedNow = budgetExhausted(budget) || (budget && timedOut && remainingMs(budget) <= 1000 ? budgetExhausted(budget, budget.deadlineAt) : null);
+        if (checkingGoal && !exhaustedNow) { coreTurn.stopReview(); coreTurn.update('complete'); finalReply = coreTurn.candidateReply; break; }
         if (!exhaustedNow) throw error;
         emitBudgetExhausted(exhaustedNow);
-        finalReply = budgetExhaustedReply(exhaustedNow);
+        finalReply = coreTurn.candidateReply || budgetExhaustedReply(exhaustedNow);
         break;
       }
 
       signal.throwIfAborted();
-      if (graphState.searchPlan?.nativeWebSearchEnabled) hostedItems.push(...(rawReply?.responseItems || []).filter(item => ['message', 'web_search_call'].includes(item?.type)));
+      if (!checkingGoal && graphState.searchPlan?.nativeWebSearchEnabled) {
+        const items = (rawReply?.responseItems || []).filter(item => ['message', 'web_search_call'].includes(item?.type));
+        hostedItems.push(...items);
+        // The transport may return structured receipts without emitting SSE.
+        // This is provider-reported evidence, never an independently read page.
+        const receipt = hostedSearchReceipt({ items, text: rawReply?.text });
+        if (receipt.verified) coreTurn.observeNative({ id: `hosted:${iteration}`, name: 'native_web_search', status: 'completed', output: receipt.evidence + '\n' + receipt.answer, sources: receipt.sources.map(source => ({ ...source, reading: 'provider', text: rawReply?.text || '' })) });
+      }
       const turn = functionSession.parse(rawReply);
       const { thinking, toolCalls } = turn;
 
-      // No tool calls → this is the final response
-      if (!toolCalls.length) {
+      if (checkingGoal) {
+        const decision = coreTurn.review(toolCalls.length ? '' : turn.text);
+        sseEmitter?.('execution_event', { kind: 'pipeline', id: `goal-check:${iteration}`, module: 'compute', name: '核对任务交付', status: decision.decision === 'complete' ? 'completed' : 'failed', output: decision.explanation || decision.reason });
+        if (decision.decision === 'continue') {
+          coreTurn.update('feedback', { repair: true });
+          loopMessages.push({ role: 'assistant', content: coreTurn.candidateReply }, { role: 'user', content: decision.feedback });
+          continue;
+        }
         coreTurn.update('complete');
-        finalReply = coreTurn.status === 'completed' ? turn.text : coreTurn.reply(latestUserMessage);
+        finalReply = coreTurn.candidateReply;
+        if (hostedItems.length) finalReply = hostedSearchReceipt({ items: hostedItems, text: finalReply }).answer;
+        break;
+      }
+
+      // No calls is a candidate answer, not proof that the user's goal is done.
+      if (!toolCalls.length) {
+        if (coreTurn.candidate(turn.text, { research: !!graphState.searchPlan.sharedPlan?.research, nativeSearch: graphState.searchPlan?.nativeWebSearchEnabled === true })) {
+          coreTurn.update('feedback');
+          continue;
+        }
+        coreTurn.update('complete');
+        finalReply = turn.text || coreTurn.reply(latestUserMessage);
         if (coreTurn.status === 'completed' && graphState.searchPlan?.nativeWebSearchEnabled) {
           const receipt = hostedSearchReceipt({ items: hostedItems, text: turn.text });
           missingHostedEvidence = !receipt.verified || !receipt.sources.length;
-          finalReply = missingHostedEvidence
-            ? '本轮未收到可核对的 Search completed 与来源回执，无法确认已完成实时检索。请重新验证 Hosted Search 或配置 HTTP Search Backend。'
-            : receipt.answer;
+          if (!missingHostedEvidence) finalReply = receipt.answer;
         }
         break;
       }
@@ -504,7 +534,7 @@ export function createInvokeModelNode(turn) {
     // the finalize node can attach it to normalizedReply → sendChatMessage
     // attaches it to the persisted assistantMessage.  Only emit when
     // non-empty so we don't pollute pure-text replies with empty arrays.
-    const out = { completionForReply: reply => coreTurn.receipt(latestUserMessage, reply, terminalReason || coreTurn.reason), reply: finalReply, hadToolCalls, skipVerification: coreTurn.status === 'blocked' || missingHostedEvidence || graphState.searchPlan.sharedPlan?.route === 'unavailable', toolEvidence: collectVerificationEvidence(evidencePairs, { query: latestUserMessage }), next: 'finalize' };
+    const out = { completionForReply: reply => coreTurn.receipt(latestUserMessage, reply, terminalReason || coreTurn.reason), reply: finalReply, hadToolCalls, skipVerification: (coreTurn.status === 'blocked' && coreTurn.reason !== 'MISSING_TOOL_EVIDENCE') || graphState.searchPlan.sharedPlan?.route === 'unavailable', toolEvidence: collectVerificationEvidence(evidencePairs, { query: latestUserMessage }), next: 'finalize' };
     if (accumulatedToolResults.length > 0) {
       out.toolResults = accumulatedToolResults;
     }

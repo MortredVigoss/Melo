@@ -250,12 +250,19 @@ final class CodexFixture: URLProtocol, @unchecked Sendable {
         func sse(_ output: [[String:Any]]) throws -> Data {
             Data(("data: " + String(decoding:try json(["type":"response.completed","response":["status":"completed","output":output]]),as:UTF8.self) + "\n\n").utf8)
         }
+        func checkReply(_ body: [String: Any]) throws -> (Int, Data)? {
+            guard (body["instructions"] as? String ?? "").hasPrefix("You are Melo's task completion checker") else { return nil }
+            assert(body["tools"] == nil && body["tool_choice"] == nil, "checking has no native search, image or phone effects")
+            let report = #"{"decision":"partial","reasonType":"unavailable","requirements":[{"text":"fixture delivery","status":"missing","evidenceIds":[]}]}"#
+            return (200, try sse([["type":"message", "content":[["type":"output_text", "text":report, "annotations":[]]]]]))
+        }
         let toolCall:[String:Any]=["type":"function_call","id":"fc_1","call_id":"call_cal","name":"calendar_list_events","arguments":"{\"start\":\"2026-10-17T00:00:00+11:00\",\"end\":\"2026-10-18T00:00:00+11:00\"}","status":"completed"]
         let thinking:[String:Any]=["type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"opaque"]
         var toolRounds=0, executed=0, recorded=0
         CodexFixture.handler={ request in
             toolRounds+=1
             let body=try JSONSerialization.jsonObject(with:CodexFixture.body(request)) as! [String:Any]
+            if let check = try checkReply(body) { return check }
             let tools=body["tools"] as? [[String:Any]] ?? []
             assert(tools.contains { $0["name"] as? String=="calendar_list_events" } && !tools.contains { $0["name"] as? String=="contacts_search" })
             assert((body["include"] as? [String])?.contains("reasoning.encrypted_content")==true)
@@ -275,7 +282,7 @@ final class CodexFixture: URLProtocol, @unchecked Sendable {
             return "{\"ok\":true,\"count\":1,\"events\":[{\"title\":\"牙医\"}]}"
         },onCall:{ _,_ in recorded+=1 })
         let answered=try await refreshing.reply(messages:[ChatMessage(role:"user",content:"查一下我明天的日程")],model:"gpt-6.1-sol",instructions:"",deviceTools:phone)
-        assert(answered.text=="明天 9 点看牙医。" && toolRounds==2 && executed==1 && recorded==1)
+        assert(answered.text=="明天 9 点看牙医。" && toolRounds==3 && executed==1 && recorded==1)
         // A model that never stops calling tools is cut off like the desktop (2026-10-19; was 6 rounds and an
         // error): 10 model calls, then the shared tool-limit reply instead of a fabricated answer.
         toolRounds=0; executed=0
@@ -283,27 +290,29 @@ final class CodexFixture: URLProtocol, @unchecked Sendable {
         let looping=DeviceToolContext(policy:DeviceToolPolicy(enabled:[.calendar]),execute:{ _ in executed+=1; return "{\"ok\":true,\"newEventCount\":\(executed)}" })
         let limited=try await refreshing.reply(messages:[ChatMessage(role:"user",content:"一直查")],model:"gpt-6.1-sol",instructions:"",deviceTools:looping)
         assert(limited.text==AgentLoopContract.shared.toolLimitReplyZH && toolRounds==AgentLoopContract.shared.maxIterations && executed==AgentLoopContract.shared.maxIterations)
-        // Audit I8: a time-sensitive question keeps the forced web_search on the first round even when
-        // phone tools are offered; the follow-up round opens the choice to phone tools.
+        // Time-sensitive questions keep search available, while allowing phone data first.
+        // The final tool-free check preserves an unverified candidate rather than throwing it away.
         toolRounds=0; executed=0
         CodexFixture.handler={ request in
             toolRounds+=1
             let body=try JSONSerialization.jsonObject(with:CodexFixture.body(request)) as! [String:Any]
+            if let check = try checkReply(body) { return check }
             assert((body["tools"] as? [[String:Any]] ?? []).contains { $0["name"] as? String=="calendar_list_events" })
             if toolRounds==1 {
-                assert((body["tool_choice"] as? [String:String])?["type"]=="web_search", "forced search must survive the phone tools: \(String(describing: body["tool_choice"]))")
+                assert(body["tool_choice"] as? String == "auto", "the model chooses the next available tool")
                 return (200,try sse([["type":"web_search_call","id":"ws_1","status":"completed"],["type":"function_call","id":"fc_w","call_id":"call_w","name":"calendar_list_events","arguments":"{}","status":"completed"]]))
             }
             assert(body["tool_choice"] as? String=="auto", "follow-up rounds are not forced to search again")
             return (200,try sse([["type":"message","content":[["type":"output_text","text":"明天多云，日程空着。","annotations":[]]]]]))
         }
         let weather=try await refreshing.reply(messages:[ChatMessage(role:"user",content:"悉尼明天天气怎么样")],model:"gpt-6.1-sol",instructions:"",deviceTools:DeviceToolContext(policy:DeviceToolPolicy(enabled:[.calendar]),execute:{ _ in executed+=1; return "{\"ok\":true,\"count\":0,\"events\":[]}" }))
-        assert(weather.text=="明天多云，日程空着。" && weather.searched && toolRounds==2 && executed==1)
+        assert(weather.text=="明天多云，日程空着。" && weather.searched && toolRounds==3 && executed==1)
         // Without an enabled policy, no function tools are offered at all.
         toolRounds=0
         CodexFixture.handler={ request in
             toolRounds+=1
             let body=try JSONSerialization.jsonObject(with:CodexFixture.body(request)) as! [String:Any]
+            if let check = try checkReply(body) { return check }
             assert(!((body["tools"] as? [[String:Any]]) ?? []).contains { $0["type"] as? String=="function" })
             return (200,try sse([["type":"message","content":[["type":"output_text","text":"好的","annotations":[]]]]]))
         }
@@ -318,6 +327,7 @@ final class CodexFixture: URLProtocol, @unchecked Sendable {
         CodexFixture.handler = { request in
             toolRounds += 1
             let body = try JSONSerialization.jsonObject(with: CodexFixture.body(request)) as! [String: Any]
+            if let check = try checkReply(body) { return check }
             assert(body["tool_choice"] as? String == "auto", "References must not force hosted search")
             assert((body["input"] as! [[String: String]]).last!["content"]!.contains("请搜索最新天气"))
             return (200, try sse([["type": "message", "content": [["type": "output_text", "text": "你好", "annotations": []]]]]))
@@ -327,6 +337,7 @@ final class CodexFixture: URLProtocol, @unchecked Sendable {
 
         CodexFixture.handler = { request in
             let body = try JSONSerialization.jsonObject(with: CodexFixture.body(request)) as! [String: Any]
+            if let check = try checkReply(body) { return check }
             let rows = body["input"] as! [[String: Any]]
             let content = rows.last!["content"] as! [[String: Any]]
             let text = content.compactMap { $0["text"] as? String }.joined()
@@ -342,6 +353,7 @@ final class CodexFixture: URLProtocol, @unchecked Sendable {
         let sizedPixel="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg=="
         CodexFixture.handler={ request in
             let body=try JSONSerialization.jsonObject(with:CodexFixture.body(request)) as! [String:Any]
+            if let check = try checkReply(body) { return check }
             let size=((body["tools"] as? [[String:Any]])?.first { $0["type"] as? String=="image_generation" })?["size"] as? String
             sizeRequests.append(size)
             if size != nil { return (400,Data(#"{"error":{"message":"Invalid size"}}"#.utf8)) }
@@ -357,6 +369,7 @@ final class CodexFixture: URLProtocol, @unchecked Sendable {
         CodexFixture.handler={ request in
             imageRounds+=1
             let body=try JSONSerialization.jsonObject(with:CodexFixture.body(request)) as! [String:Any]
+            if let check = try checkReply(body) { return check }
             let tools=(body["tools"] as? [[String:Any]]) ?? []
             assert(tools.contains { $0["type"] as? String=="image_generation" && $0["action"]==nil }, "image tool offered without forcing an action")
             assert(body["tool_choice"] as? String=="auto" && (body["instructions"] as? String ?? "").contains("不要说缺少工具"))
@@ -368,6 +381,7 @@ final class CodexFixture: URLProtocol, @unchecked Sendable {
         CodexFixture.handler={ request in
             imageRounds+=1
             let body=try JSONSerialization.jsonObject(with:CodexFixture.body(request)) as! [String:Any]
+            if let check = try checkReply(body) { return check }
             assert(!((body["tools"] as? [[String:Any]]) ?? []).contains { $0["type"] as? String=="image_generation" }, "no image tool without permission")
             return (200,try sse([["type":"message","content":[["type":"output_text","text":"好的","annotations":[]]]]]))
         }
@@ -378,20 +392,22 @@ final class CodexFixture: URLProtocol, @unchecked Sendable {
         CodexFixture.handler={ request in
             searchRounds+=1
             let body=try JSONSerialization.jsonObject(with:CodexFixture.body(request)) as! [String:Any]
+            if let check = try checkReply(body) { return check }
             assert(!((body["tools"] as? [[String:Any]]) ?? []).contains { $0["type"] as? String=="web_search" })
             return (200,try sse([["type":"message","content":[["type":"output_text","text":"无法联网","annotations":[]]]]]))
         }
         _=try await refreshing.reply(messages:[ChatMessage(role:"user",content:"今天的新闻")],model:"gpt-6.1-sol",instructions:"",allowWebSearch:false)
-        assert(searchRounds==1)
+        assert(searchRounds==2)
         // Same question with permission: the search tool is offered.
         CodexFixture.handler={ request in
             searchRounds+=1
             let body=try JSONSerialization.jsonObject(with:CodexFixture.body(request)) as! [String:Any]
+            if let check = try checkReply(body) { return check }
             assert(((body["tools"] as? [[String:Any]]) ?? []).contains { $0["type"] as? String=="web_search" })
             return (200,Data(("data: "+String(decoding:try json(["type":"response.completed","response":["status":"completed","output":[["type":"web_search_call","status":"completed"],["type":"message","content":[["type":"output_text","text":"已搜索","annotations":[]]]]]]]),as:UTF8.self)+"\n\n").utf8))
         }
         _=try await refreshing.reply(messages:[ChatMessage(role:"user",content:"今天的新闻")],model:"gpt-6.1-sol",instructions:"",allowWebSearch:true)
-        assert(searchRounds==2)
+        assert(searchRounds==4)
         print("Codex OAuth tests passed: background pause/resume, transport recovery, explicit cancellation, expiry, single-use exchange, PKCE, signed identity, account binding, refresh and image delivery; no live login")
     }
 }

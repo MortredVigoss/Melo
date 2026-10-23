@@ -254,6 +254,7 @@ test('G-1d slice 1.5: tool_calls_done SSE event includes evidenceTrail when tool
     const reply = makeFakeReply();
     reply.queue.push('<tool_call>{"id":"c1","name":"trail_tool","arguments":{}}</tool_call>');
     reply.queue.push('done');
+    reply.queue.push(JSON.stringify({ decision: 'complete', reasonType: 'fulfilled', requirements: [{ text: 'Fixture task', status: 'met', evidenceIds: ['c1'] }] }));
 
     const res = await runSubAgent({
       task: 't',

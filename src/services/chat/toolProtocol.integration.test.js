@@ -107,7 +107,8 @@ test('anthropic: tools with cache_control, tool_use parsed, tool_result sent bac
   assert.equal(result.normalizedReply.content, '核对完成。');
   assert.deepEqual(h.executions, ['A']);
   assert.equal(h.permissions.length, 2, 'invalid/unknown calls never reach the authorization gate');
-  assert.equal(h.requests.length, 2);
+  assert.equal(h.requests.length, 3, 'tool, answer, and tool-free goal check');
+  assert.equal(h.requests[2].body.tools, undefined);
   assert.ok(h.requests.every(r => r.path === '/v1/messages' && r.headers['x-api-key'] === 'fixture-key'));
   const first = h.requests[0].body;
   assert.deepEqual(first.tools.map(t => [t.name, Object.keys(t).sort().join(',')]), [['fixture_lookup', 'cache_control,description,input_schema,name']]);
@@ -158,7 +159,8 @@ test('chat-completions (opt-in): tools/tool_choice, tool_calls echoed back, tool
   assert.equal(result.normalizedReply.content, '核对完成。');
   assert.deepEqual(h.executions, ['A']);
   assert.equal(h.permissions.length, 2);
-  assert.equal(h.requests.length, 2);
+  assert.equal(h.requests.length, 3, 'tool, answer, and tool-free goal check');
+  assert.equal(h.requests[2].body.tools, undefined);
   assert.ok(h.requests.every(r => r.path === '/v1/chat/completions' && r.headers.authorization === 'Bearer fixture-key'));
   const first = h.requests[0].body;
   assert.deepEqual(first.tools, [{ type: 'function', function: { name: 'fixture_lookup', description: 'Read the requested fixture entry.',
@@ -226,7 +228,8 @@ test('responses: unchanged request shape and the same protocol-neutral chain is 
     connectors: [], skills: [], latestUserMessage: text, agentId: 'main', _dependencies: { getEmbedding: async () => null }, sseEmitter() {} }));
   assert.equal(result.normalizedReply.content, '核对完成。');
   assert.deepEqual(executions, ['A']);
-  assert.equal(requests.length, 2);
+  assert.equal(requests.length, 3, 'two work requests and one tool-free check');
+  assert.equal(requests[2].body.tools, undefined);
   assert.ok(requests.every(r => r.path === '/v1/responses'));
   assert.deepEqual(requests[0].body.tools, [{ type: 'function', name: 'fixture_lookup', description: 'Read the requested fixture entry.', strict: true,
     parameters: { type: 'object', properties: { query: { type: 'string' }, limit: { anyOf: [{ type: 'integer' }, { type: 'null' }] } }, required: ['query', 'limit'], additionalProperties: false } }]);
@@ -257,7 +260,8 @@ test('anthropic: a result with meta.modelImage is shown to the model as an image
   });
   const result = await h.run();
   assert.equal(result.normalizedReply.content, '页面是蓝色的。');
-  assert.equal(h.requests.length, 2);
+  assert.equal(h.requests.length, 3, 'tool, answer, and tool-free goal check');
+  assert.equal(h.requests[2].body.tools, undefined);
   const second = h.requests[1].body.messages;
   const resultIndex = second.findIndex(m => m.role === 'user' && Array.isArray(m.content) && m.content[0]?.type === 'tool_result');
   assert.ok(resultIndex > 0);
@@ -303,7 +307,8 @@ test('responses: a result with meta.modelImage becomes an input_image user item 
     workspace: { rootPath: home, exists: false, entries: [], filePaths: [], fileCount: 0, commandTemplates: [], commandRuns: [] },
     connectors: [], skills: [], latestUserMessage: text, agentId: 'main', _dependencies: { getEmbedding: async () => null }, sseEmitter() {} }));
   assert.equal(result.normalizedReply.content, '页面是蓝色的。');
-  assert.equal(requests.length, 2);
+  assert.equal(requests.length, 3, 'two work requests and one tool-free check');
+  assert.equal(requests[2].body.tools, undefined);
   const input = requests[1].body.input;
   const outputIndex = input.findIndex(i => i.type === 'function_call_output');
   assert.ok(outputIndex > 0);

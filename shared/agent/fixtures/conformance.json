@@ -1460,7 +1460,6 @@
         "phone_use"
       ],
       "requiredTools": [
-        "web_search",
         "phone_use"
       ]
     }
@@ -4242,6 +4241,323 @@
     "ok": true,
     "expected": {
       "outcome": "cancelled"
+    }
+  },
+  {
+    "name": "goal retains original on explicit continuation",
+    "input": {
+      "version": 1,
+      "op": "goal",
+      "action": "start",
+      "goal": "继续",
+      "messages": [
+        {
+          "role": "user",
+          "content": "查演唱会当天天气"
+        },
+        {
+          "role": "assistant",
+          "content": "还缺场馆"
+        },
+        {
+          "role": "user",
+          "content": "继续"
+        }
+      ]
+    },
+    "ok": true,
+    "expected": {
+      "original": "查演唱会当天天气\n继续"
+    }
+  },
+  {
+    "name": "goal candidate after calendar requires checking",
+    "input": {
+      "version": 1,
+      "op": "goal",
+      "action": "candidate",
+      "state": {
+        "version": 1,
+        "id": "goal-fixture",
+        "original": "查演唱会当天天气",
+        "amendments": [],
+        "revision": 1,
+        "phase": "checking",
+        "corrections": 0,
+        "requirements": [],
+        "decision": null,
+        "reason": "",
+        "candidate": "请给我地址",
+        "availableTools": [
+          "web_search"
+        ],
+        "research": true
+      },
+      "observations": [
+        {
+          "id": "calendar",
+          "type": "tool",
+          "name": "calendar_list_events",
+          "ok": true,
+          "executed": true,
+          "output": "Concert on 31 October, place unspecified."
+        }
+      ],
+      "candidate": {
+        "reply": "请给我地址",
+        "roundsLeft": 7,
+        "tools": [
+          "web_search"
+        ],
+        "research": true
+      }
+    },
+    "ok": true,
+    "expected": {
+      "phase": "checking"
+    }
+  },
+  {
+    "name": "public venue lookup continues",
+    "input": {
+      "version": 1,
+      "op": "goal",
+      "action": "review",
+      "state": {
+        "version": 1,
+        "id": "goal-fixture",
+        "original": "查演唱会当天天气",
+        "amendments": [],
+        "revision": 1,
+        "phase": "checking",
+        "corrections": 0,
+        "requirements": [],
+        "decision": null,
+        "reason": "",
+        "candidate": "请给我地址",
+        "availableTools": [
+          "web_search"
+        ],
+        "research": true
+      },
+      "observations": [
+        {
+          "id": "calendar",
+          "type": "tool",
+          "name": "calendar_list_events",
+          "ok": true,
+          "executed": true,
+          "output": "Concert on 31 October, place unspecified."
+        }
+      ],
+      "response": "{\"decision\": \"needs_user\", \"reasonType\": \"lookup_missing\", \"reason\": \"缺少地点\", \"nextStep\": \"查场馆和天气\", \"requirements\": [{\"text\": \"演唱会天气\", \"status\": \"missing\", \"evidenceIds\": []}]}"
+    },
+    "ok": true,
+    "expected": {
+      "decision": "continue",
+      "corrections": 1,
+      "phase": "working"
+    }
+  },
+  {
+    "name": "ambiguous private choice waits",
+    "input": {
+      "version": 1,
+      "op": "goal",
+      "action": "review",
+      "state": {
+        "version": 1,
+        "id": "goal-fixture",
+        "original": "查演唱会当天天气",
+        "amendments": [],
+        "revision": 1,
+        "phase": "checking",
+        "corrections": 0,
+        "requirements": [],
+        "decision": null,
+        "reason": "",
+        "candidate": "请给我地址",
+        "availableTools": [
+          "web_search"
+        ],
+        "research": true
+      },
+      "observations": [
+        {
+          "id": "calendar",
+          "type": "tool",
+          "name": "calendar_list_events",
+          "ok": true,
+          "executed": true,
+          "output": "Concert on 31 October, place unspecified."
+        }
+      ],
+      "response": "{\"decision\": \"needs_user\", \"reasonType\": \"ambiguity\", \"reason\": \"缺少地点\", \"nextStep\": \"查场馆和天气\", \"requirements\": [{\"text\": \"演唱会天气\", \"status\": \"missing\", \"evidenceIds\": []}]}"
+    },
+    "ok": true,
+    "expected": {
+      "decision": "needs_user",
+      "phase": "finished"
+    }
+  },
+  {
+    "name": "incomplete task stops on correction cap",
+    "input": {
+      "version": 1,
+      "op": "goal",
+      "action": "review",
+      "state": {
+        "version": 1,
+        "id": "goal-fixture",
+        "original": "查演唱会当天天气",
+        "amendments": [],
+        "revision": 1,
+        "phase": "checking",
+        "corrections": 2,
+        "requirements": [],
+        "decision": null,
+        "reason": "",
+        "candidate": "请给我地址",
+        "availableTools": [
+          "web_search"
+        ],
+        "research": true
+      },
+      "observations": [
+        {
+          "id": "calendar",
+          "type": "tool",
+          "name": "calendar_list_events",
+          "ok": true,
+          "executed": true,
+          "output": "Concert on 31 October, place unspecified."
+        }
+      ],
+      "response": "{\"decision\": \"continue\", \"reasonType\": \"lookup_missing\", \"reason\": \"缺少地点\", \"nextStep\": \"查场馆和天气\", \"requirements\": [{\"text\": \"演唱会天气\", \"status\": \"missing\", \"evidenceIds\": []}]}"
+    },
+    "ok": true,
+    "expected": {
+      "decision": "partial",
+      "reason": "GOAL_CORRECTION_LIMIT"
+    }
+  },
+  {
+    "name": "goal rejects invented source",
+    "input": {
+      "version": 1,
+      "op": "goal",
+      "action": "review",
+      "state": {
+        "version": 1,
+        "id": "goal-fixture",
+        "original": "查演唱会当天天气",
+        "amendments": [],
+        "revision": 1,
+        "phase": "checking",
+        "corrections": 0,
+        "requirements": [],
+        "decision": null,
+        "reason": "",
+        "candidate": "请给我地址",
+        "availableTools": [
+          "web_search"
+        ],
+        "research": true
+      },
+      "observations": [
+        {
+          "id": "calendar",
+          "type": "tool",
+          "name": "calendar_list_events",
+          "ok": true,
+          "executed": true,
+          "output": "Concert on 31 October, place unspecified."
+        }
+      ],
+      "response": "{\"decision\": \"complete\", \"requirements\": [{\"text\": \"weather\", \"status\": \"met\", \"evidenceIds\": [\"invented\"]}]}"
+    },
+    "ok": true,
+    "expected": {
+      "decision": "partial",
+      "reason": "GOAL_EVIDENCE_INVALID"
+    }
+  },
+  {
+    "name": "goal check budget has no hidden extra round",
+    "input": {
+      "version": 1,
+      "op": "goal",
+      "action": "candidate",
+      "state": {
+        "version": 1,
+        "id": "goal-fixture",
+        "original": "查演唱会当天天气",
+        "amendments": [],
+        "revision": 1,
+        "phase": "checking",
+        "corrections": 0,
+        "requirements": [],
+        "decision": null,
+        "reason": "",
+        "candidate": "请给我地址",
+        "availableTools": [
+          "web_search"
+        ],
+        "research": true
+      },
+      "observations": [
+        {
+          "id": "calendar",
+          "type": "tool",
+          "name": "calendar_list_events",
+          "ok": true,
+          "executed": true,
+          "output": "Concert on 31 October, place unspecified."
+        }
+      ],
+      "candidate": {
+        "reply": "candidate",
+        "roundsLeft": 0,
+        "tools": [
+          "web_search"
+        ]
+      }
+    },
+    "ok": true,
+    "expected": {
+      "decision": "partial",
+      "reason": "GOAL_CHECK_BUDGET"
+    }
+  },
+  {
+    "name": "goal check failure preserves partial state",
+    "input": {
+      "version": 1,
+      "op": "goal",
+      "action": "stop",
+      "state": {
+        "version": 1,
+        "id": "goal-fixture",
+        "original": "查演唱会当天天气",
+        "amendments": [],
+        "revision": 1,
+        "phase": "checking",
+        "corrections": 0,
+        "requirements": [],
+        "decision": null,
+        "reason": "",
+        "candidate": "请给我地址",
+        "availableTools": [
+          "web_search"
+        ],
+        "research": true
+      }
+    },
+    "ok": true,
+    "expected": {
+      "decision": "partial",
+      "phase": "finished",
+      "reason": "GOAL_CHECK_UNAVAILABLE"
     }
   }
 ]

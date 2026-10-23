@@ -185,7 +185,7 @@ async function runSubAgentLoop({
   let iterations = 0;
   let failedTools = 0;
   let deniedTools = 0;
-  const coreTurn = createCoreTurn({ allowedTools: allowedTools.map(t => t.id), limits: { rounds: Math.min(20, maxIterations) } });
+  const coreTurn = createCoreTurn({ goal: task, tools: allowedTools, allowedTools: allowedTools.map(t => t.id), limits: { rounds: Math.min(20, maxIterations) } });
   const toolResults = [];
   let usedTokens=0;
 
@@ -196,14 +196,22 @@ async function runSubAgentLoop({
 
     if (coreTurn.update('request') !== 'running') break;
     iterations++;
-    const request = fitRequestContext({ sections: [{ id: 'instructions', text: systemPrompt, required: true }],
-      messages: loopMessages, toolDefinitions: functionSession.definitions, ...contextBudget });
+    const checkingGoal = coreTurn.checking;
+    const review = checkingGoal ? coreTurn.reviewRequest() : null;
+    let request;
+    try { request = fitRequestContext({ sections: [{ id: 'instructions', text: review?.systemPrompt || systemPrompt, required: true }],
+      messages: review?.messages || loopMessages, toolDefinitions: checkingGoal ? [] : functionSession.definitions, ...contextBudget }); } catch (error) {
+      if (!checkingGoal) throw error;
+      coreTurn.stopReview('GOAL_CHECK_CONTEXT'); coreTurn.update('complete');
+      finalOutput = cleanReplyForParent(coreTurn.candidateReply);
+      break;
+    }
     const estimatedInput=Math.ceil(estimateTextTokens(systemPrompt+JSON.stringify(request.messages)+JSON.stringify(functionSession.definitions))*4/3)+32;
-    if(usedTokens+estimatedInput>=maxTokens) return {ok:false,output:'Member token budget exhausted before another request.',meta:{budgetExceeded:true,iterations,toolResults,completion:coreTurn.receipt(task,'','TOKEN_LIMIT')}};
+    if(usedTokens+estimatedInput>=maxTokens) return {ok:false,output:coreTurn.candidateReply || 'Member token budget exhausted before another request.',meta:{budgetExceeded:true,iterations,toolResults,completion:coreTurn.receipt(task,coreTurn.candidateReply,'TOKEN_LIMIT')}};
     // Run budget (C1): the child pool derived from the parent turn; spending here is charged upward.
     const runBudget=currentRequestContext()?.budget||null;
     const exhausted=budgetExhausted(runBudget);
-    if(exhausted) return {ok:false,output:`Run budget exhausted (${exhausted.reason}) before another request.`,error:'BUDGET_EXHAUSTED',meta:{budgetExceeded:true,budget:{reason:exhausted.reason,limit:exhausted.limit,used:exhausted.used},iterations,toolResults,completion:coreTurn.receipt(task,'','BUDGET_EXHAUSTED')}};
+    if(exhausted) return {ok:false,output:coreTurn.candidateReply || `Run budget exhausted (${exhausted.reason}) before another request.`,error:'BUDGET_EXHAUSTED',meta:{budgetExceeded:true,budget:{reason:exhausted.reason,limit:exhausted.limit,used:exhausted.used},iterations,toolResults,completion:coreTurn.receipt(task,coreTurn.candidateReply,'BUDGET_EXHAUSTED')}};
     const tokensBefore=usedTokens;
     const remaining=maxTokens-usedTokens-estimatedInput;
     const configuredLimit=Number(providerConfig.maxOutputTokens||providerConfig.maxTokens);
@@ -212,8 +220,8 @@ async function runSubAgentLoop({
     const account=receipt=>{if(accounted)return;accounted=true;recordUsage(runBudget,{providerCalls:1,inputTokens:receiptInputTokens(receipt)??estimatedInput});};
     let rawReply;
     try { rawReply = await replyFn({
-      ...functionSession.requestOptions(),
-      maxTokens:outputLimit,
+      ...(checkingGoal ? { maxTokens: 2048 } : functionSession.requestOptions()),
+      maxTokens:checkingGoal ? Math.min(outputLimit, 2048) : outputLimit,
       timeoutMs:runBudget?requestTimeoutMs(runBudget):undefined,
       onProviderResponse:receipt=>{if(receipt.usage)responseUsage=receipt.usage;account(receipt);onProviderResponse?.(receipt);},
       authMode: config.authMode,
@@ -221,15 +229,22 @@ async function runSubAgentLoop({
       apiKey: providerConfig.apiKey,
       baseUrl: providerConfig.baseUrl,
       model: providerConfig.model,
-      systemPrompt,
+      systemPrompt: review?.systemPrompt || systemPrompt,
       messages: request.messages,
-      nativeWebSearchEnabled: nativeFeaturesForScope(currentRequestContext().capabilityScope).nativeWebSearchEnabled,
-      nativeImageGenerationEnabled: nativeFeaturesForScope(currentRequestContext().capabilityScope).nativeImageGenerationEnabled,
+      nativeWebSearchEnabled: !checkingGoal && nativeFeaturesForScope(currentRequestContext().capabilityScope).nativeWebSearchEnabled,
+      nativeImageGenerationEnabled: !checkingGoal && !coreTurn.repairing && nativeFeaturesForScope(currentRequestContext().capabilityScope).nativeImageGenerationEnabled,
+      onExecutionEvent: event => coreTurn.observeNative(event),
       signal,
       // Native tools obey the same inherited capability snapshot as local tools.
-      workspacePath,
+      workspacePath: checkingGoal ? null : workspacePath,
       // No onDelta for sub-agents — output goes through tool result
     }); }
+    catch (error) {
+      if (!checkingGoal || signal?.aborted) throw error;
+      coreTurn.stopReview(); coreTurn.update('complete');
+      finalOutput = cleanReplyForParent(coreTurn.candidateReply);
+      break;
+    }
     finally { account(null); }
 
     const measured=responseUsage&&Number(responseUsage.input)+Number(responseUsage.output);
@@ -237,7 +252,20 @@ async function runSubAgentLoop({
     const turn = functionSession.parse(rawReply);
     const { toolCalls } = turn;
 
+    if (checkingGoal) {
+      const decision = coreTurn.review(toolCalls.length ? '' : turn.text);
+      if (decision.decision === 'continue') {
+        coreTurn.update('feedback', { repair: true });
+        loopMessages.push({ role: 'assistant', content: coreTurn.candidateReply }, { role: 'user', content: decision.feedback });
+        continue;
+      }
+      coreTurn.update('complete');
+      finalOutput = cleanReplyForParent(coreTurn.candidateReply);
+      break;
+    }
+
     if (!toolCalls.length) {
+      if (coreTurn.candidate(turn.text, { research: true, nativeSearch: nativeFeaturesForScope(currentRequestContext().capabilityScope).nativeWebSearchEnabled })) { coreTurn.update('feedback'); continue; }
       coreTurn.update('complete');
       if (coreTurn.status !== 'completed') break;
       finalOutput = cleanReplyForParent(turn.text);
@@ -361,15 +389,15 @@ async function runSubAgentLoop({
     if (!finalOutput) finalOutput = '(Sub-agent produced no output within iteration budget)';
   }
 
-  // `ok` means the member reached a conclusion within budget. A recoverable
-  // tool error (missing file, one search timeout) no longer flips the whole
-  // member — and with it the team and the review loop — to "failed"
-  // (2026-10-17 audit B-5). failedTools stays in meta; createHandoff lets
-  // the member's own self-reported status override when it says so.
+  // Recoverable tool errors remain in meta; the final delivery check decides
+  // whether the member actually finished. Self-reported prose cannot promote
+  // an incomplete receipt to a successful handoff.
+  const completion = coreTurn.receipt(task, finalOutput);
   return {
-    ok: !exhausted && deniedTools === 0,
+    ok: !exhausted && deniedTools === 0 && completion.outcome === 'completed',
+    ...(completion.outcome !== 'completed' ? { error: 'GOAL_INCOMPLETE' } : {}),
     output: finalOutput,
-    meta: { depth, iterations, toolCalls: totalToolCalls, failedTools, deniedTools, exhausted, stopReason: coreTurn.reason, toolResults, completion: coreTurn.receipt(task, finalOutput) },
+    meta: { depth, iterations, toolCalls: totalToolCalls, failedTools, deniedTools, exhausted, stopReason: coreTurn.reason, toolResults, completion },
   };
 }
 

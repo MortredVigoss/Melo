@@ -11,7 +11,8 @@ export function createHandoff(task,outcome,usage) {
  // 'failed'); cancellation and budget exhaustion are facts the runner knows
  // better and always win.
  const selfReported=['completed','failed'].includes(supplied.status)?supplied.status:null;
- const status=outcome.meta?.aborted?'cancelled':outcome.meta?.budgetExceeded?'budget-exceeded':!outcome.ok?'failed':(selfReported || 'completed');
- return normalizeHandoff({completion:outcome.meta?.completion,subtask:task,conclusion:supplied.conclusion || outcome.output,evidence:supplied.evidence || [],changedFiles:[...new Set([...observed,...strings(supplied.changedFiles)])],unfinished:supplied.unfinished || (status==='completed'?[]:[outcome.output]),review:supplied.review,status,usage});
+ const incomplete=outcome.meta?.completion && outcome.meta.completion.outcome!=='completed';
+ const status=outcome.meta?.aborted?'cancelled':outcome.meta?.budgetExceeded?'budget-exceeded':!outcome.ok||incomplete?'failed':(selfReported || 'completed');
+ return normalizeHandoff({completion:outcome.meta?.completion,subtask:task,conclusion:supplied.conclusion || outcome.output,evidence:supplied.evidence || [],changedFiles:[...new Set([...observed,...strings(supplied.changedFiles)])],unfinished:incomplete?[outcome.meta.completion.summary || 'Task completion is unverified',...strings(supplied.unfinished)]:supplied.unfinished || (status==='completed'?[]:[outcome.output]),review:supplied.review,status,usage});
 }
 export const HANDOFF_INSTRUCTION='Return only a JSON handoff with conclusion, evidence (sources and observations; distinguish claims from verified checks), changedFiles, unfinished, and review (approve or revise only when reviewing). Do not claim verification without evidence. Do not write long-term memory.';
