@@ -429,6 +429,46 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             assert(chat.map { $0["role"] as? String } == ["system", "user", "assistant", "tool", "user"] && chat[4]["content"] as? String == "补充")
             assert(RequestSizeEstimate.tokens(Data(#"{"a":"data:image/jpeg;base64,\#(String(repeating: "A", count: 4000))"}"#.utf8)) < 20)
         }
+        // Smart routing uses the same opaque-ID fixtures as Node and Android.
+        do {
+            let fixtures = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: "shared/agent/fixtures/model-routing.json"))) as! [[String: Any]]
+            for row in fixtures {
+                let result = SharedLoopPolicy.value("modelRouting", ["routing": row["input"]!]) as! [String: Any]
+                let expected = row["expected"] as! [String: Any]
+                assert(result["model"] as? String == expected["model"] as? String)
+                assert(result["tier"] as? String == expected["tier"] as? String)
+            }
+            let defaults = UserDefaults(suiteName: "routing-tests-" + UUID().uuidString)!
+            defaults.set("keep-account", forKey: "account")
+            let initial = PhoneRoutingPolicy.read(defaults)
+            let saved = try PhoneRoutingPolicy.save(initial, defaults: defaults)
+            assert(saved.revision == 1 && defaults.string(forKey: "account") == "keep-account")
+            do { _ = try PhoneRoutingPolicy.save(initial, defaults: defaults); assertionFailure("Stale revision accepted") } catch {}
+            var policy = PhoneRoutingPolicy()
+            policy.tiers = Dictionary(uniqueKeysWithValues: [("light", "a"), ("standard", "b"), ("strong", "c")].map { ($0.0, [RoutingAssignment(connectionId: "local", model: $0.1)]) })
+            let candidates = ["a", "b", "c"].map { PhoneRoutingCandidate(connectionId: "local", model: $0, name: $0) }
+            func session() throws -> PhoneRoutingSession { try .init(policy: policy, mode: "smart", connectionId: "local", defaultModel: "a", candidates: candidates, text: "比较几个方案", history: [], attachments: []) }
+            var actual: [String] = [], effects = 0
+            let low = ScriptedTransport { request in
+                if request.goalReview != nil { return answer(#"{"complexity":1,"risk":"low","needs":{}}"#) }
+                return calls([fc("effect-1", "calendar_create_event", #"{"title":"fixture"}"#)])
+            }
+            let high = ScriptedTransport { request in
+                if request.goalReview != nil { return answer(#"{"decision":"complete","explanation":"done"}"#) }
+                if request.iteration == 1 { assert(!request.transcript.isEmpty); return calls([fc("effect-2", "calendar_create_event", #"{"title":"fixture"}"#)]) }
+                return answer("完成")
+            }
+            let host = PhoneRoutingHost(session: try session(), messages: [.init(role: "user", content: "比较几个方案")], identity: "account-one") { _, model in actual.append(model); return model == "c" ? high : low }
+            let tools = AgentLoopTools(definitions: [.init(name: "calendar_create_event", description: "fixture", parameters: ["type": "object"])], instructions: "", perform: { _ in effects += 1; return PhoneToolResult(output: PhoneToolEnvelope.success("done")) })
+            let budget = PhoneRunBudget()
+            _ = try await AgentLoop(transport: low, tools: tools, budget: budget, latestUserMessage: "比较几个方案", hooks: AgentLoopHooks(routing: host)).run()
+            assert(effects == 1 && host.session.model == "c" && host.session.escalated)
+            assert(low.requests.filter { $0.goalReview != nil }.count == 1)
+            let cached = PhoneRoutingHost(session: try session(), messages: [], identity: "account-one") { _, _ in high }
+            _ = try await cached.prepare(budget: PhoneRunBudget(), stage: nil)
+            assert(cached.session.judge == nil)
+            assert(!host.session.escalate(rounds: 9, failures: 9, requested: true))
+        }
         print("Agent loop tests passed: 10-call limit reply, 32-call batch and reused ids, budget (deadline/tokens/tool calls/timeout), repeat guard, envelopes and refusals, supplements without restart, condensation retry, cancellation trace, finalize verification, narrowed team budget, transcript rendering")
     }
 }

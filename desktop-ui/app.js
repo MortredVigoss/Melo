@@ -1,9 +1,9 @@
+import { renderSmartRouting, editSmartRouting, handleSmartRouting, smartRoutingDrag } from './smartRouting.js';
 import {handleManagementAction} from './managementActions.js';
 import {askFileDecision} from './chatFiles.js';
 import { isAgentChannelAvailable } from '/shared/channelAvailability.js';
 import { t, ui } from './i18n.js';
 import { installLanguageControls } from './languageControls.js';
-import { renderExtraFast, editExtraFast, handleExtraFast } from './extraFast.js';
 import { olderBootstrap, changedBootstrapSections, pageAffected } from './bootstrapPatch.js';
 import { createSharedApi } from './sharedApi.js';
 import { createSettingsFormEditors, installUnsavedSettingsGuard } from './settingsEdit.js';
@@ -4573,12 +4573,12 @@ function renderModelPage() {
       </div>
       <div class="model-connection-summary">
         <div><small>GLOBAL DEFAULT</small><strong>${escapeHtml(modelLabel(config.model))}</strong><span>${escapeHtml(config.model)} · ${escapeHtml(config.authMode === 'codex' ? 'Codex OAuth' : config.authMode === 'local' ? '本地连接' : 'API')}</span></div>
-        <p>默认连接用于回答；开启额外快速后，短判断可自动分配给其他已配置模型。Agent指令保持不变。每条回复的“模型记录”显示服务端实际返回的标识。</p>
+        <p>默认连接用于回答。Agent 指令与工具配置保持不变。每条回复的“模型记录”显示服务端实际返回的标识。</p>
       </div>
       ${renderDefaultModelSettings(config, escapeHtml)}
+    ${renderSmartRouting(config)}
       ${renderLlmConnections(config)}
       ${renderSearchSettings(config)}
-      ${renderExtraFast(config)}
       ${renderImageSettings(config)}
       <details class="model-prompt-settings"><summary>全局系统提示词</summary>
         <section class="surface-card">
@@ -5766,11 +5766,8 @@ document.addEventListener('click', async event => {
     return;
   }
   if (['new-chat', 'open-chat'].includes(action)) clearImageTask();
-  if (action?.startsWith('extra-fast-') && trigger.tagName === 'BUTTON') {
-    event.preventDefault();
-    await handleExtraFast(action, { config: uiState.bootstrap.settings.config, api, render, refresh: () => loadBootstrap(uiState.searchQuery, { quiet: true }) });
-    return;
-  }
+
+  if (action?.startsWith('smart-routing-')) { event.preventDefault(); await handleSmartRouting(action, {trigger,config:uiState.bootstrap.settings.config,api,render,refresh:()=>loadBootstrap(uiState.searchQuery,{quiet:true})}); return; }
   if (action?.startsWith('llm-') && trigger.tagName === 'BUTTON') {
     event.preventDefault();
     await handleLlmConnection(action, { config: uiState.bootstrap.settings.config, api, render, refresh: () => loadBootstrap(uiState.searchQuery, { quiet: true }), openUrl: openExternalUrl, chatgptLogin: handleStartModelOAuthLogin });
@@ -5813,7 +5810,7 @@ document.addEventListener('click', async event => {
       case 'pick-default-model': {
         if (uiState.modelPickerSaving) break;
         const model = trigger.dataset.model;
-        const selection = model ? {model, profileId:trigger.dataset.profileId || ''} : null;
+        const selection = trigger.dataset.modelMode === 'smart' ? {mode:'smart', model:'', profileId:trigger.dataset.profileId || ''} : model ? {model, profileId:trigger.dataset.profileId || ''} : null;
         uiState.modelPickerSaving = true;
         render();
         try {
@@ -6334,7 +6331,7 @@ document.addEventListener('input', event => {
   if (memoryFeature.handleInput(target)) return;
   if (target.dataset.taskPricing) { uiState.taskPricing ||= {}; uiState.taskPricing[target.dataset.taskPricing] = target.value; return; }
   if (handleImageInput(target, uiState.bootstrap?.settings?.config || {})) return;
-  if (editExtraFast(target)) return;
+  if (editSmartRouting(target)) return;
   if (editLlmConnection(target, uiState.bootstrap?.settings?.config || {})) return;
   if (editSearchSettings(target)) return;
 
@@ -6476,7 +6473,7 @@ document.addEventListener('change', async event => {
   if (target.dataset.taskCheck) { uiState.taskChecks ||= {}; const task=activeTasks().find(t=>t.id===target.dataset.taskCheck); uiState.taskChecks[target.dataset.taskCheck] ||= {}; Object.assign(uiState.taskChecks[target.dataset.taskCheck],{runId:task?.execution?.runId,[target.dataset.criterion]:target.checked}); return; }
   if (customizeFeature.handleChange(target)) return;
   if (handleImageInput(target, uiState.bootstrap?.settings?.config || {})) { render(); return; }
-  if (editExtraFast(target)) return;
+  if (editSmartRouting(target)) { render(); return; }
   if (editLlmConnection(target, uiState.bootstrap?.settings?.config || {})) { render(); return; }
   if (editSearchSettings(target)) { render(); return; }
 
@@ -6879,3 +6876,5 @@ setInterval(() => {
   if (!chatFeature.isSending() || document.hidden) return;
   for (const node of document.querySelectorAll('.thinking-banner, .neural-activity')) node.textContent = chatFeature.thinkingLabel();
 }, 1000);
+
+for (const type of ['dragstart','dragover','drop']) document.addEventListener(type,event=>smartRoutingDrag(event,render));

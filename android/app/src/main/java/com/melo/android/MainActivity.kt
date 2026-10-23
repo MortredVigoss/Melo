@@ -223,7 +223,7 @@ private data class ChatTimelineItem(val id: String, val at: String, val message:
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             val agent = data.agents.find { it.id == chat.agentId }
             Text(agent?.name ?: "Melo", color = MeloGold)
-            Text(" · " + (data.settings.connections.find { it.id == (chat.connectionId ?: data.settings.activeConnection) }?.model?.ifBlank { "未配置模型" } ?: "未配置模型"), color = MeloMuted, maxLines = 1, modifier = Modifier.weight(1f))
+            TextButton(onClick = { options = true }, enabled = !busy, modifier = Modifier.weight(1f)) { Text(if ((chat.modelMode ?: data.settings.smartRouting.text("defaultMode")) == "smart" && agent?.model.isNullOrBlank()) "智能（自动）" else chat.model?.takeIf(String::isNotBlank) ?: agent?.model?.takeIf(String::isNotBlank) ?: data.settings.connections.find { it.id == (chat.connectionId ?: data.settings.activeConnection) }?.model?.ifBlank { "未配置模型" } ?: "未配置模型", color = MeloMuted, maxLines = 1) }
             IconButton(onClick = { scriptLibrary = true }, enabled = !busy, modifier = Modifier.testTag("chat-cache-open")) { Icon(Icons.Outlined.History, "操作缓存") }
             IconButton(onClick = { options = true }, enabled = !busy) { Icon(Icons.Outlined.Tune, "对话设置") }
         }

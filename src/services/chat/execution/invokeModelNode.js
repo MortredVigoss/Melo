@@ -1,3 +1,5 @@
+import { toolEffect } from '../../../../shared/agent/toolEffects.js';
+import { resolveContextBudget } from '../contextBudget.js';
 import { teamCompletion } from '../../../../shared/agent/completion.js';
 import { hostedSearchReceipt } from '../../../../shared/agent/hostedSearch.js';
 // Chat execution graph — `invoke-model` node (architecture B2, 2026-10-20).
@@ -48,7 +50,8 @@ const STABLE_MEMORY_KINDS = new Set(['project-book', 'personal-profile']);
 export function createInvokeModelNode(turn) {
   const { agentId, budget, chat, config, context, contextBudget, createReply, env, home, imageTask, latestUserMessage, modelOverrides, modelResponses, onDelta, onImageProgress, onImageTaskResolved, onReasoningDelta, promptDebug, providerProfile, signal, sseEmitter, state, teamPlan, turnContextPlacement, workspace } = turn;
   return async function invokeModel(graphState) {
-    const selectedModel = modelOverrides.model || graphState.activeAgentProfile.model || config.model;
+    const routingSession = turn.routing;
+    let selectedModel = modelOverrides.model || graphState.activeAgentProfile.model || config.model;
     const delegatedModelConfig = { ...config, ...modelOverrides, model: selectedModel, modelResolvedForTurn: true,
       toolCalling: env.MELO_FUNCTION_CALLING || config.toolCalling };
     const teamTask = state.tasks?.find(t=>t.execution?.requestId===context.requestId && t.execution?.teamPlan);
@@ -98,7 +101,7 @@ export function createInvokeModelNode(turn) {
       graphState.modelMessages = await prepareVisionInputs(decorated,{signal,detail:task.detail,onObservation:e=>sseEmitter?.('execution_event',{kind:'pipeline',id:`vision-prepare:${++serial}`,module:'compute',status:'completed',...e})});
     }
     const latestParts=graphState.modelMessages.filter(m=>m.role==='user').at(-1)?.content;
-    const vision = Array.isArray(latestParts) && latestParts.some(p=>p.type==='image_url') ? visionConnection(config,{...modelOverrides,model:selectedModel}) : null;
+    let vision = routingSession?.current.mode === 'smart' ? null : Array.isArray(latestParts) && latestParts.some(p=>p.type==='image_url') ? visionConnection(config,{...modelOverrides,model:selectedModel}) : null;
     const fastPathReply = task?.action === 'analyze' || !scopeAllowsTool(context.capabilityScope,'image',{action:'generate'}) ? null : await tryImageEditFastPath({
       config: { ...config, model:selectedModel },
       messages: graphState.modelMessages,
@@ -113,9 +116,15 @@ export function createInvokeModelNode(turn) {
 
     // Shared with the iPhone loop (shared/protocol/agent-loop.json).
     const MAX_TOOL_ITERATIONS = AGENT_LOOP_CONTRACT.loop.maxIterations;
-    const functionSession = createFunctionCallingSession({ ...delegatedModelConfig, ...(vision || {}),
+    const escalationTool = { id: 'melo_escalate', name: 'melo_escalate', description: 'Request one higher configured model tier when the task needs more reasoning. This continues the same task with all results preserved. Do not repeat completed actions.', effect: 'compute', requiresPermission: false,
+      parametersSchema: { type: 'object', properties: { reason: { type: 'string', description: 'Why this task requires a stronger model.' } }, required: ['reason'], additionalProperties: false } };
+    const routingEnabled = routingSession?.current.mode === 'smart' && config.smartRouting?.allowEscalation !== false;
+    if (routingEnabled) graphState.promptTools = [...graphState.promptTools, escalationTool];
+    let escalationRequested = false;
+    let routingSideEffects = false;
+    let functionSession = createFunctionCallingSession({ ...delegatedModelConfig, ...(vision || {}),
       toolCalling: env.MELO_FUNCTION_CALLING || config.toolCalling }, graphState.promptTools);
-    const loopSections = graphState.promptSections.map(section => section.id === 'tools' && graphState.promptTools.length
+    let loopSections = graphState.promptSections.map(section => section.id === 'tools' && graphState.promptTools.length
       ? { ...section, text: [buildSearchRoutingPrompt(graphState.searchPlan), buildToolsSystemPrompt(graphState.promptTools,
         { includeExamples: false, native: functionSession.native, protocol: functionSession.protocol })].filter(Boolean).join('\n\n') } : section);
     // Running message list for the tool loop — starts from the prepared window.
@@ -147,6 +156,7 @@ export function createInvokeModelNode(turn) {
     // MCP tools resolve by id (`mcp:s:t`, XML prompt) or wire name (`mcp__s__t`).
     const mcpToolsByName = indexMcpTools(graphState.mcpTools || []);
     const visibleToolIds = new Set(graphState.visibleToolIds || []);
+    if (routingEnabled) visibleToolIds.add('melo_escalate');
     const allowedToolIdList = [...visibleToolIds].filter(id => !/^browser_/u.test(id) || graphState.searchPlan.sharedPlan?.backend === 'browser');
     const coreTurn = createCoreTurn({ runId: String(context.requestId), turnId: chat.id,
       goal: graphState.searchPlan.sharedPlan?.resolvedGoal || latestUserMessage, tools: graphState.promptTools,
@@ -176,6 +186,19 @@ export function createInvokeModelNode(turn) {
         }
       }
 
+      if (!coreTurn.checking && routingSession?.escalate({ ...coreTurn.routingProgress, requested: escalationRequested, sideEffects: routingSideEffects })) {
+        const selected = routingSession.connection();
+        selectedModel = selected.model;
+        Object.assign(config, selected);
+        Object.assign(modelOverrides, { model: selected.model, verifier: selected.model, apiKey: selected.apiKey, baseUrl: selected.baseUrl });
+        Object.assign(delegatedModelConfig, selected, { modelResolvedForTurn: true });
+        Object.assign(contextBudget, resolveContextBudget(env, { config: selected }));
+        functionSession = createFunctionCallingSession({ ...selected, toolCalling: env.MELO_FUNCTION_CALLING || selected.toolCalling }, graphState.promptTools);
+        loopSections = loopSections.map(section => section.id === 'tools' ? { ...section, text: [buildSearchRoutingPrompt(graphState.searchPlan), buildToolsSystemPrompt(graphState.promptTools, { includeExamples: false, native: functionSession.native, protocol: functionSession.protocol })].join('\n\n') } : section);
+        // Rerouting never resets the budget, goal, tool IDs or successful effects.
+        coreTurn.update('reroute');
+      }
+      escalationRequested = false;
       let request;
       const checkingGoal = coreTurn.checking;
       try {
@@ -249,6 +272,7 @@ export function createInvokeModelNode(turn) {
         onDelta: !checkingGoal && isFirstIteration ? onDelta : undefined,
         onReasoningDelta: checkingGoal ? undefined : onReasoningDelta,
         providerProfile,
+        routing: routingSession?.current.mode === 'smart' ? { ...routingSession.current, judge: undefined } : undefined,
         // Workspace path enables inline image generation through the
         // Codex OAuth chat stream (createCodexResponsesReply adds the
         // image_generation tool when this is truthy and writes the
@@ -262,7 +286,7 @@ export function createInvokeModelNode(turn) {
         // it this turn is said in the routing prompt. Only an explicit
         // user network-off or a non-Codex route keeps it off.
         nativeWebSearchEnabled: !checkingGoal && nativeFeaturesForScope(context.capabilityScope).nativeWebSearchEnabled && graphState.searchPlan?.nativeWebSearchEnabled === true,
-        nativeImageGenerationEnabled: !checkingGoal && !coreTurn.repairing && scopeAllowsTool(context.capabilityScope,'image',{action:'generate'}) && imageSettings(config).engine === 'codex-oauth',
+        nativeImageGenerationEnabled: (routingSession?.current.mode !== 'smart' || routingSession.current.tier === 'strong') && !checkingGoal && !coreTurn.repairing && scopeAllowsTool(context.capabilityScope,'image',{action:'generate'}) && imageSettings(config).engine === 'codex-oauth',
         onExecutionEvent: event => {
           const observed = { ...event, id: event.id ? `${iteration}:${event.id}` : undefined };
           coreTurn.observeNative(observed);
@@ -365,6 +389,14 @@ export function createInvokeModelNode(turn) {
       for (const tc of toolCalls) {
         if (tc.rejectedResult) continue;
         if (!coreTurn.permits(tc.id)) tc.rejectedResult = coreTurn.rejectionResult(tc.id);
+        else if (routingSession?.current.mode === 'smart' && routingSession.current.tier !== 'strong' && ['write', 'unknown'].includes(toolEffect(tc.name, tc.arguments))) {
+          routingSideEffects = true; escalationRequested = true;
+          tc.rejectedResult = { ok: false, output: 'This action has not executed. It requires the strong tier. Continue using previous results after the host checks the configured tier; if unavailable ask the user to configure it.', meta: { code: 'ROUTING_REQUIRES_STRONG', executionStarted: false } };
+        }
+        else if (routingEnabled && tc.name === 'melo_escalate') {
+          escalationRequested = true;
+          tc.rejectedResult = { ok: true, output: 'Routing request recorded. Continue from existing results; do not repeat successful effects. The host will check the remaining budget and available tiers.', meta: { executionStarted: false } };
+        }
       }
       const executableCalls = toolCalls.map(tc => {
         let tool = tc.rejectedResult ? null : skillToolsById.get(tc.name) || mcpToolsByName.get(tc.name) || getTool(tc.name);

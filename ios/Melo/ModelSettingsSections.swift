@@ -34,6 +34,7 @@ struct ModelSettingsSection: View {
                     Toggle("联网搜索", isOn: value.webSearch)
                 }
             }
+            SmartRoutingSettings()
             if authMode == "api" { LLMConnectionsView() }
             else {
                 Button { Task { await account.loadModels() } } label: { Label("刷新可用模型", systemImage: "arrow.clockwise") }.disabled(!account.signedIn || account.busy)

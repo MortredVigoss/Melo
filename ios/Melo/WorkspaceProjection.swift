@@ -59,14 +59,16 @@ enum WorkspaceProjection {
     static func model(_ selection: ConversationModel?, connections: [PortableConnection]) -> Any {
         guard let selection else { return NSNull() }
         let local = connections.first { $0.id == selection.connectionID }
-        return ["connectionID": selection.syncConnectionID ?? selection.connectionID, "name": selection.name ?? local?.name ?? (selection.connectionID == "chatgpt" ? "ChatGPT" : ""), "model": selection.model, "authMode": selection.authMode ?? (selection.connectionID == "chatgpt" ? "codex" : "api-key"), "baseURL": base(selection.baseURL ?? local?.baseURL ?? ""), "apiProtocol": selection.apiProtocol ?? local?.apiProtocol ?? "chat-completions"]
+        var result: [String: Any] = ["connectionID": selection.syncConnectionID ?? selection.connectionID, "name": selection.name ?? local?.name ?? (selection.connectionID == "chatgpt" ? "ChatGPT" : ""), "model": selection.model, "authMode": selection.authMode ?? (selection.connectionID == "chatgpt" ? "codex" : "api-key"), "baseURL": base(selection.baseURL ?? local?.baseURL ?? ""), "apiProtocol": selection.apiProtocol ?? local?.apiProtocol ?? "chat-completions"]
+        if selection.mode == "smart" { result["mode"] = "smart" }
+        return result
     }
     static func modelSelection(_ value: SyncValue, connections: [PortableConnection]) -> ConversationModel? {
         guard value != .null else { return nil }
-        if value["authMode"].string == "codex" { return .init(connectionID: "chatgpt", model: value["model"].string, name: value["name"].string, baseURL:value["baseURL"].string,apiProtocol:value["apiProtocol"].string,syncConnectionID:value["connectionID"].string,authMode:"codex") }
+        if value["authMode"].string == "codex" { return .init(connectionID: "chatgpt", model: value["model"].string, name: value["name"].string, baseURL:value["baseURL"].string,apiProtocol:value["apiProtocol"].string,syncConnectionID:value["connectionID"].string,authMode:"codex",mode:value["mode"].string == "smart" ? "smart" : nil) }
         let matches = connections.filter { base($0.baseURL) == base(value["baseURL"].string) && $0.apiProtocol == value["apiProtocol"].string }
         let local = matches.first { $0.id == value["connectionID"].string } ?? (matches.count == 1 ? matches[0] : nil)
-        return .init(connectionID: local?.id ?? "unconnected-sync", model: value["model"].string, name: value["name"].string, baseURL: value["baseURL"].string, apiProtocol: value["apiProtocol"].string,syncConnectionID:value["connectionID"].string,authMode:value["authMode"].string)
+        return .init(connectionID: local?.id ?? "unconnected-sync", model: value["model"].string, name: value["name"].string, baseURL: value["baseURL"].string, apiProtocol: value["apiProtocol"].string,syncConnectionID:value["connectionID"].string,authMode:value["authMode"].string,mode:value["mode"].string == "smart" ? "smart" : nil)
     }
     static func stage(_ s: ExecutionStage) -> [String: Any] {
         ["id":s.id,"module":s.module,"name":s.name,"status":s.status,"provider":"","input":s.input,"output":s.output,"query":"","resultSummary":"","model":s.model ?? "","returnedModel":s.returnedModel ?? "","channel":s.channel ?? "","startedAt":s.startedAt ?? "","finishedAt":s.finishedAt ?? ""]

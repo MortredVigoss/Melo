@@ -88,6 +88,10 @@ export function advanceTurn(previous, event, now) {
       state.awaitingModel = false;
       return state;
     }
+    case 'reroute':
+      if (state.pending.length || state.awaitingModel) fail('PENDING_EFFECT', 'Finish the current response and pair its tools before rerouting.');
+      state.repairing = true;
+      return state;
     case 'feedback':
       if (!state.awaitingModel || state.pending.length) fail('PENDING_EFFECT', 'Only an unverified model answer can receive feedback.');
       state.awaitingModel = false;

@@ -648,7 +648,6 @@ async function main() {
     // JS fixtures are discovered above; only non-Node-test journeys need
     // explicit stages. No parallel hand-maintained file allowlist.
     results.push(await runStep('Settings design browser journeys', () => runCommand('npm', ['run', 'test:settings-design'])));
-    results.push(await runStep('Extra fast browser journey', () => runCommand('npm', ['run', 'test:extra-fast-browser'])));
 
     results.push(await runStep('iPhone protocol and shared renderer (test:ios)', () => runCommand('npm', ['run', 'test:ios', ...(results[0].status === 'GREEN' ? ['--', '--skip-js'] : [])])));
     results.push(await runStep('Android JVM, Lint, Debug and Release (check:android)', () => runCommand('npm', ['run', 'check:android'])));

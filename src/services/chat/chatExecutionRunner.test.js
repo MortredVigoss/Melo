@@ -823,13 +823,13 @@ test('run budget (T7): a tool cut by the run deadline reports BUDGET_EXHAUSTED, 
   } finally { clearInterval(timer); }
 });
 
-test('optional fast judge retains the answer model and contributes its real usage receipt', async () => {
+test('retired extraFast settings never start a classifier or change the fixed answer model', async () => {
   const state = fixtureState(), chat = fixtureChat(); state.chats = [chat];
   const events = []; let judgments = 0, answers = 0;
   const config = { ...fixtureConfig, extraFast: { enabled: true } };
   await saveState(state);
   const result = await runChatAgentExecutionGraph({ config, state, chat, workspace: fixtureWorkspace(), connectors: [], skills: [],
-    latestUserMessage: '今天的心情还算不错呢', agentId: 'main', sseEmitter: (type, value) => events.push({ type, value }),
+    latestUserMessage: '你好', agentId: 'main', sseEmitter: (type, value) => events.push({ type, value }),
     _dependencies: { getEmbedding: async () => null,
       judgeFast: async options => {
         judgments++; options.onDecision({ source: 'model', model: 'judge-mini', reportedModel: 'judge-mini',
@@ -841,11 +841,11 @@ test('optional fast judge retains the answer model and contributes its real usag
         return '今天还不错。';
       },
     } });
-  assert.equal(judgments, 1); assert.equal(answers, 1);
-  assert.equal(result.normalizedReply.modelResponses[0].purpose, 'intent-judge');
-  assert.equal(result.normalizedReply.usage.input, 28); assert.equal(result.normalizedReply.usage.output, 11);
-  assert.equal(result.normalizedReply.usage.requests, 2);
-  assert.ok(events.some(event => event.type === 'execution_event' && event.value.id === 'judge:intent'));
+  assert.equal(judgments, 0); assert.equal(answers, 1);
+  assert.ok(result.normalizedReply.modelResponses.every(row => row.purpose !== 'intent-judge'));
+  assert.equal(result.normalizedReply.usage.input, 20); assert.equal(result.normalizedReply.usage.output, 10);
+  assert.equal(result.normalizedReply.usage.requests, 1);
+  assert.ok(!events.some(event => event.type === 'execution_event' && event.value.id === 'judge:intent'));
 });
 
 test('tool invocation records (D1): 3 calls → 3 jsonl lines whose modelFacingOutput is the exact function_call_output sent back, and tool_calls_start carries no raw secret', async () => {
@@ -1004,4 +1004,47 @@ test('L6/L7/L13: an older extractive card is upgraded from its own message range
   assert.equal(stored.compactBoundaryMessageId, 'b3');
   assert.equal(stored.compactedMessageCount, 10);
   assert.doesNotMatch(stored.compactSummary, /抽取式摘要/);
+});
+
+test('smart routing selects the actual answer model and meters the single judgment in the same turn', async () => {
+  const state = fixtureState(), chat = fixtureChat(); state.chats = [chat]; state.agentProfiles.main.model = "";
+  await saveState(state);
+  const choice = model => ({connectionId:'fixture-smart',model});
+  const config = {...fixtureConfig, activeLlmProfileId:'fixture-smart', model:'opaque-light', apiKey:'fixture',
+    llmProfiles:{'fixture-smart':{authMode:'api-key',apiKey:'fixture',baseUrl:fixtureConfig.baseUrl,model:'opaque-light',models:['opaque-light','opaque-standard','opaque-strong']}},
+    smartRouting:{defaultMode:'smart',allowEscalation:true,tiers:{light:[choice('opaque-light')],standard:[choice('opaque-standard')],strong:[choice('opaque-strong')]}}};
+  const requests=[];
+  const result=await runChatAgentExecutionGraph({config,state,chat,workspace:fixtureWorkspace(),connectors:[],skills:[],latestUserMessage:'从几个角度谈谈这个想法',agentId:'main',
+    _dependencies:{getEmbedding:async()=>null,createReply:async options=>{
+      requests.push({model:options.model,purpose:options.purpose});
+      options.onProviderResponse?.({requestedModel:options.model,reportedModel:options.model,usage:{input:10,output:2,cached:0,cacheWrite:0}});
+      return options.purpose==='routing-judge' ? JSON.stringify({complexity:3,risk:'low',needs:{},reason:'reasoning'}) : '可以从体验、成本和可维护性三个角度考虑。';
+    }}});
+  assert.equal(requests[0].model,'opaque-light');assert.equal(requests[0].purpose,'routing-judge');
+  assert.ok(requests.slice(1).every(r=>r.model==='opaque-standard'));
+  assert.equal(result.normalizedReply.usage.requests,requests.length);
+  assert.ok(result.normalizedReply.modelResponses.some(row=>row.routing?.tier==='standard'));
+});
+
+test('smart escalation continues with prior tool results and never repeats a successful write', async()=>{
+  const {registerTool,unregisterTool}=await import('../../tools/registry.js');
+  const state=fixtureState(),chat=fixtureChat();state.chats=[chat];state.agentProfiles.main.model='';await saveState(state);
+  let effects=0,answers=0;const requested=[];
+  registerTool({id:'routing_write_probe',name:'routing_write_probe',description:'Write fixture',effect:'write',requiresPermission:false,isConcurrencySafe:false,
+    parametersSchema:{type:'object',properties:{value:{type:'string'}},required:['value'],additionalProperties:false},run:async()=>{effects++;return {ok:true,output:'fixture written'};}});
+  const choice=model=>({connectionId:'routing-fixture',model});
+  const config={...fixtureConfig,apiProtocol:'responses',activeLlmProfileId:'routing-fixture',apiKey:'fixture',model:'lower',llmProfiles:{'routing-fixture':{authMode:'api-key',apiProtocol:'responses',apiKey:'fixture',baseUrl:fixtureConfig.baseUrl,model:'lower',models:['lower','higher']}},smartRouting:{defaultMode:'smart',allowEscalation:true,tiers:{light:[choice('lower')],standard:[choice('higher')],strong:[choice('higher')]}}};
+  const call=(id,name,args)=>({type:'function_call',id,call_id:id,name,arguments:JSON.stringify(args)});
+  try {
+    await runChatAgentExecutionGraph({config,state,chat,workspace:fixtureWorkspace(),connectors:[],skills:[],latestUserMessage:'读三个文件',agentId:'main',_dependencies:{getEmbedding:async()=>null,createReply:async options=>{
+      if(options.purpose==='routing-judge')return JSON.stringify({complexity:1,risk:'low',needs:{tools:true}});
+      requested.push(options.model);
+      if(options.systemPrompt.includes("You are Melo's task completion checker"))return '{"decision":"completed","requirements":[{"text":"完成测试","status":"met","evidenceIds":[]}]}';
+      answers++;
+      if(answers===1)return {protocol:'responses',text:'',responseItems:[call('write-1','routing_write_probe',{value:'same'}),call('upgrade','melo_escalate',{reason:'need reasoning'})]};
+      if(answers===2){assert.equal(options.model,'higher');assert.ok(options.messages.some(m=>m.functionCallOutputs?.some(o=>o.call_id==='write-1')));return {protocol:'responses',text:'',responseItems:[call('write-2','routing_write_probe',{value:'same'})]};}
+      return {protocol:'responses',text:'已完成并保留原有结果。',responseItems:[]};
+    }}});
+    assert.equal(effects,1);assert.equal(requested[0],'lower');assert.ok(requested.slice(1).every(model=>model==='higher'));
+  }finally{unregisterTool('routing_write_probe');}
 });

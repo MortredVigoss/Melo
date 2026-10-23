@@ -15,10 +15,11 @@ import kotlin.coroutines.resumeWithException
 
 /** A separate tool channel; ordinary streaming chat retains its original decoder. */
 class DeviceAgentClient(private val debug: Boolean, private val http: OkHttpClient = ModelClient(debug).http) {
-    suspend fun next(connection: Connection, key: String, history: List<JsonObject>, taskInstructions: String = "", chatTools: Boolean = false, toolSpecs: List<JsonObject>? = null, nativeWebSearch: Boolean = false): DeviceTurn {
+    suspend fun next(connection: Connection, key: String, history: List<JsonObject>, taskInstructions: String = "", chatTools: Boolean = false, toolSpecs: List<JsonObject>? = null, nativeWebSearch: Boolean = false, outputLimit: Int? = null): DeviceTurn {
         ConnectionPolicy.validate(connection, key, debug)
         require(connection.protocol in setOf("chat-completions", "responses", "anthropic")) { "手机助手需要支持 Tool Calling 的真实模型连接；自动验证使用隔离 HTTP Fixture。" }
-        val payload = payload(connection, history, taskInstructions, chatTools, toolSpecs, nativeWebSearch)
+        val base = payload(connection, history, taskInstructions, chatTools, toolSpecs, nativeWebSearch)
+        val payload = if (outputLimit == null) base else JsonObject(base + ((if (connection.protocol == "responses") "max_output_tokens" else "max_tokens") to JsonPrimitive(outputLimit.coerceAtLeast(1))))
         val request = Request.Builder().url(EndpointPolicy.validate(connection.endpoint, debug))
             .post(payload.toString().toRequestBody("application/json".toMediaType())).header("Accept", "application/json")
             .apply { if (connection.protocol == "anthropic") { header("x-api-key", key); header("anthropic-version", "2023-06-01") } else header("Authorization", "Bearer $key") }.build()

@@ -1,6 +1,1196 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "高风险任务": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高风险任务"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "High-risk task"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高リスクのタスク"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "고위험 작업"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tarea de alto riesgo"
+          }
+        }
+      }
+    },
+    "深入研究": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "深入研究"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In-depth research"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "詳細調査"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "심층 조사"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Investigación profunda"
+          }
+        }
+      }
+    },
+    "任务要求": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务要求"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Task requirements"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タスク要件"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 요구 사항"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requisitos de la tarea"
+          }
+        }
+      }
+    },
+    "简单任务": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "简单任务"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Simple task"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "簡単なタスク"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "간단한 작업"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tarea sencilla"
+          }
+        }
+      }
+    },
+    "默认标准档": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "默认标准档"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standard fallback"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "標準にフォールバック"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "표준으로 대체"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nivel estándar por defecto"
+          }
+        }
+      }
+    },
+    "任务判断": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务判断"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Task assessment"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タスク判定"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 판단"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Evaluación de tarea"
+          }
+        }
+      }
+    },
+    "模型请求升档": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模型请求升档"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Model requested escalation"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "モデルが昇格を要求"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모델의 상향 요청"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escalado solicitado por el modelo"
+          }
+        }
+      }
+    },
+    "重复失败": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重复失败"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repeated failures"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "失敗の繰り返し"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "반복 실패"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fallos repetidos"
+          }
+        }
+      }
+    },
+    "工具轮次增加": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工具轮次增加"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Additional tool rounds"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ツール実行回数の増加"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "도구 실행 횟수 증가"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Más rondas de herramientas"
+          }
+        }
+      }
+    },
+    "有副作用的操作": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有副作用的操作"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Action with side effects"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "副作用のある操作"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "부수 효과가 있는 작업"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Acción con efectos secundarios"
+          }
+        }
+      }
+    },
+    "智能模式": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "智能模式"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Smart mode"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スマートモード"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스마트 모드"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modo inteligente"
+          }
+        }
+      }
+    },
+    "智能（自动）": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "智能（自动）"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Smart (automatic)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スマート（自動）"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스마트(자동)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inteligente (automático)"
+          }
+        }
+      }
+    },
+    "固定模型": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "固定模型"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fixed model"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "固定モデル"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "고정 모델"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modelo fijo"
+          }
+        }
+      }
+    },
+    "默认模式": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "默认模式"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default mode"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "既定のモード"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기본 모드"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modo predeterminado"
+          }
+        }
+      }
+    },
+    "选择偏好": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择偏好"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Selection preference"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選択の優先設定"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "선택 기본 설정"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preferencia de selección"
+          }
+        }
+      }
+    },
+    "节省成本": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "节省成本"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lower cost"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "費用を抑える"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "비용 절약"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Menor coste"
+          }
+        }
+      }
+    },
+    "均衡": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "均衡"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Balanced"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バランス"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "균형"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Equilibrado"
+          }
+        }
+      }
+    },
+    "质量优先": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "质量优先"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prefer quality"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "品質優先"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "품질 우선"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Priorizar calidad"
+          }
+        }
+      }
+    },
+    "轻": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "轻"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Light"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "軽量"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "가벼움"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ligero"
+          }
+        }
+      }
+    },
+    "标准": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标准"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standard"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "標準"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "표준"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Estándar"
+          }
+        }
+      }
+    },
+    "强": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "强"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Strong"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高性能"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "고성능"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Potente"
+          }
+        }
+      }
+    },
+    "支持图片理解": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "支持图片理解"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supports image understanding"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画像理解に対応"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이미지 이해 지원"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Admite comprensión de imágenes"
+          }
+        }
+      }
+    },
+    "当前配置等同固定模型": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前配置等同固定模型"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Current setup is equivalent to a fixed model"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現在の設定は固定モデルと同等です"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "현재 설정은 고정 모델과 같습니다"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La configuración actual equivale a un modelo fijo"
+          }
+        }
+      }
+    },
+    "等同固定模型": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等同固定模型"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Equivalent to fixed model"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "固定モデルと同等"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "고정 모델과 같음"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Equivale a un modelo fijo"
+          }
+        }
+      }
+    },
+    "智能选模": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "智能选模"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Smart model selection"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スマートモデル選択"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스마트 모델 선택"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Selección inteligente"
+          }
+        }
+      }
+    },
+    "智能模式判断": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "智能模式判断"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Smart routing judgment"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スマート選択の判断"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스마트 선택 판단"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Evaluación de selección inteligente"
+          }
+        }
+      }
+    },
+    "固定模型与智能（自动）均可选择。模型档位由你指定，价格与延迟仅作参考。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "固定模型与智能（自动）均可选择。模型档位由你指定，价格与延迟仅作参考。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose a fixed model or Smart (automatic). You assign model tiers; price and latency are reference only."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "固定モデルとスマート（自動）を選べます。モデルの段階は自分で設定し、価格と遅延は参考として表示します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "고정 모델 또는 스마트(자동)를 선택하세요. 모델 등급은 직접 지정하며 가격과 지연 시간은 참고용입니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige un modelo fijo o Inteligente (automático). Tú asignas los niveles; el precio y la latencia son orientativos."
+          }
+        }
+      }
+    },
+    "Agent 已指定固定模型时，智能模式沿用该模型。只配置一个可用模型时等同固定模型，不额外请求判断。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent 已指定固定模型时，智能模式沿用该模型。只配置一个可用模型时等同固定模型，不额外请求判断。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Smart mode respects a fixed Agent model. With one available model, it acts as fixed mode and makes no extra judgment request."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent に固定モデルが指定されている場合はそれを使用します。利用可能なモデルが一つの場合は固定モードと同じで、追加の判断リクエストはありません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent에 고정 모델이 지정되어 있으면 그대로 사용합니다. 사용 가능한 모델이 하나면 고정 모드로 작동하며 추가 판단 요청을 보내지 않습니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El modo inteligente respeta el modelo fijo del agente. Si solo hay un modelo disponible, funciona como modo fijo sin solicitudes adicionales de evaluación."
+          }
+        }
+      }
+    },
+    "允许智能模式向其他已保存连接发送内容": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允许智能模式向其他已保存连接发送内容"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow smart mode to send content to other saved connections"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スマートモードで他の保存済み接続に内容を送信することを許可"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스마트 모드가 다른 저장된 연결로 내용을 보내도록 허용"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permitir que el modo inteligente envíe contenido a otras conexiones guardadas"
+          }
+        }
+      }
+    },
+    "允许本轮任务最多升档一次": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允许本轮任务最多升档一次"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow at most one upgrade during this turn"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このターンで一度だけ上位モデルへの切り替えを許可"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이번 작업에서 최대 한 번 상위 모델 전환 허용"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permitir como máximo una subida de nivel en este turno"
+          }
+        }
+      }
+    },
+    "默认只使用本对话连接。判断最多等待 3 秒，会计入用量；固定选择和明确的简单任务不请求判断。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "默认只使用本对话连接。判断最多等待 3 秒，会计入用量；固定选择和明确的简单任务不请求判断。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only this chat’s connection is used by default. Judgments take up to 3 seconds and count toward usage; fixed selections and clearly simple tasks need none."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "既定ではこの会話の接続のみ使用します。判断は最大3秒で使用量に含まれます。固定選択や明確に簡単なタスクでは判断しません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기본적으로 이 대화의 연결만 사용합니다. 판단은 최대 3초이며 사용량에 포함됩니다. 고정 선택과 명확히 간단한 작업에는 판단이 없습니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Por defecto solo se usa la conexión de este chat. La evaluación tarda hasta 3 segundos y cuenta en el uso; no se hace con modelos fijos ni tareas claramente sencillas."
+          }
+        }
+      }
+    },
+    "勾选或拖动模型到档位；同档按列表顺序尝试。图片理解需要已通过测试或手动确认支持。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "勾选或拖动模型到档位；同档按列表顺序尝试。图片理解需要已通过测试或手动确认支持。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select or drag models into tiers. Within a tier, list order applies. Image understanding requires a passed test or your explicit confirmation."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "モデルを選択するか段階にドラッグしてください。同じ段階では一覧の順に使用します。画像理解はテスト合格または手動確認が必要です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모델을 선택하거나 등급으로 끌어다 놓으세요. 같은 등급은 목록 순서로 선택합니다. 이미지 이해는 테스트 통과 또는 직접 확인이 필요합니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Selecciona o arrastra modelos a los niveles. En cada nivel se respeta el orden. La comprensión de imágenes requiere una prueba aprobada o confirmación explícita."
+          }
+        }
+      }
+    },
+    "默认连接用于回答。Agent 指令与工具配置保持不变。每条回复的“模型记录”显示服务端实际返回的标识。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "默认连接用于回答。Agent 指令与工具配置保持不变。每条回复的“模型记录”显示服务端实际返回的标识。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Replies use the default connection. Agent instructions and tool settings are preserved. Model records show the identifier actually returned by the service."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "既定の接続で回答します。Agent の指示とツール設定は保持され、モデル記録にはサービスが返した識別子が表示されます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기본 연결로 답변합니다. Agent 지시와 도구 설정은 유지되며 모델 기록에는 서비스가 실제로 반환한 식별자가 표시됩니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las respuestas usan la conexión predeterminada. Se conservan las instrucciones y herramientas del agente. El registro muestra el identificador devuelto por el servicio."
+          }
+        }
+      }
+    },
+    "已设为默认回答模型。Melo 的 Agent 指令与工具配置保留。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已设为默认回答模型。Melo 的 Agent 指令与工具配置保留。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default reply model saved. Melo Agent instructions and tool settings are preserved."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "既定の回答モデルを保存しました。Melo の Agent 指示とツール設定は保持されます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기본 답변 모델을 저장했습니다. Melo Agent 지시와 도구 설정은 유지됩니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modelo de respuesta predeterminado guardado. Se conservan las instrucciones y herramientas del agente."
+          }
+        }
+      }
+    },
     "未找到这张图片的可信保存记录。": {
       "extractionState": "manual",
       "localizations": {
@@ -9906,41 +11096,6 @@
         }
       }
     },
-    "默认连接用于回答；开启额外快速后，短判断可自动分配给其他已配置模型。Agent指令保持不变。每条回复的“模型记录”显示服务端实际返回的标识。": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "默认连接用于回答；开启额外快速后，短判断可自动分配给其他已配置模型。Agent指令保持不变。每条回复的“模型记录”显示服务端实际返回的标识。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Replies use the default connection. Extra Fast can route short decisions to other configured models without changing agent instructions. Model records show the identifiers actually returned by the service."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "回答には既定の接続を使用します。追加高速化では短い判断を設定済みの別モデルへ割り当てることがあります。役割指示は保持され、モデル記録には実際に返された識別子を表示します。"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "응답은 기본 연결을 사용합니다. 추가 고속 모드는 짧은 판단을 다른 설정된 모델에 배정할 수 있습니다. 역할 지침은 유지되며 모델 기록에 서비스가 반환한 식별자가 표시됩니다."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Las respuestas usan la conexión predeterminada. Extra rápido puede asignar decisiones breves a otros modelos configurados sin cambiar las instrucciones. Los registros muestran los identificadores devueltos por el servicio."
-          }
-        }
-      }
-    },
     "应用于模型请求的基础指令。保存这里不会更换模型连接。": {
       "extractionState": "manual",
       "localizations": {
@@ -13962,41 +15117,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Pequeño"
-          }
-        }
-      }
-    },
-    "标准": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "标准"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Standard"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "標準"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "표준"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Estándar"
           }
         }
       }
@@ -28382,41 +29502,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Uso"
-          }
-        }
-      }
-    },
-    "额外快速 · 意图判断": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "额外快速 · 意图判断"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Extra fast · Intent detection"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "高速補助 · 意図判定"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "추가 빠른 처리 · 의도 판단"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rápido adicional · Detección de intención"
           }
         }
       }
@@ -43926,41 +45011,6 @@
         }
       }
     },
-    "额外快速": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "额外快速"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Extra fast"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "高速モード"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "추가 가속"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Modo rápido"
-          }
-        }
-      }
-    },
     "默认关闭": {
       "extractionState": "manual",
       "localizations": {
@@ -43996,41 +45046,6 @@
         }
       }
     },
-    "自动从已保存连接的模型中分配短判断任务。正式回答仍用对话选择的模型；记忆检索仍在本机完成。": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自动从已保存连接的模型中分配短判断任务。正式回答仍用对话选择的模型；记忆检索仍在本机完成。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Assigns short judgement tasks to models from your saved connections automatically. Replies still use the model chosen for the chat; memory retrieval stays on this Mac."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "保存済み接続のモデルに短い判断タスクを自動で割り当てます。回答は会話で選んだモデルのまま、記憶の検索はこのコンピュータで行います。"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "저장된 연결의 모델에 짧은 판단 작업을 자동으로 배정합니다. 답변은 대화에서 선택한 모델을 그대로 쓰고 기억 검색은 이 컴퓨터에서 수행합니다."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Asigna automáticamente tareas de juicio breves a modelos de tus conexiones guardadas. Las respuestas siguen usando el modelo elegido para el chat; la recuperación de memoria se hace en este Mac."
-          }
-        }
-      }
-    },
     "载入最新版本并保留我的选择": {
       "extractionState": "manual",
       "localizations": {
@@ -44062,111 +45077,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cargar la última versión y conservar mi elección"
-          }
-        }
-      }
-    },
-    "开启额外快速，允许已配置的模型处理意图和群聊回复判断": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "开启额外快速，允许已配置的模型处理意图和群聊回复判断"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Turn on extra fast and let configured models handle intent and group-reply judgements"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "高速モードをオンにし、設定済みモデルに意図判断とグループ返信判断を任せる"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "추가 가속을 켜고 구성된 모델이 의도 판단과 그룹 답장 판단을 처리하도록 허용"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Activar el modo rápido y dejar que los modelos configurados decidan la intención y las respuestas en grupo"
-          }
-        }
-      }
-    },
-    "开启后自动检测最多 3 个不同模型，共最多 6 次短请求，会消耗对应 API 或订阅额度。判断内容可能发送给这些已配置的平台；不自动启用额外收费的加速档位。": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "开启后自动检测最多 3 个不同模型，共最多 6 次短请求，会消耗对应 API 或订阅额度。判断内容可能发送给这些已配置的平台；不自动启用额外收费的加速档位。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "When on, up to 3 different models are tested with at most 6 short requests, using the corresponding API or subscription quota. Judgement content may be sent to those configured platforms; paid acceleration tiers are never enabled automatically."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "オンにすると最大 3 つのモデルを最大 6 回の短いリクエストで検出し、対応する API または購読の割り当てを消費します。判断内容はそれらの設定済みプラットフォームに送られることがあります。有料の高速枠は自動では有効になりません。"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "켜면 최대 3개 모델을 최대 6회의 짧은 요청으로 검사하며 해당 API 또는 구독 할당량을 사용합니다. 판단 내용이 구성된 플랫폼으로 전송될 수 있습니다. 유료 가속 등급은 자동으로 켜지지 않습니다."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Al activarlo se prueban hasta 3 modelos con un máximo de 6 solicitudes breves, consumiendo la cuota de API o suscripción correspondiente. El contenido del juicio puede enviarse a esas plataformas configuradas; los niveles de aceleración de pago nunca se activan solos."
-          }
-        }
-      }
-    },
-    "规则能判断时不请求模型；单次判断最多等待 4 秒，失败后使用保守规则。按有效实测耗时分配，未测模型只作候选。短请求检测不代表完整分类精度评测，也不保证整段回答更快。": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "规则能判断时不请求模型；单次判断最多等待 4 秒，失败后使用保守规则。按有效实测耗时分配，未测模型只作候选。短请求检测不代表完整分类精度评测，也不保证整段回答更快。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No model is called when rules can decide; a judgement waits at most 4 s and falls back to conservative rules. Assignment follows measured latency; untested models are only candidates. A short-request test is not a full accuracy evaluation and does not guarantee faster replies."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ルールで判断できる場合はモデルを呼びません。判断は最大 4 秒待ち、失敗時は保守的なルールを使います。実測した所要時間で割り当て、未測定のモデルは候補のみです。短いリクエストの検出は分類精度の評価ではなく、回答全体が速くなる保証でもありません。"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "규칙으로 판단할 수 있으면 모델을 호출하지 않습니다. 판단은 최대 4초 기다리며 실패하면 보수적 규칙을 사용합니다. 실측 소요 시간에 따라 배정하고 미검사 모델은 후보로만 둡니다. 짧은 요청 검사는 분류 정확도 평가가 아니며 전체 답변이 빨라진다고 보장하지 않습니다."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No se llama al modelo cuando las reglas pueden decidir; un juicio espera como máximo 4 s y vuelve a reglas conservadoras si falla. La asignación sigue la latencia medida; los modelos sin probar son solo candidatos. Una prueba de solicitud breve no evalúa la precisión completa ni garantiza respuestas más rápidas."
           }
         }
       }
@@ -44241,41 +45151,6 @@
         }
       }
     },
-    "群聊回复判断": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "群聊回复判断"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Group-reply judgement"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "グループ返信判断"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "그룹 답장 판단"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Juicio de respuesta en grupo"
-          }
-        }
-      }
-    },
     "沿用原有路径": {
       "extractionState": "manual",
       "localizations": {
@@ -44342,76 +45217,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sin conexión disponible; se usan reglas conservadoras"
-          }
-        }
-      }
-    },
-    "最近短请求 {ms} ms": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "最近短请求 {ms} ms"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "last short request {ms} ms"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "直近の短いリクエスト {ms} ms"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "최근 짧은 요청 {ms}ms"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "última solicitud breve {ms} ms"
-          }
-        }
-      }
-    },
-    "按模型类型优先选择，尚未实测": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "按模型类型优先选择，尚未实测"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "chosen by model type, not measured yet"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "モデル種別で優先選択、未測定"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "모델 유형으로 우선 선택, 아직 미측정"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "elegido por tipo de modelo, aún sin medir"
           }
         }
       }
@@ -44556,76 +45361,6 @@
         }
       }
     },
-    "设置已保存，正在用短请求检测并分配…": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "设置已保存，正在用短请求检测并分配…"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Settings saved; testing and assigning with short requests…"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "設定を保存しました。短いリクエストで検出して割り当て中…"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "설정을 저장했습니다. 짧은 요청으로 검사하고 배정하는 중…"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ajustes guardados; probando y asignando con solicitudes breves…"
-          }
-        }
-      }
-    },
-    "检测完成，按有效实测结果自动分配。": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "检测完成，按有效实测结果自动分配。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Testing finished; assigned by the measured results."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "検出が完了し、実測結果に基づいて自動で割り当てました。"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "검사가 끝났으며 실측 결과에 따라 자동 배정했습니다."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Prueba terminada; asignado según los resultados medidos."
-          }
-        }
-      }
-    },
     "尚无通过检测的模型；未测连接仍可作为候选，请检查连接后重试。": {
       "extractionState": "manual",
       "localizations": {
@@ -44657,41 +45392,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ningún modelo pasó la prueba todavía; las conexiones sin probar siguen siendo candidatas: revísalas y vuelve a intentarlo."
-          }
-        }
-      }
-    },
-    "设置已保存；检测未完成，可点击“重新检测并分配”。": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "设置已保存；检测未完成，可点击“重新检测并分配”。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Settings saved; testing did not finish — use “Re-test and assign”."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "設定を保存しました。検出は未完了です。「再検出して割り当て」を押してください。"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "설정을 저장했습니다. 검사가 끝나지 않았으니 “다시 검사하고 배정”을 누르세요."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ajustes guardados; la prueba no terminó: usa «Volver a probar y asignar»."
           }
         }
       }
@@ -46512,41 +47212,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Conexión eliminada"
-          }
-        }
-      }
-    },
-    "已设为默认回答模型；额外快速开启时，短判断按加速设置单独分配。Melo 的Agent指令与工具配置保留。": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已设为默认回答模型；额外快速开启时，短判断按加速设置单独分配。Melo 的Agent指令与工具配置保留。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Set as the default reply model; with extra fast on, short judgements follow the acceleration settings separately. Melo's Agent instructions and tool settings are kept."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "既定の回答モデルに設定しました。高速モードがオンの場合、短い判断は高速設定に従って個別に割り当てられます。Melo の Agent 指示とツール設定は保持されます。"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "기본 답변 모델로 설정했습니다. 추가 가속이 켜져 있으면 짧은 판단은 가속 설정에 따라 따로 배정됩니다. Melo의 Agent 지시와 도구 설정은 유지됩니다."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Establecido como modelo de respuesta predeterminado; con el modo rápido activo, los juicios breves siguen aparte los ajustes de aceleración. Las instrucciones de agente y los ajustes de herramientas de Melo se conservan."
           }
         }
       }

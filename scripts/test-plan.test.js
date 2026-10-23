@@ -93,7 +93,7 @@ test('daily CLI executes the selected group, isolates home, and stops on failure
     await writeFile(join(root,'src/unrelated.test.js'),'throw Error("unrelated backend must not run for UI-only edits");');
     const testBody='import test from "node:test"; import assert from "node:assert/strict"; test("isolated",()=>{assert.equal(process.env.MELO_TEST_MODE,"1");assert.ok(!process.env.MELO_HOME.endsWith("must-not-use"));});';
     for(const name of ['one','two']) await writeFile(join(root,`desktop-ui/${name}.test.js`),testBody);
-    for(const name of ['check-syntax.js','verify-settings-design.mjs','verify-extra-fast.mjs']) await writeFile(join(root,'scripts',name),`import {appendFileSync} from 'node:fs';appendFileSync('jobs.log', '${name}\\n');`);
+    for(const name of ['check-syntax.js','verify-settings-design.mjs']) await writeFile(join(root,'scripts',name),`import {appendFileSync} from 'node:fs';appendFileSync('jobs.log', '${name}\\n');`);
     await writeFile(join(root,'ios/scripts/test.py'),"import sys\nfrom pathlib import Path\nassert '--renderer-only' in sys.argv\nwith Path('jobs.log').open('a') as f: f.write('renderer\\n')\n");
     git('init');git('config','user.name','Fixture');git('config','user.email','fixture@example.invalid');
     git('add','package.json','src','desktop-ui','scripts','ios');git('commit','-m','fixture');
@@ -118,7 +118,7 @@ test('daily CLI runs only the document link check for an overview-only change', 
     await writeFile(join(root,'package.json'),'{"type":"module"}');
     await writeFile(join(root,'scripts/test-quarantine.json'),'{}');
     await writeFile(join(root,'desktop-ui/ui.test.js'),'throw Error("documentation edits must not run product tests");');
-    for(const name of ['check-syntax.js','verify-settings-design.mjs','verify-extra-fast.mjs','check-doc-links.js']) await writeFile(join(root,'scripts',name),`import {appendFileSync} from 'node:fs';appendFileSync('jobs.log', ['${name}',...process.argv.slice(2)].join(' ')+'\\n');`);
+    for(const name of ['check-syntax.js','verify-settings-design.mjs','check-doc-links.js']) await writeFile(join(root,'scripts',name),`import {appendFileSync} from 'node:fs';appendFileSync('jobs.log', ['${name}',...process.argv.slice(2)].join(' ')+'\\n');`);
     await writeFile(join(root,'ios/scripts/test.py'),"from pathlib import Path\nwith Path('jobs.log').open('a') as f: f.write('ios\\n')\n");
     await writeFile(join(root,'MELO_OVERVIEW.md'),'# old\n');
     git('init');git('config','user.name','Fixture');git('config','user.email','fixture@example.invalid');
@@ -140,7 +140,7 @@ test('a failed resource preflight stops the real CLI before JS, browser or Swift
     await writeFile(join(root,'scripts/test-quarantine.json'),'{}');
     await writeFile(join(root,'src/marker.test.js'),"import {writeFileSync} from 'node:fs';writeFileSync('must-not-run','JS ran');");
     await writeFile(join(root,'scripts/check-syntax.js'),'// fixture syntax already checked');
-    for(const name of ['verify-settings-design.mjs','verify-extra-fast.mjs'])await writeFile(join(root,'scripts',name),"import {writeFileSync} from 'node:fs';writeFileSync('must-not-run','browser ran');");
+    for(const name of ['verify-settings-design.mjs'])await writeFile(join(root,'scripts',name),"import {writeFileSync} from 'node:fs';writeFileSync('must-not-run','browser ran');");
     await writeFile(join(root,'ios/scripts/test.py'),"import sys\nfrom pathlib import Path\nassert '--check-renderer' in sys.argv\nPath('preflight-ran').write_text('1')\nraise SystemExit(1)\n");
     assert.throws(()=>execFileSync(process.execPath,[script,'--files','package.json'],{cwd:root,env,encoding:'utf8',stdio:'pipe'}),error=>error.status===1&&/共享渲染资源预检 failed/.test(error.stderr));
     assert.equal(await readFile(join(root,'preflight-ran'),'utf8'),'1');

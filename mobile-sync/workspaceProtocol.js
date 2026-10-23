@@ -35,7 +35,7 @@ export function portableAgent(v) {
 export function portableModel(v) {
   if (v == null) return null;
   if (!object(v)) throw new Error('Invalid portable model');
-  return {connectionID:text(v.connectionID,180),name:text(v.name,200),model:text(v.model,180),authMode:v.authMode==='codex'?'codex':v.authMode==='local'?'local':'api-key',baseURL:url(v.baseURL,{endpoint:true}),apiProtocol:v.apiProtocol==='anthropic'?'anthropic':'chat-completions'};
+  return {connectionID:text(v.connectionID,180),name:text(v.name,200),model:text(v.model,180),...(v.mode==='smart'?{mode:'smart'}:{}),authMode:v.authMode==='codex'?'codex':v.authMode==='local'?'local':'api-key',baseURL:url(v.baseURL,{endpoint:true}),apiProtocol:v.apiProtocol==='anthropic'?'anthropic':'chat-completions'};
 }
 export function portableScene(v) {
   if (!object(v)) return null;

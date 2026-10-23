@@ -111,7 +111,7 @@ export async function handleLlmConnection(action, { config, api, render, refresh
         editSession.saved();
       }
       if (action === 'llm-activate') {
-        await api('/api/settings/llm/activate', { method: 'POST', body: { id: draft.id } }); state.message = t('已设为默认回答模型；额外快速开启时，短判断按加速设置单独分配。Melo 的Agent指令与工具配置保留。');
+        await api('/api/settings/llm/activate', { method: 'POST', body: { id: draft.id } }); state.message = t('已设为默认回答模型。Melo 的 Agent 指令与工具配置保留。');
       } else if (action === 'llm-test' || action === 'llm-vision' || action === 'llm-search' || action === 'llm-models') {
         state.message = action !== 'llm-models' ? t('正在发送真实模型请求…') : t('正在读取模型列表…'); render();
         const result = await api(`/api/settings/llm/${action === 'llm-models' ? 'models' : 'test'}`, { method: 'POST', body: { id: draft.id, modality: action === 'llm-search' ? 'search' : action === 'llm-vision' ? 'vision' : 'text' } });

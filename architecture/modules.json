@@ -23,8 +23,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 627,
-      "edges": 1925,
+      "modules": 628,
+      "edges": 1922,
       "roots": [
         "src",
         "desktop-ui",
@@ -33,7 +33,7 @@
       ],
       "note": "静态 import/re-export，含 desktop-ui 对 /shared/*.js 的服务映射；不含动态 import 与外部包"
     },
-    "routes": 160,
+    "routes": 159,
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
@@ -734,8 +734,8 @@
       ],
       "modules": {
         "desktop-ui": 27,
-        "shared": 26,
-        "src": 69
+        "shared": 27,
+        "src": 68
       },
       "entryModules": [
         {
@@ -780,6 +780,12 @@
           "module": "shared/agent/media/textUrls.js",
           "importedBy": [
             "media"
+          ]
+        },
+        {
+          "module": "shared/agent/modelRouting.js",
+          "importedBy": [
+            "settings"
           ]
         },
         {
@@ -854,14 +860,6 @@
           "module": "src/http/executionRoutes.js",
           "importedBy": [
             "platform"
-          ]
-        },
-        {
-          "module": "src/judge/fastJudge.js",
-          "importedBy": [
-            "channels",
-            "desktop-shell",
-            "settings"
           ]
         },
         {
@@ -1004,17 +1002,17 @@
         "knowledge": 5,
         "media": 24,
         "memory": 27,
-        "platform": 58,
+        "platform": 54,
         "projects": 11,
-        "settings": 9,
+        "settings": 10,
         "sync": 2,
         "tools": 38,
         "voice": 3
       },
       "usedBy": {
         "agents": 18,
-        "channels": 9,
-        "desktop-shell": 8,
+        "channels": 7,
+        "desktop-shell": 7,
         "media": 10,
         "memory": 11,
         "platform": 15,
@@ -1141,15 +1139,15 @@
           "shared/agent/continuation.test.js",
           "shared/agent/execution.test.js",
           "shared/agent/goal.test.js",
+          "shared/agent/modelRouting.test.js",
           "shared/agent/research.test.js",
           "shared/agent/taskReplay.test.js",
           "shared/agent/tools.test.js",
-          "src/judge/fastJudge.test.js",
-          "src/judge/fastTransport.test.js",
           "src/openai.codex-inline-image.test.js",
           "src/openai.codex-input.test.js",
           "src/openai.prompt-cache.test.js",
           "src/providers/apiCompatibility.test.js",
+          "src/providers/auxiliaryTransport.test.js",
           "src/providers/functionCalling.test.js",
           "src/providers/llmConnections.test.js",
           "src/retrieval/intentRouter.test.js",
@@ -1707,16 +1705,19 @@
         "desktop-ui/settingsEdit.*",
         "desktop-ui/modelPresentation.*",
         "desktop-ui/language*.*",
-        "desktop-ui/{llmConnections,extraFast,credentialChip}.js",
+        "desktop-ui/{llmConnections,smartRouting,credentialChip}.js",
+        "src/services/modelRouting/**",
+        "src/services/settings/smartRouting*",
         "ios/Melo/{ChatGPTAccount,CodexOAuth,CodexLoginView,OAuthLoopback,Keychain,LLMConnections,ModelSettingsSections,ConnectionProbe,SettingsView,InterfaceLanguage,LanguagePicker,RuntimeDiagnosticsView,DraftMerge,EditableSection,EditableDocument}.swift",
         "ios/Melo/LocalSettings*.swift",
         "ios/Melo/EditDraft*.swift",
+        "ios/Melo/SmartRouting*.swift",
         "ios/Melo/Localizable.xcstrings",
         "ios/Tests/{CodexOAuthTests,ConnectionProbeTests,EditDraftStorageTests,EditDraftTests,InterfaceLanguageTests}.swift"
       ],
       "modules": {
         "desktop-ui": 7,
-        "src": 15
+        "src": 16
       },
       "entryModules": [
         {
@@ -1724,12 +1725,6 @@
           "importedBy": [
             "desktop-shell",
             "tools"
-          ]
-        },
-        {
-          "module": "desktop-ui/extraFast.js",
-          "importedBy": [
-            "desktop-shell"
           ]
         },
         {
@@ -1764,6 +1759,12 @@
             "desktop-shell",
             "media",
             "memory"
+          ]
+        },
+        {
+          "module": "desktop-ui/smartRouting.js",
+          "importedBy": [
+            "desktop-shell"
           ]
         },
         {
@@ -1806,13 +1807,14 @@
           ]
         },
         {
-          "module": "src/services/settings/desktopSettings.js",
+          "module": "src/services/modelRouting/routing.js",
           "importedBy": [
-            "platform"
+            "chat",
+            "desktop-shell"
           ]
         },
         {
-          "module": "src/services/settings/extraFast.js",
+          "module": "src/services/settings/desktopSettings.js",
           "importedBy": [
             "platform"
           ]
@@ -1837,6 +1839,12 @@
         },
         {
           "module": "src/services/settings/modelSettings.js",
+          "importedBy": [
+            "platform"
+          ]
+        },
+        {
+          "module": "src/services/settings/smartRouting.js",
           "importedBy": [
             "platform"
           ]
@@ -1878,8 +1886,8 @@
         "agents": 3,
         "approvals": 8,
         "channels": 2,
-        "chat": 9,
-        "desktop-shell": 13,
+        "chat": 10,
+        "desktop-shell": 14,
         "knowledge": 1,
         "media": 7,
         "memory": 14,
@@ -1894,8 +1902,6 @@
         "GET /api/settings/cache ← src/http/domainRoutes.js",
         "POST /api/settings/cache/clear ← src/http/domainRoutes.js",
         "GET /api/settings/export ← src/http/domainRoutes.js",
-        "POST /api/settings/extra-fast ← src/http/domainRoutes.js",
-        "POST /api/settings/extra-fast/test ← src/http/domainRoutes.js",
         "POST /api/settings/import ← src/http/domainRoutes.js",
         "POST /api/settings/import-preview ← src/http/domainRoutes.js",
         "POST /api/settings/llm/activate ← src/http/domainRoutes.js",
@@ -1908,11 +1914,11 @@
         "POST /api/settings/local ← src/http/domainRoutes.js",
         "POST /api/settings/model ← src/http/domainRoutes.js",
         "POST /api/settings/model/oauth/start ← src/http/domainRoutes.js",
-        "POST /api/settings/model/options ← src/http/domainRoutes.js"
+        "POST /api/settings/model/options ← src/http/domainRoutes.js",
+        "POST /api/settings/smart-routing ← src/http/domainRoutes.js"
       ],
       "desktopUi": [
         "desktop-ui/credentialChip.js",
-        "desktop-ui/extraFast.js",
         "desktop-ui/language.css",
         "desktop-ui/languageControls.js",
         "desktop-ui/llmConnections.js",
@@ -1921,7 +1927,8 @@
         "desktop-ui/modelPresentation.css",
         "desktop-ui/modelPresentation.js",
         "desktop-ui/settingsEdit.css",
-        "desktop-ui/settingsEdit.js"
+        "desktop-ui/settingsEdit.js",
+        "desktop-ui/smartRouting.js"
       ],
       "iphone": {
         "owned": [
@@ -1943,7 +1950,10 @@
           "ios/Melo/ModelSettingsSections.swift",
           "ios/Melo/OAuthLoopback.swift",
           "ios/Melo/RuntimeDiagnosticsView.swift",
-          "ios/Melo/SettingsView.swift"
+          "ios/Melo/SettingsView.swift",
+          "ios/Melo/SmartRouting.swift",
+          "ios/Melo/SmartRoutingIntegration.swift",
+          "ios/Melo/SmartRoutingSettings.swift"
         ],
         "counterparts": [
           "ios/Melo/Localizable.xcstrings"
@@ -1953,23 +1963,23 @@
       "tests": {
         "groups": [
           "npm run test:models",
-          "npm run test:extra-fast",
           "npm run test:settings-design"
         ],
         "js": [
           "desktop-ui/credentialChip.test.js",
-          "desktop-ui/extraFast.test.js",
           "desktop-ui/language.browser.test.js",
           "desktop-ui/llmConnections.test.js",
           "desktop-ui/localSettings.test.js",
           "desktop-ui/modelPresentation.test.js",
           "desktop-ui/settingsEdit.test.js",
+          "desktop-ui/smartRouting.test.js",
           "src/codexAuth.executable.test.js",
           "src/config.codexCatalogMigration.test.js",
+          "src/services/modelRouting/routing.test.js",
           "src/services/settings/agentDevicePermissions.test.js",
-          "src/services/settings/extraFast.test.js",
           "src/services/settings/localData.test.js",
-          "src/services/settings/localSettings.test.js"
+          "src/services/settings/localSettings.test.js",
+          "src/services/settings/smartRouting.test.js"
         ],
         "swift": [
           "ios/Tests/CodexOAuthTests.swift",
@@ -3540,13 +3550,13 @@
         "agents": 12,
         "approvals": 4,
         "channels": 2,
-        "chat": 8,
+        "chat": 7,
         "knowledge": 1,
         "media": 5,
         "memory": 1,
         "platform": 9,
         "projects": 5,
-        "settings": 13,
+        "settings": 14,
         "sync": 2,
         "tools": 13,
         "voice": 2
@@ -3651,6 +3661,7 @@
           "desktop-ui/i18n.test.js",
           "desktop-ui/i18nCoverage.test.js",
           "desktop-ui/launchScreen.test.js",
+          "desktop-ui/modelReceiptHistory.test.js",
           "desktop-ui/neuralMotion.test.js",
           "desktop-ui/neuralSampling.test.js",
           "desktop-ui/neuralSatellite.test.js",
@@ -3812,7 +3823,6 @@
         {
           "module": "src/debug.js",
           "importedBy": [
-            "chat",
             "media",
             "memory",
             "tools"
@@ -4088,7 +4098,7 @@
         "agents": 42,
         "approvals": 36,
         "channels": 22,
-        "chat": 58,
+        "chat": 54,
         "desktop-shell": 9,
         "knowledge": 2,
         "media": 9,
@@ -4260,7 +4270,7 @@
       ],
       "dependsOn": {
         "agents": 6,
-        "chat": 9,
+        "chat": 7,
         "media": 3,
         "memory": 4,
         "platform": 22,

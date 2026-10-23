@@ -32,6 +32,7 @@ struct ImageSizeRejected: Error {}
     private var applicationActive = true
     private var refreshing: Task<CodexRegistration,Error>?
     private var epoch = UUID()
+    var routingIdentity: String { (activeID ?? "") + epoch.uuidString }
     private let session: URLSession
     private let defaults: UserDefaults
     private let persistCredentials: (String) throws -> Void
@@ -171,6 +172,20 @@ struct ImageSizeRejected: Error {}
             if !revoked { error="已退出此手机，但未确认远端撤销。可在 ChatGPT 的安全设置中检查授权。" }
         } catch { self.error=error.localizedDescription }
     }
+    func routingTransport(messages: [ChatMessage], requestHistory: [ChatMessage], model: String, instructions: String, imageInputs: [ImageInput], tools: AgentLoopTools?, allowWebSearch: Bool, allowImageTool: Bool, cacheKey: String, onObservation: ((ExecutionObservation) -> Void)?) async throws -> CodexResponsesTransport {
+        let expectedEpoch = epoch
+        let account = try await credentials()
+        try Task.checkCancellation()
+        var body = ChatGPTRequest.body(messages: messages, requestHistory: requestHistory, model: model, instructions: instructions, webSearch: allowWebSearch && (defaults.object(forKey: "webSearchEnabled") as? Bool ?? true), cacheKey: cacheKey)
+        if !imageInputs.isEmpty { body["input"] = ImageRequestBody.responses(messages: ChatGPTRequest.withCurrentTime(messages), inputs: imageInputs, task: ImageTaskPlan(action: .analyze), model: model, instructions: instructions)["input"] }
+        body["tools"] = ((body["tools"] as? [[String: Any]]) ?? []) + ((tools?.definitions ?? []) + [PhoneRoutingHost.control]).map(\.responsesDefinition)
+        if allowImageTool { body["tools"] = ((body["tools"] as? [[String: Any]]) ?? []) + [["type": "image_generation", "model": ImageTaskPlan().model]] }
+        body["tool_choice"] = "auto"
+        body["instructions"] = ((body["instructions"] as? String) ?? "") + "\n" + (tools?.instructionsWithContract ?? "")
+        let updates = StreamUpdates(onObservation: onObservation, onReceiving: nil, setStatus: { _ in })
+        return CodexResponsesTransport(account: account, session: session, sessionID: UUID().uuidString, model: model, base: body, offersTools: true, imageMode: allowImageTool, updates: updates, isCurrent: { [weak self] in self?.epoch == expectedEpoch })
+    }
+
     func reply(messages: [ChatMessage], requestHistory: [ChatMessage]? = nil, model: String, instructions: String, imageInputs: [ImageInput] = [], imageTask: ImageTaskPlan? = nil, deviceTools: DeviceToolContext? = nil, allowWebSearch: Bool = true, allowImageTool: Bool = false, statusKey: String? = nil, cacheKey: String? = nil, budget: PhoneRunBudget? = nil, verification: AgentVerification? = nil, hooks: AgentLoopHooks = AgentLoopHooks(), onObservation: ((ExecutionObservation) -> Void)? = nil, onReceiving: (() -> Void)? = nil) async throws -> ModelReply {
         if imageTask?.makesImage != true { try ConversationHistory.validateCurrentInput(messages.last(where: { $0.role == "user" })?.content ?? "", instructions: instructions) }
         let expectedEpoch = epoch
@@ -294,6 +309,7 @@ struct ImageSizeRejected: Error {}
 /// rounds replay every output item verbatim, one function_call_output per call
 /// and this round's screenshots. Completion checks use a separate tool-free body.
 final class CodexResponsesTransport: AgentModelTransport, @unchecked Sendable {
+    var routingContextLimit: Int? = nil
     let account: CodexRegistration, session: URLSession, sessionID: String, model: String
     private(set) var base: [String: Any]
     let offersTools: Bool
@@ -314,7 +330,9 @@ final class CodexResponsesTransport: AgentModelTransport, @unchecked Sendable {
         for item in transcript {
             switch item {
             case .toolRound(let round, let results):
-                guard case .responses(let output) = round.echo else { continue }
+                let output: [[String: Any]]
+                if case .responses(let original) = round.echo { output = original }
+                else { output = (round.text.isEmpty ? [] : [["type": "message", "role": "assistant", "content": [["type": "output_text", "text": round.text]]]]) + round.calls.map { ["type": "function_call", "call_id": $0.callID, "name": $0.name, "arguments": $0.arguments] } }
                 items = DeviceToolLoop.followUpInput(previous: items, output: output, results: results.map { (callID: $0.call.callID, result: $0.phoneResult) })
             case .userText(let text): items.append(["role": "user", "content": text])
             }
@@ -381,6 +399,7 @@ final class CodexResponsesTransport: AgentModelTransport, @unchecked Sendable {
         }
         if input.repairing { body["tools"] = (body["tools"] as? [[String: Any]])?.filter { $0["type"] as? String != "image_generation" } }
         _ = try PhoneMemberLimits.outputAllowance(body: body, remaining: input.remainingTokens)
+        if let limit = routingContextLimit, RequestSizeEstimate.tokens(try JSONSerialization.data(withJSONObject: body)) > limit { throw RequestTooLarge(message: "所选模型上下文容量不足；原对话和已执行结果已保留，请选择容量更大的模型。") }
         var result: (ChatGPTStream, Int)
         do { result = try await stream(body, timeout: input.timeout, observe: input.goalReview == nil) }
         catch is ImageSizeRejected where input.goalReview == nil && !input.repairing {

@@ -1,4 +1,5 @@
 import { t, ui } from './i18n.js';
+const routingLabels = { light:'轻', standard:'标准', strong:'强', high_risk:'高风险任务', deep_research:'深入研究', task_shape:'任务要求', simple:'简单任务', ambiguous:'默认标准档', judgment:'任务判断', requested_escalation:'模型请求升档', repeated_failure:'重复失败', tool_rounds:'工具轮次增加', side_effect:'有副作用的操作' };
 const labels = {
   'gpt-6.1-sol': 'Sol 6.1',
   'gpt-6-astra': 'Astra 6',
@@ -63,7 +64,8 @@ export function conversationAgent(data, { overview = false, newAgentId = 'main',
 }
 
 export function renderModelPicker({ config, models, agent, selection, open, saving }, escape) {
-  const current = selection?.model || agent?.model || config.model;
+  const smart = selection?.mode === 'smart' || (!selection && config.smartRouting?.defaultMode === 'smart');
+  const current = smart ? agent?.model || t('智能（自动）') : selection?.model || agent?.model || config.model;
   const profiles = config.llmConnections?.profiles || [];
   const activeID = config.llmConnections?.activeId || '';
   const choices = [{id:activeID,name:t("当前连接"),models}, ...profiles.filter(p=>p.id!==activeID).map(p=>({id:p.id,name:p.name,models:connectionModelOptions(config,p)}))];
@@ -77,7 +79,8 @@ export function renderModelPicker({ config, models, agent, selection, open, savi
       <p class="model-picker-context">这里选择文字对话模型；图片理解与生成可在系统中另行配置。网页搜索、文件及电脑工具由 Melo 按 Agent 权限执行，网页搜索无需额外配置。</p>
       <div class="model-picker-options" role="group" aria-label="可选模型">
         <button type="button" class="model-picker-option ${!selection?'is-selected':''}" data-action="pick-default-model" data-model="" aria-pressed="${!selection}" ${saving?'disabled':''}>沿用Agent / 系统默认</button>
-        ${choices.map(profile=>ui`<small>${escape(profile.name)}</small>${profile.models.map(model=>ui`<button type="button" class="model-picker-option ${selection?.model===model&&selection?.profileId===profile.id?'is-selected':''}" data-action="pick-default-model" data-model="${escape(model)}" data-profile-id="${escape(profile.id)}" aria-pressed="${selection?.model===model&&selection?.profileId===profile.id}" ${saving?'disabled':''}><span><strong>${escape(modelLabel(model))}</strong><small>${escape(model)}</small></span></button>`).join('')}`).join('')}
+        <button type="button" class="model-picker-option ${selection?.mode==='smart'?'is-selected':''}" data-action="pick-default-model" data-model-mode="smart" data-profile-id="${escape(selection?.profileId || activeID)}" aria-pressed="${selection?.mode==='smart'}" ${saving||agent?.model?'disabled':''}>智能（自动）</button>
+        ${choices.map(profile=>ui`<small>${escape(profile.name)}</small>${profile.models.map(model=>ui`<button type="button" class="model-picker-option ${selection?.mode!=='smart'&&selection?.model===model&&selection?.profileId===profile.id?'is-selected':''}" data-action="pick-default-model" data-model="${escape(model)}" data-profile-id="${escape(profile.id)}" aria-pressed="${selection?.mode!=='smart'&&selection?.model===model&&selection?.profileId===profile.id}" ${saving?'disabled':''}><span><strong>${escape(modelLabel(model))}</strong><small>${escape(model)}</small></span></button>`).join('')}`).join('')}
       </div><footer><span>${saving?t("正在保存…"):'其他对话和系统默认不变；实际返回模型仍在每条回复下记录。'}</span><button type="button" data-action="open-view" data-view="model">管理连接 ↗</button></footer>
     </section>` : ''}
   </div>`;
@@ -95,7 +98,7 @@ export function renderModelReceipt(message, escape) {
     <div class="model-receipt-body"><p>以下是这条回复的调用记录，当前默认模型不会改写历史记录。</p>
       ${receipts.map((row, index) => ui`<div class="model-receipt-row">
         <span class="model-receipt-index">${String(index + 1).padStart(2, '0')}</span>
-        <dl>${row.purpose === "intent-judge" ? ui`<div><dt>用途</dt><dd>额外快速 · 意图判断</dd></div>` : ""}<div><dt>请求模型</dt><dd>${escape(row.requestedModel || t("未记录"))}</dd></div><div><dt>服务端返回</dt><dd>${escape(row.reportedModel || t("未提供模型标识"))}</dd></div></dl>
+        <dl>${row.routing ? ui`<div><dt>智能选模</dt><dd>${escape(t(routingLabels[row.routing.tier] || '智能模式'))} · ${escape(t(routingLabels[row.routing.reason] || '智能模式'))}${row.routing.equivalentFixed ? ` · ${t("等同固定模型")}` : ""}</dd></div>` : ""}${row.purpose === "routing-judge" ? ui`<div><dt>用途</dt><dd>智能模式判断</dd></div>` : ""}${row.purpose === "intent-judge" ? ui`<div><dt>用途</dt><dd>意图判断</dd></div>` : ""}<div><dt>请求模型</dt><dd>${escape(row.requestedModel || t("未记录"))}</dd></div><div><dt>服务端返回</dt><dd>${escape(row.reportedModel || t("未提供模型标识"))}</dd></div></dl>
         <span class="model-receipt-state">${row.simulated ? t("模拟 · 未验证真实模型") : !row.reportedModel ? t("未验证") : row.reportedModel === row.requestedModel ? t("返回一致") : t("返回不同模型")}</span>
       </div>`).join('')}
       ${message.metadata?.runId ? ui`<small class="model-receipt-run">运行编号 ${escape(message.metadata.runId)}</small>` : ''}

@@ -1,7 +1,7 @@
+import { saveSmartRouting } from '../services/settings/smartRouting.js';
 import {previewChatDeletion,listChatFiles,decideChatFiles,openChatFiles} from '../services/workspace/chatWorkspaceFiles.js';
 import { changeProjectLifecycle } from '../services/project/projectLifecycle.js';
 import { createRouteRegistry } from './routeRegistry.js';
-import { saveExtraFast, testExtraFast } from '../services/settings/extraFast.js';
 import { memoryFacts, updateMemoryFact, projectMemoryBook, createProjectMemoryBookEntry } from '../services/memory/memoryManagement.js';
 import { exportLocalArchive, importLocalArchive, validateLocalArchive, extractionCache } from '../services/settings/localData.js';
 import { updateLocalProfile } from '../services/settings/localProfile.js';
@@ -27,22 +27,12 @@ import { getEmbeddingProvider } from '../memory/embedProviders/createEmbeddingPr
 
 
 const router = createRouteRegistry([
+    {method:'POST',paths:['/api/settings/smart-routing'],auth:'local-write',handler:async({request,response})=>sendJson(response,200,await saveSmartRouting(await readJsonBody(request)))},
     {method:'POST',paths:['/api/projects/lifecycle'],auth:'local-write',handler:async({request,response})=>sendBootstrapAfterCommit(response,await changeProjectLifecycle(await readJsonBody(request)))},
     {method:'POST',paths:['/api/chats/delete-preview'],auth:'local-write',handler:async({request,response})=>sendJson(response,200,await previewChatDeletion((await readJsonBody(request)).chatId))},
     {method:'GET',paths:['/api/workspace/retained'],auth:'local-read',handler:async({response})=>sendJson(response,200,await listChatFiles())},
     {method:'POST',paths:['/api/workspace/retained'],auth:'local-write',handler:async({request,response})=>sendJson(response,200,await decideChatFiles(await readJsonBody(request)))},
     {method:'POST',paths:['/api/workspace/open'],auth:'local-write',handler:async({request,response})=>sendJson(response,200,await openChatFiles(await readJsonBody(request)))},
-    { method: 'POST', paths: ["/api/settings/extra-fast"], auth: 'local-write', handler: async ({ request, response, url, requireLocalOrigin }) => {
-      sendJson(response, 200, await saveExtraFast(await readJsonBody(request))); return;
-    } },
-    { method: 'POST', paths: ["/api/settings/extra-fast/test"], auth: 'local-write', handler: async ({ request, response, url, requireLocalOrigin }) => {
-      const abort = new AbortController();
-      const closed = () => { if (!response.writableEnded) abort.abort(); };
-      response.on('close', closed);
-      try { sendJson(response, 200, await testExtraFast({ signal: abort.signal })); }
-      finally { response.off('close', closed); }
-      return;
-    } },
     { method: 'GET', paths: ["/api/settings/export"], auth: 'local-read', handler: async ({ request, response, url, requireLocalOrigin }) => {
       const archive=await exportLocalArchive();
       if(url.searchParams.get('download')==='1') {

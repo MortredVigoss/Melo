@@ -158,7 +158,7 @@ export function impactedPlan(code, files, impact) {
   }
   for(const [name,sources] of Object.entries(swiftSources))if(sources.some(p=>touched.has(p)))swiftSuites.add(name);
   if([...touched].some(p=>Object.hasOwn(manifest,p)))renderer=true;
-  if([...touched].some(p=>/^desktop-ui\/(localSettings|settingsEdit|llmConnections|extraFast)\.js$/.test(p)))browsers=true;
+  if([...touched].some(p=>/^desktop-ui\/(localSettings|settingsEdit|llmConnections|smartRouting)\.js$/.test(p)))browsers=true;
   if(renderer)add(IOS_JS,'共享渲染：manifest 与桥接测试');
   if(!chosen.size&&!swiftSuites.size&&!allSwift&&!renderer&&code.some(p=>!TOOLING.test(p)))widen('未找到有效覆盖，回退全量');
   return finish();

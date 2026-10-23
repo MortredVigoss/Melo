@@ -1,3 +1,4 @@
+import { publicSmartRouting } from '../modelRouting/routing.js';
 import {projectWorkspaceStatus} from '../workspace/workspacePolicy.js';
 import { isAgentChannelAvailable } from '../../shared/channelAvailability.js';
 import {projectText} from '../../domain/project/projectService.js';
@@ -6,7 +7,6 @@ import {CAPABILITY_LABELS} from '../../domain/agent/capabilities.js';
 import { pendingPersonaRecords } from '../chat/portableWorkspace.js';
 import { startStage } from '../../runtime/performanceTrace.js';
 import { imageSettings as resolvedImageSettings } from '../../images/imageSettings.js';
-import { publicExtraFast } from '../../judge/fastJudge.js';
 import { publicLlmConnections } from '../../shared/llmProviders.js';
 // Desktop bootstrap builder cluster — sub-phase 7d-5δ commit 8e of the
 // desktopStore decomposition. byte-for-byte port (CLAUDE.md §5).
@@ -316,8 +316,8 @@ export async function getDesktopBootstrap(query = '', { skipModelNormalize = fal
         provider: config.provider,
         imageSettings: resolvedImageSettings(config),
         llmConnections: publicLlmConnections(config),
+        smartRouting: publicSmartRouting(config),
         agentRuntime: config.agentRuntime,
-        extraFast: publicExtraFast(config),
         apiProtocol: config.apiProtocol || 'chat-completions',
         baseUrl: config.baseUrl,
         model: config.model,

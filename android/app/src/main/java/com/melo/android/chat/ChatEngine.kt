@@ -39,7 +39,10 @@ class ChatEngine(private val context: Context, val repository: Repository) {
         val state = repository.data.value
         val chat = state.chats.find { it.id == chatId }
         val connectionId = chat?.connectionId ?: state.settings.activeConnection
-        val connection = state.settings.connections.find { it.id == connectionId }
+        val agentModel = state.agents.find { it.id == chat?.agentId }?.model.orEmpty()
+        val mode = chat?.modelMode ?: if (chat?.model != null) "fixed" else state.settings.smartRouting.text("defaultMode").ifBlank { "fixed" }
+        val fixedModel = if (mode == "smart") agentModel else chat?.model?.takeIf(String::isNotBlank) ?: agentModel
+        val connection = state.settings.connections.find { it.id == connectionId }?.let { if (fixedModel.isBlank()) it else it.copy(model = fixedModel) }
         val instructions = chat?.let { repository.instructions(it, state) }.orEmpty()
         val historyEnabled = state.agents.find { it.id == chat?.agentId }?.source("memory") != false
         val phoneUse = chat?.phoneUseEnabled == true && connection?.protocol != "fixture"
@@ -50,6 +53,7 @@ class ChatEngine(private val context: Context, val repository: Repository) {
             var checkpoint: Job? = null
             try {
                 requireNotNull(chat) { "对话已不存在。" }
+                require(chat.portableModel == null || chat.connectionId != null) { "此对话的模型连接尚未在本机配置，请在对话设置选择已保存连接；原选择与资料已保留。" }
                 requireNotNull(connection) { "请先在「系统 → 模型连接」配置服务，或在 Debug 中添加本地 Fixture。" }
                 val key = if (connection.protocol == "fixture") "" else repository.credential(connection.id)
                 ConnectionPolicy.validate(connection, key, BuildConfig.DEBUG)
@@ -69,6 +73,10 @@ class ChatEngine(private val context: Context, val repository: Repository) {
                 checkpoint = launch {
                     while (isActive) { delay(1000); val partial = mutable.value.turns[chatId]?.partial.orEmpty(); repository.change { current -> current.copy(runs = current.runs.map { if (it.id == run.id && it.status == "running") it.copy(partial = partial) else it }) } }
                 }
+                val routingKeys = state.settings.connections.associate { it.id to (if (it.protocol == "fixture") "" else repository.credential(it.id)) }
+                var executionConnection: Connection = connection
+                var executionKey = key
+                val routing = SmartRoutingConfig(mode, state.settings.smartRouting, state.settings.connections, routingKeys, fixedModel)
                 val selected = if (retry) chat.messages.take(chat.messages.indexOfLast { it.id == message.id } + 1) else chat.messages + message
                 val result = withContext(Dispatchers.IO) {
                     if (connection.protocol == "fixture") client.reply(connection, key, selected, instructions, repository::imageData) { partial -> updateTurn(chatId) { it.copy(partial = partial) } }
@@ -81,7 +89,7 @@ class ChatEngine(private val context: Context, val repository: Repository) {
                                 val research = args.text("purpose") == "research"
                                 val researchInstructions = if (research) "\nThis is a live research task. Read the requested facts from current pages and return the findings, app/source, any visible useful links/addresses, and uncertainties in finish.summary (up to 2000 characters). Opening an app alone is not the research goal. Do not send messages, book, purchase or modify account/settings. Never fabricate facts or links. Current device time: ${java.time.ZonedDateTime.now()}." else ""
                                 val receipt = (context.applicationContext as com.melo.android.MeloApplication).deviceAgent.invoke(
-                                    args.text("goal"), research, ChatDeviceContext(chat, connection, key, instructions + researchInstructions, run.id, currentCoroutineContext()[com.melo.android.core.SharedRunBudget.Scope]?.budget))
+                                    args.text("goal"), research, ChatDeviceContext(chat, executionConnection, executionKey, instructions + researchInstructions, run.id, currentCoroutineContext()[com.melo.android.core.SharedRunBudget.Scope]?.budget))
                                 currentCoroutineContext().ensureActive()
                                 if (research && receipt.ok) withContext(Dispatchers.Main) {
                                     runCatching { context.startActivity(Intent(context, com.melo.android.MainActivity::class.java).putExtra("melo_chat_id", chatId).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)) }
@@ -91,7 +99,7 @@ class ChatEngine(private val context: Context, val repository: Repository) {
                             onPhase = { phase -> updateTurn(chatId) { it.copy(phase = phase) } },
                             onDelta = { partial -> updateTurn(chatId) { it.copy(partial = partial) } },
                             previousScenes = if (historyEnabled) state.runs.filter { it.chatId == chatId }.takeLast(3).map { it.sharedScene } else emptyList(),
-                            historyEnabled = historyEnabled, contextLedger = chat.contextLedger,
+                            historyEnabled = historyEnabled, contextLedger = chat.contextLedger, routingConfig = routing, onRoutedConnection = { c, k -> executionConnection = c; executionKey = k },
                             onContextLedger = { ledger -> repository.change { current -> current.copy(chats = current.chats.map { if (it.id == chatId) it.copy(contextLedger = ledger) else it }) } },
                             onScene = { scene -> repository.change { current -> current.copy(runs = current.runs.map { if (it.id == run.id && it.status == "running") it.copy(sharedScene = scene) else it }) } },
                         )

@@ -25,7 +25,6 @@ export const DEFAULT_AGENT_RUNTIME = Object.freeze({ search: Object.freeze({ bac
 
 export const DEFAULT_CONFIG = Object.freeze({
   agentRuntime: normalizeRuntimeConfig(DEFAULT_AGENT_RUNTIME),
-  extraFast: Object.freeze({ enabled: false, revision: 0, measurements: {} }),
   provider: 'openai-compatible',
   baseUrl: CODEX_OAUTH_BASE_URL,
   model: DEFAULT_MODELS_BY_AUTH_MODE.codex,

@@ -138,6 +138,20 @@ enum Network {
     /// One reply on an API-key connection (chat-completions or Anthropic). The
     /// request body without tools is unchanged; with phone tools the turn runs
     /// through AgentLoop (same limits, budget, envelopes and finalize as the desktop).
+    static func routingTransport(messages: [ChatMessage], endpoint: String, model: String, token: String, instructions: String, apiProtocol: String, imageInputs: [ImageInput], tools: AgentLoopTools?, onObservation: (@MainActor (ExecutionObservation) -> Void)?) throws -> APIChatTransport {
+        let anthropic = apiProtocol == "anthropic"
+        let definitions = (tools?.definitions ?? []) + [PhoneRoutingHost.control]
+        let prompt = systemLine(toolInstructions: tools?.instructionsWithContract) + instructions
+        let rows = ImageRequestBody.chat(messages: messages, inputs: imageInputs, anthropic: anthropic, instructions: instructions)
+        var body: [String: Any] = ["model": model, "stream": false, "messages": [["role": "system", "content": prompt]] + rows, "tools": definitions.map(\.chatCompletionsDefinition), "tool_choice": "auto"]
+        var headers: [String: String] = [:]
+        if anthropic {
+            body = ["model": model, "stream": false, "max_tokens": 8192, "system": prompt, "messages": rows, "tools": definitions.map(\.anthropicDefinition)]
+            headers = ["x-api-key": token, "anthropic-version": "2023-06-01"]
+        }
+        return APIChatTransport(url: try self.endpoint(endpoint), token: token, headers: headers, session: session, anthropic: anthropic, apiProtocol: apiProtocol, model: model, base: body, offersTools: true, onObservation: onObservation)
+    }
+
     static func reply(messages: [ChatMessage], requestHistory: [ChatMessage]? = nil, endpoint: String, model: String, token: String, instructions: String = "", apiProtocol: String = "chat-completions", imageInputs: [ImageInput] = [], tools: PhoneToolSet? = nil, session: URLSession = Network.session, budget: PhoneRunBudget? = nil, verification: AgentVerification? = nil, hooks: AgentLoopHooks = AgentLoopHooks(), onObservation: (@MainActor (ExecutionObservation) -> Void)? = nil, onStatus: (@MainActor (String) -> Void)? = nil) async throws -> ModelReply {
         try ConversationHistory.validateCurrentInput(messages.last(where: { $0.role == "user" })?.content ?? "", instructions: instructions)
         guard !token.isEmpty, !model.trimmingCharacters(in: .whitespaces).isEmpty else { throw MeloError.message("先在设置中填写模型服务和 API 密钥。") }
@@ -183,6 +197,7 @@ enum Network {
 /// echo, tool results first, this round's screenshots; earlier screenshots
 /// reduced to their caption), then supplements as user text.
 final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
+    var routingContextLimit: Int? = nil
     let url: URL, token: String, headers: [String: String], session: URLSession
     let anthropic: Bool, apiProtocol: String, model: String
     let base: [String: Any]
@@ -205,10 +220,14 @@ final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
             case .toolRound(let round, let results):
                 let pairs = results.map { (callID: $0.call.callID, result: $0.phoneResult) }
                 if anthropic {
-                    guard case .anthropic(let content) = round.echo else { continue }
+                    let content: [[String: Any]]
+                    if case .anthropic(let original) = round.echo { content = original }
+                    else { content = (round.text.isEmpty ? [] : [["type": "text", "text": round.text]]) + round.calls.map { ["type": "tool_use", "id": $0.callID, "name": $0.name, "input": (try? JSONSerialization.jsonObject(with: Data($0.arguments.utf8))) ?? [:]] } }
                     rows = WebPageText.demotedAnthropicMessages(rows) + Network.anthropicToolRound(assistant: content, results: pairs)
                 } else {
-                    guard case .chat(let message) = round.echo else { continue }
+                    let message: [String: Any]
+                    if case .chat(let original) = round.echo { message = original }
+                    else { message = ["role": "assistant", "content": round.text, "tool_calls": round.calls.map { ["id": $0.callID, "type": "function", "function": ["name": $0.name, "arguments": $0.arguments]] }] }
                     rows = WebPageText.demotedChatMessages(rows) + Network.chatToolRound(assistant: message, results: pairs)
                 }
             case .userText(let text):
@@ -222,7 +241,7 @@ final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
     }
 
     func round(_ input: AgentLoopRequest) async throws -> AgentRound {
-        if input.iteration > 0 {
+        if input.goalReview == nil && (input.iteration > 0 || routingContextLimit != nil) {
             observation.stage("model:response", name: "模型请求", status: "running", output: "工具结果已返回，等待模型继续", model: model)
             await onObservation?(observation)
         }
@@ -235,12 +254,14 @@ final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
         if let allowance = try PhoneMemberLimits.outputAllowance(body: body, remaining: input.remainingTokens) {
             body["max_tokens"] = min(allowance, (body["max_tokens"] as? Int) ?? allowance)
         }
+        if let limit = input.outputLimit { body["max_tokens"] = min(limit, (body["max_tokens"] as? Int) ?? limit) }
         let payload = try JSONSerialization.data(withJSONObject: body)
+        if let limit = routingContextLimit, RequestSizeEstimate.tokens(payload) > limit { throw RequestTooLarge(message: "所选模型上下文容量不足；原对话和已执行结果已保留，请选择容量更大的模型。") }
         let data = try await Network.post(url, token: token, body: payload, session: session, headers: headers, timeout: max(1, min(timeoutCap, input.timeout)))
         try Task.checkCancellation()
         let receipt = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         var finishReason: String?
-        if let receipt {
+        if let receipt, input.goalReview == nil {
             let choices = receipt["choices"] as? [[String: Any]]
             finishReason = receipt["stop_reason"] as? String ?? choices?.first?["finish_reason"] as? String
             observation.apiReceipt(receipt, transport: apiProtocol, finishReason: finishReason)
@@ -289,6 +310,7 @@ final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
             throw MeloError.message("模型未完成回复（\(String(reason.prefix(60)))），未保存为完整回答。")
         }
         guard let text = choice.message.content, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw MeloError.message("模型没有返回文字内容。") }
+        if input.goalReview != nil { return AgentRound(text: text, inputTokens: usage, estimatedInputTokens: estimate, outputTokens: outputTokens) }
         observation.stage("model:response", name: "模型请求", status: "completed", output: "模型文字返回完成" + (observation.returnedModel.map { " · 服务返回模型：\($0)" } ?? " · 服务未报告模型标识"))
         observation.stage("reply:format", name: "整理回答与引用", status: "running", output: "处理服务返回的文字与引用标记")
         await onObservation?(observation)

@@ -29,6 +29,7 @@ object PortableWorkspace {
         if (value == null || value == JsonNull) return JsonNull
         val row = value.jsonObject
         return buildJsonObject {
+            row["mode"]?.jsonPrimitive?.contentOrNull?.takeIf { it in setOf("fixed", "smart") }?.let { put("mode", it) }
             put("connectionID", text(row, "connectionID", 180)); put("name", text(row, "name", 200)); put("model", text(row, "model", 180))
             put("authMode", row.text("authMode").takeIf { it in setOf("codex", "local") } ?: "api-key")
             put("baseURL", url(row, "baseURL", true)); put("apiProtocol", if (row.text("apiProtocol") == "anthropic") "anthropic" else "chat-completions")

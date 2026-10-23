@@ -93,8 +93,8 @@
 .neural-dashboard .model-connection-summary {max-width:none;margin-inline:0;}
 .neural-dashboard .model-connection-summary {margin:16px 0;padding:var(--space-inset-size);}
 .neural-dashboard .page-model > .surface-card,
-.neural-dashboard :is(.llm-connections,.extra-fast-settings,.default-model-settings,.image-settings) {padding:var(--space-inset-size);margin:0 0 16px;}
-.neural-dashboard :is(.llm-connections,.default-model-settings,.extra-fast-settings) .config-form {max-width:none;}
+.neural-dashboard :is(.llm-connections,.smart-routing-settings,.default-model-settings,.image-settings) {padding:var(--space-inset-size);margin:0 0 16px;}
+.neural-dashboard :is(.llm-connections,.default-model-settings,.smart-routing-settings) .config-form {max-width:none;}
 .neural-dashboard .page-model details + .surface-card,
 .neural-dashboard .page-model .surface-card + details {margin-top:12px;}
 .neural-dashboard .settings-edit-toolbar {padding:10px 0;margin-bottom:12px;border-color:var(--space-edge-soft);}

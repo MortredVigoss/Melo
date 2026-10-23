@@ -1,0 +1,466 @@
+[
+  {
+    "name": "greeting",
+    "input": {
+      "mode": "smart",
+      "connectionId": "own",
+      "defaultModel": "opaque-A",
+      "policy": {
+        "allowEscalation": true,
+        "tiers": {
+          "light": [
+            {
+              "connectionId": "own",
+              "model": "opaque-A"
+            }
+          ],
+          "standard": [
+            {
+              "connectionId": "own",
+              "model": "opaque-B"
+            }
+          ],
+          "strong": [
+            {
+              "connectionId": "own",
+              "model": "opaque-C"
+            }
+          ]
+        }
+      },
+      "candidates": [
+        {
+          "connectionId": "own",
+          "model": "opaque-A",
+          "available": true,
+          "capabilities": {
+            "tools": true,
+            "vision": true
+          }
+        },
+        {
+          "connectionId": "own",
+          "model": "opaque-B",
+          "available": true,
+          "capabilities": {
+            "tools": true,
+            "vision": true
+          }
+        },
+        {
+          "connectionId": "own",
+          "model": "opaque-C",
+          "available": true,
+          "capabilities": {
+            "tools": true,
+            "vision": true
+          }
+        }
+      ],
+      "text": "你好"
+    },
+    "expected": {
+      "model": "opaque-A",
+      "tier": "light"
+    }
+  },
+  {
+    "name": "short-image",
+    "input": {
+      "mode": "smart",
+      "connectionId": "own",
+      "defaultModel": "opaque-A",
+      "policy": {
+        "allowEscalation": true,
+        "tiers": {
+          "light": [
+            {
+              "connectionId": "own",
+              "model": "opaque-A"
+            }
+          ],
+          "standard": [
+            {
+              "connectionId": "own",
+              "model": "opaque-B"
+            }
+          ],
+          "strong": [
+            {
+              "connectionId": "own",
+              "model": "opaque-C"
+            }
+          ]
+        }
+      },
+      "candidates": [
+        {
+          "connectionId": "own",
+          "model": "opaque-A",
+          "available": true,
+          "capabilities": {
+            "tools": true,
+            "vision": true
+          }
+        },
+        {
+          "connectionId": "own",
+          "model": "opaque-B",
+          "available": true,
+          "capabilities": {
+            "tools": true,
+            "vision": true
+          }
+        },
+        {
+          "connectionId": "own",
+          "model": "opaque-C",
+          "available": true,
+          "capabilities": {
+            "tools": true,
+            "vision": true
+          }
+        }
+      ],
+      "text": "换图片背景"
+    },
+    "expected": {
+      "model": "opaque-B",
+      "tier": "standard"
+    }
+  },
+  {
+    "name": "risk",
+    "input": {
+      "mode": "smart",
+      "connectionId": "own",
+      "defaultModel": "opaque-A",
+      "policy": {
+        "allowEscalation": true,
+        "tiers": {
+          "light": [
+            {
+              "connectionId": "own",
+              "model": "opaque-A"
+            }
+          ],
+          "standard": [
+            {
+              "connectionId": "own",
+              "model": "opaque-B"
+            }
+          ],
+          "strong": [
+            {
+              "connectionId": "own",
+              "model": "opaque-C"
+            }
+          ]
+        }
+      },
+      "candidates": [
+        {
+          "connectionId": "own",
+          "model": "opaque-A",
+          "available": true,
+          "capabilities": {
+            "tools": true,
+            "vision": true
+          }
+        },
+        {
+          "connectionId": "own",
+          "model": "opaque-B",
+          "available": true,
+          "capabilities": {
+            "tools": true,
+            "vision": true
+          }
+        },
+        {
+          "connectionId": "own",
+          "model": "opaque-C",
+          "available": true,
+          "capabilities": {
+            "tools": true,
+            "vision": true
+          }
+        }
+      ],
+      "text": "发送邮件"
+    },
+    "expected": {
+      "model": "opaque-C",
+      "tier": "strong"
+    }
+  },
+  {
+    "name": "invalid-json-fallback",
+    "input": {
+      "mode": "smart",
+      "connectionId": "own",
+      "defaultModel": "opaque-A",
+      "policy": {
+        "allowEscalation": true,
+        "tiers": {
+          "light": [
+            {
+              "connectionId": "own",
+              "model": "opaque-A"
+            }
+          ],
+          "standard": [
+            {
+              "connectionId": "own",
+              "model": "opaque-B"
+            }
+          ],
+          "strong": [
+            {
+              "connectionId": "own",
+              "model": "opaque-C"
+            }
+          ]
+        }
+      },
+      "candidates": [
+        {
+          "connectionId": "own",
+          "model": "opaque-A",
+          "available": true,
+          "capabilities": {
+            "tools": true,
+            "vision": true
+          }
+        },
+        {
+          "connectionId": "own",
+          "model": "opaque-B",
+          "available": true,
+          "capabilities": {
+            "tools": true,
+            "vision": true
+          }
+        },
+        {
+          "connectionId": "own",
+          "model": "opaque-C",
+          "available": true,
+          "capabilities": {
+            "tools": true,
+            "vision": true
+          }
+        }
+      ],
+      "text": "分析一下",
+      "judgmentAttempted": true,
+      "judgment": null
+    },
+    "expected": {
+      "model": "opaque-B",
+      "tier": "standard"
+    }
+  },
+  {
+    "name": "fixed",
+    "input": {
+      "mode": "fixed",
+      "connectionId": "own",
+      "defaultModel": "opaque-A",
+      "policy": {
+        "allowEscalation": true,
+        "tiers": {
+          "light": [
+            {
+              "connectionId": "own",
+              "model": "opaque-A"
+            }
+          ],
+          "standard": [
+            {
+              "connectionId": "own",
+              "model": "opaque-B"
+            }
+          ],
+          "strong": [
+            {
+              "connectionId": "own",
+              "model": "opaque-C"
+            }
+          ]
+        }
+      },
+      "candidates": [
+        {
+          "connectionId": "own",
+          "model": "opaque-A",
+          "available": true,
+          "capabilities": {
+            "tools": true,
+            "vision": true
+          }
+        },
+        {
+          "connectionId": "own",
+          "model": "opaque-B",
+          "available": true,
+          "capabilities": {
+            "tools": true,
+            "vision": true
+          }
+        },
+        {
+          "connectionId": "own",
+          "model": "opaque-C",
+          "available": true,
+          "capabilities": {
+            "tools": true,
+            "vision": true
+          }
+        }
+      ],
+      "text": "发送邮件"
+    },
+    "expected": {
+      "model": "opaque-A",
+      "tier": null
+    }
+  },
+  {
+    "name": "agent-pinned",
+    "input": {
+      "mode": "smart",
+      "connectionId": "own",
+      "defaultModel": "opaque-A",
+      "policy": {
+        "allowEscalation": true,
+        "tiers": {
+          "light": [
+            {
+              "connectionId": "own",
+              "model": "opaque-A"
+            }
+          ],
+          "standard": [
+            {
+              "connectionId": "own",
+              "model": "opaque-B"
+            }
+          ],
+          "strong": [
+            {
+              "connectionId": "own",
+              "model": "opaque-C"
+            }
+          ]
+        }
+      },
+      "candidates": [
+        {
+          "connectionId": "own",
+          "model": "opaque-A",
+          "available": true,
+          "capabilities": {
+            "tools": true,
+            "vision": true
+          }
+        },
+        {
+          "connectionId": "own",
+          "model": "opaque-B",
+          "available": true,
+          "capabilities": {
+            "tools": true,
+            "vision": true
+          }
+        },
+        {
+          "connectionId": "own",
+          "model": "opaque-C",
+          "available": true,
+          "capabilities": {
+            "tools": true,
+            "vision": true
+          }
+        }
+      ],
+      "fixedModel": "opaque-pin",
+      "text": "你好"
+    },
+    "expected": {
+      "model": "opaque-pin",
+      "tier": null
+    }
+  },
+  {
+    "name": "context-risk",
+    "input": {
+      "mode": "smart",
+      "connectionId": "own",
+      "defaultModel": "opaque-A",
+      "policy": {
+        "allowEscalation": true,
+        "tiers": {
+          "light": [
+            {
+              "connectionId": "own",
+              "model": "opaque-A"
+            }
+          ],
+          "standard": [
+            {
+              "connectionId": "own",
+              "model": "opaque-B"
+            }
+          ],
+          "strong": [
+            {
+              "connectionId": "own",
+              "model": "opaque-C"
+            }
+          ]
+        }
+      },
+      "candidates": [
+        {
+          "connectionId": "own",
+          "model": "opaque-A",
+          "available": true,
+          "capabilities": {
+            "tools": true,
+            "vision": true
+          }
+        },
+        {
+          "connectionId": "own",
+          "model": "opaque-B",
+          "available": true,
+          "capabilities": {
+            "tools": true,
+            "vision": true
+          }
+        },
+        {
+          "connectionId": "own",
+          "model": "opaque-C",
+          "available": true,
+          "capabilities": {
+            "tools": true,
+            "vision": true
+          }
+        }
+      ],
+      "text": "继续",
+      "context": [
+        {
+          "role": "user",
+          "content": "帮我分析投资风险"
+        }
+      ]
+    },
+    "expected": {
+      "model": "opaque-C",
+      "tier": "strong"
+    }
+  }
+]

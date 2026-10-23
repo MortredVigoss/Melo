@@ -49,15 +49,15 @@ export function exportModelSelection(choice, config) {
   if(!choice)return null;
   if(choice.portable)return portableModel(choice.portable);
   const profile=choice.profileId?config.llmProfiles?.[choice.profileId]:config;
-  return portableModel({connectionID:choice.profileId || '',name:profile?.name || '',model:choice.model,authMode:profile?.authMode || choice.authMode,baseURL:connectionBase(profile?.baseUrl || choice.baseUrl),apiProtocol:profile?.apiProtocol});
+  return portableModel({connectionID:choice.profileId || '',name:profile?.name || '',model:choice.model,...(choice.mode==='smart'?{mode:'smart'}:{}),authMode:profile?.authMode || choice.authMode,baseURL:connectionBase(profile?.baseUrl || choice.baseUrl),apiProtocol:profile?.apiProtocol});
 }
 export function importModelSelection(value, config) {
   if(!value)return null;
   const model=portableModel(value), candidates=Object.entries(config.llmProfiles || {}).filter(([,p])=>p.authMode===model.authMode && (model.authMode==='codex'||connectionBase(p.baseUrl)===connectionBase(model.baseURL)) && (p.apiProtocol || 'chat-completions')===model.apiProtocol);
   const match=candidates.find(([id])=>id===model.connectionID) || (candidates.length===1?candidates[0]:null);
-  if(match)return {profileId:match[0],model:model.model,authMode:model.authMode,baseUrl:match[1].baseUrl,portable:model};
-  if(config.authMode===model.authMode && (model.authMode==='codex'||connectionBase(config.baseUrl)===connectionBase(model.baseURL)) && (config.apiProtocol || 'chat-completions')===model.apiProtocol) return {profileId:'',model:model.model,authMode:config.authMode,baseUrl:config.baseUrl,portable:model};
-  return {profileId:'unconnected-sync',model:model.model,authMode:model.authMode,baseUrl:model.baseURL,portable:model};
+  if(match)return {profileId:match[0],model:model.model,...(model.mode==='smart'?{mode:'smart'}:{}),authMode:model.authMode,baseUrl:match[1].baseUrl,portable:model};
+  if(config.authMode===model.authMode && (model.authMode==='codex'||connectionBase(config.baseUrl)===connectionBase(model.baseURL)) && (config.apiProtocol || 'chat-completions')===model.apiProtocol) return {profileId:'',model:model.model,...(model.mode==='smart'?{mode:'smart'}:{}),authMode:config.authMode,baseUrl:config.baseUrl,portable:model};
+  return {profileId:'unconnected-sync',model:model.model,...(model.mode==='smart'?{mode:'smart'}:{}),authMode:model.authMode,baseUrl:model.baseURL,portable:model};
 }
 // Desktop compact state → `conversation.compact` (design 2026-10-17 手机对齐).
 // Desktop is the primary summariser; the previous synced record is kept when

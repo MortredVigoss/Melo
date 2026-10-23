@@ -1,3 +1,4 @@
+import { modelRoutingOperation } from './modelRouting.js';
 import { runTaskReplay } from './taskReplay.js';
 import { CORE_VERSION, startTurn, advanceTurn, turnStopReply } from './turn.js';
 import { planRequest, actionEvidence } from './search.js';
@@ -30,6 +31,7 @@ export function evaluate(input) {
       case 'repeat': value = repeatOperation(input); break;
       case 'completion': value = completionResult(input.completion); break;
       case 'teamCompletion': value = teamCompletion(input.team); break;
+      case 'modelRouting': value = modelRoutingOperation(input); break;
       case 'goal': value = goalOperation(input); break;
       case 'toolEffect': value = toolEffect(input.name, input.arguments, input.declaration); break;
       case 'completionObservation': value = completionObservation(input.observation); break;

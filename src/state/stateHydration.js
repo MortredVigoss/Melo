@@ -248,7 +248,7 @@ export function normalizeChat(chat) {
     projectId: chat?.projectId || null,
     ...(typeof chat?.workspacePath==='string' && chat.workspacePath ? {workspacePath:chat.workspacePath} : {}),
     contextArtifactIds: Array.isArray(chat?.contextArtifactIds) ? [...new Set(chat.contextArtifactIds.filter(id=>typeof id==='string'))] : [],
-    ...(chat?.modelSelection && typeof chat.modelSelection.model === 'string' ? {modelSelection: {profileId:String(chat.modelSelection.profileId || ''), model:chat.modelSelection.model, authMode:chat.modelSelection.authMode, baseUrl:chat.modelSelection.baseUrl,...(chat.modelSelection.portable?{portable:chat.modelSelection.portable}:{})}} : {}),
+    ...(chat?.modelSelection && typeof chat.modelSelection.model === 'string' ? {modelSelection: {profileId:String(chat.modelSelection.profileId || ''), model:chat.modelSelection.model, ...(chat.modelSelection.mode==='smart'?{mode:'smart'}:{}), authMode:chat.modelSelection.authMode, baseUrl:chat.modelSelection.baseUrl,...(chat.modelSelection.portable?{portable:chat.modelSelection.portable}:{})}} : {}),
     agentId:
       typeof chat?.agentId === 'string' && chat.agentId.trim()
         ? normalizeAgentStorageId(chat.agentId)

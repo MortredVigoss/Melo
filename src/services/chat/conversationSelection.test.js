@@ -89,3 +89,19 @@ test('retrieval selection accepts more than eight full documents while rejecting
  assert.equal(artifacts[14].content.length,32000,'selection leaves originals intact');
  assert.throws(()=>validateConversationSelection({contextArtifactIds:[...ids,'missing']},state,{}),/不存在/);
 });
+
+test('smart choice survives hydration and portable sync while fixed choices and connection identities stay explicit', async()=>{
+ const {exportModelSelection,importModelSelection}=await import('./portableWorkspace.js');
+ for(const profileId of ['','second']) {
+  const choice=validateConversationSelection({modelSelection:{profileId,mode:'smart'}},{},config).modelSelection;
+  const hydrated=normalizeChat({id:'smart',modelSelection:choice}).modelSelection;
+  assert.equal(hydrated.mode,'smart');assert.notEqual(hydrated.model,'smart');
+  const portable=exportModelSelection(hydrated,config);assert.equal(portable.mode,'smart');assert.ok(!JSON.stringify(portable).includes('secret'));
+  const restored=importModelSelection(portable,config);assert.equal(restored.mode,'smart');
+  const selected=conversationConfig(config,restored);assert.equal(selected.conversationModelMode,'smart');
+  assert.equal(selected.activeLlmProfileId,profileId);assert.equal(selected.apiKey,profileId?'second-secret':'first-secret');
+ }
+ const legacy=validateConversationSelection({modelSelection:{profileId:'second',model:'other'}},{},config).modelSelection;
+ assert.equal(exportModelSelection(legacy,config).mode,undefined);
+ assert.equal(conversationConfig(config,legacy).conversationModelMode,'fixed');
+});

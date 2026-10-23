@@ -270,7 +270,7 @@ async function executeChatTurn({
   signal?.throwIfAborted();
   chat.messages.push(userMessage);
   chat.updatedAt = nowIso();
-  const visualConnection=userMessage.attachments.some(a=>a.kind==='image') ? visionConnection(config,{model:context.env.MELO_MODEL || activeAgentProfile?.model || config.model}) : config;
+  const visualConnection=config.conversationModelMode==='smart' || (!config.conversationModelSelected && config.smartRouting?.defaultMode==='smart') ? config : userMessage.attachments.some(a=>a.kind==='image') ? visionConnection(config,{model:context.env.MELO_MODEL || activeAgentProfile?.model || config.model}) : config;
   const visualTest=visualConnection.visionTest || config.llmProfiles?.[config.activeLlmProfileId]?.visionTest;
   // Re-sent file-backed attachments (image retry, API clients echoing a stored
   // URL) are read back inline so extraction sees the bytes; externalization

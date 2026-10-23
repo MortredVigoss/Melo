@@ -14,6 +14,8 @@ class SharedCoreTurn private constructor(private val runtime: SharedCoreRuntime,
     val completed get() = state["status"]?.jsonPrimitive?.content == "completed"
     val active get() = state["status"]?.jsonPrimitive?.content == "running"
     val roundsLeft get() = (state["limits"]?.jsonObject?.get("rounds")?.jsonPrimitive?.intOrNull ?: 0) - (state["rounds"]?.jsonPrimitive?.intOrNull ?: 0)
+    val rounds get() = state["rounds"]?.jsonPrimitive?.intOrNull ?: 0
+    val failures get() = state["errors"]?.jsonPrimitive?.intOrNull ?: 0
     val reason get() = state["reason"]?.jsonPrimitive?.content.orEmpty()
     suspend fun event(type: String, fields: JsonObject = buildJsonObject {}): JsonObject {
         currentCoroutineContext().ensureActive()

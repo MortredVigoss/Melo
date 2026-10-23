@@ -1,14 +1,15 @@
 {
   "version": 1,
-  "sha256": "a59be5792e8cff9ffe91cff8bf1f67810e056559f99bf2c606cc6f515cc94c6e",
+  "sha256": "fb5a50692f6f0378b74d7929846653f81d9211b842eafbc7e7af249c9e2eafcb",
   "sources": {
-    "shared/agent/index.js": "621fde4c8af047773cdf6a927309c08975cb1af865f339abb322ee5ea7868908",
+    "shared/agent/index.js": "206607c369adf60f77d721303ae856168edbc7d5420af0fda9e1021401565843",
+    "shared/agent/modelRouting.js": "4d82076a8266bfa38a1c5c31dc1bab96bd1b7c71ff071b79120f9b981c873742",
     "shared/agent/taskReplay.js": "324d3294312b9f4e4d0d2484745e60cc0caf0360c82d9da643f1d1328431e74a",
-    "shared/agent/turn.js": "1b539e3afa43dd3cec58d6c39506bba1f5f6655bfb3f07b4a81747f39a02dba9",
+    "shared/agent/turn.js": "d94162208c15108fe5989318aeff053807c0d1bc3ddf5b415b56f6b9ecbb907c",
     "shared/agent/tools.js": "55845f66257d91535be60ed9436b6164b96358a6113714dc6b4f032b2695b587",
     "shared/agent/loopContract.js": "3e094b569c7dd20562deb79e73c674f1352cc0819ef4d0ad7f3a72f70ae42ea5",
     "shared/agent/repeatGuard.js": "eca1d776e713fb7a59e05c1d16f78fb9d71877ad6ebb10cb23e2a4ad5bf78382",
-    "shared/agent/toolEffects.js": "0b21b606c247342bcee5a571233694c92f6eaebfc1271ba04eb9fffa8514dcad",
+    "shared/agent/toolEffects.js": "eb09f3cb5cf924659692da82942b17ff09d483f5d5e932898307fb2003233ff4",
     "shared/agent/search.js": "f3e5dd6ab055991963a296cf12c83c5263baaec18132d0b877e606b341b94d8b",
     "shared/agent/retrieval/requestPolicy.js": "ec39e949953ee7cfd4790e3745f85550961c3ed6073e1339283ba1e1beb89f1f",
     "shared/agent/media/textUrls.js": "a18784bbc35025e156184f896f0b5fd1ccaccde18a94a36acf6e2003fefa22c6",
@@ -26,7 +27,7 @@
     "src/shared/replyDocument.js": "824fa3e1fe139e41d690a450ab2995a09ee5a3b9f575174087aa154dae96032d",
     "src/shared/conversationTopics.js": "c8056fc9d1377e20bdbabdf060759db0ba82cafda7df4d7bb554758cfc2e3e5c",
     "shared/agent/context.js": "ada3c03f36d4b58f09293c726d56931f2d352cd44419c1198456c277d032a6c0",
-    "shared/agent/contextBudget.js": "e35f791819c31d0e69fc597f22aab3316db2bb7182d86c1a480398d856c2039f",
+    "shared/agent/contextBudget.js": "5c40d5764096865e7ff64c87f1d2d731cdee0ccdec967bc4251f622e2ffa888b",
     "shared/agent/tokenEstimate.js": "d6a5f0b91312c233b808acafa8250c7342296aa62c51e95f8969dd039a550fda"
   }
 }

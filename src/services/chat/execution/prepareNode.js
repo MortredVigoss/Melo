@@ -1,3 +1,6 @@
+import { routingLabel } from '../../../../shared/agent/modelRouting.js';
+import { createRoutingSession } from '../../modelRouting/routing.js';
+import { resolveContextBudget } from '../contextBudget.js';
 import { buildSharedSearchPlan } from '../../../retrieval/sharedSearchPlan.js';
 import { resolveHostedSearchCapability } from '../../search/hostedSearchCapability.js';
 // Chat execution graph — `prepare` node (architecture B2, 2026-10-20).
@@ -89,6 +92,16 @@ export function createPrepareNode(turn) {
     const modeDef = MODE_DEFS.find(mode => mode.id === chat.mode) || MODE_DEFS[0];
     const project = findProjectById(state, chat.projectId);
     const activeAgentProfile = effectiveAgentProfile(state, agentId, project?.id || null);
+    turn.routing = await createRoutingSession({ config, agent: activeAgentProfile, text: latestUserMessage, messages: chat.messages || [], attachments: chat.messages?.at(-1)?.attachments || [], home, signal, createReply,
+      onDecision: decision => {
+        sseEmitter?.('execution_event', { kind: 'pipeline', id: `model-routing:${decision.escalations}`, name: '智能选模', module: 'compute', status: 'completed', output: routingLabel(decision), metadata: decision });
+      } });
+    if (turn.routing.current.mode === 'smart') {
+      const selected = turn.routing.connection();
+      Object.assign(config, selected);
+      Object.assign(modelOverrides, { model: selected.model, verifier: selected.model, apiKey: selected.apiKey, baseUrl: selected.baseUrl });
+      Object.assign(contextBudget, resolveContextBudget(env, { config: selected }));
+    }
     const agentConnectors = filterConnectorsForAgent(connectors, activeAgentProfile);
     const agentScopedSkills = filterSkillsForAgent(skills, activeAgentProfile);
     // Phase 3.2.2 — rule-based pre-filter. Shrinks both the system prompt
@@ -150,20 +163,6 @@ export function createPrepareNode(turn) {
       measureStage('intent.classify', () => classifyRequest(latestUserMessage, {
         config: { ...config, model: modelOverrides.model || activeAgentProfile.model || config.model },
         signal, contextMessages: chat.messages,
-        judge: _dependencies.judgeFast,
-        onDecision: decision => {
-          if (decision.model && decision.source !== 'cache') modelResponses.push({
-            requestedModel: decision.model, reportedModel: decision.reportedModel || '',
-            usage: decision.usage || null, transport: decision.transport || '', purpose: 'intent-judge',
-          });
-          sseEmitter?.('execution_event', {
-            kind: 'pipeline', id: 'judge:intent', name: '意图判断', module: 'compute', status: 'completed',
-            output: decision.source === 'model'
-              ? `${decision.model} · ${decision.latencyMs} ms`
-              : decision.source === 'cache' ? '复用近期相同判断，无新增模型请求' : '快速判断不可用，使用保守规则',
-            metadata: decision,
-          });
-        },
       })),
       isRemoteChannel
         ? Promise.resolve('')

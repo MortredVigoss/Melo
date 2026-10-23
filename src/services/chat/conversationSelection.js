@@ -15,8 +15,8 @@ export function validateConversationSelection(patch, state, config) {
       const profile = profileId ? (Object.hasOwn(config.llmProfiles || {}, profileId) ? config.llmProfiles[profileId] : null) : config;
       if (!profile) throw new Error('模型连接不存在，请重新选择。');
       const model = typeof choice.model === 'string' ? choice.model.trim() : '';
-      if (!model || model.length > 180 || /[\x00-\x1f]/.test(model)) throw new Error('模型 ID 无效。');
-      result.modelSelection = {profileId, model, authMode:profile.authMode, baseUrl:profile.baseUrl};
+      if ((choice.mode !== 'smart' && !model) || model.length > 180 || /[\x00-\x1f]/.test(model)) throw new Error('模型 ID 无效。');
+      result.modelSelection = {profileId, model: choice.mode === 'smart' ? profile.model : model, ...(choice.mode === 'smart' ? {mode: 'smart'} : {}), authMode:profile.authMode, baseUrl:profile.baseUrl};
     }
   }
   if (Object.hasOwn(patch, 'projectId')) {
@@ -38,7 +38,7 @@ export function conversationConfig(config, choice) {
   const profile = choice.profileId ? (Object.hasOwn(config.llmProfiles || {}, choice.profileId) ? config.llmProfiles[choice.profileId] : null) : config;
   if (!profile) throw new Error('本对话的模型连接已被移除，请重新选择。');
   if (!choice.profileId && (profile.authMode !== choice.authMode || profile.baseUrl !== choice.baseUrl)) throw new Error('原默认连接已改变，请为本对话重新选择模型。');
-  return {...config, ...Object.fromEntries(['authMode','baseUrl','apiKey','apiProtocol'].map(k=>[k,profile[k] || (k==='apiProtocol'?'chat-completions':'')])), activeLlmProfileId:choice.profileId || '__conversation__', conversationModelSelected:true, model:choice.model};
+  return {...config, ...Object.fromEntries(['authMode','baseUrl','apiKey','apiProtocol'].map(k=>[k,profile[k] || (k==='apiProtocol'?'chat-completions':'')])), activeLlmProfileId:choice.profileId || (choice.mode === 'smart' ? config.activeLlmProfileId || '' : '__conversation__'), conversationModelSelected:true, conversationModelMode:choice.mode || 'fixed', model:choice.model};
 }
 
 export function selectedMaterials(state, chat) {

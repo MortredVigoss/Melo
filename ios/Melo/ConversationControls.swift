@@ -55,7 +55,10 @@ struct ConversationControls: View {
     @AppStorage("modelName") private var defaultAPI = ""
     @AppStorage("modelAuthMode") private var defaultMode = "chatgpt"
     private var current: ConversationModel? { store.preferences.chatModels?[chatID] }
-    private var modelLabel: String { current?.model ?? store.agent(for: chatID).model.flatMap { $0.isEmpty ? nil : $0 } ?? (defaultMode == "chatgpt" ? defaultGPT : defaultAPI) }
+    private var modelLabel: String {
+        if (current?.mode == "smart" || (current == nil && PhoneRoutingPolicy.read().defaultMode == "smart")), store.agent(for: chatID).model?.isEmpty != false { return String(localized: "智能（自动）") }
+        if current?.mode == "smart", let pinned = store.agent(for: chatID).model, !pinned.isEmpty { return pinned }
+        return current?.model ?? store.agent(for: chatID).model.flatMap { $0.isEmpty ? nil : $0 } ?? (defaultMode == "chatgpt" ? defaultGPT : defaultAPI) }
     private var models: [String] { Array(Set(account.models.map(\.slug) + [defaultGPT, current?.connectionID == "chatgpt" ? current?.model ?? "" : ""])).filter { !$0.isEmpty }.sorted() }
     private var usesChatGPT: Bool { current.map { $0.connectionID == "chatgpt" } ?? (defaultMode == "chatgpt") }
     private var capability: String {
@@ -78,6 +81,11 @@ struct ConversationControls: View {
                     .sheet(isPresented: $team) { TeamSheet(chatID: chatID) }
                 Menu {
                     Button { store.selectModel(nil, chatID: chatID) } label: { Label("沿用Agent或系统默认", systemImage: current == nil ? "checkmark" : "gearshape") }
+                    Button {
+                        let id = current?.connectionID ?? (defaultMode == "chatgpt" ? "chatgpt" : connections.first(where: { $0.baseURL == UserDefaults.standard.string(forKey: "modelEndpoint") })?.id ?? "")
+                        var selection = current ?? ConversationModel(connectionID: id, model: usesChatGPT ? defaultGPT : defaultAPI)
+                        selection.mode = "smart"; store.selectModel(selection, chatID: chatID)
+                    } label: { Label("智能（自动）", systemImage: current?.mode == "smart" ? "checkmark" : "sparkles") }.disabled(store.agent(for: chatID).model?.isEmpty == false)
                     if account.signedIn {
                         Section("Codex（ChatGPT 账号）") {
                             ForEach(models, id: \.self) { model in Button { store.selectModel(.init(connectionID: "chatgpt", model: model), chatID: chatID) } label: { Label(model, systemImage: current?.connectionID == "chatgpt" && current?.model == model ? "checkmark" : "cpu") } }

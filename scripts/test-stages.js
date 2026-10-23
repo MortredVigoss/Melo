@@ -12,7 +12,6 @@ export function dailyStages(plan) {
   js('JS 回归',plan.files.filter(path=>!plan.preflightTests.includes(path)));
   if(plan.browsers) {
     node('设置浏览器验收',['scripts/verify-settings-design.mjs']);
-    node('加速设置浏览器验收',['scripts/verify-extra-fast.mjs']);
   }
   if(plan.swift)stages.push({label:'Swift 回归',command:'python3',args:['ios/scripts/test.py','--skip-js','--skip-renderer',...(plan.swiftSuites===null?[]:plan.swiftSuites.flatMap(name=>['--suite',name]))]});
   return stages;

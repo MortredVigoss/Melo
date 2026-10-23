@@ -174,10 +174,13 @@
         "desktop-ui/settingsEdit.*",
         "desktop-ui/modelPresentation.*",
         "desktop-ui/language*.*",
-        "desktop-ui/{llmConnections,extraFast,credentialChip}.js",
+        "desktop-ui/{llmConnections,smartRouting,credentialChip}.js",
+        "src/services/modelRouting/**",
+        "src/services/settings/smartRouting*",
         "ios/Melo/{ChatGPTAccount,CodexOAuth,CodexLoginView,OAuthLoopback,Keychain,LLMConnections,ModelSettingsSections,ConnectionProbe,SettingsView,InterfaceLanguage,LanguagePicker,RuntimeDiagnosticsView,DraftMerge,EditableSection,EditableDocument}.swift",
         "ios/Melo/LocalSettings*.swift",
         "ios/Melo/EditDraft*.swift",
+        "ios/Melo/SmartRouting*.swift",
         "ios/Melo/Localizable.xcstrings",
         "ios/Tests/{CodexOAuthTests,ConnectionProbeTests,EditDraftStorageTests,EditDraftTests,InterfaceLanguageTests}.swift"
       ],
@@ -186,7 +189,6 @@
       ],
       "testGroups": [
         "test:models",
-        "test:extra-fast",
         "test:settings-design"
       ],
       "notes": [

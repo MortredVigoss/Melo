@@ -177,6 +177,17 @@ export const syncSchema = {
             "null"
           ],
           "x-maxUtf16Length": 100
+        },
+        "mode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "fixed",
+            "smart",
+            null
+          ]
         }
       }
     },

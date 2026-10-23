@@ -25,19 +25,19 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                       config: JsonObject, searchCredential: suspend (JsonObject) -> String, phoneEnabled: Boolean, runId: String, chatId: String,
                       imageData: (Attachment) -> String, invokePhone: suspend (JsonObject) -> DeviceToolResult,
                       onPhase: (String) -> Unit, onScene: suspend (JsonObject) -> Unit = {}, previousScenes: List<JsonObject?> = emptyList(),
-                      onDelta: (String) -> Unit = onPhase, contextLedger: JsonObject = buildJsonObject {}, historyEnabled: Boolean = true, onContextLedger: suspend (JsonObject) -> Unit = {}): ModelReply = SharedCoreRuntime.open(context).use { runtime ->
-        ReplySession(runtime, connection, key, messages, instructions, config, searchCredential, phoneEnabled, runId, chatId, imageData, invokePhone, onPhase, onScene, previousScenes, onDelta, contextLedger, historyEnabled, onContextLedger).run()
+                      onDelta: (String) -> Unit = onPhase, contextLedger: JsonObject = buildJsonObject {}, historyEnabled: Boolean = true, onContextLedger: suspend (JsonObject) -> Unit = {}, routingConfig: SmartRoutingConfig? = null, onRoutedConnection: (Connection, String) -> Unit = { _, _ -> }): ModelReply = SharedCoreRuntime.open(context).use { runtime ->
+        ReplySession(runtime, connection, key, messages, instructions, config, searchCredential, phoneEnabled, runId, chatId, imageData, invokePhone, onPhase, onScene, previousScenes, onDelta, contextLedger, historyEnabled, onContextLedger, routingConfig, onRoutedConnection).run()
     }
 
     private inner class ReplySession(
         private val runtime: SharedCoreRuntime,
-        private val connection: Connection, private val key: String, private val messages: List<Message>, private val instructions: String,
+        private var connection: Connection, private var key: String, private val messages: List<Message>, private val instructions: String,
         private val config: JsonObject, private val searchCredential: suspend (JsonObject) -> String, private val phoneEnabled: Boolean,
         private val runId: String, private val chatId: String, private val imageData: (Attachment) -> String,
         private val invokePhone: suspend (JsonObject) -> DeviceToolResult, private val onPhase: (String) -> Unit,
         private val onScene: suspend (JsonObject) -> Unit, private val previousScenes: List<JsonObject?>,
         private val onDelta: (String) -> Unit, private val contextLedger: JsonObject, private val historyEnabled: Boolean,
-        private val onContextLedger: suspend (JsonObject) -> Unit,
+        private val onContextLedger: suspend (JsonObject) -> Unit, private val routingConfig: SmartRoutingConfig?, private val onRoutedConnection: (Connection, String) -> Unit,
     ) {
         private lateinit var journal: ChatJournal
         private lateinit var capturedConfig: JsonObject
@@ -52,6 +52,8 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
         private lateinit var search: SharedSearchAdapter
         private lateinit var requestedUrls: MutableSet<String>
         private var modelSequence = 0
+        private var routing: SmartRouting? = null
+        private var requestedUpgrade = false
         private var goalState: JsonObject? = null
         private var lastCandidate: DeviceTurn? = null
         val goal = messages.lastOrNull { it.role == "user" }?.content.orEmpty()
@@ -71,6 +73,11 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
         suspend fun run(): ModelReply {
         journal = ChatJournal.create(runtime, runId, chatId, messages.lastOrNull { it.role == "user" }?.content.orEmpty(), onScene)
         try {
+            val budget = SharedRunBudget.open(runtime, options = buildJsonObject { put("deadlineMs", 900_000) })
+            transport = DeviceAgentClient(debug, client.http)
+            routing = routingConfig?.let { SmartRouting(runtime, it, connection, messages) }
+            routing?.prepare(transport, budget) { id, output, status -> journal.event(id, "智能选模", output = output, status = status) }
+            routing?.let { connection = it.connection(); key = it.key(); onRoutedConnection(connection, key) }
             capturedConfig = runtime.value("config", buildJsonObject { put("config", config) }).jsonObject
             val hosted = if (connection.protocol == "responses") HostedSearchAdapter.capability(runtime, connection, key) else "unknown"
             plan = runtime.value("plan", buildJsonObject { put("request", buildJsonObject {
@@ -108,7 +115,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
             currentChainStart = history.indexOfLast { it.text("role") == "user" }
             search = SharedSearchAdapter(debug, client.http)
             requestedUrls = plan.strings("urls").toMutableSet()
-            return SharedCoreTurn.open(context, runId, chatId, names, rounds = 10, timeoutMs = 900_000, requiredTools = plan.strings("requiredTools"), toolDependencies = plan["toolDependencies"]?.jsonObject ?: buildJsonObject {}).use { turn ->
+            return SharedCoreTurn.open(context, runId, chatId, names + if (routing?.active == true) listOf("melo_escalate") else emptyList(), budget = budget, rounds = 10, timeoutMs = 900_000, requiredTools = plan.strings("requiredTools"), toolDependencies = plan["toolDependencies"]?.jsonObject ?: buildJsonObject {}).use { turn ->
                 execute(turn)
             }
         } catch (error: Throwable) {
@@ -185,7 +192,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
 
         private suspend fun execute(turn: SharedCoreTurn): ModelReply {
                 val nativeSearch = plan.text("route") == "hosted-search"
-                if (!nativeSearch && names.isEmpty()) {
+                if (!nativeSearch && names.isEmpty() && routing?.active != true) {
                     journal.event("model:reply", "模型回复", model = connection.model)
                     onPhase(if (plan.text("reason") == "execution-explanation") "正在核对上轮执行记录…" else "正在生成回复…")
                     currentChainStart = contextPolicy.fit(history, currentChainStart, taskInstructions, emptyList())
@@ -197,11 +204,21 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                     answer.publicSummary?.takeIf(String::isNotBlank)?.let { journal.event("model:reply:summary", "模型公开摘要", output = it, status = "completed", channel = "reasoning-summary") }
                     return finish(answer.text, answer.model, answer.outcome, answer.stopReason)
                 }
-                val specs = runtime.value("catalog", buildJsonObject { put("names", JsonArray(names.map { JsonPrimitive(it) })) }).jsonArray.map { it.jsonObject }
+                val specs = runtime.value("catalog", buildJsonObject { put("names", JsonArray(names.map { JsonPrimitive(it) })) }).jsonArray.map { it.jsonObject } + if (routing?.active == true) listOf(SmartRouting.control) else emptyList()
                 var succeeded = plan.text("route") == "hosted-search"
                 while (turn.active) {
                     currentCoroutineContext().ensureActive()
-                    val reply = next(turn, specs, nativeSearch)
+                    if (routing?.escalate(turn.rounds, turn.failures, requestedUpgrade, !turn.active) == true) {
+                        val previousProtocol = connection.protocol
+                        val nextConnection = routing!!.connection()
+                        if (nextConnection.protocol != previousProtocol) history = RoutingTranscript.convert(history, previousProtocol, nextConnection.protocol).toMutableList()
+                        connection = nextConnection; key = routing!!.key(); onRoutedConnection(connection, key)
+                        contextPolicy = ChatContext(runtime, connection.contextTokens)
+                        turn.event("reroute")
+                        journal.event("model-routing:1", "智能升档", model = connection.model, status = "completed")
+                    }
+                    requestedUpgrade = false
+                    val reply = next(turn, specs, nativeSearch && connection.protocol == "responses")
                     if (nativeSearch) observeHosted(reply)
                     if (reply.calls.isEmpty()) {
                         if (!checkCandidate(turn, reply)) continue
@@ -219,7 +236,13 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                         journal.event(call.id, call.name, module = module, operation = true, input = call.arguments.toString())
                         onPhase(when (call.name) { "phone_use" -> "正在执行请求的手机任务…"; "fetch_url" -> "正在核对来源网页…"; "read_history" -> "正在回读本对话原文…"; else -> "正在搜索公开来源…" })
                         var executed = false
-                        val result = if (phoneFailure != null) DeviceToolResult.error("Previous phone action failed; remaining sibling action was not executed.", "PRIOR_ACTION_FAILED") else if (!turn.permits(call.id)) DeviceToolResult.error("本步未执行：${turn.rejection(call.id)}；请先完成前置检索。", turn.rejection(call.id)) else turn.budget.effect {
+                        val result = if (phoneFailure != null) DeviceToolResult.error("Previous phone action failed; remaining sibling action was not executed.", "PRIOR_ACTION_FAILED") else if (!turn.permits(call.id)) DeviceToolResult.error("本步未执行：${turn.rejection(call.id)}；请先完成前置检索。", turn.rejection(call.id)) else if (routing?.active == true && routing!!.decision.text("tier") != "strong" && runtime.value("toolEffect", buildJsonObject { put("name", call.name); put("arguments", call.arguments) }).jsonPrimitive.content in setOf("write", "unknown")) {
+                            routing!!.sideEffects = true; requestedUpgrade = true
+                            DeviceToolResult.error("本步尚未执行，需要强档模型；请保留已有结果，等待升档或配置强档。", "ROUTING_REQUIRES_STRONG")
+                        } else if (call.name == "melo_escalate" && routing?.active == true) {
+                            requestedUpgrade = true
+                            DeviceToolResult(buildJsonObject { put("ok", true); put("status", "requested"); put("summary", "Continue from existing results; do not repeat completed actions.") })
+                        } else turn.budget.effect {
                             executed = true
                             runtime.value("validateTool", buildJsonObject { put("name", call.name); put("arguments", call.arguments) })
                             when (call.name) {

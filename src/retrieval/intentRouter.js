@@ -1,6 +1,3 @@
-import { createOpenAICompatibleReply } from '../openai.js';
-import { judgeFast } from '../judge/fastJudge.js';
-import { debugWarn } from '../debug.js';
 import { isTranslationRequest } from './requestPolicy.js';
 import { AGENT_LOOP_CONTRACT, contractRegExp } from '../runtime/agentLoopContract.js';
 
@@ -10,7 +7,6 @@ import { AGENT_LOOP_CONTRACT, contractRegExp } from '../runtime/agentLoopContrac
 // oldest *inserted* key, which in a query-repeat workload ends up evicting
 // still-hot entries.  See search audit B-1.
 const INTENT_CACHE = new Map();
-const INTENT_CACHE_MAX = 300;
 
 // Exported for unit tests.  These are generic — the intent cache just happens
 // to be the only current caller.
@@ -70,10 +66,9 @@ export async function classifyRequest(userMessage, options = {}) {
   return { taskType, riskLevel, requiresVerification: intentRequiresVerification({ taskType, riskLevel }) };
 }
 
-const FALLBACK_SYSTEM_PROMPT = INTENT.fallbackSystemPrompt;
 
 // Exported for the shared agent-loop contract fixtures (the iPhone ports this
-// rule step; null means "ambiguous — ask the classifier model").
+// rule step; null means "ambiguous — use the conservative local fallback").
 export function classifyByRules(query) {
   const text = String(query || '').trim();
   if (!text) {
@@ -122,64 +117,11 @@ export function classifyByRules(query) {
   return null;
 }
 
-export async function classifyIntent(userMessage, { config, signal, onDecision, judge = judgeFast } = {}) {
-  const text = String(userMessage || '').trim();
-  if (!text) {
-    return 'casual';
-  }
-
-  const ruleResult = classifyByRules(text);
-  if (ruleResult) {
-    return ruleResult;
-  }
-
-  if (config?.extraFast?.enabled === true) {
-    return await judge({ config, task: 'intent', systemPrompt: FALLBACK_SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: text }], fallback: 'factual', signal, onDecision });
-  }
-
-  // An OAuth classifier must use the configured, working model unless explicitly overridden.
-  const classifierModel = config?.activeLlmProfileId ? config.model : process.env.MELO_CLASSIFIER_MODEL ||
-    (config?.authMode === 'codex' ? (process.env.MELO_MODEL || config.model) : config?.model);
-  const cacheKey = JSON.stringify([config?.authMode, config?.baseUrl, classifierModel, text]);
-  const cached = lruGet(INTENT_CACHE, cacheKey);
-  if (cached !== undefined) {
-    return cached;
-  }
-
-  if (!config?.apiKey && config?.authMode !== 'codex' && config?.authMode !== 'local') {
-    return 'factual';
-  }
-
-  try {
-    const reply = await createOpenAICompatibleReply({
-      authMode: config.authMode,
-      apiProtocol: config.apiProtocol,
-      apiKey: config.apiKey,
-      baseUrl: config.baseUrl,
-      model: classifierModel,
-      systemPrompt: FALLBACK_SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: text }],
-      signal,
-      providerProfile: 'fast',
-      nativeWebSearchEnabled: false,
-    });
-
-    const normalized = String(reply || '')
-      .toLowerCase()
-      .trim()
-      .split(/\s+/)[0] || 'factual';
-    const allowed = INTENT.categories;
-    const intent = allowed.includes(normalized) ? normalized : 'factual';
-
-    lruSet(INTENT_CACHE, cacheKey, intent, INTENT_CACHE_MAX);
-
-    return intent;
-  } catch (error) {
-    if (signal?.aborted) throw signal.reason || error;
-    debugWarn('intent_router', `LLM classification failed (falling back to "factual"):`, error?.message || error);
-    return 'factual';
-  }
+// Intent remains a local context/verification label. Smart routing owns the only
+// optional classifier request, with the same turn budget and connection boundary.
+export async function classifyIntent(userMessage, { signal } = {}) {
+  signal?.throwIfAborted();
+  return classifyByRules(userMessage) || 'factual';
 }
 
 export function intentRequiresVerification(intent) {

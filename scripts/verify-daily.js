@@ -41,7 +41,7 @@ if(code.some(path=>!path.endsWith('.test.js'))||code.some(path=>!files.includes(
 }
 console.log(`日常回归：${plan.files.length}/${files.length} 个 JS 测试文件；${plan.base}；${plan.reason}`);
 for(const reason of plan.reasons||[])console.log(`  · ${reason}`);
-console.log(`浏览器：${plan.browsers?'设置 + 加速设置':'无'}；渲染：${plan.renderer?'是':'否'}；Swift：${plan.swift?(plan.swiftSuites===null?'全部':plan.swiftSuites.join(', ')):'无'}`);
+console.log(`浏览器：${plan.browsers?'设置':'无'}；渲染：${plan.renderer?'是':'否'}；Swift：${plan.swift?(plan.swiftSuites===null?'全部':plan.swiftSuites.join(', ')):'无'}`);
 if(preview) {
   console.log(JSON.stringify({...plan,excluded},null,2));
 } else {

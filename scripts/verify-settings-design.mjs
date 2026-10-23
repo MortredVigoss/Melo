@@ -85,6 +85,32 @@ try {
  await page.screenshot({path:join(dir,'voice-readonly.png')});
  assert.deepEqual(out.voice,{openOptionsDisabled:false,configLinkDisabled:false});
  await page.locator('[data-action=select-customize-item][data-id=openai-compatible]').click();const audio=page.locator('#connector-config-form');await audio.waitFor();assert.equal(await audio.locator('[name=authMode],[name=baseUrl],[name=model],[name=systemPrompt]').count(),0);await audio.locator('[data-action=form-settings-edit]').click();await audio.locator('[name=whisperBaseUrl]').fill(base+'/whisper');await audio.locator('[data-action=form-settings-save]').click();await audio.locator('[data-edit-status=saved]').waitFor();assert.equal((await bootstrap()).settings.config.llmConnections.activeId,'local');assert.deepEqual(errors,[]);
+ // Smart routing replaces the retired classifier journey inside this settings gate.
+ await go({activeView:'model'});
+ const smart=page.locator('[data-smart-routing]');await smart.waitFor();
+ assert.equal(await smart.locator('[name=defaultMode]').isDisabled(),true);
+ await smart.locator('[data-action=smart-routing-edit]').click();
+ await smart.locator('[name=defaultMode]').selectOption('smart');
+ await smart.locator('[data-action=smart-routing-save]').click();
+ await smart.locator('[data-edit-status=saved]').waitFor();
+ assert.equal((await bootstrap()).settings.config.smartRouting.defaultMode,'smart');
+ await page.reload();await page.locator('[data-smart-routing] [name=defaultMode]').waitFor();
+ assert.equal(await page.locator('[data-smart-routing] [name=defaultMode]').inputValue(),'smart');
+ assert.equal(await page.locator('[data-extra-fast]').count(),0);
+ const retired=await fetch(base+'/api/settings/extra-fast',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});assert.equal(retired.status,405);
+ await go({activeView:'chat',selectedChatId:'fixture-chat'});
+ await page.locator('[data-action=toggle-model-picker]').click();
+ const auto=page.locator('[data-action=pick-default-model][data-model-mode=smart]');await auto.waitFor();await auto.click();
+ await page.waitForFunction(()=>!document.querySelector('[data-action=toggle-model-picker]')?.disabled);
+ assert.equal((await bootstrap()).activeChat.modelSelection.mode,'smart');
+ await page.reload();await page.locator('[data-action=toggle-model-picker]').click();
+ const fixed=page.locator('[data-action=pick-default-model][data-model]:not([data-model=""])').first();
+ const fixedID=await fixed.getAttribute('data-model');await fixed.click();
+ await page.waitForFunction(()=>!document.querySelector('[data-action=toggle-model-picker]')?.disabled);
+ assert.equal((await bootstrap()).activeChat.modelSelection.model,fixedID);
+ assert.notEqual((await bootstrap()).activeChat.modelSelection.mode,'smart');
+ out.smartRouting={saved:true,reloaded:true,retiredAPI:retired.status,fixedAndSmartPicker:true};
+ assert.deepEqual(errors,[]);
  out.errors=errors;await writeFile(join(dir,'findings.json'),JSON.stringify(out,null,2));console.log(JSON.stringify(out,null,2));
 }catch(e){console.error(e.stack);if(browser){const pages=browser.contexts().flatMap(c=>c.pages());await pages[0]?.screenshot({path:join(dir,'failure.png')});}process.exitCode=1;}
 finally{await browser?.close();child.kill('SIGTERM');await closed;await writeFile(join(dir,'server.log'),logs);}

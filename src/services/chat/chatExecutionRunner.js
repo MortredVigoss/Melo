@@ -5,7 +5,7 @@ import { selectedMaterials } from './conversationSelection.js';
 import { observeModelReplies } from './executionPipeline.js';
 import { createRequestContext } from '../../runtime/requestContext.js';
 import { currentRequestContext, requestEnvironment, runWithRequestContext } from '../../runtime/requestScope.js';
-import { armBudget, recordUsage, receiptInputTokens, requestTimeoutMs, remainingMs } from '../../runtime/runBudget.js';
+import { armBudget, budgetExhausted, recordUsage, receiptInputTokens, requestTimeoutMs, remainingMs } from '../../runtime/runBudget.js';
 import { AGENT_LOOP_CONTRACT } from '../../runtime/agentLoopContract.js';
 import { estimateMessagesTokens, estimateTextTokens } from '../../memory/tokenEstimate.js';
 // Chat agent execution graph runner — sub-phase 7d-5δ commit 7b of the
@@ -87,6 +87,11 @@ export async function runChatAgentExecutionGraph({
   const turnTimeoutMs = Math.max(1, Math.ceil(Math.min(requestedTimeout, budget ? remainingMs(budget) : requestedTimeout)));
   signal = AbortSignal.any([signal, AbortSignal.timeout(turnTimeoutMs)].filter(Boolean));
   const createReply = async options => {
+    if (options.purpose === 'routing-judge') {
+      options.signal?.throwIfAborted();
+      const exhausted = budgetExhausted(budget);
+      if (exhausted) throw Object.assign(new Error('Routing judgment exceeds the remaining turn budget.'), { code: 'BUDGET_EXHAUSTED' });
+    }
     const endFirstToken = typeof options.onDelta === 'function' ? startStage('model.first_token') : null;
     let accounted = false;
     // Measured usage when the provider reports it, estimated otherwise —
@@ -105,9 +110,12 @@ export async function runChatAgentExecutionGraph({
           if (args[0]?.delta || args[0]?.text) endFirstToken();
           return options.onDelta(...args);
         } : options.onDelta,
-        onProviderResponse: receipt => { modelResponses.push(receipt); account(receipt); options.onProviderResponse?.(receipt); },
+        onProviderResponse: receipt => { modelResponses.push({ ...receipt, ...(options.purpose ? { purpose: options.purpose } : {}), ...(options.routing ? { routing: options.routing } : {}) }); account(receipt); options.onProviderResponse?.(receipt); },
       }));
-    } finally { account(null); }
+    } finally {
+      if (!accounted && options.purpose === 'routing-judge') modelResponses.push({ requestedModel: options.model, reportedModel: '', purpose: options.purpose, usage: null, failed: true });
+      account(null);
+    }
   };
   const embedQuery = _dependencies.getEmbedding || getEmbedding;
   const contextBudget = resolveContextBudget(env, { config });

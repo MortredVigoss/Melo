@@ -52,7 +52,9 @@ function defaultBudgetFor(config) {
 export function resolveContextBudget(env = {}, { config = null } = {}) {
   const bounded = (value, fallback, min, max) => Number.isFinite(Number(value)) && Number(value) >= min
     ? Math.min(max, Math.floor(Number(value))) : fallback;
-  const totalTokens = bounded(env.MELO_CONTEXT_BUDGET_TOKENS, defaultBudgetFor(config), MIN_BUDGET_TOKENS, MAX_BUDGET_TOKENS);
+  const configured = bounded(env.MELO_CONTEXT_BUDGET_TOKENS, defaultBudgetFor(config), MIN_BUDGET_TOKENS, MAX_BUDGET_TOKENS);
+  const modelWindow = Number(config?.routingContextWindow);
+  const totalTokens = modelWindow >= 4096 ? Math.min(configured, modelWindow) : configured;
   const outputReserve = Math.floor(Math.min(totalTokens / 3, bounded(env.MELO_OUTPUT_RESERVE_TOKENS, 8000, 512, 32000)));
   const inputLimit = totalTokens - outputReserve;
   const nearWindowCap = bounded(env.MELO_HISTORY_WINDOW_TOKENS, DEFAULT_NEAR_WINDOW_TOKENS, 2048, MAX_BUDGET_TOKENS);

@@ -149,6 +149,7 @@ struct ConversationModel: Codable, Equatable {
     var contextWindow: Int?
     var syncConnectionID: String?
     var authMode: String?
+    var mode: String? = nil
 }
 struct ReplyPersona: Codable, Equatable {
     var agentID: String

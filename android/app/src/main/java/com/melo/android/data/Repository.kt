@@ -53,10 +53,11 @@ class Repository(private val context: Context) {
         put("agentId", chat.agentId); put("projectId", chat.projectId?.jp() ?: JsonNull)
         val connection = data.settings.connections.find { it.id == (chat.connectionId ?: data.settings.activeConnection) }
         if (connection != null && connection.protocol in setOf("chat-completions", "anthropic")) put("model", buildJsonObject {
-            put("connectionID", connection.id); put("name", connection.name); put("model", connection.model)
+            chat.modelMode?.let { put("mode", it) }
+            put("connectionID", connection.id); put("name", connection.name); put("model", chat.model ?: connection.model)
             put("baseURL", com.melo.android.network.EndpointPolicy.validate(connection.endpoint, com.melo.android.BuildConfig.DEBUG).newBuilder().query(null).build().toString())
             put("authMode", "api-key"); put("apiProtocol", connection.protocol)
-        }) else put("model", JsonNull)
+        }) else put("model", chat.portableModel ?: JsonNull)
     })
     suspend fun editChat(id: String, transform: (Conversation) -> Conversation) = change { current ->
         val original = current.chats.first { it.id == id }
@@ -180,7 +181,13 @@ class Repository(private val context: Context) {
                 "project" -> { val row = MeloJson.decodeFromJsonElement<Project>(JsonObject(value + ("id" to record.id.jp()))); state = state.copy(projects = state.projects.filterNot { it.id == row.id } + row) }
                 "knowledge" -> { if (record.id.startsWith("pld_")) return@forEach; val row = MeloJson.decodeFromJsonElement<Knowledge>(JsonObject(value + ("id" to record.id.jp()))); state = state.copy(knowledge = state.knowledge.filterNot { it.id == row.id } + row) }
                 "memory" -> { val row = MeloJson.decodeFromJsonElement<MemoryFact>(value); if (state.chats.any { it.id == row.chatId }) state = state.copy(memories = state.memories.filterNot { it.id == row.id } + row) }
-                "conversation" -> state = state.copy(chats = state.chats.map { if (it.id == record.id) it.copy(agentId = value.text("agentId", "main"), projectId = value.text("projectId").ifBlank { null }) else it })
+                "conversation" -> state = state.copy(chats = state.chats.map { if (it.id == record.id) it.copy(agentId = value.text("agentId", "main"), projectId = value.text("projectId").ifBlank { null }).let { chat ->
+                    val selection = value["model"] as? JsonObject
+                    if(selection == null) chat.copy(modelMode = null, model = null, portableModel = null) else {
+                        val connection = state.settings.connections.find { c -> c.endpoint.trimEnd('/') == selection.text("baseURL").trimEnd('/') && c.protocol == selection.text("apiProtocol") }
+                        chat.copy(connectionId = connection?.id, modelMode = selection.text("mode").ifBlank { "fixed" }, model = selection.text("model"), portableModel = selection)
+                    }
+                } else it })
                 "message" -> {
                     val scene = value["scene"]?.takeIf { it != JsonNull }?.jsonObject ?: return@forEach
                     val chat = state.chats.find { it.id == value.text("chatId") } ?: return@forEach

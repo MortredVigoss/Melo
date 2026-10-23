@@ -55,6 +55,7 @@ struct AgentLoopRequest: @unchecked Sendable {
     /// Seconds left for this request: min(transport cap, run budget remaining).
     let timeout: TimeInterval
     var remainingTokens: Int? = nil
+    var outputLimit: Int? = nil
     var goalReview: [String: Any]? = nil
     var repairing = false
 }
@@ -110,6 +111,7 @@ struct AgentLoopOutcome {
 
 /// Observers; all run on the main actor.
 struct AgentLoopHooks {
+    var routing: PhoneRoutingHost? = nil
     var onStatus: (@MainActor (String) -> Void)? = nil
     var onStage: (@MainActor (_ id: String, _ name: String, _ status: String, _ output: String) -> Void)? = nil
     var onToolCall: (@MainActor (ExecutionToolCall) -> Void)? = nil
@@ -194,12 +196,13 @@ final class AgentLoop: @unchecked Sendable {
 
         var screenshots = 0
         var spentTokens = 0
-        let offered = Set((tools?.definitions ?? []).map(\.name))
-        let transport = self.transport
+        let offered = Set((tools?.definitions ?? []).map(\.name) + (hooks.routing == nil ? [] : ["melo_escalate"]))
+        var transport = self.transport
         if let exhausted = budget.exhausted() {
             let text = await exhaustedStop(exhausted)
             return AgentLoopOutcome(text: text, stop: .budget, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: 0)
         }
+        if let routing = hooks.routing { transport = try await routing.prepare(budget: budget, stage: hooks.onStage) }
         let core = try PhoneCoreTurn(tools: Array(offered), rounds: maxIterations, callsPerRound: maxCallsPerResponse)
         let goal = try PhoneGoalState(latestUserMessage, history: goalHistory.map { ["role": $0.role, "content": $0.content] })
         goalState = goal
@@ -219,6 +222,10 @@ final class AgentLoop: @unchecked Sendable {
                 let text = await exhaustedStop(exhausted)
                 return AgentLoopOutcome(text: candidateRound?.text ?? text, stop: .budget, finalRound: candidateRound, sources: sources, searched: searched, calls: records, iterations: iteration)
             }
+            if !goal.checking, let routing = hooks.routing, let next = try await routing.upgrade(rounds: iteration, failures: core.failures, stopped: !core.active, stage: hooks.onStage) {
+                transport = next
+                try core.event("reroute")
+            }
             if try !core.event("request") {
                 lastEvidence = evidence
                 return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration)
@@ -228,9 +235,10 @@ final class AgentLoop: @unchecked Sendable {
             var condensed = false
             while true {
                 let review = checkingGoal ? try goal.update("request", ["observations": completionObservations]) : nil
-                let request = AgentLoopRequest(iteration: iteration, transcript: transcript, timeout: budget.requestTimeout(cap: transport.timeoutCap), remainingTokens: PhoneMemberLimits.current.map { max(0, $0.tokens - spentTokens) }, goalReview: review, repairing: goal.repairing)
+                let request = AgentLoopRequest(iteration: iteration, transcript: transcript, timeout: budget.requestTimeout(cap: transport.timeoutCap), remainingTokens: PhoneMemberLimits.current.map { max(0, $0.tokens - spentTokens) }, goalReview: review, repairing: goal.repairing || hooks.routing?.session.escalated == true)
                 do {
-                    round = try await withDeadline { try await transport.round(request) }
+                    let roundTransport = transport
+                    round = try await withDeadline { try await roundTransport.round(request) }
                     break
                 } catch let error as RequestTooLarge where !checkingGoal {
                     // audit C-8 parity: condense older tool outputs once and retry; never on the first call.
@@ -282,7 +290,7 @@ final class AgentLoop: @unchecked Sendable {
                 }
             }
             searched = searched || round.searched
-            let calls = transport.offersTools && tools != nil ? round.calls : []
+            let calls = transport.offersTools && (tools != nil || hooks.routing != nil) ? round.calls : []
             if calls.isEmpty {
                 candidateRound = round
                 try goal.update("candidate", ["observations": completionObservations, "candidate": ["reply": round.text, "tools": Array(offered) + (nativeSearchAvailable ? ["native_web_search"] : []), "research": ChatGPTRequest.requiresSearch(latestUserMessage), "roundsLeft": maxIterations - iteration - 1]])
@@ -312,6 +320,12 @@ final class AgentLoop: @unchecked Sendable {
                 } else if !core.permits(call.callID) {
                     let rejected = core.rejection(call.callID)
                     outcome = PhoneToolEnvelope.finalize(ok: false, error: rejected.code, output: rejected.code == "UNKNOWN_TOOL" ? contract.unknownToolOutput : rejected.output)
+                } else if let routing = hooks.routing, routing.session.decision["tier"] as? String != "strong", ["write", "unknown"].contains(PhoneCoreTurn.effect(call.name, arguments: call.arguments)) {
+                    routing.sideEffects = true; routing.requested = true
+                    outcome = PhoneToolEnvelope.finalize(ok: false, error: "ROUTING_REQUIRES_STRONG", output: "This action has not executed. A configured strong tier is required. Continue from existing results after routing, or ask the user to configure the strong tier.")
+                } else if call.name == "melo_escalate", let routing = hooks.routing {
+                    routing.requested = true
+                    outcome = PhoneToolEnvelope.finalize(ok: true, output: "Routing request recorded. Continue from existing results; do not repeat successful effects.")
                 } else if call.name == WebPageToolSpec.screenshot, screenshots >= WebPageText.maxScreenshotsPerReply {
                     outcome = PhoneToolEnvelope.parse(WebPageText.tooManyScreenshots(url: call.urlArgument))
                 } else if let exhausted = budget.admitTool() {
@@ -405,7 +419,7 @@ final class AgentLoop: @unchecked Sendable {
         outcome.text = parsed.cleanReply
         guard parsed.hasMarker else { return }
         var classification = verification.classification
-        let transport = self.transport
+        let transport = hooks.routing?.currentTransport ?? self.transport
         if classification.taskType == nil && classification.riskLevel != "high" {
             // Ambiguous wording: the desktop asks the classifier model; the phone asks only when it matters.
             guard budget.exhausted() == nil else { return }

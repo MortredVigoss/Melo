@@ -143,6 +143,7 @@ final class PhoneCoreTurn {
     }
     private var state: [String: Any]
     private static func clock() -> Double { ProcessInfo.processInfo.systemUptime * 1000 }
+    var failures: Int { state["errors"] as? Int ?? 0 }
     var completed: Bool { state["status"] as? String == "completed" }
     var active: Bool { state["status"] as? String == "running" }
     var reason: String { state["reason"] as? String ?? "LOOP_STOPPED" }

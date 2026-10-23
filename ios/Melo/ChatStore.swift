@@ -323,13 +323,13 @@ import SwiftUI
         var endpoint = UserDefaults.standard.string(forKey: "modelEndpoint") ?? ""
         var model = UserDefaults.standard.string(forKey: "modelName") ?? ""
         var contextCapacity = choice?.contextWindow ?? (UserDefaults.standard.object(forKey: "modelContextWindow") as? Int)
-        if choice == nil && !roleModel.isEmpty { model = roleModel }
+        if (choice == nil || choice?.mode == "smart") && !roleModel.isEmpty { model = roleModel }
         var key = Secrets.read("modelKey")
         var apiProtocol = UserDefaults.standard.string(forKey: "modelProtocol") ?? "chat-completions"
         if let choice, !useChatGPT, !(plan.makesImage && plan.connectionID?.isEmpty == false) {
             do {
                 guard let connection = LLMConnection.resolve(choice, in: try loadConnections()) else { throw MeloError.message("本对话选择的模型连接尚未在此设备配置，请连接对应平台或重新选择。") }
-                endpoint = try connection.endpoint(); model = choice.model; key = connection.key; apiProtocol = connection.apiProtocol
+                endpoint = try connection.endpoint(); model = choice.mode == "smart" && !roleModel.isEmpty ? roleModel : choice.model; key = connection.key; apiProtocol = connection.apiProtocol
                 contextCapacity = connection.contextWindows?[model] ?? choice.contextWindow
             } catch { fail(error.localizedDescription); return }
         }
@@ -343,7 +343,7 @@ import SwiftUI
         }
         let defaultCodexModel = UserDefaults.standard.string(forKey: "chatgptModel") ?? ""
         let explicitCodexImage = plan.makesImage && plan.connectionID == "chatgpt"
-        let chatGPTModel = explicitCodexImage && choice?.connectionID != "chatgpt" ? defaultCodexModel : choice?.model ?? (roleModel.isEmpty ? defaultCodexModel : roleModel)
+        let chatGPTModel = explicitCodexImage && choice?.connectionID != "chatgpt" ? defaultCodexModel : (choice?.mode == "smart" && !roleModel.isEmpty ? roleModel : choice?.model) ?? (roleModel.isEmpty ? defaultCodexModel : roleModel)
         let resolvedContext = ConversationContext.resolve(agent: selectedAgent, project: project(for: chatID), notes: knowledge(for: chatID), query: clean)
         // Stable prefix (instructions) vs. per-question material (turnParts, joined to the newest
         // user message at send time) — see PhoneTurnContext.
@@ -573,15 +573,21 @@ import SwiftUI
                 // The same phone tools (device data + web pages) on every connection.
                 let phoneTools = plan.makesImage ? nil : deviceToolContext(runID: record.runId, binding: elevationBinding(runID: record.runId, agent: selectedAgent, parent: nil, chatID: chatID, ownSnapshot: leadSnapshot, parentSnapshot: nil, budget: runBudget),
                                                                            surfaceAtStart: surfaceAtStart, chatID: chatID, screenshots: screenshots, readHistory: selectedAgent.contextSources?["memory"].bool != false)
+                var routedHooks = loopHooks
+                if !plan.makesImage && teamPlan == nil && replyLoader == nil {
+                    routedHooks.routing = try smartRoutingHost(choice: choice, agent: selectedAgent, messages: modelHistory, history: history, instructions: instructions, images: modelImages, phoneTools: phoneTools, chatID: chatID, runID: record.runId, allowWeb: phonePermissions.allows(selectedAgent.id, .network), allowImages: phonePermissions.allows(selectedAgent.id, .generateMedia), onObservation: { observation in self.observe(observation, runID: record.runId) }, onSelection: { model in
+                        if let index = self.executionRecords.firstIndex(where: { $0.runId == record.runId }), !self.executionRecords[index].terminal { self.executionRecords[index].requestedModel = model }
+                    })
+                }
                 if plan.separately == true && plan.references.count > 1 { reply = try await editEachPhoto(plan, prompt: clean, history: modelHistory, instructions: instructions, runID: record.runId, useChatGPT: useChatGPT, codexModel: chatGPTModel, endpoint: endpoint, key: key) }
                 else if let teamPlan { reply = try await runTeam(teamPlan, task: clean, lead: selectedAgent, runID: record.runId, permissions: phonePermissions, budget: teamBudget, agents: teamAgents, context: resolvedContext, memory: memoryText, background: AgentTeam.background(messages: modelHistory, compact: ""), compact: compactSummary, ask: ask) }
                 else if let replyLoader { reply = try await replyLoader(modelHistory, instructions) }
-                else if useChatGPT { reply = try await account.reply(messages: modelHistory, requestHistory: history, model: chatGPTModel, instructions: instructions, imageInputs: modelImages, imageTask: plan, deviceTools: phoneTools, allowWebSearch: phonePermissions.allows(selectedAgent.id, .network), allowImageTool: phonePermissions.allows(selectedAgent.id, .generateMedia), statusKey: chatID, cacheKey: ChatGPTRequest.cacheKey(chatID: chatID, agentID: selectedAgent.id), budget: runBudget, verification: verification, hooks: loopHooks, onObservation: { observation in self.observe(observation, runID: record.runId) }, onReceiving: { replyBackground.update(runID: record.runId, completed: 1, subtitle: "正在接收回答") }) }
+                else if useChatGPT { reply = try await account.reply(messages: modelHistory, requestHistory: history, model: chatGPTModel, instructions: instructions, imageInputs: modelImages, imageTask: plan, deviceTools: phoneTools, allowWebSearch: phonePermissions.allows(selectedAgent.id, .network), allowImageTool: phonePermissions.allows(selectedAgent.id, .generateMedia), statusKey: chatID, cacheKey: ChatGPTRequest.cacheKey(chatID: chatID, agentID: selectedAgent.id), budget: runBudget, verification: verification, hooks: routedHooks, onObservation: { observation in self.observe(observation, runID: record.runId) }, onReceiving: { replyBackground.update(runID: record.runId, completed: 1, subtitle: "正在接收回答") }) }
                 else if plan.makesImage {
                     reply = try await ImageNetwork.reply(prompt: clean, task: plan, inputs: imageInputs, endpoint: endpoint, token: key, onObservation: { self.observe($0, runID: record.runId) })
                 } else {
                     defer { account.setReplyStatus(nil, for: chatID) }
-                    reply = try await Network.reply(messages: modelHistory, requestHistory: history, endpoint: endpoint, model: model, token: key, instructions: instructions, apiProtocol: apiProtocol, imageInputs: modelImages, tools: phoneTools?.toolSet, budget: runBudget, verification: verification, hooks: loopHooks, onObservation: { observation in self.observe(observation, runID: record.runId) }, onStatus: { status in self.account.setReplyStatus(status, for: chatID) })
+                    reply = try await Network.reply(messages: modelHistory, requestHistory: history, endpoint: endpoint, model: model, token: key, instructions: instructions, apiProtocol: apiProtocol, imageInputs: modelImages, tools: phoneTools?.toolSet, budget: runBudget, verification: verification, hooks: routedHooks, onObservation: { observation in self.observe(observation, runID: record.runId) }, onStatus: { status in self.account.setReplyStatus(status, for: chatID) })
                 }
                 try Task.checkCancellation()
                 replyBackground.update(runID: record.runId, completed: 2, subtitle: "正在保存完整回答")
@@ -617,7 +623,7 @@ import SwiftUI
                     if preferences.messageAgents == nil { preferences.messageAgents = [:] }
                     preferences.messageAgents?[message.id] = ReplyPersona(selectedAgent)
                     if preferences.messageModels == nil { preferences.messageModels = [:] }
-                    preferences.messageModels?[message.id] = [.init(requestedModel: record.requestedModel, reportedModel: executionRecords.first(where: { $0.runId == record.runId })?.returnedModel ?? "")]
+                    preferences.messageModels?[message.id] = [.init(requestedModel: executionRecords.first(where: { $0.runId == record.runId })?.requestedModel ?? record.requestedModel, reportedModel: executionRecords.first(where: { $0.runId == record.runId })?.returnedModel ?? "")]
                     if !reply.sources.isEmpty { if preferences.messageSources == nil { preferences.messageSources = [:] }; preferences.messageSources?[message.id] = reply.sources }
                     if reply.searched { if preferences.searchedMessages == nil { preferences.searchedMessages = [] }; preferences.searchedMessages?.insert(message.id) }
                 }

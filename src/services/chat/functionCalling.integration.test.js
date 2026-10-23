@@ -71,7 +71,7 @@ test('a real HTTP connectivity reply finishes as an answer with no tools or appr
   assert.equal(normalizedReply.completion.kind, 'answer');
   assert.equal(normalizedReply.completion.outcome, 'completed');
   assert.equal(normalizedReply.completion.summary, '回答已交付');
-  assert.equal(h.requests.length, 2, 'one intent classification and one answer; no verification retry');
+  assert.equal(h.requests.length, 1, 'one answer; retired intent classification makes no request and no verification retry');
   assert.equal(h.executions.length, 0);
   assert.equal(h.permissions.length, 0);
 });

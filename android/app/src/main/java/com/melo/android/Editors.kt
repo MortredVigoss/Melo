@@ -39,15 +39,23 @@ import com.melo.android.network.HostedSearchAdapter
     var agentId by remember { mutableStateOf(chat.agentId) }
     var projectId by remember { mutableStateOf(chat.projectId) }
     var connectionId by remember { mutableStateOf(chat.connectionId) }
+    var modelMode by remember { mutableStateOf(chat.modelMode) }
+    var model by remember { mutableStateOf(chat.model) }
     var pinned by remember { mutableStateOf(chat.pinned) }
     var phoneUse by remember { mutableStateOf(chat.phoneUseEnabled) }
-    EditorDialog("对话设置", close, save = { vm.engine.work { require(title.isNotBlank()) { "请输入对话名称。" }; vm.repository.editChat(chat.id) { it.copy(title = title.take(500), agentId = agentId, projectId = projectId, connectionId = connectionId, pinned = pinned, phoneUseEnabled = phoneUse) }; close() } }) {
+    EditorDialog("对话设置", close, save = { vm.engine.work { require(title.isNotBlank()) { "请输入对话名称。" }; vm.repository.editChat(chat.id) { it.copy(title = title.take(500), agentId = agentId, projectId = projectId, connectionId = connectionId, modelMode = modelMode, model = model, portableModel = null, pinned = pinned, phoneUseEnabled = phoneUse) }; close() } }) {
         Field("对话名称", title, { title = it })
         Text("角色"); data.agents.forEach { agent -> FilterChip(selected = agentId == agent.id, onClick = { agentId = agent.id }, label = { Text(agent.name) }) }
         Text("项目资料"); FilterChip(selected = projectId == null, onClick = { projectId = null }, label = { Text("不绑定项目") })
         data.projects.filterNot { it.archived }.forEach { project -> FilterChip(selected = projectId == project.id, onClick = { projectId = project.id }, label = { Text(project.name) }) }
-        Text("模型连接"); FilterChip(selected = connectionId == null, onClick = { connectionId = null }, label = { Text("使用全局选择") })
-        data.settings.connections.forEach { connection -> FilterChip(selected = connectionId == connection.id, onClick = { connectionId = connection.id }, label = { Text("${connection.name} · ${connection.model}") }) }
+        Text("模型连接"); FilterChip(selected = connectionId == null, onClick = { connectionId = null; modelMode = null; model = null }, label = { Text("使用全局选择") })
+        data.settings.connections.forEach { connection -> FilterChip(selected = connectionId == connection.id, onClick = { connectionId = connection.id; model = null }, label = { Text("${connection.name} · ${connection.model}") }) }
+        Text("回答模型")
+        FilterChip(enabled = data.agents.find { it.id == agentId }?.model.isNullOrBlank(), selected = modelMode == "smart", onClick = { modelMode = "smart"; model = null }, label = { Text("智能（自动）") })
+        data.settings.connections.find { it.id == (connectionId ?: data.settings.activeConnection) }?.let { c -> (c.models + c.model).filter(String::isNotBlank).distinct().forEach { id ->
+            FilterChip(selected = modelMode != "smart" && (model ?: c.model) == id, onClick = { modelMode = "fixed"; model = id }, label = { Text(id) })
+        } }
+        if (data.agents.find { it.id == agentId }?.model?.isNotBlank() == true) Text("智能模式下，Agent 指定的固定模型优先。")
         Row(verticalAlignment = Alignment.CenterVertically) { Text("置顶", Modifier.weight(1f)); Switch(pinned, { pinned = it }) }
         Row(verticalAlignment = Alignment.CenterVertically) { Text("允许调用手机", Modifier.weight(1f)); Switch(phoneUse, { phoneUse = it }, modifier = Modifier.testTag("chat-phone-use")) }
         Text("需要时可搜索手机 App 或执行你的指令；需先开启系统辅助功能。", color = MeloMuted)
@@ -171,6 +179,7 @@ import com.melo.android.network.HostedSearchAdapter
     val import = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { vm.engine.work { vm.repository.importFrom(it); tested = "资料已合并导入。" } } }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp).testTag("settings-list"), contentPadding = PaddingValues(bottom = 30.dp)) {
         item { Row { TextButton(onClick = onPhoneSettings) { Text("手机控制设置与诊断") }; TextButton(onClick = onPetSettings, modifier = Modifier.testTag("open-pet-settings")) { Text("桌宠") } } }
+        item { SmartRoutingSettings(data, vm) }
         item { SectionLabel("模型连接"); Text("凭证仅在这台设备加密保存，不进入资料同步或导出。", color = MeloMuted) }
         items(data.settings.connections, key = { it.id }) { connection ->
             val credentialStatus by produceState("正在检查本机凭证…", connection.id, editing) {
@@ -249,13 +258,15 @@ import com.melo.android.network.HostedSearchAdapter
         val hasCredential by produceState<Boolean?>(null, original.id) { value = runCatching { vm.repository.credential(original.id).isNotBlank() }.getOrDefault(false) }
         var probe by remember(original.id) { mutableStateOf<String?>(null) }; var probing by remember { mutableStateOf(false) }
         var searchProof by remember(original.id) { mutableStateOf(original.searchProof) }
+        var models by remember(original.id) { mutableStateOf(original.models.joinToString("\n")) }
         var contextTokens by remember(original.id) { mutableStateOf(original.contextTokens.toString()) }
         EditorDialog("模型连接", { if (!probing) editing = null }, { vm.engine.work {
-            vm.repository.saveConnection(original.copy(name = name.take(200), endpoint = endpoint.trim(), model = model.trim(), protocol = protocol, stream = stream, searchProof = searchProof, contextTokens = contextTokens.toIntOrNull() ?: 0), key.takeIf(String::isNotBlank)); editing = null
+            vm.repository.saveConnection(original.copy(name = name.take(200), endpoint = endpoint.trim(), model = model.trim(), protocol = protocol, stream = stream, searchProof = searchProof, contextTokens = contextTokens.toIntOrNull() ?: 0, models = models.lines().map(String::trim).filter(String::isNotBlank).distinct()), key.takeIf(String::isNotBlank)); editing = null
         } }) {
             Field("连接名称", name, { name = it }); Field("完整模型 Endpoint", endpoint, { endpoint = it })
             Text("填写完整请求地址，例如 https://example.com/v1/chat/completions；不会自动补充路径。", color = MeloMuted)
             Field("模型名称", model, { model = it })
+            Field("此连接可用模型（每行一个，按服务商模型目录填写）", models, { models = it }, lines = 3)
             Field("模型上下文容量（tokens，4096–400000）", contextTokens, { contextTokens = it })
             Text("按服务商提供的模型容量填写；图片、工具与输出预留共同计入。", color = MeloMuted)
             Text("接口协议"); listOf("chat-completions", "responses", "anthropic").forEach { choice -> FilterChip(selected = protocol == choice, onClick = { protocol = choice }, label = { Text(choice) }) }

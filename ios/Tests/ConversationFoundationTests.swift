@@ -117,6 +117,13 @@ import Foundation
     try WorkspaceProjection.apply(receiptWire, preferences: &receivedReceipts, records: &receiptRecords, connections: [])
     assert(receivedReceipts.messageModels?["receipt-message"] == [receipt])
     let connections = [PortableConnection(id:"phone-api",name:"本机连接",baseURL:"https://example.com/v1",apiProtocol:"chat-completions")]
+    let smart = ConversationModel(connectionID: "phone-api", model: "opaque-id", mode: "smart")
+    let smartWire = try JSONDecoder().decode(SyncValue.self, from: JSONSerialization.data(withJSONObject: WorkspaceProjection.model(smart, connections: connections)))
+    let smartRestored = WorkspaceProjection.modelSelection(smartWire, connections: connections)
+    assert(smartRestored?.mode == "smart" && smartRestored?.model == "opaque-id" && smartRestored?.connectionID == "phone-api")
+    let storedSmart = try JSONDecoder().decode(ConversationModel.self, from: JSONEncoder().encode(smart))
+    assert(storedSmart.mode == "smart")
+
     try WorkspaceProjection.apply(wire,preferences:&imported,records:&records,connections:connections)
     assert(imported.chatModels?["chat"]?.connectionID == "phone-api")
     assert(imported.projects?.first?.archived == true)
