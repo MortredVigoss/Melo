@@ -1,6 +1,6 @@
 # Melo 总览：当前事实、功能索引与接手入口
 
-更新时间：2026-10-22（Australia/Sydney）。这是所有 Melo 工作线程共用的人工维护入口：顶部依次是当前事实、功能索引和最新交接；按日期的阶段过程（含日期、提交与当次验证数字）在 [总览历史交接](docs/handoffs/overview-history-20261019.md)。
+更新时间：2026-10-24（Australia/Melbourne）。这是所有 Melo 工作线程共用的人工维护入口：顶部依次是当前事实、功能索引和最新交接；按日期的阶段过程（含日期、提交与当次验证数字）在 [总览历史交接](docs/handoffs/overview-history-20261019.md)。
 
 ## 1. 先看这里
 
@@ -19,7 +19,7 @@
 | --- | --- | --- |
 | 项目与工作区 | 创建显式归属、执行器绑定能力、无项目聊天按需独立目录（A `33660c6` / B `b02438a`）；文件面板、每次删除询问文件去留与遗留文件管理 `7ae2292` | [架构加固](docs/arch-hardening-20261015.md)、[UI 功能对齐](docs/ui-function-alignment-20261016.md)；项目聚合模型与完整删除级联见[项目专项](docs/project-architecture-plan-20261015.md)；P1 提交回执已交付，桌面项目页已拆到 `desktop-ui/features/projects/`（P2a，[架构方案](docs/architecture-maintainability-plan-20261019.md)） |
 | Agent、技能与团队 | Agent 演进 P0–P4 已实现，6 Agent / 26 成果已迁移；审查修正 `4680530`；统一设置页 `dc67fa0`；团队与委派同一规则，手机本机可运行团队；10-20 能力临时提升 / 即时开启与新 Agent 只读起步、「基于已有 Agent」（桌面 + 手机，手机以本机权限为上限） | [实施与迁移](docs/agent-evolution-20261015.md)、[审查修正](docs/agent-review-fixes-20261015.md)、[设置](docs/agent-settings-20261016.md)、[协作](docs/agent-team-20261016.md)、[能力临时提升](docs/capability-elevation-20261020.md)；真实模型协作与真机单列 |
-| 聊天与 agent loop | 手机与桌面同一循环（prepare → invoke-model → finalize），公共循环/预算策略现由 `shared/agent/` 同源执行，配置契约为 `shared/protocol/agent-loop.json`；10-23 已接入共享 `goal.js`：原始目标/补充、无工具交付检查、最多两次有预算纠偏；取消普通首步必搜，成员回执贯通团队，见[综合实施与验收](docs/agent-harness-implementation-20261023.md)（任务与基准集成验收均通过）；七项双端对齐修复 `ee8eb3f` / `3ad091c` 已推送并装入双端；桌面聊天页 / 输入区 / 发送管线已拆到 `desktop-ui/features/chat/`（P2c） | [修复与 10-19 日常回执](docs/mobile-desktop-alignment.md)；10-20 完成状态误分类修正与 Claude B1/B2 复核见[专项](docs/completion-status-fix-20261020.md)；真实供应商与长后台另验 |
+| 聊天与 agent loop | 手机与桌面同一循环（prepare → invoke-model → finalize），公共循环/预算策略现由 `shared/agent/` 同源执行，配置契约为 `shared/protocol/agent-loop.json`；10-23 已接入共享 `goal.js`：原始目标/补充、无工具交付检查、最多两次有预算纠偏；取消普通首步必搜，成员回执贯通团队，见[综合实施与验收](docs/agent-harness-implementation-20261023.md)（任务与基准集成验收均通过）；10-24 已覆盖安装桌面与 iPhone 0.7.10（42），数据保留及实际使用检查见[安装回执](docs/dual-update-20261024.md)；七项双端对齐修复 `ee8eb3f` / `3ad091c` 已推送并装入双端；桌面聊天页 / 输入区 / 发送管线已拆到 `desktop-ui/features/chat/`（P2c） | [修复与 10-19 日常回执](docs/mobile-desktop-alignment.md)；10-20 完成状态误分类修正与 Claude B1/B2 复核见[专项](docs/completion-status-fix-20261020.md)；真实供应商与长后台另验 |
 | 记忆 | #2 并发写事务预约修复已通过 Mac/Linux 回归与完整日常；项目记忆本与个人档案已接入；项目来源手写记忆经独立可选通道（`/api/project-memory-sync` ↔ `/v1/project-memory`）同步；桌面记忆页 / 记忆本 / 回复页脚已拆到 `desktop-ui/features/memory/`（P2a） | [记忆架构](docs/memory-architecture.md)（以顶部现行约定为准）、[A7 回执](docs/mobile-desktop-alignment.md)；私人同步服务未部署新版 |
 | 知识资料与成果 | 本机分段索引（SQLite FTS + 本地 embedding），按对话/项目开关过滤；两端按问题切段检索，旧 8 份 / 24000 字前置限制已移除 | [Agent 演进 P2/P4](docs/agent-evolution-20261015.md)、[A3/A5 回执](docs/mobile-desktop-alignment.md) |
 | 设置、模型连接与账号 | 五语界面 `2cae1cd`；手机 Codex 设备码 OAuth `85ac3a5`、应用切换取消修复 `14e602f` | 用户真实授权尚未确认；同码恢复限同一进程；[五语](docs/interface-languages-20261015.md)、[模型连接](docs/llm-connections.md) |
@@ -361,3 +361,8 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 用户已授权综合来稿后直接实施。当前改动见 [实施方案](docs/agent-harness-implementation-20261023.md)：共享 `goal.js` 保留原目标/补充、无工具交付检查、最多两次纠偏；主聊天/成员/技能/iOS/Android 接入同一决策，保持原权限和预算。
 - 工具副作用分类、MCP 只读提示、取消固定首搜与回答丢弃；团队汇总保留成员回执。账号/原图/聊天无需迁移，其他线程两份方案文档保留。
 - 验证：桌面脚本模型真实 HTTP 与 iOS AgentLoop 的日历→场馆→天气通过；Android JVM/lint/两种构建、iOS 无签名构建通过；完整日常 4,544 项 JS / 37 组 Swift / 两组浏览器通过（`.tmp/test-runs/run-kaxHiz/report.json`）。`--base 3368d11` 集成同样通过（`.tmp/test-runs/run-slmyzX/report.json`）；本次本地阶段提交，证据归档 `.tmp/agent-harness-20261023/`。脚本模型不代表真实供应商语义准确率或真机验收。无 push、git pp 或安装。
+
+### 2026-10-24 · Codex · 目标闭环版双端覆盖安装与直接推送
+- 用户授权本机与原 iPhone 覆盖安装，以及直接 git push；源码 `1f0e57d`，桌面已覆盖，iPhone 0.7.9（41）→0.7.10（42），签名身份与数据目录不变，无卸载/清空/git pp，其他线程两份未提交方案指纹未变。
+- 完整备份与安装前后回读通过：桌面原 20 聊天/722 消息、6 Agent/1 项目/26 成果和账号配置保留；手机原 16 聊天/161 消息、6 Agent/3 个账号偏好/24 张原图一致。系统启动快照和缓存差异单独列明，不混作业务数据。
+- 完整发布 gate 全绿（4,549 JS、37 Swift、两组浏览器、Android 检查及桌面打包/安装/原生启动/生命周期/服务冒烟）；iOS Release 签名、安装、启动通过。桌面真实回复与旧图预览由 Codex 操作验证，手机三项实测由用户确认“没问题”。[安装回执](docs/dual-update-20261024.md)与 `.tmp/dual-update-20261024/` 留有证据。真实日历闭环与长期后台另验，当前手机个人签名到期 10-28 20:52（Melbourne）。
