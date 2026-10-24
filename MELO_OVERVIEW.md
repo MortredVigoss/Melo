@@ -61,6 +61,12 @@
 
 ## 4. 最新交接
 
+### 2026-10-24 — Melo 主线（Claude）— 日常回归分两档，门禁加机器守卫与紧凑摘要
+- 线程 ID：e02f4818；状态：已提交（`ccdcb04`），分支 `claude/test-cost-20261024`，待合入 master。
+- 行为：`npm test -- --files` 旧=碰到公共文件即全部 4500 个 → 新=快速档（所属功能组 + 反向依赖闭包 + 从测试源码检测出的真实服务测试）；`--base` / 无参 / `--all` / `--files --full` = 集成档（10-20 旧规则不变，合并前跑一次）；地图过期在预检直接失败而不是跑全量；同机单运行器锁与负载等待；JS 阶段全部超时类失败时一次串行隔离复测并记入 summary.json，真实失败不重试。文件 / 接口：scripts/test-plan.js、test-impact.js、verify-daily.js、test-stage-runner.js，新 test-tap-summary.js、test-run-guards.js；CI 仍走集成档。
+- 验证：门禁改动按规则扩大为完整日常：JS 4605 / 4604 过 / 1 跳过、设置浏览器验收、Swift 37 组，无复测；实测 stateStore.js 537→190、config.js 537→318、叶子改动两档相同；证据 `.tmp/test-cost-20261024/.tmp/test-runs/run-meD28k/summary.json`。
+- 未完 / 下一步：A 的"测试 ↔ 覆盖模块"映射版与 D（浏览器测试共享夹具）未做；Codex / Claude 按 docs/testing-workflow.md「两档节奏」执行；合入 master 后其他 worktree 才拿到新运行器。
+
 ### 2026-10-23 — melo主线：目标保持、工具续跑与完成判断审计（仅方案）
 - 基准 `da86326`，用户要求先审计三个问题。原始用户消息有保存；多轮工具调用存在；无调用文字会结束循环，后置完成回执不负责继续补做。日历只读工具还会误入操作完成分类。
 - 实际入口：共享 `turn.js` / `completion.js`、桌面 `invokeModelNode` / `finalizeNode`、subAgent / skillExecutor、iOS AgentLoop / 两种传输、Android SharedChatAgent；[完整证据与方案](docs/agent-goal-completion-audit-20261023.md)。模块记录与当前线程登记已同步，产品代码没有修改。
