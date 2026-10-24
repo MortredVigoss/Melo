@@ -23,8 +23,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 636,
-      "edges": 1979,
+      "modules": 639,
+      "edges": 1995,
       "roots": [
         "src",
         "desktop-ui",
@@ -552,7 +552,7 @@
       "dependsOn": {
         "approvals": 3,
         "channels": 3,
-        "chat": 18,
+        "chat": 21,
         "desktop-shell": 8,
         "memory": 11,
         "platform": 42,
@@ -823,6 +823,13 @@
           ]
         },
         {
+          "module": "shared/agent/retrieval/requestPolicy.js",
+          "importedBy": [
+            "agents",
+            "tools"
+          ]
+        },
+        {
           "module": "shared/agent/runtimeMessages.js",
           "importedBy": [
             "approvals",
@@ -1047,7 +1054,7 @@
         "voice": 3
       },
       "usedBy": {
-        "agents": 18,
+        "agents": 21,
         "approvals": 1,
         "channels": 9,
         "desktop-shell": 8,
@@ -1057,7 +1064,7 @@
         "projects": 1,
         "settings": 11,
         "sync": 4,
-        "tools": 15,
+        "tools": 16,
         "voice": 2
       },
       "httpRoutes": [
@@ -2537,7 +2544,7 @@
       "dependsOn": {
         "agents": 8,
         "approvals": 33,
-        "chat": 15,
+        "chat": 16,
         "desktop-shell": 7,
         "knowledge": 3,
         "media": 2,
@@ -3391,7 +3398,7 @@
         "agents": 3,
         "channels": 3,
         "chat": 1,
-        "desktop-shell": 7,
+        "desktop-shell": 8,
         "platform": 36,
         "projects": 4,
         "settings": 8,
@@ -3525,7 +3532,7 @@
         "assets/**"
       ],
       "modules": {
-        "desktop-ui": 24,
+        "desktop-ui": 27,
         "src": 2
       },
       "entryModules": [
@@ -3550,6 +3557,12 @@
             "memory",
             "projects",
             "tools"
+          ]
+        },
+        {
+          "module": "desktop-ui/format.js",
+          "importedBy": [
+            "approvals"
           ]
         },
         {
@@ -3609,7 +3622,7 @@
       },
       "usedBy": {
         "agents": 8,
-        "approvals": 7,
+        "approvals": 8,
         "chat": 15,
         "media": 5,
         "memory": 6,
@@ -3651,8 +3664,11 @@
         "desktop-ui/emerald.css",
         "desktop-ui/features/featureContext.js",
         "desktop-ui/features/registry.js",
+        "desktop-ui/feedback.js",
+        "desktop-ui/format.js",
         "desktop-ui/galaxyBackdrop.css",
         "desktop-ui/galaxyBackdrop.js",
+        "desktop-ui/html.js",
         "desktop-ui/i18n.js",
         "desktop-ui/index.html",
         "desktop-ui/launchScreen.css",

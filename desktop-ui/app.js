@@ -1,3 +1,5 @@
+import { escapeHtml } from './html.js';
+import { showFlashToast } from './feedback.js';
 import { LOCAL_SERVICE_DEFAULTS, customVoiceActive } from '/shared/localServices.js';
 import { renderSmartRouting, editSmartRouting, handleSmartRouting, smartRoutingDrag } from './smartRouting.js';
 import {handleManagementAction} from './managementActions.js';
@@ -423,14 +425,7 @@ const MODEL_SETUP_DEFAULTS = {
   },
 };
 
-function escapeHtml(value = '') {
-  return String(value)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
-}
+
 
 function truncate(value = '', max = 180) {
   return value.length > max ? `${value.slice(0, max - 1)}…` : value;
@@ -2002,16 +1997,7 @@ async function handleTranscribeAudio() {
  * persistent panel with copy/close affordances).  Auto-dismisses after
  * `ms` and only ever shows one at a time.
  */
-function showFlashToast(message, { ms = 2000 } = {}) {
-  const existing = document.querySelector('#flash-toast');
-  if (existing instanceof HTMLElement) existing.remove();
-  const toast = document.createElement('div');
-  toast.id = 'flash-toast';
-  toast.className = 'flash-toast';
-  toast.textContent = String(message ?? '');
-  document.body.appendChild(toast);
-  setTimeout(() => { if (toast.isConnected) toast.remove(); }, ms);
-}
+
 
 /**
  * Soft-delete undo toast.  Bottom-centre banner with a live "Xs"

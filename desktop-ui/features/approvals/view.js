@@ -1,9 +1,10 @@
+import { formatTime } from '../../format.js';
 // Capability elevation surfaces (2026-10-20): the prompt card a reply stream
 // raises (same look as the tool permission dialog) and the «临时授权» list
 // shown in Agent settings and Customize → Safety. The Chinese strings are the
 // shared contract's source texts (shared/protocol/agent-loop.json
 // capabilityElevation); the catalog translates them.
-import { t, ui, currentLanguage } from '../../i18n.js';
+import { t, ui } from '../../i18n.js';
 import { approvalsState } from './state.js';
 import { getBootstrap, escapeHtml, icon } from './context.js';
 import { ensureGrants } from './controller.js';
@@ -84,11 +85,7 @@ export function renderCapabilityPrompt(entry) {
   `;
 }
 
-function formatTime(ms) {
-  if (!Number.isFinite(ms)) return '';
-  try { return new Intl.DateTimeFormat(currentLanguage(), { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(ms)); }
-  catch { return new Date(ms).toLocaleString(); }
-}
+
 
 function grantScopeText(grant) {
   if (grant.scope === 'run') return grant.kind === 'enable-own' ? t('仅本次') : t('仅本次任务');

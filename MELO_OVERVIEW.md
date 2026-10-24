@@ -426,3 +426,6 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 
 ### 2026-10-24 · 审计执行层验收收尾（Codex）
 搜索规划与能力目录、共享意图、实际模型核验、工具后流式修正完成。完整 JS/Android/设置浏览器通过后，Swift 发现日期补充丢失任务，保留原断言补齐，日期专项及 37 Swift 套件全过。证据 .tmp/audit-followthrough-20261024/ios-complete.log、agent-daily-verified.log；后一日志保留首次 Swift 失败。配置与 UI 尚在后续阶段；不推送，不覆盖真实用户数据。
+
+### 2026-10-24 · UI 公共入口原样迁移（Codex）
+app 的 escapeHtml/showFlashToast 与授权页 formatTime 原样移至 html/feedback/format，调用不变。显式范围检查 run-gYnPbj：JS、设置浏览器、所选 Swift 均通过；后续才做反馈和格式语义统一。安装路径/行为配置是另批 WIP。
