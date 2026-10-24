@@ -440,7 +440,7 @@ app 的 escapeHtml/showFlashToast 与授权页 formatTime 原样移至 html/feed
 
 ### 2026-10-24 · 全仓审计补齐最终交接（Codex）
 
-- [逐项结案与验收](docs/audit-followthrough-20261024.md)、[运行配置](docs/runtime-configuration.md)已更新；执行层 e05e65f，UI 原样入口 2beeaa5，本阶段配置/路径/界面/手机与边界修复准备本地提交。用户要求仍为不 push、不 git pp。
+- [逐项结案与验收](docs/audit-followthrough-20261024.md)、[运行配置](docs/runtime-configuration.md)已更新；执行层 e05e65f，UI 原样入口 2beeaa5，本阶段配置/路径/界面/手机与边界修复本地提交 5222034。用户要求仍为不 push、不 git pp。
 - 整批 run-ZkYuyB：4,609 JS、37 Swift、Android 四项、设置浏览器、生成器/资源全过；最后聊天表单修正按影响计划 run-jr7vsn 105 文件/652 项及设置浏览器通过。没有以专项替代先前整批；未重复无关移动构建。
 - iOS 完整 App 无签名构建通过。浏览器已实际验证保存/失败/取消/环境覆盖、链接草稿、固定与智能选择、历史图片和英文回执；截图已复查。向量 worker 退出崩溃经真实推理/排空/连续重启修复，失败日志保留。
 - 本批未覆盖安装、未碰账号/聊天/原图；他线程两份原稿指纹一致。实体设备、真实模型和发布安装另验。本批无剩余代码修复；下一步仅按用户要求推送/覆盖安装。
