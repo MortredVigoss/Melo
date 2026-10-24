@@ -565,6 +565,16 @@ async function assertNativeLaunch(appPath, expectedBundlePath = appPath) {
         test: value => value === 'page-loaded',
         message: 'Native launch did not report page-loaded',
       },
+      {
+        key: 'projectDir',
+        test: value => value === projectDir,
+        message: 'Installed native app did not resolve its configured source project',
+      },
+      {
+        key: 'webDataPersistent',
+        test: value => value === 'false',
+        message: 'Native verification must use an isolated non-persistent WebKit store',
+      },
     ];
     const uiChecks = [
       {

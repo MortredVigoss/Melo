@@ -84,6 +84,10 @@ cat > "$APP_DIR/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
+# The installed app lives outside the source tree. Persist the discovered build
+# location instead of relying on a developer-specific path or shell environment.
+/usr/bin/plutil -insert MeloProjectDirectory -string "$PROJECT_DIR" "$APP_DIR/Contents/Info.plist"
+
 # swiftc signs the executable, but the assembled bundle also needs a resource seal.
 # Sign after Info.plist and icons are present so local updates remain launchable.
 # Model assets are part of Melo, never fetched by inference at runtime.

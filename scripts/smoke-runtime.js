@@ -24,6 +24,8 @@ const diagnostic = await request('/api/diagnostics');
 assert.ok(process.env.MELO_HOME, 'MELO_HOME must point to the isolated smoke home');
 assert.equal(diagnostic.config.mock, true, 'Smoke requires a mock model server');
 assert.equal(diagnostic.paths.home, resolve(process.env.MELO_HOME));
+// Keep visible-label assertions independent of the host machine's locale.
+await request('/api/settings/local', { preferences: { interfaceLanguage: 'en' } });
 const { stdout } = await execFileAsync(process.execPath, ['src/index.js', '--home', diagnostic.paths.home, 'doctor', '--json']);
 const doctor = JSON.parse(stdout);
 assert.equal(doctor.desktop.runtime.instanceId, diagnostic.desktop.runtime.instanceId);
@@ -101,7 +103,7 @@ try {
   await page.reload();
   await page.locator('.runtime-diagnostics').waitFor();
   assert.ok((await page.locator('.runtime-diagnostics').boundingBox()).width > 400, 'Advanced diagnostics must not be squeezed into the item-list column');
-  await page.locator('.runtime-diagnostics').getByText('运行环境与存储', { exact: true }).click();
+  await page.locator('.runtime-diagnostics').getByText('Runtime and storage', { exact: true }).click();
   assert.ok((await page.locator('.runtime-diagnostics').innerText()).includes(diagnostic.paths.home));
   await page.screenshot({ path: resolve(process.env.MELO_HOME, 'runtime-panel-smoke.png') });
   await page.setViewportSize({ width: 900, height: 900 });

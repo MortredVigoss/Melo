@@ -24,6 +24,14 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
       return envDir
     }
 
+    // Source-backed installs record their actual project location at build time.
+    // Environment overrides still take precedence for isolated verification.
+    if let configuredDir = Bundle.main.object(forInfoDictionaryKey: "MeloProjectDirectory") as? String,
+       FileManager.default.fileExists(atPath: (configuredDir as NSString).appendingPathComponent("src/server.js")),
+       FileManager.default.fileExists(atPath: (configuredDir as NSString).appendingPathComponent("desktop-ui/index.html")) {
+      return configuredDir
+    }
+
     let bundleParentDir = Bundle.main.bundleURL.deletingLastPathComponent().path
     let bundleGrandparentDir = (bundleParentDir as NSString).deletingLastPathComponent
     let candidateProjectDirs = [
@@ -315,7 +323,9 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
     userContentController.add(self, name: "meloVoice")
     let configuration = WKWebViewConfiguration()
     configuration.userContentController = userContentController
-    configuration.websiteDataStore = .default()
+    // Verification must not share the user's WebKit drafts, cookies or preferences.
+    configuration.websiteDataStore = ProcessInfo.processInfo.environment["MELO_TEST_MODE"] == "1"
+      ? .nonPersistent() : .default()
     configuration.mediaTypesRequiringUserActionForPlayback = []  // allow TTS autoplay
     webView = WKWebView(frame: rect, configuration: configuration)
     webView.navigationDelegate = self
@@ -1095,6 +1105,7 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
           bundlePath=\(self.bundlePath)
           serverURL=\(self.serverURL.absoluteString)
           projectDir=\(self.projectDir)
+          webDataPersistent=\(self.webView.configuration.websiteDataStore.isPersistent)
           uiAudit=\(uiAudit)
           renderedTitle=\(renderedTitle)
           """
