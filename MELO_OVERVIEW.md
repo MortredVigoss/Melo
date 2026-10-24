@@ -415,3 +415,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 ### Codex — 2026-10-24 全仓审计补齐（执行中，暂缓推送）
 
 用户提供全仓审计并要求一起修完，撤回本轮立即 push。包含 push 的命令被自动审批拦截，未执行；此前本机安装验收已完成。按 [补齐方案](docs/audit-followthrough-20261024.md) 先复核已修项，再收敛搜索/工具/意图/核验、配置与路径、桌面/手机 UI。保留账号和他线程两份原稿；后续只本地提交，等待用户重新要求推送。
+
+### Codex — 2026-10-24 意图共享入口原样迁移
+
+按审计补齐计划把桌面意图模块原样放入 shared/agent/retrieval/intentRouter.js，旧入口保留 re-export；除 import 路径外正文逐行相同。本阶段尚未改变规则或手机行为。显式范围日常 GREEN：4,591 JS、37 Swift、设置浏览器、Android JVM/Lint/Debug/Release；证据 `.tmp/test-runs/run-S8tZgs/`。首次未加载 Java/SDK 的环境失败保留于 `.tmp/audit-followthrough-20261024/`，最终使用已核实的 Homebrew 工具链。下一步独立修正规则/工具策略/核验与流式行为，仍不推送。

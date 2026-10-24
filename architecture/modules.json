@@ -23,8 +23,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 635,
-      "edges": 1978,
+      "modules": 636,
+      "edges": 1979,
       "roots": [
         "src",
         "desktop-ui",
@@ -734,7 +734,7 @@
       ],
       "modules": {
         "desktop-ui": 27,
-        "shared": 32,
+        "shared": 33,
         "src": 68
       },
       "entryModules": [
@@ -4860,7 +4860,6 @@
       "note": "桌面运行时读取 JSON，手机内嵌生成副本（不含 fixtures）；两端跑同一批 fixtures。P3/P4 新增双端行为先扩展此文件。",
       "desktopConsumers": [
         "src/domain/agent/capabilityElevation.js",
-        "src/retrieval/intentRouter.js",
         "src/retrieval/selfVerification.js",
         "src/retrieval/verificationEvidence.js",
         "src/services/chat/chatExecutionRunner.js",
