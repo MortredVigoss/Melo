@@ -1292,6 +1292,17 @@ async function fetchViaJina(url, signal, { etag = null, lastModified = null } = 
  *      serialised by the pw lock (one page at a time), so more than 1
  *      fallback URL means multi-second p95 degradation.
  */
+// Cache storage retains reusable originals; every response projects the current budget.
+function boundedSearchEvidence(entry, limit) {
+  if (!entry) return null;
+  const results = entry.results.slice(0, Math.min(limit, searchLimits().maxResults));
+  const selected = new Set(results.map(row => canonicalizeUrl(row.url)));
+  const contentMap = new Map([...entry.contentMap]
+    .filter(([url, body]) => selected.has(canonicalizeUrl(url)) && typeof body === 'string')
+    .map(([url, body]) => [url, body.slice(0, searchLimits().contentMaxChars)]));
+  return { ...entry, results, contentMap };
+}
+
 async function fetchResultContents(urls, signal, {
   spanId = null,
   _fetchViaPlaywrightCli: _pwOverride = null,
@@ -1334,7 +1345,7 @@ async function fetchResultContents(urls, signal, {
       return false;
     }
     seenHashes.add(hash);
-    results.set(url, { url, content: body, ...meta, contentHash: hash });
+    results.set(url, { url, content: body.slice(0, searchLimits().contentMaxChars), ...meta, contentHash: hash });
     return true;
   };
 
@@ -2005,7 +2016,7 @@ export const webSearchTool = {
       // cache hit.  Without this gate, a user-cancelled search shows
       // stale rows in the UI and silently spawns a background SERP task.
       if (signal?.aborted) return bailAbortedWebSearch(trail, 'cache', q, { intent, spanId });
-      const fresh = getCachedSearch(q, intent);
+      const fresh = boundedSearchEvidence(getCachedSearch(q, intent), limit);
       if (fresh) {
         // Re-check after the (synchronous) lookup — covers the race where
         // the signal flips between entry and lookup (rare but real on
@@ -2049,7 +2060,7 @@ export const webSearchTool = {
         };
       }
 
-      const stale = getStaleCachedSearch(q, intent);
+      const stale = boundedSearchEvidence(getStaleCachedSearch(q, intent), limit);
       if (stale) {
         // Same abort gate as fresh hit above: stale path is even worse on
         // abort because it queues a background SWR refresh that re-runs
@@ -2114,6 +2125,7 @@ export const webSearchTool = {
         return {
           ok: true,
           output,
+          completionSources: [...stale.contentMap].map(([url, content]) => ({ url, content })),
           meta: {
             query: q,
             provider: stale.provider,
@@ -2467,7 +2479,7 @@ export const webSearchTool = {
       },
     });
 
-    const contentMap = new Map(
+    let contentMap = new Map(
       contentItems.map(c => [c.url, c.content]).filter(([, v]) => v),
     );
 
@@ -2500,6 +2512,7 @@ export const webSearchTool = {
     );
 
     setCachedSearch(q, provider, results, contentMap, intent);
+    ({ results, contentMap } = boundedSearchEvidence({ results, contentMap }, limit));
 
     const output = formatResults(results, q, provider, contentMap, { queryTokens });
 

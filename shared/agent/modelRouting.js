@@ -1,6 +1,7 @@
 // Shared deterministic policy. Hosts own credentials, transport, storage and clocks.
 // Model names are opaque IDs; assignments are explicit user choices.
-export const ROUTING_VERSION = 1;
+import { segmentConversationTopics } from '../../src/shared/conversationTopics.js';
+export const ROUTING_VERSION = 2;
 export const ROUTING_TIERS = ['light', 'standard', 'strong'];
 const keyOf = c => JSON.stringify([c.connectionId || '', c.model]);
 const fail = (code, message) => { throw Object.assign(new Error(message), { code }); };
@@ -10,11 +11,31 @@ const deep = /深度(?:研究|调研)|全面(?:审计|分析)|deep research|comp
 const visual = /换.*背景|修图|编辑.*(?:图|照片)|(?:图|照片).*编辑|生成.*图|画一|change.*background|edit.*(?:image|photo)|generate.*image/iu;
 const trivial = /^(?:(?:你好|您好|嗨|谢谢|早上好|hello|hi|hey|thanks)[!！。,.\s]*|[\d\s.+*/()−×÷-]+[=?？]*)$/iu;
 
+// Use the existing shared topic segmentation, never all historical risk words.
+// Ambiguous short continuations stay with their topic; explicit new tasks reset it.
+const newTopic = /^(?:换(?:个|一个)?话题|另(?:一|个)(?:件事|问题)|新(?:的)?(?:任务|问题)|new (?:topic|task)|change (?:the )?subject|unrelated(?: question)?)[，,:：\s]*/iu;
+export function routingTaskContext(input = {}) {
+  const text = String(input.text || '');
+  if (trivial.test(text.trim()) || newTopic.test(text.trim())) return [];
+  let prior = (input.context || []).filter(m => m.role === 'user' || m.role === 'assistant')
+    .map(m => ({ role: m.role, content: typeof m.content === 'string' ? m.content : '' }));
+  if (prior.at(-1)?.role === 'user' && prior.at(-1).content === text) prior.pop();
+  let boundary = -1;
+  for (let i = 0; i < prior.length; i++) if (prior[i].role === 'user' && newTopic.test(prior[i].content.trim())) boundary = i;
+  if (boundary >= 0) prior = prior.slice(boundary);
+  const rows = [...prior, { role: 'user', content: text }].map((m, i) => ({ ...m, id: String(i) }));
+  const { byMessage } = segmentConversationTopics(rows);
+  const topic = byMessage[String(rows.length - 1)];
+  return rows.slice(0, -1).filter(m => m.role === 'user' && byMessage[m.id] === topic).map(m => m.content);
+}
+export function routingJudgmentInput(input = {}) {
+  return { context: routingTaskContext(input).slice(-4), goal: input.goal || '', text: String(input.text || ''),
+    attachments: (input.attachments || []).map(a => ({ kind: a.kind, mimeType: a.mimeType || a.type })) };
+}
+
 export function routingRules(input = {}) {
   const text = String(input.text || '');
-  // Original goal and prior user messages preserve risk through short follow-ups.
-  const prior = (input.context || []).filter(m => m.role === 'user').map(m => typeof m.content === 'string' ? m.content : '');
-  if (prior.at(-1) === text) prior.pop();
+  const prior = routingTaskContext(input);
   const context = [input.goal, ...prior, text].filter(Boolean).join('\n');
   const needs = { ...(input.needs || {}) };
   if (input.attachments?.length) needs.attachments = true;
@@ -100,5 +121,6 @@ export function modelRoutingOperation(input) {
   if (input.action === 'parse') return parseRoutingJudgment(input.text);
   if (input.action === 'escalate') return escalateRouting(input.routing);
   if (input.action === 'prompt') return ROUTING_JUDGE_PROMPT;
+  if (input.action === 'judgeInput') return routingJudgmentInput(input.routing);
   return selectRouting(input.routing);
 }

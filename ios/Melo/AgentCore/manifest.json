@@ -1,14 +1,15 @@
 {
   "version": 1,
-  "sha256": "b28fb9c7f430b92650092e57c2720262abd055226e08f0c83a5c0048ee7e5e52",
+  "sha256": "78633d1d9d6d3146df583d008b29ca69d4859a0a9bd18dbd8892204befd7865e",
   "sources": {
     "shared/agent/index.js": "f89b9e5b72b7f71f22870931b2d7c6c658e00f135b323045b5aabc4dd195f20b",
     "shared/agent/imageLanguage.js": "2c2daaf60ec60aa8c34d235999af577816831e1143083c1c03b8d9e915488b7c",
     "shared/agent/locale.js": "f1ad69e49a9d785992c82a947b9487b395ece4bca91399fd6b28f217c72d3667",
     "shared/agent/runtimeMessages.js": "36f4e6a711b50e28670c860e9df9cd7dda4c036555c6b340bf001f7af7ddbf05",
-    "shared/agent/modelCapabilities.js": "9019f04f0e21e4c2a226f338252e4e1e51a1695fd735d3b901efbaa9d2864696",
+    "shared/agent/modelCapabilities.js": "1f29ebb73fc2b78e38dbb1d41573e2a64c351adbaa0899620ff790f6b7315857",
     "shared/agent/providerDefaults.js": "533ab612f61b32d5cca033a3f42a59186651574fc9ab67a84ce4ac57207314ea",
-    "shared/agent/modelRouting.js": "4d82076a8266bfa38a1c5c31dc1bab96bd1b7c71ff071b79120f9b981c873742",
+    "shared/agent/modelRouting.js": "561bf76933961d5d4e483be0784dfeac4b65bb9d38b3cff6e00c8b63b5235cc0",
+    "src/shared/conversationTopics.js": "c8056fc9d1377e20bdbabdf060759db0ba82cafda7df4d7bb554758cfc2e3e5c",
     "shared/agent/taskReplay.js": "324d3294312b9f4e4d0d2484745e60cc0caf0360c82d9da643f1d1328431e74a",
     "shared/agent/turn.js": "892908137bd2044f16a66c030c1d1d9b44d80c74622f4e80eb1241466e0f589a",
     "shared/agent/tools.js": "cd493ad7c80dbb302df75dcf1430b7d95632faeec5445f397c25da62f1daaeed",
@@ -30,7 +31,6 @@
     "shared/agent/skill/skillService.js": "d6dbbde1f4ce3f4a7fd3fd89de23eb688c9f80d4de43780f806e46f26f4f8644",
     "shared/agent/hostedSearch.js": "75d1a1be8b0350ae05fba5602b17704857f3b85cb13f0bf38982413ba442226a",
     "src/shared/replyDocument.js": "824fa3e1fe139e41d690a450ab2995a09ee5a3b9f575174087aa154dae96032d",
-    "src/shared/conversationTopics.js": "c8056fc9d1377e20bdbabdf060759db0ba82cafda7df4d7bb554758cfc2e3e5c",
     "shared/agent/context.js": "ada3c03f36d4b58f09293c726d56931f2d352cd44419c1198456c277d032a6c0",
     "shared/agent/contextBudget.js": "5c40d5764096865e7ff64c87f1d2d731cdee0ccdec967bc4251f622e2ffa888b",
     "shared/agent/tokenEstimate.js": "d6a5f0b91312c233b808acafa8250c7342296aa62c51e95f8969dd039a550fda"

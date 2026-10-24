@@ -326,9 +326,11 @@ import SwiftUI
         if (choice == nil || choice?.mode == "smart") && !roleModel.isEmpty { model = roleModel }
         var key = Secrets.read("modelKey")
         var apiProtocol = UserDefaults.standard.string(forKey: "modelProtocol") ?? "chat-completions"
+        var selectedConnection: LLMConnection?
         if let choice, !useChatGPT, !(plan.makesImage && plan.connectionID?.isEmpty == false) {
             do {
                 guard let connection = LLMConnection.resolve(choice, in: try loadConnections()) else { throw MeloError.message("本对话选择的模型连接尚未在此设备配置，请连接对应平台或重新选择。") }
+                selectedConnection = connection
                 endpoint = try connection.endpoint(); model = choice.mode == "smart" && !roleModel.isEmpty ? roleModel : choice.model; key = connection.key; apiProtocol = connection.apiProtocol
                 contextCapacity = connection.contextWindows?[model] ?? choice.contextWindow
             } catch { fail(error.localizedDescription); return }
@@ -337,6 +339,7 @@ import SwiftUI
         else if plan.makesImage, let connectionID = plan.connectionID, !connectionID.isEmpty {
             do {
                 guard let connection = try loadConnections().first(where: { $0.id == connectionID }) else { throw MeloError.message("所选图片连接尚未在此手机配置，请重新选择；原图和要求已保留。") }
+                selectedConnection = connection
                 endpoint = try connection.endpoint(); key = connection.key; apiProtocol = connection.apiProtocol
                 useChatGPT = false
             } catch { fail(error.localizedDescription); return }
@@ -402,6 +405,15 @@ import SwiftUI
                 }
             } catch { fail(error.localizedDescription); return }
         }
+        // Preflight before saving messages, binding originals or marking a run as sending.
+        // Use the actual selected ID; equal endpoints/keys do not imply equal declarations.
+        if selectedConnection == nil && !useChatGPT {
+            let matches = ((try? loadConnections()) ?? []).filter { (try? $0.endpoint()) == endpoint && $0.key == key && $0.apiProtocol == apiProtocol }
+            selectedConnection = matches.first { $0.id == UserDefaults.standard.string(forKey: "activeLLMConnection") }
+                ?? (matches.count == 1 ? matches[0] : nil)
+        }
+        let connectionCapabilities = useChatGPT ? [:] : (selectedConnection?.capabilities(for: plan.makesImage ? plan.model : model) ?? [:])
+        if plan.makesImage, connectionCapabilities["imageGen"] == false { fail("此模型已设为不支持图片输出，请选择生图模型或修改能力设置。"); return }
         if retry, plan.makesImage, let question = chats[index].messages.last, question.role == "user" {
             do { try imageLibrary.bind(plan.references.compactMap { imageLibrary.index.assets[$0.id] }, to: question.id, request: plan) }
             catch { fail(error.localizedDescription); return }
@@ -453,10 +465,6 @@ import SwiftUI
         sendingChats.insert(chatID)
         let supplements = PhoneSupplements()
         supplementQueues[chatID] = supplements; pendingSupplements[chatID] = nil
-        // Capture capability declarations with the selected connection before work starts.
-        let matchingConnections = ((try? loadConnections()) ?? []).filter { (try? $0.endpoint()) == endpoint && $0.key == key }
-        let connectionCapabilities = matchingConnections.count == 1 ? matchingConnections[0].capabilities(for: plan.makesImage ? plan.model : model) : [:]
-        if plan.makesImage, connectionCapabilities["imageGen"] == false { fail("此模型已设为不支持图片输出，请选择生图模型或修改能力设置。"); return }
         let routeChatGPT = useChatGPT, routeEndpoint = endpoint, routeModel = model, routeKey = key, routeProtocol = apiProtocol, routeCodexModel = chatGPTModel
         let loader = replyLoader, chatAccount = account
         // One run budget per reply (20 min / 400k input tokens / 120 tool calls, shared contract);

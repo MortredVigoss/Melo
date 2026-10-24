@@ -6270,7 +6270,7 @@ document.addEventListener('click', async event => {
         if (uiState.ttsEngine === 'api' && currentProvider === 'edge') {
           api('/api/settings/model', {
             method: 'POST',
-            body: { ttsProvider: '' },
+            body: { ttsProvider: 'openai' },
           }).then(payload => applyBootstrapPreservingDrafts(payload)).catch(() => {});
         }
         render();

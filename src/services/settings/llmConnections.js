@@ -111,7 +111,7 @@ export function inspectLlmProfile(id) {
   return scoped(async () => requireProfile(await loadConfig({ skipModelNormalize: true }), id));
 }
 
-export function testLlmProfile(id, { signal, reply = createOpenAICompatibleReply, discover = discoverAvailableModels, catalogOnly = false, modality = 'text' } = {}) {
+export function testLlmProfile(id, { signal, reply = createOpenAICompatibleReply, discover = discoverAvailableModels, catalogOnly = false, modality = 'text', challenge = () => String(randomInt(100000, 999999)) } = {}) {
   return scoped(async () => {
     const profile = await inspectLlmProfile(id);
     const start = Date.now();
@@ -126,7 +126,7 @@ export function testLlmProfile(id, { signal, reply = createOpenAICompatibleReply
       } else {
         if (!profile.model) throw new Error('请填写要测试的模型 ID。');
         let metadata = {};
-        const code = String(randomInt(100000, 999999));
+        const code = challenge();
         const image = modality === 'vision' ? await sharp(Buffer.from(`<svg width="640" height="240" xmlns="http://www.w3.org/2000/svg"><rect width="640" height="240" fill="white"/><text x="50" y="155" font-size="100" fill="black" font-family="Arial">${code}</text></svg>`)).png().toBuffer() : null;
         const probeContent = image ? [{type:'text',text:'Read the six digits in the image. Reply with only the digits.'},{type:'image_url',image_url:{url:`data:image/png;base64,${image.toString('base64')}`}}] : 'Calculate 2 + 2. Reply with only the number.';
         const text = await reply({ ...profile, systemPrompt: 'Reply briefly. Do not request tools.', messages: [{ role: 'user', content: probeContent }],

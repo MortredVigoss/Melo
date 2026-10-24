@@ -45,6 +45,10 @@ final class PhoneRoutingSession: @unchecked Sendable {
     var model: String { decision["model"] as? String ?? "" }
     var connectionId: String { decision["connectionId"] as? String ?? "" }
     var cacheToken: String { String(data: (try? JSONSerialization.data(withJSONObject: input, options: [.sortedKeys])) ?? Data(), encoding: .utf8) ?? "" }
+    var judgmentText: String {
+        let value = SharedLoopPolicy.value("modelRouting", ["action": "judgeInput", "routing": input]) as? [String: Any] ?? [:]
+        return String(data: (try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])) ?? Data(), encoding: .utf8) ?? ""
+    }
     var judge: [String: Any]? { decision["judge"] as? [String: Any] }
     var label: String { SharedLoopPolicy.value("modelRouting", ["action": "label", "decision": decision]) as? String ?? model }
     init(policy: PhoneRoutingPolicy, mode: String, connectionId: String, defaultModel: String, fixedModel: String = "", candidates: [PhoneRoutingCandidate], text: String, history: [[String: String]], attachments: [[String: String]]) throws {
@@ -90,7 +94,7 @@ final class PhoneRoutingHost: @unchecked Sendable {
     var currentTransport: AgentModelTransport? { selectedTransport }
     private var selectedTransport: AgentModelTransport?
     init(session: PhoneRoutingSession, messages: [ChatMessage], identity: String = UUID().uuidString, factory: @escaping @MainActor (String, String) async throws -> AgentModelTransport) {
-        self.session = session; judgmentMessages = messages; self.factory = factory
+        self.session = session; judgmentMessages = [ChatMessage(role: "user", content: session.judgmentText)]; self.factory = factory
         cacheKey = SHA256.hash(data: Data((identity + session.cacheToken).utf8)).map { String(format: "%02x", $0) }.joined()
     }
     static let control = PhoneToolDefinition(name: "melo_escalate", description: "Request one higher configured model tier. Continue from existing tool results without repeating successful actions.", parameters: ["type": "object", "properties": ["reason": ["type": "string"]], "required": ["reason"], "additionalProperties": false])

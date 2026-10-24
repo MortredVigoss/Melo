@@ -563,13 +563,16 @@ function capabilitiesFromMetadata(row = {}) {
 function resolvedModelCapabilities(connection = {}, model = connection.model) {
   const result = { ...normalizeModelCapabilities(connection.modelMetadata?.[model]) };
   const test = connection.visionTest;
-  if (test?.requestedModel === model && typeof test.ok === 'boolean') result.vision = test.ok;
+  // Transport/auth/recognition failures do not establish a model capability.
+  if (test?.requestedModel === model && test.ok === true) result.vision = true;
   return { ...result, ...normalizeModelCapabilities(connection.modelCapabilities?.[model]) };
 }
 function connectionForModel(config = {}) {
   const profile = config.llmProfiles?.[config.activeLlmProfileId];
-  // Direct/vision overrides cannot borrow a same-named model's declarations from another endpoint.
-  return profile && profile.baseUrl === config.baseUrl && profile.authMode === config.authMode &&
+  // A selected connection snapshot and its credentials outrank a stale active ID.
+  // Several saved connections may use the same endpoint and even the same key.
+  return profile && (!config.id || config.id === config.activeLlmProfileId) &&
+    (profile.apiKey || '') === (config.apiKey || '') && profile.baseUrl === config.baseUrl && profile.authMode === config.authMode &&
     (profile.apiProtocol || 'chat-completions') === (config.apiProtocol || 'chat-completions') ? profile : config;
 }
 function modelCapabilityOperation(input) {
@@ -621,10 +624,155 @@ const PROVIDER_DEFAULTS = Object.freeze({
 return { PROVIDER_DEFAULTS };
 })();
 
+modules["src/shared/conversationTopics.js"] = (() => {
+// Topics inside one conversation (A → B → C → back to A), shared verbatim by the
+// desktop server, the desktop UI and the iPhone (bundled into its JS engine), so
+// the same messages always split into the same topics on every device.
+//
+// Deterministic word / Chinese-bigram overlap plus a few cue phrases. A wrong
+// guess is cheap by design: the recent turns are always sent in full, and the
+// directory of other topics is always available to the model.
+
+const STOP_WORDS = new Set(('the a an is are was were be been to of and or in on for with it its this that these those what how why when where who which can could ' +
+  'would should will do does did you your me my i we our us please about from as at by have has had so if then than but not no yes ok okay also just more some any ' +
+  'there here get got make use using want need like know tell give help').split(' '));
+const STOP_BIGRAMS = new Set(['这个', '那个', '什么', '怎么', '么样', '一下', '可以', '我们', '你们', '他们', '是不', '不是', '这样', '那样', '还是', '就是', '一个',
+  '没有', '现在', '然后', '因为', '所以', '如果', '但是', '可能', '应该', '需要', '知道', '觉得', '问题', '时候', '东西', '一些', '这些', '那些', '帮我', '给我',
+  '告诉', '请问', '为什', '能不', '不能', '有没', '怎样', '如何', '哪些', '哪个', '之前', '刚才', '上面', '再说', '继续', '回到', '的话', '一点', '有点', '比较',
+  '还有', '另外', '顺便', '问一', '下一', '么办', '么加', '么做', '么写', '么用', '么弄', '么回', '么样', '是什', '为何', '你好', '谢谢', '好的']);
+// Replies that report what the user did or saw continue the current topic
+// ("我在 useEffect 里…", "I tried …"), even when they use new words.
+const CONTINUE_CUE = /^(?:那么?|还有|然后|继续|再|为什么|为啥|怎么|它|这个|那个|这|好的?|嗯|对|是的|可以|不对|不是|所以|而且|如果|但是?|可是|结果|我(?:在|用|试|已经|刚|这边|这里|是|有|改|按|照|加|把|发现|看到)|and\b|also\b|but\b|what about\b|how about\b|why\b|so\b|then\b|ok\b|okay\b|i(?:'ve| have)? (?:tried|did|used|added|changed|got|see|saw|am|'m)\b|it (?:still|now|does|doesn't)\b)/i;
+const RETURN_CUE = /回到|回头说|说回|刚才(?:那个|说的|的)|之前(?:说的|那个|的)|前面(?:那个|说的|的)|上面(?:那个|说的|的)|\bback to\b|\bearlier\b|\bgoing back\b/i;
+// A new topic needs some substance: words count 1, Chinese bigrams ½ (a run of n
+// characters yields n − 1 overlapping bigrams).
+const NEW_TOPIC_MIN_WEIGHT = 3;
+const termWeight = terms => { let weight = 0; for (const term of terms) weight += /[\u4e00-\u9fff]/.test(term) ? 0.5 : 1; return weight; };
+
+// Only the opening of each message decides its topic, so every host reads the
+// same text (the iPhone sends at most this much across its JS bridge).
+const TOPIC_TEXT_LIMIT = 1000;
+
+function textOf(message) {
+  const content = message && message.content;
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) return content.map(part => (part && typeof part.text === 'string' ? part.text : '')).join(' ');
+  return '';
+}
+
+function topicTerms(text) {
+  const terms = new Set();
+  const lower = String(text || '').toLowerCase();
+  const words = lower.match(/[a-z0-9][a-z0-9+#._-]*/g) || [];
+  for (const word of words) {
+    const clean = word.replace(/[._-]+$/, '');
+    if (clean.length >= 2 && !STOP_WORDS.has(clean)) terms.add(clean);
+  }
+  const runs = lower.match(/[一-鿿]+/g) || [];
+  for (const run of runs) {
+    for (let index = 0; index + 1 < run.length; index += 1) {
+      const pair = run.slice(index, index + 2);
+      if (!STOP_BIGRAMS.has(pair)) terms.add(pair);
+    }
+  }
+  return terms;
+}
+
+function overlap(terms, vocabulary) {
+  if (!terms.size) return 0;
+  let shared = 0;
+  for (const term of terms) if (vocabulary.has(term)) shared += 1;
+  return shared / terms.size;
+}
+
+function label(text) {
+  const clean = String(text || '').replace(/\s+/g, ' ').trim();
+  return clean.length > 18 ? clean.slice(0, 18) + '…' : clean;
+}
+
+// messages: [{id, role, content}] in order. Returns the topic of every message
+// (an answer belongs to its question's topic) and the topics in creation order.
+function segmentConversationTopics(messages) {
+  const list = Array.isArray(messages) ? messages : [];
+  const topics = [];
+  const byMessage = {};
+  let current = null;
+  for (let index = 0; index < list.length; index += 1) {
+    const message = list[index] || {};
+    const id = String(message.id || index);
+    if (message.role !== 'user') {
+      if (current) {
+        byMessage[id] = current.id;
+        current.messageIds.push(id);
+        current.lastIndex = index;
+        for (const term of topicTerms(textOf(message).slice(0, 200))) current.vocabulary.add(term);
+      }
+      continue;
+    }
+    const text = textOf(message).slice(0, TOPIC_TEXT_LIMIT);
+    const terms = topicTerms(text);
+    let chosen = current;
+    if (!current) {
+      chosen = null;
+    } else if (terms.size) {
+      const scores = topics.map(topic => ({ topic, score: overlap(terms, topic.vocabulary) }));
+      const own = scores.find(entry => entry.topic === current).score;
+      // Highest score wins; ties go to the current topic, then the most recently active one.
+      let best = null;
+      for (const entry of scores) {
+        if (entry.topic === current) continue;
+        if (!best || entry.score > best.score || (entry.score === best.score && entry.topic.lastIndex > best.topic.lastIndex)) best = entry;
+      }
+      const trimmed = text.trim();
+      if (RETURN_CUE.test(trimmed) && best && best.score >= 0.15 && best.score >= own) chosen = best.topic;
+      else if (CONTINUE_CUE.test(trimmed)) chosen = best && best.score >= 0.15 && best.score >= own + 0.15 ? best.topic : current;
+      else if (best && best.score >= 0.3 && best.score >= own + 0.15) chosen = best.topic;
+      else if (own < 0.15 && (!best || best.score < 0.15) && termWeight(terms) >= NEW_TOPIC_MIN_WEIGHT) chosen = null;
+      else chosen = current;
+    }
+    if (!chosen) {
+      chosen = { id, label: label(text), messageIds: [], firstIndex: index, lastIndex: index, vocabulary: new Set() };
+      topics.push(chosen);
+    }
+    for (const term of terms) chosen.vocabulary.add(term);
+    chosen.messageIds.push(id);
+    chosen.lastIndex = index;
+    byMessage[id] = chosen.id;
+    current = chosen;
+  }
+  return {
+    byMessage,
+    topics: topics.map(topic => ({ id: topic.id, label: topic.label, messageIds: topic.messageIds.slice(), firstIndex: topic.firstIndex, lastIndex: topic.lastIndex })),
+  };
+}
+
+// Where the conversation moves to another topic, keyed by the user message that
+// starts the move. A move back names the message where that topic began, so the
+// UI can link to it. Both clients draw dividers from this same list.
+function topicDividers(messages) {
+  const segmentation = segmentConversationTopics(messages);
+  if (segmentation.topics.length < 2) return [];
+  const dividers = [];
+  let previous = null;
+  for (const message of Array.isArray(messages) ? messages : []) {
+    if (!message || message.role !== 'user') continue;
+    const id = String(message.id);
+    const topic = segmentation.topics.find(entry => entry.id === segmentation.byMessage[id]);
+    if (!topic) continue;
+    if (previous && topic.id !== previous) dividers.push({ messageId: id, label: topic.label, returnsTo: topic.id === id ? null : topic.id });
+    previous = topic.id;
+  }
+  return dividers;
+}
+
+return { TOPIC_TEXT_LIMIT, topicTerms, segmentConversationTopics, topicDividers };
+})();
+
 modules["shared/agent/modelRouting.js"] = (() => {
 // Shared deterministic policy. Hosts own credentials, transport, storage and clocks.
 // Model names are opaque IDs; assignments are explicit user choices.
-const ROUTING_VERSION = 1;
+const { segmentConversationTopics } = modules["src/shared/conversationTopics.js"];
+const ROUTING_VERSION = 2;
 const ROUTING_TIERS = ['light', 'standard', 'strong'];
 const keyOf = c => JSON.stringify([c.connectionId || '', c.model]);
 const fail = (code, message) => { throw Object.assign(new Error(message), { code }); };
@@ -634,11 +782,31 @@ const deep = /深度(?:研究|调研)|全面(?:审计|分析)|deep research|comp
 const visual = /换.*背景|修图|编辑.*(?:图|照片)|(?:图|照片).*编辑|生成.*图|画一|change.*background|edit.*(?:image|photo)|generate.*image/iu;
 const trivial = /^(?:(?:你好|您好|嗨|谢谢|早上好|hello|hi|hey|thanks)[!！。,.\s]*|[\d\s.+*/()−×÷-]+[=?？]*)$/iu;
 
+// Use the existing shared topic segmentation, never all historical risk words.
+// Ambiguous short continuations stay with their topic; explicit new tasks reset it.
+const newTopic = /^(?:换(?:个|一个)?话题|另(?:一|个)(?:件事|问题)|新(?:的)?(?:任务|问题)|new (?:topic|task)|change (?:the )?subject|unrelated(?: question)?)[，,:：\s]*/iu;
+function routingTaskContext(input = {}) {
+  const text = String(input.text || '');
+  if (trivial.test(text.trim()) || newTopic.test(text.trim())) return [];
+  let prior = (input.context || []).filter(m => m.role === 'user' || m.role === 'assistant')
+    .map(m => ({ role: m.role, content: typeof m.content === 'string' ? m.content : '' }));
+  if (prior.at(-1)?.role === 'user' && prior.at(-1).content === text) prior.pop();
+  let boundary = -1;
+  for (let i = 0; i < prior.length; i++) if (prior[i].role === 'user' && newTopic.test(prior[i].content.trim())) boundary = i;
+  if (boundary >= 0) prior = prior.slice(boundary);
+  const rows = [...prior, { role: 'user', content: text }].map((m, i) => ({ ...m, id: String(i) }));
+  const { byMessage } = segmentConversationTopics(rows);
+  const topic = byMessage[String(rows.length - 1)];
+  return rows.slice(0, -1).filter(m => m.role === 'user' && byMessage[m.id] === topic).map(m => m.content);
+}
+function routingJudgmentInput(input = {}) {
+  return { context: routingTaskContext(input).slice(-4), goal: input.goal || '', text: String(input.text || ''),
+    attachments: (input.attachments || []).map(a => ({ kind: a.kind, mimeType: a.mimeType || a.type })) };
+}
+
 function routingRules(input = {}) {
   const text = String(input.text || '');
-  // Original goal and prior user messages preserve risk through short follow-ups.
-  const prior = (input.context || []).filter(m => m.role === 'user').map(m => typeof m.content === 'string' ? m.content : '');
-  if (prior.at(-1) === text) prior.pop();
+  const prior = routingTaskContext(input);
   const context = [input.goal, ...prior, text].filter(Boolean).join('\n');
   const needs = { ...(input.needs || {}) };
   if (input.attachments?.length) needs.attachments = true;
@@ -724,10 +892,11 @@ function modelRoutingOperation(input) {
   if (input.action === 'parse') return parseRoutingJudgment(input.text);
   if (input.action === 'escalate') return escalateRouting(input.routing);
   if (input.action === 'prompt') return ROUTING_JUDGE_PROMPT;
+  if (input.action === 'judgeInput') return routingJudgmentInput(input.routing);
   return selectRouting(input.routing);
 }
 
-return { ROUTING_VERSION, ROUTING_TIERS, routingRules, parseRoutingJudgment, eligibleCandidates, selectRouting, escalateRouting, ROUTING_JUDGE_PROMPT, ROUTING_LABELS, routingLabel, modelRoutingOperation };
+return { ROUTING_VERSION, ROUTING_TIERS, routingTaskContext, routingJudgmentInput, routingRules, parseRoutingJudgment, eligibleCandidates, selectRouting, escalateRouting, ROUTING_JUDGE_PROMPT, ROUTING_LABELS, routingLabel, modelRoutingOperation };
 })();
 
 modules["shared/agent/tools.js"] = (() => {
@@ -3041,150 +3210,6 @@ function replyPresentation(value = '') {
 }
 
 return { inlineSpans, tableCells, parseReplyDocument, readableInline, replyPlainText, inlinePresentation, replyPresentation };
-})();
-
-modules["src/shared/conversationTopics.js"] = (() => {
-// Topics inside one conversation (A → B → C → back to A), shared verbatim by the
-// desktop server, the desktop UI and the iPhone (bundled into its JS engine), so
-// the same messages always split into the same topics on every device.
-//
-// Deterministic word / Chinese-bigram overlap plus a few cue phrases. A wrong
-// guess is cheap by design: the recent turns are always sent in full, and the
-// directory of other topics is always available to the model.
-
-const STOP_WORDS = new Set(('the a an is are was were be been to of and or in on for with it its this that these those what how why when where who which can could ' +
-  'would should will do does did you your me my i we our us please about from as at by have has had so if then than but not no yes ok okay also just more some any ' +
-  'there here get got make use using want need like know tell give help').split(' '));
-const STOP_BIGRAMS = new Set(['这个', '那个', '什么', '怎么', '么样', '一下', '可以', '我们', '你们', '他们', '是不', '不是', '这样', '那样', '还是', '就是', '一个',
-  '没有', '现在', '然后', '因为', '所以', '如果', '但是', '可能', '应该', '需要', '知道', '觉得', '问题', '时候', '东西', '一些', '这些', '那些', '帮我', '给我',
-  '告诉', '请问', '为什', '能不', '不能', '有没', '怎样', '如何', '哪些', '哪个', '之前', '刚才', '上面', '再说', '继续', '回到', '的话', '一点', '有点', '比较',
-  '还有', '另外', '顺便', '问一', '下一', '么办', '么加', '么做', '么写', '么用', '么弄', '么回', '么样', '是什', '为何', '你好', '谢谢', '好的']);
-// Replies that report what the user did or saw continue the current topic
-// ("我在 useEffect 里…", "I tried …"), even when they use new words.
-const CONTINUE_CUE = /^(?:那么?|还有|然后|继续|再|为什么|为啥|怎么|它|这个|那个|这|好的?|嗯|对|是的|可以|不对|不是|所以|而且|如果|但是?|可是|结果|我(?:在|用|试|已经|刚|这边|这里|是|有|改|按|照|加|把|发现|看到)|and\b|also\b|but\b|what about\b|how about\b|why\b|so\b|then\b|ok\b|okay\b|i(?:'ve| have)? (?:tried|did|used|added|changed|got|see|saw|am|'m)\b|it (?:still|now|does|doesn't)\b)/i;
-const RETURN_CUE = /回到|回头说|说回|刚才(?:那个|说的|的)|之前(?:说的|那个|的)|前面(?:那个|说的|的)|上面(?:那个|说的|的)|\bback to\b|\bearlier\b|\bgoing back\b/i;
-// A new topic needs some substance: words count 1, Chinese bigrams ½ (a run of n
-// characters yields n − 1 overlapping bigrams).
-const NEW_TOPIC_MIN_WEIGHT = 3;
-const termWeight = terms => { let weight = 0; for (const term of terms) weight += /[\u4e00-\u9fff]/.test(term) ? 0.5 : 1; return weight; };
-
-// Only the opening of each message decides its topic, so every host reads the
-// same text (the iPhone sends at most this much across its JS bridge).
-const TOPIC_TEXT_LIMIT = 1000;
-
-function textOf(message) {
-  const content = message && message.content;
-  if (typeof content === 'string') return content;
-  if (Array.isArray(content)) return content.map(part => (part && typeof part.text === 'string' ? part.text : '')).join(' ');
-  return '';
-}
-
-function topicTerms(text) {
-  const terms = new Set();
-  const lower = String(text || '').toLowerCase();
-  const words = lower.match(/[a-z0-9][a-z0-9+#._-]*/g) || [];
-  for (const word of words) {
-    const clean = word.replace(/[._-]+$/, '');
-    if (clean.length >= 2 && !STOP_WORDS.has(clean)) terms.add(clean);
-  }
-  const runs = lower.match(/[一-鿿]+/g) || [];
-  for (const run of runs) {
-    for (let index = 0; index + 1 < run.length; index += 1) {
-      const pair = run.slice(index, index + 2);
-      if (!STOP_BIGRAMS.has(pair)) terms.add(pair);
-    }
-  }
-  return terms;
-}
-
-function overlap(terms, vocabulary) {
-  if (!terms.size) return 0;
-  let shared = 0;
-  for (const term of terms) if (vocabulary.has(term)) shared += 1;
-  return shared / terms.size;
-}
-
-function label(text) {
-  const clean = String(text || '').replace(/\s+/g, ' ').trim();
-  return clean.length > 18 ? clean.slice(0, 18) + '…' : clean;
-}
-
-// messages: [{id, role, content}] in order. Returns the topic of every message
-// (an answer belongs to its question's topic) and the topics in creation order.
-function segmentConversationTopics(messages) {
-  const list = Array.isArray(messages) ? messages : [];
-  const topics = [];
-  const byMessage = {};
-  let current = null;
-  for (let index = 0; index < list.length; index += 1) {
-    const message = list[index] || {};
-    const id = String(message.id || index);
-    if (message.role !== 'user') {
-      if (current) {
-        byMessage[id] = current.id;
-        current.messageIds.push(id);
-        current.lastIndex = index;
-        for (const term of topicTerms(textOf(message).slice(0, 200))) current.vocabulary.add(term);
-      }
-      continue;
-    }
-    const text = textOf(message).slice(0, TOPIC_TEXT_LIMIT);
-    const terms = topicTerms(text);
-    let chosen = current;
-    if (!current) {
-      chosen = null;
-    } else if (terms.size) {
-      const scores = topics.map(topic => ({ topic, score: overlap(terms, topic.vocabulary) }));
-      const own = scores.find(entry => entry.topic === current).score;
-      // Highest score wins; ties go to the current topic, then the most recently active one.
-      let best = null;
-      for (const entry of scores) {
-        if (entry.topic === current) continue;
-        if (!best || entry.score > best.score || (entry.score === best.score && entry.topic.lastIndex > best.topic.lastIndex)) best = entry;
-      }
-      const trimmed = text.trim();
-      if (RETURN_CUE.test(trimmed) && best && best.score >= 0.15 && best.score >= own) chosen = best.topic;
-      else if (CONTINUE_CUE.test(trimmed)) chosen = best && best.score >= 0.15 && best.score >= own + 0.15 ? best.topic : current;
-      else if (best && best.score >= 0.3 && best.score >= own + 0.15) chosen = best.topic;
-      else if (own < 0.15 && (!best || best.score < 0.15) && termWeight(terms) >= NEW_TOPIC_MIN_WEIGHT) chosen = null;
-      else chosen = current;
-    }
-    if (!chosen) {
-      chosen = { id, label: label(text), messageIds: [], firstIndex: index, lastIndex: index, vocabulary: new Set() };
-      topics.push(chosen);
-    }
-    for (const term of terms) chosen.vocabulary.add(term);
-    chosen.messageIds.push(id);
-    chosen.lastIndex = index;
-    byMessage[id] = chosen.id;
-    current = chosen;
-  }
-  return {
-    byMessage,
-    topics: topics.map(topic => ({ id: topic.id, label: topic.label, messageIds: topic.messageIds.slice(), firstIndex: topic.firstIndex, lastIndex: topic.lastIndex })),
-  };
-}
-
-// Where the conversation moves to another topic, keyed by the user message that
-// starts the move. A move back names the message where that topic began, so the
-// UI can link to it. Both clients draw dividers from this same list.
-function topicDividers(messages) {
-  const segmentation = segmentConversationTopics(messages);
-  if (segmentation.topics.length < 2) return [];
-  const dividers = [];
-  let previous = null;
-  for (const message of Array.isArray(messages) ? messages : []) {
-    if (!message || message.role !== 'user') continue;
-    const id = String(message.id);
-    const topic = segmentation.topics.find(entry => entry.id === segmentation.byMessage[id]);
-    if (!topic) continue;
-    if (previous && topic.id !== previous) dividers.push({ messageId: id, label: topic.label, returnsTo: topic.id === id ? null : topic.id });
-    previous = topic.id;
-  }
-  return dividers;
-}
-
-return { TOPIC_TEXT_LIMIT, topicTerms, segmentConversationTopics, topicDividers };
 })();
 
 modules["shared/agent/tokenEstimate.js"] = (() => {

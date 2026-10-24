@@ -32,3 +32,28 @@ test('direct callers also enforce the connection registry instead of needing a p
  const original=JSON.stringify(options);await assert.rejects(createOpenAICompatibleReply(options),{code:'MODEL_VISION_DISABLED'});
  assert.equal(requests,0);assert.equal(JSON.stringify(options),original);
 });
+
+import { visionConnection } from '../../src/images/imageSettings.js';
+test('selected vision connection owns declarations even when endpoints, models and keys match', async t => {
+  const requests=[];
+  t.mock.method(globalThis,'fetch',async(url,options)=>{requests.push(options.headers);return Response.json({choices:[{message:{content:'seen'},finish_reason:'stop'}]});});
+  const messages=[{role:'user',content:[{type:'image_url',image_url:{url:'data:image/png;base64,YQ=='}}]}];
+  for (const sharedKey of [false,true]) for (const allowed of [false,true]) {
+    const a={id:'a',authMode:'api-key',apiProtocol:'chat-completions',baseUrl:'https://fixture.invalid/v1',model:'opaque',apiKey:'a-key',modelCapabilities:{opaque:{vision:!allowed}}};
+    const b={...a,id:'b',apiKey:sharedKey?'a-key':'b-key',modelCapabilities:{opaque:{vision:allowed}}};
+    const config={...a,activeLlmProfileId:'a',llmProfiles:{a,b},imageSettings:{visionProfileId:'b'}};
+    const selected=visionConnection(config); const before=requests.length;
+    assert.equal(resolvedModelCapabilities(connectionForModel(selected),'opaque').vision,allowed);
+    if(allowed) { await createOpenAICompatibleReply({...selected,messages}); assert.equal(requests.length,before+1); assert.equal(requests.at(-1).authorization,`Bearer ${b.apiKey}`); }
+    else { await assert.rejects(createOpenAICompatibleReply({...selected,messages}),{code:'MODEL_VISION_DISABLED'}); assert.equal(requests.length,before); }
+    assert.equal(connectionForModel({...config,...b}).id,'b','explicit connection snapshot wins over stale active id');
+  }
+});
+test('failed vision probes are unknown and cannot override declared support',()=>{
+  for (const error of ['timeout','401','429','incorrect recognition']) {
+    const visionTest={requestedModel:'opaque',ok:false,error};
+    assert.deepEqual(resolvedModelCapabilities({visionTest},'opaque'),{});
+    assert.equal(resolvedModelCapabilities({visionTest,modelMetadata:{opaque:{vision:true}}},'opaque').vision,true);
+    assert.equal(resolvedModelCapabilities({visionTest:{...visionTest,ok:true},modelCapabilities:{opaque:{vision:false}}},'opaque').vision,false);
+  }
+});

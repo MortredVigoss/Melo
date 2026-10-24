@@ -35,6 +35,16 @@ class SmartRoutingFlowTest {
                 val request=MeloJson.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject;assertEquals("opaque-A",request.text("model"));assertEquals(512,request["max_tokens"]?.jsonPrimitive?.int)
                 session().prepare(DeviceAgentClient(true),SharedRunBudget.open(core)) { _,_,_ -> };assertEquals(1,server.requestCount)
                 assertTrue(route.escalate(5,0,false,false));assertEquals("opaque-C",route.model);assertFalse(route.escalate(8,4,true,false))
+                // The host must send the shared current-task projection, not re-add old risk.
+                server.enqueue(MockResponse().setBody(buildJsonObject { put("choices",buildJsonArray { add(buildJsonObject { put("finish_reason","stop");put("message",buildJsonObject { put("role","assistant");put("content",judgment) }) }) }) }.toString()))
+                val newTask = "换个话题，比较两篇小说的写作风格"
+                val scoped = SmartRouting(core,config,connection,listOf(Message(role="user",content="法律诉讼风险"),Message(role="assistant",content="已完成"),Message(role="user",content=newTask)))
+                scoped.prepare(DeviceAgentClient(true),SharedRunBudget.open(core)) { _,_,_ -> }
+                assertEquals("opaque-B",scoped.model);assertEquals(2,server.requestCount);assertEquals(0,other.requestCount)
+                val scopedRequest=MeloJson.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject
+                val payload=MeloJson.parseToJsonElement(scopedRequest.getValue("messages").jsonArray.last().jsonObject.text("content")).jsonObject
+                assertEquals(0,payload.getValue("context").jsonArray.size);assertEquals(newTask,payload.text("text"))
+
             } }
         }
     }

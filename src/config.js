@@ -58,7 +58,7 @@ export const DEFAULT_CONFIG = Object.freeze({
   ttsSpeed: 1.0,        // MiniMax voice_setting.speed: 0.5–2.0, 1.0 = normal
   ttsPitch: 0,          // MiniMax voice_setting.pitch: -12–12, 0 = normal
   ttsVol: 1.0,          // MiniMax voice_setting.vol: 0.1–10.0, 1.0 = normal
-  ttsProvider: '',     // '' = default OpenAI | 'edge' = Edge TTS | 'minimax' = MiniMax
+  ttsProvider: '',     // '' = legacy automatic | openai / edge / minimax / custom = explicit provider
   ttsEdgeVoice: '',    // e.g. 'zh-CN-XiaoxiaoNeural'; empty = auto-detect by language
   ttsAutoPlay: false,  // "Auto-speak replies" — also enables Telegram voice reply
   // Monotonic revision number bumped by every model-config write that

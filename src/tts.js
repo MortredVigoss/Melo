@@ -1,9 +1,8 @@
 /**
  * Text-to-Speech service.
  *
- * Provider priority:
- *   1. MiniMax T2A V2  — if minimaxApiKey + minimaxVoiceId are set in config
- *   2. OpenAI-compatible /v1/audio/speech — whisperApiKey / whisperBaseUrl, or api-key mode
+ * Explicit provider selection is authoritative. Only legacy unselected configs
+ * retain MiniMax → Edge → OpenAI fallback behavior.
  *
  * MiniMax API: POST https://api.minimax.chat/v1/t2a_v2
  *   Returns hex-encoded MP3 in data.audio field.
@@ -255,12 +254,19 @@ export async function synthesizeSpeech(text, config = {}, options = {}) {
   if (!input) return null;
 
   const signal = options.signal || AbortSignal.timeout(TTS_TIMEOUT_MS);
+  config = { ...config };
+  const provider = String(config.ttsProvider || '').trim();
+  const legacy = !provider;
+  const edgeSynthesize = options.edgeSynthesize || _synthesizeWithEdgeTts;
+  // Capture all environment-derived routes before any provider await.
+  const { apiKey, baseUrl } = resolveTtsConfig(config);
+  if (provider && !['edge', 'openai', 'custom', 'minimax'].includes(provider)) return null;
 
   // ── Priority 1: MiniMax ────────────────────────────────────────────────────
   const minimaxKey    = String(process.env.MINIMAX_API_KEY || config?.minimaxApiKey || '').trim();
   const minimaxVoice  = String(options.voiceId || config?.minimaxVoiceId || '').trim();
   const minimaxGroup  = String(process.env.MINIMAX_GROUP_ID || config?.minimaxGroupId || '').trim();
-  if (minimaxKey && minimaxVoice && !customVoiceActive(config)) {
+  if ((legacy || provider === 'minimax') && minimaxKey && minimaxVoice && !customVoiceActive(config)) {
     try {
       const ttsSpeed = parseFloat(config?.ttsSpeed) || 1.0;
       const ttsPitch = parseFloat(config?.ttsPitch) || 0;
@@ -269,7 +275,8 @@ export async function synthesizeSpeech(text, config = {}, options = {}) {
       process.stderr.write(`[tts] MiniMax OK: ${result.buffer.length} bytes\n`);
       return result;
     } catch (err) {
-      process.stderr.write(`[tts] MiniMax failed: ${err.message} — falling back\n`);
+      process.stderr.write(`[tts] MiniMax failed: ${err.message}\n`);
+      if (!legacy || signal.aborted) return null;
     }
   } else {
     process.stderr.write(`[tts] MiniMax skipped: key=${!!minimaxKey} voice=${!!minimaxVoice}\n`);
@@ -277,17 +284,18 @@ export async function synthesizeSpeech(text, config = {}, options = {}) {
 
   // ── Priority 2: Edge TTS (local CLI) — used when ttsProvider === 'edge',
   //    or as fallback when MiniMax was attempted but failed ──────────────────
-  const wantEdge = String(config?.ttsProvider || '').trim() === 'edge';
-  const minimaxAttempted = !!(minimaxKey && minimaxVoice) && !customVoiceActive(config);
+  if (provider === 'minimax') return null;
+  const wantEdge = provider === 'edge';
+  const minimaxAttempted = legacy && !!(minimaxKey && minimaxVoice) && !customVoiceActive(config);
   if (wantEdge || minimaxAttempted) {
     process.stderr.write(`[tts] Falling back to Edge TTS\n`);
-    const edgeResult = await _synthesizeWithEdgeTts(input, config, { signal });
+    const edgeResult = await edgeSynthesize(input, config, { signal });
     if (edgeResult) return edgeResult;
-    // If edge also fails, continue to OpenAI fallback
+    if (!legacy || signal.aborted) return null;
+    // Unselected legacy configurations retain the previous fallback.
   }
 
-  // ── Priority 3: OpenAI-compatible /v1/audio/speech ─────────────────────────
-  const { apiKey, baseUrl } = resolveTtsConfig(config);
+  // ── OpenAI-compatible /v1/audio/speech ───────────────────────────────────
   if (!baseUrl) return null;
   if (!apiKey && !isLocalEndpoint(baseUrl)) return null;
 
@@ -325,10 +333,12 @@ export async function synthesizeSpeech(text, config = {}, options = {}) {
  * or null when it should work.
  */
 export function getTtsUnavailableReason(config = {}) {
-  // MiniMax is always available if both key + voice id are set
+  const provider = String(config.ttsProvider || '').trim();
+  // Credentials only satisfy the selected provider (or legacy automatic selection).
   const minimaxKey   = String(process.env.MINIMAX_API_KEY || config?.minimaxApiKey || '').trim();
   const minimaxVoice = String(config?.minimaxVoiceId || '').trim();
-  if (minimaxKey && minimaxVoice && !customVoiceActive(config)) return null;
+  if ((!provider || provider === 'minimax') && minimaxKey && minimaxVoice && !customVoiceActive(config)) return null;
+  if (provider === 'minimax') return 'MiniMax requires its API key and voice ID.';
 
   // Edge TTS is always available (uses CLI binary, no API key required)
   if (String(config?.ttsProvider || '').trim() === 'edge') return null;

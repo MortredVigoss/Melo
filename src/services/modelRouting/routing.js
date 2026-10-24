@@ -1,6 +1,6 @@
 import { resolvedModelCapabilities } from '../../../shared/agent/modelCapabilities.js';
 import { createHash } from 'node:crypto';
-import { selectRouting, escalateRouting, parseRoutingJudgment, ROUTING_JUDGE_PROMPT, ROUTING_VERSION } from '../../../shared/agent/modelRouting.js';
+import { selectRouting, escalateRouting, parseRoutingJudgment, routingJudgmentInput, ROUTING_JUDGE_PROMPT, ROUTING_VERSION } from '../../../shared/agent/modelRouting.js';
 
 export function routingCandidates(config) {
   const active = config.activeLlmProfileId || '';
@@ -29,7 +29,7 @@ export function publicSmartRouting(config) { return { ...routingPolicy(config), 
 export function routeConnection(config, route) {
   const p = route.connectionId === (config.activeLlmProfileId || '') ? config : config.llmProfiles?.[route.connectionId];
   if (!p) throw Object.assign(new Error('所选智能模型的连接已不可用。'), { code: 'ROUTING_CONNECTION_MISSING' });
-  return { ...config, authMode: p.authMode, apiProtocol: p.apiProtocol || 'chat-completions', apiKey: p.apiKey || '', baseUrl: p.baseUrl, activeLlmProfileId: route.connectionId, model: route.model, routingContextWindow: p.contextWindows?.[route.model] || 0 };
+  return { ...config, ...p, authMode: p.authMode, apiProtocol: p.apiProtocol || 'chat-completions', apiKey: p.apiKey || '', baseUrl: p.baseUrl, activeLlmProfileId: route.connectionId, model: route.model, routingContextWindow: p.contextWindows?.[route.model] || 0 };
 }
 const cache = new Map();
 export function clearRoutingCache() { cache.clear(); }
@@ -60,7 +60,7 @@ export async function createRoutingSession({ config, agent, text, messages = [],
       let timer;
       try {
         const request = createReply({ authMode: connection.authMode, apiProtocol: connection.apiProtocol, apiKey: connection.apiKey, baseUrl: connection.baseUrl, model: connection.model,
-          systemPrompt: ROUTING_JUDGE_PROMPT, messages: [{ role: 'user', content: JSON.stringify({ context: messages.filter(m => m.role === 'user').map(m => m.content).slice(-4), text, attachments: attachments.map(a => ({ kind: a.kind, mimeType: a.mimeType })) }) }],
+          systemPrompt: ROUTING_JUDGE_PROMPT, messages: [{ role: 'user', content: JSON.stringify(routingJudgmentInput(input)) }],
           signal: combined, timeoutMs: 3000, maxTokens: 512, providerProfile: 'fast', purpose: 'routing-judge',
           nativeWebSearchEnabled: false, nativeImageGenerationEnabled: false });
         const raw = await Promise.race([request, new Promise((_, reject) => { timer = setTimeout(() => { const e = new Error('Routing judgment timed out'); controller.abort(e); reject(e); }, 3000); })]);

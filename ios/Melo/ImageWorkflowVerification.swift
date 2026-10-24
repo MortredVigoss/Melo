@@ -19,6 +19,47 @@ import UIKit
         var result:[String:Any]=["passed":false,"realProvider":false]
         do {
             let orange=try fixture(false),blue=try fixture(true)
+            // Capability rejection is a preflight failure, even with two same-endpoint connections.
+            var disabledConnection = LLMConnection(id:"disabled-image",name:"Disabled",baseURL:"https://fixture.invalid/v1",model:"opaque-image",key:"fixture-only")
+            disabledConnection.modelCapabilities = ["opaque-image":["imageGen":false]]
+            var twinConnection = disabledConnection; twinConnection.id = "allowed-twin"
+            twinConnection.modelCapabilities = ["opaque-image":["imageGen":true]]
+            var disabledCalls = 0
+            let deniedRoot = root.appendingPathComponent("capability-preflight")
+            let denied = ChatStore(directory:deniedRoot,replyLoader:{ _,_ in
+                disabledCalls += 1
+                return ModelReply(text:"Fixture",images:[ImagePayload(data:blue,mimeType:"image/png")])
+            },loadConnections:{[twinConnection,disabledConnection]})
+            let deniedChat = denied.newChat()!, deniedInput = try denied.importImage(orange)
+            let deniedOriginal = try denied.imageLibrary.data(deniedInput)
+            let deniedPlan = ImageTaskPlan(action:.edit,references:[ImageReference(id:deniedInput.id)],model:"opaque-image",connectionID:disabledConnection.id)
+            denied.composerDrafts[deniedChat] = ConversationDraft(text:"把背景改蓝",imagePlan:deniedPlan); denied.flushDrafts()
+            denied.send("把背景改蓝",chatID:deniedChat,imageTask:deniedPlan)
+            guard disabledCalls == 0, !denied.anySending, denied.chats.first?.messages.isEmpty == true, denied.executionRecords.isEmpty,
+                  denied.error?.contains("不支持图片输出") == true, denied.composerDrafts[deniedChat]?.imagePlan == deniedPlan else { throw MeloError.message("Image capability rejection leaked sending state or modified the draft") }
+            denied.cancel(chatID:deniedChat)
+            let deniedRestored = ChatStore(directory:deniedRoot)
+            guard deniedRestored.composerDrafts[deniedChat]?.imagePlan == deniedPlan, deniedRestored.imageLibrary.index.assets[deniedInput.id] == deniedInput, try deniedRestored.imageLibrary.data(deniedInput) == deniedOriginal else { throw MeloError.message("Rejected image request lost original or draft across reload") }
+            do {
+                let defaults = UserDefaults.standard
+                let keys = ["modelAuthMode", "modelEndpoint", "modelProtocol", "activeLLMConnection"]
+                let saved = Dictionary(uniqueKeysWithValues: keys.map { ($0, defaults.object(forKey:$0)) })
+                defer { for key in keys { if let value = saved[key] ?? nil { defaults.set(value,forKey:key) } else { defaults.removeObject(forKey:key) } } }
+                defaults.set("api",forKey:"modelAuthMode"); defaults.set(try disabledConnection.endpoint(),forKey:"modelEndpoint")
+                defaults.set(disabledConnection.apiProtocol,forKey:"modelProtocol"); defaults.set(disabledConnection.id,forKey:"activeLLMConnection")
+                var globalDisabled = disabledConnection; globalDisabled.key = Secrets.read("modelKey")
+                var globalTwin = twinConnection; globalTwin.key = globalDisabled.key
+                let defaultStore = ChatStore(directory:root.appendingPathComponent("default-capability"),replyLoader:{ _,_ in
+                    disabledCalls += 1; return ModelReply(text:"Must not run")
+                },loadConnections:{[globalTwin,globalDisabled]})
+                let defaultChat = defaultStore.newChat()!, defaultInput = try defaultStore.importImage(orange)
+                defaultStore.send("把背景改蓝",chatID:defaultChat,imageTask:ImageTaskPlan(action:.edit,references:[ImageReference(id:defaultInput.id)],model:"opaque-image"))
+                guard disabledCalls == 0, !defaultStore.anySending, defaultStore.chats.first?.messages.isEmpty == true, defaultStore.error?.contains("不支持图片输出") == true else { throw MeloError.message("Global default connection lost its capability identity") }
+            }
+            disabledConnection.modelCapabilities = ["opaque-image":["imageGen":true]]
+            denied.send("把背景改蓝",chatID:deniedChat,imageTask:deniedPlan)
+            for _ in 0..<100 { if !denied.anySending { break }; try await Task.sleep(for:.milliseconds(20)) }
+            guard disabledCalls == 1, !denied.anySending, denied.chats.first?.messages.count == 2 else { throw MeloError.message("A corrected image capability could not retry in the same chat") }
             // An unsigned-in Codex phone must stop before creating a failed request, preserving its draft.
             let blocked=ChatStore(directory:root.appendingPathComponent("blocked"))
             let blockedChat=blocked.newChat()!,blockedInput=try blocked.importImage(orange)
@@ -88,7 +129,7 @@ import UIKit
             guard abs(zoom.zoomScale - 2.38) < 0.001 else {throw MeloError.message("Resize reset zoom")}
             zoom.display(bitmap,id:"second");zoom.layoutIfNeeded()
             guard zoom.zoomScale == 1 else {throw MeloError.message("New image did not reset fit")}
-            result=["passed":true,"realProvider":false,"naturalEditFirstRequest":true,"nativeCumulativeZoom":true,"nativeElasticLimit":true,"zoomSurvivesViewUpdate":true,"requests":calls,"messagesAfterRetry":2,"referencePersisted":true,"outputPersisted":true,"restartRestored":true,"crossChatRejected":true,"emptyEditRejected":true,"unsignedCodexRejectedBeforeSend":true,"draftRetained":true,"automaticEditResolved":true,"failureRecorded":true,"retryConnectionPersisted":true]
+            result=["passed":true,"realProvider":false,"capabilityPreflightPreservesDraftAndOriginal":true,"capabilityRetrySameChat":true,"sameEndpointConnectionIsolated":true,"defaultConnectionIsolated":true,"naturalEditFirstRequest":true,"nativeCumulativeZoom":true,"nativeElasticLimit":true,"zoomSurvivesViewUpdate":true,"requests":calls,"messagesAfterRetry":2,"referencePersisted":true,"outputPersisted":true,"restartRestored":true,"crossChatRejected":true,"emptyEditRejected":true,"unsignedCodexRejectedBeforeSend":true,"draftRetained":true,"automaticEditResolved":true,"failureRecorded":true,"retryConnectionPersisted":true]
         } catch {result["error"]=error.localizedDescription}
         try? FileManager.default.createDirectory(at:parent,withIntermediateDirectories:true)
         if let data=try? JSONSerialization.data(withJSONObject:result,options:[.sortedKeys,.prettyPrinted]) {try? data.write(to:parent.appendingPathComponent("image-verification.json"),options:.atomic)}

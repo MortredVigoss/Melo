@@ -448,6 +448,10 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             policy.tiers = Dictionary(uniqueKeysWithValues: [("light", "a"), ("standard", "b"), ("strong", "c")].map { ($0.0, [RoutingAssignment(connectionId: "local", model: $0.1)]) })
             let candidates = ["a", "b", "c"].map { PhoneRoutingCandidate(connectionId: "local", model: $0, name: $0) }
             func session() throws -> PhoneRoutingSession { try .init(policy: policy, mode: "smart", connectionId: "local", defaultModel: "a", candidates: candidates, text: "比较几个方案", history: [], attachments: []) }
+            let scoped = try PhoneRoutingSession(policy: policy, mode: "smart", connectionId: "local", defaultModel: "a", candidates: candidates, text: "换个话题，比较两篇小说的写作风格", history: [["role":"user","content":"投资风险"],["role":"assistant","content":"已完成"]], attachments: [])
+            let scopedHost = PhoneRoutingHost(session: scoped, messages: [.init(role:"user",content:"投资风险")]) { _,_ in ScriptedTransport { _ in answer("fixture") } }
+            let payload = try JSONSerialization.jsonObject(with: Data(scopedHost.judgmentMessages[0].content.utf8)) as! [String:Any]
+            assert((payload["context"] as? [String])?.isEmpty == true && scoped.model == "b", "Phone judge must not reintroduce history filtered by the shared routing policy")
             var actual: [String] = [], effects = 0
             let low = ScriptedTransport { request in
                 if request.goalReview != nil { return answer(#"{"complexity":1,"risk":"low","needs":{}}"#) }

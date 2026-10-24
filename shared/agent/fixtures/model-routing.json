@@ -462,5 +462,309 @@
       "model": "opaque-C",
       "tier": "strong"
     }
+  },
+  {
+    "name": "closed risk then greeting",
+    "input": {
+      "mode": "smart",
+      "connectionId": "own",
+      "defaultModel": "opaque-A",
+      "policy": {
+        "allowEscalation": true,
+        "tiers": {
+          "light": [
+            {
+              "connectionId": "own",
+              "model": "opaque-A"
+            }
+          ],
+          "standard": [
+            {
+              "connectionId": "own",
+              "model": "opaque-B"
+            }
+          ],
+          "strong": [
+            {
+              "connectionId": "own",
+              "model": "opaque-C"
+            }
+          ]
+        }
+      },
+      "candidates": [
+        {
+          "connectionId": "own",
+          "model": "opaque-A",
+          "available": true,
+          "capabilities": {
+            "tools": true,
+            "vision": true
+          }
+        },
+        {
+          "connectionId": "own",
+          "model": "opaque-B",
+          "available": true,
+          "capabilities": {
+            "tools": true,
+            "vision": true
+          }
+        },
+        {
+          "connectionId": "own",
+          "model": "opaque-C",
+          "available": true,
+          "capabilities": {
+            "tools": true,
+            "vision": true
+          }
+        }
+      ],
+      "text": "hello",
+      "goal": "",
+      "context": [
+        {
+          "role": "user",
+          "content": "分析投资风险"
+        },
+        {
+          "role": "assistant",
+          "content": "分析已完成"
+        }
+      ]
+    },
+    "expected": {
+      "model": "opaque-A",
+      "tier": "light"
+    }
+  },
+  {
+    "name": "risk followup",
+    "input": {
+      "mode": "smart",
+      "connectionId": "own",
+      "defaultModel": "opaque-A",
+      "policy": {
+        "allowEscalation": true,
+        "tiers": {
+          "light": [
+            {
+              "connectionId": "own",
+              "model": "opaque-A"
+            }
+          ],
+          "standard": [
+            {
+              "connectionId": "own",
+              "model": "opaque-B"
+            }
+          ],
+          "strong": [
+            {
+              "connectionId": "own",
+              "model": "opaque-C"
+            }
+          ]
+        }
+      },
+      "candidates": [
+        {
+          "connectionId": "own",
+          "model": "opaque-A",
+          "available": true,
+          "capabilities": {
+            "tools": true,
+            "vision": true
+          }
+        },
+        {
+          "connectionId": "own",
+          "model": "opaque-B",
+          "available": true,
+          "capabilities": {
+            "tools": true,
+            "vision": true
+          }
+        },
+        {
+          "connectionId": "own",
+          "model": "opaque-C",
+          "available": true,
+          "capabilities": {
+            "tools": true,
+            "vision": true
+          }
+        }
+      ],
+      "text": "好的",
+      "goal": "",
+      "context": [
+        {
+          "role": "user",
+          "content": "分析投资风险"
+        },
+        {
+          "role": "assistant",
+          "content": "分析已完成"
+        }
+      ]
+    },
+    "expected": {
+      "model": "opaque-C",
+      "tier": "strong"
+    }
+  },
+  {
+    "name": "new topic after risk",
+    "input": {
+      "mode": "smart",
+      "connectionId": "own",
+      "defaultModel": "opaque-A",
+      "policy": {
+        "allowEscalation": true,
+        "tiers": {
+          "light": [
+            {
+              "connectionId": "own",
+              "model": "opaque-A"
+            }
+          ],
+          "standard": [
+            {
+              "connectionId": "own",
+              "model": "opaque-B"
+            }
+          ],
+          "strong": [
+            {
+              "connectionId": "own",
+              "model": "opaque-C"
+            }
+          ]
+        }
+      },
+      "candidates": [
+        {
+          "connectionId": "own",
+          "model": "opaque-A",
+          "available": true,
+          "capabilities": {
+            "tools": true,
+            "vision": true
+          }
+        },
+        {
+          "connectionId": "own",
+          "model": "opaque-B",
+          "available": true,
+          "capabilities": {
+            "tools": true,
+            "vision": true
+          }
+        },
+        {
+          "connectionId": "own",
+          "model": "opaque-C",
+          "available": true,
+          "capabilities": {
+            "tools": true,
+            "vision": true
+          }
+        }
+      ],
+      "text": "换个话题，比较两篇小说的叙述方式",
+      "goal": "",
+      "context": [
+        {
+          "role": "user",
+          "content": "分析投资风险"
+        },
+        {
+          "role": "assistant",
+          "content": "分析已完成"
+        }
+      ]
+    },
+    "expected": {
+      "model": "opaque-B",
+      "tier": "standard"
+    }
+  },
+  {
+    "name": "active goal preserved",
+    "input": {
+      "mode": "smart",
+      "connectionId": "own",
+      "defaultModel": "opaque-A",
+      "policy": {
+        "allowEscalation": true,
+        "tiers": {
+          "light": [
+            {
+              "connectionId": "own",
+              "model": "opaque-A"
+            }
+          ],
+          "standard": [
+            {
+              "connectionId": "own",
+              "model": "opaque-B"
+            }
+          ],
+          "strong": [
+            {
+              "connectionId": "own",
+              "model": "opaque-C"
+            }
+          ]
+        }
+      },
+      "candidates": [
+        {
+          "connectionId": "own",
+          "model": "opaque-A",
+          "available": true,
+          "capabilities": {
+            "tools": true,
+            "vision": true
+          }
+        },
+        {
+          "connectionId": "own",
+          "model": "opaque-B",
+          "available": true,
+          "capabilities": {
+            "tools": true,
+            "vision": true
+          }
+        },
+        {
+          "connectionId": "own",
+          "model": "opaque-C",
+          "available": true,
+          "capabilities": {
+            "tools": true,
+            "vision": true
+          }
+        }
+      ],
+      "text": "hello",
+      "goal": "分析投资风险",
+      "context": [
+        {
+          "role": "user",
+          "content": "分析投资风险"
+        },
+        {
+          "role": "assistant",
+          "content": "分析已完成"
+        }
+      ]
+    },
+    "expected": {
+      "model": "opaque-C",
+      "tier": "strong"
+    }
   }
 ]

@@ -45,7 +45,7 @@ class SmartRouting(private val runtime: SharedCoreRuntime, private val config: S
         if(judge != null) {
             val c = (config.connections.find { it.id == judge.text("connectionId") } ?: error("判断连接已不可用。")).copy(model = judge.text("model"))
             val prompt = runtime.value("modelRouting", buildJsonObject { put("action", "prompt") }).jsonPrimitive.content
-            val history = listOf(buildJsonObject { put("role", "user"); put("content", messages.filter { it.role == "user" }.takeLast(4).joinToString("\n") { it.content }) })
+            val history = listOf(buildJsonObject { put("role", "user"); put("content", runtime.value("modelRouting", buildJsonObject { put("action", "judgeInput"); put("routing", input) }).toString()) })
             var judgment: JsonElement = JsonNull
             try {
                 val result = withTimeout(3000) { budget.model(SharedRunBudget.estimateInput(history, prompt), { it.inputTokens }) {

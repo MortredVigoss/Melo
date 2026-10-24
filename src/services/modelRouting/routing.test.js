@@ -33,3 +33,17 @@ test('judgment deadline aborts its transport and cancellation never becomes a fa
   calls++;options.signal.addEventListener('abort',()=>reject(options.signal.reason),{once:true});controller.abort(new Error('user cancelled'));
  })}),/user cancelled/);assert.equal(calls,1);
 });
+
+
+test('routing judgment only sees the current task, and rerouted connections own their capabilities',async()=>{
+ clearRoutingCache();let payload;
+ const text='换个话题，比较两篇小说的叙述方式';
+ const route=await createRoutingSession({config,home:'task-scope',text,messages:[{role:'user',content:'法律诉讼风险'},{role:'assistant',content:'已完成'}],createReply:async options=>{payload=JSON.parse(options.messages[0].content);return answer;}});
+ assert.deepEqual(payload.context,[]);assert.equal(payload.text,text);assert.equal(route.current.model,'two');
+ const {routeConnection}=await import('./routing.js');const {connectionForModel,resolvedModelCapabilities}=await import('../../../shared/agent/modelCapabilities.js');
+ const one={id:'a',baseUrl:'https://same.invalid/v1',apiKey:'a',authMode:'api-key',modelCapabilities:{opaque:{vision:false}}};
+ const two={...one,id:'b',apiKey:'b',modelCapabilities:{opaque:{vision:true}}};
+ const selected=routeConnection({...one,activeLlmProfileId:'a',llmProfiles:{a:one,b:two}},{connectionId:'b',model:'opaque'});
+ assert.equal(resolvedModelCapabilities(connectionForModel(selected),'opaque').vision,true);
+ assert.equal(selected.apiKey,'b');
+});

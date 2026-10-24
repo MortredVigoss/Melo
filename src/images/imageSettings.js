@@ -46,7 +46,7 @@ export function visionConnection(config, fallback = {}) {
     return { ...config, ...fallback, model: fallback.model || config.model || DEFAULT_CHAT_MODEL };
   const profile = config.llmProfiles?.[id];
   if (!profile) throw new Error('选择的视觉模型连接已不存在，请重新选择。');
-  return { ...config, ...profile };
+  return { ...config, ...profile, activeLlmProfileId: id };
 }
 export function validateImageTask(value) {
   if (value == null) return null;

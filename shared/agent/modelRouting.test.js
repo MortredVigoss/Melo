@@ -64,3 +64,15 @@ test('side-effect minimum can promote a single model without losing its identity
  assert.equal(next.tier,'strong');assert.equal(next.model,previous.model);assert.equal(next.escalations,1);
  assert.equal(escalateRouting({...input,previous:next,requested:true,sideEffects:true}),null);
 });
+
+
+test('new tasks clear historical risk while continuations and an active goal retain it',()=>{
+ const context=[{role:'user',content:'请分析这项投资和相关法律诉讼风险'},{role:'assistant',content:'分析已完成。'}];
+ for(const text of ['hello','2 + 3?','换个话题，帮我比较两篇小说的写作风格','Please compare the narrative style of these two novels']) {
+   const value=selectRouting({...base,text,context}); assert.notEqual(value.tier,'strong',text);
+ }
+ for(const text of ['好的','那继续呢','what about that?','50呢？']) assert.equal(selectRouting({...base,text,context}).tier,'strong',text);
+ assert.equal(selectRouting({...base,text:'hello',goal:'继续分析投资风险',context}).tier,'strong');
+ const moved=[...context,{role:'user',content:'换个话题，帮我比较两篇小说的写作风格'},{role:'assistant',content:'小说叙事分析'}];
+ assert.notEqual(selectRouting({...base,text:'继续比较',context:moved}).tier,'strong');
+});

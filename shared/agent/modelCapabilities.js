@@ -25,13 +25,16 @@ export function capabilitiesFromMetadata(row = {}) {
 export function resolvedModelCapabilities(connection = {}, model = connection.model) {
   const result = { ...normalizeModelCapabilities(connection.modelMetadata?.[model]) };
   const test = connection.visionTest;
-  if (test?.requestedModel === model && typeof test.ok === 'boolean') result.vision = test.ok;
+  // Transport/auth/recognition failures do not establish a model capability.
+  if (test?.requestedModel === model && test.ok === true) result.vision = true;
   return { ...result, ...normalizeModelCapabilities(connection.modelCapabilities?.[model]) };
 }
 export function connectionForModel(config = {}) {
   const profile = config.llmProfiles?.[config.activeLlmProfileId];
-  // Direct/vision overrides cannot borrow a same-named model's declarations from another endpoint.
-  return profile && profile.baseUrl === config.baseUrl && profile.authMode === config.authMode &&
+  // A selected connection snapshot and its credentials outrank a stale active ID.
+  // Several saved connections may use the same endpoint and even the same key.
+  return profile && (!config.id || config.id === config.activeLlmProfileId) &&
+    (profile.apiKey || '') === (config.apiKey || '') && profile.baseUrl === config.baseUrl && profile.authMode === config.authMode &&
     (profile.apiProtocol || 'chat-completions') === (config.apiProtocol || 'chat-completions') ? profile : config;
 }
 export function modelCapabilityOperation(input) {

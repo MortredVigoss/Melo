@@ -174,3 +174,33 @@ test('MiniMax synthesis preserves Korean instead of stripping text based on lang
  const result=await synthesizeSpeech('안녕하세요',{ttsProvider:'minimax',minimaxApiKey:'fixture-key',minimaxVoiceId:'fixture'});
  assert.equal(body.text,'안녕하세요');assert.equal(result.buffer.length,2);
 });
+
+
+test('explicit TTS selection owns both success and failure; saved credentials never override it',async t=>{
+  const {synthesizeSpeech,getTtsUnavailableReason}=await import('./tts.js');
+  const config={minimaxApiKey:'fixture',minimaxVoiceId:'fixture',whisperApiKey:'speech-key',whisperBaseUrl:'https://speech.invalid/v1',customVoiceBaseUrl:'http://127.0.0.1:8911/v1'};
+  let fail=false, urls=[], edgeCalls=0;
+  t.mock.method(globalThis,'fetch',async url=>{urls.push(String(url)); if(fail)return new Response('',{status:500}); return String(url).includes('minimaxi')?Response.json({data:{audio:'0102'}}):new Response(new Uint8Array([1,2]));});
+  const edgeSynthesize=async()=>{edgeCalls++;return fail?null:{buffer:Buffer.from([1,2]),mimeType:'audio/mpeg'};};
+  for(const provider of ['edge','openai','custom','minimax']) for(const failure of [false,true]) {
+    fail=failure;urls=[];edgeCalls=0;
+    const result=await synthesizeSpeech('hello',{...config,ttsProvider:provider},{edgeSynthesize});
+    assert.equal(!!result,!failure,provider);
+    assert.equal(edgeCalls,provider==='edge'?1:0,provider);
+    assert.equal(urls.length,provider==='edge'?0:1,provider);
+    if(urls.length)assert.equal(new URL(urls[0]).hostname,{openai:'speech.invalid',custom:'127.0.0.1',minimax:'api.minimaxi.chat'}[provider]);
+  }
+  assert.ok(getTtsUnavailableReason({ttsProvider:'openai',authMode:'codex',minimaxApiKey:'fixture',minimaxVoiceId:'fixture'}));
+  assert.ok(getTtsUnavailableReason({ttsProvider:'minimax',...config,minimaxVoiceId:''}));
+});
+
+
+test('legacy automatic fallback retains the pre-await route snapshot',async t=>{
+ const {synthesizeSpeech}=await import('./tts.js');const urls=[];
+ const original=process.env.MELO_WHISPER_BASE_URL;
+ t.after(()=>{if(original===undefined)delete process.env.MELO_WHISPER_BASE_URL;else process.env.MELO_WHISPER_BASE_URL=original;});
+ process.env.MELO_WHISPER_BASE_URL='https://before.invalid/v1';
+ t.mock.method(globalThis,'fetch',async url=>{urls.push(String(url));return String(url).includes('minimaxi')?new Response('',{status:500}):new Response(new Uint8Array([1,2]));});
+ const audio=await synthesizeSpeech('fixture',{minimaxApiKey:'fixture',minimaxVoiceId:'fixture',whisperApiKey:'fixture'},{edgeSynthesize:async()=>{process.env.MELO_WHISPER_BASE_URL='https://after.invalid/v1';return null;}});
+ assert.ok(audio);assert.deepEqual(urls,['https://api.minimaxi.chat/v1/t2a_v2','https://before.invalid/v1/audio/speech']);
+});

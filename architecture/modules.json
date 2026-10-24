@@ -24,7 +24,7 @@
     ],
     "graph": {
       "modules": 635,
-      "edges": 1977,
+      "edges": 1978,
       "roots": [
         "src",
         "desktop-ui",
@@ -2703,6 +2703,7 @@
           "src/tools/builtins/webSearchTool.health.test.js",
           "src/tools/builtins/webSearchTool.helpers.test.js",
           "src/tools/builtins/webSearchTool.jinaAbort.test.js",
+          "src/tools/builtins/webSearchTool.limits.test.js",
           "src/tools/builtins/webSearchTool.swrAbort.test.js",
           "src/tools/executor.cancellation.test.js",
           "src/tools/executor.capabilityElevation.test.js",
@@ -4981,6 +4982,7 @@
         "desktop-ui/features/chat/controller.js",
         "desktop-ui/features/chat/index.js",
         "shared/agent/index.js",
+        "shared/agent/modelRouting.js",
         "shared/conversationTopics.js"
       ],
       "features": [

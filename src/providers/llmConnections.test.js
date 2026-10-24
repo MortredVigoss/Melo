@@ -196,3 +196,28 @@ test('per-model declarations survive activation and discovery but do not follow 
     assert.deepEqual(profile.modelMetadata,{});assert.deepEqual(profile.modelCapabilities,{});assert.equal(profile.apiKey,'new-fixture-key');
   });
 });
+
+
+test('vision probe retries reach the provider after transient or recognition failures; explicit disable still blocks', async t => {
+  const home=await mkdtemp(join(tmpdir(),'melo-vision-retry-'));
+  t.after(()=>rm(home,{recursive:true,force:true}));
+  let requests=0, failure;
+  t.mock.method(globalThis,'fetch',async()=>{
+    requests++;
+    if(failure==='timeout') throw new Error('fixture timeout');
+    if(typeof failure==='number') return Response.json({error:{message:'fixture error'}},{status:failure});
+    return new Response(`data: ${JSON.stringify({choices:[{delta:{content:failure==='recognition'?'000000':'123456'},finish_reason:'stop'}]})}\n\ndata: [DONE]\n\n`,{headers:{'content-type':'text/event-stream'}});
+  });
+  await runWithRequestContext(createRequestContext({home,env:{MELO_MOCK_RESPONSE:''}}),async()=>{
+    await saveLlmProfile({id:'probe',providerId:'custom',baseUrl:'https://fixture.invalid/v1',model:'opaque',apiKey:'fixture-only'});
+    const probe=()=>testLlmProfile('probe',{modality:'vision',challenge:()=> '123456'});
+    for(const cause of ['timeout',401,429,'recognition']) {
+      failure=cause; assert.equal((await probe()).ok,false);
+      const before=requests; failure=null;
+      const result=await probe(); assert.equal(result.ok,true,result.error);
+      assert.equal(requests,before+1,'a failed probe must not disable future requests');
+    }
+    await saveLlmProfile({id:'probe',providerId:'custom',model:'opaque',modelCapability:{vision:false}});
+    const before=requests; assert.equal((await probe()).ok,false); assert.equal(requests,before,'explicit user capability remains authoritative');
+  });
+});
