@@ -1,3 +1,4 @@
+import { captureBehavior } from '../../runtime/runtimeBehavior.js';
 import { resolveReplyLocale } from '../../../shared/agent/locale.js';
 import { executionMessage } from '../../../shared/agent/runtimeMessages.js';
 import { connectionForModel } from '../../../shared/agent/modelCapabilities.js';
@@ -507,7 +508,7 @@ async function executeChatTurn({
   delete state._pendingVerificationRecord;
   // Design audit D2 (optional): MELO_TOOL_TRACE_ALWAYS=1 also replays the
   // tool trace of successful turns that ran at least one tool.
-  const successTrace = context.env.MELO_TOOL_TRACE_ALWAYS === '1' && Array.isArray(normalizedReply.toolResults) && normalizedReply.toolResults.length
+  const successTrace = captureBehavior(config, context.env).MELO_TOOL_TRACE_ALWAYS === '1' && Array.isArray(normalizedReply.toolResults) && normalizedReply.toolResults.length
     ? await readToolTraceText(context, { status: 'completed' }).catch(() => '') : '';
   const successTraceMessage = successTrace ? buildToolTraceMessage(context, successTrace, { status: 'completed', agent: { id: effectiveAgentId, name: activeAgentProfile.name } }) : null;
   // Persist the assistant reply inside the atomic queue so we always merge

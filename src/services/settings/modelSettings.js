@@ -1,3 +1,4 @@
+import { RUNTIME_BEHAVIOR, normalizeBehavior } from '../../../shared/agent/runtimeBehavior.js';
 import { localServiceUrl } from '../../shared/localServices.js';
 import { imageSettings, imageConnection, visionConnection } from '../../images/imageSettings.js';
 // Architecture migration: byte-for-byte command port.
@@ -76,6 +77,11 @@ async function updateModelConfigInner(patch = {}) {
       : currentVal;
 
   const safePatch = { ...patch };
+  if ('behavior' in patch) {
+    if (!patch.behavior || Array.isArray(patch.behavior) || typeof patch.behavior !== 'object' || Object.entries(patch.behavior).some(([key,value]) => !RUNTIME_BEHAVIOR.some(item => item.key === key) || typeof value !== 'boolean')) throw new Error('Invalid runtime behavior settings.');
+    safePatch.behavior = normalizeBehavior({ ...current.behavior, ...patch.behavior }, current);
+  }
+  if ('toolCalling' in patch && !['auto','native','legacy'].includes(patch.toolCalling)) throw new Error('Invalid tool protocol.');
   if ('customVoiceBaseUrl' in safePatch) safePatch.customVoiceBaseUrl = localServiceUrl(safePatch.customVoiceBaseUrl);
   if ('agentRuntime' in patch || 'searchApiKey' in patch || patch.clearSearchKey === true) {
     safePatch.agentRuntime = normalizeRuntimeConfig(patch.agentRuntime || current.agentRuntime);

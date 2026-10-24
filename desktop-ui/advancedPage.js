@@ -1,3 +1,5 @@
+import { renderBehaviorSettings } from './behaviorSettings.js';
+import { formatTime } from './format.js';
 import {renderConnectorManagement} from './managementActions.js';
 import {renderRetainedFiles} from './chatFiles.js';
 import { t, ui } from './i18n.js';
@@ -114,7 +116,7 @@ export function renderAdvancedPage({
     ? '<div class="empty-state compact">No background runs.</div>'
     : adv.tasks.map(t => {
         const isRunning = t.status === 'running';
-        const fmt = t.startedAt ? new Date(t.startedAt).toLocaleTimeString() : '—';
+        const fmt = t.startedAt ? formatTime(t.startedAt, { style:'clock' }) : '—';
         return ui`
           <div class="list-row">
             <div class="thread-meta">
@@ -220,12 +222,13 @@ export function renderAdvancedPage({
           </div>
           <div class="inline-actions">
             <button class="small-button" type="button" data-action="refresh-advanced-status">
-              ${adv.loading ? '检查中…' : '刷新状态'}
+              ${adv.loading ? t('检查中…') : t('刷新状态')}
             </button>
           </div>
         </div>
 
         ${errorBlock}
+        ${renderBehaviorSettings(data.settings?.config || {})}
         ${taskPanelHtml}
         ${approvalPanelHtml}
         <button class="small-button" data-action="manage-session-permissions">会话工具授权</button>

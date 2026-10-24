@@ -6,6 +6,13 @@
     workspace: ['正在打开你的工作空间', '载入对话与偏好设置'],
     error: ['暂时无法打开工作空间', '可以重试，已有内容会保留。'],
   };
+  // BEGIN GENERATED LAUNCH COPY
+  const launchCopy = {"正在启动 Melo":{"zh-CN":"正在启动 Melo","en":"Starting Melo","ja":"Melo を起動中","ko":"Melo 시작 중","es":"Iniciando Melo"},"连接本地工作空间":{"zh-CN":"连接本地工作空间","en":"Connecting to your local workspace","ja":"ローカルワークスペースに接続中","ko":"로컬 작업 공간에 연결 중","es":"Conectando al espacio local"},"正在打开你的工作空间":{"zh-CN":"正在打开你的工作空间","en":"Opening your workspace","ja":"ワークスペースを開いています","ko":"작업 공간 여는 중","es":"Abriendo tu espacio"},"载入对话与偏好设置":{"zh-CN":"载入对话与偏好设置","en":"Loading conversations and preferences","ja":"会話と設定を読み込み中","ko":"대화 및 설정 불러오는 중","es":"Cargando conversaciones y preferencias"},"暂时无法打开工作空间":{"zh-CN":"暂时无法打开工作空间","en":"Unable to open the workspace","ja":"ワークスペースを開けません","ko":"작업 공간을 열 수 없습니다","es":"No se puede abrir el espacio"},"可以重试，已有内容会保留。":{"zh-CN":"可以重试，已有内容会保留。","en":"Try again. Existing content will be preserved.","ja":"再試行できます。既存の内容は保持されます。","ko":"다시 시도할 수 있으며 기존 내용은 유지됩니다.","es":"Puedes reintentar. Se conservará el contenido."},"没有可用的诊断详情。":{"zh-CN":"没有可用的诊断详情。","en":"No diagnostic details available.","ja":"診断情報はありません。","ko":"진단 정보가 없습니다.","es":"No hay detalles de diagnóstico."},"Melo 启动":{"zh-CN":"Melo 启动","en":"Melo startup","ja":"Melo の起動","ko":"Melo 시작","es":"Inicio de Melo"},"重新打开":{"zh-CN":"重新打开","en":"Reopen","ja":"再度開く","ko":"다시 열기","es":"Reabrir"},"查看诊断信息":{"zh-CN":"查看诊断信息","en":"Show diagnostics","ja":"診断情報を表示","ko":"진단 정보 보기","es":"Ver diagnóstico"}};
+  // END GENERATED LAUNCH COPY
+  function launchText(key) {
+    const language = String(state.language || navigator.language || 'en').split('-')[0];
+    return launchCopy[key]?.[language === 'zh' ? 'zh-CN' : language] || launchCopy[key]?.en || key;
+  }
   let root, canvas, ctx, resizeObserver, removalObserver, raf = 0, lastFrame = 0;
   let state = {}, width = 0, height = 0, core = { x: 0, y: 0, radius: 80 };
   let retry = () => location.reload();
@@ -40,12 +47,15 @@
     const phase = phases[state.phase] ? state.phase : 'workspace';
     root.dataset.phase = phase;
     root.setAttribute('aria-busy', phase === 'error' ? 'false' : 'true');
-    root.querySelector('[data-launch-status]').textContent = phases[phase][0];
-    root.querySelector('[data-launch-caption]').textContent = phases[phase][1];
+    root.querySelector('[data-launch-status]').textContent = launchText(phases[phase][0]);
+    root.querySelector('[data-launch-caption]').textContent = launchText(phases[phase][1]);
     root.querySelector('[data-launch-recovery]').hidden = phase !== 'error';
-    root.querySelector('[data-launch-detail]').textContent = String(state.detail || '没有可用的诊断详情。');
+    root.querySelector('[data-launch-detail]').textContent = String(state.detail || launchText('没有可用的诊断详情。'));
     root.querySelector('details').hidden = !state.detail;
     root.querySelector('button').disabled = false;
+    root.querySelector('button').textContent = launchText('重新打开');
+    root.querySelector('summary').textContent = launchText('查看诊断信息');
+    root.setAttribute('aria-label', launchText('Melo 启动'));
     draw();
   }
 
@@ -161,7 +171,7 @@
     dispose(); root?.remove(); root = null;
     document.getElementById('app')?.classList.add('is-launch-arriving');
   }
-  window.MeloLaunch = { show, dismiss };
+  window.MeloLaunch = { show, dismiss, setLanguage(value) { state.language=value; if(root?.isConnected)show(); } };
   let initial = { phase: 'workspace' };
   try { initial = JSON.parse(document.getElementById('melo-launch-state')?.textContent || '{}'); } catch {}
   show(initial);

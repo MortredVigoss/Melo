@@ -2,12 +2,12 @@
 /* 1. The working surface is a reading surface: nearly opaque, so nested
    cards no longer pick up uneven star light through stacked alpha. */
 .neural-shell:not(.is-overview) .neural-dashboard.workspace {
- background:radial-gradient(ellipse at 0 0,rgba(174,145,100,.06),transparent 52%),linear-gradient(145deg,rgba(23,22,20,.95),rgba(10,11,14,.97));
+ background:radial-gradient(ellipse at 0 0,var(--palette-7110d00bed),transparent 52%),linear-gradient(145deg,var(--palette-6afc4225c9),var(--palette-d34be569fc));
 }
 .neural-dashboard .surface-card .surface-card,
 .neural-dashboard .detail-card .surface-card,
 .neural-dashboard .surface-card .detail-card {
- background:rgba(255,246,228,.022);box-shadow:none;border-color:var(--space-edge-soft);
+ background:var(--palette-05da90ef74);box-shadow:none;border-color:var(--space-edge-soft);
 }
 
 /* 2. One type scale. Unsized text used to inherit the browser's 16px, so
@@ -23,7 +23,7 @@
 .neural-dashboard .subsection-title {font-size:var(--type-section);}
 .neural-dashboard .page-kicker {font-size:var(--type-body);line-height:1.7;color:var(--space-muted);margin-top:6px;}
 .neural-dashboard .page-title + .page-kicker,
-.neural-dashboard .header-row .page-title ~ .page-kicker {font-size:14px;margin-top:8px;}
+.neural-dashboard .header-row .page-title ~ .page-kicker {font-size:var(--font-size-14px);margin-top:8px;}
 .neural-dashboard :is(.list-row-meta,.page-kicker-tip) {color:var(--space-muted);line-height:1.7;}
 .neural-dashboard .empty-state.compact {font-size:var(--type-body);border-radius:var(--space-radius-control);}
 .neural-dashboard .empty-state {border-radius:var(--space-radius-card);}
@@ -54,7 +54,7 @@
  background-color:var(--space-inset);color:var(--space-text);font-size:var(--type-body);line-height:1.5;
 }
 :where(.neural-dashboard .page) :where(input,textarea)::placeholder {color:var(--space-soft);}
-:where(.neural-dashboard .page) :where(input,textarea,select):focus-visible {outline:none;border-color:var(--space-gold);box-shadow:0 0 0 2px rgba(209,178,125,.12);}
+:where(.neural-dashboard .page) :where(input,textarea,select):focus-visible {outline:none;border-color:var(--space-gold);box-shadow:0 0 0 2px var(--palette-0f9faad27f);}
 .neural-dashboard :is(.config-select,.agent-select):not(:disabled),
 :where(.neural-dashboard .page) :where(select):not(:disabled) {
  appearance:none;-webkit-appearance:none;min-height:36px;padding:7px 32px 7px 10px;
@@ -69,19 +69,19 @@
 .neural-dashboard .label > :is(input:not([type=checkbox],[type=radio]),select,textarea) {width:100%;}
 .neural-dashboard .inline-actions > label {display:inline-flex;align-items:center;gap:8px;color:var(--space-muted);font-size:var(--type-small);}
 .neural-dashboard .inline-actions > label > select {width:auto;min-width:96px;}
-.neural-dashboard input[type=checkbox] {accent-color:#b99a5f;}
+.neural-dashboard input[type=checkbox] {accent-color:var(--palette-87ee265fab);}
 
 /* 5. Page skeletons. Every management page starts at the same left edge,
    uses the same title size and the same 16px card. */
 .neural-dashboard .local-settings {max-width:none;margin:0;padding:var(--space-inset-size);}
 .neural-dashboard .local-settings header .eyebrow {display:none;}
-.neural-dashboard .local-settings header h1 {font-size:26px;line-height:1.35;letter-spacing:-.025em;font-weight:500;margin:0;}
-.neural-dashboard .local-settings header p {font-size:14px;color:var(--space-muted);margin:8px 0 0;}
+.neural-dashboard .local-settings header h1 {font-size:var(--font-size-26px);line-height:1.35;letter-spacing:-.025em;font-weight:500;margin:0;}
+.neural-dashboard .local-settings header p {font-size:var(--font-size-14px);color:var(--space-muted);margin:8px 0 0;}
 .neural-dashboard .local-settings-tabs {margin:20px 0 16px;}
 .neural-dashboard .local-settings-links {margin:16px 0 0;}
 .neural-dashboard .local-settings-card {
  padding:var(--space-inset-size);border:1px solid var(--space-edge-soft);border-radius:var(--space-radius-card);
- background:var(--space-card);box-shadow:inset 1px 1px #f4deba09,inset -1px -1px #0003,0 4px 12px #0001;
+ background:var(--space-card);box-shadow:inset 1px 1px var(--palette-65a507a1b7),inset -1px -1px var(--palette-4566085eb0),0 4px 12px var(--palette-0212afa337);
 }
 .neural-dashboard .local-settings-card h2 {font-size:var(--type-pane);margin:0 0 12px;}
 .neural-dashboard .local-setting-row {min-height:56px;font-size:var(--type-body);}

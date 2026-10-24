@@ -58,9 +58,10 @@ test('a running reply shows its steps, keeps controls usable and takes a supplem
     assert.equal((await fetch(base + '/api/settings/local', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({preferences:{interfaceLanguage:'zh-CN'}})})).status,200);
     await page.goto(base);
  const composer=page.locator('#composer');await composer.waitFor();
- await composer.fill('写一首关于月亮的诗');await composer.press('Enter');
+ await composer.fill('写一首关于月亮的诗');await page.locator('[data-form=composer] button[type=submit]').click();
  // Mid-reply: the stop button is there, steps render in the chat, and the controls are not locked.
  await page.locator('[data-action=stop-send]').waitFor();
+ assert.equal(await page.locator('[data-action=stop-send]').evaluate(el=>!!el.closest('[inert]')),false,'click-to-send keeps stop interactive');
  await page.locator('.run-steps .run-step').first().waitFor({timeout:10000});
  assert.ok(await page.locator('.run-steps').isVisible()&&await page.locator('.run-steps').evaluate(el=>{const r=el.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight;}),'steps are in view');
  assert.equal(await page.locator('[data-action=toggle-agent-selector]').isDisabled(),false,'Agent selector stays usable');

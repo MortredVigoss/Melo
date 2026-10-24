@@ -7,7 +7,7 @@ import {resolve,join} from 'node:path';
 import assert from 'node:assert/strict';
 const dir=resolve('.tmp/settings-design-check');await mkdir(dir,{recursive:true});const home=await mkdtemp(join(dir,'home-'));await mkdir(join(home,'desktop'));
 await writeFile(join(home,'desktop/state.json'),JSON.stringify({chats:[{id:'fixture-chat',source:'desktop',title:'交互验收',agentId:'main',messages:[{id:'user-msg',role:'user',content:'验收',createdAt:new Date().toISOString()},{id:'assistant-msg',role:'assistant',content:'原角色的历史回复',createdAt:new Date().toISOString(),metadata:{agent:{id:'main',name:'Main agent'}}}]}],settings:{activeView:'settings'}}));
-const child=spawn(process.execPath,['src/server.js','--host','127.0.0.1','--port','0'],{env:{...process.env,MELO_HOME:home,MELO_TEST_MODE:'1',MELO_MOCK_RESPONSE:'fixture response',MELO_DREAMING_ENABLED:'0',MELO_MEMORY_RUNTIME:'0'},stdio:['ignore','pipe','pipe']});
+const child=spawn(process.execPath,['src/server.js','--host','127.0.0.1','--port','0'],{env:{...process.env,MELO_HOME:home,MELO_TEST_MODE:'1',MELO_MOCK_RESPONSE:'fixture response',MELO_DREAMING_ENABLED:'0',MELO_MEMORY_RUNTIME:'0',MELO_CDP_ENABLED:'false'},stdio:['ignore','pipe','pipe']});
 let logs='',browser;child.stderr.on('data',b=>logs+=b);const closed=once(child,'exit');
 try {
  const base=await new Promise((resolve,reject)=>{const t=setTimeout(()=>reject(new Error(logs)),15000);child.stdout.on('data',b=>{logs+=b;const m=logs.match(/listening at (http:\/\/127\.0\.0\.1:\d+)/);if(m){clearTimeout(t);resolve(m[1]);}});child.once('exit',()=>{clearTimeout(t);reject(new Error(logs));});});
@@ -110,6 +110,51 @@ try {
  assert.equal((await bootstrap()).activeChat.modelSelection.model,fixedID);
  assert.notEqual((await bootstrap()).activeChat.modelSelection.mode,'smart');
  out.smartRouting={saved:true,reloaded:true,retiredAPI:retired.status,fixedAndSmartPicker:true};
+ assert.deepEqual(errors,[]);
+
+ // Runtime flags are real saved configuration; environment overrides stay visible and locked.
+ await go({activeView:'customize',selectedCustomizeSection:'advanced'});
+ const behavior=page.locator('[data-behavior-settings]');await behavior.waitFor();
+ assert.equal(await behavior.locator('[name=toolChainHistory]').isDisabled(),true);
+ assert.equal(await page.locator('[data-action=refresh-advanced-status]').innerText(),'Refresh status');
+ await behavior.locator('[data-action=behavior-settings-edit]').click();
+ assert.equal(await behavior.locator('[name=browserControl]').isDisabled(),true);
+ assert.match(await behavior.innerText(),/MELO_CDP_ENABLED/);
+ await behavior.locator('[name=toolChainHistory]').check();
+ await page.route('**/api/settings/model',route=>route.fulfill({status:500,contentType:'application/json',body:JSON.stringify({error:'fixture save failure'})}),{times:1});
+ await behavior.locator('[data-action=behavior-settings-save]').click();
+ await behavior.locator('[data-edit-status=error]').waitFor();
+ assert.equal(await behavior.locator('[name=toolChainHistory]').isChecked(),true);
+ await behavior.locator('[data-action=behavior-settings-save]').click();
+ await behavior.locator('[data-edit-status=saved]').waitFor();
+ assert.equal((await bootstrap()).settings.config.behavior.toolChainHistory,true);
+ await go({activeView:'customize',selectedCustomizeSection:'advanced'});
+ assert.equal(await behavior.locator('[name=toolChainHistory]').isChecked(),true);
+ await behavior.locator('[data-action=behavior-settings-edit]').click();
+ await behavior.locator('[name=toolChainHistory]').uncheck();
+ await behavior.locator('[data-action=behavior-settings-cancel]').click();
+ assert.equal(await behavior.locator('[name=toolChainHistory]').isChecked(),true);
+ await behavior.scrollIntoViewIfNeeded();await page.screenshot({path:join(dir,'runtime-behavior.png')});
+ out.runtimeBehavior={persisted:true,failedSaveRetained:true,cancelRestored:true,environmentLocked:true};
+ // Real composer dialog: invalid values stay editable, cancel preserves text, valid links become drafts.
+ await go({activeView:'chat',selectedChatId:'fixture-chat'});
+ await page.locator('#composer').fill('preserved draft');
+ const openLink=async()=>{await page.locator('[data-action=toggle-composer-attachment-menu]').click();await page.locator('[data-action=add-link-attachment]').click();};
+ await openLink();const linkDialog=page.locator('dialog.input-dialog');await linkDialog.waitFor();
+ await linkDialog.locator('input').fill('javascript:alert(1)');
+ await linkDialog.locator('button[type=submit]').click();
+ assert.equal(await linkDialog.locator('input').getAttribute('aria-invalid'),'true');
+ await page.screenshot({path:join(dir,'link-validation.png')});
+ await linkDialog.locator('button[type=button]').click();
+ assert.equal(await page.locator('#composer').inputValue(),'preserved draft');
+ await openLink();await linkDialog.locator('input').fill('https://example.com/audit');
+ await linkDialog.locator('button[type=submit]').click();await linkDialog.waitFor({state:'detached'});
+ assert.equal(await page.locator('#composer').inputValue(),'preserved draft');
+ assert.ok(await page.locator('.composer-card').innerText().then(text=>text.includes('example.com')));
+ const colors=await page.evaluate(()=>{const e=document.querySelector('.composer-card'),c=getComputedStyle(e);return {background:c.backgroundColor,color:c.color,fontSize:c.fontSize};});
+ assert.notEqual(colors.color,'rgba(0, 0, 0, 0)');assert.ok(parseFloat(colors.fontSize)>0);
+ await page.screenshot({path:join(dir,'audit-composer.png')});
+ out.linkDialog={cancelKeepsDraft:true,invalidKeptOpen:true,validAttached:true,colors};
  assert.deepEqual(errors,[]);
  out.errors=errors;await writeFile(join(dir,'findings.json'),JSON.stringify(out,null,2));console.log(JSON.stringify(out,null,2));
 }catch(e){console.error(e.stack);if(browser){const pages=browser.contexts().flatMap(c=>c.pages());await pages[0]?.screenshot({path:join(dir,'failure.png')});}process.exitCode=1;}

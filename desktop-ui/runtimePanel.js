@@ -1,3 +1,4 @@
+import { formatTime } from './format.js';
 import { t, ui } from './i18n.js';
 export function renderRuntimePanel(report, escapeHtml) {
   if (!report) return ui`<p class="page-kicker-tip">正在读取状态，尚未确认各项能力是否可用。</p>`;
@@ -12,7 +13,7 @@ export function renderRuntimePanel(report, escapeHtml) {
       return ui`<article class="quality-status-card">
         <span>${escapeHtml(labels[row.id] ? t(labels[row.id]) : row.label || row.id)}</span>
         <strong class="runtime-status-${status}">${escapeHtml(t(states[status]))}</strong>
-        <small>${row.checkedAt ? escapeHtml(t('最近检查：{0}', { 0: new Date(row.checkedAt).toLocaleString() })) : t('暂无近期验证记录')}</small>
+        <small>${row.checkedAt ? escapeHtml(t('最近检查：{0}', { 0: formatTime(row.checkedAt, {style:'full'}) })) : t('暂无近期验证记录')}</small>
         <details class="quality-details"><summary>查看依据</summary>
           <p>${escapeHtml(row.reason || 'not-tested')}</p>
           <p>验证层级：${escapeHtml(row.level || 'storage')}</p>

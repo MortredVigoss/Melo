@@ -1,3 +1,4 @@
+import { escapeHtml as encodeHtml } from '../../html.js';
 // Projectile motion renderer — canvas + slider params.
 //
 // Input spec shape (already validated upstream in vizSpec.js):
@@ -225,13 +226,7 @@ function mountProjectile(host, spec) {
 }
 
 function escape(str) {
-  return String(str || '').replace(/[&<>"']/g, ch => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;',
-  })[ch]);
+  return encodeHtml(str || '');
 }
 
 function formatValue(value, unit) {

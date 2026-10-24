@@ -36,3 +36,10 @@ test('clarification and contextual reply heuristics stay conservative', () => {
     false,
   );
 });
+
+test('short requests and plain lists do not masquerade as clarification', () => {
+  for (const text of ['2+2','Write a poem','今天天气怎么样','長い説明をお願いします']) assert.equal(isLikelyContextDependentReply(text), false);
+  for (const text of ['それ','그거','ese','that one']) assert.equal(isLikelyContextDependentReply(text), true);
+  assert.equal(isLikelyClarificationPrompt('- apples\n- oranges'), false);
+  for (const text of ['どちらですか？','어느 것이에요?','¿Cuál de estas opciones?']) assert.equal(isLikelyClarificationPrompt(text), true);
+});

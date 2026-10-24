@@ -36,7 +36,10 @@ test('protocol resolution: responses / anthropic / opt-in chat-completions / xml
   assert.equal(resolveToolProtocol({ authMode: 'codex', toolCalling: 'legacy' }), 'xml');
   assert.equal(resolveToolProtocol({ ...deepseek, toolCalling: 'legacy' }, { MELO_CHAT_TOOLS: '1' }), 'xml');
   assert.equal(resolveToolProtocol({ authMode: 'api-key', apiProtocol: 'anthropic', toolCalling: 'legacy' }), 'xml');
-  assert.equal(resolveToolProtocol({ authMode: 'api-key', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-realtime' }), 'xml');
+  assert.equal(resolveToolProtocol({ authMode: 'api-key', baseUrl: 'https://api.openai.com/v1', model: 'custom', modelCapabilities:{custom:{tools:false}} }), 'xml');
+  assert.equal(resolveToolProtocol({ ...deepseek, model:'audio-realtime-custom', toolCalling:'native' }), 'chat-completions');
+  assert.equal(resolveToolProtocol(deepseek,{MELO_FUNCTION_CALLING:'true'}),'chat-completions');
+  assert.equal(resolveToolProtocol({...deepseek,toolCalling:'native'},{MELO_FUNCTION_CALLING:'false'}),'xml');
   // Session exposes protocol and the derived `native` getter.
   const session = createFunctionCallingSession({ ...deepseek, toolCalling: 'native' }, [tool]);
   assert.equal(session.protocol, 'chat-completions'); assert.equal(session.native, true);

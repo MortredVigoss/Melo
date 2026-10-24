@@ -1,3 +1,4 @@
+import { AGENT_LOOP_CONTRACT, contractRegExp } from '../../shared/agent/loopContract.js';
 function normalizeSnippet(value = '', maxLength = 260) {
   const text = String(value || '')
     .replace(/\s+/g, ' ')
@@ -52,6 +53,7 @@ export function isLikelyClarificationPrompt(text) {
   }
 
   const clarificationSignals = [
+    'どちら', 'どれですか', 'どの意味', '어느 것', '무슨 뜻', 'cuál de', 'qué quieres decir',
     'which one',
     'which do you mean',
     'do you mean',
@@ -80,7 +82,7 @@ export function isLikelyClarificationPrompt(text) {
   }
 
   const bulletCount = (String(text || '').match(/(^|\n)\s*[-*•]\s/g) || []).length;
-  return bulletCount >= 2;
+  return bulletCount >= 2 && /[?？]/u.test(normalized);
 }
 
 export function isLikelyContextDependentReply(text) {
@@ -90,15 +92,10 @@ export function isLikelyContextDependentReply(text) {
   }
 
   const lower = normalized.toLowerCase();
-  const wordCount = lower.split(/\s+/).filter(Boolean).length;
+  return contractRegExp(AGENT_LOOP_CONTRACT.intent.patterns.shortAck).test(lower)
+    || contractRegExp(AGENT_LOOP_CONTRACT.intent.patterns.contextualReply).test(lower)
+    || /^(?:that one|this one|first|second|third|第[一二三四五六七八九十]+个|这个|那个|それ|これ|그거|이거|ese|esa|este|esta)[。.!！?？]*$/iu.test(lower);
 
-  if (normalized.length <= 36 || wordCount <= 6) {
-    return true;
-  }
-
-  return /^(yes|no|yeah|nope|sure|ok|okay|that one|this one|first|second|third|第一个|第二个|第三个|这个|那个)$/i.test(
-    lower,
-  );
 }
 
 export function extractClarificationOptions(text = '') {

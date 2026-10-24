@@ -1,18 +1,15 @@
-import { runtimeStageName as stageName, runtimeStageOutput as localizedStageOutput } from '../shared/agent/runtimeMessages.js';
+import { escapeHtml } from './html.js';
+import { runtimeStageName as stageName, runtimeStageOutput as localizedStageOutput, runtimeCompletionText as localizedCompletionText } from '../shared/agent/runtimeMessages.js';
 import { translations } from './translations.js';
-export const LANGUAGES = Object.freeze([
-  { id:'zh-CN', name:'简体中文', short:'中文' },
-  { id:'en', name:'English', short:'EN' },
-  { id:'ko', name:'한국어', short:'한국어' },
-  { id:'ja', name:'日本語', short:'日本語' },
-  { id:'es', name:'Español', short:'ES' },
-]);
+import { LANGUAGES } from './interfaceLanguages.js';
+export { LANGUAGES };
 export const normalizeLanguage = value => LANGUAGES.some(language => language.id === value) ? value : 'zh-CN';
 let language = 'zh-CN';
 export const currentLanguage = () => language;
 export function setLanguage(value) {
   language = normalizeLanguage(value);
   if (typeof document !== 'undefined') document.documentElement.lang = language;
+  globalThis.MeloLaunch?.setLanguage?.(language);
   return language;
 }
 // Only call with authored interface text. Interpolated user content stays opaque.
@@ -20,7 +17,7 @@ export function t(source, values = {}, locale = language) {
   const text = translations[source]?.[normalizeLanguage(locale)] ?? String(source ?? '');
   return text.replace(/\{(\w+)\}/g, (token, key) => Object.hasOwn(values,key) ? String(values[key]) : token);
 }
-const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const escape = value => escapeHtml(String(value));
 const cache = new WeakMap();
 const slot = index => `\uE000${index}\uE001`;
 function translateStaticText(text) {
@@ -55,3 +52,5 @@ export function ui(strings, ...values) {
 export function runtimeStageName(stage) { return t(stageName(stage, language)); }
 
 export function runtimeStageOutput(stage) { return localizedStageOutput(stage,currentLanguage()); }
+
+export const runtimeCompletionText = receipt => localizedCompletionText(receipt, currentLanguage());

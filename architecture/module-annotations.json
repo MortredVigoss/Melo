@@ -373,7 +373,8 @@
         "/api/bootstrap",
         "/api/launch/",
         "/vendor/",
-        "/shared/"
+        "/shared/",
+        "/src/shared/visualTokens.js"
       ],
       "testGroups": [
         "test:ui",
@@ -1367,6 +1368,35 @@
         "scripts/ci-test-plan.test.js"
       ],
       "note": "CI must plan before expensive jobs and fail closed when planning fails."
+    },
+    {
+      "id": "gen-interface-catalog",
+      "kind": "generator",
+      "generator": "scripts/generate-interface-languages.js",
+      "inputs": [
+        "shared/protocol/interface-languages.json"
+      ],
+      "outputs": [
+        "desktop-ui/interfaceLanguages.js",
+        "ios/Melo/InterfaceLanguage.swift"
+      ],
+      "check": "scripts/generate-interface-languages.test.js",
+      "command": "node scripts/generate-interface-languages.js",
+      "note": "Shared language identifiers, display names and native locale mappings."
+    },
+    {
+      "id": "gen-visual-palette",
+      "kind": "generator",
+      "generator": "scripts/generate-visual-tokens.js",
+      "inputs": [
+        "desktop-ui/tokens.css"
+      ],
+      "outputs": [
+        "src/shared/visualTokens.js"
+      ],
+      "check": "scripts/visual-tokens.test.js",
+      "command": "node scripts/generate-visual-tokens.js",
+      "note": "Canvas and server defaults from the authored CSS palette; browser theme overrides remain effective."
     }
   ]
 }

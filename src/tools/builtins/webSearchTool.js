@@ -1,3 +1,4 @@
+import { captureBehavior } from '../../runtime/runtimeBehavior.js';
 import { searchLimits, scopedSearchRun } from '../../services/search/searchLimits.js';
 /**
  * web_search tool
@@ -1324,6 +1325,7 @@ async function fetchResultContents(urls, signal, {
   // anti-bot bypass).  Env off path is unchanged.
   _fetchViaCdpChrome: _cdpOverride = null,
 } = {}) {
+  const behavior = captureBehavior();
   // G-1c follow-up #2 (Codex C round-2 闭环 2026-05-10): entry abort gate.
   // Pre-fix, an aborted signal at this point still ran Jina probes + PW
   // fallback because the function trusted the caller-side check.  Now
@@ -1496,7 +1498,7 @@ async function fetchResultContents(urls, signal, {
   if (signal?.aborted) {
     return { items: [...results.values()].filter(r => r.content), fallbackTier };
   }
-  const useCdp = process.env.MELO_CDP_ENABLED === '1';
+  const useCdp = behavior.MELO_CDP_ENABLED === '1';
   let fallbackImpl = null;
   let plannedTier = null;
   if (useCdp) {

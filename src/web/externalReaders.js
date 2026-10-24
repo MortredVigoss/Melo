@@ -1,3 +1,4 @@
+import { captureBehavior } from '../runtime/runtimeBehavior.js';
 import { execFile as execFileCallback } from 'node:child_process';
 import { access, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { constants as fsConstants } from 'node:fs';
@@ -285,7 +286,8 @@ async function readWithCamoufox(url, {
 }
 
 export async function readUrlWithExternalReader(kind, url, options = {}) {
-  if (process.env.MELO_DISABLE_EXTERNAL_WEB_READERS === '1') return null;
+  const behavior = options.behavior || captureBehavior(options.config);
+  if (behavior.MELO_DISABLE_EXTERNAL_WEB_READERS === '1') return null;
   if (!READER_ORDER.includes(kind)) return null;
 
   if (kind === 'crawl4ai') return readWithCrawl4AI(url, options);
@@ -302,8 +304,9 @@ export async function readUrlWithExternalReaders(url, {
   cookies = '',
   config,
   _runCommand,
+  behavior = captureBehavior(config),
 } = {}) {
-  if (process.env.MELO_DISABLE_EXTERNAL_WEB_READERS === '1') return null;
+  if (behavior.MELO_DISABLE_EXTERNAL_WEB_READERS === '1') return null;
 
   const order = (Array.isArray(preferred) ? preferred : [preferred])
     .map(value => String(value || '').trim())
@@ -313,6 +316,7 @@ export async function readUrlWithExternalReaders(url, {
     if (signal?.aborted) return null;
     try {
       const result = await readUrlWithExternalReader(kind, url, {
+        behavior,
         signal,
         maxChars,
         timeoutMs,

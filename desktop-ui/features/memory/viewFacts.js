@@ -1,6 +1,7 @@
+import { escapeHtml } from '../../html.js';
 import { t, ui } from '../../i18n.js';
 import { renderEditActions, EditSession } from '../../settingsEdit.js';
-const escape=value=>String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const escape = value => escapeHtml(value ?? '');
 // Bug audit U6: static labels go through t() at render time (the interface
 // language is chosen after import). '仅原对话' is a native-catalog key
 // (ios/native-translations.js) that the shared catalog may not duplicate.
@@ -16,7 +17,7 @@ export function renderMemoryFacts(data,{query='',editing=null,busy=false,draft=n
     <p>自动记忆默认仅用于原对话。停止使用会保留记录供恢复，原始聊天仍然保留。</p>
     <div class="inline-actions"><input id="memory-fact-query" aria-label="搜索记忆" placeholder="搜索内容或来源对话" value="${escape(query)}"/><button class="small-button" data-action="memory-fact-search">搜索</button></div>
     ${!data?ui`<p>正在读取记忆…</p>`:data.records.length?data.records.map(r=>ui`<article class="detail-card" data-memory-record="${escape(r.id)}">
-      ${feedback?.id===r.id?ui`<div class="settings-edit-toolbar" data-edit-status="saved"><span class="settings-save-status" role="status">✓ ${escape(feedback.message)}</span></div>`:''}
+      ${feedback?.id===r.id?ui`<div class="settings-edit-toolbar" data-edit-status="saved"><span class="settings-save-status" role="status" aria-live="polite">✓ ${escape(feedback.message)}</span></div>`:''}
       <div class="list-row-meta">${r.status==='conflict'?ui`<span class="status-badge memory-conflict-badge">冲突</span> `:''}${escape(statuses[r.status] || r.status)} · ${escape(scopes[r.scope])}${r.category?` · ${escape(categories[r.category] || r.category)}`:''}${r.pinned?` · 📌 ${escape(t('固定常驻'))}`:''}</div>
       ${r.conflict?ui`<div class="memory-conflict" data-memory-conflict="${escape(r.id)}"><p>桌面与手机都修改了这条记忆，桌面版仍在使用；请选择保留哪一版。</p>
         <p><strong>桌面版</strong>（${escape(scopes[r.scope])}）：${escape(r.text)}</p>

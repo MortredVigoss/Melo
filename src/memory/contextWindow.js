@@ -1,3 +1,5 @@
+import { COMPACT_TRIGGER_TOKENS, CONTEXT_WINDOW_TOKENS, COMPACT_KEEP_RECENT_MIN, MAX_COMPACT_FAILURES } from './limits.js';
+export { COMPACT_TRIGGER_TOKENS, CONTEXT_WINDOW_TOKENS, COMPACT_KEEP_RECENT_MIN, MAX_COMPACT_FAILURES };
 // Pure history window; byte-for-byte port from contextCompact.js.
 import { estimateMessageTokens } from './tokenEstimate.js';
 
@@ -11,16 +13,16 @@ import { estimateMessageTokens } from './tokenEstimate.js';
 // callers that pass nothing still get these.
 
 /** Fallback: trigger a full LLM compact when pending history exceeds this. */
-export const COMPACT_TRIGGER_TOKENS = 80_000;
+
 
 /** Fallback: maximum history tokens carried by the sliding window. */
-export const CONTEXT_WINDOW_TOKENS = 60_000;
+
 
 /** Always preserve at least this many recent messages verbatim. */
-export const COMPACT_KEEP_RECENT_MIN = 6;
+
 
 /** Stop retrying compact after this many consecutive failures. */
-export const MAX_COMPACT_FAILURES = 3;
+
 
 // ─── Token-bounded sliding window ─────────────────────────────────────────────
 

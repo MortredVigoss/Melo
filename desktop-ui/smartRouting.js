@@ -1,9 +1,10 @@
+import { escapeHtml } from './html.js';
 import { t, ui } from './i18n.js';
 import { EditSession, renderEditActions, paintEditActions } from './settingsEdit.js';
 import { modelLabel } from './modelPresentation.js';
 const session = new EditSession();
 let draft = null, busy = false, message = '', conflict = false, dragged = null;
-const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+const escape = value => escapeHtml(value ?? '');
 const defaults = { revision:0, defaultMode:'fixed', preference:'balanced', allowCrossConnection:false, allowEscalation:true, tiers:{ light:[], standard:[], strong:[] }, candidates:[] };
 const valueOf = config => config.smartRouting || defaults;
 const copy = saved => JSON.parse(JSON.stringify({ ...defaults, ...saved }));
@@ -45,7 +46,7 @@ export function renderSmartRouting(config) {
   const disabled = !session.editing || busy ? 'disabled' : '';
   const candidates = draft.candidates || [];
   const selected = [...new Set(Object.values(draft.tiers).flat().map(c=>JSON.stringify([c.connectionId,c.model])))];
-  return ui`<section class="surface-card smart-routing-settings" data-smart-routing>
+  return ui`<section class="surface-card smart-routing-settings" data-smart-routing data-neural-key="smart-routing-${session.revision}">
     <h2 class="pane-title">智能模式</h2><p class="page-kicker">固定模型与智能（自动）均可选择。模型档位由你指定，价格与延迟仅作参考。</p>
     ${renderEditActions(session,{prefix:'smart-routing',disabled:busy,saveDisabled:conflict})}
     ${conflict?ui`<button type="button" data-action="smart-routing-rebase">载入最新版本并保留我的选择</button>`:''}

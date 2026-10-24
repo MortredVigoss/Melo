@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { assetFileName, buildCatalog, bundleFileName, bundleUrl, catalogFiles, listClips, parseArgs, parseCropDetect, parseProbe, probeArgs, sha256File, transcodeArgs, verifyCatalogFiles, SKINS } from '../../scripts/android-pet-assets.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const options = parseArgs(process.argv.slice(2), { out: resolve(root, 'android/app/src/main/assets/pet') });
+const options = parseArgs(process.argv.slice(2), { out: resolve(root, 'android/app/src/main/assets/pet'), ...(process.env.MELO_PET_SOURCE ? { source: process.env.MELO_PET_SOURCE } : {}) });
 const assetRoot = resolve(options.out);
 const catalogPath = join(assetRoot, 'catalog.json');
 const cachePath = join(assetRoot, 'skins', '.import-cache.json');

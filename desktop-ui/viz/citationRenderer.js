@@ -1,3 +1,4 @@
+import { escapeHtml as encodeHtml } from '../html.js';
 import { ui } from '../i18n.js';
 // ─── Citation renderer + side drawer ────────────────────────────────────────
 // Companion to vizRenderer.js. Handles the NotebookLM-style feature where the
@@ -217,11 +218,7 @@ export function installCitationDrawer({ fetchPreview }) {
 }
 
 function escapeText(str) {
-  return String(str ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+  return encodeHtml(str ?? '');
 }
 
 async function openCitationDrawer({ src, startLine, endLine, quote }) {

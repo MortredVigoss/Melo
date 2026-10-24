@@ -1,3 +1,4 @@
+import { booleanSetting, toolCallingOverride } from '../../shared/agent/runtimeBehavior.js';
 // Protocol adapter layer for function calling (design audit 2026-10-17, E1).
 //
 // One protocol-neutral intermediate representation (IR) of a tool turn:
@@ -58,13 +59,14 @@ function hostOf(baseUrl) {
  * OpenAI host so those models stay on the XML protocol.
  */
 export function resolveToolProtocol(config = {}, env = {}) {
-  if (config.toolCalling === 'legacy') return 'xml';
+  const mode = toolCallingOverride(env) || config.toolCalling;
+  if (mode === 'legacy' || booleanSetting(mode) === false) return 'xml';
   if (config.authMode === 'codex' || config.apiProtocol === 'responses') return 'responses';
   const host = hostOf(config.baseUrl);
   if (config.apiProtocol === 'anthropic' || (!config.apiProtocol && ANTHROPIC_HOSTS.test(host))) return 'anthropic';
-  if (/audio|realtime|gpt-3\.5/i.test(config.model || '')) return 'xml';
+  if (config.modelCapabilities?.[config.model]?.tools === false) return 'xml';
   if (config.authMode !== 'local' && RESPONSES_HOSTS.test(host)) return 'responses';
-  const optedIn = config.toolCalling === 'native' || String(env?.MELO_CHAT_TOOLS || '') === '1';
+  const optedIn = mode === 'native' || booleanSetting(mode) === true || booleanSetting(env?.MELO_CHAT_TOOLS) === true;
   return optedIn ? 'chat-completions' : 'xml';
 }
 

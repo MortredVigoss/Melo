@@ -1,3 +1,4 @@
+import { showFlashToast } from './feedback.js';
 import { PROVIDER_DEFAULTS } from '../shared/agent/providerDefaults.js';
 import { t, ui } from './i18n.js';
 import { EditSession, renderEditActions, paintEditActions } from './settingsEdit.js';
@@ -89,7 +90,7 @@ export function renderImageSettings(config) {
         : ui`<p class="list-row-meta">当前通道按实际返回展示预览。质量和尺寸按选择请求，最终以服务返回为准；局部遮罩需使用支持遮罩的图像 API。</p>`
     }
     <label><input type="checkbox" data-image-setting="inspectEdits" ${value.inspectEdits ? 'checked' : ''}> 改图后核对修改与保留项（每张额外一次视觉请求，不自动重生成）</label>
-    </fieldset><p role="status">${esc(status)}</p>
+    </fieldset><p role="status" aria-live="polite">${esc(status)}</p>
   </div></section>`;
 }
 export function renderImageTaskControls(attachments = []) {
@@ -221,12 +222,14 @@ export async function handleImageAction(action, { config, attachments, api, rend
   if (action === 'image-mask' && draft) {
     if ((config.imageSettings?.engine || 'codex-oauth') !== 'openai-api') {
       status = '局部遮罩需要图像 API，请先在系统 → 模型中选择。';
-      window.alert(status);
+      showFlashToast(t(status), { kind:"error", ms:0 });
+      render();
       return true;
     }
     const source = attachments.find((a) => a.kind === 'image');
     if (!source) {
-      window.alert(t("请先附加要修改的原图。"));
+      showFlashToast(t("请先附加要修改的原图。"), { kind:"error", ms:0 });
+      render();
       return true;
     }
     const value = await drawMask(source.url);

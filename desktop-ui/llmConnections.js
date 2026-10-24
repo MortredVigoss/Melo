@@ -1,3 +1,4 @@
+import { escapeHtml } from './html.js';
 import { t, ui } from './i18n.js';
 import { EditSession, renderEditActions, paintEditActions } from './settingsEdit.js';
 import { copyLinkText } from './linkActions.js';
@@ -5,7 +6,7 @@ import { connectionModelOptions, modelLabel } from './modelPresentation.js';
 
 const editSession = new EditSession();
 const state = { selected: '', draft: null, busy: false, message: '', oauth: null, conflict: false };
-const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const escape = value => escapeHtml(value ?? '');
 const connections = config => config.llmConnections || { providers: [], profiles: [], activeId: '' };
 function draftFor(config) {
   if (state.draft && (editSession.editing || editSession.status === 'saving' || state.busy)) return state.draft;

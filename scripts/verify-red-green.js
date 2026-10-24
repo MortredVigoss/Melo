@@ -1,3 +1,4 @@
+import { desktopInstallPaths } from './desktop-install-paths.js';
 import { spawn } from 'node:child_process';
 import { readFile, rm, unlink, writeFile } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -13,9 +14,7 @@ const telegramMockToken = 'melo-mock-telegram-token';
 // 2026-05-12 cleanup: build output moved to .tmp/desktop-build/ so the
 // source tree no longer carries a third Melo.app duplicate (Spotlight was
 // indexing it as a separate app).  Path tracks build-desktop-app.sh's APP_DIR.
-const nativeAppPath = join(projectDir, '.tmp', 'desktop-build', 'Melo.app');
-const desktopFolderAppPath = join(process.env.HOME || '', 'Desktop', 'melo', 'Melo.app');
-const launchpadAppPath = join(process.env.HOME || '', 'Applications', 'Melo.app');
+const { source: nativeAppPath, shortcut: desktopFolderAppPath, primary: launchpadAppPath } = desktopInstallPaths({ projectDir, home: process.env.HOME, env: { ...process.env } });
 const nativeDebugPath = join(projectDir, '.tmp/desktop-app-debug.txt');
 const autoCloseSentinelPath = join(projectDir, '.tmp/desktop-app-auto-close');
 const verifyMeloHome = join(projectDir, '.tmp/melo-home-verify');

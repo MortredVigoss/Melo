@@ -1,3 +1,4 @@
+import { formatTime } from '../../format.js';
 // Customize page — renderers and selectors
 // (architecture B3 step 1, 2026-10-20). Byte-for-byte move out of
 // desktop-ui/app.js: function bodies and their comments are unchanged; case
@@ -630,7 +631,7 @@ function renderSafetyPane() {
   const fmtTimestamp = (ms) => {
     if (typeof ms !== 'number' || !Number.isFinite(ms)) return '';
     try {
-      return new Date(ms).toLocaleString();
+      return formatTime(ms, {style:'full'});
     } catch {
       return '';
     }

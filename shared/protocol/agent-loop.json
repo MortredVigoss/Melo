@@ -4032,5 +4032,21 @@
         "settingsScope": "这台手机上的"
       }
     }
+  },
+  "guardLimits": {
+    "maxRounds": 64,
+    "consecutiveErrors": 3,
+    "maxConsecutiveErrors": 10,
+    "stagnantRounds": 5,
+    "maxStagnantRounds": 20,
+    "dependencyTools": 16,
+    "completionObservations": 128
+  },
+  "delegationLimits": {
+    "iterations": 8,
+    "depth": 2
+  },
+  "executionLimits": {
+    "toolTimeoutMs": 60000
   }
 }

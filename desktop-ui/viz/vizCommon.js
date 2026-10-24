@@ -1,15 +1,10 @@
+import { escapeHtml as encodeHtml } from '../html.js';
 // Shared helpers for viz renderers — escape, parameter row HTML, slider
 // binding, canvas setup. Keeps each renderer focused on its own physics
 // / geometry instead of re-implementing the boilerplate.
 
 export function escapeAttr(str) {
-  return String(str == null ? '' : str).replace(/[&<>"']/g, ch => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;',
-  })[ch]);
+  return encodeHtml(str == null ? '' : str);
 }
 
 export function formatValue(value, unit) {

@@ -57,7 +57,8 @@ struct ImageTaskPlan: Codable, Equatable {
         }
         let discussion = masked.range(of: #"(?:生成|绘制|编辑|生图|修改|换背景|改背景)[^，。；!?;\n]{0,20}(?:的代码|要怎么|要如何|教程)|^(?:请|帮我|给我)?(?:写|生成|提供)[^，。；!?;\n]{0,25}提示词(?:$|[，。；!?;：:\n])|\b(?:create|write|generate)\s+(?:an?\s+)?(?:image\s+)?(?:prompt|tutorial|code)\b|^(?:如何|怎么|how\s+(?:to|do|can))[^\n]{0,40}(?:生成|编辑|生图|修改|改|换|generate|edit|draw|change|replace|retouch)"#, options: [.regularExpression,.caseInsensitive]) != nil
         let explanation = masked.range(of: #"^(?:请|帮我)?(?:解释|说明|讲讲)|^(?:如何|怎么|为什么)|(?:对比度|饱和度|曝光|亮度).{0,16}(?:有什么|会怎样|会怎么样|的原理)|(?:画|绘制|生成|做).{0,60}(?:的代码|的提示词)|\b(?:how|why)\b.{0,50}\b(?:contrast|saturation|exposure|brightness)|\b(?:in|as)\s+(?:svg|css|html)(?:\s+code)?\b"#, options: [.regularExpression,.caseInsensitive]) != nil
-        let negated = declined || discussion || explanation
+        let explicitToolDenial = (SharedLoopPolicy.value("requestPolicy", ["text": prompt]) as? [String: Any])?["toolsForbidden"] as? Bool == true
+        let negated = declined || discussion || explanation || explicitToolDenial
         if negated { result.action = .analyze }
         else if action == .auto, let foreignAction = SharedLoopPolicy.value("imageLanguage", ["text": prompt, "hasInputImage": !references.isEmpty || !previousImages.isEmpty]) as? String, let resolved = ImageAction(rawValue: foreignAction) {
             result.action = resolved

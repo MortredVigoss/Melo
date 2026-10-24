@@ -23,8 +23,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 639,
-      "edges": 1995,
+      "modules": 646,
+      "edges": 2066,
       "roots": [
         "src",
         "desktop-ui",
@@ -33,7 +33,7 @@
       ],
       "note": "静态 import/re-export，含 desktop-ui 对 /shared/*.js 的服务映射；不含动态 import 与外部包"
     },
-    "routes": 163,
+    "routes": 166,
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
@@ -552,9 +552,9 @@
       "dependsOn": {
         "approvals": 3,
         "channels": 3,
-        "chat": 21,
+        "chat": 22,
         "desktop-shell": 8,
-        "memory": 11,
+        "memory": 12,
         "platform": 42,
         "settings": 3,
         "tools": 21
@@ -734,7 +734,7 @@
       ],
       "modules": {
         "desktop-ui": 27,
-        "shared": 33,
+        "shared": 34,
         "src": 68
       },
       "entryModules": [
@@ -791,6 +791,12 @@
           ]
         },
         {
+          "module": "shared/agent/loopContract.js",
+          "importedBy": [
+            "memory"
+          ]
+        },
+        {
           "module": "shared/agent/media/textUrls.js",
           "importedBy": [
             "media"
@@ -826,6 +832,15 @@
           "module": "shared/agent/retrieval/requestPolicy.js",
           "importedBy": [
             "agents",
+            "tools"
+          ]
+        },
+        {
+          "module": "shared/agent/runtimeBehavior.js",
+          "importedBy": [
+            "desktop-shell",
+            "platform",
+            "settings",
             "tools"
           ]
         },
@@ -1042,11 +1057,11 @@
         "agents": 34,
         "approvals": 7,
         "channels": 2,
-        "desktop-shell": 15,
+        "desktop-shell": 21,
         "knowledge": 5,
         "media": 24,
         "memory": 27,
-        "platform": 54,
+        "platform": 58,
         "projects": 11,
         "settings": 11,
         "sync": 2,
@@ -1054,17 +1069,17 @@
         "voice": 3
       },
       "usedBy": {
-        "agents": 21,
+        "agents": 22,
         "approvals": 1,
         "channels": 9,
-        "desktop-shell": 8,
+        "desktop-shell": 10,
         "media": 14,
-        "memory": 11,
-        "platform": 16,
+        "memory": 12,
+        "platform": 17,
         "projects": 1,
-        "settings": 11,
+        "settings": 13,
         "sync": 4,
-        "tools": 16,
+        "tools": 18,
         "voice": 2
       },
       "httpRoutes": [
@@ -1291,7 +1306,7 @@
       ],
       "modules": {
         "desktop-ui": 9,
-        "src": 57
+        "src": 58
       },
       "entryModules": [
         {
@@ -1401,6 +1416,12 @@
           ]
         },
         {
+          "module": "src/memory/limits.js",
+          "importedBy": [
+            "agents"
+          ]
+        },
+        {
           "module": "src/memory/memoryPromotion.js",
           "importedBy": [
             "chat"
@@ -1490,18 +1511,18 @@
       "dependsOn": {
         "agents": 2,
         "approvals": 3,
-        "chat": 11,
-        "desktop-shell": 6,
+        "chat": 12,
+        "desktop-shell": 9,
         "knowledge": 3,
         "media": 1,
-        "platform": 27,
+        "platform": 37,
         "projects": 1,
         "settings": 15,
         "sync": 2,
         "tools": 1
       },
       "usedBy": {
-        "agents": 11,
+        "agents": 12,
         "channels": 4,
         "chat": 27,
         "desktop-shell": 1,
@@ -1924,8 +1945,8 @@
       "dependsOn": {
         "agents": 3,
         "approvals": 1,
-        "chat": 11,
-        "desktop-shell": 9,
+        "chat": 13,
+        "desktop-shell": 12,
         "media": 1,
         "platform": 25,
         "sync": 3,
@@ -1936,7 +1957,7 @@
         "approvals": 8,
         "channels": 2,
         "chat": 11,
-        "desktop-shell": 14,
+        "desktop-shell": 15,
         "knowledge": 1,
         "media": 8,
         "memory": 15,
@@ -2041,6 +2062,7 @@
       "implicit": [
         "bridge-desktop-native",
         "bridge-desktop-pet",
+        "gen-interface-catalog",
         "gen-interface-languages",
         "served-shared-modules",
         "source-tests-self"
@@ -2544,12 +2566,12 @@
       "dependsOn": {
         "agents": 8,
         "approvals": 33,
-        "chat": 16,
-        "desktop-shell": 7,
+        "chat": 18,
+        "desktop-shell": 15,
         "knowledge": 3,
         "media": 2,
         "memory": 6,
-        "platform": 38,
+        "platform": 43,
         "projects": 5,
         "settings": 10
       },
@@ -2923,10 +2945,10 @@
       "dependsOn": {
         "approvals": 1,
         "chat": 14,
-        "desktop-shell": 5,
+        "desktop-shell": 6,
         "knowledge": 1,
         "memory": 1,
-        "platform": 10,
+        "platform": 11,
         "settings": 8,
         "tools": 4,
         "voice": 1
@@ -3532,7 +3554,7 @@
         "assets/**"
       ],
       "modules": {
-        "desktop-ui": 27,
+        "desktop-ui": 30,
         "src": 2
       },
       "entryModules": [
@@ -3540,6 +3562,12 @@
           "module": "desktop-ui/atomicButton.js",
           "importedBy": [
             "chat"
+          ]
+        },
+        {
+          "module": "desktop-ui/behaviorSettings.js",
+          "importedBy": [
+            "tools"
           ]
         },
         {
@@ -3560,9 +3588,27 @@
           ]
         },
         {
+          "module": "desktop-ui/feedback.js",
+          "importedBy": [
+            "chat",
+            "media"
+          ]
+        },
+        {
           "module": "desktop-ui/format.js",
           "importedBy": [
-            "approvals"
+            "approvals",
+            "chat",
+            "tools"
+          ]
+        },
+        {
+          "module": "desktop-ui/html.js",
+          "importedBy": [
+            "chat",
+            "memory",
+            "settings",
+            "tools"
           ]
         },
         {
@@ -3609,13 +3655,13 @@
         "agents": 12,
         "approvals": 4,
         "channels": 2,
-        "chat": 8,
+        "chat": 10,
         "knowledge": 1,
         "media": 5,
         "memory": 1,
-        "platform": 9,
+        "platform": 12,
         "projects": 5,
-        "settings": 14,
+        "settings": 15,
         "sync": 2,
         "tools": 13,
         "voice": 2
@@ -3623,14 +3669,14 @@
       "usedBy": {
         "agents": 8,
         "approvals": 8,
-        "chat": 15,
-        "media": 5,
-        "memory": 6,
+        "chat": 21,
+        "media": 6,
+        "memory": 9,
         "platform": 2,
         "projects": 5,
-        "settings": 9,
+        "settings": 12,
         "sync": 1,
-        "tools": 7,
+        "tools": 15,
         "voice": 1
       },
       "httpRoutes": [
@@ -3640,6 +3686,7 @@
         "GET /api/launch/reset ← src/server.js",
         "GET /shared/agent/locale.js ← src/server.js",
         "GET /shared/agent/providerDefaults.js ← src/server.js",
+        "GET /shared/agent/runtimeBehavior.js ← src/server.js",
         "GET /shared/agent/runtimeMessages.js ← src/server.js",
         "GET /shared/channelAvailability.js ← src/server.js",
         "GET /shared/conversationTopics.js ← src/server.js",
@@ -3653,13 +3700,17 @@
         "GET /shared/sessionEvents.js ← src/server.js",
         "GET /shared/textUrls.js ← src/server.js",
         "GET /shared/urlDetector.js ← src/server.js",
+        "GET /shared/visualTokens.js ← src/server.js",
+        "GET /src/shared/visualTokens.js ← src/server.js",
         "GET /vendor/three/* ← src/server.js"
       ],
       "desktopUi": [
+        "desktop-ui/actionForms.js",
         "desktop-ui/anchorRouting.js",
         "desktop-ui/app.js",
         "desktop-ui/atomicButton.css",
         "desktop-ui/atomicButton.js",
+        "desktop-ui/behaviorSettings.js",
         "desktop-ui/bootstrapPatch.js",
         "desktop-ui/emerald.css",
         "desktop-ui/features/featureContext.js",
@@ -3671,6 +3722,7 @@
         "desktop-ui/html.js",
         "desktop-ui/i18n.js",
         "desktop-ui/index.html",
+        "desktop-ui/interfaceLanguages.js",
         "desktop-ui/launchScreen.css",
         "desktop-ui/launchScreen.js",
         "desktop-ui/neural.css",
@@ -3715,8 +3767,10 @@
           "npm run test:architecture-performance"
         ],
         "js": [
+          "desktop-ui/actionForms.test.js",
           "desktop-ui/anchorRouting.test.js",
           "desktop-ui/appSwitchFreeze.test.js",
+          "desktop-ui/behaviorSettings.test.js",
           "desktop-ui/bootstrapPatch.test.js",
           "desktop-ui/capabilityElevation.browser.test.js",
           "desktop-ui/committedSave.browser.test.js",
@@ -3735,6 +3789,7 @@
           "desktop-ui/neuralWorkspace.test.js",
           "desktop-ui/runtimeRefactor.test.js",
           "desktop-ui/searchSettings.test.js",
+          "desktop-ui/sharedUi.test.js",
           "desktop-ui/synapticBody.test.js",
           "desktop-ui/undoToast.test.js",
           "src/index.cli.test.js",
@@ -3748,8 +3803,10 @@
         "bridge-desktop-pet",
         "bridge-process-shutdown",
         "bridge-stale-server",
+        "gen-interface-catalog",
         "gen-interface-languages",
         "gen-ios-scene",
+        "gen-visual-palette",
         "served-shared-modules",
         "source-tests-app-dispatch-freeze",
         "source-tests-app-js",
@@ -3883,7 +3940,7 @@
         "src/**"
       ],
       "modules": {
-        "src": 53
+        "src": 55
       },
       "entryModules": [
         {
@@ -4001,10 +4058,21 @@
             "approvals",
             "channels",
             "chat",
+            "desktop-shell",
             "media",
             "memory",
             "projects",
             "settings",
+            "tools"
+          ]
+        },
+        {
+          "module": "src/runtime/runtimeBehavior.js",
+          "importedBy": [
+            "chat",
+            "desktop-shell",
+            "media",
+            "memory",
             "tools"
           ]
         },
@@ -4044,6 +4112,13 @@
             "memory",
             "settings",
             "voice"
+          ]
+        },
+        {
+          "module": "src/shared/visualTokens.js",
+          "importedBy": [
+            "chat",
+            "desktop-shell"
           ]
         },
         {
@@ -4158,7 +4233,7 @@
         "agents": 34,
         "approvals": 18,
         "channels": 6,
-        "chat": 16,
+        "chat": 17,
         "desktop-shell": 2,
         "knowledge": 2,
         "media": 2,
@@ -4173,15 +4248,15 @@
         "agents": 42,
         "approvals": 36,
         "channels": 22,
-        "chat": 54,
-        "desktop-shell": 9,
+        "chat": 58,
+        "desktop-shell": 12,
         "knowledge": 2,
-        "media": 10,
-        "memory": 27,
+        "media": 11,
+        "memory": 37,
         "projects": 23,
         "settings": 25,
         "sync": 4,
-        "tools": 38,
+        "tools": 43,
         "voice": 6
       },
       "httpRoutes": [],
@@ -4232,6 +4307,7 @@
           "src/runtime/postTurnTasks.test.js",
           "src/runtime/processOwnership.test.js",
           "src/runtime/reconcileDerivedFacts.test.js",
+          "src/runtime/runtimeBehavior.test.js",
           "src/runtime/searchCacheEvidence.test.js",
           "src/runtime/serverLock.test.js",
           "src/runtime/storageInventory.test.js",
@@ -4239,6 +4315,7 @@
           "src/server.imports.smoke.test.js",
           "src/serverGuard.test.js",
           "src/shared/localServices.test.js",
+          "src/shared/runtimeBehavior.test.js",
           "src/state/architectureConcurrency.test.js",
           "src/state/chatRetention.test.js",
           "src/state/checkpointCommit.test.js",
@@ -4262,6 +4339,8 @@
         "bridge-desktop-owner-pipe",
         "bridge-process-shutdown",
         "bridge-stale-server",
+        "gen-ios-scene",
+        "gen-visual-palette",
         "served-shared-modules",
         "source-tests-cross-module"
       ],
@@ -4427,8 +4506,10 @@
           "scripts/check-doc-links.test.js",
           "scripts/check-syntax.test.js",
           "scripts/ci-test-plan.test.js",
+          "scripts/desktop-install-paths.test.js",
           "scripts/desktop-server-lifecycle.test.js",
           "scripts/eval-agent-tasks.test.js",
+          "scripts/generate-interface-languages.test.js",
           "scripts/generate-module-map.test.js",
           "scripts/ios-test-selection.test.js",
           "scripts/native-shutdown.test.js",
@@ -4438,7 +4519,8 @@
           "scripts/test-discovery.test.js",
           "scripts/test-impact.test.js",
           "scripts/test-plan.test.js",
-          "scripts/test-stage-runner.test.js"
+          "scripts/test-stage-runner.test.js",
+          "scripts/visual-tokens.test.js"
         ],
         "swift": []
       },
@@ -4449,8 +4531,10 @@
         "bridge-stale-server",
         "ci-workflow-selection",
         "gen-agent-core",
+        "gen-interface-catalog",
         "gen-interface-languages",
         "gen-module-map",
+        "gen-visual-palette",
         "source-tests-desktop-shell-lifecycle",
         "source-tests-task-replay",
         "tooling-ios-tests",
@@ -4875,6 +4959,7 @@
       ],
       "note": "桌面运行时读取 JSON，手机内嵌生成副本（不含 fixtures）；两端跑同一批 fixtures。P3/P4 新增双端行为先扩展此文件。",
       "desktopConsumers": [
+        "src/agents/subAgent.js",
         "src/domain/agent/capabilityElevation.js",
         "src/retrieval/selfVerification.js",
         "src/retrieval/verificationEvidence.js",
@@ -5055,12 +5140,16 @@
         "desktop-ui/executionScene3D.js",
         "desktop-ui/executionTiming.js",
         "desktop-ui/executionViewport.js",
+        "desktop-ui/format.js",
+        "desktop-ui/html.js",
         "desktop-ui/i18n.js",
+        "desktop-ui/interfaceLanguages.js",
         "desktop-ui/neuralGlass.css",
         "desktop-ui/neuralSatellite.js",
         "desktop-ui/neuralScene.js",
         "desktop-ui/neuralScene3D.js",
         "desktop-ui/synapticBody.js",
+        "desktop-ui/tokens.css",
         "desktop-ui/translations.js",
         "ios/Melo/MeloTheme.swift",
         "ios/SceneSource/mobile.css",
@@ -5075,7 +5164,8 @@
         "src/memory/offline/extractor.js",
         "src/shared/executionMetadata.js",
         "src/shared/executionScene.js",
-        "src/shared/sessionEvents.js"
+        "src/shared/sessionEvents.js",
+        "src/shared/visualTokens.js"
       ],
       "outputs": [
         "ios/Melo/Scene/**",
@@ -5088,7 +5178,8 @@
         "chat",
         "desktop-shell",
         "iphone",
-        "memory"
+        "memory",
+        "platform"
       ]
     },
     {
@@ -5792,6 +5883,45 @@
       ],
       "note": "CI must plan before expensive jobs and fail closed when planning fails.",
       "features": [
+        "tooling"
+      ]
+    },
+    {
+      "id": "gen-interface-catalog",
+      "kind": "generator",
+      "generator": "scripts/generate-interface-languages.js",
+      "inputs": [
+        "shared/protocol/interface-languages.json"
+      ],
+      "outputs": [
+        "desktop-ui/interfaceLanguages.js",
+        "ios/Melo/InterfaceLanguage.swift"
+      ],
+      "check": "scripts/generate-interface-languages.test.js",
+      "command": "node scripts/generate-interface-languages.js",
+      "note": "Shared language identifiers, display names and native locale mappings.",
+      "features": [
+        "desktop-shell",
+        "settings",
+        "tooling"
+      ]
+    },
+    {
+      "id": "gen-visual-palette",
+      "kind": "generator",
+      "generator": "scripts/generate-visual-tokens.js",
+      "inputs": [
+        "desktop-ui/tokens.css"
+      ],
+      "outputs": [
+        "src/shared/visualTokens.js"
+      ],
+      "check": "scripts/visual-tokens.test.js",
+      "command": "node scripts/generate-visual-tokens.js",
+      "note": "Canvas and server defaults from the authored CSS palette; browser theme overrides remain effective.",
+      "features": [
+        "desktop-shell",
+        "platform",
         "tooling"
       ]
     }

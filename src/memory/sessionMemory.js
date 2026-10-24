@@ -1,3 +1,6 @@
+import { MEMORY_EXTRACT_INTERVAL, MEMORY_INJECT_LIMIT, MEMORY_MAX_STORED, MEMORY_EXTRACTION_MIN_MESSAGES } from './limits.js';
+export { MEMORY_EXTRACT_INTERVAL, MEMORY_INJECT_LIMIT, MEMORY_MAX_STORED };
+import { captureBehavior } from '../runtime/runtimeBehavior.js';
 /**
  * Session memory extractor.
  *
@@ -31,16 +34,16 @@ import { requestEnvironment } from '../runtime/requestScope.js';
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 /** Extract memory after every this many assistant turns. */
-export const MEMORY_EXTRACT_INTERVAL = 4;
+
 
 /** Maximum facts injected into system prompt per request. */
-export const MEMORY_INJECT_LIMIT = 12;
+
 
 /** Maximum total stored facts per chat. */
-export const MEMORY_MAX_STORED = 80;
+
 
 /** Minimum messages in the window to attempt extraction. */
-const MEMORY_EXTRACTION_MIN_MESSAGES = 6;
+
 
 // ─── Extraction ───────────────────────────────────────────────────────────────
 
@@ -72,7 +75,7 @@ export async function extractMemoryFacts(messages, { config, signal } = {}) {
   if (!messages || messages.length < MEMORY_EXTRACTION_MIN_MESSAGES) return [];
 
   // Offline path: rule-based extractor only, no network.
-  const env = { ...requestEnvironment() };
+  const env = captureBehavior(config);
   messages = messages.slice(-24);
   if (env.MELO_OFFLINE_ONLY === '1') {
     return extractFactsRuleBased(messages);

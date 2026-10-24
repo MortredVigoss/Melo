@@ -1,8 +1,10 @@
+import { formatTime } from './format.js';
+import { escapeHtml } from './html.js';
 import { t, currentLanguage } from './i18n.js';
 
 const terminal = value => ['completed', 'failed', 'cancelled', 'interrupted'].includes(value?.status);
 const instant = value => typeof value === 'string' && value.trim() && Number.isFinite(Date.parse(value)) ? Date.parse(value) : null;
-const escape = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const escape = value => escapeHtml(String(value));
 // Merge overlapping model requests: parallel members and summary telemetry
 // must not multiply the wall-clock time shown to the user.
 function intervalDuration(items, end) {
@@ -48,7 +50,7 @@ export function formatExecutionDuration(ms) {
   return t('{seconds} 秒', { seconds: Math.floor(ms / 1000).toLocaleString(currentLanguage()) });
 }
 function dateText(value) {
-  return new Date(value).toLocaleString(currentLanguage(), { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  return formatTime(value, { style:'full' });
 }
 export function renderExecutionTiming(scene, now = Date.now()) {
   const value = executionTiming(scene, now); if (!value) return '';

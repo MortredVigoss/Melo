@@ -1,3 +1,4 @@
+import { captureBehavior } from '../../runtime/runtimeBehavior.js';
 import { searchLimits, scopedSearchRun } from '../../services/search/searchLimits.js';
 /**
  * fetch_url tool
@@ -225,6 +226,7 @@ export const fetchUrlTool = {
     _tryPlaywright: _tryPlaywrightOverride,
     _tryCdpChrome: _tryCdpChromeOverride,
   } = {}) {
+    const behavior = captureBehavior(config);
     const trail = [];
     const tStart = Date.now();
     // Local aliases — when an override is supplied, all call sites in
@@ -537,7 +539,7 @@ export const fetchUrlTool = {
         // the user's logged-in Chrome session without consent.  The env
         // flag IS the user's consent gate (set via launchctl setenv /
         // LaunchAgent / shell export).
-        if (process.env.MELO_CDP_ENABLED !== '1') {
+        if (behavior.MELO_CDP_ENABLED !== '1') {
           recordTrail(trail, 'cdp-chrome', 'skip', {
             reason: 'cdp-disabled',
             extra: { extractMode: 'cdp-chrome' },
@@ -663,7 +665,7 @@ export const fetchUrlTool = {
         // playwright so the chain doesn't regress on env-on hosts where
         // Chrome happens to be down.  Skipped entirely when env not set,
         // preserving pre-Stage-2b behavior bit-for-bit.
-        if (looksEmpty(content) && process.env.MELO_CDP_ENABLED === '1') {
+        if (looksEmpty(content) && behavior.MELO_CDP_ENABLED === '1') {
           const tCdp = Date.now();
           try {
             const cdpContent = await tryCdpChrome();

@@ -1,3 +1,4 @@
+import { captureBehavior } from '../runtime/runtimeBehavior.js';
 import {
   isPlaceholderSource,
   extractedMediaLabel,
@@ -313,7 +314,7 @@ export async function enrichMessageWithMediaContext(message, context = {}) {
     return message;
   }
 
-  if (process.env.MELO_DISABLE_MEDIA === '1') {
+  if (captureBehavior(context.config).MELO_DISABLE_MEDIA === '1') {
     message.extractedMedia = [];
     return message;
   }

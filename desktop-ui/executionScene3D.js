@@ -1,3 +1,4 @@
+import { visualColor } from '../src/shared/visualTokens.js';
 import * as T from 'three';
 import { EXECUTION_MODULES, moduleActivity, sceneFinished, sceneKey } from '/shared/executionScene.js';
 
@@ -9,20 +10,20 @@ export function createExecutionScene3D(host, { onProject, onFailure, onSelect, o
   const canvas = document.createElement('canvas');
   canvas.setAttribute('aria-hidden', 'true');
   const renderer = new T.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: 'low-power' });
-  renderer.setClearColor('#060a10', 0);
+  renderer.setClearColor(visualColor('scene-060a10'), 0);
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.5));
   renderer.outputColorSpace = T.SRGBColorSpace;
   const world = new T.Scene();
-  world.fog = new T.FogExp2('#060a10', .0007);
+  world.fog = new T.FogExp2(visualColor('scene-060a10'), .0007);
   const camera = new T.PerspectiveCamera(46, 1, 1, 3000);
   const target = new T.Vector3(0, 0, -40), aim = target.clone();
   camera.position.set(0, 55, 750);
   const cameraGoal = camera.position.clone();
-  world.add(new T.AmbientLight('#74849d', .85));
-  const sun = new T.DirectionalLight('#ffce97', 3.1); sun.position.set(-2, 4, 5); world.add(sun);
-  const rim = new T.DirectionalLight('#75bfd4', 1.8); rim.position.set(3, -1, -2); world.add(rim);
-  const key = new T.PointLight('#ffbb78', 35000, 1800); key.position.set(-150, 230, 350); world.add(key);
-  const fill = new T.PointLight('#86cddd', 17000, 1400); fill.position.set(240, -90, 200); world.add(fill);
+  world.add(new T.AmbientLight(visualColor('scene-74849d'), .85));
+  const sun = new T.DirectionalLight(visualColor('scene-ffce97'), 3.1); sun.position.set(-2, 4, 5); world.add(sun);
+  const rim = new T.DirectionalLight(visualColor('scene-75bfd4'), 1.8); rim.position.set(3, -1, -2); world.add(rim);
+  const key = new T.PointLight(visualColor('scene-ffbb78'), 35000, 1800); key.position.set(-150, 230, 350); world.add(key);
+  const fill = new T.PointLight(visualColor('scene-86cddd'), 17000, 1400); fill.position.set(240, -90, 200); world.add(fill);
   let seed = 2573;
   const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
   const disposables = [], modules = [], sourceNodes = new Map();
@@ -36,7 +37,7 @@ export function createExecutionScene3D(host, { onProject, onFailure, onSelect, o
     const x = (random() - .5) * 1800;
     dust.push(x, (random() - .5) * 800 + x * .2, -150 - random() * 1300);
   }
-  const stars = points(dust, '#b29d80', 1.9, .7); world.add(stars);
+  const stars = points(dust, visualColor('scene-b29d80'), 1.9, .7); world.add(stars);
   function line(points, color, opacity = .2) {
     const geometry = new T.BufferGeometry().setFromPoints(points);
     const material = new T.LineBasicMaterial({ color, transparent: true, opacity, depthWrite: false });
@@ -71,8 +72,8 @@ export function createExecutionScene3D(host, { onProject, onFailure, onSelect, o
   for (let i = 0; i < modules.length; i++) {
     const a = modules[i].center, b = modules[(i + 1) % modules.length].center;
     const curve = new T.CubicBezierCurve3(a, a.clone().add(new T.Vector3(0, 90, -90)), b.clone().add(new T.Vector3(0, 80, -120)), b);
-    const strand = line(curve.getPoints(60), '#ab8955', .24);
-    const pulse = new T.Mesh(sphere, new T.MeshBasicMaterial({ color: '#dabc84' })); disposables.push(pulse.material); world.add(pulse);
+    const strand = line(curve.getPoints(60), visualColor('scene-ab8955'), .24);
+    const pulse = new T.Mesh(sphere, new T.MeshBasicMaterial({ color: visualColor('scene-dabc84') })); disposables.push(pulse.material); world.add(pulse);
     conduits.push({ curve, strand, pulse });
   }
   let width = 1, height = 1, raf = 0, last = 0, elapsed = 0, frame = 0, dead = false, visible = true, open = true;
@@ -124,10 +125,10 @@ export function createExecutionScene3D(host, { onProject, onFailure, onSelect, o
     for (const [id, object] of sourceNodes) if (!keys.has(id)) { world.remove(object.mesh, object.line); object.line.geometry.dispose(); object.line.material.dispose(); object.mesh.material.dispose(); sourceNodes.delete(id); }
     for (const node of items) if (!sourceNodes.has(node.id)) {
       const center = modules.find(m => m.id === focus)?.center || new T.Vector3();
-      const material = new T.MeshBasicMaterial({ color: node.cited ? '#ffe4a3' : '#91b4c7' });
+      const material = new T.MeshBasicMaterial({ color: node.cited ? visualColor('scene-ffe4a3') : visualColor('scene-91b4c7') });
       const mesh = new T.Mesh(sphere, material); mesh.position.copy(center); world.add(mesh);
       const geometry = new T.BufferGeometry().setFromPoints([center, center]);
-      const strand = new T.Line(geometry, new T.LineBasicMaterial({ color: '#a88b63', transparent: true, opacity: .32 })); world.add(strand);
+      const strand = new T.Line(geometry, new T.LineBasicMaterial({ color: visualColor('scene-a88b63'), transparent: true, opacity: .32 })); world.add(strand);
       sourceNodes.set(node.id, { mesh, goal: center.clone(), line: strand });
     }
     configureCamera(); layoutDetails(); generation++; interactingUntil = performance.now() + 900; if (open && visible && !document.hidden) draw(0); start();

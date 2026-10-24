@@ -1,3 +1,4 @@
+import { normalizeBehavior } from '../shared/agent/runtimeBehavior.js';
 import { LOCAL_SERVICE_DEFAULTS } from './shared/localServices.js';
 import { requestEnvironment, currentRequestContext, runWithRequestContext } from './runtime/requestScope.js';
 import { createRequestContext } from './runtime/requestContext.js';
@@ -25,6 +26,7 @@ export const VALID_AUTH_MODES = Object.freeze(['local', 'api-key', 'codex']);
 export const DEFAULT_AGENT_RUNTIME = Object.freeze({ search: Object.freeze({ backend: 'none', browserFallback: true }) });
 
 export const DEFAULT_CONFIG = Object.freeze({
+  behavior: normalizeBehavior(),
   agentRuntime: normalizeRuntimeConfig(DEFAULT_AGENT_RUNTIME),
   provider: 'openai-compatible',
   baseUrl: CODEX_OAUTH_BASE_URL,
@@ -275,6 +277,7 @@ function normalizeConfigShape(config = {}, { skipModelNormalize = false } = {}) 
     ...DEFAULT_CONFIG,
     ...config,
     ...normalizeMcpStartup(config),
+    behavior: normalizeBehavior(config.behavior, config),
     agentRuntime: normalizeRuntimeConfig(config.agentRuntime ?? DEFAULT_AGENT_RUNTIME),
     authMode,
     baseUrl: String(config.baseUrl || DEFAULT_CONFIG.baseUrl).trim(),

@@ -2,7 +2,7 @@ import SwiftUI
 
 let meloAccent = MeloTheme.gold
 let meloGold = MeloTheme.gold.opacity(0.85)
-let meloBackground = Color(red: 0.025, green: 0.028, blue: 0.035)
+let meloBackground = MeloTheme.phoneBackground
 
 struct MeloPanel: ViewModifier {
     func body(content: Content) -> some View {
@@ -58,7 +58,7 @@ struct ContentView: View {
                     if expanded {
                         VStack(spacing: 0) {
                             HStack {
-                                Button { openingTask?.cancel(); openingModule = -1; coreTap = nil; withAnimation { path = []; section = 0 } } label: { Label("返回中枢", systemImage: "circle.hexagongrid.fill").font(.system(size: 10)).frame(minHeight: 44) }
+                                Button { openingTask?.cancel(); openingModule = -1; coreTap = nil; withAnimation { path = []; section = 0 } } label: { Label("返回中枢", systemImage: "circle.hexagongrid.fill").font(MeloType.caption()).frame(minHeight: 44) }
                                 Spacer(minLength: 100)
                             }.padding(.horizontal, 20).frame(height: 70)
                             HStack(spacing: 0) {
@@ -66,7 +66,7 @@ struct ContentView: View {
                                     Button { selectModule(module.id) } label: {
                                         VStack(spacing: 5) {
                                             NeuralGlyphAnchor(module: module, size: 28)
-                                            Text(LocalizedStringKey(module.name)).font(.system(size: 11, weight: selected == module.id ? .semibold : .regular))
+                                            Text(LocalizedStringKey(module.name)).font(MeloType.label(weight: selected == module.id ? .semibold : .regular))
                                         }.foregroundStyle(module.color.opacity(selected == module.id ? 1 : 0.8))
                                             .frame(maxWidth: .infinity).frame(height: 54).contentShape(Rectangle())
                                     }.buttonStyle(NeuralPressStyle(id: module.id, hover: { hoveredModule = $0 }))
@@ -133,8 +133,8 @@ struct PageHeading: View {
     let detail: String
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
-            Text(eyebrow).font(.system(size: 10, weight: .semibold)).tracking(3).foregroundStyle(meloAccent)
-            Text(LocalizedStringKey(title)).font(.system(size: 28, weight: .medium, design: .rounded))
+            Text(eyebrow).font(MeloType.caption(weight: .semibold)).tracking(3).foregroundStyle(meloAccent)
+            Text(LocalizedStringKey(title)).font(MeloType.title(weight: .medium, design: .rounded))
             Text(LocalizedStringKey(detail)).font(.subheadline).foregroundStyle(.secondary)
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -154,25 +154,25 @@ struct HomeView: View {
                     Button { select(module.id) } label: {
                         VStack(spacing: 7) {
                             NeuralGlyphAnchor(module: module, size: 60)
-                            Text(LocalizedStringKey(module.name)).font(.system(size: 15, weight: .medium)).foregroundStyle(module.color)
-                            if geometry.size.height >= 600 { Text(module.english).font(.system(size: 7)).tracking(1).foregroundStyle(module.color.opacity(0.66)) }
+                            Text(LocalizedStringKey(module.name)).font(MeloType.row(weight: .medium)).foregroundStyle(module.color)
+                            if geometry.size.height >= 600 { Text(module.english).font(MeloType.micro()).tracking(1).foregroundStyle(module.color.opacity(0.66)) }
                         }.frame(width: 94).contentShape(Rectangle())
                     }.buttonStyle(NeuralPressStyle(id: module.id, hover: hover)).accessibilityLabel(LocalizedStringKey(module.name))
                         .position(x: geometry.size.width * module.x, y: geometry.size.height < 600 ? min(max(128, geometry.size.height * module.y), geometry.size.height - 165) : geometry.size.height * module.y)
                 }
                 VStack {
                     HStack(alignment: .top) {
-                        VStack(alignment: .leading, spacing: 6) { HStack(spacing: 8) { Image(systemName: "asterisk").font(.system(size: 20, weight: .ultraLight)).foregroundStyle(meloGold); Text("melo").font(.system(size: 27, weight: .light, design: .serif)) }; Text("NEURAL WORKSPACE").font(.system(size: 8)).tracking(2.4).foregroundStyle(meloGold) }
+                        VStack(alignment: .leading, spacing: 6) { HStack(spacing: 8) { Image(systemName: "asterisk").font(MeloType.symbol(weight: .ultraLight)).foregroundStyle(meloGold); Text("melo").font(MeloType.brand(weight: .light, design: .serif)) }; Text("NEURAL WORKSPACE").font(MeloType.eyebrow()).tracking(2.4).foregroundStyle(meloGold) }
                         Spacer()
                         Button { select(3) } label: { LocalProfileBadge(size: 26); Circle().fill((authMode == "api" ? !apiModel.isEmpty : account.signedIn) ? meloGold : Color.secondary).frame(width: 5, height: 5); Text(LocalizedStringKey(authMode == "api" ? (apiModel.isEmpty ? "选择模型" : "API 模型") : account.signedIn ? "ChatGPT" : "连接账号")).font(.caption2).foregroundStyle(.secondary) }
                     }.padding(.horizontal, 26).padding(.top, 14)
                     Spacer()
                     VStack(spacing: 13) {
-                        if geometry.size.height >= 600 { Text("选择一个节点，展开思考。").font(.caption).foregroundStyle(Color(red: 0.66, green: 0.62, blue: 0.53)) }
+                        if geometry.size.height >= 600 { Text("选择一个节点，展开思考。").font(.caption).foregroundStyle(MeloTheme.phoneHint) }
                         Button { if let id = store.newChat() { open(id) } } label: {
                             HStack { Text("从一个想法开始…").font(.subheadline).foregroundStyle(.secondary); Spacer(); Image(systemName: "arrow.up.right").font(.callout).foregroundStyle(meloAccent) }.padding(19).background(meloBackground.opacity(0.42), in: RoundedRectangle(cornerRadius: 20)).overlay(RoundedRectangle(cornerRadius: 20).stroke(meloGold.opacity(0.3), lineWidth: 0.6))
                         }.disabled(!store.storageReady)
-                        HStack { InterfaceLanguageMenu(); Spacer(); VStack(alignment: .trailing, spacing: 4) { Text("\(store.chats.count) 段对话 · \(store.preferences.agents.count) 个Agent"); Text("本机工作空间") }.font(.system(size: 9)).foregroundStyle(meloGold.opacity(0.7)) }
+                        HStack { InterfaceLanguageMenu(); Spacer(); VStack(alignment: .trailing, spacing: 4) { Text("\(store.chats.count) 段对话 · \(store.preferences.agents.count) 个Agent"); Text("本机工作空间") }.font(MeloType.meta()).foregroundStyle(meloGold.opacity(0.7)) }
                     }.padding(.horizontal, 26).padding(.bottom, 22)
                 }
             }
@@ -194,7 +194,7 @@ struct CoreView: View {
                     let y = center.y + sin(angle) * radius * 0.8 + sin(time * 0.5 + angle) * 7
                     let diameter = 0.8 + (1 - fraction) * 1.8
                     let opacity = 0.15 + (1 + sin(angle + time * 0.45)) * 0.28
-                    let color = index % 17 == 0 ? Color(red: 0.35, green: 0.65, blue: 0.67) : index % 3 == 0 ? meloGold : meloAccent
+                    let color = index % 17 == 0 ? MeloTheme.phoneNeuron : index % 3 == 0 ? meloGold : meloAccent
                     context.fill(Path(ellipseIn: CGRect(x: x, y: y, width: diameter, height: diameter)), with: .color(color.opacity(opacity)))
                 }
             }
@@ -209,9 +209,9 @@ struct ConversationRow: View {
         HStack(alignment: .top, spacing: 13) {
             AgentAvatar(agent: agent, size: 38)
             VStack(alignment: .leading, spacing: 7) {
-                HStack { Text(chat.title).font(.system(size: 15, weight: .medium)).lineLimit(1); if pinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(meloGold) } }
+                HStack { Text(chat.title).font(MeloType.row(weight: .medium)).lineLimit(1); if pinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(meloGold) } }
                 Text(ReplyDocument.plainText(chat.messages.last?.content ?? "等待你的第一个想法")).font(.caption).lineLimit(2).foregroundStyle(.secondary)
-                Text("\(agent.name) · \(chat.messages.count) 条消息").font(.system(size: 10)).foregroundStyle(.tertiary)
+                Text("\(agent.name) · \(chat.messages.count) 条消息").font(MeloType.caption()).foregroundStyle(.tertiary)
             }
             Spacer(minLength: 0)
             Image(systemName: "arrow.up.right").font(.caption2).foregroundStyle(.tertiary).padding(.top, 4)
@@ -297,8 +297,8 @@ struct ChatView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 14) {
-                Button { withAnimation(.easeInOut(duration: 0.3)) { historyVisible.toggle() } } label: { VStack(spacing: 3) { Image(systemName: "sidebar.left").font(.system(size: 18, weight: .light)); Text("历史").font(.system(size: 9)) }.frame(width: 40, height: 44) }.accessibilityLabel("展开历史对话")
-                VStack(alignment: .leading, spacing: 3) { Text("WORKSPACE / CHAT").font(.system(size: 8)).tracking(1.5).foregroundStyle(meloGold); Button { editedTitle = chat?.title ?? ""; renaming = true } label: { HStack(spacing: 6) { Text(chat?.title ?? "对话").font(.subheadline).lineLimit(1); Image(systemName: "pencil").font(.caption2).foregroundStyle(meloGold) } }.foregroundStyle(.primary).accessibilityLabel("重命名当前对话") }
+                Button { withAnimation(.easeInOut(duration: 0.3)) { historyVisible.toggle() } } label: { VStack(spacing: 3) { Image(systemName: "sidebar.left").font(MeloType.control(weight: .light)); Text("历史").font(MeloType.meta()) }.frame(width: 40, height: 44) }.accessibilityLabel("展开历史对话")
+                VStack(alignment: .leading, spacing: 3) { Text("WORKSPACE / CHAT").font(MeloType.eyebrow()).tracking(1.5).foregroundStyle(meloGold); Button { editedTitle = chat?.title ?? ""; renaming = true } label: { HStack(spacing: 6) { Text(chat?.title ?? "对话").font(.subheadline).lineLimit(1); Image(systemName: "pencil").font(.caption2).foregroundStyle(meloGold) } }.foregroundStyle(.primary).accessibilityLabel("重命名当前对话") }
                 Spacer()
                 Button { settings = true } label: { Image(systemName: "slider.horizontal.3").frame(width: 36, height: 38) }.accessibilityLabel("模型设置")
             }.padding(.horizontal, 16).padding(.vertical, 9).background(meloBackground.opacity(0.3)).overlay(alignment: .bottom) { Rectangle().fill(meloGold.opacity(0.13)).frame(height: 0.5) }
@@ -314,7 +314,7 @@ struct ChatView: View {
                     } else if chat?.messages.isEmpty != false {
                         VStack(alignment: .leading, spacing: 14) {
                             AgentAvatar(agent: store.agent(for: chatID), size: 52).padding(.bottom, 8)
-                            Text("对话 / \(store.agent(for: chatID).name)").font(.system(size: 29, weight: .medium, design: .rounded))
+                            Text("对话 / \(store.agent(for: chatID).name)").font(MeloType.chatTitle(weight: .medium, design: .rounded))
                             Text(store.agent(for: chatID).subtitle).font(.subheadline).foregroundStyle(.secondary)
                             ForEach(["帮我梳理一个想法", "一起拟一份今天的计划", "帮我润色一段文字"], id: \.self) { text in Button { draft = text } label: { HStack { Text(text); Spacer(); Image(systemName: "arrow.up.left") }.font(.subheadline).padding(15).background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 15)) }.foregroundStyle(.secondary) }
                         }.padding(.top, 45).padding(.horizontal, 8)
@@ -334,7 +334,7 @@ struct ChatView: View {
                                     Menu {
                                         Text("请求模型：\(run.requestedModel.isEmpty ? "未选择" : run.requestedModel)")
                                         Text("服务返回：\(run.returnedModel ?? "未提供，不推断")")
-                                    } label: { Text(run.returnedModel ?? "返回模型未提供").font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1) }.accessibilityLabel("查看本轮模型信息")
+                                    } label: { Text(run.returnedModel ?? "返回模型未提供").font(MeloType.meta()).foregroundStyle(.secondary).lineLimit(1) }.accessibilityLabel("查看本轮模型信息")
                                 }
                             }
                             if let receipts = store.preferences.messageModels?[message.id], !receipts.isEmpty {
@@ -403,7 +403,7 @@ struct ChatView: View {
                         }
                     } label: {
                         Image(systemName: voiceInput.state.recording ? "stop.fill" : "mic.fill")
-                            .font(.system(size: 18)).foregroundStyle(voiceInput.state.active ? meloGold : meloAccent)
+                            .font(MeloType.control()).foregroundStyle(voiceInput.state.active ? meloGold : meloAccent)
                             .frame(width: 44, height: 44).background(.white.opacity(0.05), in: Circle())
                     }.disabled(voiceInput.state.status == "stopping")
                      .accessibilityLabel(voiceInput.state.active ? "停止语音输入" : "语音输入，转为文字后确认发送")
@@ -420,7 +420,7 @@ struct ChatView: View {
                         }
                     } label: { Text(voiceLanguage == "zh-CN" ? "听写 · 中文" : voiceLanguage == "en-US" ? "听写 · English" : "听写 · 系统语言").font(.caption2) }.disabled(voiceInput.state.active)
                     Spacer()
-                    Text("回复可能有误，请核实重要信息").font(.system(size: 9)).foregroundStyle(.tertiary)
+                    Text("回复可能有误，请核实重要信息").font(MeloType.meta()).foregroundStyle(.tertiary)
                 }
             }.padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 6).background(meloBackground.opacity(0.65))
         }
@@ -486,7 +486,7 @@ struct ChatView: View {
                 if !state.partial.isEmpty { ScrollView { Text(state.partial).font(.subheadline).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 78) }
                 if !state.error.isEmpty { Text(state.error).font(.caption).foregroundStyle(meloGold) }
                 if !state.notice.isEmpty { Text(state.notice).font(.caption).foregroundStyle(.secondary) }
-                if state.active { Text("最长 60 秒 · 转为文字后确认发送 · 系统识别可能需要联网").font(.system(size: 10)).foregroundStyle(.secondary) }
+                if state.active { Text("最长 60 秒 · 转为文字后确认发送 · 系统识别可能需要联网").font(MeloType.caption()).foregroundStyle(.secondary) }
             }.padding(10).background(meloGold.opacity(0.045), in: RoundedRectangle(cornerRadius: 14))
         }
     }

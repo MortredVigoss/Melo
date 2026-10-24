@@ -1,3 +1,4 @@
+import { escapeHtml } from '../../html.js';
 // "Memories this reply drew on" footer for assistant messages (2026-10-17
 // design audit M5 / plan 2A). The data has been persisted in
 // message.metadata.memoryUsage since the memory-feedback work, but the chat
@@ -6,7 +7,7 @@
 // place they noticed it. Pure renderer; actions are handled in ./controller.js.
 import { t, ui } from '../../i18n.js';
 
-const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const escape = value => escapeHtml(value ?? '');
 
 export function renderMessageMemoryRefs(message, { feedback = null, busy = false, open = false } = {}) {
   if (message?.role !== 'assistant') return '';
@@ -26,7 +27,7 @@ export function renderMessageMemoryRefs(message, { feedback = null, busy = false
       <span class="message-memory-ref-kind">${escape(row.kind || 'memory')}</span>
       <span class="message-memory-ref-text">${escape(row.text || '')}</span>
       ${facts.includes(row) ? ui`<span class="inline-actions">
-        ${feedback?.id === row.id && (!feedback.messageId || feedback.messageId === message.id) ? ui`<span class="settings-save-status" role="status">✓ ${escape(feedback.message)}</span>` : ui`
+        ${feedback?.id === row.id && (!feedback.messageId || feedback.messageId === message.id) ? ui`<span class="settings-save-status" role="status" aria-live="polite">✓ ${escape(feedback.message)}</span>` : ui`
         ${row.kind !== 'project-book' ? ui`<button class="small-button" type="button" data-kind="${escape(row.kind)}" data-action="memory-ref-scope" data-memory-id="${escape(row.id)}" data-scope="project" ${busy ? 'disabled' : ''}>${escape(t('记到项目'))}</button>` : ''}
         ${row.kind !== 'personal-profile' && personalTargetId(row) ? ui`<button class="small-button" type="button" data-kind="${escape(row.kind)}" data-action="memory-ref-scope" data-memory-id="${escape(row.id)}" data-scope="personal" ${busy ? 'disabled' : ''}>${escape(t('记成个人'))}</button>` : ''}
         <button class="small-button" type="button" data-kind="${escape(row.kind)}" data-action="memory-ref-forget" data-memory-id="${escape(row.id)}" ${busy ? 'disabled' : ''}>${escape(t('停止使用'))}</button>`}

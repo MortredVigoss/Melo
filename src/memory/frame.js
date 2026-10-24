@@ -1,3 +1,5 @@
+import { FRAME_GAP_MS, FRAME_MAX_USER_TURNS, FRAME_MAX_TOKENS, FRAME_DRIFT_COS, FRAME_MIN_TURNS } from './limits.js';
+export { FRAME_GAP_MS, FRAME_MAX_USER_TURNS, FRAME_MAX_TOKENS, FRAME_DRIFT_COS, FRAME_MIN_TURNS };
 /**
  * Frame layer — the "picture" in the Scene → Frame → Content hierarchy.
  *
@@ -25,11 +27,11 @@
 import { createHash } from 'node:crypto';
 import { normalizeConversationSnippet } from './heuristics.js';
 
-export const FRAME_GAP_MS = 30 * 60 * 1000;
-export const FRAME_MAX_USER_TURNS = 5;
-export const FRAME_MAX_TOKENS = 2000;
-export const FRAME_DRIFT_COS = 0.35;
-export const FRAME_MIN_TURNS = 2;
+
+
+
+
+
 
 // ─── Token estimation (shared with contextCompact.js heuristic) ──────────────
 

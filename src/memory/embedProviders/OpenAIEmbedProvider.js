@@ -1,3 +1,5 @@
+import { requestEnvironment } from '../../runtime/requestScope.js';
+import { captureBehavior } from '../../runtime/runtimeBehavior.js';
 /**
  * OpenAIEmbedProvider — fallback using OpenAI's text-embedding-3-large.
  * Disabled when MELO_OFFLINE_ONLY=1.
@@ -10,9 +12,9 @@ const TIMEOUT_MS = 10_000;
 export class OpenAIEmbedProvider extends EmbeddingProvider {
   static get providerName() { return 'openai'; }
 
-  constructor({ apiKey = null, model = 'text-embedding-3-large', dims = 1024 } = {}) {
+  constructor({ env = requestEnvironment(), apiKey = null, model = 'text-embedding-3-large', dims = 1024 } = {}) {
     super();
-    this.apiKey = apiKey || process.env.OPENAI_API_KEY || process.env.MELO_API_KEY || '';
+    this.apiKey = apiKey || env.OPENAI_API_KEY || env.MELO_API_KEY || '';
     this.model = model;
     this._dims = dims;
   }
@@ -20,7 +22,7 @@ export class OpenAIEmbedProvider extends EmbeddingProvider {
   get modelId() { return this.model; }
 
   async isAvailable() {
-    if (process.env.MELO_OFFLINE_ONLY === '1') return false;
+    if (captureBehavior().MELO_OFFLINE_ONLY === '1') return false;
     return Boolean(this.apiKey) && this.apiKey.startsWith('sk-');
   }
 

@@ -1,3 +1,4 @@
+import { visualColor } from './visualTokens.js';
 const sceneMessageParams = value => Object.fromEntries(Object.entries(value || {}).filter(([k,v])=>/^[a-zA-Z][a-zA-Z0-9_]{0,39}$/.test(k) && (typeof v === 'string' || typeof v === 'number' && Number.isFinite(v))).slice(0,16).map(([k,v])=>[k,typeof v === 'string' ? v.slice(0,300) : v]));
 export { sessionEvents } from './sessionEvents.js';
 import { executionMetadata, publicSummaryText } from './executionMetadata.js';
@@ -5,11 +6,11 @@ import { executionMetadata, publicSummaryText } from './executionMetadata.js';
 // Browser/server contract. Only observations enter this state; animation has
 // no authority to create operations, URLs, progress or candidate results.
 export const EXECUTION_MODULES = Object.freeze([
-  { id: 'search', name: '网页检索', color: '#edb866', position: [-225, 58, 20] },
-  { id: 'compute', name: '分析与计算', color: '#82bccc', position: [-110, -102, 95] },
-  { id: 'files', name: '文件与代码', color: '#b9b39b', position: [56, 105, -150] },
-  { id: 'tools', name: '工具调用', color: '#b69bcb', position: [232, 54, -80] },
-  { id: 'create', name: '模型与成果', color: '#e88c62', position: [142, -116, 40] },
+  { id: 'search', name: '网页检索', color: visualColor('execution-search'), position: [-225, 58, 20] },
+  { id: 'compute', name: '分析与计算', color: visualColor('execution-compute'), position: [-110, -102, 95] },
+  { id: 'files', name: '文件与代码', color: visualColor('execution-files'), position: [56, 105, -150] },
+  { id: 'tools', name: '工具调用', color: visualColor('execution-tools'), position: [232, 54, -80] },
+  { id: 'create', name: '模型与成果', color: visualColor('execution-create'), position: [142, -116, 40] },
 ]);
 export const TERMINAL_SCENE_STATUSES = ['completed', 'failed', 'cancelled', 'interrupted'];
 export const sceneFinished = scene => TERMINAL_SCENE_STATUSES.includes(scene?.status);

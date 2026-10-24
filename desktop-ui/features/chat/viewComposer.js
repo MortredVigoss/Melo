@@ -216,7 +216,7 @@ function renderComposerCard({ inline = false } = {}) {
 
   return ui`
     <div class="composer-shell">
-      <div class="composer-conversation-choice agent-chip-anchor">${renderAgentSelectorChip()}${chatState.agentSelectionSaving?ui`<span class="list-row-meta" role="status">正在切换Agent…</span>`:''}</div>
+      <div class="composer-conversation-choice agent-chip-anchor">${renderAgentSelectorChip()}${chatState.agentSelectionSaving?ui`<span class="list-row-meta" role="status" aria-live="polite">正在切换Agent…</span>`:''}</div>
       ${renderImageTaskControls(chatState.composerAttachments)}
       ${renderExecutionPanel()}
       ${chatState.composerRetry?.interrupted && chatState.composerRetry.chatId === composerChat?.id ? ui`<div class="alert">上次请求已中断，可能已有部分操作完成。请先核对对话与执行记录。<button type="button" class="small-button" data-action="restart-interrupted-send">已核对，作为新请求重新执行</button></div>` : ''}

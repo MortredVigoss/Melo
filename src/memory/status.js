@@ -1,3 +1,4 @@
+import { captureBehavior } from '../runtime/runtimeBehavior.js';
 import { createRequire } from 'node:module';
 /**
  * src/memory/status.js
@@ -204,6 +205,7 @@ export function collectMemoryStatus({ meloHome = getMeloHome() } = {}) {
  * own internal timeout; Ollama uses 2s).
  */
 export async function probeEmbeddingProviderAvailability() {
+  const behavior = captureBehavior();
   const result = {
     available: null,
     modelId: null,
@@ -256,7 +258,7 @@ export async function probeEmbeddingProviderAvailability() {
         'or the configured embed model (MELO_OLLAMA_EMBED_MODEL, default bge-m3) is not pulled. ' +
         'Run `ollama serve` and `ollama pull bge-m3` to enable.';
     } else if (name === 'openai') {
-      const offline = process.env.MELO_OFFLINE_ONLY === '1';
+      const offline = behavior.MELO_OFFLINE_ONLY === '1';
       result.reasons.openai = offline
         ? 'MELO_OFFLINE_ONLY=1 explicitly disables the OpenAI embed provider.'
         : 'Neither OPENAI_API_KEY nor MELO_API_KEY (sk-...) set — set one to enable.';

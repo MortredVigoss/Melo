@@ -3,6 +3,9 @@
 import SwiftUI
 
 enum MeloTheme {
+    static let phoneBackground = Color(red: 6.375 / 255.0, green: 7.14 / 255.0, blue: 8.925 / 255.0).opacity(1.0)
+    static let phoneHint = Color(red: 168.3 / 255.0, green: 158.1 / 255.0, blue: 135.15 / 255.0).opacity(1.0)
+    static let phoneNeuron = Color(red: 89.25 / 255.0, green: 165.75 / 255.0, blue: 170.85 / 255.0).opacity(1.0)
     static let text = Color(red: 237 / 255.0, green: 232 / 255.0, blue: 223 / 255.0)
     static let muted = Color(red: 185 / 255.0, green: 176 / 255.0, blue: 162 / 255.0)
     static let soft = Color(red: 150 / 255.0, green: 143 / 255.0, blue: 132 / 255.0)
@@ -21,4 +24,18 @@ enum MeloTheme {
     static let cardRadius: CGFloat = 16.0
     static let panelRadius: CGFloat = 22.0
     static let neuralColors: [Color] = [Color(red: 232 / 255.0, green: 173 / 255.0, blue: 102 / 255.0), Color(red: 203 / 255.0, green: 114 / 255.0, blue: 123 / 255.0), Color(red: 174 / 255.0, green: 136 / 255.0, blue: 199 / 255.0), Color(red: 145 / 255.0, green: 179 / 255.0, blue: 187 / 255.0), Color(red: 206 / 255.0, green: 150 / 255.0, blue: 115 / 255.0)]
+}
+
+enum MeloType {
+    static func micro(weight: Font.Weight = .regular, design: Font.Design = .default) -> Font { .system(size: 7.0, weight: weight, design: design) }
+    static func eyebrow(weight: Font.Weight = .regular, design: Font.Design = .default) -> Font { .system(size: 8.0, weight: weight, design: design) }
+    static func meta(weight: Font.Weight = .regular, design: Font.Design = .default) -> Font { .system(size: 9.0, weight: weight, design: design) }
+    static func caption(weight: Font.Weight = .regular, design: Font.Design = .default) -> Font { .system(size: 10.0, weight: weight, design: design) }
+    static func label(weight: Font.Weight = .regular, design: Font.Design = .default) -> Font { .system(size: 11.0, weight: weight, design: design) }
+    static func row(weight: Font.Weight = .regular, design: Font.Design = .default) -> Font { .system(size: 15.0, weight: weight, design: design) }
+    static func control(weight: Font.Weight = .regular, design: Font.Design = .default) -> Font { .system(size: 18.0, weight: weight, design: design) }
+    static func symbol(weight: Font.Weight = .regular, design: Font.Design = .default) -> Font { .system(size: 20.0, weight: weight, design: design) }
+    static func brand(weight: Font.Weight = .regular, design: Font.Design = .default) -> Font { .system(size: 27.0, weight: weight, design: design) }
+    static func title(weight: Font.Weight = .regular, design: Font.Design = .default) -> Font { .system(size: 28.0, weight: weight, design: design) }
+    static func chatTitle(weight: Font.Weight = .regular, design: Font.Design = .default) -> Font { .system(size: 29.0, weight: weight, design: design) }
 }

@@ -6,7 +6,13 @@ globalThis.fetch=async()=>{throw new Error('Network is disabled in Melo local em
 env.useBrowserCache=false;
 let extractor;
 let queue=Promise.resolve();
-parentPort.on('message',({id,text})=>{
+parentPort.on('message',({id,text,shutdown})=>{
+  if (shutdown) {
+    queue=queue.then(async()=>{
+      try { await extractor?.dispose(); } finally { extractor=null; parentPort.close(); }
+    });
+    return;
+  }
   queue=queue.then(async()=>{
     try {
       extractor ||= await pipeline('feature-extraction',workerData.modelDir,{

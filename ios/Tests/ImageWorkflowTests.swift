@@ -13,6 +13,10 @@ import UniformTypeIdentifiers
         }
 
         let inspection = ImageReviewRequest(imageID: UUID().uuidString, requirements: "检查准确文字")
+        for prompt in ["不要使用任何工具，生成一张图片", "Do not use tools. Generate an image"] {
+            let plan = try ImageTaskPlan(action: .generate).resolved(prompt: prompt, previousImages: [])
+            assert(!plan.makesImage, "Explicit tool prohibition must also stop the image shortcut")
+        }
         let inspectionPlan = try inspection.plan.resolved(prompt: inspection.prompt, previousImages: [])
         assert(inspectionPlan.action == .analyze && !inspectionPlan.makesImage && inspectionPlan.references.count == 1)
         assert(inspection.prompt.contains("检查准确文字") && inspection.prompt.contains("不要修改或生成"))

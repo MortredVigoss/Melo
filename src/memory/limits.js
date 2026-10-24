@@ -1,0 +1,19 @@
+// Memory implementation defaults. Live token budgets and split-frame options override these at their owning entry points.
+export const COMPACT_TRIGGER_TOKENS = 80_000;
+export const CONTEXT_WINDOW_TOKENS = 60_000;
+export const COMPACT_KEEP_RECENT_MIN = 6;
+export const MAX_COMPACT_FAILURES = 3;
+export const MEMORY_EXTRACT_INTERVAL = 4;
+export const MEMORY_INJECT_LIMIT = 12;
+export const MEMORY_MAX_STORED = 80;
+export const MEMORY_EXTRACTION_MIN_MESSAGES = 6;
+export const FRAME_GAP_MS = 30 * 60 * 1000;
+export const FRAME_MAX_USER_TURNS = 5;
+export const FRAME_MAX_TOKENS = 2000;
+export const FRAME_DRIFT_COS = 0.35;
+export const FRAME_MIN_TURNS = 2;
+export const MAX_CONTEXT_RECENT_MESSAGES = 8;
+export const MAX_CONTEXT_MEMORY_MESSAGES = 24;
+export const MAX_CONTEXT_MEMORY_ITEMS = 6;
+export const AGENT_NOTES_LIMIT = 4;
+export const SHARED_FACTS_LIMIT = 4;

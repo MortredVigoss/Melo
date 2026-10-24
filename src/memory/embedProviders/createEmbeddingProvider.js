@@ -41,9 +41,9 @@ function makeCache() {
 // per-provider rejection reasons without booting the singleton.
 export const REGISTRY = new Map();
 REGISTRY.set('builtin', () => new BuiltinEmbedProvider());
-REGISTRY.set('ollama', () => new OllamaEmbedProvider());
-REGISTRY.set('openai', () => new OpenAIEmbedProvider());
-REGISTRY.set('http', () => new CustomHttpEmbedProvider());
+REGISTRY.set('ollama', options => new OllamaEmbedProvider(options));
+REGISTRY.set('openai', options => new OpenAIEmbedProvider(options));
+REGISTRY.set('http', options => new CustomHttpEmbedProvider(options));
 
 export function registerEmbeddingProvider(name, factory) { REGISTRY.set(name, factory); }
 
@@ -82,7 +82,7 @@ export async function getEmbeddingProvider() {
   const env = { ...requestEnvironment() };
   let connection = null;
   try { connection = JSON.parse(readFileSync(configPath, 'utf8')).embeddingConnection; } catch {}
-  const key = JSON.stringify([configPath, connection, env.MELO_EMBED_PROVIDER, env.MELO_EMBED_MODEL_DIR]);
+  const key = JSON.stringify([configPath, connection, env.MELO_EMBED_PROVIDER, env.MELO_EMBED_MODEL_DIR, env.MELO_OLLAMA_URL, env.MELO_OLLAMA_EMBED_MODEL, env.MELO_EMBED_DIMS, env.MELO_OLLAMA_MAX_INPUT_CHARS, env.MELO_EMBED_HTTP_URL, env.MELO_EMBED_HTTP_TOKEN, env.MELO_EMBED_MODEL, env.OPENAI_API_KEY, env.MELO_API_KEY]);
   if (_singleton && _singletonKey === key) return _singleton;
   _singleton = null; _singletonKey = key;
   const explicit = String(env.MELO_EMBED_PROVIDER || '').trim().toLowerCase();
@@ -90,7 +90,7 @@ export async function getEmbeddingProvider() {
   // automatic cloud fallback; external adapters remain explicit integrations.
   const order = explicit ? [explicit] : ['builtin'];
 
-  const candidates = order.map(name => REGISTRY.get(name)?.()).filter(Boolean);
+  const candidates = order.map(name => REGISTRY.get(name)?.({ env })).filter(Boolean);
   for (const p of candidates) {
     // eslint-disable-next-line no-await-in-loop
     if (await p.isAvailable()) {

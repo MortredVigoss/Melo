@@ -1,3 +1,5 @@
+import { requestEnvironment } from '../../runtime/requestScope.js';
+import { memoryEndpointAllowed } from '../../runtime/runtimeBehavior.js';
 /**
  * CustomHttpEmbedProvider — user can point at their own embedding service.
  * Contract:
@@ -11,16 +13,12 @@
 
 import { EmbeddingProvider, toDims } from './EmbeddingProvider.js';
 
-const URL_ENV = process.env.MELO_EMBED_HTTP_URL || '';
-const TOKEN_ENV = process.env.MELO_EMBED_HTTP_TOKEN || '';
-const DIMS_ENV = Number(process.env.MELO_EMBED_DIMS || 1024);
-const MODEL_ENV = process.env.MELO_EMBED_MODEL || 'custom-http';
 const TIMEOUT_MS = 10_000;
 
 export class CustomHttpEmbedProvider extends EmbeddingProvider {
   static get providerName() { return 'http'; }
 
-  constructor({ url = URL_ENV, token = TOKEN_ENV, dims = DIMS_ENV, model = MODEL_ENV } = {}) {
+  constructor({ env = requestEnvironment(), url = env.MELO_EMBED_HTTP_URL || '', token = env.MELO_EMBED_HTTP_TOKEN || '', dims = Number(env.MELO_EMBED_DIMS || 1024), model = env.MELO_EMBED_MODEL || 'custom-http' } = {}) {
     super();
     this.url = url;
     this.token = token;
@@ -31,10 +29,12 @@ export class CustomHttpEmbedProvider extends EmbeddingProvider {
   get modelId() { return this.model; }
 
   async isAvailable() {
+    if (!memoryEndpointAllowed(this.url)) return false;
     return Boolean(this.url);
   }
 
   async embed(text) {
+    if (!memoryEndpointAllowed(this.url)) return null;
     if (!this.url) return null;
     const input = String(text || '').slice(0, 2048).trim();
     if (!input) return null;

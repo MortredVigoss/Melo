@@ -1,3 +1,4 @@
+import { escapeHtml as encodeHtml } from '../../html.js';
 // Tree renderer — SVG hierarchical layout with expand/collapse.
 //
 // Input spec shape (validated upstream in vizSpec.js):
@@ -203,13 +204,7 @@ function mountTree(host, spec) {
 }
 
 function escape(str) {
-  return String(str || '').replace(/[&<>"']/g, ch => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;',
-  })[ch]);
+  return encodeHtml(str || '');
 }
 
 export default mountTree;

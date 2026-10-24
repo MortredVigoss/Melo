@@ -21,12 +21,12 @@ test('image preview preserves original downloads, focus, zoom and retry feedback
     if (['/shared/agent/runtimeMessages.js','/shared/agent/locale.js'].includes(new URL(req.url,'http://fixture').pathname)) {
       res.writeHead(200, {'content-type':'text/javascript'}); res.end(await readFile(resolve('.' + new URL(req.url,'http://fixture').pathname))); return;
     }
-    if (['/imagePreview.js', '/imageResource.js', '/imageZoom.js', '/i18n.js', '/translations.js', '/styles.css'].includes(req.url)) {
+    if (['/html.js', '/interfaceLanguages.js', '/tokens.css', '/imagePreview.js', '/imageResource.js', '/imageZoom.js', '/i18n.js', '/translations.js', '/styles.css'].includes(req.url)) {
       res.writeHead(200, { 'content-type': req.url.endsWith('.js') ? 'text/javascript' : 'text/css' });
       res.end(await readFile(resolve('desktop-ui' + req.url))); return;
     }
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-    res.end(`<html><head><link rel="stylesheet" href="/styles.css"></head><body style="padding:24px"><main id="app">${cards}<textarea id="composer"></textarea></main><script type="module">import {installImagePreview} from '/imagePreview.js';installImagePreview(location.search ? {saveNativeImage: async payload => {window.savedImage=payload;if(window.saveError)throw new Error(window.saveError);return {cancelled:window.cancelSave};}} : {});window.previewReady=true;</script></body></html>`);
+    res.end(`<html><head><link rel="stylesheet" href="/tokens.css"><link rel="stylesheet" href="/styles.css"></head><body style="padding:24px"><main id="app">${cards}<textarea id="composer"></textarea></main><script type="module">import {installImagePreview} from '/imagePreview.js';installImagePreview(location.search ? {saveNativeImage: async payload => {window.savedImage=payload;if(window.saveError)throw new Error(window.saveError);return {cancelled:window.cancelSave};}} : {});window.previewReady=true;</script></body></html>`);
   });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const base = `http://127.0.0.1:${server.address().port}`;

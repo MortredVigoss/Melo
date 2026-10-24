@@ -1,3 +1,4 @@
+import { escapeHtml } from './html.js';
 import { t, ui } from './i18n.js';
 import { EditSession, renderEditActions, paintEditActions } from './settingsEdit.js';
 
@@ -5,7 +6,7 @@ import { EditSession, renderEditActions, paintEditActions } from './settingsEdit
 // (audit 2026-10-22; this block used to carry its own three buttons).
 const session = new EditSession();
 const state = { busy: false, draft: null, message: '' };
-const escape = value => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
+const escape = value => escapeHtml(value ?? '');
 const draftFrom = config => ({ ...(config.agentRuntime?.search || {}), apiKey: '', clearKey: false });
 
 export function renderSearchSettings(config) {
@@ -27,7 +28,7 @@ export function renderSearchSettings(config) {
       <label class="label">搜索超时（毫秒）<input class="config-input" type="number" name="timeoutMs" min="3000" max="120000" value="${escape(draft.timeoutMs || 20000)}"></label>
     </fieldset>
     <p class="list-row-meta">Search 凭证仅保存于本机，并绑定该地址。保存配置不会发送搜索请求，也不代表服务已验证。</p>
-    <p role="status">${escape(state.message)}</p>
+    <p role="status" aria-live="polite">${escape(state.message)}</p>
     </div>
   </section>`;
 }

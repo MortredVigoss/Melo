@@ -7,7 +7,7 @@ import { JSDOM } from 'jsdom';
 import { buildLaunchScreen } from '../scripts/build-launch-screen.js';
 
 const script = await readFile(new URL('./launchScreen.js', import.meta.url), 'utf8');
-function fixture({ reduced = false, native = false, canvas = true } = {}) {
+function fixture({ reduced = false, native = false, canvas = true, language = 'zh-CN' } = {}) {
   const dom = new JSDOM(`<body ${native ? 'data-native-launch="true"' : ''}><div id="app"></div></body>`, { url: 'http://localhost', runScripts: 'outside-only', pretendToBeVisual: true });
   const w = dom.window, frames = new Map(), messages = [];
   let id = 0;
@@ -17,6 +17,7 @@ function fixture({ reduced = false, native = false, canvas = true } = {}) {
   w.cancelAnimationFrame = key => frames.delete(key);
   w.HTMLCanvasElement.prototype.getContext = () => canvas ? new Proxy({}, { get: () => () => {} }) : null;
   if (native) w.webkit = { messageHandlers: { meloVoice: { postMessage: value => messages.push(value) } } };
+  Object.defineProperty(w.navigator,"language",{value:language,configurable:true});
   w.eval(script);
   return { w, dom, frames, messages, page: w.document.querySelector('.melo-launch') };
 }
@@ -73,4 +74,10 @@ test('native bundle contains the same startup assets without network dependencie
     assert.doesNotMatch(html, /<(script|link)[^>]+(?:src|href)=/);
     assert.match(html, /data-native-launch="true"/);
   } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test('standalone startup uses system language and can adopt saved interface language',()=>{
+ const f=fixture({language:'en-US'});assert.match(f.page.textContent,/Loading conversations/);
+ f.w.MeloLaunch.setLanguage('ja');assert.match(f.page.textContent,/会話と設定/);
+ f.w.MeloLaunch.dismiss();f.w.MeloLaunch.setLanguage('es');assert.equal(f.w.document.querySelector('.melo-launch'),null);f.dom.window.close();
 });

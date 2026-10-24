@@ -1,3 +1,6 @@
+import { toolCallingOverride } from '../../../shared/agent/runtimeBehavior.js';
+import { requestEnvironment } from '../../runtime/requestScope.js';
+import { behaviorStatus } from '../../runtime/runtimeBehavior.js';
 import { publicSmartRouting } from '../modelRouting/routing.js';
 import {projectWorkspaceStatus} from '../workspace/workspacePolicy.js';
 import { isAgentChannelAvailable } from '../../shared/channelAvailability.js';
@@ -88,7 +91,7 @@ function captureBootstrapContext() {
   const storePath = join(home, 'desktop', 'store.sqlite');
   const agentsDir = join(home, 'desktop', 'agents');
   const { getAgentMarkdownPaths } = createAgentMarkdownFileHelpers({ agentsDir });
-  return { home, stateFilePath, threadsDir, storePath, getAgentMarkdownPaths };
+  return { env: { ...requestEnvironment() }, home, stateFilePath, threadsDir, storePath, getAgentMarkdownPaths };
 }
 
 function availableModelsForConfig(config) {
@@ -318,6 +321,10 @@ export async function getDesktopBootstrap(query = '', { skipModelNormalize = fal
         llmConnections: publicLlmConnections(config),
         smartRouting: publicSmartRouting(config),
         agentRuntime: config.agentRuntime,
+        behavior: config.behavior,
+        behaviorStatus: behaviorStatus(config, ctx.env),
+        toolCallingOverride: toolCallingOverride(ctx.env),
+        toolCalling: config.toolCalling || 'auto',
         apiProtocol: config.apiProtocol || 'chat-completions',
         baseUrl: config.baseUrl,
         model: config.model,

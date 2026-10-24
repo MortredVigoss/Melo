@@ -1,0 +1,26 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { JSDOM } from 'jsdom';
+import { updateNeuralWorkspace } from './neuralDom.js';
+import { renderBehaviorSettings, editBehaviorSettings, handleBehaviorSettings } from './behaviorSettings.js';
+test('runtime settings preserve failed drafts, honor locks and cancel without saving',async()=>{
+ const dom=new JSDOM('<main></main>'),root=dom.window.document.querySelector('main');
+ const config={behavior:{browserControl:false},behaviorStatus:{mediaExtraction:{source:'environment',value:false,variable:'MELO_DISABLE_MEDIA'}}};
+ const render=()=>{updateNeuralWorkspace(root,renderBehaviorSettings(config));};render();
+ assert.equal(root.querySelector('fieldset').disabled,true);
+ const calls=[];let fail=true;
+ const api=async(path,request)=>{calls.push(request.body);if(fail)throw new Error('fixture failure');Object.assign(config,request.body);};
+ const deps={api,render,refresh:async()=>{}};
+ await handleBehaviorSettings('behavior-settings-edit',deps);
+ assert.equal(root.querySelector('[name=mediaExtraction]').disabled,true);
+ let browser=root.querySelector('[name=browserControl]');browser.checked=true;editBehaviorSettings(browser);
+ await handleBehaviorSettings('behavior-settings-save',deps);
+ assert.equal(root.querySelector('[name=browserControl]').checked,true);
+ assert.equal(root.querySelector('.settings-edit-toolbar').dataset.editStatus,'error');
+ fail=false;await handleBehaviorSettings('behavior-settings-save',deps);
+ assert.equal(config.behavior.browserControl,true);assert.equal(calls.length,2);
+ await handleBehaviorSettings('behavior-settings-edit',deps);browser=root.querySelector('[name=browserControl]');browser.checked=false;editBehaviorSettings(browser);
+ await handleBehaviorSettings('behavior-settings-cancel',deps);
+ assert.equal(root.querySelector('[name=browserControl]').checked,true);assert.equal(calls.length,2);
+ dom.window.close();
+});

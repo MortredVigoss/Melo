@@ -1,3 +1,4 @@
+import { captureBehavior } from '../runtime/runtimeBehavior.js';
 /**
  * Context compression for Melo.
  *
@@ -230,6 +231,7 @@ export async function compactConversationDetailed(messages = [], {
   _createReply = createOpenAICompatibleReply,
   _compactOffline = compactOfflineDetailed,
 } = {}) {
+  const behavior = captureBehavior(config);
   if (signal?.aborted) throw signal.reason || new Error('Request aborted');
   if (!messages.length) return { summary: null, source: 'none' };
 
@@ -248,7 +250,7 @@ export async function compactConversationDetailed(messages = [], {
   // Offline-only mode: skip cloud LLMs entirely.  compactOffline tries every
   // local OAI-compatible endpoint in turn and falls back to a deterministic
   // rule summary if nothing is reachable.
-  if (process.env.MELO_OFFLINE_ONLY === '1') {
+  if (behavior.MELO_OFFLINE_ONLY === '1') {
     return useOffline();
   }
 

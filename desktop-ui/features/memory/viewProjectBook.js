@@ -1,9 +1,10 @@
+import { escapeHtml } from '../../html.js';
 // Project page «记忆本» section (design 2026-10-17 §3.4, 2B). Pure renderer:
 // data comes from GET /api/projects/memory-book, actions are handled by
 // ./controller.js (data-action="project-book-*").
 import { t, ui } from '../../i18n.js';
 
-const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const escape = value => escapeHtml(value ?? '');
 export const BOOK_SECTION_LABELS = Object.freeze({ goal: '目标', convention: '约定', decision: '决定', progress: '进展', todo: '待办', file: '文件' });
 export const BOOK_SECTION_ORDER = Object.freeze(Object.keys(BOOK_SECTION_LABELS));
 // Bug audit U6: static labels are translated at render time (the interface
@@ -32,7 +33,7 @@ export function renderProjectMemoryBook(project, data, { busy = false, feedback 
   return ui`<section class="surface-card project-detail-panel project-memory-book" data-project-book="${escape(project.id)}">
     <div class="header-row"><h2 class="subsection-title">记忆本</h2><span class="meta-label">${records ? escape(t('{count} 条', { count: records.filter(r => r.status === 'active').length })) : ''}</span></div>
     <p class="list-row-meta">项目内所有对话与 Agent 共享的约定、决定与进展。自动行带 auto 徽章并以 [auto] 提供给模型；确认后不会再被自动行替代；停止使用会保留记录。</p>
-    ${feedback ? ui`<div class="settings-edit-toolbar" data-edit-status="saved"><span class="settings-save-status" role="status">✓ ${escape(feedback)}</span></div>` : ''}
+    ${feedback ? ui`<div class="settings-edit-toolbar" data-edit-status="saved"><span class="settings-save-status" role="status" aria-live="polite">✓ ${escape(feedback)}</span></div>` : ''}
     ${!records ? ui`<p>正在读取记忆本…</p>` : groups.length ? groups.map(([section, rows]) => ui`<div class="project-book-section" data-book-section="${section}">
       <h3 class="list-row-title">${escape(sectionLabel(section))}</h3>
       ${rows.map(r => ui`<article class="detail-card project-book-row" data-book-record="${escape(r.id)}">

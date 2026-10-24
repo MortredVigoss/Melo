@@ -1,3 +1,4 @@
+import { requestText } from '../../feedback.js';
 // Chat feature controller (architecture plan P2c, 2026-10-19): the composer
 // (draft, prompt history, slash palette, attachments and drag-and-drop, voice
 // input), the send pipeline (optimistic user message, /api/chat/send/stream
@@ -437,8 +438,12 @@ function openComposerAttachmentPicker(accept) {
   render();
 }
 
-function promptComposerLinkAttachment() {
-  const value = window.prompt('Paste a link to attach to this chat', 'https://');
+async function promptComposerLinkAttachment() {
+  const chatID = activeChat()?.id;
+  const value = await requestText({ title:t('添加链接'), value:'https://',
+    validate: value => { try { const url = new URL(value.trim()); if (['http:','https:'].includes(url.protocol) && url.hostname && !url.username && !url.password) return ''; } catch {} return t('请输入完整的 http 或 https 链接'); }
+  });
+  if (activeChat()?.id !== chatID) return;
   const url = String(value || '').trim();
   if (!url) {
     return;
@@ -1099,8 +1104,8 @@ export const chatActions = {
   'pick-composer-attachment': ({ trigger }) => {
     openComposerAttachmentPicker(trigger.dataset.accept || 'image/*,video/*,audio/*');
   },
-  'add-link-attachment': () => {
-    promptComposerLinkAttachment();
+  'add-link-attachment': async () => {
+    await promptComposerLinkAttachment();
   },
   'remove-composer-attachment': ({ trigger }) => {
     chatState.composerAttachments = chatState.composerAttachments.filter(

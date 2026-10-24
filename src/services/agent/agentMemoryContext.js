@@ -1,3 +1,5 @@
+import { AGENT_NOTES_LIMIT, SHARED_FACTS_LIMIT } from '../../memory/limits.js';
+export { AGENT_NOTES_LIMIT, SHARED_FACTS_LIMIT };
 import { requestEnvironment } from '../../runtime/requestScope.js';
 import { canRecallMemory, isLocalChat, normalizedFact } from '../../memory/factPolicy.js';
 import { buildSpeakerMemoryNamespace } from '../../memory/snapshotBuilder.js';
@@ -23,8 +25,8 @@ const snippet = (row, max = 180) => lifecyclePrefix(row) + normalizeConversation
 // Slot limits for the split corrections group (design 2026-10-17 §3.4,
 // "Agent 级记忆定位"): this agent's own namespace gets its own seats so shared
 // chat/project/personal facts can no longer crowd out its self-corrections.
-export const AGENT_NOTES_LIMIT = 4;
-export const SHARED_FACTS_LIMIT = 4;
+
+
 export const AGENT_NOTES_HEADING = 'Agent notes (this agent\'s self-corrections, user requirements for it, owned tasks):';
 export const SHARED_FACTS_HEADING = 'Shared facts (this chat / project / personal):';
 const taskLine = row => `- ${row.metadata?.title || row.text} [${row.metadata?.status || 'unknown'}]${row.metadata?.latestNote ? ` :: ${normalizeConversationSnippet(row.metadata.latestNote,160)}` : ''}`;

@@ -485,3 +485,17 @@ export function runtimeStageOutput(stage, locale) {
   const value = executionMessage({ ...stage, kind: 'pipeline' });
   return value?.outputMessageId && RUNTIME_MESSAGES[value.outputMessageId] ? runtimeMessage(value.outputMessageId, locale, value.outputMessageParams) : stage?.output || '';
 }
+
+// Saved completion summaries predate interface-language changes. Translate
+// catalog-authored fragments only; the model's explanation remains opaque.
+export function runtimeCompletionText(receipt, locale) {
+  const text=String(receipt?.summary || '');
+  const explanation=receipt?.task?.explanation?.slice(0,240);
+  const suffix=explanation && text.endsWith(' · '+explanation) ? ' · '+explanation : '';
+  const authored=suffix ? text.slice(0,-suffix.length) : text;
+  const language=normalizeLocale(locale);
+  return authored.split(' · ').map(fragment=>{
+    const row=Object.values(RUNTIME_MESSAGES).find(value=>Object.values(value).includes(fragment));
+    return row?.[language] || fragment;
+  }).join(' · ')+suffix;
+}

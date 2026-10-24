@@ -9,6 +9,7 @@ struct ChatGPTModel: Decodable, Identifiable {
     var context_window: Int? = nil
     var input_modalities: [String]? = nil
     var output_modalities: [String]? = nil
+    var supports_reasoning_summaries: Bool? = nil
 }
 // Keep the existing connection identifier so conversation selections survive migration.
 // Credentials are exclusively Codex grants in a NEW Keychain entry; SIWC is never reused.
@@ -182,7 +183,7 @@ struct ImageSizeRejected: Error {}
         tools?.definitions = permittedDefinitions
         let account = try await credentials()
         try Task.checkCancellation()
-        var body = ChatGPTRequest.body(messages: messages, requestHistory: requestHistory, model: model, instructions: instructions, webSearch: allowWebSearch && (defaults.object(forKey: "webSearchEnabled") as? Bool ?? true), cacheKey: cacheKey)
+        var body = ChatGPTRequest.body(messages: messages, requestHistory: requestHistory, model: model, instructions: instructions, webSearch: allowWebSearch && (defaults.object(forKey: "webSearchEnabled") as? Bool ?? true), reasoningSummary: models.first(where: { $0.slug == model })?.supports_reasoning_summaries == true, cacheKey: cacheKey)
         if !imageInputs.isEmpty { body["input"] = ImageRequestBody.responses(messages: ChatGPTRequest.withCurrentTime(messages), inputs: imageInputs, task: ImageTaskPlan(action: .analyze), model: model, instructions: instructions)["input"] }
         body["tools"] = ((body["tools"] as? [[String: Any]]) ?? []) + ((tools?.definitions ?? []) + [PhoneRoutingHost.control]).map(\.responsesDefinition)
         if allowImageTool && ChatGPTRequest.allowsTool("image", messages: requestHistory) { body["tools"] = ((body["tools"] as? [[String: Any]]) ?? []) + [["type": "image_generation", "model": ImageTaskPlan().model]] }
@@ -208,7 +209,7 @@ struct ImageSizeRejected: Error {}
         let sessionID = UUID().uuidString
         // The device-wide switch and this Agent's phone permission must both allow search.
         let webSearch = allowWebSearch && imageTask?.makesImage != true && (defaults.object(forKey: "webSearchEnabled") as? Bool ?? true)
-        var body = ChatGPTRequest.body(messages: messages, requestHistory: requestHistory, model: model, instructions: instructions, webSearch: webSearch, cacheKey: cacheKey)
+        var body = ChatGPTRequest.body(messages: messages, requestHistory: requestHistory, model: model, instructions: instructions, webSearch: webSearch, reasoningSummary: models.first(where: { $0.slug == model })?.supports_reasoning_summaries == true, cacheKey: cacheKey)
         if !imageInputs.isEmpty || imageTask?.makesImage == true {
             // Analysis replaces the text-only input; retain the per-turn clock too.
             let imageMessages = imageTask?.makesImage == true ? messages : ChatGPTRequest.withCurrentTime(messages)

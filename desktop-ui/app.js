@@ -1,3 +1,5 @@
+import { beginFormSubmission, decorateActionForms } from './actionForms.js';
+import { editBehaviorSettings, handleBehaviorSettings } from './behaviorSettings.js';
 import { escapeHtml } from './html.js';
 import { showFlashToast } from './feedback.js';
 import { LOCAL_SERVICE_DEFAULTS, customVoiceActive } from '/shared/localServices.js';
@@ -1475,13 +1477,7 @@ function scheduleSearchRefresh() {
 }
 
 function showError(message) {
-  uiState.error = message;
-  bgRender();
-  window.clearTimeout(showError.timer);
-  showError.timer = window.setTimeout(() => {
-    uiState.error = '';
-    bgRender();
-  }, 4800);
+  showFlashToast(message, { kind: 'error', ms: 0 });
 }
 
 function openExternalUrl(url) {
@@ -5319,7 +5315,7 @@ function render({ background = false, changedSections = null } = {}) {
       <div class="neural-cosmos" aria-hidden="true"></div>
       <div class="neural-core-anchor" aria-hidden="true"></div>
       ${renderNeuralNavigation(uiState.bootstrap, neuralGroup, { overview: uiState.neuralOverview, still: uiState.neuralStill })}
-      <div class="neural-activity" role="status">${chatFeature.isSending() ? escapeHtml(chatFeature.thinkingLabel()) : t("本地工作空间")}</div>
+      <div class="neural-activity" role="status" aria-live="polite">${chatFeature.isSending() ? escapeHtml(chatFeature.thinkingLabel()) : t("本地工作空间")}</div>
       <div class="neural-preview" role="status" aria-live="polite" hidden></div>
       <div data-neural-key="dashboard" class="workspace neural-dashboard">
         ${renderSyncConflicts(uiState.bootstrap.syncConflicts,escapeHtml)}
@@ -5352,6 +5348,7 @@ function render({ background = false, changedSections = null } = {}) {
   `);
 
   settingsFormEditors.decorate(app);
+  decorateActionForms(app);
   syncNeuralComposer(app, chatFeature.composerText());
   animateNeuralLayout(neuralBefore, uiState.neuralStill);
   syncNeuralScene(uiState.neuralStill);
@@ -5749,11 +5746,12 @@ document.addEventListener('click', async event => {
   if (chatFeature.handleChatFilesToggle(action, trigger, event)) return;
   if (action?.startsWith('image-')) {
     event.preventDefault();
-    try { await handleImageAction(action, { config: uiState.bootstrap.settings.config, attachments: chatFeature.composerAttachments(), api, render, refresh: () => loadBootstrap(uiState.searchQuery, { quiet: true }) }); } catch (error) { window.alert(error.message); }
+    try { await handleImageAction(action, { config: uiState.bootstrap.settings.config, attachments: chatFeature.composerAttachments(), api, render, refresh: () => loadBootstrap(uiState.searchQuery, { quiet: true }) }); } catch (error) { showError(error.message); }
     return;
   }
   if (['new-chat', 'open-chat'].includes(action)) clearImageTask();
 
+  if (action?.startsWith('behavior-settings-')) { event.preventDefault(); await handleBehaviorSettings(action,{api,render,refresh:()=>loadBootstrap(uiState.searchQuery,{quiet:true})}); return; }
   if (action?.startsWith('smart-routing-')) { event.preventDefault(); await handleSmartRouting(action, {trigger,config:uiState.bootstrap.settings.config,api,render,refresh:()=>loadBootstrap(uiState.searchQuery,{quiet:true})}); return; }
   if (action?.startsWith('llm-') && trigger.tagName === 'BUTTON') {
     event.preventDefault();
@@ -6320,6 +6318,7 @@ document.addEventListener('input', event => {
   if (handleImageInput(target, uiState.bootstrap?.settings?.config || {})) return;
   if (editSmartRouting(target)) return;
   if (editLlmConnection(target, uiState.bootstrap?.settings?.config || {})) return;
+  if (editBehaviorSettings(target)) return;
   if (editSearchSettings(target)) return;
 
   if (chatFeature.handleComposerInput(target)) return;
@@ -6462,6 +6461,7 @@ document.addEventListener('change', async event => {
   if (handleImageInput(target, uiState.bootstrap?.settings?.config || {})) { render(); return; }
   if (editSmartRouting(target)) { render(); return; }
   if (editLlmConnection(target, uiState.bootstrap?.settings?.config || {})) { render(); return; }
+  if (editBehaviorSettings(target)) return;
   if (editSearchSettings(target)) { render(); return; }
 
   try {
@@ -6599,6 +6599,8 @@ document.addEventListener('submit', async event => {
 
   const editTicket=settingsFormEditors.start(form);
   if(editTicket===false) return;
+  const finishSubmission=beginFormSubmission(form);
+  if(!finishSubmission) return;
   let saveError=null;
   if(editTicket) queueMicrotask(()=>render());
   try {
@@ -6642,7 +6644,7 @@ document.addEventListener('submit', async event => {
     saveError=error;
     showError(error.message);
   }
-  finally { if(editTicket) settingsFormEditors.finish(editTicket,saveError); }
+  finally { finishSubmission(); if(editTicket) settingsFormEditors.finish(editTicket,saveError); }
 });
 
 // Keep a deliberately opened receipt visible inside the existing thread scroller.

@@ -1,3 +1,4 @@
+import { captureBehavior } from '../../runtime/runtimeBehavior.js';
 import { getRequestNetworkPolicy } from '../../../shared/agent/retrieval/requestPolicy.js';
 import { resolvedRequestGoal } from '../../../shared/agent/search.js';
 import {resolveCapabilityContext} from '../agent/capabilityContext.js';
@@ -30,9 +31,6 @@ import {
   runStateGraph,
 } from '../../agentGraph.js';
 import { getEmbedding } from '../../memory/embeddings.js';
-import {
-  filterToolsForSearchPlan,
-} from '../../retrieval/searchRouter.js';
 import { createOpenAICompatibleReply } from '../../openai.js';
 import { resolveContextBudget } from './contextBudget.js';
 import { createFinalizeNode } from './execution/finalizeNode.js';
@@ -71,7 +69,7 @@ export async function runChatAgentExecutionGraph({
   if (!context.requestToolPolicy) context = Object.freeze({ ...context, requestToolPolicy: Object.freeze(getRequestNetworkPolicy(resolvedRequestGoal(latestUserMessage, chat.messages))) });
   if (currentRequestContext() !== context) return runWithRequestContext(context, () => runChatAgentExecutionGraph({ ...arguments[0], context }));
   home ||= context.home;
-  const env = context.env;
+  const env = captureBehavior(config, context.env);
   const firstToken = startStage('turn.prepare_to_first_token');
   const originalDelta = onDelta;
   if (typeof originalDelta === 'function') onDelta = (...args) => {

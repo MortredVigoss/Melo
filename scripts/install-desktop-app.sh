@@ -3,51 +3,48 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-# 2026-05-12 cleanup: build output moved from "$PROJECT_DIR/Melo.app" to
-# .tmp/desktop-build/Melo.app (Spotlight no longer shows a 3rd duplicate
-# in the source tree).  Reads the new location now.
-APP_DIR="$PROJECT_DIR/.tmp/desktop-build/Melo.app"
-LEGACY_APP_DIR="$PROJECT_DIR/Melo.app"
-PRIMARY_DEPLOY_TARGET="$HOME/Applications/Melo.app"
-DESKTOP_FOLDER_APP_TARGET="$HOME/Desktop/melo/Melo.app"
-# 2026-05-12 cleanup: previously also dittoed a full copy to
-# "$HOME/Desktop/melo/Applications/Melo.app".  No code path referenced it
-# (verify-red-green.js's launch tests only cover Launchpad + the Desktop
-# symlink), Spotlight indexed it as a 2nd independent app, and there was
-# no documented reason for the duplicate — likely historical cruft from
-# trying to make ~/Desktop/melo/ feel "self-contained".  Removed the
-# install target; LEGACY_DESKTOP_APPLICATIONS sweep below scrubs any
-# stale copies from prior installs.
-LEGACY_DESKTOP_APPLICATIONS="$HOME/Desktop/melo/Applications/Melo.app"
+APP_DIR="$(node "$SCRIPT_DIR/desktop-install-paths.js" "$PROJECT_DIR" source)"
+PRIMARY_DEPLOY_TARGET="$(node "$SCRIPT_DIR/desktop-install-paths.js" "$PROJECT_DIR" primary)"
+DESKTOP_FOLDER_APP_TARGET="$(node "$SCRIPT_DIR/desktop-install-paths.js" "$PROJECT_DIR" shortcut)"
 
-if [[ ! -d "$APP_DIR" ]]; then
-  echo "Built app not found at $APP_DIR. Run npm run build:desktop first." >&2
+verify_bundle() {
+  local bundle="$1"
+  [[ -d "$bundle" && ! -L "$bundle" ]] || return 1
+  local identifier="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$bundle/Contents/Info.plist" 2>/dev/null)"
+  local executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$bundle/Contents/Info.plist" 2>/dev/null)"
+  [[ "$identifier" == "com.melo.desktop" && "$executable" != */* && -x "$bundle/Contents/MacOS/$executable" ]]
+}
+
+if ! verify_bundle "$APP_DIR"; then
+  echo "Valid built Melo app not found at $APP_DIR. Run npm run build:desktop first." >&2
+  exit 1
+fi
+for target in "$PRIMARY_DEPLOY_TARGET" "$DESKTOP_FOLDER_APP_TARGET"; do
+  if [[ -e "$target" && ! -L "$target" ]] && ! verify_bundle "$target"; then
+    echo "Refusing to replace an unrelated file or app: $target" >&2
+    exit 1
+  fi
+done
+
+# Stage a complete bundle before moving the existing app. User data lives
+# outside the bundle; no account/container/data-directory cleanup runs here.
+mkdir -p "$(dirname "$PRIMARY_DEPLOY_TARGET")"
+STAGING_DIR="$(mktemp -d "$(dirname "$PRIMARY_DEPLOY_TARGET")/.melo-install.XXXXXX")"
+trap 'rm -rf "$STAGING_DIR"' EXIT
+ditto "$APP_DIR" "$STAGING_DIR/Melo.app"
+verify_bundle "$STAGING_DIR/Melo.app"
+if [[ -e "$PRIMARY_DEPLOY_TARGET" || -L "$PRIMARY_DEPLOY_TARGET" ]]; then
+  mv "$PRIMARY_DEPLOY_TARGET" "$STAGING_DIR/Previous.app"
+fi
+if ! mv "$STAGING_DIR/Melo.app" "$PRIMARY_DEPLOY_TARGET"; then
+  [[ ! -e "$STAGING_DIR/Previous.app" ]] || mv "$STAGING_DIR/Previous.app" "$PRIMARY_DEPLOY_TARGET"
   exit 1
 fi
 
-# Sweep any leftover Melo.app left behind by older builds at the project root.
-# Pre-cleanup the source tree had Melo.app/ living alongside source; now the
-# build script outputs to .tmp/ instead.  This rm makes the migration
-# idempotent: running install once cleans the stale root copy.
-if [[ -d "$LEGACY_APP_DIR" || -L "$LEGACY_APP_DIR" ]]; then
-  rm -rf "$LEGACY_APP_DIR"
+if [[ "$DESKTOP_FOLDER_APP_TARGET" != "$PRIMARY_DEPLOY_TARGET" ]]; then
+  mkdir -p "$(dirname "$DESKTOP_FOLDER_APP_TARGET")"
+  if [[ -e "$DESKTOP_FOLDER_APP_TARGET" || -L "$DESKTOP_FOLDER_APP_TARGET" ]]; then
+    rm -rf "$DESKTOP_FOLDER_APP_TARGET"
+  fi
+  ln -s "$PRIMARY_DEPLOY_TARGET" "$DESKTOP_FOLDER_APP_TARGET"
 fi
-
-# Sweep the deprecated `~/Desktop/melo/Applications/Melo.app` deploy target
-# from prior installs.  See comment above for context.  Idempotent — if the
-# user is on a fresh machine this is a no-op.
-if [[ -d "$LEGACY_DESKTOP_APPLICATIONS" || -L "$LEGACY_DESKTOP_APPLICATIONS" ]]; then
-  rm -rf "$LEGACY_DESKTOP_APPLICATIONS"
-fi
-# Also drop the now-empty `~/Desktop/melo/Applications/` directory if we
-# created it.  Quiet failure (rmdir errors when non-empty) is fine —
-# user may have put other things there.
-rmdir "$HOME/Desktop/melo/Applications" 2>/dev/null || true
-
-mkdir -p "$(dirname "$PRIMARY_DEPLOY_TARGET")"
-rm -rf "$PRIMARY_DEPLOY_TARGET"
-ditto "$APP_DIR" "$PRIMARY_DEPLOY_TARGET"
-
-mkdir -p "$(dirname "$DESKTOP_FOLDER_APP_TARGET")"
-rm -rf "$DESKTOP_FOLDER_APP_TARGET"
-ln -s "$PRIMARY_DEPLOY_TARGET" "$DESKTOP_FOLDER_APP_TARGET"

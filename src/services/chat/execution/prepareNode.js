@@ -144,7 +144,7 @@ export function createPrepareNode(turn) {
     // `config.toolChainHistory === true`) it is rendered back into the
     // active protocol's shape so a chat continues after a provider switch.
     // Default off: history stays prose-only, as before.
-    const toolChainProtocol = env.MELO_TOOL_CHAIN_HISTORY === '1' || config.toolChainHistory === true
+    const toolChainProtocol = env.MELO_TOOL_CHAIN_HISTORY === '1'
       ? toolProtocolFor({ ...config, baseUrl: modelOverrides.baseUrl, toolCalling: env.MELO_FUNCTION_CALLING || config.toolCalling })
       : null;
     let modelMessages = buildModelMessagesFromChat(modelChat(), { windowTokens: contextBudget.windowTokens, toolChainProtocol });

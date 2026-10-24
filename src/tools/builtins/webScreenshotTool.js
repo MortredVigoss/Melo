@@ -1,3 +1,4 @@
+import { captureBehavior } from '../../runtime/runtimeBehavior.js';
 /**
  * web_screenshot tool
  *
@@ -287,7 +288,7 @@ export const webScreenshotTool = {
     const selector = typeof waitFor === 'string' && waitFor.trim() ? waitFor.trim().slice(0, 200) : '';
     const viewportWidth = clampWidth(width ?? DEFAULT_WIDTH);
     const wantFullPage = fullPage === true;
-    const env = deps.env || requestEnvironment();
+    const env = captureBehavior(undefined, deps.env || requestEnvironment());
     const cdpEnabled = env.MELO_CDP_ENABLED === '1';
     const binary = cdpEnabled ? null : deps.chromeBinary();
     const headlessAvailable = Boolean(binary && deps.chromeExists(binary));

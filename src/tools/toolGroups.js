@@ -1,3 +1,4 @@
+import { booleanSetting } from '../../shared/agent/runtimeBehavior.js';
 // Catalogs follow current capability/service configuration, not keywords.
 
 export const TOOL_GROUP_IDS = Object.freeze(['browser', 'documents', 'media']);
@@ -16,7 +17,7 @@ export function toolGroupOf(toolId) {
 // Browser automation additionally needs the user's explicit local opt-in.
 export function wantedToolGroups({ searchPlan = null, env = {} } = {}) {
   const wanted = new Set(['documents', 'media']);
-  if (env.MELO_CDP_ENABLED === '1' && !searchPlan?.sharedPlan?.network?.fetchForbidden &&
+  if (booleanSetting(env.MELO_CDP_ENABLED) === true && !searchPlan?.sharedPlan?.network?.fetchForbidden &&
       !['user-disabled-network', 'network-forbidden'].includes(searchPlan?.reason)) wanted.add('browser');
   return wanted;
 }

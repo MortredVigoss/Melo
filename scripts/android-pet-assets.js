@@ -1,6 +1,7 @@
 // Pure helpers for the Android desktop-pet skin import. The CLI that runs
 // ffmpeg lives in android/scripts/import-pet-skins.mjs; everything here is
 // deterministic so the gate can check it without media or ffmpeg.
+import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { readdir, stat } from 'node:fs/promises';
@@ -8,7 +9,7 @@ import { join, posix } from 'node:path';
 
 export const STAGE = { width: 480, height: 270 };
 export const DEFAULT_CRF = 32;
-export const DEFAULT_SOURCE = '/Users/mortred/Documents/New project/desktop-pet';
+export const DEFAULT_SOURCE = fileURLToPath(new URL('../desktop-pet/', import.meta.url));
 export const GITHUB_REPOSITORY = 'MortredVigoss/Melo';
 
 /** Skins packaged into the APK. `prefix` keeps asset names ASCII; the catalog maps action names to files. */

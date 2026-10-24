@@ -581,7 +581,7 @@ export function createInvokeModelNode(turn) {
     // Bug audit T15: the chain (≤24 KB per reply) is only persisted when
     // replay is enabled (MELO_TOOL_CHAIN_HISTORY=1 / config.toolChainHistory);
     // with replay off nothing reads it, so storing it only grows threads.
-    if (toolChainTurns.length > 0 && (env.MELO_TOOL_CHAIN_HISTORY === '1' || config.toolChainHistory === true)) {
+    if (toolChainTurns.length > 0 && (env.MELO_TOOL_CHAIN_HISTORY === '1')) {
       out.toolChain = buildToolChainRecord(toolChainTurns, { protocol: functionSession.protocol });
     }
     return out;

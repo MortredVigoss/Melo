@@ -32,7 +32,7 @@ import { resolveRuntimePaths } from '../runtime/paths.js';
 import { budgetExhausted, recordUsage, remainingMs } from '../runtime/runBudget.js';
 import { AGENT_LOOP_CONTRACT, fillTemplate } from '../runtime/agentLoopContract.js';
 
-const DEFAULT_TOOL_TIMEOUT_MS = 60_000;
+const DEFAULT_TOOL_TIMEOUT_MS = AGENT_LOOP_CONTRACT.executionLimits.toolTimeoutMs;
 
 /**
  * Execute a single tool with full permission + error handling.

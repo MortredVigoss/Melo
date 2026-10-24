@@ -1,3 +1,6 @@
+import { requestEnvironment } from '../../runtime/requestScope.js';
+import { LOCAL_SERVICE_DEFAULTS } from '../../shared/localServices.js';
+import { memoryEndpointAllowed } from '../../runtime/runtimeBehavior.js';
 /**
  * OllamaEmbedProvider — default local embedder, used for bge-m3 and any
  * other Ollama-hosted model.
@@ -5,9 +8,6 @@
 
 import { EmbeddingProvider, toDims } from './EmbeddingProvider.js';
 
-const OLLAMA_BASE = process.env.MELO_OLLAMA_URL || 'http://localhost:11434';
-const OLLAMA_MODEL = process.env.MELO_OLLAMA_EMBED_MODEL || 'bge-m3';
-const DIMS = Number(process.env.MELO_EMBED_DIMS || 1024);
 const TIMEOUT_MS = 8_000;
 
 // Input character cap.  Phase-2 #1: the legacy 512 cap was silently
@@ -17,12 +17,11 @@ const TIMEOUT_MS = 8_000;
 // text-embedding-3-large provider).  bge-m3 accepts 8192 tokens natively;
 // chars ≈ tokens for CJK and somewhat less for Latin, so 8192 is a safe
 // upper bound without a tokeniser dependency.
-const MAX_INPUT_CHARS = Math.max(256, Number(process.env.MELO_OLLAMA_MAX_INPUT_CHARS || 8192));
 
 export class OllamaEmbedProvider extends EmbeddingProvider {
   static get providerName() { return 'ollama'; }
 
-  constructor({ baseUrl = OLLAMA_BASE, model = OLLAMA_MODEL, dims = DIMS, maxInputChars = MAX_INPUT_CHARS } = {}) {
+  constructor({ env = requestEnvironment(), baseUrl = env.MELO_OLLAMA_URL || LOCAL_SERVICE_DEFAULTS.ollama.replace(/\/v1$/, ''), model = env.MELO_OLLAMA_EMBED_MODEL || 'bge-m3', dims = Number(env.MELO_EMBED_DIMS || 1024), maxInputChars = Math.max(256, Number(env.MELO_OLLAMA_MAX_INPUT_CHARS || 8192)) } = {}) {
     super();
     this.baseUrl = baseUrl;
     this.model = model;
@@ -33,6 +32,7 @@ export class OllamaEmbedProvider extends EmbeddingProvider {
   get modelId() { return this.model; }
 
   async isAvailable() {
+    if (!memoryEndpointAllowed(this.baseUrl)) return false;
     try {
       const ac = new AbortController();
       setTimeout(() => ac.abort(), 2000);
@@ -48,6 +48,7 @@ export class OllamaEmbedProvider extends EmbeddingProvider {
   }
 
   async embed(text) {
+    if (!memoryEndpointAllowed(this.baseUrl)) return null;
     const input = String(text || '').slice(0, this.maxInputChars).trim();
     if (!input) return null;
     const ac = new AbortController();

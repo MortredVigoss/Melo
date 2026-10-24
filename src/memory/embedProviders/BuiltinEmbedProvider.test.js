@@ -38,3 +38,17 @@ test('bundled model performs real Chinese semantic retrieval without network',as
     assert.ok(dot(q,relevant)>dot(q,unrelated)+0.03);
   }finally{await stopBuiltinEmbeddings();}
 });
+
+test('native worker drains pending inference and can restart after graceful disposal',async t=>{
+  const provider=new BuiltinEmbedProvider();
+  assert.equal(await provider.isAvailable(),true,'built-in model assets must be prepared for this acceptance');
+  t.after(stopBuiltinEmbeddings);
+  for(let round=0;round<3;round++){
+    const pending=provider.embed('A queued memory request');
+    await new Promise(resolve=>setImmediate(resolve));
+    const stopping=stopBuiltinEmbeddings();
+    assert.equal((await pending)?.length,1024,'shutdown must not discard queued inference');
+    await stopping;
+  }
+  assert.equal((await provider.embed('New request after restart'))?.length,1024);
+});

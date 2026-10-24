@@ -1,5 +1,6 @@
+import { escapeHtml } from './html.js';
 import { t, ui } from './i18n.js';
-const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const escape = value => escapeHtml(value ?? '');
 
 const pendingEdits = new Set();
 export const hasUnsavedSettings = () => pendingEdits.size > 0;

@@ -1,3 +1,4 @@
+import { escapeHtml as encodeHtml } from '../../html.js';
 // globe-flight — 3D interactive globe with an animated flight arc.
 //
 // Spec shape:
@@ -242,9 +243,5 @@ export default function mountGlobeFlight(host, spec) {
 }
 
 function escapeHtml(s) {
-  return String(s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+  return encodeHtml(String(s));
 }

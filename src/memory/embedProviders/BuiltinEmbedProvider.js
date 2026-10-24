@@ -18,16 +18,29 @@ export class BuiltinEmbedProvider {
     if(!state){
       const worker=new Worker(new URL('./builtinWorker.js',import.meta.url),{workerData:{modelDir:this.modelDir},execArgv:[]});
       state={worker,pending:new Map(),next:0};workers.set(this.modelDir,state);worker.unref();
-      const fail=()=>{for(const item of state.pending.values()){clearTimeout(item.timer);item.resolve(null);}state.pending.clear();workers.delete(this.modelDir);};
+      const fail=()=>{for(const item of state.pending.values()){clearTimeout(item.timer);item.resolve(null);}state.pending.clear();if(workers.get(this.modelDir)===state)workers.delete(this.modelDir);};
       worker.on('error',fail);worker.on('exit',fail);
-      worker.on('message',message=>{const item=state.pending.get(message.id);if(!item)return;clearTimeout(item.timer);state.pending.delete(message.id);item.resolve(message.error?null:message.vector);if(!state.pending.size)worker.unref();});
+      worker.on('message',message=>{const item=state.pending.get(message.id);if(!item)return;clearTimeout(item.timer);state.pending.delete(message.id);item.resolve(message.error?null:message.vector);if(!state.pending.size && !state.stopping)worker.unref();});
     }
     if(state.pending.size>=100) return null;
     const id=++state.next;state.worker.ref();
     return new Promise(resolve=>{
-      const timer=setTimeout(()=>{state.pending.delete(id);resolve(null);if(!state.pending.size)state.worker.unref();},60000);
+      const timer=setTimeout(()=>{state.pending.delete(id);resolve(null);if(!state.pending.size && !state.stopping)state.worker.unref();},60000);
       state.pending.set(id,{resolve,timer});state.worker.postMessage({id,text:input});
     });
   }
 }
-export async function stopBuiltinEmbeddings(){await Promise.all([...workers.values()].map(s=>s.worker.terminate()));workers.clear();}
+export async function stopBuiltinEmbeddings() {
+  const stopping=[...workers.entries()];
+  for (const [path,state] of stopping) {
+    if(workers.get(path)===state)workers.delete(path);
+    state.stopping=true;state.worker.ref();
+  }
+  await Promise.all(stopping.map(([,state])=>new Promise(resolve=>{
+    // Let queued inference finish and release native ONNX sessions before the
+    // worker exits. Force termination is only a bounded last resort.
+    const timer=setTimeout(()=>{void state.worker.terminate();},5000);
+    state.worker.once('exit',()=>{clearTimeout(timer);resolve();});
+    state.worker.postMessage({shutdown:true});
+  })));
+}

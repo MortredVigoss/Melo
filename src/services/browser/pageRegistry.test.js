@@ -638,3 +638,20 @@ test('listPages: returns metadata for every entry', async () => {
   const ids = list.map(p => p.pageId).sort();
   assert.deepEqual(ids, [a.pageId, b.pageId].sort());
 });
+
+test('saved browser setting reaches execution, with environment denial taking precedence',async()=>{
+ const { runWithRequestContext }=await import('../../runtime/requestScope.js');
+ const { createRequestContext }=await import('../../runtime/requestContext.js');
+ const mod=await import('./pageRegistry.js');
+ const page=makeFakePage(),fake=makeFakeBrowser([page]);let connected=0;
+ mod._setConnectImplForTests(async()=>{connected++;return {browser:fake.browser};});
+ const config={behavior:{browserControl:true}};
+ await runWithRequestContext(createRequestContext({config,env:{MELO_CDP_ENABLED:''}}),async()=>{
+   await mod.openPage('https://example.com/config-enabled');await mod.closeAllPages();
+ });
+ assert.equal(connected,1);assert.equal(page.gotoCallCount,1);
+ await runWithRequestContext(createRequestContext({config,env:{MELO_CDP_ENABLED:'false'}}),async()=>{
+   await assert.rejects(()=>mod.openPage('https://example.com/blocked'),/MELO_CDP_ENABLED/);
+ });
+ assert.equal(connected,1,'denied request must never connect to the browser');
+});

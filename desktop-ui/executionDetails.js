@@ -1,11 +1,9 @@
+import { formatNumber } from './format.js';
+import { escapeHtml } from './html.js';
 export { renderExecutionTiming } from './executionTiming.js';
-import { t, ui, currentLanguage, runtimeStageName, runtimeStageOutput } from './i18n.js';
-const escape = (value) =>
-  String(value ?? '').replace(
-    /[&<>"']/g,
-    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
-  );
-const amount = value => Number.isSafeInteger(value) && value >= 0 ? value.toLocaleString('en-US') : null;
+import { t, ui, currentLanguage, runtimeStageName, runtimeStageOutput, runtimeCompletionText } from './i18n.js';
+const escape = value => escapeHtml(value ?? '');
+const amount = value => Number.isSafeInteger(value) && value >= 0 ? formatNumber(value) : null;
 const seconds = value => amount(value) === null ? null : `${(value / 1000).toFixed(2)} s`;
 export function executionApiLine(op) {
   const api = op.api;
@@ -52,7 +50,7 @@ export function renderExecutionDetail(op, status) {
   const summary = op.channel === 'reasoning-summary';
   const output = ui`<pre class="execution-detail-output">${escape(op.output || t("尚未返回输出"))}</pre>`;
   return ui`<button data-execution-action="close-inspector">关闭</button><strong>${escape(op.name)} · ${escape(status)}</strong>
-    ${op.handoff ? ui`<section><strong>成员交接记录</strong><p>${escape(op.agentId)} · ${escape(op.handoff.status)}</p>${op.handoff.completion?.summary ? `<p>${escape(op.handoff.completion.summary)}</p>` : ''}<pre>${escape(op.handoff.conclusion)}</pre><p>证据与来源</p><pre>${escape((op.handoff.evidence||[]).join('\n'))}</pre><p>改动文件</p><pre>${escape((op.handoff.changedFiles||[]).join('\n'))}</pre><p>未完成事项</p><pre>${escape((op.handoff.unfinished||[]).join('\n'))}</pre><p>${op.handoff.usage?.unknown ? '用量未完整报告' : `${op.handoff.usage?.input??0} + ${op.handoff.usage?.output??0} tokens`} · ${op.handoff.usage?.estimatedCost==null?'费用未知':`${op.handoff.usage.estimatedCost}`}</p></section>` : ''}
+    ${op.handoff ? ui`<section><strong>成员交接记录</strong><p>${escape(op.agentId)} · ${escape(op.handoff.status)}</p>${op.handoff.completion?.summary ? `<p>${escape(runtimeCompletionText(op.handoff.completion))}</p>` : ''}<pre>${escape(op.handoff.conclusion)}</pre><p>证据与来源</p><pre>${escape((op.handoff.evidence||[]).join('\n'))}</pre><p>改动文件</p><pre>${escape((op.handoff.changedFiles||[]).join('\n'))}</pre><p>未完成事项</p><pre>${escape((op.handoff.unfinished||[]).join('\n'))}</pre><p>${op.handoff.usage?.unknown ? '用量未完整报告' : `${op.handoff.usage?.input??0} + ${op.handoff.usage?.output??0} tokens`} · ${op.handoff.usage?.estimatedCost==null?'费用未知':`${op.handoff.usage.estimatedCost}`}</p></section>` : ''}
     ${summary ? ui`<p>模型公开推理摘要 · 服务实际返回的概述</p>${output}` : ''}
     ${renderApi(op)}
     ${op.verification ? ui`<p>${escape(op.verification)} · ${op.exitCode == null ? t("尚无正常退出码") : `退出码 ${op.exitCode}`}；请结合实际输出核对检查范围。</p>` : ''}

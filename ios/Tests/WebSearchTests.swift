@@ -18,8 +18,8 @@ import Foundation
 
         assert((body["tools"] as? [[String:String]])?.first?["type"] == "web_search")
         assert(ChatGPTRequest.body(messages: [], model: "test", instructions: "", webSearch: false)["tools"] == nil)
-        assert((ChatGPTRequest.body(messages: [], model: "gpt-6.1-sol", instructions: "", webSearch: false)["reasoning"] as? [String:String])?["summary"] == "auto")
-        for model in ["gpt-4.1", "gpt-5-chat-latest", "custom", "gpt-6-instant"] { assert(!ChatGPTRequest.supportsPublicSummary(model)) }
+        assert((ChatGPTRequest.body(messages: [], model: "custom-reasoner", instructions: "", webSearch: false, reasoningSummary: true)["reasoning"] as? [String:String])?["summary"] == "auto")
+        for model in ["gpt-4.1", "gpt-5-chat-latest", "custom", "gpt-6-instant"] { assert(ChatGPTRequest.body(messages: [], model: model, instructions: "", webSearch: false)["reasoning"] == nil) }
         assert(WebSource.validated(title: "bad", url: "javascript:alert(1)") == nil)
         assert(WebSource.validated(title: "bad", url: "https://user:password@example.com") == nil)
         let text = "悉尼🌦预报：晴。来源"

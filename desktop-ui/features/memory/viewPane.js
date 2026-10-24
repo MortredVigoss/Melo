@@ -63,7 +63,7 @@ function renderMemoryPane() {
           </div>
         </div>
 
-        ${s.derivedIndex ? ui`<p class="page-kicker" role="status">${escapeHtml(({ready:'最近保存的内容已进入检索索引',pending:'内容已保存，检索索引正在后台更新',deferred:'内容已保存，索引更新暂缓，稍后自动重试',inline:'当前以本机同步方式更新索引'})[s.derivedIndex.status] || '正在检查索引状态')}</p>` : ''}
+        ${s.derivedIndex ? ui`<p class="page-kicker" role="status" aria-live="polite">${escapeHtml(({ready:'最近保存的内容已进入检索索引',pending:'内容已保存，检索索引正在后台更新',deferred:'内容已保存，索引更新暂缓，稍后自动重试',inline:'当前以本机同步方式更新索引'})[s.derivedIndex.status] || '正在检查索引状态')}</p>` : ''}
         ${drift.hasDrift ? ui`
           <div class="alert compact-alert">
             <strong>检测到嵌入模型变更。</strong>
@@ -82,8 +82,8 @@ function renderMemoryPane() {
           <div class="inline-actions"><button class="small-button" data-action="memory-diagnose" ${memoryState.memoryStatus.repairBusy ? 'disabled' : ''}>检测模型</button>
           <button class="small-button" data-action="memory-repair" ${memoryState.memoryStatus.repairBusy ? 'disabled' : ''}>${s.repair?.completed && s.repair.status !== 'complete' ? '继续修复' : '安全重建索引'}</button>
           ${memoryState.memoryStatus.repairBusy ? ui`<button class="small-button" data-action="memory-pause">本批完成后暂停</button>` : ''}</div>
-          ${s.repair ? ui`<p role="status">${escapeHtml(s.repair.status === 'complete' ? '已验证并切换' : s.repair.status === 'failed' ? '修复暂停' : '待继续')} · ${s.repair.completed}/${s.repair.total} · ${escapeHtml(s.repair.error || s.repair.note || '')}</p>` : ''}
-          ${memoryState.memoryStatus.diagnosis ? ui`<p role="status">${escapeHtml(memoryState.memoryStatus.diagnosis.available ? '实际嵌入请求成功' : '关键词检索模式')} · ${escapeHtml(memoryState.memoryStatus.diagnosis.issues.map(i => i.message).join(' '))}</p>` : ''}
+          ${s.repair ? ui`<p role="status" aria-live="polite">${escapeHtml(s.repair.status === 'complete' ? '已验证并切换' : s.repair.status === 'failed' ? '修复暂停' : '待继续')} · ${s.repair.completed}/${s.repair.total} · ${escapeHtml(s.repair.error || s.repair.note || '')}</p>` : ''}
+          ${memoryState.memoryStatus.diagnosis ? ui`<p role="status" aria-live="polite">${escapeHtml(memoryState.memoryStatus.diagnosis.available ? '实际嵌入请求成功' : '关键词检索模式')} · ${escapeHtml(memoryState.memoryStatus.diagnosis.issues.map(i => i.message).join(' '))}</p>` : ''}
           <p>Melo 内置多语言嵌入模型，在本机后台运行，无需安装其他软件。模型资源随应用提供；检索不会自动调用外部服务。</p>
         </section>
         ${renderMemoryFacts(memoryState.memoryFacts,{query:memoryState.memoryFactQuery,editing:memoryState.memoryFactEditing,busy:memoryState.memoryFactBusy,draft:memoryState.memoryFactDraft,session:memoryFactEdit,feedback:memoryState.memoryFactFeedback})}

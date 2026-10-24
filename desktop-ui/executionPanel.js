@@ -1,10 +1,11 @@
-import { t, ui, currentLanguage, runtimeStageName, runtimeStageOutput } from './i18n.js';
+import { escapeHtml } from './html.js';
+import { t, ui, currentLanguage, runtimeStageName, runtimeStageOutput, runtimeCompletionText } from './i18n.js';
 import { renderExecutionDetail, renderSessionEvents, executionApiLine, renderExecutionSignal, renderReasoningRecords, renderExecutionTiming } from './executionDetails.js';
 import { EXECUTION_MODULES, sessionEvents, moduleActivity, sceneFinished, finishExecutionScene, visibleSceneSources, sourceReadingLabel, sceneSourceUrl } from '/shared/executionScene.js';
 
 import { bindExecutionZoom, clampZoom, wideViewport, DETAIL_ZOOM, MIN_ZOOM, MAX_ZOOM } from './executionViewport.js';
 
-const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const escape = value => escapeHtml(value ?? '');
 const statusNames = { get idle() { return t('无调用记录'); }, get recorded() { return t('仅引用记录'); }, get queued() { return t('排队'); }, get running() { return t('执行中'); }, get waiting() { return t('等待许可'); }, get completed() { return t('已完成'); }, get failed() { return t('失败'); }, get cancelled() { return t('已取消'); }, get interrupted() { return t('已中断'); } };
 const scenes = new Map(), views = new Map(), delivered = new Set();
 const presentations = new Map();
@@ -133,7 +134,7 @@ function updateButtons() {
 }
 function headerStatus(scene) {
   if (!scene) return t("待机 · 氛围动画");
-  if (sceneFinished(scene) && scene.completion?.summary) return scene.completion.summary;
+  if (sceneFinished(scene) && scene.completion?.summary) return runtimeCompletionText(scene.completion);
   if (sceneFinished(scene)) return t('{status} · 回看记录，未在执行', { status: statusNames[scene.status] });
   const running = scene.operations.filter(op => op.status === 'running');
   if (running.length > 1) return t('{count} 项真实调用并行执行', { count: running.length });
@@ -217,7 +218,7 @@ function paint() {
   host.hidden = !opened && !scene;
   host.classList.toggle('is-collapsed', !opened);
   const history = [...scenes.values()].filter(s => s.chatId === currentChat).sort((a, b) => b.startedAt.localeCompare(a.startedAt));
-  host.querySelector('.execution-panel-header').innerHTML = ui`<strong>NEURAL / 任务空间</strong><span class="execution-status" role="status">${escape(headerStatus(scene))}</span>
+  host.querySelector('.execution-panel-header').innerHTML = ui`<strong>NEURAL / 任务空间</strong><span class="execution-status" role="status" aria-live="polite">${escape(headerStatus(scene))}</span>
     ${history.length > 1 ? ui`<select aria-label="选择历史任务" data-execution-history>${history.map(s => ui`<option value="${escape(s.runId)}" ${s.runId === currentRun ? 'selected' : ''}>${escape(s.query.slice(0, 24) || t("任务"))}</option>`).join('')}</select>` : ''}
     ${historyCursors.get(currentChat) ? ui`<button data-execution-action="older-scenes">更早的任务</button>` : ''}
     <button class="execution-voice" data-action="toggle-tts-autoplay" title="朗读设置">朗读设置</button>

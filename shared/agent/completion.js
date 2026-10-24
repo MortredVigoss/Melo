@@ -1,3 +1,4 @@
+import { AGENT_LOOP_CONTRACT } from './loopContract.js';
 import { resolveReplyLocale } from './locale.js';
 import { runtimeMessage } from './runtimeMessages.js';
 import { planRequest } from './search.js';
@@ -30,7 +31,7 @@ function relevant(source, goal) {
 }
 
 export function completionReceipt({ goal = '', kind = 'answer', reply = '', observations = [], terminalReason = '', verifiedActions = [], task } = {}) {
-  const rows = Array.isArray(observations) ? observations.slice(0, 128) : [];
+  const rows = Array.isArray(observations) ? observations.slice(0, AGENT_LOOP_CONTRACT.guardLimits.completionObservations) : [];
   const performed = rows.filter(row => row?.ok === true && row.executed === true);
   const base = { version: 1, kind, outcome: 'blocked', goalState: 'unverified', reason: '', evidenceIds: [], completedSteps: new Set(performed.map(row => String(row.id).split(':source:')[0])).size, ...(task ? { task } : {}) };
   if (terminalReason === 'CANCELLED') return { ...base, outcome: 'cancelled', reason: terminalReason };

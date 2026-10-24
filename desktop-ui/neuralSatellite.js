@@ -1,9 +1,10 @@
+import { visualColor, visualRgb } from '../src/shared/visualTokens.js';
 export const neuralIdentities = [
- {id:'chat',color:'#ba793b',light:'#e8ad66',rgb:'186,121,59',lightRgb:'232,173,102'},
- {id:'projects',color:'#8f3945',light:'#cb727b',rgb:'143,57,69',lightRgb:'203,114,123'},
- {id:'agents',color:'#715087',light:'#ae88c7',rgb:'113,80,135',lightRgb:'174,136,199'},
- {id:'knowledge',color:'#506e77',light:'#91b3bb',rgb:'80,110,119',lightRgb:'145,179,187'},
- {id:'system',color:'#926044',light:'#ce9673',rgb:'146,96,68',lightRgb:'206,150,115'},
+ {id:'chat',color:visualColor('chat'),light:visualColor('chat-light'),rgb:visualRgb('chat'),lightRgb:visualRgb('chat-light')},
+ {id:'projects',color:visualColor('projects'),light:visualColor('projects-light'),rgb:visualRgb('projects'),lightRgb:visualRgb('projects-light')},
+ {id:'agents',color:visualColor('agents'),light:visualColor('agents-light'),rgb:visualRgb('agents'),lightRgb:visualRgb('agents-light')},
+ {id:'knowledge',color:visualColor('knowledge'),light:visualColor('knowledge-light'),rgb:visualRgb('knowledge'),lightRgb:visualRgb('knowledge-light')},
+ {id:'system',color:visualColor('system'),light:visualColor('system-light'),rgb:visualRgb('system'),lightRgb:visualRgb('system-light')},
 ];
 
 // An interrupted focus turn always starts at the current attitude. Free spin

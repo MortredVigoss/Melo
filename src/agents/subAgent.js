@@ -1,3 +1,4 @@
+import { AGENT_LOOP_CONTRACT } from '../runtime/agentLoopContract.js';
 import { requestAllowsTool } from '../../shared/agent/retrieval/requestPolicy.js';
 import { createCoreTurn } from '../runtime/sharedAgentCore.js';
 import { renderAgentIdentity } from '../domain/agent/agentIdentity.js';
@@ -35,8 +36,8 @@ import { createFunctionCallingSession } from '../tools/functionCalling.js';
 import { fitRequestContext, resolveContextBudget } from '../services/chat/contextBudget.js';
 import { requestEnvironment } from '../runtime/requestScope.js';
 
-const MAX_SUB_AGENT_ITERATIONS = 8;
-const SUB_AGENT_MAX_DEPTH = 2;
+const MAX_SUB_AGENT_ITERATIONS = AGENT_LOOP_CONTRACT.delegationLimits.iterations;
+const SUB_AGENT_MAX_DEPTH = AGENT_LOOP_CONTRACT.delegationLimits.depth;
 
 /**
  * Resolve the concrete list of Tool objects a sub-agent is allowed to use.

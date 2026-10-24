@@ -1,3 +1,4 @@
+import { captureBehavior } from '../../runtime/runtimeBehavior.js';
 /**
  * Persistent CDP page handle registry — Stage 3a of the meloChrome rollout.
  *
@@ -88,7 +89,7 @@ export async function openPage(url, {
   chromePath,
   openTimeoutMs = DEFAULT_OPEN_TIMEOUT_MS,
 } = {}) {
-  if (process.env.MELO_CDP_ENABLED !== '1') {
+  if (captureBehavior().MELO_CDP_ENABLED !== '1') {
     throw new Error('Browser tools require MELO_CDP_ENABLED=1 (user-set env flag)');
   }
   if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
