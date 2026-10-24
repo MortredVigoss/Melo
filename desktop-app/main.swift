@@ -24,15 +24,12 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
       return envDir
     }
 
-    let homeDir = NSHomeDirectory()
     let bundleParentDir = Bundle.main.bundleURL.deletingLastPathComponent().path
     let bundleGrandparentDir = (bundleParentDir as NSString).deletingLastPathComponent
     let candidateProjectDirs = [
       bundleParentDir,
       (bundleParentDir as NSString).appendingPathComponent("Melo Desktop Project"),
       (bundleGrandparentDir as NSString).appendingPathComponent("Melo Desktop Project"),
-      (homeDir as NSString).appendingPathComponent("Desktop/melo/Melo Desktop Project"),
-      (homeDir as NSString).appendingPathComponent("Documents/New project"),
     ]
 
     for candidate in candidateProjectDirs {

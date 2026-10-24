@@ -9,6 +9,7 @@ const GT_BASE = 'https://translate.googleapis.com/translate_a/single';
 const MAX_TEXT = 5000;
 
 const LANG_ALIASES = {
+  '日本語':'ja', '한국어':'ko', '한국말':'ko', 'español':'es', 'castellano':'es', 'inglés':'en', '英語':'en', '영어':'en', '中国語':'zh-CN', '중국어':'zh-CN', 'chino':'zh-CN', 'japonés':'ja', 'coreano':'ko',
   chinese: 'zh-CN', cn: 'zh-CN', zh: 'zh-CN', '中文': 'zh-CN', '简体': 'zh-CN', '繁体': 'zh-TW',
   english: 'en', en: 'en', '英文': 'en', '英语': 'en',
   japanese: 'ja', jp: 'ja', ja: 'ja', '日文': 'ja', '日语': 'ja',

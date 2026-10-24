@@ -90,7 +90,7 @@ export function createVoiceInput({ env = globalThis, getContext, onChange, onCom
     try {
       const engine = new Recognition();
       recognition = engine;
-      engine.lang = language === 'system' ? (env.navigator?.language || 'zh-CN') : language;
+      engine.lang = language === 'system' ? (env.navigator?.language || navigator.language || 'en-US') : language;
       engine.continuous = true;
       engine.interimResults = true;
       hasInterim = false;

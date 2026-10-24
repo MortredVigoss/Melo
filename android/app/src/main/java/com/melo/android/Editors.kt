@@ -75,11 +75,14 @@ import com.melo.android.network.HostedSearchAdapter
         var name by remember(original.id) { mutableStateOf(original.name) }; var subtitle by remember(original.id) { mutableStateOf(original.subtitle) }
         var instructions by remember(original.id) { mutableStateOf(original.instructions) }; var identity by remember(original.id) { mutableStateOf(original.identity) }
         var soul by remember(original.id) { mutableStateOf(original.soul) }
+        var replyLanguage by remember(original.id) { mutableStateOf(original.replyLanguage) }
         var contextSources by remember(original.id) { mutableStateOf(original.contextSources) }
         EditorDialog("编辑角色", { editing = null }, { vm.engine.work {
             require(name.isNotBlank()) { "请输入角色名称。" }
-            vm.repository.saveAgent(original.copy(name = name.take(200), subtitle = subtitle, instructions = instructions, identity = identity, soul = soul, contextSources = contextSources)); editing = null
+            vm.repository.saveAgent(original.copy(name = name.take(200), subtitle = subtitle, instructions = instructions, identity = identity, soul = soul, contextSources = contextSources, replyLanguage = replyLanguage)); editing = null
         } }) { Field("名称", name, { name = it }); Field("简介", subtitle, { subtitle = it }); Field("角色指令", instructions, { instructions = it }, 4); Field("身份", identity, { identity = it }, 2); Field("风格", soul, { soul = it }, 2)
+            Text("回复语言")
+            listOf("" to "跟随用户消息", "zh" to "中文", "en" to "English", "ja" to "日本語", "ko" to "한국어", "es" to "Español").forEach { (value,title) -> FilterChip(selected = replyLanguage == value, onClick = { replyLanguage = value }, label = { Text(title) }) }
             Text("上下文来源（本机）")
             listOf("projects" to "项目指令", "artifacts" to "项目资料", "memory" to "记忆与历史回读").forEach { (key, label) ->
                 Row(verticalAlignment = Alignment.CenterVertically) { Text(label, Modifier.weight(1f)); Switch(contextSources[key] != false, { enabled -> contextSources = contextSources + (key to enabled) }) }
@@ -167,6 +170,8 @@ import com.melo.android.network.HostedSearchAdapter
     var fontScale by remember(data.settings.fontScale) { mutableFloatStateOf(data.settings.fontScale) }
     var tested by remember { mutableStateOf<String?>(null) }
     val savedSearch = data.settings.agentRuntime["search"] as? JsonObject ?: buildJsonObject {}
+    var searchMaxResults by remember(data.settings.agentRuntime) { mutableStateOf(savedSearch.text("maxResults").ifBlank { "8" }) }
+    var searchTimeoutMs by remember(data.settings.agentRuntime) { mutableStateOf(savedSearch.text("timeoutMs").ifBlank { "20000" }) }
     var searchEnabled by remember(data.settings.agentRuntime) { mutableStateOf(savedSearch.text("backend") == "http") }
     var searchProvider by remember(data.settings.agentRuntime) { mutableStateOf(savedSearch.text("provider", "custom")) }
     var searchEndpoint by remember(data.settings.agentRuntime) { mutableStateOf(savedSearch.text("endpoint")) }
@@ -210,9 +215,12 @@ import com.melo.android.network.HostedSearchAdapter
             if (searchProvider != "brave") Row(verticalAlignment = Alignment.CenterVertically) { Text("使用本机 Search 凭证", Modifier.weight(1f)); Switch(searchUsesKey, { searchUsesKey = it }, enabled = !searchSaving) }
             if (searchProvider == "brave" || searchUsesKey) OutlinedTextField(searchKey, { searchKey = it }, label = { Text("新的 Search API Key（留空保留该地址原值）") }, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth().testTag("search-key"), singleLine = true, enabled = !searchSaving)
             Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(searchClearKey, { searchClearKey = it }, Modifier.testTag("search-clear-key"), enabled = !searchSaving); Text("清除此地址已保存的 Search Key") }
+            Field("搜索条数上限（1–8）", searchMaxResults, { searchMaxResults = it })
+            Field("搜索超时（毫秒，3000–120000）", searchTimeoutMs, { searchTimeoutMs = it })
             TextButton(modifier = Modifier.testTag("save-search"), enabled = !searchSaving, onClick = {
                 val enabledDraft = searchEnabled; val keyDraft = searchKey.trim(); val clearDraft = searchClearKey
                 val draft = buildJsonObject { put("search", buildJsonObject {
+                    put("maxResults", searchMaxResults.toIntOrNull() ?: 8); put("timeoutMs", searchTimeoutMs.toIntOrNull() ?: 20000)
                     put("backend", if (searchEnabled) "http" else "none"); put("provider", searchProvider); put("endpoint", searchEndpoint)
                     put("credentialRef", if (searchUsesKey || searchProvider == "brave") "search" else "")
                 }) }
@@ -258,18 +266,28 @@ import com.melo.android.network.HostedSearchAdapter
         val hasCredential by produceState<Boolean?>(null, original.id) { value = runCatching { vm.repository.credential(original.id).isNotBlank() }.getOrDefault(false) }
         var probe by remember(original.id) { mutableStateOf<String?>(null) }; var probing by remember { mutableStateOf(false) }
         var searchProof by remember(original.id) { mutableStateOf(original.searchProof) }
+        var modelCapabilities by remember(original.id) { mutableStateOf(original.modelCapabilities) }
         var models by remember(original.id) { mutableStateOf(original.models.joinToString("\n")) }
         var contextTokens by remember(original.id) { mutableStateOf(original.contextTokens.toString()) }
         EditorDialog("模型连接", { if (!probing) editing = null }, { vm.engine.work {
-            vm.repository.saveConnection(original.copy(name = name.take(200), endpoint = endpoint.trim(), model = model.trim(), protocol = protocol, stream = stream, searchProof = searchProof, contextTokens = contextTokens.toIntOrNull() ?: 0, models = models.lines().map(String::trim).filter(String::isNotBlank).distinct()), key.takeIf(String::isNotBlank)); editing = null
+            vm.repository.saveConnection(original.copy(name = name.take(200), endpoint = endpoint.trim(), model = model.trim(), protocol = protocol, stream = stream, searchProof = searchProof, contextTokens = contextTokens.toIntOrNull() ?: 0, models = models.lines().map(String::trim).filter(String::isNotBlank).distinct(), modelCapabilities = modelCapabilities), key.takeIf(String::isNotBlank)); editing = null
         } }) {
-            Field("连接名称", name, { name = it }); Field("完整模型 Endpoint", endpoint, { endpoint = it })
+            Field("连接名称", name, { name = it }); Field("完整模型 Endpoint", endpoint, { endpoint = it; modelCapabilities = buildJsonObject {} })
             Text("填写完整请求地址，例如 https://example.com/v1/chat/completions；不会自动补充路径。", color = MeloMuted)
             Field("模型名称", model, { model = it })
+            listOf("vision" to "图片输入", "reasoning" to "推理参数", "imageGen" to "图片输出").forEach { (capability, label) ->
+                Text(label)
+                Row { listOf("" to "自动（目录或实测）", "true" to "支持", "false" to "不支持").forEach { (value, title) ->
+                    FilterChip(selected = (modelCapabilities[model]?.jsonObject?.get(capability)?.jsonPrimitive?.content ?: "") == value, onClick = {
+                        val entry = modelCapabilities[model]?.jsonObject.orEmpty().toMutableMap(); if (value.isEmpty()) entry.remove(capability) else entry[capability] = JsonPrimitive(value == "true")
+                        modelCapabilities = JsonObject(modelCapabilities.toMutableMap().apply { put(model, JsonObject(entry)) })
+                    }, label = { Text(title) })
+                } }
+            }
             Field("此连接可用模型（每行一个，按服务商模型目录填写）", models, { models = it }, lines = 3)
             Field("模型上下文容量（tokens，4096–400000）", contextTokens, { contextTokens = it })
             Text("按服务商提供的模型容量填写；图片、工具与输出预留共同计入。", color = MeloMuted)
-            Text("接口协议"); listOf("chat-completions", "responses", "anthropic").forEach { choice -> FilterChip(selected = protocol == choice, onClick = { protocol = choice }, label = { Text(choice) }) }
+            Text("接口协议"); listOf("chat-completions", "responses", "anthropic").forEach { choice -> FilterChip(selected = protocol == choice, onClick = { protocol = choice; modelCapabilities = buildJsonObject {} }, label = { Text(choice) }) }
             if (original.protocol == "fixture") Text("此连接只用于 Debug Fixture，不会联网。", color = MeloGold)
             OutlinedTextField(key, { key = it }, label = { Text(if (hasCredential == true) "新的 API 凭证（留空保留已保存凭证）" else "API 凭证（此设备尚未保存，必填）") }, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth().testTag("connection-key"), singleLine = true)
             Text(if (hasCredential == true) "本机已有凭证。保存配置不会发送模型请求。" else "凭证只在此设备保存；已有订阅仍需填写此服务的 API Key。", color = MeloMuted)

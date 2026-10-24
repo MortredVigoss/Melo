@@ -71,3 +71,14 @@ test('read-only connection refreshes revisions; editing preserves conflicts unti
  failRefresh=true;await act('llm-reload',hooks);assert.equal(dom.window.document.querySelector('[name=model]').value,'my draft');
  failRefresh=false;await act('llm-reload',hooks);assert.equal(dom.window.document.querySelector('[name=model]').value,'other editor');assert.equal(dom.window.document.querySelector('[name=model]').matches(':disabled'),true);dom.window.close();
 });
+
+test('capability switches enable Save and persist explicit false for an opaque model',async()=>{
+ const {renderLlmConnections:markup,editLlmConnection:change,handleLlmConnection:act}=await import('./llmConnections.js?capability-save');
+ const config={authMode:'api-key',model:'opaque',llmConnections:{providers:LLM_PROVIDERS,profiles:[{id:'custom',providerId:'custom',name:'Local fixture',baseUrl:'https://fixture.invalid/v1',model:'opaque',revision:1}],activeId:'custom'}};
+ let dom,saved;const render=()=>{dom?.window.close();dom=new JSDOM(markup(config));};
+ const hooks={config,render,refresh:async()=>{},api:async(url,{body})=>{assert.match(url,/save$/);saved=body;return config.llmConnections;}};
+ render();await act('llm-edit',hooks);
+ const input=dom.window.document.querySelector('[data-model-capability=vision]');input.value='false';change(input,config);
+ assert.equal(dom.window.document.querySelector('[data-action=llm-save]').disabled,false);
+ await act('llm-save',hooks);assert.equal(saved.modelCapability.vision,false);assert.equal(saved.model,'opaque');dom.window.close();
+});

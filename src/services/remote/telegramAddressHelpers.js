@@ -29,7 +29,7 @@ export function stripTelegramBotMention(text = '', botUsername = '') {
 }
 
 export function hasTelegramInvokePrefix(text = '') {
-  return /^(?:\/(?:ask|melo)\b|melo[:,，\s])/i.test(String(text || '').trim());
+  return /^\/(?:ask|melo)\b/i.test(String(text || '').trim());
 }
 
 export function escapeTelegramAliasRegex(value = '') {
@@ -59,7 +59,6 @@ export function collectTelegramBotAliases(profile, telegramChannel) {
     }
   }
 
-  aliases.add('melo');
 
   const nicknames = String(telegramChannel?.nicknames || '')
     .split(/[,，;；]/)

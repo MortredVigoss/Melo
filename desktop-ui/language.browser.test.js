@@ -34,6 +34,8 @@ test('interface language switches, persists, and never rewrites user content or 
     const page = await browser.newPage({ viewport: { width: 1200, height: 850 } });
     page.setDefaultTimeout(10000);
     const errors = []; page.on('pageerror', e => errors.push(e.message));
+    // This fixture asserts Chinese labels; set the preference explicitly, independent of the host locale.
+    assert.equal((await fetch(base + '/api/settings/local', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({preferences:{interfaceLanguage:'zh-CN'}})})).status,200);
     await page.goto(base);
     await page.locator('#composer').waitFor();
     await page.locator('#composer').fill('系统设置\nMy draft 日本語 한국어');

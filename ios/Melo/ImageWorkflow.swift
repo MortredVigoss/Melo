@@ -35,7 +35,7 @@ struct ImageReviewRequest {
 struct ImageTaskPlan: Codable, Equatable {
     var action: ImageAction = .auto
     var references: [ImageReference] = []
-    var model = "gpt-image-2"
+    var model = ((SharedLoopPolicy.value("providerDefaults", [:]) as? [String: Any])?["media"] as? [String: String])?["legacyPhoneImage"] ?? ""
     var size = "auto"
     var quality = "high"
     // Local connection ID only; credentials stay in Keychain. Missing in older drafts.
@@ -59,6 +59,9 @@ struct ImageTaskPlan: Codable, Equatable {
         let explanation = masked.range(of: #"^(?:请|帮我)?(?:解释|说明|讲讲)|^(?:如何|怎么|为什么)|(?:对比度|饱和度|曝光|亮度).{0,16}(?:有什么|会怎样|会怎么样|的原理)|(?:画|绘制|生成|做).{0,60}(?:的代码|的提示词)|\b(?:how|why)\b.{0,50}\b(?:contrast|saturation|exposure|brightness)|\b(?:in|as)\s+(?:svg|css|html)(?:\s+code)?\b"#, options: [.regularExpression,.caseInsensitive]) != nil
         let negated = declined || discussion || explanation
         if negated { result.action = .analyze }
+        else if action == .auto, let foreignAction = SharedLoopPolicy.value("imageLanguage", ["text": prompt, "hasInputImage": !references.isEmpty || !previousImages.isEmpty]) as? String, let resolved = ImageAction(rawValue: foreignAction) {
+            result.action = resolved
+        }
         else if action == .auto {
             // A local constraint ("不要改人物，只换背景") is not an edit request itself.
             let affirmative = masked.components(separatedBy: CharacterSet(charactersIn: "，。；！？,;!?\n")).filter {

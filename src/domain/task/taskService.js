@@ -5,7 +5,7 @@
 // shape the rest of the app can depend on.
 //
 // This module owns:
-//   - TASK_OWNERS — valid `owner` values (main / research / builder / reviewer)
+//   - taskOwners(state) — current Agent ids; creation validates against them
 //   - TASK_STATUSES — valid `status` values (todo / running / blocked / done)
 //   - MAX_TASKS — cap enforced by normalizeTasks()
 //   - normalizeTask(raw) — shape-coerce a single record; invalid owner/status
@@ -22,7 +22,13 @@
 import { randomUUID } from 'node:crypto';
 import { coerceIso, formatUpdatedAt } from '../../shared/helpers.js';
 
-export const TASK_OWNERS = ['main', 'research', 'builder', 'reviewer'];
+export const taskOwners = state => Object.keys(state?.agentProfiles || {});
+export function taskOwner(state, requested) {
+  const ids = taskOwners(state);
+  const id = requested || state.settings?.defaultAgentId || (ids.includes('main') ? 'main' : ids[0]);
+  if (!id || !ids.includes(id)) throw Object.assign(new Error('The task owner Agent is unavailable. Choose an existing Agent.'), { code: 'TASK_OWNER_MISSING' });
+  return id;
+}
 export const TASK_STATUSES = ['todo', 'running', 'blocked', 'review', 'done'];
 export const MAX_TASKS = 24;
 
@@ -38,7 +44,7 @@ export function normalizeTask(task) {
     kind: task?.kind === 'agent' ? 'agent' : 'task',
     title: task?.title || 'Untitled task',
     summary: typeof task?.summary === 'string' ? task.summary : '',
-    owner: TASK_OWNERS.includes(task?.owner) ? task.owner : 'main',
+    owner: typeof task?.owner === 'string' && /^[A-Za-z0-9_-]{1,100}$/.test(task.owner) ? task.owner : 'main',
     status: TASK_STATUSES.includes(task?.status) ? task.status : 'todo',
     projectId: task?.projectId || null,
     chatId: task?.chatId || null,

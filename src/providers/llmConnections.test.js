@@ -181,3 +181,18 @@ test('saving an inactive connection preserves env-based legacy access until expl
     assert.equal(restored.model, 'env-vendor/model'); assert.equal(restored.apiKey, 'env-only-key');
   }); } finally { await rm(home, { recursive: true, force: true }); }
 });
+
+test('per-model declarations survive activation and discovery but do not follow an endpoint change', async t => {
+  const home=await mkdtemp(join(tmpdir(),'melo-model-capabilities-'));t.after(()=>rm(home,{recursive:true,force:true}));
+  await runWithRequestContext(createRequestContext({home}),async()=>{
+    await saveLlmProfile({id:'opaque',providerId:'custom',baseUrl:'https://one.invalid/v1',model:'vendor/opaque',apiKey:'fixture-key',modelCapabilities:{second:{vision:true}},modelCapability:{vision:false,reasoning:true}});
+    await activateLlmProfile('opaque');
+    await testLlmProfile('opaque',{catalogOnly:true,discover:async({onModelMetadata})=>{onModelMetadata([{id:'vendor/opaque',input_modalities:['text','image']}]);return ['vendor/opaque'];}});
+    let profile=await inspectLlmProfile('opaque');
+    assert.equal(profile.modelCapabilities['vendor/opaque'].vision,false);assert.equal(profile.modelMetadata['vendor/opaque'].vision,true);
+    assert.equal(profile.apiKey,'fixture-key');assert.equal(profile.modelCapabilities.second.vision,true);
+    await saveLlmProfile({id:'opaque',providerId:'custom',baseUrl:'https://two.invalid/v1',model:'vendor/opaque',apiKey:'new-fixture-key'});
+    profile=await inspectLlmProfile('opaque');
+    assert.deepEqual(profile.modelMetadata,{});assert.deepEqual(profile.modelCapabilities,{});assert.equal(profile.apiKey,'new-fixture-key');
+  });
+});

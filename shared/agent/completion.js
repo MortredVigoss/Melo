@@ -1,3 +1,5 @@
+import { resolveReplyLocale } from './locale.js';
+import { runtimeMessage } from './runtimeMessages.js';
 import { planRequest } from './search.js';
 import { toolEffect } from './toolEffects.js';
 import { startGoal, goalSnapshot } from './goal.js';
@@ -98,34 +100,32 @@ export function completionKind({ goal = '', plan, observations = [] } = {}) {
 
 export function completionResult(input = {}) {
   const receipt = completionReceipt({ ...input, kind: input.kind || completionKind(input) });
-  return { ...receipt, summary: completionSummary(receipt, input.goal) };
+  return { ...receipt, summary: completionSummary(receipt, input.goal, input.locale) };
 }
 
 // Host-owned receipts, not the lead's prose, determine team delivery. Only
 // each member's final attempt counts; earlier attempts remain in history.
-export function teamCompletion({ goal = '', reply = '', members = [], accepted = true, cancelled = false, budgetExceeded = false } = {}) {
+export function teamCompletion({ locale, goal = '', reply = '', members = [], accepted = true, cancelled = false, budgetExceeded = false } = {}) {
   const latest = [...new Map(members.map(row => [row.id, row])).values()];
   const delivered = latest.length > 0 && accepted && latest.every(row => row.ok && row.status === 'completed' && row.completion?.outcome === 'completed');
   const outcome = cancelled ? 'cancelled' : budgetExceeded ? 'budget_exhausted' : delivered && reply.trim() ? 'completed' : 'partial';
   const requirements = latest.map(row => ({ text: String(row.id).slice(0, 200), status: row.ok && row.status === 'completed' && row.completion?.outcome === 'completed' ? 'met' : 'missing', evidenceIds: row.completion?.evidenceIds || [] }));
   return { version: 1, kind: 'answer', outcome, goalState: outcome === 'completed' ? 'supported' : 'unverified', reason: outcome === 'completed' ? 'TEAM_DELIVERIES_SUMMARIZED' : 'TEAM_DELIVERY_INCOMPLETE', evidenceIds: [...new Set(requirements.flatMap(row => row.evidenceIds))], completedSteps: requirements.filter(row => row.status === 'met').length,
     task: { ...goalSnapshot(startGoal(goal)), decision: outcome === 'completed' ? 'complete' : 'partial', requirements },
-    summary: /[\u3400-\u9fff]/u.test(goal) ? (outcome === 'completed' ? '已汇总成员交付；详见各成员回执' : '团队尚未全部完成；详见各成员回执') : (outcome === 'completed' ? 'Member deliveries summarized; see individual receipts' : 'Team delivery is incomplete; see member receipts') };
+    summary: runtimeMessage(outcome === 'completed' ? 'teamDone' : 'teamPartial', locale || resolveReplyLocale({text:goal})) };
 }
 
-export function completionSummary(receipt, text = '') {
-  const zh = /[\u3400-\u9fff]/u.test(text);
-  const labels = zh
-    ? { completed: '已完成', partial: '部分完成', blocked: '受阻', needs_user: '等待补充', cancelled: '已取消', budget_exhausted: '预算已用完' }
-    : { completed: 'Completed', partial: 'Partially completed', blocked: 'Blocked', needs_user: 'Needs your input', cancelled: 'Cancelled', budget_exhausted: 'Budget exhausted' };
-  const label = labels[receipt?.outcome] || (zh ? '完成状态未知' : 'Completion unknown');
-  if (receipt?.goalState === 'not_applicable') return zh ? '回答已交付' : 'Answer delivered';
-  if (receipt?.reason === 'ANSWERED_WITHOUT_SOURCES') return zh ? '已回答；未检索来源' : 'Answered without retrieving sources';
-  if (receipt?.reason === 'GOAL_CHECK_BUDGET') return zh ? '回答已保留；剩余预算不足，尚未完成交付检查' : 'Answer preserved; insufficient budget to check delivery';
-  if (['GOAL_CHECK_TRUNCATED', 'GOAL_CHECK_CONTEXT'].includes(receipt?.reason)) return zh ? '回答已保留；内容超过本次核对范围，完成情况未确认' : 'Answer preserved; content exceeds the scope of this delivery check';
-  if (['GOAL_CHECK_UNAVAILABLE', 'GOAL_CHECK_INVALID', 'GOAL_EVIDENCE_INVALID'].includes(receipt?.reason)) return zh ? '回答已保留；交付检查未能完成，结论待核对' : 'Answer preserved; delivery check unavailable, conclusions remain unchecked';
-  if (receipt?.reason === 'GOAL_DELIVERY_SUPPORTED') return zh ? '已核对交付要求与执行依据；事实未独立复核' : 'Delivery checked against recorded evidence; facts not independently verified';
-  if (receipt?.task?.explanation) return label + ' · ' + receipt.task.explanation.slice(0, 240);
-  if (receipt?.goalState === 'supported') return zh ? '已读取相关来源；结论未独立核实' : 'Relevant sources read; conclusions are not independently verified';
-  return label + (receipt?.goalState === 'verified' ? (zh ? ' · 已核对目标状态' : ' · Target state verified') : (zh ? ' · 尚无目标完成证据' : ' · Goal completion is unverified'));
+export function completionSummary(receipt, text = '', locale) {
+  const language = locale || resolveReplyLocale({ text });
+  const message = key => runtimeMessage(key, language);
+  const label = message(['completed','partial','blocked','needs_user','cancelled','budget_exhausted'].includes(receipt?.outcome) ? receipt.outcome : 'unknown');
+  if (receipt?.goalState === 'not_applicable') return message('delivered');
+  if (receipt?.reason === 'ANSWERED_WITHOUT_SOURCES') return message('unsourced');
+  if (receipt?.reason === 'GOAL_CHECK_BUDGET') return message('checkBudget');
+  if (['GOAL_CHECK_TRUNCATED','GOAL_CHECK_CONTEXT'].includes(receipt?.reason)) return message('checkScope');
+  if (['GOAL_CHECK_UNAVAILABLE','GOAL_CHECK_INVALID','GOAL_EVIDENCE_INVALID'].includes(receipt?.reason)) return message('checkUnavailable');
+  if (receipt?.reason === 'GOAL_DELIVERY_SUPPORTED') return message('supported');
+  if (receipt?.task?.explanation) return label + ' · ' + receipt.task.explanation.slice(0,240);
+  if (receipt?.goalState === 'supported') return message('sourcesRead');
+  return label + ' · ' + message(receipt?.goalState === 'verified' ? 'verified' : 'unverified');
 }

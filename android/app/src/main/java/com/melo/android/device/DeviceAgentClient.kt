@@ -16,6 +16,8 @@ import kotlin.coroutines.resumeWithException
 /** A separate tool channel; ordinary streaming chat retains its original decoder. */
 class DeviceAgentClient(private val debug: Boolean, private val http: OkHttpClient = ModelClient(debug).http) {
     suspend fun next(connection: Connection, key: String, history: List<JsonObject>, taskInstructions: String = "", chatTools: Boolean = false, toolSpecs: List<JsonObject>? = null, nativeWebSearch: Boolean = false, outputLimit: Int? = null): DeviceTurn {
+        fun hasImage(value: JsonElement): Boolean = when(value) { is JsonObject -> value["type"]?.jsonPrimitive?.contentOrNull in setOf("image", "image_url", "input_image") || value.values.any(::hasImage); is JsonArray -> value.any(::hasImage); else -> false }
+        require(connection.modelCapabilities[connection.model]?.jsonObject?.get("vision")?.jsonPrimitive?.booleanOrNull != false || history.none { hasImage(it) }) { "此模型已设为不支持图片输入，请选择视觉模型或修改能力设置。" }
         ConnectionPolicy.validate(connection, key, debug)
         require(connection.protocol in setOf("chat-completions", "responses", "anthropic")) { "手机助手需要支持 Tool Calling 的真实模型连接；自动验证使用隔离 HTTP Fixture。" }
         val base = payload(connection, history, taskInstructions, chatTools, toolSpecs, nativeWebSearch)

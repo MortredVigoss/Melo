@@ -68,8 +68,7 @@ import {
   latestProcessableTelegramText,
 } from './telegramParsing.js';
 import {
-  GRAY_ZONE_MIN,
-  REPLY_SCORE_THRESHOLD,
+  replyScoreLimits,
   buildTelegramReplyScore,
 } from './telegramReplyScore.js';
 import {
@@ -173,12 +172,13 @@ async function shouldReplyToTelegramMessage(incoming, telegramChannel, profile, 
     incoming, telegramChannel, profile, recentChat,
   );
 
+  const {threshold,grayMin} = replyScoreLimits(config);
   let decision;
   let method = 'score';
 
-  if (totalScore >= REPLY_SCORE_THRESHOLD) {
+  if (totalScore >= threshold) {
     decision = true;
-  } else if (totalScore < GRAY_ZONE_MIN) {
+  } else if (totalScore < grayMin) {
     decision = false;
   } else {
     // Gray zone: call LLM classifier

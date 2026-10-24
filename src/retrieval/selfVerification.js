@@ -1,3 +1,4 @@
+import { PROVIDER_DEFAULTS } from '../shared/modelCatalog.js';
 import { createOpenAICompatibleReply } from '../openai.js';
 import { buildVerificationEvidence, isSupportedVerification } from './verificationEvidence.js';
 import { AGENT_LOOP_CONTRACT, contractRegExp, fillTemplate } from '../runtime/agentLoopContract.js';
@@ -73,7 +74,7 @@ export async function verifyUncertainClaim({
       apiProtocol: config.apiProtocol,
       apiKey: config.apiKey,
       baseUrl: config.baseUrl,
-      model: config.activeLlmProfileId ? config.model : process.env.MELO_VERIFIER_MODEL || model || config.model || 'gpt-4o-mini',
+      model: config.activeLlmProfileId ? config.model : process.env.MELO_VERIFIER_MODEL || model || config.model || PROVIDER_DEFAULTS.auxiliary.verifier,
       systemPrompt: VERIFIER_SYSTEM_PROMPT,
       messages: [
         { role: 'user', content: fillTemplate(UNCERTAINTY.questionTemplate, { question: userMessage }) },

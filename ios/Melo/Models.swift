@@ -50,7 +50,7 @@ func timestamp() -> String {
 }
 enum MeloError: LocalizedError {
     case message(String)
-    var errorDescription: String? { if case .message(let text) = self { return text }; return nil }
+    var errorDescription: String? { if case .message(let text) = self { return String(localized: String.LocalizationValue(text)) }; return nil }
 }
 struct DeletedChat: Codable, Equatable {
     var id: String

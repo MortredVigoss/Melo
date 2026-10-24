@@ -46,12 +46,12 @@ test('snowflakeGt: same length → lexical compare matches numeric', () => {
 });
 
 // ── hasDiscordInvokePrefix ──────────────────────────────────────────────────
-test('hasDiscordInvokePrefix: matches /ask, /melo, melo: etc.', () => {
+test('hasDiscordInvokePrefix: matches explicit commands, not an implicit product alias', () => {
   assert.equal(hasDiscordInvokePrefix('/ask when is the deadline'), true);
   assert.equal(hasDiscordInvokePrefix('/melo help'), true);
-  assert.equal(hasDiscordInvokePrefix('melo: quick question'), true);
-  assert.equal(hasDiscordInvokePrefix('melo，能帮我查一下吗'), true);
-  assert.equal(hasDiscordInvokePrefix('melo how are you'), true);
+  assert.equal(hasDiscordInvokePrefix('melo: quick question'), false);
+  assert.equal(hasDiscordInvokePrefix('melo，能帮我查一下吗'), false);
+  assert.equal(hasDiscordInvokePrefix('melo how are you'), false);
   assert.equal(hasDiscordInvokePrefix('  /ask   padded  '), true);
 });
 
@@ -266,7 +266,7 @@ test('collectDiscordBotAliases: pulls botUsername, nicknames, agent name, and me
   const aliases = collectDiscordBotAliases(profile, channel, '123456');
   // Case-folded, plus the <@id> mention tokens
   assert.ok(aliases.includes('melobot'));
-  assert.ok(aliases.includes('melo'));
+  assert.ok(!aliases.includes('melo'));
   assert.ok(aliases.includes('金冬天'));
   assert.ok(aliases.includes('冬天'));
   assert.ok(aliases.includes('小金'));

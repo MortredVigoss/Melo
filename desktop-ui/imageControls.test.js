@@ -1,3 +1,4 @@
+import { PROVIDER_DEFAULTS } from '../shared/agent/providerDefaults.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -67,4 +68,14 @@ test('image settings require edit, keep failed drafts, and lock only after save 
  assert.match(renderImageSettings(config),/data-edit-status="dirty"/);assert.equal(requests,0);
  await handleImageAction('image-settings-save',context);assert.match(renderImageSettings(config),/data-edit-status="error"/);assert.match(renderImageSettings(config),/value="gpt-6-astra"/);
  fail=false;await handleImageAction('image-settings-save',context);assert.equal(requests,2);assert.match(renderImageSettings(config),/data-edit-status="saved"/);assert.match(renderImageSettings(config),/<fieldset[^>]*disabled/);
+});
+
+
+test('image settings share registry defaults while keeping saved opaque model IDs', () => {
+  const codex = renderImageSettings({authMode:'api-key'});
+  assert.ok(codex.includes(`value="${PROVIDER_DEFAULTS.chat.codex}"`));
+  const api = renderImageSettings({imageSettings:{engine:'openai-api'}});
+  assert.ok(api.includes(`value="${PROVIDER_DEFAULTS.media.image}"`));
+  assert.match(renderImageSettings({imageSettings:{engine:'openai-api',model:'custom-image-endpoint'}}), /value="custom-image-endpoint"/);
+  assert.match(renderImageSettings({imageSettings:{engine:'codex-oauth',codexModel:'custom-language-endpoint'}}), /value="custom-language-endpoint"/);
 });

@@ -24,7 +24,9 @@ test('built-in Agent persona saves once, failed saves retain drafts, and Markdow
   browser=await launchTestChrome(chromium);
   const page=await browser.newPage({viewport:{width:1440,height:1000}});
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
-  await page.goto(base);
+  // This fixture asserts Chinese labels; set the preference explicitly, independent of the host locale.
+    assert.equal((await fetch(base + '/api/settings/local', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({preferences:{interfaceLanguage:'zh-CN'}})})).status,200);
+    await page.goto(base);
   const consent=page.getByRole('dialog',{name:'Productivity MCP consent'});
   if(await consent.isVisible())await consent.getByRole('button',{name:/暂不启用/}).click();
   const form=page.locator('form[data-form=agent-profile-update]').first();

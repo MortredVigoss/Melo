@@ -21,11 +21,11 @@ test('actual API and OAuth adapters send supported fast reasoning without servic
   await runWithRequestContext(context, async () => {
     for (const [model, effort] of [['gpt-6.1-sol', 'low'], ['gpt-6-luna', 'none']]) {
       await createOpenAICompatibleReply({ authMode: 'api-key', apiKey: 'fixture', baseUrl: 'https://api.openai.com/v1',
-        model, providerProfile: 'fast', maxTokens: 1024, systemPrompt: 'classify', messages: [{ role: 'user', content: 'test' }] });
+        model, modelCapabilities:{reasoning:true,reasoningEfforts:[effort],defaultReasoningEffort:effort}, providerProfile: 'fast', maxTokens: 1024, systemPrompt: 'classify', messages: [{ role: 'user', content: 'test' }] });
       assert.equal(calls.at(-1).max_completion_tokens, 1024);
       assert.equal(calls.at(-1).reasoning_effort, effort);
       assert.equal(calls.at(-1).service_tier, undefined);
-      await createCodexResponsesReply({ model, providerProfile: 'fast', systemPrompt: 'classify', messages: [{ role: 'user', content: 'test' }],
+      await createCodexResponsesReply({ model, modelCapabilities:{reasoning:true,reasoningEfforts:[effort],defaultReasoningEffort:effort}, providerProfile: 'fast', systemPrompt: 'classify', messages: [{ role: 'user', content: 'test' }],
         nativeWebSearchEnabled: false, nativeImageGenerationEnabled: false,
         _credentialProvider: async () => ({ loggedIn: true, accountId: 'fixture', accessToken: 'fixture-token' }),
         _fetchImpl: async (_url, options) => {

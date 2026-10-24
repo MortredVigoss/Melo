@@ -54,13 +54,14 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
         private var modelSequence = 0
         private var routing: SmartRouting? = null
         private var requestedUpgrade = false
+        private var replyLocale = "en"
         private var goalState: JsonObject? = null
         private var lastCandidate: DeviceTurn? = null
         val goal = messages.lastOrNull { it.role == "user" }?.content.orEmpty()
         val observations = mutableListOf<JsonElement>()
         val verifiedActions = mutableListOf<JsonElement>()
         suspend fun receipt(reply: String, reason: String? = null, plan: JsonObject? = null) = runtime.value("completion", buildJsonObject { put("completion", buildJsonObject {
-            put("goal", goal); put("reply", reply); put("observations", JsonArray(observations)); put("verifiedActions", JsonArray(verifiedActions))
+            put("locale", replyLocale); put("goal", goal); put("reply", reply); put("observations", JsonArray(observations)); put("verifiedActions", JsonArray(verifiedActions))
             goalState?.let { state -> put("task", JsonObject(state.filterKeys { it !in setOf("candidate", "phase", "feedback", "availableTools", "research") })) }
             reason?.let { put("terminalReason", it) }; plan?.let { put("plan", it) }
         }) }).jsonObject
@@ -70,7 +71,9 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                 return ModelReply(text, model, outcome = completion.text("outcome"), stopReason = if (completion.text("outcome") == "completed") null else completion.text("reason"))
             }
 
+        private suspend fun stopped(reason: String) = runtime.value("stopReply", buildJsonObject { put("reason",reason); put("text",goal); put("locale",replyLocale) }).jsonPrimitive.content
         suspend fun run(): ModelReply {
+            replyLocale = runtime.value("locale", buildJsonObject { put("text",goal); put("agentLanguage",config.text("replyLanguage")); put("systemLanguage",java.util.Locale.getDefault().toLanguageTag()) }).jsonPrimitive.content
         journal = ChatJournal.create(runtime, runId, chatId, messages.lastOrNull { it.role == "user" }?.content.orEmpty(), onScene)
         try {
             val budget = SharedRunBudget.open(runtime, options = buildJsonObject { put("deadlineMs", 900_000) })
@@ -199,7 +202,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                     turn.request()
                     val answer = turn.budget.model(SharedRunBudget.estimateInput(history, taskInstructions)) { client.reply(connection, key, prepared.messages.takeLast(history.size), taskInstructions, imageData, onDelta) }
                     turn.event("complete")
-                    if (!turn.completed) return finish("本轮已停止（${turn.reason}），尚未确认完成。", answer.model, "blocked", turn.reason)
+                    if (!turn.completed) return finish(stopped(turn.reason), answer.model, "blocked", turn.reason)
                     journal.event("model:reply", "模型回复", model = connection.model, returnedModel = answer.model, output = "回复已返回", status = "completed")
                     answer.publicSummary?.takeIf(String::isNotBlank)?.let { journal.event("model:reply:summary", "模型公开摘要", output = it, status = "completed", channel = "reasoning-summary") }
                     return finish(answer.text, answer.model, answer.outcome, answer.stopReason)
@@ -285,7 +288,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                     }
                     if (phoneFailure != null) return finish("手机任务未完成：$phoneFailure", reply.model, if (succeeded) "partial" else "blocked", phoneFailureCode)
                 }
-                return finish("本轮已停止（${turn.reason}）。已有操作保留，尚未确认任务完成。", connection.model, if (succeeded) "partial" else "blocked", turn.reason)
+                return finish(stopped(turn.reason), connection.model, if (succeeded) "partial" else "blocked", turn.reason)
         }
     }
 }

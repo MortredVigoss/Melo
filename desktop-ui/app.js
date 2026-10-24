@@ -1,3 +1,4 @@
+import { LOCAL_SERVICE_DEFAULTS, customVoiceActive } from '/shared/localServices.js';
 import { renderSmartRouting, editSmartRouting, handleSmartRouting, smartRoutingDrag } from './smartRouting.js';
 import {handleManagementAction} from './managementActions.js';
 import {askFileDecision} from './chatFiles.js';
@@ -409,8 +410,8 @@ const HOME_PROMPT_PRESETS = [
 
 const MODEL_SETUP_DEFAULTS = {
   local: {
-    baseUrl: 'http://127.0.0.1:11434/v1',
-    model: 'llama3.1',
+    baseUrl: LOCAL_SERVICE_DEFAULTS.ollama,
+    model: DEFAULT_MODELS_BY_AUTH_MODE.local,
   },
   'api-key': {
     baseUrl: 'https://api.openai.com/v1',
@@ -609,7 +610,7 @@ function renderTtsVoicePanel() {
   const whisperBaseUrl = uiState.bootstrap?.settings?.config?.whisperBaseUrl || '';
   const ttsProvider = uiState.bootstrap?.settings?.config?.ttsProvider || '';
   const isEdgeTtsActive = engine === 'api' && ttsProvider === 'edge';
-  const isCustomVoiceActive = engine === 'api' && !isEdgeTtsActive && /127\.0\.0\.1:7860/.test(whisperBaseUrl);
+  const isCustomVoiceActive = engine === 'api' && customVoiceActive(uiState.bootstrap?.settings?.config);
   const isApiVoiceActive = engine === 'api' && !isEdgeTtsActive && !isCustomVoiceActive;
 
   // Group browser voices by language for readability
@@ -6290,7 +6291,7 @@ document.addEventListener('click', async event => {
         localStorage.setItem('melo-tts-engine', 'api');
         api('/api/settings/model', {
           method: 'POST',
-          body: { whisperBaseUrl: 'http://127.0.0.1:7860/v1', ttsProvider: '' },
+          body: { ttsProvider: 'custom' },
         }).then(payload => applyBootstrapPreservingDrafts(payload)).catch(() => {});
         uiState.ttsVoicePanelOpen = false;
         render();

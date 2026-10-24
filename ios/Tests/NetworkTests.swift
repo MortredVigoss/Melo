@@ -57,6 +57,12 @@ func json(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObject(
         configuration.protocolClasses = [MockProtocol.self]
         let session = URLSession(configuration: configuration)
         defer { session.invalidateAndCancel() }
+        let beforeDenied = MockProtocol.requestBodies.count
+        do {
+            _ = try await Network.reply(messages: [.init(role: "user", content: "Describe this")], endpoint: "https://example.invalid/chat", model: "opaque-model", token: "test-key", imageInputs: [ImageInput(data: Data([1,2,3]), mimeType: "image/png")], modelCapabilities: ["vision":false], session: session)
+            fatalError("Disabled image input reached provider")
+        } catch {}
+        assert(MockProtocol.requestBodies.count == beforeDenied, "Capability rejection must make zero provider requests")
         MockProtocol.status = 400
         MockProtocol.payload = "{\"error\":{\"code\":\"context_length_exceeded\",\"message\":\"maximum context length\"}}"
         do { _ = try await Network.reply(messages: [], endpoint: "https://example.invalid/chat", model: "test", token: "test-key", session: session); fatalError("Context error accepted") }

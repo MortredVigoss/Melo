@@ -1,3 +1,4 @@
+import { PROVIDER_DEFAULTS } from '../shared/agent/providerDefaults.js';
 import { t, ui } from './i18n.js';
 import { EditSession, renderEditActions, paintEditActions } from './settingsEdit.js';
 const settingsEdit = new EditSession();
@@ -26,8 +27,8 @@ const profiles = (config, apiOnly = false) =>
 const defaults = {
   engine: 'codex-oauth',
   profileId: '',
-  model: 'gpt-image-2.5-sunburst',
-  codexModel: 'gpt-6.1-sol',
+  model: PROVIDER_DEFAULTS.media.image,
+  codexModel: PROVIDER_DEFAULTS.chat.codex,
   visionProfileId: '',
   detail: 'auto',
   quality: 'high',
@@ -81,7 +82,7 @@ export function renderImageSettings(config) {
             ],
             value.size,
           )}</select></label><p class="list-row-meta">${esc(t("2K、4K 更慢、用量更高；4K 为实验尺寸，效果可能不稳定。若通道不接受所选尺寸，会按服务默认尺寸生成并注明实际像素。"))}</p>` : ''}
-    ${value.engine === 'codex-oauth' ? ui`<label class="label">图片请求使用的语言模型<input class="config-input" data-image-setting="codexModel" value="${esc(value.codexModel)}" placeholder="gpt-6.1-sol / gpt-6-astra"></label>` : ''}
+    ${value.engine === 'codex-oauth' ? ui`<label class="label">图片请求使用的语言模型<input class="config-input" data-image-setting="codexModel" value="${esc(value.codexModel)}" placeholder="${esc(PROVIDER_DEFAULTS.chat.codex)}"></label>` : ''}
     ${
       value.engine === 'openai-api'
         ? ui`<label class="label">图像 API 连接<select class="config-select" data-image-setting="profileId">${opts([['', t("请选择已保存的 API 连接")], ...profiles(config, true)], value.profileId)}</select></label><label class="label">图像模型 ID<input class="config-input" data-image-setting="model" value="${esc(value.model)}"></label><label><input type="checkbox" data-image-setting="previews" ${value.previews ? 'checked' : ''}> 请求生成中的预览（可能增加用量；通道需支持流式图像）</label>`

@@ -144,7 +144,10 @@ final class PhoneRunBudget: @unchecked Sendable {
         }
     }
     /// `budgetExhaustedReply`
-    static func reply(_ exhausted: Exhaustion) -> String { AgentLoopContract.fill(loopContract.budgetReplyTemplate, ["reason": describe(exhausted)]) }
+    static func reply(_ exhausted: Exhaustion) -> String {
+        guard let locale = PhoneReplyLanguage.current else { return AgentLoopContract.fill(loopContract.budgetReplyTemplate, ["reason": describe(exhausted)]) }
+        return SharedLoopPolicy.value("runtimeMessage", ["id":"budget", "locale":locale, "params":["reason":exhausted.reason]]) as? String ?? "Runtime budget exhausted."
+    }
     /// The run-record stage text the desktop emits for `budget:exhausted`.
     static func stageText(_ exhausted: Exhaustion) -> String {
         let limitText = exhausted.reason == "deadline" ? "\(Int((exhausted.used / 1000).rounded()))s / \(Int((exhausted.limit / 1000).rounded()))s" : "\(JSText.number(exhausted.used)) / \(JSText.number(exhausted.limit))"

@@ -4,7 +4,7 @@ import {buildImagePromptText,parseImageReview,MAX_IMAGE_REQUEST_CHARS} from './i
 test('brief preserves exact multilingual text and role boundaries without adding an edit constraint to new images',()=>{
   const request='把标题写成“Melo | 2026”，换成横版。\n保留中文，不添加其他文字。';
   const brief=buildImagePromptText({userPrompt:request,action:'generate',referenceRoles:['style','subject']});
-  assert.ok(brief.includes(request));assert.match(brief,/Image 1: 风格/);assert.match(brief,/Image 2: 主体/);
+  assert.ok(brief.includes(request));assert.match(brief,/Image 1: visual style/);assert.match(brief,/Image 2: subject identity/);
   assert.match(brief,/does not freeze/);assert.doesNotMatch(brief,/Only change the attributes/);
 });
 test('maximum user request fits Images API with a bounded, explicitly partial analysis',()=>{

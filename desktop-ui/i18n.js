@@ -1,3 +1,4 @@
+import { runtimeStageName as stageName, runtimeStageOutput as localizedStageOutput } from '../shared/agent/runtimeMessages.js';
 import { translations } from './translations.js';
 export const LANGUAGES = Object.freeze([
   { id:'zh-CN', name:'简体中文', short:'中文' },
@@ -50,3 +51,7 @@ export function ui(strings, ...values) {
   }
   return compiled.replace(/\uE000(\d+)\uE001/g, (_,index) => String(values[Number(index)]));
 }
+
+export function runtimeStageName(stage) { return t(stageName(stage, language)); }
+
+export function runtimeStageOutput(stage) { return localizedStageOutput(stage,currentLanguage()); }

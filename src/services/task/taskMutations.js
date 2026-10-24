@@ -10,6 +10,7 @@ import { updateStateAtomically } from '../../state/stateStore.js';
 import { findTaskById } from '../../state/stateLookups.js';
 import { getDesktopBootstrap } from '../desktop/bootstrap.js';
 import {
+  taskOwner,
   normalizeTask,
   normalizeTasks,
 } from '../../domain/task/taskService.js';
@@ -24,7 +25,7 @@ export async function createTask({ title, summary, owner, projectId, chatId, kin
       kind,
       title: String(title || '').trim() || 'Untitled task',
       summary: String(summary || '').trim(),
-      owner,
+      owner: taskOwner(state, owner),
       projectId: creationProjectId(state,{projectId,chatId,operation:'task'}),
       chatId: chatId || null,
       status: 'todo',
@@ -56,6 +57,7 @@ export async function updateTask(taskId, patch = {}) {
       if (Number.isInteger(score) && score >= 1 && score <= 5 && task.runHistory?.length) task.runHistory[task.runHistory.length-1].qualityScore = score; }
     if (task.execution?.status === 'prepared') task.execution.status = 'cancelled';
     task.syncRevision = (task.syncRevision || 1) + 1;
+    if ('owner' in patch) patch = { ...patch, owner: taskOwner(state, patch.owner) };
     const editable = Object.fromEntries(Object.entries(patch).filter(([key]) => ['title', 'summary', 'owner', 'status', 'projectId'].includes(key)));
     Object.assign(task, normalizeTask({
       ...task,

@@ -34,6 +34,7 @@ export function buildAgentProfilePatch(form, formData) {
   assignString('soul.md');
   assignString('mood');
   assignString('model');
+  assignString('replyLanguage');
   assignString('systemPrompt');
   assignString('voiceReplyMode');
   assignString('voicePersonality');

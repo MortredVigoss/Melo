@@ -378,3 +378,9 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - P3 iPhone/Android 原生设置、候选顺序、对话模式同步、实际传输和回执已接线；Swift 循环含共用夹具、缓存和副作用计数通过，iOS 完整模拟器构建通过。Android 模拟器 HTTP 夹具与最终复验通过（同连接判断计数 1、外部连接 0、缓存零增量、一次升档）；最后 Kotlin 接线修正的 JVM/Lint/Debug/Release 重验通过。
 - 完整日常组合 `npm test -- --base 458c3c0` GREEN：4,549 JS、37 Swift、设置浏览器、Android JVM/Lint/双构建及生成物检查，目录 `.tmp/test-runs/run-LpZwCA/`。其后新增超时取消 4/4、对话模式同步 9/9 定向回归通过。详细边界见[实施文档第 9 节](docs/smart-model-routing-plan-20261023.md#9-实施状态2026-10-24)，专项证据 `.tmp/smart-routing-20261024/`。
 - 模式配置保留既有固定选择；智能不跨连接，除非用户明确开启。专用图片服务保持原配置。真实账号、聊天、原图未写入或覆盖安装；未作真实服务收费或 iPhone 真机验收，不以构建/模拟器代替。后续按用户要求再推送或原位安装，不自动 git pp。
+
+### Codex · 跨提供方/语言/本机配置治理（2026-10-24，已实现并通过组合验收）
+
+用户授权按 A–G 审计实施，基准 `5afb0be`；实际落点、配置登记与兼容边界见 [专项记录](docs/portability-hardening-20261024.md)。连接目录/实测/声明决定视觉和推理行为，默认模型集中；自定义声音按类型/配置地址识别，保留转写配置。任务 owner 校验现有 Agent，团队明确选成员，频道别名来自配置。语言出口/事件 ID 与参数、三端能力 UI、五语图片意图、搜索配置与逐请求隔离已接线；项目回复语言的保存、继承、恢复自动经真实冷加载验证。
+最终 `npm test -- --base 5afb0be` GREEN：4,578 JS、37 Swift、设置浏览器、Android JVM/Lint/Debug/Release、生成物及依赖检查，证据 `.tmp/test-runs/run-pHqzcA/report.json`。完整 iOS Simulator App 构建通过（`.tmp/portability-20261024/ios-frozen-build.log`）；各专项与先红后绿日志见 `.tmp/portability-20261024/`。已修复旧夹具语言/共享路径依赖；视频取消测试保留原断言，独立及最终组合均通过。
+本轮本地提交，未发布、未安装、未作真实收费模型或外部 F5 包验收。语言/能力保持设备本地，严格旧同步协议不加未知字段；各端保留本机选择。保留其他线程 `docs/agent-loop-dehardcode-plan-20261023.md`；后续按用户指示推送或安装，不自动 git pp。

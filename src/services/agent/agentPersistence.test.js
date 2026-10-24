@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, writeFile, readFile, readdir, rm } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { serializeAgentState, hydrateAgentRecords, hydrateProjectAgentRecords } from '../../domain/agent/agentState.js';
-import { normalizeAgentProfile } from '../../state/agentProfiles.js';
+import { normalizeAgentProfile, effectiveAgentProfile } from '../../state/agentProfiles.js';
 import { createRequestContext } from '../../runtime/requestContext.js';
 import { runWithRequestContext } from '../../runtime/requestScope.js';
 import { updateAgentProfile } from './agentMutations.js';
@@ -109,4 +109,28 @@ test('legacy capability migration requires matching preview and persists after c
   await assert.rejects(updateAgentProfile('main',{capabilities:null}),/explicit object/);
   assert.equal(state.agentProfiles.main.instructions,'Keep');
  });
+});
+
+
+test('project reply language inherits, overrides and explicitly resets through committed storage', async t => {
+  const home = await mkdtemp(join(tmpdir(), 'melo-project-language-'));
+  t.after(() => rm(home, {recursive:true, force:true}));
+  await runWithRequestContext(createRequestContext({home}), async () => {
+    await updateAgentProfile('main', {replyLanguage:'ko'});
+    await updateAgentProfile('main', {name:'Project Agent'}, {scope:'project', projectId:'p'});
+    let state = await loadState({home});
+    assert.equal(effectiveAgentProfile(state, 'main', 'p').replyLanguage, 'ko');
+    assert.equal(Object.hasOwn(state.projectAgentOverrides.p.main, 'replyLanguage'), false);
+    for (const replyLanguage of ['ja', 'es', '']) {
+      await updateAgentProfile('main', {replyLanguage}, {scope:'project', projectId:'p'});
+      await updateAgentProfile('main', {name:'Renamed Project Agent'}, {scope:'project', projectId:'p'});
+      const path = join(home, 'desktop', 'state.json');
+      const disk = JSON.parse(await readFile(path, 'utf8'));
+      assert.equal(disk.projectAgentOverrides.p.main.replyLanguage, replyLanguage);
+      await writeFile(path, JSON.stringify(disk));
+      state = await loadState({home});
+      assert.equal(effectiveAgentProfile(state, 'main', 'p').replyLanguage, replyLanguage);
+      assert.equal(state.agentProfiles.main.replyLanguage, 'ko');
+    }
+  });
 });

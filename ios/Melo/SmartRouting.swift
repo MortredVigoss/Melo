@@ -51,7 +51,7 @@ final class PhoneRoutingSession: @unchecked Sendable {
         var policy = policy
         var candidates = candidates
         for i in candidates.indices {
-            if policy.tiers.values.flatMap({ $0 }).contains(where: { $0.connectionId == candidates[i].connectionId && $0.model == candidates[i].model && $0.vision }) { candidates[i].capabilities["vision"] = true }
+            if candidates[i].capabilities["vision"] != false, policy.tiers.values.flatMap({ $0 }).contains(where: { $0.connectionId == candidates[i].connectionId && $0.model == candidates[i].model && $0.vision }) { candidates[i].capabilities["vision"] = true }
         }
         let local = candidates.filter { $0.connectionId == connectionId && $0.available }
         if policy.tiers.values.allSatisfy(\.isEmpty), local.count == 1 {

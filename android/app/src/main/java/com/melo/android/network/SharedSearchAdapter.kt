@@ -38,12 +38,12 @@ class SharedSearchAdapter(private val debug: Boolean, http: OkHttpClient) {
                 if (credential.isNotBlank()) header(effect.text("credentialHeader"), effect.text("credentialPrefix") + credential)
                 if (effect.text("method") == "POST") post(effect.getValue("body").toString().toRequestBody("application/json".toMediaType()))
             }.build()
-        val result = exchange(request, 262_144)
+        val result = withTimeout(search["timeoutMs"]?.jsonPrimitive?.longOrNull ?: 20000) { exchange(request, 262_144, timeoutMs = search["timeoutMs"]?.jsonPrimitive?.longOrNull) }
         if (!result.ok) return result
         val raw = runCatching { MeloJson.parseToJsonElement(result.data.text("body")) }.getOrNull()
             ?: return DeviceToolResult.error("Search Backend 返回格式无效。", "INVALID_SEARCH_RESPONSE")
         return DeviceToolResult(runtime.value("searchResult", buildJsonObject {
-            put("result", raw); put("observation", buildJsonObject { put("fetchedAt", now()); put("backend", effect.text("backend")) })
+            put("result", raw); put("observation", buildJsonObject { put("fetchedAt", now()); put("backend", effect.text("backend")); put("maxResults", minOf(args["maxResults"]?.jsonPrimitive?.intOrNull ?: search["maxResults"]?.jsonPrimitive?.intOrNull ?: 6, search["maxResults"]?.jsonPrimitive?.intOrNull ?: 8)) })
         }).jsonObject)
     }
     suspend fun fetch(runtime: SharedCoreRuntime, args: JsonObject, requestedUrls: List<String>): DeviceToolResult {
@@ -59,8 +59,9 @@ class SharedSearchAdapter(private val debug: Boolean, http: OkHttpClient) {
             put("observation", buildJsonObject { put("fetchedAt", now()) })
         }).jsonObject)
     }
-    private suspend fun exchange(request: Request, limit: Int, publicPage: Boolean = false): DeviceToolResult = suspendCancellableCoroutine { continuation ->
-        val pageClient = if (!publicPage) client else client.newBuilder().dns { hostname ->
+    private suspend fun exchange(request: Request, limit: Int, publicPage: Boolean = false, timeoutMs: Long? = null): DeviceToolResult = suspendCancellableCoroutine { continuation ->
+        val scopedClient = if(timeoutMs == null) client else client.newBuilder().callTimeout(timeoutMs.coerceIn(3000,120000), TimeUnit.MILLISECONDS).build()
+        val pageClient = if (!publicPage) scopedClient else scopedClient.newBuilder().dns { hostname ->
             val addresses = Dns.SYSTEM.lookup(hostname)
             if (!(debug && hostname in setOf("localhost", "127.0.0.1", "10.0.2.2")) && addresses.any { it.isAnyLocalAddress || it.isLoopbackAddress || it.isLinkLocalAddress || it.isSiteLocalAddress || it.isMulticastAddress || it.address.size == 16 && (it.address[0].toInt() and 0xfe) == 0xfc }) throw java.net.UnknownHostException("网页来源不能读取本地或私有网络地址。")
             addresses

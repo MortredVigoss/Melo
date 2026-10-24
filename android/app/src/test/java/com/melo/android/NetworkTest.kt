@@ -11,6 +11,23 @@ import org.junit.Test
 import java.util.concurrent.TimeUnit
 
 class NetworkTest {
+    @Test fun declaredImageSupportRejectsBeforeHttpAndUnknownModelKeepsItsImage() = runBlocking {
+        MockWebServer().use { server ->
+            server.start()
+            val connection = Connection(name = "Fixture", endpoint = server.url("/v1/chat/completions").toString(), model = "opaque-vendor-id", stream = false,
+                modelCapabilities = MeloJson.parseToJsonElement("""{"opaque-vendor-id":{"vision":false}}""").jsonObject)
+            val messages = listOf(Message(role = "user", content = "Describe this", attachments = listOf(Attachment(name = "original.png", mime = "image/png", file = "original-file"))))
+            assertTrue(runCatching { ModelClient(true).reply(connection, "test-key", messages, "", { "aW1hZ2U=" }) {} }.isFailure)
+            assertEquals(0, server.requestCount)
+            server.enqueue(MockResponse().setBody("""{"choices":[{"finish_reason":"stop","message":{"content":"Fixture answer"}}]}"""))
+            val unknown = connection.copy(modelCapabilities = MeloJson.parseToJsonElement("{}").jsonObject)
+            ModelClient(true).reply(unknown, "test-key", messages, "", { "aW1hZ2U=" }) {}
+            assertEquals(1, server.requestCount)
+            assertTrue(server.takeRequest().body.readUtf8().contains("aW1hZ2U="))
+            assertEquals("original-file", messages[0].attachments[0].file)
+        }
+    }
+
     @Test fun responsesExposeOnlyProviderPublicSummariesAndRetainThemAtStreamCompletion() {
         val response = MeloJson.parseToJsonElement("""{"status":"completed","model":"fixture","output":[{"type":"reasoning","encrypted_content":"opaque","content":[{"type":"reasoning_text","text":"private"}],"summary":[{"type":"summary_text","text":"Public summary"}]},{"type":"message","content":[{"type":"output_text","text":"Final answer"}]}]}""").jsonObject
         val answer = ModelClient.decodeResponse(response, "responses")

@@ -1,4 +1,4 @@
-import { t, ui, currentLanguage } from './i18n.js';
+import { t, ui, currentLanguage, runtimeStageName, runtimeStageOutput } from './i18n.js';
 import { renderExecutionDetail, renderSessionEvents, executionApiLine, renderExecutionSignal, renderReasoningRecords, renderExecutionTiming } from './executionDetails.js';
 import { EXECUTION_MODULES, sessionEvents, moduleActivity, sceneFinished, finishExecutionScene, visibleSceneSources, sourceReadingLabel, sceneSourceUrl } from '/shared/executionScene.js';
 
@@ -140,7 +140,7 @@ function headerStatus(scene) {
   if (running.length === 1) return t('{module} · 执行中', { module: EXECUTION_MODULES.find(m => m.id === running[0].module)?.name });
   if (scene.operations.some(op => op.status === 'waiting')) return t("等待许可 · 尚未执行");
   const stage = (scene.pipeline || []).filter(item => item.status === 'running').at(-1);
-  if (stage) return `${stage.name} · ${stage.channel === 'reasoning-summary' ? t("公开摘要更新中") : stage.output || t("执行中")}`;
+  if (stage) return `${runtimeStageName(stage, currentLanguage())} · ${stage.channel === 'reasoning-summary' ? t("公开摘要更新中") : runtimeStageOutput(stage) || t("执行中")}`;
   return scene.operations.length ? t("调用已返回 · 等待回答") : t("请求处理中 · 等待可观测工具事件");
 }
 function detailsFor(scene) {
@@ -176,7 +176,7 @@ function renderCandidates(scene) {
   if (focus !== 'create') return '';
   const artifacts = scene?.artifacts || [];
   const stages = moduleActivity(scene, 'create').operations;
-  const delivery = ui`<div class="execution-pipeline" aria-label="模型与交付记录">${stages.map(stage => ui`<button data-execution-action="inspect" data-operation="${escape(stage.id)}" data-stage-status="${escape(stage.status)}"><strong>${escape(stage.name)}</strong><span>${escape(statusNames[stage.status] || stage.status)}</span><small>${escape(stage.output || stage.input || t("等待返回"))}</small>${stage.api ? ui`<small class="execution-api-line">${escape(executionApiLine(stage))}</small>` : ''}</button>`).join('')}</div>`;
+  const delivery = ui`<div class="execution-pipeline" aria-label="模型与交付记录">${stages.map(stage => ui`<button data-execution-action="inspect" data-operation="${escape(stage.id)}" data-stage-status="${escape(stage.status)}"><strong>${escape(runtimeStageName(stage, currentLanguage()))}</strong><span>${escape(statusNames[stage.status] || stage.status)}</span><small>${escape(runtimeStageOutput(stage) || stage.input || t("等待返回"))}</small>${stage.api ? ui`<small class="execution-api-line">${escape(executionApiLine(stage))}</small>` : ''}</button>`).join('')}</div>`;
   const previews = (scene?.previews || []).filter(p => !artifacts.some(a=>a.operationId===p.operationId));
   const previewCards = previews.map(p => ui`<article class="execution-candidate execution-preview"><img src="${escape(p.url)}" alt="服务返回的生成预览"><p>${sceneFinished(scene)?'生成未完成的预览':'生成中的预览'} · 非最终成果</p></article>`).join('');
   const missing = Math.max(0,(scene?.imageTask?.count || 0)-artifacts.filter(a=>a.kind==='image').length);

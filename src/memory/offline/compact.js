@@ -1,3 +1,5 @@
+import { PROVIDER_DEFAULTS } from '../../shared/modelCatalog.js';
+import { LOCAL_SERVICE_DEFAULTS, localServiceUrl } from '../../shared/localServices.js';
 /**
  * Offline-capable conversation compactor.
  *
@@ -21,12 +23,12 @@ import { auditSummary, QUALITY_DEFAULT_THRESHOLD } from '../dreaming/summaryQual
 
 const LOCAL_LLM_CANDIDATES = [
   // Order matters — first reachable endpoint wins.
-  { name: 'ollama',    baseUrl: 'http://localhost:11434/v1' },
-  { name: 'lmstudio',  baseUrl: 'http://localhost:1234/v1' },
-  { name: 'llamacpp',  baseUrl: 'http://localhost:8080/v1' },
+  { name: 'ollama',    baseUrl: LOCAL_SERVICE_DEFAULTS.ollama },
+  { name: 'lmstudio',  baseUrl: LOCAL_SERVICE_DEFAULTS.lmstudio },
+  { name: 'llamacpp',  baseUrl: LOCAL_SERVICE_DEFAULTS.llamacpp },
 ];
 
-const LOCAL_LLM_MODEL = process.env.MELO_LOCAL_COMPACT_MODEL || 'qwen2.5:3b';
+
 const LOCAL_LLM_TIMEOUT_MS = 15_000;
 const RULE_SUMMARY_MAX_CHARS = 1200;
 
@@ -137,7 +139,9 @@ export async function compactOfflineDetailed(messages = [], { config = {}, signa
   // asked us not to touch any model.  (Local LLMs are still considered
   // "offline" by our definition.)
   if (process.env.MELO_OFFLINE_DISABLE_LLM !== '1') {
-    for (const candidate of LOCAL_LLM_CANDIDATES) {
+    const model = process.env.MELO_LOCAL_COMPACT_MODEL || config.offlineCompactModel || PROVIDER_DEFAULTS.media.offlineCompact;
+    const candidates = LOCAL_LLM_CANDIDATES.map(candidate => ({ ...candidate, baseUrl: localServiceUrl(config.localServices?.[candidate.name], candidate.baseUrl), model }));
+    for (const candidate of candidates) {
       try {
         const summary = await _invokeLocalLlm(candidate, transcript, signal);
         if (summary && summary.trim()) {
@@ -191,7 +195,7 @@ async function callLocalLlm(candidate, transcript, signal) {
     authMode: 'local',
     apiKey: 'sk-local-no-auth',
     baseUrl: candidate.baseUrl,
-    model: LOCAL_LLM_MODEL,
+    model: candidate.model || PROVIDER_DEFAULTS.media.offlineCompact,
     systemPrompt:
       'You are a terse conversation summariser. Output ONLY the summary, no preamble.',
     messages: [{ role: 'user', content: buildPrompt(transcript) }],

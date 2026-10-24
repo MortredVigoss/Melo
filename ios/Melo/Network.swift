@@ -138,7 +138,8 @@ enum Network {
     /// One reply on an API-key connection (chat-completions or Anthropic). The
     /// request body without tools is unchanged; with phone tools the turn runs
     /// through AgentLoop (same limits, budget, envelopes and finalize as the desktop).
-    static func routingTransport(messages: [ChatMessage], endpoint: String, model: String, token: String, instructions: String, apiProtocol: String, imageInputs: [ImageInput], tools: AgentLoopTools?, onObservation: (@MainActor (ExecutionObservation) -> Void)?) throws -> APIChatTransport {
+    static func routingTransport(messages: [ChatMessage], endpoint: String, model: String, token: String, instructions: String, apiProtocol: String, imageInputs: [ImageInput], modelCapabilities: [String: Bool] = [:], tools: AgentLoopTools?, onObservation: (@MainActor (ExecutionObservation) -> Void)?) throws -> APIChatTransport {
+        if !imageInputs.isEmpty, modelCapabilities["vision"] == false { throw MeloError.message("此模型已设为不支持图片输入，请选择视觉模型或修改能力设置。") }
         let anthropic = apiProtocol == "anthropic"
         let definitions = (tools?.definitions ?? []) + [PhoneRoutingHost.control]
         let prompt = systemLine(toolInstructions: tools?.instructionsWithContract) + instructions
@@ -152,7 +153,8 @@ enum Network {
         return APIChatTransport(url: try self.endpoint(endpoint), token: token, headers: headers, session: session, anthropic: anthropic, apiProtocol: apiProtocol, model: model, base: body, offersTools: true, onObservation: onObservation)
     }
 
-    static func reply(messages: [ChatMessage], requestHistory: [ChatMessage]? = nil, endpoint: String, model: String, token: String, instructions: String = "", apiProtocol: String = "chat-completions", imageInputs: [ImageInput] = [], tools: PhoneToolSet? = nil, session: URLSession = Network.session, budget: PhoneRunBudget? = nil, verification: AgentVerification? = nil, hooks: AgentLoopHooks = AgentLoopHooks(), onObservation: (@MainActor (ExecutionObservation) -> Void)? = nil, onStatus: (@MainActor (String) -> Void)? = nil) async throws -> ModelReply {
+    static func reply(messages: [ChatMessage], requestHistory: [ChatMessage]? = nil, endpoint: String, model: String, token: String, instructions: String = "", apiProtocol: String = "chat-completions", imageInputs: [ImageInput] = [], modelCapabilities: [String: Bool] = [:], tools: PhoneToolSet? = nil, session: URLSession = Network.session, budget: PhoneRunBudget? = nil, verification: AgentVerification? = nil, hooks: AgentLoopHooks = AgentLoopHooks(), onObservation: (@MainActor (ExecutionObservation) -> Void)? = nil, onStatus: (@MainActor (String) -> Void)? = nil) async throws -> ModelReply {
+        if !imageInputs.isEmpty, modelCapabilities["vision"] == false { throw MeloError.message("此模型已设为不支持图片输入，请选择视觉模型或修改能力设置。") }
         try ConversationHistory.validateCurrentInput(messages.last(where: { $0.role == "user" })?.content ?? "", instructions: instructions)
         guard !token.isEmpty, !model.trimmingCharacters(in: .whitespaces).isEmpty else { throw MeloError.message("先在设置中填写模型服务和 API 密钥。") }
         let loopTools = (tools?.definitions.isEmpty ?? true) ? nil : tools?.loopTools

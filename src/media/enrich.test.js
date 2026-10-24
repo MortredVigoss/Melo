@@ -40,12 +40,11 @@ test('normalizeExtractedMedia keeps only valid structured entries', () => {
   ]);
 });
 
-test('modelSupportsVision stays conservative', () => {
-  assert.equal(modelSupportsVision('gpt-4o'), true);
-  assert.equal(modelSupportsVision('gemini-1.5-pro'), true);
-  assert.equal(modelSupportsVision('gpt-5.5'), true);
-  assert.equal(modelSupportsVision('o3'), true);
-  assert.equal(modelSupportsVision('gpt-3.5-turbo'), false);
+test('modelSupportsVision requires declarations or exact test evidence, never a model name', () => {
+  for (const id of ['gpt-4o','gemini-1.5-pro','gpt-5.5','o3','gpt-3.5-turbo','llava','opaque-42']) assert.equal(modelSupportsVision(id), undefined);
+  assert.equal(modelSupportsVision('opaque-42', { requestedModel:'opaque-42', ok:true }), true);
+  assert.equal(modelSupportsVision('opaque-42', { requestedModel:'other', ok:true }), undefined);
+  assert.equal(modelSupportsVision('opaque-42', null, {modelCapabilities:{'opaque-42':{vision:false}}}), false);
 });
 
 test('renderExtractedMediaContext and search text include extracted content', () => {

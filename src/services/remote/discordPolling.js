@@ -69,8 +69,7 @@ import {
 } from './offlineBacklogFilter.js';
 import { renderTelegramTransportText } from './telegramPolling.js';
 import {
-  GRAY_ZONE_MIN,
-  REPLY_SCORE_THRESHOLD,
+  replyScoreLimits,
 } from './telegramReplyScore.js';
 import {
   normalizeAgentStorageId,
@@ -158,12 +157,13 @@ async function shouldReplyToDiscordMessage(
     botUserId,
   );
 
+  const {threshold,grayMin} = replyScoreLimits(config);
   let decision;
   let method = 'score';
 
-  if (totalScore >= REPLY_SCORE_THRESHOLD) {
+  if (totalScore >= threshold) {
     decision = true;
-  } else if (totalScore < GRAY_ZONE_MIN) {
+  } else if (totalScore < grayMin) {
     decision = false;
   } else {
     method = 'llm';

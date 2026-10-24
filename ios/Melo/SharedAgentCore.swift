@@ -2,6 +2,13 @@ import Foundation
 import CryptoKit
 import JavaScriptCore
 
+enum PhoneReplyLanguage {
+    @TaskLocal static var current: String?
+    static func resolve(_ text: String, agent: String? = nil) -> String {
+        SharedLoopPolicy.value("locale", ["agentLanguage": agent ?? "", "text": text, "interfaceLanguage": UserDefaults.standard.string(forKey: "interfaceLanguage") ?? Locale.preferredLanguages.first ?? "en"]) as? String ?? "en"
+    }
+}
+
 /// Additive persisted receipt; old records have no receipt and stay unknown.
 struct AgentCompletionReceipt: Codable, Equatable, Sendable {
     var version: Int
@@ -18,11 +25,11 @@ struct AgentCompletionReceipt: Codable, Equatable, Sendable {
         return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
     }
     static func team(goal: String, reply: String, members: [[String: Any]], accepted: Bool, cancelled: Bool, budgetExceeded: Bool) -> Self? {
-        guard let value = SharedLoopPolicy.value("teamCompletion", ["team": ["goal": goal, "reply": reply, "members": members, "accepted": accepted, "cancelled": cancelled, "budgetExceeded": budgetExceeded]]), let data = try? JSONSerialization.data(withJSONObject: value) else { return nil }
+        guard let value = SharedLoopPolicy.value("teamCompletion", ["team": ["locale": PhoneReplyLanguage.current ?? PhoneReplyLanguage.resolve(goal), "goal": goal, "reply": reply, "members": members, "accepted": accepted, "cancelled": cancelled, "budgetExceeded": budgetExceeded]]), let data = try? JSONSerialization.data(withJSONObject: value) else { return nil }
         return try? JSONDecoder().decode(Self.self, from: data)
     }
     static func make(goal: String, reply: String, observations: [[String: Any]] = [], terminalReason: String = "", task: [String: Any]? = nil) -> Self? {
-        var input: [String: Any] = ["goal": goal, "reply": reply, "observations": observations, "terminalReason": terminalReason]
+        var input: [String: Any] = ["goal": goal, "reply": reply, "observations": observations, "terminalReason": terminalReason, "locale": PhoneReplyLanguage.current ?? PhoneReplyLanguage.resolve(goal)]
         if let task { input["task"] = task }
         guard let value = SharedLoopPolicy.value("completion", ["completion": input]),
               let data = try? JSONSerialization.data(withJSONObject: value) else { return nil }
@@ -168,6 +175,6 @@ final class PhoneCoreTurn {
         let result = (state["rejectionResults"] as? [String: [String: Any]])?[id]
         return (code, result?["output"] as? String ?? "Tool request rejected by the shared loop policy: \(code)")
     }
-    func reply(_ text: String) -> String { SharedLoopPolicy.value("stopReply", ["reason": reason, "text": text]) as? String ?? "共享运行策略不可用，本轮已停止。" }
+    func reply(_ text: String) -> String { SharedLoopPolicy.value("stopReply", ["reason": reason, "text": text, "locale": PhoneReplyLanguage.current ?? PhoneReplyLanguage.resolve(text)]) as? String ?? "共享运行策略不可用，本轮已停止。" }
     static func fingerprint(_ text: String) -> String { SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined() }
 }

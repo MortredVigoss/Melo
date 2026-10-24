@@ -1,3 +1,6 @@
+import { runtimeMessage } from '../../../../shared/agent/runtimeMessages.js';
+import { turnStopReply } from '../../../../shared/agent/turn.js';
+import { connectionForModel, resolvedModelCapabilities } from '../../../../shared/agent/modelCapabilities.js';
 import { toolEffect } from '../../../../shared/agent/toolEffects.js';
 import { resolveContextBudget } from '../contextBudget.js';
 import { teamCompletion } from '../../../../shared/agent/completion.js';
@@ -85,7 +88,7 @@ export function createInvokeModelNode(turn) {
       taskMessage.metadata = {...taskMessage.metadata,imageTask:task};
       await onImageTaskResolved?.(task);
     }
-    if (task && task.action !== 'analyze' && !scopeAllowsTool(context.capabilityScope,'image',{action:'generate'})) return {reply:'此 Agent 未开启生成媒体能力。请在 Agent 设置中开启后重试。',next:'finalize'};
+    if (task && task.action !== 'analyze' && !scopeAllowsTool(context.capabilityScope,'image',{action:'generate'})) return {reply:runtimeMessage('mediaDenied', config.replyLanguage),next:'finalize'};
     if (task && task.action !== 'analyze') {
       const reply = await runImageTask({task,config,messages:graphState.modelMessages,attachments,workspace,signal,sseEmitter,onDelta,onImageProgress,selectedModel,home});
       return {reply,next:'finalize'};
@@ -246,16 +249,16 @@ export function createInvokeModelNode(turn) {
         terminalReason = 'BUDGET_EXHAUSTED';
         const limitText = exhausted.reason === 'deadline' ? `${Math.round(exhausted.used / 1000)}s / ${Math.round(exhausted.limit / 1000)}s` : `${exhausted.used} / ${exhausted.limit}`;
         sseEmitter?.('execution_event', { kind: 'pipeline', id: 'budget:exhausted', module: 'compute', name: '运行预算已用完', status: 'failed',
-          output: `已达到运行预算（${describeBudgetReason(exhausted)}，已用 ${limitText}），本轮停止。已用：模型请求 ${exhausted.usage.providerCalls} 次、输入约 ${exhausted.usage.inputTokens} token、工具调用 ${exhausted.usage.toolCalls} 次。`,
+          outputMessageId:'output.budget',outputMessageParams:{reason:exhausted.reason,calls:exhausted.usage.providerCalls,tokens:exhausted.usage.inputTokens,tools:exhausted.usage.toolCalls},output: `已达到运行预算（${describeBudgetReason(exhausted)}，已用 ${limitText}），本轮停止。已用：模型请求 ${exhausted.usage.providerCalls} 次、输入约 ${exhausted.usage.inputTokens} token、工具调用 ${exhausted.usage.toolCalls} 次。`,
           budget: { code: exhausted.code, reason: exhausted.reason, limit: exhausted.limit, used: exhausted.used, usage: exhausted.usage } });
       };
       const exhausted = budgetExhausted(budget);
       if (exhausted) {
         emitBudgetExhausted(exhausted);
-        finalReply = coreTurn.candidateReply || budgetExhaustedReply(exhausted);
+        finalReply = coreTurn.candidateReply || budgetExhaustedReply(exhausted, config.replyLanguage);
         break;
       }
-      if (coreTurn.update('request') !== 'running') { finalReply = coreTurn.reply(latestUserMessage); break; }
+      if (coreTurn.update('request') !== 'running') { finalReply = coreTurn.reply(latestUserMessage, config.replyLanguage); break; }
       let rawReply;
       try {
         rawReply = await createReply({
@@ -265,6 +268,7 @@ export function createInvokeModelNode(turn) {
         apiKey: vision?.apiKey ?? modelOverrides.apiKey,
         baseUrl: vision?.baseUrl || modelOverrides.baseUrl,
         model: vision?.model || selectedModel,
+        modelCapabilities: resolvedModelCapabilities(connectionForModel(vision || config), vision?.model || selectedModel),
         systemPrompt: request.systemPrompt,
         messages: attachTurnContextToMessages(request.messages, request.turnContext),
         cacheScope: `${agentId}:${chat.id}`,
@@ -305,7 +309,7 @@ export function createInvokeModelNode(turn) {
         if (checkingGoal && !exhaustedNow) { coreTurn.stopReview(); coreTurn.update('complete'); finalReply = coreTurn.candidateReply; break; }
         if (!exhaustedNow) throw error;
         emitBudgetExhausted(exhaustedNow);
-        finalReply = coreTurn.candidateReply || budgetExhaustedReply(exhaustedNow);
+        finalReply = coreTurn.candidateReply || budgetExhaustedReply(exhaustedNow, config.replyLanguage);
         break;
       }
 
@@ -342,7 +346,7 @@ export function createInvokeModelNode(turn) {
           continue;
         }
         coreTurn.update('complete');
-        finalReply = turn.text || coreTurn.reply(latestUserMessage);
+        finalReply = turn.text || coreTurn.reply(latestUserMessage, config.replyLanguage);
         if (coreTurn.status === 'completed' && graphState.searchPlan?.nativeWebSearchEnabled) {
           const receipt = hostedSearchReceipt({ items: hostedItems, text: turn.text });
           missingHostedEvidence = !receipt.verified || !receipt.sources.length;
@@ -352,7 +356,7 @@ export function createInvokeModelNode(turn) {
       }
 
       coreTurn.update('calls', { calls: toolCalls.map(call => ({ ...call, name: mcpToolsByName.get(call.name)?.id || call.name })) });
-      if (coreTurn.status !== 'running') { finalReply = coreTurn.reply(latestUserMessage); break; }
+      if (coreTurn.status !== 'running') { finalReply = coreTurn.reply(latestUserMessage, config.replyLanguage); break; }
 
       // Emit SSE event so the UI can show tool execution status
       if (typeof sseEmitter === 'function') {
@@ -544,7 +548,7 @@ export function createInvokeModelNode(turn) {
       coreTurn.results(allResults);
       if (coreTurn.status !== 'running') {
         sseEmitter?.('execution_event', { kind: 'pipeline', id: 'core:stop', module: 'compute', name: '执行已停止', status: 'failed', output: coreTurn.reason });
-        finalReply = coreTurn.reply(latestUserMessage);
+        finalReply = coreTurn.reply(latestUserMessage, config.replyLanguage);
         break;
       }
 
@@ -554,9 +558,7 @@ export function createInvokeModelNode(turn) {
 
     // Exhaustion is not success; never publish a tool-call block as an answer.
     if (!finalReply) {
-      finalReply = contractRegExp(AGENT_LOOP_CONTRACT.cjkPattern).test(latestUserMessage)
-        ? AGENT_LOOP_CONTRACT.loop.toolLimitReply.zh
-        : AGENT_LOOP_CONTRACT.loop.toolLimitReply.en;
+      finalReply = turnStopReply('ROUND_LIMIT', latestUserMessage, config.replyLanguage);
     }
 
     // Only finalize may publish reply_text to the speech channel.

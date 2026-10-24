@@ -23,6 +23,8 @@ export function renderSearchSettings(config) {
       <label class="label">新的 Search API Key<input class="config-input" name="apiKey" type="password" autocomplete="off" value="${escape(draft.apiKey)}" placeholder="留空保留这个地址原有的密钥"></label>
       <label class="list-row-meta"><input type="checkbox" name="clearKey" ${draft.clearKey ? 'checked' : ''}> 清除此地址已保存的 Search Key</label>
       <label class="list-row-meta"><input type="checkbox" name="browserFallback" ${draft.browserFallback ? 'checked' : ''}> 允许内置网页检索（无需密钥，默认开启）</label>
+      <label class="label">搜索条数上限<input class="config-input" type="number" name="maxResults" min="1" max="8" value="${escape(draft.maxResults || 8)}"></label>
+      <label class="label">搜索超时（毫秒）<input class="config-input" type="number" name="timeoutMs" min="3000" max="120000" value="${escape(draft.timeoutMs || 20000)}"></label>
     </fieldset>
     <p class="list-row-meta">Search 凭证仅保存于本机，并绑定该地址。保存配置不会发送搜索请求，也不代表服务已验证。</p>
     <p role="status">${escape(state.message)}</p>
@@ -55,6 +57,7 @@ export async function handleSearchSettings(action, { api, render, refresh }) {
     await api('/api/settings/model', { method: 'POST', body: { agentRuntime: { version: 1, search: {
       backend: draft.backend || 'none', provider: draft.provider || 'custom', endpoint: draft.endpoint || '',
       credentialRef: draft.credentialRef || '', browserFallback: draft.browserFallback === true,
+      maxResults: Number(draft.maxResults || 8), timeoutMs: Number(draft.timeoutMs || 20000),
     } }, searchApiKey: draft.apiKey, clearSearchKey: draft.clearKey === true } });
     session.saved(); state.message = t('Search 配置已保存，尚未验证真实服务。');
     state.draft.apiKey = ''; await refresh();

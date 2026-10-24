@@ -12,6 +12,9 @@ struct LLMConnection: Codable, Identifiable, Equatable {
     var probe: ConnectionProbe?
     var models: [String]?
     var contextWindows: [String: Int]?
+    var modelCapabilities: [String: [String: Bool]]?
+    var modelMetadata: [String: [String: Bool]]?
+    func capabilities(for model: String) -> [String: Bool] { (modelMetadata?[model] ?? [:]).merging(modelCapabilities?[model] ?? [:]) { _, explicit in explicit } }
     static let presets: [LLMConnection] = [
         .init(id: "openai", name: "OpenAI API", baseURL: "https://api.openai.com/v1"),
         .init(id: "deepseek", name: "DeepSeek", baseURL: "https://api.deepseek.com"),
@@ -104,10 +107,17 @@ struct LLMConnectionsView: View {
             }
             if let draftError { Text(draftError).font(.caption).foregroundStyle(.red) }
             Group {
-            TextField("服务 Base URL（HTTPS）", text: $draft.baseURL).keyboardType(.URL).meloInput()
-            if selected == "custom" { Picker("接口格式", selection: $draft.apiProtocol) { Text("Chat Completions").tag("chat-completions"); Text("Anthropic Messages").tag("anthropic") } }
+            TextField("服务 Base URL（HTTPS）", text: Binding(get: { draft.baseURL }, set: { draft.baseURL = $0; draft.modelCapabilities = nil; draft.modelMetadata = nil })).keyboardType(.URL).meloInput()
+            if selected == "custom" { Picker("接口格式", selection: Binding(get: { draft.apiProtocol }, set: { draft.apiProtocol = $0; draft.modelCapabilities = nil; draft.modelMetadata = nil })) { Text("Chat Completions").tag("chat-completions"); Text("Anthropic Messages").tag("anthropic") } }
             TextField(selected == "doubao" ? "模型 ID 或 ep-… 接入点" : "模型 ID", text: $draft.model).meloInput()
             if !models.isEmpty { Picker("从列表选择", selection: $draft.model) { Text("选择或手填").tag(draft.model); ForEach(models.filter { $0 != draft.model }, id: \.self) { Text($0).tag($0) } } }
+            ForEach(["vision", "reasoning", "imageGen"], id: \.self) { capability in
+                Picker(["vision":"图片输入", "reasoning":"推理参数", "imageGen":"图片输出"][capability]!, selection: Binding(get: { (draft.modelCapabilities?[draft.model]?[capability]).map { $0 ? "true" : "false" } ?? "" }, set: { value in
+                    var declarations = draft.modelCapabilities ?? [:], entry = declarations[draft.model] ?? [:]
+                    entry[capability] = value.isEmpty ? nil : value == "true"
+                    declarations[draft.model] = entry; draft.modelCapabilities = declarations
+                })) { Text("自动（目录或实测）").tag(""); Text("支持").tag("true"); Text("不支持").tag("false") }
+            }
             SecureField(profiles.first { $0.id == selected }?.key.isEmpty == false ? "已保存密钥；留空保留" : "API Key", text: $key).meloInput()
             Toggle("清除此连接的已保存密钥", isOn: $clearKey).font(.caption)
             }.disabled(!editing)
@@ -171,6 +181,7 @@ struct LLMConnectionsView: View {
         var value = draft
         let previous = profiles.first { $0.id == selected }
         if let previous, !previous.key.isEmpty, previous.baseURL != draft.baseURL, key.isEmpty, !clearKey { throw MeloError.message("服务地址改变后，请重新填写密钥或先清除旧密钥。") }
+        if let previous, previous.baseURL != value.baseURL || previous.apiProtocol != value.apiProtocol { value.modelMetadata = nil }
         value.key = clearKey ? "" : key.isEmpty ? previous?.key ?? "" : key
         let endpoint = try value.endpoint()
         if value.probe?.matches(endpoint: endpoint, model: value.model, apiProtocol: value.apiProtocol, key: value.key) != true { value.probe = nil }
@@ -212,6 +223,9 @@ struct LLMConnectionsView: View {
             guard (response as? HTTPURLResponse)?.statusCode == 200, let json = try JSONSerialization.jsonObject(with: data) as? [String: Any], let rows = json["data"] as? [[String: Any]] else { throw MeloError.message("服务不提供模型列表或凭证不可用；可以手填模型 ID 并测试。") }
             models = rows.compactMap { $0["id"] as? String }
             draft.models = models
+            var metadata: [String: [String: Bool]] = [:]
+            for row in rows { if let id = row["id"] as? String, let values = SharedLoopPolicy.value("modelCapabilities", ["action":"metadata", "row":row]) as? [String: Any] { metadata[id] = values.reduce(into: [:]) { if let flag = $1.value as? Bool { $0[$1.key] = flag } } } }
+            draft.modelMetadata = metadata
             var windows = draft.contextWindows ?? [:]
             for row in rows {
                 guard let id = row["id"] as? String, let n = (row["context_window"] ?? row["context_length"]) as? NSNumber,

@@ -157,6 +157,7 @@ struct AgentEditor: View {
             Text("保存后，对已绑定此Agent的对话下一轮生效。").font(.caption).foregroundStyle(.secondary)
         }
         Section("高级Agent设定") {
+            Picker("回复语言", selection: optional(\.replyLanguage)) { Text("跟随用户消息").tag(""); Text("中文").tag("zh"); Text("English").tag("en"); Text("日本語").tag("ja"); Text("한국어").tag("ko"); Text("Español").tag("es") }
             TextField("默认模型 ID（留空沿用系统）", text: optional(\.model)).textInputAutocapitalization(.never).autocorrectionDisabled()
         }
         Section("图标") {

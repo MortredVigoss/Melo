@@ -1,3 +1,4 @@
+import { runtimeMessage } from './runtimeMessages.js';
 // Run-level budget (2026-10-17 design audit T3 / option C1).
 //
 // Before this module a turn only had per-iteration limits (10 tool
@@ -189,7 +190,8 @@ export function describeBudgetReason(exhausted) {
 }
 
 /** The explicit assistant reply the chat loop publishes when the budget is gone. */
-export function budgetExhaustedReply(exhausted) {
+export function budgetExhaustedReply(exhausted, locale = 'zh') {
+  if (locale !== 'zh') return runtimeMessage('budget', locale, {reason: `${exhausted?.reason || 'budget'} (${exhausted?.limit ?? ''})`});
   return fillTemplate(BUDGET.replyTemplate, { reason: describeBudgetReason(exhausted) });
 }
 

@@ -24,7 +24,7 @@ class SmartRouting(private val runtime: SharedCoreRuntime, private val config: S
     suspend fun prepare(client: DeviceAgentClient, budget: SharedRunBudget, onDecision: suspend (String, String, String) -> Unit) {
         val candidates = config.connections.flatMap { c -> (c.models + c.model).filter(String::isNotBlank).distinct().map { model -> buildJsonObject {
             put("connectionId", c.id); put("model", model); put("contextWindow", c.contextTokens); put("available", config.keys[c.id]?.isNotBlank() == true)
-            put("capabilities", buildJsonObject { put("tools", true); put("vision", assigned.any { it.text("connectionId") == c.id && it.text("model") == model && it["vision"]?.jsonPrimitive?.booleanOrNull == true }) }) } } }
+            put("capabilities", buildJsonObject { put("tools", true); put("vision", assigned.any { it.text("connectionId") == c.id && it.text("model") == model && it["vision"]?.jsonPrimitive?.booleanOrNull == true }); c.modelCapabilities[model]?.jsonObject?.forEach { (key,value) -> put(key,value) } }) } } }
         var policy = JsonObject(buildJsonObject { put("defaultMode", "fixed"); put("preference", "balanced"); put("allowEscalation", true); put("allowCrossConnection", false) } + config.policy)
         val local = candidates.filter { it.text("connectionId") == current.id }
         if (assigned.isEmpty() && local.size == 1) policy = JsonObject(policy + ("tiers" to buildJsonObject { for(tier in listOf("light","standard","strong")) put(tier, JsonArray(local)) }))

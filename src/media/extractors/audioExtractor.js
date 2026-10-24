@@ -1,3 +1,5 @@
+import { PROVIDER_DEFAULTS } from '../../shared/modelCatalog.js';
+import { LOCAL_SERVICE_DEFAULTS } from '../../shared/localServices.js';
 import { execFile } from 'node:child_process';
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -63,7 +65,7 @@ function resolveTranscriptionConfig(config = {}) {
       process.env.MELO_BASE_URL ||
         process.env.OPENAI_BASE_URL ||
         config?.baseUrl ||
-        'http://127.0.0.1:11434/v1',
+        LOCAL_SERVICE_DEFAULTS.ollama,
     ).trim();
     return { apiKey: '', baseUrl, source: 'local' };
   }
@@ -88,7 +90,7 @@ function resolveTranscriptionConfig(config = {}) {
   }
   return {
     apiKey: '',
-    baseUrl: 'http://127.0.0.1:11434/v1',
+    baseUrl: LOCAL_SERVICE_DEFAULTS.ollama,
     source: 'codex-local-fallback',
   };
 }
@@ -414,7 +416,7 @@ export async function extractAudioContentFromBuffer(audioBuffer, attachment = {}
   const fileName = attachment.fileName || 'audio.ogg';
   const mimeType = attachment.mimeType || 'audio/ogg';
   form.append('file', new Blob([audioBuffer], { type: mimeType }), fileName);
-  form.append('model', process.env.MELO_WHISPER_MODEL || 'whisper-1');
+  form.append('model', process.env.MELO_WHISPER_MODEL || PROVIDER_DEFAULTS.media.transcription);
 
   const headers = {};
   if (apiKey) {

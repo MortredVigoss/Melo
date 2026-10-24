@@ -1,3 +1,4 @@
+import { normalizeLocale } from '../../shared/agent/locale.js';
 import { normalizeCapabilities, normalizeCollaboration, intersectCapabilities, intersectCollaboration } from '../domain/agent/capabilities.js';
 import { composeAgentInstructions, agentInstructionFields, mergeAgentInstructions } from '../domain/agent/agentDocument.js';
 // ─── Agent profile state normalizers ─────────────────────────────────────────
@@ -141,6 +142,7 @@ export function normalizeAgentProfile(agentId, profile) {
       laneLabel: definition.laneLabel,
       description: typeof profile?.description === 'string' && (profile.portableIdentity || profile.description.trim()) ? profile.description : definition.description,
       instructions,
+      replyLanguage: normalizeLocale(profile?.replyLanguage, ''),
       rolePrompt: persona.rolePrompt,
       isCustom: Boolean(definition.isCustom),
       mood: MOOD_OPTION_IDS.has(profile?.mood) ? profile.mood : definition.defaultMood,
@@ -184,6 +186,7 @@ export function normalizeAgentOverride(agentId, profile) {
   }
 
   const normalized = {};
+  if (typeof profile.replyLanguage === 'string') normalized.replyLanguage = normalizeLocale(profile.replyLanguage, '');
   if (profile.capabilities !== undefined) normalized.capabilities = normalizeCapabilities(profile.capabilities);
   if (profile.collaboration !== undefined) normalized.collaboration = normalizeCollaboration(profile.collaboration);
   if (profile.contextSources !== undefined) normalized.contextSources = {projects:profile.contextSources.projects!==false,knowledge:profile.contextSources.knowledge!==false,memory:profile.contextSources.memory!==false};

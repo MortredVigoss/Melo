@@ -1,3 +1,5 @@
+import { completionSummary } from '../../../../shared/agent/completion.js';
+import { runtimeMessage } from '../../../../shared/agent/runtimeMessages.js';
 // Chat execution graph — `finalize` node (architecture B2, 2026-10-20).
 // Mechanical move out of chatExecutionRunner.js: the body below is the
 // original node body, unchanged except for one indentation level. The
@@ -107,9 +109,7 @@ export function createFinalizeNode(turn) {
       rawNormalized.content.trim()
         ? rawNormalized
         : normalizeAssistantReplyForConversation(
-            isRemoteChannel
-              ? 'Sorry, I could not generate a response. Please try again.'
-              : 'I wasn\'t able to generate a response for this message. Please try again.',
+            runtimeMessage('empty', config.replyLanguage),
             { channelKind },
           );
 
@@ -134,6 +134,7 @@ export function createFinalizeNode(turn) {
     // does the conditional spread onto the persisted assistantMessage —
     // empty / absent arrays produce no `toolResults` key on the message.
     normalizedReply.completion = graphState.completionForReply?.(preNormalizeText);
+    if (normalizedReply.completion?.outcome) normalizedReply.completion.summary = completionSummary(normalizedReply.completion, latestUserMessage, config.replyLanguage);
     normalizedReply.memoryUsage = graphState.memoryUsage || [];
     if (graphState.team) normalizedReply.team = graphState.team;
     if (Array.isArray(graphState.toolResults) && graphState.toolResults.length > 0) {

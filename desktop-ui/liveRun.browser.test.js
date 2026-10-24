@@ -54,7 +54,9 @@ test('a running reply shows its steps, keeps controls usable and takes a supplem
  await post('/api/settings',{activeMode:'chat',activeView:'chat',selectedChatId:chatId});
  browser=await launchTestChrome(chromium);
  const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
- await page.goto(base);
+ // This fixture asserts Chinese labels; set the preference explicitly, independent of the host locale.
+    assert.equal((await fetch(base + '/api/settings/local', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({preferences:{interfaceLanguage:'zh-CN'}})})).status,200);
+    await page.goto(base);
  const composer=page.locator('#composer');await composer.waitFor();
  await composer.fill('写一首关于月亮的诗');await composer.press('Enter');
  // Mid-reply: the stop button is there, steps render in the chat, and the controls are not locked.

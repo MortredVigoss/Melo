@@ -113,3 +113,11 @@ export function buildTelegramReplyScore(incoming, telegramChannel, profile, rece
   };
   return { signals, totalScore };
 }
+
+// Archived channels keep their settings. These overrides never enable a channel.
+export function replyScoreLimits(config = {}) {
+  const raw=config.operationalLimits?.remote || {};
+  const number=(value,fallback)=>value == null || !Number.isFinite(Number(value)) ? fallback : Math.max(0,Math.min(1,Number(value)));
+  const threshold=number(raw.replyThreshold,REPLY_SCORE_THRESHOLD);
+  return {threshold,grayMin:Math.min(threshold,number(raw.grayMin,GRAY_ZONE_MIN))};
+}

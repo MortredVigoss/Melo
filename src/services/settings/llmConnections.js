@@ -1,3 +1,4 @@
+import { normalizeModelCapabilities, capabilitiesFromMetadata } from '../../../shared/agent/modelCapabilities.js';
 import sharp from 'sharp';
 import { randomInt } from 'node:crypto';
 import { connectionDiagnosis } from './connectionDiagnosis.js';
@@ -53,12 +54,22 @@ export function saveLlmProfile(patch, { oauthKey, expectedRevision, signal } = {
     if (!['chat-completions', 'anthropic', 'responses'].includes(apiProtocol)) throw new Error('不支持的模型协议。');
     const model = String(patch.model ?? previous?.model ?? provider.model).trim();
     if (model.length > 200 || /[\r\n\0]/.test(model)) throw new Error('模型 ID 无效。');
+    const sameEndpoint = previous?.baseUrl === baseUrl && previous?.apiProtocol === apiProtocol;
+    const declarations = sameEndpoint ? { ...previous.modelCapabilities } : {};
+    if (patch.modelCapabilities && typeof patch.modelCapabilities === 'object' && !Array.isArray(patch.modelCapabilities)) {
+      for (const [id, caps] of Object.entries(patch.modelCapabilities).slice(0,1000)) {
+        if (!id || id.length > 200 || /[\r\n\0]/.test(id) || ['__proto__','constructor','prototype'].includes(id)) throw new Error('Invalid model capability id.');
+        declarations[id] = normalizeModelCapabilities(caps);
+      }
+    }
+    if (patch.modelCapability) declarations[model] = normalizeModelCapabilities(patch.modelCapability);
     const next = {
       id, providerId: provider.id, name: String(patch.name || previous?.name || provider.name).slice(0, 100),
       authMode: provider.authMode, baseUrl, apiProtocol, model,
       apiKey: provider.authMode === 'codex' || patch.clearKey ? '' : incomingKey || previous?.apiKey || '',
       authKind: oauthKey ? 'oauth' : incomingKey || patch.clearKey ? 'api-key' : previous?.authKind || 'api-key',
-      models: previous?.baseUrl === baseUrl ? previous.models || [] : [],
+      models: sameEndpoint ? previous.models || [] : [],
+      modelMetadata: sameEndpoint ? previous.modelMetadata || {} : {}, modelCapabilities: declarations,
       revision: (previous?.revision || 0) + 1, test: null, searchTest: null,
     };
     // A no-op save before activation must not erase the successful probe.
@@ -107,8 +118,9 @@ export function testLlmProfile(id, { signal, reply = createOpenAICompatibleReply
     let result;
     try {
       if (catalogOnly) {
-        const models = await discover({ ...profile, signal });
-        result = { models };
+        let modelMetadata = {};
+        const models = await discover({ ...profile, signal, onModelMetadata: rows => { modelMetadata = Object.fromEntries(rows.map(row => [row.id || row.slug, capabilitiesFromMetadata(row)])); } });
+        result = { models, modelMetadata };
       } else if (modality === 'search') {
         result = { ...await probeHostedSearch(profile, { reply, signal }), modality, requestedModel: profile.model, testedAt: new Date().toISOString(), latencyMs: Date.now() - start };
       } else {
@@ -137,7 +149,7 @@ export function testLlmProfile(id, { signal, reply = createOpenAICompatibleReply
       const config = await loadConfig({ skipModelNormalize: true });
       const current = requireProfile(config, id);
       if (current.revision !== profile.revision) throw new Error('测试期间连接已更改，结果未保存，请重新测试。');
-      const updatedProfile = catalogOnly ? { ...current, models: result.models } : { ...current, [modality === 'search' ? 'searchTest' : modality === 'vision' ? 'visionTest' : 'test']: result };
+      const updatedProfile = catalogOnly ? { ...current, models: result.models, modelMetadata: result.modelMetadata } : { ...current, [modality === 'search' ? 'searchTest' : modality === 'vision' ? 'visionTest' : 'test']: result };
       let updated = { ...config, llmProfiles: { ...config.llmProfiles, [id]: updatedProfile } };
       if (catalogOnly && updated.activeLlmProfileId === id) updated = applyProfile(updated, id, updatedProfile);
       await saveConfig(updated, { skipModelNormalize: true });

@@ -16,7 +16,7 @@ test('chat composer grows from two to four visual lines and scrolls without losi
     chats: [{ id: 'density-chat', source: 'desktop', title: '阅读密度验收', agentId: 'main', messages: [
       { id: 'question', role: 'user', content: '请用几段文字说明今天的工作安排。', createdAt: new Date().toISOString() },
       { id: 'answer', role: 'assistant', content: Array.from({ length: 8 }, (_, i) => `第 ${i + 1} 项：先核对任务的目标与资料，再按顺序完成、检查并保存结果。每一步保留必要的记录，方便后续回看和继续处理。`).join('\n\n'), createdAt: new Date().toISOString() },
-    ] }], settings: { activeView: 'chat', selectedChatId: 'density-chat' },
+    ] }], settings: { activeView: 'chat', selectedChatId: 'density-chat', localPreferences: {interfaceLanguage:'zh-CN'} },
   }));
   const child = spawn(process.execPath, ['src/server.js', '--host', '127.0.0.1', '--port', '0'], {
     cwd: resolve('.'), env: { ...process.env, MELO_HOME: home, MELO_TEST_MODE: '1', MELO_DREAMING_ENABLED: '0', MELO_MEMORY_RUNTIME: '0' }, stdio: ['ignore', 'pipe', 'pipe'],
@@ -59,7 +59,9 @@ test('chat composer grows from two to four visual lines and scrolls without losi
         if (!names.includes(name)) return route.continue();
         await route.fulfill({ contentType: name.endsWith('.js') ? 'text/javascript' : 'text/css', body: await readFile(join(proof, 'before/desktop-ui', name), 'utf8') });
       };
-      await page.route('**/*', intercept); await page.goto(base); await ready();
+      await page.route('**/*', intercept); // This fixture asserts Chinese labels; set the preference explicitly, independent of the host locale.
+    assert.equal((await fetch(base + '/api/settings/local', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({preferences:{interfaceLanguage:'zh-CN'}})})).status,200);
+    await page.goto(base); await ready();
       report.before = await metrics(); await page.screenshot({ path: join(proof, 'desktop-before.png') });
       await page.unroute('**/*', intercept);
     }

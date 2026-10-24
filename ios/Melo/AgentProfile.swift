@@ -15,6 +15,7 @@ struct AgentProfile: Codable, Identifiable, Equatable {
     var contextSources: SyncValue?
     var mood: String?
     var model: String?
+    var replyLanguage: String?
     // Compatibility accessors; the persisted document is the single source.
     var identity: String? { get { section("身份") } set { setSection("身份", newValue) } }
     var soul: String? { get { section("风格") } set { setSection("风格", newValue) } }
@@ -60,6 +61,7 @@ struct AgentProfile: Codable, Identifiable, Equatable {
         self.avatarData=avatarData; self.mood=mood; self.model=model
     }
     var prompt: String {
+        (replyLanguage?.isEmpty == false ? "Reply language default: \(replyLanguage!). Explicit user language requests take precedence.\n" : "") +
         "当前 Agent 名称：\(name)\nAgent 定位：\(description)\n用户设定的回复与工作要求（每一轮均生效）：\n\(instructions)\n遵守以上 Agent 设定，不主动改回默认助手口吻；当前用户明确要求优先于 Agent 默认风格。Agent 设定不能扩大实际工具、权限或已知事实。"
     }
     func inheritingExecution(from base: AgentProfile) -> AgentProfile {
@@ -69,10 +71,11 @@ struct AgentProfile: Codable, Identifiable, Equatable {
         value.contextSources = contextSources ?? base.contextSources
         return value
     }
-    enum CodingKeys: String, CodingKey { case id, name, description, subtitle, symbol, instructions, avatarData, identity, soul, systemPrompt, mood, model, personaVersion, capabilities, collaboration, contextSources }
+    enum CodingKeys: String, CodingKey { case id, name, description, subtitle, symbol, instructions, avatarData, identity, soul, systemPrompt, mood, model, replyLanguage, personaVersion, capabilities, collaboration, contextSources }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.init(id:try c.decodeIfPresent(String.self,forKey:.id) ?? UUID().uuidString, name:try c.decode(String.self,forKey:.name), subtitle:try c.decodeIfPresent(String.self,forKey:.description) ?? c.decodeIfPresent(String.self,forKey:.subtitle) ?? "", symbol:try c.decode(String.self,forKey:.symbol), instructions:try c.decodeIfPresent(String.self,forKey:.instructions) ?? "", avatarData:try c.decodeIfPresent(Data.self,forKey:.avatarData), mood:try c.decodeIfPresent(String.self,forKey:.mood), model:try c.decodeIfPresent(String.self,forKey:.model))
+        replyLanguage = try c.decodeIfPresent(String.self,forKey:.replyLanguage)
         capabilities = try c.decodeIfPresent(SyncValue.self,forKey:.capabilities)
         collaboration = try c.decodeIfPresent(SyncValue.self,forKey:.collaboration)
         contextSources = try c.decodeIfPresent(SyncValue.self,forKey:.contextSources)
@@ -86,6 +89,7 @@ struct AgentProfile: Codable, Identifiable, Equatable {
     }
     func encode(to encoder: Encoder) throws {
         var c=encoder.container(keyedBy:CodingKeys.self)
+        try c.encodeIfPresent(replyLanguage,forKey:.replyLanguage)
         try c.encodeIfPresent(capabilities,forKey:.capabilities); try c.encodeIfPresent(collaboration,forKey:.collaboration); try c.encodeIfPresent(contextSources,forKey:.contextSources)
         try c.encode(id,forKey:.id); try c.encode(name,forKey:.name); try c.encode(description,forKey:.description)
         try c.encode(symbol,forKey:.symbol); try c.encode(instructions,forKey:.instructions); try c.encode(1,forKey:.personaVersion)

@@ -1,3 +1,4 @@
+import { runtimeMessage } from '../../../shared/agent/runtimeMessages.js';
 import { getMeloHome } from '../../config.js';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, existsSync } from 'node:fs';
@@ -10,7 +11,7 @@ const canonical = value => Array.isArray(value) ? value.map(canonical) : value &
 function repeatableRead(tool, args) {
   return tool.id === 'bash' && /^(?:cat|ls|pwd|whoami)(?:[ \t]+[A-Za-z0-9_./*?=+,:@%~-]+)*[ \t]*$/.test(args.command || '');
 }
-export function reserveTaskOperation({ home, taskId, tool, args, workspacePath, invocationId }) {
+export function reserveTaskOperation({ home, taskId, tool, args, workspacePath, invocationId, locale = 'zh' }) {
   // Per-call verdict: a multi-action tool's write actions get a receipt even
   // when its reads are concurrency-safe (tools/tool.js `concurrency`).
   if (!taskId || toolConcurrencySafe(tool, args) || tool.category === 'agent' || tool.id === 'agent') return null;
@@ -35,8 +36,8 @@ export function reserveTaskOperation({ home, taskId, tool, args, workspacePath, 
       db.exec('COMMIT');
       db.close();
       const result = previous.result && JSON.parse(previous.result);
-      return { result: result ? { ...result, output: '复用同一次调用的执行记录；当前效果仍需核对。\n' + (result.output || ''), meta: { ...result.meta, replayed: true } }
-        : { ok: false, error: 'OPERATION_UNCERTAIN', output: '此操作已有结果不明的执行记录。请检查实际效果；为避免重复副作用，本次未自动重试。' } };
+      return { result: result ? { ...result, output: runtimeMessage('operationReplay',locale) + '\n' + (result.output || ''), meta: { ...result.meta, replayed: true } }
+        : { ok: false, error: 'OPERATION_UNCERTAIN', output: runtimeMessage('operationUncertain',locale) } };
     }
     db.prepare('INSERT INTO operations(key,result,taskId,toolId,fingerprint) VALUES(?,NULL,?,?,?)').run(key, taskId, tool.id, fingerprint);
     db.exec('COMMIT');

@@ -7,6 +7,8 @@ struct ChatGPTModel: Decodable, Identifiable {
     let display_name: String
     let visibility: String?
     var context_window: Int? = nil
+    var input_modalities: [String]? = nil
+    var output_modalities: [String]? = nil
 }
 // Keep the existing connection identifier so conversation selections survive migration.
 // Credentials are exclusively Codex grants in a NEW Keychain entry; SIWC is never reused.
@@ -154,7 +156,7 @@ struct ImageSizeRejected: Error {}
             guard !available.isEmpty else { throw MeloError.message("此 Codex 账号暂未提供可用模型，请检查订阅或工作区权限。") }
             models=available
             if (defaults.string(forKey:"chatgptModel") ?? "").isEmpty {
-                let initial=available.first(where: { $0.slug == "gpt-6.1-sol" }) ?? available[0]
+                let initial=available[0]
                 defaults.set(initial.slug,forKey:"chatgptModel")
             }
         } catch { if epoch == expectedEpoch { self.error=error.localizedDescription } }
@@ -173,6 +175,7 @@ struct ImageSizeRejected: Error {}
         } catch { self.error=error.localizedDescription }
     }
     func routingTransport(messages: [ChatMessage], requestHistory: [ChatMessage], model: String, instructions: String, imageInputs: [ImageInput], tools: AgentLoopTools?, allowWebSearch: Bool, allowImageTool: Bool, cacheKey: String, onObservation: ((ExecutionObservation) -> Void)?) async throws -> CodexResponsesTransport {
+        if !imageInputs.isEmpty, let inputs = models.first(where: { $0.slug == model })?.input_modalities, !inputs.contains("image") { throw MeloError.message("此模型已设为不支持图片输入，请选择视觉模型或修改能力设置。") }
         let expectedEpoch = epoch
         let account = try await credentials()
         try Task.checkCancellation()
@@ -187,6 +190,7 @@ struct ImageSizeRejected: Error {}
     }
 
     func reply(messages: [ChatMessage], requestHistory: [ChatMessage]? = nil, model: String, instructions: String, imageInputs: [ImageInput] = [], imageTask: ImageTaskPlan? = nil, deviceTools: DeviceToolContext? = nil, allowWebSearch: Bool = true, allowImageTool: Bool = false, statusKey: String? = nil, cacheKey: String? = nil, budget: PhoneRunBudget? = nil, verification: AgentVerification? = nil, hooks: AgentLoopHooks = AgentLoopHooks(), onObservation: ((ExecutionObservation) -> Void)? = nil, onReceiving: (() -> Void)? = nil) async throws -> ModelReply {
+        if !imageInputs.isEmpty, let inputs = models.first(where: { $0.slug == model })?.input_modalities, !inputs.contains("image") { throw MeloError.message("此模型已设为不支持图片输入，请选择视觉模型或修改能力设置。") }
         if imageTask?.makesImage != true { try ConversationHistory.validateCurrentInput(messages.last(where: { $0.role == "user" })?.content ?? "", instructions: instructions) }
         let expectedEpoch = epoch
         func setStatus(_ value: String) {

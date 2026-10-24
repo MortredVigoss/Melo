@@ -57,6 +57,7 @@ export function normalizeAgentChannel(channelId, channel = {}) {
     enabled: Boolean(channel?.enabled),
     botToken: typeof channel?.botToken === 'string' ? channel.botToken.trim() : '',
     botUsername: typeof channel?.botUsername === 'string' ? channel.botUsername.trim() : '',
+    language: typeof channel?.language === 'string' && /^(zh|en|ja|ko|es)(-[A-Za-z]+)?$/.test(channel.language) ? channel.language : '',
     nicknames: typeof channel?.nicknames === 'string' ? channel.nicknames.trim() : '',
     chatId: typeof channel?.chatId === 'string' ? channel.chatId.trim() : '',
     guildId: typeof channel?.guildId === 'string' ? channel.guildId.trim() : '',

@@ -339,6 +339,7 @@ export async function getDesktopBootstrap(query = '', { skipModelNormalize = fal
           ? `${config.whisperApiKey.slice(0, 4)}...${config.whisperApiKey.slice(-4)}`
           : '(not set)',
         whisperBaseUrl: config.whisperBaseUrl || '',
+        customVoiceBaseUrl: config.customVoiceBaseUrl,
         ttsProvider: config.ttsProvider || '',
         ttsEdgeVoice: config.ttsEdgeVoice || '',
         // MiniMax T2A V2 — surfaced so the UI can render a config block

@@ -114,8 +114,8 @@ test('buildOutputHardConstraints: remote channel adds the length cap + repeat su
   const out = buildOutputHardConstraints({ isRemoteChannel: true });
   assert.match(out, /plain-text messaging channel/);
   assert.match(out, /Keep remote-channel replies tight/);
-  assert.match(out, /under ~600 Chinese characters/);
-  assert.match(out, /再说一次/); // ZH no-repeat suppressor
+  assert.match(out, /few short paragraphs in the reply language/);
+  assert.match(out, /to repeat/); // ZH no-repeat suppressor
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

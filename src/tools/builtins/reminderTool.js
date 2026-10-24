@@ -52,6 +52,7 @@ export const reminderTool = {
   async run({ action, time, text, id }, context = {}) {
     const scheduler = getReminderScheduler(context.meloHome);
     const chatId = context.chatId;
+    const timeFormat = new Intl.DateTimeFormat(context.config?.replyLanguage || 'en', {dateStyle:'medium', timeStyle:'long', timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone});
     if (!chatId) return { ok: false, output: 'A current chat is required for reminder delivery.', error: 'NO_CHAT' };
     context.signal?.throwIfAborted();
     if (action === 'set') {
@@ -66,12 +67,12 @@ export const reminderTool = {
       const reminder = { id: 'rem_' + randomUUID(), text: text.trim(), fireAt, chatId,
         createdAt: new Date().toISOString() };
       await scheduler.add(reminder, { signal: context.signal });
-      return { ok: true, output: 'Reminder saved: "' + reminder.text + '" (' + new Date(fireAt).toLocaleString() + '). Melo must be running; otherwise delivery resumes on next startup.',
+      return { ok: true, output: 'Reminder saved: "' + reminder.text + '" (' + timeFormat.format(new Date(fireAt)) + '). Melo must be running; otherwise delivery resumes on next startup.',
         meta: { id: reminder.id, fireAt } };
     }
     if (action === 'list') {
       const list = await scheduler.list(chatId);
-      return { ok: true, output: list.length ? list.map(r => '[' + r.id + '] ' + r.text + ' (' + new Date(r.fireAt).toLocaleString() + ') — ' + ({ pending: '等待发送', failed: '已停止：目标失效', paused: '重试已暂停', uncertain: '发送结果待核对', sending: '正在发送', delivered: '已发送，保存中' }[r.status || 'pending'] || r.status) + (r.lastError ? '：' + r.lastError : '')).join('\n') : 'No active reminders.', meta: { count: list.length } };
+      return { ok: true, output: list.length ? list.map(r => '[' + r.id + '] ' + r.text + ' (' + timeFormat.format(new Date(r.fireAt)) + ') — ' + ({ pending: '等待发送', failed: '已停止：目标失效', paused: '重试已暂停', uncertain: '发送结果待核对', sending: '正在发送', delivered: '已发送，保存中' }[r.status || 'pending'] || r.status) + (r.lastError ? '：' + r.lastError : '')).join('\n') : 'No active reminders.', meta: { count: list.length } };
     }
     if (action === 'cancel') {
       const record = await scheduler.cancel(id, chatId, { signal: context.signal });

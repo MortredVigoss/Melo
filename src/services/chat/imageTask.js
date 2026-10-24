@@ -1,3 +1,4 @@
+import { multilingualImageAction } from '../../../shared/agent/imageLanguage.js';
 import { validateImagePrompt, IMAGE_REVIEW_INSTRUCTIONS, parseImageReview, formatImageReview } from '../../images/imagePrompts.js';
 import sharp from 'sharp';
 import { requestsPhotoAdjustment, requestsNaturalImage, asksAboutImage, instructsImageChange, requestsReferenceImage, combinesImages } from '../../shared/imageRequestIntent.js';
@@ -43,6 +44,8 @@ export function inferImageTask(text, messages, explicit) {
   );
   const affirmative = instruction.split(/[，。；！？,;!?\n]/).filter(clause => !/(?:不要|不用|不必|无需|禁止|别)|\b(?:do not|don't|never)\b/iu.test(clause)).join('，');
   const taskFor = action => validateImageTask({ ...explicit, action, count: explicit?.count ?? requestedImageCount(text), references: explicit?.references ?? [] });
+  const multilingualAction = multilingualImageAction(instruction, hasImage);
+  if (multilingualAction) return taskFor(multilingualAction);
   const generationRequested = requestsNaturalImage(affirmative) || requestsReferenceImage(affirmative) ||
     /^(?:请|帮我|给我|麻烦|你|请帮我)*\s*(?:生成|画|绘制|制作|做)[^。！？\n]{0,100}(?:图片|图像|插画|海报|照片|张图|幅图)|^(?:please\s+)?(?:generate|draw|create)\s+(?:an?\s+|\d+\s+)?(?:images?|pictures?|illustrations?|photos?)\b/i.test(
       instruction,

@@ -24,7 +24,7 @@ enum RunProgress {
         var steps: [RunStep] = []
         for stage in record.pipeline ?? [] where stage.id != "reply:render" {
             let detail = String(stage.output.replacingOccurrences(of: "\n", with: " ").prefix(80))
-            steps.append(RunStep(id: "stage:" + stage.id, title: stage.name, detail: detail, state: state(stage.status)))
+            steps.append(RunStep(id: "stage:" + stage.id, title: String(localized: String.LocalizationValue(stage.name)), detail: detail, state: state(stage.status)))
         }
         for operation in record.operations {
             let what: String = operation.query.isEmpty ? operation.input : operation.query

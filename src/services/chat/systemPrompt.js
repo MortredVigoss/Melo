@@ -1,3 +1,4 @@
+import { resolveReplyLocale } from '../../../shared/agent/locale.js';
 import { isAgentChannelAvailable } from '../../shared/channelAvailability.js';
 import { DATE_CONTINUITY_RULE } from './dateContext.js';
 // System-prompt assembly — extracted from desktopStore in Phase 7d-2.
@@ -83,9 +84,9 @@ export function buildConversationFormattingRules() {
     // feel like two near-identical answers glued together. Once a point has
     // been made, the model must move on — no re-listing, no "顺手再给你一个
     // 简版清单", no "一句话总结" that re-enumerates items already covered.
-    '- Cover each point exactly once. If you have already answered something, do NOT restate it under a new heading, a "简版清单", or a "一句话总结" that re-lists items already given.',
-    '- Never split a single answer into two passes over the same topics (e.g. a first pass of detailed explanation followed by a second pass of "清单/总结" covering the same items). Pick one shape and stop.',
-    '- A closing line is fine ("要不要我再帮你查 X"), but it must not re-enumerate anything from earlier in the same reply.',
+    '- Cover each point exactly once. If you have already answered something, do NOT restate it under a new heading, a "short checklist", or a "one-sentence summary" that re-lists items already given.',
+    '- Never split a single answer into two passes over the same topics (e.g. a first pass of detailed explanation followed by a second pass of "checklist/summary" covering the same items). Pick one shape and stop.',
+    '- A closing line is fine ("Would you like me to look up more?"), but it must not re-enumerate anything from earlier in the same reply.',
   ].join('\n');
 }
 
@@ -106,10 +107,10 @@ export function buildOutputHardConstraints({ isRemoteChannel = false } = {}) {
     // Hard-cap length and explicitly forbid the second-pass restatement shape
     // so the model is forced to stop after the primary answer.
     isRemoteChannel
-      ? '- Keep remote-channel replies tight: aim for under ~600 Chinese characters (or ~400 English words) for normal questions. If the answer genuinely needs more, still write it once — never as a primary explanation followed by a summary/清单/总结 that re-covers the same items.'
+      ? '- Keep remote-channel replies tight: aim for a few short paragraphs in the reply language for normal questions. If the answer genuinely needs more, still write it once — never as a primary explanation followed by a summary that re-covers the same items.'
       : '',
     isRemoteChannel
-      ? '- If you catch yourself writing "再说一次", "再给你一个简版", "顺手给你一个清单", "一句话总结" where those would repeat items already above, delete that section and end the reply instead.'
+      ? '- If you catch yourself writing "to repeat", "a shorter version", "one more checklist", "in summary" where those would repeat items already above, delete that section and end the reply instead.'
       : '',
   ]
     .filter(Boolean)
@@ -153,8 +154,8 @@ export function detectInputLanguage(text = '') {
   return null; // mixed or indeterminate — no constraint
 }
 
-export function buildLanguageConstraint(text = '') {
-  const lang = detectInputLanguage(text);
+export function buildLanguageConstraint(text = '', locale) {
+  const lang = locale || detectInputLanguage(text);
   if (!lang) return '';
 
   const LABELS = {
@@ -164,13 +165,14 @@ export function buildLanguageConstraint(text = '') {
     ar: 'Arabic (العربية)',
     ru: 'Russian (Русский)',
     en: 'English',
+    es: 'Spanish',
   };
   const label = LABELS[lang];
   if (!label) return '';
 
   return (
     `[Reply language default]\n` +
-    `The user's message appears to be in ${label}; use that as the default reply language.\n` +
+    `Use ${label} as this conversation's default reply language.\n` +
     `An explicit target language, translation, bilingual output or language-mixing request takes precedence over this default.\n` +
     `When no explicit language request is present, respect the configured persona's language style, including brief multilingual expressions. Preserve code, names and quoted source text.`
   );

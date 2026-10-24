@@ -1,3 +1,4 @@
+import { searchLimits, scopedSearchRun } from '../../services/search/searchLimits.js';
 /**
  * fetch_url tool
  *
@@ -18,9 +19,6 @@ import { isSocialLinkUrl, readSocialLink } from '../../services/search/socialLin
 import { wrapWithTrailLog } from '../../services/search/trailLogger.js';
 
 const JINA_READER_BASE = 'https://r.jina.ai/';
-const MAX_CONTENT_LENGTH = 20_000; // chars
-const FETCH_TIMEOUT_MS = 30_000;
-const PLAYWRIGHT_TIMEOUT_MS = 20_000;
 
 // Minimum character count at which we trust the extracted content is "real"
 // (not a cookie wall, not an empty SPA shell). Below this we escalate to the
@@ -65,7 +63,7 @@ function recordTrail(trail, tier, outcome, opts = {}) {
 async function fetchViaJina(url, signal) {
   const jinaUrl = `${JINA_READER_BASE}${encodeURIComponent(url)}`;
   const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
+  const timer = setTimeout(() => ac.abort(), searchLimits().fetchTimeoutMs);
   const combined = signal
     ? AbortSignal.any([signal, ac.signal])
     : ac.signal;
@@ -116,7 +114,7 @@ function resolveCookiesForUrl(url, config) {
 
 async function fetchDirect(url, signal, cookieStr = '') {
   const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
+  const timer = setTimeout(() => ac.abort(), searchLimits().fetchTimeoutMs);
   const combined = signal
     ? AbortSignal.any([signal, ac.signal])
     : ac.signal;
@@ -136,7 +134,7 @@ async function fetchDirect(url, signal, cookieStr = '') {
     if (!contentType.includes('text/html') && !contentType.includes('application/xhtml')) {
       // Non-HTML: return raw text up to limit
       const text = await res.text();
-      return text.trim().slice(0, MAX_CONTENT_LENGTH);
+      return text.trim().slice(0, searchLimits().fetchMaxChars);
     }
 
     const html = await res.text();
@@ -302,8 +300,8 @@ export const fetchUrlTool = {
         }
         if (socialResult?.body) {
           const body = socialResult.body;
-          const truncated = body.length > MAX_CONTENT_LENGTH
-            ? body.slice(0, MAX_CONTENT_LENGTH) + `\n\n[Content truncated at ${MAX_CONTENT_LENGTH} characters]`
+          const truncated = body.length > searchLimits().fetchMaxChars
+            ? body.slice(0, searchLimits().fetchMaxChars) + `\n\n[Content truncated at ${searchLimits().fetchMaxChars} characters]`
             : body;
           recordTrail(trail, 'social-link', 'ok', {
             latencyMs: Date.now() - tSocial,
@@ -394,8 +392,8 @@ export const fetchUrlTool = {
         return null;
       }
       const { content: pwContent } = await fetchPageViaPlaywright(normalized, {
-        timeoutMs: PLAYWRIGHT_TIMEOUT_MS,
-        maxChars: MAX_CONTENT_LENGTH,
+        timeoutMs: searchLimits().browserTimeoutMs,
+        maxChars: searchLimits().fetchMaxChars,
       });
       return pwContent || null;
     };
@@ -441,7 +439,7 @@ export const fetchUrlTool = {
             // without waiting for never-arriving network silence.
             await page.goto(normalized, {
               waitUntil: 'domcontentloaded',
-              timeout: PLAYWRIGHT_TIMEOUT_MS,
+              timeout: searchLimits().browserTimeoutMs,
             });
             // Give SPAs ~1.5s to finish first-paint / hydration after DOM
             // ready before reading innerText.  Capped — don't let a
@@ -451,7 +449,7 @@ export const fetchUrlTool = {
             } catch { /* load may never fire on streamy pages — fine */ }
             await new Promise(r => setTimeout(r, 1500));
             const text = await page.evaluate(() => document?.body?.innerText || '');
-            return String(text || '').trim().slice(0, MAX_CONTENT_LENGTH) || null;
+            return String(text || '').trim().slice(0, searchLimits().fetchMaxChars) || null;
           } finally {
             // Close ONLY the page we opened.  The shared persistent
             // context stays alive — closing it would destroy the user's
@@ -477,8 +475,8 @@ export const fetchUrlTool = {
         signal,
         config,
         cookies: cookieStr,
-        maxChars: MAX_CONTENT_LENGTH,
-        timeoutMs: PLAYWRIGHT_TIMEOUT_MS,
+        maxChars: searchLimits().fetchMaxChars,
+        timeoutMs: searchLimits().browserTimeoutMs,
       });
     };
 
@@ -742,8 +740,8 @@ export const fetchUrlTool = {
     }
 
     // Truncate
-    const truncated = content.length > MAX_CONTENT_LENGTH
-      ? content.slice(0, MAX_CONTENT_LENGTH) + `\n\n[Content truncated at ${MAX_CONTENT_LENGTH} characters]`
+    const truncated = content.length > searchLimits().fetchMaxChars
+      ? content.slice(0, searchLimits().fetchMaxChars) + `\n\n[Content truncated at ${searchLimits().fetchMaxChars} characters]`
       : content;
 
     // Append citation marker
@@ -774,3 +772,5 @@ function classifyFetchError(err) {
   if (msg.includes('parse') || msg.includes('readability')) return 'parse-error';
   return 'error';
 }
+
+fetchUrlTool.run = scopedSearchRun(fetchUrlTool.run);

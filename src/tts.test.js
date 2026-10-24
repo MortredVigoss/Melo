@@ -1,10 +1,5 @@
-/**
- * Tests for `stripKoreanForMinimax` — the helper that removes Korean
- * character runs before sending text to the Chinese-trained MiniMax
- * custom voice (e.g. the "金冬天" clone). Pure-Korean input reduces to
- * an empty string, which signals the outer pipeline to fall back to
- * Edge TTS (ko-KR-SunHiNeural).
- */
+/** Legacy strip helper compatibility tests. Active synthesis preserves every
+ * language; transport regressions below assert the actual outgoing text. */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -164,4 +159,18 @@ test('parseSayVoiceList: empty / null input returns []', () => {
   assert.deepEqual(parseSayVoiceList(''),     []);
   assert.deepEqual(parseSayVoiceList(null),   []);
   assert.deepEqual(parseSayVoiceList(undefined), []);
+});
+
+test('custom voice on another port uses that service, with no cloud credentials or MiniMax detour', async t => {
+ const {synthesizeSpeech}=await import('./tts.js'); const calls=[];
+ t.mock.method(globalThis,'fetch',async(url,options)=>{calls.push({url,options});return new Response(new Uint8Array([1,2]),{status:200});});
+ const result=await synthesizeSpeech('안녕하세요',{ttsProvider:'custom',customVoiceBaseUrl:'http://127.0.0.1:8923/v1',whisperBaseUrl:'https://transcription.invalid/v1',whisperApiKey:'keep-transcription-key',minimaxApiKey:'unused-cloud-key',minimaxVoiceId:'fixture'});
+ assert.equal(calls.length,1);assert.equal(calls[0].url,'http://127.0.0.1:8923/v1/audio/speech');
+ assert.equal(calls[0].options.headers.Authorization,undefined);assert.equal(JSON.parse(calls[0].options.body).input,'안녕하세요');assert.equal(result.buffer.length,2);
+});
+test('MiniMax synthesis preserves Korean instead of stripping text based on language',async t=>{
+ const {synthesizeSpeech}=await import('./tts.js');let body;
+ t.mock.method(globalThis,'fetch',async(url,options)=>{body=JSON.parse(options.body);return Response.json({data:{audio:'0102'}});});
+ const result=await synthesizeSpeech('안녕하세요',{ttsProvider:'minimax',minimaxApiKey:'fixture-key',minimaxVoiceId:'fixture'});
+ assert.equal(body.text,'안녕하세요');assert.equal(result.buffer.length,2);
 });

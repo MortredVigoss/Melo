@@ -9,6 +9,9 @@
  *   Returns hex-encoded MP3 in data.audio field.
  */
 
+import { PROVIDER_DEFAULTS } from './shared/modelCatalog.js';
+import { localServiceUrl, customVoiceActive, customVoiceService, LOCAL_SERVICE_DEFAULTS } from './shared/localServices.js';
+
 const TTS_TIMEOUT_MS = 180_000; // 3 min — local voice pack (F5-TTS on CPU) can take ~2 min
 const TTS_MAX_CHARS  = 4096;
 
@@ -44,10 +47,10 @@ export function parseSayVoiceList(stdout = '') {
 }
 
 const MINIMAX_TTS_BASE = 'https://api.minimaxi.chat/v1/t2a_v2';
-const MINIMAX_TTS_MODEL = 'speech-01-turbo';
+const MINIMAX_TTS_MODEL = PROVIDER_DEFAULTS.media.minimaxTts;
 
 function isLocalEndpoint(url = '') {
-  return /https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?/i.test(url);
+  try { localServiceUrl(url); return true; } catch { return false; }
 }
 
 function cleanBaseUrl(raw = '') {
@@ -60,6 +63,7 @@ function cleanBaseUrl(raw = '') {
 
 function resolveTtsConfig(config = {}) {
   const authMode = String(config?.authMode || '').trim().toLowerCase();
+  if (customVoiceActive(config)) return { apiKey: '', baseUrl: customVoiceService(config).baseUrl };
 
   // Priority 1: explicit whisper credentials (same key reused for TTS)
   const explicitKey = String(
@@ -99,7 +103,7 @@ function resolveTtsConfig(config = {}) {
       process.env.MELO_BASE_URL ||
         process.env.OPENAI_BASE_URL ||
         config?.baseUrl ||
-        'http://127.0.0.1:11434/v1',
+        LOCAL_SERVICE_DEFAULTS.ollama,
     );
     return { apiKey: '', baseUrl };
   }
@@ -194,7 +198,7 @@ async function synthesizeViaMinimax(input, apiKey, voiceId, signal, groupId, { s
   // dedicated KR voice yet. If nothing is left to say, signal the outer
   // pipeline so it can fall back to Edge TTS (ko-KR-SunHiNeural).
   // See `stripKoreanForMinimax` for the rationale.
-  const spokenText = stripKoreanForMinimax(input);
+  const spokenText = input;
   if (!spokenText) {
     throw new Error('MiniMax TTS: input reduced to empty after stripping Korean');
   }
@@ -256,15 +260,11 @@ export async function synthesizeSpeech(text, config = {}, options = {}) {
   const minimaxKey    = String(process.env.MINIMAX_API_KEY || config?.minimaxApiKey || '').trim();
   const minimaxVoice  = String(options.voiceId || config?.minimaxVoiceId || '').trim();
   const minimaxGroup  = String(process.env.MINIMAX_GROUP_ID || config?.minimaxGroupId || '').trim();
-  if (minimaxKey && minimaxVoice) {
+  if (minimaxKey && minimaxVoice && !customVoiceActive(config)) {
     try {
       const ttsSpeed = parseFloat(config?.ttsSpeed) || 1.0;
       const ttsPitch = parseFloat(config?.ttsPitch) || 0;
       const ttsVol   = parseFloat(config?.ttsVol)   || 1.0;
-      const koStripped = /[\uAC00-\uD7AF\u1100-\u11FF]/.test(input);
-      process.stderr.write(`[tts] MiniMax: voiceId=${minimaxVoice.slice(0,20)} speed=${ttsSpeed} pitch=${ttsPitch}` +
-        (koStripped ? ' ko-stripped=on' : '') +
-        ` text="${input.slice(0,60)}"\n`);
       const result = await synthesizeViaMinimax(input, minimaxKey, minimaxVoice, signal, minimaxGroup, { speed: ttsSpeed, pitch: ttsPitch, vol: ttsVol });
       process.stderr.write(`[tts] MiniMax OK: ${result.buffer.length} bytes\n`);
       return result;
@@ -278,7 +278,7 @@ export async function synthesizeSpeech(text, config = {}, options = {}) {
   // ── Priority 2: Edge TTS (local CLI) — used when ttsProvider === 'edge',
   //    or as fallback when MiniMax was attempted but failed ──────────────────
   const wantEdge = String(config?.ttsProvider || '').trim() === 'edge';
-  const minimaxAttempted = !!(minimaxKey && minimaxVoice);
+  const minimaxAttempted = !!(minimaxKey && minimaxVoice) && !customVoiceActive(config);
   if (wantEdge || minimaxAttempted) {
     process.stderr.write(`[tts] Falling back to Edge TTS\n`);
     const edgeResult = await _synthesizeWithEdgeTts(input, config, { signal });
@@ -291,7 +291,7 @@ export async function synthesizeSpeech(text, config = {}, options = {}) {
   if (!baseUrl) return null;
   if (!apiKey && !isLocalEndpoint(baseUrl)) return null;
 
-  const model  = String(options.model || config?.ttsModel || 'tts-1');
+  const model  = String(options.model || config?.ttsModel || PROVIDER_DEFAULTS.media.tts);
   const voice  = String(options.voice  || config?.ttsVoice  || 'nova');
   // Request WAV for local endpoints so buffers can be concatenated gaplessly;
   // remote OpenAI keeps mp3 (smaller).
@@ -328,7 +328,7 @@ export function getTtsUnavailableReason(config = {}) {
   // MiniMax is always available if both key + voice id are set
   const minimaxKey   = String(process.env.MINIMAX_API_KEY || config?.minimaxApiKey || '').trim();
   const minimaxVoice = String(config?.minimaxVoiceId || '').trim();
-  if (minimaxKey && minimaxVoice) return null;
+  if (minimaxKey && minimaxVoice && !customVoiceActive(config)) return null;
 
   // Edge TTS is always available (uses CLI binary, no API key required)
   if (String(config?.ttsProvider || '').trim() === 'edge') return null;

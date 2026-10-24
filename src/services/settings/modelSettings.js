@@ -1,3 +1,4 @@
+import { localServiceUrl } from '../../shared/localServices.js';
 import { imageSettings, imageConnection, visionConnection } from '../../images/imageSettings.js';
 // Architecture migration: byte-for-byte command port.
 import { createRequestContext } from '../../runtime/requestContext.js';
@@ -75,6 +76,7 @@ async function updateModelConfigInner(patch = {}) {
       : currentVal;
 
   const safePatch = { ...patch };
+  if ('customVoiceBaseUrl' in safePatch) safePatch.customVoiceBaseUrl = localServiceUrl(safePatch.customVoiceBaseUrl);
   if ('agentRuntime' in patch || 'searchApiKey' in patch || patch.clearSearchKey === true) {
     safePatch.agentRuntime = normalizeRuntimeConfig(patch.agentRuntime || current.agentRuntime);
     const endpoint = safePatch.agentRuntime.search.endpoint;

@@ -1,6 +1,8 @@
+import { runtimeMessage } from '../../shared/agent/runtimeMessages.js';
+import { currentRequestContext } from '../runtime/requestScope.js';
 import {isAbsolute} from 'node:path';
 
-export function missingWorkspaceResult(path) {
+export function missingWorkspaceResult(path, locale = currentRequestContext()?.config?.replyLanguage || 'zh') {
   if (typeof path === 'string' && isAbsolute(path)) return null;
-  return {ok:false, error:'WORKSPACE_REQUIRED', output:'此操作需要明确的工作目录。', meta:{executionStarted:false}};
+  return {ok:false, error:'WORKSPACE_REQUIRED', output:runtimeMessage('workspaceRequired', locale), meta:{executionStarted:false}};
 }

@@ -31,7 +31,9 @@ test('topic markers follow the conversation and the instructions stay a stable p
  await post('/api/settings',{activeMode:'chat',activeView:'chat',selectedChatId:chatId});
  browser=await launchTestChrome(chromium);
  const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
- await page.goto(base);
+ // This fixture asserts Chinese labels; set the preference explicitly, independent of the host locale.
+    assert.equal((await fetch(base + '/api/settings/local', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({preferences:{interfaceLanguage:'zh-CN'}})})).status,200);
+    await page.goto(base);
  const composer=page.locator('#composer');await composer.waitFor();
  const questions=['帮我写一个 Python 爬虫，抓取豆瓣电影 Top250 的片名和评分','爬虫遇到 403 怎么办','明天北京天气怎么样','推荐几本科幻小说','那个爬虫怎么加代理'];
  for(const [index,question] of questions.entries()){

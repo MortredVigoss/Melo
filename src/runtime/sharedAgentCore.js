@@ -38,7 +38,7 @@ export function createCoreTurn({ runId = randomUUID(), turnId = randomUUID(), al
     get status() { return state.status; },
     get routingProgress() { return { rounds: state.rounds, failures: state.errors, stopped: state.status !== 'running', pendingEffects: state.pending.length > 0 || state.awaitingModel }; },
     get reason() { return state.reason; },
-    reply(text = '') { return turnStopReply(state.reason, text); },
+    reply(text = '', locale) { return turnStopReply(state.reason, text, locale); },
     rejectionResult(callId) { return state.rejectionResults?.[callId] || { ok: false, error: state.rejections?.[callId] || 'TOOL_NOT_PERMITTED', output: `Tool request rejected by the shared loop policy: ${state.rejections?.[callId] || 'TOOL_NOT_PERMITTED'}` }; },
     results(pairs) {
       for (const { call, result } of pairs) {

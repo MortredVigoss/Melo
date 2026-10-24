@@ -453,6 +453,10 @@ import SwiftUI
         sendingChats.insert(chatID)
         let supplements = PhoneSupplements()
         supplementQueues[chatID] = supplements; pendingSupplements[chatID] = nil
+        // Capture capability declarations with the selected connection before work starts.
+        let matchingConnections = ((try? loadConnections()) ?? []).filter { (try? $0.endpoint()) == endpoint && $0.key == key }
+        let connectionCapabilities = matchingConnections.count == 1 ? matchingConnections[0].capabilities(for: plan.makesImage ? plan.model : model) : [:]
+        if plan.makesImage, connectionCapabilities["imageGen"] == false { fail("此模型已设为不支持图片输出，请选择生图模型或修改能力设置。"); return }
         let routeChatGPT = useChatGPT, routeEndpoint = endpoint, routeModel = model, routeKey = key, routeProtocol = apiProtocol, routeCodexModel = chatGPTModel
         let loader = replyLoader, chatAccount = account
         // One run budget per reply (20 min / 400k input tokens / 120 tool calls, shared contract);
@@ -512,7 +516,8 @@ import SwiftUI
             self.rejectApprovals(chatID: chatID)
             self.runs[chatID]?.task?.cancel()
         }
-        runs[chatID]?.task = Task { await PhoneContextBudget.$current.withValue(contextBudget) {
+        let replyLanguage = PhoneReplyLanguage.resolve(clean, agent: selectedAgent.replyLanguage)
+        runs[chatID]?.task = Task { await PhoneReplyLanguage.$current.withValue(replyLanguage) { await PhoneContextBudget.$current.withValue(contextBudget) {
             var completed = false
             defer {
                 replyBackground.finish(runID: record.runId, success: completed)
@@ -587,7 +592,7 @@ import SwiftUI
                     reply = try await ImageNetwork.reply(prompt: clean, task: plan, inputs: imageInputs, endpoint: endpoint, token: key, onObservation: { self.observe($0, runID: record.runId) })
                 } else {
                     defer { account.setReplyStatus(nil, for: chatID) }
-                    reply = try await Network.reply(messages: modelHistory, requestHistory: history, endpoint: endpoint, model: model, token: key, instructions: instructions, apiProtocol: apiProtocol, imageInputs: modelImages, tools: phoneTools?.toolSet, budget: runBudget, verification: verification, hooks: routedHooks, onObservation: { observation in self.observe(observation, runID: record.runId) }, onStatus: { status in self.account.setReplyStatus(status, for: chatID) })
+                    reply = try await Network.reply(messages: modelHistory, requestHistory: history, endpoint: endpoint, model: model, token: key, instructions: instructions, apiProtocol: apiProtocol, imageInputs: modelImages, modelCapabilities: connectionCapabilities, tools: phoneTools?.toolSet, budget: runBudget, verification: verification, hooks: routedHooks, onObservation: { observation in self.observe(observation, runID: record.runId) }, onStatus: { status in self.account.setReplyStatus(status, for: chatID) })
                 }
                 try Task.checkCancellation()
                 replyBackground.update(runID: record.runId, completed: 2, subtitle: "正在保存完整回答")
@@ -637,7 +642,7 @@ import SwiftUI
                 stage(record.runId, id: "reply:failure", name: "请求失败", status: "failed", output: String(error.localizedDescription.prefix(1000)))
                 finishRun(record.runId, state: "failed"); self.error = error.localizedDescription
             }; persistToolTrace(runID: record.runId, chatID: chatID, status: "failed") }
-        } }
+        } } }
     }
     /// Several photos + an edit request: one request per photo, two at a time, each
     /// result linked to its own original. One failed photo does not drop the others.

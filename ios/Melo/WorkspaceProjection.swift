@@ -205,6 +205,7 @@ enum WorkspaceProjection {
     }
     static func readAgent(_ id: String, _ v: SyncValue, previous: AgentProfile? = nil) -> AgentProfile {
         var result = AgentProfile(id:id,name:v["name"].string,subtitle:v["subtitle"].string,symbol:v["symbol"].string,instructions:document(v),avatarData:Data(base64Encoded:v["avatarData"].string),mood:v["mood"].string,model:v["model"].string)
+        result.replyLanguage=previous?.replyLanguage
         result.capabilities=previous?.capabilities; result.collaboration=previous?.collaboration; result.contextSources=previous?.contextSources
         return result
     }

@@ -1,3 +1,4 @@
+import { customVoiceActive, customVoiceService } from '../shared/localServices.js';
 import { createRouteRegistry } from './routeRegistry.js';
 import { sendJson, readJsonBody } from './transport.js';
 import { synthesizeWithEdgeTts as _synthesizeWithEdgeTts } from '../services/tts/edgeTts.js';
@@ -113,13 +114,13 @@ async function _synthesizeWithRecovery(text, config, opts = {}) {
   if (result) return result;
 
   // Synthesis returned null — check if this is a local F5-TTS endpoint
-  const whisperUrl = String(config?.whisperBaseUrl || '');
-  if (!/127\.0\.0\.1:7860/.test(whisperUrl)) return null; // remote endpoint, don't interfere
+  if (!customVoiceActive(config)) return null;
+  const service = customVoiceService(config);
 
   process.stdout.write('[tts] Synthesis failed — restarting F5-TTS and retrying...\n');
   try {
-    await startVoicePackServers({ force: true });
-    const ready = await _waitForF5Tts(90_000);
+    await startVoicePackServers({ force: true, service });
+    const ready = await _waitForF5Tts(90_000, service.healthUrl);
     if (!ready) {
       process.stderr.write('[tts] F5-TTS did not recover within 90s.\n');
       return null;
@@ -136,9 +137,8 @@ async function _synthesizeWithRecovery(text, config, opts = {}) {
   return result;
 }
 
-async function _waitForF5Tts(timeoutMs) {
+async function _waitForF5Tts(timeoutMs, healthUrl) {
   const deadline = Date.now() + timeoutMs;
-  const healthUrl = 'http://127.0.0.1:7860/health';
   while (Date.now() < deadline) {
     try {
       const res = await fetch(healthUrl, { signal: AbortSignal.timeout(3000) });

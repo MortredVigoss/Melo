@@ -1,3 +1,4 @@
+import { searchLimits, scopedSearchRun } from '../../services/search/searchLimits.js';
 /**
  * web_search tool
  *
@@ -149,23 +150,15 @@ import { tokenizeQuery, normalizeSearchValue } from '../../search/tokenizer.js';
 import { getEmbedding, EMBEDDING_DIMS } from '../../memory/embeddings.js';
 
 const JINA_READER_BASE = 'https://r.jina.ai/';
-const MAX_RESULTS = 8;
-const FETCH_TIMEOUT_MS = 25_000;
 
-const CONTENT_FETCH_TIMEOUT_MS = 14_000;
-const CONTENT_MAX_CHARS = 6_000;
 const CONTENT_FETCH_COUNT = 4;
 
 // Base TTLs.  Intent classifier (classifyQueryIntent) may override these per
 // query — a weather/breaking-news query gets the short TTL so we don't serve
 // a two-hour-old forecast.  Use ms, not seconds.
-const SEARCH_CACHE_TTL_MS = 2 * 60 * 60 * 1000;
-const SEARCH_CACHE_TTL_TIME_SENSITIVE_MS = 15 * 60 * 1000;
-const URL_CACHE_TTL_MS = 2 * 60 * 60 * 1000;
 
 // P2-1 — how stale a row can be before we still return it and refresh in the
 // background.  Beyond this, we fetch fresh synchronously like the old path.
-const SWR_MAX_STALE_MS = 24 * 60 * 60 * 1000;
 
 // P1-2 — synonym / alias expansion.  Every entry is a cluster of equivalents.
 // tokenizeQuery splits CJK into single graphemes and English into word tokens,
@@ -335,8 +328,8 @@ const SERP_STAGGER_MS = 2_000;
 // own mutex chain and availability cache.
 const pwSession = createPlaywrightSession({
   sessionName: 'melo-search',
-  defaultTimeoutMs: CONTENT_FETCH_TIMEOUT_MS,
-  defaultMaxChars: CONTENT_MAX_CHARS,
+  defaultTimeoutMs: searchLimits().contentTimeoutMs,
+  defaultMaxChars: searchLimits().contentMaxChars,
   debugScope: 'web_search',
 });
 const {
@@ -395,7 +388,7 @@ const BLOCKED_CONTENT_DOMAINS = new Set([
 async function searchViaPlaywright(query, numResults) {
   return withPwLock(async () => {
     const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}&num=${Math.min(numResults + 2, 15)}&hl=zh-CN`;
-    await pwNavigate(googleUrl, FETCH_TIMEOUT_MS);
+    await pwNavigate(googleUrl, searchLimits().timeoutMs);
 
     // Extract search results from Google SERP
     const extractScript = `(() => {
@@ -419,7 +412,7 @@ async function searchViaPlaywright(query, numResults) {
       return JSON.stringify(results);
     })()`;
 
-    const raw = await runPlaywrightCli(['eval', extractScript], FETCH_TIMEOUT_MS);
+    const raw = await runPlaywrightCli(['eval', extractScript], searchLimits().timeoutMs);
     let parsed;
     try {
       parsed = JSON.parse(raw);
@@ -454,7 +447,7 @@ async function searchViaDdg(query, numResults, signal) {
   const jinaUrl = `${JINA_READER_BASE}${ddgUrl}`;
 
   const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
+  const timer = setTimeout(() => ac.abort(), searchLimits().timeoutMs);
   const combined = signal ? AbortSignal.any([signal, ac.signal]) : ac.signal;
 
   try {
@@ -611,7 +604,7 @@ function getCachedUrlContent(url) {
     const db = getCacheDb();
     const row = db.prepare(
       'SELECT content, etag, last_modified, content_hash, fetched_at FROM url_content_cache WHERE url = ? AND fetched_at > ?',
-    ).get(url, Date.now() - URL_CACHE_TTL_MS);
+    ).get(url, Date.now() - searchLimits().urlCacheTtlMs);
     if (!row) return null;
     return {
       content: row.content,
@@ -761,8 +754,8 @@ function buildCacheKey(query, intent) {
 }
 
 function ttlForIntent(intent) {
-  if (intent?.timeSensitive) return SEARCH_CACHE_TTL_TIME_SENSITIVE_MS;
-  return SEARCH_CACHE_TTL_MS;
+  if (intent?.timeSensitive) return searchLimits().freshCacheTtlMs;
+  return searchLimits().cacheTtlMs;
 }
 
 /**
@@ -793,7 +786,7 @@ function getCachedSearch(query, intent) {
 
 /**
  * P2-1 — stale-while-revalidate lookup.  Returns rows that are past the
- * fresh TTL but still within SWR_MAX_STALE_MS, so the caller can show them
+ * fresh TTL but still within searchLimits().staleMaxMs, so the caller can show them
  * immediately while a background refresh updates the row.
  */
 function getStaleCachedSearch(query, intent) {
@@ -802,7 +795,7 @@ function getStaleCachedSearch(query, intent) {
     const key = buildCacheKey(query, intent);
     const now = Date.now();
     const freshCutoff = now - ttlForIntent(intent);
-    const staleCutoff = now - SWR_MAX_STALE_MS;
+    const staleCutoff = now - searchLimits().staleMaxMs;
     const row = db.prepare(
       'SELECT * FROM web_search_cache WHERE query_norm = ? AND created_at <= ? AND created_at > ?',
     ).get(key, freshCutoff, staleCutoff);
@@ -1132,7 +1125,7 @@ function selectContentUrls(results, query, {
 async function fetchViaPlaywrightCli(url) {
   return withPwLock(async () => {
     try {
-      await pwNavigate(url, CONTENT_FETCH_TIMEOUT_MS);
+      await pwNavigate(url, searchLimits().contentTimeoutMs);
       const waitAndExtract = `(async () => {
         const get = () => (document.body?.innerText || '').trim();
         let prev = get();
@@ -1144,7 +1137,7 @@ async function fetchViaPlaywrightCli(url) {
         }
         return get();
       })()`;
-      const raw = await runPlaywrightCli(['eval', waitAndExtract], CONTENT_FETCH_TIMEOUT_MS);
+      const raw = await runPlaywrightCli(['eval', waitAndExtract], searchLimits().contentTimeoutMs);
       let text = raw;
       try {
         text = JSON.parse(raw);
@@ -1156,7 +1149,7 @@ async function fetchViaPlaywrightCli(url) {
         return { url, content: null };
       }
       const clean = cleanPageText(text);
-      return { url, content: clean.slice(0, CONTENT_MAX_CHARS) };
+      return { url, content: clean.slice(0, searchLimits().contentMaxChars) };
     } catch (error) {
       debugWarn('web_search', `Playwright page fetch failed for ${url}:`, error?.message || error);
       return { url, content: null };
@@ -1212,7 +1205,7 @@ async function fetchViaCdpChromeForContentFetch(url, signal) {
       try {
         await page.goto(url, {
           waitUntil: 'domcontentloaded',
-          timeout: CONTENT_FETCH_TIMEOUT_MS,
+          timeout: searchLimits().contentTimeoutMs,
         });
         try {
           await page.waitForLoadState('load', { timeout: 3000 });
@@ -1225,7 +1218,7 @@ async function fetchViaCdpChromeForContentFetch(url, signal) {
           return { url, content: null };
         }
         const clean = cleanPageText(trimmed);
-        return { url, content: clean.slice(0, CONTENT_MAX_CHARS) };
+        return { url, content: clean.slice(0, searchLimits().contentMaxChars) };
       } finally {
         if (signal && abortListener) {
           try { signal.removeEventListener('abort', abortListener); } catch {}
@@ -1255,7 +1248,7 @@ async function fetchViaCdpChromeForContentFetch(url, signal) {
 async function fetchViaJina(url, signal, { etag = null, lastModified = null } = {}) {
   const jinaUrl = `${JINA_READER_BASE}${url}`;
   const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), CONTENT_FETCH_TIMEOUT_MS);
+  const timer = setTimeout(() => ac.abort(), searchLimits().contentTimeoutMs);
   const combined = signal ? AbortSignal.any([signal, ac.signal]) : ac.signal;
 
   const headers = { 'X-Return-Format': 'markdown', 'X-Timeout': '12' };
@@ -1276,7 +1269,7 @@ async function fetchViaJina(url, signal, { etag = null, lastModified = null } = 
     const clean = cleanPageText(text);
     return {
       url,
-      content: clean.slice(0, CONTENT_MAX_CHARS),
+      content: clean.slice(0, searchLimits().contentMaxChars),
       etag: res.headers.get('etag') || null,
       lastModified: res.headers.get('last-modified') || null,
     };
@@ -1699,7 +1692,7 @@ async function fetchWeatherFastPath(query, signal) {
  * Whichever returns a non-empty result set first wins. If both settle empty,
  * resolves with an empty-results outcome carrying the aggregated errors.
  *
- * Both legs are bounded by their own inner timeouts (FETCH_TIMEOUT_MS);
+ * Both legs are bounded by their own inner timeouts (searchLimits().timeoutMs);
  * the race adds no new time budget — it only decides whether to parallelize.
  */
 async function raceSerpProviders(query, limit, signal, deps = {}) {
@@ -1860,7 +1853,7 @@ export const webSearchTool = {
       },
       num_results: {
         type: 'number',
-        description: `Number of results to return (1–${MAX_RESULTS}). Default: 5.`,
+        description: `Number of results to return (1–${searchLimits().maxResults}). Default: 5.`,
         default: 5,
       },
       noCache: {
@@ -1920,7 +1913,7 @@ export const webSearchTool = {
     }
 
     const q = query.trim();
-    const limit = Math.max(1, Math.min(MAX_RESULTS, Math.floor(num_results) || 5));
+    const limit = Math.max(1, Math.min(searchLimits().maxResults, Math.floor(num_results) || 5));
 
     // P2-3 — single span id per `run()` invocation so every debug line can
     // be grepped back to one query.  Never thrown, never awaited.
@@ -2623,8 +2616,8 @@ export async function getCacheStats() {
       sizeBytes: 0,
       searchCache: { rows: 0, freshRows: 0, oldestAgeMs: null, newestAgeMs: null },
       urlCache: { rows: 0, freshRows: 0, oldestAgeMs: null, newestAgeMs: null },
-      searchTtlMs: SEARCH_CACHE_TTL_MS,
-      urlTtlMs: URL_CACHE_TTL_MS,
+      searchTtlMs: searchLimits().cacheTtlMs,
+      urlTtlMs: searchLimits().urlCacheTtlMs,
     };
   }
 
@@ -2639,7 +2632,7 @@ export async function getCacheStats() {
     ).get();
     const sFresh = db.prepare(
       'SELECT COUNT(*) AS c FROM web_search_cache WHERE created_at > ?',
-    ).get(now - SEARCH_CACHE_TTL_MS);
+    ).get(now - searchLimits().cacheTtlMs);
     searchStats = {
       rows: Number(sRow?.c || 0),
       freshRows: Number(sFresh?.c || 0),
@@ -2652,7 +2645,7 @@ export async function getCacheStats() {
     ).get();
     const uFresh = db.prepare(
       'SELECT COUNT(*) AS c FROM url_content_cache WHERE fetched_at > ?',
-    ).get(now - URL_CACHE_TTL_MS);
+    ).get(now - searchLimits().urlCacheTtlMs);
     urlStats = {
       rows: Number(uRow?.c || 0),
       freshRows: Number(uFresh?.c || 0),
@@ -2669,8 +2662,8 @@ export async function getCacheStats() {
     sizeBytes,
     searchCache: searchStats,
     urlCache: urlStats,
-    searchTtlMs: SEARCH_CACHE_TTL_MS,
-    urlTtlMs: URL_CACHE_TTL_MS,
+    searchTtlMs: searchLimits().cacheTtlMs,
+    urlTtlMs: searchLimits().urlCacheTtlMs,
   };
 }
 
@@ -2696,8 +2689,8 @@ export function clearCache(scope = 'all') {
     }
     if (scope === 'stale') {
       const now = Date.now();
-      const r1 = db.prepare('DELETE FROM web_search_cache WHERE created_at <= ?').run(now - SEARCH_CACHE_TTL_MS);
-      const r2 = db.prepare('DELETE FROM url_content_cache WHERE fetched_at <= ?').run(now - URL_CACHE_TTL_MS);
+      const r1 = db.prepare('DELETE FROM web_search_cache WHERE created_at <= ?').run(now - searchLimits().cacheTtlMs);
+      const r2 = db.prepare('DELETE FROM url_content_cache WHERE fetched_at <= ?').run(now - searchLimits().urlCacheTtlMs);
       deleted = Number(r1.changes || 0) + Number(r2.changes || 0);
     }
     return { ok: true, deleted, scope };
@@ -2743,10 +2736,10 @@ async function probeCacheDb(path = cacheDbPath()) {
       sizeBytes: st.size,
       rowCount,
       lastQueryAgeMs,
-      ttlMs: SEARCH_CACHE_TTL_MS,
+      ttlMs: searchLimits().cacheTtlMs,
     };
   } catch {
-    return { exists: false, path, sizeBytes: 0, rowCount: 0, lastQueryAgeMs: null, ttlMs: SEARCH_CACHE_TTL_MS };
+    return { exists: false, path, sizeBytes: 0, rowCount: 0, lastQueryAgeMs: null, ttlMs: searchLimits().cacheTtlMs };
   }
 }
 
@@ -2802,3 +2795,5 @@ export async function checkSearchHealth({ signal } = {}) {
     summary: `search: ${evidence.status.toUpperCase()} (${evidence.reason}); Playwright ${primaryOk ? 'installed' : 'unavailable'}, Jina ${fallbackOk ? 'reachable' : 'unreachable'}. Dependency probes do not verify page content.`,
   };
 }
+
+webSearchTool.run = scopedSearchRun(webSearchTool.run);

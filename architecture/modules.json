@@ -23,8 +23,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 628,
-      "edges": 1922,
+      "modules": 635,
+      "edges": 1977,
       "roots": [
         "src",
         "desktop-ui",
@@ -33,7 +33,7 @@
       ],
       "note": "静态 import/re-export，含 desktop-ui 对 /shared/*.js 的服务映射；不含动态 import 与外部包"
     },
-    "routes": 159,
+    "routes": 163,
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
@@ -734,7 +734,7 @@
       ],
       "modules": {
         "desktop-ui": 27,
-        "shared": 27,
+        "shared": 32,
         "src": 68
       },
       "entryModules": [
@@ -777,9 +777,30 @@
           ]
         },
         {
+          "module": "shared/agent/imageLanguage.js",
+          "importedBy": [
+            "media"
+          ]
+        },
+        {
+          "module": "shared/agent/locale.js",
+          "importedBy": [
+            "channels",
+            "platform",
+            "settings"
+          ]
+        },
+        {
           "module": "shared/agent/media/textUrls.js",
           "importedBy": [
             "media"
+          ]
+        },
+        {
+          "module": "shared/agent/modelCapabilities.js",
+          "importedBy": [
+            "media",
+            "settings"
           ]
         },
         {
@@ -789,9 +810,25 @@
           ]
         },
         {
+          "module": "shared/agent/providerDefaults.js",
+          "importedBy": [
+            "media",
+            "settings"
+          ]
+        },
+        {
           "module": "shared/agent/repeatGuard.js",
           "importedBy": [
             "agents"
+          ]
+        },
+        {
+          "module": "shared/agent/runtimeMessages.js",
+          "importedBy": [
+            "approvals",
+            "channels",
+            "desktop-shell",
+            "tools"
           ]
         },
         {
@@ -1004,22 +1041,23 @@
         "memory": 27,
         "platform": 54,
         "projects": 11,
-        "settings": 10,
+        "settings": 11,
         "sync": 2,
         "tools": 38,
         "voice": 3
       },
       "usedBy": {
         "agents": 18,
-        "channels": 7,
-        "desktop-shell": 7,
-        "media": 10,
+        "approvals": 1,
+        "channels": 9,
+        "desktop-shell": 8,
+        "media": 14,
         "memory": 11,
-        "platform": 15,
+        "platform": 16,
         "projects": 1,
-        "settings": 7,
+        "settings": 11,
         "sync": 4,
-        "tools": 14,
+        "tools": 15,
         "voice": 2
       },
       "httpRoutes": [
@@ -1139,7 +1177,9 @@
           "shared/agent/continuation.test.js",
           "shared/agent/execution.test.js",
           "shared/agent/goal.test.js",
+          "shared/agent/modelCapabilities.test.js",
           "shared/agent/modelRouting.test.js",
+          "shared/agent/portability.test.js",
           "shared/agent/research.test.js",
           "shared/agent/taskReplay.test.js",
           "shared/agent/tools.test.js",
@@ -1447,9 +1487,9 @@
         "desktop-shell": 6,
         "knowledge": 3,
         "media": 1,
-        "platform": 26,
+        "platform": 27,
         "projects": 1,
-        "settings": 14,
+        "settings": 15,
         "sync": 2,
         "tools": 1
       },
@@ -1868,17 +1908,19 @@
           "importedBy": [
             "chat",
             "desktop-shell",
-            "media"
+            "media",
+            "memory",
+            "voice"
           ]
         }
       ],
       "dependsOn": {
         "agents": 3,
         "approvals": 1,
-        "chat": 7,
+        "chat": 11,
         "desktop-shell": 9,
         "media": 1,
-        "platform": 22,
+        "platform": 25,
         "sync": 3,
         "tools": 2
       },
@@ -1886,16 +1928,16 @@
         "agents": 3,
         "approvals": 8,
         "channels": 2,
-        "chat": 10,
+        "chat": 11,
         "desktop-shell": 14,
         "knowledge": 1,
-        "media": 7,
-        "memory": 14,
+        "media": 8,
+        "memory": 15,
         "platform": 17,
         "projects": 1,
         "sync": 1,
         "tools": 10,
-        "voice": 1
+        "voice": 2
       },
       "httpRoutes": [
         "POST /api/settings ← src/http/domainRoutes.js",
@@ -2185,7 +2227,7 @@
       ],
       "modules": {
         "desktop-ui": 28,
-        "src": 82
+        "src": 83
       },
       "entryModules": [
         {
@@ -2495,12 +2537,12 @@
       "dependsOn": {
         "agents": 8,
         "approvals": 33,
-        "chat": 14,
+        "chat": 15,
         "desktop-shell": 7,
         "knowledge": 3,
         "media": 2,
         "memory": 6,
-        "platform": 36,
+        "platform": 38,
         "projects": 5,
         "settings": 10
       },
@@ -2627,6 +2669,7 @@
           "src/services/search/apiDirect.test.js",
           "src/services/search/defaultSearch.test.js",
           "src/services/search/hostedSearchCapability.test.js",
+          "src/services/search/searchLimits.test.js",
           "src/services/search/searchResultsBuilder.test.js",
           "src/services/search/searchService.test.js",
           "src/services/search/searchSettings.test.js",
@@ -2871,12 +2914,12 @@
       ],
       "dependsOn": {
         "approvals": 1,
-        "chat": 10,
+        "chat": 14,
         "desktop-shell": 5,
         "knowledge": 1,
         "memory": 1,
-        "platform": 9,
-        "settings": 7,
+        "platform": 10,
+        "settings": 8,
         "tools": 4,
         "voice": 1
       },
@@ -3057,9 +3100,9 @@
         "chat": 2,
         "desktop-shell": 1,
         "media": 1,
-        "platform": 4,
+        "platform": 6,
         "projects": 1,
-        "settings": 1
+        "settings": 2
       },
       "usedBy": {
         "channels": 5,
@@ -3346,6 +3389,7 @@
       "dependsOn": {
         "agents": 3,
         "channels": 3,
+        "chat": 1,
         "desktop-shell": 7,
         "platform": 36,
         "projects": 4,
@@ -3424,6 +3468,7 @@
         "js": [
           "desktop-ui/features/approvals/controller.test.js",
           "desktop-ui/fileSafetyResponse.test.js",
+          "src/domain/task/taskOwners.test.js",
           "src/reminders/delivery.test.js",
           "src/reminders/scheduler.test.js",
           "src/safety/apiSurface.test.js",
@@ -3550,7 +3595,7 @@
         "agents": 12,
         "approvals": 4,
         "channels": 2,
-        "chat": 7,
+        "chat": 8,
         "knowledge": 1,
         "media": 5,
         "memory": 1,
@@ -3579,11 +3624,15 @@
         "GET /api/diagnostics ← src/server.js",
         "GET /api/health ← src/server.js",
         "GET /api/launch/reset ← src/server.js",
+        "GET /shared/agent/locale.js ← src/server.js",
+        "GET /shared/agent/providerDefaults.js ← src/server.js",
+        "GET /shared/agent/runtimeMessages.js ← src/server.js",
         "GET /shared/channelAvailability.js ← src/server.js",
         "GET /shared/conversationTopics.js ← src/server.js",
         "GET /shared/executionMetadata.js ← src/server.js",
         "GET /shared/executionScene.js ← src/server.js",
         "GET /shared/localPreferences.js ← src/server.js",
+        "GET /shared/localServices.js ← src/server.js",
         "GET /shared/minimaxVoiceResolver.js ← src/server.js",
         "GET /shared/modelCatalog.js ← src/server.js",
         "GET /shared/replyDocument.js ← src/server.js",
@@ -3817,7 +3866,7 @@
         "src/**"
       ],
       "modules": {
-        "src": 52
+        "src": 53
       },
       "entryModules": [
         {
@@ -3972,6 +4021,15 @@
           ]
         },
         {
+          "module": "src/shared/localServices.js",
+          "importedBy": [
+            "media",
+            "memory",
+            "settings",
+            "voice"
+          ]
+        },
+        {
           "module": "src/state/agentProfiles.js",
           "importedBy": [
             "agents",
@@ -4083,7 +4141,7 @@
         "agents": 34,
         "approvals": 18,
         "channels": 6,
-        "chat": 15,
+        "chat": 16,
         "desktop-shell": 2,
         "knowledge": 2,
         "media": 2,
@@ -4101,13 +4159,13 @@
         "chat": 54,
         "desktop-shell": 9,
         "knowledge": 2,
-        "media": 9,
-        "memory": 26,
+        "media": 10,
+        "memory": 27,
         "projects": 23,
-        "settings": 22,
+        "settings": 25,
         "sync": 4,
-        "tools": 36,
-        "voice": 4
+        "tools": 38,
+        "voice": 6
       },
       "httpRoutes": [],
       "desktopUi": [],
@@ -4163,6 +4221,7 @@
           "src/runtime/usage.test.js",
           "src/server.imports.smoke.test.js",
           "src/serverGuard.test.js",
+          "src/shared/localServices.test.js",
           "src/state/architectureConcurrency.test.js",
           "src/state/chatRetention.test.js",
           "src/state/checkpointCommit.test.js",
@@ -4270,7 +4329,7 @@
       ],
       "dependsOn": {
         "agents": 6,
-        "chat": 7,
+        "chat": 9,
         "media": 3,
         "memory": 4,
         "platform": 22,
@@ -4994,6 +5053,8 @@
         "ios/SceneSource/neuralLayout.js",
         "ios/scripts/build-scene.py",
         "ios/scripts/sync-theme.py",
+        "shared/agent/locale.js",
+        "shared/agent/runtimeMessages.js",
         "src/memory/offline/extractor.js",
         "src/shared/executionMetadata.js",
         "src/shared/executionScene.js",

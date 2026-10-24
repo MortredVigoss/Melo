@@ -1,4 +1,5 @@
-import { DEFAULT_CHAT_MODEL } from '../shared/modelCatalog.js';
+import { resolvedModelCapabilities } from '../../shared/agent/modelCapabilities.js';
+import { DEFAULT_CHAT_MODEL, PROVIDER_DEFAULTS } from '../shared/modelCatalog.js';
 
 // Output sizes offered on both clients. gpt-image-2 accepts edges that are
 // multiples of 16 below 3840 px; above 2560x1440 is experimental (OpenAI guide).
@@ -12,7 +13,7 @@ export function imageSettings(config = {}) {
   return {
     engine: source.engine || legacyEngine || 'codex-oauth',
     profileId: source.profileId || '',
-    model: source.model || 'gpt-image-2.5-sunburst',
+    model: source.model || PROVIDER_DEFAULTS.media.image,
     codexModel:
       source.codexModel || (config.authMode === 'codex' ? config.model : '') || DEFAULT_CHAT_MODEL,
     visionProfileId: source.visionProfileId || '',
@@ -36,6 +37,7 @@ export function imageConnection(config, settings = imageSettings(config)) {
   ) {
     throw new Error('请在图像设置中选择已保存的 OpenAI Images 兼容 API 连接。');
   }
+  if (resolvedModelCapabilities(profile, settings.model).imageGen === false) throw Object.assign(new Error('This model is configured without image generation. Choose another image model.'), {code:'MODEL_IMAGE_GENERATION_DISABLED'});
   return { ...profile, model: settings.model };
 }
 export function visionConnection(config, fallback = {}) {

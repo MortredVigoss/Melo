@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { LANGUAGES, setLanguage, t, ui } from './i18n.js';
 import { translations } from './translations.js';
-import { normalizeLocalPreferences, validateLocalPreferencePatch } from '../src/domain/settings/localPreferences.js';
+import { normalizeLocalPreferences, validateLocalPreferencePatch, LOCAL_PREFERENCE_DEFAULTS } from '../src/domain/settings/localPreferences.js';
 
 test('all five catalogs cover the same interface keys and native catalog stays in sync', async () => {
   const native = JSON.parse(await readFile(new URL('../ios/Melo/Localizable.xcstrings',import.meta.url)));
@@ -17,7 +17,7 @@ test('language preference rejects invalid values and preserves existing preferen
   for (const {id} of LANGUAGES) assert.deepEqual(validateLocalPreferencePatch({interfaceLanguage:id}),{interfaceLanguage:id});
   assert.throws(()=>validateLocalPreferencePatch({interfaceLanguage:'<script>'}));
   const old=normalizeLocalPreferences({textSize:'large',voiceLanguage:'en-US'});
-  assert.equal(old.interfaceLanguage,'zh-CN');assert.equal(old.textSize,'large');assert.equal(old.voiceLanguage,'en-US');
+  assert.equal(old.interfaceLanguage,LOCAL_PREFERENCE_DEFAULTS.interfaceLanguage);assert.equal(old.textSize,'large');assert.equal(old.voiceLanguage,'en-US');
 });
 test('literal templates translate UI only, preserve user data, attributes and placeholder order', () => {
   try {
@@ -29,4 +29,13 @@ test('literal templates translate UI only, preserve user data, attributes and pl
     setLanguage('bad'); assert.equal(t('系统设置'),'系统设置');
     setLanguage('ja'); assert.equal(t('untranslated developer output'),'untranslated developer output');
   } finally { setLanguage('zh-CN'); }
+});
+
+test('a fresh device follows its system locale while saved language wins',async()=>{
+ const {execFileSync}=await import('node:child_process');
+ for(const [locale,expected] of [['en_US.UTF-8','en'],['ja_JP.UTF-8','ja']]) {
+  const script="import {normalizeLocalPreferences} from './src/domain/settings/localPreferences.js';console.log(JSON.stringify([normalizeLocalPreferences().interfaceLanguage,normalizeLocalPreferences({interfaceLanguage:'ko'}).interfaceLanguage]));";
+  const result=JSON.parse(execFileSync(process.execPath,['--input-type=module','-e',script],{env:{...process.env,LANG:locale,LC_ALL:locale}}).toString());
+  assert.deepEqual(result,[expected,'ko']);
+ }
 });

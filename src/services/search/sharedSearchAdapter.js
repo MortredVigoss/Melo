@@ -38,7 +38,7 @@ export function createSharedSearchTool(legacyTool) {
       const stored = slot && typeof capturedConfig.searchCredentials?.[slot] === 'string' ? capturedConfig.searchCredentials[slot] : '';
       const credential = options.searchCredential ?? (search.credentialRef === 'search' ? stored || (env.MELO_SEARCH_ENDPOINT === search.endpoint ? env.MELO_SEARCH_API_KEY : '') : '');
       const debug = env.MELO_TEST_MODE === '1' || options.fixture === true;
-      const signal = AbortSignal.any([options.signal, AbortSignal.timeout(20_000)].filter(Boolean));
+      const signal = AbortSignal.any([options.signal, AbortSignal.timeout(search.timeoutMs || 20_000)].filter(Boolean));
       const failure = code => ({ ok: false, error: code, output: JSON.stringify({ ok: false, error: code, results: [], backend: search.backend }) });
       try {
         validateCommonTool(spec.name, args);
@@ -53,11 +53,11 @@ export function createSharedSearchTool(legacyTool) {
             headers: { 'content-type': 'application/json', accept: 'application/json', ...(credential ? { [effect.credentialHeader]: effect.credentialPrefix + credential } : {}) },
             ...(effect.body ? { body: JSON.stringify(effect.body) } : {}) });
           if (!response.ok) { await response.body?.cancel(); return failure('SEARCH_HTTP_' + response.status); }
-          const result = normalizeSearchResponse(await boundedJSON(response), { fetchedAt: new Date().toISOString(), backend: effect.backend });
+          const result = normalizeSearchResponse(await boundedJSON(response), { fetchedAt: new Date().toISOString(), backend: effect.backend, maxResults: Math.min(args.maxResults || search.maxResults || 6, search.maxResults || 8) });
           return { ok: result.ok, status: result.status, code: result.code, output: JSON.stringify(result), error: result.error, meta: { results: result.results, provider: result.backend, fetchedAt: result.fetchedAt, freshness: result.freshness,
             progressKey: createHash('sha256').update(JSON.stringify(result.results)).digest('hex') } };
         }
-        if (search.browserFallback && legacyTool) return legacyTool.run({ query: args.query, num_results: args.maxResults || 6 }, options);
+        if (search.browserFallback && legacyTool) return legacyTool.run({ query: args.query, num_results: Math.min(args.maxResults || search.maxResults || 6, search.maxResults || 8) }, { ...options, signal });
         return failure('SEARCH_UNAVAILABLE');
       } catch (error) {
         if (options.signal?.aborted) throw options.signal.reason;
@@ -73,6 +73,6 @@ export function createCompatibleSearchTool(legacyTool) {
   return { ...legacyTool, async run(args, options = {}) {
     const config = options.config || options.requestContext?.config || currentRequestContext()?.config || {};
     if (!config.agentRuntime?.search) return legacyTool.run(args, options);
-    return portable.run({ query: args.query, maxResults: Math.min(8, Math.max(1, args.num_results || 6)) }, options);
+    return portable.run({ query: args.query, maxResults: Math.min(config.agentRuntime?.search?.maxResults || 8, Math.max(1, args.num_results || config.agentRuntime?.search?.maxResults || 6)) }, options);
   } };
 }

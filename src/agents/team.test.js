@@ -38,7 +38,7 @@ test('parallel researchers keep MCP servers and skills and only stop writing; a 
 test('cancellation stops queued roles and reaches running child',async()=>{
   const controller=new AbortController();let invoked=0;
   const team=await runAgentTeam({plan:{roles:['research','builder','reviewer'],concurrency:2},task:'fixture',config:{},signal:controller.signal,run:async({signal})=>{invoked++;controller.abort();assert.equal(signal.aborted,true);throw new Error('aborted');}});
-  assert.equal(invoked,1);assert.equal(team.results.length,3);assert.ok(team.results.every(r=>r.cancelled));assert.equal(validateTeamPlan({roles:['builder','reviewer'],concurrency:2}).concurrency,1);
+  assert.equal(invoked,1);assert.equal(team.results.length,3);assert.ok(team.results.every(r=>r.cancelled));assert.equal(validateTeamPlan({roles:['builder','reviewer'],mode:'sequential',concurrency:2}).concurrency,1);
 });
 test('unknown usage or unknown prices never become zero cost',()=>{
  assert.equal(summarizeUsage([{}],{input:1,output:2,cached:0,cacheWrite:0}).estimatedCost,null);

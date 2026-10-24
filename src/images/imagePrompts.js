@@ -19,10 +19,10 @@ export const IMAGE_INTENT_RULES = [
 ].join(' ');
 
 const roles = {
-  reference: '原图参考 / general reference; for edits image 1 is the base canvas unless the user specifies otherwise',
-  subject: '主体与身份 / subject identity and defining traits, not its unrelated background',
-  style: '风格 / visual style, materials and lighting; do not copy unrelated subjects or text',
-  composition: '构图 / framing, geometry and layout; do not copy unrelated identity or branding',
+  reference: 'general reference; for edits image 1 is the base canvas unless the user specifies otherwise',
+  subject: 'subject identity and defining traits, not its unrelated background',
+  style: 'visual style, materials and lighting; do not copy unrelated subjects or text',
+  composition: 'framing, geometry and layout; do not copy unrelated identity or branding',
 };
 
 export function buildImagePromptText({userPrompt, action = 'generate', editSpec = '', referenceRoles = [], masked = false} = {}) {

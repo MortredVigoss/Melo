@@ -1,3 +1,4 @@
+import { multilingualImageAction } from '../../../shared/agent/imageLanguage.js';
 // Build the model-facing message window from a chat object.
 //
 // This is sub-phase 7d-1 of the desktopStore decomposition: pull the pure
@@ -229,6 +230,7 @@ export function detectImageGenIntent(text) {
  */
 export function detectImageIntent(text, { hasInputImage = false } = {}) {
   if (typeof text !== 'string' || !text.trim()) return false;
+  if (multilingualImageAction(text, hasInputImage)) return true;
   if (IMAGE_GEN_INTENT_PATTERN.test(text)) return true;
   if (!hasInputImage) return false;
   if (IMAGE_EDIT_INTENT_PATTERN.test(text)) return true;

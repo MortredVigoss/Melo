@@ -98,3 +98,15 @@ test('mobile checkpoint reports pending local approval without exporting grants 
   assert.deepEqual(state.tasks[0].execution.pendingApprovals, {});
   assert.equal(state.tasks[0].status, 'blocked');
 });
+
+test('custom task owner survives create/update and missing owners cannot start a run',async()=>{
+ const {createTask,updateTask}=await import('./taskMutations.js');
+ const {normalizeAgentProfile}=await import('../../state/agentProfiles.js');
+ await updateStateAtomically(state=>{state.agentProfiles.writer=normalizeAgentProfile('writer',{name:'Writer'});state.settings.defaultAgentId='writer';});
+ await createTask({title:'Custom owner regression',owner:'writer'});
+ const task=(await loadState()).tasks.find(t=>t.title==='Custom owner regression');assert.equal(task.owner,'writer');
+ await updateTask(task.id,{owner:''});assert.equal((await loadState()).tasks.find(t=>t.id===task.id).owner,'writer');
+ await assert.rejects(updateTask(task.id,{owner:'absent-agent'}),{code:'TASK_OWNER_MISSING'});
+ await updateStateAtomically(state=>{state.tasks.find(t=>t.id===task.id).owner='absent-agent';});
+ await assert.rejects(prepareTaskExecution(task.id,{skipBootstrap:true}),{code:'TASK_OWNER_MISSING'});
+});

@@ -1,3 +1,4 @@
+import { resolvedModelCapabilities } from '../../../shared/agent/modelCapabilities.js';
 import { createHash } from 'node:crypto';
 import { selectRouting, escalateRouting, parseRoutingJudgment, ROUTING_JUDGE_PROMPT, ROUTING_VERSION } from '../../../shared/agent/modelRouting.js';
 
@@ -8,7 +9,7 @@ export function routingCandidates(config) {
   return profiles.flatMap(([connectionId, p]) => {
     const models = [...new Set([p.model, ...(p.models || []), ...(connectionId === active ? config.modelCatalogs?.[p.authMode] || [] : [])].filter(m => typeof m === 'string' && m.trim()))];
     return models.map(model => ({ connectionId, model, name: p.name || connectionId || '当前连接',
-      capabilities: { tools: true, vision: p.visionTest?.ok === true && p.visionTest.requestedModel === model },
+      capabilities: { tools: true, ...resolvedModelCapabilities(p, model) },
       contextWindow: p.contextWindows?.[model] || 0,
       available: p.authMode === 'codex' ? config.codexAuth?.loggedIn !== false : p.authMode === 'local' || !!p.apiKey,
       price: config.modelPricing?.[model] || null,
@@ -42,7 +43,7 @@ export async function createRoutingSession({ config, agent, text, messages = [],
     text, context: messages, attachments };
   // Explicit per-assignment modality confirmations are stored with the policy.
   for (const c of input.candidates) for (const entries of Object.values(policy.tiers || {})) {
-    if (entries.some(a => a.connectionId === c.connectionId && a.model === c.model && a.vision === true)) c.capabilities.vision = true;
+    if (c.capabilities.vision !== false && entries.some(a => a.connectionId === c.connectionId && a.model === c.model && a.vision === true)) c.capabilities.vision = true;
   }
   let current = selectRouting(input);
   if (current.judge) {

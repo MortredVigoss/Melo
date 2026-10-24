@@ -1,5 +1,5 @@
 export { renderExecutionTiming } from './executionTiming.js';
-import { t, ui } from './i18n.js';
+import { t, ui, currentLanguage, runtimeStageName, runtimeStageOutput } from './i18n.js';
 const escape = (value) =>
   String(value ?? '').replace(
     /[&<>"']/g,
@@ -43,7 +43,7 @@ export function renderReasoningRecords(scene, statusNames) {
   const stages = (scene?.pipeline || []).filter(stage => stage.channel === 'reasoning-summary');
   if (!stages.length) return '';
   stages.push(...(scene?.operations || []).filter(op => op.module === 'compute'));
-  return ui`<div class="execution-reasoning-records" aria-label="公开推理摘要记录">${stages.map(stage => ui`<button data-execution-action="inspect" data-operation="${escape(stage.id)}"><b>${escape(stage.expression || stage.name)} · ${escape(statusNames[stage.status] || stage.status)}</b><p>${escape(stage.result || stage.output || t("等待返回"))}</p><small>${escape(executionApiLine(stage))} · 展开详情</small></button>`).join('')}</div>`;
+  return ui`<div class="execution-reasoning-records" aria-label="公开推理摘要记录">${stages.map(stage => ui`<button data-execution-action="inspect" data-operation="${escape(stage.id)}"><b>${escape(stage.expression || runtimeStageName(stage, currentLanguage()))} · ${escape(statusNames[stage.status] || stage.status)}</b><p>${escape(stage.result || runtimeStageOutput(stage) || t("等待返回"))}</p><small>${escape(executionApiLine(stage))} · 展开详情</small></button>`).join('')}</div>`;
 }
 export function renderExecutionDetail(op, status) {
   // v1 portable scenes carry the handoff in output, preserving old readers.

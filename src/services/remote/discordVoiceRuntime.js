@@ -1,3 +1,5 @@
+import { runtimeMessage } from '../../../shared/agent/runtimeMessages.js';
+import { resolveReplyLocale } from '../../../shared/agent/locale.js';
 // ─── Discord voice runtime ───────────────────────────────────────────────────
 // Singleton that owns:
 //   - one discord.js Client per agent id (lazy, created on first voice join)
@@ -138,53 +140,54 @@ class DiscordVoiceRuntime {
     // upstream, but we re-strip defensively in case this handler is called with
     // raw text.
     const cleaned = stripLeadingMentionAndAliases(rawText, profile, discordChannel);
+    const locale = resolveReplyLocale({agentLanguage:profile?.replyLanguage,text:cleaned,channelLanguage:discordChannel?.language});
 
     if (JOIN_CMD_RE.test(cleaned)) {
       return this._handleJoin({
-        incoming, agentId, profile, discordChannel, botUserId, resolveConfig,
+        incoming, agentId, profile, discordChannel, botUserId, resolveConfig, locale,
       });
     }
     if (LEAVE_CMD_RE.test(cleaned)) {
-      return this._handleLeave({ incoming, agentId });
+      return this._handleLeave({ incoming, agentId, locale });
     }
     return { handled: false };
   }
 
-  async _handleJoin({ incoming, agentId, profile, discordChannel, botUserId, resolveConfig }) {
+  async _handleJoin({ incoming, agentId, profile, discordChannel, botUserId, resolveConfig, locale = 'zh' }) {
     const guildId = String(incoming?.guildId || '');
     const senderId = String(incoming?.senderId || '');
     if (!guildId) {
-      return { handled: true, reply: '只能在服务器的文字频道里让我加入语音（DM 里没有语音频道的概念）。' };
+      return { handled: true, reply: runtimeMessage('voiceGuild',locale) };
     }
     let client;
     try {
       client = await this._getClient(agentId, discordChannel?.botToken);
     } catch (err) {
-      return { handled: true, reply: `登入 Discord Gateway 失败：${err?.message || err}` };
+      return { handled: true, reply: runtimeMessage('voiceGateway',locale,{error:err?.message || err}) };
     }
 
     let guild;
     try {
       guild = await client.guilds.fetch(guildId);
     } catch (err) {
-      return { handled: true, reply: `找不到这个服务器：${err?.message || err}` };
+      return { handled: true, reply: runtimeMessage('voiceServer',locale,{error:err?.message || err}) };
     }
 
     let member;
     try {
       member = await guild.members.fetch(senderId);
     } catch {
-      return { handled: true, reply: '我在这个服务器里找不到你的成员资料。' };
+      return { handled: true, reply: runtimeMessage('voiceMember',locale) };
     }
     const voiceChannel = member.voice?.channel;
     if (!voiceChannel) {
-      return { handled: true, reply: '你得先进一个语音频道，我才能跟着进去。' };
+      return { handled: true, reply: runtimeMessage('voiceFirst',locale) };
     }
 
     const key = `${agentId}:${guildId}`;
     let session = this.sessions.get(key);
     if (session && session.voiceChannelId === voiceChannel.id) {
-      return { handled: true, reply: '我已经在这个语音频道里了。说话就行。' };
+      return { handled: true, reply: runtimeMessage('voiceAlready',locale) };
     }
     if (session) {
       await session.stop().catch(() => {});
@@ -204,25 +207,25 @@ class DiscordVoiceRuntime {
     try {
       await session.start(voiceChannel.id);
     } catch (err) {
-      return { handled: true, reply: `加入语音频道失败：${err?.message || err}` };
+      return { handled: true, reply: runtimeMessage('voiceFailed',locale,{error:err?.message || err}) };
     }
     this.sessions.set(key, session);
     writeDebug(`[dc-voice] session registered key=${key}`);
     return {
       handled: true,
-      reply: `已加入 #${voiceChannel.name}。说话我就能听到 —— 开头带上我的名字，或者接着上一句继续说都行。`,
+      reply: runtimeMessage('voiceJoined',locale,{name:voiceChannel.name}),
     };
   }
 
-  async _handleLeave({ incoming, agentId }) {
+  async _handleLeave({ incoming, agentId, locale = 'zh' }) {
     const guildId = String(incoming?.guildId || '');
-    if (!guildId) return { handled: true, reply: '没有要离开的语音频道。' };
+    if (!guildId) return { handled: true, reply: runtimeMessage('voiceNone',locale) };
     const key = `${agentId}:${guildId}`;
     const session = this.sessions.get(key);
-    if (!session) return { handled: true, reply: '我不在语音频道里。' };
+    if (!session) return { handled: true, reply: runtimeMessage('voiceAbsent',locale) };
     await session.stop().catch(() => {});
     this.sessions.delete(key);
-    return { handled: true, reply: '已离开语音频道。' };
+    return { handled: true, reply: runtimeMessage('voiceLeft',locale) };
   }
 
   hasActiveSession(agentId, guildId) {

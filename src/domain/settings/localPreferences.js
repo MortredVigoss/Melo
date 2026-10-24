@@ -1,7 +1,10 @@
+import { normalizeLocale } from '../../../shared/agent/locale.js';
+const systemLocale = normalizeLocale(typeof navigator !== 'undefined' ? navigator.language : Intl.DateTimeFormat().resolvedOptions().locale);
+const interfaceDefault = ['zh','en','ja','ko','es'].includes(systemLocale) ? (systemLocale === 'zh' ? 'zh-CN' : systemLocale) : 'en';
 // Device-local preferences. Deliberately excluded from portable workspace sync.
 export const LOCAL_PREFERENCE_DEFAULTS = Object.freeze({
-  interfaceLanguage: 'zh-CN', textSize: 'standard', motion: 'system', autoCollapse: true,
-  sendShortcut: 'enter', voiceLanguage: 'zh-CN', restoreSession: false,
+  interfaceLanguage: interfaceDefault, textSize: 'standard', motion: 'system', autoCollapse: true,
+  sendShortcut: 'enter', voiceLanguage: 'system', restoreSession: false,
   // Per-Agent permissions for this computer (the phone's 这台手机上 has the
   // same shape, 2026-10-22): { [agentId]: { location: true } }. Only true
   // values are stored, so an Agent is off until the user turns it on here.

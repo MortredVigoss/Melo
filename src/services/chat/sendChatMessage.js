@@ -1,3 +1,6 @@
+import { resolveReplyLocale } from '../../../shared/agent/locale.js';
+import { executionMessage } from '../../../shared/agent/runtimeMessages.js';
+import { connectionForModel } from '../../../shared/agent/modelCapabilities.js';
 import { completionResult } from '../../../shared/agent/completion.js';
 import { usedSupplements } from './supplements.js';
 import { hasPerformanceTrace, withPerformanceTrace } from '../../runtime/performanceTrace.js';
@@ -138,7 +141,7 @@ export function sendChatMessage(options) {
         const result = await runWithRequestContext(turnContext,()=>executeChatTurn({ ...options, home: context.home, context: turnContext, configPromise, executionRecorder,
           sseEmitter: (event, data) => {
             if (event === 'tool_record') { executionRecorder.recordTool(data.record); return; }
-            if (event === 'execution_event') executionRecorder.event(data);
+            if (event === 'execution_event') { data = executionMessage(data); executionRecorder.event(data); }
             emit(event, data);
           },
         }));
@@ -246,6 +249,7 @@ async function executeChatTurn({
     effectiveAgentId,
     activeProject?.id || null,
   );
+  config.replyLanguage = resolveReplyLocale({agentLanguage: activeAgentProfile.replyLanguage, text: trimmed, channelLanguage: channelContext?.language || activeAgentProfile.channels?.[channelContext?.channelId]?.language, interfaceLanguage: state.settings.localPreferences?.interfaceLanguage});
   const connectors = buildConnectors(state.settings.enabledConnectorIds, config, workspace, state, activeProject);
   const skills = buildSkills(state.settings.enabledSkillIds, state.settings.customSkills);
 
@@ -271,7 +275,7 @@ async function executeChatTurn({
   chat.messages.push(userMessage);
   chat.updatedAt = nowIso();
   const visualConnection=config.conversationModelMode==='smart' || (!config.conversationModelSelected && config.smartRouting?.defaultMode==='smart') ? config : userMessage.attachments.some(a=>a.kind==='image') ? visionConnection(config,{model:context.env.MELO_MODEL || activeAgentProfile?.model || config.model}) : config;
-  const visualTest=visualConnection.visionTest || config.llmProfiles?.[config.activeLlmProfileId]?.visionTest;
+  const visualTest=connectionForModel(visualConnection).visionTest;
   // Re-sent file-backed attachments (image retry, API clients echoing a stored
   // URL) are read back inline so extraction sees the bytes; externalization
   // below maps them onto the same file again.
@@ -280,8 +284,8 @@ async function executeChatTurn({
     config,
     allowRemoteExtraction: !networkPolicy.fetchForbidden,
     modelSupportsVision: modelSupportsVision(
-      visualConnection.model, visualTest,
-    ),
+      visualConnection.model, visualTest, connectionForModel(visualConnection),
+    ) !== false,
   });
   // Attachment externalization (design §2.3): large inline data URLs move to
   // <home>/desktop/attachments and the stored message keeps a small

@@ -27,6 +27,14 @@ export function editLlmConnection(target, config) {
     input.value = target.value;
     return editLlmConnection(input, config);
   }
+  if (target.dataset.modelCapability) {
+    const draft = draftFor(config);
+    draft.modelCapabilities = { ...draft.modelCapabilities, [draft.model]: { ...draft.modelCapabilities?.[draft.model] } };
+    const entry = draft.modelCapabilities[draft.model], key = target.dataset.modelCapability;
+    if (target.value === '') delete entry[key]; else entry[key] = target.value === 'true';
+    editSession.change(); state.message = t('有未保存的修改'); paintEditActions(target.closest('[data-llm-connections]').querySelector('.settings-edit-toolbar'),editSession,{prefix:'llm',disabled:state.busy,saveDisabled:state.conflict}); return true;
+  }
+  if (['baseUrl','apiProtocol'].includes(target.name) && draftFor(config)[target.name] !== target.value) { draftFor(config).modelCapabilities={}; draftFor(config).modelMetadata={}; }
   if (target.name) { editSession.change(); draftFor(config)[target.name] = target.type === 'checkbox' ? target.checked : target.value; state.message = t('有未保存的修改'); const bar=target.closest('[data-llm-connections]').querySelector('.settings-edit-toolbar');paintEditActions(bar,editSession,{prefix:'llm',disabled:state.busy,saveDisabled:state.conflict}); }
   return true;
 }
@@ -54,6 +62,8 @@ export function renderLlmConnections(config) {
       ${provider.id === 'custom' ? ui`<label class="label">API 接口格式<select class="config-select" name="apiProtocol" ${disabled}><option value="chat-completions" ${!['anthropic','responses'].includes(draft.apiProtocol) ? 'selected' : ''}>OpenAI Chat Completions</option><option value="responses" ${draft.apiProtocol === 'responses' ? 'selected' : ''}>OpenAI Responses</option><option value="anthropic" ${draft.apiProtocol === 'anthropic' ? 'selected' : ''}>Anthropic Messages</option></select></label>` : ''}
       <label class="label">选择模型<select class="config-select" data-action="llm-pick-model">${connectionModelOptions(config, draft).map(m => `<option value="${escape(m)}" ${m === draft.model ? 'selected' : ''}>${escape(modelLabel(m))} · ${escape(m)}</option>`).join('')}<option value="" ${!draft.model ? 'selected' : ''}>手动填写模型 ID</option></select></label>
       <label class="label">模型 ID（可手动填写）<input class="config-input" name="model" value="${escape(draft.model)}" placeholder="${escape(provider.modelHint || t('填写模型 ID，或读取模型列表'))}" ${disabled}></label>
+      <p class="list-row-meta">模型能力按当前连接保存；自动读取目录或实测结果，未知能力不按名字推断。</p>
+      ${[['vision','图片输入'],['reasoning','推理参数'],['imageGen','图片输出']].map(([key,label]) => `<label class="label">${escape(t(label))}<select class="config-select" data-model-capability="${key}">${[['',t('自动（目录或实测）')],['true',t('支持')],['false',t('不支持')]].map(([v,name])=>`<option value="${v}" ${String(draft.modelCapabilities?.[draft.model]?.[key] ?? '')===v?'selected':''}>${escape(name)}</option>`).join('')}</select></label>`).join('')}
       ${provider.authMode !== 'codex' ? ui`<label class="label">API Key${provider.authMode === 'local' ? t('（可选）') : ''}<input class="config-input" name="apiKey" type="password" autocomplete="off" value="${escape(draft.apiKey)}" placeholder="${saved?.hasKey ? t('已保存；留空保留此连接的密钥') : t('只保存到本机')}" ${disabled}></label><label class="list-row-meta"><input type="checkbox" name="clearKey" ${draft.clearKey ? 'checked' : ''} ${disabled}> 清除此连接保存的密钥</label>` : ui`<p class="list-row-meta">${config.codexAuth?.loggedIn ? t('ChatGPT 已登录') : t('需要先完成 ChatGPT 登录')}；模型请求由 Melo 直接发送。</p>`}
       </fieldset><div class="inline-actions">
         <button type="button" class="small-button" data-action="llm-models" ${actionDisabled}>加载模型列表</button>
@@ -105,7 +115,7 @@ export async function handleLlmConnection(action, { config, api, render, refresh
       await api('/api/settings/llm/remove', { method: 'POST', body: { id: draft.id } }); state.draft = null; state.selected = ''; state.message = t('连接已移除');
     } else {
       if(action==='llm-save') {
-        const saved = await api('/api/settings/llm/save', { method: 'POST', body: draft });
+        const saved = await api('/api/settings/llm/save', { method: 'POST', body: { ...draft, modelCapability: draft.modelCapabilities?.[draft.model] || {} } });
         const updated = saved.profiles.find(p => p.id === draft.id);
         state.draft = { ...draft, ...updated, apiKey: '', clearKey: false };
         editSession.saved();

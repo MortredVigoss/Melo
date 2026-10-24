@@ -35,7 +35,9 @@ test('chat files, explicit deletion decisions and management actions work throug
  assert.equal(await readFile(join(path,'approved.txt'),'utf8'),'approved output');
  await post('/api/settings',{activeMode:'chat',activeView:'chat',selectedChatId:chatId});
  browser=await launchTestChrome(chromium);
- const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('response',async r=>{if(r.url().includes('/api/workspace/select-file'))t.diagnostic('select '+r.status());});await page.goto(base);
+ const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('response',async r=>{if(r.url().includes('/api/workspace/select-file'))t.diagnostic('select '+r.status());});// This fixture asserts Chinese labels; set the preference explicitly, independent of the host locale.
+    assert.equal((await fetch(base + '/api/settings/local', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({preferences:{interfaceLanguage:'zh-CN'}})})).status,200);
+    await page.goto(base);
  const files=page.locator('.chat-files-panel');await files.waitFor();await files.locator('summary').click();await files.locator('[data-file-path="result.txt"]').click();await files.locator('pre').filter({hasText:'visible output'}).waitFor({timeout:10000}).catch(async error=>{t.diagnostic(JSON.stringify({errors,html:await files.innerHTML(),open:await files.getAttribute('open'),selected:(await boot()).workspace.selectedFilePath,body:(await page.locator('body').innerText()).slice(-1800)}));throw error;});
  assert.equal(await files.locator('[data-action=open-chat-files]').count(),1);await page.screenshot({path:join(proof,'chat-files.png')});
  const remove=page.locator('[data-action=delete-active-chat]');await remove.click();let dialog=page.locator('dialog[open]');await page.screenshot({path:join(proof,'delete-choice.png')});await dialog.getByRole('button',{name:'取消',exact:true}).click();assert.ok((await boot()).chats.some(c=>c.id===chatId));

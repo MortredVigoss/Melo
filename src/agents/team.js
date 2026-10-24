@@ -14,9 +14,9 @@ import {getAllTools,getTool} from '../tools/registryCore.js';
 import {narrowBudget,extendBudget,remainingMs,budgetExhausted,recordUsage,receiptInputTokens,requestTimeoutMs} from '../runtime/runBudget.js';
 export const TEAM_ROLES = Object.freeze({research:'调研',builder:'实施',reviewer:'复核'});
 export const TEAM_TEMPLATES = Object.freeze([
- {id:'research-build-review',name:'调研 → 实施 → 复核',members:['research','builder','reviewer'],mode:'sequential'},
- {id:'parallel-research',name:'并行调研后复核',members:['research','reviewer'],mode:'parallel'},
- {id:'review-loop',name:'实施 / 复核循环',members:['builder','reviewer'],mode:'review-loop',maxRounds:2},
+ {id:'research-build-review',name:'调研 → 实施 → 复核',roleTags:['research','implementation','review'],mode:'sequential'},
+ {id:'parallel-research',name:'并行调研后复核',roleTags:['research','review'],mode:'parallel'},
+ {id:'review-loop',name:'实施 / 复核循环',roleTags:['implementation','review'],mode:'review-loop',maxRounds:2},
 ]);
 // Tools a non-builder member of a legacy (profile-less) plan may inherit.
 // A registered tool's static `capability` declaration (tools/tool.js) decides
@@ -40,7 +40,7 @@ export function validateTeamPlan(plan) {
  if(plan.templateId) {const template=TEAM_TEMPLATES.find(t=>t.id===plan.templateId);if(!template)throw new Error('Unknown team template');plan={...template,...plan};}
  const members=[...(plan.members || plan.roles || [])];
  if(!members.length||members.length>8||members.some(id=>typeof id!=='string'||!/^[A-Za-z0-9_-]{1,100}$/.test(id))||new Set(members).size!==members.length)throw new Error('团队需包含 1–8 个不同的 Agent ID。');
- const mode=plan.mode || (Number(plan.concurrency)>1&&!members.includes('builder')?'parallel':'sequential');
+ const mode=plan.mode || (Number(plan.concurrency)>1?'parallel':'sequential');
  if(!['sequential','parallel','review-loop'].includes(mode))throw new Error('Unknown orchestration mode');
  if(mode==='review-loop'&&members.length!==2)throw new Error('复核循环需要实施和复核两个成员。');
  const bounded=(value,fallback,min,max)=>Math.max(min,Math.min(max,Math.floor(Number(value)||fallback)));

@@ -1,3 +1,4 @@
+import { taskOwner } from '../../domain/task/taskService.js';
 import { validateTeamPlan } from '../../agents/team.js';
 import { randomUUID } from 'node:crypto';
 import { createRequestContext } from '../../runtime/requestContext.js';
@@ -14,6 +15,7 @@ export async function prepareTaskExecution(taskId, { skipBootstrap = false, team
   await updateStateAtomically(state => {
     const task = state.tasks.find(t => t.id === taskId);
     if (!task) throw new Error('找不到任务。');
+    taskOwner(state, task.owner);
     if (task.projectId && state.projects?.find(project => project.id === task.projectId)?.deletedAt) throw new Error('所属项目已删除，请重新分配任务后再执行。');
     if (task.status === 'running') throw new Error('任务正在执行，请先停止当前执行。');
     let chat = state.chats.find(c => c.id === task.execution?.chatId);

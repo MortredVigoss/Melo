@@ -1,3 +1,4 @@
+import { LOCAL_SERVICE_DEFAULTS } from './shared/localServices.js';
 import { requestEnvironment, currentRequestContext, runWithRequestContext } from './runtime/requestScope.js';
 import { createRequestContext } from './runtime/requestContext.js';
 import { dirname, join } from 'node:path';
@@ -6,14 +7,14 @@ import { getCodexAuthState } from './codexAuth.js';
 import { atomicWriteJson } from './storage.js';
 import { registerSearchTriggers as registerWebSearchTriggers } from './retrieval/searchRouter.js';
 import { resolveRuntimePaths } from './runtime/paths.js';
-import { DEFAULT_MODEL_CATALOGS, DEFAULT_MODELS_BY_AUTH_MODE } from './shared/modelCatalog.js';
+import { DEFAULT_MODEL_CATALOGS, DEFAULT_MODELS_BY_AUTH_MODE, PROVIDER_DEFAULTS } from './shared/modelCatalog.js';
 import { normalizeRuntimeConfig } from '../shared/agent/tools.js';
 
 export const OPENAI_API_BASE_URL = 'https://api.openai.com/v1';
 export const CODEX_OAUTH_BASE_URL = 'https://chatgpt.com/backend-api';
-export const LOCAL_MODEL_BASE_URL = 'http://127.0.0.1:11434/v1';
+export const LOCAL_MODEL_BASE_URL = LOCAL_SERVICE_DEFAULTS.ollama;
 
-export { DEFAULT_MODEL_CATALOGS, DEFAULT_MODELS_BY_AUTH_MODE } from './shared/modelCatalog.js';
+export { DEFAULT_MODEL_CATALOGS, DEFAULT_MODELS_BY_AUTH_MODE, PROVIDER_DEFAULTS } from './shared/modelCatalog.js';
 export const VALID_AUTH_MODES = Object.freeze(['local', 'api-key', 'codex']);
 
 // Until the user saves their own search settings, the desktop searches the
@@ -36,6 +37,7 @@ export const DEFAULT_CONFIG = Object.freeze({
   // independently of the main chat API (useful in codex/local modes).
   whisperApiKey: '',
   whisperBaseUrl: '',
+  customVoiceBaseUrl: LOCAL_SERVICE_DEFAULTS.customVoice,
   modelCatalogs: DEFAULT_MODEL_CATALOGS,
   // Per-domain Cookie strings for authenticated web fetching.
   // Keys are hostnames (e.g. "y.qq.com", "bilibili.com"), values are Cookie header strings.
@@ -43,7 +45,7 @@ export const DEFAULT_CONFIG = Object.freeze({
   domainCookies: {},
   // Text-to-speech settings (reuses whisperApiKey / whisperBaseUrl credentials)
   ttsVoice: 'nova',   // OpenAI TTS voice: alloy | ash | coral | echo | nova | onyx | shimmer
-  ttsModel: 'tts-1',  // tts-1 (fast) | tts-1-hd (higher quality) | gpt-4o-mini-tts
+  ttsModel: PROVIDER_DEFAULTS.media.tts,  // tts-1 (fast) | tts-1-hd (higher quality) | gpt-4o-mini-tts
   // MiniMax T2A V2 — takes priority over OpenAI TTS when both fields are set
   minimaxApiKey: '',      // MiniMax platform API key
   minimaxGroupId: '',    // MiniMax GroupId (from platform dashboard)

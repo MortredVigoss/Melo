@@ -39,7 +39,9 @@ test('sync token cannot approve capability grants; only explicit desktop approva
  await stop();await start();updated=profile(await boot());assert.equal(updated.capabilities.delegate,false);assert.ok(updated.pendingCapabilityChange);
  assert.equal((await request('/api/settings',{activeView:'agent',selectedAgentId:'research'})).status,200);
  browser=await launchTestChrome(chromium);
- const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(base);
+ const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));// This fixture asserts Chinese labels; set the preference explicitly, independent of the host locale.
+    assert.equal((await fetch(base + '/api/settings/local', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({preferences:{interfaceLanguage:'zh-CN'}})})).status,200);
+    await page.goto(base);
  await page.getByText('同步权限变更待桌面确认',{exact:true}).first().waitFor();
  const confirm=page.locator('[data-action="confirm-agent-settings"][data-accept="true"]').first();
  assert.equal(await confirm.isEnabled(),true);

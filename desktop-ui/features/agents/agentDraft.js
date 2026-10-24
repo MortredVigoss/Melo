@@ -89,6 +89,7 @@ export function agentDraftFromProfile(agent) {
     mood: agent?.mood,
     tools: toolIds,
     model: agent?.model || '',
+    replyLanguage: agent?.replyLanguage || '',
     systemPrompt: agent?.systemPrompt || '',
     voiceReplyMode: typeof agent?.voiceReplyMode === 'string' ? agent.voiceReplyMode : 'summary',
     edgeTtsVoice: typeof agent?.edgeTtsVoice === 'string' ? agent.edgeTtsVoice : '',

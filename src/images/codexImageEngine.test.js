@@ -873,7 +873,7 @@ test('both edit stages retain late requirements and reference generation does no
     return bodies.length===1 ? mockResponseFromEvents([sseEvent({type:'response.completed',response:{output:[{type:'message',content:[{text:'Style: purple. Preserve: square layout'}]}]}})]) : mockResponseFromEvents([sseEvent({type:'response.output_item.done',item:{type:'image_generation_call',result:fakePngBase64(2048),output_format:'png'}})]);
   }});
   assert.equal(bodies.length,2);assert.ok(result.buffer.length>1024);
-  for(const body of bodies){const parts=body.input[0].content;assert.ok(parts[0].text.includes(prompt));assert.equal(parts.filter(p=>p.type==='input_image').length,2);assert.match(parts[0].text,/Image 1: 风格/);assert.match(parts[0].text,/Image 2: 主体/);}
+  for(const body of bodies){const parts=body.input[0].content;assert.ok(parts[0].text.includes(prompt));assert.equal(parts.filter(p=>p.type==='input_image').length,2);assert.match(parts[0].text,/Image 1: visual style/);assert.match(parts[0].text,/Image 2: subject identity/);}
   assert.match(bodies[1].instructions,/create a new image/);
   assert.doesNotMatch(bodies[1].instructions,/Preserve composition/);
 });

@@ -26,7 +26,7 @@ export function budgetOperation({ action, budget = null, now, options = {}, usag
     case 'narrow': return narrowBudget(state, options);
     case 'extend': return { changes: extendBudget(state, options, now), budget: state };
     case 'describe': return describeBudgetReason(exhausted);
-    case 'reply': return budgetExhaustedReply(exhausted);
+    case 'reply': return budgetExhaustedReply(exhausted, options.locale);
     default: throw Object.assign(new Error('Unknown budget operation.'), { code: 'UNKNOWN_OPERATION' });
   }
 }

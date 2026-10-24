@@ -1,3 +1,5 @@
+import { resolveReplyLocale } from './locale.js';
+import { runtimeMessage } from './runtimeMessages.js';
 import { COMMON_TOOLS, validateCommonTool } from './tools.js';
 import { AGENT_LOOP_CONTRACT } from './loopContract.js';
 import { createRepeatGuard, toolCallFingerprint } from './repeatGuard.js';
@@ -144,10 +146,8 @@ export function advanceTurn(previous, event, now) {
   }
 }
 
-export function turnStopReply(reason, text = '') {
-  const cjk = new RegExp(AGENT_LOOP_CONTRACT.cjkPattern.source, AGENT_LOOP_CONTRACT.cjkPattern.flags).test(text);
-  if (reason === 'ROUND_LIMIT') return AGENT_LOOP_CONTRACT.loop.toolLimitReply[cjk ? 'zh' : 'en'];
-  return cjk
-    ? `本轮已停止（${reason || 'LOOP_STOPPED'}）。已有操作和回执已保留，尚未确认任务完成；请调整目标或补充信息后继续。`
-    : `This turn stopped (${reason || 'LOOP_STOPPED'}). Existing actions and receipts are preserved; task completion is unverified. Please adjust the request or supply more information.`;
+export function turnStopReply(reason, text = '', locale) {
+  const language = locale || resolveReplyLocale({ text });
+  if (reason === 'ROUND_LIMIT' && ['zh','en'].includes(language)) return AGENT_LOOP_CONTRACT.loop.toolLimitReply[language];
+  return runtimeMessage('stop', language, { reason: reason || 'LOOP_STOPPED' });
 }

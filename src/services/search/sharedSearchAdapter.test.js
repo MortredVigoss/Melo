@@ -82,3 +82,9 @@ test('Node compatibility preserves legacy requests but explicit unavailable sear
   const unavailable = await tool.run({ query: 'fixture' }, { config: { agentRuntime: { search: { backend: 'none' } } } });
   assert.equal(unavailable.ok, false); assert.equal(calls, 1);
 });
+
+test('a backend returning too many sources cannot exceed the configured result count',async t=>{
+ const server=await fixture(t,(_,response)=>response.end(JSON.stringify({results:Array.from({length:8},(_,i)=>({title:'Result '+i,url:'https://fixture.invalid/'+i}))})));
+ const result=await createSharedSearchTool().run({query:'fixture',maxResults:8},{fixture:true,config:{agentRuntime:{search:{backend:'http',endpoint:server.endpoint,maxResults:2}}}});
+ assert.equal(JSON.parse(server.requests[0].body).maxResults,2);assert.equal(JSON.parse(result.output).results.length,2);assert.equal(JSON.parse(result.output).truncated,true);
+});

@@ -162,7 +162,7 @@ export async function latestProcessableDiscordMessage(message, channel) {
 
 export function hasDiscordInvokePrefix(text = '') {
   // Same invoke vocabulary as Telegram — /ask, /melo, "melo:" prefix.
-  return /^(?:\/(?:ask|melo)\b|melo[:,，\s])/i.test(String(text || '').trim());
+  return /^\/(?:ask|melo)\b/i.test(String(text || '').trim());
 }
 
 export function collectDiscordBotAliases(profile, discordChannel, botUserId = '') {
@@ -193,7 +193,6 @@ export function collectDiscordBotAliases(profile, discordChannel, botUserId = ''
     }
   }
 
-  aliases.add('melo');
 
   const nicknames = String(discordChannel?.nicknames || '')
     .split(/[,，;；]/)

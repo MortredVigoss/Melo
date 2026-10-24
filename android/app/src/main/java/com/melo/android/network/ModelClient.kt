@@ -31,6 +31,7 @@ class ModelClient(private val debug: Boolean, val http: OkHttpClient = OkHttpCli
     .readTimeout(90, TimeUnit.SECONDS).callTimeout(15, TimeUnit.MINUTES).build()) {
     suspend fun reply(connection: Connection, key: String, messages: List<Message>, instructions: String,
                       imageData: (Attachment) -> String, onDelta: (String) -> Unit): ModelReply {
+        require(connection.modelCapabilities[connection.model]?.jsonObject?.get("vision")?.jsonPrimitive?.booleanOrNull != false || messages.none { message -> message.attachments.any { it.mime.startsWith("image/") } }) { "此模型已设为不支持图片输入，请选择视觉模型或修改能力设置。" }
         ConnectionPolicy.validate(connection, key, debug)
         if (connection.protocol == "fixture") {
             val answer = "这是本地 Fixture 回复，用于验证 Melo Android 的聊天、取消、存储和后台恢复。\n\n收到：${messages.lastOrNull { it.role == "user" }?.content.orEmpty()}\n\n没有调用真实模型服务。"

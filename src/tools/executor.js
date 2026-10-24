@@ -72,7 +72,7 @@ export async function executeTool(tool, args, options = {}) {
   catch(error) {return finalizeToolResult({ok:false,error:error.code || 'WORKSPACE_UNAVAILABLE',output:error.message,meta:{denied:true,executionStarted:false}});}
   const ownedWorkspace=await ownedWorkspaceSafety(resolved,workspacePath);
   const permissionScope=await operationScope(resolved,workspacePath,capabilityScope.agentId);
-  const requestContext=Object.freeze({...resolved,workspacePath,ownedWorkspace,capabilityScope,permissionScope});
+  const requestContext=Object.freeze({...resolved,config:options.config || resolved.config,workspacePath,ownedWorkspace,capabilityScope,permissionScope});
   const scopedOptions={...options,workspacePath,requestContext,capabilities:capabilityScope.capabilities,agentId:capabilityScope.agentId,
     allowedToolIds:capabilityScope.allowedToolIds,taskId:resolved.turnBinding?.taskId || null};
   const result=await runWithRequestContext(requestContext,()=>executeScopedTool(tool,args,scopedOptions));
@@ -100,7 +100,7 @@ async function executeScopedTool(tool,args,options) {
   };
   observe('queued');
   try {
-    const ticket = reserveTaskOperation({home:requestContext?.home || options.meloHome || resolveRuntimePaths().home,taskId:options.taskId,tool,args,workspacePath:options.workspacePath,invocationId:`${requestContext?.runId || 'direct'}:${id}`});
+    const ticket = reserveTaskOperation({locale:options.config?.replyLanguage,home:requestContext?.home || options.meloHome || resolveRuntimePaths().home,taskId:options.taskId,tool,args,workspacePath:options.workspacePath,invocationId:`${requestContext?.runId || 'direct'}:${id}`});
     let result;
     try { result = ticket?.result || await runObservedTool(tool, args, { ...options, sseEmitter:emit, observe }); }
     catch(error) { ticket?.finish?.({ok:false,meta:{executionStarted}}); throw error; }

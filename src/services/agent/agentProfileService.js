@@ -228,7 +228,7 @@ export const starterCapabilities = () => capabilitiesFromAtoms(CAPABILITY_ELEVAT
 // independent). Persona-like fields (instructions, description, mood, voice)
 // only when the user ticks it; channels / bot tokens, avatar, name and the
 // portable-identity flag never.
-const BASED_ON_SETTINGS = ['collaboration', 'contextSources', 'model', 'tools', 'enabledSkillIds', 'enabledConnectorIds', 'enabledMcpServerIds'];
+const BASED_ON_SETTINGS = ['replyLanguage', 'collaboration', 'contextSources', 'model', 'tools', 'enabledSkillIds', 'enabledConnectorIds', 'enabledMcpServerIds'];
 const BASED_ON_PERSONA = ['instructions', 'rolePrompt', 'identity', 'soulMd', 'systemPrompt', 'description', 'laneLabel', 'mood',
   'voiceReplyMode', 'voicePersonality', 'minimaxVoiceId', 'edgeTtsVoice', 'ttsSpeed', 'ttsPitch', 'ttsVol'];
 

@@ -31,6 +31,10 @@ struct ExecutionStage: Codable, Equatable, Identifiable {
     var status: String
     var input = ""
     var output = ""
+    var messageId: String?
+    var messageParams: [String: SyncValue]?
+    var outputMessageId: String?
+    var outputMessageParams: [String: SyncValue]?
     var model: String?
     var returnedModel: String?
     var startedAt: String?

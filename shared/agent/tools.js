@@ -40,29 +40,33 @@ export function normalizeRuntimeConfig(input = {}) {
     endpoint: suppliedEndpoint || (provider === 'brave' ? 'https://api.search.brave.com/res/v1/web/search' : ''),
     credentialRef: provider === 'brave' ? 'search' : typeof search.credentialRef === 'string' ? search.credentialRef.trim().slice(0, 128) : '',
     browserFallback: search.browserFallback === true,
+    ...(Number.isFinite(Number(search.maxResults)) && search.maxResults != null ? {maxResults:Math.min(8,Math.max(1,Math.floor(Number(search.maxResults))))} : {}),
+    ...(Number.isFinite(Number(search.timeoutMs)) && search.timeoutMs != null ? {timeoutMs:Math.min(120000,Math.max(3000,Math.floor(Number(search.timeoutMs))))} : {}),
   } };
 }
 
 export function searchRequest(args, config) {
   validateCommonTool('web_search', args);
   const search = normalizeRuntimeConfig(config).search;
+  const maxResults = Math.min(args.maxResults || search.maxResults || 6, search.maxResults || 8);
   if (search.backend !== 'http' || !search.endpoint) throw Object.assign(new Error('No HTTP search backend.'), { code: 'SEARCH_UNAVAILABLE' });
-  if (search.provider === 'brave') return { method: 'GET', url: search.endpoint + (search.endpoint.includes('?') ? '&' : '?') + 'q=' + encodeURIComponent(args.query) + '&count=' + (args.maxResults || 6), credentialHeader: 'X-Subscription-Token', credentialPrefix: '', backend: 'brave' };
-  return { method: 'POST', url: search.endpoint, body: { query: args.query, maxResults: args.maxResults || 6 }, credentialHeader: 'Authorization', credentialPrefix: 'Bearer ', backend: 'http' };
+  if (search.provider === 'brave') return { method: 'GET', url: search.endpoint + (search.endpoint.includes('?') ? '&' : '?') + 'q=' + encodeURIComponent(args.query) + '&count=' + maxResults, credentialHeader: 'X-Subscription-Token', credentialPrefix: '', backend: 'brave' };
+  return { method: 'POST', url: search.endpoint, body: { query: args.query, maxResults }, credentialHeader: 'Authorization', credentialPrefix: 'Bearer ', backend: 'http' };
 }
 
-export function normalizeSearchResponse(value, { fetchedAt, backend = 'http' } = {}) {
+export function normalizeSearchResponse(value, { fetchedAt, backend = 'http', maxResults = 8 } = {}) {
+  const limit = Number.isFinite(Number(maxResults)) ? Math.min(8,Math.max(1,Math.floor(Number(maxResults)))) : 8;
   if (backend === 'brave' && Array.isArray(value?.web?.results)) value = { results: value.web.results.map(row => ({ title: row.title, url: row.url, snippet: row.description })) };
   const error = code => ({ ok: false, status: 'error', code, error: code, results: [], backend, fetchedAt });
   if (!value || !Array.isArray(value.results)) return error('INVALID_SEARCH_RESPONSE');
-  const results = value.results.slice(0, 8).filter(row => row && typeof row.url === 'string' && /^https?:\/\/[^\s/]+/iu.test(row.url)).map(row => ({
+  const results = value.results.slice(0, limit).filter(row => row && typeof row.url === 'string' && /^https?:\/\/[^\s/]+/iu.test(row.url)).map(row => ({
     title: String(row.title || row.url).slice(0, 200), url: row.url.slice(0, 4000),
     snippet: typeof row.snippet === 'string' ? row.snippet.slice(0, 2000) : '',
     ...(typeof row.text === 'string' ? { text: row.text.slice(0, 5000) } : {}),
     ...(typeof row.observedAt === 'string' ? { observedAt: row.observedAt.slice(0, 64) } : {}),
   }));
   if (value.results.length && !results.length) return error('INVALID_SEARCH_RESPONSE');
-  return { ok: true, status: results.length ? 'ok' : 'empty', ...(results.length ? {} : { code: 'NO_RESULTS', hint: 'Search ran successfully but found no sources; change the query or explain the limitation rather than repeating the same request.' }), results, backend, fetchedAt, freshness: 'unknown', truncated: value.results.length > 8,
+  return { ok: true, status: results.length ? 'ok' : 'empty', ...(results.length ? {} : { code: 'NO_RESULTS', hint: 'Search ran successfully but found no sources; change the query or explain the limitation rather than repeating the same request.' }), results, backend, fetchedAt, freshness: 'unknown', truncated: value.results.length > limit,
     evidence: 'Only returned sources were retrieved. Fetch time is not proof of current business status; retain uncertainty.' };
 }
 

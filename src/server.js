@@ -2,6 +2,7 @@
 // relying on the desktopStore facade's import side effect (audit A-11).
 import { bootstrapBuiltinTools } from './tools/registry.js';
 bootstrapBuiltinTools();
+import { customVoiceService } from './shared/localServices.js';
 import {loadConfig} from './config.js';
 import { isAgentChannelAvailable } from './shared/channelAvailability.js';
 import { createRouteRegistry } from './http/routeRegistry.js';
@@ -411,6 +412,7 @@ const coreRoutes = createRouteRegistry([
       }
       return;
     } },
+  { method: 'GET', paths: ["/shared/agent/providerDefaults.js", "/shared/agent/locale.js", "/shared/agent/runtimeMessages.js"], auth: 'local-read', handler: async ({response,url}) => { response.writeHead(200, {'content-type':'text/javascript; charset=utf-8','cache-control':'no-cache'}); createReadStream(join(rootDir,'shared','agent',url.pathname.split('/').at(-1))).pipe(response); } },
   { method: 'GET', paths: ["/shared/localPreferences.js"], auth: 'local-read', handler: async ({request,response,url,requireLocalOrigin}) => { response.writeHead(200, {'content-type':'text/javascript; charset=utf-8','cache-control':'no-cache'}); createReadStream(join(rootDir,'src','domain','settings','localPreferences.js')).pipe(response); return; } },
   { method: 'GET', paths: ["/shared/urlDetector.js","/shared/textUrls.js"], auth: 'local-read', handler: async ({request,response,url,requireLocalOrigin}) => {
       const absPath = url.pathname.endsWith('/textUrls.js')
@@ -435,7 +437,7 @@ const coreRoutes = createRouteRegistry([
       }
       return;
     } },
-  { method: 'GET', paths: ["/shared/channelAvailability.js","/shared/minimaxVoiceResolver.js","/shared/modelCatalog.js","/shared/executionScene.js","/shared/executionMetadata.js","/shared/replyDocument.js","/shared/sessionEvents.js","/shared/conversationTopics.js"], auth: 'local-read', handler: async ({request,response,url,requireLocalOrigin}) => {
+  { method: 'GET', paths: ["/shared/localServices.js","/shared/channelAvailability.js","/shared/minimaxVoiceResolver.js","/shared/modelCatalog.js","/shared/executionScene.js","/shared/executionMetadata.js","/shared/replyDocument.js","/shared/sessionEvents.js","/shared/conversationTopics.js"], auth: 'local-read', handler: async ({request,response,url,requireLocalOrigin}) => {
       const absPath = join(rootDir, 'src', 'shared', url.pathname.split('/').at(-1));
       try {
         const fileStat = await stat(absPath);
@@ -1032,29 +1034,32 @@ server.listen(port, host, () => {
 // restart only kills the process this server spawned (by pid), never a
 // stranger on the port.
 let _voicePackProcess = null;
+let _voicePackBaseUrl = '';
 async function voicePackInstalled() {
   const { access } = await import('node:fs/promises');
   try { await access(join(rootDir, 'voice-packs', 'custom-voice', 'start.sh')); return true; }
   catch { return false; }
 }
-async function startVoicePackServers({ force = false } = {}) {
-  if (process.env.MELO_TEST_MODE === '1') return;
+async function startVoicePackServers({ force = false, service } = {}) {
+  const environment = { ...process.env };
+  if (environment.MELO_TEST_MODE === '1') return;
+  service ||= customVoiceService(await loadConfig());
   const { spawn } = await import('node:child_process');
 
   const voicePackDir = join(rootDir, 'voice-packs', 'custom-voice');
   const startScript = join(voicePackDir, 'start.sh');
-  const healthUrl = 'http://127.0.0.1:7860/health';
+  const { healthUrl, host, port } = service;
 
   if (!(await voicePackInstalled())) return; // no voice pack installed, skip silently
 
   if (force) {
     // Restart only the server we started ourselves.
-    if (_voicePackProcess && _voicePackProcess.exitCode === null) {
+    if (_voicePackProcess && _voicePackProcess.exitCode === null && _voicePackBaseUrl === service.baseUrl) {
       try { _voicePackProcess.kill('SIGTERM'); process.stdout.write('[voice-pack] Stopped the F5-TTS process started by this server.\n'); } catch {}
       // Brief pause to let the port free up
       await new Promise(r => setTimeout(r, 1500));
     } else {
-      process.stderr.write('[voice-pack] F5-TTS watchdog: port 7860 is unhealthy but the listener was not started by this server; not killing it. Stop it manually if it is a stale voice-pack process.\n');
+      process.stderr.write('[voice-pack] F5-TTS watchdog: configured endpoint is unhealthy but the listener was not started by this server; not killing it. Stop it manually if it is a stale voice-pack process.\n');
       return;
     }
   } else {
@@ -1072,10 +1077,11 @@ async function startVoicePackServers({ force = false } = {}) {
   const proc = spawn('bash', [startScript], {
     detached: false,
     stdio: 'ignore',
-    env: { ...process.env },
+    env: { ...environment, F5_TTS_HOST: host, F5_TTS_PORT: port, GRADIO_SERVER_NAME: host, GRADIO_SERVER_PORT: port },
   });
   proc.unref();
   _voicePackProcess = proc;
+  _voicePackBaseUrl = service.baseUrl;
 
   // Poll until healthy (max 120s) — fire-and-forget poll when not forced
   const deadline = Date.now() + 120_000;
@@ -1100,15 +1106,16 @@ async function startVoicePackServers({ force = false } = {}) {
 // Every 5 minutes, ping the health endpoint. If it's down, restart automatically.
 async function scheduleF5TtsWatchdog() {
   if (process.env.MELO_TEST_MODE === '1' || !(await voicePackInstalled())) return;
+  const service = customVoiceService(await loadConfig());
   setTimeout(async () => {
     try {
       // 10s timeout — F5-TTS event loop is now free during inference (executor fix),
       // so 10s is generous enough to distinguish "busy" from "actually down".
-      const res = await fetch('http://127.0.0.1:7860/health', { signal: AbortSignal.timeout(10_000) });
+      const res = await fetch(service.healthUrl, { signal: AbortSignal.timeout(10_000) });
       if (!res.ok) throw new Error('unhealthy');
     } catch {
       process.stderr.write('[voice-pack] F5-TTS watchdog: server down, restarting...\n');
-      startVoicePackServers({ force: true }).catch(() => {});
+      startVoicePackServers({ force: true, service }).catch(() => {});
     }
     scheduleF5TtsWatchdog(); // reschedule
   }, 5 * 60 * 1000); // every 5 minutes

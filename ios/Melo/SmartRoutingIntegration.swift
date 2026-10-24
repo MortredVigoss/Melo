@@ -14,8 +14,8 @@ extension ChatStore {
         let selected = choice.flatMap { LLMConnection.resolve($0, in: connections) }
         let currentID = choice?.connectionID == "chatgpt" || (choice == nil && defaultIsCodex) ? "chatgpt" : selected?.id ?? connections.first(where: { WorkspaceProjection.base($0.baseURL) == WorkspaceProjection.base(defaultEndpoint) })?.id ?? ""
         let defaultModel = currentID == "chatgpt" ? choice?.model ?? defaults.string(forKey: "chatgptModel") ?? "" : choice?.model ?? connections.first(where: { $0.id == currentID })?.model ?? ""
-        var candidates = connections.flatMap { c in Array(Set((c.models ?? []) + [c.model])).filter { !$0.isEmpty }.map { PhoneRoutingCandidate(connectionId: c.id, model: $0, name: c.name, contextWindow: c.contextWindows?[$0] ?? 0, available: !c.key.isEmpty) } }
-        if account.signedIn { candidates += Array(Set(account.models.map(\.slug) + [defaults.string(forKey: "chatgptModel") ?? ""])).filter { !$0.isEmpty }.map { PhoneRoutingCandidate(connectionId: "chatgpt", model: $0, name: "Codex") } }
+        var candidates = connections.flatMap { c in Array(Set((c.models ?? []) + [c.model])).filter { !$0.isEmpty }.map { PhoneRoutingCandidate(connectionId: c.id, model: $0, name: c.name, capabilities: ["tools":true].merging(c.capabilities(for: $0)) { _, declared in declared }, contextWindow: c.contextWindows?[$0] ?? 0, available: !c.key.isEmpty) } }
+        if account.signedIn { candidates += Array(Set(account.models.map(\.slug) + [defaults.string(forKey: "chatgptModel") ?? ""])).filter { !$0.isEmpty }.map { model in PhoneRoutingCandidate(connectionId: "chatgpt", model: model, name: "Codex", capabilities: account.models.first(where: { $0.slug == model })?.input_modalities.map { ["tools":true,"vision":$0.contains("image")] } ?? ["tools":true]) } }
         let session = try PhoneRoutingSession(policy: policy, mode: mode, connectionId: currentID, defaultModel: defaultModel, candidates: candidates,
                                              text: history.last(where: { $0.role == "user" })?.content ?? "", history: history.map { ["role": $0.role, "content": $0.content] }, attachments: images.map { _ in ["kind": "image"] })
         let capturedConnections = connections
@@ -40,7 +40,7 @@ extension ChatStore {
             }
             guard let connection = capturedConnections.first(where: { $0.id == id }) else { throw MeloError.message("所选智能模型的连接已不可用。") }
             let capacity = PhoneContextBudget(capacity: connection.contextWindows?[model])
-            let transport = try PhoneContextBudget.$current.withValue(capacity) { try Network.routingTransport(messages: messages, endpoint: connection.endpoint(), model: model, token: connection.key, instructions: instructions, apiProtocol: connection.apiProtocol, imageInputs: images, tools: tools, onObservation: observe) }
+            let transport = try PhoneContextBudget.$current.withValue(capacity) { try Network.routingTransport(messages: messages, endpoint: connection.endpoint(), model: model, token: connection.key, instructions: instructions, apiProtocol: connection.apiProtocol, imageInputs: images, modelCapabilities: connection.capabilities(for: model), tools: tools, onObservation: observe) }
             transport.routingContextLimit = capacity.input
             return transport
         }

@@ -218,6 +218,7 @@ function renderAgentWorkbench(selected) {
         <section class="agent-settings-section agent-identity-section">
         <div class="agent-avatar-editor">${renderAgentAvatar({...selected,...draft}, escapeHtml, 40)}<label class="small-button agent-file-button">上传头像<input type="file" accept="image/png,image/jpeg,image/webp" data-agent-avatar="${escapeHtml(selected.id)}" aria-label="上传Agent头像"></label>${agentDraftFor(selected)?.avatarData?ui`<button type="button" class="small-button" data-action="clear-agent-avatar" data-agent-id="${escapeHtml(selected.id)}">恢复默认</button>`:''}<span>头像只保存在 Melo，预览后点击保存修改生效。</span></div>
         ${renderAgentPersonaFields(selected, draft)}
+        <label class="label">回复语言<select class="config-select" name="replyLanguage">${[['','跟随用户消息'],['zh','中文'],['en','English'],['ja','日本語'],['ko','한국어'],['es','Español']].map(([value,label])=>`<option value="${value}" ${draft?.replyLanguage===value?'selected':''}>${escapeHtml(t(label))}</option>`).join('')}</select></label>
 
         <label class="label">
           模型覆盖

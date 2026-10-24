@@ -1,3 +1,4 @@
+const sceneMessageParams = value => Object.fromEntries(Object.entries(value || {}).filter(([k,v])=>/^[a-zA-Z][a-zA-Z0-9_]{0,39}$/.test(k) && (typeof v === 'string' || typeof v === 'number' && Number.isFinite(v))).slice(0,16).map(([k,v])=>[k,typeof v === 'string' ? v.slice(0,300) : v]));
 export { sessionEvents } from './sessionEvents.js';
 import { executionMetadata, publicSummaryText } from './executionMetadata.js';
 
@@ -140,6 +141,10 @@ export function applyExecutionEvent(scene, event) {
     let stage = scene.pipeline.find(item => item.id === event.id);
     if (!stage) { stage = { id: event.id, module: event.module === 'compute' ? 'compute' : 'create', name: sceneText(event.name, 100), status: 'queued' }; scene.pipeline.push(stage); }
     if (!TERMINAL_SCENE_STATUSES.includes(stage.status)) {
+      if (event.output !== undefined && !event.outputMessageId) { delete stage.outputMessageId; delete stage.outputMessageParams; }
+      if (event.name !== undefined && !event.messageId) { delete stage.messageId; delete stage.messageParams; }
+      if (typeof event.outputMessageId === 'string') { stage.outputMessageId = sceneText(event.outputMessageId, 100); stage.outputMessageParams = sceneMessageParams(event.outputMessageParams); }
+      if (typeof event.messageId === 'string') { stage.messageId = sceneText(event.messageId, 100); stage.messageParams = sceneMessageParams(event.messageParams); }
       for (const key of ['status', 'name', 'input', 'output', 'model', 'returnedModel']) {
         if (event[key] !== undefined) stage[key] = sceneText(event[key], key === 'output' && event.channel === 'reasoning-summary' ? 24000 : 1000);
       }

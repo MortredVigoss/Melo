@@ -1,3 +1,5 @@
+import { connectionForModel, resolvedModelCapabilities, normalizeModelCapabilities } from '../shared/agent/modelCapabilities.js';
+import { multilingualImageAction } from '../shared/agent/imageLanguage.js';
 import { normalizeUsage } from './runtime/usage.js';
 import { modelReplyText } from './tools/functionCalling.js';
 import { isToolProtocolMessage, renderToolMessage } from './tools/toolProtocol.js';
@@ -147,6 +149,7 @@ export function withTurnGuidance(input, guidance) {
 // patterns import for why we don't pull the original function.
 function _detectImageIntentLocal(text, { hasInputImage = false } = {}) {
   if (typeof text !== 'string' || !text.trim()) return false;
+  if (multilingualImageAction(text, hasInputImage)) return true;
   if (IMAGE_GEN_INTENT_PATTERN.test(text)) return true;
   if (!hasInputImage) return false;
   if (IMAGE_EDIT_INTENT_PATTERN.test(text)) return true;
@@ -472,7 +475,6 @@ function normalizeCodexReasoningEffort(rawValue, model) {
 }
 
 function resolveFastCodexReasoningEffort(model, fallback = DEFAULT_CODEX_FAST_REASONING_EFFORT) {
-  if (/^gpt-6-luna(?:-|$)/i.test(model)) return 'none';
   return normalizeReasoningEffort(model, requestEnvironment().MELO_CODEX_FAST_REASONING_EFFORT || fallback, fallback);
 }
 
@@ -1035,6 +1037,7 @@ async function readCodexErrorResponse(response) {
 export async function createCodexResponsesReply({
   baseUrl,
   model,
+  modelCapabilities = {},
   systemPrompt,
   messages,
   signal,
@@ -1052,12 +1055,13 @@ export async function createCodexResponsesReply({
   _fetchImpl,
 } = {}) {
   const capturedHome = resolveRuntimePaths().home;
+  nativeImageGenerationEnabled = nativeImageGenerationEnabled && modelCapabilities.imageGen !== false;
   const endpoint = resolveCodexResponsesEndpoint(baseUrl);
   const sessionId = createCodexSessionId();
   const timeoutMs = resolveCodexRequestTimeoutMs();
   const reasoningEffort = normalizeCodexReasoningEffort(requestEnvironment().MELO_CODEX_REASONING_EFFORT, model);
   const isFastProfile = providerProfile === 'fast';
-  const effectiveReasoningEffort = isFastProfile ? resolveFastCodexReasoningEffort(model) : reasoningEffort;
+  const effectiveReasoningEffort = normalizeReasoningEffort(model, isFastProfile ? resolveFastCodexReasoningEffort(model) : reasoningEffort, reasoningEffort, modelCapabilities);
   const record = createCapabilityRecorder({ config: { authMode: 'codex', model } });
   const credential = await _credentialProvider();
   if (!credential.loggedIn) {
@@ -1143,10 +1147,7 @@ export async function createCodexResponsesReply({
     text: { verbosity: isFastProfile ? 'low' : DEFAULT_CODEX_TEXT_VERBOSITY },
     include: ['reasoning.encrypted_content', ...(nativeWebSearchEnabled ? ['web_search_call.action.sources'] : [])],
     prompt_cache_key: promptCacheKey,
-    reasoning: {
-      effort: effectiveReasoningEffort,
-      summary: 'auto',
-    },
+    ...(effectiveReasoningEffort ? { reasoning: { effort: effectiveReasoningEffort, summary: 'auto' } } : {}),
     ...(tools.length
       ? {
           tool_choice: 'auto',
@@ -1261,9 +1262,11 @@ export async function discoverAvailableModels({
   apiKey,
   baseUrl,
   model,
+  onModelMetadata,
+  signal,
 }) {
   if (authMode === 'codex') {
-    const catalog = await readCodexModelCatalog();
+    const catalog = await readCodexModelCatalog({ onModelMetadata });
     return uniqueModels(catalog.length ? catalog : DEFAULT_DISCOVERED_MODELS.codex, model);
   }
 
@@ -1281,7 +1284,7 @@ export async function discoverAvailableModels({
       ...(apiProtocol === 'anthropic' || new URL(normalizedUrl).hostname === 'api.anthropic.com' ? { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' } : {}),
       ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
     },
-    signal: AbortSignal.timeout(15000),
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000),
   });
 
   if (!response.ok) {
@@ -1292,6 +1295,7 @@ export async function discoverAvailableModels({
   }
 
   const payload = await response.json();
+  onModelMetadata?.(Array.isArray(payload?.data) ? payload.data : []);
   const discovered = Array.isArray(payload?.data)
     ? payload.data
         .map(item => String(item?.id || '').trim())
@@ -1306,6 +1310,8 @@ export async function discoverAvailableModels({
 }
 
 export async function createOpenAICompatibleReply(options) {
+  options = { ...options, modelCapabilities: { ...normalizeModelCapabilities(options.modelCapabilities), ...resolvedModelCapabilities(connectionForModel(options), options.model) } };
+  if (options.modelCapabilities?.vision === false && messagesHaveInputImages(options.messages)) throw Object.assign(new Error('This model is configured without image input. Choose a vision model or update its capabilities.'), { code: 'MODEL_VISION_DISABLED' });
   const record = createCapabilityRecorder({ config: options });
   let metadata = {};
   // `timeoutMs` (run budget, design audit C1): the caller's remaining run
@@ -1344,6 +1350,7 @@ async function requestOpenAICompatibleReply({
   apiKey,
   baseUrl,
   model,
+  modelCapabilities = {},
   systemPrompt,
   messages,
   signal,
@@ -1383,6 +1390,7 @@ async function requestOpenAICompatibleReply({
     return await createCodexResponsesReply({
         baseUrl,
         model,
+        modelCapabilities,
         systemPrompt,
         messages,
         signal,
@@ -1430,7 +1438,7 @@ async function requestOpenAICompatibleReply({
   const resolvedMessages = await resolveAudioAttachments(normalizeProviderMessages(messages), { signal });
   const chatPromptCacheKey = apiPromptCacheKey({ baseUrl, model, cacheScope, providerProfile, endpoint: 'chat-completions' });
   const payload = {
-    ...fastGenerationOptions({ model, baseUrl, maxTokens, providerProfile }),
+    ...fastGenerationOptions({ model, baseUrl, maxTokens, providerProfile, modelCapabilities }),
     model,
     messages: [
       { role: 'system', content: systemPrompt },

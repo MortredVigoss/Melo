@@ -48,7 +48,7 @@ test('finalize: a blank model reply is replaced by the channel-appropriate fallb
   const desktop = await harness().finalize(base({ reply: '   ' }));
   assert.match(desktop.normalizedReply.content, /wasn't able to generate a response/);
   const remote = await harness({ isRemoteChannel: true, background: true }).finalize(base({ reply: '' }));
-  assert.match(remote.normalizedReply.content, /could not generate a response/);
+  assert.match(remote.normalizedReply.content, /generate a response/);
   assert.deepEqual(remote.normalizedReply.citations, [], 'remote channels never carry citation pins');
 });
 

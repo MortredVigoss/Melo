@@ -236,13 +236,13 @@ export function createPrepareNode(turn) {
       // second pass would otherwise share (and lose) one spinner (audit U2).
       const stageId = compactPasses++ === 0 ? 'compact:running' : `compact:running:${compactPasses}`;
       const stage = { kind: 'pipeline', id: stageId, module: 'compute', name: '压缩早期对话' };
-      sseEmitter?.('execution_event', { ...stage, status: 'running', output: `正在把最早的 ${compactPlan.compactedCount} 条消息压成摘要（通常后台已完成，这是兜底）。` });
+      sseEmitter?.('execution_event', { ...stage, status: 'running', outputMessageId:'output.compactStart',outputMessageParams:{count:compactPlan.compactedCount},output: `正在把最早的 ${compactPlan.compactedCount} 条消息压成摘要（通常后台已完成，这是兜底）。` });
       const fail = async () => {
         // Persisted (audit L5): the MAX_COMPACT_FAILURES breaker only
         // trips when failures survive the turn.
         chat.compactFailures = (chat.compactFailures || 0) + 1;
         await persistCompactFailure(chat, { home }).catch(() => {});
-        sseEmitter?.('execution_event', { ...stage, status: 'failed', output: `摘要失败（连续 ${chat.compactFailures} 次）；本轮继续使用原始历史。` });
+        sseEmitter?.('execution_event', { ...stage, status: 'failed', outputMessageId:'output.compactFailure',outputMessageParams:{count:chat.compactFailures},output: `摘要失败（连续 ${chat.compactFailures} 次）；本轮继续使用原始历史。` });
       };
       try {
         const { summary, source } = await compactConversationDetailed(compactPlan.messages, {
@@ -263,7 +263,7 @@ export function createPrepareNode(turn) {
           await persistCompactSnapshot(chat, compactPlan, { home });
           modelMessages = buildModelMessagesFromChat(modelChat(), { windowTokens: historyWindowTokens, toolChainProtocol });
           compactedThisTurn = true;
-          sseEmitter?.('execution_event', { ...stage, status: 'completed', output: `已把 ${compactPlan.coveredCount || compactPlan.messages.length} 条消息压成一张话题卡（${source === 'rule' ? '抽取式' : '模型'}摘要）。` });
+          sseEmitter?.('execution_event', { ...stage, status: 'completed', outputMessageId:'output.compactDone',outputMessageParams:{count:compactPlan.coveredCount || compactPlan.messages.length},output: `已把 ${compactPlan.coveredCount || compactPlan.messages.length} 条消息压成一张话题卡（${source === 'rule' ? '抽取式' : '模型'}摘要）。` });
           return true;
         }
         await fail();
@@ -497,7 +497,7 @@ export function createPrepareNode(turn) {
       topicExcerpts: topicExcerpts.text,
       toolsPrompt,
       sessionMemoryBlock,
-      languageConstraint: buildLanguageConstraint(latestUserMessage),
+      languageConstraint: buildLanguageConstraint(latestUserMessage, config.replyLanguage),
       dateContext: buildDateChangeNote(chat.messages),
       vizInstructions,
       citationInstructions,

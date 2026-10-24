@@ -19,9 +19,10 @@ test('current defaults migrate only the old default catalog and retain custom mo
   const custom = ['my-model', 'gpt-5.5'];
   assert.deepEqual(migrateCodexCatalog(custom), custom);
   for (const model of ['gpt-6.1-sol', 'gpt-6-astra']) {
-    assert.equal(modelSupportsVision(model), true);
-    assert.equal(normalizeReasoningEffort(model, 'minimal'), 'low');
-    assert.equal(normalizeReasoningEffort(model, 'none'), 'low');
+    assert.equal(modelSupportsVision(model), undefined);
+    assert.equal(modelSupportsVision(model, null, {modelMetadata:{[model]:{vision:true}}}), true);
+    assert.equal(normalizeReasoningEffort(model, 'minimal', 'low', {reasoningEfforts:['low','medium','high','max']}), 'low');
+    assert.equal(normalizeReasoningEffort(model, 'none', 'low', {reasoningEfforts:['low','medium','high','max']}), 'low');
     assert.equal(normalizeReasoningEffort(model, 'max'), 'max');
     assert.equal(normalizeReasoningEffort(model, 'ultra'), 'medium');
   }
@@ -63,7 +64,7 @@ test('Sol and Astra payloads keep selected model, normalize effort and expose th
     for (const [requested, expected] of [['minimal', 'low'], ['max', 'max'], ['high', 'high']]) {
       let seen;
       await runWithRequestContext(createRequestContext({ env: { MELO_CODEX_REASONING_EFFORT: requested } }), () => createCodexResponsesReply({
-        model, systemPrompt: 'Reply OK.', messages: [{ role: 'user', content: 'test' }], nativeWebSearchEnabled: false,
+        model, modelCapabilities:{reasoning:true,reasoningEfforts:['low','medium','high','max'],defaultReasoningEffort:'low'}, systemPrompt: 'Reply OK.', messages: [{ role: 'user', content: 'test' }], nativeWebSearchEnabled: false,
         onModelMetadata: metadata => { seen = metadata; },
         _credentialProvider: async () => ({ loggedIn: true, accessToken: 'test', accountId: 'test' }),
         _fetchImpl: async (url, options) => {
