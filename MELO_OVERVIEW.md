@@ -384,3 +384,21 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 用户授权按 A–G 审计实施，基准 `5afb0be`；实际落点、配置登记与兼容边界见 [专项记录](docs/portability-hardening-20261024.md)。连接目录/实测/声明决定视觉和推理行为，默认模型集中；自定义声音按类型/配置地址识别，保留转写配置。任务 owner 校验现有 Agent，团队明确选成员，频道别名来自配置。语言出口/事件 ID 与参数、三端能力 UI、五语图片意图、搜索配置与逐请求隔离已接线；项目回复语言的保存、继承、恢复自动经真实冷加载验证。
 最终 `npm test -- --base 5afb0be` GREEN：4,578 JS、37 Swift、设置浏览器、Android JVM/Lint/Debug/Release、生成物及依赖检查，证据 `.tmp/test-runs/run-pHqzcA/report.json`。完整 iOS Simulator App 构建通过（`.tmp/portability-20261024/ios-frozen-build.log`）；各专项与先红后绿日志见 `.tmp/portability-20261024/`。已修复旧夹具语言/共享路径依赖；视频取消测试保留原断言，独立及最终组合均通过。
 实现本地提交 `9ef3691`，未发布、未安装、未作真实收费模型或外部 F5 包验收。语言/能力保持设备本地，严格旧同步协议不加未知字段；各端保留本机选择。保留其他线程 `docs/agent-loop-dehardcode-plan-20261023.md`；后续按用户指示推送或安装，不自动 git pp。
+
+### Codex · 运行逻辑复审（2026-10-24，六项已按下方交接修复）
+
+用户要求先审计再报告。基准 `dadd38b`；[审计记录](docs/runtime-logic-audit-20261024.md) 确认 3 项 P1（iPhone 生图拒绝遗留发送状态、同 URL 不同连接串用能力、失败视觉探测阻断重测）及 3 项 P2（Edge 选择被 MiniMax 优先级覆盖、缓存不应用新正文/证据预算、旧任务风险污染新任务路由）。五项在隔离 home/模拟传输/真实临时缓存复现，iPhone 项由完整控制流静态确认，未作真机验收。
+现有相关回归 50/50 通过，反例与日志见 `.tmp/logic-audit-20261024/`；这批组合漏测尚未修复，不能沿用上一轮 GREEN 作为修复证明。本轮只新增审计文档及交接 WIP，产品代码、账号、原图不变；未提交/推送/安装/git pp，其他线程方案原样保留。后续已获授权完成修复，当前状态以下方交接为准。
+
+### Codex — 2026-10-24 六项逻辑修复与跨端验收
+
+- 用户授权“都去修了”，基准 `dadd38b`；[专项审计及修复记录](docs/runtime-logic-audit-20261024.md)保留原反例与验收入口。本线程仅测试与本地提交，不运行 git pp、推送或覆盖安装真实设备。
+- iPhone `ChatStore.swift` 在持久化消息/图片和登记发送状态之前检查所选连接的图片能力；`ImageWorkflowVerification.swift` 原生模拟器覆盖同端点不同连接、拒绝零调用、存储原图字节与草稿冷加载保留、改配置后同聊天重试。
+- `shared/agent/modelCapabilities.js`、`imageSettings.js`、`services/modelRouting/routing.js` 绑定所选连接身份/凭据/能力；失败探测只记诊断，`llmConnections.test.js` 逐个模拟超时/401/429/误识别后成功请求，显式禁用保持零调用。
+- `tts.js` 遵守显式服务选择，失败不跨服务，旧空值配置保持回退兼容并捕获异步前环境；`desktop-ui/app.js` API 语音选项写明确提供方。
+- `webSearchTool.js` 查询与 URL/304 缓存统一按当前预算返回，SQLite 回归验证结果/正文/证据一致和磁盘原文保留。
+- `shared/agent/modelRouting.js` 仅继承当前话题风险；三端共用判断输入，续问/未完成目标与本轮风险仍保留。更新共享包、Swift/Android 适配与跨端夹具；PhoneRoutingHost 与 Android SmartRouting 的实际判断请求均有断言。
+- 显式文件范围完整日常验收通过：4,586 JS、37 Swift、设置浏览器、Android JVM/Lint/Debug/Release；iPhone Debug 构建与原生诊断通过；Android 专项模拟器 1 个集成测试通过、0 跳过，内含共享夹具和实际本地请求计数。最终整批 `npm test -- --base dadd38b` 通过，37 组 Swift 仅复用编译并重新执行测试；iPhone 跟随全局默认连接的身份分支另完成最终构建及原生诊断。
+- 证据：`.tmp/logic-fixes-20261024/`、`.tmp/test-runs/run-hyoCFT/`、最终 `.tmp/test-runs/run-yoDiS7/`。真实服务、实体设备、长期后台另验。测试设备已清理；他线程方案 SHA-256 未变。
+
+产品修复本地提交 `99d2fca`；未推送或覆盖安装。
