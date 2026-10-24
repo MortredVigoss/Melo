@@ -71,6 +71,8 @@
 
 ## 验收记录
 
+实现本地提交：`9ef3691`。
+
 - 最终基准：`npm test -- --base 5afb0be`，日志 `.tmp/test-runs/run-pHqzcA/`。语法、文档链接、生成器/依赖、共享渲染、Android JVM/Lint/Debug/Release、4,578 项 JS、设置浏览器与 37 组 Swift 全部通过。Swift 复用编译缓存但逐组重新执行，组合总计 231.1 秒。
 - 最终共享 Core 的完整 iOS Simulator App 构建通过，证据 `.tmp/portability-20261024/ios-frozen-build.log`。这是编译验收，不是实体 iPhone 或真实服务验收。
 - 项目 Agent 回复语言的保存、继承与显式自动状态：真实磁盘冷加载回归先红后绿（7/7）。图片设置、首次本地连接与核验默认值均读注册表，已保存的自定义模型 ID 不被覆盖。

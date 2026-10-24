@@ -383,4 +383,4 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 
 用户授权按 A–G 审计实施，基准 `5afb0be`；实际落点、配置登记与兼容边界见 [专项记录](docs/portability-hardening-20261024.md)。连接目录/实测/声明决定视觉和推理行为，默认模型集中；自定义声音按类型/配置地址识别，保留转写配置。任务 owner 校验现有 Agent，团队明确选成员，频道别名来自配置。语言出口/事件 ID 与参数、三端能力 UI、五语图片意图、搜索配置与逐请求隔离已接线；项目回复语言的保存、继承、恢复自动经真实冷加载验证。
 最终 `npm test -- --base 5afb0be` GREEN：4,578 JS、37 Swift、设置浏览器、Android JVM/Lint/Debug/Release、生成物及依赖检查，证据 `.tmp/test-runs/run-pHqzcA/report.json`。完整 iOS Simulator App 构建通过（`.tmp/portability-20261024/ios-frozen-build.log`）；各专项与先红后绿日志见 `.tmp/portability-20261024/`。已修复旧夹具语言/共享路径依赖；视频取消测试保留原断言，独立及最终组合均通过。
-本轮本地提交，未发布、未安装、未作真实收费模型或外部 F5 包验收。语言/能力保持设备本地，严格旧同步协议不加未知字段；各端保留本机选择。保留其他线程 `docs/agent-loop-dehardcode-plan-20261023.md`；后续按用户指示推送或安装，不自动 git pp。
+实现本地提交 `9ef3691`，未发布、未安装、未作真实收费模型或外部 F5 包验收。语言/能力保持设备本地，严格旧同步协议不加未知字段；各端保留本机选择。保留其他线程 `docs/agent-loop-dehardcode-plan-20261023.md`；后续按用户指示推送或安装，不自动 git pp。
