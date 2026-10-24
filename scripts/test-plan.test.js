@@ -5,6 +5,8 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+import {readFileSync} from 'node:fs';
+const readFileSyncUtf8=path=>readFileSync(path,'utf8');
 import {planTests, changedPaths, currentTestPlan} from './test-plan.js';
 import {TEST_ROOTS} from './test-discovery.js';
 
@@ -79,7 +81,7 @@ test('full gate remains all-tests and daily gate is explicit about release cover
 
 test('daily CLI executes the selected group, isolates home, and stops on failure before browser jobs', async () => {
   const root=await mkdtemp(join(tmpdir(),'melo-daily-cli-'));
-  const env={...process.env,MELO_HOME:join(root,'must-not-use')};
+  const env={...process.env,MELO_HOME:join(root,'must-not-use'),MELO_TEST_NESTED:'1'};
   // Emulate a shell invocation; Node disables nested --test runners when it
   // inherits the parent test worker's internal context marker.
   delete env.NODE_TEST_CONTEXT;
@@ -109,7 +111,7 @@ test('daily CLI executes the selected group, isolates home, and stops on failure
 
 test('daily CLI runs only the document link check for an overview-only change', async () => {
   const root=await mkdtemp(join(tmpdir(),'melo-daily-docs-'));
-  const env={...process.env,MELO_HOME:join(root,'must-not-use')};
+  const env={...process.env,MELO_HOME:join(root,'must-not-use'),MELO_TEST_NESTED:'1'};
   delete env.NODE_TEST_CONTEXT;
   const script=fileURLToPath(new URL('./verify-daily.js',import.meta.url));
   const git=(...args)=>execFileSync('git',args,{cwd:root,stdio:'pipe'});
@@ -132,7 +134,7 @@ test('daily CLI runs only the document link check for an overview-only change', 
 
 test('a failed resource preflight stops the real CLI before JS, browser or Swift execution', async()=>{
   const root=await mkdtemp(join(tmpdir(),'melo-preflight-cli-'));
-  const env={...process.env};delete env.NODE_TEST_CONTEXT;
+  const env={...process.env,MELO_TEST_NESTED:'1'};delete env.NODE_TEST_CONTEXT;
   const script=fileURLToPath(new URL('./verify-daily.js',import.meta.url));
   try {
     for(const dir of ['src','desktop-ui','scripts','mobile-sync','ios/Tests','ios/scripts'])await mkdir(join(root,dir),{recursive:true});
@@ -153,4 +155,60 @@ test('Android integration selects native checks and shared Core changes include 
   assert.equal(native.android, true); assert.equal(native.swift, false); assert.equal(native.browsers, false);
   for (const path of ['shared/agent/turn.js', 'shared/protocol/sync.schema.json', 'ios/Melo/Scene/scene.js', 'scripts/android.mjs', '.github/workflows/android.yml']) assert.equal(planTests([path], tests).android, true, path);
   assert.equal(planTests(['src/server.js'], tests).android, false);
+});
+
+// Two tiers and the load guard (2026-10-24): `--files` is the quick tier, `--full`
+// forces the integration tier, a JS stage whose only failures are timeouts gets one
+// serial isolated rerun recorded as its own stage, and summary.json carries the result.
+test('daily CLI tiers: --files is quick, --full is integration, contradictory flags are refused', async()=>{
+  const root=await mkdtemp(join(tmpdir(),'melo-daily-tier-'));
+  const env={...process.env,MELO_TEST_NESTED:'1'};delete env.NODE_TEST_CONTEXT;
+  const script=fileURLToPath(new URL('./verify-daily.js',import.meta.url));
+  const run=(...flags)=>execFileSync(process.execPath,[script,...flags],{cwd:root,env,encoding:'utf8',stdio:'pipe'});
+  try {
+    for(const dir of [...TEST_ROOTS,'ios/scripts'])await mkdir(join(root,dir),{recursive:true});
+    await writeFile(join(root,'package.json'),'{"type":"module"}');
+    await writeFile(join(root,'scripts/test-quarantine.json'),'{}');
+    await writeFile(join(root,'desktop-ui/one.test.js'),'import test from "node:test";test("ok",()=>{});');
+    assert.match(run('--plan','--files','desktop-ui/one.test.js'),/快速档/);
+    assert.match(run('--plan','--files','desktop-ui/one.test.js','--full'),/集成档/);
+    assert.match(run('--plan','--all'),/集成档/);
+    assert.throws(()=>run('--plan','--all','--quick'),/integration tier/);
+    assert.throws(()=>run('--plan','--full','--quick'),/only one of --full or --quick/);
+  } finally {await rm(root,{recursive:true,force:true});}
+});
+
+test('daily CLI reruns timeout-only JS failures once in isolation, records it, and never retries a real failure', async()=>{
+  const root=await mkdtemp(join(tmpdir(),'melo-daily-flaky-'));
+  const env={...process.env,MELO_TEST_NESTED:'1'};delete env.NODE_TEST_CONTEXT;
+  const script=fileURLToPath(new URL('./verify-daily.js',import.meta.url));
+  const run=(extraEnv={})=>execFileSync(process.execPath,[script,'--files','desktop-ui/flaky.test.js'],{cwd:root,env:{...env,...extraEnv},encoding:'utf8',stdio:'pipe'});
+  const summaryOf=output=>JSON.parse(readFileSyncUtf8(output.match(/摘要：(.+summary\.json)/)[1]));
+  try {
+    for(const dir of [...TEST_ROOTS,'ios/scripts'])await mkdir(join(root,dir),{recursive:true});
+    await writeFile(join(root,'package.json'),'{"type":"module"}');
+    await writeFile(join(root,'scripts/test-quarantine.json'),'{}');
+    await writeFile(join(root,'scripts/check-syntax.js'),'// fixture');
+    // Times out the first time it runs in this fixture (a load symptom), passes when rerun.
+    await writeFile(join(root,'desktop-ui/flaky.test.js'),'import test from "node:test";import {existsSync,writeFileSync} from "node:fs";test("slow once",{timeout:300},async()=>{if(!existsSync("ran-once")){writeFileSync("ran-once","1");await new Promise(r=>setTimeout(r,1500));}});');
+    const output=run();
+    assert.match(output,/只有超时类失败/);assert.match(output,/隔离复测通过/);
+    const summary=summaryOf(output);
+    assert.equal(summary.ok,true);assert.equal(summary.tier,'quick');
+    assert.deepEqual(summary.stages.map(s=>s.label),['语法检查','JS 回归','JS 隔离复测']);
+    assert.equal(summary.stages[1].code!==0,true);assert.equal(summary.stages[2].code,0);
+    assert.deepEqual(summary.flaky.files,['desktop-ui/flaky.test.js']);assert.equal(summary.flaky.passed,true);
+    assert.equal(summary.js.fail+summary.js.cancelled,1,"node counts a timed-out test as cancelled");assert.match(summary.js.failures[0],/^timeout \[desktop-ui\/flaky\.test\.js/);
+    // Opting out of the rerun keeps the timeout as a failure.
+    await rm(join(root,'ran-once'));
+    assert.throws(()=>run({MELO_TEST_NO_RERUN:'1'}),error=>error.status===1&&/JS 回归 failed/.test(error.stderr)&&!/隔离复测/.test(error.stdout));
+    // A deterministic failure is never retried.
+    await writeFile(join(root,'desktop-ui/flaky.test.js'),'import test from "node:test";test("broken",()=>{throw Error("real regression");});');
+    assert.throws(()=>run(),error=>{
+      assert.equal(error.status,1);assert.match(error.stderr,/JS 回归 failed/);assert.doesNotMatch(error.stdout,/隔离复测/);
+      const summary=summaryOf(error.stderr);
+      assert.equal(summary.ok,false);assert.equal(summary.flaky,null);assert.match(summary.js.failures[0],/^failed \[desktop-ui\/flaky\.test\.js.*real regression/);
+      return true;
+    });
+  } finally {await rm(root,{recursive:true,force:true});}
 });

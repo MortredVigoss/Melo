@@ -4519,7 +4519,9 @@
           "scripts/test-discovery.test.js",
           "scripts/test-impact.test.js",
           "scripts/test-plan.test.js",
+          "scripts/test-run-guards.test.js",
           "scripts/test-stage-runner.test.js",
+          "scripts/test-tap-summary.test.js",
           "scripts/visual-tokens.test.js"
         ],
         "swift": []

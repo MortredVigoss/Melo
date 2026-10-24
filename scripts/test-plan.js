@@ -12,7 +12,11 @@ export const isDocOnly = path => /^docs\/.*\.md$/.test(path) || /^docs\/handoffs
 
 // The pure selection function also serves scope and fixture tests. Without a
 // verified dependency context, runtime changes conservatively expand the gate.
-export function planTests(changed, files, impact = null) {
+// `options.tier` is 'integration' (default; the shared-tree / merge rules) or
+// 'quick' (one change at a time, see impactedPlan). Doc-only and test-only
+// plans are the same in both tiers.
+export function planTests(changed, files, impact = null, options = {}) {
+  const tier = options.tier === 'quick' ? 'quick' : 'integration';
   const paths = [...new Set(changed)].sort();
   const code = paths.filter(path => !isDocOnly(path));
   const testsOnly = code.length > 0 && code.every(path => path.endsWith('.test.js'));
@@ -28,10 +32,10 @@ export function planTests(changed, files, impact = null) {
   } else if (testsOnly && !deletedTest) {
     plan = {files:files.filter(path => code.includes(path)), fullUnit:false, reason:'仅测试文件变化，运行改动的测试', reasons:[], browsers:false, ios:false, swift:false, renderer:false, swiftSuites:[], preflightTests:[]};
   } else {
-    plan = impactedPlan(code, files, impact);
+    plan = impactedPlan(code, files, impact, {tier});
   }
   const androidMode = androidOnly && code.every(path=>/^android\/app\/src\/(?:main|test)\/.*\.(?:kt|xml)$/.test(path) && !path.endsWith('/AndroidManifest.xml')) ? 'daily' : 'check';
-  return {...plan, android, androidMode, changed:paths, docs:paths.filter(path=>isDocOnly(path)&&path.endsWith('.md')),
+  return {tier, integrationRequired:false, preflightOnly:false, ...plan, android, androidMode, changed:paths, docs:paths.filter(path=>isDocOnly(path)&&path.endsWith('.md')),
     syntax:plan.fullUnit ? null : code.filter(path=>/\.[cm]?js$/.test(path))};
 }
 
@@ -46,10 +50,10 @@ export function changedPaths(root, base) {
   return {base: 'HEAD^ (最近提交)', paths: split(git(['diff', '--no-renames', '--name-only', '-z', 'HEAD^', 'HEAD', '--']))};
 }
 
-export function currentTestPlan(root, files, base, impact = null) {
+export function currentTestPlan(root, files, base, impact = null, options = {}) {
   try {
     const changes = changedPaths(root, base);
-    return {...planTests(changes.paths, files, impact), base: changes.base};
+    return {...planTests(changes.paths, files, impact, options), base: changes.base};
   } catch (error) {
     if (base) throw error; // A typo in an explicit base must not be ignored.
     return {...planTests(['package.json'], files), base: '无法确定 Git 范围', reason: 'Git 范围不可用，回退完整日常检查'};

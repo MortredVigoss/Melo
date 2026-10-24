@@ -5,6 +5,16 @@ import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { dirname, resolve, relative } from 'node:path';
 import { buildModuleMap, ownerOf, matchesGlob, servedModules, loadAnnotations } from './generate-module-map.js';
+import { discoverTests } from './test-discovery.js';
+
+// Tests that start the real server (`spawn(node, ['src/server.js', …])`) are
+// not reachable through the import graph; the quick tier adds them whenever a
+// public runtime boundary changed. Detected from source, never from a list.
+const SERVER_LITERAL = /['"`]src\/server\.js['"`]/;
+export async function serverConsumers(root, tests) {
+  const matches = await Promise.all(tests.map(async test => SERVER_LITERAL.test(await readFile(resolve(root, test), 'utf8').catch(() => '')) ? test : null));
+  return matches.filter(Boolean).sort();
+}
 
 export const IOS_JS = ['ios/Tests/SceneBridge.test.js', 'ios/Tests/NeuralLayout.test.js'];
 const CORE = /^(?:package(?:-lock)?\.json$|binding\.gyp$|native\/|src\/(?:state\/|persistence\/|runtime\/|safety\/|providers\/|server\.js$|desktopStore\.js$|config\.js$|openai\.js$|tools\/(?:executor|permissions|permissionPersistence|registry)\.|services\/chat\/(?:chatExecutionRunner|sendChatMessage|turnLifecycle|turnScheduler)\.)|shared\/(?:protocol|agent)\/|mobile-sync\/.*(?:protocol|Protocol|syncContract))/;
@@ -86,13 +96,25 @@ export async function buildTestImpact(root = process.cwd(), built = null) {
   if(existsSync(resolve(root,'ios/Melo/Scene/desktop-manifest.json'))) manifest=JSON.parse(await readFile(resolve(root,'ios/Melo/Scene/desktop-manifest.json'),'utf8'));
   const saved=await readFile(resolve(root,'architecture/modules.json'),'utf8').catch(()=>null);
   const problems=[...built.problems,...built.map.summary.sourceReadingTests.unannotated.map(p=>`未登记源码读取测试：${p}`),...built.map.summary.unownedFiles.map(p=>`未登记归属：${p}`)];
-  return {root,built,reverse,opaque,swiftSources,manifest,problems,stale:!built.partial&&saved!==`${JSON.stringify(built.map,null,2)}\n`,exists:path=>existsSync(resolve(root,path))};
+  const servers=await serverConsumers(root,await discoverTests(root));
+  return {root,built,reverse,opaque,swiftSources,manifest,problems,serverConsumers:servers,stale:!built.partial&&saved!==`${JSON.stringify(built.map,null,2)}\n`,exists:path=>existsSync(resolve(root,path))};
 }
 
-export function impactedPlan(code, files, impact) {
+// Two tiers (2026-10-24, user decision "改什么都要 4500 个测试"):
+//   integration (default) — the 2026-10-20 rules unchanged: public runtime
+//     boundaries, stale maps and unknown dependencies widen to every test.
+//   quick — one change at a time. Public boundaries select their owning
+//     feature, the reverse-import closure and the tests that start the real
+//     server instead of everything; a stale / unregistered map only runs the
+//     preflight (fail fast, fix the map) instead of 4500 tests. The gate
+//     itself, deletions and unknown paths still widen. A quick plan never
+//     proves the shared tree: `integrationRequired` says so and the merge
+//     step runs the integration tier once.
+export function impactedPlan(code, files, impact, {tier='integration'}={}) {
+  const quick=tier==='quick';
   const chosen=new Set(), reasons=[], selectedFeatures=new Set(), touched=new Set(code);
   const preflight=new Set(), swiftSuites=new Set();
-  let full=false, allSwift=false, renderer=false, browsers=false;
+  let full=false, allSwift=false, renderer=false, browsers=false, preflightOnly=false, publicBoundary=false;
   const add=(paths,reason)=>{for(const path of paths)if(files.includes(path))chosen.add(path);if(reason)reasons.push(reason);};
   const widen=reason=>{full=true;allSwift=true;renderer=true;browsers=true;reasons.push(reason);};
   if(!impact) {widen('依赖地图不可用，保守回退全量');return finish();}
@@ -101,11 +123,24 @@ export function impactedPlan(code, files, impact) {
   const feature=(id,reason)=>{if(!id)return;selectedFeatures.add(id);add(built.map.features[id]?.tests.js||[],reason);};
   const toolbox=()=>add(files.filter(p=>p.startsWith('scripts/')),'开发工具：脚本测试组');
   const expand=seeds=>{const queue=[...seeds],seen=new Set(queue);for(const p of queue)for(const next of reverse.get(p)||[])if(!seen.has(next)){seen.add(next);queue.push(next);}return seen;};
-  if(impact.problems.length||impact.stale) widen(impact.problems.length?`依赖登记不完整：${impact.problems.join('；')}`:'生成的功能地图过期；先更新地图');
+  // Public boundary in the quick tier: the owning feature group plus every
+  // test reachable through reverse imports; the real-server tests join below.
+  const boundary=(path,label)=>{
+    publicBoundary=true;
+    const id=owner(path);
+    if(id&&!['platform','tooling'].includes(id))feature(id,`${path}：${label} → ${id} 功能组`);
+    add([...expand([path])].filter(p=>p.endsWith('.test.js')),`${path}：${label} → 反向依赖测试`);
+  };
+  if(impact.problems.length||impact.stale) {
+    const why=impact.problems.length?`依赖登记不完整：${impact.problems.join('；')}`:'生成的功能地图过期；先更新地图';
+    if(quick) {preflightOnly=true;reasons.push(`${why}（快速档只跑预检：npm run generate:module-map 后重试）`);}
+    else widen(why);
+  }
   for(const path of code) {
     if(!impact.exists(path)) {widen(`${path}：删除 / 重命名 / 不存在，回退全量`);continue;}
     if(path.endsWith('.test.js')) {add([path],`${path}：改动测试`);continue;}
-    if(GATE.test(path)||CORE.test(path)) {widen(`${path}：公共运行边界 / 检测基础设施`);continue;}
+    if(GATE.test(path)) {widen(`${path}：检测基础设施`);continue;}
+    if(CORE.test(path)) {if(quick)boundary(path,'公共运行边界');else widen(`${path}：公共运行边界 / 检测基础设施`);continue;}
     if(TOOLING.test(path)) {toolbox();continue;}
     if(path.startsWith('ios/Melo/Scene/')||path.startsWith('ios/SceneSource/')||path==='ios/scripts/build-scene.py') {renderer=true;reasons.push(`${path}：手机渲染资源`);continue;}
     if(/^ios\/(Melo|Tests)\/.*\.swift$/.test(path)) {
@@ -134,7 +169,7 @@ export function impactedPlan(code, files, impact) {
     }
     if(/^(src|mobile-sync|shared)\/.*\.js$/.test(path)&&built.graph.has(path)) {
       const id=owner(path);
-      if(!id||['platform','tooling'].includes(id))widen(`${path}：未分离的公共基础设施`);
+      if(!id||['platform','tooling'].includes(id)) {if(quick)boundary(path,'未分离的公共基础设施');else widen(`${path}：未分离的公共基础设施`);}
       else {feature(id,`${path}：${id} 功能组`);if(id==='settings')browsers=true;}
       continue;
     }
@@ -147,7 +182,11 @@ export function impactedPlan(code, files, impact) {
   const reached=expand([...code,...uncertain]);
   for(const path of reached)touched.add(path);
   add([...reached].filter(p=>p.endsWith('.test.js')));
-  for(const path of uncertain.filter(p=>!p.endsWith('.test.js')))widen(`${path}：运行时动态依赖无法确定，回退全量`);
+  for(const path of uncertain.filter(p=>!p.endsWith('.test.js'))) {
+    if(quick) {publicBoundary=true;reasons.push(`${path}：运行时动态依赖无法确定；快速档加入其反向依赖与真实服务测试`);}
+    else widen(`${path}：运行时动态依赖无法确定，回退全量`);
+  }
+  if(quick&&publicBoundary)add(impact.serverConsumers||[],'公共边界：启动真实服务的 HTTP / 浏览器测试');
   for(const contract of built.map.sharedContracts) if(code.some(p=>[contract.path,...contract.desktop,...contract.iphone].includes(p))) {
     add(contract.tests,'共享契约：'+contract.id);
     for(const p of contract.iphone)touched.add(p);
@@ -164,10 +203,17 @@ export function impactedPlan(code, files, impact) {
   return finish();
 
   function finish() {
+    if(preflightOnly&&!full) {
+      // Fail fast on a stale or unregistered map: only the generator checks run,
+      // nothing else is selected, and the plan says why.
+      const check=files.filter(file=>/^scripts\/generate-.*\.test\.js$/.test(file));
+      return {files:check,fullUnit:false,reason:'快速档：功能地图过期或登记不完整，只跑预检',reasons:sorted(reasons),features:[],preflightTests:check,browsers:false,renderer:false,ios:false,swift:false,swiftSuites:[],tier,integrationRequired:true,preflightOnly:true};
+    }
     if(full)for(const file of files)chosen.add(file);
     for(const file of chosen)if(/^scripts\/generate-.*\.test\.js$/.test(file))preflight.add(file);
     if(impact&&code.some(p=>!p.endsWith('.test.js')))preflight.add('scripts/generate-module-map.test.js');
     for(const file of preflight)if(files.includes(file))chosen.add(file);else preflight.delete(file);
-    return {files:files.filter(p=>chosen.has(p)),fullUnit:full,reason:full?'公共或未知边界，扩大回归':'按功能、反向依赖与跨端契约选择',reasons:sorted(reasons),features:sorted(selectedFeatures),preflightTests:sorted(preflight),browsers,renderer,ios:renderer||allSwift||swiftSuites.size>0,swift:allSwift||swiftSuites.size>0,swiftSuites:allSwift?null:sorted(swiftSuites)};
+    const reason=full?'公共或未知边界，扩大回归':quick?'快速档：按反向依赖、所属功能与真实服务测试选择；合并前跑集成档':'按功能、反向依赖与跨端契约选择';
+    return {files:files.filter(p=>chosen.has(p)),fullUnit:full,reason,reasons:sorted(reasons),features:sorted(selectedFeatures),preflightTests:sorted(preflight),browsers,renderer,ios:renderer||allSwift||swiftSuites.size>0,swift:allSwift||swiftSuites.size>0,swiftSuites:allSwift?null:sorted(swiftSuites),tier,integrationRequired:quick&&!full&&code.some(p=>!p.endsWith('.test.js')),preflightOnly:false};
   }
 }

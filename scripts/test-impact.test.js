@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
-import {buildTestImpact, moduleReferences, IOS_JS} from './test-impact.js';
+import {buildTestImpact, moduleReferences, serverConsumers, IOS_JS} from './test-impact.js';
 import {planTests} from './test-plan.js';
 import {dailyStages} from './test-stages.js';
 import {discoverRunnableTests} from './test-discovery.js';
@@ -113,4 +113,40 @@ test('daily CLI rejects ambiguous task scopes and unknown flags',()=>{
   for(const args of [['--files'],['--files','../outside.js'],['--base','HEAD','--files','README.md'],['--wat'],['--all','--base','HEAD']]) {
     assert.throws(()=>execFileSync(process.execPath,['scripts/verify-daily.js',...args],{stdio:'pipe'}));
   }
+});
+
+// Two tiers (2026-10-24): the quick tier replaces "public boundary → every test"
+// with the owning feature, the reverse-import closure and the tests that start
+// the real server; the integration tier keeps the 2026-10-20 widening.
+test('quick tier: a public runtime boundary selects dependents plus real-server tests instead of everything',()=>{
+  const quick=planTests(['src/state/stateStore.js'],files,context,{tier:'quick'});
+  assert.equal(quick.tier,'quick');assert.equal(quick.fullUnit,false);assert.equal(quick.integrationRequired,true);
+  assert.ok(quick.files.length>0&&quick.files.length<files.length,`${quick.files.length} of ${files.length}`);
+  assert.ok(context.serverConsumers.length>=20,'the real-server tests are detected from source');
+  for(const test of context.serverConsumers)assert.ok(quick.files.includes(test),test);
+  assert.ok(quick.files.some(path=>path.startsWith('src/state/')),'the owning feature group is kept');
+  const integration=planTests(['src/state/stateStore.js'],files,context);
+  assert.equal(integration.tier,'integration');assert.equal(integration.fullUnit,true);
+  assert.ok(quick.files.every(path=>integration.files.includes(path)),'quick is a subset of integration');
+  assert.match(quick.reason,/快速档/);
+});
+test('quick tier fails fast on a stale or unregistered map and still widens for the gate itself and deletions',()=>{
+  for(const extra of [{stale:true},{problems:['unregistered edge']}]) {
+    const p=planTests(['src/services/search/searchResultsBuilder.js'],files,{...context,...extra},{tier:'quick'});
+    assert.equal(p.preflightOnly,true);assert.equal(p.fullUnit,false);
+    assert.ok(p.files.length>0&&p.files.every(file=>/^scripts\/generate-.*\.test\.js$/.test(file)),JSON.stringify(p.files));
+    assert.deepEqual(p.files,p.preflightTests);assert.equal(p.browsers,false);assert.equal(p.swift,false);
+    assert.ok(p.reasons.some(reason=>/快速档只跑预检/.test(reason)));
+  }
+  assert.equal(planTests(['scripts/test-plan.js'],files,context,{tier:'quick'}).fullUnit,true,'the gate itself always widens');
+  assert.equal(planTests(['desktop-ui/deleted.test.js'],files,context,{tier:'quick'}).fullUnit,true,'a deleted test always widens');
+  assert.equal(planTests(['unknown.config'],files,context,{tier:'quick'}).fullUnit,true,'an unknown boundary always widens');
+  const leaf=planTests(['src/services/search/searchResultsBuilder.js'],files,context,{tier:'quick'});
+  assert.deepEqual(leaf.files,planTests(['src/services/search/searchResultsBuilder.js'],files,context).files,'a leaf change selects the same tests in both tiers');
+  assert.equal(leaf.integrationRequired,true);
+  assert.equal(planTests(['docs/design.md'],files,context,{tier:'quick'}).integrationRequired,false);
+});
+test('server consumers are detected from test sources, never from a hand-kept list',async()=>{
+  const detected=await serverConsumers(process.cwd(),['desktop-ui/agentSettings.browser.test.js','scripts/test-run-guards.test.js','scripts/missing.test.js']);
+  assert.deepEqual(detected,['desktop-ui/agentSettings.browser.test.js']);
 });
