@@ -359,7 +359,7 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             let notNeeded = try await verify(["verdict": "VERIFIED"], classification: creative, reply: "秋风起。\n[UNCERTAIN: 季节]")
             assert(notNeeded.0.text == "秋风起。" && notNeeded.1.completions.isEmpty, "the marker is removed, no verifier call for creative work")
             let ambiguous = try await verify(["verdict": "VERIFIED", "evidenceId": "tool:v1", "evidenceQuote": "1958 年"], classification: PhoneIntent.Classification(taskType: nil, riskLevel: "normal"), reply: "1958 年建成。\n[UNCERTAIN: 年份]")
-            assert(ambiguous.1.completions.map(\.system) == [c.intentFallbackSystemPrompt, c.verifierSystemPrompt] && ambiguous.0.verification?.verdict == "VERIFIED", "ambiguous wording asks the classifier with the desktop prompt")
+            assert(ambiguous.1.completions.map(\.system) == [c.verifierSystemPrompt] && ambiguous.0.verification?.verdict == "VERIFIED", "ambiguous wording uses the local fallback without an extra model call")
             // An exhausted budget skips verification.
             var clock = 0.0
             let late = ScriptedTransport { _ in clock = 21 * 60_000; return answer("答案\n[UNCERTAIN: 数字]") }

@@ -351,6 +351,10 @@
       "translation": {
         "source": "(?:翻译|译成|\\btranslat(?:e|ion)\\b)",
         "flags": "iu"
+      },
+      "greeting": {
+        "source": "^(?:hi(?: there)?|hello|hey|good morning|good evening|\\u4f60\\u597d|\\u55e8|\\u65e9\\u4e0a\\u597d|\\u665a\\u4e0a\\u597d|\\u3053\\u3093\\u306b\\u3061\\u306f|\\u3053\\u3093\\u3070\\u3093\\u306f|\\u304a\\u306f\\u3088\\u3046|\\uc548\\ub155\\ud558\\uc138\\uc694|\\uc548\\ub155|hola|buenos d\\u00edas|buenas noches)[\\s!.?\\u3002\\uff01\\uff1f]*$",
+        "flags": "iu"
       }
     }
   },
@@ -1535,7 +1539,7 @@
       },
       {
         "text": "hi there",
-        "expected": null
+        "expected": "casual"
       },
       {
         "text": "把这段话翻译成英文：今天天气很好",
@@ -1547,11 +1551,11 @@
       },
       {
         "text": "一直查",
-        "expected": "casual"
+        "expected": null
       },
       {
         "text": "今天的新闻",
-        "expected": "casual"
+        "expected": null
       },
       {
         "text": "请帮我整理一下这周的会议纪要并列出待办事项和负责人",
@@ -1559,7 +1563,7 @@
       },
       {
         "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-        "expected": "factual"
+        "expected": null
       }
     ],
     "intentContext": [

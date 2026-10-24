@@ -1,5 +1,5 @@
 import { getRequestNetworkPolicy, requestUrls } from './retrieval/requestPolicy.js';
-import { createSearchRouter } from './retrieval/searchRouter.js';
+import { publicLookupRequest } from './retrieval/publicLookupIntent.js';
 import { normalizeRuntimeConfig } from './tools.js';
 import { extractTextUrls } from './media/textUrls.js';
 
@@ -37,7 +37,7 @@ export function resolvedRequestGoal(text = '', messages = []) {
 }
 
 // Requests and capability/config snapshots are data; this module does no IO.
-export function planRequest({ text = '', messages = [], capabilities = {}, config = {} } = {}) {
+function buildRequestPlan({ text = '', messages = [], capabilities = {}, config = {} } = {}) {
   const continued = continuedRequest(text, messages);
   if (continued) {
     const plan = planRequest({ text: continued.task, messages: continued.messages, capabilities, config });
@@ -70,10 +70,7 @@ export function planRequest({ text = '', messages = [], capabilities = {}, confi
   let urls = requestUrls(text);
   const linkReference = /(?:打开链接|读取链接|这个链接|链接里|\b(?:open|read|fetch) (?:this |the )?link\b)/iu.test(policy.instruction);
   if (!urls.length && linkReference) urls = [...new Set(messages.slice(-8).flatMap(message => typeof message.content === 'string' ? extractTextUrls(message.content) : []))].slice(0, 8);
-  const router = createSearchRouter({ currentRequestContext: () => ({ config }), requestEnvironment: () => ({}) });
-  // Retain upstream clarification continuity (dates / passengers / confirmations).
-  const legacyIntent = router.buildSearchPlan({ latestUserMessage: text, modelMessages: messages, authMode: 'api-key' });
-  const lookup = !policy.searchForbidden && !policy.localSearch && (legacyIntent.route === 'melo-web' || router.scoreWebSearchIntent(text) >= 2 || /餐厅|餐馆|饭店|营业|咖啡馆|早午餐|深度调研|多来源|\b(?:brunch|restaurants?|caf[eé]s?|deep research|compare sources)\b/iu.test(instruction));
+  const lookup = publicLookupRequest(text, messages, config.webSearchTriggers);
   const base = { route: 'none', reason: 'conversation', tools: [], requiredTools: [], backend: null, urls, network: { searchForbidden: policy.searchForbidden, fetchForbidden: policy.fetchForbidden }, instructions: '' };
   if (explanation) return { ...base, reason: 'execution-explanation', urls: [], instructions: 'Explain the previous turn using its recorded execution evidence. Do not repeat its actions. Missing historical details must be stated as unknown.' };
   if (conceptual && !newAction) return { ...base, reason: 'conceptual-question', urls: [] };
@@ -107,4 +104,28 @@ export function planRequest({ text = '', messages = [], capabilities = {}, confi
   if (available('web_search') && capabilities.legacyReader === true && runtimeConfig.search.backend === 'legacy-reader') return { ...base, route: 'legacy-search', tools: ['web_search'], backend: 'legacy-reader', instructions: guidance };
   if (available('web_search') && capabilities.browserSearch === true && runtimeConfig.search.browserFallback) return { ...base, route: 'browser-search', tools: ['web_search'], backend: 'browser', instructions: guidance };
   return { ...base, route: 'unavailable', reason: 'SEARCH_UNAVAILABLE', instructions: 'No verified hosted search or configured search backend is available to retrieve public evidence. Explain the missing search capability. Do not invent current facts or open phone apps as a fallback.' };
+}
+
+// Planning suggests a backend; availability is a separate capability snapshot.
+// Mobile hosts use this catalog too, so an unrecognised question cannot hide
+// search/URL reading from the later steps of the same turn.
+export function planRequest(request = {}) {
+  const plan = buildRequestPlan(request);
+  const { capabilities = {}, config = {} } = request;
+  const policy = getRequestNetworkPolicy(resolvedRequestGoal(request.text, request.messages));
+  const runtime = normalizeRuntimeConfig(config);
+  const grants = new Set(capabilities.grants || []);
+  const executors = new Set(capabilities.executors || []);
+  const available = name => grants.has(name) && executors.has(name);
+  const searchBackend = runtime.search.backend === 'http' && !!runtime.search.endpoint ||
+    capabilities.browserSearch === true && runtime.search.browserFallback ||
+    capabilities.legacyReader === true && runtime.search.backend === 'legacy-reader';
+  const availableTools = policy.toolsForbidden ? [] : [...new Set([
+    ...(plan.tools || []),
+    ...(!policy.fetchForbidden && available('fetch_url') ? ['fetch_url'] : []),
+    ...(!policy.searchForbidden && searchBackend && available('web_search') ? ['web_search'] : []),
+  ])];
+  return { ...plan, availableTools,
+    nativeSearchAvailable: !policy.searchForbidden && !policy.localSearch && capabilities.hostedSearch === 'verified' && grants.has('web_search') && !['phone', 'browser'].includes(plan.route),
+    toolsForbidden: policy.toolsForbidden };
 }

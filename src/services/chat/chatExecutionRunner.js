@@ -1,3 +1,5 @@
+import { getRequestNetworkPolicy } from '../../../shared/agent/retrieval/requestPolicy.js';
+import { resolvedRequestGoal } from '../../../shared/agent/search.js';
 import {resolveCapabilityContext} from '../agent/capabilityContext.js';
 import {missingCapabilityScope} from '../../domain/agent/capabilityScope.js';
 import { measureStage, startStage } from '../../runtime/performanceTrace.js';
@@ -66,6 +68,7 @@ export async function runChatAgentExecutionGraph({
     context=await resolveCapabilityContext(context,{state,chat,agentId});
     if (!context) throw Object.assign(new Error(missingCapabilityScope().output),{code:'CAPABILITY_SCOPE_MISSING'});
   }
+  if (!context.requestToolPolicy) context = Object.freeze({ ...context, requestToolPolicy: Object.freeze(getRequestNetworkPolicy(resolvedRequestGoal(latestUserMessage, chat.messages))) });
   if (currentRequestContext() !== context) return runWithRequestContext(context, () => runChatAgentExecutionGraph({ ...arguments[0], context }));
   home ||= context.home;
   const env = context.env;
@@ -128,7 +131,7 @@ export async function runChatAgentExecutionGraph({
     apiKey: config.activeLlmProfileId ? config.apiKey : env.MELO_API_KEY || env.OPENAI_API_KEY || config.apiKey,
     baseUrl: config.activeLlmProfileId ? config.baseUrl : env.MELO_BASE_URL || env.OPENAI_BASE_URL || config.baseUrl,
     model: config.conversationModelSelected ? config.model : config.activeLlmProfileId ? '' : env.MELO_MODEL || '',
-    verifier: config.activeLlmProfileId ? config.model : env.MELO_VERIFIER_MODEL || '',
+    verifier: env.MELO_VERIFIER_MODEL || '',
   };
   const isRemoteChannel = background && Boolean(channelContext?.channelId);
 

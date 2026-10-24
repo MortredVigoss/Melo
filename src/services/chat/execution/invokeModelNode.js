@@ -51,6 +51,7 @@ const STABLE_MEMORY_KINDS = new Set(['project-book', 'personal-profile']);
 //   3. If tool calls exist: execute them, append results, loop (max 10)
 //   4. If no tool calls (or max iterations reached): proceed to finalize
 export function createInvokeModelNode(turn) {
+  const privateTurn = turn;
   const { agentId, budget, chat, config, context, contextBudget, createReply, env, home, imageTask, latestUserMessage, modelOverrides, modelResponses, onDelta, onImageProgress, onImageTaskResolved, onReasoningDelta, promptDebug, providerProfile, signal, sseEmitter, state, teamPlan, turnContextPlacement, workspace } = turn;
   return async function invokeModel(graphState) {
     const routingSession = turn.routing;
@@ -79,7 +80,7 @@ export function createInvokeModelNode(turn) {
     // See imageEditFastPath.js for the gating + pipeline. Failures /
     // gate misses return null; we fall through to the normal loop and
     // the agent decides what to do (apologise, re-route, etc.).
-    const task = inferImageTask(latestUserMessage, graphState.modelMessages, imageTask);
+    const task = context.requestToolPolicy?.toolsForbidden ? null : inferImageTask(latestUserMessage, graphState.modelMessages, imageTask);
     const taskMessage = chat.messages.filter(m => m.role === 'user').at(-1);
     // Image references are matched against model parts by URL, so the task
     // attachments use the same hydrated data URLs as the model window.
@@ -105,7 +106,7 @@ export function createInvokeModelNode(turn) {
     }
     const latestParts=graphState.modelMessages.filter(m=>m.role==='user').at(-1)?.content;
     let vision = routingSession?.current.mode === 'smart' ? null : Array.isArray(latestParts) && latestParts.some(p=>p.type==='image_url') ? visionConnection(config,{...modelOverrides,model:selectedModel}) : null;
-    const fastPathReply = task?.action === 'analyze' || !scopeAllowsTool(context.capabilityScope,'image',{action:'generate'}) ? null : await tryImageEditFastPath({
+    const fastPathReply = context.requestToolPolicy?.toolsForbidden || task?.action === 'analyze' || !scopeAllowsTool(context.capabilityScope,'image',{action:'generate'}) ? null : await tryImageEditFastPath({
       config: { ...config, model:selectedModel },
       messages: graphState.modelMessages,
       workspace,
@@ -160,7 +161,7 @@ export function createInvokeModelNode(turn) {
     const mcpToolsByName = indexMcpTools(graphState.mcpTools || []);
     const visibleToolIds = new Set(graphState.visibleToolIds || []);
     if (routingEnabled) visibleToolIds.add('melo_escalate');
-    const allowedToolIdList = [...visibleToolIds].filter(id => !/^browser_/u.test(id) || graphState.searchPlan.sharedPlan?.backend === 'browser');
+    const allowedToolIdList = [...visibleToolIds];
     const coreTurn = createCoreTurn({ runId: String(context.requestId), turnId: chat.id,
       goal: graphState.searchPlan.sharedPlan?.resolvedGoal || latestUserMessage, tools: graphState.promptTools,
       allowedTools: allowedToolIdList, requiredTools: graphState.searchPlan.sharedPlan?.requiredTools, toolDependencies: graphState.searchPlan.sharedPlan?.toolDependencies, limits: { rounds: MAX_TOOL_ITERATIONS, timeoutMs: Math.max(1, Math.ceil(remainingMs(budget))) } });
@@ -260,6 +261,11 @@ export function createInvokeModelNode(turn) {
       }
       if (coreTurn.update('request') !== 'running') { finalReply = coreTurn.reply(latestUserMessage, config.replyLanguage); break; }
       let rawReply;
+      if (!checkingGoal) privateTurn.answerConnection = {
+        authMode: vision?.authMode || config.authMode, apiProtocol: vision?.apiProtocol || config.apiProtocol,
+        apiKey: vision?.apiKey ?? modelOverrides.apiKey, baseUrl: vision?.baseUrl || modelOverrides.baseUrl,
+        model: vision?.model || selectedModel,
+      };
       try {
         rawReply = await createReply({
         ...(checkingGoal ? { maxTokens: 2048 } : functionSession.requestOptions()),
@@ -273,7 +279,7 @@ export function createInvokeModelNode(turn) {
         messages: attachTurnContextToMessages(request.messages, request.turnContext),
         cacheScope: `${agentId}:${chat.id}`,
         signal,
-        onDelta: !checkingGoal && isFirstIteration ? onDelta : undefined,
+        onDelta: !checkingGoal ? onDelta : undefined,
         onReasoningDelta: checkingGoal ? undefined : onReasoningDelta,
         providerProfile,
         routing: routingSession?.current.mode === 'smart' ? { ...routingSession.current, judge: undefined } : undefined,
@@ -289,8 +295,8 @@ export function createInvokeModelNode(turn) {
         // present whenever the agent may use the network; whether to use
         // it this turn is said in the routing prompt. Only an explicit
         // user network-off or a non-Codex route keeps it off.
-        nativeWebSearchEnabled: !checkingGoal && nativeFeaturesForScope(context.capabilityScope).nativeWebSearchEnabled && graphState.searchPlan?.nativeWebSearchEnabled === true,
-        nativeImageGenerationEnabled: (routingSession?.current.mode !== 'smart' || routingSession.current.tier === 'strong') && !checkingGoal && !coreTurn.repairing && scopeAllowsTool(context.capabilityScope,'image',{action:'generate'}) && imageSettings(config).engine === 'codex-oauth',
+        nativeWebSearchEnabled: !checkingGoal && nativeFeaturesForScope(context.capabilityScope,context.requestToolPolicy).nativeWebSearchEnabled && graphState.searchPlan?.nativeWebSearchEnabled === true,
+        nativeImageGenerationEnabled: !context.requestToolPolicy?.toolsForbidden && (routingSession?.current.mode !== 'smart' || routingSession.current.tier === 'strong') && !checkingGoal && !coreTurn.repairing && scopeAllowsTool(context.capabilityScope,'image',{action:'generate'}) && imageSettings(config).engine === 'codex-oauth',
         onExecutionEvent: event => {
           const observed = { ...event, id: event.id ? `${iteration}:${event.id}` : undefined };
           coreTurn.observeNative(observed);

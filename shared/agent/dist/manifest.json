@@ -1,8 +1,13 @@
 {
   "version": 1,
-  "sha256": "78633d1d9d6d3146df583d008b29ca69d4859a0a9bd18dbd8892204befd7865e",
+  "sha256": "4d45ade85936045469cdefea756405bf2adf8a3e76883937c4534a6c23885952",
   "sources": {
-    "shared/agent/index.js": "f89b9e5b72b7f71f22870931b2d7c6c658e00f135b323045b5aabc4dd195f20b",
+    "shared/agent/index.js": "1c656218041504d61947495debdf36d4d72fe2cb7c8eed023b36e81d0ecd7d93",
+    "shared/agent/retrieval/requestPolicy.js": "e6c7dfc4ac142a2123aa4c32795ad3ad60cadc3c18819060482229ee3763ed16",
+    "shared/agent/media/textUrls.js": "a18784bbc35025e156184f896f0b5fd1ccaccde18a94a36acf6e2003fefa22c6",
+    "shared/agent/loopContract.js": "1da8b86df9dc1ed1cf5584ea04b9cc27ada08592569346bb1932412e15e84ff4",
+    "shared/agent/retrieval/publicLookupIntent.js": "85b8577c4ca585306e0f12ed55607c1ead92a790eda8e3e51d0c886b2ee8337a",
+    "shared/agent/retrieval/intentRouter.js": "cc592474a82ea3542efb0138fe7605fecc3ce822fcc161a738b3c1b40dd06d88",
     "shared/agent/imageLanguage.js": "2c2daaf60ec60aa8c34d235999af577816831e1143083c1c03b8d9e915488b7c",
     "shared/agent/locale.js": "f1ad69e49a9d785992c82a947b9487b395ece4bca91399fd6b28f217c72d3667",
     "shared/agent/runtimeMessages.js": "36f4e6a711b50e28670c860e9df9cd7dda4c036555c6b340bf001f7af7ddbf05",
@@ -13,14 +18,9 @@
     "shared/agent/taskReplay.js": "324d3294312b9f4e4d0d2484745e60cc0caf0360c82d9da643f1d1328431e74a",
     "shared/agent/turn.js": "892908137bd2044f16a66c030c1d1d9b44d80c74622f4e80eb1241466e0f589a",
     "shared/agent/tools.js": "cd493ad7c80dbb302df75dcf1430b7d95632faeec5445f397c25da62f1daaeed",
-    "shared/agent/loopContract.js": "3e094b569c7dd20562deb79e73c674f1352cc0819ef4d0ad7f3a72f70ae42ea5",
     "shared/agent/repeatGuard.js": "eca1d776e713fb7a59e05c1d16f78fb9d71877ad6ebb10cb23e2a4ad5bf78382",
     "shared/agent/toolEffects.js": "eb09f3cb5cf924659692da82942b17ff09d483f5d5e932898307fb2003233ff4",
-    "shared/agent/search.js": "f3e5dd6ab055991963a296cf12c83c5263baaec18132d0b877e606b341b94d8b",
-    "shared/agent/retrieval/requestPolicy.js": "ec39e949953ee7cfd4790e3745f85550961c3ed6073e1339283ba1e1beb89f1f",
-    "shared/agent/media/textUrls.js": "a18784bbc35025e156184f896f0b5fd1ccaccde18a94a36acf6e2003fefa22c6",
-    "shared/agent/retrieval/searchRouter.js": "04ed7da89b472ddc8e0b4173ecdd49c34273d5939646f31c717ddcdc0c14f6e2",
-    "shared/agent/retrieval/publicLookupIntent.js": "6a40292a4a126cb09e1c4f837d8504e0e3ecbf5e7f465eb6299469be3c88d525",
+    "shared/agent/search.js": "0c28ac6b4c88c516760f303f24629ba59168f43ff21c8d6066d280526039d7d0",
     "shared/agent/policyBridge.js": "685179f8ac85a4252f6f4a5a7c441f3da568f32146b8e2c22a7e7bf195077f4b",
     "shared/agent/runBudget.js": "4ddc72a53adda8ddc5557e08facce214fe782fa78782e1323531a8ca72877efe",
     "shared/agent/completion.js": "7b033362102f8ee57d6f0deb42989743791cff2e8ea8a827566e282abe7fee49",
@@ -32,7 +32,7 @@
     "shared/agent/hostedSearch.js": "75d1a1be8b0350ae05fba5602b17704857f3b85cb13f0bf38982413ba442226a",
     "src/shared/replyDocument.js": "824fa3e1fe139e41d690a450ab2995a09ee5a3b9f575174087aa154dae96032d",
     "shared/agent/context.js": "ada3c03f36d4b58f09293c726d56931f2d352cd44419c1198456c277d032a6c0",
-    "shared/agent/contextBudget.js": "5c40d5764096865e7ff64c87f1d2d731cdee0ccdec967bc4251f622e2ffa888b",
+    "shared/agent/contextBudget.js": "c78779a5a550cdfea89c1f4a1aeeecc421aba4541979f92d0e30d64e308a35e2",
     "shared/agent/tokenEstimate.js": "d6a5f0b91312c233b808acafa8250c7342296aa62c51e95f8969dd039a550fda"
   }
 }

@@ -74,7 +74,7 @@ export async function verifyUncertainClaim({
       apiProtocol: config.apiProtocol,
       apiKey: config.apiKey,
       baseUrl: config.baseUrl,
-      model: config.activeLlmProfileId ? config.model : process.env.MELO_VERIFIER_MODEL || model || config.model || PROVIDER_DEFAULTS.auxiliary.verifier,
+      model: model || config.model || PROVIDER_DEFAULTS.auxiliary.verifier,
       systemPrompt: VERIFIER_SYSTEM_PROMPT,
       messages: [
         { role: 'user', content: fillTemplate(UNCERTAINTY.questionTemplate, { question: userMessage }) },

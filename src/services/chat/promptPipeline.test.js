@@ -76,9 +76,14 @@ test('real runner tool loop verifies fresh evidence before emitting the only fin
   let verifierCalls = 0, goalChecks = 0;
   const events = [];
   const delivery = createReplyDelivery();
-  const spoken = [];
+  const spoken = [], deltas = [];
+  const input = fixture('When did the example ship?');
+  input.config.activeLlmProfileId = 'test-connection';
+  input.config.model = 'connection-default';
+  input.state.agentProfiles.main.model = 'agent-pinned';
   const result = await runChatAgentExecutionGraph({
-    ...fixture('When did the example ship?'),
+    ...input,
+    onDelta: chunk => deltas.push(chunk),
     sseEmitter: (event, payload) => {
       events.push({ event, payload });
       const next = receiveReplyDelivery(delivery, event, payload);
@@ -86,15 +91,18 @@ test('real runner tool loop verifies fresh evidence before emitting the only fin
       if (next.finalSpeechText) spoken.push(next.finalSpeechText);
     },
     _dependencies: { getEmbedding: async () => null, createReply: async request => {
-      if (request.systemPrompt.startsWith("You are Melo's task completion checker")) { goalChecks++; assert.equal(request.tools, undefined); return '{"decision":"partial","reasonType":"unavailable","requirements":[{"text":"release year","status":"missing","evidenceIds":[]}]}'; }
+      if (request.systemPrompt.startsWith("You are Melo's task completion checker")) { goalChecks++; assert.equal(request.tools, undefined); assert.equal(request.onDelta, undefined); return '{"decision":"partial","reasonType":"unavailable","requirements":[{"text":"release year","status":"missing","evidenceIds":[]}]}'; }
       if (request.systemPrompt.startsWith('Review factual claims')) {
         verifierCalls += 1;
+        assert.equal(request.model, 'agent-pinned');
         assert.equal(events.some(event => event.event === 'reply_text'), false);
         assert.match(request.messages.at(-1).content, /Release year: 2024/);
         assert.match(request.messages.at(-1).content, /full-text/);
         return JSON.stringify({ verdict: 'CORRECTED', evidenceId: 'tool:call1', evidenceQuote: 'Release year: 2024.', originalClaim: 'It shipped in 2025.', correction: 'It shipped in 2024.' });
       }
       calls += 1;
+      assert.equal(request.model, 'agent-pinned');
+      if (calls > 1) { assert.equal(typeof request.onDelta, 'function'); await request.onDelta({delta:'It shipped in 2025.',text:'It shipped in 2025.'}); }
       assert.equal(request.cacheScope, 'main:test-chat');
       if (calls === 1) return '<tool_call>{"id":"call1","name":"test_reference","arguments":{}}</tool_call>';
       assert.match(request.messages.at(-1).content, /Release year: 2024/);
@@ -103,6 +111,8 @@ test('real runner tool loop verifies fresh evidence before emitting the only fin
   });
   assert.equal(calls, 2);
   assert.equal(verifierCalls, 1);
+  assert.equal(deltas.length, 1, 'final answer after tools streams while the checker remains private');
+  assert.equal(Object.hasOwn(result, 'answerConnection'), false, 'provider credentials remain in the private turn closure');
   assert.equal(goalChecks, 1);
   assert.equal(result.normalizedReply.content, 'It shipped in 2024. Keep the receipt.');
   assert.deepEqual(spoken, [result.normalizedReply.content]);
@@ -187,16 +197,16 @@ test('negative search reaches the model, with no approval or native search', asy
   assert.equal(result.normalizedReply.content, '100°C。');
 });
 
-test('simple arithmetic drops tools but follow-ups, files, and URLs retain them', async () => {
+test('arithmetic, translation, follow-ups, files and URLs retain authorized tools', async () => {
   async function run(question, mutate = () => {}) {
     const input = fixture(question);
     mutate(input);
     return runChatAgentExecutionGraph({ ...input, _dependencies: { getEmbedding: async () => null, createReply: async () => '323' } });
   }
   const simple = await run('17乘以19等于多少？只回答数字。');
-  assert.deepEqual(simple.visibleToolIds, []);
-  assert.equal(simple.toolContextPolicy.mode, 'none');
-  for (const text of ['计算17乘以19并保存到文件', '请读取 https://example.com', '帮我生成一个 PDF', '现在还有哪些步骤要继续？']) {
+  assert.ok(simple.visibleToolIds.includes('test_reference'));
+  assert.equal(simple.toolContextPolicy.mode, 'full');
+  for (const text of ['translate hello into Spanish', '计算17乘以19并保存到文件', '请读取 https://example.com', '帮我生成一个 PDF', '现在还有哪些步骤要继续？']) {
     const result = await run(text);
     assert.ok(result.visibleToolIds.includes('test_reference'), text);
   }
@@ -218,12 +228,12 @@ test('explicit no-network context prevents automatic remote media fetching', asy
   } finally { globalThis.fetch = originalFetch; }
 });
 
-test('default enabled built-in skills do not disable the lean route, but custom skills do', async () => {
+test('built-in and custom skills keep authorized tools available for calculations', async () => {
   const input = fixture('17乘以19等于多少？只回答数字。');
   input.skills = buildSkills(BUILTIN_SKILLS.map(skill => skill.id), []);
   const deps = { getEmbedding: async () => null, createReply: async () => '323' };
   const result = await runChatAgentExecutionGraph({ ...input, _dependencies: deps });
-  assert.deepEqual(result.visibleToolIds, []);
+  assert.ok(result.visibleToolIds.includes('test_reference'));
   const custom = { id: 'custom-calculation', name: 'custom-calculation', type: 'executable', source: 'custom', enabled: true, systemPrompt: 'Use the custom workflow for calculations.' };
   input.skills = [custom];
   const protectedResult = await runChatAgentExecutionGraph({ ...input, _dependencies: deps });
@@ -262,4 +272,22 @@ test('actual prompt gets a fact once, and only complete budget-surviving facts c
  assert.equal(clipped.normalizedReply.memoryUsage.some(r=>r.id===hugeId),false);
  assert.equal(store.getMemoriesByIds([hugeId])[0].metadata.useCount,undefined);
  assert.equal(store.getHitStats({memoryIds:[hugeId]})[0]?.goodOutcomes,0);
+});
+
+test('a calculation can execute a calculator and blanket tool refusal executes nothing', async () => {
+  let executed=0;
+  const {unregisterTool}=await import('../../tools/registryCore.js');
+  registerTool({id:'calculator',name:'Calculator fixture',description:'Calculate',parametersSchema:{type:'object',properties:{}},requiresPermission:false,
+    run:async()=>{executed++;return {ok:true,output:'323'};}});
+  try {
+    for (const question of ['17*19', '不要使用工具，17*19']) {
+      const start=executed; let requests=0;
+      const result=await runChatAgentExecutionGraph({...fixture(question),_dependencies:{getEmbedding:async()=>null,createReply:async request=>{
+        if(request.systemPrompt.startsWith("You are Melo's task completion checker")) return '{"decision":"partial","reasonType":"unavailable","requirements":[{"text":"calculation","status":"missing","evidenceIds":[]}]}';
+        return ++requests===1 ? '<tool_call>{"id":"calc","name":"calculator","arguments":{}}</tool_call>' : '323';
+      }}});
+      assert.equal(executed-start,question.startsWith('不要')?0:1);
+      assert.equal(result.visibleToolIds.includes('calculator'),!question.startsWith('不要'));
+    }
+  } finally {unregisterTool('calculator');}
 });

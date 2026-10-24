@@ -1,3 +1,4 @@
+import { requestAllowsTool } from '../../shared/agent/retrieval/requestPolicy.js';
 import {workspaceForTool,ownedWorkspaceSafety} from '../services/workspace/toolWorkspace.js';
 import {trackWorkspaceWork} from '../agents/workspaceScheduling.js';
 import {narrowCapabilityScope,scopeAllowsTool,missingCapabilityScope,liveCapabilityScope} from '../domain/agent/capabilityScope.js';
@@ -52,6 +53,10 @@ export async function executeTool(tool, args, options = {}) {
   const ambient=currentRequestContext();
   const resolved=await resolveCapabilityContext(ambient || options.requestContext);
   if (!resolved) return missingCapabilityScope();
+  if (!requestAllowsTool(tool, resolved.requestToolPolicy)) return finalizeToolResult({
+    ok: false, error: 'REQUEST_TOOL_DENIED', output: 'The user prohibited this tool or network operation for the current turn.',
+    meta: { denied: true, executionStarted: false },
+  });
   // Grants are never baked into a scope: every call is checked against the
   // grant-free view, and live grants (or a user prompt) are consulted only when
   // that view denies — so a revocation applies to the very next call.

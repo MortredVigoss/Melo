@@ -8,11 +8,10 @@
 //   ④ migration scope: 3 production tools (fetchUrlTool / socialLinkTool /
 //      webSearchTool), memory-recall / file-grep deferred
 //
-// This module is the **G-2b adapter layer**: pure functions that take the
-// legacy return shape from any of the 3 tools and emit a uniform
-// `SearchTaskResult`.  No production caller is forced to migrate yet —
-// chatExecutionRunner + agentMemoryContext can opt into this normalization
-// at their own pace (G-2c).
+// Pure adapter for legacy tool results and persisted history. Production
+// toolResultProjection normalizes results here before storing evidence trails;
+// callers retain the raw output for backwards-compatible model/history reads.
+// This layer does not plan searches or grant tools.
 //
 // Design constraints (lessons-learned from G-1c 6-commit chain):
 //   • Pure functions, no side effects → testable with input/output only,

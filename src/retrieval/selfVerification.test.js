@@ -99,3 +99,14 @@ test('verifier no-context does not call a model; abort propagates', async () => 
     _createReply: async () => { controller.abort(new Error('user stopped')); throw controller.signal.reason; },
   }), /user stopped/);
 });
+
+test('verification honors the actual answering model even with an active connection default', async () => {
+  let received;
+  await verifyUncertainClaim({userMessage:'release?',assistantReply:'2024',uncertainClaim:'year',
+    config:{activeLlmProfileId:'connection',model:'default-model',apiKey:'test-key',baseUrl:'https://example.test/v1'},model:'agent-model',
+    toolEvidence:[{id:'source',ok:true,text:'Release year: 2024.'}],
+    _createReply:async request=>{received=request;return '{"verdict":"UNVERIFIED"}';}});
+  assert.equal(received.model,'agent-model');
+  assert.equal(received.baseUrl,'https://example.test/v1');
+  assert.equal(received.apiKey,'test-key');
+});

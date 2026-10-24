@@ -1,3 +1,5 @@
+import { requestAllowsTool, getRequestNetworkPolicy } from '../../../../shared/agent/retrieval/requestPolicy.js';
+import { isStandaloneGreeting } from '../../../../shared/agent/retrieval/intentRouter.js';
 import { routingLabel } from '../../../../shared/agent/modelRouting.js';
 import { createRoutingSession } from '../../modelRouting/routing.js';
 import { resolveContextBudget } from '../contextBudget.js';
@@ -11,7 +13,7 @@ import { resolveHostedSearchCapability } from '../../search/hostedSearchCapabili
 // node (checked by scope analysis before the move), so this is equivalent to
 // the closure it replaces.
 import { readExecutionContext } from '../executionScenes.js';
-import { toolsForCapabilityScope, nativeFeaturesForScope, scopeAllowsTool } from '../../../domain/agent/capabilityScope.js';
+import { toolsForCapabilityScope, scopeAllowsTool } from '../../../domain/agent/capabilityScope.js';
 import { retrieveKnowledgeContext } from '../knowledgeContext.js';
 import { measureStage, measureStageSync } from '../../../runtime/performanceTrace.js';
 import { resolveSessionFacts } from '../../../memory/factRecords.js';
@@ -32,7 +34,7 @@ import { buildAgentMemoryNodeContext } from '../../agent/agentMemoryContext.js';
 import { buildToolRoutingPrompt } from '../../agent/toolRoutingPrompt.js';
 import { buildChannelRoutePrompt } from '../../remote/channelRoutePrompt.js';
 import { buildMatcherContextFromChat } from '../matcherContext.js';
-import { detectImageIntent, buildModelMessagesFromChat, modelMessageSourceIds } from '../messageBuilder.js';
+import { buildModelMessagesFromChat, modelMessageSourceIds } from '../messageBuilder.js';
 import { hydrateMessagesForModel } from '../../../media/attachments.js';
 import { buildDynamicContext } from '../dynamicContext.js';
 import { planChatGraphAction, buildApprovalResponse } from '../chatActionPlanning.js';
@@ -52,7 +54,7 @@ import { buildSkillTool } from '../../../agents/skillExecutor.js';
 import { planIncrementalCompact, compactConversationDetailed, formatCompactContextBlock, buildRecentWindow } from '../../../memory/contextCompact.js';
 import { formatSessionMemoryBlock, selectSessionMemoryFacts } from '../../../memory/sessionMemory.js';
 import { classifyRequest } from '../../../retrieval/intentRouter.js';
-import { buildSearchRoutingPrompt, constrainSearchPlan } from '../../../retrieval/searchRouter.js';
+import { buildSearchRoutingPrompt } from '../../../retrieval/searchRouter.js';
 import { buildToolsSystemPrompt, shouldInjectToolsPrompt } from '../../../tools/systemPrompt.js';
 import { appendCompactCard, replaceCardSummary, ledgerCards, ledgerDigest, renderCompactLedger, degradedCardForUpgrade, noteCardUpgradeAttempt } from '../../../memory/compactLedger.js';
 import { buildTopicExcerpts } from '../topicExcerpts.js';
@@ -169,10 +171,8 @@ export function createPrepareNode(turn) {
         : buildDynamicContext(state, chat, workspace, agentConnectors.filter(c=>c.id!=="artifacts"), latestUserMessage),
     ]);
     const intent = classification.taskType;
-    const allowLiveSpeech = classification.riskLevel === 'normal' && intent === 'casual' &&
-      (chat.messages?.length || 0) <= 1 && !chat.compactSummary &&
-      !(chat.messages?.at(-1)?.attachments?.length) &&
-      /^(?:hi|hello|hey|ok|okay|thanks|thank you|你好|嗨|好的|好|谢谢)[\s!.?。！？]*$/i.test(String(latestUserMessage).trim());
+    const standaloneGreeting = isStandaloneGreeting({ text: latestUserMessage, messages: chat.messages, compactSummary: chat.compactSummary });
+    const allowLiveSpeech = classification.riskLevel === 'normal' && intent === 'casual' && standaloneGreeting;
     sseEmitter?.('speech_policy', { allowLiveSpeech });
 
     // ── 3. Plan actions (needs agentConnectors resolved above) ─────────
@@ -366,8 +366,7 @@ export function createPrepareNode(turn) {
     let toolsPrompt = buildSearchRoutingPrompt(searchPlan);
     let visibleToolIds = new Set();
     let promptTools = [];
-    const explicitTeam=teamPlan || state.tasks?.find(t=>t.execution?.requestId===context.requestId)?.execution?.teamPlan;
-    const toolContextPolicy = explicitTeam ? {mode:"full",reason:"explicit-team"} : selectToolContextPolicy({
+    const toolContextPolicy = selectToolContextPolicy({
       text: latestUserMessage, chat, searchPlan,
       hasExecutableSkills: requiresSkillToolContext(listExecutableSkills(enabledSkills), latestUserMessage),
       highRisk: classification.riskLevel === 'high',
@@ -376,43 +375,24 @@ export function createPrepareNode(turn) {
       // prepare scope owns the local `activeAgentProfile` (line 150);
       // graphState doesn't exist here (only invoke-model gets that).
       const allowedTools = filterMcpToolsForAgent([...getAllTools(), ...mcpTools], activeAgentProfile);
-      // Stable tool set (design audit A2): core tools always; extension
-      // groups (browser / documents / media) activate on a hint and then
-      // stay for the rest of the chat, so the definitions array only grows
-      // and the provider prefix cache survives routing changes. Search
-      // routing is prompt text only (buildSearchRoutingPrompt).
-      const latestAttachments = chat.messages?.at(-1)?.attachments || [];
-      const wantedGroups = wantedToolGroups({
-        text: latestUserMessage, attachments: latestAttachments, history: chat.messages || [], searchPlan, env,
-        hasImageIntent: detectImageIntent(latestUserMessage, { hasInputImage: latestAttachments.some(a => a?.kind === 'image') }),
-      });
-      const activatedGroups = nextActivatedGroups(chat.toolGroupsActivated, wantedGroups);
-      if (activatedGroups.join(',') !== (Array.isArray(chat.toolGroupsActivated) ? [...chat.toolGroupsActivated].sort().join(',') : '')) {
-        chat.toolGroupsActivated = activatedGroups;
-        await persistChatRuntimeFields(chat, ['toolGroupsActivated'], { home }).catch(() => {});
-      }
-      const stableTools = selectStableTools(allowedTools, activatedGroups)
-        // Browser tools keep their CDP gate from the old router.
-        .filter(tool => !/^browser_/.test(String(tool.id)) || env.MELO_CDP_ENABLED === '1');
-      promptTools = toolsForCapabilityScope([...stableTools, ...skillTools],context.capabilityScope).filter(t=>t.id!=='delegate'||activeAgentProfile.collaboration.canDelegate&&activeAgentProfile.collaboration.delegateTargets.length>0);
+      const wantedGroups = wantedToolGroups({ searchPlan, env });
+      const stableTools = selectStableTools(allowedTools, nextActivatedGroups([], wantedGroups))
+        .filter(tool => requestAllowsTool(tool, context.requestToolPolicy || getRequestNetworkPolicy(latestUserMessage)));
+      promptTools = toolsForCapabilityScope([...stableTools, ...skillTools].filter(tool => requestAllowsTool(tool, context.requestToolPolicy || getRequestNetworkPolicy(latestUserMessage))),context.capabilityScope).filter(t=>t.id!=='delegate'||activeAgentProfile.collaboration.canDelegate&&activeAgentProfile.collaboration.delegateTargets.length>0);
       visibleToolIds = new Set(promptTools.map(tool => tool.id).filter(Boolean));
     }
-    if (!searchPlan.sharedPlan) searchPlan = constrainSearchPlan(searchPlan, { toolIds: [...visibleToolIds],
-      nativeSearch: config.authMode === 'codex' && nativeFeaturesForScope(context.capabilityScope).nativeWebSearchEnabled });
     toolsPrompt = buildSearchRoutingPrompt(searchPlan);
     const functionSession = createFunctionCallingSession({ ...config, baseUrl: modelOverrides.baseUrl,
       toolCalling: env.MELO_FUNCTION_CALLING || config.toolCalling }, promptTools);
     toolsPrompt = [toolsPrompt, buildToolsSystemPrompt(promptTools, { includeExamples: false, native: functionSession.native, protocol: functionSession.protocol })].filter(Boolean).join('\n\n');
     if (toolContextPolicy.mode === 'none') {
-      toolsPrompt = [toolsPrompt, 'This is a self-contained text task. Answer directly from the user-provided context or basic knowledge; no tools are exposed for this turn. If information is missing, say so.'].filter(Boolean).join('\n\n');
+      toolsPrompt = [toolsPrompt, 'The user explicitly prohibited tools for this turn. Answer from the available context and state any information gaps without executing tools.'].filter(Boolean).join('\n\n');
     }
     if (promptDebug) process.stdout.write(`[tool-context] ${JSON.stringify(toolContextPolicy)}\n`);
 
     // Standalone greetings need no retrieval or embedding. A short confirmation
     // in an ongoing task ("好" / "ok") still keeps its full context.
-    const skipMemory = activeAgentProfile.contextSources?.memory === false || classification.riskLevel === 'normal' && intent === 'casual' &&
-      !(chat.messages?.at(-1)?.attachments?.length) &&
-      /^(?:hi|hello|hey|thanks|thank you|你好|嗨|谢谢)[\s!.?。！？]*$/i.test(String(latestUserMessage).trim());
+    const skipMemory = activeAgentProfile.contextSources?.memory === false || allowLiveSpeech;
     // Project memory book + personal profile (design 2B): stable blocks for
     // local chats only — never for a remote channel audience, never when the
     // agent has memory switched off. Their rows are reported in memoryUsage

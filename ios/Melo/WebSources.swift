@@ -131,21 +131,20 @@ enum ChatGPTRequest {
         return !name.contains("-chat") && !name.contains("instant") && name.range(of: #"^(gpt-[56]([.-]|$)|o[134](-|$))"#, options: .regularExpression) != nil
     }
     static func requiresSearch(_ text: String) -> Bool {
-        let value = text.lowercased()
-        return ["天气", "气温", "新闻", "最新", "实时", "联网", "搜索", "查一下", "营业时间", "股价", "汇率", "机票", "航班", "票价", "weather", "forecast", "latest", "search", "current price", "exchange rate", "flight", "airfare"].contains(where: value.contains)
+        SharedLoopPolicy.value("lookupIntent", ["text": text]) as? Bool ?? false
     }
-    static func allowsSearch(_ messages: [ChatMessage]) -> Bool {
-        let text = messages.last(where: { $0.role == "user" })?.content.lowercased() ?? ""
-        return !["不用查", "不要搜索", "不用联网", "不联网", "不要联网", "不准联网", "don't search", "do not search", "no web search"].contains(where: text.contains)
+    static func allowsTool(_ name: String, messages: [ChatMessage]) -> Bool {
+        SharedLoopPolicy.value("requestToolAllowed", [
+            "tool": name, "text": messages.last(where: { $0.role == "user" })?.content ?? "",
+            "messages": messages.map { ["role": $0.role, "content": $0.content] }
+        ]) as? Bool ?? false
     }
+    static func allowsSearch(_ messages: [ChatMessage]) -> Bool { allowsTool("web_search", messages: messages) }
     static func requiresSearch(_ messages: [ChatMessage]) -> Bool {
-        let userMessages = messages.filter { $0.role == "user" }
-        guard let last = userMessages.last?.content else { return false }
-        if !allowsSearch(messages) { return false }
-        if requiresSearch(last) { return true }
-        let short = last.trimmingCharacters(in: .whitespacesAndNewlines)
-        let followup = ["对", "是", "是的", "继续", "好", "查吧", "再查一下", "yes", "continue"].contains(short.lowercased()) || short.range(of: #"^.{0,12}(\d{1,4}[年月日号/.-]|明天|后天|周末|下周).{0,40}$"#, options: .regularExpression) != nil
-        return short.count <= 80 && followup && userMessages.dropLast().suffix(3).contains { requiresSearch($0.content) }
+        SharedLoopPolicy.value("lookupIntent", [
+            "text": messages.last(where: { $0.role == "user" })?.content ?? "",
+            "messages": messages.map { ["role": $0.role, "content": $0.content] }
+        ]) as? Bool ?? false
     }
     /// Stable per-chat grouping for the provider's prompt cache (opaque; no chat text).
     static func cacheKey(chatID: String, agentID: String) -> String {

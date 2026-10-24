@@ -177,12 +177,15 @@ struct ImageSizeRejected: Error {}
     func routingTransport(messages: [ChatMessage], requestHistory: [ChatMessage], model: String, instructions: String, imageInputs: [ImageInput], tools: AgentLoopTools?, allowWebSearch: Bool, allowImageTool: Bool, cacheKey: String, onObservation: ((ExecutionObservation) -> Void)?) async throws -> CodexResponsesTransport {
         if !imageInputs.isEmpty, let inputs = models.first(where: { $0.slug == model })?.input_modalities, !inputs.contains("image") { throw MeloError.message("此模型已设为不支持图片输入，请选择视觉模型或修改能力设置。") }
         let expectedEpoch = epoch
+        var tools = tools
+        let permittedDefinitions = tools?.definitions.filter { ChatGPTRequest.allowsTool($0.name, messages: requestHistory) } ?? []
+        tools?.definitions = permittedDefinitions
         let account = try await credentials()
         try Task.checkCancellation()
         var body = ChatGPTRequest.body(messages: messages, requestHistory: requestHistory, model: model, instructions: instructions, webSearch: allowWebSearch && (defaults.object(forKey: "webSearchEnabled") as? Bool ?? true), cacheKey: cacheKey)
         if !imageInputs.isEmpty { body["input"] = ImageRequestBody.responses(messages: ChatGPTRequest.withCurrentTime(messages), inputs: imageInputs, task: ImageTaskPlan(action: .analyze), model: model, instructions: instructions)["input"] }
         body["tools"] = ((body["tools"] as? [[String: Any]]) ?? []) + ((tools?.definitions ?? []) + [PhoneRoutingHost.control]).map(\.responsesDefinition)
-        if allowImageTool { body["tools"] = ((body["tools"] as? [[String: Any]]) ?? []) + [["type": "image_generation", "model": ImageTaskPlan().model]] }
+        if allowImageTool && ChatGPTRequest.allowsTool("image", messages: requestHistory) { body["tools"] = ((body["tools"] as? [[String: Any]]) ?? []) + [["type": "image_generation", "model": ImageTaskPlan().model]] }
         body["tool_choice"] = "auto"
         body["instructions"] = ((body["instructions"] as? String) ?? "") + "\n" + (tools?.instructionsWithContract ?? "")
         let updates = StreamUpdates(onObservation: onObservation, onReceiving: nil, setStatus: { _ in })
@@ -215,7 +218,7 @@ struct ImageSizeRejected: Error {}
         }
         // Ordinary replies may still make or edit an image when the wording was not
         // recognised up front: the model decides, instead of saying the tool is missing.
-        let offersImageTool = allowImageTool && imageTask?.makesImage != true
+        let offersImageTool = allowImageTool && imageTask?.makesImage != true && ChatGPTRequest.allowsTool("image", messages: requestHistory ?? messages)
         if offersImageTool {
             let plan = imageTask ?? ImageTaskPlan()
             body["tools"] = ((body["tools"] as? [[String: Any]]) ?? []) + [["type": "image_generation", "model": plan.model].merging(plan.size == "auto" ? [:] : ["size": plan.size]) { _, new in new }]
@@ -224,7 +227,7 @@ struct ImageSizeRejected: Error {}
         }
         let imageMode = imageTask?.makesImage == true || offersImageTool
         // Phone tools (device data + web pages + read_history) are offered only for ordinary replies, never image generation.
-        let phoneTools = imageTask?.makesImage == true ? [] : (deviceTools?.definitions ?? [])
+        let phoneTools = imageTask?.makesImage == true ? [] : (deviceTools?.definitions ?? []).filter { ChatGPTRequest.allowsTool($0.name, messages: requestHistory ?? messages) }
         var loopTools: AgentLoopTools?
         if !phoneTools.isEmpty, let deviceTools {
             let tools = AgentLoopTools(definitions: phoneTools, instructions: deviceTools.instructions, perform: deviceTools.perform, statusText: deviceTools.statusText)

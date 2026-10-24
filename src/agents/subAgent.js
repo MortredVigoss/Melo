@@ -1,3 +1,4 @@
+import { requestAllowsTool } from '../../shared/agent/retrieval/requestPolicy.js';
 import { createCoreTurn } from '../runtime/sharedAgentCore.js';
 import { renderAgentIdentity } from '../domain/agent/agentIdentity.js';
 import {resolveCapabilityContext} from '../services/agent/capabilityContext.js';
@@ -142,7 +143,7 @@ async function runSubAgentLoop({
     return { ok: false, output: 'Sub-agent task cannot be empty.' };
   }
 
-  const allowedTools = toolsForCapabilityScope(resolveAllowedTools(allowedToolIds, agentProfile ? 0 : depth,extraTools),currentRequestContext().capabilityScope).filter(t=>!['agent','delegate'].includes(t.id)||depth<maxDepth);
+  const allowedTools = toolsForCapabilityScope(resolveAllowedTools(allowedToolIds, agentProfile ? 0 : depth,extraTools),currentRequestContext().capabilityScope).filter(tool => requestAllowsTool(tool,currentRequestContext().requestToolPolicy)).filter(t=>!['agent','delegate'].includes(t.id)||depth<maxDepth);
   const providerConfig = delegatedConfig(config);
   const functionSession = createFunctionCallingSession(providerConfig, allowedTools);
   const contextBudget = resolveContextBudget(requestEnvironment());
@@ -231,8 +232,8 @@ async function runSubAgentLoop({
       model: providerConfig.model,
       systemPrompt: review?.systemPrompt || systemPrompt,
       messages: request.messages,
-      nativeWebSearchEnabled: !checkingGoal && nativeFeaturesForScope(currentRequestContext().capabilityScope).nativeWebSearchEnabled,
-      nativeImageGenerationEnabled: !checkingGoal && !coreTurn.repairing && nativeFeaturesForScope(currentRequestContext().capabilityScope).nativeImageGenerationEnabled,
+      nativeWebSearchEnabled: !checkingGoal && nativeFeaturesForScope(currentRequestContext().capabilityScope,currentRequestContext().requestToolPolicy).nativeWebSearchEnabled,
+      nativeImageGenerationEnabled: !checkingGoal && !coreTurn.repairing && nativeFeaturesForScope(currentRequestContext().capabilityScope,currentRequestContext().requestToolPolicy).nativeImageGenerationEnabled,
       onExecutionEvent: event => coreTurn.observeNative(event),
       signal,
       // Native tools obey the same inherited capability snapshot as local tools.
@@ -265,7 +266,7 @@ async function runSubAgentLoop({
     }
 
     if (!toolCalls.length) {
-      if (coreTurn.candidate(turn.text, { research: true, nativeSearch: nativeFeaturesForScope(currentRequestContext().capabilityScope).nativeWebSearchEnabled })) { coreTurn.update('feedback'); continue; }
+      if (coreTurn.candidate(turn.text, { research: true, nativeSearch: nativeFeaturesForScope(currentRequestContext().capabilityScope,currentRequestContext().requestToolPolicy).nativeWebSearchEnabled })) { coreTurn.update('feedback'); continue; }
       coreTurn.update('complete');
       if (coreTurn.status !== 'completed') break;
       finalOutput = cleanReplyForParent(turn.text);

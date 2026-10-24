@@ -36,6 +36,7 @@ export function _resetIntentCacheForTests() {
 // Rule patterns, thresholds and the classifier prompt are shared with the
 // iPhone finalize step (shared/protocol/agent-loop.json).
 const INTENT = AGENT_LOOP_CONTRACT.intent;
+const GREETING_PATTERN = contractRegExp(INTENT.patterns.greeting);
 const HIGH_STAKES_PATTERN = contractRegExp(INTENT.patterns.highStakes);
 const CREATIVE_PATTERN = contractRegExp(INTENT.patterns.creative);
 const CODING_PATTERN = contractRegExp(INTENT.patterns.coding);
@@ -50,7 +51,12 @@ export function classifyRisk(query = '') {
 }
 
 export async function classifyRequest(userMessage, options = {}) {
-  let taskType = await classifyIntent(userMessage, options);
+  options.signal?.throwIfAborted();
+  return classifyLocalRequest(userMessage, options);
+}
+
+export function classifyLocalRequest(userMessage, options = {}) {
+  let taskType = classifyByRules(userMessage) || 'factual';
   let riskText = String(userMessage || '');
   const contextualReply = CONTEXTUAL_REPLY_PATTERN.test(riskText.trim());
   if (contextualReply && Array.isArray(options.contextMessages)) {
@@ -75,7 +81,7 @@ export function classifyByRules(query) {
     return 'casual';
   }
 
-  if (SHORT_ACK_PATTERN.test(text)) {
+  if (SHORT_ACK_PATTERN.test(text) || GREETING_PATTERN.test(text)) {
     return 'casual';
   }
   if (isTranslationRequest(text)) return 'creative';
@@ -101,18 +107,6 @@ export function classifyByRules(query) {
     return 'factual';
   }
 
-  if (text.length < INTENT.shortTextChars) {
-    return 'casual';
-  }
-
-  // Long messages that didn't match a specific pattern are almost always
-  // factual information requests or task instructions — default to 'factual'
-  // so we avoid an extra API round-trip for the large majority of messages.
-  // Only genuinely ambiguous short-to-medium messages (8–80 chars, no markers)
-  // fall through to the API classifier.
-  if (text.length > INTENT.longTextChars) {
-    return 'factual';
-  }
 
   return null;
 }
@@ -133,4 +127,18 @@ export function intentRequiresVerification(intent) {
 
 export function intentAllowsUncertaintyMarker(intent) {
   return intentRequiresVerification(intent);
+}
+
+// Only standalone greetings skip retrieval. Ongoing acknowledgements keep context.
+export function isStandaloneGreeting({ text = '', messages = [], compactSummary = '' } = {}) {
+  return messages.length <= 1 && !compactSummary && !messages.at(-1)?.attachments?.length &&
+    (GREETING_PATTERN.test(text.trim()) || SHORT_ACK_PATTERN.test(text.trim()));
+}
+
+export function intentOperation(input = {}) {
+  if (input.action === 'rules') return classifyByRules(input.text);
+  if (input.action === 'risk') return classifyRisk(input.text);
+  if (input.action === 'translation') return isTranslationRequest(input.text);
+  if (input.action === 'greeting') return isStandaloneGreeting(input);
+  return classifyLocalRequest(input.text, { contextMessages: input.messages });
 }

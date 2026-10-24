@@ -46,12 +46,9 @@ export function createFinalizeNode(turn) {
         uncertainClaim: parsed.uncertainClaim,
         contextBlocks: [graphState.memoryContext, graphState.dynamicContext, graphState.projectContext],
         toolEvidence: graphState.toolEvidence || [],
-        config: { ...config, apiKey: modelOverrides.apiKey, baseUrl: modelOverrides.baseUrl },
-        model:
-          modelOverrides.verifier ||
-          modelOverrides.model ||
-          graphState.activeAgentProfile.model ||
-          config.model,
+        config: { ...config, apiKey: modelOverrides.apiKey, baseUrl: modelOverrides.baseUrl, ...turn.answerConnection },
+        model: modelOverrides.verifier || turn.answerConnection?.model ||
+          modelOverrides.model || graphState.activeAgentProfile.model || config.model,
         signal,
         _createReply: createReply,
       });

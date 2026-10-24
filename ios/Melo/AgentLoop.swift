@@ -196,7 +196,8 @@ final class AgentLoop: @unchecked Sendable {
 
         var screenshots = 0
         var spentTokens = 0
-        let offered = Set((tools?.definitions ?? []).map(\.name) + (hooks.routing == nil ? [] : ["melo_escalate"]))
+        let permittedDefinitions = (tools?.definitions ?? []).filter { ChatGPTRequest.allowsTool($0.name, messages: goalHistory.isEmpty ? [ChatMessage(role: "user", content: latestUserMessage)] : goalHistory) }
+        let offered = Set(permittedDefinitions.map(\.name) + (hooks.routing == nil ? [] : ["melo_escalate"]))
         var transport = self.transport
         if let exhausted = budget.exhausted() {
             let text = await exhaustedStop(exhausted)
@@ -420,20 +421,7 @@ final class AgentLoop: @unchecked Sendable {
         guard parsed.hasMarker else { return }
         var classification = verification.classification
         let transport = hooks.routing?.currentTransport ?? self.transport
-        if classification.taskType == nil && classification.riskLevel != "high" {
-            // Ambiguous wording: the desktop asks the classifier model; the phone asks only when it matters.
-            guard budget.exhausted() == nil else { return }
-            do {
-                let timeout = budget.requestTimeout(cap: transport.timeoutCap)
-                let question = verification.question
-                let answer = try await withDeadline { try await transport.complete(system: AgentLoopContract.shared.intentFallbackSystemPrompt, messages: [ChatMessage(role: "user", content: JSText.trim(question))], timeout: timeout) }
-                budget.record(inputTokens: PhoneTokenEstimate.text(AgentLoopContract.shared.intentFallbackSystemPrompt + question), providerCalls: 1)
-                classification.taskType = PhoneIntent.normalize(answer)
-            } catch {
-                if Task.isCancelled || error is CancellationError { throw error }
-                classification.taskType = "factual"
-            }
-        }
+        if classification.taskType == nil { classification.taskType = "factual" }
         guard classification.requiresVerification, budget.exhausted() == nil else { return }
         await hooks.onStage?("finalize:verify", "核实不确定内容", "running", parsed.uncertainClaim)
         let toolEvidence = PhoneUncertainty.collect(lastEvidence, query: latestUserMessage)

@@ -88,3 +88,16 @@ test('classifyIntent cache is isolated — _resetIntentCacheForTests clears it',
   _resetIntentCacheForTests();
   assert.equal(await classifyIntent('hi'), 'casual');
 });
+
+test('short task instructions and long unclassified text are never labelled casual by length', async () => {
+  const { classifyByRules, isStandaloneGreeting } = await import('./intentRouter.js');
+  for (const text of ['一直查','今天的新闻','換背景','x'.repeat(100)]) {
+    assert.equal(classifyByRules(text),null);
+    assert.equal(await classifyIntent(text),'factual');
+  }
+  for(const text of ['hello','你好','hola','こんにちは','안녕하세요','ok']) {
+    assert.equal(isStandaloneGreeting({text,messages:[{role:'user',content:text}]}),true);
+    assert.equal(isStandaloneGreeting({text,messages:[{role:'assistant',content:'pending task'},{role:'user',content:text}]}),false);
+    assert.equal(isStandaloneGreeting({text,messages:[{role:'user',attachments:[{kind:'image'}]}]}),false);
+  }
+});

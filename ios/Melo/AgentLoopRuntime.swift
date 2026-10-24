@@ -556,7 +556,7 @@ enum PhoneUncertainty {
 
 enum PhoneIntent {
     struct Classification: Equatable {
-        /// nil = the rules could not decide (the desktop asks a classifier model).
+        /// nil is a legacy ambiguous label; use the conservative local fallback.
         var taskType: String?
         var riskLevel: String
         var requiresVerification: Bool { PhoneIntent.requiresVerification(taskType: taskType ?? "factual", riskLevel: riskLevel) }
@@ -575,32 +575,17 @@ enum PhoneIntent {
     }
     /// `classifyByRules`
     static func rules(_ query: String) -> String? {
-        let text = JSText.trim(query)
-        if text.isEmpty { return "casual" }
-        if pattern("shortAck").test(text) { return "casual" }
-        if isTranslationRequest(text) { return "creative" }
-        if pattern("coding").test(text) { return "coding" }
-        if pattern("creative").test(text) { return "creative" }
-        if pattern("highStakes").test(text) { return "high-stakes" }
-        if pattern("questionMark").test(text) || pattern("factualEn").test(text) || pattern("factualCn").test(text) { return "factual" }
-        if JSText.length(text) < loopContract.intentShortTextChars { return "casual" }
-        if JSText.length(text) > loopContract.intentLongTextChars { return "factual" }
-        return nil
+        SharedLoopPolicy.value("intent", ["action": "rules", "text": query]) as? String
     }
-    static func risk(_ query: String) -> String { pattern("highStakes").test(query) ? "high" : "normal" }
-    /// `classifyRequest` without the model step: ambiguous text keeps `taskType == nil`.
+    static func risk(_ query: String) -> String {
+        SharedLoopPolicy.value("intent", ["action": "risk", "text": query]) as? String ?? "high"
+    }
     static func classify(_ message: String, history: [ChatMessage]) -> Classification {
-        var taskType = rules(message)
-        var riskText = message
-        if pattern("contextualReply").test(JSText.trim(riskText)) {
-            var turns = history.filter { $0.role == "user" }
-            if turns.last?.content == message { turns.removeLast() }
-            if let previous = turns.last?.content, !JSText.trim(previous).isEmpty {
-                taskType = rules(previous) ?? "factual"
-                riskText = previous + "\n" + riskText
-            }
+        let messages = history.map { ["role": $0.role, "content": $0.content] }
+        guard let result = SharedLoopPolicy.value("intent", ["text": message, "messages": messages]) as? [String: Any] else {
+            return Classification(taskType: "factual", riskLevel: "high")
         }
-        return Classification(taskType: taskType, riskLevel: taskType == "high-stakes" ? "high" : risk(riskText))
+        return Classification(taskType: result["taskType"] as? String ?? "factual", riskLevel: result["riskLevel"] as? String ?? "high")
     }
     /// `intentRequiresVerification`
     static func requiresVerification(taskType: String, riskLevel: String) -> Bool {

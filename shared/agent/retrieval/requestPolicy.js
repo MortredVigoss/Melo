@@ -37,6 +37,7 @@ export function getRequestNetworkPolicy(text = '') {
   return {
     instruction,
     contextOnly,
+    toolsForbidden: TOOLS_DENIAL.test(instruction),
     fetchForbidden,
     searchForbidden: fetchForbidden || SEARCH_DENIAL.test(instruction),
     localSearch: isExplicitLocalSearch(text),
@@ -65,9 +66,6 @@ export function isTranslationRequest(text = '') {
   return TRANSLATION_PATTERN.test(instruction);
 }
 
-const EXTERNAL_TASK = /https?:\/\/|\b(?:file|pdf|docx|xlsx|csv|workspace|repo|browser|tool|save|send|email|post|publish|calendar|upload|download|execute|run|remind|schedule|image|video|audio)\b|文件|附件|图片|截图|视频|音频|语音|浏览器|工具|工作区|仓库|保存|发送|发给|发到|导出|邮件|日历|上传|下载|运行|执行|生成|提醒|定时/iu;
-const FOLLOW_UP = /^(?:ok|okay|yes|sure|continue|go ahead|好|好的|是|对|继续|再说说)[\s!.?。！？]*$/iu;
-
 export function requiresSkillToolContext(skills = [], text = '') {
   const query = String(text).toLowerCase();
   return skills.some(skill => {
@@ -79,20 +77,18 @@ export function requiresSkillToolContext(skills = [], text = '') {
   });
 }
 
-export function selectToolContextPolicy({ text = '', chat, searchPlan, hasExecutableSkills = false, highRisk = false } = {}) {
-  const policy = getRequestNetworkPolicy(text);
-  const full = { mode: 'full', reason: 'task-may-need-tools' };
-  if (hasExecutableSkills || highRisk || searchPlan?.route !== 'none' || FOLLOW_UP.test(text.trim())) return full;
-  const latestUser = (chat?.messages || []).findLast(message => message?.role === 'user');
-  if (latestUser?.attachments?.length || EXTERNAL_TASK.test(policy.instruction) || /https?:\/\//iu.test(text)) return full;
-  // Only high-confidence self-contained requests take the lean path. Unknown
-  // tasks and short confirmations retain the normal tool/permission pipeline.
-  const arithmetic = text.length <= 160 && /\d\s*(?:[+*×÷/−-]|乘以?|除以?|加|减)\s*-?\d/u.test(text) &&
-    /^[\d\s.,，。?？!！:：=()+*×÷/−%\-乘以除加减等于多少请帮我计算结果只回答数字]+$/u.test(text);
-  const translation = text.length <= 1400 && isTranslationRequest(text);
-  const explicitQuestion = /[?？]|多少|是否|能否|能确定|能确认|是什么|\b(?:what|when|why|how|is|are|can)\b/iu.test(policy.instruction);
-  if (arithmetic || translation || (policy.contextOnly && text.length <= 1800) || (policy.searchForbidden && explicitQuestion && text.length <= 600)) {
-    return { mode: 'none', reason: arithmetic ? 'simple-arithmetic' : translation ? 'supplied-text-translation' : 'explicit-context-only' };
-  }
-  return full;
+export function selectToolContextPolicy({ text = '' } = {}) {
+  return getRequestNetworkPolicy(text).toolsForbidden
+    ? { mode: 'none', reason: 'user-disabled-tools' }
+    : { mode: 'full', reason: 'authorized-tools-available' };
+}
+
+/** Same user restrictions at catalog and execution boundaries, including members. */
+export function requestAllowsTool(tool, policy = {}) {
+  if (policy.toolsForbidden) return false;
+  const id = typeof tool === 'string' ? tool : String(tool?.id || '');
+  const network = tool?.capability === 'network' || /^(?:web_search|fetch_url|open_url|web_screenshot|browser_.*)$/.test(id);
+  if (policy.fetchForbidden && network) return false;
+  if (policy.searchForbidden && id === 'web_search') return false;
+  return true;
 }

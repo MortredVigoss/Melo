@@ -1,3 +1,4 @@
+import { publicLookupRequest } from './retrieval/publicLookupIntent.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { planRequest, actionEvidence } from './search.js';
@@ -79,4 +80,23 @@ test('explicit app research, denied phone use and context-only answers retain th
   assert.deepEqual(plan('推荐 Surry Hills brunch，不要操作手机').tools, ['web_search', 'fetch_url']);
   assert.deepEqual(plan('只根据已有对话推荐 brunch，不联网').tools, []);
   assert.equal(plan('打开设置', { capabilities: { executors: [], grants: [] } }).reason, 'PHONE_UNAVAILABLE');
+});
+
+test('tool availability survives an unknown-language lookup hint and obeys current user restrictions', () => {
+ const p=plan('Quel temps fera-t-il au concert ?');
+ assert.ok(p.availableTools.includes('web_search'));
+ assert.ok(p.availableTools.includes('fetch_url'));
+ for(const text of ['不要使用任何工具','no tools please']){
+  const blocked=plan(text); assert.deepEqual(blocked.availableTools,[]); assert.equal(blocked.nativeSearchAvailable,false);
+ }
+ assert.equal(plan('不要搜索，但读取 https://example.test/a').availableTools.includes('web_search'),false);
+ assert.ok(plan('不要搜索，但读取 https://example.test/a').availableTools.includes('fetch_url'));
+});
+
+test('date-only follow-up retains a public lookup goal and explicit cancellation stops it', () => {
+  const history = [{role:'user',content:'查一下墨尔本到悉尼的机票'}, {role:'assistant',content:'哪一天？'}];
+  for (const content of ['10月31号','2026-10-31','下周三']) {
+    assert.equal(publicLookupRequest(content, history), true);
+  }
+  assert.equal(publicLookupRequest('不用查了，帮我写首诗', history), false);
 });

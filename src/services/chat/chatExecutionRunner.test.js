@@ -661,7 +661,7 @@ test('F3 MCP isolation: mcpRegistry tools reach only the whitelisted agent and d
   } finally { unregisterMcpServer('probe-srv'); }
 });
 
-test('shared search policy keeps stable browser definitions but denies screen effects and unsupported final claims', async () => {
+test('authorized browser tools remain executable across search routes without certifying unsupported claims', async () => {
   const { registerTool, unregisterTool, getTool } = await import('../../tools/registry.js');
   const { createRequestContext } = await import('../../runtime/requestContext.js');
   const original = getTool('browser_open'); let effects = 0, calls = 0;
@@ -669,7 +669,7 @@ test('shared search policy keeps stable browser definitions but denies screen ef
   registerTool({ id: 'policy_probe', name: 'Policy Probe', description: 'Capture inherited permissions', requiresPermission: false, parametersSchema: { type: 'object', properties: {} },
     run: async (_, context) => { inherited = context.allowedToolIds; return { ok: true, output: 'Policy captured' }; } });
   unregisterTool('browser_open');
-  registerTool({ ...original, run: async () => { effects++; return { ok: true, output: 'Should never execute' }; } });
+  registerTool({ ...original, run: async () => { effects++; return { ok: true, output: 'Browser opened; no restaurant evidence returned' }; } });
   const state = fixtureState(), chat = fixtureChat(); state.chats = [chat]; await saveState(state);
   const context = createRequestContext({ home: TEST_HOME, env: { MELO_CDP_ENABLED: '1' } });
   try {
@@ -678,8 +678,8 @@ test('shared search policy keeps stable browser definitions but denies screen ef
       _dependencies: { getEmbedding: async () => null, createReply: async () => calls++ === 0
         ? '<tool_call>{"id":"browser-1","name":"browser_open","arguments":{"url":"https://google.com"}}</tool_call><tool_call>{"id":"probe-1","name":"policy_probe","arguments":{}}</tool_call>' : 'I searched and found the best restaurant.' } });
     assert.ok(result.visibleToolIds.includes('browser_open'), 'upstream stable definitions are preserved');
-    assert.equal(effects, 0); assert.equal(calls, 3);
-    assert.ok(inherited.includes('web_search')); assert.equal(inherited.includes('browser_open'), false, 'nested Skill / Agent permissions cannot widen the parent search policy');
+    assert.equal(effects, 1); assert.equal(calls, 3);
+    assert.ok(inherited.includes('web_search')); assert.equal(inherited.includes('browser_open'), true, 'members inherit the same explicitly opted-in browser permission');
     assert.equal(result.reply, 'I searched and found the best restaurant.');
     assert.equal(result.normalizedReply.completion.outcome, 'partial');
     assert.equal(result.normalizedReply.completion.reason, 'GOAL_CHECK_UNAVAILABLE');

@@ -1,3 +1,4 @@
+import { buildSharedSearchPlan } from '../../retrieval/sharedSearchPlan.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
@@ -87,4 +88,13 @@ test('a backend returning too many sources cannot exceed the configured result c
  const server=await fixture(t,(_,response)=>response.end(JSON.stringify({results:Array.from({length:8},(_,i)=>({title:'Result '+i,url:'https://fixture.invalid/'+i}))})));
  const result=await createSharedSearchTool().run({query:'fixture',maxResults:8},{fixture:true,config:{agentRuntime:{search:{backend:'http',endpoint:server.endpoint,maxResults:2}}}});
  assert.equal(JSON.parse(server.requests[0].body).maxResults,2);assert.equal(JSON.parse(result.output).results.length,2);assert.equal(JSON.parse(result.output).truncated,true);
+});
+
+test('backend availability is independent of classifier hints and does not impose a required search', () => {
+ const result=buildSharedSearchPlan({latestUserMessage:'17*19',capabilities:{hostedSearch:'verified',grants:['web_search'],executors:['web_search']}});
+ assert.equal(result.sharedPlan.route,'none');
+ assert.deepEqual(result.sharedPlan.requiredTools,[]);
+ assert.equal(result.nativeWebSearchEnabled,true);
+ const denied=buildSharedSearchPlan({latestUserMessage:'不要联网，17*19',capabilities:{hostedSearch:'verified',grants:['web_search']}});
+ assert.equal(denied.nativeWebSearchEnabled,false);
 });

@@ -1,3 +1,4 @@
+import { requestAllowsTool } from '../../../shared/agent/retrieval/requestPolicy.js';
 import {normalizeCapabilities,intersectCapabilities,toolCapabilityAllowed,filterToolsByCapabilities} from './capabilities.js';
 import {requestableCapabilities} from './capabilityElevation.js';
 
@@ -91,5 +92,5 @@ export const toolsForCapabilityScope=(tools,scope)=>{
   const visible=scope.elevation?{...scope,capabilities:visibleCapabilities(scope)}:scope;
   return filterToolsByCapabilities(tools,visible.capabilities).filter(t=>scopeAllowsTool(visible,t));
 };
-export const nativeFeaturesForScope=scope=>({nativeWebSearchEnabled:scopeAllowsTool(scope,'web_search'),nativeImageGenerationEnabled:scopeAllowsTool(scope,'image',{action:'generate'})});
+export const nativeFeaturesForScope=(scope,policy={})=>({nativeWebSearchEnabled:requestAllowsTool('web_search',policy)&&scopeAllowsTool(scope,'web_search'),nativeImageGenerationEnabled:requestAllowsTool('image',policy)&&scopeAllowsTool(scope,'image',{action:'generate'})});
 export const missingCapabilityScope=()=>({ok:false,error:'CAPABILITY_SCOPE_MISSING',output:'Cannot determine the executing Agent capability scope.',meta:{denied:true,executionStarted:false}});

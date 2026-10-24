@@ -139,6 +139,9 @@ enum Network {
     /// request body without tools is unchanged; with phone tools the turn runs
     /// through AgentLoop (same limits, budget, envelopes and finalize as the desktop).
     static func routingTransport(messages: [ChatMessage], endpoint: String, model: String, token: String, instructions: String, apiProtocol: String, imageInputs: [ImageInput], modelCapabilities: [String: Bool] = [:], tools: AgentLoopTools?, onObservation: (@MainActor (ExecutionObservation) -> Void)?) throws -> APIChatTransport {
+        var tools = tools
+        let permittedDefinitions = tools?.definitions.filter { ChatGPTRequest.allowsTool($0.name, messages: messages) } ?? []
+        tools?.definitions = permittedDefinitions
         if !imageInputs.isEmpty, modelCapabilities["vision"] == false { throw MeloError.message("此模型已设为不支持图片输入，请选择视觉模型或修改能力设置。") }
         let anthropic = apiProtocol == "anthropic"
         let definitions = (tools?.definitions ?? []) + [PhoneRoutingHost.control]
@@ -157,7 +160,9 @@ enum Network {
         if !imageInputs.isEmpty, modelCapabilities["vision"] == false { throw MeloError.message("此模型已设为不支持图片输入，请选择视觉模型或修改能力设置。") }
         try ConversationHistory.validateCurrentInput(messages.last(where: { $0.role == "user" })?.content ?? "", instructions: instructions)
         guard !token.isEmpty, !model.trimmingCharacters(in: .whitespaces).isEmpty else { throw MeloError.message("先在设置中填写模型服务和 API 密钥。") }
-        let loopTools = (tools?.definitions.isEmpty ?? true) ? nil : tools?.loopTools
+        var loopTools = (tools?.definitions.isEmpty ?? true) ? nil : tools?.loopTools
+        let permittedDefinitions = loopTools?.definitions.filter { ChatGPTRequest.allowsTool($0.name, messages: requestHistory ?? messages) } ?? []
+        loopTools?.definitions = permittedDefinitions
         let anthropic = apiProtocol == "anthropic"
         var body: [String: Any] = ["model": model, "stream": false, "messages": [["role": "system", "content": systemLine(toolInstructions: loopTools?.instructionsWithContract) + instructions]] + ImageRequestBody.chat(messages: messages, inputs: imageInputs, anthropic: anthropic, instructions: instructions)]
         var headers: [String: String] = [:]

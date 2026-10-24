@@ -67,3 +67,17 @@ test('skill allowlist reaches ambient context; omitted nested options and native
   assert.equal(seen.nativeWebSearchEnabled,false);assert.equal(seen.nativeImageGenerationEnabled,false);assert.equal(nested,0);assert.equal(permissions,0);assert.equal(skillTools,1);
  } finally {unregisterTool('calculator');}
 });
+
+test('explicit user tool/network restrictions refuse execution before permissions or grants',async()=>{
+ const {getRequestNetworkPolicy}=await import('../../shared/agent/retrieval/requestPolicy.js');
+ for(const [text,id] of [['不要使用工具','calculator'],['不要联网','fetch_url'],['不要搜索','web_search']]) {
+  let runs=0,permissions=0;
+  const ctx={...context(scope(null,true)),requestToolPolicy:getRequestNetworkPolicy(text)};
+  const result=await runWithRequestContext(ctx,()=>executeTool({id,requiresPermission:true,run:()=>{runs++;return {ok:true,output:'bad'};}},{},{sseEmitter:()=>permissions++}));
+  assert.equal(result.error,'REQUEST_TOOL_DENIED');assert.equal(result.meta.executionStarted,false);
+  assert.equal(runs,0);assert.equal(permissions,0);
+ }
+ const {requestAllowsTool}=await import('../../shared/agent/retrieval/requestPolicy.js');
+ assert.equal(requestAllowsTool('calculator',getRequestNetworkPolicy('不要联网，算 17*19')),true);
+ assert.equal(requestAllowsTool('fetch_url',getRequestNetworkPolicy('不要搜索，读取链接')),true);
+});

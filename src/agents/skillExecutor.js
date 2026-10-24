@@ -1,3 +1,4 @@
+import { requestAllowsTool } from '../../shared/agent/retrieval/requestPolicy.js';
 import { createCoreTurn } from '../runtime/sharedAgentCore.js';
 import {resolveCapabilityContext} from '../services/agent/capabilityContext.js';
 import {currentRequestContext,runWithRequestContext} from '../runtime/requestScope.js';
@@ -204,7 +205,7 @@ async function runSkillLoop({
   }
 
   const providerConfig = delegatedConfig(config);
-  const allowedTools = toolsForCapabilityScope(resolveSkillTools(skill, allowedToolIds, extraTools),currentRequestContext().capabilityScope);
+  const allowedTools = toolsForCapabilityScope(resolveSkillTools(skill, allowedToolIds, extraTools),currentRequestContext().capabilityScope).filter(tool => requestAllowsTool(tool,currentRequestContext().requestToolPolicy));
   const functionSession = createFunctionCallingSession(providerConfig, allowedTools);
   const contextBudget = resolveContextBudget(requestEnvironment());
   const systemPrompt = buildSkillSystemPrompt(skill, allowedTools, { native: functionSession.native, protocol: functionSession.protocol });
@@ -283,8 +284,8 @@ async function runSkillLoop({
       model: providerConfig.model,
       systemPrompt: review?.systemPrompt || systemPrompt,
       messages: request.messages,
-      nativeWebSearchEnabled: !checkingGoal && nativeFeaturesForScope(currentRequestContext().capabilityScope).nativeWebSearchEnabled,
-      nativeImageGenerationEnabled: !checkingGoal && !coreTurn.repairing && nativeFeaturesForScope(currentRequestContext().capabilityScope).nativeImageGenerationEnabled,
+      nativeWebSearchEnabled: !checkingGoal && nativeFeaturesForScope(currentRequestContext().capabilityScope,currentRequestContext().requestToolPolicy).nativeWebSearchEnabled,
+      nativeImageGenerationEnabled: !checkingGoal && !coreTurn.repairing && nativeFeaturesForScope(currentRequestContext().capabilityScope,currentRequestContext().requestToolPolicy).nativeImageGenerationEnabled,
       onExecutionEvent: event => coreTurn.observeNative(event),
       signal,
     }); }
@@ -314,7 +315,7 @@ async function runSkillLoop({
     }
 
     if (!toolCalls.length) {
-      if (coreTurn.candidate(turn.text, { research: true, nativeSearch: nativeFeaturesForScope(currentRequestContext().capabilityScope).nativeWebSearchEnabled })) { coreTurn.update('feedback'); continue; }
+      if (coreTurn.candidate(turn.text, { research: true, nativeSearch: nativeFeaturesForScope(currentRequestContext().capabilityScope,currentRequestContext().requestToolPolicy).nativeWebSearchEnabled })) { coreTurn.update('feedback'); continue; }
       coreTurn.update('complete');
       if (coreTurn.status !== 'completed') break;
       finalOutput = cleanReplyForParent(turn.text);

@@ -419,3 +419,10 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 ### Codex — 2026-10-24 意图共享入口原样迁移
 
 按审计补齐计划把桌面意图模块原样放入 shared/agent/retrieval/intentRouter.js，旧入口保留 re-export；除 import 路径外正文逐行相同。本阶段尚未改变规则或手机行为。显式范围日常 GREEN：4,591 JS、37 Swift、设置浏览器、Android JVM/Lint/Debug/Release；证据 `.tmp/test-runs/run-S8tZgs/`。首次未加载 Java/SDK 的环境失败保留于 `.tmp/audit-followthrough-20261024/`，最终使用已核实的 Homebrew 工具链。下一步独立修正规则/工具策略/核验与流式行为，仍不推送。
+
+### Codex — 2026-10-24 审计执行层修正（WIP）
+
+落实 [补齐方案的执行层](docs/audit-followthrough-20261024.md)：共享检索入口/可用工具目录、明确工具限制、桌面与 iOS 同源意图、核验使用实际回答模型、工具后流式。Android 已接共享目录。专项 285 项及追加修复 46 项通过，最终组合回归在跑；首次全量发现两处历史/预算联动已修，失败证据保留。当前源码尚未提交/安装/推送，UI/配置/路径仍待做，账号和两份他线程原稿未动。
+
+### 2026-10-24 · 审计执行层验收收尾（Codex）
+搜索规划与能力目录、共享意图、实际模型核验、工具后流式修正完成。完整 JS/Android/设置浏览器通过后，Swift 发现日期补充丢失任务，保留原断言补齐，日期专项及 37 Swift 套件全过。证据 .tmp/audit-followthrough-20261024/ios-complete.log、agent-daily-verified.log；后一日志保留首次 Swift 失败。配置与 UI 尚在后续阶段；不推送，不覆盖真实用户数据。

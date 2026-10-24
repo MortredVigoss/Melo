@@ -1,3 +1,6 @@
+import { getRequestNetworkPolicy, requestAllowsTool } from './retrieval/requestPolicy.js';
+import { publicLookupRequest } from './retrieval/publicLookupIntent.js';
+import { intentOperation } from './retrieval/intentRouter.js';
 import { multilingualImageAction } from './imageLanguage.js';
 import { localeOperation } from './locale.js';
 import { runtimeMessage } from './runtimeMessages.js';
@@ -6,7 +9,7 @@ import { PROVIDER_DEFAULTS } from './providerDefaults.js';
 import { modelRoutingOperation } from './modelRouting.js';
 import { runTaskReplay } from './taskReplay.js';
 import { CORE_VERSION, startTurn, advanceTurn, turnStopReply } from './turn.js';
-import { planRequest, actionEvidence } from './search.js';
+import { planRequest, actionEvidence, resolvedRequestGoal } from './search.js';
 import { buildSkills } from './skill/skillService.js';
 import { toolCatalog, validateCommonTool, normalizeRuntimeConfig, normalizeSearchResponse, normalizeFetchedPage, searchRequest } from './tools.js';
 import { connectionIdentity, hostedCapability, hostedSearchReceipt, hostedSearchProof } from './hostedSearch.js';
@@ -27,6 +30,10 @@ export function evaluate(input) {
     let value;
     switch (input.op) {
       case 'taskReplay': value = runTaskReplay(input.dataset); break;
+      case 'requestPolicy': value = getRequestNetworkPolicy(resolvedRequestGoal(input.text, input.messages)); break;
+      case 'requestToolAllowed': value = requestAllowsTool(input.tool, getRequestNetworkPolicy(resolvedRequestGoal(input.text, input.messages))); break;
+      case 'lookupIntent': value = publicLookupRequest(resolvedRequestGoal(input.text, input.messages), input.messages); break;
+      case 'intent': value = intentOperation(input); break;
       case 'hello': value = { version: CORE_VERSION, runtime: 'melo-local-core', portable: true }; break;
       case 'contextCost': value = contextCost(input.text); break;
       case 'contextPlan': value = contextPlan(input.context); break;

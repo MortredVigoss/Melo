@@ -183,6 +183,20 @@ export function fitRequestContext({ sections = [], messages = [], totalTokens = 
   let selectedRawCost = [...indices].reduce((sum, index) => sum + messageCosts[index], 0);
   const selectedMessages = () => [...indices].sort((a, b) => a - b).map(index => messages[index]);
   const promptCost = () => Math.ceil(estimateTextTokens(renderPromptSections([...selected.values()])) * 4 / 3) + 32 + toolTokens;
+  // Prefer the most recent complete exchange to optional recall. Otherwise a
+  // larger authorized tool catalog can evict a turn that compaction kept.
+  const latest = latestUserIndex(messages);
+  let previous = latest - 1;
+  while (previous >= 0 && (messages[previous]?.role !== 'user' || messages[previous]?.isToolResult)) previous--;
+  if (previous >= 0) {
+    const recent = [];
+    for (let i = previous; i < latest; i++) if (!indices.has(i)) recent.push(i);
+    const cost = recent.reduce((sum, i) => sum + messageCosts[i], 0);
+    if (promptCost() + Math.ceil((selectedRawCost + cost) * 4 / 3) + HISTORY_WINDOW_MARGIN <= inputLimit) {
+      recent.forEach(i => indices.add(i));
+      selectedRawCost += cost;
+    }
+  }
   const remaining = inputLimit - promptCost() - Math.ceil(selectedRawCost * 4 / 3);
   if (remaining < 0) throw overflow();
 
