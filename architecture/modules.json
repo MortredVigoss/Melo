@@ -4500,6 +4500,7 @@
           "scripts/android-pet-assets.test.js",
           "scripts/android-target.test.js",
           "scripts/android-task-report.test.js",
+          "scripts/audit-inventory.test.js",
           "scripts/boundary-report.test.js",
           "scripts/capacity-fixture.test.js",
           "scripts/check-dependencies.test.js",
