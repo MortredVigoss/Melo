@@ -1,6 +1,6 @@
 # Melo 总览：当前事实、功能索引与接手入口
 
-更新时间：2026-10-24（Australia/Melbourne）。这是所有 Melo 工作线程共用的人工维护入口：顶部依次是当前事实、功能索引和最新交接；按日期的阶段过程（含日期、提交与当次验证数字）在 [总览历史交接](docs/handoffs/overview-history-20261019.md)。
+更新时间：2026-10-26（Australia/Sydney）。这是所有 Melo 工作线程共用的人工维护入口：顶部依次是当前事实、功能索引和最新交接；按日期的阶段过程（含日期、提交与当次验证数字）在 [总览历史交接](docs/handoffs/overview-history-20261019.md)。
 
 ## 1. 先看这里
 
@@ -12,6 +12,8 @@
 - 本文不是自动监控：各线程必须在实际改动后主动更新。未更新的线程或未记录的 diff 应标为“待归属/待核对”。
 
 ## 2. 当前事实
+
+10-26 Android 接手：已将本地 master fast-forward 到 `248364b`，从最新主线建立 `codex/android-organizer-20261026`；原 Android 未推送工作保留在原分支 `1be64ad`，未混合合并。Goal Check 的 Calendar→Weather 受控回归通过，旧手机循环问题尚未全部解决；见 [主线复核](docs/master-loop-recheck-20261026.md)。用户新增 Todo / Calendar 两个独立页面，确认通知+可选强提醒、系统日历+ICS；[整体设计](docs/specs/2026-10-26-android-organizer-design.md)待认可，尚未开始产品实现或安装。
 
 每个功能只保留一个现行状态和证据入口。测试数字只属于当次源码，见所链带日期的回执；当前树需重新运行 `npm test`（日常）或 `npm run test:full`（发布）。过程与旧状态见[历史交接](docs/handoffs/overview-history-20261019.md)。
 
@@ -60,6 +62,11 @@
 基础设施另列 `platform`（`src/state/`、`src/runtime/`、`src/http/` 传输）、`channels`（已归档渠道）、`tooling`（脚本与 gate）。
 
 ## 4. 最新交接
+
+### 2026-10-26 — Android 主线复核与 Organizer 设计
+- 当前新分支基于主线 `248364b`，旧 Android checkpoint `1be64ad` 保留；Goal/Completion/HTTP 53 项通过，Android JVM 147 项通过。Fold6 ADB 已授权、仍为 0.9.0/code22，仅查元数据，没有安装。
+- 已确认源代码仍有 phoneFailure 直接返回、四调用压缩/JPEG Progress、Workflow Tool 未合入；不宣称主线已解决所有旧故障。
+- Todo/Calendar 用户已选择原生提醒和系统+ICS Provider；[设计稿](docs/specs/2026-10-26-android-organizer-design.md)待整体审阅；[复核回执](docs/master-loop-recheck-20261026.md)保存本轮证据与边界。
 
 ### 2026-10-24 — Melo 主线（Claude）— 日常回归分两档，门禁加机器守卫与紧凑摘要
 - 线程 ID：e02f4818；状态：已提交（`ccdcb04`），分支 `claude/test-cost-20261024`，待合入 master。
