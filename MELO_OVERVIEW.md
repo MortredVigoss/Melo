@@ -61,6 +61,12 @@
 
 ## 4. 最新交接
 
+### 2026-10-26 — 设计 Melo（Codex）— 剩余审计分批修复
+- 状态：批次 0 完成待本地提交，基准 `cce1e64`，独立分支 `codex/audit-0-20261026`；按用户方案顺序执行，架构另出方案。
+- 文件 / 行为：`scripts/audit-inventory.mjs` 精准校准 H1/H3/H18/H19；`scripts/ci-audit-inventory.mjs` 与 verification workflow 比较当前 / 前一基线并拒绝新增；详见 [实施回执](docs/audit/remediation-2026-10-26.md)。
+- 验证：规则与 CI 本地夹具 6/6；扫描 +0，H1 8 / H3 13 / H18 38 / H19 18；仅消除误报，3 条行为探针仍 open。完整快速校准与集成档均 JS 4629/4629、两组浏览器、37 Swift，无跳过 / 复测；证据见实施回执，未部署、未安装。
+- 下一步：本地合入批次 0，再处理 L5/L15/L16/J5；H5/H20 保留。
+
 ### 2026-10-26 — Melo 主线（Claude）— 规则扫描基线与审计台账
 - 线程 ID：e02f4818；状态：已提交并合入 master（`61f7fe7`），未推送。
 - 行为：审计从手工 grep 改为 `node scripts/audit-inventory.mjs`（20 条规则 × 834 文件，写 `docs/audit/inventory-<日期>.json` 与 `report-<日期>.md`；`--baseline` 报增量）；`docs/audit/ledger.md` 记 17 条机器探针与判断类条目状态；自测 `scripts/audit-inventory.test.js`。

@@ -150,3 +150,15 @@ test('server consumers are detected from test sources, never from a hand-kept li
   const detected=await serverConsumers(process.cwd(),['desktop-ui/agentSettings.browser.test.js','scripts/test-run-guards.test.js','scripts/missing.test.js']);
   assert.deepEqual(detected,['desktop-ui/agentSettings.browser.test.js']);
 });
+
+test('audit inventories select tooling checks without forcing product regressions', () => {
+  for (const tier of ['quick', 'integration']) {
+    const p = planTests(['docs/audit/inventory-2026-10-26.json', 'docs/audit/diff.json'], files, context, {tier});
+    assert.equal(p.fullUnit, false);
+    assert.equal(p.swift, false);
+    assert.ok(p.files.includes('scripts/audit-inventory.test.js'));
+    assert.ok(p.files.includes('scripts/ci-audit-inventory.test.js'));
+    assert.ok(p.files.every(path => path.startsWith('scripts/')));
+    assert.equal(planTests(['docs/audit/runtime-config.json'], files, context, {tier}).fullUnit, true);
+  }
+});

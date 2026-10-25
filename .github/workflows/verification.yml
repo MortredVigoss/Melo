@@ -17,6 +17,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  audit:
+    name: Audit inventory must not grow
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '22.22.2'
+      - name: Compare current and previous baselines
+        run: node scripts/ci-audit-inventory.mjs
+      - uses: actions/upload-artifact@v7.0.2
+        if: always()
+        with:
+          name: audit-inventory
+          include-hidden-files: true
+          path: .tmp/ci/audit/
+          retention-days: 7
+
   plan:
     name: Test impact plan
     runs-on: ubuntu-latest

@@ -4506,6 +4506,7 @@
           "scripts/check-dependencies.test.js",
           "scripts/check-doc-links.test.js",
           "scripts/check-syntax.test.js",
+          "scripts/ci-audit-inventory.test.js",
           "scripts/ci-test-plan.test.js",
           "scripts/desktop-install-paths.test.js",
           "scripts/desktop-server-lifecycle.test.js",

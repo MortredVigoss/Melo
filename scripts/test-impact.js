@@ -19,7 +19,7 @@ export async function serverConsumers(root, tests) {
 export const IOS_JS = ['ios/Tests/SceneBridge.test.js', 'ios/Tests/NeuralLayout.test.js'];
 const CORE = /^(?:package(?:-lock)?\.json$|binding\.gyp$|native\/|src\/(?:state\/|persistence\/|runtime\/|safety\/|providers\/|server\.js$|desktopStore\.js$|config\.js$|openai\.js$|tools\/(?:executor|permissions|permissionPersistence|registry)\.|services\/chat\/(?:chatExecutionRunner|sendChatMessage|turnLifecycle|turnScheduler)\.)|shared\/(?:protocol|agent)\/|mobile-sync\/.*(?:protocol|Protocol|syncContract))/;
 const GATE = /^(?:scripts\/(?:test-(?:plan|impact|discovery|stages|stage-runner)|ci-test-plan|verify-daily|run-unit-tests|verify-red-green|generate-module-map|check-dependencies)\.js|ios\/scripts\/(?:test|swift_test_cache)\.py|\.github\/workflows\/.*\.ya?ml)$/;
-const TOOLING = /^(?:architecture\/(?:modules|module-annotations)\.json|scripts\/(?:scope|boundary-report|check-doc-links)\.js)$/;
+const TOOLING = /^(?:docs\/audit\/(?:inventory-\d{4}-\d{2}-\d{2}|diff)\.json|architecture\/(?:modules|module-annotations)\.json|scripts\/(?:scope|boundary-report|check-doc-links)\.js)$/;
 const sorted = values => [...new Set(values)].sort();
 const list = value => Array.isArray(value) ? value : value ? [value] : [];
 const matches = (path, patterns) => list(patterns).some(pattern => matchesGlob(path, pattern));

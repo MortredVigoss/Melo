@@ -2,7 +2,7 @@
 
 目的：让审计收敛。每条问题有编号、来源、状态；机器能探的由 `scripts/audit-inventory.mjs` 每次运行自动刷新（`inventory-*.json` 的 `ledger`），判断类由人工在本表更新。再审计时只报"新增 / 已关 / 复发"，不整份重写。
 
-运行：`node scripts/audit-inventory.mjs`（全量，写 `docs/audit/inventory-<日期>.json` 与 `report-<日期>.md`）；`node scripts/audit-inventory.mjs --baseline docs/audit/inventory-<上次>.json` 只看增量。规则清单在脚本顶部 `RULES`，机器探针在 `LEDGER`。
+运行：`node scripts/audit-inventory.mjs`（全量，写 `docs/audit/inventory-<日期>.json` 与 `report-<日期>.md`）；`node scripts/audit-inventory.mjs --baseline docs/audit/inventory-<上次>.json` 只看增量。`--check --out .tmp/audit` 使新增命中返回非零（按出现次数比较，不能拿关闭项抵消新增项）；CI 同时检查当前基线与目标分支 / push 前一提交基线。规则清单在脚本顶部 `RULES`，机器探针在 `LEDGER`。
 
 ## 一、机器探针（来自 10-23 / 10-24 三份报告的具体结论）
 
@@ -26,13 +26,13 @@
 | L16 | 纠正事实主题只认三种 | `src/memory/factPolicy.js` | 10-23 | 🔴 open |
 | L17 | 智能模式档位表未落地 | `desktop-ui/smartRouting.js` | 10-23 | ✅ closed（已落地） |
 
-## 二、规则扫描基线（2026-10-26，834 个正式文件 × 20 条规则）
+## 二、规则扫描基线（2026-10-26，批次 0 校准后 835 个正式文件 × 20 条规则）
 
 | 规则 | 命中 | 和 10-24 手工报告的对应 | 解读 |
 | --- | --- | --- | --- |
-| H1 模型名正则 / 字面量 | 22 | 原报告 ~60 处散落 → 目录模块 `providerDefaults.js` / `modelCatalog.js` 已集中（不计） | 剩余：`modelPresentation.js` 显示名表、`audioExtractor.js` whisper 名、`config.js`、iOS 自检文件 |
+| H1 模型名正则 / 字面量 | 8 | 原报告 ~60 处散落 → 目录模块 `providerDefaults.js` / `modelCatalog.js` 已集中（不计） | 剩余：显示名 3、配置迁移快照 3、冒烟用例 2。转写状态 / 后端 / 二进制名称和 iOS 自检已校准；没有 5 个真实转写模型默认值 |
 | H2 CJK 判断语言 | 8 | 原 6 种写法 → 共享 `shared/agent/locale.js`（不计） | 剩余 8 处未改走共享 helper |
-| H3 本机地址 / 端口 | 17 | 原散落 → `src/shared/localServices.js` 集中（不计） | 剩余：`desktop-app/main.swift`、`verify-red-green.js`、mobile-sync relay |
+| H3 本机地址 / 端口 | 13 | 原散落 → `src/shared/localServices.js` 集中（不计） | 剩余：`desktop-app/main.swift`、`verify-red-green.js`、mobile-sync relay |
 | H4 机器绝对路径 | 3 | 原 1 → 3 | 见报告样例，需逐个看 |
 | H7 中文事件名无翻译行 | 7 | 原 21 → 7 | 剩余多为提供方 / 连接显示名 |
 | H8 服务端中文回复 / 错误 | 27 | 原 42 → 27 | 仍按"有没有汉字"选语言的落点 |
@@ -45,8 +45,8 @@
 | H15 escapeHtml 副本 | 14 | 16 → 14 | |
 | H16 未文档化环境开关（出现处） | 0 | 原 3 个开关零文档 → 0 | 按出现处计，`docs/**/*.md` 或根说明文件里提到即豁免；"在设置页可见"仍是 J7 |
 | H17 问候词表副本 | 2 | 5 → 2 | |
-| H18 iOS 固定字号 / 原始色 / 绕过本地化 | 56 | 26 + 26 + 33 → 56 | |
-| H19 写死 zh-CN 默认 | 34 | 新规则 | 多在 iOS 设置页与 `desktop-app/main.swift` |
+| H18 iOS 固定字号 / 原始色 / 绕过本地化 | 38 | 26 + 26 + 33 → 56 | |
+| H19 写死 zh-CN 默认 | 18 | 新规则 | 多在 iOS 设置页与 `desktop-app/main.swift` |
 | H20 TODO | 3 | 3 → 3 | |
 | H5 外部服务地址（信息） | 73 | 原 40 个域名 | 集成端点，暂不处理 |
 | H6 内置 Agent id 写进逻辑 | 2 | 47 处兜底 → 2 处真逻辑 | |
@@ -79,3 +79,7 @@
 - 每次审计先跑 `audit-inventory.mjs --baseline <上次>`，报告只写：机器规则的 新增 / 已关；台账里状态变化的条目；新发现的判断类条目（给新编号）。
 - "看过没问题"也要记：判断类条目复核后写明日期与结论，避免下次重新发现。
 - 规则表要改（加规则、改允许名单）必须在脚本里改并跑自测 `scripts/audit-inventory.test.js`，不在报告里口头改。
+
+## 2026-10-26 批次 0 复核
+
+H1 / H3 / H18 / H19 校准及正反例通过，所有规则新增为 0；数值下降属于误报修正，L5 / L15 / L16 仍开放。H5（73）与 H20（3）按用户要求保留。门禁检查基线缺项和基准历史缺失时失败；CI 运行中不改写基线。完整验收与后续批次见 [实施回执](remediation-2026-10-26.md)。

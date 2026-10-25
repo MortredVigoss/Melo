@@ -1,0 +1,125 @@
+{
+  "baseline": "2026-10-26",
+  "rules": {
+    "H1": {
+      "new": 0,
+      "closed": 14,
+      "count": 8,
+      "baselineCount": 22
+    },
+    "H2": {
+      "new": 0,
+      "closed": 0,
+      "count": 8,
+      "baselineCount": 8
+    },
+    "H3": {
+      "new": 0,
+      "closed": 4,
+      "count": 13,
+      "baselineCount": 17
+    },
+    "H4": {
+      "new": 0,
+      "closed": 0,
+      "count": 3,
+      "baselineCount": 3
+    },
+    "H5": {
+      "new": 0,
+      "closed": 0,
+      "count": 73,
+      "baselineCount": 73
+    },
+    "H6": {
+      "new": 0,
+      "closed": 0,
+      "count": 2,
+      "baselineCount": 2
+    },
+    "H7": {
+      "new": 0,
+      "closed": 0,
+      "count": 7,
+      "baselineCount": 7
+    },
+    "H8": {
+      "new": 0,
+      "closed": 0,
+      "count": 27,
+      "baselineCount": 27
+    },
+    "H9": {
+      "new": 0,
+      "closed": 0,
+      "count": 1,
+      "baselineCount": 1
+    },
+    "H10": {
+      "new": 0,
+      "closed": 0,
+      "count": 18,
+      "baselineCount": 18
+    },
+    "H11": {
+      "new": 0,
+      "closed": 0,
+      "count": 0,
+      "baselineCount": 0
+    },
+    "H12": {
+      "new": 0,
+      "closed": 0,
+      "count": 0,
+      "baselineCount": 0
+    },
+    "H13": {
+      "new": 0,
+      "closed": 0,
+      "count": 14,
+      "baselineCount": 14
+    },
+    "H14": {
+      "new": 0,
+      "closed": 0,
+      "count": 24,
+      "baselineCount": 24
+    },
+    "H15": {
+      "new": 0,
+      "closed": 0,
+      "count": 14,
+      "baselineCount": 14
+    },
+    "H16": {
+      "new": 0,
+      "closed": 0,
+      "count": 0,
+      "baselineCount": 0
+    },
+    "H17": {
+      "new": 0,
+      "closed": 0,
+      "count": 2,
+      "baselineCount": 2
+    },
+    "H18": {
+      "new": 0,
+      "closed": 18,
+      "count": 38,
+      "baselineCount": 56
+    },
+    "H19": {
+      "new": 0,
+      "closed": 16,
+      "count": 18,
+      "baselineCount": 34
+    },
+    "H20": {
+      "new": 0,
+      "closed": 0,
+      "count": 3,
+      "baselineCount": 3
+    }
+  }
+}

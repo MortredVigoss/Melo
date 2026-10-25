@@ -107,3 +107,9 @@ Swift suite 的输入列表只在 `ios/scripts/test.py` 定义。`--list-suites`
 局部 UI 保留整个功能 UI 测试组，再通过真实依赖补选后端测试（包括文件安全）；后端仍保留整功能组。Swift 按真实编译输入选组，相关时才执行 JavaScriptCore Replay；原生 shell 测试仍在 macOS 执行。共享 / 未知 / 检测基础设施变更保留跨平台全检，File safety 的两个操作系统不去重。Android CI 仍保留 Release/R8 与模拟器。三个工作流均取消同分支过时运行。
 
 Swift 只复用编译缓存和 DerivedData，按操作系统、架构、Xcode、源文件和依赖标识隔离；测试每次真实执行。当前选组对比（相同源码基线，JS 文件数，非耗时承诺）：customize/view.js 103 → 26，chat/controller.js 98 → 40，chat.css 80 → 22。证据见 `.tmp/test-cost-camera-20261021/selection-after.json`；专项和完整校准结果见 [本轮计划与验收](test-cost-camera-plan-20261021.md)。
+
+### 审计基线（2026-10-26）
+
+每批运行 `node scripts/audit-inventory.mjs --baseline docs/audit/inventory-2026-10-26.json`，复核增量后随修复提交新的 inventory 与台账。CI 独立 audit job 加 `--check` 并把输出写入 `.tmp/ci/audit/`，任何新增命中（含重复行）都失败；它同时比较当前基线和目标分支 / push 前的基线，不能通过同 PR 抬高基线豁免新增。
+
+`docs/audit/inventory-YYYY-MM-DD.json` 与 `diff.json` 只触发脚本测试组，不作为未知产品运行时边界迫使每批全量；其他未知 JSON 仍保守扩大。扫描器 / CI 工作流本身改动仍需完整校准。规则数字减少仅表示扫描项关闭，功能探针与行为回归另外验收。

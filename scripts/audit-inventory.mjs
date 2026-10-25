@@ -11,7 +11,7 @@
 // "is a bug". Judgement items (unclear logic, UI consistency) live in the
 // ledger (docs/audit/ledger.md), not here.
 //
-//   node scripts/audit-inventory.mjs [--out docs/audit] [--baseline <json>] [--json-only]
+//   node scripts/audit-inventory.mjs [--out docs/audit] [--baseline <json>] [--json-only] [--check]
 import { readdir, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { resolve, relative, join } from 'node:path';
@@ -22,6 +22,8 @@ const opt = (name, fallback) => { const i = args.indexOf(name); return i >= 0 ? 
 const outDir = opt('--out', 'docs/audit');
 const baselinePath = opt('--baseline', null);
 const jsonOnly = args.includes('--json-only');
+const check = args.includes('--check');
+if (check && !baselinePath) throw new Error('--check requires --baseline');
 // Local calendar date (the machine's zone), not UTC, so the file matches the day the audit was run.
 const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
 
@@ -51,7 +53,7 @@ async function walk(dir, out) {
 // line; 'g' not needed), note.
 const RULES = [
   { id: 'H1', title: '模型名正则 / 字面量决定能力或默认值', severity: 'high',
-    files: /\.(?:js|swift)$/, allow: /^(?:src\/shared\/modelCatalog\.js|src\/shared\/llmProviders\.js|shared\/agent\/providerDefaults\.js|ios\/Melo\/LLMConnections\.swift|src\/providers\/codexModels\.js)$/,
+    files: /\.(?:js|swift)$/, allow: /^(?:src\/shared\/modelCatalog\.js|src\/shared\/llmProviders\.js|shared\/agent\/providerDefaults\.js|ios\/Melo\/LLMConnections\.swift|src\/providers\/codexModels\.js|ios\/Melo\/[^/]*Verification\.swift)$/,
     pattern: /(?:\/\^?(?:gpt|claude|gemini|llama|qwen|deepseek|o[134])[^/]*\/[gimsuy]*|['"](?:gpt-[0-9][\w.-]*|gpt-image[\w.-]*|claude-[\w.-]+|gemini-[\w.-]+|llama[\w.:-]*|whisper-[\w.-]+|speech-0\d[\w-]*|tts-1[\w-]*)['"])/,
     note: '能力标志应来自模型目录；默认名只留目录模块' },
   { id: 'H2', title: '用汉字 / CJK 正则判断语言或内容', severity: 'high',
@@ -59,7 +61,7 @@ const RULES = [
     pattern: /\\u(?:4e00|4E00|3400)-\\u(?:9fff|9FFF)|\\p\{Script=Han\}|\[一-龥\]/,
     note: '语言选择应来自对话 / 界面 / Agent 设置；分词与索引模块例外' },
   { id: 'H3', title: '本机地址与端口字面量', severity: 'high',
-    files: /\.(?:js|swift)$/, allow: /^(?:src\/config\.js|src\/shared\/localServices\.js|src\/shared\/llmProviders\.js|ios\/Melo\/LLMConnections\.swift)$/,
+    files: /\.(?:js|swift)$/, allow: /^(?:src\/config\.js|src\/shared\/localServices\.js|src\/shared\/llmProviders\.js|ios\/Melo\/LLMConnections\.swift|scripts\/verify-red-green\.js)$/,
     pattern: /(?:127\.0\.0\.1|localhost):\d{2,5}|\b(?:7860|11434|43127|43128|43212)\b/,
     note: '端口进 config 带默认；前端读配置 URL，不做端口正则' },
   { id: 'H4', title: '机器相关绝对路径', severity: 'high',
@@ -111,11 +113,11 @@ const RULES = [
     files: /^(?:src|shared)\/.*\.js$/, allow: /^$/,
     pattern: /\^\(\?:(?:hi|ok|okay)\|/, note: '一份共享词表' },
   { id: 'H18', title: 'iOS 固定字号 / 原始色 / 绕过本地化的文本', severity: 'info',
-    files: /^ios\/Melo\/.*\.swift$/, allow: /^$/,
+    files: /^ios\/Melo\/.*\.swift$/, allow: /^ios\/Melo\/MeloTheme\.swift$/,
     pattern: /\.font\(\.system\(size:|Color\((?:hex|red):|Text\(verbatim:|Text\("\\\(/, note: '语义字号、色板、LocalizedStringKey' },
   { id: 'H19', title: '写死的语言默认值 zh-CN', severity: 'medium',
     files: /\.(?:js|swift)$/, allow: /^(?:src\/domain\/settings\/localPreferences\.js|src\/tools\/builtins\/translateTool\.js|src\/services\/export\/pdfEditSpec\.js|src\/tools\/builtins\/pdfTool\.js)$/,
-    pattern: /['"]zh-CN['"]|['"]zh-Hans['"]/, note: '默认语言跟系统 / 设置' },
+    pattern: /(?:\?\?|\|\|)\s*['"]zh-(?:CN|Hans)['"]|\b(?:const|let|var)\s+\w+(?:\s*:\s*String)?\s*=\s*['"]zh-(?:CN|Hans)['"]|\b(?:language|locale|interfaceLanguage|voiceLanguage)\s*(?::\s*String)?\s*=\s*['"]zh-(?:CN|Hans)['"]|\?\s*value\s*:\s*['"]zh-(?:CN|Hans)['"]/, note: '默认语言跟系统 / 设置' },
   { id: 'H20', title: 'TODO / FIXME / HACK', severity: 'info',
     files: /\.(?:js|swift)$/, allow: /^$/, pattern: /\b(?:TODO|FIXME|HACK|XXX)\b/, note: '' },
 ];
@@ -180,7 +182,14 @@ for (const rule of RULES) {
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       if (/^\s*(?:\/\/|\*|\/\*)/.test(line) && rule.id !== 'H20') continue; // comments only count for TODO
-      if (!rule.pattern.test(line)) continue;
+      // Exempt individual status/backend/binary tokens, never an entire line:
+      // a real model literal beside a status still needs review.
+      const candidate = rule.id === 'H1'
+        ? line.replace(/(['"])(?:whisper-(?:unavailable|error|cpp|cli)|llamacpp)\1/g, "''") : line;
+      if (!rule.pattern.test(candidate)) continue;
+      // The native shell cannot import JS configuration. Only its one numeric
+      // default definition is allowed; duplicate initializers remain visible.
+      if (rule.id === 'H3' && file === 'desktop-app/main.swift' && /^\s*\)\s*\?\?\s*43127\s*$/.test(line)) continue;
       if (rule.exclude && rule.exclude.test(line)) continue;
       if (rule.needsTranslationRow) { const name = line.match(/name:\s*'([^']*)'/)?.[1]; if (name && translationKeys.has(name)) continue; }
       if (rule.needsDoc) { const flag = line.match(/MELO_[A-Z0-9_]+/)?.[0]; if (flag && docText.includes(flag)) continue; }
@@ -207,16 +216,33 @@ if (baselinePath) {
   const baseline = JSON.parse(await readFile(resolve(root, baselinePath), 'utf8'));
   diff = { baseline: baseline.date, rules: {} };
   for (const id of Object.keys(inventory.rules)) {
-    const key = hit => `${hit.file}:${hit.text}`;
-    const before = new Set((baseline.rules[id]?.hits || []).map(key));
-    const after = new Set(inventory.rules[id].hits.map(key));
-    diff.rules[id] = { new: [...after].filter(k => !before.has(k)).length, closed: [...before].filter(k => !after.has(k)).length, count: after.size, baselineCount: before.size };
+    if (!Array.isArray(baseline.rules?.[id]?.hits)) throw new Error(`Baseline is missing rule ${id}`);
+    // Multiset comparison catches a second copy of the same offending line.
+    // Line numbers are excluded so unrelated edits do not create false growth.
+    const counts = hits => {
+      const result = new Map();
+      for (const hit of hits) {
+        const key = `${hit.file}:${hit.text}`;
+        result.set(key, (result.get(key) || 0) + 1);
+      }
+      return result;
+    };
+    const before = counts(baseline.rules[id].hits);
+    const after = counts(inventory.rules[id].hits);
+    const added = [...after].reduce((n, [key, count]) => n + Math.max(0, count - (before.get(key) || 0)), 0);
+    const closed = [...before].reduce((n, [key, count]) => n + Math.max(0, count - (after.get(key) || 0)), 0);
+    diff.rules[id] = { new: added, closed, count: inventory.rules[id].count, baselineCount: baseline.rules[id].hits.length };
   }
 }
 
+if (check && Object.values(diff.rules).some(rule => rule.new > 0)) process.exitCode = 1;
+
 // ─── Output ──────────────────────────────────────────────────────────────────
 await mkdir(resolve(root, outDir), { recursive: true });
-await writeFile(resolve(root, outDir, `inventory-${today}.json`), JSON.stringify(inventory, null, 1) + '\n');
+const inventoryPath = resolve(root, outDir, `inventory-${today}.json`);
+if (check && baselinePath && inventoryPath === resolve(root, baselinePath)) throw new Error('--check output must not overwrite its baseline; use --out .tmp/audit');
+await writeFile(inventoryPath, JSON.stringify(inventory, null, 1) + '\n');
+if (diff) await writeFile(resolve(root, outDir, 'diff.json'), JSON.stringify(diff, null, 2) + '\n');
 const severityOrder = { high: 0, medium: 1, info: 2 };
 const rows = Object.entries(inventory.rules).sort((a, b) => severityOrder[a[1].severity] - severityOrder[b[1].severity] || b[1].count - a[1].count);
 const lines = [`# 规则扫描清单 · ${today}`, '', `提交 \`${inventory.commit}\`；扫描 ${inventory.filesScanned} 个正式文件（${ROOTS.join('、')}，不含测试 / dist / node_modules），生成物按规则跳过：${inventory.skippedGenerated.join('、') || '无'}。每条规则对其范围内的全部文件逐行应用；"命中"表示需要看，不等于 bug。`, '',

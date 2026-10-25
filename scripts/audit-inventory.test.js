@@ -85,3 +85,80 @@ test('baseline diff reports new and closed hits by location, not by count', asyn
     assert.match(output, /H3 \+1\/-1/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+const put = async (root, path, text) => {
+  await mkdir(join(root, path, '..'), { recursive: true });
+  await writeFile(join(root, path), text);
+};
+
+test('calibration exempts statuses, self-checks and palette definitions without hiding real defaults', async () => {
+  const root = await fixture();
+  try {
+    await put(root, 'src/status.js', [
+      "const status = 'whisper-unavailable';", "const backend = 'whisper-cpp';",
+      "const binary = 'whisper-cli';", "const backendName = 'llamacpp';",
+      "const status2 = 'whisper-error', model = 'whisper-1';",
+    ].join('\n'));
+    await put(root, 'ios/Melo/ImageVerification.swift', 'let model = "gpt-6-astra"\nlet port = 43127');
+    await put(root, 'ios/Melo/MeloTheme.swift', '.font(.system(size: 13))\nColor(hex: 0xffffff)');
+    await put(root, 'desktop-app/main.swift', [
+      '  ) ?? 43127', // only the single shell definition
+      '  private var port = 43127', // duplicate still counted
+      '  let other = "http://localhost:11434"',
+    ].join('\n'));
+    await put(root, 'scripts/verify-red-green.js', "const testUrl = 'http://127.0.0.1:43129';");
+    run(root);
+    const inv = await latest(root);
+    assert.equal(inv.rules.H1.count, 2);
+    assert.ok(inv.rules.H1.hits.some(hit => hit.text.includes("model = 'whisper-1'")));
+    assert.equal(inv.rules.H3.count, 4, 'self-checks are not globally excluded; duplicate native defaults remain');
+    assert.equal(inv.rules.H18.count, 2);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('language defaults include declarations and fallbacks, not choices or locale mappings', async () => {
+  const root = await fixture();
+  try {
+    await put(root, 'desktop-ui/languages.js', [
+      "const choices = ['zh-CN', 'en'];",
+      "const mapping = {zh: 'zh-CN'};",
+      "return selected === 'zh' ? 'zh-CN' : selected;",
+      "const locale = input || 'zh-CN';",
+      "function start(language = 'zh-CN') {}",
+      "let language = 'zh-CN';",
+      "const normalize = value => known(value) ? value : 'zh-CN';",
+    ].join('\n'));
+    await put(root, 'ios/Melo/Language.swift', [
+      'case chinese = "zh-CN", english = "en"',
+      'Text("中文").tag("zh-CN")',
+      'var interfaceLanguage = "zh-CN"',
+      'locale: payload["language"] as? String ?? "zh-Hans")',
+      'func start(locale: String = "zh-CN") {}',
+    ].join('\n'));
+    run(root);
+    const inv = await latest(root);
+    assert.equal(inv.rules.H19.count, 7);
+    assert.ok(inv.rules.H19.hits.every(hit => !/choices|mapping|selected|case chinese|\.tag/.test(hit.text)));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('check fails on added occurrences even when total counts stay flat or text is duplicated', async () => {
+  const root = await fixture();
+  try {
+    run(root);
+    const baseline = join(root, 'baseline.json');
+    await writeFile(baseline, JSON.stringify(await latest(root)));
+    run(root, '--baseline', baseline, '--check');
+    const file = join(root, 'src/services/chat/example.js');
+    const original = await readFile(file, 'utf8');
+    await writeFile(file, original.replace('gpt-4.1-mini', 'gpt-4.1'));
+    assert.throws(() => run(root, '--baseline', baseline, '--check'), { status: 1 });
+    await writeFile(file, original + "\nconst model = 'gpt-4.1-mini';\n");
+    assert.throws(() => run(root, '--baseline', baseline, '--check'), { status: 1 });
+    const diff = JSON.parse(await readFile(join(root, 'audit-out/diff.json'), 'utf8'));
+    assert.equal(diff.rules.H1.new, 1, 'duplicate lines are counted, not deduplicated');
+    assert.equal(diff.rules.H1.closed, 0);
+    await writeFile(file, original.replace("const model = 'gpt-4.1-mini';", 'const model = configured;'));
+    run(root, '--baseline', baseline, '--check');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

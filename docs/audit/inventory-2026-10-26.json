@@ -1,7 +1,7 @@
 {
  "version": 1,
  "date": "2026-10-26",
- "commit": "248364b",
+ "commit": "cce1e64",
  "roots": [
   "src",
   "shared",
@@ -11,7 +11,7 @@
   "scripts",
   "mobile-sync"
  ],
- "filesScanned": 834,
+ "filesScanned": 835,
  "skippedGenerated": [
   "desktop-ui/translations.js",
   "ios/Melo/AgentCore/agent-core.js",
@@ -24,19 +24,12 @@
    "severity": "high",
    "note": "能力标志应来自模型目录；默认名只留目录模块",
    "scanned": 802,
-   "count": 22,
-   "files": 10,
+   "count": 8,
+   "files": 3,
    "byFile": {
     "desktop-ui/modelPresentation.js": 3,
-    "desktop-ui/videoStatus.js": 2,
-    "ios/Melo/ImageWorkflowVerification.swift": 3,
     "scripts/smoke-desktop.js": 2,
-    "src/config.js": 3,
-    "src/domain/media/extractedMedia.js": 1,
-    "src/http/ttsRoutes.js": 1,
-    "src/media/extractors/audioExtractor.js": 5,
-    "src/memory/offline/compact.js": 1,
-    "src/runtime/capabilities.js": 1
+    "src/config.js": 3
    },
    "hits": [
     {
@@ -53,31 +46,6 @@
      "file": "desktop-ui/modelPresentation.js",
      "line": 6,
      "text": "'gpt-6-luna': 'Luna 6',"
-    },
-    {
-     "file": "desktop-ui/videoStatus.js",
-     "line": 47,
-     "text": "if (source === 'whisper-unavailable') {"
-    },
-    {
-     "file": "desktop-ui/videoStatus.js",
-     "line": 55,
-     "text": "case 'whisper-cpp':"
-    },
-    {
-     "file": "ios/Melo/ImageWorkflowVerification.swift",
-     "line": 68,
-     "text": "p.chatModels?[blockedChat] = ConversationModel(connectionID:\"chatgpt\",model:\"gpt-6-astra\")"
-    },
-    {
-     "file": "ios/Melo/ImageWorkflowVerification.swift",
-     "line": 76,
-     "text": "do { _=try await blocked.account.reply(messages:[ChatMessage(role:\"user\",content:requirement)],model:\"gpt-6-astra\",instructions:\"\",imageTask:ImageTaskPlan(actio"
-    },
-    {
-     "file": "ios/Melo/ImageWorkflowVerification.swift",
-     "line": 99,
-     "text": "guard restored.imageLibrary.images(for:answer.id)==[output],restored.imageLibrary.index.requests[user.id]?.references.first?.id==input.id,restored.imageLibrary."
     },
     {
      "file": "scripts/smoke-desktop.js",
@@ -103,51 +71,6 @@
      "file": "src/config.js",
      "line": 122,
      "text": "Object.freeze(['gpt-5.5', 'gpt-4.1', 'gpt-4.1-mini']),  // 5.5 first cut, before B"
-    },
-    {
-     "file": "src/domain/media/extractedMedia.js",
-     "line": 17,
-     "text": "normalized === 'whisper-unavailable' ||"
-    },
-    {
-     "file": "src/http/ttsRoutes.js",
-     "line": 651,
-     "text": "if (source === 'whisper-unavailable' || source === 'whisper-error') {"
-    },
-    {
-     "file": "src/media/extractors/audioExtractor.js",
-     "line": 140,
-     "text": "const WHISPER_CLI = process.env.MELO_WHISPER_CLI || 'whisper-cli';"
-    },
-    {
-     "file": "src/media/extractors/audioExtractor.js",
-     "line": 349,
-     "text": "source: 'whisper-cpp',"
-    },
-    {
-     "file": "src/media/extractors/audioExtractor.js",
-     "line": 383,
-     "text": "source: 'whisper-unavailable',"
-    },
-    {
-     "file": "src/media/extractors/audioExtractor.js",
-     "line": 401,
-     "text": "source: 'whisper-unavailable',"
-    },
-    {
-     "file": "src/media/extractors/audioExtractor.js",
-     "line": 434,
-     "text": "source: 'whisper-unavailable',"
-    },
-    {
-     "file": "src/memory/offline/compact.js",
-     "line": 28,
-     "text": "{ name: 'llamacpp',  baseUrl: LOCAL_SERVICE_DEFAULTS.llamacpp },"
-    },
-    {
-     "file": "src/runtime/capabilities.js",
-     "line": 72,
-     "text": "const real = Boolean(text) && !source.endsWith('-placeholder') && !['vision-passthrough', 'whisper-unavailable'].includes(source);"
     }
    ]
   },
@@ -215,15 +138,14 @@
    "severity": "high",
    "note": "端口进 config 带默认；前端读配置 URL，不做端口正则",
    "scanned": 802,
-   "count": 17,
-   "files": 13,
+   "count": 13,
+   "files": 12,
    "byFile": {
-    "desktop-app/main.swift": 3,
+    "desktop-app/main.swift": 2,
     "desktop-ui/features/customize/view.js": 1,
     "mobile-sync/desktop-relay.js": 1,
     "scripts/smoke-desktop.js": 1,
     "scripts/smoke-runtime.js": 1,
-    "scripts/verify-red-green.js": 3,
     "src/media/extractors/audioExtractor.js": 1,
     "src/memory/providers/ChromaProvider.js": 1,
     "src/memory/status.js": 1,
@@ -237,11 +159,6 @@
      "file": "desktop-app/main.swift",
      "line": 53,
      "text": "ProcessInfo.processInfo.environment[\"MELO_DESKTOP_PORT\"] ?? \"43127\""
-    },
-    {
-     "file": "desktop-app/main.swift",
-     "line": 54,
-     "text": ") ?? 43127"
     },
     {
      "file": "desktop-app/main.swift",
@@ -267,21 +184,6 @@
      "file": "scripts/smoke-runtime.js",
      "line": 8,
      "text": "const baseUrl = process.env.MELO_SMOKE_BASE_URL || 'http://127.0.0.1:43129';"
-    },
-    {
-     "file": "scripts/verify-red-green.js",
-     "line": 10,
-     "text": "const serverUrl = 'http://127.0.0.1:43129';"
-    },
-    {
-     "file": "scripts/verify-red-green.js",
-     "line": 11,
-     "text": "const connectorUrl = 'http://127.0.0.1:43131';"
-    },
-    {
-     "file": "scripts/verify-red-green.js",
-     "line": 12,
-     "text": "const telegramMockUrl = 'http://127.0.0.1:43132';"
     },
     {
      "file": "src/media/extractors/audioExtractor.js",
@@ -324,7 +226,7 @@
    "title": "机器相关绝对路径",
    "severity": "high",
    "note": "仓库里不出现用户目录",
-   "scanned": 807,
+   "scanned": 808,
    "count": 3,
    "files": 2,
    "byFile": {
@@ -1511,8 +1413,8 @@
    "severity": "info",
    "note": "语义字号、色板、LocalizedStringKey",
    "scanned": 105,
-   "count": 56,
-   "files": 19,
+   "count": 38,
+   "files": 18,
    "byFile": {
     "ios/Melo/AgentEditor.swift": 3,
     "ios/Melo/CapabilityElevationViews.swift": 4,
@@ -1525,7 +1427,6 @@
     "ios/Melo/LLMConnections.swift": 1,
     "ios/Melo/LanguagePicker.swift": 1,
     "ios/Melo/LocalSettingsView.swift": 2,
-    "ios/Melo/MeloTheme.swift": 18,
     "ios/Melo/MemoryFactsView.swift": 2,
     "ios/Melo/PersonalWorkspace.swift": 2,
     "ios/Melo/ReplyContentView.swift": 1,
@@ -1666,96 +1567,6 @@
      "text": "Text(\"\\(store.chats.count) 段对话 · \\(store.preferences.agents.count) 个Agent\").font(.subheadline)"
     },
     {
-     "file": "ios/Melo/MeloTheme.swift",
-     "line": 6,
-     "text": "static let phoneBackground = Color(red: 6.375 / 255.0, green: 7.14 / 255.0, blue: 8.925 / 255.0).opacity(1.0)"
-    },
-    {
-     "file": "ios/Melo/MeloTheme.swift",
-     "line": 7,
-     "text": "static let phoneHint = Color(red: 168.3 / 255.0, green: 158.1 / 255.0, blue: 135.15 / 255.0).opacity(1.0)"
-    },
-    {
-     "file": "ios/Melo/MeloTheme.swift",
-     "line": 8,
-     "text": "static let phoneNeuron = Color(red: 89.25 / 255.0, green: 165.75 / 255.0, blue: 170.85 / 255.0).opacity(1.0)"
-    },
-    {
-     "file": "ios/Melo/MeloTheme.swift",
-     "line": 9,
-     "text": "static let text = Color(red: 237 / 255.0, green: 232 / 255.0, blue: 223 / 255.0)"
-    },
-    {
-     "file": "ios/Melo/MeloTheme.swift",
-     "line": 10,
-     "text": "static let muted = Color(red: 185 / 255.0, green: 176 / 255.0, blue: 162 / 255.0)"
-    },
-    {
-     "file": "ios/Melo/MeloTheme.swift",
-     "line": 11,
-     "text": "static let soft = Color(red: 150 / 255.0, green: 143 / 255.0, blue: 132 / 255.0)"
-    },
-    {
-     "file": "ios/Melo/MeloTheme.swift",
-     "line": 12,
-     "text": "static let gold = Color(red: 209 / 255.0, green: 178 / 255.0, blue: 125 / 255.0)"
-    },
-    {
-     "file": "ios/Melo/MeloTheme.swift",
-     "line": 13,
-     "text": "static let edge = Color(red: 211 / 255.0, green: 188 / 255.0, blue: 148 / 255.0).opacity(0.16)"
-    },
-    {
-     "file": "ios/Melo/MeloTheme.swift",
-     "line": 14,
-     "text": "static let edgeSoft = Color(red: 211 / 255.0, green: 188 / 255.0, blue: 148 / 255.0).opacity(0.085)"
-    },
-    {
-     "file": "ios/Melo/MeloTheme.swift",
-     "line": 15,
-     "text": "static let edgeRaised = Color(red: 222 / 255.0, green: 199 / 255.0, blue: 162 / 255.0).opacity(0.25)"
-    },
-    {
-     "file": "ios/Melo/MeloTheme.swift",
-     "line": 16,
-     "text": "static let inset = Color(red: 6 / 255.0, green: 9 / 255.0, blue: 14 / 255.0).opacity(0.3)"
-    },
-    {
-     "file": "ios/Melo/MeloTheme.swift",
-     "line": 17,
-     "text": "static let hover = Color(red: 192 / 255.0, green: 157 / 255.0, blue: 98 / 255.0).opacity(0.1)"
-    },
-    {
-     "file": "ios/Melo/MeloTheme.swift",
-     "line": 18,
-     "text": "static let selected = Color(red: 192 / 255.0, green: 157 / 255.0, blue: 98 / 255.0).opacity(0.16)"
-    },
-    {
-     "file": "ios/Melo/MeloTheme.swift",
-     "line": 19,
-     "text": "static let glass = LinearGradient(colors: [Color(red: 28 / 255.0, green: 27 / 255.0, blue: 26 / 255.0).opacity(0.54), Color(red: 9 / 255.0, green: 12 / 255.0, b"
-    },
-    {
-     "file": "ios/Melo/MeloTheme.swift",
-     "line": 20,
-     "text": "static let card = LinearGradient(colors: [Color(red: 40 / 255.0, green: 37 / 255.0, blue: 32 / 255.0).opacity(0.3), Color(red: 12 / 255.0, green: 15 / 255.0, bl"
-    },
-    {
-     "file": "ios/Melo/MeloTheme.swift",
-     "line": 21,
-     "text": "static let floating = LinearGradient(colors: [Color(red: 43 / 255.0, green: 39 / 255.0, blue: 33 / 255.0).opacity(0.82), Color(red: 13 / 255.0, green: 16 / 255."
-    },
-    {
-     "file": "ios/Melo/MeloTheme.swift",
-     "line": 22,
-     "text": "static let dialog = LinearGradient(colors: [Color(red: 35 / 255.0, green: 33 / 255.0, blue: 30 / 255.0).opacity(0.73), Color(red: 11 / 255.0, green: 14 / 255.0,"
-    },
-    {
-     "file": "ios/Melo/MeloTheme.swift",
-     "line": 26,
-     "text": "static let neuralColors: [Color] = [Color(red: 232 / 255.0, green: 173 / 255.0, blue: 102 / 255.0), Color(red: 203 / 255.0, green: 114 / 255.0, blue: 123 / 255."
-    },
-    {
      "file": "ios/Melo/MemoryFactsView.swift",
      "line": 22,
      "text": "Text(\"\\(scopeName(fact.scope)) · \\(statusName(fact.effectiveStatus))\").font(.caption).foregroundStyle(meloGold)"
@@ -1822,37 +1633,24 @@
    "severity": "medium",
    "note": "默认语言跟系统 / 设置",
    "scanned": 802,
-   "count": 34,
-   "files": 21,
+   "count": 18,
+   "files": 13,
    "byFile": {
-    "desktop-app/main.swift": 2,
+    "desktop-app/main.swift": 1,
     "desktop-ui/features/chat/controller.js": 1,
     "desktop-ui/features/chat/viewComposer.js": 1,
     "desktop-ui/i18n.js": 2,
-    "desktop-ui/interfaceLanguages.js": 1,
-    "desktop-ui/launchScreen.js": 2,
-    "desktop-ui/localSettings.js": 1,
     "desktop-ui/voiceInput.js": 1,
-    "ios/Melo/ContentView.swift": 3,
+    "ios/Melo/ContentView.swift": 1,
     "ios/Melo/ExecutionWorkspace.swift": 1,
-    "ios/Melo/InterfaceLanguage.swift": 2,
     "ios/Melo/LanguagePicker.swift": 1,
-    "ios/Melo/LocalSettingsView.swift": 6,
+    "ios/Melo/LocalSettingsView.swift": 5,
     "ios/Melo/MeloApp.swift": 1,
-    "ios/Melo/SpeechText.swift": 2,
     "ios/Melo/SystemSpeechInput.swift": 1,
     "ios/Melo/VideoStudy.swift": 1,
-    "ios/Melo/VoiceInput.swift": 1,
-    "scripts/build-interface-languages.js": 2,
-    "scripts/build-launch-screen.js": 1,
-    "scripts/sync-codex-progress.js": 1
+    "ios/Melo/VoiceInput.swift": 1
    },
    "hits": [
-    {
-     "file": "desktop-app/main.swift",
-     "line": 78,
-     "text": "\"zh-Hans\", \"zh-Hant\", \"en-US\","
-    },
     {
      "file": "desktop-app/main.swift",
      "line": 665,
@@ -1879,26 +1677,6 @@
      "text": "let language = 'zh-CN';"
     },
     {
-     "file": "desktop-ui/interfaceLanguages.js",
-     "line": 4,
-     "text": "\"id\": \"zh-CN\","
-    },
-    {
-     "file": "desktop-ui/launchScreen.js",
-     "line": 10,
-     "text": "const launchCopy = {\"正在启动 Melo\":{\"zh-CN\":\"正在启动 Melo\",\"en\":\"Starting Melo\",\"ja\":\"Melo を起動中\",\"ko\":\"Melo 시작 중\",\"es\":\"Iniciando Melo\"},\"连接本地工作空间\":{\"zh-CN\":\"连接本地工作空间"
-    },
-    {
-     "file": "desktop-ui/launchScreen.js",
-     "line": 14,
-     "text": "return launchCopy[key]?.[language === 'zh' ? 'zh-CN' : language] || launchCopy[key]?.en || key;"
-    },
-    {
-     "file": "desktop-ui/localSettings.js",
-     "line": 48,
-     "text": "if(tab==='voice')body=ui`${select('voiceLanguage',t(\"语音输入语言\"),[['zh-CN',t(\"中文\")],['en-US','English'],['system',t(\"系统语言\")]],p.voiceLanguage)}<p>点击输入区麦克风开始识别；麦克风与"
-    },
-    {
      "file": "desktop-ui/voiceInput.js",
      "line": 80,
      "text": "function start(language = 'zh-CN') {"
@@ -1909,29 +1687,9 @@
      "text": "@AppStorage(\"melo.voiceLanguage\") private var voiceLanguage = \"zh-CN\""
     },
     {
-     "file": "ios/Melo/ContentView.swift",
-     "line": 419,
-     "text": "Text(\"中文\").tag(\"zh-CN\"); Text(\"English\").tag(\"en-US\"); Text(\"系统语言\").tag(\"system\")"
-    },
-    {
-     "file": "ios/Melo/ContentView.swift",
-     "line": 421,
-     "text": "} label: { Text(voiceLanguage == \"zh-CN\" ? \"听写 · 中文\" : voiceLanguage == \"en-US\" ? \"听写 · English\" : \"听写 · 系统语言\").font(.caption2) }.disabled(voiceInput.state.acti"
-    },
-    {
      "file": "ios/Melo/ExecutionWorkspace.swift",
      "line": 97,
      "text": "@AppStorage(\"melo.interfaceLanguage\") private var interfaceLanguage = \"zh-CN\""
-    },
-    {
-     "file": "ios/Melo/InterfaceLanguage.swift",
-     "line": 5,
-     "text": "case chinese = \"zh-CN\", english = \"en\", korean = \"ko\", japanese = \"ja\", spanish = \"es\""
-    },
-    {
-     "file": "ios/Melo/InterfaceLanguage.swift",
-     "line": 8,
-     "text": "var localeID: String { switch self { case .chinese: return \"zh-Hans\"; case .english: return \"en\"; case .korean: return \"ko\"; case .japanese: return \"ja\"; case ."
     },
     {
      "file": "ios/Melo/LanguagePicker.swift",
@@ -1960,11 +1718,6 @@
     },
     {
      "file": "ios/Melo/LocalSettingsView.swift",
-     "line": 96,
-     "text": "Picker(\"语音语言（听写与朗读）\", selection: value.language) { Text(\"中文\").tag(\"zh-CN\"); Text(\"English\").tag(\"en-US\"); Text(\"系统语言\").tag(\"system\") }"
-    },
-    {
-     "file": "ios/Melo/LocalSettingsView.swift",
      "line": 201,
      "text": "let preference = UserDefaults.standard.string(forKey: \"melo.voiceLanguage\") ?? \"zh-CN\""
     },
@@ -1972,16 +1725,6 @@
      "file": "ios/Melo/MeloApp.swift",
      "line": 9,
      "text": "@AppStorage(\"melo.interfaceLanguage\") private var interfaceLanguage = \"zh-CN\""
-    },
-    {
-     "file": "ios/Melo/SpeechText.swift",
-     "line": 25,
-     "text": "if matches(text, \"[\\\\p{Han}]\") { return preference == \"zh-TW\" ? \"zh-TW\" : \"zh-CN\" }"
-    },
-    {
-     "file": "ios/Melo/SpeechText.swift",
-     "line": 29,
-     "text": "case \"zh-CN\", \"en-US\": return preference"
     },
     {
      "file": "ios/Melo/SystemSpeechInput.swift",
@@ -1997,26 +1740,6 @@
      "file": "ios/Melo/VoiceInput.swift",
      "line": 46,
      "text": "func start(id: String = UUID().uuidString, locale: String = \"zh-CN\", commit: ((String) -> Void)? = nil) {"
-    },
-    {
-     "file": "scripts/build-interface-languages.js",
-     "line": 9,
-     "text": "localizations: Object.fromEntries(Object.entries(values).map(([language,value]) => [language === 'zh-CN' ? 'zh-Hans' : language, {stringUnit:{state:'translated'"
-    },
-    {
-     "file": "scripts/build-interface-languages.js",
-     "line": 11,
-     "text": "const output = JSON.stringify({sourceLanguage:'zh-Hans',strings,version:'1.0'},null,2)+'\\n';"
-    },
-    {
-     "file": "scripts/build-launch-screen.js",
-     "line": 11,
-     "text": "const html = `<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Melo</titl"
-    },
-    {
-     "file": "scripts/sync-codex-progress.js",
-     "line": 35,
-     "text": "return new Intl.DateTimeFormat('zh-CN', {"
     }
    ]
   },
