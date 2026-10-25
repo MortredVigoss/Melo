@@ -61,6 +61,12 @@
 
 ## 4. 最新交接
 
+### 2026-10-26 — Melo 主线（Claude）— 规则扫描基线与审计台账
+- 线程 ID：e02f4818；状态：已提交并合入 master（`61f7fe7`），未推送。
+- 行为：审计从手工 grep 改为 `node scripts/audit-inventory.mjs`（20 条规则 × 834 文件，写 `docs/audit/inventory-<日期>.json` 与 `report-<日期>.md`；`--baseline` 报增量）；`docs/audit/ledger.md` 记 17 条机器探针与判断类条目状态；自测 `scripts/audit-inventory.test.js`。
+- 验证：集成档完整日常 GREEN（JS 4624 / 两组浏览器 / Swift 37）；基线：探针 14 关 3 开，CSS 原始色 0、搜索规划器合一；变差项：按钮类名 26 种、空状态口吻增多。
+- 未完 / 下一步：把 `--baseline` 接进 CI 当增长门禁；规则误报收敛（H1 状态字符串、iOS 自检文件）；判断类 J2 / J3 / U1–U6 交 Codex 排期；桌面 / 手机术语对表（U10）未做。
+
 ### 2026-10-24 — Melo 主线（Claude）— 日常回归分两档，门禁加机器守卫与紧凑摘要
 - 线程 ID：e02f4818；状态：已提交（`ccdcb04`），分支 `claude/test-cost-20261024`，待合入 master。
 - 行为：`npm test -- --files` 旧=碰到公共文件即全部 4500 个 → 新=快速档（所属功能组 + 反向依赖闭包 + 从测试源码检测出的真实服务测试）；`--base` / 无参 / `--all` / `--files --full` = 集成档（10-20 旧规则不变，合并前跑一次）；地图过期在预检直接失败而不是跑全量；同机单运行器锁与负载等待；JS 阶段全部超时类失败时一次串行隔离复测并记入 summary.json，真实失败不重试。文件 / 接口：scripts/test-plan.js、test-impact.js、verify-daily.js、test-stage-runner.js，新 test-tap-summary.js、test-run-guards.js；CI 仍走集成档。
