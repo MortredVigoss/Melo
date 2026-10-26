@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { createDevelopmentService } from './service.js';
 import { createGit, containedFile } from './git.js';
 import { command } from './process.js';
@@ -19,10 +19,11 @@ async function fixture(t, options = {}) {
   await git.invoke(['init', '-b', 'main'], repository);
   await writeFile(join(repository, 'app.cjs'), 'module.exports = 1;\n');
   await writeFile(join(repository, 'check.cjs'), "require('node:assert/strict').equal(require('./app.cjs'), 2);\n");
+  if (options.lock) await writeFile(join(repository, 'package-lock.json'), options.lock);
   await git.invoke(['add', '.'], repository); await git.invoke(['commit', '-m', 'fixture'], repository);
   let calls = 0;
   const runnerFactory = ({ directory }) => ({
-    image: async () => `sha256:${'a'.repeat(64)}`, stop: async () => {},
+    image: async () => `sha256:${'a'.repeat(64)}`, labels: async () => options.labels || {}, stop: async () => {},
     async run({ argv, workspace, signal, onStart }) {
       calls++;
       const id = randomUUID(), run = { id, name: `melo-dev-${id}`, argv, startedAt: new Date().toISOString(), status: 'running' };
@@ -158,4 +159,31 @@ test('failed runner preparation remains visible without breaking all job listing
   const service = createDevelopmentService({ home: f.home, env: { ...process.env }, runnerFactory: () => ({ image: async () => { throw new Error('image absent'); } }) });
   await assert.rejects(service.create({ repository: f.repository, goal: 'Unavailable image', agentId: 'builder', reviewerId: 'reviewer', commands: [['node', 'check.cjs']] }), /image absent/);
   const rows = await service.list(); assert.equal(rows.length, 2); assert.ok(rows.some(row => row.status === 'blocked' && !row.initialized));
+});
+
+// Review finding 2 (2026-10-26): dependencies inside the image are frozen at
+// build time, so the baseline lockfile must match the image label and a
+// candidate that changes the lockfile cannot be verified by that image.
+test('image lock label must match the baseline lockfile; unlabelled images are recorded as unverifiable', async t => {
+  const lock = '{"name":"fixture","lockfileVersion":3}\n';
+  const matching = createHash('sha256').update(lock).digest('hex');
+  const ok = await fixture(t, { lock, labels: { 'melo.lock-sha256': matching } });
+  assert.equal(ok.job.lockHash, matching); assert.equal(ok.job.imageWarning, undefined);
+  const unlabelled = await fixture(t, { lock });
+  assert.match(unlabelled.job.imageWarning, /no dependency lock label/);
+  const root = await mkdtemp(join(tmpdir(), 'melo-dev-lock-')); t.after(() => rm(root, { recursive: true, force: true }));
+  const repository = join(root, 'repo'); await mkdir(repository);
+  const git = createGit(process.env); await git.invoke(['init', '-b', 'main'], repository);
+  await writeFile(join(repository, 'package-lock.json'), lock); await git.invoke(['add', '.'], repository); await git.invoke(['commit', '-m', 'fixture'], repository);
+  const service = createDevelopmentService({ home: join(root, 'home'), env: { ...process.env }, implement: async () => ({ ok: true }), review: async () => ({ verdict: 'approve', summary: '' }),
+    runnerFactory: () => ({ image: async () => `sha256:${'b'.repeat(64)}`, labels: async () => ({ 'melo.lock-sha256': 'f'.repeat(64) }), stop: async () => {}, run: async () => { throw new Error('must not run'); } }) });
+  await assert.rejects(service.create({ repository, goal: 'x', agentId: 'builder', reviewerId: 'reviewer', commands: [['true']] }), /different package-lock\.json/);
+  assert.equal((await service.list())[0].status, 'blocked', 'the mismatch is recorded on the job, not hidden');
+});
+
+test('a candidate that changes the lockfile is blocked before verification instead of tested against stale dependencies', async t => {
+  const f = await fixture(t, { lock: '{"lockfileVersion":3}\n', implement: async ({ job }) => { await writeFile(join(job.workspace, 'package-lock.json'), '{"lockfileVersion":3,"changed":true}\n'); await writeFile(join(job.workspace, 'app.cjs'), 'module.exports = 2;\n'); return { ok: true }; } });
+  const result = await f.start();
+  assert.equal(result.status, 'blocked'); assert.match(result.error, /image dependencies are now stale/);
+  assert.equal(f.calls(), 0, 'no verification command ran');
 });

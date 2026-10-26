@@ -4690,7 +4690,8 @@
           "desktop-ui/features/development/panel.test.js",
           "src/development/agent.test.js",
           "src/development/service.test.js",
-          "src/http/developmentRoutes.http.test.js"
+          "src/http/developmentRoutes.http.test.js",
+          "src/tools/builtins/developmentTool.test.js"
         ],
         "swift": []
       },

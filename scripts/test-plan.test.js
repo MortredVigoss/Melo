@@ -212,3 +212,29 @@ test('daily CLI reruns timeout-only JS failures once in isolation, records it, a
     });
   } finally {await rm(root,{recursive:true,force:true});}
 });
+
+test('daily CLI --platform linux prints and records the stages it cannot execute instead of failing them', async()=>{
+  const root=await mkdtemp(join(tmpdir(),'melo-daily-platform-'));
+  const env={...process.env,MELO_TEST_NESTED:'1'};delete env.NODE_TEST_CONTEXT;
+  const script=fileURLToPath(new URL('./verify-daily.js',import.meta.url));
+  const git=(...args)=>execFileSync('git',args,{cwd:root,stdio:'pipe'});
+  try {
+    for(const dir of [...TEST_ROOTS,'ios/scripts'])await mkdir(join(root,dir),{recursive:true});
+    await writeFile(join(root,'package.json'),'{"type":"module"}');
+    await writeFile(join(root,'scripts/test-quarantine.json'),'{}');
+    await writeFile(join(root,'desktop-ui/one.test.js'),'import test from "node:test";test("ok",()=>{});');
+    for(const name of ['check-syntax.js','verify-settings-design.mjs']) await writeFile(join(root,'scripts',name),`import {appendFileSync} from 'node:fs';appendFileSync('jobs.log', '${name}\\n');`);
+    await writeFile(join(root,'ios/scripts/test.py'),"import sys\nfrom pathlib import Path\nwith Path('jobs.log').open('a') as f: f.write(('swift' if '--skip-js' in sys.argv else 'renderer')+'\\n')\n");
+    git('init');git('config','user.name','Fixture');git('config','user.email','fixture@example.invalid');
+    git('add','.');git('commit','-m','fixture');
+    await writeFile(join(root,'desktop-ui/changed.js'),'// runtime change widens to Swift without a dependency map');
+    const output=execFileSync(process.execPath,[script,'--platform','linux'],{cwd:root,env,encoding:'utf8',stdio:'pipe'});
+    assert.match(output,/本平台（linux）不执行：Swift 回归/);assert.match(output,/本平台未执行：Swift 回归/);
+    const jobs=await readFile(join(root,'jobs.log'),'utf8');
+    assert.ok(!jobs.includes('swift'),'the Swift stage must not run on linux');assert.ok(jobs.includes('renderer'),'the python renderer preflight still runs on linux');assert.ok(jobs.includes('verify-settings-design.mjs'),'browser stages still run');
+    const summary=JSON.parse(readFileSyncUtf8(output.match(/摘要：(.+summary\.json)/)[1]));
+    assert.deepEqual(summary.platform,{name:'linux',skipped:['Swift 回归']});
+    assert.ok(!summary.stages.some(s=>s.label==='Swift 回归'));
+    assert.throws(()=>execFileSync(process.execPath,[script,'--platform','windows'],{cwd:root,env,encoding:'utf8',stdio:'pipe'}),/darwin or linux/);
+  } finally {await rm(root,{recursive:true,force:true});}
+});

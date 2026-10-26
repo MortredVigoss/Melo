@@ -5,7 +5,7 @@ import { join, resolve, relative, isAbsolute } from 'node:path';
 import { discoverRunnableTests } from './test-discovery.js';
 import { currentTestPlan, planTests, isDocOnly } from './test-plan.js';
 import { buildTestImpact } from './test-impact.js';
-import { dailyStages } from './test-stages.js';
+import { platformStages } from './test-stages.js';
 import { parseTapSummary, isolatedRerunFiles, describeFailures } from './test-tap-summary.js';
 import { acquireTestLock, waitForLoad } from './test-run-guards.js';
 
@@ -19,11 +19,15 @@ import { acquireTestLock, waitForLoad } from './test-run-guards.js';
 const env = {...process.env};
 const root = process.cwd();
 const args = process.argv.slice(2);
-let base, taskFiles, all=false, preview=false, tierFlag;
+let base, taskFiles, all=false, preview=false, tierFlag, platformFlag;
 for(let i=0;i<args.length;i++) {
   const arg=args[i];
   if(arg==='--plan')preview=true;
   else if(arg==='--all')all=true;
+  else if(arg==='--platform') {
+    if(platformFlag!==undefined||!['darwin','linux'].includes(args[i+1]||''))throw Error('--platform requires darwin or linux');
+    platformFlag=args[++i];
+  }
   else if(arg==='--full'||arg==='--quick') {
     if(tierFlag)throw Error('Use only one of --full or --quick');
     tierFlag=arg==='--full'?'integration':'quick';
@@ -45,6 +49,11 @@ if([base!==undefined,Boolean(taskFiles),all].filter(Boolean).length>1)throw Erro
 if(all&&tierFlag==='quick')throw Error('--all is always the integration tier');
 const tier=all?'integration':tierFlag||(taskFiles?'quick':'integration');
 const options={tier};
+// Stages a platform cannot execute (Swift needs Xcode, Android needs a JDK)
+// are reported as not executed here, never counted as passed. A Linux
+// container (the isolated development runner) selects this automatically.
+const platform=platformFlag||env.MELO_TEST_PLATFORM||(process.platform==='darwin'?'darwin':'linux');
+if(!['darwin','linux'].includes(platform))throw Error('MELO_TEST_PLATFORM must be darwin or linux');
 const {files,excluded}=await discoverRunnableTests();
 let plan=taskFiles?{...planTests(taskFiles,files,null,options),base:'显式任务文件（不代表整个共享工作树）'}:currentTestPlan(root,files,base,null,options);
 if(all)plan={...planTests([...plan.changed,'package.json'],files),base:'显式完整日常检查'};
@@ -59,8 +68,10 @@ console.log(`日常回归 · ${tierLabel}：${plan.files.length}/${files.length}
 for(const reason of plan.reasons||[])console.log(`  · ${reason}`);
 console.log(`浏览器：${plan.browsers?'设置':'无'}；渲染：${plan.renderer?'是':'否'}；Swift：${plan.swift?(plan.swiftSuites===null?'全部':plan.swiftSuites.join(', ')):'无'}`);
 if(plan.integrationRequired)console.log('  ⚠ 快速档结果不代表共享树；合并前运行一次 npm test -- --base <该批开始前的提交>');
+const {stages,skipped:platformSkipped}=platformStages(plan,platform);
+if(platformSkipped.length)console.log(`  ⚠ 本平台（${platform}）不执行：${platformSkipped.join('、')}；这些阶段由 Mac / CI 覆盖，本次结果不是原生验收`);
 if(preview) {
-  console.log(JSON.stringify({...plan,excluded},null,2));
+  console.log(JSON.stringify({...plan,excluded,platform,platformSkipped},null,2));
 } else {
   // Nested runs (the gate's own fixtures, CI) skip the machine guards.
   const nested=env.MELO_TEST_NESTED==='1'||env.CI==='true';
@@ -71,13 +82,13 @@ if(preview) {
   const home=await mkdtemp(join(tmpdir(),'melo-daily-'));
   const started=Date.now();
   const runner=await createStageRunner({root,env:{...env,MELO_HOME:home,MELO_TEST_MODE:'1',MELO_TEST_NESTED:'1'}});
-  const summary={version:1,tier:plan.tier,base:plan.base,reason:plan.reason,reasons:plan.reasons||[],selected:plan.files.length,total:files.length,integrationRequired:Boolean(plan.integrationRequired),
+  const summary={version:1,tier:plan.tier,base:plan.base,reason:plan.reason,reasons:plan.reasons||[],selected:plan.files.length,total:files.length,integrationRequired:Boolean(plan.integrationRequired),platform:{name:platform,skipped:platformSkipped},
     stages:[],js:null,flaky:null,lock:{waitedMs:lock.waitedMs,acquired:lock.acquired},load:{atStart:load.samples.at(-1),waitedMs:load.waitedMs,exceeded:load.exceeded},ok:false,elapsedSeconds:0,directory:runner.directory};
   const writeSummary=async()=>{summary.elapsedSeconds=Number(((Date.now()-started)/1000).toFixed(1));await writeFile(join(runner.directory,'summary.json'),JSON.stringify(summary,null,2)+'\n');};
   const record=stage=>summary.stages.push({label:stage.label,code:stage.code,seconds:Number(stage.seconds.toFixed(2)),log:stage.log});
   try {
     for(const [path,entry] of Object.entries(excluded))console.log(`QUARANTINED ${path}: ${entry.reason} (expires ${entry.expires})`);
-    for(const stage of dailyStages(plan)) {
+    for(const stage of stages) {
       if(stage.label!=='JS 回归') {record(await runner.run(stage.label,stage.command,stage.args));continue;}
       const result=await runner.run(stage.label,stage.command,stage.args,{allowFailure:true});
       record(result);
@@ -98,7 +109,7 @@ if(preview) {
     }
     summary.ok=true;
     await writeSummary();
-    console.log(`日常选定范围通过 (${summary.elapsedSeconds}s)。${plan.tier==='quick'?'快速档只证明显式任务范围；合并前运行集成档 npm test -- --base <ref>。':taskFiles?'仅证明显式任务范围；共享树集成另验。':''}完整验证运行 npm run test:full（不安装）；仅在明确授权发布时运行 npm run release:verify，包含安装与正式启动验收。`);
+    console.log(`日常选定范围通过 (${summary.elapsedSeconds}s)。${platformSkipped.length?`本平台未执行：${platformSkipped.join("、")}。`:""}${plan.tier==='quick'?'快速档只证明显式任务范围；合并前运行集成档 npm test -- --base <ref>。':taskFiles?'仅证明显式任务范围；共享树集成另验。':''}完整验证运行 npm run test:full（不安装）；仅在明确授权发布时运行 npm run release:verify，包含安装与正式启动验收。`);
     console.log(`摘要：${join(runner.directory,'summary.json')}`);
   } catch(error) {
     await writeSummary();

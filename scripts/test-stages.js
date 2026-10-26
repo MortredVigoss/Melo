@@ -16,3 +16,15 @@ export function dailyStages(plan) {
   if(plan.swift)stages.push({label:'Swift 回归',command:'python3',args:['ios/scripts/test.py','--skip-js','--skip-renderer',...(plan.swiftSuites===null?[]:plan.swiftSuites.flatMap(name=>['--suite',name]))]});
   return stages;
 }
+
+// Stages a platform cannot execute (2026-10-26, review finding 3): a Linux
+// container has no Xcode and no JDK, so Swift and Android stages are reported
+// as not executed on this platform instead of failing the whole run. They are
+// never silently dropped: the caller prints and records `skipped`, and a Linux
+// pass is explicitly not a Mac / iPhone / Android acceptance.
+const PLATFORM_LIMITS={linux:stage=>stage.label==='Swift 回归'||stage.label.startsWith('Android ')};
+export function platformStages(plan,platform='darwin') {
+  const all=dailyStages(plan), limit=PLATFORM_LIMITS[platform];
+  if(!limit)return {stages:all,skipped:[]};
+  return {stages:all.filter(stage=>!limit(stage)),skipped:all.filter(limit).map(stage=>stage.label)};
+}

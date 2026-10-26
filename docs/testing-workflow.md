@@ -17,6 +17,8 @@
 
 **超时类失败的一次隔离复测**：JS 阶段失败且**全部**失败都是超时类（Node `testTimeoutFailure`、错误文本含 timeout / ETIMEDOUT、或由测试自身定时器触发的拒绝——浏览器测试的 15 秒服务启动守卫就是这种）时，把这些文件串行（并发 1）复测一次，记为独立阶段「JS 隔离复测」并写进 `summary.json` 的 `flaky`。任何一个真实失败（断言、异常、文件崩溃）→ 不复测、直接红。`MELO_TEST_NO_RERUN=1` 关闭复测。这不是重试到绿，而是把"负载把它打红"和"代码把它打红"分开记账；报告里必须写出复测过的文件。
 
+**平台限制（2026-10-26）**：`--platform darwin|linux`（默认按运行机器，`MELO_TEST_PLATFORM` 可覆盖）。Linux 没有 Xcode 和 JDK，Swift 与 Android 阶段会打印"本平台不执行"并写进 `summary.json` 的 `platform.skipped`，不计通过、不计失败。隔离开发容器里的 `npm test` 自动走 linux 模式，所以容器里的绿只代表 JS / 浏览器 / 渲染预检，**不是 Mac / iPhone / Android 验收**；这些阶段由 Mac 本机或 CI 补跑。
+
 **给代理读的摘要**：每次运行在 `.tmp/test-runs/run-*/summary.json` 写入档位、基准、选测数 / 总数、各阶段退出码与日志路径、JS 通过 / 失败 / 取消数、失败测试一行一个（类别 + 文件:行 + 名称 + 首行错误）、复测记录、锁等待与负载。终端末尾打印摘要路径；失败时直接列出失败行。代理不要去读几万行 TAP 日志，看 `summary.json` 和阶段日志尾部即可。
 
 ## 每次改动怎么做

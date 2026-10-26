@@ -14,7 +14,7 @@ export function dockerArguments({ name, image, writable = true, uid = 1000, gid 
   const setup = 'set -e; mkdir -p /tmp/home /tmp/melo-home; cd /workspace/source; '
     + 'if [ -d /workspace/repository.git ]; then git --git-dir=/workspace/repository.git config core.bare false; git --git-dir=/workspace/repository.git config core.worktree /workspace/source; printf "gitdir: /workspace/repository.git\\n" > .git; fi; '
     + 'for item in node_modules build; do if [ -d "/opt/melo/$item" ] && [ ! -e "$item" ]; then ln -s "/opt/melo/$item" "$item"; fi; done; exec "$@"';
-  return ['create', '--name', name, '--label', 'melo.development=1', '--network', 'none', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--pids-limit', '256', '--memory', '2g', '--cpus', '2', '--user', `${uid}:${gid}`, '--tmpfs', '/tmp:rw,nosuid,nodev,size=1073741824,mode=1777', '--mount', `type=volume,source=${name},target=/workspace${writable ? '' : ',readonly'}`, '--workdir', '/workspace', '--env', 'HOME=/tmp/home', '--env', 'MELO_HOME=/tmp/melo-home', '--env', 'MELO_TEST_MODE=1', '--env', 'MELO_TEST_CHROME=/usr/bin/chromium', '--env', 'CI=1', '--env', 'GIT_CONFIG_NOSYSTEM=1', '--env', 'GIT_CONFIG_GLOBAL=/dev/null', '--entrypoint', '/bin/sh', image, '-c', setup, '--'];
+  return ['create', '--name', name, '--label', 'melo.development=1', '--network', 'none', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--pids-limit', '256', '--memory', '2g', '--cpus', '2', '--user', `${uid}:${gid}`, '--tmpfs', '/tmp:rw,nosuid,nodev,size=1073741824,mode=1777', '--mount', `type=volume,source=${name},target=/workspace${writable ? '' : ',readonly'}`, '--workdir', '/workspace', '--env', 'HOME=/tmp/home', '--env', 'MELO_HOME=/tmp/melo-home', '--env', 'MELO_TEST_MODE=1', '--env', 'MELO_TEST_CHROME=/usr/bin/chromium', '--env', 'CI=1', '--env', 'MELO_TEST_NESTED=1', '--env', 'GIT_CONFIG_NOSYSTEM=1', '--env', 'GIT_CONFIG_GLOBAL=/dev/null', '--entrypoint', '/bin/sh', image, '-c', setup, '--'];
 }
 export async function validateWorkerTree(root) {
   let count = 0, bytes = 0;
@@ -47,6 +47,14 @@ export function createContainerRunner({ env, directory, executable = 'docker' })
     async image(reference = 'node:22-bookworm') {
       if (typeof reference !== 'string' || reference.startsWith('-') || reference.length > 250) throw new Error('Invalid container image');
       return requireSuccess(await invoke(['image', 'inspect', '--format', '{{.Id}}', reference]));
+    },
+    // Labels stamped by scripts/build-development-image.mjs; an image without
+    // them (e.g. a plain node image) returns {} and the service records a warning.
+    async labels(reference) {
+      if (typeof reference !== 'string' || reference.startsWith('-') || reference.length > 250) throw new Error('Invalid container image');
+      const raw = requireSuccess(await invoke(['image', 'inspect', '--format', '{{json .Config.Labels}}', reference]));
+      const labels = raw && raw !== 'null' ? JSON.parse(raw) : {};
+      return labels && typeof labels === 'object' ? labels : {};
     },
     async stop(name) {
       if (!/^melo-dev-[a-f0-9-]+$/.test(name)) throw new Error('Invalid container identity');

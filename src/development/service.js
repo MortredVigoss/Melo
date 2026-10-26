@@ -61,6 +61,18 @@ export function createDevelopmentService({ home, env, implement, review, publish
         job.image = await runnerFor(job).image(image);
         job.policyHash = digest(JSON.stringify({ image: job.image, commands: tests }));
         await git.checkout(job);
+        // Review finding 2 (2026-10-26): the image froze `npm ci` at build
+        // time. Verification against dependencies that do not match the
+        // baseline lockfile would be misleading, so a labelled image must
+        // match and an unlabelled one is recorded as unverifiable.
+        const lock = await readFile(join(job.workspace, 'package-lock.json')).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
+        if (lock) {
+          job.lockHash = digest(lock);
+          const labels = typeof runnerFor(job).labels === 'function' ? await runnerFor(job).labels(image) : {};
+          const expected = labels['melo.lock-sha256'];
+          if (expected && expected !== job.lockHash) fail('The container image was built from a different package-lock.json than this baseline. Run npm run build:development-image, then create the job again.');
+          if (!expected) job.imageWarning = 'The image carries no dependency lock label; verification cannot confirm its dependencies match the baseline.';
+        }
         job.rules = await repositoryRules(job.workspace);
         job.initialized = true; job.status = 'created';
         return save(job);
@@ -96,6 +108,9 @@ export function createDevelopmentService({ home, env, implement, review, publish
           Object.assign(job, await git.snapshot(job));
           job.changedFiles = await git.changed(job);
           if (!job.changedFiles.length) fail('No candidate changes were produced');
+          // A dependency change cannot be verified inside an image whose
+          // node_modules were frozen from the old lockfile (review finding 2).
+          if (job.changedFiles.some(path => /^package(?:-lock)?\.json$/.test(path))) fail('The candidate changes package.json or package-lock.json; the image dependencies are now stale. Rebuild the image from this candidate in a trusted environment and create a new job to verify it.');
           job.sensitiveFiles = job.changedFiles.filter(path => sensitiveChange(path) || job.commands.some(argv => argv.includes(path) || argv.includes(`./${path}`)));
           job.status = 'testing'; await save(job);
           const validation = join(store.directory(id), 'validation');

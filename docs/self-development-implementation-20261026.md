@@ -43,6 +43,12 @@
 4. 手机同步同一个作业 ID、阶段、候选和验收摘要，不能修改可信回执或发起授权。真实 Mac/iPhone 安装、健康检查、自动回滚，以及受控合并/更新器仍是后续阶段。
 5. 本版以固定命令的真实退出码、测试前后源码树一致和独立审查作为接受条件；并未证明测试覆盖充分，也未实现跨所有测试框架的“跳过数/断言数”机器证明。CPU/内存/进程与日志有上限；输出回传限制 512 MiB，Docker 临时卷写入期间尚无统一磁盘硬配额。
 
+## 10-26 审计后的三处收紧（Claude）
+
+1. `development_job` 工具只接受桌面来源的对话：Telegram / Discord / 手机即使对该工具设了"始终允许"，也会在工具入口被拒绝，而不只是靠"没有审批面"。
+2. 镜像依赖与基线绑定：`npm run build:development-image` 把 `package-lock.json` 的 SHA-256 写进镜像标签 `melo.lock-sha256`；创建作业时基线 lock 与标签不一致直接受阻（提示重建镜像），无标签的镜像在作业上记"无法确认依赖一致"；候选改了 `package.json` / `package-lock.json` 在验证前受阻，不会拿旧依赖出绿。
+3. 容器里的验证按平台裁剪：`npm test` 在 Linux 自动跳过 Swift / Android 阶段并明确记录"本平台未执行"，作业回执里能看到；Linux 通过 ≠ 原生验收，这一点未变。
+
 ## 可重跑证据
 
 - `npm run test:development`：作业、能力、路径、拒绝条件、恢复、同步及 UI 回归；追加 `scripts/release-policy.test.js scripts/native-translations.test.js` 以及 UI 翻译覆盖、工具注册规范为本轮 35 项专项范围。

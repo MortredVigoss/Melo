@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {buildTestImpact, moduleReferences, serverConsumers, IOS_JS} from './test-impact.js';
 import {planTests} from './test-plan.js';
-import {dailyStages} from './test-stages.js';
+import {dailyStages, platformStages} from './test-stages.js';
 import {discoverRunnableTests} from './test-discovery.js';
 
 const {files}=await discoverRunnableTests();
@@ -161,4 +161,18 @@ test('audit inventories select tooling checks without forcing product regression
     assert.ok(p.files.every(path => path.startsWith('scripts/')));
     assert.equal(planTests(['docs/audit/runtime-config.json'], files, context, {tier}).fullUnit, true);
   }
+});
+
+// Review finding 3 (2026-10-26): a Linux container cannot run Swift or Android
+// stages; they are reported as not executed on that platform, never dropped
+// silently and never counted as passed.
+test('platform stages: linux reports Swift and Android as not executed, darwin keeps every stage',()=>{
+  const p=plan('shared/protocol/agent-loop.json');
+  const darwin=platformStages({...p,syntax:[],docs:[]},'darwin');
+  assert.deepEqual(darwin.skipped,[]);assert.deepEqual(darwin.stages,dailyStages({...p,syntax:[],docs:[]}));
+  const linux=platformStages({...p,syntax:[],docs:[]},'linux');
+  assert.ok(linux.skipped.includes('Swift 回归'));assert.ok(linux.skipped.some(label=>label.startsWith('Android ')));
+  assert.ok(!linux.stages.some(stage=>stage.label==='Swift 回归'||stage.label.startsWith('Android ')));
+  assert.ok(linux.stages.some(stage=>stage.label==='JS 回归'),'JS still runs on linux');
+  assert.equal(linux.stages.length+linux.skipped.length,darwin.stages.length);
 });

@@ -6,7 +6,10 @@ export const developmentTool = {
   description: 'Inspect, start or stop a development job created by the user in the desktop task panel. Jobs use an isolated container and fixed verification policy; they never automatically merge, push or install. Cannot create or approve a job through this tool.',
   parametersSchema: { type: 'object', properties: { action: { type: 'string', enum: ['list', 'status', 'start', 'stop'] }, id: { type: 'string' } }, required: ['action'] },
   examples: [{ action: 'list' }],
-  async run({ action, id }) {
+  async run({ action, id }, toolContext = {}) {
+    // Only a desktop chat may touch development jobs. A standing "always
+    // allow" rule must not let a Telegram / Discord message start one.
+    if (toolContext?.chatSource && toolContext.chatSource !== 'desktop') throw new Error('Development jobs can only be inspected or controlled from a Melo desktop chat, not from a remote or mobile channel.');
     const context = currentRequestContext();
     if (!context?.capabilityScope || !context.home) throw new Error('Development capability scope missing');
     const service = developmentRuntime(context.home, context.env);
