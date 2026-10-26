@@ -20,6 +20,7 @@ import { topicDividers } from '../../src/shared/conversationTopics.js';
 import { budgetOperation } from './policyBridge.js';
 import { repeatOperation } from './repeatGuard.js';
 import { completionResult, completionObservation, teamCompletion } from './completion.js';
+import { AGENT_LOOP_CONTRACT } from './loopContract.js';
 import { goalOperation } from './goal.js';
 import { toolEffect } from './toolEffects.js';
 import { contextCost, contextPlan, contextWirePlan, historyPage } from './context.js';
@@ -49,6 +50,7 @@ export function evaluate(input) {
       case 'providerDefaults': value = PROVIDER_DEFAULTS; break;
       case 'modelCapabilities': value = modelCapabilityOperation(input); break;
       case 'modelRouting': value = modelRoutingOperation(input); break;
+      case 'loopPolicy': value = AGENT_LOOP_CONTRACT.loop; break;
       case 'goal': value = goalOperation(input); break;
       case 'toolEffect': value = toolEffect(input.name, input.arguments, input.declaration); break;
       case 'completionObservation': value = completionObservation(input.observation); break;

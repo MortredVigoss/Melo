@@ -1313,6 +1313,11 @@ export const syncSchema = {
           "type": "integer",
           "minimum": 1,
           "maximum": 900000
+        },
+        "maxTaskIterations": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
         }
       }
     },

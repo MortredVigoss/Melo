@@ -1,3 +1,4 @@
+import { endTaskPermissions } from '../../safety/fileSafetyGate.js';
 import { captureBehavior } from '../../runtime/runtimeBehavior.js';
 import { getRequestNetworkPolicy } from '../../../shared/agent/retrieval/requestPolicy.js';
 import { resolvedRequestGoal } from '../../../shared/agent/search.js';
@@ -224,7 +225,7 @@ export async function runChatAgentExecutionGraph({
     },
   });
 
-  return runStateGraph(graph, {
+  try { return await runStateGraph(graph, {
     config,
     state,
     chat,
@@ -234,5 +235,5 @@ export async function runChatAgentExecutionGraph({
     latestUserMessage,
     agentId,
     channelContext,
-  });
+  }); } finally { endTaskPermissions(context); }
 }

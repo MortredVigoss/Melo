@@ -1,0 +1,805 @@
+{
+ "version": 1,
+ "date": "2026-10-27",
+ "commit": "dfc9269",
+ "roots": [
+  "src",
+  "shared",
+  "desktop-ui",
+  "ios/Melo",
+  "desktop-app",
+  "scripts",
+  "mobile-sync"
+ ],
+ "filesScanned": 854,
+ "skippedGenerated": [
+  "desktop-ui/translations.js",
+  "ios/Melo/AgentCore/agent-core.js",
+  "ios/Melo/Scene/scene.js",
+  "shared/agent/loopContract.js"
+ ],
+ "rules": {
+  "H1": {
+   "title": "模型名正则 / 字面量决定能力或默认值",
+   "severity": "high",
+   "note": "能力标志应来自模型目录；默认名只留目录模块",
+   "scanned": 817,
+   "count": 0,
+   "files": 0,
+   "byFile": {},
+   "hits": []
+  },
+  "H2": {
+   "title": "用汉字 / CJK 正则判断语言或内容",
+   "severity": "high",
+   "note": "语言选择应来自对话 / 界面 / Agent 设置；分词与索引模块例外",
+   "scanned": 705,
+   "count": 0,
+   "files": 0,
+   "byFile": {},
+   "hits": []
+  },
+  "H3": {
+   "title": "本机地址与端口字面量",
+   "severity": "high",
+   "note": "端口进 config 带默认；前端读配置 URL，不做端口正则",
+   "scanned": 817,
+   "count": 0,
+   "files": 0,
+   "byFile": {},
+   "hits": []
+  },
+  "H4": {
+   "title": "机器相关绝对路径",
+   "severity": "high",
+   "note": "仓库里不出现用户目录",
+   "scanned": 827,
+   "count": 0,
+   "files": 0,
+   "byFile": {},
+   "hits": []
+  },
+  "H5": {
+   "title": "外部服务地址字面量",
+   "severity": "info",
+   "note": "集成端点集中到目录 / 配置，便于换区与自建",
+   "scanned": 817,
+   "count": 73,
+   "files": 31,
+   "byFile": {
+    "desktop-ui/app.js": 2,
+    "ios/Melo/ChatGPTProtocol.swift": 2,
+    "ios/Melo/CodexOAuth.swift": 3,
+    "ios/Melo/SyncWorkspace.swift": 1,
+    "mobile-sync/fixtures/v1/syncContract.generated.js": 2,
+    "mobile-sync/syncContract.generated.js": 2,
+    "scripts/android-pet-assets.js": 1,
+    "scripts/prepare-memory-model.js": 1,
+    "scripts/smoke-desktop.js": 1,
+    "shared/agent/tools.js": 1,
+    "src/codexAuth.js": 4,
+    "src/config.js": 5,
+    "src/images/codexImageEngine.js": 1,
+    "src/images/imageGen.js": 1,
+    "src/media/extractors/audioExtractor.js": 5,
+    "src/media/extractors/youtubeExtractor.js": 2,
+    "src/memory/embedProviders/OpenAIEmbedProvider.js": 1,
+    "src/openai.js": 1,
+    "src/providers/openRouterOAuth.js": 3,
+    "src/services/remote/discordApi.js": 3,
+    "src/services/remote/discordParsing.js": 1,
+    "src/services/remote/telegramApi.js": 1,
+    "src/services/search/apiDirect.js": 8,
+    "src/tools/builtins/browserTools.js": 2,
+    "src/tools/builtins/fetchUrlTool.js": 2,
+    "src/tools/builtins/mediaApiTool.js": 3,
+    "src/tools/builtins/mediaInfoTool.js": 4,
+    "src/tools/builtins/translateTool.js": 1,
+    "src/tools/builtins/webScreenshotTool.js": 1,
+    "src/tools/builtins/webSearchTool.js": 4,
+    "src/tts.js": 4
+   },
+   "hits": [
+    {
+     "file": "desktop-ui/app.js",
+     "line": 430,
+     "text": "baseUrl: 'https://api.openai.com/v1',"
+    },
+    {
+     "file": "desktop-ui/app.js",
+     "line": 434,
+     "text": "baseUrl: 'https://chatgpt.com/backend-api',"
+    },
+    {
+     "file": "ios/Melo/ChatGPTProtocol.swift",
+     "line": 7,
+     "text": "static let issuer = \"https://auth.openai.com\""
+    },
+    {
+     "file": "ios/Melo/ChatGPTProtocol.swift",
+     "line": 8,
+     "text": "static let resource = \"https://api.openai.com/v1\""
+    },
+    {
+     "file": "ios/Melo/CodexOAuth.swift",
+     "line": 35,
+     "text": "static let issuer = \"https://auth.openai.com\""
+    },
+    {
+     "file": "ios/Melo/CodexOAuth.swift",
+     "line": 36,
+     "text": "static let resource = \"https://chatgpt.com/backend-api/codex\""
+    },
+    {
+     "file": "ios/Melo/CodexOAuth.swift",
+     "line": 172,
+     "text": "guard let auth = claims[\"https://api.openai.com/auth\"] as? [String:Any], let accountID = auth[\"chatgpt_account_id\"] as? String,"
+    },
+    {
+     "file": "ios/Melo/SyncWorkspace.swift",
+     "line": 196,
+     "text": "static let schema: SyncValue = try! JSONDecoder().decode(SyncValue.self, from: Data(##\"{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"https://"
+    },
+    {
+     "file": "mobile-sync/fixtures/v1/syncContract.generated.js",
+     "line": 3,
+     "text": "\"$schema\": \"https://json-schema.org/draft/2020-12/schema\","
+    },
+    {
+     "file": "mobile-sync/fixtures/v1/syncContract.generated.js",
+     "line": 4,
+     "text": "\"$id\": \"https://melo.local/sync/workspace-v1.schema.json\","
+    },
+    {
+     "file": "mobile-sync/syncContract.generated.js",
+     "line": 3,
+     "text": "\"$schema\": \"https://json-schema.org/draft/2020-12/schema\","
+    },
+    {
+     "file": "mobile-sync/syncContract.generated.js",
+     "line": 4,
+     "text": "\"$id\": \"https://melo.local/sync/workspace-v1.schema.json\","
+    },
+    {
+     "file": "scripts/android-pet-assets.js",
+     "line": 148,
+     "text": "return `https://github.com/${repository}/releases/download/${tag}/${posix.basename(file)}`;"
+    },
+    {
+     "file": "scripts/prepare-memory-model.js",
+     "line": 18,
+     "text": "const response=await fetch(`https://huggingface.co/Xenova/multilingual-e5-small/resolve/${revision}/${file}`,{signal:AbortSignal.timeout(300000)});"
+    },
+    {
+     "file": "scripts/smoke-desktop.js",
+     "line": 240,
+     "text": "baseUrl: 'https://chatgpt.com/backend-api',"
+    },
+    {
+     "file": "shared/agent/tools.js",
+     "line": 40,
+     "text": "endpoint: suppliedEndpoint || (provider === 'brave' ? 'https://api.search.brave.com/res/v1/web/search' : ''),"
+    },
+    {
+     "file": "src/codexAuth.js",
+     "line": 204,
+     "text": "const auth = payload?.['https://api.openai.com/auth'] || {};"
+    },
+    {
+     "file": "src/codexAuth.js",
+     "line": 205,
+     "text": "const profile = payload?.['https://api.openai.com/profile'] || {};"
+    },
+    {
+     "file": "src/codexAuth.js",
+     "line": 224,
+     "text": "const auth = payload?.['https://api.openai.com/auth'] || {};"
+    },
+    {
+     "file": "src/codexAuth.js",
+     "line": 225,
+     "text": "const openaiProfile = payload?.['https://api.openai.com/profile'] || {};"
+    },
+    {
+     "file": "src/config.js",
+     "line": 14,
+     "text": "export const OPENAI_API_BASE_URL = 'https://api.openai.com/v1';"
+    },
+    {
+     "file": "src/config.js",
+     "line": 15,
+     "text": "export const CODEX_OAUTH_BASE_URL = 'https://chatgpt.com/backend-api';"
+    },
+    {
+     "file": "src/config.js",
+     "line": 76,
+     "text": "lastFmApiKey: '',    // https://www.last.fm/api/account/create"
+    },
+    {
+     "file": "src/config.js",
+     "line": 77,
+     "text": "tavilyApiKey: '',    // https://tavily.com (web search)"
+    },
+    {
+     "file": "src/config.js",
+     "line": 78,
+     "text": "serpApiKey: '',      // https://serpapi.com (web search)"
+    },
+    {
+     "file": "src/images/codexImageEngine.js",
+     "line": 78,
+     "text": "const CODEX_RESPONSES_ENDPOINT = 'https://chatgpt.com/backend-api/codex/responses';"
+    },
+    {
+     "file": "src/images/imageGen.js",
+     "line": 32,
+     "text": "const MINIMAX_IMAGE_BASE = 'https://api.minimaxi.chat/v1/image_generation';"
+    },
+    {
+     "file": "src/media/extractors/audioExtractor.js",
+     "line": 38,
+     "text": "baseUrl: explicitBaseUrl || 'https://api.openai.com/v1',"
+    },
+    {
+     "file": "src/media/extractors/audioExtractor.js",
+     "line": 44,
+     "text": "if (config?.activeLlmProfileId && config.baseUrl !== 'https://api.openai.com/v1') return { apiKey: '', baseUrl: '' };"
+    },
+    {
+     "file": "src/media/extractors/audioExtractor.js",
+     "line": 58,
+     "text": "'https://api.openai.com/v1',"
+    },
+    {
+     "file": "src/media/extractors/audioExtractor.js",
+     "line": 88,
+     "text": "baseUrl: codexEnvBase || 'https://api.openai.com/v1',"
+    },
+    {
+     "file": "src/media/extractors/audioExtractor.js",
+     "line": 100,
+     "text": "const raw = String(rawBaseUrl || 'https://api.openai.com/v1').trim();"
+    },
+    {
+     "file": "src/media/extractors/youtubeExtractor.js",
+     "line": 176,
+     "text": "`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`,"
+    },
+    {
+     "file": "src/media/extractors/youtubeExtractor.js",
+     "line": 239,
+     "text": "const endpoint = `https://vimeo.com/api/oembed.json?url=${encodeURIComponent(url)}`;"
+    },
+    {
+     "file": "src/memory/embedProviders/OpenAIEmbedProvider.js",
+     "line": 36,
+     "text": "const res = await fetch('https://api.openai.com/v1/embeddings', {"
+    },
+    {
+     "file": "src/openai.js",
+     "line": 47,
+     "text": "const DEFAULT_CODEX_BASE_URL = 'https://chatgpt.com/backend-api';"
+    },
+    {
+     "file": "src/providers/openRouterOAuth.js",
+     "line": 9,
+     "text": "const TOKEN_ENDPOINT = 'https://openrouter.ai/api/v1/auth/keys';"
+    },
+    {
+     "file": "src/providers/openRouterOAuth.js",
+     "line": 10,
+     "text": "const AUTH_ENDPOINT = 'https://openrouter.ai/auth';"
+    },
+    {
+     "file": "src/providers/openRouterOAuth.js",
+     "line": 17,
+     "text": "if (profile.providerId !== 'openrouter' || profile.baseUrl !== 'https://openrouter.ai/api/v1') throw new Error('请先保存 OpenRouter 官方地址的连接。');"
+    },
+    {
+     "file": "src/services/remote/discordApi.js",
+     "line": 33,
+     "text": "process.env.MELO_DISCORD_API_BASE || `https://discord.com/api/${DISCORD_API_VERSION}`,"
+    },
+    {
+     "file": "src/services/remote/discordApi.js",
+     "line": 62,
+     "text": "'user-agent': 'MeloDesktopBot (https://github.com, 1.0)',"
+    },
+    {
+     "file": "src/services/remote/discordApi.js",
+     "line": 160,
+     "text": "'user-agent': 'MeloDesktopBot (https://github.com, 1.0)',"
+    },
+    {
+     "file": "src/services/remote/discordParsing.js",
+     "line": 84,
+     "text": "url: `https://media.discordapp.net/stickers/${stickerId}.png`,"
+    },
+    {
+     "file": "src/services/remote/telegramApi.js",
+     "line": 34,
+     "text": "return String(process.env.MELO_TELEGRAM_API_BASE || 'https://api.telegram.org').replace(/\\/+$/, '');"
+    },
+    {
+     "file": "src/services/search/apiDirect.js",
+     "line": 49,
+     "text": "const UA = 'Melo/0.2 (https://github.com/MortredVigoss/Melo) Node.js';"
+    },
+    {
+     "file": "src/services/search/apiDirect.js",
+     "line": 268,
+     "text": "const url = `https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(cleaned)}&tags=story&hitsPerPage=3`;"
+    },
+    {
+     "file": "src/services/search/apiDirect.js",
+     "line": 286,
+     "text": "const itemUrl = `https://news.ycombinator.com/item?id=${hit.objectID}`;"
+    },
+    {
+     "file": "src/services/search/apiDirect.js",
+     "line": 361,
+     "text": "const url = `https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(cleaned)}&limit=5&fields=${fields}`;"
+    },
+    {
+     "file": "src/services/search/apiDirect.js",
+     "line": 381,
+     "text": "const paperUrl = `https://arxiv.org/abs/${arxivId}`;"
+    },
+    {
+     "file": "src/services/search/apiDirect.js",
+     "line": 443,
+     "text": "const url = `https://api.github.com/search/repositories?q=${encodeURIComponent(cleaned)}&per_page=3&sort=best-match`;"
+    },
+    {
+     "file": "src/services/search/apiDirect.js",
+     "line": 465,
+     "text": "const url2 = String(repo.html_url || `https://github.com/${repo.full_name}`);"
+    },
+    {
+     "file": "src/services/search/apiDirect.js",
+     "line": 526,
+     "text": "const url = 'https://api.stackexchange.com/2.3/search/advanced' +"
+    },
+    {
+     "file": "src/tools/builtins/browserTools.js",
+     "line": 93,
+     "text": "{ url: 'https://news.ycombinator.com' },"
+    },
+    {
+     "file": "src/tools/builtins/browserTools.js",
+     "line": 94,
+     "text": "{ url: 'https://github.com/anthropics/anthropic-sdk-python/issues' },"
+    },
+    {
+     "file": "src/tools/builtins/fetchUrlTool.js",
+     "line": 22,
+     "text": "const JINA_READER_BASE = 'https://r.jina.ai/';"
+    },
+    {
+     "file": "src/tools/builtins/fetchUrlTool.js",
+     "line": 204,
+     "text": "{ url: 'https://docs.python.org/3/library/json.html', extract_mode: 'jina' },"
+    },
+    {
+     "file": "src/tools/builtins/mediaApiTool.js",
+     "line": 21,
+     "text": "const MUSICBRAINZ_BASE = 'https://musicbrainz.org/ws/2';"
+    },
+    {
+     "file": "src/tools/builtins/mediaApiTool.js",
+     "line": 22,
+     "text": "const LASTFM_BASE      = 'https://ws.audioscrobbler.com/2.0';"
+    },
+    {
+     "file": "src/tools/builtins/mediaApiTool.js",
+     "line": 23,
+     "text": "const ITUNES_BASE      = 'https://itunes.apple.com/search';"
+    },
+    {
+     "file": "src/tools/builtins/mediaInfoTool.js",
+     "line": 168,
+     "text": "{ url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', operation: 'info' },"
+    },
+    {
+     "file": "src/tools/builtins/mediaInfoTool.js",
+     "line": 169,
+     "text": "{ url: 'https://y.qq.com/n/ryqq/songDetail/001fNHEf1SFWQM', operation: 'info' },"
+    },
+    {
+     "file": "src/tools/builtins/mediaInfoTool.js",
+     "line": 170,
+     "text": "{ url: 'https://www.bilibili.com/video/BV1xx411c7aQ', operation: 'url', format: 'bestaudio' },"
+    },
+    {
+     "file": "src/tools/builtins/mediaInfoTool.js",
+     "line": 171,
+     "text": "{ url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', operation: 'subtitle' },"
+    },
+    {
+     "file": "src/tools/builtins/translateTool.js",
+     "line": 8,
+     "text": "const GT_BASE = 'https://translate.googleapis.com/translate_a/single';"
+    },
+    {
+     "file": "src/tools/builtins/webScreenshotTool.js",
+     "line": 267,
+     "text": "{ url: 'https://news.ycombinator.com', fullPage: true, width: 1024 },"
+    },
+    {
+     "file": "src/tools/builtins/webSearchTool.js",
+     "line": 153,
+     "text": "const JINA_READER_BASE = 'https://r.jina.ai/';"
+    },
+    {
+     "file": "src/tools/builtins/webSearchTool.js",
+     "line": 391,
+     "text": "const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}&num=${Math.min(numResults + 2, 15)}&hl=zh-CN`;"
+    },
+    {
+     "file": "src/tools/builtins/webSearchTool.js",
+     "line": 447,
+     "text": "const ddgUrl = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`;"
+    },
+    {
+     "file": "src/tools/builtins/webSearchTool.js",
+     "line": 1678,
+     "text": "const url = `https://wttr.in/${encodeURIComponent(location)}?format=j1`;"
+    },
+    {
+     "file": "src/tts.js",
+     "line": 48,
+     "text": "const MINIMAX_TTS_BASE = 'https://api.minimaxi.chat/v1/t2a_v2';"
+    },
+    {
+     "file": "src/tts.js",
+     "line": 76,
+     "text": "const baseUrl = cleanBaseUrl(explicitBaseUrl || 'https://api.openai.com/v1');"
+    },
+    {
+     "file": "src/tts.js",
+     "line": 81,
+     "text": "if (config?.activeLlmProfileId && config.baseUrl !== 'https://api.openai.com/v1') return { apiKey: '', baseUrl: '' };"
+    },
+    {
+     "file": "src/tts.js",
+     "line": 92,
+     "text": "'https://api.openai.com/v1',"
+    }
+   ]
+  },
+  "H6": {
+   "title": "内置 Agent id 写进逻辑",
+   "severity": "medium",
+   "note": "owner / 团队预设应读 agentProfiles，不写死 id",
+   "scanned": 467,
+   "count": 2,
+   "files": 2,
+   "byFile": {
+    "src/services/chat/executionScenes.js": 1,
+    "src/state/stateHydration.js": 1
+   },
+   "hits": [
+    {
+     "file": "src/services/chat/executionScenes.js",
+     "line": 81,
+     "text": "if (terminalStatus === 'completed' && receipt?.kind === 'research' && receipt.outcome === 'blocked' &&"
+    },
+    {
+     "file": "src/state/stateHydration.js",
+     "line": 549,
+     "text": "agentProfiles: Object.fromEntries(Object.entries(normalizeAgentProfiles()).map(([id,p])=>[id,{...p,capabilities:recommendedCapabilities(id,{skills:DEFAULT_ENABL"
+    }
+   ]
+  },
+  "H7": {
+   "title": "服务端直发界面的中文事件名（无翻译行）",
+   "severity": "high",
+   "note": "事件应发 id + 参数，由 UI 翻译；或至少补翻译行",
+   "scanned": 467,
+   "count": 0,
+   "files": 0,
+   "byFile": {},
+   "hits": []
+  },
+  "H8": {
+   "title": "服务端中文回复 / 错误文案",
+   "severity": "medium",
+   "note": "按对话语言选文案，不按\"有没有汉字\"",
+   "scanned": 467,
+   "count": 0,
+   "files": 0,
+   "byFile": {},
+   "hits": []
+  },
+  "H9": {
+   "title": "按用户消息脚本选回复语言",
+   "severity": "high",
+   "note": "同 H2，针对\"中 / 英二选一\"的落点",
+   "scanned": 705,
+   "count": 0,
+   "files": 0,
+   "byFile": {},
+   "hits": []
+  },
+  "H10": {
+   "title": "桌面 JS 里的原始色值",
+   "severity": "medium",
+   "note": "颜色进 tokens.css；3D / 卫星场景例外",
+   "scanned": 138,
+   "count": 0,
+   "files": 0,
+   "byFile": {},
+   "hits": []
+  },
+  "H11": {
+   "title": "CSS 原始色值（tokens.css 之外）",
+   "severity": "info",
+   "note": "主题换色会漏；逐步收进 tokens",
+   "scanned": 21,
+   "count": 0,
+   "files": 0,
+   "byFile": {},
+   "hits": []
+  },
+  "H12": {
+   "title": "原生对话框 alert / confirm / prompt",
+   "severity": "medium",
+   "note": "统一走应用内反馈",
+   "scanned": 138,
+   "count": 0,
+   "files": 0,
+   "byFile": {},
+   "hits": []
+  },
+  "H13": {
+   "title": "内联 style= 属性",
+   "severity": "info",
+   "note": "进 CSS 类",
+   "scanned": 138,
+   "count": 0,
+   "files": 0,
+   "byFile": {},
+   "hits": []
+  },
+  "H14": {
+   "title": "CSS !important",
+   "severity": "info",
+   "note": "层叠顺序问题的症状",
+   "scanned": 21,
+   "count": 5,
+   "files": 5,
+   "byFile": {
+    "desktop-ui/executionPanel.css": 1,
+    "desktop-ui/launchScreen.css": 1,
+    "desktop-ui/localSettings.css": 1,
+    "desktop-ui/neural.css": 1,
+    "desktop-ui/settingsEdit.css": 1
+   },
+   "hits": [
+    {
+     "file": "desktop-ui/executionPanel.css",
+     "line": 2,
+     "text": ".execution-panel[hidden] {display:none!important;}"
+    },
+    {
+     "file": "desktop-ui/launchScreen.css",
+     "line": 38,
+     "text": ".melo-launch [hidden] { display: none !important; }"
+    },
+    {
+     "file": "desktop-ui/localSettings.css",
+     "line": 13,
+     "text": "html[data-melo-reduced=true] *,html[data-melo-reduced=true] *::before,html[data-melo-reduced=true] *::after{animation-duration:.001ms!important;animation-iterat"
+    },
+    {
+     "file": "desktop-ui/neural.css",
+     "line": 124,
+     "text": "@media (prefers-reduced-motion:reduce) {.neural-shell *{transition:none!important;}}"
+    },
+    {
+     "file": "desktop-ui/settingsEdit.css",
+     "line": 21,
+     "text": "[data-settings-managed] button[hidden], [data-action=submit-agent-profile][hidden]{display:none!important}"
+    }
+   ]
+  },
+  "H15": {
+   "title": "escapeHtml / escape 重复定义",
+   "severity": "medium",
+   "note": "一份共享 helper",
+   "scanned": 138,
+   "count": 0,
+   "files": 0,
+   "byFile": {},
+   "hits": []
+  },
+  "H16": {
+   "title": "只认 === '1' 的环境开关",
+   "severity": "medium",
+   "note": "行为开关进 config + 设置页\"高级\"，debug 开关集中一份文档",
+   "scanned": 637,
+   "count": 0,
+   "files": 0,
+   "byFile": {},
+   "hits": []
+  },
+  "H17": {
+   "title": "问候 / 确认词表副本",
+   "severity": "medium",
+   "note": "一份共享词表",
+   "scanned": 499,
+   "count": 2,
+   "files": 2,
+   "byFile": {
+    "shared/agent/retrieval/publicLookupIntent.js": 1,
+    "shared/agent/retrieval/searchRouter.js": 1
+   },
+   "hits": [
+    {
+     "file": "shared/agent/retrieval/publicLookupIntent.js",
+     "line": 28,
+     "text": "const LOOKUP_ACK = /^(?:ok|okay|yes|sure|continue|go ahead|好|好的|继续)[\\s!.?。！？]*$/iu;"
+    },
+    {
+     "file": "shared/agent/retrieval/searchRouter.js",
+     "line": 178,
+     "text": "if (/^(?:ok|okay|yes|sure|continue|go ahead|好|好的|继续)[\\s!.?。！？]*$/iu.test(latestText)) {"
+    }
+   ]
+  },
+  "H18": {
+   "title": "iOS 固定字号 / 原始色 / 绕过本地化的文本",
+   "severity": "info",
+   "note": "语义字号、色板；仅原样输出的固定文案，SwiftUI 插值由五语目录门禁检查，用户内容保持原样",
+   "scanned": 105,
+   "count": 0,
+   "files": 0,
+   "byFile": {},
+   "hits": []
+  },
+  "H19": {
+   "title": "写死的语言默认值 zh-CN",
+   "severity": "medium",
+   "note": "默认语言跟系统 / 设置",
+   "scanned": 817,
+   "count": 0,
+   "files": 0,
+   "byFile": {},
+   "hits": []
+  },
+  "H20": {
+   "title": "TODO / FIXME / HACK",
+   "severity": "info",
+   "note": "",
+   "scanned": 817,
+   "count": 3,
+   "files": 3,
+   "byFile": {
+    "src/agents/subAgent.js": 1,
+    "src/memory/offline/compact.js": 1,
+    "src/tools/builtins/grepTool.js": 1
+   },
+   "hits": [
+    {
+     "file": "src/agents/subAgent.js",
+     "line": 451,
+     "text": "{ task: 'Find all TODO comments in the src/ directory and list them with file and line number.' },"
+    },
+    {
+     "file": "src/memory/offline/compact.js",
+     "line": 256,
+     "text": "if (/(TODO|待办|pending|不确定|稍后|later|next step)/i.test(text)) {"
+    },
+    {
+     "file": "src/tools/builtins/grepTool.js",
+     "line": 277,
+     "text": "{ pattern: 'TODO', include: '*.js' },"
+    }
+   ]
+  }
+ },
+ "ledger": [
+  {
+   "id": "L1",
+   "title": "额外快速（小模型猜标签）仍在代码里",
+   "file": "src/judge/fastJudge.js",
+   "status": "closed"
+  },
+  {
+   "id": "L2",
+   "title": "HTTP 搜索路由把 web_search 设为必需工具",
+   "file": "shared/agent/search.js",
+   "status": "closed"
+  },
+  {
+   "id": "L3",
+   "title": "路由提示词硬写\"先搜\"",
+   "file": "shared/agent/search.js",
+   "status": "closed"
+  },
+  {
+   "id": "L4",
+   "title": "Hosted 搜索缺回执时替换模型回答",
+   "file": "src/services/chat/execution/invokeModelNode.js",
+   "status": "closed"
+  },
+  {
+   "id": "L5",
+   "title": "研究回执要求回复原样含来源 URL",
+   "file": "shared/agent/completion.js",
+   "status": "closed"
+  },
+  {
+   "id": "L6",
+   "title": "分类模型写死 gpt-4o-mini",
+   "file": "src/retrieval/intentRouter.js",
+   "status": "closed"
+  },
+  {
+   "id": "L7",
+   "title": "视觉能力按模型名正则",
+   "file": "src/media/visionCapability.js",
+   "status": "closed"
+  },
+  {
+   "id": "L8",
+   "title": "前端用 7860 端口正则判断自定义声音",
+   "file": "desktop-ui/app.js",
+   "status": "closed"
+  },
+  {
+   "id": "L9",
+   "title": "任务 owner 固定四个内置 id",
+   "file": "src/domain/task/taskService.js",
+   "status": "closed"
+  },
+  {
+   "id": "L10",
+   "title": "渠道别名硬加 melo",
+   "file": "src/services/remote/telegramAddressHelpers.js",
+   "status": "closed"
+  },
+  {
+   "id": "L11",
+   "title": "英文硬编码的 window.prompt 附链接",
+   "file": "desktop-ui/features/chat/controller.js",
+   "status": "closed"
+  },
+  {
+   "id": "L12",
+   "title": "仓库里本机绝对路径（android-pet-assets）",
+   "file": "scripts/android-pet-assets.js",
+   "status": "closed"
+  },
+  {
+   "id": "L13",
+   "title": "同轮两份不同的问候词表（prepareNode 175 vs 415）",
+   "file": "src/services/chat/execution/prepareNode.js",
+   "status": "closed"
+  },
+  {
+   "id": "L14",
+   "title": "空回复兜底只有英文",
+   "file": "src/services/chat/execution/finalizeNode.js",
+   "status": "closed"
+  },
+  {
+   "id": "L15",
+   "title": "预算用完模板只有中文",
+   "file": "shared/protocol/agent-loop.json",
+   "status": "closed"
+  },
+  {
+   "id": "L16",
+   "title": "纠正事实主题只认三种",
+   "file": "src/memory/factPolicy.js",
+   "status": "closed"
+  },
+  {
+   "id": "L17",
+   "title": "智能模式档位表存在（设计落地探针，open = 未落地）",
+   "file": "desktop-ui/smartRouting.js",
+   "status": "closed"
+  }
+ ]
+}

@@ -24,7 +24,7 @@ export function startTurn({ runId, turnId, allowedTools = [], requiredTools = []
   return {
     version: CORE_VERSION, runId, turnId, status: 'running', startedAt: now, lastNow: now, successfulEffects: [], repairing: false,
     deadline: now + bounded('timeoutMs', AGENT_LOOP_CONTRACT.budget.deadlineMs, Number.MAX_SAFE_INTEGER - now),
-    limits: { rounds: Number.isFinite(limits.rounds) ? Math.max(0, Math.min(AGENT_LOOP_CONTRACT.guardLimits.maxRounds, Math.floor(limits.rounds))) : AGENT_LOOP_CONTRACT.loop.maxIterations, callsPerRound: bounded('callsPerRound', AGENT_LOOP_CONTRACT.loop.maxCallsPerResponse, AGENT_LOOP_CONTRACT.loop.maxCallsPerResponse), errors: bounded('errors', AGENT_LOOP_CONTRACT.guardLimits.consecutiveErrors, AGENT_LOOP_CONTRACT.guardLimits.maxConsecutiveErrors), stagnant: bounded('stagnant', AGENT_LOOP_CONTRACT.guardLimits.stagnantRounds, AGENT_LOOP_CONTRACT.guardLimits.maxStagnantRounds) },
+    limits: { ...(limits.finalReport === true ? { finalReport: true } : {}), rounds: Number.isFinite(limits.rounds) ? Math.max(0, Math.min(AGENT_LOOP_CONTRACT.guardLimits.maxRounds, Math.floor(limits.rounds))) : AGENT_LOOP_CONTRACT.loop.maxIterations, callsPerRound: bounded('callsPerRound', AGENT_LOOP_CONTRACT.loop.maxCallsPerResponse, AGENT_LOOP_CONTRACT.loop.maxCallsPerResponse), errors: bounded('errors', AGENT_LOOP_CONTRACT.guardLimits.consecutiveErrors, AGENT_LOOP_CONTRACT.guardLimits.maxConsecutiveErrors), stagnant: bounded('stagnant', AGENT_LOOP_CONTRACT.guardLimits.stagnantRounds, AGENT_LOOP_CONTRACT.guardLimits.maxStagnantRounds) },
     allowedTools: [...new Set(allowedTools.filter(identity))], requiredTools: [...new Set(requiredTools.filter(identity))], toolDependencies: Object.fromEntries(Object.entries(toolDependencies).filter(([name, needs]) => identity(name) && Array.isArray(needs)).map(([name, needs]) => [name, needs.filter(identity).slice(0, AGENT_LOOP_CONTRACT.guardLimits.dependencyTools)])), successfulTools: [], pendingTools: {}, rounds: 0, awaitingModel: false,
     hostToolSchemas: hostToolSchemas === true, failures: [], pendingFingerprints: {}, rejectionResults: {},
     callIds: [], pending: [], permitted: [], phoneTasks: [], rejections: {}, errors: 0, roundSucceeded: false, stagnant: 0, progressKeys: [], reason: null,
@@ -43,12 +43,25 @@ export function advanceTurn(previous, event, now) {
   switch (event.type) {
     case 'request':
       if (state.pending.length || state.awaitingModel) fail('PENDING_EFFECT', 'Pair every effect with a result before the next model request.');
-      if (state.rounds >= state.limits.rounds) return stop('ROUND_LIMIT');
-      state.rounds++;
+      if (event.mode === 'review') {
+        if ((state.reviewRounds || 0) >= 3) return stop('GOAL_CHECK_LIMIT');
+        state.reviewRounds = (state.reviewRounds || 0) + 1;
+        state.requestMode = 'review';
+      } else if (state.rounds >= state.limits.rounds) {
+        if (!state.limits.finalReport || state.reportIssued) return stop('ROUND_LIMIT');
+        state.requestMode = 'report';
+        state.reportIssued = true;
+      } else {
+        state.rounds++;
+        delete state.requestMode;
+      }
       state.awaitingModel = true;
       return state;
     case 'calls': {
       if (!state.awaitingModel || state.pending.length) fail('UNEXPECTED_CALLS', 'No model request is awaiting calls.');
+      // Hosts must suppress tool schemas AND native features on these rounds.
+      // Refuse even a hallucinated call before any effect can be permitted.
+      if (['review', 'report'].includes(state.requestMode)) return stop(state.requestMode === 'report' ? 'ROUND_LIMIT' : 'GOAL_CHECK_TOOLS');
       const calls = event.calls;
       if (!Array.isArray(calls) || !calls.length || calls.length > state.limits.callsPerRound) fail('INVALID_BATCH', 'Invalid tool batch size.');
       const seen = new Set(state.callIds);
@@ -140,6 +153,7 @@ export function advanceTurn(previous, event, now) {
     }
     case 'complete':
       if (!state.awaitingModel || state.pending.length) fail('PENDING_EFFECT', 'A final answer cannot drop pending tools.');
+      if (state.requestMode === 'report') return stop('ROUND_LIMIT');
       if ((state.requiredTools || []).some(name => !state.successfulTools.includes(name))) return stop('MISSING_TOOL_EVIDENCE');
       return { ...state, status: 'completed', awaitingModel: false };
     default: fail('UNKNOWN_EVENT', 'Unknown turn event.');

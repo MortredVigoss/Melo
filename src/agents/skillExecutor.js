@@ -245,12 +245,14 @@ async function runSkillLoop({
     }
 
     if (coreTurn.update('request') !== 'running') break;
-    iterations++;
+    iterations = coreTurn.routingProgress.rounds;
     const checkingGoal = coreTurn.checking;
-    const review = checkingGoal ? coreTurn.reviewRequest() : null;
+    const reportingProgress = coreTurn.reporting;
+    const toolFree = checkingGoal || reportingProgress;
+    const review = checkingGoal ? coreTurn.reviewRequest() : reportingProgress ? coreTurn.progressRequest() : null;
     let request;
     try { request = fitRequestContext({ sections: [{ id: 'instructions', text: review?.systemPrompt || systemPrompt, required: true }],
-      messages: review?.messages || loopMessages, toolDefinitions: checkingGoal ? [] : functionSession.definitions, ...contextBudget }); } catch (error) {
+      messages: review?.messages || loopMessages, toolDefinitions: toolFree ? [] : functionSession.definitions, ...contextBudget }); } catch (error) {
       if (!checkingGoal) throw error;
       coreTurn.stopReview('GOAL_CHECK_CONTEXT'); coreTurn.update('complete');
       finalOutput = cleanReplyForParent(coreTurn.candidateReply);
@@ -274,7 +276,7 @@ async function runSkillLoop({
     };
     let rawReply;
     try { rawReply = await replyFn({
-      ...(checkingGoal ? { maxTokens: 2048 } : functionSession.requestOptions()),
+      ...(toolFree ? { maxTokens: 2048 } : functionSession.requestOptions()),
       timeoutMs: runBudget ? requestTimeoutMs(runBudget) : undefined,
       onProviderResponse: account,
       authMode: config.authMode,
@@ -284,13 +286,15 @@ async function runSkillLoop({
       model: providerConfig.model,
       systemPrompt: review?.systemPrompt || systemPrompt,
       messages: request.messages,
-      nativeWebSearchEnabled: !checkingGoal && nativeFeaturesForScope(currentRequestContext().capabilityScope,currentRequestContext().requestToolPolicy).nativeWebSearchEnabled,
-      nativeImageGenerationEnabled: !checkingGoal && !coreTurn.repairing && nativeFeaturesForScope(currentRequestContext().capabilityScope,currentRequestContext().requestToolPolicy).nativeImageGenerationEnabled,
+      nativeWebSearchEnabled: !toolFree && nativeFeaturesForScope(currentRequestContext().capabilityScope,currentRequestContext().requestToolPolicy).nativeWebSearchEnabled,
+      nativeImageGenerationEnabled: !toolFree && !coreTurn.repairing && nativeFeaturesForScope(currentRequestContext().capabilityScope,currentRequestContext().requestToolPolicy).nativeImageGenerationEnabled,
       onExecutionEvent: event => coreTurn.observeNative(event),
       signal,
     }); }
     catch (error) {
-      if (!checkingGoal || signal?.aborted) throw error;
+      if (signal?.aborted) throw error;
+      if (reportingProgress) { coreTurn.update('complete'); finalOutput = coreTurn.reply(task); break; }
+      if (!checkingGoal) throw error;
       coreTurn.stopReview(); coreTurn.update('complete');
       finalOutput = cleanReplyForParent(coreTurn.candidateReply);
       completed = coreTurn.status === 'completed';
@@ -300,6 +304,12 @@ async function runSkillLoop({
 
     const turn = functionSession.parse(rawReply);
     const { toolCalls } = turn;
+
+    if (reportingProgress) {
+      coreTurn.update('complete');
+      finalOutput = cleanReplyForParent(toolCalls.length ? coreTurn.reply(task) : turn.text || coreTurn.reply(task));
+      break;
+    }
 
     if (checkingGoal) {
       const decision = coreTurn.review(toolCalls.length ? '' : turn.text);

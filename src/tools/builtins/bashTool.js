@@ -1,4 +1,5 @@
 import {resolve as resolveWorkspaceCwd} from 'node:path';
+import { readOnlyCommand } from './readOnlyCommand.js';
 import {missingWorkspaceResult} from '../workspace.js';
 /**
  * Built-in tool: bash
@@ -238,6 +239,9 @@ export const bashTool = {
     // Pre-compute cwd here so isInAllowlist can validate it sits
     // inside workspacePath (Phase 2D follow-up #3).
     const effectiveCwd = cwdOverride ? resolveWorkspaceCwd(workspacePath, cwdOverride) : workspacePath;
+    signal?.throwIfAborted();
+    const readResult = risks.length === 0 ? await readOnlyCommand(command, effectiveCwd, context) : null;
+    if (readResult) return readResult;
     const allowlisted = risks.length === 0 && isInAllowlist(command, effectiveCwd, workspacePath);
 
     if (!allowlisted) {

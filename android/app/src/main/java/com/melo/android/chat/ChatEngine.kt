@@ -82,7 +82,7 @@ class ChatEngine(private val context: Context, val repository: Repository) {
                     if (connection.protocol == "fixture") client.reply(connection, key, selected, instructions, repository::imageData) { partial -> updateTurn(chatId) { it.copy(partial = partial) } }
                     else withTimeout(15 * 60 * 1000L) {
                         SharedChatAgent(context, client, BuildConfig.DEBUG).reply(connection, key, selected, instructions,
-                            JsonObject(state.settings.agentRuntime + ("replyLanguage" to JsonPrimitive(state.agents.find { it.id == chat.agentId }?.replyLanguage.orEmpty()))), { search -> if (search.text("credentialRef") == "search") repository.credential(SharedSearchAdapter.credentialId(search.text("endpoint"), BuildConfig.DEBUG)) else "" }, phoneUse, run.id, chatId, repository::imageData,
+                            JsonObject(state.settings.agentRuntime + mapOf("replyLanguage" to JsonPrimitive(state.agents.find { it.id == chat.agentId }?.replyLanguage.orEmpty()), "maxTaskIterations" to JsonPrimitive(state.agents.find { it.id == chat.agentId }?.maxTaskIterations ?: 10))), { search -> if (search.text("credentialRef") == "search") repository.credential(SharedSearchAdapter.credentialId(search.text("endpoint"), BuildConfig.DEBUG)) else "" }, phoneUse, run.id, chatId, repository::imageData,
                             invokePhone = { args ->
                                 currentCoroutineContext().ensureActive()
                                 check(repository.data.value.chats.any { it.id == chatId }) { "对话已删除，手机操作已停止。" }

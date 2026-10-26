@@ -5102,10 +5102,13 @@ function _fileSafetyBody(operation, payload) {
 function _fileSafetyButtons(operation, payload, requestId) {
   const confirm = operation === 'delete' && payload?.stage === 'confirm';
   const persistent = payload?.persistentAllowed === true;
+  const taskScope = payload?.taskScope;
   return ui`
     <button class="small-button is-primary" data-action="${confirm ? 'file-safety-confirm-delete' : 'file-safety-allow'}" data-scope="once" data-request-id="${escapeHtml(requestId)}">仅本次</button>
+    ${taskScope ? ui`<button class="small-button" data-action="file-safety-allow" data-scope="task" data-request-id="${escapeHtml(requestId)}">本次任务允许</button>` : ''}
     <button class="small-button" data-action="file-safety-deny" data-request-id="${escapeHtml(requestId)}">拒绝</button>
     <button class="small-button" data-action="file-safety-allow" data-scope="file" data-persistent="1" data-request-id="${escapeHtml(requestId)}" ${persistent ? '' : 'disabled'}>始终允许</button>
+    ${taskScope ? ui`<p class="page-kicker-tip">${escapeHtml(t(taskScope.kind === 'workspace-write' ? '本次任务内允许修改此工作区的普通文件；不含删除、敏感路径和其他 Agent。取消或任务结束后失效。' : '本次任务内允许此固定命令；目录或 package.json 改变后重新确认。取消或任务结束后失效。'))} <code>${escapeHtml(taskScope.workspace)}</code></p>` : ''}
     <p class="page-kicker-tip">${persistent ? (operation === 'bash' ? t('只保存此固定 npm 命令、Agent与真实工作目录；package.json 变化后重新确认，不放行其他命令。') : t('长期授权仅限当前文件、操作、Agent与项目，重启后仍有效，可在权限页撤销。')) : t('此操作需要逐次确认，不支持长期授权。')}${operation === 'delete' ? ' ' + t('删除仍需输入文件名确认。') : ''}</p>`;
 }
 

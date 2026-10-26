@@ -27,6 +27,7 @@
  *   - Only use tools when necessary.
  */
 
+import { AGENT_LOOP_CONTRACT } from '../../shared/agent/loopContract.js';
 import { TOOL_RESULT_CONTRACT_NOTE } from './toolResult.js';
 import { getToolsByCategory, getAllTools } from './registryCore.js';
 
@@ -42,6 +43,8 @@ You have access to tools. To use a tool, emit a \`<tool_call>\` block containing
 {"id":"<unique_id>","name":"<tool_name>","arguments":{<key>:<value>,...}}
 </tool_call>
 \`\`\`
+
+${AGENT_LOOP_CONTRACT.loop.operationInstructions}
 
 Rules:
 - You may emit one or more \`<tool_call>\` blocks per response.
@@ -63,6 +66,7 @@ const NATIVE_RESULT_ITEM = Object.freeze({
 const nativeToolInstructions = (protocol = 'responses') => `## Available Tools
 
 Use the supplied function definitions to request tools. Do not write XML tool calls in reply text.
+${AGENT_LOOP_CONTRACT.loop.operationInstructions}
 Choose only tools that help the user's task; return a direct answer when no tool is needed.
 Follow each function's schema exactly; use null only where its schema permits null. Melo supplies permissions, workspace and account context.
 Independent read operations may be requested together. Operations whose inputs depend on earlier outputs must wait for those outputs.

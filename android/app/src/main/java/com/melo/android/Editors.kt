@@ -76,11 +76,18 @@ import com.melo.android.network.HostedSearchAdapter
         var instructions by remember(original.id) { mutableStateOf(original.instructions) }; var identity by remember(original.id) { mutableStateOf(original.identity) }
         var soul by remember(original.id) { mutableStateOf(original.soul) }
         var replyLanguage by remember(original.id) { mutableStateOf(original.replyLanguage) }
+        var taskRounds by remember(original.id) { mutableIntStateOf(original.maxTaskIterations.coerceIn(1, 20)) }
         var contextSources by remember(original.id) { mutableStateOf(original.contextSources) }
         EditorDialog("编辑角色", { editing = null }, { vm.engine.work {
             require(name.isNotBlank()) { "请输入角色名称。" }
-            vm.repository.saveAgent(original.copy(name = name.take(200), subtitle = subtitle, instructions = instructions, identity = identity, soul = soul, contextSources = contextSources, replyLanguage = replyLanguage)); editing = null
+            vm.repository.saveAgent(original.copy(name = name.take(200), subtitle = subtitle, instructions = instructions, identity = identity, soul = soul, contextSources = contextSources, replyLanguage = replyLanguage, maxTaskIterations = taskRounds)); editing = null
         } }) { Field("名称", name, { name = it }); Field("简介", subtitle, { subtitle = it }); Field("角色指令", instructions, { instructions = it }, 4); Field("身份", identity, { identity = it }, 2); Field("风格", soul, { soul = it }, 2)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("任务执行轮数（本机）：$taskRounds", Modifier.weight(1f))
+                TextButton(onClick = { taskRounds-- }, enabled = taskRounds > 1) { Text("−") }
+                TextButton(onClick = { taskRounds++ }, enabled = taskRounds < 20) { Text("+") }
+            }
+            Text("检查不占执行轮数；到顶后汇报进度。")
             Text("回复语言")
             listOf("" to "跟随用户消息", "zh" to "中文", "en" to "English", "ja" to "日本語", "ko" to "한국어", "es" to "Español").forEach { (value,title) -> FilterChip(selected = replyLanguage == value, onClick = { replyLanguage = value }, label = { Text(title) }) }
             Text("上下文来源（本机）")

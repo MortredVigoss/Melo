@@ -279,12 +279,13 @@ func json(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObject(
         assert(claudeBlocks.map { $0["type"] as? String } == ["tool_result", "tool_result", "text", "text", "image"])
         MockProtocol.payloads = []; MockProtocol.anthropic = true
 
-        // The loop is bounded like the desktop (2026-10-19; was 6 rounds and an error): 10 model calls,
-        // then the shared tool-limit reply — attempts are never presented as results.
+        // Ten work rounds plus one tool-free report. A report that attempts
+        // another tool call falls back to the limit reply without execution.
         MockProtocol.requestBodies = []; performed = []
         MockProtocol.payloads = (0..<12).map { "{\"stop_reason\":\"tool_use\",\"content\":[{\"type\":\"tool_use\",\"id\":\"t\($0)\",\"name\":\"open_url\",\"input\":{\"url\":\"https://a.example/\($0)\"}}]}" }
         let limited = try await Network.reply(messages: [ChatMessage(role: "user", content: "一直查")], endpoint: "https://example.invalid/v1/messages", model: "claude", token: "test-key", apiProtocol: "anthropic", tools: toolSet, session: session)
-        assert(limited.text == AgentLoopContract.shared.toolLimitReplyZH && performed.count == AgentLoopContract.shared.maxIterations && MockProtocol.requestBodies.count == AgentLoopContract.shared.maxIterations)
+        assert(limited.text == AgentLoopContract.shared.toolLimitReplyZH && performed.count == AgentLoopContract.shared.maxIterations && MockProtocol.requestBodies.count == AgentLoopContract.shared.maxIterations + 1)
+        assert(MockProtocol.requestBodies.last?["tools"] == nil, "the final report offers no tools")
         // A call id the model already used in this turn is refused before anything runs (desktop T12).
         MockProtocol.requestBodies = []; performed = []
         MockProtocol.payloads = Array(repeating: "{\"stop_reason\":\"tool_use\",\"content\":[{\"type\":\"tool_use\",\"id\":\"same\",\"name\":\"open_url\",\"input\":{\"url\":\"https://a.example\"}}]}", count: 2)

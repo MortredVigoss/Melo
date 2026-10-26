@@ -25,7 +25,7 @@ import { currentRequestContext, runWithRequestContext } from '../runtime/request
  *   const result = await executeTool(tool, args, { sseEmitter, workspacePath, signal, chatId, onOutput });
  */
 
-import { requestPermission } from './permissions.js';
+import { requestPermission, checkPermissionRule } from './permissions.js';
 import { emitHook } from '../plugins/hooks.js';
 import { finalizeToolResult } from './toolResult.js';
 import { resolveRuntimePaths } from '../runtime/paths.js';
@@ -128,7 +128,11 @@ async function runObservedTool(tool, args, options = {}) {
     options.observe?.('waiting');
     try {
       // Pass chatId so session-scope grants don't leak across chats.
-      await requestPermission(tool.id, args, sseEmitter, signal, chatId, requestContext);
+      if (tool.permissionGate === 'file-safety') {
+        // The file gate owns the concrete path/diff consent. Keep explicit
+        // user deny policies, but never ask twice for the same operation.
+        if (await checkPermissionRule(tool.id, args, chatId) === 'deny') throw new Error(`Tool "${tool.id}" is not permitted by policy.`);
+      } else await requestPermission(tool.id, args, sseEmitter, signal, chatId, requestContext);
     } catch (err) {
       return finalizeToolResult({
         ok: false,

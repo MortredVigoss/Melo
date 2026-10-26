@@ -73,7 +73,8 @@ test('correction never replays a successful effect; a fresh read remains executa
 
 test('keyword routing alone cannot force stable knowledge to search; oversized goals remain unverified', () => {
   const stable = goalCandidate(startGoal('咖啡馆一般如何管理菜单'), { reply: '可以按类别管理。', research: true, tools: ['web_search'], roundsLeft: 9 });
-  assert.equal(stable.decision, 'deliver');
+  assert.equal(stable.phase, 'checking');
+  assert.equal(reviewGoal(stable, report('complete', [], { reasonType: 'self_contained' })).decision, 'deliver');
   for (const [original, reply] of [[goal.repeat(3000), 'candidate'], [goal, 'x'.repeat(25000)]]) {
     const state = goalCandidate(startGoal(original), { reply, observations: calendar, tools: ['web_search'], roundsLeft: 9 });
     assert.equal(state.reason, 'GOAL_CHECK_TRUNCATED');
@@ -92,7 +93,7 @@ test('an empty provider flag cannot certify facts, and prompt-injection content 
   assert.equal(req.tools, undefined);
   const expired = createCoreTurn({ goal, allowedTools: ['file_write'], limits: { rounds: 1 } });
   expired.update('request'); expired.candidate('done', { research: true });
-  assert.equal(expired.task.reason, 'GOAL_CHECK_BUDGET');
+  assert.equal(expired.checking, true); // check rounds have their own bounded allowance
 });
 
 test('team summary cannot promote missing member delivery; a successful final review round can recover', () => {
@@ -111,4 +112,48 @@ test('failed tool attempts still require a delivery check and evidence budgets r
   const request = JSON.parse(goalReviewRequest(candidate(), rows).messages[0].content);
   assert.ok(request.observations.at(-1).text.startsWith('31 '));
   assert.ok(request.observations.reduce((total, row) => total + row.text.length, 0) <= 16000);
+});
+
+test('zero-tool local tasks are checked in every language and a discoverable path resumes work', () => {
+  for (const original of ['帮我整理项目并核对结果', 'Organize the workspace and check the result', '프로젝트를 정리해 주세요', 'プロジェクトを整理してください', 'Organiza el proyecto', 'Translate the file README.md in this project', '翻译工作区的readme.md并保存译文']) {
+    const state = goalCandidate(startGoal(original), { reply: 'Please tell me the directory.', tools: ['file_list', 'file_read'], roundsLeft: 10 });
+    assert.equal(state.phase, 'checking', original);
+    const next = reviewGoal(state, report('continue', [], { nextStep: 'List the workspace to find its directory.' }));
+    assert.equal(next.decision, 'continue');
+    assert.notEqual(completionResult({ goal: original, reply: state.candidate, task: goalSnapshot(next) }).outcome, 'completed');
+  }
+});
+
+test('semantic check can deliver self-contained writing but never waive real tool evidence', () => {
+  const response = report('complete', [], { reasonType: 'self_contained' });
+  const state = goalCandidate(startGoal('Explain how a tree works'), { reply: 'A tree has branches.', tools: ['file_read'], roundsLeft: 1 });
+  assert.equal(reviewGoal(state, response).decision, 'deliver');
+  assert.equal(reviewGoal(candidate(), response, calendar).reason, 'GOAL_COVERAGE_MISSING');
+});
+
+test('checks do not consume work rounds and the final report cannot execute tools or certify delivery', () => {
+  const core = createCoreTurn({ goal: 'Inspect my project', allowedTools: ['file_read'], limits: { rounds: 2 } });
+  core.update('request');
+  assert.equal(core.candidate('Which directory?'), true); core.update('feedback');
+  core.update('request');
+  assert.equal(core.routingProgress.rounds, 1);
+  core.review(report('continue', [], { nextStep: 'Read workspace metadata.' })); core.update('feedback', { repair: true });
+  core.update('request');
+  assert.equal(core.routingProgress.rounds, 2); assert.equal(core.reporting, false);
+  const call = { id: 'read', name: 'file_read', arguments: { path: 'README.md' } };
+  core.update('calls', { calls: [call] }); core.results([{ call, result: { ok: true, output: 'Project details.' } }]);
+  assert.equal(core.reporting, true); assert.match(core.progressRequest().systemPrompt, /progress report/);
+  assert.equal(core.update('request'), 'running');
+  core.update('calls', { calls: [{ ...call, id: 'forbidden-report-call' }] });
+  assert.equal(core.permits('forbidden-report-call'), false); assert.equal(core.reason, 'ROUND_LIMIT');
+  assert.equal(core.receipt('Inspect my project', 'Read README; further work remains.').outcome, 'budget_exhausted');
+});
+
+test('last work round may still be checked and cancellation/deadline never grant a report', () => {
+  let now = 1;
+  const core = createCoreTurn({ goal: 'Inspect my project', allowedTools: ['file_read'], limits: { rounds: 1, timeoutMs: 100 }, clock: () => now });
+  core.update('request'); core.candidate('Tell me the directory'); core.update('feedback');
+  assert.equal(core.update('request'), 'running'); assert.equal(core.routingProgress.rounds, 1);
+  core.review(report('continue')); core.update('feedback', { repair: true });
+  now = 101; assert.equal(core.update('request'), 'blocked'); assert.equal(core.reason, 'DEADLINE_EXCEEDED');
 });

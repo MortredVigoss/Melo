@@ -18,7 +18,9 @@
  *
  * Permission contract:
  *   - requiresPermission: true  → executor asks user before running (default for destructive tools)
- *   - requiresPermission: false → runs immediately (read-only, safe tools)
+ *   - requiresPermission: false → tool owns any required operation gate
+ *   - permissionGate: "file-safety" → executor enforces deny policies, then
+ *     the built-in file gate obtains path/diff consent without a duplicate prompt.
  *
  * Self-description (design audit T8/T9, option F2). Every field is optional;
  * an undeclared field falls back to the built-in id tables that predate it:
@@ -132,6 +134,7 @@ export function isCapabilityRequirement(value) {
 
 /** Validate the optional self-description fields; all may be absent. */
 export function validateSelfDescription(tool) {
+  if (tool.permissionGate !== undefined && tool.permissionGate !== 'file-safety') return { valid: false, reason: 'Unknown tool permissionGate.' };
   const boolOrFn = (key) => tool[key] === undefined || typeof tool[key] === 'boolean' || typeof tool[key] === 'function';
   if (!boolOrFn('needsWorkspace')) return { valid: false, reason: 'Tool needsWorkspace must be a boolean or (args) => boolean.' };
   if (!boolOrFn('concurrency')) return { valid: false, reason: 'Tool concurrency must be a boolean or (args) => boolean.' };

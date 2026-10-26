@@ -944,9 +944,8 @@ test('round 13 Phase 2D followup #5: git diff --output=/path BLOCKED — write-b
   });
 });
 
-test('round 13 Phase 2D followup #6: ls fully removed from allowlist — both ls -la and ls foo prompt', async () => {
-  // Phase 2D follow-up #6: ls removed entirely (any arg form
-  // risks shell-expansion / glob / tilde leak before our check).
+test('bounded ls uses a read-only adapter; path arguments retain the explicit gate', async () => {
+  // The adapter handles only a fixed listing shape without shell evaluation.
   await withTempEnv(async ({ ws }) => {
     const gate = await freshGate();
     let prompts = 0;
@@ -956,7 +955,7 @@ test('round 13 Phase 2D followup #6: ls fully removed from allowlist — both ls
     };
     await bashTool.run({ command: 'ls -la' }, { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse });
     await bashTool.run({ command: 'ls foo/bar' }, { workspacePath: ws, chatId: 'chat-A', sseEmitter: sse });
-    assert.equal(prompts, 2, 'every ls invocation now prompts');
+    assert.equal(prompts, 1, 'only the arbitrary path form prompts; bounded listing uses glob safety');
   });
 });
 

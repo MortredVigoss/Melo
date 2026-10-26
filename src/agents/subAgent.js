@@ -197,12 +197,14 @@ async function runSubAgentLoop({
     }
 
     if (coreTurn.update('request') !== 'running') break;
-    iterations++;
+    iterations = coreTurn.routingProgress.rounds;
     const checkingGoal = coreTurn.checking;
-    const review = checkingGoal ? coreTurn.reviewRequest() : null;
+    const reportingProgress = coreTurn.reporting;
+    const toolFree = checkingGoal || reportingProgress;
+    const review = checkingGoal ? coreTurn.reviewRequest() : reportingProgress ? coreTurn.progressRequest() : null;
     let request;
     try { request = fitRequestContext({ sections: [{ id: 'instructions', text: review?.systemPrompt || systemPrompt, required: true }],
-      messages: review?.messages || loopMessages, toolDefinitions: checkingGoal ? [] : functionSession.definitions, ...contextBudget }); } catch (error) {
+      messages: review?.messages || loopMessages, toolDefinitions: toolFree ? [] : functionSession.definitions, ...contextBudget }); } catch (error) {
       if (!checkingGoal) throw error;
       coreTurn.stopReview('GOAL_CHECK_CONTEXT'); coreTurn.update('complete');
       finalOutput = cleanReplyForParent(coreTurn.candidateReply);
@@ -222,8 +224,8 @@ async function runSubAgentLoop({
     const account=receipt=>{if(accounted)return;accounted=true;recordUsage(runBudget,{providerCalls:1,inputTokens:receiptInputTokens(receipt)??estimatedInput});};
     let rawReply;
     try { rawReply = await replyFn({
-      ...(checkingGoal ? { maxTokens: 2048 } : functionSession.requestOptions()),
-      maxTokens:checkingGoal ? Math.min(outputLimit, 2048) : outputLimit,
+      ...(toolFree ? { maxTokens: 2048 } : functionSession.requestOptions()),
+      maxTokens:toolFree ? Math.min(outputLimit, 2048) : outputLimit,
       timeoutMs:runBudget?requestTimeoutMs(runBudget):undefined,
       onProviderResponse:receipt=>{if(receipt.usage)responseUsage=receipt.usage;account(receipt);onProviderResponse?.(receipt);},
       authMode: config.authMode,
@@ -233,16 +235,18 @@ async function runSubAgentLoop({
       model: providerConfig.model,
       systemPrompt: review?.systemPrompt || systemPrompt,
       messages: request.messages,
-      nativeWebSearchEnabled: !checkingGoal && nativeFeaturesForScope(currentRequestContext().capabilityScope,currentRequestContext().requestToolPolicy).nativeWebSearchEnabled,
-      nativeImageGenerationEnabled: !checkingGoal && !coreTurn.repairing && nativeFeaturesForScope(currentRequestContext().capabilityScope,currentRequestContext().requestToolPolicy).nativeImageGenerationEnabled,
+      nativeWebSearchEnabled: !toolFree && nativeFeaturesForScope(currentRequestContext().capabilityScope,currentRequestContext().requestToolPolicy).nativeWebSearchEnabled,
+      nativeImageGenerationEnabled: !toolFree && !coreTurn.repairing && nativeFeaturesForScope(currentRequestContext().capabilityScope,currentRequestContext().requestToolPolicy).nativeImageGenerationEnabled,
       onExecutionEvent: event => coreTurn.observeNative(event),
       signal,
       // Native tools obey the same inherited capability snapshot as local tools.
-      workspacePath: checkingGoal ? null : workspacePath,
+      workspacePath: toolFree ? null : workspacePath,
       // No onDelta for sub-agents — output goes through tool result
     }); }
     catch (error) {
-      if (!checkingGoal || signal?.aborted) throw error;
+      if (signal?.aborted) throw error;
+      if (reportingProgress) { coreTurn.update('complete'); finalOutput = coreTurn.reply(task); break; }
+      if (!checkingGoal) throw error;
       coreTurn.stopReview(); coreTurn.update('complete');
       finalOutput = cleanReplyForParent(coreTurn.candidateReply);
       break;
@@ -253,6 +257,12 @@ async function runSubAgentLoop({
     usedTokens=tokensBefore+(Number.isFinite(measured)&&measured>0?measured:estimatedInput+Math.ceil(estimateTextTokens(typeof rawReply==='string'?rawReply:JSON.stringify(rawReply))*4/3));
     const turn = functionSession.parse(rawReply);
     const { toolCalls } = turn;
+
+    if (reportingProgress) {
+      coreTurn.update('complete');
+      finalOutput = cleanReplyForParent(toolCalls.length ? coreTurn.reply(task) : turn.text || coreTurn.reply(task));
+      break;
+    }
 
     if (checkingGoal) {
       const decision = coreTurn.review(toolCalls.length ? '' : turn.text);

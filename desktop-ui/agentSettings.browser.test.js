@@ -58,6 +58,16 @@ test('Agent editor: visible creation, shared routes, saved capabilities/channels
   await form.locator('[data-action=form-settings-save]').click();await form.locator('[data-edit-status=saved]').waitFor();
   const renamed=(await boot()).customize.agents.find(a=>a.id==='research');
   for(const key of ['capabilities','collaboration','contextSources','model','instructions','mood','enabledMcpServerIds'])assert.deepEqual(renamed[key],initial[key],key);
+  // Main-task rounds are separate from members, persist on Save, and Cancel keeps the saved value.
+  await form.locator('[data-action=form-settings-edit]').click();
+  const caps=form.locator('.agent-capabilities'); if(!await caps.evaluate(el=>el.open)) await caps.locator('summary').click();
+  await form.locator('[name=maxTaskIterations]').fill('16');
+  await form.locator('[data-action=form-settings-save]').click(); await form.locator('[data-edit-status=saved]').waitFor();
+  assert.equal((await boot()).customize.agents.find(a=>a.id==='research').collaboration.maxTaskIterations,16);
+  assert.equal((await boot()).customize.agents.find(a=>a.id==='research').collaboration.maxIterations,initial.collaboration.maxIterations);
+  await form.locator('[data-action=form-settings-edit]').click(); await form.locator('[name=maxTaskIterations]').fill('19');
+  await form.locator('[data-action=form-settings-cancel]').click();
+  assert.equal(await form.locator('[name=maxTaskIterations]').inputValue(),'16');
   // A failed creation does not add a phantom entry, and the button can be retried.
   const before=(await boot()).customize.agents.length;
   await page.route('**/api/agents/create-custom',route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'fixture creation unavailable'})}),{times:1});

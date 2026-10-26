@@ -154,10 +154,47 @@ function clipText(value, max) {
   return value.length > max ? value.slice(0, max) : value;
 }
 
+// A task grant belongs to the captured run budget, role/project and real
+// workspace identity. Weak ownership and run identity prevent reuse by the
+// next message, another home, or a delegated Agent. Never persisted or synced.
+const taskGrants = new WeakMap();
+const taskDenials = new WeakMap();
+export function endTaskPermissions(context) { if (context?.budget) { taskGrants.delete(context.budget); taskDenials.delete(context.budget); } }
+function taskDenialKey(context, kind, payload) {
+  const effect = ['write_new', 'write_overwrite', 'edit'].includes(kind) ? 'write' : kind;
+  return taskGrantKey(context, [effect, payload.realPath || payload.realPaths || null, kind === 'bash' ? [payload.command, payload.realCwd] : null]);
+}
+function rememberTaskDenial(entry) {
+  if (!entry.context.budget) return;
+  let denials = taskDenials.get(entry.context.budget);
+  if (!denials) { denials = new Set(); taskDenials.set(entry.context.budget, denials); }
+  denials.add(taskDenialKey(entry.context, entry.kind, entry.payload));
+}
+function taskGrantScope(context, kind, payload, allowed) {
+  const scope = context.permissionScope;
+  if (!allowed || !context.runId || !context.budget || context.signal?.aborted || !scope?.workspace?.path || scope.workspace.unavailable || payload.sensitive || payload.hasSymlinkInChain || payload.hasSymlinks) return null;
+  if (['write_new', 'write_overwrite', 'edit'].includes(kind) && payload.withinWorkspace === true) return { kind: 'workspace-write', workspace: scope.workspace.path };
+  if (kind === 'bash' && payload.cwdInsideWorkspace === true && payload.commandTemplate) return { kind: 'command', workspace: scope.workspace.path, template: payload.commandTemplate };
+  return null;
+}
+function taskGrantKey(context, descriptor) {
+  return JSON.stringify([context.home, context.runId, context.chatId, context.permissionScope, descriptor]);
+}
+function hasTaskGrant(context, descriptor) {
+  return !!descriptor && !context.signal?.aborted && taskGrants.get(context.budget)?.has(taskGrantKey(context, descriptor)) === true;
+}
+function addTaskGrant(context, descriptor) {
+  if (!descriptor || context.signal?.aborted) return false;
+  let grants = taskGrants.get(context.budget);
+  if (!grants) { grants = new Set(); taskGrants.set(context.budget, grants); }
+  grants.add(taskGrantKey(context, descriptor));
+  return true;
+}
+
 // Send the prompt and wait for the UI's response. Returns the resolved
 // scope choice ('once' | 'file' | 'dir'); rejects with FILE_SAFETY_DENIED
 // on deny / timeout / abort.
-function _prompt({ payload, sseEmitter, signal, chatId, kind, expectedConfirmation = null, persistentAllowed = true }) {
+function _prompt({ payload, sseEmitter, signal, chatId, kind, expectedConfirmation = null, persistentAllowed = true, taskAllowed = false }) {
   if (signal?.aborted) return Promise.reject(denyError('File operation aborted.'));
   const context = currentRequestContext() || createRequestContext({ chatId, signal });
   // Same rule as tools/permissions.js (design audit T5 / F1): with no
@@ -168,6 +205,12 @@ function _prompt({ payload, sseEmitter, signal, chatId, kind, expectedConfirmati
     const error = denyError(`File operation "${kind}" needs user approval, but this channel has no approval surface. Ask the user to run it from the Melo desktop app.`);
     error.code = 'PERMISSION_NO_SURFACE';
     return Promise.reject(error);
+  }
+  if (taskDenials.get(context.budget)?.has(taskDenialKey(context, kind, payload))) return Promise.reject(denyError('This operation was already denied in this task. Continue independent permitted work without recreating this effect.'));
+  const taskScope = taskGrantScope(context, kind, payload, taskAllowed);
+  if (hasTaskGrant(context, taskScope)) {
+    recordPermission({operation:kind,decision:'allow',reason:'用户本次任务范围授权',path:payload.realPath || taskScope.workspace},context);
+    return Promise.resolve({ scope: SCOPE.ONCE, persistent: false, task: true });
   }
   const canPersist = persistentAllowed && !payload.sensitive && ((!!payload.realPath && ['read', 'write_new', 'write_overwrite', 'edit'].includes(kind)) || (kind === 'bash' && !!payload.commandTemplate));
   return new Promise((resolveFn, rejectFn) => {
@@ -191,9 +234,9 @@ function _prompt({ payload, sseEmitter, signal, chatId, kind, expectedConfirmati
       chatId,
       kind,
       expectedConfirmation,
-      context, payload, canPersist,
+      context, payload, canPersist, taskScope,
       resolve: (decision) => {
-        recordPermission({operation:kind,decision:'allow',reason:decision.persistent ? '用户长期授权' : '用户单次授权',path:payload.realPath || null},context);
+        recordPermission({operation:kind,decision:'allow',reason:decision.task ? '用户本次任务范围授权' : decision.persistent ? '用户长期授权' : '用户单次授权',path:payload.realPath || null},context);
         clearTimeout(timer);
         signal?.removeEventListener('abort', onAbort);
         _pending.delete(requestId);
@@ -214,6 +257,7 @@ function _prompt({ payload, sseEmitter, signal, chatId, kind, expectedConfirmati
         operation: kind,
         ...payload,
         persistentAllowed: canPersist,
+        taskScope,
       }); } catch (error) {
         _pending.get(requestId)?.reject(error.message || String(error));
       }
@@ -239,6 +283,7 @@ export function resolveFileSafety(requestId, scope, extras = {}) {
   if (entry.context.home !== resolveRuntimePaths().home) return { ok: false, reason: 'Permission belongs to another home.' };
   if (entry.resolving) return { ok: false, reason: '授权正在保存，请稍候。' };
   if (scope === SCOPE.DENY) {
+    rememberTaskDenial(entry);
     recordPermission({operation:entry.kind,decision:'deny',reason:'用户拒绝',path:entry.payload.realPath || null},entry.context);
     rememberPermissionDecision(requestId);
     entry.reject('User denied operation.');
@@ -261,6 +306,13 @@ export function resolveFileSafety(requestId, scope, extras = {}) {
         expected: entry.expectedConfirmation,
       };
     }
+  }
+
+  if (scope === 'task') {
+    if (extras.persistent || !entry.taskScope || !addTaskGrant(entry.context, entry.taskScope)) return { ok: false, reason: 'This request does not allow task-scoped authorization.' };
+    rememberPermissionDecision(requestId);
+    entry.resolve({ scope: SCOPE.ONCE, persistent: false, task: true });
+    return { ok: true };
   }
 
   if (![SCOPE.ONCE, SCOPE.FILE, SCOPE.DIR].includes(scope)) {
@@ -881,6 +933,7 @@ export async function requestWrite({
     const decision = await _prompt({
       sseEmitter, signal, chatId,
       kind: isCreate ? OP_KIND.WRITE_NEW : OP_KIND.WRITE_OVERWRITE,
+      taskAllowed: !bypassGrants,
       payload: {
         path: abs,
         realPath,
@@ -983,6 +1036,7 @@ export async function requestEdit({
     const decision = await _prompt({
       sseEmitter, signal, chatId,
       kind: OP_KIND.EDIT,
+      taskAllowed: true,
       payload: {
         path: abs,
         realPath,
@@ -1314,6 +1368,7 @@ export async function requestBashOp({
   await _prompt({
     sseEmitter, signal, chatId,
     kind: OP_KIND.BASH,
+    taskAllowed: true,
     payload: {
       command: clipText(command, 4000),
       commandTemplate: template,

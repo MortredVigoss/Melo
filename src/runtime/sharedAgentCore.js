@@ -3,18 +3,20 @@ import { toolCallFingerprint } from '../agents/repeatGuard.js';
 import { turnStopReply } from '../../shared/agent/turn.js';
 import { startTurn, advanceTurn } from '../../shared/agent/turn.js';
 import { completionObservation, completionResult } from '../../shared/agent/completion.js';
-import { startGoal, amendGoal, goalText, goalSnapshot, goalCandidate, goalReviewRequest, reviewGoal, stopGoal } from '../../shared/agent/goal.js';
+import { startGoal, amendGoal, goalText, goalSnapshot, goalCandidate, goalReviewRequest, goalProgressRequest, reviewGoal, stopGoal } from '../../shared/agent/goal.js';
 import { toolEffect } from '../../shared/agent/toolEffects.js';
 
 /** Node Host for the same reducer packaged for Android / iOS. */
 export function createCoreTurn({ runId = randomUUID(), turnId = randomUUID(), allowedTools, requiredTools, toolDependencies, limits, goal, tools = [], hostToolSchemas = true, clock = () => performance.timeOrigin + performance.now() }) {
-  let state = startTurn({ runId, turnId, allowedTools, requiredTools, toolDependencies, limits, hostToolSchemas, now: clock() });
+  let state = startTurn({ runId, turnId, allowedTools, requiredTools, toolDependencies, limits: { ...limits, finalReport: typeof goal === 'string' }, hostToolSchemas, now: clock() });
   const observations = [];
   let task = typeof goal === 'string' ? startGoal(goal, runId) : null;
   let candidateReply = '';
   const declaration = name => tools.find(tool => tool.id === name || tool.functionName === name) || {};
   return {
     receipt(goal, reply, terminalReason = state.reason, plan, citations = []) { return completionResult({ goal: task ? goalText(task) : goal, reply, terminalReason, plan, citations, observations, task: goalSnapshot(task) }); },
+    get reporting() { return task?.phase !== 'checking' && (state.awaitingModel ? state.requestMode === 'report' : state.rounds >= state.limits.rounds && !state.reportIssued); },
+    progressRequest() { return goalProgressRequest(task, observations); },
     get checking() { return task?.phase === 'checking'; },
     get repairing() { return state.repairing; },
     get candidateReply() { return candidateReply; },
@@ -54,6 +56,7 @@ export function createCoreTurn({ runId = randomUUID(), turnId = randomUUID(), al
     rejection(callId) { return state.rejections?.[callId] || 'TOOL_NOT_PERMITTED'; },
     permits(callId) { return state.status === 'running' && state.pending.includes(callId) && state.permitted.includes(callId); },
     update(type, fields = {}) {
+      if (type === 'request' && task?.phase === 'checking') fields = { ...fields, mode: 'review' };
       if (type === 'calls') fields = { ...fields, calls: fields.calls.map(call => ({ ...call, effect: toolEffect(call.name, call.arguments, declaration(call.name)), fingerprint: toolCallFingerprint(call.name, call.arguments) })) };
       state = advanceTurn(state, { ...fields, type, runId, turnId }, clock());
       return state.status;

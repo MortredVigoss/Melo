@@ -22,11 +22,11 @@ export function intersectCapabilities(a,b) {
 export function hasCapability(capabilities, key) { return !capabilities || capabilities[key]===true; }
 export function normalizeCollaboration(value={}) {
   const bounded=(v,f,max)=>Number.isInteger(v)&&v>=1?Math.min(v,max):f;
-  return {canDelegate:value.canDelegate===true,delegateTargets:list(value.delegateTargets),maxDelegationDepth:bounded(value.maxDelegationDepth,1,3),maxIterations:bounded(value.maxIterations,8,20),maxTokens:bounded(value.maxTokens,32000,200000),timeoutMs:bounded(value.timeoutMs,180000,900000)};
+  return {...(value.maxTaskIterations !== undefined ? {maxTaskIterations:bounded(value.maxTaskIterations,10,20)} : {}),canDelegate:value.canDelegate===true,delegateTargets:list(value.delegateTargets),maxDelegationDepth:bounded(value.maxDelegationDepth,1,3),maxIterations:bounded(value.maxIterations,8,20),maxTokens:bounded(value.maxTokens,32000,200000),timeoutMs:bounded(value.timeoutMs,180000,900000)};
 }
 export function intersectCollaboration(a,b) {
   a=normalizeCollaboration(a);b=normalizeCollaboration(b);
-  return {canDelegate:a.canDelegate&&b.canDelegate,delegateTargets:a.delegateTargets.filter(id=>b.delegateTargets.includes(id)),
+  return {...(a.maxTaskIterations !== undefined || b.maxTaskIterations !== undefined ? {maxTaskIterations:Math.min(a.maxTaskIterations ?? 10,b.maxTaskIterations ?? 10)} : {}),canDelegate:a.canDelegate&&b.canDelegate,delegateTargets:a.delegateTargets.filter(id=>b.delegateTargets.includes(id)),
     ...Object.fromEntries(['maxDelegationDepth','maxIterations','maxTokens','timeoutMs'].map(key=>[key,Math.min(a[key],b[key])]))};
 }
 // Tool self-description (tools/tool.js `capability`). The domain cannot import

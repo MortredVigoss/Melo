@@ -193,7 +193,8 @@ test('chat-completions without opt-in stays on the XML protocol: no tools field,
   });
   const result = await h.run();
   assert.equal(result.normalizedReply.content, '直接回答。');
-  assert.equal(h.requests.length, 1);
+  assert.equal(h.requests.length, 2);
+  assert.equal('tools' in h.requests[1].body, false, 'delivery check also has no tools');
   assert.equal(h.requests[0].path, '/v1/chat/completions');
   assert.equal('tools' in h.requests[0].body, false);
   assert.match(JSON.stringify(h.requests[0].body.messages), /<tool_call>/);

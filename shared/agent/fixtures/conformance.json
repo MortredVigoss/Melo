@@ -4483,7 +4483,7 @@
     }
   },
   {
-    "name": "goal check budget has no hidden extra round",
+    "name": "goal check has a separate bounded allowance after the last work round",
     "input": {
       "version": 1,
       "op": "goal",
@@ -4525,8 +4525,8 @@
     },
     "ok": true,
     "expected": {
-      "decision": "partial",
-      "reason": "GOAL_CHECK_BUDGET"
+      "phase": "checking",
+      "decision": null
     }
   },
   {

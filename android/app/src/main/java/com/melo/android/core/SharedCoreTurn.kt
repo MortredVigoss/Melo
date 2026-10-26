@@ -13,6 +13,7 @@ class SharedTurnStopped(val reason: String) : IllegalStateException("Shared Agen
 class SharedCoreTurn private constructor(private val runtime: SharedCoreRuntime, private var state: JsonObject, val budget: SharedRunBudget) : AutoCloseable {
     val completed get() = state["status"]?.jsonPrimitive?.content == "completed"
     val active get() = state["status"]?.jsonPrimitive?.content == "running"
+    val reporting get() = state.text("requestMode") == "report"
     val roundsLeft get() = (state["limits"]?.jsonObject?.get("rounds")?.jsonPrimitive?.intOrNull ?: 0) - (state["rounds"]?.jsonPrimitive?.intOrNull ?: 0)
     val rounds get() = state["rounds"]?.jsonPrimitive?.intOrNull ?: 0
     val failures get() = state["errors"]?.jsonPrimitive?.intOrNull ?: 0
@@ -27,7 +28,7 @@ class SharedCoreTurn private constructor(private val runtime: SharedCoreRuntime,
         state = reply.getValue("value").jsonObject
         return state
     }
-    suspend fun request() { budget.check(); event("request"); if (!active) throw SharedTurnStopped(reason) }
+    suspend fun request(review: Boolean = false) { budget.check(); event("request", buildJsonObject { if (review) put("mode", "review") }); if (!active) throw SharedTurnStopped(reason) }
     fun permits(id: String) = active && state.getValue("pending").jsonArray.any { it.jsonPrimitive.content == id } && state.getValue("permitted").jsonArray.any { it.jsonPrimitive.content == id }
     fun rejection(id: String) = state["rejections"]?.jsonObject?.text(id).orEmpty()
     suspend fun calls(calls: List<Pair<String, String>>, arguments: Map<String, JsonObject> = emptyMap(), requireAll: Boolean = true) {
@@ -51,7 +52,7 @@ class SharedCoreTurn private constructor(private val runtime: SharedCoreRuntime,
         private fun fingerprint(name: String, args: JsonObject) = java.security.MessageDigest.getInstance("SHA-256")
             .digest((name + canonical(args)).toByteArray()).joinToString("") { "%02x".format(it) }
 
-        suspend fun open(context: Context, runId: String, turnId: String, allowedTools: List<String>, rounds: Int, timeoutMs: Int = 600_000, requiredTools: List<String> = emptyList(), toolDependencies: JsonObject = buildJsonObject {}, callsPerRound: Int = 32, budget: SharedRunBudget? = null): SharedCoreTurn {
+        suspend fun open(context: Context, runId: String, turnId: String, allowedTools: List<String>, rounds: Int, timeoutMs: Int = 600_000, requiredTools: List<String> = emptyList(), toolDependencies: JsonObject = buildJsonObject {}, callsPerRound: Int = 32, finalReport: Boolean = false, budget: SharedRunBudget? = null): SharedCoreTurn {
             val runtime = SharedCoreRuntime.open(context)
             try {
                 val reply = runtime.evaluate(buildJsonObject {
@@ -61,7 +62,7 @@ class SharedCoreTurn private constructor(private val runtime: SharedCoreRuntime,
                         put("allowedTools", JsonArray(allowedTools.map { JsonPrimitive(it) }))
                         put("requiredTools", JsonArray(requiredTools.map { JsonPrimitive(it) }))
                         put("toolDependencies", toolDependencies)
-                        put("limits", buildJsonObject { put("rounds", rounds); put("timeoutMs", timeoutMs); put("callsPerRound", callsPerRound) })
+                        put("limits", buildJsonObject { put("rounds", rounds); put("finalReport", finalReport); put("timeoutMs", timeoutMs); put("callsPerRound", callsPerRound) })
                     })
                 })
                 check(reply["ok"]?.jsonPrimitive?.boolean == true) { "共享 Agent 无法初始化。" }

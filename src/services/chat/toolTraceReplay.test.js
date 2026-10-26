@@ -97,7 +97,7 @@ test('cancel after one file_read → chat holds a tool-trace line with the file 
   const result = await runChatAgentExecutionGraph({ config: { authMode: 'unset', apiKey: '', baseUrl: '', model: 'gpt-4' }, state, chat,
     workspace: { rootPath: join(TEST_HOME, 'workspaces', 'chats', 'trace-chat'), exists: true, entries: [], filePaths: [], fileCount: 0, selectedFilePath: null, selectedFile: null, commandTemplates: [], commandRuns: [] },
     connectors: [], skills: [], latestUserMessage: '继续', agentId: 'main',
-    _dependencies: { getEmbedding: async () => null, createReply: async options => { requestMessages = options.messages; return '好的，接着上次读过的计划继续。'; } } });
+    _dependencies: { getEmbedding: async () => null, createReply: async options => { if (!options.systemPrompt.includes("task completion checker")) requestMessages = options.messages; return '好的，接着上次读过的计划继续。'; } } });
   assert.match(result.normalizedReply.content, /接着/);
   const serialized = JSON.stringify(requestMessages);
   assert.ok(serialized.includes(TOOL_TRACE_PREFIX) && serialized.includes('notes/plan.md'), 'next turn prompt history includes the tool trace with the file name');

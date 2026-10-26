@@ -51,7 +51,7 @@ test('retired Demon ignores legacy flags and strips new specs while file citatio
     ...input,
     demonMode: true, // Old clients and saved preferences cannot reactivate it.
     _dependencies: { getEmbedding: async () => null, createReply: async request => {
-      prompt = request.systemPrompt;
+      if (!request.systemPrompt.includes("task completion checker")) prompt = request.systemPrompt;
       return '资料写道：<cite src="notes.txt" lines="1">已核对</cite>。\n<viz-spec>{"kind":"tree","nodes":[{"id":"root","label":"Legacy"}]}</viz-spec>';
     } },
   });
@@ -187,7 +187,7 @@ test('negative search reaches the model, with no approval or native search', asy
   let calls = 0;
   const result = await runChatAgentExecutionGraph({
     ...input, _dependencies: { getEmbedding: async () => null, createReply: async request => {
-      calls += 1;
+      if (!request.systemPrompt.includes("task completion checker")) calls += 1;
       assert.equal(request.nativeWebSearchEnabled, false);
       return '100°C。';
     } },
@@ -259,7 +259,7 @@ test('actual prompt gets a fact once, and only complete budget-surviving facts c
   metadata:{chatId,scope:'chat',audience:'local',category:'preference'},createdAt:'2026-01-01T00:00:00Z'});
  store.replaceMemories([make(text)]);
  let prompt='';
- const result=await runChatAgentExecutionGraph({...fixture('Please recall my nebula preference.'),_dependencies:{getEmbedding:async()=>null,createReply:async req=>{prompt=fullPromptText(req);return '已记住。';}}});
+ const result=await runChatAgentExecutionGraph({...fixture('Please recall my nebula preference.'),_dependencies:{getEmbedding:async()=>null,createReply:async req=>{if (!req.systemPrompt.includes("task completion checker")) prompt=fullPromptText(req);return '已记住。';}}});
  assert.equal(prompt.split(text).length-1,1,'one fact must have exactly one prompt representation');
  assert.equal(result.normalizedReply.memoryUsage.filter(r=>r.id===id).length,1);
  assert.equal(store.getMemoriesByIds([id])[0].metadata.useCount,1);
@@ -290,4 +290,57 @@ test('a calculation can execute a calculator and blanket tool refusal executes n
       assert.equal(result.visibleToolIds.includes('calculator'),!question.startsWith('不要'));
     }
   } finally {unregisterTool('calculator');}
+});
+
+test('actual runner resumes a zero-tool task; reviews do not spend the configured execution rounds', async () => {
+  const input = fixture('Inspect the project and report its release year.');
+  input.state.agentProfiles.main.collaboration = { maxTaskIterations: 3 };
+  let work = 0, checks = 0;
+  const result = await runChatAgentExecutionGraph({ ...input, _dependencies: { getEmbedding: async () => null, createReply: async request => {
+    if (request.systemPrompt.includes('task completion checker')) {
+      checks++;
+      assert.equal(request.nativeWebSearchEnabled, false); assert.equal(request.nativeImageGenerationEnabled, false);
+      const data = JSON.parse(request.messages[0].content);
+      const evidence = data.observations.filter(row => row.ok && row.executed).map(row => row.id);
+      return JSON.stringify({ decision: evidence.length ? 'complete' : 'continue', reasonType: evidence.length ? 'fulfilled' : 'lookup_missing', reason: 'Read the project release note.', nextStep: 'Use test_reference.', requirements: [{ text: 'project release year', status: evidence.length ? 'met' : 'missing', evidenceIds: evidence }] });
+    }
+    work++;
+    if (work === 1) return 'Please tell me which directory.';
+    if (work === 2) return '<tool_call>{"id":"inspect","name":"test_reference","arguments":{}}</tool_call>';
+    return 'The project release year is 2024.';
+  } } });
+  assert.equal(work, 3); assert.equal(checks, 2);
+  assert.equal(result.normalizedReply.completion.outcome, 'completed');
+  assert.match(result.normalizedReply.content, /2024/);
+});
+
+test('actual runner uses one tool-free progress report after the task round limit', async () => {
+  const input = fixture('Inspect every project record and report all findings.');
+  input.state.agentProfiles.main.collaboration = { maxTaskIterations: 2 };
+  let work = 0, reports = 0;
+  const result = await runChatAgentExecutionGraph({ ...input, _dependencies: { getEmbedding: async () => null, createReply: async request => {
+    if (request.systemPrompt.includes('execution-round limit')) {
+      reports++;
+      assert.equal(request.nativeWebSearchEnabled, false); assert.equal(request.nativeImageGenerationEnabled, false);
+      assert.equal(request.workspacePath, null); assert.ok(!request.tools?.length);
+      return 'Read two records. More records remain; continue by checking the rest.';
+    }
+    work++;
+    return `<tool_call>{"id":"read-${work}","name":"test_reference","arguments":{}}</tool_call>`;
+  } } });
+  assert.equal(work, 2); assert.equal(reports, 1);
+  assert.equal(result.normalizedReply.completion.outcome, 'budget_exhausted');
+  assert.equal(result.normalizedReply.completion.reason, 'ROUND_LIMIT');
+  assert.match(result.normalizedReply.content, /More records remain/);
+});
+
+test('self-contained delivery records a completed check instead of a failure badge', async () => {
+  const stages = [];
+  const result = await runChatAgentExecutionGraph({ ...fixture('Explain how a tree grows.'), sseEmitter: (event, payload) => {
+    if (event === 'execution_event' && payload.id?.startsWith('goal-check:')) stages.push(payload);
+  }, _dependencies: { getEmbedding: async () => null, createReply: async request => request.systemPrompt.includes('task completion checker')
+    ? JSON.stringify({ decision: 'complete', reasonType: 'self_contained', requirements: [{ text: 'Explain tree growth', status: 'met', evidenceIds: [] }] })
+    : 'A tree grows by forming new cells.' } });
+  assert.equal(result.normalizedReply.completion.outcome, 'completed');
+  assert.equal(stages.length, 1); assert.equal(stages[0].status, 'completed');
 });

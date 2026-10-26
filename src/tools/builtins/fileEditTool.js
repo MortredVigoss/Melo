@@ -107,6 +107,7 @@ export const fileEditTool = {
     'Use file_read first to confirm the exact text to replace.',
   category: 'filesystem',
   requiresPermission: true,
+  permissionGate: 'file-safety', // One operation-specific prompt; executor still enforces explicit deny rules.
   isConcurrencySafe: false,
   // Self-description (tools/tool.js); see that file for the fallback tables.
   capability: 'writeFiles',
@@ -280,8 +281,8 @@ export const fileEditTool = {
         return {
           ok: false,
           output: err.message,
-          error: err.code === 'FILE_SAFETY_DENIED' ? 'DENIED' : 'GATE_ERROR',
-          meta: { denied: err.code === 'FILE_SAFETY_DENIED' },
+          error: err.code === 'FILE_SAFETY_DENIED' ? 'DENIED' : err.code === 'PERMISSION_NO_SURFACE' ? err.code : 'GATE_ERROR',
+          meta: { denied: ['FILE_SAFETY_DENIED', 'PERMISSION_NO_SURFACE'].includes(err.code) },
         };
       }
 

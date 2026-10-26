@@ -77,7 +77,7 @@ test('task guard: empty task rejected even with valid config', async () => {
 
 test('M4: instructions land in the user turn, not the system prompt', async () => {
   const reply = makeFakeReply();
-  reply.queue.push('All done.');
+  reply.queue.push('All done.', "{\"decision\": \"complete\", \"reasonType\": \"self_contained\", \"requirements\": [{\"text\": \"requested text\", \"status\": \"met\", \"evidenceIds\": []}]}");
 
   const res = await runSubAgent({
     task: 'summarise X',
@@ -87,7 +87,8 @@ test('M4: instructions land in the user turn, not the system prompt', async () =
   });
 
   assert.equal(res.ok, true);
-  assert.equal(reply.callLog.length, 1);
+  assert.equal(reply.callLog.length, 2);
+  assert.equal(reply.callLog[1].functionTools, undefined, "completion check has no tools");
   const call = reply.callLog[0];
 
   // System prompt should NOT contain the parent-supplied instructions text.
@@ -211,6 +212,7 @@ test('N3: finalOutput scrubs <tool_call> and <thinking> blocks before returning'
   const reply = makeFakeReply();
   reply.queue.push(
     '<thinking>secret chain-of-thought</thinking>Clean user-facing answer.',
+    "{\"decision\": \"complete\", \"reasonType\": \"self_contained\", \"requirements\": [{\"text\": \"requested text\", \"status\": \"met\", \"evidenceIds\": []}]}",
   );
   const res = await runSubAgent({ task: 't', config: validConfig(), replyFn: reply });
   assert.equal(res.ok, true);
@@ -364,11 +366,11 @@ test('T17: a member honours the MELO_FUNCTION_CALLING override from the request 
   const { createRequestContext } = await import('../runtime/requestContext.js');
   let seen = null;
   await runWithRequestContext(createRequestContext({ env: { MELO_FUNCTION_CALLING: 'legacy' } }), () => runSubAgent({
-    task: 't', config: { ...validConfig(), apiProtocol: 'chat-completions', toolCalling: 'native' }, replyFn: async options => { seen = options; return 'done'; } }));
+    task: 't', config: { ...validConfig(), apiProtocol: 'chat-completions', toolCalling: 'native' }, replyFn: async options => { seen ||= options; return 'done'; } }));
   assert.equal(seen.functionTools, undefined, 'legacy override → XML protocol for the member too');
   assert.equal(seen.toolProtocol, undefined);
   seen = null;
   await runWithRequestContext(createRequestContext({ env: { MELO_FUNCTION_CALLING: 'native' } }), () => runSubAgent({
-    task: 't', config: { ...validConfig(), apiProtocol: 'chat-completions', toolCalling: 'legacy' }, replyFn: async options => { seen = options; return 'done'; } }));
+    task: 't', config: { ...validConfig(), apiProtocol: 'chat-completions', toolCalling: 'legacy' }, replyFn: async options => { seen ||= options; return 'done'; } }));
   assert.equal(seen.toolProtocol, 'chat-completions', 'native override → chat-completions protocol');
 });

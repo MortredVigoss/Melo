@@ -241,8 +241,11 @@ test('runSkill: reaching maxIterations reports incomplete work without raw tool 
     assert.equal(res.ok, false);
     assert.equal(res.error, 'SKILL_ITERATION_LIMIT');
     assert.equal(res.meta.iterations, 2);
-    // 2 iterations → 2 model calls.
-    assert.equal(reply.callLog.length, 2);
+    // Two work rounds plus exactly one tool-free progress report.
+    assert.equal(reply.callLog.length, 3);
+    assert.equal(reply.callLog[2].functionTools, undefined);
+    assert.equal(reply.callLog[2].nativeWebSearchEnabled, false);
+    assert.equal(reply.callLog[2].nativeImageGenerationEnabled, false);
     // The final output is scrubbed (no raw <tool_call>).
     assert.ok(!res.output.includes('<tool_call>'));
   } finally {
@@ -345,14 +348,14 @@ test('T17: a skill honours the MELO_FUNCTION_CALLING override from the request e
     let seen = null;
     await runWithRequestContext(createRequestContext({ env: { MELO_FUNCTION_CALLING: 'legacy' } }), () => runSkill({
       skill: executableSkill(), config: { ...validConfig(), apiProtocol: 'chat-completions', toolCalling: 'native' }, allowedToolIds: ['fc_probe'],
-      replyFn: async options => { seen = options; return 'done'; } }));
+      replyFn: async options => { seen ||= options; return 'done'; } }));
     assert.equal(seen.functionTools, undefined, 'legacy override → XML protocol, no native tool definitions');
     assert.match(seen.systemPrompt, /<tool_call>/);
     // And the reverse: an XML config promoted to native by the override.
     seen = null;
     await runWithRequestContext(createRequestContext({ env: { MELO_FUNCTION_CALLING: 'native' } }), () => runSkill({
       skill: executableSkill(), config: { ...validConfig(), apiProtocol: 'chat-completions', toolCalling: 'legacy' }, allowedToolIds: ['fc_probe'],
-      replyFn: async options => { seen = options; return 'done'; } }));
+      replyFn: async options => { seen ||= options; return 'done'; } }));
     assert.equal(seen.toolProtocol, 'chat-completions');
     assert.ok(Array.isArray(seen.functionTools) && seen.functionTools.some(t => t.function?.name === 'fc_probe'));
   } finally { unregisterTool('fc_probe'); }

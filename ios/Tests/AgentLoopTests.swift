@@ -61,6 +61,37 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
         }
         let plain = try await AgentLoop(transport: ScriptedTransport { _ in answer("Hello") }, tools: nil, budget: PhoneRunBudget(), latestUserMessage: "Hello").run()
         assert(plain.completion?.outcome == "completed" && plain.completion?.goalState == "not_applicable")
+        let plainLog = Log()
+        let plainTask = try await AgentLoop(transport: ScriptedTransport { input in
+            input.goalReview == nil ? answer("Trees grow new cells.") : answer(#"{"decision":"complete","reasonType":"self_contained","requirements":[{"text":"Explain tree growth","status":"met","evidenceIds":[]}]}"#)
+        }, tools: loopTools(plainLog), budget: PhoneRunBudget(), latestUserMessage: "Explain tree growth", hooks: hooks(plainLog)).run()
+        assert(plainTask.completion?.outcome == "completed")
+        assert(plainLog.stages.contains { $0.id.hasPrefix("goal-check:") && $0.status == "completed" })
+        assert(plainLog.performed.isEmpty)
+
+        // Zero-tool local work enters the same checker; reviews do not spend
+        // the configured work rounds, and the final report is tool-free.
+        do {
+            var agent = AgentProfile(id: "rounds-qa", name: "QA", subtitle: "", symbol: "sparkles", instructions: "")
+            assert(agent.maxTaskIterations == 10)
+            agent.maxTaskIterations = 2; assert(agent.maxTaskIterations == 2)
+            let log = Log(); var work = 0, checks = 0, reports = 0
+            let transport = ScriptedTransport { input in
+                let system = input.goalReview?["systemPrompt"] as? String ?? ""
+                if system.contains("execution-round limit") { reports += 1; return answer("Read one page; more work remains.") }
+                if input.goalReview != nil {
+                    checks += 1
+                    return answer(#"{"decision":"continue","reasonType":"lookup_missing","nextStep":"Read the available page","requirements":[{"text":"inspect the task","status":"missing","evidenceIds":[]}]}"#)
+                }
+                work += 1
+                return work == 1 ? answer("Which directory?") : calls([fc("read-page")])
+            }
+            var configured = hooks(log); configured.maxTaskIterations = agent.maxTaskIterations
+            let result = try await AgentLoop(transport: transport, tools: loopTools(log), budget: PhoneRunBudget(), latestUserMessage: "Inspect my project", hooks: configured).run()
+            assert(work == 2 && checks == 1 && reports == 1 && log.performed.count == 1)
+            assert(result.stop == .toolLimit && result.text == "Read one page; more work remains.")
+            assert(result.completion?.reason == "ROUND_LIMIT")
+        }
 
         // Calendar discovery must not terminate a weather request: one bounded
         // check resumes the same turn, with the original goal and tool evidence.
@@ -162,13 +193,13 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             assert(children.allSatisfy { $0.exhausted()?.reason == "tool-calls" })
         }
 
-        // 1. Ten model calls at most; the limit reply is the shared text, in the question's language.
+        // 1. Ten work rounds and one tool-free report; invented report tools never execute.
         do {
             let log = Log()
             var n = 0
             let transport = ScriptedTransport { _ in n += 1; return calls([fc("c\(n)", "open_url", #"{"url":"https://a.example/\#(n)"}"#)]) }
             let outcome = try await AgentLoop(transport: transport, tools: loopTools(log), budget: PhoneRunBudget(), latestUserMessage: "一直查", hooks: hooks(log)).run()
-            assert(outcome.stop == .toolLimit && outcome.text == c.toolLimitReplyZH && transport.requests.count == 10 && log.performed.count == 10 && log.records.count == 10)
+            assert(outcome.stop == .toolLimit && outcome.text == c.toolLimitReplyZH && transport.requests.count == 11 && log.performed.count == 10 && log.records.count == 10)
             let english = try await AgentLoop(transport: ScriptedTransport { _ in n += 1; return calls([fc("e\(n)", "open_url", #"{"url":"https://a.example/\#(n)"}"#)]) }, tools: loopTools(Log()), budget: PhoneRunBudget(), latestUserMessage: "keep going").run()
             assert(english.text == c.toolLimitReplyEN)
             // Every round after the first carries the earlier tool rounds; results are envelopes.
@@ -295,7 +326,7 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             let unusedQueue = PhoneSupplements()
             var unusedHooks = AgentLoopHooks(); unusedHooks.takeSupplements = { unusedQueue.take() }
             _ = unusedQueue.add("再加一段")
-            _ = try await AgentLoop(transport: ScriptedTransport { _ in answer("一次答完") }, tools: loopTools(Log()), budget: PhoneRunBudget(), latestUserMessage: "q", hooks: unusedHooks).run()
+            _ = try await AgentLoop(transport: ScriptedTransport { _ in answer("一次答完") }, tools: loopTools(Log()), budget: PhoneRunBudget(), latestUserMessage: "不要使用工具，直接回答", hooks: unusedHooks).run()
             assert(unusedQueue.end() == ["再加一段"], "an answer in one call leaves the supplement for the next message")
         }
 
@@ -400,7 +431,7 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
                 }
                 assertionFailure("unfinished member cannot report success")
             } catch {}
-            assert(transport.requests.count == 1 && log.performed.count == 1)
+            assert(transport.requests.count == 2 && log.performed.count == 1)
             let denied = Log()
             let expensive = ScriptedTransport { _ in var row = calls([fc("write")]); row.inputTokens = 100; row.outputTokens = 500; return row }
             do {

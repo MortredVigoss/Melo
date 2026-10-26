@@ -24,8 +24,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 659,
-      "edges": 2125,
+      "modules": 660,
+      "edges": 2135,
       "roots": [
         "src",
         "desktop-ui",
@@ -575,7 +575,7 @@
         "projects": 4,
         "settings": 3,
         "sync": 6,
-        "tools": 8
+        "tools": 9
       },
       "httpRoutes": [
         "POST /api/agents/channel/test ← src/http/domainRoutes.js",
@@ -801,7 +801,8 @@
         {
           "module": "shared/agent/loopContract.js",
           "importedBy": [
-            "memory"
+            "memory",
+            "tools"
           ]
         },
         {
@@ -1065,7 +1066,7 @@
       ],
       "dependsOn": {
         "agents": 34,
-        "approvals": 7,
+        "approvals": 8,
         "channels": 2,
         "desktop-shell": 20,
         "knowledge": 5,
@@ -1090,7 +1091,7 @@
         "projects": 1,
         "settings": 14,
         "sync": 4,
-        "tools": 18,
+        "tools": 19,
         "voice": 2
       },
       "httpRoutes": [
@@ -2271,7 +2272,7 @@
       ],
       "modules": {
         "desktop-ui": 28,
-        "src": 83
+        "src": 84
       },
       "entryModules": [
         {
@@ -2579,15 +2580,15 @@
         }
       ],
       "dependsOn": {
-        "agents": 8,
-        "approvals": 33,
-        "chat": 18,
+        "agents": 9,
+        "approvals": 35,
+        "chat": 19,
         "desktop-shell": 14,
         "development": 1,
         "knowledge": 3,
         "media": 2,
         "memory": 6,
-        "platform": 55,
+        "platform": 56,
         "projects": 5,
         "settings": 10
       },
@@ -2740,6 +2741,7 @@
           "src/tools/builtins/phase2c.richMedia.test.js",
           "src/tools/builtins/phase2d.bashTool.test.js",
           "src/tools/builtins/readHistoryTool.test.js",
+          "src/tools/builtins/readOnlyCommand.test.js",
           "src/tools/builtins/webScreenshotTool.test.js",
           "src/tools/builtins/webSearchTool.apiDirect.test.js",
           "src/tools/builtins/webSearchTool.cdpChrome.test.js",
@@ -3325,6 +3327,7 @@
         {
           "module": "src/safety/fileSafetyGate.js",
           "importedBy": [
+            "chat",
             "knowledge",
             "platform",
             "tools"
@@ -3444,7 +3447,7 @@
       },
       "usedBy": {
         "agents": 3,
-        "chat": 7,
+        "chat": 8,
         "desktop-shell": 4,
         "knowledge": 3,
         "media": 1,
@@ -3452,7 +3455,7 @@
         "platform": 18,
         "projects": 1,
         "settings": 1,
-        "tools": 33,
+        "tools": 35,
         "voice": 1
       },
       "httpRoutes": [
@@ -3535,6 +3538,7 @@
           "src/safety/sensitivePaths.test.js",
           "src/safety/symlinkDelete.test.js",
           "src/safety/symlinkSafety.test.js",
+          "src/safety/taskPermissions.test.js",
           "src/safety/trash.test.js",
           "src/safety/workspaceAlias.test.js",
           "src/services/approval/approvalConcurrency.test.js",
@@ -3811,6 +3815,7 @@
           "desktop-ui/searchSettings.test.js",
           "desktop-ui/sharedUi.test.js",
           "desktop-ui/synapticBody.test.js",
+          "desktop-ui/taskPermissions.browser.test.js",
           "desktop-ui/undoToast.test.js",
           "src/index.cli.test.js",
           "src/index.memoryCli.test.js"
@@ -4299,7 +4304,7 @@
         "projects": 23,
         "settings": 26,
         "sync": 6,
-        "tools": 55,
+        "tools": 56,
         "voice": 6
       },
       "httpRoutes": [],

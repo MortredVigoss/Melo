@@ -447,3 +447,17 @@ enum ProjectMemoryProjection {
         preferences.projectMemorySync = workspace
     }
 }
+
+extension AgentProfile {
+    var maxTaskIterations: Int {
+        get {
+            guard case .number(let value)? = collaboration?["maxTaskIterations"], value.isFinite else { return 10 }
+            return Int(min(20, max(1, value)))
+        }
+        set {
+            guard case .object(var values) = collaboration ?? AgentSettingsProjection.collaboration else { return }
+            values["maxTaskIterations"] = .number(Double(min(20, max(1, newValue))))
+            collaboration = .object(values)
+        }
+    }
+}

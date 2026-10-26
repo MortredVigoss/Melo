@@ -119,7 +119,7 @@ export function createInvokeModelNode(turn) {
     }
 
     // Shared with the iPhone loop (shared/protocol/agent-loop.json).
-    const MAX_TOOL_ITERATIONS = AGENT_LOOP_CONTRACT.loop.maxIterations;
+    const MAX_TOOL_ITERATIONS = graphState.activeAgentProfile?.collaboration?.maxTaskIterations ?? AGENT_LOOP_CONTRACT.loop.maxIterations;
     const escalationTool = { id: 'melo_escalate', name: 'melo_escalate', description: 'Request one higher configured model tier when the task needs more reasoning. This continues the same task with all results preserved. Do not repeat completed actions.', effect: 'compute', requiresPermission: false,
       parametersSchema: { type: 'object', properties: { reason: { type: 'string', description: 'Why this task requires a stronger model.' } }, required: ['reason'], additionalProperties: false } };
     const routingEnabled = routingSession?.current.mode === 'smart' && config.smartRouting?.allowEscalation !== false;
@@ -205,10 +205,13 @@ export function createInvokeModelNode(turn) {
       escalationRequested = false;
       let request;
       const checkingGoal = coreTurn.checking;
+      const reportingProgress = coreTurn.reporting;
+      const toolFree = checkingGoal || reportingProgress;
       try {
-        const review = checkingGoal ? coreTurn.reviewRequest() : null;
-        request = fitRequestContext({ sections: review ? [{ id: 'goal-check', text: review.systemPrompt, required: true }] : loopSections, messages: review?.messages || loopMessages, toolDefinitions: checkingGoal ? [] : functionSession.definitions, ...contextBudget, turnContextPlacement });
+        const review = checkingGoal ? coreTurn.reviewRequest() : reportingProgress ? coreTurn.progressRequest() : null;
+        request = fitRequestContext({ sections: review ? [{ id: 'goal-check', text: review.systemPrompt, required: true }] : loopSections, messages: review?.messages || loopMessages, toolDefinitions: toolFree ? [] : functionSession.definitions, ...contextBudget, turnContextPlacement });
       } catch (error) {
+        if (reportingProgress) { coreTurn.update('request'); coreTurn.update('complete'); finalReply = coreTurn.reply(latestUserMessage, config.replyLanguage); break; }
         if (checkingGoal) { coreTurn.stopReview('GOAL_CHECK_CONTEXT'); finalReply = coreTurn.candidateReply; break; }
         // audit C-8: a long tool loop must not die after the tools already
         // ran. Condense older tool outputs in this turn's chain and retry
@@ -268,7 +271,7 @@ export function createInvokeModelNode(turn) {
       };
       try {
         rawReply = await createReply({
-        ...(checkingGoal ? { maxTokens: 2048 } : functionSession.requestOptions()),
+        ...(toolFree ? { maxTokens: 2048 } : functionSession.requestOptions()),
         authMode: vision?.authMode || config.authMode,
         apiProtocol: vision?.apiProtocol || config.apiProtocol,
         apiKey: vision?.apiKey ?? modelOverrides.apiKey,
@@ -290,13 +293,13 @@ export function createInvokeModelNode(turn) {
         // providers this parameter is currently ignored.
         //
         // Native provider features obey the Agent capability snapshot.
-        workspacePath: checkingGoal ? null : workspace?.rootPath || null,
+        workspacePath: toolFree ? null : workspace?.rootPath || null,
         // Stable across turns (A2): the native web_search definition is
         // present whenever the agent may use the network; whether to use
         // it this turn is said in the routing prompt. Only an explicit
         // user network-off or a non-Codex route keeps it off.
-        nativeWebSearchEnabled: !checkingGoal && nativeFeaturesForScope(context.capabilityScope,context.requestToolPolicy).nativeWebSearchEnabled && graphState.searchPlan?.nativeWebSearchEnabled === true,
-        nativeImageGenerationEnabled: !context.requestToolPolicy?.toolsForbidden && (routingSession?.current.mode !== 'smart' || routingSession.current.tier === 'strong') && !checkingGoal && !coreTurn.repairing && scopeAllowsTool(context.capabilityScope,'image',{action:'generate'}) && imageSettings(config).engine === 'codex-oauth',
+        nativeWebSearchEnabled: !toolFree && nativeFeaturesForScope(context.capabilityScope,context.requestToolPolicy).nativeWebSearchEnabled && graphState.searchPlan?.nativeWebSearchEnabled === true,
+        nativeImageGenerationEnabled: !context.requestToolPolicy?.toolsForbidden && (routingSession?.current.mode !== 'smart' || routingSession.current.tier === 'strong') && !toolFree && !coreTurn.repairing && scopeAllowsTool(context.capabilityScope,'image',{action:'generate'}) && imageSettings(config).engine === 'codex-oauth',
         onExecutionEvent: event => {
           const observed = { ...event, id: event.id ? `${iteration}:${event.id}` : undefined };
           coreTurn.observeNative(observed);
@@ -312,6 +315,7 @@ export function createInvokeModelNode(turn) {
         if (signal?.aborted) throw error;
         const timedOut = error?.name === 'TimeoutError' || error?.code === 'ETIMEDOUT';
         const exhaustedNow = budgetExhausted(budget) || (budget && timedOut && remainingMs(budget) <= 1000 ? budgetExhausted(budget, budget.deadlineAt) : null);
+        if (reportingProgress && !exhaustedNow) { coreTurn.update('complete'); finalReply = coreTurn.reply(latestUserMessage, config.replyLanguage); break; }
         if (checkingGoal && !exhaustedNow) { coreTurn.stopReview(); coreTurn.update('complete'); finalReply = coreTurn.candidateReply; break; }
         if (!exhaustedNow) throw error;
         emitBudgetExhausted(exhaustedNow);
@@ -320,7 +324,7 @@ export function createInvokeModelNode(turn) {
       }
 
       signal.throwIfAborted();
-      if (!checkingGoal && graphState.searchPlan?.nativeWebSearchEnabled) {
+      if (!toolFree && graphState.searchPlan?.nativeWebSearchEnabled) {
         const items = (rawReply?.responseItems || []).filter(item => ['message', 'web_search_call'].includes(item?.type));
         hostedItems.push(...items);
         // The transport may return structured receipts without emitting SSE.
@@ -331,9 +335,15 @@ export function createInvokeModelNode(turn) {
       const turn = functionSession.parse(rawReply);
       const { thinking, toolCalls } = turn;
 
+      if (reportingProgress) {
+        coreTurn.update('complete');
+        finalReply = toolCalls.length ? coreTurn.reply(latestUserMessage, config.replyLanguage) : turn.text || coreTurn.reply(latestUserMessage, config.replyLanguage);
+        break;
+      }
+
       if (checkingGoal) {
         const decision = coreTurn.review(toolCalls.length ? '' : turn.text);
-        sseEmitter?.('execution_event', { kind: 'pipeline', id: `goal-check:${iteration}`, module: 'compute', messageId: 'stage.delivery', status: decision.decision === 'complete' ? 'completed' : 'failed', output: decision.explanation || decision.reason });
+        sseEmitter?.('execution_event', { kind: 'pipeline', id: `goal-check:${iteration}`, module: 'compute', messageId: 'stage.delivery', status: ['complete', 'deliver'].includes(decision.decision) ? 'completed' : 'failed', output: decision.explanation || decision.reason });
         if (decision.decision === 'continue') {
           coreTurn.update('feedback', { repair: true });
           loopMessages.push({ role: 'assistant', content: coreTurn.candidateReply }, { role: 'user', content: decision.feedback });

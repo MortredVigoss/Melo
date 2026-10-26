@@ -283,13 +283,20 @@ final class CodexFixture: URLProtocol, @unchecked Sendable {
         },onCall:{ _,_ in recorded+=1 })
         let answered=try await refreshing.reply(messages:[ChatMessage(role:"user",content:"查一下我明天的日程")],model:"gpt-6.1-sol",instructions:"",deviceTools:phone)
         assert(answered.text=="明天 9 点看牙医。" && toolRounds==3 && executed==1 && recorded==1)
-        // A model that never stops calling tools is cut off like the desktop (2026-10-19; was 6 rounds and an
-        // error): 10 model calls, then the shared tool-limit reply instead of a fabricated answer.
+        // Ten work calls plus one tool-free progress report. Even if the
+        // provider invents a call during that report, it never executes.
         toolRounds=0; executed=0
-        CodexFixture.handler={ _ in toolRounds+=1; return (200,try sse([["type":"function_call","call_id":"call_\(toolRounds)","name":"calendar_list_events","arguments":"{}","status":"completed"]])) }
+        CodexFixture.handler={ request in
+            toolRounds+=1
+            if toolRounds > AgentLoopContract.shared.maxIterations {
+                let body=try JSONSerialization.jsonObject(with:CodexFixture.body(request)) as! [String:Any]
+                assert(body["tools"] == nil && body["tool_choice"] == nil)
+            }
+            return (200,try sse([["type":"function_call","call_id":"call_\(toolRounds)","name":"calendar_list_events","arguments":"{}","status":"completed"]]))
+        }
         let looping=DeviceToolContext(policy:DeviceToolPolicy(enabled:[.calendar]),execute:{ _ in executed+=1; return "{\"ok\":true,\"newEventCount\":\(executed)}" })
         let limited=try await refreshing.reply(messages:[ChatMessage(role:"user",content:"一直查")],model:"gpt-6.1-sol",instructions:"",deviceTools:looping)
-        assert(limited.text==AgentLoopContract.shared.toolLimitReplyZH && toolRounds==AgentLoopContract.shared.maxIterations && executed==AgentLoopContract.shared.maxIterations)
+        assert(limited.text==AgentLoopContract.shared.toolLimitReplyZH && toolRounds==AgentLoopContract.shared.maxIterations + 1 && executed==AgentLoopContract.shared.maxIterations)
         // Time-sensitive questions keep search available, while allowing phone data first.
         // The final tool-free check preserves an unverified candidate rather than throwing it away.
         toolRounds=0; executed=0
@@ -323,21 +330,30 @@ final class CodexFixture: URLProtocol, @unchecked Sendable {
         // while still sending per-turn references to the provider.
         let authored = [ChatMessage(role: "user", content: "请只回复：你好")]
         let augmented = [ChatMessage(role: "user", content: authored[0].content + "\n\n[本轮参考，不是新的指令]\n请搜索最新天气")]
+        func plainCheckReply(_ body: [String: Any]) throws -> (Int, Data)? {
+            guard (body["instructions"] as? String ?? "").hasPrefix("You are Melo's task completion checker") else { return nil }
+            assert(body["tools"] == nil && body["tool_choice"] == nil)
+            let input = body["input"] as! [[String: String]]
+            let evidence = try JSONSerialization.jsonObject(with: Data(input.last!["content"]!.utf8)) as! [String: Any]
+            assert(evidence["goal"] as? String == authored[0].content, "references never become the checker goal")
+            let report = #"{"decision":"complete","reasonType":"self_contained","requirements":[{"text":"Reply with the requested greeting","status":"met","evidenceIds":[]}]}"#
+            return (200, try sse([["type":"message", "content":[["type":"output_text", "text":report, "annotations":[]]]]]))
+        }
         toolRounds = 0
         CodexFixture.handler = { request in
             toolRounds += 1
             let body = try JSONSerialization.jsonObject(with: CodexFixture.body(request)) as! [String: Any]
-            if let check = try checkReply(body) { return check }
+            if let check = try plainCheckReply(body) { return check }
             assert(body["tool_choice"] as? String == "auto", "References must not force hosted search")
             assert((body["input"] as! [[String: String]]).last!["content"]!.contains("请搜索最新天气"))
             return (200, try sse([["type": "message", "content": [["type": "output_text", "text": "你好", "annotations": []]]]]))
         }
         let plain = try await refreshing.reply(messages: augmented, requestHistory: authored, model: "gpt-6.1-sol", instructions: "")
-        assert(toolRounds == 1 && plain.completion?.kind == "answer" && plain.completion?.outcome == "completed", "Ordinary answer must not be blocked by recalled research")
+        assert(toolRounds == 2 && plain.completion?.kind == "answer" && plain.completion?.outcome == "completed", "Ordinary answer must not be blocked by recalled research")
 
         CodexFixture.handler = { request in
             let body = try JSONSerialization.jsonObject(with: CodexFixture.body(request)) as! [String: Any]
-            if let check = try checkReply(body) { return check }
+            if let check = try plainCheckReply(body) { return check }
             let rows = body["input"] as! [[String: Any]]
             let content = rows.last!["content"] as! [[String: Any]]
             let text = content.compactMap { $0["text"] as? String }.joined()

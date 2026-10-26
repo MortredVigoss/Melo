@@ -46,7 +46,9 @@ test('topic markers follow the conversation and the instructions stay a stable p
  await page.locator('.message.is-highlighted').filter({hasText:'Top250'}).waitFor();
  await page.screenshot({path:join(proof,'topic-dividers.png')});
  // Only the chat turns (background memory extraction also calls the model).
- const turns=requests.filter(body=>!String(body.instructions).includes('memory extraction assistant'));
+ const checks=requests.filter(body=>String(body.instructions).includes('task completion checker'));
+ assert.ok(checks.length>0); assert.ok(checks.every(body=>!body.tools?.length),'checks cannot execute tools');
+ const turns=requests.filter(body=>!String(body.instructions).includes('memory extraction assistant')&&!String(body.instructions).includes('task completion checker'));
  assert.equal(turns.length,5);
  assert.equal(new Set(turns.map(body=>body.instructions)).size,1,'every turn sends the same instructions');
  assert.deepEqual(errors,[]);

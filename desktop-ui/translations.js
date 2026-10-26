@@ -4,6 +4,14 @@ export { INTERFACE_TERMS as interfaceTermKeys } from './interfaceLanguages.js';
 // Authored interface copy only. User messages, names and provider output never enter this catalog.
 // Columns: Chinese source / English / Japanese / Korean / Spanish.
 const rows = [
+["本次任务允许", "Allow for this task", "このタスクで許可", "이 작업에서 허용", "Permitir para esta tarea"],
+["本次任务内允许修改此工作区的普通文件；不含删除、敏感路径和其他 Agent。取消或任务结束后失效。", "Allow changes to ordinary files in this workspace for this task. Excludes deletion, sensitive paths and other Agents. Expires on cancellation or task end.", "このタスク中、この作業領域の通常ファイルの変更を許可します。削除、機密パス、他の Agent は対象外です。取消または終了時に失効します。", "이 작업에서 이 작업 공간의 일반 파일 수정을 허용합니다. 삭제, 민감한 경로, 다른 Agent는 제외됩니다. 취소 또는 작업 종료 시 만료됩니다.", "Permite modificar archivos normales de este espacio durante la tarea. Excluye eliminación, rutas sensibles y otros Agents. Caduca al cancelar o finalizar."],
+["本次任务内允许此固定命令；目录或 package.json 改变后重新确认。取消或任务结束后失效。", "Allow this exact command for this task. Confirm again if its directory or package.json changes. Expires on cancellation or task end.", "このタスク中、この固定コマンドを許可します。ディレクトリや package.json が変わると再確認します。取消または終了時に失効します。", "이 작업에서 이 고정 명령을 허용합니다. 디렉터리나 package.json 변경 시 다시 확인합니다. 취소 또는 작업 종료 시 만료됩니다.", "Permite este comando exacto durante la tarea. Si cambian el directorio o package.json se vuelve a confirmar. Caduca al cancelar o finalizar."],
+
+["任务执行轮数", "Task execution rounds", "タスク実行ラウンド", "작업 실행 횟수", "Rondas de ejecución"],
+["任务执行轮数：%lld", "Task execution rounds: %lld", "タスク実行ラウンド：%lld", "작업 실행 횟수: %lld", "Rondas de ejecución: %lld"],
+["检查不占执行轮数；到顶后会汇报进度。时间与 token 预算仍有效。", "Checks do not use execution rounds. At the limit, a progress report follows. Time and token budgets still apply.", "確認は実行ラウンドに含まれません。上限後に進捗を報告します。時間とトークンの制限は引き続き有効です。", "검사는 실행 횟수에 포함되지 않습니다. 한도에 도달하면 진행 상황을 보고합니다. 시간과 토큰 한도는 계속 적용됩니다.", "Las comprobaciones no consumen rondas. Al alcanzar el límite se informa del progreso. Los límites de tiempo y tokens siguen vigentes."],
+
 ["工作目录", "Working directory", "作業ディレクトリ", "작업 디렉터리", "Directorio de trabajo"],
 ["隔离开发", "Isolated development", "隔離開発", "격리 개발", "Desarrollo aislado"],
 ["待开始", "Not started", "開始待ち", "시작 대기", "Sin iniciar"],

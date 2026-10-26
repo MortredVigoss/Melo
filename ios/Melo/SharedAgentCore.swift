@@ -55,7 +55,7 @@ final class PhoneGoalState {
     @discardableResult func update(_ action: String, _ fields: [String: Any] = [:]) throws -> [String: Any] {
         var input = fields; input["action"] = action; input["state"] = state
         guard let next = SharedLoopPolicy.value("goal", input) as? [String: Any] else { throw SharedAgentCoreError.invalidReply }
-        if action != "request" { state = next }
+        if action != "request" && action != "progress" { state = next }
         return next
     }
 }
@@ -150,13 +150,15 @@ final class PhoneCoreTurn {
     }
     private var state: [String: Any]
     private static func clock() -> Double { ProcessInfo.processInfo.systemUptime * 1000 }
+    var rounds: Int { state["rounds"] as? Int ?? 0 }
+    var reporting: Bool { state["requestMode"] as? String == "report" }
     var failures: Int { state["errors"] as? Int ?? 0 }
     var completed: Bool { state["status"] as? String == "completed" }
     var active: Bool { state["status"] as? String == "running" }
     var reason: String { state["reason"] as? String ?? "LOOP_STOPPED" }
     init(tools: [String], rounds: Int, callsPerRound: Int) throws {
         let turn: [String: Any] = ["runId": UUID().uuidString, "turnId": UUID().uuidString, "now": Self.clock(),
-            "allowedTools": tools, "hostToolSchemas": true, "limits": ["rounds": rounds, "callsPerRound": callsPerRound]]
+            "allowedTools": tools, "hostToolSchemas": true, "limits": ["rounds": rounds, "callsPerRound": callsPerRound, "finalReport": true]]
         guard let value = SharedLoopPolicy.value("start", ["turn": turn]) as? [String: Any] else { throw SharedAgentCoreError.unavailable }
         state = value
     }
