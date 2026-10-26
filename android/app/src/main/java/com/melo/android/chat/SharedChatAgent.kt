@@ -97,7 +97,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                     put("hostedSearch", hosted)
                 })
             }) }).jsonObject
-            journal.event("plan", "请求规划", output = "${plan.text("route")} · ${plan.text("reason")} · tools=${plan["tools"]}", status = "completed")
+            journal.event("plan", "请求规划", output = "${plan.text("route")} · ${plan.text("reason")} · suggestedTools=${plan["tools"]}", status = "completed")
             goalState = runtime.value("goal", buildJsonObject { put("action", "start"); put("goal", plan.text("resolvedGoal").ifBlank { goal }); put("id", runId) }).jsonObject
             if (plan.text("route") == "unavailable" && plan.text("reason") == "PHONE_UNAVAILABLE") return finish(when (plan.text("reason")) {
                 "MISSING_URL" -> "请提供要读取的完整 URL，或指出对话中的具体链接。"
@@ -118,6 +118,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
             if (historyEnabled) onContextLedger(prepared.ledger)
             journal.event("context", "上下文预算", output = "模型容量 ${connection.contextTokens} tokens；近窗 ${prepared.messages.size}/${messages.size} 条，原文保留；历史回读${if (historyEnabled) "开启" else "关闭"}。", status = "completed")
             names = (plan.strings("availableTools") + if (historyEnabled && prepared.omitted && plan["toolsForbidden"]?.jsonPrimitive?.booleanOrNull != true) listOf("read_history") else emptyList()).distinct()
+            journal.event("tools", "本轮工具目录", output = "registeredTools=" + (names + (if (routing?.active == true) listOf("melo_escalate") else emptyList()) + (if (plan["nativeSearchAvailable"]?.jsonPrimitive?.booleanOrNull == true) listOf("native_web_search") else emptyList())).joinToString(", "), status = "completed")
             transport = DeviceAgentClient(debug, client.http)
             history = ChatPhoneUse.history(prepared.messages, connection.protocol, imageData)
             currentChainStart = history.indexOfLast { it.text("role") == "user" }

@@ -39,6 +39,35 @@ class ResearchExecutionFlowTest {
         put("decision", if (complete) "complete" else "partial"); put("reasonType", if (complete) "fulfilled" else "unavailable"); put("reason", "Fixture delivery check"); put("nextStep", "")
         put("requirements", buildJsonArray { add(buildJsonObject { put("text", "Requested delivery"); put("status", if (complete) "met" else "missing"); put("evidenceIds", buildJsonArray { if (complete) add(evidence) }) }) })
     }.toString())
+    @Test fun shortChineseRetryRetainsPhoneSchemaAndNeverCompletesAnUnexecutedTask() = runBlocking {
+        for (protocol in listOf("chat-completions", "responses", "anthropic")) for (execute in listOf(true, false)) MockWebServer().use { model ->
+            model.start()
+            val original = "打开汽水音乐 搜索浅影阿的《牡丹亭》播放"
+            val messages = listOf(Message(role = "user", content = original), Message(role = "assistant", content = "请先启用 Accessibility Service。"), Message(role = "user", content = "重试"))
+            if (execute) {
+                model.enqueue(tool(protocol, "phone_use", "retry-phone", buildJsonObject { put("goal", original); put("purpose", "action") }))
+                model.enqueue(final(protocol, "Fixture phone task completed")); model.enqueue(review(protocol, true, "retry-phone"))
+            } else model.enqueue(final(protocol, "我没有可操作手机的工具，请手动完成。"))
+            val connection = Connection(endpoint = model.url("/model").toString(), model = "fixture-model", protocol = protocol, stream = false)
+            var invoked = 0; val scenes = mutableListOf<JsonObject>()
+            val result = SharedChatAgent(app, ModelClient(true), true).reply(connection, "fixture-key", messages, "", buildJsonObject {}, { "" }, true, newId(), "retry-fixture", { "" },
+                invokePhone = { args ->
+                    invoked++; assertEquals(original, args.text("goal"))
+                    DeviceToolResult(buildJsonObject { put("ok", true); put("status", "achieved"); put("goal", original); put("summary", "Local fixture, no real music or playback"); put("run_id", "fixture-phone") })
+                }, onPhase = {}, onScene = { scenes.add(it) })
+            val first = model.takeRequest(2, TimeUnit.SECONDS)!!.body.readUtf8()
+            assertTrue("phone schema must survive short retry in $protocol", first.contains("phone_use"))
+            assertTrue(first.contains("todo_list")); assertTrue(first.contains("calendar_list_events"))
+            val scene = scenes.last(); val completion = scene.getValue("completion").jsonObject
+            assertTrue(completion.getValue("task").jsonObject.text("original").contains(original))
+            val catalog = scene.getValue("pipeline").jsonArray.map { it.jsonObject }.single { it.text("id") == "tools" }.text("output")
+            assertTrue(catalog.contains("phone_use")); assertTrue(catalog.contains("todo_list"))
+            assertEquals(if (execute) 1 else 0, invoked)
+            assertEquals(if (execute) "completed" else "blocked", result.outcome)
+            if (!execute) assertEquals("MISSING_TOOL_EVIDENCE", result.stopReason)
+            assertEquals(if (execute) 3 else 1, model.requestCount)
+        }
+    }
     @Test fun threeProtocolsSearchReadThenNavigateAndPersistOnlyObservedEvents() = runBlocking {
         for (protocol in listOf("chat-completions", "responses", "anthropic")) MockWebServer().use { model -> MockWebServer().use { backend ->
             model.start(); backend.start()

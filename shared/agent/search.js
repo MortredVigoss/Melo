@@ -13,7 +13,7 @@ export function actionEvidence(plan = {}, urls = []) {
 // Continue only an explicit retry/resume phrase. The latest concrete user
 // request is the authority; assistant statements cannot grant tools. Preserve
 // restrictions from intermediate retries and stop at topic/cancellation changes.
-const CONTINUATION = /^(?:(?:请|帮我|麻烦你?|你|那就|现在)\s*)*(?:再试(?:一[次下]|试)?|重新(?:尝试|执行|试试|试)(?:一次|一下)?|继续(?:执行|刚才的任务)?|try again|retry|continue|go ahead)(?=[\s，,。.!！？?；;:]|$)/iu;
+const CONTINUATION = /^(?:(?:请|帮我|麻烦你?|你|那就|现在)\s*)*(?:重试(?:一次|一下)?|再试(?:一[次下]|试)?|重新(?:尝试|执行|试试|试)(?:一次|一下)?|继续(?:执行|刚才的任务)?|try again|retry|continue|go ahead)(?=[\s，,。.!！？?；;:]|$)/iu;
 
 function continuedRequest(text, messages) {
   if (!CONTINUATION.test(getRequestNetworkPolicy(text).instruction.trim())) return null;

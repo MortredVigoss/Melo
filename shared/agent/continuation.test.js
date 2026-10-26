@@ -12,6 +12,20 @@ test('retry restores the previous compound task with current configured capabili
  assert.equal(p.route,'http-search');assert.deepEqual(p.tools,['web_search','fetch_url','phone_use']);assert.deepEqual(p.requiredTools,['phone_use']);
  assert.deepEqual(p.toolDependencies,{phone_use:['web_search']});assert.match(p.instructions,/retry/i);
 });
+test('short Chinese retry retains the original phone goal and its execution requirement',()=>{
+ const original='打开汽水音乐 搜索浅影阿的《牡丹亭》播放';
+ const messages=[user(original),assistant('请先启用 Accessibility Service。')];
+ for(const text of ['重试','重试一次','重试一下','请重试']) {
+  const p=ask(text,[...messages,user(text)]);
+  assert.equal(p.route,'phone',text);assert.deepEqual(p.requiredTools,['phone_use']);
+  assert.ok(p.availableTools.includes('phone_use'));assert.match(p.resolvedGoal,/打开汽水音乐/);
+ }
+ const narrowed=ask('重试，不要操作手机',messages);
+ assert.ok(!narrowed.availableTools.includes('phone_use'));assert.deepEqual(narrowed.requiredTools,[]);
+ assert.deepEqual(ask('重试',[user(original),user('取消，停止操作')]).requiredTools,[]);
+ assert.deepEqual(ask('重试',[]).requiredTools,[]);
+ assert.deepEqual(ask('重试是什么意思？',messages).requiredTools,[]);
+});
 test('retry uses current capability instead of an assistant claim that no tools exist',()=>{
  const p=ask('Try again',[user('Recommend brunch in Surry Hills'),assistant('I cannot search or operate the phone.')]);
  assert.equal(p.route,'http-search');assert.deepEqual(p.requiredTools,[]);
