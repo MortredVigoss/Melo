@@ -1,3 +1,4 @@
+import { sceneColor } from '../../../src/shared/visualTokens.js';
 // RC circuit charge/discharge curve.
 // Params: V (voltage), R (Ω), C (F), mode toggled via `decay` param (0=charge,1=discharge)
 import {
@@ -90,7 +91,7 @@ export default function mountCircuitRc(host, spec) {
 
     // Running indicator.
     const vNow = decay ? V * Math.exp(-tNow / tau) : V * (1 - Math.exp(-tNow / tau));
-    ctx.fillStyle = '#fff7f3';
+    ctx.fillStyle = sceneColor('diagram-point');
     ctx.shadowColor = decay ? 'rgba(120,200,255,0.7)' : 'rgba(246,90,96,0.7)';
     ctx.shadowBlur = 12;
     ctx.beginPath();

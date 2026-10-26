@@ -95,7 +95,7 @@ body,html {background:var(--palette-ed6b05ea88);}
 .neural-shell button:focus-visible {outline:1px solid var(--palette-a30a11aeb3);outline-offset:4px;}
 @media (max-width:1150px) {
  .neural-shell.shell {grid-template-columns:155px 180px minmax(0,1fr);gap:7px;padding-left:7px;padding-right:12px;}
- .neural-cluster {gap:6px;--cluster-shift:0px!important;}
+ .neural-cluster {gap:6px;--cluster-shift:0px;}
  .neural-orb {width:45px;height:45px;}
  .neural-cluster strong {font-size:var(--font-size-12px);}.neural-cluster small{font-size:var(--font-size-5px);}
  .neural-branches {padding-left:8px;}.neural-branches-heading{padding-left:10px;}
@@ -150,7 +150,7 @@ body,html {background:var(--palette-ed6b05ea88);}
 /* Spatial workspace v2: persistent controls in a shared coordinate system. */
 .neural-shell.shell {display:block;padding:0;perspective:none;}
 .neural-core-anchor {position:absolute;width:1px;height:1px;pointer-events:none;transition:left .85s cubic-bezier(.22,.72,.18,1),top .85s cubic-bezier(.22,.72,.18,1);}
-.neural-navigation {position:absolute;inset:0;display:block;pointer-events:none;transform:none!important;opacity:1!important;filter:none!important;}
+.neural-navigation {position:absolute;inset:0;display:block;pointer-events:none;transform:none;opacity:1;filter:none;}
 .neural-brand {position:absolute;top:21px;left:24px;pointer-events:auto;}
 .neural-primary {position:absolute;inset:0;padding:0;display:block;pointer-events:none;}
 .neural-primary:before {display:none;}
@@ -173,7 +173,7 @@ body,html {background:var(--palette-ed6b05ea88);}
 .neural-shell.is-overview .neural-dashboard {background:none;border:0;box-shadow:none;transform:translateX(-50%);bottom:30px;overflow:visible;}
 .neural-shell.is-overview .neural-dashboard .topbar,.neural-shell.is-overview .neural-dashboard-label {display:none;}
 .neural-shell.is-overview .content-scroll {overflow:visible;}
-.neural-overview {padding:0!important;min-height:0;display:block;}
+.neural-overview {padding:0;min-height:0;display:block;}
 .neural-home-caption {text-align:center;margin-bottom:14px;}.neural-home-caption>span{font:8px monospace;letter-spacing:.2em;color:var(--palette-3cf8b780b5);}.neural-home-caption p{font-size:var(--font-size-13px);color:var(--palette-4e5bf042f0);margin:10px 0;}
 .neural-home-composer .composer-card{background:var(--palette-24fc5f34ba);border-color:var(--palette-b1e6d44f4c);padding:12px;}
 .neural-home-composer .composer-status-copy{display:none;}
@@ -181,12 +181,11 @@ body,html {background:var(--palette-ed6b05ea88);}
 .neural-module-summary{display:none;}
 .neural-shell[data-neural-stage=module] .neural-dashboard{bottom:auto;transform:translate(-50%,-50%);}
 .neural-shell[data-neural-stage=module] .neural-module-summary{display:block;}
-.neural-module-summary small{font-size:var(--font-size-9px);color:var(--palette-709d0cc824);}.neural-module-summary h1{font-size:31px!important;margin:15px 0!important;}.neural-module-summary p,.neural-module-summary>span{font-size:var(--font-size-12px);color:var(--palette-47181f5070);line-height:1.8;}
+.neural-module-summary small{font-size:var(--font-size-9px);color:var(--palette-709d0cc824);}.neural-module-summary h1{font-size:31px;margin:15px 0;}.neural-module-summary p,.neural-module-summary>span{font-size:var(--font-size-12px);color:var(--palette-47181f5070);line-height:1.8;}
 .neural-shell[data-neural-stage=module] .neural-home-caption,.neural-shell[data-neural-stage=module] .neural-home-composer,.neural-shell[data-neural-stage=module] .neural-overview-note{display:none;}
 .neural-preview{position:absolute;z-index:var(--layer-5);padding:12px 15px;width:225px;border:1px solid var(--palette-194dff8c3f);border-radius:10px;background:var(--palette-5d1f3c46fa);color:var(--palette-604bf84478);font-size:var(--font-size-11px);line-height:1.8;box-shadow:0 14px 36px var(--palette-f80ab45ca7);pointer-events:none;}
 .neural-preview[hidden]{display:none;}
 .neural-shell[data-neural-busy=true] .neural-live-dot{background:var(--palette-269b177d55);}
-.neural-shell.is-still *{transition:none!important;animation:none!important;}
 @media(max-width:900px){
  .neural-shell[data-neural-stage=module] .neural-dashboard {display:none;}
  .neural-shell:not([data-neural-stage=overview]) .neural-cluster-copy small{display:none;}
@@ -196,9 +195,9 @@ body,html {background:var(--palette-ed6b05ea88);}
 }
 @media(max-width:600px){
  .neural-shell[data-neural-stage=overview] .neural-dashboard {display:flex;bottom:18px;}
- .neural-shell[data-neural-stage=detail] .neural-dashboard {left:80px!important;width:calc(100% - 92px)!important;}
+ .neural-shell[data-neural-stage=detail] .neural-dashboard {left:80px;width:calc(100% - 92px);}
  .neural-shell[data-neural-stage=detail] .neural-branches{display:none;}
- .neural-shell[data-neural-stage=module] .neural-branches{display:flex;width:calc(100% - 125px)!important;}
+ .neural-shell[data-neural-stage=module] .neural-branches{display:flex;width:calc(100% - 125px);}
  .neural-cluster {width:100px;}.neural-orb{width:43px;height:43px;}.neural-cluster small{display:none;}
  .neural-shell[data-neural-stage=overview] .neural-home-caption{display:none;}
 }

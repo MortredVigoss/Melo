@@ -85,7 +85,7 @@ function harness({ bootstrap = page(), responses = {}, overview = false } = {}) 
     },
     render: () => { renders++; paint(); },
     bgRender: () => { renders++; paint(); },
-    showError: text => errors.push(text),
+    notify: ({text}) => errors.push(text),
     applyBootstrap: payload => { applied.push(payload); state.bootstrap = payload; },
     applyBootstrapPreservingDrafts: payload => { preserved.push(payload); state.bootstrap = payload; },
     refreshBootstrap: async () => { refreshes++; if (refreshError) throw refreshError; },

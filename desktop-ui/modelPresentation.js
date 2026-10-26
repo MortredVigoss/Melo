@@ -71,7 +71,7 @@ export function renderModelPicker({ config, models, agent, selection, open, savi
       <span class="model-picker-dot" aria-hidden="true"></span><span>${escape(modelLabel(current))}</span><small>${selection?t("本对话"):t("默认")}</small><span aria-hidden="true">⌄</span>
     </button>
     ${open ? ui`<section id="model-picker-panel" class="model-picker-panel" popover="manual" aria-label="对话模型选择">
-      <header><div><small>MODEL / CONNECTION</small><h3>选择本对话的模型</h3></div></header>
+      <header><div><small>MODEL / CONNECTION</small><h3 class="subsection-title">选择本对话的模型</h3></div></header>
       <p class="model-picker-context">${agent?.model ? `${escape(agent.name)} 单独指定了 ${escape(modelLabel(agent.model))}。` : t("未单独选择时沿用默认模型。")} 更改只影响本对话之后的请求。</p>
       <p class="model-picker-context">这里选择文字对话模型；图片理解与生成可在系统中另行配置。网页搜索、文件及电脑工具由 Melo 按 Agent 权限执行，网页搜索无需额外配置。</p>
       <div class="model-picker-options" role="group" aria-label="可选模型">

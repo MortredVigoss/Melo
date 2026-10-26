@@ -23,8 +23,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 647,
-      "edges": 2091,
+      "modules": 648,
+      "edges": 2089,
       "roots": [
         "src",
         "desktop-ui",
@@ -1060,7 +1060,7 @@
         "agents": 34,
         "approvals": 7,
         "channels": 2,
-        "desktop-shell": 22,
+        "desktop-shell": 20,
         "knowledge": 5,
         "media": 24,
         "memory": 27,
@@ -1516,7 +1516,7 @@
         "agents": 2,
         "approvals": 3,
         "chat": 12,
-        "desktop-shell": 9,
+        "desktop-shell": 6,
         "knowledge": 3,
         "media": 1,
         "platform": 40,
@@ -1950,7 +1950,7 @@
         "agents": 3,
         "approvals": 1,
         "chat": 14,
-        "desktop-shell": 12,
+        "desktop-shell": 9,
         "media": 1,
         "platform": 26,
         "sync": 3,
@@ -2571,11 +2571,11 @@
         "agents": 8,
         "approvals": 33,
         "chat": 18,
-        "desktop-shell": 15,
+        "desktop-shell": 14,
         "knowledge": 3,
         "media": 2,
         "memory": 6,
-        "platform": 48,
+        "platform": 55,
         "projects": 5,
         "settings": 10
       },
@@ -3558,7 +3558,7 @@
         "assets/**"
       ],
       "modules": {
-        "desktop-ui": 30,
+        "desktop-ui": 31,
         "src": 2
       },
       "entryModules": [
@@ -3578,6 +3578,12 @@
           "module": "desktop-ui/bootstrapPatch.js",
           "importedBy": [
             "agents"
+          ]
+        },
+        {
+          "module": "desktop-ui/buttonStyles.js",
+          "importedBy": [
+            "chat"
           ]
         },
         {
@@ -3603,15 +3609,6 @@
           "importedBy": [
             "approvals",
             "chat",
-            "tools"
-          ]
-        },
-        {
-          "module": "desktop-ui/html.js",
-          "importedBy": [
-            "chat",
-            "memory",
-            "settings",
             "tools"
           ]
         },
@@ -3663,7 +3660,7 @@
         "knowledge": 1,
         "media": 5,
         "memory": 1,
-        "platform": 12,
+        "platform": 15,
         "projects": 5,
         "settings": 15,
         "sync": 2,
@@ -3673,14 +3670,14 @@
       "usedBy": {
         "agents": 8,
         "approvals": 8,
-        "chat": 22,
+        "chat": 20,
         "media": 6,
-        "memory": 9,
+        "memory": 6,
         "platform": 2,
         "projects": 5,
-        "settings": 12,
+        "settings": 9,
         "sync": 1,
-        "tools": 15,
+        "tools": 14,
         "voice": 1
       },
       "httpRoutes": [
@@ -3717,6 +3714,7 @@
         "desktop-ui/atomicButton.js",
         "desktop-ui/behaviorSettings.js",
         "desktop-ui/bootstrapPatch.js",
+        "desktop-ui/buttonStyles.js",
         "desktop-ui/emerald.css",
         "desktop-ui/features/featureContext.js",
         "desktop-ui/features/registry.js",
@@ -3777,10 +3775,12 @@
           "desktop-ui/appSwitchFreeze.test.js",
           "desktop-ui/behaviorSettings.test.js",
           "desktop-ui/bootstrapPatch.test.js",
+          "desktop-ui/buttonStyles.test.js",
           "desktop-ui/capabilityElevation.browser.test.js",
           "desktop-ui/committedSave.browser.test.js",
           "desktop-ui/committedSave.test.js",
           "desktop-ui/features/registry.test.js",
+          "desktop-ui/feedback.test.js",
           "desktop-ui/galaxyBackdrop.browser.test.js",
           "desktop-ui/galaxyBackdrop.test.js",
           "desktop-ui/i18n.test.js",
@@ -4137,7 +4137,8 @@
           "module": "src/shared/visualTokens.js",
           "importedBy": [
             "chat",
-            "desktop-shell"
+            "desktop-shell",
+            "tools"
           ]
         },
         {
@@ -4268,14 +4269,14 @@
         "approvals": 36,
         "channels": 22,
         "chat": 59,
-        "desktop-shell": 12,
+        "desktop-shell": 15,
         "knowledge": 2,
         "media": 13,
         "memory": 40,
         "projects": 23,
         "settings": 26,
         "sync": 6,
-        "tools": 48,
+        "tools": 55,
         "voice": 6
       },
       "httpRoutes": [],
@@ -5158,6 +5159,7 @@
       "kind": "generator",
       "generator": "ios/scripts/build-scene.py",
       "inputs": [
+        "desktop-ui/buttonStyles.js",
         "desktop-ui/executionDetails.js",
         "desktop-ui/executionPanel.css",
         "desktop-ui/executionPanel.js",

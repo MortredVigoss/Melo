@@ -1,21 +1,56 @@
 import { t } from './i18n.js';
 
-export function showFlashToast(message, { ms=2000, kind='status' } = {}) {
-  document.querySelector('#flash-toast')?.remove();
-  const toast = document.createElement('div');
-  toast.id = 'flash-toast';
-  toast.className = 'flash-toast' + (kind === 'error' ? ' is-error' : '');
-  toast.setAttribute('role', kind === 'error' ? 'alert' : 'status');
-  toast.setAttribute('aria-live', kind === 'error' ? 'assertive' : 'polite');
-  const text = document.createElement('span');
-  text.textContent = String(message ?? '');
-  toast.append(text);
-  const close = document.createElement('button');
-  close.type = 'button'; close.className = 'small-button';
-  close.textContent = t('关闭'); close.onclick = () => toast.remove();
-  toast.append(close);
-  document.body.append(toast);
-  if (ms > 0) setTimeout(() => toast.remove(), ms);
+const documents = new WeakMap();
+function stateFor(doc) {
+  if (!documents.has(doc)) documents.set(doc, { scope: 'page', root: doc.body, notices: new Map(), timer: null });
+  return documents.get(doc);
+}
+function noticeNode(doc, { level, text }, dismiss, toast = false) {
+  const node = doc.createElement('div');
+  node.className = toast ? 'flash-toast ui-notice' : 'ui-notice';
+  node.dataset.level = level;
+  node.setAttribute('role', level === 'error' ? 'alert' : 'status');
+  node.setAttribute('aria-live', level === 'error' ? 'assertive' : 'polite');
+  const content = doc.createElement('span');
+  content.textContent = String(text ?? '');
+  const close = doc.createElement('button');
+  close.type = 'button'; close.className = 'button-ghost';
+  close.textContent = t('关闭提示');
+  close.onclick = dismiss;
+  node.append(content, close);
+  return node;
+}
+// Reattach persistent page feedback after a normal render; other pages keep
+// their own notices until dismissed. Live execution/voice status is separate.
+export function renderNotifications(root, { scope = 'page' } = {}) {
+  if (!root) return;
+  const doc = root.ownerDocument, state = stateFor(doc);
+  state.root = root; state.scope = scope;
+  root.querySelector('[data-page-notice]')?.remove();
+  const notice = state.notices.get(scope);
+  if (!notice) return;
+  const dismiss = () => { state.notices.delete(scope); renderNotifications(state.root, { scope: state.scope }); };
+  const node = noticeNode(doc, notice, dismiss);
+  node.dataset.pageNotice = scope;
+  (root.querySelector('.content-shell') || root).prepend(node);
+}
+// Errors persist in the page. Success/info use one timed toast. Callers may
+// additionally request an error toast when the originating surface is hidden.
+export function notify({ level = 'info', text, scope, toast = level !== 'error' } = {}) {
+  if (typeof document === 'undefined') return;
+  const doc = document, state = stateFor(doc), key = scope || state.scope;
+  const notice = { level, text };
+  if (level === 'error') state.notices.set(key, notice);
+  else if (level === 'success') state.notices.delete(key);
+  renderNotifications(state.root, { scope: state.scope });
+  if (!toast) return;
+  clearTimeout(state.timer);
+  doc.querySelector('#flash-toast')?.remove();
+  const node = noticeNode(doc, notice, () => node.remove(), true);
+  node.id = 'flash-toast'; doc.body.append(node);
+  // Persistent errors stay in the page after the optional toast expires.
+  state.timer = setTimeout(() => node.remove(), 3000);
+  state.timer.unref?.();
 }
 
 let pendingDialog = null;
@@ -37,9 +72,9 @@ export function requestText({ title, value='', validate=()=>'', confirmLabel=t('
     status.setAttribute('aria-live','polite'); input.setAttribute('aria-describedby',status.id);
     const actions = document.createElement('div'); actions.className = 'inline-actions';
     const submit = document.createElement('button');
-    submit.type = 'submit'; submit.className = 'small-button is-primary'; submit.textContent = confirmLabel;
+    submit.type = 'submit'; submit.className = 'button-primary'; submit.textContent = confirmLabel;
     const cancel = document.createElement('button');
-    cancel.type = 'button'; cancel.className = 'small-button'; cancel.textContent = t('取消');
+    cancel.type = 'button'; cancel.className = 'button-secondary'; cancel.textContent = t('取消');
     let settled = false;
     const finish = result => {
       if (settled) return; settled = true; pendingDialog = null;

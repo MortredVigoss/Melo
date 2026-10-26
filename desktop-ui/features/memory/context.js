@@ -6,12 +6,12 @@
 import { checkFeatureContext } from '../featureContext.js';
 import { createMemoryApi } from './api.js';
 
-export const MEMORY_CONTEXT = Object.freeze(['api', 'render', 'bgRender', 'showError', 'activeProject', 'escapeHtml']);
+export const MEMORY_CONTEXT = Object.freeze(['api', 'render', 'bgRender', 'notify', 'activeProject', 'escapeHtml']);
 
-export let render, bgRender, showError, activeProject, escapeHtml, memoryApi;
+export let render, bgRender, notify, activeProject, escapeHtml, memoryApi;
 
 export function bindMemoryContext(context) {
   checkFeatureContext('memory', context, MEMORY_CONTEXT);
-  ({ render, bgRender, showError, activeProject, escapeHtml } = context);
+  ({ render, bgRender, notify, activeProject, escapeHtml } = context);
   memoryApi = createMemoryApi(context.api);
 }

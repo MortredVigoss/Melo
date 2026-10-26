@@ -1,4 +1,4 @@
-import { escapeHtml } from '../../html.js';
+import { escapeHtml } from '../../i18n.js';
 // "Memories this reply drew on" footer for assistant messages (2026-10-17
 // design audit M5 / plan 2A). The data has been persisted in
 // message.metadata.memoryUsage since the memory-feedback work, but the chat
@@ -7,7 +7,6 @@ import { escapeHtml } from '../../html.js';
 // place they noticed it. Pure renderer; actions are handled in ./controller.js.
 import { t, ui } from '../../i18n.js';
 
-const escape = value => escapeHtml(value ?? '');
 
 export function renderMessageMemoryRefs(message, { feedback = null, busy = false, open = false } = {}) {
   if (message?.role !== 'assistant') return '';
@@ -20,17 +19,17 @@ export function renderMessageMemoryRefs(message, { feedback = null, busy = false
   // Bug audit U3: every render rebuilds the <details>; it stays open when the
   // user opened it (tracked by ./controller.js) or when its feedback is being shown.
   const keepOpen = open || (!!feedback?.messageId && feedback.messageId === message.id);
-  return ui`<details class="message-memory-refs" data-message-memory-refs="${escape(message.id)}" ${keepOpen ? 'open' : ''}>
-    <summary>${escape(t('本回答参考的记忆'))}（${usage.length}）</summary>
-    <p class="list-row-meta">${escape(t('这些内容已提供给模型作为参考，不代表回答一定采用。'))}</p>
-    ${usage.map(row => ui`<div class="message-memory-ref" data-memory-id="${escape(row.id)}">
-      <span class="message-memory-ref-kind">${escape(row.kind || 'memory')}</span>
-      <span class="message-memory-ref-text">${escape(row.text || '')}</span>
+  return ui`<details class="message-memory-refs" data-message-memory-refs="${escapeHtml(message.id)}" ${keepOpen ? 'open' : ''}>
+    <summary>${escapeHtml(t('本回答参考的记忆'))}（${usage.length}）</summary>
+    <p class="list-row-meta">${escapeHtml(t('这些内容已提供给模型作为参考，不代表回答一定采用。'))}</p>
+    ${usage.map(row => ui`<div class="message-memory-ref" data-memory-id="${escapeHtml(row.id)}">
+      <span class="message-memory-ref-kind">${escapeHtml(row.kind || 'memory')}</span>
+      <span class="message-memory-ref-text">${escapeHtml(row.text || '')}</span>
       ${facts.includes(row) ? ui`<span class="inline-actions">
-        ${feedback?.id === row.id && (!feedback.messageId || feedback.messageId === message.id) ? ui`<span class="settings-save-status" role="status" aria-live="polite">✓ ${escape(feedback.message)}</span>` : ui`
-        ${row.kind !== 'project-book' ? ui`<button class="small-button" type="button" data-kind="${escape(row.kind)}" data-action="memory-ref-scope" data-memory-id="${escape(row.id)}" data-scope="project" ${busy ? 'disabled' : ''}>${escape(t('记到项目'))}</button>` : ''}
-        ${row.kind !== 'personal-profile' && personalTargetId(row) ? ui`<button class="small-button" type="button" data-kind="${escape(row.kind)}" data-action="memory-ref-scope" data-memory-id="${escape(row.id)}" data-scope="personal" ${busy ? 'disabled' : ''}>${escape(t('记成个人'))}</button>` : ''}
-        <button class="small-button" type="button" data-kind="${escape(row.kind)}" data-action="memory-ref-forget" data-memory-id="${escape(row.id)}" ${busy ? 'disabled' : ''}>${escape(t('停止使用'))}</button>`}
+        ${feedback?.id === row.id && (!feedback.messageId || feedback.messageId === message.id) ? ui`<span class="settings-save-status" role="status" aria-live="polite">✓ ${escapeHtml(feedback.message)}</span>` : ui`
+        ${row.kind !== 'project-book' ? ui`<button class="small-button" type="button" data-kind="${escapeHtml(row.kind)}" data-action="memory-ref-scope" data-memory-id="${escapeHtml(row.id)}" data-scope="project" ${busy ? 'disabled' : ''}>${escapeHtml(t('记到项目'))}</button>` : ''}
+        ${row.kind !== 'personal-profile' && personalTargetId(row) ? ui`<button class="small-button" type="button" data-kind="${escapeHtml(row.kind)}" data-action="memory-ref-scope" data-memory-id="${escapeHtml(row.id)}" data-scope="personal" ${busy ? 'disabled' : ''}>${escapeHtml(t('记成个人'))}</button>` : ''}
+        <button class="small-button" type="button" data-kind="${escapeHtml(row.kind)}" data-action="memory-ref-forget" data-memory-id="${escapeHtml(row.id)}" ${busy ? 'disabled' : ''}>${escapeHtml(t('停止使用'))}</button>`}
       </span>` : ''}
     </div>`).join('')}
   </details>`;

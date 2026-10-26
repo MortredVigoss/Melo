@@ -61,7 +61,7 @@ export async function handleManagementAction(action,trigger,{api,data,applyBoots
  } else if(action==='manage-reconnect-mcp') {await post('/api/mcp/connect',{name:trigger.dataset.serverName});await refresh();
  } else if(action==='manage-session-permissions') {
   const options=(data.chats || data.recents || []).map(c=>({id:c.id,name:c.title}));
-  const dialog=managementDialog({title:'会话工具授权',submitLabel:'查看授权',fields:[{name:'chatId',label:'选择对话',options,value:data.activeChat?.id,required:true}],submit:values=>api('/api/tools/session-permissions?chatId='+encodeURIComponent(values.chatId))});
+  const dialog=managementDialog({title:'对话工具授权',submitLabel:'查看授权',fields:[{name:'chatId',label:'选择对话',options,value:data.activeChat?.id,required:true}],submit:values=>api('/api/tools/session-permissions?chatId='+encodeURIComponent(values.chatId))});
   const revoke=document.createElement('button');revoke.type='button';revoke.className='small-button';revoke.textContent=t('撤销此对话的临时授权');dialog.querySelector('.inline-actions').prepend(revoke);
   revoke.onclick=async()=>{const chatId=dialog.querySelector('[name=chatId]').value;if(!chatId)return;revoke.disabled=true;try{await post('/api/tools/session-permissions/clear?chatId='+encodeURIComponent(chatId),{});dialog.querySelector('[role=status]').textContent=JSON.stringify(await api('/api/tools/session-permissions?chatId='+encodeURIComponent(chatId)),null,2);}catch(error){dialog.querySelector('[role=alert]').textContent=error.message;}finally{revoke.disabled=false;}};
  } else return false;

@@ -64,7 +64,7 @@ struct LocalFilesView: View {
                         }.meloPanel()
                     }
                     if !folders.loaded { Button("重新载入授权记录") { folders.reload() } }
-                    Text("文件夹授权只保存在此 iPhone，不随对话同步或导出。移除授权不会删除原文件或已导入的知识资料。单文件预览上限 20 MB。").font(.caption).foregroundStyle(.secondary)
+                    Text("文件夹授权只保存在此 iPhone，不随对话同步或导出。移除授权不会删除原文件或已导入的知识。单文件预览上限 20 MB。").font(.caption).foregroundStyle(.secondary)
                 }.padding(20)
             }.background(MeloTheme.dialog).navigationTitle("本机文件").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() }.disabled(busy) } }
@@ -186,14 +186,14 @@ struct LocalFilePreviewView: View {
                 else { ContentUnavailableView("此格式暂不支持预览", systemImage: "doc.questionmark", description: Text("可使用原文件所属的 App 查看；文件未发送给模型。")) }
                 VStack(alignment: .leading, spacing: 8) {
                     if canExtract {
-                        Button { extract() } label: { Label(busy ? "正在提取文字…" : "添加到知识资料", systemImage: "text.badge.plus").frame(minHeight: 44) }.disabled(busy)
-                        Text("下一步可检查文字并确认保存，最多 12,000 字。保存后在对话“项目与资料”里选用。").font(.caption).foregroundStyle(.secondary)
-                    } else { Text("当前仅预览。TXT、Markdown 和有文字层的 PDF 可添加为知识资料；Office 文件暂不提取正文。").font(.caption).foregroundStyle(.secondary) }
+                        Button { extract() } label: { Label(busy ? "正在提取文字…" : "添加到知识", systemImage: "text.badge.plus").frame(minHeight: 44) }.disabled(busy)
+                        Text("下一步可检查文字并确认保存，最多 12,000 字。保存后在对话“项目与知识”里选用。").font(.caption).foregroundStyle(.secondary)
+                    } else { Text("当前仅预览。TXT、Markdown 和有文字层的 PDF 可添加为知识；Office 文件暂不提取正文。").font(.caption).foregroundStyle(.secondary) }
                 }.padding(16)
             }.background(MeloTheme.dialog).navigationTitle(file.name).navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() }.disabled(busy) } }
                 .sheet(item: $note) { KnowledgeEditor(note: $0) }
-                .alert("导入资料", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) { Button("知道了") { error = nil } } message: { Text(error ?? "") }
+                .alert("导入知识", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) { Button("知道了") { error = nil } } message: { Text(error ?? "") }
         }.interactiveDismissDisabled(busy)
     }
     private func extract() {

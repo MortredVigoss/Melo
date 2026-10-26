@@ -17,7 +17,7 @@ import { buildAgentProfilePatch } from './agentProfilePatch.js';
 import { agentDocumentWithPreset, agentDraftFromProfile, normalizeChannelsForDraft } from './agentDraft.js';
 import { decideAgentMcpAuthAction } from './agentMcpAuthorise.js';
 import { agentsState, resetAgentsState } from './state.js';
-import { bindAgentsContext, agentsApi, getBootstrap, app, render, bgRender, showError, showFlashToast, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts, refreshBootstrap, activeProject, agentProfileById, minimaxTtsConfigPatchForVoice, beginFormEdit, formEditToken, nativeSettings, isAgentChannelAvailable } from './context.js';
+import { bindAgentsContext, agentsApi, getBootstrap, app, render, bgRender, notify, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts, refreshBootstrap, activeProject, agentProfileById, minimaxTtsConfigPatchForVoice, beginFormEdit, formEditToken, nativeSettings, isAgentChannelAvailable } from './context.js';
 
 // Binds the narrow context and starts from fresh feature state and idle
 // timers. app.js calls this once at startup (through ./index.js); tests call
@@ -354,7 +354,7 @@ async function handleUpdateAgentProfile(form) {
     await waitForMinimumVisibleState;
     delete agentsState.agentDrafts[draftKey];
     applyBootstrap(payload);
-    if (payload.agentExportWarning) showError(payload.agentExportWarning);
+    if (payload.agentExportWarning) notify({level:'error',text:payload.agentExportWarning});
     const activeTtsConfig = getBootstrap()?.settings?.config || {};
     const savedVoiceId = String(patch.minimaxVoiceId || '').trim();
     if (
@@ -396,7 +396,7 @@ async function handleTestAgentChannel(trigger) {
 async function handleImportAgentPreset(agentId, presetId) {
   const preset = agentPresetById(presetId);
   if (!preset) {
-    showError('Preset not found.');
+    notify({level:'error',text:'Preset not found.'});
     return;
   }
 
@@ -413,7 +413,7 @@ async function handleImportAgentPreset(agentId, presetId) {
 async function handleResetProjectAgentOverride(agentId) {
   const project = activeProject();
   if (!project) {
-    showError('Choose a project before resetting an override.');
+    notify({level:'error',text:'Choose a project before resetting an override.'});
     return;
   }
 
@@ -447,7 +447,7 @@ export const agentsActions = {
     const text = draft?.instructions ?? '';
     if (window.webkit?.messageHandlers?.meloVoice) {
       const result = await nativeSettings('savePortableArchive', {text, name:'AGENT.md'});
-      showFlashToast(result.cancelled ? t('已取消导出。') : t('已导出 Markdown。'));
+      notify({level:'success',text:result.cancelled ? t('已取消导出。') : t('已导出 Markdown。')});
       return;
     }
     const url = URL.createObjectURL(new Blob([text], {type:'text/markdown;charset=utf-8'}));
@@ -585,7 +585,7 @@ export const agentsActions = {
       presetUnpinned,
     });
     if (decision.action.startsWith('refused-') || decision.action === 'refused-invalid') {
-      if (decision.toast) showFlashToast(decision.toast);
+      if (decision.toast) notify({level:'success',text:decision.toast});
       return;
     }
     currentDraft.enabledMcpServerIds = decision.nextIds;
@@ -728,7 +728,7 @@ async function importAgentDocument(target) {
     if(!editIsCurrent()) return;
     agentsState.agentDrafts[key]={...agentDraftFor(agentProfileById(agentId)),instructions};
     render();
-  } catch(error) { showError(error.message); }
+  } catch(error) { notify({level:'error',text:error.message}); }
 }
 
 async function previewAgentAvatar(target) {
@@ -741,7 +741,7 @@ async function previewAgentAvatar(target) {
     agentsState.agentDrafts[draftKey]={...originalDraft,...agentsState.agentDrafts[draftKey],avatarData};
     render();
   }
-  catch (error) { showError(error.message); }
+  catch (error) { notify({level:'error',text:error.message}); }
 }
 
 // Last branch inside the 'change' listener's try (agent-profile-update form

@@ -68,7 +68,7 @@ struct LocalGeneralSettings: View {
                 return value
             }) { value, _ in
                 Picker("界面语言", selection: value.interfaceLanguage) { ForEach(InterfaceLanguage.allCases) { language in Text(verbatim: language.name).tag(language.rawValue) } }
-                Text("仅改变界面文字，聊天内容与模型回复语言不受影响。").font(.caption).foregroundStyle(.secondary)
+                Text("仅改变界面文字，对话内容与模型回复语言不受影响。").font(.caption).foregroundStyle(.secondary)
                 Picker("文字大小", selection: value.textSize) { Text("跟随系统").tag("system"); Text("大").tag("large"); Text("更大").tag("larger") }
                 Toggle("减少动态效果", isOn: value.reduceMotion)
                 Toggle("后台回复完成通知", isOn: value.notifications)
@@ -113,7 +113,7 @@ struct PortableArchive: Codable {
     var exportedAt = timestamp()
     var snapshot: SyncSnapshot
     func validate() throws {
-        guard format == "melo-portable-workspace", version == 1, snapshot.version == 1 else { throw MeloError.message("请选择 Melo 导出的可迁移资料文件。") }
+        guard format == "melo-portable-workspace", version == 1, snapshot.version == 1 else { throw MeloError.message("请选择 Melo 导出的可迁移数据文件。") }
         _ = try merge([], snapshot.chats, deletedChats: snapshot.deletedChats ?? [])
         if let workspace = snapshot.workspace { _ = try SyncWorkspace().merging(workspace) }
     }
@@ -137,28 +137,28 @@ struct LocalDataSettings: View {
         DisclosureGroup {
             VStack(alignment: .leading, spacing: 14) {
                 Text("\(store.chats.count) 段对话 · \(store.preferences.agents.count) 个Agent").font(.subheadline)
-                Text("可导出对话、Agent、项目、共享资料与来源记录。不包含模型密钥、原始附件、电脑文件与权限；这不是整机备份。").font(.caption).foregroundStyle(.secondary)
-                Button("导出可迁移资料") { do { document = LocalArchiveDocument(data: try store.exportLocalArchive()); exporting = true } catch { self.error = error.localizedDescription } }.disabled(store.anySending || store.syncing)
-                Button("导入资料文件") { importing = true }.disabled(store.anySending || store.syncing)
+                Text("可导出对话、Agent、项目、共享知识与来源记录。不包含模型密钥、原始附件、电脑文件与权限；这不是整机备份。").font(.caption).foregroundStyle(.secondary)
+                Button("导出可迁移数据") { do { document = LocalArchiveDocument(data: try store.exportLocalArchive()); exporting = true } catch { self.error = error.localizedDescription } }.disabled(store.anySending || store.syncing)
+                Button("导入数据文件") { importing = true }.disabled(store.anySending || store.syncing)
                 if let value = pending {
-                    Text("将合并 \(value.snapshot.chats.count) 段对话，保留当前资料与模型连接。").font(.caption)
-                    Button("确认合并") { do { try store.importLocalArchive(value); pending = nil; status = "资料已合并；冲突可在同步区域查看。" } catch { self.error = error.localizedDescription } }.disabled(store.anySending || store.syncing)
+                    Text("将合并 \(value.snapshot.chats.count) 段对话，保留当前知识与模型连接。").font(.caption)
+                    Button("确认合并") { do { try store.importLocalArchive(value); pending = nil; status = "数据已合并；冲突可在同步区域查看。" } catch { self.error = error.localizedDescription } }.disabled(store.anySending || store.syncing)
                     Button("取消") { pending = nil }
                 }
-                Button("清理网页临时缓存") { Task { await LocalDeviceServices.clearWebCache(); status = "网页临时缓存已清理，聊天与登录凭据保留。" } }
+                Button("清理网页临时缓存") { Task { await LocalDeviceServices.clearWebCache(); status = "网页临时缓存已清理，对话与登录凭据保留。" } }
                 if !status.isEmpty { Text(status).font(.caption).foregroundStyle(meloGold) }
             }.padding(.top, 16)
         } label: { Label("本机数据管理", systemImage: "externaldrive").font(.headline) }.meloPanel()
-        .fileExporter(isPresented: $exporting, document: document, contentType: .json, defaultFilename: "Melo-资料") { result in if case .failure(let e) = result { error = e.localizedDescription } }
+        .fileExporter(isPresented: $exporting, document: document, contentType: .json, defaultFilename: "Melo-知识") { result in if case .failure(let e) = result { error = e.localizedDescription } }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
             do {
                 let url = try result.get(), access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
-                guard (try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) <= 16 * 1024 * 1024 else { throw MeloError.message("资料文件超过 16 MB。") }
-                let data = try Data(contentsOf: url); guard data.count <= 16 * 1024 * 1024 else { throw MeloError.message("资料文件超过 16 MB。") }
+                guard (try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) <= 16 * 1024 * 1024 else { throw MeloError.message("数据文件超过 16 MB。") }
+                let data = try Data(contentsOf: url); guard data.count <= 16 * 1024 * 1024 else { throw MeloError.message("数据文件超过 16 MB。") }
                 let archive = try JSONDecoder().decode(PortableArchive.self, from: data); try archive.validate(); pending = archive
             } catch { self.error = error.localizedDescription }
         }
-        .alert("资料管理", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) { Button("好") { error = nil } } message: { Text(error ?? "") }
+        .alert("知识管理", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) { Button("好") { error = nil } } message: { Text(error ?? "") }
     }
 }
 

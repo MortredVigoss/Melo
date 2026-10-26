@@ -67,3 +67,30 @@ test('dirty settings across pages guard browser reload and native quit until sav
  second.failed(new Error('offline'));assert.equal(blocked(),true);second.cancel();assert.equal(blocked(),false);
  dom.window.close();
 });
+
+test('creation forms start editing, retain failed drafts, cancel and reopen, and have real submit controls',()=>{
+ const dom=new JSDOM('<main></main>'),doc=dom.window.document;let visible=true,cancelled=0;
+ const render=()=>{doc.querySelector('main').innerHTML=visible?'<form data-form="project-create"><input name="name" value=""><textarea name="summary"></textarea></form>':'';controls.decorate(doc);};
+ const controls=createSettingsFormEditors({render,onCancel(){cancelled++;visible=false;}});controls.install(doc);render();
+ const form=doc.querySelector('form'),input=form.querySelector('input');
+ assert.equal(input.disabled,false);assert.equal(form.querySelector('[type=submit]').disabled,true);
+ input.value='Keep draft';input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+ const key=controls.start(form);assert.equal(typeof key,'string');assert.equal(controls.start(form),false);
+ controls.finish(key,new Error('offline'));
+ assert.equal(doc.querySelector('input').value,'Keep draft');assert.equal(doc.querySelector('[type=submit]').disabled,false);
+ assert.match(doc.querySelector('[role=alert]').textContent,/offline/);
+ doc.querySelector('[data-action=form-settings-cancel]').click();assert.equal(cancelled,1);assert.equal(doc.querySelector('form'),null);
+ visible=true;render();assert.equal(doc.querySelector('input').disabled,false);assert.equal(doc.querySelector('input').value,'');
+ dom.window.close();
+});
+
+test('command forms isolate drafts by template and acknowledge submission without claiming completion',()=>{
+ const dom=new JSDOM('<main></main>'),doc=dom.window.document;
+ const render=()=>{doc.querySelector('main').innerHTML=['one','two'].map(id=>`<form data-form="command-run" data-template-id="${id}"><input name="query" value="${id}"></form>`).join('');controls.decorate(doc);};
+ const controls=createSettingsFormEditors({render,onCancel(){}});controls.install(doc);render();
+ const forms=doc.querySelectorAll('form');const one=controls.start(forms[0]),two=controls.start(forms[1]);assert.notEqual(one,two);
+ controls.finish(one);assert.match(doc.querySelector('form').textContent,/请求已提交/);
+ assert.doesNotMatch(doc.querySelector('form').textContent,/✓ 已保存/);
+ controls.finish(two,new Error('offline'));assert.match(doc.querySelectorAll('form')[1].textContent,/offline/);
+ controls.finish(two);dom.window.close();
+});

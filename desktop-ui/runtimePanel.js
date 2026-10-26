@@ -13,7 +13,7 @@ export function renderRuntimePanel(report, escapeHtml) {
       return ui`<article class="quality-status-card">
         <span>${escapeHtml(labels[row.id] ? t(labels[row.id]) : row.label || row.id)}</span>
         <strong class="runtime-status-${status}">${escapeHtml(t(states[status]))}</strong>
-        <small>${row.checkedAt ? escapeHtml(t('最近检查：{0}', { 0: formatTime(row.checkedAt, {style:'full'}) })) : t('暂无近期验证记录')}</small>
+        <small>${row.checkedAt ? escapeHtml(t('最近检查：{0}', { 0: formatTime(row.checkedAt, {style:'full'}) })) : t('还没有近期验证记录')}</small>
         <details class="quality-details"><summary>查看依据</summary>
           <p>${escapeHtml(row.reason || 'not-tested')}</p>
           <p>验证层级：${escapeHtml(row.level || 'storage')}</p>

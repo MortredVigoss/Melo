@@ -38,3 +38,36 @@ export function visualRgb(name) {
   const values=color?.match(/^rgba?\(([^)]+)\)/)?.[1].split(',').slice(0,3).map(v=>v.trim());
   return values?.join(',') || [1,3,5].map(offset=>parseInt(defaults[name].slice(offset,offset+2),16)).join(',');
 }
+
+const sceneDefaults = Object.freeze({
+  "neural-background": "#080807",
+  "neural-gold": "#d3a459",
+  "neural-clay": "#a97862",
+  "neural-slate": "#737779",
+  "neural-sand": "#b2a893",
+  "neural-light": "#edc786",
+  "neural-silver": "#91a0b3",
+  "neural-shadow": "#080b13",
+  "synapse-thread": "#76419d",
+  "synapse-branch": "#9a65d3",
+  "synapse-tint": "#a66ad7",
+  "atom-h": "#f0f0f0",
+  "atom-c": "#c4c4c4",
+  "atom-n": "#6bb0ff",
+  "atom-o": "#ff8080",
+  "atom-f": "#ffe06b",
+  "atom-cl": "#9be88a",
+  "atom-br": "#d8a272",
+  "atom-i": "#c18aff",
+  "atom-p": "#ffaa66",
+  "atom-s": "#ffe066",
+  "atom-alkali": "#c0c0ff",
+  "atom-fe": "#ff9a66",
+  "atom-mg": "#a3ff9e",
+  "atom-default": "#d0d0d0",
+  "diagram-point": "#fff7f3"
+});
+export function sceneColor(name) {
+  const authored = typeof document !== 'undefined' && typeof getComputedStyle === 'function' ? getComputedStyle(document.documentElement).getPropertyValue('--scene-'+name).trim() : '';
+  return authored || sceneDefaults[name];
+}

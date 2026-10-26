@@ -3,7 +3,7 @@
 // grants. Registered once by app.js through the action registry.
 import { t } from '../../i18n.js';
 import { approvalsState, resetApprovalsState } from './state.js';
-import { bindApprovalsContext, approvalsApi, app, render, bgRender, showFlashToast, refreshBootstrap, toolPermissions, setToolPermissions } from './context.js';
+import { bindApprovalsContext, approvalsApi, app, render, bgRender, notify, refreshBootstrap, toolPermissions, setToolPermissions } from './context.js';
 
 export const GRANTS_TTL_MS = 5000;
 
@@ -60,7 +60,7 @@ export async function respondCapabilityRequest(requestId, decision) {
     if (error.message === 'CAPABILITY_REQUEST_NOT_FOUND') {
       // Timed out, cancelled or answered elsewhere: nothing was granted.
       dropEntry(requestId);
-      showFlashToast(t('这个授权请求已经结束，没有保存任何授权。'));
+      notify({level:'success',text:t('这个授权请求已经结束，没有保存任何授权。')});
     } else {
       entry.error = (ERROR_TEXT[error.message] || (() => t('授权没有保存：{reason}', { reason: error.message })))();
     }
@@ -77,7 +77,7 @@ export async function revokeGrant(id) {
   try {
     await approvalsApi.revokeGrant(id);
     approvalsState.grants = approvalsState.grants.filter(grant => grant.id !== id);
-    showFlashToast(t('已撤销临时授权，下一次工具调用起生效。'));
+    notify({level:'success',text:t('已撤销临时授权，下一次工具调用起生效。')});
   } catch (error) {
     // Already expired / revoked elsewhere: the reload below shows the truth.
     approvalsState.grantsError = error.message === 'CAPABILITY_GRANT_NOT_FOUND' ? '' : t('撤销没有完成：{reason}', { reason: error.message });

@@ -1,4 +1,4 @@
-import { escapeHtml as encodeHtml } from '../../html.js';
+import { escapeHtml } from '../../i18n.js';
 // Tree renderer — SVG hierarchical layout with expand/collapse.
 //
 // Input spec shape (validated upstream in vizSpec.js):
@@ -128,17 +128,17 @@ function renderTreeSvg(byId, rootId, collapsed) {
     const isRoot = entry.depth === 0;
     const toggle =
       entry.hasChildren
-        ? `<g class="viz-tree-toggle" data-toggle-id="${escape(entry.id)}"
+        ? `<g class="viz-tree-toggle" data-toggle-id="${escapeHtml(entry.id)}"
              transform="translate(${entry.x}, ${y + entry.height + 6})">
              <circle r="7" />
              <text text-anchor="middle" dominant-baseline="central" dy="1">${entry.collapsed ? '+' : '−'}</text>
            </g>`
         : '';
     nodes.push(`
-      <g class="viz-tree-node ${isRoot ? 'is-root' : ''}" data-node-id="${escape(entry.id)}">
+      <g class="viz-tree-node ${isRoot ? 'is-root' : ''}" data-node-id="${escapeHtml(entry.id)}">
         <rect x="${x}" y="${y}" rx="8" ry="8" width="${entry.width}" height="${entry.height}" />
         <text x="${entry.x}" y="${entry.y}" text-anchor="middle" dominant-baseline="central">
-          ${escape(entry.label)}
+          ${escapeHtml(entry.label)}
         </text>
         ${toggle}
       </g>
@@ -161,7 +161,7 @@ function mountTree(host, spec) {
 
   function paint() {
     host.innerHTML = `
-      ${spec.title ? `<div class="viz-title">${escape(spec.title)}</div>` : ''}
+      ${spec.title ? `<div class="viz-title">${escapeHtml(spec.title)}</div>` : ''}
       <div class="viz-tree-scroll">
         ${renderTreeSvg(byId, rootId, collapsed)}
       </div>
@@ -203,8 +203,5 @@ function mountTree(host, spec) {
   };
 }
 
-function escape(str) {
-  return encodeHtml(str || '');
-}
 
 export default mountTree;

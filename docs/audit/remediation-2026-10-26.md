@@ -52,8 +52,17 @@ H2 的五个文件仅是来源相关性分词、检索词权重与频道昵称�
 
 地址 / 端口集中 localServices，原生壳只有一个启动回退。示例路径使用用户 Documents；桌宠素材导入必须 MELO_PET_SOURCE_DIR 或 --from，缺失在任何写入前失败，已存在资产与 lock 不变。七项行为开关及编辑保存取消已经存在，复用 config.behavior，不引入重复 advanced 键；补齐 docs/env-flags.md 和生产布尔变量完整性检查。专项 18/18，原生桌面壳编译通过（保留已有定位 API deprecation 警告，无编译错误）。首次快速档抓到 customize 新依赖的浏览器绝对路径不能由 Node 解析；修正为双环境相对引用并登记受限静态路由，专项 8/8。最终快速档 `.tmp/test-runs/run-rDYbH7/summary.json`、集成档 `.tmp/test-runs/run-6NFolE/summary.json` 均 GREEN：JS 4670/4670、两组浏览器、37 Swift、Android 四项，0 跳过/复测。设置浏览器实际检查环境覆盖锁定、保存失败保留草稿、重试、取消与重新加载持久化。证据 `.tmp/audit-batch-3/`；没有安装或调用真实付费供应商。
 
+## 批次 4：桌面 UI 与双端词条
+
+基准 `58158dd`，分支 `codex/audit-4-20261026`。通知统一 notify，错误条持续到关闭/成功并隔离页面；创建与动作表单复用 EditSession，错误上抛保留草稿，取消和请求确认保留真实语义。三种标题层级、四种普通操作按钮视觉变体；神经节点/选择卡片保留组件命中区，行为与布局 hooks 不算新的视觉设计。固定样式、单一转义和场景色同源后 H10/H13/H15=0，H14=5（hidden / reduced-motion）。
+
+真实浏览器和截图复查发现并修正导航节点多余边框、窄屏语言菜单层级、展开详情挤窄输入、发送按钮超出窗口、通知覆盖标题。场景按实际输入控件高度限高并内部滚动，保留可见对话。新增实际创建取消重开/503 失败草稿/重试/Enter、尺寸与无遮挡断言。五语、阅读密度、执行详情/滚动、设置交互均通过。
+
+U6 词条同步提前覆盖手机，个人资料、数据文件和会话令牌不误改成知识。此前手机门禁跳过全部插值，本批补齐 26 条五语格式并加入解析检查。H18 的 32 处是 SwiftUI 原生支持的插值或应原样显示的用户/模型文本，不转换为动态翻译键；规则保留固定 verbatim 文案与字体/颜色检测，实际字体 6 处留批次 5。专项 guard 10/10、文案与浏览器组合 15/15、场景尺寸 4/4。
+
+首次检查中的旧文案断言、data-URL 装载器、缺词条和过期 scene manifest 失败已保留并修正，没有删除断言或跳过。最终快速档 `.tmp/test-runs/run-buMgfk/summary.json` 与集成档 `.tmp/test-runs/run-0v2rP6/summary.json` 均 GREEN：4677 JS、设置浏览器、37 Swift、Android JVM/Lint/Debug/Release，0 跳过/隔离复测。证据 `.tmp/audit-batch-4/`；截图 `.tmp/language-20261015/`、`.tmp/chat-density-20261014/`。Codex 界面读取被工具拒绝，未绕过；按 Melo 现行黑金/紧凑 token 实施。扫描在工作树生成，inventory.commit 是生成时 HEAD，修复归属以本批提交为准。无安装/推送。
+
 ## 后续批次
 
-4. 桌面 UI：反馈、表单、标题 / 按钮 / 空状态 / 术语及样式 helper。
 5. iOS：主题 token、本地化及双端术语检测。
 6. 架构：J2 / J3 / J6 / J8 独立方案，随后按依赖验收。

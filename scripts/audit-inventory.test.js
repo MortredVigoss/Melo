@@ -32,7 +32,7 @@ async function fixture() {
   await put('desktop-ui/tokens.css', '--a: #ffffff;');
   await put('desktop-ui/panel.css', '.a { color: #000000 !important; }');
   await put('desktop-ui/translations.js', '["意图判断","Intent","意図","의도","Intención"],\n');
-  await put('ios/Melo/View.swift', 'Text(verbatim: name)\n    .font(.system(size: 13))');
+  await put('ios/Melo/View.swift', 'Text(verbatim: "未翻译")\nText(verbatim: name)\nText("\\(count) 条消息")\n    .font(.system(size: 13))');
   await put('scripts/tool.js', "const DEFAULT_SOURCE = '/Users/someone/project';");
   await put('docs/flags.md', 'MELO_DOCUMENTED_FLAG turns on the thing.');
   await put('shared/agent/completion.js', "if (String(reply).includes(row.url)) ok();");

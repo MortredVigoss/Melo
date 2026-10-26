@@ -1,4 +1,11 @@
-import { escapeHtml } from './html.js';
+export function escapeHtml(value = '') {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
 import { runtimeStageName as stageName, runtimeStageOutput as localizedStageOutput, runtimeCompletionText as localizedCompletionText } from '../shared/agent/runtimeMessages.js';
 import { translations } from './translations.js';
 import { LANGUAGES } from './interfaceLanguages.js';

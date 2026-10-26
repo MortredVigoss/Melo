@@ -10,7 +10,7 @@ struct RuntimeDiagnosticsView: View {
         NavigationStack {
             List {
                 Section {
-                    Text("用于对照退出或重开时的录屏，只记录最近 80 次启动、前后台和请求状态，不含聊天、图片、账号或密钥。系统不保证发出终止通知，记录缺失不能证明发生了崩溃。")
+                    Text("用于对照退出或重开时的录屏，只记录最近 80 次启动、前后台和请求状态，不含对话、图片、账号或密钥。系统不保证发出终止通知，记录缺失不能证明发生了崩溃。")
                         .font(.caption).foregroundStyle(.secondary)
                     if let error = RuntimeDiagnostics.journal.error { Text(error).foregroundStyle(.red) }
                     else if FileManager.default.fileExists(atPath: RuntimeDiagnostics.journal.file.path) {

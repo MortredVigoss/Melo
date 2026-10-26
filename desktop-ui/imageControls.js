@@ -1,4 +1,4 @@
-import { showFlashToast } from './feedback.js';
+import { notify } from './feedback.js';
 import { PROVIDER_DEFAULTS } from '../shared/agent/providerDefaults.js';
 import { t, ui } from './i18n.js';
 import { EditSession, renderEditActions, paintEditActions } from './settingsEdit.js';
@@ -50,7 +50,7 @@ const settingsFor = (config) => ({
 export function renderImageSettings(config) {
   const value = settingsDraft || settingsFor(config);
   return ui`<section class="surface-card image-settings"><h2 class="pane-title">图片能力</h2><p class="page-kicker">识图连接与图片生成服务独立选择。API 使用对应账户额度；没有权限或参数不支持时会报告失败。</p><div class="config-form">${renderEditActions(settingsEdit,{prefix:'image-settings'})}<fieldset class="settings-connection-fields" ${!settingsEdit.editing||busy?'disabled':''}>
-    <label class="label">视觉模型<select class="config-select" data-image-setting="visionProfileId">${opts([['', t("沿用当前聊天模型")], ...profiles(config)], value.visionProfileId)}</select></label>
+    <label class="label">视觉模型<select class="config-select" data-image-setting="visionProfileId">${opts([['', t("沿用当前对话模型")], ...profiles(config)], value.visionProfileId)}</select></label>
     <label class="label">图片生成服务<select class="config-select" data-image-setting="engine">${opts(
       [
         ['codex-oauth', 'ChatGPT / Codex OAuth'],
@@ -222,13 +222,13 @@ export async function handleImageAction(action, { config, attachments, api, rend
   if (action === 'image-mask' && draft) {
     if ((config.imageSettings?.engine || 'codex-oauth') !== 'openai-api') {
       status = '局部遮罩需要图像 API，请先在系统 → 模型中选择。';
-      showFlashToast(t(status), { kind:"error", ms:0 });
+      notify({level:'error',text:t(status)});
       render();
       return true;
     }
     const source = attachments.find((a) => a.kind === 'image');
     if (!source) {
-      showFlashToast(t("请先附加要修改的原图。"), { kind:"error", ms:0 });
+      notify({level:'error',text:t("请先附加要修改的原图。")});
       render();
       return true;
     }
@@ -251,7 +251,7 @@ async function drawMask(url) {
     const dialog = document.createElement('dialog');
     dialog.className = 'image-mask-dialog';
     dialog.innerHTML =
-      ui`<h3>涂抹要修改的区域</h3><p>粉色涂抹处会变成透明遮罩；第一张参考图作为编辑原图。</p><div class="image-mask-surface"></div><div class="inline-actions"><button data-mask-clear>清空</button><button data-mask-cancel>取消</button><button data-mask-save>使用遮罩</button></div>`;
+      ui`<h3 class="subsection-title">涂抹要修改的区域</h3><p>粉色涂抹处会变成透明遮罩；第一张参考图作为编辑原图。</p><div class="image-mask-surface"></div><div class="inline-actions"><button data-mask-clear>清空</button><button data-mask-cancel>取消</button><button data-mask-save>使用遮罩</button></div>`;
     const area = dialog.querySelector('.image-mask-surface');
     area.append(img);
     const overlay = document.createElement('canvas'),

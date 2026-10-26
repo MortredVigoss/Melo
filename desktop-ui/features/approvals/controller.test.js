@@ -36,7 +36,7 @@ function harness({ responses = {}, queue = [] } = {}) {
       return structuredClone(resolved ?? { ok: true });
     },
     render: () => { renders++; }, bgRender: () => { renders++; },
-    showFlashToast: message => toasts.push(message),
+    notify: ({text}) => toasts.push(text),
     refreshBootstrap: async () => { refreshes++; },
     toolPermissions: () => state.queue,
     setToolPermissions: list => { state.queue = list; },
@@ -149,7 +149,7 @@ test('«临时授权» loads once, lists per Agent with accessible revoke button
   let served = grants;
   const h = harness({ responses: { '/api/capability-grants': () => ({ ok: true, grants: served }), '/api/capability-grants/revoke': { ok: true } } });
   let root = mount(h.feature.renderGrantList());
-  assert.match(root.textContent, /目前没有临时授权/);
+  assert.match(root.textContent, /还没有临时授权/);
   await flush(); await flush();
   assert.deepEqual(h.calls.map(c => c[0]), ['/api/capability-grants']);
   mount(h.feature.renderGrantList());
@@ -169,7 +169,7 @@ test('«临时授权» loads once, lists per Agent with accessible revoke button
   assert.match(h.toasts[0], /已撤销临时授权/);
   assert.deepEqual(h.feature.getState().grants.map(g => g.id), ['cg_2']);
   const none = mount(h.feature.renderGrantList({ agentId: 'builder' }));
-  assert.match(none.textContent, /这个 Agent 目前没有临时授权/);
+  assert.match(none.textContent, /这个 Agent 还没有临时授权/);
 });
 
 test('the card follows the interface language', () => {

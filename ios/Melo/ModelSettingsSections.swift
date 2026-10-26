@@ -38,7 +38,7 @@ struct ModelSettingsSection: View {
             if authMode == "api" { LLMConnectionsView() }
             else {
                 Button { Task { await account.loadModels() } } label: { Label("刷新可用模型", systemImage: "arrow.clockwise") }.disabled(!account.signedIn || account.busy)
-                Text("实时检索取决于所选模型与账号权限；登录不会自动导入聊天记录。").font(.caption).foregroundStyle(.secondary)
+                Text("实时检索取决于所选模型与账号权限；登录不会自动导入对话记录。").font(.caption).foregroundStyle(.secondary)
             }
         }.textInputAutocapitalization(.never).autocorrectionDisabled().meloPanel()
     }

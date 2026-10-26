@@ -26,7 +26,7 @@ import { isRenderableViz } from '../../viz/vizRenderer.js';
 import { collectTeamPlan } from '../../teamPanel.js';
 import { streamApi } from './api.js';
 import { renderStreamingFast, patchLiveRunSteps } from './viewThread.js';
-import { bindChatContext, chatApi, getBootstrap, setBootstrap, app, render, bgRender, showError, applyBootstrap, applyBootstrapPreservingDrafts, refreshBootstrap, activeChat, isOverview, leaveOverview, newChatSelection, selectNewChatAgent, allChatAgentProfiles, closeModelPicker, toolPermissions, setToolPermissions, commandPaletteOpen, voiceLanguage, handleComposerCommand, handleSpeakMessage, handleDeleteChat, stopCurrentTts, _isTtsActive, _streamTtsStart, _streamTtsPushChunk, setStreamTtsBuffer, _streamTtsOnToolCall, _streamTtsReset, _streamTtsFlush, notifyLocalCompletion, shouldSendOnEnter, promoteTextUrlsToAttachments, receiveExecutionScene, cancelLiveScene, captureThreadAnchor, restoreThreadAnchor, truncate, icon } from './context.js';
+import { bindChatContext, chatApi, getBootstrap, setBootstrap, app, render, bgRender, notify, applyBootstrap, applyBootstrapPreservingDrafts, refreshBootstrap, activeChat, isOverview, leaveOverview, newChatSelection, selectNewChatAgent, allChatAgentProfiles, closeModelPicker, toolPermissions, setToolPermissions, commandPaletteOpen, voiceLanguage, handleComposerCommand, handleSpeakMessage, handleDeleteChat, stopCurrentTts, _isTtsActive, _streamTtsStart, _streamTtsPushChunk, setStreamTtsBuffer, _streamTtsOnToolCall, _streamTtsReset, _streamTtsFlush, notifyLocalCompletion, shouldSendOnEnter, promoteTextUrlsToAttachments, receiveExecutionScene, cancelLiveScene, captureThreadAnchor, restoreThreadAnchor, truncate, icon } from './context.js';
 import { chatState, resetChatState } from './state.js';
 
 // Binds the narrow context and starts from fresh feature state. app.js calls
@@ -390,13 +390,13 @@ async function queueComposerFiles(fileList) {
   for (const file of files) {
     const kind = detectAttachmentKindFromFile(file);
     if (!kind) {
-      showError(`${file.name} is not supported yet. Add images, video, audio, or PDF files here.`);
+      notify({level:'error',text:`${file.name} is not supported yet. Add images, video, audio, or PDF files here.`});
       continue;
     }
     // Photos up to 100 MB are sent as a bounded copy; videos up to 500 MB are uploaded as a file; other files keep 20 MB.
     const limit = kind === 'image' || kind === 'video' ? attachmentLimit(kind) : 20 * MB;
     if (file.size > limit) {
-      showError(t('{name} 超过 {limit} MB，未添加。', { name: file.name, limit: limit / MB }));
+      notify({level:'error',text:t('{name} 超过 {limit} MB，未添加。', { name: file.name, limit: limit / MB })});
       continue;
     }
     const copy = kind === 'image' ? await makeTransferCopy(file).catch(() => null) : null;
@@ -404,7 +404,7 @@ async function queueComposerFiles(fileList) {
     if (kind === 'video') {
       chatState.attachmentUploading = file.name; render();
       try { url = (await uploadVideoFile(file)).url; }
-      catch (error) { showError(t('{name} 上传失败：{reason}', { name: file.name, reason: error.message })); continue; }
+      catch (error) { notify({level:'error',text:t('{name} 上传失败：{reason}', { name: file.name, reason: error.message })}); continue; }
       finally { chatState.attachmentUploading = null; }
     }
     url ||= await readFileAsDataUrl(file);
@@ -429,7 +429,7 @@ async function queueComposerFiles(fileList) {
 function openComposerAttachmentPicker(accept) {
   const input = document.querySelector('#composer-attachment-input');
   if (!(input instanceof HTMLInputElement)) {
-    showError('Attachment picker is unavailable right now.');
+    notify({level:'error',text:'Attachment picker is unavailable right now.'});
     return;
   }
   chatState.composerAttachmentMenuOpen = false;
@@ -450,7 +450,7 @@ async function promptComposerLinkAttachment() {
     return;
   }
   if (!/^https?:\/\//i.test(url)) {
-    showError('Please paste a full http or https link.');
+    notify({level:'error',text:'Please paste a full http or https link.'});
     return;
   }
   // Reuse the same classifier as text-paste promotion so YouTube / audio /
@@ -849,7 +849,7 @@ async function handleSendMessage(prepared = null) {
       interrupted: error.code === 'REQUEST_INTERRUPTED' };
     restoreImageTask(imageTask);
     chatState.composerAttachmentMenuOpen = false;
-    showError(error.message);
+    notify({level:'error',text:error.message});
   } finally {
     chatState.sending = false;
     // Supplements the turn could not use are sent as the next message of the same chat.
@@ -1018,9 +1018,9 @@ export const chatActions = {
     const message = activeChat()?.messages?.find(m => m.id === trigger.dataset.messageId);
     const attachment = message?.attachments?.find(a => a.id === trigger.dataset.attachmentId);
     const entry = message && attachment ? videoExtraction(message, attachment) : null;
-    if (!entry) { showError(t('这段视频还没有处理结果。')); return; }
+    if (!entry) { notify({level:'error',text:t('这段视频还没有处理结果。')}); return; }
     try { applyBootstrap(await chatApi.saveArtifact({ ...videoKnowledgeNote(attachment, entry), projectId: activeChat()?.projectId || null })); (chatState.savedVideoKnowledge ||= {})[attachment.id] = true; render(); }
-    catch (error) { showError(error.message); }
+    catch (error) { notify({level:'error',text:error.message}); }
   },
   'thread-load-earlier': () => {
     // Long-thread render window: reveal the next 60 older messages. The
@@ -1093,9 +1093,9 @@ export const chatActions = {
   },
   'run-chat-team': async ({ trigger }) => {
     const chat=activeChat(), content=chatState.composer.trim();
-    if(!content) {showError(t('请先在输入框写下团队任务。'));return;}
+    if(!content) {notify({level:'error',text:t('请先在输入框写下团队任务。')});return;}
     const team=collectTeamPlan(trigger.closest('[data-team-scope]'));
-    if(team.error) {showError(t(team.error));return;}
+    if(team.error) {notify({level:'error',text:t(team.error)});return;}
     await handleSendMessage({chatId:chat?.id,content,teamPlan:team.plan});
   },
   'toggle-composer-attachment-menu': () => {
@@ -1187,7 +1187,7 @@ export function handleComposerInput(target) {
 }
 
 // 'change' listener branch for the composer's hidden file input, at its old
-// position inside the listener's try (errors still reach showError). Returns
+// position inside the listener's try (errors still reach notify). Returns
 // false or the pending upload, which the listener awaits.
 export function handleComposerFileChange(target) {
   if (target.id === 'composer-attachment-input') {
@@ -1245,7 +1245,7 @@ export async function handleComposerDrop(event) {
   try {
     await queueComposerFiles(event.dataTransfer?.files);
   } catch (error) {
-    showError(error.message);
+    notify({level:'error',text:error.message});
   }
 }
 

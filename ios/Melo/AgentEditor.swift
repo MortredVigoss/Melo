@@ -31,7 +31,7 @@ struct AgentEditor: View {
                     Label(LocalizedStringKey(statusText), systemImage: statusIcon)
                         .font(.subheadline.weight(.medium)).foregroundStyle(statusColor)
                         .accessibilityIdentifier("role.status")
-                    if WorkspaceProjection.pending(store.preferences).contains("agent:" + session.draft.id) { Text("此 Agent 的新版人设尚未同步。全文已保留在本机，其他聊天继续同步。").font(.caption).foregroundStyle(.orange) }
+                    if WorkspaceProjection.pending(store.preferences).contains("agent:" + session.draft.id) { Text("此 Agent 的新版人设尚未同步。全文已保留在本机，其他对话继续同步。").font(.caption).foregroundStyle(.orange) }
                     if let error = session.error { Text(error).font(.caption).foregroundStyle(.red) }
                     if session.hasConflict {
                         if let current {

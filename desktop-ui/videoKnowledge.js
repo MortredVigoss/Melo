@@ -12,7 +12,7 @@ export function videoKnowledgeNote(attachment, entry) {
   const meta = entry?.metadata || {};
   const times = Array.isArray(meta.keyframeTimes) ? meta.keyframeTimes : [];
   const transcript = String(entry?.text || '').trim();
-  const lines = [`# 视频资料：${name}`, ''];
+  const lines = [`# 视频知识：${name}`, ''];
   if (times.length) lines.push(`- 关键画面：${times.length} 张，时间点 ${times.map(clock).join('、')}`);
   lines.push(`- 文字稿来源：${meta.source === 'video-keyframes-only' ? '无可识别语音' : '视频语音转写'}`, '');
   lines.push('## 文字稿', '', meta.source === 'video-keyframes-only' || !transcript ? '（这段视频没有可识别的语音。）' : transcript);

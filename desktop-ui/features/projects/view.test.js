@@ -14,7 +14,7 @@ function install(bootstrap = {}, overrides = {}) {
   return installProjectsFeature({
     getBootstrap: () => bootstrap,
     api: async () => { throw new Error('no request expected'); },
-    render() {}, showError() {}, patchSettings: async () => {}, applyBootstrap() {}, applyBootstrapPreservingDrafts() {},
+    render() {}, notify() {}, patchSettings: async () => {}, applyBootstrap() {}, applyBootstrapPreservingDrafts() {},
     startProjectSession: async () => {},
     activeProject: () => bootstrap.activeProject || null,
     activeProjectChats: () => [], activeProjectArtifacts: () => [],

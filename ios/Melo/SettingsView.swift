@@ -31,15 +31,15 @@ struct SettingsContent: View {
                 ModelSettingsSection()
                 VStack(alignment: .leading, spacing: 16) {
                     HStack { Label("数据与同步", systemImage: "arrow.triangle.2.circlepath").font(.headline); Spacer(); Text("\(store.chats.count) 段对话").font(.caption).foregroundStyle(meloGold) }
-                    if !WorkspaceProjection.pending(store.preferences).isEmpty { Text("部分 Agent 人设或关联配置尚未同步：旧版协议无法无损表示。全文已保留在本机，其他聊天继续同步。").font(.caption).foregroundStyle(.orange) }
+                    if !WorkspaceProjection.pending(store.preferences).isEmpty { Text("部分 Agent 人设或关联配置尚未同步：旧版协议无法无损表示。全文已保留在本机，其他对话继续同步。").font(.caption).foregroundStyle(.orange) }
                     Group {
-                        if store.syncStatus == "聊天已同步 · 部分 Agent 人设或关联配置待同步，全文保留在本机" { Text("聊天已同步 · 部分 Agent 人设或关联配置待同步，全文保留在本机") }
+                        if store.syncStatus == "对话已同步 · 部分 Agent 人设或关联配置待同步，全文保留在本机" { Text("对话已同步 · 部分 Agent 人设或关联配置待同步，全文保留在本机") }
                         else { Text(store.syncStatus) }
                     }.font(.subheadline).foregroundStyle(.secondary)
                     DisclosureGroup("同步服务配置") {
                         SyncSettingsSection()
                     }.font(.subheadline)
-                    Text("同步对话、Agent头像、项目与共享资料、对话模型选择、来源记录和任务检查点。Agent 能力范围单独同步；密钥、电脑路径和具体文件授权保存在本机；需配置支持上下文同步的私人服务。").font(.caption).foregroundStyle(MeloTheme.muted)
+                    Text("同步对话、Agent头像、项目与共享知识、对话模型选择、来源记录和任务检查点。Agent 能力范围单独同步；密钥、电脑路径和具体文件授权保存在本机；需配置支持上下文同步的私人服务。").font(.caption).foregroundStyle(MeloTheme.muted)
                     ForEach(store.preferences.personaRecoveries ?? []) { recovery in
                         DisclosureGroup("本机人设恢复副本") {
                             Text(recovery.key + " · " + recovery.createdAt).font(.caption)

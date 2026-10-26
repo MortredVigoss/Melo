@@ -24,7 +24,7 @@ function harness({ responses = {}, activeProject = { id: 'P' }, onRender = null 
     if (value instanceof Error) throw value;
     return typeof value === 'function' ? value(path, options) : structuredClone(value);
   };
-  const context = { api, render: () => { renders++; onRender?.(); }, bgRender: () => { renders++; onRender?.(); }, showError: message => errors.push(message), activeProject: () => activeProject, escapeHtml: value => String(value ?? '') };
+  const context = { api, render: () => { renders++; onRender?.(); }, bgRender: () => { renders++; onRender?.(); }, notify: ({text}) => errors.push(text), activeProject: () => activeProject, escapeHtml: value => String(value ?? '') };
   const feature = installMemoryFeature(context);
   const actions = createActionRegistry('action');
   actions.register(feature.actions, 'memory');
@@ -36,9 +36,9 @@ const element = html => { const host = document.createElement('div'); host.inner
 const click = (h, action, html) => h.actions.dispatch(action, { action, trigger: html ? element(html) : null, event: null });
 
 test('the memory feature owns its state and refuses a context carrying uiState', async () => {
-  const base = { api: async () => ({}), render() {}, bgRender() {}, showError() {}, activeProject: () => null, escapeHtml: String };
+  const base = { api: async () => ({}), render() {}, bgRender() {}, notify() {}, activeProject: () => null, escapeHtml: String };
   assert.throws(() => installMemoryFeature({ ...base, uiState: {} }), /not uiState/);
-  assert.throws(() => installMemoryFeature({ api: base.api }), /missing context render, bgRender, showError, activeProject, escapeHtml/);
+  assert.throws(() => installMemoryFeature({ api: base.api }), /missing context render, bgRender, notify, activeProject, escapeHtml/);
   const first = harness();
   await click(first, 'memory-wipe-open', '<button data-action="memory-wipe-open"></button>');
   const firstState = first.feature.getState();
@@ -158,10 +158,10 @@ test('手写一条: a failed save keeps the text and its draft; another project\
   const text = form.querySelector('textarea');
   text.value = 'Keep me';
   failing.feature.handleInput(text);
-  await failing.forms.dispatch('project-book-create', { form });
+  await assert.rejects(failing.forms.dispatch('project-book-create', { form }), /offline/);
   assert.equal(text.value, 'Keep me');
   assert.deepEqual(failing.feature.getState().projectBookDraft, { text: 'Keep me', projectId: 'P' });
-  assert.deepEqual(failing.errors, ['offline']);
+  assert.deepEqual(failing.errors, [], 'the form owner handles the rejected save');
   // The save resolves after the same form element was re-rendered for project Q.
   let release;
   const slow = harness({ responses: { '/api/projects/memory-book?': { records: [] }, '/api/projects/memory-book': () => new Promise(resolve => { release = resolve; }) } });

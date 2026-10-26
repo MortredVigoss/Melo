@@ -1,6 +1,5 @@
-import { escapeHtml } from './html.js';
+import { escapeHtml } from './i18n.js';
 import { t, ui } from './i18n.js';
-const escape = value => escapeHtml(value ?? '');
 
 const pendingEdits = new Set();
 export const hasUnsavedSettings = () => pendingEdits.size > 0;
@@ -26,11 +25,11 @@ export class EditSession {
   failed(error) { pendingEdits.add(this); this.status = 'error'; this.dirty = true; this.error = error?.message || String(error || '保存失败，请重试'); }
 }
 
-export function renderEditActions(session, {prefix='settings', key='', submit=false, disabled=false, saveDisabled=false}={}) {
+export function renderEditActions(session, {prefix='settings', key='', submit=false, disabled=false, saveDisabled=false, saveLabel='', successLabel=''}={}) {
   const s = session.status, editing = session.editing || s === 'saving';
-  const message = s === 'saved' ? t("✓ 已保存") : s === 'saving' ? t("正在保存，请稍候…") : s === 'error' ? `${session.appliedLabels?.length ? t("部分已保存，剩余保存失败") : t("保存失败")}：${session.error}` : session.dirty ? t("有未保存的修改") : editing ? t("编辑中 · 修改后点击保存") : t("只读 · 点击编辑后修改");
-  const common = `data-edit-key="${escape(key)}"`;
-  return ui`<div class="settings-edit-toolbar" data-edit-status="${s}"><span class="settings-save-status" role="${s==='error'?'alert':'status'}" aria-live="polite">${escape(message)}</span><div class="inline-actions">${editing ? ui`<button type="${submit?'submit':'button'}" class="small-button settings-save-button" data-action="${prefix}-save" ${common} ${disabled||saveDisabled||s==='saving'||!session.dirty?'disabled':''}>${s==='saving'?t("保存中…"):s==='error'?t("重试保存"):t("保存修改")}</button><button type="button" class="small-button" data-action="${prefix}-cancel" ${common} ${disabled||s==='saving'?'disabled':''}>${session.appliedLabels?.length ? t("放弃未保存部分") : t("取消")}</button>` : ui`<button type="button" class="small-button settings-edit-button" data-action="${prefix}-edit" ${common} ${disabled?'disabled':''}>编辑 / 修改</button>`}</div></div>`;
+  const message = s === 'saved' ? (successLabel || t("✓ 已保存")) : s === 'saving' ? t("正在保存，请稍候…") : s === 'error' ? `${session.appliedLabels?.length ? t("部分已保存，剩余保存失败") : t("保存失败")}：${session.error}` : session.dirty ? t("有未保存的修改") : editing ? t("编辑中 · 修改后点击保存") : t("只读 · 点击编辑后修改");
+  const common = `data-edit-key="${escapeHtml(key)}"`;
+  return ui`<div class="settings-edit-toolbar" data-edit-status="${s}"><span class="settings-save-status" role="${s==='error'?'alert':'status'}" aria-live="polite">${escapeHtml(message)}</span><div class="inline-actions">${editing ? ui`<button type="${submit?'submit':'button'}" class="small-button settings-save-button button-primary" data-action="${prefix}-save" ${common} ${disabled||saveDisabled||s==='saving'||!session.dirty?'disabled':''}>${s==='saving'?t("保存中…"):s==='error'?t("重试保存"):(saveLabel || t("保存修改"))}</button><button type="button" class="small-button button-secondary" data-action="${prefix}-cancel" ${common} ${disabled||s==='saving'?'disabled':''}>${session.appliedLabels?.length ? t("放弃未保存部分") : t("取消")}</button>` : ui`<button type="button" class="small-button settings-edit-button button-secondary" data-action="${prefix}-edit" ${common} ${disabled?'disabled':''}>编辑 / 修改</button>`}</div></div>`;
 }
 
 // Keep the save button mounted while a field's blur/change event fires.
@@ -53,14 +52,21 @@ export function paintEditActions(bar, session, options={}) {
 export function createSettingsFormEditors({render, onCancel, scope=()=>'', ownsDraft=()=>false}) {
   const sessions = new Map();
   const drafts = new Map();
-  const selector = ['agent-profile-update','connector-config','model-config','default-model-config','skill-custom-update','project-update','task-pricing'].map(t=>`form[data-form="${t}"]`).join(',');
+  const createForms = new Set(['artifact-create','artifact-update','task-create','file-save','command-run','skill-custom-create','project-create','project-book-create']);
+  let mounted = new Set();
+  const labels = {'artifact-create':'保存知识','task-create':'创建任务','file-save':'排队保存','command-run':'排队运行','skill-custom-create':'创建技能','project-create':'创建项目','project-book-create':'写入记忆本'};
+  const actionOptions = form => ({prefix:'form-settings',key:keyFor(form),submit:true,saveLabel:labels[form.dataset.form]?t(labels[form.dataset.form]):'',successLabel:['file-save','command-run'].includes(form.dataset.form)?t('请求已提交'):''});
+  const selector = [...createForms,'agent-profile-update','connector-config','model-config','default-model-config','skill-custom-update','project-update','task-pricing'].map(t=>`form[data-form="${t}"]`).join(',');
   const savedActions = new Set(['test-agent-channel','confirm-agent-settings']);
   const safeActions = new Set(['select-agent-editor-tab','switch-agent-channel-tab','toggle-agent-secret']);
-  const keyFor = form => `${form.dataset.form}:${form.dataset.agentId || form.dataset.skillId || form.dataset.projectId || ''}:${scope(form)}`;
+  const keyFor = form => `${form.dataset.form}:${form.dataset.agentId || form.dataset.skillId || form.dataset.projectId || form.dataset.artifactId || form.dataset.templateId || form.dataset.filePath || ''}:${scope(form)}`;
   const get = key => { if(!sessions.has(key)) sessions.set(key,new EditSession()); return sessions.get(key); };
   function decorate(root) {
+    const current = new Set();
     for (const form of root.querySelectorAll(selector)) {
       const key = keyFor(form), session = get(key);
+      current.add(key);
+      if (createForms.has(form.dataset.form) && !mounted.has(key) && !session.dirty && session.status!=='saving') { session.begin(); if(form.dataset.form==='command-run') session.change(); }
       form.dataset.settingsManaged = key;
       const draft=drafts.get(key);
       if(draft) for(const control of form.querySelectorAll('input[name],textarea[name],select[name]')) {
@@ -77,10 +83,11 @@ export function createSettingsFormEditors({render, onCancel, scope=()=>'', ownsD
         if(control.tagName==='BUTTON' && control.type==='submit') control.hidden = true;
       }
       let bar = form.querySelector(':scope > .settings-edit-toolbar');
-      const html = renderEditActions(session,{prefix:'form-settings',key,submit:true});
+      const html = renderEditActions(session,actionOptions(form));
       if(bar) bar.outerHTML=html; else form.insertAdjacentHTML('afterbegin',html);
       for(const external of root.querySelectorAll('[data-action="submit-agent-profile"]')) if(external.dataset.formId===form.id) external.hidden=true;
     }
+    mounted = current;
   }
   function changed(event) {
     const form=event.target.closest?.(selector); if(!form) return;
@@ -98,7 +105,7 @@ export function createSettingsFormEditors({render, onCancel, scope=()=>'', ownsD
     }
     // Update only the status controls; don't replace the input or move its caret.
     const bar=form.querySelector(':scope > .settings-edit-toolbar');
-    paintEditActions(bar,session,{prefix:'form-settings',key:keyFor(form),submit:true});
+    paintEditActions(bar,session,actionOptions(form));
   }
   function install(doc) {
     doc.addEventListener('input',changed,true); doc.addEventListener('change',changed,true);

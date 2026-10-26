@@ -24,6 +24,7 @@ export function installProjectsFeature(context) {
     // 'change': project default Agent. Returns false or the pending save.
     handleChange: handleProjectsChange,
     renderPage: renderProjectsPage,
+    cancelCreateForm() { projectsState.showProjectForm=false; projectsState.draftProject={name:'',tag:'',summary:'',instructions:'',workspacePath:''}; },
     getState: () => projectsState,
   };
 }

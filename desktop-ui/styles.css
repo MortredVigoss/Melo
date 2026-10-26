@@ -1884,7 +1884,7 @@ select option {
   background: var(--palette-cd1577e9e4);
 }
 
-.card-title {
+:is(.pane-title,.subsection-title) {
   font-size: var(--font-size-22px);
   font-family: var(--serif-font);
   margin: 0 0 10px;
@@ -2147,7 +2147,7 @@ select option {
   margin-bottom: 18px;
 }
 
-.artifact-mini-card .card-title {
+.artifact-mini-card :is(.pane-title,.subsection-title) {
   font-size: var(--font-size-20px);
 }
 
@@ -3051,8 +3051,8 @@ select option {
 }
 
 
-.page-kicker-tip {
-  margin-top: 6px !important;
+.page-kicker.page-kicker-tip {
+  margin-top: 6px ;
   font-size: var(--font-size-12px);
   color: var(--text-muted);
   display: flex;
@@ -3837,7 +3837,7 @@ select option {
 .quality-details { margin: 12px 0; padding: 12px 0; border-top: 1px solid var(--palette-5a4bb00860); overflow-wrap: anywhere; }
 .quality-details > summary { cursor: pointer; font-size: var(--font-size-13px); opacity: .82; padding: 5px 0; }
 .quality-details[open] > summary { margin-bottom: 12px; }
-.permission-actions .page-kicker-tip { flex-basis: 100%; line-height: 1.7; }
+.permission-actions .page-kicker.page-kicker-tip { flex-basis: 100%; line-height: 1.7; }
 
 /* Image controls share the task-space glass and gold language. */
 .image-task-options { margin: 5px 0; font-size: var(--font-size-12px); }
@@ -3853,7 +3853,7 @@ select option {
 .image-reference-row details { width:100%; }
 .image-reference-row details[open] { display:flex; flex-wrap:wrap; gap:5px; }
 .image-reference-row details label { display:inline-flex; margin:5px 6px 0 0; }
-.image-reference-row details input { width:55px!important; }
+.image-reference-row details input { width:55px; }
 .image-settings { padding:22px; margin-bottom:20px; }
 .image-settings > .page-kicker { font-size:var(--font-size-13px); }
 .image-settings .config-form { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; max-width:760px; }
@@ -3876,7 +3876,7 @@ select option {
 .reply-table { border-collapse:collapse; min-width:100%; font-size:var(--font-size-14px); }
 .reply-table :is(th,td) { padding:8px 12px; text-align:left; vertical-align:top; border-bottom:1px solid var(--palette-93f7c33522); }
 .reply-table th { color:var(--palette-1799bc4125); font-size:var(--font-size-12px); font-weight:500; background:var(--palette-5ebb8bd130); }
-.reply-heading { font-weight:600; margin-top:14px!important; }
+.message-content .reply-heading { font-weight:600; margin-top:14px; }
 .reply-list-item { display:flex; gap:10px; align-items:baseline; }
 .reply-list-item > span { color:var(--palette-99dfd7800c); }
 .reply-list-item p { margin:5px 0; }

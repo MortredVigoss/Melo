@@ -5,7 +5,7 @@ import { installMemoryFeature } from './index.js';
 
 // Behaviour versions of the former app.js source guards (memoryPane.source.test.js).
 const context = (overrides = {}) => ({
-  api: async () => ({}), render() {}, bgRender() {}, showError() {}, activeProject: () => null,
+  api: async () => ({}), render() {}, bgRender() {}, notify() {}, activeProject: () => null,
   escapeHtml: value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])),
   ...overrides,
 });

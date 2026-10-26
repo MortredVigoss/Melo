@@ -1,3 +1,4 @@
+import { sceneColor } from '../../../src/shared/visualTokens.js';
 // Interactive geometry renderer. Supports two shapes:
 //   - triangle: params a, b, c are side lengths → compute apex via law of cosines
 //   - circle:   param r is radius, draws circle + radius line
@@ -77,7 +78,7 @@ function renderTriangle(host, params, title, formula) {
         ${points
           .map(
             (p, i) => `
-              <circle cx="${p.x}" cy="${p.y}" r="4" fill="#fff7f3" />
+              <circle cx="${p.x}" cy="${p.y}" r="4" fill="${sceneColor('diagram-point')}" />
               <text x="${p.x + 7}" y="${p.y - 7}" font-size="11" fill="rgba(255,255,255,0.75)">${escapeAttr(
               ['A', 'B', 'C'][i],
             )}</text>
@@ -110,7 +111,7 @@ function renderCircle(host, params, title, formula) {
     <svg viewBox="0 0 ${WIDTH} ${HEIGHT}" class="viz-geometry-svg">
       <circle cx="${cx}" cy="${cy}" r="${visR}" fill="rgba(246,90,96,0.15)" stroke="rgba(255,180,140,0.8)" stroke-width="1.8" />
       <line x1="${cx}" y1="${cy}" x2="${cx + visR}" y2="${cy}" stroke="rgba(255,255,255,0.7)" stroke-width="1.5" />
-      <circle cx="${cx}" cy="${cy}" r="3" fill="#fff7f3" />
+      <circle cx="${cx}" cy="${cy}" r="3" fill="${sceneColor('diagram-point')}" />
       <text x="${cx + visR / 2}" y="${cy - 6}" font-size="11" fill="rgba(255,255,255,0.8)" text-anchor="middle">r = ${r.toFixed(2)}</text>
     </svg>
     <div class="viz-readout">Area = π·r² = ${area.toFixed(2)}  ·  Circumference = 2π·r = ${circ.toFixed(2)}</div>

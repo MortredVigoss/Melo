@@ -25,6 +25,8 @@ export function positionNeuralWorkspace(root){
  rail.inert=layout.home;
  if(layout.detail){const [x,y,w,h]=layout.panel;Object.assign(panel.style,{left:`${x}px`,top:`${y}px`,width:`${w}px`,height:`${h}px`});}
  else Object.assign(panel.style,{left:layout.home?'50%':`${layout.branch[0]+layout.branch[2]+(width-layout.branch[0]-layout.branch[2])/2}px`,top:layout.home?'auto':'50%',width:layout.home?`${overviewDockWidth(width)}px`:`${Math.min(420,Math.max(180,width-layout.branch[0]-layout.branch[2]-72))}px`,height:'auto'});
+ if(width<=600 && stage==='detail')Object.assign(panel.style,{left:'80px',width:`${width-92}px`});
+ if(width<=600 && stage==='module')rail.style.width=`${width-125}px`;
  root.classList.toggle('is-compact',layout.compact);
 }
 export function animateNeuralLayout(before,still=false){

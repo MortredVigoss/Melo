@@ -1,3 +1,4 @@
+import { sceneColor } from '../../../src/shared/visualTokens.js';
 // Spring-mass oscillator renderer.
 // Params: k (spring constant N/m), m (mass kg), x0 (initial displacement m)
 import {
@@ -89,7 +90,7 @@ export default function mountSpring(host, spec) {
     drawSpring(ctx, WALL_X, boxX, CENTER_Y, 8);
 
     // Mass box.
-    ctx.fillStyle = '#fff7f3';
+    ctx.fillStyle = sceneColor('diagram-point');
     ctx.shadowColor = 'rgba(246,90,96,0.6)';
     ctx.shadowBlur = 12;
     ctx.fillRect(boxX, CENTER_Y - BOX_H / 2, BOX_W, BOX_H);

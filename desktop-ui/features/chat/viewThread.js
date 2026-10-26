@@ -281,7 +281,7 @@ function renderThreadArtifactStrip(artifacts) {
                     artifact.language || artifact.kind,
                   )}</span>
                 </div>
-                <h3 class="card-title">${escapeHtml(artifact.title)}</h3>
+                <h3 class="subsection-title">${escapeHtml(artifact.title)}</h3>
                 <p class="card-summary">${escapeHtml(truncate(artifact.content, 140))}</p>
               </button>
             `,
@@ -298,7 +298,7 @@ function renderRegularChatPage() {
   const chatAgent = conversationAgent(getBootstrap(), { newAgentId: newChatSelection().agentId, newProjectId: newChatSelection().projectId });
 
   if (!chat) {
-    return ui`<section class="page is-chat neural-chat-home"><div class="neural-chat-intro"><div class="neural-overview-kicker">A NEW CONNECTION</div><h1>此刻，你在想什么？</h1><p>与 Melo 一起，把想法延伸下去。</p></div>${renderComposerCard()}</section>`;
+    return ui`<section class="page is-chat neural-chat-home"><div class="neural-chat-intro"><div class="neural-overview-kicker">A NEW CONNECTION</div><h1 class="page-title">此刻，你在想什么？</h1><p>与 Melo 一起，把想法延伸下去。</p></div>${renderComposerCard()}</section>`;
   }
 
   return ui`

@@ -8,7 +8,7 @@
 const TOOL_NAMES = {
   file_read: '读取文件', file_write: '写入文件', file_edit: '修改文件', file_delete: '删除文件', file_move: '移动文件', file_mkdir: '新建文件夹',
   bash: '运行命令', glob: '查找文件', grep: '搜索代码', web_search: '联网搜索', native_web_search: '联网搜索', fetch_url: '读取网页', web_screenshot: '网页截图',
-  image: '生成图片', image_edit: '修改图片', delegate: '交给其他 Agent', search_history: '查找聊天记录',
+  image: '生成图片', image_edit: '修改图片', delegate: '交给其他 Agent', search_history: '查找对话记录',
 };
 const oneLine = value => String(value || '').replace(/\s+/g, ' ').trim().slice(0, 90);
 

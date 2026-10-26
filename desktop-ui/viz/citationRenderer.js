@@ -1,4 +1,4 @@
-import { escapeHtml as encodeHtml } from '../html.js';
+import { escapeHtml as encodeHtml } from '../i18n.js';
 import { ui } from '../i18n.js';
 // ─── Citation renderer + side drawer ────────────────────────────────────────
 // Companion to vizRenderer.js. Handles the NotebookLM-style feature where the

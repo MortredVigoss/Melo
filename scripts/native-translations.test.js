@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
 import { translations } from '../desktop-ui/translations.js';
 import { nativeTranslations } from '../ios/native-translations.js';
+import { swiftUIStrings, catalogKeysForFormat } from './testSupport/swift-ui-copy.mjs';
 
 test('native authored static controls have five-language catalog coverage', async()=>{
   const native=JSON.parse(await readFile(new URL('../ios/Melo/Localizable.xcstrings',import.meta.url)));
@@ -19,13 +20,23 @@ test('native authored static controls have five-language catalog coverage', asyn
     if(!file.endsWith('.swift')||file.includes('Verification'))continue;
     const source=await readFile(new URL('../ios/Melo/'+file,import.meta.url),'utf8');
     if(!source.includes('import SwiftUI'))continue;
-    // Static authored labels only. Interpolated formats and user-derived strings
-    // need explicit review; never turn arbitrary model output into a catalog key.
-    for(const match of source.matchAll(/\b(?:Text|Button|Label|Section|TextField|SecureField|Toggle|Picker|PhotosPicker|NavigationLink|ContentUnavailableView|DisclosureGroup|navigationTitle|accessibilityLabel|alert|confirmationDialog)\(\s*"((?:\\.|[^"\\])*)"/g)) {
-      const key=match[1];
-      if(/[\u3400-\u9fff]/.test(key)&&!key.includes('\\(')&&!native.strings[key])missing.push(`${file}: ${key}`);
+    // SwiftUI localizes literal interpolation. Require its format in the
+    // catalog too, while leaving arbitrary user/model Text(value) opaque.
+    for(const format of swiftUIStrings(source)) {
+      if(!/[\u3400-\u9fff]/.test(format.parts.join('')))continue;
+      const keys=format.expressions.length ? catalogKeysForFormat(format,Object.keys(native.strings)) : native.strings[format.literal] ? [format.literal] : [];
+      if(keys.length!==1)missing.push(`${file}: ${format.literal}`);
+      for(const key of keys) for(const language of ['zh-Hans','en','ja','ko','es']) assert.ok(native.strings[key].localizations[language]?.stringUnit.value,`${language}: ${key}`);
     }
   }
   assert.deepEqual(missing,[]);
-  for(const key of ['图片模式','生成图片','修改图片','看图分析','主体','项目与资料%@','照片','一句话介绍','Agent详情','创建Agent','查看模式 · 点编辑后修改','未保存 · 请处理后重试','不同Agent，同样默契。','为每一种工作，选择合适的思考方式。','查看%@','与%@对话','此 Agent 的新版人设尚未同步。全文已保留在本机，其他聊天继续同步。'])assert.ok(native.strings[key].localizations.en.stringUnit.value);
+  for(const key of ['图片模式','生成图片','修改图片','看图分析','主体','项目与知识%@','照片','一句话介绍','Agent详情','创建Agent','查看模式 · 点编辑后修改','未保存 · 请处理后重试','不同Agent，同样默契。','为每一种工作，选择合适的思考方式。','查看%@','与%@对话','此 Agent 的新版人设尚未同步。全文已保留在本机，其他对话继续同步。'])assert.ok(native.strings[key].localizations.en.stringUnit.value);
+});
+
+test('SwiftUI format guard handles nested expressions and rejects a missing translation',()=>{
+  const [format]=swiftUIStrings(String.raw`Text("项目 \(store.project(for: id).name) · \(ready ? "已完成" : "等待")")`);
+  assert.deepEqual(format.parts,['项目 ',' · ','']);
+  assert.deepEqual(catalogKeysForFormat(format,['项目 %@ · %@']),['项目 %@ · %@']);
+  assert.deepEqual(catalogKeysForFormat(format,['项目 %@']),[]);
+  assert.deepEqual(swiftUIStrings('Text(verbatim: modelOutput)\nText(user.name)'),[]);
 });

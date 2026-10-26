@@ -1,10 +1,9 @@
-import { escapeHtml } from './html.js';
+import { escapeHtml } from './i18n.js';
 import { t, ui } from './i18n.js';
 import { EditSession, renderEditActions, paintEditActions } from './settingsEdit.js';
 import { modelLabel } from './modelPresentation.js';
 const session = new EditSession();
 let draft = null, busy = false, message = '', conflict = false, dragged = null;
-const escape = value => escapeHtml(value ?? '');
 const defaults = { revision:0, defaultMode:'fixed', preference:'balanced', allowCrossConnection:false, allowEscalation:true, tiers:{ light:[], standard:[], strong:[] }, candidates:[] };
 const valueOf = config => config.smartRouting || defaults;
 const copy = saved => JSON.parse(JSON.stringify({ ...defaults, ...saved }));
@@ -51,7 +50,7 @@ export function renderSmartRouting(config) {
     ${renderEditActions(session,{prefix:'smart-routing',disabled:busy,saveDisabled:conflict})}
     ${conflict?ui`<button type="button" data-action="smart-routing-rebase">载入最新版本并保留我的选择</button>`:''}
     <div class="config-form"><label class="label">默认模式<select name="defaultMode" ${disabled}><option value="fixed" ${draft.defaultMode==='fixed'?'selected':''}>固定模型</option><option value="smart" ${draft.defaultMode==='smart'?'selected':''}>智能（自动）</option></select></label>
-    <label class="label">选择偏好<select name="preference" ${disabled}>${[['cost','节省成本'],['balanced','均衡'],['quality','质量优先']].map(([v,n])=>`<option value="${v}" ${draft.preference===v?'selected':''}>${escape(t(n))}</option>`).join('')}</select></label></div>
+    <label class="label">选择偏好<select name="preference" ${disabled}>${[['cost','节省成本'],['balanced','均衡'],['quality','质量优先']].map(([v,n])=>`<option value="${v}" ${draft.preference===v?'selected':''}>${escapeHtml(t(n))}</option>`).join('')}</select></label></div>
     <p class="list-row-meta">Agent 已指定固定模型时，智能模式沿用该模型。只配置一个可用模型时等同固定模型，不额外请求判断。</p>
     <label class="list-row-meta"><input type="checkbox" name="allowCrossConnection" ${draft.allowCrossConnection?'checked':''} ${disabled}> 允许智能模式向其他已保存连接发送内容</label>
     <label class="list-row-meta"><input type="checkbox" name="allowEscalation" ${draft.allowEscalation?'checked':''} ${disabled}> 允许本轮任务最多升档一次</label>
@@ -61,8 +60,8 @@ export function renderSmartRouting(config) {
     <div class="smart-routing-tiers">${[['light','轻'],['standard','标准'],['strong','强']].map(([tier,label])=>ui`<fieldset data-tier="${tier}"><legend>${t(label)}</legend>${[...candidates].sort((a,b)=>(draft.tiers[tier].findIndex(x=>same(x,a))+1 || 9999)-(draft.tiers[tier].findIndex(x=>same(x,b))+1 || 9999)).map(c=>{
       const i=candidates.indexOf(c), rank=draft.tiers[tier].findIndex(a=>same(a,c));
       const chosen=draft.tiers[tier].find(a=>same(a,c));
-      return ui`<div class="smart-routing-candidate" data-candidate="${i}" draggable="${!disabled}"><label><input type="checkbox" name="candidate" data-index="${i}" data-tier="${tier}" ${chosen?'checked':''} ${disabled}> ${escape(modelLabel(c.model))}</label><small>${escape(c.name)} · ${escape(c.model)}${c.latencyMs?` · ${escape(c.latencyMs)} ms`:''}${c.price?` · ${escape(JSON.stringify(c.price))}`:''}</small><label><input type="checkbox" name="vision" data-index="${i}" ${chosen?.vision?'checked':''} ${disabled||!chosen?'disabled':''}> ${t('支持图片理解')}</label>${chosen?ui`<div><button type="button" data-action="smart-routing-move-up" data-tier="${tier}" data-rank="${rank}" ${disabled||rank===0?'disabled':''}>↑</button><span>${rank+1}</span><button type="button" data-action="smart-routing-move-down" data-tier="${tier}" data-rank="${rank}" ${disabled||rank===draft.tiers[tier].length-1?'disabled':''}>↓</button></div>`:''}</div>`;
-    }).join('')}</fieldset>`).join('')}</div><p role="status" aria-live="polite">${escape(message)}</p></section>`;
+      return ui`<div class="smart-routing-candidate" data-candidate="${i}" draggable="${!disabled}"><label><input type="checkbox" name="candidate" data-index="${i}" data-tier="${tier}" ${chosen?'checked':''} ${disabled}> ${escapeHtml(modelLabel(c.model))}</label><small>${escapeHtml(c.name)} · ${escapeHtml(c.model)}${c.latencyMs?` · ${escapeHtml(c.latencyMs)} ms`:''}${c.price?` · ${escapeHtml(JSON.stringify(c.price))}`:''}</small><label><input type="checkbox" name="vision" data-index="${i}" ${chosen?.vision?'checked':''} ${disabled||!chosen?'disabled':''}> ${t('支持图片理解')}</label>${chosen?ui`<div><button type="button" data-action="smart-routing-move-up" data-tier="${tier}" data-rank="${rank}" ${disabled||rank===0?'disabled':''}>↑</button><span>${rank+1}</span><button type="button" data-action="smart-routing-move-down" data-tier="${tier}" data-rank="${rank}" ${disabled||rank===draft.tiers[tier].length-1?'disabled':''}>↓</button></div>`:''}</div>`;
+    }).join('')}</fieldset>`).join('')}</div><p role="status" aria-live="polite">${escapeHtml(message)}</p></section>`;
 }
 export async function handleSmartRouting(action,{config,api,render,refresh,trigger}) {
   if (!action?.startsWith('smart-routing-')) return false;

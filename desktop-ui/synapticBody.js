@@ -1,3 +1,4 @@
+import { sceneColor } from '../src/shared/visualTokens.js';
 import * as T from 'three';
 
 // The actor uses the same open network language as the surrounding scene:
@@ -119,16 +120,16 @@ export function createSynapticBody() {
     layers.push({ geometry, rest, weights: makeWeights(rest) });
     return geometry;
   }
-  const threadMaterial = new T.LineBasicMaterial({ color: '#76419d', transparent: true, opacity: .38,
+  const threadMaterial = new T.LineBasicMaterial({ color: sceneColor('synapse-thread'), transparent: true, opacity: .38,
     depthWrite: false, blending: T.AdditiveBlending });
-  const branchMaterial = new T.LineBasicMaterial({ color: '#9a65d3', transparent: true, opacity: .82,
+  const branchMaterial = new T.LineBasicMaterial({ color: sceneColor('synapse-branch'), transparent: true, opacity: .82,
     depthWrite: false, blending: T.AdditiveBlending });
   body.add(new T.LineSegments(geometryFor(threads), threadMaterial));
   body.add(new T.LineSegments(geometryFor(branches), branchMaterial));
   // Soft point falloff creates local violet light without a filled body or a
   // full-scene bloom pass. The low-alpha halo leaves background threads visible.
   const glowMaterial = new T.ShaderMaterial({
-    uniforms: { tint: { value: new T.Color('#a66ad7') }, intensity: { value: .7 } },
+    uniforms: { tint: { value: new T.Color(sceneColor('synapse-tint')) }, intensity: { value: .7 } },
     transparent: true, depthWrite: false, blending: T.AdditiveBlending,
     vertexShader: `
       void main() {

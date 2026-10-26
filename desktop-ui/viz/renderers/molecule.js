@@ -1,3 +1,4 @@
+import { sceneColor } from '../../../src/shared/visualTokens.js';
 // Minimal 2D molecule renderer — atoms at (x, y) positions, bonds as
 // single/double/triple lines. No force layout; the spec provides
 // absolute coordinates in arbitrary units, which are normalized to fit
@@ -13,14 +14,14 @@ import {
 } from '../vizCommon.js';
 
 const ELEMENT_COLORS = {
-  H: '#f0f0f0', C: '#c4c4c4', N: '#6bb0ff', O: '#ff8080',
-  F: '#ffe06b', Cl: '#9be88a', Br: '#d8a272', I: '#c18aff',
-  P: '#ffaa66', S: '#ffe066', Na: '#c0c0ff', K: '#c0c0ff',
-  Fe: '#ff9a66', Mg: '#a3ff9e', Ca: '#d0d0d0',
+  H: sceneColor('atom-h'), C: sceneColor('atom-c'), N: sceneColor('atom-n'), O: sceneColor('atom-o'),
+  F: sceneColor('atom-f'), Cl: sceneColor('atom-cl'), Br: sceneColor('atom-br'), I: sceneColor('atom-i'),
+  P: sceneColor('atom-p'), S: sceneColor('atom-s'), Na: sceneColor('atom-alkali'), K: sceneColor('atom-alkali'),
+  Fe: sceneColor('atom-fe'), Mg: sceneColor('atom-mg'), Ca: sceneColor('atom-default'),
 };
 
 function colorFor(element) {
-  return ELEMENT_COLORS[element] || '#d0d0d0';
+  return ELEMENT_COLORS[element] || sceneColor('atom-default');
 }
 
 function normalizePositions(atoms, width, height, padding) {

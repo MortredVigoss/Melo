@@ -1,3 +1,4 @@
+import { sceneColor } from '../src/shared/visualTokens.js';
 import { createNeuralScene as createCanvasScene } from './neuralScene.js';
 import { createSatelliteTopology, createSatelliteGlyph, createGlyphBridges, neuralIdentities, createSatelliteMotion, advanceSatelliteMotion, rotateSatellitePoint, lobeDepth, pickNeuralLobe } from './neuralSatellite.js';
 
@@ -23,7 +24,7 @@ function createGpuScene(T,initialHost,onLost) {
  let draws=0,measure=0,frameMax=0,quality=1,scale=140,brainDepth=-170,focus=0,px=0,py=0,aimX=0,aimY=0,flightUntil=0,activation=0,lastStage='',lastFocus=-1;
  const reduced=matchMedia('(prefers-reduced-motion: reduce)'),disposables=[];
  let seed=19841;const rand=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
- const palette=['#d3a459','#a97862','#737779','#b2a893','#edc786'].map(c=>new T.Color(c));
+ const palette=[sceneColor('neural-gold'),sceneColor('neural-clay'),sceneColor('neural-slate'),sceneColor('neural-sand'),sceneColor('neural-light')].map(c=>new T.Color(c));
  const moduleColors=neuralIdentities.map(v=>new T.Color(v.color)),moduleLights=neuralIdentities.map(v=>new T.Color(v.light));
  const vertex=`attribute float aSize;attribute float aAlpha;attribute float aModule;uniform float uDpr;uniform float uTime;uniform float uFocus;uniform float uActivity;uniform float uStellar;varying vec3 vColor;varying float vAlpha;varying float vSpark;
  void main(){vec4 mv=modelViewMatrix*vec4(position,1.0);gl_Position=projectionMatrix*mv;float selected=1.0-step(.4,abs(aModule-uFocus));float pulse=.92+.08*sin(uTime*.65+position.x*.05);vColor=color;vSpark=uStellar*smoothstep(3.5,7.0,aSize);vAlpha=aAlpha*pulse*clamp(1100.0/-mv.z,.58,1.12)*(aModule<0.0?1.0:(.64+selected*.48+uActivity*.12));gl_PointSize=clamp(aSize*uDpr*900.0/-mv.z,1.0,100.0);}`;
@@ -39,7 +40,7 @@ function createGpuScene(T,initialHost,onLost) {
    const mesh=new T.Points(g,m);mesh.frustumCulled=false;disposables.push(g,m);return mesh;
  }
  // Three independent depth populations, with a curved dust lane and dark gaps.
- const silver=new T.Color('#91a0b3'),shadow=new T.Color('#080b13');
+ const silver=new T.Color(sceneColor('neural-silver')),shadow=new T.Color(sceneColor('neural-shadow'));
  const atmosphere=[];
  for(let i=0;i<16000;i++){
    const lane=i<11000,t=rand(),x=lane?(t-.5)*2.4:(rand()-.5)*3.8;

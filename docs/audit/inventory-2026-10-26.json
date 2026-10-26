@@ -1,7 +1,7 @@
 {
  "version": 1,
  "date": "2026-10-26",
- "commit": "02213c0",
+ "commit": "58158dd",
  "roots": [
   "src",
   "shared",
@@ -11,7 +11,7 @@
   "scripts",
   "mobile-sync"
  ],
- "filesScanned": 836,
+ "filesScanned": 838,
  "skippedGenerated": [
   "desktop-ui/translations.js",
   "ios/Melo/AgentCore/agent-core.js",
@@ -23,7 +23,7 @@
    "title": "模型名正则 / 字面量决定能力或默认值",
    "severity": "high",
    "note": "能力标志应来自模型目录；默认名只留目录模块",
-   "scanned": 803,
+   "scanned": 804,
    "count": 0,
    "files": 0,
    "byFile": {},
@@ -33,7 +33,7 @@
    "title": "用汉字 / CJK 正则判断语言或内容",
    "severity": "high",
    "note": "语言选择应来自对话 / 界面 / Agent 设置；分词与索引模块例外",
-   "scanned": 691,
+   "scanned": 692,
    "count": 0,
    "files": 0,
    "byFile": {},
@@ -43,7 +43,7 @@
    "title": "本机地址与端口字面量",
    "severity": "high",
    "note": "端口进 config 带默认；前端读配置 URL，不做端口正则",
-   "scanned": 803,
+   "scanned": 804,
    "count": 0,
    "files": 0,
    "byFile": {},
@@ -53,7 +53,7 @@
    "title": "机器相关绝对路径",
    "severity": "high",
    "note": "仓库里不出现用户目录",
-   "scanned": 809,
+   "scanned": 811,
    "count": 0,
    "files": 0,
    "byFile": {},
@@ -63,7 +63,7 @@
    "title": "外部服务地址字面量",
    "severity": "info",
    "note": "集成端点集中到目录 / 配置，便于换区与自建",
-   "scanned": 803,
+   "scanned": 804,
    "count": 73,
    "files": 31,
    "byFile": {
@@ -102,12 +102,12 @@
    "hits": [
     {
      "file": "desktop-ui/app.js",
-     "line": 422,
+     "line": 429,
      "text": "baseUrl: 'https://api.openai.com/v1',"
     },
     {
      "file": "desktop-ui/app.js",
-     "line": 426,
+     "line": 433,
      "text": "baseUrl: 'https://chatgpt.com/backend-api',"
     },
     {
@@ -515,7 +515,7 @@
    "title": "按用户消息脚本选回复语言",
    "severity": "high",
    "note": "同 H2，针对\"中 / 英二选一\"的落点",
-   "scanned": 691,
+   "scanned": 692,
    "count": 0,
    "files": 0,
    "byFile": {},
@@ -525,113 +525,11 @@
    "title": "桌面 JS 里的原始色值",
    "severity": "medium",
    "note": "颜色进 tokens.css；3D / 卫星场景例外",
-   "scanned": 136,
-   "count": 18,
-   "files": 10,
-   "byFile": {
-    "desktop-ui/neuralScene.js": 1,
-    "desktop-ui/neuralScene3D.js": 2,
-    "desktop-ui/synapticBody.js": 3,
-    "desktop-ui/viz/renderers/circuitRc.js": 1,
-    "desktop-ui/viz/renderers/geometry.js": 2,
-    "desktop-ui/viz/renderers/molecule.js": 5,
-    "desktop-ui/viz/renderers/pendulum.js": 1,
-    "desktop-ui/viz/renderers/projectile.js": 1,
-    "desktop-ui/viz/renderers/reactionEnergy.js": 1,
-    "desktop-ui/viz/renderers/spring.js": 1
-   },
-   "hits": [
-    {
-     "file": "desktop-ui/neuralScene.js",
-     "line": 45,
-     "text": "sky.fillStyle='#080807';sky.fillRect(0,0,width,height);"
-    },
-    {
-     "file": "desktop-ui/neuralScene3D.js",
-     "line": 26,
-     "text": "const palette=['#d3a459','#a97862','#737779','#b2a893','#edc786'].map(c=>new T.Color(c));"
-    },
-    {
-     "file": "desktop-ui/neuralScene3D.js",
-     "line": 42,
-     "text": "const silver=new T.Color('#91a0b3'),shadow=new T.Color('#080b13');"
-    },
-    {
-     "file": "desktop-ui/synapticBody.js",
-     "line": 122,
-     "text": "const threadMaterial = new T.LineBasicMaterial({ color: '#76419d', transparent: true, opacity: .38,"
-    },
-    {
-     "file": "desktop-ui/synapticBody.js",
-     "line": 124,
-     "text": "const branchMaterial = new T.LineBasicMaterial({ color: '#9a65d3', transparent: true, opacity: .82,"
-    },
-    {
-     "file": "desktop-ui/synapticBody.js",
-     "line": 131,
-     "text": "uniforms: { tint: { value: new T.Color('#a66ad7') }, intensity: { value: .7 } },"
-    },
-    {
-     "file": "desktop-ui/viz/renderers/circuitRc.js",
-     "line": 93,
-     "text": "ctx.fillStyle = '#fff7f3';"
-    },
-    {
-     "file": "desktop-ui/viz/renderers/geometry.js",
-     "line": 80,
-     "text": "<circle cx=\"${p.x}\" cy=\"${p.y}\" r=\"4\" fill=\"#fff7f3\" />"
-    },
-    {
-     "file": "desktop-ui/viz/renderers/geometry.js",
-     "line": 113,
-     "text": "<circle cx=\"${cx}\" cy=\"${cy}\" r=\"3\" fill=\"#fff7f3\" />"
-    },
-    {
-     "file": "desktop-ui/viz/renderers/molecule.js",
-     "line": 16,
-     "text": "H: '#f0f0f0', C: '#c4c4c4', N: '#6bb0ff', O: '#ff8080',"
-    },
-    {
-     "file": "desktop-ui/viz/renderers/molecule.js",
-     "line": 17,
-     "text": "F: '#ffe06b', Cl: '#9be88a', Br: '#d8a272', I: '#c18aff',"
-    },
-    {
-     "file": "desktop-ui/viz/renderers/molecule.js",
-     "line": 18,
-     "text": "P: '#ffaa66', S: '#ffe066', Na: '#c0c0ff', K: '#c0c0ff',"
-    },
-    {
-     "file": "desktop-ui/viz/renderers/molecule.js",
-     "line": 19,
-     "text": "Fe: '#ff9a66', Mg: '#a3ff9e', Ca: '#d0d0d0',"
-    },
-    {
-     "file": "desktop-ui/viz/renderers/molecule.js",
-     "line": 23,
-     "text": "return ELEMENT_COLORS[element] || '#d0d0d0';"
-    },
-    {
-     "file": "desktop-ui/viz/renderers/pendulum.js",
-     "line": 79,
-     "text": "ctx.fillStyle = '#fff7f3';"
-    },
-    {
-     "file": "desktop-ui/viz/renderers/projectile.js",
-     "line": 124,
-     "text": "ctx.fillStyle = '#fff7f3';"
-    },
-    {
-     "file": "desktop-ui/viz/renderers/reactionEnergy.js",
-     "line": 139,
-     "text": "ctx.fillStyle = '#fff7f3';"
-    },
-    {
-     "file": "desktop-ui/viz/renderers/spring.js",
-     "line": 92,
-     "text": "ctx.fillStyle = '#fff7f3';"
-    }
-   ]
+   "scanned": 137,
+   "count": 0,
+   "files": 0,
+   "byFile": {},
+   "hits": []
   },
   "H11": {
    "title": "CSS 原始色值（tokens.css 之外）",
@@ -647,7 +545,7 @@
    "title": "原生对话框 alert / confirm / prompt",
    "severity": "medium",
    "note": "统一走应用内反馈",
-   "scanned": 136,
+   "scanned": 137,
    "count": 0,
    "files": 0,
    "byFile": {},
@@ -657,109 +555,25 @@
    "title": "内联 style= 属性",
    "severity": "info",
    "note": "进 CSS 类",
-   "scanned": 136,
-   "count": 14,
-   "files": 10,
-   "byFile": {
-    "desktop-ui/advancedPage.js": 1,
-    "desktop-ui/agentAvatar.js": 1,
-    "desktop-ui/app.js": 3,
-    "desktop-ui/executionPanel.js": 1,
-    "desktop-ui/features/agents/view.js": 1,
-    "desktop-ui/features/chat/viewComposer.js": 1,
-    "desktop-ui/features/customize/view.js": 1,
-    "desktop-ui/features/memory/viewPane.js": 2,
-    "desktop-ui/neuralShell.js": 2,
-    "desktop-ui/replyDocument.js": 1
-   },
-   "hits": [
-    {
-     "file": "desktop-ui/advancedPage.js",
-     "line": 188,
-     "text": "? ui`<div class=\"list-row-meta\" style=\"opacity: 0.78;\">npm 包尚未锁定到精确版本 — ${"
-    },
-    {
-     "file": "desktop-ui/agentAvatar.js",
-     "line": 6,
-     "text": ": `<span class=\"agent-photo agent-photo-fallback\" style=\"width:${size}px;height:${size}px\" aria-hidden=\"true\">${escape((agent?.name||'M').slice(0,1))}</span>`;"
-    },
-    {
-     "file": "desktop-ui/app.js",
-     "line": 668,
-     "text": "<span class=\"toolbar-icon\" style=\"width:14px;height:14px\">${icon.speak}</span>"
-    },
-    {
-     "file": "desktop-ui/app.js",
-     "line": 4144,
-     "text": "<div class=\"tree-row is-directory\" style=\"padding-left:${indent}px\">"
-    },
-    {
-     "file": "desktop-ui/app.js",
-     "line": 4156,
-     "text": "style=\"padding-left:${indent}px\""
-    },
-    {
-     "file": "desktop-ui/executionPanel.js",
-     "line": 233,
-     "text": "return ui`<button class=\"execution-label execution-module\" data-node-id=\"${module.id}\" data-execution-action=\"focus\" data-module=\"${module.id}\" data-status=\"${a"
-    },
-    {
-     "file": "desktop-ui/features/agents/view.js",
-     "line": 310,
-     "text": "<div class=\"list-row-meta\" style=\"margin:0 0 8px 0;\">"
-    },
-    {
-     "file": "desktop-ui/features/chat/viewComposer.js",
-     "line": 353,
-     "text": "<span style=\"margin-left:4px;opacity:.6;font-size:.75em\">▾</span>"
-    },
-    {
-     "file": "desktop-ui/features/customize/view.js",
-     "line": 769,
-     "text": "${addError ? ui`<div class=\"alert compact-alert\" style=\"margin-top: 8px;\">${escapeHtml(addError)}</div>` : ''}"
-    },
-    {
-     "file": "desktop-ui/features/memory/viewPane.js",
-     "line": 147,
-     "text": "<div class=\"inline-actions\" style=\"margin-top: 8px;\">"
-    },
-    {
-     "file": "desktop-ui/features/memory/viewPane.js",
-     "line": 155,
-     "text": "${wipeResult ? ui`<div class=\"list-row-meta\" style=\"margin-top: 8px;\">${escapeHtml(wipeResult)}</div>` : ''}"
-    },
-    {
-     "file": "desktop-ui/neuralShell.js",
-     "line": 42,
-     "text": "<div class=\"neural-primary\">${neuralGroups.map((g,i)=>ui`<button class=\"neural-cluster ${g.id===group?'is-active':''}\" data-neural-key=\"group-${g.id}\" data-acti"
-    },
-    {
-     "file": "desktop-ui/neuralShell.js",
-     "line": 45,
-     "text": "<aside class=\"neural-branches\" style=\"${identityStyle(selected.id)}\" aria-label=\"${selected.name}功能分支\"><div class=\"neural-branches-heading\"><span>0${neuralGroup"
-    },
-    {
-     "file": "desktop-ui/replyDocument.js",
-     "line": 9,
-     "text": "if(b.type==='list') return `<div class=\"reply-list-item\" style=\"margin-inline-start:${Math.min(b.indent,24)*0.5}em\"><span>${escape(b.checked == null ? b.marker "
-    }
-   ]
+   "scanned": 137,
+   "count": 0,
+   "files": 0,
+   "byFile": {},
+   "hits": []
   },
   "H14": {
    "title": "CSS !important",
    "severity": "info",
    "note": "层叠顺序问题的症状",
    "scanned": 21,
-   "count": 24,
-   "files": 7,
+   "count": 5,
+   "files": 5,
    "byFile": {
-    "desktop-ui/executionPanel.css": 4,
+    "desktop-ui/executionPanel.css": 1,
     "desktop-ui/launchScreen.css": 1,
-    "desktop-ui/localSettings.css": 2,
-    "desktop-ui/neural.css": 8,
-    "desktop-ui/neuralGlass.css": 5,
-    "desktop-ui/settingsEdit.css": 1,
-    "desktop-ui/styles.css": 3
+    "desktop-ui/localSettings.css": 1,
+    "desktop-ui/neural.css": 1,
+    "desktop-ui/settingsEdit.css": 1
    },
    "hits": [
     {
@@ -768,29 +582,9 @@
      "text": ".execution-panel[hidden] {display:none!important;}"
     },
     {
-     "file": "desktop-ui/executionPanel.css",
-     "line": 26,
-     "text": ".execution-panel:not(.is-fallback) .execution-panel-stage[data-wide=true] .execution-extra {opacity:0;visibility:hidden!important;pointer-events:none;}"
-    },
-    {
-     "file": "desktop-ui/executionPanel.css",
-     "line": 30,
-     "text": ".execution-source {display:block;width:126px;box-sizing:border-box;padding:8px 9px;text-decoration:none!important;border:1px solid var(--palette-3a026ced44);bor"
-    },
-    {
-     "file": "desktop-ui/executionPanel.css",
-     "line": 75,
-     "text": ".execution-panel.is-fallback .execution-label {position:static!important;transform:none!important;opacity:1!important;}"
-    },
-    {
      "file": "desktop-ui/launchScreen.css",
      "line": 38,
      "text": ".melo-launch [hidden] { display: none !important; }"
-    },
-    {
-     "file": "desktop-ui/localSettings.css",
-     "line": 9,
-     "text": ".local-name{display:grid;gap:10px;max-width:380px}.local-import-preview{padding:16px;background:var(--palette-d2ae613fe0);border-radius:12px}.local-error{color:"
     },
     {
      "file": "desktop-ui/localSettings.css",
@@ -799,88 +593,13 @@
     },
     {
      "file": "desktop-ui/neural.css",
-     "line": 98,
-     "text": ".neural-cluster {gap:6px;--cluster-shift:0px!important;}"
-    },
-    {
-     "file": "desktop-ui/neural.css",
      "line": 124,
      "text": "@media (prefers-reduced-motion:reduce) {.neural-shell *{transition:none!important;}}"
-    },
-    {
-     "file": "desktop-ui/neural.css",
-     "line": 153,
-     "text": ".neural-navigation {position:absolute;inset:0;display:block;pointer-events:none;transform:none!important;opacity:1!important;filter:none!important;}"
-    },
-    {
-     "file": "desktop-ui/neural.css",
-     "line": 176,
-     "text": ".neural-overview {padding:0!important;min-height:0;display:block;}"
-    },
-    {
-     "file": "desktop-ui/neural.css",
-     "line": 184,
-     "text": ".neural-module-summary small{font-size:var(--font-size-9px);color:var(--palette-709d0cc824);}.neural-module-summary h1{font-size:31px!important;margin:15px 0!im"
-    },
-    {
-     "file": "desktop-ui/neural.css",
-     "line": 189,
-     "text": ".neural-shell.is-still *{transition:none!important;animation:none!important;}"
-    },
-    {
-     "file": "desktop-ui/neural.css",
-     "line": 199,
-     "text": ".neural-shell[data-neural-stage=detail] .neural-dashboard {left:80px!important;width:calc(100% - 92px)!important;}"
-    },
-    {
-     "file": "desktop-ui/neural.css",
-     "line": 201,
-     "text": ".neural-shell[data-neural-stage=module] .neural-branches{display:flex;width:calc(100% - 125px)!important;}"
-    },
-    {
-     "file": "desktop-ui/neuralGlass.css",
-     "line": 113,
-     "text": "#app:has(>.palette-backdrop,>.tool-permission-backdrop) .neural-shell :is(.neural-navigation,.neural-branches,.neural-dashboard,.neural-activity) {opacity:.22!i"
-    },
-    {
-     "file": "desktop-ui/neuralGlass.css",
-     "line": 237,
-     "text": ".neural-shell:not([data-spatial-ready=true]) :is(.neural-core-anchor,.neural-cluster,.neural-branches,.neural-dashboard){transition:none!important;}"
-    },
-    {
-     "file": "desktop-ui/neuralGlass.css",
-     "line": 311,
-     "text": ".neural-module-summary h1 {font-family:inherit;font-size:34px!important;font-weight:400;letter-spacing:-.04em;}"
-    },
-    {
-     "file": "desktop-ui/neuralGlass.css",
-     "line": 336,
-     "text": "@media(prefers-reduced-motion:reduce){.neural-core-anchor:before,.neural-core-anchor:after{transition:none;}.neural-shell .content-shell{animation:none!importan"
-    },
-    {
-     "file": "desktop-ui/neuralGlass.css",
-     "line": 341,
-     "text": "background:transparent!important;border-color:transparent!important;box-shadow:none!important;"
     },
     {
      "file": "desktop-ui/settingsEdit.css",
      "line": 21,
      "text": "[data-settings-managed] button[hidden], [data-action=submit-agent-profile][hidden]{display:none!important}"
-    },
-    {
-     "file": "desktop-ui/styles.css",
-     "line": 3055,
-     "text": "margin-top: 6px !important;"
-    },
-    {
-     "file": "desktop-ui/styles.css",
-     "line": 3856,
-     "text": ".image-reference-row details input { width:55px!important; }"
-    },
-    {
-     "file": "desktop-ui/styles.css",
-     "line": 3879,
-     "text": ".reply-heading { font-weight:600; margin-top:14px!important; }"
     }
    ]
   },
@@ -888,103 +607,17 @@
    "title": "escapeHtml / escape 重复定义",
    "severity": "medium",
    "note": "一份共享 helper",
-   "scanned": 136,
-   "count": 14,
-   "files": 14,
-   "byFile": {
-    "desktop-ui/executionDetails.js": 1,
-    "desktop-ui/executionPanel.js": 1,
-    "desktop-ui/executionTiming.js": 1,
-    "desktop-ui/features/memory/viewFacts.js": 1,
-    "desktop-ui/features/memory/viewMessageRefs.js": 1,
-    "desktop-ui/features/memory/viewProjectBook.js": 1,
-    "desktop-ui/html.js": 1,
-    "desktop-ui/llmConnections.js": 1,
-    "desktop-ui/searchSettings.js": 1,
-    "desktop-ui/settingsEdit.js": 1,
-    "desktop-ui/smartRouting.js": 1,
-    "desktop-ui/viz/renderers/globeFlight.js": 1,
-    "desktop-ui/viz/renderers/projectile.js": 1,
-    "desktop-ui/viz/renderers/tree.js": 1
-   },
-   "hits": [
-    {
-     "file": "desktop-ui/executionDetails.js",
-     "line": 5,
-     "text": "const escape = value => escapeHtml(value ?? '');"
-    },
-    {
-     "file": "desktop-ui/executionPanel.js",
-     "line": 8,
-     "text": "const escape = value => escapeHtml(value ?? '');"
-    },
-    {
-     "file": "desktop-ui/executionTiming.js",
-     "line": 7,
-     "text": "const escape = value => escapeHtml(String(value));"
-    },
-    {
-     "file": "desktop-ui/features/memory/viewFacts.js",
-     "line": 4,
-     "text": "const escape = value => escapeHtml(value ?? '');"
-    },
-    {
-     "file": "desktop-ui/features/memory/viewMessageRefs.js",
-     "line": 10,
-     "text": "const escape = value => escapeHtml(value ?? '');"
-    },
-    {
-     "file": "desktop-ui/features/memory/viewProjectBook.js",
-     "line": 7,
-     "text": "const escape = value => escapeHtml(value ?? '');"
-    },
-    {
-     "file": "desktop-ui/html.js",
-     "line": 1,
-     "text": "export function escapeHtml(value = '') {"
-    },
-    {
-     "file": "desktop-ui/llmConnections.js",
-     "line": 9,
-     "text": "const escape = value => escapeHtml(value ?? '');"
-    },
-    {
-     "file": "desktop-ui/searchSettings.js",
-     "line": 9,
-     "text": "const escape = value => escapeHtml(value ?? '');"
-    },
-    {
-     "file": "desktop-ui/settingsEdit.js",
-     "line": 3,
-     "text": "const escape = value => escapeHtml(value ?? '');"
-    },
-    {
-     "file": "desktop-ui/smartRouting.js",
-     "line": 7,
-     "text": "const escape = value => escapeHtml(value ?? '');"
-    },
-    {
-     "file": "desktop-ui/viz/renderers/globeFlight.js",
-     "line": 245,
-     "text": "function escapeHtml(s) {"
-    },
-    {
-     "file": "desktop-ui/viz/renderers/projectile.js",
-     "line": 228,
-     "text": "function escape(str) {"
-    },
-    {
-     "file": "desktop-ui/viz/renderers/tree.js",
-     "line": 206,
-     "text": "function escape(str) {"
-    }
-   ]
+   "scanned": 137,
+   "count": 0,
+   "files": 0,
+   "byFile": {},
+   "hits": []
   },
   "H16": {
    "title": "只认 === '1' 的环境开关",
    "severity": "medium",
    "note": "行为开关进 config + 设置页\"高级\"，debug 开关集中一份文档",
-   "scanned": 624,
+   "scanned": 625,
    "count": 0,
    "files": 0,
    "byFile": {},
@@ -1017,100 +650,21 @@
   "H18": {
    "title": "iOS 固定字号 / 原始色 / 绕过本地化的文本",
    "severity": "info",
-   "note": "语义字号、色板、LocalizedStringKey",
+   "note": "语义字号、色板；仅原样输出的固定文案，SwiftUI 插值由五语目录门禁检查，用户内容保持原样",
    "scanned": 105,
-   "count": 38,
-   "files": 18,
+   "count": 6,
+   "files": 4,
    "byFile": {
-    "ios/Melo/AgentEditor.swift": 3,
-    "ios/Melo/CapabilityElevationViews.swift": 4,
     "ios/Melo/CodexLoginView.swift": 1,
-    "ios/Melo/ContentView.swift": 6,
     "ios/Melo/ConversationControls.swift": 2,
-    "ios/Melo/ExecutionWorkspace.swift": 1,
-    "ios/Melo/HistoryView.swift": 1,
-    "ios/Melo/ImageViews.swift": 4,
-    "ios/Melo/LLMConnections.swift": 1,
-    "ios/Melo/LanguagePicker.swift": 1,
-    "ios/Melo/LocalSettingsView.swift": 2,
-    "ios/Melo/MemoryFactsView.swift": 2,
-    "ios/Melo/PersonalWorkspace.swift": 2,
-    "ios/Melo/ReplyContentView.swift": 1,
-    "ios/Melo/RunProgressView.swift": 2,
-    "ios/Melo/SettingsView.swift": 2,
-    "ios/Melo/SmartRoutingSettings.swift": 1,
-    "ios/Melo/TeamSheet.swift": 2
+    "ios/Melo/ImageViews.swift": 2,
+    "ios/Melo/SettingsView.swift": 1
    },
    "hits": [
-    {
-     "file": "ios/Melo/AgentEditor.swift",
-     "line": 102,
-     "text": "Text(verbatim: CapabilityCopy.template(\"基于「{name}」\", [\"name\": agent.name])).tag(agent.id)"
-    },
-    {
-     "file": "ios/Melo/AgentEditor.swift",
-     "line": 128,
-     "text": "(Text(LocalizedStringKey([\"mcpServers\":\"MCP 服务\",\"skills\":\"技能\",\"connectors\":\"连接器\"][key] ?? key)) + Text(verbatim: \"：\" + caps[key].array.map(\\.string).joined(sepa"
-    },
-    {
-     "file": "ios/Melo/AgentEditor.swift",
-     "line": 137,
-     "text": "HStack(spacing: 16) { AgentAvatar(agent: session.draft, size: 64); VStack(alignment: .leading, spacing: 6) { Text(session.draft.name).font(.title3.weight(.semib"
-    },
-    {
-     "file": "ios/Melo/CapabilityElevationViews.swift",
-     "line": 73,
-     "text": "Text(verbatim: name + \" · \" + capability).font(.subheadline)"
-    },
-    {
-     "file": "ios/Melo/CapabilityElevationViews.swift",
-     "line": 74,
-     "text": "Text(verbatim: [CapabilityCopy.scope(grant), CapabilityCopy.expiry(grant), CapabilityCopy.kind(grant)].joined(separator: \" · \"))"
-    },
-    {
-     "file": "ios/Melo/CapabilityElevationViews.swift",
-     "line": 100,
-     "text": "if let notice { Text(verbatim: notice).font(.caption).foregroundStyle(.green).accessibilityAddTraits(.updatesFrequently) }"
-    },
-    {
-     "file": "ios/Melo/CapabilityElevationViews.swift",
-     "line": 118,
-     "text": "if let notice { Text(verbatim: notice).font(.caption).foregroundStyle(.green) }"
-    },
     {
      "file": "ios/Melo/CodexLoginView.swift",
      "line": 27,
      "text": "Text(code.userCode).font(.system(size:26,weight:.semibold,design:.monospaced)).tracking(2).textSelection(.enabled).accessibilityLabel(\"登录验证码 \\(code.userCode)\")"
-    },
-    {
-     "file": "ios/Melo/ContentView.swift",
-     "line": 97,
-     "text": "} message: { request in Text(verbatim: request.detail + \"\\n\\n\") + Text(\"Melo 请求在你的 iPhone 上执行这项操作。\") }"
-    },
-    {
-     "file": "ios/Melo/ContentView.swift",
-     "line": 100,
-     "text": ".alert(Text(verbatim: store.pendingCapabilityRequest.map(CapabilityCopy.title) ?? \"\"), isPresented: Binding(get: { store.pendingCapabilityRequest != nil }, set:"
-    },
-    {
-     "file": "ios/Melo/ContentView.swift",
-     "line": 105,
-     "text": "} message: { request in Text(verbatim: CapabilityCopy.message(request)) }"
-    },
-    {
-     "file": "ios/Melo/ContentView.swift",
-     "line": 175,
-     "text": "HStack { InterfaceLanguageMenu(); Spacer(); VStack(alignment: .trailing, spacing: 4) { Text(\"\\(store.chats.count) 段对话 · \\(store.preferences.agents.count) 个Agent"
-    },
-    {
-     "file": "ios/Melo/ContentView.swift",
-     "line": 214,
-     "text": "Text(\"\\(agent.name) · \\(chat.messages.count) 条消息\").font(MeloType.caption()).foregroundStyle(.tertiary)"
-    },
-    {
-     "file": "ios/Melo/ContentView.swift",
-     "line": 546,
-     "text": "Text(verbatim: content).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)"
     },
     {
      "file": "ios/Melo/ConversationControls.swift",
@@ -1123,16 +677,6 @@
      "text": "} label: { HStack(spacing: 6) { AgentAvatar(agent: store.agent(for: chatID), size: 22); Text(\"Agent · \" + store.agent(for: chatID).name); Image(systemName: \"che"
     },
     {
-     "file": "ios/Melo/ExecutionWorkspace.swift",
-     "line": 67,
-     "text": "Text(\"\\(record.status) · \\(record.operations.count) 次实际调用\").font(.caption)"
-    },
-    {
-     "file": "ios/Melo/HistoryView.swift",
-     "line": 52,
-     "text": "Text(\"\\(filtered.count) 段对话 · 按最近更新排序\").font(.caption2).foregroundStyle(.secondary)"
-    },
-    {
      "file": "ios/Melo/ImageViews.swift",
      "line": 12,
      "text": "else { Image(systemName:\"photo\").foregroundStyle(.secondary).overlay(alignment:.bottom) { Text(\"图片暂不可读\").font(.system(size:9)) } }"
@@ -1143,94 +687,9 @@
      "text": ".overlay(alignment:.topTrailing) { Button { plan.references.removeAll{$0.id==ref.id} } label:{ Image(systemName:\"xmark.circle.fill\").font(.system(size:18)).padd"
     },
     {
-     "file": "ios/Melo/ImageViews.swift",
-     "line": 180,
-     "text": "HStack { Text(\"\\(image.width) × \\(image.height)\").font(.caption2).foregroundStyle(.secondary);Spacer();Button(\"继续修改\"){edit(image)}.font(.caption) }"
-    },
-    {
-     "file": "ios/Melo/ImageViews.swift",
-     "line": 309,
-     "text": "Text(\"\\(displayed.width) × \\(displayed.height)\").font(.caption).foregroundStyle(.secondary)"
-    },
-    {
-     "file": "ios/Melo/LLMConnections.swift",
-     "line": 146,
-     "text": "Text(\"\\(probe.elapsedMS) ms · \\(probe.response)\").lineLimit(3)"
-    },
-    {
-     "file": "ios/Melo/LanguagePicker.swift",
-     "line": 8,
-     "text": "ForEach(InterfaceLanguage.allCases) { value in Text(verbatim: value.name).tag(value.rawValue) }"
-    },
-    {
-     "file": "ios/Melo/LocalSettingsView.swift",
-     "line": 70,
-     "text": "Picker(\"界面语言\", selection: value.interfaceLanguage) { ForEach(InterfaceLanguage.allCases) { language in Text(verbatim: language.name).tag(language.rawValue) } }"
-    },
-    {
-     "file": "ios/Melo/LocalSettingsView.swift",
-     "line": 139,
-     "text": "Text(\"\\(store.chats.count) 段对话 · \\(store.preferences.agents.count) 个Agent\").font(.subheadline)"
-    },
-    {
-     "file": "ios/Melo/MemoryFactsView.swift",
-     "line": 22,
-     "text": "Text(\"\\(scopeName(fact.scope)) · \\(statusName(fact.effectiveStatus))\").font(.caption).foregroundStyle(meloGold)"
-    },
-    {
-     "file": "ios/Melo/MemoryFactsView.swift",
-     "line": 74,
-     "text": "Text(\"\\(fact.category) · \\(fact.updatedAt)\").font(.caption).foregroundStyle(.secondary)"
-    },
-    {
-     "file": "ios/Melo/PersonalWorkspace.swift",
-     "line": 25,
-     "text": "Text(\"\\(chats.count) 段对话 · \\(project.knowledgeIds?.count ?? 0) 份共享资料\\(project.archived == true ? \" · 已归档\" : \"\")\").font(.caption).foregroundStyle(meloGold)"
-    },
-    {
-     "file": "ios/Melo/PersonalWorkspace.swift",
-     "line": 137,
-     "text": "Section(\"资料正文\") { TextEditor(text: value.content).frame(minHeight: 300); Text(\"\\(value.wrappedValue.content.count) / 12,000 字\").font(.caption).foregroundStyle(."
-    },
-    {
-     "file": "ios/Melo/ReplyContentView.swift",
-     "line": 15,
-     "text": "ScrollView(.horizontal) { Text(verbatim: block.text).font(.system(.caption, design: .monospaced)).fixedSize(horizontal: true, vertical: false).textSelection(.en"
-    },
-    {
-     "file": "ios/Melo/RunProgressView.swift",
-     "line": 18,
-     "text": "Text(verbatim: step.title).font(.caption).foregroundStyle(step.state == .running ? .primary : .secondary)"
-    },
-    {
-     "file": "ios/Melo/RunProgressView.swift",
-     "line": 19,
-     "text": "if !step.detail.isEmpty { Text(verbatim: step.detail).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }"
-    },
-    {
-     "file": "ios/Melo/SettingsView.swift",
-     "line": 33,
-     "text": "HStack { Label(\"数据与同步\", systemImage: \"arrow.triangle.2.circlepath\").font(.headline); Spacer(); Text(\"\\(store.chats.count) 段对话\").font(.caption).foregroundStyle(m"
-    },
-    {
      "file": "ios/Melo/SettingsView.swift",
      "line": 95,
      "text": "HStack { Text(\"MELO FOR IPHONE\").tracking(2); Spacer(); Text(\"\\(version) · 本地测试版\") }.font(.system(size: 9)).foregroundStyle(.tertiary)"
-    },
-    {
-     "file": "ios/Melo/SmartRoutingSettings.swift",
-     "line": 45,
-     "text": "Text(\"\\(index + 1)\")"
-    },
-    {
-     "file": "ios/Melo/TeamSheet.swift",
-     "line": 36,
-     "text": "Text(\"\\(index + 1)\").font(.caption.weight(.semibold)).foregroundStyle(MeloTheme.dialog).frame(width: 22, height: 22).background(meloGold, in: Circle())"
-    },
-    {
-     "file": "ios/Melo/TeamSheet.swift",
-     "line": 41,
-     "text": "if !order.isEmpty { (Text(\"执行顺序：\") + Text(verbatim: order.map(name).joined(separator: \" → \"))).font(.caption).foregroundStyle(.secondary) }"
     }
    ]
   },
@@ -1238,7 +697,7 @@
    "title": "写死的语言默认值 zh-CN",
    "severity": "medium",
    "note": "默认语言跟系统 / 设置",
-   "scanned": 803,
+   "scanned": 804,
    "count": 0,
    "files": 0,
    "byFile": {},
@@ -1248,7 +707,7 @@
    "title": "TODO / FIXME / HACK",
    "severity": "info",
    "note": "",
-   "scanned": 803,
+   "scanned": 804,
    "count": 3,
    "files": 3,
    "byFile": {

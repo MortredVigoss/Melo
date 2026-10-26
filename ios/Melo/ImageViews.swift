@@ -148,7 +148,7 @@ struct ImageComposerBar: View {
                             ForEach(imageConnections) { connection in Text(connection.name).tag(connection.id) }
                             if let id = plan.connectionID, !id.isEmpty, id != "chatgpt", !imageConnections.contains(where: { $0.id == id }) { Text("原连接不可用，请重新选择").tag(id) }
                         }
-                        Text("Codex 登录可用于聊天、看图和图片生成 / 编辑；图像任务也可单独选择 API 连接，不改变本对话的聊天模型。")
+                        Text("Codex 登录可用于对话、看图和图片生成 / 编辑；图像任务也可单独选择 API 连接，不改变本对话的对话模型。")
                             .font(.footnote).foregroundStyle(.secondary)
                         NavigationLink("Codex 登录与账号") { ScrollView { CodexLoginCard().padding(20) }.navigationTitle("Codex 登录") }
                     }
@@ -159,7 +159,7 @@ struct ImageComposerBar: View {
                         Text("2K、4K 更慢、用量更高；4K 为实验尺寸，效果可能不稳定。若通道不接受所选尺寸，会按服务默认尺寸生成并注明实际像素。").font(.footnote).foregroundStyle(.secondary)
                         Picker("质量",selection:$plan.quality) { Text("自动").tag("auto");Text("低").tag("low");Text("中").tag("medium");Text("高").tag("high") }
                     }
-                    Section { Text("Codex 使用订阅额度；API 连接按对应平台计费，需支持 images/edits 和所选图片模型。失败时不自动切换通道。看图分析仍使用聊天模型。一次最多八张图片；多张图片默认逐张修改，说明“合成”时合成一张。") }
+                    Section { Text("Codex 使用订阅额度；API 连接按对应平台计费，需支持 images/edits 和所选图片模型。失败时不自动切换通道。看图分析仍使用对话模型。一次最多八张图片；多张图片默认逐张修改，说明“合成”时合成一张。") }
                 }.navigationTitle("图片设置").toolbar { ToolbarItem(placement:.confirmationAction){Button("完成"){options=false}} }
             }.preferredColorScheme(.dark)
         }

@@ -14,7 +14,7 @@ struct MemoryFactsView: View {
             Text("沿用桌面的事实提取规则。自动记忆默认仅用于原对话；跨对话共享需明确修改范围，停用或删除来源对话后不再用于回复，已共享的记忆也适用。").font(.caption).foregroundStyle(.secondary)
             TextField("搜索记忆或来源", text: $query).meloInput()
             Toggle("查看停用与历史记忆", isOn: $showInactive)
-            if facts.isEmpty { Text("这里暂无记忆。新对话中的偏好和明确决定会保留来源；已有资料不会被伪造为个人记忆。").font(.subheadline).foregroundStyle(.secondary).padding(.vertical) }
+            if facts.isEmpty { Text("这里还没有记忆。新对话中的偏好和明确决定会保留来源；已有知识不会被伪造为个人记忆。").font(.subheadline).foregroundStyle(.secondary).padding(.vertical) }
             ForEach(facts) { fact in
                 Button { selected = fact } label: {
                     VStack(alignment: .leading, spacing: 8) {

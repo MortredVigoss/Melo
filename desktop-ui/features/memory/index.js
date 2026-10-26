@@ -37,6 +37,7 @@ export function installMemoryFeature(context) {
     renderPane: renderMemoryPane,
     renderProjectBook: project => renderProjectMemoryBook(project, projectBookData(project.id), { busy: memoryState.projectBookBusy, feedback: memoryState.projectBookFeedback, draft: memoryState.projectBookDraft?.projectId === project.id ? memoryState.projectBookDraft : null }),
     renderMessageRefs: message => renderMessageMemoryRefs(message, { feedback: memoryState.memoryRefFeedback, busy: memoryState.memoryFactBusy, open: Boolean(memoryState.memoryRefsOpen[message.id]) }),
+    cancelCreateForm() { memoryState.projectBookDraft=null; },
     getState: () => memoryState,
   };
 }

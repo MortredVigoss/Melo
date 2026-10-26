@@ -1,3 +1,4 @@
+import { sceneColor } from '../../../src/shared/visualTokens.js';
 // Reaction energy diagram.
 // Params: E_reactants, E_products, E_activation (height of the barrier above reactants)
 // Draws a smooth potential-energy curve: flat → rise to transition state → fall to products.
@@ -136,7 +137,7 @@ export default function mountReactionEnergy(host, spec) {
     ctx.stroke();
 
     // Mark activation peak.
-    ctx.fillStyle = '#fff7f3';
+    ctx.fillStyle = sceneColor('diagram-point');
     ctx.beginPath();
     ctx.arc(toX(0.5), toY(peak), 4, 0, Math.PI * 2);
     ctx.fill();

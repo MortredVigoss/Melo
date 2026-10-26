@@ -12,16 +12,16 @@ import { checkFeatureContext } from '../featureContext.js';
 import { createAgentsApi } from './api.js';
 
 export const AGENTS_CONTEXT = Object.freeze([
-  'getBootstrap', 'app', 'api', 'render', 'bgRender', 'showError', 'showFlashToast',
+  'getBootstrap', 'app', 'api', 'render', 'bgRender', 'notify',
   'patchSettings', 'applyBootstrap', 'applyBootstrapPreservingDrafts', 'refreshBootstrap',
   'activeProject', 'agentProfileById', 'minimaxTtsConfigPatchForVoice', 'beginFormEdit', 'formEditToken',
   'nativeSettings', 'isAgentChannelAvailable', 'escapeHtml', 'icon', 'renderCapabilityGrants',
 ]);
 
-export let getBootstrap, app, render, bgRender, showError, showFlashToast, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts, refreshBootstrap, activeProject, agentProfileById, minimaxTtsConfigPatchForVoice, beginFormEdit, formEditToken, nativeSettings, isAgentChannelAvailable, escapeHtml, icon, renderCapabilityGrants, agentsApi;
+export let getBootstrap, app, render, bgRender, notify, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts, refreshBootstrap, activeProject, agentProfileById, minimaxTtsConfigPatchForVoice, beginFormEdit, formEditToken, nativeSettings, isAgentChannelAvailable, escapeHtml, icon, renderCapabilityGrants, agentsApi;
 
 export function bindAgentsContext(context) {
   checkFeatureContext('agents', context, AGENTS_CONTEXT);
-  ({ getBootstrap, app, render, bgRender, showError, showFlashToast, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts, refreshBootstrap, activeProject, agentProfileById, minimaxTtsConfigPatchForVoice, beginFormEdit, formEditToken, nativeSettings, isAgentChannelAvailable, escapeHtml, icon, renderCapabilityGrants } = context);
+  ({ getBootstrap, app, render, bgRender, notify, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts, refreshBootstrap, activeProject, agentProfileById, minimaxTtsConfigPatchForVoice, beginFormEdit, formEditToken, nativeSettings, isAgentChannelAvailable, escapeHtml, icon, renderCapabilityGrants } = context);
   agentsApi = createAgentsApi(context.api);
 }

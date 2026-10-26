@@ -95,7 +95,7 @@ struct CapabilityGrantsSection: View {
         let grants = store.capabilityGrants(agentID: agentID)
         Section {
             Text("对话中临时允许的能力。任务结束、到期或撤销后失效；撤销从下一次工具调用起生效。").font(.caption).foregroundStyle(.secondary)
-            if grants.isEmpty { Text("这个 Agent 目前没有临时授权。").font(.caption).foregroundStyle(.secondary) }
+            if grants.isEmpty { Text("这个 Agent 还没有临时授权。").font(.caption).foregroundStyle(.secondary) }
             ForEach(grants) { grant in CapabilityGrantRow(grant: grant, notice: $notice) }
             if let notice { Text(verbatim: notice).font(.caption).foregroundStyle(.green).accessibilityAddTraits(.updatesFrequently) }
         } header: { Text("临时授权") }
@@ -113,7 +113,7 @@ struct CapabilityGrantsPanel: View {
         VStack(alignment: .leading, spacing: 12) {
             Label("临时授权", systemImage: "clock.badge.checkmark").font(.headline)
             Text("对话中临时允许的能力。任务结束、到期或撤销后失效；撤销从下一次工具调用起生效。").font(.caption).foregroundStyle(.secondary)
-            if grants.isEmpty { Text("目前没有临时授权。").font(.caption).foregroundStyle(.secondary) }
+            if grants.isEmpty { Text("还没有临时授权。").font(.caption).foregroundStyle(.secondary) }
             ForEach(grants) { grant in CapabilityGrantRow(grant: grant, notice: $notice) }
             if let notice { Text(verbatim: notice).font(.caption).foregroundStyle(.green) }
         }.meloPanel().accessibilityElement(children: .contain).accessibilityIdentifier("capability-grants.all")

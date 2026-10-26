@@ -9,15 +9,15 @@ import { checkFeatureContext } from '../featureContext.js';
 import { createProjectsApi } from './api.js';
 
 export const PROJECTS_CONTEXT = Object.freeze([
-  'getBootstrap', 'api', 'render', 'showError', 'patchSettings', 'applyBootstrap', 'applyBootstrapPreservingDrafts',
+  'getBootstrap', 'api', 'render', 'notify', 'patchSettings', 'applyBootstrap', 'applyBootstrapPreservingDrafts',
   'startProjectSession', 'activeProject', 'activeProjectChats', 'activeProjectArtifacts', 'renderMemoryBook',
   'escapeHtml', 'truncate', 'icon',
 ]);
 
-export let getBootstrap, render, showError, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts, startProjectSession, activeProject, activeProjectChats, activeProjectArtifacts, renderMemoryBook, escapeHtml, truncate, icon, projectsApi;
+export let getBootstrap, render, notify, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts, startProjectSession, activeProject, activeProjectChats, activeProjectArtifacts, renderMemoryBook, escapeHtml, truncate, icon, projectsApi;
 
 export function bindProjectsContext(context) {
   checkFeatureContext('projects', context, PROJECTS_CONTEXT);
-  ({ getBootstrap, render, showError, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts, startProjectSession, activeProject, activeProjectChats, activeProjectArtifacts, renderMemoryBook, escapeHtml, truncate, icon } = context);
+  ({ getBootstrap, render, notify, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts, startProjectSession, activeProject, activeProjectChats, activeProjectArtifacts, renderMemoryBook, escapeHtml, truncate, icon } = context);
   projectsApi = createProjectsApi(context.api);
 }

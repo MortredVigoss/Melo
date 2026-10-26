@@ -6,14 +6,14 @@ import { checkFeatureContext } from '../featureContext.js';
 import { createApprovalsApi } from './api.js';
 
 export const APPROVALS_CONTEXT = Object.freeze([
-  'getBootstrap', 'app', 'api', 'render', 'bgRender', 'showFlashToast', 'refreshBootstrap',
+  'getBootstrap', 'app', 'api', 'render', 'bgRender', 'notify', 'refreshBootstrap',
   'toolPermissions', 'setToolPermissions', 'escapeHtml', 'icon',
 ]);
 
-export let getBootstrap, app, render, bgRender, showFlashToast, refreshBootstrap, toolPermissions, setToolPermissions, escapeHtml, icon, approvalsApi;
+export let getBootstrap, app, render, bgRender, notify, refreshBootstrap, toolPermissions, setToolPermissions, escapeHtml, icon, approvalsApi;
 
 export function bindApprovalsContext(context) {
   checkFeatureContext('approvals', context, APPROVALS_CONTEXT);
-  ({ getBootstrap, app, render, bgRender, showFlashToast, refreshBootstrap, toolPermissions, setToolPermissions, escapeHtml, icon } = context);
+  ({ getBootstrap, app, render, bgRender, notify, refreshBootstrap, toolPermissions, setToolPermissions, escapeHtml, icon } = context);
   approvalsApi = createApprovalsApi(context.api);
 }

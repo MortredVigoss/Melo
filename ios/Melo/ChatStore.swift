@@ -150,7 +150,7 @@ import SwiftUI
             try FileManager.default.createDirectory(at: sceneFile.deletingLastPathComponent(), withIntermediateDirectories: true)
             try BackgroundReplyStorage.write(JSONEncoder().encode(executionRecords), to: sceneFile)
             lastSceneSave = Date()
-        } catch { self.error = "任务记录暂未保存，聊天记录不受影响。" }
+        } catch { self.error = "任务记录暂未保存，对话记录不受影响。" }
     }
     /// One background allowance per running reply (iOS identifiers are per run).
     private func makeBackground() -> ReplyBackgroundLifetime {
@@ -539,7 +539,7 @@ import SwiftUI
             do {
                 try Task.checkCancellation()
                 if resolvedContext.knowledgeChunks > 0 {
-                    stage(record.runId, id: "context:knowledge", name: "资料检索", status: "completed", output: "已按问题选取 \(resolvedContext.knowledgeChunks) 个片段，全文保留。")
+                    stage(record.runId, id: "context:knowledge", name: "知识检索", status: "completed", output: "已按问题选取 \(resolvedContext.knowledgeChunks) 个片段，全文保留。")
                 }
                 if var value = compactPlan.value, !compactPlan.pending.isEmpty {
                     // Save rule cards before any network call. Interruptions retain
@@ -623,7 +623,7 @@ import SwiftUI
                     }
                 }
                 if !attachments.isEmpty { try imageLibrary.bind(attachments, to: message.id); imageRevision += 1 }
-                stage(record.runId, id: "reply:save", name: "保存回答", status: "running", output: "写入本机聊天记录")
+                stage(record.runId, id: "reply:save", name: "保存回答", status: "running", output: "写入本机对话记录")
                 let original = chats[position]
                 chats[position].messages.append(message)
                 chats[position].updatedAt = timestamp()
@@ -806,9 +806,9 @@ import SwiftUI
         guard storageReady, executionReady, !anySending, !syncing else { throw MeloError.message("请等待当前任务结束后再导出。") }
         let connections = try portableConnections()
         let workspace = try WorkspaceProjection.refreshed(preferences, chats: chats, records: executionRecords, connections: connections, device: syncDevice)
-        guard WorkspaceProjection.pending(preferences).isEmpty else { throw MeloError.message("部分人设暂不能完整导出为兼容资料，请先单独备份人设全文。") }
+        guard WorkspaceProjection.pending(preferences).isEmpty else { throw MeloError.message("部分人设暂不能完整导出为兼容知识，请先单独备份人设全文。") }
         let data = try JSONEncoder().encode(PortableArchive(snapshot: SyncSnapshot(chats: chats, tasks: taskCheckpoints, handoffs: taskHandoffs, workspace: workspace, deletedChats: deletedChats)))
-        guard data.count <= 16 * 1024 * 1024 else { throw MeloError.message("资料超过 16 MB 导出上限。") }
+        guard data.count <= 16 * 1024 * 1024 else { throw MeloError.message("知识超过 16 MB 导出上限。") }
         return data
     }
     func importLocalArchive(_ archive: PortableArchive) throws {
@@ -1078,7 +1078,7 @@ import SwiftUI
             guard updatePreferences({ $0.workspaceSync = workspace; $0.personaSyncHolds = prepared.holds }) else { return }
             let sentDeletions = deletedChats
             let payload = try JSONEncoder().encode(SyncSnapshot(chats: chats, tasks: taskCheckpoints, handoffs: taskHandoffs, workspace: workspace, deletedChats: sentDeletions))
-            guard payload.count <= 8 * 1024 * 1024 else { throw MeloError.message("聊天记录超过当前同步容量。") }
+            guard payload.count <= 8 * 1024 * 1024 else { throw MeloError.message("对话记录超过当前同步容量。") }
             let data: Data
             if let syncLoader { data = try await syncLoader(payload) }
             else { data = try await Network.post(try Network.endpoint(endpoint), token: token, body: payload) }
@@ -1113,7 +1113,7 @@ import SwiftUI
             if !confirmed.isEmpty { updatePreferences { $0.taskHandoffReceipts = ($0.taskHandoffReceipts ?? []).union(confirmed) } }
             migrateLegacyReferences()
             let conflicts = preferences.workspaceSync?.conflicts.count ?? 0
-            syncStatus = !WorkspaceProjection.pending(preferences).isEmpty ? "聊天已同步 · 部分 Agent 人设或关联配置待同步，全文保留在本机" : remote.workspace == nil ? "正文已同步 · 服务尚未支持Agent、项目和来源同步，请更新同步服务" : conflicts > 0 ? "有 \(conflicts) 项同步冲突 · 所有版本均已保留，请处理" : "对话、Agent、项目、资料与来源已同步 · \(Date().formatted(date: .omitted, time: .shortened))"
+            syncStatus = !WorkspaceProjection.pending(preferences).isEmpty ? "对话已同步 · 部分 Agent 人设或关联配置待同步，全文保留在本机" : remote.workspace == nil ? "正文已同步 · 服务尚未支持Agent、项目和来源同步，请更新同步服务" : conflicts > 0 ? "有 \(conflicts) 项同步冲突 · 所有版本均已保留，请处理" : "对话、Agent、项目、知识与来源已同步 · \(Date().formatted(date: .omitted, time: .shortened))"
             if syncLoader == nil { await syncAgentSettings(endpoint:endpoint,token:token); await syncProjectMemory(endpoint: endpoint, token: token) }
         } catch { syncStatus = "同步未完成 · " + error.localizedDescription; if reportErrors { self.error = error.localizedDescription } }
     }

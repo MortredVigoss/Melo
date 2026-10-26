@@ -6,7 +6,7 @@
 // equivalent because nothing followed the switch inside its try block).
 // app.js names they read come from ./context.js (transitional, live bindings).
 import { pickConnectorField } from '../../connectorDraft.js';
-import { allChatAgentProfiles, api, applyBootstrap, applyBootstrapPreservingDrafts, bgRender, getBootstrap, minimaxTtsConfigPatchForVoice, modelSetupDraft, patchSettings, refreshBootstrap, render, resolveActiveMinimaxVoiceId, setError, setTtsVoice, showError, ttsVoice } from './context.js';
+import { allChatAgentProfiles, api, applyBootstrap, applyBootstrapPreservingDrafts, bgRender, getBootstrap, minimaxTtsConfigPatchForVoice, modelSetupDraft, patchSettings, refreshBootstrap, render, resolveActiveMinimaxVoiceId, setError, setTtsVoice, notify, ttsVoice } from './context.js';
 import { customizeState } from './state.js';
 
 // Parse the comma-separated skill form fields (folders, allowedAgentIds,
@@ -123,10 +123,10 @@ async function handleReloadMcpServers() {
   try {
     const resp = await api('/api/mcp/reload', { method: 'POST' });
     customizeState.advanced.cliServers = Array.isArray(resp?.servers) ? resp.servers : [];
-    showError(`Reloaded ${customizeState.advanced.cliServers.length} MCP server(s).`);
+    notify({level:'success',text:`Reloaded ${customizeState.advanced.cliServers.length} MCP server(s).`});
     render();
   } catch (err) {
-    showError(`MCP reload failed: ${err?.message || err}`);
+    notify({level:'error',text:`MCP reload failed: ${err?.message || err}`});
   }
 }
 
@@ -137,7 +137,7 @@ async function handleDisconnectMcpServer(name) {
     // Refresh the list so the UI reflects the new state.
     await refreshAdvancedStatus();
   } catch (err) {
-    showError(`Disconnect failed: ${err?.message || err}`);
+    notify({level:'error',text:`Disconnect failed: ${err?.message || err}`});
   }
 }
 
@@ -650,7 +650,7 @@ export const customizeActions = {
       }
 
       if (!voiceId) {
-        showError('Configure a MiniMax voice first — set a Default Voice ID in Settings → Connector or bind one to an agent.');
+        notify({level:'error',text:'Configure a MiniMax voice first — set a Default Voice ID in Settings → Connector or bind one to an agent.'});
         return;
       }
 

@@ -1,4 +1,4 @@
-import { escapeHtml } from './html.js';
+import { escapeHtml } from './i18n.js';
 import { t, ui } from './i18n.js';
 import { EditSession, renderEditActions, paintEditActions } from './settingsEdit.js';
 
@@ -6,7 +6,6 @@ import { EditSession, renderEditActions, paintEditActions } from './settingsEdit
 // (audit 2026-10-22; this block used to carry its own three buttons).
 const session = new EditSession();
 const state = { busy: false, draft: null, message: '' };
-const escape = value => escapeHtml(value ?? '');
 const draftFrom = config => ({ ...(config.agentRuntime?.search || {}), apiKey: '', clearKey: false });
 
 export function renderSearchSettings(config) {
@@ -19,16 +18,16 @@ export function renderSearchSettings(config) {
     <fieldset class="settings-connection-fields" ${disabled}>
       <label class="list-row-meta"><input type="checkbox" name="enabled" ${draft.backend === 'http' ? 'checked' : ''}> 启用 HTTP Search</label>
       <label class="label">搜索服务<select class="config-select" name="provider"><option value="custom" ${draft.provider !== 'brave' ? 'selected' : ''}>兼容 HTTP</option><option value="brave" ${draft.provider === 'brave' ? 'selected' : ''}>Brave Search API</option></select></label>
-      <label class="label">Search 地址（Brave 留空使用默认地址）<input class="config-input" name="endpoint" value="${escape(draft.endpoint)}"></label>
+      <label class="label">Search 地址（Brave 留空使用默认地址）<input class="config-input" name="endpoint" value="${escapeHtml(draft.endpoint)}"></label>
       <label class="list-row-meta"><input type="checkbox" name="usesKey" ${draft.credentialRef || draft.provider === 'brave' ? 'checked' : ''}> 使用本机 Search 凭证</label>
-      <label class="label">新的 Search API Key<input class="config-input" name="apiKey" type="password" autocomplete="off" value="${escape(draft.apiKey)}" placeholder="留空保留这个地址原有的密钥"></label>
+      <label class="label">新的 Search API Key<input class="config-input" name="apiKey" type="password" autocomplete="off" value="${escapeHtml(draft.apiKey)}" placeholder="留空保留这个地址原有的密钥"></label>
       <label class="list-row-meta"><input type="checkbox" name="clearKey" ${draft.clearKey ? 'checked' : ''}> 清除此地址已保存的 Search Key</label>
       <label class="list-row-meta"><input type="checkbox" name="browserFallback" ${draft.browserFallback ? 'checked' : ''}> 允许内置网页检索（无需密钥，默认开启）</label>
-      <label class="label">搜索条数上限<input class="config-input" type="number" name="maxResults" min="1" max="8" value="${escape(draft.maxResults || 8)}"></label>
-      <label class="label">搜索超时（毫秒）<input class="config-input" type="number" name="timeoutMs" min="3000" max="120000" value="${escape(draft.timeoutMs || 20000)}"></label>
+      <label class="label">搜索条数上限<input class="config-input" type="number" name="maxResults" min="1" max="8" value="${escapeHtml(draft.maxResults || 8)}"></label>
+      <label class="label">搜索超时（毫秒）<input class="config-input" type="number" name="timeoutMs" min="3000" max="120000" value="${escapeHtml(draft.timeoutMs || 20000)}"></label>
     </fieldset>
     <p class="list-row-meta">Search 凭证仅保存于本机，并绑定该地址。保存配置不会发送搜索请求，也不代表服务已验证。</p>
-    <p role="status" aria-live="polite">${escape(state.message)}</p>
+    <p role="status" aria-live="polite">${escapeHtml(state.message)}</p>
     </div>
   </section>`;
 }

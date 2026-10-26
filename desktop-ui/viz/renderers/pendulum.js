@@ -1,3 +1,4 @@
+import { sceneColor } from '../../../src/shared/visualTokens.js';
 // Simple pendulum renderer — small-angle approximation.
 // Params: L (length, m), g (gravity, m/s²), theta0 (amplitude, degrees)
 import {
@@ -76,7 +77,7 @@ export default function mountPendulum(host, spec) {
     ctx.stroke();
 
     // Bob.
-    ctx.fillStyle = '#fff7f3';
+    ctx.fillStyle = sceneColor('diagram-point');
     ctx.shadowColor = 'rgba(246,90,96,0.7)';
     ctx.shadowBlur = 14;
     ctx.beginPath();

@@ -8,7 +8,7 @@
 import { t } from '../../i18n.js';
 import { collectTeamPlan } from '../../teamPanel.js';
 import { projectsState, resetProjectsState } from './state.js';
-import { bindProjectsContext, projectsApi, getBootstrap, render, showError, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts, startProjectSession } from './context.js';
+import { bindProjectsContext, projectsApi, getBootstrap, render, notify, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts, startProjectSession } from './context.js';
 
 // Binds the narrow context and starts from fresh feature state. app.js calls
 // this once at startup (through ./index.js); tests call it per case.
@@ -33,8 +33,7 @@ async function handleCreateProject() {
   if (projectsState.projectCreating) return;
   const { name, summary, instructions, tag, workspacePath } = projectsState.draftProject;
   if (!name.trim()) {
-    showError('Project name is required.');
-    return;
+    throw new Error('Project name is required.');
   }
 
   projectsState.projectCreating = true;
@@ -90,11 +89,11 @@ export const projectsActions = {
   },
   'save-project-team': async ({ trigger }) => {
     const team=collectTeamPlan(trigger.closest('[data-team-scope]'));
-    if(team.error) {showError(t(team.error));return;}
-    try { applyBootstrap(await projectsApi.update(trigger.dataset.projectId,{teamPlan:team.plan})); } catch(error) { showError(error.message); }
+    if(team.error) {notify({level:'error',text:t(team.error)});return;}
+    try { applyBootstrap(await projectsApi.update(trigger.dataset.projectId,{teamPlan:team.plan})); } catch(error) { notify({level:'error',text:error.message}); }
   },
   'clear-project-team': async ({ trigger }) => {
-    try { applyBootstrap(await projectsApi.update(trigger.dataset.projectId,{teamPlan:null})); } catch(error) { showError(error.message); }
+    try { applyBootstrap(await projectsApi.update(trigger.dataset.projectId,{teamPlan:null})); } catch(error) { notify({level:'error',text:error.message}); }
   },
   'chat-from-project': async ({ trigger }) => {
     await startProjectSession(trigger.dataset.projectId, 'chat');
@@ -176,7 +175,7 @@ export function handleProjectsChange(target) {
 
 async function saveProjectDefaultAgent(target) {
   try { applyBootstrapPreservingDrafts(await projectsApi.update(target.dataset.projectDefaultAgent,{defaultAgentId:target.value})); }
-  catch(error) { showError(error.message); }
+  catch(error) { notify({level:'error',text:error.message}); }
   render();
 }
 

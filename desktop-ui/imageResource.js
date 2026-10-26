@@ -36,7 +36,7 @@ export async function resolveImageSource(image, { signal } = {}) {
 
 export function installImageRecovery() {
   const inspected = new WeakSet();
-  const showError = (image, error) => {
+  const showImageFailure = (image, error) => {
     image.title = error.message;
     const caption = image.closest('figure')?.querySelector('figcaption');
     if (caption) { caption.textContent = error.message; caption.setAttribute('role', 'status'); }
@@ -45,7 +45,7 @@ export function installImageRecovery() {
     if (inspected.has(image) || !image.dataset.imageRef || !legacyWorkspaceUrl(image.getAttribute('src'))) return;
     inspected.add(image);
     image.dataset.recoveryAttempted = '1';
-    resolveImageSource(image).catch(error => showError(image, error));
+    resolveImageSource(image).catch(error => showImageFailure(image, error));
   };
   const scan = node => {
     if (node.nodeType !== 1) return;
@@ -70,6 +70,6 @@ export function installImageRecovery() {
       if (!response.ok) throw new Error(await imageResponseError(response, '图片暂时无法读取，请重试。'));
       response.body?.cancel();
       throw new Error(t('图片已损坏或浏览器不支持此格式。'));
-    } catch (error) { showError(image, error); }
+    } catch (error) { showImageFailure(image, error); }
   }, true);
 }

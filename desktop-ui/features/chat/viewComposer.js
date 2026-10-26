@@ -350,7 +350,7 @@ function renderAgentSelectorChip() {
             aria-haspopup="dialog" aria-expanded="${chatState.agentSelectorOpen}" aria-controls="agent-selector-panel"
             title="选择对话Agent" aria-label="选择对话 Agent" ${chatState.agentSelectionSaving ? 'disabled' : ''}>
       <span class="agent-selector-caption">Agent</span>${renderAgentAvatar(agent, escapeHtml, 22)} ${escapeHtml(agent.name)}
-      <span style="margin-left:4px;opacity:.6;font-size:.75em">▾</span>
+      <span class="selector-caret">▾</span>
     </button>
   `;
 }

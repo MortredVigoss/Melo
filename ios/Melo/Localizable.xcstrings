@@ -1,6 +1,286 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "此分类还没有内容。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此分类还没有内容。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No items in this category yet."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この分類にはまだ項目がありません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 분류에는 아직 항목이 없습니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aún no hay elementos en esta categoría."
+          }
+        }
+      }
+    },
+    "查看进行中的项目": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看进行中的项目"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View active projects"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "進行中のプロジェクト"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "진행 중인 프로젝트"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ver proyectos activos"
+          }
+        }
+      }
+    },
+    "查看已归档项目": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看已归档项目"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View archived projects"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アーカイブ済みプロジェクト"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "보관된 프로젝트"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ver proyectos archivados"
+          }
+        }
+      }
+    },
+    "返回项目": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返回项目"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back to projects"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクトに戻る"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "프로젝트로 돌아가기"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Volver a proyectos"
+          }
+        }
+      }
+    },
+    "关闭详情": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭详情"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close details"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "詳細を閉じる"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "상세 닫기"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cerrar detalles"
+          }
+        }
+      }
+    },
+    "保存知识": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存知识"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save knowledge"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ナレッジを保存"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지식 저장"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Guardar conocimiento"
+          }
+        }
+      }
+    },
+    "请求已提交": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请求已提交"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Request submitted"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リクエストを送信しました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "요청이 제출되었습니다"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Solicitud enviada"
+          }
+        }
+      }
+    },
+    "关闭提示": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭提示"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dismiss notification"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知を閉じる"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "알림 닫기"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cerrar aviso"
+          }
+        }
+      }
+    },
     "只展示已记录的执行 · 不代表模型内部思维": {
       "extractionState": "manual",
       "localizations": {
@@ -1366,13 +1646,13 @@
         }
       }
     },
-    "记忆离线只限制记忆提取、压缩和向量服务；聊天模型仍按所选连接运行。": {
+    "记忆离线只限制记忆提取、压缩和向量服务；对话模型仍按所选连接运行。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "记忆离线只限制记忆提取、压缩和向量服务；聊天模型仍按所选连接运行。"
+            "value": "记忆离线只限制记忆提取、压缩和向量服务；对话模型仍按所选连接运行。"
           }
         },
         "en": {
@@ -3256,13 +3536,13 @@
         }
       }
     },
-    "资料按问题与上下文预算选取相关片段，全文保留。": {
+    "知识按问题与上下文预算选取相关片段，全文保留。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "资料按问题与上下文预算选取相关片段，全文保留。"
+            "value": "知识按问题与上下文预算选取相关片段，全文保留。"
           }
         },
         "en": {
@@ -4936,13 +5216,13 @@
         }
       }
     },
-    "暂无可选项": {
+    "还没有可选项": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "暂无可选项"
+            "value": "还没有可选项"
           }
         },
         "en": {
@@ -5811,13 +6091,13 @@
         }
       }
     },
-    "会话工具授权": {
+    "对话工具授权": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "会话工具授权"
+            "value": "对话工具授权"
           }
         },
         "en": {
@@ -7911,13 +8191,13 @@
         }
       }
     },
-    "默认聊天 ID（可选）": {
+    "默认对话 ID（可选）": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "默认聊天 ID（可选）"
+            "value": "默认对话 ID（可选）"
           }
         },
         "en": {
@@ -8541,13 +8821,13 @@
         }
       }
     },
-    "此 Agent 的新版人设尚未同步。全文已保留在本机，其他聊天继续同步。": {
+    "此 Agent 的新版人设尚未同步。全文已保留在本机，其他对话继续同步。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "此 Agent 的新版人设尚未同步。全文已保留在本机，其他聊天继续同步。"
+            "value": "此 Agent 的新版人设尚未同步。全文已保留在本机，其他对话继续同步。"
           }
         },
         "en": {
@@ -8576,13 +8856,13 @@
         }
       }
     },
-    "部分 Agent 人设或关联配置尚未同步：旧版协议无法无损表示。全文已保留在本机，其他聊天继续同步。": {
+    "部分 Agent 人设或关联配置尚未同步：旧版协议无法无损表示。全文已保留在本机，其他对话继续同步。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "部分 Agent 人设或关联配置尚未同步：旧版协议无法无损表示。全文已保留在本机，其他聊天继续同步。"
+            "value": "部分 Agent 人设或关联配置尚未同步：旧版协议无法无损表示。全文已保留在本机，其他对话继续同步。"
           }
         },
         "en": {
@@ -8611,13 +8891,13 @@
         }
       }
     },
-    "聊天已同步 · 部分 Agent 人设或关联配置待同步，全文保留在本机": {
+    "对话已同步 · 部分 Agent 人设或关联配置待同步，全文保留在本机": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "聊天已同步 · 部分 Agent 人设或关联配置待同步，全文保留在本机"
+            "value": "对话已同步 · 部分 Agent 人设或关联配置待同步，全文保留在本机"
           }
         },
         "en": {
@@ -8996,13 +9276,13 @@
         }
       }
     },
-    "暂无模型与交付记录": {
+    "还没有模型与交付记录": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "暂无模型与交付记录"
+            "value": "还没有模型与交付记录"
           }
         },
         "en": {
@@ -12391,13 +12671,13 @@
         }
       }
     },
-    "把同一目标下的对话、资料与工作要求放在一起。": {
+    "把同一目标下的对话、知识与工作要求放在一起。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "把同一目标下的对话、资料与工作要求放在一起。"
+            "value": "把同一目标下的对话、知识与工作要求放在一起。"
           }
         },
         "en": {
@@ -12916,13 +13196,13 @@
         }
       }
     },
-    "保存可复用的背景资料、笔记和成果；在对话的「项目与资料」中明确选用。记忆负责自动召回，技能保存工作方法。": {
+    "保存可复用的背景知识、笔记和成果；在对话的「项目与知识」中明确选用。记忆负责自动召回，技能保存工作方法。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "保存可复用的背景资料、笔记和成果；在对话的「项目与资料」中明确选用。记忆负责自动召回，技能保存工作方法。"
+            "value": "保存可复用的背景知识、笔记和成果；在对话的「项目与知识」中明确选用。记忆负责自动召回，技能保存工作方法。"
           }
         },
         "en": {
@@ -13651,13 +13931,13 @@
         }
       }
     },
-    "自动记忆默认仅用于原对话。停止使用会保留记录供恢复，原始聊天仍然保留。": {
+    "自动记忆默认仅用于原对话。停止使用会保留记录供恢复，原始对话仍然保留。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "自动记忆默认仅用于原对话。停止使用会保留记录供恢复，原始聊天仍然保留。"
+            "value": "自动记忆默认仅用于原对话。停止使用会保留记录供恢复，原始对话仍然保留。"
           }
         },
         "en": {
@@ -14036,13 +14316,13 @@
         }
       }
     },
-    "仅改变界面文字，聊天内容与模型回复语言不受影响。": {
+    "仅改变界面文字，对话内容与模型回复语言不受影响。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "仅改变界面文字，聊天内容与模型回复语言不受影响。"
+            "value": "仅改变界面文字，对话内容与模型回复语言不受影响。"
           }
         },
         "en": {
@@ -14188,25 +14468,25 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Knowledge"
+            "value": "Knowledge item"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ナレッジ"
+            "value": "資料"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "지식"
+            "value": "자료"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Conocimiento"
+            "value": "Documento"
           }
         }
       }
@@ -14281,13 +14561,13 @@
         }
       }
     },
-    "把相关的工作与资料，连接在一起。": {
+    "把相关的工作与知识，连接在一起。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "把相关的工作与资料，连接在一起。"
+            "value": "把相关的工作与知识，连接在一起。"
           }
         },
         "en": {
@@ -14351,13 +14631,13 @@
         }
       }
     },
-    "资料由你保存并选用；记忆自动召回；技能提供工作方法。": {
+    "知识由你保存并选用；记忆自动召回；技能提供工作方法。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "资料由你保存并选用；记忆自动召回；技能提供工作方法。"
+            "value": "知识由你保存并选用；记忆自动召回；技能提供工作方法。"
           }
         },
         "en": {
@@ -14596,13 +14876,13 @@
         }
       }
     },
-    "查找消息、资料与功能": {
+    "查找消息、知识与功能": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "查找消息、资料与功能"
+            "value": "查找消息、知识与功能"
           }
         },
         "en": {
@@ -14876,13 +15156,13 @@
         }
       }
     },
-    "资料与成果": {
+    "知识与成果": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "资料与成果"
+            "value": "知识与成果"
           }
         },
         "en": {
@@ -14911,13 +15191,13 @@
         }
       }
     },
-    "添加资料、保存成果，在对话中选用": {
+    "添加知识、保存成果，在对话中选用": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "添加资料、保存成果，在对话中选用"
+            "value": "添加知识、保存成果，在对话中选用"
           }
         },
         "en": {
@@ -16451,13 +16731,13 @@
         }
       }
     },
-    "聊天字号": {
+    "对话字号": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "聊天字号"
+            "value": "对话字号"
           }
         },
         "en": {
@@ -17676,13 +17956,13 @@
         }
       }
     },
-    "导出普通对话、Agent、项目、共享资料和可迁移的来源记录。原始附件、完整执行账本、模型密钥和设备权限不包含在此文件中；这不是整机备份。": {
+    "导出普通对话、Agent、项目、共享知识和可迁移的来源记录。原始附件、完整执行账本、模型密钥和设备权限不包含在此文件中；这不是整机备份。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "导出普通对话、Agent、项目、共享资料和可迁移的来源记录。原始附件、完整执行账本、模型密钥和设备权限不包含在此文件中；这不是整机备份。"
+            "value": "导出普通对话、Agent、项目、共享知识和可迁移的来源记录。原始附件、完整执行账本、模型密钥和设备权限不包含在此文件中；这不是整机备份。"
           }
         },
         "en": {
@@ -17711,13 +17991,13 @@
         }
       }
     },
-    "导出可迁移资料": {
+    "导出可迁移数据": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "导出可迁移资料"
+            "value": "导出可迁移数据"
           }
         },
         "en": {
@@ -17746,13 +18026,13 @@
         }
       }
     },
-    "导入资料文件": {
+    "导入数据文件": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "导入资料文件"
+            "value": "导入数据文件"
           }
         },
         "en": {
@@ -17816,13 +18096,13 @@
         }
       }
     },
-    "保存资料文件": {
+    "保存数据文件": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "保存资料文件"
+            "value": "保存数据文件"
           }
         },
         "en": {
@@ -17991,13 +18271,13 @@
         }
       }
     },
-    "当前没有 Melo 云账号。已有私人同步仍按原配置运行；不会因更换头像自动上传资料。": {
+    "当前没有 Melo 云账号。已有私人同步仍按原配置运行；不会因更换头像自动上传数据。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "当前没有 Melo 云账号。已有私人同步仍按原配置运行；不会因更换头像自动上传资料。"
+            "value": "当前没有 Melo 云账号。已有私人同步仍按原配置运行；不会因更换头像自动上传数据。"
           }
         },
         "en": {
@@ -18201,13 +18481,13 @@
         }
       }
     },
-    "诊断仅包含应用版本、浏览器版本和记录数量，不包含聊天正文与密钥。": {
+    "诊断仅包含应用版本、浏览器版本和记录数量，不包含对话正文与密钥。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "诊断仅包含应用版本、浏览器版本和记录数量，不包含聊天正文与密钥。"
+            "value": "诊断仅包含应用版本、浏览器版本和记录数量，不包含对话正文与密钥。"
           }
         },
         "en": {
@@ -18271,13 +18551,13 @@
         }
       }
     },
-    "本地个人资料、头像与常用偏好；可迁移资料导入导出；设备权限入口。": {
+    "本地个人资料、头像与常用偏好；可迁移数据导入导出；设备权限入口。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本地个人资料、头像与常用偏好；可迁移资料导入导出；设备权限入口。"
+            "value": "本地个人资料、头像与常用偏好；可迁移数据导入导出；设备权限入口。"
           }
         },
         "en": {
@@ -19251,13 +19531,13 @@
         }
       }
     },
-    "资料文件超过 16 MB。": {
+    "数据文件超过 16 MB。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "资料文件超过 16 MB。"
+            "value": "数据文件超过 16 MB。"
           }
         },
         "en": {
@@ -19286,13 +19566,13 @@
         }
       }
     },
-    "资料文件已保存。": {
+    "数据文件已保存。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "资料文件已保存。"
+            "value": "数据文件已保存。"
           }
         },
         "en": {
@@ -19356,13 +19636,13 @@
         }
       }
     },
-    "资料已合并，现有模型连接和设备权限保留。": {
+    "数据已合并，现有模型连接和设备权限保留。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "资料已合并，现有模型连接和设备权限保留。"
+            "value": "数据已合并，现有模型连接和设备权限保留。"
           }
         },
         "en": {
@@ -21211,13 +21491,13 @@
         }
       }
     },
-    "沿用当前聊天模型": {
+    "沿用当前对话模型": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "沿用当前聊天模型"
+            "value": "沿用当前对话模型"
           }
         },
         "en": {
@@ -23381,13 +23661,13 @@
         }
       }
     },
-    "项目共享资料": {
+    "项目共享知识": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "项目共享资料"
+            "value": "项目共享知识"
           }
         },
         "en": {
@@ -25061,13 +25341,13 @@
         }
       }
     },
-    "添加资料": {
+    "添加知识": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "添加资料"
+            "value": "添加知识"
           }
         },
         "en": {
@@ -25092,41 +25372,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Añadir recurso"
-          }
-        }
-      }
-    },
-    "保存资料": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "保存资料"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Save resource"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "資料を保存"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "자료 저장"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Guardar recurso"
           }
         }
       }
@@ -27266,13 +27511,13 @@
         }
       }
     },
-    "{0} 聊天、头像、附件原件、模型连接和记忆保留。": {
+    "{0} 对话、头像、附件原件、模型连接和记忆保留。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "{0} 聊天、头像、附件原件、模型连接和记忆保留。"
+            "value": "{0} 对话、头像、附件原件、模型连接和记忆保留。"
           }
         },
         "en": {
@@ -28736,13 +28981,13 @@
         }
       }
     },
-    "暂无审批记录。": {
+    "还没有审批记录。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "暂无审批记录。"
+            "value": "还没有审批记录。"
           }
         },
         "en": {
@@ -29016,13 +29261,13 @@
         }
       }
     },
-    "{0} 份资料与成果": {
+    "{0} 份知识与成果": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "{0} 份资料与成果"
+            "value": "{0} 份知识与成果"
           }
         },
         "en": {
@@ -29331,13 +29576,13 @@
         }
       }
     },
-    "已归档 · 对话与资料保留": {
+    "已归档 · 对话与知识保留": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已归档 · 对话与资料保留"
+            "value": "已归档 · 对话与知识保留"
           }
         },
         "en": {
@@ -29366,13 +29611,13 @@
         }
       }
     },
-    "先在知识分支保存资料。": {
+    "先在知识库保存知识。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "先在知识分支保存资料。"
+            "value": "先在知识库保存知识。"
           }
         },
         "en": {
@@ -29436,13 +29681,13 @@
         }
       }
     },
-    "还没有保存的资料或成果。": {
+    "还没有保存的知识或成果。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "还没有保存的资料或成果。"
+            "value": "还没有保存的知识或成果。"
           }
         },
         "en": {
@@ -30066,13 +30311,13 @@
         }
       }
     },
-    "暂无状态，点击刷新检查。": {
+    "还没有状态，点击刷新检查。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "暂无状态，点击刷新检查。"
+            "value": "还没有状态，点击刷新检查。"
           }
         },
         "en": {
@@ -30416,13 +30661,13 @@
         }
       }
     },
-    "资料标题": {
+    "知识标题": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "资料标题"
+            "value": "知识标题"
           }
         },
         "en": {
@@ -30451,13 +30696,13 @@
         }
       }
     },
-    "写入背景资料、笔记或保存成果": {
+    "写入背景知识、笔记或保存成果": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "写入背景资料、笔记或保存成果"
+            "value": "写入背景知识、笔记或保存成果"
           }
         },
         "en": {
@@ -30486,13 +30731,13 @@
         }
       }
     },
-    "选择一份资料查看或编辑。": {
+    "选择一份知识查看或编辑。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "选择一份资料查看或编辑。"
+            "value": "选择一份知识查看或编辑。"
           }
         },
         "en": {
@@ -30976,13 +31221,13 @@
         }
       }
     },
-    "项目与资料{0}": {
+    "项目与知识{0}": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "项目与资料{0}"
+            "value": "项目与知识{0}"
           }
         },
         "en": {
@@ -31046,13 +31291,13 @@
         }
       }
     },
-    "选用知识资料": {
+    "选用知识": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "选用知识资料"
+            "value": "选用知识"
           }
         },
         "en": {
@@ -31116,13 +31361,13 @@
         }
       }
     },
-    "先在知识 → 资料与成果中保存资料。": {
+    "先在知识库 → 知识与成果中保存知识。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "先在知识 → 资料与成果中保存资料。"
+            "value": "先在知识库 → 知识与成果中保存知识。"
           }
         },
         "en": {
@@ -35596,13 +35841,13 @@
         }
       }
     },
-    "存为知识资料": {
+    "存为知识": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "存为知识资料"
+            "value": "存为知识"
           }
         },
         "en": {
@@ -35981,13 +36226,13 @@
         }
       }
     },
-    "查找聊天记录": {
+    "查找对话记录": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "查找聊天记录"
+            "value": "查找对话记录"
           }
         },
         "en": {
@@ -37276,13 +37521,13 @@
         }
       }
     },
-    "这个 Agent 目前没有临时授权。": {
+    "这个 Agent 还没有临时授权。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "这个 Agent 目前没有临时授权。"
+            "value": "这个 Agent 还没有临时授权。"
           }
         },
         "en": {
@@ -37311,13 +37556,13 @@
         }
       }
     },
-    "目前没有临时授权。": {
+    "还没有临时授权。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "目前没有临时授权。"
+            "value": "还没有临时授权。"
           }
         },
         "en": {
@@ -37941,41 +38186,6 @@
         }
       }
     },
-    "返回项目": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "返回项目"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Back to projects"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "プロジェクトに戻る"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "프로젝트로 돌아가기"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Volver a proyectos"
-          }
-        }
-      }
-    },
     "已删除项目": {
       "extractionState": "manual",
       "localizations": {
@@ -38116,13 +38326,13 @@
         }
       }
     },
-    "项目已删除；聊天、资料、图片和原文件夹保留。": {
+    "项目已删除；对话、知识、图片和原文件夹保留。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "项目已删除；聊天、资料、图片和原文件夹保留。"
+            "value": "项目已删除；对话、知识、图片和原文件夹保留。"
           }
         },
         "en": {
@@ -38186,13 +38396,13 @@
         }
       }
     },
-    "聊天将解除项目归属，资料、图片与外部文件夹保留；项目记忆隔离保存，待审批失效。": {
+    "对话将解除项目归属，知识、图片与外部文件夹保留；项目记忆隔离保存，待审批失效。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "聊天将解除项目归属，资料、图片与外部文件夹保留；项目记忆隔离保存，待审批失效。"
+            "value": "对话将解除项目归属，知识、图片与外部文件夹保留；项目记忆隔离保存，待审批失效。"
           }
         },
         "en": {
@@ -42421,13 +42631,13 @@
         }
       }
     },
-    "可选用任意多份资料；每轮按问题选取最相关的片段发送（最多 8 段），全文保留。": {
+    "可选用任意多份知识；每轮按问题选取最相关的片段发送（最多 8 段），全文保留。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "可选用任意多份资料；每轮按问题选取最相关的片段发送（最多 8 段），全文保留。"
+            "value": "可选用任意多份知识；每轮按问题选取最相关的片段发送（最多 8 段），全文保留。"
           }
         },
         "en": {
@@ -42942,41 +43152,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Transcripción"
-          }
-        }
-      }
-    },
-    "关闭提示": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "关闭提示"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Close"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "閉じる"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "닫기"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cerrar"
           }
         }
       }
@@ -45046,13 +45221,13 @@
         }
       }
     },
-    "暂无近期验证记录": {
+    "还没有近期验证记录": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "暂无近期验证记录"
+            "value": "还没有近期验证记录"
           }
         },
         "en": {
@@ -46621,13 +46796,13 @@
         }
       }
     },
-    "暂无可用连接，使用保守规则": {
+    "还没有可用连接，使用保守规则": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "暂无可用连接，使用保守规则"
+            "value": "还没有可用连接，使用保守规则"
           }
         },
         "en": {
@@ -49736,13 +49911,13 @@
         }
       }
     },
-    "资料状态：{state}": {
+    "知识状态：{state}": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "资料状态：{state}"
+            "value": "知识状态：{state}"
           }
         },
         "en": {
@@ -49911,13 +50086,13 @@
         }
       }
     },
-    "选用资料：{items}": {
+    "选用知识：{items}": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "选用资料：{items}"
+            "value": "选用知识：{items}"
           }
         },
         "en": {
@@ -50436,13 +50611,13 @@
         }
       }
     },
-    "本机聊天渲染": {
+    "本机对话渲染": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本机聊天渲染"
+            "value": "本机对话渲染"
           }
         },
         "en": {
@@ -50471,13 +50646,13 @@
         }
       }
     },
-    "回答已渲染到当前设备的聊天界面；不代表用户已阅读": {
+    "回答已渲染到当前设备的对话界面；不代表用户已阅读": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "回答已渲染到当前设备的聊天界面；不代表用户已阅读"
+            "value": "回答已渲染到当前设备的对话界面；不代表用户已阅读"
           }
         },
         "en": {
@@ -52116,41 +52291,6 @@
         }
       }
     },
-    "知识资料": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "知识资料"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Knowledge item"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "資料"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "자료"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Documento"
-          }
-        }
-      }
-    },
     "图标样式": {
       "extractionState": "manual",
       "localizations": {
@@ -52536,13 +52676,13 @@
         }
       }
     },
-    "资料较长，将按预算选取部分内容；未选取的部分不会发送。": {
+    "知识较长，将按预算选取部分内容；未选取的部分不会发送。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "资料较长，将按预算选取部分内容；未选取的部分不会发送。"
+            "value": "知识较长，将按预算选取部分内容；未选取的部分不会发送。"
           }
         },
         "en": {
@@ -52571,13 +52711,13 @@
         }
       }
     },
-    "先在知识库中保存资料。": {
+    "先在知识库中保存知识。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "先在知识库中保存资料。"
+            "value": "先在知识库中保存知识。"
           }
         },
         "en": {
@@ -53131,13 +53271,13 @@
         }
       }
     },
-    "我在这个服务器里找不到你的成员资料。": {
+    "我在这个服务器里找不到你的成员信息。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "我在这个服务器里找不到你的成员资料。"
+            "value": "我在这个服务器里找不到你的成员信息。"
           }
         },
         "en": {
@@ -54216,13 +54356,13 @@
         }
       }
     },
-    "界面语言也用于无法判断用户消息语言时的回复；已有聊天内容不变。": {
+    "界面语言也用于无法判断用户消息语言时的回复；已有对话内容不变。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "界面语言也用于无法判断用户消息语言时的回复；已有聊天内容不变。"
+            "value": "界面语言也用于无法判断用户消息语言时的回复；已有对话内容不变。"
           }
         },
         "en": {
@@ -55612,6 +55752,916 @@
           "stringUnit": {
             "state": "translated",
             "value": "Verificando el resultado de imagen"
+          }
+        }
+      }
+    },
+    "%lld 段对话 · 按最近更新排序": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 段对话 · 按最近更新排序"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld conversations · Most recently updated first"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会話 %lld 件 · 更新日時順"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대화 %lld개 · 최근 업데이트 순"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld conversaciones · Más recientes primero"
+          }
+        }
+      }
+    },
+    "%@的操作": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@的操作"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actions for %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ の操作"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 작업"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Acciones para %@"
+          }
+        }
+      }
+    },
+    "账号 %lld · %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账号 %lld · %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Account %lld · %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アカウント %lld · %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "계정 %lld · %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cuenta %lld · %@"
+          }
+        }
+      }
+    },
+    "登录验证码 %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录验证码 %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign-in code %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ログインコード %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그인 코드 %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Código de acceso %@"
+          }
+        }
+      }
+    },
+    "%@ · %lld 条消息": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · %lld 条消息"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · %lld messages"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · メッセージ %lld 件"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · 메시지 %lld개"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · %lld mensajes"
+          }
+        }
+      }
+    },
+    "对话 / %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对话 / %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conversation / %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会話 / %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대화 / %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conversación / %@"
+          }
+        }
+      }
+    },
+    "请求模型：%@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请求模型：%@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requested model: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要求モデル：%@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "요청 모델: %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modelo solicitado: %@"
+          }
+        }
+      }
+    },
+    "复制来源链接：%@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制来源链接：%@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy source link: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "出典リンクをコピー：%@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "출처 링크 복사: %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copiar enlace de la fuente: %@"
+          }
+        }
+      }
+    },
+    "版本：%lld": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "版本：%lld"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revision: %lld"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リビジョン：%lld"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "리비전: %lld"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revisión: %lld"
+          }
+        }
+      }
+    },
+    "更新时间：%@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新时间：%@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Updated: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新日時：%@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "업데이트: %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actualizado: %@"
+          }
+        }
+      }
+    },
+    "执行设备：%@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "执行设备：%@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Execution device: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実行端末：%@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행 기기: %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dispositivo de ejecución: %@"
+          }
+        }
+      }
+    },
+    "%@ · 项目共享": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · 项目共享"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · Shared with project"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · プロジェクト共有"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · 프로젝트 공유"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · Compartido con el proyecto"
+          }
+        }
+      }
+    },
+    "%@ · %lld 次实际调用": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · %lld 次实际调用"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · %lld recorded calls"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · 実際の呼び出し %lld 回"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · 실제 호출 %lld회"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · %lld llamadas registradas"
+          }
+        }
+      }
+    },
+    "返回模型：%@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返回模型：%@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Returned model: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返されたモデル：%@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "반환된 모델: %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modelo devuelto: %@"
+          }
+        }
+      }
+    },
+    "将合并 %lld 段对话，保留当前知识与模型连接。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将合并 %lld 段对话，保留当前知识与模型连接。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Merge %lld conversations, keeping current knowledge and model connections."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 件の会話を統合し、現在のナレッジとモデル接続を保持します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대화 %lld개를 병합하며 현재 지식과 모델 연결을 유지합니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Combinar %lld conversaciones conservando el conocimiento y las conexiones actuales."
+          }
+        }
+      }
+    },
+    "%lld 段对话 · %lld 份共享知识%@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 段对话 · %lld 份共享知识%@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld conversations · %lld shared knowledge items%@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会話 %lld 件 · 共有ナレッジ %lld 件%@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대화 %lld개 · 공유 지식 %lld개%@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld conversaciones · %lld elementos de conocimiento compartidos%@"
+          }
+        }
+      }
+    },
+    "桌面任务与接力（%lld）": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "桌面任务与接力（%lld）"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desktop tasks and handoffs (%lld)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デスクトップのタスクと引き継ぎ（%lld）"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "데스크톱 작업 및 인계 (%lld)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tareas y relevos de escritorio (%lld)"
+          }
+        }
+      }
+    },
+    "%lld / 12,000 字": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld / 12,000 字"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld / 12,000 characters"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld / 12,000 文字"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld / 12,000자"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld / 12.000 caracteres"
+          }
+        }
+      }
+    },
+    "采用版本 %lld": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "采用版本 %lld"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use version %lld"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バージョン %lld を使用"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "버전 %lld 사용"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usar versión %lld"
+          }
+        }
+      }
+    },
+    "Agent 能力冲突 · %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent 能力冲突 · %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent capability conflict · %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent の機能の競合 · %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent 기능 충돌 · %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conflicto de capacidades de Agent · %@"
+          }
+        }
+      }
+    },
+    "同步冲突 · %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同步冲突 · %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sync conflict · %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同期の競合 · %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "동기화 충돌 · %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conflicto de sincronización · %@"
+          }
+        }
+      }
+    },
+    "版本 %lld": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "版本 %lld"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Version %lld"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バージョン %lld"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "버전 %lld"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Versión %lld"
+          }
+        }
+      }
+    },
+    "%@ · 本地测试版": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · 本地测试版"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · Local test build"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · ローカルテスト版"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · 로컬 테스트 빌드"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · Versión local de prueba"
+          }
+        }
+      }
+    },
+    "「%@」未开启委派。请在电脑的 Agent 设置里开启“委派”，并勾选可以协作的 Agent；设置会同步到这台手机。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」未开启委派。请在电脑的 Agent 设置里开启“委派”，并勾选可以协作的 Agent；设置会同步到这台手机。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delegation is off for “%@”. Enable it and choose collaborators in the desktop Agent settings; these settings sync to this phone."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」の委任はオフです。デスクトップの Agent 設定で委任をオンにし、連携相手を選んでください。設定はこの端末に同期されます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘%@’의 위임이 꺼져 있습니다. 데스크톱 Agent 설정에서 위임을 켜고 협업할 Agent를 선택하세요. 설정이 이 휴대폰에 동기화됩니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La delegación está desactivada para «%@». Actívala y elige colaboradores en los ajustes de Agent del escritorio; se sincronizarán con este teléfono."
+          }
+        }
+      }
+    },
+    "「%@」还没有可协作的 Agent。请在电脑的 Agent 设置里勾选委派对象；设置会同步到这台手机。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」还没有可协作的 Agent。请在电脑的 Agent 设置里勾选委派对象；设置会同步到这台手机。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%@” has no collaborators yet. Choose delegation targets in the desktop Agent settings; these settings sync to this phone."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」にはまだ連携相手がいません。デスクトップの Agent 設定で委任先を選んでください。設定はこの端末に同期されます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘%@’에게 아직 협업할 Agent가 없습니다. 데스크톱 Agent 설정에서 위임 대상을 선택하세요. 설정이 이 휴대폰에 동기화됩니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "«%@» aún no tiene colaboradores. Elige destinatarios de delegación en los ajustes de Agent del escritorio; se sincronizarán con este teléfono."
+          }
+        }
+      }
+    },
+    "由「%@」发起并汇总结果。成员按勾选顺序接力；并行模式下最后一位负责复核；循环模式需要正好两位：先实施，后复核。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "由「%@」发起并汇总结果。成员按勾选顺序接力；并行模式下最后一位负责复核；循环模式需要正好两位：先实施，后复核。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%@” starts the work and summarizes results. Members hand off in selection order; the last reviews parallel work. Loop mode needs exactly two members: implement, then review."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」が開始し、結果をまとめます。選択順に引き継ぎ、並列では最後のメンバーが確認します。ループには実装と確認を行う 2 名が必要です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "‘%@’이 작업을 시작하고 결과를 정리합니다. 선택 순서로 인계하며 병렬 모드에서는 마지막 구성원이 검토합니다. 반복 모드에는 구현자와 검토자 두 명이 필요합니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "«%@» inicia el trabajo y resume los resultados. El relevo sigue el orden elegido; el último revisa el trabajo paralelo. El modo de bucle requiere dos miembros: implementar y revisar."
           }
         }
       }
@@ -57751,13 +58801,13 @@
         }
       }
     },
-    "同步后的成果会显示在这里，不会自动用作知识资料。": {
+    "同步后的成果会显示在这里，不会自动用作知识。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "同步后的成果会显示在这里，不会自动用作知识资料。"
+            "value": "同步后的成果会显示在这里，不会自动用作知识。"
           }
         },
         "en": {
@@ -57856,13 +58906,13 @@
         }
       }
     },
-    "最多 8 份；长资料按预算选取，全文保留。": {
+    "最多 8 份；长知识按预算选取，全文保留。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "最多 8 份；长资料按预算选取，全文保留。"
+            "value": "最多 8 份；长知识按预算选取，全文保留。"
           }
         },
         "en": {
@@ -57996,13 +59046,13 @@
         }
       }
     },
-    "项目与资料%@": {
+    "项目与知识%@": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "项目与资料%@"
+            "value": "项目与知识%@"
           }
         },
         "en": {
@@ -58346,13 +59396,13 @@
         }
       }
     },
-    "用 ChatGPT 账号授权，手机独立完成聊天、看图、搜索和修图。Melo 负责对话与任务执行，API 密钥连接仍可单独选择。": {
+    "用 ChatGPT 账号授权，手机独立完成对话、看图、搜索和修图。Melo 负责对话与任务执行，API 密钥连接仍可单独选择。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "用 ChatGPT 账号授权，手机独立完成聊天、看图、搜索和修图。Melo 负责对话与任务执行，API 密钥连接仍可单独选择。"
+            "value": "用 ChatGPT 账号授权，手机独立完成对话、看图、搜索和修图。Melo 负责对话与任务执行，API 密钥连接仍可单独选择。"
           }
         },
         "en": {
@@ -60306,13 +61356,13 @@
         }
       }
     },
-    "可导出对话、Agent、项目、共享资料与来源记录。不包含模型密钥、原始附件、电脑文件与权限；这不是整机备份。": {
+    "可导出对话、Agent、项目、共享知识与来源记录。不包含模型密钥、原始附件、电脑文件与权限；这不是整机备份。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "可导出对话、Agent、项目、共享资料与来源记录。不包含模型密钥、原始附件、电脑文件与权限；这不是整机备份。"
+            "value": "可导出对话、Agent、项目、共享知识与来源记录。不包含模型密钥、原始附件、电脑文件与权限；这不是整机备份。"
           }
         },
         "en": {
@@ -60341,13 +61391,13 @@
         }
       }
     },
-    "资料管理": {
+    "知识管理": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "资料管理"
+            "value": "知识管理"
           }
         },
         "en": {
@@ -60516,13 +61566,13 @@
         }
       }
     },
-    "这里暂无记忆。新对话中的偏好和明确决定会保留来源；已有资料不会被伪造为个人记忆。": {
+    "这里还没有记忆。新对话中的偏好和明确决定会保留来源；已有知识不会被伪造为个人记忆。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "这里暂无记忆。新对话中的偏好和明确决定会保留来源；已有资料不会被伪造为个人记忆。"
+            "value": "这里还没有记忆。新对话中的偏好和明确决定会保留来源；已有知识不会被伪造为个人记忆。"
           }
         },
         "en": {
@@ -61146,13 +62196,13 @@
         }
       }
     },
-    "实时检索取决于所选模型与账号权限；登录不会自动导入聊天记录。": {
+    "实时检索取决于所选模型与账号权限；登录不会自动导入对话记录。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "实时检索取决于所选模型与账号权限；登录不会自动导入聊天记录。"
+            "value": "实时检索取决于所选模型与账号权限；登录不会自动导入对话记录。"
           }
         },
         "en": {
@@ -61286,41 +62336,6 @@
         }
       }
     },
-    "查看已归档项目": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "查看已归档项目"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Show archived projects"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "アーカイブ済みプロジェクトを表示"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "보관된 프로젝트 보기"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ver proyectos archivados"
-          }
-        }
-      }
-    },
     "例如：旅行计划、学习一门语言、开发一个产品。项目不是另一种 Agent，而是一组相关工作的容器。": {
       "extractionState": "manual",
       "localizations": {
@@ -61426,13 +62441,13 @@
         }
       }
     },
-    "归档保留对话与资料，可随时恢复。配置同步服务后，项目与共享资料会一起同步。": {
+    "归档保留对话与知识，可随时恢复。配置同步服务后，项目与共享知识会一起同步。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "归档保留对话与资料，可随时恢复。配置同步服务后，项目与共享资料会一起同步。"
+            "value": "归档保留对话与知识，可随时恢复。配置同步服务后，项目与共享知识会一起同步。"
           }
         },
         "en": {
@@ -61601,41 +62616,6 @@
         }
       }
     },
-    "资料": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "资料"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Documents"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "資料"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "자료"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Documentos"
-          }
-        }
-      }
-    },
     "导入文字文件": {
       "extractionState": "manual",
       "localizations": {
@@ -61671,13 +62651,13 @@
         }
       }
     },
-    "搜索资料": {
+    "搜索知识": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "搜索资料"
+            "value": "搜索知识"
           }
         },
         "en": {
@@ -61706,13 +62686,13 @@
         }
       }
     },
-    "查看已删除资料": {
+    "查看已删除知识": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "查看已删除资料"
+            "value": "查看已删除知识"
           }
         },
         "en": {
@@ -61741,13 +62721,13 @@
         }
       }
     },
-    "删除后立即停止用于新请求；配置同步服务后，资料和删除状态一起同步。电脑本地文件不会自动上传。": {
+    "删除后立即停止用于新请求；配置同步服务后，知识和删除状态一起同步。电脑本地文件不会自动上传。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "删除后立即停止用于新请求；配置同步服务后，资料和删除状态一起同步。电脑本地文件不会自动上传。"
+            "value": "删除后立即停止用于新请求；配置同步服务后，知识和删除状态一起同步。电脑本地文件不会自动上传。"
           }
         },
         "en": {
@@ -61776,13 +62756,13 @@
         }
       }
     },
-    "资料正文": {
+    "知识正文": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "资料正文"
+            "value": "知识正文"
           }
         },
         "en": {
@@ -61846,13 +62826,13 @@
         }
       }
     },
-    "用于对照退出或重开时的录屏，只记录最近 80 次启动、前后台和请求状态，不含聊天、图片、账号或密钥。系统不保证发出终止通知，记录缺失不能证明发生了崩溃。": {
+    "用于对照退出或重开时的录屏，只记录最近 80 次启动、前后台和请求状态，不含对话、图片、账号或密钥。系统不保证发出终止通知，记录缺失不能证明发生了崩溃。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "用于对照退出或重开时的录屏，只记录最近 80 次启动、前后台和请求状态，不含聊天、图片、账号或密钥。系统不保证发出终止通知，记录缺失不能证明发生了崩溃。"
+            "value": "用于对照退出或重开时的录屏，只记录最近 80 次启动、前后台和请求状态，不含对话、图片、账号或密钥。系统不保证发出终止通知，记录缺失不能证明发生了崩溃。"
           }
         },
         "en": {
@@ -62126,13 +63106,13 @@
         }
       }
     },
-    "本次对话可用的知识资料": {
+    "本次对话可用的知识": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本次对话可用的知识资料"
+            "value": "本次对话可用的知识"
           }
         },
         "en": {
@@ -62161,13 +63141,13 @@
         }
       }
     },
-    "先在知识分支添加资料，再在这里选用。": {
+    "先在知识库添加知识，再在这里选用。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "先在知识分支添加资料，再在这里选用。"
+            "value": "先在知识库添加知识，再在这里选用。"
           }
         },
         "en": {
@@ -62196,13 +63176,13 @@
         }
       }
     },
-    "项目共享与本对话选中的资料会随下一次消息发送，合计最多 8 份、24000 字。已删除资料不会加入。": {
+    "项目共享与本对话选中的知识会随下一次消息发送，合计最多 8 份、24000 字。已删除知识不会加入。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "项目共享与本对话选中的资料会随下一次消息发送，合计最多 8 份、24000 字。已删除资料不会加入。"
+            "value": "项目共享与本对话选中的知识会随下一次消息发送，合计最多 8 份、24000 字。已删除知识不会加入。"
           }
         },
         "en": {
@@ -62231,13 +63211,13 @@
         }
       }
     },
-    "项目与资料": {
+    "项目与知识": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "项目与资料"
+            "value": "项目与知识"
           }
         },
         "en": {
@@ -62266,13 +63246,13 @@
         }
       }
     },
-    "同步对话、Agent头像、项目与共享资料、对话模型选择、来源记录和任务检查点。密钥、电脑路径和权限保存在本机；需配置支持上下文同步的私人服务。": {
+    "同步对话、Agent头像、项目与共享知识、对话模型选择、来源记录和任务检查点。密钥、电脑路径和权限保存在本机；需配置支持上下文同步的私人服务。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "同步对话、Agent头像、项目与共享资料、对话模型选择、来源记录和任务检查点。密钥、电脑路径和权限保存在本机；需配置支持上下文同步的私人服务。"
+            "value": "同步对话、Agent头像、项目与共享知识、对话模型选择、来源记录和任务检查点。密钥、电脑路径和权限保存在本机；需配置支持上下文同步的私人服务。"
           }
         },
         "en": {
@@ -63526,13 +64506,13 @@
         }
       }
     },
-    "Codex 登录可用于聊天、看图和图片生成 / 编辑；图像任务也可单独选择 API 连接，不改变本对话的聊天模型。": {
+    "Codex 登录可用于对话、看图和图片生成 / 编辑；图像任务也可单独选择 API 连接，不改变本对话的对话模型。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Codex 登录可用于聊天、看图和图片生成 / 编辑；图像任务也可单独选择 API 连接，不改变本对话的聊天模型。"
+            "value": "Codex 登录可用于对话、看图和图片生成 / 编辑；图像任务也可单独选择 API 连接，不改变本对话的对话模型。"
           }
         },
         "en": {
@@ -63806,13 +64786,13 @@
         }
       }
     },
-    "Codex 使用订阅额度；API 连接按对应平台计费，需支持 images/edits 和所选图片模型。失败时不自动切换通道。看图分析仍使用聊天模型。一次最多八张图片；多张图片默认逐张修改，说明“合成”时合成一张。": {
+    "Codex 使用订阅额度；API 连接按对应平台计费，需支持 images/edits 和所选图片模型。失败时不自动切换通道。看图分析仍使用对话模型。一次最多八张图片；多张图片默认逐张修改，说明“合成”时合成一张。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Codex 使用订阅额度；API 连接按对应平台计费，需支持 images/edits 和所选图片模型。失败时不自动切换通道。看图分析仍使用聊天模型。一次最多八张图片；多张图片默认逐张修改，说明“合成”时合成一张。"
+            "value": "Codex 使用订阅额度；API 连接按对应平台计费，需支持 images/edits 和所选图片模型。失败时不自动切换通道。看图分析仍使用对话模型。一次最多八张图片；多张图片默认逐张修改，说明“合成”时合成一张。"
           }
         },
         "en": {
@@ -64926,13 +65906,13 @@
         }
       }
     },
-    "同步对话、Agent头像、项目与共享资料、对话模型选择、来源记录和任务检查点。Agent 能力范围单独同步；密钥、电脑路径和具体文件授权保存在本机；需配置支持上下文同步的私人服务。": {
+    "同步对话、Agent头像、项目与共享知识、对话模型选择、来源记录和任务检查点。Agent 能力范围单独同步；密钥、电脑路径和具体文件授权保存在本机；需配置支持上下文同步的私人服务。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "同步对话、Agent头像、项目与共享资料、对话模型选择、来源记录和任务检查点。Agent 能力范围单独同步；密钥、电脑路径和具体文件授权保存在本机；需配置支持上下文同步的私人服务。"
+            "value": "同步对话、Agent头像、项目与共享知识、对话模型选择、来源记录和任务检查点。Agent 能力范围单独同步；密钥、电脑路径和具体文件授权保存在本机；需配置支持上下文同步的私人服务。"
           }
         },
         "en": {
@@ -65346,13 +66326,13 @@
         }
       }
     },
-    "文件夹授权只保存在此 iPhone，不随对话同步或导出。移除授权不会删除原文件或已导入的知识资料。单文件预览上限 20 MB。": {
+    "文件夹授权只保存在此 iPhone，不随对话同步或导出。移除授权不会删除原文件或已导入的知识。单文件预览上限 20 MB。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "文件夹授权只保存在此 iPhone，不随对话同步或导出。移除授权不会删除原文件或已导入的知识资料。单文件预览上限 20 MB。"
+            "value": "文件夹授权只保存在此 iPhone，不随对话同步或导出。移除授权不会删除原文件或已导入的知识。单文件预览上限 20 MB。"
           }
         },
         "en": {
@@ -65626,13 +66606,13 @@
         }
       }
     },
-    "下一步可检查文字并确认保存，最多 12,000 字。保存后在对话“项目与资料”里选用。": {
+    "下一步可检查文字并确认保存，最多 12,000 字。保存后在对话“项目与知识”里选用。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "下一步可检查文字并确认保存，最多 12,000 字。保存后在对话“项目与资料”里选用。"
+            "value": "下一步可检查文字并确认保存，最多 12,000 字。保存后在对话“项目与知识”里选用。"
           }
         },
         "en": {
@@ -65661,13 +66641,13 @@
         }
       }
     },
-    "当前仅预览。TXT、Markdown 和有文字层的 PDF 可添加为知识资料；Office 文件暂不提取正文。": {
+    "当前仅预览。TXT、Markdown 和有文字层的 PDF 可添加为知识；Office 文件暂不提取正文。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "当前仅预览。TXT、Markdown 和有文字层的 PDF 可添加为知识资料；Office 文件暂不提取正文。"
+            "value": "当前仅预览。TXT、Markdown 和有文字层的 PDF 可添加为知识；Office 文件暂不提取正文。"
           }
         },
         "en": {
@@ -65696,13 +66676,13 @@
         }
       }
     },
-    "导入资料": {
+    "导入知识": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "导入资料"
+            "value": "导入知识"
           }
         },
         "en": {
@@ -65976,13 +66956,13 @@
         }
       }
     },
-    "预览在本机完成。添加为知识资料并在对话中选用后，相关文字才会随请求发送给模型；已配置的资料同步也适用。": {
+    "预览在本机完成。添加为知识并在对话中选用后，相关文字才会随请求发送给模型；已配置的知识同步也适用。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "预览在本机完成。添加为知识资料并在对话中选用后，相关文字才会随请求发送给模型；已配置的资料同步也适用。"
+            "value": "预览在本机完成。添加为知识并在对话中选用后，相关文字才会随请求发送给模型；已配置的知识同步也适用。"
           }
         },
         "en": {
@@ -66532,41 +67512,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cada miembro llama al modelo una vez en este iPhone, solo con texto. La búsqueda web requiere que el Agent que inicia y ese miembro la tengan activada en «En este iPhone». Todo el equipo tiene como máximo 15 minutos."
-          }
-        }
-      }
-    },
-    "存为知识": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "存为知识"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Save as knowledge"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ナレッジに保存"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "지식으로 저장"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Guardar en conocimiento"
           }
         }
       }

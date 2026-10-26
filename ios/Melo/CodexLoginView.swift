@@ -8,7 +8,7 @@ struct CodexLoginCard: View {
     var body: some View {
         VStack(alignment:.leading,spacing:16) {
             Label(account.signedIn ? "Codex 已连接" : "连接 Codex",systemImage:"person.crop.circle.badge.checkmark").font(.headline)
-            Text("用 ChatGPT 账号授权，手机独立完成聊天、看图、搜索和修图。Melo 负责对话与任务执行，API 密钥连接仍可单独选择。")
+            Text("用 ChatGPT 账号授权，手机独立完成对话、看图、搜索和修图。Melo 负责对话与任务执行，API 密钥连接仍可单独选择。")
                 .font(.subheadline).foregroundStyle(.secondary)
             Text(account.status).font(.caption).foregroundStyle(.secondary)
             ForEach(Array(account.registrations.enumerated()),id:\.element.id) { index,registration in

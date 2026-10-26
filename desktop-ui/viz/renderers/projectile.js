@@ -1,4 +1,5 @@
-import { escapeHtml as encodeHtml } from '../../html.js';
+import { sceneColor } from '../../../src/shared/visualTokens.js';
+import { escapeHtml } from '../../i18n.js';
 // Projectile motion renderer — canvas + slider params.
 //
 // Input spec shape (already validated upstream in vizSpec.js):
@@ -121,7 +122,7 @@ function drawProjectile(canvas, state) {
     const frac = idxF - i0;
     const x = points[i0].x + (points[i1].x - points[i0].x) * frac;
     const y = points[i0].y + (points[i1].y - points[i0].y) * frac;
-    ctx.fillStyle = '#fff7f3';
+    ctx.fillStyle = sceneColor('diagram-point');
     ctx.shadowColor = 'rgba(246, 90, 96, 0.7)';
     ctx.shadowBlur = 12;
     ctx.beginPath();
@@ -158,15 +159,15 @@ function mountProjectile(host, spec) {
 
   host.classList.add('viz-card');
   host.innerHTML = `
-    ${spec.title ? `<div class="viz-title">${escape(spec.title)}</div>` : ''}
+    ${spec.title ? `<div class="viz-title">${escapeHtml(spec.title)}</div>` : ''}
     <canvas class="viz-canvas" width="${CANVAS_W}" height="${CANVAS_H}"></canvas>
     <div class="viz-readout" data-role="viz-readout"></div>
     <div class="viz-params">
       ${state.params
         .map(
           p => `
-          <label class="viz-param-row" data-param-id="${escape(p.id)}">
-            <span class="viz-param-label">${escape(p.label || p.id)}</span>
+          <label class="viz-param-row" data-param-id="${escapeHtml(p.id)}">
+            <span class="viz-param-label">${escapeHtml(p.label || p.id)}</span>
             <input
               class="viz-param-slider"
               type="range"
@@ -174,15 +175,15 @@ function mountProjectile(host, spec) {
               max="${p.max}"
               step="${p.step || ((p.max - p.min) / 100)}"
               value="${p.value}"
-              data-param-id="${escape(p.id)}"
+              data-param-id="${escapeHtml(p.id)}"
             />
-            <span class="viz-param-value" data-param-value-for="${escape(p.id)}">${formatValue(p.value, p.unit)}</span>
+            <span class="viz-param-value" data-param-value-for="${escapeHtml(p.id)}">${formatValue(p.value, p.unit)}</span>
           </label>
         `,
         )
         .join('')}
     </div>
-    ${spec.formula ? `<div class="viz-formula">${escape(spec.formula)}</div>` : ''}
+    ${spec.formula ? `<div class="viz-formula">${escapeHtml(spec.formula)}</div>` : ''}
   `;
 
   const canvas = host.querySelector('canvas.viz-canvas');
@@ -204,7 +205,7 @@ function mountProjectile(host, spec) {
       const param = state.params.find(p => p.id === id);
       if (!param) return;
       param.value = next;
-      const label = host.querySelector(`[data-param-value-for="${CSS.escape(id)}"]`);
+      const label = host.querySelector(`[data-param-value-for="${CSS.escapeHtml(id)}"]`);
       if (label) label.textContent = formatValue(next, param.unit);
       recompute();
       updateReadout();
@@ -225,9 +226,6 @@ function mountProjectile(host, spec) {
   };
 }
 
-function escape(str) {
-  return encodeHtml(str || '');
-}
 
 function formatValue(value, unit) {
   const n = Number(value);

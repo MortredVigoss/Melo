@@ -121,7 +121,7 @@ struct LocalPermissionsView: View {
                         Label("文件与文件夹", systemImage: "folder").font(.headline)
                         Text("通过系统“文件”选择器访问你选中的内容。可记住指定文件夹，也可随时移除授权；无法读取其他 App 的私有数据。").font(.caption).foregroundStyle(.secondary)
                         Button { files = true } label: { Label("打开本机文件", systemImage: "folder.badge.plus").frame(minHeight: 44) }
-                        Text("预览在本机完成。添加为知识资料并在对话中选用后，相关文字才会随请求发送给模型；已配置的资料同步也适用。").font(.caption).foregroundStyle(.secondary)
+                        Text("预览在本机完成。添加为知识并在对话中选用后，相关文字才会随请求发送给模型；已配置的知识同步也适用。").font(.caption).foregroundStyle(.secondary)
                     }.meloPanel()
                     permissionRow("麦克风", symbol: "mic", state: permissions.microphone, detail: Text("仅用于点击语音输入后的录音。自动朗读不需要麦克风。"), kind: .microphone)
                     permissionRow("相机", symbol: "camera", state: permissions.camera, detail: Text("确认照片后加入草稿，点击发送才会交给模型。"), kind: .camera)

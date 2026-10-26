@@ -155,7 +155,7 @@ export function renderAttachmentCards(message, { savedVideoKnowledge = {}, escap
                 <div class="media-caption">
                   ${escapeHtml(attachmentLabel(attachment))}
                   <span class="media-caption-hint">${escapeHtml(status)}</span>
-                  ${studied ? (savedVideoKnowledge[attachment.id] ? ui`<button type="button" class="small-button" disabled>已存入知识</button>` : ui`<button type="button" class="small-button" data-action="save-video-knowledge" data-message-id="${escapeHtml(message.id || '')}" data-attachment-id="${escapeHtml(attachment.id || '')}">存为知识资料</button>`) : ''}
+                  ${studied ? (savedVideoKnowledge[attachment.id] ? ui`<button type="button" class="small-button" disabled>已存入知识</button>` : ui`<button type="button" class="small-button" data-action="save-video-knowledge" data-message-id="${escapeHtml(message.id || '')}" data-attachment-id="${escapeHtml(attachment.id || '')}">存为知识</button>`) : ''}
                 </div>
               </div>
             `;

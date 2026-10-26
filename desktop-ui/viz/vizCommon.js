@@ -1,4 +1,4 @@
-import { escapeHtml as encodeHtml } from '../html.js';
+import { escapeHtml as encodeHtml } from '../i18n.js';
 // Shared helpers for viz renderers — escape, parameter row HTML, slider
 // binding, canvas setup. Keeps each renderer focused on its own physics
 // / geometry instead of re-implementing the boilerplate.

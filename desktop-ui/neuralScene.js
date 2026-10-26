@@ -1,3 +1,4 @@
+import { sceneColor } from '../src/shared/visualTokens.js';
 import { createSatelliteTopology, createSatelliteGlyph, createGlyphBridges, neuralIdentities, createSatelliteMotion, advanceSatelliteMotion, rotateSatellitePoint, pickNeuralLobe } from './neuralSatellite.js';
 // Full-workspace deep-sky field. A cached dust/stellar plate plus a bounded
 // moving signal layer: foreground motion is continuous, hidden motion stops.
@@ -42,7 +43,7 @@ export function createNeuralScene(initialHost) {
    context.fillStyle=g;context.fillRect(x-r,y-r,r*2,r*2);
  }
  function cacheSky(){
-   sky.fillStyle='#080807';sky.fillRect(0,0,width,height);
+   sky.fillStyle=sceneColor('neural-background');sky.fillRect(0,0,width,height);
    // Cool charcoal recedes; warm silver rims reveal the edges of opaque dust.
    dust.forEach((p,i)=>{
      const x=width*(.27+(p.x-.5)*.48),y=height*(.5+(p.x-.5)*.60+(p.y-.5)*.28);

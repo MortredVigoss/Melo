@@ -21,7 +21,7 @@ function harness(bootstrap = { projects: [] }) {
   const context = {
     getBootstrap: () => bootstrap,
     api: async (path, options = {}) => { calls.push([path, options.method || 'GET', options.body]); return { settings: {}, marker: path }; },
-    render: () => { renders++; }, showError: message => errors.push(message),
+    render: () => { renders++; }, notify: ({text}) => errors.push(text),
     patchSettings: async patch => { settings.push(patch); }, applyBootstrap: payload => applied.push(payload), applyBootstrapPreservingDrafts: payload => preserved.push(payload),
     startProjectSession: async (projectId, mode) => { sessions.push([projectId, mode]); },
     activeProject: () => bootstrap.activeProject || null, activeProjectChats: () => [], activeProjectArtifacts: () => [],
@@ -66,9 +66,9 @@ test('new project: the form draft lives in feature state, create posts it once a
 
 test('a nameless project is refused locally without a request', async () => {
   const h = harness();
-  await h.forms.dispatch('project-create', { form: null });
+  await assert.rejects(h.forms.dispatch('project-create', { form: null }), /Project name is required/);
   assert.deepEqual(h.calls, []);
-  assert.deepEqual(h.errors, ['Project name is required.']);
+  assert.deepEqual(h.errors, [], 'the form owner receives the error and retains its edit session');
 });
 
 test('project saves, archive, team and default Agent all patch through /api/projects/update', async () => {

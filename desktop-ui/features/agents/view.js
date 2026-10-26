@@ -149,7 +149,7 @@ function renderAgentCapabilities(selected,draft) {
 
 function renderAgentPersonaFields(selected, draft) {
   return ui`
-    ${getBootstrap()?.syncPendingPersonas?.some(row => row.kind === 'agent' && row.id === selected.id || row.kind === 'project' && row.id === activeProject()?.id && selectedAgentScope() === 'project') ? ui`<p role="status" aria-live="polite">此 Agent 的新版人设尚未同步。全文已保留在本机，其他聊天继续同步。</p>` : ''}
+    ${getBootstrap()?.syncPendingPersonas?.some(row => row.kind === 'agent' && row.id === selected.id || row.kind === 'project' && row.id === activeProject()?.id && selectedAgentScope() === 'project') ? ui`<p role="status" aria-live="polite">此 Agent 的新版人设尚未同步。全文已保留在本机，其他对话继续同步。</p>` : ''}
     ${!selected.capabilities ? ui`<p role="status" aria-live="polite">旧版权限待迁移</p>` : ''}
     <label class="label">Agent 名称<input class="config-input" name="name" value="${escapeHtml(draft?.name ?? selected.name ?? '')}" /></label>
     <label class="label">一句话定位<textarea class="textarea agent-control-editor" name="description" rows="2">${escapeHtml(draft?.description ?? selected.description ?? '')}</textarea></label>
@@ -307,7 +307,7 @@ function renderAgentWorkbench(selected) {
                     <input type="checkbox" name="discordVoiceReply" ${discordChannel.voiceReply ? 'checked' : ''} />
                     <span>文字回复后发送语音</span>
                   </label>
-                  <div class="list-row-meta" style="margin:0 0 8px 0;">
+                  <div class="list-row-meta section-note">
                     上方语音设置应用于此 Agent。
                   </div>
                   <label class="label">

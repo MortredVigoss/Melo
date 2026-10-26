@@ -68,7 +68,7 @@
       <header class="melo-launch-header">MELO / WORKSPACE</header>
       <main class="melo-launch-body">
         <div class="melo-launch-core" aria-hidden="true"></div>
-        <h1>melo</h1><p class="melo-launch-signature">A CONNECTED WORKSPACE</p>
+        <h1 class="page-title">melo</h1><p class="melo-launch-signature">A CONNECTED WORKSPACE</p>
         <div role="status" aria-live="polite"><div class="melo-launch-status"><i class="melo-launch-signal" aria-hidden="true"></i><span data-launch-status></span></div>
           <p class="melo-launch-caption" data-launch-caption></p></div>
         <div class="melo-launch-recovery" data-launch-recovery hidden>

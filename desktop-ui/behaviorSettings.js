@@ -1,6 +1,6 @@
 import { RUNTIME_BEHAVIOR, normalizeBehavior } from '../shared/agent/runtimeBehavior.js';
 import { t, ui } from './i18n.js';
-import { escapeHtml } from './html.js';
+import { escapeHtml } from './i18n.js';
 import { EditSession, renderEditActions, paintEditActions } from './settingsEdit.js';
 const session = new EditSession();
 let draft = null, message = '', current = {};
@@ -18,7 +18,7 @@ export function renderBehaviorSettings(config = {}) {
     <label class="label">工具协议<select class="config-select" name="toolCalling" ${config.toolCallingOverride ? 'disabled' : ''}>
       ${['auto','native','legacy'].map(mode=>'<option value="'+mode+'" '+(draft.toolCalling===mode?'selected':'')+'>'+escapeHtml(t({auto:'自动',native:'原生工具调用',legacy:'兼容文本工具'}[mode]))+'</option>').join('')}
     </select>${config.toolCallingOverride ? escapeHtml(t("环境覆盖")) : ""}</label></fieldset>
-    <p class="list-row-meta">记忆离线只限制记忆提取、压缩和向量服务；聊天模型仍按所选连接运行。</p>
+    <p class="list-row-meta">记忆离线只限制记忆提取、压缩和向量服务；对话模型仍按所选连接运行。</p>
     <p role="status" aria-live="polite">${escapeHtml(message)}</p></section>`;
 }
 export function editBehaviorSettings(target) {

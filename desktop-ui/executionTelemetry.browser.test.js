@@ -61,7 +61,7 @@ test('real browser loads saved API telemetry through Melo routes, reads summarie
     assert.match(await page.locator('.execution-inspector').innerText(), /resp-fixture-001/);
     assert.match(await page.locator('.execution-inspector').innerText(), /推理 token/);
     await page.screenshot({ path: join(proof, 'api-detail.png') });
-    await page.getByRole('button', { name: '关闭', exact: true }).click();
+    await page.getByRole('button', { name: '关闭详情', exact: true }).click();
     await page.getByRole('button', { name: '进入分析与计算' }).click();
     const records = page.locator('.execution-reasoning-records');
     await records.waitFor(); assert.match(await records.innerText(), /225/); assert.match(await records.innerText(), /15 \* 15/);

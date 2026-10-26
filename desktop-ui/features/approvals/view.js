@@ -114,14 +114,14 @@ export function renderGrantList({ agentId = null } = {}) {
   return ui`
     <section class="capability-grants" aria-labelledby="${titleId}" aria-live="polite">
       <div class="header-row capability-grants-header">
-        <h3 class="capability-grants-title" id="${titleId}">临时授权</h3>
+        <h3 class="subsection-title capability-grants-title" id="${titleId}">临时授权</h3>
         <button type="button" class="small-button" data-action="capability-grants-refresh" ${approvalsState.grantsLoading ? 'disabled aria-busy="true"' : ''}>刷新</button>
       </div>
       <p class="page-kicker-tip">对话中临时允许的能力。任务结束、到期或撤销后失效；撤销从下一次工具调用起生效。</p>
       ${approvalsState.grantsError ? `<div class="alert compact-alert" role="alert">${escapeHtml(approvalsState.grantsError)}</div>` : ''}
       ${grants.length
         ? `<ul class="safety-rule-list capability-grant-list">${rows}</ul>`
-        : `<p class="empty-state compact">${escapeHtml(agentId ? t('这个 Agent 目前没有临时授权。') : t('目前没有临时授权。'))}</p>`}
+        : `<p class="empty-state compact">${escapeHtml(agentId ? t('这个 Agent 还没有临时授权。') : t('还没有临时授权。'))}</p>`}
     </section>
   `;
 }

@@ -39,7 +39,7 @@ struct EditableDocument<Value: Equatable & Codable, Fields: View>: View {
                     ToolbarItem(placement: .confirmationAction) {
                         if edit.editing {
                             Button("保存") { save() }.buttonStyle(.borderedProminent).tint(canSave ? meloGold : .gray).foregroundStyle(.black).disabled(!canSave)
-                        } else { Button("编辑") { if let value = read() { edit.begin(value) } else { edit.fail("这项资料已不存在。") } } }
+                        } else { Button("编辑") { if let value = read() { edit.begin(value) } else { edit.fail("这项知识已不存在。") } } }
                     }
                     ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("收起键盘") { focused = false } }
                 }

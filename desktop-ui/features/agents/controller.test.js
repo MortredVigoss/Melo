@@ -44,7 +44,7 @@ function harness({ bootstrap = page(), project = null, api = null, responses = {
       return structuredClone(value);
     }),
     render: () => { renders++; }, bgRender: () => { renders++; },
-    showError: message => errors.push(message), showFlashToast: message => toasts.push(message),
+    notify: ({level,text}) => (level==='error'?errors:toasts).push(text),
     patchSettings: async patch => { settings.push(patch); },
     applyBootstrap: payload => { applied.push(payload); state.bootstrap = payload; },
     applyBootstrapPreservingDrafts: payload => { preserved.push(payload); state.bootstrap = payload; },
@@ -239,7 +239,7 @@ function sharedApi({ uiState, responses, errors }) {
     const next = responses.shift();
     return { ok: next.status < 400, json: async () => next.body };
   };
-  const api = createSharedApi({ getBootstrap: () => uiState.bootstrap, showError: message => errors.push(message), request });
+  const api = createSharedApi({ getBootstrap: () => uiState.bootstrap, notify: ({text}) => errors.push(text), request });
   return { api, requests };
 }
 

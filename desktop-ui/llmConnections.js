@@ -1,4 +1,4 @@
-import { escapeHtml } from './html.js';
+import { escapeHtml } from './i18n.js';
 import { t, ui } from './i18n.js';
 import { EditSession, renderEditActions, paintEditActions } from './settingsEdit.js';
 import { copyLinkText } from './linkActions.js';
@@ -6,7 +6,6 @@ import { connectionModelOptions, modelLabel } from './modelPresentation.js';
 
 const editSession = new EditSession();
 const state = { selected: '', draft: null, busy: false, message: '', oauth: null, conflict: false };
-const escape = value => escapeHtml(value ?? '');
 const connections = config => config.llmConnections || { providers: [], profiles: [], activeId: '' };
 function draftFor(config) {
   if (state.draft && (editSession.editing || editSession.status === 'saving' || state.busy)) return state.draft;
@@ -56,16 +55,16 @@ export function renderLlmConnections(config) {
     <div class="header-row"><h2 class="pane-title">模型提供方</h2><span class="chip">Melo 负责记忆与工具执行</span></div>
     <p class="page-kicker">各平台的地址、密钥和模型独立保存。连接测试会发送一次简短请求，计入对应账号用量。</p>
     <div class="config-form">
-      <label class="label">选择连接<select class="config-select" data-action="llm-select" ${disabled}>${options.map(p => `<option value="${escape(p.id)}" ${p.id === draft.id ? 'selected' : ''}>${escape(p.name)}</option>`).join('')}</select></label>
+      <label class="label">选择连接<select class="config-select" data-action="llm-select" ${disabled}>${options.map(p => `<option value="${escapeHtml(p.id)}" ${p.id === draft.id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}</select></label>
       ${renderEditActions(editSession,{prefix:'llm',disabled:state.busy,saveDisabled:state.conflict})}
       ${state.conflict ? ui`<p role="alert">此连接已在其他位置更新，当前草稿仍保留。请先载入最新配置，再重新编辑。</p><button type="button" class="small-button" data-action="llm-reload">放弃此草稿并载入最新配置</button>` : ''}
-      <fieldset class="settings-connection-fields" ${fieldsDisabled}><label class="label">服务地址<input class="config-input" name="baseUrl" value="${escape(draft.baseUrl)}" ${provider.authMode === 'codex' ? 'readonly' : ''} ${disabled}></label>
+      <fieldset class="settings-connection-fields" ${fieldsDisabled}><label class="label">服务地址<input class="config-input" name="baseUrl" value="${escapeHtml(draft.baseUrl)}" ${provider.authMode === 'codex' ? 'readonly' : ''} ${disabled}></label>
       ${provider.id === 'custom' ? ui`<label class="label">API 接口格式<select class="config-select" name="apiProtocol" ${disabled}><option value="chat-completions" ${!['anthropic','responses'].includes(draft.apiProtocol) ? 'selected' : ''}>OpenAI Chat Completions</option><option value="responses" ${draft.apiProtocol === 'responses' ? 'selected' : ''}>OpenAI Responses</option><option value="anthropic" ${draft.apiProtocol === 'anthropic' ? 'selected' : ''}>Anthropic Messages</option></select></label>` : ''}
-      <label class="label">选择模型<select class="config-select" data-action="llm-pick-model">${connectionModelOptions(config, draft).map(m => `<option value="${escape(m)}" ${m === draft.model ? 'selected' : ''}>${escape(modelLabel(m))} · ${escape(m)}</option>`).join('')}<option value="" ${!draft.model ? 'selected' : ''}>手动填写模型 ID</option></select></label>
-      <label class="label">模型 ID（可手动填写）<input class="config-input" name="model" value="${escape(draft.model)}" placeholder="${escape(t(provider.modelHint) || t('填写模型 ID，或读取模型列表'))}" ${disabled}></label>
+      <label class="label">选择模型<select class="config-select" data-action="llm-pick-model">${connectionModelOptions(config, draft).map(m => `<option value="${escapeHtml(m)}" ${m === draft.model ? 'selected' : ''}>${escapeHtml(modelLabel(m))} · ${escapeHtml(m)}</option>`).join('')}<option value="" ${!draft.model ? 'selected' : ''}>手动填写模型 ID</option></select></label>
+      <label class="label">模型 ID（可手动填写）<input class="config-input" name="model" value="${escapeHtml(draft.model)}" placeholder="${escapeHtml(t(provider.modelHint) || t('填写模型 ID，或读取模型列表'))}" ${disabled}></label>
       <p class="list-row-meta">模型能力按当前连接保存；自动读取目录或实测结果，未知能力不按名字推断。</p>
-      ${[['vision','图片输入'],['reasoning','推理参数'],['imageGen','图片输出']].map(([key,label]) => `<label class="label">${escape(t(label))}<select class="config-select" data-model-capability="${key}">${[['',t('自动（目录或实测）')],['true',t('支持')],['false',t('不支持')]].map(([v,name])=>`<option value="${v}" ${String(draft.modelCapabilities?.[draft.model]?.[key] ?? '')===v?'selected':''}>${escape(name)}</option>`).join('')}</select></label>`).join('')}
-      ${provider.authMode !== 'codex' ? ui`<label class="label">API Key${provider.authMode === 'local' ? t('（可选）') : ''}<input class="config-input" name="apiKey" type="password" autocomplete="off" value="${escape(draft.apiKey)}" placeholder="${saved?.hasKey ? t('已保存；留空保留此连接的密钥') : t('只保存到本机')}" ${disabled}></label><label class="list-row-meta"><input type="checkbox" name="clearKey" ${draft.clearKey ? 'checked' : ''} ${disabled}> 清除此连接保存的密钥</label>` : ui`<p class="list-row-meta">${config.codexAuth?.loggedIn ? t('ChatGPT 已登录') : t('需要先完成 ChatGPT 登录')}；模型请求由 Melo 直接发送。</p>`}
+      ${[['vision','图片输入'],['reasoning','推理参数'],['imageGen','图片输出']].map(([key,label]) => `<label class="label">${escapeHtml(t(label))}<select class="config-select" data-model-capability="${key}">${[['',t('自动（目录或实测）')],['true',t('支持')],['false',t('不支持')]].map(([v,name])=>`<option value="${v}" ${String(draft.modelCapabilities?.[draft.model]?.[key] ?? '')===v?'selected':''}>${escapeHtml(name)}</option>`).join('')}</select></label>`).join('')}
+      ${provider.authMode !== 'codex' ? ui`<label class="label">API Key${provider.authMode === 'local' ? t('（可选）') : ''}<input class="config-input" name="apiKey" type="password" autocomplete="off" value="${escapeHtml(draft.apiKey)}" placeholder="${saved?.hasKey ? t('已保存；留空保留此连接的密钥') : t('只保存到本机')}" ${disabled}></label><label class="list-row-meta"><input type="checkbox" name="clearKey" ${draft.clearKey ? 'checked' : ''} ${disabled}> 清除此连接保存的密钥</label>` : ui`<p class="list-row-meta">${config.codexAuth?.loggedIn ? t('ChatGPT 已登录') : t('需要先完成 ChatGPT 登录')}；模型请求由 Melo 直接发送。</p>`}
       </fieldset><div class="inline-actions">
         <button type="button" class="small-button" data-action="llm-models" ${actionDisabled}>加载模型列表</button>
         <button type="button" class="small-button" data-action="llm-test" ${actionDisabled}>测试实际请求</button>
@@ -76,9 +75,9 @@ export function renderLlmConnections(config) {
         ${saved && saved.id !== data.activeId ? ui`<button type="button" class="small-button" data-action="llm-remove" ${actionDisabled}>移除连接</button>` : ''}
       </div>
       ${provider.id === 'openrouter' ? ui`<p class="list-row-meta">登录授权使用 OpenRouter 额度，也可直接填写 Key。不会使用你的 ChatGPT 或 Claude 订阅额度。</p>` : ''}
-      <p role="status" aria-live="polite" class="llm-connection-status">${escape(state.message || (test ? test.ok ? t('请求成功 · {ms} ms · 请求模型：{requested} · 返回模型：{reported} · {at}', { ms: test.latencyMs, requested: test.requestedModel, reported: test.reportedModel || t('服务未提供'), at: test.testedAt }) : t('请求失败：{error} · {guidance}', { error: test.error, guidance: test.guidance || "" }) : t('尚未进行此连接的真实请求测试')))}</p>
-      <p class="list-row-meta">图片识别：${saved?.visionTest ? saved.visionTest.ok ? escape(t('已实测 · {model} · {at}', { model: saved.visionTest.requestedModel, at: saved.visionTest.testedAt })) : escape(t('测试未通过 · {error}', { error: saved.visionTest.error })) : escape(t('尚未实测；测试会发送一张本机生成的数字图，计入模型用量'))}</p>
-      <p class="list-row-meta">Hosted Search：${saved?.searchTest ? saved.searchTest.ok ? escape(t('上次验证通过 · {model} · {at}', { model: saved.searchTest.requestedModel, at: saved.searchTest.testedAt })) : escape(t('尚未验证通过 · {error}', { error: saved.searchTest.error })) : escape(t('尚未验证；按钮会发送一次真实搜索请求，计入服务用量。验证绑定当前连接与凭证。'))}</p>
+      <p role="status" aria-live="polite" class="llm-connection-status">${escapeHtml(state.message || (test ? test.ok ? t('请求成功 · {ms} ms · 请求模型：{requested} · 返回模型：{reported} · {at}', { ms: test.latencyMs, requested: test.requestedModel, reported: test.reportedModel || t('服务未提供'), at: test.testedAt }) : t('请求失败：{error} · {guidance}', { error: test.error, guidance: test.guidance || "" }) : t('尚未进行此连接的真实请求测试')))}</p>
+      <p class="list-row-meta">图片识别：${saved?.visionTest ? saved.visionTest.ok ? escapeHtml(t('已实测 · {model} · {at}', { model: saved.visionTest.requestedModel, at: saved.visionTest.testedAt })) : escapeHtml(t('测试未通过 · {error}', { error: saved.visionTest.error })) : escapeHtml(t('尚未实测；测试会发送一张本机生成的数字图，计入模型用量'))}</p>
+      <p class="list-row-meta">Hosted Search：${saved?.searchTest ? saved.searchTest.ok ? escapeHtml(t('上次验证通过 · {model} · {at}', { model: saved.searchTest.requestedModel, at: saved.searchTest.testedAt })) : escapeHtml(t('尚未验证通过 · {error}', { error: saved.searchTest.error })) : escapeHtml(t('尚未验证；按钮会发送一次真实搜索请求，计入服务用量。验证绑定当前连接与凭证。'))}</p>
       ${state.oauth ? ui`<div class="inline-actions"><button type="button" class="small-button" data-action="llm-open-oauth">打开授权页面</button><button type="button" class="small-button" data-action="llm-copy-oauth">复制授权链接</button><button type="button" class="small-button" data-action="llm-cancel-oauth">取消授权</button></div>` : ''}
       <details class="list-row-meta"><summary>平台能力说明</summary><p>这里连接模型接口。搜索、文件处理和其他工具仍由 Melo 调度；模型可用性以实际请求为准。Copilot、Gemini CLI、Kimi Code 的代理程序未作为模型通道接入。</p></details>
     </div>

@@ -114,7 +114,7 @@ const RULES = [
     pattern: /\^\(\?:(?:hi|ok|okay)\|/, note: '一份共享词表' },
   { id: 'H18', title: 'iOS 固定字号 / 原始色 / 绕过本地化的文本', severity: 'info',
     files: /^ios\/Melo\/.*\.swift$/, allow: /^ios\/Melo\/MeloTheme\.swift$/,
-    pattern: /\.font\(\.system\(size:|Color\((?:hex|red):|Text\(verbatim:|Text\("\\\(/, note: '语义字号、色板、LocalizedStringKey' },
+    pattern: /\.font\(\.system\(size:|Color\((?:hex|red):|Text\(verbatim:\s*"[^"\n]*[A-Za-z\u3400-\u9fff]/, note: '语义字号、色板；仅原样输出的固定文案，SwiftUI 插值由五语目录门禁检查，用户内容保持原样' },
   { id: 'H19', title: '写死的语言默认值 zh-CN', severity: 'medium',
     files: /\.(?:js|swift)$/, allow: /^(?:src\/domain\/settings\/localPreferences\.js|src\/tools\/builtins\/translateTool\.js|src\/services\/export\/pdfEditSpec\.js|src\/tools\/builtins\/pdfTool\.js)$/,
     pattern: /(?:\?\?|\|\|)\s*['"]zh-(?:CN|Hans)['"]|\b(?:const|let|var)\s+\w+(?:\s*:\s*String)?\s*=\s*['"]zh-(?:CN|Hans)['"]|\b(?:language|locale|interfaceLanguage|voiceLanguage)\s*(?::\s*String)?\s*=\s*['"]zh-(?:CN|Hans)['"]|\?\s*value\s*:\s*['"]zh-(?:CN|Hans)['"]/, note: '默认语言跟系统 / 设置' },

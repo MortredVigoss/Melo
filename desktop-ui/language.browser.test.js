@@ -80,6 +80,11 @@ test('interface language switches, persists, and never rewrites user content or 
     await page.locator('.execution-detail-output').waitFor();
     assert.match(await page.locator('.execution-detail-output').innerText(),/42 characters.*Not reported/);
     assert.doesNotMatch(await page.locator('#execution-panel').innerText(),/\p{Script=Han}/u,'authored execution UI is fully English');
+    assert.ok((await page.locator('#composer').boundingBox()).width > 300,'execution details must not squeeze the composer into a vertical strip');
+    const layout=await page.evaluate(()=>Object.fromEntries(['.chat-thread','.thread-footer','.composer-shell','.composer-card','#composer','.composer-actions','.execution-panel','.execution-panel-viewport','.execution-panel-stage','.execution-signal-host','.execution-timing-host'].map(selector=>{const el=document.querySelector(selector),r=el.getBoundingClientRect(),css=getComputedStyle(el);return [selector,{y:r.y,height:r.height,bottom:r.bottom,maxHeight:css.maxHeight,overflow:css.overflow}]})));
+    await writeFile(resolve(proof,'execution-layout.json'),JSON.stringify(layout,null,2));
+    const send=await page.locator('[data-form=composer] button[type=submit]').boundingBox();
+    assert.ok(send.y+send.height<=layout['.chat-thread'].bottom,'the send button remains inside the conversation with details open');
     await page.screenshot({path:resolve(proof,'execution-english.png')});
     await page.locator('[data-action=settings-open]').click();
     await page.locator('[data-tab=general]').click();
@@ -108,6 +113,36 @@ test('interface language switches, persists, and never rewrites user content or 
     await page.setViewportSize({width:390,height:844});
     await page.screenshot({path:resolve(proof,'settings-korean-narrow.png')});
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+    // Creation forms use the same edit lifecycle as settings, including
+    // failed persistence and cancellation. Only the isolated fixture is written.
+    await switchTo('en');
+    await page.setViewportSize({width:1200,height:850});
+    await fetch(base+'/api/settings',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({activeView:'projects'})});
+    await page.reload();
+    let nativeDialogs=0;page.on('dialog',async dialog=>{nativeDialogs++;await dialog.dismiss();});
+    await page.locator('[data-action=toggle-project-form]').click();
+    const create=page.locator('[data-form=project-create]');
+    assert.equal(await create.locator('[name=name]').isDisabled(),false);
+    await create.locator('[name=name]').fill('Unsaved project');
+    await create.locator('[data-action=form-settings-cancel]').click();
+    await create.waitFor({state:'detached'});
+    await page.locator('[data-action=toggle-project-form]').click();
+    assert.equal(await create.locator('[name=name]').inputValue(),'');
+    await create.locator('[name=name]').fill('Audit project');
+    await page.route('**/api/projects',route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'Fixture temporarily unavailable'})}),{times:1});
+    await create.locator('[name=name]').press('Enter');
+    await create.locator('[data-edit-status=error]').waitFor();
+    assert.equal(await create.locator('[name=name]').inputValue(),'Audit project');
+    const noticeBounds=await page.locator('[data-page-notice]').boundingBox();
+    const titleBounds=await page.locator('.page-title').boundingBox();
+    assert.ok(noticeBounds.y+noticeBounds.height<=titleBounds.y,'error stays above page content');
+    assert.doesNotMatch(await page.locator('.project-overview-header').innerText(),/\p{Script=Han}/u);
+    await page.screenshot({path:resolve(proof,'create-failed.png')});
+    await create.locator('[data-action=form-settings-save]').click();
+    await create.waitFor({state:'detached'});
+    assert.ok((await (await fetch(base+'/api/bootstrap')).json()).projects.some(project=>project.name==='Audit project'));
+    assert.equal(nativeDialogs,0);
+    assert.equal(await page.locator('.neural-cluster.button-secondary').count(),0,'canvas navigation keeps its hit area');
     assert.deepEqual(errors,[]);
   } finally {
     await browser?.close(); child.kill('SIGTERM'); await exited;

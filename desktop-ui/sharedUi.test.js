@@ -4,7 +4,7 @@ import { JSDOM } from 'jsdom';
 import { formatTime, formatNumber } from './format.js';
 import { escapeHtml } from './html.js';
 import { setLanguage } from './i18n.js';
-import { requestText, showFlashToast } from './feedback.js';
+import { requestText, notify } from './feedback.js';
 test('formatting respects language and timezone and never invents invalid dates',()=>{
   const date='2026-10-24T01:00:00Z';
   assert.match(formatTime(date,{style:'full',locale:'en',timeZone:'UTC'}),/01:00:00/);
@@ -29,7 +29,7 @@ test('application input validates without closing, cancels safely, and restores 
   const cancelled=requestText({title:'Link',value:'saved draft'});
   document.querySelector('dialog').dispatchEvent(new dom.window.Event('cancel',{cancelable:true}));
   assert.equal(await cancelled,null);assert.equal(document.activeElement,origin);
-  showFlashToast('<b>failure</b>',{kind:'error',ms:0});
+  notify({level:'error',text:'<b>failure</b>',toast:true});
   assert.equal(document.querySelector('#flash-toast').getAttribute('role'),'alert');
   assert.equal(document.querySelector('#flash-toast b'),null);
   document.querySelector('#flash-toast button').click();assert.equal(document.querySelector('#flash-toast'),null);

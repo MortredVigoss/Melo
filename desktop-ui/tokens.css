@@ -952,3 +952,41 @@
   --visual-scene-91b4c7: #91b4c7;
   --visual-scene-a88b63: #a88b63;
 }
+
+:root {
+  --scene-chat-rgb: 186,121,59;
+  --scene-projects-rgb: 143,57,69;
+  --scene-agents-rgb: 113,80,135;
+  --scene-knowledge-rgb: 80,110,119;
+  --scene-system-rgb: 146,96,68;
+}
+
+/* Canvas, SVG and Three.js scene palette. */
+:root {
+  --scene-neural-background: #080807;
+  --scene-neural-gold: #d3a459;
+  --scene-neural-clay: #a97862;
+  --scene-neural-slate: #737779;
+  --scene-neural-sand: #b2a893;
+  --scene-neural-light: #edc786;
+  --scene-neural-silver: #91a0b3;
+  --scene-neural-shadow: #080b13;
+  --scene-synapse-thread: #76419d;
+  --scene-synapse-branch: #9a65d3;
+  --scene-synapse-tint: #a66ad7;
+  --scene-atom-h: #f0f0f0;
+  --scene-atom-c: #c4c4c4;
+  --scene-atom-n: #6bb0ff;
+  --scene-atom-o: #ff8080;
+  --scene-atom-f: #ffe06b;
+  --scene-atom-cl: #9be88a;
+  --scene-atom-br: #d8a272;
+  --scene-atom-i: #c18aff;
+  --scene-atom-p: #ffaa66;
+  --scene-atom-s: #ffe066;
+  --scene-atom-alkali: #c0c0ff;
+  --scene-atom-fe: #ff9a66;
+  --scene-atom-mg: #a3ff9e;
+  --scene-atom-default: #d0d0d0;
+  --scene-diagram-point: #fff7f3;
+}

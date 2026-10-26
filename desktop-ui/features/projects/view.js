@@ -41,13 +41,13 @@ function renderProjectsOverview() {
           <div class="header-row">
             <div>
               <h1 class="page-title compact">项目</h1>
-              <p class="page-kicker">把同一目标下的对话、资料与工作要求放在一起。</p>
+              <p class="page-kicker">把同一目标下的对话、知识与工作要求放在一起。</p>
             </div>
           </div>
 
           <div class="surface-card project-empty-hero">
             <div class="project-empty-hero__icon">${icon.folder}</div>
-            <h2 class="project-empty-hero__title">还没有项目</h2>
+            <h2 class="pane-title project-empty-hero__title">还没有项目</h2>
             <p class="project-empty-hero__body">
               为一件持续进行的事创建项目，写下目标与要求，再把相关对话放进来。每次继续对话都会带上项目背景。
             </p>
@@ -71,8 +71,8 @@ function renderProjectsOverview() {
           </div>
 
           <div class="inline-actions">
-            <button class="ghost-button" data-action="toggle-archived-projects">${projectsState.showArchivedProjects?'查看进行中的项目':'查看已归档项目'}</button>
-            <button class="ghost-button" data-action="toggle-deleted-projects">${projectsState.showDeletedProjects?'返回项目':'已删除项目'}</button>
+            <button class="ghost-button" data-action="toggle-archived-projects">${t(projectsState.showArchivedProjects?'查看进行中的项目':'查看已归档项目')}</button>
+            <button class="ghost-button" data-action="toggle-deleted-projects">${t(projectsState.showDeletedProjects?'返回项目':'已删除项目')}</button>
             <button class="ghost-button is-primary" data-action="toggle-project-form">
               <span class="toolbar-icon">${icon.plus}</span>
               新建项目
@@ -118,7 +118,7 @@ function renderProjectsOverview() {
 
 function renderProjectCard(item) {
   if (item.deletedAt) return ui`<section class="project-card">
-    <h2>${escapeHtml(item.nameKey ? t(item.nameKey) : item.name)}</h2><p>项目已删除；聊天、资料、图片和原文件夹保留。</p>
+    <h2 class="pane-title">${escapeHtml(item.nameKey ? t(item.nameKey) : item.name)}</h2><p>项目已删除；对话、知识、图片和原文件夹保留。</p>
     <p>原项目记忆保留在旧范围，旧审批不会恢复。</p>
     <button class="small-button" data-action="restore-deleted-project" data-project-id="${escapeHtml(item.id)}" ${projectsState.lifecycleBusy?'disabled':''}>恢复为新项目</button>
   </section>`;
@@ -144,7 +144,7 @@ function renderProjectCard(item) {
         </span>
         <span class="project-card__metric">
           <span class="toolbar-icon">${icon.box}</span>
-          ${item.artifactCount} 份资料与成果
+          ${item.artifactCount} 份知识与成果
         </span>
       </div>
     </button>
@@ -189,10 +189,8 @@ function renderProjectCreateForm() {
         )}</textarea>
       </label>
       <div class="inline-actions">
-        <button ${projectsState.projectCreating ? 'disabled' : ''} class="small-button is-primary" type="submit">创建项目</button>
-        <button ${projectsState.projectCreating ? 'disabled' : ''} class="small-button is-outline" type="button" data-action="toggle-project-form">
-          取消
-        </button>
+
+
       </div>
     </form>
   `;
@@ -203,7 +201,7 @@ function renderProjectAgentDefaults(project) {
   const lead = agents.find(agent => agent.id === (project.defaultAgentId || 'main')) || null;
   const options = agents.map(agent => `<option value="${escapeHtml(agent.id)}" ${project.defaultAgentId === agent.id ? 'selected' : ''}>${escapeHtml(agent.name || agent.id)}</option>`).join('');
   return ui`<section class="surface-card project-detail-panel project-agent-defaults">
-    <h2 class="subsection-title">Agent 与协作</h2>
+    <h2 class="pane-title">Agent 与协作</h2>
     <label class="label">默认 Agent<select class="input" data-project-default-agent="${escapeHtml(project.id)}" ${project.archived ? 'disabled' : ''}><option value="">不指定（沿用当前选择）</option>${options}</select></label>
     <p class="meta-label">在这个项目里开启新对话时使用；团队由这个 Agent 发起。项目内的 Agent 权限只能比全局更严。</p>
     <h3 class="subsection-title">默认团队</h3>
@@ -257,7 +255,7 @@ function renderProjectsDetailView(project) {
             <button class="small-button is-outline" data-action="archive-project" data-project-id="${project.id}" data-archived="${!project.archived}">${project.archived?t("恢复项目"):t("归档项目")}</button>
             <button class="small-button is-outline" data-action="preview-delete-project" data-project-id="${project.id}">删除项目</button>
             ${projectsState.pendingDeleteProjectId===project.id?ui`<div role="alert">
-              <p>聊天将解除项目归属，资料、图片与外部文件夹保留；项目记忆隔离保存，待审批失效。</p>
+              <p>对话将解除项目归属，知识、图片与外部文件夹保留；项目记忆隔离保存，待审批失效。</p>
               <button class="small-button" data-action="confirm-delete-project" data-project-id="${project.id}" ${projectsState.lifecycleBusy?'disabled':''}>确认删除项目</button>
               <button class="small-button is-outline" data-action="cancel-delete-project">取消</button>
             </div>`:''}
@@ -266,9 +264,9 @@ function renderProjectsDetailView(project) {
 
         <div class="chip-row">
           <span class="chip is-accent">${escapeHtml(project.tag)}</span>
-          ${project.archived?ui`<span class="chip">已归档 · 对话与资料保留</span>`:''}
+          ${project.archived?ui`<span class="chip">已归档 · 对话与知识保留</span>`:''}
           <span class="chip">${project.chatCount ?? relatedChats.length} 段对话</span>
-          <span class="chip">${project.artifactCount ?? relatedArtifacts.length} 份资料与成果</span>
+          <span class="chip">${project.artifactCount ?? relatedArtifacts.length} 份知识与成果</span>
           ${
             project.workspacePath
               ? ui`<span class="chip mono" title="${escapeHtml(project.workspacePath)}">${escapeHtml(project.workspacePath)}</span>`
@@ -278,7 +276,7 @@ function renderProjectsDetailView(project) {
 
         <div class="project-detail-grid">
           <section class="surface-card project-detail-panel">
-            <h2 class="subsection-title">项目设置</h2>
+            <h2 class="pane-title">项目设置</h2>
             <form
               class="project-form-card"
               data-form="project-update"
@@ -318,14 +316,11 @@ function renderProjectsDetailView(project) {
                   project.instructions,
                 )}</textarea>
               </label>
-              <fieldset class="context-materials"><legend>项目共享资料</legend><p>资料按问题与上下文预算选取相关片段，全文保留。</p>
-                ${(getBootstrap().artifacts || []).filter(a=>a.content?.trim()).map(a=>ui`<label><input type="checkbox" name="knowledgeIds" value="${escapeHtml(a.id)}" ${(project.knowledgeIds || []).includes(a.id)?'checked':''}>${escapeHtml(a.title)}</label>`).join('') || ui`<p>先在知识分支保存资料。</p>`}
+              <fieldset class="context-materials"><legend>项目共享知识</legend><p>知识按问题与上下文预算选取相关片段，全文保留。</p>
+                ${(getBootstrap().artifacts || []).filter(a=>a.content?.trim()).map(a=>ui`<label><input type="checkbox" name="knowledgeIds" value="${escapeHtml(a.id)}" ${(project.knowledgeIds || []).includes(a.id)?'checked':''}>${escapeHtml(a.title)}</label>`).join('') || ui`<p>先在知识库保存知识。</p>`}
               </fieldset>
               <div class="inline-actions">
-                <button class="small-button is-primary" type="submit">
-                  <span class="toolbar-icon">${icon.save}</span>
-                  保存项目
-                </button>
+
               </div>
             </form>
           </section>
@@ -335,7 +330,7 @@ function renderProjectsDetailView(project) {
             ${renderMemoryBook(project)}
             <section class="surface-card project-detail-panel">
               <div class="header-row">
-                <h2 class="subsection-title">相关对话</h2>
+                <h2 class="pane-title">相关对话</h2>
                 <span class="meta-label">${relatedChats.length} 段</span>
               </div>
               <div class="mini-list">
@@ -363,7 +358,7 @@ function renderProjectsDetailView(project) {
 
             <section class="surface-card project-detail-panel">
               <div class="header-row">
-                <h2 class="subsection-title">资料与成果</h2>
+                <h2 class="pane-title">知识与成果</h2>
                 <span class="meta-label">${relatedArtifacts.length} 份</span>
               </div>
               <div class="mini-list">
@@ -386,7 +381,7 @@ function renderProjectsDetailView(project) {
                           `,
                         )
                         .join('')
-                    : ui`<div class="empty-state compact">还没有保存的资料或成果。</div>`
+                    : ui`<div class="empty-state compact">还没有保存的知识或成果。</div>`
                 }
               </div>
             </section>

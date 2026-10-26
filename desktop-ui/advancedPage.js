@@ -185,7 +185,7 @@ export function renderAdvancedPage({
             <div class="list-row-meta">${escapeHtml(preset?.description || '')}</div>
             <div class="list-row-meta mono">${escapeHtml(cmdSummary)}</div>
             ${unpinned
-              ? ui`<div class="list-row-meta" style="opacity: 0.78;">npm 包尚未锁定到精确版本 — ${
+              ? ui`<div class="list-row-meta muted-note">npm 包尚未锁定到精确版本 — ${
                   isLegacyEnableOnUnpinned
                     ? ui`点击「停用」清除旧的 enable*Mcp:true 配置。`
                     : 'toggle disabled until a version lands in <code>PINNED_VERSIONS</code>.'
@@ -231,7 +231,7 @@ export function renderAdvancedPage({
         ${renderBehaviorSettings(data.settings?.config || {})}
         ${taskPanelHtml}
         ${approvalPanelHtml}
-        <button class="small-button" data-action="manage-session-permissions">会话工具授权</button>
+        <button class="small-button" data-action="manage-session-permissions">对话工具授权</button>
         ${renderRuntimePanel(adv.diagnostics, escapeHtml)}
         ${renderRetainedFiles(adv.retainedFiles,escapeHtml)}
 

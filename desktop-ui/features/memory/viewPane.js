@@ -39,7 +39,7 @@ function renderMemoryPane() {
       return ui`<div class="alert compact-alert">${escapeHtml(error)}</div>`;
     }
     if (!snapshot) {
-      return ui`<div class="empty-state compact">暂无状态，点击刷新检查。</div>`;
+      return ui`<div class="empty-state compact">还没有状态，点击刷新检查。</div>`;
     }
     const s = snapshot;
     const drift = s.embedding?.drift || {};
@@ -77,7 +77,7 @@ function renderMemoryPane() {
           <div class="quality-status-card"><span>语义检索</span><strong>${semanticStatus}</strong><small>${diagnosis?.available === false ? '当前使用关键词检索；已有文字记忆保留' : diagnosis?.available ? '以实际检索结果为准' : '点击检测模型，验证检索是否可用'}</small></div>
         </div>
         <section class="quality-details">
-          <h3>检索模型与索引</h3>
+          <h3 class="subsection-title">检索模型与索引</h3>
           <p>模型就绪后会在后台分批建立索引。需要修复时可安全重建，原文与旧索引保留到新索引通过验证。</p>
           <div class="inline-actions"><button class="small-button" data-action="memory-diagnose" ${memoryState.memoryStatus.repairBusy ? 'disabled' : ''}>检测模型</button>
           <button class="small-button" data-action="memory-repair" ${memoryState.memoryStatus.repairBusy ? 'disabled' : ''}>${s.repair?.completed && s.repair.status !== 'complete' ? '继续修复' : '安全重建索引'}</button>
@@ -144,7 +144,7 @@ function renderMemoryPane() {
           ${wipeConfirmOpen ? ui`
             <div class="alert compact-alert">
               <div><strong>这会清空所有已存向量。</strong> 记忆条目和设置不受影响。</div>
-              <div class="inline-actions" style="margin-top: 8px;">
+              <div class="inline-actions block-gap">
                 <button class="small-button is-danger" data-action="memory-wipe-confirm" ${wipeInFlight ? 'disabled' : ''}>
                   ${wipeInFlight ? t('正在清空…') : t('确认清空向量')}
                 </button>
@@ -152,7 +152,7 @@ function renderMemoryPane() {
               </div>
             </div>
           ` : ''}
-          ${wipeResult ? ui`<div class="list-row-meta" style="margin-top: 8px;">${escapeHtml(wipeResult)}</div>` : ''}
+          ${wipeResult ? ui`<div class="list-row-meta block-gap">${escapeHtml(wipeResult)}</div>` : ''}
         </div>
 
         <div class="subsection">

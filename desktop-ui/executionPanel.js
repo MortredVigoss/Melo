@@ -1,11 +1,11 @@
-import { escapeHtml } from './html.js';
+import { applyButtonStyles } from './buttonStyles.js';
+import { escapeHtml } from './i18n.js';
 import { t, ui, currentLanguage, runtimeStageName, runtimeStageOutput, runtimeCompletionText } from './i18n.js';
 import { renderExecutionDetail, renderSessionEvents, executionApiLine, renderExecutionSignal, renderReasoningRecords, renderExecutionTiming } from './executionDetails.js';
 import { EXECUTION_MODULES, sessionEvents, moduleActivity, sceneFinished, finishExecutionScene, visibleSceneSources, sourceReadingLabel, sceneSourceUrl } from '/shared/executionScene.js';
 
 import { bindExecutionZoom, clampZoom, wideViewport, DETAIL_ZOOM, MIN_ZOOM, MAX_ZOOM } from './executionViewport.js';
 
-const escape = value => escapeHtml(value ?? '');
 const statusNames = { get idle() { return t('无调用记录'); }, get recorded() { return t('仅引用记录'); }, get queued() { return t('排队'); }, get running() { return t('执行中'); }, get waiting() { return t('等待许可'); }, get completed() { return t('已完成'); }, get failed() { return t('失败'); }, get cancelled() { return t('已取消'); }, get interrupted() { return t('已中断'); } };
 const scenes = new Map(), views = new Map(), delivered = new Set();
 const presentations = new Map();
@@ -31,7 +31,7 @@ function cancelCollapse() { clearTimeout(collapseTimer); closingRun = null; }
 export const renderExecutionPanel = () => ui`<section id="execution-panel" class="execution-panel is-collapsed" data-neural-key="execution-panel" data-execution-owned="true" aria-label="三维任务空间" hidden></section>`;
 export function renderSceneReplay(message) {
   const id = message.role === 'assistant' && message.metadata?.runId;
-  return id ? ui`<button type="button" class="message-scene-replay" data-execution-action="replay" data-run="${escape(id)}">◌ 回看任务空间</button><div data-execution-timing-run="${escape(id)}">${renderExecutionTiming(scenes.get(id))}</div>` : '';
+  return id ? ui`<button type="button" class="message-scene-replay" data-execution-action="replay" data-run="${escapeHtml(id)}">◌ 回看任务空间</button><div data-execution-timing-run="${escapeHtml(id)}">${renderExecutionTiming(scenes.get(id))}</div>` : '';
 }
 const selectedScene = () => {
   const scene = scenes.get(currentRun); if (!scene) return null;
@@ -69,8 +69,8 @@ function observeRenderedMessages(chat) {
     if (!rendered) continue;
     let saved;
     try { saved = JSON.parse(localStorage.getItem(`melo-scene-presented:${runId}`) || 'null'); } catch {}
-    const presentation = saved?.messageId === message.id ? saved : { id: 'reply:render', module: 'create', name: t('本机聊天渲染'), status: 'completed',
-      messageId: message.id, output: t('回答已渲染到当前设备的聊天界面；不代表用户已阅读'), finishedAt: new Date().toISOString() };
+    const presentation = saved?.messageId === message.id ? saved : { id: 'reply:render', module: 'create', name: t('本机对话渲染'), status: 'completed',
+      messageId: message.id, output: t('回答已渲染到当前设备的对话界面；不代表用户已阅读'), finishedAt: new Date().toISOString() };
     presentations.set(runId, presentation);
     try { localStorage.setItem(`melo-scene-presented:${runId}`, JSON.stringify(presentation)); } catch {}
   }
@@ -153,6 +153,19 @@ function detailsFor(scene) {
 function sizeDetails() {
   const stage = host?.querySelector('.execution-panel-stage');
   if (!stage) return;
+  // The scene scrolls within the space left by the real composer height.
+  // Four input lines, wrapped controls and translated labels must not push
+  // Send below the window. Keep a small visible portion of the conversation.
+  const thread=host.closest('.chat-thread'), footer=host.closest('.thread-footer');
+  const viewport=host.querySelector('.execution-panel-viewport');
+  if(thread?.clientHeight && footer && viewport) {
+    const fixed=[...thread.children].filter(el=>el!==footer && !el.classList.contains('thread-scroll-region')).reduce((sum,el)=>sum+el.getBoundingClientRect().height,0);
+    const gap=parseFloat(getComputedStyle(thread).rowGap)||0;
+    const controls=footer.getBoundingClientRect().height-viewport.getBoundingClientRect().height;
+    const available=Math.max(48,Math.floor(thread.clientHeight-fixed-controls-gap*(thread.children.length-1)-72));
+    const value=`${available}px`;
+    if(host.style.getPropertyValue('--scene-available-height')!==value)host.style.setProperty('--scene-available-height',value);
+  }
   const items = wideViewport(zoom) ? [] : detailsFor(selectedScene());
   const columns = Math.max(2, Math.min(5, Math.floor((stage.clientWidth - 24) / 140)));
   const height = items.length ? `${Math.ceil(items.length / columns) * (focus === 'search' ? 112 : 86) + (focus === 'search' ? 140 : 90)}px` : '0px';
@@ -164,33 +177,33 @@ function renderDetails(scene, items) {
     const sourceUrl = new URL(linkUrl);
     const title = source.titleProvided ? source.title : source.citationLabel || (sourceUrl.pathname === '/' ? sourceUrl.hostname : sourceUrl.pathname.split('/').filter(Boolean).slice(-2).join('/'));
     const reading = sourceReadingLabel(source), citation = source.cited ? t('已被最终引用') : t('未被最终引用');
-    return ui`<a class="execution-label execution-source" data-node-id="${escape(source.id)}" data-priority="${index < 5 ? 'primary' : 'secondary'}" data-cited="${source.cited}" href="${escape(linkUrl)}" data-external-url="${escape(linkUrl)}" target="_blank" rel="noopener noreferrer" title="${escape(`${source.titleProvided ? source.title : '页面标题未提供'}\n${linkUrl}\n${reading}\n${citation}\n服务：${source.providers.join('、') || '未报告'}${source.recovered ? '\n从截断记录与最终引用恢复；正文范围未知' : ''}`)}"><span class="execution-source-rank">${String(index + 1).padStart(2, '0')} · ${source.cited ? '回答引用' : index < 5 ? '相关来源' : '更多候选'}</span><strong>${escape(title)}</strong><small>${escape(new URL(source.url).hostname)}</small><small>${escape(reading)}</small><small>${source.cited ? '✦ 已引用' : '未引用 · 点击检查'}</small></a>`;
+    return ui`<a class="execution-label execution-source" data-node-id="${escapeHtml(source.id)}" data-priority="${index < 5 ? 'primary' : 'secondary'}" data-cited="${source.cited}" href="${escapeHtml(linkUrl)}" data-external-url="${escapeHtml(linkUrl)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(`${source.titleProvided ? source.title : '页面标题未提供'}\n${linkUrl}\n${reading}\n${citation}\n服务：${source.providers.join('、') || '未报告'}${source.recovered ? '\n从截断记录与最终引用恢复；正文范围未知' : ''}`)}"><span class="execution-source-rank">${String(index + 1).padStart(2, '0')} · ${source.cited ? '回答引用' : index < 5 ? '相关来源' : '更多候选'}</span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(new URL(source.url).hostname)}</small><small>${escapeHtml(reading)}</small><small>${source.cited ? '✦ 已引用' : '未引用 · 点击检查'}</small></a>`;
   }).join('');
-  return items.map(op => ui`<button class="execution-label execution-source execution-operation" data-node-id="${escape(op.id)}" data-execution-action="inspect" data-operation="${escape(op.id)}" title="${escape(`${op.input || ''}\n${runtimeStageOutput(op) || ''}`)}"><strong>${escape(op.result ?? op.expression ?? runtimeStageName(op))}</strong><small>${escape(op.channel === 'reasoning-summary' ? (runtimeStageOutput(op) || '').slice(-100) : focus === 'tools' ? `归属：${EXECUTION_MODULES.find(m => m.id === op.module)?.name || t("工具调用")} · ${op.provider || op.name}` : op.expression || op.input || op.name)}</small><small>${escape(statusNames[op.status])}</small></button>`).join('');
+  return items.map(op => ui`<button class="execution-label execution-source execution-operation" data-node-id="${escapeHtml(op.id)}" data-execution-action="inspect" data-operation="${escapeHtml(op.id)}" title="${escapeHtml(`${op.input || ''}\n${runtimeStageOutput(op) || ''}`)}"><strong>${escapeHtml(op.result ?? op.expression ?? runtimeStageName(op))}</strong><small>${escapeHtml(op.channel === 'reasoning-summary' ? (runtimeStageOutput(op) || '').slice(-100) : focus === 'tools' ? `归属：${EXECUTION_MODULES.find(m => m.id === op.module)?.name || t("工具调用")} · ${op.provider || op.name}` : op.expression || op.input || op.name)}</small><small>${escapeHtml(statusNames[op.status])}</small></button>`).join('');
 }
 function renderSearchTrail(scene) {
   if (focus !== 'search') return '';
   const ops = (scene?.operations || []).filter(op => op.module === 'search');
-  return ui`<div class="execution-search-trail" aria-label="真实检索调用">${ops.map(op => ui`<button data-execution-action="inspect" data-operation="${escape(op.id)}" title="${escape(`${op.input || ''}\n${op.resultSummary || op.status}`)}"><b>${escape(op.provider || op.name)}</b> · ${escape(op.resultSummary || statusNames[op.status])}</button>`).join('')}</div>`;
+  return ui`<div class="execution-search-trail" aria-label="真实检索调用">${ops.map(op => ui`<button data-execution-action="inspect" data-operation="${escapeHtml(op.id)}" title="${escapeHtml(`${op.input || ''}\n${op.resultSummary || op.status}`)}"><b>${escapeHtml(op.provider || op.name)}</b> · ${escapeHtml(op.resultSummary || statusNames[op.status])}</button>`).join('')}</div>`;
 }
 function renderCandidates(scene) {
   if (focus !== 'create') return '';
   const artifacts = scene?.artifacts || [];
   const stages = moduleActivity(scene, 'create').operations;
-  const delivery = ui`<div class="execution-pipeline" aria-label="模型与交付记录">${stages.map(stage => ui`<button data-execution-action="inspect" data-operation="${escape(stage.id)}" data-stage-status="${escape(stage.status)}"><strong>${escape(runtimeStageName(stage, currentLanguage()))}</strong><span>${escape(statusNames[stage.status] || stage.status)}</span><small>${escape(runtimeStageOutput(stage) || stage.input || t("等待返回"))}</small>${stage.api ? ui`<small class="execution-api-line">${escape(executionApiLine(stage))}</small>` : ''}</button>`).join('')}</div>`;
+  const delivery = ui`<div class="execution-pipeline" aria-label="模型与交付记录">${stages.map(stage => ui`<button data-execution-action="inspect" data-operation="${escapeHtml(stage.id)}" data-stage-status="${escapeHtml(stage.status)}"><strong>${escapeHtml(runtimeStageName(stage, currentLanguage()))}</strong><span>${escapeHtml(statusNames[stage.status] || stage.status)}</span><small>${escapeHtml(runtimeStageOutput(stage) || stage.input || t("等待返回"))}</small>${stage.api ? ui`<small class="execution-api-line">${escapeHtml(executionApiLine(stage))}</small>` : ''}</button>`).join('')}</div>`;
   const previews = (scene?.previews || []).filter(p => !artifacts.some(a=>a.operationId===p.operationId));
-  const previewCards = previews.map(p => ui`<article class="execution-candidate execution-preview"><img src="${escape(p.url)}" alt="服务返回的生成预览"><p>${sceneFinished(scene)?'生成未完成的预览':'生成中的预览'} · 非最终成果</p></article>`).join('');
+  const previewCards = previews.map(p => ui`<article class="execution-candidate execution-preview"><img src="${escapeHtml(p.url)}" alt="服务返回的生成预览"><p>${sceneFinished(scene)?'生成未完成的预览':'生成中的预览'} · 非最终成果</p></article>`).join('');
   const missing = Math.max(0,(scene?.imageTask?.count || 0)-artifacts.filter(a=>a.kind==='image').length);
   const retry = imageRetryHandler && sceneFinished(scene) && missing ? ui`<button class="execution-image-retry" data-execution-action="retry-images">重试缺少的 ${missing} 张 · 发起新请求</button>` : '';
-  if (!artifacts.length) return stages.length || previews.length ? ui`<div class="execution-outcomes">${delivery}<div class="execution-candidates">${previewCards}</div>${retry}</div>` : ui`<div class="execution-empty"><strong>暂无模型与交付记录</strong>旧任务未记录的接收、整理与保存过程不会补造</div>`;
+  if (!artifacts.length) return stages.length || previews.length ? ui`<div class="execution-outcomes">${delivery}<div class="execution-candidates">${previewCards}</div>${retry}</div>` : ui`<div class="execution-empty"><strong>还没有模型与交付记录</strong>旧任务未记录的接收、整理与保存过程不会补造</div>`;
   const images = artifacts.filter(a => a.kind === 'image'), selected = scene.selectedImageIds || [];
   return ui`<div class="execution-outcomes"><details class="execution-delivery-details"><summary>查看 ${stages.length} 条执行记录</summary>${delivery}</details>${retry}<div class="execution-candidates">${previewCards}${artifacts.map(artifact => ui`<article class="execution-candidate" data-selected="${selected.includes(artifact.id)}">
-    <a href="${escape(artifact.url)}" data-external-url="${escape(artifact.url)}" target="_blank" rel="noopener noreferrer">${artifact.kind === 'image' ? ui`<img src="${escape(artifact.url)}" alt="${escape(artifact.title)}" loading="lazy">` : escape(artifact.title)}</a>
-    <p>${escape(artifact.title)} ${selected.includes(artifact.id) ? `· 展示第 ${selected.indexOf(artifact.id) + 1} 张` : '· 可检查候选'}</p>
-    ${artifact.requestedModel ? ui`<small>${escape(artifact.engine)} · 请求 ${escape(artifact.requestedModel)} · 返回 ${escape(artifact.reportedModel || t("服务未报告"))}</small>` : ''}
-    ${artifact.requestedQuality ? ui`<small aria-label="查看图片质量">质量：请求 ${escape(artifact.requestedQuality)} · 返回 ${escape(artifact.reportedQuality || t("服务未报告"))}</small>` : ''}
-    ${artifact.beforeUrl ? ui`<details class="execution-comparison"><summary>查看修改前后</summary><div><figure><img src="${escape(artifact.beforeUrl)}" alt="修改前" loading="lazy"><figcaption>修改前</figcaption></figure><figure><img src="${escape(artifact.url)}" alt="修改后" loading="lazy"><figcaption>修改后</figcaption></figure></div></details>` : ''}
-    ${artifact.kind === 'image' && sceneFinished(scene) ? ui`<div class="execution-candidate-controls"><select aria-label="替换图片位置" data-execution-slot>${Array.from({ length: Math.min(scene.requestedImages, images.length) }, (_, i) => ui`<option value="${i}" ${i === slot ? 'selected' : ''}>第 ${i + 1} 张</option>`).join('')}</select><button data-execution-action="select-image" data-artifact="${escape(artifact.id)}" ${selectionBusy ? 'disabled' : ''}>${selected.includes(artifact.id) ? t("已选中") : t("选为展示")}</button></div>` : ''}
+    <a href="${escapeHtml(artifact.url)}" data-external-url="${escapeHtml(artifact.url)}" target="_blank" rel="noopener noreferrer">${artifact.kind === 'image' ? ui`<img src="${escapeHtml(artifact.url)}" alt="${escapeHtml(artifact.title)}" loading="lazy">` : escapeHtml(artifact.title)}</a>
+    <p>${escapeHtml(artifact.title)} ${selected.includes(artifact.id) ? `· 展示第 ${selected.indexOf(artifact.id) + 1} 张` : '· 可检查候选'}</p>
+    ${artifact.requestedModel ? ui`<small>${escapeHtml(artifact.engine)} · 请求 ${escapeHtml(artifact.requestedModel)} · 返回 ${escapeHtml(artifact.reportedModel || t("服务未报告"))}</small>` : ''}
+    ${artifact.requestedQuality ? ui`<small aria-label="查看图片质量">质量：请求 ${escapeHtml(artifact.requestedQuality)} · 返回 ${escapeHtml(artifact.reportedQuality || t("服务未报告"))}</small>` : ''}
+    ${artifact.beforeUrl ? ui`<details class="execution-comparison"><summary>查看修改前后</summary><div><figure><img src="${escapeHtml(artifact.beforeUrl)}" alt="修改前" loading="lazy"><figcaption>修改前</figcaption></figure><figure><img src="${escapeHtml(artifact.url)}" alt="修改后" loading="lazy"><figcaption>修改后</figcaption></figure></div></details>` : ''}
+    ${artifact.kind === 'image' && sceneFinished(scene) ? ui`<div class="execution-candidate-controls"><select aria-label="替换图片位置" data-execution-slot>${Array.from({ length: Math.min(scene.requestedImages, images.length) }, (_, i) => ui`<option value="${i}" ${i === slot ? 'selected' : ''}>第 ${i + 1} 张</option>`).join('')}</select><button data-execution-action="select-image" data-artifact="${escapeHtml(artifact.id)}" ${selectionBusy ? 'disabled' : ''}>${selected.includes(artifact.id) ? t("已选中") : t("选为展示")}</button></div>` : ''}
   </article>`).join('')}</div></div>`;
 }
 let inspectedOperation = '';
@@ -218,8 +231,8 @@ function paint() {
   host.hidden = !opened && !scene;
   host.classList.toggle('is-collapsed', !opened);
   const history = [...scenes.values()].filter(s => s.chatId === currentChat).sort((a, b) => b.startedAt.localeCompare(a.startedAt));
-  host.querySelector('.execution-panel-header').innerHTML = ui`<strong>NEURAL / 任务空间</strong><span class="execution-status" role="status" aria-live="polite">${escape(headerStatus(scene))}</span>
-    ${history.length > 1 ? ui`<select aria-label="选择历史任务" data-execution-history>${history.map(s => ui`<option value="${escape(s.runId)}" ${s.runId === currentRun ? 'selected' : ''}>${escape(s.query.slice(0, 24) || t("任务"))}</option>`).join('')}</select>` : ''}
+  host.querySelector('.execution-panel-header').innerHTML = ui`<strong>NEURAL / 任务空间</strong><span class="execution-status" role="status" aria-live="polite">${escapeHtml(headerStatus(scene))}</span>
+    ${history.length > 1 ? ui`<select aria-label="选择历史任务" data-execution-history>${history.map(s => ui`<option value="${escapeHtml(s.runId)}" ${s.runId === currentRun ? 'selected' : ''}>${escapeHtml(s.query.slice(0, 24) || t("任务"))}</option>`).join('')}</select>` : ''}
     ${historyCursors.get(currentChat) ? ui`<button data-execution-action="older-scenes">更早的任务</button>` : ''}
     <button class="execution-voice" data-action="toggle-tts-autoplay" title="朗读设置">朗读设置</button>
     <button data-execution-action="toggle" aria-expanded="${opened}">${opened ? t("收起") : t("展开回看")} ↗</button>`;
@@ -230,11 +243,11 @@ function paint() {
     lastSignature = signature;
     host.querySelector('.execution-labels').innerHTML = EXECUTION_MODULES.map(module => {
       const activity = moduleActivity(scene, module.id);
-      return ui`<button class="execution-label execution-module" data-node-id="${module.id}" data-execution-action="focus" data-module="${module.id}" data-status="${activity.status}" style="--module-color:${module.color}" aria-label="进入${escape(t(module.name))}" title="${module.id === 'search' ? '搜索和网页读取都归入网页检索' : module.id === 'compute' ? '显示模型公开摘要与实际计算；两者独立标记' : module.id === 'files' ? '显示文件读写、代码修改片段和实际结果' : module.id === 'create' ? '显示模型请求、接收、整理、保存、渲染及实际成果' : '汇总所有真实工具调用；搜索、计算、文件操作也在这里，每次仅计一次'} · ${activity.operations.length} ${['create', 'compute'].includes(module.id) ? '条执行记录' : '次工具调用'}"><i></i><strong>${escape(t(module.name))}</strong><small>${escape(statusNames[activity.status])}${module.id === 'search' && scene?.sources.length ? ` · ${t('{count} 条来源 ↗',{count:scene.sources.length})}` : module.id === 'tools' ? ` · ${t('{count} 次工具调用',{count:activity.operations.length})}` : module.id === 'create' ? ` · ${t('{count} 条记录',{count:activity.operations.length})}` : activity.running.length > 1 ? ` ×${activity.running.length}` : ''}</small></button>`;
+      return ui`<button class="execution-label execution-module" data-node-id="${module.id}" data-execution-action="focus" data-module="${module.id}" data-status="${activity.status}" aria-label="进入${escapeHtml(t(module.name))}" title="${module.id === 'search' ? '搜索和网页读取都归入网页检索' : module.id === 'compute' ? '显示模型公开摘要与实际计算；两者独立标记' : module.id === 'files' ? '显示文件读写、代码修改片段和实际结果' : module.id === 'create' ? '显示模型请求、接收、整理、保存、渲染及实际成果' : '汇总所有真实工具调用；搜索、计算、文件操作也在这里，每次仅计一次'} · ${activity.operations.length} ${['create', 'compute'].includes(module.id) ? '条执行记录' : '次工具调用'}"><i></i><strong>${escapeHtml(t(module.name))}</strong><small>${escapeHtml(statusNames[activity.status])}${module.id === 'search' && scene?.sources.length ? ` · ${t('{count} 条来源 ↗',{count:scene.sources.length})}` : module.id === 'tools' ? ` · ${t('{count} 次工具调用',{count:activity.operations.length})}` : module.id === 'create' ? ` · ${t('{count} 条记录',{count:activity.operations.length})}` : activity.running.length > 1 ? ` ×${activity.running.length}` : ''}</small></button>`;
     }).join('') + renderDetails(scene, items);
-    host.querySelector('.execution-focus-tools').innerHTML = focus ? ui`<button data-execution-action="overview">← 整体视角</button><span title="按问题、实际搜索词与标题、网址、摘要的匹配及搜索排名排序；引用只作标记，不占用保留名额。相关性是启发式分数，不是概率">${escape(t(EXECUTION_MODULES.find(m => m.id === focus)?.name))}${focus === 'search' ? ` · 展示 ${items.length} / ${scene?.sources.length || 0} 条记录 · 按相关性` : ''}</span>${focus === 'search' && (scene?.sources.length || 0) > 5 ? ui`<button data-execution-action="more">${more ? '收起至五个' : '展开更多 · 最多十个'}</button>` : ''}` : '<span></span>';
+    host.querySelector('.execution-focus-tools').innerHTML = focus ? ui`<button data-execution-action="overview">← 整体视角</button><span title="按问题、实际搜索词与标题、网址、摘要的匹配及搜索排名排序；引用只作标记，不占用保留名额。相关性是启发式分数，不是概率">${escapeHtml(t(EXECUTION_MODULES.find(m => m.id === focus)?.name))}${focus === 'search' ? ` · 展示 ${items.length} / ${scene?.sources.length || 0} 条记录 · 按相关性` : ''}</span>${focus === 'search' && (scene?.sources.length || 0) > 5 ? ui`<button data-execution-action="more">${more ? '收起至五个' : '展开更多 · 最多十个'}</button>` : ''}` : '<span></span>';
     const extra = host.querySelector('.execution-extra'), scrollTop = extra.querySelector('.execution-reasoning-records')?.scrollTop || 0;
-    extra.innerHTML = renderSessionEvents(sessionEvents(scene)) + renderSearchTrail(scene) + (focus === 'compute' ? renderReasoningRecords(scene, statusNames) : '') + (renderCandidates(scene) || (!scene || focus && !items.length && !(focus === 'compute' && scene?.pipeline?.some(p => p.channel === 'reasoning-summary')) ? ui`<div class="execution-empty"><strong>${!scene ? '任务发生时，空间随之点亮' : focus === 'search' && searchOps.length ? (moduleActivity(scene, 'search').running.length ? '检索执行中 · 等待来源记录' : '此调用未返回来源清单') : '此区域暂无执行记录'}</strong>${!scene ? '点击区域靠近 · 电子与微光仅为氛围' : '不补造步骤、来源或进度'}</div>` : ''));
+    extra.innerHTML = renderSessionEvents(sessionEvents(scene)) + renderSearchTrail(scene) + (focus === 'compute' ? renderReasoningRecords(scene, statusNames) : '') + (renderCandidates(scene) || (!scene || focus && !items.length && !(focus === 'compute' && scene?.pipeline?.some(p => p.channel === 'reasoning-summary')) ? ui`<div class="execution-empty"><strong>${!scene ? '任务发生时，空间随之点亮' : focus === 'search' && searchOps.length ? (moduleActivity(scene, 'search').running.length ? '检索执行中 · 等待来源记录' : '此调用未返回来源清单') : '此区域还没有执行记录'}</strong>${!scene ? '点击区域靠近 · 电子与微光仅为氛围' : '不补造步骤、来源或进度'}</div>` : ''));
     const records = extra.querySelector('.execution-reasoning-records'); if (records) records.scrollTop = scrollTop;
     host.querySelector('.execution-signal-host').innerHTML = wideViewport(zoom) ? renderExecutionSignal(scene) : '';
     host.querySelector('.execution-inspector').hidden = !inspectedOperation;
@@ -242,8 +255,8 @@ function paint() {
   }
   const images = scene?.artifacts.filter(a => a.kind === 'image') || [];
   const deficit = scene?.operations.some(op => ['image', 'image_edit', 'native_image_generation'].includes(op.name)) && sceneFinished(scene) && images.length < scene.requestedImages ? ` · ${t('图片 {done}/{total} 张成功', { done: images.length, total: scene.requestedImages })}` : '';
-  host.querySelector('.execution-panel-footer').innerHTML = ui`<span>${escape(selectionError || scene?.persistenceError || scene?.observationNote || (sceneFinished(scene) ? t('执行已停止 · 神经脉冲是低强度氛围动画') : scene ? t('只展示已记录的执行 · 不代表模型内部思维') : t('准备就绪 · 尚未搜索、计算或调用工具')))}${escape(deficit)}</span><span>${scene?.operations.length || 0} 次工具调用 · ${scene?.pipeline?.length || 0} 条执行记录 · ${scene?.sources.length || 0} 条来源</span>`;
-  updateButtons(); syncZoomControls(); paintTiming();
+  host.querySelector('.execution-panel-footer').innerHTML = ui`<span>${escapeHtml(selectionError || scene?.persistenceError || scene?.observationNote || (sceneFinished(scene) ? t('执行已停止 · 神经脉冲是低强度氛围动画') : scene ? t('只展示已记录的执行 · 不代表模型内部思维') : t('准备就绪 · 尚未搜索、计算或调用工具')))}${escapeHtml(deficit)}</span><span>${scene?.operations.length || 0} 次工具调用 · ${scene?.pipeline?.length || 0} 条执行记录 · ${scene?.sources.length || 0} 条来源</span>`;
+  updateButtons(); syncZoomControls(); paintTiming(); applyButtonStyles(host);
   if (opened && !gpu && !loading) {
     loading = true;
     const currentHost = host;
@@ -264,8 +277,8 @@ function projectLabels(labels, { width, height }) {
     const moduleOffscreen = !position.detail && (position.x < 0 || position.x > width || position.y < 0 || position.y > height);
     const x = Math.min(width - w - 7, Math.max(7, position.x - w / 2));
     const y = Math.min(height - h - 40, Math.max(position.detail ? focus === 'search' ? 88 : 42 : 9, position.y - h / 2));
-    el.style.transform = `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0)`;
-    el.style.visibility = position.visible && !moduleOffscreen ? 'visible' : 'hidden';
+    el.style.setProperty('--projected-transform', `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0)`);
+    el.dataset.projectionVisible = String(position.visible && !moduleOffscreen);
   }
 }
 // The newest unfinished run of a chat, for the live steps shown inside the chat.
@@ -336,6 +349,7 @@ export function syncExecutionPanel({ chat, still = false, autoCollapse: shouldAu
     if (typeof ResizeObserver !== 'undefined') {
       layoutObserver = new ResizeObserver(sizeDetails);
       layoutObserver.observe(stage);
+      for(const element of [host.closest('.chat-thread'),host.closest('.thread-footer')]) if(element)layoutObserver.observe(element);
     }
   }
   if (currentChat !== (chat?.id || null)) {

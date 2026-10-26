@@ -100,7 +100,7 @@ struct ConversationControls: View {
                     }
                     Button("管理连接与模型列表", systemImage: "slider.horizontal.3", action: settings)
                 } label: { Label(modelLabel.isEmpty ? "选择模型" : modelLabel, systemImage: "cpu").font(.caption).lineLimit(1).padding(11).background(MeloTheme.inset, in: Capsule()) }.accessibilityLabel("选择对话模型")
-                Button { context = true } label: { Label("项目与资料\(store.knowledge(for: chatID).isEmpty ? "" : " · \(store.knowledge(for: chatID).count)")", systemImage: "paperclip").font(.caption).padding(11).background(MeloTheme.inset, in: Capsule()) }
+                Button { context = true } label: { Label("项目与知识\(store.knowledge(for: chatID).isEmpty ? "" : " · \(store.knowledge(for: chatID).count)")", systemImage: "paperclip").font(.caption).padding(11).background(MeloTheme.inset, in: Capsule()) }
             }.padding(.horizontal, 16).padding(.vertical, 6)
         }.onAppear { load() }.onChange(of: defaultMode) { _, _ in load() }.onReceive(NotificationCenter.default.publisher(for: Notification.Name("MeloConnectionsChanged"))) { _ in load() }
         .task { if account.signedIn && account.models.isEmpty { await account.loadModels() } }
@@ -136,8 +136,8 @@ struct ConversationContextPicker: View {
                         ForEach((store.preferences.projects ?? []).filter { $0.archived != true || $0.id == store.preferences.chatProjects?[chatID] }) { Text($0.name + ($0.archived == true ? "（已归档）" : "")).tag($0.id) }
                     }
                 }
-                Section("本次对话可用的知识资料") {
-                    if (store.preferences.knowledge ?? []).isEmpty { Text("先在知识分支添加资料，再在这里选用。").foregroundStyle(.secondary) }
+                Section("本次对话可用的知识") {
+                    if (store.preferences.knowledge ?? []).isEmpty { Text("先在知识库添加知识，再在这里选用。").foregroundStyle(.secondary) }
                     ForEach((store.preferences.knowledge ?? []).filter { $0.deleted != true && $0.kind != "result" }) { note in
                         if store.project(for: chatID)?.knowledgeIds?.contains(note.id) == true {
                             Label("\(note.title) · 项目共享", systemImage: "checkmark.circle.fill").foregroundStyle(.secondary)
@@ -152,9 +152,9 @@ struct ConversationContextPicker: View {
                             }))
                         }
                     }
-                    Text("资料按问题与上下文预算选取相关片段，全文保留。").font(.caption).foregroundStyle(.secondary)
+                    Text("知识按问题与上下文预算选取相关片段，全文保留。").font(.caption).foregroundStyle(.secondary)
                 }
-            }.navigationTitle("项目与资料").toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+            }.navigationTitle("项目与知识").toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
         }.presentationBackground(MeloTheme.dialog)
     }
 }

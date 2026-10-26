@@ -508,7 +508,7 @@ struct TaskHandoffView: View {
                     Button { Task { await store.sync() } } label: { Label(store.syncing ? "正在同步…" : "同步检查点", systemImage: "arrow.clockwise").frame(minHeight: 44) }.disabled(store.syncing)
                 }.meloPanel()
                 Picker("任务筛选", selection: $filter) { Text("进行中").tag(0); Text("已完成").tag(1) }.pickerStyle(.segmented)
-                if tasks.isEmpty { ContentUnavailableView(filter == 0 ? "暂无待处理任务" : "暂无已完成任务", systemImage: "square.stack.3d.up", description: Text("在桌面创建任务并配置同步服务后，检查点会显示在这里。")) }
+                if tasks.isEmpty { ContentUnavailableView(filter == 0 ? "还没有待处理任务" : "还没有已完成任务", systemImage: "square.stack.3d.up", description: Text("在桌面创建任务并配置同步服务后，检查点会显示在这里。")) }
                 ForEach(tasks) { task in
                     VStack(alignment: .leading, spacing: 16) {
                         HStack(alignment: .top) {

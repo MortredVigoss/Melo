@@ -121,3 +121,69 @@
 /* Section labels are now authored in Chinese; forced capitals only turned
    embedded product names into WHISPER / COOKIE. */
 .neural-dashboard .meta-block-label {text-transform:none;letter-spacing:.02em;}
+
+/* Audit UI: authored styles shared by desktop and bundled phone scene. */
+.muted-note{opacity:.78}.section-note{margin:0 0 8px}.selector-caret{margin-left:4px;opacity:.6;font-size:.75em}.block-gap{margin-top:8px}.toolbar-icon-compact{width:14px;height:14px}
+.agent-photo[data-avatar-size="22"]{width:22px;height:22px}
+.agent-photo[data-avatar-size="24"]{width:24px;height:24px}
+.agent-photo[data-avatar-size="28"]{width:28px;height:28px}
+.agent-photo[data-avatar-size="32"]{width:32px;height:32px}
+.agent-photo[data-avatar-size="40"]{width:40px;height:40px}
+.agent-photo[data-avatar-size="88"]{width:88px;height:88px}
+.reply-list-item[data-list-indent="0"]{margin-inline-start:0em}
+.reply-list-item[data-list-indent="1"]{margin-inline-start:0.5em}
+.reply-list-item[data-list-indent="2"]{margin-inline-start:1em}
+.reply-list-item[data-list-indent="3"]{margin-inline-start:1.5em}
+.reply-list-item[data-list-indent="4"]{margin-inline-start:2em}
+.reply-list-item[data-list-indent="5"]{margin-inline-start:2.5em}
+.reply-list-item[data-list-indent="6"]{margin-inline-start:3em}
+.reply-list-item[data-list-indent="7"]{margin-inline-start:3.5em}
+.reply-list-item[data-list-indent="8"]{margin-inline-start:4em}
+.reply-list-item[data-list-indent="9"]{margin-inline-start:4.5em}
+.reply-list-item[data-list-indent="10"]{margin-inline-start:5em}
+.reply-list-item[data-list-indent="11"]{margin-inline-start:5.5em}
+.reply-list-item[data-list-indent="12"]{margin-inline-start:6em}
+.reply-list-item[data-list-indent="13"]{margin-inline-start:6.5em}
+.reply-list-item[data-list-indent="14"]{margin-inline-start:7em}
+.reply-list-item[data-list-indent="15"]{margin-inline-start:7.5em}
+.reply-list-item[data-list-indent="16"]{margin-inline-start:8em}
+.reply-list-item[data-list-indent="17"]{margin-inline-start:8.5em}
+.reply-list-item[data-list-indent="18"]{margin-inline-start:9em}
+.reply-list-item[data-list-indent="19"]{margin-inline-start:9.5em}
+.reply-list-item[data-list-indent="20"]{margin-inline-start:10em}
+.reply-list-item[data-list-indent="21"]{margin-inline-start:10.5em}
+.reply-list-item[data-list-indent="22"]{margin-inline-start:11em}
+.reply-list-item[data-list-indent="23"]{margin-inline-start:11.5em}
+.reply-list-item[data-list-indent="24"]{margin-inline-start:12em}
+.neural-cluster[data-group="chat"],.neural-branches[data-group="chat"]{--neural-color:var(--visual-chat);--neural-light:var(--visual-chat-light);--neural-rgb:var(--scene-chat-rgb)}
+.neural-cluster[data-group="projects"],.neural-branches[data-group="projects"]{--neural-color:var(--visual-projects);--neural-light:var(--visual-projects-light);--neural-rgb:var(--scene-projects-rgb)}
+.neural-cluster[data-group="agents"],.neural-branches[data-group="agents"]{--neural-color:var(--visual-agents);--neural-light:var(--visual-agents-light);--neural-rgb:var(--scene-agents-rgb)}
+.neural-cluster[data-group="knowledge"],.neural-branches[data-group="knowledge"]{--neural-color:var(--visual-knowledge);--neural-light:var(--visual-knowledge-light);--neural-rgb:var(--scene-knowledge-rgb)}
+.neural-cluster[data-group="system"],.neural-branches[data-group="system"]{--neural-color:var(--visual-system);--neural-light:var(--visual-system-light);--neural-rgb:var(--scene-system-rgb)}
+
+/* Manual still mode uses the same animation cancellation as the scene host. */
+.neural-shell.is-still :is(.neural-dashboard,.neural-core-anchor,.neural-cluster,.neural-branches,.neural-orb,.content-shell){transition:none;animation:none}
+
+.tree-row[data-tree-depth]{padding-left:var(--tree-indent,14px)}
+
+.ui-notice{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--border-strong);border-radius:10px;background:var(--surface-elevated);color:var(--text);font-size:var(--type-body);line-height:1.5;pointer-events:auto}
+.ui-notice>span{flex:1;overflow-wrap:anywhere}.ui-notice[data-level=error]{border-color:var(--state-error);color:var(--state-error)}
+.ui-notice[data-page-notice]{flex-shrink:0;margin:8px 12px}.ui-notice.flash-toast{border-radius:12px;max-width:min(600px,90vw)}
+
+/* Canonical button appearance. Feature classes own layout and data-action owns behavior. */
+:is(#app,.input-dialog,.flash-toast) :is(.button-primary,.button-secondary,.button-ghost,.button-icon){font-family:inherit;font-weight:500;border:1px solid var(--border-strong);border-radius:8px;box-shadow:none;cursor:pointer;color:var(--text);background:var(--bg-soft);line-height:1.4}
+:is(#app,.input-dialog,.flash-toast) .button-primary{background:var(--space-gold);color:var(--bg);border-color:var(--space-gold)}
+:is(#app,.input-dialog,.flash-toast) :is(.button-ghost,.button-icon){background:transparent;border-color:transparent}
+:is(#app,.input-dialog,.flash-toast) :is(.button-primary,.button-secondary,.button-ghost){padding:6px 10px;min-height:30px}
+:is(#app,.input-dialog,.flash-toast) .button-icon{display:inline-flex;align-items:center;justify-content:center;min-width:28px;min-height:28px;padding:5px}
+:is(#app,.input-dialog,.flash-toast) .button-icon.is-primary{background:var(--space-gold);color:var(--bg)}
+:is(#app,.input-dialog,.flash-toast) :is(.button-secondary,.button-ghost,.button-icon):hover{background:var(--bg-hover);border-color:var(--border-strong)}
+:is(#app,.input-dialog,.flash-toast) .button-primary:hover{filter:brightness(1.08)}
+:is(#app,.input-dialog,.flash-toast) :is(.button-primary,.button-secondary,.button-ghost,.button-icon):focus-visible{outline:2px solid var(--space-gold);outline-offset:2px}
+:is(#app,.input-dialog,.flash-toast) :is(.button-primary,.button-secondary,.button-ghost,.button-icon):disabled{opacity:.5;cursor:default}
+:is(#app,.input-dialog,.flash-toast) :is(.button-primary,.button-secondary,.button-ghost,.button-icon).is-danger{color:var(--state-error);border-color:var(--state-error)}
+#app :is(.page,.local-settings,.surface-card) h1.page-title{font-size:var(--type-pane);line-height:1.4;font-weight:600}
+#app :is(.page,.local-settings,.surface-card) h2.pane-title{font-size:var(--type-section);line-height:1.4;font-weight:600}
+#app :is(.page,.local-settings,.surface-card) h3.subsection-title{font-size:var(--type-body);line-height:1.4;font-weight:600}
+
+.content-shell:has(>[data-page-notice]){grid-template-rows:auto minmax(0,1fr)}

@@ -1,10 +1,9 @@
 import { formatTime } from './format.js';
-import { escapeHtml } from './html.js';
+import { escapeHtml } from './i18n.js';
 import { t, currentLanguage } from './i18n.js';
 
 const terminal = value => ['completed', 'failed', 'cancelled', 'interrupted'].includes(value?.status);
 const instant = value => typeof value === 'string' && value.trim() && Number.isFinite(Date.parse(value)) ? Date.parse(value) : null;
-const escape = value => escapeHtml(String(value));
 // Merge overlapping model requests: parallel members and summary telemetry
 // must not multiply the wall-clock time shown to the user.
 function intervalDuration(items, end) {
@@ -58,6 +57,6 @@ export function renderExecutionTiming(scene, now = Date.now()) {
   if (value.modelMs !== null) labels.push(t('思考与回复 {time}', { time: formatExecutionDuration(value.modelMs) }));
   if (value.done && value.finishedAt !== null) labels.push(t(value.completed ? '完成于 {time}' : '停止于 {time}', { time: dateText(value.finishedAt) }));
   const img = value.image;
-  const progress = img ? `<div class="execution-image-progress"><span>${escape(t('图片成果 {percent}% · 已保存 {saved}/{total} 张', { percent: img.percent, saved: img.saved, total: img.requested }))}</span><progress value="${img.percent}" max="100" aria-label="${escape(t('图片成果进度'))}"></progress>${img.elapsedMs !== null ? `<span>${escape(t('图片处理 {time}', { time: formatExecutionDuration(img.elapsedMs) }))}</span>` : ''}${img.savedAt !== null ? `<span>${escape(t('图片保存于 {time}', { time: dateText(img.savedAt) }))}</span>` : ''}${!value.done && img.percent < 100 ? `<small>${escape(t('按已保存张数计；单张生成进度未提供'))}</small>` : ''}</div>` : '';
-  return `<div class="execution-timing"><span title="${escape(t('本轮含等待和工具执行；思考与回复为模型请求用时，并非内部推理计时'))}">${labels.map(escape).join(' · ')}</span>${progress}</div>`;
+  const progress = img ? `<div class="execution-image-progress"><span>${escapeHtml(t('图片成果 {percent}% · 已保存 {saved}/{total} 张', { percent: img.percent, saved: img.saved, total: img.requested }))}</span><progress value="${img.percent}" max="100" aria-label="${escapeHtml(t('图片成果进度'))}"></progress>${img.elapsedMs !== null ? `<span>${escapeHtml(t('图片处理 {time}', { time: formatExecutionDuration(img.elapsedMs) }))}</span>` : ''}${img.savedAt !== null ? `<span>${escapeHtml(t('图片保存于 {time}', { time: dateText(img.savedAt) }))}</span>` : ''}${!value.done && img.percent < 100 ? `<small>${escapeHtml(t('按已保存张数计；单张生成进度未提供'))}</small>` : ''}</div>` : '';
+  return `<div class="execution-timing"><span title="${escapeHtml(t('本轮含等待和工具执行；思考与回复为模型请求用时，并非内部推理计时'))}">${labels.map(escapeHtml).join(' · ')}</span>${progress}</div>`;
 }

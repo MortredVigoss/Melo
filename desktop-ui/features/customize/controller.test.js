@@ -33,7 +33,7 @@ function harness({ bootstrap = page(), responses = {} } = {}) {
     allChatAgentProfiles: () => [],
     api: async (path, options = {}) => { calls.push([path, options.method || 'GET', options.body]); const key = Object.keys(responses).find(p => path.startsWith(p)); const value = key ? responses[key] : {}; if (value instanceof Error) throw value; return structuredClone(value); },
     applyBootstrap: payload => { applied.push(payload); state.bootstrap = payload; }, applyBootstrapPreservingDrafts: payload => { applied.push(payload); state.bootstrap = payload; },
-    bgRender: () => { bgRenders++; }, render: () => { renders++; }, showError: m => errors.push(m), escapeHtml: v => String(v ?? ''),
+    bgRender: () => { bgRenders++; }, render: () => { renders++; }, notify: ({text}) => errors.push(text), escapeHtml: v => String(v ?? ''),
     patchSettings: async patch => { settings.push(patch); }, minimaxTtsConfigPatchForVoice: id => ({ minimaxVoiceId: id }), effectiveModelSetupDraft: () => ({}),
     renderApprovalPanel: () => '', renderCommandRunner: () => '', renderProjectArtifactShelf: () => '', renderSelectedFilePreview: () => '', renderTaskPanel: () => '',
     getBootstrap: () => state.bootstrap, modelSetupDraft: () => null, refreshBootstrap: async () => { refreshes++; }, resolveActiveMinimaxVoiceId: () => ({ voiceId: '' }),

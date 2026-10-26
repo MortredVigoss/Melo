@@ -1,8 +1,9 @@
+import { applyButtonStyles } from './buttonStyles.js';
 import { detectReplyLanguage } from '../shared/agent/locale.js';
 import { beginFormSubmission, decorateActionForms } from './actionForms.js';
 import { editBehaviorSettings, handleBehaviorSettings } from './behaviorSettings.js';
-import { escapeHtml } from './html.js';
-import { showFlashToast } from './feedback.js';
+import { escapeHtml } from './i18n.js';
+import { notify, renderNotifications } from './feedback.js';
 import { LOCAL_SERVICE_DEFAULTS, customVoiceActive } from '/shared/localServices.js';
 import { renderSmartRouting, editSmartRouting, handleSmartRouting, smartRoutingDrag } from './smartRouting.js';
 import {handleManagementAction} from './managementActions.js';
@@ -69,6 +70,12 @@ const settingsFormEditors = createSettingsFormEditors({render,
   scope: form => form.dataset.agentId ? agentsFeature.formDraftScope(form) : form.dataset.form==='task-pricing' ? uiState.bootstrap?.settings?.config?.model || '' : '',
   onCancel: form => {
     if(form.dataset.agentId) agentsFeature.discardFormDraft(form);
+    if(form.dataset.form==='project-create') projectsFeature.cancelCreateForm();
+    if(form.dataset.form==='project-book-create') memoryFeature.cancelCreateForm();
+    if(form.dataset.form==='file-save') resetFileEditor();
+    if(form.dataset.form==='task-create') { uiState.showTaskForm=false; uiState.draftTask={title:'',summary:'',owner:'builder',kind:'task'}; }
+    if(form.dataset.form==='artifact-create') { uiState.showArtifactForm=false; uiState.draftArtifact={title:'',language:'markdown',kind:'note',content:''}; }
+    if(form.dataset.form==='artifact-update') { uiState.editingArtifactId=null; uiState.editingArtifactDraft={title:'',language:'',kind:'',content:''}; }
     if(form.dataset.form==='task-pricing') uiState.taskPricing=null;
     if(['connector-config','model-config'].includes(form.dataset.form)) clearModelFormDraft(form);
   },
@@ -293,12 +300,12 @@ const icon = {
 const api = createSharedApi({ getBootstrap: () => uiState.bootstrap, onRecoveryChange: () => bgRender() });
 const featureActions = createActionRegistry('action');
 const featureForms = createActionRegistry('form');
-const memoryFeature = installMemoryFeature({ api, render, bgRender, showError, activeProject, escapeHtml });
+const memoryFeature = installMemoryFeature({ api, render, bgRender, notify, activeProject, escapeHtml });
 featureActions.register(memoryFeature.actions, 'memory');
 featureForms.register(memoryFeature.forms, 'memory');
 const projectsFeature = installProjectsFeature({
   getBootstrap: () => uiState.bootstrap,
-  api, render, showError, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts, startProjectSession,
+  api, render, notify, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts, startProjectSession,
   activeProject, activeProjectChats, activeProjectArtifacts,
   renderMemoryBook: memoryFeature.renderProjectBook,
   escapeHtml, truncate, icon,
@@ -310,7 +317,7 @@ featureForms.register(projectsFeature.forms, 'projects');
 // the «临时授权» list appears in Agent settings and Customize → Safety.
 const approvalsFeature = installApprovalsFeature({
   getBootstrap: () => uiState.bootstrap,
-  app, api, render, bgRender, showFlashToast,
+  app, api, render, bgRender, notify,
   refreshBootstrap: () => loadBootstrap(uiState.searchQuery, { quiet: true }),
   toolPermissions: () => uiState.pendingToolPermissions,
   setToolPermissions: list => { uiState.pendingToolPermissions = list; },
@@ -319,7 +326,7 @@ const approvalsFeature = installApprovalsFeature({
 featureActions.register(approvalsFeature.actions, 'approvals');
 const agentsFeature = installAgentsFeature({
   getBootstrap: () => uiState.bootstrap,
-  app, api, render, bgRender, showError, showFlashToast, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts,
+  app, api, render, bgRender, notify, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts,
   refreshBootstrap: () => loadBootstrap(uiState.searchQuery, { quiet: true }),
   activeProject, agentProfileById, minimaxTtsConfigPatchForVoice,
   beginFormEdit: form => settingsFormEditors.begin(form),
@@ -334,7 +341,7 @@ const chatFeature = installChatFeature({
   // The optimistic user message and the restore after a failed send replace
   // the page data without a render, exactly as the moved code did.
   setBootstrap: payload => { uiState.bootstrap = payload; },
-  app, api, render, bgRender, showError, applyBootstrap, applyBootstrapPreservingDrafts,
+  app, api, render, bgRender, notify, applyBootstrap, applyBootstrapPreservingDrafts,
   refreshBootstrap: () => loadBootstrap(uiState.searchQuery, { quiet: true }),
   activeChat,
   isOverview: () => uiState.neuralOverview,
@@ -369,7 +376,7 @@ featureActions.register(chatFeature.actions, 'chat');
 featureForms.register(chatFeature.forms, 'chat');
 // Customize page (architecture B3): skills, connectors, safety and Tools & Tasks sections.
 const customizeFeature = installCustomizeFeature({
-  agentsFeature, approvalsFeature, memoryFeature, allChatAgentProfiles, api, applyBootstrap, applyBootstrapPreservingDrafts, bgRender, render, showError, escapeHtml,
+  agentsFeature, approvalsFeature, memoryFeature, allChatAgentProfiles, api, applyBootstrap, applyBootstrapPreservingDrafts, bgRender, render, notify, escapeHtml,
   patchSettings, minimaxTtsConfigPatchForVoice, effectiveModelSetupDraft, resolveActiveMinimaxVoiceId, renderApprovalPanel, renderCommandRunner, renderProjectArtifactShelf, renderSelectedFilePreview, renderTaskPanel,
   getBootstrap: () => uiState.bootstrap,
   modelSetupDraft: () => uiState.modelSetupDraft,
@@ -665,7 +672,7 @@ function renderTtsVoicePanel() {
   return ui`
     <div class="tts-voice-panel">
       <div class="tts-panel-header">
-        <span class="toolbar-icon" style="width:14px;height:14px">${icon.speak}</span>
+        <span class="toolbar-icon toolbar-icon-compact">${icon.speak}</span>
         Voice settings
       </div>
 
@@ -1316,7 +1323,7 @@ function resetFileEditor() {
 function startSelectedFileEdit() {
   const selectedFile = uiState.bootstrap?.workspace?.selectedFile;
   if (!selectedFile) {
-    showError('Select a file before editing it.');
+    notify({level:'error',text:'Select a file before editing it.'});
     return;
   }
 
@@ -1477,9 +1484,6 @@ function scheduleSearchRefresh() {
   }, 180);
 }
 
-function showError(message) {
-  showFlashToast(message, { kind: 'error', ms: 0 });
-}
 
 function openExternalUrl(url) {
   const normalized = String(url || '').trim();
@@ -1505,7 +1509,7 @@ function openExternalUrl(url) {
 }
 
 window.addEventListener('melo-external-link', event => {
-  if (event.detail?.ok === false) showError('浏览器未能打开，请点击链接旁的「复制链接」后粘贴到浏览器。');
+  if (event.detail?.ok === false) notify({level:'error',text:'浏览器未能打开，请点击链接旁的「复制链接」后粘贴到浏览器。'});
 });
 
 function homePromptPresetById(presetId) {
@@ -1928,7 +1932,7 @@ async function handleOpenNewChatHome() {
 async function handleToggleChatLock(chatId) {
   const recent = (uiState.bootstrap?.recents || []).find(chat => chat.id === chatId);
   if (!recent) {
-    showError('Chat not found.');
+    notify({level:'error',text:'Chat not found.'});
     return;
   }
 
@@ -2853,7 +2857,7 @@ async function speakText(text, messageId = null, agentId = '') {
     }
     // Macos failed (no /usr/bin/say, e.g. Linux) — fall back to speechSynthesis.
     if (!speakWithBrowser(input, messageId)) {
-      showError('TTS is not available in this environment.');
+      notify({level:'error',text:'TTS is not available in this environment.'});
     }
     return;
   }
@@ -2861,7 +2865,7 @@ async function speakText(text, messageId = null, agentId = '') {
   // Explicit Browser voice — speechSynthesis only. No server involvement.
   if (useBrowser) {
     if (!speakWithBrowser(input, messageId)) {
-      showError('Browser speech synthesis is not available in this environment.');
+      notify({level:'error',text:'Browser speech synthesis is not available in this environment.'});
     }
     return;
   }
@@ -2937,8 +2941,7 @@ async function handleSpeakMessage(trigger) {
 async function handleCreateArtifact() {
   const { title, content, language, kind } = uiState.draftArtifact;
   if (!content.trim()) {
-    showError('Artifact content is required.');
-    return;
+    throw new Error('Artifact content is required.');
   }
 
   const payload = await api('/api/artifacts', {
@@ -2987,8 +2990,7 @@ async function handleUpdateArtifact() {
   if (!artifactId) return;
   const draft = uiState.editingArtifactDraft;
   if (!draft.content.trim()) {
-    showError('Artifact content is required.');
-    return;
+    throw new Error('Artifact content is required.');
   }
 
   const payload = await api('/api/artifacts/update', {
@@ -3113,7 +3115,7 @@ async function handleStartModelOAuthLogin() {
     method: 'POST',
     body: {},
   });
-  showError('OpenAI sign-in was opened in Terminal. Finish the browser authorization, then click Refresh status.');
+  notify({level:'info',text:'OpenAI sign-in was opened in Terminal. Finish the browser authorization, then click Refresh status.'});
 }
 
 
@@ -3128,8 +3130,7 @@ function creationContext() {
 async function handleCreateTask() {
   const title = uiState.draftTask.title.trim();
   if (!title) {
-    showError('Task title is required.');
-    return;
+    throw new Error('Task title is required.');
   }
 
   const payload = await api('/api/tasks', {
@@ -3491,7 +3492,7 @@ async function handleComposerCommand() {
 
   const commandLine = raw.slice(1).trim();
   if (!commandLine) {
-    showError('Type a command after /.');
+    notify({level:'error',text:'Type a command after /.'});
     return true;
   }
 
@@ -3505,7 +3506,7 @@ async function handleComposerCommand() {
       break;
     case 'mode':
       if (!['chat', 'cowork', 'code'].includes(remainder)) {
-        showError('Use /mode chat, /mode cowork, or /mode code.');
+        notify({level:'error',text:'Use /mode chat, /mode cowork, or /mode code.'});
         return true;
       }
       await patchSettings({
@@ -3515,7 +3516,7 @@ async function handleComposerCommand() {
       break;
     case 'view':
       if (!['chat', 'chats', 'projects', 'customize', 'artifacts', 'search'].includes(remainder)) {
-        showError('Unknown view.');
+        notify({level:'error',text:'Unknown view.'});
         return true;
       }
       await patchSettings({
@@ -3527,7 +3528,7 @@ async function handleComposerCommand() {
         item.name.toLowerCase().includes(remainder.toLowerCase()),
       );
       if (!project) {
-        showError('Project not found.');
+        notify({level:'error',text:'Project not found.'});
         return true;
       }
       await patchSettings({
@@ -3542,7 +3543,7 @@ async function handleComposerCommand() {
           entry.type === 'file' && entry.path.toLowerCase().includes(remainder.toLowerCase()),
       );
       if (!file) {
-        showError('File not found in the current workspace snapshot.');
+        notify({level:'error',text:'File not found in the current workspace snapshot.'});
         return true;
       }
       await handleSelectWorkspaceFile(file.path);
@@ -3551,7 +3552,7 @@ async function handleComposerCommand() {
     case 'run': {
       const [templateId = '', ...queryParts] = parts;
       if (!templateId) {
-        showError('Use /run <template-id> [query].');
+        notify({level:'error',text:'Use /run <template-id> [query].'});
         return true;
       }
       await createApprovalRequest({
@@ -3598,7 +3599,7 @@ async function handleComposerCommand() {
     }
     case 'mcp':
       if (remainder !== 'browse') {
-        showError('Use /mcp browse.');
+        notify({level:'error',text:'Use /mcp browse.'});
         return true;
       }
       await patchSettings({
@@ -3607,7 +3608,7 @@ async function handleComposerCommand() {
       });
       break;
     default:
-      showError(`Unknown command: /${lowerName}`);
+      notify({level:'error',text:`Unknown command: /${lowerName}`});
       return true;
   }
 
@@ -3651,8 +3652,7 @@ async function handleSelectWorkspaceFile(filePath, { lineNumber = null } = {}) {
 async function handleSaveWorkspaceFile() {
   const filePath = uiState.fileDraftPath || uiState.bootstrap?.workspace?.selectedFile?.path;
   if (!filePath) {
-    showError('Choose a file before saving.');
-    return;
+    throw new Error('Choose a file before saving.');
   }
 
   await createApprovalRequest({
@@ -3672,7 +3672,7 @@ async function handleSaveWorkspaceFile() {
 async function handleApplyArtifactToSelectedFile(artifactId) {
   const selectedFilePath = uiState.bootstrap?.workspace?.selectedFilePath;
   if (!selectedFilePath) {
-    showError('Select a target file before applying an artifact.');
+    notify({level:'error',text:'Select a target file before applying an artifact.'});
     return;
   }
 
@@ -3887,10 +3887,10 @@ function renderComposerCommandDeck({ inline = false } = {}) {
 }
 
 async function previewTaskBackup(operationId) {
-  try { uiState.taskRestore = await api('/api/tasks/restore-preview', {method:'POST',body:{operationId}}); render(); } catch(error) { showError(error.message); }
+  try { uiState.taskRestore = await api('/api/tasks/restore-preview', {method:'POST',body:{operationId}}); render(); } catch(error) { notify({level:'error',text:error.message}); }
 }
 async function confirmTaskRestore(token) {
-  try { const result = await api('/api/tasks/restore-confirm', {method:'POST',body:{token}}); uiState.taskRestore = null; showFlashToast(t('已恢复；恢复前的内容也已备份：{path}', { path: result.safetyBackupId })); render(); } catch(error) { showError(error.message); }
+  try { const result = await api('/api/tasks/restore-confirm', {method:'POST',body:{token}}); uiState.taskRestore = null; notify({level:'success',text:t('已恢复；恢复前的内容也已备份：{path}', { path: result.safetyBackupId })}); render(); } catch(error) { notify({level:'error',text:error.message}); }
 }
 function renderTaskPanel({ compact = false } = {}) {
   const tasks = activeTasks();
@@ -3902,7 +3902,7 @@ function renderTaskPanel({ compact = false } = {}) {
         <div>
           <h2 class="pane-title">任务</h2>
           <details class="quality-details"><summary>当前模型计价（可选）</summary><p>填写服务实际单价，单位 USD / 百万 token。缺少单价时费用显示未知；订阅用量不换算成 API 账单。</p><form data-form="task-pricing">${[['input','普通输入'],['output','输出'],['cached','缓存读取'],['cacheWrite','缓存写入']].map(([key,label])=>ui`<label>${label}<input type="number" min="0" step="any" id="pricing-${key}" name="${key}" value="${escapeHtml(uiState.taskPricing?.[key] ?? config.modelPricing?.[key] ?? '')}" data-task-pricing="${key}" placeholder="未填写" /></label>`).join('')}</form></details>
-          ${uiState.taskRestore ? ui`<section class="quality-details"><h3>恢复预览 · ${escapeHtml(uiState.taskRestore.action)}</h3><p>${escapeHtml(uiState.taskRestore.path)}</p><p>${uiState.taskRestore.currentBytes} → ${uiState.taskRestore.restoredBytes} 字节${uiState.taskRestore.truncated ? ' · 内容预览已截断' : ''}</p><details><summary>查看当前与恢复后的内容</summary><p>当前</p><pre>${escapeHtml(uiState.taskRestore.currentPreview)}</pre><p>恢复后</p><pre>${escapeHtml(uiState.taskRestore.restoredPreview)}</pre></details><button class="small-button" data-action="confirm-task-restore" data-token="${uiState.taskRestore.token}">确认恢复此文件</button></section>` : ''}
+          ${uiState.taskRestore ? ui`<section class="quality-details"><h3 class="subsection-title">恢复预览 · ${escapeHtml(uiState.taskRestore.action)}</h3><p>${escapeHtml(uiState.taskRestore.path)}</p><p>${uiState.taskRestore.currentBytes} → ${uiState.taskRestore.restoredBytes} 字节${uiState.taskRestore.truncated ? ' · 内容预览已截断' : ''}</p><details><summary>查看当前与恢复后的内容</summary><p>当前</p><pre>${escapeHtml(uiState.taskRestore.currentPreview)}</pre><p>恢复后</p><pre>${escapeHtml(uiState.taskRestore.restoredPreview)}</pre></details><button class="small-button" data-action="confirm-task-restore" data-token="${uiState.taskRestore.token}">确认恢复此文件</button></section>` : ''}
         </div>
         <button class="small-button" data-action="toggle-task-form">
           ${uiState.showTaskForm ? t("收起") : t("新建任务")}
@@ -3988,7 +3988,7 @@ function renderTaskPanel({ compact = false } = {}) {
                   </select>
                 </label>
               </div>
-              <button class="small-button is-primary" type="submit">创建任务</button>
+
             </form>
           `
           : ''
@@ -4113,7 +4113,7 @@ function renderApprovalPanel({ compact = false } = {}) {
                   `,
                 )
                 .join('')
-            : ui`<div class="empty-state compact">暂无审批记录。</div>`
+            : ui`<div class="empty-state compact">还没有审批记录。</div>`
         }
       </div>
     </section>
@@ -4138,10 +4138,10 @@ function renderWorkspaceExplorer() {
     <div class="file-tree">
       ${workspace.entries
         .map(entry => {
-          const indent = 14 + entry.depth * 18;
+          const depth = Math.max(0, Number(entry.depth) || 0);
           if (entry.type === 'directory') {
             return ui`
-              <div class="tree-row is-directory" style="padding-left:${indent}px">
+              <div class="tree-row is-directory" data-tree-depth="${depth}">
                 <span class="tree-icon">${icon.folder}</span>
                 <span>${escapeHtml(entry.name)}</span>
               </div>
@@ -4153,7 +4153,7 @@ function renderWorkspaceExplorer() {
               class="tree-row is-file ${
                 workspace.selectedFilePath === entry.path ? 'is-active' : ''
               }"
-              style="padding-left:${indent}px"
+              data-tree-depth="${depth}"
               data-action="select-file"
               data-file-path="${escapeHtml(entry.path)}"
             >
@@ -4219,12 +4219,8 @@ function renderSelectedFilePreview() {
         ${
           isEditing
             ? ui`
-              <button class="small-button is-primary" type="submit" form="file-save-form">
-                排队保存
-              </button>
-              <button class="small-button" data-action="cancel-edit-file">
-                Discard
-              </button>
+
+
             `
             : ui`
               <button class="small-button is-primary" data-action="start-edit-file">
@@ -4236,7 +4232,7 @@ function renderSelectedFilePreview() {
       ${
         isEditing
           ? ui`
-            <form id="file-save-form" data-form="file-save">
+            <form id="file-save-form" data-form="file-save" data-file-path="${escapeHtml(selectedFile.path)}">
               <textarea class="textarea code-editor" id="selected-file-editor">${escapeHtml(
                 uiState.fileDraftContent,
               )}</textarea>
@@ -4283,7 +4279,7 @@ function renderCommandRunner() {
                   `
                   : ''
               }
-              <button class="small-button is-primary" type="submit">排队运行</button>
+
             </form>
           `,
         )
@@ -4387,7 +4383,7 @@ function renderCodePage() {
                 ? chatFeature.renderMessageList(chat)
                 : ui`
                   <div class="code-empty">
-                    <h2 class="card-title">代码模式已就绪</h2>
+                    <h2 class="pane-title">代码模式已就绪</h2>
                     <p class="card-summary">
                       浏览文件、运行安全的本地命令，并把成果放在对话旁边。
                     </p>
@@ -4514,7 +4510,7 @@ function renderChatsPage() {
                     chat => ui`
                       <button class="chat-row" data-action="open-chat" data-chat-id="${chat.id}">
                         <div class="chat-row__body">
-                          <h2 class="chat-row__title">${escapeHtml(chat.title)}</h2>
+                          <h2 class="pane-title chat-row__title">${escapeHtml(chat.title)}</h2>
                           <p class="chat-row__preview">${escapeHtml(chat.preview)}</p>
                         </div>
                         <div class="chat-row__meta">
@@ -4590,7 +4586,7 @@ async function handleKillBackgroundTask(runId) {
     await api('/api/background-tasks/kill', { method: 'POST', body: { runId } });
     await customizeFeature.refreshAdvancedStatus();
   } catch (err) {
-    showError(`Kill task failed: ${err?.message || err}`);
+    notify({level:'error',text:`Kill task failed: ${err?.message || err}`});
   }
 }
 
@@ -4646,7 +4642,7 @@ function renderArtifactsPage() {
           <div class="inline-actions">
             <button class="ghost-button is-primary" data-action="toggle-artifact-form">
               <span class="toolbar-icon">${icon.plus}</span>
-              添加资料
+              添加知识
             </button>
           </div>
         </div>
@@ -4660,7 +4656,7 @@ function renderArtifactsPage() {
                     标题
                     <input class="input" name="title" value="${escapeHtml(
                       uiState.draftArtifact.title,
-                    )}" placeholder="资料标题" />
+                    )}" placeholder="知识标题" />
                   </label>
                   <label class="label">
                     格式或语言
@@ -4677,15 +4673,13 @@ function renderArtifactsPage() {
                 </label>
                 <label class="label">
                   正文
-                  <textarea class="textarea" name="content" placeholder="写入背景资料、笔记或保存成果">${escapeHtml(
+                  <textarea class="textarea" name="content" placeholder="写入背景知识、笔记或保存成果">${escapeHtml(
                     uiState.draftArtifact.content,
                   )}</textarea>
                 </label>
                 <div class="inline-actions">
-                  <button class="small-button is-primary" type="submit">保存资料</button>
-                  <button class="small-button is-outline" type="button" data-action="toggle-artifact-form">
-                    Cancel
-                  </button>
+
+
                   ${
                     project ? ui`<span class="meta-label">Attached to ${escapeHtml(project.name)}</span>` : ''
                   }
@@ -4724,7 +4718,7 @@ function renderArtifactsPage() {
                                   : ''
                               }
                             </div>
-                            <h2 class="card-title">${escapeHtml(artifact.title)}</h2>
+                            <h2 class="pane-title">${escapeHtml(artifact.title)}</h2>
                             <p class="card-summary">${escapeHtml(
                               truncate(artifact.content, 140),
                             )}</p>
@@ -4732,7 +4726,7 @@ function renderArtifactsPage() {
                         `,
                       )
                       .join('')
-                  : '<div class="empty-state compact">此分类暂时没有内容。</div>'
+                  : ui`<div class="empty-state compact">此分类还没有内容。</div>`
               }
             </div>
           </section>
@@ -4742,7 +4736,7 @@ function renderArtifactsPage() {
               active
                 ? uiState.editingArtifactId === active.id
                   ? ui`
-                    <form class="project-form-card surface-card" data-form="artifact-update">
+                    <form class="project-form-card surface-card" data-form="artifact-update" data-artifact-id="${escapeHtml(active.id)}">
                       <div class="project-form-grid">
                         <label class="label">
                           标题
@@ -4770,10 +4764,8 @@ function renderArtifactsPage() {
                         )}</textarea>
                       </label>
                       <div class="inline-actions">
-                        <button class="small-button is-primary" type="submit">保存修改</button>
-                        <button class="small-button is-outline" type="button" data-action="cancel-edit-artifact">
-                          Cancel
-                        </button>
+
+
                       </div>
                     </form>
                   `
@@ -4842,7 +4834,7 @@ function renderArtifactsPage() {
 
                     ${['note','text','markdown',''].includes(active.kind) || ['text','markdown',''].includes(active.language) ? ui`<div class="message-text-block" data-copyable-surface>${renderTextBlock(active.content)}</div>` : ui`<pre class="code-preview tall" data-copyable-surface><code>${escapeHtml(active.content)}</code></pre>`}
                   `
-                : ui`<div class="empty-state">选择一份资料查看或编辑。</div>`
+                : ui`<div class="empty-state">选择一份知识查看或编辑。</div>`
             }
           </section>
         </div>
@@ -5340,10 +5332,14 @@ function render({ background = false, changedSections = null } = {}) {
       <p class="meta-label">刷新只读取已保存的内容。</p>
       ${api.pendingSaves().map(save => ui`<button type="button" class="small-button" data-action="retry-committed-save" data-save-id="${save.id}" ${save.retrying ? 'disabled' : ''}>${save.retrying ? t('正在刷新…') : t('刷新页面')}</button>`).join('')}
     </aside>` : ''}
-    ${uiState.error ? ui`<div class="toast">${escapeHtml(uiState.error)}</div>` : ''}
+
   `);
 
+  for (const row of app.querySelectorAll('[data-tree-depth]')) row.style.setProperty('--tree-indent', `${14 + Number(row.dataset.treeDepth) * 18}px`);
+  renderNotifications(app,{scope:[uiState.bootstrap.settings.activeView,uiState.bootstrap.settings.selectedCustomizeSection || ''].join(':')});
+  if (uiState.error) { notify({level:'error',text:uiState.error}); uiState.error=''; }
   settingsFormEditors.decorate(app);
+  applyButtonStyles(app);
   decorateActionForms(app);
   syncNeuralComposer(app, chatFeature.composerText());
   animateNeuralLayout(neuralBefore, uiState.neuralStill);
@@ -5604,13 +5600,13 @@ function activateExternalCardElement(externalCard) {
   }
   if (route.kind === 'external') {
     if (!openExternalUrl(route.href)) {
-      showError('Melo could not open this link.');
+      notify({level:'error',text:'Melo could not open this link.'});
     }
     return true;
   }
   // 'invalid' — data attribute was empty / non-http; surface the error so the
   // activation is not silently dead.
-  showError('Melo could not open this link.');
+  notify({level:'error',text:'Melo could not open this link.'});
   return true;
 }
 
@@ -5634,9 +5630,9 @@ document.addEventListener('click', async event => {
     event.stopPropagation();
     try {
       await copyLinkText(copyLink.dataset.copyLink);
-      showFlashToast('链接已复制');
+      notify({level:'success',text:'链接已复制'});
     } catch {
-      showError('复制失败，请选中链接后按 ⌘C 复制。');
+      notify({level:'error',text:'复制失败，请选中链接后按 ⌘C 复制。'});
     }
     return;
   }
@@ -5712,7 +5708,7 @@ document.addEventListener('click', async event => {
     if (route.kind === 'external') {
       event.preventDefault();
       if (!openExternalUrl(route.href)) {
-        showError('Melo could not open this link.');
+        notify({level:'error',text:'Melo could not open this link.'});
       }
       return;
     }
@@ -5742,7 +5738,7 @@ document.addEventListener('click', async event => {
   if (chatFeature.handleChatFilesToggle(action, trigger, event)) return;
   if (action?.startsWith('image-')) {
     event.preventDefault();
-    try { await handleImageAction(action, { config: uiState.bootstrap.settings.config, attachments: chatFeature.composerAttachments(), api, render, refresh: () => loadBootstrap(uiState.searchQuery, { quiet: true }) }); } catch (error) { showError(error.message); }
+    try { await handleImageAction(action, { config: uiState.bootstrap.settings.config, attachments: chatFeature.composerAttachments(), api, render, refresh: () => loadBootstrap(uiState.searchQuery, { quiet: true }) }); } catch (error) { notify({level:'error',text:error.message}); }
     return;
   }
   if (['new-chat', 'open-chat'].includes(action)) clearImageTask();
@@ -6001,12 +5997,12 @@ document.addEventListener('click', async event => {
         if (navigator.clipboard?.writeText) {
           try {
             await navigator.clipboard.writeText(path);
-            showFlashToast(`Copied ${path}`);
+            notify({level:'success',text:`Copied ${path}`});
           } catch {
-            showFlashToast('Copy failed — clipboard access denied');
+            notify({level:'error',text:'Copy failed — clipboard access denied'});
           }
         } else {
-          showFlashToast('Copy unavailable in this browser');
+          notify({level:'error',text:'Copy unavailable in this browser'});
         }
         break;
       }
@@ -6024,7 +6020,7 @@ document.addEventListener('click', async event => {
           || uiState.bootstrap?.settings?.selectedChatId
           || '';
         if (!chatId) {
-          showError('Open a chat first before saving it as a skill.');
+          notify({level:'error',text:'Open a chat first before saving it as a skill.'});
           break;
         }
         const hint = trigger.dataset.hint || '';
@@ -6035,12 +6031,12 @@ document.addEventListener('click', async event => {
             body: { chatId, hint },
           });
         } catch (err) {
-          showError(`Skill drafting failed: ${err?.message || err}`);
+          notify({level:'error',text:`Skill drafting failed: ${err?.message || err}`});
           break;
         }
         if (!result?.ok || !result.skill) {
           const reason = result?.reason || result?.error || 'Unknown drafting error.';
-          showError(`Could not draft a skill from this chat: ${reason}`);
+          notify({level:'error',text:`Could not draft a skill from this chat: ${reason}`});
           break;
         }
         const drafted = result.skill;
@@ -6180,20 +6176,20 @@ document.addEventListener('click', async event => {
       case 'set-task-status':
         if (trigger.dataset.status === 'done') {
           const acceptanceChecks = Object.fromEntries([...document.querySelectorAll('[data-task-check]')].filter(el => el.dataset.taskCheck === trigger.dataset.taskId).map(el => [el.dataset.criterion, el.checked]));
-          try { applyBootstrap(await api('/api/tasks/update', { method:'POST', body: { taskId:trigger.dataset.taskId, patch:{status:'done',acceptanceChecks,qualityScore:document.getElementById(`quality-score-${trigger.dataset.taskId}`)?.value} } })); render(); } catch(error) { showError(error.message); }
+          try { applyBootstrap(await api('/api/tasks/update', { method:'POST', body: { taskId:trigger.dataset.taskId, patch:{status:'done',acceptanceChecks,qualityScore:document.getElementById(`quality-score-${trigger.dataset.taskId}`)?.value} } })); render(); } catch(error) { notify({level:'error',text:error.message}); }
           break;
         }
         await handleUpdateTaskStatus(trigger.dataset.taskId, trigger.dataset.status);
         break;
       case 'task-operations':
-        try { uiState.taskOperations ||= {}; uiState.taskOperations[trigger.dataset.taskId] = (await api(`/api/tasks/operations?taskId=${encodeURIComponent(trigger.dataset.taskId)}`)).operations; render(); } catch(error) { showError(error.message); }
+        try { uiState.taskOperations ||= {}; uiState.taskOperations[trigger.dataset.taskId] = (await api(`/api/tasks/operations?taskId=${encodeURIComponent(trigger.dataset.taskId)}`)).operations; render(); } catch(error) { notify({level:'error',text:error.message}); }
         break;
       case 'task-operation-retry':
-        try { await api('/api/tasks/operations/retry',{method:'POST',body:{taskId:trigger.dataset.taskId,key:trigger.dataset.key,confirm:'verified-not-applied'}}); uiState.taskOperations[trigger.dataset.taskId] = uiState.taskOperations[trigger.dataset.taskId].filter(r=>r.key!==trigger.dataset.key); render(); } catch(error) { showError(error.message); }
+        try { await api('/api/tasks/operations/retry',{method:'POST',body:{taskId:trigger.dataset.taskId,key:trigger.dataset.key,confirm:'verified-not-applied'}}); uiState.taskOperations[trigger.dataset.taskId] = uiState.taskOperations[trigger.dataset.taskId].filter(r=>r.key!==trigger.dataset.key); render(); } catch(error) { notify({level:'error',text:error.message}); }
         break;
       case 'run-task-team': {
         const team=collectTeamPlan(trigger.closest('[data-team-scope]'));
-        if(team.error) {showError(t(team.error));break;}
+        if(team.error) {notify({level:'error',text:t(team.error)});break;}
         await handleRunTask(trigger.dataset.taskId, team.plan);
         break;
       }
@@ -6288,7 +6284,7 @@ document.addEventListener('click', async event => {
         break;
     }
   } catch (error) {
-    showError(error.message);
+    notify({level:'error',text:error.message});
   }
 });
 
@@ -6435,7 +6431,7 @@ document.addEventListener('change', async event => {
       else {
         uiState.newChatArtifactIds=patch.contextArtifactIds;
       }
-    } catch(error) { showError(error.message); }
+    } catch(error) { notify({level:'error',text:error.message}); }
     render(); return;
   }
   const agentFileChange = agentsFeature.handleFileChange(target);
@@ -6576,7 +6572,7 @@ document.addEventListener('change', async event => {
 
     if (agentsFeature.handleChange(target)) return;
   } catch (error) {
-    showError(error.message);
+    notify({level:'error',text:error.message});
   }
 });
 
@@ -6638,7 +6634,7 @@ document.addEventListener('submit', async event => {
     }
   } catch (error) {
     saveError=error;
-    showError(error.message);
+    notify({level:'error',text:error.message});
   }
   finally { finishSubmission(); if(editTicket) settingsFormEditors.finish(editTicket,saveError); }
 });
@@ -6846,7 +6842,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) chatF
 document.addEventListener('change', event => {
   if (event.target.matches?.('[data-voice-language]')) {
     uiState.voiceLanguage = event.target.value;
-    api('/api/settings/local',{method:'POST',body:{preferences:{voiceLanguage:event.target.value}}}).then(data=>applyBootstrapPreservingDrafts(data)).catch(error=>showError(error.message));
+    api('/api/settings/local',{method:'POST',body:{preferences:{voiceLanguage:event.target.value}}}).then(data=>applyBootstrapPreservingDrafts(data)).catch(error=>notify({level:'error',text:error.message}));
   }
 });
 

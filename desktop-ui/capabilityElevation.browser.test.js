@@ -103,7 +103,7 @@ test('beyond-parent prompt → approve → tool runs → grant listed → revoke
   await page.screenshot({ path: join(proof, 'grant-listed.png') });
   await row.first().locator('[data-action="capability-grant-revoke"]').click();
   await row.first().waitFor({ state: 'detached', timeout: 10000 });
-  await page.locator('.capability-grants').filter({ hasText: '这个 Agent 目前没有临时授权' }).waitFor({ timeout: 10000 });
+  await page.locator('.capability-grants').filter({ hasText: '这个 Agent 还没有临时授权' }).waitFor({ timeout: 10000 });
   grants = (await (await fetch(`${base}/api/capability-grants`)).json()).grants;
   assert.deepEqual(grants, []);
   assert.deepEqual(failed, []);

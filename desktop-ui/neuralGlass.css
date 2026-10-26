@@ -58,7 +58,7 @@
  background:var(--space-card);border-color:var(--space-edge-soft);border-radius:var(--space-radius-card);box-shadow:inset 1px 1px var(--palette-65a507a1b7),inset -1px -1px var(--palette-4566085eb0),0 4px 12px var(--palette-0212afa337);
 }
 .neural-dashboard :is(.project-card,.chat-card,.artifact-card,.project-form-card) {padding:16px;}
-.neural-dashboard .card-title {font-size:var(--font-size-21px);line-height:1.4;margin-bottom:8px;}
+.neural-dashboard :is(.pane-title,.subsection-title) {font-size:var(--font-size-21px);line-height:1.4;margin-bottom:8px;}
 .neural-dashboard .card-summary {font-size:var(--font-size-13px);line-height:1.75;margin-bottom:16px;}
 .neural-dashboard .customize-pane {padding:16px;}
 .neural-dashboard .quality-status-grid {gap:12px;margin:16px 0;grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr));}
@@ -110,7 +110,7 @@
 }
 .palette-backdrop,.tool-permission-backdrop {background:var(--palette-ada7221e92);backdrop-filter:none;-webkit-backdrop-filter:none;padding:clamp(24px,9vh,80px) 24px 24px;}
 /* Keep star light visible while underlying interface text recedes. */
-#app:has(>.palette-backdrop,>.tool-permission-backdrop) .neural-shell :is(.neural-navigation,.neural-branches,.neural-dashboard,.neural-activity) {opacity:.22!important;}
+#app:has(>.palette-backdrop,>.tool-permission-backdrop) .neural-shell :is(.neural-navigation,.neural-branches,.neural-dashboard,.neural-activity) {opacity:.22;}
 #app:has(>.palette-backdrop,>.tool-permission-backdrop) .neural-preview {visibility:hidden;}
 .palette-shell,.tool-permission-shell {background:var(--space-dialog);border-radius:var(--space-radius-panel);animation:space-surface-enter .32s cubic-bezier(.22,.78,.18,1);}
 .palette-shell {width:min(640px,100%);max-height:calc(100dvh - 112px);display:flex;flex-direction:column;}
@@ -179,15 +179,13 @@
    Its 3D coordinate plane keeps full-sized source cards and live hit testing. */
 .execution-panel-viewport {position:relative;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--palette-b39e2b7eaa) transparent;}
 .execution-panel-viewport:focus-visible {outline:1px solid var(--space-gold);outline-offset:-2px;}
-.chat-thread .execution-panel-viewport {max-height:clamp(180px,calc(100dvh - 480px),520px);}
+.chat-thread .execution-panel-viewport {max-height:min(var(--scene-available-height,100dvh),clamp(180px,calc(100dvh - 480px),520px));}
 .chat-thread .execution-panel-stage {height:max(clamp(180px,calc(100dvh - 480px),410px),var(--detail-height,0px));min-height:180px;}
 .execution-panel-viewport>.execution-zoom {position:sticky;bottom:8px;width:max-content;max-width:calc(100% - 20px);margin:-44px 10px 8px auto;}
 .execution-panel.is-collapsed .execution-panel-viewport {display:none;}
 .chat-thread:has(.execution-panel:not(.is-collapsed):not([hidden])) {gap:12px;}
 .chat-thread:has(.execution-panel:not(.is-collapsed):not([hidden])) .thread-header .page-title {font-size:var(--font-size-17px);}
 .chat-thread:has(.execution-panel:not(.is-collapsed):not([hidden])) .thread-header .small-button {min-height:30px;padding:6px 9px;font-size:var(--font-size-10px);}
-.neural-dashboard .composer-shell:has(.execution-panel:not(.is-collapsed):not([hidden])) .composer-core {flex-direction:row;align-items:center;}
-.neural-dashboard .composer-shell:has(.execution-panel:not(.is-collapsed):not([hidden])) .composer-input-frame {flex:1;min-width:0;order:-1;}
 @container workspace (max-width:640px) {
  .neural-dashboard .topbar-right .status-pill:first-child {display:none;}
  .neural-dashboard .topbar,.neural-dashboard-label {padding-inline:16px;}
@@ -200,13 +198,12 @@
  .execution-panel .execution-module {padding:5px 7px;row-gap:1px;}
  .execution-module strong {font-size:var(--font-size-10px);line-height:1.4;}
  .execution-module small {font-size:var(--font-size-8px);line-height:1.4;}
- .chat-thread .execution-panel-viewport {max-height:clamp(220px,calc(100dvh - 500px),480px);}
+ .chat-thread .execution-panel-viewport {max-height:min(var(--scene-available-height,100dvh),clamp(220px,calc(100dvh - 500px),480px));}
  .chat-thread .execution-panel-stage {height:max(clamp(220px,calc(100dvh - 500px),410px),var(--detail-height,0px));min-height:220px;}
  .thread-header .inline-actions {align-self:flex-start;}
 }
 @container workspace (max-width:520px) {
- .neural-dashboard .composer-shell:has(.execution-panel:not(.is-collapsed):not([hidden])) .composer-core {flex-direction:column-reverse;align-items:stretch;}
- .chat-thread .execution-panel-viewport {max-height:clamp(180px,calc(100dvh - 550px),480px);}
+ .chat-thread .execution-panel-viewport {max-height:min(var(--scene-available-height,100dvh),clamp(180px,calc(100dvh - 550px),480px));}
  .chat-thread .execution-panel-stage {height:max(clamp(180px,calc(100dvh - 550px),410px),var(--detail-height,0px));min-height:180px;}
 }
 @media(max-width:600px) {
@@ -234,7 +231,7 @@
 }
 @keyframes space-surface-enter {from{opacity:0;transform:perspective(1200px) translate3d(0,14px,-55px);}to{opacity:1;transform:perspective(1200px) translate3d(0,0,0);}}
 @media(prefers-reduced-motion:reduce){.palette-shell,.tool-permission-shell{animation:none;}.neural-core-anchor,.neural-primary .neural-cluster{will-change:auto;}}
-.neural-shell:not([data-spatial-ready=true]) :is(.neural-core-anchor,.neural-cluster,.neural-branches,.neural-dashboard){transition:none!important;}
+.neural-shell:not([data-spatial-ready=true]) :is(.neural-core-anchor,.neural-cluster,.neural-branches,.neural-dashboard){transition:none;}
 
 /* A common light source: warm upper-left rims, cool lower-right occlusion.
    The core socket is translucent; the GPU tissue remains visible inside it. */
@@ -308,7 +305,7 @@
 .neural-branch strong {font-size:var(--font-size-13px);}
 .neural-branches-heading>span {letter-spacing:.10em;color:var(--space-soft);}
 .neural-module-summary {border-left:1px solid var(--space-edge);padding:24px 0 24px 26px;}
-.neural-module-summary h1 {font-family:inherit;font-size:34px!important;font-weight:400;letter-spacing:-.04em;}
+.neural-module-summary h1 {font-family:inherit;font-size:34px;font-weight:400;letter-spacing:-.04em;}
 .neural-module-summary p {max-width:240px;color:var(--space-muted);}
 .neural-home-caption p {font-size:var(--font-size-14px);letter-spacing:.02em;color:var(--palette-af9647fb22);}
 .neural-home-composer .composer-card {background:var(--space-glass);box-shadow:var(--space-shadow);}
@@ -333,12 +330,12 @@
  .neural-core-anchor:after {font-size:var(--font-size-6px);}
  .neural-module-summary {display:none;}
 }
-@media(prefers-reduced-motion:reduce){.neural-core-anchor:before,.neural-core-anchor:after{transition:none;}.neural-shell .content-shell{animation:none!important;}}
+@media(prefers-reduced-motion:reduce){.neural-core-anchor:before,.neural-core-anchor:after{transition:none;}.neural-shell .content-shell{animation:none;}}
 
 /* Navigation bodies are rendered as neural tissue in the shared scene.
    Keep the full DOM hit boxes; remove every visible shell, including hover. */
 .neural-shell .neural-primary .neural-cluster .neural-orb {
- background:transparent!important;border-color:transparent!important;box-shadow:none!important;
+ background:transparent;border-color:transparent;box-shadow:none;
 }
 .neural-shell .neural-primary .neural-orb:before,.neural-shell .neural-primary .neural-orb:after {display:none;}
 .neural-shell .neural-primary .neural-orb>span {visibility:hidden;}

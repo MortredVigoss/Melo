@@ -8,7 +8,7 @@ import { EditSession } from '../../settingsEdit.js';
 import { defaultCategory } from './viewFacts.js';
 import { personalTargetId } from './viewMessageRefs.js';
 import { memoryState, resetMemoryState } from './state.js';
-import { bindMemoryContext, memoryApi, render, bgRender, showError, activeProject } from './context.js';
+import { bindMemoryContext, memoryApi, render, bgRender, notify, activeProject } from './context.js';
 
 export let memoryFactEdit = new EditSession();
 
@@ -50,7 +50,7 @@ async function handleMemoryRepairAction(action) {
     } else {
       m.diagnosis = await (connection ? memoryApi.connect(connection) : memoryApi.diagnose());
     }
-  } catch (error) { showError(error.message); }
+  } catch (error) { notify({level:'error',text:error.message}); }
   finally { m.repairBusy = false; bgRender(); }
 }
 
@@ -68,7 +68,7 @@ async function handleMemoryFactAction(action, id) {
   // Bug audit U10: acting on row B must not discard row A's unsaved editor.
   const closesEditor=action==='memory-fact-save'||Boolean(id&&id===memoryState.memoryFactEditing);
   try { await memoryApi.updateFact(id,patch);if(closesEditor)memoryFactEdit.saved();memoryState.memoryFactFeedback={id,message:resolveConflict?(resolveConflict==='desktop'?'已采用桌面版':'已采用手机版'):action==='memory-fact-save'?t("已保存"):action==='memory-fact-forget'?'已停止使用':'已恢复使用'};if(closesEditor){memoryState.memoryFactEditing=null;memoryState.memoryFactDraft=null;}await refreshMemoryStatus(); }
-  catch(error) { memoryFactEdit.failed(error); showError(error.message); }
+  catch(error) { memoryFactEdit.failed(error); notify({level:'error',text:error.message}); }
   finally { memoryState.memoryFactBusy=false;bgRender(); }
 }
 
@@ -95,7 +95,7 @@ function loadProjectBook(projectId) {
     .then(data => { memoryState.projectBook = { projectId, data, loadedAt: Date.now() }; bgRender(); })
     .catch(error => {
       memoryState.projectBook = { projectId, data: cached?.data || { records: [] }, loadedAt: cached?.loadedAt || 0, failedAt: Date.now() };
-      if (!cached?.failedAt) showError(error.message);
+      if (!cached?.failedAt) notify({level:'error',text:error.message});
       bgRender();
     });
 }
@@ -151,7 +151,7 @@ async function handleProjectBookAction(action, id, { section = null, form = null
     }
     await refreshProjectBook(projectId);
     if (memoryState.memoryFacts) await refreshMemoryStatus();
-  } catch (error) { showError(error.message); }
+  } catch (error) { if(action==='project-book-create') throw error; notify({level:'error',text:error.message}); }
   finally { memoryState.projectBookBusy = false; bgRender(); }
 }
 
@@ -176,7 +176,7 @@ async function handleMemoryRefAction(action, id, scope, { kind = null, messageId
     clearTimeout(memoryRefFeedbackTimer);
     memoryRefFeedbackTimer = setTimeout(() => { if (memoryState.memoryRefFeedback === shown) { memoryState.memoryRefFeedback = null; bgRender(); } }, 8000);
     if (memoryState.memoryFacts) await refreshMemoryStatus();
-  } catch (error) { showError(error.message); }
+  } catch (error) { notify({level:'error',text:error.message}); }
   finally { memoryState.memoryFactBusy = false; bgRender(); }
 }
 

@@ -1,8 +1,2 @@
-export function escapeHtml(value = '') {
-  return String(value)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
-}
+// Compatibility path; all behavior lives with authored UI rendering.
+export { escapeHtml } from './i18n.js';

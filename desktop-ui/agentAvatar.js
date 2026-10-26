@@ -1,9 +1,10 @@
 import { ui } from './i18n.js';
 export function renderAgentAvatar(agent, escape, size=32) {
   const data=agent?.avatarData;
+  size = [22,24,28,32,40,88].includes(size) ? size : 32;
   return typeof data==='string' && /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(data) && data.length<500000
     ? ui`<img class="agent-photo" src="${escape(data)}" width="${size}" height="${size}" alt="${escape(agent.name||'Agent')}头像">`
-    : `<span class="agent-photo agent-photo-fallback" style="width:${size}px;height:${size}px" aria-hidden="true">${escape((agent?.name||'M').slice(0,1))}</span>`;
+    : `<span class="agent-photo agent-photo-fallback" data-avatar-size="${size}" aria-hidden="true">${escape((agent?.name||'M').slice(0,1))}</span>`;
 }
 export async function readAgentAvatar(file) {
   if (!file || file.size>20*1024*1024 || !/^image\/(?:png|jpeg|webp)$/.test(file.type)) throw new Error('请选择 20 MB 以内的 PNG、JPEG 或 WebP 图片。');

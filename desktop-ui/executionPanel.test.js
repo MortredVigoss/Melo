@@ -18,8 +18,9 @@ test('panel reuses its live DOM, caps sources at ten and projects selected image
   install('fetch', async url => { calls.push(url); return { ok: true, json: async () => ({ scenes: [] }) }; });
   t.after(() => { dom.window.close(); for (const [key, descriptor] of originals) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key]; } });
   const source = (await readFile(new URL('./executionPanel.js', import.meta.url), 'utf8'))
+    .replace("'./buttonStyles.js'",JSON.stringify(new URL('./buttonStyles.js',import.meta.url).href))
     .replace("'./html.js'",JSON.stringify(new URL('./html.js',import.meta.url).href))
-    .replace("'./i18n.js'",JSON.stringify(new URL('./i18n.js',import.meta.url).href))
+    .replaceAll("'./i18n.js'",JSON.stringify(new URL('./i18n.js',import.meta.url).href))
     .replace("'/shared/executionScene.js'", JSON.stringify(new URL('../src/shared/executionScene.js', import.meta.url).href))
     .replace("'./executionDetails.js'", JSON.stringify(new URL('./executionDetails.js', import.meta.url).href))
     .replace("'./executionViewport.js'", JSON.stringify(new URL('./executionViewport.js', import.meta.url).href));
@@ -77,7 +78,7 @@ test('panel reuses its live DOM, caps sources at ten and projects selected image
   panel.syncExecutionPanel({ chat: { id: 'chat', messages: [{ id: 'answer', role: 'assistant', metadata: { runId: 'sources' } }] } });
   document.querySelector('[data-module="create"]').click();
   assert.match(document.querySelector('.execution-pipeline').textContent, /模型请求/);
-  assert.match(document.querySelector('.execution-pipeline').textContent, /本机聊天渲染/);
+  assert.match(document.querySelector('.execution-pipeline').textContent, /本机对话渲染/);
   assert.ok(localStorage.getItem('melo-scene-presented:sources'));
   assert.match(document.querySelector('.execution-pipeline').textContent, /1,200/);
   document.querySelector('[data-module=compute]').click();
@@ -121,8 +122,9 @@ test('U4: cancelLiveScene finishes the run locally and re-reads the chat scenes 
   install('fetch', async url => { calls.push(String(url)); return { ok: true, json: async () => ({ scenes: [] }) }; });
   t.after(() => { dom.window.close(); for (const [key, descriptor] of originals) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key]; } });
   const source = (await readFile(new URL('./executionPanel.js', import.meta.url), 'utf8'))
+    .replace("'./buttonStyles.js'",JSON.stringify(new URL('./buttonStyles.js',import.meta.url).href))
     .replace("'./html.js'",JSON.stringify(new URL('./html.js',import.meta.url).href))
-    .replace("'./i18n.js'",JSON.stringify(new URL('./i18n.js',import.meta.url).href))
+    .replaceAll("'./i18n.js'",JSON.stringify(new URL('./i18n.js',import.meta.url).href))
     .replace("'/shared/executionScene.js'", JSON.stringify(new URL('../src/shared/executionScene.js', import.meta.url).href))
     .replace("'./executionDetails.js'", JSON.stringify(new URL('./executionDetails.js', import.meta.url).href))
     .replace("'./executionViewport.js'", JSON.stringify(new URL('./executionViewport.js', import.meta.url).href));

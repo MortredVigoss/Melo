@@ -11,12 +11,12 @@
 import { checkFeatureContext } from '../featureContext.js';
 
 export const CUSTOMIZE_CONTEXT = Object.freeze([
-  'agentsFeature', 'allChatAgentProfiles', 'api', 'applyBootstrap', 'applyBootstrapPreservingDrafts', 'approvalsFeature', 'bgRender', 'effectiveModelSetupDraft', 'escapeHtml', 'getBootstrap', 'memoryFeature', 'minimaxTtsConfigPatchForVoice', 'modelSetupDraft', 'patchSettings', 'refreshBootstrap', 'render', 'renderApprovalPanel', 'renderCommandRunner', 'renderProjectArtifactShelf', 'renderSelectedFilePreview', 'renderTaskPanel', 'resolveActiveMinimaxVoiceId', 'setError', 'setTtsVoice', 'showError', 'ttsVoice',
+  'agentsFeature', 'allChatAgentProfiles', 'api', 'applyBootstrap', 'applyBootstrapPreservingDrafts', 'approvalsFeature', 'bgRender', 'effectiveModelSetupDraft', 'escapeHtml', 'getBootstrap', 'memoryFeature', 'minimaxTtsConfigPatchForVoice', 'modelSetupDraft', 'patchSettings', 'refreshBootstrap', 'render', 'renderApprovalPanel', 'renderCommandRunner', 'renderProjectArtifactShelf', 'renderSelectedFilePreview', 'renderTaskPanel', 'resolveActiveMinimaxVoiceId', 'setError', 'setTtsVoice', 'notify', 'ttsVoice',
 ]);
 
-export let agentsFeature, allChatAgentProfiles, api, applyBootstrap, applyBootstrapPreservingDrafts, approvalsFeature, bgRender, effectiveModelSetupDraft, escapeHtml, getBootstrap, memoryFeature, minimaxTtsConfigPatchForVoice, modelSetupDraft, patchSettings, refreshBootstrap, render, renderApprovalPanel, renderCommandRunner, renderProjectArtifactShelf, renderSelectedFilePreview, renderTaskPanel, resolveActiveMinimaxVoiceId, setError, setTtsVoice, showError, ttsVoice;
+export let agentsFeature, allChatAgentProfiles, api, applyBootstrap, applyBootstrapPreservingDrafts, approvalsFeature, bgRender, effectiveModelSetupDraft, escapeHtml, getBootstrap, memoryFeature, minimaxTtsConfigPatchForVoice, modelSetupDraft, patchSettings, refreshBootstrap, render, renderApprovalPanel, renderCommandRunner, renderProjectArtifactShelf, renderSelectedFilePreview, renderTaskPanel, resolveActiveMinimaxVoiceId, setError, setTtsVoice, notify, ttsVoice;
 
 export function bindCustomizeContext(context) {
   checkFeatureContext('customize', context, CUSTOMIZE_CONTEXT);
-  ({ agentsFeature, allChatAgentProfiles, api, applyBootstrap, applyBootstrapPreservingDrafts, approvalsFeature, bgRender, effectiveModelSetupDraft, escapeHtml, getBootstrap, memoryFeature, minimaxTtsConfigPatchForVoice, modelSetupDraft, patchSettings, refreshBootstrap, render, renderApprovalPanel, renderCommandRunner, renderProjectArtifactShelf, renderSelectedFilePreview, renderTaskPanel, resolveActiveMinimaxVoiceId, setError, setTtsVoice, showError, ttsVoice } = context);
+  ({ agentsFeature, allChatAgentProfiles, api, applyBootstrap, applyBootstrapPreservingDrafts, approvalsFeature, bgRender, effectiveModelSetupDraft, escapeHtml, getBootstrap, memoryFeature, minimaxTtsConfigPatchForVoice, modelSetupDraft, patchSettings, refreshBootstrap, render, renderApprovalPanel, renderCommandRunner, renderProjectArtifactShelf, renderSelectedFilePreview, renderTaskPanel, resolveActiveMinimaxVoiceId, setError, setTtsVoice, notify, ttsVoice } = context);
 }

@@ -229,7 +229,7 @@ function renderConnectorDetails(selected) {
               <input class="input" name="folders" value="${escapeHtml((selected.folders || []).join(', '))}" />
             </label>
             <div class="inline-actions">
-              <button class="small-button is-primary" type="submit">保存修改</button>
+
               <button
                 class="small-button is-danger"
                 type="button"
@@ -379,9 +379,7 @@ function renderConnectorDetails(selected) {
           <span class="meta-label" data-tts-test-status></span>
         </div>
 
-        <button class="small-button is-primary" type="submit">
-          保存连接器设置
-        </button>
+
       </form>
     `;
   } else if (selected.id === 'local-files') {
@@ -583,7 +581,7 @@ function renderCustomSkillCreateCard() {
           <input class="input" name="folders" placeholder="plans, references" />
         </label>
         <div class="inline-actions">
-          <button class="small-button is-primary" type="submit">创建技能</button>
+
         </div>
       </form>
     </div>
@@ -766,7 +764,7 @@ function renderDomainCookiesPane() {
         </button>
         <button class="small-button" data-action="refresh-domain-cookies">刷新列表</button>
       </div>
-      ${addError ? ui`<div class="alert compact-alert" style="margin-top: 8px;">${escapeHtml(addError)}</div>` : ''}
+      ${addError ? ui`<div class="alert compact-alert block-gap">${escapeHtml(addError)}</div>` : ''}
     </div>
 
     ${list}

@@ -4,7 +4,7 @@
 // actions. A feature module registers its `data-action` (click) and
 // `data-form` (submit) names here instead of adding `case` branches; app.js
 // asks the registry first, inside the same try/catch, so errors still reach
-// showError and form edit tickets still finish. Names stay exactly as
+// notify and form edit tickets still finish. Names stay exactly as
 // rendered in the DOM. Registering a name twice is a programming error.
 //
 // Callers check has() synchronously and await dispatch() only for a
