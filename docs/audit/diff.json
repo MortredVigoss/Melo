@@ -3,9 +3,9 @@
   "rules": {
     "H1": {
       "new": 0,
-      "closed": 14,
+      "closed": 0,
       "count": 8,
-      "baselineCount": 22
+      "baselineCount": 8
     },
     "H2": {
       "new": 0,
@@ -15,9 +15,9 @@
     },
     "H3": {
       "new": 0,
-      "closed": 4,
+      "closed": 0,
       "count": 13,
-      "baselineCount": 17
+      "baselineCount": 13
     },
     "H4": {
       "new": 0,
@@ -105,15 +105,15 @@
     },
     "H18": {
       "new": 0,
-      "closed": 18,
+      "closed": 0,
       "count": 38,
-      "baselineCount": 56
+      "baselineCount": 38
     },
     "H19": {
       "new": 0,
-      "closed": 16,
+      "closed": 0,
       "count": 18,
-      "baselineCount": 34
+      "baselineCount": 18
     },
     "H20": {
       "new": 0,

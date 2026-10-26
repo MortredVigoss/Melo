@@ -58,7 +58,7 @@ test('virtual clock: deadline 60 s — remaining shrinks, request timeout is min
   assert.equal(exhausted.reason, 'deadline');
   assert.equal(exhausted.limit, 60_000);
   assert.equal(exhausted.used, 61_000);
-  assert.match(budgetExhaustedReply(exhausted), /^这轮对话已达到运行预算（运行时间 1 分钟），已停止。你可以发送“继续”接着做。$/);
+  assert.match(budgetExhaustedReply(exhausted, 'zh'), /^这轮对话已达到运行预算（运行时间 1 分钟），已停止。你可以发送“继续”接着做。$/);
 });
 
 test('no budget: helpers degrade to "unbounded"', () => {

@@ -16,7 +16,7 @@ function bundled(input) {
   context.__request = JSON.stringify(input);
   return JSON.parse(vm.runInContext('MeloAgent.evaluate(__request)', context, { timeout: 250 }));
 }
-function subset(actual, expected) { if (Array.isArray(expected)) { assert.deepEqual(actual, expected); return; } for (const [key, value] of Object.entries(expected)) assert.deepEqual(actual[key], value, key); }
+function subset(actual, expected) { if (expected === null || typeof expected !== 'object' || Array.isArray(expected)) { assert.deepEqual(actual, expected); return; } for (const [key, value] of Object.entries(expected)) assert.deepEqual(actual[key], value, key); }
 
 for (const fixture of cases) test('cross-engine contract: ' + fixture.name, () => {
   const native = evaluate(fixture.input), isolated = bundled(fixture.input);

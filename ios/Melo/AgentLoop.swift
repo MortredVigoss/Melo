@@ -162,7 +162,7 @@ final class AgentLoop: @unchecked Sendable {
         if PhoneMemberLimits.current != nil, outcome.stop != .answered { throw MeloError.message("成员达到运行上限，结果尚未完成。") }
         if let validate { try validate(outcome) }
         try await finalize(&outcome)
-        outcome.completion = AgentCompletionReceipt.make(goal: latestUserMessage, reply: outcome.text, observations: completionObservations, terminalReason: outcome.stop == .budget ? "BUDGET_EXHAUSTED" : completionTerminalReason, task: goalState?.snapshot)
+        outcome.completion = AgentCompletionReceipt.make(goal: latestUserMessage, reply: outcome.text, observations: completionObservations, terminalReason: outcome.stop == .budget ? "BUDGET_EXHAUSTED" : completionTerminalReason, task: goalState?.snapshot, citations: outcome.sources.map { ["url": $0.url] })
         if let receipt = outcome.completion { await hooks.onStage?("completion", "目标回执", receipt.outcome == "completed" ? "completed" : "failed", receipt.summary) }
         return outcome
     }

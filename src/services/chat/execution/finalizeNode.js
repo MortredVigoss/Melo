@@ -130,7 +130,7 @@ export function createFinalizeNode(turn) {
     // tool-loop node above) onto the normalized reply.  sendChatMessage
     // does the conditional spread onto the persisted assistantMessage —
     // empty / absent arrays produce no `toolResults` key on the message.
-    normalizedReply.completion = graphState.completionForReply?.(preNormalizeText);
+    normalizedReply.completion = graphState.completionForReply?.(preNormalizeText, normalizedReply.citations);
     if (normalizedReply.completion?.outcome) normalizedReply.completion.summary = completionSummary(normalizedReply.completion, latestUserMessage, config.replyLanguage);
     normalizedReply.memoryUsage = graphState.memoryUsage || [];
     if (graphState.team) normalizedReply.team = graphState.team;

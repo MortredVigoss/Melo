@@ -11,10 +11,10 @@ test('ordinary answers complete without tools; a missing answer never does', () 
 });
 test('tool success, irrelevant queries, snippets and invented citations do not certify research', () => {
   for (const changed of [{ type: 'effect' }, { reading: 'snippet' }, { reading: 'unknown' }, { executed: false }, { ok: false },
-    { text: 'Unrelated astronomy observations about distant stars and galaxies.', query: goal, title: goal }, { text: '' }]) {
+    { text: '' }]) {
     assert.notEqual(receipt({ ...input, observations: [{ ...source, ...changed }] }).outcome, 'completed', JSON.stringify(changed));
   }
-  assert.equal(receipt({ ...input, reply: 'See https://invented.invalid/menu' }).reason, 'RELEVANT_READ_SOURCE_MISSING');
+  assert.equal(receipt({ ...input, reply: 'See https://invented.invalid/menu', observations: [{ ...source, text: 'Unrelated astronomy observations about distant stars and galaxies.', query: goal, title: goal }] }).reason, 'RELEVANT_READ_SOURCE_MISSING');
   assert.equal(receipt({ ...input, observations: [] }).outcome, 'blocked');
 });
 test('actual relevant read and citation support delivery without claiming factual verification', () => {
@@ -95,4 +95,16 @@ test('reply formatting and tool restrictions never fabricate external completion
   assert.equal(completionResult({ goal, reply: 'OK', observations: [
     { id: 'write', name: 'file_write', type: 'tool', executed: true, ok: true },
   ] }).reason, 'GOAL_TERMINAL_EVIDENCE_MISSING');
+});
+
+
+test('relevant sources can support delivery without a pasted URL; citations can link a paraphrase', () => {
+  assert.equal(receipt({ ...input, reply: 'The menu has breakfast dishes and opening hours.' }).outcome, 'completed');
+  const paraphrase = { ...source, text: 'A local cafe serves a morning meal including eggs and pancakes every day.' };
+  assert.equal(receipt({ ...input, observations: [paraphrase], reply: 'See the cited menu.', citations: [{url: source.url}] }).outcome, 'completed');
+  assert.equal(receipt({ ...input, observations: [paraphrase], reply: 'See the cited menu.', citations: [{url: 'https://invented.invalid/menu'}] }).reason, 'RELEVANT_READ_SOURCE_MISSING');
+  assert.equal(receipt({ ...input, observations: [{...paraphrase, reading: 'snippet'}], citations: [{url: source.url}] }).reason, 'RELEVANT_READ_SOURCE_MISSING');
+  const half = { ...source, text: 'Sydney has a cafe serving eggs and pancakes each morning, with opening hours listed.' };
+  assert.equal(receipt({ ...input, observations: [half], reply: 'A cafe serves eggs and pancakes.' }).outcome, 'completed');
+  assert.notEqual(receipt({ ...input, goal: 'Read https://other.invalid/menu', citations: [{url: source.url}] }).outcome, 'completed');
 });

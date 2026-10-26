@@ -25,13 +25,52 @@
       "tool-calls": "工具调用次数"
     },
     "reasonFormat": {
-      "deadlineMinutes": "{text} {minutes} 分钟",
-      "deadlineSeconds": "{text} {seconds} 秒",
-      "tool-calls": "{text} {limit} 次",
-      "input-tokens": "{text} {limit}"
+      "zh": {
+        "deadlineMinutes": "运行时间 {minutes} 分钟",
+        "deadlineSeconds": "运行时间 {seconds} 秒",
+        "tool-calls": "工具调用次数 {limit} 次",
+        "input-tokens": "输入 token {limit}"
+      },
+      "en": {
+        "deadlineMinutes": "runtime {minutes} minutes",
+        "deadlineSeconds": "runtime {seconds} seconds",
+        "tool-calls": "{limit} tool calls",
+        "input-tokens": "{limit} input tokens"
+      },
+      "ja": {
+        "deadlineMinutes": "実行時間 {minutes} 分",
+        "deadlineSeconds": "実行時間 {seconds} 秒",
+        "tool-calls": "ツール呼び出し {limit} 回",
+        "input-tokens": "入力 {limit} トークン"
+      },
+      "ko": {
+        "deadlineMinutes": "실행 시간 {minutes}분",
+        "deadlineSeconds": "실행 시간 {seconds}초",
+        "tool-calls": "도구 호출 {limit}회",
+        "input-tokens": "입력 토큰 {limit}개"
+      },
+      "es": {
+        "deadlineMinutes": "{minutes} minutos de ejecución",
+        "deadlineSeconds": "{seconds} segundos de ejecución",
+        "tool-calls": "{limit} llamadas a herramientas",
+        "input-tokens": "{limit} tokens de entrada"
+      }
     },
-    "replyTemplate": "这轮对话已达到运行预算（{reason}），已停止。你可以发送“继续”接着做。",
-    "toolSkippedTemplate": "Run budget exhausted ({reason}); tool \"{tool}\" was not executed."
+    "replyTemplate": {
+      "zh": "这轮对话已达到运行预算（{reason}），已停止。你可以发送“继续”接着做。",
+      "en": "This turn reached its run budget ({reason}) and has stopped. Send “continue” to resume.",
+      "ja": "このターンは実行予算（{reason}）に達したため停止しました。「続けて」と送信すると再開できます。",
+      "ko": "이번 실행의 한도({reason})에 도달하여 중지했습니다. “계속”을 보내면 이어서 진행할 수 있습니다.",
+      "es": "Este turno alcanzó su límite de ejecución ({reason}) y se detuvo. Envía «continuar» para reanudar."
+    },
+    "toolSkippedTemplate": "Run budget exhausted ({reason}); tool \"{tool}\" was not executed.",
+    "unavailableReply": {
+      "zh": "共享运行策略不可用，本轮已停止。请重新启动 Melo 后重试。",
+      "en": "The shared runtime policy is unavailable. This turn has stopped. Restart Melo and try again.",
+      "ja": "共有実行ポリシーを利用できないため、このターンを停止しました。Melo を再起動して再試行してください。",
+      "ko": "공유 실행 정책을 사용할 수 없어 이번 실행을 중지했습니다. Melo를 다시 시작한 후 재시도하세요.",
+      "es": "La política de ejecución compartida no está disponible. Este turno se detuvo. Reinicia Melo e inténtalo de nuevo."
+    }
   },
   "repeatGuard": {
     "limit": 2,
@@ -1108,7 +1147,8 @@
         "used": {},
         "now": 1060000,
         "startedAt": 1000000,
-        "expected": null
+        "expected": null,
+        "locale": "zh"
       },
       {
         "overrides": {},
@@ -1121,7 +1161,8 @@
           "used": 1200000,
           "describe": "运行时间 20 分钟",
           "reply": "这轮对话已达到运行预算（运行时间 20 分钟），已停止。你可以发送“继续”接着做。"
-        }
+        },
+        "locale": "zh"
       },
       {
         "overrides": {
@@ -1136,7 +1177,8 @@
           "used": 45000,
           "describe": "运行时间 1 分钟",
           "reply": "这轮对话已达到运行预算（运行时间 1 分钟），已停止。你可以发送“继续”接着做。"
-        }
+        },
+        "locale": "zh"
       },
       {
         "overrides": {
@@ -1151,7 +1193,8 @@
           "used": 95000,
           "describe": "运行时间 2 分钟",
           "reply": "这轮对话已达到运行预算（运行时间 2 分钟），已停止。你可以发送“继续”接着做。"
-        }
+        },
+        "locale": "zh"
       },
       {
         "overrides": {},
@@ -1167,7 +1210,8 @@
           "used": 400000,
           "describe": "输入 token 400000",
           "reply": "这轮对话已达到运行预算（输入 token 400000），已停止。你可以发送“继续”接着做。"
-        }
+        },
+        "locale": "zh"
       },
       {
         "overrides": {},
@@ -1182,7 +1226,8 @@
           "used": 120,
           "describe": "工具调用次数 120 次",
           "reply": "这轮对话已达到运行预算（工具调用次数 120 次），已停止。你可以发送“继续”接着做。"
-        }
+        },
+        "locale": "zh"
       },
       {
         "overrides": {
@@ -1199,7 +1244,8 @@
           "used": 5,
           "describe": "工具调用次数 5 次",
           "reply": "这轮对话已达到运行预算（工具调用次数 5 次），已停止。你可以发送“继续”接着做。"
-        }
+        },
+        "locale": "zh"
       }
     ],
     "narrowBudget": {
@@ -3847,7 +3893,209 @@
           "expected": 1800086400000
         }
       ]
-    }
+    },
+    "budgetReplies": [
+      {
+        "locale": "zh",
+        "exhausted": {
+          "reason": "deadline",
+          "limit": 60000,
+          "used": 60000
+        },
+        "description": "运行时间 1 分钟",
+        "reply": "这轮对话已达到运行预算（运行时间 1 分钟），已停止。你可以发送“继续”接着做。"
+      },
+      {
+        "locale": "zh",
+        "exhausted": {
+          "reason": "deadline",
+          "limit": 5000,
+          "used": 5000
+        },
+        "description": "运行时间 5 秒",
+        "reply": "这轮对话已达到运行预算（运行时间 5 秒），已停止。你可以发送“继续”接着做。"
+      },
+      {
+        "locale": "zh",
+        "exhausted": {
+          "reason": "input-tokens",
+          "limit": 80,
+          "used": 80
+        },
+        "description": "输入 token 80",
+        "reply": "这轮对话已达到运行预算（输入 token 80），已停止。你可以发送“继续”接着做。"
+      },
+      {
+        "locale": "zh",
+        "exhausted": {
+          "reason": "tool-calls",
+          "limit": 3,
+          "used": 3
+        },
+        "description": "工具调用次数 3 次",
+        "reply": "这轮对话已达到运行预算（工具调用次数 3 次），已停止。你可以发送“继续”接着做。"
+      },
+      {
+        "locale": "en",
+        "exhausted": {
+          "reason": "deadline",
+          "limit": 60000,
+          "used": 60000
+        },
+        "description": "runtime 1 minutes",
+        "reply": "This turn reached its run budget (runtime 1 minutes) and has stopped. Send “continue” to resume."
+      },
+      {
+        "locale": "en",
+        "exhausted": {
+          "reason": "deadline",
+          "limit": 5000,
+          "used": 5000
+        },
+        "description": "runtime 5 seconds",
+        "reply": "This turn reached its run budget (runtime 5 seconds) and has stopped. Send “continue” to resume."
+      },
+      {
+        "locale": "en",
+        "exhausted": {
+          "reason": "input-tokens",
+          "limit": 80,
+          "used": 80
+        },
+        "description": "80 input tokens",
+        "reply": "This turn reached its run budget (80 input tokens) and has stopped. Send “continue” to resume."
+      },
+      {
+        "locale": "en",
+        "exhausted": {
+          "reason": "tool-calls",
+          "limit": 3,
+          "used": 3
+        },
+        "description": "3 tool calls",
+        "reply": "This turn reached its run budget (3 tool calls) and has stopped. Send “continue” to resume."
+      },
+      {
+        "locale": "ja",
+        "exhausted": {
+          "reason": "deadline",
+          "limit": 60000,
+          "used": 60000
+        },
+        "description": "実行時間 1 分",
+        "reply": "このターンは実行予算（実行時間 1 分）に達したため停止しました。「続けて」と送信すると再開できます。"
+      },
+      {
+        "locale": "ja",
+        "exhausted": {
+          "reason": "deadline",
+          "limit": 5000,
+          "used": 5000
+        },
+        "description": "実行時間 5 秒",
+        "reply": "このターンは実行予算（実行時間 5 秒）に達したため停止しました。「続けて」と送信すると再開できます。"
+      },
+      {
+        "locale": "ja",
+        "exhausted": {
+          "reason": "input-tokens",
+          "limit": 80,
+          "used": 80
+        },
+        "description": "入力 80 トークン",
+        "reply": "このターンは実行予算（入力 80 トークン）に達したため停止しました。「続けて」と送信すると再開できます。"
+      },
+      {
+        "locale": "ja",
+        "exhausted": {
+          "reason": "tool-calls",
+          "limit": 3,
+          "used": 3
+        },
+        "description": "ツール呼び出し 3 回",
+        "reply": "このターンは実行予算（ツール呼び出し 3 回）に達したため停止しました。「続けて」と送信すると再開できます。"
+      },
+      {
+        "locale": "ko",
+        "exhausted": {
+          "reason": "deadline",
+          "limit": 60000,
+          "used": 60000
+        },
+        "description": "실행 시간 1분",
+        "reply": "이번 실행의 한도(실행 시간 1분)에 도달하여 중지했습니다. “계속”을 보내면 이어서 진행할 수 있습니다."
+      },
+      {
+        "locale": "ko",
+        "exhausted": {
+          "reason": "deadline",
+          "limit": 5000,
+          "used": 5000
+        },
+        "description": "실행 시간 5초",
+        "reply": "이번 실행의 한도(실행 시간 5초)에 도달하여 중지했습니다. “계속”을 보내면 이어서 진행할 수 있습니다."
+      },
+      {
+        "locale": "ko",
+        "exhausted": {
+          "reason": "input-tokens",
+          "limit": 80,
+          "used": 80
+        },
+        "description": "입력 토큰 80개",
+        "reply": "이번 실행의 한도(입력 토큰 80개)에 도달하여 중지했습니다. “계속”을 보내면 이어서 진행할 수 있습니다."
+      },
+      {
+        "locale": "ko",
+        "exhausted": {
+          "reason": "tool-calls",
+          "limit": 3,
+          "used": 3
+        },
+        "description": "도구 호출 3회",
+        "reply": "이번 실행의 한도(도구 호출 3회)에 도달하여 중지했습니다. “계속”을 보내면 이어서 진행할 수 있습니다."
+      },
+      {
+        "locale": "es",
+        "exhausted": {
+          "reason": "deadline",
+          "limit": 60000,
+          "used": 60000
+        },
+        "description": "1 minutos de ejecución",
+        "reply": "Este turno alcanzó su límite de ejecución (1 minutos de ejecución) y se detuvo. Envía «continuar» para reanudar."
+      },
+      {
+        "locale": "es",
+        "exhausted": {
+          "reason": "deadline",
+          "limit": 5000,
+          "used": 5000
+        },
+        "description": "5 segundos de ejecución",
+        "reply": "Este turno alcanzó su límite de ejecución (5 segundos de ejecución) y se detuvo. Envía «continuar» para reanudar."
+      },
+      {
+        "locale": "es",
+        "exhausted": {
+          "reason": "input-tokens",
+          "limit": 80,
+          "used": 80
+        },
+        "description": "80 tokens de entrada",
+        "reply": "Este turno alcanzó su límite de ejecución (80 tokens de entrada) y se detuvo. Envía «continuar» para reanudar."
+      },
+      {
+        "locale": "es",
+        "exhausted": {
+          "reason": "tool-calls",
+          "limit": 3,
+          "used": 3
+        },
+        "description": "3 llamadas a herramientas",
+        "reply": "Este turno alcanzó su límite de ejecución (3 llamadas a herramientas) y se detuvo. Envía «continuar» para reanudar."
+      }
+    ]
   },
   "contextBudget": {
     "cloud": 160000,

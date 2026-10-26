@@ -22,10 +22,14 @@ private final class CountingTransport: AgentModelTransport {
         assert(budget.remainingMs() == 0 && budget.requestTimeout(cap: 100) == 0)
         let member = budget.narrowed(maxToolCalls: 100)
         assert(member.exhausted()?.reason == "policy-unavailable")
-        let transport = CountingTransport()
-        let outcome = try await AgentLoop(transport: transport, tools: nil, budget: budget, latestUserMessage: "test").run()
-        assert(outcome.stop == .budget && transport.calls == 0)
-        assert(outcome.text.contains("共享运行策略不可用"))
+        for locale in ["zh", "en", "ja", "ko", "es"] {
+            let transport = CountingTransport()
+            let outcome = try await PhoneReplyLanguage.$current.withValue(locale) {
+                try await AgentLoop(transport: transport, tools: nil, budget: budget, latestUserMessage: "test").run()
+            }
+            assert(outcome.stop == .budget && transport.calls == 0)
+            assert(outcome.text == AgentLoopContract.shared.budgetUnavailableReply[locale])
+        }
         print("Missing shared policy fails closed: root/member budgets and model calls remain blocked")
     }
 }

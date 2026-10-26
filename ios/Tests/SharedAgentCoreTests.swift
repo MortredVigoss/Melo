@@ -18,12 +18,21 @@ import CryptoKit
                 assert(NSDictionary(dictionary: ["value": result]).isEqual(to: ["value": expected]), fixture["name"] as! String)
                 continue
             }
+            if let expected = fixture["expected"] as? String {
+                assert(result as? String == expected, fixture["name"] as! String)
+                continue
+            }
             let value = result as! [String: Any]
             for (key, expected) in fixture["expected"] as! [String: Any] {
                 guard let actual = value[key] else { fatalError("Missing \(key)") }
                 assert(NSDictionary(dictionary: [key: actual]).isEqual(to: [key: expected]), "\(fixture["name"]!): \(key)")
             }
         }
+        let sourceURL = "https://fixture.invalid/menu"
+        let source: [[String: Any]] = [["id": "read-1", "type": "source", "executed": true, "ok": true, "url": sourceURL, "reading": "extracted", "text": "A local cafe serves a morning meal including eggs and pancakes every day."]]
+        let cited = AgentCompletionReceipt.make(goal: "Research Sydney brunch", reply: "A cafe serves breakfast.", observations: source, citations: [["url": sourceURL]])
+        assert(cited?.outcome == "completed" && cited?.goalState == "supported", "iOS host must forward displayed citations")
+        assert(AgentCompletionReceipt.make(goal: "Research Sydney brunch", reply: "A cafe serves breakfast.", observations: source)?.outcome != "completed")
         let taskData = try Data(contentsOf: root.appendingPathComponent("shared/agent/fixtures/tasks.json"))
         let taskDataset = try JSONSerialization.jsonObject(with: taskData) as! [String: Any]
         let taskStart = Date()

@@ -28,8 +28,8 @@ struct AgentCompletionReceipt: Codable, Equatable, Sendable {
         guard let value = SharedLoopPolicy.value("teamCompletion", ["team": ["locale": PhoneReplyLanguage.current ?? PhoneReplyLanguage.resolve(goal), "goal": goal, "reply": reply, "members": members, "accepted": accepted, "cancelled": cancelled, "budgetExceeded": budgetExceeded]]), let data = try? JSONSerialization.data(withJSONObject: value) else { return nil }
         return try? JSONDecoder().decode(Self.self, from: data)
     }
-    static func make(goal: String, reply: String, observations: [[String: Any]] = [], terminalReason: String = "", task: [String: Any]? = nil) -> Self? {
-        var input: [String: Any] = ["goal": goal, "reply": reply, "observations": observations, "terminalReason": terminalReason, "locale": PhoneReplyLanguage.current ?? PhoneReplyLanguage.resolve(goal)]
+    static func make(goal: String, reply: String, observations: [[String: Any]] = [], terminalReason: String = "", task: [String: Any]? = nil, citations: [[String: String]] = []) -> Self? {
+        var input: [String: Any] = ["goal": goal, "reply": reply, "observations": observations, "citations": citations, "terminalReason": terminalReason, "locale": PhoneReplyLanguage.current ?? PhoneReplyLanguage.resolve(goal)]
         if let task { input["task"] = task }
         guard let value = SharedLoopPolicy.value("completion", ["completion": input]),
               let data = try? JSONSerialization.data(withJSONObject: value) else { return nil }

@@ -1,7 +1,7 @@
 {
  "version": 1,
  "date": "2026-10-26",
- "commit": "cce1e64",
+ "commit": "bf828fa",
  "roots": [
   "src",
   "shared",
@@ -1803,7 +1803,7 @@
    "id": "L5",
    "title": "研究回执要求回复原样含来源 URL",
    "file": "shared/agent/completion.js",
-   "status": "open"
+   "status": "closed"
   },
   {
    "id": "L6",
@@ -1863,13 +1863,13 @@
    "id": "L15",
    "title": "预算用完模板只有中文",
    "file": "shared/protocol/agent-loop.json",
-   "status": "open"
+   "status": "closed"
   },
   {
    "id": "L16",
    "title": "纠正事实主题只认三种",
    "file": "src/memory/factPolicy.js",
-   "status": "open"
+   "status": "closed"
   },
   {
    "id": "L17",

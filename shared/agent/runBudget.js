@@ -1,4 +1,4 @@
-import { runtimeMessage } from './runtimeMessages.js';
+import { normalizeLocale } from './locale.js';
 // Run-level budget (2026-10-17 design audit T3 / option C1).
 //
 // Before this module a turn only had per-iteration limits (10 tool
@@ -177,22 +177,24 @@ export function extendBudget(budget, { deadlineMs, maxInputTokens, maxToolCalls 
 }
 
 /** Human-readable reason, e.g. "运行时间 20 分钟" / "输入 token 400000" / "工具调用次数 120 次". */
-export function describeBudgetReason(exhausted) {
+export function describeBudgetReason(exhausted, locale = 'zh') {
   if (!exhausted) return '';
+  const formats = BUDGET.reasonFormat[normalizeLocale(locale)] || BUDGET.reasonFormat.en;
   if (exhausted.reason === 'deadline') {
     const minutes = Math.round(exhausted.limit / 60_000);
     return minutes >= 1
-      ? fillTemplate(BUDGET.reasonFormat.deadlineMinutes, { text: exhausted.reasonText, minutes })
-      : fillTemplate(BUDGET.reasonFormat.deadlineSeconds, { text: exhausted.reasonText, seconds: Math.round(exhausted.limit / 1000) });
+      ? fillTemplate(formats.deadlineMinutes, { text: exhausted.reasonText, minutes })
+      : fillTemplate(formats.deadlineSeconds, { text: exhausted.reasonText, seconds: Math.round(exhausted.limit / 1000) });
   }
-  if (exhausted.reason === 'tool-calls') return fillTemplate(BUDGET.reasonFormat['tool-calls'], { text: exhausted.reasonText, limit: exhausted.limit });
-  return fillTemplate(BUDGET.reasonFormat['input-tokens'], { text: exhausted.reasonText, limit: exhausted.limit });
+  if (exhausted.reason === 'tool-calls') return fillTemplate(formats['tool-calls'], { text: exhausted.reasonText, limit: exhausted.limit });
+  return fillTemplate(formats['input-tokens'], { text: exhausted.reasonText, limit: exhausted.limit });
 }
 
 /** The explicit assistant reply the chat loop publishes when the budget is gone. */
-export function budgetExhaustedReply(exhausted, locale = 'zh') {
-  if (locale !== 'zh') return runtimeMessage('budget', locale, {reason: `${exhausted?.reason || 'budget'} (${exhausted?.limit ?? ''})`});
-  return fillTemplate(BUDGET.replyTemplate, { reason: describeBudgetReason(exhausted) });
+export function budgetExhaustedReply(exhausted, locale = 'en') {
+  if (exhausted?.reason === 'policy-unavailable') return BUDGET.unavailableReply[normalizeLocale(locale)] || BUDGET.unavailableReply.en;
+  const template = BUDGET.replyTemplate[normalizeLocale(locale)] || BUDGET.replyTemplate.en;
+  return fillTemplate(template, { reason: describeBudgetReason(exhausted, locale) });
 }
 
 /** Input tokens of one provider receipt; raw or normalized usage shapes. */

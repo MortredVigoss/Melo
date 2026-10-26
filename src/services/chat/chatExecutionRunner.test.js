@@ -244,6 +244,7 @@ function fixtureWorkspace() {
 // no network call fires. getEmbedding is wrapped in `.catch(() => null)` by
 // the runner. The compact path is gated on hasModelConfig=false, so it skips.
 const fixtureConfig = {
+  replyLanguage: 'zh',
   authMode: 'unset',
   apiKey: '',
   baseUrl: '',

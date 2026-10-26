@@ -14,7 +14,7 @@ export function createCoreTurn({ runId = randomUUID(), turnId = randomUUID(), al
   let candidateReply = '';
   const declaration = name => tools.find(tool => tool.id === name || tool.functionName === name) || {};
   return {
-    receipt(goal, reply, terminalReason = state.reason, plan) { return completionResult({ goal: task ? goalText(task) : goal, reply, terminalReason, plan, observations, task: goalSnapshot(task) }); },
+    receipt(goal, reply, terminalReason = state.reason, plan, citations = []) { return completionResult({ goal: task ? goalText(task) : goal, reply, terminalReason, plan, citations, observations, task: goalSnapshot(task) }); },
     get checking() { return task?.phase === 'checking'; },
     get repairing() { return state.repairing; },
     get candidateReply() { return candidateReply; },

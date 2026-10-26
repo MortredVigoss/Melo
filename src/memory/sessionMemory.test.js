@@ -33,12 +33,12 @@ test('mergeMemoryFacts deduplicates on exact lowercased fact string', () => {
 
 test('mergeMemoryFacts invalidates prior corrections when a new correction lands', () => {
   let facts = mergeMemoryFacts([], [
-    { fact: 'Build target is ES2020, not ES2022', category: 'correction' },
+    { fact: 'Build target is ES2020, not ES2022', category: 'correction', subjectKey: 'build.ecmascript' },
   ]);
   assert.equal(facts[0].validTo, null);
 
   facts = mergeMemoryFacts(facts, [
-    { fact: 'Actually ES2023, not ES2020', category: 'correction' },
+    { fact: 'Actually ES2023, not ES2020', category: 'correction', subjectKey: 'build.ecmascript' },
   ]);
 
   assert.equal(facts.length, 2);
@@ -132,4 +132,19 @@ test('formatSessionMemoryBlock returns empty string when every fact is invalidat
     { fact: 'Stale', category: 'decision', validTo: past },
   ]);
   assert.equal(block, '');
+});
+
+
+test('corrections replace any explicit subject for the same speaker, while unknown subjects coexist', () => {
+  const facts = mergeMemoryFacts([
+    {fact: 'Warranty is one year', category: 'technical_detail', subjectKey: 'product.warranty', sourceSenderId: 'alice'},
+    {fact: 'Warranty is three years', category: 'technical_detail', subjectKey: 'product.warranty', sourceSenderId: 'bob'},
+    {fact: 'Shipping takes one week', category: 'technical_detail', subjectKey: 'product.shipping', sourceSenderId: 'alice'},
+  ], [{fact: 'Actually the warranty is two years', category: 'correction', subjectKey: ' PRODUCT.WARRANTY ', sourceSenderId: 'alice'}]);
+  assert.ok(facts[0].validTo);
+  assert.equal(facts[1].validTo, undefined);
+  assert.equal(facts[2].validTo, undefined);
+  assert.equal(facts[3].subjectKey, 'product.warranty');
+  const unknown = mergeMemoryFacts([{fact: 'Build target ES2020', category: 'correction'}], [{fact: 'Actually ES2023', category: 'correction'}]);
+  assert.equal(filterActiveFacts(unknown).length, 2, 'word overlap must not invent a correction subject');
 });

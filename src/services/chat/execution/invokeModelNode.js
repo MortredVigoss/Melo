@@ -574,7 +574,7 @@ export function createInvokeModelNode(turn) {
     // the finalize node can attach it to normalizedReply → sendChatMessage
     // attaches it to the persisted assistantMessage.  Only emit when
     // non-empty so we don't pollute pure-text replies with empty arrays.
-    const out = { completionForReply: reply => coreTurn.receipt(latestUserMessage, reply, terminalReason || coreTurn.reason), reply: finalReply, hadToolCalls, skipVerification: (coreTurn.status === 'blocked' && coreTurn.reason !== 'MISSING_TOOL_EVIDENCE') || graphState.searchPlan.sharedPlan?.route === 'unavailable', toolEvidence: collectVerificationEvidence(evidencePairs, { query: latestUserMessage }), next: 'finalize' };
+    const out = { completionForReply: (reply, citations) => coreTurn.receipt(latestUserMessage, reply, terminalReason || coreTurn.reason, undefined, citations), reply: finalReply, hadToolCalls, skipVerification: (coreTurn.status === 'blocked' && coreTurn.reason !== 'MISSING_TOOL_EVIDENCE') || graphState.searchPlan.sharedPlan?.route === 'unavailable', toolEvidence: collectVerificationEvidence(evidencePairs, { query: latestUserMessage }), next: 'finalize' };
     if (accumulatedToolResults.length > 0) {
       out.toolResults = accumulatedToolResults;
     }

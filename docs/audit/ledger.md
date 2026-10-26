@@ -12,7 +12,7 @@
 | L2 | HTTP 搜索路由把 web_search 设为必需工具 | `shared/agent/search.js` | 10-23 | ✅ closed |
 | L3 | 路由提示词硬写"先搜" | `shared/agent/search.js` | 10-23 | ✅ closed |
 | L4 | Hosted 搜索缺回执时替换模型回答 | `invokeModelNode.js` | 10-23 | ✅ closed |
-| L5 | 研究回执要求回复原样含来源 URL | `shared/agent/completion.js` | 10-23 | 🔴 open |
+| L5 | 研究回执要求回复原样含来源 URL | `shared/agent/completion.js` | 10-23 | ✅ closed（2026-10-26，行为回归 + 双端契约） |
 | L6 | 分类模型写死 gpt-4o-mini | `src/retrieval/intentRouter.js` | 10-23 | ✅ closed |
 | L7 | 视觉能力按模型名正则 | `src/media/visionCapability.js` | 10-24 | ✅ closed（探针形态）；目录化见 H1 |
 | L8 | 前端用 7860 端口正则判断自定义声音 | `desktop-ui/app.js` | 10-24 | ✅ closed |
@@ -22,8 +22,8 @@
 | L12 | 仓库里本机绝对路径 | `scripts/android-pet-assets.js` | 10-24 | ✅ closed |
 | L13 | 同轮两份不同的问候词表 | `prepareNode.js` | 10-24 | ✅ closed |
 | L14 | 空回复兜底只有英文 | `finalizeNode.js` | 10-24 | ✅ closed |
-| L15 | 预算用完模板只有中文 | `agent-loop.json` | 10-24 | 🔴 open |
-| L16 | 纠正事实主题只认三种 | `src/memory/factPolicy.js` | 10-23 | 🔴 open |
+| L15 | 预算用完模板只有中文 | `agent-loop.json` | 10-24 | ✅ closed（2026-10-26，行为回归 + 双端契约） |
+| L16 | 纠正事实主题只认三种 | `src/memory/factPolicy.js` | 10-23 | ✅ closed（2026-10-26，行为回归 + 双端契约） |
 | L17 | 智能模式档位表未落地 | `desktop-ui/smartRouting.js` | 10-23 | ✅ closed（已落地） |
 
 ## 二、规则扫描基线（2026-10-26，批次 0 校准后 835 个正式文件 × 20 条规则）
@@ -59,8 +59,8 @@
 | J2 | route 名 12 个、`unavailable` 7 种 reason | 12 | 12 | 🟡 open，列为下一阶段 |
 | J3 | `searchTask.js` 适配层"无人被迫迁移" | 95 处 legacy | 未复核 | 🟡 open |
 | J4 | 问候 / 确认词表多份 | 5 份 | 3 份（H17 计 2） | 🟡 收窄 |
-| J5 | 核验模型永远用默认模型 | — | 未复核 | 🟡 open |
-| J6 | 只有第一轮流式输出 | — | 未复核 | 🟡 open（设计取舍） |
+| J5 | 核验模型永远用默认模型 | — | 2026-10-26 复核已有修复 | ✅ closed：真实 runner 测试断言核验请求使用 Agent 固定模型 |
+| J6 | 只有第一轮流式输出 | — | 2026-10-26 复核已有修复 | ✅ closed：工具后最终回答有 onDelta，目标检查不流式；旧注释在架构方案登记 |
 | J7 | 18 个 `=== '1'` 环境开关不在设置页 | 18 | H16 计 32 处 | 🟡 open |
 | J8 | `app.js` 6881 行等体量 | 6881 | 6869 | 🟡 open |
 | U1 | 反馈通道 3 套并用 | 71 / 10 / 23 | 72 / 13 / 24 | 🟡 open |

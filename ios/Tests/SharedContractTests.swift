@@ -269,8 +269,15 @@ import Foundation
             if expected == .null { assert(exhausted == nil, "budget should not be exhausted") }
             else {
                 assert(exhausted?.reason == expected["reason"]!.stringValue! && exhausted?.limit == expected["limit"]!.numberValue! && exhausted?.used == expected["used"]!.numberValue!, "budget exhaustion differs")
-                assert(PhoneRunBudget.describe(exhausted!) == expected["describe"]!.stringValue! && PhoneRunBudget.reply(exhausted!) == expected["reply"]!.stringValue!, "budget text differs: \(PhoneRunBudget.reply(exhausted!))")
+                assert(PhoneRunBudget.describe(exhausted!) == expected["describe"]!.stringValue! && PhoneRunBudget.reply(exhausted!, locale: row["locale"]?.stringValue) == expected["reply"]!.stringValue!, "budget text differs: \(PhoneRunBudget.reply(exhausted!))")
             }
+            count += 1
+        }
+        for row in F["budgetReplies"]!.items {
+            let value = row["exhausted"]!, locale = row["locale"]!.stringValue!
+            let exhausted = PhoneRunBudget.Exhaustion(reason: value["reason"]!.stringValue!, limit: value["limit"]!.numberValue!, used: value["used"]!.numberValue!, usage: .init())
+            assert(PhoneRunBudget.describe(exhausted, locale: locale) == row["description"]!.stringValue!)
+            assert(PhoneRunBudget.reply(exhausted, locale: locale) == row["reply"]!.stringValue!)
             count += 1
         }
         do {

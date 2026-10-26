@@ -202,7 +202,7 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
         }
 
         // 3. Run budget on a virtual clock: deadline, input tokens and tool calls end the turn with the shared reply.
-        do {
+        try await PhoneReplyLanguage.$current.withValue("zh") {
             var now = 0.0
             let log = Log()
             var n = 0
@@ -227,6 +227,18 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             let hang = ScriptedTransport { _ in clock = 20 * 60_000; throw URLError(.timedOut) }
             let hung = try await AgentLoop(transport: hang, tools: nil, budget: PhoneRunBudget(now: { clock }), latestUserMessage: "q").run()
             assert(hung.stop == .budget && hung.text.contains("运行时间"))
+        }
+
+        // Locale is bound by ChatStore for a conversation and inherited by its loop.
+        for locale in ["zh", "en", "ja", "ko", "es"] {
+            let budget = PhoneRunBudget(maxInputTokens: 1)
+            budget.record(inputTokens: 1)
+            let transport = ScriptedTransport { _ in assertionFailure("Exhausted budget called a model"); return answer("unexpected") }
+            let outcome = try await PhoneReplyLanguage.$current.withValue(locale) {
+                try await AgentLoop(transport: transport, tools: nil, budget: budget, latestUserMessage: "q").run()
+            }
+            assert(outcome.stop == .budget && transport.requests.isEmpty)
+            assert(outcome.text == PhoneRunBudget.reply(budget.exhausted()!, locale: locale))
         }
 
         // 4. Repeat guard: the same failing call runs twice, the third is answered locally.

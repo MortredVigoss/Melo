@@ -21,16 +21,14 @@ function url(value) {
   return /^https?:\/\/[^\s/@]+(?:[/?#][^\s]*)?$/iu.test(text) && text.length <= 4000 ? text : '';
 }
 function relevant(source, goal) {
-  const requested = String(goal).match(/https?:\/\/[^\s<>"）)]+/gu) || [];
-  if (requested.length) return requested.some(value => value.replace(/[.,，。;；]+$/u, '') === source.url);
   const keys = terms(goal), content = words(source.text);
   // This is a conservative provenance gate, not a factual or semantic judge.
   // The query echoed by a tool and its URL/title are deliberately excluded.
   const matched = keys.filter(key => content.includes(key));
-  return keys.length > 0 && matched.length >= Math.min(2, keys.length) && matched.length / keys.length >= 0.75;
+  return keys.length > 0 && matched.length / keys.length >= 0.5;
 }
 
-export function completionReceipt({ goal = '', kind = 'answer', reply = '', observations = [], terminalReason = '', verifiedActions = [], task } = {}) {
+export function completionReceipt({ goal = '', kind = 'answer', reply = '', citations = [], observations = [], terminalReason = '', verifiedActions = [], task } = {}) {
   const rows = Array.isArray(observations) ? observations.slice(0, AGENT_LOOP_CONTRACT.guardLimits.completionObservations) : [];
   const performed = rows.filter(row => row?.ok === true && row.executed === true);
   const base = { version: 1, kind, outcome: 'blocked', goalState: 'unverified', reason: '', evidenceIds: [], completedSteps: new Set(performed.map(row => String(row.id).split(':source:')[0])).size, ...(task ? { task } : {}) };
@@ -50,8 +48,11 @@ export function completionReceipt({ goal = '', kind = 'answer', reply = '', obse
   if (!needsResearch && !needsAction) return { ...base, outcome: performed.length ? 'partial' : 'blocked', reason: 'COMPLETION_CONTRACT_UNKNOWN' };
   let sources = [];
   if (needsResearch) {
+    const links = value => (String(value).match(/https?:\/\/[^\s<>"）)]+/gu) || []).map(value => value.replace(/[.,，。;；]+$/u, ''));
+    const requested = links(goal);
+    const cited = new Set([...links(reply), ...(Array.isArray(citations) ? citations : []).map(row => url(typeof row === 'string' ? row : row?.url || row?.sourceUrl || row?.src)).filter(Boolean)]);
     sources = rows.filter(row => row?.ok === true && row.executed === true && row.type === 'source' && typeof row.id === 'string' && row.id.length > 0 && url(row.url) &&
-      ['extracted', 'partial'].includes(row.reading) && String(row.text || '').trim().length >= 40 && relevant(row, goal) && String(reply).includes(row.url));
+      ['extracted', 'partial'].includes(row.reading) && String(row.text || '').trim().length >= 40 && (!requested.length || requested.includes(row.url)) && (requested.includes(row.url) || relevant(row, goal) || cited.has(row.url)));
     if (!sources.length) return { ...base, outcome: performed.length ? 'partial' : 'blocked', reason: 'RELEVANT_READ_SOURCE_MISSING' };
   }
   let actions = [];

@@ -3624,7 +3624,7 @@
       "completion": {
         "goal": "Research Sydney brunch",
         "kind": "research",
-        "reply": "Sydney brunch: https://fixture.invalid/menu",
+        "reply": "No source is cited in this answer.",
         "observations": [
           {
             "id": "read-1",
@@ -3707,7 +3707,7 @@
             "ok": true,
             "url": "https://fixture.invalid/menu",
             "reading": "extracted",
-            "text": "Sydney brunch menu with breakfast dishes and observed opening hours for this fixture."
+            "text": "Distant stars and galaxies have different spectra and their light is redshifted."
           }
         ]
       }
@@ -4559,5 +4559,548 @@
       "phase": "finished",
       "reason": "GOAL_CHECK_UNAVAILABLE"
     }
+  },
+  {
+    "name": "budget reply zh 运行时间 1 分钟",
+    "input": {
+      "version": 1,
+      "op": "budget",
+      "action": "reply",
+      "now": 0,
+      "exhausted": {
+        "reason": "deadline",
+        "limit": 60000,
+        "used": 60000
+      },
+      "options": {
+        "locale": "zh"
+      }
+    },
+    "ok": true,
+    "expected": "这轮对话已达到运行预算（运行时间 1 分钟），已停止。你可以发送“继续”接着做。"
+  },
+  {
+    "name": "budget reply zh 运行时间 5 秒",
+    "input": {
+      "version": 1,
+      "op": "budget",
+      "action": "reply",
+      "now": 0,
+      "exhausted": {
+        "reason": "deadline",
+        "limit": 5000,
+        "used": 5000
+      },
+      "options": {
+        "locale": "zh"
+      }
+    },
+    "ok": true,
+    "expected": "这轮对话已达到运行预算（运行时间 5 秒），已停止。你可以发送“继续”接着做。"
+  },
+  {
+    "name": "budget reply zh 输入 token 80",
+    "input": {
+      "version": 1,
+      "op": "budget",
+      "action": "reply",
+      "now": 0,
+      "exhausted": {
+        "reason": "input-tokens",
+        "limit": 80,
+        "used": 80
+      },
+      "options": {
+        "locale": "zh"
+      }
+    },
+    "ok": true,
+    "expected": "这轮对话已达到运行预算（输入 token 80），已停止。你可以发送“继续”接着做。"
+  },
+  {
+    "name": "budget reply zh 工具调用次数 3 次",
+    "input": {
+      "version": 1,
+      "op": "budget",
+      "action": "reply",
+      "now": 0,
+      "exhausted": {
+        "reason": "tool-calls",
+        "limit": 3,
+        "used": 3
+      },
+      "options": {
+        "locale": "zh"
+      }
+    },
+    "ok": true,
+    "expected": "这轮对话已达到运行预算（工具调用次数 3 次），已停止。你可以发送“继续”接着做。"
+  },
+  {
+    "name": "budget reply en runtime 1 minutes",
+    "input": {
+      "version": 1,
+      "op": "budget",
+      "action": "reply",
+      "now": 0,
+      "exhausted": {
+        "reason": "deadline",
+        "limit": 60000,
+        "used": 60000
+      },
+      "options": {
+        "locale": "en"
+      }
+    },
+    "ok": true,
+    "expected": "This turn reached its run budget (runtime 1 minutes) and has stopped. Send “continue” to resume."
+  },
+  {
+    "name": "budget reply en runtime 5 seconds",
+    "input": {
+      "version": 1,
+      "op": "budget",
+      "action": "reply",
+      "now": 0,
+      "exhausted": {
+        "reason": "deadline",
+        "limit": 5000,
+        "used": 5000
+      },
+      "options": {
+        "locale": "en"
+      }
+    },
+    "ok": true,
+    "expected": "This turn reached its run budget (runtime 5 seconds) and has stopped. Send “continue” to resume."
+  },
+  {
+    "name": "budget reply en 80 input tokens",
+    "input": {
+      "version": 1,
+      "op": "budget",
+      "action": "reply",
+      "now": 0,
+      "exhausted": {
+        "reason": "input-tokens",
+        "limit": 80,
+        "used": 80
+      },
+      "options": {
+        "locale": "en"
+      }
+    },
+    "ok": true,
+    "expected": "This turn reached its run budget (80 input tokens) and has stopped. Send “continue” to resume."
+  },
+  {
+    "name": "budget reply en 3 tool calls",
+    "input": {
+      "version": 1,
+      "op": "budget",
+      "action": "reply",
+      "now": 0,
+      "exhausted": {
+        "reason": "tool-calls",
+        "limit": 3,
+        "used": 3
+      },
+      "options": {
+        "locale": "en"
+      }
+    },
+    "ok": true,
+    "expected": "This turn reached its run budget (3 tool calls) and has stopped. Send “continue” to resume."
+  },
+  {
+    "name": "budget reply ja 実行時間 1 分",
+    "input": {
+      "version": 1,
+      "op": "budget",
+      "action": "reply",
+      "now": 0,
+      "exhausted": {
+        "reason": "deadline",
+        "limit": 60000,
+        "used": 60000
+      },
+      "options": {
+        "locale": "ja"
+      }
+    },
+    "ok": true,
+    "expected": "このターンは実行予算（実行時間 1 分）に達したため停止しました。「続けて」と送信すると再開できます。"
+  },
+  {
+    "name": "budget reply ja 実行時間 5 秒",
+    "input": {
+      "version": 1,
+      "op": "budget",
+      "action": "reply",
+      "now": 0,
+      "exhausted": {
+        "reason": "deadline",
+        "limit": 5000,
+        "used": 5000
+      },
+      "options": {
+        "locale": "ja"
+      }
+    },
+    "ok": true,
+    "expected": "このターンは実行予算（実行時間 5 秒）に達したため停止しました。「続けて」と送信すると再開できます。"
+  },
+  {
+    "name": "budget reply ja 入力 80 トークン",
+    "input": {
+      "version": 1,
+      "op": "budget",
+      "action": "reply",
+      "now": 0,
+      "exhausted": {
+        "reason": "input-tokens",
+        "limit": 80,
+        "used": 80
+      },
+      "options": {
+        "locale": "ja"
+      }
+    },
+    "ok": true,
+    "expected": "このターンは実行予算（入力 80 トークン）に達したため停止しました。「続けて」と送信すると再開できます。"
+  },
+  {
+    "name": "budget reply ja ツール呼び出し 3 回",
+    "input": {
+      "version": 1,
+      "op": "budget",
+      "action": "reply",
+      "now": 0,
+      "exhausted": {
+        "reason": "tool-calls",
+        "limit": 3,
+        "used": 3
+      },
+      "options": {
+        "locale": "ja"
+      }
+    },
+    "ok": true,
+    "expected": "このターンは実行予算（ツール呼び出し 3 回）に達したため停止しました。「続けて」と送信すると再開できます。"
+  },
+  {
+    "name": "budget reply ko 실행 시간 1분",
+    "input": {
+      "version": 1,
+      "op": "budget",
+      "action": "reply",
+      "now": 0,
+      "exhausted": {
+        "reason": "deadline",
+        "limit": 60000,
+        "used": 60000
+      },
+      "options": {
+        "locale": "ko"
+      }
+    },
+    "ok": true,
+    "expected": "이번 실행의 한도(실행 시간 1분)에 도달하여 중지했습니다. “계속”을 보내면 이어서 진행할 수 있습니다."
+  },
+  {
+    "name": "budget reply ko 실행 시간 5초",
+    "input": {
+      "version": 1,
+      "op": "budget",
+      "action": "reply",
+      "now": 0,
+      "exhausted": {
+        "reason": "deadline",
+        "limit": 5000,
+        "used": 5000
+      },
+      "options": {
+        "locale": "ko"
+      }
+    },
+    "ok": true,
+    "expected": "이번 실행의 한도(실행 시간 5초)에 도달하여 중지했습니다. “계속”을 보내면 이어서 진행할 수 있습니다."
+  },
+  {
+    "name": "budget reply ko 입력 토큰 80개",
+    "input": {
+      "version": 1,
+      "op": "budget",
+      "action": "reply",
+      "now": 0,
+      "exhausted": {
+        "reason": "input-tokens",
+        "limit": 80,
+        "used": 80
+      },
+      "options": {
+        "locale": "ko"
+      }
+    },
+    "ok": true,
+    "expected": "이번 실행의 한도(입력 토큰 80개)에 도달하여 중지했습니다. “계속”을 보내면 이어서 진행할 수 있습니다."
+  },
+  {
+    "name": "budget reply ko 도구 호출 3회",
+    "input": {
+      "version": 1,
+      "op": "budget",
+      "action": "reply",
+      "now": 0,
+      "exhausted": {
+        "reason": "tool-calls",
+        "limit": 3,
+        "used": 3
+      },
+      "options": {
+        "locale": "ko"
+      }
+    },
+    "ok": true,
+    "expected": "이번 실행의 한도(도구 호출 3회)에 도달하여 중지했습니다. “계속”을 보내면 이어서 진행할 수 있습니다."
+  },
+  {
+    "name": "budget reply es 1 minutos de ejecución",
+    "input": {
+      "version": 1,
+      "op": "budget",
+      "action": "reply",
+      "now": 0,
+      "exhausted": {
+        "reason": "deadline",
+        "limit": 60000,
+        "used": 60000
+      },
+      "options": {
+        "locale": "es"
+      }
+    },
+    "ok": true,
+    "expected": "Este turno alcanzó su límite de ejecución (1 minutos de ejecución) y se detuvo. Envía «continuar» para reanudar."
+  },
+  {
+    "name": "budget reply es 5 segundos de ejecución",
+    "input": {
+      "version": 1,
+      "op": "budget",
+      "action": "reply",
+      "now": 0,
+      "exhausted": {
+        "reason": "deadline",
+        "limit": 5000,
+        "used": 5000
+      },
+      "options": {
+        "locale": "es"
+      }
+    },
+    "ok": true,
+    "expected": "Este turno alcanzó su límite de ejecución (5 segundos de ejecución) y se detuvo. Envía «continuar» para reanudar."
+  },
+  {
+    "name": "budget reply es 80 tokens de entrada",
+    "input": {
+      "version": 1,
+      "op": "budget",
+      "action": "reply",
+      "now": 0,
+      "exhausted": {
+        "reason": "input-tokens",
+        "limit": 80,
+        "used": 80
+      },
+      "options": {
+        "locale": "es"
+      }
+    },
+    "ok": true,
+    "expected": "Este turno alcanzó su límite de ejecución (80 tokens de entrada) y se detuvo. Envía «continuar» para reanudar."
+  },
+  {
+    "name": "budget reply es 3 llamadas a herramientas",
+    "input": {
+      "version": 1,
+      "op": "budget",
+      "action": "reply",
+      "now": 0,
+      "exhausted": {
+        "reason": "tool-calls",
+        "limit": 3,
+        "used": 3
+      },
+      "options": {
+        "locale": "es"
+      }
+    },
+    "ok": true,
+    "expected": "Este turno alcanzó su límite de ejecución (3 llamadas a herramientas) y se detuvo. Envía «continuar» para reanudar."
+  },
+  {
+    "name": "completion: research without pasted URL",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "completion",
+      "completion": {
+        "goal": "Research Sydney brunch",
+        "kind": "research",
+        "reply": "The breakfast menu includes eggs.",
+        "observations": [
+          {
+            "id": "read-1",
+            "type": "source",
+            "executed": true,
+            "ok": true,
+            "url": "https://fixture.invalid/menu",
+            "reading": "extracted",
+            "text": "Sydney brunch menu with breakfast dishes and observed opening hours for this fixture."
+          }
+        ],
+        "citations": []
+      }
+    },
+    "expected": {
+      "outcome": "completed",
+      "goalState": "supported",
+      "evidenceIds": [
+        "read-1"
+      ]
+    }
+  },
+  {
+    "name": "completion: research citation paraphrase",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "completion",
+      "completion": {
+        "goal": "Research Sydney brunch",
+        "kind": "research",
+        "reply": "A cafe serves breakfast.",
+        "observations": [
+          {
+            "id": "read-1",
+            "type": "source",
+            "executed": true,
+            "ok": true,
+            "url": "https://fixture.invalid/menu",
+            "reading": "extracted",
+            "text": "A local cafe serves a morning meal including eggs and pancakes every day."
+          }
+        ],
+        "citations": [
+          {
+            "url": "https://fixture.invalid/menu"
+          }
+        ]
+      }
+    },
+    "expected": {
+      "outcome": "completed",
+      "goalState": "supported",
+      "evidenceIds": [
+        "read-1"
+      ]
+    }
+  },
+  {
+    "name": "policy unavailable reply zh",
+    "input": {
+      "version": 1,
+      "op": "budget",
+      "action": "reply",
+      "now": 0,
+      "exhausted": {
+        "reason": "policy-unavailable",
+        "limit": 0,
+        "used": 0
+      },
+      "options": {
+        "locale": "zh"
+      }
+    },
+    "ok": true,
+    "expected": "共享运行策略不可用，本轮已停止。请重新启动 Melo 后重试。"
+  },
+  {
+    "name": "policy unavailable reply en",
+    "input": {
+      "version": 1,
+      "op": "budget",
+      "action": "reply",
+      "now": 0,
+      "exhausted": {
+        "reason": "policy-unavailable",
+        "limit": 0,
+        "used": 0
+      },
+      "options": {
+        "locale": "en"
+      }
+    },
+    "ok": true,
+    "expected": "The shared runtime policy is unavailable. This turn has stopped. Restart Melo and try again."
+  },
+  {
+    "name": "policy unavailable reply ja",
+    "input": {
+      "version": 1,
+      "op": "budget",
+      "action": "reply",
+      "now": 0,
+      "exhausted": {
+        "reason": "policy-unavailable",
+        "limit": 0,
+        "used": 0
+      },
+      "options": {
+        "locale": "ja"
+      }
+    },
+    "ok": true,
+    "expected": "共有実行ポリシーを利用できないため、このターンを停止しました。Melo を再起動して再試行してください。"
+  },
+  {
+    "name": "policy unavailable reply ko",
+    "input": {
+      "version": 1,
+      "op": "budget",
+      "action": "reply",
+      "now": 0,
+      "exhausted": {
+        "reason": "policy-unavailable",
+        "limit": 0,
+        "used": 0
+      },
+      "options": {
+        "locale": "ko"
+      }
+    },
+    "ok": true,
+    "expected": "공유 실행 정책을 사용할 수 없어 이번 실행을 중지했습니다. Melo를 다시 시작한 후 재시도하세요."
+  },
+  {
+    "name": "policy unavailable reply es",
+    "input": {
+      "version": 1,
+      "op": "budget",
+      "action": "reply",
+      "now": 0,
+      "exhausted": {
+        "reason": "policy-unavailable",
+        "limit": 0,
+        "used": 0
+      },
+      "options": {
+        "locale": "es"
+      }
+    },
+    "ok": true,
+    "expected": "La política de ejecución compartida no está disponible. Este turno se detuvo. Reinicia Melo e inténtalo de nuevo."
   }
 ]

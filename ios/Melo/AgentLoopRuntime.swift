@@ -131,8 +131,9 @@ final class PhoneRunBudget: @unchecked Sendable {
         return PhoneRunBudget(parent: self, state: result)
     }
     /// `describeBudgetReason`
-    static func describe(_ exhausted: Exhaustion) -> String {
-        let formats = loopContract.budgetReasonFormat
+    static func describe(_ exhausted: Exhaustion, locale: String = "zh") -> String {
+        let language = locale.replacingOccurrences(of: "_", with: "-").split(separator: "-").first.map(String.init)?.lowercased() ?? "en"
+        let formats = loopContract.budgetReasonFormat[language] ?? loopContract.budgetReasonFormat["en"] ?? [:]
         switch exhausted.reason {
         case "deadline":
             let minutes = Int((exhausted.limit / 60_000).rounded())
@@ -144,9 +145,14 @@ final class PhoneRunBudget: @unchecked Sendable {
         }
     }
     /// `budgetExhaustedReply`
-    static func reply(_ exhausted: Exhaustion) -> String {
-        guard let locale = PhoneReplyLanguage.current else { return AgentLoopContract.fill(loopContract.budgetReplyTemplate, ["reason": describe(exhausted)]) }
-        return SharedLoopPolicy.value("runtimeMessage", ["id":"budget", "locale":locale, "params":["reason":exhausted.reason]]) as? String ?? "Runtime budget exhausted."
+    static func reply(_ exhausted: Exhaustion, locale: String? = nil) -> String {
+        let selected = locale ?? PhoneReplyLanguage.current ?? PhoneReplyLanguage.resolve("")
+        let value: [String: Any] = ["reason": exhausted.reason, "limit": exhausted.limit, "used": exhausted.used]
+        if let reply = operation("reply", time: 0, fields: ["exhausted": value, "options": ["locale": selected]]) as? String { return reply }
+        let language = selected.replacingOccurrences(of: "_", with: "-").split(separator: "-").first.map(String.init)?.lowercased() ?? "en"
+        if exhausted.reason == "policy-unavailable" { return loopContract.budgetUnavailableReply[language] ?? loopContract.budgetUnavailableReply["en"] ?? "" }
+        let template = loopContract.budgetReplyTemplate[language] ?? loopContract.budgetReplyTemplate["en"] ?? ""
+        return AgentLoopContract.fill(template, ["reason": describe(exhausted, locale: selected)])
     }
     /// The run-record stage text the desktop emits for `budget:exhausted`.
     static func stageText(_ exhausted: Exhaustion) -> String {

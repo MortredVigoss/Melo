@@ -1218,6 +1218,7 @@
           "src/retrieval/selfVerification.test.js",
           "src/runtime/agentLoopContract.test.js",
           "src/runtime/runBudget.test.js",
+          "src/runtime/sharedAgentCore.completion.test.js",
           "src/services/chat/attachmentExternalization.test.js",
           "src/services/chat/chatExecutionRunner.test.js",
           "src/services/chat/compactScheduler.test.js",

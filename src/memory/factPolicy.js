@@ -11,9 +11,6 @@ export function factSubject(fact) {
   const text=String(fact.fact || '');
   if (fact.category === 'identity') return text.match(/^\s*([\p{L}\s]{1,24})[:：]/u)?.[1]?.trim().toLowerCase() || '';
   if (fact.category !== 'correction') return '';
-  if (/\bES20\d\d\b/i.test(text)) return 'build.ecmascript';
-  if (/部署端口|deployment port/i.test(text)) return 'deployment.port';
-  if (/回复.{0,6}(中文|英文)|reply language/i.test(text)) return 'reply.language';
   return '';
 }
 

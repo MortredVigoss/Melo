@@ -38,9 +38,16 @@ test('scorer rejects unexpected tools, missing provenance, repeated calls and co
 test('changing receipts or expectations cannot silently bless a failed task', () => {
   const changed = structuredClone(dataset);
   changed.tasks[0].frames[1].calls[0].receipt.data.text = 'An unrelated astronomy article about stars and galaxies, without restaurant evidence.';
+  // Citing a genuinely read source now supports delivery even when a
+  // paraphrase has no keyword overlap (L5). Neither relevance nor a citation
+  // is available in this negative case.
+  changed.tasks[0].frames.at(-1).reply = 'No restaurant evidence was provided.';
   const result = evaluate({ version: 1, op: 'taskReplay', dataset: changed });
   assert.equal(result.value.passed, false);
   assert.ok(result.value.tasks[0].score.failures.includes('outcome'));
+  const unread = structuredClone(dataset);
+  unread.tasks[0].frames[1].calls[0].receipt.data.text = '';
+  assert.equal(evaluate({ version: 1, op: 'taskReplay', dataset: unread }).value.passed, false, 'a citation never substitutes for a source body');
   const noExpectation = structuredClone(dataset); noExpectation.tasks[0].expected = {};
   assert.equal(evaluate({ version: 1, op: 'taskReplay', dataset: noExpectation }).value.passed, false);
 });

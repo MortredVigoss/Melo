@@ -69,7 +69,7 @@ test('run budget reasons, replies and narrowing match the fixtures', () => {
     const budget = createRunBudget({ now: () => row.startedAt, overrides: row.overrides });
     recordUsage(budget, row.used);
     const exhausted = budgetExhausted(budget, row.now);
-    assert.deepEqual(exhausted ? { reason: exhausted.reason, limit: exhausted.limit, used: exhausted.used, describe: describeBudgetReason(exhausted), reply: budgetExhaustedReply(exhausted) } : null, row.expected);
+    assert.deepEqual(exhausted ? { reason: exhausted.reason, limit: exhausted.limit, used: exhausted.used, describe: describeBudgetReason(exhausted), reply: budgetExhaustedReply(exhausted, row.locale) } : null, row.expected);
   }
   const { parent: p, child: c, childUsed, expected } = F.narrowBudget;
   const parent = createRunBudget({ now: () => 0, overrides: p.overrides });
@@ -120,4 +120,14 @@ test('read_history slicing and token estimates match the fixtures', () => {
     assert.deepEqual({ ids: slice.messages.map(m => m.id), hasMore: Boolean(slice.hasMore), nextMessageId: slice.nextMessageId || '', missing: slice.missing || '' }, row.expected, JSON.stringify(row.args));
   }
   for (const row of F.tokens) assert.equal(estimateTextTokens(row.text), row.expected);
+});
+
+test('budget replies and reasons follow the five-language contract', () => {
+  for (const row of F.budgetReplies) {
+    assert.equal(describeBudgetReason(row.exhausted, row.locale), row.description);
+    assert.equal(budgetExhaustedReply(row.exhausted, row.locale), row.reply);
+  }
+  const sample = F.budgetReplies.find(row => row.locale === 'en');
+  assert.equal(budgetExhaustedReply(sample.exhausted, 'unknown'), sample.reply);
+  assert.equal(budgetExhaustedReply(sample.exhausted), sample.reply);
 });
