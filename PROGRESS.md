@@ -1,3 +1,11 @@
+## 2026-10-26 — 双端覆盖到今日主线（iPhone 0.7.12 (44)、桌面壳重装），回执一并推送
+
+Claude：用户要求"合并 master，本机和手机覆盖安装"，随后要求回执也推上去。master 已含全部完成线程，无新合并；安装源码 `752a086` 与完整日常校验过的 `16ad6dd` 只差文档和版本号。
+本机 `test:full` 除 Android 外全绿（本机无 JDK / SDK，266 ms 即红，属环境），`release:verify` 的安装步骤因此不会放行，改按 10-24 先例：完整验证后手动 `install:desktop`，再用与发布脚本相同的原生启动断言跑两个安装路径，13 项全过。
+手机：解锁状态下整份备份一次成功；安装后与启动后回读 16 对话 / 169 消息 / 6 Agent / 26 图全部一致。构建需 Python ≥ 3.9（Codex 新的主题同步脚本），本机 anaconda 3.8 会直接失败，用系统 Python 通过。详见 [安装回执](docs/overwrite-install-20261026.md)。
+
+本地 `test:full` 除 Android 外 GREEN（JS、容器 / 旅程、设置浏览器、Swift、壳生命周期、浏览器端到端）；`run-bZBKkK` 完整日常 GREEN。Final commit: `752a086`.
+
 ## 2026-10-26 — 隔离自开发审计后收紧三处：工具来源、镜像依赖、平台裁剪
 
 Claude：审计 Codex 的隔离自开发第一版后，用户拍板"1–3 直接修了，然后 git push"。三处都是"存在但没接到位"的边界：`development_job` 只靠"远端没有审批面"挡住，一条"始终允许"就能从 Telegram / Discord 启动作业；镜像里的 node_modules 在构建时冻结，作业却不核对基线 lock，依赖漂移会让验证结论失真；容器是 Linux，`npm test` 遇到 Swift / Android 阶段只能整轮失败或被当作通过。
