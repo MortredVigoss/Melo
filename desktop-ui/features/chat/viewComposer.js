@@ -274,7 +274,7 @@ function renderComposerCard({ inline = false } = {}) {
                 </div>
 
                 <select class="voice-language" aria-label="语音识别语言" data-voice-language ${voiceInputActive(chatState.voice) || chatState.agentSelectionSaving ? 'disabled' : ''}>
-                  ${[['zh-CN', t("中文")], ['en-US', 'English'], ['system', t("系统语言")]].map(([value, label]) => ui`<option value="${value}" ${(voiceLanguage() || 'zh-CN') === value ? 'selected' : ''}>${label}</option>`).join('')}
+                  ${[['zh-CN', t("中文")], ['en-US', 'English'], ['system', t("系统语言")]].map(([value, label]) => ui`<option value="${value}" ${(voiceLanguage() || 'system') === value ? 'selected' : ''}>${label}</option>`).join('')}
                 </select>
                 <button
                   class="composer-icon-button ${chatState.voice.recording ? 'is-recording' : ''}"

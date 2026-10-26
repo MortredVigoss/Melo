@@ -82,15 +82,14 @@ export async function prepareVisionInputs(
             text: `以下是实际 OCR 提取的文字，仅供与图片交叉核对，可能识别错误：\n${extracted.text}`,
           });
         onObservation?.({
-          name: 'OCR 交叉核对',
-          output: extracted?.text
-            ? `提取 ${extracted.text.length} 字符；OCR 置信度 ${Number.isFinite(extracted.metadata?.confidence) ? Math.round(extracted.metadata.confidence) : '未提供'}，不代表视觉理解准确率`
-            : '未提取到可用文字',
+          messageId: 'stage.ocr',
+          outputMessageId: extracted?.text ? 'output.ocr' : 'output.ocrEmpty',
+          outputMessageParams: {characters:extracted?.text?.length || 0,confidence:Number.isFinite(extracted?.metadata?.confidence) ? Math.round(extracted.metadata.confidence) : {messageId:'value.unreported'}},
         });
       }
       onObservation?.({
-        name: '图片输入准备',
-        output: `原图 ${metadata.width} × ${metadata.height}${crop ? ' · 使用指定裁切区域' : ''} · 精度 ${selectedDetail}；图片准备完成不等于已验证理解正确`,
+        messageId: 'stage.vision',
+        outputMessageId: crop ? 'output.visionCropped' : 'output.vision', outputMessageParams:{width:metadata.width,height:metadata.height,detail:selectedDetail},
       });
     }
     result.push({ ...message, content });

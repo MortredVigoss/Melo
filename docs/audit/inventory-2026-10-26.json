@@ -1,7 +1,7 @@
 {
  "version": 1,
  "date": "2026-10-26",
- "commit": "bf828fa",
+ "commit": "c37b0f8",
  "roots": [
   "src",
   "shared",
@@ -11,7 +11,7 @@
   "scripts",
   "mobile-sync"
  ],
- "filesScanned": 835,
+ "filesScanned": 836,
  "skippedGenerated": [
   "desktop-ui/translations.js",
   "ios/Melo/AgentCore/agent-core.js",
@@ -23,7 +23,7 @@
    "title": "模型名正则 / 字面量决定能力或默认值",
    "severity": "high",
    "note": "能力标志应来自模型目录；默认名只留目录模块",
-   "scanned": 802,
+   "scanned": 803,
    "count": 8,
    "files": 3,
    "byFile": {
@@ -78,66 +78,17 @@
    "title": "用汉字 / CJK 正则判断语言或内容",
    "severity": "high",
    "note": "语言选择应来自对话 / 界面 / Agent 设置；分词与索引模块例外",
-   "scanned": 690,
-   "count": 8,
-   "files": 7,
-   "byFile": {
-    "desktop-ui/app.js": 1,
-    "shared/agent/completion.js": 1,
-    "src/services/chat/dynamicContext.js": 1,
-    "src/services/media/voiceRewrite.js": 2,
-    "src/services/remote/telegramAddressHelpers.js": 1,
-    "src/shared/conversationTopics.js": 1,
-    "src/shared/executionScene.js": 1
-   },
-   "hits": [
-    {
-     "file": "desktop-ui/app.js",
-     "line": 2409,
-     "text": "if (/[\\u4E00-\\u9FFF\\u3400-\\u4DBF\\uF900-\\uFAFF]/.test(text)) return 'zh';"
-    },
-    {
-     "file": "shared/agent/completion.js",
-     "line": 16,
-     "text": "const han = (text.match(/[\\u3400-\\u9fff]+/gu) || []).flatMap(word => [...word].slice(0, -1).map((_, i) => word.slice(i, i + 2))).filter(word => !stopHan.has(wor"
-    },
-    {
-     "file": "src/services/chat/dynamicContext.js",
-     "line": 29,
-     "text": "const tokens = raw.match(/[a-z0-9_]{2,}|[\\u4e00-\\u9fff]{2,}/g) || [];"
-    },
-    {
-     "file": "src/services/media/voiceRewrite.js",
-     "line": 169,
-     "text": "let cleaned = extracted.replace(/@[\\w\\u4e00-\\u9fff]+/g, '').replace(/^\\s*[，,\\s]+/, '').trim();"
-    },
-    {
-     "file": "src/services/media/voiceRewrite.js",
-     "line": 214,
-     "text": ".replace(/@[\\w\\u4e00-\\u9fff]+/g, '')"
-    },
-    {
-     "file": "src/services/remote/telegramAddressHelpers.js",
-     "line": 81,
-     "text": "if (/^[\\u4e00-\\u9fff]+$/.test(normalizedAlias)) {"
-    },
-    {
-     "file": "src/shared/conversationTopics.js",
-     "line": 23,
-     "text": "const termWeight = terms => { let weight = 0; for (const term of terms) weight += /[\\u4e00-\\u9fff]/.test(term) ? 0.5 : 1; return weight; };"
-    },
-    {
-     "file": "src/shared/executionScene.js",
-     "line": 239,
-     "text": "const han = String(text).match(/[\\u3400-\\u9fff]+/g) || [];"
-    }
-   ]
+   "scanned": 691,
+   "count": 0,
+   "files": 0,
+   "byFile": {},
+   "hits": []
   },
   "H3": {
    "title": "本机地址与端口字面量",
    "severity": "high",
    "note": "端口进 config 带默认；前端读配置 URL，不做端口正则",
-   "scanned": 802,
+   "scanned": 803,
    "count": 13,
    "files": 12,
    "byFile": {
@@ -226,7 +177,7 @@
    "title": "机器相关绝对路径",
    "severity": "high",
    "note": "仓库里不出现用户目录",
-   "scanned": 808,
+   "scanned": 809,
    "count": 3,
    "files": 2,
    "byFile": {
@@ -241,12 +192,12 @@
     },
     {
      "file": "src/tools/builtins/pdfTool.js",
-     "line": 662,
+     "line": 663,
      "text": "{ action: 'read', path: '/Users/me/doc.pdf' },"
     },
     {
      "file": "src/tools/builtins/pdfTool.js",
-     "line": 664,
+     "line": 665,
      "text": "{ action: 'write', path: '/Users/me/output.pdf', content: '# Report\\n\\nHello world', format: 'markdown' },"
     }
    ]
@@ -255,7 +206,7 @@
    "title": "外部服务地址字面量",
    "severity": "info",
    "note": "集成端点集中到目录 / 配置，便于换区与自建",
-   "scanned": 802,
+   "scanned": 803,
    "count": 73,
    "files": 31,
    "byFile": {
@@ -294,12 +245,12 @@
    "hits": [
     {
      "file": "desktop-ui/app.js",
-     "line": 421,
+     "line": 422,
      "text": "baseUrl: 'https://api.openai.com/v1',"
     },
     {
      "file": "desktop-ui/app.js",
-     "line": 425,
+     "line": 426,
      "text": "baseUrl: 'https://chatgpt.com/backend-api',"
     },
     {
@@ -474,17 +425,17 @@
     },
     {
      "file": "src/providers/openRouterOAuth.js",
-     "line": 8,
+     "line": 9,
      "text": "const TOKEN_ENDPOINT = 'https://openrouter.ai/api/v1/auth/keys';"
     },
     {
      "file": "src/providers/openRouterOAuth.js",
-     "line": 9,
+     "line": 10,
      "text": "const AUTH_ENDPOINT = 'https://openrouter.ai/auth';"
     },
     {
      "file": "src/providers/openRouterOAuth.js",
-     "line": 16,
+     "line": 17,
      "text": "if (profile.providerId !== 'openrouter' || profile.baseUrl !== 'https://openrouter.ai/api/v1') throw new Error('请先保存 OpenRouter 官方地址的连接。');"
     },
     {
@@ -663,7 +614,7 @@
    "title": "内置 Agent id 写进逻辑",
    "severity": "medium",
    "note": "owner / 团队预设应读 agentProfiles，不写死 id",
-   "scanned": 455,
+   "scanned": 456,
    "count": 2,
    "files": 2,
    "byFile": {
@@ -687,233 +638,31 @@
    "title": "服务端直发界面的中文事件名（无翻译行）",
    "severity": "high",
    "note": "事件应发 id + 参数，由 UI 翻译；或至少补翻译行",
-   "scanned": 455,
-   "count": 7,
-   "files": 4,
-   "byFile": {
-    "src/services/chat/portableWorkspace.js": 1,
-    "src/services/settings/llmConnections.js": 1,
-    "src/shared/llmProviders.js": 4,
-    "src/state/stateHydration.js": 1
-   },
-   "hits": [
-    {
-     "file": "src/services/chat/portableWorkspace.js",
-     "line": 233,
-     "text": "if (!state.projects.some(row => row.id === marker.projectId)) state.projects.push({ id: marker.projectId, name: '已删除的项目', workspacePath: '', knowledgeIds: [], c"
-    },
-    {
-     "file": "src/services/settings/llmConnections.js",
-     "line": 23,
-     "text": "name: '原有连接', ...Object.fromEntries(profileFields.map(k => [k, config[k]])),"
-    },
-    {
-     "file": "src/shared/llmProviders.js",
-     "line": 8,
-     "text": "{ id: 'doubao', name: '豆包 · 火山方舟', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: '', modelHint: '模型 ID 或已开通的 ep-… 推理接入点' },"
-    },
-    {
-     "file": "src/shared/llmProviders.js",
-     "line": 12,
-     "text": "{ id: 'qwen', name: '通义千问 · 百炼', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: '', modelHint: '填写模型 ID；地址必须与密钥所在区域一致' },"
-    },
-    {
-     "file": "src/shared/llmProviders.js",
-     "line": 14,
-     "text": "{ id: 'local', name: '本地模型', authMode: 'local', baseUrl: LOCAL_SERVICE_DEFAULTS.ollama, model: '' },"
-    },
-    {
-     "file": "src/shared/llmProviders.js",
-     "line": 15,
-     "text": "{ id: 'custom', name: '自定义兼容服务', baseUrl: '', model: '', modelHint: '服务端提供的模型 ID' },"
-    },
-    {
-     "file": "src/state/stateHydration.js",
-     "line": 175,
-     "text": "name: '项目',"
-    }
-   ]
+   "scanned": 456,
+   "count": 0,
+   "files": 0,
+   "byFile": {},
+   "hits": []
   },
   "H8": {
    "title": "服务端中文回复 / 错误文案",
    "severity": "medium",
    "note": "按对话语言选文案，不按\"有没有汉字\"",
-   "scanned": 455,
-   "count": 27,
-   "files": 16,
-   "byFile": {
-    "src/agents/delegate.js": 2,
-    "src/agents/team.js": 1,
-    "src/http/chatRoutes.js": 1,
-    "src/http/mediaRoutes.js": 2,
-    "src/http/mobileSyncRoutes.js": 2,
-    "src/media/visionInputs.js": 1,
-    "src/memory/repair.js": 4,
-    "src/providers/openRouterOAuth.js": 1,
-    "src/services/chat/execution/invokeModelNode.js": 1,
-    "src/services/chat/executionPipeline.js": 3,
-    "src/services/chat/imageEditFastPath.js": 1,
-    "src/services/chat/imageTask.js": 2,
-    "src/services/chat/sendChatMessage.js": 1,
-    "src/tools/builtins/imageTool.js": 2,
-    "src/tools/builtins/pdfTool.js": 2,
-    "src/tools/builtins/xlsxTool.js": 1
-   },
-   "hits": [
-    {
-     "file": "src/agents/delegate.js",
-     "line": 19,
-     "text": "if(!normalizeCapabilities(profile.capabilities))return {ok:false,error:'AGENT_MIGRATION_REQUIRED',output:`请先在桌面完成 Agent「${profile.name||profile.id}」的能力迁移，再启动协作。"
-    },
-    {
-     "file": "src/agents/delegate.js",
-     "line": 73,
-     "text": "if(!settings.canDelegate || !scopeAllowsTool(narrowCapabilityScope(resolved?.capabilityScope,{capabilities:context.capabilities}),'delegate') || !settings.deleg"
-    },
-    {
-     "file": "src/agents/team.js",
-     "line": 127,
-     "text": "output:`团队计划 ${plan.maxMinutes} 分钟 / ${plan.maxTokens} token，受当前运行预算限制为约 ${cappedMinutes} 分钟 / ${teamBudget.maxInputTokens} token。`,"
-    },
-    {
-     "file": "src/http/chatRoutes.js",
-     "line": 44,
-     "text": "sendJson(response, entry ? 200 : 409, entry ? { id: entry.id } : { error: '这个对话当前没有进行中的回复。' });"
-    },
-    {
-     "file": "src/http/mediaRoutes.js",
-     "line": 66,
-     "text": "if (!size) { sendJson(response, 404, { error: '视频不存在。' }); return; }"
-    },
-    {
-     "file": "src/http/mediaRoutes.js",
-     "line": 78,
-     "text": "if (!path || size === null) { sendJson(response, 404, { error: '附件不存在。' }); return; }"
-    },
-    {
-     "file": "src/http/mobileSyncRoutes.js",
-     "line": 52,
-     "text": "sendJson(response,403,{error:'能力放宽只能在本机桌面设置中确认。'});return true;"
-    },
-    {
-     "file": "src/http/mobileSyncRoutes.js",
-     "line": 115,
-     "text": "sendJson(response,413,{error:'同步资料超过 8 MiB 容量，原记录已保留。请先导出备份并减少同步资料。'});"
-    },
-    {
-     "file": "src/media/visionInputs.js",
-     "line": 93,
-     "text": "output: `原图 ${metadata.width} × ${metadata.height}${crop ? ' · 使用指定裁切区域' : ''} · 精度 ${selectedDetail}；图片准备完成不等于已验证理解正确`,"
-    },
-    {
-     "file": "src/memory/repair.js",
-     "line": 106,
-     "text": "if (!available) issues.push({ code: 'offline', message: '嵌入服务未响应；当前使用关键词检索。' });"
-    },
-    {
-     "file": "src/memory/repair.js",
-     "line": 107,
-     "text": "if (provider && dims !== EMBEDDING_DIMS) issues.push({ code: 'dimensions', message: `模型报告 ${dims} 维，索引需要 ${EMBEDDING_DIMS} 维。` });"
-    },
-    {
-     "file": "src/memory/repair.js",
-     "line": 108,
-     "text": "if (snapshot.embedding.storedModelId && provider && snapshot.embedding.storedModelId !== provider.modelId) issues.push({ code: 'model_changed', message: '嵌入模型已变"
-    },
-    {
-     "file": "src/memory/repair.js",
-     "line": 109,
-     "text": "if ((snapshot.counts.vecMemories || 0) < (snapshot.counts.memories || 0)) issues.push({ code: 'missing_index', message: '部分记忆尚未建立语义索引。' });"
-    },
-    {
-     "file": "src/providers/openRouterOAuth.js",
-     "line": 63,
-     "text": "if (!abort.signal.aborted) { entry.status = 'failed'; entry.error = '授权未保存，连接可能已变更或授权服务不可用。请返回 Melo 重试。'; }"
-    },
-    {
-     "file": "src/services/chat/execution/invokeModelNode.js",
-     "line": 253,
-     "text": "outputMessageId:'output.budget',outputMessageParams:{reason:exhausted.reason,calls:exhausted.usage.providerCalls,tokens:exhausted.usage.inputTokens,tools:exhaus"
-    },
-    {
-     "file": "src/services/chat/executionPipeline.js",
-     "line": 34,
-     "text": "publish({ id, name, status: 'running', model: options.model, input: `请求模型：${options.model || '服务默认'}`, output: '等待服务返回' });"
-    },
-    {
-     "file": "src/services/chat/executionPipeline.js",
-     "line": 54,
-     "text": "publish({ id, status: 'running', output: '正在接收模型输出', api });"
-    },
-    {
-     "file": "src/services/chat/executionPipeline.js",
-     "line": 87,
-     "text": "publish({ id, status: options.signal?.aborted || error?.name === 'AbortError' ? 'cancelled' : 'failed', api, output: '未取得完整响应' });"
-    },
-    {
-     "file": "src/services/chat/imageEditFastPath.js",
-     "line": 324,
-     "text": "output: `请求质量：${result.requestedQuality || imageSettings(config).quality} · 返回质量：${result.reportedQuality || '服务未报告'}`,"
-    },
-    {
-     "file": "src/services/chat/imageTask.js",
-     "line": 300,
-     "text": "output: `已保存图片 · 请求模型：${requestModel} · 返回模型：${result.reportedModel || '服务未报告'} · 请求质量：${settings.quality} · 返回质量：${result.reportedQuality || '服务未报告'}`,"
-    },
-    {
-     "file": "src/services/chat/imageTask.js",
-     "line": 364,
-     "text": "output: '核对未完成，已生成图片保留',"
-    },
-    {
-     "file": "src/services/chat/sendChatMessage.js",
-     "line": 569,
-     "text": "executionRecorder?.event({ kind: 'pipeline', id: 'reply:save', status: 'completed', output: '回答与引用已保存，可交付界面' });"
-    },
-    {
-     "file": "src/tools/builtins/imageTool.js",
-     "line": 262,
-     "text": "if (output && !isAbsolute(output) && !workspacePath) return {ok:false,error:'WORKSPACE_REQUIRED',output:'此操作需要明确的工作目录。',meta:{executionStarted:false}};"
-    },
-    {
-     "file": "src/tools/builtins/imageTool.js",
-     "line": 506,
-     "text": "if (!isAbsolute(inputPath) && !workspacePath) return {ok:false,error:'WORKSPACE_REQUIRED',output:'此操作需要明确的工作目录。',meta:{executionStarted:false}};"
-    },
-    {
-     "file": "src/tools/builtins/pdfTool.js",
-     "line": 722,
-     "text": "if (!abs) return {error:'此操作需要明确的工作目录。',errorCode:'WORKSPACE_REQUIRED'};"
-    },
-    {
-     "file": "src/tools/builtins/pdfTool.js",
-     "line": 835,
-     "text": "if (!absPath) return {ok:false,error:'WORKSPACE_REQUIRED',output:'此操作需要明确的工作目录。',meta:{executionStarted:false}};"
-    },
-    {
-     "file": "src/tools/builtins/xlsxTool.js",
-     "line": 93,
-     "text": "if (path && !isAbsolute(path) && !workspacePath) return {ok:false,error:'WORKSPACE_REQUIRED',output:'此操作需要明确的工作目录。',meta:{executionStarted:false}};"
-    }
-   ]
+   "scanned": 456,
+   "count": 0,
+   "files": 0,
+   "byFile": {},
+   "hits": []
   },
   "H9": {
    "title": "按用户消息脚本选回复语言",
    "severity": "high",
    "note": "同 H2，针对\"中 / 英二选一\"的落点",
-   "scanned": 690,
-   "count": 1,
-   "files": 1,
-   "byFile": {
-    "desktop-ui/app.js": 1
-   },
-   "hits": [
-    {
-     "file": "desktop-ui/app.js",
-     "line": 2409,
-     "text": "if (/[\\u4E00-\\u9FFF\\u3400-\\u4DBF\\uF900-\\uFAFF]/.test(text)) return 'zh';"
-    }
-   ]
+   "scanned": 691,
+   "count": 0,
+   "files": 0,
+   "byFile": {},
+   "hits": []
   },
   "H10": {
    "title": "桌面 JS 里的原始色值",
@@ -1079,17 +828,17 @@
     },
     {
      "file": "desktop-ui/app.js",
-     "line": 667,
+     "line": 668,
      "text": "<span class=\"toolbar-icon\" style=\"width:14px;height:14px\">${icon.speak}</span>"
     },
     {
      "file": "desktop-ui/app.js",
-     "line": 4148,
+     "line": 4144,
      "text": "<div class=\"tree-row is-directory\" style=\"padding-left:${indent}px\">"
     },
     {
      "file": "desktop-ui/app.js",
-     "line": 4160,
+     "line": 4156,
      "text": "style=\"padding-left:${indent}px\""
     },
     {
@@ -1378,7 +1127,7 @@
    "title": "只认 === '1' 的环境开关",
    "severity": "medium",
    "note": "行为开关进 config + 设置页\"高级\"，debug 开关集中一份文档",
-   "scanned": 623,
+   "scanned": 624,
    "count": 0,
    "files": 0,
    "byFile": {},
@@ -1388,7 +1137,7 @@
    "title": "问候 / 确认词表副本",
    "severity": "medium",
    "note": "一份共享词表",
-   "scanned": 487,
+   "scanned": 488,
    "count": 2,
    "files": 2,
    "byFile": {
@@ -1632,122 +1381,17 @@
    "title": "写死的语言默认值 zh-CN",
    "severity": "medium",
    "note": "默认语言跟系统 / 设置",
-   "scanned": 802,
-   "count": 18,
-   "files": 13,
-   "byFile": {
-    "desktop-app/main.swift": 1,
-    "desktop-ui/features/chat/controller.js": 1,
-    "desktop-ui/features/chat/viewComposer.js": 1,
-    "desktop-ui/i18n.js": 2,
-    "desktop-ui/voiceInput.js": 1,
-    "ios/Melo/ContentView.swift": 1,
-    "ios/Melo/ExecutionWorkspace.swift": 1,
-    "ios/Melo/LanguagePicker.swift": 1,
-    "ios/Melo/LocalSettingsView.swift": 5,
-    "ios/Melo/MeloApp.swift": 1,
-    "ios/Melo/SystemSpeechInput.swift": 1,
-    "ios/Melo/VideoStudy.swift": 1,
-    "ios/Melo/VoiceInput.swift": 1
-   },
-   "hits": [
-    {
-     "file": "desktop-app/main.swift",
-     "line": 665,
-     "text": "locale: payload[\"language\"] as? String ?? \"zh-CN\")"
-    },
-    {
-     "file": "desktop-ui/features/chat/controller.js",
-     "line": 534,
-     "text": "voiceInput.start(voiceLanguage() || 'zh-CN');"
-    },
-    {
-     "file": "desktop-ui/features/chat/viewComposer.js",
-     "line": 277,
-     "text": "${[['zh-CN', t(\"中文\")], ['en-US', 'English'], ['system', t(\"系统语言\")]].map(([value, label]) => ui`<option value=\"${value}\" ${(voiceLanguage() || 'zh-CN') === value"
-    },
-    {
-     "file": "desktop-ui/i18n.js",
-     "line": 6,
-     "text": "export const normalizeLanguage = value => LANGUAGES.some(language => language.id === value) ? value : 'zh-CN';"
-    },
-    {
-     "file": "desktop-ui/i18n.js",
-     "line": 7,
-     "text": "let language = 'zh-CN';"
-    },
-    {
-     "file": "desktop-ui/voiceInput.js",
-     "line": 80,
-     "text": "function start(language = 'zh-CN') {"
-    },
-    {
-     "file": "ios/Melo/ContentView.swift",
-     "line": 265,
-     "text": "@AppStorage(\"melo.voiceLanguage\") private var voiceLanguage = \"zh-CN\""
-    },
-    {
-     "file": "ios/Melo/ExecutionWorkspace.swift",
-     "line": 97,
-     "text": "@AppStorage(\"melo.interfaceLanguage\") private var interfaceLanguage = \"zh-CN\""
-    },
-    {
-     "file": "ios/Melo/LanguagePicker.swift",
-     "line": 4,
-     "text": "@AppStorage(\"melo.interfaceLanguage\") private var language = \"zh-CN\""
-    },
-    {
-     "file": "ios/Melo/LocalSettingsView.swift",
-     "line": 37,
-     "text": "var interfaceLanguage = \"zh-CN\""
-    },
-    {
-     "file": "ios/Melo/LocalSettingsView.swift",
-     "line": 41,
-     "text": "init(interfaceLanguage: String = \"zh-CN\", textSize: String = \"system\", reduceMotion: Bool = false, notifications: Bool = false) {"
-    },
-    {
-     "file": "ios/Melo/LocalSettingsView.swift",
-     "line": 82,
-     "text": "var language = \"zh-CN\""
-    },
-    {
-     "file": "ios/Melo/LocalSettingsView.swift",
-     "line": 84,
-     "text": "static func read() -> Self { .init(language: UserDefaults.standard.string(forKey: \"melo.voiceLanguage\") ?? \"zh-CN\", autoSpeak: UserDefaults.standard.bool(forKey"
-    },
-    {
-     "file": "ios/Melo/LocalSettingsView.swift",
-     "line": 201,
-     "text": "let preference = UserDefaults.standard.string(forKey: \"melo.voiceLanguage\") ?? \"zh-CN\""
-    },
-    {
-     "file": "ios/Melo/MeloApp.swift",
-     "line": 9,
-     "text": "@AppStorage(\"melo.interfaceLanguage\") private var interfaceLanguage = \"zh-CN\""
-    },
-    {
-     "file": "ios/Melo/SystemSpeechInput.swift",
-     "line": 42,
-     "text": "let language = locale == \"system\" ? (Locale.preferredLanguages.first ?? \"zh-CN\") : locale"
-    },
-    {
-     "file": "ios/Melo/VideoStudy.swift",
-     "line": 51,
-     "text": "static func digest(url: URL, name: String, locale: String = Locale.preferredLanguages.first ?? \"zh-CN\") async throws -> VideoDigest {"
-    },
-    {
-     "file": "ios/Melo/VoiceInput.swift",
-     "line": 46,
-     "text": "func start(id: String = UUID().uuidString, locale: String = \"zh-CN\", commit: ((String) -> Void)? = nil) {"
-    }
-   ]
+   "scanned": 803,
+   "count": 0,
+   "files": 0,
+   "byFile": {},
+   "hits": []
   },
   "H20": {
    "title": "TODO / FIXME / HACK",
    "severity": "info",
    "note": "",
-   "scanned": 802,
+   "scanned": 803,
    "count": 3,
    "files": 3,
    "byFile": {

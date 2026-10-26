@@ -10,8 +10,8 @@
     "H2": {
       "new": 0,
       "closed": 0,
-      "count": 8,
-      "baselineCount": 8
+      "count": 0,
+      "baselineCount": 0
     },
     "H3": {
       "new": 0,
@@ -40,20 +40,20 @@
     "H7": {
       "new": 0,
       "closed": 0,
-      "count": 7,
-      "baselineCount": 7
+      "count": 0,
+      "baselineCount": 0
     },
     "H8": {
       "new": 0,
       "closed": 0,
-      "count": 27,
-      "baselineCount": 27
+      "count": 0,
+      "baselineCount": 0
     },
     "H9": {
       "new": 0,
       "closed": 0,
-      "count": 1,
-      "baselineCount": 1
+      "count": 0,
+      "baselineCount": 0
     },
     "H10": {
       "new": 0,
@@ -112,8 +112,8 @@
     "H19": {
       "new": 0,
       "closed": 0,
-      "count": 18,
-      "baselineCount": 18
+      "count": 0,
+      "baselineCount": 0
     },
     "H20": {
       "new": 0,

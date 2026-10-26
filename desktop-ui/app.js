@@ -1,3 +1,4 @@
+import { detectReplyLanguage } from '../shared/agent/locale.js';
 import { beginFormSubmission, decorateActionForms } from './actionForms.js';
 import { editBehaviorSettings, handleBehaviorSettings } from './behaviorSettings.js';
 import { escapeHtml } from './html.js';
@@ -2405,12 +2406,7 @@ function _speakWithNativeBridge(text, messageId) {
   return true;
 }
 
-function _detectLang(text) {
-  if (/[\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFF]/.test(text)) return 'zh';
-  if (/[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]/.test(text)) return 'ko';
-  if (/[\u3040-\u309F\u30A0-\u30FF]/.test(text)) return 'ja';
-  return '';
-}
+function _detectLang(text) { return detectReplyLanguage(text) || ''; }
 
 // ── Streaming TTS sentence queue ──────────────────────────────────────────────
 // Detects sentence boundaries in streaming text, sends each sentence to the

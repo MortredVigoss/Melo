@@ -19,7 +19,7 @@ export function observeModelReplies(provider, emit) {
   return async options => {
     const round = ++serial;
     const id = `model:${round}`;
-    const name = options.providerProfile === 'fast' ? '核验模型请求' : '模型请求';
+    const messageId = options.providerProfile === 'fast' ? 'stage.verifyModel' : 'stage.model';
     const started = Date.now();
     let receiving = false, receipt, summary = '', lastSummaryAt = 0, lastMetadataAt = 0, closed = false;
     let api = {};
@@ -30,8 +30,8 @@ export function observeModelReplies(provider, emit) {
       api = { ...api, ...next, ...((api.usage || next.usage) ? { usage: { ...api.usage, ...next.usage } } : {}) };
     };
     const summaryId = `${id}:summary`;
-    const summarize = status => publish({ id: summaryId, module: 'compute', channel: 'reasoning-summary', name: `第 ${round} 轮 · 公开推理摘要`, status, model: options.model, output: summary, api });
-    publish({ id, name, status: 'running', model: options.model, input: `请求模型：${options.model || '服务默认'}`, output: '等待服务返回' });
+    const summarize = status => publish({ id: summaryId, module: 'compute', channel: 'reasoning-summary', messageId: 'stage.summary', messageParams: {round}, status, model: options.model, output: summary, api });
+    publish({ id, messageId, status: 'running', model: options.model, input: options.model || '', outputMessageId: 'output.waiting' });
     try {
       const reply = await provider({
         ...options,
@@ -51,7 +51,7 @@ export function observeModelReplies(provider, emit) {
           if (chunk?.delta || chunk?.text) { firstEvent(); api.firstTextMs ??= elapsed(); }
           if (!receiving && (chunk?.delta || chunk?.text)) {
             receiving = true;
-            publish({ id, status: 'running', output: '正在接收模型输出', api });
+            publish({ id, status: 'running', outputMessageId: 'output.receiving', api });
           }
           return options.onDelta(chunk);
         } } : {}),
@@ -78,13 +78,14 @@ export function observeModelReplies(provider, emit) {
       api.durationMs = elapsed(); api.outputCharacters = modelReplyText(reply).length;
       const status = options.signal?.aborted ? 'cancelled' : ['incomplete', 'interrupted'].includes(api.responseStatus) ? 'interrupted' : api.responseStatus === 'failed' ? 'failed' : 'completed';
       if (summary) summarize(status);
-      publish({ id, name: receipt?.simulated ? '模拟响应' : name, status, api, returnedModel: receipt?.reportedModel || api.reportedModel || '',
-        output: `${receipt?.simulated ? '模拟返回' : status === 'completed' ? '模型返回完成' : '响应未完整结束'} · 收到 ${modelReplyText(reply).length} 个字符${pendingToolCalls(reply) ? ` · ${pendingToolCalls(reply)} 个工具请求待执行` : ''}${api.reportedModel ? ` · 服务返回模型：${api.reportedModel}` : ' · 服务未报告模型标识'}` });
+      publish({ id, messageId: receipt?.simulated ? 'stage.simulated' : messageId, status, api, returnedModel: receipt?.reportedModel || api.reportedModel || '',
+        outputMessageId: receipt?.simulated ? 'output.modelSimulated' : status === 'completed' ? 'output.modelCompleted' : 'output.modelInterrupted',
+        outputMessageParams: {characters: modelReplyText(reply).length, tools: pendingToolCalls(reply), model: api.reportedModel || {messageId:'value.unreported'}} });
       return reply;
     } catch (error) {
       closed = true; api.durationMs = elapsed();
       if (summary) summarize(options.signal?.aborted || error?.name === 'AbortError' ? 'cancelled' : 'failed');
-      publish({ id, status: options.signal?.aborted || error?.name === 'AbortError' ? 'cancelled' : 'failed', api, output: '未取得完整响应' });
+      publish({ id, status: options.signal?.aborted || error?.name === 'AbortError' ? 'cancelled' : 'failed', api, outputMessageId: 'output.incomplete' });
       throw error;
     }
   };

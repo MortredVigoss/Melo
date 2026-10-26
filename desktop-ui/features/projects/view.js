@@ -118,7 +118,7 @@ function renderProjectsOverview() {
 
 function renderProjectCard(item) {
   if (item.deletedAt) return ui`<section class="project-card">
-    <h2>${escapeHtml(item.name)}</h2><p>项目已删除；聊天、资料、图片和原文件夹保留。</p>
+    <h2>${escapeHtml(item.nameKey ? t(item.nameKey) : item.name)}</h2><p>项目已删除；聊天、资料、图片和原文件夹保留。</p>
     <p>原项目记忆保留在旧范围，旧审批不会恢复。</p>
     <button class="small-button" data-action="restore-deleted-project" data-project-id="${escapeHtml(item.id)}" ${projectsState.lifecycleBusy?'disabled':''}>恢复为新项目</button>
   </section>`;

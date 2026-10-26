@@ -57,7 +57,7 @@ const RULES = [
     pattern: /(?:\/\^?(?:gpt|claude|gemini|llama|qwen|deepseek|o[134])[^/]*\/[gimsuy]*|['"](?:gpt-[0-9][\w.-]*|gpt-image[\w.-]*|claude-[\w.-]+|gemini-[\w.-]+|llama[\w.:-]*|whisper-[\w.-]+|speech-0\d[\w-]*|tts-1[\w-]*)['"])/,
     note: '能力标志应来自模型目录；默认名只留目录模块' },
   { id: 'H2', title: '用汉字 / CJK 正则判断语言或内容', severity: 'high',
-    files: /\.js$/, allow: /^(?:shared\/agent\/locale\.js|src\/search\/tokenizer\.js|src\/memory\/(?:conversationIndex|knowledgeIndex|store)\.js|src\/agents\/skillTokenize\.js|src\/tools\/builtins\/knowledgeTool\.js|src\/domain\/message\/messageBlocks\.js|desktop-ui\/features\/chat\/viewMessage\.js)$/,
+    files: /\.js$/, allow: /^(?:shared\/agent\/(?:locale|completion)\.js|src\/services\/chat\/dynamicContext\.js|src\/services\/remote\/telegramAddressHelpers\.js|src\/shared\/(?:conversationTopics|executionScene)\.js|src\/search\/tokenizer\.js|src\/memory\/(?:conversationIndex|knowledgeIndex|store)\.js|src\/agents\/skillTokenize\.js|src\/tools\/builtins\/knowledgeTool\.js|src\/domain\/message\/messageBlocks\.js|desktop-ui\/features\/chat\/viewMessage\.js)$/,
     pattern: /\\u(?:4e00|4E00|3400)-\\u(?:9fff|9FFF)|\\p\{Script=Han\}|\[一-龥\]/,
     note: '语言选择应来自对话 / 界面 / Agent 设置；分词与索引模块例外' },
   { id: 'H3', title: '本机地址与端口字面量', severity: 'high',

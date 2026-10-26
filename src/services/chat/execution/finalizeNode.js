@@ -23,7 +23,7 @@ import { parseUncertaintyMarker, verifyUncertainClaim, applyVerificationToReply 
 export function createFinalizeNode(turn) {
   const { background, config, createReply, env, isRemoteChannel, latestUserMessage, modelOverrides, modelResponses, signal, sseEmitter } = turn;
   return async function finalize(graphState) {
-    sseEmitter?.('execution_event', { kind: 'pipeline', id: 'reply:format', name: '整理回答与引用', status: 'running', output: '处理返回文字、引用与消息格式' });
+    sseEmitter?.('execution_event', { kind: 'pipeline', id: 'reply:format', messageId: 'stage.format', status: 'running', outputMessageId: 'output.format' });
     const channelKind = isRemoteChannel ? 'remote' : 'desktop';
     const parsed = parseUncertaintyMarker(graphState.reply);
     const shouldVerify =
@@ -146,7 +146,7 @@ export function createFinalizeNode(turn) {
       normalizedReply.modelResponses = modelResponses;
       normalizedReply.usage = summarizePricedUsage(modelResponses, config.modelPricing);
     }
-    sseEmitter?.('execution_event', { kind: 'pipeline', id: 'reply:format', status: 'completed', output: '回答格式与引用整理完成' });
+    sseEmitter?.('execution_event', { kind: 'pipeline', id: 'reply:format', status: 'completed', outputMessageId: 'output.formatted' });
     sseEmitter?.('reply_text', { text: normalizedReply.content, final: true });
 
     return {

@@ -1,5 +1,6 @@
+import { runtimeStageName, runtimeStageOutput } from '../../shared/agent/runtimeMessages.js';
 import { visualColor } from './visualTokens.js';
-const sceneMessageParams = value => Object.fromEntries(Object.entries(value || {}).filter(([k,v])=>/^[a-zA-Z][a-zA-Z0-9_]{0,39}$/.test(k) && (typeof v === 'string' || typeof v === 'number' && Number.isFinite(v))).slice(0,16).map(([k,v])=>[k,typeof v === 'string' ? v.slice(0,300) : v]));
+const sceneMessageParams = value => Object.fromEntries(Object.entries(value || {}).filter(([k,v])=>/^[a-zA-Z][a-zA-Z0-9_]{0,39}$/.test(k) && (typeof v === 'string' || typeof v === 'number' && Number.isFinite(v) || v && typeof v === 'object' && /^value\.[a-zA-Z0-9_]{1,40}$/.test(v.messageId))).slice(0,16).map(([k,v])=>[k,typeof v === 'string' ? v.slice(0,300) : typeof v === 'object' ? {messageId:v.messageId} : v]));
 export { sessionEvents } from './sessionEvents.js';
 import { executionMetadata, publicSummaryText } from './executionMetadata.js';
 
@@ -146,9 +147,12 @@ export function applyExecutionEvent(scene, event) {
       if (event.name !== undefined && !event.messageId) { delete stage.messageId; delete stage.messageParams; }
       if (typeof event.outputMessageId === 'string') { stage.outputMessageId = sceneText(event.outputMessageId, 100); stage.outputMessageParams = sceneMessageParams(event.outputMessageParams); }
       if (typeof event.messageId === 'string') { stage.messageId = sceneText(event.messageId, 100); stage.messageParams = sceneMessageParams(event.messageParams); }
-      for (const key of ['status', 'name', 'input', 'output', 'model', 'returnedModel']) {
+      for (const key of ['status', 'name', 'input', 'output', 'model', 'returnedModel', 'actorName']) {
         if (event[key] !== undefined) stage[key] = sceneText(event[key], key === 'output' && event.channel === 'reasoning-summary' ? 24000 : 1000);
       }
+      // Retain a readable fallback for the frozen v1 sync shape. UI uses IDs.
+      if (stage.messageId) stage.name = runtimeStageName(stage, 'en');
+      if (stage.outputMessageId) stage.output = runtimeStageOutput(stage, 'en');
       if(event.handoff && typeof event.handoff==='object') {stage.handoff=event.handoff;stage.agentId=sceneText(event.agentId,100);stage.memberId=sceneText(event.memberId,100);}
       // Bug audit U5: first sighting of a stage is its start, whatever status
       // it arrives with (a completed-only stage used to have no time at all).
@@ -167,9 +171,12 @@ export function applyExecutionEvent(scene, event) {
     if (!op) { op = { id: event.id, module: event.module || 'tools', name: sceneText(event.name, 100), status: 'queued' }; scene.operations.push(op); }
     const wasTerminal = ['completed', 'failed', 'cancelled'].includes(op.status);
     if (!wasTerminal || ['completed', 'failed', 'cancelled'].includes(event.status)) {
+      if (event.output !== undefined && !event.outputMessageId) { delete op.outputMessageId; delete op.outputMessageParams; }
+      if (typeof event.outputMessageId === 'string') { op.outputMessageId = sceneText(event.outputMessageId, 100); op.outputMessageParams = sceneMessageParams(event.outputMessageParams); }
       for (const key of ['status', 'input', 'output', 'errorCode', 'provider', 'expression', 'result', 'query', 'resultSummary']) {
         if (event[key] !== undefined) op[key] = sceneText(event[key], key === 'output' ? 2200 : 1000);
       }
+      if (op.outputMessageId) op.output = runtimeStageOutput(op, 'en');
       if (EXECUTION_MODULES.some(m => m.id === event.module)) op.module = event.module;
       if (event.change) op.change = { path: sceneText(event.change.path, 2000), before: sceneText(event.change.before, 8000), after: sceneText(event.change.after, 8000), truncated: !!event.change.truncated, kind: sceneText(event.change.kind, 40) };
       if (event.command) op.command = sceneText(event.command, 2000);

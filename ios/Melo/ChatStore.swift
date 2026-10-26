@@ -524,7 +524,7 @@ import SwiftUI
             self.rejectApprovals(chatID: chatID)
             self.runs[chatID]?.task?.cancel()
         }
-        let replyLanguage = PhoneReplyLanguage.resolve(clean, agent: selectedAgent.replyLanguage)
+        let replyLanguage = PhoneReplyLanguage.resolve(clean, agent: selectedAgent.replyLanguage, history: (chats.first(where: { $0.id == chatID })?.messages ?? []).map { ["role": $0.role, "content": $0.content] })
         runs[chatID]?.task = Task { await PhoneReplyLanguage.$current.withValue(replyLanguage) { await PhoneContextBudget.$current.withValue(contextBudget) {
             var completed = false
             defer {

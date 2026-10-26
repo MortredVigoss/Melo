@@ -13,7 +13,7 @@ test('model stream boundaries remain separate from tools and never store draft t
   }, (type, event) => { assert.equal(type, 'execution_event'); applyExecutionEvent(scene, event); states.push(structuredClone(event)); });
   const reply = await call({ model: 'requested-model', onDelta: chunk => deltas.push(chunk) });
   assert.equal(reply, 'final result'); assert.equal(deltas.length, 2);
-  assert.equal(states.length, 3); assert.match(states[1].output, /正在接收/);
+  assert.equal(states.length, 3); assert.equal(states[1].outputMessageId, 'output.receiving'); assert.equal(states[1].output, undefined);
   assert.equal(scene.operations.length, 0); assert.equal(scene.pipeline.length, 1);
   assert.equal(scene.pipeline[0].returnedModel, 'actual-model');
   assert.doesNotMatch(JSON.stringify(scene), /private draft|final result/);

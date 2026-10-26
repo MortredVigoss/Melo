@@ -94,7 +94,7 @@ struct ExecutionWorkspace: View {
 }
 
 struct ExecutionWebView: UIViewRepresentable {
-    @AppStorage("melo.interfaceLanguage") private var interfaceLanguage = "zh-CN"
+    @AppStorage("melo.interfaceLanguage") private var interfaceLanguage = InterfaceLanguage.system.rawValue
     let chatID: String
     let runID: String?
     let records: [ExecutionRecord]

@@ -1,3 +1,4 @@
+import { serverText } from '../shared/serverText.js';
 import {projectMemoryFor} from '../services/chat/projectMemorySync.js';
 import {validateAgentSettings,refreshAgentSettings,applyAgentSettings,confirmAgentSettings} from '../../mobile-sync/agentSettings.js';
 import {mergeWorkspaces} from '../../mobile-sync/workspaceProtocol.js';
@@ -49,7 +50,7 @@ export async function handleMobileSyncRoute(request, response, url) {
       const address=request.socket?.remoteAddress;
       const origins=new Set(['localhost','127.0.0.1','[::1]'].map(host=>`http://${host}:${request.socket?.localPort}`));
       if(request.method!=='POST'||request.headers.authorization||!['127.0.0.1','::1','::ffff:127.0.0.1'].includes(address)||!origins.has(request.headers.origin)) {
-        sendJson(response,403,{error:'能力放宽只能在本机桌面设置中确认。'});return true;
+        sendJson(response,403,{error:serverText('localCapabilityOnly')});return true;
       }
       const body=await readJsonBody(request);
       await updateStateAtomically(state=>confirmAgentSettings(state,body),{home});
@@ -112,7 +113,7 @@ export async function handleMobileSyncRoute(request, response, url) {
   await finishChatDeletions(home);
   const outgoing = exportMobileSnapshot(state,{workspace:true});
   if (Buffer.byteLength(JSON.stringify(outgoing)) > 8 * 1024 * 1024) {
-    sendJson(response,413,{error:'同步资料超过 8 MiB 容量，原记录已保留。请先导出备份并减少同步资料。'});
+    sendJson(response,413,{error:serverText('syncLimit')});
   } else sendJson(response,200,outgoing);
   return true;
 }

@@ -98,7 +98,7 @@ test('cancelling inspection keeps the delivered image and cancellation state in 
   await assert.rejects(f.send('cancel',{imageTask:{action:'generate',count:2,inspect:true},signal:controller.signal,
     onDelta:async()=>{snapshotAtDelivery=await f.state();},
     sseEmitter:(kind,event)=>{
-      if(kind==='execution_event'&&event.name==='核对图片结果'&&event.status==='running')controller.abort();
+      if(kind==='execution_event'&&event.messageId==='stage.imageCheck'&&event.status==='running')controller.abort();
       if(kind==='execution_scene'&&event.scene.status==='cancelled')finish(event.scene);
     },
   }),{name:'AbortError'});

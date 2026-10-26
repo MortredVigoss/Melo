@@ -6,7 +6,7 @@ import SwiftUI
     }
 
     @Environment(\.dynamicTypeSize) private var systemTextSize
-    @AppStorage("melo.interfaceLanguage") private var interfaceLanguage = "zh-CN"
+    @AppStorage("melo.interfaceLanguage") private var interfaceLanguage = InterfaceLanguage.system.rawValue
     @AppStorage("melo.textSize") private var textSize = "system"
     private var effectiveTextSize: DynamicTypeSize { textSize == "large" ? max(systemTextSize,.xLarge) : textSize == "larger" ? max(systemTextSize,.xxxLarge) : systemTextSize }
     @StateObject private var store: ChatStore = {

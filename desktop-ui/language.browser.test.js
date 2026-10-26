@@ -55,6 +55,32 @@ test('interface language switches, persists, and never rewrites user content or 
     await switchTo('en');
     await page.reload(); await page.locator('#composer').waitFor();
     assert.equal(await page.locator('html').getAttribute('lang'),'en');
+    // Real HTTP boundary: the shared API sends the selected locale and the
+    // server renders errors in that request's language, not the machine's.
+    const localizedError = await page.evaluate(async () => {
+      const {createChatApi} = await import('/features/chat/api.js');
+      const response = await createChatApi(() => {}).postSupplement('density-chat', 'extra');
+      return {status:response.status,body:await response.json()};
+    });
+    assert.equal(localizedError.status,409);
+    assert.equal(localizedError.body.error,'This conversation has no reply in progress.');
+    await page.evaluate(async () => {
+      const panel=await import('/executionPanel.js');
+      const {createExecutionScene,applyExecutionEvent}=await import('/shared/executionScene.js');
+      const scene=createExecutionScene({runId:'language-events',chatId:'density-chat',query:'Please explain the result'});
+      applyExecutionEvent(scene,{kind:'pipeline',id:'model:1',messageId:'stage.model',status:'completed',model:'fixture-model',outputMessageId:'output.modelCompleted',outputMessageParams:{characters:42,tools:0,model:{messageId:'value.unreported'}},api:{outputCharacters:42,durationMs:15}});
+      applyExecutionEvent(scene,{kind:'pipeline',id:'model:1:summary',channel:'reasoning-summary',messageId:'stage.summary',messageParams:{round:1},status:'completed',output:'Public summary from the fixture'});
+      panel.syncExecutionPanel({chat:{id:'density-chat',messages:[]},autoCollapse:false,still:true});
+      panel.receiveExecutionScene(scene);
+    });
+    await page.locator('#execution-panel:not([hidden])').waitFor();
+    if(await page.locator('#execution-panel').evaluate(el=>el.classList.contains('is-collapsed'))) await page.locator('[data-execution-action=toggle]').click();
+    await page.locator('[data-module=create]').click();
+    await page.locator('.execution-pipeline [data-operation="model:1"]').click();
+    await page.locator('.execution-detail-output').waitFor();
+    assert.match(await page.locator('.execution-detail-output').innerText(),/42 characters.*Not reported/);
+    assert.doesNotMatch(await page.locator('#execution-panel').innerText(),/\p{Script=Han}/u,'authored execution UI is fully English');
+    await page.screenshot({path:resolve(proof,'execution-english.png')});
     await page.locator('[data-action=settings-open]').click();
     await page.locator('[data-tab=general]').click();
     assert.equal(await page.locator('.local-settings h1').textContent(),'Settings');

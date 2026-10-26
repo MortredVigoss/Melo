@@ -18,5 +18,13 @@ export function resolveReplyLocale({ agentLanguage, text = '', channelLanguage, 
   return normalizeLocale(agentLanguage, '') || detectReplyLanguage(text) || normalizeLocale(channelLanguage, '') || normalizeLocale(interfaceLanguage, '') || normalizeLocale(systemLanguage);
 }
 export function localeOperation(input) {
-  return resolveReplyLocale(input);
+  return replyLocale(input.chat, input.text, input);
+}
+
+// Conversation language is request-local. An attachment-only turn inherits the
+// most recent user language; assistant prose never overrides the user's choice.
+export function replyLocale(chat = {}, userMessage = '', preferences = {}) {
+  const text = [userMessage, ...(chat.messages || []).filter(row => row.role === 'user').reverse().map(row => typeof row.content === 'string' ? row.content : '')]
+    .find(value => detectReplyLanguage(value)) || '';
+  return resolveReplyLocale({ ...preferences, agentLanguage: preferences.agentLanguage || chat.replyLanguage, text });
 }

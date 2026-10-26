@@ -1,6 +1,7 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { resolveRuntimePaths } from './paths.js';
 import { currentRequestContext, requestEnvironment } from './requestScope.js';
+import { normalizeLocale } from '../../shared/agent/locale.js';
 import { createRunBudget } from './runBudget.js';
 
 export function createRequestContext(options = {}) {
@@ -17,6 +18,8 @@ export function createRequestContext(options = {}) {
     : randomUUID());
   return Object.freeze({
     env, paths, home: paths.home,
+    interfaceLanguage: normalizeLocale(options.interfaceLanguage || parent?.interfaceLanguage, ''),
+    replyLocale: normalizeLocale(options.replyLocale || parent?.replyLocale, ''),
     requestId,
     runId,
     chatId: options.chatId || null,

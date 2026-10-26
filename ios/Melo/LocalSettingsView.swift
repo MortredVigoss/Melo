@@ -34,11 +34,11 @@ struct LocalProfileSettings: View {
     }
 }
 struct GeneralSettingsValue: Equatable, Codable {
-    var interfaceLanguage = "zh-CN"
+    var interfaceLanguage = InterfaceLanguage.system.rawValue
     var textSize = "system"
     var reduceMotion = false
     var notifications = false
-    init(interfaceLanguage: String = "zh-CN", textSize: String = "system", reduceMotion: Bool = false, notifications: Bool = false) {
+    init(interfaceLanguage: String = InterfaceLanguage.system.rawValue, textSize: String = "system", reduceMotion: Bool = false, notifications: Bool = false) {
         self.interfaceLanguage = interfaceLanguage; self.textSize = textSize
         self.reduceMotion = reduceMotion; self.notifications = notifications
     }
@@ -79,9 +79,9 @@ struct LocalGeneralSettings: View {
     }
 }
 struct VoiceSettingsValue: Equatable, Codable {
-    var language = "zh-CN"
+    var language = "system"
     var autoSpeak = false
-    static func read() -> Self { .init(language: UserDefaults.standard.string(forKey: "melo.voiceLanguage") ?? "zh-CN", autoSpeak: UserDefaults.standard.bool(forKey: "melo.autoSpeak")) }
+    static func read() -> Self { .init(language: UserDefaults.standard.string(forKey: "melo.voiceLanguage") ?? "system", autoSpeak: UserDefaults.standard.bool(forKey: "melo.autoSpeak")) }
 }
 struct LocalVoiceSettings: View {
     @ObservedObject private var device = LocalDeviceServices.shared
@@ -198,7 +198,7 @@ import WebKit
         guard !plain.isEmpty else { return }
         stopSpeech()
         let utterance = AVSpeechUtterance(string: plain)
-        let preference = UserDefaults.standard.string(forKey: "melo.voiceLanguage") ?? "zh-CN"
+        let preference = UserDefaults.standard.string(forKey: "melo.voiceLanguage") ?? "system"
         let language = SpeechText.voiceLanguage(for: plain, preference: preference)
         // `zh-Hans-CN` style tags are normalised in SpeechText; when no voice has
         // the exact tag, the first installed voice of the same language is used.

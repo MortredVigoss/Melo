@@ -49,7 +49,7 @@ test('externalized attachments are served with their mime type and immutable cac
     assert.equal(response.status, 404, bad);
   }
   const missing = await fetch(base + '/api/media/attachments/11111111-2222-4333-8444-555555555557.png');
-  assert.equal((await missing.json()).error, '附件不存在。');
+  assert.equal((await missing.json()).error, 'Attachment not found.');
   const raw = await new Promise((resolve, reject) => {
     const socket = connect(server.address().port, '127.0.0.1', () => {
       socket.write('GET /api/media/attachments/../../state.json HTTP/1.1\r\nHost: local\r\nConnection: close\r\n\r\n');

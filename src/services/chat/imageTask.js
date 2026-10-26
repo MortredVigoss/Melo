@@ -297,7 +297,7 @@ export async function runImageTask({
       artifacts.push(artifact);
       links.push(`![${artifact.title}](${saved.url})`);
       observe('completed', {
-        output: `已保存图片 · 请求模型：${requestModel} · 返回模型：${result.reportedModel || '服务未报告'} · 请求质量：${settings.quality} · 返回质量：${result.reportedQuality || '服务未报告'}`,
+        outputMessageId: 'output.imageSaved', outputMessageParams: {requestedModel: requestModel, model: result.reportedModel || {messageId:'value.unreported'}, quality:settings.quality,reportedQuality:result.reportedQuality || {messageId:'value.unreported'}},
         artifacts: [artifact],
       });
       await onImageProgress?.({artifacts:[...artifacts],count:jobs.length});
@@ -315,13 +315,13 @@ export async function runImageTask({
         } catch {
           const note = `第 ${index + 1} 张未完成视觉核对：视觉连接不可用，已生成图片保留。`;
           reviews.push(note);
-          emit({kind:'pipeline',id:checkId,name:'核对图片结果',status:'failed',output:note});
+          emit({kind:'pipeline',id:checkId,messageId: 'stage.imageCheck',status:'failed',output:note});
           continue;
         }
         emit({
           kind: 'pipeline',
           id: checkId,
-          name: '核对图片结果',
+          messageId: 'stage.imageCheck',
           status: 'running',
           model: vision.model,
         });
@@ -353,15 +353,15 @@ export async function runImageTask({
           const review = parseImageReview(report);
           const note = formatImageReview(review, index);
           reviews.push(note);
-          emit({kind:'pipeline',id:checkId,name:'核对图片结果',status:'completed',output:note});
+          emit({kind:'pipeline',id:checkId,messageId: 'stage.imageCheck',status:'completed',output:note});
         } catch (error) {
           reviews.push(`第 ${index + 1} 张未完成视觉核对，已生成图片保留。`);
           emit({
             kind: 'pipeline',
             id: checkId,
-            name: '核对图片结果',
+            messageId: 'stage.imageCheck',
             status: signal?.aborted ? 'cancelled' : 'failed',
-            output: '核对未完成，已生成图片保留',
+            outputMessageId: 'output.imageUnchecked',
           });
           if (signal?.aborted) throw error;
         }

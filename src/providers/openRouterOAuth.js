@@ -1,3 +1,4 @@
+import { serverText } from '../shared/serverText.js';
 import { createHash, randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
 import { currentRequestContext, runWithRequestContext } from '../runtime/requestScope.js';
@@ -60,7 +61,7 @@ export async function startOpenRouterOAuth(profileId, { fetchImpl = fetch, lifet
       entry.status = 'completed';
       reply(res, 200, 'OpenRouter 已连接。请返回 Melo 选择模型并测试；用量计入 OpenRouter 账号。');
     } catch (error) {
-      if (!abort.signal.aborted) { entry.status = 'failed'; entry.error = '授权未保存，连接可能已变更或授权服务不可用。请返回 Melo 重试。'; }
+      if (!abort.signal.aborted) { entry.status = 'failed'; entry.error = serverText('oauthNotSaved', {}, context.interfaceLanguage); }
       reply(res, 400, entry.error || '授权已取消。');
     } finally { close(); }
   });

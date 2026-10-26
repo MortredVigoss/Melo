@@ -4,8 +4,8 @@ import JavaScriptCore
 
 enum PhoneReplyLanguage {
     @TaskLocal static var current: String?
-    static func resolve(_ text: String, agent: String? = nil) -> String {
-        SharedLoopPolicy.value("locale", ["agentLanguage": agent ?? "", "text": text, "interfaceLanguage": UserDefaults.standard.string(forKey: "interfaceLanguage") ?? Locale.preferredLanguages.first ?? "en"]) as? String ?? "en"
+    static func resolve(_ text: String, agent: String? = nil, history: [[String: String]] = [], interfaceLanguage: String? = nil) -> String {
+        SharedLoopPolicy.value("locale", ["agentLanguage": agent ?? "", "text": text, "chat": ["messages": history], "interfaceLanguage": interfaceLanguage ?? UserDefaults.standard.string(forKey: "melo.interfaceLanguage") ?? Locale.preferredLanguages.first ?? "en"]) as? String ?? "en"
     }
 }
 

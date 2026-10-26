@@ -394,10 +394,18 @@ function resolveReplyLocale({ agentLanguage, text = '', channelLanguage, interfa
   return normalizeLocale(agentLanguage, '') || detectReplyLanguage(text) || normalizeLocale(channelLanguage, '') || normalizeLocale(interfaceLanguage, '') || normalizeLocale(systemLanguage);
 }
 function localeOperation(input) {
-  return resolveReplyLocale(input);
+  return replyLocale(input.chat, input.text, input);
 }
 
-return { normalizeLocale, detectReplyLanguage, resolveReplyLocale, localeOperation };
+// Conversation language is request-local. An attachment-only turn inherits the
+// most recent user language; assistant prose never overrides the user's choice.
+function replyLocale(chat = {}, userMessage = '', preferences = {}) {
+  const text = [userMessage, ...(chat.messages || []).filter(row => row.role === 'user').reverse().map(row => typeof row.content === 'string' ? row.content : '')]
+    .find(value => detectReplyLanguage(value)) || '';
+  return resolveReplyLocale({ ...preferences, agentLanguage: preferences.agentLanguage || chat.replyLanguage, text });
+}
+
+return { normalizeLocale, detectReplyLanguage, resolveReplyLocale, localeOperation, replyLocale };
 })();
 
 modules["shared/agent/runtimeMessages.js"] = (() => {
@@ -859,29 +867,351 @@ const RUNTIME_MESSAGES = {
     "es": "Se condensaron {count} mensajes en una tarjeta temática."
   },
   "output.budget": {
-    "zh": "本轮达到运行预算：{reason}；模型请求 {calls} 次，输入 {tokens} token，工具 {tools} 次。",
-    "en": "Runtime budget reached: {reason}; {calls} model requests, {tokens} input tokens, {tools} tool calls.",
-    "ja": "実行予算に到達: {reason}。モデル {calls} 回、入力 {tokens} トークン、ツール {tools} 回。",
-    "ko": "실행 예산 도달: {reason}. 모델 {calls}회, 입력 {tokens}토큰, 도구 {tools}회.",
-    "es": "Límite alcanzado: {reason}; {calls} solicitudes, {tokens} tokens de entrada, {tools} llamadas a herramientas."
+    "zh": "本轮达到运行预算：{reason}（已用 {limitText}）；模型请求 {calls} 次，输入 {tokens} token，工具 {tools} 次。",
+    "en": "Runtime budget reached: {reason} (used {limitText}); {calls} model requests, {tokens} input tokens, {tools} tool calls.",
+    "ja": "実行予算に到達: {reason}（使用量 {limitText}）。モデル {calls} 回、入力 {tokens} トークン、ツール {tools} 回。",
+    "ko": "실행 예산 도달: {reason} (사용량 {limitText}). 모델 {calls}회, 입력 {tokens}토큰, 도구 {tools}회.",
+    "es": "Límite alcanzado: {reason} (usado {limitText}); {calls} solicitudes, {tokens} tokens de entrada, {tools} llamadas a herramientas."
+  },
+  "stage.summary": {
+    "zh": "第 {round} 轮 · 公开推理摘要",
+    "en": "Round {round} · Public reasoning summary",
+    "ja": "第 {round} 回 · 公開推論要約",
+    "ko": "{round}회 · 공개 추론 요약",
+    "es": "Ronda {round} · Resumen público del razonamiento"
+  },
+  "output.waiting": {
+    "zh": "等待服务返回",
+    "en": "Waiting for the service",
+    "ja": "サービスの応答を待機中",
+    "ko": "서비스 응답 대기 중",
+    "es": "Esperando al servicio"
+  },
+  "output.receiving": {
+    "zh": "正在接收模型输出",
+    "en": "Receiving model output",
+    "ja": "モデルの出力を受信中",
+    "ko": "모델 출력 수신 중",
+    "es": "Recibiendo la salida del modelo"
+  },
+  "output.incomplete": {
+    "zh": "未取得完整响应",
+    "en": "No complete response received",
+    "ja": "完全な応答を取得できませんでした",
+    "ko": "완전한 응답을 받지 못했습니다",
+    "es": "No se recibió una respuesta completa"
+  },
+  "output.modelCompleted": {
+    "zh": "模型返回完成 · 收到 {characters} 个字符 · {tools} 个工具请求待执行 · 返回模型：{model}",
+    "en": "Model response complete · {characters} characters · {tools} pending tool calls · Reported model: {model}",
+    "ja": "モデル応答完了 · {characters} 文字 · 未実行のツール {tools} 件 · 応答モデル: {model}",
+    "ko": "모델 응답 완료 · {characters}자 · 대기 도구 {tools}개 · 응답 모델: {model}",
+    "es": "Respuesta completa · {characters} caracteres · {tools} herramientas pendientes · Modelo informado: {model}"
+  },
+  "output.modelInterrupted": {
+    "zh": "响应未完整结束 · 收到 {characters} 个字符 · {tools} 个工具请求待执行 · 返回模型：{model}",
+    "en": "Response incomplete · {characters} characters · {tools} pending tool calls · Reported model: {model}",
+    "ja": "応答未完了 · {characters} 文字 · 未実行のツール {tools} 件 · 応答モデル: {model}",
+    "ko": "응답 미완료 · {characters}자 · 대기 도구 {tools}개 · 응답 모델: {model}",
+    "es": "Respuesta incompleta · {characters} caracteres · {tools} herramientas pendientes · Modelo informado: {model}"
+  },
+  "output.modelSimulated": {
+    "zh": "模拟返回 · 收到 {characters} 个字符 · {tools} 个工具请求待执行 · 返回模型：{model}",
+    "en": "Simulated response · {characters} characters · {tools} pending tool calls · Reported model: {model}",
+    "ja": "模擬応答 · {characters} 文字 · 未実行のツール {tools} 件 · 応答モデル: {model}",
+    "ko": "모의 응답 · {characters}자 · 대기 도구 {tools}개 · 응답 모델: {model}",
+    "es": "Respuesta simulada · {characters} caracteres · {tools} herramientas pendientes · Modelo informado: {model}"
+  },
+  "output.saving": {
+    "zh": "写入对话记录",
+    "en": "Writing conversation history",
+    "ja": "会話履歴を保存中",
+    "ko": "대화 기록 저장 중",
+    "es": "Guardando el historial"
+  },
+  "output.saved": {
+    "zh": "回答与引用已保存，可交付界面",
+    "en": "Answer and citations saved, ready for display",
+    "ja": "回答と引用を保存しました。表示できます",
+    "ko": "답변과 인용이 저장되어 표시할 수 있습니다",
+    "es": "Respuesta y citas guardadas, listas para mostrar"
+  },
+  "output.teamBudget": {
+    "zh": "团队计划 {minutes} 分钟 / {tokens} token，受当前运行预算限制为约 {cappedMinutes} 分钟 / {cappedTokens} token。",
+    "en": "Team plan: {minutes} minutes / {tokens} tokens; current run caps it at about {cappedMinutes} minutes / {cappedTokens} tokens.",
+    "ja": "チーム計画: {minutes} 分 / {tokens} トークン。現在の実行予算で約 {cappedMinutes} 分 / {cappedTokens} トークンに制限されます。",
+    "ko": "팀 계획: {minutes}분 / {tokens}토큰. 현재 실행 예산으로 약 {cappedMinutes}분 / {cappedTokens}토큰으로 제한됩니다.",
+    "es": "Plan del equipo: {minutes} minutos / {tokens} tokens; límite actual: unos {cappedMinutes} minutos / {cappedTokens} tokens."
+  },
+  "output.imageSaved": {
+    "zh": "已保存图片 · 请求模型：{requestedModel} · 返回模型：{model} · 请求质量：{quality} · 返回质量：{reportedQuality}",
+    "en": "Image saved · Requested model: {requestedModel} · Reported model: {model} · Requested quality: {quality} · Reported quality: {reportedQuality}",
+    "ja": "画像を保存済み · 要求モデル: {requestedModel} · 応答モデル: {model} · 要求品質: {quality} · 応答品質: {reportedQuality}",
+    "ko": "이미지 저장됨 · 요청 모델: {requestedModel} · 응답 모델: {model} · 요청 품질: {quality} · 응답 품질: {reportedQuality}",
+    "es": "Imagen guardada · Modelo solicitado: {requestedModel} · Informado: {model} · Calidad solicitada: {quality} · Informada: {reportedQuality}"
+  },
+  "output.imageQuality": {
+    "zh": "请求质量：{quality} · 返回质量：{reportedQuality}",
+    "en": "Requested quality: {quality} · Reported quality: {reportedQuality}",
+    "ja": "要求品質: {quality} · 応答品質: {reportedQuality}",
+    "ko": "요청 품질: {quality} · 응답 품질: {reportedQuality}",
+    "es": "Calidad solicitada: {quality} · Informada: {reportedQuality}"
+  },
+  "output.imageUnchecked": {
+    "zh": "核对未完成，已生成图片保留",
+    "en": "Review incomplete; generated images preserved",
+    "ja": "確認は未完了です。生成画像は保持されます",
+    "ko": "검토 미완료. 생성된 이미지는 보존되었습니다",
+    "es": "Revisión incompleta; se conservan las imágenes generadas"
+  },
+  "output.vision": {
+    "zh": "原图 {width} × {height} · 精度 {detail}；图片准备完成不等于已验证理解正确",
+    "en": "Original {width} × {height} · Detail: {detail}; preparation does not verify visual understanding",
+    "ja": "元画像 {width} × {height} · 詳細度: {detail}。準備完了は視覚理解の検証を意味しません",
+    "ko": "원본 {width} × {height} · 정밀도: {detail}. 준비 완료는 시각 이해 검증을 의미하지 않습니다",
+    "es": "Original {width} × {height} · Detalle: {detail}; preparar la imagen no verifica su comprensión"
+  },
+  "output.visionCropped": {
+    "zh": "原图 {width} × {height} · 使用指定裁切区域 · 精度 {detail}；图片准备完成不等于已验证理解正确",
+    "en": "Original {width} × {height} · Requested crop applied · Detail: {detail}; preparation does not verify visual understanding",
+    "ja": "元画像 {width} × {height} · 指定領域で切り抜き · 詳細度: {detail}。準備完了は視覚理解の検証を意味しません",
+    "ko": "원본 {width} × {height} · 지정 영역 자르기 적용 · 정밀도: {detail}. 준비 완료는 시각 이해 검증을 의미하지 않습니다",
+    "es": "Original {width} × {height} · Recorte aplicado · Detalle: {detail}; preparar la imagen no verifica su comprensión"
+  },
+  "output.ocr": {
+    "zh": "提取 {characters} 字符；OCR 置信度 {confidence}，不代表视觉理解准确率",
+    "en": "Extracted {characters} characters; OCR confidence {confidence} does not measure visual understanding",
+    "ja": "{characters} 文字を抽出。OCR 信頼度 {confidence} は視覚理解の精度ではありません",
+    "ko": "{characters}자 추출. OCR 신뢰도 {confidence}는 시각 이해 정확도가 아닙니다",
+    "es": "{characters} caracteres extraídos; la confianza OCR {confidence} no mide la comprensión visual"
+  },
+  "output.ocrEmpty": {
+    "zh": "未提取到可用文字",
+    "en": "No usable text extracted",
+    "ja": "利用可能な文字を抽出できませんでした",
+    "ko": "사용 가능한 텍스트를 추출하지 못했습니다",
+    "es": "No se extrajo texto utilizable"
+  },
+  "value.unreported": {
+    "zh": "服务未报告",
+    "en": "Not reported",
+    "ja": "報告なし",
+    "ko": "보고되지 않음",
+    "es": "No informado"
+  },
+  "stage.model": {
+    "zh": "模型请求",
+    "en": "Model request",
+    "ja": "モデルリクエスト",
+    "ko": "모델 요청",
+    "es": "Solicitud al modelo"
+  },
+  "stage.verifyModel": {
+    "zh": "核验模型请求",
+    "en": "Verification model request",
+    "ja": "検証モデルリクエスト",
+    "ko": "검증 모델 요청",
+    "es": "Solicitud de verificación"
+  },
+  "stage.simulated": {
+    "zh": "模拟响应",
+    "en": "Simulated response",
+    "ja": "模擬応答",
+    "ko": "모의 응답",
+    "es": "Respuesta simulada"
+  },
+  "output.routing": {
+    "zh": "{tier} · {model} · {reason}",
+    "en": "{tier} · {model} · {reason}",
+    "ja": "{tier} · {model} · {reason}",
+    "ko": "{tier} · {model} · {reason}",
+    "es": "{tier} · {model} · {reason}"
+  },
+  "value.routing_light": {
+    "zh": "轻",
+    "en": "Light",
+    "ja": "軽量",
+    "ko": "가벼움",
+    "es": "Ligero"
+  },
+  "value.routing_standard": {
+    "zh": "标准",
+    "en": "Standard",
+    "ja": "標準",
+    "ko": "표준",
+    "es": "Estándar"
+  },
+  "value.routing_strong": {
+    "zh": "强",
+    "en": "Strong",
+    "ja": "高性能",
+    "ko": "고성능",
+    "es": "Potente"
+  },
+  "value.routing_high_risk": {
+    "zh": "高风险任务",
+    "en": "High-risk task",
+    "ja": "高リスクのタスク",
+    "ko": "고위험 작업",
+    "es": "Tarea de alto riesgo"
+  },
+  "value.routing_deep_research": {
+    "zh": "深入研究",
+    "en": "In-depth research",
+    "ja": "詳細調査",
+    "ko": "심층 조사",
+    "es": "Investigación profunda"
+  },
+  "value.routing_task_shape": {
+    "zh": "任务要求",
+    "en": "Task requirements",
+    "ja": "タスク要件",
+    "ko": "작업 요구 사항",
+    "es": "Requisitos de la tarea"
+  },
+  "value.routing_simple": {
+    "zh": "简单任务",
+    "en": "Simple task",
+    "ja": "簡単なタスク",
+    "ko": "간단한 작업",
+    "es": "Tarea sencilla"
+  },
+  "value.routing_ambiguous": {
+    "zh": "默认标准档",
+    "en": "Standard fallback",
+    "ja": "標準にフォールバック",
+    "ko": "표준으로 대체",
+    "es": "Nivel estándar por defecto"
+  },
+  "value.routing_judgment": {
+    "zh": "任务判断",
+    "en": "Task assessment",
+    "ja": "タスク判定",
+    "ko": "작업 판단",
+    "es": "Evaluación de tarea"
+  },
+  "value.routing_requested_escalation": {
+    "zh": "模型请求升档",
+    "en": "Model requested escalation",
+    "ja": "モデルが昇格を要求",
+    "ko": "모델의 상향 요청",
+    "es": "Escalado solicitado por el modelo"
+  },
+  "value.routing_repeated_failure": {
+    "zh": "重复失败",
+    "en": "Repeated failures",
+    "ja": "失敗の繰り返し",
+    "ko": "반복 실패",
+    "es": "Fallos repetidos"
+  },
+  "value.routing_tool_rounds": {
+    "zh": "工具轮次增加",
+    "en": "Additional tool rounds",
+    "ja": "ツール実行回数の増加",
+    "ko": "도구 실행 횟수 증가",
+    "es": "Más rondas de herramientas"
+  },
+  "value.routing_side_effect": {
+    "zh": "有副作用的操作",
+    "en": "Action with side effects",
+    "ja": "副作用のある操作",
+    "ko": "부수 효과가 있는 작업",
+    "es": "Acción con efectos secundarios"
+  },
+  "value.routing_fixed_selection": {
+    "zh": "固定模型",
+    "en": "Fixed model",
+    "ja": "固定モデル",
+    "ko": "고정 모델",
+    "es": "Modelo fijo"
+  },
+  "value.routing_default_model": {
+    "zh": "默认模型",
+    "en": "Default model",
+    "ja": "既定のモデル",
+    "ko": "기본 모델",
+    "es": "Modelo predeterminado"
+  },
+  "value.budget_deadline": {
+    "zh": "时间上限",
+    "en": "Time limit",
+    "ja": "時間上限",
+    "ko": "시간 제한",
+    "es": "Límite de tiempo"
+  },
+  "value.budget_input_tokens": {
+    "zh": "输入 token 上限",
+    "en": "Input token limit",
+    "ja": "入力トークン上限",
+    "ko": "입력 토큰 제한",
+    "es": "Límite de tokens de entrada"
+  },
+  "value.budget_tool_calls": {
+    "zh": "工具调用上限",
+    "en": "Tool call limit",
+    "ja": "ツール呼び出し上限",
+    "ko": "도구 호출 제한",
+    "es": "Límite de llamadas a herramientas"
   }
 };
 function runtimeMessage(id, locale = 'en', params = {}) {
   const row = RUNTIME_MESSAGES[id];
   const text = row?.[normalizeLocale(locale)] || row?.en || id;
+  params = Object.fromEntries(Object.entries(params).map(([key, value]) => [key, value && typeof value === 'object' && typeof value.messageId === 'string' ? runtimeMessage(value.messageId, locale, value.params || {}) : value]));
   return text.replace(/\{(\w+)\}/g, (match, key) => Object.hasOwn(params, key) ? String(params[key]) : match);
+}
+const legacyOutputs = {
+  'stage.model':['output.waiting','output.receiving','output.modelCompleted','output.modelInterrupted','output.modelSimulated','output.incomplete'],
+  'stage.verifyModel':['output.waiting','output.receiving','output.modelCompleted','output.modelInterrupted','output.incomplete'],
+  'stage.simulated':['output.modelSimulated'], 'stage.save':['output.saving','output.saved'],
+  'stage.vision':['output.vision','output.visionCropped'], 'stage.ocr':['output.ocr','output.ocrEmpty'],
+  'stage.teamBudget':['output.teamBudget'], 'stage.routing':['output.routing'],
+  'stage.imageCheck':['output.imageUnchecked'],
+  'stage.compact':['output.compactStart','output.compactFailure','output.compactDone','output.aborted'],
+  'stage.degraded':['output.degraded'], 'stage.restored':['output.restored'],
+  'stage.condense':['output.condensed'], 'stage.format':['output.format','output.formatted'],
+  'stage.budget':['output.budget'],
+};
+const escapePattern = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function legacyMessage(text, ids) {
+  if (typeof text !== 'string' || text.length > 12000) return null;
+  for (const id of ids) for (const template of Object.values(RUNTIME_MESSAGES[id] || {})) {
+    const names = [...template.matchAll(/\{(\w+)\}/g)].map(match=>match[1]);
+    const pattern = template.split(/\{\w+\}/g).map(escapePattern).join('([\\s\\S]*?)');
+    const match = new RegExp('^'+pattern+'$').exec(text);
+    if (!match) continue;
+    return {id, params:Object.fromEntries(names.map((name,index)=>{
+      const value=match[index+1];
+      const label=Object.entries(RUNTIME_MESSAGES).find(([key,row])=>key.startsWith('value.') && Object.values(row).includes(value));
+      return [name,label ? {messageId:label[0]} : value];
+    }))};
+  }
+  return null;
 }
 function executionMessage(event) {
   if (event?.kind !== 'pipeline') return event;
-  const entry = Object.entries(RUNTIME_MESSAGES).find(([id, row]) => id.startsWith('stage.') && row.zh === event.name);
-  const authoredOutput = entry && ['stage.compact','stage.condense','stage.budget','stage.stopped','stage.format','stage.degraded','stage.restored'].includes(entry[0]) || /^(?:compact:|tool-chain:condense:|reply:format)/.test(event.id || '');
-  const output = authoredOutput && Object.entries(RUNTIME_MESSAGES).find(([id, row]) => id.startsWith('output.') && row.zh === event.output);
-  return { ...event, ...(entry ? { messageId: entry[0], messageParams: {} } : {}), ...(output ? { outputMessageId: output[0], outputMessageParams: {} } : {}) };
+  // Compatibility with frozen v1 sync and saved pre-ID records. Match only
+  // known authored stages/outputs; summaries, handoffs and supplements stay opaque.
+  const stageIds = Object.keys(RUNTIME_MESSAGES).filter(id=>id.startsWith('stage.'));
+  let entry = event.messageId ? null : legacyMessage(event.name, stageIds);
+  let actorName = event.actorName;
+  if (!event.messageId && !entry && typeof event.name === 'string') {
+    const parts = event.name.split(' · ');
+    for (let index=1; index<parts.length; index++) {
+      entry=legacyMessage(parts.slice(index).join(' · '),stageIds);
+      if (entry) { actorName=parts.slice(0,index).join(' · '); break; }
+    }
+  }
+  const id = event.messageId || entry?.id;
+  const outputIds = legacyOutputs[id] || (['image','image_edit','native_image_generation'].includes(event.name) ? ['output.imageSaved','output.imageQuality'] : []);
+  const output = event.outputMessageId ? null : legacyMessage(event.output, outputIds);
+  return { ...event, ...(actorName ? {actorName} : {}), ...(entry ? { messageId: entry.id, messageParams: entry.params } : {}), ...(output ? { outputMessageId: output.id, outputMessageParams: output.params } : {}) };
 }
 
 function runtimeStageName(stage, locale) {
   const value = executionMessage({ ...stage, kind: 'pipeline' });
-  return value?.messageId && RUNTIME_MESSAGES[value.messageId] ? runtimeMessage(value.messageId, locale, value.messageParams) : stage?.name || '';
+  const name = value?.messageId && RUNTIME_MESSAGES[value.messageId] ? runtimeMessage(value.messageId, locale, value.messageParams) : stage?.name || '';
+  return value?.actorName ? `${value.actorName} · ${name}` : name;
 }
 
 function runtimeStageOutput(stage, locale) {

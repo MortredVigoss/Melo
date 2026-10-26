@@ -1,3 +1,6 @@
+// This fixture asserts Chinese copy explicitly; production defaults follow the device.
+import { setLanguage as setFixtureLanguage } from './i18n.js';
+setFixtureLanguage('zh-CN');
 // Smoke tests for the Advanced pane renderer.  Pure string output —
 // no DOM, no `uiState` global — so `node --test` is enough.
 

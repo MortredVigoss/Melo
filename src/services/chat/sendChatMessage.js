@@ -1,5 +1,5 @@
 import { captureBehavior } from '../../runtime/runtimeBehavior.js';
-import { resolveReplyLocale } from '../../../shared/agent/locale.js';
+import { replyLocale } from '../../../shared/agent/locale.js';
 import { executionMessage } from '../../../shared/agent/runtimeMessages.js';
 import { connectionForModel } from '../../../shared/agent/modelCapabilities.js';
 import { completionResult } from '../../../shared/agent/completion.js';
@@ -250,7 +250,7 @@ async function executeChatTurn({
     effectiveAgentId,
     activeProject?.id || null,
   );
-  config.replyLanguage = resolveReplyLocale({agentLanguage: activeAgentProfile.replyLanguage, text: trimmed, channelLanguage: channelContext?.language || activeAgentProfile.channels?.[channelContext?.channelId]?.language, interfaceLanguage: state.settings.localPreferences?.interfaceLanguage});
+  config.replyLanguage = replyLocale(chat, trimmed, {agentLanguage: activeAgentProfile.replyLanguage, channelLanguage: channelContext?.language || activeAgentProfile.channels?.[channelContext?.channelId]?.language, interfaceLanguage: context.interfaceLanguage || state.settings.localPreferences?.interfaceLanguage});
   const connectors = buildConnectors(state.settings.enabledConnectorIds, config, workspace, state, activeProject);
   const skills = buildSkills(state.settings.enabledSkillIds, state.settings.customSkills);
 
@@ -358,7 +358,7 @@ async function executeChatTurn({
   let normalizedReply;
   let partialImageMessage;
   try {
-    const graphResult = await runChatAgentExecutionGraph({
+    const graphResult = await runWithRequestContext(Object.freeze({ ...context, replyLocale: config.replyLanguage }), () => runChatAgentExecutionGraph({
       config,
       home,
       context: { ...context, config, workspacePath: workspace.rootPath },
@@ -382,7 +382,7 @@ async function executeChatTurn({
       onReasoningDelta,
       sseEmitter,
       providerProfile,
-    });
+    }));
     signal?.throwIfAborted();
     normalizedReply = graphResult.normalizedReply;
     // Capture CORRECTED verdicts so they can be written into the assistant
@@ -460,7 +460,7 @@ async function executeChatTurn({
     };
   }
 
-  executionRecorder?.event({ kind: 'pipeline', id: 'reply:save', name: '保存回答', status: 'running', output: '写入聊天记录' });
+  executionRecorder?.event({ kind: 'pipeline', id: 'reply:save', messageId: 'stage.save', status: 'running', outputMessageId: 'output.saving' });
   const assistantMessage = {
     id: partialImageMessage?.id || randomUUID(),
     role: 'assistant',
@@ -566,7 +566,7 @@ async function executeChatTurn({
     return latestState;
   }, { home });
 
-  executionRecorder?.event({ kind: 'pipeline', id: 'reply:save', status: 'completed', output: '回答与引用已保存，可交付界面' });
+  executionRecorder?.event({ kind: 'pipeline', id: 'reply:save', status: 'completed', outputMessageId: 'output.saved' });
   await executionRecorder?.finish('completed', assistantMessage);
 
   // Conversation history indexing (fire and forget — never blocks the response)

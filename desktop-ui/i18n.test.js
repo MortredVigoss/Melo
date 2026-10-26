@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { LANGUAGES, setLanguage, t, ui } from './i18n.js';
+import { LANGUAGES, setLanguage, normalizeLanguage, t, ui } from './i18n.js';
 import { translations } from './translations.js';
 import { normalizeLocalPreferences, validateLocalPreferencePatch, LOCAL_PREFERENCE_DEFAULTS } from '../src/domain/settings/localPreferences.js';
 
@@ -26,7 +26,7 @@ test('literal templates translate UI only, preserve user data, attributes and pl
     const render=()=>ui`<section data-id="${'系统设置'}"><h1>系统设置</h1><p>${content}</p><button title="保存修改">保存修改</button><span>${3} 段对话 · ${2} 个Agent</span></section>`;
     assert.equal(render(),'<section data-id="系统设置"><h1>Settings</h1><p>'+content+'</p><button title="Save changes">Save changes</button><span>3 chats · 2 agents</span></section>');
     setLanguage('ko'); assert.match(render(),/<h1>설정<\/h1>/); assert.ok(render().includes(content));
-    setLanguage('bad'); assert.equal(t('系统设置'),'系统设置');
+    setLanguage('bad'); assert.equal(t('系统设置'),translations['系统设置'][normalizeLanguage()]);
     setLanguage('ja'); assert.equal(t('untranslated developer output'),'untranslated developer output');
   } finally { setLanguage('zh-CN'); }
 });

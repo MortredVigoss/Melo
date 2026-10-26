@@ -1,3 +1,4 @@
+import { runtimeStageOutput } from '../../../shared/agent/runtimeMessages.js';
 import { saveState, loadState } from '../../state/stateStore.js';
 // Smoke tests for chatExecutionRunner — sub-phase 7d-5δ commit 7c.
 //
@@ -799,7 +800,7 @@ test('run budget (T7/U13): TimeoutError mid-request at the deadline → budget:e
   assert.ok(exhausted, 'budget:exhausted execution event is emitted on the mid-request timeout');
   assert.equal(exhausted.value.status, 'failed', 'U13: rendered as a warning, not a ✓');
   assert.equal(exhausted.value.budget.reason, 'deadline');
-  assert.match(exhausted.value.output, /已用 60s \/ 60s/, 'U13: limit/used travel in output, which the scene keeps');
+  assert.match(runtimeStageOutput(exhausted.value,'zh'), /已用 60s \/ 60s/, 'U13: limit/used travel in output, which the scene keeps');
 });
 
 test('run budget (T7): a tool cut by the run deadline reports BUDGET_EXHAUSTED, not a tool TIMEOUT', async () => {

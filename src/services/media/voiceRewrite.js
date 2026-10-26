@@ -166,7 +166,7 @@ export async function rewriteForVoice(text, config, voicePersonality = '', sende
 
   // Phase 1.5: pre-clean for voice — strip @mentions, they'll be replaced by
   // personality opener.
-  let cleaned = extracted.replace(/@[\w\u4e00-\u9fff]+/g, '').replace(/^\s*[，,\s]+/, '').trim();
+  let cleaned = extracted.replace(/@[\p{L}\p{N}_]+/gu, '').replace(/^\s*[，,\s]+/, '').trim();
 
   // Phase 2: LLM personality injection on the already-compressed text (fast,
   // short input).
@@ -211,7 +211,7 @@ export async function rewriteForVoice(text, config, voicePersonality = '', sende
       // path additionally applies stripKoreanForMinimax in ../../tts.js as a
       // safety net.
       voiceText = voiceText
-        .replace(/@[\w\u4e00-\u9fff]+/g, '')
+        .replace(/@[\p{L}\p{N}_]+/gu, '')
         .replace(/^\s*[，,\s]+/, '')
         .trim();
 

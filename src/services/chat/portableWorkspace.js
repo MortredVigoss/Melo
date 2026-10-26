@@ -230,7 +230,7 @@ export function applyPortableWorkspace(state,workspace,{config={},home,resolvedK
   // Capture original membership before applying the detached wire projection,
   // so approvals without their own projectId are also invalidated and reported.
   for (const marker of deletedProjects.values()) {
-    if (!state.projects.some(row => row.id === marker.projectId)) state.projects.push({ id: marker.projectId, name: '已删除的项目', workspacePath: '', knowledgeIds: [], createdAt: marker.deletedAt });
+    if (!state.projects.some(row => row.id === marker.projectId)) state.projects.push({ id: marker.projectId, name: '已删除的项目', nameKey: '已删除的项目', workspacePath: '', knowledgeIds: [], createdAt: marker.deletedAt });
     deleteProjectState(state, { ...marker, timestamp: marker.deletedAt, device: state.mobileWorkspaceDevice || randomUUID() });
   }
   const held = new Set(pendingPersonaRecords(state).map(row => `${row.kind}:${row.id}`));

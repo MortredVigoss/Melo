@@ -3,6 +3,10 @@ import CryptoKit
 
 @main struct SharedAgentCoreTests {
     static func main() async throws {
+        let languageHistory = [["role": "user", "content": "明日の天気を教えてください"], ["role": "assistant", "content": "请查阅来源"]]
+        assert(PhoneReplyLanguage.resolve("", history: languageHistory, interfaceLanguage: "en") == "ja")
+        assert(PhoneReplyLanguage.resolve("Please explain this", agent: "ko", history: languageHistory, interfaceLanguage: "es") == "ko")
+        assert(PhoneReplyLanguage.resolve("", interfaceLanguage: "es") == "es")
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         func runtime() throws -> SharedAgentCore {
             try SharedAgentCore(bundleURL: root.appendingPathComponent("shared/agent/dist/agent-core.js"), manifestURL: root.appendingPathComponent("shared/agent/dist/manifest.json"))

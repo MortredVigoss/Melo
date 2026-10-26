@@ -20,7 +20,7 @@ const applyProfile = (config, id, profile) => ({ ...config, activeLlmProfileId: 
 function profilesWithLegacy(config) {
   if (Object.keys(config.llmProfiles || {}).length) return { ...config.llmProfiles };
   return { existing: { id: 'existing', providerId: config.authMode === 'codex' ? 'chatgpt' : config.authMode === 'local' ? 'local' : 'custom',
-    name: '原有连接', ...Object.fromEntries(profileFields.map(k => [k, config[k]])),
+    name: '原有连接', nameKey: '原有连接', ...Object.fromEntries(profileFields.map(k => [k, config[k]])),
     models: config.modelCatalogs?.[config.authMode] || [], revision: 1 } };
 }
 
@@ -65,6 +65,7 @@ export function saveLlmProfile(patch, { oauthKey, expectedRevision, signal } = {
     if (patch.modelCapability) declarations[model] = normalizeModelCapabilities(patch.modelCapability);
     const next = {
       id, providerId: provider.id, name: String(patch.name || previous?.name || provider.name).slice(0, 100),
+      nameKey: patch.name ? '' : previous?.nameKey || (!previous?.name ? provider.name : ''),
       authMode: provider.authMode, baseUrl, apiProtocol, model,
       apiKey: provider.authMode === 'codex' || patch.clearKey ? '' : incomingKey || previous?.apiKey || '',
       authKind: oauthKey ? 'oauth' : incomingKey || patch.clearKey ? 'api-key' : previous?.authKind || 'api-key',

@@ -48,7 +48,7 @@ enum VideoStudy {
         return KnowledgeNote(title: String("视频：\(digest.name)".prefix(120)), content: body.joined(separator: "\n"), kind: "note", language: "markdown")
     }
 
-    static func digest(url: URL, name: String, locale: String = Locale.preferredLanguages.first ?? "zh-CN") async throws -> VideoDigest {
+    static func digest(url: URL, name: String, locale: String = Locale.preferredLanguages.first ?? Locale.current.identifier) async throws -> VideoDigest {
         let asset = AVURLAsset(url: url)
         let duration = try await asset.load(.duration).seconds
         guard duration.isFinite, duration > 0 else { throw MeloError.message("无法读取这段视频。") }

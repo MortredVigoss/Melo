@@ -1,3 +1,4 @@
+import { currentLanguage } from './i18n.js';
 // The shared request layer (architecture plan P2, features/README.md): the one
 // JSON request helper app.js and every feature use. Moved out of app.js in
 // P2c (2026-10-19) so it is tested as a module instead of as cut-out app.js
@@ -31,7 +32,7 @@ export function createSharedApi({ getBootstrap, onRecoveryChange = () => {}, req
     const response = await request(path, {
       method: options.method || 'GET',
       headers: {
-        'content-type': 'application/json',
+        'content-type': 'application/json', 'x-melo-interface-language': currentLanguage(),
         ...(base ? { 'x-melo-bootstrap-base': base._snapshot.token } : {}),
         ...(options.headers || {}),
       },

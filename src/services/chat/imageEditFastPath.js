@@ -321,7 +321,7 @@ export async function tryImageEditFastPath({
     return null;
   }
   observe('completed', {
-    output: `请求质量：${result.requestedQuality || imageSettings(config).quality} · 返回质量：${result.reportedQuality || '服务未报告'}`,
+    outputMessageId: 'output.imageQuality', outputMessageParams: {quality:result.requestedQuality || imageSettings(config).quality, reportedQuality:result.reportedQuality || {messageId:'value.unreported'}},
     artifacts: [{ id: `artifact-${operationId}`, kind: 'image', title: '编辑后的图片', path: result.path, url,
       requestedQuality: result.requestedQuality || imageSettings(config).quality, reportedQuality: result.reportedQuality || '' }],
   });

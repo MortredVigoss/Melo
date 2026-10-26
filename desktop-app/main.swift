@@ -662,7 +662,7 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
       if voiceInput.state.active { voiceInput.stop() }
       else {
         voiceInput.start(id: payload["sessionID"] as? String ?? UUID().uuidString,
-                         locale: payload["language"] as? String ?? "zh-CN")
+                         locale: payload["language"] as? String ?? Locale.current.identifier)
       }
     case "stop":
       if payload["sessionID"] as? String == voiceInput.state.sessionID { voiceInput.stop() }

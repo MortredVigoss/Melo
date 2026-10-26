@@ -43,7 +43,7 @@ final class VoiceInput: ObservableObject {
         self.finalWait = finalWait
     }
 
-    func start(id: String = UUID().uuidString, locale: String = "zh-CN", commit: ((String) -> Void)? = nil) {
+    func start(id: String = UUID().uuidString, locale: String = Locale.current.identifier, commit: ((String) -> Void)? = nil) {
         guard activeID == nil else { return }
         activeID = id
         self.commit = commit

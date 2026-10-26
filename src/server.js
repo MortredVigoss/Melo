@@ -926,7 +926,7 @@ await finishChatDeletions(runtimePaths.home);
     } },
 ]);
 
-const server = createServer((request, response) => runWithRequestContext(createRequestContext({ bootstrapBase: String(request.headers['x-melo-bootstrap-base'] || '').slice(0,80) }), async () => {
+const server = createServer((request, response) => runWithRequestContext(createRequestContext({ interfaceLanguage: request.headers['x-melo-interface-language'], bootstrapBase: String(request.headers['x-melo-bootstrap-base'] || '').slice(0,80) }), async () => {
   try {
     const url = new URL(request.url || '/', `http://${host}:${port}`);
     if (url.pathname.startsWith('/api/') && !requireLocalHost(request, response)) return;

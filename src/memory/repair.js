@@ -1,3 +1,4 @@
+import { serverText } from '../shared/serverText.js';
 import { notifyMemoryIndexRepaired } from './store.js';
 import { DatabaseSync } from 'node:sqlite';
 import { createRequire } from 'node:module';
@@ -103,10 +104,10 @@ export async function diagnoseMemory(snapshot, providerPromise = getEmbeddingPro
   try { available = !!provider && validVector(await (provider.probe || provider.embed).call(provider,'Melo 记忆连接检查')); } catch {}
   const dims = provider?.observedDims ?? provider?.dims;
   const issues = [];
-  if (!available) issues.push({ code: 'offline', message: '嵌入服务未响应；当前使用关键词检索。' });
-  if (provider && dims !== EMBEDDING_DIMS) issues.push({ code: 'dimensions', message: `模型报告 ${dims} 维，索引需要 ${EMBEDDING_DIMS} 维。` });
-  if (snapshot.embedding.storedModelId && provider && snapshot.embedding.storedModelId !== provider.modelId) issues.push({ code: 'model_changed', message: '嵌入模型已变化，需要安全重建索引。' });
-  if ((snapshot.counts.vecMemories || 0) < (snapshot.counts.memories || 0)) issues.push({ code: 'missing_index', message: '部分记忆尚未建立语义索引。' });
+  if (!available) issues.push({ code: 'offline', message: serverText('embeddingOffline') });
+  if (provider && dims !== EMBEDDING_DIMS) issues.push({ code: 'dimensions', message: serverText('embeddingDimensions', {actual:dims,expected:EMBEDDING_DIMS}) });
+  if (snapshot.embedding.storedModelId && provider && snapshot.embedding.storedModelId !== provider.modelId) issues.push({ code: 'model_changed', message: serverText('embeddingChanged') });
+  if ((snapshot.counts.vecMemories || 0) < (snapshot.counts.memories || 0)) issues.push({ code: 'missing_index', message: serverText('embeddingMissing') });
   available = available && dims === EMBEDDING_DIMS;
   return { available, model: provider?.modelId || null, dims: dims || null, issues, checkedAt: new Date().toISOString() };
 }

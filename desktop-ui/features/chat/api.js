@@ -1,3 +1,4 @@
+import { currentLanguage } from '../../i18n.js';
 // Chat requests (architecture plan P2c, 2026-10-19): the only requests the
 // chat feature makes. createChatApi(api) wraps app.js's shared api() (same
 // URLs and bodies as before the move); the reply stream and the supplement
@@ -19,7 +20,7 @@ export function createChatApi(api) {
     clearSpeechQueue: () => api('/api/tts/queue-clear', { method: 'POST', body: {} }),
     stopSpeech: () => api('/api/tts/speak-stop', { method: 'POST', body: {} }),
     // A supplement for the running reply; the caller reads response.ok.
-    postSupplement: (chatId, content) => fetch('/api/chat/supplement', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chatId, content }) }),
+    postSupplement: (chatId, content) => fetch('/api/chat/supplement', { method: 'POST', headers: { 'content-type': 'application/json', 'x-melo-interface-language': currentLanguage() }, body: JSON.stringify({ chatId, content }) }),
   };
 }
 
@@ -71,7 +72,7 @@ async function streamApi(path, options = {}) {
   const response = await fetch(path, {
     method: options.method || 'GET',
     headers: {
-      'content-type': 'application/json',
+      'content-type': 'application/json', 'x-melo-interface-language': currentLanguage(),
       ...(options.headers || {}),
     },
     body: options.body ? JSON.stringify(options.body) : undefined,

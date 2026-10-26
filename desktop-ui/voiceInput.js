@@ -1,4 +1,4 @@
-import { t, ui } from './i18n.js';
+import { t, ui, currentLanguage } from './i18n.js';
 export const voiceInputActive = state => ['requesting', 'listening', 'stopping'].includes(state?.status);
 export const voiceInputSupported = (env = globalThis) => Boolean(
   env.webkit?.messageHandlers?.meloVoice ||
@@ -77,7 +77,7 @@ export function createVoiceInput({ env = globalThis, getContext, onChange, onCom
     try { recognition?.stop(); } catch { complete(id, state.preview); }
   }
 
-  function start(language = 'zh-CN') {
+  function start(language = currentLanguage()) {
     if (voiceInputActive(state)) return;
     if (!voiceInputSupported(env)) {
       emit({ status: 'error', error: t('当前浏览器不支持语音识别，请使用支持的浏览器、系统键盘听写或 Melo 桌面版。') }); return;

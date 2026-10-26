@@ -30,13 +30,13 @@ test('phone adapter replays local evidence, persists the view and opens sources 
     .replace("'./desktop-ui/executionScene3D.js'",JSON.stringify(renderer));
   await import(moduleURL(bridgeCode));
   assert.equal(events[0].type,'ready');
-  window.meloReceive({chat:{id:'empty',messages:[]},scenes:[],views:{},still:false});
+  window.meloReceive({interfaceLanguage:'zh-CN',chat:{id:'empty',messages:[]},scenes:[],views:{},still:false});
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(document.querySelector('#execution-panel').hidden,false,'A chat with no tasks must still show the idle workspace');
   assert.equal(document.querySelectorAll('.execution-module').length,5);
   const sources=Array.from({length:14},(_,i)=>({id:`s${i}`,url:`https://example.com/${i}`,title:`Source ${i}`,titleProvided:true,order:i,rank:i,reading:'unknown',appeared:true,cited:i===0,providers:['fixture'],queries:[]}));
   const scene={version:1,runId:'r',chatId:'c',status:'running',sequence:1,query:'forecast',startedAt:'2026-10-07',operations:[{id:'o',module:'search',name:'web_search',status:'running'}],sources,artifacts:[],selectedImageIds:[]};
-  const payload={chat:{id:'c',messages:[]},scenes:[scene],views:{r:{focus:'search',more:false,slot:0,zoom:1.8}},still:true};
+  const payload={interfaceLanguage:'zh-CN',chat:{id:'c',messages:[]},scenes:[scene],views:{r:{focus:'search',more:false,slot:0,zoom:1.8}},still:true};
   window.meloReceive(payload); await new Promise(resolve=>setImmediate(resolve));
   assert.equal(document.querySelectorAll('.execution-module').length,5);
   assert.equal(document.querySelectorAll('.execution-panel-viewport > .execution-panel-stage').length,1,'Use the desktop reading viewport directly, without a second mobile scroller');
@@ -105,7 +105,7 @@ test('phone adapter replays local evidence, persists the view and opens sources 
   assert.equal(document.querySelectorAll('.execution-source').length,10);
   // Actual native public-summary records flow into the unchanged desktop inspector.
   const summaryScene={...scene,chatId:'analysis-chat',runId:'analysis-run',sequence:1,sources:[],operations:[],pipeline:[{id:'model:summary:rs',module:'compute',channel:'reasoning-summary',name:'模型公开推理摘要',status:'running',output:'正在核对条件'}]};
-  const summaryPayload={chat:{id:'analysis-chat',messages:[]},scenes:[summaryScene],runId:summaryScene.runId,views:{'analysis-run':{focus:'compute',more:false,slot:0,zoom:1.8}},still:true};
+  const summaryPayload={interfaceLanguage:'zh-CN',chat:{id:'analysis-chat',messages:[]},scenes:[summaryScene],runId:summaryScene.runId,views:{'analysis-run':{focus:'compute',more:false,slot:0,zoom:1.8}},still:true};
   window.meloReceive(summaryPayload);
   await new Promise(resolve=>setImmediate(resolve));
   document.querySelector('[data-module="compute"]').click();
@@ -118,10 +118,10 @@ test('phone adapter replays local evidence, persists the view and opens sources 
   // The desktop history contract must work against local phone records too.
   const history = Array.from({length:45},(_,i)=>({...scene,chatId:'history',runId:`old-${String(i).padStart(2,'0')}`,query:`Task ${i}`,status:'completed',startedAt:'2026-10-08T00:00:00Z'}));
   history.push({...scene,chatId:'history',runId:'active',startedAt:'2026-10-01T00:00:00Z'});
-  window.meloReceive({chat:{id:'history',messages:[]},scenes:history,views:{},still:true,runId:'old-44'});
+  window.meloReceive({interfaceLanguage:'zh-CN',chat:{id:'history',messages:[]},scenes:history,views:{},still:true,runId:'old-44'});
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(document.querySelectorAll('[data-execution-history] option').length,21,'First page plus the older active task stays visible');
-  window.meloReceive({chat:{id:'history',messages:[]},scenes:history.map(s=>s.runId==='active' ? {...s,status:'completed',sequence:2} : s),views:{},still:true,runId:'old-44'});
+  window.meloReceive({interfaceLanguage:'zh-CN',chat:{id:'history',messages:[]},scenes:history.map(s=>s.runId==='active' ? {...s,status:'completed',sequence:2} : s),views:{},still:true,runId:'old-44'});
   const historyPicker=document.querySelector('[data-execution-history]');
   historyPicker.value='active'; historyPicker.dispatchEvent(new dom.window.Event('change',{bubbles:true}));
   assert.match(document.querySelector('.execution-status').textContent,/已完成/,'An older live task must still receive its final state outside page one');

@@ -1,3 +1,6 @@
+// This fixture asserts Chinese copy explicitly; production defaults follow the device.
+import { setLanguage as setFixtureLanguage } from './i18n.js';
+setFixtureLanguage('zh-CN');
 // The "桌面宠物" row (desktop app only): the select carries the saved preference,
 // the note shows the pet's real state, saving goes through setLocalSettings like
 // launchAtLogin, and the native shell's melo-local-settings-changed event (the

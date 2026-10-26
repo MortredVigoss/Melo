@@ -1,3 +1,5 @@
+import { setLanguage } from './i18n.js';
+setLanguage('zh-CN');
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createVoiceInput, voiceInputSupported, renderVoiceInput } from './voiceInput.js';
@@ -85,4 +87,10 @@ test('native automatic stopping also has a bridge deadline if its final event is
  f.input.receive({sessionID:id,status:'listening',partial:'当前片段'});
  f.input.receive({sessionID:id,status:'stopping',recording:false});assert.equal(f.timers.size,1);
  [...f.timers.values()][0]();assert.equal(f.input.state.status,'ready');assert.deepEqual(f.commits,['当前片段']);
+});
+
+test('dictation without a saved choice follows the interface language', () => {
+  setLanguage('ja');
+  try { const f = fixture(true); f.input.start(); assert.equal(f.messages[0].language, 'ja'); }
+  finally { setLanguage('zh-CN'); }
 });

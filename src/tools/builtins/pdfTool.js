@@ -1,3 +1,4 @@
+import { serverText } from '../../shared/serverText.js';
 /**
  * pdf tool
  *
@@ -719,7 +720,7 @@ export const pdfTool = {
           : workspacePath
             ? resolve(workspacePath, maybePath)
             : null;
-        if (!abs) return {error:'此操作需要明确的工作目录。',errorCode:'WORKSPACE_REQUIRED'};
+        if (!abs) return {error:serverText('workspaceRequired'),errorCode:'WORKSPACE_REQUIRED'};
         return { path: abs };
       }
       if (!workspacePath) {
@@ -832,7 +833,7 @@ export const pdfTool = {
           // so the underlying library never re-opens the path (no
           // post-approval TOCTOU window).
           const absPath = resolveInputPdfPath(path);
-          if (!absPath) return {ok:false,error:'WORKSPACE_REQUIRED',output:'此操作需要明确的工作目录。',meta:{executionStarted:false}};
+          if (!absPath) return {ok:false,error:'WORKSPACE_REQUIRED',output:serverText('workspaceRequired'),meta:{executionStarted:false}};
           const gated = await gatedReadIntoBuffer(absPath, { workspacePath, sseEmitter, signal, chatId }, {
             maxBytes: MAX_PDF_BYTES,
             toolName: 'pdf:read',

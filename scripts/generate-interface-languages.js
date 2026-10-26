@@ -12,7 +12,14 @@ export async function generateInterfaceLanguages({check=false}={}) {
  '    var id: String { rawValue }',
  '    var name: String { switch self { '+entries.map(row=>'case .'+row.swift+': return '+quote(row.name)).join('; ')+' } }',
  '    var localeID: String { switch self { '+entries.map(row=>'case .'+row.swift+': return '+quote(row.locale)).join('; ')+' } }',
- '    static func resolve(_ value: String?) -> Self { Self(rawValue: value ?? "") ?? .chinese }','}',''].join('\n');
+ '    static var system: Self { resolve(nil) }',
+ '    static func resolve(_ value: String?, systemLanguage: String = Locale.current.identifier) -> Self {',
+ '        func match(_ value: String) -> Self? {',
+ '            let base = value.replacingOccurrences(of: "_", with: "-").split(separator: "-").first?.lowercased()',
+ '            return allCases.first { $0.rawValue.split(separator: "-").first?.lowercased() == base }',
+ '        }',
+ '        return value.flatMap(match) ?? match(systemLanguage) ?? .english',
+ '    }','}',''].join('\n');
  for(const [path,text] of [['desktop-ui/interfaceLanguages.js',js],['ios/Melo/InterfaceLanguage.swift',swift]]) {
   if(check) { if(await readFile(resolve(root,path),'utf8')!==text) throw new Error(path+' is stale'); }
   else await writeFile(resolve(root,path),text);

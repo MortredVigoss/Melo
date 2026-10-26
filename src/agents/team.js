@@ -123,8 +123,8 @@ async function runAgentTeamScoped({plan,task,config,workspacePath,signal,sseEmit
  const teamBudget=narrowBudget(parentBudget,{deadlineMs:planDeadlineMs,maxInputTokens:plan.maxTokens});
  if(teamBudget&&(remainingMs(teamBudget)<planDeadlineMs||teamBudget.maxInputTokens<plan.maxTokens)) {
   const cappedMinutes=Math.max(1,Math.round(remainingMs(teamBudget)/60000));
-  sseEmitter?.('execution_event',{kind:'pipeline',id:'team:budget-capped',module:'compute',name:'团队预算被父预算封顶',status:'completed',
-   output:`团队计划 ${plan.maxMinutes} 分钟 / ${plan.maxTokens} token，受当前运行预算限制为约 ${cappedMinutes} 分钟 / ${teamBudget.maxInputTokens} token。`,
+  sseEmitter?.('execution_event',{kind:'pipeline',id:'team:budget-capped',module:'compute',messageId: 'stage.teamBudget',status:'completed',
+   outputMessageId:'output.teamBudget',outputMessageParams:{minutes:plan.maxMinutes,tokens:plan.maxTokens,cappedMinutes,cappedTokens:teamBudget.maxInputTokens},
    budget:{planMinutes:plan.maxMinutes,planTokens:plan.maxTokens,remainingMs:remainingMs(teamBudget),maxInputTokens:teamBudget.maxInputTokens,extended:grown.extended}});
  }
  const teamTimeoutMs=Math.max(1,Math.min(plan.maxMinutes*60000,remainingMs(teamBudget)));

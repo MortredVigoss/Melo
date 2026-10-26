@@ -71,7 +71,7 @@ test('HTTP and SSE share validation, turn identity and durable retry semantics',
   // The supplement route is reachable and refuses text when no reply is running in the chat.
   const idle = await post('/api/chat/supplement', { chatId: 'contract', content: '改成五言' });
   assert.equal(idle.status, 409);
-  assert.match((await idle.json()).error, /没有进行中的回复/);
+  assert.match((await idle.json()).error, /no reply in progress/);
   const body = { chatId: 'contract', content: 'hello', requestId: 'stable-request' };
   const streamed = await post('/api/chat/send/stream', body);
   assert.equal(streamed.status, 200);
@@ -94,7 +94,7 @@ test('HTTP and SSE share validation, turn identity and durable retry semantics',
   assert.equal(finalScene.status, 'completed');
   assert.equal(finalScene.operations.length, 0, 'model and delivery stages must not become fictitious tools');
   assert.deepEqual(finalScene.pipeline.map(stage => stage.id), ['model:1', 'reply:format', 'reply:save']);
-  assert.equal(finalScene.pipeline[0].name, '模拟响应', 'fixture replies must not claim a live model call');
+  assert.equal(finalScene.pipeline[0].messageId, 'stage.simulated', 'fixture replies must not claim a live model call');
   assert.ok(finalScene.pipeline.every(stage => stage.status === 'completed' && stage.finishedAt));
   assert.ok(!finalScene.pipeline.some(stage => stage.id === 'reply:render'), 'the backend cannot claim the client has rendered the answer');
   const repeated = await (await post('/api/chat/send', body)).json();

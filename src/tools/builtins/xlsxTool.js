@@ -1,3 +1,4 @@
+import { serverText } from '../../shared/serverText.js';
 /**
  * xlsx tool
  *
@@ -90,7 +91,7 @@ export const xlsxTool = {
   async run(args, context = {}) {
     const { workspacePath } = context;
     const path = args?.path;
-    if (path && !isAbsolute(path) && !workspacePath) return {ok:false,error:'WORKSPACE_REQUIRED',output:'此操作需要明确的工作目录。',meta:{executionStarted:false}};
+    if (path && !isAbsolute(path) && !workspacePath) return {ok:false,error:'WORKSPACE_REQUIRED',output:serverText('workspaceRequired'),meta:{executionStarted:false}};
 
 
     // Resolve output path.

@@ -1,3 +1,6 @@
+// This fixture asserts Chinese copy explicitly; production defaults follow the device.
+import { setLanguage as setFixtureLanguage } from '../../../desktop-ui/i18n.js';
+setFixtureLanguage('zh-CN');
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';

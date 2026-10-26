@@ -1,6 +1,5 @@
 import { requestAllowsTool, getRequestNetworkPolicy } from '../../../../shared/agent/retrieval/requestPolicy.js';
 import { isStandaloneGreeting } from '../../../../shared/agent/retrieval/intentRouter.js';
-import { routingLabel } from '../../../../shared/agent/modelRouting.js';
 import { createRoutingSession } from '../../modelRouting/routing.js';
 import { resolveContextBudget } from '../contextBudget.js';
 import { buildSharedSearchPlan } from '../../../retrieval/sharedSearchPlan.js';
@@ -96,7 +95,7 @@ export function createPrepareNode(turn) {
     const activeAgentProfile = effectiveAgentProfile(state, agentId, project?.id || null);
     turn.routing = await createRoutingSession({ config, agent: activeAgentProfile, text: latestUserMessage, messages: chat.messages || [], attachments: chat.messages?.at(-1)?.attachments || [], home, signal, createReply,
       onDecision: decision => {
-        sseEmitter?.('execution_event', { kind: 'pipeline', id: `model-routing:${decision.escalations}`, name: '智能选模', module: 'compute', status: 'completed', output: routingLabel(decision), metadata: decision });
+        sseEmitter?.('execution_event', { kind: 'pipeline', id: `model-routing:${decision.escalations}`, messageId: 'stage.routing', module: 'compute', status: 'completed', outputMessageId:'output.routing',outputMessageParams:{tier:{messageId:'value.routing_'+decision.tier},model:decision.model,reason:{messageId:'value.routing_'+decision.reason}}, metadata: decision });
       } });
     if (turn.routing.current.mode === 'smart') {
       const selected = turn.routing.connection();
@@ -235,14 +234,14 @@ export function createPrepareNode(turn) {
       // reaches a terminal status, so a failed first pass and the forced
       // second pass would otherwise share (and lose) one spinner (audit U2).
       const stageId = compactPasses++ === 0 ? 'compact:running' : `compact:running:${compactPasses}`;
-      const stage = { kind: 'pipeline', id: stageId, module: 'compute', name: '压缩早期对话' };
-      sseEmitter?.('execution_event', { ...stage, status: 'running', outputMessageId:'output.compactStart',outputMessageParams:{count:compactPlan.compactedCount},output: `正在把最早的 ${compactPlan.compactedCount} 条消息压成摘要（通常后台已完成，这是兜底）。` });
+      const stage = { kind: 'pipeline', id: stageId, module: 'compute', messageId: 'stage.compact' };
+      sseEmitter?.('execution_event', { ...stage, status: 'running', outputMessageId:'output.compactStart',outputMessageParams:{count:compactPlan.compactedCount} });
       const fail = async () => {
         // Persisted (audit L5): the MAX_COMPACT_FAILURES breaker only
         // trips when failures survive the turn.
         chat.compactFailures = (chat.compactFailures || 0) + 1;
         await persistCompactFailure(chat, { home }).catch(() => {});
-        sseEmitter?.('execution_event', { ...stage, status: 'failed', outputMessageId:'output.compactFailure',outputMessageParams:{count:chat.compactFailures},output: `摘要失败（连续 ${chat.compactFailures} 次）；本轮继续使用原始历史。` });
+        sseEmitter?.('execution_event', { ...stage, status: 'failed', outputMessageId:'output.compactFailure',outputMessageParams:{count:chat.compactFailures} });
       };
       try {
         const { summary, source } = await compactConversationDetailed(compactPlan.messages, {
@@ -257,19 +256,19 @@ export function createPrepareNode(turn) {
           appendCompactCard(chat, compactPlan, { summary, source: source || 'cloud' });
           if (source === 'rule') {
             process.stderr.write(`[compact] chat ${chat.id}: summarising model unavailable, using extractive fallback for ${compactPlan.compactedCount} messages\n`);
-            sseEmitter?.('execution_event', { kind: 'pipeline', id: 'compact:degraded', module: 'compute', name: '对话摘要降级', status: 'completed', output: '摘要模型不可用，已使用抽取式摘要；后续轮次会自动重试。' });
+            sseEmitter?.('execution_event', { kind: 'pipeline', id: 'compact:degraded', module: 'compute', messageId: 'stage.degraded', status: 'completed', outputMessageId: 'output.degraded' });
           }
           // Persist so the summary survives restarts.
           await persistCompactSnapshot(chat, compactPlan, { home });
           modelMessages = buildModelMessagesFromChat(modelChat(), { windowTokens: historyWindowTokens, toolChainProtocol });
           compactedThisTurn = true;
-          sseEmitter?.('execution_event', { ...stage, status: 'completed', outputMessageId:'output.compactDone',outputMessageParams:{count:compactPlan.coveredCount || compactPlan.messages.length},output: `已把 ${compactPlan.coveredCount || compactPlan.messages.length} 条消息压成一张话题卡（${source === 'rule' ? '抽取式' : '模型'}摘要）。` });
+          sseEmitter?.('execution_event', { ...stage, status: 'completed', outputMessageId:'output.compactDone',outputMessageParams:{count:compactPlan.coveredCount || compactPlan.messages.length} });
           return true;
         }
         await fail();
       } catch (error) {
         if (signal?.aborted) {
-          sseEmitter?.('execution_event', { ...stage, status: 'cancelled', output: '已中止。' });
+          sseEmitter?.('execution_event', { ...stage, status: 'cancelled', outputMessageId: 'output.aborted' });
           throw signal.reason || error;
         }
         await fail();
@@ -310,7 +309,7 @@ export function createPrepareNode(turn) {
         const { summary, source } = await compactConversationDetailed(range, { config, signal: controller.signal, previousSummary, _createReply: createReply });
         if (summary && source === 'cloud') {
           replaceCardSummary(chat, target.id, { summary, source: 'cloud' });
-          sseEmitter?.('execution_event', { kind: 'pipeline', id: 'compact:upgraded', module: 'compute', name: '对话摘要已恢复', status: 'completed', output: '摘要模型恢复可用，已用完整摘要替换抽取式摘要。' });
+          sseEmitter?.('execution_event', { kind: 'pipeline', id: 'compact:upgraded', module: 'compute', messageId: 'stage.restored', status: 'completed', outputMessageId: 'output.restored' });
         }
       } catch (error) {
         if (signal?.aborted) throw signal.reason || error;
@@ -340,7 +339,7 @@ export function createPrepareNode(turn) {
         : '';
       // Original text of the ledger cards this message returns to (1D-4).
       topicExcerpts = compactContext ? buildTopicExcerpts(chat, latestUserMessage, { readHistory }) : { text: '', cards: [] };
-      if (topicExcerpts.cards.length) sseEmitter?.('execution_event', { kind: 'pipeline', id: 'history:excerpts', module: 'compute', name: '早期话题原文', status: 'completed', output: topicExcerpts.cards.map(card => `${card.title} (#${card.fromMessageId.slice(0, 8)}…#${card.toMessageId.slice(0, 8)})`).join('\n') });
+      if (topicExcerpts.cards.length) sseEmitter?.('execution_event', { kind: 'pipeline', id: 'history:excerpts', module: 'compute', messageId: 'stage.history', status: 'completed', output: topicExcerpts.cards.map(card => `${card.title} (#${card.fromMessageId.slice(0, 8)}…#${card.toMessageId.slice(0, 8)})`).join('\n') });
     };
 
     // Build per-request skill tools for all enabled executable skills this
@@ -456,7 +455,7 @@ export function createPrepareNode(turn) {
       hasProjectFiles,
     });
 
-    const selectedMaterials = isRemoteChannel || activeAgentProfile.contextSources?.knowledge === false ? '' : await retrieveKnowledgeContext({state,chat,home:context.home,query:latestUserMessage,signal,onRetrieved:rows=>sseEmitter?.('execution_event',{kind:'pipeline',id:'knowledge:retrieval',module:'compute',name:'知识片段检索',status:'completed',output:rows.map(r=>`${r.title} [${r.start}-${r.end}]`).join('\n')})});
+    const selectedMaterials = isRemoteChannel || activeAgentProfile.contextSources?.knowledge === false ? '' : await retrieveKnowledgeContext({state,chat,home:context.home,query:latestUserMessage,signal,onRetrieved:rows=>sseEmitter?.('execution_event',{kind:'pipeline',id:'knowledge:retrieval',module:'compute',messageId: 'stage.knowledge',status:'completed',output:rows.map(r=>`${r.title} [${r.start}-${r.end}]`).join('\n')})});
     refreshCompactContext({ readHistory: visibleToolIds.has('read_history') });
     const executionHistory = await readExecutionContext(context.home, chat, { excludedRunId: context.runId, enabled: !isRemoteChannel && activeAgentProfile.contextSources?.memory !== false });
     const buildPromptSections = () => buildReActPromptSections({

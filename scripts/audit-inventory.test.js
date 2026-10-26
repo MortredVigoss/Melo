@@ -162,3 +162,13 @@ test('check fails on added occurrences even when total counts stay flat or text 
     run(root, '--baseline', baseline, '--check');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test('H2 explicitly exempts relevance tokenizers but still detects ad hoc language choices', async () => {
+  const root=await fixture();
+  try {
+    for(const path of ['shared/agent/completion.js','src/services/chat/dynamicContext.js','src/services/remote/telegramAddressHelpers.js','src/shared/conversationTopics.js','src/shared/executionScene.js']) await put(root,path,"const terms=text.match(/[\\u4e00-\\u9fff]/g);");
+    run(root);const inventory=await latest(root);
+    assert.equal(inventory.rules.H2.count,1);
+    assert.equal(inventory.rules.H2.hits[0].file,'src/services/chat/example.js');
+  } finally {await rm(root,{recursive:true,force:true});}
+});

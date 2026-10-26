@@ -186,7 +186,7 @@ export function createInvokeModelNode(turn) {
         if (supplements.length) {
           coreTurn.amend(supplementMessage(supplements));
           loopMessages = [...loopMessages, { role: 'user', content: supplementMessage(supplements), isSupplement: true }];
-          for (const entry of supplements) sseEmitter?.('execution_event', { kind: 'pipeline', id: `supplement:${entry.id}`, name: '收到补充', module: 'compute', status: 'completed', output: entry.text });
+          for (const entry of supplements) sseEmitter?.('execution_event', { kind: 'pipeline', id: `supplement:${entry.id}`, messageId: 'stage.supplement', module: 'compute', status: 'completed', output: entry.text });
         }
       }
 
@@ -217,7 +217,7 @@ export function createInvokeModelNode(turn) {
         const condensed = compactToolChain(loopMessages);
         if (!condensed.changed) throw error;
         loopMessages = condensed.messages;
-        sseEmitter?.('execution_event', { kind: 'pipeline', id: `tool-chain:condense:${iteration}`, module: 'compute', name: '工具结果已压缩', status: 'completed', output: '早期工具输出已压缩以继续本轮。' });
+        sseEmitter?.('execution_event', { kind: 'pipeline', id: `tool-chain:condense:${iteration}`, module: 'compute', messageId: 'stage.condense', status: 'completed', outputMessageId: 'output.condensed' });
         request = fitRequestContext({ sections: loopSections, messages: loopMessages, toolDefinitions: functionSession.definitions, ...contextBudget, turnContextPlacement });
       }
       if (promptDebug) process.stdout.write(`[prompt-budget] iteration=${iteration} ${JSON.stringify(request.diagnostics)}\n`);
@@ -249,8 +249,8 @@ export function createInvokeModelNode(turn) {
       const emitBudgetExhausted = exhausted => {
         terminalReason = 'BUDGET_EXHAUSTED';
         const limitText = exhausted.reason === 'deadline' ? `${Math.round(exhausted.used / 1000)}s / ${Math.round(exhausted.limit / 1000)}s` : `${exhausted.used} / ${exhausted.limit}`;
-        sseEmitter?.('execution_event', { kind: 'pipeline', id: 'budget:exhausted', module: 'compute', name: '运行预算已用完', status: 'failed',
-          outputMessageId:'output.budget',outputMessageParams:{reason:exhausted.reason,calls:exhausted.usage.providerCalls,tokens:exhausted.usage.inputTokens,tools:exhausted.usage.toolCalls},output: `已达到运行预算（${describeBudgetReason(exhausted)}，已用 ${limitText}），本轮停止。已用：模型请求 ${exhausted.usage.providerCalls} 次、输入约 ${exhausted.usage.inputTokens} token、工具调用 ${exhausted.usage.toolCalls} 次。`,
+        sseEmitter?.('execution_event', { kind: 'pipeline', id: 'budget:exhausted', module: 'compute', messageId: 'stage.budget', status: 'failed',
+          outputMessageId:'output.budget',outputMessageParams:{reason:{messageId:'value.budget_'+exhausted.reason.replaceAll('-','_')},limitText,calls:exhausted.usage.providerCalls,tokens:exhausted.usage.inputTokens,tools:exhausted.usage.toolCalls},
           budget: { code: exhausted.code, reason: exhausted.reason, limit: exhausted.limit, used: exhausted.used, usage: exhausted.usage } });
       };
       const exhausted = budgetExhausted(budget);
@@ -333,7 +333,7 @@ export function createInvokeModelNode(turn) {
 
       if (checkingGoal) {
         const decision = coreTurn.review(toolCalls.length ? '' : turn.text);
-        sseEmitter?.('execution_event', { kind: 'pipeline', id: `goal-check:${iteration}`, module: 'compute', name: '核对任务交付', status: decision.decision === 'complete' ? 'completed' : 'failed', output: decision.explanation || decision.reason });
+        sseEmitter?.('execution_event', { kind: 'pipeline', id: `goal-check:${iteration}`, module: 'compute', messageId: 'stage.delivery', status: decision.decision === 'complete' ? 'completed' : 'failed', output: decision.explanation || decision.reason });
         if (decision.decision === 'continue') {
           coreTurn.update('feedback', { repair: true });
           loopMessages.push({ role: 'assistant', content: coreTurn.candidateReply }, { role: 'user', content: decision.feedback });
@@ -553,7 +553,7 @@ export function createInvokeModelNode(turn) {
       signal?.throwIfAborted();
       coreTurn.results(allResults);
       if (coreTurn.status !== 'running') {
-        sseEmitter?.('execution_event', { kind: 'pipeline', id: 'core:stop', module: 'compute', name: '执行已停止', status: 'failed', output: coreTurn.reason });
+        sseEmitter?.('execution_event', { kind: 'pipeline', id: 'core:stop', module: 'compute', messageId: 'stage.stopped', status: 'failed', output: coreTurn.reason });
         finalReply = coreTurn.reply(latestUserMessage, config.replyLanguage);
         break;
       }

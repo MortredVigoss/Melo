@@ -23,8 +23,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 646,
-      "edges": 2066,
+      "modules": 647,
+      "edges": 2083,
       "roots": [
         "src",
         "desktop-ui",
@@ -552,10 +552,10 @@
       "dependsOn": {
         "approvals": 3,
         "channels": 3,
-        "chat": 22,
+        "chat": 23,
         "desktop-shell": 8,
         "memory": 12,
-        "platform": 42,
+        "platform": 43,
         "settings": 3,
         "tools": 21
       },
@@ -785,7 +785,9 @@
         {
           "module": "shared/agent/locale.js",
           "importedBy": [
+            "agents",
             "channels",
+            "desktop-shell",
             "platform",
             "settings"
           ]
@@ -850,6 +852,7 @@
             "approvals",
             "channels",
             "desktop-shell",
+            "platform",
             "tools"
           ]
         },
@@ -1057,11 +1060,11 @@
         "agents": 34,
         "approvals": 7,
         "channels": 2,
-        "desktop-shell": 21,
+        "desktop-shell": 22,
         "knowledge": 5,
         "media": 24,
         "memory": 27,
-        "platform": 58,
+        "platform": 59,
         "projects": 11,
         "settings": 11,
         "sync": 2,
@@ -1069,13 +1072,13 @@
         "voice": 3
       },
       "usedBy": {
-        "agents": 22,
+        "agents": 23,
         "approvals": 1,
         "channels": 9,
-        "desktop-shell": 10,
+        "desktop-shell": 11,
         "media": 14,
         "memory": 12,
-        "platform": 17,
+        "platform": 20,
         "projects": 1,
         "settings": 13,
         "sync": 4,
@@ -1516,7 +1519,7 @@
         "desktop-shell": 9,
         "knowledge": 3,
         "media": 1,
-        "platform": 37,
+        "platform": 38,
         "projects": 1,
         "settings": 15,
         "sync": 2,
@@ -1949,7 +1952,7 @@
         "chat": 13,
         "desktop-shell": 12,
         "media": 1,
-        "platform": 25,
+        "platform": 26,
         "sync": 3,
         "tools": 2
       },
@@ -2151,7 +2154,7 @@
         "chat": 4,
         "desktop-shell": 1,
         "memory": 5,
-        "platform": 4,
+        "platform": 5,
         "projects": 2,
         "settings": 1
       },
@@ -2572,7 +2575,7 @@
         "knowledge": 3,
         "media": 2,
         "memory": 6,
-        "platform": 43,
+        "platform": 45,
         "projects": 5,
         "settings": 10
       },
@@ -2949,7 +2952,7 @@
         "desktop-shell": 6,
         "knowledge": 1,
         "memory": 1,
-        "platform": 11,
+        "platform": 13,
         "settings": 8,
         "tools": 4,
         "voice": 1
@@ -3656,7 +3659,7 @@
         "agents": 12,
         "approvals": 4,
         "channels": 2,
-        "chat": 10,
+        "chat": 11,
         "knowledge": 1,
         "media": 5,
         "memory": 1,
@@ -3670,7 +3673,7 @@
       "usedBy": {
         "agents": 8,
         "approvals": 8,
-        "chat": 21,
+        "chat": 22,
         "media": 6,
         "memory": 9,
         "platform": 2,
@@ -3941,7 +3944,7 @@
         "src/**"
       ],
       "modules": {
-        "src": 55
+        "src": 56
       },
       "entryModules": [
         {
@@ -4116,6 +4119,18 @@
           ]
         },
         {
+          "module": "src/shared/serverText.js",
+          "importedBy": [
+            "agents",
+            "chat",
+            "media",
+            "memory",
+            "settings",
+            "sync",
+            "tools"
+          ]
+        },
+        {
           "module": "src/shared/visualTokens.js",
           "importedBy": [
             "chat",
@@ -4234,7 +4249,7 @@
         "agents": 34,
         "approvals": 18,
         "channels": 6,
-        "chat": 17,
+        "chat": 20,
         "desktop-shell": 2,
         "knowledge": 2,
         "media": 2,
@@ -4246,18 +4261,18 @@
         "voice": 2
       },
       "usedBy": {
-        "agents": 42,
+        "agents": 43,
         "approvals": 36,
         "channels": 22,
-        "chat": 58,
+        "chat": 59,
         "desktop-shell": 12,
         "knowledge": 2,
-        "media": 11,
-        "memory": 37,
+        "media": 13,
+        "memory": 38,
         "projects": 23,
-        "settings": 25,
-        "sync": 4,
-        "tools": 43,
+        "settings": 26,
+        "sync": 5,
+        "tools": 45,
         "voice": 6
       },
       "httpRoutes": [],
@@ -4317,6 +4332,7 @@
           "src/serverGuard.test.js",
           "src/shared/localServices.test.js",
           "src/shared/runtimeBehavior.test.js",
+          "src/shared/serverText.test.js",
           "src/state/architectureConcurrency.test.js",
           "src/state/chatRetention.test.js",
           "src/state/checkpointCommit.test.js",

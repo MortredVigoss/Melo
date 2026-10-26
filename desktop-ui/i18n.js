@@ -3,8 +3,12 @@ import { runtimeStageName as stageName, runtimeStageOutput as localizedStageOutp
 import { translations } from './translations.js';
 import { LANGUAGES } from './interfaceLanguages.js';
 export { LANGUAGES };
-export const normalizeLanguage = value => LANGUAGES.some(language => language.id === value) ? value : 'zh-CN';
-let language = 'zh-CN';
+const interfaceId = value => {
+  const base = String(value || '').replace('_', '-').split('-')[0].toLowerCase();
+  return LANGUAGES.find(language => language.id.split('-')[0] === base)?.id;
+};
+export const normalizeLanguage = value => interfaceId(value) || interfaceId(typeof navigator !== 'undefined' ? navigator.language : Intl.DateTimeFormat().resolvedOptions().locale) || 'en';
+let language = normalizeLanguage();
 export const currentLanguage = () => language;
 export function setLanguage(value) {
   language = normalizeLanguage(value);

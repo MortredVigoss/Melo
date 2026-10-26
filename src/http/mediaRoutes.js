@@ -1,3 +1,4 @@
+import { serverText } from '../shared/serverText.js';
 import { createReadStream } from 'node:fs';
 import { createRouteRegistry } from './routeRegistry.js';
 import { sendJson } from './transport.js';
@@ -63,7 +64,7 @@ export function createMediaRoutes({ home }) {
       const path = uploadPath(url.pathname, home);
       let size;
       try { size = path ? await uploadSize(path) : null; } catch { size = null; }
-      if (!size) { sendJson(response, 404, { error: '视频不存在。' }); return; }
+      if (!size) { sendJson(response, 404, { error: serverText('videoMissing') }); return; }
       const type = TYPES[path.split('.').pop()] || 'application/octet-stream';
       serveFileWithRanges(request, response, { path, size, type, headers: { 'X-Content-Type-Options': 'nosniff' } });
     } },
@@ -75,7 +76,7 @@ export function createMediaRoutes({ home }) {
       const path = attachmentPath(url.pathname, home);
       let size;
       try { size = path ? await uploadSize(path) : null; } catch { size = null; }
-      if (!path || size === null) { sendJson(response, 404, { error: '附件不存在。' }); return; }
+      if (!path || size === null) { sendJson(response, 404, { error: serverText('attachmentMissing') }); return; }
       const type = mimeTypeForName(path);
       const headers = {
         'Cache-Control': 'private, max-age=31536000, immutable',

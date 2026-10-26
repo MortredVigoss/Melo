@@ -46,8 +46,8 @@ export function renderLlmConnections(config) {
   const draft = draftFor(config);
   const saved = data.profiles.find(p => p.id === draft.id);
   const provider = data.providers.find(p => p.id === draft.providerId);
-  const options = [...data.profiles.map(p => ({ id: p.id, name: `${p.name} · ${p.id === data.activeId ? t('当前使用') : t('已保存')}` })),
-    ...data.providers.filter(p => !data.profiles.some(s => s.id === p.id)).map(p => ({ id: p.id, name: p.name }))];
+  const options = [...data.profiles.map(p => ({ id: p.id, name: `${p.nameKey ? t(p.nameKey) : p.name} · ${p.id === data.activeId ? t('当前使用') : t('已保存')}` })),
+    ...data.providers.filter(p => !data.profiles.some(s => s.id === p.id)).map(p => ({ id: p.id, name: t(p.name) }))];
   const disabled = state.busy ? 'disabled' : '';
   const fieldsDisabled = state.busy || !editSession.editing ? 'disabled' : '';
   const actionDisabled = state.busy || editSession.editing || !saved ? 'disabled' : '';
@@ -62,7 +62,7 @@ export function renderLlmConnections(config) {
       <fieldset class="settings-connection-fields" ${fieldsDisabled}><label class="label">服务地址<input class="config-input" name="baseUrl" value="${escape(draft.baseUrl)}" ${provider.authMode === 'codex' ? 'readonly' : ''} ${disabled}></label>
       ${provider.id === 'custom' ? ui`<label class="label">API 接口格式<select class="config-select" name="apiProtocol" ${disabled}><option value="chat-completions" ${!['anthropic','responses'].includes(draft.apiProtocol) ? 'selected' : ''}>OpenAI Chat Completions</option><option value="responses" ${draft.apiProtocol === 'responses' ? 'selected' : ''}>OpenAI Responses</option><option value="anthropic" ${draft.apiProtocol === 'anthropic' ? 'selected' : ''}>Anthropic Messages</option></select></label>` : ''}
       <label class="label">选择模型<select class="config-select" data-action="llm-pick-model">${connectionModelOptions(config, draft).map(m => `<option value="${escape(m)}" ${m === draft.model ? 'selected' : ''}>${escape(modelLabel(m))} · ${escape(m)}</option>`).join('')}<option value="" ${!draft.model ? 'selected' : ''}>手动填写模型 ID</option></select></label>
-      <label class="label">模型 ID（可手动填写）<input class="config-input" name="model" value="${escape(draft.model)}" placeholder="${escape(provider.modelHint || t('填写模型 ID，或读取模型列表'))}" ${disabled}></label>
+      <label class="label">模型 ID（可手动填写）<input class="config-input" name="model" value="${escape(draft.model)}" placeholder="${escape(t(provider.modelHint) || t('填写模型 ID，或读取模型列表'))}" ${disabled}></label>
       <p class="list-row-meta">模型能力按当前连接保存；自动读取目录或实测结果，未知能力不按名字推断。</p>
       ${[['vision','图片输入'],['reasoning','推理参数'],['imageGen','图片输出']].map(([key,label]) => `<label class="label">${escape(t(label))}<select class="config-select" data-model-capability="${key}">${[['',t('自动（目录或实测）')],['true',t('支持')],['false',t('不支持')]].map(([v,name])=>`<option value="${v}" ${String(draft.modelCapabilities?.[draft.model]?.[key] ?? '')===v?'selected':''}>${escape(name)}</option>`).join('')}</select></label>`).join('')}
       ${provider.authMode !== 'codex' ? ui`<label class="label">API Key${provider.authMode === 'local' ? t('（可选）') : ''}<input class="config-input" name="apiKey" type="password" autocomplete="off" value="${escape(draft.apiKey)}" placeholder="${saved?.hasKey ? t('已保存；留空保留此连接的密钥') : t('只保存到本机')}" ${disabled}></label><label class="list-row-meta"><input type="checkbox" name="clearKey" ${draft.clearKey ? 'checked' : ''} ${disabled}> 清除此连接保存的密钥</label>` : ui`<p class="list-row-meta">${config.codexAuth?.loggedIn ? t('ChatGPT 已登录') : t('需要先完成 ChatGPT 登录')}；模型请求由 Melo 直接发送。</p>`}

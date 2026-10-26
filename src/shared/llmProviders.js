@@ -36,7 +36,7 @@ export function publicLlmConnections(config) {
     providers: LLM_PROVIDERS,
     activeId: config.activeLlmProfileId || '',
     profiles: Object.entries(config.llmProfiles || {}).map(([id, p]) => ({
-      id, providerId: p.providerId, name: p.name, authMode: p.authMode,
+      id, providerId: p.providerId, name: p.name, nameKey: p.nameKey || '', authMode: p.authMode,
       apiProtocol: p.apiProtocol || 'chat-completions', baseUrl: p.baseUrl,
       model: p.model, hasKey: Boolean(p.apiKey), authKind: p.authKind || 'api-key',
       modelMetadata: p.modelMetadata || {}, modelCapabilities: p.modelCapabilities || {},

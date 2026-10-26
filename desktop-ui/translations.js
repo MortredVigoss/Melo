@@ -1,6 +1,23 @@
 // Authored interface copy only. User messages, names and provider output never enter this catalog.
 // Columns: Chinese source / English / Japanese / Korean / Spanish.
 const rows = [
+["只展示已记录的执行 · 不代表模型内部思维", "Recorded execution only · Not the model’s internal thoughts", "記録された実行のみ · モデル内部の思考ではありません", "기록된 실행만 표시 · 모델 내부 사고가 아닙니다", "Solo ejecución registrada · No representa el pensamiento interno del modelo"],
+["执行已停止 · 神经脉冲是低强度氛围动画", "Execution stopped · Neural pulses are ambient animation", "実行は停止済み · パルスは背景アニメーションです", "실행 중지됨 · 신경 맥박은 배경 애니메이션입니다", "Ejecución detenida · Los pulsos son animación ambiental"],
+["准备就绪 · 尚未搜索、计算或调用工具", "Ready · No searches, calculations or tool calls yet", "準備完了 · 検索・計算・ツール実行はまだありません", "준비 완료 · 검색, 계산, 도구 호출 전입니다", "Listo · Aún no se han realizado búsquedas, cálculos ni llamadas"],
+["{count} 次工具调用", "{count} tool calls", "ツール呼び出し {count} 回", "도구 호출 {count}회", "{count} llamadas a herramientas"],
+["{count} 条记录", "{count} records", "{count} 件の記録", "기록 {count}개", "{count} registros"],
+["{count} 条来源 ↗", "{count} sources ↗", "情報源 {count} 件 ↗", "출처 {count}개 ↗", "{count} fuentes ↗"],
+["摘要较长，保留前 24,000 字符", "Long summary; first 24,000 characters retained", "長い要約のため先頭 24,000 文字を保持", "긴 요약의 처음 24,000자 유지", "Resumen largo; se conservan los primeros 24.000 caracteres"],
+["长内容已截断", "Long content truncated", "長い内容を省略", "긴 내용 잘림", "Contenido largo truncado"],
+
+["项目", "Projects", "プロジェクト", "프로젝트", "Proyectos"],
+["豆包 · 火山方舟", "Doubao · Volcengine Ark", "Doubao · Volcengine Ark", "Doubao · Volcengine Ark", "Doubao · Volcengine Ark"],
+["通义千问 · 百炼", "Qwen · Model Studio", "Qwen · Model Studio", "Qwen · Model Studio", "Qwen · Model Studio"],
+["本地模型", "Local models", "ローカルモデル", "로컬 모델", "Modelos locales"],
+["自定义兼容服务", "Custom compatible service", "カスタム互換サービス", "사용자 정의 호환 서비스", "Servicio compatible personalizado"],
+["原有连接", "Existing connection", "既存の接続", "기존 연결", "Conexión existente"],
+["已删除的项目", "Deleted project", "削除済みのプロジェクト", "삭제된 프로젝트", "Proyecto eliminado"],
+
 ["检查中…", "Checking…", "確認中…", "확인 중…", "Comprobando…"],
 ["刷新状态", "Refresh status", "状態を更新", "상태 새로 고침", "Actualizar estado"],
 ["正在启动 Melo", "Starting Melo", "Melo を起動中", "Melo 시작 중", "Iniciando Melo"],

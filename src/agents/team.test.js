@@ -1,3 +1,4 @@
+import { runtimeStageOutput } from '../../shared/agent/runtimeMessages.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {validateTeamPlan} from './team.js';
@@ -177,7 +178,20 @@ test('T8: a team plan extends a top-level turn budget; inside a child pool it is
  assert.equal(memberRemaining.tokens,50_000);
  const notice=capped.find(e=>e.type==='execution_event'&&e.event.id==='team:budget-capped');
  assert.ok(notice,'the cap is surfaced as a pipeline event');
- assert.match(notice.event.output,/60 分钟 \/ 2000000 token/);
- assert.match(notice.event.output,/约 5 分钟 \/ 50000 token/);
+ assert.match(runtimeStageOutput(notice.event,'zh'),/60 分钟 \/ 2000000 token/);
+ assert.match(runtimeStageOutput(notice.event,'zh'),/约 5 分钟 \/ 50000 token/);
  assert.equal(remainingMs(root),60*60_000,'the root was not touched by the child team');
+});
+
+test('team members keep their pinned reply language and request errors remain isolated', async () => {
+  const {normalizeAgentProfile}=await import('../state/agentProfiles.js');
+  const {serverText}=await import('../shared/serverText.js');
+  const {normalizeCapabilities}=await import('../domain/agent/capabilities.js');
+  const capabilities=normalizeCapabilities({readFiles:true,network:true,delegate:true});
+  const agentProfiles=Object.fromEntries([['research','ja'],['builder','ko']].map(([id,replyLanguage])=>[id,{...normalizeAgentProfile(id,{}),replyLanguage,capabilities}]));
+  const seen={};
+  await runAgentTeam({plan:{members:['research','builder'],mode:'parallel',concurrency:2},task:'Please read these sources',config:{replyLanguage:'en'},agentProfiles,capabilities,
+    run:async({roleId,config})=>{await new Promise(resolve=>setImmediate(resolve));seen[roleId]=[config.replyLanguage,serverText('noActiveReply')];return {ok:true,output:'done'};}});
+  assert.deepEqual(seen.research,['ja','この会話には処理中の回答がありません。']);
+  assert.deepEqual(seen.builder,['ko','이 대화에는 진행 중인 답변이 없습니다.']);
 });

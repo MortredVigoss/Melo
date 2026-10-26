@@ -1,3 +1,4 @@
+import { serverText } from '../../shared/serverText.js';
 import { imageSettings, imageConnection } from '../../images/imageSettings.js';
 import { generateApiImage } from '../../images/openaiImageEngine.js';
 /**
@@ -259,7 +260,7 @@ export const imageTool = {
       return { ok: false, output: 'Missing required: action.', error: 'INVALID_PARAMS' };
     }
 
-    if (output && !isAbsolute(output) && !workspacePath) return {ok:false,error:'WORKSPACE_REQUIRED',output:'此操作需要明确的工作目录。',meta:{executionStarted:false}};
+    if (output && !isAbsolute(output) && !workspacePath) return {ok:false,error:'WORKSPACE_REQUIRED',output:serverText('workspaceRequired'),meta:{executionStarted:false}};
 
     // ── generate (no input file required) ─────────────────────────────────
     if (action === 'generate') {
@@ -503,7 +504,7 @@ export const imageTool = {
     if (!inputPath) {
       return { ok: false, output: 'Missing required: path.', error: 'INVALID_PARAMS' };
     }
-    if (!isAbsolute(inputPath) && !workspacePath) return {ok:false,error:'WORKSPACE_REQUIRED',output:'此操作需要明确的工作目录。',meta:{executionStarted:false}};
+    if (!isAbsolute(inputPath) && !workspacePath) return {ok:false,error:'WORKSPACE_REQUIRED',output:serverText('workspaceRequired'),meta:{executionStarted:false}};
     const absPath = isAbsolute(inputPath) ? inputPath : resolve(workspacePath, inputPath);
 
     // Gate the input image read once. atomicOpenLeaf+S_ISREG+size

@@ -1,3 +1,4 @@
+import { serverText } from '../shared/serverText.js';
 import { createRequestContext, requestIdentity } from '../runtime/requestContext.js';
 import { validateChatRequest, errorPayload } from '../services/chat/requestContract.js';
 import { sendChatMessage } from '../services/chat/sendChatMessage.js';
@@ -41,7 +42,7 @@ export async function handleChatRoutes(request, response, url) {
     if (url.pathname === '/api/chat/supplement' && request.method === 'POST') {
       const body = await readJsonBody(request);
       const entry = addSupplement(String(body?.chatId || ''), body?.content);
-      sendJson(response, entry ? 200 : 409, entry ? { id: entry.id } : { error: '这个对话当前没有进行中的回复。' });
+      sendJson(response, entry ? 200 : 409, entry ? { id: entry.id } : { error: serverText('noActiveReply') });
       return;
     }
 

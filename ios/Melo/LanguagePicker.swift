@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct InterfaceLanguageMenu: View {
-    @AppStorage("melo.interfaceLanguage") private var language = "zh-CN"
+    @AppStorage("melo.interfaceLanguage") private var language = InterfaceLanguage.system.rawValue
     var body: some View {
         Menu {
             Picker("界面语言", selection: $language) {

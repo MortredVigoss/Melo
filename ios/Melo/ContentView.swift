@@ -262,7 +262,7 @@ struct ChatView: View {
     @EnvironmentObject var account: ChatGPTAccount
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var voiceInput = VoiceInput(engine: SystemSpeechInput())
-    @AppStorage("melo.voiceLanguage") private var voiceLanguage = "zh-CN"
+    @AppStorage("melo.voiceLanguage") private var voiceLanguage = "system"
     @State var chatID: String
     @State private var historyVisible = ChatView.previewHistory
     private static var previewHistory: Bool {

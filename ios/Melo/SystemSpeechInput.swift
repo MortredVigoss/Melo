@@ -39,7 +39,7 @@ final class SystemSpeechInput: SpeechInputEngine {
     }
 
     private func begin(locale: String, token: UUID, receive: @escaping (SpeechInputEvent) -> Void) {
-        let language = locale == "system" ? (Locale.preferredLanguages.first ?? "zh-CN") : locale
+        let language = locale == "system" ? (Locale.preferredLanguages.first ?? Locale.current.identifier) : locale
         guard let recognizer = SFSpeechRecognizer(locale: Locale(identifier: language)), recognizer.isAvailable else {
             receive(.failure("当前语言的语音识别暂不可用，请检查网络或更换语言。")); return
         }

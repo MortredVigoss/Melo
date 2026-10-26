@@ -1,3 +1,4 @@
+import { currentLanguage } from '../../i18n.js';
 import { requestText } from '../../feedback.js';
 // Chat feature controller (architecture plan P2c, 2026-10-19): the composer
 // (draft, prompt history, slash palette, attachments and drag-and-drop, voice
@@ -531,7 +532,7 @@ function handleVoiceBridgeEvent(detail = {}) { voiceInput.receive(detail); }
 function toggleVoiceInput() {
   if (voiceInputActive(chatState.voice)) { voiceInput.stop(); return; }
   stopCurrentTts();
-  voiceInput.start(voiceLanguage() || 'zh-CN');
+  voiceInput.start(voiceLanguage() || currentLanguage());
 }
 
 async function handleCreateChat({

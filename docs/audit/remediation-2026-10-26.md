@@ -32,9 +32,21 @@
 
 最终快速档 `.tmp/test-runs/run-5yhv0C/summary.json`、集成档 `.tmp/test-runs/run-6Kx5nu/summary.json` 均 GREEN：JS 4660/4660、两组浏览器、37 Swift、Android JVM/Lint/Debug/Release，0 跳过、0 隔离复测。首次缺 Java 环境、旧夹具失败及共享策略错误均保留日志；使用本机已有 Java 21 / Android SDK，无新增安装。Android instrumentation 新夹具仅编译，未跑模拟器。证据 `.tmp/audit-batch-1/`。
 
+## 批次 2：语言与事件
+
+基准 `c37b0f8`，分支 `codex/audit-2-20261026`。C 混合：共享 runtimeMessages 管执行事件 ID/参数；serverText 管服务端错误/回复。请求头在边界捕获语言，异步请求上下文隔离；Agent → 最近用户消息 → 渠道 → 界面。iOS 读取正确的已保存偏好键，缺省跟随系统，已存选择保留。
+
+H2 的五个文件仅是来源相关性分词、检索词权重与频道昵称边界，加入分词允许名单；voiceRewrite 的 @昵称使用 Unicode 字母/数字，TTS 统一 detector。规则 H2/H7/H8/H9/H19 = 0，新增命中 0。分词例外有边界测试，仍拒绝散落的语言猜测。
+
+
+附件续问继承最近用户消息语言；Agent 固定语言优先，团队并发成员的请求上下文与错误提示互不串语言。桌面请求头实际被 HTTP 错误入口消费。执行事件发 ID/参数，持久化场景另带英文兼容文本，冻结的 v1 同步剥离扩展字段后仍可读，桌面可按新语言重新渲染；用户补充、模型正文、成员姓名不作为翻译键。
+
+英文浏览器实测执行详情无中文，预算数值、字符计数与未知用量均保留，五语切换、草稿保留和重启恢复用例通过。截图 `.tmp/language-20261015/execution-english.png` 已目检。Swift 语言专项通过，包含附件续问、固定 Agent 与界面回退；完整 iOS Release / iphoneos 未签名构建通过（`.tmp/audit-batch-2/ios-build.log`），涵盖 UIKit / SwiftUI 页面；没有安装或真机体验验收。
+
+首次快速档暴露 57 项失败：主要为旧测试依赖隐式中文，现明确设置夹具语言，原有断言保留；其中预算事件遗漏 used/limit 是实际回归，补回参数并保留原数字断言。最终专项 56/56、Swift 专项两组通过。最终快速档 `.tmp/test-runs/run-ZgBFZ6/summary.json`、集成档 `.tmp/test-runs/run-HOgEbi/summary.json` 均 GREEN：JS 4668/4668、两组浏览器、37 Swift、Android JVM/Lint/Debug/Release，0 跳过、0 隔离复测。完整日志 `.tmp/audit-batch-2/`，失败日志也保留。
+
 ## 后续批次
 
-2. 语言：replyLocale、事件 id、服务端文案和英文执行面板。
 3. 配置：真实默认值、地址 / 路径与高级开关。以校准后的真实命中为准，不将状态标识迁入模型目录。
 4. 桌面 UI：反馈、表单、标题 / 按钮 / 空状态 / 术语及样式 helper。
 5. iOS：主题 token、本地化及双端术语检测。
