@@ -1,3 +1,5 @@
+import { createJobStore } from '../development/store.js';
+import { developmentCheckpoint } from '../development/checkpoint.js';
 import { serverText } from '../shared/serverText.js';
 import {projectMemoryFor} from '../services/chat/projectMemorySync.js';
 import {validateAgentSettings,refreshAgentSettings,applyAgentSettings,confirmAgentSettings} from '../../mobile-sync/agentSettings.js';
@@ -111,7 +113,8 @@ export async function handleMobileSyncRoute(request, response, url) {
   },{home});
   if(incoming)state=await updateStateAtomically(s=>{ replayPortableMemory(s); return s; },{home});
   await finishChatDeletions(home);
-  const outgoing = exportMobileSnapshot(state,{workspace:true});
+  const development = (await createJobStore(home).list()).map(developmentCheckpoint);
+  const outgoing = exportMobileSnapshot(state,{workspace:true,development});
   if (Buffer.byteLength(JSON.stringify(outgoing)) > 8 * 1024 * 1024) {
     sendJson(response,413,{error:serverText('syncLimit')});
   } else sendJson(response,200,outgoing);

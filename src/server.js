@@ -1,3 +1,5 @@
+import { createDevelopmentRoutes } from './http/developmentRoutes.js';
+import { stopDevelopmentJobs } from './development/runtime.js';
 import { DESKTOP_SERVICE_DEFAULTS } from './shared/localServices.js';
 // Composition root: register built-in tools explicitly here instead of
 // relying on the desktopStore facade's import side effect (audit A-11).
@@ -927,6 +929,8 @@ await finishChatDeletions(runtimePaths.home);
     } },
 ]);
 
+const developmentRoutes = createDevelopmentRoutes({ home: runtimePaths.home, env: { ...process.env } });
+
 const server = createServer((request, response) => runWithRequestContext(createRequestContext({ interfaceLanguage: request.headers['x-melo-interface-language'], bootstrapBase: String(request.headers['x-melo-bootstrap-base'] || '').slice(0,80) }), async () => {
   try {
     const url = new URL(request.url || '/', `http://${host}:${port}`);
@@ -934,6 +938,7 @@ const server = createServer((request, response) => runWithRequestContext(createR
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method) && !requireLocalOrigin(request, response)) return;
 
     if (await handleMobileSyncRoute(request, response, url)) return;
+    if (await developmentRoutes.handle(request, response, url, requireLocalOrigin)) return;
     if (await handleExecutionRoutes(request, response, url, runtimePaths.home)) return;
     if (mediaRoutes.matches(request, url)) {
       await mediaRoutes.handle(request, response, url, requireLocalOrigin);
@@ -1305,6 +1310,7 @@ function shutdown() {
     .then(m => m.getDiscordVoiceRuntime().shutdown())
     .catch(() => {});
   Promise.allSettled([
+    stopDevelopmentJobs(),
     isAgentChannelAvailable('telegram') ? _releaseTelegramLock() : Promise.resolve(),
     isAgentChannelAvailable('discord') ? _releaseDiscordLock() : Promise.resolve(),
     voiceShutdown,

@@ -323,8 +323,8 @@ import com.melo.android.network.HostedSearchAdapter
         } }) { Text("创建任务") } }
         items(data.tasks, key = { it.jsonObject.text("id") }) { item ->
             val task = item.jsonObject
-            ListItem(headlineContent = { Text(task.text("title")) }, supportingContent = { Text("${task.text("status")} · ${task.text("owner")}\n${task.text("checkpoint").take(300)}") })
-            if (task.text("status") in setOf("todo", "blocked")) TextButton(onClick = { vm.engine.work {
+            ListItem(headlineContent = { Text(task.text("title")) }, supportingContent = { Text("${task.text("status")} · ${task.text("owner")}\n${task.text("checkpoint").take(if (task.text("id").startsWith("dev_")) 12000 else 300)}") })
+            if (!task.text("id").startsWith("dev_") && task.text("status") in setOf("todo", "blocked")) TextButton(onClick = { vm.engine.work {
                 val id = task.text("id")
                 require(vm.repository.data.value.handoffs.none { it.jsonObject.text("taskId") == id }) { "该任务已有接力请求。" }
                 val handoff = buildJsonObject { put("id", newId()); put("taskId", id); put("fromDevice", data.deviceId); put("requestedAt", now()); put("revision", task["revision"] ?: JsonPrimitive(1)) }

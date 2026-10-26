@@ -1,3 +1,4 @@
+import { verificationMode, releaseOnly } from './release-policy.js';
 import { desktopInstallPaths } from './desktop-install-paths.js';
 import { spawn } from 'node:child_process';
 import { readFile, rm, unlink, writeFile } from 'node:fs/promises';
@@ -644,6 +645,7 @@ async function assertNativeLaunch(appPath, expectedBundlePath = appPath) {
 }
 
 async function main() {
+  const mode = verificationMode(process.argv.slice(2));
   const results = [];
   let connectorProcess = null;
   let telegramProcess = null;
@@ -656,6 +658,9 @@ async function main() {
 
     // JS fixtures are discovered above; only non-Node-test journeys need
     // explicit stages. No parallel hand-maintained file allowlist.
+    results.push(await runStep('Development container isolation', () => runCommand('npm', ['run', 'test:development:container'])));
+    results.push(await runStep('Development desktop journey', () => runCommand('npm', ['run', 'test:development:journey'])));
+
     results.push(await runStep('Settings design browser journeys', () => runCommand('npm', ['run', 'test:settings-design'])));
 
     results.push(await runStep('iPhone protocol and shared renderer (test:ios)', () => runCommand('npm', ['run', 'test:ios', ...(results[0].status === 'GREEN' ? ['--', '--skip-js'] : [])])));
@@ -673,30 +678,6 @@ async function main() {
     } else {
       results.push(
         await runStep('Desktop shell server lifecycle (signals, stale server)', () => runCommand('node', [join(projectDir, 'scripts/smoke-desktop-lifecycle.js'), nativeAppPath], { timeoutMs: 180000 })),
-      );
-    }
-    results.push(
-      await runStep('Install desktop app bundle', () => runCommand('npm', ['run', 'install:desktop'])),
-    );
-    if (process.env.MELO_SKIP_NATIVE_LAUNCH === '1') {
-      for (const name of ['Desktop folder Melo.app launch', 'Launchpad Melo.app launch']) {
-        results.push({ name, status: 'YELLOW', durationMs: 0, detail: 'Explicitly skipped: native window verification requires an unlocked desktop.' });
-      }
-    } else {
-      results.push(
-        await runStep('Desktop folder Melo.app launch', async () => {
-          const output = await assertNativeLaunch(desktopFolderAppPath, [
-            desktopFolderAppPath,
-            launchpadAppPath,
-          ]);
-          return output.split('\n').slice(0, 5).join('\n');
-        }),
-      );
-      results.push(
-        await runStep('Launchpad Melo.app launch', async () => {
-          const output = await assertNativeLaunch(launchpadAppPath);
-          return output.split('\n').slice(0, 5).join('\n');
-        }),
       );
     }
 
@@ -770,6 +751,35 @@ async function main() {
         return 'Agents expose canonical instructions/description, compatible persona sections and explicit capabilities or a migration preview.';
       }),
     );
+    // Installation is the last release-only step, after every pure check.
+    await releaseOnly(mode, results, async () => {
+    results.push(
+      await runStep('Install desktop app bundle', () => runCommand('npm', ['run', 'install:desktop'])),
+    );
+    if (process.env.MELO_SKIP_NATIVE_LAUNCH === '1') {
+      for (const name of ['Desktop folder Melo.app launch', 'Launchpad Melo.app launch']) {
+        results.push({ name, status: 'YELLOW', durationMs: 0, detail: 'Explicitly skipped: native window verification requires an unlocked desktop.' });
+      }
+    } else {
+      results.push(
+        await runStep('Desktop folder Melo.app launch', async () => {
+          const output = await assertNativeLaunch(desktopFolderAppPath, [
+            desktopFolderAppPath,
+            launchpadAppPath,
+          ]);
+          return output.split('\n').slice(0, 5).join('\n');
+        }),
+      );
+      results.push(
+        await runStep('Launchpad Melo.app launch', async () => {
+          const output = await assertNativeLaunch(launchpadAppPath);
+          return output.split('\n').slice(0, 5).join('\n');
+        }),
+      );
+    }
+
+    });
+
   } finally {
     await cleanupAll();
   }

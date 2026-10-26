@@ -32,7 +32,9 @@ test('ownership prefers exact paths, then longer literal prefixes, and tests fol
 test('the map covers every requested feature with entries, routes, counterparts, contracts and tests', async () => {
   const { map, problems } = await buildModuleMap();
   assert.deepEqual(problems, []);
-  assert.deepEqual(map.summary.features, ['projects', 'agents', 'chat', 'memory', 'knowledge', 'settings', 'sync', 'tools', 'media', 'voice', 'approvals', 'desktop-shell', 'desktop-pet', 'iphone']);
+  assert.deepEqual(map.summary.features, ['projects', 'agents', 'chat', 'memory', 'knowledge', 'settings', 'sync', 'tools', 'media', 'voice', 'approvals', 'desktop-shell', 'desktop-pet', 'iphone', 'development']);
+  assert.ok(map.features.development.httpRoutes.some(route => route.startsWith('POST /api/development/create ')));
+  assert.ok(map.features.development.tests.js.includes('src/development/service.test.js'));
   assert.deepEqual(map.summary.unassignedRoutes, []);
   assert.deepEqual(map.summary.unownedFiles, []);
   assert.deepEqual(map.summary.sourceReadingTests.unannotated, [], 'register new source-reading tests in architecture/module-annotations.json');

@@ -471,6 +471,24 @@
       "notes": [
         "npm test = verify-daily.js（test-plan.js / test-impact.js 按功能、反向依赖及隐式边选组）；npm run test:full 为发布 gate。scope 使用相同选组器，只输出报告。"
       ]
+    },
+    "development": {
+      "title": "隔离开发作业",
+      "owns": [
+        "src/development/**",
+        "src/http/developmentRoutes*",
+        "src/tools/builtins/developmentTool.js",
+        "desktop-ui/features/development/**"
+      ],
+      "routes": [
+        "/api/development/"
+      ],
+      "testGroups": [
+        "test:development"
+      ],
+      "notes": [
+        "固定候选、容器执行、只读审查与待合并包；手机复用 v1 任务检查点，不授予桌面执行权限。"
+      ]
     }
   },
   "counterparts": [
@@ -786,6 +804,20 @@
       ],
       "contract": "agent-loop",
       "note": "能力临时提升 / 即时开启：同一判定、原子、时长与文案（agent-loop.json capabilityElevation，手机映射在其 phone 节）；两端各自账本，不同步；手机卡口 DeviceToolContext.perform"
+    },
+    {
+      "feature": "development",
+      "desktop": [
+        "src/development/checkpoint.js",
+        "desktop-ui/features/development/panel.js",
+        "src/http/mobileSyncRoutes.js"
+      ],
+      "iphone": [
+        "ios/Melo/Models.swift",
+        "ios/Melo/ContentView.swift"
+      ],
+      "contract": "sync-schema",
+      "note": "开发作业使用 v1 只读任务检查点，手机不持有桌面运行或合并授权；Android TasksScreen 显示相同记录。"
     }
   ],
   "sharedContracts": [

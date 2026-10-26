@@ -1,3 +1,4 @@
+import { withDevelopmentCheckpoints } from '../../development/checkpoint.js';
 // Mobile sync business logic — byte-for-byte extraction from
 // src/http/mobileSyncRoutes.js (2026-10-17 audit A-4 / A-12: the transport
 // module carried export/import/merge/persist logic, and
@@ -16,13 +17,13 @@ const portableDate = (value, fallback) => {
   const candidate = Number.isFinite(Date.parse(value)) ? value : fallback;
   return Number.isFinite(Date.parse(candidate)) ? new Date(candidate).toISOString() : '1970-01-01T00:00:00.000Z';
 };
-export function exportMobileSnapshot(state, {workspace = false} = {}) {
+export function exportMobileSnapshot(state, {workspace = false, development = []} = {}) {
   const deletedChats = mergeDeletedChats(state.mobileDeletedChats);
   const deleted = new Set(deletedChats.map(row => row.id));
   return validateSnapshot({ version: 1, deletedChats,
     ...(workspace && state.mobileWorkspaceSync ? {workspace:withoutDeletedChatContext(state.mobileWorkspaceSync, deletedChats)} : {}),
-    ...(state.tasks?.length || state.mobileTaskSync ? {
-      tasks: [...(state.mobileTaskSync?.tasks || []).filter(remote=>!state.tasks?.some(t=>t.id===remote.id)), ...(state.tasks || []).map(t=>({id:t.id,title:String(t.title || '任务').slice(0,500),status:t.status,owner:t.owner,checkpoint:((Object.keys(t.execution?.pendingApprovals || {}).length ? `等待执行设备确认：${Object.values(t.execution.pendingApprovals).join('、')}。\n` : '')+(t.latestNote || t.summary || '')).slice(0,12000),revision:t.syncRevision || 1,sourceDevice:'desktop',updatedAt:t.updatedAt,chatId:t.execution?.chatId || null,needsApproval:Object.keys(t.execution?.pendingApprovals || {}).length>0 || ['blocked','review'].includes(t.status)}))],
+    ...(state.tasks?.length || state.mobileTaskSync || development.length ? {
+      tasks: withDevelopmentCheckpoints([...(state.mobileTaskSync?.tasks || []).filter(remote=>!state.tasks?.some(t=>t.id===remote.id)), ...(state.tasks || []).map(t=>({id:t.id,title:String(t.title || '任务').slice(0,500),status:t.status,owner:t.owner,checkpoint:((Object.keys(t.execution?.pendingApprovals || {}).length ? `等待执行设备确认：${Object.values(t.execution.pendingApprovals).join('、')}。\n` : '')+(t.latestNote || t.summary || '')).slice(0,12000),revision:t.syncRevision || 1,sourceDevice:'desktop',updatedAt:t.updatedAt,chatId:t.execution?.chatId || null,needsApproval:Object.keys(t.execution?.pendingApprovals || {}).length>0 || ['blocked','review'].includes(t.status)}))], development),
       handoffs:state.mobileTaskSync?.handoffs || [],
     } : {}), chats: state.chats.filter(chat => !chat.externalThreadKey && !deleted.has(chat.id)).map(chat => ({
     id: chat.id, title: String(chat.title || '对话').slice(0,500), createdAt: portableDate(chat.createdAt, chat.updatedAt), updatedAt: portableDate(chat.updatedAt, chat.createdAt),

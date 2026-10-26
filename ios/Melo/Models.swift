@@ -115,7 +115,7 @@ struct TaskCheckpoint: Codable, Identifiable, Equatable {
     var chatId: String?
     var needsApproval: Bool
     var statusLabel: String { needsApproval && status == "running" ? "等待执行设备确认权限" : ["todo":"待执行", "running":"执行中", "blocked":"需要修复", "review":"待验收", "done":"已完成"][status] ?? "未知状态" }
-    var canRequestHandoff: Bool { ["todo", "blocked"].contains(status) }
+    var canRequestHandoff: Bool { !id.hasPrefix("dev_") && ["todo", "blocked"].contains(status) }
     func handoffLabel(requests: [TaskHandoff], receipts: Set<String>) -> String {
         let matches = requests.filter { $0.taskId == id && $0.revision == revision }
         if matches.contains(where: { receipts.contains($0.id) }) { return "同步服务已接收 · 等待桌面确认" }

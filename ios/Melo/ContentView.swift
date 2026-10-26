@@ -516,6 +516,7 @@ struct TaskHandoffView: View {
                             VStack(alignment: .leading, spacing: 6) { Text(task.title).font(.headline); Text(task.statusLabel).font(.caption).foregroundStyle(meloAccent) }
                         }
                         Text(task.checkpoint.isEmpty ? "尚无执行检查点" : task.checkpoint).font(.subheadline).foregroundStyle(MeloTheme.muted).textSelection(.enabled)
+                        if task.id.hasPrefix("dev_") { Label("在执行设备处理", systemImage: "desktopcomputer").font(.caption).foregroundStyle(MeloTheme.muted) }
                         if task.needsApproval { Label("回到执行设备核对权限或验收结果", systemImage: "lock.shield").font(.caption).foregroundStyle(meloGold) }
                         if let id = task.chatId, store.chats.contains(where: { $0.id == id }) { Button { open(id) } label: { Label("查看已同步对话", systemImage: "bubble.left.and.bubble.right").frame(minHeight: 44) } }
                         if task.canRequestHandoff {

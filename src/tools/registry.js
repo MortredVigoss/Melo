@@ -1,3 +1,4 @@
+import { developmentTool } from './builtins/developmentTool.js';
 import {delegateTool,delegateTask} from '../agents/delegate.js';
 /**
  * Tool registry.
@@ -61,5 +62,6 @@ const webSearchTool = createCompatibleSearchTool(legacyWebSearchTool);
 export function bootstrapBuiltinTools() {
   if (_bootstrapped) return;
   _bootstrapped = true;
-  registerTools([bashTool, fileReadTool, fileEditTool, fileWriteTool, fileDeleteTool, fileMoveTool, fileMkdirTool, globTool, grepTool, delegateTool, {...delegateTool,id:'agent',name:'Agent (legacy alias)',run:delegateTask}, fetchUrlTool, webSearchTool, webScreenshotTool, mediaInfoTool, mediaApiTool, searchHistoryTool, readHistoryTool, pdfTool, xlsxTool, calculatorTool, clipboardTool, deviceLocationTool, translateTool, imageTool, reminderTool, knowledgeTool, browserOpenTool, browserSnapshotTool, browserCloseTool, browserClickTool, browserFillTool, browserWaitForTool]);
+  registerTools([
+  developmentTool,bashTool, fileReadTool, fileEditTool, fileWriteTool, fileDeleteTool, fileMoveTool, fileMkdirTool, globTool, grepTool, delegateTool, {...delegateTool,id:'agent',name:'Agent (legacy alias)',run:delegateTask}, fetchUrlTool, webSearchTool, webScreenshotTool, mediaInfoTool, mediaApiTool, searchHistoryTool, readHistoryTool, pdfTool, xlsxTool, calculatorTool, clipboardTool, deviceLocationTool, translateTool, imageTool, reminderTool, knowledgeTool, browserOpenTool, browserSnapshotTool, browserCloseTool, browserClickTool, browserFillTool, browserWaitForTool]);
 }

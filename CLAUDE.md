@@ -28,7 +28,7 @@ git config --local alias.pp '!./scripts/codex-review.sh'
 
 ## 2. PROGRESS.md 作为状态看板
 
-- 回归分层（Codex / Claude / 人工共用）：必须遵守 [日常检测与发布规则](docs/testing-workflow.md) 的**两档节奏**（2026-10-24）。每次改动：先 `npm run test:plan -- --files <本任务全部改动文件>`，再运行同范围 `npm test -- --files ...`（快速档：改动影响面 + 公共边界的真实服务测试，不再因为碰到公共文件就跑 4500 个）；一批改动合并 / 推送前**跑一次集成档** `npm test -- --base <该批开始前的提交>` 或共享树 `npm test`（公共 / 未知边界扩大到全部）。不能漏列运行时 / 生成物来缩小范围；门禁自身改动在两档都扩大。完整发布仍用 `npm run test:full`；快速档成功不代表共享树，集成档成功不代表发布或真机验收。新增测试必须接入，禁止削弱断言或跳过失败；超时类失败只允许运行器记录在案的一次隔离复测，真实失败不重试；门禁修改先专项再一次完整日常校准。读结果看 `.tmp/test-runs/run-*/summary.json`，不读整份 TAP。
+- 回归分层（Codex / Claude / 人工共用）：必须遵守 [日常检测与发布规则](docs/testing-workflow.md) 的**两档节奏**（2026-10-24）。每次改动：先 `npm run test:plan -- --files <本任务全部改动文件>`，再运行同范围 `npm test -- --files ...`（快速档：改动影响面 + 公共边界的真实服务测试，不再因为碰到公共文件就跑 4500 个）；一批改动合并 / 推送前**跑一次集成档** `npm test -- --base <该批开始前的提交>` 或共享树 `npm test`（公共 / 未知边界扩大到全部）。不能漏列运行时 / 生成物来缩小范围；门禁自身改动在两档都扩大。完整发布须明确授权并用 `npm run release:verify`；`npm run test:full` 仅完整验证、不安装；快速档成功不代表共享树，集成档成功不代表发布或真机验收。新增测试必须接入，禁止削弱断言或跳过失败；超时类失败只允许运行器记录在案的一次隔离复测，真实失败不重试；门禁修改先专项再一次完整日常校准。读结果看 `.tmp/test-runs/run-*/summary.json`，不读整份 TAP。
 
 - 仓库根目录维护一份 `PROGRESS.md`，记录 **意图与上下文**——不是 changelog（changelog 是 `git log` 的活，codex review 看 diff 就能拿到代码事实）。
 - 每次完成一个可验证的步骤（测试通过、bug 修复、feature 落地、重要重构）就追加一条。**写每一句话之前先问：这条 codex 看 git diff 能不能自己拿到？** 能拿到的就删掉，只留 diff 看不到的——意图、用户拍板、评级反馈、流程偏离、谁做的（Claude / Codex / 用户手改）。

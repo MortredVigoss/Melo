@@ -86,7 +86,12 @@
     "import:pet-skin": "node scripts/desktop-pet-assets.js import",
     "verify:pet-skin": "node scripts/desktop-pet-assets.js verify",
     "bench:capacity": "node scripts/bench-capacity.js",
-    "eval:tasks": "node scripts/eval-agent-tasks.js"
+    "eval:tasks": "node scripts/eval-agent-tasks.js",
+    "release:verify": "node scripts/verify-red-green.js --release",
+    "test:development": "node --test src/development/*.test.js src/http/developmentRoutes.http.test.js desktop-ui/features/development/*.test.js",
+    "test:development:container": "node scripts/verify-development-container.mjs",
+    "test:development:journey": "node scripts/verify-development-journey.mjs",
+    "build:development-image": "node scripts/build-development-image.mjs"
   },
   "dependencies": {
     "@discordjs/voice": "^0.17.0",

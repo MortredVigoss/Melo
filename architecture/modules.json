@@ -15,7 +15,8 @@
       "approvals",
       "desktop-shell",
       "desktop-pet",
-      "iphone"
+      "iphone",
+      "development"
     ],
     "supportAreas": [
       "platform",
@@ -23,8 +24,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 648,
-      "edges": 2090,
+      "modules": 659,
+      "edges": 2125,
       "roots": [
         "src",
         "desktop-ui",
@@ -33,7 +34,7 @@
       ],
       "note": "静态 import/re-export，含 desktop-ui 对 /shared/*.js 的服务映射；不含动态 import 与外部包"
     },
-    "routes": 167,
+    "routes": 175,
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
@@ -308,6 +309,7 @@
           "module": "src/agents/handoff.js",
           "importedBy": [
             "chat",
+            "development",
             "platform"
           ]
         },
@@ -365,6 +367,7 @@
         {
           "module": "src/agents/subAgent.js",
           "importedBy": [
+            "development",
             "platform",
             "tools"
           ]
@@ -442,6 +445,7 @@
             "approvals",
             "chat",
             "desktop-shell",
+            "development",
             "platform",
             "sync",
             "tools"
@@ -457,6 +461,7 @@
           "module": "src/domain/agent/capabilityScope.js",
           "importedBy": [
             "chat",
+            "development",
             "tools"
           ]
         },
@@ -564,6 +569,7 @@
         "channels": 6,
         "chat": 34,
         "desktop-shell": 12,
+        "development": 4,
         "memory": 2,
         "platform": 34,
         "projects": 4,
@@ -965,6 +971,7 @@
           "module": "src/runtime/runBudget.js",
           "importedBy": [
             "agents",
+            "development",
             "platform",
             "tools"
           ]
@@ -1076,6 +1083,7 @@
         "approvals": 1,
         "channels": 9,
         "desktop-shell": 11,
+        "development": 1,
         "media": 14,
         "memory": 12,
         "platform": 20,
@@ -1856,6 +1864,7 @@
             "channels",
             "chat",
             "desktop-shell",
+            "development",
             "knowledge",
             "media",
             "memory",
@@ -1962,6 +1971,7 @@
         "channels": 2,
         "chat": 11,
         "desktop-shell": 15,
+        "development": 1,
         "knowledge": 1,
         "media": 8,
         "memory": 15,
@@ -2153,6 +2163,7 @@
         "agents": 6,
         "chat": 4,
         "desktop-shell": 1,
+        "development": 3,
         "memory": 5,
         "platform": 6,
         "projects": 2,
@@ -2572,6 +2583,7 @@
         "approvals": 33,
         "chat": 18,
         "desktop-shell": 14,
+        "development": 1,
         "knowledge": 3,
         "media": 2,
         "memory": 6,
@@ -3618,6 +3630,7 @@
             "agents",
             "approvals",
             "chat",
+            "development",
             "media",
             "memory",
             "projects",
@@ -3657,6 +3670,7 @@
         "approvals": 4,
         "channels": 2,
         "chat": 11,
+        "development": 1,
         "knowledge": 1,
         "media": 5,
         "memory": 1,
@@ -3671,6 +3685,7 @@
         "agents": 8,
         "approvals": 8,
         "chat": 20,
+        "development": 1,
         "media": 6,
         "memory": 6,
         "platform": 2,
@@ -3965,6 +3980,7 @@
         {
           "module": "src/http/routeRegistry.js",
           "importedBy": [
+            "development",
             "media",
             "voice"
           ]
@@ -3973,6 +3989,7 @@
           "module": "src/http/transport.js",
           "importedBy": [
             "chat",
+            "development",
             "media",
             "sync",
             "voice"
@@ -4049,6 +4066,7 @@
             "approvals",
             "channels",
             "chat",
+            "development",
             "media",
             "memory",
             "projects",
@@ -4064,6 +4082,7 @@
             "channels",
             "chat",
             "desktop-shell",
+            "development",
             "media",
             "memory",
             "projects",
@@ -4149,6 +4168,7 @@
             "channels",
             "chat",
             "desktop-shell",
+            "development",
             "memory",
             "sync",
             "voice"
@@ -4230,6 +4250,7 @@
             "channels",
             "chat",
             "desktop-shell",
+            "development",
             "knowledge",
             "media",
             "memory",
@@ -4255,6 +4276,7 @@
         "channels": 6,
         "chat": 20,
         "desktop-shell": 2,
+        "development": 2,
         "knowledge": 2,
         "media": 2,
         "memory": 21,
@@ -4270,6 +4292,7 @@
         "channels": 22,
         "chat": 59,
         "desktop-shell": 15,
+        "development": 9,
         "knowledge": 2,
         "media": 13,
         "memory": 40,
@@ -4539,6 +4562,7 @@
           "scripts/ios-test-selection.test.js",
           "scripts/native-shutdown.test.js",
           "scripts/native-translations.test.js",
+          "scripts/release-policy.test.js",
           "scripts/scope.test.js",
           "scripts/swift-test-cache.test.js",
           "scripts/test-discovery.test.js",
@@ -4569,6 +4593,110 @@
       ],
       "notes": [
         "npm test = verify-daily.js（test-plan.js / test-impact.js 按功能、反向依赖及隐式边选组）；npm run test:full 为发布 gate。scope 使用相同选组器，只输出报告。"
+      ]
+    },
+    "development": {
+      "title": "隔离开发作业",
+      "kind": "feature",
+      "owns": [
+        "src/development/**",
+        "src/http/developmentRoutes*",
+        "src/tools/builtins/developmentTool.js",
+        "desktop-ui/features/development/**"
+      ],
+      "modules": {
+        "desktop-ui": 1,
+        "src": 10
+      },
+      "entryModules": [
+        {
+          "module": "desktop-ui/features/development/panel.js",
+          "importedBy": [
+            "desktop-shell"
+          ]
+        },
+        {
+          "module": "src/development/checkpoint.js",
+          "importedBy": [
+            "sync"
+          ]
+        },
+        {
+          "module": "src/development/runtime.js",
+          "importedBy": [
+            "platform"
+          ]
+        },
+        {
+          "module": "src/development/store.js",
+          "importedBy": [
+            "sync"
+          ]
+        },
+        {
+          "module": "src/http/developmentRoutes.js",
+          "importedBy": [
+            "platform"
+          ]
+        },
+        {
+          "module": "src/tools/builtins/developmentTool.js",
+          "importedBy": [
+            "tools"
+          ]
+        }
+      ],
+      "dependsOn": {
+        "agents": 4,
+        "chat": 1,
+        "desktop-shell": 1,
+        "platform": 9,
+        "settings": 1
+      },
+      "usedBy": {
+        "desktop-shell": 1,
+        "platform": 2,
+        "sync": 3,
+        "tools": 1
+      },
+      "httpRoutes": [
+        "POST /api/development/approve ← src/http/developmentRoutes.js",
+        "POST /api/development/create ← src/http/developmentRoutes.js",
+        "POST /api/development/export ← src/http/developmentRoutes.js",
+        "GET /api/development/job ← src/http/developmentRoutes.js",
+        "GET /api/development/jobs ← src/http/developmentRoutes.js",
+        "POST /api/development/recover ← src/http/developmentRoutes.js",
+        "POST /api/development/start ← src/http/developmentRoutes.js",
+        "POST /api/development/stop ← src/http/developmentRoutes.js"
+      ],
+      "desktopUi": [
+        "desktop-ui/features/development/panel.js"
+      ],
+      "iphone": {
+        "owned": [],
+        "counterparts": [
+          "ios/Melo/ContentView.swift",
+          "ios/Melo/Models.swift"
+        ]
+      },
+      "sharedContracts": [
+        "sync-schema"
+      ],
+      "tests": {
+        "groups": [
+          "npm run test:development"
+        ],
+        "js": [
+          "desktop-ui/features/development/panel.test.js",
+          "src/development/agent.test.js",
+          "src/development/service.test.js",
+          "src/http/developmentRoutes.http.test.js"
+        ],
+        "swift": []
+      },
+      "implicit": [],
+      "notes": [
+        "固定候选、容器执行、只读审查与待合并包；手机复用 v1 任务检查点，不授予桌面执行权限。"
       ]
     }
   },
@@ -4959,6 +5087,24 @@
         "agents",
         "approvals",
         "platform"
+      ]
+    },
+    {
+      "feature": "development",
+      "desktop": [
+        "src/development/checkpoint.js",
+        "desktop-ui/features/development/panel.js",
+        "src/http/mobileSyncRoutes.js"
+      ],
+      "iphone": [
+        "ios/Melo/Models.swift",
+        "ios/Melo/ContentView.swift"
+      ],
+      "contract": "sync-schema",
+      "note": "开发作业使用 v1 只读任务检查点，手机不持有桌面运行或合并授权；Android TasksScreen 显示相同记录。",
+      "desktopFeatures": [
+        "development",
+        "sync"
       ]
     }
   ],

@@ -1,3 +1,4 @@
+import { renderDevelopmentPanel, handleDevelopment } from './features/development/panel.js';
 import { applyButtonStyles } from './buttonStyles.js';
 import { detectReplyLanguage } from '../shared/agent/locale.js';
 import { beginFormSubmission, decorateActionForms } from './actionForms.js';
@@ -3893,10 +3894,12 @@ async function confirmTaskRestore(token) {
   try { const result = await api('/api/tasks/restore-confirm', {method:'POST',body:{token}}); uiState.taskRestore = null; notify({level:'success',text:t('已恢复；恢复前的内容也已备份：{path}', { path: result.safetyBackupId })}); render(); } catch(error) { notify({level:'error',text:error.message}); }
 }
 function renderTaskPanel({ compact = false } = {}) {
+  const developmentPanel = renderDevelopmentPanel({ profiles: allChatAgentProfiles(), escapeHtml, api, render });
   const tasks = activeTasks();
   const config = uiState.bootstrap?.settings?.config || {};
 
   return ui`
+    ${developmentPanel}
     <section class="surface-card ${compact ? 'compact-surface-card' : ''}">
       <div class="header-row">
         <div>
@@ -5761,6 +5764,7 @@ document.addEventListener('click', async event => {
   }
 
   try {
+    if (await handleDevelopment(action, trigger, { api, render })) return;
     if(await handleManagementAction(action,trigger,{api,data:uiState.bootstrap,applyBootstrap,refresh:customizeFeature.refreshAdvancedStatus})) return;
     if (featureActions.has(action)) { await featureActions.dispatch(action, { action, trigger, event }); return; }
     switch (action) {
