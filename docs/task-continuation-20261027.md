@@ -1,6 +1,6 @@
 # 有能力却提前结束：实施与验收（2026-10-27）
 
-基准 `7ae6bf5`，分支 `codex/task-continuation-20261027`。用户指定的四项修复已落地；最终快速档、集成档结果见下方。仅本地开发，不推送、不安装。
+基准 `7ae6bf5`，分支 `codex/task-continuation-20261027`。用户指定的四项修复已落地，本地实现提交 `99b8ba7`；最终快速档、集成档均通过，结果见下方。仅本地开发，不推送、不安装。
 
 ## 已实现的行为
 
@@ -34,7 +34,9 @@
 | 真模型 | `gpt-6.1-sol`四场景符合预期，见[脱敏回执](task-continuation-real-model-20261027.md)：文件翻译读写回读、多文件计算报告完成；2轮后追加零工具报告；拒绝写入后原文件保留且给出准确建议 |
 | 审计 | `node scripts/audit-inventory.mjs --baseline docs/audit/inventory-2026-10-26.json`：所有H规则无新增，未提高基线 |
 | 最终快速档 | `run-oTS2EM` GREEN：JS4726/4726、37套Swift、Android四项、设置浏览器通过；456.9秒；无跳过、无隔离复测 |
-| 基于7ae6bf5的集成档 | 运行中 |
+| 基于7ae6bf5的集成档 | `run-fK71Jc` GREEN：JS4726/4726、37套Swift、Android四项、设置浏览器通过；168.7秒；无跳过、无隔离复测；检查源码提交 `99b8ba7`（含规范提交 `dfc9269`） |
+
+两档完整摘要分别为 `.tmp/test-runs/run-oTS2EM/summary.json` 与 `.tmp/test-runs/run-fK71Jc/summary.json`。集成档Swift复用了37份编译产物，但全部37套测试实际执行；未以编译缓存替代测试。最终集成后只更新本验收文档与交接，文档链接和diff单独检查，不重复产品门禁。
 
 真实模型使用隔离home/workspace，只传测试数据，审批由测试脚本在该目录中批准/拒绝；英文审批按钮另由真实HTTP服务与浏览器夹具操作。不是实体手机/生产账号数据验收，也没有安装应用。
 
