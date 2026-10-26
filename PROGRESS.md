@@ -1,3 +1,7 @@
+## 2026-10-27 — Fold6 安装交回用户试用
+
+Codex：用户重新授权覆盖安装，已装入上一轮同一 APK 0.10.0；保留本地数据库/设置备份，核对版本与启动，未发送模型请求或执行任务。仅安装验收，不扩大先前 Emulator/汽水结论；未推送。
+
 ## 2026-10-26 — Android Organizer 与动态广告恢复，按用户要求改用 Emulator
 
 Codex：用户认可独立 Todo / Calendar、通知+可选闹钟、系统日历+ICS；本地共用 Core/Repository，直接 OAuth 和跨端 Organizer Sync 不在本批范围。
