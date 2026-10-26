@@ -374,7 +374,8 @@
         "/api/launch/",
         "/vendor/",
         "/shared/",
-        "/src/shared/visualTokens.js"
+        "/src/shared/visualTokens.js",
+        "/src/shared/localServices.js"
       ],
       "testGroups": [
         "test:ui",

@@ -1,3 +1,4 @@
+import { LOCAL_SERVICE_DEFAULTS } from '../../../src/shared/localServices.js';
 import { formatTime } from '../../format.js';
 // Customize page — renderers and selectors
 // (architecture B3 step 1, 2026-10-20). Byte-for-byte move out of
@@ -304,7 +305,7 @@ function renderConnectorDetails(selected) {
           <div>用于音频和语音消息转写。</div>
           <div>API 密钥模式：自动使用主 API 密钥，无需额外配置。</div>
           <div>本地模式：自动使用本机 Ollama 地址，无需授权。</div>
-          <div>Codex OAuth 模式：自动尝试本机 Ollama（http://127.0.0.1:11434/v1），运行 ollama serve 后可用；也可以在下方单独设置 Whisper 密钥。</div>
+          <div>${escapeHtml(t('Codex OAuth 模式：自动尝试本机 Ollama（{url}），运行 ollama serve 后可用；也可以在下方单独设置 Whisper 密钥。', {url:LOCAL_SERVICE_DEFAULTS.ollama}))}</div>
           <div>下方字段会覆盖任何模式的自动选择。</div>
         </div>
         <label class="label">

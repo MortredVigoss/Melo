@@ -23,6 +23,10 @@
 - 桌面安装默认 ~/Applications/Melo.app，快捷入口为产品仓库父目录；MELO_DESKTOP_INSTALL_DIR、MELO_DESKTOP_SHORTCUT_DIR 可指定绝对目录。拒绝覆盖非 Melo 应用和源构建目录，保留账号数据。
 - 桌宠源默认仓库内 desktop-pet，MELO_PET_SOURCE 可覆盖；不再引用开发者个人目录。
 
+素材导入使用 `MELO_PET_SOURCE_DIR` 或 `--from`，没有隐式源目录；这与桌宠代码打包的 `MELO_PET_SOURCE` 分开。
+
+全部行为、诊断和兼容开关见[环境开关目录](env-flags.md)。
+
 ## 开发诊断
 
 | 变量 | 用途 |

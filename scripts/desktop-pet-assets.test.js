@@ -97,3 +97,15 @@ test('a source pack that disagrees with its own manifest is refused before anyth
   assert.equal(await readFile(join(f.store, 'winter-animation/挥手.webm'), 'utf8'), 'webm-b');
   assert.ok(f.module.verifyAssets({ store: f.store, petRoot: f.pet }));
 });
+
+
+test('missing import source fails before changing the asset store or lock', async t => {
+  const f = await fixture(t);
+  f.module.importAssets({ from: f.source, store: f.store, petRoot: f.pet, log: f.log });
+  const before = await readFile(join(f.pet, 'assets.lock.json'), 'utf8');
+  for (const from of ['', '   ', null]) {
+    assert.throws(() => f.module.importAssets({ from, store: f.store, petRoot: f.pet, log: f.log }), /MELO_PET_SOURCE_DIR/);
+    assert.equal(await readFile(join(f.pet, 'assets.lock.json'), 'utf8'), before);
+    assert.ok(f.module.verifyAssets({ store: f.store, petRoot: f.pet }));
+  }
+});

@@ -1,10 +1,7 @@
+import { PROVIDER_DEFAULTS } from '../shared/agent/providerDefaults.js';
 import { t, ui } from './i18n.js';
 const routingLabels = { light:'轻', standard:'标准', strong:'强', high_risk:'高风险任务', deep_research:'深入研究', task_shape:'任务要求', simple:'简单任务', ambiguous:'默认标准档', judgment:'任务判断', requested_escalation:'模型请求升档', repeated_failure:'重复失败', tool_rounds:'工具轮次增加', side_effect:'有副作用的操作' };
-const labels = {
-  'gpt-6.1-sol': 'Sol 6.1',
-  'gpt-6-astra': 'Astra 6',
-  'gpt-6-luna': 'Luna 6',
-};
+const labels = PROVIDER_DEFAULTS.labels;
 
 export function modelLabel(model) {
   return labels[model] || String(model || t("未配置"));

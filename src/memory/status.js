@@ -1,3 +1,4 @@
+import { LOCAL_SERVICE_DEFAULTS } from '../shared/localServices.js';
 import { captureBehavior } from '../runtime/runtimeBehavior.js';
 import { createRequire } from 'node:module';
 /**
@@ -254,7 +255,7 @@ export async function probeEmbeddingProviderAvailability() {
     // Per-provider explanation — what would a user need to fix?
     if (name === 'ollama') {
       result.reasons.ollama =
-        'Ollama HTTP API at MELO_OLLAMA_URL (default http://localhost:11434) not reachable, ' +
+        `Ollama HTTP API at MELO_OLLAMA_URL (default ${LOCAL_SERVICE_DEFAULTS.ollama.replace(/\/v1$/, '')}) not reachable, ` +
         'or the configured embed model (MELO_OLLAMA_EMBED_MODEL, default bge-m3) is not pulled. ' +
         'Run `ollama serve` and `ollama pull bge-m3` to enable.';
     } else if (name === 'openai') {

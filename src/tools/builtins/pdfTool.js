@@ -660,9 +660,9 @@ export const pdfTool = {
     required: ['action'],
   },
   examples: [
-    { action: 'read', path: '/Users/me/doc.pdf' },
+    { action: 'read', path: '~/Documents/doc.pdf' },
     { action: 'read', path: 'https://example.com/report.pdf' },
-    { action: 'write', path: '/Users/me/output.pdf', content: '# Report\n\nHello world', format: 'markdown' },
+    { action: 'write', path: '~/Documents/output.pdf', content: '# Report\n\nHello world', format: 'markdown' },
     {
       action: 'structured',
       title: 'Q1 Sales',

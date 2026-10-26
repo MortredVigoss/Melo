@@ -1,3 +1,4 @@
+import { DESKTOP_SERVICE_DEFAULTS } from '../src/shared/localServices.js';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -5,7 +6,7 @@ import { resolve } from 'node:path';
 import { chromium } from 'playwright-core';
 import { launchTestChrome } from '../src/testSupport/testChrome.js';
 
-const baseUrl = process.env.MELO_SMOKE_BASE_URL || 'http://127.0.0.1:43129';
+const baseUrl = process.env.MELO_SMOKE_BASE_URL || DESKTOP_SERVICE_DEFAULTS.smokeOrigin;
 const execFileAsync = promisify(execFile);
 async function request(path, body) {
   const response = await fetch(`${baseUrl}${path}`, {

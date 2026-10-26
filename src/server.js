@@ -1,3 +1,4 @@
+import { DESKTOP_SERVICE_DEFAULTS } from './shared/localServices.js';
 // Composition root: register built-in tools explicitly here instead of
 // relying on the desktopStore facade's import side effect (audit A-11).
 import { bootstrapBuiltinTools } from './tools/registry.js';
@@ -103,7 +104,7 @@ function getArgValue(flag, fallback) {
 }
 
 const host = getArgValue('--host', '127.0.0.1');
-const port = Number(getArgValue('--port', process.env.MELO_DESKTOP_PORT || '43127'));
+const port = Number(getArgValue('--port', process.env.MELO_DESKTOP_PORT || DESKTOP_SERVICE_DEFAULTS.port));
 const telegramPollIntervalMs = Math.max(
   1500,
   Number(getArgValue('--telegram-poll-ms', process.env.MELO_TELEGRAM_POLL_MS || '3500')) || 3500,
@@ -437,7 +438,7 @@ const coreRoutes = createRouteRegistry([
       }
       return;
     } },
-  { method: 'GET', paths: ["/src/shared/visualTokens.js", "/shared/visualTokens.js", "/shared/localServices.js","/shared/channelAvailability.js","/shared/minimaxVoiceResolver.js","/shared/modelCatalog.js","/shared/executionScene.js","/shared/executionMetadata.js","/shared/replyDocument.js","/shared/sessionEvents.js","/shared/conversationTopics.js"], auth: 'local-read', handler: async ({request,response,url,requireLocalOrigin}) => {
+  { method: 'GET', paths: ["/src/shared/localServices.js", "/src/shared/visualTokens.js", "/shared/visualTokens.js", "/shared/localServices.js","/shared/channelAvailability.js","/shared/minimaxVoiceResolver.js","/shared/modelCatalog.js","/shared/executionScene.js","/shared/executionMetadata.js","/shared/replyDocument.js","/shared/sessionEvents.js","/shared/conversationTopics.js"], auth: 'local-read', handler: async ({request,response,url,requireLocalOrigin}) => {
       const absPath = join(rootDir, 'src', 'shared', url.pathname.split('/').at(-1));
       try {
         const fileStat = await stat(absPath);

@@ -1,3 +1,4 @@
+import { MEMORY_SERVICE_DEFAULTS } from '../../shared/localServices.js';
 /**
  * ChromaProvider — talks to a Chroma server (local or remote) over HTTP.
  * Default URL: http://localhost:8000 (Chroma's default).  Config via env:
@@ -16,7 +17,7 @@
 
 import { MemoryProvider } from './MemoryProvider.js';
 
-const DEFAULT_URL = process.env.MELO_CHROMA_URL || 'http://localhost:8000';
+const DEFAULT_URL = process.env.MELO_CHROMA_URL || MEMORY_SERVICE_DEFAULTS.chroma;
 const DEFAULT_COLLECTION = process.env.MELO_CHROMA_COLLECTION || 'melo_memories';
 
 export class ChromaProvider extends MemoryProvider {

@@ -50,9 +50,9 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
   }()
   private let host = "127.0.0.1"
   private let configuredPort = Int(
-    ProcessInfo.processInfo.environment["MELO_DESKTOP_PORT"] ?? "43127"
+    ProcessInfo.processInfo.environment["MELO_DESKTOP_PORT"] ?? ""
   ) ?? 43127
-  private var port = 43127
+  private lazy var port = configuredPort
   private var hasLoadedServer = false
   private var launchingServer = false
   private var stoppedStaleServerPID: pid_t?

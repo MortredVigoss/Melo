@@ -24,7 +24,7 @@
     ],
     "graph": {
       "modules": 647,
-      "edges": 2083,
+      "edges": 2091,
       "roots": [
         "src",
         "desktop-ui",
@@ -33,7 +33,7 @@
       ],
       "note": "静态 import/re-export，含 desktop-ui 对 /shared/*.js 的服务映射；不含动态 import 与外部包"
     },
-    "routes": 166,
+    "routes": 167,
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
@@ -1080,7 +1080,7 @@
         "memory": 12,
         "platform": 20,
         "projects": 1,
-        "settings": 13,
+        "settings": 14,
         "sync": 4,
         "tools": 18,
         "voice": 2
@@ -1519,7 +1519,7 @@
         "desktop-shell": 9,
         "knowledge": 3,
         "media": 1,
-        "platform": 38,
+        "platform": 40,
         "projects": 1,
         "settings": 15,
         "sync": 2,
@@ -1949,7 +1949,7 @@
       "dependsOn": {
         "agents": 3,
         "approvals": 1,
-        "chat": 13,
+        "chat": 14,
         "desktop-shell": 12,
         "media": 1,
         "platform": 26,
@@ -2154,7 +2154,7 @@
         "chat": 4,
         "desktop-shell": 1,
         "memory": 5,
-        "platform": 5,
+        "platform": 6,
         "projects": 2,
         "settings": 1
       },
@@ -2575,7 +2575,7 @@
         "knowledge": 3,
         "media": 2,
         "memory": 6,
-        "platform": 45,
+        "platform": 48,
         "projects": 5,
         "settings": 10
       },
@@ -3705,6 +3705,7 @@
         "GET /shared/textUrls.js ← src/server.js",
         "GET /shared/urlDetector.js ← src/server.js",
         "GET /shared/visualTokens.js ← src/server.js",
+        "GET /src/shared/localServices.js ← src/server.js",
         "GET /src/shared/visualTokens.js ← src/server.js",
         "GET /vendor/three/* ← src/server.js"
       ],
@@ -4115,6 +4116,8 @@
             "media",
             "memory",
             "settings",
+            "sync",
+            "tools",
             "voice"
           ]
         },
@@ -4268,11 +4271,11 @@
         "desktop-shell": 12,
         "knowledge": 2,
         "media": 13,
-        "memory": 38,
+        "memory": 40,
         "projects": 23,
         "settings": 26,
-        "sync": 5,
-        "tools": 45,
+        "sync": 6,
+        "tools": 48,
         "voice": 6
       },
       "httpRoutes": [],
@@ -4527,6 +4530,7 @@
           "scripts/ci-test-plan.test.js",
           "scripts/desktop-install-paths.test.js",
           "scripts/desktop-server-lifecycle.test.js",
+          "scripts/env-flags.test.js",
           "scripts/eval-agent-tasks.test.js",
           "scripts/generate-interface-languages.test.js",
           "scripts/generate-module-map.test.js",

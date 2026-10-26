@@ -1,10 +1,11 @@
+import { DESKTOP_SERVICE_DEFAULTS } from '../src/shared/localServices.js';
 import { requireDeletionAcknowledgement } from './protocol.js';
 // Runs alongside the desktop server. All local writes go through its transaction queue.
 const endpoint = new URL(process.env.MELO_SYNC_URL || '');
 if (endpoint.protocol !== 'https:' && !['localhost','127.0.0.1'].includes(endpoint.hostname)) throw new Error('Sync requires HTTPS');
 const token = process.env.MELO_SYNC_TOKEN || '';
 if (token.length < 32) throw new Error('Missing sync token');
-const local = `http://127.0.0.1:${Number(process.env.MELO_DESKTOP_PORT || 43127)}/api/mobile-sync`;
+const local = `http://127.0.0.1:${Number(process.env.MELO_DESKTOP_PORT || DESKTOP_SERVICE_DEFAULTS.port)}/api/mobile-sync`;
 const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
 async function exchange(url, body) {
   const response = await fetch(url, { method: body ? 'POST' : 'GET', headers, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(20000), redirect: 'error' });

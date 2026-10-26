@@ -45,9 +45,15 @@ H2 的五个文件仅是来源相关性分词、检索词权重与频道昵称�
 
 首次快速档暴露 57 项失败：主要为旧测试依赖隐式中文，现明确设置夹具语言，原有断言保留；其中预算事件遗漏 used/limit 是实际回归，补回参数并保留原数字断言。最终专项 56/56、Swift 专项两组通过。最终快速档 `.tmp/test-runs/run-ZgBFZ6/summary.json`、集成档 `.tmp/test-runs/run-HOgEbi/summary.json` 均 GREEN：JS 4668/4668、两组浏览器、37 Swift、Android JVM/Lint/Debug/Release，0 跳过、0 隔离复测。完整日志 `.tmp/audit-batch-2/`，失败日志也保留。
 
+
+## 批次 3：配置
+
+基准 `02213c0`，分支 `codex/audit-3-20261026`。实际剩余 H1 是显示名、旧目录迁移快照与冒烟夹具，不是五个 Whisper 模型默认值；转写原本已读 providerDefaults.media.transcription。显示名和旧目录快照现共用目录，保留用户定制模型和迁移匹配规则。H1/H3/H4 = 0，其他规则新增 0。
+
+地址 / 端口集中 localServices，原生壳只有一个启动回退。示例路径使用用户 Documents；桌宠素材导入必须 MELO_PET_SOURCE_DIR 或 --from，缺失在任何写入前失败，已存在资产与 lock 不变。七项行为开关及编辑保存取消已经存在，复用 config.behavior，不引入重复 advanced 键；补齐 docs/env-flags.md 和生产布尔变量完整性检查。专项 18/18，原生桌面壳编译通过（保留已有定位 API deprecation 警告，无编译错误）。首次快速档抓到 customize 新依赖的浏览器绝对路径不能由 Node 解析；修正为双环境相对引用并登记受限静态路由，专项 8/8。最终快速档 `.tmp/test-runs/run-rDYbH7/summary.json`、集成档 `.tmp/test-runs/run-6NFolE/summary.json` 均 GREEN：JS 4670/4670、两组浏览器、37 Swift、Android 四项，0 跳过/复测。设置浏览器实际检查环境覆盖锁定、保存失败保留草稿、重试、取消与重新加载持久化。证据 `.tmp/audit-batch-3/`；没有安装或调用真实付费供应商。
+
 ## 后续批次
 
-3. 配置：真实默认值、地址 / 路径与高级开关。以校准后的真实命中为准，不将状态标识迁入模型目录。
 4. 桌面 UI：反馈、表单、标题 / 按钮 / 空状态 / 术语及样式 helper。
 5. iOS：主题 token、本地化及双端术语检测。
 6. 架构：J2 / J3 / J6 / J8 独立方案，随后按依赖验收。

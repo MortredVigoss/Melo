@@ -21,7 +21,7 @@ export const PET_ROOT = resolve(dirname(here), '../desktop-pet');
 // opaque dependency and widen every daily plan (scripts/test-impact.js).
 const assets = require('../desktop-pet/assets-store.cjs');
 export const { STORE, LINKS } = assets;
-export const DEFAULT_SOURCE = process.env.MELO_PET_SOURCE_DIR || '/Users/mortred/Documents/New project/desktop-pet';
+export const DEFAULT_SOURCE = process.env.MELO_PET_SOURCE_DIR || '';
 
 export function readManifest(file) {
   const manifest = JSON.parse(readFileSync(file, 'utf8'));
@@ -104,6 +104,7 @@ function link(petRoot, store) {
 const isLink = path => { try { return lstatSync(path).isSymbolicLink(); } catch { return false; } };
 
 export function importAssets({ from = DEFAULT_SOURCE, store = assets.assetsStoreDir(), petRoot = PET_ROOT, log = console.log } = {}) {
+  if (!from || !String(from).trim()) throw new Error('Set MELO_PET_SOURCE_DIR or pass --from <pet source directory> before importing pet assets.');
   from = resolve(from); store = resolve(store);
   const sourcePack = join(from, 'skins/winter');
   const manifest = readManifest(join(sourcePack, 'manifest.json'));

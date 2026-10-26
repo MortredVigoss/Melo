@@ -1,3 +1,4 @@
+import { DESKTOP_SERVICE_DEFAULTS } from '../shared/localServices.js';
 /**
  * Signed workspace-file URLs.
  *
@@ -43,7 +44,7 @@ let _serverOrigin = null;
 
 function guessOriginFromEnv() {
   const host = '127.0.0.1';
-  const port = process.env.MELO_DESKTOP_PORT || '43127';
+  const port = process.env.MELO_DESKTOP_PORT || DESKTOP_SERVICE_DEFAULTS.port;
   return `http://${host}:${port}`;
 }
 

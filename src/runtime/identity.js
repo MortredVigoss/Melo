@@ -1,3 +1,4 @@
+import { DESKTOP_SERVICE_DEFAULTS } from '../shared/localServices.js';
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { readFile, unlink } from 'node:fs/promises';
@@ -7,7 +8,7 @@ import { resolveRuntimePaths } from './paths.js';
 
 const run = promisify(execFile);
 
-export async function createRuntimeIdentity({ paths = resolveRuntimePaths(), host = '127.0.0.1', port = 43127 } = {}) {
+export async function createRuntimeIdentity({ paths = resolveRuntimePaths(), host = '127.0.0.1', port = DESKTOP_SERVICE_DEFAULTS.port } = {}) {
   let revision = 'unknown';
   let dirty = null;
   try {

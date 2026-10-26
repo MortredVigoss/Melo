@@ -40461,37 +40461,37 @@
         }
       }
     },
-    "Codex OAuth 模式：自动尝试本机 Ollama（http://127.0.0.1:11434/v1），运行 ollama serve 后可用；也可以在下方单独设置 Whisper 密钥。": {
+    "Codex OAuth 模式：自动尝试本机 Ollama（{url}），运行 ollama serve 后可用；也可以在下方单独设置 Whisper 密钥。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Codex OAuth 模式：自动尝试本机 Ollama（http://127.0.0.1:11434/v1），运行 ollama serve 后可用；也可以在下方单独设置 Whisper 密钥。"
+            "value": "Codex OAuth 模式：自动尝试本机 Ollama（{url}），运行 ollama serve 后可用；也可以在下方单独设置 Whisper 密钥。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Codex OAuth mode: tries local Ollama (http://127.0.0.1:11434/v1) automatically; run ollama serve to enable it, or set a dedicated Whisper key below."
+            "value": "Codex OAuth mode: tries local Ollama ({url}) automatically; run ollama serve to enable it, or set a dedicated Whisper key below."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Codex OAuth モード：ローカルの Ollama（http://127.0.0.1:11434/v1）を自動で試します。ollama serve を実行すると使えます。下で専用の Whisper キーを設定することもできます。"
+            "value": "Codex OAuth モード：ローカルの Ollama（{url}）を自動で試します。ollama serve を実行すると使えます。下で専用の Whisper キーを設定することもできます。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Codex OAuth 모드: 로컬 Ollama(http://127.0.0.1:11434/v1)를 자동으로 시도합니다. ollama serve를 실행하면 사용할 수 있고, 아래에서 전용 Whisper 키를 설정할 수도 있습니다."
+            "value": "Codex OAuth 모드: 로컬 Ollama({url})를 자동으로 시도합니다. ollama serve를 실행하면 사용할 수 있고, 아래에서 전용 Whisper 키를 설정할 수도 있습니다."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Modo Codex OAuth: prueba Ollama local (http://127.0.0.1:11434/v1) automáticamente; ejecuta ollama serve para activarlo o define abajo una clave de Whisper propia."
+            "value": "Modo Codex OAuth: prueba Ollama local ({url}) automáticamente; ejecuta ollama serve para activarlo o define abajo una clave de Whisper propia."
           }
         }
       }

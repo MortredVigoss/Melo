@@ -27,3 +27,7 @@ export function customVoiceActive(config = {}) {
   try { return localServiceUrl(config.whisperBaseUrl) === customVoiceService(config).baseUrl; }
   catch { return false; }
 }
+
+// Host bootstraps and test services share identities, not capability heuristics.
+export const DESKTOP_SERVICE_DEFAULTS = Object.freeze({ port: 43127, smokeOrigin: 'http://127.0.0.1:43129' });
+export const MEMORY_SERVICE_DEFAULTS = Object.freeze({ chroma: 'http://localhost:8000' });

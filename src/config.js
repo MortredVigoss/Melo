@@ -116,11 +116,7 @@ function normalizeCatalogEntry(values = []) {
 // disks that match one of these obsolete fingerprints get the
 // in-place upgrade. A genuinely-customised catalog (anything not
 // in this list) is left alone — we can't safely guess intent.
-const KNOWN_OBSOLETE_CODEX_CATALOGS = Object.freeze([
-  Object.freeze(['gpt-5.5', 'gpt-5.4', 'gpt-4.1']),  // last pre-GPT-6 default
-  Object.freeze(['gpt-5.4', 'gpt-4.1', 'gpt-4.1-mini']),  // pre-5.5 default
-  Object.freeze(['gpt-5.5', 'gpt-4.1', 'gpt-4.1-mini']),  // 5.5 first cut, before B
-]);
+const KNOWN_OBSOLETE_CODEX_CATALOGS = Object.freeze(PROVIDER_DEFAULTS.legacyCodexCatalogs.map(row => Object.freeze([...row])));
 
 function arraysEqualOrdered(a, b) {
   if (!Array.isArray(a) || !Array.isArray(b)) return false;

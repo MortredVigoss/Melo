@@ -22,7 +22,7 @@
 
 ## 大文件与运行时（不入 Git）
 
-- 金冬天 WebM（约 364MB）、关键帧审计（约 320MB）与大肥鱼原版 WebM（约 52MB）放在仓库旁的固定目录 `../desktop-pet-assets`（可用 `MELO_PET_ASSETS_DIR` 覆盖）。在 Melo 仓库根目录运行 `npm run import:pet-skin`（默认源为素材生产线 `MELO_PET_SOURCE_DIR`，可加 `-- --from <目录>`）：校验源包与其 manifest 一致后复制进该目录，更新 `skins/winter/manifest.json`、`winter-config.json` 和 `assets.lock.json`，并把 `skins/winter/winter-animation`、`upstream/assets/webm` 链接到该目录。皮肤包重建后再跑一次即可；`npm run verify:pet-skin` 校验当前状态。
+- 金冬天 WebM（约 364MB）、关键帧审计（约 320MB）与大肥鱼原版 WebM（约 52MB）放在仓库旁的固定目录 `../desktop-pet-assets`（可用 `MELO_PET_ASSETS_DIR` 覆盖）。在 Melo 仓库根目录运行 `npm run import:pet-skin`（必须先设置 `MELO_PET_SOURCE_DIR`，或加 `-- --from <目录>`；不再猜测个人电脑上的素材目录）：校验源包与其 manifest 一致后复制进该目录，更新 `skins/winter/manifest.json`、`winter-config.json` 和 `assets.lock.json`，并把 `skins/winter/winter-animation`、`upstream/assets/webm` 链接到该目录。皮肤包重建后再跑一次即可；`npm run verify:pet-skin` 校验当前状态。
 - Electron 由 `package.json` 钉版本：`npm run install:desktop-pet` 安装到 `desktop-pet/node_modules`。
 - `npm run build:desktop` 调用 `scripts/bundle-desktop-pet.js`：校验媒体、重建 host 产物，把代码、生产依赖、两套皮肤和带桌宠身份的 `runtime/DSHPet.app`（ad-hoc 签名）装进 `Melo.app/Contents/Resources/desktop-pet/`，再由 Melo 的外层签名覆盖。
 - 素材生产线（`animation-work-v3/`、超分与插帧工具、证据）留在原项目，不在本仓库。

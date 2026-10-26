@@ -1,3 +1,4 @@
+import { DESKTOP_SERVICE_DEFAULTS } from '../../shared/localServices.js';
 import { PROVIDER_DEFAULTS } from '../../shared/modelCatalog.js';
 import { LOCAL_SERVICE_DEFAULTS } from '../../shared/localServices.js';
 import { execFile } from 'node:child_process';
@@ -13,7 +14,7 @@ const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
 // Port where the Swift native transcription server listens.
 // The Swift app starts this server at (Node.js port + 1), defaulting to 43128.
 const NATIVE_TRANSCRIPTION_PORT =
-  Number(process.env.MELO_DESKTOP_PORT || 43127) + 1;
+  Number(process.env.MELO_DESKTOP_PORT || DESKTOP_SERVICE_DEFAULTS.port) + 1;
 
 // Local endpoints that don't require an Authorization header (e.g. Ollama)
 function isLocalEndpoint(url = '') {

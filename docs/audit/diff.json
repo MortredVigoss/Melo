@@ -3,8 +3,8 @@
   "rules": {
     "H1": {
       "new": 0,
-      "closed": 0,
-      "count": 8,
+      "closed": 8,
+      "count": 0,
       "baselineCount": 8
     },
     "H2": {
@@ -15,14 +15,14 @@
     },
     "H3": {
       "new": 0,
-      "closed": 0,
-      "count": 13,
+      "closed": 13,
+      "count": 0,
       "baselineCount": 13
     },
     "H4": {
       "new": 0,
-      "closed": 0,
-      "count": 3,
+      "closed": 3,
+      "count": 0,
       "baselineCount": 3
     },
     "H5": {

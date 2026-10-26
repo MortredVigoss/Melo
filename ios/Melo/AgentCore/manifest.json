@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "sha256": "f78fa0b98a6618798544d45b0e65c352e083cb0eb15a0063689202b9369a6b91",
+  "sha256": "041ec7494356ac78ade48f6ec6578f332b375254db3de0a0c5743d0304e3cd3d",
   "sources": {
     "shared/agent/index.js": "1c656218041504d61947495debdf36d4d72fe2cb7c8eed023b36e81d0ecd7d93",
     "shared/agent/retrieval/requestPolicy.js": "e6c7dfc4ac142a2123aa4c32795ad3ad60cadc3c18819060482229ee3763ed16",
@@ -12,7 +12,7 @@
     "shared/agent/locale.js": "e3da97be8c76698536b398dab786bcee42011da35da415d83a24cfb791d12b44",
     "shared/agent/runtimeMessages.js": "923b5d3a90a638affa65f7cbd543a0666a31816b16db4afa6496b1c2c9fda325",
     "shared/agent/modelCapabilities.js": "1f29ebb73fc2b78e38dbb1d41573e2a64c351adbaa0899620ff790f6b7315857",
-    "shared/agent/providerDefaults.js": "533ab612f61b32d5cca033a3f42a59186651574fc9ab67a84ce4ac57207314ea",
+    "shared/agent/providerDefaults.js": "bc0b9d0069848df1b7621cd8eb598b78cd51a68cf5c58f93bc03ce2e95f7b73d",
     "shared/agent/modelRouting.js": "561bf76933961d5d4e483be0784dfeac4b65bb9d38b3cff6e00c8b63b5235cc0",
     "src/shared/conversationTopics.js": "c8056fc9d1377e20bdbabdf060759db0ba82cafda7df4d7bb554758cfc2e3e5c",
     "shared/agent/taskReplay.js": "324d3294312b9f4e4d0d2484745e60cc0caf0360c82d9da643f1d1328431e74a",

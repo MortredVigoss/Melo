@@ -1,3 +1,4 @@
+import { DESKTOP_SERVICE_DEFAULTS } from '../../shared/localServices.js';
 /**
  * device_location tool (desktop, 2026-10-22)
  *
@@ -62,7 +63,7 @@ export const deviceLocationTool = {
   async run(_args = {}, context = {}) {
     // Bind the port, home and Agent before any await (CLAUDE.md §6).
     const env = context.requestContext?.env || process.env;
-    const port = Number(env.MELO_DESKTOP_PORT || 43127) + 1;
+    const port = Number(env.MELO_DESKTOP_PORT || DESKTOP_SERVICE_DEFAULTS.port) + 1;
     const home = context.meloHome || context.requestContext?.home;
     const agentId = String(context.agentId || context.requestContext?.turnBinding?.role || 'main');
     const fetchImpl = context.fetchImpl || fetch;

@@ -1,7 +1,7 @@
 {
  "version": 1,
  "date": "2026-10-26",
- "commit": "c37b0f8",
+ "commit": "02213c0",
  "roots": [
   "src",
   "shared",
@@ -24,55 +24,10 @@
    "severity": "high",
    "note": "能力标志应来自模型目录；默认名只留目录模块",
    "scanned": 803,
-   "count": 8,
-   "files": 3,
-   "byFile": {
-    "desktop-ui/modelPresentation.js": 3,
-    "scripts/smoke-desktop.js": 2,
-    "src/config.js": 3
-   },
-   "hits": [
-    {
-     "file": "desktop-ui/modelPresentation.js",
-     "line": 4,
-     "text": "'gpt-6.1-sol': 'Sol 6.1',"
-    },
-    {
-     "file": "desktop-ui/modelPresentation.js",
-     "line": 5,
-     "text": "'gpt-6-astra': 'Astra 6',"
-    },
-    {
-     "file": "desktop-ui/modelPresentation.js",
-     "line": 6,
-     "text": "'gpt-6-luna': 'Luna 6',"
-    },
-    {
-     "file": "scripts/smoke-desktop.js",
-     "line": 239,
-     "text": "model: 'gpt-5.5',"
-    },
-    {
-     "file": "scripts/smoke-desktop.js",
-     "line": 825,
-     "text": "item => item === 'gpt-5.5',"
-    },
-    {
-     "file": "src/config.js",
-     "line": 120,
-     "text": "Object.freeze(['gpt-5.5', 'gpt-5.4', 'gpt-4.1']),  // last pre-GPT-6 default"
-    },
-    {
-     "file": "src/config.js",
-     "line": 121,
-     "text": "Object.freeze(['gpt-5.4', 'gpt-4.1', 'gpt-4.1-mini']),  // pre-5.5 default"
-    },
-    {
-     "file": "src/config.js",
-     "line": 122,
-     "text": "Object.freeze(['gpt-5.5', 'gpt-4.1', 'gpt-4.1-mini']),  // 5.5 first cut, before B"
-    }
-   ]
+   "count": 0,
+   "files": 0,
+   "byFile": {},
+   "hits": []
   },
   "H2": {
    "title": "用汉字 / CJK 正则判断语言或内容",
@@ -89,118 +44,20 @@
    "severity": "high",
    "note": "端口进 config 带默认；前端读配置 URL，不做端口正则",
    "scanned": 803,
-   "count": 13,
-   "files": 12,
-   "byFile": {
-    "desktop-app/main.swift": 2,
-    "desktop-ui/features/customize/view.js": 1,
-    "mobile-sync/desktop-relay.js": 1,
-    "scripts/smoke-desktop.js": 1,
-    "scripts/smoke-runtime.js": 1,
-    "src/media/extractors/audioExtractor.js": 1,
-    "src/memory/providers/ChromaProvider.js": 1,
-    "src/memory/status.js": 1,
-    "src/runtime/identity.js": 1,
-    "src/server.js": 1,
-    "src/tools/builtins/deviceLocationTool.js": 1,
-    "src/web/urlSigning.js": 1
-   },
-   "hits": [
-    {
-     "file": "desktop-app/main.swift",
-     "line": 53,
-     "text": "ProcessInfo.processInfo.environment[\"MELO_DESKTOP_PORT\"] ?? \"43127\""
-    },
-    {
-     "file": "desktop-app/main.swift",
-     "line": 55,
-     "text": "private var port = 43127"
-    },
-    {
-     "file": "desktop-ui/features/customize/view.js",
-     "line": 307,
-     "text": "<div>Codex OAuth 模式：自动尝试本机 Ollama（http://127.0.0.1:11434/v1），运行 ollama serve 后可用；也可以在下方单独设置 Whisper 密钥。</div>"
-    },
-    {
-     "file": "mobile-sync/desktop-relay.js",
-     "line": 7,
-     "text": "const local = `http://127.0.0.1:${Number(process.env.MELO_DESKTOP_PORT || 43127)}/api/mobile-sync`;"
-    },
-    {
-     "file": "scripts/smoke-desktop.js",
-     "line": 5,
-     "text": "const baseUrl = process.env.MELO_SMOKE_BASE_URL || 'http://127.0.0.1:43129';"
-    },
-    {
-     "file": "scripts/smoke-runtime.js",
-     "line": 8,
-     "text": "const baseUrl = process.env.MELO_SMOKE_BASE_URL || 'http://127.0.0.1:43129';"
-    },
-    {
-     "file": "src/media/extractors/audioExtractor.js",
-     "line": 16,
-     "text": "Number(process.env.MELO_DESKTOP_PORT || 43127) + 1;"
-    },
-    {
-     "file": "src/memory/providers/ChromaProvider.js",
-     "line": 19,
-     "text": "const DEFAULT_URL = process.env.MELO_CHROMA_URL || 'http://localhost:8000';"
-    },
-    {
-     "file": "src/memory/status.js",
-     "line": 257,
-     "text": "'Ollama HTTP API at MELO_OLLAMA_URL (default http://localhost:11434) not reachable, ' +"
-    },
-    {
-     "file": "src/runtime/identity.js",
-     "line": 10,
-     "text": "export async function createRuntimeIdentity({ paths = resolveRuntimePaths(), host = '127.0.0.1', port = 43127 } = {}) {"
-    },
-    {
-     "file": "src/server.js",
-     "line": 106,
-     "text": "const port = Number(getArgValue('--port', process.env.MELO_DESKTOP_PORT || '43127'));"
-    },
-    {
-     "file": "src/tools/builtins/deviceLocationTool.js",
-     "line": 65,
-     "text": "const port = Number(env.MELO_DESKTOP_PORT || 43127) + 1;"
-    },
-    {
-     "file": "src/web/urlSigning.js",
-     "line": 46,
-     "text": "const port = process.env.MELO_DESKTOP_PORT || '43127';"
-    }
-   ]
+   "count": 0,
+   "files": 0,
+   "byFile": {},
+   "hits": []
   },
   "H4": {
    "title": "机器相关绝对路径",
    "severity": "high",
    "note": "仓库里不出现用户目录",
    "scanned": 809,
-   "count": 3,
-   "files": 2,
-   "byFile": {
-    "scripts/desktop-pet-assets.js": 1,
-    "src/tools/builtins/pdfTool.js": 2
-   },
-   "hits": [
-    {
-     "file": "scripts/desktop-pet-assets.js",
-     "line": 24,
-     "text": "export const DEFAULT_SOURCE = process.env.MELO_PET_SOURCE_DIR || '/Users/mortred/Documents/New project/desktop-pet';"
-    },
-    {
-     "file": "src/tools/builtins/pdfTool.js",
-     "line": 663,
-     "text": "{ action: 'read', path: '/Users/me/doc.pdf' },"
-    },
-    {
-     "file": "src/tools/builtins/pdfTool.js",
-     "line": 665,
-     "text": "{ action: 'write', path: '/Users/me/output.pdf', content: '# Report\\n\\nHello world', format: 'markdown' },"
-    }
-   ]
+   "count": 0,
+   "files": 0,
+   "byFile": {},
+   "hits": []
   },
   "H5": {
    "title": "外部服务地址字面量",
@@ -315,7 +172,7 @@
     },
     {
      "file": "scripts/smoke-desktop.js",
-     "line": 238,
+     "line": 240,
      "text": "baseUrl: 'https://chatgpt.com/backend-api',"
     },
     {
@@ -380,27 +237,27 @@
     },
     {
      "file": "src/media/extractors/audioExtractor.js",
-     "line": 37,
+     "line": 38,
      "text": "baseUrl: explicitBaseUrl || 'https://api.openai.com/v1',"
     },
     {
      "file": "src/media/extractors/audioExtractor.js",
-     "line": 43,
+     "line": 44,
      "text": "if (config?.activeLlmProfileId && config.baseUrl !== 'https://api.openai.com/v1') return { apiKey: '', baseUrl: '' };"
     },
     {
      "file": "src/media/extractors/audioExtractor.js",
-     "line": 57,
+     "line": 58,
      "text": "'https://api.openai.com/v1',"
     },
     {
      "file": "src/media/extractors/audioExtractor.js",
-     "line": 87,
+     "line": 88,
      "text": "baseUrl: codexEnvBase || 'https://api.openai.com/v1',"
     },
     {
      "file": "src/media/extractors/audioExtractor.js",
-     "line": 99,
+     "line": 100,
      "text": "const raw = String(rawBaseUrl || 'https://api.openai.com/v1').trim();"
     },
     {
@@ -858,7 +715,7 @@
     },
     {
      "file": "desktop-ui/features/customize/view.js",
-     "line": 768,
+     "line": 769,
      "text": "${addError ? ui`<div class=\"alert compact-alert\" style=\"margin-top: 8px;\">${escapeHtml(addError)}</div>` : ''}"
     },
     {

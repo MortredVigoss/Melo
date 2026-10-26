@@ -1,8 +1,10 @@
+import { DESKTOP_SERVICE_DEFAULTS } from '../src/shared/localServices.js';
+import { PROVIDER_DEFAULTS } from '../shared/agent/providerDefaults.js';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { buildConversationContinuityContext } from '../src/desktopStore.js';
 
-const baseUrl = process.env.MELO_SMOKE_BASE_URL || 'http://127.0.0.1:43129';
+const baseUrl = process.env.MELO_SMOKE_BASE_URL || DESKTOP_SERVICE_DEFAULTS.smokeOrigin;
 const telegramMockUrl = process.env.MELO_TELEGRAM_MOCK_BASE_URL || '';
 const telegramMockToken = process.env.MELO_MOCK_TELEGRAM_TOKEN || 'melo-mock-telegram-token';
 
@@ -236,7 +238,7 @@ async function main() {
     body: {
       authMode: 'codex',
       baseUrl: 'https://chatgpt.com/backend-api',
-      model: 'gpt-5.5',
+      model: PROVIDER_DEFAULTS.legacyCodexCatalogs[0][0],
     },
   });
 
@@ -822,7 +824,7 @@ async function main() {
     modelOptionsCount: (modelOptionsBootstrap.settings?.config?.availableModels || []).length,
     modelOptionHit:
       (modelOptionsBootstrap.settings?.config?.availableModels || []).find(
-        item => item === 'gpt-5.5',
+        item => item === PROVIDER_DEFAULTS.legacyCodexCatalogs[0][0],
       ) || null,
     chatId,
     savedFile: saved.workspace?.selectedFile?.path || smokeFilePath,
