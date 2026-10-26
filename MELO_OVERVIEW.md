@@ -6,7 +6,7 @@
 
 - Mac 工作仓库：`/Users/mortred/Desktop/melo/Melo Desktop Project`；Android Integration 的 WSL 工作仓库：`/home/zhouy/workplace/Melo`。Codex 的独立任务目录不一定是实际 Git checkout，接手必须核对 `git rev-parse --show-toplevel`。
 - 本文保存当前事实、功能索引、架构边界、跨线程登记和最新交接；`PROGRESS.md` 保存意图时间线；专项文档保存详细证据；Git 保存代码历史；`architecture/modules.json` 是生成的功能地图。`codex.md` 是自动生成快照，不手改。
-- 接手顺序：本文 → `CLAUDE.md` → `git status --short` → `npm run scope -- <改动文件>`（只报告受影响功能、另一端与选组）→ 本次模块的实际 diff / 源码与证据。正常工作不用完整回读线程。
+- 接手顺序：`MELO_DEVELOPMENT_STANDARD.md` → 本文 → `git status --short` → `npm run scope -- <改动文件>`（只报告受影响功能、另一端与选组）→ 本次模块的实际 diff / 源码与证据。正常工作不用完整回读线程。
 - 记录缺失、线程更新时间晚于交接、源码与文档冲突时，只定向读该线程近期相关轮次，再补本文；不要靠旧总结覆盖新代码。
 - 2026-10-15 已确认通知的 8 条线程全部完成补录回复；当前主线复核总览、源码/Git 与关键证据，集中归档详细回执。完成补录不等于产品任务全部验收；详见[历史交接](docs/handoffs/overview-history-20261019.md)的补录登记与[核对报告](docs/handoffs/melo-doc-reconciliation-20261015.md)。
 - 本文不是自动监控：各线程必须在实际改动后主动更新。未更新的线程或未记录的 diff 应标为“待归属/待核对”。
@@ -60,6 +60,15 @@
 基础设施另列 `platform`（`src/state/`、`src/runtime/`、`src/http/` 传输）、`channels`（已归档渠道）、`tooling`（脚本与 gate）。
 
 ## 4. 最新交接
+
+### 2026-10-27 — 设计 Melo（Codex）— 有能力却提前结束的四项修复
+- 基准 `7ae6bf5`，干净树开分支 `codex/task-continuation-20261027`；[实施与验收](docs/task-continuation-20261027.md)。核对 `shared/agent/goal.js`、`turn.js`、Node / iOS / Android Host，已证实零工具漏检及检查轮占执行轮；WIP：共享核心、三端循环、任务轮数设置与本任务授权已接入。专项150/150、浏览器修正7/7及iOS循环专项通过；首轮快速 `run-3OrhNV` 未过，兼容及夹具已修。真模型三项（读写回读、轮数到顶汇报、拒绝替代）符合预期，保存脱敏回执；权限专项10/10含英文浏览器通过，文件双重审批已合并且显式拒绝保留。最终快速/集成检测进行中。
+- 授权边界：本次任务明确范围由用户确认；拒绝后仅走仍被允许的替代路径。保留取消、预算、已有检索检查与成功效果去重。下一步补用例、实现、分层检测及真实模型回执；不推送/安装。
+
+### 2026-10-27 — Melo 主线（Claude）— 统一开发规范落地
+- 线程 ID：e02f4818；状态：本地提交，未推送。根目录 [MELO_DEVELOPMENT_STANDARD.md](MELO_DEVELOPMENT_STANDARD.md) 取代 CLAUDE.md / AGENTS.md 的流程部分，两者改为入口指针；所有线程开工先读规范。
+- 要点：任何授权 AI 同一标准；修改前基于索引写执行链路与审计边界（停止条件、覆盖 / 未覆盖）；改后两档回归并覆盖上限 / 超时 / 压缩 / 审批 / 取消 / 契约场景；审计记录分级保留；审计输出固定格式。缺口：函数级调用索引待建。
+- 未完 / 下一步：函数级 `call-index` 生成器与过期检测；Codex 由用户另行告知。
 
 ### 2026-10-27 — Melo 主线（Claude）— Agent 工具覆盖与任务闭环审计（只报告）
 - 线程 ID：e02f4818；状态：报告已交付并本地提交，未推送；没有改产品代码。
