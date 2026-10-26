@@ -72,6 +72,14 @@ InterfaceCopy 是原生 Bundle 本地化入口，CapabilityCopy 复用它。记�
 
 专项 JS 6/6、Foundation 五语 Bundle 实读/未知原文保留通过。最终完整 iPhoneOS Release 未签名编译成功（`.tmp/audit-batch-5/ios-build-final.log`）。快速档 `.tmp/test-runs/run-Qa1s4U/summary.json`、集成档 `.tmp/test-runs/run-eHENTL/summary.json` 均 GREEN：4678 JS、设置浏览器、37 Swift（含 SharedContractTests）、Android 四项，无跳过/隔离复测。没有真机安装、权限弹窗或远程真实同步验收。
 
-## 后续批次
+## 批次 6：架构独立方案
 
-6. 架构：J2 / J3 / J6 / J8 独立方案，随后按依赖验收。
+[架构计划](architecture-plan-2026-10-26.md) 已记录方案评分、实际入口、分步交付、兼容读取、机器验收与回退。J2 不能为压低枚举数丢失浏览器导航/交互；J3 已复核有生产消费者，不可直接删；J8 按 settings/tts/composer 三次原样移植，逻辑优化另提交。J6 行为已在批次 1 验证，陈旧注释在批次 5 清理。J2/J3/J8 仍 open，本批交付的是独立方案。
+
+文档批次不重复移动端构建或产品全量回归；按范围计划检查文档与基线，代码集成证据沿用批次 5 的当前源码。规则增量新增0。
+
+文档/基线最终验收：快速 `run-juEJci`、集成 `run-ySP23x` 均通过，34 个脚本测试文件 / 121 项，0 跳过/隔离复测；两档约 13 秒，无浏览器/Swift/Android 重复执行。
+
+## 本轮交付边界
+
+批次 0–5 实现完成并本地合入；批次 6 方案交付。目标 H1/H2/H3/H4/H7/H8/H9/H10/H13/H15/H18/H19 均为0，H14=5；17 项机器探针全部 closed。H5=73 与 H20=3 按要求不动；H6=2、H17=2 和 J4 不在本轮方案范围，仍保留台账，不宣称全仓零问题。没有推送、发布、覆盖安装或真机验收。

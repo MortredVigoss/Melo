@@ -56,13 +56,13 @@
 | 编号 | 问题 | 10-24 | 10-26 | 状态 |
 | --- | --- | --- | --- | --- |
 | J1 | 两套搜索规划器并存 | `constrainSearchPlan` + `planRequest` | `prepareNode` 不再调用旧规划器 | ✅ closed（route 名仍 12 个，见 J2） |
-| J2 | route 名 12 个、`unavailable` 7 种 reason | 12 | 12 | 🟡 open，列为下一阶段 |
-| J3 | `searchTask.js` 适配层"无人被迫迁移" | 95 处 legacy | 未复核 | 🟡 open |
+| J2 | 路由与 unavailable 原因 | 12 类 route | 2026-10-26 复核 | 🟡 open：[独立方案](architecture-plan-2026-10-26.md)，类别与 executor/action/reason 分离，保留浏览器语义 |
+| J3 | 搜索适配层迁移 | 95 处 legacy | 2026-10-26 已复核实际消费者 | 🟡 open：适配层服务生产投影/历史兼容；三类产出分步迁移，见[方案](architecture-plan-2026-10-26.md) |
 | J4 | 问候 / 确认词表多份 | 5 份 | 3 份（H17 计 2） | 🟡 收窄 |
 | J5 | 核验模型永远用默认模型 | — | 2026-10-26 复核已有修复 | ✅ closed：真实 runner 测试断言核验请求使用 Agent 固定模型 |
 | J6 | 只有第一轮流式输出 | — | 2026-10-26 复核已有修复 | ✅ closed：工具后最终回答有 onDelta，目标检查不流式；旧注释已于批次 5 修正，不改变运行逻辑 |
 | J7 | 18 个 `=== '1'` 环境开关不在设置页 | 18 | H16 计 32 处 | ✅ closed（2026-10-26 复核：已有七项设置；新增目录守卫，真实浏览器保存/取消/覆盖通过） |
-| J8 | `app.js` 6881 行等体量 | 6881 | 6869 | 🟡 open |
+| J8 | app.js 拆分 | 6881 | 当前 6861 行 | 🟡 open：settings → tts → composer 独立原样移植，见[方案](architecture-plan-2026-10-26.md) |
 | U1 | 反馈通道 | 71 / 10 / 23 | notify 统一入口 | ✅ closed（2026-10-26，持久错误/成功提示；真实进度 role=status 保留） |
 | U2 | 表单编辑 | 13 个 | 共享 EditSession | ✅ closed（2026-10-26，取消/失败重试/Enter 浏览器实测；composer 与自定义输入对话框保留提交语义） |
 | U3 | 页头层级 | 9 / 27 | page-title / pane-title / subsection-title | ✅ closed（2026-10-26，消息正文标题保留） |
