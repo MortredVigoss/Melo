@@ -1,6 +1,6 @@
 # Melo 总览：当前事实、功能索引与接手入口
 
-更新时间：2026-10-24（Australia/Melbourne）。这是所有 Melo 工作线程共用的人工维护入口：顶部依次是当前事实、功能索引和最新交接；按日期的阶段过程（含日期、提交与当次验证数字）在 [总览历史交接](docs/handoffs/overview-history-20261019.md)。
+更新时间：2026-10-26（Australia/Melbourne）。这是所有 Melo 工作线程共用的人工维护入口：顶部依次是当前事实、功能索引和最新交接；按日期的阶段过程（含日期、提交与当次验证数字）在 [总览历史交接](docs/handoffs/overview-history-20261019.md)。
 
 ## 1. 先看这里
 
@@ -60,6 +60,12 @@
 基础设施另列 `platform`（`src/state/`、`src/runtime/`、`src/http/` 传输）、`channels`（已归档渠道）、`tooling`（脚本与 gate）。
 
 ## 4. 最新交接
+
+### 2026-10-26 — Melo 主线（Claude）— 隔离自开发审计后三处收紧
+- 线程 ID：e02f4818；状态：已提交 `16ad6dd`，随文档回执一起推送 master；未安装。
+- 行为：`development_job` 在工具入口拒绝非桌面聊天来源（Telegram / Discord 的"始终允许"不再能启动作业）；`npm run build:development-image` 把 `package-lock.json` 哈希写进镜像标签 `melo.lock-sha256`，创建作业时不一致阻断、无标签记警告，候选改依赖文件在验证前阻断；`npm test --platform linux`（容器内自动选）把 Swift / Android 记为"本平台未执行"写入 `summary.json`，不计通过。
+- 验证：门禁改动完整日常 `run-bZBKkK`（JS 4709/4709、设置浏览器、Swift 全过，无跳过/复测；Android 不在计划内）；Docker 隔离与旅程验收通过、无残留；真实镜像标签读取验证通过。现有 `melo-development:local` 无标签，重建后才绑定。
+- 未完 / 下一步：重建带标签镜像并用真实作业走一遍阻断路径；Mac 原生隔离运行器、真模型与真机验收仍属后续阶段。
 
 ### 2026-10-26 — melo主线（Codex）— 自修改与隔离开发能力专项审计
 - 用户本轮只要求先审计，未授权实施；源码基准 `b39823f`，开始时工作树干净。交付[能力审计报告](docs/self-development-capability-audit-20261026.md)，没有修改产品代码、真实账号/聊天/图片或其他线程工作。
