@@ -23,8 +23,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 646,
-      "edges": 2066,
+      "modules": 647,
+      "edges": 2069,
       "roots": [
         "src",
         "desktop-ui",
@@ -1065,7 +1065,7 @@
         "projects": 11,
         "settings": 11,
         "sync": 2,
-        "tools": 38,
+        "tools": 41,
         "voice": 3
       },
       "usedBy": {
@@ -2252,10 +2252,13 @@
         "ios/Melo/WebPage*.swift",
         "ios/Melo/LocalFile*.swift",
         "ios/Melo/{DeviceTools,WebSources,SourceBrowser,LocalFilesView,LocalPermissionsView}.swift",
-        "ios/Tests/{DeviceToolsTests,LocalFileAccessTests,WebPageToolsTests,WebSearchTests}.swift"
+        "ios/Tests/{DeviceToolsTests,LocalFileAccessTests,WebPageToolsTests,WebSearchTests}.swift",
+        "shared/agent/organizer.js",
+        "shared/agent/organizer.test.js"
       ],
       "modules": {
         "desktop-ui": 28,
+        "shared": 1,
         "src": 83
       },
       "entryModules": [
@@ -2291,6 +2294,12 @@
         },
         {
           "module": "desktop-ui/viz/vizRenderer.js",
+          "importedBy": [
+            "chat"
+          ]
+        },
+        {
+          "module": "shared/agent/organizer.js",
           "importedBy": [
             "chat"
           ]
@@ -2578,7 +2587,7 @@
       "usedBy": {
         "agents": 21,
         "approvals": 2,
-        "chat": 38,
+        "chat": 41,
         "desktop-shell": 13,
         "media": 4,
         "memory": 1,
@@ -2680,6 +2689,7 @@
           "desktop-ui/viz/citationRenderer.test.js",
           "desktop-ui/viz/vizRenderer.test.js",
           "scripts/inspect-search-trail.test.js",
+          "shared/agent/organizer.test.js",
           "src/mcp/init.test.js",
           "src/mcp/manager.test.js",
           "src/mcp/startup.test.js",

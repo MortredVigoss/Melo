@@ -1,3 +1,9 @@
+## 2026-10-26 — Android Organizer 与动态广告恢复，按用户要求改用 Emulator
+
+Codex：用户认可独立 Todo / Calendar、通知+可选闹钟、系统日历+ICS；本地共用 Core/Repository，直接 OAuth 和跨端 Organizer Sync 不在本批范围。
+用户后续说明手机不在电脑旁并要求 Emulator；不继续原来的真机授权，不覆盖安装 Fold6。动态广告修复仅有受控正反例，真实汽水仍待测。
+Core 212 / JVM 160 / Native 专项 26 通过；完整 Native 87/88（宠物拖动失败），快速档两项缺失私有宠物原始素材。失败均保留，无伪造或跳过。本批仅本地，不推送。
+
 ## 2026-10-26 — Codex：从最新主线核对修复，再设计 Todo / Calendar
 
 用户要求先 pull 再判断旧问题；主线 fast-forward 完成，另开功能分支，原 Android 未推送工作保留，避免把主线 Goal Check 与旧手机修复混作同一已安装版本。

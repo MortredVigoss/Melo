@@ -25,27 +25,34 @@ class ContextFlowTest {
         "anthropic" -> """{"stop_reason":"tool_use","content":[{"type":"tool_use","id":"history1","name":"read_history","input":{"fromMessageId":"first","limit":1}}]}"""
         else -> """{"choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","tool_calls":[{"id":"history1","type":"function","function":{"name":"read_history","arguments":"{\"fromMessageId\":\"first\",\"limit\":1}"}}]}}]}"""
     })
-    private fun final(protocol: String) = MockResponse().setBody(when (protocol) {
-        "responses" -> """{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"Retain account 427."}]}]}"""
-        "anthropic" -> """{"stop_reason":"end_turn","content":[{"type":"text","text":"Retain account 427."}]}"""
-        else -> """{"choices":[{"finish_reason":"stop","message":{"content":"Retain account 427."}}]}"""
-    })
+    private fun final(protocol: String, text: String = "Retain account 427."): MockResponse {
+        val encoded = MeloJson.encodeToString(text)
+        return MockResponse().setBody(when (protocol) {
+            "responses" -> """{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":$encoded}]}]}"""
+            "anthropic" -> """{"stop_reason":"end_turn","content":[{"type":"text","text":$encoded}]}"""
+            else -> """{"choices":[{"finish_reason":"stop","message":{"content":$encoded}}]}"""
+        })
+    }
     @Test fun longHistoryReadsOriginalThroughAllThreeProtocolsAndSurvivesDatabaseReopen() = runBlocking {
         val messages = transcript()
         var saved = buildJsonObject {}
         for (protocol in listOf("chat-completions", "responses", "anthropic")) MockWebServer().use { server ->
             server.start(); server.enqueue(tool(protocol)); server.enqueue(final(protocol))
+            server.enqueue(final(protocol, """{"decision":"complete","reasonType":"fulfilled","reason":"Original history read","nextStep":"","requirements":[{"text":"Original account decision","status":"met","evidenceIds":["history1"]}]}"""))
             val result = SharedChatAgent(app, ModelClient(true), true).reply(
                 Connection(endpoint = server.url("/model").toString(), model = "fixture", protocol = protocol, stream = false, contextTokens = 16000),
                 "fixture-key", messages, "", buildJsonObject {}, { "" }, false, "context-$protocol", "context-chat", { error("No image loading") },
                 invokePhone = { error("Reading history cannot invoke a device") }, onPhase = {}, onContextLedger = { saved = it })
             assertEquals("Retain account 427.", result.text)
-            assertEquals(2, server.requestCount)
+            assertEquals(3, server.requestCount)
             val first = server.takeRequest(2, TimeUnit.SECONDS)!!.body.readUtf8()
             val second = server.takeRequest(2, TimeUnit.SECONDS)!!.body.readUtf8()
             assertTrue(first.contains("read_history")); assertTrue(first.contains("current") || first.contains("Repeat the original"))
             assertTrue(second.contains("Original decision: retain account 427; never replace it."))
             assertFalse(first.contains("Earlier quoted details. ".repeat(160).repeat(100)))
+            val review = server.takeRequest(2, TimeUnit.SECONDS)!!.body.readUtf8()
+            assertTrue(review.contains("task completion checker"))
+            assertFalse(review.contains("\"name\":\"read_history\""))
             assertTrue(saved.getValue("cards").jsonArray.isNotEmpty())
         }
         val name = "context-fixture-${newId()}.db"

@@ -89,8 +89,8 @@ function buildRequestPlan({ text = '', messages = [], capabilities = {}, config 
     : { ...base, route: 'unavailable', reason: 'PHONE_UNAVAILABLE' };
   if (/(?:实现|编写|算法|\bimplement|\bwrite|\balgorithm)/iu.test(policy.instruction) && !/(?:联网|网上|谷歌|最新|\blatest|\bgoogle|\bweb search)/iu.test(policy.instruction)) return base;
   if (!lookup) return base;
-  if (!grants.has('web_search')) return { ...base, route: 'unavailable', reason: 'SEARCH_NOT_GRANTED' };
   const research = { depth: /深度|深入|多来源|交叉核对|\b(?:deep research|compare sources|multiple sources)\b/iu.test(instruction) ? 'deep' : 'standard', navigate: lookup && navigation };
+  if (!grants.has('web_search')) return { ...base, research, route: 'unavailable', reason: 'SEARCH_NOT_GRANTED' };
   const readingTools = available('fetch_url') ? ['fetch_url'] : [];
   const phoneTools = research.navigate && available('phone_use') ? ['phone_use'] : [];
   const guidance = 'Retrieve public evidence when needed for the requested result. Choose the next tool from the actual information gap: local calendar, location, knowledge or history may need to be read before searching. Do not impose an arbitrary first tool. Use fetch_url on relevant source URLs when details are needed. Search snippets are not full page reads. Compare evidence and cite returned URLs; report insufficient, conflicting or stale sources and unknown opening hours. Do not fabricate facts or require an arbitrary number of sources. ' +
@@ -103,7 +103,7 @@ function buildRequestPlan({ text = '', messages = [], capabilities = {}, config 
   if (available('web_search') && runtimeConfig.search.backend === 'http' && runtimeConfig.search.endpoint) return { ...searchBase, route: 'http-search', tools: ['web_search', ...readingTools, ...phoneTools], requiredTools: phoneTools, toolDependencies: phoneTools.length ? { phone_use: ['web_search'] } : {}, backend: 'http' };
   if (available('web_search') && capabilities.legacyReader === true && runtimeConfig.search.backend === 'legacy-reader') return { ...base, route: 'legacy-search', tools: ['web_search'], backend: 'legacy-reader', instructions: guidance };
   if (available('web_search') && capabilities.browserSearch === true && runtimeConfig.search.browserFallback) return { ...base, route: 'browser-search', tools: ['web_search'], backend: 'browser', instructions: guidance };
-  return { ...base, route: 'unavailable', reason: 'SEARCH_UNAVAILABLE', instructions: 'No verified hosted search or configured search backend is available to retrieve public evidence. Explain the missing search capability. Do not invent current facts or open phone apps as a fallback.' };
+  return { ...searchBase, route: 'unavailable', reason: 'SEARCH_UNAVAILABLE', instructions: 'No verified hosted search or configured search backend is available to retrieve public evidence. Explain the missing search capability. Do not invent current facts or open phone apps as a fallback.' };
 }
 
 // Planning suggests a backend; availability is a separate capability snapshot.

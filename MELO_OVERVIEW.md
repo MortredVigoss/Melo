@@ -13,7 +13,7 @@
 
 ## 2. 当前事实
 
-10-26 Android 接手：已将本地 master fast-forward 到 `248364b`，从最新主线建立 `codex/android-organizer-20261026`；原 Android 未推送工作保留在原分支 `1be64ad`，未混合合并。Goal Check 的 Calendar→Weather 受控回归通过，旧手机循环问题尚未全部解决；见 [主线复核](docs/master-loop-recheck-20261026.md)。用户新增 Todo / Calendar 两个独立页面，确认通知+可选强提醒、系统日历+ICS；[整体设计](docs/specs/2026-10-26-android-organizer-design.md)待认可，尚未开始产品实现或安装。
+10-26 Android 接手：已将本地 master fast-forward 到 `248364b`，从最新主线建立 `codex/android-organizer-20261026`；原 Android 未推送工作保留在原分支 `1be64ad`，未混合合并。Goal Check 的 Calendar→Weather 受控回归通过，旧手机循环问题尚未全部解决；见 [主线复核](docs/master-loop-recheck-20261026.md)。用户已认可并实施 Todo / Calendar 独立页面、系统日历/ICS、通知与可选强提醒、同一 Repository 的 Chat Tools；[实施回执](docs/android-organizer-implementation-20261026.md)。补充修复动态广告引起的坐标 stale_screen 误拒绝，见[专项](docs/android-dynamic-ad-freshness-20261026.md)。当前 0.10.0 已完成：Core 212、JVM 160、Native 专项 26 全通过；完整 Native 87/88，宠物拖动仍失败；快速档两项缺失私有宠物素材，不能称全仓 GREEN。用户已改为 Emulator 测试，未装入 Fold6，未推送。
 
 每个功能只保留一个现行状态和证据入口。测试数字只属于当次源码，见所链带日期的回执；当前树需重新运行 `npm test`（日常）或 `npm run test:full`（发布）。过程与旧状态见[历史交接](docs/handoffs/overview-history-20261019.md)。
 

@@ -370,12 +370,18 @@ class DeviceAgentTest {
             }
             MockWebServer().use { server ->
                 server.dispatcher = object : Dispatcher() {
+                    var postTapObservations = 0
                     override fun dispatch(request: RecordedRequest): MockResponse {
                         val messages = MeloJson.parseToJsonElement(request.body.clone().readUtf8()).jsonObject["messages"]!!.jsonArray.map { it.jsonObject }
                         val previous = messages.lastOrNull { it.text("role") == "tool" }?.text("content")?.let { MeloJson.parseToJsonElement(it).jsonObject }
                         if (previous == null) return fixtureCall("observe", buildJsonObject { put("action", "observe") })
                         if (previous["ok"]?.jsonPrimitive?.booleanOrNull != true) return fixtureCall("blocked", finishArgs("blocked"))
                         if (previous["nodes"]!!.jsonArray.any { it.jsonObject.text("text") == "Count 1" }) return fixtureCall("finish", finishArgs("achieved", previous.text("screen_id"), "Count 1"))
+                        if (previous.text("action") == "tap" || postTapObservations > 0) {
+                            check(postTapObservations < 3) { "Fixture tap did not reach a fresh visible result." }
+                            postTapObservations++
+                            return fixtureCall("after-tap-$postTapObservations", buildJsonObject { put("action", "observe") })
+                        }
                         val target = node(DeviceToolResult(previous), if (decision == "node_commit") "Send" else "Target button")
                         val bounds = target["bounds"]!!.jsonArray.map { it.jsonPrimitive.int }
                         return fixtureCall("coordinate", buildJsonObject {
@@ -404,7 +410,7 @@ class DeviceAgentTest {
                 val allow = decision in setOf("allow", "changed", "node_commit")
                 withContext(Dispatchers.Main) { if (decision == "cancel") app.deviceAgent.cancel() else app.deviceAgent.confirmApproval(approval.id, allow) }
                 val run = waitForAgent(goal)
-                assertEquals(when (decision) { "allow", "node_commit" -> "achieved"; "cancel" -> "cancelled"; "changed" -> "blocked"; else -> "needs_user" }, run.status)
+                assertEquals("decision=$decision; error=${run.error}", when (decision) { "allow", "node_commit" -> "achieved"; "cancel" -> "cancelled"; "changed" -> "blocked"; else -> "needs_user" }, run.status)
                 assertCount(if (decision in setOf("allow", "node_commit")) "Count 1" else "Count 0")
                 if (decision == "changed") assertTrue(run.steps.any { it.code == "stale_screen" && !it.ok })
                 withContext(Dispatchers.Main) { app.deviceAgent.confirmApproval(approval.id, true) }

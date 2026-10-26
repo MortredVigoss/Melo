@@ -27,6 +27,7 @@ import androidx.compose.ui.*
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.*
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.*
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.*
@@ -38,6 +39,8 @@ import com.melo.android.camera.CameraCaptureDialog
 import com.melo.android.data.*
 import com.melo.android.device.*
 import com.melo.android.pet.*
+import com.melo.android.organizer.*
+import kotlinx.coroutines.launch
 import com.melo.android.ui.*
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.*
@@ -55,6 +58,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         // The pet stays enabled across process restarts; bring it back from the foreground where starting a service is always allowed.
+        (application as MeloApplication).organizer.work { (application as MeloApplication).organizer.reminders.reconcile() }
         val pet = (application as MeloApplication).petPreferences.value
         if (pet.enabled && PetOverlayService.canDraw(this) && !PetOverlayService.state.value.attached) runCatching { PetOverlayService.start(this) }
     }
@@ -68,15 +72,18 @@ class MeloViewModel(application: Application) : AndroidViewModel(application) {
     val repository = engine.repository
 }
 
-private enum class Page { Home, Chats, Agents, Workspace, Settings, Tasks, Device, Pet }
+private enum class Page { Home, Chats, Agents, Workspace, Settings, Tasks, Device, Pet, Todo, Calendar }
 private data class NavItem(val page: Page, val label: String, val icon: ImageVector)
-private val navigation = listOf(NavItem(Page.Home, "中枢", Icons.Outlined.Hub), NavItem(Page.Chats, "对话", Icons.AutoMirrored.Outlined.Chat), NavItem(Page.Agents, "角色", Icons.Outlined.PersonOutline), NavItem(Page.Workspace, "资料", Icons.Outlined.FolderOpen), NavItem(Page.Settings, "系统", Icons.Outlined.Tune))
+private val navigation = listOf(NavItem(Page.Home, "中枢", Icons.Outlined.Hub), NavItem(Page.Chats, "对话", Icons.AutoMirrored.Outlined.Chat), NavItem(Page.Agents, "角色", Icons.Outlined.PersonOutline), NavItem(Page.Workspace, "资料", Icons.Outlined.FolderOpen), NavItem(Page.Todo, "待办", Icons.Outlined.Checklist), NavItem(Page.Calendar, "日历", Icons.Outlined.CalendarMonth), NavItem(Page.Settings, "系统", Icons.Outlined.Tune))
 private data class ChatTimelineItem(val id: String, val at: String, val message: Message? = null, val device: DeviceRun? = null, val run: RunRecord? = null)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun MeloApp(vm: MeloViewModel = viewModel(), requestedChat: Pair<String, Int>? = null, requestedPage: Pair<String, Int>? = null) {
     val data by vm.repository.data.collectAsStateWithLifecycle()
     val runtime by vm.engine.runtime.collectAsStateWithLifecycle()
+    val organizer = (LocalContext.current.applicationContext as MeloApplication).organizer
+    val drawer = rememberDrawerState(DrawerValue.Closed)
+    val navScope = rememberCoroutineScope()
     val deviceAgent = (LocalContext.current.applicationContext as MeloApplication).deviceAgent
     val deviceRuntime by deviceAgent.runtime.collectAsStateWithLifecycle()
     var pageName by rememberSaveable { mutableStateOf(Page.Home.name) }
@@ -88,7 +95,7 @@ private data class ChatTimelineItem(val id: String, val at: String, val message:
         val target = requestedChat?.first
         if (runtime.initialized && target != null && data.chats.any { it.id == target }) { chatId = target; pageName = Page.Chats.name; showHistory = false; executionChat = null }
     }
-    LaunchedEffect(requestedPage) { if (requestedPage?.first == "pet") { pageName = Page.Pet.name; executionChat = null } }
+    LaunchedEffect(requestedPage) { when (requestedPage?.first) { "pet" -> pageName = Page.Pet.name; "todo" -> pageName = Page.Todo.name; "calendar" -> pageName = Page.Calendar.name }; if (requestedPage != null) executionChat = null }
     val context = LocalContext.current
     val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     fun newChat(agentId: String = "main", projectId: String? = null) { vm.engine.work { chatId = vm.repository.newChat(agentId, projectId); pageName = Page.Chats.name; showHistory = false } }
@@ -97,22 +104,27 @@ private data class ChatTimelineItem(val id: String, val at: String, val message:
     }
     val keyboard = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     val expanded = LocalConfiguration.current.screenWidthDp >= 600
+    ModalNavigationDrawer(drawerState = drawer, gesturesEnabled = !expanded, drawerContent = {
+        if (!expanded) ModalDrawerSheet(modifier = if (drawer.isClosed) Modifier.clearAndSetSemantics {} else Modifier) { Column(Modifier.verticalScroll(rememberScrollState())) { Text("Melo", Modifier.padding(20.dp), style = MaterialTheme.typography.headlineMedium)
+            navigation.forEach { item -> NavigationDrawerItem(label = { Text(item.label) }, icon = { Icon(item.icon, null) }, selected = page == item.page, onClick = { pageName = item.page.name; navScope.launch { drawer.close() } }) }
+        } }
+    }) {
     Row(Modifier.fillMaxSize().background(MeloBackground)) {
-    if (expanded) NavigationRail(containerColor = MeloBackground, modifier = Modifier.fillMaxHeight()) {
+    if (expanded) NavigationRail(containerColor = MeloBackground, modifier = Modifier.fillMaxHeight().verticalScroll(rememberScrollState())) {
         Spacer(Modifier.height(24.dp))
         navigation.forEach { item -> NavigationRailItem(selected = page == item.page, onClick = { pageName = item.page.name }, icon = { Icon(item.icon, null) }, label = { Text(item.label) }) }
     }
     Scaffold(modifier = Modifier.weight(1f), containerColor = MeloBackground, contentWindowInsets = WindowInsets.systemBars,
         bottomBar = { if (!keyboard && !expanded) NavigationBar(containerColor = MeloBackground) {
-            navigation.forEach { item -> NavigationBarItem(selected = page == item.page, onClick = { pageName = item.page.name }, icon = { Icon(item.icon, null) }, label = { Text(item.label) }) }
+            navigation.filter { it.page !in setOf(Page.Todo, Page.Calendar) }.forEach { item -> NavigationBarItem(selected = page == item.page, onClick = { pageName = item.page.name }, icon = { Icon(item.icon, null) }, label = { Text(item.label) }) }
         } },
-        topBar = { if (page != Page.Home) TopAppBar(title = { Text(if (executionChat != null) "任务空间" else when (page) {
-            Page.Chats -> data.chats.find { it.id == chatId }?.title ?: "对话"; Page.Agents -> "角色"; Page.Workspace -> "工作区"; Page.Settings -> "系统"; Page.Tasks -> "任务与执行"; Page.Device -> "手机助手"; Page.Pet -> "桌宠"; else -> "Melo"
+        topBar = { TopAppBar(title = { Text(if (executionChat != null) "任务空间" else when (page) {
+            Page.Chats -> data.chats.find { it.id == chatId }?.title ?: "对话"; Page.Agents -> "角色"; Page.Workspace -> "工作区"; Page.Settings -> "系统"; Page.Tasks -> "任务与执行"; Page.Device -> "手机助手"; Page.Pet -> "桌宠"; Page.Todo -> "待办"; Page.Calendar -> "日历"; else -> "Melo"
         }, maxLines = 1) }, colors = TopAppBarDefaults.topAppBarColors(containerColor = MeloBackground), navigationIcon = {
             IconButton(onClick = { if (executionChat != null) executionChat = null else if (page == Page.Chats) showHistory = !showHistory else pageName = if (page == Page.Pet) Page.Settings.name else Page.Home.name }) {
                 Icon(if (page == Page.Chats && executionChat == null) Icons.Outlined.History else Icons.AutoMirrored.Outlined.ArrowBack, "返回或历史")
             }
-        }, actions = { if (page == Page.Chats) { IconButton(onClick = { newChat() }) { Icon(Icons.Outlined.Add, "新对话") }; IconButton(onClick = { executionChat = chatId }) { Icon(Icons.Outlined.Hub, "任务空间") } } }) }
+        }, actions = { if (!expanded) IconButton(onClick = { navScope.launch { drawer.open() } }) { Icon(Icons.Outlined.Menu, "打开侧边栏") }; if (page == Page.Chats) { IconButton(onClick = { newChat() }) { Icon(Icons.Outlined.Add, "新对话") }; IconButton(onClick = { executionChat = chatId }) { Icon(Icons.Outlined.Hub, "任务空间") } } }) }
     ) { padding ->
         CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, LocalDensity.current.fontScale * data.settings.fontScale)) {
             Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding(), contentAlignment = Alignment.TopCenter) {
@@ -120,6 +132,8 @@ private data class ChatTimelineItem(val id: String, val at: String, val message:
                 if (!runtime.initialized) Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) { CircularProgressIndicator(); Text("载入本机资料…") }
                 else if (executionChat != null) ExecutionScreen(data, executionChat!!, onOpen = { openUrl(context, it) })
                 else when (page) {
+                    Page.Todo -> TodoScreen(organizer)
+                    Page.Calendar -> CalendarScreen(organizer)
                     Page.Home -> HomeScreen(data, runtime, onNewChat = { newChat() }, onPage = { pageName = it.name })
                     Page.Chats -> {
                         val selected = data.chats.find { it.id == chatId }
@@ -144,6 +158,7 @@ private data class ChatTimelineItem(val id: String, val at: String, val message:
         }
     }
     }
+}
 }
 
 @Composable private fun HomeScreen(data: AppData, runtime: ChatRuntime, onNewChat: () -> Unit, onPage: (Page) -> Unit) {

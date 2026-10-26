@@ -48,6 +48,8 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
     private var screenId = ""
     private var observedGeneration = -1L
     private var observedAt = 0L
+    private var observedJpeg: String? = null
+    private var lastScreenshotStarted = 0L
     private var windowId = -1
     private var bounds = Rect()
     private var imageWidth = 0
@@ -148,7 +150,7 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
     }
     override fun configureScreenshots(enabled: Boolean) { checkSession(); screenshots = enabled; invalidateObservation() }
     private fun invalidateObservation() {
-        screenId = ""; observedLayout = null; nodes.values.forEach { @Suppress("DEPRECATION") it.recycle() }; nodes.clear(); targets.clear()
+        screenId = ""; observedJpeg = null; observedLayout = null; nodes.values.forEach { @Suppress("DEPRECATION") it.recycle() }; nodes.clear(); targets.clear()
     }
     private fun checkSession() {
         check(authorized) { "手机助手尚未开始，或已停止。" }
@@ -181,9 +183,40 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
     }
     private fun requireFresh(arguments: JsonObject, contentSensitive: Boolean = true) {
         if (observedLayout != layoutKey(selectedDisplay)) throw DeviceExecutionException("stale_screen", "显示布局或折叠姿态已改变，请重新 observe。")
-        if (!(arguments.text("screen_id") == screenId && screenId.isNotBlank() && (!contentSensitive || observedGeneration == generation) && SystemClock.elapsedRealtime() - observedAt < 90_000)) throw DeviceExecutionException("stale_screen", "屏幕已变化或 observation 已过期，请重新 observe。")
+        if (arguments.text("screen_id") != screenId || screenId.isBlank()) throw DeviceExecutionException("stale_screen", "screen_id 不对应最近的 observation，请重新 observe。")
+        if (SystemClock.elapsedRealtime() - observedAt >= 90_000) throw DeviceExecutionException("stale_screen", "observation 已超过 90 秒，请重新 observe。")
+        if (contentSensitive && observedGeneration != generation) throw DeviceExecutionException("stale_screen", "窗口内容已变化，请重新观察目标。")
         val current = selectedWindow(windowId); val currentBounds = Rect().also(current::getBoundsInScreen)
         if (current.id != windowId || currentBounds != bounds) throw DeviceExecutionException("stale_screen", "窗口或尺寸已改变，请重新 observe。")
+    }
+    private suspend fun requireCoordinateFresh(arguments: JsonObject) {
+        checkSession(); requireFresh(arguments, false); point(arguments, "x", "y")
+        if (observedGeneration == generation) return
+        val original = observedJpeg ?: throw DeviceExecutionException("stale_screen", "窗口持续变化且缺少截图，无法核对坐标目标。")
+        val current = try { screenshot(windowId) } catch (e: CancellationException) { throw e } catch (_: Exception) { throw DeviceExecutionException("stale_screen", "无法取得当前目标区域截图，请重新观察。") }
+        checkSession(); requireFresh(arguments, false)
+        val same = withContext(Dispatchers.Default) {
+            fun patch(encoded: String): IntArray? {
+                val bytes = Base64.decode(encoded, Base64.NO_WRAP)
+                val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return null
+                try {
+                    if (bitmap.width != imageWidth || bitmap.height != imageHeight) return null
+                    val x = number(arguments, "x", -1); val y = number(arguments, "y", -1)
+                    val radius = (minOf(imageWidth, imageHeight) / 40).coerceIn(16, 32)
+                    val left = (x - radius).coerceAtLeast(0); val top = (y - radius).coerceAtLeast(0)
+                    val right = (x + radius).coerceAtMost(bitmap.width); val bottom = (y + radius).coerceAtMost(bitmap.height)
+                    if (right - left < 16 || bottom - top < 16) return null
+                    val crop = Bitmap.createBitmap(bitmap, left, top, right-left, bottom-top)
+                    val sample = Bitmap.createScaledBitmap(crop, CoordinateAnchor.SIDE, CoordinateAnchor.SIDE, true)
+                    try { return IntArray(CoordinateAnchor.SIDE * CoordinateAnchor.SIDE).also { sample.getPixels(it, 0, CoordinateAnchor.SIDE, 0, 0, CoordinateAnchor.SIDE, CoordinateAnchor.SIDE) } }
+                    finally { if (sample !== crop) sample.recycle(); if (crop !== bitmap) crop.recycle() }
+                } finally { bitmap.recycle() }
+            }
+            val before = patch(original); val after = patch(current)
+            before != null && after != null && CoordinateAnchor.matches(before, after)
+        }
+        checkSession(); requireFresh(arguments, false)
+        if (!same) throw DeviceExecutionException("stale_screen", "点击目标区域已变化或缺少稳定视觉特征，未执行点击，请重新定位。")
     }
     private fun target(node: AccessibilityNodeInfo): DeviceTarget {
         val rect = Rect().also(node::getBoundsInScreen)
@@ -231,8 +264,9 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
             if (action == "list_apps") return@withContext DeviceToolResult(catalog().page(arguments.text("query"), number(arguments, "offset", 0), number(arguments, "limit", AppCatalog.DEFAULT_PAGE_SIZE)))
             // Home never targets content. Melo's own progress updates must not
             // prevent leaving its window; keep screen identity/age/window checks.
-            val contentSensitive = action == "swipe" || action == "tap" && arguments.text("node_id").isBlank()
-            if (action !in setOf("observe", "open_app", "wait")) requireFresh(arguments, contentSensitive)
+            val contentSensitive = action == "swipe"
+            if (action == "tap" && arguments.text("node_id").isBlank()) requireCoordinateFresh(arguments)
+            else if (action !in setOf("observe", "open_app", "wait")) requireFresh(arguments, contentSensitive)
             when (action) {
                 "open_app" -> {
                     val requestedPackage = arguments.text("package_name")
@@ -270,8 +304,8 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
                         // Validate coordinates before asking; approval never bypasses freshness.
                         point(arguments, "x", "y")
                         if (!confirm(arguments, null)) return@withContext DeviceToolResult.error("本步操作未获允许，已停止。", "user_declined")
-                        checkSession(); requireFresh(arguments)
-                        val (x, y) = point(arguments, "x", "y"); gesture(x, y, verify = { checkSession(); requireFresh(arguments) })
+                        checkSession(); requireFresh(arguments, false)
+                        val (x, y) = point(arguments, "x", "y"); gesture(x, y, verify = { requireCoordinateFresh(arguments) })
                     }
                 }
                 "type_text" -> {
@@ -326,7 +360,7 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
         require(px in 0 until imageWidth && py in 0 until imageHeight) { "坐标超出最近 screenshot 的范围。" }
         return (bounds.left + px.toFloat() * bounds.width() / imageWidth) to (bounds.top + py.toFloat() * bounds.height() / imageHeight)
     }
-    private suspend fun gesture(x: Float, y: Float, endX: Float = x, endY: Float = y, duration: Long = 60, verify: () -> Unit) {
+    private suspend fun gesture(x: Float, y: Float, endX: Float = x, endY: Float = y, duration: Long = 60, verify: suspend () -> Unit) {
         val path = Path().apply { moveTo(x, y); lineTo(endX, endY) }
         val builder = GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, duration))
         if (Build.VERSION.SDK_INT >= 30) builder.setDisplayId(selectedDisplay)
@@ -380,6 +414,7 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
         var screenshotError: String? = null
         val jpeg = if (screenshots) try { screenshot(windowId) } catch (e: CancellationException) { throw e } catch (e: Exception) { screenshotError = e.message ?: "截图不可用。"; null } else null
         if (layoutAtStart != layoutKey(selectedDisplay)) throw DeviceExecutionException("stale_screen", "观察期间显示布局已改变，请重新 observe。")
+        observedJpeg = jpeg
         screenId = newId(); observedGeneration = before; observedAt = SystemClock.elapsedRealtime(); observedLayout = layoutAtStart
         return DeviceObservation(buildJsonObject {
             put("screen_id", screenId); put("display_id", selectedDisplay); put("window_id", windowId); put("package_name", root.packageName?.toString().orEmpty())
@@ -399,6 +434,9 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
     }
     private suspend fun screenshot(id: Int): String {
         if (Build.VERSION.SDK_INT < 30) throw IllegalStateException("此 Android 版本只支持 UI tree，截图需要 Android 11 或更新。")
+        val pause = 350 - (SystemClock.elapsedRealtime() - lastScreenshotStarted)
+        if (pause > 0) delay(pause)
+        checkSession(); lastScreenshotStarted = SystemClock.elapsedRealtime()
         val bitmap = withTimeout(5000) { suspendCancellableCoroutine<Bitmap> { continuation ->
             val callback = object : TakeScreenshotCallback {
                 override fun onSuccess(result: ScreenshotResult) {

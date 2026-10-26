@@ -48,15 +48,22 @@ class SharedSearchFlowTest {
         "anthropic" -> """{"stop_reason":"tool_use","content":[{"type":"tool_use","id":"search-1","name":"$name","input":{"query":"Surry Hills fixture"}}]}"""
         else -> """{"choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","tool_calls":[{"id":"search-1","type":"function","function":{"name":"$name","arguments":"{\"query\":\"Surry Hills fixture\"}"}}]}}]}"""
     })
-    private fun final(protocol: String) = MockResponse().setBody(when (protocol) {
-        "responses" -> """{"status":"completed","model":"fixture-model","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"[Fixture A](https://fixture.invalid/menu) 营业状态未知。"}]}]}"""
-        "anthropic" -> """{"stop_reason":"end_turn","model":"fixture-model","content":[{"type":"text","text":"[Fixture A](https://fixture.invalid/menu) 营业状态未知。"}]}"""
-        else -> """{"model":"fixture-model","choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"[Fixture A](https://fixture.invalid/menu) 营业状态未知。","tool_calls":null}}]}"""
-    })
+    private fun final(protocol: String, text: String = "[Fixture A](https://fixture.invalid/menu) 营业状态未知。"): MockResponse {
+        val encoded = MeloJson.encodeToString(text)
+        return MockResponse().setBody(when (protocol) {
+            "responses" -> """{"status":"completed","model":"fixture-model","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":$encoded}]}]}"""
+            "anthropic" -> """{"stop_reason":"end_turn","model":"fixture-model","content":[{"type":"text","text":$encoded}]}"""
+            else -> """{"model":"fixture-model","choices":[{"finish_reason":"stop","message":{"role":"assistant","content":$encoded,"tool_calls":null}}]}"""
+        })
+    }
+    private fun review(protocol: String, complete: Boolean = false, evidence: String = "") = final(protocol, buildJsonObject {
+        put("decision", if (complete) "complete" else "partial"); put("reasonType", if (complete) "fulfilled" else "unavailable"); put("reason", "Fixture evidence check"); put("nextStep", "")
+        put("requirements", buildJsonArray { add(buildJsonObject { put("text", "Public facts"); put("status", if (complete) "met" else "missing"); put("evidenceIds", buildJsonArray { if (complete) add(evidence) }) }) })
+    }.toString())
 
     @Test fun threeProtocolsSearchPublicSourcesAndReturnToChatWithoutAnyDeviceRun() = runBlocking {
         for (protocol in listOf("chat-completions", "responses", "anthropic")) MockWebServer().use { model -> MockWebServer().use { backend ->
-            model.enqueue(tool(protocol)); model.enqueue(final(protocol)); model.start()
+            model.enqueue(tool(protocol)); model.enqueue(final(protocol)); model.enqueue(review(protocol)); model.start()
             backend.enqueue(MockResponse().setHeader("Content-Type", "application/json").setBody("""{"results":[{"title":"Fixture A","url":"https://fixture.invalid/menu","snippet":"Hours not verified"}]}""")); backend.start()
             val endpoint = backend.url("/search").toString()
             val config = buildJsonObject { put("search", buildJsonObject { put("backend", "http"); put("endpoint", endpoint); put("credentialRef", "search") }) }
@@ -65,7 +72,7 @@ class SharedSearchFlowTest {
             val id = chat(model, protocol, config)
             val run = send(id, "搜索 Surry Hills 当前营业的餐厅")
             assertEquals(run.error, "partial", run.status)
-            assertEquals("RELEVANT_READ_SOURCE_MISSING", run.sharedScene?.get("completion")?.jsonObject?.text("reason"))
+            assertEquals("GOAL_UNAVAILABLE", run.sharedScene?.get("completion")?.jsonObject?.text("reason"))
             assertTrue(run.partial.contains("营业状态未知")); assertTrue(run.sources.contains("https://fixture.invalid/menu"))
             assertEquals(deviceCount, app.repository.data.value.deviceRuns.size); assertFalse(app.deviceAgent.runtime.value.running)
             val first = model.takeRequest(2, TimeUnit.SECONDS)!!.body.readUtf8()
@@ -75,7 +82,8 @@ class SharedSearchFlowTest {
             val follow = model.takeRequest(2, TimeUnit.SECONDS)!!.body.readUtf8()
             assertTrue(follow.contains("search-1")); assertTrue(follow.contains("Fixture A")); assertTrue(follow.contains("freshness"))
             assertFalse(follow.contains("fixture-search-key")); assertFalse(run.partial.contains("fixture-search-key"))
-            assertEquals(2, model.requestCount); assertEquals(1, backend.requestCount)
+            assertEquals(3, model.requestCount); assertEquals(1, backend.requestCount)
+            val check = model.takeRequest(2, TimeUnit.SECONDS)!!.body.readUtf8(); assertTrue(check.contains("task completion checker")); assertFalse(check.contains("\"name\":\"web_search\""))
         } }
     }
 
@@ -88,6 +96,7 @@ class SharedSearchFlowTest {
             model.enqueue(tool("chat-completions"))
             model.enqueue(MockResponse().setBody(buildJsonObject { put("choices", buildJsonArray { add(buildJsonObject { put("finish_reason", "tool_calls"); put("message", buildJsonObject { put("role", "assistant"); put("tool_calls", buildJsonArray { add(buildJsonObject { put("id", "read-1"); put("type", "function"); put("function", buildJsonObject { put("name", "fetch_url"); put("arguments", buildJsonObject { put("url", page) }.toString()) }) }) }) }) }) }) }.toString()))
             model.enqueue(MockResponse().setBody(buildJsonObject { put("choices", buildJsonArray { add(buildJsonObject { put("finish_reason", "stop"); put("message", buildJsonObject { put("role", "assistant"); put("content", "Sydney brunch: $page") }) }) }) }.toString()))
+            model.enqueue(review("chat-completions", body.startsWith("Sydney"), "read-1:source:0"))
             model.start()
             val config = buildJsonObject { put("search", buildJsonObject { put("backend", "http"); put("endpoint", backend.url("/search").toString()) }) }
             val id = chat(model, config = config)
@@ -95,29 +104,30 @@ class SharedSearchFlowTest {
             val completion = run.sharedScene!!.getValue("completion").jsonObject
             assertEquals(if (body.startsWith("Sydney")) "completed" else "partial", run.status)
             assertEquals(if (body.startsWith("Sydney")) "supported" else "unverified", completion.text("goalState"))
-            assertEquals(3, model.requestCount); assertEquals(2, backend.requestCount)
+            assertEquals(4, model.requestCount); assertEquals(2, backend.requestCount)
             assertFalse(completion.toString().contains("breakfast dishes"))
         } }
     }
 
-    @Test fun unconfiguredPublicSearchDoesNotCallModelOrTakeOverTheScreen() = runBlocking {
+    @Test fun unconfiguredSearchKeepsNativeOrganizerAvailableWithoutTakingOverScreen() = runBlocking {
         MockWebServer().use { model ->
-            model.start(); val deviceCount = app.repository.data.value.deviceRuns.size
+            model.enqueue(final("chat-completions", "没有可用 Search Backend，未获取餐厅事实。")); model.enqueue(review("chat-completions")); model.start(); val deviceCount = app.repository.data.value.deviceRuns.size
             val id = chat(model)
-            val run = send(id, "Surry Hills 有什么好吃的饭店")
-            assertEquals("blocked", run.status); assertTrue(run.partial.contains("SEARCH_UNAVAILABLE"))
-            assertEquals(0, model.requestCount); assertEquals(deviceCount, app.repository.data.value.deviceRuns.size)
+            val run = send(id, "搜索 Surry Hills 现在营业的饭店")
+            assertEquals("blocked", run.status); assertEquals("GOAL_UNAVAILABLE", run.sharedScene!!.getValue("completion").jsonObject.text("reason"))
+            assertEquals(2, model.requestCount); assertEquals(deviceCount, app.repository.data.value.deviceRuns.size)
+            val first = model.takeRequest(2, TimeUnit.SECONDS)!!.body.readUtf8(); assertTrue(first.contains("todo_list")); assertFalse(first.contains("\"name\":\"web_search\""))
         }
     }
 
     @Test fun modelCannotClaimSearchCompletionWithoutRunningTheTool() = runBlocking {
         MockWebServer().use { model -> MockWebServer().use { backend ->
-            model.enqueue(final("chat-completions")); model.start(); backend.start()
+            model.enqueue(final("chat-completions")); model.enqueue(review("chat-completions")); model.start(); backend.start()
             val config = buildJsonObject { put("search", buildJsonObject { put("backend", "http"); put("endpoint", backend.url("/search").toString()) }) }
             val id = chat(model, config = config)
             val run = send(id, "搜索 Surry Hills 餐厅")
-            assertTrue(run.partial.contains("MISSING_TOOL_EVIDENCE")); assertEquals(0, backend.requestCount)
-            assertFalse(run.partial.contains("[Fixture A]"))
+            assertEquals("blocked", run.status); assertEquals("GOAL_UNAVAILABLE", run.sharedScene!!.getValue("completion").jsonObject.text("reason")); assertEquals(0, backend.requestCount)
+            assertTrue(run.partial.contains("[Fixture A]")); assertEquals("unverified", run.sharedScene!!.getValue("completion").jsonObject.text("goalState"))
         } }
     }
 
@@ -127,7 +137,8 @@ class SharedSearchFlowTest {
             val id = chat(model, config = buildJsonObject { put("search", buildJsonObject { put("backend", "http"); put("endpoint", "invalid"); put("credentialRef", "search") }) })
             val run = send(id, "1+1")
             assertEquals(run.error, "completed", run.status); assertEquals(1, model.requestCount)
-            assertFalse(model.takeRequest(2, TimeUnit.SECONDS)!!.body.readUtf8().contains("web_search"))
+            val names = MeloJson.parseToJsonElement(model.takeRequest(2, TimeUnit.SECONDS)!!.body.readUtf8()).jsonObject.getValue("tools").jsonArray.map { it.jsonObject["function"]?.jsonObject?.text("name") }
+            assertFalse(names.contains("web_search")); assertTrue(names.contains("todo_list"))
         }
     }
 
@@ -138,7 +149,7 @@ class SharedSearchFlowTest {
     @Test fun hostedProbeAndRealChatRequireCompletedReceiptAndInvalidateChangedConnection() = runBlocking {
         MockWebServer().use { model ->
             fun hosted() = MockResponse().setBody("""{"status":"completed","model":"fixture-model","output":[{"type":"web_search_call","status":"completed","action":{"sources":[{"title":"Fixture A","url":"https://fixture.invalid/menu"}]}},{"type":"message","content":[{"type":"output_text","text":"Fixture A；营业状态未知。"}]}]}""")
-            model.enqueue(hosted()); model.enqueue(hosted()); model.enqueue(final("responses")); model.start()
+            model.enqueue(hosted()); model.enqueue(hosted()); model.enqueue(review("responses")); model.start()
             val id = chat(model, "responses")
             val connection = app.repository.data.value.settings.connections.last()
             val proof = HostedSearchAdapter.probe(app, connection, "fixture-model-key", ModelClient(true), true)
@@ -148,23 +159,29 @@ class SharedSearchFlowTest {
             val run = send(id, "搜索 Surry Hills 餐厅")
             assertEquals(run.error, "partial", run.status); assertTrue(run.sources.contains("https://fixture.invalid/menu"))
             assertEquals(deviceCount, app.repository.data.value.deviceRuns.size)
-            repeat(2) {
+            repeat(2) { index ->
                 val body = MeloJson.parseToJsonElement(model.takeRequest(2, TimeUnit.SECONDS)!!.body.readUtf8()).jsonObject
-                assertEquals(listOf("web_search"), body.getValue("tools").jsonArray.map { it.jsonObject.text("type") })
+                assertEquals(1, body.getValue("tools").jsonArray.count { it.jsonObject.text("type") == "web_search" })
+                if (index == 1) assertTrue(body.toString().contains("todo_list"))
                 assertTrue(body.getValue("include").jsonArray.any { it.jsonPrimitive.content == "web_search_call.action.sources" })
             }
+            assertTrue(model.takeRequest(2, TimeUnit.SECONDS)!!.body.readUtf8().contains("task completion checker"))
+            model.enqueue(final("responses")); model.enqueue(review("responses"))
             val plain = send(id, "搜索现在还营业的餐厅")
-            assertTrue(plain.partial.contains("未收到可核对的 Search completed"))
+            assertEquals("blocked", plain.status); assertTrue(plain.sharedScene.toString().contains("未收到 completed 与来源回执"))
+            repeat(2) { model.takeRequest(2, TimeUnit.SECONDS) }
             app.repository.saveConnection(connection.copy(searchProof = proof, model = "changed-model"), null)
+            model.enqueue(final("responses", "Search unavailable")); model.enqueue(review("responses"))
             val invalidated = send(id, "搜索餐厅")
-            assertTrue(invalidated.partial.contains("SEARCH_UNAVAILABLE")); assertEquals(3, model.requestCount)
+            assertEquals("blocked", invalidated.status); assertEquals(7, model.requestCount)
+            val changed = model.takeRequest(2, TimeUnit.SECONDS)!!.body.readUtf8(); assertTrue(changed.contains("todo_list")); assertFalse(changed.contains("\"type\":\"web_search\""))
             assertEquals(deviceCount, app.repository.data.value.deviceRuns.size)
         }
     }
 
     @Test fun failedBackendDoesNotEscalateToPhone() = runBlocking {
         MockWebServer().use { model -> MockWebServer().use { backend ->
-            model.enqueue(tool("chat-completions")); model.enqueue(final("chat-completions")); model.start()
+            model.enqueue(tool("chat-completions")); model.enqueue(final("chat-completions")); model.enqueue(review("chat-completions")); model.start()
             backend.enqueue(MockResponse().setResponseCode(503)); backend.start()
             val config = buildJsonObject { put("search", buildJsonObject { put("backend", "http"); put("endpoint", backend.url("/search").toString()) }) }
             val deviceCount = app.repository.data.value.deviceRuns.size

@@ -2,6 +2,7 @@ import { publicLookupRequest } from './retrieval/publicLookupIntent.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { planRequest, actionEvidence } from './search.js';
+import { startGoal, goalCandidate } from './goal.js';
 
 const capabilities = { executors: ['web_search', 'fetch_url', 'phone_use'], grants: ['web_search', 'fetch_url', 'phone_use'], hostedSearch: 'unknown' };
 const config = { search: { backend: 'http', endpoint: 'https://search.fixture.invalid' } };
@@ -58,6 +59,18 @@ test('missing search capability is explicit, and is not permission to browse the
   assert.equal(result.route, 'unavailable');
   assert.equal(result.reason, 'SEARCH_UNAVAILABLE');
   assert.deepEqual(result.tools, []);
+});
+
+test('missing search backend or grant retains the goal check without hiding local capabilities', () => {
+  for (const extra of [{ config: {} }, { capabilities: { ...capabilities, grants: ['fetch_url', 'phone_use'] } }]) {
+    const text = '搜索 Surry Hills 现在营业的饭店';
+    const result = plan(text, extra);
+    assert.equal(result.route, 'unavailable');
+    assert.ok(result.research);
+    assert.equal(result.availableTools.includes('web_search'), false);
+    assert.equal(goalCandidate(startGoal(text), { reply: '没有 Search Backend。', research: !!result.research, tools: ['todo_list'], roundsLeft: 2 }).phase, 'checking');
+  }
+  assert.equal(plan('1+1', { config: { search: { backend: 'http', endpoint: 'invalid' } } }).availableTools.includes('web_search'), false);
 });
 
 test('navigation follow-up uses the selected place without repeating research', () => {

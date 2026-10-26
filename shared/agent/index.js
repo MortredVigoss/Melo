@@ -22,6 +22,7 @@ import { repeatOperation } from './repeatGuard.js';
 import { completionResult, completionObservation, teamCompletion } from './completion.js';
 import { goalOperation } from './goal.js';
 import { toolEffect } from './toolEffects.js';
+import { organizerCommand, ORGANIZER_TOOLS } from './organizer.js';
 import { contextCost, contextPlan, contextWirePlan, historyPage } from './context.js';
 
 export function evaluate(input) {
@@ -34,6 +35,8 @@ export function evaluate(input) {
       case 'requestToolAllowed': value = requestAllowsTool(input.tool, getRequestNetworkPolicy(resolvedRequestGoal(input.text, input.messages))); break;
       case 'lookupIntent': value = publicLookupRequest(resolvedRequestGoal(input.text, input.messages), input.messages); break;
       case 'intent': value = intentOperation(input); break;
+      case 'organizerNames': value = ORGANIZER_TOOLS.map(tool => tool.name); break;
+      case 'organizer': value = organizerCommand(input.command); break;
       case 'hello': value = { version: CORE_VERSION, runtime: 'melo-local-core', portable: true }; break;
       case 'contextCost': value = contextCost(input.text); break;
       case 'contextPlan': value = contextPlan(input.context); break;

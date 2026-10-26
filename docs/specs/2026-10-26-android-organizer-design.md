@@ -1,6 +1,6 @@
 # Android Todo、Calendar 与 Reminder Engine 设计
 
-日期：2026-10-26（Australia/Sydney）。状态：提案，待用户确认整体设计后实施。
+日期：2026-10-26（Australia/Sydney）。状态：用户于 2026-10-26 回复“可以”，整体设计已认可，0.10.0 已实施；验证与未完成项见 [实施回执](../android-organizer-implementation-20261026.md)。
 基线：主线 `248364b`；当前分支 `codex/android-organizer-20261026`。旧 Android 功能分支 `codex/phone-workflow-tools-20261021` 保留至 `1be64ad`，没有合并或覆盖其中的 Workflow / Progress 修复。
 
 ## 已确认的需求
@@ -78,7 +78,7 @@ Organizer 与当前 Agent 执行 Tasks、Device Script Cache 是不同领域，�
 ## 页面与适配
 
 - 沿用当前黑金 Compose 组件与文字风格，Todo / Calendar 各自独立文件模块，不继续扩大 MainActivity。
-- 展开屏使用可滚动 NavigationRail，加入两个独立目的地；折叠窄屏通过 Drawer 提供同一目的地集合，避免把七个入口挤进底栏。系统返回、旋转和折叠时保留当前页面、选中日期与未保存编辑。
+- 展开屏使用可滚动 NavigationRail，加入两个独立目的地；折叠窄屏通过 Drawer 提供同一目的地集合，并保留原五项底栏快捷入口，避免把七个入口挤进底栏。系统返回、旋转和折叠时保留当前页面、选中日期与未保存编辑。
 - 提醒权限与来源设置留在两个页面的对应设置入口；不把实现术语放到创建事项的主流程。
 
 ## 实施顺序和验收
@@ -100,4 +100,4 @@ Organizer 与当前 Agent 执行 Tasks、Device Script Cache 是不同领域，�
 
 ## 审阅边界
 
-用户已确认提醒形式与多来源接入 A；此文的整体架构、页面行为、第一版范围及验收计划尚待审阅认可。本轮尚未编写产品实现，也尚未安装新 APK。
+用户已确认提醒形式与多来源接入 A；整体设计已获用户认可，按下述阶段实施并逐项保留验收边界；尚未安装新 APK。

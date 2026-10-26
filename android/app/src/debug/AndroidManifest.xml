@@ -2,6 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application android:networkSecurityConfig="@xml/debug_network_security">
         <activity android:name=".DeviceFixtureActivity" android:exported="false" />
+        <activity android:name=".DynamicAdFixtureActivity" android:exported="false" />
         <service android:name=".AgentCoreProbeService" android:exported="false" />
     </application>
 </manifest>

@@ -3,6 +3,17 @@ import assert from 'node:assert/strict';
 import { normalizeRuntimeConfig, normalizeFetchedPage, normalizeSearchResponse, searchRequest } from './tools.js';
 import { startTurn, advanceTurn } from './turn.js';
 
+test('malformed search endpoints never become an executable capability', () => {
+  for (const endpoint of ['invalid', 'file:///private', 'https://user:secret@example.com', 'https://', 'https://example.com/#fragment', 'https://example.com/with space']) {
+    const config = { search: { backend: 'http', endpoint } };
+    assert.equal(normalizeRuntimeConfig(config).search.endpoint, '', endpoint);
+    assert.throws(() => searchRequest({ query: 'test' }, config), { code: 'SEARCH_UNAVAILABLE' });
+  }
+  for (const endpoint of ['https://example.com/search?q=x', 'http://127.0.0.1:1234/search', 'http://[::1]:1234/search']) {
+    assert.equal(normalizeRuntimeConfig({ search: { backend: 'http', endpoint } }).search.endpoint, endpoint);
+  }
+});
+
 test('all Hosts get identical safe defaults; Brave fills its one shared endpoint', () => {
   assert.equal(normalizeRuntimeConfig().search.backend, 'none');
   assert.equal(normalizeRuntimeConfig().search.browserFallback, false);

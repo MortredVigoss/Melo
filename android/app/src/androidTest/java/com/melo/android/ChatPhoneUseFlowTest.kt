@@ -79,7 +79,10 @@ class ChatPhoneUseFlowTest {
                 var child = 0
                 override fun dispatch(request: RecordedRequest): MockResponse {
                     val body = MeloJson.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
-                    val name = body["tools"]!!.jsonArray.single().jsonObject["function"]!!.jsonObject.text("name")
+                    if (body.toString().contains("You are Melo's task completion checker")) return final().setBody("""{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"decision\":\"complete\",\"reasonType\":\"fulfilled\",\"reason\":\"Fixture read\",\"nextStep\":\"\",\"requirements\":[{\"text\":\"Read fixture\",\"status\":\"met\",\"evidenceIds\":[\"phone-1\"]}]}"}}]}""")
+                    val offered = body["tools"]!!.jsonArray.map { it.jsonObject["function"]!!.jsonObject.text("name") }
+                    val name = if ("android_device" in offered) "android_device" else "phone_use"
+                    if (name == "phone_use") assertTrue("Native organizer remains registered in the parent loop", "todo_list" in offered && "calendar_list_events" in offered)
                     if (name == "phone_use") return if (body.toString().contains("tool_call_id")) final().setBodyDelay(1, TimeUnit.SECONDS) else research(goal).setBodyDelay(1, TimeUnit.SECONDS)
                     child++
                     if (child == 1) return call("android_device", "observe", buildJsonObject { put("action", "observe") })
@@ -116,7 +119,9 @@ class ChatPhoneUseFlowTest {
                 assertFalse(body.contains("future-turn-project-marker"))
                 assertFalse(body.contains("local-fixture-key"))
             }
-            assertEquals(4, server.requestCount); assertFalse(app.deviceAgent.runtime.value.running)
+            val review = withContext(Dispatchers.IO) { server.takeRequest(5, TimeUnit.SECONDS) }!!.body.readUtf8()
+            assertTrue(review.contains("task completion checker")); assertTrue(review.contains("captured-model")); assertFalse(review.contains("android_device"))
+            assertEquals(5, server.requestCount); assertFalse(app.deviceAgent.runtime.value.running)
             assertEquals("next-message-draft-must-survive", saved.drafts[id])
         }
     }
@@ -153,12 +158,13 @@ class ChatPhoneUseFlowTest {
         }
     }
 
-    @Test fun disabledSkillUsesOriginalChatWithoutToolsOrDeviceSession() = runBlocking {
+    @Test fun disabledPhoneSkillKeepsNativeOrganizerButCannotStartDeviceSession() = runBlocking {
         MockWebServer().use { server ->
             server.enqueue(final()); server.start(); val id = chat(server, false)
             withContext(Dispatchers.Main) { assertTrue(app.engine.send(id, "普通问答")) }; complete(id)
             val body = server.takeRequest(2, TimeUnit.SECONDS)!!.body.readUtf8()
-            assertFalse(body.contains("\"tools\"")); assertEquals(1, server.requestCount)
+            val names = MeloJson.parseToJsonElement(body).jsonObject.getValue("tools").jsonArray.map { it.jsonObject.getValue("function").jsonObject.text("name") }
+            assertFalse(names.contains("phone_use")); assertFalse(names.contains("android_device")); assertTrue(names.contains("todo_list")); assertTrue(names.contains("calendar_list_events")); assertEquals(1, server.requestCount)
             assertTrue(app.repository.data.value.deviceRuns.none { it.taskContext?.chatId == id })
         }
     }

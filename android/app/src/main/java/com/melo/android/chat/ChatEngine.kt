@@ -108,8 +108,8 @@ class ChatEngine(private val context: Context, val repository: Repository) {
                 currentCoroutineContext().ensureActive()
                 check(repository.data.value.chats.any { it.id == chatId }) { "对话已删除，未保存新的回复。" }
                 checkpoint.cancelAndJoin(); checkpoint = null
-                val sources = replySources(result.text)
                 val observed = repository.data.value.runs.find { it.id == run.id } ?: run
+                val sources = (replySources(result.text) + (observed.sharedScene?.get("sources") as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.text("url")?.takeIf { url -> url.startsWith("https://") || url.startsWith("http://") } }).distinct()
                 val completed = observed.copy(status = result.outcome, finishedAt = now(), partial = result.text, error = result.stopReason, reportedModel = result.model, simulated = result.simulated, sources = sources)
                 val assistant = Message(role = "assistant", content = result.text, runId = run.id)
                 repository.change { current ->
