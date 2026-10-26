@@ -92,7 +92,7 @@ struct SettingsContent: View {
                     capability("画笔遮罩与批量图片", "桌面可用", "paintbrush.pointed")
                     capability("实时搜索与天气", authMode == "chatgpt" && account.signedIn && webSearchEnabled ? "已开启 · 按账号权限" : "未开启", "globe")
                 }.meloPanel()
-                HStack { Text("MELO FOR IPHONE").tracking(2); Spacer(); Text("\(version) · 本地测试版") }.font(.system(size: 9)).foregroundStyle(.tertiary)
+                HStack { Text("MELO FOR IPHONE").tracking(2); Spacer(); Text("\(version) · 本地测试版") }.font(MeloType.meta()).foregroundStyle(.tertiary)
             }.padding(20)
         }
         .environment(\.openURL, OpenURLAction { url in

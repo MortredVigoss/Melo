@@ -8,7 +8,7 @@ struct AgentAvatar: View {
     var body: some View {
         Group {
             if let data = agent.avatarData, let image = UIImage(data: data) { Image(uiImage: image).resizable().scaledToFill() }
-            else { Image(systemName: agent.symbol).font(.system(size: size * 0.44)).foregroundStyle(meloGold).frame(width: size, height: size).background(meloGold.opacity(0.1)) }
+            else { Image(systemName: agent.symbol).font(MeloType.avatarSymbol(size: size)).foregroundStyle(meloGold).frame(width: size, height: size).background(meloGold.opacity(0.1)) }
         }.frame(width: size, height: size).clipShape(RoundedRectangle(cornerRadius: size * 0.3)).accessibilityHidden(true)
     }
 }
@@ -75,7 +75,7 @@ struct ConversationControls: View {
                         Button { store.selectAgent(agent.id, chatID: chatID) } label: { Label(agent.name, systemImage: store.agent(for: chatID).id == agent.id ? "checkmark" : agent.symbol) }
                     }
                     Text("切换只影响之后的回复；历史消息保持原Agent。")
-                } label: { HStack(spacing: 6) { AgentAvatar(agent: store.agent(for: chatID), size: 22); Text("Agent · " + store.agent(for: chatID).name); Image(systemName: "chevron.down").font(.system(size: 9)) }.font(.caption).padding(9).background(MeloTheme.inset, in: Capsule()) }.accessibilityLabel("选择对话Agent")
+                } label: { HStack(spacing: 6) { AgentAvatar(agent: store.agent(for: chatID), size: 22); Text("Agent · " + store.agent(for: chatID).name); Image(systemName: "chevron.down").font(MeloType.meta()) }.font(.caption).padding(9).background(MeloTheme.inset, in: Capsule()) }.accessibilityLabel("选择对话Agent")
                 Button { team = true } label: { Label(store.pendingTeams[chatID].map { "团队 · \($0.members.count) 人" } ?? "团队", systemImage: "person.3").font(.caption).padding(11).background(store.pendingTeams[chatID] == nil ? MeloTheme.inset : meloGold.opacity(0.18), in: Capsule()) }.accessibilityLabel(store.pendingTeams[chatID] == nil ? "选择团队协作" : "下一条消息将由团队执行，点按修改")
                     // Its own presentation anchor: two sheets on one view do not both present.
                     .sheet(isPresented: $team) { TeamSheet(chatID: chatID) }

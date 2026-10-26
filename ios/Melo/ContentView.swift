@@ -298,7 +298,7 @@ struct ChatView: View {
         VStack(spacing: 0) {
             HStack(spacing: 14) {
                 Button { withAnimation(.easeInOut(duration: 0.3)) { historyVisible.toggle() } } label: { VStack(spacing: 3) { Image(systemName: "sidebar.left").font(MeloType.control(weight: .light)); Text("历史").font(MeloType.meta()) }.frame(width: 40, height: 44) }.accessibilityLabel("展开历史对话")
-                VStack(alignment: .leading, spacing: 3) { Text("WORKSPACE / CHAT").font(MeloType.eyebrow()).tracking(1.5).foregroundStyle(meloGold); Button { editedTitle = chat?.title ?? ""; renaming = true } label: { HStack(spacing: 6) { Text(chat?.title ?? "对话").font(.subheadline).lineLimit(1); Image(systemName: "pencil").font(.caption2).foregroundStyle(meloGold) } }.foregroundStyle(.primary).accessibilityLabel("重命名当前对话") }
+                VStack(alignment: .leading, spacing: 3) { Text("WORKSPACE / CHAT").font(MeloType.eyebrow()).tracking(1.5).foregroundStyle(meloGold); Button { editedTitle = chat?.title ?? ""; renaming = true } label: { HStack(spacing: 6) { Text(chat?.title ?? CapabilityCopy.localized(InterfaceTerm.conversation.key)).font(.subheadline).lineLimit(1); Image(systemName: "pencil").font(.caption2).foregroundStyle(meloGold) } }.foregroundStyle(.primary).accessibilityLabel("重命名当前对话") }
                 Spacer()
                 Button { settings = true } label: { Image(systemName: "slider.horizontal.3").frame(width: 36, height: 38) }.accessibilityLabel("模型设置")
             }.padding(.horizontal, 16).padding(.vertical, 9).background(meloBackground.opacity(0.3)).overlay(alignment: .bottom) { Rectangle().fill(meloGold.opacity(0.13)).frame(height: 0.5) }
@@ -332,8 +332,8 @@ struct ChatView: View {
                                     Button { executionRunID = run.runId; showExecution = true } label: { Label("回看任务空间", systemImage: "atom").font(.caption) }
                                     Spacer()
                                     Menu {
-                                        Text("请求模型：\(run.requestedModel.isEmpty ? "未选择" : run.requestedModel)")
-                                        Text("服务返回：\(run.returnedModel ?? "未提供，不推断")")
+                                        Text("请求模型：\(run.requestedModel.isEmpty ? CapabilityCopy.localized("未选择") : run.requestedModel)")
+                                        Text("服务返回：\(run.returnedModel ?? CapabilityCopy.localized("未提供，不推断"))")
                                     } label: { Text(run.returnedModel ?? "返回模型未提供").font(MeloType.meta()).foregroundStyle(.secondary).lineLimit(1) }.accessibilityLabel("查看本轮模型信息")
                                 }
                             }
@@ -343,7 +343,7 @@ struct ChatView: View {
                                         if receipt.purpose == "intent-judge" { Text("用途：额外快速 · 意图判断") }
                                         if receipt.simulated { Text("模拟调用 · 未验证真实模型") }
                                         Text("请求模型：\(receipt.requestedModel)")
-                                        Text("服务返回：\(receipt.reportedModel.isEmpty ? "未提供，不推断" : receipt.reportedModel)")
+                                        Text("服务返回：\(receipt.reportedModel.isEmpty ? CapabilityCopy.localized("未提供，不推断") : receipt.reportedModel)")
                                     }
                                 } label: { Label("本轮模型记录", systemImage: "cpu").font(.caption2) }
                             }

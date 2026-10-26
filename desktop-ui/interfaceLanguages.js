@@ -1,4 +1,4 @@
-// Generated from shared/protocol/interface-languages.json.
+// Generated from shared/protocol/interface-languages.json and interface-terms.json.
 export const LANGUAGES = Object.freeze([
   {
     "id": "zh-CN",
@@ -26,3 +26,5 @@ export const LANGUAGES = Object.freeze([
     "short": "ES"
   }
 ].map(Object.freeze));
+export const INTERFACE_TERMS = Object.freeze({"knowledge":"知识库","artifacts":"成果库","conversation":"对话","device":"这台电脑上"});
+export const NATIVE_INTERFACE_TERMS = Object.freeze({"knowledge":"知识库","artifacts":"成果库","conversation":"对话","device":"这台手机上"});

@@ -9,7 +9,7 @@ import { renderSmartRouting, editSmartRouting, handleSmartRouting, smartRoutingD
 import {handleManagementAction} from './managementActions.js';
 import {askFileDecision} from './chatFiles.js';
 import { isAgentChannelAvailable } from '/shared/channelAvailability.js';
-import { t, ui } from './i18n.js';
+import { t, ui, term } from './i18n.js';
 import { installLanguageControls } from './languageControls.js';
 import { olderBootstrap, changedBootstrapSections, pageAffected } from './bootstrapPatch.js';
 import { createSharedApi } from './sharedApi.js';
@@ -4636,7 +4636,7 @@ function renderArtifactsPage() {
       <div class="page-grid">
         <div class="header-row">
           <div>
-            <h1 class="page-title compact">${uiState.artifactCollection==='results'?t('成果库'):t('知识库')}</h1><p class="page-kicker">知识由你主动保存和选用。成果来自回复中的代码块，不自动加入知识上下文。</p><div class="inline-actions"><button class="small-button" data-action="artifact-collection" data-collection="knowledge">知识库</button><button class="small-button" data-action="artifact-collection" data-collection="results">成果库</button></div>
+            <h1 class="page-title compact">${uiState.artifactCollection==='results'?term('artifacts'):term('knowledge')}</h1><p class="page-kicker">知识由你主动保存和选用。成果来自回复中的代码块，不自动加入知识上下文。</p><div class="inline-actions"><button class="small-button" data-action="artifact-collection" data-collection="knowledge">${term('knowledge')}</button><button class="small-button" data-action="artifact-collection" data-collection="results">${term('artifacts')}</button></div>
           </div>
 
           <div class="inline-actions">

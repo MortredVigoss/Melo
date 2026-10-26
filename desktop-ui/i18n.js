@@ -8,7 +8,7 @@ export function escapeHtml(value = '') {
 }
 import { runtimeStageName as stageName, runtimeStageOutput as localizedStageOutput, runtimeCompletionText as localizedCompletionText } from '../shared/agent/runtimeMessages.js';
 import { translations } from './translations.js';
-import { LANGUAGES } from './interfaceLanguages.js';
+import { LANGUAGES, INTERFACE_TERMS } from './interfaceLanguages.js';
 export { LANGUAGES };
 const interfaceId = value => {
   const base = String(value || '').replace('_', '-').split('-')[0].toLowerCase();
@@ -23,6 +23,7 @@ export function setLanguage(value) {
   globalThis.MeloLaunch?.setLanguage?.(language);
   return language;
 }
+export const term = (concept, locale = language) => t(INTERFACE_TERMS[concept], {}, locale);
 // Only call with authored interface text. Interpolated user content stays opaque.
 export function t(source, values = {}, locale = language) {
   const text = translations[source]?.[normalizeLanguage(locale)] ?? String(source ?? '');

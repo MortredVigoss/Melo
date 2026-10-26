@@ -1,0 +1,6 @@
+{
+  "knowledge": { "desktop": "知识库", "ios": "知识库" },
+  "artifacts": { "desktop": "成果库", "ios": "成果库" },
+  "conversation": { "desktop": "对话", "ios": "对话" },
+  "device": { "desktop": "这台电脑上", "ios": "这台手机上" }
+}

@@ -4,9 +4,12 @@ import { resolve } from 'node:path';
 const root=fileURLToPath(new URL('../',import.meta.url));
 export async function generateInterfaceLanguages({check=false}={}) {
  const entries=JSON.parse(await readFile(resolve(root,'shared/protocol/interface-languages.json'),'utf8'));
+ const terms=JSON.parse(await readFile(resolve(root,'shared/protocol/interface-terms.json'),'utf8'));
  const quote=value=>JSON.stringify(value);
- const js='// Generated from shared/protocol/interface-languages.json.\nexport const LANGUAGES = Object.freeze('+JSON.stringify(entries.map(({id,name,short})=>({id,name,short})),null,2)+'.map(Object.freeze));\n';
- const swift=['// Generated from shared/protocol/interface-languages.json. Do not edit.',
+ let js='// Generated from shared/protocol/interface-languages.json and interface-terms.json.\nexport const LANGUAGES = Object.freeze('+JSON.stringify(entries.map(({id,name,short})=>({id,name,short})),null,2)+'.map(Object.freeze));\n';
+ js += 'export const INTERFACE_TERMS = Object.freeze('+JSON.stringify(Object.fromEntries(Object.entries(terms).map(([id,row])=>[id,row.desktop])))+');\n';
+ js += 'export const NATIVE_INTERFACE_TERMS = Object.freeze('+JSON.stringify(Object.fromEntries(Object.entries(terms).map(([id,row])=>[id,row.ios])))+');\n';
+ let swift=['// Generated from shared/protocol/interface-languages.json and interface-terms.json. Do not edit.',
  'import Foundation','','enum InterfaceLanguage: String, CaseIterable, Identifiable {',
  '    case '+entries.map(row=>row.swift+' = '+quote(row.id)).join(', '),
  '    var id: String { rawValue }',
@@ -20,6 +23,8 @@ export async function generateInterfaceLanguages({check=false}={}) {
  '        }',
  '        return value.flatMap(match) ?? match(systemLanguage) ?? .english',
  '    }','}',''].join('\n');
+ swift += '\nenum InterfaceTerm: String, CaseIterable {\n    case '+Object.keys(terms).join(', ')+'\n    var key: String { switch self { '+Object.entries(terms).map(([id,row])=>'case .'+id+': return '+quote(row.ios)).join('; ')+' } }\n}\n';
+ swift += "\nenum InterfaceCopy {\n    static func localized(_ key: String, language: String? = UserDefaults.standard.string(forKey: \"melo.interfaceLanguage\"), bundle: Bundle = .main) -> String {\n        let locale = InterfaceLanguage.resolve(language).localeID\n        let localized = bundle.path(forResource: locale, ofType: \"lproj\").flatMap(Bundle.init(path:)) ?? bundle\n        return localized.localizedString(forKey: key, value: key, table: nil)\n    }\n}\n";
  for(const [path,text] of [['desktop-ui/interfaceLanguages.js',js],['ios/Melo/InterfaceLanguage.swift',swift]]) {
   if(check) { if(await readFile(resolve(root,path),'utf8')!==text) throw new Error(path+' is stale'); }
   else await writeFile(resolve(root,path),text);

@@ -24,7 +24,7 @@
     ],
     "graph": {
       "modules": 648,
-      "edges": 2089,
+      "edges": 2090,
       "roots": [
         "src",
         "desktop-ui",
@@ -4535,6 +4535,7 @@
           "scripts/eval-agent-tasks.test.js",
           "scripts/generate-interface-languages.test.js",
           "scripts/generate-module-map.test.js",
+          "scripts/interface-terms.test.js",
           "scripts/ios-test-selection.test.js",
           "scripts/native-shutdown.test.js",
           "scripts/native-translations.test.js",
@@ -5918,7 +5919,8 @@
       "kind": "generator",
       "generator": "scripts/generate-interface-languages.js",
       "inputs": [
-        "shared/protocol/interface-languages.json"
+        "shared/protocol/interface-languages.json",
+        "shared/protocol/interface-terms.json"
       ],
       "outputs": [
         "desktop-ui/interfaceLanguages.js",

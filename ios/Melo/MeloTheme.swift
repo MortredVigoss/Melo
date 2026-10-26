@@ -24,6 +24,7 @@ enum MeloTheme {
     static let cardRadius: CGFloat = 16.0
     static let panelRadius: CGFloat = 22.0
     static let neuralColors: [Color] = [Color(red: 232 / 255.0, green: 173 / 255.0, blue: 102 / 255.0), Color(red: 203 / 255.0, green: 114 / 255.0, blue: 123 / 255.0), Color(red: 174 / 255.0, green: 136 / 255.0, blue: 199 / 255.0), Color(red: 145 / 255.0, green: 179 / 255.0, blue: 187 / 255.0), Color(red: 206 / 255.0, green: 150 / 255.0, blue: 115 / 255.0)]
+    static let success = Color(red: 214 / 255.0, green: 192 / 255.0, blue: 142 / 255.0)
 }
 
 enum MeloType {
@@ -38,4 +39,6 @@ enum MeloType {
     static func brand(weight: Font.Weight = .regular, design: Font.Design = .default) -> Font { .system(size: 27.0, weight: weight, design: design) }
     static func title(weight: Font.Weight = .regular, design: Font.Design = .default) -> Font { .system(size: 28.0, weight: weight, design: design) }
     static func chatTitle(weight: Font.Weight = .regular, design: Font.Design = .default) -> Font { .system(size: 29.0, weight: weight, design: design) }
+    static func loginCode(weight: Font.Weight = .regular, design: Font.Design = .default) -> Font { .system(size: 26.0, weight: weight, design: design) }
+    static func avatarSymbol(size: CGFloat) -> Font { .system(size: size * 0.44) }
 }

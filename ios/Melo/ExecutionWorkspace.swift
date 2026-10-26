@@ -64,7 +64,7 @@ struct ExecutionWorkspace: View {
                             ForEach(records.reversed()) { record in
                                 Text(record.query).font(.headline)
                                 ExecutionTimingView(record: record)
-                                Text("\(record.status) · \(record.operations.count) 次实际调用").font(.caption)
+                                Text("\(["running":"进行中", "completed":"已完成", "failed":"失败", "stopped":"已停止", "cancelled":"已取消", "queued":"排队中", "interrupted":"已中断", "in_progress":"进行中"][record.status].map(CapabilityCopy.localized) ?? record.status) · \(record.operations.count) 次实际调用").font(.caption)
                                 ForEach(record.sources) { source in
                                     Button(source.title) { if let url = URL(string: source.citationUrl ?? source.url) { sourcePage = SourcePage(url: url) } }.multilineTextAlignment(.leading)
                                 }

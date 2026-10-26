@@ -66,7 +66,7 @@ struct PhoneAgentPermissionsSection: View {
         })
     }
     var body: some View {
-        Section("这台手机上") {
+        Section(LocalizedStringKey(InterfaceTerm.device.key)) {
             Text("只在这台 iPhone 上生效，立即保存，不同步。手机数据还需要在设置 > 手机数据中开启对应类型。").font(.caption).foregroundStyle(.secondary)
             ForEach(PhoneCapability.allCases) { capability in
                 let unavailable = capability.deviceKind.map { !device.enabled.contains($0) } ?? false

@@ -1,13 +1,13 @@
-import { t, ui, escapeHtml as esc } from './i18n.js';
+import { t, ui, term, escapeHtml as esc } from './i18n.js';
 import { renderLanguageControl } from './languageControls.js';
 import { renderAgentAvatar } from './agentAvatar.js';
 import { createRouteSampler } from './neuralSampling.js';
 // The navigation tree is explicit: visual links describe real UI hierarchy.
 export const neuralGroups = [
- {id:'chat',get name(){return t('对话');},en:'CONVERSATIONS',symbol:'◌',get description(){return t('想法从一段对话开始。');}},
+ {id:'chat',get name(){return term('conversation');},en:'CONVERSATIONS',symbol:'◌',get description(){return t('想法从一段对话开始。');}},
  {id:'projects',get name(){return t('项目');},en:'PROJECTS',symbol:'◇',get description(){return t('把相关的工作与知识，连接在一起。');}},
  {id:'agents',get name(){return t('Agent');},en:'AGENTS',symbol:'✧',get description(){return t('为不同的工作，找到合适的思考方式。');}},
- {id:'knowledge',get name(){return t('知识');},en:'KNOWLEDGE',symbol:'△',get description(){return t('知识由你保存并选用；记忆自动召回；技能提供工作方法。');}},
+ {id:'knowledge',get name(){return term('knowledge');},en:'KNOWLEDGE',symbol:'△',get description(){return t('知识由你保存并选用；记忆自动召回；技能提供工作方法。');}},
  {id:'system',get name(){return t('系统');},en:'SYSTEM',symbol:'⬡',get description(){return t('连接模型、工具与本地工作环境。');}},
 ];
 export function groupForSettings(settings={}) {

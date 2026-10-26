@@ -142,7 +142,7 @@ struct LLMConnectionsView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Label("实际请求已通过", systemImage: "checkmark.circle").foregroundStyle(meloGold)
                     Text("请求模型：\(probe.requestedModel)")
-                    Text("返回模型：\(probe.returnedModel ?? "服务未提供")")
+                    Text("返回模型：\(probe.returnedModel ?? CapabilityCopy.localized("服务未提供"))")
                     Text("\(probe.elapsedMS) ms · \(probe.response)").lineLimit(3)
                     Text(probe.testedAt).foregroundStyle(MeloTheme.soft)
                 }.font(.caption).frame(maxWidth: .infinity, alignment: .leading).padding(12).background(MeloTheme.inset, in: RoundedRectangle(cornerRadius: MeloTheme.controlRadius))

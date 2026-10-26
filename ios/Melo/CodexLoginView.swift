@@ -7,7 +7,7 @@ struct CodexLoginCard: View {
     @State private var showAuthorization = false
     var body: some View {
         VStack(alignment:.leading,spacing:16) {
-            Label(account.signedIn ? "Codex 已连接" : "连接 Codex",systemImage:"person.crop.circle.badge.checkmark").font(.headline)
+            Label(LocalizedStringKey(account.signedIn ? "Codex 已连接" : "连接 Codex"),systemImage:"person.crop.circle.badge.checkmark").font(.headline)
             Text("用 ChatGPT 账号授权，手机独立完成对话、看图、搜索和修图。Melo 负责对话与任务执行，API 密钥连接仍可单独选择。")
                 .font(.subheadline).foregroundStyle(.secondary)
             Text(account.status).font(.caption).foregroundStyle(.secondary)
@@ -17,14 +17,14 @@ struct CodexLoginCard: View {
                         Image(systemName:account.activeID == registration.id ? "checkmark.circle.fill" : "circle")
                         VStack(alignment:.leading,spacing:3) {
                             Text(registration.email).lineLimit(1)
-                            Text("账号 \(index+1) · \(registration.refreshToken.isEmpty ? "待授权" : "已保存到本机钥匙串")").font(.caption2).foregroundStyle(.secondary)
+                            Text("账号 \(index+1) · \(CapabilityCopy.localized(registration.refreshToken.isEmpty ? "待授权" : "已保存到本机钥匙串"))").font(.caption2).foregroundStyle(.secondary)
                         }
                         Spacer()
                     }.font(.subheadline)
                 }.disabled(account.busy || store.anySending)
             }
             if let code=account.deviceCode {
-                Text(code.userCode).font(.system(size:26,weight:.semibold,design:.monospaced)).tracking(2).textSelection(.enabled).accessibilityLabel("登录验证码 \(code.userCode)")
+                Text(code.userCode).font(MeloType.loginCode(weight:.semibold,design:.monospaced)).tracking(2).textSelection(.enabled).accessibilityLabel("登录验证码 \(code.userCode)")
                 HStack {
                     Button(copied ? "已复制" : "复制验证码",systemImage:copied ? "checkmark" : "doc.on.doc") { UIPasteboard.general.string=code.userCode; copied=true }
                     Spacer()

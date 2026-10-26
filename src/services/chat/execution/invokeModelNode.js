@@ -176,8 +176,8 @@ export function createInvokeModelNode(turn) {
     };
 
     for (let iteration = 0; ; iteration++) {
-      // On subsequent iterations, we're streaming "thinking" not the final
-      // reply, so suppress onDelta to avoid emitting partial tool-loop text.
+      // Each answer round can stream, including after tools. Intermediate
+      // goal checks below stay buffered and do not receive onDelta.
       const isFirstIteration = iteration === 0;
       // Supplements typed while this turn runs join before the next model call,
       // keeping every step already done.

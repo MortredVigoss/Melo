@@ -64,22 +64,22 @@ struct MemoryFactsView: View {
                 if fact.scope == "project" {
                     Section("项目记忆本") {
                         Picker("类别", selection: Binding(get: { value.wrappedValue.section ?? "convention" }, set: { value.wrappedValue.section = $0 })) {
-                            ForEach(MobileMemoryFact.bookSections, id: \.self) { section in Text(["goal":"目标", "convention":"约定", "decision":"决定", "progress":"进展", "todo":"待办", "file":"文件"][section] ?? section).tag(section) }
+                            ForEach(MobileMemoryFact.bookSections, id: \.self) { section in Text(LocalizedStringKey(["goal":"目标", "convention":"约定", "decision":"决定", "progress":"进展", "todo":"待办", "file":"文件"][section] ?? section)).tag(section) }
                         }
                     }
                 }
                 Section("原始来源") {
                     Text(sourceName(fact))
                     Text(fact.sourceText).textSelection(.enabled).font(.subheadline)
-                    Text("\(fact.category) · \(fact.updatedAt)").font(.caption).foregroundStyle(.secondary)
+                    Text("\(["user_preference":"偏好", "project_context":"项目背景", "technical_detail":"技术细节", "decision":"决定", "correction":"纠正", "identity":"身份"][fact.category].map(CapabilityCopy.localized) ?? fact.category) · \(fact.updatedAt)").font(.caption).foregroundStyle(.secondary)
                 }
             }
         }
     }
     private func sourceName(_ fact: MobileMemoryFact) -> String {
-        if fact.isProjectSource { return "项目 · " + ((store.preferences.projects ?? []).first { $0.id == fact.projectId }?.name ?? "来源项目未同步") }
-        return store.chats.first { $0.id == fact.chatId }?.title ?? "来源对话已删除或未同步"
+        if fact.isProjectSource { return CapabilityCopy.localized("项目") + " · " + ((store.preferences.projects ?? []).first { $0.id == fact.projectId }?.name ?? CapabilityCopy.localized("来源项目未同步")) }
+        return store.chats.first { $0.id == fact.chatId }?.title ?? CapabilityCopy.localized("来源对话已删除或未同步")
     }
-    private func scopeName(_ scope: String) -> String { ["chat":"原对话", "project":"同项目", "agent":"同Agent", "personal":"本机共享"][scope] ?? "原对话" }
-    private func statusName(_ status: String) -> String { ["active":"启用", "forgotten":"停用", "historical":"历史", "unconfirmed":"待确认"][status] ?? status }
+    private func scopeName(_ scope: String) -> String { CapabilityCopy.localized(["chat":"原对话", "project":"同项目", "agent":"同Agent", "personal":"本机共享"][scope] ?? "原对话") }
+    private func statusName(_ status: String) -> String { ["active":"启用", "forgotten":"停用", "historical":"历史", "unconfirmed":"待确认"][status].map(CapabilityCopy.localized) ?? status }
 }

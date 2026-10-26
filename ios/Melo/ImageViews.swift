@@ -9,7 +9,7 @@ struct LocalImageThumbnail: View {
     var body: some View {
         Group {
             if let thumbnail { Image(uiImage:thumbnail).resizable().scaledToFit() }
-            else { Image(systemName:"photo").foregroundStyle(.secondary).overlay(alignment:.bottom) { Text("图片暂不可读").font(.system(size:9)) } }
+            else { Image(systemName:"photo").foregroundStyle(.secondary).overlay(alignment:.bottom) { Text("图片暂不可读").font(MeloType.meta()) } }
         }
         .task(id:image.id) {
             guard let data = try? library.data(image) else { return }
@@ -56,7 +56,7 @@ struct ImageComposerBar: View {
                                     Button { onPreview(image) } label: { LocalImageThumbnail(image:image,library:store.imageLibrary).frame(width:72,height:60) }.accessibilityLabel("预览参考图")
                                     Menu { ForEach(ImageReference.roles,id:\.self) { role in Button(LocalizedStringKey(ImageReference.title(role))) { if let i=plan.references.firstIndex(where:{$0.id==ref.id}) { plan.references[i].role=role } } } } label: { Text(LocalizedStringKey(ImageReference.title(ref.role))).font(.caption2) }
                                 }.padding(8).background(meloGold.opacity(0.07),in:RoundedRectangle(cornerRadius:12))
-                                .overlay(alignment:.topTrailing) { Button { plan.references.removeAll{$0.id==ref.id} } label:{ Image(systemName:"xmark.circle.fill").font(.system(size:18)).padding(4) }.accessibilityLabel("移除参考图") }
+                                .overlay(alignment:.topTrailing) { Button { plan.references.removeAll{$0.id==ref.id} } label:{ Image(systemName:"xmark.circle.fill").font(MeloType.control()).padding(4) }.accessibilityLabel("移除参考图") }
                             }
                         }
                     }.padding(.trailing,4)

@@ -4,7 +4,7 @@
 // desktop-ui/app.js byte-for-byte first; they now read the feature's own state
 // and the bootstrap through the context. DOM, classes, data-attributes, ids
 // and action names are unchanged.
-import { t, ui } from '../../i18n.js';
+import { t, ui, term } from '../../i18n.js';
 import { renderAgentAvatar } from '../../agentAvatar.js';
 import { renderCapabilityChoices } from './capabilityChoices.js';
 import { getBootstrap, activeProject, isAgentChannelAvailable, escapeHtml, icon, renderCapabilityGrants } from './context.js';
@@ -386,7 +386,7 @@ function renderAgentWorkbench(selected) {
 // session. Today only location, which stays off until the user turns it on.
 function renderAgentDeviceSection(selected) {
   const on = getBootstrap()?.settings?.localPreferences?.agentDevice?.[selected.id]?.location === true;
-  return ui`<details class="agent-settings-section agent-device-section" data-agent-section="${selected.id}:device" ${agentsState.agentOpenSections[`${selected.id}:device`] ? 'open' : ''}><summary>这台电脑上</summary>
+  return ui`<details class="agent-settings-section agent-device-section" data-agent-section="${selected.id}:device" ${agentsState.agentOpenSections[`${selected.id}:device`] ? 'open' : ''}><summary>${term('device')}</summary>
     <p>只在这台电脑上生效，立即保存，不同步；与上方同步的能力范围无关。</p>
     <label class="checkbox-row"><input type="checkbox" data-action="toggle-agent-device-permission" data-agent-id="${escapeHtml(selected.id)}" data-permission="location" ${on ? 'checked' : ''}><span>定位</span></label>
     <p>需要时读取一次当前位置，用于“附近”“我在哪”这类问题；坐标取整到约 1 公里，首次使用时 macOS 会再询问一次。</p>

@@ -1,3 +1,6 @@
+// Shared concept IDs: knowledge = 知识库, artifacts = 成果库, conversation = 对话.
+// device = 这台电脑上 (desktop) / 这台手机上 (iOS); see shared/protocol/interface-terms.json.
+export { INTERFACE_TERMS as interfaceTermKeys } from './interfaceLanguages.js';
 // Authored interface copy only. User messages, names and provider output never enter this catalog.
 // Columns: Chinese source / English / Japanese / Korean / Spanish.
 const rows = [

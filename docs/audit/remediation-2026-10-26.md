@@ -62,7 +62,16 @@ U6 词条同步提前覆盖手机，个人资料、数据文件和会话令牌�
 
 首次检查中的旧文案断言、data-URL 装载器、缺词条和过期 scene manifest 失败已保留并修正，没有删除断言或跳过。最终快速档 `.tmp/test-runs/run-buMgfk/summary.json` 与集成档 `.tmp/test-runs/run-0v2rP6/summary.json` 均 GREEN：4677 JS、设置浏览器、37 Swift、Android JVM/Lint/Debug/Release，0 跳过/隔离复测。证据 `.tmp/audit-batch-4/`；截图 `.tmp/language-20261015/`、`.tmp/chat-density-20261014/`。Codex 界面读取被工具拒绝，未绕过；按 Melo 现行黑金/紧凑 token 实施。扫描在工作树生成，inventory.commit 是生成时 HEAD，修复归属以本批提交为准。无安装/推送。
 
+## 批次 5：iOS 与双端语义
+
+基准 `07c3b46`，分支 `codex/audit-5-20261026`，详见 [原生计划](ios-ui-plan-2026-10-26.md)。验证码、头像比例、图片图标和页脚读取 MeloType；成功提示读取同源状态色。批次 4 校准后剩余 6 处字号全部修复，H18=0，所有规则新增0。用户/模型原文继续原样显示。
+
+shared/protocol/interface-terms.json 定义 knowledge/artifacts/conversation/device 四个概念，生成桌面映射和 Swift InterfaceTerm，两端目录导出同一组 ID 并在导航、库标题和设备权限标题实际使用。device 保留这台电脑/手机差异；目录头注释与跨端一致性门禁已接。
+
+InterfaceCopy 是原生 Bundle 本地化入口，CapabilityCopy 复用它。记忆范围/分类/状态、项目归档后缀、登录状态、模型回执占位和执行状态先本地化再插值，用户名称/内容和未知枚举保持原文。目录门禁检查插值内固定回退与枚举表，专项补齐“已停止”“排队中”。J6 过期注释顺带纠正，工具后流式逻辑不变。
+
+专项 JS 6/6、Foundation 五语 Bundle 实读/未知原文保留通过。最终完整 iPhoneOS Release 未签名编译成功（`.tmp/audit-batch-5/ios-build-final.log`）。快速档 `.tmp/test-runs/run-Qa1s4U/summary.json`、集成档 `.tmp/test-runs/run-eHENTL/summary.json` 均 GREEN：4678 JS、设置浏览器、37 Swift（含 SharedContractTests）、Android 四项，无跳过/隔离复测。没有真机安装、权限弹窗或远程真实同步验收。
+
 ## 后续批次
 
-5. iOS：主题 token、本地化及双端术语检测。
 6. 架构：J2 / J3 / J6 / J8 独立方案，随后按依赖验收。

@@ -1375,7 +1375,8 @@
       "kind": "generator",
       "generator": "scripts/generate-interface-languages.js",
       "inputs": [
-        "shared/protocol/interface-languages.json"
+        "shared/protocol/interface-languages.json",
+        "shared/protocol/interface-terms.json"
       ],
       "outputs": [
         "desktop-ui/interfaceLanguages.js",

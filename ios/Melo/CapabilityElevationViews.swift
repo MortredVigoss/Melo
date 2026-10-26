@@ -7,11 +7,7 @@ import SwiftUI
 // chosen interface language and then filled, like the desktop's t(key, values).
 
 enum CapabilityCopy {
-    private static var bundle: Bundle {
-        let language = InterfaceLanguage.resolve(UserDefaults.standard.string(forKey: "melo.interfaceLanguage")).localeID
-        return Bundle.main.path(forResource: language, ofType: "lproj").flatMap(Bundle.init(path:)) ?? .main
-    }
-    static func localized(_ key: String) -> String { bundle.localizedString(forKey: key, value: key, table: nil) }
+    static func localized(_ key: String) -> String { InterfaceCopy.localized(key) }
     static func template(_ key: String, _ values: [String: String]) -> String { AgentLoopContract.fill(localized(key), values) }
     private static var contract: CapabilityElevationContract { CapabilityElevation.contract }
 
@@ -97,7 +93,7 @@ struct CapabilityGrantsSection: View {
             Text("对话中临时允许的能力。任务结束、到期或撤销后失效；撤销从下一次工具调用起生效。").font(.caption).foregroundStyle(.secondary)
             if grants.isEmpty { Text("这个 Agent 还没有临时授权。").font(.caption).foregroundStyle(.secondary) }
             ForEach(grants) { grant in CapabilityGrantRow(grant: grant, notice: $notice) }
-            if let notice { Text(verbatim: notice).font(.caption).foregroundStyle(.green).accessibilityAddTraits(.updatesFrequently) }
+            if let notice { Text(verbatim: notice).font(.caption).foregroundStyle(MeloTheme.success).accessibilityAddTraits(.updatesFrequently) }
         } header: { Text("临时授权") }
         .accessibilityIdentifier("capability-grants.agent")
     }
@@ -115,7 +111,7 @@ struct CapabilityGrantsPanel: View {
             Text("对话中临时允许的能力。任务结束、到期或撤销后失效；撤销从下一次工具调用起生效。").font(.caption).foregroundStyle(.secondary)
             if grants.isEmpty { Text("还没有临时授权。").font(.caption).foregroundStyle(.secondary) }
             ForEach(grants) { grant in CapabilityGrantRow(grant: grant, notice: $notice) }
-            if let notice { Text(verbatim: notice).font(.caption).foregroundStyle(.green) }
+            if let notice { Text(verbatim: notice).font(.caption).foregroundStyle(MeloTheme.success) }
         }.meloPanel().accessibilityElement(children: .contain).accessibilityIdentifier("capability-grants.all")
     }
 }

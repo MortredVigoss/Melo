@@ -28,6 +28,14 @@ test('native authored static controls have five-language catalog coverage', asyn
       if(keys.length!==1)missing.push(`${file}: ${format.literal}`);
       for(const key of keys) for(const language of ['zh-Hans','en','ja','ko','es']) assert.ok(native.strings[key].localizations[language]?.stringUnit.value,`${language}: ${key}`);
     }
+    // Dynamic labels are localized before interpolation. Check literal
+    // fallbacks and enum-table values too; the surrounding format alone
+    // cannot prove that an inserted status is translated.
+    const segments=[...source.matchAll(/(?:CapabilityCopy|InterfaceCopy)\.localized\(([^;\n]+)/g),...source.matchAll(/\[([^\[\]\n]+)\]\[[^\]\n]+\]\.map\(CapabilityCopy\.localized\)/g)];
+    for(const segment of segments)for(const value of segment[1].matchAll(/"((?:\\.|[^"\\])*)"/g)) {
+      const key=value[1];
+      if(/[\u3400-\u9fff]/.test(key)&&!key.includes('\\(')&&!native.strings[key])missing.push(`${file}: dynamic label ${key}`);
+    }
   }
   assert.deepEqual(missing,[]);
   for(const key of ['图片模式','生成图片','修改图片','看图分析','主体','项目与知识%@','照片','一句话介绍','Agent详情','创建Agent','查看模式 · 点编辑后修改','未保存 · 请处理后重试','不同Agent，同样默契。','为每一种工作，选择合适的思考方式。','查看%@','与%@对话','此 Agent 的新版人设尚未同步。全文已保留在本机，其他对话继续同步。'])assert.ok(native.strings[key].localizations.en.stringUnit.value);

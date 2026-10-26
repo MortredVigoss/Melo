@@ -1,4 +1,4 @@
-// Generated from shared/protocol/interface-languages.json. Do not edit.
+// Generated from shared/protocol/interface-languages.json and interface-terms.json. Do not edit.
 import Foundation
 
 enum InterfaceLanguage: String, CaseIterable, Identifiable {
@@ -13,5 +13,18 @@ enum InterfaceLanguage: String, CaseIterable, Identifiable {
             return allCases.first { $0.rawValue.split(separator: "-").first?.lowercased() == base }
         }
         return value.flatMap(match) ?? match(systemLanguage) ?? .english
+    }
+}
+
+enum InterfaceTerm: String, CaseIterable {
+    case knowledge, artifacts, conversation, device
+    var key: String { switch self { case .knowledge: return "知识库"; case .artifacts: return "成果库"; case .conversation: return "对话"; case .device: return "这台手机上" } }
+}
+
+enum InterfaceCopy {
+    static func localized(_ key: String, language: String? = UserDefaults.standard.string(forKey: "melo.interfaceLanguage"), bundle: Bundle = .main) -> String {
+        let locale = InterfaceLanguage.resolve(language).localeID
+        let localized = bundle.path(forResource: locale, ofType: "lproj").flatMap(Bundle.init(path:)) ?? bundle
+        return localized.localizedString(forKey: key, value: key, table: nil)
     }
 }

@@ -1,7 +1,7 @@
 {
  "version": 1,
  "date": "2026-10-26",
- "commit": "58158dd",
+ "commit": "07c3b46",
  "roots": [
   "src",
   "shared",
@@ -652,46 +652,10 @@
    "severity": "info",
    "note": "语义字号、色板；仅原样输出的固定文案，SwiftUI 插值由五语目录门禁检查，用户内容保持原样",
    "scanned": 105,
-   "count": 6,
-   "files": 4,
-   "byFile": {
-    "ios/Melo/CodexLoginView.swift": 1,
-    "ios/Melo/ConversationControls.swift": 2,
-    "ios/Melo/ImageViews.swift": 2,
-    "ios/Melo/SettingsView.swift": 1
-   },
-   "hits": [
-    {
-     "file": "ios/Melo/CodexLoginView.swift",
-     "line": 27,
-     "text": "Text(code.userCode).font(.system(size:26,weight:.semibold,design:.monospaced)).tracking(2).textSelection(.enabled).accessibilityLabel(\"登录验证码 \\(code.userCode)\")"
-    },
-    {
-     "file": "ios/Melo/ConversationControls.swift",
-     "line": 11,
-     "text": "else { Image(systemName: agent.symbol).font(.system(size: size * 0.44)).foregroundStyle(meloGold).frame(width: size, height: size).background(meloGold.opacity(0"
-    },
-    {
-     "file": "ios/Melo/ConversationControls.swift",
-     "line": 78,
-     "text": "} label: { HStack(spacing: 6) { AgentAvatar(agent: store.agent(for: chatID), size: 22); Text(\"Agent · \" + store.agent(for: chatID).name); Image(systemName: \"che"
-    },
-    {
-     "file": "ios/Melo/ImageViews.swift",
-     "line": 12,
-     "text": "else { Image(systemName:\"photo\").foregroundStyle(.secondary).overlay(alignment:.bottom) { Text(\"图片暂不可读\").font(.system(size:9)) } }"
-    },
-    {
-     "file": "ios/Melo/ImageViews.swift",
-     "line": 59,
-     "text": ".overlay(alignment:.topTrailing) { Button { plan.references.removeAll{$0.id==ref.id} } label:{ Image(systemName:\"xmark.circle.fill\").font(.system(size:18)).padd"
-    },
-    {
-     "file": "ios/Melo/SettingsView.swift",
-     "line": 95,
-     "text": "HStack { Text(\"MELO FOR IPHONE\").tracking(2); Spacer(); Text(\"\\(version) · 本地测试版\") }.font(.system(size: 9)).foregroundStyle(.tertiary)"
-    }
-   ]
+   "count": 0,
+   "files": 0,
+   "byFile": {},
+   "hits": []
   },
   "H19": {
    "title": "写死的语言默认值 zh-CN",

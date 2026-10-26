@@ -43,10 +43,12 @@ for name in ['control', 'card', 'panel']:
     lines.append(f'    static let {name}Radius: CGFloat = {float(tokens["radius-" + name].removesuffix("px"))}')
 identities = json.loads(subprocess.check_output(['node', '--input-type=module', '-e', "import {neuralIdentities} from './desktop-ui/neuralSatellite.js'; process.stdout.write(JSON.stringify(neuralIdentities))"], cwd=root))
 lines.append('    static let neuralColors: [Color] = [' + ', '.join(color(item['light']) for item in identities) + ']')
+lines.append('    static let success = '+color(resolve_token(palette['--state-ok'])))
 lines.append('}')
 lines += ['', 'enum MeloType {']
-for name in ['micro', 'eyebrow', 'meta', 'caption', 'label', 'row', 'control', 'symbol', 'brand', 'title', 'chatTitle']:
+for name in ['micro', 'eyebrow', 'meta', 'caption', 'label', 'row', 'control', 'symbol', 'brand', 'title', 'chatTitle', 'loginCode']:
     size = float(palette['--phone-type-' + name].strip().removesuffix('px'))
     lines.append(f'    static func {name}(weight: Font.Weight = .regular, design: Font.Design = .default) -> Font {{ .system(size: {size}, weight: weight, design: design) }}')
+lines.append('    static func avatarSymbol(size: CGFloat) -> Font { .system(size: size * '+palette['--phone-avatar-symbol-ratio'].strip()+') }')
 lines.append('}')
 (root / 'ios/Melo/MeloTheme.swift').write_text('\n'.join(lines) + '\n')

@@ -1,6 +1,19 @@
+// Shared concept IDs: knowledge = 知识库, artifacts = 成果库, conversation = 对话.
+// device = 这台电脑上 (desktop) / 这台手机上 (iOS); see shared/protocol/interface-terms.json.
+export { NATIVE_INTERFACE_TERMS as interfaceTermKeys } from '../desktop-ui/interfaceLanguages.js';
 // Native-only authored copy. User names, prompts and model output are never translated.
 // Chinese / English / Japanese / Korean / Spanish.
 const rows = [
+["已停止", "Stopped", "停止済み", "중지됨", "Detenido"],
+["排队中", "Queued", "待機中", "대기 중", "En cola"],
+["待授权","Awaiting authorization","承認待ち","승인 대기 중","Pendiente de autorización"],
+["已保存到本机钥匙串","Saved in this device’s keychain","この端末のキーチェーンに保存済み","이 기기의 키체인에 저장됨","Guardado en el llavero de este dispositivo"],
+["原对话","Original conversation","元の会話","원래 대화","Conversación original"],
+["本机共享","Shared on this device","この端末で共有","이 기기에서 공유","Compartido en este dispositivo"],
+["来源项目未同步","Source project has not synced","参照元プロジェクトは未同期です","원본 프로젝트가 동기화되지 않았습니다","El proyecto de origen no se ha sincronizado"],
+["来源对话已删除或未同步","Source conversation was deleted or has not synced","参照元の会話は削除済みか未同期です","원본 대화가 삭제되었거나 동기화되지 않았습니다","La conversación de origen se eliminó o no se ha sincronizado"],
+["未选择","Not selected","未選択","선택되지 않음","Sin seleccionar"],
+["未提供，不推断","Not reported; no inference","未提供・推測しません","제공되지 않음; 추정하지 않음","No indicado; sin inferencias"],
 ["%lld 段对话 · 按最近更新排序", "%lld conversations · Most recently updated first", "会話 %lld 件 · 更新日時順", "대화 %lld개 · 최근 업데이트 순", "%lld conversaciones · Más recientes primero"],
 ["%@的操作", "Actions for %@", "%@ の操作", "%@ 작업", "Acciones para %@"],
 ["账号 %lld · %@","Account %lld · %@","アカウント %lld · %@","계정 %lld · %@","Cuenta %lld · %@"],

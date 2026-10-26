@@ -22,7 +22,7 @@ struct ProjectsView: View {
                         HStack { Text(project.name).font(.title3); Spacer(); if project.deletedAt == nil { Button("查看") { editing = project }.font(.caption) } }
                         if !project.contextGoal.isEmpty { Text(project.contextGoal).font(.subheadline).foregroundStyle(.secondary) }
                         let chats = store.chats.filter { store.preferences.chatProjects?[$0.id] == project.id }
-                        Text("\(chats.count) 段对话 · \(project.knowledgeIds?.count ?? 0) 份共享知识\(project.archived == true ? " · 已归档" : "")").font(.caption).foregroundStyle(meloGold)
+                        Text("\(chats.count) 段对话 · \(project.knowledgeIds?.count ?? 0) 份共享知识\(project.archived == true ? " · " + CapabilityCopy.localized("已归档") : "")").font(.caption).foregroundStyle(meloGold)
                         ForEach(chats) { chat in Button { open(chat.id) } label: { Label(chat.title, systemImage: "bubble.left").font(.subheadline).frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 5) } }
                         if project.archived != true { Button { if let id = store.newChat(projectID: project.id) { open(id) } } label: { Label("在项目中开始对话", systemImage: "plus.bubble") }.font(.subheadline) }
                         if project.deletedAt != nil {
@@ -31,7 +31,7 @@ struct ProjectsView: View {
                             Button("恢复为新项目") { store.restoreProject(project.id) }.font(.caption)
                         } else {
                         Button("删除项目", role: .destructive) { deleting = project }.font(.caption)
-                        Button(project.archived == true ? "恢复项目" : "归档项目") { store.updatePreferences { p in if let index = p.projects?.firstIndex(where: { $0.id == project.id }) { p.projects?[index].archived = project.archived != true } } }.font(.caption)
+                        Button(LocalizedStringKey(project.archived == true ? "恢复项目" : "归档项目")) { store.updatePreferences { p in if let index = p.projects?.firstIndex(where: { $0.id == project.id }) { p.projects?[index].archived = project.archived != true } } }.font(.caption)
                         }
                     }.meloPanel()
                 }
@@ -82,8 +82,8 @@ struct KnowledgeView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                PageHeading(eyebrow: "KNOWLEDGE", title: "知识", detail: "保存反复用到的背景、要求和参考文字，在对话里主动选用。")
-                Picker("知识分类", selection: $tab) { Text("知识").tag(0); Text("记忆").tag(1); Text("成果").tag(2) }.pickerStyle(.segmented).accessibilityIdentifier("knowledge.category")
+                PageHeading(eyebrow: "KNOWLEDGE", title: InterfaceTerm.knowledge.key, detail: "保存反复用到的背景、要求和参考文字，在对话里主动选用。")
+                Picker("知识分类", selection: $tab) { Text(LocalizedStringKey(InterfaceTerm.knowledge.key)).tag(0); Text("记忆").tag(1); Text(LocalizedStringKey(InterfaceTerm.artifacts.key)).tag(2) }.pickerStyle(.segmented).accessibilityIdentifier("knowledge.category")
                 if tab == 1 { MemoryFactsView() } else {
                 if tab == 0 { HStack { Button { editing = KnowledgeNote(title: "", content: "") } label: { Label("添加知识", systemImage: "plus") }; Spacer(); Button("导入文件") { importing = true } }.font(.subheadline).padding(.vertical, 8) }
                 TextField(tab == 2 ? "搜索成果" : "搜索知识", text: $query).meloInput()
@@ -117,7 +117,7 @@ struct ResultDetail: View {
                     Text(note.language ?? "text").font(.caption).foregroundStyle(.secondary)
                     Text(note.content).font(.system(.subheadline, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
                 }.padding(20)
-            }.navigationTitle("成果").navigationBarTitleDisplayMode(.inline)
+            }.navigationTitle(LocalizedStringKey(InterfaceTerm.artifacts.key)).navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("完成") { dismiss() } }; ToolbarItem(placement: .primaryAction) { ShareLink(item: note.content) } }
         }.presentationBackground(MeloTheme.dialog)
     }
