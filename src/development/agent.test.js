@@ -42,3 +42,19 @@ test('legacy or disabled capabilities cannot start an isolated worker', () => {
   profiles.builder.capabilities = null;
   assert.throws(() => authorizeDevelopmentProfiles(profiles, job), /Implementation/);
 });
+
+test('a review approval requires controller-observed evidence and source reads', async t => {
+  const workspace = await mkdtemp(join(tmpdir(), 'melo-dev-review-')); t.after(() => rm(workspace, { recursive: true, force: true }));
+  await writeFile(join(workspace, 'source.txt'), 'candidate');
+  const job = { workspace, headSha: 'abc', goal: 'Inspect', reviewerId: 'reviewer', rules: [], tests: [], changedFiles: ['source.txt'] };
+  const context = { home: join(workspace, 'home'), env: { ...process.env }, reviewer: { id: 'reviewer', capabilities: recommendedCapabilities('reviewer') }, config: { model: 'fixture' } };
+  for (const paths of [[], ['@evidence'], ['@evidence', 'source.txt']]) {
+    const agents = createDevelopmentAgents({ run: async ({ extraTools }) => {
+      for (const path of paths) await extraTools[0].run({ path });
+      return { ok: true, output: JSON.stringify({ status: 'completed', review: 'approve', conclusion: 'Approved', evidence: ['claimed evidence'], unfinished: [] }) };
+    } });
+    const result = await agents.review({ job, context });
+    assert.equal(result.verdict, paths.length === 2 ? 'approve' : 'revise');
+    assert.deepEqual(result.sourceReads, paths);
+  }
+});

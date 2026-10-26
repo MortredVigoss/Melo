@@ -4,6 +4,7 @@ export { INTERFACE_TERMS as interfaceTermKeys } from './interfaceLanguages.js';
 // Authored interface copy only. User messages, names and provider output never enter this catalog.
 // Columns: Chinese source / English / Japanese / Korean / Spanish.
 const rows = [
+["工作目录", "Working directory", "作業ディレクトリ", "작업 디렉터리", "Directorio de trabajo"],
 ["隔离开发", "Isolated development", "隔離開発", "격리 개발", "Desarrollo aislado"],
 ["待开始", "Not started", "開始待ち", "시작 대기", "Sin iniciar"],
 ["实施中", "Implementing", "実装中", "구현 중", "Implementando"],

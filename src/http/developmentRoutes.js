@@ -3,10 +3,15 @@ import { readJsonBody, sendJson } from './transport.js';
 import { developmentRuntime } from '../development/runtime.js';
 
 export function createDevelopmentRoutes({ home, env, service = developmentRuntime(home, env) }) {
+  // Begin reconciliation when the server composes its routes, not only when a
+  // user happens to open the development panel. Other app routes stay usable.
+  const recovery = service.initialize?.() || Promise.resolve();
+  recovery.catch(() => {});
   const action = handler => async ({ request, response, url }) => {
     // Remote sync tokens never authorize development or candidate approval.
     if (request.headers.authorization) { sendJson(response, 403, { error: 'Development actions require the local desktop' }); return; }
     try {
+      await recovery;
       const input = request.method === 'POST' ? await readJsonBody(request, { maxBytes: 64000 }) : Object.fromEntries(url.searchParams);
       if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid development request');
       sendJson(response, 200, await handler(input));

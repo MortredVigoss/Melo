@@ -98,7 +98,7 @@ if(preview) {
     }
     summary.ok=true;
     await writeSummary();
-    console.log(`日常选定范围通过 (${summary.elapsedSeconds}s)。${plan.tier==='quick'?'快速档只证明显式任务范围；合并前运行集成档 npm test -- --base <ref>。':taskFiles?'仅证明显式任务范围；共享树集成另验。':''}发布前运行 npm run test:full，包含全部测试及打包、安装、启动验收。`);
+    console.log(`日常选定范围通过 (${summary.elapsedSeconds}s)。${plan.tier==='quick'?'快速档只证明显式任务范围；合并前运行集成档 npm test -- --base <ref>。':taskFiles?'仅证明显式任务范围；共享树集成另验。':''}完整验证运行 npm run test:full（不安装）；仅在明确授权发布时运行 npm run release:verify，包含安装与正式启动验收。`);
     console.log(`摘要：${join(runner.directory,'summary.json')}`);
   } catch(error) {
     await writeSummary();

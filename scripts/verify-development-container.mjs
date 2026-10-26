@@ -9,8 +9,9 @@ import { createContainerRunner } from '../src/development/runner.js';
 import { createGit } from '../src/development/git.js';
 
 const root = await mkdtemp(join(process.env.MELO_DEV_CONTAINER_FIXTURE_ROOT || tmpdir(), 'melo-container-acceptance-'));
-const workspace = join(root, 'candidate'), outside = join(root, 'host-only.txt'), repository = join(root, 'repository');
+const workspace = join(root, 'candidate'), outside = join(root, 'host-only.txt'), repository = join(root, 'repository'), credentialFixture = join(root, 'synthetic-credentials.json');
 await mkdir(repository, { mode: 0o700 }); await writeFile(outside, 'host-fixture-only');
+await writeFile(credentialFixture, '{"key":"synthetic-fixture-only"}');
 const git = createGit(process.env);
 await git.invoke(['init', '-b', 'main'], repository);
 let networkRequests = 0;
@@ -21,7 +22,7 @@ assert.equal(process.env.MELO_SYNTHETIC_SECRET,undefined);
 assert.equal(process.env.HOME,'/tmp/home');
 assert.match(cp.execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}),/^[a-f0-9]{40}/);
 cp.execFileSync('git',['branch','worker-only']);
-for(const p of [${JSON.stringify(outside)},'/var/run/docker.sock','/Users/mortred/.codex/auth.json'])assert.throws(()=>fs.readFileSync(p));
+for(const p of [${JSON.stringify(outside)},'/var/run/docker.sock',${JSON.stringify(credentialFixture)}])assert.throws(()=>fs.readFileSync(p));
 assert.throws(()=>fs.writeFileSync('/host-write','bad'));
 fs.writeFileSync('/workspace/source/result.txt','candidate-write');
 assert.throws(()=>cp.execFileSync('node',['-e','require("fs").readFileSync('+JSON.stringify(${JSON.stringify(outside)})+')']));
@@ -44,6 +45,9 @@ try {
     dependencies = await runner.run({ image, workspace, gitDir, argv: ['node', '-e', 'require("node:assert/strict").ok(require("sharp").versions.vips); require("ajv"); require("./build/Release/dirfd_ops.node"); console.log("Linux dependencies and native addon loaded")'] });
     assert.equal(dependencies.status, 'passed', dependencies.error || await readFile(join(root, 'runs', `${dependencies.id}.log`), 'utf8'));
   }
+  const rejectedOutput = await runner.run({ image, workspace, gitDir, argv: ['node', '-e', 'const fs=require("fs");fs.writeFileSync("result.txt","untrusted replacement");fs.symlinkSync("/tmp/home","escape");'] });
+  assert.equal(rejectedOutput.status, 'failed'); assert.match(rejectedOutput.error, /escaping symbolic link/);
+  assert.equal(await readFile(join(workspace, 'result.txt'), 'utf8'), 'candidate-write', 'rejected worker output cannot replace the candidate');
   let longCommand = null;
   if (process.argv.includes('--long')) {
     longCommand = await runner.run({ image, workspace, gitDir, argv: ['node', '-e', 'console.log("long command started"); setTimeout(()=>console.log("long command complete"),610000)'], timeoutMs: 660000 });
@@ -55,5 +59,5 @@ try {
   const controller = new AbortController();
   const cancelled = await runner.run({ image, workspace, gitDir, argv: ['node', '-e', 'setInterval(()=>console.log("running"),100)'], signal: controller.signal, onStart: () => { setTimeout(() => controller.abort(), 1200); } });
   assert.equal(cancelled.status, 'cancelled');
-  console.log(JSON.stringify({ fixture: root, isolation, dependencies, longCommand, cancelled, hostRequests: networkRequests }, null, 2));
+  console.log(JSON.stringify({ fixture: root, isolation, dependencies, rejectedOutput, longCommand, cancelled, hostRequests: networkRequests }, null, 2));
 } finally { server.close(); }

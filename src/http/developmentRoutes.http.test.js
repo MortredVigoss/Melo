@@ -8,6 +8,8 @@ import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createDevelopmentRoutes } from './developmentRoutes.js';
+import { createJobStore } from '../development/store.js';
+import { randomUUID } from 'node:crypto';
 
 test('development HTTP rejects foreign origins and sync credentials before any mutation', async t => {
   let creates = 0, approvals = 0;
@@ -31,6 +33,8 @@ test('development HTTP rejects foreign origins and sync credentials before any m
 
 test('real server exposes development jobs and keeps mutations behind the origin gate', { timeout: 45000 }, async t => {
   const home = await mkdtemp(join(tmpdir(), 'melo-dev-http-'));
+  const interruptedId = `dev_${randomUUID()}`;
+  await createJobStore(home).save({ id: interruptedId, status: 'implementing', goal: 'Interrupted fixture', revision: 1 });
   const child = spawn(process.execPath, ['src/server.js', '--host', '127.0.0.1', '--port', '0'], { cwd: fileURLToPath(new URL('../../', import.meta.url)), env: { ...process.env, MELO_HOME: home, MELO_TEST_MODE: '1', MELO_MEMORY_RUNTIME: '0', MELO_DREAMING_ENABLED: '0' }, stdio: ['ignore', 'pipe', 'pipe'] });
   const closed = once(child, 'exit');
   t.after(async () => { const timer = setTimeout(() => child.kill('SIGKILL'), 5000); child.kill('SIGTERM'); await closed; clearTimeout(timer); await rm(home, { recursive: true, force: true }); });
@@ -41,7 +45,11 @@ test('real server exposes development jobs and keeps mutations behind the origin
     child.once('exit', () => { clearTimeout(timer); reject(new Error(log.slice(-2000))); });
     child.stdout.on('data', chunk => { log += chunk; const match = log.match(/listening at (http:\/\/127\.0\.0\.1:\d+)/); if (match) { clearTimeout(timer); resolve(match[1]); } });
   });
-  const result = await fetch(base + '/api/development/jobs'); assert.equal(result.status, 200); assert.deepEqual(await result.json(), { jobs: [] });
+  // Read the individual job before ever requesting the list/panel: startup
+  // recovery must already be wired, rather than relying on a UI list request.
+  const detail = await (await fetch(base + `/api/development/job?id=${interruptedId}`)).json();
+  assert.equal(detail.job.status, 'interrupted');
+  const result = await fetch(base + '/api/development/jobs'); assert.equal(result.status, 200); assert.equal((await result.json()).jobs[0].status, 'interrupted');
   const denied = await fetch(base + '/api/development/create', { method: 'POST', headers: { origin: 'https://evil.test', 'content-type': 'application/json' }, body: '{}' });
   assert.equal(denied.status, 403);
 });

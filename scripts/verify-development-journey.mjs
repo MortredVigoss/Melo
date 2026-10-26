@@ -29,7 +29,7 @@ const model = createServer(async (request, response) => {
   const reviewing = JSON.stringify(body.messages).includes('Review the fixed candidate');
   const turn = checking ? 0 : reviewing ? ++reviews : ++builds;
   const content = checking ? JSON.stringify({ decision: 'complete', reasonType: 'fulfilled', reason: 'Fixture evidence satisfies this bounded stage', nextStep: '', requirements: [{ text: checkingInput.goal, status: 'met', evidenceIds: checkingInput.observations.filter(row => row.ok && row.executed).map(row => row.id) }] }) : reviewing
-    ? turn === 1 ? '<tool_call>{"name":"candidate_read","arguments":{"path":"@evidence"}}</tool_call>' : JSON.stringify({ status: 'completed', review: 'approve', conclusion: 'Fixture reviewer checked fixed source and passing verification receipt', evidence: ['@evidence'], unfinished: [] })
+    ? turn <= 2 ? `<tool_call>${JSON.stringify({ name: 'candidate_read', arguments: { path: turn === 1 ? '@evidence' : 'app.cjs' } })}</tool_call>` : JSON.stringify({ status: 'completed', review: 'approve', conclusion: 'Fixture reviewer checked fixed source and passing verification receipt', evidence: ['@evidence', 'app.cjs'], unfinished: [] })
     : turn === 1 ? `<tool_call>${JSON.stringify({ name: 'candidate_write', arguments: { path: 'app.cjs', expectedHash: digest('module.exports = 1;\n'), content: 'module.exports = 2;\n' } })}</tool_call>` : JSON.stringify({ status: 'completed', conclusion: 'Changed the candidate to return 2', changedFiles: ['app.cjs'], unfinished: [] });
   if (!body.stream) {
     response.writeHead(200, { 'content-type': 'application/json' });

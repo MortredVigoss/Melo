@@ -8,7 +8,7 @@
   "shared/agent/runtimeMessages.js": "923b5d3a90a638affa65f7cbd543a0666a31816b16db4afa6496b1c2c9fda325",
   "shared/agent/locale.js": "e3da97be8c76698536b398dab786bcee42011da35da415d83a24cfb791d12b44",
   "desktop-ui/i18n.js": "1afe07d39b263945065dcfc2b8f759f50a606e376776921f584f4a65973f3ca6",
-  "desktop-ui/translations.js": "08854bd9cfc52d8445d2f85a48fda3e01d9ad81f8626884395276755bf488d8b",
+  "desktop-ui/translations.js": "dd9ec54528dcf076aea08b4fc630221a793b79970966034350eaf9d71e2b6732",
   "desktop-ui/neuralScene3D.js": "ce30ea2ef4124cc6330f320276e7ffbff7b5a5e88dd6b952c2b873cfd740aa24",
   "desktop-ui/neuralScene.js": "a6665facb0afeafdcfece7880907abcfa9ef1abf7326e060f0ac99650b8d541e",
   "desktop-ui/neuralSatellite.js": "dce60310eda4e075b99503913484f495bb581cd70b0c588e865fffcb5ad5b54e",

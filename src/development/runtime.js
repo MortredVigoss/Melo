@@ -11,6 +11,8 @@ export function developmentRuntime(home, env) {
   if (!runtimes.has(home)) {
     const captured = { ...env };
     const service = createDevelopmentService({ home, env: captured, ...createDevelopmentAgents() });
+    let recovery;
+    service.initialize = () => recovery ||= service.list();
     service.prepare = async (job, parentScope) => {
       const request = createRequestContext({ home, env: captured });
       return runWithRequestContext(request, async () => {

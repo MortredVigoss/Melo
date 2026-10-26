@@ -1,6 +1,41 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "工作目录": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工作目录"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Working directory"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作業ディレクトリ"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 디렉터리"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Directorio de trabajo"
+          }
+        }
+      }
+    },
     "隔离开发": {
       "extractionState": "manual",
       "localizations": {
