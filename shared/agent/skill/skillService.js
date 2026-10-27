@@ -1,3 +1,4 @@
+import { AGENT_LOOP_CONTRACT } from '../loopContract.js';
 // ─── Skill service ───────────────────────────────────────────────────────────
 // Pure data + shape helpers for the "skill" domain — the built-in skill
 // catalog, custom-skill normalization, the two-tier skill list assembled
@@ -50,7 +51,7 @@ export const BUILTIN_SKILLS = [
     folders: ['SKILL.md', 'agents', 'assets', 'eval-viewer', 'references', 'scripts'],
     type: 'executable',
     parametersSchema: DEFAULT_SKILL_TASK_SCHEMA,
-    maxIterations: 6,
+    maxIterations: AGENT_LOOP_CONTRACT.skillLimits.iterations,
     tags: ['meta', 'authoring', 'productivity'],
     triggers: ['create skill', 'new skill', 'turn into a skill', 'reusable workflow', 'skill-ify', '做一个技能', '创建技能'],
   },
@@ -66,7 +67,7 @@ export const BUILTIN_SKILLS = [
     folders: ['README.md', 'plans', 'checklists'],
     type: 'executable',
     parametersSchema: DEFAULT_SKILL_TASK_SCHEMA,
-    maxIterations: 6,
+    maxIterations: AGENT_LOOP_CONTRACT.skillLimits.iterations,
     tags: ['planning', 'project', 'productivity'],
     triggers: ['plan', 'milestones', 'roadmap', 'break down', 'phased', '规划', '计划', '里程碑', '拆分任务'],
   },
@@ -82,7 +83,7 @@ export const BUILTIN_SKILLS = [
     folders: ['CONNECTOR.md', 'examples', 'schemas'],
     type: 'executable',
     parametersSchema: DEFAULT_SKILL_TASK_SCHEMA,
-    maxIterations: 6,
+    maxIterations: AGENT_LOOP_CONTRACT.skillLimits.iterations,
     tags: ['engineering', 'integration', 'architecture'],
     triggers: ['connector', 'integration', 'api', 'wire up', 'expose tool', '连接器', '集成'],
   },
@@ -98,7 +99,7 @@ export const BUILTIN_SKILLS = [
     folders: ['rules.md', 'examples', 'gallery'],
     type: 'executable',
     parametersSchema: DEFAULT_SKILL_TASK_SCHEMA,
-    maxIterations: 6,
+    maxIterations: AGENT_LOOP_CONTRACT.skillLimits.iterations,
     tags: ['artifacts', 'productivity'],
     triggers: ['save as artifact', 'promote', 'make reusable', 'artifact', '沉淀', '保存'],
   },
@@ -177,8 +178,8 @@ export function normalizeBuiltinSkill(skill) {
     toolWhitelist: Array.isArray(skill.toolWhitelist) ? skill.toolWhitelist.slice() : null,
     allowedAgentIds: Array.isArray(skill.allowedAgentIds) ? skill.allowedAgentIds.slice() : null,
     maxIterations: Number.isFinite(Number(skill.maxIterations))
-      ? Math.max(1, Math.min(16, Math.floor(Number(skill.maxIterations))))
-      : 6,
+      ? Math.max(1, Math.min(AGENT_LOOP_CONTRACT.skillLimits.maxIterations, Math.floor(Number(skill.maxIterations))))
+      : AGENT_LOOP_CONTRACT.skillLimits.iterations,
     createdFrom: null,
     tags: Array.isArray(skill.tags) ? skill.tags.map(t => String(t).toLowerCase()).filter(Boolean) : [],
     triggers: Array.isArray(skill.triggers) ? skill.triggers.map(t => String(t).toLowerCase()).filter(Boolean) : [],
@@ -285,8 +286,8 @@ export function normalizeCustomSkill(skill) {
       ? skill.allowedAgentIds.map(v => clampString(v, 64)).filter(Boolean).slice(0, 64)
       : null,
     maxIterations: Number.isFinite(Number(skill?.maxIterations))
-      ? Math.max(1, Math.min(16, Math.floor(Number(skill.maxIterations))))
-      : 6,
+      ? Math.max(1, Math.min(AGENT_LOOP_CONTRACT.skillLimits.maxIterations, Math.floor(Number(skill.maxIterations))))
+      : AGENT_LOOP_CONTRACT.skillLimits.iterations,
     createdFrom: skill?.createdFrom && typeof skill.createdFrom === 'object'
       ? {
           conversationId: clampString(skill.createdFrom.conversationId, 80) || null,

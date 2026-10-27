@@ -24,8 +24,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 660,
-      "edges": 2135,
+      "modules": 662,
+      "edges": 2151,
       "roots": [
         "src",
         "desktop-ui",
@@ -34,7 +34,7 @@
       ],
       "note": "静态 import/re-export，含 desktop-ui 对 /shared/*.js 的服务映射；不含动态 import 与外部包"
     },
-    "routes": 175,
+    "routes": 176,
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
@@ -557,7 +557,7 @@
       "dependsOn": {
         "approvals": 3,
         "channels": 3,
-        "chat": 23,
+        "chat": 28,
         "desktop-shell": 8,
         "memory": 12,
         "platform": 43,
@@ -740,7 +740,7 @@
       ],
       "modules": {
         "desktop-ui": 27,
-        "shared": 34,
+        "shared": 35,
         "src": 68
       },
       "entryModules": [
@@ -801,6 +801,7 @@
         {
           "module": "shared/agent/loopContract.js",
           "importedBy": [
+            "agents",
             "memory",
             "tools"
           ]
@@ -1072,7 +1073,7 @@
         "knowledge": 5,
         "media": 24,
         "memory": 27,
-        "platform": 59,
+        "platform": 60,
         "projects": 11,
         "settings": 11,
         "sync": 2,
@@ -1080,18 +1081,18 @@
         "voice": 3
       },
       "usedBy": {
-        "agents": 23,
+        "agents": 28,
         "approvals": 1,
         "channels": 9,
         "desktop-shell": 11,
         "development": 1,
         "media": 14,
         "memory": 12,
-        "platform": 20,
+        "platform": 21,
         "projects": 1,
         "settings": 14,
         "sync": 4,
-        "tools": 19,
+        "tools": 21,
         "voice": 2
       },
       "httpRoutes": [
@@ -1211,6 +1212,7 @@
           "shared/agent/continuation.test.js",
           "shared/agent/execution.test.js",
           "shared/agent/goal.test.js",
+          "shared/agent/loopLimits.test.js",
           "shared/agent/modelCapabilities.test.js",
           "shared/agent/modelRouting.test.js",
           "shared/agent/portability.test.js",
@@ -2582,7 +2584,7 @@
       "dependsOn": {
         "agents": 9,
         "approvals": 35,
-        "chat": 19,
+        "chat": 21,
         "desktop-shell": 14,
         "development": 1,
         "knowledge": 3,
@@ -3705,6 +3707,7 @@
         "GET /api/health ← src/server.js",
         "GET /api/launch/reset ← src/server.js",
         "GET /shared/agent/locale.js ← src/server.js",
+        "GET /shared/agent/loopContract.js ← src/server.js",
         "GET /shared/agent/providerDefaults.js ← src/server.js",
         "GET /shared/agent/runtimeBehavior.js ← src/server.js",
         "GET /shared/agent/runtimeMessages.js ← src/server.js",
@@ -3965,7 +3968,7 @@
         "src/**"
       ],
       "modules": {
-        "src": 56
+        "src": 57
       },
       "entryModules": [
         {
@@ -4093,6 +4096,12 @@
             "projects",
             "settings",
             "tools"
+          ]
+        },
+        {
+          "module": "src/runtime/runDeadline.js",
+          "importedBy": [
+            "chat"
           ]
         },
         {
@@ -4279,7 +4288,7 @@
         "agents": 34,
         "approvals": 18,
         "channels": 6,
-        "chat": 20,
+        "chat": 21,
         "desktop-shell": 2,
         "development": 2,
         "knowledge": 2,
@@ -4295,7 +4304,7 @@
         "agents": 43,
         "approvals": 36,
         "channels": 22,
-        "chat": 59,
+        "chat": 60,
         "desktop-shell": 15,
         "development": 9,
         "knowledge": 2,
@@ -4355,6 +4364,7 @@
           "src/runtime/postTurnTasks.test.js",
           "src/runtime/processOwnership.test.js",
           "src/runtime/reconcileDerivedFacts.test.js",
+          "src/runtime/runDeadline.test.js",
           "src/runtime/runtimeBehavior.test.js",
           "src/runtime/searchCacheEvidence.test.js",
           "src/runtime/serverLock.test.js",
@@ -5138,6 +5148,7 @@
       ],
       "note": "桌面运行时读取 JSON，手机内嵌生成副本（不含 fixtures）；两端跑同一批 fixtures。P3/P4 新增双端行为先扩展此文件。",
       "desktopConsumers": [
+        "src/agents/skillExecutor.js",
         "src/agents/subAgent.js",
         "src/domain/agent/capabilityElevation.js",
         "src/retrieval/selfVerification.js",
@@ -5340,6 +5351,7 @@
         "ios/scripts/build-scene.py",
         "ios/scripts/sync-theme.py",
         "shared/agent/locale.js",
+        "shared/agent/loopContract.js",
         "shared/agent/runtimeMessages.js",
         "src/memory/offline/extractor.js",
         "src/shared/executionMetadata.js",

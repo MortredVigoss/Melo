@@ -79,6 +79,14 @@ final class PhoneRunBudget: @unchecked Sendable {
         guard available else { return }
         apply(Self.operation("arm", time: now(), fields: ["budget": snapshot()]) as? [String: Any])
     }
+    func configureDeepTask(_ limits: [String: Any]) {
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        guard available, parent == nil else { return }
+        let deadline = limits["deadlineMs"] as? Double ?? 0
+        let options: [String: Any] = ["deadlineMs": max(0, startedAt + deadline - now()), "maxToolCalls": limits["maxToolCalls"] ?? maxToolCalls]
+        guard let result = Self.operation("extend", time: now(), fields: ["budget": snapshot(), "options": options]) as? [String: Any] else { invalidatePolicy(); return }
+        apply(result["budget"] as? [String: Any])
+    }
     func remainingMs(at time: Double? = nil) -> Double {
         Self.lock.lock(); defer { Self.lock.unlock() }
         guard available else { return 0 }

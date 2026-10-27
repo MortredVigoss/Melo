@@ -232,7 +232,7 @@ import Foundation
         // The embedded copy is the checked-in file without its fixtures.
         var embedded = file.foundation as! [String: Any]; embedded["fixtures"] = nil
         assert(NSDictionary(dictionary: embedded).isEqual(to: c.raw), "AgentLoopContract.swift is stale; run npm run generate:agent-loop-contract")
-        assert(c.maxIterations == 10 && c.maxCallsPerResponse == 32 && c.repeatLimit == 2 && c.deadlineMs == 1_200_000 && c.maxInputTokens == 400_000 && c.maxToolCalls == 120)
+        assert(c.maxIterations == 40 && c.maxCallsPerResponse == 32 && c.repeatLimit == 2 && c.deadlineMs == 1_800_000 && c.maxInputTokens == 400_000 && c.maxToolCalls == 200)
 
         for row in F["toolTrace"]!.items {
             let entries = row["records"]!.items.map { record in

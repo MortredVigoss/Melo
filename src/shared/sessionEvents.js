@@ -1,3 +1,4 @@
+import { AGENT_LOOP_CONTRACT } from '../../shared/agent/loopContract.js';
 // One deterministic, read-only projection of existing execution records.
 // This is also bundled into the portable Core; it has no IO or replay effects.
 const identifier = value => typeof value === 'string' && /^[a-zA-Z0-9_.:/-]{1,256}$/.test(value) ? value : '';
@@ -18,16 +19,16 @@ export function sessionEvents(scene) {
       ...Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined)) });
   };
   emit('turn', 'turn', 'started', { status: 'running', at: timestamp(scene.startedAt) });
-  for (const row of (scene.pipeline || []).slice(0, 160)) {
+  for (const row of (scene.pipeline || []).slice(0, AGENT_LOOP_CONTRACT.guardLimits.executionEvents)) {
     if (!identifier(row.id) || !/(^|:)model:/.test(row.id) || row.channel === 'reasoning-summary' || row.id.endsWith(':summary')) continue;
     const fields = { model: identifier(row.returnedModel || row.model) || undefined };
     if (timestamp(row.startedAt)) emit('model', row.id, 'started', { ...fields, status: 'running', at: timestamp(row.startedAt) });
     if (terminal(row.status)) emit('model', row.id, 'finished', { ...fields, status: statusOf(row.status), at: timestamp(row.finishedAt) });
   }
-  for (const row of (scene.operations || []).slice(0, 160)) {
+  for (const row of (scene.operations || []).slice(0, AGENT_LOOP_CONTRACT.guardLimits.executionEvents)) {
     if (identifier(row.id)) toolRows.set(row.id, row);
   }
-  for (const call of (scene.toolCalls || []).slice(0, 160)) {
+  for (const call of (scene.toolCalls || []).slice(0, AGENT_LOOP_CONTRACT.guardLimits.executionEvents)) {
     if (!identifier(call.callId) || !Number.isSafeInteger(call.iteration) || call.iteration < 0) continue;
     const id = `${identifier(call.scopeId) ? call.scopeId + ':' : ''}${call.iteration}:${call.callId}`, row = toolRows.get(id) || {};
     const status = call.status || call.resultEnvelope?.status;

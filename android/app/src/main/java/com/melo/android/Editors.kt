@@ -76,7 +76,7 @@ import com.melo.android.network.HostedSearchAdapter
         var instructions by remember(original.id) { mutableStateOf(original.instructions) }; var identity by remember(original.id) { mutableStateOf(original.identity) }
         var soul by remember(original.id) { mutableStateOf(original.soul) }
         var replyLanguage by remember(original.id) { mutableStateOf(original.replyLanguage) }
-        var taskRounds by remember(original.id) { mutableIntStateOf(original.maxTaskIterations.coerceIn(1, 20)) }
+        var taskRounds by remember(original.id) { mutableIntStateOf(original.maxTaskIterations.coerceIn(AgentLoopDefaults.minIterations, AgentLoopDefaults.maxRounds)) }
         var contextSources by remember(original.id) { mutableStateOf(original.contextSources) }
         EditorDialog("编辑角色", { editing = null }, { vm.engine.work {
             require(name.isNotBlank()) { "请输入角色名称。" }
@@ -84,8 +84,8 @@ import com.melo.android.network.HostedSearchAdapter
         } }) { Field("名称", name, { name = it }); Field("简介", subtitle, { subtitle = it }); Field("角色指令", instructions, { instructions = it }, 4); Field("身份", identity, { identity = it }, 2); Field("风格", soul, { soul = it }, 2)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("任务执行轮数（本机）：$taskRounds", Modifier.weight(1f))
-                TextButton(onClick = { taskRounds-- }, enabled = taskRounds > 1) { Text("−") }
-                TextButton(onClick = { taskRounds++ }, enabled = taskRounds < 20) { Text("+") }
+                TextButton(onClick = { taskRounds-- }, enabled = taskRounds > AgentLoopDefaults.minIterations) { Text("−") }
+                TextButton(onClick = { taskRounds++ }, enabled = taskRounds < AgentLoopDefaults.maxRounds) { Text("+") }
             }
             Text("检查不占执行轮数；到顶后汇报进度。")
             Text("回复语言")

@@ -158,7 +158,7 @@ struct AgentEditor: View {
             Text("保存后，对已绑定此Agent的对话下一轮生效。").font(.caption).foregroundStyle(.secondary)
         }
         Section("高级Agent设定") {
-            Stepper(value: draft.maxTaskIterations, in: 1...20) { Text("任务执行轮数：\(session.draft.maxTaskIterations)") }.accessibilityIdentifier("role.maxTaskIterations")
+            Stepper(value: draft.maxTaskIterations, in: AgentLoopContract.shared.minIterations...AgentLoopContract.shared.maxRounds) { Text("任务执行轮数：\(session.draft.maxTaskIterations)") }.accessibilityIdentifier("role.maxTaskIterations")
             Text("检查不占执行轮数；到顶后会汇报进度。时间与 token 预算仍有效。").font(.caption).foregroundStyle(.secondary)
             Picker("回复语言", selection: optional(\.replyLanguage)) { Text("跟随用户消息").tag(""); Text("中文").tag("zh"); Text("English").tag("en"); Text("日本語").tag("ja"); Text("한국어").tag("ko"); Text("Español").tag("es") }
             TextField("默认模型 ID（留空沿用系统）", text: optional(\.model)).textInputAutocapitalization(.never).autocorrectionDisabled()

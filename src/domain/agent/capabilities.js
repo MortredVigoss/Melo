@@ -1,3 +1,4 @@
+import { AGENT_LOOP_CONTRACT as C } from '../../../shared/agent/loopContract.js';
 import { parseMcpToolId } from '../../mcp/toolId.js';
 
 export const CAPABILITY_LABELS = Object.freeze({readFiles:'读取文件',writeFiles:'修改文件',runCommands:'运行命令',network:'联网',knowledgeMemory:'知识与记忆',generateMedia:'生成媒体',delegate:'委派'});
@@ -22,11 +23,11 @@ export function intersectCapabilities(a,b) {
 export function hasCapability(capabilities, key) { return !capabilities || capabilities[key]===true; }
 export function normalizeCollaboration(value={}) {
   const bounded=(v,f,max)=>Number.isInteger(v)&&v>=1?Math.min(v,max):f;
-  return {...(value.maxTaskIterations !== undefined ? {maxTaskIterations:bounded(value.maxTaskIterations,10,20)} : {}),canDelegate:value.canDelegate===true,delegateTargets:list(value.delegateTargets),maxDelegationDepth:bounded(value.maxDelegationDepth,1,3),maxIterations:bounded(value.maxIterations,8,20),maxTokens:bounded(value.maxTokens,32000,200000),timeoutMs:bounded(value.timeoutMs,180000,900000)};
+  return {...(value.maxTaskIterations !== undefined ? {maxTaskIterations:bounded(value.maxTaskIterations,C.loop.maxIterations,C.guardLimits.maxRounds)} : {}),canDelegate:value.canDelegate===true,delegateTargets:list(value.delegateTargets),maxDelegationDepth:bounded(value.maxDelegationDepth,1,3),maxIterations:bounded(value.maxIterations,C.delegationLimits.iterations,20),maxTokens:bounded(value.maxTokens,32000,200000),timeoutMs:bounded(value.timeoutMs,180000,900000)};
 }
 export function intersectCollaboration(a,b) {
   a=normalizeCollaboration(a);b=normalizeCollaboration(b);
-  return {...(a.maxTaskIterations !== undefined || b.maxTaskIterations !== undefined ? {maxTaskIterations:Math.min(a.maxTaskIterations ?? 10,b.maxTaskIterations ?? 10)} : {}),canDelegate:a.canDelegate&&b.canDelegate,delegateTargets:a.delegateTargets.filter(id=>b.delegateTargets.includes(id)),
+  return {...(a.maxTaskIterations !== undefined || b.maxTaskIterations !== undefined ? {maxTaskIterations:Math.min(a.maxTaskIterations ?? C.loop.maxIterations,b.maxTaskIterations ?? C.loop.maxIterations)} : {}),canDelegate:a.canDelegate&&b.canDelegate,delegateTargets:a.delegateTargets.filter(id=>b.delegateTargets.includes(id)),
     ...Object.fromEntries(['maxDelegationDepth','maxIterations','maxTokens','timeoutMs'].map(key=>[key,Math.min(a[key],b[key])]))};
 }
 // Tool self-description (tools/tool.js `capability`). The domain cannot import

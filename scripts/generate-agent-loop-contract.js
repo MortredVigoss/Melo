@@ -4,8 +4,8 @@
 // (src/runtime/agentLoopContract.js); the iPhone app has no access to the
 // repository at run time, so it carries this generated copy. `--check` fails
 // when the Swift copy is stale.
-import { readFile, writeFile, access } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { readFile, writeFile, access, mkdir } from 'node:fs/promises';
+import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const SWIFT_PATH = 'ios/Melo/AgentLoopContract.swift';
@@ -32,6 +32,14 @@ export async function generateAgentLoopContract({ check = false, root = process.
   if (check) {
     if (await readFile(portablePath, 'utf8') !== portable) throw new Error(`${JS_PATH} is stale; run npm run generate:agent-loop-contract`);
   } else await writeFile(portablePath, portable);
+  const kotlinPath = resolve(root, 'android/app/src/main/java/com/melo/android/core/AgentLoopDefaults.kt');
+  const constants = { maxIterations: contract.loop.maxIterations, minIterations: contract.loop.minIterations, maxRounds: contract.guardLimits.maxRounds,
+    deadlineMs: contract.budget.deadlineMs, deepDeadlineMs: contract.loop.deepTask.deadlineMs };
+  const kotlin = '// Generated from shared/protocol/agent-loop.json; do not edit.\npackage com.melo.android.core\n\nobject AgentLoopDefaults {\n' +
+    Object.entries(constants).map(([key, value]) => `    const val ${key}: Int = ${value}`).join('\n') + '\n}\n';
+  if (check) {
+    if (await readFile(kotlinPath, 'utf8') !== kotlin) throw new Error('Android AgentLoopDefaults is stale; run npm run generate:agent-loop-contract');
+  } else { await mkdir(dirname(kotlinPath), { recursive: true }); await writeFile(kotlinPath, kotlin); }
   return { bytes: json.length };
 }
 

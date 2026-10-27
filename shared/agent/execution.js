@@ -1,3 +1,4 @@
+import { AGENT_LOOP_CONTRACT } from './loopContract.js';
 import { sessionContext, sessionEventId } from '../../src/shared/sessionEvents.js';
 // Portable observations using the existing ExecutionScene projection contract.
 // Hosts supply identity/time; this module has no effects or credential access.
@@ -34,7 +35,7 @@ export function executionScene({ action, scene, runId, chatId, query, at, event 
   if (event.runId && event.runId !== scene.runId) throw new Error('Execution event belongs to another run.');
   const kind = event.kind === 'operation' ? 'operation' : 'pipeline';
   const rows = kind === 'operation' ? next.operations : next.pipeline;
-  if (!event.id || rows.length >= 160 && !rows.some(row => row.id === event.id)) throw new Error('Execution observation limit.');
+  if (!event.id || rows.length >= AGENT_LOOP_CONTRACT.guardLimits.executionEvents && !rows.some(row => row.id === event.id)) throw new Error('Execution observation limit.');
   let row = rows.find(item => item.id === event.id);
   if (!row) { row = { id: text(event.id, 256), name: text(event.name, 100), module: ['search', 'tools', 'compute', 'create', 'files'].includes(event.module) ? event.module : 'compute', status: 'running', startedAt: at }; rows.push(row); }
   if (row.status !== 'running') return next;

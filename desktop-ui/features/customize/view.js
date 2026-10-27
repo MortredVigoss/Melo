@@ -1,3 +1,4 @@
+import { AGENT_LOOP_CONTRACT } from '../../../shared/agent/loopContract.js';
 import { LOCAL_SERVICE_DEFAULTS } from '../../../src/shared/localServices.js';
 import { formatTime } from '../../format.js';
 // Customize page — renderers and selectors
@@ -141,7 +142,7 @@ function renderConnectorDetails(selected) {
           </div>
           <div>
             <div class="meta-block-label">最多迭代次数</div>
-            <div>${Number(selected.maxIterations || 6)}</div>
+            <div>${Number(selected.maxIterations || AGENT_LOOP_CONTRACT.skillLimits.iterations)}</div>
           </div>
           <div>
             <div class="meta-block-label">工具白名单</div>
@@ -214,7 +215,7 @@ function renderConnectorDetails(selected) {
             </label>
             <label class="label">
               最多迭代次数（仅可执行）
-              <input class="input" type="number" name="maxIterations" min="1" max="16" value="${Number(selected.maxIterations || 6)}" />
+              <input class="input" type="number" name="maxIterations" min="1" max="16" value="${Number(selected.maxIterations || AGENT_LOOP_CONTRACT.skillLimits.iterations)}" />
             </label>
             <label class="label">
               允许的 Agent（逗号分隔 ID，留空表示全部）
@@ -566,7 +567,7 @@ function renderCustomSkillCreateCard() {
         </label>
         <label class="label">
           最多迭代次数（仅可执行）
-          <input class="input" type="number" name="maxIterations" min="1" max="16" value="6" />
+          <input class="input" type="number" name="maxIterations" min="1" max="16" value="${AGENT_LOOP_CONTRACT.skillLimits.iterations}" />
         </label>
         <label class="label">
           允许的 Agent（逗号分隔 ID，留空表示全部）

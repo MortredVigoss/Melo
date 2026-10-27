@@ -1,3 +1,4 @@
+import { AGENT_LOOP_CONTRACT } from '../runtime/agentLoopContract.js';
 import { requestAllowsTool } from '../../shared/agent/retrieval/requestPolicy.js';
 import { createCoreTurn } from '../runtime/sharedAgentCore.js';
 import {resolveCapabilityContext} from '../services/agent/capabilityContext.js';
@@ -227,7 +228,7 @@ async function runSkillLoop({
     1,
     Math.min(
       ABSOLUTE_ITERATION_CAP,
-      Number.isFinite(Number(skill.maxIterations)) ? Math.floor(Number(skill.maxIterations)) : 6,
+      Number.isFinite(Number(skill.maxIterations)) ? Math.floor(Number(skill.maxIterations)) : AGENT_LOOP_CONTRACT.skillLimits.iterations,
     ),
   );
 

@@ -1,3 +1,4 @@
+import { AGENT_LOOP_CONTRACT as C } from '../../../shared/agent/loopContract.js';
 export function buildAgentProfilePatch(form, formData) {
   const hasFormField = name =>
     Boolean(form.elements.namedItem(name)) || formData.has(name);
@@ -22,7 +23,7 @@ export function buildAgentProfilePatch(form, formData) {
     patch.capabilities={version:1,...Object.fromEntries(flags.map(k=>[k,formData.get('cap_'+k)==='on'])),...Object.fromEntries(['skills','mcpServers','connectors'].map(k=>[k,choiceList('cap_'+k)]))};
     if(hasFormField('capabilityMigrationExpected')) patch.capabilityMigrationExpected=String(formData.get('capabilityMigrationExpected'));
     // One delegation switch: the capability flag also sets the synced collaboration flag.
-    patch.collaboration={...(Number(formData.get('maxTaskIterations')||10)!==10?{maxTaskIterations:Number(formData.get('maxTaskIterations'))}:{}),canDelegate:formData.get('cap_delegate')==='on',delegateTargets:choiceList('delegateTargets'),maxDelegationDepth:Number(formData.get('maxDelegationDepth')||1),maxIterations:Number(formData.get('maxIterations')||8),maxTokens:Number(formData.get('maxTokens')||32000),timeoutMs:Number(formData.get('timeoutMs')||180000)};
+    patch.collaboration={...(Number(formData.get('maxTaskIterations')||C.loop.maxIterations)!==C.loop.maxIterations?{maxTaskIterations:Number(formData.get('maxTaskIterations'))}:{}),canDelegate:formData.get('cap_delegate')==='on',delegateTargets:choiceList('delegateTargets'),maxDelegationDepth:Number(formData.get('maxDelegationDepth')||1),maxIterations:Number(formData.get('maxIterations')||C.delegationLimits.iterations),maxTokens:Number(formData.get('maxTokens')||32000),timeoutMs:Number(formData.get('timeoutMs')||180000)};
     patch.contextSources=Object.fromEntries(['projects','knowledge','memory'].map(k=>[k,formData.get('context_'+k)==='on']));
   }
   assignString('name');

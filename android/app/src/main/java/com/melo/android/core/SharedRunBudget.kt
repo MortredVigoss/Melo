@@ -32,6 +32,12 @@ class SharedRunBudget private constructor(
             put("action", action); put("now", SystemClock.elapsedRealtime()); put("budget", snapshot())
         })) } catch (error: Throwable) { invalidate(); throw error }
     }
+    suspend fun configureDeepTask(limits: JsonObject) = mutex.withLock {
+        if (parent == null) {
+            val deadline = (state.getValue("startedAt").jsonPrimitive.double + limits.getValue("deadlineMs").jsonPrimitive.double - SystemClock.elapsedRealtime()).coerceAtLeast(0.0)
+            apply(operation("extend", buildJsonObject { put("options", buildJsonObject { put("deadlineMs", deadline); put("maxToolCalls", limits.getValue("maxToolCalls")) }) }).jsonObject.getValue("budget").jsonObject)
+        }
+    }
     suspend fun check() = mutex.withLock {
         val exhausted = operation("exhausted")
         if (exhausted != JsonNull) throw SharedBudgetExhausted()

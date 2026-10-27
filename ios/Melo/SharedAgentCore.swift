@@ -156,9 +156,11 @@ final class PhoneCoreTurn {
     var completed: Bool { state["status"] as? String == "completed" }
     var active: Bool { state["status"] as? String == "running" }
     var reason: String { state["reason"] as? String ?? "LOOP_STOPPED" }
-    init(tools: [String], rounds: Int, callsPerRound: Int) throws {
+    init(tools: [String], rounds: Int, callsPerRound: Int, timeoutMs: Double? = nil) throws {
+        var limits: [String: Any] = ["rounds": rounds, "callsPerRound": callsPerRound, "finalReport": true]
+        if let timeoutMs { limits["timeoutMs"] = max(1, floor(timeoutMs)) }
         let turn: [String: Any] = ["runId": UUID().uuidString, "turnId": UUID().uuidString, "now": Self.clock(),
-            "allowedTools": tools, "hostToolSchemas": true, "limits": ["rounds": rounds, "callsPerRound": callsPerRound, "finalReport": true]]
+            "allowedTools": tools, "hostToolSchemas": true, "limits": limits]
         guard let value = SharedLoopPolicy.value("start", ["turn": turn]) as? [String: Any] else { throw SharedAgentCoreError.unavailable }
         state = value
     }

@@ -36,3 +36,19 @@
 仅实际工具批次增加 rounds；三端 Host 发送 request.kind；兼容旧 mode=review。新增四份跨引擎计数 fixture 与非法 kind/批次、收尾工具零执行断言。Swift 旧夹具改为一轮工具额度，仍断言候选+检查+工具+收尾共四次模型请求与实际执行一次。
 
 快速档 `run-h7krwC/summary.json` 全绿：JS 4732/4732、Swift 37 组、Android JVM/Lint/Debug/Release、设置浏览器与生成资源；无跳过、无隔离复测。Swift 夹具在该组编译前更新，重新生成全文件 test:plan，选组保持全部 Swift/JS/Android；日志保留。证据 `.tmp/limit-delivery-20261027/step1-plan.log`。剩余四步尚未实施。
+
+## 第二步实现边界（WIP）
+
+新 `shared/agent/loopLimits.js:resolveLoopLimits` 由 Node 和原生 JSON 桥共同调用；模型路由保存深度分类标志，普通升档不偷偷重置预算。主任务已有字段 `collaboration.maxTaskIterations` 保留，成员仍为 `maxIterations`，避免混用两个独立设置；新 UI 为 10–64，旧记录小于10的显式值保持可读且不重写。成员默认20、技能默认12只作用于未填写的配置。
+
+Agent 扩展协议的可选 maxTaskIterations 最大值放宽到64，workspace v1其他字段不变；旧端的该可选设置通道可能不能接收大于20的新值，原数据保留；本次三端消费者与生成物一起更新，未部署同步服务器。新 Android UI 常量由契约生成，运行策略从同一 JS core 读取。
+
+`chatExecutionRunner → runDeadline` 保持原始硬截止，只有本轮预算实际延长才在旧截止点重排剩余时间，显式短截止仍优先；Swift root 在路由准备后取动态预算，成员不放大；Android 移除15分钟旧常量、保留45分钟外层硬顶和每请求共享预算。执行记录边界从160提升至契约512，以容纳300次工具调用，包含 sessionEvents 与桌面记录投影。
+
+第二步首轮快速档 `run-jZMSSo` 在浏览器加载阶段失败：前端增加共享契约 import 后，服务端白名单未增加该模块。不是机器负载问题。修正 `server.js` 明确只读路由与 iOS 面板打包依赖后，Agent 设置浏览器保存64/取消/原配置保留通过。旧运行器将错误判为超时并开始自动复测，已停止该旧运行及其4个子进程，失败日志和 `step2-first-run-interrupted.json` 保留；随后在稳定树重新生成全部改动文件计划并完整重跑，不把旧树自动重试当验收。
+
+第二步补漏：技能磁盘导入、新建/编辑表单也从同一契约读取默认12，显式保存6仍保留。Swift 新超时传入暴露出 `DEADLINE_EXCEEDED` 被误归 `.toolLimit`，已按原因归 `.budget`；独立 JSCore 桥不依赖完整 App 的 `AgentLoopContract` 类型，未传超时时由共享 reducer 取默认。旧夹具分别改为30分钟、契约轮数足量响应、超过当前契约截止时间，仍保留“不得发生晚到副作用/不得再核验”的断言。
+
+过程证据：`run-6iDtDd` 与 `run-aTMkfB` 的 JS4742、Android四项和设置浏览器均绿，Swift 分别暴露旧响应夹具不足和超时夹具未同步；失败原样保留，未跳过。`step2-swift-all.log` 同时记录独立桥的编译边界修复；`step2-swift-final-loop.log` 关键循环套件通过。最终同范围快速门禁重跑中，以上不是最终完成声明。
+
+第二步最终验收：`run-9yDTRs/summary.json` 同范围快速档全绿：JS4742/4742、Swift37套、Android JVM/Lint/Debug/Release、设置浏览器和生成资源；零跳过、零隔离复测。最终测试前完成上述修正，测试期间未再改产品代码。第二步独立本地提交；第三步及后续、真实模型和最终基准集成仍未完成。

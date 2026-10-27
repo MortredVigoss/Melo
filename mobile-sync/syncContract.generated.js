@@ -1317,7 +1317,7 @@ export const syncSchema = {
         "maxTaskIterations": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 20
+          "maximum": 64
         }
       }
     },

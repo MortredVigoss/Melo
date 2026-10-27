@@ -13,7 +13,7 @@ function virtualClock(start = 1_000_000) {
   return now;
 }
 
-test('defaults: 20 min / 400k input tokens / 120 tool calls, env and overrides win in that order', () => {
+test('defaults: 30 min / 400k input tokens / 200 tool calls, env and overrides win in that order', () => {
   const now = virtualClock();
   const plain = createRunBudget({ now });
   assert.equal(plain.deadlineAt - plain.startedAt, DEFAULT_RUN_DEADLINE_MS);

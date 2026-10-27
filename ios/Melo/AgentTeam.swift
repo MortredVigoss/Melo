@@ -110,7 +110,7 @@ enum AgentTeam {
             guard case .number(let n)? = agent.collaboration?[key], n.isFinite, n > 0 else { return fallback }
             return PhoneReadHistory.boundedInteger(n, minimum: 1, maximum: max)
         }
-        return PhoneMemberLimits(iterations: number("maxIterations", fallback: 8, max: 30), tokens: number("maxTokens", fallback: 32000, max: 400000), timeoutMs: Double(number("timeoutMs", fallback: 180000, max: 900000)))
+        return PhoneMemberLimits(iterations: number("maxIterations", fallback: AgentLoopContract.shared.delegationIterations, max: 20), tokens: number("maxTokens", fallback: 32000, max: 400000), timeoutMs: Double(number("timeoutMs", fallback: 180000, max: 900000)))
     }
     static func model(_ agent: AgentProfile, fallback: String) -> String {
         let own = agent.model?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

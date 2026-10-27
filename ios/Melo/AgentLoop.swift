@@ -157,7 +157,7 @@ final class AgentLoop: @unchecked Sendable {
     // MARK: run
 
     func run() async throws -> AgentLoopOutcome {
-        if let value = hooks.maxTaskIterations { maxIterations = min(20, max(1, value)) }
+        if let value = hooks.maxTaskIterations { maxIterations = min(contract.maxRounds, max(1, value)) }
         if let limits = PhoneMemberLimits.current { maxIterations = limits.iterations }
         budget.arm()
         var outcome = try await invokeModel()
@@ -205,8 +205,16 @@ final class AgentLoop: @unchecked Sendable {
             let text = await exhaustedStop(exhausted)
             return AgentLoopOutcome(text: text, stop: .budget, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: 0)
         }
-        if let routing = hooks.routing { transport = try await routing.prepare(budget: budget, stage: hooks.onStage) }
-        let core = try PhoneCoreTurn(tools: Array(offered), rounds: maxIterations, callsPerRound: maxCallsPerResponse)
+        if let routing = hooks.routing {
+            transport = try await routing.prepare(budget: budget, stage: hooks.onStage)
+            if PhoneMemberLimits.current == nil, routing.session.decision["deepTask"] as? Bool == true,
+               let limits = SharedLoopPolicy.value("loopLimits", ["limits": ["route": routing.session.decision]]) as? [String: Any] {
+                maxIterations = limits["maxIterations"] as? Int ?? maxIterations
+                budget.configureDeepTask(limits)
+            }
+        }
+
+        let core = try PhoneCoreTurn(tools: Array(offered), rounds: maxIterations, callsPerRound: maxCallsPerResponse, timeoutMs: budget.remainingMs())
         let goal = try PhoneGoalState(latestUserMessage, history: goalHistory.map { ["role": $0.role, "content": $0.content] })
         goalState = goal
         var candidateRound: AgentRound?
@@ -231,7 +239,7 @@ final class AgentLoop: @unchecked Sendable {
             }
             if try !core.event("request", goal.checking ? ["mode": "review"] : [:]) {
                 lastEvidence = evidence
-                return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration)
+                return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: core.reason == "DEADLINE_EXCEEDED" ? .budget : .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration)
             }
             var round = AgentRound()
             let checkingGoal = goal.checking
@@ -262,7 +270,7 @@ final class AgentLoop: @unchecked Sendable {
                     try Task.checkCancellation()
                     if reportingProgress {
                         try core.event("complete"); lastEvidence = evidence
-                        return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration + 1)
+                        return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: core.reason == "DEADLINE_EXCEEDED" ? .budget : .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration + 1)
                     }
                     guard checkingGoal, let candidate = candidateRound else { throw error }
                     if (error as? URLError)?.code == .cancelled { throw error }
@@ -280,7 +288,7 @@ final class AgentLoop: @unchecked Sendable {
             if reportingProgress {
                 try core.event("complete"); lastEvidence = evidence
                 let text = round.calls.isEmpty && !round.text.isEmpty ? round.text : core.reply(latestUserMessage)
-                return AgentLoopOutcome(text: text, stop: .toolLimit, finalRound: round, sources: sources, searched: searched, calls: records, iterations: iteration + 1)
+                return AgentLoopOutcome(text: text, stop: core.reason == "DEADLINE_EXCEEDED" ? .budget : .toolLimit, finalRound: round, sources: sources, searched: searched, calls: records, iterations: iteration + 1)
             }
             if checkingGoal, let candidate = candidateRound {
                 let decision = try goal.update("review", ["response": round.calls.isEmpty ? round.text : "", "observations": completionObservations])
@@ -309,7 +317,7 @@ final class AgentLoop: @unchecked Sendable {
                 try goal.update("candidate", ["observations": completionObservations, "candidate": ["reply": round.text, "tools": Array(offered) + (nativeSearchAvailable ? ["native_web_search"] : []), "research": ChatGPTRequest.requiresSearch(latestUserMessage), "roundsLeft": maxIterations - core.rounds]])
                 if goal.checking { try core.event("feedback"); iteration += 1; continue }
                 try core.event("complete")
-                if !core.completed { return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration + 1) }
+                if !core.completed { return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: core.reason == "DEADLINE_EXCEEDED" ? .budget : .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration + 1) }
                 lastEvidence = evidence
                 return AgentLoopOutcome(text: round.text, stop: .answered, finalRound: round, sources: sources, searched: searched, calls: records, iterations: iteration + 1)
             }
@@ -318,7 +326,7 @@ final class AgentLoop: @unchecked Sendable {
                 let args = OrderedJSON.arguments(call.arguments)
                 return ["id": call.callID, "name": call.name, "effect": PhoneCoreTurn.effect(call.name, arguments: call.arguments), "fingerprint": PhoneCoreTurn.fingerprint(call.name + args.canonicalJSON)]
             }])
-            if !core.active { return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration + 1) }
+            if !core.active { return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: core.reason == "DEADLINE_EXCEEDED" ? .budget : .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration + 1) }
             var results: [AgentToolResult] = []
             for call in calls {
                 let args = OrderedJSON.arguments(call.arguments)
@@ -387,7 +395,7 @@ final class AgentLoop: @unchecked Sendable {
             iteration += 1
             if !core.active {
                 await hooks.onStage?("core:stop", "执行已停止", "failed", core.reason)
-                return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration)
+                return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: core.reason == "DEADLINE_EXCEEDED" ? .budget : .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration)
             }
         }
     }

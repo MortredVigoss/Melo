@@ -80,9 +80,9 @@ class ChatEngine(private val context: Context, val repository: Repository) {
                 val selected = if (retry) chat.messages.take(chat.messages.indexOfLast { it.id == message.id } + 1) else chat.messages + message
                 val result = withContext(Dispatchers.IO) {
                     if (connection.protocol == "fixture") client.reply(connection, key, selected, instructions, repository::imageData) { partial -> updateTurn(chatId) { it.copy(partial = partial) } }
-                    else withTimeout(15 * 60 * 1000L) {
+                    else withTimeout(com.melo.android.core.AgentLoopDefaults.deepDeadlineMs.toLong()) {
                         SharedChatAgent(context, client, BuildConfig.DEBUG).reply(connection, key, selected, instructions,
-                            JsonObject(state.settings.agentRuntime + mapOf("replyLanguage" to JsonPrimitive(state.agents.find { it.id == chat.agentId }?.replyLanguage.orEmpty()), "maxTaskIterations" to JsonPrimitive(state.agents.find { it.id == chat.agentId }?.maxTaskIterations ?: 10))), { search -> if (search.text("credentialRef") == "search") repository.credential(SharedSearchAdapter.credentialId(search.text("endpoint"), BuildConfig.DEBUG)) else "" }, phoneUse, run.id, chatId, repository::imageData,
+                            JsonObject(state.settings.agentRuntime + mapOf("replyLanguage" to JsonPrimitive(state.agents.find { it.id == chat.agentId }?.replyLanguage.orEmpty()), "maxTaskIterations" to JsonPrimitive(state.agents.find { it.id == chat.agentId }?.maxTaskIterations ?: com.melo.android.core.AgentLoopDefaults.maxIterations))), { search -> if (search.text("credentialRef") == "search") repository.credential(SharedSearchAdapter.credentialId(search.text("endpoint"), BuildConfig.DEBUG)) else "" }, phoneUse, run.id, chatId, repository::imageData,
                             invokePhone = { args ->
                                 currentCoroutineContext().ensureActive()
                                 check(repository.data.value.chats.any { it.id == chatId }) { "对话已删除，手机操作已停止。" }

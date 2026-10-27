@@ -1,3 +1,5 @@
+import { resolveLoopLimits } from '../../../../shared/agent/loopLimits.js';
+import { extendBudget } from '../../../runtime/runBudget.js';
 import { runtimeMessage } from '../../../../shared/agent/runtimeMessages.js';
 import { turnStopReply } from '../../../../shared/agent/turn.js';
 import { connectionForModel, resolvedModelCapabilities } from '../../../../shared/agent/modelCapabilities.js';
@@ -119,7 +121,9 @@ export function createInvokeModelNode(turn) {
     }
 
     // Shared with the iPhone loop (shared/protocol/agent-loop.json).
-    const MAX_TOOL_ITERATIONS = graphState.activeAgentProfile?.collaboration?.maxTaskIterations ?? AGENT_LOOP_CONTRACT.loop.maxIterations;
+    const loopLimits = resolveLoopLimits({ maxIterations: graphState.activeAgentProfile?.collaboration?.maxTaskIterations, route: routingSession?.current });
+    const MAX_TOOL_ITERATIONS = loopLimits.maxIterations;
+    if (budget && routingSession?.current.deepTask) extendBudget(budget, { deadlineMs: Math.max(0, budget.startedAt + loopLimits.deadlineMs - budget.now()), maxToolCalls: loopLimits.maxToolCalls });
     const escalationTool = { id: 'melo_escalate', name: 'melo_escalate', description: 'Request one higher configured model tier when the task needs more reasoning. This continues the same task with all results preserved. Do not repeat completed actions.', effect: 'compute', requiresPermission: false,
       parametersSchema: { type: 'object', properties: { reason: { type: 'string', description: 'Why this task requires a stronger model.' } }, required: ['reason'], additionalProperties: false } };
     const routingEnabled = routingSession?.current.mode === 'smart' && config.smartRouting?.allowEscalation !== false;

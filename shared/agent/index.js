@@ -21,6 +21,7 @@ import { budgetOperation } from './policyBridge.js';
 import { repeatOperation } from './repeatGuard.js';
 import { completionResult, completionObservation, teamCompletion } from './completion.js';
 import { AGENT_LOOP_CONTRACT } from './loopContract.js';
+import { resolveLoopLimits } from './loopLimits.js';
 import { goalOperation } from './goal.js';
 import { toolEffect } from './toolEffects.js';
 import { contextCost, contextPlan, contextWirePlan, historyPage } from './context.js';
@@ -40,6 +41,7 @@ export function evaluate(input) {
       case 'contextPlan': value = contextPlan(input.context); break;
       case 'contextWirePlan': value = contextWirePlan(input.context); break;
       case 'historyPage': value = historyPage(input.page); break;
+      case 'loopLimits': value = resolveLoopLimits(input.limits); break;
       case 'budget': value = JSON.parse(JSON.stringify(budgetOperation(input))); break;
       case 'repeat': value = repeatOperation(input); break;
       case 'completion': value = completionResult(input.completion); break;

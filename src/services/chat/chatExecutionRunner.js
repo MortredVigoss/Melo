@@ -1,3 +1,4 @@
+import { runDeadline } from '../../runtime/runDeadline.js';
 import { endTaskPermissions } from '../../safety/fileSafetyGate.js';
 import { captureBehavior } from '../../runtime/runtimeBehavior.js';
 import { getRequestNetworkPolicy } from '../../../shared/agent/retrieval/requestPolicy.js';
@@ -85,9 +86,9 @@ export async function runChatAgentExecutionGraph({
   // the same wrapper), the tool executor and member/skill sub-loops. The
   // context was created when the request arrived; the clock starts here.
   const budget = armBudget(context.budget || null);
-  const requestedTimeout = Number.isFinite(_dependencies.turnTimeoutMs) ? _dependencies.turnTimeoutMs : AGENT_LOOP_CONTRACT.budget.deadlineMs;
-  const turnTimeoutMs = Math.max(1, Math.ceil(Math.min(requestedTimeout, budget ? remainingMs(budget) : requestedTimeout)));
-  signal = AbortSignal.any([signal, AbortSignal.timeout(turnTimeoutMs)].filter(Boolean));
+  const requestedTimeout = Number.isFinite(_dependencies.turnTimeoutMs) ? _dependencies.turnTimeoutMs : AGENT_LOOP_CONTRACT.loop.deepTask.deadlineMs;
+  const deadline = runDeadline(budget, { maxMs: Math.max(1, Math.ceil(requestedTimeout)) });
+  signal = AbortSignal.any([signal, deadline.signal].filter(Boolean));
   const createReply = async options => {
     if (options.purpose === 'routing-judge') {
       options.signal?.throwIfAborted();
@@ -235,5 +236,5 @@ export async function runChatAgentExecutionGraph({
     latestUserMessage,
     agentId,
     channelContext,
-  }); } finally { endTaskPermissions(context); }
+  }); } finally { deadline.dispose(); endTaskPermissions(context); }
 }

@@ -1,3 +1,4 @@
+import { AGENT_LOOP_CONTRACT } from '../../shared/agent/loopContract.js';
 // Phase 3.1: disk-based skill loader + SKILL.md frontmatter parser.
 //
 // Storage layout:
@@ -131,7 +132,7 @@ export function skillFromMarkdown(skillId, raw, diskPath) {
         ? frontmatter.allowedAgentIds
         : null;
   const maxIterations = Number(
-    frontmatter['max-iterations'] ?? frontmatter.maxIterations ?? 6,
+    frontmatter['max-iterations'] ?? frontmatter.maxIterations ?? AGENT_LOOP_CONTRACT.skillLimits.iterations,
   );
   const version = Number(frontmatter.version ?? 1);
   // `source` marks where a disk-backed skill came from. 'melo-bundle'

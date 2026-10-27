@@ -352,7 +352,7 @@ enum MobileKnowledge {
 // separate workspace. These envelopes never enter the user's knowledge list.
 enum AgentSettingsProjection {
     static let emptyCapabilities: SyncValue = .object(Dictionary(uniqueKeysWithValues:["readFiles","writeFiles","runCommands","network","knowledgeMemory","generateMedia","delegate"].map { ($0,SyncValue.bool(false)) }).merging(["version":.number(1),"mcpServers":.array([]),"skills":.array([]),"connectors":.array([])]) { _,v in v })
-    static let collaboration: SyncValue = .object(["canDelegate":.bool(false),"delegateTargets":.array([]),"maxDelegationDepth":.number(1),"maxIterations":.number(8),"maxTokens":.number(32000),"timeoutMs":.number(180000)])
+    static let collaboration: SyncValue = .object(["canDelegate":.bool(false),"delegateTargets":.array([]),"maxDelegationDepth":.number(1),"maxIterations":.number(Double(AgentLoopContract.shared.delegationIterations)),"maxTokens":.number(32000),"timeoutMs":.number(180000)])
     static let sources: SyncValue = .object(["projects":.bool(true),"knowledge":.bool(true),"memory":.bool(true)])
     static func id(_ project: String?, _ agent: String) -> String {
         let key=SyncValue.array([project.map(SyncValue.string) ?? .null,.string(agent)]).canonical
@@ -451,12 +451,12 @@ enum ProjectMemoryProjection {
 extension AgentProfile {
     var maxTaskIterations: Int {
         get {
-            guard case .number(let value)? = collaboration?["maxTaskIterations"], value.isFinite else { return 10 }
-            return Int(min(20, max(1, value)))
+            guard case .number(let value)? = collaboration?["maxTaskIterations"], value.isFinite else { return AgentLoopContract.shared.maxIterations }
+            return Int(min(Double(AgentLoopContract.shared.maxRounds), max(1, value)))
         }
         set {
             guard case .object(var values) = collaboration ?? AgentSettingsProjection.collaboration else { return }
-            values["maxTaskIterations"] = .number(Double(min(20, max(1, newValue))))
+            values["maxTaskIterations"] = .number(Double(min(AgentLoopContract.shared.maxRounds, max(1, newValue))))
             collaboration = .object(values)
         }
     }

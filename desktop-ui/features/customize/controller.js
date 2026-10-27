@@ -1,3 +1,4 @@
+import { AGENT_LOOP_CONTRACT } from '../../../shared/agent/loopContract.js';
 // Customize page — handlers, loaders and the actions / forms registered with app.js
 // (architecture B3 step 1, 2026-10-20). Byte-for-byte move out of
 // desktop-ui/app.js: function bodies and their comments are unchanged; case
@@ -23,7 +24,7 @@ function normalizeSkillFormBody(formData) {
   const rawType = String(formData.get('type') || '').trim().toLowerCase();
   const type = rawType === 'prompt' ? 'prompt' : 'executable';
   const iterN = Number(formData.get('maxIterations'));
-  const maxIterations = Number.isFinite(iterN) && iterN >= 1 && iterN <= 16 ? Math.floor(iterN) : 6;
+  const maxIterations = Number.isFinite(iterN) && iterN >= 1 && iterN <= AGENT_LOOP_CONTRACT.skillLimits.maxIterations ? Math.floor(iterN) : AGENT_LOOP_CONTRACT.skillLimits.iterations;
   return {
     name: String(formData.get('name') || '').trim(),
     description: String(formData.get('description') || '').trim(),

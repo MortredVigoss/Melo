@@ -76,11 +76,13 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
             replyLocale = runtime.value("locale", buildJsonObject { put("text",goal); put("agentLanguage",config.text("replyLanguage")); put("systemLanguage",java.util.Locale.getDefault().toLanguageTag()) }).jsonPrimitive.content
         journal = ChatJournal.create(runtime, runId, chatId, messages.lastOrNull { it.role == "user" }?.content.orEmpty(), onScene)
         try {
-            val budget = SharedRunBudget.open(runtime, options = buildJsonObject { put("deadlineMs", 900_000) })
+            val budget = SharedRunBudget.open(runtime)
             transport = DeviceAgentClient(debug, client.http)
             routing = routingConfig?.let { SmartRouting(runtime, it, connection, messages) }
             routing?.prepare(transport, budget) { id, output, status -> journal.event(id, "智能选模", output = output, status = status) }
             routing?.let { connection = it.connection(); key = it.key(); onRoutedConnection(connection, key) }
+            val loopLimits = runtime.value("loopLimits", buildJsonObject { put("limits", buildJsonObject { config["maxTaskIterations"]?.let { put("maxIterations", it) }; routing?.decision?.let { put("route", it) } }) }).jsonObject
+            if (routing?.decision?.get("deepTask")?.jsonPrimitive?.booleanOrNull == true) budget.configureDeepTask(loopLimits)
             capturedConfig = runtime.value("config", buildJsonObject { put("config", config) }).jsonObject
             val hosted = if (connection.protocol == "responses") HostedSearchAdapter.capability(runtime, connection, key) else "unknown"
             plan = runtime.value("plan", buildJsonObject { put("request", buildJsonObject {
@@ -118,7 +120,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
             currentChainStart = history.indexOfLast { it.text("role") == "user" }
             search = SharedSearchAdapter(debug, client.http)
             requestedUrls = plan.strings("urls").toMutableSet()
-            return SharedCoreTurn.open(context, runId, chatId, names + if (routing?.active == true) listOf("melo_escalate") else emptyList(), budget = budget, rounds = (config["maxTaskIterations"]?.jsonPrimitive?.intOrNull ?: 10).coerceIn(1, 20), finalReport = true, timeoutMs = 900_000, requiredTools = plan.strings("requiredTools"), toolDependencies = plan["toolDependencies"]?.jsonObject ?: buildJsonObject {}).use { turn ->
+            return SharedCoreTurn.open(context, runId, chatId, names + if (routing?.active == true) listOf("melo_escalate") else emptyList(), budget = budget, rounds = loopLimits.getValue("maxIterations").jsonPrimitive.int, finalReport = true, timeoutMs = budget.remaining().coerceAtLeast(1).toInt(), requiredTools = plan.strings("requiredTools"), toolDependencies = plan["toolDependencies"]?.jsonObject ?: buildJsonObject {}).use { turn ->
                 execute(turn)
             }
         } catch (error: Throwable) {

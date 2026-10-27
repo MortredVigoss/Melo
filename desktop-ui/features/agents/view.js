@@ -1,3 +1,4 @@
+import { AGENT_LOOP_CONTRACT as C } from '../../../shared/agent/loopContract.js';
 // Agent settings renderers (architecture plan P2b, 2026-10-19): the Agent
 // page, the shared editor (workbench) with persona, capability/collaboration
 // and channel sections, and the channel runtime card. Moved out of
@@ -142,7 +143,7 @@ function renderAgentCapabilities(selected,draft) {
     <p>${escapeHtml(t('开启“委派”后，这个 Agent 可以把任务交给下面勾选的 Agent，也可以发起多 Agent 协作；没勾选的 Agent 不能被委派或组队。'))}</p>
     <div class="agent-settings-grid">
     ${renderCapabilityChoices('delegateTargets','委派对象',draft?.delegateTargets ?? collaboration.delegateTargets,getBootstrap().customize.agents.filter(a=>a.id!==selected.id),escapeHtml)}
-    ${[['maxTaskIterations','任务执行轮数',10,20],['maxDelegationDepth','委派深度',1,3],['maxIterations','成员轮数',8,20],['maxTokens','成员 token 上限',32000,200000],['timeoutMs','成员超时（毫秒）',180000,900000]].map(([key,label,fallback,max])=>`<label class="label">${escapeHtml(t(label))}<input class="config-input" type="number" min="1" max="${max}" name="${key}" value="${escapeHtml(String(draft?.[key]??collaboration[key]??fallback))}"></label>`).join('')}
+    ${[['maxTaskIterations','任务执行轮数',C.loop.maxIterations,C.guardLimits.maxRounds],['maxDelegationDepth','委派深度',1,3],['maxIterations','成员轮数',C.delegationLimits.iterations,20],['maxTokens','成员 token 上限',32000,200000],['timeoutMs','成员超时（毫秒）',180000,900000]].map(([key,label,fallback,max])=>`<label class="label">${escapeHtml(t(label))}<input class="config-input" type="number" min="${key === 'maxTaskIterations' ? C.loop.minIterations : 1}" max="${max}" name="${key}" value="${escapeHtml(String(draft?.[key]??collaboration[key]??fallback))}"></label>`).join('')}
     </div><p>检查不占执行轮数；到顶后会汇报进度。时间与 token 预算仍有效。</p><p>上下文来源</p><div class="agent-capability-flags">${[['projects','项目指引'],['knowledge','共享知识'],['memory','记忆']].map(([key,label])=>`<label class="checkbox-row"><input type="checkbox" name="context_${key}" ${(draft?.['context_'+key]!==undefined?draft['context_'+key]==='on':selected.contextSources?.[key]!==false)?'checked':''}>${escapeHtml(t(label))}</label>`).join('')}
   </div></details>`;
 }

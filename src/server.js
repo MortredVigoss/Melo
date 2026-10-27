@@ -415,7 +415,7 @@ const coreRoutes = createRouteRegistry([
       }
       return;
     } },
-  { method: 'GET', paths: ["/shared/agent/runtimeBehavior.js", "/shared/agent/providerDefaults.js", "/shared/agent/locale.js", "/shared/agent/runtimeMessages.js"], auth: 'local-read', handler: async ({response,url}) => { response.writeHead(200, {'content-type':'text/javascript; charset=utf-8','cache-control':'no-cache'}); createReadStream(join(rootDir,'shared','agent',url.pathname.split('/').at(-1))).pipe(response); } },
+  { method: 'GET', paths: ["/shared/agent/loopContract.js", "/shared/agent/runtimeBehavior.js", "/shared/agent/providerDefaults.js", "/shared/agent/locale.js", "/shared/agent/runtimeMessages.js"], auth: 'local-read', handler: async ({response,url}) => { response.writeHead(200, {'content-type':'text/javascript; charset=utf-8','cache-control':'no-cache'}); createReadStream(join(rootDir,'shared','agent',url.pathname.split('/').at(-1))).pipe(response); } },
   { method: 'GET', paths: ["/shared/localPreferences.js"], auth: 'local-read', handler: async ({request,response,url,requireLocalOrigin}) => { response.writeHead(200, {'content-type':'text/javascript; charset=utf-8','cache-control':'no-cache'}); createReadStream(join(rootDir,'src','domain','settings','localPreferences.js')).pipe(response); return; } },
   { method: 'GET', paths: ["/shared/urlDetector.js","/shared/textUrls.js"], auth: 'local-read', handler: async ({request,response,url,requireLocalOrigin}) => {
       const absPath = url.pathname.endsWith('/textUrls.js')

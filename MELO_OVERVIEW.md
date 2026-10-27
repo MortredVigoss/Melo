@@ -512,4 +512,6 @@ app 的 escapeHtml/showFlashToast 与授权页 formatTime 原样移至 html/feed
 ## 2026-10-27 — 本线程：循环计数与上限交付
 
 - 已按用户指定方案开工；独立工作树/分支 `codex/limit-delivery-20261027`，起点 ca3fca0，保留上一轮闭环修复。执行链路、审计边界和五步验收见 [实施记录](docs/limit-delivery-20261027.md)。
-- 第一步 WIP：共享 reducer 仅在合法工具批次计数；Node/iPhone/Android request 显式区分 tools/check/delivery。检查、纠偏候选、收尾不占 rounds，取消/时限/副作用守卫保留。快速档 run-h7krwC 全绿：JS 4732、Swift 37、Android 四项、设置浏览器与生成资源，无跳过/复测；准备独立提交；后续默认额度、统一收尾与成员/真实模型验收未完成。未推送/安装。
+- 第一步 WIP：共享 reducer 仅在合法工具批次计数；Node/iPhone/Android request 显式区分 tools/check/delivery。检查、纠偏候选、收尾不占 rounds，取消/时限/副作用守卫保留。快速档 run-h7krwC 全绿：JS 4732、Swift 37、Android 四项、设置浏览器与生成资源，无跳过/复测；已独立提交 d0bcf3e；后续默认额度、统一收尾与成员/真实模型验收未完成。未推送/安装。
+
+- 第二步完成：默认主循环40/成员20/技能12，200次工具、30分钟；智能深度64/300/45分钟，三端设置/契约同改，显式旧值保留。最终快速 run-9yDTRs 全绿：JS4742、Swift37、Android四项、设置浏览器，零跳过/复测。过程失败与修正见实施记录；统一收尾、成员及最终验收待继续。

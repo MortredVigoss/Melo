@@ -37,7 +37,20 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
 @main struct AgentLoopTests {
     @MainActor static func main() async throws {
         let c = AgentLoopContract.shared
-        assert(c.maxIterations == 10 && c.maxCallsPerResponse == 32)
+        assert(c.maxIterations == 40 && c.maxCallsPerResponse == 32)
+        do {
+            var clock = 1000.0
+            let budget = PhoneRunBudget(now: { clock })
+            budget.record(inputTokens: 50, providerCalls: 1)
+            clock += 3000
+            budget.configureDeepTask(["deadlineMs": 2_700_000.0, "maxToolCalls": 300])
+            assert(budget.deadlineAt == 2_701_000 && budget.maxToolCalls == 300 && budget.maxInputTokens == 400_000)
+            assert(budget.used.inputTokens == 50)
+            let child = budget.narrowed(deadlineMs: 10_000)
+            let childDeadline = child.deadlineAt
+            child.configureDeepTask(["deadlineMs": 2_700_000.0, "maxToolCalls": 300])
+            assert(child.deadlineAt == childDeadline)
+        }
 
         // The shared receipt reads actual page text, never a successful tool flag.
         for body in ["Sydney brunch menu with breakfast dishes and observed opening hours for this fixture.", "Distant stars and galaxies have different spectra and their light is redshifted.", ""] {
@@ -73,7 +86,7 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
         // the configured work rounds, and the final report is tool-free.
         do {
             var agent = AgentProfile(id: "rounds-qa", name: "QA", subtitle: "", symbol: "sparkles", instructions: "")
-            assert(agent.maxTaskIterations == 10)
+            assert(agent.maxTaskIterations == 40)
             agent.maxTaskIterations = 1; assert(agent.maxTaskIterations == 1)
             let log = Log(); var work = 0, checks = 0, reports = 0
             let transport = ScriptedTransport { input in
@@ -193,13 +206,13 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             assert(children.allSatisfy { $0.exhausted()?.reason == "tool-calls" })
         }
 
-        // 1. Ten work rounds and one tool-free report; invented report tools never execute.
+        // 1. Forty work rounds and one tool-free report; invented report tools never execute.
         do {
             let log = Log()
             var n = 0
             let transport = ScriptedTransport { _ in n += 1; return calls([fc("c\(n)", "open_url", #"{"url":"https://a.example/\#(n)"}"#)]) }
             let outcome = try await AgentLoop(transport: transport, tools: loopTools(log), budget: PhoneRunBudget(), latestUserMessage: "一直查", hooks: hooks(log)).run()
-            assert(outcome.stop == .toolLimit && outcome.text == c.toolLimitReplyZH && transport.requests.count == 11 && log.performed.count == 10 && log.records.count == 10)
+            assert(outcome.stop == .toolLimit && outcome.text == c.toolLimitReplyZH && transport.requests.count == c.maxIterations + 1 && log.performed.count == c.maxIterations && log.records.count == c.maxIterations)
             let english = try await AgentLoop(transport: ScriptedTransport { _ in n += 1; return calls([fc("e\(n)", "open_url", #"{"url":"https://a.example/\#(n)"}"#)]) }, tools: loopTools(Log()), budget: PhoneRunBudget(), latestUserMessage: "keep going").run()
             assert(english.text == c.toolLimitReplyEN)
             // Every round after the first carries the earlier tool rounds; results are envelopes.
@@ -239,8 +252,8 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             var n = 0
             let slow = ScriptedTransport { _ in now += 11 * 60_000; n += 1; return calls([fc("d\(n)")]) }
             let outcome = try await AgentLoop(transport: slow, tools: loopTools(log), budget: PhoneRunBudget(now: { now }), latestUserMessage: "q", hooks: hooks(log)).run()
-            assert(outcome.stop == .budget && slow.requests.count == 2 && outcome.text == "这轮对话已达到运行预算（运行时间 20 分钟），已停止。你可以发送“继续”接着做。")
-            assert(log.stages.contains { $0.id == "budget:exhausted" && $0.status == "failed" && $0.output.contains("模型请求 2 次") })
+            assert(outcome.stop == .budget && slow.requests.count == 3 && outcome.text == "这轮对话已达到运行预算（运行时间 30 分钟），已停止。你可以发送“继续”接着做。")
+            assert(log.stages.contains { $0.id == "budget:exhausted" && $0.status == "failed" && $0.output.contains("模型请求 3 次") })
 
             let tokens = ScriptedTransport { _ in var r = calls([fc("t\(Int.random(in: 0..<1_000_000))")]); r.inputTokens = 400_000; return r }
             let tokenOutcome = try await AgentLoop(transport: tokens, tools: loopTools(Log()), budget: PhoneRunBudget(), latestUserMessage: "q").run()
@@ -255,7 +268,7 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
 
             // A request cut off by the deadline takes the budget path, not a provider failure.
             var clock = 0.0
-            let hang = ScriptedTransport { _ in clock = 20 * 60_000; throw URLError(.timedOut) }
+            let hang = ScriptedTransport { _ in clock = AgentLoopContract.shared.deadlineMs; throw URLError(.timedOut) }
             let hung = try await AgentLoop(transport: hang, tools: nil, budget: PhoneRunBudget(now: { clock }), latestUserMessage: "q").run()
             assert(hung.stop == .budget && hung.text.contains("运行时间"))
         }
@@ -405,7 +418,7 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             assert(ambiguous.1.completions.map(\.system) == [c.verifierSystemPrompt] && ambiguous.0.verification?.verdict == "VERIFIED", "ambiguous wording uses the local fallback without an extra model call")
             // An exhausted budget skips verification.
             var clock = 0.0
-            let late = ScriptedTransport { _ in clock = 21 * 60_000; return answer("答案\n[UNCERTAIN: 数字]") }
+            let late = ScriptedTransport { _ in clock = AgentLoopContract.shared.deadlineMs + 60_000; return answer("答案\n[UNCERTAIN: 数字]") }
             let lateOutcome = try await AgentLoop(transport: late, tools: nil, budget: PhoneRunBudget(now: { clock }), latestUserMessage: "q", verification: AgentVerification(question: "q", classification: factual)).run()
             assert(lateOutcome.text == "答案" && late.completions.isEmpty)
         }

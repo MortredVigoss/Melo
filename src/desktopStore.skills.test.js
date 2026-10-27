@@ -159,13 +159,13 @@ test('normalizeCustomSkill always produces a valid parametersSchema', () => {
   assert.deepEqual(good.parametersSchema.required, ['query']);
 });
 
-test('normalizeCustomSkill clamps maxIterations to [1,16] and defaults to 6', () => {
+test('normalizeCustomSkill clamps maxIterations to [1,16] and defaults to 12', () => {
   const low = normalizeCustomSkill({ id: 'a', name: 'a', maxIterations: -5 });
   assert.equal(low.maxIterations, 1);
   const high = normalizeCustomSkill({ id: 'b', name: 'b', maxIterations: 9999 });
   assert.equal(high.maxIterations, 16);
   const def = normalizeCustomSkill({ id: 'c', name: 'c' });
-  assert.equal(def.maxIterations, 6);
+  assert.equal(def.maxIterations, 12);
 });
 
 test('normalizeCustomSkill preserves toolWhitelist and allowedAgentIds as arrays', () => {

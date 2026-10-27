@@ -26,7 +26,7 @@ const F = C.fixtures;
 test('the module reads the checked-in JSON and desktop constants come from it', () => {
   const file = JSON.parse(readFileSync(new URL('../../shared/protocol/agent-loop.json', import.meta.url), 'utf8'));
   assert.deepEqual(C, file);
-  assert.equal(C.loop.maxIterations, 10);
+  assert.equal(C.loop.maxIterations, 40);
   assert.equal(MAX_FUNCTION_CALLS_PER_RESPONSE, C.loop.maxCallsPerResponse);
   assert.deepEqual([DEFAULT_RUN_DEADLINE_MS, DEFAULT_RUN_MAX_INPUT_TOKENS, DEFAULT_RUN_MAX_TOOL_CALLS], [C.budget.deadlineMs, C.budget.maxInputTokens, C.budget.maxToolCalls]);
   assert.deepEqual([...TOOL_ERROR_CODES], C.toolResult.errorCodes);

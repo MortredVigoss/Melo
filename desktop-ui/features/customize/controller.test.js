@@ -141,3 +141,10 @@ test('an MCP preset toggle that fails surfaces through setError; a success refre
   assert.equal(ok.feature.getState().advanced.loaded, true, 'the Tools & Tasks cache is rebuilt');
   assert.equal(ok.topError(), null);
 });
+
+test("new skill form defaults to twelve rounds and preserves saved six-round skills", () => {
+ const form = new FormData();
+ assert.equal(globalThis.__meloUiInternals__.normalizeSkillFormBody(form).maxIterations, 12);
+ form.set("maxIterations", "6");
+ assert.equal(globalThis.__meloUiInternals__.normalizeSkillFormBody(form).maxIterations, 6);
+});

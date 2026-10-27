@@ -1,3 +1,4 @@
+import { AGENT_LOOP_CONTRACT } from '../../../shared/agent/loopContract.js';
 import { mkdir, readFile, writeFile, rename, readdir, stat, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
@@ -193,7 +194,7 @@ export function createExecutionRecorder(context, query, emit) {
       const call = projectToolCall(record);
       const index = scene.toolCalls.findIndex(row => row.iteration === call.iteration && row.callId === call.callId);
       if (index >= 0) scene.toolCalls[index] = call;
-      else if (scene.toolCalls.length < 160) scene.toolCalls.push(call);
+      else if (scene.toolCalls.length < AGENT_LOOP_CONTRACT.guardLimits.executionEvents) scene.toolCalls.push(call);
       scene.sequence++;
       publish();
     },
@@ -226,7 +227,7 @@ export async function readExecutionScene(home, runId, history = {}) {
     const scene = JSON.parse(await readFile(fileFor(home, runId), 'utf8'));
     if (scene.version !== 1 || scene.runId !== runId) return null;
     const records = await readToolInvocationRecords(runId, { home });
-    if (records.length) scene.toolCalls = records.slice(0, 160).map(projectToolCall);
+    if (records.length) scene.toolCalls = records.slice(0, AGENT_LOOP_CONTRACT.guardLimits.executionEvents).map(projectToolCall);
     if (!sceneFinished(scene)) finishExecutionScene(scene, { status: 'interrupted' });
     return refreshArtifactUrls(recoverSceneObservations(scene, history));
   } catch (error) {

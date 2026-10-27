@@ -1716,9 +1716,9 @@
     },
     "ok": true,
     "expected": {
-      "deadline": 1201000,
+      "deadline": 1801000,
       "limits": {
-        "rounds": 10,
+        "rounds": 40,
         "callsPerRound": 32,
         "errors": 3,
         "stagnant": 5
@@ -5354,6 +5354,66 @@
         "a",
         "b"
       ]
+    }
+  },
+  {
+    "name": "loop limits: default",
+    "input": {
+      "version": 1,
+      "op": "loopLimits",
+      "limits": {}
+    },
+    "ok": true,
+    "expected": {
+      "maxIterations": 40,
+      "minIterations": 10,
+      "maxRounds": 64,
+      "maxToolCalls": 200,
+      "deadlineMs": 1800000
+    }
+  },
+  {
+    "name": "loop limits: deep",
+    "input": {
+      "version": 1,
+      "op": "loopLimits",
+      "limits": {
+        "maxIterations": 16,
+        "route": {
+          "mode": "smart",
+          "deepTask": true
+        }
+      }
+    },
+    "ok": true,
+    "expected": {
+      "maxIterations": 64,
+      "minIterations": 10,
+      "maxRounds": 64,
+      "maxToolCalls": 300,
+      "deadlineMs": 2700000
+    }
+  },
+  {
+    "name": "loop limits: fixed",
+    "input": {
+      "version": 1,
+      "op": "loopLimits",
+      "limits": {
+        "maxIterations": 64,
+        "route": {
+          "mode": "fixed",
+          "deepTask": true
+        }
+      }
+    },
+    "ok": true,
+    "expected": {
+      "maxIterations": 64,
+      "minIterations": 10,
+      "maxRounds": 64,
+      "maxToolCalls": 200,
+      "deadlineMs": 1800000
     }
   }
 ]
