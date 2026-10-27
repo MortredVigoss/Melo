@@ -32,7 +32,7 @@
 - 门禁首次 `run-7Xevkp` 因上述新测试尚未登记而停止，已补齐；`run-VDUuzz` / `run-H9h6Gy` 分别因 shell 未提供 JDK / SDK 路径停止。已确认本机既有工具链后显式提供 `JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home`、`ANDROID_HOME=/opt/homebrew/share/android-commandlinetools`，没有安装新软件或跳过阶段。
 - 快速档 `run-pGEfj5/summary.json`：GREEN，143/568 个文件；JS 首轮 778 项、777 pass、1 cancelled（安全浏览器用例负载超时），运行器记录的一次隔离复测通过；Android JVM/Lint/Debug/Release、共享渲染预检、设置浏览器通过，无平台跳过。总计 438.6s。
 - 基准集成档 `run-necJZi/summary.json`：GREEN，143/568 个文件，JS 778/778、0 fail/cancelled/skipped；Android JVM/Lint/Debug/Release、共享渲染预检、设置浏览器全部通过，无复测、无平台跳过，223.5s。Swift 不在本次选测范围，未运行；不代表全仓/真机/真实模型/发布验收。
-- 当前状态：修复、回归、桌面视觉验收完成，待本地提交；不推送、不安装，其他功能及用户数据未更改。
+- 当前状态：修复、回归、桌面视觉验收完成，本地提交 `a74a90d`；不推送、不安装，其他功能及用户数据未更改。
 
 ## 复验命令
 
