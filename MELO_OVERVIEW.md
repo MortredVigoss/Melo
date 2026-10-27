@@ -508,3 +508,8 @@ app 的 escapeHtml/showFlashToast 与授权页 formatTime 原样移至 html/feed
 - 验证：专项 35/35；最终完整快速档 `run-PaMYDz` / 集成档 `run-b5NI8f`（基准 `346e175`）：JS 4704/4704、设置浏览器、Swift 37 组、Android JVM/Lint/Debug/Release 全过，无跳过/超时复测；iPhone 完整未签名构建成功。容器隔离、Git/原生依赖、恶意符号链接回传拒绝、取消清理和浏览器/HTTP/执行器闭环均实测；模型为确定性夹具。长命令约608秒正常退出；首次脚本计时断言错误已记录修正。
 - 测试环境在独立工作树准备：依赖、离线模型、素材链接及哈希校验；未改真实账号或共享素材。Melo 最终实现提交 `833e991` 的模块在真实容器20/20，源码树不变。证据 `.tmp/self-development-implementation-20261026/`；完整说明见[实施文档](docs/self-development-implementation-20261026.md)。
 - 状态：整批实现与组合验收已完成，本地合入主线；不推送、不安装。自动合并/发布/回滚、Mac/iPhone隔离运行器、真模型与真机验收属于后续阶段；本版不声称已实现完整自更新闭环。
+
+## 2026-10-27 — 本线程：循环计数与上限交付
+
+- 已按用户指定方案开工；独立工作树/分支 `codex/limit-delivery-20261027`，起点 ca3fca0，保留上一轮闭环修复。执行链路、审计边界和五步验收见 [实施记录](docs/limit-delivery-20261027.md)。
+- 第一步 WIP：共享 reducer 仅在合法工具批次计数；Node/iPhone/Android request 显式区分 tools/check/delivery。检查、纠偏候选、收尾不占 rounds，取消/时限/副作用守卫保留。快速档 run-h7krwC 全绿：JS 4732、Swift 37、Android 四项、设置浏览器与生成资源，无跳过/复测；准备独立提交；后续默认额度、统一收尾与成员/真实模型验收未完成。未推送/安装。

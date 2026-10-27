@@ -5102,5 +5102,258 @@
     },
     "ok": true,
     "expected": "La política de ejecución compartida no está disponible. Este turno se detuvo. Reinicia Melo e inténtalo de nuevo."
+  },
+  {
+    "name": "tool-round accounting: tools request is free",
+    "input": {
+      "version": 1,
+      "op": "advance",
+      "state": {
+        "version": 1,
+        "runId": "count-run",
+        "turnId": "count-turn",
+        "status": "running",
+        "startedAt": 1,
+        "lastNow": 1,
+        "successfulEffects": [],
+        "repairing": false,
+        "deadline": 1200001,
+        "limits": {
+          "finalReport": true,
+          "rounds": 2,
+          "callsPerRound": 32,
+          "errors": 3,
+          "stagnant": 5
+        },
+        "allowedTools": [
+          "read"
+        ],
+        "requiredTools": [],
+        "toolDependencies": {},
+        "successfulTools": [],
+        "pendingTools": {},
+        "rounds": 0,
+        "awaitingModel": false,
+        "hostToolSchemas": false,
+        "failures": [],
+        "pendingFingerprints": {},
+        "rejectionResults": {},
+        "callIds": [],
+        "pending": [],
+        "permitted": [],
+        "phoneTasks": [],
+        "rejections": {},
+        "errors": 0,
+        "roundSucceeded": false,
+        "stagnant": 0,
+        "progressKeys": [],
+        "reason": null
+      },
+      "event": {
+        "runId": "count-run",
+        "turnId": "count-turn",
+        "type": "request",
+        "kind": "tools"
+      },
+      "now": 1
+    },
+    "ok": true,
+    "expected": {
+      "rounds": 0,
+      "awaitingModel": true
+    }
+  },
+  {
+    "name": "tool-round accounting: check request is free",
+    "input": {
+      "version": 1,
+      "op": "advance",
+      "state": {
+        "version": 1,
+        "runId": "count-run",
+        "turnId": "count-turn",
+        "status": "running",
+        "startedAt": 1,
+        "lastNow": 1,
+        "successfulEffects": [],
+        "repairing": false,
+        "deadline": 1200001,
+        "limits": {
+          "finalReport": true,
+          "rounds": 2,
+          "callsPerRound": 32,
+          "errors": 3,
+          "stagnant": 5
+        },
+        "allowedTools": [
+          "read"
+        ],
+        "requiredTools": [],
+        "toolDependencies": {},
+        "successfulTools": [],
+        "pendingTools": {},
+        "rounds": 0,
+        "awaitingModel": false,
+        "hostToolSchemas": false,
+        "failures": [],
+        "pendingFingerprints": {},
+        "rejectionResults": {},
+        "callIds": [],
+        "pending": [],
+        "permitted": [],
+        "phoneTasks": [],
+        "rejections": {},
+        "errors": 0,
+        "roundSucceeded": false,
+        "stagnant": 0,
+        "progressKeys": [],
+        "reason": null
+      },
+      "event": {
+        "runId": "count-run",
+        "turnId": "count-turn",
+        "type": "request",
+        "kind": "check"
+      },
+      "now": 1
+    },
+    "ok": true,
+    "expected": {
+      "rounds": 0,
+      "awaitingModel": true
+    }
+  },
+  {
+    "name": "tool-round accounting: delivery request is free",
+    "input": {
+      "version": 1,
+      "op": "advance",
+      "state": {
+        "version": 1,
+        "runId": "count-run",
+        "turnId": "count-turn",
+        "status": "running",
+        "startedAt": 1,
+        "lastNow": 1,
+        "successfulEffects": [],
+        "repairing": false,
+        "deadline": 1200001,
+        "limits": {
+          "finalReport": true,
+          "rounds": 2,
+          "callsPerRound": 32,
+          "errors": 3,
+          "stagnant": 5
+        },
+        "allowedTools": [
+          "read"
+        ],
+        "requiredTools": [],
+        "toolDependencies": {},
+        "successfulTools": [],
+        "pendingTools": {},
+        "rounds": 0,
+        "awaitingModel": false,
+        "hostToolSchemas": false,
+        "failures": [],
+        "pendingFingerprints": {},
+        "rejectionResults": {},
+        "callIds": [],
+        "pending": [],
+        "permitted": [],
+        "phoneTasks": [],
+        "rejections": {},
+        "errors": 0,
+        "roundSucceeded": false,
+        "stagnant": 0,
+        "progressKeys": [],
+        "reason": null
+      },
+      "event": {
+        "runId": "count-run",
+        "turnId": "count-turn",
+        "type": "request",
+        "kind": "delivery"
+      },
+      "now": 1
+    },
+    "ok": true,
+    "expected": {
+      "rounds": 0,
+      "awaitingModel": true
+    }
+  },
+  {
+    "name": "tool-round accounting: tool batch counts once",
+    "input": {
+      "version": 1,
+      "op": "advance",
+      "state": {
+        "version": 1,
+        "runId": "count-run",
+        "turnId": "count-turn",
+        "status": "running",
+        "startedAt": 1,
+        "lastNow": 1,
+        "successfulEffects": [],
+        "repairing": false,
+        "deadline": 1200001,
+        "limits": {
+          "finalReport": true,
+          "rounds": 2,
+          "callsPerRound": 32,
+          "errors": 3,
+          "stagnant": 5
+        },
+        "allowedTools": [
+          "read"
+        ],
+        "requiredTools": [],
+        "toolDependencies": {},
+        "successfulTools": [],
+        "pendingTools": {},
+        "rounds": 0,
+        "awaitingModel": true,
+        "hostToolSchemas": false,
+        "failures": [],
+        "pendingFingerprints": {},
+        "rejectionResults": {},
+        "callIds": [],
+        "pending": [],
+        "permitted": [],
+        "phoneTasks": [],
+        "rejections": {},
+        "errors": 0,
+        "roundSucceeded": false,
+        "stagnant": 0,
+        "progressKeys": [],
+        "reason": null,
+        "pendingEffects": {}
+      },
+      "event": {
+        "runId": "count-run",
+        "turnId": "count-turn",
+        "type": "calls",
+        "calls": [
+          {
+            "id": "a",
+            "name": "read"
+          },
+          {
+            "id": "b",
+            "name": "read"
+          }
+        ]
+      },
+      "now": 1
+    },
+    "ok": true,
+    "expected": {
+      "rounds": 1,
+      "permitted": [
+        "a",
+        "b"
+      ]
+    }
   }
 ]

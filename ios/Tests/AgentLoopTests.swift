@@ -74,7 +74,7 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
         do {
             var agent = AgentProfile(id: "rounds-qa", name: "QA", subtitle: "", symbol: "sparkles", instructions: "")
             assert(agent.maxTaskIterations == 10)
-            agent.maxTaskIterations = 2; assert(agent.maxTaskIterations == 2)
+            agent.maxTaskIterations = 1; assert(agent.maxTaskIterations == 1)
             let log = Log(); var work = 0, checks = 0, reports = 0
             let transport = ScriptedTransport { input in
                 let system = input.goalReview?["systemPrompt"] as? String ?? ""

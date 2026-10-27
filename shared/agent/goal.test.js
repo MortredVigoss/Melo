@@ -132,14 +132,14 @@ test('semantic check can deliver self-contained writing but never waive real too
 });
 
 test('checks do not consume work rounds and the final report cannot execute tools or certify delivery', () => {
-  const core = createCoreTurn({ goal: 'Inspect my project', allowedTools: ['file_read'], limits: { rounds: 2 } });
+  const core = createCoreTurn({ goal: 'Inspect my project', allowedTools: ['file_read'], limits: { rounds: 1 } });
   core.update('request');
   assert.equal(core.candidate('Which directory?'), true); core.update('feedback');
   core.update('request');
-  assert.equal(core.routingProgress.rounds, 1);
+  assert.equal(core.routingProgress.rounds, 0);
   core.review(report('continue', [], { nextStep: 'Read workspace metadata.' })); core.update('feedback', { repair: true });
   core.update('request');
-  assert.equal(core.routingProgress.rounds, 2); assert.equal(core.reporting, false);
+  assert.equal(core.routingProgress.rounds, 0); assert.equal(core.reporting, false);
   const call = { id: 'read', name: 'file_read', arguments: { path: 'README.md' } };
   core.update('calls', { calls: [call] }); core.results([{ call, result: { ok: true, output: 'Project details.' } }]);
   assert.equal(core.reporting, true); assert.match(core.progressRequest().systemPrompt, /progress report/);
@@ -153,7 +153,7 @@ test('last work round may still be checked and cancellation/deadline never grant
   let now = 1;
   const core = createCoreTurn({ goal: 'Inspect my project', allowedTools: ['file_read'], limits: { rounds: 1, timeoutMs: 100 }, clock: () => now });
   core.update('request'); core.candidate('Tell me the directory'); core.update('feedback');
-  assert.equal(core.update('request'), 'running'); assert.equal(core.routingProgress.rounds, 1);
+  assert.equal(core.update('request'), 'running'); assert.equal(core.routingProgress.rounds, 0);
   core.review(report('continue')); core.update('feedback', { repair: true });
   now = 101; assert.equal(core.update('request'), 'blocked'); assert.equal(core.reason, 'DEADLINE_EXCEEDED');
 });

@@ -56,7 +56,7 @@ export function createCoreTurn({ runId = randomUUID(), turnId = randomUUID(), al
     rejection(callId) { return state.rejections?.[callId] || 'TOOL_NOT_PERMITTED'; },
     permits(callId) { return state.status === 'running' && state.pending.includes(callId) && state.permitted.includes(callId); },
     update(type, fields = {}) {
-      if (type === 'request' && task?.phase === 'checking') fields = { ...fields, mode: 'review' };
+      if (type === 'request') fields = { kind: task?.phase === 'checking' ? 'check' : 'tools', ...fields };
       if (type === 'calls') fields = { ...fields, calls: fields.calls.map(call => ({ ...call, effect: toolEffect(call.name, call.arguments, declaration(call.name)), fingerprint: toolCallFingerprint(call.name, call.arguments) })) };
       state = advanceTurn(state, { ...fields, type, runId, turnId }, clock());
       return state.status;

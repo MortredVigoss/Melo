@@ -28,7 +28,7 @@ class SharedCoreTurn private constructor(private val runtime: SharedCoreRuntime,
         state = reply.getValue("value").jsonObject
         return state
     }
-    suspend fun request(review: Boolean = false) { budget.check(); event("request", buildJsonObject { if (review) put("mode", "review") }); if (!active) throw SharedTurnStopped(reason) }
+    suspend fun request(review: Boolean = false) { budget.check(); event("request", buildJsonObject { put("kind", if (review) "check" else "tools") }); if (!active) throw SharedTurnStopped(reason) }
     fun permits(id: String) = active && state.getValue("pending").jsonArray.any { it.jsonPrimitive.content == id } && state.getValue("permitted").jsonArray.any { it.jsonPrimitive.content == id }
     fun rejection(id: String) = state["rejections"]?.jsonObject?.text(id).orEmpty()
     suspend fun calls(calls: List<Pair<String, String>>, arguments: Map<String, JsonObject> = emptyMap(), requireAll: Boolean = true) {

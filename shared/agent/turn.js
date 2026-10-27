@@ -43,16 +43,16 @@ export function advanceTurn(previous, event, now) {
   switch (event.type) {
     case 'request':
       if (state.pending.length || state.awaitingModel) fail('PENDING_EFFECT', 'Pair every effect with a result before the next model request.');
-      if (event.mode === 'review') {
+      if (event.kind && !['tools', 'check', 'delivery'].includes(event.kind)) fail('INVALID_REQUEST_KIND', 'Unknown model request kind.');
+      if (event.kind === 'check' || event.mode === 'review') {
         if ((state.reviewRounds || 0) >= 3) return stop('GOAL_CHECK_LIMIT');
         state.reviewRounds = (state.reviewRounds || 0) + 1;
         state.requestMode = 'review';
-      } else if (state.rounds >= state.limits.rounds) {
+      } else if (event.kind === 'delivery' || state.rounds >= state.limits.rounds) {
         if (!state.limits.finalReport || state.reportIssued) return stop('ROUND_LIMIT');
         state.requestMode = 'report';
         state.reportIssued = true;
       } else {
-        state.rounds++;
         delete state.requestMode;
       }
       state.awaitingModel = true;
@@ -69,6 +69,8 @@ export function advanceTurn(previous, event, now) {
         if (!identity(call?.id) || seen.has(call.id)) fail('DUPLICATE_CALL_ID', 'Invalid or reused tool call ID.');
         seen.add(call.id);
       }
+      if (state.rounds >= state.limits.rounds) return stop('ROUND_LIMIT');
+      state.rounds++; // Count actual tool batches, never model requests or reviews.
       state.callIds = [...seen];
       state.pending = calls.map(call => call.id);
       state.pendingTools = Object.fromEntries(calls.map(call => [call.id, call.name]));

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "sha256": "86b4b807a44096f562d441dcef9508b07bdc5e6318d325c4aa2cc486a8d5b8cd",
+  "sha256": "b532e3c60e88c28a2516966ab7bfd95e853ff5b4c0fde737729caa43833d51f9",
   "sources": {
     "shared/agent/index.js": "432ca27d0ba5726800b9d6eab2002b2f4a5d1f6613917f0d28d7db65afe71b84",
     "shared/agent/retrieval/requestPolicy.js": "e6c7dfc4ac142a2123aa4c32795ad3ad60cadc3c18819060482229ee3763ed16",
@@ -16,7 +16,7 @@
     "shared/agent/modelRouting.js": "561bf76933961d5d4e483be0784dfeac4b65bb9d38b3cff6e00c8b63b5235cc0",
     "src/shared/conversationTopics.js": "c8056fc9d1377e20bdbabdf060759db0ba82cafda7df4d7bb554758cfc2e3e5c",
     "shared/agent/taskReplay.js": "324d3294312b9f4e4d0d2484745e60cc0caf0360c82d9da643f1d1328431e74a",
-    "shared/agent/turn.js": "07cca66ac6e131682aa03f2a11c688090cfa57edefa1ff02c615c431ba90b873",
+    "shared/agent/turn.js": "31b66b5d015a00a287e16e61d390caf86f2a10f2abdc04c6cd57edc9f5ac6f28",
     "shared/agent/tools.js": "cd493ad7c80dbb302df75dcf1430b7d95632faeec5445f397c25da62f1daaeed",
     "shared/agent/repeatGuard.js": "eca1d776e713fb7a59e05c1d16f78fb9d71877ad6ebb10cb23e2a4ad5bf78382",
     "shared/agent/toolEffects.js": "eb09f3cb5cf924659692da82942b17ff09d483f5d5e932898307fb2003233ff4",

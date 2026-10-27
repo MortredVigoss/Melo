@@ -163,7 +163,9 @@ final class PhoneCoreTurn {
         state = value
     }
     @discardableResult func event(_ type: String, _ fields: [String: Any] = [:]) throws -> Bool {
-        var event = fields; event["type"] = type; event["runId"] = state["runId"]; event["turnId"] = state["turnId"]
+        var event = fields
+        if type == "request", event["kind"] == nil { event["kind"] = event["mode"] as? String == "review" ? "check" : "tools" }
+        event["type"] = type; event["runId"] = state["runId"]; event["turnId"] = state["turnId"]
         guard let value = SharedLoopPolicy.value("advance", ["state": state, "event": event, "now": Self.clock()]) as? [String: Any] else {
             state["status"] = "blocked"; state["reason"] = "INVALID_LOOP_EVENT"
             throw SharedAgentCoreError.invalidReply

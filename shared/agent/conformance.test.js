@@ -45,6 +45,43 @@ test('user content cannot execute JavaScript through the JSON bridge', () => {
 
 function turn(limits = {}) { return startTurn({ runId: 'run-a', turnId: 'turn-a', now: 1000, allowedTools: ['read', 'write'], limits }); }
 function event(state, type, fields = {}, now = state.lastNow) { return advanceTurn(state, { runId: state.runId, turnId: state.turnId, type, ...fields }, now); }
+test('only actual tool batches count; checks, corrective candidates and delivery are free', () => {
+  let state = turn({ rounds: 2, finalReport: true });
+  const step = (type, fields = {}) => { state = event(state, type, fields); };
+  step('request', { kind: 'tools' });
+  assert.equal(state.rounds, 0);
+  step('feedback');
+  step('request', { kind: 'check' });
+  step('feedback', { repair: true });
+  step('request', { kind: 'tools' });
+  assert.equal(state.rounds, 0);
+  step('calls', { calls: [{ id: 'read1', name: 'read' }, { id: 'read2', name: 'read' }] });
+  assert.equal(state.rounds, 1);
+  step('result', { callId: 'read1', ok: true, progressKey: 'first' });
+  step('result', { callId: 'read2', ok: true, progressKey: 'second' });
+  step('request', { kind: 'tools' });
+  step('calls', { calls: [{ id: 'read3', name: 'read' }] });
+  step('result', { callId: 'read3', ok: true, progressKey: 'third' });
+  assert.equal(state.rounds, 2);
+  step('request', { kind: 'check' });
+  step('feedback');
+  step('request', { kind: 'delivery' });
+  assert.equal(state.rounds, 2);
+  assert.equal(state.requestMode, 'report');
+  let executed = 0;
+  step('calls', { calls: [{ id: 'forbidden', name: 'write' }] });
+  if (state.status === 'running' && state.permitted.includes('forbidden')) executed++;
+  assert.equal(executed, 0);
+  assert.equal(state.reason, 'ROUND_LIMIT');
+});
+
+test('request kinds fail closed, invalid batches do not consume a tool round', () => {
+  assert.throws(() => event(turn(), 'request', { kind: 'unknown' }), { code: 'INVALID_REQUEST_KIND' });
+  const state = event(turn(), 'request', { kind: 'tools' });
+  assert.throws(() => event(state, 'calls', { calls: [] }), { code: 'INVALID_BATCH' });
+  assert.equal(state.rounds, 0);
+});
+
 test('reused ID across rounds and invalid batch are rejected atomically before effects', () => {
   let state = event(turn(), 'request');
   const prior = JSON.stringify(state);
