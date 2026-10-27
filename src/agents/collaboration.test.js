@@ -62,8 +62,8 @@ test('run budget (C1): a member runs on a child budget — timeout ≤ parent re
  const {createRequestContext}=await import('../runtime/requestContext.js');
  const {createRunBudget,remainingMs,budgetExhausted}=await import('../runtime/runBudget.js');
  const {runWithRequestContext,currentRequestContext}=await import('../runtime/requestScope.js');
- let now=0;const parentBudget=createRunBudget({now:()=>now,overrides:{deadlineMs:60000,maxInputTokens:1000}});
- now=50000; // 10 s of the turn left; the member's own timeout is 3 min
+ let now=0;const parentBudget=createRunBudget({now:()=>now,overrides:{deadlineMs:120000,maxInputTokens:32000}});
+ now=50000; // 10 s of work plus 60 s delivery left; the member's own timeout is 3 min
  let child;
  const member=await runWithRequestContext(createRequestContext({budget:parentBudget}),()=>runConfiguredMember({profile:profile('scout',{timeoutMs:180000}),parentCapabilities:caps,config:{},task:'look',
   run:opts=>runSubAgent({...opts,replyFn:async request=>{child=currentRequestContext().budget;assert.ok(request.timeoutMs<=10000,'request timeout is cut to the parent remainder');
@@ -72,7 +72,7 @@ test('run budget (C1): a member runs on a child budget — timeout ≤ parent re
  assert.equal(child.parent,parentBudget);assert.ok(remainingMs(child)<=remainingMs(parentBudget));assert.ok(child.deadlineAt<=parentBudget.deadlineAt);
  assert.equal(child.used.inputTokens,700);assert.equal(parentBudget.used.inputTokens,700,'member usage lands on the parent');assert.equal(parentBudget.used.providerCalls,1);
  // Once the parent pool is gone a new member stops before its first request.
- parentBudget.used.inputTokens=1000;
+ parentBudget.used.inputTokens=32000;
  const starved=await runWithRequestContext(createRequestContext({budget:parentBudget}),()=>runConfiguredMember({profile:profile('late'),parentCapabilities:caps,config:{},task:'more',
   run:opts=>runSubAgent({...opts,replyFn:async()=>{throw new Error('must not request');}})}));
  assert.equal(starved.ok,false);assert.equal(starved.error,'BUDGET_EXHAUSTED');assert.equal(budgetExhausted(parentBudget).reason,'input-tokens');

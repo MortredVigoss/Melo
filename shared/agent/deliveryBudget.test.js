@@ -45,3 +45,24 @@ test('a real hard deadline cannot be bypassed by delivery phase', () => {
   for (const phase of ['work', 'delivery', 'delivery-check']) assert.equal(admitModel(budget, { phase, inputTokens: 1 }).allowed, false);
   assert.equal(budget.used.providerCalls, 0);
 });
+
+test('member total tokens reserve output, account actual output and protect siblings and ancestors', () => {
+  const root = reserveDelivery(createRunBudget({ now: 1 }));
+  const parent = reserveDelivery(narrowBudget(root, { maxInputTokens: 64000, maxTotalTokens: 64000 }));
+  const a = reserveDelivery(narrowBudget(parent, { maxInputTokens: 32000, maxTotalTokens: 32000 }));
+  const b = reserveDelivery(narrowBudget(parent, { maxInputTokens: 32000, maxTotalTokens: 32000 }));
+  const first = admitModel(a, { inputTokens: 1000, outputTokens: 10000 });
+  assert.equal(first.allowed, true);
+  assert.equal(parent.pendingOutput, 10000);
+  assert.equal(admitModel(b, { inputTokens: 1000, outputTokens: 30000 }).allowed, false);
+  settleModel(a, first.claim, { inputTokens: 1000, outputTokens: 1000 });
+  assert.equal(parent.used.outputTokens, 1000);
+  assert.equal(root.used.outputTokens, undefined, 'root input-token budget retains its semantics');
+  assert.equal(parent.pendingOutput, 0);
+  recordUsage(a, { inputTokens: a.maxTotalTokens - a.delivery.inputTokens - a.delivery.outputTokens - 2048 - a.used.inputTokens - a.used.outputTokens });
+  assert.equal(admitModel(a, { inputTokens: 1 }).allowed, false);
+  const delivery = admitModel(a, { phase: 'delivery', inputTokens: 1000, outputTokens: 8192 });
+  assert.equal(delivery.allowed, true);
+  settleModel(a, delivery.claim, { inputTokens: 1000, outputTokens: 2000 });
+  assert.equal(admitModel(a, { phase: 'delivery-check', inputTokens: 1000, outputTokens: 2048 }).allowed, true);
+});

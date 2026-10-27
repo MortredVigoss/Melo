@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "sha256": "1f399ae2bdc8ea1c01a2421bbe1027cf73faa86f59640fe8c46052522ec00d7f",
+  "sha256": "22b0bd425a7109c78c626d2cb4714b752e5ee9c47154519b40b51bffde03658a",
   "sources": {
     "shared/agent/index.js": "c4950842345e2ddc6877214854a9bc21aa25a51e6b81aacd6e79a9a4b59c0379",
     "shared/agent/limitDelivery.js": "76daff1670bb5180ebbffd1098b45211bfcdf1bd40ac1a3e3396f84804f6f975",
@@ -9,7 +9,7 @@
     "shared/agent/retrieval/intentRouter.js": "cc592474a82ea3542efb0138fe7605fecc3ce822fcc161a738b3c1b40dd06d88",
     "shared/agent/retrieval/requestPolicy.js": "e6c7dfc4ac142a2123aa4c32795ad3ad60cadc3c18819060482229ee3763ed16",
     "shared/agent/media/textUrls.js": "a18784bbc35025e156184f896f0b5fd1ccaccde18a94a36acf6e2003fefa22c6",
-    "shared/agent/loopContract.js": "8443b9825c7c2f8ce87f036b16959b51d822a6854eddaef4c8ed8c368745cf08",
+    "shared/agent/loopContract.js": "07bfdb0097d402d94acb4c706c2db43793a5531d672a217a51a70e78c2076d06",
     "shared/agent/search.js": "0c28ac6b4c88c516760f303f24629ba59168f43ff21c8d6066d280526039d7d0",
     "shared/agent/retrieval/publicLookupIntent.js": "85b8577c4ca585306e0f12ed55607c1ead92a790eda8e3e51d0c886b2ee8337a",
     "shared/agent/tools.js": "cd493ad7c80dbb302df75dcf1430b7d95632faeec5445f397c25da62f1daaeed",
@@ -24,8 +24,8 @@
     "shared/agent/turn.js": "25d50cda6c38bc045f1df58449106fa6704d9ee04e7f6d97d0746350d9f0bdeb",
     "shared/agent/repeatGuard.js": "eca1d776e713fb7a59e05c1d16f78fb9d71877ad6ebb10cb23e2a4ad5bf78382",
     "shared/agent/toolEffects.js": "eb09f3cb5cf924659692da82942b17ff09d483f5d5e932898307fb2003233ff4",
-    "shared/agent/policyBridge.js": "c1480a795b873b4c17bce861a02e94d42fc537a97107d5540703b5ae19c96465",
-    "shared/agent/runBudget.js": "9e6a1e256242439bc96f04514e098412c59416bdfcabcd43c75267071b6c7b1e",
+    "shared/agent/policyBridge.js": "4d6529f8d02752acaf43548b81c27e6a206843f2a7c853d4bb56c72707d71984",
+    "shared/agent/runBudget.js": "bd0d5da69ffd9a6489f6d321b5ed3ab9b846678a1b31f080cbaeaa8c38d57a57",
     "shared/agent/completion.js": "176bb4447bb3ff7bd0d5fc18e3ff106199df419c0f3eb4b50fa2247da7923459",
     "shared/agent/execution.js": "ed098e7b80574892c1060f79a88496bce6fd521bdbd6ec4331458d7aa28aaae8",
     "src/shared/sessionEvents.js": "47ceca8f284e5c950252d1f6cb7774199d4db1343a9c47e7b01421333e268a5c",

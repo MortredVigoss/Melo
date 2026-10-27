@@ -1,3 +1,7 @@
+import { deliveryEvidence } from '../../shared/agent/evidence.js';
+import { runLimitDelivery } from '../runtime/limitDelivery.js';
+import { budgetedMemberReply } from '../runtime/memberReply.js';
+import { isDeliveryLimit, hostEvidenceReply } from '../../shared/agent/limitDelivery.js';
 import { AGENT_LOOP_CONTRACT } from '../runtime/agentLoopContract.js';
 import { requestAllowsTool } from '../../shared/agent/retrieval/requestPolicy.js';
 import { createCoreTurn } from '../runtime/sharedAgentCore.js';
@@ -6,7 +10,7 @@ import {resolveCapabilityContext} from '../services/agent/capabilityContext.js';
 import {currentRequestContext,runWithRequestContext} from '../runtime/requestScope.js';
 import {narrowCapabilityScope,missingCapabilityScope,toolsForCapabilityScope,nativeFeaturesForScope} from '../domain/agent/capabilityScope.js';
 import {estimateTextTokens} from '../memory/tokenEstimate.js';
-import {budgetExhausted,recordUsage,receiptInputTokens,requestTimeoutMs} from '../runtime/runBudget.js';
+import {memberTokenLimit,createRunBudget,narrowBudget,reserveDelivery,budgetExhausted,recordUsage} from '../runtime/runBudget.js';
 import {HANDOFF_INSTRUCTION} from './handoff.js';
 import { delegatedConfig } from './delegatedConfig.js';
 import { projectToolResultForPersist } from '../services/chat/toolResultProjection.js';
@@ -99,7 +103,10 @@ export async function runSubAgent(options) {
   const parent=await resolveCapabilityContext(currentRequestContext());
   if (!parent) return missingCapabilityScope();
   const capabilityScope=narrowCapabilityScope(parent.capabilityScope,{capabilities:options.capabilities,allowedToolIds:options.allowedToolIds});
-  return runWithRequestContext(Object.freeze({...parent,capabilityScope}),()=>runSubAgentLoop({...options,capabilities:capabilityScope.capabilities,allowedToolIds:capabilityScope.allowedToolIds}));
+  const pool = parent.budget || createRunBudget();
+  const owned = options.agentProfile?.id && parent.memberBudgetOwner === options.agentProfile.id && !pool.delivery;
+  const budget = reserveDelivery(memberTokenLimit(owned ? pool : narrowBudget(pool), options.maxTokens || 32000));
+  return runWithRequestContext(Object.freeze({...parent,capabilityScope,budget}),()=>runSubAgentLoop({...options,capabilities:capabilityScope.capabilities,allowedToolIds:capabilityScope.allowedToolIds}));
 }
 
 async function runSubAgentLoop({
@@ -189,19 +196,22 @@ async function runSubAgentLoop({
   let deniedTools = 0;
   const coreTurn = createCoreTurn({ goal: task, tools: allowedTools, allowedTools: allowedTools.map(t => t.id), limits: { rounds: Math.min(20, maxIterations) } });
   const toolResults = [];
-  let usedTokens=0;
+  const runBudget = currentRequestContext().budget;
+  const createReply = budgetedMemberReply(replyFn, runBudget);
+  let terminalReason = '';
 
   for (let iteration = 0; ; iteration++) {
     if (signal?.aborted) {
-      return { ok: false, output: 'Sub-agent aborted.', meta: { aborted: true, iteration, completion: coreTurn.receipt(task, '', 'CANCELLED') } };
+      return { ok: false, output: hostEvidenceReply('Sub-agent aborted.', coreTurn.observations, config.replyLanguage), meta: { aborted: true, iteration, completion: coreTurn.receipt(task, '', 'CANCELLED') } };
     }
 
+    if (coreTurn.reporting) { terminalReason = 'ROUND_LIMIT'; break; }
+    if (budgetExhausted(runBudget)) { terminalReason = 'BUDGET_EXHAUSTED'; break; }
     if (coreTurn.update('request') !== 'running') break;
     iterations = coreTurn.routingProgress.rounds;
     const checkingGoal = coreTurn.checking;
-    const reportingProgress = coreTurn.reporting;
-    const toolFree = checkingGoal || reportingProgress;
-    const review = checkingGoal ? coreTurn.reviewRequest() : reportingProgress ? coreTurn.progressRequest() : null;
+    const toolFree = checkingGoal;
+    const review = checkingGoal ? coreTurn.reviewRequest() : null;
     let request;
     try { request = fitRequestContext({ sections: [{ id: 'instructions', text: review?.systemPrompt || systemPrompt, required: true }],
       messages: review?.messages || loopMessages, toolDefinitions: toolFree ? [] : functionSession.definitions, ...contextBudget }); } catch (error) {
@@ -210,24 +220,11 @@ async function runSubAgentLoop({
       finalOutput = cleanReplyForParent(coreTurn.candidateReply);
       break;
     }
-    const estimatedInput=Math.ceil(estimateTextTokens(systemPrompt+JSON.stringify(request.messages)+JSON.stringify(functionSession.definitions))*4/3)+32;
-    if(usedTokens+estimatedInput>=maxTokens) return {ok:false,output:coreTurn.candidateReply || 'Member token budget exhausted before another request.',meta:{budgetExceeded:true,iterations,toolResults,completion:coreTurn.receipt(task,coreTurn.candidateReply,'TOKEN_LIMIT')}};
-    // Run budget (C1): the child pool derived from the parent turn; spending here is charged upward.
-    const runBudget=currentRequestContext()?.budget||null;
-    const exhausted=budgetExhausted(runBudget);
-    if(exhausted) return {ok:false,output:coreTurn.candidateReply || `Run budget exhausted (${exhausted.reason}) before another request.`,error:'BUDGET_EXHAUSTED',meta:{budgetExceeded:true,budget:{reason:exhausted.reason,limit:exhausted.limit,used:exhausted.used},iterations,toolResults,completion:coreTurn.receipt(task,coreTurn.candidateReply,'BUDGET_EXHAUSTED')}};
-    const tokensBefore=usedTokens;
-    const remaining=maxTokens-usedTokens-estimatedInput;
-    const configuredLimit=Number(providerConfig.maxOutputTokens||providerConfig.maxTokens);
-    const outputLimit=Math.max(1,Math.floor(Math.min(remaining,Math.max(1,contextBudget.totalTokens-estimatedInput),Number.isFinite(configuredLimit)&&configuredLimit>0?configuredLimit:remaining)));
-    let responseUsage=null, accounted=false;
-    const account=receipt=>{if(accounted)return;accounted=true;recordUsage(runBudget,{providerCalls:1,inputTokens:receiptInputTokens(receipt)??estimatedInput});};
     let rawReply;
-    try { rawReply = await replyFn({
+    try { rawReply = await createReply({
       ...(toolFree ? { maxTokens: 2048 } : functionSession.requestOptions()),
-      maxTokens:toolFree ? Math.min(outputLimit, 2048) : outputLimit,
-      timeoutMs:runBudget?requestTimeoutMs(runBudget):undefined,
-      onProviderResponse:receipt=>{if(receipt.usage)responseUsage=receipt.usage;account(receipt);onProviderResponse?.(receipt);},
+      ...(toolFree ? { maxTokens: 2048 } : Number(providerConfig.maxOutputTokens || providerConfig.maxTokens) > 0 ? { maxTokens: Number(providerConfig.maxOutputTokens || providerConfig.maxTokens) } : {}),
+      onProviderResponse,
       authMode: config.authMode,
       apiProtocol: config.apiProtocol,
       apiKey: providerConfig.apiKey,
@@ -237,7 +234,7 @@ async function runSubAgentLoop({
       messages: request.messages,
       nativeWebSearchEnabled: !toolFree && nativeFeaturesForScope(currentRequestContext().capabilityScope,currentRequestContext().requestToolPolicy).nativeWebSearchEnabled,
       nativeImageGenerationEnabled: !toolFree && !coreTurn.repairing && nativeFeaturesForScope(currentRequestContext().capabilityScope,currentRequestContext().requestToolPolicy).nativeImageGenerationEnabled,
-      onExecutionEvent: event => coreTurn.observeNative(event),
+      onExecutionEvent: event => { if (coreTurn.observeNative(event)) recordUsage(runBudget, { toolCalls: 1 }); },
       signal,
       // Native tools obey the same inherited capability snapshot as local tools.
       workspacePath: toolFree ? null : workspacePath,
@@ -245,24 +242,16 @@ async function runSubAgentLoop({
     }); }
     catch (error) {
       if (signal?.aborted) throw error;
-      if (reportingProgress) { coreTurn.update('complete'); finalOutput = coreTurn.reply(task); break; }
+      if (error.code === 'BUDGET_EXHAUSTED' || budgetExhausted(runBudget)) { terminalReason = 'BUDGET_EXHAUSTED'; break; }
       if (!checkingGoal) throw error;
       coreTurn.stopReview(); coreTurn.update('complete');
       finalOutput = cleanReplyForParent(coreTurn.candidateReply);
       break;
     }
-    finally { account(null); }
 
-    const measured=responseUsage&&Number(responseUsage.input)+Number(responseUsage.output);
-    usedTokens=tokensBefore+(Number.isFinite(measured)&&measured>0?measured:estimatedInput+Math.ceil(estimateTextTokens(typeof rawReply==='string'?rawReply:JSON.stringify(rawReply))*4/3));
+
     const turn = functionSession.parse(rawReply);
     const { toolCalls } = turn;
-
-    if (reportingProgress) {
-      coreTurn.update('complete');
-      finalOutput = cleanReplyForParent(toolCalls.length ? coreTurn.reply(task) : turn.text || coreTurn.reply(task));
-      break;
-    }
 
     if (checkingGoal) {
       const decision = coreTurn.review(toolCalls.length ? '' : turn.text);
@@ -390,8 +379,13 @@ async function runSubAgentLoop({
     if (coreTurn.results(allResults) !== 'running') break;
   }
 
-  const exhausted = !finalOutput || coreTurn.status !== 'completed';
-  if (coreTurn.status === 'blocked') finalOutput = coreTurn.reply(task);
+  iterations = coreTurn.routingProgress.rounds;
+  terminalReason ||= coreTurn.reason;
+  if (isDeliveryLimit(terminalReason)) {
+    const delivery = await runLimitDelivery({ task: coreTurn.goalState, observations: coreTurn.observations, reason: terminalReason,
+      fallback: finalOutput || coreTurn.reply(task), createReply, options: { ...providerConfig, onProviderResponse }, budget: runBudget, signal, locale: config.replyLanguage });
+    coreTurn.acceptDelivery(delivery.task); finalOutput = delivery.reply; terminalReason = delivery.terminalReason;
+  } else if (coreTurn.status === 'blocked') finalOutput = coreTurn.reply(task);
   if (!finalOutput) {
     // Iteration budget exhausted without a terminal prose reply. Use the last
     // assistant message but scrub tool-call XML and thinking blocks so the
@@ -404,12 +398,13 @@ async function runSubAgentLoop({
   // Recoverable tool errors remain in meta; the final delivery check decides
   // whether the member actually finished. Self-reported prose cannot promote
   // an incomplete receipt to a successful handoff.
-  const completion = coreTurn.receipt(task, finalOutput);
+  const completion = coreTurn.receipt(task, finalOutput, terminalReason);
+  const exhausted = completion.outcome !== 'completed';
   return {
     ok: !exhausted && deniedTools === 0 && completion.outcome === 'completed',
-    ...(completion.outcome !== 'completed' ? { error: 'GOAL_INCOMPLETE' } : {}),
+    ...(completion.outcome !== 'completed' ? { error: terminalReason === 'BUDGET_EXHAUSTED' ? 'BUDGET_EXHAUSTED' : 'GOAL_INCOMPLETE' } : {}),
     output: finalOutput,
-    meta: { depth, iterations, toolCalls: totalToolCalls, failedTools, deniedTools, exhausted, stopReason: coreTurn.reason, toolResults, completion },
+    meta: { depth, iterations, toolCalls: totalToolCalls, failedTools, deniedTools, exhausted, ...(completion.outcome === 'budget_exhausted' ? { budgetExceeded: true } : {}), stopReason: terminalReason, toolResults, observations: deliveryEvidence(coreTurn.observations), completion },
   };
 }
 

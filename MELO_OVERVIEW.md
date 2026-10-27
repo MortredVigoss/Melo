@@ -521,3 +521,8 @@ app 的 escapeHtml/showFlashToast 与授权页 formatTime 原样移至 html/feed
 ### 2026-10-27 Codex 循环上限第三步交接
 
 第三步完整快速档 run-xapdiU 通过：JS4757/4757、Swift37、Android JVM/Lint/Debug/Release、设置浏览器，零跳过/复测。修复旧报告变量残留、独立入口取消信号、策略资源缺失的零调用兜底；保留完整失败与修复日志。见 `.tmp/limit-delivery-20261027/step3-quick-verified.log` 与 `.tmp/test-runs/run-xapdiU/summary.json`。尚未完成成员/技能、真实模型和基准集成。 独立工作树实现，无推送或安装；前两步提交 d0bcf3e、cceb4f1。详情 [实施记录](docs/limit-delivery-20261027.md)。
+
+### 2026-10-27 Codex 循环上限第四步交接
+
+- 子循环统一收尾、总 token 记账与团队主 Agent 补做已接通；Node/iPhone 采用同源预算，Android没有新增原生协作入口。默认成员授权弹窗/执行/撤销通过。
+- 累计快速 run-4D3pby：JS4771、Swift37、Android四项、设置浏览器全绿，无跳过/复测；完整未签名 iPhoneOS 构建成功。真实模型隔离演唱会任务8次请求/5次工具已 completed；第五步保存脱敏回执并跑7ae6bf5集成。前三步 d0bcf3e/cceb4f1/006797b，第四步本地提交；[链路与证据](docs/limit-delivery-20261027.md)。未推送/安装，用户数据未变。

@@ -409,7 +409,9 @@ final class CodexResponsesTransport: AgentModelTransport, @unchecked Sendable {
         if input.repairing { body["tools"] = (body["tools"] as? [[String: Any]])?.filter { $0["type"] as? String != "image_generation" } }
         _ = try PhoneMemberLimits.outputAllowance(body: body, remaining: input.remainingTokens)
         if let limit = routingContextLimit, RequestSizeEstimate.tokens(try JSONSerialization.data(withJSONObject: body)) > limit { throw RequestTooLarge(message: "所选模型上下文容量不足；原对话和已执行结果已保留，请选择容量更大的模型。") }
-        let meter = try PhoneModelMeter(estimate: RequestSizeEstimate.tokens(try JSONSerialization.data(withJSONObject: body))); defer { meter.finish() }
+        let requestEstimate = RequestSizeEstimate.tokens(try JSONSerialization.data(withJSONObject: body))
+        let allowance = PhoneExecutionScope.budget?.outputLimit(inputTokens: requestEstimate, cap: input.outputLimit, phase: PhoneExecutionScope.phase)
+        var meter = try PhoneModelMeter(estimate: requestEstimate, outputLimit: allowance); defer { meter.finish() }
         var result: (ChatGPTStream, Int)
         do { result = try await stream(body, timeout: input.timeout, observe: input.goalReview == nil) }
         catch is ImageSizeRejected where input.goalReview == nil && !input.repairing {
@@ -417,10 +419,13 @@ final class CodexResponsesTransport: AgentModelTransport, @unchecked Sendable {
             base["tools"] = ((base["tools"] as? [[String: Any]]) ?? []).map { var tool = $0; if tool["type"] as? String == "image_generation" { tool["size"] = nil }; return tool }
             body["tools"] = base["tools"]
             sizeFallback = true
+            meter.finish()
+            meter = try PhoneModelMeter(estimate: RequestSizeEstimate.tokens(try JSONSerialization.data(withJSONObject: body)), outputLimit: allowance)
             result = try await stream(body, timeout: input.timeout, observe: true)
         }
         let (stream, estimate) = result
         meter.inputTokens = Self.inputTokens(stream) ?? estimate
+        meter.outputTokens = Self.inputTokens(stream, key: "output") ?? PhoneTokenEstimate.text(stream.text + stream.functionCalls.map(\.arguments).joined())
         if input.goalReview != nil && !stream.functionCalls.isEmpty { throw MeloError.message("Tool calls are not permitted in a delivery or goal check.") }
         let calls = input.goalReview == nil && offersTools ? stream.functionCalls : []
         let text = calls.isEmpty ? try stream.result() : stream.text

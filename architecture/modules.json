@@ -24,8 +24,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 665,
-      "edges": 2163,
+      "modules": 666,
+      "edges": 2172,
       "roots": [
         "src",
         "desktop-ui",
@@ -557,10 +557,10 @@
       "dependsOn": {
         "approvals": 3,
         "channels": 3,
-        "chat": 28,
+        "chat": 31,
         "desktop-shell": 8,
         "memory": 12,
-        "platform": 43,
+        "platform": 47,
         "settings": 3,
         "tools": 21
       },
@@ -642,6 +642,7 @@
           "desktop-ui/features/agents/capabilityChoices.test.js",
           "desktop-ui/features/agents/controller.test.js",
           "desktop-ui/teamPanel.test.js",
+          "src/agents/childDelivery.test.js",
           "src/agents/collaboration.test.js",
           "src/agents/memberBackground.test.js",
           "src/agents/memberHistoryScope.test.js",
@@ -777,6 +778,12 @@
           ]
         },
         {
+          "module": "shared/agent/evidence.js",
+          "importedBy": [
+            "agents"
+          ]
+        },
+        {
           "module": "shared/agent/goal.js",
           "importedBy": [
             "platform"
@@ -797,6 +804,7 @@
         {
           "module": "shared/agent/limitDelivery.js",
           "importedBy": [
+            "agents",
             "platform"
           ]
         },
@@ -1093,14 +1101,14 @@
         "voice": 3
       },
       "usedBy": {
-        "agents": 28,
+        "agents": 31,
         "approvals": 1,
         "channels": 9,
         "desktop-shell": 11,
         "development": 1,
         "media": 14,
         "memory": 12,
-        "platform": 24,
+        "platform": 25,
         "projects": 1,
         "settings": 14,
         "sync": 4,
@@ -1515,6 +1523,7 @@
           "importedBy": [
             "agents",
             "chat",
+            "platform",
             "tools"
           ]
         },
@@ -1557,7 +1566,7 @@
         "desktop-shell": 1,
         "knowledge": 2,
         "media": 1,
-        "platform": 21,
+        "platform": 22,
         "projects": 1,
         "sync": 5,
         "tools": 6
@@ -3983,7 +3992,7 @@
         "src/**"
       ],
       "modules": {
-        "src": 58
+        "src": 59
       },
       "entryModules": [
         {
@@ -4047,7 +4056,14 @@
         {
           "module": "src/runtime/limitDelivery.js",
           "importedBy": [
+            "agents",
             "chat"
+          ]
+        },
+        {
+          "module": "src/runtime/memberReply.js",
+          "importedBy": [
+            "agents"
           ]
         },
         {
@@ -4309,12 +4325,12 @@
         "agents": 34,
         "approvals": 18,
         "channels": 6,
-        "chat": 24,
+        "chat": 25,
         "desktop-shell": 2,
         "development": 2,
         "knowledge": 2,
         "media": 2,
-        "memory": 21,
+        "memory": 22,
         "projects": 6,
         "settings": 17,
         "sync": 2,
@@ -4322,7 +4338,7 @@
         "voice": 2
       },
       "usedBy": {
-        "agents": 43,
+        "agents": 47,
         "approvals": 36,
         "channels": 22,
         "chat": 61,

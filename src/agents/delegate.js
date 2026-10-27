@@ -50,7 +50,7 @@ export async function runConfiguredMember({concurrentReader=false,profile,parent
  const receipts=[], started=Date.now(), memberId=randomUUID();
  const emit=(type,event)=>sseEmitter?.(type,type==='execution_event'?{...event,id:`member:${memberId}:${event.id}`,actorName:profile.name}:{...event,agentId:profile.id});
  const invoke=()=>run({extraTools,task,instructions,background,agentProfile:profile,config:{...config,replyLanguage:language,model:profile.model || config.model,modelResolvedForTurn:true},workspacePath,signal:controller.signal,sseEmitter:emit,chatId,depth,allowedToolIds:toolIds,capabilities,roleId:profile.id,agentProfiles,collaboration:settings,ancestry:[...ancestry,profile.id],maxDepth,maxIterations:settings.maxIterations,maxTokens:settings.maxTokens,chatSource,projectId,onProviderResponse:r=>{if(!controller.signal.aborted)receipts.push(r);}});
- const scoped=()=>parent?runWithRequestContext(Object.freeze({...parent,replyLocale:language,agentId:profile.id,capabilityScope,...(budget?{budget}:{})}),invoke):invoke();
+ const scoped=()=>parent?runWithRequestContext(Object.freeze({...parent,replyLocale:language,agentId:profile.id,memberBudgetOwner:profile.id,capabilityScope,...(budget?{budget}:{})}),invoke):invoke();
  // A member that may be granted a writing capability mid-run takes the writer lease up front.
  const writer=requestable.writeFiles||requestable.runCommands||requestable.generateMedia||requestable.mcpServers.length>0||requestable.connectors.length>0;
  emit('execution_event',{kind:'pipeline',id:'handoff',messageId: 'stage.member',module:'compute',status:'running',input:task});

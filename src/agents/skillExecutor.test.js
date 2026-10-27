@@ -243,7 +243,7 @@ test('runSkill: reaching maxIterations reports incomplete work without raw tool 
     assert.equal(res.meta.iterations, 2);
     // Two work rounds plus exactly one tool-free progress report.
     assert.equal(reply.callLog.length, 3);
-    assert.equal(reply.callLog[2].functionTools, undefined);
+    assert.deepEqual(reply.callLog[2].functionTools, []);
     assert.equal(reply.callLog[2].nativeWebSearchEnabled, false);
     assert.equal(reply.callLog[2].nativeImageGenerationEnabled, false);
     // The final output is scrubbed (no raw <tool_call>).

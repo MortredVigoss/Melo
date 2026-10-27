@@ -13,7 +13,7 @@ private var loopContract: AgentLoopContract { AgentLoopContract.shared }
 /// members) narrow it and every use they record also lands on the parent.
 /// Times are milliseconds from an injectable clock.
 final class PhoneRunBudget: @unchecked Sendable {
-    struct Usage: Equatable { var inputTokens = 0; var toolCalls = 0; var providerCalls = 0 }
+    struct Usage: Equatable { var inputTokens = 0; var outputTokens = 0; var toolCalls = 0; var providerCalls = 0 }
     struct Exhaustion: Equatable {
         let reason: String
         let limit: Double
@@ -31,6 +31,8 @@ final class PhoneRunBudget: @unchecked Sendable {
     private var usedValue = Usage()
     private var delivery: [String: Any]?
     private var pendingInput = 0
+    private var pendingOutput = 0
+    private var maxTotalTokens: Int?
     let parent: PhoneRunBudget?
     let now: () -> Double
 
@@ -63,8 +65,8 @@ final class PhoneRunBudget: @unchecked Sendable {
     // a value snapshot, and never holds or mutates native objects itself.
     private func snapshot() -> [String: Any] {
         ["startedAt": startedAt, "deadlineAt": deadlineAt, "maxInputTokens": maxInputTokens, "maxToolCalls": maxToolCalls,
-         "delivery": delivery as Any? ?? NSNull(), "pendingInput": pendingInput,
-         "used": ["inputTokens": usedValue.inputTokens, "toolCalls": usedValue.toolCalls, "providerCalls": usedValue.providerCalls],
+         "delivery": delivery as Any? ?? NSNull(), "pendingInput": pendingInput, "pendingOutput": pendingOutput, "maxTotalTokens": maxTotalTokens as Any? ?? NSNull(),
+         "used": ["inputTokens": usedValue.inputTokens, "outputTokens": usedValue.outputTokens, "toolCalls": usedValue.toolCalls, "providerCalls": usedValue.providerCalls],
          "parent": parent.map { $0.snapshot() } as Any? ?? NSNull()]
     }
     private func apply(_ state: [String: Any]?, ancestors: Bool = true) {
@@ -72,8 +74,9 @@ final class PhoneRunBudget: @unchecked Sendable {
               let tokens = state["maxInputTokens"] as? Int, let calls = state["maxToolCalls"] as? Int,
               let usage = state["used"] as? [String: Int] else { invalidatePolicy(); return }
         delivery = state["delivery"] as? [String: Any]; pendingInput = state["pendingInput"] as? Int ?? 0
+        pendingOutput = state["pendingOutput"] as? Int ?? 0; maxTotalTokens = state["maxTotalTokens"] as? Int
         startedAt = start; deadlineAt = deadline; maxInputTokens = tokens; maxToolCalls = calls
-        usedValue = Usage(inputTokens: usage["inputTokens"] ?? 0, toolCalls: usage["toolCalls"] ?? 0, providerCalls: usage["providerCalls"] ?? 0)
+        usedValue = Usage(inputTokens: usage["inputTokens"] ?? 0, outputTokens: usage["outputTokens"] ?? 0, toolCalls: usage["toolCalls"] ?? 0, providerCalls: usage["providerCalls"] ?? 0)
         if ancestors, let parent { parent.apply(state["parent"] as? [String: Any]) }
     }
     var used: Usage { Self.lock.lock(); defer { Self.lock.unlock() }; return usedValue }
@@ -93,17 +96,29 @@ final class PhoneRunBudget: @unchecked Sendable {
         guard available else { return 0 }
         return Self.operation("workRemaining", time: now(), fields: ["budget": snapshot()]) as? Double ?? 0
     }
-    func admitModel(estimatedInput: Int, phase: String = "work") throws -> [String: Any] {
+    func setMemberTokens(_ tokens: Int) {
         Self.lock.lock(); defer { Self.lock.unlock() }
-        guard available, let result = Self.operation("admitModel", time: now(), fields: ["budget": snapshot(), "options": ["phase": phase, "inputTokens": estimatedInput]]) as? [String: Any] else { throw PhoneBudgetReached() }
+        guard available else { return }
+        apply(Self.operation("memberLimit", time: now(), fields: ["budget": snapshot(), "options": ["maxTokens": tokens]]) as? [String: Any])
+    }
+    func outputLimit(inputTokens: Int, cap: Int? = nil, phase: String = "work") -> Int? {
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        guard available else { return 0 }
+        var options: [String: Any] = ["inputTokens": inputTokens, "phase": phase]
+        if let cap { options["cap"] = cap }
+        return Self.operation("outputLimit", time: now(), fields: ["budget": snapshot(), "options": options]) as? Int
+    }
+    func admitModel(estimatedInput: Int, outputTokens: Int = 0, phase: String = "work") throws -> [String: Any] {
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        guard available, let result = Self.operation("admitModel", time: now(), fields: ["budget": snapshot(), "options": ["phase": phase, "inputTokens": estimatedInput, "outputTokens": outputTokens]]) as? [String: Any] else { throw PhoneBudgetReached() }
         apply(result["budget"] as? [String: Any])
         guard result["allowed"] as? Bool == true, let claim = result["claim"] as? [String: Any] else { throw PhoneBudgetReached() }
         return claim
     }
-    func settleModel(_ claim: [String: Any], inputTokens: Int) {
+    func settleModel(_ claim: [String: Any], inputTokens: Int, outputTokens: Int = 0) {
         Self.lock.lock(); defer { Self.lock.unlock() }
         guard available else { return }
-        apply(Self.operation("settleModel", time: now(), fields: ["budget": snapshot(), "options": ["claim": claim], "usage": ["inputTokens": inputTokens]]) as? [String: Any])
+        apply(Self.operation("settleModel", time: now(), fields: ["budget": snapshot(), "options": ["claim": claim], "usage": ["inputTokens": inputTokens, "outputTokens": outputTokens]]) as? [String: Any])
     }
     func configureDeepTask(_ limits: [String: Any]) {
         Self.lock.lock(); defer { Self.lock.unlock() }
@@ -139,10 +154,10 @@ final class PhoneRunBudget: @unchecked Sendable {
               let usage = value["usage"] as? [String: Int] else { invalidatePolicy(); return unavailable }
         return Exhaustion(reason: reason, limit: limit, used: spent, usage: Usage(inputTokens: usage["inputTokens"] ?? 0, toolCalls: usage["toolCalls"] ?? 0, providerCalls: usage["providerCalls"] ?? 0))
     }
-    func record(inputTokens: Int = 0, toolCalls: Int = 0, providerCalls: Int = 0) {
+    func record(inputTokens: Int = 0, outputTokens: Int = 0, toolCalls: Int = 0, providerCalls: Int = 0) {
         Self.lock.lock(); defer { Self.lock.unlock() }
         guard available else { return }
-        apply(Self.operation("record", time: now(), fields: ["budget": snapshot(), "usage": ["inputTokens": inputTokens, "toolCalls": toolCalls, "providerCalls": providerCalls]]) as? [String: Any])
+        apply(Self.operation("record", time: now(), fields: ["budget": snapshot(), "usage": ["inputTokens": inputTokens, "outputTokens": outputTokens, "toolCalls": toolCalls, "providerCalls": providerCalls]]) as? [String: Any])
     }
     func exhausted(at time: Double? = nil, phase: String = "work") -> Exhaustion? {
         Self.lock.lock(); defer { Self.lock.unlock() }
@@ -174,6 +189,7 @@ final class PhoneRunBudget: @unchecked Sendable {
             return minutes >= 1
                 ? AgentLoopContract.fill(formats["deadlineMinutes"] ?? "", ["text": exhausted.reasonText, "minutes": String(minutes)])
                 : AgentLoopContract.fill(formats["deadlineSeconds"] ?? "", ["text": exhausted.reasonText, "seconds": String(Int((exhausted.limit / 1000).rounded()))])
+        case "total-tokens": return AgentLoopContract.fill(formats["total-tokens"] ?? "", ["limit": JSText.number(exhausted.limit)])
         case "tool-calls": return AgentLoopContract.fill(formats["tool-calls"] ?? "", ["text": exhausted.reasonText, "limit": JSText.number(exhausted.limit)])
         default: return AgentLoopContract.fill(formats["input-tokens"] ?? "", ["text": exhausted.reasonText, "limit": JSText.number(exhausted.limit)])
         }
@@ -761,10 +777,13 @@ final class PhoneModelMeter {
     private let budget: PhoneRunBudget?
     private let claim: [String: Any]?
     var inputTokens: Int
+    var outputTokens: Int
+    private var settled = false
     var accounted: Bool { claim != nil }
-    init(estimate: Int) throws {
-        budget = PhoneExecutionScope.budget; inputTokens = estimate
-        claim = try budget?.admitModel(estimatedInput: estimate, phase: PhoneExecutionScope.phase)
+    init(estimate: Int, outputLimit: Int? = nil) throws {
+        budget = PhoneExecutionScope.budget; inputTokens = estimate; outputTokens = outputLimit ?? 0
+        if outputLimit == 0 { throw PhoneBudgetReached() }
+        claim = try budget?.admitModel(estimatedInput: estimate, outputTokens: outputLimit ?? 0, phase: PhoneExecutionScope.phase)
     }
-    func finish() { if let claim { budget?.settleModel(claim, inputTokens: inputTokens) } }
+    func finish() { guard !settled else { return }; settled = true; if let claim { budget?.settleModel(claim, inputTokens: inputTokens, outputTokens: outputTokens) } }
 }

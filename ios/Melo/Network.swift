@@ -263,9 +263,12 @@ final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
             body["max_tokens"] = min(allowance, (body["max_tokens"] as? Int) ?? allowance)
         }
         if let limit = input.outputLimit { body["max_tokens"] = min(limit, (body["max_tokens"] as? Int) ?? limit) }
+        let estimated = RequestSizeEstimate.tokens(try JSONSerialization.data(withJSONObject: body))
+        let allowance = PhoneExecutionScope.budget?.outputLimit(inputTokens: estimated + 32, cap: body["max_tokens"] as? Int, phase: PhoneExecutionScope.phase)
+        if let allowance { guard allowance > 0 else { throw PhoneBudgetReached() }; body["max_tokens"] = allowance }
         let payload = try JSONSerialization.data(withJSONObject: body)
         if let limit = routingContextLimit, RequestSizeEstimate.tokens(payload) > limit { throw RequestTooLarge(message: "所选模型上下文容量不足；原对话和已执行结果已保留，请选择容量更大的模型。") }
-        let meter = try PhoneModelMeter(estimate: RequestSizeEstimate.tokens(payload)); defer { meter.finish() }
+        let meter = try PhoneModelMeter(estimate: RequestSizeEstimate.tokens(payload), outputLimit: allowance); defer { meter.finish() }
         let data = try await Network.post(url, token: token, body: payload, session: session, headers: headers, timeout: max(1, min(timeoutCap, input.timeout)))
         try Task.checkCancellation()
         let receipt = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
@@ -280,6 +283,7 @@ final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
         meter.inputTokens = usage ?? estimate
         let usageObject = receipt?["usage"] as? [String: Any]
         let outputTokens = Network.usageNumber(usageObject?["output_tokens"]) ?? Network.usageNumber(usageObject?["completion_tokens"])
+        meter.outputTokens = outputTokens ?? RequestSizeEstimate.tokens(data)
         // Tool round: only a completed tool turn counts; calls cut off by `length` /
         // `max_tokens` are never executed (the truncation is reported below).
         if input.goalReview == nil, offersTools, let receipt, finishReason == (anthropic ? "tool_use" : "tool_calls") {

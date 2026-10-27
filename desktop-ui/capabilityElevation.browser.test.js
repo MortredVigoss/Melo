@@ -74,7 +74,10 @@ test('beyond-parent prompt → approve → tool runs → grant listed → revoke
 
   // The prompt card: beyond the parent, inside Builder's own settings.
   const card = page.locator('.capability-prompt-shell');
-  await card.waitFor({ timeout: 20000 });
+  await card.waitFor({ timeout: 20000 }).catch(async error => {
+    const snapshot = await (await fetch(base + '/api/bootstrap')).json();
+    throw new Error(error.message + '\nFixture diagnostics: ' + JSON.stringify({ requests: requests.map(r=>({tools:r.tools,outputs:r.outputs,bytes:r.body.length})), messages:snapshot.activeChat?.messages?.slice(-1) }));
+  });
   assert.match(await card.textContent(), /需要『知识与记忆』，.*没有这个能力/);
   const options = await card.locator('[data-action="capability-request-respond"]').allTextContents();
   assert.deepEqual(options.map(s => s.trim()), ['仅本次任务', '本对话 24 小时', '拒绝']);
@@ -86,7 +89,16 @@ test('beyond-parent prompt → approve → tool runs → grant listed → revoke
 
   // The tool ran inside Builder's loop and the turn finished.
   await page.locator('[data-action=stop-send]').waitFor({ state: 'detached', timeout: 30000 });
-  assert.ok(requests.some(r => !r.tools.includes('delegate') && r.outputs > 0), 'Builder got the search_history result');
+  const memberReceivedResult = requests.some(r => {
+    if (r.tools.includes('delegate')) return false;
+    if (r.outputs > 0) return true;
+    // At the member token allowance the same result is delivered as an
+    // observed result in the tool-free report, not a normal tool-output turn.
+    return (JSON.parse(r.body).input || []).some(row => {
+      try { const text = typeof row.content === 'string' ? row.content : (row.content || []).map(part=>part.text || '').join(''); return JSON.parse(text).observations?.some(value => value.name === 'search_history' && value.ok === true && value.executed === true && value.text?.trim()); } catch { return false; }
+    });
+  });
+  assert.ok(memberReceivedResult, 'Builder got the successful search_history result through the normal or reserved delivery request');
   const boot = async () => (await fetch(base + '/api/bootstrap')).json();
   const chat = (await boot()).activeChat;
   assert.equal(chat.messages.at(-1).role, 'assistant');

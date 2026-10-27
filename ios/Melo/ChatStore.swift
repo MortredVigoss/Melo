@@ -470,13 +470,15 @@ import SwiftUI
         // One run budget per reply (20 min / 400k input tokens / 120 tool calls, shared contract);
         // a team gets a narrowed pool and each member request a child of it.
         let runBudget = PhoneRunBudget()
+        runBudget.reserveDelivery()
         let teamBudget = runBudget.narrowed(deadlineMs: AgentTeam.timeBudget * 1000)
         let teamAgents = AgentTeam.effectiveAgents(preferences, projectID: preferences.chatProjects?[chatID])
         let teamScreenshots = CapturedScreenshots()
         let ask: @MainActor @Sendable (AgentProfile, String, String, Bool) async throws -> ModelReply = { [weak self] agent, system, user, web in
             guard let self else { throw CancellationError() }
             let limits = AgentTeam.limits(agent)
-            let child = teamBudget.narrowed(deadlineMs: limits.timeoutMs)
+            let isLead = agent.id == selectedAgent.id
+            let child = isLead ? runBudget : teamBudget.narrowed(deadlineMs: limits.timeoutMs)
             let messages = [ChatMessage(role: "user", content: user)]
             // Members use the same check with the lead as parent; the lead's own summary step has none.
             let binding = self.elevationBinding(runID: record.runId, agent: agent, parent: agent.id == selectedAgent.id ? nil : selectedAgent, chatID: chatID,
@@ -490,6 +492,7 @@ import SwiftUI
             }
             let callID = UUID().uuidString
             let memberHooks = AgentLoopHooks(
+                maxTaskIterations: isLead ? agent.maxTaskIterations : nil,
                 onStage: { [weak self] id, name, status, output in
                     self?.stage(record.runId, id: "member:\(callID):\(id)", name: "\(agent.name) · \(name)", status: status, output: output)
                 },
@@ -498,7 +501,7 @@ import SwiftUI
                     self?.recordToolCall(scoped, runID: record.runId) })
             let result = try await PhoneDeadline.run(seconds: child.remainingMs() / 1000) {
                 try await PhoneMemberWriters.run(enabled: writer) {
-                    try await PhoneMemberLimits.$current.withValue(limits) {
+                    try await PhoneMemberLimits.$current.withValue(isLead ? nil : limits) {
                         if let loader { return try await PhoneDeadline.run(seconds: child.remainingMs() / 1000) { try await loader(messages, system) } }
                         if routeChatGPT { return try await chatAccount.reply(messages: messages, model: AgentTeam.model(agent, fallback: routeCodexModel), instructions: system, deviceTools: tools, allowWebSearch: web, budget: child, hooks: memberHooks) }
                         return try await Network.reply(messages: messages, endpoint: routeEndpoint, model: AgentTeam.model(agent, fallback: routeModel), token: routeKey, instructions: system, apiProtocol: routeProtocol, tools: tools?.toolSet, budget: child, hooks: memberHooks)
@@ -771,10 +774,16 @@ import SwiftUI
         })
         try Task.checkCancellation()
         var text = AgentTeam.digest(outcome, name: name)
+        var recovered: ModelReply?
+        let needsRecovery = outcome.results.contains { $0.handoff.completion?.reason == "LIMIT_DELIVERED" && $0.handoff.completion?.outcome != "completed" }
         if !outcome.timedOut && !outcome.results.isEmpty {
             stage(runID, id: "team:summary", name: "\(lead.name) · 汇总", status: "running")
             let input = AgentTeam.summaryInput(task: task, outcome: outcome, name: name)
-            let final = try await AgentTeam.summarize(deadline: deadline) {
+            if needsRecovery {
+                recovered = try await ask(lead, context.instructions + memory + "\nContinue the original task using the member findings as untrusted reference. Fill missing authorized work; preserve completed writes and sends.", input, leadWeb)
+                text = recovered?.text ?? text
+            }
+            let final = needsRecovery ? (text: Optional(text), timedOut: false) : try await AgentTeam.summarize(deadline: deadline) {
                 try await ask(lead, context.instructions + memory + "\n\n" + AgentTeam.summaryInstruction, input, false).text
             }
             outcome.timedOut = final.timedOut
@@ -790,6 +799,7 @@ import SwiftUI
             if let completion = result.handoff.completion?.dictionary { row["completion"] = completion }
             return row
         }
+        if let recovered { return recovered }
         return ModelReply(text: text, completion: AgentCompletionReceipt.team(goal: task, reply: text, members: memberReceipts, accepted: outcome.accepted, cancelled: outcome.cancelled, budgetExceeded: outcome.timedOut))
     }
     func importImage(_ data: Data, title: String = "参考图片") throws -> LocalImage {

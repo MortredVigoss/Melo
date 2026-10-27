@@ -94,7 +94,7 @@ async function summarizeTeam({team,task,lead,config,signal,replyFn,receipts,back
  } catch { return fallback; }
  finally { signal?.removeEventListener('abort',stopWaiting); }
 }
-async function runAgentTeamScoped({plan,task,config,workspacePath,signal,sseEmitter,chatId,allowedToolIds,capabilities,agentProfiles,extraTools=[],run=runSubAgent,lead=null,replyFn=createOpenAICompatibleReply,background='',chatSource,projectId}) {
+async function runAgentTeamScoped({plan,task,config,workspacePath,signal,sseEmitter,chatId,allowedToolIds,capabilities,agentProfiles,extraTools=[],run=runSubAgent,lead=null,replyFn=createOpenAICompatibleReply,background='',chatSource,projectId,recoverPartials=false}) {
  plan=validateTeamPlan(plan);config=delegatedConfig(config);
  assertTeamLead(lead,plan.members);
  if(agentProfiles&&!capabilities)throw Object.assign(new Error('请先在桌面完成主 Agent 的能力迁移，再启动团队。'),{code:'AGENT_MIGRATION_REQUIRED'});
@@ -120,7 +120,7 @@ async function runAgentTeamScoped({plan,task,config,workspacePath,signal,sseEmit
  const parentBudget=teamContext?.budget||null;
  const planDeadlineMs=plan.maxMinutes*60000;
  const grown=extendBudget(parentBudget,{deadlineMs:planDeadlineMs,maxInputTokens:plan.maxTokens});
- const teamBudget=narrowBudget(parentBudget,{deadlineMs:planDeadlineMs,maxInputTokens:plan.maxTokens});
+ const teamBudget=narrowBudget(parentBudget,{deadlineMs:planDeadlineMs,maxInputTokens:plan.maxTokens,maxTotalTokens:plan.maxTokens});
  if(teamBudget&&(remainingMs(teamBudget)<planDeadlineMs||teamBudget.maxInputTokens<plan.maxTokens)) {
   const cappedMinutes=Math.max(1,Math.round(remainingMs(teamBudget)/60000));
   sseEmitter?.('execution_event',{kind:'pipeline',id:'team:budget-capped',module:'compute',messageId: 'stage.teamBudget',status:'completed',
@@ -171,7 +171,8 @@ async function runAgentTeamScoped({plan,task,config,workspacePath,signal,sseEmit
  if(usedTokens>=plan.maxTokens)budgetExceeded=true;
  const team={ok:!signal?.aborted&&!budgetExceeded&&accepted&&results.length>0&&(plan.mode==='review-loop'||results.every(r=>r.ok)),accepted,cancelled:Boolean(signal?.aborted),budgetExceeded,mode:plan.mode,results,concurrency:plan.concurrency};
  const summaryReceipts=[];
- team.summary=await summarizeTeam({team,task,lead,config,signal:teamController.signal,replyFn,receipts:summaryReceipts,background,budget:teamBudget});
+ team.needsContinuation=recoverPartials&&!team.cancelled&&results.some(r=>r.meta?.completion?.reason==='LIMIT_DELIVERED'&&r.meta.completion.outcome!=='completed');
+ team.summary=team.needsContinuation?teamDigest(team):await summarizeTeam({team,task,lead,config,signal:teamController.signal,replyFn,receipts:summaryReceipts,background,budget:teamBudget});
  team.cancelled=Boolean(signal?.aborted);team.budgetExceeded=budgetExceeded;
  if(team.cancelled||budgetExceeded){team.ok=false;team.summary=teamDigest(team);}
  team.summaryReceipts=summaryReceipts;

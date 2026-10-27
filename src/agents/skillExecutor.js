@@ -1,10 +1,13 @@
+import { runLimitDelivery } from '../runtime/limitDelivery.js';
+import { budgetedMemberReply } from '../runtime/memberReply.js';
+import { isDeliveryLimit, hostEvidenceReply } from '../../shared/agent/limitDelivery.js';
 import { AGENT_LOOP_CONTRACT } from '../runtime/agentLoopContract.js';
 import { requestAllowsTool } from '../../shared/agent/retrieval/requestPolicy.js';
 import { createCoreTurn } from '../runtime/sharedAgentCore.js';
 import {resolveCapabilityContext} from '../services/agent/capabilityContext.js';
 import {currentRequestContext,runWithRequestContext} from '../runtime/requestScope.js';
 import {narrowCapabilityScope,missingCapabilityScope,toolsForCapabilityScope,nativeFeaturesForScope} from '../domain/agent/capabilityScope.js';
-import {budgetExhausted,narrowBudget,recordUsage,receiptInputTokens,requestTimeoutMs} from '../runtime/runBudget.js';
+import {createRunBudget,reserveDelivery,budgetExhausted,narrowBudget,recordUsage} from '../runtime/runBudget.js';
 import {estimateMessagesTokens,estimateTextTokens} from '../memory/tokenEstimate.js';
 import { delegatedConfig } from './delegatedConfig.js';
 import { redactToolArgs } from '../tools/toolInvocationRecord.js';
@@ -145,7 +148,7 @@ export async function runSkill(options) {
   const ids=resolveSkillTools(options.skill,options.allowedToolIds,options.extraTools).map(tool=>tool.id);
   const capabilityScope=narrowCapabilityScope(parent.capabilityScope,{capabilities:options.capabilities,allowedToolIds:ids,source:'skill'});
   // Run budget (C1): a skill runs on a child pool of the calling turn; its spending is charged upward.
-  const budget=narrowBudget(parent.budget||null);
+  const budget=reserveDelivery(narrowBudget(parent.budget || createRunBudget()));
   return runWithRequestContext(Object.freeze({...parent,capabilityScope,...(budget?{budget}:{})}),()=>runSkillLoop({...options,capabilities:capabilityScope.capabilities,allowedToolIds:capabilityScope.allowedToolIds}));
 }
 
@@ -237,20 +240,24 @@ async function runSkillLoop({
   const coreTurn = createCoreTurn({ goal: firstUserContent, tools: allowedTools, allowedTools: allowedTools.map(t => t.id), limits: { rounds: maxIterations } });
   let completed = false;
   let iterations = 0;
+  const runBudget = currentRequestContext().budget;
+  const createReply = budgetedMemberReply(replyFn, runBudget);
+  let terminalReason = '';
 
   for (let iteration = 0; ; iteration++) {
     if (signal?.aborted) {
-      const aborted = { ok: false, output: 'Skill aborted.', error: 'ABORTED', meta: { aborted: true, iteration, completion: coreTurn.receipt(task, '', 'CANCELLED') } };
+      const aborted = { ok: false, output: hostEvidenceReply('Skill aborted.', coreTurn.observations, config.replyLanguage), error: 'ABORTED', meta: { aborted: true, iteration, completion: coreTurn.receipt(task, '', 'CANCELLED') } };
       recordTelemetry(false, aborted);
       return aborted;
     }
 
+    if (coreTurn.reporting) { terminalReason = 'ROUND_LIMIT'; break; }
+    if (budgetExhausted(runBudget)) { terminalReason = 'BUDGET_EXHAUSTED'; break; }
     if (coreTurn.update('request') !== 'running') break;
     iterations = coreTurn.routingProgress.rounds;
     const checkingGoal = coreTurn.checking;
-    const reportingProgress = coreTurn.reporting;
-    const toolFree = checkingGoal || reportingProgress;
-    const review = checkingGoal ? coreTurn.reviewRequest() : reportingProgress ? coreTurn.progressRequest() : null;
+    const toolFree = checkingGoal;
+    const review = checkingGoal ? coreTurn.reviewRequest() : null;
     let request;
     try { request = fitRequestContext({ sections: [{ id: 'instructions', text: review?.systemPrompt || systemPrompt, required: true }],
       messages: review?.messages || loopMessages, toolDefinitions: toolFree ? [] : functionSession.definitions, ...contextBudget }); } catch (error) {
@@ -260,26 +267,10 @@ async function runSkillLoop({
       completed = coreTurn.status === 'completed';
       break;
     }
-    // Run budget (C1): stop before another request once the turn's pool is gone.
-    const runBudget = currentRequestContext()?.budget || null;
-    const exhausted = budgetExhausted(runBudget);
-    if (exhausted) {
-      const stopped = { ok: false, output: coreTurn.candidateReply || `Run budget exhausted (${exhausted.reason}) before another request; the skill is incomplete.`, error: 'BUDGET_EXHAUSTED',
-        meta: { skillId: skill.id, iterations, toolCalls: totalToolCalls, depth, completion: coreTurn.receipt(task, '', 'BUDGET_EXHAUSTED'), budget: { reason: exhausted.reason, limit: exhausted.limit, used: exhausted.used } } };
-      recordTelemetry(false, stopped);
-      return stopped;
-    }
-    let accounted = false;
-    const account = receipt => {
-      if (accounted) return; accounted = true;
-      recordUsage(runBudget, { providerCalls: 1, inputTokens: receiptInputTokens(receipt)
-        ?? estimateMessagesTokens(request.messages) + Math.ceil(estimateTextTokens(systemPrompt) * 4 / 3) });
-    };
     let rawReply;
-    try { rawReply = await replyFn({
+    try { rawReply = await createReply({
       ...(toolFree ? { maxTokens: 2048 } : functionSession.requestOptions()),
-      timeoutMs: runBudget ? requestTimeoutMs(runBudget) : undefined,
-      onProviderResponse: account,
+
       authMode: config.authMode,
       apiProtocol: config.apiProtocol,
       apiKey: providerConfig.apiKey,
@@ -289,28 +280,22 @@ async function runSkillLoop({
       messages: request.messages,
       nativeWebSearchEnabled: !toolFree && nativeFeaturesForScope(currentRequestContext().capabilityScope,currentRequestContext().requestToolPolicy).nativeWebSearchEnabled,
       nativeImageGenerationEnabled: !toolFree && !coreTurn.repairing && nativeFeaturesForScope(currentRequestContext().capabilityScope,currentRequestContext().requestToolPolicy).nativeImageGenerationEnabled,
-      onExecutionEvent: event => coreTurn.observeNative(event),
+      onExecutionEvent: event => { if (coreTurn.observeNative(event)) recordUsage(runBudget, { toolCalls: 1 }); },
       signal,
     }); }
     catch (error) {
       if (signal?.aborted) throw error;
-      if (reportingProgress) { coreTurn.update('complete'); finalOutput = coreTurn.reply(task); break; }
+      if (error.code === 'BUDGET_EXHAUSTED' || budgetExhausted(runBudget)) { terminalReason = 'BUDGET_EXHAUSTED'; break; }
       if (!checkingGoal) throw error;
       coreTurn.stopReview(); coreTurn.update('complete');
       finalOutput = cleanReplyForParent(coreTurn.candidateReply);
       completed = coreTurn.status === 'completed';
       break;
     }
-    finally { account(null); }
+
 
     const turn = functionSession.parse(rawReply);
     const { toolCalls } = turn;
-
-    if (reportingProgress) {
-      coreTurn.update('complete');
-      finalOutput = cleanReplyForParent(toolCalls.length ? coreTurn.reply(task) : turn.text || coreTurn.reply(task));
-      break;
-    }
 
     if (checkingGoal) {
       const decision = coreTurn.review(toolCalls.length ? '' : turn.text);
@@ -433,11 +418,19 @@ async function runSkillLoop({
     if (coreTurn.results(allResults) !== 'running') break;
   }
 
-  const completion = coreTurn.receipt(task, finalOutput);
+  iterations = coreTurn.routingProgress.rounds;
+  terminalReason ||= coreTurn.reason;
+  if (isDeliveryLimit(terminalReason)) {
+    const delivery = await runLimitDelivery({ task: coreTurn.goalState, observations: coreTurn.observations, reason: terminalReason,
+      fallback: finalOutput || coreTurn.reply(task), createReply, options: providerConfig, budget: runBudget, signal, locale: config.replyLanguage });
+    coreTurn.acceptDelivery(delivery.task); finalOutput = delivery.reply; terminalReason = delivery.terminalReason;
+  }
+  const completion = coreTurn.receipt(task, finalOutput, terminalReason);
+  completed = completion.outcome === 'completed';
   const finalResult = {
     ok: completed && Boolean(finalOutput) && completion.outcome === 'completed',
     output: finalOutput || (coreTurn.status === 'blocked' ? coreTurn.reply(task) : completed ? 'Skill returned no answer.' : 'Skill reached its tool iteration limit before producing a final answer; the task is incomplete.'),
-    ...(!completed ? { error: coreTurn.reason === 'ROUND_LIMIT' ? 'SKILL_ITERATION_LIMIT' : coreTurn.reason || 'SKILL_ITERATION_LIMIT' } : !finalOutput ? { error: 'EMPTY_SKILL_REPLY' } : completion.outcome !== 'completed' ? { error: 'GOAL_INCOMPLETE' } : {}),
+    ...(terminalReason === 'LIMIT_DELIVERED' && !completed ? { error: 'GOAL_INCOMPLETE' } : !completed ? { error: coreTurn.reason === 'ROUND_LIMIT' ? 'SKILL_ITERATION_LIMIT' : coreTurn.reason || 'SKILL_ITERATION_LIMIT' } : !finalOutput ? { error: 'EMPTY_SKILL_REPLY' } : completion.outcome !== 'completed' ? { error: 'GOAL_INCOMPLETE' } : {}),
     meta: {
       skillId: skill.id,
       completion,
@@ -472,6 +465,7 @@ export function buildSkillTool(skill) {
     // Skills run their own tool loop and can do side-effectful things;
     // never run two in parallel under the same caller.
     isConcurrencySafe: false,
+    timeout: AGENT_LOOP_CONTRACT.budget.deadlineMs,
     parametersSchema: (skill.parametersSchema && skill.parametersSchema.type === 'object')
       ? skill.parametersSchema
       : { type: 'object', properties: {}, required: [] },

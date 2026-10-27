@@ -1,4 +1,4 @@
-import { reserveDelivery, workRemainingMs, admitModel, settleModel, createRunBudget, armBudget, remainingMs, requestTimeoutMs, recordUsage, budgetExhausted, narrowBudget, extendBudget, describeBudgetReason, budgetExhaustedReply } from './runBudget.js';
+import { memberTokenLimit, modelOutputLimit, reserveDelivery, workRemainingMs, admitModel, settleModel, createRunBudget, armBudget, remainingMs, requestTimeoutMs, recordUsage, budgetExhausted, narrowBudget, extendBudget, describeBudgetReason, budgetExhaustedReply } from './runBudget.js';
 
 // Native Hosts retain object ownership, locking and clocks. This JSON boundary
 // calls the very same budget implementation used by the Node compatibility API.
@@ -15,6 +15,8 @@ export function budgetOperation({ action, budget = null, now, options = {}, usag
     case 'arm': return armBudget(state, now);
     case 'reserveDelivery': return reserveDelivery(state);
     case 'workRemaining': return workRemainingMs(state, now);
+    case 'memberLimit': return memberTokenLimit(state, options.maxTokens);
+    case 'outputLimit': return modelOutputLimit(state, options);
     case 'admitModel': return admitModel(state, options);
     case 'settleModel': return settleModel(state, options.claim, usage);
     case 'remaining': return remainingMs(state, now);

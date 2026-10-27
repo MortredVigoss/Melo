@@ -65,3 +65,17 @@ Agent 扩展协议的可选 maxTaskIterations 最大值放宽到64，workspace v
 ### 第三步验证完成
 
 第三步完整快速档 run-xapdiU 通过：JS4757/4757、Swift37、Android JVM/Lint/Debug/Release、设置浏览器，零跳过/复测。修复旧报告变量残留、独立入口取消信号、策略资源缺失的零调用兜底；保留完整失败与修复日志。见 `.tmp/limit-delivery-20261027/step3-quick-verified.log` 与 `.tmp/test-runs/run-xapdiU/summary.json`。尚未完成成员/技能、真实模型和基准集成。
+
+## 第四步修改前补充边界
+
+`runConfiguredMember → runSubAgent → budgetedMemberReply → shared runBudget` 与 `buildSkillTool → runSkill` 分别保留权限、工作区写锁、取消传播及交接。子预算为成员保留总输入/输出 token，未配置总量的主预算仍只计输入；并发准入把未结算输出也算入父池。iPhone `PhoneMemberLimits → AgentLoop → PhoneModelMeter → policyBridge` 使用相同策略，达到上限返回 completion 和文字而非抛错丢交接。Codex OAuth 不接受 API 的输出上限字段，保留原协议；用量按回执/估计结算，原生服务内部调用不可由本机逐个抢占（需在最终证据写明此物理边界）。
+
+子任务 partial/GOAL_INCOMPLETE 通过交接保留缺口，主循环指令要求补做/换人。团队固定编排的主 Agent 汇总路径也须检查：不能把 partial 成员直接归为整体成功，余量不足时保留交接。Android 当前没有本机委派/技能执行入口，公共预算与完成契约由同源 JS/跨引擎测试覆盖，不声明新增 Android 协作功能。停止边界仍是既有持久化、工具权限和提供方传输；本步不部署/安装或改用户配置。
+
+## 第四步验收
+
+成员与技能在上限时复用统一交付/检查，partial 保持 GOAL_INCOMPLETE 和证据交接；团队成员 partial 后由主 Agent 继续正常工具循环。输入/输出总预算只施加于成员与团队池，主任务原有输入预算不变；并发请求先占额度，成功/失败均结算，父池预留不可被子任务吃掉。小成员预算按比例预留输入，避免默认 builder 尚未发出能力授权就耗尽；不能满足交付额度时保留宿主清单。
+
+最终累计快速档 `run-4D3pby/summary.json` 全绿：JS4771/4771、Swift37套、Android JVM/Lint/Debug/Release、设置浏览器，零跳过/复测。`step4-ios-build.log` 记录完整未签名 iPhoneOS 构建通过。成员/技能各轮数、调用、时间、token、取消计数器通过；HTTP 团队恢复夹具6次模型请求，成员读A后部分交接，主 Agent 接着读C并得到 completed。能力授权浏览器实际弹窗、放行、结果回传、列出和撤销通过。首轮失败 `run-GbcOvA` 保留，修正预留比例、父预算夹具与耗尽 metadata 后完整重跑。
+
+真实模型演唱会链路已在隔离日历夹具与真实联网工具上完成：8次模型请求、5次工具调用，最终 completed；不读取或修改用户日历。第五步将保存脱敏回执、补执行面板断言并跑基准集成。所有验证只在隔离环境，不推送或安装。

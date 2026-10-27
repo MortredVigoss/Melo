@@ -30,7 +30,7 @@ async function harness(t, respond, options={}) {
     res.end(await respond(requests.length, body));
   });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
-  registerTool({ id: 'fixture_lookup', name: 'Fixture lookup', description: 'Read the requested fixture entry.',
+  registerTool({ id: 'fixture_lookup', capability:options.toolCapability, name: 'Fixture lookup', description: 'Read the requested fixture entry.',
     parametersSchema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
     requiresPermission: true, isConcurrencySafe: true,
     run: async args => { executions.push(args.query); return options.toolResult?.(args) ?? options.outcome ?? { ok: true, output: `found ${args.query}` }; } });
@@ -382,4 +382,26 @@ test('cancelling during a goal check cannot continue tools or publish a fabricat
   assert.deepEqual(h.executions, ['A']); assert.equal(h.permissions.length, 1);
   assert.equal(h.requests.length, 3);
   assert.equal(h.events.filter(row => row.type === 'reply_text').length, 0);
+});
+
+test('partial team member returns findings and the lead continues missing work through real HTTP', async t => {
+  const cap = {...emptyCapabilities(),readFiles:true,delegate:true};
+  const profiles = {main:{id:'main',name:'Lead',model:'parent',capabilities:cap,collaboration:{canDelegate:true,delegateTargets:['research']}},research:{id:'research',name:'Research',model:'research-model',capabilities:{...emptyCapabilities(),readFiles:true},collaboration:{maxIterations:1,maxTokens:100000}}};
+  let memberWork = 0, leadWork = 0, deliveries = 0;
+  const h = await harness(t, (_n, body) => {
+    const member = body.model === 'research-model';
+    if (goalReviewBody(body)) return textReply(JSON.stringify(member
+      ? {decision:'partial',requirements:[{text:'Read C',status:'missing',evidenceIds:[]}]}
+      : {decision:'complete',reasonType:'fulfilled',requirements:[{text:'Read A and C',status:'met',evidenceIds:['member:0:member-read','lead-gap']}]}));
+    if (JSON.stringify(body).includes('execution allowance is ending')) {deliveries++; return textReply('Found A. C remains unread.');}
+    if (member) {memberWork++;return done([fn('member-read','A')]);}
+    leadWork++;
+    assert.match(JSON.stringify(body), /Found A|found A/);
+    return leadWork === 1 ? done([fn('lead-gap','C')]) : textReply('A and C were read and checked.');
+  }, {profiles,toolCapability:'readFiles',text:'Read local A and C and report both findings.',teamPlan:{members:['research'],mode:'sequential'}});
+  const result = await h.run();
+  assert.equal(memberWork,1);assert.equal(deliveries,1);assert.equal(leadWork,2);
+  assert.deepEqual(h.executions,['A','C'],'the lead fills the gap without repeating the member read');
+  assert.equal(h.requests.length,6);assert.equal(result.normalizedReply.completion.outcome,'completed');
+  assert.match(result.normalizedReply.content,/A and C/);
 });

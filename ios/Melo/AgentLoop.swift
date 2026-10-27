@@ -162,10 +162,9 @@ final class AgentLoop: @unchecked Sendable {
 
     func run() async throws -> AgentLoopOutcome {
         if let value = hooks.maxTaskIterations { maxIterations = min(contract.maxRounds, max(1, value)) }
-        if let limits = PhoneMemberLimits.current { maxIterations = limits.iterations }
+        if let limits = PhoneMemberLimits.current { maxIterations = limits.iterations; budget.setMemberTokens(limits.tokens) }
         budget.arm(); budget.reserveDelivery()
         var outcome = try await invokeModel()
-        if PhoneMemberLimits.current != nil, outcome.stop != .answered { throw MeloError.message("成员达到运行上限，结果尚未完成。") }
         if outcome.stop == .answered, let validate { try validate(outcome) }
         try await finalize(&outcome)
         outcome.completion = AgentCompletionReceipt.make(goal: latestUserMessage, reply: outcome.text, observations: completionObservations, terminalReason: outcome.stop == .budget ? "BUDGET_EXHAUSTED" : completionTerminalReason, task: goalState?.snapshot, citations: outcome.sources.map { ["url": $0.url] })
@@ -257,7 +256,7 @@ final class AgentLoop: @unchecked Sendable {
             var condensed = false
             while true {
                 let review = checkingGoal ? try goal.update("request", ["observations": completionObservations]) : nil
-                let request = AgentLoopRequest(iteration: iteration, transcript: transcript, timeout: budget.requestTimeout(cap: transport.timeoutCap), remainingTokens: PhoneMemberLimits.current.map { max(0, $0.tokens - spentTokens) }, goalReview: review, repairing: goal.repairing || hooks.routing?.session.escalated == true)
+                let request = AgentLoopRequest(iteration: iteration, transcript: transcript, timeout: budget.requestTimeout(cap: transport.timeoutCap), remainingTokens: nil, goalReview: review, repairing: goal.repairing || hooks.routing?.session.escalated == true)
                 do {
                     let roundTransport = transport
                     round = try await withDeadline { try await roundTransport.round(request) }
@@ -290,9 +289,11 @@ final class AgentLoop: @unchecked Sendable {
                 }
             }
             let inputTokens = round.inputTokens ?? round.estimatedInputTokens
-            if !round.budgetAccounted { budget.record(inputTokens: inputTokens, providerCalls: 1) }
+            if !round.budgetAccounted { budget.record(inputTokens: inputTokens, outputTokens: round.outputTokens ?? PhoneTokenEstimate.text(round.text + round.calls.map(\.arguments).joined()), providerCalls: 1) }
             spentTokens += inputTokens + (round.outputTokens ?? PhoneTokenEstimate.text(round.text + round.calls.map(\.arguments).joined()))
-            if let limit = PhoneMemberLimits.current?.tokens, spentTokens > limit { throw MeloError.message("成员 token 预算已用完，未继续执行工具。") }
+            if PhoneMemberLimits.current != nil, budget.exhausted() != nil && !checkingGoal {
+                return try await deliverLimit("TOKEN_LIMIT", fallback: core.reply(latestUserMessage), transport: transport, sources: sources, searched: searched, records: records, iteration: iteration)
+            }
             if checkingGoal, let candidate = candidateRound {
                 let decision = try goal.update("review", ["response": round.calls.isEmpty ? round.text : "", "observations": completionObservations])
                 await hooks.onStage?("goal-check:\(iteration)", "核对任务交付", ["complete", "deliver"].contains(decision["decision"] as? String ?? "") ? "completed" : "failed", decision["explanation"] as? String ?? decision["reason"] as? String ?? "")
@@ -419,13 +420,14 @@ final class AgentLoop: @unchecked Sendable {
             let timeout = budget.requestTimeout(cap: transport.timeoutCap, phase: phase)
             let input = AgentLoopRequest(iteration: iteration, transcript: [], timeout: timeout, outputLimit: output, goalReview: value)
             let estimate = RequestSizeEstimate.tokens(try JSONSerialization.data(withJSONObject: value))
-            let claim = transport.metersBudget ? nil : try budget.admitModel(estimatedInput: estimate, phase: phase)
-            var charged = estimate
-            defer { if let claim { budget.settleModel(claim, inputTokens: charged) } }
+            let claim = transport.metersBudget ? nil : try budget.admitModel(estimatedInput: estimate, outputTokens: output, phase: phase)
+            var charged = estimate, chargedOutput = output
+            defer { if let claim { budget.settleModel(claim, inputTokens: charged, outputTokens: chargedOutput) } }
             let result = try await PhoneExecutionScope.$phase.withValue(phase) {
                 try await self.withDeadline { try await transport.round(input) }
             }
             charged = result.inputTokens ?? max(estimate, result.estimatedInputTokens)
+            chargedOutput = result.outputTokens ?? PhoneTokenEstimate.text(result.text)
             return result
         }
         var candidate: AgentRound

@@ -435,25 +435,37 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             assert(!transport.completions.flatMap { $0.messages }.contains { $0.content.contains("PRIVATE_") })
         }
 
-        // A6: limits stop before another request or a side effect, including provider output usage.
+        // Member limits preserve failed/partial handoffs and block late side effects.
         do {
             let log = Log(), transport = ScriptedTransport { _ in calls([fc(UUID().uuidString)]) }
-            do {
-                _ = try await PhoneMemberLimits.$current.withValue(.init(iterations: 1, tokens: 10000, timeoutMs: 1000)) {
-                    try await AgentLoop(transport: transport, tools: loopTools(log), budget: PhoneRunBudget(), latestUserMessage: "q").run()
-                }
-                assertionFailure("unfinished member cannot report success")
-            } catch {}
+            let limited = try await PhoneMemberLimits.$current.withValue(.init(iterations: 1, tokens: 32000, timeoutMs: 180000)) {
+                try await AgentLoop(transport: transport, tools: loopTools(log), budget: PhoneRunBudget(), latestUserMessage: "q").run()
+            }
+            assert(limited.completion?.outcome != "completed")
             assert(transport.requests.count == 2 && log.performed.count == 1)
             let denied = Log()
             let expensive = ScriptedTransport { _ in var row = calls([fc("write")]); row.inputTokens = 100; row.outputTokens = 500; return row }
-            do {
-                _ = try await PhoneMemberLimits.$current.withValue(.init(iterations: 8, tokens: 200, timeoutMs: 1000)) {
-                    try await AgentLoop(transport: expensive, tools: loopTools(denied), budget: PhoneRunBudget(), latestUserMessage: "q").run()
-                }
-                assertionFailure("member budget ignored")
-            } catch {}
-            assert(denied.performed.isEmpty && expensive.requests[0].remainingTokens == 200)
+            let unavailable = try await PhoneMemberLimits.$current.withValue(.init(iterations: 8, tokens: 200, timeoutMs: 180000)) {
+                try await AgentLoop(transport: expensive, tools: loopTools(denied), budget: PhoneRunBudget(), latestUserMessage: "q").run()
+            }
+            assert(unavailable.completion?.outcome != "completed" && denied.performed.isEmpty && expensive.requests.isEmpty)
+            let overrun = ScriptedTransport { _ in var row = calls([fc("late-write")]); row.inputTokens = 100; row.outputTokens = 32000; return row }
+            let noEffects = Log()
+            let over = try await PhoneMemberLimits.$current.withValue(.init(iterations: 8, tokens: 32000, timeoutMs: 180000)) {
+                try await AgentLoop(transport: overrun, tools: loopTools(noEffects), budget: PhoneRunBudget(), latestUserMessage: "q").run()
+            }
+            assert(over.completion?.outcome != "completed" && noEffects.performed.isEmpty && overrun.requests.count == 1)
+            var work = 0, reports = 0, checks = 0
+            let partial = ScriptedTransport { request in
+                if (request.goalReview?["systemPrompt"] as? String ?? "").contains("execution allowance is ending") { reports += 1; return answer("Found the concert in Sydney. Ticket availability remains unknown.") }
+                if request.goalReview != nil { checks += 1; return answer(#"{"decision":"partial","requirements":[{"text":"ticket availability","status":"missing","evidenceIds":[]}]}"#) }
+                work += 1; return calls([fc("calendar")])
+            }
+            let done = try await PhoneMemberLimits.$current.withValue(.init(iterations: 1, tokens: 32000, timeoutMs: 180000)) {
+                try await AgentLoop(transport: partial, tools: loopTools(Log()), budget: PhoneRunBudget(), latestUserMessage: "Find concert tickets").run()
+            }
+            assert(work == 1 && reports == 1 && checks == 1 && done.completion?.outcome == "partial" && done.completion?.reason == "LIMIT_DELIVERED")
+            assert(done.text.contains("Sydney") && done.text.contains("ticket availability"))
         }
 
         // 10. Team members run on a narrowed child of the turn budget; their use lands on the parent.

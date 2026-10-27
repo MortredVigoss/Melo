@@ -17,8 +17,9 @@ export async function runLimitDelivery({ task, observations, reason, fallback, c
     nativeWebSearchEnabled: false, nativeImageGenerationEnabled: false, onDelta: undefined, onReasoningDelta: undefined, onNativeToolEvent: undefined, onExecutionEvent: undefined });
   try {
     const raw = await call(deliveryRequest(task, observations, reason), 'delivery', 8192);
-    const parsed = parser.parse(raw); candidate = parsed.text;
-    if (!candidate.trim() || parsed.toolCalls.length) return stopped();
+    const parsed = parser.parse(raw);
+    if (!parsed.text.trim() || parsed.toolCalls.length) return stopped();
+    candidate = parsed.text;
   } catch (error) {
     if (signal?.aborted) return stopped();
     return stopped();

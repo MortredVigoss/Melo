@@ -5715,5 +5715,83 @@
       "reason": "LIMIT_DELIVERED",
       "summary": "部分完成 · 已达轮数上限"
     }
+  },
+  {
+    "name": "member total token reserve work",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "budget",
+      "action": "admitModel",
+      "budget": {
+        "startedAt": 0,
+        "deadlineAt": 1800000,
+        "maxInputTokens": 32000,
+        "maxTotalTokens": 32000,
+        "maxToolCalls": 200,
+        "used": {
+          "inputTokens": 15000,
+          "outputTokens": 1000,
+          "toolCalls": 1,
+          "providerCalls": 1
+        },
+        "parent": null,
+        "delivery": {
+          "deadlineMs": 60000,
+          "inputTokens": 8000,
+          "outputTokens": 8192,
+          "issued": false,
+          "checked": false
+        }
+      },
+      "now": 1,
+      "options": {
+        "phase": "work",
+        "inputTokens": 1000,
+        "outputTokens": 1
+      }
+    },
+    "expected": {
+      "allowed": false
+    }
+  },
+  {
+    "name": "member total token reserve delivery",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "budget",
+      "action": "admitModel",
+      "budget": {
+        "startedAt": 0,
+        "deadlineAt": 1800000,
+        "maxInputTokens": 32000,
+        "maxTotalTokens": 32000,
+        "maxToolCalls": 200,
+        "used": {
+          "inputTokens": 15000,
+          "outputTokens": 1000,
+          "toolCalls": 1,
+          "providerCalls": 1
+        },
+        "parent": null,
+        "delivery": {
+          "deadlineMs": 60000,
+          "inputTokens": 8000,
+          "outputTokens": 8192,
+          "issued": false,
+          "checked": false
+        }
+      },
+      "now": 1,
+      "options": {
+        "phase": "delivery",
+        "inputTokens": 1000,
+        "outputTokens": 8192
+      }
+    },
+    "expected": {
+      "allowed": true
+    }
   }
 ]

@@ -56,6 +56,7 @@ export function createRunBudget({ env = {}, now, overrides = {} } = {}) {
   return {
     startedAt,
     deadlineAt,
+    ...(positiveInt(overrides.maxTotalTokens) ? { maxTotalTokens: positiveInt(overrides.maxTotalTokens) } : {}),
     maxInputTokens: positiveInt(overrides.maxInputTokens) ?? positiveInt(env?.MELO_RUN_MAX_INPUT_TOKENS) ?? DEFAULT_RUN_MAX_INPUT_TOKENS,
     maxToolCalls: positiveInt(overrides.maxToolCalls) ?? positiveInt(env?.MELO_RUN_MAX_TOOL_CALLS) ?? DEFAULT_RUN_MAX_TOOL_CALLS,
     used: { inputTokens: 0, toolCalls: 0, providerCalls: 0 },
@@ -99,8 +100,9 @@ export function requestTimeoutMs(budget, { cap = DEFAULT_REQUEST_TIMEOUT_CAP_MS,
 }
 
 /** Add usage to the budget and every ancestor (members/skills count toward the parent). */
-export function recordUsage(budget, { inputTokens = 0, toolCalls = 0, providerCalls = 0 } = {}) {
+export function recordUsage(budget, { inputTokens = 0, outputTokens = 0, toolCalls = 0, providerCalls = 0 } = {}) {
   for (let node = budget; node; node = node.parent) {
+    if (node.maxTotalTokens != null) node.used.outputTokens = (node.used.outputTokens || 0) + Math.max(0, Number(outputTokens) || 0);
     node.used.inputTokens += Math.max(0, Number(inputTokens) || 0);
     node.used.toolCalls += Math.max(0, Number(toolCalls) || 0);
     node.used.providerCalls += Math.max(0, Number(providerCalls) || 0);
@@ -113,7 +115,7 @@ export function recordUsage(budget, { inputTokens = 0, toolCalls = 0, providerCa
  * { code:'BUDGET_EXHAUSTED', reason:'deadline'|'input-tokens'|'tool-calls', limit, used, reasonText }.
  * A child is also exhausted when any ancestor is (siblings share the parent's pool).
  */
-export function budgetExhausted(budget, now, { phase = 'work', inputTokens = 0 } = {}) {
+export function budgetExhausted(budget, now, { phase = 'work', inputTokens = 0, outputTokens = 0, ignoreToolLimit = phase !== 'work' } = {}) {
   if (!budget) return null;
   const time = currentTime(budget, now);
   const build = (reason, limit, used) => ({ code: BUDGET_EXHAUSTED, reason, limit, used, reasonText: REASON_TEXT[reason],
@@ -123,8 +125,13 @@ export function budgetExhausted(budget, now, { phase = 'work', inputTokens = 0 }
   const tokenLimit = budget.maxInputTokens - (reserve?.inputTokens || 0);
   if (time >= deadline) return build('deadline', budget.deadlineAt - budget.startedAt, time - budget.startedAt);
   if (budget.used.inputTokens + (budget.pendingInput || 0) + inputTokens >= tokenLimit) return build('input-tokens', budget.maxInputTokens, budget.used.inputTokens);
-  if (phase === 'work' && budget.used.toolCalls >= budget.maxToolCalls) return build('tool-calls', budget.maxToolCalls, budget.used.toolCalls);
-  return budget.parent ? budgetExhausted(budget.parent, time, { inputTokens }) : null;
+  if (budget.maxTotalTokens != null) {
+    const total = budget.used.inputTokens + (budget.used.outputTokens || 0) + (budget.pendingInput || 0) + (budget.pendingOutput || 0) + inputTokens + outputTokens;
+    const limit = budget.maxTotalTokens - (reserve ? reserve.inputTokens + reserve.outputTokens + AGENT_LOOP_CONTRACT.delivery.checkOutputTokens : 0);
+    if (total >= limit) return build('total-tokens', budget.maxTotalTokens, total);
+  }
+  if (!ignoreToolLimit && phase === 'work' && budget.used.toolCalls >= budget.maxToolCalls) return build('tool-calls', budget.maxToolCalls, budget.used.toolCalls);
+  return budget.parent ? budgetExhausted(budget.parent, time, { inputTokens, outputTokens, ignoreToolLimit }) : null;
 }
 
 /**
@@ -148,6 +155,7 @@ export function narrowBudget(parent, child = {}) {
   return {
     startedAt,
     deadlineAt: Math.min(...candidates),
+    ...((positiveInt(child.maxTotalTokens) || parent.maxTotalTokens != null) ? { maxTotalTokens: limit(child.maxTotalTokens, parent.maxTotalTokens == null ? Infinity : parent.maxTotalTokens - parent.used.inputTokens - (parent.used.outputTokens || 0) - (parent.pendingInput || 0) - (parent.pendingOutput || 0) - (parent.delivery ? parent.delivery.inputTokens + parent.delivery.outputTokens + AGENT_LOOP_CONTRACT.delivery.checkOutputTokens : 0)) } : {}),
     maxInputTokens: limit(child.maxInputTokens, parent.maxInputTokens - parent.used.inputTokens - (parent.pendingInput || 0) - (parent.delivery?.inputTokens || 0)),
     maxToolCalls: limit(child.maxToolCalls, parent.maxToolCalls - parent.used.toolCalls),
     used: { inputTokens: 0, toolCalls: 0, providerCalls: 0 },
@@ -190,6 +198,7 @@ export function describeBudgetReason(exhausted, locale = 'zh') {
       ? fillTemplate(formats.deadlineMinutes, { text: exhausted.reasonText, minutes })
       : fillTemplate(formats.deadlineSeconds, { text: exhausted.reasonText, seconds: Math.round(exhausted.limit / 1000) });
   }
+  if (exhausted.reason === 'total-tokens') return fillTemplate(formats['total-tokens'], { limit: exhausted.limit });
   if (exhausted.reason === 'tool-calls') return fillTemplate(formats['tool-calls'], { text: exhausted.reasonText, limit: exhausted.limit });
   return fillTemplate(formats['input-tokens'], { text: exhausted.reasonText, limit: exhausted.limit });
 }
@@ -213,7 +222,7 @@ export function receiptInputTokens(receipt) {
 // Child reservations cannot spend the parent's delivery allowance.
 export function reserveDelivery(budget) {
   if (!budget || budget.delivery) return budget;
-  budget.delivery = { deadlineMs: AGENT_LOOP_CONTRACT.delivery.deadlineMs, inputTokens: Math.min(AGENT_LOOP_CONTRACT.delivery.inputTokens, Math.floor(budget.maxInputTokens / 4)), outputTokens: AGENT_LOOP_CONTRACT.delivery.outputTokens, issued: false, checked: false };
+  budget.delivery = { deadlineMs: AGENT_LOOP_CONTRACT.delivery.deadlineMs, inputTokens: Math.min(AGENT_LOOP_CONTRACT.delivery.inputTokens, Math.floor(budget.maxInputTokens / 4), budget.maxTotalTokens == null ? Infinity : Math.floor(budget.maxTotalTokens / 16)), outputTokens: AGENT_LOOP_CONTRACT.delivery.outputTokens, issued: false, checked: false };
   return budget;
 }
 export function workRemainingMs(budget, now) {
@@ -221,19 +230,46 @@ export function workRemainingMs(budget, now) {
   const own = Math.max(0, remainingMs(budget, now) - (budget.delivery?.deadlineMs || 0));
   return Math.min(own, budget.parent ? workRemainingMs(budget.parent, now) : Infinity);
 }
-export function admitModel(budget, { phase = 'work', inputTokens = 0 } = {}) {
+export function admitModel(budget, { phase = 'work', inputTokens = 0, outputTokens = 0 } = {}) {
   if (!['work', 'delivery', 'delivery-check'].includes(phase)) throw new Error('Unknown model budget phase');
   const estimate = Math.max(0, Number(inputTokens) || 0);
-  const exhausted = budgetExhausted(budget, undefined, { phase, inputTokens: estimate });
+  const output = Math.max(0, Number(outputTokens) || 0);
+  const exhausted = budgetExhausted(budget, undefined, { phase, inputTokens: estimate, outputTokens: output });
   if (exhausted) return { allowed: false, exhausted, budget };
   if (phase !== 'work' && (!budget?.delivery || budget.delivery[phase === 'delivery' ? 'issued' : 'checked'])) {
     return { allowed: false, exhausted: { code: BUDGET_EXHAUSTED, reason: 'delivery-unavailable' }, budget };
   }
   if (phase !== 'work') budget.delivery[phase === 'delivery' ? 'issued' : 'checked'] = true;
-  for (let node = budget; node; node = node.parent) node.pendingInput = (node.pendingInput || 0) + estimate;
-  return { allowed: true, budget, claim: { inputTokens: estimate, phase } };
+  for (let node = budget; node; node = node.parent) {
+    node.pendingInput = (node.pendingInput || 0) + estimate;
+    if (node.maxTotalTokens != null) node.pendingOutput = (node.pendingOutput || 0) + output;
+  }
+  return { allowed: true, budget, claim: { inputTokens: estimate, ...(output ? { outputTokens: output } : {}), phase } };
 }
 export function settleModel(budget, claim, usage = {}) {
-  for (let node = budget; node; node = node.parent) node.pendingInput = Math.max(0, (node.pendingInput || 0) - (claim?.inputTokens || 0));
+  for (let node = budget; node; node = node.parent) {
+    node.pendingInput = Math.max(0, (node.pendingInput || 0) - (claim?.inputTokens || 0));
+    if (node.maxTotalTokens != null) node.pendingOutput = Math.max(0, (node.pendingOutput || 0) - (claim?.outputTokens || 0));
+  }
   return recordUsage(budget, { providerCalls: 1, ...usage });
+}
+
+// The output allowance is shared by API/native/member Hosts. It includes
+// in-flight sibling claims and preserves every ancestor's delivery reserve.
+export function modelOutputLimit(budget, { phase = 'work', inputTokens = 0, cap = Infinity } = {}) {
+  let left = Number.isFinite(cap) ? cap : Infinity;
+  for (let node = budget; node; node = node.parent) {
+    if (node.maxTotalTokens == null) continue;
+    const reserve = node === budget && phase !== 'work' ? null : node.delivery;
+    const held = reserve ? reserve.inputTokens + reserve.outputTokens + AGENT_LOOP_CONTRACT.delivery.checkOutputTokens : 0;
+    left = Math.min(left, node.maxTotalTokens - held - node.used.inputTokens - (node.used.outputTokens || 0) - (node.pendingInput || 0) - (node.pendingOutput || 0) - inputTokens - 1);
+  }
+  return Number.isFinite(left) ? Math.max(0, Math.floor(left)) : null;
+}
+
+export function memberTokenLimit(budget, maxTokens) {
+  if (!budget || !positiveInt(maxTokens)) return budget;
+  budget.maxInputTokens = Math.min(budget.maxInputTokens, positiveInt(maxTokens));
+  budget.maxTotalTokens = Math.min(budget.maxTotalTokens ?? Infinity, positiveInt(maxTokens));
+  return budget;
 }
