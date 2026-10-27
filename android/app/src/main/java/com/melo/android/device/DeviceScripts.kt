@@ -104,7 +104,7 @@ object GoalTemplate {
 }
 
 data class CacheMatch(val script: DeviceScript, val parameters: Map<String, String>)
-data class CacheLookup(val exact: CacheMatch? = null, val similar: List<DeviceScript> = emptyList(), val incompatible: Int = 0)
+data class CacheLookup(val exact: CacheMatch? = null, val similar: List<DeviceScript> = emptyList(), val incompatible: Int = 0, val legacy: CacheMatch? = null)
 object TaskCacheRouter {
     private fun tokens(text: String): Set<String> {
         val normalized = Normalizer.normalize(text, Normalizer.Form.NFKC).lowercase().replace(Regex("打开|启动|进入|帮我|麻烦|手机|系统|应用|页面|一下|请"), " ")
@@ -123,6 +123,13 @@ object TaskCacheRouter {
             GoalTemplate.bind(script.goalTemplate, goal)?.takeIf { bindings -> script.parameters.all { it in bindings } }?.let { CacheMatch(script, it) }
         }
         if (exact.size == 1) return CacheLookup(exact.single(), incompatible = incompatible)
+        // Missing metadata is different from a KNOWN incompatible posture or
+        // app version. Only a unique, literal/template match may be revalidated
+        // under ScriptRunner's live selectors and terminal checks.
+        val legacy = owned.filter { it.environment == null }.mapNotNull { script ->
+            GoalTemplate.bind(script.goalTemplate, goal)?.takeIf { bindings -> script.parameters.all { it in bindings } }?.let { CacheMatch(script, it) }
+        }.singleOrNull()
+        if (exact.isEmpty() && legacy != null && environment != null && environment.layout.isNotBlank() && !environment.layout.contains("hinge-pending")) return CacheLookup(incompatible = incompatible, legacy = legacy)
         val wanted = tokens(goal)
         val ranked = eligible.map { script ->
             val other = tokens(script.goalTemplate)

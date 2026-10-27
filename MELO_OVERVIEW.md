@@ -13,6 +13,8 @@
 
 ## 2. 当前事实
 
+10-27 0.10.2（26）执行阶段已验证：能力目录不随措辞隐藏 phone_use、UI Tree 优先/按需图像、普通点击沿用任务授权、低对比关闭控件和旧缓存重校验；Core215/JVM164/Native63通过，快速档两项缺私有素材。见[执行回执](docs/android-phone-reliability-20261027.md)。用户最新明确动作/子流程成功应立即缓存，发布粒度正在继续，不把本阶段当成完成。
+
 10-27 补丁 0.10.1（25）已覆盖安装 Fold6：修复短句“重试”丢失原任务及 phone_use，并区分路由建议/实际注册目录；Core 213、Native 专项 11 通过，最新 APK 六种协议/执行组合通过。手机锁屏，真实汽水播放尚待解锁复测；见[补丁回执](docs/android-short-retry-fix-20261027.md)。
 
 10-26 Android 接手：已将本地 master fast-forward 到 `248364b`，从最新主线建立 `codex/android-organizer-20261026`；原 Android 未推送工作保留在原分支 `1be64ad`，未混合合并。Goal Check 的 Calendar→Weather 受控回归通过，旧手机循环问题尚未全部解决；见 [主线复核](docs/master-loop-recheck-20261026.md)。用户已认可并实施 Todo / Calendar 独立页面、系统日历/ICS、通知与可选强提醒、同一 Repository 的 Chat Tools；[实施回执](docs/android-organizer-implementation-20261026.md)。补充修复动态广告引起的坐标 stale_screen 误拒绝，见[专项](docs/android-dynamic-ad-freshness-20261026.md)。当前 0.10.0 已完成：Core 212、JVM 160、Native 专项 26 全通过；完整 Native 87/88，宠物拖动仍失败；快速档两项缺失私有宠物素材，不能称全仓 GREEN。10-26 使用 Emulator；10-27 用户重新授权后，0.10.0（24）已覆盖安装到 Fold6 并确认启动，见[安装回执](docs/android-organizer-install-20261027.md)。真实汽水和强提醒交回用户试用，未推送。

@@ -14,6 +14,7 @@ class DynamicAdFixtureActivity : Activity() {
     class AdCanvas(context: Context) : View(context) {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         var changed = false
+        var dim = false
         var clicks = 0
         private var tick = 0
         private val animate = object : Runnable {
@@ -23,7 +24,7 @@ class DynamicAdFixtureActivity : Activity() {
         override fun onDraw(c: Canvas) {
             c.drawColor(if (tick % 2 == 0) Color.rgb(30, 60, 90) else Color.rgb(80, 25, 55))
             paint.color = Color.WHITE; paint.textSize = 36f; c.drawText("Advertisement $tick", 30f, height * .6f, paint)
-            paint.color = if (changed) Color.RED else Color.BLACK
+            paint.color = if (changed) Color.RED else if (dim) Color.rgb(215, 215, 215) else Color.BLACK
             c.drawRect(width * .78f, height * .04f, width * .98f, height * .22f, paint)
             paint.color = Color.WHITE; paint.strokeWidth = 8f
             val x = width * .88f; val y = height * .13f

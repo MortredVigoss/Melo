@@ -13,13 +13,13 @@ class DeviceTargetPolicyTest {
             assertFalse(DeviceTargetPolicy.unchanged(target, changed))
         assertFalse(DeviceTargetPolicy.unchanged(null, target))
     }
-    @Test fun coordinateAndCommitClicksRequireNativeConfirmationWhileNavigationDoesNot() {
-        assertTrue(DeviceTargetPolicy.needsConfirmation("tap", null))
+    @Test fun ordinaryCoordinatesUseTaskAuthorizationAndCommitControlsStillRequireConfirmation() {
+        assertFalse(DeviceTargetPolicy.needsConfirmation("tap", null))
         for (label in listOf("发送", "删除聊天", "立即支付", "Send", "Delete account", "Buy now")) assertTrue(DeviceTargetPolicy.needsConfirmation("tap", target.copy(text = label)))
         assertFalse(DeviceTargetPolicy.needsConfirmation("tap", target))
         assertFalse(DeviceTargetPolicy.needsConfirmation("type_text", target))
     }
-    @Test fun stationaryGesturesCannotBypassTheCoordinateClickConfirmation() {
+    @Test fun stationaryGesturesCannotDisguiseAClickAsASwipe() {
         fun swipe(endX: Int) = buildJsonObject { put("action", "swipe"); put("screen_id", "s"); put("x", 10); put("y", 10); put("end_x", endX); put("end_y", 10) }
         for (endX in listOf(10, 11, 57)) assertTrue(runCatching { DeviceTools.validate(swipe(endX)) }.isFailure)
         DeviceTools.validate(swipe(200))

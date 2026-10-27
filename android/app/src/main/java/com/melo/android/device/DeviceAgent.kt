@@ -110,23 +110,23 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
                 }
                 // A miss needs valid model access before clearing the user's draft;
                 // an exact/manual hit must never read credentials at all.
-                val modelAccess = if (lookup.exact == null) {
+                val modelAccess = if (lookup.exact == null && lookup.legacy == null) {
                     require(instructions.length <= 32_000) { "角色或项目指令超过任务预算，请减少资料后重试。" }
                     credentials()
                 } else null
-                val source = lookup.exact?.script ?: lookup.similar.firstOrNull()
-                val mode = when { manualScript != null -> "manual"; lookup.exact != null -> "exact"; lookup.similar.isNotEmpty() -> "similar"; else -> "probe" }
+                val source = lookup.exact?.script ?: lookup.legacy?.script ?: lookup.similar.firstOrNull()
+                val mode = when { manualScript != null -> "manual"; lookup.exact != null -> "exact"; lookup.legacy != null -> "revalidate"; lookup.similar.isNotEmpty() -> "similar"; else -> "probe" }
                 val started = DeviceRun(goal = trimmed, connectionName = if (lookup.exact != null) "本机缓存" else connection?.name ?: "未配置模型", taskContext = taskContext,
                     executionMode = mode, modelRequests = 0, scriptId = source?.id, scriptRevision = source?.revision, parentRunId = binding?.parentRunId,
                     cacheLookupMs = lookupMs, cacheIncompatible = lookup.incompatible,
-                    cacheNote = if (lookup.incompatible > 0) "已排除 ${lookup.incompatible} 个布局、姿态、App 版本不兼容或缺少环境记录的缓存。" else "")
+                    cacheNote = if (lookup.legacy != null) "旧缓存缺少环境记录，正在按当前页面逐步重新验证；尚未认定兼容。" else if (lookup.incompatible > 0) "已排除 ${lookup.incompatible} 个布局、姿态、App 版本不兼容或缺少环境记录的缓存。" else "")
                 run = started
                 repository.change { current ->
                     require(chatId == null || current.chats.any { it.id == chatId }) { "对话已删除。" }
                     current.copy(deviceRuns = (current.deviceRuns + started).takeLast(50), drafts = if (chatId == null || binding != null || scriptId != null) current.drafts else current.drafts - chatId)
                 }
                 mutable.update { it.copy(running = true, runId = started.id, phase = "正在检查操作缓存…", chatId = chatId, scriptId = source?.id) }
-                device.begin(displayId, screenshots && lookup.exact == null && lookup.similar.isEmpty()); begun = true
+                device.begin(displayId, screenshots && lookup.exact == null && lookup.legacy == null && lookup.similar.isEmpty()); begun = true
                 val outcome = withTimeout(10 * 60 * 1000L) {
                     var activeBudget = binding?.budget
                     val executeDevice: suspend (JsonObject) -> DeviceToolResult = { arguments ->
@@ -136,7 +136,7 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
                     val trace: suspend (DeviceStep) -> Unit = { step -> run = run!!.copy(steps = run!!.steps + step); save(run!!) }
                     val phase: (String) -> Unit = { text -> mutable.update { it.copy(phase = text) } }
                     fun countRequest() { run = run!!.copy(modelRequests = (run!!.modelRequests ?: 0) + 1) }
-                    var recipe = lookup.exact
+                    var recipe = lookup.exact ?: lookup.legacy
                     var adapted = false
                     if (recipe == null && lookup.similar.isNotEmpty()) {
                         phase("Similar Hit · 正在精简改写候选脚本…")
@@ -151,14 +151,16 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
                         val match = requireNotNull(recipe)
                         val replayStarted = System.nanoTime()
                         val replay = ScriptRunner(executeDevice, trace, phase, compatible = {
-                            if (match.script.environment == null) manualScript != null
+                            if (match.script.environment == null) (manualScript != null || lookup.legacy?.script?.id == match.script.id) &&
+                                (environment?.let { initial -> device.cacheEnvironment(displayId, match.script.packages())?.supports(match.script.copy(environment = initial)) == true } ?: (manualScript != null))
                             else device.cacheEnvironment(displayId, match.script.packages())?.supports(match.script) == true
                         }).run(match.script, match.parameters)
                         run = run!!.copy(cacheReplayMs = (System.nanoTime() - replayStarted) / 1_000_000)
                         if (!adapted && replay.outcome.status != "achieved") repository.invalidateDeviceScript(match.script, replay.outcome.error.orEmpty())
                         if (replay.outcome.status == "achieved") {
-                            if (adapted) pendingCache = match.script.copy(sourceRunId = started.id, scope = cacheScope) else replaySuccess = match.script
-                            run = run!!.copy(cacheNote = if (adapted) "相似脚本已验证成功。" else "本机重放与终态校验成功；没有调用模型。")
+                            if (adapted) pendingCache = match.script.copy(sourceRunId = started.id, scope = cacheScope)
+                            else replaySuccess = if (match.script.environment == null) bindEnvironment(match.script) ?: match.script else match.script
+                            run = run!!.copy(cacheNote = if (adapted) "相似脚本已验证成功。" else if (replaySuccess?.environment != null && match.script.environment == null) "旧缓存已通过当前页面与终态验证，已补齐环境记录；没有调用模型。" else "本机重放与终态校验成功；没有调用模型。")
                             return@withTimeout replay.outcome
                         }
                         if (manualScript != null || replay.unsafeToResume || replay.outcome.status == "needs_user") return@withTimeout replay.outcome.copy(

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "sha256": "4c69613042f56e200e1f8900f0d93de334a1520ce7edcbefc9120dc1a531d4fd",
+  "sha256": "fab55144616fc7086a63d506ad556da871bfb76bb38c1dd96806caa91ce5b7e7",
   "sources": {
     "shared/agent/index.js": "3afc8cd6d84db8036d89ff6f69f6b1ff286913be767cb56097389ef673374aac",
     "shared/agent/retrieval/requestPolicy.js": "e6c7dfc4ac142a2123aa4c32795ad3ad60cadc3c18819060482229ee3763ed16",
@@ -21,7 +21,7 @@
     "shared/agent/organizer.js": "72c3cd0e68301f59d7da791716d64ff3f8fc269c9c254b80986247f9ea4e1920",
     "shared/agent/repeatGuard.js": "eca1d776e713fb7a59e05c1d16f78fb9d71877ad6ebb10cb23e2a4ad5bf78382",
     "shared/agent/toolEffects.js": "a96f8c5d0cf82c89beda874e3d5b3fe7639a24d8c5b1e1e6c0b867c4c62dd0bf",
-    "shared/agent/search.js": "6f047996c3e7339b4dc4962cd3898df5553a470eef322eb2e05a28ead0b85069",
+    "shared/agent/search.js": "4983562c387affc9d2aeb92a438b1ec8cb1b04b2a0fa14b07cff7f550ac60ea4",
     "shared/agent/policyBridge.js": "685179f8ac85a4252f6f4a5a7c441f3da568f32146b8e2c22a7e7bf195077f4b",
     "shared/agent/runBudget.js": "4ddc72a53adda8ddc5557e08facce214fe782fa78782e1323531a8ca72877efe",
     "shared/agent/completion.js": "b75b4070be9c3a9102992d6278becb2db51c6d84a8b4ee16c3e84658a3b81259",

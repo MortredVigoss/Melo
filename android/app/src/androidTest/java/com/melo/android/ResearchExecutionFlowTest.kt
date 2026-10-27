@@ -68,6 +68,35 @@ class ResearchExecutionFlowTest {
             assertEquals(if (execute) 3 else 1, model.requestCount)
         }
     }
+    @Test fun informalFollowupsKeepTheSameCatalogOnEveryWorkRoundWithoutRoutingRecognition() = runBlocking {
+        for (protocol in listOf("chat-completions", "responses", "anthropic")) MockWebServer().use { model ->
+            model.start()
+            val original = "打开汽水音乐，搜索牡丹亭播放"
+            val messages = listOf(Message(role = "user", content = original), Message(role = "assistant", content = "以前没有手机工具。"), Message(role = "user", content = "再次重试，换个办法继续刚才的事"))
+            model.enqueue(tool(protocol, "phone_use", "informal-phone", buildJsonObject { put("goal", original); put("purpose", "action") }))
+            model.enqueue(final(protocol)); model.enqueue(review(protocol, true, "informal-phone"))
+            var calls = 0
+            val result = SharedChatAgent(app, ModelClient(true), true).reply(Connection(endpoint = model.url("/model").toString(), model = "fixture", protocol = protocol, stream = false), "fixture-key", messages, "", buildJsonObject {}, { "" }, true, newId(), "informal-fixture", { "" },
+                invokePhone = { calls++; DeviceToolResult(buildJsonObject { put("ok", true); put("status", "achieved"); put("summary", "Local fixture result") }) }, onPhase = {})
+            assertEquals("completed", result.outcome); assertEquals(1, calls)
+            repeat(2) {
+                val request = model.takeRequest(2, TimeUnit.SECONDS)!!.body.readUtf8()
+                assertTrue(request.contains("phone_use")); assertTrue(request.contains("todo_list")); assertTrue(request.contains(original)); assertTrue(request.contains("再次重试"))
+            }
+            val checker = model.takeRequest(2, TimeUnit.SECONDS)!!.body.readUtf8()
+            assertTrue(checker.contains("task completion checker")); assertEquals(3, model.requestCount)
+        }
+    }
+    @Test fun publicResearchCannotTakeOverPhoneDespiteRegisteredCapability() = runBlocking {
+        MockWebServer().use { model ->
+            model.start(); model.enqueue(tool("chat-completions", "phone_use", "unrequested-phone", buildJsonObject { put("goal", "Open Maps and research restaurants on screen"); put("purpose", "research") }))
+            var calls = 0
+            val result = SharedChatAgent(app, ModelClient(true), true).reply(Connection(endpoint = model.url("/model").toString(), model = "fixture", stream = false), "fixture-key", listOf(Message(role = "user", content = "搜索 Surry Hills 当前营业的餐厅")), "", buildJsonObject {}, { "" }, true, newId(), "research-boundary", { "" },
+                invokePhone = { calls++; error("Unrequested screen takeover") }, onPhase = {})
+            assertEquals(0, calls); assertEquals("blocked", result.outcome); assertEquals("PHONE_NOT_REQUESTED", result.stopReason)
+            assertTrue(model.takeRequest(2, TimeUnit.SECONDS)!!.body.readUtf8().contains("phone_use"))
+        }
+    }
     @Test fun threeProtocolsSearchReadThenNavigateAndPersistOnlyObservedEvents() = runBlocking {
         for (protocol in listOf("chat-completions", "responses", "anthropic")) MockWebServer().use { model -> MockWebServer().use { backend ->
             model.start(); backend.start()

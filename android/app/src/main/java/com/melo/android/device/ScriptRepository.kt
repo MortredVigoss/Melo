@@ -35,7 +35,7 @@ suspend fun Repository.commitDeviceOutcome(run: DeviceRun, learned: DeviceScript
         if (run.status == "achieved" && replaySuccess != null) {
             val current = scripts.firstOrNull { it.id == replaySuccess.id && it.revision == replaySuccess.revision }
             if (current != null) {
-                scripts = scripts.map { if (it.id != current.id) it else it.copy(hits = it.hits + 1, successes = it.successes + 1, verified = true, invalidated = false, lastError = "", updatedAt = now()) }
+                scripts = scripts.map { if (it.id != current.id) it else it.copy(hits = it.hits + 1, successes = it.successes + 1, verified = true, invalidated = false, environment = it.environment ?: replaySuccess.environment, lastError = "", updatedAt = now()) }
                 finished = finished.copy(cacheId = current.id)
             } else finished = finished.copy(cacheNote = "本次运行使用旧版本；当前缓存已修改或删除，未覆盖。")
         }

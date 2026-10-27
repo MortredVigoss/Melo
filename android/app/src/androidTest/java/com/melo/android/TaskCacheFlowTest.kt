@@ -84,6 +84,46 @@ class TaskCacheFlowTest {
     private fun cached(goal: String = "Fixture ${newId()}", steps: List<ScriptStep> = listOf(ScriptStep("open_app", "fixture.settings"))) = DeviceScript(
         name = "Fixture cache", goalTemplate = goal, steps = steps, completion = ScriptAssertion("fixture.settings", "Fixture", "Ready"), scope = cacheScope, verified = true, environment = environment)
 
+    @Test fun legacyExactRecipeIsRevalidatedBeforeEnvironmentIsStoredAndThenHitsNormally() = runBlocking {
+        val goal = "Legacy exact fixture ${newId()}"; val legacy = cached(goal).copy(environment = null)
+        app.repository.change { it.copy(deviceScripts = listOf(legacy), settings = it.settings.copy(activeConnection = null, connections = emptyList())) }
+        assertNull(app.repository.data.value.deviceScripts.single().environment)
+        val first = run(goal)
+        assertEquals(first.error, "achieved", first.status); assertEquals("revalidate", first.executionMode); assertEquals(0, first.modelRequests)
+        assertEquals(environment, app.repository.data.value.deviceScripts.single().environment)
+        val second = run(goal)
+        assertEquals("achieved", second.status); assertEquals("exact", second.executionMode); assertEquals(0, second.modelRequests)
+    }
+    @Test fun legacyRevalidationPinsTheInitialPostureAndStopsBeforeASecondEffect() = runBlocking {
+        val goal = "Legacy posture fixture ${newId()}"
+        val click = ScriptStep("tap", "fixture.settings", "Fixture", NodeSelector(viewId = "fixture.settings:id/target"))
+        val legacy = cached(goal, listOf(ScriptStep("open_app", "fixture.settings"), click, click)).copy(environment = null)
+        app.repository.change { it.copy(deviceScripts = listOf(legacy), settings = it.settings.copy(activeConnection = null, connections = emptyList())) }
+        val device = object : FixtureDevice() {
+            override suspend fun execute(arguments: JsonObject): DeviceToolResult {
+                val result = super.execute(arguments)
+                if (arguments.text("action") == "tap") cacheEnvironment = environment.copy(layout = "new-posture")
+                return result
+            }
+        }
+        val result = run(goal, device)
+        assertNotEquals("achieved", result.status); assertEquals(1, device.taps); assertEquals(0, result.modelRequests)
+        assertNull(app.repository.data.value.deviceScripts.single().environment)
+    }
+    @Test fun failedLegacyValidationAndKnownIncompatibleLayoutsAreNeverTrusted() = runBlocking {
+        val goal = "Legacy failure fixture ${newId()}"; val legacy = cached(goal).copy(environment = null)
+        app.repository.change { it.copy(deviceScripts = listOf(legacy)) }
+        val failed = run(goal, object : FixtureDevice() {
+            override suspend fun execute(arguments: JsonObject) = DeviceToolResult.error("Fixture target not visible", "stale_target")
+        }, scriptId = legacy.id)
+        assertNotEquals("achieved", failed.status); assertNull(app.repository.data.value.deviceScripts.single().environment)
+        val known = cached(goal).copy(environment = environment.copy(layout = "other-fold-posture"))
+        val lookup = TaskCacheRouter.lookup(goal, listOf(known), cacheScope, environment)
+        assertNull(lookup.exact); assertNull(lookup.legacy)
+        assertNull(TaskCacheRouter.lookup(goal, listOf(legacy, legacy.copy(id = newId())), cacheScope, environment).legacy)
+        assertNull(TaskCacheRouter.lookup(goal, listOf(cached(goal), cached(goal), legacy), cacheScope, environment).legacy)
+        for (layout in listOf("", "hinge-pending")) assertNull(TaskCacheRouter.lookup(goal, listOf(legacy), cacheScope, environment.copy(layout = layout)).legacy)
+    }
     @Test fun probePublishesCacheThenExactHitWorksWithoutAnyConnectionOrKey() = runBlocking {
         MockWebServer().use { server ->
             queueProbe(server); server.start(); connection(server)

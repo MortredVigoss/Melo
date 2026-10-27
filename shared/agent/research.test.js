@@ -8,6 +8,23 @@ const capabilities = { executors: ['web_search', 'fetch_url', 'phone_use'], gran
 const config = { search: { backend: 'http', endpoint: 'https://search.fixture.invalid' } };
 const plan = (text, extra = {}) => planRequest({ text, capabilities, config, ...extra });
 
+test('registered phone capability is independent of routing vocabulary and reply history', () => {
+  const messages = [{ role: 'user', content: '打开汽水音乐，搜索牡丹亭播放' }, { role: 'assistant', content: '我没有手机工具，请手动操作。' }];
+  for (const text of ['再次重试', '还是不行，你继续弄', '换一种方式呢', '下一步', '你好', '1+1']) {
+    const result = plan(text, { messages });
+    assert.ok(result.availableTools.includes('phone_use'), text);
+    assert.ok(result.availableTools.includes('web_search'), text);
+  }
+  for (const text of ['不要操作手机，搜索餐厅', '不要调用工具', '只根据已有对话回答，不联网']) assert.ok(!plan(text).availableTools.includes('phone_use'), text);
+  assert.ok(!plan('再次重试', { capabilities: { ...capabilities, grants: ['web_search', 'fetch_url'] } }).availableTools.includes('phone_use'));
+});
+
+test('offered phone tools are not permission to replace public research with a screen takeover', () => {
+  const result = plan('推荐 Surry Hills brunch');
+  assert.ok(result.availableTools.includes('phone_use'));
+  assert.equal(actionEvidence(result, []).code, 'PHONE_NOT_REQUESTED');
+});
+
 test('checking supplied text is not a web lookup, while real lookup verbs remain research', () => {
   for (const text of ['连通性检查，请回复 OK', '请检查一下这句话的语法', '审查这个计算：2 + 2 = 4']) {
     assert.equal(plan(text).route, 'none', text);

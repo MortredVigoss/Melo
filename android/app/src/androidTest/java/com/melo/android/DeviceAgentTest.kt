@@ -49,10 +49,22 @@ class DeviceAgentTest {
     private suspend fun observe(service: DeviceExecutor): DeviceToolResult = service.execute(buildJsonObject { put("action", "observe") })
     private fun node(observation: DeviceToolResult, label: String): JsonObject = observation.data["nodes"]!!.jsonArray.map { it.jsonObject }.firstOrNull { it.text("text") == label || it.text("description") == label } ?: error("Missing $label in ${observation.data}")
 
+    @Test fun treeFirstSupportsOrdinaryCoordinateTapsWithoutApprovalAndExplicitVisualFallback() = runBlocking {
+        val service = DeviceAccess.service!!; service.begin(0, true)
+        val tree = observe(service)
+        assertTrue(tree.ok); assertNull(tree.jpeg); assertEquals("ui_tree", tree.data.text("observation_mode"))
+        val target = node(tree, "Target button"); val bounds = target.getValue("bounds").jsonArray.map { it.jsonPrimitive.int }
+        val tapped = service.execute(buildJsonObject { put("action", "tap"); put("screen_id", tree.data.text("screen_id")); put("x", (bounds[0] + bounds[2]) / 2); put("y", (bounds[1] + bounds[3]) / 2) })
+        assertTrue(tapped.data.toString(), tapped.ok); assertNull(app.deviceAgent.runtime.value.approval)
+        val image = service.execute(buildJsonObject { put("action", "observe"); put("include_screenshot", true) })
+        assertTrue(image.ok); assertNotNull(image.jpeg); assertEquals("ui_tree_and_screenshot", image.data.text("observation_mode"))
+        assertNotNull(node(image, "Count 1"))
+    }
+
     @Test fun actualScreenshotNodeClickChineseTypingAndStaleScreenProtection() = runBlocking {
         val service = DeviceAccess.service!!
         service.begin(0, true)
-        var screen = observe(service)
+        var screen = service.execute(buildJsonObject { put("action", "observe"); put("include_screenshot", true) })
         assertTrue(screen.data.toString(), screen.ok)
         assertTrue(screen.data.toString(), screen.data["screenshot_available"]!!.jsonPrimitive.boolean)
         val bytes = android.util.Base64.decode(screen.jpeg, android.util.Base64.NO_WRAP)
@@ -63,7 +75,7 @@ class DeviceAgentTest {
         screen = observe(service)
         assertTrue(screen.ok); assertNull(screen.jpeg); assertFalse(screen.data["screenshot_available"]!!.jsonPrimitive.boolean)
         service.configureScreenshots(true); delay(400)
-        screen = observe(service)
+        screen = service.execute(buildJsonObject { put("action", "observe"); put("include_screenshot", true) })
         assertTrue(screen.ok); assertNotNull(screen.jpeg)
         assertFalse(screen.data.toString().contains("fixture-password-hidden"))
         val old = screen.data.text("screen_id")
@@ -315,7 +327,7 @@ class DeviceAgentTest {
                     val previous = messages.lastOrNull { it.text("role") == "tool" }?.text("content")?.let { MeloJson.parseToJsonElement(it).jsonObject }
                     val nodes = previous?.get("nodes")?.jsonArray.orEmpty().map { it.jsonObject }
                     if (nodes.any { it.text("text") == "Count 1" }) return fixtureCall("finish", finishArgs("achieved", previous!!.text("screen_id"), "Count 1"))
-                    val arguments = if (previous == null || previous["ok"]?.jsonPrimitive?.booleanOrNull != true) buildJsonObject { put("action", "observe") } else buildJsonObject {
+                    val arguments = if (previous == null || previous["ok"]?.jsonPrimitive?.booleanOrNull != true) buildJsonObject { put("action", "observe"); put("include_screenshot", true) } else buildJsonObject {
                         put("action", "tap"); put("screen_id", previous.text("screen_id")); put("node_id", nodes.first { it.text("text") == "Target button" }.text("node_id"))
                     }
                     return MockResponse().setBody(buildJsonObject { put("choices", buildJsonArray { add(buildJsonObject {
@@ -362,9 +374,9 @@ class DeviceAgentTest {
             assertEquals("cancelled", app.repository.data.value.deviceRuns.last().status)
         }
     }
-    @Test fun coordinateClickWaitsForNativeApprovalAndDeclineOrCancelExecutesNothing() = runBlocking {
+    @Test fun sensitiveCoordinatesAndNodesKeepApprovalAndDeclineOrCancelExecutesNothing() = runBlocking {
         for (decision in listOf("allow", "decline", "cancel", "changed", "node_commit")) ActivityScenario.launch<DeviceFixtureActivity>(Intent(app, DeviceFixtureActivity::class.java)).use { scenario ->
-            if (decision == "node_commit") scenario.onActivity { activity ->
+            scenario.onActivity { activity ->
                 val content = activity.findViewById<android.view.ViewGroup>(android.R.id.content).getChildAt(0) as android.view.ViewGroup
                 (content.getChildAt(1) as android.widget.Button).text = "Send"
             }
@@ -382,7 +394,7 @@ class DeviceAgentTest {
                             postTapObservations++
                             return fixtureCall("after-tap-$postTapObservations", buildJsonObject { put("action", "observe") })
                         }
-                        val target = node(DeviceToolResult(previous), if (decision == "node_commit") "Send" else "Target button")
+                        val target = node(DeviceToolResult(previous), "Send")
                         val bounds = target["bounds"]!!.jsonArray.map { it.jsonPrimitive.int }
                         return fixtureCall("coordinate", buildJsonObject {
                             put("action", "tap"); put("screen_id", previous.text("screen_id"))

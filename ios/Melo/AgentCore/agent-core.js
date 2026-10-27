@@ -1739,7 +1739,11 @@ const { publicLookupRequest } = modules["shared/agent/retrieval/publicLookupInte
 const { normalizeRuntimeConfig } = modules["shared/agent/tools.js"];
 const { extractTextUrls } = modules["shared/agent/media/textUrls.js"];
 
+const PHONE_DENIED = /(?:不要|不用|禁止|别).{0,6}(?:手机|屏幕|小红书|微信|Google Maps|导航)|\b(?:do not|don't|never)\s+(?:use|open|operate|navigate)\s*(?:my |the )?(?:phone|screen|wechat|xiaohongshu|google maps)?/iu;
+const CAPABILITY_GUIDANCE = 'The tool definitions in THIS request are the current authorized capability catalog. Routing hints are suggestions, not a list of your capabilities. Interpret every new user message using the supplied conversation context, including informal follow-ups and retries; never adopt an earlier assistant claim that a currently registered tool does not exist. Decide whether research or device work is needed from the user goal. Public web questions use search/read tools; a search failure does not authorize a phone-screen fallback. Use phone_use only within the user-requested phone/app task. Do not repeat successful side effects.';
+
 function actionEvidence(plan = {}, urls = []) {
+  if (plan.research && !plan.research.navigate) return { ok: false, code: 'PHONE_NOT_REQUESTED', error: '本次公开资料检索没有请求手机操作，未接管屏幕。请使用检索结果或说明缺少的检索能力。' };
   const observedDestination = urls.some(url => typeof url === 'string' && /^https?:\/\/[^\s/@]+(?:[/?#][^\s]*)?$/iu.test(url));
   return plan.research?.navigate && !observedDestination
     ? { ok: false, code: 'DESTINATION_UNVERIFIED', error: '检索没有返回可核对的地点来源，尚不能选择导航目标。' }
@@ -1792,7 +1796,7 @@ function buildRequestPlan({ text = '', messages = [], capabilities = {}, config 
   const previous = messages.filter(message => message?.role === 'user' && typeof message.content === 'string').map(message => message.content);
   if (previous.at(-1) === text) previous.pop();
   const followUp = /^(?:那|这|第[一二三四五六七八九十\d]+|它|他们|what about|the (?:first|second|third)|that one)/iu;
-  const phoneDenied = /(?:不要|不用|禁止|别).{0,6}(?:手机|屏幕|小红书|微信|Google Maps|导航)|\b(?:do not|don't|never)\s+(?:use|open|operate|navigate)\s*(?:my |the )?(?:phone|screen|wechat|xiaohongshu|google maps)?/iu;
+  const phoneDenied = PHONE_DENIED;
   const navigation = !phoneDenied.test(instruction) && /导航|带我去|\b(?:navigate|directions to|take me to)\b/iu.test(instruction);
   let appFollowUp = false;
   if (followUp.test(policy.instruction.trim())) for (const prior of previous.slice(-8).reverse()) {
@@ -1860,8 +1864,9 @@ function planRequest(request = {}) {
     ...(plan.tools || []),
     ...(!policy.fetchForbidden && available('fetch_url') ? ['fetch_url'] : []),
     ...(!policy.searchForbidden && searchBackend && available('web_search') ? ['web_search'] : []),
+    ...(!policy.contextOnly && !policy.localSearch && !PHONE_DENIED.test(policy.instruction) && available('phone_use') ? ['phone_use'] : []),
   ])];
-  return { ...plan, availableTools,
+  return { ...plan, instructions: [plan.instructions, CAPABILITY_GUIDANCE].filter(Boolean).join('\n'), availableTools,
     nativeSearchAvailable: !policy.searchForbidden && !policy.localSearch && capabilities.hostedSearch === 'verified' && grants.has('web_search') && !['phone', 'browser'].includes(plan.route),
     toolsForbidden: policy.toolsForbidden };
 }

@@ -136,7 +136,7 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
             setOnClickListener { (application as MeloApplication).deviceAgent.cancel() }
         }
         val params = WindowManager.LayoutParams(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL, PixelFormat.TRANSLUCENT).apply {
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON, PixelFormat.TRANSLUCENT).apply {
             gravity = Gravity.TOP or Gravity.END; x = 8; y = (80 * resources.displayMetrics.density).toInt()
             title = "Melo device assistant stop"
         }
@@ -192,6 +192,14 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
     private suspend fun requireCoordinateFresh(arguments: JsonObject) {
         checkSession(); requireFresh(arguments, false); point(arguments, "x", "y")
         if (observedGeneration == generation) return
+        // Tree-backed coordinates use the same identity checks as node taps.
+        val (nativeX, nativeY) = point(arguments, "x", "y")
+        val treeTarget = targets.entries.filter { (_, target) ->
+            val b = target.bounds
+            target.clickable && listOf(target.text, target.description, target.viewId).any(String::isNotBlank) &&
+                nativeX >= b[0] && nativeX < b[2] && nativeY >= b[1] && nativeY < b[3]
+        }.minByOrNull { (_, target) -> val b = target.bounds; (b[2] - b[0]).toLong() * (b[3] - b[1]) }
+        if (treeTarget != null && runCatching { freshNode(JsonObject(arguments + ("node_id" to JsonPrimitive(treeTarget.key)))) }.isSuccess) return
         val original = observedJpeg ?: throw DeviceExecutionException("stale_screen", "窗口持续变化且缺少截图，无法核对坐标目标。")
         val current = try { screenshot(windowId) } catch (e: CancellationException) { throw e } catch (_: Exception) { throw DeviceExecutionException("stale_screen", "无法取得当前目标区域截图，请重新观察。") }
         checkSession(); requireFresh(arguments, false)
@@ -254,6 +262,14 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
             } finally { runCatching { manager.removeView(button) }; if (confirmationButton === button) confirmationButton = null; reply.cancel() }
         }
     }
+    private fun coordinateCommitTarget(arguments: JsonObject): AccessibilityNodeInfo? {
+        val (x, y) = point(arguments, "x", "y")
+        val candidate = targets.entries.filter { (_, target) ->
+            val box = target.bounds
+            x >= box[0] && x < box[2] && y >= box[1] && y < box[3] && DeviceTargetPolicy.needsConfirmation("tap", target)
+        }.minByOrNull { (_, target) -> val b = target.bounds; (b[2] - b[0]).toLong() * (b[3] - b[1]) } ?: return null
+        return freshNode(JsonObject(arguments + ("node_id" to JsonPrimitive(candidate.key))))
+    }
     override suspend fun execute(arguments: JsonObject): DeviceToolResult = withContext(Dispatchers.Main.immediate) {
         try {
             checkSession(); DeviceTools.validate(arguments)
@@ -303,7 +319,7 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
                     } else {
                         // Validate coordinates before asking; approval never bypasses freshness.
                         point(arguments, "x", "y")
-                        if (!confirm(arguments, null)) return@withContext DeviceToolResult.error("本步操作未获允许，已停止。", "user_declined")
+                        if (!confirm(arguments, coordinateCommitTarget(arguments))) return@withContext DeviceToolResult.error("本步操作未获允许，已停止。", "user_declined")
                         checkSession(); requireFresh(arguments, false)
                         val (x, y) = point(arguments, "x", "y"); gesture(x, y, verify = { requireCoordinateFresh(arguments) })
                     }
@@ -337,7 +353,8 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
                 if (!ready) return@withContext DeviceToolResult.error(
                     "已请求打开 $launchTarget，但 Accessibility 未提供目标前台窗口；当前窗口为 ${foreground.packageName.ifBlank { "未知" }}。目标可能已经显示，不能据此认定未安装。已停止，不会操作替代窗口。", "foreground_window_unavailable")
             }
-            val observation = observe(if (action == "observe") arguments["window_id"]?.jsonPrimitive?.intOrNull else null)
+            val observation = observe(if (action == "observe") arguments["window_id"]?.jsonPrimitive?.intOrNull else null,
+                action == "observe" && arguments["include_screenshot"]?.jsonPrimitive?.booleanOrNull == true)
             if (launchTarget != null && observation.data.text("package_name") != launchTarget) return@withContext DeviceToolResult.error(
                 "启动后窗口发生变化，当前为 ${observation.data.text("package_name")}，未取得目标 $launchTarget 的窗口。已停止，不会操作替代窗口。", "foreground_window_unavailable")
             DeviceToolResult(buildJsonObject {
@@ -376,7 +393,7 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
         } } finally { overlay?.visibility = View.VISIBLE }
         check(success) { "手势被取消或系统拒绝。" }
     }
-    private suspend fun observe(requestedWindowId: Int? = null): DeviceObservation {
+    private suspend fun observe(requestedWindowId: Int? = null, requestedScreenshot: Boolean = false): DeviceObservation {
         checkSession()
         // Bounded quiet wait: animated pages remain usable through node validation.
         for (attempt in 0 until 5) { val before = generation; delay(120); if (generation == before) break }
@@ -412,7 +429,8 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
             visit(root, 0)
         }
         var screenshotError: String? = null
-        val jpeg = if (screenshots) try { screenshot(windowId) } catch (e: CancellationException) { throw e } catch (e: Exception) { screenshotError = e.message ?: "截图不可用。"; null } else null
+        val needsImage = screenshots && ObservationPolicy.needsScreenshot(entries, requestedScreenshot)
+        val jpeg = if (needsImage) try { screenshot(windowId) } catch (e: CancellationException) { throw e } catch (e: Exception) { screenshotError = e.message ?: "截图不可用。"; null } else null
         if (layoutAtStart != layoutKey(selectedDisplay)) throw DeviceExecutionException("stale_screen", "观察期间显示布局已改变，请重新 observe。")
         observedJpeg = jpeg
         screenId = newId(); observedGeneration = before; observedAt = SystemClock.elapsedRealtime(); observedLayout = layoutAtStart
@@ -428,6 +446,8 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
             })
             put("image_width", imageWidth); put("image_height", imageHeight); put("nodes", entries)
             put("screenshot_available", jpeg != null); screenshotError?.let { put("screenshot_error", it) }
+            put("observation_mode", if (jpeg == null) "ui_tree" else "ui_tree_and_screenshot")
+            if (screenshots && !needsImage) put("screenshot_hint", "UI tree provided first. If the target is not represented, request observe(include_screenshot=true); do not guess coordinates.")
             put("stable", generation == before)
             put("coordinate_space", "window screenshot pixels; top-left=(0,0)")
         }, jpeg)
