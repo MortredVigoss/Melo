@@ -1,3 +1,7 @@
+## 2026-10-27 — Claude 桌面真实多工具测试两段 + iPhone 覆盖到 0.7.13 (45)
+
+Claude：用户点"桌面"文件夹权限后，用主 Agent 真跑 BIGBANG 10-31 长任务（[评估](docs/live-test-bigbang-20261027.md)）：第一段 313 s / 14 次模型调用 / 8 轮工具，只确认场馆、交通限制并给出两天路线；发"继续"后第二段 192 s 补上岩石区万圣节市集；两段都因 40 万输入 token 回合预算 `LIMIT_DELIVERED`，天气始终缺（BOM 页面 JS 渲染，官方接口真值 18–26 °C、70 % 降雨）。根因在平台：壳给服务的 PATH 没有 node，`npx` 不可达，Playwright 搜索腿在装好的桌面版里永远不可用；Jina 匿名访问 DuckDuckGo 被限流（三次 403）；Playwright MCP 授权无人点 120 s 超时；页面 6 000 字截断。iPhone 19:14–19:20 从 0.7.12 (44) 原位覆盖到 0.7.13 (45)：整份容器备份 55 文件 / 188.0 MB 逐文件 SHA-256，安装后与首启后两次回读 17 对话 / 174 消息 / 6 Agent / 26 图一致，只有系统快照、运行日志、dyld 缓存变化（[回执](docs/overwrite-install-20261027.md)）。版本号改在 pbxproj 被判为构建边界，快速档扩大到全部 `run-vBDgCI`（JS 4771/4771、设置浏览器、Swift 全部，171.9 s）全绿。未推送、未跑集成档；壳 PATH 修复需重编译并让用户再点一次权限，待用户决定。
+
 ## 2026-10-27 — Claude 桌面覆盖安装到 554ce96，修发布脚本 open --env 截断
 
 Claude：用户要求"把电脑版安装好，再测一个多轮调用工具的长问题"。`release:verify`（含本机 Android 四项）安装前 15 项与安装步骤全绿，但两项原生启动断言红：macOS 26.6 的 `open --env` 把值在第一个空格处截断（项目路径含空格），壳拿到错误的 MELO_HOME 起不来服务。`scripts/verify-red-green.js` 改为直接拉起 `Contents/MacOS/MeloDesktop` 传环境；快速档扩大到全部 `run-StBxI4` 全绿，第二次 `release:verify` 17 项全绿（两个安装路径 page-loaded 4.7 s / 2.6 s），新壳 17:07 覆盖到 `~/Applications/Melo.app`。壳重编译后签名变化，首次正常启动弹"桌面"文件夹权限框，系统弹窗须用户点，用户选择晚上点；真实长任务测试（主 Agent，BIGBANG 10-31 演唱会天气 / 活动 / 次日路线）顺延到晚上由本线程自动发题录制。[回执](docs/overwrite-install-20261027.md)。未推送、未跑集成档；iPhone 覆盖安装今晚（先备份，签名 10-28 20:52 到期）。
