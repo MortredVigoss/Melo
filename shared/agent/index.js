@@ -1,3 +1,4 @@
+import { deliveryOperation } from './limitDelivery.js';
 import { getRequestNetworkPolicy, requestAllowsTool } from './retrieval/requestPolicy.js';
 import { publicLookupRequest } from './retrieval/publicLookupIntent.js';
 import { intentOperation } from './retrieval/intentRouter.js';
@@ -53,6 +54,7 @@ export function evaluate(input) {
       case 'modelCapabilities': value = modelCapabilityOperation(input); break;
       case 'modelRouting': value = modelRoutingOperation(input); break;
       case 'loopPolicy': value = AGENT_LOOP_CONTRACT.loop; break;
+      case 'delivery': value = deliveryOperation(input); break;
       case 'goal': value = goalOperation(input); break;
       case 'toolEffect': value = toolEffect(input.name, input.arguments, input.declaration); break;
       case 'completionObservation': value = completionObservation(input.observation); break;

@@ -10,7 +10,7 @@ import { selectedMaterials } from './conversationSelection.js';
 import { observeModelReplies } from './executionPipeline.js';
 import { createRequestContext } from '../../runtime/requestContext.js';
 import { currentRequestContext, requestEnvironment, runWithRequestContext } from '../../runtime/requestScope.js';
-import { armBudget, budgetExhausted, recordUsage, receiptInputTokens, requestTimeoutMs, remainingMs } from '../../runtime/runBudget.js';
+import { reserveDelivery, admitModel, settleModel, armBudget, budgetExhausted, recordUsage, receiptInputTokens, requestTimeoutMs, remainingMs } from '../../runtime/runBudget.js';
 import { AGENT_LOOP_CONTRACT } from '../../runtime/agentLoopContract.js';
 import { estimateMessagesTokens, estimateTextTokens } from '../../memory/tokenEstimate.js';
 // Chat agent execution graph runner — sub-phase 7d-5δ commit 7b of the
@@ -85,16 +85,22 @@ export async function runChatAgentExecutionGraph({
   // for the whole turn, shared by this loop, synchronous compaction (it uses
   // the same wrapper), the tool executor and member/skill sub-loops. The
   // context was created when the request arrived; the clock starts here.
-  const budget = armBudget(context.budget || null);
+  const budget = reserveDelivery(armBudget(context.budget || null));
   const requestedTimeout = Number.isFinite(_dependencies.turnTimeoutMs) ? _dependencies.turnTimeoutMs : AGENT_LOOP_CONTRACT.loop.deepTask.deadlineMs;
   const deadline = runDeadline(budget, { maxMs: Math.max(1, Math.ceil(requestedTimeout)) });
-  signal = AbortSignal.any([signal, deadline.signal].filter(Boolean));
+  const userSignal = signal || context.signal;
+  signal = AbortSignal.any([userSignal, deadline.signal].filter(Boolean));
   const createReply = async options => {
     if (options.purpose === 'routing-judge') {
       options.signal?.throwIfAborted();
       const exhausted = budgetExhausted(budget);
       if (exhausted) throw Object.assign(new Error('Routing judgment exceeds the remaining turn budget.'), { code: 'BUDGET_EXHAUSTED' });
     }
+    options.signal?.throwIfAborted();
+    const phase = options.budgetPhase || 'work';
+    const estimatedInput = estimateMessagesTokens(options.messages || []) + Math.ceil(estimateTextTokens(options.systemPrompt || '') * 4 / 3) + estimateTextTokens(JSON.stringify(options.tools || []));
+    const admission = admitModel(budget, { phase, inputTokens: estimatedInput });
+    if (!admission.allowed) throw Object.assign(new Error('The model request would spend the reserved delivery allowance.'), { code: 'BUDGET_EXHAUSTED', exhausted: admission.exhausted });
     const endFirstToken = typeof options.onDelta === 'function' ? startStage('model.first_token') : null;
     let accounted = false;
     // Measured usage when the provider reports it, estimated otherwise —
@@ -103,12 +109,12 @@ export async function runChatAgentExecutionGraph({
       if (accounted) return; accounted = true;
       const inputTokens = receiptInputTokens(receipt)
         ?? estimateMessagesTokens(options.messages || []) + Math.ceil(estimateTextTokens(options.systemPrompt || '') * 4 / 3);
-      recordUsage(budget, { providerCalls: 1, inputTokens });
+      settleModel(budget, admission.claim, { inputTokens });
     };
     try {
       return await measureStage('model.request', () => observedReply({
         ...options,
-        timeoutMs: budget ? requestTimeoutMs(budget) : options.timeoutMs,
+        timeoutMs: budget ? requestTimeoutMs(budget, { phase, ...(options.timeoutMs ? { cap: options.timeoutMs } : {}) }) : options.timeoutMs,
         onDelta: endFirstToken ? (...args) => {
           if (args[0]?.delta || args[0]?.text) endFirstToken();
           return options.onDelta(...args);
@@ -196,6 +202,7 @@ export async function runChatAgentExecutionGraph({
     background,
     channelContext,
     isRemoteChannel,
+    userSignal,
     signal,
     onDelta,
     onReasoningDelta,

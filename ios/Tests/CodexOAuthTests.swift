@@ -283,7 +283,7 @@ final class CodexFixture: URLProtocol, @unchecked Sendable {
         },onCall:{ _,_ in recorded+=1 })
         let answered=try await refreshing.reply(messages:[ChatMessage(role:"user",content:"查一下我明天的日程")],model:"gpt-6.1-sol",instructions:"",deviceTools:phone)
         assert(answered.text=="明天 9 点看牙医。" && toolRounds==3 && executed==1 && recorded==1)
-        // Ten work calls plus one tool-free progress report. Even if the
+        // Contract tool rounds plus one reserved tool-free delivery. Even if the
         // provider invents a call during that report, it never executes.
         toolRounds=0; executed=0
         CodexFixture.handler={ request in
@@ -296,7 +296,8 @@ final class CodexFixture: URLProtocol, @unchecked Sendable {
         }
         let looping=DeviceToolContext(policy:DeviceToolPolicy(enabled:[.calendar]),execute:{ _ in executed+=1; return "{\"ok\":true,\"newEventCount\":\(executed)}" })
         let limited=try await refreshing.reply(messages:[ChatMessage(role:"user",content:"一直查")],model:"gpt-6.1-sol",instructions:"",deviceTools:looping)
-        assert(limited.text==AgentLoopContract.shared.toolLimitReplyZH && toolRounds==AgentLoopContract.shared.maxIterations + 1 && executed==AgentLoopContract.shared.maxIterations)
+        assert(limited.text.hasPrefix(AgentLoopContract.shared.toolLimitReplyZH) && toolRounds==AgentLoopContract.shared.maxIterations + 1 && executed==AgentLoopContract.shared.maxIterations)
+        assert(limited.text.contains("calendar_list_events"), "host fallback retains the executed-tool ledger")
         // Time-sensitive questions keep search available, while allowing phone data first.
         // The final tool-free check preserves an unverified candidate rather than throwing it away.
         toolRounds=0; executed=0

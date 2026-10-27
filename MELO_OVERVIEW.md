@@ -515,3 +515,9 @@ app 的 escapeHtml/showFlashToast 与授权页 formatTime 原样移至 html/feed
 - 第一步 WIP：共享 reducer 仅在合法工具批次计数；Node/iPhone/Android request 显式区分 tools/check/delivery。检查、纠偏候选、收尾不占 rounds，取消/时限/副作用守卫保留。快速档 run-h7krwC 全绿：JS 4732、Swift 37、Android 四项、设置浏览器与生成资源，无跳过/复测；已独立提交 d0bcf3e；后续默认额度、统一收尾与成员/真实模型验收未完成。未推送/安装。
 
 - 第二步完成：默认主循环40/成员20/技能12，200次工具、30分钟；智能深度64/300/45分钟，三端设置/契约同改，显式旧值保留。最终快速 run-9yDTRs 全绿：JS4742、Swift37、Android四项、设置浏览器，零跳过/复测。过程失败与修正见实施记录；统一收尾、成员及最终验收待继续。
+
+- 第三步 WIP：统一无工具收尾与核验已接入三端主循环；6/40轮桌面/iPhone夹具保留活动结果，预算并发/取消计数器与Android JVM已验。当前未独立提交，完整快速档与子循环/真模型/最终集成继续；详见实施记录。
+
+### 2026-10-27 Codex 循环上限第三步交接
+
+第三步完整快速档 run-xapdiU 通过：JS4757/4757、Swift37、Android JVM/Lint/Debug/Release、设置浏览器，零跳过/复测。修复旧报告变量残留、独立入口取消信号、策略资源缺失的零调用兜底；保留完整失败与修复日志。见 `.tmp/limit-delivery-20261027/step3-quick-verified.log` 与 `.tmp/test-runs/run-xapdiU/summary.json`。尚未完成成员/技能、真实模型和基准集成。 独立工作树实现，无推送或安装；前两步提交 d0bcf3e、cceb4f1。详情 [实施记录](docs/limit-delivery-20261027.md)。

@@ -32,6 +32,7 @@ class SharedRunBudget private constructor(
             put("action", action); put("now", SystemClock.elapsedRealtime()); put("budget", snapshot())
         })) } catch (error: Throwable) { invalidate(); throw error }
     }
+    suspend fun reserveDelivery() = mutex.withLock { apply(operation("reserveDelivery").jsonObject) }
     suspend fun configureDeepTask(limits: JsonObject) = mutex.withLock {
         if (parent == null) {
             val deadline = (state.getValue("startedAt").jsonPrimitive.double + limits.getValue("deadlineMs").jsonPrimitive.double - SystemClock.elapsedRealtime()).coerceAtLeast(0.0)
@@ -43,21 +44,28 @@ class SharedRunBudget private constructor(
         if (exhausted != JsonNull) throw SharedBudgetExhausted()
     }
     suspend fun remaining(): Long = mutex.withLock { operation("remaining").jsonPrimitive.double.toLong().coerceAtLeast(0) }
-    private suspend fun timeout(): Long = mutex.withLock { operation("timeout").jsonPrimitive.double.toLong().coerceAtLeast(0) }
+    private suspend fun timeout(phase: String = "work"): Long = mutex.withLock { operation("timeout", buildJsonObject { put("options", buildJsonObject { put("phase", phase) }) }).jsonPrimitive.double.toLong().coerceAtLeast(0) }
     suspend fun record(inputTokens: Long = 0, toolCalls: Int = 0, providerCalls: Int = 0) = mutex.withLock {
         apply(operation("record", buildJsonObject { put("usage", buildJsonObject {
             put("inputTokens", inputTokens); put("toolCalls", toolCalls); put("providerCalls", providerCalls)
         }) }).jsonObject)
     }
-    suspend fun <T> model(estimatedInput: Long, usage: (T) -> Long? = { null }, work: suspend () -> T): T {
-        check()
+    suspend fun <T> model(estimatedInput: Long, usage: (T) -> Long? = { null }, phase: String = "work", work: suspend () -> T): T {
+        val claim = mutex.withLock {
+            val admission = operation("admitModel", buildJsonObject { put("options", buildJsonObject { put("phase", phase); put("inputTokens", estimatedInput) }) }).jsonObject
+            apply(admission.getValue("budget").jsonObject)
+            if (!admission.getValue("allowed").jsonPrimitive.boolean) throw SharedBudgetExhausted()
+            admission.getValue("claim")
+        }
         var input = estimatedInput.coerceAtLeast(0)
         try {
-            val result = withTimeout(timeout()) { work() }
+            val result = withTimeout(timeout(phase)) { work() }
             input = usage(result)?.coerceAtLeast(0) ?: input
             return result
         } finally {
-            withContext(NonCancellable) { record(inputTokens = input, providerCalls = 1) }
+            withContext(NonCancellable) { mutex.withLock {
+                apply(operation("settleModel", buildJsonObject { put("options", buildJsonObject { put("claim", claim) }); put("usage", buildJsonObject { put("inputTokens", input) }) }).jsonObject)
+            } }
         }
     }
     suspend fun <T> effect(work: suspend () -> T): T {
@@ -66,7 +74,8 @@ class SharedRunBudget private constructor(
             apply(admission.getValue("budget").jsonObject)
             if (!admission.getValue("allowed").jsonPrimitive.boolean) throw SharedBudgetExhausted()
         }
-        return withTimeout(remaining()) { work() }
+        val left = mutex.withLock { operation("workRemaining").jsonPrimitive.double.toLong().coerceAtLeast(0) }
+        return withTimeout(left) { work() }
     }
     companion object {
         // Host measurement fallback when the provider omits usage. Image bytes

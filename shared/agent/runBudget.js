@@ -92,9 +92,10 @@ export function remainingMs(budget, now) {
 }
 
 /** Provider request timeout: min(cap, remaining). Without a budget → cap. */
-export function requestTimeoutMs(budget, { cap = DEFAULT_REQUEST_TIMEOUT_CAP_MS, now } = {}) {
+export function requestTimeoutMs(budget, { cap = DEFAULT_REQUEST_TIMEOUT_CAP_MS, now, phase = 'work' } = {}) {
   if (!budget) return cap;
-  return Math.max(0, Math.min(cap, remainingMs(budget, now)));
+  const left = phase === 'work' ? workRemainingMs(budget, now) : Math.min(remainingMs(budget, now), budget.parent ? workRemainingMs(budget.parent, now) : Infinity);
+  return Math.max(0, Math.min(cap, left));
 }
 
 /** Add usage to the budget and every ancestor (members/skills count toward the parent). */
@@ -112,15 +113,18 @@ export function recordUsage(budget, { inputTokens = 0, toolCalls = 0, providerCa
  * { code:'BUDGET_EXHAUSTED', reason:'deadline'|'input-tokens'|'tool-calls', limit, used, reasonText }.
  * A child is also exhausted when any ancestor is (siblings share the parent's pool).
  */
-export function budgetExhausted(budget, now) {
+export function budgetExhausted(budget, now, { phase = 'work', inputTokens = 0 } = {}) {
   if (!budget) return null;
   const time = currentTime(budget, now);
   const build = (reason, limit, used) => ({ code: BUDGET_EXHAUSTED, reason, limit, used, reasonText: REASON_TEXT[reason],
     elapsedMs: Math.max(0, time - budget.startedAt), usage: { ...budget.used } });
-  if (time >= budget.deadlineAt) return build('deadline', budget.deadlineAt - budget.startedAt, time - budget.startedAt);
-  if (budget.used.inputTokens >= budget.maxInputTokens) return build('input-tokens', budget.maxInputTokens, budget.used.inputTokens);
-  if (budget.used.toolCalls >= budget.maxToolCalls) return build('tool-calls', budget.maxToolCalls, budget.used.toolCalls);
-  return budget.parent ? budgetExhausted(budget.parent, time) : null;
+  const reserve = phase === 'work' ? budget.delivery : null;
+  const deadline = budget.deadlineAt - (reserve?.deadlineMs || 0);
+  const tokenLimit = budget.maxInputTokens - (reserve?.inputTokens || 0);
+  if (time >= deadline) return build('deadline', budget.deadlineAt - budget.startedAt, time - budget.startedAt);
+  if (budget.used.inputTokens + (budget.pendingInput || 0) + inputTokens >= tokenLimit) return build('input-tokens', budget.maxInputTokens, budget.used.inputTokens);
+  if (phase === 'work' && budget.used.toolCalls >= budget.maxToolCalls) return build('tool-calls', budget.maxToolCalls, budget.used.toolCalls);
+  return budget.parent ? budgetExhausted(budget.parent, time, { inputTokens }) : null;
 }
 
 /**
@@ -135,7 +139,7 @@ export function budgetExhausted(budget, now) {
 export function narrowBudget(parent, child = {}) {
   if (!parent) return null;
   const startedAt = currentTime(parent);
-  const candidates = [parent.deadlineAt];
+  const candidates = [parent.deadlineAt - (parent.delivery?.deadlineMs || 0)];
   const childDeadlineMs = positiveInt(child.deadlineMs);
   if (childDeadlineMs) candidates.push(startedAt + childDeadlineMs);
   const childDeadlineAt = positiveInt(child.deadlineAt);
@@ -144,7 +148,7 @@ export function narrowBudget(parent, child = {}) {
   return {
     startedAt,
     deadlineAt: Math.min(...candidates),
-    maxInputTokens: limit(child.maxInputTokens, parent.maxInputTokens - parent.used.inputTokens),
+    maxInputTokens: limit(child.maxInputTokens, parent.maxInputTokens - parent.used.inputTokens - (parent.pendingInput || 0) - (parent.delivery?.inputTokens || 0)),
     maxToolCalls: limit(child.maxToolCalls, parent.maxToolCalls - parent.used.toolCalls),
     used: { inputTokens: 0, toolCalls: 0, providerCalls: 0 },
     parent,
@@ -203,4 +207,33 @@ export function receiptInputTokens(receipt) {
   if (!usage || typeof usage !== 'object') return null;
   const value = usage.input ?? usage.input_tokens ?? usage.prompt_tokens;
   return Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : null;
+}
+
+// Activated at run entry, before context preparation or any model/tool work.
+// Child reservations cannot spend the parent's delivery allowance.
+export function reserveDelivery(budget) {
+  if (!budget || budget.delivery) return budget;
+  budget.delivery = { deadlineMs: AGENT_LOOP_CONTRACT.delivery.deadlineMs, inputTokens: Math.min(AGENT_LOOP_CONTRACT.delivery.inputTokens, Math.floor(budget.maxInputTokens / 4)), outputTokens: AGENT_LOOP_CONTRACT.delivery.outputTokens, issued: false, checked: false };
+  return budget;
+}
+export function workRemainingMs(budget, now) {
+  if (!budget) return Infinity;
+  const own = Math.max(0, remainingMs(budget, now) - (budget.delivery?.deadlineMs || 0));
+  return Math.min(own, budget.parent ? workRemainingMs(budget.parent, now) : Infinity);
+}
+export function admitModel(budget, { phase = 'work', inputTokens = 0 } = {}) {
+  if (!['work', 'delivery', 'delivery-check'].includes(phase)) throw new Error('Unknown model budget phase');
+  const estimate = Math.max(0, Number(inputTokens) || 0);
+  const exhausted = budgetExhausted(budget, undefined, { phase, inputTokens: estimate });
+  if (exhausted) return { allowed: false, exhausted, budget };
+  if (phase !== 'work' && (!budget?.delivery || budget.delivery[phase === 'delivery' ? 'issued' : 'checked'])) {
+    return { allowed: false, exhausted: { code: BUDGET_EXHAUSTED, reason: 'delivery-unavailable' }, budget };
+  }
+  if (phase !== 'work') budget.delivery[phase === 'delivery' ? 'issued' : 'checked'] = true;
+  for (let node = budget; node; node = node.parent) node.pendingInput = (node.pendingInput || 0) + estimate;
+  return { allowed: true, budget, claim: { inputTokens: estimate, phase } };
+}
+export function settleModel(budget, claim, usage = {}) {
+  for (let node = budget; node; node = node.parent) node.pendingInput = Math.max(0, (node.pendingInput || 0) - (claim?.inputTokens || 0));
+  return recordUsage(budget, { providerCalls: 1, ...usage });
 }

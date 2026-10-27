@@ -5415,5 +5415,305 @@
       "maxToolCalls": 200,
       "deadlineMs": 1800000
     }
+  },
+  {
+    "name": "delivery: hosted search counts one actual tool round",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "advance",
+      "state": {
+        "version": 1,
+        "runId": "delivery-fixture",
+        "turnId": "turn",
+        "status": "running",
+        "startedAt": 0,
+        "lastNow": 1,
+        "successfulEffects": [],
+        "repairing": false,
+        "deadline": 1800000,
+        "limits": {
+          "finalReport": true,
+          "rounds": 2,
+          "callsPerRound": 32,
+          "errors": 3,
+          "stagnant": 5
+        },
+        "allowedTools": [
+          "fetch_url"
+        ],
+        "requiredTools": [],
+        "toolDependencies": {},
+        "successfulTools": [],
+        "pendingTools": {},
+        "rounds": 0,
+        "awaitingModel": true,
+        "hostToolSchemas": true,
+        "failures": [],
+        "pendingFingerprints": {},
+        "rejectionResults": {},
+        "callIds": [],
+        "pending": [],
+        "permitted": [],
+        "phoneTasks": [],
+        "rejections": {},
+        "errors": 0,
+        "roundSucceeded": false,
+        "stagnant": 0,
+        "progressKeys": [],
+        "reason": null,
+        "pendingEffects": {}
+      },
+      "event": {
+        "runId": "delivery-fixture",
+        "turnId": "turn",
+        "type": "hosted-call"
+      },
+      "now": 2
+    },
+    "expected": {
+      "rounds": 1
+    }
+  },
+  {
+    "name": "delivery: native and local calls share the same model tool round",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "advance",
+      "state": {
+        "version": 1,
+        "runId": "delivery-fixture",
+        "turnId": "turn",
+        "status": "running",
+        "startedAt": 0,
+        "lastNow": 2,
+        "successfulEffects": [],
+        "repairing": false,
+        "deadline": 1800000,
+        "limits": {
+          "finalReport": true,
+          "rounds": 2,
+          "callsPerRound": 32,
+          "errors": 3,
+          "stagnant": 5
+        },
+        "allowedTools": [
+          "fetch_url"
+        ],
+        "requiredTools": [],
+        "toolDependencies": {},
+        "successfulTools": [
+          "web_search"
+        ],
+        "pendingTools": {},
+        "rounds": 1,
+        "awaitingModel": true,
+        "hostToolSchemas": true,
+        "failures": [],
+        "pendingFingerprints": {},
+        "rejectionResults": {},
+        "callIds": [],
+        "pending": [],
+        "permitted": [],
+        "phoneTasks": [],
+        "rejections": {},
+        "errors": 0,
+        "roundSucceeded": false,
+        "stagnant": 0,
+        "progressKeys": [],
+        "reason": null,
+        "pendingEffects": {},
+        "nativeRound": true
+      },
+      "event": {
+        "runId": "delivery-fixture",
+        "turnId": "turn",
+        "type": "calls",
+        "calls": [
+          {
+            "id": "read",
+            "name": "fetch_url",
+            "effect": "read"
+          }
+        ]
+      },
+      "now": 3
+    },
+    "expected": {
+      "rounds": 1,
+      "pending": [
+        "read"
+      ]
+    }
+  },
+  {
+    "name": "delivery: hosted calls are forbidden during the no-tools delivery",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "advance",
+      "state": {
+        "version": 1,
+        "runId": "delivery-fixture",
+        "turnId": "turn",
+        "status": "running",
+        "startedAt": 0,
+        "lastNow": 4,
+        "successfulEffects": [],
+        "repairing": false,
+        "deadline": 1800000,
+        "limits": {
+          "finalReport": true,
+          "rounds": 2,
+          "callsPerRound": 32,
+          "errors": 3,
+          "stagnant": 5
+        },
+        "allowedTools": [
+          "fetch_url"
+        ],
+        "requiredTools": [],
+        "toolDependencies": {},
+        "successfulTools": [
+          "web_search"
+        ],
+        "pendingTools": {},
+        "rounds": 1,
+        "awaitingModel": true,
+        "hostToolSchemas": true,
+        "failures": [],
+        "pendingFingerprints": {},
+        "rejectionResults": {},
+        "callIds": [],
+        "pending": [],
+        "permitted": [],
+        "phoneTasks": [],
+        "rejections": {},
+        "errors": 0,
+        "roundSucceeded": false,
+        "stagnant": 0,
+        "progressKeys": [],
+        "reason": null,
+        "pendingEffects": {},
+        "requestMode": "report",
+        "reportIssued": true
+      },
+      "event": {
+        "runId": "delivery-fixture",
+        "turnId": "turn",
+        "type": "hosted-call"
+      },
+      "now": 5
+    },
+    "expected": {
+      "status": "blocked",
+      "reason": "UNEXPECTED_HOSTED_CALL"
+    }
+  },
+  {
+    "name": "delivery: exhausted call budget still admits exactly one reserved model",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "budget",
+      "action": "admitModel",
+      "budget": {
+        "startedAt": 0,
+        "deadlineAt": 1800000,
+        "maxInputTokens": 400000,
+        "maxToolCalls": 1,
+        "used": {
+          "inputTokens": 0,
+          "toolCalls": 1,
+          "providerCalls": 0
+        },
+        "parent": null,
+        "delivery": {
+          "deadlineMs": 60000,
+          "inputTokens": 65536,
+          "outputTokens": 8192,
+          "issued": false,
+          "checked": false
+        }
+      },
+      "now": 1,
+      "options": {
+        "phase": "delivery",
+        "inputTokens": 1000
+      }
+    },
+    "expected": {
+      "allowed": true
+    }
+  },
+  {
+    "name": "delivery: hard deadline cannot be bypassed by a reserved model",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "budget",
+      "action": "admitModel",
+      "budget": {
+        "startedAt": 0,
+        "deadlineAt": 1800000,
+        "maxInputTokens": 400000,
+        "maxToolCalls": 1,
+        "used": {
+          "inputTokens": 0,
+          "toolCalls": 1,
+          "providerCalls": 0
+        },
+        "parent": null,
+        "delivery": {
+          "deadlineMs": 60000,
+          "inputTokens": 65536,
+          "outputTokens": 8192,
+          "issued": false,
+          "checked": false
+        }
+      },
+      "now": 1800000,
+      "options": {
+        "phase": "delivery",
+        "inputTokens": 1000
+      }
+    },
+    "expected": {
+      "allowed": false
+    }
+  },
+  {
+    "name": "delivery: limit receipt displays partial instead of blocked",
+    "ok": true,
+    "input": {
+      "version": 1,
+      "op": "completion",
+      "completion": {
+        "goal": "当天活动",
+        "reply": "已确认 Harbour Halloween Walk，结束时间未核实",
+        "terminalReason": "LIMIT_DELIVERED",
+        "locale": "zh",
+        "task": {
+          "version": 1,
+          "decision": "partial",
+          "deliveryCheck": "checked",
+          "limitDelivery": true,
+          "limitReason": "ROUND_LIMIT",
+          "requirements": [
+            {
+              "text": "结束时间",
+              "status": "missing",
+              "evidenceIds": []
+            }
+          ]
+        }
+      }
+    },
+    "expected": {
+      "outcome": "partial",
+      "reason": "LIMIT_DELIVERED",
+      "summary": "部分完成 · 已达轮数上限"
+    }
   }
 ]

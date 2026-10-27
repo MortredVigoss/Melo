@@ -208,6 +208,7 @@ final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
     let url: URL, token: String, headers: [String: String], session: URLSession
     let anthropic: Bool, apiProtocol: String, model: String
     let base: [String: Any]
+    let metersBudget = true
     let offersTools: Bool
     let timeoutCap: TimeInterval = 120
     var observation = ExecutionObservation()
@@ -256,7 +257,7 @@ final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
         if let review = input.goalReview {
             let messages = review["messages"] as? [[String: Any]] ?? []
             let system = review["systemPrompt"] as? String ?? ""
-            body = anthropic ? ["model": model, "stream": false, "max_tokens": 2048, "system": system, "messages": messages] : ["model": model, "stream": false, "messages": [["role": "system", "content": system]] + messages]
+            body = anthropic ? ["model": model, "stream": false, "max_tokens": input.outputLimit ?? 2048, "system": system, "messages": messages] : ["model": model, "stream": false, "messages": [["role": "system", "content": system]] + messages]
         } else if !input.transcript.isEmpty { body["messages"] = Self.rendered(base["messages"] as? [[String: Any]] ?? [], transcript: input.transcript, anthropic: anthropic) }
         if let allowance = try PhoneMemberLimits.outputAllowance(body: body, remaining: input.remainingTokens) {
             body["max_tokens"] = min(allowance, (body["max_tokens"] as? Int) ?? allowance)
@@ -264,6 +265,7 @@ final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
         if let limit = input.outputLimit { body["max_tokens"] = min(limit, (body["max_tokens"] as? Int) ?? limit) }
         let payload = try JSONSerialization.data(withJSONObject: body)
         if let limit = routingContextLimit, RequestSizeEstimate.tokens(payload) > limit { throw RequestTooLarge(message: "所选模型上下文容量不足；原对话和已执行结果已保留，请选择容量更大的模型。") }
+        let meter = try PhoneModelMeter(estimate: RequestSizeEstimate.tokens(payload)); defer { meter.finish() }
         let data = try await Network.post(url, token: token, body: payload, session: session, headers: headers, timeout: max(1, min(timeoutCap, input.timeout)))
         try Task.checkCancellation()
         let receipt = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
@@ -275,6 +277,7 @@ final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
             await onObservation?(observation)
         }
         let usage = Network.usageInputTokens(receipt), estimate = RequestSizeEstimate.tokens(payload)
+        meter.inputTokens = usage ?? estimate
         let usageObject = receipt?["usage"] as? [String: Any]
         let outputTokens = Network.usageNumber(usageObject?["output_tokens"]) ?? Network.usageNumber(usageObject?["completion_tokens"])
         // Tool round: only a completed tool turn counts; calls cut off by `length` /
@@ -285,7 +288,7 @@ final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
             let calls = anthropic ? Network.anthropicToolCalls(assistantContent) : Network.chatToolCalls(assistantMessage)
             if !calls.isEmpty {
                 let text = anthropic ? assistantContent.filter { $0["type"] as? String == "text" }.compactMap { $0["text"] as? String }.joined() : assistantMessage["content"] as? String ?? ""
-                return AgentRound(text: text, calls: calls, echo: anthropic ? .anthropic(assistantContent) : .chat(assistantMessage), inputTokens: usage, estimatedInputTokens: estimate, outputTokens: outputTokens)
+                return AgentRound(text: text, calls: calls, echo: anthropic ? .anthropic(assistantContent) : .chat(assistantMessage), inputTokens: usage, estimatedInputTokens: estimate, outputTokens: outputTokens, budgetAccounted: meter.accounted)
             }
         }
         struct Response: Decodable {
@@ -317,7 +320,7 @@ final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
             throw MeloError.message("模型未完成回复（\(String(reason.prefix(60)))），未保存为完整回答。")
         }
         guard let text = choice.message.content, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw MeloError.message("模型没有返回文字内容。") }
-        if input.goalReview != nil { return AgentRound(text: text, inputTokens: usage, estimatedInputTokens: estimate, outputTokens: outputTokens) }
+        if input.goalReview != nil { return AgentRound(text: text, inputTokens: usage, estimatedInputTokens: estimate, outputTokens: outputTokens, budgetAccounted: meter.accounted) }
         observation.stage("model:response", name: "模型请求", status: "completed", output: "模型文字返回完成" + (observation.returnedModel.map { " · 服务返回模型：\($0)" } ?? " · 服务未报告模型标识"))
         observation.stage("reply:format", name: "整理回答与引用", status: "running", output: "处理服务返回的文字与引用标记")
         await onObservation?(observation)
@@ -325,7 +328,7 @@ final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
         for source in sources { observation.source(url: source.url, title: source.title, cited: true, provider: "API 回复") }
         observation.stage("reply:format", name: "整理回答与引用", status: "completed", output: "文字与 \(sources.count) 条引用已整理；无搜索调用记录")
         await onObservation?(observation)
-        return AgentRound(text: text, sources: sources, inputTokens: usage, estimatedInputTokens: estimate, outputTokens: outputTokens)
+        return AgentRound(text: text, sources: sources, inputTokens: usage, estimatedInputTokens: estimate, outputTokens: outputTokens, budgetAccounted: meter.accounted)
     }
 
     func complete(system: String, messages: [ChatMessage], timeout: TimeInterval) async throws -> String {

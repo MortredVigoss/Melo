@@ -55,8 +55,18 @@ export function advanceTurn(previous, event, now) {
       } else {
         delete state.requestMode;
       }
+      delete state.nativeRound;
       state.awaitingModel = true;
       return state;
+    case 'hosted-call': {
+      if (!state.awaitingModel || ['review', 'report'].includes(state.requestMode)) return stop('UNEXPECTED_HOSTED_CALL');
+      if (!state.nativeRound) {
+        if (state.rounds >= state.limits.rounds) return stop('ROUND_LIMIT');
+        state.rounds++; state.nativeRound = true;
+      }
+      state.successfulTools = [...new Set([...state.successfulTools, 'web_search'])];
+      return state;
+    }
     case 'calls': {
       if (!state.awaitingModel || state.pending.length) fail('UNEXPECTED_CALLS', 'No model request is awaiting calls.');
       // Hosts must suppress tool schemas AND native features on these rounds.
@@ -69,8 +79,10 @@ export function advanceTurn(previous, event, now) {
         if (!identity(call?.id) || seen.has(call.id)) fail('DUPLICATE_CALL_ID', 'Invalid or reused tool call ID.');
         seen.add(call.id);
       }
-      if (state.rounds >= state.limits.rounds) return stop('ROUND_LIMIT');
-      state.rounds++; // Count actual tool batches, never model requests or reviews.
+      if (!state.nativeRound) {
+        if (state.rounds >= state.limits.rounds) return stop('ROUND_LIMIT');
+        state.rounds++; // A hosted call and local calls in one response are one tool round.
+      }
       state.callIds = [...seen];
       state.pending = calls.map(call => call.id);
       state.pendingTools = Object.fromEntries(calls.map(call => [call.id, call.name]));

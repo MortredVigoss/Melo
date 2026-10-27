@@ -14,6 +14,9 @@ export function createCoreTurn({ runId = randomUUID(), turnId = randomUUID(), al
   let candidateReply = '';
   const declaration = name => tools.find(tool => tool.id === name || tool.functionName === name) || {};
   return {
+    get goalState() { return task; },
+    get observations() { return observations; },
+    acceptDelivery(value) { task = value; },
     receipt(goal, reply, terminalReason = state.reason, plan, citations = []) { return completionResult({ goal: task ? goalText(task) : goal, reply, terminalReason, plan, citations, observations, task: goalSnapshot(task) }); },
     get reporting() { return task?.phase !== 'checking' && (state.awaitingModel ? state.requestMode === 'report' : state.rounds >= state.limits.rounds && !state.reportIssued); },
     progressRequest() { return goalProgressRequest(task, observations); },
@@ -32,10 +35,13 @@ export function createCoreTurn({ runId = randomUUID(), turnId = randomUUID(), al
     review(text) { task = reviewGoal(task, text, observations); return task; },
     stopReview(reason) { if (task) task = stopGoal(task, reason); },
     observeNative(event) {
-      if (event?.name !== 'native_web_search' || event.status !== 'completed') return;
+      if (event?.name !== 'native_web_search' || event.status !== 'completed') return false;
+      const counted = state.awaitingModel && state.status === 'running' && !state.nativeRound;
+      if (counted) state = advanceTurn(state, { type: 'hosted-call', runId, turnId }, clock());
       const id = String(event.id || 'native-search');
       if (!observations.some(row => row.id === id)) observations.push(...completionObservation({ id, name: 'web_search', ok: true, executed: true, output: event.output, sources: event.sources || [] }));
-      if (observations.length > 128) observations.splice(0, observations.length - 128);
+      return counted;
+
     },
     get status() { return state.status; },
     get routingProgress() { return { rounds: state.rounds, failures: state.errors, stopped: state.status !== 'running', pendingEffects: state.pending.length > 0 || state.awaitingModel }; },
@@ -46,7 +52,7 @@ export function createCoreTurn({ runId = randomUUID(), turnId = randomUUID(), al
       for (const { call, result } of pairs) {
         observations.push(...completionObservation({ id: call.id, name: call.name, ok: result?.ok, executed: result?.ok === true && result?.meta?.executionStarted !== false,
           output: result?.output, arguments: call.arguments, declaration: declaration(call.name), data: { url: result?.meta?.url, text: call.name === 'fetch_url' ? String(result?.output || '').replace(/\n\n\[source:[\s\S]*$/u, '') : '' }, sources: result?.completionSources || result?.meta?.contentItems || [] }));
-        if (observations.length > 128) observations.splice(0, observations.length - 128);
+
         if (state.status !== 'running') continue;
         const progressKey = createHash('sha256').update(JSON.stringify([call.name, toolCallFingerprint(call.name, call.arguments), result?.status, result?.output])).digest('hex');
         state = advanceTurn(state, { type: 'result', runId, turnId, callId: call.id, ok: result?.ok === true, code: result?.code, error: result?.error, output: String(result?.output || '').slice(0, 500), progressKey }, clock());

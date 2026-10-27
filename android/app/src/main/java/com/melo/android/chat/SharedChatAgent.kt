@@ -39,6 +39,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
         private val onDelta: (String) -> Unit, private val contextLedger: JsonObject, private val historyEnabled: Boolean,
         private val onContextLedger: suspend (JsonObject) -> Unit, private val routingConfig: SmartRoutingConfig?, private val onRoutedConnection: (Connection, String) -> Unit,
     ) {
+        private lateinit var budget: SharedRunBudget
         private lateinit var journal: ChatJournal
         private lateinit var capturedConfig: JsonObject
         private lateinit var plan: JsonObject
@@ -66,7 +67,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
             reason?.let { put("terminalReason", it) }; plan?.let { put("plan", it) }
         }) }).jsonObject
         private suspend fun finish(text: String, model: String?, outcome: String = "completed", reason: String? = null): ModelReply {
-                val completion = receipt(text, reason ?: if (outcome == "completed") null else "TASK_INCOMPLETE", plan)
+                val completion = receipt(text, reason ?: if (outcome == "completed") null else "TASK_INCOMPLETE", if (::plan.isInitialized) plan else null)
                 journal.finish(completion.text("outcome"), completion.text("reason"), completion)
                 return ModelReply(text, model, outcome = completion.text("outcome"), stopReason = if (completion.text("outcome") == "completed") null else completion.text("reason"))
             }
@@ -76,7 +77,8 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
             replyLocale = runtime.value("locale", buildJsonObject { put("text",goal); put("agentLanguage",config.text("replyLanguage")); put("systemLanguage",java.util.Locale.getDefault().toLanguageTag()) }).jsonPrimitive.content
         journal = ChatJournal.create(runtime, runId, chatId, messages.lastOrNull { it.role == "user" }?.content.orEmpty(), onScene)
         try {
-            val budget = SharedRunBudget.open(runtime)
+            budget = SharedRunBudget.open(runtime)
+            budget.reserveDelivery()
             transport = DeviceAgentClient(debug, client.http)
             routing = routingConfig?.let { SmartRouting(runtime, it, connection, messages) }
             routing?.prepare(transport, budget) { id, output, status -> journal.event(id, "智能选模", output = output, status = status) }
@@ -124,9 +126,9 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                 execute(turn)
             }
         } catch (error: Throwable) {
-            if (lastCandidate != null && (error is SharedBudgetExhausted || error is SharedTurnStopped || error is TimeoutCancellationException)) {
+            if (::budget.isInitialized && (error is SharedBudgetExhausted || error is SharedTurnStopped && error.reason in setOf("ROUND_LIMIT", "DEADLINE_EXCEEDED", "TOKEN_LIMIT") || error is TimeoutCancellationException)) {
                 val reason = when (error) { is SharedTurnStopped -> error.reason; is TimeoutCancellationException -> "DEADLINE_EXCEEDED"; else -> "BUDGET_EXHAUSTED" }
-                return withContext(NonCancellable) { finish(lastCandidate!!.text, lastCandidate!!.model, "partial", reason) }
+                if (currentCoroutineContext().isActive) return deliverLimit(reason)
             }
             withContext(NonCancellable) {
                 val reason = when (error) { is SharedBudgetExhausted -> "BUDGET_EXHAUSTED"; is TimeoutCancellationException -> "DEADLINE_EXCEEDED"; is SharedTurnStopped -> error.reason; is CancellationException -> "CANCELLED"; else -> "REQUEST_FAILED" }
@@ -137,26 +139,40 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
         }
         }
 
+        private suspend fun deliverLimit(reason: String): ModelReply {
+            currentCoroutineContext().ensureActive()
+            if (goalState == null) goalState = runtime.value("goal", buildJsonObject { put("action", "start"); put("goal", goal); put("id", runId) }).jsonObject
+            suspend fun delivery(action: String, fields: JsonObject = buildJsonObject {}) = runtime.value("delivery", JsonObject(fields + buildJsonObject { put("action", action); put("state", goalState!!); put("observations", JsonArray(observations)); put("locale", replyLocale) }))
+            suspend fun fallback(): ModelReply {
+                val prefix = lastCandidate?.text?.takeIf { it.isNotBlank() } ?: stopped(reason)
+                val text = delivery("fallback", buildJsonObject { put("reply", prefix) }).jsonPrimitive.content
+                return finish(text, connection.model, "partial", reason)
+            }
+            suspend fun request(prompt: JsonObject, phase: String, output: Int): DeviceTurn {
+                val rows = prompt.getValue("messages").jsonArray.map { it.jsonObject }
+                val system = prompt.text("systemPrompt")
+                return budget.model(SharedRunBudget.estimateInput(rows, system), { it.inputTokens }, phase) {
+                    transport.next(connection, key, rows, system, true, emptyList(), nativeWebSearch = false, outputLimit = output)
+                }
+            }
+            val answer = try { request(delivery("request", buildJsonObject { put("reason", reason) }).jsonObject, "delivery", 8192) }
+            catch (error: Exception) { currentCoroutineContext().ensureActive(); return fallback() }
+            if (answer.calls.isNotEmpty() || answer.text.isBlank()) return fallback()
+            goalState = delivery("candidate", buildJsonObject { put("reply", answer.text); put("reason", reason) }).jsonObject
+            goalState = try {
+                val checked = request(delivery("check").jsonObject, "delivery-check", 2048)
+                delivery("review", buildJsonObject { put("response", if (checked.calls.isEmpty()) checked.text else "") }).jsonObject
+            } catch (error: Exception) { currentCoroutineContext().ensureActive(); delivery("review", buildJsonObject { put("response", JsonNull) }).jsonObject }
+            val text = delivery("reply", buildJsonObject { put("reply", answer.text) }).jsonPrimitive.content
+            return finish(text, answer.model, "partial", "LIMIT_DELIVERED")
+        }
+
         private suspend fun next(turn: SharedCoreTurn, specs: List<JsonObject>, nativeSearch: Boolean = false): DeviceTurn {
+                    if (turn.roundsLeft <= 0) throw SharedTurnStopped("ROUND_LIMIT")
                     if (turn.roundsLeft > 0) currentChainStart = contextPolicy.fit(history, currentChainStart, taskInstructions, specs)
                     val id = "model:${++modelSequence}"
                     journal.event(id, "模型请求", model = connection.model)
                     turn.request()
-                    if (turn.reporting) {
-                        val progress = runtime.value("goal", buildJsonObject { put("action", "progress"); put("state", goalState!!); put("observations", JsonArray(observations)) }).jsonObject
-                        val reportHistory = progress.getValue("messages").jsonArray.map { it.jsonObject }
-                        val system = progress.text("systemPrompt")
-                        val report = try { turn.budget.model(SharedRunBudget.estimateInput(reportHistory, system), { it.inputTokens }) { transport.next(connection, key, reportHistory, system, true, emptyList(), nativeWebSearch = false) } }
-                        catch (error: Exception) {
-                            if (error is CancellationException || error is SharedBudgetExhausted || error is SharedTurnStopped) throw error
-                            journal.event(id, "模型请求", model = connection.model, status = "failed")
-                            turn.event("complete")
-                            return DeviceTurn(text = stopped("ROUND_LIMIT"), calls = emptyList(), wire = emptyList(), model = connection.model)
-                        }
-                        journal.event(id, "模型请求", model = connection.model, returnedModel = report.model, status = "completed")
-                        turn.event("complete")
-                        return report.copy(calls = emptyList(), text = if (report.calls.isEmpty()) report.text else stopped("ROUND_LIMIT"))
-                    }
                     val estimate = SharedRunBudget.estimateInput(history, taskInstructions, specs)
                     val reply = turn.budget.model(estimate, { it.inputTokens }) { transport.next(connection, key, history, taskInstructions, true, specs, nativeWebSearch = nativeSearch) }
                     journal.event(id, "模型请求", model = connection.model, returnedModel = reply.model, output = if (reply.calls.isEmpty()) "已收到文字回复" else "请求 ${reply.calls.joinToString { it.name }}", status = "completed")
@@ -240,7 +256,10 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                     requestedUpgrade = false
                     val reply = next(turn, specs, nativeSearch && connection.protocol == "responses")
                     if (!turn.active) return finish(reply.text, reply.model, "budget_exhausted", turn.reason)
-                    if (nativeSearch) observeHosted(reply)
+                    if (nativeSearch) {
+                        val before = observations.size; observeHosted(reply)
+                        if (observations.size > before) { turn.event("hosted-call"); budget.record(toolCalls = 1) }
+                    }
                     if (reply.calls.isEmpty()) {
                         if (!checkCandidate(turn, reply)) continue
                         if (!turn.completed) return finish(reply.text, reply.model, if (succeeded) "partial" else "blocked", turn.reason)
@@ -306,6 +325,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                     }
                     if (phoneFailure != null) return finish("手机任务未完成：$phoneFailure", reply.model, if (succeeded) "partial" else "blocked", phoneFailureCode)
                 }
+                if (turn.reason in setOf("ROUND_LIMIT", "DEADLINE_EXCEEDED")) throw SharedTurnStopped(turn.reason)
                 return finish(stopped(turn.reason), connection.model, if (succeeded) "partial" else "blocked", turn.reason)
         }
     }

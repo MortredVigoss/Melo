@@ -1,5 +1,43 @@
 import { normalizeLocale } from './locale.js';
 export const RUNTIME_MESSAGES = {
+  "deliveryUnverified": {"zh":"未核验","en":"Unverified","ja":"未検証","ko":"미검증","es":"Sin verificar"},
+
+  "deliveryGaps": {
+    "zh": "尚未完成或核实的部分：",
+    "en": "Missing or unverified parts:",
+    "ja": "未完了・未確認の項目：",
+    "ko": "미완료 또는 미확인 항목:",
+    "es": "Partes pendientes o sin verificar:"
+  },
+  "deliveryContinue": {
+    "zh": "发送“继续”我接着补。",
+    "en": "Send “continue” to resume the remaining work.",
+    "ja": "「続けて」と送ると残りを進めます。",
+    "ko": "“계속”을 보내면 남은 작업을 이어갑니다.",
+    "es": "Envía «continuar» para retomar lo pendiente."
+  },
+  "deliveryEvidence": {
+    "zh": "已执行的工具与结果（由宿主记录）：",
+    "en": "Executed tools and results (host records):",
+    "ja": "実行したツールと結果（ホスト記録）：",
+    "ko": "실행한 도구와 결과(호스트 기록):",
+    "es": "Herramientas ejecutadas y resultados (registro del sistema):"
+  },
+  "deliveryRounds": {
+    "zh": "已达轮数上限",
+    "en": "Round limit reached",
+    "ja": "実行回数の上限",
+    "ko": "실행 횟수 한도 도달",
+    "es": "Límite de rondas alcanzado"
+  },
+  "deliveryBudget": {
+    "zh": "已达运行预算",
+    "en": "Run budget reached",
+    "ja": "実行予算の上限",
+    "ko": "실행 예산 한도 도달",
+    "es": "Presupuesto de ejecución agotado"
+  }
+,
   "stop": {
     "zh": "本轮已停止（{reason}）。已有操作和回执已保留，尚未确认任务完成；请调整目标或补充信息后继续。",
     "en": "This turn stopped ({reason}). Existing actions and receipts are preserved; task completion is unverified. Please adjust the request or supply more information.",

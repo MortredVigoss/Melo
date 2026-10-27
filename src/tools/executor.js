@@ -29,7 +29,7 @@ import { requestPermission, checkPermissionRule } from './permissions.js';
 import { emitHook } from '../plugins/hooks.js';
 import { finalizeToolResult } from './toolResult.js';
 import { resolveRuntimePaths } from '../runtime/paths.js';
-import { budgetExhausted, recordUsage, remainingMs } from '../runtime/runBudget.js';
+import { budgetExhausted, recordUsage, workRemainingMs } from '../runtime/runBudget.js';
 import { AGENT_LOOP_CONTRACT, fillTemplate } from '../runtime/agentLoopContract.js';
 
 const DEFAULT_TOOL_TIMEOUT_MS = AGENT_LOOP_CONTRACT.executionLimits.toolTimeoutMs;
@@ -224,13 +224,13 @@ async function runObservedTool(tool, args, options = {}) {
 
   // ── Run with timeout wrapper ─────────────────────────────────────────────────
   // The tool's own ceiling, cut to whatever run time is left (C1).
-  const timeout = Math.max(1, Math.min(tool.timeout ?? DEFAULT_TOOL_TIMEOUT_MS, remainingMs(budget)));
+  const timeout = Math.max(1, Math.min(tool.timeout ?? DEFAULT_TOOL_TIMEOUT_MS, workRemainingMs(budget)));
   let timeoutId;
 
   timeoutId = setTimeout(() => {
     // Bug audit T7: a cut caused by the run deadline is reported as
     // BUDGET_EXHAUSTED, so the model stops instead of retrying "the tool".
-    const byBudget = budget && remainingMs(budget) <= 0;
+    const byBudget = budget && workRemainingMs(budget) <= 0;
     cancel(Object.assign(
       new Error(byBudget
         ? `Run budget (deadline) ran out while tool "${tool.id}" was running (${timeout / 1000}s in); the run budget, not the tool's own time limit, was exhausted.`

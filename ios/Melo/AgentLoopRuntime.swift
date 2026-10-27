@@ -29,6 +29,8 @@ final class PhoneRunBudget: @unchecked Sendable {
     private(set) var maxInputTokens: Int
     private(set) var maxToolCalls: Int
     private var usedValue = Usage()
+    private var delivery: [String: Any]?
+    private var pendingInput = 0
     let parent: PhoneRunBudget?
     let now: () -> Double
 
@@ -61,6 +63,7 @@ final class PhoneRunBudget: @unchecked Sendable {
     // a value snapshot, and never holds or mutates native objects itself.
     private func snapshot() -> [String: Any] {
         ["startedAt": startedAt, "deadlineAt": deadlineAt, "maxInputTokens": maxInputTokens, "maxToolCalls": maxToolCalls,
+         "delivery": delivery as Any? ?? NSNull(), "pendingInput": pendingInput,
          "used": ["inputTokens": usedValue.inputTokens, "toolCalls": usedValue.toolCalls, "providerCalls": usedValue.providerCalls],
          "parent": parent.map { $0.snapshot() } as Any? ?? NSNull()]
     }
@@ -68,6 +71,7 @@ final class PhoneRunBudget: @unchecked Sendable {
         guard let state, let start = state["startedAt"] as? Double, let deadline = state["deadlineAt"] as? Double,
               let tokens = state["maxInputTokens"] as? Int, let calls = state["maxToolCalls"] as? Int,
               let usage = state["used"] as? [String: Int] else { invalidatePolicy(); return }
+        delivery = state["delivery"] as? [String: Any]; pendingInput = state["pendingInput"] as? Int ?? 0
         startedAt = start; deadlineAt = deadline; maxInputTokens = tokens; maxToolCalls = calls
         usedValue = Usage(inputTokens: usage["inputTokens"] ?? 0, toolCalls: usage["toolCalls"] ?? 0, providerCalls: usage["providerCalls"] ?? 0)
         if ancestors, let parent { parent.apply(state["parent"] as? [String: Any]) }
@@ -78,6 +82,28 @@ final class PhoneRunBudget: @unchecked Sendable {
         Self.lock.lock(); defer { Self.lock.unlock() }
         guard available else { return }
         apply(Self.operation("arm", time: now(), fields: ["budget": snapshot()]) as? [String: Any])
+    }
+    func reserveDelivery() {
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        guard available else { return }
+        apply(Self.operation("reserveDelivery", time: now(), fields: ["budget": snapshot()]) as? [String: Any])
+    }
+    func workRemainingMs() -> Double {
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        guard available else { return 0 }
+        return Self.operation("workRemaining", time: now(), fields: ["budget": snapshot()]) as? Double ?? 0
+    }
+    func admitModel(estimatedInput: Int, phase: String = "work") throws -> [String: Any] {
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        guard available, let result = Self.operation("admitModel", time: now(), fields: ["budget": snapshot(), "options": ["phase": phase, "inputTokens": estimatedInput]]) as? [String: Any] else { throw PhoneBudgetReached() }
+        apply(result["budget"] as? [String: Any])
+        guard result["allowed"] as? Bool == true, let claim = result["claim"] as? [String: Any] else { throw PhoneBudgetReached() }
+        return claim
+    }
+    func settleModel(_ claim: [String: Any], inputTokens: Int) {
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        guard available else { return }
+        apply(Self.operation("settleModel", time: now(), fields: ["budget": snapshot(), "options": ["claim": claim], "usage": ["inputTokens": inputTokens]]) as? [String: Any])
     }
     func configureDeepTask(_ limits: [String: Any]) {
         Self.lock.lock(); defer { Self.lock.unlock() }
@@ -92,10 +118,10 @@ final class PhoneRunBudget: @unchecked Sendable {
         guard available else { return 0 }
         return Self.operation("remaining", time: time ?? now(), fields: ["budget": snapshot()]) as? Double ?? 0
     }
-    func requestTimeout(cap: TimeInterval) -> TimeInterval {
+    func requestTimeout(cap: TimeInterval, phase: String = "work") -> TimeInterval {
         Self.lock.lock(); defer { Self.lock.unlock() }
         guard available else { return 0 }
-        let milliseconds = Self.operation("timeout", time: now(), fields: ["budget": snapshot()]) as? Double ?? 0
+        let milliseconds = Self.operation("timeout", time: now(), fields: ["budget": snapshot(), "options": ["phase": phase, "cap": min(cap, 86400) * 1000]]) as? Double ?? 0
         return min(cap, milliseconds / 1000)
     }
     /// Reserve one effect under the same native lock that owns ancestor usage.
@@ -118,11 +144,11 @@ final class PhoneRunBudget: @unchecked Sendable {
         guard available else { return }
         apply(Self.operation("record", time: now(), fields: ["budget": snapshot(), "usage": ["inputTokens": inputTokens, "toolCalls": toolCalls, "providerCalls": providerCalls]]) as? [String: Any])
     }
-    func exhausted(at time: Double? = nil) -> Exhaustion? {
+    func exhausted(at time: Double? = nil, phase: String = "work") -> Exhaustion? {
         Self.lock.lock(); defer { Self.lock.unlock() }
         let unavailable = Exhaustion(reason: "policy-unavailable", limit: 0, used: 0, usage: usedValue)
         guard available else { return unavailable }
-        let result = Self.operation("exhausted", time: time ?? now(), fields: ["budget": snapshot()])
+        let result = Self.operation("exhausted", time: time ?? now(), fields: ["budget": snapshot(), "options": ["phase": phase]])
         if result is NSNull { return nil }
         guard let value = result as? [String: Any], let reason = value["reason"] as? String,
               let limit = value["limit"] as? Double, let spent = value["used"] as? Double,
@@ -727,4 +753,18 @@ enum PhoneReadHistory {
         let header = "Conversation \"\(title.isEmpty ? "Untitled" : title)\" (\(chatID)), \(rendered.count) of \(slice.messages.count) requested message(s)\(continuation)."
         return PhoneToolEnvelope.success(([header] + rendered).joined(separator: "\n\n"), maxOutputChars: Int.max)
     }
+}
+
+// An admission refusal has no provider request and no side effects.
+struct PhoneBudgetReached: Error {}
+final class PhoneModelMeter {
+    private let budget: PhoneRunBudget?
+    private let claim: [String: Any]?
+    var inputTokens: Int
+    var accounted: Bool { claim != nil }
+    init(estimate: Int) throws {
+        budget = PhoneExecutionScope.budget; inputTokens = estimate
+        claim = try budget?.admitModel(estimatedInput: estimate, phase: PhoneExecutionScope.phase)
+    }
+    func finish() { if let claim { budget?.settleModel(claim, inputTokens: inputTokens) } }
 }

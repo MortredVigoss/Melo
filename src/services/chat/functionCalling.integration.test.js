@@ -159,7 +159,9 @@ test('shared Core ends identical successful reads before the old ten-round cap',
 
 test('a turn deadline aborts an in-flight model request without executing a late tool', async t => {
   const h = await harness(t, async () => { await new Promise(resolve => setTimeout(resolve, 150)); return done([fn('late', 'A')]); }, { turnTimeoutMs: 80 });
-  await assert.rejects(h.run(), /timeout|abort/i);
+  const result = await h.run();
+  assert.equal(result.normalizedReply.completion.reason, 'DEADLINE_EXCEEDED');
+  assert.match(result.normalizedReply.content, /continue|继续/);
   assert.equal(h.executions.length, 0);
   assert.ok(h.requests.length <= 1);
 });

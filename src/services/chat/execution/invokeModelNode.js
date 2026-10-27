@@ -1,3 +1,5 @@
+import { runLimitDelivery } from '../../../runtime/limitDelivery.js';
+import { isDeliveryLimit, hostEvidenceReply } from '../../../../shared/agent/limitDelivery.js';
 import { resolveLoopLimits } from '../../../../shared/agent/loopLimits.js';
 import { extendBudget } from '../../../runtime/runBudget.js';
 import { runtimeMessage } from '../../../../shared/agent/runtimeMessages.js';
@@ -18,7 +20,7 @@ import { scopeAllowsTool, nativeFeaturesForScope } from '../../../domain/agent/c
 import { recordMemoryFeedback } from '../../../memory/store.js';
 import { runAgentTeam } from '../../../agents/team.js';
 import { takeSupplements, supplementMessage } from '../supplements.js';
-import { budgetExhausted, budgetExhaustedReply, describeBudgetReason, remainingMs } from '../../../runtime/runBudget.js';
+import { budgetExhausted, budgetExhaustedReply, describeBudgetReason, recordUsage, remainingMs } from '../../../runtime/runBudget.js';
 import { AGENT_LOOP_CONTRACT, contractRegExp } from '../../../runtime/agentLoopContract.js';
 import { nowIso } from '../../../shared/helpers.js';
 import { effectiveAgentProfile } from '../../../state/agentProfiles.js';
@@ -54,7 +56,7 @@ const STABLE_MEMORY_KINDS = new Set(['project-book', 'personal-profile']);
 //   4. If no tool calls (or max iterations reached): proceed to finalize
 export function createInvokeModelNode(turn) {
   const privateTurn = turn;
-  const { agentId, budget, chat, config, context, contextBudget, createReply, env, home, imageTask, latestUserMessage, modelOverrides, modelResponses, onDelta, onImageProgress, onImageTaskResolved, onReasoningDelta, promptDebug, providerProfile, signal, sseEmitter, state, teamPlan, turnContextPlacement, workspace } = turn;
+  const { agentId, budget, chat, config, context, contextBudget, createReply, env, home, imageTask, latestUserMessage, modelOverrides, modelResponses, onDelta, onImageProgress, onImageTaskResolved, onReasoningDelta, promptDebug, providerProfile, signal, userSignal, sseEmitter, state, teamPlan, turnContextPlacement, workspace } = turn;
   return async function invokeModel(graphState) {
     const routingSession = turn.routing;
     let selectedModel = modelOverrides.model || graphState.activeAgentProfile.model || config.model;
@@ -180,6 +182,11 @@ export function createInvokeModelNode(turn) {
     };
 
     for (let iteration = 0; ; iteration++) {
+      if (signal?.aborted) {
+        if (userSignal?.aborted) throw signal.reason;
+        terminalReason = 'DEADLINE_EXCEEDED'; break;
+      }
+      if (coreTurn.reporting) { terminalReason = 'ROUND_LIMIT'; break; }
       // Each answer round can stream, including after tools. Intermediate
       // goal checks below stay buffered and do not receive onDelta.
       const isFirstIteration = iteration === 0;
@@ -209,13 +216,11 @@ export function createInvokeModelNode(turn) {
       escalationRequested = false;
       let request;
       const checkingGoal = coreTurn.checking;
-      const reportingProgress = coreTurn.reporting;
-      const toolFree = checkingGoal || reportingProgress;
+      const toolFree = checkingGoal;
       try {
-        const review = checkingGoal ? coreTurn.reviewRequest() : reportingProgress ? coreTurn.progressRequest() : null;
+        const review = checkingGoal ? coreTurn.reviewRequest() : null;
         request = fitRequestContext({ sections: review ? [{ id: 'goal-check', text: review.systemPrompt, required: true }] : loopSections, messages: review?.messages || loopMessages, toolDefinitions: toolFree ? [] : functionSession.definitions, ...contextBudget, turnContextPlacement });
       } catch (error) {
-        if (reportingProgress) { coreTurn.update('request'); coreTurn.update('complete'); finalReply = coreTurn.reply(latestUserMessage, config.replyLanguage); break; }
         if (checkingGoal) { coreTurn.stopReview('GOAL_CHECK_CONTEXT'); finalReply = coreTurn.candidateReply; break; }
         // audit C-8: a long tool loop must not die after the tools already
         // ran. Condense older tool outputs in this turn's chain and retry
@@ -306,7 +311,7 @@ export function createInvokeModelNode(turn) {
         nativeImageGenerationEnabled: !context.requestToolPolicy?.toolsForbidden && (routingSession?.current.mode !== 'smart' || routingSession.current.tier === 'strong') && !toolFree && !coreTurn.repairing && scopeAllowsTool(context.capabilityScope,'image',{action:'generate'}) && imageSettings(config).engine === 'codex-oauth',
         onExecutionEvent: event => {
           const observed = { ...event, id: event.id ? `${iteration}:${event.id}` : undefined };
-          coreTurn.observeNative(observed);
+          if (coreTurn.observeNative(observed)) recordUsage(budget, { toolCalls: 1 });
           sseEmitter?.('execution_event', observed);
         },
       });
@@ -316,10 +321,12 @@ export function createInvokeModelNode(turn) {
         // TimeoutError. That is the budget running out, not a provider
         // failure, so it takes the budget path (event + "continue" reply)
         // instead of the generic "model request failed" card.
-        if (signal?.aborted) throw error;
+        if (signal?.aborted) {
+          if (userSignal?.aborted) throw error;
+          terminalReason = 'DEADLINE_EXCEEDED'; break;
+        }
         const timedOut = error?.name === 'TimeoutError' || error?.code === 'ETIMEDOUT';
-        const exhaustedNow = budgetExhausted(budget) || (budget && timedOut && remainingMs(budget) <= 1000 ? budgetExhausted(budget, budget.deadlineAt) : null);
-        if (reportingProgress && !exhaustedNow) { coreTurn.update('complete'); finalReply = coreTurn.reply(latestUserMessage, config.replyLanguage); break; }
+        const exhaustedNow = error?.exhausted || budgetExhausted(budget) || (budget && timedOut && remainingMs(budget) <= 1000 ? budgetExhausted(budget, budget.deadlineAt) : null);
         if (checkingGoal && !exhaustedNow) { coreTurn.stopReview(); coreTurn.update('complete'); finalReply = coreTurn.candidateReply; break; }
         if (!exhaustedNow) throw error;
         emitBudgetExhausted(exhaustedNow);
@@ -327,23 +334,20 @@ export function createInvokeModelNode(turn) {
         break;
       }
 
-      signal.throwIfAborted();
+      if (signal?.aborted) {
+        if (userSignal?.aborted) throw signal.reason;
+        terminalReason = 'DEADLINE_EXCEEDED'; break;
+      }
       if (!toolFree && graphState.searchPlan?.nativeWebSearchEnabled) {
         const items = (rawReply?.responseItems || []).filter(item => ['message', 'web_search_call'].includes(item?.type));
         hostedItems.push(...items);
         // The transport may return structured receipts without emitting SSE.
         // This is provider-reported evidence, never an independently read page.
         const receipt = hostedSearchReceipt({ items, text: rawReply?.text });
-        if (receipt.verified) coreTurn.observeNative({ id: `hosted:${iteration}`, name: 'native_web_search', status: 'completed', output: receipt.evidence + '\n' + receipt.answer, sources: receipt.sources.map(source => ({ ...source, reading: 'provider', text: rawReply?.text || '' })) });
+        if (receipt.verified && coreTurn.observeNative({ id: `hosted:${iteration}`, name: 'native_web_search', status: 'completed', output: receipt.evidence + '\n' + receipt.answer, sources: receipt.sources.map(source => ({ ...source, reading: 'provider', text: rawReply?.text || '' })) })) recordUsage(budget, { toolCalls: 1 });
       }
       const turn = functionSession.parse(rawReply);
       const { thinking, toolCalls } = turn;
-
-      if (reportingProgress) {
-        coreTurn.update('complete');
-        finalReply = toolCalls.length ? coreTurn.reply(latestUserMessage, config.replyLanguage) : turn.text || coreTurn.reply(latestUserMessage, config.replyLanguage);
-        break;
-      }
 
       if (checkingGoal) {
         const decision = coreTurn.review(toolCalls.length ? '' : turn.text);
@@ -564,8 +568,11 @@ export function createInvokeModelNode(turn) {
       if (evidencePairs.length > 8) evidencePairs.splice(0, evidencePairs.length - 8);
       // A cancelled turn stops here: its records are on disk for the
       // tool-trace replay (D2) and no further model request is sent.
-      signal?.throwIfAborted();
       coreTurn.results(allResults);
+      if (signal?.aborted) {
+        if (userSignal?.aborted) throw signal.reason;
+        terminalReason = 'DEADLINE_EXCEEDED'; break;
+      }
       if (coreTurn.status !== 'running') {
         sseEmitter?.('execution_event', { kind: 'pipeline', id: 'core:stop', module: 'compute', messageId: 'stage.stopped', status: 'failed', output: coreTurn.reason });
         finalReply = coreTurn.reply(latestUserMessage, config.replyLanguage);
@@ -588,7 +595,17 @@ export function createInvokeModelNode(turn) {
     // the finalize node can attach it to normalizedReply → sendChatMessage
     // attaches it to the persisted assistantMessage.  Only emit when
     // non-empty so we don't pollute pure-text replies with empty arrays.
-    const out = { completionForReply: (reply, citations) => coreTurn.receipt(latestUserMessage, reply, terminalReason || coreTurn.reason, undefined, citations), reply: finalReply, hadToolCalls, skipVerification: (coreTurn.status === 'blocked' && coreTurn.reason !== 'MISSING_TOOL_EVIDENCE') || graphState.searchPlan.sharedPlan?.route === 'unavailable', toolEvidence: collectVerificationEvidence(evidencePairs, { query: latestUserMessage }), next: 'finalize' };
+    const limitReason = terminalReason || coreTurn.reason;
+    let deliveredAtLimit = false;
+    if (isDeliveryLimit(limitReason)) {
+      const delivery = await runLimitDelivery({ task: coreTurn.goalState, observations: coreTurn.observations, reason: limitReason,
+        fallback: finalReply || coreTurn.reply(latestUserMessage, config.replyLanguage), createReply, budget, signal, locale: config.replyLanguage,
+        options: { ...config, ...modelOverrides, model: selectedModel, ...(privateTurn.answerConnection || {}), modelCapabilities: resolvedModelCapabilities(connectionForModel(config), selectedModel) } });
+      coreTurn.acceptDelivery(delivery.task); finalReply = delivery.reply; terminalReason = delivery.terminalReason;
+      deliveredAtLimit = true;
+      sseEmitter?.('execution_event', { kind: 'pipeline', id: 'limit:delivery', module: 'compute', messageId: 'stage.delivery', status: terminalReason === 'LIMIT_DELIVERED' ? 'completed' : 'failed', output: terminalReason });
+    }
+    const out = { completionForReply: (reply, citations) => coreTurn.receipt(latestUserMessage, reply, terminalReason || coreTurn.reason, undefined, citations), reply: finalReply, hadToolCalls, limitFallback: deliveredAtLimit && !userSignal?.aborted, skipVerification: deliveredAtLimit || (coreTurn.status === 'blocked' && coreTurn.reason !== 'MISSING_TOOL_EVIDENCE') || graphState.searchPlan.sharedPlan?.route === 'unavailable', toolEvidence: collectVerificationEvidence(evidencePairs, { query: latestUserMessage }), next: 'finalize' };
     if (accumulatedToolResults.length > 0) {
       out.toolResults = accumulatedToolResults;
     }

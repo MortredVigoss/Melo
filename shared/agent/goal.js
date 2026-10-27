@@ -1,3 +1,4 @@
+import { deliveryEvidence } from './evidence.js';
 import { isStandaloneGreeting } from './retrieval/intentRouter.js';
 import { getRequestNetworkPolicy } from './retrieval/requestPolicy.js';
 import { resolvedRequestGoal } from './search.js';
@@ -54,7 +55,7 @@ export function goalReviewRequest(state, observations = []) {
   let remaining = GOAL_LIMITS.evidenceChars;
   // Reserve the body budget for the newest observations first; an early long
   // page must not erase the final weather/result that closes the actual goal.
-  const evidence = observations.slice(-GOAL_LIMITS.observations).reverse().map(row => {
+  const evidence = state.limitDelivery ? deliveryEvidence(observations) : observations.slice(-GOAL_LIMITS.observations).reverse().map(row => {
     const body = text(row.text || row.output, Math.min(2000, remaining)); remaining -= body.length;
     return { id: row.id, name: row.name, type: row.type, effect: row.effect, ok: row.ok, executed: row.executed, url: row.url, reading: row.reading, text: body, truncated: String(row.text || row.output || '').length > body.length };
   }).reverse();

@@ -108,10 +108,12 @@ final class PhoneRoutingHost: @unchecked Sendable {
             let rows = judgmentMessages.map { ["role": $0.role, "content": $0.content] }
             let review: [String: Any] = ["systemPrompt": PhoneRoutingSession.judgePrompt, "messages": rows]
             var reply: AgentRound?
-            defer { budget.record(inputTokens: reply?.inputTokens ?? reply?.estimatedInputTokens ?? PhoneContextBudget.cost(judgmentMessages.map(\.content).joined(separator: "\n")), providerCalls: 1) }
+            defer { if !transport.metersBudget { budget.record(inputTokens: reply?.inputTokens ?? reply?.estimatedInputTokens ?? PhoneContextBudget.cost(judgmentMessages.map(\.content).joined(separator: "\n")), providerCalls: 1) } }
             do {
                 reply = try await PhoneDeadline.run(seconds: min(3, budget.remainingMs() / 1000)) {
-                    try await transport.round(.init(iteration: 0, transcript: [], timeout: min(3, budget.requestTimeout(cap: 3)), outputLimit: 512, goalReview: review))
+                    try await PhoneExecutionScope.$budget.withValue(budget) {
+                        try await transport.round(.init(iteration: 0, transcript: [], timeout: min(3, budget.requestTimeout(cap: 3)), outputLimit: 512, goalReview: review))
+                    }
                 }
             } catch { try Task.checkCancellation() }
             try session.applyJudgment(reply?.text)

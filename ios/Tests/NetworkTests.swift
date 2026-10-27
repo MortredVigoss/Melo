@@ -284,7 +284,7 @@ func json(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObject(
         MockProtocol.requestBodies = []; performed = []
         MockProtocol.payloads = (0..<(AgentLoopContract.shared.maxIterations + 1)).map { "{\"stop_reason\":\"tool_use\",\"content\":[{\"type\":\"tool_use\",\"id\":\"t\($0)\",\"name\":\"open_url\",\"input\":{\"url\":\"https://a.example/\($0)\"}}]}" }
         let limited = try await Network.reply(messages: [ChatMessage(role: "user", content: "一直查")], endpoint: "https://example.invalid/v1/messages", model: "claude", token: "test-key", apiProtocol: "anthropic", tools: toolSet, session: session)
-        assert(limited.text == AgentLoopContract.shared.toolLimitReplyZH && performed.count == AgentLoopContract.shared.maxIterations && MockProtocol.requestBodies.count == AgentLoopContract.shared.maxIterations + 1)
+        assert(limited.text.hasPrefix(AgentLoopContract.shared.toolLimitReplyZH) && performed.count == AgentLoopContract.shared.maxIterations && MockProtocol.requestBodies.count == AgentLoopContract.shared.maxIterations + 1)
         assert(MockProtocol.requestBodies.last?["tools"] == nil, "the final report offers no tools")
         // A call id the model already used in this turn is refused before anything runs (desktop T12).
         MockProtocol.requestBodies = []; performed = []

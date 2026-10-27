@@ -20,6 +20,7 @@ struct AgentCompletionReceipt: Codable, Equatable, Sendable {
     var completedSteps: Int
     var summary: String
     var task: AgentGoalSnapshot? = nil
+    var limitReason: String? = nil
     var dictionary: [String: Any]? {
         guard let data = try? JSONEncoder().encode(self) else { return nil }
         return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
@@ -40,6 +41,7 @@ struct AgentCompletionReceipt: Codable, Equatable, Sendable {
 struct AgentGoalSnapshot: Codable, Equatable, Sendable {
     struct Requirement: Codable, Equatable, Sendable { var text: String; var status: String; var evidenceIds: [String] }
     var version: Int; var id: String; var original: String; var amendments: [String]; var revision: Int
+    var limitDelivery: Bool? = nil; var limitReason: String? = nil; var deliveryCheck: String? = nil
     var corrections: Int; var requirements: [Requirement]; var decision: String?; var reason: String; var explanation: String?
 }
 
@@ -52,6 +54,16 @@ final class PhoneGoalState {
     var checking: Bool { state["phase"] as? String == "checking" }
     var repairing: Bool { (state["corrections"] as? Int ?? 0) > 0 }
     var snapshot: [String: Any]? { SharedLoopPolicy.value("goal", ["action": "snapshot", "state": state]) as? [String: Any] }
+    @discardableResult func delivery(_ action: String, _ fields: [String: Any] = [:]) throws -> [String: Any] {
+        var input = fields; input["action"] = action; input["state"] = state
+        guard let next = SharedLoopPolicy.value("delivery", input) as? [String: Any] else { throw SharedAgentCoreError.invalidReply }
+        if ["candidate", "review"].contains(action) { state = next }
+        return next
+    }
+    func deliveryText(_ reply: String, locale: String) throws -> String {
+        guard let value = SharedLoopPolicy.value("delivery", ["action": "reply", "state": state, "reply": reply, "locale": locale]) as? String else { throw SharedAgentCoreError.invalidReply }
+        return value
+    }
     @discardableResult func update(_ action: String, _ fields: [String: Any] = [:]) throws -> [String: Any] {
         var input = fields; input["action"] = action; input["state"] = state
         guard let next = SharedLoopPolicy.value("goal", input) as? [String: Any] else { throw SharedAgentCoreError.invalidReply }

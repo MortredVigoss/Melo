@@ -52,3 +52,16 @@ Agent 扩展协议的可选 maxTaskIterations 最大值放宽到64，workspace v
 过程证据：`run-6iDtDd` 与 `run-aTMkfB` 的 JS4742、Android四项和设置浏览器均绿，Swift 分别暴露旧响应夹具不足和超时夹具未同步；失败原样保留，未跳过。`step2-swift-all.log` 同时记录独立桥的编译边界修复；`step2-swift-final-loop.log` 关键循环套件通过。最终同范围快速门禁重跑中，以上不是最终完成声明。
 
 第二步最终验收：`run-9yDTRs/summary.json` 同范围快速档全绿：JS4742/4742、Swift37套、Android JVM/Lint/Debug/Release、设置浏览器和生成资源；零跳过、零隔离复测。最终测试前完成上述修正，测试期间未再改产品代码。第二步独立本地提交；第三步及后续、真实模型和最终基准集成仍未完成。
+
+
+## 第三步 WIP：统一收尾与跨端边界
+
+`reserveDelivery → admitModel/settleModel` 在各宿主的请求入口预留60秒、8k输出额度和有界输入余量；父子账本与并发待结算请求共用额度，工作工具的超时改为扣除预留后的期限。Node `chatExecutionRunner/createReply → runtime/limitDelivery`、Swift `AgentLoop.deliverLimit → APIChatTransport/CodexResponsesTransport`、Kotlin `SharedChatAgent.deliverLimit → SharedRunBudget.model` 全部调用同一 delivery/goal/completion 规则。正常轮数/时间/调用/token 上限进入一次无工具交付与检查，只有硬截止/取消/不可用额度走宿主清单；检查不可用保留回答为 unverified。公开原生搜索也计一次实际工具轮，同一回复的原生与本地工具不重复计轮。
+
+新增审计边界：预算 JSON 桥须克隆预留对象（跨引擎测试暴露原先浅复制会修改入参，已修）；Swift 真 transport 按实际请求体准入并结算，循环不再重复计费，智能路由判断也走同一预算。检查/交付关闭普通及托管工具；继续沿既有取消持久化路径保存工具记录，不在取消后再请求模型。completion 新增 LIMIT_DELIVERED、可选 limitReason/检查结果；JSCore Codable 与 Android JSON/共享场景同时读取，旧数据缺字段仍可解码。
+
+当前证据：桌面6/40工具轮演出→异地→当天活动夹具通过，分别 partial/LIMIT_DELIVERED 与 completed，已有活动与缺口不丢；共享预算并发/三上限/硬截止计数器通过。iPhone相同6/40场景、Network与SharedContract三个套件通过（后续桥克隆修正会再核对）；Android编译/JVM通过。`step3-*` 留失败与修正记录；最终完整快速档、成员/技能统一收尾、真模型及基准集成尚未完成。
+
+### 第三步验证完成
+
+第三步完整快速档 run-xapdiU 通过：JS4757/4757、Swift37、Android JVM/Lint/Debug/Release、设置浏览器，零跳过/复测。修复旧报告变量残留、独立入口取消信号、策略资源缺失的零调用兜底；保留完整失败与修复日志。见 `.tmp/limit-delivery-20261027/step3-quick-verified.log` 与 `.tmp/test-runs/run-xapdiU/summary.json`。尚未完成成员/技能、真实模型和基准集成。

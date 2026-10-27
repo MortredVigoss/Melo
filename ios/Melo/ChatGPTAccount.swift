@@ -320,6 +320,7 @@ final class CodexResponsesTransport: AgentModelTransport, @unchecked Sendable {
     var routingContextLimit: Int? = nil
     let account: CodexRegistration, session: URLSession, sessionID: String, model: String
     private(set) var base: [String: Any]
+    let metersBudget = true
     let offersTools: Bool
     let imageMode: Bool
     var timeoutCap: TimeInterval { imageMode ? 180 : 120 }
@@ -408,6 +409,7 @@ final class CodexResponsesTransport: AgentModelTransport, @unchecked Sendable {
         if input.repairing { body["tools"] = (body["tools"] as? [[String: Any]])?.filter { $0["type"] as? String != "image_generation" } }
         _ = try PhoneMemberLimits.outputAllowance(body: body, remaining: input.remainingTokens)
         if let limit = routingContextLimit, RequestSizeEstimate.tokens(try JSONSerialization.data(withJSONObject: body)) > limit { throw RequestTooLarge(message: "所选模型上下文容量不足；原对话和已执行结果已保留，请选择容量更大的模型。") }
+        let meter = try PhoneModelMeter(estimate: RequestSizeEstimate.tokens(try JSONSerialization.data(withJSONObject: body))); defer { meter.finish() }
         var result: (ChatGPTStream, Int)
         do { result = try await stream(body, timeout: input.timeout, observe: input.goalReview == nil) }
         catch is ImageSizeRejected where input.goalReview == nil && !input.repairing {
@@ -418,10 +420,12 @@ final class CodexResponsesTransport: AgentModelTransport, @unchecked Sendable {
             result = try await stream(body, timeout: input.timeout, observe: true)
         }
         let (stream, estimate) = result
+        meter.inputTokens = Self.inputTokens(stream) ?? estimate
+        if input.goalReview != nil && !stream.functionCalls.isEmpty { throw MeloError.message("Tool calls are not permitted in a delivery or goal check.") }
         let calls = input.goalReview == nil && offersTools ? stream.functionCalls : []
         let text = calls.isEmpty ? try stream.result() : stream.text
         return AgentRound(text: text, calls: calls, echo: .responses(stream.outputItems), sources: stream.sources, searched: stream.searched, images: stream.images,
-                          inputTokens: Self.inputTokens(stream), estimatedInputTokens: estimate, outputTokens: Self.inputTokens(stream, key: "output"))
+                          inputTokens: Self.inputTokens(stream), estimatedInputTokens: estimate, outputTokens: Self.inputTokens(stream, key: "output"), budgetAccounted: meter.accounted)
     }
 
     func complete(system: String, messages: [ChatMessage], timeout: TimeInterval) async throws -> String {

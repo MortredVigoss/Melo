@@ -141,7 +141,7 @@ export function createFinalizeNode(turn) {
     // Budget diagnostics (audit L4): the background pre-compaction follows
     // the history window this turn actually had, not the nominal one.
     if (graphState.promptDiagnostics) normalizedReply.promptDiagnostics = graphState.promptDiagnostics;
-    if (signal?.aborted) throw signal.reason || new Error('Request aborted');
+    if (signal?.aborted && !graphState.limitFallback) throw signal.reason || new Error('Request aborted');
     if (modelResponses.length) {
       normalizedReply.modelResponses = modelResponses;
       normalizedReply.usage = summarizePricedUsage(modelResponses, config.modelPricing);

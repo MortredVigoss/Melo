@@ -32,6 +32,13 @@ export function completionReceipt({ goal = '', kind = 'answer', reply = '', cita
   const rows = Array.isArray(observations) ? observations.slice(0, AGENT_LOOP_CONTRACT.guardLimits.completionObservations) : [];
   const performed = rows.filter(row => row?.ok === true && row.executed === true);
   const base = { version: 1, kind, outcome: 'blocked', goalState: 'unverified', reason: '', evidenceIds: [], completedSteps: new Set(performed.map(row => String(row.id).split(':source:')[0])).size, ...(task ? { task } : {}) };
+  if (terminalReason === 'LIMIT_DELIVERED' && String(reply).trim()) {
+    const evidenceIds = [...new Set((task?.requirements || []).flatMap(row => row.evidenceIds || []))];
+    const supported = task?.decision === 'complete' && evidenceIds.length > 0 && evidenceIds.every(id => performed.some(row => row.id === id));
+    const selfContained = task?.decision === 'deliver' && !performed.length;
+    return { ...base, outcome: task?.deliveryCheck === 'unverified' ? 'unverified' : supported || selfContained ? 'completed' : 'partial',
+      goalState: supported ? 'supported' : 'unverified', reason: 'LIMIT_DELIVERED', limitReason: task?.limitReason || 'ROUND_LIMIT', evidenceIds };
+  }
   if (terminalReason === 'CANCELLED') return { ...base, outcome: 'cancelled', reason: terminalReason };
   if (/BUDGET|DEADLINE|ROUND_LIMIT|TOKEN_LIMIT/u.test(terminalReason)) return { ...base, outcome: 'budget_exhausted', reason: terminalReason };
   if (terminalReason) return { ...base, outcome: performed.length ? 'partial' : 'blocked', reason: terminalReason };
@@ -120,7 +127,8 @@ export function teamCompletion({ locale, goal = '', reply = '', members = [], ac
 export function completionSummary(receipt, text = '', locale) {
   const language = locale || resolveReplyLocale({ text });
   const message = key => runtimeMessage(key, language);
-  const label = message(['completed','partial','blocked','needs_user','cancelled','budget_exhausted'].includes(receipt?.outcome) ? receipt.outcome : 'unknown');
+  const label = receipt?.outcome === 'unverified' ? message('deliveryUnverified') : message(['completed','partial','blocked','needs_user','cancelled','budget_exhausted','unverified'].includes(receipt?.outcome) ? receipt.outcome : 'unknown');
+  if (receipt?.reason === 'LIMIT_DELIVERED') return label + ' · ' + message(receipt.limitReason === 'ROUND_LIMIT' ? 'deliveryRounds' : 'deliveryBudget');
   if (receipt?.goalState === 'not_applicable') return message('delivered');
   if (receipt?.reason === 'ANSWERED_WITHOUT_SOURCES') return message('unsourced');
   if (receipt?.reason === 'GOAL_CHECK_BUDGET') return message('checkBudget');

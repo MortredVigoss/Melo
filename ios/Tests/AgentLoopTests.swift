@@ -91,7 +91,7 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             let log = Log(); var work = 0, checks = 0, reports = 0
             let transport = ScriptedTransport { input in
                 let system = input.goalReview?["systemPrompt"] as? String ?? ""
-                if system.contains("execution-round limit") { reports += 1; return answer("Read one page; more work remains.") }
+                if system.contains("execution allowance is ending") { reports += 1; return answer("Read one page; more work remains.") }
                 if input.goalReview != nil {
                     checks += 1
                     return answer(#"{"decision":"continue","reasonType":"lookup_missing","nextStep":"Read the available page","requirements":[{"text":"inspect the task","status":"missing","evidenceIds":[]}]}"#)
@@ -101,9 +101,9 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             }
             var configured = hooks(log); configured.maxTaskIterations = agent.maxTaskIterations
             let result = try await AgentLoop(transport: transport, tools: loopTools(log), budget: PhoneRunBudget(), latestUserMessage: "Inspect my project", hooks: configured).run()
-            assert(work == 2 && checks == 1 && reports == 1 && log.performed.count == 1)
-            assert(result.stop == .toolLimit && result.text == "Read one page; more work remains.")
-            assert(result.completion?.reason == "ROUND_LIMIT")
+            assert(work == 2 && checks == 2 && reports == 1 && log.performed.count == 1)
+            assert(result.stop == .deliveredLimit && result.text.contains("Read one page; more work remains."))
+            assert(result.completion?.reason == "LIMIT_DELIVERED" && result.completion?.outcome == "partial")
         }
 
         // Calendar discovery must not terminate a weather request: one bounded
@@ -174,7 +174,7 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
                 return PhoneToolResult(output: PhoneToolEnvelope.success("late"))
             })
             let start = Date()
-            let result = try await AgentLoop(transport: ScriptedTransport { _ in calls([fc("slow", "read_history")]) }, tools: slowTools, budget: PhoneRunBudget(deadlineMs: 30), latestUserMessage: "q").run()
+            let result = try await AgentLoop(transport: ScriptedTransport { _ in calls([fc("slow", "read_history")]) }, tools: slowTools, budget: PhoneRunBudget(deadlineMs: 60_030), latestUserMessage: "q").run()
             assert(result.stop == .budget && Date().timeIntervalSince(start) < 0.2)
             try await Task.sleep(nanoseconds: 320_000_000)
             assert(performed == 0 && result.calls.first?.code == "BUDGET_EXHAUSTED")
@@ -212,9 +212,9 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             var n = 0
             let transport = ScriptedTransport { _ in n += 1; return calls([fc("c\(n)", "open_url", #"{"url":"https://a.example/\#(n)"}"#)]) }
             let outcome = try await AgentLoop(transport: transport, tools: loopTools(log), budget: PhoneRunBudget(), latestUserMessage: "一直查", hooks: hooks(log)).run()
-            assert(outcome.stop == .toolLimit && outcome.text == c.toolLimitReplyZH && transport.requests.count == c.maxIterations + 1 && log.performed.count == c.maxIterations && log.records.count == c.maxIterations)
+            assert(outcome.stop == .toolLimit && outcome.text.hasPrefix(c.toolLimitReplyZH) && transport.requests.count == c.maxIterations + 1 && log.performed.count == c.maxIterations && log.records.count == c.maxIterations)
             let english = try await AgentLoop(transport: ScriptedTransport { _ in n += 1; return calls([fc("e\(n)", "open_url", #"{"url":"https://a.example/\#(n)"}"#)]) }, tools: loopTools(Log()), budget: PhoneRunBudget(), latestUserMessage: "keep going").run()
-            assert(english.text == c.toolLimitReplyEN)
+            assert(english.text.hasPrefix(c.toolLimitReplyEN))
             // Every round after the first carries the earlier tool rounds; results are envelopes.
             if case .toolRound(_, let results)? = transport.requests[1].transcript.last { assert(object(results[0].modelOutput)["status"] as? String == "ok" && object(results[0].modelOutput)["output"] as? String == #"{"title":"page"}"#) } else { assertionFailure("tool round missing") }
             assert(log.statuses.contains("正在打开网页…") && log.statuses.last == "正在思考…")
@@ -252,7 +252,7 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             var n = 0
             let slow = ScriptedTransport { _ in now += 11 * 60_000; n += 1; return calls([fc("d\(n)")]) }
             let outcome = try await AgentLoop(transport: slow, tools: loopTools(log), budget: PhoneRunBudget(now: { now }), latestUserMessage: "q", hooks: hooks(log)).run()
-            assert(outcome.stop == .budget && slow.requests.count == 3 && outcome.text == "这轮对话已达到运行预算（运行时间 30 分钟），已停止。你可以发送“继续”接着做。")
+            assert(outcome.stop == .budget && slow.requests.count == 3 && outcome.text.hasPrefix("这轮对话已达到运行预算（运行时间 30 分钟），已停止。你可以发送“继续”接着做。"))
             assert(log.stages.contains { $0.id == "budget:exhausted" && $0.status == "failed" && $0.output.contains("模型请求 3 次") })
 
             let tokens = ScriptedTransport { _ in var r = calls([fc("t\(Int.random(in: 0..<1_000_000))")]); r.inputTokens = 400_000; return r }
@@ -263,7 +263,7 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             var k = 0
             let many = ScriptedTransport { _ in k += 1; return calls([fc("a\(k)"), fc("b\(k)", "read_history", "{}"), fc("c\(k)", "read_history", #"{"limit":2}"#)]) }
             let toolOutcome = try await AgentLoop(transport: many, tools: loopTools(toolLog), budget: PhoneRunBudget(maxToolCalls: 2), latestUserMessage: "q", hooks: hooks(toolLog)).run()
-            assert(toolOutcome.stop == .budget && toolLog.performed.count == 2 && many.requests.count == 1 && toolOutcome.text.contains("工具调用次数 2 次"))
+            assert(toolOutcome.stop == .budget && toolLog.performed.count == 2 && many.requests.count == 2 && toolOutcome.text.contains("工具调用次数 2 次"))
             assert(toolLog.records.last?.code == "BUDGET_EXHAUSTED" && toolLog.records.last?.executed == false)
 
             // A request cut off by the deadline takes the budget path, not a provider failure.
@@ -529,6 +529,48 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             assert(cached.session.judge == nil)
             assert(!host.session.escalate(rounds: 9, failures: 9, requested: true))
         }
+
+        // The same three-hop delivery fixture as the Node host: report at six
+        // actual tool rounds, complete with forty; checks never consume rounds.
+        for rounds in [6, 40] {
+            let log = Log(); var work = 0, reports = 0, checks = 0
+            let transport = ScriptedTransport { input in
+                let system = input.goalReview?["systemPrompt"] as? String ?? ""
+                if system.contains("execution allowance is ending") {
+                    reports += 1; assert(input.outputLimit == 8192)
+                    let rows = input.goalReview?["messages"] as? [[String: String]] ?? []
+                    let evidence = object(rows.first?["content"] ?? "")["observations"] as? [[String: Any]] ?? []
+                    assert(evidence.contains { $0["id"] as? String == "concert-1" })
+                    assert(evidence.contains { ($0["text"] as? String ?? "").contains("Harbour Halloween Walk") })
+                    return answer("已确认：悉尼 31 日 Harbour Halloween Walk，18:00 开始。未核实：结束时间。下一步：核对官方页面。")
+                }
+                if input.goalReview != nil {
+                    checks += 1
+                    return answer(rounds == 6
+                        ? #"{"decision":"continue","reasonType":"lookup_missing","nextStep":"核对结束时间","requirements":[{"text":"当天活动","status":"met","evidenceIds":["concert-3"]},{"text":"完整开放时间","status":"missing","evidenceIds":[]}]}"#
+                        : #"{"decision":"complete","reasonType":"fulfilled","requirements":[{"text":"当天活动","status":"met","evidenceIds":["concert-3"]},{"text":"完整开放时间","status":"met","evidenceIds":["concert-7"]}]}"#)
+                }
+                if work < 7 {
+                    work += 1
+                    return calls([fc("concert-\(work)", work == 1 ? "calendar_list_events" : "open_url", work == 1 ? #"{"start":"2026-10-23T00:00:00+11:00","end":"2026-11-01T00:00:00+11:00"}"# : #"{"url":"https://fixture.invalid/concert/\#(work)"}"#)])
+                }
+                return answer("悉尼 31 日 Harbour Halloween Walk，完整开放时间 18:00–21:00。")
+            }
+            let values = ["演出日历：31 日，Example Arena。", "场馆所在城市是悉尼。", "悉尼 31 日 Harbour Halloween Walk，18:00 开始，结束时间待核实。", "日期已再次核对。", "场馆地址已核对。", "活动页面仍缺结束时间。", "官方完整开放时间：18:00–21:00。"]
+            let tools = AgentLoopTools(definitions: DeviceToolSpec.all.map(\.definition) + WebPageToolSpec.all.map(\.definition), instructions: "", perform: { call in
+                log.performed.append(call)
+                return PhoneToolResult(output: PhoneToolEnvelope.success(values[log.performed.count - 1]))
+            })
+            var configured = hooks(log); configured.maxTaskIterations = rounds
+            let result = try await AgentLoop(transport: transport, tools: tools, budget: PhoneRunBudget(), latestUserMessage: "根据演出日历确定场馆城市，并给出当地 31 日活动和完整开放时间。", hooks: configured).run()
+            assert(log.performed.count == (rounds == 6 ? 6 : 7)); assert(checks == 1)
+            assert(transport.requests.count == (rounds == 6 ? 8 : 9))
+            assert(result.text.contains("Harbour Halloween Walk"))
+            assert(result.completion?.outcome == (rounds == 6 ? "partial" : "completed"))
+            if rounds == 6 { assert(reports == 1 && result.text.contains("继续") && result.completion?.reason == "LIMIT_DELIVERED") }
+            else { assert(reports == 0 && result.text.contains("18:00–21:00")) }
+        }
+
         print("Agent loop tests passed: 10-call limit reply, 32-call batch and reused ids, budget (deadline/tokens/tool calls/timeout), repeat guard, envelopes and refusals, supplements without restart, condensation retry, cancellation trace, finalize verification, narrowed team budget, transcript rendering")
     }
 }

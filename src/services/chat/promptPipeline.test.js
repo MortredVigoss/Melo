@@ -317,9 +317,10 @@ test('actual runner resumes a zero-tool task; reviews do not spend the configure
 test('actual runner uses one tool-free progress report after the task round limit', async () => {
   const input = fixture('Inspect every project record and report all findings.');
   input.state.agentProfiles.main.collaboration = { maxTaskIterations: 2 };
-  let work = 0, reports = 0;
+  let work = 0, reports = 0, checks = 0;
   const result = await runChatAgentExecutionGraph({ ...input, _dependencies: { getEmbedding: async () => null, createReply: async request => {
-    if (request.systemPrompt.includes('execution-round limit')) {
+    if (request.purpose === 'limit-check') { checks++; return JSON.stringify({ decision: 'partial', requirements: [{ text: 'Remaining records', status: 'missing', evidenceIds: [] }] }); }
+    if (request.purpose === 'limit-delivery') {
       reports++;
       assert.equal(request.nativeWebSearchEnabled, false); assert.equal(request.nativeImageGenerationEnabled, false);
       assert.equal(request.workspacePath, null); assert.ok(!request.tools?.length);
@@ -328,9 +329,10 @@ test('actual runner uses one tool-free progress report after the task round limi
     work++;
     return `<tool_call>{"id":"read-${work}","name":"test_reference","arguments":{}}</tool_call>`;
   } } });
-  assert.equal(work, 2); assert.equal(reports, 1);
-  assert.equal(result.normalizedReply.completion.outcome, 'budget_exhausted');
-  assert.equal(result.normalizedReply.completion.reason, 'ROUND_LIMIT');
+  assert.equal(work, 2); assert.equal(reports, 1); assert.equal(checks, 1);
+  assert.equal(result.normalizedReply.completion.outcome, 'partial');
+  assert.equal(result.normalizedReply.completion.reason, 'LIMIT_DELIVERED');
+  assert.equal(result.normalizedReply.completion.limitReason, 'ROUND_LIMIT');
   assert.match(result.normalizedReply.content, /More records remain/);
 });
 

@@ -4295,7 +4295,7 @@
     "stagnantRounds": 5,
     "maxStagnantRounds": 20,
     "dependencyTools": 16,
-    "completionObservations": 128,
+    "completionObservations": 6000,
     "executionEvents": 512
   },
   "delegationLimits": {
@@ -4308,5 +4308,11 @@
   "skillLimits": {
     "iterations": 12,
     "maxIterations": 16
+  },
+  "delivery": {
+    "deadlineMs": 60000,
+    "inputTokens": 65536,
+    "outputTokens": 8192,
+    "checkOutputTokens": 2048
   }
 }

@@ -24,7 +24,7 @@ export function executionScene({ action, scene, runId, chatId, query, at, event 
   const next = JSON.parse(JSON.stringify(scene));
   if (scene.status !== 'running') return next;
   if (action === 'finish') {
-    next.taskOutcome = ['completed', 'partial', 'blocked', 'needs_user', 'cancelled', 'budget_exhausted', 'failed', 'interrupted'].includes(outcome) ? outcome : 'failed';
+    next.taskOutcome = ['completed', 'partial', 'blocked', 'needs_user', 'cancelled', 'budget_exhausted', 'unverified', 'failed', 'interrupted'].includes(outcome) ? outcome : 'failed';
     if (completion?.version === 1) next.completion = completion;
     next.status = ['completed', 'cancelled', 'interrupted'].includes(next.taskOutcome) ? next.taskOutcome : 'failed';
     next.finishedAt = at; next.stopReason = text(reason, 500);

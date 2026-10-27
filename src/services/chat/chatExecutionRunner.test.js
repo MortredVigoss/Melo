@@ -709,13 +709,13 @@ test('run budget (C1): deadline passes during a tool call → explicit 运行预
   const state = fixtureState(), chat = fixtureChat({ messages: [{ id: 'budget-user', role: 'user', content: '把这个任务做完' }] });
   state.chats = [chat];
   await saveState(state);
-  // Virtual clock: the run has 60 s; the one tool the model calls "takes" 61 s.
+  // Virtual clock: 60 s work + 60 s reserve; the tool jumps past the hard deadline.
   let now = 1_000_000;
-  const budget = createRunBudget({ now: () => now, overrides: { deadlineMs: 60_000 } });
+  const budget = createRunBudget({ now: () => now, overrides: { deadlineMs: 120_000 } });
   const context = createRequestContext({ home: TEST_HOME, chatId: chat.id, budget });
   let toolRuns = 0;
   const probe = { id: 'budget_probe', name: 'budget_probe', description: 'slow probe', parametersSchema: { type: 'object', properties: {} }, requiresPermission: false,
-    run: async () => { toolRuns++; now += 61_000; return { ok: true, output: 'slow work done' }; } };
+    run: async () => { toolRuns++; now += 121_000; return { ok: true, output: 'slow work done' }; } };
   registerTool(probe);
   const events = []; let replies = 0;
   try {
@@ -730,6 +730,7 @@ test('run budget (C1): deadline passes during a tool call → explicit 运行预
     assert.equal(toolRuns, 1);
     assert.equal(replies, 1, 'the second model call is beyond the deadline and must not happen');
     assert.match(result.normalizedReply.content, /运行预算/);
+    assert.match(result.normalizedReply.content, /slow work done/, 'hard-stop fallback preserves the actual host tool result');
     assert.match(result.normalizedReply.content, /继续/);
     const exhausted = events.find(e => e.type === 'execution_event' && e.value.id === 'budget:exhausted');
     assert.ok(exhausted, 'budget:exhausted execution event is emitted');
@@ -740,7 +741,7 @@ test('run budget (C1): deadline passes during a tool call → explicit 运行预
   } finally { unregisterTool(probe.id); }
 });
 
-test('run budget (C1): tool-call cap → executor refuses with BUDGET_EXHAUSTED and the loop stops before the next model call', async () => {
+test('run budget (C1): tool-call cap refuses further effects and delivers with two tool-free requests', async () => {
   const { registerTool, unregisterTool } = await import('../../tools/registry.js');
   const { createRequestContext } = await import('../../runtime/requestContext.js');
   const { createRunBudget } = await import('../../runtime/runBudget.js');
@@ -758,13 +759,24 @@ test('run budget (C1): tool-call cap → executor refuses with BUDGET_EXHAUSTED 
     const result = await runChatAgentExecutionGraph({ context, config: fixtureConfig, state, chat, workspace: fixtureWorkspace(), connectors: [], skills: [],
       latestUserMessage: '把这个任务做完', agentId: 'main', sseEmitter: (type, value) => events.push({ type, value }),
       _dependencies: { getEmbedding: async () => null,
-        createReply: async () => { replies++; return '<tool_call>{"id":"a","name":"cap_probe","arguments":{}}</tool_call><tool_call>{"id":"b","name":"cap_probe","arguments":{}}</tool_call>'; } } });
+        createReply: async options => {
+          replies++;
+          if (options.budgetPhase) {
+            assert.deepEqual(options.functionTools, []); assert.equal(options.nativeWebSearchEnabled, false);
+            if (options.budgetPhase === 'delivery') return '第一个操作已完成，第二个尚未执行。';
+            return JSON.stringify({decision:'partial',reasonType:'unavailable',requirements:[{text:'第一个操作',status:'met',evidenceIds:['a']},{text:'第二个操作',status:'missing',evidenceIds:[]}]});
+          }
+          return '<tool_call>{"id":"a","name":"cap_probe","arguments":{}}</tool_call><tool_call>{"id":"b","name":"cap_probe","arguments":{}}</tool_call>';
+        } } });
     assert.equal(toolRuns, 1, 'only the first call fits the cap');
-    assert.equal(replies, 1);
+    assert.equal(replies, 3, 'one work request, one delivery and one check');
     const done = events.find(e => e.type === 'tool_calls_done');
     assert.deepEqual(done.value.results.map(r => r.ok), [true, false]);
     assert.match(done.value.results[1].output, /Run budget exhausted \(tool-calls\)/);
-    assert.match(result.normalizedReply.content, /运行预算（工具调用次数 1 次）/);
+    assert.match(result.normalizedReply.content, /第一个操作已完成/);
+    assert.match(result.normalizedReply.content, /继续/);
+    assert.equal(result.normalizedReply.completion.outcome, 'partial');
+    assert.equal(result.normalizedReply.completion.reason, 'LIMIT_DELIVERED');
   } finally { unregisterTool(probe.id); }
 });
 
@@ -780,7 +792,7 @@ test('run budget (T7/U13): TimeoutError mid-request at the deadline → budget:e
   state.chats = [chat];
   await saveState(state);
   let now = 2_000_000;
-  const budget = createRunBudget({ now: () => now, overrides: { deadlineMs: 60_000 } });
+  const budget = createRunBudget({ now: () => now, overrides: { deadlineMs: 120_000 } });
   const context = createRequestContext({ home: TEST_HOME, chatId: chat.id, budget });
   const events = []; let replies = 0;
   const result = await runChatAgentExecutionGraph({ context, config: fixtureConfig, state, chat, workspace: fixtureWorkspace(), connectors: [], skills: [],
@@ -789,7 +801,7 @@ test('run budget (T7/U13): TimeoutError mid-request at the deadline → budget:e
       createReply: async options => {
         replies++;
         // The transport's AbortSignal.timeout(remaining) fires exactly at the deadline.
-        now += options.timeoutMs;
+        now += options.timeoutMs + 60_000;
         throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
       } } });
   assert.equal(replies, 1);
@@ -800,7 +812,7 @@ test('run budget (T7/U13): TimeoutError mid-request at the deadline → budget:e
   assert.ok(exhausted, 'budget:exhausted execution event is emitted on the mid-request timeout');
   assert.equal(exhausted.value.status, 'failed', 'U13: rendered as a warning, not a ✓');
   assert.equal(exhausted.value.budget.reason, 'deadline');
-  assert.match(runtimeStageOutput(exhausted.value,'zh'), /已用 60s \/ 60s/, 'U13: limit/used travel in output, which the scene keeps');
+  assert.match(runtimeStageOutput(exhausted.value,'zh'), /已用 120s \/ 120s/, 'U13: limit/used travel in output, which the scene keeps');
 });
 
 test('run budget (T7): a tool cut by the run deadline reports BUDGET_EXHAUSTED, not a tool TIMEOUT', async () => {
@@ -1049,4 +1061,52 @@ test('smart escalation continues with prior tool results and never repeats a suc
     }}});
     assert.equal(effects,1);assert.equal(requested[0],'lower');assert.ok(requested.slice(1).every(model=>model==='higher'));
   }finally{unregisterTool('routing_write_probe');}
+});
+
+test('concert → another city → same-day activities: six tool rounds deliver findings and gaps; forty completes', async () => {
+  const { registerTool, unregisterTool } = await import('../../tools/registry.js');
+  const names = ['concert_calendar','concert_venue','concert_events'];
+  const outputs = ['演唱会：2026-10-31，Example Arena。','Example Arena 位于悉尼。','悉尼 31 日 Harbour Halloween Walk，18:00 开始；完整开放时间待核实。','日历日期再次核对为 31 日。','场馆地址已核对在悉尼市区。','活动页面包含 Harbour Halloween Walk；尚缺结束时间。','官方活动完整开放时间：18:00–21:00。'];
+  let effects = 0;
+  for (const id of names) registerTool({id,name:id,description:'Concert journey fixture',effect:'read',requiresPermission:false,parametersSchema:{type:'object',properties:{step:{type:'integer'}}},run:async args=>{effects++;return {ok:true,output:outputs[args.step]};}});
+  try {
+    for (const rounds of [6,40]) {
+      effects=0;let work=0,requests=0;const seen=[];
+      const question='根据演出日历确定场馆所在城市，给出当地 31 日活动，并核实完整开放时间。';
+      const state=fixtureState(),chat=fixtureChat({messages:[{id:'concert-goal',role:'user',content:question}]});
+      state.agentProfiles.main.collaboration={maxTaskIterations:rounds};state.chats=[chat];await saveState(state);
+      const result=await runChatAgentExecutionGraph({config:fixtureConfig,state,chat,workspace:fixtureWorkspace(),connectors:[],skills:[],latestUserMessage:question,agentId:'main',
+        _dependencies:{getEmbedding:async()=>null,createReply:async options=>{
+          requests++;seen.push(options);
+          if(options.budgetPhase==='delivery') {
+            const prompt=JSON.parse(options.messages[0].content);
+            assert.ok(prompt.observations.some(row=>row.id==='concert-1'));
+            assert.ok(prompt.observations.some(row=>/Harbour Halloween Walk/.test(row.text)));
+            return '已确认：悉尼 31 日有 Harbour Halloween Walk，18:00 开始。\n未核实：结束时间。\n下一步：继续核对官方页面。';
+          }
+          if(options.budgetPhase==='delivery-check'||options.systemPrompt.startsWith("You are Melo's task completion checker")) return JSON.stringify({decision:rounds===6?'continue':'complete',reasonType:rounds===6?'lookup_missing':'fulfilled',reason:rounds===6?'结束时间未核实':'活动及开放时间已核实',nextStep:'核对结束时间',requirements:[{text:'当天活动',status:'met',evidenceIds:['concert-3']},{text:'完整开放时间',status:rounds===6?'missing':'met',evidenceIds:rounds===6?[]:['concert-7']}]});
+          if(work<7){const step=work++;return `<tool_call>${JSON.stringify({id:`concert-${step+1}`,name:names[Math.min(step,2)],arguments:{step}})}</tool_call>`;}
+          return '悉尼 31 日 Harbour Halloween Walk，完整开放时间 18:00–21:00。';
+        }}});
+      assert.match(result.normalizedReply.content,/Harbour Halloween Walk/);
+      assert.equal(effects,rounds===6?6:7);assert.equal(requests,rounds===6?8:9);
+      const receipt=result.normalizedReply.completion;
+      assert.equal(receipt.outcome,rounds===6?'partial':'completed');
+      if(rounds===6){assert.equal(receipt.reason,'LIMIT_DELIVERED');assert.match(result.normalizedReply.content,/完整开放时间/);assert.match(result.normalizedReply.content,/继续/);}
+      else assert.match(result.normalizedReply.content,/18:00–21:00/);
+      assert.ok(seen.filter(r=>r.budgetPhase).every(r=>!r.functionTools.length&&!r.nativeWebSearchEnabled&&!r.nativeImageGenerationEnabled));
+    }
+  } finally {for(const id of names)unregisterTool(id);}
+});
+
+test('cancellation after a tool result never starts delivery or another effect', async () => {
+  const {registerTool,unregisterTool}=await import('../../tools/registry.js');
+  const {createRequestContext}=await import('../../runtime/requestContext.js');
+  const controller=new AbortController();let effects=0,requests=0;
+  const state=fixtureState(),chat=fixtureChat();state.chats=[chat];await saveState(state);
+  registerTool({id:'cancel_delivery_probe',name:'cancel_delivery_probe',description:'Cancellation fixture',requiresPermission:false,parametersSchema:{type:'object',properties:{}},run:async()=>{effects++;controller.abort(new Error('fixture user cancellation'));return {ok:true,output:'first result'};}});
+  try {
+    await assert.rejects(runChatAgentExecutionGraph({context:createRequestContext({home:TEST_HOME,chatId:chat.id,signal:controller.signal}),signal:controller.signal,config:fixtureConfig,state,chat,workspace:fixtureWorkspace(),connectors:[],skills:[],latestUserMessage:'执行两步操作',agentId:'main',_dependencies:{getEmbedding:async()=>null,createReply:async options=>{requests++;assert.equal(options.budgetPhase,undefined);return '<tool_call>{"id":"cancel-a","name":"cancel_delivery_probe","arguments":{}}</tool_call><tool_call>{"id":"cancel-b","name":"cancel_delivery_probe","arguments":{}}</tool_call>';}}}),/cancel|abort/i);
+    assert.equal(effects,1);assert.equal(requests,1);
+  } finally {unregisterTool('cancel_delivery_probe');}
 });
