@@ -13,6 +13,8 @@
 
 ## 2. 当前事实
 
+10-27 用户要求共享 Loop 的本地 Trace，为后续 Eval 积累真实样本，不限 Android。已核对公共状态机、Node 主循环/Subagent/Skill、iOS/Android Host 和既有 Fixture Eval；[设计稿](docs/specs/2026-10-27-loop-local-traces-design.md)待审阅，生产代码尚未改动。
+
 10-27 0.10.3（27）按用户澄清改为独立成功动作即时持久化：原生 open_app 验证后立刻发布 action；checkpoint 验证后发布子流程，整项任务失败也保留。Chat 通过共享 Core 的 phone_workflow / 当前 Skill Manifest 原生重放，编辑/删除仍由本机缓存库管理。Core222/JVM170/Emulator69通过，Android构建与R8通过；快速档仅两项缺私有桌宠素材，不能称全仓 GREEN。已导出0.10.3 APK，Fold6未连接、未安装；不能用已保存子目标替代整项任务成功；[专项回执](docs/android-verified-action-cache-20261027.md)。
 
 10-27 0.10.2（26）执行阶段已验证：能力目录不随措辞隐藏 phone_use、UI Tree 优先/按需图像、普通点击沿用任务授权、低对比关闭控件和旧缓存重校验；Core215/JVM164/Native63通过，快速档两项缺私有素材。见[执行回执](docs/android-phone-reliability-20261027.md)。用户最新明确动作/子流程成功应立即缓存，发布粒度后续由0.10.3继续，不把0.10.2阶段当成该功能完成。
