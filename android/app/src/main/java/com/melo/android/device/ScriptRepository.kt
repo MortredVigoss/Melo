@@ -24,6 +24,37 @@ suspend fun Repository.editDeviceScript(original: DeviceScript, edited: DeviceSc
 
 suspend fun Repository.deleteDeviceScript(id: String) = change { it.copy(deviceScripts = it.deviceScripts.filterNot { script -> script.id == id }) }
 
+/** Publish a checked part while its parent task is still running. Never changes
+ * the task status or resurrects a recipe edited/deleted since this task started.
+ */
+suspend fun Repository.publishVerifiedScript(script: DeviceScript, runId: String, initial: List<DeviceScript>): DeviceScript? {
+    ScriptValidator.validate(script)
+    require(script.cacheKind in setOf("action", "subflow") && script.verified && script.environment?.supports(script) == true)
+    var published: DeviceScript? = null
+    change { state ->
+        val run = state.deviceRuns.find { it.id == runId && it.status == "running" } ?: return@change state
+        val owner = run.taskContext
+        if (owner != null && state.chats.none { it.id == owner.chatId && it.agentId == owner.agentId && it.projectId == owner.projectId }) return@change state
+        fun same(other: DeviceScript) = other.cacheKind == script.cacheKind && other.scope == script.scope && other.environment == script.environment && other.goalTemplate == script.goalTemplate
+        val expected = initial.singleOrNull(::same)
+        val currentMatches = state.deviceScripts.filter(::same)
+        if (currentMatches.size > 1) return@change state
+        val current = currentMatches.singleOrNull()
+        if (expected?.id != current?.id || expected?.revision != current?.revision || current?.enabled == false || current != null && (!current.verified || current.invalidated)) return@change state
+        if (current == null && state.deviceScripts.size >= 100) return@change state
+        // Repeated observations of the same recipe do not churn its revision and
+        // invalidate a catalog already supplied to a running model request.
+        if (current != null) {
+            if (current.steps != script.steps || current.completion != script.completion || current.parameters != script.parameters) return@change state
+            published = current
+        } else published = script
+        val stored = published!!
+        state.copy(deviceScripts = if (current == null) state.deviceScripts + stored else state.deviceScripts,
+            deviceRuns = state.deviceRuns.map { if (it.id == runId) it.copy(learnedScriptIds = (it.learnedScriptIds + stored.id).distinct()) else it })
+    }
+    return published
+}
+
 /** Receipt and trusted cache are one Room-document transaction, including late cancellation. */
 suspend fun Repository.commitDeviceOutcome(run: DeviceRun, learned: DeviceScript?, initial: List<DeviceScript>, replaySuccess: DeviceScript?): DeviceRun {
     var finished = run
@@ -41,7 +72,7 @@ suspend fun Repository.commitDeviceOutcome(run: DeviceRun, learned: DeviceScript
         }
         if (run.status == "achieved" && learned != null) {
             ScriptValidator.validate(learned)
-            fun sameGoal(other: DeviceScript) = other.scope == learned.scope && other.environment == learned.environment && GoalTemplate.normalize(other.goalTemplate) == GoalTemplate.normalize(learned.goalTemplate)
+            fun sameGoal(other: DeviceScript) = other.cacheKind == learned.cacheKind && other.scope == learned.scope && other.environment == learned.environment && GoalTemplate.normalize(other.goalTemplate) == GoalTemplate.normalize(learned.goalTemplate)
             val expected = initial.firstOrNull(::sameGoal)
             val current = scripts.firstOrNull(::sameGoal)
             if (current?.id == expected?.id && current?.revision == expected?.revision && (current != null || scripts.size < 100)) {

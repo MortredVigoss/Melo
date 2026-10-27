@@ -31,6 +31,15 @@ export function startTurn({ runId, turnId, allowedTools = [], requiredTools = []
   };
 }
 
+// phone_use and phone_workflow are two executors for the same granted phone
+// capability. This aliases evidence/prerequisites, never grants or goal success.
+function toolSucceeded(state, name) {
+  return state.successfulTools.includes(name) || name === 'phone_use' && state.allowedTools.includes('phone_workflow') && state.successfulTools.includes('phone_workflow');
+}
+function prerequisites(state, name) {
+  return [...new Set([...(state.toolDependencies?.[name] || []), ...(name === 'phone_workflow' ? state.toolDependencies?.phone_use || [] : [])])];
+}
+
 export function advanceTurn(previous, event, now) {
   if (previous?.version !== CORE_VERSION || !identity(previous?.runId)) fail('INVALID_TURN', 'Unknown turn version.');
   if (!Number.isFinite(now) || now < previous.lastNow) fail('INVALID_CLOCK', 'The Host clock must be monotonic.');
@@ -67,7 +76,7 @@ export function advanceTurn(previous, event, now) {
       const guard = createRepeatGuard({ entries: state.failures, fingerprint: (_name, key) => key });
       state.permitted = calls.filter(call => {
         if (!state.allowedTools.includes(call.name)) { state.rejections[call.id] = 'UNKNOWN_TOOL'; return false; }
-        if ((state.toolDependencies?.[call.name] || []).some(name => !state.successfulTools.includes(name))) { state.rejections[call.id] = 'PREREQUISITE_MISSING'; return false; }
+        if (prerequisites(state, call.name).some(name => !toolSucceeded(state, name))) { state.rejections[call.id] = 'PREREQUISITE_MISSING'; return false; }
         if (!state.hostToolSchemas && COMMON_TOOLS.some(tool => tool.name === call.name)) {
           try { validateCommonTool(call.name, call.arguments); }
           catch { state.rejections[call.id] = 'INVALID_TOOL_ARGUMENTS'; return false; }
@@ -140,7 +149,7 @@ export function advanceTurn(previous, event, now) {
     }
     case 'complete':
       if (!state.awaitingModel || state.pending.length) fail('PENDING_EFFECT', 'A final answer cannot drop pending tools.');
-      if ((state.requiredTools || []).some(name => !state.successfulTools.includes(name))) return stop('MISSING_TOOL_EVIDENCE');
+      if ((state.requiredTools || []).some(name => !toolSucceeded(state, name))) return stop('MISSING_TOOL_EVIDENCE');
       return { ...state, status: 'completed', awaitingModel: false };
     default: fail('UNKNOWN_EVENT', 'Unknown turn event.');
   }

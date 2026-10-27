@@ -64,7 +64,7 @@ class ScriptRecorder(private val goal: String, seedSteps: List<ScriptStep> = emp
                 "back" -> { require(before != null); steps += ScriptStep("back", before.text("package_name"), mask(before.text("window_title"))) }
                 "home" -> steps += ScriptStep("home")
                 "wait" -> steps += ScriptStep("wait", durationMs = (arguments["duration_ms"]?.jsonPrimitive?.intOrNull ?: 600).coerceIn(100, 3000))
-                "finish" -> if (arguments.text("outcome") == "achieved" && result.data.text("verification") == "visible_facts") {
+                "finish", "checkpoint" -> if ((action == "checkpoint" || arguments.text("outcome") == "achieved") && result.data.text("verification") == "visible_facts") {
                     val text = arguments.text("visible_text")
                     val parameter = values.entries.firstOrNull { it.value.isNotBlank() && it.value == text }?.key.orEmpty()
                     completion = ScriptAssertion(arguments.text("expected_package").ifBlank { result.data.text("package_name") }, mask(result.data.text("window_title")), if (parameter.isBlank()) mask(text) else "", parameter)
@@ -79,15 +79,15 @@ class ScriptRecorder(private val goal: String, seedSteps: List<ScriptStep> = emp
         }
         if (result.ok && result.data.text("screen_id").isNotBlank()) screen = result.data
     }
-    fun compile(scope: String, runId: String): DeviceScript? {
+    fun compile(scope: String, runId: String, recordedGoal: String = goal): DeviceScript? {
         if (unsupported.isNotBlank()) return null
         return try {
             val assertion = completion ?: error("没有通过验证的终态。")
             val fields = steps.flatMap { listOf(it.windowTitle, it.selector?.text.orEmpty(), it.selector?.description.orEmpty()) } + listOf(assertion.windowTitle, assertion.visibleText)
             val used = (steps.map { it.parameter } + assertion.parameter + fields.flatMap(GoalTemplate::names)).filter(String::isNotBlank).distinct()
             val activeValues = values.filterKeys { it in used }
-            require(activeValues.values.filter(String::isNotBlank).all { value -> goal.windowed(value.length).count { it == value } <= 1 }) { "目标中的输入值重复，无法无歧义参数化；未缓存。" }
-            val template = GoalTemplate.normalize(GoalTemplate.parameterize(goal.trim(), activeValues))
+            require(activeValues.values.filter(String::isNotBlank).all { value -> recordedGoal.windowed(value.length).count { it == value } <= 1 }) { "目标中的输入值重复，无法无歧义参数化；未缓存。" }
+            val template = GoalTemplate.normalize(GoalTemplate.parameterize(recordedGoal.trim(), activeValues))
             DeviceScript(name = template.take(100), goalTemplate = template, steps = steps.toList(), completion = assertion,
                 parameters = used, scope = scope, sourceRunId = runId, verified = true, successes = 1).also(ScriptValidator::validate)
         } catch (e: Exception) { unsupported = e.message ?: "脚本不完整，未缓存。"; null }

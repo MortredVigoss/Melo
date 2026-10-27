@@ -13,7 +13,9 @@
 
 ## 2. 当前事实
 
-10-27 0.10.2（26）执行阶段已验证：能力目录不随措辞隐藏 phone_use、UI Tree 优先/按需图像、普通点击沿用任务授权、低对比关闭控件和旧缓存重校验；Core215/JVM164/Native63通过，快速档两项缺私有素材。见[执行回执](docs/android-phone-reliability-20261027.md)。用户最新明确动作/子流程成功应立即缓存，发布粒度正在继续，不把本阶段当成完成。
+10-27 0.10.3（27）按用户澄清改为独立成功动作即时持久化：原生 open_app 验证后立刻发布 action；checkpoint 验证后发布子流程，整项任务失败也保留。Chat 通过共享 Core 的 phone_workflow / 当前 Skill Manifest 原生重放，编辑/删除仍由本机缓存库管理。Core222/JVM170/Emulator69通过，Android构建与R8通过；快速档仅两项缺私有桌宠素材，不能称全仓 GREEN。已导出0.10.3 APK，Fold6未连接、未安装；不能用已保存子目标替代整项任务成功；[专项回执](docs/android-verified-action-cache-20261027.md)。
+
+10-27 0.10.2（26）执行阶段已验证：能力目录不随措辞隐藏 phone_use、UI Tree 优先/按需图像、普通点击沿用任务授权、低对比关闭控件和旧缓存重校验；Core215/JVM164/Native63通过，快速档两项缺私有素材。见[执行回执](docs/android-phone-reliability-20261027.md)。用户最新明确动作/子流程成功应立即缓存，发布粒度后续由0.10.3继续，不把0.10.2阶段当成该功能完成。
 
 10-27 补丁 0.10.1（25）已覆盖安装 Fold6：修复短句“重试”丢失原任务及 phone_use，并区分路由建议/实际注册目录；Core 213、Native 专项 11 通过，最新 APK 六种协议/执行组合通过。手机锁屏，真实汽水播放尚待解锁复测；见[补丁回执](docs/android-short-retry-fix-20261027.md)。
 

@@ -21,16 +21,18 @@ import java.text.Normalizer
     val parameters: List<String> = emptyList(), val scope: String = "", val sourceRunId: String = "", val revision: Int = 1,
     val enabled: Boolean = true, val verified: Boolean = false, val createdAt: String = now(), val updatedAt: String = createdAt,
     val hits: Int = 0, val successes: Int = 0, val failures: Int = 0, val lastError: String = "", val invalidated: Boolean = false, val schemaVersion: Int = 1,
-    val environment: CacheEnvironment? = null)
+    val environment: CacheEnvironment? = null, val cacheKind: String = "task")
 
 object ScriptValidator {
     const val MAX_BYTES = 96_000
     private val packagePattern = Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z0-9_]+)+")
     fun validate(script: DeviceScript) {
         require(MeloJson.encodeToString(script).toByteArray().size <= MAX_BYTES) { "脚本超过 96 KiB。" }
+        require(script.cacheKind in setOf("task", "action", "subflow")) { "缓存粒度无效。" }
         require(script.schemaVersion == 1) { "此脚本格式版本不受支持。" }
         require(script.name.isNotBlank() && script.name.length <= 100 && script.goalTemplate.isNotBlank() && script.goalTemplate.length <= 4000) { "请输入脚本名称和目标模板。" }
         require(script.steps.size in 1..60 && script.revision > 0) { "脚本需要 1–60 个步骤。" }
+        if (script.cacheKind == "action") require(script.steps.size == 1 && script.steps.single().action == "open_app" && script.steps.single().packageName == script.completion.packageName && script.parameters.isEmpty() && script.completion.windowTitle.isBlank() && script.completion.visibleText.isBlank() && script.completion.parameter.isBlank()) { "单动作 Cache 仅使用原生打开 App 和前台 package 校验；页面动作请保存为子流程。" }
         script.environment?.let { env ->
             require(env.layout.length in 1..500 && env.appVersions.size <= 61 && env.appVersions.all { (pkg, version) -> packagePattern.matches(pkg) && version >= 0 }) { "缓存环境记录无效。" }
         }
@@ -131,7 +133,8 @@ object TaskCacheRouter {
         }.singleOrNull()
         if (exact.isEmpty() && legacy != null && environment != null && environment.layout.isNotBlank() && !environment.layout.contains("hinge-pending")) return CacheLookup(incompatible = incompatible, legacy = legacy)
         val wanted = tokens(goal)
-        val ranked = eligible.map { script ->
+        // Independently successful parts must not masquerade as an adapted whole task.
+        val ranked = eligible.filter { it.cacheKind == "task" }.map { script ->
             val other = tokens(script.goalTemplate)
             val keywords = tokens(script.completion.windowTitle + " " + script.steps.joinToString(" ") { it.packageName.substringAfterLast('.') + " " + it.windowTitle + " " + it.selector?.text.orEmpty() + " " + it.selector?.description.orEmpty() + " " + it.selector?.viewId?.substringAfterLast('/').orEmpty() })
             val goalScore = if (wanted.isEmpty() || other.isEmpty()) 0.0 else wanted.intersect(other).size.toDouble() / wanted.union(other).size

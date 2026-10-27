@@ -60,6 +60,7 @@ import com.melo.android.ui.*
                 Text("${deviceStatus(run.status)} · ${run.connectionName} · ${run.steps.size} 步", color = MeloMuted)
                 Text(deviceRunMode(run.executionMode) + (run.modelRequests?.let { " · 模型请求 $it 次" } ?: ""), color = MeloMuted)
                 if (run.cacheNote.isNotBlank()) Text(run.cacheNote, style = MaterialTheme.typography.bodySmall)
+                if (run.learnedScriptIds.isNotEmpty()) Text("已保存 ${run.learnedScriptIds.size} 个已验证操作 / 子流程；与整项任务结果分开记录。", style = MaterialTheme.typography.bodySmall)
                 Text("缓存检查 ${run.cacheLookupMs} ms · 重放 ${run.cacheReplayMs} ms · 探索 ${run.cacheFallbackMs} ms · 不兼容 ${run.cacheIncompatible}", style = MaterialTheme.typography.bodySmall)
                 run.steps.forEachIndexed { index, step -> Text("${index + 1}. ${step.action} · ${if (step.ok) "成功" else "失败"} · ${step.detail}", style = MaterialTheme.typography.bodySmall) }
                 if (run.answer.isNotBlank()) Text(run.answer)
@@ -86,6 +87,7 @@ fun deviceStatus(status: String) = when (status) {
                 runCatching { " · ${java.time.Duration.between(java.time.Instant.parse(run.startedAt), java.time.Instant.parse(end)).toMillis().coerceAtLeast(0) / 1000.0}s" }.getOrDefault("")
             }.orEmpty(), color = MeloMuted, style = MaterialTheme.typography.bodySmall)
             if (run.cacheNote.isNotBlank()) Text(run.cacheNote, style = MaterialTheme.typography.bodySmall)
+            if (run.learnedScriptIds.isNotEmpty()) Text("已保存 ${run.learnedScriptIds.size} 个已验证操作 / 子流程；与整项任务结果分开记录。", style = MaterialTheme.typography.bodySmall)
             Text("缓存检查 ${run.cacheLookupMs} ms · 重放 ${run.cacheReplayMs} ms · 探索 ${run.cacheFallbackMs} ms · 不兼容 ${run.cacheIncompatible}", style = MaterialTheme.typography.bodySmall)
             if (active) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text(phase); TextButton(onClick = onCancel) { Text("停止手机操作") } }
             if (run.answer.isNotBlank()) Text(run.answer)

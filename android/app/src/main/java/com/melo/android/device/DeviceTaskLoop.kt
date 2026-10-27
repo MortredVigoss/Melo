@@ -12,6 +12,16 @@ data class DeviceOutcome(val status: String, val answer: String = "", val error:
 
 /** Model prose and a successful gesture are never a completion receipt. */
 object DeviceCompletion {
+    /** Foreground identity is independent of animation within the launched app.
+     * This receipt certifies only open_app, never a page, search or playback.
+     */
+    fun verifyAppLaunch(expectedPackage: String, launched: DeviceToolResult?, current: DeviceToolResult): DeviceToolResult {
+        if (launched?.ok != true || !current.ok || launched.data.text("target_package") != expectedPackage ||
+            launched.data.text("package_name") != expectedPackage || current.data.text("package_name") != expectedPackage ||
+            launched.data.text("screen_id").isBlank() || current.data.text("screen_id").isBlank())
+            return DeviceToolResult.error("未核实目标 App 的当前前台窗口。", "unverified_launch")
+        return DeviceToolResult(JsonObject(current.data + ("verification" to "visible_facts".jp())))
+    }
     fun verify(arguments: JsonObject, previous: DeviceToolResult?, current: DeviceToolResult): DeviceToolResult {
         if (previous == null || !previous.ok || previous.data.text("screen_id").isBlank() || arguments.text("screen_id") != previous.data.text("screen_id"))
             return DeviceToolResult.error("完成证据未引用最近画面，请重新观察。", "stale_evidence")
@@ -54,7 +64,7 @@ class DeviceTaskLoop(
     private val onStep: suspend (DeviceStep) -> Unit,
     private val onPhase: (String) -> Unit = {},
     private val maxSteps: Int = 30,
-    private val onResult: (JsonObject, DeviceToolResult) -> Unit = { _, _ -> },
+    private val onResult: suspend (JsonObject, DeviceToolResult) -> Unit = { _, _ -> },
     private val core: SharedCoreTurn? = null,
 ) {
     suspend fun run(goal: String): DeviceOutcome {
@@ -102,12 +112,12 @@ class DeviceTaskLoop(
                 DeviceTools.validate(call.arguments)
                 if (core != null && !core.permits(call.id)) DeviceToolResult.error("Shared loop refused this operation.", core.rejection(call.id))
                 else if (repeatedLaunch) DeviceToolResult.error("同一 App 已反复请求打开；已停止重复执行。请检查现有页面或缩小目标。", "repeated_launch")
-                else if (action == "finish") {
-                    if (call.arguments.text("outcome") != "achieved" && previous?.data?.text("code") == "app_not_found" && !discoveryRecovery) {
+                else if (action in setOf("finish", "checkpoint")) {
+                    if (action == "finish" && call.arguments.text("outcome") != "achieved" && previous?.data?.text("code") == "app_not_found" && !discoveryRecovery) {
                         discoveryRecovery = true
                         DeviceToolResult.error("Before concluding the app is unavailable, search ALL apps using list_apps(query=shorter name/alternate name/package fragment) and inspect candidates/pagination, or home + observe and launcher search. Do not repeat failing arguments, install apps or change permissions. If still blocked or ambiguous, finish honestly; this recovery is offered only once.", "discovery_required")
                     }
-                    else if (call.arguments.text("outcome") != "achieved") DeviceToolResult(buildJsonObject { put("ok", true) })
+                    else if (action == "finish" && call.arguments.text("outcome") != "achieved") DeviceToolResult(buildJsonObject { put("ok", true) })
                     else if (latestScreen?.data?.text("screen_id") != call.arguments.text("screen_id")) DeviceToolResult.error("请使用最近 screen_id。", "stale_evidence")
                     else DeviceCompletion.verify(call.arguments, latestScreen, execute(buildJsonObject {
                         put("action", "observe")
@@ -140,7 +150,7 @@ class DeviceTaskLoop(
             if (result.data.text("screen_id").isNotBlank() && result.ok) latestScreen = result
             if (core?.active == false) return DeviceOutcome("blocked", error = "共享 Agent 已停止（${core.reason}）。已有步骤保留。")
             if (action == "finish" && result.ok) return DeviceOutcome(call.arguments.text("outcome"), call.arguments.text("summary"), verification = result.data.text("verification").ifBlank { null })
-            core?.observeDevice(action, result.ok, DeviceProgress.fingerprint(result))
+            if (action != "checkpoint") core?.observeDevice(action, result.ok, DeviceProgress.fingerprint(result))
             if (core?.active == false) return DeviceOutcome("blocked", error = "共享 Agent 已停止（${core.reason}）。已有步骤保留。")
         }
         return DeviceOutcome("blocked", error = "达到 $maxSteps 步上限，已停止；已执行步骤保留。")

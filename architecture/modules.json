@@ -23,8 +23,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 647,
-      "edges": 2069,
+      "modules": 648,
+      "edges": 2071,
       "roots": [
         "src",
         "desktop-ui",
@@ -734,7 +734,7 @@
       ],
       "modules": {
         "desktop-ui": 27,
-        "shared": 34,
+        "shared": 35,
         "src": 68
       },
       "entryModules": [
@@ -1205,6 +1205,7 @@
           "shared/agent/research.test.js",
           "shared/agent/taskReplay.test.js",
           "shared/agent/tools.test.js",
+          "shared/agent/workflows.test.js",
           "src/openai.codex-inline-image.test.js",
           "src/openai.codex-input.test.js",
           "src/openai.prompt-cache.test.js",

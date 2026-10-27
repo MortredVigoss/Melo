@@ -68,7 +68,7 @@ class ScriptRunner(private val execute: suspend (JsonObject) -> DeviceToolResult
     suspend fun run(script: DeviceScript, parameters: Map<String, String>): ScriptReplay {
         ScriptValidator.validate(script)
         require(parameters.keys.all { it in script.parameters } && script.parameters.all { it in parameters } && parameters.values.all { it.length <= 4000 }) { "脚本输入参数缺失或过长。" }
-        var completed = 0; var unsafe = false
+        var completed = 0; var unsafe = false; var lastReceipt: DeviceToolResult? = null
         try {
             for ((index, step) in script.steps.withIndex()) {
                 currentCoroutineContext().ensureActive(); onPhase("本机脚本 · ${index + 1}/${script.steps.size} · ${step.action}")
@@ -97,12 +97,22 @@ class ScriptRunner(private val execute: suspend (JsonObject) -> DeviceToolResult
                     if (receipt.ok || receipt.data.text("code") !in setOf("stale_screen", "stale_target") || attempt == 1) break
                 }
                 val result = receipt!!
+                lastReceipt = result
                 // Even a custom unlabeled button can commit. Never auto-resume a
                 // failed cache by replaying previous taps/typing from the beginning.
                 if (step.action in setOf("tap", "type_text", "swipe", "back") && (result.ok || result.data.text("code") !in setOf("stale_screen", "stale_target", "user_declined", "invalid_arguments"))) unsafe = true
                 onStep(DeviceStep(step.action, result.ok, "本机脚本第 ${index + 1} 步" + if (result.ok) "已返回执行回执" else "失败，已停止", durationMs = (System.nanoTime() - started) / 1_000_000, code = result.data.text("code")))
                 if (!result.ok) return ScriptReplay(DeviceOutcome(if (result.data.text("code") == "user_declined") "needs_user" else "blocked", error = result.data.text("error")), completed, unsafe || result.data.text("code") == "user_declined")
                 completed++
+            }
+            if (script.cacheKind == "action") {
+                onPhase("本机动作 · 核对当前前台 App…")
+                ensureCompatible()
+                val fresh = observe()
+                ensureCompatible()
+                val verified = DeviceCompletion.verifyAppLaunch(script.completion.packageName, lastReceipt, fresh)
+                onStep(DeviceStep("finish", verified.ok, if (verified.ok) "已核对当前前台 App；尚未核对其他页面任务" else "目标 App 未在前台", code = verified.data.text("code")))
+                return ScriptReplay(if (verified.ok) DeviceOutcome("achieved", "已打开目标 App；此回执仅覆盖打开操作。", verification = "visible_facts") else DeviceOutcome("blocked", error = verified.data.text("error")), completed, unsafe)
             }
             onPhase("本机脚本 · 重新检查终态…")
             val assertion = script.completion

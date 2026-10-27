@@ -27,7 +27,7 @@ import kotlinx.serialization.json.*
         Surface(Modifier.widthIn(max = 760.dp).fillMaxWidth(0.96f).fillMaxHeight(0.92f).testTag("cache-library"), shape = MaterialTheme.shapes.large, color = MeloBackground) {
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("操作缓存", style = MaterialTheme.typography.titleLarge, color = MeloGold); TextButton(onClick = onDismiss) { Text("关闭") } }
-                Text("Exact / 参数命中在本机执行；Similar 改写和 Probe 会调用模型。成功探索自动缓存，仅保存在本机。", color = MeloMuted, style = MaterialTheme.typography.bodySmall)
+                Text("Exact / 参数命中在本机执行；Similar 改写和 Probe 会调用模型。已验证动作和子流程单独缓存，后续任务失败也保留，仅保存在本机。", color = MeloMuted, style = MaterialTheme.typography.bodySmall)
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 if (data.deviceScripts.isEmpty()) Text("还没有缓存。执行一次可验证的手机操作后，会自动记录可复用步骤。", color = MeloMuted)
                 LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -35,7 +35,7 @@ import kotlinx.serialization.json.*
                         ElevatedCard(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                                 Text(script.name, style = MaterialTheme.typography.titleMedium, color = MeloGold)
-                                Text("${script.steps.size} 步 · r${script.revision} · " + when { !script.enabled -> "已停用"; script.invalidated -> "已失效"; !script.verified -> "待验证"; else -> "已验证" }, color = MeloMuted)
+                                Text((when (script.cacheKind) { "action" -> "单个动作"; "subflow" -> "子流程"; else -> "完整流程" }) + " · ${script.steps.size} 步 · r${script.revision} · " + when { !script.enabled -> "已停用"; script.invalidated -> "已失效"; !script.verified -> "待验证"; else -> "已验证" }, color = MeloMuted)
                                 Text("命中 ${script.hits} · 成功 ${script.successes} · 失败 ${script.failures}", style = MaterialTheme.typography.bodySmall, color = MeloMuted)
                                 Text(script.goalTemplate, style = MaterialTheme.typography.bodySmall)
                                 if (script.lastError.isNotBlank()) Text(script.lastError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)

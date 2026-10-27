@@ -23,6 +23,7 @@ import { completionResult, completionObservation, teamCompletion } from './compl
 import { goalOperation } from './goal.js';
 import { toolEffect } from './toolEffects.js';
 import { organizerCommand, ORGANIZER_TOOLS } from './organizer.js';
+import { workflowCatalog, prepareWorkflowCall } from './workflows.js';
 import { contextCost, contextPlan, contextWirePlan, historyPage } from './context.js';
 
 export function evaluate(input) {
@@ -58,6 +59,8 @@ export function evaluate(input) {
       case 'plan': value = planRequest(input.request); break;
       case 'actionEvidence': value = actionEvidence(input.plan, input.urls); break;
       case 'skills': value = buildSkills(input.enabledIds, input.customSkills); break;
+      case 'workflowCatalog': value = workflowCatalog(input.catalog); break;
+      case 'workflowCall': value = prepareWorkflowCall(input.call); break;
       case 'catalog': value = toolCatalog(input.names); break;
       case 'validateTool': value = validateCommonTool(input.name, input.arguments); break;
       case 'config': value = normalizeRuntimeConfig(input.config); break;
