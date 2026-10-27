@@ -114,3 +114,22 @@ Agent 扩展协议的可选 maxTaskIterations 最大值放宽到64，workspace v
 ## master 合并与推送授权
 
 2026-10-27用户明确授权合并master并推送。fetch后origin/master无独有提交，本地master为7ae6bf5；以fast-forward合入77b2879，保留全部前序提交，不产生合并冲突或产品代码变化。再次核对verification.json中的94份代码SHA一致，复用刚完成的7ae6bf5基准集成结果；只对新增的本节及总览/进度记录执行文档范围检查。`push-master.log`和`push-master-receipt.json`位于产品仓库`.tmp/limit-delivery-20261027/`，保存实际推送结果与local/remote SHA。未授权安装，不运行git pp。
+
+## Claude 复核与收尾（2026-10-27，基准 36c40b3）
+
+范围：`ca3fca0..77b2879` 五步提交与 `36c40b3` 发布记录，对照用户 10-27 指定的八条补改清单。方法：逐文件读 diff（共享 reducer / goal / completion / runBudget / limitDelivery、Node 主循环与成员 / 技能、iOS AgentLoop / SharedAgentCore / AgentLoopRuntime、Android SharedChatAgent / SharedRunBudget、桌面 Agent 设置），核对 [verification.json](evidence/limit-delivery-20261027/verification.json) 的六份门禁摘要与本仓库 `.tmp/test-runs/run-ca7apo`、`run-RRWwcg` 的 summary.json；本机复跑 `shared/agent/{deliveryBudget,limitDelivery,loopLimits,conformance}.test.js`、`src/agents/childDelivery.test.js`、`src/runtime/runDeadline.test.js`（178/178）与 `chatExecutionRunner.test.js` 的演唱会三跳夹具（通过）。没有重跑完整门禁，没有跑真实模型。
+
+| 条目 | 结论 | 对应文件:函数 |
+| --- | --- | --- |
+| 1 数值 | 落地 | `shared/protocol/agent-loop.json` loop / budget / delegationLimits / skillLimits；`shared/agent/loopLimits.js:resolveLoopLimits`；三端设置范围取自契约 |
+| 2 只计工具轮 | 落地 | `shared/agent/turn.js:advanceTurn` 的 `calls` / `hosted-call` 分支计数，`request` 不计 |
+| 3 预留额度 | 落地 | `shared/agent/runBudget.js:reserveDelivery/admitModel/budgetExhausted`；时间 / 调用 / token 到顶均进交付 |
+| 4 交付后检查 | 落地 | `shared/agent/limitDelivery.js:deliveryRequest/reviewDelivery/deliveryReply`；Node `src/runtime/limitDelivery.js:runLimitDelivery`；iOS `AgentLoop.deliverLimit`；Android `SharedChatAgent.deliverLimit` |
+| 5 回执与 UI | 落地 | `shared/agent/completion.js:completionReceipt/completionSummary`：LIMIT_DELIVERED 按检查结果给 completed / partial / unverified，面板"部分完成 · 已达轮数上限" |
+| 6 无额度兜底 | 落地 | `shared/agent/limitDelivery.js:hostEvidenceReply`，三端 fallback 均调用 |
+| 7 子循环 | 落地 | `src/agents/subAgent.js` / `skillExecutor.js` 末尾交付；`src/agents/team.js` needsContinuation → `invokeModelNode` 带成员证据续跑 |
+| 8 验收 | 落地 | 三跳夹具 6 / 40 轮、取消不交付、三种上限预留；快速 run-ca7apo 与集成 run-RRWwcg（基准 7ae6bf5）全绿 |
+
+未覆盖与保留：真实模型只跑到 completed 路径，LIMIT_DELIVERED 仅夹具覆盖，且真跑发生在第四步中间代码；Codex OAuth 不接受输出上限参数，8k 只是准入额度；交付证据 24000 字符平摊到全部观察，超长运行时每条摘要很短，先观察不改；Kotlin `SharedCoreTurn.reporting` 已无调用方，本机 Android 阶段需单独环境，留待下次 Android 改动一并清理。
+
+收尾改动：删除 `99b8ba7` 留下、三端均不再调用的进度汇报路径（`shared/agent/goal.js:goalProgressRequest` 与 `progress` 操作、`src/runtime/sharedAgentCore.js:progressRequest`、iOS `SharedAgentCore.swift` 的 `progress` 分支与 `PhoneCoreTurn.reporting`），重建 agent-core 生成物。reducer 的 `delivery` 请求种类与 `report` 模式是契约夹具的一部分，保留。链路：`goalOperation` → Node / Swift / Kotlin 的 goal 桥；停止条件：三端全文 grep 无 `progress` 操作调用方，dist 与 iOS 包由生成器重建并经预检比对。回归结果：快速档 `run-xZwVL9`（规划器判为公共边界并扩大到全部：JS 4771/4771、Swift 全部、Android JVM / Lint / Debug / Release、设置浏览器，453 s）与基于 `36c40b3` 的集成档 `run-Yz80Pm`（含文档链接检查，173 s）均 GREEN，零跳过、零隔离复测；Android 阶段以 Homebrew openjdk@21 与 `/opt/homebrew/share/android-commandlinetools` 实际执行，不是记为未执行。摘要在各自 `.tmp/test-runs/<run>/summary.json`。

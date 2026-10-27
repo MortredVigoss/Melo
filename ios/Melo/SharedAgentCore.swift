@@ -67,7 +67,7 @@ final class PhoneGoalState {
     @discardableResult func update(_ action: String, _ fields: [String: Any] = [:]) throws -> [String: Any] {
         var input = fields; input["action"] = action; input["state"] = state
         guard let next = SharedLoopPolicy.value("goal", input) as? [String: Any] else { throw SharedAgentCoreError.invalidReply }
-        if action != "request" && action != "progress" { state = next }
+        if action != "request" { state = next }
         return next
     }
 }
@@ -163,7 +163,6 @@ final class PhoneCoreTurn {
     private var state: [String: Any]
     private static func clock() -> Double { ProcessInfo.processInfo.systemUptime * 1000 }
     var rounds: Int { state["rounds"] as? Int ?? 0 }
-    var reporting: Bool { state["requestMode"] as? String == "report" }
     var failures: Int { state["errors"] as? Int ?? 0 }
     var completed: Bool { state["status"] as? String == "completed" }
     var active: Bool { state["status"] as? String == "running" }

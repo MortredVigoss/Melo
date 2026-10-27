@@ -1,3 +1,7 @@
+## 2026-10-27 — Claude 复核循环上限八条并收尾
+
+Claude：对照用户 10-27 的八条补改清单逐项核对 Codex 的 `ca3fca0..77b2879`，八条全部落地；本机复跑新增测试 178/178 与演唱会三跳夹具通过，门禁摘要 run-ca7apo / run-RRWwcg 核对一致。收尾删除三端均不再调用的进度汇报死路径并重建 agent-core；reducer 的 `delivery` 种类与 `report` 模式属契约夹具，保留。保留项：真实模型未跑到 LIMIT_DELIVERED、OAuth 输出上限只是准入额度、Kotlin 未用 getter 待 Android 改动时清理。复核表与链路见[实施记录](docs/limit-delivery-20261027.md)复核节；快速 run-xZwVL9 与集成 run-Yz80Pm（基准 36c40b3）全绿，Android、Swift 均实际执行。用户授权推送；今晚覆盖安装桌面与 iPhone（个人签名 10-28 20:52 Melbourne 到期）。
+
 ## 2026-10-27 — master 合并与推送
 
 Codex：用户明确授权合并master并推送。已快进合入77b2879及其前序，保留独立提交，无冲突/产品代码改动；代码指纹与run-RRWwcg集成绿灯一致。本次仅更新发布交接并做文档范围检查；推送目标origin/master，实际远端核对见[实施记录](docs/limit-delivery-20261027.md)的本地回执。不安装、不改用户数据。

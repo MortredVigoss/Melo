@@ -142,7 +142,7 @@ test('checks do not consume work rounds and the final report cannot execute tool
   assert.equal(core.routingProgress.rounds, 0); assert.equal(core.reporting, false);
   const call = { id: 'read', name: 'file_read', arguments: { path: 'README.md' } };
   core.update('calls', { calls: [call] }); core.results([{ call, result: { ok: true, output: 'Project details.' } }]);
-  assert.equal(core.reporting, true); assert.match(core.progressRequest().systemPrompt, /progress report/);
+  assert.equal(core.reporting, true);
   assert.equal(core.update('request'), 'running');
   core.update('calls', { calls: [{ ...call, id: 'forbidden-report-call' }] });
   assert.equal(core.permits('forbidden-report-call'), false); assert.equal(core.reason, 'ROUND_LIMIT');

@@ -3,7 +3,7 @@ import { toolCallFingerprint } from '../agents/repeatGuard.js';
 import { turnStopReply } from '../../shared/agent/turn.js';
 import { startTurn, advanceTurn } from '../../shared/agent/turn.js';
 import { completionObservation, completionResult } from '../../shared/agent/completion.js';
-import { startGoal, amendGoal, goalText, goalSnapshot, goalCandidate, goalReviewRequest, goalProgressRequest, reviewGoal, stopGoal } from '../../shared/agent/goal.js';
+import { startGoal, amendGoal, goalText, goalSnapshot, goalCandidate, goalReviewRequest, reviewGoal, stopGoal } from '../../shared/agent/goal.js';
 import { toolEffect } from '../../shared/agent/toolEffects.js';
 
 /** Node Host for the same reducer packaged for Android / iOS. */
@@ -19,7 +19,6 @@ export function createCoreTurn({ runId = randomUUID(), turnId = randomUUID(), al
     acceptDelivery(value) { task = value; },
     receipt(goal, reply, terminalReason = state.reason, plan, citations = []) { return completionResult({ goal: task ? goalText(task) : goal, reply, terminalReason, plan, citations, observations, task: goalSnapshot(task) }); },
     get reporting() { return task?.phase !== 'checking' && (state.awaitingModel ? state.requestMode === 'report' : state.rounds >= state.limits.rounds && !state.reportIssued); },
-    progressRequest() { return goalProgressRequest(task, observations); },
     get checking() { return task?.phase === 'checking'; },
     get repairing() { return state.repairing; },
     get candidateReply() { return candidateReply; },

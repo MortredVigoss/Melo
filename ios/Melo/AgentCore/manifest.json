@@ -1,10 +1,10 @@
 {
   "version": 1,
-  "sha256": "22b0bd425a7109c78c626d2cb4714b752e5ee9c47154519b40b51bffde03658a",
+  "sha256": "da013b3600249bcc9555f932b8c3e84a404d3f16f9e08434f5d648a7de0b20ec",
   "sources": {
     "shared/agent/index.js": "c4950842345e2ddc6877214854a9bc21aa25a51e6b81aacd6e79a9a4b59c0379",
     "shared/agent/limitDelivery.js": "76daff1670bb5180ebbffd1098b45211bfcdf1bd40ac1a3e3396f84804f6f975",
-    "shared/agent/goal.js": "20536257ce7836848b74c8d1011fcc61fa5cc677be0642236b1836353da757c1",
+    "shared/agent/goal.js": "651a9a82d0dff0d7a82edc33102adb50e36f0afe786202704f779d7a7a8f3f70",
     "shared/agent/evidence.js": "f7aef4bfdf8ce4341bc12d5fd45901a741556a86293aed5209447e4808f9e9fb",
     "shared/agent/retrieval/intentRouter.js": "cc592474a82ea3542efb0138fe7605fecc3ce822fcc161a738b3c1b40dd06d88",
     "shared/agent/retrieval/requestPolicy.js": "e6c7dfc4ac142a2123aa4c32795ad3ad60cadc3c18819060482229ee3763ed16",
