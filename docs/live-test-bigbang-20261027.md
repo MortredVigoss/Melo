@@ -48,6 +48,8 @@
 5. **页面内容上限 6 000 字**（`src/services/search/searchLimits.js` `contentMaxChars`）：海边雕塑展官网的"NOW ON until 2 November 2026"在页面 markdown 第 6 844 字，auto 模式读不到；第二段用 direct 模式（上限 20 000）也没把展期写出来，模型实际收到的正文没有留档（`toolResults` 只存摘要），无法进一步定位。
 6. **BOM 页面是 JS 渲染**：`fetch_url` 三种模式都只拿到导航。`web_search` 里有 wttr.in 天气快路（`fetchWeatherFastPath`），但只在带天气词的 `web_search` 里触发，而模型在第一次搜索失败后再没用过 `web_search` 查天气。BOM 的公开 App 接口（`api.weather.bom.gov.au/v1/locations/r3gx2f/forecasts/daily`，9 天）一次就拿到真值，是天气能力的候选来源。
 
+后续（当晚）：根因 1 已修——node 目录置于服务 PATH 首位，第三次 `release:verify` 17 项全绿覆盖安装（[安装回执](overwrite-install-20261027.md)）。装后实测 Playwright 腿真的跑了，但 Google 给无头浏览器返回"异常流量"验证页，Jina 匿名 DuckDuckGo 仍 403：无 key 时 `web_search` 仍无结果，下一步是配 Tavily / SerpAPI / Jina key 或换搜索引擎。
+
 ## 证据
 
 - `.tmp/desktop-install-20261027/live-test/`：`events.jsonl`、`console.log`、`run.out`、`reply.md`、`done.json`、`chat.json`、`exit.txt`；续写轮在 `continue-1/` 同名文件；`reference/`（BOM 接口原始 JSON、Transport NSW 与雕塑展页面 markdown）；测试脚本 `melo-live-test.mjs`、`analyze-live-test.mjs`、`approve-readonly-browser.sh`。

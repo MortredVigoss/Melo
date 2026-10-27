@@ -60,6 +60,7 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
   private var launchAttempt = UUID()
   private var launchRequest: URLSessionDataTask?
   private var resolvedNodePath: String?
+  private var serverSearchPath: String?
   private var serverOutput = ""
   private let debugQueue = DispatchQueue(label: "com.melo.desktop.diagnostics", qos: .utility)
   private lazy var voiceInput: VoiceInput = {
@@ -412,6 +413,23 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
     }
 
     resolvedNodePath = nodeExecutable
+    // The server inherits a fixed PATH, so the toolchain next to the resolved
+    // node binary (npx, and with it the Playwright leg of web_search) was out
+    // of reach whenever node came from nvm rather than a system directory
+    // (2026-10-27 live test: every search fell back to one rate-limited leg).
+    // Its directory goes first so `npx` resolves against the same node.
+    let nodeBinDirectory = (nodeExecutable as NSString).deletingLastPathComponent
+    let searchPath = ([nodeBinDirectory] + [
+      "/opt/homebrew/bin",
+      "/usr/local/bin",
+      "/usr/bin",
+      "/bin",
+      "/usr/sbin",
+      "/sbin",
+    ]).reduce(into: [String]()) { directories, directory in
+      if !directories.contains(directory) { directories.append(directory) }
+    }.joined(separator: ":")
+    serverSearchPath = searchPath
 
     let process = Process()
     process.executableURL = URL(fileURLWithPath: nodeExecutable)
@@ -436,14 +454,7 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
       "MELO_DESKTOP_PORT": String(port),
       // See ownerPipe below; src/runtime/desktopOwner.js reads this flag.
       "MELO_DESKTOP_OWNER_PIPE": "1",
-      "PATH": [
-        "/opt/homebrew/bin",
-        "/usr/local/bin",
-        "/usr/bin",
-        "/bin",
-        "/usr/sbin",
-        "/sbin",
-      ].joined(separator: ":"),
+      "PATH": searchPath,
     ], uniquingKeysWith: { _, launchValue in launchValue })
 
     // A SIGKILL or crash skips every handler here; the kernel then closes this
@@ -1106,6 +1117,8 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
           serverURL=\(self.serverURL.absoluteString)
           projectDir=\(self.projectDir)
           webDataPersistent=\(self.webView.configuration.websiteDataStore.isPersistent)
+          nodePath=\(self.resolvedNodePath ?? "(unknown)")
+          serverPath=\(self.serverSearchPath ?? "(unknown)")
           uiAudit=\(uiAudit)
           renderedTitle=\(renderedTitle)
           """

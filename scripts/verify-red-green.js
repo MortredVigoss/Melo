@@ -581,6 +581,22 @@ async function assertNativeLaunch(appPath, expectedBundlePath = appPath) {
         test: value => value === 'false',
         message: 'Native verification must use an isolated non-persistent WebKit store',
       },
+      {
+        key: 'nodePath',
+        test: value => typeof value === 'string' && value.startsWith('/') && value.endsWith('/node'),
+        message: 'Native launch did not record the node binary that runs the server',
+      },
+      {
+        // The server's PATH must start with the directory of that node binary:
+        // web_search probes `npx` for its Playwright leg, and with nvm's node
+        // outside the fixed system directories the installed app never had it
+        // (2026-10-27 live test).
+        key: 'serverPath',
+        test: value => typeof parsed.nodePath === 'string'
+          && typeof value === 'string'
+          && value.split(':')[0] === dirname(parsed.nodePath),
+        message: 'Server PATH does not start with the directory of the node binary (npx unreachable)',
+      },
     ];
     const uiChecks = [
       {

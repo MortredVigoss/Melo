@@ -7,6 +7,7 @@
 - 桌面：`~/Applications/Melo.app`（Launchpad 主目标）与 `~/Desktop/melo/Melo.app`（指向前者的符号链接）于 16:39 覆盖，壳从源码目录运行 `src/server.js`，桌面运行的代码就是 `554ce96`。
 - 真实长任务测试已于 18:58–19:09 跑完（主 Agent，两段），结论与根因见 [live-test-bigbang-20261027.md](live-test-bigbang-20261027.md)：场馆 / 交通 / 两天路线准确，天气始终缺，万圣节与次日活动要发"继续"才补到一部分；缺项都是桌面版里的工具链问题（壳 PATH 没有 node 使 Playwright 搜索腿永远不可用、Jina 匿名访问 DuckDuckGo 被限流、浏览器授权无人点 120 s 超时、回合 40 万输入 token 预算、页面 6 000 字截断）。
 - iPhone（同机、同 bundle `com.melo.iphone.mfpiao`、同 Personal Team）19:14–19:20 从 **0.7.12 (44)** 原位覆盖到 **0.7.13 (45)**，首次启动成功；数据全部保留（见下表）。个人签名自本次构建起重新计 7 天。
+- 壳 PATH 修复（用户随后要求"修壳 PATH，然后推送"）：`desktop-app/main.swift` 把解析出的 node 所在目录放到服务 PATH 最前面，并在 page-loaded 调试输出里加 `nodePath` / `serverPath`；`scripts/verify-red-green.js` 的原生启动断言新增这两项（共 14 项）。第三次 `release:verify`（19:57–20:02）17 项全绿并覆盖安装，壳 20:02 由 `open -a` 正常拉起，等用户再点一次"桌面"文件夹权限。
 
 ## 手机数据保留
 
@@ -32,13 +33,21 @@
 
 修复后的完整发布流程（17:04–17:07，`release-verify-2.log`）：17 项全部 GREEN，`Overall status: GREEN`——JS 4777 / 4777、容器隔离、桌面旅程、设置浏览器（36 s）、iPhone 协议与共享渲染（10 s，增量构建）、Android 四项（14 s）、语法、桌宠素材、壳构建、壳生命周期、本地 UI 服务、桌面冒烟、浏览器端到端、人设契约、安装、**Desktop folder Melo.app launch（4.7 s）与 Launchpad Melo.app launch（2.6 s）均 page-loaded**。安装步骤把 17:07:17 重编译的壳覆盖到 `~/Applications/Melo.app`，随后 `open -a` 正常拉起一次，停在"桌面"文件夹权限弹窗等用户今晚点允许；之后不再重编译。
 
+## 壳 PATH 修复（第三次 release:verify）
+
+真实测试暴露壳给 `src/server.js` 的 PATH 写死为六个系统目录，而 node 来自 nvm：`npx` 不可达，`web_search` 的 Playwright / Google 腿探活必败，搜索只剩 Jina→DuckDuckGo 一条腿（见[测试回执](live-test-bigbang-20261027.md)）。修复把 `resolveNodeExecutable()` 结果的目录去重后放到 PATH 首位，让 `npx` 与 `node` 来自同一套工具链。
+
+1. 直接拉起 `.tmp/desktop-build/Melo.app`（测试模式 + 自动关闭哨兵）：3.5 s page-loaded，`nodePath=/Users/mortred/.nvm/versions/node/v22.22.2/bin/node`，`serverPath` 以该目录开头；同一 PATH 下 `npx -y @playwright/cli@0.1.11 --version` 1.5 s 返回 0.1.11（探活预算 8 s，包已在 npx 缓存）。
+2. 第三次 `npm run release:verify`（19:57–20:02，`release-verify-3.log`）：17 项全绿——JS 回归 156 s、容器隔离、桌面旅程、设置浏览器 47 s、iPhone 协议与共享渲染 16 s、Android 四项 23 s（本机执行）、语法、桌宠素材、壳构建 11 s、壳生命周期 19 s、本地 UI 服务、桌面冒烟、浏览器端到端、人设契约、安装、Desktop folder 启动 6.5 s、Launchpad 启动 3.2 s（两者各 14 项断言，含新增的 nodePath / serverPath）。
+3. 装后端到端（20:08，`search-check/`）：用户点权限后真实服务进程 `PATH=/Users/mortred/.nvm/versions/node/v22.22.2/bin:…`；主 Agent 一条只调 `web_search` 的短问题，SERP 阶段 7.9 s（探活与 Google 导航都真的跑了），但 Google 给无头浏览器返回"检测到异常流量"验证页（用同一 CLI 手动复现：落到 `/sorry/index`，0 条结果链接），Jina 匿名访问 DuckDuckGo 仍 403，结果仍是 `PROVIDER_DOWN`。PATH 修复本身到位；无 key 时搜索要能用，下一步是配 Tavily / SerpAPI（api-direct 层）或 Jina key，或给 Playwright 腿换一个不验证无头浏览器的引擎。
+
 ## 桌面壳
 
 - 安装路径与 10-26 相同；壳重编译导致 ad-hoc 签名变化，macOS 把它当作新应用重新询问"桌面"文件夹访问权限，所以每次重编译并覆盖后，用户第一次正常启动都会再见到这个弹窗；从终端直接拉起可执行文件做验证时继承了终端的权限，不会弹。
-- 已补做：真实模型长任务测试（见「结果」与测试回执）；iPhone 覆盖安装（见「手机数据保留」）。未做：壳 PATH 修复（`desktop-app/main.swift` 把解析出的 node 所在目录加进服务 PATH，需再次重编译并让用户再点一次"桌面"文件夹权限，待用户决定）。
+- 已补做：真实模型长任务测试（见「结果」与测试回执）；iPhone 覆盖安装（见「手机数据保留」）。壳 PATH 已修并覆盖安装（见「壳 PATH 修复」），用户需再点一次"桌面"文件夹权限。
 
 ## 本机证据
 
-`.tmp/desktop-install-20261027/`：`release-verify.log`（第一次）、`native-launch-desktop-folder.txt`、`native-launch-launchpad.txt`、`desktop-app-debug-desktop-folder.txt`、`desktop-app-debug-last.txt`、`gate-quick.log`、`gate-chain.log`、`release-verify-2.log`（第二次）、`live-test/`（真实测试两段的事件流、回复、执行场景引用与真值参考，见测试回执）。快速档摘要 `.tmp/test-runs/run-StBxI4/summary.json`。
+`.tmp/desktop-install-20261027/`：`release-verify.log`（第一次）、`native-launch-desktop-folder.txt`、`native-launch-launchpad.txt`、`desktop-app-debug-desktop-folder.txt`、`desktop-app-debug-last.txt`、`gate-quick.log`、`gate-chain.log`、`release-verify-2.log`（第二次）、`build-path-fix.log`、`release-verify-3.log`（第三次，含安装）、`integration.log`（推送前集成档）、`search-check/`（装后 web_search 实测）、`live-test/`（真实测试两段的事件流、回复、执行场景引用与真值参考，见测试回执）。快速档摘要 `.tmp/test-runs/run-StBxI4/summary.json`。
 
 手机：`.tmp/phone-install-20261027/`（`backup-before.log`、`before-manifest.json`、`before-summary.json`、`build.log`、`install.json`、`installed-after.json`、`copy-after-install.log`、`phone-after-install-preservation.json`、`launch.json`、`copy-after-launch.log`、`phone-after-launch-preservation.json`、`compare.cjs`、`gate-quick.log`）；版本号改动的快速档 `run-vBDgCI`（JS 4771/4771、设置浏览器、Swift 全部，171.9 s）全绿，摘要 `.tmp/test-runs/run-vBDgCI/summary.json`；备份副本 `~/Library/Application Support/MeloDeviceBackups/update-20261027-191430/`（`phone-before`、`phone-after-install`、`phone-after-launch`，均为完整容器副本）。
