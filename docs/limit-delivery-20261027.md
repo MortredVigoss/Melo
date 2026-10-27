@@ -27,7 +27,7 @@
 4. 成员/技能同语义，partial 交接 GOAL_INCOMPLETE，上级继续补做。
 5. 三跳场景 6/40 轮、预算/取消边界、共享 conformance、Swift/Kotlin、同范围快速档、基准集成档与真实模型。
 
-已阅读覆盖：共享 turn/goal/budget/completion/JSON bridge、Node core host、桌面主循环、子循环入口、Swift loop/core、Kotlin core/budget/聊天入口及 scope 索引。逐步补读 provider 预算入口、配置和所有回执消费者并记录差异。未完成：代码、回归、真实模型与最终集成；目前不能宣称行为已修复。
+已阅读覆盖：共享 turn/goal/budget/completion/JSON bridge、Node core host、桌面主循环、子循环入口、Swift loop/core、Kotlin core/budget/聊天入口及 scope 索引。逐步补读 provider 预算入口、配置和所有回执消费者并记录差异。开工时未完成：代码、回归、真实模型与最终集成。当前进度以本文最后的验收记录为准。
 
 专项证据：`.tmp/limit-delivery-20261027/`；阶段完成后追加实际命令、结果和提交。功能级源代码索引尚未落地，本表来自直接阅读实际函数，不以模块地图代替调用证据。
 
@@ -37,7 +37,7 @@
 
 快速档 `run-h7krwC/summary.json` 全绿：JS 4732/4732、Swift 37 组、Android JVM/Lint/Debug/Release、设置浏览器与生成资源；无跳过、无隔离复测。Swift 夹具在该组编译前更新，重新生成全文件 test:plan，选组保持全部 Swift/JS/Android；日志保留。证据 `.tmp/limit-delivery-20261027/step1-plan.log`。剩余四步尚未实施。
 
-## 第二步实现边界（WIP）
+## 第二步实现与过程记录
 
 新 `shared/agent/loopLimits.js:resolveLoopLimits` 由 Node 和原生 JSON 桥共同调用；模型路由保存深度分类标志，普通升档不偷偷重置预算。主任务已有字段 `collaboration.maxTaskIterations` 保留，成员仍为 `maxIterations`，避免混用两个独立设置；新 UI 为 10–64，旧记录小于10的显式值保持可读且不重写。成员默认20、技能默认12只作用于未填写的配置。
 
@@ -54,7 +54,7 @@ Agent 扩展协议的可选 maxTaskIterations 最大值放宽到64，workspace v
 第二步最终验收：`run-9yDTRs/summary.json` 同范围快速档全绿：JS4742/4742、Swift37套、Android JVM/Lint/Debug/Release、设置浏览器和生成资源；零跳过、零隔离复测。最终测试前完成上述修正，测试期间未再改产品代码。第二步独立本地提交；第三步及后续、真实模型和最终基准集成仍未完成。
 
 
-## 第三步 WIP：统一收尾与跨端边界
+## 第三步实现与过程记录：统一收尾与跨端边界
 
 `reserveDelivery → admitModel/settleModel` 在各宿主的请求入口预留60秒、8k输出额度和有界输入余量；父子账本与并发待结算请求共用额度，工作工具的超时改为扣除预留后的期限。Node `chatExecutionRunner/createReply → runtime/limitDelivery`、Swift `AgentLoop.deliverLimit → APIChatTransport/CodexResponsesTransport`、Kotlin `SharedChatAgent.deliverLimit → SharedRunBudget.model` 全部调用同一 delivery/goal/completion 规则。正常轮数/时间/调用/token 上限进入一次无工具交付与检查，只有硬截止/取消/不可用额度走宿主清单；检查不可用保留回答为 unverified。公开原生搜索也计一次实际工具轮，同一回复的原生与本地工具不重复计轮。
 
@@ -79,3 +79,34 @@ Agent 扩展协议的可选 maxTaskIterations 最大值放宽到64，workspace v
 最终累计快速档 `run-4D3pby/summary.json` 全绿：JS4771/4771、Swift37套、Android JVM/Lint/Debug/Release、设置浏览器，零跳过/复测。`step4-ios-build.log` 记录完整未签名 iPhoneOS 构建通过。成员/技能各轮数、调用、时间、token、取消计数器通过；HTTP 团队恢复夹具6次模型请求，成员读A后部分交接，主 Agent 接着读C并得到 completed。能力授权浏览器实际弹窗、放行、结果回传、列出和撤销通过。首轮失败 `run-GbcOvA` 保留，修正预留比例、父预算夹具与耗尽 metadata 后完整重跑。
 
 真实模型演唱会链路已在隔离日历夹具与真实联网工具上完成：8次模型请求、5次工具调用，最终 completed；不读取或修改用户日历。第五步将保存脱敏回执、补执行面板断言并跑基准集成。所有验证只在隔离环境，不推送或安装。
+
+## 第五步验收范围与当前证据
+
+- 跨端6/40轮场景分别交付 partial/LIMIT_DELIVERED 与 completed；目标检查和纠偏候选不计轮。时间/工具次数/输入token与成员总token的预留、硬截止、取消、并发父子额度均有真实调用计数器断言。相关入口：shared 的 conformance/deliveryBudget/limitDelivery，Node chatExecutionRunner 与 childDelivery，Swift AgentLoopTests，Android共享核心/JVM。
+- 执行面板新增生产 completion → scene → DOM 的断言，文字为“部分完成 · 已达轮数上限”，旧“受阻 · 尚无目标完成证据”不出现。专项2/2通过。
+- [真实模型回执](evidence/limit-delivery-20261027/live-model-receipt.json)：2026-10-27，8次模型请求/5次工具调用，日历→场馆城市→当地活动→正文读取→核验纠偏→completed；没有“达到工具执行上限”。首个日历回执正文不足被检查器发现并重新读日历，未凭空标记完成。日历为明确标注的测试占位条目，联网检索/网页与模型为真实调用，未使用个人日历。
+- [执行场景回执](evidence/limit-delivery-20261027/execution-scene.json)由当时捕获的真实事件通过生产投影器重建，来源/操作/最终completion可回看。场景中的重建时间不作性能证据；耗时以模型回执为准。执行时未冻结源码hash，此项仅证明当时主循环真实链路，不冒充最终提交哈希的运行证明；最终集成门禁另验。
+
+未覆盖与限制：没有安装应用、真机相机/账号同步、长期后台验收。Codex OAuth不支持本地API的输出上限参数；8k为预留/准入额度，实际输出依提供方用量结算，不能宣称服务端硬截断为8k。提供方托管搜索的内部多次调用也不能被宿主逐个抢占；本地工具仍逐个计数和截止。用户显式给成员极小token或短于预留的时间时可能无法进行模型收尾，保留宿主结果清单且不伪造完成。
+
+步骤提交：d0bcf3e（计数）、cceb4f1（配置）、006797b（主循环交付）、57bc404（成员/技能）。第五步累计快速档与基准7ae6bf5集成档开始前，产品代码已固定；待记录最终结果。
+
+## 最终验收与覆盖清单
+
+最终累计快速档 `run-ca7apo` 与基于 **7ae6bf5** 的集成档 `run-RRWwcg` 均通过：**JS4771/4771、Swift37套、Android JVM/Lint/Debug/Release、设置浏览器、语法/文档/生成器/资源预检**；零失败、零取消、零跳过、零隔离复测。Swift复用编译产物但37个测试程序全部实际重跑，不是跳过测试。最终完整未签名 iPhoneOS 构建 `step5-ios-build.log` 成功，未安装。
+
+[门禁摘要、源码与日志指纹](evidence/limit-delivery-20261027/verification.json)记录每个成功阶段，代码在最终两档门禁期间未修改。临时完整日志位于实施工作树 `.tmp/test-runs/` 与 `.tmp/limit-delivery-20261027/`；失败过程保留，不能把早期失败轮当最终绿灯。
+
+| 验收边界 | 实际回归入口与结论 |
+| --- | --- |
+| 工具轮、免费检查/纠偏/交付、共享生成契约 | `shared/agent/conformance.test.js`，147份跨引擎fixture及额外直接断言；Swift SharedAgentCore/SharedContract、Android JVM。 |
+| 6轮部分交付、40轮完整交付 | Node `chatExecutionRunner.test.js` 与 Swift `AgentLoopTests.swift` 的同主题夹具；结果/缺口保留，前者LIMIT_DELIVERED。 |
+| 时间/调用/input token、成员total token、并发预留 | `deliveryBudget.test.js`、`runBudget.test.js`、`childDelivery.test.js`；一次交付+无工具核验，父预留不可借用。 |
+| 审批拒绝/超时/无界面、权限继承 | `executor.capabilityElevation.test.js`、`executor.capabilityScope.test.js`、capabilityElevation浏览器；拒绝零操作，允许/撤销实际生效。 |
+| 取消、硬超时与迟到副作用 | `executor.cancellation.test.js`、chatExecutionRunner及Swift AgentLoop；取消零后续模型，真实bash延迟写被阻止。 |
+| 压缩、网络/读页失败与无进展 | chatExecutionRunner上下文压缩、`fetchUrlTool.evidenceTrail.test.js`、`webSearchTool.jinaAbort/swrAbort.test.js`、`agents/repeatGuard.test.js`及共享reducer；保留已有护栏，不把上限放大变成无限循环。 |
+| 团队部分交接后继续 | `functionCalling.integration.test.js`真实HTTP夹具；6请求/2实际读取，主Agent补做后completed。 |
+| UI、配置与旧数据兼容 | agentSettings/capabilityElevation真实浏览器、executionPanel DOM；三端共用字段和默认，显式旧值保留。真实账号/同步服务器未写入。 |
+| 真实模型 | 隔离日历+真实模型/联网：8请求、5工具、检查纠偏后completed，完整边界见上节。 |
+
+五步实施及本地验收完成。最后一步仅新增回归/脱敏证据和交接文档；合回原本地开发分支时须再次确认原树干净且仍为ca3fca0，使用fast-forward保留历史。未运行git pp/push/安装；没有将构建或夹具结果称为真机验收。

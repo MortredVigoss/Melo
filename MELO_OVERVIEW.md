@@ -19,7 +19,7 @@
 | --- | --- | --- |
 | 项目与工作区 | 创建显式归属、执行器绑定能力、无项目聊天按需独立目录（A `33660c6` / B `b02438a`）；文件面板、每次删除询问文件去留与遗留文件管理 `7ae2292` | [架构加固](docs/arch-hardening-20261015.md)、[UI 功能对齐](docs/ui-function-alignment-20261016.md)；项目聚合模型与完整删除级联见[项目专项](docs/project-architecture-plan-20261015.md)；P1 提交回执已交付，桌面项目页已拆到 `desktop-ui/features/projects/`（P2a，[架构方案](docs/architecture-maintainability-plan-20261019.md)） |
 | Agent、技能与团队 | Agent 演进 P0–P4 已实现，6 Agent / 26 成果已迁移；审查修正 `4680530`；统一设置页 `dc67fa0`；团队与委派同一规则，手机本机可运行团队；10-20 能力临时提升 / 即时开启与新 Agent 只读起步、「基于已有 Agent」（桌面 + 手机，手机以本机权限为上限） | [实施与迁移](docs/agent-evolution-20261015.md)、[审查修正](docs/agent-review-fixes-20261015.md)、[设置](docs/agent-settings-20261016.md)、[协作](docs/agent-team-20261016.md)、[能力临时提升](docs/capability-elevation-20261020.md)；真实模型协作与真机单列 |
-| 聊天与 agent loop | 手机与桌面同一循环（prepare → invoke-model → finalize），公共循环/预算策略现由 `shared/agent/` 同源执行，配置契约为 `shared/protocol/agent-loop.json`；10-23 已接入共享 `goal.js`：原始目标/补充、无工具交付检查、最多两次有预算纠偏；取消普通首步必搜，成员回执贯通团队，见[综合实施与验收](docs/agent-harness-implementation-20261023.md)（任务与基准集成验收均通过）；10-24 已覆盖安装桌面与 iPhone 0.7.10（42），数据保留及实际使用检查见[安装回执](docs/dual-update-20261024.md)；七项双端对齐修复 `ee8eb3f` / `3ad091c` 已推送并装入双端；桌面聊天页 / 输入区 / 发送管线已拆到 `desktop-ui/features/chat/`（P2c）；10-27 `99b8ba7`补齐零工具任务核验、检查轮独立、可配执行轮与到顶进度汇报 | [10-27闭环修复与验收](docs/task-continuation-20261027.md)；[修复与 10-19 日常回执](docs/mobile-desktop-alignment.md)；10-20 完成状态误分类修正与 Claude B1/B2 复核见[专项](docs/completion-status-fix-20261020.md)；真实供应商与长后台另验 |
+| 聊天与 agent loop | 手机与桌面同一循环（prepare → invoke-model → finalize），公共循环/预算策略现由 `shared/agent/` 同源执行，配置契约为 `shared/protocol/agent-loop.json`；10-23 已接入共享 `goal.js`：原始目标/补充、无工具交付检查、最多两次有预算纠偏；取消普通首步必搜，成员回执贯通团队，见[综合实施与验收](docs/agent-harness-implementation-20261023.md)（任务与基准集成验收均通过）；10-24 已覆盖安装桌面与 iPhone 0.7.10（42），数据保留及实际使用检查见[安装回执](docs/dual-update-20261024.md)；七项双端对齐修复 `ee8eb3f` / `3ad091c` 已推送并装入双端；桌面聊天页 / 输入区 / 发送管线已拆到 `desktop-ui/features/chat/`（P2c）；10-27 `99b8ba7`补齐零工具任务核验；后续[上限交付改造](docs/limit-delivery-20261027.md)已实现只计工具轮、默认40轮、预留收尾、成员部分交接后主 Agent 补做（三端契约同源，最终快速/7ae6bf5集成已通过） | [10-27闭环修复与验收](docs/task-continuation-20261027.md)；[修复与 10-19 日常回执](docs/mobile-desktop-alignment.md)；10-20 完成状态误分类修正与 Claude B1/B2 复核见[专项](docs/completion-status-fix-20261020.md)；真实供应商与长后台另验 |
 | 记忆 | #2 并发写事务预约修复已通过 Mac/Linux 回归与完整日常；项目记忆本与个人档案已接入；项目来源手写记忆经独立可选通道（`/api/project-memory-sync` ↔ `/v1/project-memory`）同步；桌面记忆页 / 记忆本 / 回复页脚已拆到 `desktop-ui/features/memory/`（P2a） | [记忆架构](docs/memory-architecture.md)（以顶部现行约定为准）、[A7 回执](docs/mobile-desktop-alignment.md)；私人同步服务未部署新版 |
 | 知识资料与成果 | 本机分段索引（SQLite FTS + 本地 embedding），按对话/项目开关过滤；两端按问题切段检索，旧 8 份 / 24000 字前置限制已移除 | [Agent 演进 P2/P4](docs/agent-evolution-20261015.md)、[A3/A5 回执](docs/mobile-desktop-alignment.md) |
 | 设置、模型连接与账号 | 五语界面 `2cae1cd`；手机 Codex 设备码 OAuth `85ac3a5`、应用切换取消修复 `14e602f` | 用户真实授权尚未确认；同码恢复限同一进程；[五语](docs/interface-languages-20261015.md)、[模型连接](docs/llm-connections.md) |
@@ -511,18 +511,8 @@ app 的 escapeHtml/showFlashToast 与授权页 formatTime 原样移至 html/feed
 
 ## 2026-10-27 — 本线程：循环计数与上限交付
 
-- 已按用户指定方案开工；独立工作树/分支 `codex/limit-delivery-20261027`，起点 ca3fca0，保留上一轮闭环修复。执行链路、审计边界和五步验收见 [实施记录](docs/limit-delivery-20261027.md)。
-- 第一步 WIP：共享 reducer 仅在合法工具批次计数；Node/iPhone/Android request 显式区分 tools/check/delivery。检查、纠偏候选、收尾不占 rounds，取消/时限/副作用守卫保留。快速档 run-h7krwC 全绿：JS 4732、Swift 37、Android 四项、设置浏览器与生成资源，无跳过/复测；已独立提交 d0bcf3e；后续默认额度、统一收尾与成员/真实模型验收未完成。未推送/安装。
-
-- 第二步完成：默认主循环40/成员20/技能12，200次工具、30分钟；智能深度64/300/45分钟，三端设置/契约同改，显式旧值保留。最终快速 run-9yDTRs 全绿：JS4742、Swift37、Android四项、设置浏览器，零跳过/复测。过程失败与修正见实施记录；统一收尾、成员及最终验收待继续。
-
-- 第三步 WIP：统一无工具收尾与核验已接入三端主循环；6/40轮桌面/iPhone夹具保留活动结果，预算并发/取消计数器与Android JVM已验。当前未独立提交，完整快速档与子循环/真模型/最终集成继续；详见实施记录。
-
-### 2026-10-27 Codex 循环上限第三步交接
-
-第三步完整快速档 run-xapdiU 通过：JS4757/4757、Swift37、Android JVM/Lint/Debug/Release、设置浏览器，零跳过/复测。修复旧报告变量残留、独立入口取消信号、策略资源缺失的零调用兜底；保留完整失败与修复日志。见 `.tmp/limit-delivery-20261027/step3-quick-verified.log` 与 `.tmp/test-runs/run-xapdiU/summary.json`。尚未完成成员/技能、真实模型和基准集成。 独立工作树实现，无推送或安装；前两步提交 d0bcf3e、cceb4f1。详情 [实施记录](docs/limit-delivery-20261027.md)。
-
-### 2026-10-27 Codex 循环上限第四步交接
-
-- 子循环统一收尾、总 token 记账与团队主 Agent 补做已接通；Node/iPhone 采用同源预算，Android没有新增原生协作入口。默认成员授权弹窗/执行/撤销通过。
-- 累计快速 run-4D3pby：JS4771、Swift37、Android四项、设置浏览器全绿，无跳过/复测；完整未签名 iPhoneOS 构建成功。真实模型隔离演唱会任务8次请求/5次工具已 completed；第五步保存脱敏回执并跑7ae6bf5集成。前三步 d0bcf3e/cceb4f1/006797b，第四步本地提交；[链路与证据](docs/limit-delivery-20261027.md)。未推送/安装，用户数据未变。
+- 用户指定五步方案；独立工作树/分支 `codex/limit-delivery-20261027`，起点 ca3fca0，保留上一轮闭环修复；最终集成基准7ae6bf5。已读入口与开发规范，调用链/状态/异常/契约消费者与停止边界见[实施记录](docs/limit-delivery-20261027.md)。
+- 已本地独立提交：d0bcf3e仅实际工具批次计rounds；cceb4f1默认40/20/12、工具200/30分钟、深度64/300/45分钟及三端设置；006797b预留时间/token后的无工具交付/核验；57bc404成员/技能统一交付及主 Agent继续补做。显式旧配置、取消/副作用/权限守卫保留。
+- 最新累计快速run-4D3pby：JS4771、Swift37、Android JVM/Lint/Debug/Release、设置浏览器全绿，零跳过/复测；iPhone完整未签名构建成功。6/40轮两端夹具分别partial/LIMIT_DELIVERED与completed；浏览器授权、结果回传、撤销及DOM部分完成状态已验证。
+- 第五步验收完成：真实模型隔离日历→真实搜索/读页→检查纠偏，8请求/5工具，completed；[脱敏回执](docs/evidence/limit-delivery-20261027/live-model-receipt.json)与[重建执行场景](docs/evidence/limit-delivery-20261027/execution-scene.json)。最终累计快速run-ca7apo/7ae6bf5集成run-RRWwcg全绿（JS4771、Swift37、Android四项、设置浏览器，零跳过/复测）；最终未签名iPhoneOS完整构建成功。本地验收完成，产品源码交付目标为原开发分支codex/task-continuation-20261027，整合方式为fast-forward；保留五步独立提交。
+- 无推送、git pp、安装或用户数据变更。Codex OAuth输出8k仅为本机预留而非服务端硬截断；Android没有新增原生成员入口；真机、账号同步、长期后台本次未验。

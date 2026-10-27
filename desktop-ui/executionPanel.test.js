@@ -1,6 +1,7 @@
 // This fixture asserts Chinese copy explicitly; production defaults follow the device.
 import { setLanguage as setFixtureLanguage } from './i18n.js';
 setFixtureLanguage('zh-CN');
+import { completionResult } from '../shared/agent/completion.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -104,6 +105,14 @@ test('panel reuses its live DOM, caps sources at ten and projects selected image
   const projected = panel.selectedMessagePresentation(message);
   assert.deepEqual(projected.attachments.map(a => a.id), imageScene.selectedImageIds);
   assert.ok(!projected.content.includes('![')); assert.equal(message.attachments.length, 5);
+  const limited = createExecutionScene({ runId: 'limit-delivery', chatId: 'chat', query: '当天活动' });
+  panel.receiveExecutionScene(structuredClone(limited));
+  const completion = completionResult({ goal: '当天活动', reply: '已确认活动，票量尚未核实', terminalReason: 'LIMIT_DELIVERED', locale: 'zh',
+    task: { version: 1, limitDelivery: true, limitReason: 'ROUND_LIMIT', deliveryCheck: 'checked', decision: 'partial', requirements: [{ text: '票量', status: 'missing', evidenceIds: [] }] } });
+  finishExecutionScene(limited, { message: { id: 'limited-answer', metadata: { completion } } });
+  panel.receiveExecutionScene(structuredClone(limited));
+  assert.match(document.querySelector('.execution-panel').textContent, /部分完成 · 已达轮数上限/);
+  assert.doesNotMatch(document.querySelector('.execution-panel').textContent, /受阻 · 尚无目标完成证据/);
   assert.ok(calls.every(url => String(url).startsWith('/api/chat/scenes?')));
   document.querySelector('[data-execution-action="toggle"]').click();
   await new Promise(resolve => setImmediate(resolve));

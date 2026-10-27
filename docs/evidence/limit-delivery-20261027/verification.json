@@ -1,0 +1,586 @@
+{
+  "version": 1,
+  "startCommit": "ca3fca0",
+  "integrationBase": "7ae6bf5",
+  "validatedImplementationCommit": "57bc404",
+  "additionalTest": "desktop-ui/executionPanel.test.js",
+  "codeHashes": {
+    "android/app/src/main/java/com/melo/android/Editors.kt": "9a3819e826446c97d1b24275d5bf802a366acb9c92cb7fb9270f7f7e5a975ff0",
+    "android/app/src/main/java/com/melo/android/chat/ChatEngine.kt": "0cb128a90a51edeb7b221a802433c96734d8eb48fa0ebda95fd60c59baa84e39",
+    "android/app/src/main/java/com/melo/android/chat/SharedChatAgent.kt": "cc6af4a9bfd23145d5c16216c629882e3c19f26d6e915a923525721100836c57",
+    "android/app/src/main/java/com/melo/android/core/AgentLoopDefaults.kt": "63d22bdb035c208ddf8b1cd0f0cddbdde79dd4853fcbded8afd2230f3deac3de",
+    "android/app/src/main/java/com/melo/android/core/SharedCoreTurn.kt": "fea3022c7dbc01cd173fe38aa96f41cccbdfda79cf19843ede1aeb0b42ec7d54",
+    "android/app/src/main/java/com/melo/android/core/SharedRunBudget.kt": "6cda0bdb1b9f4bdbf9a6bf72bb77182854ed15642bfecf6d0c32e4fa709ffc0e",
+    "android/app/src/main/java/com/melo/android/data/Models.kt": "0a84a86c9fe758ee07e8667ff418f4e84e6c346664f4acf4002cf89b3a2ad843",
+    "android/app/src/main/java/com/melo/android/data/Repository.kt": "e6d488b9a09f7c8dcb00a5b6455d3ffa68f88047532cc4cff4e5b09d21445f81",
+    "android/app/src/test/java/com/melo/android/AgentLoopDefaultsTest.kt": "9a7bddf80605ed8daf53210dc165868605fa84415478152a26d96867030a0080",
+    "architecture/modules.json": "41229c46c240c9cda30d0a139bff6bcadd47239adfeb7ec5014890ff0db48f56",
+    "desktop-ui/agentSettings.browser.test.js": "957605097714f5d0dd4cb11d6be25005d8c30f7a3367573b2fb5dcde23463e45",
+    "desktop-ui/capabilityElevation.browser.test.js": "dba55eef0f04c942c569bc411908649e325d548498575781556f209ef7d8163b",
+    "desktop-ui/executionPanel.test.js": "505e6043f87bf4d8d8ad83753a09354ecb8d7d0b690d9f24cf912470a8e932c2",
+    "desktop-ui/features/agents/agentProfilePatch.js": "8741048c5ae43909a26b3d0028601356989fa06c4ff21564e13f9dd2e2c9e033",
+    "desktop-ui/features/agents/view.js": "b439df729e7a0170900ce9addda963936663c07fbaf193b4d71ffa1a464d9434",
+    "desktop-ui/features/customize/controller.js": "a252f77c9df0895a832c78f28646a69af30fff705687aca5c88bd619c4d50854",
+    "desktop-ui/features/customize/controller.test.js": "84a066c00ef527f9a4128a788f4e5936269966134f1f1d4fa8121f08c1d951da",
+    "desktop-ui/features/customize/view.js": "50598ad781bea061d991f69a42fc2201240a81a441aff828cc8937e9ede5ee3e",
+    "ios/Melo/AgentCore/agent-core.js": "22b0bd425a7109c78c626d2cb4714b752e5ee9c47154519b40b51bffde03658a",
+    "ios/Melo/AgentCore/manifest.json": "cf8198e4e96274f5654b15f983796988a59620137beafb1b3e19434b2a9c5c41",
+    "ios/Melo/AgentEditor.swift": "70ef78e7e90ae0c7e82ba65d780d5baede491af206dfb323a37c8e918374cf97",
+    "ios/Melo/AgentLoop.swift": "ce8fb67bfaff166d325c24729406cef5c52b5e1c3de5c0a86ac560603f333092",
+    "ios/Melo/AgentLoopContract.swift": "9dc0d146b55afc13af041b2e1150137de4e7d136ba359d7ce31d1a652f35b8ae",
+    "ios/Melo/AgentLoopRuntime.swift": "332fb8d1f1504107be2f51585a0454516169805ab228d5cc3989a7c4c9202e93",
+    "ios/Melo/AgentProfile.swift": "982f7b44d2fdb7a79359106bf1448375836017289ab843516578d365909c168b",
+    "ios/Melo/AgentTeam.swift": "7bcb824862413cb39e1d75618f3355d87893ab3d5d5df9748cc996c8f55fbdb1",
+    "ios/Melo/ChatGPTAccount.swift": "9cfa93fd9bfe5884435d5ad3e45065ba718462ba5f9a2f8104b5af1401d9a12f",
+    "ios/Melo/ChatStore.swift": "29e389787928d9cd2958bc14fd55ff92756d7d258047cd7794f4240384a4929b",
+    "ios/Melo/Network.swift": "d98e70743f6443d5ed954176cf26d7239fcac80a5a774bbcdaee0d916c6bf412",
+    "ios/Melo/Scene/desktop-manifest.json": "6784fd09b1a4df0124e82a60947d3930887b5e3c62f22b2f44f131449d31a9e6",
+    "ios/Melo/Scene/scene.js": "87666612dc33da7a45eb7d3d4740b5b08a4cf4cdc2ede99b8432ea6100d92acc",
+    "ios/Melo/SharedAgentCore.swift": "e2672766a4ac35cac99f5b079ab5792276e5cd95716edf36b23d01836858a028",
+    "ios/Melo/SmartRouting.swift": "d1a2250d3e84c31bf6e2d5812a210effbb9ab33d21a59aed1bee6bbf1506ed1e",
+    "ios/Melo/SyncWorkspace.swift": "886100eb84511a404c6b810ad1c0bc5374230e4728d2f44085bb13fd223ce999",
+    "ios/Tests/AgentLoopTests.swift": "de7c6defcc21851b2fcb615ec8cc735b42ad79fdd22c150db0f457b129d785a7",
+    "ios/Tests/CodexOAuthTests.swift": "86d44d335dad49779988c118ddaada9143874aa62ac2ac2905e131552849cbb1",
+    "ios/Tests/NetworkTests.swift": "1e639cc7afab832d2106cd17625da5d57f0f1f1e0e50525a2da3e84b96a1abf6",
+    "ios/Tests/SharedContractTests.swift": "e36466a4a9b75172b8acc28e12d7ba054637d59c8ff9f35ed4cb2e9d3f6fa92c",
+    "ios/scripts/build-scene.py": "eac24674e3f352df73e0c2e6f0ef64b3dd3da598c429887f037357a3dcb3875d",
+    "mobile-sync/syncContract.generated.js": "469004520ce21ef97d1f5887160be57fbbaae86034d0b21075624d9d86a9052c",
+    "scripts/generate-agent-loop-contract.js": "793512676ebc675c01a203d1b4574d91a3c3cdd906a887a40ed486ef720b773b",
+    "shared/agent/completion.js": "176bb4447bb3ff7bd0d5fc18e3ff106199df419c0f3eb4b50fa2247da7923459",
+    "shared/agent/conformance.test.js": "d9cb347bc689376271f7dff4662bb2428a8da3634682ce63e479b9984b2a6101",
+    "shared/agent/deliveryBudget.test.js": "f53b615138ad4abd574a34a4b693208e756eed1453088eb7846f0f33ac6f0c2e",
+    "shared/agent/dist/agent-core.js": "22b0bd425a7109c78c626d2cb4714b752e5ee9c47154519b40b51bffde03658a",
+    "shared/agent/dist/manifest.json": "cf8198e4e96274f5654b15f983796988a59620137beafb1b3e19434b2a9c5c41",
+    "shared/agent/evidence.js": "f7aef4bfdf8ce4341bc12d5fd45901a741556a86293aed5209447e4808f9e9fb",
+    "shared/agent/execution.js": "ed098e7b80574892c1060f79a88496bce6fd521bdbd6ec4331458d7aa28aaae8",
+    "shared/agent/fixtures/conformance.json": "81bd259aa31dd8d87954b7d472f227f60c2d1ce4788b7effbb667a56cb94405c",
+    "shared/agent/goal.js": "20536257ce7836848b74c8d1011fcc61fa5cc677be0642236b1836353da757c1",
+    "shared/agent/goal.test.js": "290c670e3427c54b898a15c0f936babfb9b84f9e33d74ba71ca6abbad1cf2e22",
+    "shared/agent/index.js": "c4950842345e2ddc6877214854a9bc21aa25a51e6b81aacd6e79a9a4b59c0379",
+    "shared/agent/limitDelivery.js": "76daff1670bb5180ebbffd1098b45211bfcdf1bd40ac1a3e3396f84804f6f975",
+    "shared/agent/limitDelivery.test.js": "9a826d179bc48217bc290e8350f85238fa3784d713b78694d9784b4689e4577d",
+    "shared/agent/loopContract.js": "07bfdb0097d402d94acb4c706c2db43793a5531d672a217a51a70e78c2076d06",
+    "shared/agent/loopLimits.js": "0e59042459342a55240326508e66b8ebc67f9a31b8f36434f9b03c58c27ba227",
+    "shared/agent/loopLimits.test.js": "989aa21794285a5c9405e63dc5053e4abaf46346190e9c0662d4c60f4b1e46e4",
+    "shared/agent/modelRouting.js": "edc79f44ecb42176baf853ea890bfaa76206477b4c90888f657f5428625d2e28",
+    "shared/agent/policyBridge.js": "4d6529f8d02752acaf43548b81c27e6a206843f2a7c853d4bb56c72707d71984",
+    "shared/agent/runBudget.js": "bd0d5da69ffd9a6489f6d321b5ed3ab9b846678a1b31f080cbaeaa8c38d57a57",
+    "shared/agent/runtimeMessages.js": "6092975776c116b95b2e4f3eb53a29df7c6fa0043672323dc16ebcb3763b7a94",
+    "shared/agent/skill/skillService.js": "9e13d5333b69971ad419549e4e49854e30035b5732d693a0170108ad3b9b73df",
+    "shared/agent/turn.js": "25d50cda6c38bc045f1df58449106fa6704d9ee04e7f6d97d0746350d9f0bdeb",
+    "shared/protocol/agent-loop.json": "40e28111db78aee94d0713585c4b10ab28c3c2580b4b3c14b36c7a1665fbbbc4",
+    "shared/protocol/sync.schema.json": "02c7c3de1c7677ee4e0f3cf349fff94e7c464be5b03adaec5018da64ec6f5c00",
+    "src/agents/childDelivery.test.js": "343e6c1cd861d9b6fde520fe368b314f3c1dd43963db9c4eea8eca1d208c2faf",
+    "src/agents/collaboration.test.js": "b925633256a006870e590565de7a11e2b9d9e9155c1a2667d74f6b3dc07b5b99",
+    "src/agents/delegate.js": "6534cda350fe1331a2ce59a04419c2220efe04cf210e43f663e15ce35288d6da",
+    "src/agents/skillExecutor.js": "2476ea96cffcc051a533abfea327de246f08ca4b6f043724ecb6cbebbf7a9f2a",
+    "src/agents/skillExecutor.test.js": "0549bb9986c745bdfd65df1745089ccc29b1db1f55f6e8727f07b332ac541723",
+    "src/agents/skillsDisk.home.test.js": "e0e987a68642bb22ed744c19ad555cce7a5d813924c1569a68fcacbbb1a36d4d",
+    "src/agents/skillsDisk.js": "050a050fec8c9110abba89680453dac490328570fa6b5966ec348c98375107ef",
+    "src/agents/subAgent.js": "8f19828d34a62ce627cea15fbd4d8b23b724871e9ffafc4bcec0795135dfba64",
+    "src/agents/team.js": "27e795775664c4c246a462e8c5026d70bacccc0d244a9cb586c2057e4d49423f",
+    "src/desktopStore.skills.test.js": "32671b5d1738a928a761e301d6e8f7f9398437393469c934dcb59b722cfe9612",
+    "src/domain/agent/capabilities.js": "dbbf32e6690f61806590456641cabcb8bdc0a9dde3515cb475d9095f36f43943",
+    "src/runtime/agentLoopContract.test.js": "16c73690793f123866974fbf25d88e2ea7923dffc2c826c51ba6227b0b6906d5",
+    "src/runtime/limitDelivery.js": "0f169f858f22ee1dfa8699b6d6abd372739d8633bd76e826c1ec9669b6808ac1",
+    "src/runtime/memberReply.js": "54a79eed5461d07d13eccba1dd4edc039991e2679f00a571be55e5319560f3e5",
+    "src/runtime/runBudget.js": "4b84551b8faac0d3d7c0736095b3e52db86434c46a26dbb6dd4c5a3ef05c0216",
+    "src/runtime/runBudget.test.js": "5ad3e2798b6c5659d45dc840a9775f01dfe0943f84427538b558e515ee30d4f5",
+    "src/runtime/runDeadline.js": "02e95c9db3a2a89997cb8d2306500fd26a221a2364d2ee1160314c94ba85ada8",
+    "src/runtime/runDeadline.test.js": "0deee7fdd1a1390acc43b8c473a7982e0aeaf0ba366e3c22f6c8305d7f353cbe",
+    "src/runtime/sharedAgentCore.js": "3cd7bd89008ba387f90247885c34b49005de173b4d3953b705537524c4126000",
+    "src/server.js": "edb5d2c64ca4feb45d2b5409a84b0eabaad241a840e9f519c1b8506a5be39e28",
+    "src/services/chat/chatExecutionRunner.js": "19d88000725cd5529e1996a57575c2ca893e31cee7d5b520d4cf8bcfb7135a44",
+    "src/services/chat/chatExecutionRunner.test.js": "4a0d1e45e1d0f5f0eab9d446923355a94b9e987626f269c6dc168aaa22d01239",
+    "src/services/chat/execution/finalizeNode.js": "68aee9dfa91caac94c9b0e411431da1990f16f7cf166f7073220e547c4a95c63",
+    "src/services/chat/execution/invokeModelNode.js": "06891d36daa4388766d12a545c840a61c82e3661073b23d91acad6f9868650f9",
+    "src/services/chat/executionScenes.js": "e041a30282988e49056050c1dd5d10c1b2b4225615feaf8fd221b819a87f6cc7",
+    "src/services/chat/functionCalling.integration.test.js": "3cb723c0bcd1c7469d121dde82a2d43ebc51f770193b366da1000835f95516a1",
+    "src/services/chat/promptPipeline.test.js": "111b740985570111570e860e65c97c13219aa64d508edbd53fae05b16b1f2f95",
+    "src/shared/sessionEvents.js": "47ceca8f284e5c950252d1f6cb7774199d4db1343a9c47e7b01421333e268a5c",
+    "src/tools/executor.js": "f891e01798ce9f8da35c815013cf06afccdf09818d64e659c9fdd950fcb3c3a9"
+  },
+  "gates": [
+    {
+      "tier": "quick",
+      "base": "显式任务文件（不代表整个共享工作树）",
+      "selected": 562,
+      "total": 562,
+      "platform": {
+        "name": "darwin",
+        "skipped": []
+      },
+      "js": {
+        "tests": 4732,
+        "pass": 4732,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "failures": []
+      },
+      "flaky": null,
+      "ok": true,
+      "elapsedSeconds": 538.5,
+      "run": "run-h7krwC",
+      "stages": [
+        {
+          "label": "语法检查",
+          "code": 0,
+          "seconds": 5.71,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-h7krwC/1.log",
+          "sha256": "2f2ba8208a37f26d36ffc4560b6bb081d0220a8d6f048c40d83ff0be30c8c4c6"
+        },
+        {
+          "label": "文档链接检查",
+          "code": 0,
+          "seconds": 0.02,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-h7krwC/2.log",
+          "sha256": "26ed781d00c8a03187016aaa94a89e99e7b121dce8edfffb76c8f75571314e45"
+        },
+        {
+          "label": "生成器与依赖预检",
+          "code": 0,
+          "seconds": 0.38,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-h7krwC/3.log",
+          "sha256": "417e151e6180cb367f73f6ff8a6c2fedc3a1cc421d7d76695b4f33062b0ad655"
+        },
+        {
+          "label": "共享渲染资源预检",
+          "code": 0,
+          "seconds": 0.04,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-h7krwC/4.log",
+          "sha256": "79f091cd4863f73f17de8ac2cdcba2479b37d72409f158c842e731db28eb77b8"
+        },
+        {
+          "label": "Android JVM / Lint / Debug / Release",
+          "code": 0,
+          "seconds": 135.74,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-h7krwC/5.log",
+          "sha256": "179f1dea9b4f8b43bfe6388397ae45108421c010fe03858ff439ac2da1ed4bdd"
+        },
+        {
+          "label": "JS 回归",
+          "code": 0,
+          "seconds": 107.6,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-h7krwC/6.log",
+          "sha256": "9d0eaefae4e0a7d77914d32e8c7059a1f48f93bc6bd335400a854837acf31ca8"
+        },
+        {
+          "label": "设置浏览器验收",
+          "code": 0,
+          "seconds": 35.63,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-h7krwC/7.log",
+          "sha256": "f42adf8c44e517cb7b7dc46c5595c0d165c690c6e8b413d7fbd71b6fdb919b97"
+        },
+        {
+          "label": "Swift 回归",
+          "code": 0,
+          "seconds": 253.41,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-h7krwC/8.log",
+          "sha256": "c54771567fad37910747c011cee58f310fdc194f353d816c781cdde5a9246a3c"
+        }
+      ]
+    },
+    {
+      "tier": "quick",
+      "base": "显式任务文件（不代表整个共享工作树）",
+      "selected": 564,
+      "total": 564,
+      "platform": {
+        "name": "darwin",
+        "skipped": []
+      },
+      "js": {
+        "tests": 4742,
+        "pass": 4742,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "failures": []
+      },
+      "flaky": null,
+      "ok": true,
+      "elapsedSeconds": 191.6,
+      "run": "run-9yDTRs",
+      "stages": [
+        {
+          "label": "语法检查",
+          "code": 0,
+          "seconds": 5.82,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-9yDTRs/1.log",
+          "sha256": "003591a6d7fb46f40977c74a25224e9ba1bc8bc4db781ad99f1f62552203da8e"
+        },
+        {
+          "label": "文档链接检查",
+          "code": 0,
+          "seconds": 0.03,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-9yDTRs/2.log",
+          "sha256": "8a9d932ee8502fe295e841370c4ae4a3065bb8de901f2d645a5e600b9cd1251f"
+        },
+        {
+          "label": "生成器与依赖预检",
+          "code": 0,
+          "seconds": 0.39,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-9yDTRs/3.log",
+          "sha256": "64631b87f022307b8f305d0ce0f4e309ddaac8f05dc813d239ddaa88385d7e3c"
+        },
+        {
+          "label": "共享渲染资源预检",
+          "code": 0,
+          "seconds": 0.04,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-9yDTRs/4.log",
+          "sha256": "79f091cd4863f73f17de8ac2cdcba2479b37d72409f158c842e731db28eb77b8"
+        },
+        {
+          "label": "Android JVM / Lint / Debug / Release",
+          "code": 0,
+          "seconds": 13.97,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-9yDTRs/5.log",
+          "sha256": "0708cf222cd432163cb69104c5118d80f68fc74975e7f8e4a36efecb3dda0c32"
+        },
+        {
+          "label": "JS 回归",
+          "code": 0,
+          "seconds": 102.92,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-9yDTRs/6.log",
+          "sha256": "22228225ac9954f9cc260185cfe56a9f7a3fedd636058eef52041cddff0b58c7"
+        },
+        {
+          "label": "设置浏览器验收",
+          "code": 0,
+          "seconds": 35.97,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-9yDTRs/7.log",
+          "sha256": "f42adf8c44e517cb7b7dc46c5595c0d165c690c6e8b413d7fbd71b6fdb919b97"
+        },
+        {
+          "label": "Swift 回归",
+          "code": 0,
+          "seconds": 32.46,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-9yDTRs/8.log",
+          "sha256": "354b1c5f31424e2c9dc0d1b23ac28fd66e9835a47cf5e60138e37365b2f95f9d"
+        }
+      ]
+    },
+    {
+      "tier": "quick",
+      "base": "显式任务文件（不代表整个共享工作树）",
+      "selected": 566,
+      "total": 566,
+      "platform": {
+        "name": "darwin",
+        "skipped": []
+      },
+      "js": {
+        "tests": 4757,
+        "pass": 4757,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "failures": []
+      },
+      "flaky": null,
+      "ok": true,
+      "elapsedSeconds": 385.1,
+      "run": "run-xapdiU",
+      "stages": [
+        {
+          "label": "语法检查",
+          "code": 0,
+          "seconds": 6.38,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-xapdiU/1.log",
+          "sha256": "5b89af8b8570f39a5fa1dcb598bde8bdc5e5c0e7cfe811f612d87bf1fc68597f"
+        },
+        {
+          "label": "文档链接检查",
+          "code": 0,
+          "seconds": 0.02,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-xapdiU/2.log",
+          "sha256": "57ae25152db242fc2bb3fde80435fafd185d8bb05f5156f4ecf6369dc7a71174"
+        },
+        {
+          "label": "生成器与依赖预检",
+          "code": 0,
+          "seconds": 0.41,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-xapdiU/3.log",
+          "sha256": "97b8e0b5911cd7ea4152defb8b4655749c4af935df12fe6f32b3f373baf00b68"
+        },
+        {
+          "label": "共享渲染资源预检",
+          "code": 0,
+          "seconds": 0.04,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-xapdiU/4.log",
+          "sha256": "79f091cd4863f73f17de8ac2cdcba2479b37d72409f158c842e731db28eb77b8"
+        },
+        {
+          "label": "Android JVM / Lint / Debug / Release",
+          "code": 0,
+          "seconds": 15.01,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-xapdiU/5.log",
+          "sha256": "2fc64e1b1bb666f993d5a935b2f42f2164fb0b1d2a2d98a30ed54bb5813bac0a"
+        },
+        {
+          "label": "JS 回归",
+          "code": 0,
+          "seconds": 102.11,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-xapdiU/6.log",
+          "sha256": "3daa8315d5dde2af8b31fa827b7cd7625d9eb0fd499c94094a6c95248d33ba2a"
+        },
+        {
+          "label": "设置浏览器验收",
+          "code": 0,
+          "seconds": 35.7,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-xapdiU/7.log",
+          "sha256": "9a0b95b30b4e95d72de0d64ccc818a4f3a03e8973de0d7686980e5c0203b6cd1"
+        },
+        {
+          "label": "Swift 回归",
+          "code": 0,
+          "seconds": 225.41,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-xapdiU/8.log",
+          "sha256": "ee96ba02ce5feccbb8dec9fa43a305e464562808ce7e3bedae9af9ffa6c446b9"
+        }
+      ]
+    },
+    {
+      "tier": "quick",
+      "base": "显式任务文件（不代表整个共享工作树）",
+      "selected": 567,
+      "total": 567,
+      "platform": {
+        "name": "darwin",
+        "skipped": []
+      },
+      "js": {
+        "tests": 4771,
+        "pass": 4771,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "failures": []
+      },
+      "flaky": null,
+      "ok": true,
+      "elapsedSeconds": 400.8,
+      "run": "run-4D3pby",
+      "stages": [
+        {
+          "label": "语法检查",
+          "code": 0,
+          "seconds": 5.74,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-4D3pby/1.log",
+          "sha256": "86379c3c584867b23b220928f5531b6c4ebdd27b97d7db5566b366210dddabac"
+        },
+        {
+          "label": "文档链接检查",
+          "code": 0,
+          "seconds": 0.02,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-4D3pby/2.log",
+          "sha256": "cf0a917a80deb98b50b1c8485588ad5cd80a7cab35159594080d3ad1bd7a1acc"
+        },
+        {
+          "label": "生成器与依赖预检",
+          "code": 0,
+          "seconds": 0.38,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-4D3pby/3.log",
+          "sha256": "2324c65eaeae589acee722b8fe7e1f10be66ba812c2d3d116cf4f22da9162293"
+        },
+        {
+          "label": "共享渲染资源预检",
+          "code": 0,
+          "seconds": 0.03,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-4D3pby/4.log",
+          "sha256": "79f091cd4863f73f17de8ac2cdcba2479b37d72409f158c842e731db28eb77b8"
+        },
+        {
+          "label": "Android JVM / Lint / Debug / Release",
+          "code": 0,
+          "seconds": 19.74,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-4D3pby/5.log",
+          "sha256": "92891302171fb4cfca1854e99f2b62ddbfbd67378482645fe1e4abce0b796e40"
+        },
+        {
+          "label": "JS 回归",
+          "code": 0,
+          "seconds": 102.71,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-4D3pby/6.log",
+          "sha256": "a614e55ea03051f172ecd56ae16b7dbcd5db2717cf27aecc6470350103ad3faa"
+        },
+        {
+          "label": "设置浏览器验收",
+          "code": 0,
+          "seconds": 35.79,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-4D3pby/7.log",
+          "sha256": "9a0b95b30b4e95d72de0d64ccc818a4f3a03e8973de0d7686980e5c0203b6cd1"
+        },
+        {
+          "label": "Swift 回归",
+          "code": 0,
+          "seconds": 236.38,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-4D3pby/8.log",
+          "sha256": "67e030665bafc95b8954db6c883b29addd55bcfebf3076ae9f534622600f8b91"
+        }
+      ]
+    },
+    {
+      "tier": "quick",
+      "base": "显式任务文件（不代表整个共享工作树）",
+      "selected": 567,
+      "total": 567,
+      "platform": {
+        "name": "darwin",
+        "skipped": []
+      },
+      "js": {
+        "tests": 4771,
+        "pass": 4771,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "failures": []
+      },
+      "flaky": null,
+      "ok": true,
+      "elapsedSeconds": 169.3,
+      "run": "run-ca7apo",
+      "stages": [
+        {
+          "label": "语法检查",
+          "code": 0,
+          "seconds": 5.78,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-ca7apo/1.log",
+          "sha256": "86379c3c584867b23b220928f5531b6c4ebdd27b97d7db5566b366210dddabac"
+        },
+        {
+          "label": "文档链接检查",
+          "code": 0,
+          "seconds": 0.02,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-ca7apo/2.log",
+          "sha256": "c106e891445e5918ca592c6d49b0d1d4c1ab99d124591ce0950965cc185507b6"
+        },
+        {
+          "label": "生成器与依赖预检",
+          "code": 0,
+          "seconds": 0.41,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-ca7apo/3.log",
+          "sha256": "3c956079822a89e2a3ea666e1d218a025e33dfcd7f9347feea6d824736cfd54c"
+        },
+        {
+          "label": "共享渲染资源预检",
+          "code": 0,
+          "seconds": 0.04,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-ca7apo/4.log",
+          "sha256": "79f091cd4863f73f17de8ac2cdcba2479b37d72409f158c842e731db28eb77b8"
+        },
+        {
+          "label": "Android JVM / Lint / Debug / Release",
+          "code": 0,
+          "seconds": 14.15,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-ca7apo/5.log",
+          "sha256": "0708cf222cd432163cb69104c5118d80f68fc74975e7f8e4a36efecb3dda0c32"
+        },
+        {
+          "label": "JS 回归",
+          "code": 0,
+          "seconds": 102.82,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-ca7apo/6.log",
+          "sha256": "636e88e62b47cd598b824cad7f9126617239c40090b74a5b80fb089c19ef5ab3"
+        },
+        {
+          "label": "设置浏览器验收",
+          "code": 0,
+          "seconds": 35.71,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-ca7apo/7.log",
+          "sha256": "9a0b95b30b4e95d72de0d64ccc818a4f3a03e8973de0d7686980e5c0203b6cd1"
+        },
+        {
+          "label": "Swift 回归",
+          "code": 0,
+          "seconds": 10.4,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-ca7apo/8.log",
+          "sha256": "1129cd5cd40c3243cb287e2fbb11b7d4bccec9a049b8d96ac193d7e786c728df"
+        }
+      ]
+    },
+    {
+      "tier": "integration",
+      "base": "7ae6bf5",
+      "selected": 567,
+      "total": 567,
+      "platform": {
+        "name": "darwin",
+        "skipped": []
+      },
+      "js": {
+        "tests": 4771,
+        "pass": 4771,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0,
+        "failures": []
+      },
+      "flaky": null,
+      "ok": true,
+      "elapsedSeconds": 170.4,
+      "run": "run-RRWwcg",
+      "stages": [
+        {
+          "label": "语法检查",
+          "code": 0,
+          "seconds": 5.75,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-RRWwcg/1.log",
+          "sha256": "86379c3c584867b23b220928f5531b6c4ebdd27b97d7db5566b366210dddabac"
+        },
+        {
+          "label": "文档链接检查",
+          "code": 0,
+          "seconds": 0.03,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-RRWwcg/2.log",
+          "sha256": "84cf9872e37e0cf096ed50b48d5f9d854bf0cb1f53a51f9b7d0ba1098cd5e169"
+        },
+        {
+          "label": "生成器与依赖预检",
+          "code": 0,
+          "seconds": 0.4,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-RRWwcg/3.log",
+          "sha256": "dad06ebec6c7d4182dc545278f3388ec295ab5e2698b8459c64ba1f5f1394993"
+        },
+        {
+          "label": "共享渲染资源预检",
+          "code": 0,
+          "seconds": 0.04,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-RRWwcg/4.log",
+          "sha256": "79f091cd4863f73f17de8ac2cdcba2479b37d72409f158c842e731db28eb77b8"
+        },
+        {
+          "label": "Android JVM / Lint / Debug / Release",
+          "code": 0,
+          "seconds": 13.96,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-RRWwcg/5.log",
+          "sha256": "0708cf222cd432163cb69104c5118d80f68fc74975e7f8e4a36efecb3dda0c32"
+        },
+        {
+          "label": "JS 回归",
+          "code": 0,
+          "seconds": 103.97,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-RRWwcg/6.log",
+          "sha256": "0352a9461839b9925a0d01a82e5d05619f0e4f09ff9324505aa4ea1c4508c8df"
+        },
+        {
+          "label": "设置浏览器验收",
+          "code": 0,
+          "seconds": 35.74,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-RRWwcg/7.log",
+          "sha256": "9a0b95b30b4e95d72de0d64ccc818a4f3a03e8973de0d7686980e5c0203b6cd1"
+        },
+        {
+          "label": "Swift 回归",
+          "code": 0,
+          "seconds": 10.49,
+          "log": "/private/tmp/melo-limit-delivery-20261027/.tmp/test-runs/run-RRWwcg/8.log",
+          "sha256": "11ad5a6408030e81a3e3af68bf0101accc8f423d83fd936eaff484a189dc3b4b"
+        }
+      ]
+    }
+  ],
+  "boundary": "Source and automated tests only. Swift cached compilations were reused but all 37 test binaries executed. No skipped stages, no retries in the successful runs. No installation or physical-device acceptance."
+}

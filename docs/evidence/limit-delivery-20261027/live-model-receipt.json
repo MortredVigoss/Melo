@@ -1,0 +1,207 @@
+{
+  "version": 1,
+  "test": "Concert → venue city → same-day activities",
+  "boundary": "Calendar entry is an explicit synthetic QA fixture, not a real booking. Answer model and web retrieval are live. No personal calendar, account state, chats or originals are modified.",
+  "startedAt": "2026-10-27T02:47:15.547Z",
+  "finishedAt": "2026-10-27T02:48:58.745Z",
+  "calendarReads": 2,
+  "reply": "已重新读取日历，取得非空结果：占位演出为 2026 年 10 月 31 日 14:00，场馆是 Sydney Opera House（悉尼歌剧院）。年份、时间和场馆均由此次日历读取确认；不核实该占位演出是否真实举办。\n\n日历未填写城市，但此前已通过新州政府目录核对：悉尼歌剧院位于悉尼，地址为 Bennelong Point, Sydney NSW 2000。\n来源：https://www.service.nsw.gov.au/nswgovdirectory/sydney-opera-house\n\n与该日期、城市匹配的万圣节活动为 Screamfest Sydney 2026，以下信息此前已读取主办方页面核对：\n\n时间：2026 年 10 月 31 日 20:00 开门，至 11 月 1 日 03:00。\n地点：Manning Bar，University of Sydney，Manning Road, Camperdown NSW 2050，悉尼。\n入场要求：18 岁及以上，须携带有效带照片身份证件。\n活动详情：https://www.screamfest.com.au/sydney-halloween-festival-2026\n页面提供的购票入口：https://arep.co/p/screamfest2026\n\n具体票价、剩余票量及当前是否仍可购票未核实。日历没有演出结束时间，因此不能确认演出后是否来得及参加；这里只确认活动与占位演出同城、同一天开始。",
+  "completion": {
+    "version": 1,
+    "kind": "research",
+    "outcome": "completed",
+    "goalState": "supported",
+    "reason": "GOAL_DELIVERY_SUPPORTED",
+    "evidenceIds": [
+      "call_7e24b2e649dd4b6fba20a9202fd71bf5",
+      "call_da51b4e796fb4cf6bd11ae4ddcf10489:source:2",
+      "call_e966b7d0967d437ab77553667a87897a"
+    ],
+    "completedSteps": 5,
+    "task": {
+      "version": 1,
+      "id": "e8cac19e-4c68-4316-8dcf-90aa06ed32f1",
+      "original": "请读取日历里10月31日的演出安排，自己查清场馆所在城市，再找当天同城的万圣节活动。至少提供一项经来源核对的活动时间、地点和链接；票量等查不到的写明未核实。测试日历里的演出只是占位条目，不需要核实这场演出是否真实举办。",
+      "goalTruncated": false,
+      "amendments": [],
+      "revision": 1,
+      "corrections": 1,
+      "requirements": [
+        {
+          "text": "读取日历中10月31日的演出安排",
+          "status": "met",
+          "evidenceIds": [
+            "call_7e24b2e649dd4b6fba20a9202fd71bf5"
+          ]
+        },
+        {
+          "text": "自行查清演出场馆所在城市",
+          "status": "met",
+          "evidenceIds": [
+            "call_7e24b2e649dd4b6fba20a9202fd71bf5",
+            "call_da51b4e796fb4cf6bd11ae4ddcf10489:source:2"
+          ]
+        },
+        {
+          "text": "提供至少一项当天同城、经来源核对的万圣节活动时间、地点和链接",
+          "status": "met",
+          "evidenceIds": [
+            "call_e966b7d0967d437ab77553667a87897a",
+            "call_7e24b2e649dd4b6fba20a9202fd71bf5",
+            "call_da51b4e796fb4cf6bd11ae4ddcf10489:source:2"
+          ]
+        },
+        {
+          "text": "票量等查不到的信息明确标注未核实，不核实占位演出的真实性",
+          "status": "met",
+          "evidenceIds": [
+            "call_7e24b2e649dd4b6fba20a9202fd71bf5",
+            "call_e966b7d0967d437ab77553667a87897a"
+          ]
+        }
+      ],
+      "decision": "complete",
+      "reason": "GOAL_DELIVERY_SUPPORTED",
+      "candidateTruncated": false,
+      "evidenceRequired": true,
+      "explanation": "已通过非空日历读取确认占位演出的日期、时间和场馆，通过新州政府目录确认场馆位于悉尼，并读取活动页面核对同日同城的万圣节活动时间、地点及链接。候选答复明确标注票价、余票及当前可购状态未核实，也未核实占位演出的真实性。"
+    },
+    "summary": "已核对交付要求与执行依据；事实未独立复核"
+  },
+  "assertions": {
+    "calendarWasRead": true,
+    "locationIncluded": true,
+    "noBareLimitTemplate": true,
+    "hasSource": true,
+    "hasResult": true,
+    "validReceipt": true
+  },
+  "sourceBoundary": "Executed on step-four WIP. A frozen source hash was not captured; later changes before 57bc404 concerned bounded member budgets. This receipt is live-model evidence, not proof of a physical-device or installed-app run.",
+  "requests": [
+    {
+      "kind": "work",
+      "model": "gpt-6.1-sol",
+      "startedAt": "2026-10-27T02:47:15.590Z",
+      "finishedAt": "2026-10-27T02:47:19.126Z",
+      "nativeSearch": false,
+      "tools": [
+        "calendar_list_events",
+        "web_search",
+        "fetch_url"
+      ]
+    },
+    {
+      "kind": "work",
+      "model": "gpt-6.1-sol",
+      "startedAt": "2026-10-27T02:47:19.130Z",
+      "finishedAt": "2026-10-27T02:47:24.582Z",
+      "nativeSearch": false,
+      "tools": [
+        "calendar_list_events",
+        "web_search",
+        "fetch_url"
+      ]
+    },
+    {
+      "kind": "work",
+      "model": "gpt-6.1-sol",
+      "startedAt": "2026-10-27T02:48:06.046Z",
+      "finishedAt": "2026-10-27T02:48:08.386Z",
+      "nativeSearch": false,
+      "tools": [
+        "calendar_list_events",
+        "web_search",
+        "fetch_url"
+      ]
+    },
+    {
+      "kind": "work",
+      "model": "gpt-6.1-sol",
+      "startedAt": "2026-10-27T02:48:08.776Z",
+      "finishedAt": "2026-10-27T02:48:19.408Z",
+      "nativeSearch": false,
+      "tools": [
+        "calendar_list_events",
+        "web_search",
+        "fetch_url"
+      ]
+    },
+    {
+      "kind": "check",
+      "model": "gpt-6.1-sol",
+      "startedAt": "2026-10-27T02:48:19.409Z",
+      "finishedAt": "2026-10-27T02:48:31.234Z",
+      "nativeSearch": false,
+      "tools": []
+    },
+    {
+      "kind": "work",
+      "model": "gpt-6.1-sol",
+      "startedAt": "2026-10-27T02:48:31.236Z",
+      "finishedAt": "2026-10-27T02:48:40.826Z",
+      "nativeSearch": false,
+      "tools": [
+        "calendar_list_events",
+        "web_search",
+        "fetch_url"
+      ]
+    },
+    {
+      "kind": "work",
+      "model": "gpt-6.1-sol",
+      "startedAt": "2026-10-27T02:48:40.829Z",
+      "finishedAt": "2026-10-27T02:48:49.350Z",
+      "nativeSearch": false,
+      "tools": [
+        "calendar_list_events",
+        "web_search",
+        "fetch_url"
+      ]
+    },
+    {
+      "kind": "check",
+      "model": "gpt-6.1-sol",
+      "startedAt": "2026-10-27T02:48:49.351Z",
+      "finishedAt": "2026-10-27T02:48:58.738Z",
+      "nativeSearch": false,
+      "tools": []
+    }
+  ],
+  "toolResults": [
+    {
+      "toolCallId": "call_30dcf869483443318dab93c254e7f1d1",
+      "toolName": "calendar_list_events",
+      "ok": true,
+      "durationMs": 1,
+      "summary": "QA calendar: concert visit at Sydney Opera House, 2026-10-31 14:00. Venue street address and city field absent. This placeholder tests location lookup; it is not a claim of a real concert booking."
+    },
+    {
+      "toolCallId": "call_da51b4e796fb4cf6bd11ae4ddcf10489",
+      "toolName": "web_search",
+      "ok": true,
+      "durationMs": 17641,
+      "summary": "Web search results for: \"Sydney Opera House official address Sydney Bennelong Point\" [via: duckduckgo] ### 1. Sydney Opera House - Service NSW [source: https://www.service.nsw.gov.au/nswgovdirectory/s"
+    },
+    {
+      "toolCallId": "call_3da8a225658e44419d7f2e7b534ca9c6",
+      "toolName": "web_search",
+      "ok": true,
+      "durationMs": 23815,
+      "summary": "Web search results for: \"Sydney Halloween 31 October 2026 event\" [via: duckduckgo] ### 1. Halloween Sydney 2026 | Events, Shows & Experiences [source: https://halloweeneventsaustralia.com.au/sydney/] "
+    },
+    {
+      "toolCallId": "call_e966b7d0967d437ab77553667a87897a",
+      "toolName": "fetch_url",
+      "ok": true,
+      "durationMs": 388,
+      "summary": "Title: Sydney Halloween Festival 2026 — Screamfest 31 October URL Source: https://www.screamfest.com.au/sydney-halloween-festival-2026 Markdown Content: [← SCREAMFEST](https://www.screamfest.com.au/)["
+    },
+    {
+      "toolCallId": "call_7e24b2e649dd4b6fba20a9202fd71bf5",
+      "toolName": "calendar_list_events",
+      "ok": true,
+      "durationMs": 0,
+      "summary": "QA calendar: concert visit at Sydney Opera House, 2026-10-31 14:00. Venue street address and city field absent. This placeholder tests location lookup; it is not a claim of a real concert booking."
+    }
+  ]
+}
