@@ -1273,6 +1273,18 @@
       "note": "浏览器测试从 index.html 读取 importmap 与样式表清单；新增/改名页面模块或 CSS 时同步 index.html"
     },
     {
+      "id": "neural-home-cascade",
+      "kind": "source-reading-test",
+      "reads": [
+        "desktop-ui/index.html",
+        "desktop-ui/**/*.css",
+        "desktop-ui/neuralMotion.js",
+        "desktop-ui/neuralLayout.js"
+      ],
+      "tests": ["desktop-ui/neuralHome.browser.test.js"],
+      "note": "首页回归使用真实 CSS 顺序、生产导航模板和测量布局；覆盖选中/悬停/聚焦与窗口尺寸"
+    },
+    {
       "id": "tooling-test-plan",
       "kind": "source-reading-test",
       "reads": [

@@ -334,7 +334,8 @@
 
 /* Navigation bodies are rendered as neural tissue in the shared scene.
    Keep the full DOM hit boxes; remove every visible shell, including hover. */
-.neural-shell .neural-primary .neural-cluster .neural-orb {
+.neural-shell .neural-primary .neural-cluster .neural-orb,
+.neural-shell[data-neural-stage] .neural-primary .neural-cluster:is(.is-active,:hover,:focus-visible) .neural-orb {
  background:transparent;border-color:transparent;box-shadow:none;
 }
 .neural-shell .neural-primary .neural-orb:before,.neural-shell .neural-primary .neural-orb:after {display:none;}

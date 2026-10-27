@@ -17,7 +17,16 @@ export function workspaceLayout(width,height,stage='overview',dockHeight=260) {
  const branchX=compact?(detail?116:142):(detail?210:290);
  const branchW=compact?(detail?154:Math.min(320,w*.34)):detail?192:Math.min(390,w*.28);
  const panelX=compact?290:422;
- const brainScale=home?Math.min(w*.23,fieldH*.48,340):compact?48:detail?70:88;
+ let brainScale=home?Math.min(w*.23,fieldH*.48,340):compact?48:detail?70:88;
+ if(home){
+   // The upper project is a separate volume, not part of the central lobe.
+   // Reserve its full hover radius before fitting the brain between it and
+   // the measured dock. Envelopes include depth drift and the 10% lobe lift.
+   const orb=Math.max(44,Math.min(96,w*.064,h*.103));
+   const top=ports[1][1]+orb*.54+16,bottom=h-dockHeight-46;
+   brainScale=Math.min(brainScale,Math.max(24,(bottom-top)/1.96));
+   core[1]=Math.max(top+brainScale*1.08,Math.min(core[1],bottom-brainScale*.88));
+ }
  const coreSize=home?brainScale*1.86:compact?74:detail?114:158;
  return {core,coreSize,brainScale,ports,branch:[branchX,100,branchW,Math.max(210,h-162)],panel:[panelX,16,Math.max(0,w-panelX-16),h-32],compact,home,detail};
 }

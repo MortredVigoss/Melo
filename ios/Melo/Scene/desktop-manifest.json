@@ -21,7 +21,7 @@
   "desktop-ui/executionPicking.js": "0759469c287ea127528c6a812c56d29afc3e7037967c961f1a44832f4a7ced00",
   "desktop-ui/synapticBody.js": "202ad1938e859f551de6d76b01c0f8e744e6ead767e5e9b7ba376b5a964d9ee0",
   "desktop-ui/executionPanel.css": "8b4bdb155659c656172b20f06e9331d3294b0b07fbe61040b16801886d1cdd63",
-  "desktop-ui/neuralGlass.css": "9b6b3f889f168d26c8d48218fe834155e405c173e6909ea2c0f26785c9f08d23",
+  "desktop-ui/neuralGlass.css": "35b8e7f026c2af62dccfeea8a4d7fc0a0a1c310fca7c1b2c5a0a92499c7b9192",
   "src/shared/executionScene.js": "8b4fe839103d6875f422c358d4a18b8dc01b86296aac4431b0d8137f1f150414",
   "src/shared/executionMetadata.js": "bea7ba046b40c8318049f90a6e87d7fc9f4863f6115424190e25a54e201b5220",
   "src/shared/sessionEvents.js": "47ceca8f284e5c950252d1f6cb7774199d4db1343a9c47e7b01421333e268a5c",

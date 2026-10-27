@@ -1,3 +1,7 @@
+## 2026-10-27 — melo ui：首页神经导航回归修复
+
+Codex：用户要求恢复被通用样式改坏的首页。修正无边界入口与输入 dock 的级联优先级，保留五色、图形拓扑和功能；为顶部项目与中枢补垂直避让，含任务回执的首页也不再混成一团。新增回归先红后绿，定向 11/11；桌面原生窗口和浏览器已实看，五个模块均可打开原有分支。快速 `run-pGEfj5` GREEN（1 项负载超时隔离复测通过），基准集成 `run-necJZi` JS 778/778、Android/共享渲染/设置浏览器全绿，无复测；无推送/重装或账户数据变更。链路、根因和证据见[修复记录](docs/home-ui-regression-20261027.md)。
+
 ## 2026-10-27 — Claude 修桌面壳服务 PATH 并第三次 release:verify 覆盖安装，推送
 
 Claude：用户要求"修壳 PATH，然后推送"。`desktop-app/main.swift` 把 `resolveNodeExecutable()` 结果所在目录去重后放到服务 PATH 首位，page-loaded 调试输出新增 `nodePath` / `serverPath`；`scripts/verify-red-green.js` 原生启动断言新增这两项（共 14 项）。直接拉起新壳 3.5 s page-loaded，同一 PATH 下 `npx -y @playwright/cli@0.1.11 --version` 1.5 s；第三次 `npm run release:verify`（19:57–20:02）17 项全绿并覆盖安装，壳由 `open -a` 正常拉起，用户点权限后真实服务进程 PATH 以 nvm 的 node 目录开头。装后用主 Agent 发一条只调 `web_search` 的短问题：Playwright 腿这次真的跑了（SERP 7.9 s），但 Google 给无头浏览器返回"异常流量"验证页（手动复现落到 `/sorry/index`，0 条结果），Jina 匿名访问 DuckDuckGo 仍 403，无 key 时 `web_search` 仍无结果；下一步要么配 Tavily / SerpAPI / Jina key，要么给 Playwright 腿换引擎。推送前集成档 `npm test -- --base 554ce96`：`run-1epM2L`（JS 4771/4771、设置浏览器、Swift 全部，234 s）全绿；回执见 [overwrite-install-20261027.md](docs/overwrite-install-20261027.md)。已推送。

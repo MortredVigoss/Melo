@@ -173,7 +173,8 @@ body,html {background:var(--palette-ed6b05ea88);}
 .neural-shell.is-overview .neural-dashboard {background:none;border:0;box-shadow:none;transform:translateX(-50%);bottom:30px;overflow:visible;}
 .neural-shell.is-overview .neural-dashboard .topbar,.neural-shell.is-overview .neural-dashboard-label {display:none;}
 .neural-shell.is-overview .content-scroll {overflow:visible;}
-.neural-overview {padding:0;min-height:0;display:block;}
+/* The measured input dock is not the old padded overview reading panel. */
+.neural-shell .neural-dashboard .neural-overview {padding:0;min-height:0;display:block;}
 .neural-home-caption {text-align:center;margin-bottom:14px;}.neural-home-caption>span{font:8px monospace;letter-spacing:.2em;color:var(--palette-3cf8b780b5);}.neural-home-caption p{font-size:var(--font-size-13px);color:var(--palette-4e5bf042f0);margin:10px 0;}
 .neural-home-composer .composer-card{background:var(--palette-24fc5f34ba);border-color:var(--palette-b1e6d44f4c);padding:12px;}
 .neural-home-composer .composer-status-copy{display:none;}

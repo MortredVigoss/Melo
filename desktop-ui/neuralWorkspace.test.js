@@ -51,3 +51,12 @@ test('overview uses a larger window while reserving actual composer height',()=>
  }
  assert.ok(overviewDockWidth(390)<=350,'small screens retain side gutters');
 });
+
+test('overview separates the top project volume from the brain even with a tall dock',()=>{
+ for(const [w,h] of [[900,660],[1320,860],[1920,1080]])for(const dock of [260,340,400]){
+  const layout=workspaceLayout(w,h,'overview',dock);
+  const orb=Math.max(44,Math.min(96,w*.064,h*.103));
+  assert.ok(layout.core[1]-layout.brainScale*1.08>=layout.ports[1][1]+orb*.54+15.9,'project tissue has its own space above the hovered upper lobe');
+  assert.ok(layout.core[1]+layout.brainScale*.88<=h-dock-45.9,'lower lobes stay above the measured dock');
+ }
+});
