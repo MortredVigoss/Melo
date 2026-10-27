@@ -516,3 +516,7 @@ app 的 escapeHtml/showFlashToast 与授权页 formatTime 原样移至 html/feed
 - 最新累计快速run-4D3pby：JS4771、Swift37、Android JVM/Lint/Debug/Release、设置浏览器全绿，零跳过/复测；iPhone完整未签名构建成功。6/40轮两端夹具分别partial/LIMIT_DELIVERED与completed；浏览器授权、结果回传、撤销及DOM部分完成状态已验证。
 - 第五步验收完成：真实模型隔离日历→真实搜索/读页→检查纠偏，8请求/5工具，completed；[脱敏回执](docs/evidence/limit-delivery-20261027/live-model-receipt.json)与[重建执行场景](docs/evidence/limit-delivery-20261027/execution-scene.json)。最终累计快速run-ca7apo/7ae6bf5集成run-RRWwcg全绿（JS4771、Swift37、Android四项、设置浏览器，零跳过/复测）；最终未签名iPhoneOS完整构建成功。本地验收完成，产品源码交付目标为原开发分支codex/task-continuation-20261027，整合方式为fast-forward；保留五步独立提交。
 - 无推送、git pp、安装或用户数据变更。Codex OAuth输出8k仅为本机预留而非服务端硬截断；Android没有新增原生成员入口；真机、账号同步、长期后台本次未验。
+
+### 2026-10-27 — 本线程 master 合并与推送交接
+
+用户随后明确授权“去推送吧 合并master”。远端读取后无分叉，master从7ae6bf5快进至77b2879，包含此前任务闭环修复及本次五步提交。94份本次代码指纹与最终集成run-RRWwcg一致，合并未产生产品改动；复用其JS4771、Swift37、Android四项与浏览器全绿证据。本次只补发布记录并按文档范围检查；正式推送目标origin/master，命令输出及远端SHA核对保存在`.tmp/limit-delivery-20261027/push-master.log`与`push-master-receipt.json`。不运行git pp，不覆盖安装，不改账号和数据。

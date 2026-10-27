@@ -110,3 +110,7 @@ Agent 扩展协议的可选 maxTaskIterations 最大值放宽到64，workspace v
 | 真实模型 | 隔离日历+真实模型/联网：8请求、5工具、检查纠偏后completed，完整边界见上节。 |
 
 五步实施及本地验收完成。最后一步仅新增回归/脱敏证据和交接文档；合回原本地开发分支时须再次确认原树干净且仍为ca3fca0，使用fast-forward保留历史。未运行git pp/push/安装；没有将构建或夹具结果称为真机验收。
+
+## master 合并与推送授权
+
+2026-10-27用户明确授权合并master并推送。fetch后origin/master无独有提交，本地master为7ae6bf5；以fast-forward合入77b2879，保留全部前序提交，不产生合并冲突或产品代码变化。再次核对verification.json中的94份代码SHA一致，复用刚完成的7ae6bf5基准集成结果；只对新增的本节及总览/进度记录执行文档范围检查。`push-master.log`和`push-master-receipt.json`位于产品仓库`.tmp/limit-delivery-20261027/`，保存实际推送结果与local/remote SHA。未授权安装，不运行git pp。
