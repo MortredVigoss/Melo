@@ -546,12 +546,18 @@ async function assertNativeLaunch(appPath, expectedBundlePath = appPath) {
   await writeFile(autoCloseSentinelPath, '', 'utf8');
   try {
     await runCommand('osascript', ['-e', 'tell application "Melo" to quit']).catch(() => '');
-    await runCommand('open', [
-      '--env', `MELO_HOME=${join(verifyMeloHome, 'native')}`,
-      '--env', 'MELO_TEST_MODE=1',
-      '--env', 'MELO_MOCK_RESPONSE=Native smoke reply.',
-      '-n', '-W', appPath,
-    ], { timeoutMs: 60000 });
+    // The bundle executable is spawned directly with its environment: `open
+    // --env` hands LaunchServices only the text before the first space of each
+    // value (macOS 26.6, 2026-10-27), so a MELO_HOME under a path containing a
+    // space reached the app truncated and the launch never reported page-loaded.
+    await runCommand(join(appPath, 'Contents/MacOS/MeloDesktop'), [], {
+      env: {
+        MELO_HOME: join(verifyMeloHome, 'native'),
+        MELO_TEST_MODE: '1',
+        MELO_MOCK_RESPONSE: 'Native smoke reply.',
+      },
+      timeoutMs: 60000,
+    });
     const debugOutput = await readFile(nativeDebugPath, 'utf8');
     const parsed = parseNativeDebugOutput(debugOutput);
     const uiAudit = parsed.uiAudit || {};
