@@ -134,7 +134,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                 return withContext(NonCancellable) { finish(lastCandidate!!.text, lastCandidate!!.model, "partial", reason) }
             }
             withContext(NonCancellable) {
-                val reason = when (error) { is SharedBudgetExhausted -> "BUDGET_EXHAUSTED"; is TimeoutCancellationException -> "DEADLINE_EXCEEDED"; is SharedTurnStopped -> error.reason; is CancellationException -> "CANCELLED"; else -> "REQUEST_FAILED" }
+                val reason = when (error) { is SharedBudgetExhausted -> "BUDGET_EXHAUSTED"; is TimeoutCancellationException -> "DEADLINE_EXCEEDED"; is SharedTurnStopped -> error.reason; is CancellationException -> "CANCELLED"; is ModelRequestFailure -> error.code; else -> "REQUEST_FAILED" }
                 val completion = receipt("", reason)
                 journal.finish(completion.text("outcome"), reason, completion)
             }
@@ -154,9 +154,14 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                     }
                     val id = "model:${++modelSequence}"
                     journal.event(id, "模型请求", model = connection.model)
+                    onPhase("正在等待模型响应…")
                     turn.request()
                     val estimate = SharedRunBudget.estimateInput(history, currentInstructions, specs)
-                    val reply = turn.budget.model(estimate, { it.inputTokens }) { transport.next(connection, key, history, currentInstructions, true, specs, nativeWebSearch = nativeSearch) }
+                    val reply = try { turn.budget.model(estimate, { it.inputTokens }) { transport.next(connection, key, history, currentInstructions, true, specs, nativeWebSearch = nativeSearch, onProgress = onPhase) } }
+                    catch (error: Exception) {
+                        if (error !is CancellationException) journal.event(id, "模型请求", model = connection.model, output = (error as? ModelRequestFailure)?.let { "${it.code} · ${it.message}" } ?: "模型请求未完成，未收到可执行回执。", status = "failed")
+                        throw error
+                    }
                     journal.event(id, "模型请求", model = connection.model, returnedModel = reply.model, output = if (reply.calls.isEmpty()) "已收到文字回复" else "请求 ${reply.calls.joinToString { it.name }}", status = "completed")
                     val summary = runtime.value("publicReasoning", buildJsonObject { put("items", JsonArray(reply.wire)) }).jsonPrimitive.content
                     if (summary.isNotBlank()) journal.event("$id:summary", "模型公开摘要", output = summary, status = "completed", channel = "reasoning-summary")

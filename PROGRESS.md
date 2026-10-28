@@ -1,3 +1,9 @@
+## 2026-10-28 — 补齐实际模型连接路径与失败可观测性
+
+用户截图暴露0.10.7首个模型请求失败，工具目录已完整；Codex确认上次Bedrock非Streaming验收未覆盖GPT/Modal。修复强制关Stream和错误原因未显示，保留完整Tool回执后才执行与不自动重发约束。
+本轮JVM201/Native29过，先用隔离HTTP/Emulator；随后复用先前授权Proxy Key单次检查GPT/Modal，公开合成13Tools请求Streaming返回200/15.692秒/web_search参数有效，未执行工具、未发送私人Trace或操作手机。最终Gate待验收；不能据此确认原76秒错误类型或手机完整任务成功。
+[证据、失败Fixture与验证边界](docs/android-model-transport-fix-20261028.md)。
+
 ## 2026-10-28 — 让手机远程下载当前 Branch 的试用包
 
 用户要求直接针对当前Branch发布，构成本轮推送与Pre-release授权，取代此前先保留本地；未合并master、未运行git pp或自动Review。Tag固定fd3bd0d，附件为已验收APK和校验文件，匿名下载200，GitHub digest一致，与0.10.6同签名。

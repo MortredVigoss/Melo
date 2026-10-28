@@ -2,6 +2,7 @@ package com.melo.android
 
 import com.melo.android.data.*
 import com.melo.android.device.*
+import com.melo.android.network.ModelRequestFailure
 import kotlinx.coroutines.*
 import kotlinx.serialization.json.*
 import okhttp3.mockwebserver.*
@@ -75,7 +76,7 @@ class DeviceAgentClientTest {
             DeviceAgentClient.appendResult(history, protocol, turn.calls.single(), DeviceToolResult(buildJsonObject { put("ok", true); put("screen_id", "screen-fixture"); put("nodes", JsonArray(emptyList())) }, "aW1hZ2U="))
             assertEquals("已完成", client.next(connection, "fixture-not-a-real-key", history).text)
             val first = MeloJson.parseToJsonElement(server.takeRequest(1, TimeUnit.SECONDS)!!.body.readUtf8()).jsonObject
-            assertEquals(false, first["stream"]!!.jsonPrimitive.boolean)
+            assertEquals(connection.stream, first["stream"]!!.jsonPrimitive.boolean)
             assertEquals(1, first["tools"]!!.jsonArray.size)
             val second = server.takeRequest(1, TimeUnit.SECONDS)!!
             val body = second.body.readUtf8()
@@ -152,6 +153,39 @@ class DeviceAgentClientTest {
             server.enqueue(MockResponse().setBody("{broken-json private-fixture-value")); server.start()
             val error = runCatching { DeviceAgentClient(true).next(Connection(endpoint = server.url("/tools").toString(), model = "fixture"), "fixture", DeviceAgentClient.initial("chat-completions", "fixture")) }.exceptionOrNull()
             assertNotNull(error); assertFalse(error!!.message.orEmpty().contains("private-fixture-value")); assertTrue(error.message.orEmpty().contains("Tool Calling"))
+        }
+    }
+    @Test fun streamPreferenceIsRespectedForEveryProtocolAndToolCatalog() {
+        for (protocol in protocols) for (stream in listOf(true, false)) {
+            val value = DeviceAgentClient.payload(Connection(protocol = protocol, model = "fixture", stream = stream), emptyList(), chatTools = true, toolSpecs = emptyList())
+            assertEquals(stream, value["stream"]!!.jsonPrimitive.boolean)
+        }
+    }
+    @Test fun httpGatewayErrorsKeepSafeStatusAndRequestIdWithoutProviderBody() = runBlocking {
+        for (status in listOf(400, 401, 429, 504)) MockWebServer().use { server ->
+            server.enqueue(MockResponse().setResponseCode(status).setHeader("x-request-id", "fixture-request-1").setBody("private-provider-body fixture-not-a-real-key")); server.start()
+            val error = runCatching { DeviceAgentClient(true).next(Connection(endpoint = server.url("/model").toString(), model = "fixture"), "fixture-not-a-real-key", emptyList()) }.exceptionOrNull()
+            assertTrue(error is ModelRequestFailure); val failure = error as ModelRequestFailure
+            assertEquals(status, failure.httpStatus); assertEquals("MODEL_HTTP_$status", failure.code); assertEquals("fixture-request-1", failure.requestId)
+            assertTrue(failure.message!!.contains("HTTP $status")); assertFalse(failure.message!!.contains("private-provider-body")); assertFalse(failure.message!!.contains("fixture-not-a-real-key"))
+            assertEquals(1, server.requestCount)
+        }
+    }
+    @Test fun missingHeadersAndStalledBodiesHaveDifferentSafeTimeoutDiagnostics() = runBlocking {
+        for (headers in listOf(false, true)) MockWebServer().use { server ->
+            server.enqueue(if (headers) MockResponse().setBody("{}").setBodyDelay(600, TimeUnit.MILLISECONDS) else MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE)); server.start()
+            val http = okhttp3.OkHttpClient.Builder().retryOnConnectionFailure(false).readTimeout(100, TimeUnit.MILLISECONDS).build()
+            val error = runCatching { DeviceAgentClient(true, http).next(Connection(endpoint = server.url("/model").toString(), model = "fixture"), "fixture", emptyList()) }.exceptionOrNull() as ModelRequestFailure
+            assertEquals("MODEL_TIMEOUT", error.code); assertEquals(if (headers) "reading-response" else "waiting-headers", error.phase)
+            assertEquals(1, server.requestCount)
+        }
+    }
+    @Test fun definitiveHttpErrorDoesNotWaitForAStalledProviderErrorBody() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setResponseCode(504).setBody("private-error-body").setBodyDelay(1, TimeUnit.SECONDS)); server.start()
+            val http = okhttp3.OkHttpClient.Builder().readTimeout(100, TimeUnit.MILLISECONDS).build()
+            val error = runCatching { DeviceAgentClient(true, http).next(Connection(endpoint = server.url("/model").toString(), model = "fixture"), "fixture", emptyList()) }.exceptionOrNull() as ModelRequestFailure
+            assertEquals("MODEL_HTTP_504", error.code); assertEquals("http-response", error.phase)
         }
     }
 }

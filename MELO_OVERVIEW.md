@@ -13,6 +13,8 @@
 
 ## 2. 当前事实
 
+10-28 用户反馈0.10.7首个模型请求76秒失败，截图证明13工具已注册而非Tool缺失。确认Android Tool Transport强制stream=false、错误步骤/Chat卡不显示实际原因；现修复连接Stream配置与三协议SSE完整回执、分片/断流安全、HTTP/Timeout诊断和折叠错误展示。201项JVM、Native29（含折叠错误展示/重启与SSE主Loop）已过；视觉截图已核对。用此前授权Proxy Key做单次公开合成GPT/Modal请求，13Tools+Streaming返回200/15.692秒/web_search参数校验过，未执行工具、未发送私人Trace；不等于手机全任务验收。最终Gate仍进行，0.10.8（32）未发布。此次用户GPT/Modal实际失败原因尚无原始记录，不能声称已证明是504或已实机修复。私人Trace仅本地、未操作手机，实际请求仅上述公开合成检查。[Transport专项](docs/android-model-transport-fix-20261028.md)。
+
 10-28 用户现授权对当前Branch单独Release，已推送codex/android-organizer-20261026并发布[Android 0.10.7 Pre-release](https://github.com/MortredVigoss/Melo/releases/tag/android-v0.10.7-organizer-preview.1)，Tag固定fd3bd0d，不合并master。APK+SHA256SUMS匿名下载200、GitHub digest一致，与0.10.6同签名。已补集成档run-dkvzlN与完整test:full：Android/Browser/Runtime Smoke通过；全量JS仍仅两项私有桌宠素材失败，macOS打包/安装/启动在Linux失败、Swift跳过，不能称完整发布Gate GREEN。私人Trace仅本地。[发布回执](docs/android-0.10.7-branch-prerelease-20261028.md)。
 
 10-28 已落实共享任务/证据契约与生产Android单决策Loop：phone_action/phone_workflow回到同一Chat Loop，原生Session无Model；Routing仅建议、明确Workflow依赖保留。修复反馈误派任务、完成证据截断/误分类、每轮丢历史、跨页已生效状态丢失、动作后观察失败与残留输入Cache；成功子流程独立发布并参数重放。0.10.7（31）：Core240/JVM190/Native50通过，最终APK再跑生产Chat6项通过；真实Bedrock五个样本独立UI校验，导航27.137→19.563秒，浏览器59.661→28.295秒/12→3请求，换词30.084秒命中同Cache。run-PyqRFL JS4636过/2缺私有素材失败/15跳过；Lint/Debug/Release、独立Settings浏览器、SceneBridge4通过。Swift/JSC待macOS、Fold6 OneUI待实机；不能称全仓GREEN。APK已导出Windows artifacts，Trace仅本地、未操作手机、未推送。[实现与完整验收边界](docs/android-unified-loop-20261028.md)。

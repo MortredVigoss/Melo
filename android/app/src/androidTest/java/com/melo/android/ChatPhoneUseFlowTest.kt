@@ -61,8 +61,8 @@ class ChatPhoneUseFlowTest {
         }) }) })
     }.toString())
     private fun final() = MockResponse().setBody("""{"model":"captured-model","choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"Fixture 页面 Count 0，未查询真实餐厅。","tool_calls":null}}]}""")
-    private suspend fun chat(server: MockWebServer, enabled: Boolean = true): String {
-        val connection = Connection(name = "Chat phone local fixture", endpoint = server.url("/chat").toString(), model = "captured-model", stream = false)
+    private suspend fun chat(server: MockWebServer, enabled: Boolean = true, stream: Boolean = false): String {
+        val connection = Connection(name = "Chat phone local fixture", endpoint = server.url("/chat").toString(), model = "captured-model", stream = stream)
         app.repository.saveConnection(connection, "local-fixture-key")
         val agent = Agent(name = "Phone skill fixture", instructions = "captured-agent-marker")
         val project = Project(name = "Phone project fixture", instructions = "captured-project-marker")
@@ -97,7 +97,10 @@ class ChatPhoneUseFlowTest {
                     assertTrue("phone_action" in offered); assertTrue("todo_list" in offered); assertTrue("calendar_list_events" in offered)
                     assertFalse("phone_use" in offered); assertFalse("android_device" in offered)
                     return when (++round) {
-                        1 -> device("observed", buildJsonObject { put("action", "observe") }).setBodyDelay(1, TimeUnit.SECONDS)
+                        1 -> MockResponse().setHeader("Content-Type", "text/event-stream").setBody(
+                            "data: " + """{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"observed","function":{"name":"phone_action","arguments":"{\"action\":\"observe\"}"}}]},"finish_reason":null}]}""" + "\n\n" +
+                            "data: " + """{"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}""" + "\n\ndata: [DONE]\n\n"
+                        ).setBodyDelay(1, TimeUnit.SECONDS)
                         2 -> {
                             val receipt = body["messages"]!!.jsonArray.map { it.jsonObject }.last { it.text("role") == "tool" }
                             val screen = MeloJson.parseToJsonElement(receipt.text("content")).jsonObject
@@ -109,10 +112,11 @@ class ChatPhoneUseFlowTest {
                     }
                 }
             }
-            server.start(); val id = chat(server)
+            server.start(); val id = chat(server, stream = true)
             withContext(Dispatchers.Main) { assertTrue(app.engine.send(id, "请查看当前测试页面")) }
             val first = withContext(Dispatchers.IO) { server.takeRequest(5, TimeUnit.SECONDS) }!!
             assertTrue(first.body.clone().readUtf8().contains("phone_action"))
+            assertTrue(first.body.clone().readUtf8().contains("\"stream\":true"))
             app.repository.draft(id, "next-message-draft-must-survive")
             val moveError = runCatching { app.repository.editChat(id) { it.copy(projectId = null) } }.exceptionOrNull()
             assertTrue(moveError is IllegalArgumentException)
@@ -192,6 +196,21 @@ class ChatPhoneUseFlowTest {
             complete(id)
             assertTrue(app.repository.data.value.chats.none { it.id == id })
             assertTrue(app.repository.data.value.deviceRuns.none { it.taskContext?.chatId == id }); assertEquals(1, server.requestCount)
+        }
+    }
+    @Test fun gatewayFailurePersistsItsActualCauseAndNeverStartsADeviceTask() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setResponseCode(504).setHeader("x-request-id", "gateway-fixture-1").setBody("private-upstream-error-body")); server.start()
+            val id = chat(server, stream = true)
+            withContext(Dispatchers.Main) { assertTrue(app.engine.send(id, "搜索 Surry Hills brunch 然后导航开车过去")) }; complete(id)
+            val saved = app.repository.data.value; val run = saved.runs.last { it.chatId == id }
+            assertTrue(run.error.orEmpty().contains("HTTP 504")); assertFalse(run.error.orEmpty().contains("private-upstream-error-body"))
+            assertEquals("MODEL_HTTP_504", run.sharedScene!!.text("stopReason"))
+            val steps = run.sharedScene!!.getValue("pipeline").jsonArray.map { it.jsonObject }
+            val model = steps.single { it.text("id") == "model:1" }
+            assertEquals("failed", model.text("status")); assertTrue(model.text("output").contains("MODEL_HTTP_504"))
+            assertEquals(1, server.requestCount); assertTrue(saved.deviceRuns.none { it.taskContext?.chatId == id })
+            assertEquals(1, saved.chats.first { it.id == id }.messages.size)
         }
     }
 }

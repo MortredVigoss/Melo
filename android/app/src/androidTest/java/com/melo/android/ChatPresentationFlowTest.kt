@@ -78,6 +78,21 @@ class ChatPresentationFlowTest {
         ui.onNodeWithTag("execution-content-${run.id}").assertDoesNotExist()
     }
 
+    @Test fun modelFailureIsVisibleWithoutExpandingTheCardAndSurvivesRestart() = runBlocking {
+        val id = app.repository.newChat(); val error = "模型服务或上游网关暂时不可用（HTTP 504）。"
+        val run = RunRecord(chatId = id, prompt = "Failure UI fixture", status = "blocked", finishedAt = now(), error = error)
+        app.repository.change { current -> current.copy(runs = current.runs + run, chats = current.chats.map {
+            if (it.id == id) it.copy(messages = listOf(Message(role = "user", content = "Failure UI fixture"))) else it
+        }) }
+        show(id); scrollToTag("execution-error-${run.id}")
+        ui.onNodeWithTag("execution-error-${run.id}").assertTextEquals(error).assertIsDisplayed()
+        ui.onNodeWithTag("execution-content-${run.id}").assertDoesNotExist()
+        ui.activityRule.scenario.recreate(); ui.waitForIdle(); scrollToTag("execution-error-${run.id}")
+        ui.onNodeWithTag("execution-error-${run.id}").assertTextEquals(error).assertIsDisplayed()
+        File(app.cacheDir, "chat-model-failure.png").outputStream().use { ui.onRoot().captureToImage().asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        Unit
+    }
+
     @Test fun markdownHasFormattedTextCodeAndScrollableTableWhileLegacyTraceStaysUnknown() = runBlocking {
         val id=app.repository.newChat();val run=RunRecord(chatId=id,prompt="Markdown fixture",status="completed",finishedAt=now())
         val markdown="# Fixture heading\n\n- **Single O** brunch\n\n[Maps link](https://fixture.invalid/map)\n\n```kotlin\nval item_name = \"literal * code\"\n```\n\n| Name | Evidence |\n|---|---|\n| A | Page was read |"
