@@ -10,7 +10,7 @@ import java.security.MessageDigest
 /** Per-parent-turn adapter; Core owns the portable manifest and call contract. */
 internal class PhoneWorkflowHost(private val context: Context, private val repository: Repository,
     private val agent: DeviceAgent, private val binding: ChatDeviceContext,
-    private val executor: DeviceExecutor? = DeviceAccess.service) {
+    private val executor: DeviceExecutor? = DeviceAccess.service, private val owner: Job? = null) {
     private val scope = MessageDigest.getInstance("SHA-256").digest("${binding.chat.agentId}|${binding.chat.projectId.orEmpty()}|0|${binding.scopeInstructions}".toByteArray()).joinToString("") { "%02x".format(it) }
     private fun ownerCurrent(): Boolean {
         if (executor == null || executor is MeloAccessibilityService && executor !== DeviceAccess.service) return false
@@ -45,6 +45,6 @@ internal class PhoneWorkflowHost(private val context: Context, private val repos
         }
         currentCoroutineContext().ensureActive()
         val budget = currentCoroutineContext()[SharedRunBudget.Scope]?.budget
-        agent.invokeWorkflow(prepared.getValue("value").jsonObject, binding.copy(budget = budget ?: binding.budget), executor)
+        agent.invokeWorkflow(prepared.getValue("value").jsonObject, binding.copy(budget = budget ?: binding.budget), executor, owner)
     }
 }

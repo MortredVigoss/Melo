@@ -17,6 +17,19 @@ export function publicReasoning(items = []) {
   return items.filter(item => item?.type === 'reasoning').flatMap(item => Array.isArray(item.summary) ? item.summary : [])
     .filter(item => item?.type === 'summary_text' && typeof item.text === 'string').map(item => text(item.text, 8000)).join('\n').slice(0, 12000);
 }
+// Execution scenes can enter history/sync. Native screen payloads belong only
+// to the device-local Trace, not this portable presentation projection.
+function nativeSceneEvent(event) {
+  if (!['phone_action', 'phone_workflow'].includes(event.name)) return event;
+  const parse = value => { try { return typeof value === 'string' ? JSON.parse(value) : value || {}; } catch { return {}; } };
+  const input = parse(event.input), result = event.result || parse(event.output);
+  const safe = Object.fromEntries(['ok', 'status', 'verification', 'package_name', 'code', 'cache_id'].filter(key => result[key] != null).map(key => [key, result[key]]));
+  if (input.action) safe.action = input.action;
+  const hint = result.ok === true ? '原生操作回执已返回；详细证据仅保存在本机。' : '原生操作尚未完成；详细证据仅保存在本机。';
+  return { ...event, ...(event.input != null ? { input: JSON.stringify(event.name === 'phone_workflow' ? { workflow_id: input.workflow_id, revision: input.revision } : { action: input.action }) } : {}),
+    ...(event.output != null ? { output: JSON.stringify({ ...safe, local_details: true }) } : {}),
+    ...(event.result ? { result: { ...safe, summary: hint } } : {}) };
+}
 export function executionScene({ action, scene, runId, chatId, query, at, event = {}, outcome, reason, completion } = {}) {
   if (action === 'create') return { version: 1, runId, chatId, query: text(query, 4000), startedAt: at, status: 'running', sequence: 0, operations: [], pipeline: [], sources: [], artifacts: [], events: [], lastModule: 'compute', taskOutcome: 'running' };
   if (!scene || scene.version !== 1) throw new Error('Unknown execution scene.');
@@ -31,6 +44,7 @@ export function executionScene({ action, scene, runId, chatId, query, at, event 
     return next;
   }
   if (action !== 'event') throw new Error('Unknown execution operation.');
+  event = nativeSceneEvent(event);
   if (event.runId && event.runId !== scene.runId) throw new Error('Execution event belongs to another run.');
   const kind = event.kind === 'operation' ? 'operation' : 'pipeline';
   const rows = kind === 'operation' ? next.operations : next.pipeline;
@@ -60,6 +74,7 @@ export function executionScene({ action, scene, runId, chatId, query, at, event 
   return next;
 }
 export function executionContext(scenes = []) {
+  scenes = scenes.map(scene => scene?.version === 1 ? { ...scene, operations: (scene.operations || []).map(row => ({ ...row, ...nativeSceneEvent(row) })) } : scene);
   const details = scenes.slice(-3).filter(scene => scene?.version === 1).map(scene => ({
     runId: scene.runId, query: text(scene.query, 1000),
     tools: (scene.operations || []).slice(0, 20).map(row => ({

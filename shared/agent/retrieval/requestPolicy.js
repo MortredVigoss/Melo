@@ -14,7 +14,7 @@ export function maskQuotedText(value = '') {
 
 const NEGATED_ACTION = /(?:不要|不用|不必|无需|禁止|别|不需要)[^，,。！？;；\n]{0,20}(?:搜|查找|检索|运行|执行|调用|构建|联网|上网|打开|访问)|\b(?:do not|don['’]t|never|without|no need to)\s+(?:\w+\s+){0,3}(?:search|find|grep|run|execute|call|build|browse|fetch|open|access)\b/iu;
 const SEARCH_DENIAL = /(?:不要|不用|不必|无需|禁止|别|不需要)[^，,。！？;；\n]{0,20}(?:搜|查找|检索)|\b(?:do not|don['’]t|never|without|no need to)\s+(?:\w+\s+){0,3}(?:search|find|google|look up)\b/iu;
-const NETWORK_DENIAL = /不联网|不上网|(?:不要|不用|不必|无需|禁止|别|不需要)\s*(?:再|去|调用)?\s*(?:联网|上网|浏览网页|访问网络|打开(?:链接|网址|网页)?|访问|读取(?:链接|网址|网页))|\b(?:do not|don['’]t|never|without)\s+(?:browse|go online|access|fetch|open|read)\b/iu;
+const NETWORK_DENIAL = /不联网|不上网|(?:不要|不用|不必|无需|禁止|别|不需要)\s*(?:再|去|调用)?\s*(?:联网|上网|浏览网页|访问网络|(?:打开|访问|读取)(?:(?:任何|所有|这个|该)?(?:链接|网址|网页|网站)|\s*(?:https?:\/\/|www\.)))|\b(?:do not|don['’]t|never|without)\s+(?:browse|go online|access\s+(?:(?:the|any)\s+)?(?:internet|network|web)|(?:fetch|open|read)(?:\s+(?:(?:the|any|a|this)\s+)?(?:webpages?|websites?|pages?|urls?|links?)\b|\s*(?:https?:\/\/|www\.|(?=[,.;!?]|$))))/iu;
 // A blanket tool prohibition also excludes hosted search and URL reads.
 // Match instructions only (quoted examples have already been masked).
 const TOOLS_DENIAL = /(?:不要|不用|不必|无需|禁止|别|不需要)\s*(?:(?:再|去|调用|使用|用)\s*)*(?:任何|所有|一切)?\s*工具|\b(?:(?:do not|don['’]t|never|without)\s+(?:(?:use|using|call|calling|invoke|invoking)\s+)?(?:(?:any|the)\s+)?tools?|no tools?)\b/iu;

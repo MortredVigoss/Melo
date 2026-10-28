@@ -16,7 +16,7 @@ import java.text.Normalizer
 @Serializable data class ScriptStep(val action: String, val packageName: String = "", val windowTitle: String = "", val selector: NodeSelector? = null,
     val parameter: String = "", val text: String = "", val direction: String = "", val durationMs: Int = 600, val timeoutMs: Int = 5000,
     val windowWidth: Int = 0, val windowHeight: Int = 0)
-@Serializable data class ScriptAssertion(val packageName: String, val windowTitle: String = "", val visibleText: String = "", val parameter: String = "")
+@Serializable data class ScriptAssertion(val packageName: String, val windowTitle: String = "", val visibleText: String = "", val parameter: String = "", val requiredTexts: List<String> = emptyList())
 @Serializable data class DeviceScript(val id: String = newId(), val name: String, val goalTemplate: String, val steps: List<ScriptStep>, val completion: ScriptAssertion,
     val parameters: List<String> = emptyList(), val scope: String = "", val sourceRunId: String = "", val revision: Int = 1,
     val enabled: Boolean = true, val verified: Boolean = false, val createdAt: String = now(), val updatedAt: String = createdAt,
@@ -32,30 +32,36 @@ object ScriptValidator {
         require(script.schemaVersion == 1) { "此脚本格式版本不受支持。" }
         require(script.name.isNotBlank() && script.name.length <= 100 && script.goalTemplate.isNotBlank() && script.goalTemplate.length <= 4000) { "请输入脚本名称和目标模板。" }
         require(script.steps.size in 1..60 && script.revision > 0) { "脚本需要 1–60 个步骤。" }
-        if (script.cacheKind == "action") require(script.steps.size == 1 && script.steps.single().action == "open_app" && script.steps.single().packageName == script.completion.packageName && script.parameters.isEmpty() && script.completion.windowTitle.isBlank() && script.completion.visibleText.isBlank() && script.completion.parameter.isBlank()) { "单动作 Cache 仅使用原生打开 App 和前台 package 校验；页面动作请保存为子流程。" }
+        if (script.cacheKind == "action") require(script.steps.size == 1 && script.steps.single().action == "open_app" && script.steps.single().packageName == script.completion.packageName && script.parameters.isEmpty() && script.completion.windowTitle.isBlank() && script.completion.visibleText.isBlank() && script.completion.parameter.isBlank() && script.completion.requiredTexts.isEmpty()) { "单动作 Cache 仅使用原生打开 App 和前台 package 校验；页面动作请保存为子流程。" }
         script.environment?.let { env ->
             require(env.layout.length in 1..500 && env.appVersions.size <= 61 && env.appVersions.all { (pkg, version) -> packagePattern.matches(pkg) && version >= 0 }) { "缓存环境记录无效。" }
         }
         require(script.parameters.size <= 12 && script.parameters.distinct() == script.parameters && script.parameters.all { it.matches(Regex("[A-Za-z][A-Za-z0-9_]{0,39}")) }) { "输入参数名称重复或无效。" }
+        val populated = mutableSetOf<Pair<String, NodeSelector?>>()
         for (step in script.steps) {
-            require(step.action in setOf("open_app", "tap", "type_text", "swipe", "home", "back", "wait")) { "脚本动作不受支持。" }
+            if (step.action in setOf("open_app", "back", "home")) populated.clear()
+            if (step.action == "type_text") populated += step.packageName to step.selector
+            if (step.action == "submit_input") require(step.packageName to step.selector in populated) { "提交步骤缺少由脚本建立的输入前置条件；不能依赖页面遗留文字。" }
+            require(step.action in setOf("open_app", "tap", "type_text", "submit_input", "swipe", "home", "back", "wait")) { "脚本动作不受支持。" }
             require(step.durationMs in 100..3000 && step.timeoutMs in 100..10_000 && step.windowTitle.length <= 160) { "步骤等待时间或窗口名称超出范围。" }
             require(step.windowWidth in 0..32000 && step.windowHeight in 0..32000) { "缓存窗口尺寸无效。" }
             require(step.action in setOf("home", "wait") || packagePattern.matches(step.packageName)) { "步骤需要确切 App package。" }
             require(step.parameter.isBlank() || step.parameter in script.parameters) { "步骤引用了未声明的输入参数。" }
             require(step.text.length <= 4000 && (step.parameter.isBlank() || step.text.isEmpty())) { "输入参数不能与固定文字同时出现。" }
-            if (step.action in setOf("tap", "type_text", "swipe")) {
+            if (step.action in setOf("tap", "type_text", "submit_input", "swipe")) {
                 val selector = step.selector ?: error("节点步骤需要稳定 selector，不能保存临时 ID 或裸坐标。")
                 require(listOf(selector.viewId, selector.text, selector.description).any(String::isNotBlank)) { "selector 至少需要 viewId、精确 text 或 description。" }
                 require(listOf(selector.viewId, selector.text, selector.description, selector.className).all { it.length <= 300 }) { "selector 过长。" }
+                if (step.action == "submit_input") require(selector.editable == true) { "提交步骤需要 editable selector。" }
                 if (step.action == "type_text") require(selector.editable == true && (step.parameter.isNotBlank() || step.text.isNotEmpty())) { "输入步骤需要 editable selector 和文字或参数。" }
                 if (step.action == "swipe") require(selector.scrollable == true && step.direction in setOf("up", "down", "left", "right")) { "滑动步骤需要 scrollable selector 和方向。" }
             }
         }
         require(packagePattern.matches(script.completion.packageName) && script.completion.windowTitle.length <= 160 && script.completion.visibleText.length <= 300) { "终态需要有效 App 和有界可见证据。" }
+        require(script.completion.requiredTexts.size <= 12 && script.completion.requiredTexts.all { it.isNotBlank() && it.length <= 4000 }) { "附加终态文字超出范围。" }
         require(script.completion.parameter.isBlank() || script.completion.parameter in script.parameters) { "终态引用了未声明参数。" }
         require(script.completion.parameter.isBlank() || script.completion.visibleText.isBlank()) { "终态文字与参数不能同时填写。" }
-        val fields = script.steps.flatMap { listOf(it.windowTitle, it.selector?.text.orEmpty(), it.selector?.description.orEmpty()) } + listOf(script.goalTemplate, script.completion.windowTitle, script.completion.visibleText)
+        val fields = script.steps.flatMap { listOf(it.windowTitle, it.selector?.text.orEmpty(), it.selector?.description.orEmpty()) } + script.completion.requiredTexts + listOf(script.goalTemplate, script.completion.windowTitle, script.completion.visibleText)
         require(fields.flatMap(GoalTemplate::names).all { it in script.parameters }) { "脚本模板引用了未声明参数。" }
         val used = script.steps.map { it.parameter }.filter(String::isNotBlank) + script.completion.parameter.takeIf(String::isNotBlank).orEmpty().let { if (it.isBlank()) emptyList() else listOf(it) } + fields.dropLast(3).flatMap(GoalTemplate::names) + GoalTemplate.names(script.completion.windowTitle) + GoalTemplate.names(script.completion.visibleText)
         require(script.parameters.all { it in used }) { "每个参数必须用于实际动作或终态，不能只作为目标通配符。" }
@@ -76,6 +82,7 @@ object ScriptValidator {
 object GoalTemplate {
     private val slot = Regex("\\{\\{([A-Za-z][A-Za-z0-9_]{0,39})\\}\\}")
     fun literalText(template: String) = slot.replace(template, "")
+    fun bindKnown(template: String, values: Map<String, String>): String = slot.replace(template) { values[it.groupValues[1]] ?: it.value }
     fun render(template: String, values: Map<String, String>): String = slot.replace(template) { values[it.groupValues[1]] ?: error("缺少脚本输入参数。") }
     fun parameterize(text: String, values: Map<String, String>): String {
         val entries = values.entries.filter { it.value.isNotBlank() }.sortedByDescending { it.value.length }

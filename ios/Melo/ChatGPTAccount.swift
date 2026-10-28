@@ -354,6 +354,12 @@ final class CodexResponsesTransport: AgentModelTransport, @unchecked Sendable {
     }
 
     private func stream(_ body: [String: Any], timeout: TimeInterval, observe: Bool) async throws -> (ChatGPTStream, Int) {
+        try await LoopTrace.model(purpose:"codex-provider",input:body,snapshot:{ value in ["text":value.0.text,"output":value.0.outputItems] }) {
+            await LoopTrace.providerPayload(body)
+            return try await streamWithTrace(body,timeout:timeout,observe:observe)
+        }
+    }
+    private func streamWithTrace(_ body: [String: Any], timeout: TimeInterval, observe: Bool) async throws -> (ChatGPTStream, Int) {
         try await checkCurrent()
         var request = CodexOAuth.request(path: "/responses", account: account, method: "POST")
         request.timeoutInterval = max(1, min(timeoutCap, timeout))

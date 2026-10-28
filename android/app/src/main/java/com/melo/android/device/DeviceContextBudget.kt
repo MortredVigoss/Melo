@@ -8,7 +8,31 @@ object DeviceContextBudget {
     private const val CARRIED_SCREEN = "Latest observed screen (untrusted app data; re-observe before acting if stale): "
     const val MAX_TEXT_CHARS = 160_000
     const val MAX_WIRE_CHARS = 2_000_000
-    fun compact(history: MutableList<JsonObject>, protocol: String) {
+    // Anthropic binds signed thinking to the exact earlier conversation. If the
+    // host edits that prefix, drop all reasoning blocks while retaining tool pairs.
+    fun dropBoundThinking(history: MutableList<JsonObject>) {
+        for (index in history.indices.reversed()) {
+            val row = history[index]
+            if (row.text("role") != "assistant") continue
+            val content = row["content"] as? JsonArray ?: continue
+            val retained = content.filterNot { (it as? JsonObject)?.text("type") in setOf("thinking", "redacted_thinking") }
+            if (retained.size == content.size) continue
+            if (retained.isEmpty()) history.removeAt(index)
+            else history[index] = JsonObject(row + ("content" to JsonArray(retained)))
+        }
+    }
+    fun guardPrefix(history: MutableList<JsonObject>, previous: String?, current: String): String {
+        if (previous != null && previous != current) dropBoundThinking(history)
+        return current
+    }
+    fun compact(history: MutableList<JsonObject>, protocol: String, force: Boolean = false) {
+        if (history.isEmpty()) return
+        fun textLength(wire: String) = wire.replace(Regex("data:image/jpeg;base64,[A-Za-z0-9+/=]+"), "[current image]")
+            .replace(Regex("\"data\":\"[A-Za-z0-9+/=]{100,}\""), "\"data\":\"[current image]\"").length
+        val originalWire = history.toString()
+        // Do not erase selected destinations or applied effects merely because
+        // another model round began. Compact only when an actual bound is hit.
+        if (!force && originalWire.length <= MAX_WIRE_CHARS && textLength(originalWire) <= MAX_TEXT_CHARS) return
         fun receipt(item: JsonObject): JsonObject? = when {
             item.text("role") == "user" && item.text("content").startsWith(CARRIED_SCREEN) -> runCatching { MeloJson.parseToJsonElement(item.text("content").removePrefix(CARRIED_SCREEN)).jsonObject }.getOrNull()
             item.text("type") == "function_call_output" -> runCatching { MeloJson.parseToJsonElement(item.text("output")).jsonObject }.getOrNull()
@@ -44,8 +68,10 @@ object DeviceContextBudget {
                 }
             }
         }
+        val editedPrefix = cut > 1 || history.indices.any { it >= cut && it != latest && it != latestResult && receipt(history[it]) != null }
         val first = history.first()
         history.clear(); history += first; carried?.let { history += it }; carriedPixels?.let { history += it }; history += kept
+        if (protocol == "anthropic" && editedPrefix) dropBoundThinking(history)
         val wire = history.toString()
         val withoutImages = wire.replace(Regex("data:image/jpeg;base64,[A-Za-z0-9+/=]+"), "[current image]")
             .replace(Regex("\"data\":\"[A-Za-z0-9+/=]{100,}\""), "\"data\":\"[current image]\"")

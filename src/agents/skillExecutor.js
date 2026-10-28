@@ -1,3 +1,4 @@
+import { withLoopTrace, traceEvent } from '../runtime/loopTrace.js';
 import { requestAllowsTool } from '../../shared/agent/retrieval/requestPolicy.js';
 import { createCoreTurn } from '../runtime/sharedAgentCore.js';
 import {resolveCapabilityContext} from '../services/agent/capabilityContext.js';
@@ -138,6 +139,9 @@ function buildSkillSystemPrompt(skill, allowedTools, options = {}) {
  * @returns {Promise<{ ok: boolean, output: string, error?: string, meta?: Object }>}
  */
 export async function runSkill(options) {
+  return withLoopTrace({ home: currentRequestContext()?.home, kind: 'skill', goal: options?.task }, () => runSkillWithTrace(options));
+}
+async function runSkillWithTrace(options) {
   if (!options.skill || options.skill.type!=='executable' || !options.config) return runSkillLoop(options);
   const parent=await resolveCapabilityContext(currentRequestContext());
   if (!parent) return missingCapabilityScope();
@@ -419,6 +423,7 @@ async function runSkillLoop({
     }
 
     loopMessages = functionSession.append(loopMessages, turn, allResults);
+    traceEvent('tool.feedback.appended', { callIds: allResults.map(pair => pair.call.id) }, loopMessages.slice(-Math.min(80, allResults.length * 2 + 1)));
     if (coreTurn.results(allResults) !== 'running') break;
   }
 

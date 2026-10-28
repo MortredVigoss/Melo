@@ -1,3 +1,4 @@
+import { traceModelCall, traceProviderPayload, traceEvent } from './runtime/loopTrace.js';
 import { connectionForModel, resolvedModelCapabilities, normalizeModelCapabilities } from '../shared/agent/modelCapabilities.js';
 import { multilingualImageAction } from '../shared/agent/imageLanguage.js';
 import { normalizeUsage } from './runtime/usage.js';
@@ -1166,7 +1167,7 @@ export async function createCodexResponsesReply({
       accountId: credential.accountId,
       sessionId,
     }),
-    body: JSON.stringify(payload),
+    body: await traceProviderPayload(payload),
     signal: withTimeoutSignal(timeoutMs, signal),
   });
 
@@ -1242,7 +1243,7 @@ export async function createApiResponsesReply({ baseUrl, apiKey, model, systemPr
   await ensureFetchKeepAliveConfigured();
   const response = await _fetchImpl(`${normalizeBaseUrl(baseUrl).replace(/\/responses$/, '')}/responses`, {
     method: 'POST', redirect: 'error', signal: withTimeoutSignal(DEFAULT_PROVIDER_REQUEST_TIMEOUT_MS, signal),
-    headers: { 'content-type': 'application/json', ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}) }, body: JSON.stringify(payload),
+    headers: { 'content-type': 'application/json', ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}) }, body: await traceProviderPayload(payload),
   });
   if (!response.ok) {
     const raw = await response.text();
@@ -1310,6 +1311,9 @@ export async function discoverAvailableModels({
 }
 
 export async function createOpenAICompatibleReply(options) {
+  return traceModelCall(options, createOpenAICompatibleReplyInternal);
+}
+async function createOpenAICompatibleReplyInternal(options) {
   options = { ...options, modelCapabilities: { ...normalizeModelCapabilities(options.modelCapabilities), ...resolvedModelCapabilities(connectionForModel(options), options.model) } };
   if (options.modelCapabilities?.vision === false && messagesHaveInputImages(options.messages)) throw Object.assign(new Error('This model is configured without image input. Choose a vision model or update its capabilities.'), { code: 'MODEL_VISION_DISABLED' });
   const record = createCapabilityRecorder({ config: options });
@@ -1329,6 +1333,7 @@ export async function createOpenAICompatibleReply(options) {
       transport: metadata.transport || (options.authMode === 'codex' ? 'codex-responses' : 'chat-completions'),
       simulated: Boolean(requestEnvironment().MELO_MOCK_RESPONSE),
     };
+    traceEvent('model.provider.receipt', { source: 'provider-adapter', usageOrigin: receipt.usage ? 'provider' : 'unknown' }, receipt);
     options.onProviderResponse?.(receipt);
     if (options.providerProfile !== 'fast') {
       const hasToolCalls = reply?.responseItems?.some(item => item.type === 'function_call')
@@ -1459,7 +1464,7 @@ async function requestOpenAICompatibleReply({
       'content-type': 'application/json',
       ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
     },
-    body: JSON.stringify(payload),
+    body: await traceProviderPayload(payload),
     signal: withTimeoutSignal(DEFAULT_PROVIDER_REQUEST_TIMEOUT_MS, signal),
   });
 

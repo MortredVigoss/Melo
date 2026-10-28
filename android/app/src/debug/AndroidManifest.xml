@@ -3,6 +3,7 @@
     <application android:networkSecurityConfig="@xml/debug_network_security">
         <activity android:name=".DeviceFixtureActivity" android:exported="false" />
         <activity android:name=".DynamicAdFixtureActivity" android:exported="false" />
+        <activity android:name=".NavigationFixtureActivity" android:exported="false" />
         <service android:name=".AgentCoreProbeService" android:exported="false" />
     </application>
 </manifest>

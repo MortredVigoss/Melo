@@ -6,6 +6,7 @@ const COMPUTE = new Set(['calculator', 'translate', 'melo_escalate']);
 const WRITE = new Set(['file_write', 'file_edit', 'file_delete', 'file_move', 'file_mkdir', 'xlsx', 'calendar_create_event', 'reminders_create', 'reminders_complete', 'phone_use', 'phone_workflow']);
 
 export function toolEffect(name, args = {}, declaration = {}) {
+  if (name === 'phone_action') return ['observe', 'list_apps', 'wait', 'finish', 'checkpoint'].includes(args.action) ? 'read' : 'write';
   if (['read', 'compute', 'write'].includes(declaration.effect)) return declaration.effect;
   if (organizerEffect(name)) return organizerEffect(name);
   if (READ.has(name)) return 'read';

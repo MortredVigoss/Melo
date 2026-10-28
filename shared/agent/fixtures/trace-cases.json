@@ -1,0 +1,466 @@
+{
+  "version": 1,
+  "kind": "controlled-trace-fixtures",
+  "qualityClaim": "capture-and-contract-only-not-model-quality",
+  "cases": [
+    {
+      "id": "calendar-venue-weather",
+      "request": "帮我看看日历中那场演唱会当天的天气",
+      "tools": [
+        "calendar_list_events",
+        "web_search"
+      ],
+      "frames": [
+        {
+          "calls": [
+            {
+              "name": "calendar_list_events",
+              "arguments": {},
+              "receipt": {
+                "ok": true,
+                "output": "BIGBANG 2026-10-31; venue missing"
+              }
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "name": "web_search",
+              "arguments": {
+                "query": "BIGBANG 2026-10-31 venue"
+              },
+              "receipt": {
+                "ok": true,
+                "output": "fixture receipt"
+              }
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "name": "web_search",
+              "arguments": {
+                "query": "Sydney Olympic Park 2026-10-31 weather"
+              },
+              "receipt": {
+                "ok": true,
+                "output": "fixture receipt"
+              }
+            }
+          ]
+        },
+        {
+          "text": "Fixture answer with weather"
+        }
+      ],
+      "expected": {
+        "minModelRequests": 4,
+        "requiredTools": [
+          "calendar_list_events",
+          "web_search"
+        ]
+      }
+    },
+    {
+      "id": "brunch-research-navigation",
+      "request": "找Surry Hills评分高的brunch然后开车导航",
+      "tools": [
+        "web_search",
+        "fetch_url",
+        "phone_workflow"
+      ],
+      "dependencies": {
+        "phone_workflow": [
+          "web_search"
+        ]
+      },
+      "frames": [
+        {
+          "calls": [
+            {
+              "name": "web_search",
+              "arguments": {
+                "query": "Surry Hills brunch ratings"
+              },
+              "receipt": {
+                "ok": true,
+                "output": "fixture receipt"
+              }
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "name": "fetch_url",
+              "arguments": {
+                "url": "https://example.org/brunch"
+              },
+              "receipt": {
+                "ok": true,
+                "output": "fixture receipt"
+              }
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "name": "phone_workflow",
+              "arguments": {
+                "workflow_id": "fixture-map",
+                "revision": 1,
+                "parameters": {
+                  "destination": "fixture cafe",
+                  "mode": "driving"
+                }
+              },
+              "receipt": {
+                "ok": true,
+                "output": "fixture receipt"
+              }
+            }
+          ]
+        },
+        {
+          "text": "Fixture navigation receipt"
+        }
+      ],
+      "expected": {
+        "requiredTools": [
+          "web_search",
+          "fetch_url",
+          "phone_workflow"
+        ]
+      }
+    },
+    {
+      "id": "followup-tool-catalog",
+      "request": "再来一次",
+      "tools": [
+        "phone_use",
+        "web_search",
+        "fetch_url"
+      ],
+      "frames": [
+        {
+          "calls": [
+            {
+              "name": "phone_use",
+              "arguments": {
+                "goal": "Open exact requested app",
+                "purpose": "action"
+              },
+              "receipt": {
+                "ok": true,
+                "output": "fixture receipt"
+              }
+            }
+          ]
+        },
+        {
+          "text": "Fixture subgoal only"
+        }
+      ],
+      "expected": {
+        "requiredTools": [
+          "phone_use"
+        ],
+        "requiredOfferedTools": [
+          "phone_use",
+          "web_search",
+          "fetch_url"
+        ]
+      }
+    },
+    {
+      "id": "tree-before-image",
+      "request": "在测试应用中点击搜索",
+      "tools": [
+        "android_device"
+      ],
+      "frames": [
+        {
+          "calls": [
+            {
+              "name": "android_device",
+              "arguments": {
+                "action": "observe"
+              },
+              "receipt": {
+                "ok": true,
+                "output": "fixture receipt",
+                "screenshotCaptured": false
+              }
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "name": "android_device",
+              "arguments": {
+                "action": "tap",
+                "node_id": "fresh-node",
+                "screen_id": "fresh-screen"
+              },
+              "receipt": {
+                "ok": true,
+                "output": "fixture receipt",
+                "screenshotCaptured": false
+              }
+            }
+          ]
+        },
+        {
+          "text": "Fixture search page"
+        }
+      ],
+      "expected": {
+        "maxScreenshots": 0,
+        "requiredTools": [
+          "android_device"
+        ]
+      }
+    },
+    {
+      "id": "animated-ad-recovery",
+      "request": "打开音乐应用，关闭广告后搜索",
+      "tools": [
+        "android_device"
+      ],
+      "frames": [
+        {
+          "calls": [
+            {
+              "name": "android_device",
+              "arguments": {
+                "action": "open_app",
+                "package_name": "fixture.music"
+              },
+              "receipt": {
+                "ok": true,
+                "output": "fixture receipt"
+              }
+            }
+          ],
+          "cache": {
+            "type": "cache.publish",
+            "data": {
+              "kind": "action",
+              "verification": "foreground-package"
+            }
+          }
+        },
+        {
+          "calls": [
+            {
+              "name": "android_device",
+              "arguments": {
+                "action": "tap",
+                "x": 10,
+                "y": 20
+              },
+              "receipt": {
+                "ok": false,
+                "output": "fixture receipt",
+                "code": "stale_screen"
+              }
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "name": "android_device",
+              "arguments": {
+                "action": "observe"
+              },
+              "receipt": {
+                "ok": true,
+                "output": "fixture receipt"
+              }
+            }
+          ]
+        },
+        {
+          "text": "Fixture blocked; no blind repeat"
+        }
+      ],
+      "expected": {
+        "requiredEvents": [
+          "cache.publish"
+        ],
+        "maxToolDispatches": 3
+      }
+    },
+    {
+      "id": "partial-success-cache-reuse",
+      "request": "打开音乐应用后搜索；下次复用已打开动作",
+      "tools": [
+        "android_device",
+        "phone_workflow"
+      ],
+      "frames": [
+        {
+          "calls": [
+            {
+              "name": "android_device",
+              "arguments": {
+                "action": "open_app",
+                "package_name": "fixture.music"
+              },
+              "receipt": {
+                "ok": true,
+                "output": "fixture receipt"
+              }
+            }
+          ],
+          "cache": {
+            "type": "cache.publish",
+            "data": {
+              "kind": "action",
+              "scriptId": "fixture-open",
+              "revision": 1
+            }
+          }
+        },
+        {
+          "calls": [
+            {
+              "name": "android_device",
+              "arguments": {
+                "action": "type_text",
+                "node_id": "missing"
+              },
+              "receipt": {
+                "ok": false,
+                "output": "fixture receipt",
+                "code": "target_not_found"
+              }
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "name": "phone_workflow",
+              "arguments": {
+                "workflow_id": "fixture-open",
+                "revision": 1,
+                "parameters": {}
+              },
+              "receipt": {
+                "ok": true,
+                "output": "fixture receipt"
+              }
+            }
+          ],
+          "cache": {
+            "type": "cache.replay",
+            "data": {
+              "scriptId": "fixture-open",
+              "deviceModelRequests": 0,
+              "verifiedSubgoal": "open app"
+            }
+          }
+        },
+        {
+          "text": "Search remains unverified"
+        }
+      ],
+      "expected": {
+        "requiredEvents": [
+          "cache.publish",
+          "cache.replay"
+        ],
+        "requiredTools": [
+          "phone_workflow"
+        ]
+      }
+    },
+    {
+      "id": "fold-environment-mismatch",
+      "request": "折叠后执行之前的搜索流程",
+      "tools": [
+        "android_device"
+      ],
+      "frames": [
+        {
+          "cache": {
+            "type": "cache.lookup",
+            "data": {
+              "incompatible": 1,
+              "reason": "layout_changed",
+              "saved": "inner",
+              "current": "outer"
+            }
+          },
+          "calls": [
+            {
+              "name": "android_device",
+              "arguments": {
+                "action": "observe"
+              },
+              "receipt": {
+                "ok": true,
+                "output": "fixture receipt"
+              }
+            }
+          ]
+        },
+        {
+          "text": "Fixture requests fresh targets; no old-coordinate replay"
+        }
+      ],
+      "expected": {
+        "requiredEvents": [
+          "cache.lookup"
+        ],
+        "maxToolDispatches": 1
+      }
+    },
+    {
+      "id": "cancel-unknown-effect",
+      "request": "在执行中取消任务",
+      "tools": [
+        "android_device"
+      ],
+      "frames": [
+        {
+          "calls": [
+            {
+              "name": "android_device",
+              "arguments": {
+                "action": "tap",
+                "node_id": "fresh",
+                "screen_id": "current"
+              },
+              "receipt": {
+                "ok": false,
+                "output": "fixture receipt",
+                "code": "TIMEOUT",
+                "effectState": "unknown"
+              }
+            }
+          ]
+        },
+        {
+          "cancel": true
+        }
+      ],
+      "expected": {
+        "requiredEvents": [
+          "model.request.started",
+          "tool.result"
+        ],
+        "requiredEffectStates": [
+          "unknown"
+        ],
+        "maxToolDispatches": 1
+      }
+    }
+  ]
+}

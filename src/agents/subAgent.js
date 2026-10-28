@@ -1,3 +1,4 @@
+import { withLoopTrace, traceEvent } from '../runtime/loopTrace.js';
 import { AGENT_LOOP_CONTRACT } from '../runtime/agentLoopContract.js';
 import { requestAllowsTool } from '../../shared/agent/retrieval/requestPolicy.js';
 import { createCoreTurn } from '../runtime/sharedAgentCore.js';
@@ -95,6 +96,9 @@ function cleanReplyForParent(rawReply) {
  * @returns {Promise<{ ok: boolean, output: string, meta?: Object }>}
  */
 export async function runSubAgent(options) {
+  return withLoopTrace({ home: currentRequestContext()?.home, kind: 'subagent', goal: options?.task }, () => runSubAgentWithTrace(options));
+}
+async function runSubAgentWithTrace(options) {
   if (!options.config || !options.task?.trim() || (options.depth || 0) > (options.agentProfile ? options.maxDepth ?? 1 : SUB_AGENT_MAX_DEPTH-1)) return runSubAgentLoop(options);
   const parent=await resolveCapabilityContext(currentRequestContext());
   if (!parent) return missingCapabilityScope();
@@ -377,6 +381,7 @@ async function runSubAgentLoop({
     // even after a prose reply, so the parent can see the attempt.
     deniedTools += allResults.filter(r=>r.result.ok === false && ['TOOL_NOT_WHITELISTED','CAPABILITY_DENIED','PERMISSION_DENIED','DELEGATION_DENIED'].includes(r.result.error)).length;
     loopMessages = functionSession.append(loopMessages, turn, allResults);
+    traceEvent('tool.feedback.appended', { callIds: allResults.map(pair => pair.call.id) }, loopMessages.slice(-Math.min(80, allResults.length * 2 + 1)));
     if (coreTurn.results(allResults) !== 'running') break;
   }
 

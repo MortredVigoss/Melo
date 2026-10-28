@@ -76,7 +76,7 @@ class SharedSearchFlowTest {
             assertTrue(run.partial.contains("营业状态未知")); assertTrue(run.sources.contains("https://fixture.invalid/menu"))
             assertEquals(deviceCount, app.repository.data.value.deviceRuns.size); assertFalse(app.deviceAgent.runtime.value.running)
             val first = model.takeRequest(2, TimeUnit.SECONDS)!!.body.readUtf8()
-            assertTrue(first.contains("web_search")); assertTrue(first.contains("phone_use")); assertFalse(first.contains("android_device"))
+            assertTrue(first.contains("web_search")); assertTrue(first.contains("phone_action")); assertFalse(first.contains("\"name\":\"phone_use\"")); assertFalse(first.contains("android_device"))
             val lookup = backend.takeRequest(2, TimeUnit.SECONDS)!!
             assertEquals("Bearer fixture-search-key", lookup.getHeader("Authorization")); assertEquals("Surry Hills fixture", MeloJson.parseToJsonElement(lookup.body.readUtf8()).jsonObject.text("query"))
             val follow = model.takeRequest(2, TimeUnit.SECONDS)!!.body.readUtf8()
@@ -189,7 +189,7 @@ class SharedSearchFlowTest {
             assertEquals("blocked", send(id, "搜索 Surry Hills 餐厅").status)
             model.takeRequest(2, TimeUnit.SECONDS)
             val follow = model.takeRequest(2, TimeUnit.SECONDS)!!.body.readUtf8()
-            assertTrue(follow.contains("SEARCH_HTTP_503")); assertTrue(follow.contains("phone_use"))
+            assertTrue(follow.contains("SEARCH_HTTP_503")); assertTrue(follow.contains("phone_action")); assertFalse(follow.contains("\"name\":\"phone_use\""))
             assertEquals(1, backend.requestCount); assertEquals(deviceCount, app.repository.data.value.deviceRuns.size)
         } }
     }

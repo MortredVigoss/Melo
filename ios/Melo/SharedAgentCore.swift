@@ -56,6 +56,7 @@ final class PhoneGoalState {
         var input = fields; input["action"] = action; input["state"] = state
         guard let next = SharedLoopPolicy.value("goal", input) as? [String: Any] else { throw SharedAgentCoreError.invalidReply }
         if action != "request" { state = next }
+        LoopTrace.emit(action == "review" ? "goal.check" : "goal.updated", ["action":action], payload:next)
         return next
     }
 }
@@ -155,18 +156,22 @@ final class PhoneCoreTurn {
     var active: Bool { state["status"] as? String == "running" }
     var reason: String { state["reason"] as? String ?? "LOOP_STOPPED" }
     init(tools: [String], rounds: Int, callsPerRound: Int) throws {
-        let turn: [String: Any] = ["runId": UUID().uuidString, "turnId": UUID().uuidString, "now": Self.clock(),
+        let turn: [String: Any] = ["runId": LoopTrace.current?.runID ?? UUID().uuidString, "turnId": UUID().uuidString, "now": Self.clock(),
             "allowedTools": tools, "hostToolSchemas": true, "limits": ["rounds": rounds, "callsPerRound": callsPerRound]]
-        guard let value = SharedLoopPolicy.value("start", ["turn": turn]) as? [String: Any] else { throw SharedAgentCoreError.unavailable }
-        state = value
+        guard let value = SharedLoopPolicy.value("tracedStart", ["turn": turn]) as? [String: Any] else { throw SharedAgentCoreError.unavailable }
+        guard let next = value["state"] as? [String: Any] else { throw SharedAgentCoreError.invalidReply }
+        state = next
+        LoopTrace.events(value["events"] as? [[String: Any]] ?? [])
     }
     @discardableResult func event(_ type: String, _ fields: [String: Any] = [:]) throws -> Bool {
         var event = fields; event["type"] = type; event["runId"] = state["runId"]; event["turnId"] = state["turnId"]
-        guard let value = SharedLoopPolicy.value("advance", ["state": state, "event": event, "now": Self.clock()]) as? [String: Any] else {
+        guard let value = SharedLoopPolicy.value("tracedAdvance", ["state": state, "event": event, "now": Self.clock()]) as? [String: Any] else {
             state["status"] = "blocked"; state["reason"] = "INVALID_LOOP_EVENT"
             throw SharedAgentCoreError.invalidReply
         }
-        state = value
+        guard let next = value["state"] as? [String: Any] else { throw SharedAgentCoreError.invalidReply }
+        state = next
+        LoopTrace.events(value["events"] as? [[String: Any]] ?? [])
         return active
     }
     func permits(_ id: String) -> Bool { active && (state["permitted"] as? [String] ?? []).contains(id) && (state["pending"] as? [String] ?? []).contains(id) }

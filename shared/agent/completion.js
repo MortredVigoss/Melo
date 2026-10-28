@@ -31,6 +31,8 @@ function relevant(source, goal) {
 }
 
 export function completionReceipt({ goal = '', kind = 'answer', reply = '', observations = [], terminalReason = '', verifiedActions = [], task } = {}) {
+  // The checked speech act outranks a lexical route hint in persisted records.
+  if (['answer', 'feedback', 'clarification'].includes(task?.turnKind)) kind = 'answer';
   const rows = Array.isArray(observations) ? observations.slice(0, AGENT_LOOP_CONTRACT.guardLimits.completionObservations) : [];
   const performed = rows.filter(row => row?.ok === true && row.executed === true);
   const base = { version: 1, kind, outcome: 'blocked', goalState: 'unverified', reason: '', evidenceIds: [], completedSteps: new Set(performed.map(row => String(row.id).split(':source:')[0])).size, ...(task ? { task } : {}) };
@@ -40,7 +42,10 @@ export function completionReceipt({ goal = '', kind = 'answer', reply = '', obse
   if (!String(reply).trim()) return { ...base, outcome: performed.length ? 'partial' : 'blocked', reason: 'NO_FINAL_ANSWER' };
   if (task?.decision && task.decision !== 'deliver') {
     const evidenceIds = [...new Set((task.requirements || []).flatMap(row => row.evidenceIds || []))];
-    const supported = task.decision === 'complete' && evidenceIds.length && evidenceIds.every(id => performed.some(row => row.id === id));
+    const conversational = ['answer', 'feedback', 'clarification'].includes(task.turnKind) && task.requirements?.length && task.requirements.every(row => row.status === 'met' && (row.evidenceIds?.length || ['response', 'context', 'constraint'].includes(row.kind)));
+    const external = row => !row.kind || ['external_fact', 'external_effect'].includes(row.kind);
+    const positive = task.requirements?.some(row => external(row) && row.evidenceIds?.length && row.evidenceIds.every(id => performed.some(observation => observation.id === id)));
+    const supported = task.decision === 'complete' && (positive || conversational) && (task.requirements || []).every(row => (row.evidenceIds || []).every(id => (external(row) ? performed : rows).some(observation => observation.id === id)));
     return { ...base, outcome: supported ? 'completed' : task.decision === 'needs_user' ? 'needs_user' : performed.length ? 'partial' : 'blocked', goalState: supported ? 'supported' : 'unverified', reason: supported ? 'GOAL_DELIVERY_SUPPORTED' : task.reason || 'GOAL_COVERAGE_MISSING', evidenceIds };
   }
   if (task?.decision === 'deliver' && kind === 'research' && !performed.length) return { ...base, outcome: 'completed', goalState: 'unverified', reason: 'ANSWERED_WITHOUT_SOURCES' };
@@ -71,7 +76,13 @@ export function completionReceipt({ goal = '', kind = 'answer', reply = '', obse
 // the final receipt and evidence IDs may be persisted.
 export function completionObservation({ id, name, ok, executed, output = '', data = {}, sources = [], arguments: args = {}, declaration = {} } = {}) {
   const effect = toolEffect(name, args, declaration);
-  const rows = [{ id: String(id || '').slice(0, 256), name, type: 'tool', effect, ok: ok === true, executed: executed === true, output: String(output || data.text || '').slice(0, 4000) }];
+  const effects = ['phone_action', 'phone_workflow'].includes(name) && Array.isArray(data.applied_effects) ? JSON.stringify(data.applied_effects).slice(0, 2400) : '';
+  const native = ['phone_action', 'phone_workflow', 'phone_use'].includes(name);
+  const receipt = native ? Object.fromEntries(['status', 'verification', 'run_id', 'screen_id', 'package_name', 'action', 'code', 'error'].filter(key => data[key] != null).map(key => [key, data[key]])) : null;
+  if (receipt && data.verification === 'visible_facts' && args.visible_text) receipt.checked_claim = { expected_package: args.expected_package, visible_text: args.visible_text };
+  if (receipt && Array.isArray(data.nodes)) receipt.observed_texts = [...new Set(data.nodes.flatMap(row => [row.text, row.description]).filter(value => typeof value === 'string' && value.trim()))].slice(0, 64).map(value => value.slice(0, 300));
+  const prefix = (receipt ? `Native receipt: ${JSON.stringify(receipt).slice(0, 6000)}\n` : '') + (effects ? `Cumulative native applied effects (not proof of the whole task): ${effects}\n` : '');
+  const rows = [{ id: String(id || '').slice(0, 256), name, type: 'tool', effect, ok: ok === true, executed: executed === true, output: prefix + String(output || data.text || '').slice(0, Math.max(0, (native ? 8000 : 4000) - prefix.length)) }];
   if (ok !== true || executed !== true) return rows;
   let page = data;
   if (name === 'open_url') {

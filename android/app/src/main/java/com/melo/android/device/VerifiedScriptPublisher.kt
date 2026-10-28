@@ -14,6 +14,8 @@ internal class VerifiedScriptPublisher(
     private var segment: ScriptRecorder? = null
     private var initialEnvironment: CacheEnvironment? = null
     private val published = mutableSetOf<String>()
+    private var latest: JsonObject? = null
+    private var entered: String? = null
     private suspend fun emit(script: DeviceScript) {
         val current = environment(script.packages()) ?: return
         if (current.layout != initialEnvironment?.layout || !current.supports(script.copy(environment = initialEnvironment))) return
@@ -29,6 +31,10 @@ internal class VerifiedScriptPublisher(
     }
     suspend fun record(arguments: JsonObject, result: DeviceToolResult) {
         val action = arguments.text("action")
+        val before = latest
+        if (result.ok && result.data.text("screen_id").isNotBlank()) latest = result.data
+        if (action in setOf("open_app", "back", "home")) entered = null
+        if (action == "type_text" && result.ok) entered = arguments.text("text")
         if (action == "open_app" && result.ok) {
             val pkg = result.data.text("target_package")
             // Native open_app already waits for and observes this exact foreground
@@ -45,6 +51,22 @@ internal class VerifiedScriptPublisher(
             return
         }
         segment?.record(arguments, result)
+        if (action == "submit_input" && result.ok && !entered.isNullOrBlank() && before?.text("package_name") == result.data.text("package_name")) {
+            val query = entered!!
+            // A populated editor proves input, not a completed search. Learn only
+            // when a different, noneditable result exposes the submitted query.
+            val fact = result.data["nodes"]?.jsonArray.orEmpty().map { it.jsonObject }.filter { it["editable"]?.jsonPrimitive?.booleanOrNull != true }
+                .flatMap { listOf(it.text("text"), it.text("description")) }.firstOrNull { it.isNotBlank() && it.length <= 300 && it.contains(query) }
+            if (fact != null && result.data.text("screen_id") != before?.text("screen_id")) {
+                val checkpoint = buildJsonObject {
+                    put("action", "checkpoint"); put("goal", "Search ${result.data.text("package_name")} for $query")
+                    put("expected_package", result.data.text("package_name")); put("visible_text", fact)
+                }
+                val verified = DeviceToolResult(JsonObject(result.data + ("verification" to JsonPrimitive("visible_facts"))))
+                segment?.record(checkpoint, verified)
+                segment?.compile(scope, runId, checkpoint.text("goal"))?.copy(cacheKind = "subflow")?.let { emit(it) }
+            }
+        }
         if (action == "checkpoint" && result.ok && result.data.text("verification") == "visible_facts") {
             segment?.compile(scope, runId, arguments.text("goal"))?.copy(cacheKind = "subflow")?.let { emit(it) }
         }

@@ -96,4 +96,4 @@ import kotlinx.serialization.json.*
     }
 }
 
-fun deviceRunMode(mode: String): String = when (mode) { "exact" -> "Cache Hit"; "similar" -> "Similar Hit"; "manual" -> "本机脚本"; "revalidate" -> "旧缓存校验"; else -> "Probe" }
+fun deviceRunMode(mode: String): String = when (mode) { "unified" -> "对话主循环"; "exact" -> "Cache Hit"; "similar" -> "Similar Hit"; "manual" -> "本机脚本"; "revalidate" -> "旧缓存校验"; else -> "Probe" }

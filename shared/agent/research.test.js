@@ -42,7 +42,7 @@ test('brunch recommendation plus navigation exposes research then an explicitly 
   const result = plan('推荐一下有什么好的 Surry Hill 的 brunch，然后给我导航到那里。你先不用管有没有开门，我主要是测试一下你的能力。');
   assert.equal(result.route, 'http-search');
   assert.deepEqual(result.tools, ['web_search', 'fetch_url', 'phone_use']);
-  assert.deepEqual(result.requiredTools, ['phone_use']);
+  assert.deepEqual(result.suggestedRequiredTools, ['phone_use']);
   assert.equal(result.research.depth, 'standard');
   assert.match(result.instructions, /before.*phone_use/is);
 });
@@ -94,7 +94,7 @@ test('navigation follow-up uses the selected place without repeating research', 
   const messages = [{ role: 'user', content: '推荐 Surry Hills brunch' }, { role: 'assistant', content: 'First: Fixture A. Second: Fixture B.' }];
   const result = plan('导航到第二家', { messages });
   assert.equal(result.route, 'phone');
-  assert.deepEqual(result.requiredTools, ['phone_use']);
+  assert.deepEqual(result.suggestedRequiredTools, ['phone_use']);
 });
 
 test('compound navigation requires an actual returned source, not just a successful empty search', () => {
@@ -110,6 +110,22 @@ test('explicit app research, denied phone use and context-only answers retain th
   assert.deepEqual(plan('推荐 Surry Hills brunch，不要操作手机').tools, ['web_search', 'fetch_url']);
   assert.deepEqual(plan('只根据已有对话推荐 brunch，不联网').tools, []);
   assert.equal(plan('打开设置', { capabilities: { executors: [], grants: [] } }).reason, 'PHONE_UNAVAILABLE');
+});
+
+test('a URL inside an explicitly requested phone browser workflow does not require a second fetch executor', () => {
+  for (const text of [
+    '使用 Chrome 浏览器打开 https://example.com，点击链接并停留在说明页。',
+    'Open https://example.com in Firefox on my phone and follow the documentation link.',
+    '在手机上打开 https://example.com，查看页面。',
+  ]) {
+    const result = plan(text);
+    assert.equal(result.route, 'phone', text);
+    assert.deepEqual(result.suggestedRequiredTools, ['phone_use'], text);
+    assert.ok(result.availableTools.includes('fetch_url'), text);
+  }
+  assert.deepEqual(plan('读取 https://example.com').suggestedRequiredTools, ['fetch_url']);
+  assert.deepEqual(plan('打开 https://example.com').suggestedRequiredTools, ['fetch_url']);
+  assert.deepEqual(plan('不要操作手机，读取 https://example.com').suggestedRequiredTools, ['fetch_url']);
 });
 
 test('tool availability survives an unknown-language lookup hint and obeys current user restrictions', () => {

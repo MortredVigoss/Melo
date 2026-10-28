@@ -27,7 +27,7 @@ class ScriptRecorder(private val goal: String, seedSteps: List<ScriptStep> = emp
     fun record(arguments: JsonObject, result: DeviceToolResult) {
         val action = arguments.text("action"); val before = screen
         if (!result.ok) {
-            if (action in setOf("tap", "type_text", "swipe", "back", "home") && result.data.text("code") !in setOf("stale_screen", "stale_target", "invalid_arguments", "user_declined")) unsupported = "动作失败后无法证明没有产生效果，未缓存这次探索。"
+            if (action in setOf("tap", "type_text", "submit_input", "swipe", "back", "home") && result.data.text("code") !in setOf("stale_screen", "stale_target", "invalid_arguments", "user_declined", "input_not_focused", "submission_unavailable")) unsupported = "动作失败后无法证明没有产生效果，未缓存这次探索。"
         } else if (unsupported.isBlank()) try {
             when (action) {
                 "open_app" -> {
@@ -35,7 +35,7 @@ class ScriptRecorder(private val goal: String, seedSteps: List<ScriptStep> = emp
                     require(pkg.isNotBlank()) { "无法确定启动目标 package。" }
                     if (steps.lastOrNull()?.let { it.action == "open_app" && it.packageName == pkg } != true) steps += ScriptStep("open_app", packageName = pkg)
                 }
-                "tap", "type_text" -> {
+                "tap", "type_text", "submit_input" -> {
                     require(before != null) { "动作之前没有可用 observation。" }
                     val node = select(before, arguments.text("node_id")) ?: error("纯坐标点击无法可靠转换为本机脚本。")
                     val target = stable(node, before)
@@ -67,29 +67,51 @@ class ScriptRecorder(private val goal: String, seedSteps: List<ScriptStep> = emp
                 "finish", "checkpoint" -> if ((action == "checkpoint" || arguments.text("outcome") == "achieved") && result.data.text("verification") == "visible_facts") {
                     val text = arguments.text("visible_text")
                     val parameter = values.entries.firstOrNull { it.value.isNotBlank() && it.value == text }?.key.orEmpty()
-                    completion = ScriptAssertion(arguments.text("expected_package").ifBlank { result.data.text("package_name") }, mask(result.data.text("window_title")), if (parameter.isBlank()) mask(text) else "", parameter)
+                    val visible = result.data["nodes"]?.jsonArray.orEmpty().flatMap { listOf(it.jsonObject.text("text"), it.jsonObject.text("description")) }.toSet()
+                    val required = values.values.filter { it.isNotBlank() && it in visible }.distinct().map(::mask)
+                    completion = ScriptAssertion(arguments.text("expected_package").ifBlank { result.data.text("package_name") }, mask(result.data.text("window_title")), if (parameter.isBlank()) mask(text) else "", parameter, required)
                 }
             }
         } catch (e: Exception) { unsupported = e.message ?: "本次探索包含无法重放的动作。" }
         // Bind semantic steps to the window geometry where they were verified.
-        if (result.ok && before != null && action in setOf("tap", "type_text", "swipe", "back") && unsupported.isBlank() && steps.isNotEmpty()) {
+        if (result.ok && before != null && action in setOf("tap", "type_text", "submit_input", "swipe", "back") && unsupported.isBlank() && steps.isNotEmpty()) {
             val last = steps.last()
             steps[steps.lastIndex] = last.copy(windowWidth = before["window_width"]?.jsonPrimitive?.intOrNull ?: 0,
                 windowHeight = before["window_height"]?.jsonPrimitive?.intOrNull ?: 0)
         }
         if (result.ok && result.data.text("screen_id").isNotBlank()) screen = result.data
     }
+    /** Native action/target/input vocabulary, never a cached research conclusion
+     * or a newly reworded child-agent goal. All captured inputs occur once. */
+    fun compileCanonical(scope: String, runId: String): DeviceScript? {
+        val inputs = values.values.filter(String::isNotBlank).distinct()
+        val targets = steps.mapNotNull { it.selector?.let { node -> node.text.ifBlank { node.description } }.takeUnless { it.isNullOrBlank() } }
+            .filter { target -> GoalTemplate.names(target).isEmpty() && inputs.none { target.contains(it) } }.distinct().take(12)
+        val goal = "Device workflow ${steps.map { it.packageName }.filter(String::isNotBlank).distinct().joinToString(",")}: " +
+            steps.map { it.action }.joinToString(" -> ") + "; targets=" + targets.joinToString(" | ") + "; inputs=" + inputs.joinToString(" | ")
+        return compile(scope, runId, goal)
+    }
     fun compile(scope: String, runId: String, recordedGoal: String = goal): DeviceScript? {
         if (unsupported.isNotBlank()) return null
         return try {
             val assertion = completion ?: error("没有通过验证的终态。")
-            val fields = steps.flatMap { listOf(it.windowTitle, it.selector?.text.orEmpty(), it.selector?.description.orEmpty()) } + listOf(assertion.windowTitle, assertion.visibleText)
+            val fields = steps.flatMap { listOf(it.windowTitle, it.selector?.text.orEmpty(), it.selector?.description.orEmpty()) } + assertion.requiredTexts + listOf(assertion.windowTitle, assertion.visibleText)
             val used = (steps.map { it.parameter } + assertion.parameter + fields.flatMap(GoalTemplate::names)).filter(String::isNotBlank).distinct()
             val activeValues = values.filterKeys { it in used }
             require(activeValues.values.filter(String::isNotBlank).all { value -> recordedGoal.windowed(value.length).count { it == value } <= 1 }) { "目标中的输入值重复，无法无歧义参数化；未缓存。" }
-            val template = GoalTemplate.normalize(GoalTemplate.parameterize(recordedGoal.trim(), activeValues))
-            DeviceScript(name = template.take(100), goalTemplate = template, steps = steps.toList(), completion = assertion,
-                parameters = used, scope = scope, sourceRunId = runId, verified = true, successes = 1).also(ScriptValidator::validate)
+            // A model-derived URL or spelling variant cannot be bound from the
+            // user's literal goal. Keep it fixed for exact reuse, not orphaned.
+            val fixed = activeValues.filterValues { it.isBlank() || !recordedGoal.contains(it) }
+            val bound = activeValues.filterKeys { it !in fixed }
+            fun freeze(text: String) = GoalTemplate.bindKnown(text, fixed)
+            val compiledSteps = steps.map { step -> step.copy(
+                windowTitle = freeze(step.windowTitle), selector = step.selector?.let { it.copy(text = freeze(it.text), description = freeze(it.description)) },
+                parameter = step.parameter.takeUnless { it in fixed }.orEmpty(), text = fixed[step.parameter] ?: freeze(step.text)) }
+            val compiledAssertion = assertion.copy(windowTitle = freeze(assertion.windowTitle),
+                visibleText = fixed[assertion.parameter] ?: freeze(assertion.visibleText), parameter = assertion.parameter.takeUnless { it in fixed }.orEmpty(), requiredTexts = assertion.requiredTexts.map(::freeze))
+            val template = GoalTemplate.normalize(GoalTemplate.parameterize(recordedGoal.trim(), bound))
+            DeviceScript(name = template.take(100), goalTemplate = template, steps = compiledSteps, completion = compiledAssertion,
+                parameters = used.filter { it in bound }, scope = scope, sourceRunId = runId, verified = true, successes = 1).also(ScriptValidator::validate)
         } catch (e: Exception) { unsupported = e.message ?: "脚本不完整，未缓存。"; null }
     }
 }

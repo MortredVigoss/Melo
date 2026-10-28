@@ -111,6 +111,7 @@ struct AgentLoopOutcome {
 
 /// Observers; all run on the main actor.
 struct AgentLoopHooks {
+    var traceRunID: String? = nil
     var routing: PhoneRoutingHost? = nil
     var onStatus: (@MainActor (String) -> Void)? = nil
     var onStage: (@MainActor (_ id: String, _ name: String, _ status: String, _ output: String) -> Void)? = nil
@@ -156,6 +157,9 @@ final class AgentLoop: @unchecked Sendable {
     // MARK: run
 
     func run() async throws -> AgentLoopOutcome {
+        try await LoopTrace.withRun(runID: hooks.traceRunID ?? UUID().uuidString, goal: latestUserMessage, outcome: { $0.completion?.outcome ?? "unknown" }) { try await runWithTrace() }
+    }
+    private func runWithTrace() async throws -> AgentLoopOutcome {
         if let limits = PhoneMemberLimits.current { maxIterations = limits.iterations }
         budget.arm()
         var outcome = try await invokeModel()
@@ -239,7 +243,9 @@ final class AgentLoop: @unchecked Sendable {
                 let request = AgentLoopRequest(iteration: iteration, transcript: transcript, timeout: budget.requestTimeout(cap: transport.timeoutCap), remainingTokens: PhoneMemberLimits.current.map { max(0, $0.tokens - spentTokens) }, goalReview: review, repairing: goal.repairing || hooks.routing?.session.escalated == true)
                 do {
                     let roundTransport = transport
-                    round = try await withDeadline { try await roundTransport.round(request) }
+                    round = try await LoopTrace.model(purpose: checkingGoal ? "goal-check" : "loop", input: ["iteration":iteration,"toolNames":Array(offered),"loadedToolInstructions":tools?.instructionsWithContract ?? ""], snapshot: { value in
+                        ["text":value.text,"calls":value.calls.map { ["id":$0.callID,"name":$0.name,"arguments":$0.arguments] },"inputTokens":value.inputTokens as Any? ?? NSNull(),"outputTokens":value.outputTokens as Any? ?? NSNull(),"usageOrigin":value.inputTokens == nil ? "unknown" : "provider"]
+                    }) { try await withDeadline { try await roundTransport.round(request) } }
                     break
                 } catch let error as RequestTooLarge where !checkingGoal {
                     // audit C-8 parity: condense older tool outputs once and retry; never on the first call.
@@ -294,7 +300,7 @@ final class AgentLoop: @unchecked Sendable {
             let calls = transport.offersTools && (tools != nil || hooks.routing != nil) ? round.calls : []
             if calls.isEmpty {
                 candidateRound = round
-                try goal.update("candidate", ["observations": completionObservations, "candidate": ["reply": round.text, "tools": Array(offered) + (nativeSearchAvailable ? ["native_web_search"] : []), "research": ChatGPTRequest.requiresSearch(latestUserMessage), "roundsLeft": maxIterations - iteration - 1]])
+                try goal.update("candidate", ["observations": completionObservations, "candidate": ["context": ["messages": goalHistory.suffix(8).map { ["role": $0.role, "content": $0.content] }, "capabilities": Array(offered)], "reply": round.text, "tools": Array(offered) + (nativeSearchAvailable ? ["native_web_search"] : []), "research": ChatGPTRequest.requiresSearch(latestUserMessage), "roundsLeft": maxIterations - iteration - 1]])
                 if goal.checking { try core.event("feedback"); iteration += 1; continue }
                 try core.event("complete")
                 if !core.completed { return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration + 1) }
@@ -304,7 +310,7 @@ final class AgentLoop: @unchecked Sendable {
             // The shared reducer validates the whole batch before any OS effect.
             try core.event("calls", ["calls": calls.map { call -> [String: Any] in
                 let args = OrderedJSON.arguments(call.arguments)
-                return ["id": call.callID, "name": call.name, "effect": PhoneCoreTurn.effect(call.name, arguments: call.arguments), "fingerprint": PhoneCoreTurn.fingerprint(call.name + args.canonicalJSON)]
+                return ["id": call.callID, "name": call.name, "arguments":(try? JSONSerialization.jsonObject(with:Data(call.arguments.utf8))) as Any? ?? [:], "effect": PhoneCoreTurn.effect(call.name, arguments: call.arguments), "fingerprint": PhoneCoreTurn.fingerprint(call.name + args.canonicalJSON)]
             }])
             if !core.active { return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration + 1) }
             var results: [AgentToolResult] = []
@@ -335,7 +341,12 @@ final class AgentLoop: @unchecked Sendable {
                     if let tools {
                         await hooks.onStatus?(tools.statusText(call))
                         do {
-                            let result = try await withDeadline { await tools.perform(call) }
+                            let result = try await LoopTrace.withSpan("tool:" + call.callID) {
+                                LoopTrace.emit("tool.dispatch.started",["callId":call.callID,"name":call.name,"effectState":"dispatched","dispatchLayer":"host-executor"])
+                                await LoopTrace.current?.root.flush()
+                                try Task.checkCancellation()
+                                return try await withDeadline { await tools.perform(call) }
+                            }
                             capability = result.capability
                             try PhoneExecutionScope.check(deadline: budget)
                             outcome = PhoneToolEnvelope.parse(result.output)
@@ -350,6 +361,7 @@ final class AgentLoop: @unchecked Sendable {
                     // A call the capability check refused never reached the tool.
                     executed = capability?.allowed != false
                 }
+                LoopTrace.emit("tool.result",["callId":call.callID,"name":call.name,"ok":outcome.ok,"effectState":!executed ? "not_started" : cancelled || outcome.code == "TIMEOUT" || outcome.code == "BUDGET_EXHAUSTED" ? "unknown" : outcome.ok ? "returned" : "error_returned"],payload:["output":outcome.output,"code":outcome.code as Any? ?? NSNull()])
                 var record = ExecutionToolCall(iteration: iteration, call: call, args: args, outcome: outcome, executed: executed, started: started, finished: Date())
                 record.capability = capability
                 records.append(record)
@@ -369,6 +381,7 @@ final class AgentLoop: @unchecked Sendable {
             }
             await hooks.onStatus?("正在思考…")
             transcript.append(.toolRound(round, results))
+            for result in results { LoopTrace.emit("tool.feedback.appended",["callId":result.call.callID],payload:["modelFacingOutput":result.modelOutput,"imagePresent":result.imageJPEG != nil]) }
             // A cancelled turn stops here: its records are already reported for the tool trace.
             try Task.checkCancellation()
             lastEvidence = evidence
@@ -430,7 +443,7 @@ final class AgentLoop: @unchecked Sendable {
         let result = try await PhoneUncertainty.verify(question: verification.question, reply: parsed.cleanReply, claim: parsed.uncertainClaim,
                                                        contextBlocks: verification.contextBlocks, toolEvidence: toolEvidence) { system, messages in
             budget.record(inputTokens: PhoneTokenEstimate.text(system + messages.map(\.content).joined()), providerCalls: 1)
-            return try await self.withDeadline { try await transport.complete(system: system, messages: messages, timeout: timeout) }
+            return try await LoopTrace.model(purpose:"finalize-verification",input:["system":system,"messages":messages.map { ["role":$0.role,"content":$0.content] }],snapshot:{ $0 }) { try await self.withDeadline { try await transport.complete(system: system, messages: messages, timeout: timeout) } }
         }
         outcome.text = PhoneUncertainty.apply(parsed.cleanReply, result)
         outcome.verification = result

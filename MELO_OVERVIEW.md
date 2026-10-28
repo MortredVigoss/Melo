@@ -1,6 +1,6 @@
 # Melo 总览：当前事实、功能索引与接手入口
 
-更新时间：2026-10-27（Australia/Sydney）。这是所有 Melo 工作线程共用的人工维护入口：顶部依次是当前事实、功能索引和最新交接；按日期的阶段过程（含日期、提交与当次验证数字）在 [总览历史交接](docs/handoffs/overview-history-20261019.md)。
+更新时间：2026-10-28（Australia/Sydney）。这是所有 Melo 工作线程共用的人工维护入口：顶部依次是当前事实、功能索引和最新交接；按日期的阶段过程（含日期、提交与当次验证数字）在 [总览历史交接](docs/handoffs/overview-history-20261019.md)。
 
 ## 1. 先看这里
 
@@ -13,7 +13,13 @@
 
 ## 2. 当前事实
 
-10-27 用户要求共享 Loop 的本地 Trace，为后续 Eval 积累真实样本，不限 Android。已核对公共状态机、Node 主循环/Subagent/Skill、iOS/Android Host 和既有 Fixture Eval；[设计稿](docs/specs/2026-10-27-loop-local-traces-design.md)待审阅，生产代码尚未改动。
+10-28 已落实共享任务/证据契约与生产Android单决策Loop：phone_action/phone_workflow回到同一Chat Loop，原生Session无Model；Routing仅建议、明确Workflow依赖保留。修复反馈误派任务、完成证据截断/误分类、每轮丢历史、跨页已生效状态丢失、动作后观察失败与残留输入Cache；成功子流程独立发布并参数重放。0.10.7（31）：Core240/JVM190/Native50通过，最终APK再跑生产Chat6项通过；真实Bedrock五个样本独立UI校验，导航27.137→19.563秒，浏览器59.661→28.295秒/12→3请求，换词30.084秒命中同Cache。run-PyqRFL JS4636过/2缺私有素材失败/15跳过；Lint/Debug/Release、独立Settings浏览器、SceneBridge4通过。Swift/JSC待macOS、Fold6 OneUI待实机；不能称全仓GREEN。APK已导出Windows artifacts，Trace仅本地、未操作手机、未推送。[实现与完整验收边界](docs/android-unified-loop-20261028.md)。
+
+10-28 用户要求手机拿走后完整分析最近会话，避免逐句补丁。已只读保存两份一致快照，完整读取最新4会话/34消息/18主执行/9设备执行；其中15次主执行确属0.10.6。确认共性问题：Android餐厅Skill与共享Web指导在实际请求中冲突；反馈/澄清被requiredTools和工具证据规则误判，108.91秒纯反馈出现6次模型请求；子循环每轮压缩导致已选目的地在Start后的下一轮丢失，随后继续操作并尝试关闭导航（被freshness拦住）；导航仅学到open_app、0次checkpoint，另有搜索Cache遗漏原输入前置条件；操作/观察错误状态混合。3个共用层故障已无模型/无手机本地复现。[审计、分阶段改进与验收](docs/android-session-harness-audit-20261028.md)已记录；该审计阶段仅改文档与本地诊断、未改运行时、未请求新模型、未推送；其后的实现与验证见上一条。原始私人Trace仅本地，不能沿用浏览器验收声称真实Maps导航已修。
+
+10-27/28 用户要求改用 Emulator 自主验证真实任务、重复耗时及 Cache。0.10.6（30）空白页+冷进程基线下，Google搜索27.551→9.071秒（Model6→0）、网页跳转34.518→10.112秒（9→0）；ChatEngine真实注册入口49.209→26.255秒，自动phone_use→phone_workflow，同一Cache、子Model7→0（UI主请求2次，不含独立Completion Checker）。已修共享Core的URL强制fetch误判、串行工具请求、Focus、孤立参数和Manifest签名前缀；IME Search/Send、Hint/Label已验证，表单搜索37.773→10.392秒、实际请求9→0、独立终态校验通过。JVM182、Native19+4+2及Lint/Debug/Release过；run-feZKBk JS4625过/2缺私有素材失败/15跳过，未称全仓GREEN。换Google关键词固定结果标题失配仍有；自建QEMU内存问题已加仅针对其进程的监控，失败日志保留。[专项证据与限制](docs/android-browser-cache-evaluation-20261027.md)。用户随后明确要求安装手机：Fold6已备份覆盖0.10.6、启动及Accessibility绑定核对，保留旧连接，未跑手机任务；Trace保留策略/隔离与跨端仍WIP，仅本地，不推送。
+
+10-27 共享 Loop 本地 Trace 设计已获用户认可，Core / Node / iOS / Android 录制实现为 WIP；用户要求 Trace 留在本地、不自动发送。当前 0.10.4（28）试用 APK 已覆盖安装 Fold6 并得到启动成功回执，保留现有数据；JVM170、Trace/HTTP12、Emulator Trace2通过，完整同范围快速档已结束（run-85yqsn，仅两项缺私有素材），不能称 Trace 已完成验收。继续本地隔离、保留策略及跨端验证；[设计](docs/specs/2026-10-27-loop-local-traces-design.md)、[试装回执](docs/android-local-trace-trial-install-20261027.md)。
 
 10-27 0.10.3（27）按用户澄清改为独立成功动作即时持久化：原生 open_app 验证后立刻发布 action；checkpoint 验证后发布子流程，整项任务失败也保留。Chat 通过共享 Core 的 phone_workflow / 当前 Skill Manifest 原生重放，编辑/删除仍由本机缓存库管理。Core222/JVM170/Emulator69通过，Android构建与R8通过；快速档仅两项缺私有桌宠素材，不能称全仓 GREEN。已导出0.10.3 APK，Fold6未连接、未安装；不能用已保存子目标替代整项任务成功；[专项回执](docs/android-verified-action-cache-20261027.md)。
 

@@ -12,5 +12,11 @@ class MeloApplication : Application() {
     val engine by lazy { ChatEngine(this, repository) }
     val deviceAgent by lazy { DeviceAgent(this, repository) }
     val petPreferences by lazy { PetPreferences(this) }
-    override fun onCreate() { super.onCreate(); android.webkit.WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG); engine.initialize(); organizer.start() }
+    override fun onCreate() {
+        super.onCreate()
+        // Do not eagerly load the WebView provider before native startup.
+        // WebView 113+ derives debugging from the app's debuggable flag.
+        engine.initialize()
+        organizer.start()
+    }
 }

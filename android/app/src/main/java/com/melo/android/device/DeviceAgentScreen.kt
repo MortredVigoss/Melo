@@ -58,7 +58,7 @@ import com.melo.android.ui.*
             ElevatedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(run.goal, style = MaterialTheme.typography.titleMedium)
                 Text("${deviceStatus(run.status)} · ${run.connectionName} · ${run.steps.size} 步", color = MeloMuted)
-                Text(deviceRunMode(run.executionMode) + (run.modelRequests?.let { " · 模型请求 $it 次" } ?: ""), color = MeloMuted)
+                Text(deviceRunMode(run.executionMode) + (if (run.executionMode == "unified") " · 模型调用见对话执行记录" else run.modelRequests?.let { " · 模型请求 $it 次" }.orEmpty()), color = MeloMuted)
                 if (run.cacheNote.isNotBlank()) Text(run.cacheNote, style = MaterialTheme.typography.bodySmall)
                 if (run.learnedScriptIds.isNotEmpty()) Text("已保存 ${run.learnedScriptIds.size} 个已验证操作 / 子流程；与整项任务结果分开记录。", style = MaterialTheme.typography.bodySmall)
                 Text("缓存检查 ${run.cacheLookupMs} ms · 重放 ${run.cacheReplayMs} ms · 探索 ${run.cacheFallbackMs} ms · 不兼容 ${run.cacheIncompatible}", style = MaterialTheme.typography.bodySmall)
@@ -83,7 +83,7 @@ fun deviceStatus(status: String) = when (status) {
             Text("手机操作 · ${deviceStatus(run.status)}", color = MeloGold, style = MaterialTheme.typography.titleSmall)
             Text(run.goal)
             Text("${run.connectionName} · ${run.steps.size} 步 · 仅本机记录", color = MeloMuted, style = MaterialTheme.typography.bodySmall)
-            Text(deviceRunMode(run.executionMode) + (run.modelRequests?.let { " · 模型请求 $it 次" } ?: "") + run.finishedAt?.let { end ->
+            Text(deviceRunMode(run.executionMode) + (if (run.executionMode == "unified") " · 模型调用见对话执行记录" else run.modelRequests?.let { " · 模型请求 $it 次" }.orEmpty()) + run.finishedAt?.let { end ->
                 runCatching { " · ${java.time.Duration.between(java.time.Instant.parse(run.startedAt), java.time.Instant.parse(end)).toMillis().coerceAtLeast(0) / 1000.0}s" }.getOrDefault("")
             }.orEmpty(), color = MeloMuted, style = MaterialTheme.typography.bodySmall)
             if (run.cacheNote.isNotBlank()) Text(run.cacheNote, style = MaterialTheme.typography.bodySmall)

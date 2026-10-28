@@ -1,3 +1,4 @@
+import { traceToolCall, traceToolDispatch } from '../runtime/loopTrace.js';
 import { requestAllowsTool } from '../../shared/agent/retrieval/requestPolicy.js';
 import {workspaceForTool,ownedWorkspaceSafety} from '../services/workspace/toolWorkspace.js';
 import {trackWorkspaceWork} from '../agents/workspaceScheduling.js';
@@ -48,6 +49,9 @@ const DEFAULT_TOOL_TIMEOUT_MS = AGENT_LOOP_CONTRACT.executionLimits.toolTimeoutM
  * @returns {Promise<import('./tool.js').ToolResult>}
  */
 export async function executeTool(tool, args, options = {}) {
+  return traceToolCall(tool, args, options, () => executeToolWithTraceContext(tool, args, options));
+}
+async function executeToolWithTraceContext(tool, args, options = {}) {
   // Ambient authority cannot be replaced by an options bag. Options may only
   // narrow it; the scoped implementation is private so callers cannot skip it.
   const ambient=currentRequestContext();
@@ -237,9 +241,11 @@ async function runObservedTool(tool, args, options = {}) {
 
   try {
     const rawResult = await Promise.race([
-      trackWorkspaceWork(Promise.resolve().then(() => {
+      trackWorkspaceWork(Promise.resolve().then(async () => {
         if (controller.signal.aborted) throw cancelError;
         if (!tool.observesOwnLifecycle) options.observe?.('running');
+        await traceToolDispatch(tool.id);
+        if (controller.signal.aborted) throw cancelError;
         return tool.run(args, context);
       })),
       cancelled,

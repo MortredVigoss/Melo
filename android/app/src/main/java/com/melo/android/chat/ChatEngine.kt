@@ -96,13 +96,21 @@ class ChatEngine(private val context: Context, val repository: Repository) {
                                 }
                                 receipt
                             },
+                            validateOwner = {
+                                check(repository.data.value.chats.any { it.id == chatId } && runtime.value.turns[chatId]?.runId == run.id) { "所属对话已删除或任务已停止。" }
+                            },
+                            invokeDevice = { args ->
+                                (context.applicationContext as com.melo.android.MeloApplication).deviceAgent.action(args,
+                                    ChatDeviceContext(chat, executionConnection, executionKey, instructions, run.id),
+                                    turns.getValue(chatId))
+                            },
                             workflowCatalog = {
                                 PhoneWorkflowHost(context, repository, (context.applicationContext as com.melo.android.MeloApplication).deviceAgent,
                                     ChatDeviceContext(chat, executionConnection, executionKey, instructions, run.id)).catalog()
                             },
                             invokeWorkflow = { args ->
                                 PhoneWorkflowHost(context, repository, (context.applicationContext as com.melo.android.MeloApplication).deviceAgent,
-                                    ChatDeviceContext(chat, executionConnection, executionKey, instructions, run.id)).invoke(args)
+                                    ChatDeviceContext(chat, executionConnection, executionKey, instructions, run.id), owner = turns.getValue(chatId)).invoke(args)
                             },
                             onPhase = { phase -> updateTurn(chatId) { it.copy(phase = phase) } },
                             onDelta = { partial -> updateTurn(chatId) { it.copy(partial = partial) } },
@@ -135,6 +143,7 @@ class ChatEngine(private val context: Context, val repository: Repository) {
                     mutable.update { it.copy(error = if (persistence != null) "本次请求状态无法写入本机存储；已保存的提问仍保留，请检查剩余空间后重启。" else if (cancelled) null else error.message ?: "请求失败，原记录已保留。") }
                 }
             } finally {
+                record?.let { (context.applicationContext as com.melo.android.MeloApplication).deviceAgent.closeActions(it.id, !currentCoroutineContext().isActive) }
                 checkpoint?.cancel()
                 turns.remove(chatId)
                 mutable.update { it.copy(turns = it.turns - chatId) }

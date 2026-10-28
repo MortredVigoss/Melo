@@ -22,8 +22,10 @@ import { repeatOperation } from './repeatGuard.js';
 import { completionResult, completionObservation, teamCompletion } from './completion.js';
 import { goalOperation } from './goal.js';
 import { toolEffect } from './toolEffects.js';
+import { PHONE_POLICY } from './phonePolicy.js';
 import { organizerCommand, ORGANIZER_TOOLS } from './organizer.js';
 import { workflowCatalog, prepareWorkflowCall } from './workflows.js';
+import { traceOperation, tracedStart, tracedAdvance } from './trace.js';
 import { contextCost, contextPlan, contextWirePlan, historyPage } from './context.js';
 
 export function evaluate(input) {
@@ -38,6 +40,9 @@ export function evaluate(input) {
       case 'intent': value = intentOperation(input); break;
       case 'organizerNames': value = ORGANIZER_TOOLS.map(tool => tool.name); break;
       case 'organizer': value = organizerCommand(input.command); break;
+      case 'trace': value = traceOperation(input); break;
+      case 'tracedStart': value = tracedStart(input.turn); break;
+      case 'tracedAdvance': value = tracedAdvance(input.state, input.event, input.now); break;
       case 'hello': value = { version: CORE_VERSION, runtime: 'melo-local-core', portable: true }; break;
       case 'contextCost': value = contextCost(input.text); break;
       case 'contextPlan': value = contextPlan(input.context); break;
@@ -55,6 +60,7 @@ export function evaluate(input) {
       case 'modelRouting': value = modelRoutingOperation(input); break;
       case 'goal': value = goalOperation(input); break;
       case 'toolEffect': value = toolEffect(input.name, input.arguments, input.declaration); break;
+      case 'phonePolicy': value = PHONE_POLICY; break;
       case 'completionObservation': value = completionObservation(input.observation); break;
       case 'plan': value = planRequest(input.request); break;
       case 'actionEvidence': value = actionEvidence(input.plan, input.urls); break;

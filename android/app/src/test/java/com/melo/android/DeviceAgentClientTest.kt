@@ -14,6 +14,14 @@ class DeviceAgentClientTest {
         val error = runCatching { DeviceAgentClient.payload(Connection(model = "fixture"), DeviceAgentClient.initial("chat-completions", "goal"), "x".repeat(32_001)) }.exceptionOrNull()
         assertNotNull(error); assertTrue(error!!.message.orEmpty().contains("预算"))
     }
+    @Test fun anthropicDeviceTransportRequestsOneSerialToolButChatKeepsBatches() {
+        val c = Connection(model = "claude-opus", protocol = "anthropic")
+        val device = DeviceAgentClient.payload(c, DeviceAgentClient.initial(c.protocol, "goal"))
+        assertEquals("auto", device["tool_choice"]?.jsonObject?.text("type"))
+        assertEquals(true, device["tool_choice"]?.jsonObject?.get("disable_parallel_tool_use")?.jsonPrimitive?.booleanOrNull)
+        val chat = DeviceAgentClient.payload(c, emptyList(), chatTools = true)
+        assertNull(chat["tool_choice"])
+    }
     @Test fun appDiscoveryToolSupportsSearchingAndCompletePagination() {
         val properties = DeviceTools.schema["properties"]!!.jsonObject
         for (name in listOf("query", "browse", "offset", "limit")) assertTrue("Missing discovery argument $name", name in properties)

@@ -1,3 +1,4 @@
+import { traceProviderPayload } from '../runtime/loopTrace.js';
 // Messages API only: no Anthropic agent runtime, shell, or provider tool loop.
 import { renderToolMessage, withAnthropicToolCache } from '../tools/toolProtocol.js';
 
@@ -67,7 +68,7 @@ export async function requestAnthropicReply({ baseUrl, apiKey, model, systemProm
   const response = await fetchImpl(`${baseUrl.replace(/\/+$/, '')}/messages`, {
     method: 'POST', redirect: 'error', signal,
     headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify(anthropicRequestBody({ model, systemPrompt, messages, maxTokens, stream: typeof onDelta === 'function', promptCache, tools: withTools ? tools : null, toolChoice })),
+    body: await traceProviderPayload(anthropicRequestBody({ model, systemPrompt, messages, maxTokens, stream: typeof onDelta === 'function', promptCache, tools: withTools ? tools : null, toolChoice })),
   });
   if (!response.ok) {
     let detail = ''; try { detail = (await response.json()).error?.message || ''; } catch {}

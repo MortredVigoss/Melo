@@ -1,3 +1,4 @@
+import { withLoopTrace, currentLoopTrace, traceModelCall, traceEvent } from '../../runtime/loopTrace.js';
 import { captureBehavior } from '../../runtime/runtimeBehavior.js';
 import { getRequestNetworkPolicy } from '../../../shared/agent/retrieval/requestPolicy.js';
 import { resolvedRequestGoal } from '../../../shared/agent/search.js';
@@ -69,6 +70,8 @@ export async function runChatAgentExecutionGraph({
   if (!context.requestToolPolicy) context = Object.freeze({ ...context, requestToolPolicy: Object.freeze(getRequestNetworkPolicy(resolvedRequestGoal(latestUserMessage, chat.messages))) });
   if (currentRequestContext() !== context) return runWithRequestContext(context, () => runChatAgentExecutionGraph({ ...arguments[0], context }));
   home ||= context.home;
+  if (currentLoopTrace()?.context.logicalRunId !== String(context.requestId)) return withLoopTrace({ home, runId: String(context.requestId), goal: latestUserMessage,
+    metadata: { chatId: chat.id, agentId: agentId || null, projectId: chat.projectId || null } }, () => runChatAgentExecutionGraph({ ...arguments[0], context, home }));
   const env = captureBehavior(config, context.env);
   const firstToken = startStage('turn.prepare_to_first_token');
   const originalDelta = onDelta;
@@ -78,7 +81,8 @@ export async function runChatAgentExecutionGraph({
   };
   const modelResponses = [];
   const replyProvider = _dependencies.createReply || createOpenAICompatibleReply;
-  const observedReply = observeModelReplies(replyProvider, sseEmitter);
+  const observedProviderReply = observeModelReplies(replyProvider, sseEmitter);
+  const observedReply = options => traceModelCall(options, observedProviderReply);
   // Run budget (design audit C1): one deadline / input-token / tool-call pool
   // for the whole turn, shared by this loop, synchronous compaction (it uses
   // the same wrapper), the tool executor and member/skill sub-loops. The
@@ -102,6 +106,7 @@ export async function runChatAgentExecutionGraph({
       const inputTokens = receiptInputTokens(receipt)
         ?? estimateMessagesTokens(options.messages || []) + Math.ceil(estimateTextTokens(options.systemPrompt || '') * 4 / 3);
       recordUsage(budget, { providerCalls: 1, inputTokens });
+      traceEvent('budget.snapshot', {}, { used: budget?.used || null, limits: budget?.limits || null, deadlineAt: budget?.deadlineAt || null });
     };
     try {
       return await measureStage('model.request', () => observedReply({
@@ -111,7 +116,7 @@ export async function runChatAgentExecutionGraph({
           if (args[0]?.delta || args[0]?.text) endFirstToken();
           return options.onDelta(...args);
         } : options.onDelta,
-        onProviderResponse: receipt => { modelResponses.push({ ...receipt, ...(options.purpose ? { purpose: options.purpose } : {}), ...(options.routing ? { routing: options.routing } : {}) }); account(receipt); options.onProviderResponse?.(receipt); },
+        onProviderResponse: receipt => { traceEvent('model.provider.receipt', { usageOrigin: receipt?.usage ? 'provider' : 'unknown' }, receipt); modelResponses.push({ ...receipt, ...(options.purpose ? { purpose: options.purpose } : {}), ...(options.routing ? { routing: options.routing } : {}) }); account(receipt); options.onProviderResponse?.(receipt); },
       }));
     } finally {
       if (!accounted && options.purpose === 'routing-judge') modelResponses.push({ requestedModel: options.model, reportedModel: '', purpose: options.purpose, usage: null, failed: true });

@@ -1,3 +1,4 @@
+import { traceEvent } from '../../../runtime/loopTrace.js';
 import { runtimeMessage } from '../../../../shared/agent/runtimeMessages.js';
 import { turnStopReply } from '../../../../shared/agent/turn.js';
 import { connectionForModel, resolvedModelCapabilities } from '../../../../shared/agent/modelCapabilities.js';
@@ -133,6 +134,7 @@ export function createInvokeModelNode(turn) {
         { includeExamples: false, native: functionSession.native, protocol: functionSession.protocol })].filter(Boolean).join('\n\n') } : section);
     // Running message list for the tool loop — starts from the prepared window.
     let loopMessages = [...graphState.modelMessages];
+    traceEvent('context.snapshot', { source: 'prepared-sections' }, { sections: graphState.promptSections, memory: graphState.memoryUsage || [], skillTools: (graphState.skillTools || []).map(tool => ({ id: tool.id, description: tool.description })) });
     let finalReply = '';
     let terminalReason = '';
     // G-1d slice 2 (2026-05-12): accumulate per-tool-call structured
@@ -268,6 +270,7 @@ export function createInvokeModelNode(turn) {
       };
       try {
         rawReply = await createReply({
+        purpose: checkingGoal ? 'goal-check' : 'loop',
         ...(checkingGoal ? { maxTokens: 2048 } : functionSession.requestOptions()),
         authMode: vision?.authMode || config.authMode,
         apiProtocol: vision?.apiProtocol || config.apiProtocol,
@@ -347,7 +350,7 @@ export function createInvokeModelNode(turn) {
 
       // No calls is a candidate answer, not proof that the user's goal is done.
       if (!toolCalls.length) {
-        if (coreTurn.candidate(turn.text, { research: !!graphState.searchPlan.sharedPlan?.research, nativeSearch: graphState.searchPlan?.nativeWebSearchEnabled === true })) {
+        if (coreTurn.candidate(turn.text, { context: { messages: loopMessages.filter(row => typeof row.content === 'string').slice(-8) }, research: !!graphState.searchPlan.sharedPlan?.research, nativeSearch: graphState.searchPlan?.nativeWebSearchEnabled === true })) {
           coreTurn.update('feedback');
           continue;
         }
@@ -480,6 +483,7 @@ export function createInvokeModelNode(turn) {
       // the persisted tool chain never carries the base64.
       const toolImages = functionSession.imagesOf(allResults);
       loopMessages = functionSession.appendToolImages(loopMessages, toolImages);
+      traceEvent('tool.feedback.appended', { round: iteration, callIds: allResults.map(pair => pair.call.id) }, loopMessages.slice(-Math.min(80, allResults.length * 2 + 1)));
       toolChainTurns.push(functionSession.turnRecord(turn, allResults, { argumentsFor: call => redactToolArgs(call.arguments), images: toolImages }));
 
       // Design audit D1: one ToolInvocationRecord per call, written to

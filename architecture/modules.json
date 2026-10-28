@@ -23,8 +23,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 648,
-      "edges": 2071,
+      "modules": 651,
+      "edges": 2086,
       "roots": [
         "src",
         "desktop-ui",
@@ -555,7 +555,7 @@
         "chat": 22,
         "desktop-shell": 8,
         "memory": 12,
-        "platform": 42,
+        "platform": 44,
         "settings": 3,
         "tools": 21
       },
@@ -734,7 +734,7 @@
       ],
       "modules": {
         "desktop-ui": 27,
-        "shared": 35,
+        "shared": 37,
         "src": 68
       },
       "entryModules": [
@@ -870,6 +870,12 @@
           "importedBy": [
             "settings",
             "tools"
+          ]
+        },
+        {
+          "module": "shared/agent/trace.js",
+          "importedBy": [
+            "platform"
           ]
         },
         {
@@ -1061,7 +1067,7 @@
         "knowledge": 5,
         "media": 24,
         "memory": 27,
-        "platform": 58,
+        "platform": 63,
         "projects": 11,
         "settings": 11,
         "sync": 2,
@@ -1075,7 +1081,7 @@
         "desktop-shell": 10,
         "media": 14,
         "memory": 12,
-        "platform": 17,
+        "platform": 18,
         "projects": 1,
         "settings": 13,
         "sync": 4,
@@ -1203,8 +1209,10 @@
           "shared/agent/modelRouting.test.js",
           "shared/agent/portability.test.js",
           "shared/agent/research.test.js",
+          "shared/agent/taskContract.test.js",
           "shared/agent/taskReplay.test.js",
           "shared/agent/tools.test.js",
+          "shared/agent/trace.test.js",
           "shared/agent/workflows.test.js",
           "src/openai.codex-inline-image.test.js",
           "src/openai.codex-input.test.js",
@@ -1235,6 +1243,7 @@
           "src/services/chat/executionTelemetry.test.js",
           "src/services/chat/functionCalling.integration.test.js",
           "src/services/chat/headlessApproval.test.js",
+          "src/services/chat/loopTrace.integration.test.js",
           "src/services/chat/messageBuilder.test.js",
           "src/services/chat/portableCompact.test.js",
           "src/services/chat/projectMemoryBook.scenario.test.js",
@@ -2581,7 +2590,7 @@
         "knowledge": 3,
         "media": 2,
         "memory": 6,
-        "platform": 43,
+        "platform": 44,
         "projects": 5,
         "settings": 10
       },
@@ -3905,6 +3914,7 @@
           "ios/Melo/ChatStore.swift",
           "ios/Melo/ContentView.swift",
           "ios/Melo/LifecycleJournal.swift",
+          "ios/Melo/LoopTrace.swift",
           "ios/Melo/MeloApp.swift",
           "ios/Melo/MeloForm.swift",
           "ios/Melo/MeloTheme.swift",
@@ -3929,6 +3939,7 @@
         "swift": [
           "ios/Tests/CapabilityElevationTests.swift",
           "ios/Tests/LifecycleJournalTests.swift",
+          "ios/Tests/LoopTraceTests.swift",
           "ios/Tests/SharedPolicyUnavailableTests.swift"
         ]
       },
@@ -3951,7 +3962,7 @@
         "src/**"
       ],
       "modules": {
-        "src": 55
+        "src": 56
       },
       "entryModules": [
         {
@@ -4006,6 +4017,14 @@
         {
           "module": "src/runtime/failureCounters.js",
           "importedBy": [
+            "chat",
+            "tools"
+          ]
+        },
+        {
+          "module": "src/runtime/loopTrace.js",
+          "importedBy": [
+            "agents",
             "chat",
             "tools"
           ]
@@ -4244,7 +4263,7 @@
         "agents": 34,
         "approvals": 18,
         "channels": 6,
-        "chat": 17,
+        "chat": 18,
         "desktop-shell": 2,
         "knowledge": 2,
         "media": 2,
@@ -4256,10 +4275,10 @@
         "voice": 2
       },
       "usedBy": {
-        "agents": 42,
+        "agents": 44,
         "approvals": 36,
         "channels": 22,
-        "chat": 58,
+        "chat": 63,
         "desktop-shell": 12,
         "knowledge": 2,
         "media": 11,
@@ -4267,7 +4286,7 @@
         "projects": 23,
         "settings": 25,
         "sync": 4,
-        "tools": 43,
+        "tools": 44,
         "voice": 6
       },
       "httpRoutes": [],
@@ -4312,6 +4331,7 @@
           "src/runtime/chatContract.http.test.js",
           "src/runtime/desktopOwner.test.js",
           "src/runtime/identity.test.js",
+          "src/runtime/loopTrace.test.js",
           "src/runtime/nativeSearchEvidence.test.js",
           "src/runtime/paths.test.js",
           "src/runtime/performanceTrace.test.js",
@@ -4520,6 +4540,7 @@
           "scripts/desktop-install-paths.test.js",
           "scripts/desktop-server-lifecycle.test.js",
           "scripts/eval-agent-tasks.test.js",
+          "scripts/eval-loop-traces.test.js",
           "scripts/generate-interface-languages.test.js",
           "scripts/generate-module-map.test.js",
           "scripts/ios-test-selection.test.js",

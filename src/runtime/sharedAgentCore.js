@@ -1,14 +1,19 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { toolCallFingerprint } from '../agents/repeatGuard.js';
 import { turnStopReply } from '../../shared/agent/turn.js';
-import { startTurn, advanceTurn } from '../../shared/agent/turn.js';
+import { tracedStart, tracedAdvance } from '../../shared/agent/trace.js';
+import { traceEvent, currentLoopTrace } from './loopTrace.js';
 import { completionObservation, completionResult } from '../../shared/agent/completion.js';
 import { startGoal, amendGoal, goalText, goalSnapshot, goalCandidate, goalReviewRequest, reviewGoal, stopGoal } from '../../shared/agent/goal.js';
 import { toolEffect } from '../../shared/agent/toolEffects.js';
 
 /** Node Host for the same reducer packaged for Android / iOS. */
-export function createCoreTurn({ runId = randomUUID(), turnId = randomUUID(), allowedTools, requiredTools, toolDependencies, limits, goal, tools = [], hostToolSchemas = true, clock = () => performance.timeOrigin + performance.now() }) {
-  let state = startTurn({ runId, turnId, allowedTools, requiredTools, toolDependencies, limits, hostToolSchemas, now: clock() });
+export function createCoreTurn({ runId = currentLoopTrace()?.context.runId || randomUUID(), turnId = randomUUID(), allowedTools, requiredTools, toolDependencies, limits, goal, tools = [], hostToolSchemas = true, clock = () => performance.timeOrigin + performance.now() }) {
+  const initial = tracedStart({ runId, turnId, allowedTools, requiredTools, toolDependencies, limits, hostToolSchemas, now: clock() });
+  let state = initial.state;
+  const observe = events => { for (const event of events) traceEvent(event.type, event.data, event.payload, { round: event.round, ...(event.spanId ? { spanId: runId + ':' + event.spanId, parentSpanId: runId } : {}) }); };
+  observe(initial.events);
+  const advance = event => { const next = tracedAdvance(state, event, clock()); state = next.state; observe(next.events); };
   const observations = [];
   let task = typeof goal === 'string' ? startGoal(goal, runId) : null;
   let candidateReply = '';
@@ -19,15 +24,15 @@ export function createCoreTurn({ runId = randomUUID(), turnId = randomUUID(), al
     get repairing() { return state.repairing; },
     get candidateReply() { return candidateReply; },
     get task() { return goalSnapshot(task); },
-    amend(text) { if (task) task = amendGoal(task, text); },
-    candidate(reply, { research = false, nativeSearch = false } = {}) {
+    amend(text) { if (task) task = amendGoal(task, text); traceEvent('goal.updated', {}, goalSnapshot(task)); },
+    candidate(reply, { research = false, nativeSearch = false, context = {} } = {}) {
       candidateReply = reply;
       if (!task) return false;
-      task = goalCandidate(task, { reply, observations, research, tools: [...allowedTools, ...(nativeSearch ? ['native_web_search'] : [])], roundsLeft: state.limits.rounds - state.rounds });
+      task = goalCandidate(task, { reply, observations, research, context: { capabilities: tools, ...context }, tools: [...allowedTools, ...(nativeSearch ? ['native_web_search'] : [])], roundsLeft: state.limits.rounds - state.rounds });
       return task.phase === 'checking';
     },
     reviewRequest() { return goalReviewRequest(task, observations); },
-    review(text) { task = reviewGoal(task, text, observations); return task; },
+    review(text) { task = reviewGoal(task, text, observations); traceEvent('goal.check', {}, goalSnapshot(task)); return task; },
     stopReview(reason) { if (task) task = stopGoal(task, reason); },
     observeNative(event) {
       if (event?.name !== 'native_web_search' || event.status !== 'completed') return;
@@ -47,7 +52,7 @@ export function createCoreTurn({ runId = randomUUID(), turnId = randomUUID(), al
         if (observations.length > 128) observations.splice(0, observations.length - 128);
         if (state.status !== 'running') continue;
         const progressKey = createHash('sha256').update(JSON.stringify([call.name, toolCallFingerprint(call.name, call.arguments), result?.status, result?.output])).digest('hex');
-        state = advanceTurn(state, { type: 'result', runId, turnId, callId: call.id, ok: result?.ok === true, code: result?.code, error: result?.error, output: String(result?.output || '').slice(0, 500), progressKey }, clock());
+        advance({ type: 'result', runId, turnId, callId: call.id, ok: result?.ok === true, code: result?.code, error: result?.error, output: String(result?.output || '').slice(0, 500), progressKey });
       }
       return state.status;
     },
@@ -55,7 +60,7 @@ export function createCoreTurn({ runId = randomUUID(), turnId = randomUUID(), al
     permits(callId) { return state.status === 'running' && state.pending.includes(callId) && state.permitted.includes(callId); },
     update(type, fields = {}) {
       if (type === 'calls') fields = { ...fields, calls: fields.calls.map(call => ({ ...call, effect: toolEffect(call.name, call.arguments, declaration(call.name)), fingerprint: toolCallFingerprint(call.name, call.arguments) })) };
-      state = advanceTurn(state, { ...fields, type, runId, turnId }, clock());
+      advance({ ...fields, type, runId, turnId });
       return state.status;
     },
   };

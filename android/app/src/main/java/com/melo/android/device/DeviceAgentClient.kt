@@ -1,6 +1,7 @@
 package com.melo.android.device
 
 import com.melo.android.data.*
+import com.melo.android.core.LoopTrace
 import com.melo.android.data.Connection
 import com.melo.android.network.*
 import com.melo.android.chat.ChatPhoneUse
@@ -22,10 +23,12 @@ class DeviceAgentClient(private val debug: Boolean, private val http: OkHttpClie
         require(connection.protocol in setOf("chat-completions", "responses", "anthropic")) { "手机助手需要支持 Tool Calling 的真实模型连接；自动验证使用隔离 HTTP Fixture。" }
         val base = payload(connection, history, taskInstructions, chatTools, toolSpecs, nativeWebSearch)
         val payload = if (outputLimit == null) base else JsonObject(base + ((if (connection.protocol == "responses") "max_output_tokens" else "max_tokens") to JsonPrimitive(outputLimit.coerceAtLeast(1))))
+        return LoopTrace.model(payload, snapshot = { turn: DeviceTurn -> JsonArray(turn.wire) }) {
+        var providerReceipt: JsonObject? = null
         val request = Request.Builder().url(EndpointPolicy.validate(connection.endpoint, debug))
             .post(payload.toString().toRequestBody("application/json".toMediaType())).header("Accept", "application/json")
             .apply { if (connection.protocol == "anthropic") { header("x-api-key", key); header("anthropic-version", "2023-06-01") } else header("Authorization", "Bearer $key") }.build()
-        return suspendCancellableCoroutine { continuation ->
+        try { suspendCancellableCoroutine { continuation ->
             val call = http.newCall(request)
             continuation.invokeOnCancellation { call.cancel() }
             call.enqueue(object : Callback {
@@ -33,15 +36,22 @@ class DeviceAgentClient(private val debug: Boolean, private val http: OkHttpClie
                 override fun onResponse(call: Call, response: Response) {
                     try {
                         val result = response.use {
-                            require(it.isSuccessful) { ModelClient.statusError(it.code) }
+                            if (!it.isSuccessful) {
+                                val detail = runCatching { it.body?.let { body -> String(ModelClient.readBounded(body, 16 * 1024)).replace(key, "[redacted]") } }.getOrNull()
+                                providerReceipt = buildJsonObject { put("httpStatus", it.code); detail?.let { body -> put("errorBody", body) } }
+                                throw IOException(ModelClient.statusError(it.code))
+                            }
                             val raw = ModelClient.readBounded(it.body ?: error("服务没有返回内容。"), 8 * 1024 * 1024)
-                            try { decode(MeloJson.parseToJsonElement(String(raw)).jsonObject, connection.protocol, if (chatTools) ChatPhoneUse.name else "android_device", toolSpecs?.map { it.text("name") }?.toSet()) }
+                            try { val parsed = MeloJson.parseToJsonElement(String(raw)).jsonObject; providerReceipt = parsed; decode(parsed, connection.protocol, if (chatTools) ChatPhoneUse.name else "android_device", toolSpecs?.map { it.text("name") }?.toSet()) }
                             catch (_: Exception) { throw IllegalStateException("模型未返回完整、有效的 Tool Calling 回执，请检查模型及接口协议。") }
                         }
                         if (continuation.isActive) continuation.resume(result)
                     } catch (e: Exception) { if (continuation.isActive) continuation.resumeWithException(e) }
                 }
             })
+        } } finally {
+            providerReceipt?.let { receipt -> LoopTrace.emit("model.provider.receipt", buildJsonObject { put("usageOrigin", if (receipt["usage"] is JsonObject) "provider" else "unknown") }, receipt) }
+        }
         }
     }
     companion object {
@@ -64,6 +74,7 @@ class DeviceAgentClient(private val debug: Boolean, private val http: OkHttpClie
                 }
                 "anthropic" -> {
                     put("system", instructions); put("max_tokens", minOf(4096, connection.contextTokens / 3)); put("messages", JsonArray(history))
+                    if (!chatTools || functions.any { it.text("name") in setOf("phone_action", "phone_workflow") }) put("tool_choice", buildJsonObject { put("type", "auto"); put("disable_parallel_tool_use", true) })
                     put("tools", buildJsonArray { functions.forEach { spec -> add(buildJsonObject { put("name", spec.getValue("name")); put("description", spec.getValue("description")); put("input_schema", spec.getValue("parameters")) }) } })
                 }
                 else -> {
@@ -121,6 +132,8 @@ class DeviceAgentClient(private val debug: Boolean, private val http: OkHttpClie
             }
             if (result.data.text("screen_id").isNotBlank()) {
                 // Never pair a new tree with pixels from an older screen, even if capture failed.
+                val replacesPixels = history.any { row -> (row["content"] as? JsonArray)?.any { (it as? JsonObject)?.text("type") in setOf("image_url", "input_image", "image") } == true }
+                if (protocol == "anthropic" && replacesPixels) DeviceContextBudget.dropBoundThinking(history)
                 for (i in history.indices) {
                     val content = history[i]["content"] as? JsonArray ?: continue
                     history[i] = JsonObject(history[i] + ("content" to JsonArray(content.filterNot { it.jsonObject.text("type") in setOf("image_url", "input_image", "image") })))

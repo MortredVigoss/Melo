@@ -82,6 +82,9 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
         else registerReceiver(screenOff, IntentFilter(Intent.ACTION_SCREEN_OFF))
     }
     override fun onServiceConnected() {
+        if (Build.VERSION.SDK_INT >= 33) serviceInfo = serviceInfo.apply {
+            flags = flags or android.accessibilityservice.AccessibilityServiceInfo.FLAG_INPUT_METHOD_EDITOR
+        }
         DeviceAccess.service = this; DeviceAccess.connected.value = true
         if (Build.VERSION.SDK_INT >= 30) {
             val manager = getSystemService(SensorManager::class.java)
@@ -226,10 +229,16 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
         checkSession(); requireFresh(arguments, false)
         if (!same) throw DeviceExecutionException("stale_screen", "点击目标区域已变化或缺少稳定视觉特征，未执行点击，请重新定位。")
     }
+    private fun accessibleDescription(node: AccessibilityNodeInfo): String {
+        node.contentDescription?.toString()?.takeIf(String::isNotBlank)?.let { return it }
+        val label = node.labeledBy
+        val labelText = try { label?.text?.toString() } finally { @Suppress("DEPRECATION") label?.recycle() }
+        return labelText?.takeIf(String::isNotBlank) ?: node.hintText?.toString().orEmpty()
+    }
     private fun target(node: AccessibilityNodeInfo): DeviceTarget {
         val rect = Rect().also(node::getBoundsInScreen)
-        return DeviceTarget(node.windowId, node.viewIdResourceName.orEmpty(), node.className?.toString().orEmpty(), node.text?.toString().orEmpty(), node.contentDescription?.toString().orEmpty(),
-            listOf(rect.left, rect.top, rect.right, rect.bottom), node.isClickable, node.isEditable, node.isEnabled, node.isVisibleToUser, node.isPassword)
+        return DeviceTarget(node.windowId, node.viewIdResourceName.orEmpty(), node.className?.toString().orEmpty(), node.text?.toString().orEmpty(), accessibleDescription(node),
+            listOf(rect.left, rect.top, rect.right, rect.bottom), node.isClickable, node.isEditable, node.isEnabled, node.isVisibleToUser, node.isPassword, node.inputType)
     }
     private fun freshNode(arguments: JsonObject): AccessibilityNodeInfo {
         val id = arguments.text("node_id")
@@ -237,8 +246,22 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
         if (!node.refresh() || !DeviceTargetPolicy.unchanged(targets[id], target(node))) throw DeviceExecutionException("stale_target", "目标节点已改变，请重新观察并定位；不会点击替代节点。")
         return node
     }
-    private suspend fun confirm(arguments: JsonObject, node: AccessibilityNodeInfo?): Boolean {
-        if (!DeviceTargetPolicy.needsConfirmation(arguments.text("action"), node?.let(::target))) return true
+    private fun focusedImeAction(node: AccessibilityNodeInfo): Int? {
+        if (!authorized || Build.VERSION.SDK_INT < 33 || !node.isFocused || !node.isEditable || node.isPassword) return null
+        if (readableWindows().none { it.id == node.windowId && it.isFocused }) return null
+        val editor = inputMethod?.currentInputEditorInfo ?: return null
+        if (editor.packageName != node.packageName?.toString()) return null
+        return editor.imeOptions and android.view.inputmethod.EditorInfo.IME_MASK_ACTION
+    }
+    private fun browserAddress(node: AccessibilityNodeInfo): Boolean {
+        val owner = node.packageName?.toString().orEmpty()
+        val viewId = node.viewIdResourceName.orEmpty()
+        if (viewId.substringAfterLast('/') !in setOf("url_bar", "urlbar_edit_text", "mozac_browser_toolbar_url_view")) return false
+        val browsers = packageManager.queryIntentActivities(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://example.com")).addCategory(Intent.CATEGORY_BROWSABLE), 0).map { it.activityInfo.packageName }.toSet()
+        return DeviceTargetPolicy.browserAddress(viewId, owner, browsers)
+    }
+    private suspend fun confirm(arguments: JsonObject, node: AccessibilityNodeInfo?, force: Boolean = false): Boolean {
+        if (!force && !DeviceTargetPolicy.needsConfirmation(arguments.text("action"), node?.let(::target))) return true
         val agent = (application as MeloApplication).deviceAgent
         val label = node?.let { it.text?.toString()?.takeIf(String::isNotBlank) ?: it.contentDescription?.toString()?.takeIf(String::isNotBlank) ?: it.viewIdResourceName.orEmpty() }
             ?.filterNot(Char::isISOControl)?.take(60)
@@ -271,6 +294,7 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
         return freshNode(JsonObject(arguments + ("node_id" to JsonPrimitive(candidate.key))))
     }
     override suspend fun execute(arguments: JsonObject): DeviceToolResult = withContext(Dispatchers.Main.immediate) {
+        var applied = false
         try {
             checkSession(); DeviceTools.validate(arguments)
             val action = arguments.text("action")
@@ -327,7 +351,22 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
                 "type_text" -> {
                     val node = freshNode(arguments)
                     require(node.isEditable) { "该节点不可编辑。" }
+                    if (!node.isFocused) return@withContext DeviceToolResult.error("输入框没有 Focus，未修改文字。请先 tap 此输入框并使用返回的新 screen_id 和 node_id。", "input_not_focused")
                     require(node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, arguments.text("text")) })) { "此 App 不支持节点输入。" }
+                }
+                "submit_input" -> {
+                    if (Build.VERSION.SDK_INT < 30) return@withContext DeviceToolResult.error("此系统不支持输入框提交；请使用页面上可见的搜索按钮。", "submission_unavailable")
+                    var node = freshNode(arguments)
+                    fun submission(current: AccessibilityNodeInfo): AccessibilityNodeInfo.AccessibilityAction? = current.actionList.firstOrNull { it.id == AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id }
+                    val submit = submission(node)
+                    if (!node.isEditable || !node.isFocused || submit == null) return@withContext DeviceToolResult.error("当前节点未暴露输入框提交；请点击输入框后重新观察，或使用可见搜索按钮。", "submission_unavailable")
+                    val label = submit.label?.toString().orEmpty()
+                    val imeAction = focusedImeAction(node)
+                    if (DeviceTargetPolicy.submitNeedsConfirmation(label, node.inputType, browserAddress(node), imeAction) && !confirm(arguments, node, force = true)) return@withContext DeviceToolResult.error("本步提交未获允许，已停止。", "user_declined")
+                    checkSession(); requireFresh(arguments, false); node = freshNode(arguments)
+                    val fresh = submission(node)
+                    if (!node.isEditable || !node.isFocused || fresh == null || fresh.label?.toString().orEmpty() != label || focusedImeAction(node) != imeAction) return@withContext DeviceToolResult.error("输入框提交动作已改变，请重新 observe。", "stale_target")
+                    if (!node.performAction(fresh.id)) return@withContext DeviceToolResult.error("App 拒绝输入框提交；请使用可见搜索按钮，勿重复相同提交。", "submission_failed")
                 }
                 "swipe" -> {
                     val start = point(arguments, "x", "y"); val end = point(arguments, "end_x", "end_y")
@@ -339,7 +378,8 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
                 }
                 "wait" -> delay(number(arguments, "duration_ms", 600).coerceIn(100, 3000).toLong())
             }
-            if (action in setOf("tap", "type_text", "swipe", "back", "home")) lastLaunchTarget = ""
+            applied = action in setOf("open_app", "tap", "type_text", "submit_input", "swipe", "back", "home")
+            if (action in setOf("tap", "type_text", "submit_input", "swipe", "back", "home")) lastLaunchTarget = ""
             if (action != "observe") { invalidateObservation(); delay(650); checkSession() }
             if (launchTarget != null) {
                 var foreground = DeviceForegroundWindow("")
@@ -359,15 +399,21 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
                 "启动后窗口发生变化，当前为 ${observation.data.text("package_name")}，未取得目标 $launchTarget 的窗口。已停止，不会操作替代窗口。", "foreground_window_unavailable")
             DeviceToolResult(buildJsonObject {
                 observation.data.forEach { (key, value) -> put(key, value) }; put("ok", true); put("action", action)
+                put("effect_state", if (applied) "applied" else "read")
                 launchTarget?.let {
                     put("target_package", it); put("launch_dispatched", launchDispatched)
                     if (!launchDispatched) { put("code", "already_foreground"); put("hint", "The app is already visible. Inspect the current pane and related_windows. Finish if the requested visible goal is satisfied; otherwise navigate. Do not relaunch again.") }
                 }
             }, observation.jpeg)
         } catch (e: CancellationException) { throw e }
-        catch (e: DeviceExecutionException) { DeviceToolResult.error(e.message.orEmpty(), e.code) }
-        catch (e: Exception) { DeviceToolResult.error(e.message ?: "设备操作失败。") }
+        catch (e: DeviceExecutionException) { effectFailure(e.message.orEmpty(), e.code, applied) }
+        catch (e: Exception) { effectFailure(e.message ?: "设备操作失败。", "execution_error", applied) }
     }
+    private fun effectFailure(message: String, code: String, applied: Boolean) = DeviceToolResult(buildJsonObject {
+        put("ok", false); put("code", if (applied) "post_action_observation_failed" else code); put("error", message.take(500))
+        put("effect_state", if (applied) "applied" else if (code in setOf("stale_screen", "stale_target", "invalid_arguments")) "not_started" else "unknown")
+        if (applied) put("hint", "The action was applied but its post-action observation failed. Observe current state; never repeat the action blindly.")
+    })
     private fun catalog(): AppCatalog = sessionApps ?: AppCatalog(packageManager.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
         .map { LaunchableApp(it.activityInfo.packageName, it.loadLabel(packageManager).toString(), listOf(it.activityInfo.applicationInfo.loadLabel(packageManager).toString())) })
         .also { sessionApps = it }
@@ -412,12 +458,19 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
                 val rect = Rect().also(node::getBoundsInScreen)
                 if (!Rect.intersects(bounds, rect)) return
                 val label = node.text?.toString().orEmpty().take(300)
-                val description = node.contentDescription?.toString().orEmpty().take(200)
+                val description = accessibleDescription(node).take(200)
                 if (label.isNotBlank() || description.isNotBlank() || node.isClickable || node.isEditable || node.isScrollable) {
                     val id = "n${nodes.size + 1}"; nodes[id] = AccessibilityNodeInfo.obtain(node); targets[id] = target(node)
                     add(buildJsonObject {
                         put("node_id", id); put("text", label); put("description", description); put("view_id", node.viewIdResourceName.orEmpty().take(200)); put("class_name", node.className?.toString().orEmpty().take(200))
                         put("clickable", node.isClickable); put("editable", node.isEditable); put("scrollable", node.isScrollable); put("enabled", node.isEnabled)
+                        if (node.isEditable) {
+                            val submit = if (Build.VERSION.SDK_INT >= 30) node.actionList.firstOrNull { it.id == AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id } else null
+                            put("focused", node.isFocused); put("submit_available", submit != null)
+                            focusedImeAction(node)?.let { put("ime_action", it) }
+                            put("input_type", node.inputType); put("input_purpose", if (node.inputType and 0xff == 0x11 || browserAddress(node)) "uri" else "text")
+                            submit?.let { put("submit_label", it.label?.toString().orEmpty().take(100)) }
+                        }
                         put("bounds", buildJsonArray { add(((rect.left - bounds.left) * scale).toInt()); add(((rect.top - bounds.top) * scale).toInt()); add(((rect.right - bounds.left) * scale).toInt()); add(((rect.bottom - bounds.top) * scale).toInt()) })
                     })
                 }

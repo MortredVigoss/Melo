@@ -86,7 +86,9 @@
     "import:pet-skin": "node scripts/desktop-pet-assets.js import",
     "verify:pet-skin": "node scripts/desktop-pet-assets.js verify",
     "bench:capacity": "node scripts/bench-capacity.js",
-    "eval:tasks": "node scripts/eval-agent-tasks.js"
+    "eval:tasks": "node scripts/eval-agent-tasks.js",
+    "trace:inspect": "node scripts/eval-loop-traces.js",
+    "trace:fixtures": "node scripts/eval-loop-traces.js --write-fixtures .tmp/loop-trace-fixtures"
   },
   "dependencies": {
     "@discordjs/voice": "^0.17.0",

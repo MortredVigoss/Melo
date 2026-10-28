@@ -19,7 +19,7 @@ class DeviceLaunchGuard {
             val target = result.data.text("target_package").ifBlank { aliases[alias] ?: alias }
             aliases[alias] = target
             attempts[target] = (attempts[target] ?: 0) + 1
-        } else if (result.ok && arguments.text("action") in setOf("tap", "type_text", "swipe", "back", "home")) {
+        } else if (result.ok && arguments.text("action") in setOf("tap", "type_text", "submit_input", "swipe", "back", "home")) {
             attempts.clear()
         }
     }

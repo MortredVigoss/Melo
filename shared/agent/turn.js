@@ -139,7 +139,7 @@ export function advanceTurn(previous, event, now) {
       if (state.pending.length || state.awaitingModel) fail('PENDING_EFFECT', 'A device observation must follow its paired result.');
       if (typeof event.ok !== 'boolean' || !identity(event.progressKey) || !identity(event.action)) fail('INVALID_RESULT', 'Invalid device observation.');
       const prior = state.deviceProgress || { seen: [], unchanged: 0, unresolvedErrors: 0 };
-      const resolves = ['tap', 'type_text', 'swipe', 'back', 'home', 'open_app'].includes(event.action);
+      const resolves = ['tap', 'type_text', 'submit_input', 'swipe', 'back', 'home', 'open_app'].includes(event.action);
       const unresolvedErrors = !event.ok ? prior.unresolvedErrors + 1 : resolves ? 0 : prior.unresolvedErrors;
       const repeated = prior.seen.includes(event.progressKey);
       state.deviceProgress = { seen: repeated ? prior.seen : [...prior.seen, event.progressKey], unchanged: repeated ? prior.unchanged + 1 : 0, unresolvedErrors };

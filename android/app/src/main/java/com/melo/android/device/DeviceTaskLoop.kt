@@ -1,5 +1,6 @@
 package com.melo.android.device
 
+import com.melo.android.core.LoopTrace
 import com.melo.android.core.SharedCoreTurn
 
 import com.melo.android.data.*
@@ -43,15 +44,22 @@ object DeviceCompletion {
     }
 }
 
-/** In-memory hashes only; UI text and action arguments never enter persisted traces. */
+/** Progress describes the observed page, not the transport used to capture it. */
 object DeviceProgress {
     fun fingerprint(result: DeviceToolResult): String {
-        val content = JsonObject(result.data.filterKeys { it !in setOf("screen_id", "window_id", "screenshot_error", "stable", "action") })
+        val data = result.data
+        val rows = data["nodes"] as? JsonArray ?: JsonArray(emptyList())
+        val content = buildJsonObject {
+            for (key in listOf("ok", "package_name", "window_title", "display_id", "window_width", "window_height", "apps", "total_apps", "next_offset")) data[key]?.let { put(key, it) }
+            put("nodes", JsonArray(rows.map { row -> JsonObject(row.jsonObject.filterKeys { it != "node_id" }) }))
+            // An error class matters; launch/capture hints do not describe the page.
+            if (!result.ok) data["code"]?.let { put("code", it) }
+        }
         val digest = MessageDigest.getInstance("SHA-256")
         digest.update(content.toString().toByteArray())
-        // Games may expose no nodes while their rendered screen is changing.
-        // Keep only a hash; neither pixels nor tree text are persisted here.
-        result.jpeg?.let { digest.update(it.toByteArray()) }
+        // Pixels are useful for games/custom surfaces without a usable UI tree.
+        // Optional JPEG capture cannot turn an unchanged editable tree into progress.
+        if (ObservationPolicy.needsScreenshot(rows)) result.jpeg?.let { digest.update(it.toByteArray()) }
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
 }
@@ -123,7 +131,7 @@ class DeviceTaskLoop(
                         put("action", "observe")
                         latestScreen?.data?.get("window_id")?.jsonPrimitive?.intOrNull?.let { put("window_id", it) }
                     }))
-                } else execute(call.arguments)
+                } else kotlinx.coroutines.withContext(LoopTrace.ToolScope(call.id)) { execute(call.arguments) }
             } catch (e: IllegalArgumentException) { DeviceToolResult.error("工具参数不符合执行契约：" + (e.message?.take(300) ?: "请检查 action 与必需字段。"), "invalid_arguments") }
             currentCoroutineContext().ensureActive()
             if (!result.ok) recovery++

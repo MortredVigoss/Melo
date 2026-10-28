@@ -77,7 +77,7 @@ class PhoneWorkflowFlowTest {
                     if (raw.contains("You are Melo's task completion checker")) return response("""{"decision":"complete","reasonType":"fulfilled","reason":"The published open-app subgoal is the entire user request","nextStep":"","requirements":[{"text":"Open settings","status":"met","evidenceIds":["native-open"]}]}""")
                     val offered = body["tools"]!!.jsonArray.map { it.jsonObject["function"]!!.jsonObject.text("name") }
                     assertFalse("Cache replay must not make any child-model request", "android_device" in offered)
-                    assertTrue("phone_use" in offered); assertTrue("phone_workflow" in offered)
+                    assertTrue("phone_action" in offered); assertFalse("phone_use" in offered); assertTrue("phone_workflow" in offered)
                     assertTrue("Every round receives the current Skill Manifest", raw.contains(workflowId))
                     return if (++parentRequests == 1) MockResponse().setBody(buildJsonObject {
                         put("choices", buildJsonArray { add(buildJsonObject { put("finish_reason", "tool_calls"); put("message", buildJsonObject {
@@ -93,9 +93,10 @@ class PhoneWorkflowFlowTest {
             withTimeout(30_000) { while (app.engine.runtime.value.turns.containsKey(chat.id)) delay(40) }
             val state = app.repository.data.value
             val run = state.deviceRuns.single { it.taskContext?.chatId == chat.id }
-            assertEquals(run.error, "achieved", run.status); assertEquals("manual", run.executionMode)
+            assertEquals(run.error, "achieved", run.status); assertEquals("unified", run.executionMode)
             assertEquals(0, run.modelRequests); assertEquals("visible_facts", run.verification)
             assertEquals(recipe.id, run.scriptId); assertEquals(2, parentRequests); assertEquals(3, server.requestCount)
+            assertEquals(recipe.id, run.cacheId); assertEquals(1, state.deviceScripts.single { it.id == recipe.id }.hits)
             assertTrue(state.chats.first { it.id == chat.id }.messages.last().content.contains("Android"))
         }
     }

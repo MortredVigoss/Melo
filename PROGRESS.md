@@ -1,3 +1,20 @@
+## 2026-10-28 — 用单决策 Loop 与成功子流程 Cache 落实审计结论
+
+用户要求改共性 Harness，手机拿走后自主验证。Codex 沿用已授权本地 Bedrock 做五个生产 Chat 真实模型样本，并使用独立 UI 终态校验：浏览器59.661→28.295秒、12→3次实际请求，换词仍命中同Cache；导航采用刻意隐藏目的地的Fixture，未冒充真实Maps验收。
+反馈/禁令不再强制设备调用，失败观察不能证明效果；Cache保留本次输入前置条件，Trace仅本地。完整Gate还发现URL禁令回归，已修并保留失败日志。
+Core240/JVM190/Native50过，最终APK另复测生产Chat6项；run-PyqRFL JS4636过/2缺私有素材失败/15跳过，Android Lint/Debug/Release与独立Settings/Bridge过。Swift/JSC与Fold6仍待对应环境，不称全仓GREEN。
+0.10.7 APK已导出Windows artifacts；本地Checkpoint随本条提交，未Push、未自动Review、未上传私人Trace。[证据与限制](docs/android-unified-loop-20261028.md)。
+
+## 2026-10-28 — 用完整真实会话核查 Harness 的系统性缺陷
+
+用户要求手机拿走后读完最近会话并分析共性，避免逐句补丁。Codex已只读保存两份一致快照，读取4会话/34消息/18主调用/9设备任务，原始私人记录留本地。
+实际请求与源码确认策略冲突、反馈/澄清误判、导航证据被每轮压缩掉、完成后继续操作、分段学习与Cache前置条件缺口；3个共享层错误已纯本地复现。上一轮浏览器验收未覆盖这些连续任务场景。
+[审计与分阶段验收方案](docs/android-session-harness-audit-20261028.md)已保存；这轮运行代码未改、未用真实模型或继续操作手机，未推送。后续应从共用任务/证据/结果契约推进单Loop与语义Cache，不能标为问题已修。
+
+## 2026-10-28 — Emulator 真实浏览器任务与自动 Cache 耗时
+
+Codex：用户要求不要依赖手机人工测试。0.10.6 真实 Bedrock/Chrome 搜索27.551→9.071秒、网页跳转34.518→10.112秒，重复子Model均0；ChatEngine自动phone_use→phone_workflow，49.209→26.255秒，实际主API仍3次（含Completion Checker）。修复共享Core URL路由、Focus/参数/串行请求/签名与IME/Hint；表单搜索37.773→10.392秒、实际请求9→0，换词两次10.967/11.224秒均同Cache/0请求，独立UI校验通过。JVM182、Native19+4+2、Lint/Debug/Release通过；run-feZKBk JS4625过/2缺私有素材失败/15跳过，未称全仓GREEN。Google换词固定结果标题失配仍开放。QEMU内存异常/绑定残留失败保留，已加仅针对自建Emulator的RSS监控并最终停机。用户随后要求装机：Fold6已本地备份覆盖0.10.6并核对启动/Accessibility绑定，保留原连接，未跑手机任务。未推送/上传Trace，整体Trace仍WIP。详见 [真实浏览器与Cache记录](docs/android-browser-cache-evaluation-20261027.md)。
+
 ## 2026-10-27 — Eval 先有共享 Loop 的真实执行证据
 
 用户要求本地 Trace 用于后续 Eval，明确不能只改 Android。Codex 先核对已有 Tool JSONL、展示投影和确定性 Fixture，设计共享事件契约与三端 Host 接线；不把模型自报成功当 label，也不把固定回放当真实模型质量。
@@ -138,3 +155,18 @@ Final commit: `99d2fca`.
 - 2026-10-21 — 回到共同主线，清理分支不丢历史：Codex：用户批准的 Integration 已在五项 CI 全绿后通过 PR #15 合并；合并树与验证 Head 完全一致。；commit 6ab1adf
 - 2026-10-21 — 整合验收按实际平台拆分，保留可追溯边界：Codex：最终本机全部 JS 4372 pass / 0 fail / 13 平台 skip，两项独立 Desktop Browser、Android 124 JVM / 73 Runtime 与 11 个跨引擎 Replay 通过；语法/生成物通过，后端无循环依赖。；commit 009134a
 - 归档摘要（2026-10-21 及更早记录）：- 2026-10-21 — 原生项目也需编译，不以协议小套件替代整合：Codex 已完成 73 项 Android Runtime 和 11 个 Node/Android Replay 一致性核对；Memory 修复后四份并行 HTTP 场景通过。
+
+### 2026-10-27 — 0.10.4 local Trace trial installed on Fold6 (WIP)
+- 意图：优先让用户试用最新本地版本；Trace 不发送的约束继续生效。
+- 改动：version 0.10.4 / code28，重建 Core 与功能地图，覆盖安装且不清数据。
+- 验证：JVM170、Trace/HTTP12、Emulator Trace2通过；ADB install Success / launch ok，随后用户手机前台为其他 App，未继续操作。
+- 边界：Trace 仍为未提交 WIP；快速档 run-85yqsn 运行中，iOS Native 未验，保留策略与隔离回归继续。
+- 证据：docs/android-local-trace-trial-install-20261027.md；commit pending。
+
+### 2026-10-27 — input submission / Bedrock verification moved off the phone
+- 意图：定位最新失败；用户要求 us-west-2 / Opus 5.5，并停止占用手机，改用 Emulator。
+- 修复：submit_input 全链路及 Cache；进展排除截图传输元数据；Anthropic History 编辑清除失效 signed thinking；本地 HTTP 错误回执。
+- 验证：JVM175；真实 Bedrock 中文搜索5次 Model、重放0额外 Model；真实 Settings 搜索通过，YouTube Music 未登录受阻。
+- 门禁：run-k4B0cc 两项私有素材失败 + 一项启动超时，未改浏览器测试的隔离复测通过；Native初测17中2项 Settings task污染已隔离，17+4+2=23项复测通过。
+- 边界：0.10.5 APK 仅装 Emulator；Fold6保持0.10.4/旧连接；Trace仍WIP、不上传；未推送。
+- 证据：docs/android-input-bedrock-emulator-20261027.md；本地未提交。

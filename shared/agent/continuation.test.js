@@ -9,15 +9,15 @@ const user=content=>({role:'user',content});
 const assistant=content=>({role:'assistant',content});
 test('retry restores the previous compound task with current configured capabilities',()=>{
  const p=ask('再试一次',[user(goal),assistant('Search was unavailable.'),user('再试一次')]);
- assert.equal(p.route,'http-search');assert.deepEqual(p.tools,['web_search','fetch_url','phone_use']);assert.deepEqual(p.requiredTools,['phone_use']);
- assert.deepEqual(p.toolDependencies,{phone_use:['web_search']});assert.match(p.instructions,/retry/i);
+ assert.equal(p.route,'http-search');assert.deepEqual(p.tools,['web_search','fetch_url','phone_use']);assert.deepEqual(p.suggestedRequiredTools,['phone_use']);
+ assert.deepEqual(p.suggestedDependencies,{phone_use:['web_search']});assert.match(p.instructions,/retry/i);
 });
 test('short Chinese retry retains the original phone goal and its execution requirement',()=>{
  const original='打开汽水音乐 搜索浅影阿的《牡丹亭》播放';
  const messages=[user(original),assistant('请先启用 Accessibility Service。')];
  for(const text of ['重试','重试一次','重试一下','请重试']) {
   const p=ask(text,[...messages,user(text)]);
-  assert.equal(p.route,'phone',text);assert.deepEqual(p.requiredTools,['phone_use']);
+  assert.equal(p.route,'phone',text);assert.deepEqual(p.suggestedRequiredTools,['phone_use']);
   assert.ok(p.availableTools.includes('phone_use'));assert.match(p.resolvedGoal,/打开汽水音乐/);
  }
  const narrowed=ask('重试，不要操作手机',messages);

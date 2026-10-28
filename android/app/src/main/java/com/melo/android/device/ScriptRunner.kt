@@ -69,6 +69,7 @@ class ScriptRunner(private val execute: suspend (JsonObject) -> DeviceToolResult
         ScriptValidator.validate(script)
         require(parameters.keys.all { it in script.parameters } && script.parameters.all { it in parameters } && parameters.values.all { it.length <= 4000 }) { "脚本输入参数缺失或过长。" }
         var completed = 0; var unsafe = false; var lastReceipt: DeviceToolResult? = null
+        val populated = mutableMapOf<Pair<String, NodeSelector?>, String>()
         try {
             for ((index, step) in script.steps.withIndex()) {
                 currentCoroutineContext().ensureActive(); onPhase("本机脚本 · ${index + 1}/${script.steps.size} · ${step.action}")
@@ -77,7 +78,24 @@ class ScriptRunner(private val execute: suspend (JsonObject) -> DeviceToolResult
                 var receipt: DeviceToolResult? = null
                 for (attempt in 0..1) {
                     ensureCompatible()
-                    val prepared = if (step.action in setOf("open_app", "wait")) null else prepare(step, parameters, deadline)
+                    var prepared = if (step.action in setOf("open_app", "wait")) null else prepare(step, parameters, deadline)
+                    if (step.action == "type_text" && prepared?.second?.get("focused")?.jsonPrimitive?.booleanOrNull == false) {
+                        // Focus is a precondition of editable input, not a detail
+                        // that can be assumed from the original successful run.
+                        ensureCompatible(); unsafe = true
+                        val focus = execute(buildJsonObject { put("action", "tap"); put("screen_id", prepared!!.first.data.text("screen_id")); put("node_id", prepared!!.second!!.text("node_id")) })
+                        onStep(DeviceStep("tap", focus.ok, "本机脚本准备输入框 Focus", code = focus.data.text("code")))
+                        if (!focus.ok) throw ReplayFailure(focus.data.text("code"), focus.data.text("error"))
+                        prepared = prepare(step, parameters, deadline)
+                        if (prepared.second?.get("focused")?.jsonPrimitive?.booleanOrNull == false) throw ReplayFailure("input_not_focused", "输入框未获得 Focus，未输入文字。")
+                    }
+                    if (prepared != null && step.action in setOf("tap", "submit_input", "swipe")) {
+                        for ((entry, expected) in populated) {
+                            if (entry.first != prepared.first.data.text("package_name")) continue
+                            val known = prepared.first.data["nodes"]?.jsonArray.orEmpty().map { it.jsonObject }.filter { entry.second?.matches(it) == true }
+                            if (known.size > 1 || known.singleOrNull()?.text("text")?.let { it != expected } == true) throw ReplayFailure("input_precondition_changed", "输入内容与本次参数不一致，未提交或点击旧内容。")
+                        }
+                    }
                     val args = when (step.action) {
                         "open_app" -> buildJsonObject { put("action", "open_app"); put("package_name", step.packageName) }
                         "wait" -> buildJsonObject { put("action", "wait"); put("duration_ms", step.durationMs) }
@@ -88,21 +106,27 @@ class ScriptRunner(private val execute: suspend (JsonObject) -> DeviceToolResult
                             if (step.action == "type_text") put("text", if (step.parameter.isBlank()) step.text else parameters.getValue(step.parameter))
                         }
                     }
+                    if (step.action == "submit_input") {
+                        val expected = populated[step.packageName to step.selector] ?: throw ReplayFailure("input_precondition_missing", "缓存未建立输入前置条件，未提交。")
+                        if (prepared?.second?.text("text") != expected) throw ReplayFailure("input_precondition_changed", "输入内容与本次参数不一致，未提交旧文字。")
+                    }
                     DeviceTools.validate(args)
                     val previouslyUnsafe = unsafe
                     ensureCompatible()
-                    if (step.action in setOf("tap", "type_text", "swipe", "back")) unsafe = true
+                    if (step.action in setOf("tap", "type_text", "submit_input", "swipe", "back")) unsafe = true
                     receipt = execute(args)
-                    if (!receipt.ok && receipt.data.text("code") in setOf("stale_screen", "stale_target", "user_declined", "invalid_arguments")) unsafe = previouslyUnsafe
+                    if (!receipt.ok && receipt.data.text("code") in setOf("stale_screen", "stale_target", "user_declined", "invalid_arguments", "input_not_focused", "submission_unavailable")) unsafe = previouslyUnsafe
                     if (receipt.ok || receipt.data.text("code") !in setOf("stale_screen", "stale_target") || attempt == 1) break
                 }
                 val result = receipt!!
                 lastReceipt = result
                 // Even a custom unlabeled button can commit. Never auto-resume a
                 // failed cache by replaying previous taps/typing from the beginning.
-                if (step.action in setOf("tap", "type_text", "swipe", "back") && (result.ok || result.data.text("code") !in setOf("stale_screen", "stale_target", "user_declined", "invalid_arguments"))) unsafe = true
+                if (step.action in setOf("tap", "type_text", "submit_input", "swipe", "back") && (result.ok || result.data.text("code") !in setOf("stale_screen", "stale_target", "user_declined", "invalid_arguments", "input_not_focused", "submission_unavailable"))) unsafe = true
                 onStep(DeviceStep(step.action, result.ok, "本机脚本第 ${index + 1} 步" + if (result.ok) "已返回执行回执" else "失败，已停止", durationMs = (System.nanoTime() - started) / 1_000_000, code = result.data.text("code")))
                 if (!result.ok) return ScriptReplay(DeviceOutcome(if (result.data.text("code") == "user_declined") "needs_user" else "blocked", error = result.data.text("error")), completed, unsafe || result.data.text("code") == "user_declined")
+                if (step.action in setOf("open_app", "back", "home", "submit_input")) populated.clear()
+                if (step.action == "type_text") populated[step.packageName to step.selector] = if (step.parameter.isBlank()) step.text else parameters.getValue(step.parameter)
                 completed++
             }
             if (script.cacheKind == "action") {
@@ -117,10 +141,12 @@ class ScriptRunner(private val execute: suspend (JsonObject) -> DeviceToolResult
             onPhase("本机脚本 · 重新检查终态…")
             val assertion = script.completion
             val text = if (assertion.parameter.isNotBlank()) parameters.getValue(assertion.parameter) else expand(assertion.visibleText, parameters)
+            val required = assertion.requiredTexts.map { expand(it, parameters) }
             val target = ScriptStep("wait", assertion.packageName, assertion.windowTitle, timeoutMs = completionTimeoutMs)
             val until = System.nanoTime() + completionTimeoutMs * 1_000_000L
             var previous = prepare(target, parameters, until).first
-            fun visible(): Boolean = text.isBlank() || previous.data["nodes"]?.jsonArray.orEmpty().any { it.jsonObject.text("text") == text || it.jsonObject.text("description") == text }
+            fun visibleIn(screen: JsonObject, value: String) = screen["nodes"]?.jsonArray.orEmpty().any { it.jsonObject.text("text") == value || it.jsonObject.text("description") == value }
+            fun visible(): Boolean = (text.isBlank() || visibleIn(previous.data, text)) && required.all { visibleIn(previous.data, it) }
             while ((!visible() || previous.data["stable"]?.jsonPrimitive?.booleanOrNull == false) && System.nanoTime() < until) { delay(250); if (System.nanoTime() < until) previous = prepare(target, parameters, until).first }
             val claim = buildJsonObject { put("action", "finish"); put("outcome", "achieved"); put("summary", "本机脚本已执行并重新检查终态。"); put("screen_id", previous.data.text("screen_id")); put("expected_package", assertion.packageName); if (text.isNotBlank()) put("visible_text", text) }
             val started = System.nanoTime()
@@ -128,6 +154,7 @@ class ScriptRunner(private val execute: suspend (JsonObject) -> DeviceToolResult
             val fresh = observe(previous.data["window_id"]?.jsonPrimitive?.intOrNull)
             ensureCompatible()
             val verified = DeviceCompletion.verify(claim, previous, fresh)
+            if (verified.ok && !required.all { visibleIn(previous.data, it) && visibleIn(fresh.data, it) }) return ScriptReplay(DeviceOutcome("blocked", error = "附加终态文字与本次参数不一致。"), completed, unsafe)
             onStep(DeviceStep("finish", verified.ok, if (verified.ok) "本机脚本终态已重新校验" else "终态不匹配，未标记完成", durationMs = (System.nanoTime() - started) / 1_000_000, code = verified.data.text("code")))
             return ScriptReplay(if (verified.ok) DeviceOutcome("achieved", claim.text("summary"), verification = "visible_facts") else DeviceOutcome("blocked", error = verified.data.text("error")), completed, unsafe)
         } catch (e: CancellationException) { throw e }
