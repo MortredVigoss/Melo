@@ -13,6 +13,8 @@
 
 ## 2. 当前事实
 
+10-28 用户现授权对当前Branch单独Release，已推送codex/android-organizer-20261026并发布[Android 0.10.7 Pre-release](https://github.com/MortredVigoss/Melo/releases/tag/android-v0.10.7-organizer-preview.1)，Tag固定fd3bd0d，不合并master。APK+SHA256SUMS匿名下载200、GitHub digest一致，与0.10.6同签名。已补集成档run-dkvzlN与完整test:full：Android/Browser/Runtime Smoke通过；全量JS仍仅两项私有桌宠素材失败，macOS打包/安装/启动在Linux失败、Swift跳过，不能称完整发布Gate GREEN。私人Trace仅本地。[发布回执](docs/android-0.10.7-branch-prerelease-20261028.md)。
+
 10-28 已落实共享任务/证据契约与生产Android单决策Loop：phone_action/phone_workflow回到同一Chat Loop，原生Session无Model；Routing仅建议、明确Workflow依赖保留。修复反馈误派任务、完成证据截断/误分类、每轮丢历史、跨页已生效状态丢失、动作后观察失败与残留输入Cache；成功子流程独立发布并参数重放。0.10.7（31）：Core240/JVM190/Native50通过，最终APK再跑生产Chat6项通过；真实Bedrock五个样本独立UI校验，导航27.137→19.563秒，浏览器59.661→28.295秒/12→3请求，换词30.084秒命中同Cache。run-PyqRFL JS4636过/2缺私有素材失败/15跳过；Lint/Debug/Release、独立Settings浏览器、SceneBridge4通过。Swift/JSC待macOS、Fold6 OneUI待实机；不能称全仓GREEN。APK已导出Windows artifacts，Trace仅本地、未操作手机、未推送。[实现与完整验收边界](docs/android-unified-loop-20261028.md)。
 
 10-28 用户要求手机拿走后完整分析最近会话，避免逐句补丁。已只读保存两份一致快照，完整读取最新4会话/34消息/18主执行/9设备执行；其中15次主执行确属0.10.6。确认共性问题：Android餐厅Skill与共享Web指导在实际请求中冲突；反馈/澄清被requiredTools和工具证据规则误判，108.91秒纯反馈出现6次模型请求；子循环每轮压缩导致已选目的地在Start后的下一轮丢失，随后继续操作并尝试关闭导航（被freshness拦住）；导航仅学到open_app、0次checkpoint，另有搜索Cache遗漏原输入前置条件；操作/观察错误状态混合。3个共用层故障已无模型/无手机本地复现。[审计、分阶段改进与验收](docs/android-session-harness-audit-20261028.md)已记录；该审计阶段仅改文档与本地诊断、未改运行时、未请求新模型、未推送；其后的实现与验证见上一条。原始私人Trace仅本地，不能沿用浏览器验收声称真实Maps导航已修。

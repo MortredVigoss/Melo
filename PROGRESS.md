@@ -1,3 +1,9 @@
+## 2026-10-28 — 让手机远程下载当前 Branch 的试用包
+
+用户要求直接针对当前Branch发布，构成本轮推送与Pre-release授权，取代此前先保留本地；未合并master、未运行git pp或自动Review。Tag固定fd3bd0d，附件为已验收APK和校验文件，匿名下载200，GitHub digest一致，与0.10.6同签名。
+按仓库规则补跑集成档run-dkvzlN和完整test:full；Android/Browser/Runtime Smoke通过，但私有桌宠素材及Linux缺少macOS发布环境仍红，故仅作为实验性Pre-release，不称全平台GREEN。不上传私人Trace，未操作手机、未调用模型。
+[公开版本与验证回执](docs/android-0.10.7-branch-prerelease-20261028.md)。后续文档提交不移动已发布Tag。
+
 ## 2026-10-28 — 用单决策 Loop 与成功子流程 Cache 落实审计结论
 
 用户要求改共性 Harness，手机拿走后自主验证。Codex 沿用已授权本地 Bedrock 做五个生产 Chat 真实模型样本，并使用独立 UI 终态校验：浏览器59.661→28.295秒、12→3次实际请求，换词仍命中同Cache；导航采用刻意隐藏目的地的Fixture，未冒充真实Maps验收。
