@@ -77,4 +77,6 @@ A1 已落地并本地提交（见 PROGRESS 当日条目）。桌面岗位目录�
 
 ### 结果
 
-A2 / A3 与 A5 的背景部分已落地并本地提交。主 Agent 一轮可派多名成员；只读成员并行、执行成员串行；每名成员有自己的回合与输入 token 份额，主 Agent 保留 60k 收尾额度；成员拿到原始目标与有界会话背景；成员副作用指纹回流主回合。未做：岗位模型可选连接（需要设置界面与配置契约，待产品决定）；iPhone / Android 仍是内联单成员实现（共享契约向后兼容，两端行为不变）。真实探针见下一节。
+A2 / A3 与 A5 的背景部分已落地并本地提交（`a1b56f8`）。
+
+真实探针（重启桌面后同一道 BIGBANG 题，`live-bigbang-phase2/`，场景 `aefd0d9f6e85081b2aded8669ae001c8`，trace `66bb67c2…`）暴露一个真 bug：检索成员 1 在 7 s 派出、43 s 交回"未核实"，trace 里它的第一次模型请求就是 `limit-delivery`，`run.finished` 为 `BUDGET_EXHAUSTED`——`runSubAgent` 用 `memberTokenLimit(child, maxTokens ?? 32000)` 把成员输入 token 上限压到 32k、再扣 8k 收尾保留与 `maxTotalTokens` 口径下的输出保留，成员第一次带工具定义和原始目标背景的工作请求就超过 `admitModel` 允许值，直接进入收尾。主 Agent 随后自己抓页，161 s 再派成员时已触发 60k 保留不启动，174 s 预算耗尽，仍是 `LIMIT_DELIVERED`（1 met / 4 missing）。修正：`runInternalMembers` 把 `maxTokens: share`（≤ 120k）传给 `runSubAgent`，成员的输入与总 token 上限即其份额；成员 `execution_event` 的 id 改为 `job-N:` 前缀（之前只加 `actorName`，成员的 `model:N` 会并进主 Agent 同名阶段）。新增真实 `runSubAgent` 循环下的回归：成员上限 ∈ [20k, 120k] 且 > 32k，第一次请求是带 `Task:` 的工作请求而非 limit-delivery，事件全部带 `job-1:` 前缀。主 Agent 一轮可派多名成员；只读成员并行、执行成员串行；每名成员有自己的回合与输入 token 份额，主 Agent 保留 60k 收尾额度；成员拿到原始目标与有界会话背景；成员副作用指纹回流主回合。未做：岗位模型可选连接（需要设置界面与配置契约，待产品决定）；iPhone / Android 仍是内联单成员实现（共享契约向后兼容，两端行为不变）。真实探针见下一节。
