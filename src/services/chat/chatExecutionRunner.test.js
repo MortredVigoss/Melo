@@ -1114,7 +1114,7 @@ test('cancellation after a tool result never starts delivery or another effect',
 test('ordinary persona routes research then calculation, rejects a cross-role call, and delivers from real handoffs', async () => {
   const {registerTool, unregisterTool, getTool} = await import('../../tools/registry.js');
   const old = getTool('fetch_url');
-  let reads = 0, leadTurns = 0, researchTurns = 0, calcTurns = 0;
+  let reads = 0, leadTurns = 0, researchTurns = 0, calcTurns = 0, checks = 0;
   const question = 'Look up the concert forecast at https://example.org/forecast and convert the temperature to Fahrenheit.';
   const call = (name,args,id) => '<tool_call>'+JSON.stringify({id,name,arguments:args})+'</tool_call>';
   unregisterTool('fetch_url');
@@ -1127,6 +1127,11 @@ test('ordinary persona routes research then calculation, rejects a cross-role ca
       _dependencies:{getEmbedding:async()=>null,createReply:async options=>{
         const messages=JSON.stringify(options.messages);
         if(options.systemPrompt.startsWith("You are Melo's task completion checker")) {
+          // Members now verify their own assignment on their own turn (phase A2);
+          // the lead's check comes last and cites the prefixed member evidence.
+          checks++;
+          if(checks===1)return JSON.stringify({decision:'complete',reasonType:'fulfilled',requirements:[{text:'forecast',kind:'external_fact',status:'met',evidenceIds:['forecast']}]});
+          if(checks===2)return JSON.stringify({decision:'complete',reasonType:'fulfilled',requirements:[{text:'conversion',kind:'computation',status:'met',evidenceIds:['calc']}]});
           return JSON.stringify({decision:'complete',reasonType:'fulfilled',requirements:[{text:'forecast and conversion',kind:'external_fact',status:'met',evidenceIds:['job-1:forecast','job-2:calc']}]});
         }
         if(options.systemPrompt.includes('You are the internal research specialist')) {
@@ -1147,5 +1152,68 @@ test('ordinary persona routes research then calculation, rejects a cross-role ca
     assert.equal(reads,1);assert.equal(researchTurns,2);assert.equal(calcTurns,3);assert.equal(leadTurns,3);
     assert.match(result.normalizedReply.content,/Winter.*68 °F/);assert.equal(result.normalizedReply.completion.outcome,'completed');
     assert.ok(events.some(e=>e.id==='internal:2' && e.status==='completed'));
+    assert.equal(checks,3,'each member checked its own assignment once, then the lead');
+  } finally {unregisterTool('fetch_url');registerTool(old);}
+});
+
+test('phase A3: one response assigns two jobs that run as parallel members and both handoffs return in the same round', async () => {
+  const {registerTool, unregisterTool, getTool} = await import('../../tools/registry.js');
+  const old = getTool('fetch_url');
+  let reads = 0, leadTurns = 0, researchTurns = 0, calcTurns = 0;
+  const question = 'Look up the concert forecast at https://example.org/forecast and separately convert 25 °C to Fahrenheit.';
+  const call = (name,args,id) => '<tool_call>'+JSON.stringify({id,name,arguments:args})+'</tool_call>';
+  unregisterTool('fetch_url');
+  registerTool({...old,run:async()=>{reads++;return {ok:true,output:'Forecast at the venue: 20 Celsius.',meta:{url:'https://example.org/forecast',length:33}};}});
+  try {
+    const state=fixtureState(),chat=fixtureChat({messages:[{id:'par-user',role:'user',content:question}]});
+    state.chats=[chat];state.agentProfiles.main.name='Winter';state.agentProfiles.main.collaboration={canDelegate:false,delegateTargets:[]};await saveState(state);
+    const events=[];
+    const result=await runChatAgentExecutionGraph({config:fixtureConfig,state,chat,workspace:fixtureWorkspace(),connectors:[],skills:[],latestUserMessage:question,agentId:'main',sseEmitter:(type,e)=>{if(type==='execution_event')events.push(e);},
+      _dependencies:{getEmbedding:async()=>null,createReply:async options=>{
+        const messages=JSON.stringify(options.messages);
+        if(options.systemPrompt.startsWith("You are Melo's task completion checker")) {
+          if(messages.includes('77 °F') && messages.includes('20 °C'))return JSON.stringify({decision:'complete',reasonType:'fulfilled',requirements:[{text:'forecast and conversion',kind:'external_fact',status:'met',evidenceIds:['job-1:forecast','job-2:calc']}]});
+          if(messages.includes('Convert 25'))return JSON.stringify({decision:'complete',reasonType:'fulfilled',requirements:[{text:'conversion',kind:'computation',status:'met',evidenceIds:['calc']}]});
+          return JSON.stringify({decision:'complete',reasonType:'fulfilled',requirements:[{text:'forecast',kind:'external_fact',status:'met',evidenceIds:['forecast']}]});
+        }
+        if(options.systemPrompt.includes('You are the internal research specialist'))return ++researchTurns===1?call('fetch_url',{url:'https://example.org/forecast'},'forecast'):'The venue forecast is 20 °C.';
+        if(options.systemPrompt.includes('You are the internal calculate specialist'))return ++calcTurns===1?call('calculator',{action:'convert',value:25,from:'celsius',to:'fahrenheit'},'calc'):'25 °C equals 77 °F.';
+        leadTurns++;
+        if(leadTurns===1)return call('route_task',{role:'research',task:'Read the venue forecast.'},'route1')+call('route_task',{role:'calculate',task:'Convert 25 °C to Fahrenheit.'},'route2');
+        assert.match(messages,/20 °C/);assert.match(messages,/77 °F/);
+        return 'Winter: the forecast is 20 °C and 25 °C is 77 °F.';
+      }}});
+    assert.equal(reads,1);assert.equal(researchTurns,2);assert.equal(calcTurns,2);assert.equal(leadTurns,2,'both handoffs came back in one lead round');
+    assert.equal(result.normalizedReply.completion.outcome,'completed');
+    const internal=events.filter(e=>/^internal:/.test(e.id)).map(e=>e.id+':'+e.status);
+    assert.ok(internal.includes('internal:1:completed') && internal.includes('internal:2:completed'));
+    const firstDone=internal.findIndex(e=>e.endsWith(':completed'));
+    assert.ok(internal.slice(0,firstDone).includes('internal:1:running') && internal.slice(0,firstDone).includes('internal:2:running'),'both members were running before either finished');
+  } finally {unregisterTool('fetch_url');registerTool(old);}
+});
+
+test('phase A3: route_task mixed with another tool is refused for that round while the other tool still runs', async () => {
+  const {registerTool, unregisterTool, getTool} = await import('../../tools/registry.js');
+  const old = getTool('fetch_url');
+  let reads = 0, leadTurns = 0, memberTurns = 0;
+  const question = 'Look up the concert forecast at https://example.org/forecast.';
+  const call = (name,args,id) => '<tool_call>'+JSON.stringify({id,name,arguments:args})+'</tool_call>';
+  unregisterTool('fetch_url');
+  registerTool({...old,run:async()=>{reads++;return {ok:true,output:'Forecast at the venue: 20 Celsius.',meta:{url:'https://example.org/forecast',length:33}};}});
+  try {
+    const state=fixtureState(),chat=fixtureChat({messages:[{id:'mix-user',role:'user',content:question}]});
+    state.chats=[chat];state.agentProfiles.main.collaboration={canDelegate:false,delegateTargets:[]};await saveState(state);
+    const result=await runChatAgentExecutionGraph({config:fixtureConfig,state,chat,workspace:fixtureWorkspace(),connectors:[],skills:[],latestUserMessage:question,agentId:'main',sseEmitter:()=>{},
+      _dependencies:{getEmbedding:async()=>null,createReply:async options=>{
+        const messages=JSON.stringify(options.messages);
+        if(options.systemPrompt.startsWith("You are Melo's task completion checker"))return JSON.stringify({decision:'complete',reasonType:'fulfilled',requirements:[{text:'forecast',kind:'external_fact',status:'met',evidenceIds:['direct']}]});
+        if(options.systemPrompt.includes('You are the internal'))return (++memberTurns, 'should not run');
+        leadTurns++;
+        if(leadTurns===1)return call('route_task',{role:'research',task:'Read the venue forecast.'},'route1')+call('fetch_url',{url:'https://example.org/forecast'},'direct');
+        assert.match(messages,/route_task on its own/);assert.match(messages,/20 Celsius/);
+        return 'The forecast is 20 °C.';
+      }}});
+    assert.equal(reads,1,'the direct tool ran');assert.equal(memberTurns,0,'no member started');assert.equal(leadTurns,2);
+    assert.equal(result.normalizedReply.completion.outcome,'completed');
   } finally {unregisterTool('fetch_url');registerTool(old);}
 });

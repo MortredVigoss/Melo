@@ -48,6 +48,7 @@ export function createCoreTurn({ runId = currentLoopTrace()?.context.runId || ra
 
     },
     get status() { return state.status; },
+    get effects() { return { successful: [...(state.successfulEffects || [])], uncertain: [...(state.uncertainEffects || [])] }; },
     get routingProgress() { return { rounds: state.rounds, failures: state.errors, stopped: state.status !== 'running', pendingEffects: state.pending.length > 0 || state.awaitingModel }; },
     get reason() { return state.reason; },
     reply(text = '', locale) { return turnStopReply(state.reason, text, locale); },

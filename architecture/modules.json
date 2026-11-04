@@ -24,8 +24,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 691,
-      "edges": 2240,
+      "modules": 692,
+      "edges": 2245,
       "roots": [
         "src",
         "desktop-ui",
@@ -367,6 +367,7 @@
         {
           "module": "src/agents/subAgent.js",
           "importedBy": [
+            "chat",
             "development",
             "platform",
             "tools"
@@ -567,7 +568,7 @@
       "usedBy": {
         "approvals": 3,
         "channels": 6,
-        "chat": 35,
+        "chat": 36,
         "desktop-shell": 12,
         "development": 4,
         "memory": 2,
@@ -742,7 +743,7 @@
       "modules": {
         "desktop-ui": 27,
         "shared": 44,
-        "src": 69
+        "src": 70
       },
       "entryModules": [
         {
@@ -1110,14 +1111,14 @@
         }
       ],
       "dependsOn": {
-        "agents": 35,
+        "agents": 36,
         "approvals": 8,
         "channels": 2,
         "desktop-shell": 20,
         "knowledge": 5,
         "media": 24,
         "memory": 27,
-        "platform": 66,
+        "platform": 67,
         "projects": 11,
         "settings": 11,
         "sync": 2,
@@ -1293,6 +1294,7 @@
           "src/services/chat/derivedState.test.js",
           "src/services/chat/dynamicContext.test.js",
           "src/services/chat/execution/finalizeNode.test.js",
+          "src/services/chat/execution/internalMembers.test.js",
           "src/services/chat/execution/internalRoles.test.js",
           "src/services/chat/executionDetail.test.js",
           "src/services/chat/executionPipeline.test.js",
@@ -4410,7 +4412,7 @@
         "agents": 49,
         "approvals": 36,
         "channels": 22,
-        "chat": 66,
+        "chat": 67,
         "desktop-shell": 15,
         "development": 9,
         "knowledge": 2,

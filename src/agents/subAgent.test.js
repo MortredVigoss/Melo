@@ -374,3 +374,16 @@ test('T17: a member honours the MELO_FUNCTION_CALLING override from the request 
     task: 't', config: { ...validConfig(), apiProtocol: 'chat-completions', toolCalling: 'legacy' }, replyFn: async options => { seen ||= options; return 'done'; } }));
   assert.equal(seen.toolProtocol, 'chat-completions', 'native override → chat-completions protocol');
 });
+test('internal routing: roleSystem is a trusted system section, instructions stay in the user turn, effects are reported', async () => {
+  const reply = makeFakeReply();
+  reply.queue.push('20 C is 68 F.', "{\"decision\": \"complete\", \"reasonType\": \"self_contained\", \"requirements\": [{\"text\": \"conversion\", \"status\": \"met\", \"evidenceIds\": []}]}");
+  const res = await runSubAgent({
+    task: 'Convert 20 C to F', roleSystem: 'You are the internal calculate specialist. Use only the offered tools.', instructions: 'caller hint',
+    allowedToolIds: ['calculator'], config: validConfig(), replyFn: reply,
+  });
+  const call = reply.callLog[0];
+  assert.match(call.systemPrompt, /You are the internal calculate specialist/);
+  assert.ok(!call.systemPrompt.includes('caller hint'), 'caller hints never enter the system prompt');
+  assert.match(call.messages[0].content, /caller hint/);
+  assert.deepEqual(res.meta.effects, { successful: [], uncertain: [] });
+});

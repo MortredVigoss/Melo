@@ -65,3 +65,13 @@ test('host suggestions extend jobs from declarations but never override static l
   assert.deepEqual(internalRouteCatalog(goal, all, 'bash'), internalRouteCatalog(goal, all));
   assert.deepEqual(evaluate({version:1,op:'internalRouting',action:'catalog',goal,tools:all,suggestions}).value, extended);
 });
+test('feedback may import member effect fingerprints so the lead never repeats a completed or uncertain write', async () => {
+  const { startTurn, advanceTurn } = await import('./turn.js');
+  let state = startTurn({runId:'r',turnId:'t',allowedTools:['file_write','file_read'], now:0}), tick=0;
+  const event = (type, payload={}) => {state=advanceTurn(state,{type,runId:'r',turnId:'t',...payload},++tick);};
+  const write = (id, fingerprint) => ({id,name:'file_write',arguments:{path:'one',content:'value'},effect:'write',fingerprint});
+  event('request');event('feedback',{internalRouting:true,successfulEffects:['member-wrote-one'],uncertainEffects:['member-maybe-two', 7, '']});
+  event('request');event('calls',{calls:[write('again','member-wrote-one'),write('maybe','member-maybe-two'),{id:'read',name:'file_read',arguments:{path:'one'},effect:'read'}]});
+  assert.deepEqual(state.permitted,['read']);
+  assert.equal(state.rejections.again,'ALREADY_EXECUTED');assert.equal(state.rejections.maybe,'ALREADY_ATTEMPTED');
+});

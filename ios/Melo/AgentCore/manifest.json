@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "sha256": "02d6a839cadb8cafb464e7a0d973094ef6d549978f39b5dc606a716052a62b7f",
+  "sha256": "a3f3f8a0b889f27bd06600fcc7ea433fe9d57b1730f16e475c9f235c05af20d8",
   "sources": {
     "shared/agent/index.js": "084ffa83ae85f3db6d63ae7539d1f5dc60254e3c247292494bae6b7e140ac59a",
     "shared/agent/arithmetic.js": "75e2c6f23a2852306c1cc10555804ef357fe6dc4f6bfa38a0f1a92b5630aa093",
@@ -28,7 +28,7 @@
     "shared/agent/modelRouting.js": "edc79f44ecb42176baf853ea890bfaa76206477b4c90888f657f5428625d2e28",
     "src/shared/conversationTopics.js": "c8056fc9d1377e20bdbabdf060759db0ba82cafda7df4d7bb554758cfc2e3e5c",
     "shared/agent/taskReplay.js": "324d3294312b9f4e4d0d2484745e60cc0caf0360c82d9da643f1d1328431e74a",
-    "shared/agent/turn.js": "f8f42de5021216ecf7fc1ab8c59bf712ad1bc2372b15b0329ee5c92076e57dc1",
+    "shared/agent/turn.js": "b414cfc286d210c7620a9a171e9b0259463d2c9fbf3beb6acb3d700c9971f0d2",
     "shared/agent/repeatGuard.js": "eca1d776e713fb7a59e05c1d16f78fb9d71877ad6ebb10cb23e2a4ad5bf78382",
     "shared/agent/toolEffects.js": "c4a441bb4552b2b7962b78012f07eeea34ebf40f25c837bdd367218d0f126c32",
     "shared/agent/policyBridge.js": "4d6529f8d02752acaf43548b81c27e6a206843f2a7c853d4bb56c72707d71984",

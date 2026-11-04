@@ -116,6 +116,9 @@ async function runSubAgentWithTrace(options) {
 async function runSubAgentLoop({
   task,
   instructions = '',
+  // Host-authored system text for an internal routing job (trusted, unlike
+  // the caller-supplied instructions which stay in the user turn).
+  roleSystem = '',
   background = '',
   config,
   workspacePath,
@@ -173,6 +176,7 @@ async function runSubAgentLoop({
     // the same agent, not a bare instructions string.
     agentProfile ? renderAgentIdentity(agentProfile, { variant: 'member' }) : '',
     agentProfile ? HANDOFF_INSTRUCTION : '',
+    typeof roleSystem === 'string' ? roleSystem.trim() : '',
     'You are a focused sub-agent. Your job is to complete the specific task assigned to you.',
     'Be concise and action-oriented. Use tools when needed.',
     'When you have finished the task, provide a clear summary of what you did and the result.',
@@ -409,7 +413,7 @@ async function runSubAgentLoop({
     ok: !exhausted && deniedTools === 0 && completion.outcome === 'completed',
     ...(completion.outcome !== 'completed' ? { error: terminalReason === 'BUDGET_EXHAUSTED' ? 'BUDGET_EXHAUSTED' : 'GOAL_INCOMPLETE' } : {}),
     output: finalOutput,
-    meta: { depth, iterations, toolCalls: totalToolCalls, failedTools, deniedTools, exhausted, ...(completion.outcome === 'budget_exhausted' ? { budgetExceeded: true } : {}), stopReason: terminalReason, toolResults, observations: deliveryEvidence(coreTurn.observations), completion },
+    meta: { depth, iterations, toolCalls: totalToolCalls, failedTools, deniedTools, exhausted, ...(completion.outcome === 'budget_exhausted' ? { budgetExceeded: true } : {}), stopReason: terminalReason, effects: coreTurn.effects, toolResults, observations: deliveryEvidence(coreTurn.observations), completion },
   };
 }
 

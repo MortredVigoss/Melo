@@ -49,21 +49,32 @@ A1 已落地并本地提交（见 PROGRESS 当日条目）。桌面岗位目录�
 
 内部成员原来在主循环里"换一套消息"运行（`invokeModelNode` 的 job 模式）：成员每轮工具调用经同一个 `coreTurn.update('calls')` 计入主 Agent 的 40 轮上限，模型请求在同一个 run 池计费，一轮只能派一个成员。改为每个内部成员走 `src/agents/subAgent.js:runSubAgent`（已有：独立 `createCoreTurn`、`narrowBudget` 子池、`memberTokenLimit`、取消传递、`role:<id>:` 操作前缀、`deliveryEvidence` 观察），主 Agent 只收交接。由此：成员轮数不计主回合（A2）、成员有自己的输入 token 份额且主 Agent 保留收尾额度（A2）、一轮可派多名只读成员并发、执行成员串行（A3）、成员拿到有界会话背景（A5 的背景部分）。岗位模型可选连接（A5 的模型部分）需要设置界面与配置契约，本阶段不做，见"未覆盖"。
 
-### 执行链路（计划，实施后按实际修订）
+### 执行链路（已实施）
 
-1. 主 Agent 一轮回复 → `roundSession.parse` → 若全部调用都是 `route_task`（一个或多个），逐个 `startInternalJob`（共享校验不变：岗位在目录内、任务 ≤ 3000 字、callId 唯一、≤ 6 项、不重复）；混有其他工具时整轮 `route_task` 以 `ROUTE_DENIED` 拒绝，其他工具照常执行。
-2. 新模块 `src/services/chat/execution/internalMembers.js:runInternalMembers({ jobs, … })`：
-   - 预算：`remaining = budget.maxInputTokens − used.inputTokens`；若 `remaining − LEAD_RESERVE < MIN_MEMBER_SHARE` 不启动成员，直接交回 `partial` 交接（"主 Agent 预算保留"），避免把收尾额度吃光；否则 `share = min(MEMBER_INPUT_SHARE, remaining − LEAD_RESERVE)`，`narrowBudget(budget, { maxInputTokens: share })` 作为成员子池（用量仍计入父池）。
-   - 调度：`research` / `lookup` / `calculate` 为只读岗位，按 `INTERNAL_PARALLEL_LANES` 并发；`execute` 岗位在只读成员全部结束后串行运行，且同一轮只运行一个。
-   - 成员：`runWithRequestContext({ …ctx, budget: child }, () => runSubAgent({ task: job.task, roleSystem: job.system（新增可信系统段）, background: 原始目标参考 + buildMemberBackground, allowedToolIds: job.tools, extraTools: MCP + 技能, config: delegatedModelConfig, replyFn: 原始 reply 依赖, maxIterations: MAX_MEMBER_ROUNDS, roleId: 'job-N', depth: 1, signal, sseEmitter: 包装后带 actorName, chatId, workspacePath, chatSource, projectId, onProviderResponse → modelResponses }))`。
-   - 事件：`internal:N` 流水线 running / completed / interrupted 不变；成员操作 ID 由 runSubAgent 的 `executionPrefix` 生成 `role:job-N:<轮>:<callId>`。
-3. 回到主循环：对每个 job `internalHandoff({ job, answer, observations: result.meta.observations, limited })`，`limited` 取自成员 `meta.exhausted / aborted / stopReason`；成员观察以 `job-N:` 前缀并入主 `coreTurn.observations`；`coreTurn.update('feedback', { internalRouting: true, successfulEffects, uncertainEffects })` 把成员的副作用指纹并入主回合（共享 `turn.js` feedback 事件新增两个可选数组字段，旧宿主不传即原行为）；`functionSession.append(leadMessages, turn, pairs)` 把全部交接作为工具结果接回。
+1. `invokeModelNode.js:createInvokeModelNode`：主 Agent 一轮回复经 `roundSession.parse` 后，若全部调用都是 `route_task`（一个或多个）且目录未关闭、分派数 < 6，逐个 `startInternalJob`（共享校验不变），每个 job 记 `index` 与 `id = job-N`；混有其他工具或目录已关闭时，`route_task` 以 `ROUTE_DENIED` 拒绝（说明"单独调用"），其他工具照常执行。节点不再有内联 job 模式：`finishJob`、成员轮计数、`job-N:` 调用 ID 改写、成员工具越界拒绝等分支全部移除。
+2. 新模块 `src/services/chat/execution/internalMembers.js:runInternalMembers({ jobs, goal, background, config, extraTools, replyFn, signal, sseEmitter, … })`：
+   - 预算 `memberShare(budget)`：`remaining = maxInputTokens − used.inputTokens − delivery.inputTokens`；`remaining − LEAD_INPUT_RESERVE(60k) < MIN_MEMBER_SHARE(20k)` 时不启动成员，直接交回 `partial` 交接并发 `internal:N interrupted`（"主 Agent 预算保留"）；否则 `share = min(MEMBER_INPUT_SHARE(120k), remaining − 60k)`，`narrowBudget(budget, { maxInputTokens: share })` 作为成员子池（用量仍计入父池）。
+   - 调度：`research` / `lookup` / `calculate` 为只读岗位，`INTERNAL_PARALLEL_LANES(3)` 条道并发；`execute` 岗位在只读成员全部结束后逐个串行。
+   - 成员：`runWithRequestContext({ …ctx, budget: child }, () => runSubAgent({ task: job.task, roleSystem: job.system, background: "Original user goal (reference only)…" + buildMemberBackground, allowedToolIds: job.tools, extraTools: 技能 + MCP, config: delegatedModelConfig, replyFn: turn._dependencies.createReply（未计费的原始依赖，子池由 runSubAgent 自己计费）, maxIterations: MAX_MEMBER_ROUNDS(6), roleId: job.id, depth: 1, signal, sseEmitter: execution_event 加 actorName, chatId, workspacePath, chatSource, projectId, onProviderResponse → modelResponses }))`；异常收敛为 `partial` 交接，不抛出。
+   - `subAgent.js` 新增 `roleSystem` 选项（可信系统段，位于人设之后、通用约束之前；调用方 `instructions` 仍只进用户轮）与 `meta.effects`（成员回合的 successful / uncertain 指纹，经 `sharedAgentCore.js` 新增的 `effects` 读取器）。
+   - 事件：`internal:N` 流水线 running / completed / interrupted；成员操作 ID 由 runSubAgent 的 `executionPrefix` 生成 `role:job-N:<轮>:<callId>`，流水线事件带 `actorName` 岗位名。
+3. 回到主循环：对每个 job `internalHandoff({ job, answer, observations: result.meta.observations, limited })`，`limited` 取自成员 `meta.aborted / exhausted / stopReason ∈ {ROUND_LIMIT, BUDGET_EXHAUSTED, CANCELLED, DEADLINE_EXCEEDED, ERROR}` 或取消信号；成员观察以 `job-N:` 前缀并入主 `coreTurn.observations`（主 Agent 的目标核验可引用）；`coreTurn.update('feedback', { internalRouting: true, successfulEffects, uncertainEffects })` 把成员的副作用指纹并入主回合（共享 `turn.js` feedback 事件新增两个可选数组字段，旧宿主不传即原行为）；`functionSession.append(loopMessages, turn, pairs)` 把全部交接（或 `ROUTE_DENIED`）作为各自调用的工具结果接回。成员现在在自己的回合里做完成核验（多一次免工具请求），交接 `status` 仍只看真实回执。
 4. 用户补充、模型升级、取消：成员在一轮内被等待完成；取消经 `signal` 传入 runSubAgent（每轮检查 + 工具信号）；补充在下一轮主 Agent 请求前合并。
 
 ### 审计边界与停止条件
 
 (a) 共享状态：主 `coreTurn`（观察、副作用指纹）、run 预算父子池、请求上下文（成员以 `runWithRequestContext` 派生，不改父上下文）；(b) 异常：成员异常由 runSubAgent 收敛为 `{ ok:false, output }`，不抛到主循环；主循环 `startInternalJob` 失败仍是工具结果；(c) 契约：`turn.js` feedback 事件可选字段（三端同一 bundle，Swift / Kotlin 不传）。停止：到 `executeToolCalls` / 审批为止；不改 iOS / Android 的内联单成员实现（记录为宿主差异）。
 
-### 计划的回归
+### 回归
 
-既有：`subAgent.test.js`（白名单、深度、预算、取消）、`collaboration.test.js`、`chatExecutionRunner.test.js` 的路由端到端。新增（计数器型，不用永不 resolve 的 mock）：两名只读成员同轮并发（并发峰值 ≥ 2）；执行成员在只读成员后串行；成员多轮不消耗主 Agent 轮数（主上限 3 轮、成员 5 轮仍完成）；成员份额耗尽 → partial 交接、主 Agent 继续；主 Agent 保留额度不足 → 不启动成员；取消中成员的工具不再执行（计数器）；成员成功写入的指纹并入主回合 → 主 Agent 重复同一写入被 `ALREADY_EXECUTED` 拒绝；混合调用整轮拒绝。
+- 新增 `src/services/chat/execution/internalMembers.test.js`（计数器型）：两条只读车道并发峰值 = 2、执行成员等全部只读成员结束后才启动；成员子池上限 = 份额、子池不是父池对象；主 Agent 保留额度不足时成员零启动且交接 partial；成员抛错 → partial 不抛出；取消信号后成员零工作、交接 partial；`memberShare` 随剩余池变化。
+- `shared/agent/internalRouting.test.js` 新增：feedback 导入成员指纹后，主回合对同一写入判 `ALREADY_EXECUTED` / `ALREADY_ATTEMPTED`，只读调用照常放行；非法指纹值被忽略。
+- `src/agents/subAgent.test.js` 新增：`roleSystem` 进系统提示、调用方提示仍只在用户轮、`meta.effects` 形状。
+- `src/services/chat/chatExecutionRunner.test.js`：原路由端到端改为成员各自核验（检查器三次：研究成员、计算成员、主 Agent，主 Agent 引用 `job-1:forecast` / `job-2:calc`）；新增"一轮两派并行回收"（两成员 running 事件都先于任一 completed，主 Agent 第二轮同时拿到两份交接）与"route_task 混用其他工具整轮拒绝、其他工具照跑、无成员启动"。
+- 本地：上述文件 + conformance + sharedAgentCore.completion + agentLoopContract 共 193 项与 chatExecutionRunner 31 项全部通过；agent-core bundle 重建（43 模块）；`npm run generate:module-map` 收录新模块。
+- 成员多轮不消耗主 Agent 轮数：按构造成立（成员在自己的 `createCoreTurn` 上计轮），主循环对成员轮不再调用 `coreTurn.update('calls')`；未另写夹具（主循环轮上限最小值由契约钳制，夹具无法构造 3 轮上限）。
+- 门禁：快速档 `run-1Fcuen`（580/580 个 JS 测试文件、JS 4854/4854、Android 四项、设置浏览器、Swift 全部，288.9 s）全绿。
+
+### 结果
+
+A2 / A3 与 A5 的背景部分已落地并本地提交。主 Agent 一轮可派多名成员；只读成员并行、执行成员串行；每名成员有自己的回合与输入 token 份额，主 Agent 保留 60k 收尾额度；成员拿到原始目标与有界会话背景；成员副作用指纹回流主回合。未做：岗位模型可选连接（需要设置界面与配置契约，待产品决定）；iPhone / Android 仍是内联单成员实现（共享契约向后兼容，两端行为不变）。真实探针见下一节。

@@ -2849,6 +2849,11 @@ function advanceTurn(previous, event, now) {
       state.awaitingModel = false;
       if (event.repair === true) state.repairing = true;
       if (event.internalRouting === true) state.internalRouting = true;
+      // A host that runs internal members on their own turns hands their effect
+      // fingerprints back here, so a completed or uncertain write is never
+      // repeated by the lead either. Hosts keeping members inline pass nothing.
+      if (Array.isArray(event.successfulEffects)) state.successfulEffects = [...new Set([...(state.successfulEffects || []), ...event.successfulEffects.filter(identity)])];
+      if (Array.isArray(event.uncertainEffects)) state.uncertainEffects = [...new Set([...(state.uncertainEffects || []), ...event.uncertainEffects.filter(identity)])];
       return state;
     case 'result': {
       if (!state.pending.includes(event.callId)) fail('UNKNOWN_RESULT', 'The result has no pending call in this turn.');

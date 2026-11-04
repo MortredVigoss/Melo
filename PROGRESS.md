@@ -1,3 +1,7 @@
+## 2026-11-04 — Claude 方案 A 阶段 2：内部成员独立运行（预算分层、并行分派、会话背景）
+
+Claude：A2 / A3 / A5（背景）合并落地。`invokeModelNode` 去掉内联 job 模式，`route_task` 一轮可多派，交给新模块 `internalMembers.js` 按 `runSubAgent` 运行：成员各自 `createCoreTurn`（最多 6 轮，不计主 Agent 40 轮）、`narrowBudget` 子池（份额 ≤ 120k 输入 token，主 Agent 保留 60k，不足 20k 不启动并交回 partial）、只读岗位 3 条道并发、执行岗位串行、取消信号贯通、成员观察以 `job-N:` 并入主回合、副作用指纹经 `turn.js` feedback 新增可选字段回流。`subAgent.js` 新增可信 `roleSystem` 段与 `meta.effects`。新测试：成员调度 / 份额 / 保留 / 取消 / 异常（计数器型）、指纹导入、roleSystem、一轮两派并行回收、混用拒绝；路由端到端改为成员各自核验。bundle 重建、模块图再生成；快速档 `run-1Fcuen` 全绿（JS 4854/4854）。未做：岗位模型可选连接（需设置界面，待产品决定）、A4 审批预筛（需审批卡片新作用域，待产品决定）；手机端仍内联单成员。[实施记录](docs/agent-orchestration-implementation-20261104.md)。未推送。
+
 ## 2026-11-04 — Claude 方案 A 阶段 1：岗位目录按工具声明动态生成
 
 Claude：用户选定审计方案 A（在现有内部岗位路由上分五阶段补齐）。A1：共享核心 `internalRouteCatalog` 新增可选的宿主建议参数（静态白名单优先、拒绝名单与请求策略照旧，手机不传则不变）；桌面新增 `internalRoles.js` 按工具的 capability（含旧表只读视图 `legacyCapabilityRequirement`）、共享 `toolEffect`、MCP 只读标记和 `uiModule` 给出岗位建议，`invokeModelNode` 传入。岗位覆盖从 11 / 33 个内建工具扩到含 bash、pdf、xlsx、image、knowledge、浏览器、translate、glob / grep / media_info 等，clipboard / reminder / media_api / 委派 / 开发作业仍只归主 Agent。重建 agent-core bundle（43 模块）、一致性 155 / 155；新增单元测试（声明规则 + 真实注册表逐工具）；快速档 `run-jJz2SQ` 扩大到全部（JS 4847/4847、设置浏览器、Swift 全部、Android 四项）全绿。实施记录见 [agent-orchestration-implementation-20261104.md](docs/agent-orchestration-implementation-20261104.md)。未推送。
