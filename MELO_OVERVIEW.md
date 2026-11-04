@@ -38,7 +38,7 @@
 | 功能 | 现行状态 | 证据 / 待验 |
 | --- | --- | --- |
 | 项目与工作区 | 创建显式归属、执行器绑定能力、无项目聊天按需独立目录（A `33660c6` / B `b02438a`）；文件面板、每次删除询问文件去留与遗留文件管理 `7ae2292` | [架构加固](docs/arch-hardening-20261015.md)、[UI 功能对齐](docs/ui-function-alignment-20261016.md)；项目聚合模型与完整删除级联见[项目专项](docs/project-architecture-plan-20261015.md)；P1 提交回执已交付，桌面项目页已拆到 `desktop-ui/features/projects/`（P2a，[架构方案](docs/architecture-maintainability-plan-20261019.md)） |
-| Agent、技能与团队 | Agent 演进 P0–P4 已实现，6 Agent / 26 成果已迁移；审查修正 `4680530`；统一设置页 `dc67fa0`；团队与委派同一规则，手机本机可运行团队；10-20 能力临时提升 / 即时开启与新 Agent 只读起步、「基于已有 Agent」（桌面 + 手机，手机以本机权限为上限） | [实施与迁移](docs/agent-evolution-20261015.md)、[审查修正](docs/agent-review-fixes-20261015.md)、[设置](docs/agent-settings-20261016.md)、[协作](docs/agent-team-20261016.md)、[能力临时提升](docs/capability-elevation-20261020.md)；真实模型协作与真机单列 |
+| Agent、技能与团队 | Agent 演进 P0–P4 已实现，6 Agent / 26 成果已迁移；审查修正 `4680530`；统一设置页 `dc67fa0`；团队与委派同一规则，手机本机可运行团队；10-20 能力临时提升 / 即时开启与新 Agent 只读起步、「基于已有 Agent」（桌面 + 手机，手机以本机权限为上限） | [实施与迁移](docs/agent-evolution-20261015.md)、[审查修正](docs/agent-review-fixes-20261015.md)、[设置](docs/agent-settings-20261016.md)、[协作](docs/agent-team-20261016.md)、[能力临时提升](docs/capability-elevation-20261020.md)；真实模型协作与真机单列；[隐藏编排层审计 11-04](docs/agent-orchestration-audit-20261104.md) |
 | 聊天与 agent loop | 手机与桌面同一循环（prepare → invoke-model → finalize），公共循环/预算策略现由 `shared/agent/` 同源执行，配置契约为 `shared/protocol/agent-loop.json`；10-23 已接入共享 `goal.js`：原始目标/补充、无工具交付检查、最多两次有预算纠偏；取消普通首步必搜，成员回执贯通团队，见[综合实施与验收](docs/agent-harness-implementation-20261023.md)（任务与基准集成验收均通过）；10-24 已覆盖安装桌面与 iPhone 0.7.10（42），数据保留及实际使用检查见[安装回执](docs/dual-update-20261024.md)；七项双端对齐修复 `ee8eb3f` / `3ad091c` 已推送并装入双端；桌面聊天页 / 输入区 / 发送管线已拆到 `desktop-ui/features/chat/`（P2c）；10-27 `99b8ba7`补齐零工具任务核验；后续[上限交付改造](docs/limit-delivery-20261027.md)已实现只计工具轮、默认40轮、预留收尾、成员部分交接后主 Agent 补做（三端契约同源，最终快速/7ae6bf5集成已通过）；10-27 `d0bcf3e`–`77b2879` 只计工具轮、默认 40 轮 / 硬顶 64、预留额度收尾交付（LIMIT_DELIVERED）、成员 / 技能部分交接后主 Agent 续跑，已推送 | [上限交付](docs/limit-delivery-20261027.md)；[10-27闭环修复与验收](docs/task-continuation-20261027.md)；[修复与 10-19 日常回执](docs/mobile-desktop-alignment.md)；10-20 完成状态误分类修正与 Claude B1/B2 复核见[专项](docs/completion-status-fix-20261020.md)；真实供应商与长后台另验 |
 | 记忆 | #2 并发写事务预约修复已通过 Mac/Linux 回归与完整日常；项目记忆本与个人档案已接入；项目来源手写记忆经独立可选通道（`/api/project-memory-sync` ↔ `/v1/project-memory`）同步；桌面记忆页 / 记忆本 / 回复页脚已拆到 `desktop-ui/features/memory/`（P2a） | [记忆架构](docs/memory-architecture.md)（以顶部现行约定为准）、[A7 回执](docs/mobile-desktop-alignment.md)；私人同步服务未部署新版 |
 | 知识资料与成果 | 本机分段索引（SQLite FTS + 本地 embedding），按对话/项目开关过滤；两端按问题切段检索，旧 8 份 / 24000 字前置限制已移除 | [Agent 演进 P2/P4](docs/agent-evolution-20261015.md)、[A3/A5 回执](docs/mobile-desktop-alignment.md) |
@@ -92,6 +92,10 @@ GitHub master 已回读至产品提交 `3379718`。集成检查 `run-2njTtf` 及
 
 ### 2026-11-04 — 模型连接管理（Codex）
 桌面和 iPhone 的系统设置首屏提供 API Key 入口，同一服务可添加多个具名账号。全局和单段对话可各自切换。Android 同地址绑定按连接 ID 解析。快速档 `run-t78jZl` 通过。五账号浏览器实点、模拟器冷启动及 HTTP 密钥核对见[入口和验收](docs/model-connection-entry-20261104.md)。
+
+### 2026-11-04 — Melo 主线（Claude）— 隐藏子 Agent 编排层审计（只报告）
+- 线程 ID：e02f4818。用户所问的"主 Agent 路由 / 分派 / 审批 / 整合、子 Agent 做网页查询与工具调用"这层已由当日内部岗位路由实现；审计对照出五项差距（岗位白名单写死只覆盖 11 / 33 工具、成员轮次与 token 不分层、不能并行分派、审批无主 Agent 预筛与任务级范围授权、同模型且成员无背景），三次真实探针印证预算不分层导致 LIMIT_DELIVERED（326 148 / 400 000 token，检索成员 6 轮 28 次调用触顶），另有 wttr.in 快路定位错误与收尾丢失成员已核实事实两处缺陷。[审计与方案评分](docs/agent-orchestration-audit-20261104.md)。未改代码。
+- 下一步：用户选方案（推荐 A：动态岗位目录 → 预算分层 → 并行分派 → 审批预筛 → 岗位模型与背景，分阶段各自验收）；P2-9 wttr.in 定位与 P2-10 收尾丢证据可单独修；搜索无 key 仍是检索岗位的前提问题。
 
 ### 2026-11-04 — 设计 Melo（Codex）— iPhone 后台保护与恢复
 本地主线组合源码 `d8c51b2` 包含后台恢复及任务分工。集成档 `run-sjrWAq` 通过 4,842 项 JS、38 套 Swift 和设置浏览器。短回复不再在前台提交持续任务，离开时排队申请系统后台时间。普通回复的工具回执与执行预算保存在设备，可以沿原任务继续；未知副作用需先核对。模拟器实切设置、系统时间到期注入、杀进程后恢复与主动取消分开验证。[实施与验收](docs/iphone-background-continuation-20261104.md)

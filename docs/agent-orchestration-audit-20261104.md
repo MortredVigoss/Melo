@@ -9,7 +9,8 @@
 1. **这层架构已经存在**：11-04 Codex 按用户选定的"按需分工"落地了内部岗位路由（`shared/agent/internalRouting.js` + 三端执行器）。当前对话的模型兼任主 Agent：遇到复合任务时调用控制工具 `route_task`，把一个子任务交给四个内部岗位之一（检索成员 / 资料读取成员 / 计算成员 / 执行成员），成员在独立上下文、岗位工具白名单内跑最多 6 轮，交回带证据的 JSON 交接，主 Agent 核验后用自己的人设答复。聊天记录里只有主 Agent 的回复；成员动作只在任务空间的"模型与交付记录"里可见。
 2. **对照用户描述，四件事已有、五件事没有**。已有：路由与分派、成员上下文隔离、交接核验、与用户审批 / 取消 / 预算的贯通。没有：(a) "工具调用交给子 Agent"只覆盖桌面 33 个内建工具里的 11 个，其余（bash、浏览器、PDF / 表格 / 图片、MCP、技能）仍只能主 Agent 自己调；(b) 不能并行分派，一轮只能派一个子任务；(c) 成员轮次和 token 与主 Agent 共用同一个 40 轮 / 40 万 token 池，没有分层；(d) 审批没有经过主 Agent 预筛，成员的每个副作用调用都直接弹给用户，无人在场时 120 s 超时；(e) 所有岗位用同一个模型连接，内部成员拿不到对话背景。
 3. **结论：能做，而且应该在现有内部路由上补齐，而不是另起一层**。推荐方案 A（见 §6），分五个可独立验收的阶段；"主 Agent 完全不碰工具、每轮先路由"的纯编排方案已在 11-04 被用户否决（6/10），本审计不建议重开。
-4. 一个与编排无关但直接决定价值的前提：桌面无 key 时 `web_search` 仍拿不到结果（Google 对无头浏览器出验证页、Jina 匿名访问 DuckDuckGo 限流，见 [10-27 测试回执](live-test-bigbang-20261027.md)）。检索成员再怎么分派也只能抓已知 URL。
+4. 一个与编排无关但直接决定价值的前提：桌面无 key 时 `web_search` 时好时坏（Google 对无头浏览器出验证页，Jina 匿名访问 DuckDuckGo 间歇限流，见 [10-27 测试回执](live-test-bigbang-20261027.md)；本次三次探针里 DuckDuckGo 可用）。
+5. **真实探针印证了差距 (c)**：同一道 BIGBANG 长问题在现有分工下仍以 `LIMIT_DELIVERED` 半截交付——主 Agent 12 s 内分派，检索成员 2 六轮 28 次并发抓页触顶，主 Agent 再两轮后输入 token 326 148 / 400 000 耗尽；结果与 10-27 无分工时相当（§4）。分工把主 Agent 的消息列表隔离了，但没有把预算隔离。
 
 ## 1. 方法
 
@@ -47,9 +48,17 @@
 
 iPhone：`ios/Melo/AgentLoop.swift:308–321,512–515` 经 `SharedLoopPolicy.value("internalRouting", …)` 调同一份共享核心；Android：`android/app/src/main/java/com/melo/android/chat/SharedChatAgent.kt:144–149,276–292`。两端由 `ios/Tests/AgentLoopTests.swift`、`ChatPhoneUseFlowTest.kt` 与 conformance 覆盖，本审计不再深入。
 
-## 4. 真实探针
+## 4. 真实探针（桌面，主 Agent，同一道 10-27 的 BIGBANG 长问题）
 
-（见下节补记。）
+| 次 | 结果 | 要点 |
+| --- | --- | --- |
+| 1 | 178.8 s 时桌面 Melo 整个进程消失，SSE 对端关闭（`live-bigbang-attempt1/`） | 11.9 s 分派检索成员 1（两轮 5 次调用，101 s 交接：悉尼 Accor Stadium 2026-10-31 19:30，官方与 setlist 来源）；112 s 分派检索成员 2 查天气与活动，四轮 17 次调用后中断。无崩溃报告、无 `server-exited` 调试记录，与手动退出一致，日志无法区分 |
+| 2 | 109 s 成员模型请求失败（`No complete response received`），主 Agent 收尾请求同样失败，回复为错误提示（`live-bigbang-attempt2/`） | 同样 11.5 s 分派；之后供应商探活正常（405），判为瞬时故障 |
+| 3 | 343 s 完整跑完，`LIMIT_DELIVERED` partial（`live-bigbang/`，场景 `a4feb59933033a4803237f9189aca58a`） | 见下 |
+
+第三次的数字：10 轮工具（主 Agent 2 轮、成员 8 轮）、39 次调用（成员 33 次）。检索成员 1 两轮 5 次调用、66.7 s 交接并核实官方场次；检索成员 2 在 73.8–248.5 s 六轮 28 次调用（16 个不同页面，一轮最多 6 个并发）触 `MAX_MEMBER_ROUNDS` 被打断（partial）；主 Agent 接着自己抓两轮 6 页，264 s `budget:exhausted`（输入 token 326 148 / 400 000，13 次模型调用），343 s 收尾交付。最终回复 2 768 字：场次写成"第三方线索、未完成官方核验"（成员 1 已交接官方来源与 19:30 开演，收尾时没有用上）、天气缺（BOM 日观测页被 6 000 字截断，10-31 那行没读到）、岩石区鬼节与市集找到但日期未核实、两天路线有、交通泛泛；完成度自评 5 项需求 1 项 met。与 10-27 无分工时的第一段相当，没有更好：成员上下文隔离保护了主 Agent 的消息列表，但成员每轮请求都在同一个 40 万 token 池里计费，并发抓页越多耗得越快，成员轮次也计入同一个 40 轮上限——这就是 §5 P1-2 的实证。
+
+第一次运行另暴露：`web_search` 的 wttr.in 天气快路把 "Sydney weather history October 31 2026 November 1 2026" 定位成阿尔及利亚 Fouka Marine（§5 P2-9）。三次都没有出现 `tool_permission`（检索岗位只用免审批工具），自动批准器没有批准任何请求。DuckDuckGo 腿当晚可用（`provider=duckduckgo`），与 10-27 的 403 不同，说明 Jina 匿名限流是间歇的。
 
 ## 5. 问题清单（按严重级）
 
@@ -63,6 +72,8 @@ iPhone：`ios/Melo/AgentLoop.swift:308–321,512–515` 经 `SharedLoopPolicy.va
 | P2-6 | 所有岗位同一模型连接 | 成员会话用 `delegatedModelConfig`；模型升级（`melo_escalate`）只在主 Agent 层 | 检索岗位用不上更快更便宜的模型；成员需要更强模型只能交回主 Agent |
 | P2-7 | "用户看不到"只做到聊天层 | `executionPanel.js` 流水线阶段显示岗位名，操作列表显示 `job-N:` 调用 | 不是缺陷，但与用户表述有差；若要完全隐藏需在任务空间折叠内部阶段 |
 | P2-8 | 检索岗位依赖的搜索后端在桌面无 key 时不可用 | `webSearchTool.js` SERP：Google 无头验证页、Jina 匿名 DDG 403（[10-27 回执](live-test-bigbang-20261027.md)） | 检索成员只能抓已知 URL；不是编排问题，但决定这层的实际价值 |
+| P2-9 | wttr.in 天气快路定位错误 | `webSearchTool.js:1614 extractWeatherLocation` 只剥天气关键词，剩余文本整段送 wttr.in；"Sydney weather history October 31 2026 November 1 2026" 被定位成阿尔及利亚 Fouka Marine 并以 `[via: wttr.in]` 成功返回（探针第 1 次） | 成员拿到一份错城市的天气当证据；应校验返回的 `nearest_area` 与查询地名一致，或只在剩余文本是短地名时走快路 |
+| P2-10 | 限额收尾时成员已核实的事实没有进入最终回复 | 探针第 3 次：检索成员 1 的交接含官方巡演页与 19:30 开演，主 Agent 在 `limit:delivery` 收尾里却写成"第三方线索、未完成官方核验"；收尾链路 `invokeModelNode` → `src/runtime/limitDelivery.js` → `shared/agent/limitDelivery.js:deliveryRequest`，原因待查（疑似收尾摘要只带观察行、不带交接正文） | 分工做对的部分在最后被丢掉，用户看到的完成度低于实际 |
 
 已确认不是问题：嵌套分派被挡（`!job && catalog`）；同岗位同任务重复被拒；用户补充与模型升级都会先结束成员；副作用指纹在内部路由下不重放；成员交接明确标注未核验；三端共用一份目录与交接逻辑。
 
@@ -99,4 +110,4 @@ node .tmp/agent-orchestration-audit-20261104/analyze-live-test.mjs .tmp/agent-or
 
 ## 9. 证据
 
-`.tmp/agent-orchestration-audit-20261104/`：`live-bigbang/`（探针事件流 `events.jsonl`、`console.log`、`reply.md`、`done.json`、`exit.txt`）、`permission-approvals.log`（如有）、脚本副本 `melo-live-test.mjs`、`analyze-live-test.mjs`、`approve-readonly-browser.sh`、`run-audit-probe.sh`。执行场景：`.tmp/melo-home-user/desktop/execution-scenes/<探针 runId>.json`。测试输出见 §1。
+`.tmp/agent-orchestration-audit-20261104/`：`live-bigbang/`（第 3 次，完整：`events.jsonl`、`console.log`、`run.out`、`reply.md`、`done.json`、`exit.txt`）、`live-bigbang-attempt1/`、`live-bigbang-attempt2/`（中断的两次，同名文件）、脚本副本 `melo-live-test.mjs`、`analyze-live-test.mjs`、`approve-readonly-browser.sh`、`run-audit-probe.sh`。执行场景：`.tmp/melo-home-user/desktop/execution-scenes/a4feb59933033a4803237f9189aca58a.json`（第 3 次）、`5b5250a9d92ba2a7e00d03c2b6fed854.json`（第 1 次，状态停在 running）、`56e8ae4e2c4e67c31ea88730f85f6d1a.json`（第 2 次，failed）。测试输出见 §1。
