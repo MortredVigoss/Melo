@@ -13,7 +13,8 @@ test('declarations decide the job: capability, shared effect, MCP read-only; unk
   assert.equal(suggestInternalRole({ id: 'x_search', capability: 'network', uiModule: 'search' }), 'research');
   assert.equal(suggestInternalRole({ id: 'x_net_unknown', capability: 'network' }), null);
   assert.equal(suggestInternalRole({ id: 'x_calc', capability: null, effect: 'compute' }), 'calculate');
-  assert.equal(suggestInternalRole({ id: 'mcp:s:read', readOnly: true }), 'research');
+  assert.equal(suggestInternalRole({ id: 'mcp:s:read', readOnly: true }), null, 'read-only MCP tools (charts, browser inspection) stay with the lead');
+  assert.equal(suggestInternalRole({ id: 'mcp:antv-chart:generate_bar_chart', readOnly: true }), null);
   assert.equal(suggestInternalRole({ id: 'mcp:s:act' }), 'execute');
   for (const id of ['route_task', 'delegate', 'agent', 'melo_escalate', 'development_job', 'fake', 'skill:draft']) assert.equal(suggestInternalRole({ id, capability: 'writeFiles' }), null, id);
   assert.equal(suggestInternalRole(null), null);

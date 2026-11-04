@@ -28,9 +28,12 @@ function requirementKeys(tool) {
 export function suggestInternalRole(tool) {
   const id = typeof tool?.id === 'string' ? tool.id : '';
   if (!id || NEVER.has(id) || id.startsWith('skill:')) return null;
-  // MCP tools carry no capability declaration; the read-only annotation is a
-  // presentation hint, so everything else is treated as an action.
-  if (id.startsWith('mcp:')) return tool.readOnly === true ? 'research' : 'execute';
+  // MCP tools carry no capability declaration. The read-only flag also covers
+  // managed generators (charts, diagrams, PDF) and browser inspection, which
+  // are not retrieval: the research job keeps only the public-media servers
+  // from the shared static list (2026-11-04 probe: 43 tool schemas per member
+  // request burned the whole share). Effectful MCP tools are actions.
+  if (id.startsWith('mcp:')) return tool.readOnly === true ? null : 'execute';
   const effect = toolEffect(id, {}, tool);
   const keys = requirementKeys(tool);
   if (effect === 'compute') return 'calculate';

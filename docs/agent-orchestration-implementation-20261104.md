@@ -13,7 +13,7 @@
 1. `src/services/chat/execution/prepareNode.js:createPrepareNode` 产出 `graphState.promptTools`（工具对象：`id`、`capability`、`uiModule`、MCP 的 `readOnly`、技能 `skill:` 前缀）。
 2. `src/services/chat/execution/internalRoles.js:internalRoleSuggestions(tools)`（新）→ 对每个工具 `suggestInternalRole(tool)`：
    - 拒绝：`route_task`、`delegate`、`agent`、`melo_escalate`、`development_job`、`fake`、`skill:*`；
-   - `mcp:*`：`readOnly === true` → 检索，否则 → 执行；
+   - `mcp:*`：非只读 → 执行；只读（含受管的图表 / 图示 / PDF 生成器与浏览器检视）留给主 Agent，检索岗位的 MCP 只保留共享静态名单里的公开媒体服务器（修订于当晚探针：43 个工具定义把成员份额吃光）；
    - 效果（`shared/agent/toolEffects.js:toolEffect(id, {}, tool)`）为 compute → 计算；
    - 浏览器动作、效果 write、能力含 writeFiles / runCommands / generateMedia、或能力是函数（按参数而定）→ 执行；
    - 能力含 network：效果 read / `uiModule === 'search'` / 只读 / 浏览器读取 → 检索，`device_location` → 资料读取，其余留给主 Agent；
@@ -79,4 +79,6 @@ A1 已落地并本地提交（见 PROGRESS 当日条目）。桌面岗位目录�
 
 A2 / A3 与 A5 的背景部分已落地并本地提交（`a1b56f8`）。
 
-真实探针（重启桌面后同一道 BIGBANG 题，`live-bigbang-phase2/`，场景 `aefd0d9f6e85081b2aded8669ae001c8`，trace `66bb67c2…`）暴露一个真 bug：检索成员 1 在 7 s 派出、43 s 交回"未核实"，trace 里它的第一次模型请求就是 `limit-delivery`，`run.finished` 为 `BUDGET_EXHAUSTED`——`runSubAgent` 用 `memberTokenLimit(child, maxTokens ?? 32000)` 把成员输入 token 上限压到 32k、再扣 8k 收尾保留与 `maxTotalTokens` 口径下的输出保留，成员第一次带工具定义和原始目标背景的工作请求就超过 `admitModel` 允许值，直接进入收尾。主 Agent 随后自己抓页，161 s 再派成员时已触发 60k 保留不启动，174 s 预算耗尽，仍是 `LIMIT_DELIVERED`（1 met / 4 missing）。修正：`runInternalMembers` 把 `maxTokens: share`（≤ 120k）传给 `runSubAgent`，成员的输入与总 token 上限即其份额；成员 `execution_event` 的 id 改为 `job-N:` 前缀（之前只加 `actorName`，成员的 `model:N` 会并进主 Agent 同名阶段）。新增真实 `runSubAgent` 循环下的回归：成员上限 ∈ [20k, 120k] 且 > 32k，第一次请求是带 `Task:` 的工作请求而非 limit-delivery，事件全部带 `job-1:` 前缀。主 Agent 一轮可派多名成员；只读成员并行、执行成员串行；每名成员有自己的回合与输入 token 份额，主 Agent 保留 60k 收尾额度；成员拿到原始目标与有界会话背景；成员副作用指纹回流主回合。未做：岗位模型可选连接（需要设置界面与配置契约，待产品决定）；iPhone / Android 仍是内联单成员实现（共享契约向后兼容，两端行为不变）。真实探针见下一节。
+真实探针（重启桌面后同一道 BIGBANG 题，`live-bigbang-phase2/`，场景 `aefd0d9f6e85081b2aded8669ae001c8`，trace `66bb67c2…`）暴露一个真 bug：检索成员 1 在 7 s 派出、43 s 交回"未核实"，trace 里它的第一次模型请求就是 `limit-delivery`，`run.finished` 为 `BUDGET_EXHAUSTED`——`runSubAgent` 用 `memberTokenLimit(child, maxTokens ?? 32000)` 把成员输入 token 上限压到 32k、再扣 8k 收尾保留与 `maxTotalTokens` 口径下的输出保留，成员第一次带工具定义和原始目标背景的工作请求就超过 `admitModel` 允许值，直接进入收尾。主 Agent 随后自己抓页，161 s 再派成员时已触发 60k 保留不启动，174 s 预算耗尽，仍是 `LIMIT_DELIVERED`（1 met / 4 missing）。修正：`runInternalMembers` 把 `maxTokens: share`（≤ 120k）传给 `runSubAgent`，成员的输入与总 token 上限即其份额；成员 `execution_event` 的 id 改为 `job-N:` 前缀（之前只加 `actorName`，成员的 `model:N` 会并进主 Agent 同名阶段）。新增真实 `runSubAgent` 循环下的回归：成员上限 ∈ [20k, 120k] 且 > 32k，第一次请求是带 `Task:` 的工作请求而非 limit-delivery，事件全部带 `job-1:` 前缀。
+
+第二次探针（`live-bigbang-phase2b/`，trace `48319190…`）：成员这次真的开工（4 次工作请求），但 120k 份额仍在 112 s 内用完：(1) A1 把所有 `readOnly` 的 MCP 工具（26 个 AntV 图表生成器、Playwright 检视、公开媒体）都归入检索岗位，成员每次请求带 43 个工具定义；(2) 成员全程用供应商托管搜索（`hosted-call`），未本地抓页，托管结果"无可读正文"；(3) 成员第 3 次回复已写明"巡演官网与主办方 FAQ 非空正文交叉核实 2026-10-31 悉尼 Accor Stadium 19:30"，而限额收尾把它改写成"候选线索、未核实"（审计 P2-10 的又一实例）。主 Agent随后自己抓页、再派成员时触发 60k 保留、184 s 预算耗尽，最终 0 met / 5 missing。修正 (1)：只读 MCP 不再自动归入检索岗位（见 A1 规则修订）；(2)(3) 记为后续问题。主 Agent 一轮可派多名成员；只读成员并行、执行成员串行；每名成员有自己的回合与输入 token 份额，主 Agent 保留 60k 收尾额度；成员拿到原始目标与有界会话背景；成员副作用指纹回流主回合。未做：岗位模型可选连接（需要设置界面与配置契约，待产品决定）；iPhone / Android 仍是内联单成员实现（共享契约向后兼容，两端行为不变）。真实探针见下一节。
