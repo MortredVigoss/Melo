@@ -4,6 +4,16 @@ export { NATIVE_INTERFACE_TERMS as interfaceTermKeys } from '../desktop-ui/inter
 // Native-only authored copy. User names, prompts and model output are never translated.
 // Chinese / English / Japanese / Korean / Spanish.
 const rows = [
+["缺少续行记录，请先核对已执行的步骤。","No recovery checkpoint is available. Review the steps already taken.","復元記録がありません。実行済みの手順を確認してください。","복구 기록이 없습니다. 이미 실행된 단계를 확인하세요.","No hay un punto de recuperación. Revisa los pasos ya ejecutados."],
+["保存当前进度并结束","Finish with saved progress","進捗を保存して終了","현재 진행 상황을 저장하고 종료","Finalizar con el progreso guardado"],
+["继续任务","Continue task","タスクを続ける","작업 계속","Continuar tarea"],
+["任务已暂停，进度已保存。","Task paused. Your progress is saved.","タスクを一時停止しました。進捗は保存されています。","작업이 일시 중지되었으며 진행 상황이 저장되었습니다.","Tarea en pausa. Se ha guardado el progreso."],
+["请先核对上一步操作的结果。","Check the last action’s result before proceeding.","続ける前に直前の操作結果を確認してください。","계속하기 전에 마지막 작업 결과를 확인하세요.","Comprueba el resultado de la última acción antes de continuar."],
+["恢复前请核对原对话的连接、Agent 和权限。","Check the original connection, agent and permissions before resuming.","再開する前に元の接続、エージェント、権限を確認してください。","재개하기 전에 원래 연결, 에이전트 및 권한을 확인하세요.","Comprueba la conexión, el agente y los permisos originales antes de continuar."],
+["恢复记录过大，已暂停操作。","Task paused because its recovery record is too large.","復元記録が大きすぎるため操作を一時停止しました。","복구 기록이 너무 커서 작업을 일시 중지했습니다.","Tarea en pausa porque el registro de recuperación es demasiado grande."],
+["回复中","Replying","返信中","응답 중","Respondiendo"],
+["保存中","Saving","保存中","저장 중","Guardando"],
+["回答已保存","Reply saved","返信を保存しました","응답 저장됨","Respuesta guardada"],
 ["已停止", "Stopped", "停止済み", "중지됨", "Detenido"],
 ["排队中", "Queued", "待機中", "대기 중", "En cola"],
 ["待授权","Awaiting authorization","承認待ち","승인 대기 중","Pendiente de autorización"],

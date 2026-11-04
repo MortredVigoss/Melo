@@ -20,8 +20,8 @@ import BackgroundTasks
                 launch(IOSContinuedReplyLease(task))
             }
         }) else { return false }
-        let request = BGContinuedProcessingTaskRequest(identifier: identifier, title: "Melo 正在回复", subtitle: "等待模型响应")
-        request.strategy = .fail // No queued replay after the foreground request ends.
+        let request = BGContinuedProcessingTaskRequest(identifier: identifier, title: "Melo", subtitle: InterfaceCopy.localized("回复中"))
+        request.strategy = .queue // A late grant attaches only to its still-live attempt.
         do { try BGTaskScheduler.shared.submit(request); return true }
         catch { return false } // Same network request retains its short allowance.
     }
@@ -37,9 +37,11 @@ import BackgroundTasks
         self.task = task; task.progress.totalUnitCount = 3
         task.expirationHandler = { [weak self] in Task { @MainActor in self?.expirationHandler?() } }
     }
-    func update(completed: Int, subtitle: String) {
+    func update(completed: Int, total: Int, subtitle: String) {
+        task.progress.totalUnitCount = Int64(total)
         task.progress.completedUnitCount = Int64(completed)
-        task.updateTitle("Melo 正在回复", subtitle: subtitle)
+        let label = InterfaceCopy.localized(subtitle)
+        if task.subtitle != label { task.updateTitle("Melo", subtitle: label) }
     }
     func finish(success: Bool) {
         task.expirationHandler = nil; task.setTaskCompleted(success: success)

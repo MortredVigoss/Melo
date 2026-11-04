@@ -55,7 +55,7 @@ import SwiftUI
     private var automaticSyncTask: Task<Void, Never>?
     private var automaticSyncPending = false
     private let syncLoader: ((Data) async throws -> Data)?
-    private struct ActiveRun { let runID: String; var task: Task<Void, Never>?; let background: ReplyBackgroundLifetime }
+    private struct ActiveRun { let runID: String; let attempt: UUID; var task: Task<Void, Never>?; let background: ReplyBackgroundLifetime }
     private var runs: [String: ActiveRun] = [:]
     private var injectedBackground: ReplyBackgroundLifetime?
     private var expiredRuns: Set<String> = []
@@ -63,6 +63,74 @@ import SwiftUI
     private struct ApprovalRequest { let chatID: String?; let item: ApprovalItem }
     private var approvalQueue: [ApprovalRequest] = []
     private var isBackground = false
+    private var foregroundGeneration = 0
+    private var foregroundReady = false
+    private var cachedCheckpoints: [String: ReplyCheckpoint] = [:]
+    private func checkpointFile(_ runID: String) -> URL {
+        file.deletingLastPathComponent().appendingPathComponent("ReplyCheckpoints")
+            .appendingPathComponent(PhoneCoreTurn.fingerprint(runID) + ".json")
+    }
+    private func checkpoint(_ runID: String) -> ReplyCheckpoint? {
+        if let value = cachedCheckpoints[runID] { return value }
+        guard let data = try? Data(contentsOf: checkpointFile(runID)), data.count <= 8 * 1024 * 1024,
+              let value = try? JSONDecoder().decode(ReplyCheckpoint.self, from: data), value.runID == runID else { return nil }
+        cachedCheckpoints[runID] = value
+        return value
+    }
+    private func persist(_ value: ReplyCheckpoint) throws {
+        let data = try JSONEncoder().encode(value)
+        guard data.count <= 8 * 1024 * 1024 else { throw MeloError.message("恢复记录过大，已暂停操作。") }
+        try BackgroundReplyStorage.write(data, to: checkpointFile(value.runID))
+        cachedCheckpoints[value.runID] = value
+    }
+    private func discardCheckpoint(_ runID: String) {
+        cachedCheckpoints[runID] = nil
+        let url = checkpointFile(runID)
+        if FileManager.default.fileExists(atPath: url.path) {
+            do { try FileManager.default.removeItem(at: url) } catch { self.error = error.localizedDescription }
+        }
+    }
+    private func recovery(for chatID: String) -> ReplyCheckpoint? {
+        guard !isSending(chatID), let record = scenes(for: chatID).last, record.status == "interrupted",
+              let saved = checkpoint(record.runId), saved.chatID == chatID,
+              let question = chats.first(where: { $0.id == chatID })?.messages.last(where: { !PhoneToolTrace.isTrace($0) }),
+              question.role == "user", question.id == saved.questionID else { return nil }
+        return saved
+    }
+    func hasSavedReply(_ chatID: String) -> Bool {
+        if recovery(for: chatID) != nil { return true }
+        guard !isSending(chatID), let last = scenes(for: chatID).last, last.status == "interrupted",
+              let question = chats.first(where: { $0.id == chatID })?.messages.last(where: { !PhoneToolTrace.isTrace($0) }) else { return false }
+        return question.role == "user" && last.query == question.content
+    }
+    func canContinueReply(_ chatID: String) -> Bool { recovery(for: chatID)?.canContinue == true }
+    func continueReply(_ chatID: String) {
+        guard let saved = recovery(for: chatID), saved.canContinue else { return }
+        startReply("", chatID: chatID, retry: true, resuming: saved)
+    }
+    /// Close an interrupted turn with a local progress receipt. This path
+    /// does not dispatch tools or claim the original task was delivered.
+    func finishWithSavedProgress(_ chatID: String) {
+        guard hasSavedReply(chatID), let idx = chats.firstIndex(where: { $0.id == chatID }),
+              let scene = executionRecords.lastIndex(where: { $0.chatId == chatID }) else { return }
+        let runID = executionRecords[scene].runId
+        let saved = recovery(for: chatID)
+        let steps = RunProgress.steps(executionRecords[scene], limit: 12).filter { $0.state == .done }
+        var lines = [InterfaceCopy.localized("任务已暂停，进度已保存。")]
+        lines += steps.map { $0.detail.isEmpty ? $0.title : $0.title + " · " + $0.detail }
+        if saved?.canContinue != true { lines.append(InterfaceCopy.localized("请先核对上一步操作的结果。")) }
+        let message = ChatMessage(role: "assistant", content: lines.joined(separator: "\n"))
+        let before = chats[idx]
+        chats[idx].messages.append(message); chats[idx].updatedAt = timestamp()
+        do { try save() } catch { chats[idx] = before; self.error = error.localizedDescription; return }
+        executionRecords[scene].messageId = message.id; saveExecutionRecords()
+        discardCheckpoint(runID)
+    }
+    private func resumeOnReturn(_ chatID: String) {
+        guard foregroundReady, !isBackground, let saved = recovery(for: chatID), saved.automatic,
+              saved.canContinue, saved.attempts < 3 else { return }
+        continueReply(chatID)
+    }
     private let replyLoader: (([ChatMessage], String) async throws -> ModelReply)?
     private let file: URL
     private var preferencesFile: URL { file.deletingLastPathComponent().appendingPathComponent("preferences.json") }
@@ -169,15 +237,20 @@ import SwiftUI
     private func observe(_ value: ExecutionObservation, runID: String) {
         guard let index = executionRecords.firstIndex(where: { $0.runId == runID }) else { return }
         guard !executionRecords[index].terminal else { return }
+        if value.operations.contains(where: { $0.name.contains("image_generation") }),
+           var saved = checkpoint(runID), saved.supportsContinuation {
+            saved.supportsContinuation = false
+            do { try persist(saved) } catch { self.error = error.localizedDescription }
+        }
         executionRecords[index].observe(value)
         if !value.operations.isEmpty || value.returnedModel != nil {
-            background(forRun: runID)?.update(runID: runID, completed: 1, subtitle: "正在接收回复与检索结果")
+            background(forRun: runID)?.update(runID: runID, completed: 1, subtitle: "回复中")
         }
         if Date().timeIntervalSince(lastSceneSave) > 0.5 { saveExecutionRecords() }
     }
     private func finishRun(_ runID: String, state: String, message: ChatMessage? = nil, sources: [WebSource] = [], completion: AgentCompletionReceipt? = nil) {
         guard let index = executionRecords.firstIndex(where: { $0.runId == runID }) else { return }
-        executionRecords[index].completion = completion ?? (state == "completed" ? nil : AgentCompletionReceipt.make(goal: executionRecords[index].query, reply: "", terminalReason: state == "cancelled" ? "CANCELLED" : "REQUEST_FAILED"))
+        executionRecords[index].completion = completion ?? (["completed", "interrupted"].contains(state) ? nil : AgentCompletionReceipt.make(goal: executionRecords[index].query, reply: "", terminalReason: state == "cancelled" ? "CANCELLED" : "REQUEST_FAILED"))
         executionRecords[index].finish(state, messageID: message?.id)
         if let message { executionRecords[index].reconcileReferences(message: message, annotations: sources) }
         saveExecutionRecords()
@@ -261,6 +334,7 @@ import SwiftUI
             nextPreferences.workspaceSync = nextPreferences.workspaceSync?.excluding(nextDeleted)
             try commitSync(.init(snapshot: .init(chats: nextChats, tasks: taskCheckpoints, handoffs: taskHandoffs, deletedChats: nextDeleted), preferences: nextPreferences, records: executionRecords.filter { $0.chatId != chatID }))
             deletedChats = nextDeleted; chats = nextChats; preferences = nextPreferences
+            for run in scenes(for: chatID) { discardCheckpoint(run.runId) }
             executionRecords.removeAll { $0.chatId == chatID }; imageRevision += 1
             composerDrafts[chatID] = nil; flushDrafts()
             scheduleAutomaticSync()
@@ -268,8 +342,15 @@ import SwiftUI
         } catch { self.error = error.localizedDescription; return false }
     }
     func send(_ text: String, chatID: String, retry: Bool = false, imageTask: ImageTaskPlan? = nil, onPreflightFailure: ((String) -> Void)? = nil) {
+        startReply(text, chatID: chatID, retry: retry, imageTask: imageTask, resuming: nil, onPreflightFailure: onPreflightFailure)
+    }
+    private func startReply(_ text: String, chatID: String, retry: Bool, imageTask: ImageTaskPlan? = nil, resuming: ReplyCheckpoint?, onPreflightFailure: ((String) -> Void)? = nil) {
         func fail(_ reason: String) { if let onPreflightFailure { onPreflightFailure(reason) } else { self.error = reason } }
         guard !isSending(chatID), storageReady, let index = chats.firstIndex(where: { $0.id == chatID }) else { onPreflightFailure?("当前无法发送，请确认对话存在，且这个对话没有正在进行的回复。"); return }
+        if retry, resuming == nil, let saved = recovery(for: chatID) {
+            if saved.canContinue { continueReply(chatID) } else { fail(InterfaceCopy.localized("请先核对上一步操作的结果。")) }
+            return
+        }
         var clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if !retry, clean.isEmpty, imageTask?.references.isEmpty == false {
             guard imageTask?.makesImage != true else { fail("请先填写想怎样修改或生成图片。"); return }
@@ -456,21 +537,67 @@ import SwiftUI
         if plan.makesImage { if !turnNote.isEmpty { instructions += "\n\n" + turnNote } } else { modelHistory = PhoneTurnContext.attach(turnNote, to: modelHistory) }
         let modelImages = imageInputs + (video?.frames.map { ImageInput(data: $0, mimeType: "image/jpeg") } ?? [])
         guard history.last?.role == "user" else { return }
-        var record = ExecutionRecord(chatId: chatID, query: history.last?.content ?? "", requestedModel: useChatGPT ? chatGPTModel : plan.makesImage ? plan.model : model)
-        if plan.makesImage { record.imageProgress = ExecutionImageProgress(startedAt: record.startedAt) }
-        executionRecords.append(record); saveExecutionRecords()
+        let runBudget = PhoneRunBudget()
+        runBudget.reserveDelivery()
+        if let data = resuming?.cursor.budget {
+            do { try runBudget.restore(data) } catch { fail(error.localizedDescription); return }
+        }
+        let attempt = UUID()
+        let isCurrent: @MainActor () -> Bool = { [weak self] in self?.runs[chatID]?.attempt == attempt }
+        let requested = useChatGPT ? chatGPTModel : plan.makesImage ? plan.model : model
+        let deviceScope = DeviceToolPolicy.load().enabled.map(\.rawValue).sorted().joined(separator: ",")
+        var bindingFields: [String] = [chatID, selectedAgent.id, project(for: chatID)?.id ?? "", selectedConnection?.id ?? "",
+                             useChatGPT ? account.activeID ?? "chatgpt" : endpoint, requested, apiProtocol,
+                             useChatGPT ? "" : PhoneCoreTurn.fingerprint(key), leadSnapshot.map(\.rawValue).sorted().joined(separator: ","),
+                             deviceScope]
+        let routingPolicy = PhoneRoutingPolicy.read()
+        let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
+        if (choice?.mode ?? (choice == nil ? routingPolicy.defaultMode : "fixed")) == "smart", selectedAgent.model?.isEmpty != false {
+            do {
+                bindingFields.append(try encoder.encode(routingPolicy).base64EncodedString())
+                bindingFields.append(account.activeID ?? "")
+                for connection in try loadConnections().sorted(by: { $0.id < $1.id }) {
+                    bindingFields += [connection.id, connection.baseURL, connection.apiProtocol, PhoneCoreTurn.fingerprint(connection.key)]
+                }
+            } catch { fail(error.localizedDescription); return }
+        }
+        let binding = PhoneCoreTurn.fingerprint(bindingFields.map { String($0.utf8.count) + ":" + $0 }.joined())
+        var record: ExecutionRecord
+        var saved: ReplyCheckpoint
+        if let prior = resuming {
+            let accessIsCurrent = prior.cursor.protectedKinds.allSatisfy { name in
+                guard let kind = DeviceDataKind(rawValue: name) else { return false }
+                return SystemDeviceData.shared.access(kind) == .granted
+            }
+            guard prior.canContinue, accessIsCurrent, prior.binding == binding, prior.questionID == history.last?.id,
+                  let idx = executionRecords.firstIndex(where: { $0.runId == prior.runID && $0.status == "interrupted" }) else {
+                fail(InterfaceCopy.localized("恢复前请核对原对话的连接、Agent 和权限。")); return
+            }
+            saved = prior; saved.automatic = false; saved.attempts += 1
+            do { try persist(saved) } catch { fail(error.localizedDescription); return }
+            record = executionRecords[idx]; record.status = "running"; record.finishedAt = nil; record.completion = nil
+            executionRecords[idx] = record
+        } else {
+            record = ExecutionRecord(chatId: chatID, query: history.last?.content ?? "", requestedModel: requested)
+            if plan.makesImage { record.imageProgress = ExecutionImageProgress(startedAt: record.startedAt) }
+            saved = ReplyCheckpoint(runID: record.runId, chatID: chatID, questionID: history.last!.id, binding: binding,
+                                    supportsContinuation: teamPlan == nil && video == nil && !plan.makesImage)
+            do { try persist(saved) } catch { fail(error.localizedDescription); return }
+            if let old = scenes(for: chatID).last { discardCheckpoint(old.runId) }
+            executionRecords.append(record)
+        }
+        saveExecutionRecords()
         activeImageActions[chatID] = plan.makesImage ? plan.action : nil
         if teamPlan != nil { pendingTeams[chatID] = nil }
         if video != nil { pendingVideos[chatID] = nil }
         sendingChats.insert(chatID)
         let supplements = PhoneSupplements()
-        supplementQueues[chatID] = supplements; pendingSupplements[chatID] = nil
+        for text in saved.supplements { _ = supplements.add(text) }
+        supplementQueues[chatID] = supplements; pendingSupplements[chatID] = supplements.queued
         let routeChatGPT = useChatGPT, routeEndpoint = endpoint, routeModel = model, routeKey = key, routeProtocol = apiProtocol, routeCodexModel = chatGPTModel
         let loader = replyLoader, chatAccount = account
         // One run budget per reply (20 min / 400k input tokens / 120 tool calls, shared contract);
         // a team gets a narrowed pool and each member request a child of it.
-        let runBudget = PhoneRunBudget()
-        runBudget.reserveDelivery()
         let teamBudget = runBudget.narrowed(deadlineMs: AgentTeam.timeBudget * 1000)
         let teamAgents = AgentTeam.effectiveAgents(preferences, projectID: preferences.chatProjects?[chatID])
         let teamScreenshots = CapturedScreenshots()
@@ -515,17 +642,27 @@ import SwiftUI
         let verification = classification.map { AgentVerification(question: clean, classification: $0, contextBlocks: [memoryText] + resolvedContext.evidence) }
         let loopHooks = AgentLoopHooks(
             internalRouting: teamPlan == nil && video == nil && !plan.makesImage,
-            onCalculation: { [weak self] id, ok, output in self?.phoneOperation(record.runId, id:"calculate:"+id, module:"compute", name:"计算", status:ok ? "completed" : "failed", summary:output) },
+            onCalculation: { [weak self] id, ok, output in guard isCurrent() else { return }; self?.phoneOperation(record.runId, id:"calculate:"+id, module:"compute", name:"计算", status:ok ? "completed" : "failed", summary:output) },
+            resumeCursor: resuming?.cursor,
+            saveCursor: { [weak self] cursor in
+                try Task.checkCancellation()
+                guard let self, isCurrent(), !self.expiredRuns.contains(record.runId),
+                      var current = self.checkpoint(record.runId) else { throw CancellationError() }
+                current.cursor = cursor; current.supplements = supplements.queued; try self.persist(current)
+            },
             maxTaskIterations: selectedAgent.maxTaskIterations,
             traceRunID: record.runId,
-            onStage: { [weak self] id, name, status, output in self?.stage(record.runId, id: id, name: name, status: status, output: output) },
-            onToolCall: { [weak self] call in self?.recordToolCall(call, runID: record.runId) },
+            onStage: { [weak self] id, name, status, output in if isCurrent() { self?.stage(record.runId, id: id, name: name, status: status, output: output) } },
+            onToolCall: { [weak self] call in if isCurrent() { self?.recordToolCall(call, runID: record.runId) } },
             takeSupplements: { supplements.take() },
             onSupplementsJoined: { [weak self] taken in self?.supplementsJoined(taken, chatID: chatID, runID: record.runId) })
         let replyBackground = makeBackground()
-        runs[chatID] = ActiveRun(runID: record.runId, task: nil, background: replyBackground)
+        let generationAtStart = foregroundGeneration
+        runs[chatID] = ActiveRun(runID: record.runId, attempt: attempt, task: nil, background: replyBackground)
         replyBackground.begin(runID: record.runId) { [weak self] in
             guard let self else { return }
+            guard self.runs[chatID]?.runID == record.runId else { return }
+            self.pauseReply(record.runId, automatic: replyBackground.automaticRecovery, budget: runBudget)
             self.expiredRuns.insert(record.runId)
             self.finishRun(record.runId, state: "interrupted")
             self.rejectApprovals(chatID: chatID)
@@ -539,9 +676,14 @@ import SwiftUI
                 if runs[chatID]?.runID == record.runId { runs[chatID] = nil }
                 sendingChats.remove(chatID); activeImageActions[chatID] = nil; expiredRuns.remove(record.runId)
                 if completed && !isBackground { scheduleAutomaticSync() }
-                endSupplements(supplements, chatID: chatID, finished: completed)
+                if !completed, checkpoint(record.runId)?.canContinue == true,
+                   scenes(for: chatID).last?.status == "interrupted" {
+                    _ = supplements.end(); supplementQueues[chatID] = nil; pendingSupplements[chatID] = nil
+                } else { endSupplements(supplements, chatID: chatID, finished: completed) }
                 // Run grants end with the run; its open cards close.
                 capabilityBroker.releaseRun(record.runId)
+                if completed { discardCheckpoint(record.runId) }
+                if foregroundGeneration != generationAtStart { resumeOnReturn(chatID) }
             }
             do {
                 try Task.checkCancellation()
@@ -595,22 +737,22 @@ import SwiftUI
                                                                            surfaceAtStart: surfaceAtStart, chatID: chatID, screenshots: screenshots, readHistory: selectedAgent.contextSources?["memory"].bool != false)
                 var routedHooks = loopHooks
                 if !plan.makesImage && teamPlan == nil && replyLoader == nil {
-                    routedHooks.routing = try smartRoutingHost(choice: choice, agent: selectedAgent, messages: modelHistory, history: history, instructions: instructions, images: modelImages, phoneTools: phoneTools, chatID: chatID, runID: record.runId, allowWeb: phonePermissions.allows(selectedAgent.id, .network), allowImages: phonePermissions.allows(selectedAgent.id, .generateMedia), onObservation: { observation in self.observe(observation, runID: record.runId) }, onSelection: { model in
+                    routedHooks.routing = try smartRoutingHost(choice: choice, agent: selectedAgent, messages: modelHistory, history: history, instructions: instructions, images: modelImages, phoneTools: phoneTools, chatID: chatID, runID: record.runId, allowWeb: phonePermissions.allows(selectedAgent.id, .network), allowImages: resuming == nil && phonePermissions.allows(selectedAgent.id, .generateMedia), onObservation: { observation in if isCurrent() { self.observe(observation, runID: record.runId) } }, onSelection: { model in
                         if let index = self.executionRecords.firstIndex(where: { $0.runId == record.runId }), !self.executionRecords[index].terminal { self.executionRecords[index].requestedModel = model }
                     })
                 }
                 if plan.separately == true && plan.references.count > 1 { reply = try await editEachPhoto(plan, prompt: clean, history: modelHistory, instructions: instructions, runID: record.runId, useChatGPT: useChatGPT, codexModel: chatGPTModel, endpoint: endpoint, key: key) }
                 else if let teamPlan { reply = try await runTeam(teamPlan, task: clean, lead: selectedAgent, runID: record.runId, permissions: phonePermissions, budget: teamBudget, agents: teamAgents, context: resolvedContext, memory: memoryText, background: AgentTeam.background(messages: modelHistory, compact: ""), compact: compactSummary, ask: ask) }
                 else if let replyLoader { reply = try await replyLoader(modelHistory, instructions) }
-                else if useChatGPT { reply = try await account.reply(messages: modelHistory, requestHistory: history, model: chatGPTModel, instructions: instructions, imageInputs: modelImages, imageTask: plan, deviceTools: phoneTools, allowWebSearch: phonePermissions.allows(selectedAgent.id, .network), allowImageTool: phonePermissions.allows(selectedAgent.id, .generateMedia), statusKey: chatID, cacheKey: ChatGPTRequest.cacheKey(chatID: chatID, agentID: selectedAgent.id), budget: runBudget, verification: verification, hooks: routedHooks, onObservation: { observation in self.observe(observation, runID: record.runId) }, onReceiving: { replyBackground.update(runID: record.runId, completed: 1, subtitle: "正在接收回答") }) }
+                else if useChatGPT { reply = try await account.reply(messages: modelHistory, requestHistory: history, model: chatGPTModel, instructions: instructions, imageInputs: modelImages, imageTask: plan, deviceTools: phoneTools, allowWebSearch: phonePermissions.allows(selectedAgent.id, .network), allowImageTool: resuming == nil && phonePermissions.allows(selectedAgent.id, .generateMedia), statusKey: chatID, cacheKey: ChatGPTRequest.cacheKey(chatID: chatID, agentID: selectedAgent.id), budget: runBudget, verification: verification, hooks: routedHooks, onObservation: { observation in if isCurrent() { self.observe(observation, runID: record.runId) } }, onReceiving: { replyBackground.update(runID: record.runId, completed: 1, subtitle: "回复中") }) }
                 else if plan.makesImage {
                     reply = try await ImageNetwork.reply(prompt: clean, task: plan, inputs: imageInputs, endpoint: endpoint, token: key, onObservation: { self.observe($0, runID: record.runId) })
                 } else {
                     defer { account.setReplyStatus(nil, for: chatID) }
-                    reply = try await Network.reply(messages: modelHistory, requestHistory: history, endpoint: endpoint, model: model, token: key, instructions: instructions, apiProtocol: apiProtocol, imageInputs: modelImages, modelCapabilities: connectionCapabilities, tools: phoneTools?.toolSet, budget: runBudget, verification: verification, hooks: routedHooks, onObservation: { observation in self.observe(observation, runID: record.runId) }, onStatus: { status in self.account.setReplyStatus(status, for: chatID) })
+                    reply = try await Network.reply(messages: modelHistory, requestHistory: history, endpoint: endpoint, model: model, token: key, instructions: instructions, apiProtocol: apiProtocol, imageInputs: modelImages, modelCapabilities: connectionCapabilities, tools: phoneTools?.toolSet, budget: runBudget, verification: verification, hooks: routedHooks, onObservation: { observation in if isCurrent() { self.observe(observation, runID: record.runId) } }, onStatus: { status in self.account.setReplyStatus(status, for: chatID) })
                 }
                 try Task.checkCancellation()
-                replyBackground.update(runID: record.runId, completed: 2, subtitle: "正在保存完整回答")
+                replyBackground.update(runID: record.runId, completed: 2, subtitle: "保存中")
                 guard let position = chats.firstIndex(where: { $0.id == chatID }) else { finishRun(record.runId, state: "interrupted"); return }
                 let message = ChatMessage(role: "assistant", content: reply.text)
                 var attachments: [LocalImage] = []
@@ -651,9 +793,19 @@ import SwiftUI
                 LocalDeviceServices.shared.completed(text: reply.text, background: isBackground)
                 completed = true
                 replyBackground.finish(runID: record.runId, success: true)
-            } catch is CancellationError { if !expiredRuns.contains(record.runId) { finishRun(record.runId, state: "cancelled") }; persistToolTrace(runID: record.runId, chatID: chatID, status: "cancelled") }
-            catch let failure as URLError where failure.code == .cancelled { if !expiredRuns.contains(record.runId) { finishRun(record.runId, state: "cancelled") }; persistToolTrace(runID: record.runId, chatID: chatID, status: "cancelled") }
-            catch { if !expiredRuns.contains(record.runId) {
+            } catch is CancellationError { if !expiredRuns.contains(record.runId) { finishRun(record.runId, state: "cancelled"); discardCheckpoint(record.runId); persistToolTrace(runID: record.runId, chatID: chatID, status: "cancelled") } }
+            catch let failure as URLError where failure.code == .cancelled {
+                if !Task.isCancelled, isBackground, checkpoint(record.runId) != nil {
+                    pauseReply(record.runId, automatic: true, budget: runBudget); finishRun(record.runId, state: "interrupted"); return
+                }
+                if !expiredRuns.contains(record.runId) { finishRun(record.runId, state: "cancelled"); discardCheckpoint(record.runId); persistToolTrace(runID: record.runId, chatID: chatID, status: "cancelled") } }
+            catch {
+                if !expiredRuns.contains(record.runId), checkpoint(record.runId) != nil, ((error as? URLError)?.interruptsPhoneReply == true || checkpoint(record.runId)?.cursor.inFlightEffect != nil) {
+                    pauseReply(record.runId, automatic: isBackground, budget: runBudget)
+                    finishRun(record.runId, state: "interrupted")
+                    return
+                }
+                if !expiredRuns.contains(record.runId) {
                 stage(record.runId, id: "reply:failure", name: "请求失败", status: "failed", output: String(error.localizedDescription.prefix(1000)))
                 finishRun(record.runId, state: "failed"); self.error = error.localizedDescription
             }; persistToolTrace(runID: record.runId, chatID: chatID, status: "failed") }
@@ -712,6 +864,10 @@ import SwiftUI
     func supplement(_ text: String, chatID: String) {
         guard isSending(chatID), let queue = supplementQueues[chatID], queue.add(text) else { return }
         pendingSupplements[chatID] = queue.queued
+        if let id = runs[chatID]?.runID, var saved = checkpoint(id), let latest = queue.queued.last {
+            saved.supplements.append(latest)
+            do { try persist(saved) } catch { self.error = error.localizedDescription }
+        }
     }
     private func supplementsJoined(_ taken: [String], chatID: String, runID: String) {
         pendingSupplements[chatID] = supplementQueues[chatID]?.queued
@@ -733,6 +889,7 @@ import SwiftUI
     private func recordToolCall(_ call: ExecutionToolCall, runID: String) {
         guard let index = executionRecords.firstIndex(where: { $0.runId == runID }) else { return }
         executionRecords[index].recordToolCall(call)
+        if call.executed { background(forRun: runID)?.finishedStep(runID: runID) }
         // Calls the loop refused (repeat guard, limits, budget) never reached a tool; show them too.
         if !call.executed { stage(runID, id: "tool:\(call.callId)", name: "工具 · \(call.toolId)", status: "failed", output: "未执行：\(call.code ?? "UNKNOWN")") }
         if Date().timeIntervalSince(lastSceneSave) > 0.5 { saveExecutionRecords() }
@@ -847,7 +1004,7 @@ import SwiftUI
     }
     /// Stops one conversation's reply (or every reply when no conversation is given).
     func cancel(chatID: String? = nil) {
-        for (id, run) in runs where chatID == nil || id == chatID { rejectApprovals(chatID: id); run.task?.cancel() }
+        for (id, run) in runs where chatID == nil || id == chatID { discardCheckpoint(run.runID); rejectApprovals(chatID: id); run.task?.cancel() }
         LocalDeviceServices.shared.stopSpeech()
     }
     // Phone data tools: reads run directly once the user enabled the kind;
@@ -862,9 +1019,10 @@ import SwiftUI
     /// member, the lead's as the parent. Grants are read per call by the broker.
     private func elevationBinding(runID: String, agent: AgentProfile, parent: AgentProfile?, chatID: String, ownSnapshot: Set<PhoneCapability>, parentSnapshot: Set<PhoneCapability>?, budget: PhoneRunBudget?) -> PhoneElevationBinding {
         let agentID = agent.id
+        let attempt = runs[chatID]?.attempt
         let atoms: @MainActor (Set<PhoneCapability>, String) -> Set<String> = { snapshot, id in Set(snapshot.intersection(PhoneAgentPermissions.load().allowed(id)).map(\.rawValue)) }
         var binding = PhoneElevationBinding(agentID: agentID, agentName: agent.name, runID: runID, chatID: chatID, projectID: project(for: chatID)?.id,
-                                            ceiling: { atoms(ownSnapshot, agentID) },
+                                            ceiling: { [weak self] in guard let attempt, self?.runs[chatID]?.attempt == attempt else { return [] }; return atoms(ownSnapshot, agentID) },
                                             surface: { [weak self] in self.map { !$0.isBackground } ?? false }, budget: budget)
         if let parent {
             let parentID = parent.id, snapshot = parentSnapshot ?? []
@@ -1047,13 +1205,28 @@ import SwiftUI
         }
         return scope
     }
+    private func pauseReply(_ runID: String, automatic: Bool, budget: PhoneRunBudget) {
+        guard var saved = checkpoint(runID) else { return }
+        saved.automatic = automatic && saved.canContinue
+        saved.cursor.budget = (try? budget.resumeData()) ?? saved.cursor.budget
+        do { try persist(saved) } catch { self.error = error.localizedDescription }
+    }
+    func leavingForeground() {
+        foregroundReady = false
+        for run in runs.values { run.background.leavingForeground() }
+    }
     func enteredBackground() {
+        foregroundReady = false
         isBackground = true
         flushDrafts()
         saveExecutionRecords()
         for run in runs.values { run.background.enteredBackground() }
     }
-    func becameActive() { isBackground = false }
+    func becameActive() {
+        isBackground = false; foregroundReady = true; foregroundGeneration += 1
+        for run in runs.values { run.background.becameActive() }
+        for chat in chats { resumeOnReturn(chat.id) }
+    }
     /// The last message that is not a tool trace is the user's: a reply is owed (retry is offered).
     func awaitingReply(_ chatID: String) -> Bool {
         chats.first(where: { $0.id == chatID })?.messages.last(where: { !PhoneToolTrace.isTrace($0) })?.role == "user"
@@ -1061,7 +1234,10 @@ import SwiftUI
     func interruptionNotice(for chatID: String) -> String? {
         guard !isSending(chatID), awaitingReply(chatID),
               scenes(for: chatID).last?.status == "interrupted" else { return nil }
-        return "上次回复已中断，可能是后台任务结束或应用被关闭。提问已保存，点重新生成可再试。"
+        if let saved = recovery(for: chatID) {
+            return InterfaceCopy.localized(saved.canContinue ? "任务已暂停，进度已保存。" : "请先核对上一步操作的结果。")
+        }
+        return InterfaceCopy.localized("缺少续行记录，请先核对已执行的步骤。")
     }
     func requestHandoff(_ task: TaskCheckpoint) async {
         guard storageReady, task.canRequestHandoff,
@@ -1130,6 +1306,8 @@ import SwiftUI
             quarantineDeletedMemories(&nextPreferences, deleted: nextDeleted)
             let recovery = SyncRecovery(snapshot: SyncSnapshot(chats: nextChats, tasks: nextTasks, handoffs: nextHandoffs, deletedChats: nextDeleted), preferences: nextPreferences, records: nextRecords)
             try commitSync(recovery)
+            let removedIDs = Set(nextDeleted.map(\.id))
+            for row in executionRecords where removedIDs.contains(row.chatId) { discardCheckpoint(row.runId) }
             deletedChats = nextDeleted; chats = nextChats; taskCheckpoints = nextTasks; taskHandoffs = nextHandoffs; preferences = nextPreferences; executionRecords = nextRecords
             // A local request is only delivered after the sync service echoes
             // the identical request. This is not confirmation of desktop execution.

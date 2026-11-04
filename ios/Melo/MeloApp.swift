@@ -25,6 +25,7 @@ import SwiftUI
                 .environment(\.locale, Locale(identifier: InterfaceLanguage.resolve(interfaceLanguage).localeID))
                 .tint(meloAccent).foregroundStyle(MeloTheme.text)
                 .task {
+                    if scenePhase == .active { store.becameActive() }
                     RuntimeDiagnostics.journal.record("launch", requestActive: store.anySending)
                     #if DEBUG && targetEnvironment(simulator)
                     if ProcessInfo.processInfo.arguments.contains("-melo-verify-interactions") { InteractionVerification.run(); InteractionVerification.seed(store); InteractionVerification.seedReview(store) }
@@ -35,6 +36,8 @@ import SwiftUI
                     if ProcessInfo.processInfo.arguments.contains("-melo-verify-local-settings") { await LocalSettingsVerification.run() }
                     if ProcessInfo.processInfo.arguments.contains("-melo-verify-local-files") { await LocalFileVerification.run() }
                     if ProcessInfo.processInfo.arguments.contains("-melo-verify-conversation") { await ConversationVerification.run() }
+                    if ProcessInfo.processInfo.arguments.contains("-melo-continuity-seed") { await ReplyBackgroundVerification.coldLaunch(resume: false) }
+                    if ProcessInfo.processInfo.arguments.contains("-melo-continuity-resume") { await ReplyBackgroundVerification.coldLaunch(resume: true) }
                     if ProcessInfo.processInfo.arguments.contains("-melo-verify-background") { await ReplyBackgroundVerification.run() }
                     if ProcessInfo.processInfo.arguments.contains("-melo-verify-device-data") { await DeviceDataVerification.run() }
                     if ProcessInfo.processInfo.arguments.contains("-melo-verify-team") { await TeamVerification.run() }
@@ -49,12 +52,14 @@ import SwiftUI
                     }
                     #endif
                 }
+                .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in store.leavingForeground() }
                 .onReceive(NotificationCenter.default.publisher(for: UIApplication.willTerminateNotification)) { _ in RuntimeDiagnostics.journal.record("termination-callback", requestActive: store.anySending) }
                 .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in RuntimeDiagnostics.journal.record("memory-warning", requestActive: store.anySending) }
                 .onChange(of: store.sendingChats.isEmpty) { _, idle in RuntimeDiagnostics.journal.record(idle ? "request-end" : "request-start", requestActive: !idle) }
                 .onChange(of: scenePhase) { _, phase in
                     RuntimeDiagnostics.journal.record(phase == .background ? "background" : phase == .active ? "active" : "inactive", requestActive: store.anySending)
                     store.account.setApplicationActive(phase == .active)
+                    if phase == .inactive { store.leavingForeground() }
                     if phase == .background { store.enteredBackground() }
                     if phase == .active {
                         store.becameActive()

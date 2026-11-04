@@ -371,7 +371,20 @@ struct ChatView: View {
                     }.padding() }
                     else if store.awaitingReply(chatID) {
                         if let notice = store.interruptionNotice(for: chatID) { Label(notice, systemImage: "pause.circle").font(.caption).foregroundStyle(meloGold).padding(.horizontal) }
-                        Button { store.send("", chatID: chatID, retry: true, imageTask: imagePlan) } label: { Label("重新生成回复", systemImage: "arrow.clockwise").font(.subheadline) }.padding(.horizontal)
+                        if store.canContinueReply(chatID) {
+                            Button { store.continueReply(chatID) } label: {
+                                Label("继续任务", systemImage: "play.fill").font(.subheadline)
+                            }.padding(.horizontal)
+                        }
+                        if store.hasSavedReply(chatID) {
+                            if !store.canContinueReply(chatID), let run = store.scenes(for: chatID).last {
+                                RunProgressList(steps: RunProgress.steps(run)).padding(.horizontal)
+                            }
+                            Button("保存当前进度并结束") { store.finishWithSavedProgress(chatID) }
+                                .font(.footnote).padding(.horizontal)
+                        } else {
+                            Button { store.send("", chatID: chatID, retry: true, imageTask: imagePlan) } label: { Label("重新生成回复", systemImage: "arrow.clockwise").font(.subheadline) }.padding(.horizontal)
+                        }
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }.padding(16)

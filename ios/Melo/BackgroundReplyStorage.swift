@@ -13,3 +13,18 @@ enum BackgroundReplyStorage {
         }
     }
 }
+
+/// Device-local only. A different conversation, user turn, Agent or account
+/// must never inherit an interrupted reply's observations.
+struct ReplyCheckpoint: Codable {
+    var runID: String
+    var chatID: String
+    var questionID: String
+    var binding: String
+    var supportsContinuation: Bool
+    var cursor = PhoneReplyCursor()
+    var automatic = false
+    var attempts = 0
+    var supplements: [String] = []
+    var canContinue: Bool { supportsContinuation && cursor.inFlightEffect == nil }
+}

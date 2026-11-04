@@ -36,6 +36,117 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
 
 @main struct AgentLoopTests {
     @MainActor static func main() async throws {
+        do {
+            var now = 1000.0
+            let original = PhoneRunBudget(deadlineMs: 60000, now: { now })
+            original.setMemberTokens(5000) // This budget meters output as well as input.
+            original.arm()
+            _ = try original.admitModel(estimatedInput: 43, outputTokens: 11)
+            let saved = try original.resumeData()
+            now += 5000
+            let restored = PhoneRunBudget(now: { now }); try restored.restore(saved); restored.arm()
+            assert(restored.deadlineAt == original.deadlineAt && restored.used.inputTokens == 43)
+            assert(restored.used.outputTokens == 11 && restored.used.providerCalls == 1)
+        }
+        // Interrupt between a real tool result and the next model request.
+        // A new loop uses a decoded disk cursor and the same successful effect
+        // is never dispatched a second time, even under a different call ID.
+        do {
+            let log = Log()
+            var tools = loopTools(log) { _ in PhoneToolResult(output: PhoneToolEnvelope.success(#"{"id":"saved-reminder","title":"same reminder"}"#)) }
+            tools.definitions += [DeviceToolSpec.all.first { $0.name == "reminders_create" }!.definition]
+            let args = #"{"title":"same reminder"}"#
+            var stored: Data?
+            var initial = hooks(log)
+            initial.saveCursor = { cursor in
+                stored = try JSONEncoder().encode(cursor)
+                if cursor.iteration == 1 { throw CancellationError() }
+            }
+            let first = ScriptedTransport { _ in calls([fc("first", "reminders_create", args)]) }
+            do {
+                _ = try await AgentLoop(transport: first, tools: tools, budget: PhoneRunBudget(),
+                                        latestUserMessage: "create a reminder", hooks: initial).run()
+                assertionFailure("Expected simulated suspension")
+            } catch is CancellationError {}
+            let cursor = try JSONDecoder().decode(PhoneReplyCursor.self, from: stored!)
+            assert(cursor.iteration == 1 && cursor.inFlightEffect == nil && !cursor.receipts.isEmpty)
+            let second = ScriptedTransport { request in
+                if request.goalReview != nil { return answer(#"{"decision":"complete","reasonType":"fulfilled","requirements":[{"text":"create reminder","status":"met","evidenceIds":["first"]}]}"#) }
+                if request.iteration == 1 {
+                    guard case .userText(let note)? = request.transcript.first, note.contains("first") else { throw MeloError.message("Missing saved evidence") }
+                    return calls([fc("first", "reminders_create", args), fc("repeat", "reminders_create", args)])
+                }
+                return answer("The reminder is saved.")
+            }
+            var resumed = hooks(log); resumed.resumeCursor = cursor
+            let delivered = try await AgentLoop(transport: second, tools: tools, budget: PhoneRunBudget(),
+                                                latestUserMessage: "create a reminder", hooks: resumed).run()
+            assert(delivered.text == "The reminder is saved." && delivered.completion?.outcome == "completed")
+            assert(log.performed.map(\.callID) == ["first"])
+            assert(second.requests.first?.iteration == 1)
+            var uncertain = cursor; uncertain.inFlightEffect = "create_event"; resumed.resumeCursor = uncertain
+            let count = second.requests.count
+            do {
+                _ = try await AgentLoop(transport: second, tools: tools, budget: PhoneRunBudget(),
+                                        latestUserMessage: "continue", hooks: resumed).run()
+                assertionFailure("Unknown effect cannot resume")
+            } catch {}
+            assert(second.requests.count == count && log.performed.count == 1)
+        }
+        // Cold resume inside an internal execution job. Rebuild the member's
+        // current scope before exposing receipts, then hand its findings to the lead.
+        do {
+            let log = Log()
+            let goal = "Create a reminder and tell me when it is saved"
+            let args = #"{"title":"member reminder"}"#
+            var tools = loopTools(log) { call in
+                let output = call.name == "open_url" ? #"{"url":"https://a.example","text":"lead-only-page-data"}"# : #"{"id":"saved-member-reminder"}"#
+                return PhoneToolResult(output: PhoneToolEnvelope.success(output))
+            }
+            tools.definitions += [DeviceToolSpec.all.first { $0.name == "reminders_create" }!.definition]
+            var h = hooks(log); h.internalRouting = true
+            var data: Data?
+            h.saveCursor = { cursor in
+                if cursor.iteration == 3 {
+                    data = try JSONEncoder().encode(cursor)
+                }
+            }
+            let initial = ScriptedTransport { request in
+                if request.iteration == 0 { return calls([fc("lead-page")]) }
+                if request.iteration == 3 { throw URLError(.networkConnectionLost) }
+                if request.internalJob == nil { return calls([fc("route","route_task",#"{"role":"execute","task":"Create the requested reminder"}"#)]) }
+                return calls([fc("write","reminders_create",args)])
+            }
+            do {
+                _ = try await AgentLoop(transport:initial, tools:tools, budget:PhoneRunBudget(), latestUserMessage:goal, hooks:h).run()
+                assertionFailure("Expected suspend after member write")
+            } catch let error as URLError where error.code == .networkConnectionLost {}
+            let saved = try JSONDecoder().decode(PhoneReplyCursor.self, from:data!)
+            assert(saved.member?.active == true && saved.member?.rounds == 1 && saved.member?.assignments.count == 1)
+            assert(log.performed.map(\.callID) == ["lead-page", "job-1:write"])
+            h.resumeCursor = saved; h.saveCursor = nil
+            var handsBack = false
+            let resume = ScriptedTransport { request in
+                if request.goalReview != nil { return answer(#"{"decision":"complete","reasonType":"fulfilled","requirements":[{"text":"save the reminder","status":"met","evidenceIds":["job-1:write"]}]}"#) }
+                if let job = request.internalJob {
+                    assert(job["role"] as? String == "execute")
+                    if request.iteration == 3 {
+                        guard case .userText(let note)? = request.transcript.first else { preconditionFailure("Missing member progress") }
+                        assert(note.contains("job-1:write") && !note.contains("lead-only-page-data") && !note.contains("lead-page"))
+                        return calls([fc("write","reminders_create",args), fc("page")])
+                    }
+                    guard case .toolRound(_, let receipts)? = request.transcript.last else { preconditionFailure("Missing replay results") }
+                    assert(receipts.last?.modelOutput.contains("CAPABILITY_DENIED") == true)
+                    assert(receipts.last?.modelOutput.contains("lead-only-page-data") == false)
+                    return answer("The requested reminder was saved.")
+                }
+                guard case .userText(let note)? = request.transcript.last else { preconditionFailure("Missing resumed member handoff") }
+                handsBack = note.contains("saved-member-reminder")
+                return answer("Your reminder was saved.")
+            }
+            let result = try await AgentLoop(transport:resume, tools:tools, budget:PhoneRunBudget(), latestUserMessage:goal, hooks:h).run()
+            assert(handsBack && result.text == "Your reminder was saved." && log.performed.map(\.callID) == ["lead-page", "job-1:write"])
+        }
         let c = AgentLoopContract.shared
         assert(c.maxIterations == 40 && c.maxCallsPerResponse == 32)
         do {
