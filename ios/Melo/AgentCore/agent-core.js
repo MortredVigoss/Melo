@@ -427,13 +427,27 @@ const jobs = {
 const ROUTE_NAME = 'route_task';
 const MAX_ASSIGNMENTS = 6;
 const MAX_MEMBER_ROUNDS = 6;
+// Tools no internal job may ever receive, whatever a host suggests: the router
+// itself, delegation, model escalation, development jobs, test doubles and
+// multi-step skills stay with the lead.
+const NEVER_ASSIGNED = new Set([ROUTE_NAME, 'delegate', 'agent', 'melo_escalate', 'development_job', 'fake']);
+const STATIC_IDS = new Set(Object.values(jobs).flatMap(job => job.tools));
+// Host suggestions (phase A1, 2026-11-04): `{ [toolId]: jobName }` derived by the
+// host from its own tool declarations. A suggestion only adds a tool the static
+// lists do not mention; it never moves a statically assigned tool, never reaches
+// the deny list, and passes the same request-policy filters as static tools.
+function suggestedTools(name, suggestions, tools) {
+  if (!suggestions || typeof suggestions !== 'object' || Array.isArray(suggestions)) return [];
+  return Object.keys(suggestions).filter(id => suggestions[id] === name && tools.includes(id)
+    && !STATIC_IDS.has(id) && !NEVER_ASSIGNED.has(id) && !id.startsWith('skill:')).sort();
+}
 
-function internalRouteCatalog(goal, tools = []) {
+function internalRouteCatalog(goal, tools = [], suggestions = null) {
   const policy = getRequestNetworkPolicy(goal);
   if (!goal?.trim() || policy.toolsForbidden || policy.contextOnly || isStandaloneGreeting({ text: goal })) return null;
   const roles = {};
   for (const [name, job] of Object.entries(jobs)) {
-    const ids = job.tools.filter(id => tools.includes(id) && requestAllowsTool(id,policy) && !(name === 'research' && (policy.contextOnly || policy.localSearch ||
+    const ids = [...job.tools, ...suggestedTools(name, suggestions, tools)].filter(id => tools.includes(id) && requestAllowsTool(id,policy) && !(name === 'research' && (policy.contextOnly || policy.localSearch ||
       (['web_search','native_web_search'].includes(id) ? policy.searchForbidden : policy.fetchForbidden))));
     if (ids.length) roles[name] = ids;
   }
@@ -468,7 +482,7 @@ function internalHandoff({ job, answer = '', observations = [], limited = false 
 
 function internalRouting(input) {
   switch (input.action) {
-    case 'catalog': return internalRouteCatalog(input.goal, input.tools);
+    case 'catalog': return internalRouteCatalog(input.goal, input.tools, input.suggestions);
     case 'start': return startInternalJob(input);
     case 'handoff': return internalHandoff(input);
     case 'limits': return { assignments: MAX_ASSIGNMENTS, rounds: MAX_MEMBER_ROUNDS };

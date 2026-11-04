@@ -52,6 +52,14 @@ export function capabilityRequirementAllowed(requirement, capabilities) {
 const READ=new Set(['file_read','glob','grep','media_info']);
 const WRITE=new Set(['file_write','file_edit','file_delete','file_move','file_mkdir','xlsx']);
 const NETWORK=new Set(['web_search','fetch_url','web_screenshot','media_api','translate','browser_open','browser_snapshot','browser_click','browser_fill','browser_wait_for','browser_close']);
+// Read-only view of the legacy tables for hosts that classify tools (internal
+// routing jobs); the executor still decides with toolCapabilityAllowed.
+export function legacyCapabilityRequirement(id) {
+  if (READ.has(id)) return 'readFiles';
+  if (WRITE.has(id)) return 'writeFiles';
+  if (NETWORK.has(id)) return 'network';
+  return null;
+}
 /**
  * @param {string} id
  * @param {Object|null} capabilities

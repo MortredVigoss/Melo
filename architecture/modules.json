@@ -24,8 +24,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 690,
-      "edges": 2237,
+      "modules": 691,
+      "edges": 2240,
       "roots": [
         "src",
         "desktop-ui",
@@ -567,7 +567,7 @@
       "usedBy": {
         "approvals": 3,
         "channels": 6,
-        "chat": 34,
+        "chat": 35,
         "desktop-shell": 12,
         "development": 4,
         "memory": 2,
@@ -742,7 +742,7 @@
       "modules": {
         "desktop-ui": 27,
         "shared": 44,
-        "src": 68
+        "src": 69
       },
       "entryModules": [
         {
@@ -1110,7 +1110,7 @@
         }
       ],
       "dependsOn": {
-        "agents": 34,
+        "agents": 35,
         "approvals": 8,
         "channels": 2,
         "desktop-shell": 20,
@@ -1293,6 +1293,7 @@
           "src/services/chat/derivedState.test.js",
           "src/services/chat/dynamicContext.test.js",
           "src/services/chat/execution/finalizeNode.test.js",
+          "src/services/chat/execution/internalRoles.test.js",
           "src/services/chat/executionDetail.test.js",
           "src/services/chat/executionPipeline.test.js",
           "src/services/chat/executionScenes.test.js",

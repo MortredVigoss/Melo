@@ -49,3 +49,19 @@ test('handoff transitions never reapply completed or uncertain external writes',
     effects+=state.permitted.length;assert.equal(effects,1);
   }
 });
+test('host suggestions extend jobs from declarations but never override static lists, the deny list or policy', () => {
+  const extra = ['bash','media_info','translate','mcp:s:read','delegate','skill:foo','route_task','development_job'];
+  const suggestions = {bash:'execute', media_info:'lookup', translate:'calculate', 'mcp:s:read':'research', delegate:'execute', 'skill:foo':'execute',
+    route_task:'execute', development_job:'execute', web_search:'calculate', ghost:'lookup', bogus:'nope'};
+  const all = [...tools, ...extra];
+  const extended = internalRouteCatalog(goal, all, suggestions);
+  assert.deepEqual(extended.roles.execute, ['file_write','bash']);
+  assert.deepEqual(extended.roles.calculate, ['calculator','translate']);
+  assert.ok(extended.roles.lookup.includes('media_info') && extended.roles.research.includes('mcp:s:read'));
+  assert.ok(extended.roles.research.includes('web_search') && !extended.roles.calculate.includes('web_search'));
+  assert.ok(!Object.values(extended.roles).flat().some(id => ['delegate','skill:foo','route_task','development_job','ghost','bogus'].includes(id)));
+  assert.equal(internalRouteCatalog('不要联网，读取日历并计算差值', all, suggestions).roles.research, undefined);
+  assert.deepEqual(internalRouteCatalog(goal, all), internalRouteCatalog(goal, all, null));
+  assert.deepEqual(internalRouteCatalog(goal, all, 'bash'), internalRouteCatalog(goal, all));
+  assert.deepEqual(evaluate({version:1,op:'internalRouting',action:'catalog',goal,tools:all,suggestions}).value, extended);
+});

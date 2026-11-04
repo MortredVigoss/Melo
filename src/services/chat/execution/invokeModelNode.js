@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { internalRouteCatalog, startInternalJob, internalHandoff, MAX_ASSIGNMENTS, MAX_MEMBER_ROUNDS, ROUTE_NAME } from '../../../../shared/agent/internalRouting.js';
+import { internalRoleSuggestions } from './internalRoles.js';
 import { runLimitDelivery } from '../../../runtime/limitDelivery.js';
 import { isDeliveryLimit, hostEvidenceReply } from '../../../../shared/agent/limitDelivery.js';
 import { resolveLoopLimits } from '../../../../shared/agent/loopLimits.js';
@@ -137,8 +138,10 @@ export function createInvokeModelNode(turn) {
     const routingEnabled = routingSession?.current.mode === 'smart' && config.smartRouting?.allowEscalation !== false;
     if (routingEnabled) graphState.promptTools = [...graphState.promptTools, escalationTool];
     const routeGoal = graphState.searchPlan.sharedPlan?.resolvedGoal || latestUserMessage;
+    // Phase A1 (2026-11-04): the host classifies every visible tool from its
+    // declarations so jobs are not limited to the shared static whitelists.
     let catalog = !teamTask && !teamPlan && !context.requestToolPolicy?.toolsForbidden && internalRouteCatalog(routeGoal, [
-      ...graphState.promptTools.map(t => t.id), ...(graphState.searchPlan.nativeWebSearchEnabled ? ['native_web_search'] : [])]);
+      ...graphState.promptTools.map(t => t.id), ...(graphState.searchPlan.nativeWebSearchEnabled ? ['native_web_search'] : [])], internalRoleSuggestions(graphState.promptTools));
     if (catalog) graphState.promptTools = [...graphState.promptTools, { id: ROUTE_NAME, name: ROUTE_NAME, description: catalog.definition.description, parametersSchema: catalog.definition.parameters }];
     const assignments = [];
     let job = null, leadMessages, leadAssignmentTurn, observationStart, jobRounds, jobSession;

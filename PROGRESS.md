@@ -1,3 +1,7 @@
+## 2026-11-04 — Claude 方案 A 阶段 1：岗位目录按工具声明动态生成
+
+Claude：用户选定审计方案 A（在现有内部岗位路由上分五阶段补齐）。A1：共享核心 `internalRouteCatalog` 新增可选的宿主建议参数（静态白名单优先、拒绝名单与请求策略照旧，手机不传则不变）；桌面新增 `internalRoles.js` 按工具的 capability（含旧表只读视图 `legacyCapabilityRequirement`）、共享 `toolEffect`、MCP 只读标记和 `uiModule` 给出岗位建议，`invokeModelNode` 传入。岗位覆盖从 11 / 33 个内建工具扩到含 bash、pdf、xlsx、image、knowledge、浏览器、translate、glob / grep / media_info 等，clipboard / reminder / media_api / 委派 / 开发作业仍只归主 Agent。重建 agent-core bundle（43 模块）、一致性 155 / 155；新增单元测试（声明规则 + 真实注册表逐工具）；快速档 `run-jJz2SQ` 扩大到全部（JS 4847/4847、设置浏览器、Swift 全部、Android 四项）全绿。实施记录见 [agent-orchestration-implementation-20261104.md](docs/agent-orchestration-implementation-20261104.md)。未推送。
+
 ## 2026-11-04 — Claude 审计隐藏子 Agent 编排层（只报告）
 
 Claude：用户问能否做一层用户看不到的子 Agent 架构（主 Agent 路由 / 分派 / 审批 / 整合，网页查询与工具调用交给不同子 Agent）。结论：这层已由 Codex 当日的内部岗位路由实现（`route_task` + 检索 / 资料读取 / 计算 / 执行四岗位，三端同源），聊天只见主 Agent 回复；对照用户目标缺五项——岗位白名单写死且只覆盖 33 个内建工具中的 11 个、成员轮次与 token 不分层（计入同一个 40 轮与 40 万 token 池）、不能并行分派、审批不经主 Agent 预筛、同一模型且成员无会话背景。真实探针三次（BIGBANG 长问题，主 Agent）：主 Agent 12 s 内分派，检索成员 1 两轮核实悉尼场次，检索成员 2 六轮 28 次调用触顶，主 Agent 再两轮后 326 148 / 400 000 token 耗尽，LIMIT_DELIVERED 半截交付，与 10-27 无分工时相当；另发现 wttr.in 快路把带日期的查询定位到阿尔及利亚、收尾时丢掉成员已核实事实。推荐在现有路由上分五阶段补齐（8.5/10），纯编排 6、自动组队 6.5。相关测试 58/58 通过。[审计](docs/agent-orchestration-audit-20261104.md)。未改代码、未推送。
