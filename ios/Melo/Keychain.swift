@@ -8,11 +8,17 @@ enum Secrets {
         let status = SecItemUpdate(query as CFDictionary, [kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly] as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else { throw MeloError.message("后台登录凭证准备失败，请解锁手机后重新打开 Melo。") }
     }
-    static func read(_ key: String) -> String {
+    static func read(_ key: String) -> String { (try? readChecked(key)) ?? "" }
+    // Profile updates must distinguish an empty keychain from an unreadable one.
+    static func readChecked(_ key: String) throws -> String {
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: key, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
         var value: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &value) == errSecSuccess, let data = value as? Data else { return "" }
-        return String(data: data, encoding: .utf8) ?? ""
+        let status = SecItemCopyMatching(query as CFDictionary, &value)
+        if status == errSecItemNotFound { return "" }
+        guard status == errSecSuccess, let data = value as? Data, let text = String(data:data, encoding:.utf8) else {
+            throw MeloError.message("无法读取安全存储。")
+        }
+        return text
     }
     static func write(_ value: String, key: String) throws {
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: key]

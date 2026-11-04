@@ -155,6 +155,36 @@ try {
  assert.notEqual(colors.color,'rgba(0, 0, 0, 0)');assert.ok(parseFloat(colors.fontSize)>0);
  await page.screenshot({path:join(dir,'audit-composer.png')});
  out.linkDialog={cancelKeepsDraft:true,invalidKeptOpen:true,validAttached:true,colors};
+ await go({activeView:'settings'});
+ await page.locator('.local-settings header [data-view=model]').click();
+ const editor=page.locator('[data-llm-connections]');
+ const keyIDs=[];
+ for (let n=1;n<=5;n++) {
+   await editor.locator('[data-action=llm-new]').click();
+   await editor.locator('[data-action=llm-new-provider]').selectOption('custom');
+   await editor.locator('[name=name]').fill('Account '+n);
+   await editor.locator('[name=baseUrl]').fill('https://example.invalid/v1');
+   await editor.locator('[name=model]').fill('shared-model');
+   await editor.locator('[name=apiKey]').fill('fixture-key-'+n);
+   await editor.locator('[data-action=llm-save]').click();
+   const button=editor.locator('[data-action=llm-use]').filter({hasText:'Account '+n});
+   await button.waitFor(); keyIDs.push(await button.getAttribute('data-profile-id'));
+ }
+ assert.equal(new Set(keyIDs).size,5);
+ for(const id of [keyIDs[4],keyIDs[1]]) {
+   await editor.locator(`[data-action=llm-use][data-profile-id="${id}"]`).click();
+   await editor.locator(`[data-action=llm-use][data-profile-id="${id}"][aria-pressed=true]`).waitFor();
+   assert.equal((await bootstrap()).settings.config.llmConnections.activeId,id);
+ }
+ await page.screenshot({path:join(dir,'five-key-connections.png')});
+ await go({activeView:'chat',selectedChatId:'fixture-chat'});
+ await page.locator('[data-action=toggle-model-picker]').click();
+ await page.locator(`[data-action=pick-default-model][data-profile-id="${keyIDs[2]}"][data-model="shared-model"]`).click();
+ await page.waitForFunction(()=>document.querySelector('[data-action=toggle-model-picker]')?.innerText.includes('Account 3'));
+ const confirmed=await bootstrap();
+ assert.equal(confirmed.activeChat.modelSelection.profileId,keyIDs[2]);
+ assert.equal(confirmed.settings.config.llmConnections.activeId,keyIDs[1]);
+ out.sameProviderKeys={saved:5,global:'Account 2',conversation:'Account 3'};
  assert.deepEqual(errors,[]);
  out.errors=errors;await writeFile(join(dir,'findings.json'),JSON.stringify(out,null,2));console.log(JSON.stringify(out,null,2));
 }catch(e){console.error(e.stack);if(browser){const pages=browser.contexts().flatMap(c=>c.pages());await pages[0]?.screenshot({path:join(dir,'failure.png')});}process.exitCode=1;}

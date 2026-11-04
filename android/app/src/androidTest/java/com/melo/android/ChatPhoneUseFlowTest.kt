@@ -86,6 +86,36 @@ class ChatPhoneUseFlowTest {
         }) }) })
     }.toString())
 
+    @Test fun fiveSavedApiKeysUseTheGlobalOrChatAccountOnTheWire() = runBlocking {
+        MockWebServer().use { server ->
+            val received = java.util.concurrent.CopyOnWriteArrayList<String>()
+            server.dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    received += request.getHeader("Authorization").orEmpty()
+                    return MockResponse().setBody("""{"model":"same-model","choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"Hello!"}}]}""")
+                }
+            }
+            server.start()
+            val accounts = (1..5).map { n -> Connection(id="key-"+newId(),name="QA "+n,endpoint=server.url("/v1/chat/completions").toString(),model="same-model",stream=false) }
+            try {
+                accounts.forEachIndexed { i, connection -> app.repository.saveConnection(connection,"fixture-"+(i+1)) }
+                app.repository.change { it.copy(settings=it.settings.copy(activeConnection=accounts[1].id)) }
+                val id = app.repository.newChat()
+                suspend fun verify(expected: String) {
+                    received.clear()
+                    withContext(Dispatchers.Main) { assertTrue(app.engine.send(id,"Hello")) }
+                    complete(id)
+                    assertTrue(received.isNotEmpty()); assertTrue(received.all { it == expected })
+                }
+                verify("Bearer fixture-2")
+                app.repository.editChat(id) { it.copy(connectionId=accounts[3].id,model="same-model",modelMode="fixed") }
+                verify("Bearer fixture-4")
+                assertEquals(accounts[1].id,app.repository.data.value.settings.activeConnection)
+                assertTrue(runCatching { app.repository.connectionKey(accounts[3].copy(endpoint="https://different.invalid/v1"),null) }.isFailure)
+            } finally { accounts.forEach { app.repository.saveCredential(it.id,"") } }
+        }
+    }
+
     @Test fun internalCalculationIsIsolatedAndReturnsToSelectedPersona() = runBlocking {
         MockWebServer().use { server ->
             server.enqueue(call("route_task","route",buildJsonObject { put("role","calculate"); put("task","Convert 20 Celsius to Fahrenheit") }))

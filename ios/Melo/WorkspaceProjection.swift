@@ -67,7 +67,7 @@ enum WorkspaceProjection {
         guard value != .null else { return nil }
         if value["authMode"].string == "codex" { return .init(connectionID: "chatgpt", model: value["model"].string, name: value["name"].string, baseURL:value["baseURL"].string,apiProtocol:value["apiProtocol"].string,syncConnectionID:value["connectionID"].string,authMode:"codex",mode:value["mode"].string == "smart" ? "smart" : nil) }
         let matches = connections.filter { base($0.baseURL) == base(value["baseURL"].string) && $0.apiProtocol == value["apiProtocol"].string }
-        let local = matches.first { $0.id == value["connectionID"].string } ?? (matches.count == 1 ? matches[0] : nil)
+        let local = matches.first { $0.id == value["connectionID"].string } ?? (!value["connectionID"].string.hasPrefix("key-") && matches.count == 1 ? matches[0] : nil)
         return .init(connectionID: local?.id ?? "unconnected-sync", model: value["model"].string, name: value["name"].string, baseURL: value["baseURL"].string, apiProtocol: value["apiProtocol"].string,syncConnectionID:value["connectionID"].string,authMode:value["authMode"].string,mode:value["mode"].string == "smart" ? "smart" : nil)
     }
     static func stage(_ s: ExecutionStage) -> [String: Any] {

@@ -153,7 +153,7 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
         if (binding == null && chatId != null && (context.applicationContext as com.melo.android.MeloApplication).engine.runtime.value.turns.containsKey(chatId)) { mutable.update { it.copy(error = "这段对话正在生成，请先停止或等待结束。") }; return false }
         val state = repository.data.value
         val chat = binding?.chat ?: chatId?.let { id -> state.chats.find { it.id == id } }
-        val connectionId = chat?.connectionId ?: state.settings.activeConnection
+        val connectionId = chat?.connectionId ?: state.settings.activeConnection.takeIf { chat?.portableModel == null }
         val connection = binding?.connection ?: state.settings.connections.find { it.id == connectionId }
         val taskContext = chat?.let { DeviceTaskContext(it.id, it.agentId, it.projectId, connection?.id.orEmpty()) }
         val instructions = binding?.instructions ?: if (chat != null) repository.instructions(chat, state) else ""

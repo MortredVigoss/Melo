@@ -4,6 +4,15 @@ export { INTERFACE_TERMS as interfaceTermKeys } from './interfaceLanguages.js';
 // Authored interface copy only. User messages, names and provider output never enter this catalog.
 // Columns: Chinese source / English / Japanese / Korean / Spanish.
 const rows = [
+["模型能力", "Model capabilities", "モデルの機能", "모델 기능", "Capacidades del modelo"],
+["添加 API Key 连接", "Add API key connection", "API キー接続を追加", "API 키 연결 추가", "Añadir conexión con clave API"],
+["模型连接与 API Key", "Model connections and API keys", "モデル接続と API キー", "모델 연결 및 API 키", "Conexiones de modelos y claves API"],
+["切换默认连接", "Switch default connection", "デフォルト接続を切り替え", "기본 연결 전환", "Cambiar conexión predeterminada"],
+["连接名称", "Connection name", "接続名", "연결 이름", "Nombre de la conexión"],
+["模型连接", "Model connections", "モデル接続", "모델 연결", "Conexiones de modelos"],
+["模型平台", "Model provider", "モデル提供元", "모델 플랫폼", "Proveedor del modelo"],
+["请输入连接名称。", "Enter a connection name.", "接続名を入力してください。", "연결 이름을 입력하세요.", "Introduce un nombre para la conexión."],
+["此连接已不可用", "This connection is unavailable", "この接続は利用できません", "이 연결을 사용할 수 없습니다", "Esta conexión no está disponible"],
 ["检索成员", "Research specialist", "検索担当", "검색 담당", "Especialista en búsqueda"],
 ["计算成员", "Calculation specialist", "計算担当", "계산 담당", "Especialista en cálculo"],
 ["资料读取成员", "Local lookup specialist", "資料参照担当", "자료 조회 담당", "Especialista en consulta local"],

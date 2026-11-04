@@ -15,6 +15,17 @@ struct LLMConnection: Codable, Identifiable, Equatable {
     var modelCapabilities: [String: [String: Bool]]?
     var modelMetadata: [String: [String: Bool]]?
     func capabilities(for model: String) -> [String: Bool] { (modelMetadata?[model] ?? [:]).merging(modelCapabilities?[model] ?? [:]) { _, explicit in explicit } }
+    var providerID: String?
+    var platform: String { providerID ?? id }
+    static func newProfile(_ preset: Self, alongside profiles: [Self]) -> Self {
+        var value = preset
+        value.id = "key-" + UUID().uuidString.lowercased()
+        value.providerID = preset.id
+        let names = Set(profiles.map(\.name))
+        var number = 1
+        while names.contains(value.name) { number += 1; value.name = preset.name + " " + String(number) }
+        return value
+    }
     static let presets: [LLMConnection] = [
         .init(id: "openai", name: "OpenAI API", baseURL: "https://api.openai.com/v1"),
         .init(id: "deepseek", name: "DeepSeek", baseURL: "https://api.deepseek.com"),
@@ -34,32 +45,38 @@ struct LLMConnection: Codable, Identifiable, Equatable {
         return base + (apiProtocol == "anthropic" ? "/messages" : "/chat/completions")
     }
     static func saved() throws -> [LLMConnection] {
-        let raw = Secrets.read("llmConnections")
-        return raw.isEmpty ? [] : try JSONDecoder().decode([LLMConnection].self, from: Data(raw.utf8))
+        let raw = try Secrets.readChecked("llmConnections")
+        if !raw.isEmpty { return try JSONDecoder().decode([Self].self, from: Data(raw.utf8)) }
+        let defaults = UserDefaults.standard
+        guard let endpoint = defaults.string(forKey:"modelEndpoint"), !endpoint.isEmpty else { return [] }
+        return [.init(id:"existing",name:"原有 API 连接",baseURL:endpoint,model:defaults.string(forKey:"modelName") ?? "",
+                      key:try Secrets.readChecked("modelKey"),apiProtocol:defaults.string(forKey:"modelProtocol") ?? "chat-completions")]
     }
     static func resolve(_ selection: ConversationModel, in connections: [LLMConnection]) -> LLMConnection? {
         guard let baseURL = selection.baseURL, !baseURL.isEmpty else { return connections.first { $0.id == selection.connectionID } }
         let matches = connections.filter { WorkspaceProjection.base($0.baseURL) == WorkspaceProjection.base(baseURL) && $0.apiProtocol == (selection.apiProtocol ?? "chat-completions") }
-        return matches.first { $0.id == selection.connectionID } ?? (matches.count == 1 ? matches[0] : nil)
+        let id = selection.connectionID == "unconnected-sync" ? selection.syncConnectionID : selection.connectionID
+        if let exact = matches.first(where: { $0.id == id }) { return exact }
+        guard let remoteID = selection.syncConnectionID, !remoteID.hasPrefix("key-"), matches.count == 1 else { return nil }
+        return matches[0]
     }
     func save(activate: Bool = false) throws {
         let endpoint = try endpoint()
         var profiles = try Self.saved()
-        if profiles.isEmpty, let oldEndpoint = UserDefaults.standard.string(forKey: "modelEndpoint"), !oldEndpoint.isEmpty {
-            profiles.append(.init(id: "existing", name: "原有 API 连接", baseURL: oldEndpoint, model: UserDefaults.standard.string(forKey: "modelName") ?? "", key: Secrets.read("modelKey"), apiProtocol: UserDefaults.standard.string(forKey: "modelProtocol") ?? "chat-completions"))
-        }
         profiles.removeAll { $0.id == id }; profiles.append(self)
         if activate {
             guard !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !key.isEmpty else { throw MeloError.message("请填写模型 ID 和密钥，或完成登录。") }
         }
         try Secrets.write(String(decoding: JSONEncoder().encode(profiles), as: UTF8.self), key: "llmConnections")
-        NotificationCenter.default.post(name: Notification.Name("MeloConnectionsChanged"), object: nil)
-        if activate {
+        let defaults = UserDefaults.standard
+        if activate || (defaults.string(forKey: "modelAuthMode") == "api" && defaults.string(forKey: "activeLLMConnection") == id) {
             try Secrets.write(key, key: "modelKey")
-            let defaults = UserDefaults.standard
             defaults.set(endpoint, forKey: "modelEndpoint"); defaults.set(model, forKey: "modelName"); defaults.set(apiProtocol, forKey: "modelProtocol")
             defaults.set(contextWindows?[model], forKey: "modelContextWindow"); defaults.set(id, forKey: "activeLLMConnection"); defaults.set("api", forKey: "modelAuthMode")
+        } else if defaults.string(forKey: "modelAuthMode") == "api", defaults.string(forKey: "activeLLMConnection") == nil, profiles.contains(where: { $0.id == "existing" }) {
+            defaults.set("existing", forKey: "activeLLMConnection")
         }
+        NotificationCenter.default.post(name: Notification.Name("MeloConnectionsChanged"), object: nil)
     }
 }
 
@@ -73,7 +90,9 @@ private struct ConnectionEditCheckpoint: Codable, Equatable {
 }
 
 struct LLMConnectionsView: View {
-    @EnvironmentObject var store: ChatStore
+    @EnvironmentObject var account: ChatGPTAccount
+    @AppStorage("modelAuthMode") private var authMode = "chatgpt"
+    @AppStorage("activeLLMConnection") private var activeID = ""
     @StateObject private var oauth = OpenRouterLogin()
     @State private var selected = "openai"
     @State private var draft = LLMConnection.presets[0]
@@ -93,24 +112,48 @@ struct LLMConnectionsView: View {
     private var checkpoint: ConnectionEditCheckpoint { .init(draft: draft, original: original, storedOriginal: storedOriginal, key: key, clearKey: clearKey, editing: editing) }
     private var dirty: Bool { draft != original || !key.isEmpty || clearKey }
     private var currentProbe: ConnectionProbe? { (try? prepared())?.probe }
-    private var options: [LLMConnection] { profiles + LLMConnection.presets.filter { p in !profiles.contains { $0.id == p.id } } }
+    private var adding: Bool { editing && storedOriginal == nil && draft.id.hasPrefix("key-") }
+    private var options: [LLMConnection] { (adding ? [draft] : []) + profiles + LLMConnection.presets.filter { p in !profiles.contains { $0.id == p.id } } }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("切换默认连接").font(.headline)
+                Spacer()
+                Menu {
+                    Button { authMode = "chatgpt" } label: { Label("Codex OAuth", systemImage: authMode == "chatgpt" ? "checkmark" : "person.crop.circle") }.disabled(!account.signedIn)
+                    ForEach(profiles) { profile in
+                        Button {
+                            do {
+                                guard let current = try LLMConnection.saved().first(where: { $0.id == profile.id }) else { throw MeloError.message("此连接已不可用") }
+                                try current.save(activate: true); select(current.id); status = "已设为当前模型。"
+                            } catch { saveError = error.localizedDescription }
+                        } label: { Label(profile.name + " · " + profile.model, systemImage: authMode == "api" && activeID == profile.id ? "checkmark" : "key") }
+                            .disabled(profile.key.isEmpty || profile.model.isEmpty)
+                    }
+                } label: { HStack { Text(authMode == "chatgpt" ? "Codex OAuth" : (profiles.first { $0.id == activeID }?.name ?? "API")); Image(systemName:"chevron.up.chevron.down") } }.disabled(editing)
+            }
+            Menu {
+                ForEach(LLMConnection.presets) { preset in Button(preset.name) { add(preset) } }
+            } label: { Label("添加 API Key 连接", systemImage: "plus") }.buttonStyle(.borderedProminent).disabled(editing)
+            DisclosureGroup("Codex OAuth") { CodexLoginCard() }
             Picker("模型平台", selection: $selected) { ForEach(options) { Text($0.name).tag($0.id) } }.disabled(editing).onChange(of: selected) { _, id in if id != draft.id { select(id) } }
             HStack {
                 EditStatus(editing: editing, dirty: dirty, saving: busy, saved: saved, error: saveError)
                 Spacer()
                 if editing {
-                    Button("取消") { if dirty { confirmDiscard = true } else { select(selected) } }
+                    Button("取消") { if dirty { confirmDiscard = true } else { discardEdit() } }
                     Button("保存") { runSave() }.buttonStyle(.borderedProminent).tint(dirty ? meloGold : .gray).foregroundStyle(.black).disabled(!dirty)
                 } else { Button("编辑") { editing = true; saved = false; saveError = nil } }
             }
             if let draftError { Text(draftError).font(.caption).foregroundStyle(.red) }
             Group {
+            TextField("连接名称", text: $draft.name).meloInput()
+            SecureField(profiles.first { $0.id == selected }?.key.isEmpty == false ? "已保存密钥；留空保留" : "API Key", text: $key).meloInput()
             TextField("服务 Base URL（HTTPS）", text: Binding(get: { draft.baseURL }, set: { draft.baseURL = $0; draft.modelCapabilities = nil; draft.modelMetadata = nil })).keyboardType(.URL).meloInput()
-            if selected == "custom" { Picker("接口格式", selection: Binding(get: { draft.apiProtocol }, set: { draft.apiProtocol = $0; draft.modelCapabilities = nil; draft.modelMetadata = nil })) { Text("Chat Completions").tag("chat-completions"); Text("Anthropic Messages").tag("anthropic") } }
-            TextField(selected == "doubao" ? "模型 ID 或 ep-… 接入点" : "模型 ID", text: $draft.model).meloInput()
+            if draft.platform == "custom" { Picker("接口格式", selection: Binding(get: { draft.apiProtocol }, set: { draft.apiProtocol = $0; draft.modelCapabilities = nil; draft.modelMetadata = nil })) { Text("Chat Completions").tag("chat-completions"); Text("Anthropic Messages").tag("anthropic") } }
+            TextField(draft.platform == "doubao" ? "模型 ID 或 ep-… 接入点" : "模型 ID", text: $draft.model).meloInput()
             if !models.isEmpty { Picker("从列表选择", selection: $draft.model) { Text("选择或手填").tag(draft.model); ForEach(models.filter { $0 != draft.model }, id: \.self) { Text($0).tag($0) } } }
+            DisclosureGroup("模型能力") {
             ForEach(["vision", "reasoning", "imageGen"], id: \.self) { capability in
                 Picker(["vision":"图片输入", "reasoning":"推理参数", "imageGen":"图片输出"][capability]!, selection: Binding(get: { (draft.modelCapabilities?[draft.model]?[capability]).map { $0 ? "true" : "false" } ?? "" }, set: { value in
                     var declarations = draft.modelCapabilities ?? [:], entry = declarations[draft.model] ?? [:]
@@ -118,15 +161,15 @@ struct LLMConnectionsView: View {
                     declarations[draft.model] = entry; draft.modelCapabilities = declarations
                 })) { Text("自动（目录或实测）").tag(""); Text("支持").tag("true"); Text("不支持").tag("false") }
             }
-            SecureField(profiles.first { $0.id == selected }?.key.isEmpty == false ? "已保存密钥；留空保留" : "API Key", text: $key).meloInput()
-            Toggle("清除此连接的已保存密钥", isOn: $clearKey).font(.caption)
+            }
+            if profiles.first(where: { $0.id == selected })?.key.isEmpty == false { Toggle("清除此连接的已保存密钥", isOn: $clearKey).font(.caption) }
             }.disabled(!editing)
             HStack(spacing: 16) {
                 Button("设为当前") { runSave(activate: true) }.disabled(editing || profiles.first { $0.id == selected } == nil)
                 Button("测试已保存连接") { Task { await test() } }.disabled(editing || profiles.first { $0.id == selected } == nil)
             }.font(.subheadline).frame(minHeight: 44)
             Button("读取模型列表") { Task { await loadModels() } }.font(.caption).disabled(!editing)
-            if selected == "openrouter" {
+            if draft.platform == "openrouter" {
                 Button("登录 OpenRouter") { Task {
                     do {
                         let connection = try prepared()
@@ -154,12 +197,18 @@ struct LLMConnectionsView: View {
         .onChange(of: checkpoint) { _, _ in preserveDraft() }
         .onDisappear { preserveDraft(); oauth.cancel() }
         .confirmationDialog("放弃未保存的连接修改？", isPresented: $confirmDiscard, titleVisibility: .visible) {
-            Button("放弃修改", role: .destructive) { select(selected) }
+            Button("放弃修改", role: .destructive) { discardEdit() }
             Button("继续编辑", role: .cancel) {}
         }
         .onChange(of: oauth.message) { _, message in if !message.isEmpty { status = message } }
     }
-    private func select(_ id: String) { draft = options.first { $0.id == id } ?? LLMConnection.presets[0]; original = draft; storedOriginal = profiles.first { $0.id == id }; editing = false; saved = false; saveError = nil; key = ""; clearKey = false; models = draft.models ?? []; status = "" }
+    private func add(_ preset: LLMConnection) {
+        draft = LLMConnection.newProfile(preset, alongside: profiles)
+        original = draft; storedOriginal = nil; selected = draft.id; editing = true
+        key = ""; clearKey = false; models = []; status = ""; saveError = nil; saved = false
+    }
+    private func discardEdit() { select(adding ? (profiles.first { $0.id == activeID }?.id ?? "openai") : selected) }
+    private func select(_ id: String) { editing = false; selected = id; draft = options.first { $0.id == id } ?? LLMConnection.presets[0]; original = draft; storedOriginal = profiles.first { $0.id == id }; saved = false; saveError = nil; key = ""; clearKey = false; models = draft.models ?? []; status = "" }
     private func restoreDraft() {
         do {
             profiles = try LLMConnection.saved()
@@ -167,7 +216,7 @@ struct LLMConnectionsView: View {
                 draft = value.draft; original = value.original; storedOriginal = value.storedOriginal
                 selected = draft.id; key = value.key; clearKey = value.clearKey; editing = true; models = draft.models ?? []
                 status = "已恢复未保存的连接草稿，保存前不会影响当前模型。"
-            } else { selected = UserDefaults.standard.string(forKey: "activeLLMConnection") ?? "openai"; select(selected) }
+            } else { select(profiles.first { $0.id == activeID }?.id ?? "openai") }
         } catch { draftError = "无法恢复连接草稿，已保存连接未改变。" }
     }
     private func preserveDraft() {
@@ -179,6 +228,8 @@ struct LLMConnectionsView: View {
     }
     private func prepared() throws -> LLMConnection {
         var value = draft
+        value.name = value.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.name.isEmpty, value.name.utf16.count <= 100 else { throw MeloError.message("连接名称需为 1–100 个字符。") }
         let previous = profiles.first { $0.id == selected }
         if let previous, !previous.key.isEmpty, previous.baseURL != draft.baseURL, key.isEmpty, !clearKey { throw MeloError.message("服务地址改变后，请重新填写密钥或先清除旧密钥。") }
         if let previous, previous.baseURL != value.baseURL || previous.apiProtocol != value.apiProtocol { value.modelMetadata = nil }
@@ -192,7 +243,7 @@ struct LLMConnectionsView: View {
             guard activate ? !editing : editing && dirty else { return }
             let stored = try LLMConnection.saved().first { $0.id == selected }
             guard stored == storedOriginal else { throw MeloError.message("连接已在其他地方更新，草稿已保留，请取消并重新编辑。") }
-            let value = try prepared(); if activate { store.cancel() }; try value.save(activate: activate)
+            let value = try prepared(); try value.save(activate: activate)
             profiles = try LLMConnection.saved(); draft = value; original = value; storedOriginal = value; key = ""; clearKey = false; editing = false; saved = true; saveError = nil
             status = activate ? "已设为当前模型。" : "连接已保存；设为当前后才会切换。"
         } catch { saveError = error.localizedDescription }

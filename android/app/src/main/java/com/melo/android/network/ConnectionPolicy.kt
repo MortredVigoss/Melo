@@ -4,6 +4,11 @@ import com.melo.android.data.Connection
 
 /** Shared by saving, chat preflight and the explicit connection probe. */
 object ConnectionPolicy {
+    private fun base(endpoint: String) = endpoint.trimEnd('/').removeSuffix("/chat/completions").removeSuffix("/messages")
+    fun match(connections: List<Connection>, id: String, endpoint: String, protocol: String): Connection? {
+        val candidates = connections.filter { base(it.endpoint) == base(endpoint) && it.protocol == protocol }
+        return candidates.firstOrNull { it.id == id } ?: candidates.singleOrNull()?.takeUnless { id.startsWith("key-") }
+    }
     fun validate(connection: Connection, key: String, debug: Boolean) {
         require(connection.name.isNotBlank()) { "请输入连接名称。" }
         if (connection.protocol == "fixture") {

@@ -1,3 +1,7 @@
+## 2026-11-04 — 系统 API Key 入口和多账号切换
+
+修复 Codex 模式遮蔽 API 配置、同平台连接复用一个 ID 及同步误选账号。桌面、iPhone 与 Android 均按系统默认和对话选择分别处理。最终快速档 `run-t78jZl` 通过 4,843 项 JS、38 套 Swift、Android 四项和设置浏览器。五账号切换另经 iPhone 与 Android 模拟器验证。[专项说明](docs/model-connection-entry-20261104.md)
+
 ## 2026-11-04 — iPhone 离开对话后继续，暂停后保留已完成的工具步骤
 
 把系统进度界面留给离开前台时仍在运行的回复。恢复沿用原问题和同一任务，已完成的操作使用回执，无法确认结果的操作保留本机进度供用户核对。原修复 cc20f89 快速档 run-6L1pvk 通过。组合源码 d8c51b2 集成档 run-sjrWAq 通过 4,842 项 JS、38 套 Swift 和设置浏览器，另验执行成员断网续行及权限。模拟器与进程重启结果见[专项](docs/iphone-background-continuation-20261104.md)。

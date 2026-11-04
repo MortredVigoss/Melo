@@ -51,8 +51,10 @@ class Repository(private val context: Context) {
     }
     private fun chatRecord(data: AppData, chat: Conversation): Workspace = portableEdit(data, "conversation", chat.id, buildJsonObject {
         put("agentId", chat.agentId); put("projectId", chat.projectId?.jp() ?: JsonNull)
-        val connection = data.settings.connections.find { it.id == (chat.connectionId ?: data.settings.activeConnection) }
-        if (connection != null && connection.protocol in setOf("chat-completions", "anthropic")) put("model", buildJsonObject {
+        val choice = chat.connectionId ?: data.settings.activeConnection.takeIf { chat.model != null || chat.modelMode != null }
+        val connection = data.settings.connections.find { it.id == choice }
+        if (chat.portableModel != null) put("model",chat.portableModel)
+        else if (connection != null && connection.protocol in setOf("chat-completions", "anthropic")) put("model", buildJsonObject {
             chat.modelMode?.let { put("mode", it) }
             put("connectionID", connection.id); put("name", connection.name); put("model", chat.model ?: connection.model)
             put("baseURL", com.melo.android.network.EndpointPolicy.validate(connection.endpoint, com.melo.android.BuildConfig.DEBUG).newBuilder().query(null).build().toString())
@@ -111,10 +113,17 @@ class Repository(private val context: Context) {
         return listOf("你运行在 Melo Android 中。只根据实际能力回答；不能声称操作了桌面、读取未提供的文件或运行了不存在的工具。", agent.prompt(), project?.instructions.orEmpty(),
             notes.joinToString("\n\n") { "参考资料：${it.title}\n${it.content}" }, memories.joinToString("\n") { "用户保存的记忆：${it.text}" }).filter(String::isNotBlank).joinToString("\n\n")
     }
+    suspend fun connectionKey(connection: Connection, newKey: String?): String {
+        newKey?.trim()?.takeIf(String::isNotBlank)?.let { return it }
+        if (connection.protocol == "fixture") return ""
+        val saved = data.value.settings.connections.firstOrNull { it.id == connection.id } ?: return ""
+        require(saved.endpoint.trimEnd('/') == connection.endpoint.trim().trimEnd('/')) { "服务地址改变后，请重新填写 API Key。" }
+        return credential(connection.id)
+    }
     suspend fun saveConnection(connection: Connection, newKey: String?) {
         require(connection.contextTokens in 4096..400000) { "Context capacity must be between 4096 and 400000 tokens." }
         val replacement = newKey?.trim()?.takeIf(String::isNotBlank)
-        val key = replacement ?: if (connection.protocol == "fixture") "" else credential(connection.id)
+        val key = connectionKey(connection, replacement)
         ConnectionPolicy.validate(connection, key, BuildConfig.DEBUG)
         if (replacement != null) saveCredential(connection.id, replacement)
         change { current -> current.copy(settings = current.settings.copy(connections = current.settings.connections.filterNot { it.id == connection.id } + connection, activeConnection = current.settings.activeConnection ?: connection.id)) }
@@ -183,8 +192,8 @@ class Repository(private val context: Context) {
                 "memory" -> { val row = MeloJson.decodeFromJsonElement<MemoryFact>(value); if (state.chats.any { it.id == row.chatId }) state = state.copy(memories = state.memories.filterNot { it.id == row.id } + row) }
                 "conversation" -> state = state.copy(chats = state.chats.map { if (it.id == record.id) it.copy(agentId = value.text("agentId", "main"), projectId = value.text("projectId").ifBlank { null }).let { chat ->
                     val selection = value["model"] as? JsonObject
-                    if(selection == null) chat.copy(modelMode = null, model = null, portableModel = null) else {
-                        val connection = state.settings.connections.find { c -> c.endpoint.trimEnd('/') == selection.text("baseURL").trimEnd('/') && c.protocol == selection.text("apiProtocol") }
+                    if(selection == null) chat.copy(connectionId = null, modelMode = null, model = null, portableModel = null) else {
+                        val connection = if (selection.text("authMode") in setOf("api-key","local")) ConnectionPolicy.match(state.settings.connections, selection.text("connectionID"), selection.text("baseURL"), selection.text("apiProtocol")) else null
                         chat.copy(connectionId = connection?.id, modelMode = selection.text("mode").ifBlank { "fixed" }, model = selection.text("model"), portableModel = selection)
                     }
                 } else it })

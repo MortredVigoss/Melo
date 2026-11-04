@@ -11,6 +11,14 @@ import org.junit.Test
 import java.util.concurrent.TimeUnit
 
 class NetworkTest {
+    @Test fun matchingFiveKeysOnOneEndpointPreservesAccountIdentity() {
+        val endpoint = "https://example.test/v1/chat/completions"
+        val accounts = (1..5).map { Connection(id="key-"+it,name="Account "+it,endpoint=endpoint,model="same-model") }
+        assertEquals("key-4",ConnectionPolicy.match(accounts,"key-4","https://example.test/v1","chat-completions")?.id)
+        assertNull(ConnectionPolicy.match(accounts,"other",endpoint,"chat-completions"))
+        assertNull(ConnectionPolicy.match(accounts.take(1),"key-missing",endpoint,"chat-completions"))
+        assertEquals(accounts[0],ConnectionPolicy.match(accounts.take(1),"legacy",endpoint,"chat-completions"))
+    }
     @Test fun declaredImageSupportRejectsBeforeHttpAndUnknownModelKeepsItsImage() = runBlocking {
         MockWebServer().use { server ->
             server.start()

@@ -9,6 +9,8 @@ import { saveConfig, loadConfig, getResolvedConfig } from '../config.js';
 import { createRequestContext } from '../runtime/requestContext.js';
 import { runWithRequestContext } from '../runtime/requestScope.js';
 import { saveLlmProfile, activateLlmProfile, forgetLlmProfile, inspectLlmProfile, testLlmProfile } from '../services/settings/llmConnections.js';
+import { conversationConfig } from '../services/chat/conversationSelection.js';
+import { importModelSelection } from '../services/chat/portableWorkspace.js';
 import { publicLlmConnections } from '../shared/llmProviders.js';
 import { createOpenAICompatibleReply } from '../openai.js';
 import { startOpenRouterOAuth, openRouterOAuthStatus } from './openRouterOAuth.js';
@@ -160,6 +162,25 @@ test('LLM connections isolate credentials and drive real HTTP inference without 
       assert.equal(openRouterOAuthStatus(flow.id).status, 'expired');
       await assert.rejects(fetch(new URL(flow.url).searchParams.get('callback_url')));
       assert.equal(exchanges, 0); assert.equal((await inspectLlmProfile('openrouter')).apiKey, before);
+    });
+    await t.test('five keys on one endpoint and model survive reload and send the selected credential', async () => {
+      const baseUrl=base+'/shared/v1', model='same-model';
+      for(let n=1;n<=5;n++) await saveLlmProfile({id:'key-'+n,providerId:'custom',name:'Account '+n,baseUrl,model,apiKey:'only-fixture-'+n,revision:0});
+      await activateLlmProfile('key-5');
+      const active=await getResolvedConfig({skipModelNormalize:true});
+      const wire={connectionID:'key-2',name:'Account 2',baseURL:baseUrl,authMode:'api-key',apiProtocol:'chat-completions',model};
+      assert.equal(importModelSelection({...wire,connectionID:'key-missing'},active).profileId,'unconnected-sync');
+      const fixed=conversationConfig(active,importModelSelection(wire,active));
+      for (const [profile,n] of [[active,5],[fixed,2]]) {
+        await createOpenAICompatibleReply({...profile,model,messages:[{role:'user',content:'fixture'}],systemPrompt:'fixture',onDelta() {}});
+        assert.equal(requests.at(-1).headers.authorization,'Bearer only-fixture-'+n);
+        assert.equal(requests.at(-1).body.model,model);
+      }
+      assert.equal((await loadConfig()).activeLlmProfileId,'key-5');
+      assert.equal((await inspectLlmProfile('key-1')).apiKey,'only-fixture-1');
+      await activateLlmProfile('existing');
+      assert.equal((await getResolvedConfig({skipModelNormalize:true})).authMode,'codex');
+      assert.equal((await inspectLlmProfile('key-5')).apiKey,'only-fixture-5');
     });
   }); } finally { server.closeAllConnections(); await new Promise(r => server.close(r)); await rm(home, { recursive: true, force: true }); }
 });

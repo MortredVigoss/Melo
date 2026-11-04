@@ -3,7 +3,13 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     var body: some View {
-        NavigationStack { SettingsContent().background(MeloTheme.dialog).toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } } }
+        NavigationStack {
+            ScrollView { VStack(alignment: .leading, spacing: 20) {
+                LLMConnectionsView().meloPanel()
+                ModelSettingsSection()
+            }.padding() }.navigationTitle("模型连接与 API Key").background(MeloTheme.dialog)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+        }
     }
 }
 struct SettingsContent: View {
@@ -12,6 +18,7 @@ struct SettingsContent: View {
     @AppStorage("webSearchEnabled") private var webSearchEnabled = true
     @AppStorage("modelAuthMode") private var authMode = "chatgpt"
     @State private var error: String?
+    @State private var connections = false
     @State private var diagnostics = false
     @State private var sourcePage: SourcePage?
     private var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "开发版" }
@@ -19,6 +26,8 @@ struct SettingsContent: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 PageHeading(eyebrow: "SYSTEM", title: "系统设置", detail: "个人资料、使用习惯与模型连接。")
+                Button { connections = true } label: { Label("模型连接与 API Key", systemImage:"key").frame(maxWidth:.infinity, alignment:.leading) }.meloPanel()
+                    .sheet(isPresented:$connections) { SettingsView() }
                 LocalProfileSettings()
                 LocalPermissionsCard()
                 LocalGeneralSettings()
@@ -27,8 +36,6 @@ struct SettingsContent: View {
                 LocalDataSettings()
                 Button { diagnostics = true } label: { Label("运行记录与退出排查", systemImage: "waveform.path.ecg").font(.subheadline).frame(minHeight: 44) }
                 MobileConnectionStatus().meloPanel()
-                CodexLoginCard().meloPanel()
-                ModelSettingsSection()
                 VStack(alignment: .leading, spacing: 16) {
                     HStack { Label("数据与同步", systemImage: "arrow.triangle.2.circlepath").font(.headline); Spacer(); Text("\(store.chats.count) 段对话").font(.caption).foregroundStyle(meloGold) }
                     if !WorkspaceProjection.pending(store.preferences).isEmpty { Text("部分 Agent 人设或关联配置尚未同步：旧版协议无法无损表示。全文已保留在本机，其他对话继续同步。").font(.caption).foregroundStyle(.orange) }

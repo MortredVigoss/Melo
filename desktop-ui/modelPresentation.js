@@ -65,10 +65,12 @@ export function renderModelPicker({ config, models, agent, selection, open, savi
   const current = smart ? agent?.model || t('智能（自动）') : selection?.model || agent?.model || config.model;
   const profiles = config.llmConnections?.profiles || [];
   const activeID = config.llmConnections?.activeId || '';
-  const choices = [{id:activeID,name:t("当前连接"),models}, ...profiles.filter(p=>p.id!==activeID).map(p=>({id:p.id,name:p.name,models:connectionModelOptions(config,p)}))];
+  const activeProfile = profiles.find(p => p.id === activeID);
+  const connectionName = (selection?.profileId ? profiles.find(p => p.id === selection.profileId)?.name : activeProfile?.name) || (config.authMode === 'codex' ? 'Codex OAuth' : t('当前连接'));
+  const choices = [{id:activeID,name:activeProfile?.name || t("当前连接"),models}, ...profiles.filter(p=>p.id!==activeID).map(p=>({id:p.id,name:p.name,models:connectionModelOptions(config,p)}))];
   return ui`<div class="model-picker-anchor">
     <button type="button" class="model-picker-trigger" data-action="toggle-model-picker" aria-label="选择对话模型" aria-expanded="${open}" aria-controls="model-picker-panel" ${saving ? 'disabled' : ''} title="本对话：${escape(current || '')}">
-      <span class="model-picker-dot" aria-hidden="true"></span><span>${escape(modelLabel(current))}</span><small>${selection?t("本对话"):t("默认")}</small><span aria-hidden="true">⌄</span>
+      <span class="model-picker-dot" aria-hidden="true"></span><span>${escape(connectionName)} · ${escape(modelLabel(current))}</span><small>${selection?t("本对话"):t("默认")}</small><span aria-hidden="true">⌄</span>
     </button>
     ${open ? ui`<section id="model-picker-panel" class="model-picker-panel" popover="manual" aria-label="对话模型选择">
       <header><div><small>MODEL / CONNECTION</small><h3 class="subsection-title">选择本对话的模型</h3></div></header>

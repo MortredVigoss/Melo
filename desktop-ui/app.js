@@ -4553,9 +4553,9 @@ function renderModelPage() {
         <div><small>GLOBAL DEFAULT</small><strong>${escapeHtml(modelLabel(config.model))}</strong><span>${escapeHtml(config.model)} · ${escapeHtml(config.authMode === 'codex' ? 'Codex OAuth' : config.authMode === 'local' ? '本地连接' : 'API')}</span></div>
         <p>默认连接用于回答。Agent 指令与工具配置保持不变。每条回复的“模型记录”显示服务端实际返回的标识。</p>
       </div>
-      ${renderDefaultModelSettings(config, escapeHtml)}
-    ${renderSmartRouting(config)}
       ${renderLlmConnections(config)}
+      ${renderDefaultModelSettings(config, escapeHtml)}
+      ${renderSmartRouting(config)}
       ${renderSearchSettings(config)}
       ${renderImageSettings(config)}
       <details class="model-prompt-settings"><summary>全局系统提示词</summary>
@@ -5753,7 +5753,7 @@ document.addEventListener('click', async event => {
   if (action?.startsWith('smart-routing-')) { event.preventDefault(); await handleSmartRouting(action, {trigger,config:uiState.bootstrap.settings.config,api,render,refresh:()=>loadBootstrap(uiState.searchQuery,{quiet:true})}); return; }
   if (action?.startsWith('llm-') && trigger.tagName === 'BUTTON') {
     event.preventDefault();
-    await handleLlmConnection(action, { config: uiState.bootstrap.settings.config, api, render, refresh: () => loadBootstrap(uiState.searchQuery, { quiet: true }), openUrl: openExternalUrl, chatgptLogin: handleStartModelOAuthLogin });
+    await handleLlmConnection(action, { trigger, config: uiState.bootstrap.settings.config, api, render, refresh: () => loadBootstrap(uiState.searchQuery, { quiet: true }), openUrl: openExternalUrl, chatgptLogin: handleStartModelOAuthLogin });
     return;
   }
   if (action?.startsWith('search-settings-') && trigger.tagName === 'BUTTON') {

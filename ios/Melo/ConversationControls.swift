@@ -54,6 +54,7 @@ struct ConversationControls: View {
     @AppStorage("chatgptModel") private var defaultGPT = ""
     @AppStorage("modelName") private var defaultAPI = ""
     @AppStorage("modelAuthMode") private var defaultMode = "chatgpt"
+    @AppStorage("activeLLMConnection") private var activeID = ""
     private var current: ConversationModel? { store.preferences.chatModels?[chatID] }
     private var modelLabel: String {
         if (current?.mode == "smart" || (current == nil && PhoneRoutingPolicy.read().defaultMode == "smart")), store.agent(for: chatID).model?.isEmpty != false { return String(localized: "智能（自动）") }
@@ -64,7 +65,7 @@ struct ConversationControls: View {
     private var capability: String {
         if usesChatGPT { return account.signedIn ? "Codex · 文字、网页与图片" : "Codex 尚未登录 · 请先配置连接" }
         if let current, LLMConnection.resolve(current, in: connections)?.key.isEmpty != false { return "\(current.name ?? "所选连接")尚未配置 · 请先连接或重新选择" }
-        return "API · 文字对话 · 本机尚未接入联网和电脑工具"
+        return current?.name ?? connections.first { $0.id == activeID }?.name ?? "API"
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -82,7 +83,7 @@ struct ConversationControls: View {
                 Menu {
                     Button { store.selectModel(nil, chatID: chatID) } label: { Label("沿用Agent或系统默认", systemImage: current == nil ? "checkmark" : "gearshape") }
                     Button {
-                        let id = current?.connectionID ?? (defaultMode == "chatgpt" ? "chatgpt" : connections.first(where: { $0.baseURL == UserDefaults.standard.string(forKey: "modelEndpoint") })?.id ?? "")
+                        let id = current?.connectionID ?? (defaultMode == "chatgpt" ? "chatgpt" : activeID)
                         var selection = current ?? ConversationModel(connectionID: id, model: usesChatGPT ? defaultGPT : defaultAPI)
                         selection.mode = "smart"; store.selectModel(selection, chatID: chatID)
                     } label: { Label("智能（自动）", systemImage: current?.mode == "smart" ? "checkmark" : "sparkles") }.disabled(store.agent(for: chatID).model?.isEmpty == false)
@@ -99,7 +100,7 @@ struct ConversationControls: View {
                         }
                     }
                     Button("管理连接与模型列表", systemImage: "slider.horizontal.3", action: settings)
-                } label: { Label(modelLabel.isEmpty ? "选择模型" : modelLabel, systemImage: "cpu").font(.caption).lineLimit(1).padding(11).background(MeloTheme.inset, in: Capsule()) }.accessibilityLabel("选择对话模型")
+                } label: { Label([usesChatGPT ? "Codex OAuth" : (connections.first { $0.id == (current?.connectionID ?? activeID) }?.name ?? "API"), modelLabel].filter { !$0.isEmpty }.joined(separator:" · "), systemImage: "cpu").font(.caption).lineLimit(1).padding(11).background(MeloTheme.inset, in: Capsule()) }.accessibilityLabel("选择对话模型")
                 Button { context = true } label: { Label("项目与知识\(store.knowledge(for: chatID).isEmpty ? "" : " · \(store.knowledge(for: chatID).count)")", systemImage: "paperclip").font(.caption).padding(11).background(MeloTheme.inset, in: Capsule()) }
             }.padding(.horizontal, 16).padding(.vertical, 6)
         }.onAppear { load() }.onChange(of: defaultMode) { _, _ in load() }.onReceive(NotificationCenter.default.publisher(for: Notification.Name("MeloConnectionsChanged"))) { _ in load() }

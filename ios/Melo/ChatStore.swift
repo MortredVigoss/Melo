@@ -408,12 +408,17 @@ import SwiftUI
         var key = Secrets.read("modelKey")
         var apiProtocol = UserDefaults.standard.string(forKey: "modelProtocol") ?? "chat-completions"
         var selectedConnection: LLMConnection?
-        if let choice, !useChatGPT, !(plan.makesImage && plan.connectionID?.isEmpty == false) {
+        let activeConnectionID = UserDefaults.standard.string(forKey:"activeLLMConnection") ?? ""
+        if !useChatGPT, choice != nil || !activeConnectionID.isEmpty, !(plan.makesImage && plan.connectionID?.isEmpty == false) {
             do {
-                guard let connection = LLMConnection.resolve(choice, in: try loadConnections()) else { throw MeloError.message("本对话选择的模型连接尚未在此设备配置，请连接对应平台或重新选择。") }
+                let saved = try loadConnections()
+                let bound = choice.map { LLMConnection.resolve($0, in:saved) } ?? saved.first { $0.id == activeConnectionID }
+                guard let connection = bound else { throw MeloError.message("本对话选择的模型连接尚未在此设备配置，请连接对应平台或重新选择。") }
                 selectedConnection = connection
-                endpoint = try connection.endpoint(); model = choice.mode == "smart" && !roleModel.isEmpty ? roleModel : choice.model; key = connection.key; apiProtocol = connection.apiProtocol
-                contextCapacity = connection.contextWindows?[model] ?? choice.contextWindow
+                endpoint = try connection.endpoint()
+                model = (choice == nil || choice?.mode == "smart") && !roleModel.isEmpty ? roleModel : choice?.model ?? connection.model
+                key = connection.key; apiProtocol = connection.apiProtocol
+                contextCapacity = connection.contextWindows?[model] ?? choice?.contextWindow
             } catch { fail(error.localizedDescription); return }
         }
         if plan.makesImage, plan.connectionID == "chatgpt" { useChatGPT = true }
