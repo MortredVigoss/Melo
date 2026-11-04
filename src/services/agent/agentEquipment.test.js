@@ -16,7 +16,7 @@ import { filterSkillsForAgent } from '../../domain/agent/agentTools.js';
 import { createCustomAgent } from './agentMutations.js';
 import { installedEquipment } from './agentEquipment.js';
 
-const DEFAULT_MCP = ['antv-chart', 'markdown2pdf', 'melo-douyin', 'melo-xiaohongshu', 'mermaid', 'playwright'];
+const DEFAULT_MCP = ['antv-chart', 'markdown2pdf', 'melo-douyin', 'melo-public-media', 'melo-xiaohongshu', 'mermaid', 'playwright'];
 const DEFAULT_SKILLS = ['artifact-curator', 'connector-builder', 'project-planner', 'skill-creator'];
 const sorted = list => [...list].sort();
 

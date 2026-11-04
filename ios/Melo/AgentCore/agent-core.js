@@ -162,9 +162,9 @@ function requestAllowsTool(tool, policy = {}) {
   if (policy.toolsForbidden) return false;
   const id = typeof tool === 'string' ? tool : String(tool?.id || '');
   if (policy.publicSocialOnly && /^mcp:melo-(?:douyin|xiaohongshu):/.test(id)) return false;
-  const network = tool?.capability === 'network' || /^mcp:melo-(?:douyin|xiaohongshu):/.test(id) || /^(?:web_search|fetch_url|open_url|web_screenshot|browser_.*)$/.test(id);
+  const network = tool?.capability === 'network' || /^mcp:melo-(?:douyin|xiaohongshu|public-media):/.test(id) || /^(?:web_search|fetch_url|open_url|web_screenshot|browser_.*)$/.test(id);
   if (policy.fetchForbidden && network) return false;
-  if (policy.searchForbidden && (id === 'web_search' || tool?.searchDiscovery === true || /^mcp:melo-(?:douyin|xiaohongshu):search_/.test(id))) return false;
+  if (policy.searchForbidden && (id === 'web_search' || tool?.searchDiscovery === true || /^mcp:melo-(?:douyin|xiaohongshu|public-media):search_/.test(id))) return false;
   return true;
 }
 
@@ -318,6 +318,32 @@ function intentOperation(input = {}) {
 }
 
 return { lruGet, lruSet, _resetIntentCacheForTests, classifyRisk, classifyLocalRequest, classifyByRules, intentRequiresVerification, intentAllowsUncertaintyMarker, isStandaloneGreeting, intentOperation };
+})();
+
+modules["shared/agent/media/publicPlatforms.js"] = (() => {
+// Public media hosts recognized by Melo's video-link detector. The desktop
+// index and the portable planner use the same names and preferred domains.
+const PUBLIC_MEDIA_SERVER = 'melo-public-media';
+const MEDIA_PLATFORMS = Object.freeze([
+  {id:'instagram', site:'instagram.com', hosts:['www.instagram.com','instagram.com'], names:/instagram|(?:^|[^a-z])ig(?:$|[^a-z])/i},
+  {id:'youtube', site:'youtube.com', hosts:['www.youtube.com','youtube.com','m.youtube.com','youtu.be'], names:/youtube|youtu\.be|油管/i},
+  {id:'vimeo', site:'vimeo.com', hosts:['www.vimeo.com','vimeo.com','player.vimeo.com'], names:/vimeo/i},
+  {id:'bilibili', site:'bilibili.com', hosts:['www.bilibili.com','bilibili.com','m.bilibili.com','b23.tv'], names:/bilibili|哔哩哔哩|B站/i},
+  {id:'tiktok', site:'tiktok.com', hosts:['www.tiktok.com','tiktok.com','m.tiktok.com','vm.tiktok.com','vt.tiktok.com'], names:/tiktok/i},
+  {id:'x', site:'x.com', hosts:['x.com','www.x.com','twitter.com','www.twitter.com','mobile.twitter.com'], names:/twitter|推特|(?:^|[^a-z])x\.com|(?:在|上|用)\s*X\s*(?:上|搜|找|查)|\bon x\b/i},
+  {id:'facebook', site:'facebook.com', hosts:['facebook.com','www.facebook.com','m.facebook.com','fb.watch'], names:/facebook|脸书|臉書|\bfb\b/i},
+  {id:'weibo', site:'weibo.com', hosts:['weibo.com','www.weibo.com','m.weibo.cn','weibo.cn'], names:/weibo|微博/i},
+  {id:'qqvideo', site:'v.qq.com', hosts:['v.qq.com','m.v.qq.com'], names:/v\.qq\.com|腾讯视频|騰訊視頻/i},
+  {id:'kuaishou', site:'kuaishou.com', hosts:['kuaishou.com','www.kuaishou.com','v.kuaishou.com','www.kwai.com','kwai.com'], names:/kuaishou|kwai|快手/i},
+]);
+function mediaPlatformInText(text) {
+  return MEDIA_PLATFORMS.find(platform=>platform.names.test(text));
+}
+function mediaPlatformForHost(host) {
+  return MEDIA_PLATFORMS.find(platform=>platform.hosts.includes(host));
+}
+
+return { PUBLIC_MEDIA_SERVER, MEDIA_PLATFORMS, mediaPlatformInText, mediaPlatformForHost };
 })();
 
 modules["shared/agent/retrieval/publicLookupIntent.js"] = (() => {
@@ -488,6 +514,7 @@ return { COMMON_TOOLS, toolCatalog, validateCommonTool, normalizeRuntimeConfig, 
 })();
 
 modules["shared/agent/search.js"] = (() => {
+const { mediaPlatformInText, PUBLIC_MEDIA_SERVER } = modules["shared/agent/media/publicPlatforms.js"];
 const { getRequestNetworkPolicy, requestUrls } = modules["shared/agent/retrieval/requestPolicy.js"];
 const { publicLookupRequest } = modules["shared/agent/retrieval/publicLookupIntent.js"];
 const { normalizeRuntimeConfig } = modules["shared/agent/tools.js"];
@@ -572,6 +599,15 @@ function buildRequestPlan({ text = '', messages = [], capabilities = {}, config 
   const platformRead = /搜|查|找|笔记|帖子|内容|推荐|攻略|视频|评价|评论|\b(?:find|search|read|recommend|reviews?|posts?|videos?)\b/iu.test(instruction) || socialURL;
   const deviceInstruction = instruction.replace(/(?:无需|不用|不必|不需要|不要)\s*(?:扫码)?登录|不登录|without (?:logging|signing) in/giu,'');
   const operateDevice = /手机|屏幕|滑动|点击|发布|发帖|私信|点赞|收藏|登录|扫码|\b(?:phone|screen|tap|swipe|post to|like the|send message)\b/iu.test(deviceInstruction);
+  const mediaPlatform=mediaPlatformInText(instruction);
+  if(mediaPlatform && !operateDevice && (urls.length || platformRead || lookup) && !platform){
+    const read='mcp:'+PUBLIC_MEDIA_SERVER+':read_post', search='mcp:'+PUBLIC_MEDIA_SERVER+':search_posts';
+    const reader=available(read)?read:available('fetch_url')?'fetch_url':null;
+    const finder=policy.searchForbidden?null:available(search)?search:available('web_search')?'web_search':null;
+    if(reader && (urls.length || finder))return {...base,route:'social-link',reason:'public-media',
+      tools:[...(!urls.length && finder?[finder]:[]),reader],backend:available(read)?'mcp':'web',
+      instructions:'Use the public '+mediaPlatform.id+' reader. Find candidate post links on '+mediaPlatform.site+' when needed, then read the matching work. If the public index is unavailable, use an authorized web_search. Cite the actual source and distinguish author text, description, subtitles and preview. Report unavailable sources.'};
+  }
   const guestOnly = policy.publicSocialOnly;
   if(platform && platformRead && !operateDevice && guestOnly && available('fetch_url') && (urls.length || (!policy.searchForbidden && available('web_search')))){
     return {...base,route:'social-link',reason:'public-platform',backend:'web',tools:urls.length?['fetch_url']:['web_search','fetch_url'],

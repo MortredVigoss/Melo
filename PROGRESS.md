@@ -1,3 +1,7 @@
+## 2026-11-04 — Instagram、YouTube 等公开作品读取
+
+Codex：桌面 6 个 Agent 默认获得公开媒体 MCP。真实模型读到 Instagram 原帖并交付；YouTube 实查字幕，Facebook 样本受限。公开范围、授权迁移及验证见[专项回执](docs/public-media-readers-20261104.md)。
+
 ## 2026-11-04 — 默认站内读取与 MCP 检索修复
 
 Codex：修复 MCP 目录、取消、结果交付与网页读取分级；小红书和抖音五个读工具默认授权现有和新 Agent，可单独撤销。已在当前桌面实连并核对 6 个 Agent、24 段聊天、734 条消息及附件引用。不登录实查得到小红书 546 字正文与抖音 288 字作者文案；真实模型自行搜→读→引用，回执 completed。日常门禁 `run-qe79QA` 全绿。未重装手机或推送。[审计、实施与验证](docs/mcp-retrieval-audit-20261104.md)，本地证据 `.tmp/mcp-reader-20261104/`。

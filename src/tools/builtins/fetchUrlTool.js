@@ -1,3 +1,6 @@
+import {mediaPlatformForHost} from '../../../shared/agent/media/publicPlatforms.js';
+import {mediaLink} from '../../services/search/mediaPermalink.js';
+import {readMediaPost} from '../../services/search/publicMediaReader.js';
 import {readPublicPost,isPublicPostHost} from '../../mcp/publicPost.js';
 import { captureBehavior } from '../../runtime/runtimeBehavior.js';
 import { searchLimits, scopedSearchRun } from '../../services/search/searchLimits.js';
@@ -282,6 +285,21 @@ export const fetchUrlTool = {
     // on a twitter/reddit/小红书 URL got rerouted to social-link, the
     // CDP branch never ran, and the schema contract ("explicit modes
     // force their tier") was silently broken.
+    const media=mediaLink(normalized);
+    if(!media && requestContext?.requestToolPolicy?.publicSocialOnly) {
+      let host;
+      try{host=new URL(normalized).hostname;}catch{}
+      if(mediaPlatformForHost(host))return {ok:false,error:'PUBLIC_POST_URL_REQUIRED',output:'Supply a public post or video permalink.'};
+    }
+    if(media && (extract_mode==='auto' || requestContext?.requestToolPolicy?.publicSocialOnly)){
+      const item=await readMediaPost(normalized,{signal});
+      if(!item)return {ok:false,error:'PUBLIC_POST_UNAVAILABLE',output:'No verifiable public content was returned for this post.'};
+      const part=pageWindow(item.text,offset,searchLimits().fetchMaxChars);
+      if(!part.body)return {ok:false,error:'OFFSET_OUT_OF_RANGE',output:'The requested offset exceeds this post.'};
+      const reading=item.reading==='snippet'?'snippet':part.truncated?'partial':item.reading;
+      return {ok:true,output:'['+item.kind+'] '+part.body+part.suffix,meta:{url:item.url,reading,kind:item.kind,truncated:part.truncated,nextOffset:part.nextOffset},
+        evidenceTrail:[{tier:'public-media',outcome:'ok',method:media.platform.id,reason:item.kind}]};
+    }
     const guestOnly=requestContext?.requestToolPolicy?.publicSocialOnly && isPublicPostHost(normalized);
     if (guestOnly || isSocialLinkUrl(normalized) && extract_mode !== 'playwright' && extract_mode !== 'cdp-chrome') {
       const tSocial = Date.now();

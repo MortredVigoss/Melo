@@ -81,6 +81,7 @@ export const DEFAULT_CONFIG = Object.freeze({
   // server does not grant an agent access or bypass per-call permissions.
   enableXiaohongshuMcp: true,
   enableDouyinMcp: true,
+  enablePublicMediaMcp: true,
   enablePlaywrightMcp:   true,  // local browser automation
   enableBrowserlessMcp: false,  // cloud service; never enabled by this default
   enableAntvChartMcp:    true,  // AntV's free rendering endpoint

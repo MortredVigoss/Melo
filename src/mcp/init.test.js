@@ -64,6 +64,7 @@ test('buildMcpFlags returns all seven flags even on an empty config', () => {
     'enableMarkdown2PdfMcp',
     'enableMermaidMcp',
     'enablePlaywrightMcp',
+    'enablePublicMediaMcp',
     'enableXiaohongshuMcp',
   ]);
   for (const v of Object.values(flags)) assert.equal(v, false);

@@ -1,3 +1,4 @@
+import {PUBLIC_MEDIA_SERVER} from '../../shared/agent/media/publicPlatforms.js';
 /**
  * MCP server manager.
  *
@@ -177,6 +178,9 @@ export async function connectMcpServer(serverName, serverConfig) {
     }
   }
 
+  const builtinMedia = serverName===PUBLIC_MEDIA_SERVER;
+  if(builtinMedia && (serverConfig.builtinPublicMedia!==true || Object.keys(serverConfig).some(k=>k!=='builtinPublicMedia')))
+    return {connected:false,toolCount:0,error:'Reserved public media service ID.'};
   const managed = socialSpec(serverName);
   const owner = new AbortController();
   _pending.get(serverName)?.abort();
@@ -194,7 +198,7 @@ export async function connectMcpServer(serverName, serverConfig) {
     for (const item of items) {
       if (managed && !managed.tools.includes(item.name)) continue;
       try {
-        const tool=buildMcpTool(serverName,item,client,!!managed);
+        const tool=buildMcpTool(serverName,item,client,!!managed,builtinMedia);
         const run=tool.run;
         tool.run=(args,ctx)=> current() && getMcpTool(tool.id)?.run === tool.run
           ? run(args,ctx) : {ok:false,error:'MCP_TOOL_UNAVAILABLE',output:'This tool is no longer available.'};
@@ -209,7 +213,13 @@ export async function connectMcpServer(serverName, serverConfig) {
       host=await startSocialHost(serverName,cwd,{signal:owner.signal,onExit:lost});
     }
     owner.signal.throwIfAborted();
-    client=new McpStdioClient({...serverConfig,...host,managed:!!managed,cwd,name:serverName,onClose:lost,
+    let localTransport;
+    if(builtinMedia){
+      const {openPublicMediaTransport}=await import('./publicMediaServer.js');
+      localTransport=await openPublicMediaTransport();
+      if(!current()){await localTransport.close();throw new Error('Connection superseded');}
+    }
+    client=new McpStdioClient({...serverConfig,...host,localTransport,managed:!!managed,cwd,name:serverName,onClose:lost,
       onToolsChanged:()=>refresh().catch(lost)});
     client.workspace=cwd;
     owner.signal.addEventListener('abort',()=>{ void client.disconnect().catch(()=>{}); },{once:true});
@@ -385,7 +395,7 @@ export function getActiveMcpServers() {
 // (requiresPermission, category) without spawning an MCP server.  The
 // `client` parameter is only used inside the `run` callback, so callers
 // in tests can pass a stub.
-export function buildMcpTool(serverName, mcpTool, client, managed = false) {
+export function buildMcpTool(serverName, mcpTool, client, managed = false, builtinMedia = false) {
   // Use the canonical writer so a malformed serverName can't reach
   // toolRegistry as `mcp:<bad>:<tool>` and confuse the auth parser
   // later.  Throws if serverName violates [A-Za-z0-9_-]+; production
@@ -403,11 +413,11 @@ export function buildMcpTool(serverName, mcpTool, client, managed = false) {
     functionName: mcpFunctionName(serverName, mcpTool?.name),
     description: (mcpTool.description || `MCP tool from ${serverName}`) + (managed && mcpTool.name.startsWith('search_') ? ' Search results are candidates; open get_feed_detail or get_video_detail before citing the content.' : ''),
     category: 'mcp',
-    readOnly: managed || mcpTool.annotations?.readOnlyHint === true,
-    ...(managed ? { capability:'network', searchDiscovery:mcpTool.name.startsWith('search_') } : {}),
+    readOnly: builtinMedia || managed || mcpTool.annotations?.readOnlyHint === true,
+    ...((managed || builtinMedia) ? { capability:'network', searchDiscovery:mcpTool.name.startsWith('search_') } : {}),
     parametersSchema,
     // MCP tools require permission unless they're clearly read-only
-    requiresPermission: !managed,
+    requiresPermission: !(managed || builtinMedia),
     isConcurrencySafe: false,
 
     async run(args, context = {}) {
@@ -428,6 +438,11 @@ export function buildMcpTool(serverName, mcpTool, client, managed = false) {
       try { raw=await client.callTool(mcpTool.name,args,context.signal); }
       catch(error){context.signal?.throwIfAborted(); if(!managed)throw error;
         raw={isError:true,content:[{type:'text',text:'Platform service unavailable. Use an authorized web search for public permalinks and read the actual page before suggesting sign-in.'}]};}
+      if(builtinMedia){
+        const result=mcpResultToToolResult(raw);
+        if(result.ok) result.completionSources=raw.structuredContent?.sources || [];
+        return result;
+      }
       const list=managed && socialSearch(mcpTool.name,raw);
       if(list) return {...list,evidenceTrail:[{tier:'platform-search',outcome:list.ok?'ok':'fail',method:serverName,reason:list.ok?'snippet':'no-verifiable-items',latencyMs:Date.now()-started}]};
       const result=mcpResultToToolResult(raw);

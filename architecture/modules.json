@@ -24,8 +24,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 675,
-      "edges": 2187,
+      "modules": 681,
+      "edges": 2206,
       "roots": [
         "src",
         "desktop-ui",
@@ -741,7 +741,7 @@
       ],
       "modules": {
         "desktop-ui": 27,
-        "shared": 37,
+        "shared": 38,
         "src": 68
       },
       "entryModules": [
@@ -823,6 +823,12 @@
           "importedBy": [
             "agents",
             "memory",
+            "tools"
+          ]
+        },
+        {
+          "module": "shared/agent/media/publicPlatforms.js",
+          "importedBy": [
             "tools"
           ]
         },
@@ -1112,7 +1118,7 @@
         "projects": 1,
         "settings": 14,
         "sync": 4,
-        "tools": 21,
+        "tools": 28,
         "voice": 2
       },
       "httpRoutes": [
@@ -2297,7 +2303,7 @@
       ],
       "modules": {
         "desktop-ui": 28,
-        "src": 93
+        "src": 98
       },
       "entryModules": [
         {
@@ -2621,7 +2627,7 @@
       "dependsOn": {
         "agents": 9,
         "approvals": 35,
-        "chat": 21,
+        "chat": 28,
         "desktop-shell": 15,
         "development": 1,
         "knowledge": 3,
@@ -2638,7 +2644,7 @@
         "desktop-shell": 13,
         "media": 4,
         "memory": 1,
-        "platform": 19,
+        "platform": 20,
         "projects": 3,
         "settings": 2
       },
@@ -2740,6 +2746,7 @@
           "scripts/inspect-search-trail.test.js",
           "src/mcp/init.test.js",
           "src/mcp/manager.test.js",
+          "src/mcp/publicMedia.test.js",
           "src/mcp/retrieval.test.js",
           "src/mcp/startup.test.js",
           "src/mcp/toolId.test.js",
@@ -4352,7 +4359,7 @@
         "projects": 6,
         "settings": 17,
         "sync": 2,
-        "tools": 19,
+        "tools": 20,
         "voice": 2
       },
       "usedBy": {

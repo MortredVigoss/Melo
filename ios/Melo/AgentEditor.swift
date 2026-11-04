@@ -119,8 +119,8 @@ struct AgentEditor: View {
         Section("电脑执行能力") {
             Text("从电脑同步，只约束这个 Agent 在电脑上的执行；放宽须在电脑确认。手机上的联网、图片和手机数据在“这台手机上”单独设置。").font(.caption).foregroundStyle(.secondary)
             if let caps=session.draft.capabilities {
-                if caps["mcpServers"].array.contains(where: { ["melo-xiaohongshu","melo-douyin"].contains($0.string) }) {
-                    Text("小红书和抖音 MCP 在电脑上执行；手机独立聊天不使用电脑登录。").font(.caption).foregroundStyle(.secondary)
+                if caps["mcpServers"].array.contains(where: { ["melo-xiaohongshu","melo-douyin","melo-public-media"].contains($0.string) }) {
+                    Text("这些平台的 MCP 在电脑上运行。").font(.caption).foregroundStyle(.secondary)
                 }
                 ForEach(["readFiles","writeFiles","runCommands","network","knowledgeMemory","generateMedia","delegate"],id: \.self) { key in
                     HStack { Text(LocalizedStringKey(["readFiles":"读取文件","writeFiles":"修改文件","runCommands":"运行命令","network":"联网","knowledgeMemory":"知识与记忆","generateMedia":"生成媒体","delegate":"委派"][key] ?? key)); Spacer(); Image(systemName:caps[key].bool ? "checkmark.circle" : "minus.circle").foregroundStyle(caps[key].bool ? .green : .secondary) }

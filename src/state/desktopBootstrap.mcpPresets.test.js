@@ -56,6 +56,9 @@ test('bootstrap.mcpPresets all enabled presets pin an exact npm or managed binar
   assert.deepEqual(presets.filter(p => p.transport === 'managed-http').map(p => p.id).sort(), ['melo-douyin', 'melo-xiaohongshu']);
   for (const preset of presets) {
     if (preset.unpinned) continue;
+    if (preset.transport==='in-process'){
+      assert.equal(preset.id,'melo-public-media');assert.equal(preset.command,undefined);assert.equal(preset.version,'1.0.0');continue;
+    }
     if (preset.transport === 'managed-http') {
       assert.equal(preset.unpinned, false);
       assert.match(preset.version, /^v\d+\.\d+\.\d+$/);

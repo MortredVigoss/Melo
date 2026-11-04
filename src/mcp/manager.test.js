@@ -108,6 +108,14 @@ test('getBuiltinMcpPresets exposes every built-in (browser + productivity)', () 
 
 test('every preset entry carries command + args + flag + description', () => {
   for (const preset of getBuiltinMcpPresets()) {
+    if(preset.transport==='in-process'){
+      assert.equal(preset.id,'melo-public-media');
+      assert.equal(preset.command,undefined);
+      assert.equal(preset.args,undefined);
+      assert.equal(preset.flag,'enablePublicMediaMcp');
+      assert.equal(preset.version,'1.0.0');
+      continue;
+    }
     if(preset.transport==='managed-http') { assert.match(preset.version,/^v\d+\.\d+\.\d+$/); continue; }
     assert.equal(typeof preset.command, 'string', `${preset.id} command`);
     assert.ok(Array.isArray(preset.args), `${preset.id} args`);
@@ -163,6 +171,14 @@ test('every preset args entry is version-pinned (no bare package name, no @lates
   // regression — one click on first-boot consent and the user
   // would be downloading whatever a hijacked maintainer publishes.
   for (const preset of getBuiltinMcpPresets()) {
+    if(preset.transport==='in-process'){
+      assert.equal(preset.id,'melo-public-media');
+      assert.equal(preset.command,undefined);
+      assert.equal(preset.args,undefined);
+      assert.equal(preset.flag,'enablePublicMediaMcp');
+      assert.equal(preset.version,'1.0.0');
+      continue;
+    }
     if(preset.transport==='managed-http') { assert.match(preset.version,/^v\d+\.\d+\.\d+$/); continue; }
     const lastArg = preset.args[preset.args.length - 1];
     assert.match(

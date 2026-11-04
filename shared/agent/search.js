@@ -1,3 +1,4 @@
+import { mediaPlatformInText, PUBLIC_MEDIA_SERVER } from './media/publicPlatforms.js';
 import { getRequestNetworkPolicy, requestUrls } from './retrieval/requestPolicy.js';
 import { publicLookupRequest } from './retrieval/publicLookupIntent.js';
 import { normalizeRuntimeConfig } from './tools.js';
@@ -82,6 +83,15 @@ function buildRequestPlan({ text = '', messages = [], capabilities = {}, config 
   const platformRead = /搜|查|找|笔记|帖子|内容|推荐|攻略|视频|评价|评论|\b(?:find|search|read|recommend|reviews?|posts?|videos?)\b/iu.test(instruction) || socialURL;
   const deviceInstruction = instruction.replace(/(?:无需|不用|不必|不需要|不要)\s*(?:扫码)?登录|不登录|without (?:logging|signing) in/giu,'');
   const operateDevice = /手机|屏幕|滑动|点击|发布|发帖|私信|点赞|收藏|登录|扫码|\b(?:phone|screen|tap|swipe|post to|like the|send message)\b/iu.test(deviceInstruction);
+  const mediaPlatform=mediaPlatformInText(instruction);
+  if(mediaPlatform && !operateDevice && (urls.length || platformRead || lookup) && !platform){
+    const read='mcp:'+PUBLIC_MEDIA_SERVER+':read_post', search='mcp:'+PUBLIC_MEDIA_SERVER+':search_posts';
+    const reader=available(read)?read:available('fetch_url')?'fetch_url':null;
+    const finder=policy.searchForbidden?null:available(search)?search:available('web_search')?'web_search':null;
+    if(reader && (urls.length || finder))return {...base,route:'social-link',reason:'public-media',
+      tools:[...(!urls.length && finder?[finder]:[]),reader],backend:available(read)?'mcp':'web',
+      instructions:'Use the public '+mediaPlatform.id+' reader. Find candidate post links on '+mediaPlatform.site+' when needed, then read the matching work. If the public index is unavailable, use an authorized web_search. Cite the actual source and distinguish author text, description, subtitles and preview. Report unavailable sources.'};
+  }
   const guestOnly = policy.publicSocialOnly;
   if(platform && platformRead && !operateDevice && guestOnly && available('fetch_url') && (urls.length || (!policy.searchForbidden && available('web_search')))){
     return {...base,route:'social-link',reason:'public-platform',backend:'web',tools:urls.length?['fetch_url']:['web_search','fetch_url'],

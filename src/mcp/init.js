@@ -31,6 +31,7 @@ import { bootstrapMcpServers as defaultBootstrap } from './manager.js';
 export function buildMcpFlags(config = {}) {
   return {
     enableXiaohongshuMcp: Boolean(config.enableXiaohongshuMcp),
+    enablePublicMediaMcp: Boolean(config.enablePublicMediaMcp),
     enableDouyinMcp: Boolean(config.enableDouyinMcp),
     enablePlaywrightMcp:   Boolean(config.enablePlaywrightMcp),
     enableBrowserlessMcp:  Boolean(config.enableBrowserlessMcp),

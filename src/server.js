@@ -799,7 +799,7 @@ await finishChatDeletions(runtimePaths.home);
       // so a stray POST can't enable an arbitrary boolean elsewhere in
       // config.json.
       const ALLOWED_MCP_FLAGS = new Set([
-        'enableXiaohongshuMcp','enableDouyinMcp',
+        'enableXiaohongshuMcp','enableDouyinMcp','enablePublicMediaMcp',
         'enablePlaywrightMcp',
         'enableBrowserlessMcp',
         'enableAntvChartMcp',

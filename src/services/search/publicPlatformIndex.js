@@ -1,7 +1,15 @@
+import {mediaPlatformForHost} from '../../../shared/agent/media/publicPlatforms.js';
+import {mediaLink} from './mediaPermalink.js';
 // A site-qualified web_search may use the public HTML search index. Never
 // silently forward a platform-only MCP query to a different provider.
-const queryDomain = /(?:^|\s)site:(?:(?:www|jingxuan)\.)?(douyin\.com|xiaohongshu\.com|rednote\.com|xhslink\.(?:cn|com))(?=\/|\s|$)/i;
-export const platformSite = query => queryDomain.exec(query)?.[1]?.toLowerCase();
+const queryDomain = /(?:^|\s)site:([A-Za-z0-9.-]+)(?=\/|\s|$)/i;
+export function platformSite(query) {
+  const site=queryDomain.exec(query)?.[1]?.toLowerCase();
+  if(!site)return undefined;
+  if(mediaPlatformForHost(site))return site;
+  const canonical=site.replace(/^(?:www|jingxuan)\./,'');
+  return ['douyin.com','xiaohongshu.com','rednote.com','xhslink.cn','xhslink.com'].includes(canonical)?canonical:undefined;
+}
 export async function searchPublicIndex(query,limit,signal,request=fetch){
   const site=platformSite(query);if(!site)return [];
   const end=AbortSignal.timeout(5500),combined=signal?AbortSignal.any([signal,end]):end;
@@ -16,7 +24,8 @@ export async function searchPublicIndex(query,limit,signal,request=fetch){
       for(const a of dom.window.document.querySelectorAll('.result__a')){
         let url;try{url=new URL(a.getAttribute('href'),'https://html.duckduckgo.com');if(['duckduckgo.com','html.duckduckgo.com'].includes(url.hostname)&&url.pathname==='/l/')url=new URL(url.searchParams.get('uddg'));}catch{continue;}
         if(url.protocol!=='https:' || url.username || url.password || url.port || !(url.hostname===site || url.hostname.endsWith('.'+site)))continue;
-        if(!(/\/video\/\d{8,25}(?:\/|$)|\/(?:explore|discovery\/item)\/[a-f0-9]{24}(?:\/|$)/i.test(url.pathname)||(/^xhslink\./.test(site)&&/^\/(?:o\/|a\/)?[a-z0-9]+\/?$/i.test(url.pathname))))continue;
+        if(mediaPlatformForHost(site) && !mediaLink(url.href)?.id)continue;
+        if(!mediaPlatformForHost(site) && !(/\/video\/\d{8,25}(?:\/|$)|\/(?:explore|discovery\/item)\/[a-f0-9]{24}(?:\/|$)/i.test(url.pathname)||(/^xhslink\./.test(site)&&/^\/(?:o\/|a\/)?[a-z0-9]+\/?$/i.test(url.pathname))))continue;
         if(seen.has(url.href))continue;seen.add(url.href);
         results.push({title:a.textContent.trim().slice(0,300),url:url.href,snippet:(a.closest('.result')?.querySelector('.result__snippet')?.textContent||'').trim().slice(0,500)});
         if(results.length>=limit)break;

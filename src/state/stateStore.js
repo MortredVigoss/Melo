@@ -1,3 +1,4 @@
+import {SOCIAL_READER_VERSION} from '../mcp/socialPresets.js';
 import {migrateLegacyResults} from '../domain/artifact/artifactService.js';
 import { serializeAgentState } from '../domain/agent/agentState.js';
 import { backupAgentState } from './storageMigration.js';
@@ -109,7 +110,7 @@ async function readSnapshot({ persistRepair = false, maintenance = false, previo
     // Legacy manifests store messages in checkpoints. Classify generated
     // snippets only after their source replies have actually been hydrated.
     if(Array.isArray(parsed.artifacts))state.artifacts=migrateLegacyResults(parsed.artifacts,state.chats);
-    const socialReadersMigrated = Number(parsed.settings?.socialReaderVersion || 0) < 1;
+    const socialReadersMigrated = Number(parsed.settings?.socialReaderVersion || 0) < SOCIAL_READER_VERSION;
     const resultsMigrated=Array.isArray(parsed.artifacts)&&parsed.artifacts.some((a,i)=>a.kind!==state.artifacts[i]?.kind);
     await measureStage('state.skills.scan', () => mergeDiskSkillsIntoState(state));
 

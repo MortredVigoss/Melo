@@ -24,7 +24,7 @@
 | 知识资料与成果 | 本机分段索引（SQLite FTS + 本地 embedding），按对话/项目开关过滤；两端按问题切段检索，旧 8 份 / 24000 字前置限制已移除 | [Agent 演进 P2/P4](docs/agent-evolution-20261015.md)、[A3/A5 回执](docs/mobile-desktop-alignment.md) |
 | 设置、模型连接与账号 | 五语界面 `2cae1cd`；手机 Codex 设备码 OAuth `85ac3a5`、应用切换取消修复 `14e602f` | 用户真实授权尚未确认；同码恢复限同一进程；[五语](docs/interface-languages-20261015.md)、[模型连接](docs/llm-connections.md) |
 | 双端同步 | v1 线协议冻结；Agent 能力与项目记忆走可选通道，旧服务只让扩展待同步，聊天同步照常 | [双端修复](docs/mobile-desktop-alignment.md)；私人同步服务需部署本版代码后启用新通道 |
-| 工具、MCP 与网页 | 桌面支持 stdio / 标准 HTTP；小红书和抖音只读 MCP 默认对现有与新 Agent 开放，可逐个撤销；手机设备数据仍为独立权限 | [站内检索、登录与验收](docs/mcp-retrieval-audit-20261104.md)、[既有 MCP](docs/mcp-startup-20261015.md)、[手机系统数据](docs/ios-device-data-20261016.md) |
+| 工具、MCP 与网页 | 桌面支持 stdio / 标准 HTTP；12 类社交与视频链接的只读检索默认对现有与新 Agent 开放，可逐个撤销；手机设备数据仍为独立权限 | [Instagram、YouTube 等 10 类平台](docs/public-media-readers-20261104.md)、[站内检索、登录与验收](docs/mcp-retrieval-audit-20261104.md)、[既有 MCP](docs/mcp-startup-20261015.md)、[手机系统数据](docs/ios-device-data-20261016.md) |
 | 搜索路由 | 自然餐饮/住宿/产品推荐与相关追问进入搜索；禁止联网、引用、闲聊、本地/App 边界保留，按当前能力说明不可用 | [#3 实施](docs/github-issues-implementation-20261020.md)；受控 HTTP 测试，真实供应商另验 |
 | 图片、视频与附件 | 10-21 双端已接应用内拍照、确认进入草稿、原件与传输副本分开；[实现与验收](docs/test-cost-camera-plan-20261021.md)，实时会话暂缓；iPhone 后置拍照四流程已由用户真机确认，见[装机回执](docs/phone-camera-install-20261021.md)。桌面/手机请求 `quality: high`，10-15 单次实测 Codex 服务回报 low；手机图片链与保存防重复已接生产入口；多图逐张、2K/4K、视频抽帧已合入主线 | 10-20 #4 二次修复旧工作区归属与回看图片引用；原生预览/原尺寸/保存/冷启动重开均通过，原件 SHA 不变；[修复回执](docs/issue-4-legacy-preview-20261020.md)、[实施证据](docs/github-issues-implementation-20261020.md)；见[图片承载计划](docs/image-capacity-plan-20261015.md)；[图片体验](docs/image-ux-20261016.md)、[多图与视频](docs/image-video-plan-20261016.md)；真实账号画质待验 |
 | 语音 | TTS 路由与停止修复（10-17 审计）；手机朗读要点化并按回复语种选声（10-18）；桌面朗读按 Agent 卡片模式 / 音色 / 风格，已知 Agent 默认概要（10-22） | [审计与实施状态](docs/architecture-agent-context-audit-20261017.md)；真机朗读待验 |
@@ -60,6 +60,10 @@
 基础设施另列 `platform`（`src/state/`、`src/runtime/`、`src/http/` 传输）、`channels`（已归档渠道）、`tooling`（脚本与 gate）。
 
 ## 4. 最新交接
+
+### 2026-11-04 — 桌面公开媒体 MCP
+
+新增 10 类作品的公开检索与读页。现有 6 个 Agent 均已启用，数据备份核对通过。Instagram 指定账号、YouTube 关键词各实获 6 个候选并读到作品。Instagram 作者文字、YouTube 实际字幕、其他平台详情与受限样本见[逐平台验收](docs/public-media-readers-20261104.md)。
 
 ### 2026-11-04 — 站内检索与 MCP 读取
 - 桌面新增小红书搜索/笔记详情、抖音搜索/作品详情/评论。固定版本、校验和、回环令牌、独立登录；现有和新建 Agent 默认获两项只读服务，用户撤销后不再补回，手机不共享电脑会话。

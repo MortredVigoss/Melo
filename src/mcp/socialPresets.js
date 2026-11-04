@@ -1,3 +1,4 @@
+import {PUBLIC_MEDIA_SERVER} from '../../shared/agent/media/publicPlatforms.js';
 export const socialPresets = Object.freeze({
   'melo-xiaohongshu': {
     platform: 'xiaohongshu', flag: 'enableXiaohongshuMcp', repo: 'xpzouying/xiaohongshu-mcp', tag: 'v2.7.2',
@@ -14,8 +15,10 @@ export const socialIds = Object.freeze(Object.keys(socialPresets));
 export function socialSpec(id) { return Object.hasOwn(socialPresets,id) ? socialPresets[id] : null; }
 
 // One-time backfill, never continuously union defaults onto a user's edits.
-export function addSocialReads(profile) {
-  const merge = ids => [...new Set([...(ids || []), ...socialIds])];
+export const SOCIAL_READER_VERSION=2;
+export function addSocialReads(profile,previousVersion=0) {
+  const additions=previousVersion<1 ? [...socialIds,PUBLIC_MEDIA_SERVER] : [PUBLIC_MEDIA_SERVER];
+  const merge = ids => [...new Set([...(ids || []), ...additions])];
   return { ...profile, enabledMcpServerIds: merge(profile.enabledMcpServerIds),
     ...(profile.capabilities ? {capabilities:{...profile.capabilities, mcpServers:merge(profile.capabilities.mcpServers)}} : {}) };
 }

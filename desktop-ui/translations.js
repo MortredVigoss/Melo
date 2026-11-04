@@ -1195,7 +1195,7 @@ const rows = [
 ["自定义设置", "Customize", "カスタマイズ", "사용자 지정", "Personalizar"],
 ["内置 MCP 服务", "Built-in MCP servers", "内蔵 MCP サーバー", "내장 MCP 서버", "Servidores MCP integrados"],
 ["{0} / {1} 已启用", "{0} of {1} enabled", "{1} 件中 {0} 件が有効", "{1}개 중 {0}개 켜짐", "{0} de {1} activados"],
-["小红书和抖音的读取工具默认对所有 Agent 开放；可在「自定义 → Agent」单独关闭。", "Xiaohongshu and Douyin readers are on by default for all Agents. Turn them off individually under Customize → Agents.", "小紅書と抖音の読み取りはすべての Agent で既定で有効です。「カスタマイズ → Agent」で個別に無効にできます。", "샤오훙수와 더우인 읽기 도구는 모든 Agent에서 기본으로 켜져 있습니다. 사용자 지정 → Agent에서 개별적으로 끌 수 있습니다.", "La lectura de Xiaohongshu y Douyin está activa de forma predeterminada para todos los agentes. Puedes desactivarla por agente en Personalizar → Agentes."],
+["公开平台读取工具默认对所有 Agent 开放，可在「自定义 → Agent」单独关闭。", "Public platform readers are on by default for all Agents. Turn them off individually under Customize → Agents.", "公開プラットフォームの読み取りはすべての Agent で既定で有効です。「カスタマイズ → Agent」で個別に無効にできます。", "공개 플랫폼 읽기 도구는 모든 Agent에서 기본으로 켜져 있습니다. 사용자 지정 → Agent에서 개별적으로 끌 수 있습니다.", "La lectura de plataformas públicas está activa para todos los agentes. Puedes desactivarla por agente en Personalizar → Agentes."],
 ["自定义 HTTP 连接器", "Custom HTTP connectors", "カスタム HTTP コネクタ", "사용자 정의 HTTP 커넥터", "Conectores HTTP personalizados"],
 ["{0} 个已配置", "{0} configured", "{0} 件設定済み", "{0}개 구성됨", "{0} configurados"],
 ["MCP 服务（stdio / HTTP）","MCP servers (stdio / HTTP)","MCP サーバー（stdio / HTTP）","MCP 서버 (stdio / HTTP)","Servidores MCP (stdio / HTTP)"],

@@ -92,8 +92,8 @@ export function requestAllowsTool(tool, policy = {}) {
   if (policy.toolsForbidden) return false;
   const id = typeof tool === 'string' ? tool : String(tool?.id || '');
   if (policy.publicSocialOnly && /^mcp:melo-(?:douyin|xiaohongshu):/.test(id)) return false;
-  const network = tool?.capability === 'network' || /^mcp:melo-(?:douyin|xiaohongshu):/.test(id) || /^(?:web_search|fetch_url|open_url|web_screenshot|browser_.*)$/.test(id);
+  const network = tool?.capability === 'network' || /^mcp:melo-(?:douyin|xiaohongshu|public-media):/.test(id) || /^(?:web_search|fetch_url|open_url|web_screenshot|browser_.*)$/.test(id);
   if (policy.fetchForbidden && network) return false;
-  if (policy.searchForbidden && (id === 'web_search' || tool?.searchDiscovery === true || /^mcp:melo-(?:douyin|xiaohongshu):search_/.test(id))) return false;
+  if (policy.searchForbidden && (id === 'web_search' || tool?.searchDiscovery === true || /^mcp:melo-(?:douyin|xiaohongshu|public-media):search_/.test(id))) return false;
   return true;
 }

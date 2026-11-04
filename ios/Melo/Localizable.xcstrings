@@ -45781,37 +45781,37 @@
         }
       }
     },
-    "小红书和抖音的读取工具默认对所有 Agent 开放；可在「自定义 → Agent」单独关闭。": {
+    "公开平台读取工具默认对所有 Agent 开放，可在「自定义 → Agent」单独关闭。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "小红书和抖音的读取工具默认对所有 Agent 开放；可在「自定义 → Agent」单独关闭。"
+            "value": "公开平台读取工具默认对所有 Agent 开放，可在「自定义 → Agent」单独关闭。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Xiaohongshu and Douyin readers are on by default for all Agents. Turn them off individually under Customize → Agents."
+            "value": "Public platform readers are on by default for all Agents. Turn them off individually under Customize → Agents."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "小紅書と抖音の読み取りはすべての Agent で既定で有効です。「カスタマイズ → Agent」で個別に無効にできます。"
+            "value": "公開プラットフォームの読み取りはすべての Agent で既定で有効です。「カスタマイズ → Agent」で個別に無効にできます。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "샤오훙수와 더우인 읽기 도구는 모든 Agent에서 기본으로 켜져 있습니다. 사용자 지정 → Agent에서 개별적으로 끌 수 있습니다."
+            "value": "공개 플랫폼 읽기 도구는 모든 Agent에서 기본으로 켜져 있습니다. 사용자 지정 → Agent에서 개별적으로 끌 수 있습니다."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "La lectura de Xiaohongshu y Douyin está activa de forma predeterminada para todos los agentes. Puedes desactivarla por agente en Personalizar → Agentes."
+            "value": "La lectura de plataformas públicas está activa para todos los agentes. Puedes desactivarla por agente en Personalizar → Agentes."
           }
         }
       }
@@ -59151,37 +59151,37 @@
         }
       }
     },
-    "小红书和抖音 MCP 在电脑上执行；手机独立聊天不使用电脑登录。": {
+    "这些平台的 MCP 在电脑上运行。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "小红书和抖音 MCP 在电脑上执行；手机独立聊天不使用电脑登录。"
+            "value": "这些平台的 MCP 在电脑上运行。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Xiaohongshu and Douyin MCP run on your computer. Standalone phone chats do not use its sign-in."
+            "value": "These platform MCP servers run on your computer."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "小紅書と抖音の MCP はコンピュータで実行されます。スマートフォンの単独チャットではそのログインを使いません。"
+            "value": "これらのプラットフォームの MCP はコンピュータで動作します。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "샤오홍슈와 더우인 MCP는 컴퓨터에서 실행됩니다. 휴대폰 단독 대화에서는 컴퓨터 로그인을 사용하지 않습니다."
+            "value": "이 플랫폼의 MCP는 컴퓨터에서 실행됩니다."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Los MCP de Xiaohongshu y Douyin se ejecutan en el ordenador. Los chats independientes del teléfono no usan esa sesión."
+            "value": "Los servidores MCP de estas plataformas se ejecutan en el ordenador."
           }
         }
       }

@@ -14,12 +14,14 @@ export function httpEndpoint(input) {
 
 // The official SDK owns framing, negotiation, cancellation, and cursor traversal.
 export class McpStdioClient {
-  constructor({ command, args = [], env = {}, cwd, name = 'mcp-server', url, headers, onClose, onToolsChanged, managed = false }) {
+  constructor({ command, args = [], env = {}, cwd, name = 'mcp-server', url, headers, onClose, onToolsChanged, localTransport, managed = false }) {
     this.name = name;
     this.client = new Client({ name: 'melo', version: '1.0' }, {
       versionNegotiation: { mode: url && !managed ? 'auto' : 'legacy' },
     });
-    if (url) {
+    if (localTransport) {
+      this.transport=localTransport;
+    } else if (url) {
       this.transport = new StreamableHTTPClientTransport(httpEndpoint(url), {
         requestInit: { headers, redirect: 'error' },
       });

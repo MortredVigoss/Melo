@@ -1,3 +1,4 @@
+import {PUBLIC_MEDIA_SERVER,MEDIA_PLATFORMS} from '../../shared/agent/media/publicPlatforms.js';
 // MCP server presets (browser + productivity), their version pins and the
 // effective-server merge. Moved out of manager.js (byte-for-byte port,
 // 2026-10-22) so lower layers can read presets without reaching the tool
@@ -193,6 +194,8 @@ export function getBuiltinMcpPresets() {
     out.push({ id, ...preset });
   }
   for (const [id,s] of Object.entries(socialPresets)) out.push({id,flag:s.flag,description:s.description,transport:'managed-http',version:s.tag});
+  out.push({id:PUBLIC_MEDIA_SERVER,flag:'enablePublicMediaMcp',transport:'in-process',version:'1.0.0',
+    description:MEDIA_PLATFORMS.map(p=>p.site).join(' · ')});
   return out;
 }
 
@@ -230,6 +233,8 @@ export function buildEffectiveMcpServers(mcpServers = {}, flags = {}) {
   for (const [id,s] of Object.entries(socialPresets)) {
     if (flags[s.flag] && !Object.hasOwn(effective,id)) effective[id]={managedSocial:id};
   }
+  if(flags.enablePublicMediaMcp && !Object.hasOwn(effective,PUBLIC_MEDIA_SERVER))
+    effective[PUBLIC_MEDIA_SERVER]={builtinPublicMedia:true};
   return effective;
 }
 

@@ -162,7 +162,7 @@ export function renderAdvancedPage({
     : (mcpPresets || []).map(preset => {
         const enabled = Boolean(preset?.enabled);
         const unpinned = Boolean(preset?.unpinned);
-        const cmdSummary = preset.transport==='managed-http' ? 'HTTP · '+preset.version : `${preset?.command || ''} ${(preset?.args || []).join(' ')}`.trim();
+        const cmdSummary = preset.transport==='in-process' ? 'Melo MCP · '+preset.version : preset.transport==='managed-http' ? 'HTTP · '+preset.version : `${preset?.command || ''} ${(preset?.args || []).join(' ')}`.trim();
         // Codex 四轮 audit 2026-04-29: an unpinned preset has 3
         // possible UI states, not 2:
         //   - unpinned + enabled  → user can still DISABLE to
@@ -254,7 +254,7 @@ export function renderAdvancedPage({
             <span class="meta-label">${(mcpPresets || []).filter(p => p?.enabled).length} / ${(mcpPresets || []).length} 已启用</span>
           </div>
           <p class="page-kicker-tip">
-            小红书和抖音的读取工具默认对所有 Agent 开放；可在「自定义 → Agent」单独关闭。
+            公开平台读取工具默认对所有 Agent 开放，可在「自定义 → Agent」单独关闭。
           </p>
           <div class="list-stack">
             ${presetRows}

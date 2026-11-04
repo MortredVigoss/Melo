@@ -13,7 +13,7 @@ import {runSubAgent} from '../testSupport/directAgentFixture.js';
 const member=id=>({id,name:id,capabilities:recommendedCapabilities(id)});
 test('fresh disk and empty manifest have recommended capabilities; real legacy records keep migration preview',async()=>{
  // Fresh installs also start with the skills and MCP presets they have on (2026-10-22).
- const fresh=recommendedCapabilities('main',{skills:['artifact-curator','connector-builder','project-planner','skill-creator'],mcpServers:['antv-chart','markdown2pdf','melo-douyin','melo-xiaohongshu','mermaid','playwright']});
+ const fresh=recommendedCapabilities('main',{skills:['artifact-curator','connector-builder','project-planner','skill-creator'],mcpServers:['antv-chart','markdown2pdf','melo-douyin','melo-public-media','melo-xiaohongshu','mermaid','playwright']});
  const home=await mkdtemp(join(tmpdir(),'melo-agent-fresh-'));
  try {assert.deepEqual((await readStateSnapshot({home})).agentProfiles.main.capabilities,fresh);}finally{await rm(home,{recursive:true,force:true});}
  assert.deepEqual(hydrateState({}).agentProfiles.main.capabilities,fresh);

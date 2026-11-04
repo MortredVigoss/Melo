@@ -283,7 +283,7 @@ async function executeChatTurn({
   userMessage.attachments = await hydrateAttachments(userMessage.attachments, { home });
   await enrichMessageWithMediaContext(userMessage, {
     config,
-    allowRemoteExtraction: !networkPolicy.fetchForbidden,
+    allowRemoteExtraction: !networkPolicy.fetchForbidden && !networkPolicy.publicSocialOnly,
     modelSupportsVision: modelSupportsVision(
       visualConnection.model, visualTest, connectionForModel(visualConnection),
     ) !== false,
