@@ -117,3 +117,33 @@ A2 / A3 与 A5 的背景部分已落地并本地提交（`a1b56f8`）。
 | A5-1 Agent 设置页新增"内部岗位模型" | 每个岗位可选连接 / 模型（默认跟随对话），存 `agentProfiles[id].collaboration.jobModels`，三端契约字段同步 | 设置页 UI、`shared/protocol` 契约、三端读取 | 7 / 10 |
 | A5-2 复用智能路由档位 | 智能模式下检索 / 资料读取岗位用"快"档，执行 / 计算跟随对话模型；非智能模式不变 | 只改 `internalMembers.js` 取连接的方式，无新界面 | 6.5 / 10 |
 | A5-3 维持现状 | 所有岗位同一连接 | 无 | 5 / 10 |
+
+## 用户拍板后的实施（2026-11-04 夜）：P2-10、B3（B1 + B2）、A4-1、A5-1
+
+用户选定全部最高分方案并授权完成后推送 master。顺序：P2-10 与 B3 先做（同在 agent loop），再 A4-1，再 A5-1；每批独立回归、提交；推送前跑集成档。
+
+### 批次 1：限额收尾证据、成员压缩、预算扩展
+
+执行链路：
+1. `shared/agent/evidence.js:deliveryEvidence(observations, chars)`：正文预算先给已核实读取（`ok && executed`），同一 URL 多次读取只保留最长正文一份，失败 / 未执行行保留 id、来源、读取状态和 ≤ 160 字短正文（行数极多时退回公平切分、最少 24 字）；`limitDelivery.js:deliveryRequest` 的证据总量 24k → 48k 字。三端同一 bundle（iPhone / Android 的限额收尾同样受益）。
+2. `invokeModelNode.js`：成员交接返回后，把成员报告作为观察行 `job-N:report`（type `handoff`，带状态前缀）并入主 `coreTurn.observations`，限额收尾与目标核验都能引用（审计 P2-10：收尾只读观察账本、不读聊天）。
+3. `src/agents/subAgent.js`：新增 `condenseEachRound`，每轮追加工具结果后用 `compactToolChain(keepRecentResults: 1)` 把更早轮次的输出压缩到契约的 600 字；内部成员开启。
+4. `internalMembers.js`：`memberConfig(config)` 把成员的 `operationalLimits.search` 收窄为 5 条结果、3 000 字正文（`scopedSearchRun` 按 `options.config` 取限额）；`extendForMember(budget, …)` 在派成员时对顶层池 `extendBudget`（+120k 输入 token、+40 次工具、+5 min，每轮上限 +480k / +20 min），发 `routing:budget:N` 流水线事件；嵌套池不扩展，份额与保留逻辑在扩展后计算。
+
+边界与停止条件：共享状态——预算对象（新增 `routingExtension` / `routingDeadlineExtension` 计数字段）、主 `coreTurn.observations`；契约——`deliveryEvidence` 输出形状不变，只变分配；停止在 `extendBudget` / `compactToolChain` / `searchLimits` 既有实现。未覆盖：iPhone / Android 的成员仍内联（它们不走 `runSubAgent`，无压缩与扩展）；`compactToolChain` 的 600 字契约值未调。
+
+回归：`limitDelivery.test.js` 新增证据分配（账本完整、已核实页面 ≥ 3 000 字、重复 URL 与失败行 ≤ 160 字、2 000 行失败账本仍 ≤ 24 字 / 行）；`subAgent.test.js` 新增 `condenseEachRound`（第三次请求里第一轮输出已压缩、最新轮完整）；`internalMembers.test.js` 新增 B1 / B2（四名成员后扩展到上限 +480k、工具与截止同步增长、每次扩展一条事件、成员搜索限额 5 / 3 000、嵌套池不扩展）并把"主 Agent 保留"用例改为扩展上限已用尽的场景；路由端到端断言主 Agent 核验请求里出现 `job-1:report`。本地 215 / 215；bundle 重建（43 模块）。
+
+### 批次 2：A4-1 审批预筛——执行成员启动前一张"本次任务"卡片（设计）
+
+现状核对：文件安全门（`src/safety/fileSafetyGate.js`）已有任务级授权（`taskGrants` 按回合预算对象键控、卡片按钮"本次任务允许"、回合结束 `endTaskPermissions`），但工具级审批（`src/tools/permissions.js`）只有仅本次 / 本对话 / 始终三档，没有任务级；主 Agent 派执行成员时也没有任何预筛。
+
+执行链路（计划）：
+1. `internalMembers.js:runOne`：成员启动前取其岗位工具里 `requiresPermission !== false && permissionGate !== 'file-safety'` 且 `checkPermissionRule === 'ask'` 的工具；有则 `requestTaskScopeApproval({ toolIds, task, label, chatId, sseEmitter, signal })`，结果写入 `routing:approval:N` 流水线事件；无论批不批都继续运行成员（未批 → 成员调用时按原流程逐个弹）。文件安全门的逐操作同意不变（这是设计边界：路径 / 差异级同意不能由任务级预批替代）。
+2. `permissions.js`：新增任务级规则桶（按 home + chatId + 回合 `requestId` 键控，成员共享主 Agent 的请求上下文），`checkPermissionRule` 在会话规则之后查它；新增 `requestTaskScopeApproval`（一个 `tool_permission` 事件，`kind: 'task_scope'`，带 `toolIds` / `task` / `label`，120 s 超时 → `timeout`，无审批面 → `no-surface`，永不抛出）；`resolvePermission` 对 `task_scope` 条目接受 `task`（本次任务）/ `session`（本对话）/ `always` 三种作用域，拒绝只关卡片；`endTaskToolPermissions(context)` 由 `chatExecutionRunner` 在回合结束时与 `endTaskPermissions` 一起调用。
+3. 桌面：`desktop-ui/features/chat/controller.js` 把 `kind === 'task_scope'` 入队；`desktop-ui/app.js:renderToolPermissionDialog` 新增卡片（岗位名、子任务、工具清单，按钮"本次任务允许 / 本对话允许 / 拒绝"），动作复用 `handleToolPermissionResponse(requestId, '', granted, scope)`；`/api/tools/permission-response` 路由不改（`kind` 透传给 `resolvePermission`）。
+4. 手机端：不运行内部成员的 `runSubAgent` 路径，无此卡片；记宿主差异。
+
+边界与停止：共享状态——新的任务级规则桶（随回合结束清理）、`pendingRequests`；契约——`tool_permission` 事件新增 `kind: 'task_scope'`（桌面本地 SSE，不进同步线协议）。停止在 `executor.js` 的既有判定（主 Agent 永不代批：任务级规则只在用户点卡片后产生）。
+
+回归（计划）：`permissions.taskScope.test.js`（任务级批准后同回合 `checkPermissionRule` 为 allow、另一回合为 ask、回合结束清理；拒绝不留规则；本对话作用域落到会话规则；超时 / 无审批面返回而不抛）；`internalMembers.test.js`（执行成员有受审批工具 → 启动前恰好一次任务级请求，批 / 拒 / 超时都继续运行成员，无受审批工具不请求）；`desktop-ui/features/chat/controller.test.js`（`task_scope` 事件入队并渲染工具清单与三个按钮，按钮 POST 的 `scope` 正确）。

@@ -13,7 +13,7 @@
 // decided by the executor inside the member exactly as for the lead.
 import { runSubAgent } from '../../../agents/subAgent.js';
 import { currentRequestContext, runWithRequestContext } from '../../../runtime/requestScope.js';
-import { narrowBudget } from '../../../runtime/runBudget.js';
+import { narrowBudget, extendBudget, remainingMs } from '../../../runtime/runBudget.js';
 import { internalHandoff, MAX_MEMBER_ROUNDS } from '../../../../shared/agent/internalRouting.js';
 
 export const READ_ONLY_JOBS = Object.freeze(['research', 'lookup', 'calculate']);
@@ -25,6 +25,40 @@ export const MEMBER_INPUT_SHARE = 120_000;
 export const LEAD_INPUT_RESERVE = 60_000;
 export const MIN_MEMBER_SHARE = 20_000;
 const LIMITED_STOPS = new Set(['ROUND_LIMIT', 'BUDGET_EXHAUSTED', 'CANCELLED', 'DEADLINE_EXCEEDED', 'ERROR']);
+// B1 (2026-11-04): a top-level turn grows by one member share per dispatched
+// member, the way an explicit team plan grows it (runBudget T8), so members no
+// longer eat the lead's own allowance. Bounded per turn; a nested pool (turn
+// inside a member or skill) never widens beyond its parent.
+export const ROUTING_EXTENSION_CAP = 4 * MEMBER_INPUT_SHARE;
+export const MEMBER_TOOL_CALLS = 40;
+export const MEMBER_DEADLINE_MS = 5 * 60_000;
+export const ROUTING_DEADLINE_CAP_MS = 20 * 60_000;
+// B2: a member reads fewer and shorter search results than the lead; its
+// handoff carries the facts, not the pages.
+export const MEMBER_SEARCH_RESULTS = 5;
+export const MEMBER_SEARCH_CONTENT_CHARS = 3000;
+
+export function extendForMember(budget, sseEmitter, job) {
+  if (!budget || budget.parent) return null;
+  const tokens = Math.max(0, Math.min(MEMBER_INPUT_SHARE, ROUTING_EXTENSION_CAP - (budget.routingExtension || 0)));
+  const deadline = Math.max(0, Math.min(MEMBER_DEADLINE_MS, ROUTING_DEADLINE_CAP_MS - (budget.routingDeadlineExtension || 0)));
+  if (!tokens && !deadline) return null;
+  const result = extendBudget(budget, {
+    ...(tokens ? { maxInputTokens: Math.max(0, budget.maxInputTokens - budget.used.inputTokens) + tokens, maxToolCalls: Math.max(0, budget.maxToolCalls - budget.used.toolCalls) + MEMBER_TOOL_CALLS } : {}),
+    ...(deadline ? { deadlineMs: remainingMs(budget) + deadline } : {}),
+  });
+  if (result.inputTokens) budget.routingExtension = (budget.routingExtension || 0) + tokens;
+  if (result.deadline) budget.routingDeadlineExtension = (budget.routingDeadlineExtension || 0) + deadline;
+  if (result.extended) sseEmitter?.('execution_event', { kind: 'pipeline', id: `routing:budget:${job.index}`, module: 'compute', name: job.label, status: 'completed',
+    output: `Turn budget extended for this member: +${tokens} input tokens, +${Math.round(deadline / 60000)} min (total +${budget.routingExtension || 0} tokens).`,
+    budget: { maxInputTokens: budget.maxInputTokens, deadlineAt: budget.deadlineAt, routingExtension: budget.routingExtension || 0 } });
+  return result;
+}
+
+export function memberConfig(config) {
+  const search = { ...(config?.operationalLimits?.search || {}), maxResults: MEMBER_SEARCH_RESULTS, contentMaxChars: MEMBER_SEARCH_CONTENT_CHARS };
+  return { ...config, operationalLimits: { ...(config?.operationalLimits || {}), search } };
+}
 
 export function memberShare(budget) {
   if (!budget) return { share: null, reason: null };
@@ -53,6 +87,7 @@ export async function runInternalMembers({ jobs = [], goal = '', background = ''
   const runOne = async index => {
     const job = jobs[index];
     pipeline(job, { status: 'running', input: job.task });
+    extendForMember(budget, sseEmitter, job);
     const { share, reason } = memberShare(budget);
     if (reason === 'LEAD_RESERVE') {
       const handoff = internalHandoff({ job, answer: 'Not started: the lead keeps its remaining budget for the answer. Continue with the evidence already gathered.', observations: [], limited: true });
@@ -63,7 +98,7 @@ export async function runInternalMembers({ jobs = [], goal = '', background = ''
     // Member events keep their own ids under the job prefix (like delegated
     // members) so a member's model:N stage never merges into the lead's.
     const emit = (type, event) => sseEmitter?.(type, type === 'execution_event' ? { ...event, ...(event?.id ? { id: `${job.id}:${event.id}` } : {}), actorName: job.label } : event);
-    const invoke = () => run({ task: job.task, roleSystem: job.system, background: memberBackground, allowedToolIds: job.tools, extraTools, config, nativeWebSearch: false, nativeImageGeneration: false,
+    const invoke = () => run({ task: job.task, roleSystem: job.system, background: memberBackground, allowedToolIds: job.tools, extraTools, config: memberConfig(config), nativeWebSearch: false, nativeImageGeneration: false, condenseEachRound: true,
       // runSubAgent caps a member's input tokens at maxTokens (32k by default,
       // sized for delegated members); an internal member gets its whole share.
       ...(replyFn ? { replyFn } : {}), maxIterations: MAX_MEMBER_ROUNDS, maxTokens: share || MEMBER_INPUT_SHARE, roleId: job.id, depth: 1, signal, sseEmitter: emit, chatId, workspacePath, chatSource, projectId, onProviderResponse });

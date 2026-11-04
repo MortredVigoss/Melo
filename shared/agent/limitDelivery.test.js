@@ -47,3 +47,23 @@ test('delivery and check expose no ordinary or hosted tools, and checker failure
  assert.equal(result.terminalReason,'LIMIT_DELIVERED');assert.match(result.reply,/Harbour Halloween Walk/);assert.equal(result.task.deliveryCheck,'unverified');
  assert.match(hostEvidenceReply('停止',observations,'zh'),/https:\/\/fixture.invalid\/events/);
 });
+test('delivery evidence gives verified reads the body budget, keeps the ledger and dedupes repeated URLs', async () => {
+  const { deliveryEvidence } = await import('./evidence.js');
+  const page = 'P'.repeat(5000), nav = 'N'.repeat(5000);
+  const rows = [
+    { id: 'nav', type: 'source', name: 'fetch_url', ok: true, executed: true, url: 'https://a.example/x', text: nav.slice(0, 900) },
+    { id: 'full', type: 'source', name: 'fetch_url', ok: true, executed: true, url: 'https://a.example/x', text: page },
+    { id: 'failed', type: 'tool', name: 'web_search', ok: false, executed: true, output: 'F'.repeat(3000) },
+    ...Array.from({ length: 40 }, (_, i) => ({ id: 'skip' + i, type: 'tool', name: 'fetch_url', ok: false, executed: false, output: 'S'.repeat(2000) })),
+    { id: 'other', type: 'source', name: 'fetch_url', ok: true, executed: true, url: 'https://b.example/', text: page },
+  ];
+  const out = deliveryEvidence(rows, 24000);
+  assert.deepEqual(out.map(r => r.id), rows.map(r => r.id), 'every observation keeps its place');
+  const by = Object.fromEntries(out.map(r => [r.id, r]));
+  assert.ok(by.full.text.length >= 3000 && by.other.text.length >= 3000, 'verified pages keep real bodies');
+  assert.ok(by.nav.text.length <= 160 && by.failed.text.length <= 160 && by.skip0.text.length <= 160, 'duplicates and failures keep short bodies');
+  assert.ok(out.reduce((n, r) => n + r.text.length, 0) <= 24000 + 2 * 4000, 'bounded');
+  assert.ok(by.full.truncated && !by.nav.ok === false);
+  const tiny = deliveryEvidence(Array.from({ length: 2000 }, (_, i) => ({ id: 'r' + i, type: 'tool', ok: false, executed: false, output: 'x'.repeat(100) })), 24000);
+  assert.ok(tiny.every(r => r.text.length <= 24), 'a huge failed ledger still fits');
+});

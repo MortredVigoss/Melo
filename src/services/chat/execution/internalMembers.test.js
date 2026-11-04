@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { runInternalMembers, memberShare, MEMBER_INPUT_SHARE, LEAD_INPUT_RESERVE, MIN_MEMBER_SHARE } from './internalMembers.js';
+import { runInternalMembers, memberShare, MEMBER_INPUT_SHARE, LEAD_INPUT_RESERVE, MIN_MEMBER_SHARE, ROUTING_EXTENSION_CAP } from './internalMembers.js';
 import { internalRouteCatalog, startInternalJob } from '../../../../shared/agent/internalRouting.js';
 import { currentRequestContext, runWithRequestContext } from '../../../runtime/requestScope.js';
-import { createRunBudget, recordUsage, reserveDelivery } from '../../../runtime/runBudget.js';
+import { createRunBudget, recordUsage, reserveDelivery, narrowBudget } from '../../../runtime/runBudget.js';
 import { runSubAgent as fixtureSubAgent } from '../../../testSupport/directAgentFixture.js';
 
 const goal = 'Find the venue forecast and the event list, then save a note';
@@ -52,7 +52,9 @@ test('a member gets its own budget share and the lead reserve stops new members;
   assert.notEqual(seen[0], budget, 'member runs on a child pool');
   assert.equal(seen.maxTokens, MEMBER_INPUT_SHARE, 'the sub-agent receives the whole share as its token cap');
   assert.deepEqual(sharedTurn[0].result.meta.effects.successful, ['fp-1']);
+  // Once the per-turn extension cap is spent (B1), the lead reserve is what stops new members.
   const nearlySpent = reserveDelivery(createRunBudget({ overrides: { maxInputTokens: 400000 } }));
+  nearlySpent.routingExtension = ROUTING_EXTENSION_CAP; nearlySpent.routingDeadlineExtension = 20 * 60000;
   recordUsage(nearlySpent, { inputTokens: 400000 - LEAD_INPUT_RESERVE - MIN_MEMBER_SHARE + 1 });
   let started = 0;
   const outcomes = await runWithRequestContext(Object.freeze({ budget: nearlySpent }), () => runInternalMembers({ jobs: [job('lookup', 'read', 2)], goal, run: async () => { started++; return { ok: true, output: 'x', meta: {} }; } }));
@@ -99,5 +101,23 @@ test('through the real sub-agent loop a member keeps its full share, not the 32k
   assert.match(String(requests[0].messages?.[0]?.content || ''), /Task:/);
   assert.equal(requests[0].nativeWebSearchEnabled, false, 'members never use provider-hosted search');
   assert.equal(requests[0].nativeImageGenerationEnabled, false);
-  assert.ok(events.every(event => String(event.id).startsWith('internal:1') || String(event.id).startsWith('job-1:')), JSON.stringify(events.map(e => e.id)));
+  assert.ok(events.every(event => String(event.id).startsWith('internal:1') || String(event.id).startsWith('job-1:') || String(event.id).startsWith('routing:budget:')), JSON.stringify(events.map(e => e.id)));
+});
+test('B1/B2: a top-level turn grows by one share per member up to the cap, nested pools never widen, and members search narrower', async () => {
+  const { ROUTING_EXTENSION_CAP, MEMBER_SEARCH_RESULTS, MEMBER_SEARCH_CONTENT_CHARS } = await import('./internalMembers.js');
+  const budget = reserveDelivery(createRunBudget({ overrides: { maxInputTokens: 400000, deadlineMs: 30 * 60000, maxToolCalls: 200 } }));
+  const configs = []; const events = [];
+  const run = async options => { configs.push(options.config); return { ok: true, output: 'ok', meta: { observations: [] } }; };
+  const jobs = Array.from({ length: 6 }, (_, i) => job('research', 'task ' + i, i + 1));
+  await runWithRequestContext(Object.freeze({ budget, config: { operationalLimits: { search: { maxResults: 8, contentMaxChars: 6000 } } } }), () =>
+    runInternalMembers({ jobs, goal, run, lanes: 1, config: { operationalLimits: { search: { maxResults: 8, contentMaxChars: 6000, timeoutMs: 9000 } } }, sseEmitter: (type, event) => { if (type === 'execution_event') events.push(event); } }));
+  assert.equal(budget.maxInputTokens, 400000 + ROUTING_EXTENSION_CAP, 'extension capped at four shares');
+  assert.equal(budget.routingExtension, ROUTING_EXTENSION_CAP);
+  assert.ok(budget.maxToolCalls > 200 && budget.deadlineAt > budget.startedAt + 30 * 60000, 'tool calls and deadline grew');
+  assert.equal(events.filter(e => /^routing:budget:/.test(e.id)).length, 4, 'one budget event per extension');
+  assert.deepEqual(configs[0].operationalLimits.search, { maxResults: MEMBER_SEARCH_RESULTS, contentMaxChars: MEMBER_SEARCH_CONTENT_CHARS, timeoutMs: 9000 });
+  const child = narrowBudget(budget, { maxInputTokens: 200000 });
+  const before = child.maxInputTokens;
+  await runWithRequestContext(Object.freeze({ budget: child }), () => runInternalMembers({ jobs: [job('lookup', 'nested', 9)], goal, run }));
+  assert.equal(child.maxInputTokens, before, 'a nested pool is never extended');
 });

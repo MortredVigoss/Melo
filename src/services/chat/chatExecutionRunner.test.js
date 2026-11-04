@@ -1132,6 +1132,7 @@ test('ordinary persona routes research then calculation, rejects a cross-role ca
           checks++;
           if(checks===1)return JSON.stringify({decision:'complete',reasonType:'fulfilled',requirements:[{text:'forecast',kind:'external_fact',status:'met',evidenceIds:['forecast']}]});
           if(checks===2)return JSON.stringify({decision:'complete',reasonType:'fulfilled',requirements:[{text:'conversion',kind:'computation',status:'met',evidenceIds:['calc']}]});
+          assert.match(messages,/job-1:report/,'the lead check sees the member report as evidence');
           return JSON.stringify({decision:'complete',reasonType:'fulfilled',requirements:[{text:'forecast and conversion',kind:'external_fact',status:'met',evidenceIds:['job-1:forecast','job-2:calc']}]});
         }
         if(options.systemPrompt.includes('You are the internal research specialist')) {

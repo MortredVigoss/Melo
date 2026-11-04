@@ -393,3 +393,18 @@ test('internal routing: roleSystem is a trusted system section, instructions sta
   assert.equal(hosted.callLog[0].nativeWebSearchEnabled, false);
   assert.equal(hosted.callLog[0].nativeImageGenerationEnabled, false);
 });
+test('condenseEachRound keeps only the latest round of tool output in a member context', async () => {
+  const reply = makeFakeReply();
+  const big = 'B'.repeat(4000);
+  const recorder = makeRecordingTool('big_read', { isConcurrencySafe: true });
+  recorder.tool.run = async () => ({ ok: true, output: big });
+  registerTool(recorder.tool);
+  try {
+    reply.queue.push('<tool_call>{"id":"r1","name":"big_read","arguments":{"q":"one"}}</tool_call>', '<tool_call>{"id":"r2","name":"big_read","arguments":{"q":"two"}}</tool_call>', 'done',
+      "{\"decision\": \"complete\", \"reasonType\": \"self_contained\", \"requirements\": [{\"text\": \"x\", \"status\": \"met\", \"evidenceIds\": []}]}");
+    await runSubAgent({ task: 'read twice', allowedToolIds: ['big_read'], config: validConfig(), replyFn: reply, condenseEachRound: true });
+    const third = JSON.stringify(reply.callLog[2].messages);
+    assert.ok(third.includes('condensed to fit the context budget'), 'the first round was condensed before the third request');
+    assert.ok(third.split('B'.repeat(1000)).length - 1 === 4 || third.includes('B'.repeat(4000)), 'the latest round stays intact');
+  } finally { unregisterTool('big_read'); }
+});

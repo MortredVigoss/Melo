@@ -37,7 +37,7 @@ import { getAllTools, getTool } from '../tools/registryCore.js';
 import { executeToolCalls } from '../tools/executor.js';
 import { parseModelResponse } from '../tools/parser.js';
 import { buildToolsSystemPrompt } from '../tools/systemPrompt.js';
-import { createFunctionCallingSession } from '../tools/functionCalling.js';
+import { createFunctionCallingSession, compactToolChain } from '../tools/functionCalling.js';
 import { fitRequestContext, resolveContextBudget } from '../services/chat/contextBudget.js';
 import { requestEnvironment } from '../runtime/requestScope.js';
 
@@ -126,6 +126,9 @@ async function runSubAgentLoop({
   // bounded, verifiable observations.
   nativeWebSearch = true,
   nativeImageGeneration = true,
+  // Condense every earlier round's tool outputs after each round so a member's
+  // context stays near the latest round instead of carrying every page read.
+  condenseEachRound = false,
   background = '',
   config,
   workspacePath,
@@ -391,6 +394,7 @@ async function runSubAgentLoop({
     // even after a prose reply, so the parent can see the attempt.
     deniedTools += allResults.filter(r=>r.result.ok === false && ['TOOL_NOT_WHITELISTED','CAPABILITY_DENIED','PERMISSION_DENIED','DELEGATION_DENIED'].includes(r.result.error)).length;
     loopMessages = functionSession.append(loopMessages, turn, allResults);
+    if (condenseEachRound) { const condensed = compactToolChain(loopMessages, { keepRecentResults: 1 }); if (condensed.changed) loopMessages = condensed.messages; }
     traceEvent('tool.feedback.appended', { callIds: allResults.map(pair => pair.call.id) }, loopMessages.slice(-Math.min(80, allResults.length * 2 + 1)));
     if (coreTurn.results(allResults) !== 'running') break;
   }

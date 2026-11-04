@@ -412,7 +412,14 @@ export function createInvokeModelNode(turn) {
           config: delegatedModelConfig, extraTools: [...(graphState.skillTools || []), ...(graphState.mcpTools || [])], replyFn: rawReplyProvider,
           signal, sseEmitter, chatId: chat.id, workspacePath: workspace?.rootPath, chatSource: chat.source || 'desktop', projectId: chat.projectId,
           onProviderResponse: receipt => { if (!signal?.aborted) modelResponses.push(receipt); } }) : [];
-        for (const outcome of outcomes) coreTurn.observations.push(...(outcome.result?.meta?.observations || []).map(row => ({ ...row, id: `${outcome.job.id}:${row.id}` })));
+        for (const outcome of outcomes) {
+          coreTurn.observations.push(...(outcome.result?.meta?.observations || []).map(row => ({ ...row, id: `${outcome.job.id}:${row.id}` })));
+          // The member's own report is evidence too: a limit delivery reads observations, not the chat, and used to
+          // lose everything a member had already verified (audit P2-10).
+          const handoff = JSON.parse(outcome.handoff);
+          if (outcome.started && handoff.memberReport) coreTurn.observations.push({ id: `${outcome.job.id}:report`, type: 'handoff', name: outcome.job.label, ok: true,
+            executed: true, reading: handoff.status, text: `[${handoff.status}] ${handoff.memberReport}` });
+        }
         coreTurn.update('feedback', { internalRouting: true,
           successfulEffects: outcomes.flatMap(outcome => outcome.result?.meta?.effects?.successful || []),
           uncertainEffects: outcomes.flatMap(outcome => outcome.result?.meta?.effects?.uncertain || []) });
