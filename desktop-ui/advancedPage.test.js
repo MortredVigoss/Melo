@@ -50,8 +50,9 @@ test('renderAdvancedPage shows system status and collapsed technical controls', 
   assert.match(html, /本机工作空间/);
   // Authored Chinese keys (translations.js carries the other languages).
   assert.match(html, /内置 MCP 服务/);
-  assert.match(html, /外部 MCP 连接器/);
-  assert.match(html, /CLI \/ stdio MCP 服务/);
+  assert.match(html, /读取工具默认对所有 Agent 开放/);
+  assert.match(html, /自定义 HTTP 连接器/);
+  assert.match(html, /MCP 服务（stdio \/ HTTP）/);
   assert.match(html, /插件/);
   assert.match(html, /后台命令任务/);
 });
@@ -97,7 +98,7 @@ test('all-empty state renders one empty-state per subsection (5 total: presets +
   assert.equal(matches.length, 5);
   assert.match(html, /No built-in MCP server presets registered/);
   assert.match(html, /尚未添加外部连接器/);
-  assert.match(html, /No active CLI \/ stdio MCP servers/);
+  assert.match(html, /No active MCP servers/);
   assert.match(html, /No plugins registered/);
   assert.match(html, /No background runs/);
 });

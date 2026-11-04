@@ -20,10 +20,17 @@
  * Tool IDs registered from MCP follow the format: `mcp:<serverName>:<toolName>`
  */
 
+import { readPublicPost } from './publicPost.js';
+import { socialSearch } from './socialSearch.js';
+import { socialLogin } from './socialLogin.js';
+import { socialSpec } from './socialPresets.js';
+import { startSocialHost } from './socialHost.js';
+import { socialSource } from './socialResult.js';
+import { readFile } from 'node:fs/promises';
 import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { McpStdioClient, mcpResultToToolResult } from './client.js';
-import { registerMcpTool, unregisterMcpServer, getMcpTool, mcpFunctionName } from '../tools/mcpRegistry.js';
+import { registerMcpTool, unregisterMcpServer, getMcpTool, getAllMcpTools, mcpFunctionName } from '../tools/mcpRegistry.js';
 import { getMeloHome } from '../config.js';
 import { formatMcpToolId, isValidMcpServerId } from './toolId.js';
 import { buildEffectiveMcpServers } from './presets.js';
@@ -81,9 +88,19 @@ export function mcpServerWorkspaceDir(serverName) {
 
 // Active clients: serverName → McpStdioClient
 const _clients = new Map();
+const _pending = new Map();
+const _states = new Map();
+export function platformLogin(id, action) {
+  const client = socialSpec(id) && _clients.get(id);
+  if(!client) throw new Error('This platform service is not connected.');
+  const cookiePath=join(client.workspace,'cookies.json');
+  return socialLogin(client,id,action,async()=>{
+    try { return /(?:^|[;\s"'])sessionid(?:_ss)?=[^;\s"']+/i.test(await readFile(cookiePath,'utf8')); }
+    catch {return false;}
+  });
+}
+export function mcpConnectionStates() { return Object.fromEntries([..._states].map(([id,status])=>[id,{status,tools:getAllMcpTools().filter(t=>t.id.startsWith('mcp:'+id+':')).map(t=>t.functionName)}])); }
 
-// Track which tool IDs we registered (so we can clean them up on reload)
-const _registeredMcpToolIds = new Set();
 
 // ─── Connect a single server ──────────────────────────────────────────────────
 
@@ -116,7 +133,7 @@ export async function connectMcpServer(serverName, serverConfig) {
     // child process keeps going and its mcp:<name>:* tools stay
     // registered, so any agent already on the whitelist can still
     // call them. Disconnect-then-skip closes that gap.
-    if (_clients.has(serverName)) {
+    if (_pending.has(serverName)) {
       disconnectMcpServer(serverName);
     }
     return { connected: false, toolCount: 0, error: 'disabled' };
@@ -130,14 +147,14 @@ export async function connectMcpServer(serverName, serverConfig) {
     // version-lock contract for automatic startup. Same disconnect-
     // existing-then-skip dance as the `disabled` branch above so an
     // earlier-running version doesn't linger after the contract changes.
-    if (_clients.has(serverName)) {
+    if (_pending.has(serverName)) {
       disconnectMcpServer(serverName);
     }
     return { connected: false, toolCount: 0, error: 'unpinned' };
   }
 
   // Disconnect existing client if re-connecting
-  if (_clients.has(serverName)) {
+  if (_pending.has(serverName)) {
     disconnectMcpServer(serverName);
   }
 
@@ -160,50 +177,52 @@ export async function connectMcpServer(serverName, serverConfig) {
     }
   }
 
-  const client = new McpStdioClient({
-    command: serverConfig.command,
-    args: serverConfig.args || [],
-    env: serverConfig.env || {},
-    name: serverName,
-    cwd,
-  });
-
-  try {
-    await client.connect();
-    _clients.set(serverName, client);
-
-    const mcpTools = await client.listTools();
-    let registered = 0;
-
-    for (const mcpTool of mcpTools) {
-      // formatMcpToolId enforces the server-id contract so a
-      // future buggy caller can't slip an ambiguous prefix in
-      // here.  serverName has already passed isValidMcpServerId
-      // above; this is just the canonical writer call.
-      const toolId = formatMcpToolId(serverName, mcpTool.name);
-      if (getMcpTool(toolId)) continue; // already registered
-
-      const tool = buildMcpTool(serverName, mcpTool, client);
+  const managed = socialSpec(serverName);
+  const owner = new AbortController();
+  _pending.get(serverName)?.abort();
+  _pending.set(serverName,owner);
+  _states.set(serverName,'connecting');
+  let client, host, revision=0;
+  const current = () => _pending.get(serverName) === owner && !owner.signal.aborted;
+  const lost = () => { if (current()) { disconnectMcpServer(serverName); _states.set(serverName,'disconnected'); } };
+  const refresh = async () => {
+    const rev = ++revision;
+    const items = await client.listTools();
+    if (!current() || rev !== revision) return 0;
+    unregisterMcpServer(serverName);
+    let count=0;
+    for (const item of items) {
+      if (managed && !managed.tools.includes(item.name)) continue;
       try {
-        // F3 (design 2026-10-17): MCP tools live in their own registry;
-        // the chat runner merges them per agent at prepare time, so the
-        // global registry never exposes them to an unauthorised agent.
-        registerMcpTool(tool);
-        _registeredMcpToolIds.add(toolId);
-        registered++;
-      } catch (error) {
-        // Duplicate or invalid — skip, but say so (bug audit T14: a swallowed
-        // registration error made the tool disappear without a trace).
-        console.warn(`[mcp] ${serverName}: tool "${mcpTool.name}" not registered: ${error?.message || error}`);
-      }
+        const tool=buildMcpTool(serverName,item,client,!!managed);
+        const run=tool.run;
+        tool.run=(args,ctx)=> current() && getMcpTool(tool.id)?.run === tool.run
+          ? run(args,ctx) : {ok:false,error:'MCP_TOOL_UNAVAILABLE',output:'This tool is no longer available.'};
+        registerMcpTool(tool); count++;
+      } catch(error) { console.warn(`[mcp] ${serverName}: tool not registered: ${error.message}`); }
     }
-
-    return { connected: true, toolCount: registered };
-  } catch (err) {
-    // Clean up failed client
-    try { client.disconnect(); } catch {}
-    _clients.delete(serverName);
-    return { connected: false, toolCount: 0, error: err.message };
+    return count;
+  };
+  try {
+    if (managed) {
+      if (serverConfig.managedSocial !== serverName || serverConfig.command || serverConfig.url) throw new Error('Reserved social reader id.');
+      host=await startSocialHost(serverName,cwd,{signal:owner.signal,onExit:lost});
+    }
+    owner.signal.throwIfAborted();
+    client=new McpStdioClient({...serverConfig,...host,managed:!!managed,cwd,name:serverName,onClose:lost,
+      onToolsChanged:()=>refresh().catch(lost)});
+    client.workspace=cwd;
+    owner.signal.addEventListener('abort',()=>{ void client.disconnect().catch(()=>{}); },{once:true});
+    await client.connect();
+    const registered=await refresh();
+    owner.signal.throwIfAborted();
+    _clients.set(serverName,client);
+    _states.set(serverName,'connected');
+    return {connected:true,toolCount:registered};
+  } catch(error) {
+    if(current()) { disconnectMcpServer(serverName); _states.set(serverName,'unavailable'); }
+    host?.stop();
+    return {connected:false,toolCount:0,error:error.message};
   }
 }
 
@@ -214,19 +233,15 @@ export async function connectMcpServer(serverName, serverConfig) {
  * @param {string} serverName
  */
 export function disconnectMcpServer(serverName) {
-  const client = _clients.get(serverName);
-  if (client) {
-    try { client.disconnect(); } catch {}
-    _clients.delete(serverName);
-  }
+  const owner=_pending.get(serverName);
+  _pending.delete(serverName);
+  _clients.delete(serverName);
+  _states.set(serverName,'disconnected');
+  owner?.abort();
 
   // Unregister all tools belonging to this server (mcpRegistry only —
   // they were never in the global registry).
-  const prefix = `mcp:${serverName}:`;
   try { unregisterMcpServer(serverName); } catch {}
-  for (const toolId of [..._registeredMcpToolIds]) {
-    if (toolId.startsWith(prefix)) _registeredMcpToolIds.delete(toolId);
-  }
 }
 
 // ─── Bootstrap all servers from config ───────────────────────────────────────
@@ -328,7 +343,7 @@ export async function bootstrapMcpServers(mcpServers = {}, flags = {}) {
   // a list of {name, reason} so we can populate `results` uniformly.
   const stale = reconcileMcpLifecycle({
     effective,
-    activeNames: [..._clients.keys()],
+    activeNames: [..._pending.keys()],
     disconnect: disconnectMcpServer,
   });
   for (const { name, reason } of stale) {
@@ -351,7 +366,7 @@ export async function bootstrapMcpServers(mcpServers = {}, flags = {}) {
  * Disconnect all active MCP servers.
  */
 export function shutdownMcpServers() {
-  for (const name of [..._clients.keys()]) {
+  for (const name of [..._pending.keys()]) {
     disconnectMcpServer(name);
   }
 }
@@ -370,7 +385,7 @@ export function getActiveMcpServers() {
 // (requiresPermission, category) without spawning an MCP server.  The
 // `client` parameter is only used inside the `run` callback, so callers
 // in tests can pass a stub.
-export function buildMcpTool(serverName, mcpTool, client) {
+export function buildMcpTool(serverName, mcpTool, client, managed = false) {
   // Use the canonical writer so a malformed serverName can't reach
   // toolRegistry as `mcp:<bad>:<tool>` and confuse the auth parser
   // later.  Throws if serverName violates [A-Za-z0-9_-]+; production
@@ -386,17 +401,43 @@ export function buildMcpTool(serverName, mcpTool, client) {
     // Readable wire name for the model (F3); the registry re-derives it on
     // registration, this is only so unregistered fixtures carry it too.
     functionName: mcpFunctionName(serverName, mcpTool?.name),
-    description: mcpTool.description || `MCP tool from ${serverName}`,
+    description: (mcpTool.description || `MCP tool from ${serverName}`) + (managed && mcpTool.name.startsWith('search_') ? ' Search results are candidates; open get_feed_detail or get_video_detail before citing the content.' : ''),
     category: 'mcp',
-    readOnly: mcpTool.annotations?.readOnlyHint === true,
+    readOnly: managed || mcpTool.annotations?.readOnlyHint === true,
+    ...(managed ? { capability:'network', searchDiscovery:mcpTool.name.startsWith('search_') } : {}),
     parametersSchema,
     // MCP tools require permission unless they're clearly read-only
-    requiresPermission: true,
+    requiresPermission: !managed,
     isConcurrencySafe: false,
 
     async run(args, context = {}) {
-      const raw = await client.callTool(mcpTool.name, args);
-      return mcpResultToToolResult(raw);
+      if(managed && serverName==='melo-douyin' && mcpTool.name!=='search_videos' &&
+        !/^\d{8,25}$/.test(args?.video || '') && !/^https?:\/\/(?:[a-z0-9-]+\.)*(?:douyin|iesdouyin)\.com\//i.test(args?.video || ''))
+        return {ok:false,error:'INVALID_PLATFORM_URL',output:'Use a Douyin work ID or a Douyin URL.'};
+      const started=Date.now();
+      let publicUrl;
+      if(managed && mcpTool.name==='get_video_detail' && args?.video) publicUrl=/^\d+$/.test(args.video)?'https://www.douyin.com/video/'+args.video:args.video;
+      if(managed && mcpTool.name==='get_feed_detail' && /^[a-f0-9]{24}$/i.test(args?.feed_id || '') && !args?.load_all_comments)
+        publicUrl='https://www.xiaohongshu.com/explore/'+args.feed_id+(args.xsec_token?'?xsec_token='+encodeURIComponent(args.xsec_token):'');
+      if(publicUrl){
+        const item=await readPublicPost(publicUrl, {signal:context.signal});
+        if(item) return {ok:true,output:JSON.stringify({...item,comments:'not_verified'}),completionSources:[item],evidenceTrail:[{tier:'public-page',outcome:'ok',method:serverName,reason:item.kind,latencyMs:Date.now()-started}]};
+      }
+      // Explicit XHS comment expansion bypasses the caption-only public shortcut.
+      let raw;
+      try { raw=await client.callTool(mcpTool.name,args,context.signal); }
+      catch(error){context.signal?.throwIfAborted(); if(!managed)throw error;
+        raw={isError:true,content:[{type:'text',text:'Platform service unavailable. Use an authorized web search for public permalinks and read the actual page before suggesting sign-in.'}]};}
+      const list=managed && socialSearch(mcpTool.name,raw);
+      if(list) return {...list,evidenceTrail:[{tier:'platform-search',outcome:list.ok?'ok':'fail',method:serverName,reason:list.ok?'snippet':'no-verifiable-items',latencyMs:Date.now()-started}]};
+      const result=mcpResultToToolResult(raw);
+      const source=managed && socialSource(mcpTool.name,raw);
+      if(source && result.ok) result.completionSources.push({...source,text:source.text.slice(0,16000),reading:source.text.length>16000?'partial':source.reading});
+      if(managed) {
+        if(!source && result.ok) return {ok:false,error:'PLATFORM_BODY_UNAVAILABLE',output:'No verifiable detail body was returned. Check sign-in or use another permitted source.'};
+        result.evidenceTrail=[{tier:'platform-detail',outcome:result.ok?'ok':'fail',method:serverName,reason:source?.reading || 'unavailable',latencyMs:Date.now()-started}];
+      }
+      return result;
     },
   };
 }

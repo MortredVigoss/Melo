@@ -3,6 +3,7 @@
 // 2026-10-22) so lower layers can read presets without reaching the tool
 // registry that manager.js imports; manager.js re-exports the public API.
 
+import { socialPresets } from './socialPresets.js';
 import { isValidMcpServerId } from './toolId.js';
 
 // ─── First-class browser MCPs ─────────────────────────────────────────────────
@@ -191,6 +192,7 @@ export function getBuiltinMcpPresets() {
   for (const [id, preset] of Object.entries(BUILTIN_MCP_PRESETS)) {
     out.push({ id, ...preset });
   }
+  for (const [id,s] of Object.entries(socialPresets)) out.push({id,flag:s.flag,description:s.description,transport:'managed-http',version:s.tag});
   return out;
 }
 
@@ -225,6 +227,9 @@ export function buildEffectiveMcpServers(mcpServers = {}, flags = {}) {
     }
   }
 
+  for (const [id,s] of Object.entries(socialPresets)) {
+    if (flags[s.flag] && !Object.hasOwn(effective,id)) effective[id]={managedSocial:id};
+  }
   return effective;
 }
 

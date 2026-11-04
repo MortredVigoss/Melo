@@ -182,7 +182,7 @@ async function fetchHtmlBody(
   }
 }
 
-const SHORT_LINK_HOSTS = new Set(['xhslink.com', 'v.douyin.com']);
+const SHORT_LINK_HOSTS = new Set(['xhslink.com', 'xhslink.cn', 'v.douyin.com']);
 
 /**
  * Canonical list of social-platform host suffixes the early-route
@@ -195,7 +195,7 @@ const SHORT_LINK_HOSTS = new Set(['xhslink.com', 'v.douyin.com']);
  */
 export const SOCIAL_HOST_SUFFIXES = Object.freeze([
   'douyin.com', 'v.douyin.com', 'iesdouyin.com',
-  'xiaohongshu.com', 'xhslink.com',
+  'xiaohongshu.com', 'xhslink.com', 'xhslink.cn', 'rednote.com',
 ]);
 
 export function hostnameOf(url) {

@@ -51,7 +51,9 @@ import { stageChatDeletion, finishChatDeletions } from './services/chat/chatDele
 import { purgeStaleSoftDeletes, createChat, deleteChat, getDesktopBootstrap, prepareDesktopLaunchState, processTelegramPollingCycle, processDiscordPollingCycle, streamSearchFileGroups, updateChat, updateModelConfig, initMcpServers } from './desktopStore.js';
 import { resolvePermission, getPendingPermissions, getSessionPermissions, clearSessionPermissions } from './tools/permissions.js';
 import { resolveFileSafety } from './safety/fileSafetyGate.js';
-import { buildEffectiveMcpServers, connectMcpServer, disconnectMcpServer, getActiveMcpServers, shutdownMcpServers } from './mcp/manager.js';
+import { httpEndpoint } from './mcp/client.js';
+import { isValidMcpServerId } from './mcp/toolId.js';
+import { platformLogin, mcpConnectionStates, getBuiltinMcpPresets, buildEffectiveMcpServers, connectMcpServer, disconnectMcpServer, getActiveMcpServers, shutdownMcpServers } from './mcp/manager.js';
 import { backgroundRunner } from './tasks/backgroundRunner.js';
 import { startApprovedBackgroundTask } from './tasks/approvedBackgroundTask.js';
 import { getReminderScheduler } from './reminders/scheduler.js';
@@ -729,21 +731,34 @@ await finishChatDeletions(runtimePaths.home);
       return;
     } },
   { method: 'GET', paths: ["/api/mcp/servers"], auth: 'local-read', handler: async ({request,response,url,requireLocalOrigin}) => {
-      sendJson(response, 200, { servers: getActiveMcpServers() });
+      sendJson(response, 200, { servers: getActiveMcpServers(), states:mcpConnectionStates() });
       return;
+    } },
+  { method: 'POST', paths: ["/api/mcp/platform-login"], auth: 'local-write', handler: async ({request,response}) => {
+      const {name,action}=await readJsonBody(request);
+      try { sendJson(response,200,await platformLogin(name,action)); } catch { sendJson(response,409,{error:'Platform login unavailable. Reconnect the service and try again.'}); }
+    } },
+  { method: 'POST', paths: ["/api/mcp/http-server"], auth: 'local-write', handler: async ({request,response}) => {
+      const {name,url,bearer}=await readJsonBody(request);
+      if(!isValidMcpServerId(name) || ['__proto__','prototype','constructor'].includes(name) || getBuiltinMcpPresets().some(p=>p.id===name)) {sendJson(response,400,{error:'Choose a new MCP server ID.'});return;}
+      let endpoint;
+      try { endpoint=httpEndpoint(url); if(endpoint.search) throw Error(); } catch {sendJson(response,400,{error:'Use HTTPS or loopback HTTP. Put credentials in the token field.'});return;}
+      if(bearer!=null && (typeof bearer!=='string'||/[\r\n]/.test(bearer)||bearer.length>8192)) {sendJson(response,400,{error:'Invalid token.'});return;}
+      const entry={url:endpoint.href,...(bearer?{headers:{Authorization:'Bearer '+bearer}}:{})};
+      const {loadConfig,saveConfig,withConfigLock}=await import('./config.js');
+      const saved=await withConfigLock(async()=>{const c=await loadConfig();if(Object.hasOwn(c.mcpServers||{},name)) return false;await saveConfig({...c,mcpServers:{...c.mcpServers,[name]:entry}});return true;});
+      if(!saved){sendJson(response,409,{error:'This MCP server ID is already in use.'});return;}
+      const result=await connectMcpServer(name,entry);
+      sendJson(response,200,{saved:true,connected:result.connected,toolCount:result.toolCount});
     } },
   { method: 'POST', paths: ["/api/mcp/connect"], auth: 'local-write', handler: async ({request,response,url,requireLocalOrigin}) => {
       const body = await readJsonBody(request);
       const {name}=body;
       const config=await loadConfig();
       const saved=buildEffectiveMcpServers(config.mcpServers,config)[name];
-      if(!body.command && (!saved || saved.disabled)) {sendJson(response,400,{error:'MCP server is not enabled in saved settings.'});return;}
-      const {command,args,env}=body.command?body:saved;
-      if (!name || !command) {
-        sendJson(response, 400, { ok: false, error: 'name and command are required.' });
-        return;
-      }
-      const result = await connectMcpServer(name, { command, args: args || [], env: env || {} });
+      const requested=body.url ? {url:body.url} : body.command ? {command:body.command,args:body.args,env:body.env} : saved;
+      if(!isValidMcpServerId(name) || !requested || requested.disabled || requested.unpinned) {sendJson(response,400,{error:'MCP server is not enabled or has no valid configuration.'});return;}
+      const result = await connectMcpServer(name, requested);
       sendJson(response, result.connected ? 200 : 500, { ok: result.connected, ...result });
       return;
     } },
@@ -760,7 +775,7 @@ await finishChatDeletions(runtimePaths.home);
     } },
   { method: 'POST', paths: ["/api/mcp/reload"], auth: 'local-write', handler: async ({request,response,url,requireLocalOrigin}) => {
       await initMcpServers();
-      sendJson(response, 200, { ok: true, servers: getActiveMcpServers() });
+      sendJson(response, 200, { ok: true, servers: getActiveMcpServers(), states:mcpConnectionStates() });
       return;
     } },
   { method: 'POST', paths: ["/api/mcp/preset-toggle"], auth: 'local-write', handler: async ({request,response,url,requireLocalOrigin}) => {
@@ -784,6 +799,7 @@ await finishChatDeletions(runtimePaths.home);
       // so a stray POST can't enable an arbitrary boolean elsewhere in
       // config.json.
       const ALLOWED_MCP_FLAGS = new Set([
+        'enableXiaohongshuMcp','enableDouyinMcp',
         'enablePlaywrightMcp',
         'enableBrowserlessMcp',
         'enableAntvChartMcp',

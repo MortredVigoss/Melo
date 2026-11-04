@@ -1,6 +1,7 @@
 import {normalizeHandoff} from '../agents/handoff.js';
 import {migrateLegacyResults} from '../domain/artifact/artifactService.js';
 import { recommendedCapabilities } from '../domain/agent/capabilities.js';
+import { addSocialReads } from '../mcp/socialPresets.js';
 import { usableMcpServerIds } from '../mcp/presets.js';
 import { DEFAULT_CONFIG } from '../config.js';
 import { hydrateAgentRecords, hydrateProjectAgentRecords } from '../domain/agent/agentState.js';
@@ -535,6 +536,7 @@ export function createDefaultState() {
         'local-command',
       ],
       connectorPresetVersion: 2,
+      socialReaderVersion: 1,
       skillPresetVersion: 1,
       promptHistory: [],
       sortProjectsBy: 'activity',
@@ -621,6 +623,13 @@ export function hydrateState(parsed = {}) {
     ? persistedSelectedProjectId
     : null;
 
+  const overrides=normalizeProjectAgentOverrides(hydrateProjectAgentRecords(parsed),hydrateAgentRecords(parsed));
+  if(Number(parsed.settings?.socialReaderVersion || 0)<1) {
+    for(const agents of Object.values(overrides)) for(const profile of Object.values(agents)) {
+      if(profile.capabilities) profile.capabilities=addSocialReads(profile).capabilities;
+    }
+  }
+
   return {
     ...defaults,
     ...runtimeFields,
@@ -631,6 +640,7 @@ export function hydrateState(parsed = {}) {
       enabledConnectorIds,
       connectorPresetVersion: defaults.settings.connectorPresetVersion,
       enabledSkillIds,
+      socialReaderVersion: 1,
       skillPresetVersion: defaults.settings.skillPresetVersion,
       promptHistory: normalizePromptHistory(parsed?.settings?.promptHistory),
       selectedProjectId,
@@ -645,11 +655,9 @@ export function hydrateState(parsed = {}) {
       ? parsed.externalConnectors.map(normalizeExternalConnector)
       : defaults.externalConnectors,
     externalToolRuns: normalizeExternalToolRuns(parsed.externalToolRuns),
-    agentProfiles: Object.keys(parsed).length===0 ? defaults.agentProfiles : normalizeAgentProfiles(hydrateAgentRecords(parsed)),
-    projectAgentOverrides: normalizeProjectAgentOverrides(
-      hydrateProjectAgentRecords(parsed),
-      hydrateAgentRecords(parsed),
-    ),
+    agentProfiles: Object.keys(parsed).length===0 ? defaults.agentProfiles : Object.fromEntries(Object.entries(normalizeAgentProfiles(hydrateAgentRecords(parsed))).map(([id,profile])=>[id,
+      Number(parsed.settings?.socialReaderVersion || 0)<1 ? addSocialReads(profile) : profile])),
+    projectAgentOverrides: overrides,
     tasks: normalizeTasks(parsed.tasks),
     mobileTaskSync: parsed.mobileTaskSync || null,
     mobileWorkspaceSync: parsed.mobileWorkspaceSync || null,

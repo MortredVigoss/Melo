@@ -109,17 +109,18 @@ async function readSnapshot({ persistRepair = false, maintenance = false, previo
     // Legacy manifests store messages in checkpoints. Classify generated
     // snippets only after their source replies have actually been hydrated.
     if(Array.isArray(parsed.artifacts))state.artifacts=migrateLegacyResults(parsed.artifacts,state.chats);
+    const socialReadersMigrated = Number(parsed.settings?.socialReaderVersion || 0) < 1;
     const resultsMigrated=Array.isArray(parsed.artifacts)&&parsed.artifacts.some((a,i)=>a.kind!==state.artifacts[i]?.kind);
     await measureStage('state.skills.scan', () => mergeDiskSkillsIntoState(state));
 
-    if ((repaired || markdownImported || threadRepaired || resultsMigrated) && persistRepair) {
+    if ((repaired || markdownImported || threadRepaired || resultsMigrated || socialReadersMigrated) && persistRepair) {
       // Pass the entire captured ctx so the repair save also writes
       // state.json + thread checkpoints to the home we read from,
       // regardless of any env flip during this load chain.
       await persistStateAtomically(state, { ctx });
     }
 
-    state[snapshotSource] ||= { home, fingerprint: fingerprint(raw), requiresRepair: repaired || markdownImported || threadRepaired || resultsMigrated, committedRuns: structuredClone(state.chatRuns || []) };
+    state[snapshotSource] ||= { home, fingerprint: fingerprint(raw), requiresRepair: repaired || markdownImported || threadRepaired || resultsMigrated || socialReadersMigrated, committedRuns: structuredClone(state.chatRuns || []) };
     return state;
   } catch (error) {
     if (!manifestFound && error && typeof error === 'object' && error.code === 'ENOENT') {

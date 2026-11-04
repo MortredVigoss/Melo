@@ -257,7 +257,7 @@ function renderConnectorDetails(selected) {
         <div class="header-row">
           <div>
             <h2 class="pane-title">${escapeHtml(selected.name)}</h2>
-            <p class="page-kicker">外部 MCP 连接器已移至 自定义 → 高级。</p>
+            <p class="page-kicker">自定义 HTTP 连接器已移至 自定义 → 高级。</p>
           </div>
           <span class="chip is-accent">实验性</span>
         </div>

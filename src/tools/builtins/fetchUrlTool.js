@@ -1,3 +1,4 @@
+import {readPublicPost,isPublicPostHost} from '../../mcp/publicPost.js';
 import { captureBehavior } from '../../runtime/runtimeBehavior.js';
 import { searchLimits, scopedSearchRun } from '../../services/search/searchLimits.js';
 /**
@@ -133,9 +134,9 @@ async function fetchDirect(url, signal, cookieStr = '') {
 
     const contentType = res.headers.get('content-type') || '';
     if (!contentType.includes('text/html') && !contentType.includes('application/xhtml')) {
-      // Non-HTML: return raw text up to limit
+      // Apply the output window once, after extraction, so later pages remain readable.
       const text = await res.text();
-      return text.trim().slice(0, searchLimits().fetchMaxChars);
+      return text.trim();
     }
 
     const html = await res.text();
@@ -155,6 +156,15 @@ async function fetchDirect(url, signal, cookieStr = '') {
 
 // ─── Tool definition ──────────────────────────────────────────────────────────
 
+function pageWindow(content,offset,limit) {
+  const start=Number.isSafeInteger(offset)&&offset>=0?offset:0;
+  const end=Math.min(content.length,start+limit);
+  const hasMore=end<content.length;
+  const nextOffset=hasMore && end<=1000000 ? end : null;
+  const truncated=start>0||hasMore;
+  return {body:content.slice(start,end),nextOffset,truncated,suffix:nextOffset!==null?`\n\n[Content truncated at ${end} characters; continue with offset=${end}.]`:hasMore?'\n[Partial content: reader limit reached.]':''};
+}
+
 export const fetchUrlTool = {
   id: 'fetch_url',
   name: 'Fetch URL',
@@ -168,7 +178,7 @@ export const fetchUrlTool = {
   capability: 'network',
   needsWorkspace: false,
   uiModule: 'search',
-  inputKeys: ['url', 'extract_mode'],
+  inputKeys: ['url', 'extract_mode','offset'],
   parametersSchema: {
     type: 'object',
     properties: {
@@ -176,18 +186,12 @@ export const fetchUrlTool = {
         type: 'string',
         description: 'The full URL to fetch (must start with http:// or https://).',
       },
+      offset: {type:'integer',minimum:0,description:'Character offset for the next portion of a long page. Use the returned next offset.'},
       extract_mode: {
         type: 'string',
         enum: ['auto', 'jina', 'direct', 'playwright', 'cdp-chrome', 'crawl4ai', 'scrapling', 'camoufox'],
         description:
-          'Extraction mode. "auto" tries Jina first, falls back to direct, then escalates to a ' +
-          'real browser (cdp-chrome when MELO_CDP_ENABLED=1, otherwise Playwright), then optional ' +
-          'local readers (Crawl4AI, Scrapling, Camoufox) for SPA/JS-heavy pages that return empty shells. ' +
-          '"jina" forces Jina reader. "direct" forces plain fetch + Readability. ' +
-          '"playwright" forces the real-browser path via the bundled CLI/Chromium (slower, use only when auto fails). ' +
-          '"cdp-chrome" attaches to the user\'s Melo Chrome session via CDP (real browser + logged-in cookies; ' +
-          'requires Google Chrome installed; window is visible). ' +
-          '"crawl4ai", "scrapling", and "camoufox" force optional local CLI readers when installed.',
+          'auto tries Jina, direct HTTP, a browser, then optional local readers. cdp-chrome uses the configured browser session; other values select a specific reader.',
         default: 'auto',
       },
       cookies: {
@@ -210,10 +214,10 @@ export const fetchUrlTool = {
   // docs/search-task-rfc.md §7 for the rationale (4 Codex C-rounds on
   // adapter fixtures that turned out to be hand-written guesses; we
   // need real production shape snapshots before G-2b round-5 push).
-  run: wrapWithTrailLog('url-fetch', async function run({ url, extract_mode = 'auto', cookies }, {
+  run: wrapWithTrailLog('url-fetch', async function run({ url, extract_mode = 'auto', cookies, offset = 0 }, {
     signal,
-    config,
-    _readSocialLink,
+    config, requestContext,
+    _readPublicPost = readPublicPost, _readSocialLink,
     _readExternalUrl,
     // Phase G-1a follow-up #2 (Codex 2026-05-10): test seams for the
     // remaining three internal fetchers — without these, evidenceTrail
@@ -227,6 +231,9 @@ export const fetchUrlTool = {
     _tryCdpChrome: _tryCdpChromeOverride,
   } = {}) {
     const behavior = captureBehavior(config);
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset > 1000000) return {ok:false,error:'INVALID_OFFSET',output:'Use a returned offset from 0 to 1000000.'};
+    // Ask capped readers for one character beyond this window, or they mistake their own cutoff for EOF.
+    const readerLimit = offset + searchLimits().fetchMaxChars + 1;
     const trail = [];
     const tStart = Date.now();
     // Local aliases — when an override is supplied, all call sites in
@@ -275,7 +282,8 @@ export const fetchUrlTool = {
     // on a twitter/reddit/小红书 URL got rerouted to social-link, the
     // CDP branch never ran, and the schema contract ("explicit modes
     // force their tier") was silently broken.
-    if (isSocialLinkUrl(normalized) && extract_mode !== 'playwright' && extract_mode !== 'cdp-chrome') {
+    const guestOnly=requestContext?.requestToolPolicy?.publicSocialOnly && isPublicPostHost(normalized);
+    if (guestOnly || isSocialLinkUrl(normalized) && extract_mode !== 'playwright' && extract_mode !== 'cdp-chrome') {
       const tSocial = Date.now();
       try {
         const explicitCookies = (cookies && String(cookies).trim()) || '';
@@ -284,7 +292,10 @@ export const fetchUrlTool = {
         // assertions don't have to wrestle with the live yt-dlp binary
         // or external network. Codex Phase 6 follow-up (⚪ P2 2026-05-05).
         const reader = typeof _readSocialLink === 'function' ? _readSocialLink : readSocialLink;
-        const socialResult = await reader(normalized, {
+        const guest = guestOnly || reader === readSocialLink ? await _readPublicPost(normalized,{signal}) : null;
+        if(guestOnly && !guest)return {ok:false,error:'PUBLIC_POST_UNAVAILABLE',output:'This public page did not return a verifiable post. Try another public permalink; no platform session was used.',evidenceTrail:[{tier:'public-page',outcome:'fail',reason:'unavailable'}]};
+        const socialResult = guest ? {body:guest.text,canonicalUrl:guest.url,reading:guest.reading,via:'public-post:'+guest.kind,
+          evidenceTrail:[{tier:'public-page',outcome:'ok',reason:guest.kind}]} : await reader(normalized, {
           config,
           explicitCookies,
           signal,
@@ -302,9 +313,11 @@ export const fetchUrlTool = {
         }
         if (socialResult?.body) {
           const body = socialResult.body;
-          const truncated = body.length > searchLimits().fetchMaxChars
-            ? body.slice(0, searchLimits().fetchMaxChars) + `\n\n[Content truncated at ${searchLimits().fetchMaxChars} characters]`
-            : body;
+          const part = pageWindow(body,offset,searchLimits().fetchMaxChars);
+          if(!part.body) return {ok:false,error:'OFFSET_OUT_OF_RANGE',output:'Requested offset exceeds the available page.',evidenceTrail:trail};
+          const preview = socialResult.via?.startsWith('share-preview:');
+          const reading = preview ? 'snippet' : socialResult.reading==='partial' || part.truncated || socialResult.via==='yt-dlp' || socialResult.via?.startsWith('browser:') ? 'partial' : 'extracted';
+          const truncated = part.body + part.suffix + (preview?'\n[Share preview only. Open the platform detail before citing the body.]':'');
           recordTrail(trail, 'social-link', 'ok', {
             latencyMs: Date.now() - tSocial,
             method: socialResult.via,
@@ -316,7 +329,7 @@ export const fetchUrlTool = {
             meta: {
               url: normalized,
               method: 'social-link',
-              length: truncated.length,
+              length: body.length, reading, truncated:part.truncated,nextOffset:part.nextOffset,
               // socialResult.via lets the caller see which sub-strategy
               // succeeded — 'yt-dlp' / 'browser:*' / 'share-preview:*' — useful for
               // debugging extractor health without re-running.
@@ -395,7 +408,7 @@ export const fetchUrlTool = {
       }
       const { content: pwContent } = await fetchPageViaPlaywright(normalized, {
         timeoutMs: searchLimits().browserTimeoutMs,
-        maxChars: searchLimits().fetchMaxChars,
+        maxChars: readerLimit,
       });
       return pwContent || null;
     };
@@ -451,7 +464,7 @@ export const fetchUrlTool = {
             } catch { /* load may never fire on streamy pages — fine */ }
             await new Promise(r => setTimeout(r, 1500));
             const text = await page.evaluate(() => document?.body?.innerText || '');
-            return String(text || '').trim().slice(0, searchLimits().fetchMaxChars) || null;
+            return String(text || '').trim() || null;
           } finally {
             // Close ONLY the page we opened.  The shared persistent
             // context stays alive — closing it would destroy the user's
@@ -477,7 +490,7 @@ export const fetchUrlTool = {
         signal,
         config,
         cookies: cookieStr,
-        maxChars: searchLimits().fetchMaxChars,
+        maxChars: readerLimit,
         timeoutMs: searchLimits().browserTimeoutMs,
       });
     };
@@ -742,14 +755,12 @@ export const fetchUrlTool = {
     }
 
     // Truncate
-    const truncated = content.length > searchLimits().fetchMaxChars
-      ? content.slice(0, searchLimits().fetchMaxChars) + `\n\n[Content truncated at ${searchLimits().fetchMaxChars} characters]`
-      : content;
-
-    // Append citation marker
+    const part=pageWindow(content,offset,searchLimits().fetchMaxChars);
+    if(!part.body) return {ok:false,error:'OFFSET_OUT_OF_RANGE',output:'Requested offset exceeds the available page.',evidenceTrail:trail};
+    const truncated=part.body+part.suffix;
     const output = `${truncated}\n\n[source: ${normalized}] [via: ${method}]`;
 
-    return { ok: true, output, meta: { url: normalized, method, length: content.length }, evidenceTrail: trail };
+    return { ok: true, output, meta: { url: normalized, method, length: content.length, truncated:part.truncated,nextOffset:part.nextOffset,reading:part.truncated?"partial":"extracted" }, evidenceTrail: trail };
   }),
 };
 

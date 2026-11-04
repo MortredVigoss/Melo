@@ -150,9 +150,11 @@ export function createPrepareNode(turn) {
     const searchCapability = _dependencies.searchCapability || await resolveHostedSearchCapability({ ...config,
       apiKey: modelOverrides.apiKey ?? config.apiKey, baseUrl: modelOverrides.baseUrl || config.baseUrl,
       model: modelOverrides.model || activeAgentProfile.model || config.model });
+    const mcpTools = mcpToolsForAgent(activeAgentProfile);
+    const planningTools=[...getAllTools(),...mcpTools].filter(tool=>scopeAllowsTool(context.capabilityScope,tool.id)).map(tool=>tool.id);
     let searchPlan = buildSharedSearchPlan({ latestUserMessage, modelMessages, config,
-      capabilities: { executors: getAllTools().filter(tool => scopeAllowsTool(context.capabilityScope, tool.id)).map(tool => tool.id),
-        grants: getAllTools().filter(tool => scopeAllowsTool(context.capabilityScope, tool.id)).map(tool => tool.id),
+      capabilities: { executors: planningTools,
+        grants: planningTools,
         hostedSearch: searchCapability.status, browserSearch: true } });
 
     // ── 2. Async fan-out ───────────────────────────────────────────────
@@ -355,7 +357,7 @@ export function createPrepareNode(turn) {
     // two agents in parallel chats see disjoint MCP sets. `tool.id` stays
     // `mcp:<server>:<tool>`; the model sees `tool.functionName`
     // (`mcp__server__tool`) and dispatch resolves both.
-    const mcpTools = mcpToolsForAgent(activeAgentProfile);
+
 
     // Build tools system prompt — remote channels now get all tools.
     // Stdio MCP tools (`mcp:<server>:<tool>`) are gated by the agent's

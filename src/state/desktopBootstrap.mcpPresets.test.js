@@ -46,15 +46,22 @@ test('bootstrap.mcpPresets pinned presets carry unpinned: false explicitly (bool
   }
 });
 
-test('bootstrap.mcpPresets ALL pinned presets have args ending in @<exact-version>', async () => {
+test('bootstrap.mcpPresets all enabled presets pin an exact npm or managed binary release', async () => {
   // Catches a future addition to BUILTIN_MCP_PRESETS that forgets
   // to register a PINNED_VERSIONS entry — the unpinned-flag would
   // catch it server-side, but this test catches it at bootstrap
   // boundary where most callers actually consume the data.
   const bootstrap = await getDesktopBootstrap();
   const presets = bootstrap?.customize?.mcpPresets;
+  assert.deepEqual(presets.filter(p => p.transport === 'managed-http').map(p => p.id).sort(), ['melo-douyin', 'melo-xiaohongshu']);
   for (const preset of presets) {
     if (preset.unpinned) continue;
+    if (preset.transport === 'managed-http') {
+      assert.equal(preset.unpinned, false);
+      assert.match(preset.version, /^v\d+\.\d+\.\d+$/);
+      assert.equal(preset.args, undefined);
+      continue;
+    }
     const lastArg = preset.args[preset.args.length - 1];
     assert.match(
       lastArg,

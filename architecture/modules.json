@@ -24,8 +24,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 666,
-      "edges": 2172,
+      "modules": 675,
+      "edges": 2187,
       "roots": [
         "src",
         "desktop-ui",
@@ -34,7 +34,7 @@
       ],
       "note": "静态 import/re-export，含 desktop-ui 对 /shared/*.js 的服务映射；不含动态 import 与外部包"
     },
-    "routes": 176,
+    "routes": 178,
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
@@ -2297,7 +2297,7 @@
       ],
       "modules": {
         "desktop-ui": 28,
-        "src": 84
+        "src": 93
       },
       "entryModules": [
         {
@@ -2343,6 +2343,12 @@
           ]
         },
         {
+          "module": "src/mcp/client.js",
+          "importedBy": [
+            "platform"
+          ]
+        },
+        {
           "module": "src/mcp/init.js",
           "importedBy": [
             "platform"
@@ -2363,10 +2369,17 @@
           ]
         },
         {
+          "module": "src/mcp/socialPresets.js",
+          "importedBy": [
+            "platform"
+          ]
+        },
+        {
           "module": "src/mcp/toolId.js",
           "importedBy": [
             "agents",
-            "desktop-shell"
+            "desktop-shell",
+            "platform"
           ]
         },
         {
@@ -2609,7 +2622,7 @@
         "agents": 9,
         "approvals": 35,
         "chat": 21,
-        "desktop-shell": 14,
+        "desktop-shell": 15,
         "development": 1,
         "knowledge": 3,
         "media": 2,
@@ -2625,7 +2638,7 @@
         "desktop-shell": 13,
         "media": 4,
         "memory": 1,
-        "platform": 16,
+        "platform": 19,
         "projects": 3,
         "settings": 2
       },
@@ -2645,6 +2658,8 @@
         "POST /api/customize/connector-toggle ← src/http/domainRoutes.js",
         "POST /api/mcp/connect ← src/server.js",
         "POST /api/mcp/disconnect ← src/server.js",
+        "POST /api/mcp/http-server ← src/server.js",
+        "POST /api/mcp/platform-login ← src/server.js",
         "POST /api/mcp/preset-toggle ← src/server.js",
         "POST /api/mcp/reload ← src/server.js",
         "GET /api/mcp/servers ← src/server.js",
@@ -2725,6 +2740,7 @@
           "scripts/inspect-search-trail.test.js",
           "src/mcp/init.test.js",
           "src/mcp/manager.test.js",
+          "src/mcp/retrieval.test.js",
           "src/mcp/startup.test.js",
           "src/mcp/toolId.test.js",
           "src/search/fileSearch.test.js",
@@ -3722,7 +3738,7 @@
         "projects": 5,
         "settings": 9,
         "sync": 1,
-        "tools": 14,
+        "tools": 15,
         "voice": 1
       },
       "httpRoutes": [
@@ -4336,7 +4352,7 @@
         "projects": 6,
         "settings": 17,
         "sync": 2,
-        "tools": 16,
+        "tools": 19,
         "voice": 2
       },
       "usedBy": {

@@ -8,6 +8,7 @@ import { AGENT_LOOP_CONTRACT } from '../../../shared/agent/loopContract.js';
 // app.js names they read come from ./context.js (transitional, live bindings).
 import { pickConnectorField } from '../../connectorDraft.js';
 import { allChatAgentProfiles, api, applyBootstrap, applyBootstrapPreservingDrafts, bgRender, getBootstrap, minimaxTtsConfigPatchForVoice, modelSetupDraft, patchSettings, refreshBootstrap, render, resolveActiveMinimaxVoiceId, setError, setTtsVoice, notify, ttsVoice } from './context.js';
+import { t } from '../../i18n.js';
 import { customizeState } from './state.js';
 
 // Parse the comma-separated skill form fields (folders, allowedAgentIds,
@@ -124,6 +125,7 @@ async function handleReloadMcpServers() {
   try {
     const resp = await api('/api/mcp/reload', { method: 'POST' });
     customizeState.advanced.cliServers = Array.isArray(resp?.servers) ? resp.servers : [];
+    customizeState.advanced.mcpStates=resp?.states || {};
     notify({level:'success',text:`Reloaded ${customizeState.advanced.cliServers.length} MCP server(s).`});
     render();
   } catch (err) {
@@ -297,6 +299,7 @@ async function refreshAdvancedStatus() {
       customizeState.advanced.error = errors.join(' · ');
     } else {
       customizeState.advanced.cliServers = Array.isArray(serversResp?.servers) ? serversResp.servers : [];
+      customizeState.advanced.mcpStates=serversResp?.states || {};
       customizeState.advanced.plugins = Array.isArray(pluginsResp?.plugins) ? pluginsResp.plugins : [];
       customizeState.advanced.tasks = Array.isArray(tasksResp?.runs) ? tasksResp.runs : [];
       customizeState.advanced.diagnostics = diagnosticsResp?._error ? null : diagnosticsResp;
@@ -564,6 +567,27 @@ export const customizeActions = {
   'ping-connector': async ({ action, trigger, event }) => {
       await handlePingExternalConnector(trigger.dataset.connectorId);
       return;
+  },
+  'manage-add-http-mcp': async ({trigger})=>{
+    const panel=trigger.closest('[data-mcp-setup]');
+    const val=k=>panel.querySelector('[name="'+k+'"]').value.trim();
+    const result=await api('/api/mcp/http-server',{method:'POST',body:{name:val('name'),url:val('url'),bearer:val('bearer')}});
+    panel.querySelector('[name="bearer"]').value='';
+    await refreshBootstrap();
+    customizeState.advanced.loaded=false; render();
+    notify({level:result.connected?'success':'warning',text:t(result.connected?'已连接':'未连接')});
+  },
+  'manage-platform-login': async ({trigger})=>{
+    const panel=trigger.closest('[data-platform-panel]');
+    const name=trigger.dataset.serverName;
+    trigger.disabled=true;
+    try {
+      const result=await api('/api/mcp/platform-login',{method:'POST',body:{name:trigger.dataset.serverName,action:trigger.dataset.loginAction}});
+      const states=customizeState.advanced.platformLogin ||= {};
+      const old=states[name];
+      states[name]={status:result.status,time:Date.now(),image:result.image || (result.status==='login_required' && old?.time>Date.now()-120000?old.image:null)};
+      render();
+    } finally {trigger.disabled=false;}
   },
   'reload-mcp-servers': async ({ action, trigger, event }) => {
       await handleReloadMcpServers();

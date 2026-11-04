@@ -24,7 +24,7 @@
 | 知识资料与成果 | 本机分段索引（SQLite FTS + 本地 embedding），按对话/项目开关过滤；两端按问题切段检索，旧 8 份 / 24000 字前置限制已移除 | [Agent 演进 P2/P4](docs/agent-evolution-20261015.md)、[A3/A5 回执](docs/mobile-desktop-alignment.md) |
 | 设置、模型连接与账号 | 五语界面 `2cae1cd`；手机 Codex 设备码 OAuth `85ac3a5`、应用切换取消修复 `14e602f` | 用户真实授权尚未确认；同码恢复限同一进程；[五语](docs/interface-languages-20261015.md)、[模型连接](docs/llm-connections.md) |
 | 双端同步 | v1 线协议冻结；Agent 能力与项目记忆走可选通道，旧服务只让扩展待同步，聊天同步照常 | [双端修复](docs/mobile-desktop-alignment.md)；私人同步服务需部署本版代码后启用新通道 |
-| 工具、MCP 与网页 | 免费 MCP 默认启动 `f3dba1a`；连接器 / MCP / 会话授权 / 技能管理 `7ae2292`；手机系统数据工具 `2e47868`（默认全关）；两端网页打开与截图（10-18） | [MCP 启动](docs/mcp-startup-20261015.md)、[手机系统数据](docs/ios-device-data-20261016.md)；实体数据调用与真机 WKWebView 待验 |
+| 工具、MCP 与网页 | 桌面支持 stdio / 标准 HTTP；小红书和抖音只读 MCP 默认对现有与新 Agent 开放，可逐个撤销；手机设备数据仍为独立权限 | [站内检索、登录与验收](docs/mcp-retrieval-audit-20261104.md)、[既有 MCP](docs/mcp-startup-20261015.md)、[手机系统数据](docs/ios-device-data-20261016.md) |
 | 搜索路由 | 自然餐饮/住宿/产品推荐与相关追问进入搜索；禁止联网、引用、闲聊、本地/App 边界保留，按当前能力说明不可用 | [#3 实施](docs/github-issues-implementation-20261020.md)；受控 HTTP 测试，真实供应商另验 |
 | 图片、视频与附件 | 10-21 双端已接应用内拍照、确认进入草稿、原件与传输副本分开；[实现与验收](docs/test-cost-camera-plan-20261021.md)，实时会话暂缓；iPhone 后置拍照四流程已由用户真机确认，见[装机回执](docs/phone-camera-install-20261021.md)。桌面/手机请求 `quality: high`，10-15 单次实测 Codex 服务回报 low；手机图片链与保存防重复已接生产入口；多图逐张、2K/4K、视频抽帧已合入主线 | 10-20 #4 二次修复旧工作区归属与回看图片引用；原生预览/原尺寸/保存/冷启动重开均通过，原件 SHA 不变；[修复回执](docs/issue-4-legacy-preview-20261020.md)、[实施证据](docs/github-issues-implementation-20261020.md)；见[图片承载计划](docs/image-capacity-plan-20261015.md)；[图片体验](docs/image-ux-20261016.md)、[多图与视频](docs/image-video-plan-20261016.md)；真实账号画质待验 |
 | 语音 | TTS 路由与停止修复（10-17 审计）；手机朗读要点化并按回复语种选声（10-18）；桌面朗读按 Agent 卡片模式 / 音色 / 风格，已知 Agent 默认概要（10-22） | [审计与实施状态](docs/architecture-agent-context-audit-20261017.md)；真机朗读待验 |
@@ -60,6 +60,19 @@
 基础设施另列 `platform`（`src/state/`、`src/runtime/`、`src/http/` 传输）、`channels`（已归档渠道）、`tooling`（脚本与 gate）。
 
 ## 4. 最新交接
+
+### 2026-11-04 — 站内检索与 MCP 读取
+- 桌面新增小红书搜索/笔记详情、抖音搜索/作品详情/评论。固定版本、校验和、回环令牌、独立登录；现有和新建 Agent 默认获两项只读服务，用户撤销后不再补回，手机不共享电脑会话。
+- 标准 HTTP/stdio、目录变化/取消、结构化内容、读页等级与长文分页已接到真实执行链。入口：自定义 → 高级 → MCP 服务；第三方发布、私信等不出现在默认工具列表。
+- [审计、授权与实施回执](docs/mcp-retrieval-audit-20261104.md)。当前桌面实连 2+3 个工具，六个 Agent 均通过权限核验；浏览器实际显示两套登录入口。访客实测：两平台各找到 4 个候选；小红书 546 字笔记正文、抖音 288 字作者文案。真实模型自行搜索并打开小红书笔记，回执 completed；受限页不算已读，视频文案不算观看记录。日常门禁 `run-qe79QA` 全绿（JS 4784、Swift 37、Android 与设置浏览器）。
+
+### 2026-11-04 — 本线程：MCP 与网页检索审计（仅报告）
+
+- 基准 `2ca7fa3`，未改产品代码/账号/配置，未安装、提交或推送。[审计与分阶段方案](docs/mcp-retrieval-audit-20261104.md)覆盖 MCP 发现→可见性→执行→结果→证据/回执及相关桌面/移动入口。
+- 审计时服务登记四个 MCP；六个全局 Agent 均允许 network 与四个预设。缺口已复现：标准 HTTP MCP 缺失、自定义 HTTP 连接器被称作 MCP、分页漏工具、退出后假连接、结果正文/图片丢失、取消不下传、社交预览与截断读取状态丢失。旧搜索故障使用 10-27 日志，未冒充今天实测。
+- 定向 11 文件 116/116、零失败/跳过；9 个边界探针 + 1 个真实子进程退出探针；证据 `.tmp/mcp-audit-20261104/`。已有循环/浏览器/核验确实存在；未注册的 sharedFetchAdapter 不算生产缺陷。
+- 已核对小红书社区 MCP、Playwright、Browserless、Tavily、Firecrawl 维护者资料；推荐先修协议/结果/证据，再补只读来源并对齐手机。当时未验真实对照任务、平台登录或 UI；用户随后授权实施，最新回执见上条。
+
 
 ### 2026-10-27 — Melo 主线（Claude）— 桌面覆盖安装到 `554ce96`，发布脚本 `open --env` 修复
 - 线程 ID：e02f4818。桌面壳 17:07 覆盖到 `~/Applications/Melo.app`，第二次 `release:verify` 17 项全绿（本机 Android 四项实际执行，两个安装路径 page-loaded）；`scripts/verify-red-green.js` 原生启动改为直接拉起可执行文件，因 macOS 26.6 的 `open --env` 把值在第一个空格处截断（项目路径含空格），快速档扩大到全部 `run-StBxI4` 全绿；[回执](docs/overwrite-install-20261027.md)。用户点权限后 18:58–19:09 用主 Agent 真跑 BIGBANG 10-31 长任务两段（[评估](docs/live-test-bigbang-20261027.md)）：场馆 / 交通 / 两天路线准确，天气缺，活动靠"继续"补到一半，两段都 LIMIT_DELIVERED；根因在壳 PATH 无 node（Playwright 搜索腿不可用）、Jina 匿名 DDG 限流、授权无人点 120 s 超时、40 万输入 token 回合预算、6 000 字页面截断。iPhone 19:14–19:20 覆盖到 0.7.13 (45)，17 对话 / 174 消息 / 6 Agent / 26 图两次回读一致。壳 PATH 当晚修复并第三次 `release:verify` 覆盖安装，集成档 `run-1epM2L` 全绿后已推送。

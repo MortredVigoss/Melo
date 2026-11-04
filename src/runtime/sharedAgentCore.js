@@ -50,7 +50,7 @@ export function createCoreTurn({ runId = randomUUID(), turnId = randomUUID(), al
     results(pairs) {
       for (const { call, result } of pairs) {
         observations.push(...completionObservation({ id: call.id, name: call.name, ok: result?.ok, executed: result?.ok === true && result?.meta?.executionStarted !== false,
-          output: result?.output, arguments: call.arguments, declaration: declaration(call.name), data: { url: result?.meta?.url, text: call.name === 'fetch_url' ? String(result?.output || '').replace(/\n\n\[source:[\s\S]*$/u, '') : '' }, sources: result?.completionSources || result?.meta?.contentItems || [] }));
+          output: result?.output, arguments: call.arguments, declaration: declaration(call.name), data: { url: result?.meta?.canonicalUrl || result?.meta?.url, reading:result?.meta?.reading,truncated:result?.meta?.truncated, text: call.name === 'fetch_url' ? String(result?.output || '').replace(/\n\n\[source:[\s\S]*$/u, '') : '' }, sources: result?.completionSources || result?.meta?.contentItems || [] }));
 
         if (state.status !== 'running') continue;
         const progressKey = createHash('sha256').update(JSON.stringify([call.name, toolCallFingerprint(call.name, call.arguments), result?.status, result?.output])).digest('hex');

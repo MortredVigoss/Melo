@@ -45501,19 +45501,19 @@
         }
       }
     },
-    "外部 MCP 连接器已移至 自定义 → 高级。": {
+    "自定义 HTTP 连接器已移至 自定义 → 高级。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "外部 MCP 连接器已移至 自定义 → 高级。"
+            "value": "自定义 HTTP 连接器已移至 自定义 → 高级。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "External MCP connectors moved to Customize → Advanced."
+            "value": "Custom HTTP connectors moved to Customize → Advanced."
           }
         },
         "ja": {
@@ -45781,72 +45781,72 @@
         }
       }
     },
-    "stdio MCP 会运行本机进程；每个 Agent 需在 自定义 → Agent 里逐个勾选。": {
+    "小红书和抖音的读取工具默认对所有 Agent 开放；可在「自定义 → Agent」单独关闭。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "stdio MCP 会运行本机进程；每个 Agent 需在 自定义 → Agent 里逐个勾选。"
+            "value": "小红书和抖音的读取工具默认对所有 Agent 开放；可在「自定义 → Agent」单独关闭。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Stdio MCPs run local processes; each Agent must opt in to every server under Customize → Agents."
+            "value": "Xiaohongshu and Douyin readers are on by default for all Agents. Turn them off individually under Customize → Agents."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "stdio MCP はローカルプロセスを実行します。各 Agent は カスタマイズ → Agent でサーバーごとに有効化する必要があります。"
+            "value": "小紅書と抖音の読み取りはすべての Agent で既定で有効です。「カスタマイズ → Agent」で個別に無効にできます。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "stdio MCP는 로컬 프로세스를 실행합니다. 각 Agent는 사용자 지정 → Agent에서 서버마다 선택해야 합니다."
+            "value": "샤오훙수와 더우인 읽기 도구는 모든 Agent에서 기본으로 켜져 있습니다. 사용자 지정 → Agent에서 개별적으로 끌 수 있습니다."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Los MCP stdio ejecutan procesos locales; cada agente debe activar cada servidor en Personalizar → Agentes."
+            "value": "La lectura de Xiaohongshu y Douyin está activa de forma predeterminada para todos los agentes. Puedes desactivarla por agente en Personalizar → Agentes."
           }
         }
       }
     },
-    "外部 MCP 连接器": {
+    "自定义 HTTP 连接器": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "外部 MCP 连接器"
+            "value": "自定义 HTTP 连接器"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "External MCP connectors"
+            "value": "Custom HTTP connectors"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "外部 MCP コネクタ"
+            "value": "カスタム HTTP コネクタ"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "외부 MCP 커넥터"
+            "value": "사용자 정의 HTTP 커넥터"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Conectores MCP externos"
+            "value": "Conectores HTTP personalizados"
           }
         }
       }
@@ -45886,37 +45886,352 @@
         }
       }
     },
-    "CLI / stdio MCP 服务": {
+    "MCP 服务（stdio / HTTP）": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "CLI / stdio MCP 服务"
+            "value": "MCP 服务（stdio / HTTP）"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "CLI / stdio MCP servers"
+            "value": "MCP servers (stdio / HTTP)"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "CLI / stdio MCP サーバー"
+            "value": "MCP サーバー（stdio / HTTP）"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "CLI / stdio MCP 서버"
+            "value": "MCP 서버 (stdio / HTTP)"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Servidores MCP CLI / stdio"
+            "value": "Servidores MCP (stdio / HTTP)"
+          }
+        }
+      }
+    },
+    "正在连接": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在连接"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecting"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接続中"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결 중"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conectando"
+          }
+        }
+      }
+    },
+    "已登录": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已登录"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Signed in"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ログイン済み"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그인됨"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sesión iniciada"
+          }
+        }
+      }
+    },
+    "扫码登录": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "扫码登录"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign in with QR code"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "QR コードでログイン"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "QR 코드로 로그인"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Acceder con código QR"
+          }
+        }
+      }
+    },
+    "检查登录状态": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检查登录状态"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check login status"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ログイン状態を確認"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그인 상태 확인"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Comprobar sesión"
+          }
+        }
+      }
+    },
+    "请用平台 App 扫码，然后检查登录状态": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请用平台 App 扫码，然后检查登录状态"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan with the platform app, then check login status."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリでスキャンしてログイン状態を確認してください"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앱으로 스캔한 후 로그인 상태를 확인하세요"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escanea con la aplicación y comprueba la sesión"
+          }
+        }
+      }
+    },
+    "二维码已过期": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "二维码已过期"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "QR code expired"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "QR コードの期限切れ"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "QR 코드 만료"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Código QR caducado"
+          }
+        }
+      }
+    },
+    "尚未登录": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未登录"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not signed in"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未ログイン"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그인되지 않음"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin sesión"
+          }
+        }
+      }
+    },
+    "添加 HTTP MCP 服务": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加 HTTP MCP 服务"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add HTTP MCP server"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HTTP MCP サーバーを追加"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HTTP MCP 서버 추가"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añadir servidor MCP HTTP"
+          }
+        }
+      }
+    },
+    "保存并连接": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存并连接"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save and connect"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存して接続"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "저장하고 연결"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Guardar y conectar"
           }
         }
       }
@@ -58832,6 +59147,41 @@
           "stringUnit": {
             "state": "translated",
             "value": "Imagen guardada a las %@"
+          }
+        }
+      }
+    },
+    "小红书和抖音 MCP 在电脑上执行；手机独立聊天不使用电脑登录。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "小红书和抖音 MCP 在电脑上执行；手机独立聊天不使用电脑登录。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Xiaohongshu and Douyin MCP run on your computer. Standalone phone chats do not use its sign-in."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "小紅書と抖音の MCP はコンピュータで実行されます。スマートフォンの単独チャットではそのログインを使いません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "샤오홍슈와 더우인 MCP는 컴퓨터에서 실행됩니다. 휴대폰 단독 대화에서는 컴퓨터 로그인을 사용하지 않습니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los MCP de Xiaohongshu y Douyin se ejecutan en el ordenador. Los chats independientes del teléfono no usan esa sesión."
           }
         }
       }

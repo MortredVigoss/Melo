@@ -248,7 +248,7 @@ func code(_ envelope: String?) -> String? { envelope.map { PhoneToolEnvelope.par
         // 10. New Agents: the full base starter set (2026-10-22) and «基于已有 Agent».
         let starter = AgentStarter.newAgent()
         for key in c.booleanKeys { assert(starter.capabilities?[key].bool == c.newAgentStarter.contains(key), "starter \(key)") }
-        assert(c.newAgentStarter == ["readFiles", "writeFiles", "runCommands", "network", "knowledgeMemory", "generateMedia"] && starter.capabilities?["delegate"].bool == false && starter.capabilities?["mcpServers"].array.isEmpty == true && starter.name.isEmpty)
+        assert(c.newAgentStarter == ["readFiles", "writeFiles", "runCommands", "network", "knowledgeMemory", "generateMedia"] && starter.capabilities?["delegate"].bool == false && starter.capabilities?["mcpServers"].array == [.string("melo-xiaohongshu"), .string("melo-douyin")] && starter.name.isEmpty)
         var draft = AgentStarter.newAgent(); draft.name = "新助手"
         var source = AgentProfile(id: "builder", name: "Builder", subtitle: "建造", symbol: "hammer", instructions: "写代码", avatarData: Data([1, 2, 3]), identity: "工程师", mood: "focused", model: "gpt-x")
         source.capabilities = AgentCapabilityWidening.widened(AgentSettingsProjection.emptyCapabilities, with: ["readFiles", "writeFiles", "mcpServers:github"])

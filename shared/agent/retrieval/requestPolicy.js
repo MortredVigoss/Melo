@@ -30,16 +30,20 @@ export function isExplicitLocalSearch(text = '') {
   return !NEGATED_ACTION.test(instruction) && LOCAL_SEARCH.test(instruction);
 }
 
+const guestPattern=/(?:不用|无需|不必|不需要|不要|不)\s*(?:扫码)?登录|免登录|without (?:logging|signing) in|no login/giu;
 export function getRequestNetworkPolicy(text = '') {
   const instruction = maskQuotedText(text);
+  // “不用登录搜…” negates account access, not the following search.
+  const scopeText=instruction.replace(guestPattern,'');
   const contextOnly = CONTEXT_ONLY.test(instruction);
   const fetchForbidden = NETWORK_DENIAL.test(instruction) || TOOLS_DENIAL.test(instruction) || contextOnly;
   return {
     instruction,
+    ...(scopeText!==instruction?{publicSocialOnly:true}:{}),
     contextOnly,
     toolsForbidden: TOOLS_DENIAL.test(instruction),
     fetchForbidden,
-    searchForbidden: fetchForbidden || SEARCH_DENIAL.test(instruction),
+    searchForbidden: fetchForbidden || SEARCH_DENIAL.test(scopeText),
     localSearch: isExplicitLocalSearch(text),
   };
 }
@@ -87,8 +91,9 @@ export function selectToolContextPolicy({ text = '' } = {}) {
 export function requestAllowsTool(tool, policy = {}) {
   if (policy.toolsForbidden) return false;
   const id = typeof tool === 'string' ? tool : String(tool?.id || '');
-  const network = tool?.capability === 'network' || /^(?:web_search|fetch_url|open_url|web_screenshot|browser_.*)$/.test(id);
+  if (policy.publicSocialOnly && /^mcp:melo-(?:douyin|xiaohongshu):/.test(id)) return false;
+  const network = tool?.capability === 'network' || /^mcp:melo-(?:douyin|xiaohongshu):/.test(id) || /^(?:web_search|fetch_url|open_url|web_screenshot|browser_.*)$/.test(id);
   if (policy.fetchForbidden && network) return false;
-  if (policy.searchForbidden && id === 'web_search') return false;
+  if (policy.searchForbidden && (id === 'web_search' || tool?.searchDiscovery === true || /^mcp:melo-(?:douyin|xiaohongshu):search_/.test(id))) return false;
   return true;
 }

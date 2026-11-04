@@ -119,11 +119,11 @@ export function createFunctionCallingSession(config, tools = []) {
     if (!native) return [];
     const images = [];
     for (const { call, result } of results) {
-      const dataUrl = result?.meta?.modelImage;
-      if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) continue;
-      const target = result.meta.finalUrl || result.meta.url || call.arguments?.url || '';
+      const urls=Array.isArray(result?.meta?.modelImages)?result.meta.modelImages:[result?.meta?.modelImage];
+      if (!urls.some(url=>typeof url==='string' && url.startsWith('data:image/'))) continue;
+      const target = result?.meta?.finalUrl || result?.meta?.url || call.arguments?.url || '';
       const text = typeof labelFor === 'function' ? labelFor(call, result) : `[${call.name}${target ? ` of ${target}` : ''}]`;
-      images.push({ callId: call.id, name: call.name, text, dataUrl });
+      for (const dataUrl of urls.slice(0,4)) if (typeof dataUrl==='string' && dataUrl.startsWith('data:image/')) images.push({ callId: call.id, name: call.name, text, dataUrl });
     }
     return normalizeToolImages(images);
   };

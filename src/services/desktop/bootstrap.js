@@ -411,6 +411,7 @@ export async function getDesktopBootstrap(query = '', { skipModelNormalize = fal
       // from the corresponding `enableXxxMcp` config flag.
       mcpPresets: getBuiltinMcpPresets().map(preset => ({
         id: preset.id,
+        transport:preset.transport, version:preset.version,
         command: preset.command,
         args: preset.args,
         description: preset.description,
@@ -470,7 +471,7 @@ export async function getDesktopBootstrap(query = '', { skipModelNormalize = fal
             id,
             source: 'user',
             enabled: !cfg?.disabled,
-            description: 'User-configured stdio MCP server',
+            description: cfg?.url?'Streamable HTTP MCP':'User-configured stdio MCP server',
             command: cfg?.command || '',
             args: Array.isArray(cfg?.args) ? cfg.args : [],
             flag: null,

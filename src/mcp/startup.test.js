@@ -88,8 +88,8 @@ test('native launches with a minimal PATH can start MCPs using the running Node 
     import {createInterface} from 'node:readline';
     createInterface({input:process.stdin}).on('line', line => {
       const request=JSON.parse(line);
-      if(request.id) console.log(JSON.stringify({jsonrpc:'2.0',id:request.id,
-        result:request.method==='tools/list'?{tools:[{name:'fixture'}]}:{capabilities:{}}}));
+      if(request.id!=null) console.log(JSON.stringify({jsonrpc:'2.0',id:request.id,
+        result:request.method==='tools/list'?{tools:[{name:'fixture',inputSchema:{type:'object'}}]}:{protocolVersion:request.params.protocolVersion,serverInfo:{name:'fixture',version:'1'},capabilities:{tools:{}}}}));
     });
   `;
   const result = execFileSync(process.execPath, ['--input-type=module', '-e', `
@@ -98,5 +98,5 @@ test('native launches with a minimal PATH can start MCPs using the running Node 
     try { await client.connect(); console.log(JSON.stringify(await client.listTools())); }
     finally { client.disconnect(); }
   `], { env: { ...process.env, PATH: '/usr/bin:/bin' }, encoding: 'utf8', timeout: 10000 });
-  assert.deepEqual(JSON.parse(result), [{ name: 'fixture' }]);
+  assert.deepEqual(JSON.parse(result).map(t=>t.name), ['fixture']);
 });

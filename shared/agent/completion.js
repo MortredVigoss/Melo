@@ -86,12 +86,12 @@ export function completionObservation({ id, name, ok, executed, output = '', dat
     try { page = JSON.parse(output); } catch { page = {}; }
   }
   const reads = ['fetch_url', 'open_url'].includes(name)
-    ? [{ url: page.url || page.finalUrl, text: page.text, reading: page.truncated ? 'partial' : 'extracted' }]
-    : name === 'web_search' ? sources : [];
+    ? [{ url: page.url || page.finalUrl, text: page.text, reading: ['snippet','unread','partial'].includes(page.reading) ? page.reading : page.truncated ? 'partial' : 'extracted' }]
+    : name === 'web_search' || name?.startsWith('mcp:') ? sources : [];
   for (const [index, source] of reads.slice(0, 16).entries()) {
     if (!url(source.url)) continue;
     rows.push({ id: `${rows[0].id}:source:${index}`, type: 'source', ok: true, executed: true,
-      url: source.url, text: String(source.text || source.content || '').slice(0, 16000), reading: source.reading || 'extracted' });
+      url: source.url, text: String(source.text || source.content || '').slice(0, 16000), reading: source.reading === 'snippet' || source.reading === 'unread' ? source.reading : String(source.text || source.content || '').length > 16000 ? 'partial' : source.reading || 'extracted' });
   }
   return rows;
 }

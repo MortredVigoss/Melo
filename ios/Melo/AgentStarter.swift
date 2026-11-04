@@ -11,6 +11,7 @@ enum AgentStarter {
     static var capabilities: SyncValue {
         var object = AgentSettingsProjection.emptyCapabilities.object
         for key in CapabilityElevation.contract.newAgentStarter where object[key] != nil { object[key] = .bool(true) }
+        object["mcpServers"] = .array(["melo-xiaohongshu", "melo-douyin"].map(SyncValue.string))
         return .object(object)
     }
     /// A blank new Agent with the starter set. Its phone permissions ("这台手机上")

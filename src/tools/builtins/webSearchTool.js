@@ -1,3 +1,4 @@
+import {platformSite,searchPublicIndex} from '../../services/search/publicPlatformIndex.js';
 import { captureBehavior } from '../../runtime/runtimeBehavior.js';
 import { searchLimits, scopedSearchRun } from '../../services/search/searchLimits.js';
 /**
@@ -444,6 +445,10 @@ function decodeDdgUrl(ddgRedirectUrl) {
 }
 
 async function searchViaDdg(query, numResults, signal) {
+  if(platformSite(query)){
+    const publicLinks=await searchPublicIndex(query,numResults,signal);
+    if(publicLinks.length)return publicLinks;
+  }
   const ddgUrl = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`;
   const jinaUrl = `${JINA_READER_BASE}${ddgUrl}`;
 

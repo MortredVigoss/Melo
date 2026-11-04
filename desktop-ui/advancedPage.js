@@ -88,13 +88,25 @@ export function renderAdvancedPage({
         </div>
       `).join('');
 
+  const loginBlock=name=>{
+    const state=adv.platformLogin?.[name];if(!state) return '';
+    const label=({scan:'请用平台 App 扫码，然后检查登录状态',authenticated:'已登录',expired:'二维码已过期',login_required:'尚未登录'})[state.status];
+    const src=state.time>Date.now()-180000 && typeof state.image==='string' && /^data:image\/png;base64,iVBORw0KGgo[A-Za-z0-9+/]*={0,2}$/.test(state.image)?state.image:null;
+    return escapeHtml(t(label||'未连接'))+(src?`<div><img width="200" height="200" alt="QR" src="${escapeHtml(src)}"></div>`:'');
+  };
+  const socialName = name=>['melo-xiaohongshu','melo-douyin'].includes(name);
   const configuredNames=[...new Set([...adv.cliServers,...(data.customize?.mcpAuthSurface || []).filter(s=>s.enabled && !s.unpinned).map(s=>s.id)])];
   const cliServerRows = configuredNames.length === 0
-    ? '<div class="empty-state compact">No active CLI / stdio MCP servers.</div>'
+    ? '<div class="empty-state compact">No active MCP servers.</div>'
     : configuredNames.map(name => ui`
         <div class="list-row">
           <div class="list-row-title mono">${escapeHtml(name)}</div>
-          <div class="list-row-meta">${adv.cliServers.includes(name)?t('已连接'):t('未连接')}</div>
+          ${socialName(name) && adv.cliServers.includes(name) ? ui`<div data-platform-panel>
+            <button type="button" class="small-button" data-action="manage-platform-login" data-server-name="${escapeHtml(name)}" data-login-action="start">扫码登录</button>
+            <button type="button" class="small-button" data-action="manage-platform-login" data-server-name="${escapeHtml(name)}" data-login-action="status">检查登录状态</button>
+            <div aria-live="polite" data-platform-status>${loginBlock(name)}</div></div>` : ''}
+          <div class="list-row-meta">${adv.cliServers.includes(name)?t('已连接'):t(adv.mcpStates?.[name]?.status==='connecting'?'正在连接':'未连接')}</div>
+          ${adv.mcpStates?.[name]?.tools?.length?`<details><summary>${t('工具')} (${adv.mcpStates[name].tools.length})</summary><code>${adv.mcpStates[name].tools.map(escapeHtml).join(', ')}</code></details>`:''}
           <div class="inline-actions">
             <button class="small-button" type="button" data-action="${adv.cliServers.includes(name)?'disconnect-mcp-server':'manage-reconnect-mcp'}" data-server-name="${escapeHtml(name)}">
               ${adv.cliServers.includes(name)?t('断开连接'):t('重新连接')}
@@ -150,7 +162,7 @@ export function renderAdvancedPage({
     : (mcpPresets || []).map(preset => {
         const enabled = Boolean(preset?.enabled);
         const unpinned = Boolean(preset?.unpinned);
-        const cmdSummary = `${preset?.command || ''} ${(preset?.args || []).join(' ')}`.trim();
+        const cmdSummary = preset.transport==='managed-http' ? 'HTTP · '+preset.version : `${preset?.command || ''} ${(preset?.args || []).join(' ')}`.trim();
         // Codex 四轮 audit 2026-04-29: an unpinned preset has 3
         // possible UI states, not 2:
         //   - unpinned + enabled  → user can still DISABLE to
@@ -188,7 +200,7 @@ export function renderAdvancedPage({
               ? ui`<div class="list-row-meta muted-note">npm 包尚未锁定到精确版本 — ${
                   isLegacyEnableOnUnpinned
                     ? ui`点击「停用」清除旧的 enable*Mcp:true 配置。`
-                    : 'toggle disabled until a version lands in <code>PINNED_VERSIONS</code>.'
+                    : 'Use the HTTP MCP form below for the hosted service.'
                 }</div>`
               : ''}
             <div class="inline-actions">
@@ -242,7 +254,7 @@ export function renderAdvancedPage({
             <span class="meta-label">${(mcpPresets || []).filter(p => p?.enabled).length} / ${(mcpPresets || []).length} 已启用</span>
           </div>
           <p class="page-kicker-tip">
-            stdio MCP 会运行本机进程；每个 Agent 需在 自定义 → Agent 里逐个勾选。
+            小红书和抖音的读取工具默认对所有 Agent 开放；可在「自定义 → Agent」单独关闭。
           </p>
           <div class="list-stack">
             ${presetRows}
@@ -251,7 +263,7 @@ export function renderAdvancedPage({
 
         <div class="subsection">
           <div class="header-row">
-            <h3 class="subsection-title">外部 MCP 连接器</h3><button class="small-button" data-action="manage-new-connector">新增连接器</button>
+            <h3 class="subsection-title">自定义 HTTP 连接器</h3><button class="small-button" data-action="manage-new-connector">新增连接器</button>
             <span class="meta-label">${externalMcps.length} 个已配置</span>
           </div>
           <div class="list-stack">
@@ -261,7 +273,7 @@ export function renderAdvancedPage({
 
         <div class="subsection">
           <div class="header-row">
-            <h3 class="subsection-title">CLI / stdio MCP 服务</h3>
+            <h3 class="subsection-title">MCP 服务（stdio / HTTP）</h3>
             <span class="meta-label">${adv.cliServers.length} 个运行中</span>
           </div>
           <div class="inline-actions">
@@ -269,6 +281,13 @@ export function renderAdvancedPage({
           </div>
           <div class="list-stack">
             ${cliServerRows}
+            <details data-mcp-setup><summary>添加 HTTP MCP 服务</summary>
+              <label>ID <input name="name" autocomplete="off"></label>
+              <label>URL <input name="url" type="url" list="mcp-hosted-urls" placeholder="https://example.com/mcp"></label>
+              <datalist id="mcp-hosted-urls"><option value="https://mcp.browserless.io/mcp">Browserless</option><option value="https://mcp.tavily.com/mcp">Tavily</option><option value="https://mcp.firecrawl.dev/v2/mcp">Firecrawl</option></datalist>
+              <label>Bearer token <input name="bearer" type="password" autocomplete="off"></label>
+              <button type="button" class="small-button" data-action="manage-add-http-mcp">保存并连接</button>
+            </details>
           </div>
         </div>
 
