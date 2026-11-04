@@ -87,7 +87,7 @@
 ### 2026-11-04 — GitHub 分支归属核对（设计 Melo）
 GitHub 仓库事件显示 `yrlf` 创建并推送 `codex/android-organizer-20261026`。12 个独有提交的 Git 作者均为 Yang。远端 `master@54a9cac` 与分支 `fed7c13` 各有 32 和 12 个独有提交，共同祖先以来分支改动 143 个文件。Organizer 增加本机待办、日历和提醒，手机操作支持验证后重放，共享核心调整完成证据并记录本机执行轨迹，Android 新增流式工具调用和错误详情。已核对 GitHub 提交、文件差异、PR 清单与预发布，本分支未开 PR。源码与发布状态以[固定版本比较](https://github.com/MortredVigoss/Melo/compare/54a9cac100998d17b105dd4816821ecc41236a01...fed7c1343240f0f622843d9c1438a5f78019f121)和[0.10.8 预览版](https://github.com/MortredVigoss/Melo/releases/tag/android-v0.10.8-organizer-preview.1)为据。
 
-预审记录：首次 git pp 审查 54a9cac..0c3bf89 为 C，未推送。已补自定义 HTTP MCP 联网限制、字幕续读和普通文章路由，29 项专项通过，详见[整改回执](docs/public-media-readers-20261104.md)。
+公开媒体 MCP 的首次预审为 C。联网权限、字幕续读和文章路由已修复，基准集成 `run-wjw2jf` 通过。按用户指令直接快进推送后，已回读核对 GitHub `master` 为 [d58554c](https://github.com/MortredVigoss/Melo/commit/d58554cf9a5bc669d472af58b38066285314846e)。[整改回执](docs/public-media-readers-20261104.md)。
 
 ### 2026-11-04 — 桌面公开媒体 MCP
 
