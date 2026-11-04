@@ -62,6 +62,27 @@ function chatHas(map, chatId, toolId) {
 // How long (ms) to wait for user response before auto-denying
 const PERMISSION_TIMEOUT_MS = 120_000;
 
+// Task-scope rules (plan A phase A4-1, 2026-11-04): one card lets the user
+// allow a member's gated tools for the current turn. Keyed by home + chat +
+// turn request id; internal members share the lead's request context, and the
+// runner clears the bucket when the turn ends. Only the user's card creates a
+// rule: the lead never grants on the user's behalf.
+const taskAllow = new Map();
+function taskKey(chatId, turnRequestId) {
+  return JSON.stringify([resolveRuntimePaths().home, String(chatId || DEFAULT_CHAT_SCOPE), String(turnRequestId || '')]);
+}
+function taskHas(chatId, turnRequestId, toolId) {
+  return Boolean(turnRequestId) && taskAllow.get(taskKey(chatId, turnRequestId))?.has(toolId) === true;
+}
+export function getTaskPermissions(chatId, turnRequestId) {
+  return [...(taskAllow.get(taskKey(chatId, turnRequestId)) || [])];
+}
+export function endTaskToolPermissions(context) {
+  const turnRequestId = context?.requestId;
+  if (!turnRequestId) return;
+  for (const key of [...taskAllow.keys()]) if (JSON.parse(key)[2] === String(turnRequestId)) taskAllow.delete(key);
+}
+
 /**
  * Check whether a tool is already permitted without asking the user.
  * Returns 'allow', 'deny', or 'ask'.
@@ -77,6 +98,11 @@ export async function checkPermissionRule(toolId, args = {}, chatId = undefined)
 
   // Session allow (for this chat)
   if (chatHas(sessionAlwaysAllow, chatId, toolId)) {
+    return 'allow';
+  }
+
+  // Task allow (this chat, this turn): granted from a member's task-scope card.
+  if (taskHas(chatId, currentRequestContext()?.requestId, toolId)) {
     return 'allow';
   }
 
@@ -188,6 +214,52 @@ export async function requestPermission(toolId, args, sseEmitter, signal, chatId
 }
 
 /**
+ * Ask the user, with one card, to allow a member's gated tools for this turn
+ * (plan A phase A4-1). Resolves to a decision and never throws: 'task'
+ * (allowed for this turn), 'session' (this chat), 'always' (persisted),
+ * 'denied', 'timeout', 'cancelled', 'no-surface' or 'none' (nothing to ask).
+ * Rules are written by resolvePermission when the user answers the card.
+ */
+export async function requestTaskScopeApproval({ toolIds = [], task = '', label = '', sseEmitter, signal, chatId = undefined, context = null } = {}) {
+  context ||= currentRequestContext() || createRequestContext({ chatId, signal });
+  const ids = [...new Set((Array.isArray(toolIds) ? toolIds : []).filter(id => typeof id === 'string' && id.trim()))];
+  if (!ids.length) return { decision: 'none', toolIds: [] };
+  if (signal?.aborted) return { decision: 'cancelled', toolIds: ids };
+  if (!hasApprovalSurface(sseEmitter, context) && context?.permissionSurface !== 'headless') return { decision: 'no-surface', toolIds: ids };
+  const requestId = randomUUID();
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = decision => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      pendingRequests.delete(requestId);
+      resolve({ decision, toolIds: ids, requestId });
+    };
+    const timer = setTimeout(() => finish('timeout'), PERMISSION_TIMEOUT_MS);
+    const onAbort = () => finish('cancelled');
+    signal?.addEventListener('abort', onAbort, { once: true });
+    pendingRequests.set(requestId, { kind: 'task_scope', chatId, context, toolId: '', toolIds: ids, task: String(task || ''), label: String(label || ''),
+      resolve: scope => finish(scope || 'task'), reject: () => finish('denied') });
+    if (typeof sseEmitter === 'function') {
+      sseEmitter('tool_permission', {
+        requestId,
+        kind: 'task_scope',
+        toolIds: ids,
+        task: String(task || '').slice(0, 2000),
+        label: String(label || ''),
+        chatId,
+        runId: context.runId,
+        turnRequestId: context.requestId,
+        permissionScope: context.permissionScope || null,
+        agentId: context.turnBinding?.role,
+      });
+    }
+  });
+}
+
+/**
  * Called by /api/tools/permission-response when the user responds.
  *
  * @param {string}  requestId
@@ -199,13 +271,42 @@ export async function resolvePermission(requestId, granted, scope = 'once', tool
   const pending = pendingRequests.get(requestId);
   if (!pending) return permissionReceipt(requestId) || { ok: false, reason: 'Unknown or expired request.' };
   if (pending.context.home !== resolveRuntimePaths().home) return { ok: false, reason: 'Permission belongs to another home.' };
-  if (toolId && toolId !== pending.toolId) return { ok: false, reason: 'Tool does not match the permission request.' };
-  toolId = pending.toolId;
+  const taskScope = pending.kind === 'task_scope';
+  if (taskScope) {
+    if (toolId && !pending.toolIds.includes(toolId)) return { ok: false, reason: 'Tool does not match the permission request.' };
+  } else {
+    if (toolId && toolId !== pending.toolId) return { ok: false, reason: 'Tool does not match the permission request.' };
+    toolId = pending.toolId;
+  }
   if (currentRequestContext() !== pending.context) {
     return runWithRequestContext(pending.context, () => resolvePermission(requestId, granted, scope, toolId));
   }
   if (pending.context.signal?.aborted) return { ok: false, reason: 'Request was cancelled.' };
   if (pending.resolving) return { ok: false, reason: 'A decision is already being applied.' };
+  if (taskScope) {
+    if (scope === 'once') scope = 'task';
+    if (!['task', 'session', 'always'].includes(scope)) return { ok: false, reason: 'Invalid permission scope.' };
+    pending.resolving = true;
+    try {
+      const chatId = pending.chatId;
+      if (granted) {
+        for (const id of pending.toolIds) {
+          if (scope === 'task') { const key = taskKey(chatId, pending.context.requestId); if (!taskAllow.has(key)) taskAllow.set(key, new Set()); taskAllow.get(key).add(id); }
+          else if (scope === 'session') ensureChatBucket(sessionAlwaysAllow, chatId).add(id);
+          else await persistPermissionRule(id, 'allow');
+          recordPermission({ operation: id, decision: 'allow', reason: `用户决定 · 本次任务卡片 · ${scope}` }, pending.context);
+        }
+      } else {
+        for (const id of pending.toolIds) recordPermission({ operation: id, decision: 'deny', reason: '用户决定 · 本次任务卡片' }, pending.context);
+      }
+      rememberPermissionDecision(requestId);
+      if (granted) pending.resolve(scope); else pending.reject();
+      return { ok: true };
+    } catch (error) {
+      pending.resolving = false;
+      return { ok: false, reason: `无法保存授权：${error.message}` };
+    }
+  }
   if (!['once', 'session', 'always'].includes(scope)) return { ok: false, reason: 'Invalid permission scope.' };
   pending.resolving = true;
   try {

@@ -1318,6 +1318,32 @@ export const syncSchema = {
           "type": "integer",
           "minimum": 1,
           "maximum": 64
+        },
+        "jobModels": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "research": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "lookup": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "calculate": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "execute": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          }
         }
       }
     },

@@ -121,3 +121,38 @@ test('B1/B2: a top-level turn grows by one share per member up to the cap, neste
   await runWithRequestContext(Object.freeze({ budget: child }), () => runInternalMembers({ jobs: [job('lookup', 'nested', 9)], goal, run }));
   assert.equal(child.maxInputTokens, before, 'a nested pool is never extended');
 });
+test('A4-1: a member with gated tools asks once on a task-scope card before starting, and runs whatever the answer is', async () => {
+  const tools = ['web_search', 'fetch_url', 'calculator', 'file_read', 'file_write', 'reminders_create', 'clipboard'];
+  const catalog = internalRouteCatalog(goal, tools);
+  const exec = (task, index) => ({ ...startInternalJob({ catalog, goal, args: { role: 'execute', task }, callId: `exec-${index}` }), index, id: `job-${index}` });
+  const requests = []; let runs = 0; const events = [];
+  const approvals = {
+    tool: id => ({ reminders_create: { requiresPermission: true }, file_write: { requiresPermission: true, permissionGate: 'file-safety' }, clipboard: { requiresPermission: true } })[id] || { requiresPermission: false },
+    check: async id => (id === 'clipboard' ? 'allow' : 'ask'),
+    request: async ({ toolIds, task }) => { requests.push({ toolIds, task }); return { decision: requests.length === 1 ? 'task' : 'denied', toolIds }; },
+  };
+  const run = async () => { runs++; return { ok: true, output: 'done', meta: { observations: [] } }; };
+  const outcomes = await runInternalMembers({ jobs: [exec('save the note', 1), exec('save the other note', 2)], goal, run, approvals, lanes: 1, sseEmitter: (type, event) => { if (type === 'execution_event') events.push(event); } });
+  assert.equal(runs, 2, 'approved and denied members both run');
+  assert.deepEqual(requests.map(r => r.toolIds), [['reminders_create'], ['reminders_create']], 'file-safety tools and already-allowed tools are not on the card');
+  assert.deepEqual(events.filter(e => /^routing:approval:/.test(e.id)).map(e => e.status), ['completed', 'failed']);
+  assert.ok(outcomes.every(o => o.started));
+  const research = await runInternalMembers({ jobs: [job('research', 'look', 3)], goal, run, approvals: { ...approvals, request: async () => { throw new Error('must not ask'); } } });
+  assert.ok(research[0].started, 'a member without gated tools asks nothing');
+});
+test('A5-1: a job runs on its configured connection, otherwise on the conversation connection', async () => {
+  const { jobConnectionConfig } = await import('./internalMembers.js');
+  const config = { authMode: 'codex', baseUrl: 'https://chatgpt.com/backend-api', model: 'gpt-6.1-sol', apiKey: '', apiProtocol: 'responses',
+    llmProfiles: { fast: { id: 'fast', authMode: 'api-key', baseUrl: 'https://openrouter.ai/api/v1', model: 'fast-model', apiKey: 'sk-fast', apiProtocol: 'chat-completions' }, empty: { id: 'empty', authMode: 'api-key', model: '' } } };
+  assert.equal(jobConnectionConfig(config, { research: 'fast' }, 'research').model, 'fast-model');
+  assert.equal(jobConnectionConfig(config, { research: 'fast' }, 'research').apiKey, 'sk-fast');
+  assert.equal(jobConnectionConfig(config, { research: 'fast' }, 'lookup').model, 'gpt-6.1-sol', 'other jobs follow the conversation');
+  assert.equal(jobConnectionConfig(config, { research: 'missing' }, 'research').model, 'gpt-6.1-sol', 'unknown ids fall back');
+  assert.equal(jobConnectionConfig(config, { research: 'empty' }, 'research').model, 'gpt-6.1-sol', 'a connection without a model falls back');
+  assert.equal(jobConnectionConfig(config, null, 'research'), config);
+  const seen = []; const events = [];
+  await runInternalMembers({ jobs: [job('research', 'look', 1), job('calculate', 'sum', 2)], goal, config, jobModels: { research: 'fast' }, lanes: 1,
+    run: async options => { seen.push(options.config.model); return { ok: true, output: 'ok', meta: { observations: [] } }; }, sseEmitter: (type, event) => { if (type === 'execution_event') events.push(event); } });
+  assert.deepEqual(seen, ['fast-model', 'gpt-6.1-sol']);
+  assert.equal(events.find(e => e.id === 'internal:1' && e.status === 'running').model, 'fast-model', 'the scene shows which model the member ran on');
+});

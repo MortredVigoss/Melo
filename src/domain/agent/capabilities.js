@@ -21,14 +21,25 @@ export function intersectCapabilities(a,b) {
   return normalizeCapabilities({...Object.fromEntries(Object.keys(CAPABILITY_LABELS).map(k=>[k,a[k]&&b[k]])),...Object.fromEntries(['mcpServers','skills','connectors'].map(k=>[k,a[k].filter(id=>b[k].includes(id))]))});
 }
 export function hasCapability(capabilities, key) { return !capabilities || capabilities[key]===true; }
+// Internal routing jobs that may run on their own model connection (plan A
+// phase A5-1, 2026-11-04): the value is an llm profile id; absent means the
+// member follows the conversation's connection.
+export const INTERNAL_JOB_ROLES=Object.freeze(['research','lookup','calculate','execute']);
+function jobModels(value) {
+  const out={};
+  for (const role of INTERNAL_JOB_ROLES) { const id=value?.[role]; if (typeof id==='string'&&/^[a-zA-Z0-9_-]{1,100}$/.test(id)) out[role]=id; }
+  return Object.keys(out).length?out:undefined;
+}
 export function normalizeCollaboration(value={}) {
   const bounded=(v,f,max)=>Number.isInteger(v)&&v>=1?Math.min(v,max):f;
-  return {...(value.maxTaskIterations !== undefined ? {maxTaskIterations:bounded(value.maxTaskIterations,C.loop.maxIterations,C.guardLimits.maxRounds)} : {}),canDelegate:value.canDelegate===true,delegateTargets:list(value.delegateTargets),maxDelegationDepth:bounded(value.maxDelegationDepth,1,3),maxIterations:bounded(value.maxIterations,C.delegationLimits.iterations,20),maxTokens:bounded(value.maxTokens,32000,200000),timeoutMs:bounded(value.timeoutMs,180000,900000)};
+  const jobs=jobModels(value.jobModels);
+  return {...(value.maxTaskIterations !== undefined ? {maxTaskIterations:bounded(value.maxTaskIterations,C.loop.maxIterations,C.guardLimits.maxRounds)} : {}),canDelegate:value.canDelegate===true,delegateTargets:list(value.delegateTargets),maxDelegationDepth:bounded(value.maxDelegationDepth,1,3),maxIterations:bounded(value.maxIterations,C.delegationLimits.iterations,20),maxTokens:bounded(value.maxTokens,32000,200000),timeoutMs:bounded(value.timeoutMs,180000,900000),...(jobs?{jobModels:jobs}:{})};
 }
 export function intersectCollaboration(a,b) {
   a=normalizeCollaboration(a);b=normalizeCollaboration(b);
   return {...(a.maxTaskIterations !== undefined || b.maxTaskIterations !== undefined ? {maxTaskIterations:Math.min(a.maxTaskIterations ?? C.loop.maxIterations,b.maxTaskIterations ?? C.loop.maxIterations)} : {}),canDelegate:a.canDelegate&&b.canDelegate,delegateTargets:a.delegateTargets.filter(id=>b.delegateTargets.includes(id)),
-    ...Object.fromEntries(['maxDelegationDepth','maxIterations','maxTokens','timeoutMs'].map(key=>[key,Math.min(a[key],b[key])]))};
+    ...Object.fromEntries(['maxDelegationDepth','maxIterations','maxTokens','timeoutMs'].map(key=>[key,Math.min(a[key],b[key])])),
+    ...((b.jobModels||a.jobModels)?{jobModels:b.jobModels||a.jobModels}:{})};
 }
 // Tool self-description (tools/tool.js `capability`). The domain cannot import
 // the tool registry, so callers hand the tool object in; the resolved

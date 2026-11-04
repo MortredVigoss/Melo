@@ -410,6 +410,7 @@ export function createInvokeModelNode(turn) {
         const { dispatchMemberBackground } = dispatchConstants();
         const outcomes = started.length ? await runInternalMembers({ jobs: started, goal: routeGoal, background: dispatchMemberBackground,
           config: delegatedModelConfig, extraTools: [...(graphState.skillTools || []), ...(graphState.mcpTools || [])], replyFn: rawReplyProvider,
+          jobModels: graphState.activeAgentProfile?.collaboration?.jobModels || null,
           signal, sseEmitter, chatId: chat.id, workspacePath: workspace?.rootPath, chatSource: chat.source || 'desktop', projectId: chat.projectId,
           onProviderResponse: receipt => { if (!signal?.aborted) modelResponses.push(receipt); } }) : [];
         for (const outcome of outcomes) {

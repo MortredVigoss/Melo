@@ -4940,6 +4940,7 @@ function renderToolPermissionDialog() {
     return renderFileSafetyDialog(entry);
   }
   if (entry.kind === 'capability') return approvalsFeature.renderCapabilityPrompt(entry);
+  if (entry.kind === 'task_scope') return approvalsFeature.renderTaskScopePrompt(entry);
 
   const { requestId, toolId, args } = entry;
   const argsText = args && Object.keys(args).length

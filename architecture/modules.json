@@ -24,8 +24,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 692,
-      "edges": 2245,
+      "modules": 693,
+      "edges": 2251,
       "roots": [
         "src",
         "desktop-ui",
@@ -272,7 +272,7 @@
         "scripts/migrate-agent-capabilities.js"
       ],
       "modules": {
-        "desktop-ui": 12,
+        "desktop-ui": 13,
         "src": 49
       },
       "entryModules": [
@@ -559,7 +559,7 @@
         "approvals": 3,
         "channels": 3,
         "chat": 31,
-        "desktop-shell": 8,
+        "desktop-shell": 9,
         "memory": 12,
         "platform": 49,
         "settings": 3,
@@ -609,6 +609,7 @@
         "desktop-ui/features/agents/context.js",
         "desktop-ui/features/agents/controller.js",
         "desktop-ui/features/agents/index.js",
+        "desktop-ui/features/agents/jobModelChoices.js",
         "desktop-ui/features/agents/state.js",
         "desktop-ui/features/agents/view.js",
         "desktop-ui/teamPanel.js"
@@ -642,6 +643,7 @@
           "desktop-ui/features/agents/agentMcpAuthorise.test.js",
           "desktop-ui/features/agents/capabilityChoices.test.js",
           "desktop-ui/features/agents/controller.test.js",
+          "desktop-ui/features/agents/jobModelChoices.test.js",
           "desktop-ui/teamPanel.test.js",
           "src/agents/childDelivery.test.js",
           "src/agents/collaboration.test.js",
@@ -1122,7 +1124,7 @@
         "projects": 11,
         "settings": 11,
         "sync": 2,
-        "tools": 41,
+        "tools": 44,
         "voice": 3
       },
       "usedBy": {
@@ -2574,6 +2576,7 @@
         {
           "module": "src/tools/permissions.js",
           "importedBy": [
+            "chat",
             "platform"
           ]
         },
@@ -2589,7 +2592,8 @@
         {
           "module": "src/tools/registryCore.js",
           "importedBy": [
-            "agents"
+            "agents",
+            "chat"
           ]
         },
         {
@@ -2675,7 +2679,7 @@
       "usedBy": {
         "agents": 21,
         "approvals": 2,
-        "chat": 41,
+        "chat": 44,
         "desktop-shell": 13,
         "media": 4,
         "memory": 1,
@@ -2852,6 +2856,7 @@
           "src/tools/permissions.chatScope.test.js",
           "src/tools/permissions.context.test.js",
           "src/tools/permissions.persist.test.js",
+          "src/tools/permissions.taskScope.test.js",
           "src/tools/registry.consistency.test.js",
           "src/tools/shellWebObservation.test.js",
           "src/tools/toolGroups.test.js",
@@ -3601,6 +3606,7 @@
         ],
         "js": [
           "desktop-ui/features/approvals/controller.test.js",
+          "desktop-ui/features/approvals/taskScope.test.js",
           "desktop-ui/fileSafetyResponse.test.js",
           "src/domain/task/taskOwners.test.js",
           "src/reminders/delivery.test.js",
@@ -3771,7 +3777,7 @@
         "voice": 2
       },
       "usedBy": {
-        "agents": 8,
+        "agents": 9,
         "approvals": 8,
         "chat": 20,
         "development": 1,

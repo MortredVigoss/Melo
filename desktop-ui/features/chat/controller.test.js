@@ -656,3 +656,20 @@ test('chat files toggle is handled before the dispatch, synchronously', () => {
   assert.equal(h.chat().chatFilesOpen, true);
   assert.equal(h.feature.handleChatFilesToggle('open-chat', summary, event), false);
 });
+
+test('a task-scope card joins the permission queue with its tools and leaves it when the turn ends', async () => {
+  const sse = server();
+  const h = harness();
+  h.chat().composer = 'save the plan';
+  const sending = h.send();
+  await flush();
+  sse.send('tool_permission', { requestId: 'scope-1', kind: 'task_scope', toolIds: ['reminders_create', 'clipboard'], task: 'Save the plan', label: '执行成员', turnRequestId: 't1' });
+  sse.send('tool_permission', { requestId: 'scope-1', kind: 'task_scope', toolIds: ['reminders_create'], task: 'Save the plan', label: '执行成员', turnRequestId: 't1' });
+  await flush();
+  assert.deepEqual(h.state.permissions.map(p => [p.kind, p.requestId, p.toolIds]), [['task_scope', 'scope-1', ['reminders_create']]], 'a retransmission replaces only itself');
+  assert.equal(h.feature.thinkingLabel().startsWith('等待你的确认'), true);
+  sse.send('done', {});
+  sse.close();
+  await sending;
+  assert.deepEqual(h.state.permissions, []);
+});

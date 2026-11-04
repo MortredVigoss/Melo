@@ -1,5 +1,6 @@
 import { runDeadline } from '../../runtime/runDeadline.js';
 import { endTaskPermissions } from '../../safety/fileSafetyGate.js';
+import { endTaskToolPermissions } from '../../tools/permissions.js';
 import { withLoopTrace, currentLoopTrace, traceModelCall, traceEvent } from '../../runtime/loopTrace.js';
 import { captureBehavior } from '../../runtime/runtimeBehavior.js';
 import { getRequestNetworkPolicy } from '../../../shared/agent/retrieval/requestPolicy.js';
@@ -248,5 +249,5 @@ export async function runChatAgentExecutionGraph({
     latestUserMessage,
     agentId,
     channelContext,
-  }); } finally { deadline.dispose(); endTaskPermissions(context); }
+  }); } finally { deadline.dispose(); endTaskPermissions(context); endTaskToolPermissions(context); }
 }

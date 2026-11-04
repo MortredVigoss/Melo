@@ -15,6 +15,8 @@ import { runSubAgent } from '../../../agents/subAgent.js';
 import { currentRequestContext, runWithRequestContext } from '../../../runtime/requestScope.js';
 import { narrowBudget, extendBudget, remainingMs } from '../../../runtime/runBudget.js';
 import { internalHandoff, MAX_MEMBER_ROUNDS } from '../../../../shared/agent/internalRouting.js';
+import { checkPermissionRule, requestTaskScopeApproval } from '../../../tools/permissions.js';
+import { getTool } from '../../../tools/registryCore.js';
 
 export const READ_ONLY_JOBS = Object.freeze(['research', 'lookup', 'calculate']);
 export const INTERNAL_PARALLEL_LANES = 3;
@@ -55,6 +57,42 @@ export function extendForMember(budget, sseEmitter, job) {
   return result;
 }
 
+// A4-1 (2026-11-04): before a member starts, every tool it may call that still
+// needs the user's approval is asked for once, on a single task-scope card,
+// instead of surfacing mid-run one call at a time. The file-safety gate keeps
+// its per-operation consent (path / diff), and a denied or unanswered card
+// changes nothing: the member runs and its calls prompt as before.
+const defaultApprovals = {
+  tool: (id, extraTools = []) => extraTools.find(tool => tool.id === id) || getTool(id) || null,
+  check: checkPermissionRule,
+  request: requestTaskScopeApproval,
+};
+export async function prescreenApprovals({ job, extraTools = [], chatId, sseEmitter, signal, approvals = defaultApprovals }) {
+  const gated = [];
+  for (const id of job.tools || []) {
+    const tool = approvals.tool(id, extraTools);
+    if (!tool || tool.requiresPermission === false || tool.permissionGate === 'file-safety') continue;
+    if (await approvals.check(id, {}, chatId) === 'ask') gated.push(id);
+  }
+  if (!gated.length) return null;
+  const outcome = await approvals.request({ toolIds: gated, task: job.task, label: job.label, chatId, sseEmitter, signal });
+  const allowed = ['task', 'session', 'always'].includes(outcome?.decision);
+  sseEmitter?.('execution_event', { kind: 'pipeline', id: `routing:approval:${job.index}`, module: 'compute', name: job.label, status: allowed ? 'completed' : 'failed',
+    output: `Task-scope approval for ${gated.join(', ')}: ${outcome?.decision || 'unknown'}.` });
+  return outcome;
+}
+
+// A5-1: a job may run on its own model connection (agent setting
+// collaboration.jobModels[role] = llm profile id); otherwise it follows the
+// conversation's connection. Keys never leave the resolved config.
+export function jobConnectionConfig(config, jobModels, role) {
+  const id = jobModels?.[role];
+  const profile = typeof id === 'string' && id ? config?.llmProfiles?.[id] : null;
+  if (!profile || !profile.model) return config;
+  return { ...config, activeLlmProfileId: id, authMode: profile.authMode, baseUrl: profile.baseUrl, model: profile.model,
+    apiKey: profile.apiKey || '', apiProtocol: profile.apiProtocol || 'chat-completions', modelResolvedForTurn: true };
+}
+
 export function memberConfig(config) {
   const search = { ...(config?.operationalLimits?.search || {}), maxResults: MEMBER_SEARCH_RESULTS, contentMaxChars: MEMBER_SEARCH_CONTENT_CHARS };
   return { ...config, operationalLimits: { ...(config?.operationalLimits || {}), search } };
@@ -77,7 +115,7 @@ function limitedResult(result, signal) {
 }
 
 export async function runInternalMembers({ jobs = [], goal = '', background = '', config, extraTools = [], replyFn, signal, sseEmitter, chatId, workspacePath,
-  chatSource, projectId, onProviderResponse, run = runSubAgent, lanes = INTERNAL_PARALLEL_LANES } = {}) {
+  chatSource, projectId, onProviderResponse, run = runSubAgent, lanes = INTERNAL_PARALLEL_LANES, approvals = defaultApprovals, jobModels = null } = {}) {
   const context = currentRequestContext();
   const budget = context?.budget || null;
   const reference = String(goal || '').slice(0, 12000);
@@ -86,7 +124,8 @@ export async function runInternalMembers({ jobs = [], goal = '', background = ''
   const pipeline = (job, fields) => sseEmitter?.('execution_event', { kind: 'pipeline', id: `internal:${job.index}`, module: 'compute', name: job.label, ...fields });
   const runOne = async index => {
     const job = jobs[index];
-    pipeline(job, { status: 'running', input: job.task });
+    const jobConfig = memberConfig(jobConnectionConfig(config, jobModels, job.role));
+    pipeline(job, { status: 'running', input: job.task, ...(jobConfig?.model ? { model: jobConfig.model } : {}) });
     extendForMember(budget, sseEmitter, job);
     const { share, reason } = memberShare(budget);
     if (reason === 'LEAD_RESERVE') {
@@ -98,11 +137,12 @@ export async function runInternalMembers({ jobs = [], goal = '', background = ''
     // Member events keep their own ids under the job prefix (like delegated
     // members) so a member's model:N stage never merges into the lead's.
     const emit = (type, event) => sseEmitter?.(type, type === 'execution_event' ? { ...event, ...(event?.id ? { id: `${job.id}:${event.id}` } : {}), actorName: job.label } : event);
-    const invoke = () => run({ task: job.task, roleSystem: job.system, background: memberBackground, allowedToolIds: job.tools, extraTools, config: memberConfig(config), nativeWebSearch: false, nativeImageGeneration: false, condenseEachRound: true,
+    const invoke = () => run({ task: job.task, roleSystem: job.system, background: memberBackground, allowedToolIds: job.tools, extraTools, config: jobConfig, nativeWebSearch: false, nativeImageGeneration: false, condenseEachRound: true,
       // runSubAgent caps a member's input tokens at maxTokens (32k by default,
       // sized for delegated members); an internal member gets its whole share.
       ...(replyFn ? { replyFn } : {}), maxIterations: MAX_MEMBER_ROUNDS, maxTokens: share || MEMBER_INPUT_SHARE, roleId: job.id, depth: 1, signal, sseEmitter: emit, chatId, workspacePath, chatSource, projectId, onProviderResponse });
     const child = budget ? narrowBudget(budget, share ? { maxInputTokens: share } : {}) : null;
+    await prescreenApprovals({ job, extraTools, chatId, sseEmitter, signal, approvals });
     let result;
     try { result = await (context ? runWithRequestContext(Object.freeze({ ...context, ...(child ? { budget: child } : {}) }), invoke) : invoke()); }
     catch (error) { result = { ok: false, output: String(error?.message || error), meta: { aborted: signal?.aborted === true, stopReason: 'ERROR' } }; }

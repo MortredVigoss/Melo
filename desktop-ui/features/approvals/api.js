@@ -6,5 +6,7 @@ export function createApprovalsApi(request) {
     respondCapability: body => request('/api/capability-requests/respond', { method: 'POST', body }),
     grants: () => request('/api/capability-grants'),
     revokeGrant: id => request('/api/capability-grants/revoke', { method: 'POST', body: { id } }),
+    // { requestId, granted, scope: 'task' | 'session' | 'always', toolId: '', kind: 'task_scope' } (A4-1)
+    respondToolPermission: body => request('/api/tools/permission-response', { method: 'POST', body }),
   };
 }

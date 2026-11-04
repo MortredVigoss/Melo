@@ -734,6 +734,11 @@ async function handleSendMessage(prepared = null) {
               payload: rest,
             });
             render();
+          } else if (payload.kind === 'task_scope') {
+            // A member's task-scope card (A4-1): one entry per request, answered by app.js.
+            setToolPermissions(toolPermissions().filter(p => p.requestId !== requestId));
+            toolPermissions().push({ kind: 'task_scope', requestId, toolIds: Array.isArray(payload.toolIds) ? payload.toolIds : [], task: payload.task || '', label: payload.label || '', agentId: payload.agentId });
+            render();
           } else if (payload.toolId) {
             const { toolId, args } = payload;
             // Retransmissions replace only themselves; parallel calls need distinct decisions.

@@ -46,6 +46,44 @@ export function promptText(entry) {
     : t('此 Agent（{agent}）需要『{capability}』', { agent, capability });
 }
 
+/**
+ * The card for one queued task-scope request (plan A phase A4-1, 2026-11-04):
+ * an internal member lists the gated tools it may need for this assignment and
+ * the user allows them for this turn, this chat, or not at all. Same look and
+ * actions as the tool permission dialog; the decision is posted by app.js.
+ */
+export function renderTaskScopePrompt(entry) {
+  const requestId = escapeHtml(entry.requestId);
+  const tools = Array.isArray(entry.toolIds) ? entry.toolIds.filter(id => typeof id === 'string') : [];
+  const label = entry.label || t('执行成员');
+  return ui`
+    <div class="tool-permission-backdrop task-scope-prompt-backdrop" role="dialog" aria-modal="true" aria-label="${escapeHtml(t('本次任务授权'))}">
+      <div class="tool-permission-shell task-scope-prompt-shell" data-task-scope-request="${requestId}">
+        <div class="tool-permission-header">
+          <span class="tool-permission-icon">${icon.chip}</span>
+          <div>
+            <div class="tool-permission-title">${escapeHtml(t('{label}需要以下工具', { label }))}</div>
+            <div class="tool-permission-subtitle">${escapeHtml(t('一次决定本次任务里这些工具的使用；文件改动仍逐项确认'))}</div>
+          </div>
+        </div>
+        <div class="tool-permission-body">
+          <div class="tool-permission-tool-name">${escapeHtml(entry.agentId || 'Agent')} · ${escapeHtml(label)}</div>
+          ${entry.task ? ui`<p class="page-kicker-tip">${escapeHtml(t('子任务：{task}', { task: String(entry.task).slice(0, 400) }))}</p>` : ''}
+          ${entry.confirmError ? ui`<div class="file-safety-warn" role="alert">${escapeHtml(entry.confirmError)}</div>` : ''}
+          <ul class="task-scope-tools">${tools.map(id => ui`<li><code>${escapeHtml(id)}</code></li>`).join('')}</ul>
+        </div>
+        <div class="tool-permission-footer">
+          <fieldset class="inline-actions permission-actions" ${entry.submitting ? 'disabled aria-busy="true"' : ''}>
+            <button class="small-button is-primary" data-action="tool-permission-allow-task" data-request-id="${requestId}" data-tool-id="">${escapeHtml(t('本次任务允许'))}</button>
+            <button class="small-button" data-action="tool-permission-allow-session" data-request-id="${requestId}" data-tool-id="">${escapeHtml(t('本对话允许'))}</button>
+            <button class="small-button" data-action="tool-permission-deny" data-request-id="${requestId}" data-tool-id="">${escapeHtml(t('拒绝'))}</button>
+          </fieldset>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 /** The prompt card for one queued `capability_request` (kind 'capability'). */
 export function renderCapabilityPrompt(entry) {
   const beyond = entry.decision === 'elevate-beyond-parent';

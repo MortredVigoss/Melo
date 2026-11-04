@@ -8,6 +8,7 @@ import { AGENT_LOOP_CONTRACT as C } from '../../../shared/agent/loopContract.js'
 import { t, ui, term } from '../../i18n.js';
 import { renderAgentAvatar } from '../../agentAvatar.js';
 import { renderCapabilityChoices } from './capabilityChoices.js';
+import { renderJobModelChoices, JOB_MODEL_ROLES } from './jobModelChoices.js';
 import { getBootstrap, activeProject, isAgentChannelAvailable, escapeHtml, icon, renderCapabilityGrants } from './context.js';
 // renderCapabilityGrants (the approvals feature's «临时授权» list) sits after the
 // form: the settings editor keeps form controls read-only until editing, and
@@ -130,7 +131,7 @@ function renderAgentCapabilities(selected,draft) {
   const pendingChanges=pending ? [
     ...Object.entries(selected.capabilityLabels||{}).filter(([key])=>pending.requested.capabilities[key]&&!selected.capabilities?.[key]).map(([,label])=>label),
     ...[['mcpServers','MCP 服务'],['skills','技能'],['connectors','连接器']].flatMap(([key,label])=>pending.requested.capabilities[key].filter(id=>!selected.capabilities?.[key]?.includes(id)).map(id=>`${t(label)}: ${id}`)),
-    ...[['maxTaskIterations','任务执行轮数'],['delegateTargets','委派对象'],['maxDelegationDepth','委派深度'],['maxIterations','成员轮数'],['maxTokens','成员 token 上限'],['timeoutMs','成员超时（毫秒）']].filter(([key])=>JSON.stringify(pending.baseline.current.collaboration[key])!==JSON.stringify(pending.requested.collaboration[key])).map(([key,label])=>`${t(label)}: ${settingText(pending.baseline.current.collaboration[key])} → ${settingText(pending.requested.collaboration[key])}`),
+    ...[['maxTaskIterations','任务执行轮数'],['delegateTargets','委派对象'],['maxDelegationDepth','委派深度'],['maxIterations','成员轮数'],['maxTokens','成员 token 上限'],['timeoutMs','成员超时（毫秒）'],['jobModels','岗位模型']].filter(([key])=>JSON.stringify(pending.baseline.current.collaboration[key])!==JSON.stringify(pending.requested.collaboration[key])).map(([key,label])=>`${t(label)}: ${settingText(pending.baseline.current.collaboration[key])} → ${settingText(pending.requested.collaboration[key])}`),
     ...[['projects','项目指引'],['knowledge','共享知识'],['memory','记忆']].filter(([key])=>pending.baseline.current.contextSources[key]!==pending.requested.contextSources[key]).map(([,label])=>`${t(label)}: ${t('开启')}`),
   ] : [];
   return ui`<details class="agent-settings-section agent-capabilities" data-agent-section="${selected.id}:capabilities" ${pending || !selected.capabilities || agentsState.agentOpenSections[`${selected.id}:capabilities`] ? 'open' : ''}><summary>能力范围与协作</summary><p>关闭的能力在工具执行时拒绝；MCP 服务可自行执行命令，请只授权可信服务。</p><p>${escapeHtml(t('「联网」包含网页搜索和读取网页；本机定位在下方「这台电脑上」单独开启。'))}</p><p>这些能力只约束这个 Agent 在电脑上的执行。手机上的联网、生成图片和手机数据，在手机的 Agent 页“这台手机上”单独设置。</p>
@@ -144,7 +145,7 @@ function renderAgentCapabilities(selected,draft) {
     <div class="agent-settings-grid">
     ${renderCapabilityChoices('delegateTargets','委派对象',draft?.delegateTargets ?? collaboration.delegateTargets,getBootstrap().customize.agents.filter(a=>a.id!==selected.id),escapeHtml)}
     ${[['maxTaskIterations','任务执行轮数',C.loop.maxIterations,C.guardLimits.maxRounds],['maxDelegationDepth','委派深度',1,3],['maxIterations','成员轮数',C.delegationLimits.iterations,20],['maxTokens','成员 token 上限',32000,200000],['timeoutMs','成员超时（毫秒）',180000,900000]].map(([key,label,fallback,max])=>`<label class="label">${escapeHtml(t(label))}<input class="config-input" type="number" min="${key === 'maxTaskIterations' ? C.loop.minIterations : 1}" max="${max}" name="${key}" value="${escapeHtml(String(draft?.[key]??collaboration[key]??fallback))}"></label>`).join('')}
-    </div><p>检查不占执行轮数；到顶后会汇报进度。时间与 token 预算仍有效。</p><p>上下文来源</p><div class="agent-capability-flags">${[['projects','项目指引'],['knowledge','共享知识'],['memory','记忆']].map(([key,label])=>`<label class="checkbox-row"><input type="checkbox" name="context_${key}" ${(draft?.['context_'+key]!==undefined?draft['context_'+key]==='on':selected.contextSources?.[key]!==false)?'checked':''}>${escapeHtml(t(label))}</label>`).join('')}
+    </div><p>${escapeHtml(t('内部岗位模型'))}</p><p>${escapeHtml(t('按岗位选择模型连接，留空跟随对话；只影响内部成员，不改审批与能力范围。'))}</p><div class="agent-settings-grid">${renderJobModelChoices(Object.fromEntries(JOB_MODEL_ROLES.map(([role])=>[role,draft?.['jobModel_'+role] ?? collaboration.jobModels?.[role] ?? ''])),getBootstrap()?.settings?.config?.llmConnections?.profiles || [],escapeHtml)}</div><p>检查不占执行轮数；到顶后会汇报进度。时间与 token 预算仍有效。</p><p>上下文来源</p><div class="agent-capability-flags">${[['projects','项目指引'],['knowledge','共享知识'],['memory','记忆']].map(([key,label])=>`<label class="checkbox-row"><input type="checkbox" name="context_${key}" ${(draft?.['context_'+key]!==undefined?draft['context_'+key]==='on':selected.contextSources?.[key]!==false)?'checked':''}>${escapeHtml(t(label))}</label>`).join('')}
   </div></details>`;
 }
 

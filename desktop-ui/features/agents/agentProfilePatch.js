@@ -1,4 +1,5 @@
 import { AGENT_LOOP_CONTRACT as C } from '../../../shared/agent/loopContract.js';
+import { jobModelsFromForm } from './jobModelChoices.js';
 export function buildAgentProfilePatch(form, formData) {
   const hasFormField = name =>
     Boolean(form.elements.namedItem(name)) || formData.has(name);
@@ -24,6 +25,8 @@ export function buildAgentProfilePatch(form, formData) {
     if(hasFormField('capabilityMigrationExpected')) patch.capabilityMigrationExpected=String(formData.get('capabilityMigrationExpected'));
     // One delegation switch: the capability flag also sets the synced collaboration flag.
     patch.collaboration={...(Number(formData.get('maxTaskIterations')||C.loop.maxIterations)!==C.loop.maxIterations?{maxTaskIterations:Number(formData.get('maxTaskIterations'))}:{}),canDelegate:formData.get('cap_delegate')==='on',delegateTargets:choiceList('delegateTargets'),maxDelegationDepth:Number(formData.get('maxDelegationDepth')||1),maxIterations:Number(formData.get('maxIterations')||C.delegationLimits.iterations),maxTokens:Number(formData.get('maxTokens')||32000),timeoutMs:Number(formData.get('timeoutMs')||180000)};
+    const jobModels=jobModelsFromForm(formData,hasFormField);
+    if(jobModels!==undefined) patch.collaboration.jobModels=jobModels;
     patch.contextSources=Object.fromEntries(['projects','knowledge','memory'].map(k=>[k,formData.get('context_'+k)==='on']));
   }
   assignString('name');

@@ -4,7 +4,7 @@
 // approvals.css, as before).
 import { installApprovalsController, approvalsActions, focusPromptAfterRender, loadGrants } from './controller.js';
 import { approvalsState } from './state.js';
-import { renderCapabilityPrompt, renderGrantList } from './view.js';
+import { renderCapabilityPrompt, renderGrantList, renderTaskScopePrompt } from './view.js';
 
 export function installApprovalsFeature(context) {
   installApprovalsController(context);
@@ -12,6 +12,8 @@ export function installApprovalsFeature(context) {
     actions: approvalsActions,
     // renderToolPermissionDialog() hands a queued entry of kind 'capability' here.
     renderCapabilityPrompt,
+    // renderToolPermissionDialog() hands a queued entry of kind 'task_scope' here (A4-1).
+    renderTaskScopePrompt,
     // Agent settings (one Agent) and Customize → Safety (all Agents).
     renderGrantList,
     // render() hook, after the other restores.

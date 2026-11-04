@@ -637,5 +637,38 @@
         }
       ]
     }
+  },
+  {
+    "name": "agentCollaboration accepts per-job connection ids",
+    "definition": "agentCollaboration",
+    "valid": true,
+    "input": {
+      "canDelegate": false,
+      "delegateTargets": [],
+      "maxDelegationDepth": 1,
+      "maxIterations": 8,
+      "maxTokens": 32000,
+      "timeoutMs": 180000,
+      "jobModels": {
+        "research": "fast-openrouter",
+        "execute": "existing"
+      }
+    }
+  },
+  {
+    "name": "agentCollaboration rejects unknown internal jobs",
+    "definition": "agentCollaboration",
+    "valid": false,
+    "input": {
+      "canDelegate": false,
+      "delegateTargets": [],
+      "maxDelegationDepth": 1,
+      "maxIterations": 8,
+      "maxTokens": 32000,
+      "timeoutMs": 180000,
+      "jobModels": {
+        "planner": "x"
+      }
+    }
   }
 ]

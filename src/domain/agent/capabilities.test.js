@@ -54,3 +54,17 @@ test('sub-agent native network and image features respect inherited capability s
  let seen;const result=await runSubAgent({task:'Answer only',config:{model:'test'},capabilities:emptyCapabilities(),replyFn:async request=>{seen=request;return 'Done';}});
  assert.equal(result.ok,true);assert.equal(seen.nativeWebSearchEnabled,false);assert.equal(seen.nativeImageGenerationEnabled,false);
 });
+
+test('collaboration.jobModels keeps only known internal jobs with valid connection ids, and a project override wins', async () => {
+  const { normalizeCollaboration, intersectCollaboration, INTERNAL_JOB_ROLES } = await import('./capabilities.js');
+  assert.deepEqual(INTERNAL_JOB_ROLES, ['research', 'lookup', 'calculate', 'execute']);
+  const normalized = normalizeCollaboration({ canDelegate: false, jobModels: { research: 'fast-openrouter', planner: 'x', execute: 'bad id!', lookup: '' } });
+  assert.deepEqual(normalized.jobModels, { research: 'fast-openrouter' });
+  assert.equal('jobModels' in normalizeCollaboration({ canDelegate: false }), false, 'absent when empty');
+  assert.equal('jobModels' in normalizeCollaboration({ jobModels: { planner: 'x' } }), false);
+  const global = normalizeCollaboration({ canDelegate: true, jobModels: { research: 'a' } });
+  assert.deepEqual(intersectCollaboration(global, normalizeCollaboration({ canDelegate: true })).jobModels, { research: 'a' }, 'inherits the global choice');
+  assert.deepEqual(intersectCollaboration(global, normalizeCollaboration({ canDelegate: true, jobModels: { research: 'b' } })).jobModels, { research: 'b' }, 'the project override wins');
+  const { normalizeAgentProfile } = await import('../../state/agentProfiles.js');
+  assert.deepEqual(normalizeAgentProfile('main', { collaboration: { canDelegate: false, jobModels: { calculate: 'cheap' } } }).collaboration.jobModels, { calculate: 'cheap' });
+});

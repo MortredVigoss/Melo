@@ -99,7 +99,32 @@ export function focusPromptAfterRender() {
   shell.querySelector('[data-action="capability-request-respond"]')?.focus?.();
 }
 
+// A member's task-scope card (A4-1, 2026-11-04): allow its gated tools for this
+// turn or this chat. Deny reuses app.js's tool-permission-deny, which the
+// server maps to the task scope for this kind of request.
+export async function respondTaskScope(requestId, granted, scope) {
+  const entry = toolPermissions().find(p => p.requestId === requestId && p.kind === 'task_scope');
+  if (!entry || entry.submitting) return;
+  entry.submitting = true;
+  entry.confirmError = '';
+  render();
+  try {
+    await approvalsApi.respondToolPermission({ requestId, granted, scope, toolId: '', kind: 'task_scope' });
+    setToolPermissions(toolPermissions().filter(p => p.requestId !== requestId));
+  } catch (error) {
+    entry.submitting = false;
+    entry.confirmError = String(error?.message || error);
+  }
+  render();
+}
+
 export const approvalsActions = {
+  'tool-permission-allow-task': async ({ trigger }) => {
+    await respondTaskScope(trigger.dataset.requestId, true, 'task');
+  },
+  'tool-permission-allow-session': async ({ trigger }) => {
+    await respondTaskScope(trigger.dataset.requestId, true, 'session');
+  },
   'capability-request-respond': async ({ trigger }) => {
     await respondCapabilityRequest(trigger.dataset.requestId, trigger.dataset.decision);
   },

@@ -65,7 +65,7 @@ test('narrow context, own state, registered actions', () => {
   assert.throws(() => installApprovalsFeature({ ...h.context, uiState: {} }), /not uiState/);
   const { refreshBootstrap, ...rest } = h.context;
   assert.throws(() => installApprovalsFeature(rest), /missing context refreshBootstrap/);
-  assert.deepEqual(Object.keys(h.feature.actions).sort(), ['capability-grant-revoke', 'capability-grants-refresh', 'capability-request-respond']);
+  assert.deepEqual(Object.keys(h.feature.actions).sort(), ['capability-grant-revoke', 'capability-grants-refresh', 'capability-request-respond', 'tool-permission-allow-session', 'tool-permission-allow-task']);
   const first = h.feature.getState();
   assert.notEqual(harness().feature.getState(), first, 'every install starts from its own state object');
 });

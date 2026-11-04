@@ -15,7 +15,7 @@ class SharedContractTest {
     }
     @Test fun allSharedNodeAndSwiftFixturesAgree() {
         val fixtures = MeloJson.parseToJsonElement(resource("fixtures.json")).jsonArray
-        assertEquals(40, fixtures.size)
+        assertEquals(42, fixtures.size)
         fixtures.forEach { fixture ->
             val row = fixture.jsonObject
             val accepted = runCatching { schema.validate(expand(row.getValue("input")), row.text("definition")) }.isSuccess
