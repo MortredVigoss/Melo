@@ -21,3 +21,20 @@
 | 低 | 从根目录搬到 docs/handoffs 的进度归档仍用原来的相对路径，导致文档门禁失败 | 修复四处引用并实际运行文档链接检查 |
 
 21 个冲突文件涉及三端主循环、生成物、公开媒体检索及文档。逐段保留主线可设的执行预算与单独的无工具检查/收尾、分支的原生动作回执与 Workflow 目录。桌面原生搜索的计数改由带 Trace 的共享状态转移入口处理。两边的测试和历史文档都在。保留原 Brave 默认端点配置，对解析后的端点统一做合法性检查。
+
+## 合入与验收
+
+本地 master 已快进到 `7a55331`。合并提交 `7a828ec` 有两个父提交 `601aed1` 和 `fed7c134`，保留了贡献者原来的 12 个提交。验收期间的主线文档提交 `9731946` 经 `1b4b172` 一起合入。`git merge-base --is-ancestor fed7c134 master` 已通过。GitHub master 在交付时为 `d58554c`。
+
+| 验证 | 实际结果 |
+| --- | --- |
+| 综合快速档 `run-Zn82fx` | 4,837/4,837 JS、38 套 Swift、Android JVM/Lint/Debug/Release、设置浏览器通过。513.1 秒，零跳过、零隔离复测 |
+| 延期提醒增量 `run-fEjLZo` | 按改动范围选择 Android 与 3 个构建脚本测试文件，11 个 JS 用例通过。短日程延期的 JVM 测试修复前失败、修复后通过 |
+| 最终集成档 `run-hdesSa` | 在源码 `7a55331` 运行 `npm test -- --base 601aed1`。247.7 秒，4,837/4,837 JS、38 套 Swift（缓存编译、实际运行）、Android 四项和设置浏览器全过。最终 JVM 报告 204/204。无跳过或隔离复测 |
+| Android 16 / API 36 隔离模拟器 | Organizer 8、Trace 2、Workflow 2、动态广告 4，共 16 项通过。最后的延期提醒补丁另复验 Organizer 8/8，重复执行不叠加计数。使用本任务创建的模拟器，已关机清理 |
+| iOS | Swift / JavaScriptCore 与未签名 iPhoneOS Release 完整构建通过。实体手机、操作系统真机权限行为、用户账号同步及真实模型服务不在本轮验收范围 |
+| H1–H20 机械审计 | 用同一规则在合并前主线生成盘点，再用 `--baseline <合并前盘点> --check` 检查候选，20 条全部 +0/-0。另与仓库 10-27 固定基线比，已有 H5 新命中 29 处，来自合并前的公开媒体与 MCP 代码。旧基线门禁仍为红，本轮保留原基线 |
+
+最初的文档门禁发现四个断链。首轮 JS 还暴露两条真实的小窗口回归，以及隔离检出缺少嵌入模型资产。代码修正后，用主检出已有的离线模型文件恢复原验收条件，重跑通过。产品断言和门禁都保留。
+
+证据在主仓库的 `.tmp/organizer-merge-20261104/`。各档摘要和阶段日志保存在 `gates/<run>/`，红绿对照在 `prune-red.log`、`goal-red.log`、`master-context.log`、`context-final.log`、`snooze-red.log` 与 `snooze-green.log`，原生结果在 `*FlowTest*.log` 和 `ios-integrated.log`。审计对照见 `master-inventory/`、`audited/` 和 `audited.log`。

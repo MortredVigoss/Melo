@@ -1,6 +1,6 @@
 ## 2026-11-04 — 合并 Android Organizer 并审计实际组合
 
-从 601aed1 合入 yrlf 的 fed7c134，保留桌面媒体、预算和权限改动，使用隔离检出验证。日历授权、交付证据与 Trace 清理修正见[合并审计](docs/android-organizer-merge-audit-20261104.md)。
+本地 master 以 `7a828ec` 纳入 yrlf 的 fed7c134，最终源码 `7a55331` 包含延期提醒修正。集成档 `run-hdesSa` 通过 4,837 JS、38 套 Swift、Android 四项及设置浏览器，无跳过或隔离复测。模拟器、缺陷复现与历史 H5 基线差异见[合并审计](docs/android-organizer-merge-audit-20261104.md)。
 
 ## 2026-11-04 — 核对 GitHub 上其他贡献者的 Android 分支
 
