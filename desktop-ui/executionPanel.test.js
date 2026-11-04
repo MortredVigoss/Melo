@@ -113,6 +113,23 @@ test('panel reuses its live DOM, caps sources at ten and projects selected image
   panel.receiveExecutionScene(structuredClone(limited));
   assert.match(document.querySelector('.execution-panel').textContent, /部分完成 · 已达轮数上限/);
   assert.doesNotMatch(document.querySelector('.execution-panel').textContent, /受阻 · 尚无目标完成证据/);
+  // The old iPhone sent terminal tool receipts as model stages, even across sync.
+  const phone = createExecutionScene({ runId: 'phone-history', chatId: 'chat', query: 'BIGBANG' });
+  phone.pipeline = [
+    { id: 'web:a', module: 'create', name: '网页 · 打开', status: 'completed', output: '已读取网页' },
+    { id: 'web:b', module: 'create', name: '网页 · 截图', status: 'failed', output: '网页加载超时' },
+    { id: 'history:excerpts', module: 'compute', name: '早期对话', status: 'completed' },
+    { id: 'model:response', module: 'create', name: '模型请求', status: 'completed' }
+  ];
+  panel.receiveExecutionScene(phone);
+  document.querySelector('[data-module="create"]').click();
+  assert.doesNotMatch(document.querySelector('.execution-extra').textContent, /网页 ·/);
+  document.querySelector('[data-module="search"]').click();
+  assert.equal(document.querySelectorAll('.execution-search-trail button').length, 2);
+  assert.match(document.querySelector('.execution-panel-footer').textContent, /2 次工具调用 · 2 条执行记录 · 0 条来源/);
+  assert.equal(phone.pipeline.length, 4, 'replaying an old receipt leaves the stored record intact');
+  finishExecutionScene(phone);
+  panel.receiveExecutionScene(phone);
   assert.ok(calls.every(url => String(url).startsWith('/api/chat/scenes?')));
   document.querySelector('[data-execution-action="toggle"]').click();
   await new Promise(resolve => setImmediate(resolve));

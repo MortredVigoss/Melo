@@ -1,6 +1,36 @@
 import Foundation
 @main struct ExecutionTests {
     static func main() throws {
+        var phone = ExecutionRecord(chatId: "phone", query: "concert", requestedModel: "m")
+        let page: [String: Any] = ["finalUrl": "https://example.org/show", "title": "Show", "text": "receipt body stays private", "pageCount": 2]
+        phone.recordPhoneOperation(id: "web:1", module: "search", name: "网页 · 打开", status: "completed", summary: "page 1/2", page: page, textRead: true)
+        phone.recordPhoneOperation(id: "web:1", module: "search", name: "网页 · 打开", status: "completed", summary: "page 1/2", page: page, textRead: true)
+        phone.recordPhoneOperation(id: "web:2", module: "search", name: "网页 · 截图", status: "completed", summary: "screenshot", page: ["url":"https://example.org/photo"])
+        phone.recordPhoneOperation(id: "web:3", module: "search", name: "网页 · 打开", status: "failed", summary: "HTTP 403", page: ["url":"https://example.org/private"])
+        var native = ExecutionObservation()
+        native.tool(["type":"web_search_call","id":"provider-1","status":"completed","action":["type":"search","sources":[["url":"https://example.org/show?utm_source=provider"],["url":"https://example.org/venue"]]]])
+        phone.observe(native); phone.observe(native)
+        assert(phone.operations.count == 4 && phone.displayedToolCount == 4 && phone.sources.count == 3)
+        let read = phone.sources.first { $0.url == "https://example.org/show" }!
+        assert(read.appeared && read.accessed && read.opened && read.reading == "partial" && !read.cited)
+        assert(phone.sources.contains { $0.url.hasSuffix("/photo") && $0.opened && !$0.accessed })
+        let encodedPhone = try JSONEncoder().encode(phone)
+        assert(!String(decoding: encodedPhone, as: UTF8.self).contains("receipt body stays private"))
+        phone.recordStage("model:1", name: "模型请求", status: "completed")
+        phone.recordStage("web:legacy", name: "网页 · 打开", status: "completed")
+        phone.recordStage("tool:denied", name: "工具 · open_url", status: "failed")
+        assert(phone.displayedToolCount == 5)
+        phone.finish("completed")
+        phone.recordPhoneOperation(id: "web:late", module: "search", name: "网页 · 打开", status: "completed", summary: "")
+        assert(phone.displayedToolCount == 5)
+        var bounds = ExecutionRecord(chatId: "bounds", query: "q", requestedModel: "m")
+        let prefix = String(repeating: "x", count: 280)
+        for tail in ["a", "b", "b"] {
+            bounds.recordPhoneOperation(id: prefix + tail, module: "search", name: "open_url", status: "completed", summary: "ok",
+                                        page: ["url":"https://example.org/" + String(repeating: "x", count: 2300)])
+        }
+        assert(bounds.operations.count == 2 && bounds.operations.allSatisfy { $0.id.utf16.count <= 200 && $0.input.isEmpty })
+        assert(bounds.sources.count == 1 && bounds.sources[0].url.count > 2200)
         let clockStart = "2026-10-16T00:00:00.000Z"
         let clockEnd = "2026-10-16T00:00:19.000Z"
         var timed = ExecutionRecord(chatId: "timed", query: "q", requestedModel: "m")

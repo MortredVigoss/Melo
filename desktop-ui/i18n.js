@@ -63,6 +63,11 @@ export function ui(strings, ...values) {
 
 export function runtimeStageName(stage) { return t(stageName(stage, language)); }
 
-export function runtimeStageOutput(stage) { return localizedStageOutput(stage,currentLanguage()); }
+export function runtimeStageOutput(stage) {
+  const output = localizedStageOutput(stage, currentLanguage());
+  if (stage?.provider !== 'iPhone' || stage.module !== 'search') return output;
+  const pages = /^已读取 (\d+)\/(\d+) 页$/.exec(output);
+  return pages ? t('已读取 {page}/{count} 页', { page: pages[1], count: pages[2] }) : t(output);
+}
 
 export const runtimeCompletionText = receipt => localizedCompletionText(receipt, currentLanguage());

@@ -1,3 +1,7 @@
+## 2026-11-04 — 任务空间工具分类及内部路由审计
+
+修复 iPhone 打开网页落入模型区、工具数显示零的问题，保留旧记录并修正窄屏回放。已核对两个自定义 Agent 的委派设置；按需分工及每轮独立分工的取舍、各端能力和验收样例见[专项说明](docs/internal-routing-and-scene-20261104.md)。最终回归 run-lQI4u4 通过，已用手机宽度实点并完成模拟器构建。
+
 ## 2026-11-04 — 合并 Android Organizer 并审计实际组合
 
 本地 master 以 `7a828ec` 纳入 yrlf 的 fed7c134，最终源码 `7a55331` 包含延期提醒修正。集成档 `run-hdesSa` 通过 4,837 JS、38 套 Swift、Android 四项及设置浏览器，无跳过或隔离复测。模拟器、缺陷复现与历史 H5 基线差异见[合并审计](docs/android-organizer-merge-audit-20261104.md)。

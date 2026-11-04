@@ -4,6 +4,16 @@ export { INTERFACE_TERMS as interfaceTermKeys } from './interfaceLanguages.js';
 // Authored interface copy only. User messages, names and provider output never enter this catalog.
 // Columns: Chinese source / English / Japanese / Korean / Spanish.
 const rows = [
+["{count} 条来源", "{count} sources", "情報源 {count} 件", "출처 {count}개", "{count} fuentes"],
+["网页 · 打开", "Open webpage", "ウェブページを開く", "웹페이지 열기", "Abrir página web"],
+["网页 · 截图", "Capture webpage", "ウェブページを撮影", "웹페이지 캡처", "Capturar página web"],
+["已读取网页", "Page read", "ページを読み込みました", "페이지를 읽음", "Página leída"],
+["已读取 {page}/{count} 页", "Read page {page} of {count}", "{count} ページ中 {page} ページ目を読み込みました", "{count}페이지 중 {page}페이지 읽음", "Se leyó la página {page} de {count}"],
+["已截图", "Screenshot captured", "撮影しました", "캡처됨", "Captura realizada"],
+["网页加载超时", "Page load timed out", "読み込みがタイムアウトしました", "페이지 로딩 시간 초과", "La carga agotó el tiempo de espera"],
+["地址不允许打开", "Address blocked", "開けないアドレスです", "허용되지 않는 주소", "Dirección bloqueada"],
+["本次回复截图已达上限", "Screenshot limit reached", "撮影回数の上限です", "캡처 한도에 도달함", "Se alcanzó el límite de capturas"],
+["网页加载失败", "Page failed to load", "ページを読み込めませんでした", "페이지 로드 실패", "No se pudo cargar la página"],
 ["本次任务允许", "Allow for this task", "このタスクで許可", "이 작업에서 허용", "Permitir para esta tarea"],
 ["本次任务内允许修改此工作区的普通文件；不含删除、敏感路径和其他 Agent。取消或任务结束后失效。", "Allow changes to ordinary files in this workspace for this task. Excludes deletion, sensitive paths and other Agents. Expires on cancellation or task end.", "このタスク中、この作業領域の通常ファイルの変更を許可します。削除、機密パス、他の Agent は対象外です。取消または終了時に失効します。", "이 작업에서 이 작업 공간의 일반 파일 수정을 허용합니다. 삭제, 민감한 경로, 다른 Agent는 제외됩니다. 취소 또는 작업 종료 시 만료됩니다.", "Permite modificar archivos normales de este espacio durante la tarea. Excluye eliminación, rutas sensibles y otros Agents. Caduca al cancelar o finalizar."],
 ["本次任务内允许此固定命令；目录或 package.json 改变后重新确认。取消或任务结束后失效。", "Allow this exact command for this task. Confirm again if its directory or package.json changes. Expires on cancellation or task end.", "このタスク中、この固定コマンドを許可します。ディレクトリや package.json が変わると再確認します。取消または終了時に失効します。", "이 작업에서 이 고정 명령을 허용합니다. 디렉터리나 package.json 변경 시 다시 확인합니다. 취소 또는 작업 종료 시 만료됩니다.", "Permite este comando exacto durante la tarea. Si cambian el directorio o package.json se vuelve a confirmar. Caduca al cancelar o finalizar."],

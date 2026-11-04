@@ -2,7 +2,7 @@ import { applyButtonStyles } from './buttonStyles.js';
 import { escapeHtml } from './i18n.js';
 import { t, ui, currentLanguage, runtimeStageName, runtimeStageOutput, runtimeCompletionText } from './i18n.js';
 import { renderExecutionDetail, renderSessionEvents, executionApiLine, renderExecutionSignal, renderReasoningRecords, renderExecutionTiming } from './executionDetails.js';
-import { EXECUTION_MODULES, sessionEvents, moduleActivity, sceneFinished, finishExecutionScene, visibleSceneSources, sourceReadingLabel, sceneSourceUrl } from '/shared/executionScene.js';
+import { EXECUTION_MODULES, sessionEvents, moduleActivity, projectPhoneToolStages, sceneFinished, finishExecutionScene, visibleSceneSources, sourceReadingLabel, sceneSourceUrl } from '/shared/executionScene.js';
 
 import { bindExecutionZoom, clampZoom, wideViewport, DETAIL_ZOOM, MIN_ZOOM, MAX_ZOOM } from './executionViewport.js';
 
@@ -184,7 +184,7 @@ function renderDetails(scene, items) {
 function renderSearchTrail(scene) {
   if (focus !== 'search') return '';
   const ops = (scene?.operations || []).filter(op => op.module === 'search');
-  return ui`<div class="execution-search-trail" aria-label="真实检索调用">${ops.map(op => ui`<button data-execution-action="inspect" data-operation="${escapeHtml(op.id)}" title="${escapeHtml(`${op.input || ''}\n${op.resultSummary || op.status}`)}"><b>${escapeHtml(op.provider || op.name)}</b> · ${escapeHtml(op.resultSummary || statusNames[op.status])}</button>`).join('')}</div>`;
+  return ui`<div class="execution-search-trail" aria-label="真实检索调用">${ops.map(op => ui`<button data-execution-action="inspect" data-operation="${escapeHtml(op.id)}" title="${escapeHtml(`${op.input || ''}\n${op.resultSummary || op.status}`)}"><b>${escapeHtml(op.provider === 'iPhone' ? runtimeStageName(op) : op.provider || op.name)}</b> · ${escapeHtml((op.provider === 'iPhone' ? runtimeStageOutput(op) : op.resultSummary) || statusNames[op.status])}</button>`).join('')}</div>`;
 }
 function renderCandidates(scene) {
   if (focus !== 'create') return '';
@@ -245,9 +245,11 @@ function paint() {
       const activity = moduleActivity(scene, module.id);
       return ui`<button class="execution-label execution-module" data-node-id="${module.id}" data-execution-action="focus" data-module="${module.id}" data-status="${activity.status}" aria-label="进入${escapeHtml(t(module.name))}" title="${module.id === 'search' ? '搜索和网页读取都归入网页检索' : module.id === 'compute' ? '显示模型公开摘要与实际计算；两者独立标记' : module.id === 'files' ? '显示文件读写、代码修改片段和实际结果' : module.id === 'create' ? '显示模型请求、接收、整理、保存、渲染及实际成果' : '汇总所有真实工具调用；搜索、计算、文件操作也在这里，每次仅计一次'} · ${activity.operations.length} ${['create', 'compute'].includes(module.id) ? '条执行记录' : '次工具调用'}"><i></i><strong>${escapeHtml(t(module.name))}</strong><small>${escapeHtml(statusNames[activity.status])}${module.id === 'search' && scene?.sources.length ? ` · ${t('{count} 条来源 ↗',{count:scene.sources.length})}` : module.id === 'tools' ? ` · ${t('{count} 次工具调用',{count:activity.operations.length})}` : module.id === 'create' ? ` · ${t('{count} 条记录',{count:activity.operations.length})}` : activity.running.length > 1 ? ` ×${activity.running.length}` : ''}</small></button>`;
     }).join('') + renderDetails(scene, items);
-    host.querySelector('.execution-focus-tools').innerHTML = focus ? ui`<button data-execution-action="overview">← 整体视角</button><span title="按问题、实际搜索词与标题、网址、摘要的匹配及搜索排名排序；引用只作标记，不占用保留名额。相关性是启发式分数，不是概率">${escapeHtml(t(EXECUTION_MODULES.find(m => m.id === focus)?.name))}${focus === 'search' ? ` · 展示 ${items.length} / ${scene?.sources.length || 0} 条记录 · 按相关性` : ''}</span>${focus === 'search' && (scene?.sources.length || 0) > 5 ? ui`<button data-execution-action="more">${more ? '收起至五个' : '展开更多 · 最多十个'}</button>` : ''}` : '<span></span>';
+    const searchCounts = [t('{count} 次工具调用', { count: searchOps.length }),
+      t('{count} 条来源', { count: scene?.sources.length || 0 })].join(' · ');
+    host.querySelector('.execution-focus-tools').innerHTML = focus ? ui`<button data-execution-action="overview">← 整体视角</button><span title="按问题、实际搜索词与标题、网址、摘要的匹配及搜索排名排序；引用只作标记，不占用保留名额。相关性是启发式分数，不是概率">${escapeHtml(t(EXECUTION_MODULES.find(m => m.id === focus)?.name))}${focus === 'search' ? ` · ${escapeHtml(searchCounts)}` : ''}</span>${focus === 'search' && (scene?.sources.length || 0) > 5 ? ui`<button data-execution-action="more">${more ? '收起至五个' : '展开更多 · 最多十个'}</button>` : ''}` : '<span></span>';
     const extra = host.querySelector('.execution-extra'), scrollTop = extra.querySelector('.execution-reasoning-records')?.scrollTop || 0;
-    extra.innerHTML = renderSessionEvents(sessionEvents(scene)) + renderSearchTrail(scene) + (focus === 'compute' ? renderReasoningRecords(scene, statusNames) : '') + (renderCandidates(scene) || (!scene || focus && !items.length && !(focus === 'compute' && scene?.pipeline?.some(p => p.channel === 'reasoning-summary')) ? ui`<div class="execution-empty"><strong>${!scene ? '任务发生时，空间随之点亮' : focus === 'search' && searchOps.length ? (moduleActivity(scene, 'search').running.length ? '检索执行中 · 等待来源记录' : '此调用未返回来源清单') : '此区域还没有执行记录'}</strong>${!scene ? '点击区域靠近 · 电子与微光仅为氛围' : '不补造步骤、来源或进度'}</div>` : ''));
+    extra.innerHTML = renderSessionEvents(sessionEvents(scene)) + renderSearchTrail(scene) + (focus === 'compute' ? renderReasoningRecords(scene, statusNames) : '') + (renderCandidates(scene) || (!scene || focus && !items.length && !(focus === 'search' && searchOps.length) && !(focus === 'compute' && scene?.pipeline?.some(p => p.channel === 'reasoning-summary')) ? ui`<div class="execution-empty"><strong>${!scene ? '任务发生时，空间随之点亮' : '此区域还没有执行记录'}</strong>${!scene ? '点击区域靠近 · 电子与微光仅为氛围' : '不补造步骤、来源或进度'}</div>` : ''));
     const records = extra.querySelector('.execution-reasoning-records'); if (records) records.scrollTop = scrollTop;
     host.querySelector('.execution-signal-host').innerHTML = wideViewport(zoom) ? renderExecutionSignal(scene) : '';
     host.querySelector('.execution-inspector').hidden = !inspectedOperation;
@@ -306,6 +308,7 @@ export function receiveExecutionScene(scene) {
   if (!scene?.runId || scene.version !== 1) return;
   const previous = scenes.get(scene.runId);
   if (previous && previous.sequence > scene.sequence) return;
+  scene = projectPhoneToolStages(scene);
   scenes.set(scene.runId, scene);
   if (scene.chatId !== currentChat) return;
   if (!sceneFinished(scene) && autoRun !== scene.runId) {

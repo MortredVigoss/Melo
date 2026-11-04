@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 struct ExecutionImageProgress: Codable, Equatable {
     var requested = 1
@@ -73,7 +74,11 @@ struct ExecutionSource: Codable, Equatable, Identifiable {
 
     static func merge(_ incoming: ExecutionSource, into sources: inout [ExecutionSource]) {
         guard let identity = WebSource.identity(incoming.url) else { return }
-        guard let index = sources.firstIndex(where: { WebSource.identity($0.url) == identity }) else { sources.append(incoming); return }
+        guard let index = sources.firstIndex(where: { WebSource.identity($0.url) == identity }) else {
+            var source = incoming
+            if sources.contains(where: { $0.id == source.id }) { source.id = "source-" + UUID().uuidString }
+            sources.append(source); return
+        }
         // Keep the first node ID and all recorded evidence across legacy duplicates.
         if incoming.titleProvided { sources[index].title = incoming.title; sources[index].titleProvided = true }
         sources[index].rank = min(sources[index].rank, incoming.rank)
@@ -306,6 +311,16 @@ struct ExecutionRecord: Codable, Identifiable, Equatable {
         return SharedLoopPolicy.value("executionContext", ["scenes": scenes]) as? String ?? ""
     }
     var terminal: Bool { ["completed", "failed", "cancelled", "interrupted"].contains(status) }
+    // The native fallback also counts old phone receipts without rewriting the record.
+    var displayedToolCount: Int {
+        var ids = Set(operations.map(\.id))
+        for stage in pipeline ?? [] where stage.module == "create" && ["completed", "failed", "cancelled", "interrupted"].contains(stage.status) {
+            if stage.id.hasPrefix("web:") && ["网页 · 打开", "网页 · 截图"].contains(stage.name)
+                || stage.id.hasPrefix("device:") && stage.name.hasPrefix("手机数据 · ")
+                || stage.id.hasPrefix("history:") && stage.name == "早期对话 · 读取原文" { ids.insert(stage.id) }
+        }
+        return ids.count
+    }
     func elapsedMilliseconds(now: Date = Date()) -> Double? {
         guard !runId.hasPrefix("legacy-") else { return nil }
         return ExecutionClock.elapsed(startedAt, end: terminal ? ExecutionClock.date(finishedAt) : now)
@@ -372,9 +387,40 @@ struct ExecutionRecord: Codable, Identifiable, Equatable {
         record.observationNote = "历史引用 · 当时未保存工具调用，不补造执行记录"
         return record
     }
+    /// Tool callbacks carry a short outcome; page bodies, screenshots and device data
+    /// never enter the scene. Native search snapshots may arrive again afterwards.
+    mutating func recordPhoneOperation(id: String, module: String, name: String, status: String,
+                                       summary: String, page: [String: Any] = [:], textRead: Bool = false) {
+        guard !terminal else { return }
+        // The v1 stage ID is bounded. Hash unusually long provider IDs without
+        // aliasing two calls whose IDs have the same prefix.
+        let receiptID = id.utf16.count <= 200 ? id : "phone:" + SHA256.hash(data: Data(id.utf8)).map { String(format: "%02x", $0) }.joined()
+        guard !operations.contains(where: { $0.id == receiptID }) else { return }
+        var op = ExecutionOperation(id: receiptID, module: module, name: name, status: status, provider: "iPhone",
+                                    output: summary, resultSummary: summary)
+        if status == "completed",
+           let url = (page["finalUrl"] as? String).flatMap({ $0.isEmpty ? nil : $0 }) ?? page["url"] as? String,
+           let safe = WebSource.validated(title: page["title"] as? String ?? "", url: url), safe.url.utf16.count <= 4000 {
+            if safe.url.utf16.count <= 2200 { op.input = safe.url }
+            var source = ExecutionSource(id: "source-" + UUID().uuidString, url: safe.url, title: safe.title, order: sources.count, rank: sources.count)
+            source.providers = ["iPhone"]; source.opened = true
+            source.titleProvided = !(page["title"] as? String ?? "").isEmpty
+            if textRead, let text = page["text"] as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                source.accessed = true
+                source.reading = (page["pageCount"] as? Int ?? 1) > 1 || page["truncated"] as? Bool == true ? "partial" : "extracted"
+            }
+            ExecutionSource.merge(source, into: &sources)
+        }
+        operations.append(op); lastModule = module; sequence += 1
+    }
     mutating func observe(_ observation: ExecutionObservation) {
         guard !terminal else { return }
-        operations = observation.operations; sources = observation.sources; returnedModel = observation.returnedModel
+        for op in observation.operations {
+            if let index = operations.firstIndex(where: { $0.id == op.id }) { operations[index] = op }
+            else { operations.append(op) }
+        }
+        for source in observation.sources { ExecutionSource.merge(source, into: &sources) }
+        if let model = observation.returnedModel { returnedModel = model }
         for stage in observation.pipeline { mergeStage(stage) }
         lastModule = pipeline?.last(where: { $0.status == "running" })?.module ?? operations.last?.module
         sequence += 1

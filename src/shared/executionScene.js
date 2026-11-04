@@ -44,13 +44,31 @@ export function sceneKey(value) {
 // over the id table below, which stays as the fallback for undeclared tools.
 export function moduleForOperation(name = '', args = {}, declared) {
   if (declared && EXECUTION_MODULES.some(m => m.id === declared)) return declared;
-  if (name === 'web_search' || name === 'fetch_url' || name === 'web_screenshot' || name === 'native_web_search' || ['browser_open', 'browser_snapshot'].includes(name)) return 'search';
+  if (name === 'web_search' || name === 'fetch_url' || name === 'open_url' || name === 'web_screenshot' || name === 'native_web_search' || ['browser_open', 'browser_snapshot'].includes(name)) return 'search';
   if (name === 'calculator') return 'compute';
   if (name === 'xlsx' || name === 'pdf' && ['write', 'structured', 'from_spec'].includes(args.action)) return 'create';
   if (name === 'native_image_generation' || name === 'image' && args.action === 'generate') return 'create';
   if (/^(file_read|file_write|file_edit|file_move|file_mkdir|file_delete|glob|grep|knowledge|search_history|media_info|read_file|write_file|edit_file|list_files|search_files|file_search|pdf|document|excel|spreadsheet|image)$/.test(name)) return 'files';
   return 'tools';
 }
+// Older iPhones wrote local tool results to pipeline using these host-owned IDs
+// and names. Project just those receipts at replay time, including synced copies.
+export function projectPhoneToolStages(scene) {
+  const promoted = new Map();
+  for (const stage of scene.pipeline || []) {
+    if (stage.module !== 'create' || !['completed', 'failed', 'cancelled', 'interrupted'].includes(stage.status)) continue;
+    let module;
+    if (stage.id?.startsWith('web:') && ['网页 · 打开', '网页 · 截图'].includes(stage.name)) module = 'search';
+    else if (stage.id?.startsWith('device:') && stage.name?.startsWith('手机数据 · ')) module = 'tools';
+    else if (stage.id?.startsWith('history:') && stage.name === '早期对话 · 读取原文') module = 'tools';
+    if (module) promoted.set(stage.id, { ...stage, module, provider: 'iPhone', resultSummary: stage.output });
+  }
+  if (!promoted.size) return scene;
+  const existing = new Set((scene.operations || []).map(operation => operation.id));
+  return { ...scene, pipeline: scene.pipeline.filter(stage => !promoted.has(stage.id)),
+    operations: [...(scene.operations || []), ...[...promoted.values()].filter(operation => !existing.has(operation.id))] };
+}
+
 export function requestedImageCount(text = '') {
   const chinese = { 一: 1, 两: 2, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10, 百: 100 };
   const instruction = String(text).replace(/“[^”]*”|「[^」]*」|"[^"]*"/g, '');

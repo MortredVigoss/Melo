@@ -483,14 +483,14 @@ import SwiftUI
             // Members use the same check with the lead as parent; the lead's own summary step has none.
             let binding = self.elevationBinding(runID: record.runId, agent: agent, parent: agent.id == selectedAgent.id ? nil : selectedAgent, chatID: chatID,
                                                 ownSnapshot: phonePermissions.allowed(agent.id), parentSnapshot: leadSnapshot, budget: child)
-            let tools = self.deviceToolContext(runID: record.runId, binding: binding, surfaceAtStart: surfaceAtStart, chatID: chatID, screenshots: teamScreenshots,
+            let callID = UUID().uuidString
+            let tools = self.deviceToolContext(runID: record.runId, scope: callID, binding: binding, surfaceAtStart: surfaceAtStart, chatID: chatID, screenshots: teamScreenshots,
                                               readHistory: selectedAgent.contextSources?["memory"].bool != false && agent.contextSources?["memory"].bool != false)
             // Writers queue; with a surface any member may be granted a write kind the device allows.
             let deviceKinds = DeviceToolPolicy.load().enabled
             let writer = [PhoneCapability.calendar, .reminders].contains { kind in
                 surfaceAtStart ? deviceKinds.contains(DeviceDataKind(rawValue: kind.rawValue)!) : phonePermissions.allows(selectedAgent.id, kind) && phonePermissions.allows(agent.id, kind)
             }
-            let callID = UUID().uuidString
             let memberHooks = AgentLoopHooks(
                 maxTaskIterations: isLead ? agent.maxTaskIterations : nil,
                 onStage: { [weak self] id, name, status, output in
@@ -871,7 +871,13 @@ import SwiftUI
         }
         return binding
     }
-    private func deviceToolContext(runID: String, binding: PhoneElevationBinding, surfaceAtStart: Bool, chatID: String? = nil, screenshots: CapturedScreenshots? = nil, readHistory: Bool = false) -> DeviceToolContext? {
+    private func phoneOperation(_ runID: String, id: String, module: String, name: String,
+                               status: String, summary: String, page: [String: Any] = [:], textRead: Bool = false) {
+        guard let index = executionRecords.firstIndex(where: { $0.runId == runID }) else { return }
+        executionRecords[index].recordPhoneOperation(id: id, module: module, name: name, status: status, summary: summary, page: page, textRead: textRead)
+    }
+    private func deviceToolContext(runID: String, scope: String? = nil, binding: PhoneElevationBinding, surfaceAtStart: Bool, chatID: String? = nil, screenshots: CapturedScreenshots? = nil, readHistory: Bool = false) -> DeviceToolContext? {
+        let receiptID: (String) -> String = { id in scope.map { "member:" + $0 + ":" + id } ?? id }
         let broker = capabilityBroker
         let ceiling = binding.ceiling(), base = binding.parent.map { ceiling.intersection($0()) } ?? ceiling
         // The tools the model sees (desktop requestableCapabilities): what this
@@ -889,7 +895,11 @@ import SwiftUI
         }, onCall: { [weak self] call, result in
             let summary = WebPageText.summary(result)
             let name = WebPageToolSpec.named(call.name)?.recordName ?? "网页 · \(call.name)"
-            self?.stage(runID, id: "web:\(call.callID)", name: name, status: summary.ok ? "completed" : "failed", output: summary.text)
+            let page = PhoneToolEnvelope.payload(result.output)
+            let http = page["status"] as? Int ?? 0
+            let status = PhoneToolEnvelope.parse(result.output).code == "ABORTED" ? "cancelled" : http >= 400 || !summary.ok ? "failed" : "completed"
+            self?.phoneOperation(runID, id: receiptID("web:\(call.callID)"), module: "search", name: name, status: status,
+                                 summary: http >= 400 ? "HTTP \(http)" : summary.text, page: page, textRead: call.name == WebPageToolSpec.openURL)
             if let jpeg = result.imageJPEG, let screenshots { screenshots.items.append((jpeg, result.imageURL)) }
         }) : nil
         // read_history: only this chat's own messages, offered when the desktop summary names ranges.
@@ -898,7 +908,7 @@ import SwiftUI
             return PhoneReadHistory.run(arguments: call.arguments, chatID: chatID, title: chat.title, messages: chat.messages)
         }, onCall: { [weak self] call, output in
             let outcome = PhoneToolEnvelope.parse(output)
-            self?.stage(runID, id: "history:\(call.callID)", name: "早期对话 · 读取原文", status: outcome.ok ? "completed" : "failed", output: outcome.ok ? (outcome.status == "empty" ? "该范围没有消息" : "已读取原文") : "读取失败（\(outcome.code ?? "UNKNOWN")）")
+            self?.phoneOperation(runID, id: receiptID("history:\(call.callID)"), module: "tools", name: "早期对话 · 读取原文", status: outcome.ok ? "completed" : "failed", summary: outcome.ok ? (outcome.status == "empty" ? "该范围没有消息" : "已读取原文") : "读取失败（\(outcome.code ?? "UNKNOWN")）")
         }) } : nil
         guard !policy.enabled.isEmpty || web != nil || history != nil else { return nil }
         let agentID = binding.agentID
@@ -917,7 +927,7 @@ import SwiftUI
         }, onCall: { [weak self] call, output in
             let summary = DeviceToolSummary.of(output)
             let name = DeviceToolSpec.named(call.name).map { "手机数据 · \($0.actionLabel)" } ?? "手机数据 · \(call.name)"
-            self?.stage(runID, id: "device:\(call.callID)", name: name, status: summary.ok ? "completed" : "failed", output: summary.text)
+            self?.phoneOperation(runID, id: receiptID("device:\(call.callID)"), module: "tools", name: name, status: summary.ok ? "completed" : "failed", summary: summary.text)
         }, web: web, history: history, gate: { call in
             // A device kind or the web switch turned off denies exactly as before: a card could not change it.
             if let kind = DeviceToolSpec.named(call.name)?.kind, !DeviceToolPolicy.load().enabled.contains(kind) {

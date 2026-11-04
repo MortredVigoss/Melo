@@ -29,7 +29,7 @@ enum RunProgress {
         for operation in record.operations {
             let what: String = operation.query.isEmpty ? operation.input : operation.query
             let summary: String = operation.resultSummary.isEmpty ? what : what + " · " + operation.resultSummary
-            let title: String = operation.module == "search" ? String(localized: "联网搜索") : operation.name
+            let title: String = operation.name == "native_web_search" ? String(localized: "联网搜索") : operation.name
             steps.append(RunStep(id: "op:" + operation.id, title: title, detail: String(summary.prefix(80)), state: state(operation.status)))
         }
         guard steps.count > limit else { return steps }
