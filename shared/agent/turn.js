@@ -109,9 +109,12 @@ export function advanceTurn(previous, event, now) {
           catch { state.rejections[call.id] = 'INVALID_TOOL_ARGUMENTS'; return false; }
         }
         const fingerprint = typeof call.fingerprint === 'string' && call.fingerprint ? call.fingerprint : toolCallFingerprint(call.name, call.arguments);
-        if (state.repairing && (state.successfulEffects || []).includes(fingerprint)) { state.rejections[call.id] = 'ALREADY_EXECUTED'; return false; }
+        if ((state.repairing || state.internalRouting) && (state.successfulEffects || []).includes(fingerprint)) { state.rejections[call.id] = 'ALREADY_EXECUTED'; return false; }
+        const effectful = /^mcp[:_]/u.test(call.name) || !['read', 'compute'].includes(call.effect || toolEffect(call.name, call.arguments));
+        if (state.internalRouting && effectful && ((state.uncertainEffects || []).includes(fingerprint) ||
+            Object.values(state.pendingFingerprints).includes(fingerprint))) { state.rejections[call.id] = 'ALREADY_ATTEMPTED'; return false; }
         state.pendingFingerprints[call.id] = fingerprint;
-        state.pendingEffects = { ...state.pendingEffects, [call.id]: /^mcp[:_]/u.test(call.name) || !['read', 'compute'].includes(call.effect || toolEffect(call.name, call.arguments)) };
+        state.pendingEffects = { ...state.pendingEffects, [call.id]: effectful };
         const repeated = guard.check(call.name, fingerprint);
         if (repeated) { state.rejections[call.id] = repeated.error; state.rejectionResults[call.id] = repeated; return false; }
         if (call.name === 'phone_use') {
@@ -134,6 +137,7 @@ export function advanceTurn(previous, event, now) {
       if (!state.awaitingModel || state.pending.length) fail('PENDING_EFFECT', 'Only an unverified model answer can receive feedback.');
       state.awaitingModel = false;
       if (event.repair === true) state.repairing = true;
+      if (event.internalRouting === true) state.internalRouting = true;
       return state;
     case 'result': {
       if (!state.pending.includes(event.callId)) fail('UNKNOWN_RESULT', 'The result has no pending call in this turn.');
@@ -142,6 +146,9 @@ export function advanceTurn(previous, event, now) {
       const toolName = state.pendingTools[event.callId];
       const permitted = state.permitted.includes(event.callId);
       if (permitted) {
+        if (state.internalRouting && !event.ok && state.pendingEffects?.[event.callId] && ['TIMEOUT','ABORTED','DEADLINE_EXCEEDED'].includes(event.code || event.error)) {
+          state.uncertainEffects = [...new Set([...(state.uncertainEffects || []), state.pendingFingerprints[event.callId]])];
+        }
         if (event.ok && state.pendingEffects?.[event.callId]) state.successfulEffects = [...new Set([...(state.successfulEffects || []), state.pendingFingerprints[event.callId]])];
         const guard = createRepeatGuard({ entries: state.failures, fingerprint: (_name, key) => key });
         guard.record(toolName, state.pendingFingerprints[event.callId], { ok: event.ok, code: event.code, error: event.error, output: event.output });

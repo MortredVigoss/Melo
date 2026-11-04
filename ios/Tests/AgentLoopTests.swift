@@ -72,6 +72,63 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             assert(result.completion?.outcome == (body.hasPrefix("Sydney") ? "completed" : "partial"))
             assert(result.completion?.goalState == (body.hasPrefix("Sydney") ? "supported" : "unverified"))
         }
+        // Ordinary custom persona (no external delegation), two real member contexts.
+        do {
+            let log = Log()
+            var h = hooks(log); h.internalRouting = true
+            var leads = 0, reads = 0, maths = 0
+            let transport = ScriptedTransport { request in
+                if request.goalReview != nil { return answer(#"{"decision":"complete","reasonType":"fulfilled","requirements":[{"text":"forecast and conversion","status":"met","evidenceIds":["job-1:same","job-2:same"]}]}"#) }
+                switch request.internalJob?["role"] as? String {
+                case "research":
+                    reads += 1
+                    return reads == 1 ? calls([fc("same")]) : answer("20 °C at the venue")
+                case "calculate":
+                    let scope = request.scopedBody(["messages":[["role":"user","content":"private lead history"]],"tools":WebPageToolSpec.all.map(\.definition.chatCompletionsDefinition)], responses:false)
+                    let body = String(decoding: try JSONSerialization.data(withJSONObject:scope), as:UTF8.self)
+                    assert(!body.contains("private lead history") && !body.contains("open_url") && body.contains("calculator"))
+                    maths += 1
+                    if maths == 1 { return calls([fc("denied","open_url")]) }
+                    if maths == 2 { return calls([fc("same","calculator",#"{"action":"convert","value":20,"from":"celsius","to":"fahrenheit"}"#)]) }
+                    return answer("68 °F")
+                default:
+                    leads += 1
+                    if leads == 1 { return calls([fc("r1","route_task",#"{"role":"research","task":"Read the venue forecast"}"#)]) }
+                    guard case .toolRound(_, let outputs) = request.transcript.last, let handoff = outputs.first?.modelOutput else { preconditionFailure("Missing real handoff") }
+                    if leads == 2 { assert(handoff.contains("20 °C")); return calls([fc("r2","route_task",#"{"role":"calculate","task":"Convert 20 °C to °F"}"#)]) }
+                    assert(handoff.contains("68")); return answer("Winter: 20 °C (68 °F)")
+                }
+            }
+            let tools = loopTools(log) { _ in PhoneToolResult(output:PhoneToolEnvelope.success(#"{"url":"https://a.example","text":"20 °C"}"#)) }
+            let outcome = try await AgentLoop(transport:transport,tools:tools,budget:PhoneRunBudget(),latestUserMessage:"Check the concert temperature and convert to Fahrenheit",hooks:h).run()
+            assert(outcome.completion?.outcome == "completed" && outcome.text.contains("68 °F"))
+            assert(log.performed.count == 1 && leads == 3 && reads == 2 && maths == 3)
+            assert(log.records.contains { $0.callId == "job-2:denied" && !$0.executed })
+        }
+        do {
+            var enabled = AgentLoopHooks(); enabled.internalRouting = true
+            let simple = ScriptedTransport { _ in answer("Hello") }
+            _ = try await AgentLoop(transport:simple,tools:loopTools(Log()),budget:PhoneRunBudget(),latestUserMessage:"Hello",hooks:enabled).run()
+            assert(simple.requests.count == 1 && simple.requests[0].internalDefinition == nil)
+            let retryTransport = ScriptedTransport { request in
+                assert(request.internalDefinition == nil && request.internalJob == nil)
+                return answer("Using the supplied text.")
+            }
+            let retry = AgentLoop(transport:retryTransport,tools:loopTools(Log()),budget:PhoneRunBudget(),latestUserMessage:"继续",hooks:enabled)
+            retry.goalHistory = [ChatMessage(role:"user",content:"只依据提供的正文回答"),ChatMessage(role:"assistant",content:"待补充"),ChatMessage(role:"user",content:"继续")]
+            _ = try await retry.run()
+            let failure = ScriptedTransport { request in
+                if request.internalJob != nil { throw URLError(.badServerResponse) }
+                if request.iteration == 0 { return calls([fc("r","route_task",#"{"role":"research","task":"Check the venue"}"#)]) }
+                if request.goalReview != nil { return answer(#"{"decision":"partial","reasonType":"unavailable","requirements":[{"text":"venue","status":"missing","evidenceIds":[]}]}"#) }
+                guard case .toolRound(_, let reports) = request.transcript.last else { preconditionFailure("No failed worker handoff") }
+                assert(reports.first?.modelOutput.contains("partial") == true)
+                return answer("Could not verify the venue.")
+            }
+            let log = Log()
+            let result = try await AgentLoop(transport:failure,tools:loopTools(log),budget:PhoneRunBudget(),latestUserMessage:"Research the venue and forecast",hooks:enabled).run()
+            assert(result.text.contains("verify") && log.performed.isEmpty && result.completion?.outcome != "completed")
+        }
         let plain = try await AgentLoop(transport: ScriptedTransport { _ in answer("Hello") }, tools: nil, budget: PhoneRunBudget(), latestUserMessage: "Hello").run()
         assert(plain.completion?.outcome == "completed" && plain.completion?.goalState == "not_applicable")
         let plainLog = Log()

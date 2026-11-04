@@ -51,6 +51,7 @@ final class PhoneGoalState {
         guard let initial = SharedLoopPolicy.value("goal", ["action": "start", "goal": goal, "messages": history, "id": UUID().uuidString]) as? [String: Any] else { throw SharedAgentCoreError.unavailable }
         state = initial
     }
+    var original: String { state["original"] as? String ?? "" }
     var checking: Bool { state["phase"] as? String == "checking" }
     var repairing: Bool { (state["corrections"] as? Int ?? 0) > 0 }
     var snapshot: [String: Any]? { SharedLoopPolicy.value("goal", ["action": "snapshot", "state": state]) as? [String: Any] }

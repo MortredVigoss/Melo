@@ -59,6 +59,43 @@ struct AgentLoopRequest: @unchecked Sendable {
     var outputLimit: Int? = nil
     var goalReview: [String: Any]? = nil
     var repairing = false
+    var internalDefinition: PhoneToolDefinition? = nil
+    var internalJob: [String: Any]? = nil
+
+    // Start each member with a fresh model context. Keep provider-specific
+    // function/result pairs together within that member's own transcript.
+    func scopedBody(_ base: [String: Any], responses: Bool, anthropic: Bool = false) -> [String: Any] {
+        guard goalReview == nil, internalDefinition != nil || internalJob != nil else { return base }
+        var body = base
+        var specs = body["tools"] as? [[String: Any]] ?? []
+        func wire(_ spec: PhoneToolDefinition) -> [String: Any] {
+            responses ? spec.responsesDefinition : anthropic ? spec.anthropicDefinition : spec.chatCompletionsDefinition
+        }
+        if let job = internalJob {
+            let allowed = Set(job["tools"] as? [String] ?? [])
+            specs = specs.filter { spec in
+                let type = spec["type"] as? String ?? ""
+                if ["web_search","web_search_preview"].contains(type) { return allowed.contains("native_web_search") }
+                let name = spec["name"] as? String ?? (spec["function"] as? [String: Any])?["name"] as? String
+                return name.map(allowed.contains) == true
+            }
+            if allowed.contains("calculator"), let calc = Self.definition((SharedLoopPolicy.value("catalog", ["names":["calculator"]]) as? [[String: Any]])?.first) {
+                specs.append(wire(calc))
+            }
+            let system = job["system"] as? String ?? "", user = ["role":"user","content":job["input"] as? String ?? ""]
+            if responses { body["instructions"] = system; body["input"] = [user]; body.removeValue(forKey:"include") }
+            else if anthropic { body["system"] = system; body["messages"] = [user] }
+            else { body["messages"] = [["role":"system","content":system], user] }
+        } else if let control = internalDefinition { specs.append(wire(control)) }
+        body["tools"] = specs
+        if internalJob != nil { body.removeValue(forKey:"tool_choice") }
+        if !anthropic && body["tool_choice"] == nil { body["tool_choice"] = specs.isEmpty ? "none" : "auto" }
+        return body
+    }
+    static func definition(_ raw: [String: Any]?) -> PhoneToolDefinition? {
+        guard let raw, let name = raw["name"] as? String, let description = raw["description"] as? String, let schema = raw["parameters"] as? [String: Any] else { return nil }
+        return PhoneToolDefinition(name: name, description: description, parameters: schema)
+    }
 }
 
 /// A provider rejected the request as too large (HTTP 413 or a context-length
@@ -115,6 +152,8 @@ struct AgentLoopOutcome {
 
 /// Observers; all run on the main actor.
 struct AgentLoopHooks {
+    var internalRouting = false
+    var onCalculation: (@MainActor (String, Bool, String) -> Void)? = nil
     var maxTaskIterations: Int? = nil
     var traceRunID: String? = nil
     var routing: PhoneRoutingHost? = nil
@@ -206,13 +245,30 @@ final class AgentLoop: @unchecked Sendable {
         var screenshots = 0
         var spentTokens = 0
         let permittedDefinitions = (tools?.definitions ?? []).filter { ChatGPTRequest.allowsTool($0.name, messages: goalHistory.isEmpty ? [ChatMessage(role: "user", content: latestUserMessage)] : goalHistory) }
-        let offered = Set(permittedDefinitions.map(\.name) + (hooks.routing == nil ? [] : ["melo_escalate"]))
-        var transport = self.transport
+        var offered = Set(permittedDefinitions.map(\.name) + (hooks.routing == nil ? [] : ["melo_escalate"]))
         if let exhausted = budget.exhausted(), exhausted.reason == "policy-unavailable" {
             return AgentLoopOutcome(text: await exhaustedStop(exhausted), stop: .budget, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: 0)
         }
         let goal = try PhoneGoalState(latestUserMessage, history: goalHistory.map { ["role": $0.role, "content": $0.content] })
         goalState = goal
+        var catalog = hooks.internalRouting ? SharedLoopPolicy.value("internalRouting", ["action":"catalog", "goal":goal.original,
+            "tools":Array(offered) + ["calculator"] + (nativeSearchAvailable ? ["native_web_search"] : [])]) as? [String:Any] : nil
+        let definition = AgentLoopRequest.definition(catalog?["definition"] as? [String:Any])
+        if catalog != nil { offered.insert("calculator") }
+        let routeLimits = catalog == nil ? nil : SharedLoopPolicy.value("internalRouting", ["action":"limits"]) as? [String:Int]
+        var assignments = [[String: Any]](), job: [String: Any]?, leadTranscript = [AgentTranscriptItem]()
+        var leadAssignmentRound: AgentRound?
+        var observationsAtStart = 0, jobRounds = 0
+        func finishJob(_ answer: String, limited: Bool = false) async {
+            guard let active = job, let leadRound = leadAssignmentRound, let call = leadRound.calls.first else { return }
+            let handoff = SharedLoopPolicy.value("internalRouting", ["action":"handoff", "job":active, "answer":answer,
+                "observations":Array(completionObservations.dropFirst(observationsAtStart)), "limited":limited]) as? String ?? "Unverified internal job."
+            transcript = leadTranscript + [.toolRound(leadRound, [AgentToolResult(call:call, modelOutput:handoff)])]
+            let status = (try? JSONSerialization.jsonObject(with: Data(handoff.utf8)) as? [String:Any])?["status"] as? String
+            await hooks.onStage?("internal:\(assignments.count)", active["label"] as? String ?? "Agent", status == "observed" ? "completed" : "interrupted", String(answer.prefix(500)))
+            job = nil
+        }
+        var transport = self.transport
         if let exhausted = budget.exhausted() {
             let text = await exhaustedStop(exhausted)
             return try await deliverLimit("BUDGET_EXHAUSTED", fallback: text, transport: transport, sources: sources, searched: searched, records: records, iteration: 0)
@@ -230,10 +286,12 @@ final class AgentLoop: @unchecked Sendable {
         var candidateRound: AgentRound?
         defer { if completionTerminalReason.isEmpty { completionTerminalReason = core.completed ? "" : core.reason } }
         var iteration = 0
-        while true {
+        work: while true {
             if iteration > 0 {
                 let supplements = await takeSupplements()
                 if !supplements.isEmpty {
+                    await finishJob("Interrupted by updated user instructions.", limited:true)
+                    catalog = nil
                     try goal.update("amend", ["amendment": contract.supplementMessage(supplements)])
                     transcript.append(.userText(contract.supplementMessage(supplements)))
                     await hooks.onSupplementsJoined?(supplements)
@@ -243,7 +301,8 @@ final class AgentLoop: @unchecked Sendable {
                 let text = await exhaustedStop(exhausted)
                 return try await deliverLimit("BUDGET_EXHAUSTED", fallback: candidateRound?.text ?? text, transport: transport, sources: sources, searched: searched, records: records, iteration: iteration)
             }
-            if !goal.checking, let routing = hooks.routing, let next = try await routing.upgrade(rounds: core.rounds, failures: core.failures, stopped: !core.active, stage: hooks.onStage) {
+            if job != nil && hooks.routing?.requested == true { await finishJob("Action deferred to the lead for model escalation; it has not executed.", limited:true) }
+            if job == nil, !goal.checking, let routing = hooks.routing, let next = try await routing.upgrade(rounds: core.rounds, failures: core.failures, stopped: !core.active, stage: hooks.onStage) {
                 transport = next
                 try core.event("reroute")
             }
@@ -255,12 +314,13 @@ final class AgentLoop: @unchecked Sendable {
                 if ["ROUND_LIMIT", "DEADLINE_EXCEEDED"].contains(core.reason) { return try await deliverLimit(core.reason, fallback: core.reply(latestUserMessage), transport: transport, sources: sources, searched: searched, records: records, iteration: iteration) }
                 return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: core.reason == "DEADLINE_EXCEEDED" ? .budget : .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration)
             }
+            if job != nil, jobRounds >= (routeLimits?["rounds"] ?? 0) { await finishJob("Member round budget reached.", limited:true) }
             var round = AgentRound()
             let checkingGoal = goal.checking
             var condensed = false
             while true {
                 let review = checkingGoal ? try goal.update("request", ["observations": completionObservations]) : nil
-                let request = AgentLoopRequest(iteration: iteration, transcript: transcript, timeout: budget.requestTimeout(cap: transport.timeoutCap), remainingTokens: nil, goalReview: review, repairing: goal.repairing || hooks.routing?.session.escalated == true)
+                let request = AgentLoopRequest(iteration: iteration, transcript: transcript, timeout: budget.requestTimeout(cap: transport.timeoutCap), remainingTokens: nil, goalReview: review, repairing: goal.repairing || hooks.routing?.session.escalated == true, internalDefinition: catalog != nil && job == nil && assignments.count < (routeLimits?["assignments"] ?? 0) ? definition : nil, internalJob: job)
                 do {
                     let roundTransport = transport
                     round = try await LoopTrace.model(purpose: checkingGoal ? "goal-check" : "loop", input: ["iteration":iteration,"toolNames":Array(offered),"loadedToolInstructions":tools?.instructionsWithContract ?? ""], snapshot: { value in
@@ -285,8 +345,13 @@ final class AgentLoop: @unchecked Sendable {
                     return try await deliverLimit("BUDGET_EXHAUSTED", fallback: candidateRound?.text ?? text, transport: transport, sources: sources, searched: searched, records: records, iteration: iteration)
                 } catch {
                     try Task.checkCancellation()
+                    if (error as? URLError)?.code == .cancelled || error is CancellationError { throw error }
+                    if job != nil {
+                        if !transport.metersBudget { budget.record(providerCalls:1) }
+                        try core.event("feedback"); await finishJob("Member model request failed before delivery.", limited:true)
+                        iteration += 1; continue work
+                    }
                     guard checkingGoal, let candidate = candidateRound else { throw error }
-                    if (error as? URLError)?.code == .cancelled { throw error }
                     if !transport.metersBudget { budget.record(inputTokens: 0, providerCalls: 1) }
                     try goal.update("stop")
                     try core.event("complete")
@@ -313,6 +378,11 @@ final class AgentLoop: @unchecked Sendable {
                 lastEvidence = evidence
                 return AgentLoopOutcome(text: candidate.text, stop: .answered, finalRound: candidate, sources: sources, searched: searched, calls: records, iterations: iteration + 1)
             }
+            // A hosted search receipt is evidence only for a member allowed
+            // to use hosted search. Local page receipts are recorded at dispatch.
+            if let job, !(job["tools"] as? [String] ?? []).contains("native_web_search") {
+                round.searched = false; round.sources = []
+            }
             sources += round.sources
             if round.searched { try core.event("hosted-call"); budget.record(toolCalls: 1) }
             if round.searched { completionObservations.append(["id": "hosted-search:\(iteration)", "name": "web_search", "type": "tool", "ok": true, "executed": true]) }
@@ -322,7 +392,18 @@ final class AgentLoop: @unchecked Sendable {
                 }
             }
             searched = searched || round.searched
-            let calls = transport.offersTools && (tools != nil || hooks.routing != nil) ? round.calls : []
+            let calls = (transport.offersTools && (tools != nil || hooks.routing != nil) || catalog != nil) ? round.calls : []
+            if job == nil, let catalog, calls.count == 1, let call = calls.first, call.name == "route_task", assignments.count < (routeLimits?["assignments"] ?? 0),
+               let args = try? JSONSerialization.jsonObject(with: Data(call.arguments.utf8)) as? [String:Any],
+               let next = SharedLoopPolicy.value("internalRouting", ["action":"start","catalog":catalog,"args":args,"callId":call.callID,"assignments":assignments,"goal":goal.original]) as? [String: Any], next["error"] == nil {
+                try core.event("feedback", ["internalRouting":true])
+                job = next; assignments.append(next); jobRounds = 0; observationsAtStart = completionObservations.count
+                leadTranscript = transcript; leadAssignmentRound = round; transcript = []
+                await hooks.onStage?("internal:\(assignments.count)", next["label"] as? String ?? "Agent", "running", next["task"] as? String ?? "")
+                iteration += 1; continue
+            }
+            if job != nil && calls.isEmpty { try core.event("feedback"); await finishJob(round.text); iteration += 1; continue }
+            if job != nil { jobRounds += 1 }
             if calls.isEmpty {
                 candidateRound = round
                 try goal.update("candidate", ["observations": completionObservations, "candidate": ["context": ["messages": goalHistory.suffix(8).map { ["role": $0.role, "content": $0.content] }, "capabilities": Array(offered)], "reply": round.text, "tools": Array(offered) + (nativeSearchAvailable ? ["native_web_search"] : []), "research": ChatGPTRequest.requiresSearch(latestUserMessage), "roundsLeft": maxIterations - core.rounds]])
@@ -333,13 +414,18 @@ final class AgentLoop: @unchecked Sendable {
                 return AgentLoopOutcome(text: round.text, stop: .answered, finalRound: round, sources: sources, searched: searched, calls: records, iterations: iteration + 1)
             }
             // The shared reducer validates the whole batch before any OS effect.
-            try core.event("calls", ["calls": calls.map { call -> [String: Any] in
+            let scopedCalls = calls.map { call -> ResponsesFunctionCall in
+                guard job != nil, !call.callID.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty, call.callID.utf16.count <= 256 else { return call }
+                let id = call.callID.utf16.count <= 245 ? "job-\(assignments.count):"+call.callID : "job-\(assignments.count)#"+PhoneCoreTurn.fingerprint(call.callID)
+                return ResponsesFunctionCall(callID:id, name:call.name, arguments:call.arguments)
+            }
+            try core.event("calls", ["calls": scopedCalls.map { call -> [String: Any] in
                 let args = OrderedJSON.arguments(call.arguments)
                 return ["id": call.callID, "name": call.name, "arguments":(try? JSONSerialization.jsonObject(with:Data(call.arguments.utf8))) as Any? ?? [:], "effect": PhoneCoreTurn.effect(call.name, arguments: call.arguments), "fingerprint": PhoneCoreTurn.fingerprint(call.name + args.canonicalJSON)]
             }])
             if !core.active { return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: core.reason == "DEADLINE_EXCEEDED" ? .budget : .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration + 1) }
             var results: [AgentToolResult] = []
-            for call in calls {
+            for (index, call) in scopedCalls.enumerated() {
                 let args = OrderedJSON.arguments(call.arguments)
                 let started = Date()
                 var outcome: PhoneToolOutcome
@@ -349,6 +435,10 @@ final class AgentLoop: @unchecked Sendable {
                 var capability: CapabilityAudit? = nil
                 if Task.isCancelled {
                     outcome = PhoneToolEnvelope.finalize(ok: false, error: "ABORTED", output: "Aborted before execution.")
+                } else if let job, !(job["tools"] as? [String] ?? []).contains(call.name) {
+                    outcome = PhoneToolEnvelope.finalize(ok:false, error:"CAPABILITY_DENIED", output:"Tool outside the internal job scope.")
+                } else if call.name == "calculator" && job == nil {
+                    outcome = PhoneToolEnvelope.finalize(ok:false, error:"UNKNOWN_TOOL", output:"Calculator is available through the internal calculation job.")
                 } else if !core.permits(call.callID) {
                     let rejected = core.rejection(call.callID)
                     outcome = PhoneToolEnvelope.finalize(ok: false, error: rejected.code, output: rejected.code == "UNKNOWN_TOOL" ? contract.unknownToolOutput : rejected.output)
@@ -362,6 +452,12 @@ final class AgentLoop: @unchecked Sendable {
                     outcome = PhoneToolEnvelope.parse(WebPageText.tooManyScreenshots(url: call.urlArgument))
                 } else if let exhausted = budget.admitTool() {
                     outcome = PhoneToolEnvelope.finalize(ok: false, error: contract.budgetCode, output: AgentLoopContract.fill(contract.budgetToolSkippedTemplate, ["reason": exhausted.reason, "tool": call.name]))
+                } else if job != nil && call.name == "calculator" {
+                    let value = (try? JSONSerialization.jsonObject(with: Data(call.arguments.utf8))) as? [String:Any] ?? [:]
+                    let result = SharedLoopPolicy.value("calculate", ["arguments":value]) as? [String:Any]
+                    executed = true
+                    outcome = PhoneToolEnvelope.finalize(ok:result != nil, error:result == nil ? "INVALID_ARGS" : nil, output:result.map(WebPageText.encode) ?? "Invalid calculation.")
+                    await hooks.onCalculation?(call.callID, outcome.ok, outcome.output)
                 } else {
                     if let tools {
                         await hooks.onStatus?(tools.statusText(call))
@@ -402,7 +498,7 @@ final class AgentLoop: @unchecked Sendable {
                 }
                 evidence.append(PhoneUncertainty.ToolPair(callID: call.callID, name: call.name, args: args, ok: outcome.ok, output: outcome.output, receivedAt: record.startedAt))
                 if evidence.count > contract.evidenceMaxToolItems { evidence.removeFirst(evidence.count - contract.evidenceMaxToolItems) }
-                results.append(AgentToolResult(call: call, modelOutput: PhoneToolEnvelope.modelFacing(outcome, maxOutputChars: max(contract.maxModelFacingOutputChars, WebPageText.maxOutputCharacters)), imageJPEG: image?.0, imageURL: image?.1 ?? ""))
+                results.append(AgentToolResult(call: calls[index], modelOutput: PhoneToolEnvelope.modelFacing(outcome, maxOutputChars: max(contract.maxModelFacingOutputChars, WebPageText.maxOutputCharacters)), imageJPEG: image?.0, imageURL: image?.1 ?? ""))
             }
             await hooks.onStatus?("正在思考…")
             transcript.append(.toolRound(round, results))

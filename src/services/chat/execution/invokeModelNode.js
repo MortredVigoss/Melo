@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { internalRouteCatalog, startInternalJob, internalHandoff, MAX_ASSIGNMENTS, MAX_MEMBER_ROUNDS, ROUTE_NAME } from '../../../../shared/agent/internalRouting.js';
 import { runLimitDelivery } from '../../../runtime/limitDelivery.js';
 import { isDeliveryLimit, hostEvidenceReply } from '../../../../shared/agent/limitDelivery.js';
 import { resolveLoopLimits } from '../../../../shared/agent/loopLimits.js';
@@ -134,6 +136,13 @@ export function createInvokeModelNode(turn) {
       parametersSchema: { type: 'object', properties: { reason: { type: 'string', description: 'Why this task requires a stronger model.' } }, required: ['reason'], additionalProperties: false } };
     const routingEnabled = routingSession?.current.mode === 'smart' && config.smartRouting?.allowEscalation !== false;
     if (routingEnabled) graphState.promptTools = [...graphState.promptTools, escalationTool];
+    const routeGoal = graphState.searchPlan.sharedPlan?.resolvedGoal || latestUserMessage;
+    let catalog = !teamTask && !teamPlan && !context.requestToolPolicy?.toolsForbidden && internalRouteCatalog(routeGoal, [
+      ...graphState.promptTools.map(t => t.id), ...(graphState.searchPlan.nativeWebSearchEnabled ? ['native_web_search'] : [])]);
+    if (catalog) graphState.promptTools = [...graphState.promptTools, { id: ROUTE_NAME, name: ROUTE_NAME, description: catalog.definition.description, parametersSchema: catalog.definition.parameters }];
+    const assignments = [];
+    let job = null, leadMessages, leadAssignmentTurn, observationStart, jobRounds, jobSession;
+    let closedRouterSession;
     let escalationRequested = false;
     let routingSideEffects = false;
     let functionSession = createFunctionCallingSession({ ...delegatedModelConfig, ...(vision || {}),
@@ -187,6 +196,14 @@ export function createInvokeModelNode(turn) {
       return { allowedDispatchTools, dispatchAgentProfiles, dispatchMemberBackground };
     };
 
+    const finishJob = (answer, limited = false) => {
+      const observations = coreTurn.observations.slice(observationStart);
+      const handoff = internalHandoff({ job, answer, observations, limited });
+      sseEmitter?.('execution_event', { kind:'pipeline', id:'internal:'+assignments.length, module:'compute', name:job.label,
+        status:JSON.parse(handoff).status === 'observed' ? 'completed' : 'interrupted', output:answer.slice(0,500) });
+      loopMessages = functionSession.append(leadMessages, leadAssignmentTurn, [{call:leadAssignmentTurn.toolCalls[0],result:{ok:true,output:handoff}}]);
+      job = null;
+    };
     for (let iteration = 0; ; iteration++) {
       if (signal?.aborted) {
         if (userSignal?.aborted) throw signal.reason;
@@ -201,31 +218,42 @@ export function createInvokeModelNode(turn) {
       if (!isFirstIteration) {
         const supplements = takeSupplements(chat.id);
         if (supplements.length) {
+          if (job) finishJob('Interrupted by updated user instructions.', true);
+          catalog = null; // Subsequent routing must not reuse a superseded permission/goal snapshot.
           coreTurn.amend(supplementMessage(supplements));
           loopMessages = [...loopMessages, { role: 'user', content: supplementMessage(supplements), isSupplement: true }];
           for (const entry of supplements) sseEmitter?.('execution_event', { kind: 'pipeline', id: `supplement:${entry.id}`, messageId: 'stage.supplement', module: 'compute', status: 'completed', output: entry.text });
         }
       }
 
-      if (!coreTurn.checking && routingSession?.escalate({ ...coreTurn.routingProgress, requested: escalationRequested, sideEffects: routingSideEffects })) {
+      if (job && escalationRequested) finishJob('Action deferred to the lead for model escalation; it has not executed.', true);
+      if (!job && !coreTurn.checking && routingSession?.escalate({ ...coreTurn.routingProgress, requested: escalationRequested, sideEffects: routingSideEffects })) {
         const selected = routingSession.connection();
         selectedModel = selected.model;
         Object.assign(config, selected);
         Object.assign(modelOverrides, { model: selected.model, verifier: selected.model, apiKey: selected.apiKey, baseUrl: selected.baseUrl });
         Object.assign(delegatedModelConfig, selected, { modelResolvedForTurn: true });
         Object.assign(contextBudget, resolveContextBudget(env, { config: selected }));
+        closedRouterSession = null;
         functionSession = createFunctionCallingSession({ ...selected, toolCalling: env.MELO_FUNCTION_CALLING || selected.toolCalling }, graphState.promptTools);
         loopSections = loopSections.map(section => section.id === 'tools' ? { ...section, text: [buildSearchRoutingPrompt(graphState.searchPlan), buildToolsSystemPrompt(graphState.promptTools, { includeExamples: false, native: functionSession.native, protocol: functionSession.protocol })].join('\n\n') } : section);
         // Rerouting never resets the budget, goal, tool IDs or successful effects.
         coreTurn.update('reroute');
       }
       escalationRequested = false;
+      if (job && jobRounds >= MAX_MEMBER_ROUNDS) finishJob('Member round budget reached.', true);
+      const routerClosed = assignments.length >= MAX_ASSIGNMENTS || !catalog;
+      const phaseTools = job ? graphState.promptTools.filter(t => job.tools.includes(t.id))
+        : routerClosed ? graphState.promptTools.filter(t => t.id !== ROUTE_NAME) : graphState.promptTools;
+      const roundSession = job ? (jobSession ??= createFunctionCallingSession({ ...delegatedModelConfig, ...(vision || {}) }, phaseTools)) : routerClosed && phaseTools.length !== graphState.promptTools.length
+        ? (closedRouterSession ??= createFunctionCallingSession({ ...delegatedModelConfig, ...(vision || {}) }, phaseTools)) : functionSession;
+      const sections = job ? [{ id:'internal-job', required:true, text: job.system + '\n' + buildToolsSystemPrompt(phaseTools, {native:roundSession.native,protocol:roundSession.protocol}) }] : loopSections;
       let request;
       const checkingGoal = coreTurn.checking;
       const toolFree = checkingGoal;
       try {
         const review = checkingGoal ? coreTurn.reviewRequest() : null;
-        request = fitRequestContext({ sections: review ? [{ id: 'goal-check', text: review.systemPrompt, required: true }] : loopSections, messages: review?.messages || loopMessages, toolDefinitions: toolFree ? [] : functionSession.definitions, ...contextBudget, turnContextPlacement });
+        request = fitRequestContext({ sections: review ? [{ id: 'goal-check', text: review.systemPrompt, required: true }] : sections, messages: review?.messages || loopMessages, toolDefinitions: toolFree ? [] : roundSession.definitions, ...contextBudget, turnContextPlacement });
       } catch (error) {
         if (checkingGoal) { coreTurn.stopReview('GOAL_CHECK_CONTEXT'); finalReply = coreTurn.candidateReply; break; }
         // audit C-8: a long tool loop must not die after the tools already
@@ -236,7 +264,7 @@ export function createInvokeModelNode(turn) {
         if (!condensed.changed) throw error;
         loopMessages = condensed.messages;
         sseEmitter?.('execution_event', { kind: 'pipeline', id: `tool-chain:condense:${iteration}`, module: 'compute', messageId: 'stage.condense', status: 'completed', outputMessageId: 'output.condensed' });
-        request = fitRequestContext({ sections: loopSections, messages: loopMessages, toolDefinitions: functionSession.definitions, ...contextBudget, turnContextPlacement });
+        request = fitRequestContext({ sections, messages: loopMessages, toolDefinitions: roundSession.definitions, ...contextBudget, turnContextPlacement });
       }
       if (promptDebug) process.stdout.write(`[prompt-budget] iteration=${iteration} ${JSON.stringify(request.diagnostics)}\n`);
       if (isFirstIteration) {
@@ -287,7 +315,7 @@ export function createInvokeModelNode(turn) {
       try {
         rawReply = await createReply({
         purpose: checkingGoal ? 'goal-check' : 'loop',
-        ...(toolFree ? { maxTokens: 2048 } : functionSession.requestOptions()),
+        ...(toolFree ? { maxTokens: 2048 } : roundSession.requestOptions()),
         authMode: vision?.authMode || config.authMode,
         apiProtocol: vision?.apiProtocol || config.apiProtocol,
         apiKey: vision?.apiKey ?? modelOverrides.apiKey,
@@ -298,8 +326,8 @@ export function createInvokeModelNode(turn) {
         messages: attachTurnContextToMessages(request.messages, request.turnContext),
         cacheScope: `${agentId}:${chat.id}`,
         signal,
-        onDelta: !checkingGoal ? onDelta : undefined,
-        onReasoningDelta: checkingGoal ? undefined : onReasoningDelta,
+        onDelta: !checkingGoal && !job ? onDelta : undefined,
+        onReasoningDelta: checkingGoal || job ? undefined : onReasoningDelta,
         providerProfile,
         routing: routingSession?.current.mode === 'smart' ? { ...routingSession.current, judge: undefined } : undefined,
         // Workspace path enables inline image generation through the
@@ -309,14 +337,15 @@ export function createInvokeModelNode(turn) {
         // providers this parameter is currently ignored.
         //
         // Native provider features obey the Agent capability snapshot.
-        workspacePath: toolFree ? null : workspace?.rootPath || null,
+        workspacePath: toolFree || job ? null : workspace?.rootPath || null,
         // Stable across turns (A2): the native web_search definition is
         // present whenever the agent may use the network; whether to use
         // it this turn is said in the routing prompt. Only an explicit
         // user network-off or a non-Codex route keeps it off.
-        nativeWebSearchEnabled: !toolFree && nativeFeaturesForScope(context.capabilityScope,context.requestToolPolicy).nativeWebSearchEnabled && graphState.searchPlan?.nativeWebSearchEnabled === true,
-        nativeImageGenerationEnabled: !context.requestToolPolicy?.toolsForbidden && (routingSession?.current.mode !== 'smart' || routingSession.current.tier === 'strong') && !toolFree && !coreTurn.repairing && scopeAllowsTool(context.capabilityScope,'image',{action:'generate'}) && imageSettings(config).engine === 'codex-oauth',
+        nativeWebSearchEnabled: (!job || job.tools.includes('native_web_search')) && !toolFree && nativeFeaturesForScope(context.capabilityScope,context.requestToolPolicy).nativeWebSearchEnabled && graphState.searchPlan?.nativeWebSearchEnabled === true,
+        nativeImageGenerationEnabled: !job && !context.requestToolPolicy?.toolsForbidden && (routingSession?.current.mode !== 'smart' || routingSession.current.tier === 'strong') && !toolFree && !coreTurn.repairing && scopeAllowsTool(context.capabilityScope,'image',{action:'generate'}) && imageSettings(config).engine === 'codex-oauth',
         onExecutionEvent: event => {
+          if (job && (event.name === 'native_image_generation' || (event.name === 'native_web_search' && !job.tools.includes('native_web_search')))) return;
           const observed = { ...event, id: event.id ? `${iteration}:${event.id}` : undefined };
           if (coreTurn.observeNative(observed)) recordUsage(budget, { toolCalls: 1 });
           sseEmitter?.('execution_event', observed);
@@ -335,6 +364,9 @@ export function createInvokeModelNode(turn) {
         const timedOut = error?.name === 'TimeoutError' || error?.code === 'ETIMEDOUT';
         const exhaustedNow = error?.exhausted || budgetExhausted(budget) || (budget && timedOut && remainingMs(budget) <= 1000 ? budgetExhausted(budget, budget.deadlineAt) : null);
         if (checkingGoal && !exhaustedNow) { coreTurn.stopReview(); coreTurn.update('complete'); finalReply = coreTurn.candidateReply; break; }
+        if (!exhaustedNow && job) {
+          coreTurn.update('feedback'); finishJob('Member model request failed before delivery.', true); continue;
+        }
         if (!exhaustedNow) throw error;
         emitBudgetExhausted(exhaustedNow);
         finalReply = coreTurn.candidateReply || budgetExhaustedReply(exhaustedNow, config.replyLanguage);
@@ -345,7 +377,7 @@ export function createInvokeModelNode(turn) {
         if (userSignal?.aborted) throw signal.reason;
         terminalReason = 'DEADLINE_EXCEEDED'; break;
       }
-      if (!toolFree && graphState.searchPlan?.nativeWebSearchEnabled) {
+      if (!toolFree && (!job || job.tools.includes('native_web_search')) && graphState.searchPlan?.nativeWebSearchEnabled) {
         const items = (rawReply?.responseItems || []).filter(item => ['message', 'web_search_call'].includes(item?.type));
         hostedItems.push(...items);
         // The transport may return structured receipts without emitting SSE.
@@ -353,8 +385,15 @@ export function createInvokeModelNode(turn) {
         const receipt = hostedSearchReceipt({ items, text: rawReply?.text });
         if (receipt.verified && coreTurn.observeNative({ id: `hosted:${iteration}`, name: 'native_web_search', status: 'completed', output: receipt.evidence + '\n' + receipt.answer, sources: receipt.sources.map(source => ({ ...source, reading: 'provider', text: rawReply?.text || '' })) })) recordUsage(budget, { toolCalls: 1 });
       }
-      const turn = functionSession.parse(rawReply);
-      const { thinking, toolCalls } = turn;
+      const turn = roundSession.parse(rawReply);
+      const { thinking } = turn;
+      // Provider IDs are local to a member conversation; preserve wire IDs in
+      // the protocol transcript, but use unique IDs in the shared execution ledger.
+      const toolCalls = job ? turn.toolCalls.map(call => {
+        if (typeof call.id !== 'string' || !call.id.trim() || call.id.length > 256) return call;
+        const id = call.id.length <= 245 ? `job-${assignments.length}:${call.id}` : `job-${assignments.length}#${createHash('sha256').update(call.id).digest('hex')}`;
+        return { ...call, id };
+      }) : turn.toolCalls;
 
       if (checkingGoal) {
         const decision = coreTurn.review(toolCalls.length ? '' : turn.text);
@@ -370,6 +409,21 @@ export function createInvokeModelNode(turn) {
         break;
       }
 
+      if (!job && catalog && toolCalls.length === 1 && !toolCalls[0].rejectedResult && toolCalls[0].name === ROUTE_NAME && assignments.length < MAX_ASSIGNMENTS) {
+        const next = startInternalJob({ catalog, args:toolCalls[0].arguments, callId:toolCalls[0].id, assignments, goal:routeGoal });
+        if (!next.error) {
+          coreTurn.update('feedback', {internalRouting:true});
+          jobSession = null;
+          assignments.push(next); job = next; jobRounds = 0; leadMessages = loopMessages; leadAssignmentTurn = turn;
+          observationStart = coreTurn.observations.length;
+          loopMessages = [{ role:'user', content:job.input }];
+          sseEmitter?.('execution_event', { kind:'pipeline', id:'internal:'+assignments.length, module:'compute', name:job.label, status:'running', input:job.task });
+          continue;
+        }
+        toolCalls[0].rejectedResult = { ok:false, output:next.error, meta:{code:'ROUTE_DENIED',executionStarted:false} };
+      }
+      if (job && !toolCalls.length) { coreTurn.update('feedback'); finishJob(turn.text || ''); continue; }
+      if (job) jobRounds++;
       // No calls is a candidate answer, not proof that the user's goal is done.
       if (!toolCalls.length) {
         if (coreTurn.candidate(turn.text, { context: { messages: loopMessages.filter(row => typeof row.content === 'string').slice(-8) }, research: !!graphState.searchPlan.sharedPlan?.research, nativeSearch: graphState.searchPlan?.nativeWebSearchEnabled === true })) {
@@ -423,7 +477,8 @@ export function createInvokeModelNode(turn) {
       const { allowedDispatchTools, dispatchAgentProfiles, dispatchMemberBackground } = dispatchConstants();
       for (const tc of toolCalls) {
         if (tc.rejectedResult) continue;
-        if (!coreTurn.permits(tc.id)) tc.rejectedResult = coreTurn.rejectionResult(tc.id);
+        if (job && !job.tools.includes(tc.name)) tc.rejectedResult = { ok:false, output:'Tool outside the internal job scope.', meta:{code:'CAPABILITY_DENIED',executionStarted:false} };
+        else if (!coreTurn.permits(tc.id)) tc.rejectedResult = coreTurn.rejectionResult(tc.id);
         else if (routingSession?.current.mode === 'smart' && routingSession.current.tier !== 'strong' && ['write', 'unknown'].includes(toolEffect(tc.name, tc.arguments))) {
           routingSideEffects = true; escalationRequested = true;
           tc.rejectedResult = { ok: false, output: 'This action has not executed. It requires the strong tier. Continue using previous results after the host checks the configured tier; if unavailable ask the user to configure it.', meta: { code: 'ROUTING_REQUIRES_STRONG', executionStarted: false } };
@@ -497,29 +552,30 @@ export function createInvokeModelNode(turn) {
       // Append assistant turn (thinking + tool calls) and tool results.
       // Appending first lets the records below capture the exact
       // model-facing output string instead of re-deriving it.
-      loopMessages = functionSession.append(loopMessages, turn, allResults);
+      const wireResults = job ? allResults.map((pair, index) => ({ ...pair, call:turn.toolCalls[index] })) : allResults;
+      loopMessages = roundSession.append(loopMessages, turn, wireResults);
       const toolResultMessage = loopMessages[loopMessages.length - 1];
       // Tool images (web_screenshot `meta.modelImage`): shown to the model
       // as one extra user message after this batch's results on native
       // protocols; the XML protocol gets the text output only. Transient —
       // the persisted tool chain never carries the base64.
-      const toolImages = functionSession.imagesOf(allResults);
-      loopMessages = functionSession.appendToolImages(loopMessages, toolImages);
+      const toolImages = roundSession.imagesOf(wireResults);
+      loopMessages = roundSession.appendToolImages(loopMessages, toolImages);
       traceEvent('tool.feedback.appended', { round: iteration, callIds: allResults.map(pair => pair.call.id) }, loopMessages.slice(-Math.min(80, allResults.length * 2 + 1)));
-      toolChainTurns.push(functionSession.turnRecord(turn, allResults, { argumentsFor: call => redactToolArgs(call.arguments), images: toolImages }));
+      toolChainTurns.push(roundSession.turnRecord(turn, wireResults, { argumentsFor: call => redactToolArgs(call.arguments), images: toolImages }));
 
       // Design audit D1: one ToolInvocationRecord per call, written to
       // `<home>/desktop/execution-scenes/<runId>.tools.jsonl`. The SSE
       // `tool_calls_done` payload and the persisted toolResults entry
       // below are projections of this record; the jsonl line is the
       // only place the full model-facing output is kept.
-      const modelFacingOutputs = modelFacingOutputsFor(toolResultMessage, allResults);
+      const modelFacingOutputs = modelFacingOutputsFor(toolResultMessage, wireResults);
       const batchFinishedAt = Date.now();
-      const toolRecords = allResults.map(({ call, result }) => {
+      const toolRecords = allResults.map(({ call, result }, index) => {
         const execution = resultsById.get(call.id);
         const record = buildToolInvocationRecord({
           runId: context.runId, iteration, call, args: call.arguments, result,
-          modelFacingOutput: modelFacingOutputs.get(call.id) || '',
+          modelFacingOutput: modelFacingOutputs.get(wireResults[index].call.id) || '',
           startedAt: execution?.startedAt ?? batchFinishedAt, finishedAt: execution?.finishedAt ?? batchFinishedAt,
           parallelGroup: execution?.parallelGroup ?? null,
         });

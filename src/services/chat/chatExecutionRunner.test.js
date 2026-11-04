@@ -1110,3 +1110,42 @@ test('cancellation after a tool result never starts delivery or another effect',
     assert.equal(effects,1);assert.equal(requests,1);
   } finally {unregisterTool('cancel_delivery_probe');}
 });
+
+test('ordinary persona routes research then calculation, rejects a cross-role call, and delivers from real handoffs', async () => {
+  const {registerTool, unregisterTool, getTool} = await import('../../tools/registry.js');
+  const old = getTool('fetch_url');
+  let reads = 0, leadTurns = 0, researchTurns = 0, calcTurns = 0;
+  const question = 'Look up the concert forecast at https://example.org/forecast and convert the temperature to Fahrenheit.';
+  const call = (name,args,id) => '<tool_call>'+JSON.stringify({id,name,arguments:args})+'</tool_call>';
+  unregisterTool('fetch_url');
+  registerTool({...old,run:async()=>{reads++;return {ok:true,output:'Forecast at the venue: 20 Celsius.',meta:{url:'https://example.org/forecast',length:33}};}});
+  try {
+    const state=fixtureState(),chat=fixtureChat({messages:[{id:'job-user',role:'user',content:question}]});
+    state.chats=[chat];state.agentProfiles.main.name='Winter';state.agentProfiles.main.collaboration={canDelegate:false,delegateTargets:[]};await saveState(state);
+    const events=[];
+    const result=await runChatAgentExecutionGraph({config:fixtureConfig,state,chat,workspace:fixtureWorkspace(),connectors:[],skills:[],latestUserMessage:question,agentId:'main',sseEmitter:(type,e)=>{if(type==='execution_event')events.push(e);},
+      _dependencies:{getEmbedding:async()=>null,createReply:async options=>{
+        const messages=JSON.stringify(options.messages);
+        if(options.systemPrompt.startsWith("You are Melo's task completion checker")) {
+          return JSON.stringify({decision:'complete',reasonType:'fulfilled',requirements:[{text:'forecast and conversion',kind:'external_fact',status:'met',evidenceIds:['job-1:forecast','job-2:calc']}]});
+        }
+        if(options.systemPrompt.includes('You are the internal research specialist')) {
+          assert.equal(options.nativeImageGenerationEnabled,false);
+          return ++researchTurns===1?call('fetch_url',{url:'https://example.org/forecast'},'forecast'):'The venue forecast is 20 °C.';
+        }
+        if(options.systemPrompt.includes('You are the internal calculate specialist')) {
+          assert.equal(options.nativeWebSearchEnabled,false);assert.equal(options.nativeImageGenerationEnabled,false);
+          calcTurns++;if(calcTurns===1)return call('fetch_url',{url:'https://example.org/private'},'forbidden');
+          if(calcTurns===2)return call('calculator',{action:'convert',value:20,from:'celsius',to:'fahrenheit'},'calc');
+          assert.match(messages,/68/);return '20 °C equals 68 °F.';
+        }
+        leadTurns++;
+        if(leadTurns===1)return call('route_task',{role:'research',task:'Read the venue forecast.'},'route1');
+        if(leadTurns===2){assert.match(messages,/20 °C/);return call('route_task',{role:'calculate',task:'Convert 20 °C to Fahrenheit.'},'route2');}
+        assert.match(messages,/68 °F/);return 'Winter: the forecast is 20 °C (68 °F).';
+      }}});
+    assert.equal(reads,1);assert.equal(researchTurns,2);assert.equal(calcTurns,3);assert.equal(leadTurns,3);
+    assert.match(result.normalizedReply.content,/Winter.*68 °F/);assert.equal(result.normalizedReply.completion.outcome,'completed');
+    assert.ok(events.some(e=>e.id==='internal:2' && e.status==='completed'));
+  } finally {unregisterTool('fetch_url');registerTool(old);}
+});

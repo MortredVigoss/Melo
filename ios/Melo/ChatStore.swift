@@ -514,6 +514,8 @@ import SwiftUI
         // finalize evidence besides tool results: recalled memory, then project and selected materials (desktop: memory / dynamic / project context).
         let verification = classification.map { AgentVerification(question: clean, classification: $0, contextBlocks: [memoryText] + resolvedContext.evidence) }
         let loopHooks = AgentLoopHooks(
+            internalRouting: teamPlan == nil && video == nil && !plan.makesImage,
+            onCalculation: { [weak self] id, ok, output in self?.phoneOperation(record.runId, id:"calculate:"+id, module:"compute", name:"计算", status:ok ? "completed" : "failed", summary:output) },
             maxTaskIterations: selectedAgent.maxTaskIterations,
             traceRunID: record.runId,
             onStage: { [weak self] id, name, status, output in self?.stage(record.runId, id: id, name: name, status: status, output: output) },

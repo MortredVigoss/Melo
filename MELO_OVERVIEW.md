@@ -81,8 +81,11 @@
 
 ## 4. 最新交接
 
+### 2026-11-04 — 内部岗位按需分工（Codex）
+桌面、iPhone 和 Android 的主 Agent 可以按需分配检索、资料读取、计算和执行，按宿主工具权限隔离成员上下文。手动团队与自定义 Agent 的委派白名单独立。真实模型用隔离合成预报交付 26°C → 78.8°F；最终回归 run-OeYShm 通过 4,842 项 JS、38 套 Swift、Android 四项和设置浏览器。三端入口、回放与边界见[实施及回执](docs/internal-routing-and-scene-20261104.md)。
+
 ### 2026-11-04 — 自定义 Agent 分工审计与任务空间分类
-金冬天、懂王当前均关闭委派。桌面及 iPhone 已有显式团队与主 Agent 汇总，自动岗位路由待方案选择。iPhone 网页、手机工具和历史读取现写入实际调用，记录来源与读取状态；旧手机回放也按工具归类。详见[方案与执行回执](docs/internal-routing-and-scene-20261104.md)。393 × 852 浏览器实点、iOS 模拟器目标构建与影响范围回归 run-lQI4u4 通过（JS 2,241，Swift 38 套，Android 四项）。未装真机。
+金冬天、懂王当前均关闭委派。桌面及 iPhone 已有显式团队与主 Agent 汇总，此前未有自动岗位路由；现按用户选定的按需分工接入普通聊天。iPhone 网页、手机工具和历史读取现写入实际调用，记录来源与读取状态；旧手机回放也按工具归类。详见[方案与执行回执](docs/internal-routing-and-scene-20261104.md)。393 × 852 浏览器实点、iOS 模拟器目标构建与影响范围回归 run-lQI4u4 通过（JS 2,241，Swift 38 套，Android 四项）。未装真机。
 
 ### 2026-11-04 — 设计 Melo（Codex）— Android Organizer 本地集成与缺陷审计
 本地 master 已合入 yrlf 的 12 个原始提交，合并节点 `7a828ec`，最终源码 `7a55331`。修复系统日历撤权后的信息披露、短日程延期失效、目标完成误报、长对话压缩后误超限、跨端 Trace 留存及归档断链。最终集成 `run-hdesSa` 通过 JS 4,837、Swift 38 套、Android JVM 204 与 Lint/Debug/Release、设置浏览器。另验模拟器 16 项、iOS 未签名完整构建。增量审计 H1–H20 零新增，10-27 固定基线原有 H5 +29。实体手机及真实模型服务另验。[合并审计](docs/android-organizer-merge-audit-20261104.md)

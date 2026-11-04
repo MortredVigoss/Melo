@@ -1,3 +1,5 @@
+import { calculateNumber } from './arithmetic.js';
+import { internalRouting } from './internalRouting.js';
 import { deliveryOperation } from './limitDelivery.js';
 import { getRequestNetworkPolicy, requestAllowsTool } from './retrieval/requestPolicy.js';
 import { publicLookupRequest } from './retrieval/publicLookupIntent.js';
@@ -68,6 +70,8 @@ export function evaluate(input) {
       case 'toolEffect': value = toolEffect(input.name, input.arguments, input.declaration); break;
       case 'phonePolicy': value = PHONE_POLICY; break;
       case 'completionObservation': value = completionObservation(input.observation); break;
+      case 'calculate': value = calculateNumber(input.arguments); break;
+      case 'internalRouting': value = internalRouting(input); break;
       case 'plan': value = planRequest(input.request); break;
       case 'actionEvidence': value = actionEvidence(input.plan, input.urls); break;
       case 'skills': value = buildSkills(input.enabledIds, input.customSkills); break;

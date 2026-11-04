@@ -264,12 +264,12 @@ final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
             observation.stage("model:response", name: "模型请求", status: "running", output: "工具结果已返回，等待模型继续", model: model)
             await onObservation?(observation)
         }
-        var body = base
+        var body = input.scopedBody(base, responses: false, anthropic: anthropic)
         if let review = input.goalReview {
             let messages = review["messages"] as? [[String: Any]] ?? []
             let system = review["systemPrompt"] as? String ?? ""
             body = anthropic ? ["model": model, "stream": false, "max_tokens": input.outputLimit ?? 2048, "system": system, "messages": messages] : ["model": model, "stream": false, "messages": [["role": "system", "content": system]] + messages]
-        } else if !input.transcript.isEmpty { body["messages"] = Self.rendered(base["messages"] as? [[String: Any]] ?? [], transcript: input.transcript, anthropic: anthropic) }
+        } else if !input.transcript.isEmpty { body["messages"] = Self.rendered(body["messages"] as? [[String: Any]] ?? [], transcript: input.transcript, anthropic: anthropic) }
         if let allowance = try PhoneMemberLimits.outputAllowance(body: body, remaining: input.remainingTokens) {
             body["max_tokens"] = min(allowance, (body["max_tokens"] as? Int) ?? allowance)
         }
@@ -297,7 +297,7 @@ final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
         meter.outputTokens = outputTokens ?? RequestSizeEstimate.tokens(data)
         // Tool round: only a completed tool turn counts; calls cut off by `length` /
         // `max_tokens` are never executed (the truncation is reported below).
-        if input.goalReview == nil, offersTools, let receipt, finishReason == (anthropic ? "tool_use" : "tool_calls") {
+        if input.goalReview == nil, (offersTools || input.internalDefinition != nil || input.internalJob != nil), let receipt, finishReason == (anthropic ? "tool_use" : "tool_calls") {
             let assistantMessage = ((receipt["choices"] as? [[String: Any]])?.first?["message"] as? [String: Any]) ?? [:]
             let assistantContent = receipt["content"] as? [[String: Any]] ?? []
             let calls = anthropic ? Network.anthropicToolCalls(assistantContent) : Network.chatToolCalls(assistantMessage)

@@ -1,0 +1,62 @@
+{
+  "baseline": "0771e46",
+  "date": "2026-11-04",
+  "desktop": {
+    "mode": "live model, temporary home, synthetic local forecast",
+    "externalAgentDelegationEnabled": false,
+    "inputCelsius": 26,
+    "expectedFahrenheit": 78.8,
+    "model": "gpt-6.1-sol",
+    "stages": [
+      [
+        "计算成员",
+        "running"
+      ],
+      [
+        "计算成员",
+        "completed"
+      ]
+    ],
+    "tools": [
+      {
+        "id": "call_f7b0d243abb24fc3908998a60295e120",
+        "tool": "file_read",
+        "ok": true
+      },
+      {
+        "id": "job-1:call_da149245fa1c4591b41d4f76aaee5be3",
+        "tool": "calculator",
+        "ok": true
+      }
+    ],
+    "outcome": "completed",
+    "reply": "forecast.txt 记载：<cite data-cite-id=\"c1\" src=\"forecast.txt\" lines=\"1-1\">Example Arena 的温度预报为 26°C，来源是 fixture instrument R72</cite>。文件将其标为 <cite data-cite-id=\"c2\" src=\"forecast.txt\" lines=\"1-1\">Synthetic QA forecast（合成 QA 测试预报）</cite>，并非经核实的实时天气预报。\n\n换算公式：°F = °C × 9/5 + 32\n代入计算：26 × 9/5 + 32 = 78.8°F\n\n因此，26°C = 78.8°F。"
+  },
+  "android": {
+    "environment": "read-only QA emulator, mock model, normal chat entry",
+    "tests": 1,
+    "failures": 0,
+    "skipped": 0,
+    "test": "internalCalculationIsIsolatedAndReturnsToSelectedPersona"
+  },
+  "ios": {
+    "environment": "production loop with scripted model; separate simulator build",
+    "test": "AgentLoopTests",
+    "physicalDeviceTest": false
+  },
+  "regression": {
+    "run": "run-OeYShm",
+    "jsPassed": 4842,
+    "jsFailed": 0,
+    "jsSkipped": 0,
+    "swiftSuitesPassed": 38,
+    "android": [
+      "JVM",
+      "Lint",
+      "Debug",
+      "Release"
+    ],
+    "settingsBrowser": "passed",
+    "isolatedRetest": false
+  }
+}

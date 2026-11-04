@@ -1,7 +1,9 @@
 import { PHONE_WORKFLOW_TOOL, validateWorkflowArguments } from './workflows.js';
 import { ORGANIZER_TOOLS, validateOrganizerTool } from './organizer.js';
 import { PHONE_ACTION_TOOL } from './phonePolicy.js';
+import { PHONE_CALCULATOR } from './arithmetic.js';
 export const COMMON_TOOLS = [
+  PHONE_CALCULATOR,
   ...ORGANIZER_TOOLS,
   PHONE_WORKFLOW_TOOL,
   PHONE_ACTION_TOOL,

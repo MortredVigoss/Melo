@@ -4,6 +4,10 @@ export { INTERFACE_TERMS as interfaceTermKeys } from './interfaceLanguages.js';
 // Authored interface copy only. User messages, names and provider output never enter this catalog.
 // Columns: Chinese source / English / Japanese / Korean / Spanish.
 const rows = [
+["检索成员", "Research specialist", "検索担当", "검색 담당", "Especialista en búsqueda"],
+["计算成员", "Calculation specialist", "計算担当", "계산 담당", "Especialista en cálculo"],
+["资料读取成员", "Local lookup specialist", "資料参照担当", "자료 조회 담당", "Especialista en consulta local"],
+["执行成员", "Action specialist", "操作担当", "작업 실행 담당", "Especialista en ejecución"],
 ["{count} 条来源", "{count} sources", "情報源 {count} 件", "출처 {count}개", "{count} fuentes"],
 ["网页 · 打开", "Open webpage", "ウェブページを開く", "웹페이지 열기", "Abrir página web"],
 ["网页 · 截图", "Capture webpage", "ウェブページを撮影", "웹페이지 캡처", "Capturar página web"],

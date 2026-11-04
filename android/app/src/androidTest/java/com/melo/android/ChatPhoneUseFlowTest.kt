@@ -72,7 +72,7 @@ class ChatPhoneUseFlowTest {
     private suspend fun complete(id: String) { withTimeout(25_000) { while (app.engine.runtime.value.turns.containsKey(id)) delay(40) } }
 
     private fun device(id: String, args: JsonObject) = call("phone_action", id, args)
-    private fun review(complete: Boolean, conversational: Boolean = false) = MockResponse().setBody(buildJsonObject {
+    private fun review(complete: Boolean, conversational: Boolean = false, evidenceID: String = "finished") = MockResponse().setBody(buildJsonObject {
         put("choices", buildJsonArray { add(buildJsonObject { put("finish_reason", "stop"); put("message", buildJsonObject {
             put("role", "assistant"); put("content", buildJsonObject {
                 put("decision", if (complete) "complete" else "partial"); put("turnKind", if (conversational) "feedback" else "task")
@@ -80,11 +80,38 @@ class ChatPhoneUseFlowTest {
                 put("requirements", buildJsonArray { add(buildJsonObject {
                     put("text", if (conversational) "Explain previous execution" else "Read fixture")
                     put("kind", if (conversational) "response" else "external_fact"); put("status", if (complete) "met" else "missing")
-                    put("evidenceIds", buildJsonArray { if (complete && !conversational) add("finished") })
+                    put("evidenceIds", buildJsonArray { if (complete && !conversational) add(evidenceID) })
                 }) })
             }.toString())
         }) }) })
     }.toString())
+
+    @Test fun internalCalculationIsIsolatedAndReturnsToSelectedPersona() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(call("route_task","route",buildJsonObject { put("role","calculate"); put("task","Convert 20 Celsius to Fahrenheit") }))
+            server.enqueue(call("calendar_list_events","denied",buildJsonObject {}))
+            server.enqueue(call("calculator","actual",buildJsonObject { put("action","convert"); put("value",20); put("from","celsius"); put("to","fahrenheit") }))
+            fun text(answer: String) = MockResponse().setBody(buildJsonObject {
+                put("model","captured-model"); put("choices",buildJsonArray { add(buildJsonObject {
+                    put("finish_reason","stop"); put("message",buildJsonObject { put("role","assistant"); put("content",answer) })
+                }) })
+            }.toString())
+            server.enqueue(text("The calculation gives 68 F."))
+            server.enqueue(text("At 20 C the equivalent is 68 F."))
+            server.enqueue(review(true,evidenceID = "job-1:actual")); server.start()
+            val id = chat(server,enabled=false)
+            withContext(Dispatchers.Main) { assertTrue(app.engine.send(id,"Convert the fixture forecast of 20 Celsius to Fahrenheit and explain the result.")) }
+            complete(id)
+            assertTrue(app.repository.data.value.chats.first { it.id == id }.messages.last().content.contains("68 F"))
+            val wires = (1..6).map { Json.parseToJsonElement(server.takeRequest(5,TimeUnit.SECONDS)!!.body.readUtf8()).jsonObject }
+            fun names(body: JsonObject) = body["tools"]?.jsonArray.orEmpty().map { it.jsonObject["function"]!!.jsonObject["name"]!!.jsonPrimitive.content }
+            assertTrue("route_task" in names(wires.first()))
+            assertEquals(listOf("calculator"),names(wires[1]))
+            assertFalse(wires[1].toString().contains("captured-agent-marker"))
+            assertTrue(wires[2].toString().contains("CAPABILITY_DENIED"))
+            assertTrue(wires[4].toString().contains("job-1:actual") && wires[4].toString().contains("captured-agent-marker"))
+        }
+    }
 
     @Test fun ordinaryChatUsesOneLoopWithRealNativeReceiptsAndNoChildModel() = runBlocking {
         MockWebServer().use { server ->

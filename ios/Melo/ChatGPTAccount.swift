@@ -405,11 +405,11 @@ final class CodexResponsesTransport: AgentModelTransport, @unchecked Sendable {
     }
 
     func round(_ input: AgentLoopRequest) async throws -> AgentRound {
-        var body = base
+        var body = input.scopedBody(base, responses: true)
         if let review = input.goalReview {
             body = ["model": model, "stream": true, "store": false, "instructions": review["systemPrompt"] as? String ?? "", "input": review["messages"] as? [[String: Any]] ?? []]
         } else if !input.transcript.isEmpty {
-            body["input"] = Self.rendered(base["input"] as? [Any] ?? [], transcript: input.transcript)
+            body["input"] = Self.rendered(body["input"] as? [Any] ?? [], transcript: input.transcript)
             if body["tool_choice"] != nil { body["tool_choice"] = "auto" }
         }
         if input.repairing { body["tools"] = (body["tools"] as? [[String: Any]])?.filter { $0["type"] as? String != "image_generation" } }
@@ -420,7 +420,7 @@ final class CodexResponsesTransport: AgentModelTransport, @unchecked Sendable {
         var meter = try PhoneModelMeter(estimate: requestEstimate, outputLimit: allowance); defer { meter.finish() }
         var result: (ChatGPTStream, Int)
         do { result = try await stream(body, timeout: input.timeout, observe: input.goalReview == nil) }
-        catch is ImageSizeRejected where input.goalReview == nil && !input.repairing {
+        catch is ImageSizeRejected where input.goalReview == nil && input.internalJob == nil && !input.repairing {
             // Retry once at the service's default size; the reply says so.
             base["tools"] = ((base["tools"] as? [[String: Any]]) ?? []).map { var tool = $0; if tool["type"] as? String == "image_generation" { tool["size"] = nil }; return tool }
             body["tools"] = base["tools"]
@@ -433,7 +433,7 @@ final class CodexResponsesTransport: AgentModelTransport, @unchecked Sendable {
         meter.inputTokens = Self.inputTokens(stream) ?? estimate
         meter.outputTokens = Self.inputTokens(stream, key: "output") ?? PhoneTokenEstimate.text(stream.text + stream.functionCalls.map(\.arguments).joined())
         if input.goalReview != nil && !stream.functionCalls.isEmpty { throw MeloError.message("Tool calls are not permitted in a delivery or goal check.") }
-        let calls = input.goalReview == nil && offersTools ? stream.functionCalls : []
+        let calls = input.goalReview == nil && (offersTools || input.internalDefinition != nil || input.internalJob != nil) ? stream.functionCalls : []
         let text = calls.isEmpty ? try stream.result() : stream.text
         return AgentRound(text: text, calls: calls, echo: .responses(stream.outputItems), sources: stream.sources, searched: stream.searched, images: stream.images,
                           inputTokens: Self.inputTokens(stream), estimatedInputTokens: estimate, outputTokens: Self.inputTokens(stream, key: "output"), budgetAccounted: meter.accounted)

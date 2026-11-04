@@ -438,9 +438,10 @@ struct ExecutionRecord: Codable, Identifiable, Equatable {
     }
     mutating func recordStage(_ id: String, name: String, status: String, output: String = "", model: String? = nil) {
         guard !terminal else { return }
-        mergeStage(ExecutionStage(id: id, name: name, status: status, output: output, model: model,
+        let module = id.hasPrefix("internal:") ? "compute" : "create"
+        mergeStage(ExecutionStage(id: id, module: module, name: name, status: status, output: output, model: model,
             startedAt: status == "running" ? timestamp() : nil, finishedAt: status == "running" ? nil : timestamp()))
-        lastModule = "create"; sequence += 1
+        lastModule = module; sequence += 1
     }
     /// Adds one tool-call record; ignored once the run has ended.
     mutating func recordToolCall(_ call: ExecutionToolCall) {

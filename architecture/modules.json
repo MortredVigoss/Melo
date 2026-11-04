@@ -24,8 +24,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 688,
-      "edges": 2230,
+      "modules": 690,
+      "edges": 2237,
       "roots": [
         "src",
         "desktop-ui",
@@ -741,7 +741,7 @@
       ],
       "modules": {
         "desktop-ui": 27,
-        "shared": 42,
+        "shared": 44,
         "src": 68
       },
       "entryModules": [
@@ -775,6 +775,12 @@
           "module": "desktop-ui/scrollPreservation.js",
           "importedBy": [
             "desktop-shell"
+          ]
+        },
+        {
+          "module": "shared/agent/arithmetic.js",
+          "importedBy": [
+            "tools"
           ]
         },
         {
@@ -1130,7 +1136,7 @@
         "projects": 1,
         "settings": 14,
         "sync": 4,
-        "tools": 28,
+        "tools": 29,
         "voice": 2
       },
       "httpRoutes": [
@@ -1251,6 +1257,7 @@
           "shared/agent/deliveryBudget.test.js",
           "shared/agent/execution.test.js",
           "shared/agent/goal.test.js",
+          "shared/agent/internalRouting.test.js",
           "shared/agent/limitDelivery.test.js",
           "shared/agent/loopLimits.test.js",
           "shared/agent/modelCapabilities.test.js",
@@ -2652,7 +2659,7 @@
       "dependsOn": {
         "agents": 9,
         "approvals": 35,
-        "chat": 28,
+        "chat": 29,
         "desktop-shell": 15,
         "development": 1,
         "knowledge": 3,
