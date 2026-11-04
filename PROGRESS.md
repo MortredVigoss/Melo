@@ -1,3 +1,7 @@
+## 2026-11-04 — Claude 方案 A 阶段 2 三处修正与四次真实探针
+
+Claude：阶段 2 落地后用桌面真实模型连跑四次 BIGBANG 长问题，逐次修正：(1) `runSubAgent` 的 32k 委派上限把成员第一次工作请求直接压进限额收尾——改为把成员份额（≤120k）作为 `maxTokens` 传入，成员事件 id 加 `job-N:` 前缀（`35f5fd1`）；(2) A1 把只读 MCP（26 个 AntV 图表生成器等）全归入检索岗位，成员每请求 43 个工具定义——只读 MCP 留给主 Agent（`42e992d`）；(3) 成员用供应商托管搜索每请求 7 万 token 且结果无可核验正文——内部成员关闭托管搜索与图像生成（`dbf5dff`）。第四次探针：两名检索成员共 7 轮 22 次本地调用、各自份额用完后交回，主 Agent 再 2 轮后 327 333 / 400 000 耗尽，仍 LIMIT_DELIVERED（场次 met，天气 / 活动 / 路线 missing）。结论：分派、并行、份额、保留、前缀都按设计工作，但 40 万 token 回合总额 ÷ 每请求 1.5–2.7 万 ≈ 16–20 次请求不够这道题；待用户决定预算策略（扩展总额 / 压缩每轮体积）与 A4 / A5，并先修限额收尾丢弃已核实事实（审计 P2-10）。[实施记录](docs/agent-orchestration-implementation-20261104.md)。未推送。
+
 ## 2026-11-04 — Claude 方案 A 阶段 2：内部成员独立运行（预算分层、并行分派、会话背景）
 
 Claude：A2 / A3 / A5（背景）合并落地。`invokeModelNode` 去掉内联 job 模式，`route_task` 一轮可多派，交给新模块 `internalMembers.js` 按 `runSubAgent` 运行：成员各自 `createCoreTurn`（最多 6 轮，不计主 Agent 40 轮）、`narrowBudget` 子池（份额 ≤ 120k 输入 token，主 Agent 保留 60k，不足 20k 不启动并交回 partial）、只读岗位 3 条道并发、执行岗位串行、取消信号贯通、成员观察以 `job-N:` 并入主回合、副作用指纹经 `turn.js` feedback 新增可选字段回流。`subAgent.js` 新增可信 `roleSystem` 段与 `meta.effects`。新测试：成员调度 / 份额 / 保留 / 取消 / 异常（计数器型）、指纹导入、roleSystem、一轮两派并行回收、混用拒绝；路由端到端改为成员各自核验。bundle 重建、模块图再生成；快速档 `run-1Fcuen` 全绿（JS 4854/4854）。未做：岗位模型可选连接（需设置界面，待产品决定）、A4 审批预筛（需审批卡片新作用域，待产品决定）；手机端仍内联单成员。[实施记录](docs/agent-orchestration-implementation-20261104.md)。未推送。
