@@ -147,3 +147,32 @@ A2 / A3 与 A5 的背景部分已落地并本地提交（`a1b56f8`）。
 边界与停止：共享状态——新的任务级规则桶（随回合结束清理）、`pendingRequests`；契约——`tool_permission` 事件新增 `kind: 'task_scope'`（桌面本地 SSE，不进同步线协议）。停止在 `executor.js` 的既有判定（主 Agent 永不代批：任务级规则只在用户点卡片后产生）。
 
 回归（计划）：`permissions.taskScope.test.js`（任务级批准后同回合 `checkPermissionRule` 为 allow、另一回合为 ask、回合结束清理；拒绝不留规则；本对话作用域落到会话规则；超时 / 无审批面返回而不抛）；`internalMembers.test.js`（执行成员有受审批工具 → 启动前恰好一次任务级请求，批 / 拒 / 超时都继续运行成员，无受审批工具不请求）；`desktop-ui/features/chat/controller.test.js`（`task_scope` 事件入队并渲染工具清单与三个按钮，按钮 POST 的 `scope` 正确）。
+
+批次 1 结果：快速档 `run-vBvTDM` 全绿，提交 `f6de67a`。真实探针（`live-bigbang-batch1/`，517 s）：两次派成员各扩展 +120k（顶层池 400k → 640k），检索成员 1 在 89 s 以 completed 交回官方场次（巡演日程、悉尼站公告、19:30），检索成员 2 跑 215 s 交回活动与天气线索；主 Agent 6 轮、成员 10 轮共 44 次调用，28 次模型调用，457 s 时 589 205 / 640 000 耗尽，517 s `LIMIT_DELIVERED`。最终回复 3 088 字：场次与官方来源、两天活动表（岩石区市集 10:00–17:00、桥下瑜伽、美术馆）、完整两天路线——自评 2 met（场次、路线）/ 3 missing（天气、两天活动"当日实际情况"）。与修前对比：官方场次不再被收尾改写成"未核实"（P2-10 生效），路线和活动表都保住了；天气仍缺——日期已过去，BOM 日观测表的 10-31 行在页面末尾，3 000 / 6 000 字截断读不到，需要分页读取，预算先用完。
+
+### 批次 3：A5-1 Agent 设置页"内部岗位模型"
+
+执行链路：
+1. 契约：`shared/protocol/sync.schema.json` 的 `agentCollaboration` 新增可选 `jobModels`（research / lookup / calculate / execute → 连接 id，1–100 字），`npm run generate:sync-contract` 重生成 `mobile-sync/syncContract.generated.js` 与 `ios/Melo/SyncWorkspace.swift`；`shared/protocol/fixtures.json` 新增"接受岗位连接 id / 拒绝未知岗位"两条线协议夹具（`mobile-sync/syncContract.test.js` 自动跑）。
+2. 归一化：`src/domain/agent/capabilities.js:normalizeCollaboration` 只保留四个岗位且 id 合法的条目，空则不输出字段；`intersectCollaboration` 项目覆盖优先、否则继承全局；`normalizeAgentProfile` 经同一函数，PATCH 路由与同步落库不变。
+3. 成员：`internalMembers.js:jobConnectionConfig(config, jobModels, role)` 按 `config.llmProfiles[id]` 换成该连接的 authMode / baseUrl / model / apiKey / apiProtocol（无 id、未知 id 或连接没填模型 → 跟随对话）；`invokeModelNode` 传入 `activeAgentProfile.collaboration.jobModels`；`internal:N running` 事件带 `model`，任务空间可见成员用的模型。
+4. 设置页：`desktop-ui/features/agents/view.js` 能力范围与协作区新增"内部岗位模型"四个下拉（选项：跟随对话 + `bootstrap.settings.config.llmConnections.profiles`），`agentProfilePatch.js` 把 `jobModel_<role>` 写进 `patch.collaboration.jobModels`。
+5. 手机端：同步后 Swift 按再生成的契约校验通过；手机的内联成员不读此字段（宿主差异，记录）。
+
+边界与停止：契约字段为可选新增，三端校验器同源再生成；停止在 `runSubAgent` 的 `config` 入参（连接切换只影响成员请求，审批 / 能力范围不变）。
+
+批次 2（A4-1）实施记录：按设计落地，两处按架构护栏改法——`desktop-ui/appSwitchFreeze.test.js` 冻结了 `app.js` 的点击分发器，"本次任务允许 / 本对话允许"两个动作改为注册在审批 feature 的动作表（`features/approvals/controller.js:respondTaskScope` 经 `approvalsApi.respondToolPermission` 发 POST，成功后从队列移除，失败写回 `confirmError`），拒绝复用既有 `tool-permission-deny`（服务端对 `task_scope` 把 `once` 映射为 `task`）；`desktop-ui/i18n.test.js` 要求五语目录与 iOS `Localizable.xcstrings` 逐键一致，新增文案经 `node scripts/build-interface-languages.js` 生成进原生目录，翻译表变化再经 `npm run build:ios-scene` 更新共享渲染 manifest。回归：`src/tools/permissions.taskScope.test.js`（任务级规则只对同对话同回合生效、回合结束清理、拒绝 / 本对话 / 取消 / 无审批面 / 非法作用域 / 卡片外工具）、`internalMembers.test.js`（执行成员启动前一张卡、批 / 拒都继续、文件安全门与已允许工具不上卡、无受审批工具不问）、`approvals/taskScope.test.js`（卡片内容与三个动作）、`approvals/controller.test.js`（动作表）、`chat/controller.test.js`（入队、重发只替换自己、回合结束清空）。
+
+批次 3（A5-1）实施记录：`desktop-ui/features/agents/jobModelChoices.js`（四个下拉、"跟随对话"默认、不存在的连接 id 保留并标"当前不可用"、`jobModelsFromForm` 只在表单含该字段时写入）；`view.js` 在成员上限之后加"内部岗位模型"块，待确认变更列表增加"岗位模型"；`agentProfilePatch.js` 写入 `collaboration.jobModels`；连接列表取自 `bootstrap.settings.config.llmConnections.profiles`（`src/services/desktop/bootstrap.js:321`）。回归：`jobModelChoices.test.js`（渲染与补丁提取）、`capabilities.test.js`（归一化、交集、`normalizeAgentProfile`）、`internalMembers.test.js`（按岗位换连接、未知 / 空模型回退、事件带 model）、线协议夹具两条。
+
+### 批次 2–3 结果：门禁、真实探针与界面核对（2026-11-05 晨）
+
+门禁：第一次合并门禁 `run-dRHk3e` 红在 Android `SharedContractTest`——线协议夹具数在 Kotlin 测试里硬编码 40，新增两条后改为 42（iOS / Node 的同名测试按数组遍历，不计数）。修后重跑时把 `.kt` 路径一并传给 `--files`，选测走"未知运行时 / 构建边界"兜底扩成 583 个全量 JS，又赶上整夜合盖休眠（`pmset -g log`：Sleep / DarkWake 到 08:39 开盖唤醒），4 个真实服务测试文件各"耗时" 5 270 s、12 个按 120 s 超时判失败（`run-sb0m4I`，7 418 s）——全是休眠造成的假红。醒来后清掉休眠留下的 `desktopOwner.test.js` 孤儿 server（pid 52542 / 52544，`MELO_TEST_MODE=1`、临时 home），只传 30 个 JS / 契约文件重跑 `run-pCcNjZ` 全绿：467 / 583，JS 4 118 / 4 118，Android 15 s、设置浏览器 43 s、Swift 293 s，共 457 s。代码提交 `4e56677`。
+
+A4-1 真实探针（桌面 Melo 重启到工作树代码，用内置浏览器在界面里发消息）：任务"在 `probe-a4` 目录新建 today.txt 写今天日期 → 改名 date.txt → 读回原样告诉我"，并要求派给执行成员。主 Agent 第一轮即 `route_task` 派出执行成员；8 s 内界面弹出"执行成员需要以下工具"卡（main · 执行成员，子任务原文，24 个工具：file_move、knowledge、markdown2pdf ×2、mermaid、Playwright 17 个动作、pdf、xlsx）。点"本次任务允许"后 `routing:approval:1` 记录决定 `task`；成员 109 s 内 4 次调用（bash 探查、file_write、file_move、bash 校验），每次文件操作仍弹文件安全门的逐项卡（Run shell command ×2、Create new file、Move / rename file，均点"仅本次"），file_move 没有再弹工具级卡；最终回复 `2026-11-05`，磁盘上 `date.txt` 10 字节、today.txt 已不存在；全程 126 s，`internal:1` 事件带 `model: gpt-6.1-sol`。场景 `.tmp/melo-home-user/desktop/execution-scenes/554e32170ba910ba8fb44f0e145e7d9e.json`，截图 `.tmp/agent-orchestration-audit-20261104/a4-1-task-scope-card.jpg`、`a4-1-file-safety-card-after-task-grant.jpg`。
+
+观察：卡片按设计列出执行岗位全部受审批工具（24 个，其中 17 个是 Playwright 动作），与这道子任务相关的只有 file_move。可选后续（未做）：按子任务文本或 MCP 服务分组收窄清单；现状是一次决定覆盖整个岗位，文件改动仍逐项确认。
+
+A5-1 界面核对：Agent 设置页 → Main agent → 能力范围与协作 →"内部岗位模型"块位于成员 token 上限 / 超时之后、上下文来源之前，四个下拉（检索 / 资料读取 / 计算 / 执行成员）默认"跟随对话"，选项来自真实连接列表（原有连接 · gpt-6.1-sol、ChatGPT · gpt-6.1-sol）；截图 `a5-1-agent-settings-job-models.jpg`。没有改动任何 Agent 配置。
+
+集成档：`run-9TzcQe` 全绿（583 / 583，JS 4 868 / 4 868，Android、设置浏览器、Swift 全部通过，197 s）；随后 `git push origin master`。

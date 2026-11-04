@@ -1,6 +1,6 @@
 # Melo 总览：当前事实、功能索引与接手入口
 
-更新时间：2026-11-04（Australia/Melbourne）。这是所有 Melo 工作线程共用的人工维护入口：顶部依次是当前事实、功能索引和最新交接；按日期的阶段过程（含日期、提交与当次验证数字）在 [总览历史交接](docs/handoffs/overview-history-20261019.md)。
+更新时间：2026-11-05（Australia/Melbourne）。这是所有 Melo 工作线程共用的人工维护入口：顶部依次是当前事实、功能索引和最新交接；按日期的阶段过程（含日期、提交与当次验证数字）在 [总览历史交接](docs/handoffs/overview-history-20261019.md)。
 
 ## 1. 先看这里
 
@@ -39,7 +39,7 @@
 | --- | --- | --- |
 | 项目与工作区 | 创建显式归属、执行器绑定能力、无项目聊天按需独立目录（A `33660c6` / B `b02438a`）；文件面板、每次删除询问文件去留与遗留文件管理 `7ae2292` | [架构加固](docs/arch-hardening-20261015.md)、[UI 功能对齐](docs/ui-function-alignment-20261016.md)；项目聚合模型与完整删除级联见[项目专项](docs/project-architecture-plan-20261015.md)；P1 提交回执已交付，桌面项目页已拆到 `desktop-ui/features/projects/`（P2a，[架构方案](docs/architecture-maintainability-plan-20261019.md)） |
 | Agent、技能与团队 | Agent 演进 P0–P4 已实现，6 Agent / 26 成果已迁移；审查修正 `4680530`；统一设置页 `dc67fa0`；团队与委派同一规则，手机本机可运行团队；10-20 能力临时提升 / 即时开启与新 Agent 只读起步、「基于已有 Agent」（桌面 + 手机，手机以本机权限为上限） | [实施与迁移](docs/agent-evolution-20261015.md)、[审查修正](docs/agent-review-fixes-20261015.md)、[设置](docs/agent-settings-20261016.md)、[协作](docs/agent-team-20261016.md)、[能力临时提升](docs/capability-elevation-20261020.md)；真实模型协作与真机单列；[隐藏编排层审计 11-04](docs/agent-orchestration-audit-20261104.md) |
-| 聊天与 agent loop | 手机与桌面同一循环（prepare → invoke-model → finalize），公共循环/预算策略现由 `shared/agent/` 同源执行，配置契约为 `shared/protocol/agent-loop.json`；10-23 已接入共享 `goal.js`：原始目标/补充、无工具交付检查、最多两次有预算纠偏；取消普通首步必搜，成员回执贯通团队，见[综合实施与验收](docs/agent-harness-implementation-20261023.md)（任务与基准集成验收均通过）；10-24 已覆盖安装桌面与 iPhone 0.7.10（42），数据保留及实际使用检查见[安装回执](docs/dual-update-20261024.md)；七项双端对齐修复 `ee8eb3f` / `3ad091c` 已推送并装入双端；桌面聊天页 / 输入区 / 发送管线已拆到 `desktop-ui/features/chat/`（P2c）；10-27 `99b8ba7`补齐零工具任务核验；后续[上限交付改造](docs/limit-delivery-20261027.md)已实现只计工具轮、默认40轮、预留收尾、成员部分交接后主 Agent 补做（三端契约同源，最终快速/7ae6bf5集成已通过）；10-27 `d0bcf3e`–`77b2879` 只计工具轮、默认 40 轮 / 硬顶 64、预留额度收尾交付（LIMIT_DELIVERED）、成员 / 技能部分交接后主 Agent 续跑，已推送 | [上限交付](docs/limit-delivery-20261027.md)；[10-27闭环修复与验收](docs/task-continuation-20261027.md)；[修复与 10-19 日常回执](docs/mobile-desktop-alignment.md)；10-20 完成状态误分类修正与 Claude B1/B2 复核见[专项](docs/completion-status-fix-20261020.md)；真实供应商与长后台另验 |
+| 聊天与 agent loop | 手机与桌面同一循环（prepare → invoke-model → finalize），公共循环/预算策略现由 `shared/agent/` 同源执行，配置契约为 `shared/protocol/agent-loop.json`；10-23 已接入共享 `goal.js`：原始目标/补充、无工具交付检查、最多两次有预算纠偏；取消普通首步必搜，成员回执贯通团队，见[综合实施与验收](docs/agent-harness-implementation-20261023.md)（任务与基准集成验收均通过）；10-24 已覆盖安装桌面与 iPhone 0.7.10（42），数据保留及实际使用检查见[安装回执](docs/dual-update-20261024.md)；七项双端对齐修复 `ee8eb3f` / `3ad091c` 已推送并装入双端；桌面聊天页 / 输入区 / 发送管线已拆到 `desktop-ui/features/chat/`（P2c）；10-27 `99b8ba7`补齐零工具任务核验；后续[上限交付改造](docs/limit-delivery-20261027.md)已实现只计工具轮、默认40轮、预留收尾、成员部分交接后主 Agent 补做（三端契约同源，最终快速/7ae6bf5集成已通过）；10-27 `d0bcf3e`–`77b2879` 只计工具轮、默认 40 轮 / 硬顶 64、预留额度收尾交付（LIMIT_DELIVERED）、成员 / 技能部分交接后主 Agent 续跑，已推送；11-04 / 05 Claude 方案 A：内部岗位成员独立运行（份额 / 并行 / 预算扩展）、限额收尾保留已核实事实、执行成员启动前“本次任务”审批卡、Agent 设置页岗位模型（`afc9992`–`4e56677`，已推送），见[编排实施记录](docs/agent-orchestration-implementation-20261104.md) | [上限交付](docs/limit-delivery-20261027.md)；[10-27闭环修复与验收](docs/task-continuation-20261027.md)；[修复与 10-19 日常回执](docs/mobile-desktop-alignment.md)；10-20 完成状态误分类修正与 Claude B1/B2 复核见[专项](docs/completion-status-fix-20261020.md)；真实供应商与长后台另验 |
 | 记忆 | #2 并发写事务预约修复已通过 Mac/Linux 回归与完整日常；项目记忆本与个人档案已接入；项目来源手写记忆经独立可选通道（`/api/project-memory-sync` ↔ `/v1/project-memory`）同步；桌面记忆页 / 记忆本 / 回复页脚已拆到 `desktop-ui/features/memory/`（P2a） | [记忆架构](docs/memory-architecture.md)（以顶部现行约定为准）、[A7 回执](docs/mobile-desktop-alignment.md)；私人同步服务未部署新版 |
 | 知识资料与成果 | 本机分段索引（SQLite FTS + 本地 embedding），按对话/项目开关过滤；两端按问题切段检索，旧 8 份 / 24000 字前置限制已移除 | [Agent 演进 P2/P4](docs/agent-evolution-20261015.md)、[A3/A5 回执](docs/mobile-desktop-alignment.md) |
 | 设置、模型连接与账号 | 五语界面 `2cae1cd`；手机 Codex 设备码 OAuth `85ac3a5`、应用切换取消修复 `14e602f` | 用户真实授权尚未确认；同码恢复限同一进程；[五语](docs/interface-languages-20261015.md)、[模型连接](docs/llm-connections.md) |
@@ -93,10 +93,9 @@ GitHub master 已回读至产品提交 `3379718`。集成检查 `run-2njTtf` 及
 ### 2026-11-04 — 模型连接管理（Codex）
 桌面和 iPhone 的系统设置首屏提供 API Key 入口，同一服务可添加多个具名账号。全局和单段对话可各自切换。Android 同地址绑定按连接 ID 解析。快速档 `run-t78jZl` 通过。五账号浏览器实点、模拟器冷启动及 HTTP 密钥核对见[入口和验收](docs/model-connection-entry-20261104.md)。
 
-### 2026-11-04 — Melo 主线（Claude）— 方案 A 阶段 1–3 落地（岗位目录动态化、成员独立运行）
-- 线程 ID：e02f4818。用户选方案 A。已落地：A1 岗位目录按工具声明动态生成（`afc9992`）；A2 / A3 / A5 背景——内部成员改走 `runSubAgent`（独立回合与份额、只读并行 / 执行串行、取消贯通、副作用指纹回流，`a1b56f8`）；四次真实探针后三处修正（成员份额、只读 MCP 留主 Agent、成员关闭托管搜索：`35f5fd1` / `42e992d` / `dbf5dff`）。最后一次探针：机制按设计工作，但 40 万 token 回合总额在主 Agent 2 轮 + 成员 7 轮后仍耗尽，BIGBANG 题仍 LIMIT_DELIVERED。[实施记录](docs/agent-orchestration-implementation-20261104.md)。未推送、未跑集成档；手机端仍是内联单成员实现。
-- 下一步：用户决定 (1) 路由轮次的预算策略（扩展总额 / 压缩每轮体积，实施记录有评分）；(2) A4 审批预筛与 A5 岗位模型的方案；(3) 先修审计 P2-10 限额收尾丢弃已核实事实。推送前跑集成档 `npm test -- --base f1bbdc7`。
-
+### 2026-11-05 — Melo 主线（Claude）— 方案 A 全部落地并推送（岗位目录、成员独立运行、限额证据、任务级审批卡、岗位模型）
+- 线程 ID：e02f4818。用户选方案 A 并拍板全部最高分项。已推送 master：A1 岗位目录动态生成（`afc9992`）；A2 / A3 成员走 `runSubAgent`（份额、只读并行 / 执行串行、取消贯通，`a1b56f8` + 三处修正 `35f5fd1` / `42e992d` / `dbf5dff`）；P2-10 + B3 限额收尾保留已核实事实、成员压缩、派成员时扩展顶层预算（`f6de67a`）；A4-1 执行成员启动前一张“本次任务”审批卡 + A5-1 Agent 设置页按岗位选模型连接（`4e56677`）。真实探针：卡片 8 s 弹出、任务级批准后 file_move 不再二次弹卡、文件安全门仍逐项确认；BIGBANG 长题机制全部按设计工作但仍 LIMIT_DELIVERED（天气需分页读 BOM）。快速档 `run-pCcNjZ` 全绿；集成档 `run-9TzcQe` 全绿（583 / 583，JS 4 868 / 4 868，Android、设置浏览器、Swift 全部通过，197 s）。[实施记录](docs/agent-orchestration-implementation-20261104.md)、[审计](docs/agent-orchestration-audit-20261104.md)。
+- 未做 / 下一步：手机端成员仍内联（无卡片、不读岗位模型，宿主差异已记录）；审批卡列出岗位全部受审批工具（执行岗 24 个，17 个是 Playwright 动作），可按子任务或 MCP 服务分组收窄；BIGBANG 的天气要 BOM 分页读取或接 BOM 公开接口；门禁前先 keep-awake，`--files` 不要带 `.kt` 路径（会扩成全量 JS）。
 ### 2026-11-04 — Melo 主线（Claude）— 隐藏子 Agent 编排层审计（只报告）
 - 线程 ID：e02f4818。用户所问的"主 Agent 路由 / 分派 / 审批 / 整合、子 Agent 做网页查询与工具调用"这层已由当日内部岗位路由实现；审计对照出五项差距（岗位白名单写死只覆盖 11 / 33 工具、成员轮次与 token 不分层、不能并行分派、审批无主 Agent 预筛与任务级范围授权、同模型且成员无背景），三次真实探针印证预算不分层导致 LIMIT_DELIVERED（326 148 / 400 000 token，检索成员 6 轮 28 次调用触顶），另有 wttr.in 快路定位错误与收尾丢失成员已核实事实两处缺陷。[审计与方案评分](docs/agent-orchestration-audit-20261104.md)。未改代码。
 - 下一步：用户选方案（推荐 A：动态岗位目录 → 预算分层 → 并行分派 → 审批预筛 → 岗位模型与背景，分阶段各自验收）；P2-9 wttr.in 定位与 P2-10 收尾丢证据可单独修；搜索无 key 仍是检索岗位的前提问题。
