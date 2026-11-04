@@ -111,6 +111,20 @@ class OrganizerTest {
         assertEquals(listOf(feed.id), visibleCalendarSources(state, false).map { it.id })
         assertEquals(listOf(feed.id), ReminderEngine.desired(state, now, false).map { it.sourceId })
     }
+    @Test fun snoozedShortCalendarEventCanRingAfterItEndsWithoutResurrectingAnEditedEvent() {
+        val start = time("2026-10-26T00:00:00Z")
+        val event = CalendarEvent("event1", "One minute meeting", startAt = start, endAt = start + 60_000,
+            timeZone = "UTC", remindAt = start, revision = 4)
+        val state = OrganizerData(core = OrganizerCore(events = listOf(event)))
+        val original = ReminderEngine.desired(state, start, true).single()
+        val later = start + 600_000
+        val snooze = ReminderDelivery(original.key, event.revision, start, "snoozed", start, later)
+        val pending = state.copy(deliveries = listOf(snooze))
+        assertEquals(later, ReminderEngine.desired(pending, later, true).single().fireAt)
+        val claimed = pending.copy(deliveries = listOf(snooze.copy(status = "received", fireAt = later, snoozeUntil = null)))
+        assertEquals(later, ReminderEngine.desired(claimed, later, true).single().fireAt)
+        assertTrue(ReminderEngine.desired(pending.copy(core = OrganizerCore(events = listOf(event.copy(revision = 5)))), later, true).isEmpty())
+    }
     @Test fun conditionalIcsRefreshPreservesEtagAndDistinguishesNotModified() {
         okhttp3.mockwebserver.MockWebServer().use { server ->
             server.start(); server.enqueue(okhttp3.mockwebserver.MockResponse().setBody("BEGIN:VCALENDAR\r\nEND:VCALENDAR").setHeader("ETag", "fixture-v1"))

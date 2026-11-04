@@ -39,9 +39,6 @@ class ReminderEngine(private val context: Context, private val repository: Organ
         val plans = all.filter { plan ->
             val delivery = state.deliveries.find { it.key == plan.key && it.revision == plan.revision }
             delivery == null || delivery.status in setOf("snoozed", "received", "ringing")
-        }.map { plan ->
-            val delivery = state.deliveries.find { it.key == plan.key && it.revision == plan.revision && it.status == "snoozed" }
-            if (delivery?.snoozeUntil != null) plan.copy(fireAt = delivery.snoozeUntil) else plan
         }.filter { it.fireAt >= now - 120000 }.sortedBy { it.fireAt }.take(MAX_ARMED).map { it.copy(scheduledAt = now) }
         repository.update { current ->
             val missed = current.planned.filter { it.fireAt < now - 120000 && current.deliveries.none { delivery -> delivery.key == it.key && delivery.revision == it.revision } }.map { ReminderDelivery(it.key, it.revision, it.fireAt, "missed", now) }
@@ -88,7 +85,31 @@ class ReminderEngine(private val context: Context, private val repository: Organ
             }
             val sources = visibleCalendarSources(state, systemCalendarAllowed).filter { it.reminders }.associateBy { it.id }
             val external = state.external.mapNotNull { row -> sources[row.sourceId]?.let { source -> PlannedReminder("event:${row.id}", row.eventId, row.sourceId, row.title, row.startAt - source.reminderMinutes * 60000L, row.revision + source.reminderMinutes + source.reminderMode.hashCode(), source.reminderMode, "calendar") } }
-            return (todos + local + external).filter { it.fireAt <= until }
+            // A snooze belongs to an already delivered occurrence. A short
+            // event may have ended before its new alarm time enters the window.
+            val pending = state.deliveries.mapNotNull { delivery ->
+                val resumeAt = when (delivery.status) {
+                    "snoozed" -> delivery.snoozeUntil
+                    "received", "ringing" -> delivery.fireAt
+                    else -> null
+                } ?: return@mapNotNull null
+                if (resumeAt < now - 120000 || resumeAt > until) return@mapNotNull null
+                delivery.key to delivery.copy(fireAt = resumeAt)
+            }.toMap()
+            val byId = state.core.events.associateBy { it.id }
+            val resumed = pending.mapNotNull { (key, receipt) ->
+                if (!key.startsWith("event:")) return@mapNotNull null
+                val occurrence = key.removePrefix("event:")
+                val startAt = occurrence.substringAfterLast(':').toLongOrNull() ?: return@mapNotNull null
+                val event = byId[occurrence.substringBeforeLast(':')] ?: return@mapNotNull null
+                if (event.revision != receipt.revision || event.remindAt == null) return@mapNotNull null
+                val row = EventOccurrences.local(event, startAt, startAt + 1).find { "event:" + it.id == key } ?: return@mapNotNull null
+                PlannedReminder(key, event.id, title = row.title, fireAt = receipt.fireAt, revision = event.revision, mode = event.reminderMode, kind = "calendar")
+            }
+            return (todos + local + external + resumed).distinctBy { it.key }.map { plan ->
+                val receipt = pending[plan.key]
+                if (receipt?.revision == plan.revision) plan.copy(fireAt = receipt.fireAt) else plan
+            }.filter { it.fireAt <= until }
         }
     }
 }
