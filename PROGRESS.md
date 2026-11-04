@@ -1,3 +1,7 @@
+## 2026-11-04 — 模型连接与 Agent 更新发布
+
+本地 Mac 原位安装通过，GitHub master 从 `889174f` 快进至 `3379718`。已验证数据保留与远端提交。[发布回执](docs/model-connection-entry-20261104.md)
+
 ## 2026-11-04 — API Key 保存交互复查
 
 桌面旧连接在补填模型时会产生空模型 ID 错误。现可保留原 Key 继续使用；桌面和 iPhone 也补了可见保存回执及重新打开时的连接选择。原生点击到实际聊天与桌面 HTTP 回执通过，快速档 `run-EjySBh` 全绿。[专项记录](docs/model-connection-entry-20261104.md)

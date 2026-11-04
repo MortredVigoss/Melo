@@ -44,3 +44,11 @@
 在 macOS 上运行 `python3 ios/scripts/test-connection-save-ui.py` 可重跑原生用例。它创建临时模拟器及只在该模拟器信任的本地证书，校验两次请求后清理。日常设置浏览器覆盖先保存 Key、刷新、补模型，不需要外部服务。测试用的是自有夹具，实际供应商授权及实体机未测。
 
 本轮最终快速档 `run-EjySBh` 通过 4,844 项 JavaScript 测试、38 套 Swift、Android JVM / Lint / Debug / Release 与设置浏览器，无跳过或隔离复测。
+
+### 2026-11-04 主线发布与 Mac 安装
+
+GitHub master 从 `889174f` 快进到 `3379718`，推送后已回读远端 SHA。此批还包括 iPhone 后台恢复、内部 Agent 分工及任务空间分类。发布时无待合并到 master 的 PR。
+
+首次集成检查 `run-q0I1Va` 的系统 Chrome 在首页用例启动时收到 SIGKILL。改用现有的 Chrome for Testing，单独验证该文件后，以同一基线完整重跑 `run-2njTtf`。4,844 项 JS、38 套 Swift、Android 四项和设置浏览器通过。随后 `npm run release:verify` 的 17 个阶段全绿，包含覆盖安装与两个 Mac 原生启动入口。实际安装的可执行文件与通过验证的构建逐字节相同。比对安装前后的账号配置、聊天正文与媒体文件哈希通过。备份与试验日志仅保存在本机；发布回执在 `.tmp/master-release-20261104/`。
+
+从 Launchpad 使用真实工作区时，macOS 对新签名再次询问桌面文件夹权限；该层单独验收。
