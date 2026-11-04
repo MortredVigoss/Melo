@@ -83,6 +83,7 @@
 
 ### 2026-11-04 — 设计 Melo（Codex）— Android Organizer 本地集成与缺陷审计
 本地 master 已合入 yrlf 的 12 个原始提交，合并节点 `7a828ec`，最终源码 `7a55331`。修复系统日历撤权后的信息披露、短日程延期失效、目标完成误报、长对话压缩后误超限、跨端 Trace 留存及归档断链。最终集成 `run-hdesSa` 通过 JS 4,837、Swift 38 套、Android JVM 204 与 Lint/Debug/Release、设置浏览器。另验模拟器 16 项、iOS 未签名完整构建。增量审计 H1–H20 零新增，10-27 固定基线原有 H5 +29。实体手机及真实模型服务另验。[合并审计](docs/android-organizer-merge-audit-20261104.md)
+用户已授权将含贡献分支和审计修复的本地 master 推送至 GitHub master。推送前远端为 `d58554c`，已验收的源码为 `7a55331`。[GitHub 主线提交记录](https://github.com/MortredVigoss/Melo/commits/master/)
 
 ### 2026-11-04 — GitHub 分支归属核对（设计 Melo）
 GitHub 仓库事件显示 `yrlf` 创建并推送 `codex/android-organizer-20261026`。12 个独有提交的 Git 作者均为 Yang。远端 `master@54a9cac` 与分支 `fed7c13` 各有 32 和 12 个独有提交，共同祖先以来分支改动 143 个文件。Organizer 增加本机待办、日历和提醒，手机操作支持验证后重放，共享核心调整完成证据并记录本机执行轨迹，Android 新增流式工具调用和错误详情。已核对 GitHub 提交、文件差异、PR 清单与预发布，本分支未开 PR。源码与发布状态以[固定版本比较](https://github.com/MortredVigoss/Melo/compare/54a9cac100998d17b105dd4816821ecc41236a01...fed7c1343240f0f622843d9c1438a5f78019f121)和[0.10.8 预览版](https://github.com/MortredVigoss/Melo/releases/tag/android-v0.10.8-organizer-preview.1)为据。
