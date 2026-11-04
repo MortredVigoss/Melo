@@ -48,7 +48,7 @@ export function instagramCaption(link,signal) {
       return {url:document.querySelector('a.EmbeddedMedia')?.href,text:caption.textContent.trim()};
     });
     if(new URL(page.url()).origin!=='https://www.instagram.com' || mediaLink(data?.url)?.id!==link.id || !data?.text) return null;
-    return {url:link.url,text:data.text.slice(0,16000),kind:'author-caption',reading:'partial'};
+    return {url:link.url,text:data.text,kind:'author-caption',reading:'partial'};
   });
 }
 export function youtubeSubtitles(link,signal) {
@@ -62,7 +62,7 @@ export function youtubeSubtitles(link,signal) {
     const canonical=await page.locator('link[rel=canonical]').first().getAttribute('href');
     if(mediaLink(page.url())?.id!==link.id || mediaLink(canonical)?.id!==link.id)return null;
     const text=(await segments.allTextContents()).map(s=>s.trim()).filter(Boolean).join('\n');
-    return text?{url:link.url,text:text.slice(0,16000),kind:'subtitles',reading:'partial'}:null;
+    return text?{url:link.url,text,kind:'subtitles',reading:'partial'}:null;
   });
 }
 

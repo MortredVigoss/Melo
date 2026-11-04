@@ -16,6 +16,7 @@ export function httpEndpoint(input) {
 export class McpStdioClient {
   constructor({ command, args = [], env = {}, cwd, name = 'mcp-server', url, headers, onClose, onToolsChanged, localTransport, managed = false }) {
     this.name = name;
+    this.transportKind = localTransport ? 'in-process' : url ? 'http' : 'stdio';
     this.client = new Client({ name: 'melo', version: '1.0' }, {
       versionNegotiation: { mode: url && !managed ? 'auto' : 'legacy' },
     });

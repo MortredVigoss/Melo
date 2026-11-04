@@ -24,8 +24,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 681,
-      "edges": 2206,
+      "modules": 683,
+      "edges": 2210,
       "roots": [
         "src",
         "desktop-ui",
@@ -741,7 +741,7 @@
       ],
       "modules": {
         "desktop-ui": 27,
-        "shared": 38,
+        "shared": 39,
         "src": 68
       },
       "entryModules": [
@@ -823,6 +823,12 @@
           "importedBy": [
             "agents",
             "memory",
+            "tools"
+          ]
+        },
+        {
+          "module": "shared/agent/media/mediaPostRef.js",
+          "importedBy": [
             "tools"
           ]
         },
@@ -2303,7 +2309,7 @@
       ],
       "modules": {
         "desktop-ui": 28,
-        "src": 98
+        "src": 99
       },
       "entryModules": [
         {

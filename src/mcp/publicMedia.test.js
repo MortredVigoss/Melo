@@ -106,3 +106,32 @@ test('YouTube discovery only signs native result cards and Instagram only opens 
  let args; const rows=await discoverPlatformPosts({id:'instagram',site:'instagram.com'},'@nasa orbit',undefined,{profile:async(...s)=>{args=s;return [];},index:()=>assert.fail('explicit profile must remain scoped')});
  assert.deepEqual(rows,[]);assert.deepEqual(args.slice(0,2),['nasa','orbit']);
 });
+test('foreign URLs mentioning a platform stay articles; a media permalink selects its actual platform',()=>{
+ const ids=['fetch_url','web_search','mcp:melo-public-media:read_post','mcp:melo-public-media:search_posts'];
+ const route=text=>planRequest({text,capabilities:{executors:ids,grants:ids}});
+ assert.equal(route('读取关于 YouTube 的文章 https://example.com/article').route,'fetch-url');
+ assert.equal(route('Read the YouTube support page https://www.youtube.com/howyoutubeworks/').route,'fetch-url');
+ assert.equal(route('Compare IG https://www.instagram.com/p/abc123/ with https://example.com/article').route,'fetch-url');
+ const actual=route('Instagram 对比里的原链接 https://youtu.be/jNQXAC9IVRw');
+ assert.equal(actual.reason,'public-media');assert.match(actual.instructions,/public youtube/);
+});
+test('the same long subtitle tail is reachable through the real reader, fetch_url and MCP pagination',async t=>{
+ const {fetchUrlTool}=await import('../tools/builtins/fetchUrlTool.js');
+ const url='https://www.youtube.com/watch?v=jNQXAC9IVRw',tail='UNIQUE FINAL SPOKEN FACT',text='spoken text '.repeat(4200)+tail;
+ const player={playabilityStatus:{status:'OK'},videoDetails:{videoId:'jNQXAC9IVRw'},captions:{playerCaptionsTracklistRenderer:{captionTracks:[{languageCode:'en',baseUrl:'https://www.youtube.com/api/timedtext?v=jNQXAC9IVRw'}]}}};
+ const read=(url,opts)=>readMediaPost(url,{...opts,request:async u=>String(u).includes('timedtext')?new Response(JSON.stringify({events:[{segs:[{utf8:text}]}]})):new Response('<script>var ytInitialPlayerResponse = '+JSON.stringify(player)+';</script>',{headers:{'content-type':'text/html'}})});
+ const client=new Client({name:'paging-test',version:'1'});await client.connect(await openPublicMediaTransport({read}));t.after(()=>client.close());
+ let joined='',offset=0;
+ do {
+   const r=await client.callTool({name:'read_post',arguments:{url,offset}});
+   const page=r.structuredContent;
+   assert.equal(page.offset,offset);assert.equal(page.totalChars,text.length);assert.ok(page.sources[0].text.length<=8000);
+   joined+=page.sources[0].text;offset=page.nextOffset;
+ } while(offset!==null);
+ assert.equal(joined,text);
+ const first=await fetchUrlTool.run({url},{_readMediaPost:read});assert.ok(first.meta.nextOffset>0);assert.doesNotMatch(first.output,/UNIQUE FINAL/);
+ let last=first;
+ while(last.meta.nextOffset!==null) last=await fetchUrlTool.run({url,offset:last.meta.nextOffset},{_readMediaPost:read});
+ assert.ok(last.output.endsWith(tail));assert.equal(last.meta.reading,'partial');
+ const invalid=await client.callTool({name:'read_post',arguments:{url,offset:text.length}});assert.equal(invalid.isError,true);
+});

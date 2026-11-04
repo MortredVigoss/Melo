@@ -61,6 +61,8 @@
 
 ## 4. 最新交接
 
+预审记录：首次 git pp 审查 54a9cac..0c3bf89 为 C，未推送。已补自定义 HTTP MCP 联网限制、字幕续读和普通文章路由，29 项专项通过，详见[整改回执](docs/public-media-readers-20261104.md)。
+
 ### 2026-11-04 — 桌面公开媒体 MCP
 
 新增 10 类作品的公开检索与读页。现有 6 个 Agent 均已启用，数据备份核对通过。Instagram 指定账号、YouTube 关键词各实获 6 个候选并读到作品。Instagram 作者文字、YouTube 实际字幕、其他平台详情与受限样本见[逐平台验收](docs/public-media-readers-20261104.md)。

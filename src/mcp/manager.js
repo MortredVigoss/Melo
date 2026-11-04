@@ -414,7 +414,8 @@ export function buildMcpTool(serverName, mcpTool, client, managed = false, built
     description: (mcpTool.description || `MCP tool from ${serverName}`) + (managed && mcpTool.name.startsWith('search_') ? ' Search results are candidates; open get_feed_detail or get_video_detail before citing the content.' : ''),
     category: 'mcp',
     readOnly: builtinMedia || managed || mcpTool.annotations?.readOnlyHint === true,
-    ...((managed || builtinMedia) ? { capability:'network', searchDiscovery:mcpTool.name.startsWith('search_') } : {}),
+    ...((managed || builtinMedia || client?.transportKind==='http') ? {capability:'network'} : {}),
+    ...((managed || builtinMedia) ? {searchDiscovery:mcpTool.name.startsWith('search_')} : {}),
     parametersSchema,
     // MCP tools require permission unless they're clearly read-only
     requiresPermission: !(managed || builtinMedia),

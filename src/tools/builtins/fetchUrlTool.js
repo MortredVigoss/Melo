@@ -1,3 +1,4 @@
+import {pageWindow} from '../../services/search/pageWindow.js';
 import {mediaPlatformForHost} from '../../../shared/agent/media/publicPlatforms.js';
 import {mediaLink} from '../../services/search/mediaPermalink.js';
 import {readMediaPost} from '../../services/search/publicMediaReader.js';
@@ -159,15 +160,6 @@ async function fetchDirect(url, signal, cookieStr = '') {
 
 // ─── Tool definition ──────────────────────────────────────────────────────────
 
-function pageWindow(content,offset,limit) {
-  const start=Number.isSafeInteger(offset)&&offset>=0?offset:0;
-  const end=Math.min(content.length,start+limit);
-  const hasMore=end<content.length;
-  const nextOffset=hasMore && end<=1000000 ? end : null;
-  const truncated=start>0||hasMore;
-  return {body:content.slice(start,end),nextOffset,truncated,suffix:nextOffset!==null?`\n\n[Content truncated at ${end} characters; continue with offset=${end}.]`:hasMore?'\n[Partial content: reader limit reached.]':''};
-}
-
 export const fetchUrlTool = {
   id: 'fetch_url',
   name: 'Fetch URL',
@@ -220,7 +212,7 @@ export const fetchUrlTool = {
   run: wrapWithTrailLog('url-fetch', async function run({ url, extract_mode = 'auto', cookies, offset = 0 }, {
     signal,
     config, requestContext,
-    _readPublicPost = readPublicPost, _readSocialLink,
+    _readPublicPost = readPublicPost, _readMediaPost = readMediaPost, _readSocialLink,
     _readExternalUrl,
     // Phase G-1a follow-up #2 (Codex 2026-05-10): test seams for the
     // remaining three internal fetchers — without these, evidenceTrail
@@ -292,7 +284,7 @@ export const fetchUrlTool = {
       if(mediaPlatformForHost(host))return {ok:false,error:'PUBLIC_POST_URL_REQUIRED',output:'Supply a public post or video permalink.'};
     }
     if(media && (extract_mode==='auto' || requestContext?.requestToolPolicy?.publicSocialOnly)){
-      const item=await readMediaPost(normalized,{signal});
+      const item=await _readMediaPost(normalized,{signal});
       if(!item)return {ok:false,error:'PUBLIC_POST_UNAVAILABLE',output:'No verifiable public content was returned for this post.'};
       const part=pageWindow(item.text,offset,searchLimits().fetchMaxChars);
       if(!part.body)return {ok:false,error:'OFFSET_OUT_OF_RANGE',output:'The requested offset exceeds this post.'};

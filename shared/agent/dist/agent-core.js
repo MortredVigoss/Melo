@@ -346,6 +346,64 @@ function mediaPlatformForHost(host) {
 return { PUBLIC_MEDIA_SERVER, MEDIA_PLATFORMS, mediaPlatformInText, mediaPlatformForHost };
 })();
 
+modules["shared/agent/media/mediaPostRef.js"] = (() => {
+const { mediaPlatformForHost } = modules["shared/agent/media/publicPlatforms.js"];
+
+const paths = {
+  instagram: /^\/(?:[^/]+\/)?(?:p|reels?)\/([\w-]+)\/?$/,
+  vimeo: /^\/(?:video\/)?(\d+)(?:\/[\da-f]+)?\/?$/,
+  bilibili: /^\/video\/(BV[\da-zA-Z]+|av\d+)\/?$/,
+  tiktok: /^\/(?:@[\w.-]+\/(?:video|photo)|v)\/(\d+)(?:\.html)?\/?$/,
+  x: /^\/(?:[\w]+|i\/web)\/status\/(\d+)(?:\/(?:photo|video)\/\d+)?\/?$/,
+  facebook: /^\/(?:reels?|videos?|[^/]+\/videos)\/(?:[^/]+\/)?(\d+)\/?$/,
+  weibo: /^\/(?:\d+\/detail\/|\d+\/|detail\/|status\/|tv\/show\/)([\w:-]+)\/?$/,
+  qqvideo: /^\/x\/(?:cover\/[^/]+\/|page\/)([a-zA-Z0-9]+)\.html$/,
+  kuaishou: /^\/(?:short-video|fw\/photo|f|@[^/]+\/video)\/([\w-]+)\/?$/,
+};
+
+function queryValue(query,key) {
+  for(const entry of query.split('&')){
+    const split=entry.indexOf('=');
+    if(split>0 && entry.slice(0,split)===key){
+      try{return decodeURIComponent(entry.slice(split+1));}catch{return null;}
+    }
+  }
+  return null;
+}
+// JavaScriptCore and the Android JS engine need no browser URL globals.
+function mediaPostRef(input) {
+  const match=/^https?:\/\/([a-z0-9.-]+)(?::(443|80))?(\/[^?#\s]*)?(?:\?([^#\s]*))?(?:#[^\s]*)?$/i.exec(String(input||''));
+  if(!match)return null;
+  if(match[2] && match[2]!==(/^https:/i.test(input)?'443':'80'))return null;
+  const host=match[1].toLowerCase(),path=match[3]||'/',query=match[4]||'';
+  const kwaiShare=/^[a-z0-9-]+\.m\.chenzhongtech\.com$/.test(host);
+  const platform=mediaPlatformForHost(kwaiShare?'kuaishou.com':host);
+  if (!platform) return null;
+  const {id:family}=platform;
+  let id;
+  if (family==='youtube') {
+    id=path==='/watch' ? queryValue(query,'v') :
+      (host==='youtu.be' ? /^\/([\w-]+)\/?$/ : /^\/(?:shorts|live|embed)\/([\w-]+)\/?$/).exec(path)?.[1];
+    if (!/^[\w-]{11}$/.test(id || '')) return null;
+  } else {
+    id=paths[family].exec(path)?.[1];
+    if(family==='facebook' && /^\/(?:watch\/?|video\.php)$/.test(path)) {
+      const video=queryValue(query,'v');
+      if (/^\d+$/.test(video || '')) id=video;
+    }
+    if (!id) {
+      const shortHost=['b23.tv','vm.tiktok.com','vt.tiktok.com','v.kuaishou.com','fb.watch'].includes(host);
+      const shortPath=family==='tiktok' && /^\/t\/[\w-]+\/?$/.test(path);
+      if (!(shortHost && /^\/[\w-]+\/?$/.test(path)) && !shortPath) return null;
+      return {platform,id:null};
+    }
+  }
+  return {platform,id};
+}
+
+return { mediaPostRef };
+})();
+
 modules["shared/agent/retrieval/publicLookupIntent.js"] = (() => {
 const { getRequestNetworkPolicy } = modules["shared/agent/retrieval/requestPolicy.js"];
 // Public recommendations need fresh evidence; mentioning a venue alone does
@@ -514,6 +572,7 @@ return { COMMON_TOOLS, toolCatalog, validateCommonTool, normalizeRuntimeConfig, 
 })();
 
 modules["shared/agent/search.js"] = (() => {
+const { mediaPostRef } = modules["shared/agent/media/mediaPostRef.js"];
 const { mediaPlatformInText, PUBLIC_MEDIA_SERVER } = modules["shared/agent/media/publicPlatforms.js"];
 const { getRequestNetworkPolicy, requestUrls } = modules["shared/agent/retrieval/requestPolicy.js"];
 const { publicLookupRequest } = modules["shared/agent/retrieval/publicLookupIntent.js"];
@@ -599,8 +658,10 @@ function buildRequestPlan({ text = '', messages = [], capabilities = {}, config 
   const platformRead = /搜|查|找|笔记|帖子|内容|推荐|攻略|视频|评价|评论|\b(?:find|search|read|recommend|reviews?|posts?|videos?)\b/iu.test(instruction) || socialURL;
   const deviceInstruction = instruction.replace(/(?:无需|不用|不必|不需要|不要)\s*(?:扫码)?登录|不登录|without (?:logging|signing) in/giu,'');
   const operateDevice = /手机|屏幕|滑动|点击|发布|发帖|私信|点赞|收藏|登录|扫码|\b(?:phone|screen|tap|swipe|post to|like the|send message)\b/iu.test(deviceInstruction);
-  const mediaPlatform=mediaPlatformInText(instruction);
-  if(mediaPlatform && !operateDevice && (urls.length || platformRead || lookup) && !platform){
+  const mediaLinks=urls.map(mediaPostRef);
+  const sameMedia=mediaLinks.length && mediaLinks[0] && mediaLinks.every(link=>link?.platform.id===mediaLinks[0].platform.id);
+  const mediaPlatform=urls.length ? (sameMedia ? mediaLinks[0].platform : null) : mediaPlatformInText(instruction);
+  if(mediaPlatform && !operateDevice && (urls.length || platformRead || lookup) && (!platform || sameMedia)){
     const read='mcp:'+PUBLIC_MEDIA_SERVER+':read_post', search='mcp:'+PUBLIC_MEDIA_SERVER+':search_posts';
     const reader=available(read)?read:available('fetch_url')?'fetch_url':null;
     const finder=policy.searchForbidden?null:available(search)?search:available('web_search')?'web_search':null;
@@ -609,11 +670,11 @@ function buildRequestPlan({ text = '', messages = [], capabilities = {}, config 
       instructions:'Use the public '+mediaPlatform.id+' reader. Find candidate post links on '+mediaPlatform.site+' when needed, then read the matching work. If the public index is unavailable, use an authorized web_search. Cite the actual source and distinguish author text, description, subtitles and preview. Report unavailable sources.'};
   }
   const guestOnly = policy.publicSocialOnly;
-  if(platform && platformRead && !operateDevice && guestOnly && available('fetch_url') && (urls.length || (!policy.searchForbidden && available('web_search')))){
+  if(platform && (!urls.length || socialURL) && platformRead && !operateDevice && guestOnly && available('fetch_url') && (urls.length || (!policy.searchForbidden && available('web_search')))){
     return {...base,route:'social-link',reason:'public-platform',backend:'web',tools:urls.length?['fetch_url']:['web_search','fetch_url'],
       instructions:'No account requested. For a supplied link use fetch_url; otherwise use web_search with site:'+platform+'.com then fetch_url on a matching permalink. Distinguish post body, caption, search card and inaccessible page. Do not ask the user to sign in.'};
   }
-  if (platform && platformRead && !operateDevice && available(detailId) && (socialURL || (!policy.searchForbidden && available(searchId)))) {
+  if (platform && (!urls.length || socialURL) && platformRead && !operateDevice && available(detailId) && (socialURL || (!policy.searchForbidden && available(searchId)))) {
     const tools = [detailId,...(!policy.searchForbidden && available(searchId)?[searchId]:[]),...(available('fetch_url')?['fetch_url']:[]),...(!policy.searchForbidden && available('web_search')?['web_search']:[])];
     return {...base,route:'social-link',reason:'platform-reader',tools,backend:'mcp',
       instructions:'Use the connected '+platform+' reader. Use search for candidate IDs, then open the matching detail. Cite the returned post URL. Do not treat search cards as body text or a video description as a transcript. For a supplied permalink use fetch_url to try the public post without login. If in-site search fails, use authorized web_search for public permalinks (site:xiaohongshu.com or site:douyin.com), then fetch_url on the matching page. Only suggest sign-in for remaining restricted data. Never cite search snippets as the post.'};

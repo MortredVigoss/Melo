@@ -1,3 +1,4 @@
+import { mediaPostRef } from './media/mediaPostRef.js';
 import { mediaPlatformInText, PUBLIC_MEDIA_SERVER } from './media/publicPlatforms.js';
 import { getRequestNetworkPolicy, requestUrls } from './retrieval/requestPolicy.js';
 import { publicLookupRequest } from './retrieval/publicLookupIntent.js';
@@ -83,8 +84,10 @@ function buildRequestPlan({ text = '', messages = [], capabilities = {}, config 
   const platformRead = /搜|查|找|笔记|帖子|内容|推荐|攻略|视频|评价|评论|\b(?:find|search|read|recommend|reviews?|posts?|videos?)\b/iu.test(instruction) || socialURL;
   const deviceInstruction = instruction.replace(/(?:无需|不用|不必|不需要|不要)\s*(?:扫码)?登录|不登录|without (?:logging|signing) in/giu,'');
   const operateDevice = /手机|屏幕|滑动|点击|发布|发帖|私信|点赞|收藏|登录|扫码|\b(?:phone|screen|tap|swipe|post to|like the|send message)\b/iu.test(deviceInstruction);
-  const mediaPlatform=mediaPlatformInText(instruction);
-  if(mediaPlatform && !operateDevice && (urls.length || platformRead || lookup) && !platform){
+  const mediaLinks=urls.map(mediaPostRef);
+  const sameMedia=mediaLinks.length && mediaLinks[0] && mediaLinks.every(link=>link?.platform.id===mediaLinks[0].platform.id);
+  const mediaPlatform=urls.length ? (sameMedia ? mediaLinks[0].platform : null) : mediaPlatformInText(instruction);
+  if(mediaPlatform && !operateDevice && (urls.length || platformRead || lookup) && (!platform || sameMedia)){
     const read='mcp:'+PUBLIC_MEDIA_SERVER+':read_post', search='mcp:'+PUBLIC_MEDIA_SERVER+':search_posts';
     const reader=available(read)?read:available('fetch_url')?'fetch_url':null;
     const finder=policy.searchForbidden?null:available(search)?search:available('web_search')?'web_search':null;
@@ -93,11 +96,11 @@ function buildRequestPlan({ text = '', messages = [], capabilities = {}, config 
       instructions:'Use the public '+mediaPlatform.id+' reader. Find candidate post links on '+mediaPlatform.site+' when needed, then read the matching work. If the public index is unavailable, use an authorized web_search. Cite the actual source and distinguish author text, description, subtitles and preview. Report unavailable sources.'};
   }
   const guestOnly = policy.publicSocialOnly;
-  if(platform && platformRead && !operateDevice && guestOnly && available('fetch_url') && (urls.length || (!policy.searchForbidden && available('web_search')))){
+  if(platform && (!urls.length || socialURL) && platformRead && !operateDevice && guestOnly && available('fetch_url') && (urls.length || (!policy.searchForbidden && available('web_search')))){
     return {...base,route:'social-link',reason:'public-platform',backend:'web',tools:urls.length?['fetch_url']:['web_search','fetch_url'],
       instructions:'No account requested. For a supplied link use fetch_url; otherwise use web_search with site:'+platform+'.com then fetch_url on a matching permalink. Distinguish post body, caption, search card and inaccessible page. Do not ask the user to sign in.'};
   }
-  if (platform && platformRead && !operateDevice && available(detailId) && (socialURL || (!policy.searchForbidden && available(searchId)))) {
+  if (platform && (!urls.length || socialURL) && platformRead && !operateDevice && available(detailId) && (socialURL || (!policy.searchForbidden && available(searchId)))) {
     const tools = [detailId,...(!policy.searchForbidden && available(searchId)?[searchId]:[]),...(available('fetch_url')?['fetch_url']:[]),...(!policy.searchForbidden && available('web_search')?['web_search']:[])];
     return {...base,route:'social-link',reason:'platform-reader',tools,backend:'mcp',
       instructions:'Use the connected '+platform+' reader. Use search for candidate IDs, then open the matching detail. Cite the returned post URL. Do not treat search cards as body text or a video description as a transcript. For a supplied permalink use fetch_url to try the public post without login. If in-site search fails, use authorized web_search for public permalinks (site:xiaohongshu.com or site:douyin.com), then fetch_url on the matching page. Only suggest sign-in for remaining restricted data. Never cite search snippets as the post.'};

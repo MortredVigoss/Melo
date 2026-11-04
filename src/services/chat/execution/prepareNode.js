@@ -151,7 +151,7 @@ export function createPrepareNode(turn) {
       apiKey: modelOverrides.apiKey ?? config.apiKey, baseUrl: modelOverrides.baseUrl || config.baseUrl,
       model: modelOverrides.model || activeAgentProfile.model || config.model });
     const mcpTools = mcpToolsForAgent(activeAgentProfile);
-    const planningTools=[...getAllTools(),...mcpTools].filter(tool=>scopeAllowsTool(context.capabilityScope,tool.id)).map(tool=>tool.id);
+    const planningTools=[...getAllTools(),...mcpTools].filter(tool=>scopeAllowsTool(context.capabilityScope,tool)).map(tool=>tool.id);
     let searchPlan = buildSharedSearchPlan({ latestUserMessage, modelMessages, config,
       capabilities: { executors: planningTools,
         grants: planningTools,

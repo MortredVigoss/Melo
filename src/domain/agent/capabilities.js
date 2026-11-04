@@ -61,7 +61,13 @@ const NETWORK=new Set(['web_search','fetch_url','web_screenshot','media_api','tr
 export function toolCapabilityAllowed(id, capabilities, args, tool) {
   const c=normalizeCapabilities(capabilities);
   if (!c) return true; // Existing profiles stay unchanged until the user accepts the migration preview.
-  if (id.startsWith('mcp:')) { const parsed=parseMcpToolId(id);return !!parsed&&c.mcpServers.includes(parsed.server)&&(!['melo-xiaohongshu','melo-douyin','melo-public-media'].includes(parsed.server)||c.network); }
+  if (id.startsWith('mcp:')) {
+    const parsed=parseMcpToolId(id);
+    if(!parsed || !c.mcpServers.includes(parsed.server)) return false;
+    const needsNetwork=(tool?.id===id && tool.capability==='network') ||
+      ['melo-xiaohongshu','melo-douyin','melo-public-media'].includes(parsed.server);
+    return !needsNetwork || c.network;
+  }
   if (id.startsWith('skill:')) return c.skills.includes(id.slice(6));
   const declared=tool && tool.id===id ? declaredCapabilityRequirement(tool,args) : undefined;
   if (declared!==undefined) return capabilityRequirementAllowed(declared,c);

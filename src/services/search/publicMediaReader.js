@@ -5,7 +5,7 @@ import {instagramCaption,youtubeSubtitles} from './publicMediaBrowser.js';
 const UA='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0 Safari/537.36';
 function source(link,text,kind,reading='partial') {
   if(typeof text!=='string' || !text.trim()) return null;
-  return {url:link.url,text:text.trim().slice(0,16000),kind,reading:text.length>16000?'partial':reading};
+  return {url:link.url,text:text.trim(),kind,reading};
 }
 async function body(response,limit) {
   const parts=[]; let size=0;

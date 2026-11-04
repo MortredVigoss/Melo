@@ -1,3 +1,7 @@
+## 2026-11-04 — 公开媒体预审修正
+
+首次 git pp 为 C，已阻止推送。修正远程 MCP 网络越权、长字幕末尾丢失与文章误路由；阻断计数和完整字幕回归见[专项记录](docs/public-media-readers-20261104.md)。
+
 ## 2026-11-04 — Instagram、YouTube 等公开作品读取
 
 Codex：桌面 6 个 Agent 默认获得公开媒体 MCP。真实模型读到 Instagram 原帖并交付；YouTube 实查字幕，Facebook 样本受限。公开范围、授权迁移及验证见[专项回执](docs/public-media-readers-20261104.md)。

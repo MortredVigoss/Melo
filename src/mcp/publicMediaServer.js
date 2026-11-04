@@ -1,3 +1,4 @@
+import {pageWindow} from '../services/search/pageWindow.js';
 import {InMemoryTransport,Server} from '@modelcontextprotocol/server';
 import {MEDIA_PLATFORMS,PUBLIC_MEDIA_SERVER} from '../../shared/agent/media/publicPlatforms.js';
 import {discoverPlatformPosts} from '../services/search/publicMediaDiscovery.js';
@@ -8,7 +9,7 @@ const tools=[
   {name:'search_posts',description:'Find public post permalinks through YouTube search, an explicit Instagram @handle, or a public web index. Results are candidates. Read a post to verify its contents.',
     inputSchema:{type:'object',properties:{platform:{type:'string',enum:MEDIA_PLATFORMS.map(p=>p.id)},query:{type:'string',maxLength:500}},required:['platform','query'],additionalProperties:false}},
   {name:'read_post',description:'Read one public post without signing in. The returned kind distinguishes subtitles, author text, a video description and a preview.',
-    inputSchema:{type:'object',properties:{url:{type:'string',maxLength:4096},transcript:{type:'boolean',description:'Attempt public captions on YouTube.'}},required:['url'],additionalProperties:false}},
+    inputSchema:{type:'object',properties:{url:{type:'string',maxLength:4096},offset:{type:'integer',minimum:0,maximum:1000000,description:'Next character offset returned for a long post or transcript.'},transcript:{type:'boolean',description:'Attempt public captions on YouTube.'}},required:['url'],additionalProperties:false}},
 ].map(tool=>({...tool,annotations:{readOnlyHint:true,destructiveHint:false}}));
 
 export async function openPublicMediaTransport({search=discoverPlatformPosts,read=readMediaPost}={}) {
@@ -28,9 +29,15 @@ export async function openPublicMediaTransport({search=discoverPlatformPosts,rea
     }
     if(params.name!=='read_post' || typeof args.url!=='string' || args.url.length>4096)
       return textResult({error:'INVALID_POST_URL'},true);
+    const offset=args.offset ?? 0;
+    if(!Number.isSafeInteger(offset) || offset<0 || offset>1000000)return textResult({error:'INVALID_OFFSET'},true);
     const result=await read(args.url,{signal,transcript:args.transcript!==false});
     if(!result)return textResult({error:'PUBLIC_POST_UNAVAILABLE',next:'Report the page as unverified or try another public source.'},true);
-    return textResult({kind:result.kind,subtitles:result.subtitles,sources:[result]});
+    const part=pageWindow(result.text,offset,8000);
+    if(!part.body)return textResult({error:'OFFSET_OUT_OF_RANGE'},true);
+    const reading=result.reading==='snippet'?'snippet':part.truncated?'partial':result.reading;
+    return textResult({kind:result.kind,subtitles:result.subtitles,offset,nextOffset:part.nextOffset,
+      truncated:part.truncated,totalChars:result.text.length,sources:[{...result,text:part.body,reading}]});
   });
   await server.connect(serverTransport);
   return clientTransport;

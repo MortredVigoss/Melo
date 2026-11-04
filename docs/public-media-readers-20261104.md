@@ -30,3 +30,9 @@ YouTube 字幕轨道返回 200 空正文时，尝试官方播放页的字幕面�
 执行入口为 shared/agent/search.js → src/mcp/manager.js → publicMediaServer.js → publicPlatformIndex.js / publicMediaReader.js；网页工具复用同一读取器。浏览器截图不作为正文。工具与状态回执见本地 `.tmp/platform-readers/`。
 
 站外索引在同一网络曾返回限流页，不能保证任意关键词都有候选。最终版实测 YouTube 原站搜索「NASA Roman telescope」返回 6 条并成功读到作品简介；Instagram 明确指定 `@nasa` 时，从访客主页取得 6 条并成功打开作者文字。指定账号的结果只取该账号展示的作品。两条均经真实 MCP 协议调用，见 `.tmp/platform-readers/search-to-post.json`。桌面实际高级页也已核对两个已连接工具。
+
+## 首次 git pp 预审后的三项修正
+
+预审范围 54a9cac..0c3bf89，评级 C，未推送。修正范围为 HTTP 传输声明进入能力范围、目录和实际分发（以零请求计数验证）、两个读取入口使用同一分页实现（读到长字幕最后一行）、共享规划与桌面按原链接识别具体作品（普通文章继续走 fetch_url）。停止于 MCP 调用次数、实际返回文字、三端生成契约及最终基准回归。
+
+实现后，真实 HTTP MCP 测试先通过一次“本会话允许”，再次调用复用该授权。显式禁止联网、network 关闭、上级限制传给成员三种情况均在分发前拒绝，测试服务器新增 tools/call 数量为零。HTTP 请求类型由客户端根据传输生成，远端工具的自报注解不能关闭该限制。网页与 MCP 从同一个原始字幕分页，50,423 字符的构造样本能从两个入口读到最后一句。规划层共享同一份作品 URL 语法，混合来源链接或提到 YouTube 的普通文章均继续按网页读取。29 项专项通过。证据见 `.tmp/platform-readers/post-review-target.tap`，累计测试记录位于同目录 fix-quick.log、fix-integration.log。再次 git pp 须遵守开发规范 §9 的单次授权。

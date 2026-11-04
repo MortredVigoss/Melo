@@ -70,6 +70,36 @@ test('Streamable HTTP negotiates a 2025 session, accepts SSE, authenticates and 
  const r=await getMcpTool('mcp:'+id+':details').run({});assert.match(r.output,/actual body/);assert.match(r.output,/"score":8/);
  assert.equal(r.completionSources[0].reading,'extracted');
  assert.equal(seen.filter(m=>m==='tools/list').length,2);
+ const tool=getMcpTool('mcp:'+id+':details');
+ assert.equal(tool.capability,'network');
+ const {executeTool}=await import('../tools/executor.js');
+ const {resolvePermission,clearSessionPermissions}=await import('../tools/permissions.js');
+ const {createRequestContext}=await import('../runtime/requestContext.js');
+ const {runWithRequestContext}=await import('../runtime/requestScope.js');
+ const {capabilityScopeForProfile,narrowCapabilityScope,toolsForCapabilityScope}=await import('../domain/agent/capabilityScope.js');
+ const chatId='http-mcp-session';
+ const caps={network:true,mcpServers:[id]};
+ const allowed=capabilityScopeForProfile({id:'main',capabilities:caps});
+ const denied=capabilityScopeForProfile({id:'main',capabilities:{...caps,network:false}});
+ const child=narrowCapabilityScope(denied,{agentId:'child',capabilities:caps});
+ assert.deepEqual(toolsForCapabilityScope([tool],denied),[]);
+ let prompts=0;
+ const call=(capabilityScope,requestToolPolicy={})=>{
+   const ctx={...createRequestContext({home:dir,chatId}),turnBinding:{role:capabilityScope.agentId,project:null},capabilityScope,requestToolPolicy};
+   return runWithRequestContext(ctx,()=>executeTool(tool,{},{
+     chatId, workspacePath:dir,sseEmitter:(type,payload)=>{if(type==='tool_permission'){prompts++;void resolvePermission(payload.requestId,true,'session',tool.id);}}
+   }));
+ };
+ t.after(()=>clearSessionPermissions(chatId));
+ assert.equal((await call(allowed)).ok,true);
+ assert.equal((await call(allowed)).ok,true);
+ assert.equal(prompts,1,'existing session approval reused on the allowed control');
+ const before=seen.filter(k=>k==='tools/call').length;
+ assert.equal((await call(allowed,{fetchForbidden:true})).error,'REQUEST_TOOL_DENIED');
+ assert.equal((await call(denied)).error,'CAPABILITY_DENIED');
+ assert.equal((await call(child)).error,'CAPABILITY_DENIED');
+ assert.equal(seen.filter(k=>k==='tools/call').length,before,'zero additional remote calls after denial');
+ assert.equal(prompts,1);
  assert.throws(()=>httpEndpoint('http://external.test/mcp'));assert.throws(()=>httpEndpoint('https://u:p@external.test/'));
 });
 test('rich results, snippets and partial body evidence stay distinct',()=>{
