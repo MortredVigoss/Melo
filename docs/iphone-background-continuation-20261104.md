@@ -26,3 +26,9 @@ iOS 26.4 iPhone 17 Pro 专用模拟器。运行 `ios/scripts/verify-background-s
 原修复提交 `cc20f89` 的快速档 `run-6L1pvk` 通过 4,837 项 JS、设置浏览器及 38 套 Swift。首次检出缺少测试私有资产与同平台的原生依赖，另修复了保留旧记录所需的翻译行。随后一次 Swift 编译期间源码发生变化，固定上述提交后重新完成快速档。
 
 集成基准 `b80ade3` 引入了 iPhone 内部成员。任务暂停时也保存成员分工、剩余轮数和交接报告。恢复成员时通过当下的工具目录重新获得权限，只带入该成员的观察。已完成工具可以用原回执作答。测试先由主 Agent 读网页，再由执行成员创建提醒，在写成后模拟断网并读取磁盘格式的检查点。恢复成员取得同一条提醒的回执，未能读取主 Agent 的网页回执，最后将结果交回主 Agent。底层调用计数为一次读网页、一次创建提醒。真实供应商与真机锁屏待验。
+
+## 最终验收
+
+组合源码 `d8c51b2`。从 `b80ade3` 运行 `npm test -- --base b80ade3`，集成档 `run-sjrWAq` 用时 433 秒。4,842 项 JS 全部通过，零跳过、零失败。设置浏览器及 38 套 Swift 通过，未触发隔离复测。合并版重新完成模拟器 Debug、未签名 iPhoneOS Release 构建，以及切到设置、到期、手动停止和结束进程后恢复验收。冷启动探针调用“继续任务”按钮绑定的同一个方法，运行编号相同，提问与回答各一条。专项使用延迟网络夹具。真机外形、长时间锁屏与实际模型连接尚待验收。
+
+本地回执在产品根目录的 `.tmp/iphone-continuity-20261104/combined-evidence/`，含快速档及集成档摘要、`simulator-verification.json` 和 `process-verification.json`。复跑专项目标使用 `python3 ios/scripts/test.py --suite AgentLoopTests --suite ReplyBackgroundTests --skip-js --skip-renderer`。在专用模拟器安装 Debug 构建后，运行 `python3 ios/scripts/verify-background-simulator.py <模拟器 UUID>`。
