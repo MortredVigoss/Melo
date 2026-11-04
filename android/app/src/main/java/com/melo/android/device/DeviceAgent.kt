@@ -1,5 +1,6 @@
 package com.melo.android.device
 
+import com.melo.android.core.LoopTrace
 import com.melo.android.core.SharedCoreTurn
 import com.melo.android.core.SharedRunBudget
 import com.melo.android.core.SharedCoreRuntime
@@ -13,11 +14,11 @@ import com.melo.android.network.ModelClient
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import java.security.MessageDigest
-import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.*
 
 data class DeviceApproval(val id: String = newId(), val action: String)
 data class DeviceRuntime(val running: Boolean = false, val runId: String? = null, val phase: String = "", val error: String? = null, val approval: DeviceApproval? = null, val chatId: String? = null, val scriptId: String? = null)
-internal data class ChatDeviceContext(val chat: Conversation, val connection: com.melo.android.data.Connection, val key: String, val instructions: String, val parentRunId: String, val budget: SharedRunBudget? = null)
+internal data class ChatDeviceContext(val chat: Conversation, val connection: com.melo.android.data.Connection, val key: String, val instructions: String, val parentRunId: String, val budget: SharedRunBudget? = null, val scopeInstructions: String = instructions, val trace: LoopTrace.Scope? = null)
 
 class DeviceAgent(private val context: Context, private val repository: Repository,
                   private val client: DeviceAgentClient = DeviceAgentClient(BuildConfig.DEBUG)) {
@@ -26,6 +27,59 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
     val runtime = mutable.asStateFlow()
     private var job: Job? = null
     private var approvalReply: CompletableDeferred<Boolean>? = null
+    private var actionSession: DeviceActionSession? = null
+    private var actionOwner: String? = null
+    internal suspend fun action(args: JsonObject, binding: ChatDeviceContext, owner: Job, executor: DeviceExecutor? = DeviceAccess.service): DeviceToolResult = withContext(Dispatchers.Main.immediate) {
+        val session = session(binding, owner, executor) ?: return@withContext DeviceToolResult.error(mutable.value.error ?: "设备不可用。", "device_unavailable")
+        try { session.execute(args) }
+        catch (error: CancellationException) { throw error }
+        catch (error: Exception) { DeviceToolResult.error(error.message ?: "无法开始或继续设备操作。", "device_unavailable") }
+    }
+    private suspend fun session(binding: ChatDeviceContext, owner: Job, executor: DeviceExecutor?): DeviceActionSession? {
+        val state = repository.data.value
+        val current = state.chats.find { it.id == binding.chat.id }
+        val engine = (context.applicationContext as com.melo.android.MeloApplication).engine
+        if (!owner.isActive || engine.runtime.value.turns[binding.chat.id]?.runId != binding.parentRunId || current?.phoneUseEnabled != true ||
+            current.agentId != binding.chat.agentId || current.projectId != binding.chat.projectId || repository.instructions(current, state) != binding.scopeInstructions) {
+            mutable.update { it.copy(error = "所属对话、权限或作用域已改变。") }; return null
+        }
+        if (actionOwner == binding.parentRunId) return actionSession
+        if (mutable.value.running || job?.isActive == true || executor == null) { mutable.update { it.copy(error = "手机正忙或 Accessibility Service 未连接。") }; return null }
+        val cacheScope = MessageDigest.getInstance("SHA-256").digest("${current.agentId}|${current.projectId.orEmpty()}|0|${binding.scopeInstructions}".toByteArray()).joinToString("") { "%02x".format(it) }
+        val run = DeviceRun(goal = current.messages.lastOrNull { it.role == "user" }?.content.orEmpty(), connectionName = "Chat 主 Loop", executionMode = "unified", modelRequests = 0,
+            taskContext = DeviceTaskContext(current.id, current.agentId, current.projectId, binding.connection.id), parentRunId = binding.parentRunId)
+        repository.change { it.copy(deviceRuns = (it.deviceRuns + run).takeLast(50)) }
+        actionOwner = binding.parentRunId; job = owner
+        mutable.value = DeviceRuntime(running = true, runId = run.id, chatId = current.id)
+        actionSession = DeviceActionSession(executor, cacheScope, run, persist = { updated ->
+            val learned = repository.data.value.deviceRuns.find { it.id == updated.id }?.learnedScriptIds.orEmpty()
+            save(updated.copy(learnedScriptIds = (updated.learnedScriptIds + learned).distinct()))
+        },
+            publish = { recipe -> repository.publishVerifiedScript(recipe, run.id, state.deviceScripts) },
+            phase = { phase -> mutable.update { it.copy(phase = phase) } },
+            validateCurrent = {
+                val live = repository.data.value
+                val liveChat = live.chats.find { it.id == current.id }
+                owner.isActive && liveChat?.phoneUseEnabled == true && liveChat.agentId == current.agentId && liveChat.projectId == current.projectId &&
+                    repository.instructions(liveChat, live) == binding.scopeInstructions && (executor !is MeloAccessibilityService || executor === DeviceAccess.service)
+            },
+            scriptCurrent = { recipe -> repository.data.value.deviceScripts.any { it.id == recipe.id && it.revision == recipe.revision && it.enabled && it.verified && !it.invalidated } },
+            onReplay = { recipe, replay -> repository.change { live -> live.copy(deviceScripts = live.deviceScripts.map { row ->
+                if (row.id != recipe.id || row.revision != recipe.revision) row else row.copy(hits = row.hits + 1,
+                    successes = row.successes + if (replay.outcome.status == "achieved") 1 else 0,
+                    failures = row.failures + if (replay.outcome.status != "achieved") 1 else 0,
+                    invalidated = row.invalidated || replay.outcome.status == "blocked", lastError = replay.outcome.error.orEmpty().take(300), updatedAt = now())
+            }) } })
+        return actionSession
+    }
+    internal suspend fun closeActions(parentRunId: String, cancelled: Boolean) = withContext(NonCancellable + Dispatchers.Main.immediate) {
+        if (actionOwner != parentRunId) return@withContext
+        try { actionSession?.close(cancelled, repository.data.value.runs.find { it.id == parentRunId }?.status == "completed") } finally {
+            actionSession = null; actionOwner = null; job = null
+            approvalReply?.cancel(); approvalReply = null
+            mutable.update { it.copy(running = false, phase = "", approval = null, scriptId = null) }
+        }
+    }
     fun dismissError() { mutable.update { it.copy(error = null) } }
     fun cancel() { job?.cancel() }
     suspend fun editScript(original: DeviceScript, edited: DeviceScript) = withContext(NonCancellable) { repository.editDeviceScript(original, edited) }
@@ -54,17 +108,43 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
         val engine = (context.applicationContext as com.melo.android.MeloApplication).engine
         if (engine.runtime.value.turns[binding.chat.id]?.runId != binding.parentRunId)
             return@withContext DeviceToolResult.error("所属对话已停止，未开始手机操作。", "stale_chat")
-        if (!startTask(goal, 0, true, executor, binding.chat.id, research, null, emptyMap(), binding, !research))
+        val previousRunIds = repository.data.value.deviceRuns.map { it.id }.toSet()
+        if (!startTask(goal, 0, true, executor, binding.chat.id, research, null, emptyMap(), binding.copy(trace = LoopTrace.captureScope()), !research))
             return@withContext DeviceToolResult.error(mutable.value.error ?: "手机正被其他任务使用。", "device_busy")
         val owned = job!!
         try {
             owned.join(); currentCoroutineContext().ensureActive()
-            val run = repository.data.value.deviceRuns.lastOrNull { it.parentRunId == binding.parentRunId && it.goal == goal.trim() }
+            val run = repository.data.value.deviceRuns.lastOrNull { it.id !in previousRunIds && it.parentRunId == binding.parentRunId && it.goal == goal.trim() }
                 ?: return@withContext DeviceToolResult.error(mutable.value.error ?: "未取得手机任务回执，请检查辅助功能权限。", "device_unavailable")
             com.melo.android.chat.ChatPhoneUse.receipt(run, research)
         } finally {
             withContext(NonCancellable) { if (owned.isActive) owned.cancelAndJoin() }
         }
+    }
+
+    /** A published recipe runs with the current parent lease and zero child-model calls. */
+    internal suspend fun invokeWorkflow(plan: JsonObject, binding: ChatDeviceContext, executor: DeviceExecutor?, owner: Job? = null): DeviceToolResult = withContext(Dispatchers.Main.immediate) {
+        val engine = (context.applicationContext as com.melo.android.MeloApplication).engine
+        if (engine.runtime.value.turns[binding.chat.id]?.runId != binding.parentRunId)
+            return@withContext DeviceToolResult.error("所属对话已停止。", "stale_chat")
+        val script = repository.data.value.deviceScripts.find { it.id == plan.text("scriptId") }
+        if (script == null || script.revision != plan["revision"]?.jsonPrimitive?.intOrNull || !script.enabled || !script.verified || script.invalidated)
+            return@withContext DeviceToolResult.error("Workflow 已修改、删除或停用。", "WORKFLOW_REVISION_CHANGED")
+        val parameters = plan["parameters"]!!.jsonObject.mapValues { it.value.jsonPrimitive.content }
+        if (owner != null) {
+            val session = session(binding, owner, executor) ?: return@withContext DeviceToolResult.error("设备不可用或作用域已改变。", "device_unavailable")
+            return@withContext session.replay(script, parameters)
+        }
+        val previousRunIds = repository.data.value.deviceRuns.map { it.id }.toSet()
+        if (!startTask(plan.text("goal"), 0, false, executor, binding.chat.id, false, script.id, parameters, binding.copy(trace = LoopTrace.captureScope())))
+            return@withContext DeviceToolResult.error(mutable.value.error ?: "手机正被其他任务使用。", "device_busy")
+        val owned = job!!
+        try {
+            owned.join(); currentCoroutineContext().ensureActive()
+            val run = repository.data.value.deviceRuns.lastOrNull { it.id !in previousRunIds && it.parentRunId == binding.parentRunId && it.scriptId == script.id }
+                ?: return@withContext DeviceToolResult.error("未取得 Workflow 回执。", "WORKFLOW_FAILED")
+            com.melo.android.chat.ChatPhoneUse.receipt(run, false)
+        } finally { withContext(NonCancellable) { if (owned.isActive) owned.cancelAndJoin() } }
     }
 
     private fun startTask(goal: String, displayId: Int, screenshots: Boolean, executor: DeviceExecutor?, chatId: String?,
@@ -77,12 +157,14 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
         val connection = binding?.connection ?: state.settings.connections.find { it.id == connectionId }
         val taskContext = chat?.let { DeviceTaskContext(it.id, it.agentId, it.projectId, connection?.id.orEmpty()) }
         val instructions = binding?.instructions ?: if (chat != null) repository.instructions(chat, state) else ""
-        val cacheScope = MessageDigest.getInstance("SHA-256").digest("${chat?.agentId.orEmpty()}|${chat?.projectId.orEmpty()}|$displayId|$instructions".toByteArray()).joinToString("") { "%02x".format(it) }
+        val cacheScope = MessageDigest.getInstance("SHA-256").digest("${chat?.agentId.orEmpty()}|${chat?.projectId.orEmpty()}|$displayId|${binding?.scopeInstructions ?: instructions}".toByteArray()).joinToString("") { "%02x".format(it) }
         val manualScript = scriptId?.let { id -> state.deviceScripts.find { it.id == id } }
         val supplied = parameters.toMap()
         val trimmed = goal.trim()
         mutable.value = DeviceRuntime(running = true, chatId = chatId)
         job = scope.launch(start = CoroutineStart.LAZY) {
+            val traceRunId = newId()
+            LoopTrace.run(context, traceRunId, "device", trimmed, parent = binding?.trace, outcome = { _: Unit -> repository.data.value.deviceRuns.find { it.id == mutable.value.runId }?.status ?: "unknown" }) {
             var run: DeviceRun? = null
             var begun = false
             var pendingCache: DeviceScript? = null
@@ -103,6 +185,7 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
                 val environment = device.cacheEnvironment(displayId, state.deviceScripts.flatMap { it.packages() }.toSet())
                 val lookup = if (manualScript != null) CacheLookup(exact = CacheMatch(manualScript, supplied)) else if (forceProbe) CacheLookup() else TaskCacheRouter.lookup(trimmed, state.deviceScripts, cacheScope, environment)
                 val lookupMs = (System.nanoTime() - lookupStarted) / 1_000_000
+                LoopTrace.emit("cache.lookup", buildJsonObject { put("exactId", lookup.exact?.script?.id ?: ""); put("legacyId", lookup.legacy?.script?.id ?: ""); put("incompatible", lookup.incompatible); put("similar", kotlinx.serialization.json.JsonArray(lookup.similar.map { kotlinx.serialization.json.JsonPrimitive(it.id) })) }, environment?.let { MeloJson.encodeToJsonElement(it) })
                 fun bindEnvironment(script: DeviceScript): DeviceScript? {
                     val current = device.cacheEnvironment(displayId, script.packages()) ?: return null
                     val bound = script.copy(environment = current)
@@ -110,33 +193,36 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
                 }
                 // A miss needs valid model access before clearing the user's draft;
                 // an exact/manual hit must never read credentials at all.
-                val modelAccess = if (lookup.exact == null) {
+                val modelAccess = if (lookup.exact == null && lookup.legacy == null) {
                     require(instructions.length <= 32_000) { "角色或项目指令超过任务预算，请减少资料后重试。" }
                     credentials()
                 } else null
-                val source = lookup.exact?.script ?: lookup.similar.firstOrNull()
-                val mode = when { manualScript != null -> "manual"; lookup.exact != null -> "exact"; lookup.similar.isNotEmpty() -> "similar"; else -> "probe" }
-                val started = DeviceRun(goal = trimmed, connectionName = if (lookup.exact != null) "本机缓存" else connection?.name ?: "未配置模型", taskContext = taskContext,
+                val source = lookup.exact?.script ?: lookup.legacy?.script ?: lookup.similar.firstOrNull()
+                val mode = when { manualScript != null -> "manual"; lookup.exact != null -> "exact"; lookup.legacy != null -> "revalidate"; lookup.similar.isNotEmpty() -> "similar"; else -> "probe" }
+                val started = DeviceRun(id = traceRunId, goal = trimmed, connectionName = if (lookup.exact != null) "本机缓存" else connection?.name ?: "未配置模型", taskContext = taskContext,
                     executionMode = mode, modelRequests = 0, scriptId = source?.id, scriptRevision = source?.revision, parentRunId = binding?.parentRunId,
                     cacheLookupMs = lookupMs, cacheIncompatible = lookup.incompatible,
-                    cacheNote = if (lookup.incompatible > 0) "已排除 ${lookup.incompatible} 个布局、姿态、App 版本不兼容或缺少环境记录的缓存。" else "")
+                    cacheNote = if (lookup.legacy != null) "旧缓存缺少环境记录，正在按当前页面逐步重新验证；尚未认定兼容。" else if (lookup.incompatible > 0) "已排除 ${lookup.incompatible} 个布局、姿态、App 版本不兼容或缺少环境记录的缓存。" else "")
                 run = started
                 repository.change { current ->
                     require(chatId == null || current.chats.any { it.id == chatId }) { "对话已删除。" }
                     current.copy(deviceRuns = (current.deviceRuns + started).takeLast(50), drafts = if (chatId == null || binding != null || scriptId != null) current.drafts else current.drafts - chatId)
                 }
                 mutable.update { it.copy(running = true, runId = started.id, phase = "正在检查操作缓存…", chatId = chatId, scriptId = source?.id) }
-                device.begin(displayId, screenshots && lookup.exact == null && lookup.similar.isEmpty()); begun = true
+                device.begin(displayId, screenshots && lookup.exact == null && lookup.legacy == null && lookup.similar.isEmpty()); begun = true
                 val outcome = withTimeout(10 * 60 * 1000L) {
                     var activeBudget = binding?.budget
                     val executeDevice: suspend (JsonObject) -> DeviceToolResult = { arguments ->
                         check(chatId == null || repository.data.value.chats.any { it.id == chatId }) { "关联对话已被删除，手机操作已停止。" }
-                        activeBudget?.effect { device.execute(arguments) } ?: device.execute(arguments)
+                        LoopTrace.emit("tool.dispatch.started", buildJsonObject { put("name", "android_device"); put("action", arguments.text("action")); put("effectState", "dispatched") }, arguments)
+                        val receipt = activeBudget?.effect { device.execute(arguments) } ?: device.execute(arguments)
+                        LoopTrace.emit("tool.result", buildJsonObject { put("name", "android_device"); put("action", arguments.text("action")); put("ok", receipt.ok); put("effectState", if (receipt.ok) "returned" else if (receipt.data.text("code") in setOf("stale_screen", "stale_target", "user_declined", "invalid_arguments")) "not_started" else "unknown"); put("screenshotCaptured", receipt.jpeg != null) }, receipt.data)
+                        receipt
                     }
                     val trace: suspend (DeviceStep) -> Unit = { step -> run = run!!.copy(steps = run!!.steps + step); save(run!!) }
                     val phase: (String) -> Unit = { text -> mutable.update { it.copy(phase = text) } }
                     fun countRequest() { run = run!!.copy(modelRequests = (run!!.modelRequests ?: 0) + 1) }
-                    var recipe = lookup.exact
+                    var recipe = lookup.exact ?: lookup.legacy
                     var adapted = false
                     if (recipe == null && lookup.similar.isNotEmpty()) {
                         phase("Similar Hit · 正在精简改写候选脚本…")
@@ -151,14 +237,18 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
                         val match = requireNotNull(recipe)
                         val replayStarted = System.nanoTime()
                         val replay = ScriptRunner(executeDevice, trace, phase, compatible = {
-                            if (match.script.environment == null) manualScript != null
+                            val current = repository.data.value.deviceScripts.find { it.id == match.script.id }
+                            if (binding != null && manualScript != null && (current == null || current.revision != match.script.revision || !current.enabled || !current.verified || current.invalidated)) false
+                            else if (match.script.environment == null) (manualScript != null || lookup.legacy?.script?.id == match.script.id) &&
+                                (environment?.let { initial -> device.cacheEnvironment(displayId, match.script.packages())?.supports(match.script.copy(environment = initial)) == true } ?: (manualScript != null))
                             else device.cacheEnvironment(displayId, match.script.packages())?.supports(match.script) == true
                         }).run(match.script, match.parameters)
                         run = run!!.copy(cacheReplayMs = (System.nanoTime() - replayStarted) / 1_000_000)
                         if (!adapted && replay.outcome.status != "achieved") repository.invalidateDeviceScript(match.script, replay.outcome.error.orEmpty())
                         if (replay.outcome.status == "achieved") {
-                            if (adapted) pendingCache = match.script.copy(sourceRunId = started.id, scope = cacheScope) else replaySuccess = match.script
-                            run = run!!.copy(cacheNote = if (adapted) "相似脚本已验证成功。" else "本机重放与终态校验成功；没有调用模型。")
+                            if (adapted) pendingCache = match.script.copy(sourceRunId = started.id, scope = cacheScope)
+                            else replaySuccess = if (match.script.environment == null) bindEnvironment(match.script) ?: match.script else match.script
+                            run = run!!.copy(cacheNote = if (adapted) "相似脚本已验证成功。" else if (replaySuccess?.environment != null && match.script.environment == null) "旧缓存已通过当前页面与终态验证，已补齐环境记录；没有调用模型。" else "本机重放与终态校验成功；没有调用模型。")
                             return@withTimeout replay.outcome
                         }
                         if (manualScript != null || replay.unsafeToResume || replay.outcome.status == "needs_user") return@withTimeout replay.outcome.copy(
@@ -172,6 +262,15 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
                     currentCoroutineContext().ensureActive()
                     device.configureScreenshots(screenshots)
                     val recorder = ScriptRecorder(trimmed, prefix, prefixValues)
+                    val publishedParts = VerifiedScriptPublisher(cacheScope, started.id, environment = { packages ->
+                        device.cacheEnvironment(displayId, packages)
+                    }, publish = { part ->
+                        currentCoroutineContext().ensureActive()
+                        // Research may reuse navigation recipes, never yesterday's facts.
+                        val saved = repository.publishVerifiedScript(part, started.id, state.deviceScripts)
+                        if (saved != null) run = run!!.copy(learnedScriptIds = (run!!.learnedScriptIds + saved.id).distinct())
+                        LoopTrace.emit("cache.publish", buildJsonObject { put("published", saved != null); put("kind", part.cacheKind); saved?.let { put("scriptId", it.id); put("revision", it.revision) } })
+                    })
                     val probeStarted = System.nanoTime()
                     val probeGoal = if (prefix.isEmpty()) trimmed else trimmed + "\nHost recovery: ${prefix.size} script steps have ALREADY executed (${prefix.joinToString { it.action }}). Continue only from the current observed page. Do not replay prior effects or restart the script. Verify before finishing."
                     val result = SharedCoreRuntime.open(context).use { policy ->
@@ -182,7 +281,10 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
                             execute = executeDevice,
                             onStep = { step -> run = run!!.copy(steps = run!!.steps + step); save(run!!) },
                             onPhase = { phase -> mutable.update { it.copy(phase = phase) } },
-                            onResult = recorder::record,
+                            onResult = { arguments, result ->
+                                recorder.record(arguments, result)
+                                publishedParts.record(arguments, result)
+                            },
                             core = core,
                         ).run(probeGoal) }
                     }
@@ -218,6 +320,7 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
                     else -> null
                 }
                 if (notice != null) Toast.makeText(context, notice, Toast.LENGTH_LONG).show()
+            }
             }
         }
         job!!.start(); return true

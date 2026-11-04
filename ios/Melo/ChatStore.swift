@@ -515,6 +515,7 @@ import SwiftUI
         let verification = classification.map { AgentVerification(question: clean, classification: $0, contextBlocks: [memoryText] + resolvedContext.evidence) }
         let loopHooks = AgentLoopHooks(
             maxTaskIterations: selectedAgent.maxTaskIterations,
+            traceRunID: record.runId,
             onStage: { [weak self] id, name, status, output in self?.stage(record.runId, id: id, name: name, status: status, output: output) },
             onToolCall: { [weak self] call in self?.recordToolCall(call, runID: record.runId) },
             takeSupplements: { supplements.take() },

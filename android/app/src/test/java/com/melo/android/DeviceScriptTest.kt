@@ -23,6 +23,92 @@ class DeviceScriptTest {
     private fun done(text: String = "Ready") = args("finish", "outcome" to "achieved", "screen_id" to "fresh-screen", "expected_package" to "fixture.app", "visible_text" to text)
     private fun verified(text: String = "Ready") = DeviceToolResult(JsonObject(screen(text = text).data + ("verification" to "visible_facts".jp())))
 
+    @Test fun recordedSearchIncludesSubmissionAndReplaysItWithAFreshEditor() = runBlocking {
+        val recorder = ScriptRecorder("Search query in fixture")
+        val editor = node(editable = true)
+        recorder.record(args("open_app", "package_name" to "fixture.app"), screen(nodes = listOf(editor)))
+        recorder.record(args("type_text", "node_id" to "fresh-node", "text" to "query"), screen(nodes = listOf(editor)))
+        recorder.record(args("submit_input", "node_id" to "fresh-node"), screen())
+        recorder.record(done(), verified())
+        val recorded = recorder.compile("scope", "run")!!
+        assertEquals(listOf("open_app", "type_text", "submit_input"), recorded.steps.map { it.action })
+        val actions = mutableListOf<JsonObject>()
+        var entered = ""
+        val result = ScriptRunner({ action -> actions += action; if (action.text("action") == "type_text") entered = action.text("text"); screen(nodes = listOf(node(text = entered, editable = true))) }, completionTimeoutMs = 100).run(recorded, mapOf("input_1" to "new query"))
+        assertEquals("achieved", result.outcome.status)
+        val submit = actions.single { it.text("action") == "submit_input" }
+        assertEquals("fresh-screen", submit.text("screen_id")); assertEquals("fresh-node", submit.text("node_id"))
+        assertEquals("new query", actions.single { it.text("action") == "type_text" }.text("text"))
+    }
+    @Test fun cachedTextInputPreparesMissingFocusBeforeTypingAndSubmitting() = runBlocking {
+        var focused = false
+        var entered = ""
+        val actions = mutableListOf<String>()
+        val editor = { JsonObject(node(text = entered, editable = true) + ("focused" to JsonPrimitive(focused))) }
+        val cached = script("Search {{query}}", listOf(ScriptStep("type_text", "fixture.app", "Main", NodeSelector(viewId = "fixture.app:id/target", editable = true), parameter = "query"), ScriptStep("submit_input", "fixture.app", "Main", NodeSelector(viewId = "fixture.app:id/target", editable = true)))).copy(parameters = listOf("query"))
+        val result = ScriptRunner({ action ->
+            actions += action.text("action")
+            when (action.text("action")) {
+                "tap" -> { focused = true; screen(nodes = listOf(editor())) }
+                "type_text" -> if (!focused) DeviceToolResult.error("Focus missing", "input_not_focused") else { entered = action.text("text"); screen(nodes = listOf(editor())) }
+                "submit_input" -> if (!focused) DeviceToolResult.error("Focus missing", "submission_unavailable") else screen(nodes = listOf(editor()))
+                else -> screen(nodes = listOf(editor()))
+            }
+        }, completionTimeoutMs = 100).run(cached, mapOf("query" to "new query"))
+        assertEquals("achieved", result.outcome.status)
+        assertTrue(actions.indexOf("tap") in 0 until actions.indexOf("type_text"))
+        assertTrue(actions.indexOf("type_text") < actions.indexOf("submit_input"))
+    }
+    @Test fun orphanSubmissionCannotPublishOrReplayResidualInput() {
+        val orphan = script(steps = listOf(ScriptStep("open_app", "fixture.app"), ScriptStep("submit_input", "fixture.app", selector = NodeSelector(viewId = "fixture.app:id/target", editable = true))))
+        assertTrue(runCatching { ScriptValidator.validate(orphan) }.isFailure)
+        assertNull(TaskCacheRouter.lookup(orphan.goalTemplate, listOf(orphan), "scope", environment).exact)
+    }
+    @Test fun changedInputStopsBeforeSubmission() = runBlocking {
+        val target = NodeSelector(viewId = "fixture.app:id/target", editable = true)
+        val cached = script(steps = listOf(ScriptStep("type_text", "fixture.app", selector = target, text = "new query"), ScriptStep("submit_input", "fixture.app", selector = target)))
+        val actions = mutableListOf<String>()
+        val result = ScriptRunner({ action -> actions += action.text("action"); screen(nodes = listOf(node(text = "old query", editable = true))) }, completionTimeoutMs = 100).run(cached, emptyMap())
+        assertEquals("blocked", result.outcome.status)
+        assertFalse("submit_input" in actions)
+    }
+    @Test fun canonicalWorkflowLearnsButtonSubmissionAndChecksTheNewQueryWithoutAModel() = runBlocking {
+        val recorder = ScriptRecorder("Original broad task must not become cached research")
+        val editor = node(editable = true)
+        recorder.record(args("open_app", "package_name" to "fixture.app"), screen(nodes = listOf(editor)))
+        recorder.record(args("type_text", "node_id" to "fresh-node", "text" to "alpha"), screen(nodes = listOf(node(text = "alpha", editable = true), node(id = "button", text = "Search"))))
+        recorder.record(args("tap", "node_id" to "button"), screen(text = "Search results", nodes = listOf(node(id = "link", text = "alpha Guide"))))
+        recorder.record(args("tap", "node_id" to "link"), screen(text = "Result detail", nodes = listOf(node(text = "alpha"))))
+        recorder.record(done("Result detail"), DeviceToolResult(JsonObject(screen(text = "Result detail", nodes = listOf(node(text = "alpha"))).data + ("verification" to "visible_facts".jp()))))
+        val recipe = recorder.compileCanonical("scope", "root")!!
+        assertFalse(recipe.goalTemplate.contains("broad task")); assertFalse(MeloJson.encodeToString(recipe).contains("alpha"))
+        assertEquals(listOf("{{input_1}}"), recipe.completion.requiredTexts)
+        assertEquals(listOf("input_1"), GoalTemplate.names(recipe.goalTemplate))
+        var current = ""; var phase = 0
+        val replay = ScriptRunner({ action ->
+            if (action.text("action") == "type_text") current = action.text("text")
+            if (action.text("action") == "tap") phase++
+            when (phase) {
+                2 -> screen(text = "Result detail", nodes = listOf(node(text = current)))
+                1 -> screen(text = "Search results", nodes = listOf(node(id = "link", text = "$current Guide")))
+                else -> screen(nodes = listOf(node(text = current, editable = true), node(id = "button", text = "Search")))
+            }
+        }, completionTimeoutMs = 100).run(recipe, mapOf("input_1" to "beta"))
+        assertEquals("achieved", replay.outcome.status); assertEquals("beta", current)
+    }
+    @Test fun modelDerivedInputCannotBecomeAnUnbindableParameterOnAnExactGoal() {
+        val goal = "Search Android accessibility"
+        val typed = "https://www.google.com/search?q=Android+accessibility"
+        val recorder = ScriptRecorder(goal)
+        recorder.record(args("observe"), screen(nodes = listOf(node(editable = true))))
+        recorder.record(args("type_text", "node_id" to "fresh-node", "text" to typed), screen())
+        recorder.record(done(), verified())
+        val cached = recorder.compile("scope", "source")!!.copy(environment = environment)
+        assertTrue(cached.parameters.isEmpty())
+        assertEquals(typed, cached.steps.single().text)
+        assertEquals(cached.id, TaskCacheRouter.lookup(goal, listOf(cached), "scope", environment).exact?.script?.id)
+        assertNull(TaskCacheRouter.lookup("Search another topic", listOf(cached), "scope", environment).exact)
+    }
     @Test fun exactHitNormalizesRepresentationWithoutMergingDifferentIntent() {
         val cached = script("打开蓝牙页面")
         assertEquals(cached.id, TaskCacheRouter.lookup("  打开蓝牙页面  ", listOf(cached), "scope", environment).exact!!.script.id)

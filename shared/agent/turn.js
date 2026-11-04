@@ -31,6 +31,15 @@ export function startTurn({ runId, turnId, allowedTools = [], requiredTools = []
   };
 }
 
+// phone_use and phone_workflow are two executors for the same granted phone
+// capability. This aliases evidence/prerequisites, never grants or goal success.
+function toolSucceeded(state, name) {
+  return state.successfulTools.includes(name) || name === 'phone_use' && state.allowedTools.includes('phone_workflow') && state.successfulTools.includes('phone_workflow');
+}
+function prerequisites(state, name) {
+  return [...new Set([...(state.toolDependencies?.[name] || []), ...(name === 'phone_workflow' ? state.toolDependencies?.phone_use || [] : [])])];
+}
+
 export function advanceTurn(previous, event, now) {
   if (previous?.version !== CORE_VERSION || !identity(previous?.runId)) fail('INVALID_TURN', 'Unknown turn version.');
   if (!Number.isFinite(now) || now < previous.lastNow) fail('INVALID_CLOCK', 'The Host clock must be monotonic.');
@@ -94,7 +103,7 @@ export function advanceTurn(previous, event, now) {
       const guard = createRepeatGuard({ entries: state.failures, fingerprint: (_name, key) => key });
       state.permitted = calls.filter(call => {
         if (!state.allowedTools.includes(call.name)) { state.rejections[call.id] = 'UNKNOWN_TOOL'; return false; }
-        if ((state.toolDependencies?.[call.name] || []).some(name => !state.successfulTools.includes(name))) { state.rejections[call.id] = 'PREREQUISITE_MISSING'; return false; }
+        if (prerequisites(state, call.name).some(name => !toolSucceeded(state, name))) { state.rejections[call.id] = 'PREREQUISITE_MISSING'; return false; }
         if (!state.hostToolSchemas && COMMON_TOOLS.some(tool => tool.name === call.name)) {
           try { validateCommonTool(call.name, call.arguments); }
           catch { state.rejections[call.id] = 'INVALID_TOOL_ARGUMENTS'; return false; }
@@ -157,7 +166,7 @@ export function advanceTurn(previous, event, now) {
       if (state.pending.length || state.awaitingModel) fail('PENDING_EFFECT', 'A device observation must follow its paired result.');
       if (typeof event.ok !== 'boolean' || !identity(event.progressKey) || !identity(event.action)) fail('INVALID_RESULT', 'Invalid device observation.');
       const prior = state.deviceProgress || { seen: [], unchanged: 0, unresolvedErrors: 0 };
-      const resolves = ['tap', 'type_text', 'swipe', 'back', 'home', 'open_app'].includes(event.action);
+      const resolves = ['tap', 'type_text', 'submit_input', 'swipe', 'back', 'home', 'open_app'].includes(event.action);
       const unresolvedErrors = !event.ok ? prior.unresolvedErrors + 1 : resolves ? 0 : prior.unresolvedErrors;
       const repeated = prior.seen.includes(event.progressKey);
       state.deviceProgress = { seen: repeated ? prior.seen : [...prior.seen, event.progressKey], unchanged: repeated ? prior.unchanged + 1 : 0, unresolvedErrors };
@@ -168,7 +177,7 @@ export function advanceTurn(previous, event, now) {
     case 'complete':
       if (!state.awaitingModel || state.pending.length) fail('PENDING_EFFECT', 'A final answer cannot drop pending tools.');
       if (state.requestMode === 'report') return stop('ROUND_LIMIT');
-      if ((state.requiredTools || []).some(name => !state.successfulTools.includes(name))) return stop('MISSING_TOOL_EVIDENCE');
+      if ((state.requiredTools || []).some(name => !toolSucceeded(state, name))) return stop('MISSING_TOOL_EVIDENCE');
       return { ...state, status: 'completed', awaitingModel: false };
     default: fail('UNKNOWN_EVENT', 'Unknown turn event.');
   }

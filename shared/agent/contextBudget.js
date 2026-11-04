@@ -165,7 +165,7 @@ export function attachTurnContextToMessages(messages = [], turnContext = '') {
   return messages.map((message, index) => index === target ? attachTurnContext(message, turnContext) : message);
 }
 
-export function fitRequestContext({ sections = [], messages = [], totalTokens = 60000, outputReserve = 8000, toolDefinitions = [], turnContextPlacement = 'system' }) {
+export function fitRequestContext({ sections = [], messages = [], totalTokens = 60000, outputReserve = 8000, toolDefinitions = [], turnContextPlacement = 'system', preserveHistory = false }) {
   const inputLimit = Math.floor(totalTokens - outputReserve);
   const seen = new Set();
   const toolTokens = toolDefinitions.length ? Math.ceil(estimateTextTokens(JSON.stringify(toolDefinitions)) * 4 / 3) : 0;
@@ -182,10 +182,19 @@ export function fitRequestContext({ sections = [], messages = [], totalTokens = 
   const messageCosts = messages.map(estimateMessageTokens);
   let selectedRawCost = [...indices].reduce((sum, index) => sum + messageCosts[index], 0);
   const selectedMessages = () => [...indices].sort((a, b) => a - b).map(index => messages[index]);
-  const promptCost = () => Math.ceil(estimateTextTokens(renderPromptSections([...selected.values()])) * 4 / 3) + 32 + toolTokens;
+  const latest = latestUserIndex(messages);
+  // Measure the wire layout the provider will receive. Turn context attached
+  // to a user message includes a header and marker even for very short text.
+  const promptCost = () => {
+    const ordered = unique.filter(section => selected.has(section.id)).map(section => selected.get(section.id));
+    const moved = turnContextPlacement === 'message';
+    const system = renderPromptSections(moved ? ordered.filter(section => section.placement !== 'turn') : ordered);
+    const turn = moved ? renderPromptSections(ordered.filter(section => section.placement === 'turn')) : '';
+    const extra = turn && latest >= 0 ? estimateMessageTokens(attachTurnContext(messages[latest], turn)) - messageCosts[latest] : 0;
+    return Math.ceil(estimateTextTokens(system) * 4 / 3) + 32 + toolTokens + Math.ceil(extra * 4 / 3);
+  };
   // Prefer the most recent complete exchange to optional recall. Otherwise a
   // larger authorized tool catalog can evict a turn that compaction kept.
-  const latest = latestUserIndex(messages);
   let previous = latest - 1;
   while (previous >= 0 && (messages[previous]?.role !== 'user' || messages[previous]?.isToolResult)) previous--;
   if (previous >= 0) {
@@ -195,6 +204,15 @@ export function fitRequestContext({ sections = [], messages = [], totalTokens = 
     if (promptCost() + Math.ceil((selectedRawCost + cost) * 4 / 3) + HISTORY_WINDOW_MARGIN <= inputLimit) {
       recent.forEach(i => indices.add(i));
       selectedRawCost += cost;
+    }
+  }
+  if (preserveHistory) {
+    // Compaction already chose the tail to keep. If that tail fits with
+    // required instructions, reserve it before allocating optional recall.
+    const allRawCost = messageCosts.reduce((sum, cost) => sum + cost, 0);
+    if (promptCost() + Math.ceil(allRawCost * 4 / 3) <= inputLimit) {
+      messages.forEach((_, i) => indices.add(i));
+      selectedRawCost = allRawCost;
     }
   }
   const remaining = inputLimit - promptCost() - Math.ceil(selectedRawCost * 4 / 3);
@@ -235,7 +253,15 @@ export function fitRequestContext({ sections = [], messages = [], totalTokens = 
     const allowance = Math.min(Math.max(recallBudget - reserved, guaranteed), Math.floor((section.maxTokens || 5000) * 4 / 3));
     recallBudget -= place(section, allowance);
   });
-  const finalPromptCost = promptCost();
+  let finalPromptCost = promptCost();
+  // An optional turn section can introduce the wrapper for the first time.
+  for (const section of [...optional].reverse()) {
+    if (finalPromptCost + Math.ceil(selectedRawCost * 4 / 3) <= inputLimit) break;
+    if (selected.delete(section.id)) {
+      diagnostics.droppedSections.push(section.id);
+      finalPromptCost = promptCost();
+    }
+  }
 
   // Add newest history first, keeping tool pairs and ordinary user/assistant turns intact.
   for (let end = messages.length - 1; end >= 0;) {

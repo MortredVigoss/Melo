@@ -84,14 +84,130 @@ class TaskCacheFlowTest {
     private fun cached(goal: String = "Fixture ${newId()}", steps: List<ScriptStep> = listOf(ScriptStep("open_app", "fixture.settings"))) = DeviceScript(
         name = "Fixture cache", goalTemplate = goal, steps = steps, completion = ScriptAssertion("fixture.settings", "Fixture", "Ready"), scope = cacheScope, verified = true, environment = environment)
 
+    @Test fun openedAppIsPublishedBeforeNextModelRequestAndSurvivesTaskFailure() = runBlocking {
+        MockWebServer().use { server ->
+            var persistedBeforeNextRequest = false
+            var calls = 0
+            server.dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse = when (++calls) {
+                    1 -> call("open", args("open_app", "package_name" to "fixture.settings"))
+                    else -> {
+                        persistedBeforeNextRequest = app.repository.data.value.deviceScripts.any {
+                            it.steps.size == 1 && it.steps.single().action == "open_app" && it.completion.packageName == "fixture.settings"
+                        }
+                        call("blocked", args("finish", "outcome" to "blocked", "summary" to "Search unavailable after opening app"))
+                    }
+                }
+            }
+            server.start(); connection(server)
+            val goal = "Open fixture then search unavailable content ${newId()}"
+            val failed = run(goal)
+            assertEquals("blocked", failed.status)
+            assertTrue("Verified open_app must be persisted before another model request, regardless of the overall task", persistedBeforeNextRequest)
+            val action = app.repository.data.value.deviceScripts.single()
+            assertTrue(action.verified); assertEquals(failed.id, action.sourceRunId)
+            assertNotEquals(goal, action.goalTemplate)
+            assertNull(failed.cacheId)
+            val reopened = Repository(app).also { it.initialize() }
+            assertNotNull(reopened.data.value.deviceScripts.find { it.id == action.id })
+            app.repository.change { it.copy(settings = it.settings.copy(activeConnection = null, connections = emptyList())) }
+            val reused = run(action.goalTemplate)
+            assertEquals("achieved", reused.status); assertEquals(0, reused.modelRequests)
+            assertEquals(2, server.requestCount)
+        }
+    }
+    @Test fun checkpointPersistsReusableSubflowWhileTheRemainingTaskIsBlocked() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(call("open", args("open_app", "package_name" to "fixture.settings")))
+            server.enqueue(call("tap", args("tap", "screen_id" to "fixture-screen", "node_id" to "target")))
+            server.enqueue(call("checkpoint", args("checkpoint", "goal" to "Open fixture target", "screen_id" to "fixture-screen", "expected_package" to "fixture.settings", "visible_text" to "Ready")))
+            server.enqueue(call("blocked", args("finish", "outcome" to "blocked", "summary" to "The remaining task failed")))
+            server.start(); connection(server)
+            val failed = run("Open fixture target then do unavailable work ${newId()}")
+            assertEquals("blocked", failed.status); assertEquals(4, failed.modelRequests)
+            val script = app.repository.data.value.deviceScripts.single { it.cacheKind == "subflow" }
+            assertEquals(listOf("open_app", "tap"), script.steps.map { it.action })
+            assertEquals(2, failed.learnedScriptIds.size)
+            val encoded = MeloJson.encodeToString(script)
+            assertFalse(encoded.contains("fixture-screen")); assertFalse(encoded.contains("node_id"))
+            app.repository.change { it.copy(settings = it.settings.copy(activeConnection = null, connections = emptyList())) }
+            val device = FixtureDevice()
+            val replay = run(script.goalTemplate, device)
+            assertEquals("achieved", replay.status); assertEquals(0, replay.modelRequests); assertEquals(1, device.taps)
+            assertEquals(4, server.requestCount)
+        }
+    }
+    @Test fun failedOrUnobservedLaunchCannotPublishAnAction() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(call("open", args("open_app", "package_name" to "fixture.settings")))
+            server.start(); connection(server)
+            val failed = run("Launch failed fixture ${newId()}", object : FixtureDevice() {
+                override suspend fun execute(arguments: JsonObject) = DeviceToolResult.error("No observed foreground", "foreground_window_unavailable")
+            })
+            assertNotEquals("achieved", failed.status); assertTrue(app.repository.data.value.deviceScripts.isEmpty())
+        }
+    }
+    @Test fun publishingPartsCannotResurrectDeletedOrEditedRecipesOrChangeParentStatus() = runBlocking {
+        val action = cached("Open app fixture.settings").copy(cacheKind = "action", completion = ScriptAssertion("fixture.settings"))
+        val run = DeviceRun(goal = "A larger task", connectionName = "fixture")
+        app.repository.change { it.copy(deviceScripts = listOf(action), deviceRuns = it.deviceRuns + run) }
+        app.repository.editDeviceScript(action, action.copy(name = "User edited"))
+        assertNull(app.repository.publishVerifiedScript(action, run.id, listOf(action)))
+        assertEquals("User edited", app.repository.data.value.deviceScripts.single().name)
+        app.repository.deleteDeviceScript(action.id)
+        assertNull(app.repository.publishVerifiedScript(action, run.id, listOf(action)))
+        assertTrue(app.repository.data.value.deviceScripts.isEmpty())
+        assertEquals("running", app.repository.data.value.deviceRuns.find { it.id == run.id }!!.status)
+    }
+    @Test fun legacyExactRecipeIsRevalidatedBeforeEnvironmentIsStoredAndThenHitsNormally() = runBlocking {
+        val goal = "Legacy exact fixture ${newId()}"; val legacy = cached(goal).copy(environment = null)
+        app.repository.change { it.copy(deviceScripts = listOf(legacy), settings = it.settings.copy(activeConnection = null, connections = emptyList())) }
+        assertNull(app.repository.data.value.deviceScripts.single().environment)
+        val first = run(goal)
+        assertEquals(first.error, "achieved", first.status); assertEquals("revalidate", first.executionMode); assertEquals(0, first.modelRequests)
+        assertEquals(environment, app.repository.data.value.deviceScripts.single().environment)
+        val second = run(goal)
+        assertEquals("achieved", second.status); assertEquals("exact", second.executionMode); assertEquals(0, second.modelRequests)
+    }
+    @Test fun legacyRevalidationPinsTheInitialPostureAndStopsBeforeASecondEffect() = runBlocking {
+        val goal = "Legacy posture fixture ${newId()}"
+        val click = ScriptStep("tap", "fixture.settings", "Fixture", NodeSelector(viewId = "fixture.settings:id/target"))
+        val legacy = cached(goal, listOf(ScriptStep("open_app", "fixture.settings"), click, click)).copy(environment = null)
+        app.repository.change { it.copy(deviceScripts = listOf(legacy), settings = it.settings.copy(activeConnection = null, connections = emptyList())) }
+        val device = object : FixtureDevice() {
+            override suspend fun execute(arguments: JsonObject): DeviceToolResult {
+                val result = super.execute(arguments)
+                if (arguments.text("action") == "tap") cacheEnvironment = environment.copy(layout = "new-posture")
+                return result
+            }
+        }
+        val result = run(goal, device)
+        assertNotEquals("achieved", result.status); assertEquals(1, device.taps); assertEquals(0, result.modelRequests)
+        assertNull(app.repository.data.value.deviceScripts.single().environment)
+    }
+    @Test fun failedLegacyValidationAndKnownIncompatibleLayoutsAreNeverTrusted() = runBlocking {
+        val goal = "Legacy failure fixture ${newId()}"; val legacy = cached(goal).copy(environment = null)
+        app.repository.change { it.copy(deviceScripts = listOf(legacy)) }
+        val failed = run(goal, object : FixtureDevice() {
+            override suspend fun execute(arguments: JsonObject) = DeviceToolResult.error("Fixture target not visible", "stale_target")
+        }, scriptId = legacy.id)
+        assertNotEquals("achieved", failed.status); assertNull(app.repository.data.value.deviceScripts.single().environment)
+        val known = cached(goal).copy(environment = environment.copy(layout = "other-fold-posture"))
+        val lookup = TaskCacheRouter.lookup(goal, listOf(known), cacheScope, environment)
+        assertNull(lookup.exact); assertNull(lookup.legacy)
+        assertNull(TaskCacheRouter.lookup(goal, listOf(legacy, legacy.copy(id = newId())), cacheScope, environment).legacy)
+        assertNull(TaskCacheRouter.lookup(goal, listOf(cached(goal), cached(goal), legacy), cacheScope, environment).legacy)
+        for (layout in listOf("", "hinge-pending")) assertNull(TaskCacheRouter.lookup(goal, listOf(legacy), cacheScope, environment.copy(layout = layout)).legacy)
+    }
     @Test fun probePublishesCacheThenExactHitWorksWithoutAnyConnectionOrKey() = runBlocking {
         MockWebServer().use { server ->
             queueProbe(server); server.start(); connection(server)
             val goal = "Open fixture settings ${newId()}"
             val probe = run(goal)
             assertEquals("achieved", probe.status); assertEquals("probe", probe.executionMode); assertEquals(3, probe.modelRequests)
-            val recipe = app.repository.data.value.deviceScripts.single { it.sourceRunId == probe.id }
+            val recipe = app.repository.data.value.deviceScripts.single { it.sourceRunId == probe.id && it.cacheKind == "task" }
             assertTrue(recipe.verified); assertEquals(probe.cacheId, recipe.id)
+            assertEquals(1, app.repository.data.value.deviceScripts.count { it.cacheKind == "action" && it.sourceRunId == probe.id })
             assertFalse(MeloJson.encodeToString(app.repository.snapshot()).contains(recipe.id))
             val reloaded = Repository(app).also { it.initialize() }
             assertEquals(recipe, reloaded.data.value.deviceScripts.single { it.id == recipe.id })
@@ -106,7 +222,7 @@ class TaskCacheFlowTest {
             queueProbe(server); server.start(); connection(server)
             val goal = "Open fixture settings ${newId()}"
             run(goal)
-            val source = app.repository.data.value.deviceScripts.single()
+            val source = app.repository.data.value.deviceScripts.single { it.cacheKind == "task" }
             val next = "$goal please"
             val proposal = buildJsonObject { put("reuse", true); put("script", MeloJson.encodeToJsonElement(source.copy(goalTemplate = next))); put("parameters", buildJsonObject {}) }
             server.enqueue(MockResponse().setBody(buildJsonObject { put("choices", buildJsonArray { add(buildJsonObject {

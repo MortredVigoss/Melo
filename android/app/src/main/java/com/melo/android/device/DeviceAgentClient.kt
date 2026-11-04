@@ -1,6 +1,7 @@
 package com.melo.android.device
 
 import com.melo.android.data.*
+import com.melo.android.core.LoopTrace
 import com.melo.android.data.Connection
 import com.melo.android.network.*
 import com.melo.android.chat.ChatPhoneUse
@@ -10,38 +11,68 @@ import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
+import java.io.EOFException
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 /** A separate tool channel; ordinary streaming chat retains its original decoder. */
 class DeviceAgentClient(private val debug: Boolean, private val http: OkHttpClient = ModelClient(debug).http) {
-    suspend fun next(connection: Connection, key: String, history: List<JsonObject>, taskInstructions: String = "", chatTools: Boolean = false, toolSpecs: List<JsonObject>? = null, nativeWebSearch: Boolean = false, outputLimit: Int? = null): DeviceTurn {
+    suspend fun next(connection: Connection, key: String, history: List<JsonObject>, taskInstructions: String = "", chatTools: Boolean = false, toolSpecs: List<JsonObject>? = null, nativeWebSearch: Boolean = false, outputLimit: Int? = null, onProgress: (String) -> Unit = {}): DeviceTurn {
         fun hasImage(value: JsonElement): Boolean = when(value) { is JsonObject -> value["type"]?.jsonPrimitive?.contentOrNull in setOf("image", "image_url", "input_image") || value.values.any(::hasImage); is JsonArray -> value.any(::hasImage); else -> false }
         require(connection.modelCapabilities[connection.model]?.jsonObject?.get("vision")?.jsonPrimitive?.booleanOrNull != false || history.none { hasImage(it) }) { "此模型已设为不支持图片输入，请选择视觉模型或修改能力设置。" }
         ConnectionPolicy.validate(connection, key, debug)
         require(connection.protocol in setOf("chat-completions", "responses", "anthropic")) { "手机助手需要支持 Tool Calling 的真实模型连接；自动验证使用隔离 HTTP Fixture。" }
         val base = payload(connection, history, taskInstructions, chatTools, toolSpecs, nativeWebSearch)
         val payload = if (outputLimit == null) base else JsonObject(base + ((if (connection.protocol == "responses") "max_output_tokens" else "max_tokens") to JsonPrimitive(outputLimit.coerceAtLeast(1))))
+        return LoopTrace.model(payload, snapshot = { turn: DeviceTurn -> JsonArray(turn.wire) }) {
+        var providerReceipt: JsonObject? = null
         val request = Request.Builder().url(EndpointPolicy.validate(connection.endpoint, debug))
-            .post(payload.toString().toRequestBody("application/json".toMediaType())).header("Accept", "application/json")
+            .post(payload.toString().toRequestBody("application/json".toMediaType())).header("Accept", if (connection.stream) "text/event-stream, application/json" else "application/json")
             .apply { if (connection.protocol == "anthropic") { header("x-api-key", key); header("anthropic-version", "2023-06-01") } else header("Authorization", "Bearer $key") }.build()
-        return suspendCancellableCoroutine { continuation ->
+        try { suspendCancellableCoroutine { continuation ->
             val call = http.newCall(request)
             continuation.invokeOnCancellation { call.cancel() }
             call.enqueue(object : Callback {
-                override fun onFailure(call: Call, e: IOException) { if (continuation.isActive) continuation.resumeWithException(IOException("助手连接中断，请检查网络；已执行步骤保留。")) }
+                override fun onFailure(call: Call, e: IOException) { if (continuation.isActive) continuation.resumeWithException(ModelRequestFailure.network(e, "waiting-headers")) }
                 override fun onResponse(call: Call, response: Response) {
                     try {
                         val result = response.use {
-                            require(it.isSuccessful) { ModelClient.statusError(it.code) }
-                            val raw = ModelClient.readBounded(it.body ?: error("服务没有返回内容。"), 8 * 1024 * 1024)
-                            try { decode(MeloJson.parseToJsonElement(String(raw)).jsonObject, connection.protocol, if (chatTools) ChatPhoneUse.name else "android_device", toolSpecs?.map { it.text("name") }?.toSet()) }
-                            catch (_: Exception) { throw IllegalStateException("模型未返回完整、有效的 Tool Calling 回执，请检查模型及接口协议。") }
+                            if (!it.isSuccessful) {
+                                val failure = ModelRequestFailure.http(it.code, it.header("x-request-id")?.takeUnless { id -> id.contains(key) })
+                                // Status is already definitive; never wait for an error body or expose it.
+                                providerReceipt = buildJsonObject { put("httpStatus", it.code); put("code", failure.code); failure.requestId?.let { id -> put("requestId", id) }; put("errorBodyOmitted", true) }
+                                throw failure
+                            }
+                            onProgress("模型已连接，正在等待完整回执…")
+                            val body = it.body
+                            val parsed = try {
+                                if (it.header("Content-Type").orEmpty().contains("text/event-stream", ignoreCase = true)) {
+                                    val decoder = ToolStreamDecoder(connection.protocol, onProgress)
+                                    val source = body.source(); var frame = StringBuilder(); var bytes = 0L
+                                    fun flush() { if (frame.isNotEmpty()) { decoder.accept(frame.toString().trimEnd('\n')); frame = StringBuilder() } }
+                                    while (!decoder.isTerminal && !source.exhausted()) {
+                                        if (!continuation.isActive) throw kotlinx.coroutines.CancellationException()
+                                        val line = try { source.readUtf8LineStrict(1024 * 1024L) }
+                                        catch (_: EOFException) { require(source.buffer.size <= 1024 * 1024L); source.readUtf8Line() } ?: break
+                                        bytes += line.toByteArray().size; require(bytes <= 16 * 1024 * 1024)
+                                        when { line.isBlank() -> flush(); line.startsWith("data:") -> frame.append(line.substring(5).removePrefix(" ")).append('\n') }
+                                    }
+                                    flush(); decoder.finish()
+                                } else MeloJson.parseToJsonElement(String(ModelClient.readBounded(body, 8 * 1024 * 1024))).jsonObject
+                            } catch (error: IOException) { throw ModelRequestFailure.network(error, "reading-response") }
+                            catch (error: kotlinx.coroutines.CancellationException) { throw error }
+                            catch (error: Exception) { throw ModelRequestFailure.invalid(error) }
+                            providerReceipt = parsed
+                            try { decode(parsed, connection.protocol, if (chatTools) ChatPhoneUse.name else "android_device", toolSpecs?.map { it.text("name") }?.toSet()) }
+                            catch (error: Exception) { throw ModelRequestFailure.invalid(error) }
                         }
                         if (continuation.isActive) continuation.resume(result)
                     } catch (e: Exception) { if (continuation.isActive) continuation.resumeWithException(e) }
                 }
             })
+        } } finally {
+            providerReceipt?.let { receipt -> LoopTrace.emit("model.provider.receipt", buildJsonObject { put("usageOrigin", if (receipt["usage"] is JsonObject) "provider" else "unknown") }, receipt) }
+        }
         }
     }
     companion object {
@@ -49,7 +80,7 @@ class DeviceAgentClient(private val debug: Boolean, private val http: OkHttpClie
         fun payload(connection: Connection, history: List<JsonObject>, taskInstructions: String = "", chatTools: Boolean = false, toolSpecs: List<JsonObject>? = null, nativeWebSearch: Boolean = false): JsonObject = buildJsonObject {
             require(!nativeWebSearch || connection.protocol == "responses") { "当前 Adapter 尚未实现此协议的 Hosted Search。" }
             require(chatTools || taskInstructions.length <= 32_000) { "角色或项目指令超过手机任务预算，请减少资料后重试。" }
-            put("model", connection.model); put("stream", false)
+            put("model", connection.model); put("stream", connection.stream)
             val instructions = if (chatTools) taskInstructions else taskInstructions + "\n\n" + DeviceTools.instructions + "\n" + DeviceTools.completionInstructions + "\nSwipes must move at least 48 image pixels. Use tap for clicks; do not emulate clicks using stationary or tiny swipes."
             val name = if (chatTools) ChatPhoneUse.name else "android_device"
             val description = if (chatTools) ChatPhoneUse.description else DeviceTools.description
@@ -64,6 +95,7 @@ class DeviceAgentClient(private val debug: Boolean, private val http: OkHttpClie
                 }
                 "anthropic" -> {
                     put("system", instructions); put("max_tokens", minOf(4096, connection.contextTokens / 3)); put("messages", JsonArray(history))
+                    if (!chatTools || functions.any { it.text("name") in setOf("phone_action", "phone_workflow") }) put("tool_choice", buildJsonObject { put("type", "auto"); put("disable_parallel_tool_use", true) })
                     put("tools", buildJsonArray { functions.forEach { spec -> add(buildJsonObject { put("name", spec.getValue("name")); put("description", spec.getValue("description")); put("input_schema", spec.getValue("parameters")) }) } })
                 }
                 else -> {
@@ -121,6 +153,8 @@ class DeviceAgentClient(private val debug: Boolean, private val http: OkHttpClie
             }
             if (result.data.text("screen_id").isNotBlank()) {
                 // Never pair a new tree with pixels from an older screen, even if capture failed.
+                val replacesPixels = history.any { row -> (row["content"] as? JsonArray)?.any { (it as? JsonObject)?.text("type") in setOf("image_url", "input_image", "image") } == true }
+                if (protocol == "anthropic" && replacesPixels) DeviceContextBudget.dropBoundThinking(history)
                 for (i in history.indices) {
                     val content = history[i]["content"] as? JsonArray ?: continue
                     history[i] = JsonObject(history[i] + ("content" to JsonArray(content.filterNot { it.jsonObject.text("type") in setOf("image_url", "input_image", "image") })))

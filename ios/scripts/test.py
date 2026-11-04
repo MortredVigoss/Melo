@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Offline regression gate; all responses are fixtures, no account/device access."""
 from pathlib import Path
-import argparse, hashlib, json, platform, subprocess, time
+import argparse, hashlib, json, os, platform, subprocess, tempfile, time
 from swift_test_cache import cached_suite
 root=Path(__file__).resolve().parents[2]
 
-shared=['ios/Melo/SmartRouting.swift','ios/Melo/ImageWorkflow.swift','ios/Melo/ImageLibrary.swift','ios/Melo/ImageNetwork.swift','ios/Melo/Network.swift','ios/Melo/Models.swift','ios/Melo/ConversationHistory.swift','ios/Melo/PhoneContext.swift','ios/Melo/WebSources.swift','ios/Melo/ExecutionRecord.swift','ios/Melo/ChatGPTProtocol.swift','ios/Melo/DeviceTools.swift','ios/Melo/WebPageText.swift','ios/Melo/ImageContext.swift','ios/Melo/RunProgress.swift','ios/Melo/AgentLoopContract.swift','ios/Melo/CapabilityElevation.swift','ios/Melo/AgentLoopRuntime.swift','ios/Melo/AgentLoop.swift','ios/Melo/SharedAgentCore.swift']
+shared=['ios/Melo/SmartRouting.swift','ios/Melo/ImageWorkflow.swift','ios/Melo/ImageLibrary.swift','ios/Melo/ImageNetwork.swift','ios/Melo/Network.swift','ios/Melo/Models.swift','ios/Melo/ConversationHistory.swift','ios/Melo/PhoneContext.swift','ios/Melo/WebSources.swift','ios/Melo/ExecutionRecord.swift','ios/Melo/ChatGPTProtocol.swift','ios/Melo/DeviceTools.swift','ios/Melo/WebPageText.swift','ios/Melo/ImageContext.swift','ios/Melo/RunProgress.swift','ios/Melo/AgentLoopContract.swift','ios/Melo/CapabilityElevation.swift','ios/Melo/AgentLoopRuntime.swift','ios/Melo/AgentLoop.swift','ios/Melo/SharedAgentCore.swift','ios/Melo/LoopTrace.swift']
 suites={'main':['ios/Melo/Models.swift'], 'NetworkTests':shared, 'ConnectionProbeTests':['ios/Melo/ConnectionProbe.swift'], 'ChatGPTTests':shared, 'SSETransportTests':shared, 'WebSearchTests':shared, 'ExecutionTests':shared, 'ExecutionPageTests':['ios/Melo/ExecutionPagePolicy.swift']}
 suites['ConversationFoundationTests']=shared+['ios/Melo/AgentProfile.swift','ios/Melo/ReplyDocument.swift','ios/Melo/WorkspaceProjection.swift']
 suites['SyncContractTests']=['ios/Melo/Models.swift']
@@ -27,7 +27,8 @@ suites['AgentTeamTests']=shared+['ios/Melo/AgentProfile.swift','ios/Melo/AgentTe
 suites['VideoStudyTests']=shared+['ios/Melo/AgentProfile.swift','ios/Melo/VideoStudy.swift']
 suites['RunProgressTests']=shared
 suites['LocalFileAccessTests']=['ios/Melo/LocalFileAccess.swift']
-suites['SharedAgentCoreTests']=['ios/Melo/SharedAgentCore.swift']
+suites['SharedAgentCoreTests']=['ios/Melo/SharedAgentCore.swift','ios/Melo/LoopTrace.swift']
+suites['LoopTraceTests']=['ios/Melo/SharedAgentCore.swift','ios/Melo/LoopTrace.swift']
 suites['SharedPolicyUnavailableTests']=shared+['ios/Melo/AgentProfile.swift','ios/Melo/AgentTeam.swift']
 suites['ImagePhotoSaveTests']=['ios/Melo/ImagePhotoSave.swift']
 suites['PhoneTurnContextTests']=shared+['ios/Melo/PhoneTurnContext.swift']
@@ -103,4 +104,6 @@ def main():
     print(f'All {len(selected)} Swift suites passed; {cached} cached compilations; {time.monotonic()-swift_started:.2f}s',flush=True)
 
 if __name__ == '__main__':
-    main()
+    with tempfile.TemporaryDirectory(prefix='melo-swift-traces-') as traces:
+        os.environ['MELO_TEST_TRACE_DIR'] = traces
+        main()

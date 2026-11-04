@@ -1,6 +1,6 @@
 # Melo 总览：当前事实、功能索引与接手入口
 
-更新时间：2026-10-27（Australia/Melbourne）。这是所有 Melo 工作线程共用的人工维护入口：顶部依次是当前事实、功能索引和最新交接；按日期的阶段过程（含日期、提交与当次验证数字）在 [总览历史交接](docs/handoffs/overview-history-20261019.md)。
+更新时间：2026-11-04（Australia/Melbourne）。这是所有 Melo 工作线程共用的人工维护入口：顶部依次是当前事实、功能索引和最新交接；按日期的阶段过程（含日期、提交与当次验证数字）在 [总览历史交接](docs/handoffs/overview-history-20261019.md)。
 
 ## 1. 先看这里
 
@@ -12,6 +12,26 @@
 - 本文不是自动监控：各线程必须在实际改动后主动更新。未更新的线程或未记录的 diff 应标为“待归属/待核对”。
 
 ## 2. 当前事实
+
+10-28 用户反馈0.10.7首个模型请求76秒失败，截图证明13工具已注册而非Tool缺失。确认Android Tool Transport强制stream=false、错误步骤/Chat卡不显示实际原因；现修复连接Stream配置与三协议SSE完整回执、分片/断流安全、HTTP/Timeout诊断和折叠错误展示。201项JVM、Native29（含折叠错误展示/重启与SSE主Loop）已过；视觉截图已核对。用此前授权Proxy Key做单次公开合成GPT/Modal请求，13Tools+Streaming返回200/15.692秒/web_search参数校验过，未执行工具、未发送私人Trace；不等于手机全任务验收。快速/集成档均仅2素材失败；完整test:full的Android/Browser/Runtime Smoke过，素材/macOS环境仍红、Swift跳过；[0.10.8（32）Pre-release](https://github.com/MortredVigoss/Melo/releases/tag/android-v0.10.8-organizer-preview.1)已发布并匿名下载200，Tag固定8d76036，不合主线。此次用户GPT/Modal实际失败原因尚无原始记录，不能声称已证明是504或已实机修复。私人Trace仅本地、未操作手机，实际请求仅上述公开合成检查。[Transport专项](docs/android-model-transport-fix-20261028.md)。
+
+10-28 用户现授权对当前Branch单独Release，已推送codex/android-organizer-20261026并发布[Android 0.10.7 Pre-release](https://github.com/MortredVigoss/Melo/releases/tag/android-v0.10.7-organizer-preview.1)，Tag固定fd3bd0d，不合并master。APK+SHA256SUMS匿名下载200、GitHub digest一致，与0.10.6同签名。已补集成档run-dkvzlN与完整test:full：Android/Browser/Runtime Smoke通过；全量JS仍仅两项私有桌宠素材失败，macOS打包/安装/启动在Linux失败、Swift跳过，不能称完整发布Gate GREEN。私人Trace仅本地。[发布回执](docs/android-0.10.7-branch-prerelease-20261028.md)。
+
+10-28 已落实共享任务/证据契约与生产Android单决策Loop：phone_action/phone_workflow回到同一Chat Loop，原生Session无Model；Routing仅建议、明确Workflow依赖保留。修复反馈误派任务、完成证据截断/误分类、每轮丢历史、跨页已生效状态丢失、动作后观察失败与残留输入Cache；成功子流程独立发布并参数重放。0.10.7（31）：Core240/JVM190/Native50通过，最终APK再跑生产Chat6项通过；真实Bedrock五个样本独立UI校验，导航27.137→19.563秒，浏览器59.661→28.295秒/12→3请求，换词30.084秒命中同Cache。run-PyqRFL JS4636过/2缺私有素材失败/15跳过；Lint/Debug/Release、独立Settings浏览器、SceneBridge4通过。Swift/JSC待macOS、Fold6 OneUI待实机；不能称全仓GREEN。APK已导出Windows artifacts，Trace仅本地、未操作手机、未推送。[实现与完整验收边界](docs/android-unified-loop-20261028.md)。
+
+10-28 用户要求手机拿走后完整分析最近会话，避免逐句补丁。已只读保存两份一致快照，完整读取最新4会话/34消息/18主执行/9设备执行；其中15次主执行确属0.10.6。确认共性问题：Android餐厅Skill与共享Web指导在实际请求中冲突；反馈/澄清被requiredTools和工具证据规则误判，108.91秒纯反馈出现6次模型请求；子循环每轮压缩导致已选目的地在Start后的下一轮丢失，随后继续操作并尝试关闭导航（被freshness拦住）；导航仅学到open_app、0次checkpoint，另有搜索Cache遗漏原输入前置条件；操作/观察错误状态混合。3个共用层故障已无模型/无手机本地复现。[审计、分阶段改进与验收](docs/android-session-harness-audit-20261028.md)已记录；该审计阶段仅改文档与本地诊断、未改运行时、未请求新模型、未推送；其后的实现与验证见上一条。原始私人Trace仅本地，不能沿用浏览器验收声称真实Maps导航已修。
+
+10-27/28 用户要求改用 Emulator 自主验证真实任务、重复耗时及 Cache。0.10.6（30）空白页+冷进程基线下，Google搜索27.551→9.071秒（Model6→0）、网页跳转34.518→10.112秒（9→0）；ChatEngine真实注册入口49.209→26.255秒，自动phone_use→phone_workflow，同一Cache、子Model7→0（UI主请求2次，不含独立Completion Checker）。已修共享Core的URL强制fetch误判、串行工具请求、Focus、孤立参数和Manifest签名前缀；IME Search/Send、Hint/Label已验证，表单搜索37.773→10.392秒、实际请求9→0、独立终态校验通过。JVM182、Native19+4+2及Lint/Debug/Release过；run-feZKBk JS4625过/2缺私有素材失败/15跳过，未称全仓GREEN。换Google关键词固定结果标题失配仍有；自建QEMU内存问题已加仅针对其进程的监控，失败日志保留。[专项证据与限制](docs/android-browser-cache-evaluation-20261027.md)。用户随后明确要求安装手机：Fold6已备份覆盖0.10.6、启动及Accessibility绑定核对，保留旧连接，未跑手机任务；Trace保留策略/隔离与跨端仍WIP，仅本地，不推送。
+
+10-27 共享 Loop 本地 Trace 设计已获用户认可，Core / Node / iOS / Android 录制实现为 WIP；用户要求 Trace 留在本地、不自动发送。当前 0.10.4（28）试用 APK 已覆盖安装 Fold6 并得到启动成功回执，保留现有数据；JVM170、Trace/HTTP12、Emulator Trace2通过，完整同范围快速档已结束（run-85yqsn，仅两项缺私有素材），不能称 Trace 已完成验收。继续本地隔离、保留策略及跨端验证；[设计](docs/specs/2026-10-27-loop-local-traces-design.md)、[试装回执](docs/android-local-trace-trial-install-20261027.md)。
+
+10-27 0.10.3（27）按用户澄清改为独立成功动作即时持久化：原生 open_app 验证后立刻发布 action；checkpoint 验证后发布子流程，整项任务失败也保留。Chat 通过共享 Core 的 phone_workflow / 当前 Skill Manifest 原生重放，编辑/删除仍由本机缓存库管理。Core222/JVM170/Emulator69通过，Android构建与R8通过；快速档仅两项缺私有桌宠素材，不能称全仓 GREEN。已导出0.10.3 APK，Fold6未连接、未安装；不能用已保存子目标替代整项任务成功；[专项回执](docs/android-verified-action-cache-20261027.md)。
+
+10-27 0.10.2（26）执行阶段已验证：能力目录不随措辞隐藏 phone_use、UI Tree 优先/按需图像、普通点击沿用任务授权、低对比关闭控件和旧缓存重校验；Core215/JVM164/Native63通过，快速档两项缺私有素材。见[执行回执](docs/android-phone-reliability-20261027.md)。用户最新明确动作/子流程成功应立即缓存，发布粒度后续由0.10.3继续，不把0.10.2阶段当成该功能完成。
+
+10-27 补丁 0.10.1（25）已覆盖安装 Fold6：修复短句“重试”丢失原任务及 phone_use，并区分路由建议/实际注册目录；Core 213、Native 专项 11 通过，最新 APK 六种协议/执行组合通过。手机锁屏，真实汽水播放尚待解锁复测；见[补丁回执](docs/android-short-retry-fix-20261027.md)。
+
+10-26 Android 接手：已将本地 master fast-forward 到 `248364b`，从最新主线建立 `codex/android-organizer-20261026`；原 Android 未推送工作保留在原分支 `1be64ad`，未混合合并。Goal Check 的 Calendar→Weather 受控回归通过，旧手机循环问题尚未全部解决；见 [主线复核](docs/master-loop-recheck-20261026.md)。用户已认可并实施 Todo / Calendar 独立页面、系统日历/ICS、通知与可选强提醒、同一 Repository 的 Chat Tools；[实施回执](docs/android-organizer-implementation-20261026.md)。补充修复动态广告引起的坐标 stale_screen 误拒绝，见[专项](docs/android-dynamic-ad-freshness-20261026.md)。当前 0.10.0 已完成：Core 212、JVM 160、Native 专项 26 全通过；完整 Native 87/88，宠物拖动仍失败；快速档两项缺失私有宠物素材，不能称全仓 GREEN。10-26 使用 Emulator；10-27 用户重新授权后，0.10.0（24）已覆盖安装到 Fold6 并确认启动，见[安装回执](docs/android-organizer-install-20261027.md)。真实汽水和强提醒交回用户试用，未推送。
 
 每个功能只保留一个现行状态和证据入口。测试数字只属于当次源码，见所链带日期的回执；当前树需重新运行 `npm test`（日常）或 `npm run test:full`（发布）。过程与旧状态见[历史交接](docs/handoffs/overview-history-20261019.md)。
 
@@ -60,6 +80,9 @@
 基础设施另列 `platform`（`src/state/`、`src/runtime/`、`src/http/` 传输）、`channels`（已归档渠道）、`tooling`（脚本与 gate）。
 
 ## 4. 最新交接
+
+### 2026-11-04 — 设计 Melo（Codex）— Android Organizer 本地集成与缺陷审计
+从 master `601aed1` 与贡献分支 `fed7c134` 在独立目录集成并检查。修复日历撤权后的缓存披露、目标核验误报、跨端 Trace 留存与归档链接。执行链、验证范围与结果见[合并审计](docs/android-organizer-merge-audit-20261104.md)。
 
 ### 2026-11-04 — GitHub 分支归属核对（设计 Melo）
 GitHub 仓库事件显示 `yrlf` 创建并推送 `codex/android-organizer-20261026`。12 个独有提交的 Git 作者均为 Yang。远端 `master@54a9cac` 与分支 `fed7c13` 各有 32 和 12 个独有提交，共同祖先以来分支改动 143 个文件。Organizer 增加本机待办、日历和提醒，手机操作支持验证后重放，共享核心调整完成证据并记录本机执行轨迹，Android 新增流式工具调用和错误详情。已核对 GitHub 提交、文件差异、PR 清单与预发布，本分支未开 PR。源码与发布状态以[固定版本比较](https://github.com/MortredVigoss/Melo/compare/54a9cac100998d17b105dd4816821ecc41236a01...fed7c1343240f0f622843d9c1438a5f78019f121)和[0.10.8 预览版](https://github.com/MortredVigoss/Melo/releases/tag/android-v0.10.8-organizer-preview.1)为据。
@@ -138,6 +161,10 @@ GitHub 仓库事件显示 `yrlf` 创建并推送 `codex/android-organizer-202610
 - 行为：审计从手工 grep 改为 `node scripts/audit-inventory.mjs`（20 条规则 × 834 文件，写 `docs/audit/inventory-<日期>.json` 与 `report-<日期>.md`；`--baseline` 报增量）；`docs/audit/ledger.md` 记 17 条机器探针与判断类条目状态；自测 `scripts/audit-inventory.test.js`。
 - 验证：集成档完整日常 GREEN（JS 4624 / 两组浏览器 / Swift 37）；基线：探针 14 关 3 开，CSS 原始色 0、搜索规划器合一；变差项：按钮类名 26 种、空状态口吻增多。
 - 未完 / 下一步：把 `--baseline` 接进 CI 当增长门禁；规则误报收敛（H1 状态字符串、iOS 自检文件）；判断类 J2 / J3 / U1–U6 交 Codex 排期；桌面 / 手机术语对表（U10）未做。
+### 2026-10-26 — Android 主线复核与 Organizer 设计
+- 当前新分支基于主线 `248364b`，旧 Android checkpoint `1be64ad` 保留；Goal/Completion/HTTP 53 项通过，Android JVM 147 项通过。Fold6 ADB 已授权、仍为 0.9.0/code22，仅查元数据，没有安装。
+- 已确认源代码仍有 phoneFailure 直接返回、四调用压缩/JPEG Progress、Workflow Tool 未合入；不宣称主线已解决所有旧故障。
+- Todo/Calendar 用户已选择原生提醒和系统+ICS Provider；[设计稿](docs/specs/2026-10-26-android-organizer-design.md)待整体审阅；[复核回执](docs/master-loop-recheck-20261026.md)保存本轮证据与边界。
 
 ### 2026-10-24 — Melo 主线（Claude）— 日常回归分两档，门禁加机器守卫与紧凑摘要
 - 线程 ID：e02f4818；状态：已提交（`ccdcb04`），分支 `claude/test-cost-20261024`，待合入 master。

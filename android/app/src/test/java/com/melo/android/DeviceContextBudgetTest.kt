@@ -17,12 +17,53 @@ class DeviceContextBudgetTest {
         }
         DeviceAgentClient.appendResult(history, protocol, call, result)
     }
+    @Test fun ordinaryRoundsPreserveEarlierDestinationAndAppliedEffectsUnderBudget() {
+        val history = DeviceAgentClient.initial("responses", "Navigate to saved home")
+        repeat(9) { i -> add(history, "responses", "call-$i", DeviceToolResult(buildJsonObject { put("ok", true); put("screen_id", "screen-$i"); put("selected_destination", "saved-home"); put("effect_state", "applied") })) }
+        val before = history.toList()
+        DeviceContextBudget.compact(history, "responses")
+        assertEquals(before, history)
+    }
+    @Test fun replacingPixelsDropsAllBoundThinkingButKeepsEveryToolPair() {
+        val history = DeviceAgentClient.initial("anthropic", "goal")
+        add(history, "anthropic", "a", DeviceToolResult(buildJsonObject { put("ok", true); put("screen_id", "a") }, "old-image"))
+        history += buildJsonObject { put("role", "assistant"); put("content", buildJsonArray {
+            add(buildJsonObject { put("type", "thinking"); put("thinking", "opaque fixture"); put("signature", "bound-signature") })
+            add(buildJsonObject { put("type", "tool_use"); put("id", "b"); put("name", "android_device"); put("input", buildJsonObject { put("action", "observe") }) })
+        }) }
+        DeviceAgentClient.appendResult(history, "anthropic", DeviceCall("b", "android_device", buildJsonObject { put("action", "observe") }), DeviceToolResult(buildJsonObject { put("ok", true); put("screen_id", "b") }, "new-image"))
+        val raw = history.toString()
+        assertFalse(raw.contains("bound-signature")); assertFalse(raw.contains("old-image")); assertTrue(raw.contains("new-image"))
+        for (id in listOf("a", "b")) assertEquals(2, Regex("\"$id\"").findAll(raw).count())
+    }
+    @Test fun condensingEarlierResultsCannotKeepThinkingBoundToTheOriginalPrefix() {
+        val history = DeviceAgentClient.initial("anthropic", "goal")
+        repeat(3) { index ->
+            add(history, "anthropic", "c$index", DeviceToolResult(buildJsonObject { put("ok", true); put("screen_id", "s$index"); put("privateDetail", "old result") }))
+            val assistant = history[history.lastIndex - 1]
+            history[history.lastIndex - 1] = JsonObject(assistant + ("content" to JsonArray(listOf(buildJsonObject { put("type", "thinking"); put("thinking", "opaque fixture"); put("signature", "bound-$index") }) + assistant.getValue("content").jsonArray)))
+        }
+        DeviceContextBudget.compact(history, "anthropic", force = true)
+        assertFalse(history.toString().contains("bound-"))
+        for (id in 0..2) assertEquals(2, Regex("\"c$id\"").findAll(history.toString()).count())
+    }
+    @Test fun newlyPublishedSkillManifestInvalidatesEarlierBoundThinkingOnly() {
+        val h = DeviceAgentClient.initial("anthropic", "goal")
+        add(h, "anthropic", "one", DeviceToolResult(buildJsonObject { put("ok", true) }))
+        val assistant = h[1]
+        h[1] = JsonObject(assistant + ("content" to JsonArray(listOf(buildJsonObject { put("type", "thinking"); put("thinking", "opaque fixture"); put("signature", "old-manifest-signature") }) + assistant.getValue("content").jsonArray)))
+        DeviceContextBudget.guardPrefix(h, "same-manifest", "same-manifest")
+        assertTrue(h.toString().contains("old-manifest-signature"))
+        DeviceContextBudget.guardPrefix(h, "same-manifest", "new-manifest")
+        assertFalse(h.toString().contains("old-manifest-signature"))
+        assertEquals(2, Regex("\"one\"").findAll(h.toString()).count())
+    }
     @Test fun compactionKeepsPairedCallsGoalAndLatestObservationInEveryProtocol() {
         for (protocol in protocols) {
             val history = DeviceAgentClient.initial(protocol, "immutable original goal")
             repeat(20) { i ->
                 add(history, protocol, "c$i", DeviceToolResult(buildJsonObject { put("ok", true); put("screen_id", "screen-$i"); put("nodes", buildJsonArray { add("tree-$i-" + "x".repeat(6000)) }) }))
-                DeviceContextBudget.compact(history, protocol)
+                DeviceContextBudget.compact(history, protocol, force = true)
             }
             val raw = history.toString()
             assertTrue(raw.contains("immutable original goal")); assertTrue(raw.contains("tree-19-")); assertFalse(raw.contains("tree-18-"))
@@ -37,7 +78,7 @@ class DeviceContextBudgetTest {
             add(history, protocol, "screen", DeviceToolResult(buildJsonObject { put("ok", true); put("screen_id", "latest-screen"); put("nodes", buildJsonArray { add("retained-tree") }) }))
             repeat(12) { i ->
                 add(history, protocol, "catalog-$i", DeviceToolResult(buildJsonObject { put("ok", true); put("apps", buildJsonArray { add("visible-app-row-$i") }) }))
-                DeviceContextBudget.compact(history, protocol)
+                DeviceContextBudget.compact(history, protocol, force = true)
                 assertTrue("Lost last screen after $i/$protocol", history.toString().contains("retained-tree"))
                 assertTrue("Latest app search must remain readable", history.toString().contains("visible-app-row-$i"))
             }
@@ -47,10 +88,10 @@ class DeviceContextBudgetTest {
         for (protocol in protocols) {
             val history = DeviceAgentClient.initial(protocol, "goal")
             DeviceAgentClient.appendResult(history, protocol, DeviceCall("image", "android_device", buildJsonObject { put("action", "observe") }), DeviceToolResult(buildJsonObject { put("ok", true); put("screen_id", "s1") }, "unique-current-pixels"))
-            repeat(10) { i -> add(history, protocol, "catalog-$i", DeviceToolResult(buildJsonObject { put("ok", true); put("apps", JsonArray(emptyList())) })); DeviceContextBudget.compact(history, protocol) }
+            repeat(10) { i -> add(history, protocol, "catalog-$i", DeviceToolResult(buildJsonObject { put("ok", true); put("apps", JsonArray(emptyList())) })); DeviceContextBudget.compact(history, protocol, force = true) }
             assertTrue(history.toString().contains("unique-current-pixels"))
             add(history, protocol, "next-screen", DeviceToolResult(buildJsonObject { put("ok", true); put("screen_id", "s2"); put("screenshot_available", false) }))
-            DeviceContextBudget.compact(history, protocol)
+            DeviceContextBudget.compact(history, protocol, force = true)
             assertFalse(history.toString().contains("unique-current-pixels"))
         }
     }

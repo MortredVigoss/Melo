@@ -498,7 +498,7 @@ export function createPrepareNode(turn) {
     const requiredTokens = requiredPromptTokens({ sections: promptSections, toolDefinitions: functionSession.definitions });
     historyWindowTokens = effectiveHistoryWindow(contextBudget, requiredTokens);
     if (historyWindowTokens < contextBudget.windowTokens) modelMessages = buildModelMessagesFromChat(modelChat(), { windowTokens: historyWindowTokens, toolChainProtocol });
-    const fit = () => fitRequestContext({ sections: promptSections, messages: modelMessages, toolDefinitions: functionSession.definitions, ...contextBudget, turnContextPlacement });
+    const fit = () => fitRequestContext({ sections: promptSections, messages: modelMessages, toolDefinitions: functionSession.definitions, ...contextBudget, turnContextPlacement, preserveHistory: compactedThisTurn });
     let preparedRequest = fit();
     // The fitter knows exactly what the optional recall blocks took; the
     // history window is refined to the room that is actually left.

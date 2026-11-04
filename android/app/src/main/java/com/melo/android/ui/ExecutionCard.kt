@@ -52,6 +52,7 @@ fun executionStatus(value: String): String = when (value) {
                 Text(scene?.get("completion")?.jsonObject?.text("summary")?.takeIf(String::isNotBlank) ?: summary, color = MeloMuted, style = MaterialTheme.typography.labelSmall)
                 if (run.status == "running" && phase.isNotBlank()) Text(phase, color = MeloMuted, style = MaterialTheme.typography.bodySmall)
             }
+            run.error?.takeIf(String::isNotBlank)?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("execution-error-${run.id}")) }
             if (expanded) Column(Modifier.testTag("execution-content-${run.id}"), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 if (scene == null) Text("这条旧记录没有保存工具细节，无法据此推断是否检索或操作过手机。", color = MeloMuted)
                 else {

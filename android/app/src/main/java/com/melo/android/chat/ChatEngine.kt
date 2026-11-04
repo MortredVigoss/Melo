@@ -89,12 +89,28 @@ class ChatEngine(private val context: Context, val repository: Repository) {
                                 val research = args.text("purpose") == "research"
                                 val researchInstructions = if (research) "\nThis is a live research task. Read the requested facts from current pages and return the findings, app/source, any visible useful links/addresses, and uncertainties in finish.summary (up to 2000 characters). Opening an app alone is not the research goal. Do not send messages, book, purchase or modify account/settings. Never fabricate facts or links. Current device time: ${java.time.ZonedDateTime.now()}." else ""
                                 val receipt = (context.applicationContext as com.melo.android.MeloApplication).deviceAgent.invoke(
-                                    args.text("goal"), research, ChatDeviceContext(chat, executionConnection, executionKey, instructions + researchInstructions, run.id, currentCoroutineContext()[com.melo.android.core.SharedRunBudget.Scope]?.budget))
+                                    args.text("goal"), research, ChatDeviceContext(chat, executionConnection, executionKey, instructions + researchInstructions, run.id, currentCoroutineContext()[com.melo.android.core.SharedRunBudget.Scope]?.budget, scopeInstructions = instructions))
                                 currentCoroutineContext().ensureActive()
                                 if (research && receipt.ok) withContext(Dispatchers.Main) {
                                     runCatching { context.startActivity(Intent(context, com.melo.android.MainActivity::class.java).putExtra("melo_chat_id", chatId).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)) }
                                 }
                                 receipt
+                            },
+                            validateOwner = {
+                                check(repository.data.value.chats.any { it.id == chatId } && runtime.value.turns[chatId]?.runId == run.id) { "所属对话已删除或任务已停止。" }
+                            },
+                            invokeDevice = { args ->
+                                (context.applicationContext as com.melo.android.MeloApplication).deviceAgent.action(args,
+                                    ChatDeviceContext(chat, executionConnection, executionKey, instructions, run.id),
+                                    turns.getValue(chatId))
+                            },
+                            workflowCatalog = {
+                                PhoneWorkflowHost(context, repository, (context.applicationContext as com.melo.android.MeloApplication).deviceAgent,
+                                    ChatDeviceContext(chat, executionConnection, executionKey, instructions, run.id)).catalog()
+                            },
+                            invokeWorkflow = { args ->
+                                PhoneWorkflowHost(context, repository, (context.applicationContext as com.melo.android.MeloApplication).deviceAgent,
+                                    ChatDeviceContext(chat, executionConnection, executionKey, instructions, run.id), owner = turns.getValue(chatId)).invoke(args)
                             },
                             onPhase = { phase -> updateTurn(chatId) { it.copy(phase = phase) } },
                             onDelta = { partial -> updateTurn(chatId) { it.copy(partial = partial) } },
@@ -108,8 +124,8 @@ class ChatEngine(private val context: Context, val repository: Repository) {
                 currentCoroutineContext().ensureActive()
                 check(repository.data.value.chats.any { it.id == chatId }) { "对话已删除，未保存新的回复。" }
                 checkpoint.cancelAndJoin(); checkpoint = null
-                val sources = replySources(result.text)
                 val observed = repository.data.value.runs.find { it.id == run.id } ?: run
+                val sources = (replySources(result.text) + (observed.sharedScene?.get("sources") as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.text("url")?.takeIf { url -> url.startsWith("https://") || url.startsWith("http://") } }).distinct()
                 val completed = observed.copy(status = result.outcome, finishedAt = now(), partial = result.text, error = result.stopReason, reportedModel = result.model, simulated = result.simulated, sources = sources)
                 val assistant = Message(role = "assistant", content = result.text, runId = run.id)
                 repository.change { current ->
@@ -127,6 +143,7 @@ class ChatEngine(private val context: Context, val repository: Repository) {
                     mutable.update { it.copy(error = if (persistence != null) "本次请求状态无法写入本机存储；已保存的提问仍保留，请检查剩余空间后重启。" else if (cancelled) null else error.message ?: "请求失败，原记录已保留。") }
                 }
             } finally {
+                record?.let { (context.applicationContext as com.melo.android.MeloApplication).deviceAgent.closeActions(it.id, !currentCoroutineContext().isActive) }
                 checkpoint?.cancel()
                 turns.remove(chatId)
                 mutable.update { it.copy(turns = it.turns - chatId) }

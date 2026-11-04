@@ -1459,7 +1459,8 @@
         "fetch_url",
         "phone_use"
       ],
-      "requiredTools": [
+      "requiredTools": [],
+      "suggestedRequiredTools": [
         "phone_use"
       ]
     }

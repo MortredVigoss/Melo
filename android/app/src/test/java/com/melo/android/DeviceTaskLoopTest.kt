@@ -107,6 +107,17 @@ class DeviceTaskLoopTest {
         assertEquals(frames.last(), DeviceProgress.fingerprint(DeviceToolResult(data, "fixture-frame-7")))
         assertEquals(DeviceProgress.fingerprint(screen("a")), DeviceProgress.fingerprint(screen("b")))
     }
+    @Test fun observationTransportMetadataAndOptionalPixelsDoNotCreateTreeProgress() {
+        val original = screen(text = "Query awaiting submission")
+        val variant = DeviceToolResult(JsonObject(original.data + buildJsonObject {
+            put("screen_id", "new-capture"); put("window_id", 91); put("action", "observe")
+            put("observation_mode", "ui_tree_and_screenshot"); put("screenshot_available", true)
+            put("screenshot_hint", "different capture transport"); put("launch_dispatched", false)
+            put("code", "already_foreground"); put("hint", "still the same editor")
+        }), "different-encoded-jpeg")
+        assertEquals(DeviceProgress.fingerprint(original), DeviceProgress.fingerprint(variant))
+        assertNotEquals(DeviceProgress.fingerprint(original), DeviceProgress.fingerprint(screen(text = "Actual result")))
+    }
     @Test fun declinedNativeConfirmationStopsWithoutInvitingAnotherClick() = runBlocking {
         var modelCalls = 0
         val result = DeviceTaskLoop("chat-completions", { modelCalls++; turn("tap", args("tap", "screen_id" to "s1", "node_id" to "n1")) }, { DeviceToolResult.error("declined", "user_declined") }, {}).run("goal")

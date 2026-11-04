@@ -36,6 +36,16 @@ enum Network {
         return base.deletingLastPathComponent().appendingPathComponent(suffix)
     }
     static func post(_ url: URL, token: String, body: Data, session: URLSession = Network.session, headers: [String: String] = [:], maxBytes: Int = 8 * 1024 * 1024, timeout: TimeInterval = 120, optionalExtension: Bool = false) async throws -> Data {
+        let parsed = LoopTrace.current == nil ? nil : (try? JSONSerialization.jsonObject(with:body)) as? [String: Any]
+        if let parsed, parsed["model"] != nil {
+            return try await LoopTrace.model(purpose:"provider",input:parsed,snapshot:{ (try? JSONSerialization.jsonObject(with:$0)) ?? ["unparsed":true] }) {
+                await LoopTrace.providerPayload(parsed)
+                return try await postWithTrace(url,token:token,body:body,session:session,headers:headers,maxBytes:maxBytes,timeout:timeout,optionalExtension:optionalExtension)
+            }
+        }
+        return try await postWithTrace(url,token:token,body:body,session:session,headers:headers,maxBytes:maxBytes,timeout:timeout,optionalExtension:optionalExtension)
+    }
+    private static func postWithTrace(_ url: URL, token: String, body: Data, session: URLSession, headers: [String: String], maxBytes: Int, timeout: TimeInterval, optionalExtension: Bool) async throws -> Data {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.timeoutInterval = timeout
@@ -45,6 +55,7 @@ enum Network {
         request.httpBody = body
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw MeloError.message("服务未返回有效响应。") }
+        if LoopTrace.current?.model == true { LoopTrace.emit("model.provider.receipt",["httpStatus":http.statusCode],payload:(try? JSONSerialization.jsonObject(with:data))) }
         if optionalExtension && http.statusCode == 404 { throw ExtensionUnavailable() }
         guard (200..<300).contains(http.statusCode) else {
             if [400, 413, 422].contains(http.statusCode), let contextError = contextLimitError(data) { throw contextError }

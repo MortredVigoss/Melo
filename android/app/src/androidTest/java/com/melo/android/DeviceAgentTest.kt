@@ -29,6 +29,11 @@ class DeviceAgentTest {
     @Before fun connectRealServiceOnEmulatorOnly() {
         assumeTrue("Device fixture tests only run on Emulator", Build.FINGERPRINT.contains("generic") || Build.MODEL.contains("sdk_gphone"))
         automation = instrumentation.getUiAutomation(UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES)
+        // A preceding live search can leave Settings Intelligence on top of the
+        // Settings task. These launcher fixtures require a fresh external task.
+        // This is emulator fixture isolation, never a production launch workaround.
+        shell("am force-stop com.android.settings")
+        shell("am force-stop com.google.android.settings.intelligence")
         enabledBefore = shell("settings get secure enabled_accessibility_services").takeUnless { it == "null" }.orEmpty()
         val enabled = (enabledBefore.split(':').filter { it.isNotBlank() } + serviceName).distinct().joinToString(":")
         shell("settings put secure enabled_accessibility_services $enabled")
@@ -36,7 +41,7 @@ class DeviceAgentTest {
         waitFor { DeviceAccess.service != null }
         runBlocking { withTimeout(10_000) { app.engine.runtime.first { it.initialized } } }
         app.startActivity(Intent(app, DeviceFixtureActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        SystemClock.sleep(1200)
+        automation.waitForIdle(500, 10_000)
     }
     @After fun restoreServiceSettings() {
         if (!::automation.isInitialized) return
@@ -49,10 +54,22 @@ class DeviceAgentTest {
     private suspend fun observe(service: DeviceExecutor): DeviceToolResult = service.execute(buildJsonObject { put("action", "observe") })
     private fun node(observation: DeviceToolResult, label: String): JsonObject = observation.data["nodes"]!!.jsonArray.map { it.jsonObject }.firstOrNull { it.text("text") == label || it.text("description") == label } ?: error("Missing $label in ${observation.data}")
 
+    @Test fun treeFirstSupportsOrdinaryCoordinateTapsWithoutApprovalAndExplicitVisualFallback() = runBlocking {
+        val service = DeviceAccess.service!!; service.begin(0, true)
+        val tree = observe(service)
+        assertTrue(tree.ok); assertNull(tree.jpeg); assertEquals("ui_tree", tree.data.text("observation_mode"))
+        val target = node(tree, "Target button"); val bounds = target.getValue("bounds").jsonArray.map { it.jsonPrimitive.int }
+        val tapped = service.execute(buildJsonObject { put("action", "tap"); put("screen_id", tree.data.text("screen_id")); put("x", (bounds[0] + bounds[2]) / 2); put("y", (bounds[1] + bounds[3]) / 2) })
+        assertTrue(tapped.data.toString(), tapped.ok); assertNull(app.deviceAgent.runtime.value.approval)
+        val image = service.execute(buildJsonObject { put("action", "observe"); put("include_screenshot", true) })
+        assertTrue(image.ok); assertNotNull(image.jpeg); assertEquals("ui_tree_and_screenshot", image.data.text("observation_mode"))
+        assertNotNull(node(image, "Count 1"))
+    }
+
     @Test fun actualScreenshotNodeClickChineseTypingAndStaleScreenProtection() = runBlocking {
         val service = DeviceAccess.service!!
         service.begin(0, true)
-        var screen = observe(service)
+        var screen = service.execute(buildJsonObject { put("action", "observe"); put("include_screenshot", true) })
         assertTrue(screen.data.toString(), screen.ok)
         assertTrue(screen.data.toString(), screen.data["screenshot_available"]!!.jsonPrimitive.boolean)
         val bytes = android.util.Base64.decode(screen.jpeg, android.util.Base64.NO_WRAP)
@@ -63,7 +80,7 @@ class DeviceAgentTest {
         screen = observe(service)
         assertTrue(screen.ok); assertNull(screen.jpeg); assertFalse(screen.data["screenshot_available"]!!.jsonPrimitive.boolean)
         service.configureScreenshots(true); delay(400)
-        screen = observe(service)
+        screen = service.execute(buildJsonObject { put("action", "observe"); put("include_screenshot", true) })
         assertTrue(screen.ok); assertNotNull(screen.jpeg)
         assertFalse(screen.data.toString().contains("fixture-password-hidden"))
         val old = screen.data.text("screen_id")
@@ -72,10 +89,67 @@ class DeviceAgentTest {
         val stale = service.execute(buildJsonObject { put("action", "tap"); put("screen_id", old); put("x", 10); put("y", 10) })
         assertFalse(stale.ok)
         screen = observe(service)
+        screen = service.execute(buildJsonObject { put("action", "tap"); put("screen_id", screen.data.text("screen_id")); put("node_id", node(screen, "Fixture input").text("node_id")) })
+        assertTrue(screen.data.toString(), screen.ok)
         screen = service.execute(buildJsonObject { put("action", "type_text"); put("screen_id", screen.data.text("screen_id")); put("node_id", node(screen, "Fixture input").text("node_id")); put("text", "真实中文输入") })
         assertTrue(screen.data.toString(), screen.ok); node(screen, "真实中文输入")
         service.end()
         assertFalse(observe(service).ok)
+    }
+    @Test fun unfocusedTextInputReturnsNoEffectInsteadOfPretendingToHaveTyped() = runBlocking {
+        ActivityScenario.launch<DeviceFixtureActivity>(Intent(app, DeviceFixtureActivity::class.java)).use { scenario ->
+            scenario.onActivity { activity ->
+                val column = activity.findViewById<android.view.ViewGroup>(android.R.id.content).getChildAt(0) as android.view.ViewGroup
+                column.isFocusableInTouchMode = true; column.requestFocus()
+            }
+            val service = DeviceAccess.service!!; service.begin(0, false)
+            val before = observe(service); val input = node(before, "Fixture input")
+            assertFalse(input.toString(), input["focused"]!!.jsonPrimitive.boolean)
+            val result = service.execute(buildJsonObject { put("action", "type_text"); put("screen_id", before.data.text("screen_id")); put("node_id", input.text("node_id")); put("text", "should-not-appear") })
+            assertFalse(result.ok); assertEquals("input_not_focused", result.data.text("code"))
+            assertFalse(observe(service).data.toString().contains("should-not-appear"))
+            service.end()
+        }
+    }
+    @Test fun inputIsNotAResultUntilTheAdvertisedSearchActionIsSubmitted() = runBlocking {
+        val service = DeviceAccess.service!!; service.begin(0, false)
+        var screen = observe(service)
+        screen = service.execute(buildJsonObject { put("action", "tap"); put("screen_id", screen.data.text("screen_id")); put("node_id", node(screen, "Fixture input").text("node_id")) })
+        assertTrue(screen.data.toString(), screen.ok)
+        screen = service.execute(buildJsonObject { put("action", "type_text"); put("screen_id", screen.data.text("screen_id")); put("node_id", node(screen, "Fixture input").text("node_id")); put("text", "浅影阿 牡丹亭") })
+        assertTrue(screen.data.toString(), screen.ok)
+        assertFalse(screen.data.toString().contains("Search result: 浅影阿 牡丹亭"))
+        val editor = node(screen, "Fixture input")
+        assertTrue(editor.toString(), editor["submit_available"]?.jsonPrimitive?.booleanOrNull == true)
+        assertEquals("Search", editor.text("submit_label"))
+        screen = service.execute(buildJsonObject { put("action", "submit_input"); put("screen_id", screen.data.text("screen_id")); put("node_id", editor.text("node_id")) })
+        assertTrue(screen.data.toString(), screen.ok); node(screen, "Search result: 浅影阿 牡丹亭")
+        assertNull(app.deviceAgent.runtime.value.approval)
+        service.end()
+    }
+    @Test fun actualFocusedEditorInfoIdentifiesSearchDespiteGenericEnterLabel() = runBlocking {
+        ActivityScenario.launch<DeviceFixtureActivity>(Intent(app, DeviceFixtureActivity::class.java)).use { scenario ->
+            scenario.onActivity { activity ->
+                val column = activity.findViewById<android.view.ViewGroup>(android.R.id.content).getChildAt(0) as android.view.ViewGroup
+                (column.getChildAt(2) as android.widget.EditText).apply {
+                    contentDescription = null // The native hint remains a stable accessible label.
+                    setImeActionLabel("Enter", android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH)
+                }
+            }
+            val service = DeviceAccess.service!!; service.begin(0, false)
+            var screen = observe(service)
+            screen = service.execute(buildJsonObject { put("action", "tap"); put("screen_id", screen.data.text("screen_id")); put("node_id", node(screen, "Fixture input").text("node_id")) })
+            assertTrue(screen.data.toString(), screen.ok)
+            val editor = node(screen, "Fixture input")
+            assertEquals("Fixture input", editor.text("description"))
+            assertEquals("Enter", editor.text("submit_label"))
+            assertEquals(editor.toString(), 3, editor["ime_action"]?.jsonPrimitive?.int)
+            screen = service.execute(buildJsonObject { put("action", "submit_input"); put("screen_id", screen.data.text("screen_id")); put("node_id", editor.text("node_id")) })
+            assertTrue(screen.data.toString(), screen.ok)
+            node(screen, "Search result: ")
+            assertNull(app.deviceAgent.runtime.value.approval)
+            service.end()
+        }
     }
     @Test fun installedLabelOpensWithoutPreflightAndUnnamedInventoryReturnsNoApps() = runBlocking {
         val service = DeviceAccess.service!!
@@ -315,7 +389,7 @@ class DeviceAgentTest {
                     val previous = messages.lastOrNull { it.text("role") == "tool" }?.text("content")?.let { MeloJson.parseToJsonElement(it).jsonObject }
                     val nodes = previous?.get("nodes")?.jsonArray.orEmpty().map { it.jsonObject }
                     if (nodes.any { it.text("text") == "Count 1" }) return fixtureCall("finish", finishArgs("achieved", previous!!.text("screen_id"), "Count 1"))
-                    val arguments = if (previous == null || previous["ok"]?.jsonPrimitive?.booleanOrNull != true) buildJsonObject { put("action", "observe") } else buildJsonObject {
+                    val arguments = if (previous == null || previous["ok"]?.jsonPrimitive?.booleanOrNull != true) buildJsonObject { put("action", "observe"); put("include_screenshot", true) } else buildJsonObject {
                         put("action", "tap"); put("screen_id", previous.text("screen_id")); put("node_id", nodes.first { it.text("text") == "Target button" }.text("node_id"))
                     }
                     return MockResponse().setBody(buildJsonObject { put("choices", buildJsonArray { add(buildJsonObject {
@@ -362,21 +436,27 @@ class DeviceAgentTest {
             assertEquals("cancelled", app.repository.data.value.deviceRuns.last().status)
         }
     }
-    @Test fun coordinateClickWaitsForNativeApprovalAndDeclineOrCancelExecutesNothing() = runBlocking {
+    @Test fun sensitiveCoordinatesAndNodesKeepApprovalAndDeclineOrCancelExecutesNothing() = runBlocking {
         for (decision in listOf("allow", "decline", "cancel", "changed", "node_commit")) ActivityScenario.launch<DeviceFixtureActivity>(Intent(app, DeviceFixtureActivity::class.java)).use { scenario ->
-            if (decision == "node_commit") scenario.onActivity { activity ->
+            scenario.onActivity { activity ->
                 val content = activity.findViewById<android.view.ViewGroup>(android.R.id.content).getChildAt(0) as android.view.ViewGroup
                 (content.getChildAt(1) as android.widget.Button).text = "Send"
             }
             MockWebServer().use { server ->
                 server.dispatcher = object : Dispatcher() {
+                    var postTapObservations = 0
                     override fun dispatch(request: RecordedRequest): MockResponse {
                         val messages = MeloJson.parseToJsonElement(request.body.clone().readUtf8()).jsonObject["messages"]!!.jsonArray.map { it.jsonObject }
                         val previous = messages.lastOrNull { it.text("role") == "tool" }?.text("content")?.let { MeloJson.parseToJsonElement(it).jsonObject }
                         if (previous == null) return fixtureCall("observe", buildJsonObject { put("action", "observe") })
                         if (previous["ok"]?.jsonPrimitive?.booleanOrNull != true) return fixtureCall("blocked", finishArgs("blocked"))
                         if (previous["nodes"]!!.jsonArray.any { it.jsonObject.text("text") == "Count 1" }) return fixtureCall("finish", finishArgs("achieved", previous.text("screen_id"), "Count 1"))
-                        val target = node(DeviceToolResult(previous), if (decision == "node_commit") "Send" else "Target button")
+                        if (previous.text("action") == "tap" || postTapObservations > 0) {
+                            check(postTapObservations < 3) { "Fixture tap did not reach a fresh visible result." }
+                            postTapObservations++
+                            return fixtureCall("after-tap-$postTapObservations", buildJsonObject { put("action", "observe") })
+                        }
+                        val target = node(DeviceToolResult(previous), "Send")
                         val bounds = target["bounds"]!!.jsonArray.map { it.jsonPrimitive.int }
                         return fixtureCall("coordinate", buildJsonObject {
                             put("action", "tap"); put("screen_id", previous.text("screen_id"))
@@ -404,7 +484,7 @@ class DeviceAgentTest {
                 val allow = decision in setOf("allow", "changed", "node_commit")
                 withContext(Dispatchers.Main) { if (decision == "cancel") app.deviceAgent.cancel() else app.deviceAgent.confirmApproval(approval.id, allow) }
                 val run = waitForAgent(goal)
-                assertEquals(when (decision) { "allow", "node_commit" -> "achieved"; "cancel" -> "cancelled"; "changed" -> "blocked"; else -> "needs_user" }, run.status)
+                assertEquals("decision=$decision; error=${run.error}", when (decision) { "allow", "node_commit" -> "achieved"; "cancel" -> "cancelled"; "changed" -> "blocked"; else -> "needs_user" }, run.status)
                 assertCount(if (decision in setOf("allow", "node_commit")) "Count 1" else "Count 0")
                 if (decision == "changed") assertTrue(run.steps.any { it.code == "stale_screen" && !it.ok })
                 withContext(Dispatchers.Main) { app.deviceAgent.confirmApproval(approval.id, true) }

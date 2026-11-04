@@ -50,4 +50,23 @@ class SharedDeviceProgressTest {
         assertEquals("blocked", result.status); assertTrue(calls <= 8)
         }
     }
+    @Test fun switchingCaptureModeCannotResetAnUnchangedSearchPage() = runBlocking {
+        openCore().use { core ->
+            var calls = 0
+            val result = DeviceTaskLoop("chat-completions", {
+                turn("metadata${calls}", args(if (calls++ % 2 == 0) "observe" else "wait"))
+            }, {
+                val same = screen(id = newId(), text = "Query awaiting submission")
+                DeviceToolResult(JsonObject(same.data + buildJsonObject {
+                    put("screenshot_available", calls % 2 == 0)
+                    put("observation_mode", if (calls % 2 == 0) "ui_tree_and_screenshot" else "ui_tree")
+                    put("launch_dispatched", calls % 3 == 0)
+                    put("window_id", calls)
+                }), if (calls % 2 == 0) "pixels-$calls" else null)
+            }, {}, core = core).run("Search fixture")
+            assertEquals("blocked", result.status); assertEquals(6, calls)
+            assertTrue(result.error.orEmpty().contains("NO_PROGRESS"))
+        }
+    }
+
 }

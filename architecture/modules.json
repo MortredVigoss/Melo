@@ -24,8 +24,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 683,
-      "edges": 2210,
+      "modules": 688,
+      "edges": 2230,
       "roots": [
         "src",
         "desktop-ui",
@@ -560,7 +560,7 @@
         "chat": 31,
         "desktop-shell": 8,
         "memory": 12,
-        "platform": 47,
+        "platform": 49,
         "settings": 3,
         "tools": 21
       },
@@ -741,7 +741,7 @@
       ],
       "modules": {
         "desktop-ui": 27,
-        "shared": 39,
+        "shared": 42,
         "src": 68
       },
       "entryModules": [
@@ -913,6 +913,12 @@
           "importedBy": [
             "settings",
             "tools"
+          ]
+        },
+        {
+          "module": "shared/agent/trace.js",
+          "importedBy": [
+            "platform"
           ]
         },
         {
@@ -1105,11 +1111,11 @@
         "knowledge": 5,
         "media": 24,
         "memory": 27,
-        "platform": 61,
+        "platform": 66,
         "projects": 11,
         "settings": 11,
         "sync": 2,
-        "tools": 38,
+        "tools": 41,
         "voice": 3
       },
       "usedBy": {
@@ -1120,7 +1126,7 @@
         "development": 1,
         "media": 14,
         "memory": 12,
-        "platform": 25,
+        "platform": 26,
         "projects": 1,
         "settings": 14,
         "sync": 4,
@@ -1251,8 +1257,11 @@
           "shared/agent/modelRouting.test.js",
           "shared/agent/portability.test.js",
           "shared/agent/research.test.js",
+          "shared/agent/taskContract.test.js",
           "shared/agent/taskReplay.test.js",
           "shared/agent/tools.test.js",
+          "shared/agent/trace.test.js",
+          "shared/agent/workflows.test.js",
           "src/openai.codex-inline-image.test.js",
           "src/openai.codex-input.test.js",
           "src/openai.prompt-cache.test.js",
@@ -1283,6 +1292,7 @@
           "src/services/chat/executionTelemetry.test.js",
           "src/services/chat/functionCalling.integration.test.js",
           "src/services/chat/headlessApproval.test.js",
+          "src/services/chat/loopTrace.integration.test.js",
           "src/services/chat/messageBuilder.test.js",
           "src/services/chat/portableCompact.test.js",
           "src/services/chat/projectMemoryBook.scenario.test.js",
@@ -2305,10 +2315,13 @@
         "ios/Melo/WebPage*.swift",
         "ios/Melo/LocalFile*.swift",
         "ios/Melo/{DeviceTools,WebSources,SourceBrowser,LocalFilesView,LocalPermissionsView}.swift",
-        "ios/Tests/{DeviceToolsTests,LocalFileAccessTests,WebPageToolsTests,WebSearchTests}.swift"
+        "ios/Tests/{DeviceToolsTests,LocalFileAccessTests,WebPageToolsTests,WebSearchTests}.swift",
+        "shared/agent/organizer.js",
+        "shared/agent/organizer.test.js"
       ],
       "modules": {
         "desktop-ui": 28,
+        "shared": 1,
         "src": 99
       },
       "entryModules": [
@@ -2344,6 +2357,12 @@
         },
         {
           "module": "desktop-ui/viz/vizRenderer.js",
+          "importedBy": [
+            "chat"
+          ]
+        },
+        {
+          "module": "shared/agent/organizer.js",
           "importedBy": [
             "chat"
           ]
@@ -2639,14 +2658,14 @@
         "knowledge": 3,
         "media": 2,
         "memory": 6,
-        "platform": 56,
+        "platform": 57,
         "projects": 5,
         "settings": 10
       },
       "usedBy": {
         "agents": 21,
         "approvals": 2,
-        "chat": 38,
+        "chat": 41,
         "desktop-shell": 13,
         "media": 4,
         "memory": 1,
@@ -2750,6 +2769,7 @@
           "desktop-ui/viz/citationRenderer.test.js",
           "desktop-ui/viz/vizRenderer.test.js",
           "scripts/inspect-search-trail.test.js",
+          "shared/agent/organizer.test.js",
           "src/mcp/init.test.js",
           "src/mcp/manager.test.js",
           "src/mcp/publicMedia.test.js",
@@ -3977,6 +3997,7 @@
           "ios/Melo/ChatStore.swift",
           "ios/Melo/ContentView.swift",
           "ios/Melo/LifecycleJournal.swift",
+          "ios/Melo/LoopTrace.swift",
           "ios/Melo/MeloApp.swift",
           "ios/Melo/MeloForm.swift",
           "ios/Melo/MeloTheme.swift",
@@ -4001,6 +4022,7 @@
         "swift": [
           "ios/Tests/CapabilityElevationTests.swift",
           "ios/Tests/LifecycleJournalTests.swift",
+          "ios/Tests/LoopTraceTests.swift",
           "ios/Tests/SharedPolicyUnavailableTests.swift"
         ]
       },
@@ -4023,7 +4045,7 @@
         "src/**"
       ],
       "modules": {
-        "src": 59
+        "src": 60
       },
       "entryModules": [
         {
@@ -4089,6 +4111,14 @@
           "importedBy": [
             "agents",
             "chat"
+          ]
+        },
+        {
+          "module": "src/runtime/loopTrace.js",
+          "importedBy": [
+            "agents",
+            "chat",
+            "tools"
           ]
         },
         {
@@ -4356,7 +4386,7 @@
         "agents": 34,
         "approvals": 18,
         "channels": 6,
-        "chat": 25,
+        "chat": 26,
         "desktop-shell": 2,
         "development": 2,
         "knowledge": 2,
@@ -4369,10 +4399,10 @@
         "voice": 2
       },
       "usedBy": {
-        "agents": 47,
+        "agents": 49,
         "approvals": 36,
         "channels": 22,
-        "chat": 61,
+        "chat": 66,
         "desktop-shell": 15,
         "development": 9,
         "knowledge": 2,
@@ -4381,7 +4411,7 @@
         "projects": 23,
         "settings": 26,
         "sync": 6,
-        "tools": 56,
+        "tools": 57,
         "voice": 6
       },
       "httpRoutes": [],
@@ -4426,6 +4456,7 @@
           "src/runtime/chatContract.http.test.js",
           "src/runtime/desktopOwner.test.js",
           "src/runtime/identity.test.js",
+          "src/runtime/loopTrace.test.js",
           "src/runtime/nativeSearchEvidence.test.js",
           "src/runtime/paths.test.js",
           "src/runtime/performanceTrace.test.js",
@@ -4639,6 +4670,7 @@
           "scripts/desktop-server-lifecycle.test.js",
           "scripts/env-flags.test.js",
           "scripts/eval-agent-tasks.test.js",
+          "scripts/eval-loop-traces.test.js",
           "scripts/generate-interface-languages.test.js",
           "scripts/generate-module-map.test.js",
           "scripts/interface-terms.test.js",
