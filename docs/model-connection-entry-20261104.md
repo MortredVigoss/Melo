@@ -24,3 +24,23 @@
 最终快速档 `run-t78jZl` 在 31 个任务文件上运行。4,843 项 JavaScript 测试、38 套 Swift、Android JVM / Lint / Debug / Release 和设置浏览器通过。完整摘要在 `.tmp/test-runs/run-t78jZl/summary.json`。
 
 首次核对源码 b80ade3。开发期间另一条线程将 iPhone 后台恢复合并到 master，本次测试使用合并后的工作树。未修改用户设备上的账号、配置或应用。
+
+## 保存交互复查
+
+基准 b148a3a。旧版在保存后清空密钥编辑框，iPhone 重新打开时恢复默认连接或 OpenAI。单看编辑框无法判断刚保存的账号。此次按用户动作核对桌面 `editLlmConnection → handleLlmConnection → saveLlmProfile → renderLlmConnections`、iPhone `LLMConnectionsView.prepared → runSave → LLMConnection.save → Keychain → restoreDraft → test`。检查保存成功、失败时保留输入、重新打开及出站凭证。验证停止在本地模型服务的实际请求与用户可见结果。模拟器和独立浏览器使用测试密钥，真实账号、已安装 App 与第三方服务不参与。
+
+### 复现和修复
+
+- 桌面先保存 Key、把模型留空，旧代码会在能力表生成空字符串属性。界面回传这条记录补模型时，服务端报 `Invalid model capability id.`。已修正新记录的写入，并在编辑旧记录时丢弃这个无效属性；同一地址继续使用已保存的凭证。
+- iPhone 旧的保存动作清空编辑框，重新打开时显示系统默认的连接或 OpenAI。修复后，桌面和 iPhone 在连接旁显示「API Key 已保存」；只存了 Key 时说明还需要选模型。重新打开能回到刚保存的账号。手机将按钮标为「编辑连接」和「保存连接」，便于区别同一页的其他设置。
+- 初次交付时，桌面浏览器只验了一次填齐 Key 和模型的表单；iPhone 五账号用例直接走存储方法。这次增加按键、键盘输入、冷启动及正常聊天的检查。
+
+| 操作 | 实际结果和证据 |
+| --- | --- |
+| 桌面浏览器 | 填错服务地址后保存失败，输入仍在。改地址并仅保存 Key，刷新后能看到回执。随后补模型、设为默认并从聊天输入框发送。测试服务按请求头确认原 Key，界面显示服务回复。`.tmp/key-save-ui-20261104/desktop-wire-receipts.json`、`desktop-chat.png`。 |
+| 已有桌面数据 | 构造旧版空模型条目，通过普通保存和探测接口更新后，测试模型服务仍收到同一把 Key。`node --test src/providers/llmConnections.test.js desktop-ui/llmConnections.test.js`，19 项通过。 |
+| iPhone 原生界面 | 修改前的 b148a3a 在 XCUITest 中点击保存后缺少可见凭证回执。修复后在独立模拟器点保存、终止进程、打开设置、留空密钥补模型并保存，再点击测试、设为当前、开启对话和发送。HTTPS 夹具收到预期账号的探测请求和普通聊天，用户界面显示对应回复。旧界面证据 `.tmp/key-save-ui-20261104/before.xcresult`，最终 `.tmp/key-save-ui-results/run-qon70v5q/test.xcresult`、`receipts.json`。 |
+
+在 macOS 上运行 `python3 ios/scripts/test-connection-save-ui.py` 可重跑原生用例。它创建临时模拟器及只在该模拟器信任的本地证书，校验两次请求后清理。日常设置浏览器覆盖先保存 Key、刷新、补模型，不需要外部服务。测试用的是自有夹具，实际供应商授权及实体机未测。
+
+本轮最终快速档 `run-EjySBh` 通过 4,844 项 JavaScript 测试、38 套 Swift、Android JVM / Lint / Debug / Release 与设置浏览器，无跳过或隔离复测。

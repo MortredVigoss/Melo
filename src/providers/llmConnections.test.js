@@ -44,6 +44,20 @@ test('LLM connections isolate credentials and drive real HTTP inference without 
   const context = createRequestContext({ home, env: { MELO_MOCK_RESPONSE: '', OPENAI_API_KEY: 'ambient-key-must-not-cross', MELO_MODEL: 'ambient-model', OPENAI_BASE_URL: 'https://wrong.invalid/v1' } });
   try { await runWithRequestContext(context, async () => {
     await saveConfig({ authMode: 'codex', model: 'gpt-6.1-sol', baseUrl: 'https://chatgpt.com/backend-api', minimaxApiKey: 'unchanged-voice-key', systemPrompt: 'Keep Melo instructions' });
+    await t.test('saving only a key allows a later model selection, including profiles saved by old clients', async () => {
+      const id = 'key-first', apiKey = 'fixture-key-first';
+      const publicProfile = result => result.profiles.find(p => p.id === id);
+      const first = publicProfile(await saveLlmProfile({ id, providerId:'custom', baseUrl:base, model:'', apiKey, modelCapability:{} }));
+      assert.equal(first.hasKey, true);
+      assert.equal(Object.hasOwn(first.modelCapabilities,''), false);
+      // Reproduce the old persisted entry, including the public editor's round trip.
+      const config = await loadConfig();
+      await saveConfig({ ...config, llmProfiles:{ ...config.llmProfiles, [id]:{ ...config.llmProfiles[id], modelCapabilities:{'':{}} } } });
+      const updated = publicProfile(await saveLlmProfile({ ...first, model:'later-model', apiKey:'', modelCapabilities:{'':{}}, modelCapability:{} }));
+      assert.equal(Object.hasOwn(updated.modelCapabilities,''),false);
+      assert.equal((await testLlmProfile(id)).ok,true);
+      assert.equal(requests.at(-1).headers.authorization,'Bearer '+apiKey);
+    });
     await t.test('platform profiles keep old settings and make independently authenticated requests', async () => {
       for (const [providerId, suffix] of [['deepseek', 'v1'], ['doubao', 'api/v3'], ['gemini', 'v1beta/openai'], ['kimi', 'v1'], ['qwen', 'compatible-mode/v1'], ['openai', 'v1']]) {
         await saveLlmProfile({ providerId, baseUrl: `${base}/${providerId}/${suffix}`, model: `${providerId}-model`, apiKey: `secret-only-for-${providerId}` });

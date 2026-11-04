@@ -4,6 +4,8 @@ export { NATIVE_INTERFACE_TERMS as interfaceTermKeys } from '../desktop-ui/inter
 // Native-only authored copy. User names, prompts and model output are never translated.
 // Chinese / English / Japanese / Korean / Spanish.
 const rows = [
+["保存连接","Save connection","接続を保存","연결 저장","Guardar conexión"],
+["编辑连接","Edit connection","接続を編集","연결 편집","Editar conexión"],
 ["缺少续行记录，请先核对已执行的步骤。","No recovery checkpoint is available. Review the steps already taken.","復元記録がありません。実行済みの手順を確認してください。","복구 기록이 없습니다. 이미 실행된 단계를 확인하세요.","No hay un punto de recuperación. Revisa los pasos ya ejecutados."],
 ["保存当前进度并结束","Finish with saved progress","進捗を保存して終了","현재 진행 상황을 저장하고 종료","Finalizar con el progreso guardado"],
 ["继续任务","Continue task","タスクを続ける","작업 계속","Continuar tarea"],

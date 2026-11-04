@@ -48,7 +48,9 @@ test('connection UI preserves manual model IDs, keeps secrets provider-local, an
   }
   await handleLlmConnection('llm-save', hooks);
   assert.equal(modelRequests, 0); assert.equal(active, '');
-  assert.equal(dom.window.document.querySelector('[name="apiKey"]').value, '');
+  assert.ok(dom.window.document.querySelector('[data-saved-key]'));
+  assert.equal(dom.window.document.querySelector('[name="apiKey"]'), null);
+  assert.ok(!dom.window.document.body.innerHTML.includes('user-provided-secret'));
   await handleLlmConnection('llm-test', hooks);
   assert.equal(modelRequests, 1); assert.equal(active, '');
   assert.match(dom.window.document.querySelector('.llm-connection-status').textContent, /vendor\/actual/);

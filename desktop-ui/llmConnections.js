@@ -10,6 +10,12 @@ const connections = config => config.llmConnections || { providers: [], profiles
 function draftFor(config) {
   if (state.draft && (editSession.editing || editSession.status === 'saving' || state.busy)) return state.draft;
   const data = connections(config);
+  if (!state.selected) {
+    try {
+      const last = globalThis.localStorage?.getItem('melo.lastSavedConnection');
+      state.selected = data.profiles.find(p => p.id === last)?.id || '';
+    } catch { /* The connection editor also works without browser storage. */ }
+  }
   state.selected ||= data.activeId || (config.authMode === 'codex' ? 'chatgpt' : 'custom');
   const saved = data.profiles.find(p => p.id === state.selected);
   const provider = data.providers.find(p => p.id === (saved?.providerId || state.selected)) || data.providers[0];
@@ -84,7 +90,7 @@ export function renderLlmConnections(config) {
       ${state.conflict ? ui`<p role="alert">此连接已在其他位置更新，当前草稿仍保留。请先载入最新配置，再重新编辑。</p><button type="button" class="small-button" data-action="llm-reload">放弃此草稿并载入最新配置</button>` : ''}
       <fieldset class="settings-connection-fields" ${fieldsDisabled}>
       <label class="label">连接名称<input class="config-input" name="name" maxlength="100" value="${escapeHtml(draft.name || '')}"></label>
-      ${provider.authMode !== 'codex' ? ui`<label class="label">API Key${provider.authMode === 'local' ? t('（可选）') : ''}<input class="config-input" name="apiKey" type="password" autocomplete="off" value="${escapeHtml(draft.apiKey)}" placeholder="${saved?.hasKey ? t('已保存；留空保留此连接的密钥') : t('只保存到本机')}" ${disabled}></label>${saved?.hasKey ? ui`<label class="list-row-meta"><input type="checkbox" name="clearKey" ${draft.clearKey ? 'checked' : ''} ${disabled}> 清除此连接保存的密钥</label>` : ''}` : ui`<p class="list-row-meta">${config.codexAuth?.loggedIn ? t('ChatGPT 已登录') : t('需要先完成 ChatGPT 登录')}；模型请求由 Melo 直接发送。</p>`}
+      ${provider.authMode !== 'codex' ? ui`${saved?.hasKey ? ui`<p class="list-row-meta" data-saved-key role="status">✓ ${t('API Key 已保存')}${!saved.model ? ' · '+t('选择或填写模型后即可使用这条连接。') : ''}</p>` : ''}${(!saved?.hasKey || editSession.editing) ? ui`<label class="label">API Key${provider.authMode === 'local' ? t('（可选）') : ''}<input class="config-input" name="apiKey" type="password" autocomplete="off" value="${escapeHtml(draft.apiKey)}" placeholder="${saved?.hasKey ? t('已保存；留空保留此连接的密钥') : t('只保存到本机')}" ${disabled}></label>` : ''}${saved?.hasKey && editSession.editing ? ui`<label class="list-row-meta"><input type="checkbox" name="clearKey" ${draft.clearKey ? 'checked' : ''} ${disabled}> 清除此连接保存的密钥</label>` : ''}` : ui`<p class="list-row-meta">${config.codexAuth?.loggedIn ? t('ChatGPT 已登录') : t('需要先完成 ChatGPT 登录')}；模型请求由 Melo 直接发送。</p>`}
       <label class="label">服务地址<input class="config-input" name="baseUrl" value="${escapeHtml(draft.baseUrl)}" ${provider.authMode === 'codex' ? 'readonly' : ''} ${disabled}></label>
       ${provider.id === 'custom' ? ui`<label class="label">API 接口格式<select class="config-select" name="apiProtocol" ${disabled}><option value="chat-completions" ${!['anthropic','responses'].includes(draft.apiProtocol) ? 'selected' : ''}>OpenAI Chat Completions</option><option value="responses" ${draft.apiProtocol === 'responses' ? 'selected' : ''}>OpenAI Responses</option><option value="anthropic" ${draft.apiProtocol === 'anthropic' ? 'selected' : ''}>Anthropic Messages</option></select></label>` : ''}
       <label class="label">选择模型<select class="config-select" data-action="llm-pick-model">${connectionModelOptions(config, draft).map(m => `<option value="${escapeHtml(m)}" ${m === draft.model ? 'selected' : ''}>${escapeHtml(modelLabel(m))} · ${escapeHtml(m)}</option>`).join('')}<option value="" ${!draft.model ? 'selected' : ''}>手动填写模型 ID</option></select></label>
@@ -157,6 +163,7 @@ export async function handleLlmConnection(action, { config, api, render, refresh
         const saved = await api('/api/settings/llm/save', { method: 'POST', body: { ...draft, modelCapability: draft.modelCapabilities?.[draft.model] || {} } });
         const updated = saved.profiles.find(p => p.id === draft.id);
         state.draft = { ...draft, ...updated, apiKey: '', clearKey: false };
+        try { globalThis.localStorage?.setItem('melo.lastSavedConnection', draft.id); } catch { /* Best-effort navigation preference. */ }
         state.returnTo = null; editSession.saved();
       }
       if (action === 'llm-activate') {

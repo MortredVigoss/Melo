@@ -1,3 +1,7 @@
+## 2026-11-04 — API Key 保存交互复查
+
+桌面旧连接在补填模型时会产生空模型 ID 错误。现可保留原 Key 继续使用；桌面和 iPhone 也补了可见保存回执及重新打开时的连接选择。原生点击到实际聊天与桌面 HTTP 回执通过，快速档 `run-EjySBh` 全绿。[专项记录](docs/model-connection-entry-20261104.md)
+
 ## 2026-11-04 — 系统 API Key 入口和多账号切换
 
 修复 Codex 模式遮蔽 API 配置、同平台连接复用一个 ID 及同步误选账号。桌面、iPhone 与 Android 均按系统默认和对话选择分别处理。最终快速档 `run-t78jZl` 通过 4,843 项 JS、38 套 Swift、Android 四项和设置浏览器。五账号切换另经 iPhone 与 Android 模拟器验证。[专项说明](docs/model-connection-entry-20261104.md)

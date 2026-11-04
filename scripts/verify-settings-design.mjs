@@ -164,11 +164,23 @@ try {
    await editor.locator('[data-action=llm-new-provider]').selectOption('custom');
    await editor.locator('[name=name]').fill('Account '+n);
    await editor.locator('[name=baseUrl]').fill('https://example.invalid/v1');
-   await editor.locator('[name=model]').fill('shared-model');
+   if (n !== 1) await editor.locator('[name=model]').fill('shared-model');
    await editor.locator('[name=apiKey]').fill('fixture-key-'+n);
    await editor.locator('[data-action=llm-save]').click();
    const button=editor.locator('[data-action=llm-use]').filter({hasText:'Account '+n});
    await button.waitFor(); keyIDs.push(await button.getAttribute('data-profile-id'));
+   if (n === 1) {
+     await editor.locator('[data-saved-key]').waitFor();
+     assert.equal(await button.isDisabled(),true);
+     await page.reload();
+     await editor.locator('[data-saved-key]').waitFor();
+     assert.equal(await editor.locator('[name=name]').inputValue(),'Account 1');
+     await editor.locator('[data-action=llm-edit]').click();
+     assert.equal(await editor.locator('[name=apiKey]').inputValue(),'');
+     await editor.locator('[name=model]').fill('shared-model');
+     await editor.locator('[data-action=llm-save]').click();
+     await page.waitForFunction(id=>document.querySelector('[data-action=llm-use][data-profile-id="'+id+'"]')?.disabled === false,keyIDs[0]);
+   }
  }
  assert.equal(new Set(keyIDs).size,5);
  for(const id of [keyIDs[4],keyIDs[1]]) {

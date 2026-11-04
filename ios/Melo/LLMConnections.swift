@@ -93,6 +93,7 @@ struct LLMConnectionsView: View {
     @EnvironmentObject var account: ChatGPTAccount
     @AppStorage("modelAuthMode") private var authMode = "chatgpt"
     @AppStorage("activeLLMConnection") private var activeID = ""
+    @AppStorage("lastSavedLLMConnection") private var lastSavedID = ""
     @StateObject private var oauth = OpenRouterLogin()
     @State private var selected = "openai"
     @State private var draft = LLMConnection.presets[0]
@@ -142,13 +143,19 @@ struct LLMConnectionsView: View {
                 Spacer()
                 if editing {
                     Button("取消") { if dirty { confirmDiscard = true } else { discardEdit() } }
-                    Button("保存") { runSave() }.buttonStyle(.borderedProminent).tint(dirty ? meloGold : .gray).foregroundStyle(.black).disabled(!dirty)
-                } else { Button("编辑") { editing = true; saved = false; saveError = nil } }
+                    Button("保存连接") { runSave() }.accessibilityIdentifier("connection.save").buttonStyle(.borderedProminent).tint(dirty ? meloGold : .gray).foregroundStyle(.black).disabled(!dirty)
+                } else { Button("编辑连接") { editing = true; saved = false; saveError = nil }.accessibilityIdentifier("connection.edit") }
             }
             if let draftError { Text(draftError).font(.caption).foregroundStyle(.red) }
             Group {
             TextField("连接名称", text: $draft.name).meloInput()
-            SecureField(profiles.first { $0.id == selected }?.key.isEmpty == false ? "已保存密钥；留空保留" : "API Key", text: $key).meloInput()
+            if storedOriginal?.key.isEmpty == false {
+                Label("API Key 已保存", systemImage: "checkmark.circle.fill").font(.subheadline).foregroundStyle(meloGold)
+                if draft.model.isEmpty { Text("选择或填写模型后即可使用这条连接。").font(.caption).foregroundStyle(.secondary) }
+            }
+            if editing || storedOriginal?.key.isEmpty != false {
+                SecureField(storedOriginal?.key.isEmpty == false ? "已保存密钥；留空保留" : "API Key", text: $key).meloInput()
+            }
             TextField("服务 Base URL（HTTPS）", text: Binding(get: { draft.baseURL }, set: { draft.baseURL = $0; draft.modelCapabilities = nil; draft.modelMetadata = nil })).keyboardType(.URL).meloInput()
             if draft.platform == "custom" { Picker("接口格式", selection: Binding(get: { draft.apiProtocol }, set: { draft.apiProtocol = $0; draft.modelCapabilities = nil; draft.modelMetadata = nil })) { Text("Chat Completions").tag("chat-completions"); Text("Anthropic Messages").tag("anthropic") } }
             TextField(draft.platform == "doubao" ? "模型 ID 或 ep-… 接入点" : "模型 ID", text: $draft.model).meloInput()
@@ -216,7 +223,10 @@ struct LLMConnectionsView: View {
                 draft = value.draft; original = value.original; storedOriginal = value.storedOriginal
                 selected = draft.id; key = value.key; clearKey = value.clearKey; editing = true; models = draft.models ?? []
                 status = "已恢复未保存的连接草稿，保存前不会影响当前模型。"
-            } else { select(profiles.first { $0.id == activeID }?.id ?? "openai") }
+            } else {
+                let lastSaved = profiles.first { $0.id == lastSavedID }
+                select(lastSaved?.id ?? profiles.first { $0.id == activeID }?.id ?? "openai")
+            }
         } catch { draftError = "无法恢复连接草稿，已保存连接未改变。" }
     }
     private func preserveDraft() {
@@ -245,6 +255,7 @@ struct LLMConnectionsView: View {
             guard stored == storedOriginal else { throw MeloError.message("连接已在其他地方更新，草稿已保留，请取消并重新编辑。") }
             let value = try prepared(); try value.save(activate: activate)
             profiles = try LLMConnection.saved(); draft = value; original = value; storedOriginal = value; key = ""; clearKey = false; editing = false; saved = true; saveError = nil
+            lastSavedID = value.id
             status = activate ? "已设为当前模型。" : "连接已保存；设为当前后才会切换。"
         } catch { saveError = error.localizedDescription }
     }

@@ -4,6 +4,8 @@ export { INTERFACE_TERMS as interfaceTermKeys } from './interfaceLanguages.js';
 // Authored interface copy only. User messages, names and provider output never enter this catalog.
 // Columns: Chinese source / English / Japanese / Korean / Spanish.
 const rows = [
+["API Key 已保存", "API key saved", "API キーを保存済み", "API 키 저장됨", "Clave API guardada"],
+["选择或填写模型后即可使用这条连接。", "Choose or enter a model to use this connection.", "モデルを選択または入力すると、この接続を使用できます。", "이 연결을 사용하려면 모델을 선택하거나 입력하세요.", "Elige o introduce un modelo para usar esta conexión."],
 ["模型能力", "Model capabilities", "モデルの機能", "모델 기능", "Capacidades del modelo"],
 ["添加 API Key 连接", "Add API key connection", "API キー接続を追加", "API 키 연결 추가", "Añadir conexión con clave API"],
 ["模型连接与 API Key", "Model connections and API keys", "モデル接続と API キー", "모델 연결 및 API 키", "Conexiones de modelos y claves API"],

@@ -56,13 +56,16 @@ export function saveLlmProfile(patch, { oauthKey, expectedRevision, signal } = {
     if (model.length > 200 || /[\r\n\0]/.test(model)) throw new Error('模型 ID 无效。');
     const sameEndpoint = previous?.baseUrl === baseUrl && previous?.apiProtocol === apiProtocol;
     const declarations = sameEndpoint ? { ...previous.modelCapabilities } : {};
+    // Older key-only saves could create a capability entry with an empty model ID.
+    delete declarations[''];
     if (patch.modelCapabilities && typeof patch.modelCapabilities === 'object' && !Array.isArray(patch.modelCapabilities)) {
       for (const [id, caps] of Object.entries(patch.modelCapabilities).slice(0,1000)) {
+        if (!id && Object.hasOwn(previous?.modelCapabilities || {}, '')) continue;
         if (!id || id.length > 200 || /[\r\n\0]/.test(id) || ['__proto__','constructor','prototype'].includes(id)) throw new Error('Invalid model capability id.');
         declarations[id] = normalizeModelCapabilities(caps);
       }
     }
-    if (patch.modelCapability) declarations[model] = normalizeModelCapabilities(patch.modelCapability);
+    if (model && patch.modelCapability) declarations[model] = normalizeModelCapabilities(patch.modelCapability);
     const next = {
       id, providerId: provider.id, name: String(patch.name || previous?.name || provider.name).slice(0, 100),
       nameKey: patch.name ? '' : previous?.nameKey || (!previous?.name ? provider.name : ''),
