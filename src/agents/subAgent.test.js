@@ -386,4 +386,10 @@ test('internal routing: roleSystem is a trusted system section, instructions sta
   assert.ok(!call.systemPrompt.includes('caller hint'), 'caller hints never enter the system prompt');
   assert.match(call.messages[0].content, /caller hint/);
   assert.deepEqual(res.meta.effects, { successful: [], uncertain: [] });
+  assert.equal(call.nativeWebSearchEnabled !== undefined, true, 'the reply options carry the hosted-search flag');
+  const hosted = makeFakeReply();
+  hosted.queue.push('done', "{\"decision\": \"complete\", \"reasonType\": \"self_contained\", \"requirements\": [{\"text\": \"x\", \"status\": \"met\", \"evidenceIds\": []}]}");
+  await runSubAgent({ task: 'say done', allowedToolIds: ['calculator'], config: validConfig(), replyFn: hosted, nativeWebSearch: false, nativeImageGeneration: false });
+  assert.equal(hosted.callLog[0].nativeWebSearchEnabled, false);
+  assert.equal(hosted.callLog[0].nativeImageGenerationEnabled, false);
 });

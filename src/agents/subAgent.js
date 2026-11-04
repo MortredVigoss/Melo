@@ -119,6 +119,13 @@ async function runSubAgentLoop({
   // Host-authored system text for an internal routing job (trusted, unlike
   // the caller-supplied instructions which stay in the user turn).
   roleSystem = '',
+  // Provider-hosted search / image generation inside a member. Internal routing
+  // members turn them off: hosted search results carry no readable body for the
+  // member's own completion check and re-send tens of thousands of tokens per
+  // request (2026-11-04 probes), while local web_search / fetch_url give
+  // bounded, verifiable observations.
+  nativeWebSearch = true,
+  nativeImageGeneration = true,
   background = '',
   config,
   workspacePath,
@@ -240,8 +247,8 @@ async function runSubAgentLoop({
       model: providerConfig.model,
       systemPrompt: review?.systemPrompt || systemPrompt,
       messages: request.messages,
-      nativeWebSearchEnabled: !toolFree && nativeFeaturesForScope(currentRequestContext().capabilityScope,currentRequestContext().requestToolPolicy).nativeWebSearchEnabled,
-      nativeImageGenerationEnabled: !toolFree && !coreTurn.repairing && nativeFeaturesForScope(currentRequestContext().capabilityScope,currentRequestContext().requestToolPolicy).nativeImageGenerationEnabled,
+      nativeWebSearchEnabled: nativeWebSearch !== false && !toolFree && nativeFeaturesForScope(currentRequestContext().capabilityScope,currentRequestContext().requestToolPolicy).nativeWebSearchEnabled,
+      nativeImageGenerationEnabled: nativeImageGeneration !== false && !toolFree && !coreTurn.repairing && nativeFeaturesForScope(currentRequestContext().capabilityScope,currentRequestContext().requestToolPolicy).nativeImageGenerationEnabled,
       onExecutionEvent: event => { if (coreTurn.observeNative(event)) recordUsage(runBudget, { toolCalls: 1 }); },
       signal,
       // Native tools obey the same inherited capability snapshot as local tools.

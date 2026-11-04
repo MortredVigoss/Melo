@@ -97,5 +97,7 @@ test('through the real sub-agent loop a member keeps its full share, not the 32k
   // The 10-04 probe showed members starting straight in limit delivery: the first request must be real work.
   assert.ok(requests.length >= 1 && !/limit-delivery/.test(String(requests[0].purpose || '')) && requests[0].budgetPhase !== 'delivery', JSON.stringify({ purpose: requests[0]?.purpose, phase: requests[0]?.budgetPhase }));
   assert.match(String(requests[0].messages?.[0]?.content || ''), /Task:/);
+  assert.equal(requests[0].nativeWebSearchEnabled, false, 'members never use provider-hosted search');
+  assert.equal(requests[0].nativeImageGenerationEnabled, false);
   assert.ok(events.every(event => String(event.id).startsWith('internal:1') || String(event.id).startsWith('job-1:')), JSON.stringify(events.map(e => e.id)));
 });

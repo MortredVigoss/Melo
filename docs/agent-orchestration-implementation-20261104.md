@@ -81,4 +81,26 @@ A2 / A3 与 A5 的背景部分已落地并本地提交（`a1b56f8`）。
 
 真实探针（重启桌面后同一道 BIGBANG 题，`live-bigbang-phase2/`，场景 `aefd0d9f6e85081b2aded8669ae001c8`，trace `66bb67c2…`）暴露一个真 bug：检索成员 1 在 7 s 派出、43 s 交回"未核实"，trace 里它的第一次模型请求就是 `limit-delivery`，`run.finished` 为 `BUDGET_EXHAUSTED`——`runSubAgent` 用 `memberTokenLimit(child, maxTokens ?? 32000)` 把成员输入 token 上限压到 32k、再扣 8k 收尾保留与 `maxTotalTokens` 口径下的输出保留，成员第一次带工具定义和原始目标背景的工作请求就超过 `admitModel` 允许值，直接进入收尾。主 Agent 随后自己抓页，161 s 再派成员时已触发 60k 保留不启动，174 s 预算耗尽，仍是 `LIMIT_DELIVERED`（1 met / 4 missing）。修正：`runInternalMembers` 把 `maxTokens: share`（≤ 120k）传给 `runSubAgent`，成员的输入与总 token 上限即其份额；成员 `execution_event` 的 id 改为 `job-N:` 前缀（之前只加 `actorName`，成员的 `model:N` 会并进主 Agent 同名阶段）。新增真实 `runSubAgent` 循环下的回归：成员上限 ∈ [20k, 120k] 且 > 32k，第一次请求是带 `Task:` 的工作请求而非 limit-delivery，事件全部带 `job-1:` 前缀。
 
-第二次探针（`live-bigbang-phase2b/`，trace `48319190…`）：成员这次真的开工（4 次工作请求），但 120k 份额仍在 112 s 内用完：(1) A1 把所有 `readOnly` 的 MCP 工具（26 个 AntV 图表生成器、Playwright 检视、公开媒体）都归入检索岗位，成员每次请求带 43 个工具定义；(2) 成员全程用供应商托管搜索（`hosted-call`），未本地抓页，托管结果"无可读正文"；(3) 成员第 3 次回复已写明"巡演官网与主办方 FAQ 非空正文交叉核实 2026-10-31 悉尼 Accor Stadium 19:30"，而限额收尾把它改写成"候选线索、未核实"（审计 P2-10 的又一实例）。主 Agent随后自己抓页、再派成员时触发 60k 保留、184 s 预算耗尽，最终 0 met / 5 missing。修正 (1)：只读 MCP 不再自动归入检索岗位（见 A1 规则修订）；(2)(3) 记为后续问题。主 Agent 一轮可派多名成员；只读成员并行、执行成员串行；每名成员有自己的回合与输入 token 份额，主 Agent 保留 60k 收尾额度；成员拿到原始目标与有界会话背景；成员副作用指纹回流主回合。未做：岗位模型可选连接（需要设置界面与配置契约，待产品决定）；iPhone / Android 仍是内联单成员实现（共享契约向后兼容，两端行为不变）。真实探针见下一节。
+第二次探针（`live-bigbang-phase2b/`，trace `48319190…`）：成员这次真的开工（4 次工作请求），但 120k 份额仍在 112 s 内用完：(1) A1 把所有 `readOnly` 的 MCP 工具（26 个 AntV 图表生成器、Playwright 检视、公开媒体）都归入检索岗位，成员每次请求带 43 个工具定义；(2) 成员全程用供应商托管搜索（`hosted-call`），未本地抓页，托管结果"无可读正文"；(3) 成员第 3 次回复已写明"巡演官网与主办方 FAQ 非空正文交叉核实 2026-10-31 悉尼 Accor Stadium 19:30"，而限额收尾把它改写成"候选线索、未核实"（审计 P2-10 的又一实例）。主 Agent随后自己抓页、再派成员时触发 60k 保留、184 s 预算耗尽，最终 0 met / 5 missing。修正 (1)：只读 MCP 不再自动归入检索岗位（见 A1 规则修订，`42e992d`）。
+
+第三次探针（`live-bigbang-phase2c/`）：成员每次请求的工具定义降到 11 个，但成员 1 在 20 s 以 `Codex OAuth request completed without returning a final reply` 失败（供应商对成员请求只返回托管搜索项、没有消息体），成员 2 三次请求各带 74k / 8.5k / 70k 输入 token——供应商托管搜索（`hosted-call`）把搜索上下文整段重发，而托管结果在成员的观察账本里"正文全部为空"，自检不过、份额用完、交回 partial；主 Agent 第 26 s 已读到官方日程，限额收尾却把场次标为 missing（P2-10）。修正 (2)：`runSubAgent` 新增 `nativeWebSearch` / `nativeImageGeneration` 开关，内部成员一律关闭托管搜索与图像生成，只用本地 `web_search` / `fetch_url`（有界、可核验）；回归断言成员请求的两个开关为 false。(3) 限额收尾丢失已核实事实仍是独立缺陷，见审计 P2-10。主 Agent 一轮可派多名成员；只读成员并行、执行成员串行；每名成员有自己的回合与输入 token 份额，主 Agent 保留 60k 收尾额度；成员拿到原始目标与有界会话背景；成员副作用指纹回流主回合。未做：岗位模型可选连接（需要设置界面与配置契约，待产品决定）；iPhone / Android 仍是内联单成员实现（共享契约向后兼容，两端行为不变）。真实探针见下一节。
+
+## A4 审批预筛与 A5 岗位模型：待用户选定的两个产品点
+
+两项都会改用户可见的交互或设置，按规范 §1 / §4.5 先列方案评分，等用户选定再动手。
+
+### A4 审批预筛
+
+| 方案 | 做法 | 改动面 | 评分 |
+| --- | --- | --- | --- |
+| A4-1 审批卡片加"本次任务"作用域 | 主 Agent 派执行成员前，对该岗位里需要审批的工具发一张汇总卡（列工具与子任务）；用户批后登记为本轮任务级规则，成员命中不再弹，未批的仍逐个弹；主 Agent 永不代批 | `src/tools/permissions.js`（pending 条目带工具清单、`resolvePermission` 新作用域 `task`）、`src/server.js` 路由透传、`desktop-ui/features/approvals/view.js` 新卡片；iPhone / Android 卡片可先不做，记宿主差异 | 8 / 10 |
+| A4-2 不改界面，只"早问" | 执行成员启动前，按岗位工具并行发标准审批卡让用户一次点完；`requestPermission` 支持"预授权票据"：同对话、同工具、同任务的下一次调用直接放行 | 只改 `permissions.js` 与 `internalMembers.js`，界面零改动；但卡片上看不到子任务说明 | 7 / 10 |
+| A4-3 维持现状 | 成员调用时才弹，无人在场 120 s 超时 | 无 | 5 / 10 |
+
+### A5 岗位模型
+
+| 方案 | 做法 | 改动面 | 评分 |
+| --- | --- | --- | --- |
+| A5-1 Agent 设置页新增"内部岗位模型" | 每个岗位可选连接 / 模型（默认跟随对话），存 `agentProfiles[id].collaboration.jobModels`，三端契约字段同步 | 设置页 UI、`shared/protocol` 契约、三端读取 | 7 / 10 |
+| A5-2 复用智能路由档位 | 智能模式下检索 / 资料读取岗位用"快"档，执行 / 计算跟随对话模型；非智能模式不变 | 只改 `internalMembers.js` 取连接的方式，无新界面 | 6.5 / 10 |
+| A5-3 维持现状 | 所有岗位同一连接 | 无 | 5 / 10 |

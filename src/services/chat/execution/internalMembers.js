@@ -63,7 +63,7 @@ export async function runInternalMembers({ jobs = [], goal = '', background = ''
     // Member events keep their own ids under the job prefix (like delegated
     // members) so a member's model:N stage never merges into the lead's.
     const emit = (type, event) => sseEmitter?.(type, type === 'execution_event' ? { ...event, ...(event?.id ? { id: `${job.id}:${event.id}` } : {}), actorName: job.label } : event);
-    const invoke = () => run({ task: job.task, roleSystem: job.system, background: memberBackground, allowedToolIds: job.tools, extraTools, config,
+    const invoke = () => run({ task: job.task, roleSystem: job.system, background: memberBackground, allowedToolIds: job.tools, extraTools, config, nativeWebSearch: false, nativeImageGeneration: false,
       // runSubAgent caps a member's input tokens at maxTokens (32k by default,
       // sized for delegated members); an internal member gets its whole share.
       ...(replyFn ? { replyFn } : {}), maxIterations: MAX_MEMBER_ROUNDS, maxTokens: share || MEMBER_INPUT_SHARE, roleId: job.id, depth: 1, signal, sseEmitter: emit, chatId, workspacePath, chatSource, projectId, onProviderResponse });
