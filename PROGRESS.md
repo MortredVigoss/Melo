@@ -1,3 +1,7 @@
+## 2026-11-04 — iPhone 主线覆盖安装
+
+设备启动与数据保留通过，Mac 授权后正常工作区通过。[安装验收](docs/model-connection-entry-20261104.md)
+
 ## 2026-11-04 — 模型连接与 Agent 更新发布
 
 本地 Mac 原位安装通过，GitHub master 从 `889174f` 快进至 `3379718`。已验证数据保留与远端提交。[发布回执](docs/model-connection-entry-20261104.md)
