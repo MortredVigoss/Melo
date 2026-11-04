@@ -36,6 +36,63 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
 
 @main struct AgentLoopTests {
     @MainActor static func main() async throws {
+        do {
+            var now = 1000.0
+            let original = PhoneRunBudget(deadlineMs: 60000, now: { now })
+            original.setMemberTokens(5000) // This budget meters output as well as input.
+            original.arm()
+            _ = try original.admitModel(estimatedInput: 43, outputTokens: 11)
+            let saved = try original.resumeData()
+            now += 5000
+            let restored = PhoneRunBudget(now: { now }); try restored.restore(saved); restored.arm()
+            assert(restored.deadlineAt == original.deadlineAt && restored.used.inputTokens == 43)
+            assert(restored.used.outputTokens == 11 && restored.used.providerCalls == 1)
+        }
+        // Interrupt between a real tool result and the next model request.
+        // A new loop uses a decoded disk cursor and the same successful effect
+        // is never dispatched a second time, even under a different call ID.
+        do {
+            let log = Log()
+            var tools = loopTools(log) { _ in PhoneToolResult(output: PhoneToolEnvelope.success(#"{"id":"saved-reminder","title":"same reminder"}"#)) }
+            tools.definitions += [DeviceToolSpec.all.first { $0.name == "reminders_create" }!.definition]
+            let args = #"{"title":"same reminder"}"#
+            var stored: Data?
+            var initial = hooks(log)
+            initial.saveCursor = { cursor in
+                stored = try JSONEncoder().encode(cursor)
+                if cursor.iteration == 1 { throw CancellationError() }
+            }
+            let first = ScriptedTransport { _ in calls([fc("first", "reminders_create", args)]) }
+            do {
+                _ = try await AgentLoop(transport: first, tools: tools, budget: PhoneRunBudget(),
+                                        latestUserMessage: "create a reminder", hooks: initial).run()
+                assertionFailure("Expected simulated suspension")
+            } catch is CancellationError {}
+            let cursor = try JSONDecoder().decode(PhoneReplyCursor.self, from: stored!)
+            assert(cursor.iteration == 1 && cursor.inFlightEffect == nil && !cursor.receipts.isEmpty)
+            let second = ScriptedTransport { request in
+                if request.goalReview != nil { return answer(#"{"decision":"complete","reasonType":"fulfilled","requirements":[{"text":"create reminder","status":"met","evidenceIds":["first"]}]}"#) }
+                if request.iteration == 1 {
+                    guard case .userText(let note)? = request.transcript.first, note.contains("first") else { throw MeloError.message("Missing saved evidence") }
+                    return calls([fc("first", "reminders_create", args), fc("repeat", "reminders_create", args)])
+                }
+                return answer("The reminder is saved.")
+            }
+            var resumed = hooks(log); resumed.resumeCursor = cursor
+            let delivered = try await AgentLoop(transport: second, tools: tools, budget: PhoneRunBudget(),
+                                                latestUserMessage: "create a reminder", hooks: resumed).run()
+            assert(delivered.text == "The reminder is saved." && delivered.completion?.outcome == "completed")
+            assert(log.performed.map(\.callID) == ["first"])
+            assert(second.requests.first?.iteration == 1)
+            var uncertain = cursor; uncertain.inFlightEffect = "create_event"; resumed.resumeCursor = uncertain
+            let count = second.requests.count
+            do {
+                _ = try await AgentLoop(transport: second, tools: tools, budget: PhoneRunBudget(),
+                                        latestUserMessage: "continue", hooks: resumed).run()
+                assertionFailure("Unknown effect cannot resume")
+            } catch {}
+            assert(second.requests.count == count && log.performed.count == 1)
+        }
         let c = AgentLoopContract.shared
         assert(c.maxIterations == 40 && c.maxCallsPerResponse == 32)
         do {

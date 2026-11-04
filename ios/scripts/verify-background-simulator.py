@@ -29,7 +29,8 @@ while time.monotonic() < deadline:
         if result.get('failure') or result.get('phase') == 'complete':
             (evidence / 'simulator-verification.json').write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n')
             print(json.dumps(result, ensure_ascii=False, indent=2), flush=True)
-            sys.exit(0 if result.get('passed') else 1)
+            if not result.get('passed'): sys.exit(1)
+            break
         if not switched and result.get('phase') == 'ready-to-background':
             print(simctl('launch', sim, 'com.apple.Preferences'), flush=True)
             switched = True
@@ -45,4 +46,20 @@ while time.monotonic() < deadline:
             print(simctl('launch', sim, bundle), flush=True)
             returned = True
     time.sleep(.2)
-raise SystemExit('Native background acceptance timed out; inspect simulator logs')
+else:
+    raise SystemExit('Native background acceptance timed out; inspect simulator logs')
+
+cold = report.with_name('continuity-process-verification.json')
+cold.unlink(missing_ok=True)
+for argument, expected in [('-melo-continuity-seed', 'kill-ready'), ('-melo-continuity-resume', 'passed')]:
+    simctl('terminate', sim, bundle)
+    simctl('launch', sim, bundle, argument)
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        state = json.loads(cold.read_text()) if cold.exists() else {}
+        if state.get('failure'): raise SystemExit(state['failure'])
+        if state.get('phase') == expected: break
+        time.sleep(.2)
+    else: raise SystemExit('Missing process checkpoint phase: ' + expected)
+(evidence / 'process-verification.json').write_text(json.dumps(state, indent=2) + '\n')
+print('Cold process continuation passed', flush=True)

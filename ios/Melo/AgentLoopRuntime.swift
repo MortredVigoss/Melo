@@ -36,6 +36,7 @@ final class PhoneRunBudget: @unchecked Sendable {
     let parent: PhoneRunBudget?
     let now: () -> Double
 
+    private var restoredBudget = false
     private var policyAvailable = true
     private var available: Bool { policyAvailable && (parent?.available ?? true) }
     private func invalidatePolicy() {
@@ -81,9 +82,27 @@ final class PhoneRunBudget: @unchecked Sendable {
     }
     var used: Usage { Self.lock.lock(); defer { Self.lock.unlock() }; return usedValue }
 
+    func resumeData() throws -> Data {
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        return try JSONSerialization.data(withJSONObject: snapshot())
+    }
+    func restore(_ data: Data) throws {
+        let decoded = try JSONSerialization.jsonObject(with: data)
+        guard let saved = decoded as? [String: Any], saved["parent"] is NSNull else { throw SharedAgentCoreError.invalidReply }
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        apply(saved)
+        guard policyAvailable else { throw SharedAgentCoreError.invalidReply }
+        restoredBudget = true
+        // A suspended request may never send a usage receipt. Charge its
+        // outstanding reservation once rather than granting it again.
+        if pendingInput > 0 || pendingOutput > 0 {
+            let claim = ["inputTokens": pendingInput, "outputTokens": pendingOutput]
+            apply(Self.operation("settleModel", time: now(), fields: ["budget": snapshot(), "options": ["claim": claim], "usage": claim]) as? [String: Any])
+        }
+    }
     func arm() {
         Self.lock.lock(); defer { Self.lock.unlock() }
-        guard available else { return }
+        guard available, !restoredBudget else { return }
         apply(Self.operation("arm", time: now(), fields: ["budget": snapshot()]) as? [String: Any])
     }
     func reserveDelivery() {
@@ -122,6 +141,7 @@ final class PhoneRunBudget: @unchecked Sendable {
     }
     func configureDeepTask(_ limits: [String: Any]) {
         Self.lock.lock(); defer { Self.lock.unlock() }
+        guard !restoredBudget else { return }
         guard available, parent == nil else { return }
         let deadline = limits["deadlineMs"] as? Double ?? 0
         let options: [String: Any] = ["deadlineMs": max(0, startedAt + deadline - now()), "maxToolCalls": limits["maxToolCalls"] ?? maxToolCalls]

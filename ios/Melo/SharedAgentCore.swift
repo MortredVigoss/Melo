@@ -51,6 +51,13 @@ final class PhoneGoalState {
         guard let initial = SharedLoopPolicy.value("goal", ["action": "start", "goal": goal, "messages": history, "id": UUID().uuidString]) as? [String: Any] else { throw SharedAgentCoreError.unavailable }
         state = initial
     }
+    func resumeData() throws -> Data { try JSONSerialization.data(withJSONObject: state) }
+    func resume(_ data: Data?) throws {
+        guard let data else { return }
+        guard let saved = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              saved["version"] as? Int == 1 else { throw SharedAgentCoreError.invalidReply }
+        state = saved
+    }
     var checking: Bool { state["phase"] as? String == "checking" }
     var repairing: Bool { (state["corrections"] as? Int ?? 0) > 0 }
     var snapshot: [String: Any]? { SharedLoopPolicy.value("goal", ["action": "snapshot", "state": state]) as? [String: Any] }
@@ -190,6 +197,17 @@ final class PhoneCoreTurn {
         state = next
         LoopTrace.events(value["events"] as? [[String: Any]] ?? [])
         return active
+    }
+    // Restore only accounting and deduplication. Tool admission, identity,
+    // the clock and permissions come from this freshly authorized attempt.
+    private static let resumedFields = ["rounds", "reviewRounds", "failures", "errors", "stagnant", "progressKeys", "successfulTools", "successfulEffects", "callIds", "phoneTasks", "reportIssued", "repairing"]
+    func resumeData() throws -> Data {
+        try JSONSerialization.data(withJSONObject: state.filter { Self.resumedFields.contains($0.key) })
+    }
+    func resume(_ data: Data?) throws {
+        guard let data else { return }
+        guard let saved = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw SharedAgentCoreError.invalidReply }
+        for key in Self.resumedFields where saved[key] != nil { state[key] = saved[key] }
     }
     func permits(_ id: String) -> Bool { active && (state["permitted"] as? [String] ?? []).contains(id) && (state["pending"] as? [String] ?? []).contains(id) }
     func rejection(_ id: String) -> (code: String, output: String) {
