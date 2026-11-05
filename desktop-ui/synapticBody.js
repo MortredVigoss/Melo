@@ -111,7 +111,9 @@ function executionMotion(phase) {
   }));
 }
 
-export function createSynapticBody() {
+// Optional colors tint an internal member by its role (plan C); defaults keep
+// the original violet actor unchanged.
+export function createSynapticBody({ thread = sceneColor('synapse-thread'), branch = sceneColor('synapse-branch'), tint = sceneColor('synapse-tint') } = {}) {
   const body = new T.Group(), layers = [];
   function geometryFor(rest) {
     const geometry = new T.BufferGeometry();
@@ -120,16 +122,16 @@ export function createSynapticBody() {
     layers.push({ geometry, rest, weights: makeWeights(rest) });
     return geometry;
   }
-  const threadMaterial = new T.LineBasicMaterial({ color: sceneColor('synapse-thread'), transparent: true, opacity: .38,
+  const threadMaterial = new T.LineBasicMaterial({ color: thread, transparent: true, opacity: .38,
     depthWrite: false, blending: T.AdditiveBlending });
-  const branchMaterial = new T.LineBasicMaterial({ color: sceneColor('synapse-branch'), transparent: true, opacity: .82,
+  const branchMaterial = new T.LineBasicMaterial({ color: branch, transparent: true, opacity: .82,
     depthWrite: false, blending: T.AdditiveBlending });
   body.add(new T.LineSegments(geometryFor(threads), threadMaterial));
   body.add(new T.LineSegments(geometryFor(branches), branchMaterial));
   // Soft point falloff creates local violet light without a filled body or a
   // full-scene bloom pass. The low-alpha halo leaves background threads visible.
   const glowMaterial = new T.ShaderMaterial({
-    uniforms: { tint: { value: new T.Color(sceneColor('synapse-tint')) }, intensity: { value: .7 } },
+    uniforms: { tint: { value: new T.Color(tint) }, intensity: { value: .7 } },
     transparent: true, depthWrite: false, blending: T.AdditiveBlending,
     vertexShader: `
       void main() {
