@@ -111,7 +111,7 @@ async function executeScopedTool(tool,args,options) {
   observe('queued');
   try {
     const ticket = reserveTaskOperation({locale:options.config?.replyLanguage,home:requestContext?.home || options.meloHome || resolveRuntimePaths().home,taskId:options.taskId,tool,args,workspacePath:options.workspacePath,invocationId:`${requestContext?.runId || 'direct'}:${id}`});
-    const effect = reserveTurnEffect(requestContext?.turnEffects, tool, args, options.workspacePath);
+    const effect = reserveTurnEffect(requestContext?.turnEffects, tool, args, options.workspacePath, requestContext?.budget || null);
     let result;
     try { result = effect?.result || ticket?.result || await runObservedTool(tool, args, { ...options, sseEmitter:emit, observe }); }
     catch(error) { const failed = {ok:false,meta:{executionStarted}}; ticket?.finish?.(failed); effect?.finish?.(failed); throw error; }

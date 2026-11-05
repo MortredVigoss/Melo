@@ -32,7 +32,7 @@ class SharedRunBudget private constructor(
             put("action", action); put("now", SystemClock.elapsedRealtime()); put("budget", snapshot())
         })) } catch (error: Throwable) { invalidate(); throw error }
     }
-    suspend fun memberAllocation(): JsonObject = mutex.withLock { runtime.value("taskEvaluation",buildJsonObject { put("action","allocation"); put("budget",snapshot()) }).jsonObject }
+    suspend fun memberAllocation(rounds: Int): JsonObject = mutex.withLock { runtime.value("taskEvaluation",buildJsonObject { put("action","allocation"); put("rounds",rounds); put("budget",snapshot()) }).jsonObject }
     suspend fun usageSnapshot(): JsonObject = mutex.withLock { buildJsonObject {
         put("elapsedMs", SystemClock.elapsedRealtime() - state.getValue("startedAt").jsonPrimitive.long)
         val used = state.getValue("used").jsonObject

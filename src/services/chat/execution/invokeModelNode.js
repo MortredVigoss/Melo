@@ -454,7 +454,7 @@ export function createInvokeModelNode(turn) {
         : 'Internal assignments are closed for this turn. Continue as the lead with the available evidence.', meta: { code: 'ROUTE_DENIED', executionStarted: false } };
       // No calls is a candidate answer, not proof that the user's goal is done.
       if (!toolCalls.length) {
-        if (coreTurn.candidate(turn.text, { context: { messages: loopMessages.filter(row => typeof row.content === 'string').slice(-8) }, research: !!graphState.searchPlan.sharedPlan?.research, nativeSearch: graphState.searchPlan?.nativeWebSearchEnabled === true })) {
+        if (coreTurn.candidate(turn.text, { context: { messages: loopMessages.filter(row => typeof row.content === 'string').slice(-8) }, research: !!graphState.searchPlan.sharedPlan?.research, nativeSearch: graphState.searchPlan?.nativeWebSearchEnabled === true, offeredTools: catalog ? [TASK_PROGRESS_NAME] : [] })) {
           coreTurn.update('feedback');
           continue;
         }

@@ -25,7 +25,7 @@
     ],
     "graph": {
       "modules": 695,
-      "edges": 2264,
+      "edges": 2263,
       "roots": [
         "src",
         "desktop-ui",
@@ -1331,6 +1331,7 @@
           "src/services/chat/toolTraceReplay.test.js",
           "src/services/chat/topicExcerpts.test.js",
           "src/services/chat/turnArchive.test.js",
+          "src/services/chat/turnEffectsRepeat.test.js",
           "src/services/chat/turnLifecycle.test.js",
           "src/services/chat/turnScheduler.test.js",
           "src/shared/conversationTopics.test.js",

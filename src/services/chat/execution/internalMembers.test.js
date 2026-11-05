@@ -188,3 +188,16 @@ test('an unavailable configured connection returns a diagnosable partial handoff
  assert.equal(calls,0);assert.equal(result[0].started,false);assert.equal(result[0].result.error,'JOB_CONNECTION_UNAVAILABLE');
  assert.equal(JSON.parse(result[0].handoff).status,'partial');assert.ok(events.some(e=>e.status==='failed'&&/connection is unavailable/.test(e.output)));
 });
+
+test('C3: a member child budget covers its whole round allowance, not a single 90 s slice', async () => {
+  const { memberDeadlineMs } = await import('../../../../shared/agent/taskEvaluation.js');
+  const budget = reserveDelivery(createRunBudget({ overrides: { maxInputTokens: 400000, deadlineMs: 30 * 60000, maxToolCalls: 200 } }));
+  const seen = [];
+  const run = async () => { const child = currentRequestContext().budget; seen.push({ deadline: child.deadlineAt - child.startedAt, calls: child.maxToolCalls }); return { ok: true, output: 'ok', meta: { observations: [] } }; };
+  const first = job('research', 'initial', 1); const resumed = { ...job('research', 'gap', 2), roundLimit: 2 };
+  await runWithRequestContext(Object.freeze({ budget }), () => runInternalMembers({ jobs: [first, resumed], goal, run, lanes: 1 }));
+  assert.equal(seen[0].deadline, memberDeadlineMs(first.roundLimit));
+  assert.equal(seen[1].deadline, memberDeadlineMs(2));
+  assert.ok(seen[0].deadline > 90000 + 60000, 'four rounds get more than one slice');
+  assert.equal(seen[0].calls, 8);
+});

@@ -32,13 +32,21 @@ const TASK_EVALUATION_POLICY = Object.freeze({
   version: 1, maxCandidates: 200, maxUpdates: 64, maxInvalidUpdates: 3, maxFields: 16,
   primaryCount: 3, alternatives: 5, primaryScore: 75, alternativeScore: 60, evidenceScore: 20,
   checkpoint: { milliseconds: 180000, calls: 20 },
-  member: { initialRounds: 4, increment: 2, maxRounds: 12, calls: 8, milliseconds: 90000, deliveryReserveMs: AGENT_LOOP_CONTRACT.delivery.deadlineMs,
+  member: { initialRounds: 4, increment: 2, maxRounds: 12, calls: 8, roundMilliseconds: 90000, deliveryReserveMs: AGENT_LOOP_CONTRACT.delivery.deadlineMs,
     inputTokens: 120000, leadInputReserve: 60000, minimumInput: 20000, parallel: 3 },
   modes: { quick: { minimum: 3, maximum: 5, initial: 8 }, standard: { minimum: 5, maximum: 10, initial: 12 }, deep: { minimum: 8, maximum: 15, initial: 20 } },
   batch: { additional: 5, explicitAdditional: 10, minimumInspected: 5, lowYield: 0.2, consecutive: 2 },
   fields: { events: ['name','startsAt','place','participation'], products: ['name','model','region','price','currency','availability'], other: ['name'] },
 });
 const TASK_PROGRESS_NAME = 'task_progress';
+// A member's wall-clock slice follows its round allowance: one round may hold a
+// full tool timeout (60 s) plus a model round trip, so a single slow tool no
+// longer ends the member (2026-11-05 review C3). The delivery reserve is extra.
+function memberDeadlineMs(rounds) {
+  const p = TASK_EVALUATION_POLICY.member;
+  const count = Number.isInteger(rounds) && rounds > 0 ? Math.min(rounds, p.maxRounds) : p.initialRounds;
+  return count * p.roundMilliseconds + p.deliveryReserveMs;
+}
 const str = (v, max = 600) => typeof v === 'string' ? v.trim().slice(0, max) : '';
 const list = v => Array.isArray(v) ? v : [];
 const normalize = v => String(v ?? '').normalize('NFKC').toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, '');
@@ -201,7 +209,7 @@ function taskEvaluationOperation(input) {
   if (input.action === 'allocation') {
     const budget = input.budget, p = TASK_EVALUATION_POLICY.member;
     const remaining = budget ? Math.max(0,budget.maxInputTokens - (budget.used?.inputTokens || 0) - (budget.delivery?.inputTokens || 0) - (budget.pendingInput || 0) - p.leadInputReserve) : p.inputTokens;
-    return { allowed: remaining >= p.minimumInput, maxInputTokens: Math.min(p.inputTokens,remaining), maxToolCalls: p.calls, deadlineMs: p.milliseconds + p.deliveryReserveMs };
+    return { allowed: remaining >= p.minimumInput, maxInputTokens: Math.min(p.inputTokens,remaining), maxToolCalls: p.calls, deadlineMs: memberDeadlineMs(input.rounds) };
   }
   if (input.action === 'presentation') return taskProgressPresentation(input.result,input.locale);
   if (input.action === 'definition') return TASK_PROGRESS_DEFINITION;
@@ -219,7 +227,7 @@ function taskProgressPresentation(result, locale = 'en') {
   return { name: words[0], output: [count,result?.error,...rows,...(s?.gaps?.length ? [words[5] + ': ' + s.gaps.join('; ')] : [])].filter(Boolean).join('\n') };
 }
 
-return { TASK_EVALUATION_POLICY, TASK_PROGRESS_NAME, TASK_PROGRESS_DEFINITION, taskEvaluationSummary, updateTaskEvaluation, taskProgressResult, taskEvaluationOperation, taskProgressPresentation };
+return { TASK_EVALUATION_POLICY, TASK_PROGRESS_NAME, memberDeadlineMs, TASK_PROGRESS_DEFINITION, taskEvaluationSummary, updateTaskEvaluation, taskProgressResult, taskEvaluationOperation, taskProgressPresentation };
 })();
 
 modules["shared/agent/arithmetic.js"] = (() => {
@@ -1356,7 +1364,7 @@ return { actionEvidence, resolvedRequestGoal, planRequest };
 })();
 
 modules["shared/agent/goal.js"] = (() => {
-const { updateTaskEvaluation, taskProgressResult, taskEvaluationSummary } = modules["shared/agent/taskEvaluation.js"];
+const { updateTaskEvaluation, taskProgressResult, taskEvaluationSummary, TASK_PROGRESS_NAME } = modules["shared/agent/taskEvaluation.js"];
 const { deliveryEvidence } = modules["shared/agent/evidence.js"];
 const { isStandaloneGreeting } = modules["shared/agent/retrieval/intentRouter.js"];
 const { getRequestNetworkPolicy } = modules["shared/agent/retrieval/requestPolicy.js"];
@@ -1421,6 +1429,14 @@ Continue if authorized available tools can resolve missing information, includin
 
 const REVIEW_TURN_CONTRACT = `Classify turnKind as task, answer, feedback, or clarification. The latest user message in context determines whether NEW action was requested; discussion of a previous action does not authorize repeating it. Never turn product feedback into a task to implement a product change with unrelated tools. Give each requirement kind=response, context, constraint, external_fact, or external_effect. A prohibition (do not log in, change settings, close navigation, or look up an address) is a constraint: assess the recorded actions, report any violation, but never demand a new tool call to prove inaction; a respected constraint may have no evidence IDs. It cannot substitute for a positive requested deliverable. response/context requirements in answer/feedback/clarification may be met without executed evidence IDs; context includes host-provided capability and Skill metadata and conversation history. Metadata proves availability, never execution. New public facts and external effects ALWAYS need actual successful observation IDs. Task requirements cannot bypass this by labeling an external result response or constraint. Failed/rejected observations may explain unavailability or a respected constraint, never a successful external effect. Disambiguate names/places using available conversation, saved place roles, app-provided aliases and authorized lookup before requesting private input. Preserve cumulative verified facts when the current page changes. Once the requested terminal state is supported, stop device actions and deliver; do not inspect or close an already completed navigation.`;
 
+// The ledger rules apply only when the host offered task_progress in this turn
+// (team plans, video and image turns never do) or a ledger already exists; a
+// checker must not demand a tool the lead cannot call (2026-11-05 review C2).
+const EVALUATION_RULES = '\nFor multi-item discovery/recommendations require a task_progress contract and candidate ledger before complete. Check that it includes every user constraint and explicit quantity; independently compare the ORIGINAL goal, each quoted field and source meaning, not just valid IDs or scores. Always include the boolean evaluationValid and needsEvaluation fields in the JSON reply. If a ledger exists, set evaluationValid=true ONLY after independently validating its contract and candidate evidence; set it false when a condition or candidate is unsupported. If no ledger is needed, set evaluationValid=true and needsEvaluation=false. Set needsEvaluation=true and evaluationValid=false if a required ledger is missing. Never omit these fields, even when all requirements are met. Low yield or a soft-target adjustment never excuses a missing explicit quantity. Recommendation scores are not probabilities. Recommend only eligible candidates; disclose excluded/pending items and scope. No fabricated completeness for an open set.';
+const NO_LEDGER_RULES = '\nNo task_progress tool was offered in this turn, so a candidate ledger cannot exist and must not be demanded: judge every requirement from the evidence alone and always include the boolean fields evaluationValid=true and needsEvaluation=false in the JSON reply.';
+const evaluationOffered = state => (state.availableTools || []).includes(TASK_PROGRESS_NAME);
+const evaluationRules = state => evaluationOffered(state) || state.evaluation?.contract ? EVALUATION_RULES : NO_LEDGER_RULES;
+
 function goalReviewRequest(state, observations = []) {
   let remaining = GOAL_LIMITS.evidenceChars;
   // A page's prefix is not the evidence for all candidates on that page.
@@ -1455,7 +1471,7 @@ function goalReviewRequest(state, observations = []) {
     return { id: row.id, name: row.name, type: row.type, effect: row.effect, ok: row.ok, executed: row.executed, url: row.url, reading: row.reading, text: body, truncated: String(row.text || row.output || '').length > body.length };
   }).reverse();
   evidence.push(...pinned);
-  return { systemPrompt: GOAL_REVIEW_INSTRUCTIONS + '\n' + REVIEW_TURN_CONTRACT + '\nFor multi-item discovery/recommendations require a task_progress contract and candidate ledger before complete. Check that it includes every user constraint and explicit quantity; independently compare the ORIGINAL goal, each quoted field and source meaning, not just valid IDs or scores. Always include the boolean evaluationValid and needsEvaluation fields in the JSON reply. If a ledger exists, set evaluationValid=true ONLY after independently validating its contract and candidate evidence; set it false when a condition or candidate is unsupported. If no ledger is needed, set evaluationValid=true and needsEvaluation=false. Set needsEvaluation=true and evaluationValid=false if a required ledger is missing. Never omit these fields, even when all requirements are met. Low yield or a soft-target adjustment never excuses a missing explicit quantity. Recommendation scores are not probabilities. Recommend only eligible candidates; disclose excluded/pending items and scope. No fabricated completeness for an open set.', messages: [{ role: 'user', content: JSON.stringify({ goal: goalText(state), revision: state.revision, candidate: state.candidate, context: state.context, availableTools: state.availableTools, requirements: state.requirements, evaluation: state.evaluation || null, observations: evidence }) }] };
+  return { systemPrompt: GOAL_REVIEW_INSTRUCTIONS + '\n' + REVIEW_TURN_CONTRACT + evaluationRules(state), messages: [{ role: 'user', content: JSON.stringify({ goal: goalText(state), revision: state.revision, candidate: state.candidate, context: state.context, availableTools: state.availableTools, requirements: state.requirements, evaluation: state.evaluation || null, observations: evidence }) }] };
 }
 
 function reviewGoal(state, raw, observations = []) {
@@ -1472,7 +1488,8 @@ function reviewGoal(state, raw, observations = []) {
   if (requirements.some(row => !row.text || !['met', 'missing', 'unavailable'].includes(row.status) || row.evidenceIds.some(id => !(row.status === 'met' && external(row) ? validEvidence : attemptedEvidence).has(id)))) return finish('partial', 'GOAL_EVIDENCE_INVALID');
   let decision = report.decision;
   const evaluation = taskEvaluationSummary(state.evaluation);
-  if (decision === 'complete' && (report.needsEvaluation === true && !evaluation || report.evaluationValid === false || evaluation && report.evaluationValid !== true || evaluation && evaluation.stop !== 'ready_for_review')) {
+  const ledgerRequired = !!evaluation || evaluationOffered(state);
+  if (decision === 'complete' && ledgerRequired && (report.needsEvaluation === true && !evaluation || report.evaluationValid === false || evaluation && report.evaluationValid !== true || evaluation && evaluation.stop !== 'ready_for_review')) {
     decision = 'continue';
     report.nextStep = report.nextStep || (evaluation?.gaps?.join('; ') || 'Initialize/correct task_progress against the original requirements, then read and verify the missing candidates.');
     report.reason = report.reason || 'Task evaluation requirements remain incomplete.';

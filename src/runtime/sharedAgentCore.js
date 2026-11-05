@@ -39,10 +39,10 @@ export function createCoreTurn({ runId = currentLoopTrace()?.context.runId || ra
     get candidateReply() { return candidateReply; },
     get task() { return goalSnapshot(task); },
     amend(text) { if (task) task = amendGoal(task, text); traceEvent('goal.updated', {}, goalSnapshot(task)); },
-    candidate(reply, { research = false, nativeSearch = false, context = {} } = {}) {
+    candidate(reply, { research = false, nativeSearch = false, context = {}, offeredTools = [] } = {}) {
       candidateReply = reply;
       if (!task) return false;
-      task = goalCandidate(task, { reply, observations, research, context: { capabilities: tools, ...context }, tools: [...allowedTools, ...(nativeSearch ? ['native_web_search'] : [])], roundsLeft: state.limits.rounds - state.rounds });
+      task = goalCandidate(task, { reply, observations, research, context: { capabilities: tools, ...context }, tools: [...allowedTools, ...offeredTools, ...(nativeSearch ? ['native_web_search'] : [])], roundsLeft: state.limits.rounds - state.rounds });
       return task.phase === 'checking';
     },
     reviewRequest() { return goalReviewRequest(task, observations); },

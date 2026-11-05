@@ -157,3 +157,23 @@ test('last work round may still be checked and cancellation/deadline never grant
   core.review(report('continue')); core.update('feedback', { repair: true });
   now = 101; assert.equal(core.update('request'), 'blocked'); assert.equal(core.reason, 'DEADLINE_EXCEEDED');
 });
+
+test('C2: the checker may demand a task_progress ledger only when the host offered the tool this turn', () => {
+  const observations = [...calendar, ...weather];
+  const demand = { evaluationValid: false, needsEvaluation: true, nextStep: '' };
+  // Team plans, video and image turns never offer task_progress: a complete
+  // verdict stands and the prompt never asks the checker for a ledger.
+  const plain = candidate(startGoal(goal), observations);
+  const plainPrompt = goalReviewRequest(plain, observations).systemPrompt;
+  assert.equal(plainPrompt.includes('require a task_progress contract'), false);
+  assert.match(plainPrompt, /No task_progress tool was offered/);
+  const delivered = reviewGoal(plain, report('complete', ['weather:source:0'], demand), observations);
+  assert.equal(delivered.decision, 'complete'); assert.equal(delivered.reason, 'GOAL_DELIVERY_SUPPORTED');
+  // Offered: the same verdict becomes continue with the ledger as the next step.
+  const offered = goalCandidate(startGoal(goal), { reply: '请告诉我场馆地址。', observations, tools: ['open_url', 'task_progress'], research: true, roundsLeft: 8 });
+  assert.match(goalReviewRequest(offered, observations).systemPrompt, /require a task_progress contract/);
+  const checked = reviewGoal(offered, report('complete', ['weather:source:0'], demand), observations);
+  assert.equal(checked.decision, 'continue'); assert.match(String(checked.feedback), /task_progress/);
+  // A checker that only flags evaluationValid=false without a ledger is ignored when nothing was offered.
+  assert.equal(reviewGoal(plain, report('complete', ['weather:source:0'], { evaluationValid: false, needsEvaluation: false }), observations).decision, 'complete');
+});

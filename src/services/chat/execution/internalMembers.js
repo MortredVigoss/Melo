@@ -1,5 +1,4 @@
-import { AGENT_LOOP_CONTRACT } from '../../../../shared/agent/loopContract.js';
-import { TASK_EVALUATION_POLICY } from '../../../../shared/agent/taskEvaluation.js';
+import { TASK_EVALUATION_POLICY, memberDeadlineMs } from '../../../../shared/agent/taskEvaluation.js';
 // Internal routing members as their own sub-agent loops (phases A2/A3, 2026-11-04).
 //
 // Until 11-04 an internal member ran inside the lead's loop by swapping the
@@ -30,7 +29,7 @@ const LIMITED_STOPS = new Set(['ROUND_LIMIT', 'BUDGET_EXHAUSTED', 'CANCELLED', '
 // Compatibility exports: internal routing no longer grows the root resource pool.
 export const ROUTING_EXTENSION_CAP = 0;
 export const MEMBER_TOOL_CALLS = memberPolicy.calls;
-export const MEMBER_DEADLINE_MS = memberPolicy.milliseconds;
+export const MEMBER_DEADLINE_MS = memberPolicy.roundMilliseconds; // per member round
 export const ROUTING_DEADLINE_CAP_MS = 0;
 export const MEMBER_SEARCH_RESULTS = 5;
 export const MEMBER_SEARCH_CONTENT_CHARS = 3000;
@@ -131,7 +130,7 @@ export async function runInternalMembers({ jobs = [], goal = '', background = ''
       // runSubAgent caps a member's input tokens at maxTokens (32k by default,
       // sized for delegated members); an internal member gets its whole share.
       ...(replyFn ? { replyFn } : {}), maxIterations: job.roundLimit || MAX_MEMBER_ROUNDS, maxTokens: share || MEMBER_INPUT_SHARE, roleId: job.id, depth: 1, signal, sseEmitter: emit, chatId, workspacePath, chatSource, projectId, onProviderResponse });
-    const child = budget ? narrowBudget(budget, { maxInputTokens: share || MEMBER_INPUT_SHARE, maxToolCalls: MEMBER_TOOL_CALLS, deadlineMs: MEMBER_DEADLINE_MS + AGENT_LOOP_CONTRACT.delivery.deadlineMs }) : null;
+    const child = budget ? narrowBudget(budget, { maxInputTokens: share || MEMBER_INPUT_SHARE, maxToolCalls: MEMBER_TOOL_CALLS, deadlineMs: memberDeadlineMs(job.roundLimit || MAX_MEMBER_ROUNDS) }) : null;
     await prescreenApprovals({ job, extraTools, chatId, sseEmitter, signal, approvals });
     let result;
     try { result = await (context ? runWithRequestContext(Object.freeze({ ...context, ...(child ? { budget: child } : {}) }), invoke) : invoke()); }

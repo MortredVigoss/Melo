@@ -88,3 +88,15 @@ test('final reviewer retains actual late-page candidate evidence beyond the gene
  const request=JSON.parse(goalReviewRequest(malicious,[observation]).messages[0].content);
  assert.ok(!request.observations.some(row=>row.text.includes('Made up stock')),'stored ledger text never manufactures host evidence');
 });
+
+test('C3: a member slice follows its round allowance plus the delivery reserve',async()=>{
+ const {memberDeadlineMs,TASK_EVALUATION_POLICY:p}=await import('./taskEvaluation.js');
+ assert.equal(memberDeadlineMs(4),4*p.member.roundMilliseconds+p.member.deliveryReserveMs);
+ assert.equal(memberDeadlineMs(2),2*p.member.roundMilliseconds+p.member.deliveryReserveMs);
+ assert.equal(memberDeadlineMs(undefined),p.member.initialRounds*p.member.roundMilliseconds+p.member.deliveryReserveMs);
+ assert.equal(memberDeadlineMs(99),p.member.maxRounds*p.member.roundMilliseconds+p.member.deliveryReserveMs,'never beyond the cumulative round cap');
+ assert.ok(memberDeadlineMs(1)>=60000+p.member.deliveryReserveMs,'one round covers a full tool timeout');
+ const budget={maxInputTokens:400000,used:{inputTokens:0},delivery:{inputTokens:65536},maxToolCalls:200};
+ assert.equal(evaluate({version:1,op:'taskEvaluation',action:'allocation',budget,rounds:2}).value.deadlineMs,memberDeadlineMs(2));
+ assert.equal(evaluate({version:1,op:'taskEvaluation',action:'allocation',budget}).value.deadlineMs,memberDeadlineMs());
+});

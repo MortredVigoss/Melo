@@ -385,7 +385,8 @@ final class AgentLoop: @unchecked Sendable {
             let available = rootBudget.maxInputTokens - rootBudget.used.inputTokens - (memberPolicy["leadInputReserve"] ?? 0)
             let share = max(0,min(memberPolicy["inputTokens"] ?? 0,available))
             guard share >= (memberPolicy["minimumInput"] ?? Int.max) else { return }
-            budget = rootBudget.narrowed(deadlineMs: Double((memberPolicy["milliseconds"] ?? 0) + (memberPolicy["deliveryReserveMs"] ?? 0)), maxInputTokens: share, maxToolCalls: memberPolicy["calls"] ?? 0)
+            let rounds = active["roundLimit"] as? Int ?? memberPolicy["initialRounds"] ?? 1
+            budget = rootBudget.narrowed(deadlineMs: Double(rounds * (memberPolicy["roundMilliseconds"] ?? 0) + (memberPolicy["deliveryReserveMs"] ?? 0)), maxInputTokens: share, maxToolCalls: memberPolicy["calls"] ?? 0)
             budget.reserveDelivery()
             if restoring, let data = member.budget { try budget.restoreMember(data) }
             core = try PhoneCoreTurn(tools: active["tools"] as? [String] ?? [], rounds: active["roundLimit"] as? Int ?? 0, callsPerRound: maxCallsPerResponse, timeoutMs:budget.remainingMs())
@@ -588,7 +589,7 @@ final class AgentLoop: @unchecked Sendable {
             if job != nil { jobRounds += 1 }
             if calls.isEmpty {
                 candidateRound = round
-                try goal.update("candidate", ["observations": completionObservations, "candidate": ["context": ["messages": goalHistory.suffix(8).map { ["role": $0.role, "content": $0.content] }, "capabilities": Array(offered)], "reply": round.text, "tools": Array(offered) + (nativeSearchAvailable ? ["native_web_search"] : []), "research": ChatGPTRequest.requiresSearch(latestUserMessage), "roundsLeft": maxIterations - core.rounds]])
+                try goal.update("candidate", ["observations": completionObservations, "candidate": ["context": ["messages": goalHistory.suffix(8).map { ["role": $0.role, "content": $0.content] }, "capabilities": Array(offered)], "reply": round.text, "tools": Array(offered) + (nativeSearchAvailable ? ["native_web_search"] : []) + (catalog != nil && job == nil ? ["task_progress"] : []), "research": ChatGPTRequest.requiresSearch(latestUserMessage), "roundsLeft": maxIterations - core.rounds]])
                 if goal.checking { try core.event("feedback"); iteration += 1; continue }
                 try core.event("complete")
                 if !core.completed { return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: core.reason == "DEADLINE_EXCEEDED" ? .budget : .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration + 1) }

@@ -1,5 +1,5 @@
 import {resolve as resolveWorkspaceCwd} from 'node:path';
-import { readOnlyCommand } from './readOnlyCommand.js';
+import { readOnlyCommand, readOnlyCommandForm } from './readOnlyCommand.js';
 import {missingWorkspaceResult} from '../workspace.js';
 /**
  * Built-in tool: bash
@@ -170,6 +170,9 @@ export const bashTool = {
     'HARD-REJECTED — use the file_delete tool so files go to .melo-trash/ with two-stage approval. ' +
     'Commands the parser can\'t tokenize (broken quoting, etc) also prompt as "unknown" risk.',
   category: 'system',
+  // Turn-effect ledger hint only, never a permission: the two read-only forms
+  // the tool serves itself (ls / cat <path>) may repeat within a turn.
+  effectFor: args => readOnlyCommandForm(args?.command) ? 'read' : 'unknown',
   // FileSafetyGate.requestBashOp owns the path-level approval; toolId
   // level prompt would double-prompt for any risky bash. Silent for
   // zero-risk commands (ls / git status / etc) — exactly the contract

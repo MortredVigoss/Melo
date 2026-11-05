@@ -245,7 +245,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
             val goalSkills = if ("phone_workflow" in names) workflowCatalog() else emptyList()
             goalState = runtime.value("goal", buildJsonObject {
                 put("action", "candidate"); put("state", goalState!!); put("observations", JsonArray(observations))
-                put("candidate", buildJsonObject { put("context", buildJsonObject { put("messages", JsonArray(messages.takeLast(8).map { buildJsonObject { put("role", it.role); put("content", it.content) } })); put("capabilities", JsonArray(names.map(::JsonPrimitive))); put("skills", JsonArray(goalSkills)) }); put("reply", reply.text); put("roundsLeft", turn.roundsLeft); put("research", plan["research"] != null); put("tools", JsonArray((names + if (plan["nativeSearchAvailable"]?.jsonPrimitive?.booleanOrNull == true) listOf("native_web_search") else emptyList()).map { JsonPrimitive(it) })) })
+                put("candidate", buildJsonObject { put("context", buildJsonObject { put("messages", JsonArray(messages.takeLast(8).map { buildJsonObject { put("role", it.role); put("content", it.content) } })); put("capabilities", JsonArray(names.map(::JsonPrimitive))); put("skills", JsonArray(goalSkills)) }); put("reply", reply.text); put("roundsLeft", turn.roundsLeft); put("research", plan["research"] != null); put("tools", JsonArray((names + (if (plan["nativeSearchAvailable"]?.jsonPrimitive?.booleanOrNull == true) listOf("native_web_search") else emptyList()) + (if (internalCatalog != null && internalJob == null) listOf("task_progress") else emptyList())).map { JsonPrimitive(it) })) })
             }).jsonObject
             if (goalState!!.text("phase") != "checking") { turn.event("complete"); return true }
             val request = runtime.value("goal", buildJsonObject { put("action", "request"); put("state", goalState!!); put("observations", JsonArray(observations)) }).jsonObject
@@ -281,7 +281,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                 put("goal",plan.text("resolvedGoal").ifBlank { goal })
             }).jsonObject
             if (next.containsKey("error")) return false
-            val allocation = budget.memberAllocation()
+            val allocation = budget.memberAllocation(next.getValue("roundLimit").jsonPrimitive.int)
             if (allocation["allowed"]?.jsonPrimitive?.booleanOrNull != true) return false
             val childBudget = SharedRunBudget.open(runtime,parent=budget,options=allocation)
             childBudget.reserveDelivery()

@@ -5,13 +5,21 @@ export const TASK_EVALUATION_POLICY = Object.freeze({
   version: 1, maxCandidates: 200, maxUpdates: 64, maxInvalidUpdates: 3, maxFields: 16,
   primaryCount: 3, alternatives: 5, primaryScore: 75, alternativeScore: 60, evidenceScore: 20,
   checkpoint: { milliseconds: 180000, calls: 20 },
-  member: { initialRounds: 4, increment: 2, maxRounds: 12, calls: 8, milliseconds: 90000, deliveryReserveMs: AGENT_LOOP_CONTRACT.delivery.deadlineMs,
+  member: { initialRounds: 4, increment: 2, maxRounds: 12, calls: 8, roundMilliseconds: 90000, deliveryReserveMs: AGENT_LOOP_CONTRACT.delivery.deadlineMs,
     inputTokens: 120000, leadInputReserve: 60000, minimumInput: 20000, parallel: 3 },
   modes: { quick: { minimum: 3, maximum: 5, initial: 8 }, standard: { minimum: 5, maximum: 10, initial: 12 }, deep: { minimum: 8, maximum: 15, initial: 20 } },
   batch: { additional: 5, explicitAdditional: 10, minimumInspected: 5, lowYield: 0.2, consecutive: 2 },
   fields: { events: ['name','startsAt','place','participation'], products: ['name','model','region','price','currency','availability'], other: ['name'] },
 });
 export const TASK_PROGRESS_NAME = 'task_progress';
+// A member's wall-clock slice follows its round allowance: one round may hold a
+// full tool timeout (60 s) plus a model round trip, so a single slow tool no
+// longer ends the member (2026-11-05 review C3). The delivery reserve is extra.
+export function memberDeadlineMs(rounds) {
+  const p = TASK_EVALUATION_POLICY.member;
+  const count = Number.isInteger(rounds) && rounds > 0 ? Math.min(rounds, p.maxRounds) : p.initialRounds;
+  return count * p.roundMilliseconds + p.deliveryReserveMs;
+}
 const str = (v, max = 600) => typeof v === 'string' ? v.trim().slice(0, max) : '';
 const list = v => Array.isArray(v) ? v : [];
 const normalize = v => String(v ?? '').normalize('NFKC').toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, '');
@@ -174,7 +182,7 @@ export function taskEvaluationOperation(input) {
   if (input.action === 'allocation') {
     const budget = input.budget, p = TASK_EVALUATION_POLICY.member;
     const remaining = budget ? Math.max(0,budget.maxInputTokens - (budget.used?.inputTokens || 0) - (budget.delivery?.inputTokens || 0) - (budget.pendingInput || 0) - p.leadInputReserve) : p.inputTokens;
-    return { allowed: remaining >= p.minimumInput, maxInputTokens: Math.min(p.inputTokens,remaining), maxToolCalls: p.calls, deadlineMs: p.milliseconds + p.deliveryReserveMs };
+    return { allowed: remaining >= p.minimumInput, maxInputTokens: Math.min(p.inputTokens,remaining), maxToolCalls: p.calls, deadlineMs: memberDeadlineMs(input.rounds) };
   }
   if (input.action === 'presentation') return taskProgressPresentation(input.result,input.locale);
   if (input.action === 'definition') return TASK_PROGRESS_DEFINITION;

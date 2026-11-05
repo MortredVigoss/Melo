@@ -1,4 +1,4 @@
-import { updateTaskEvaluation, taskProgressResult, taskEvaluationSummary } from './taskEvaluation.js';
+import { updateTaskEvaluation, taskProgressResult, taskEvaluationSummary, TASK_PROGRESS_NAME } from './taskEvaluation.js';
 import { deliveryEvidence } from './evidence.js';
 import { isStandaloneGreeting } from './retrieval/intentRouter.js';
 import { getRequestNetworkPolicy } from './retrieval/requestPolicy.js';
@@ -63,6 +63,14 @@ Continue if authorized available tools can resolve missing information, includin
 
 const REVIEW_TURN_CONTRACT = `Classify turnKind as task, answer, feedback, or clarification. The latest user message in context determines whether NEW action was requested; discussion of a previous action does not authorize repeating it. Never turn product feedback into a task to implement a product change with unrelated tools. Give each requirement kind=response, context, constraint, external_fact, or external_effect. A prohibition (do not log in, change settings, close navigation, or look up an address) is a constraint: assess the recorded actions, report any violation, but never demand a new tool call to prove inaction; a respected constraint may have no evidence IDs. It cannot substitute for a positive requested deliverable. response/context requirements in answer/feedback/clarification may be met without executed evidence IDs; context includes host-provided capability and Skill metadata and conversation history. Metadata proves availability, never execution. New public facts and external effects ALWAYS need actual successful observation IDs. Task requirements cannot bypass this by labeling an external result response or constraint. Failed/rejected observations may explain unavailability or a respected constraint, never a successful external effect. Disambiguate names/places using available conversation, saved place roles, app-provided aliases and authorized lookup before requesting private input. Preserve cumulative verified facts when the current page changes. Once the requested terminal state is supported, stop device actions and deliver; do not inspect or close an already completed navigation.`;
 
+// The ledger rules apply only when the host offered task_progress in this turn
+// (team plans, video and image turns never do) or a ledger already exists; a
+// checker must not demand a tool the lead cannot call (2026-11-05 review C2).
+const EVALUATION_RULES = '\nFor multi-item discovery/recommendations require a task_progress contract and candidate ledger before complete. Check that it includes every user constraint and explicit quantity; independently compare the ORIGINAL goal, each quoted field and source meaning, not just valid IDs or scores. Always include the boolean evaluationValid and needsEvaluation fields in the JSON reply. If a ledger exists, set evaluationValid=true ONLY after independently validating its contract and candidate evidence; set it false when a condition or candidate is unsupported. If no ledger is needed, set evaluationValid=true and needsEvaluation=false. Set needsEvaluation=true and evaluationValid=false if a required ledger is missing. Never omit these fields, even when all requirements are met. Low yield or a soft-target adjustment never excuses a missing explicit quantity. Recommendation scores are not probabilities. Recommend only eligible candidates; disclose excluded/pending items and scope. No fabricated completeness for an open set.';
+const NO_LEDGER_RULES = '\nNo task_progress tool was offered in this turn, so a candidate ledger cannot exist and must not be demanded: judge every requirement from the evidence alone and always include the boolean fields evaluationValid=true and needsEvaluation=false in the JSON reply.';
+const evaluationOffered = state => (state.availableTools || []).includes(TASK_PROGRESS_NAME);
+const evaluationRules = state => evaluationOffered(state) || state.evaluation?.contract ? EVALUATION_RULES : NO_LEDGER_RULES;
+
 export function goalReviewRequest(state, observations = []) {
   let remaining = GOAL_LIMITS.evidenceChars;
   // A page's prefix is not the evidence for all candidates on that page.
@@ -97,7 +105,7 @@ export function goalReviewRequest(state, observations = []) {
     return { id: row.id, name: row.name, type: row.type, effect: row.effect, ok: row.ok, executed: row.executed, url: row.url, reading: row.reading, text: body, truncated: String(row.text || row.output || '').length > body.length };
   }).reverse();
   evidence.push(...pinned);
-  return { systemPrompt: GOAL_REVIEW_INSTRUCTIONS + '\n' + REVIEW_TURN_CONTRACT + '\nFor multi-item discovery/recommendations require a task_progress contract and candidate ledger before complete. Check that it includes every user constraint and explicit quantity; independently compare the ORIGINAL goal, each quoted field and source meaning, not just valid IDs or scores. Always include the boolean evaluationValid and needsEvaluation fields in the JSON reply. If a ledger exists, set evaluationValid=true ONLY after independently validating its contract and candidate evidence; set it false when a condition or candidate is unsupported. If no ledger is needed, set evaluationValid=true and needsEvaluation=false. Set needsEvaluation=true and evaluationValid=false if a required ledger is missing. Never omit these fields, even when all requirements are met. Low yield or a soft-target adjustment never excuses a missing explicit quantity. Recommendation scores are not probabilities. Recommend only eligible candidates; disclose excluded/pending items and scope. No fabricated completeness for an open set.', messages: [{ role: 'user', content: JSON.stringify({ goal: goalText(state), revision: state.revision, candidate: state.candidate, context: state.context, availableTools: state.availableTools, requirements: state.requirements, evaluation: state.evaluation || null, observations: evidence }) }] };
+  return { systemPrompt: GOAL_REVIEW_INSTRUCTIONS + '\n' + REVIEW_TURN_CONTRACT + evaluationRules(state), messages: [{ role: 'user', content: JSON.stringify({ goal: goalText(state), revision: state.revision, candidate: state.candidate, context: state.context, availableTools: state.availableTools, requirements: state.requirements, evaluation: state.evaluation || null, observations: evidence }) }] };
 }
 
 export function reviewGoal(state, raw, observations = []) {
@@ -114,7 +122,8 @@ export function reviewGoal(state, raw, observations = []) {
   if (requirements.some(row => !row.text || !['met', 'missing', 'unavailable'].includes(row.status) || row.evidenceIds.some(id => !(row.status === 'met' && external(row) ? validEvidence : attemptedEvidence).has(id)))) return finish('partial', 'GOAL_EVIDENCE_INVALID');
   let decision = report.decision;
   const evaluation = taskEvaluationSummary(state.evaluation);
-  if (decision === 'complete' && (report.needsEvaluation === true && !evaluation || report.evaluationValid === false || evaluation && report.evaluationValid !== true || evaluation && evaluation.stop !== 'ready_for_review')) {
+  const ledgerRequired = !!evaluation || evaluationOffered(state);
+  if (decision === 'complete' && ledgerRequired && (report.needsEvaluation === true && !evaluation || report.evaluationValid === false || evaluation && report.evaluationValid !== true || evaluation && evaluation.stop !== 'ready_for_review')) {
     decision = 'continue';
     report.nextStep = report.nextStep || (evaluation?.gaps?.join('; ') || 'Initialize/correct task_progress against the original requirements, then read and verify the missing candidates.');
     report.reason = report.reason || 'Task evaluation requirements remain incomplete.';
