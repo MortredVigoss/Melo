@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "sha256": "38566689a0747f00c6dae14fdb0c3606e614fc96912da97aa4e0b7815f8a1fff",
+  "sha256": "883c3187e387ffbba745deac2991435821e0706c6a11d4dc8be93b0e5d92710f",
   "sources": {
     "shared/agent/index.js": "d6f84581b2efec174e261b9764427e8d11d3d59ab9df737e0b2396922f0e06ba",
     "shared/agent/taskEvaluation.js": "0fa3281c4f97b028841f4efd44c54db72ee6998ea07068c90e5fefab0869b4f4",
@@ -11,7 +11,7 @@
     "shared/agent/media/textUrls.js": "a18784bbc35025e156184f896f0b5fd1ccaccde18a94a36acf6e2003fefa22c6",
     "shared/agent/retrieval/intentRouter.js": "cc592474a82ea3542efb0138fe7605fecc3ce822fcc161a738b3c1b40dd06d88",
     "shared/agent/limitDelivery.js": "17488e649fea73cf7cc39fb58a6e40c621ed9eb650e7467c7b8650887ed938de",
-    "shared/agent/goal.js": "19ac1d14b3c9124b148043528d35c7f7ce048f7c311054db4c0fe4e6f65abc31",
+    "shared/agent/goal.js": "52867a80e9de62a854e8bc1ad985b1896aa53a7a1aeeae61ed006f7f8f1ace79",
     "shared/agent/evidence.js": "f7a8c993efff0ae2596f51edba4147db6789b724cc669f44152f5253ae2cec17",
     "shared/agent/search.js": "43d81704e89e964cfe497639a1bf933b431d80bd2572c45e80a6454a52e614fe",
     "shared/agent/media/mediaPostRef.js": "ac69f2ec7bf21b540128c34e9f0f051d83001d5be511b36b7051339dda25a298",
