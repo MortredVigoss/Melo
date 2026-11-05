@@ -293,7 +293,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
             leadHistory = history; leadHistory += reply.wire; leadAssignment = call; leadChainStart = currentChainStart
             history = mutableListOf(buildJsonObject { put("role","user"); put("content",next.text("input")) })
             currentChainStart = 0
-            journal.event("internal:"+assignments.size, next.text("label"), input = next.text("task"))
+            journal.event("internal:"+assignments.size, next.text("label"), input = next.text("task"), role = next.text("role").ifEmpty { null }, rounds = next["roundLimit"]?.jsonPrimitive?.intOrNull)
             return true
         }
 
@@ -315,7 +315,8 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
             history = leadHistory; currentChainStart = leadChainStart
             DeviceAgentClient.appendResult(history, connection.protocol, leadAssignment, DeviceToolResult(Json.parseToJsonElement(report).jsonObject))
             journal.event("internal:"+assignments.size, job.text("label"), output = delivered.take(500),
-                status = if (Json.parseToJsonElement(report).jsonObject.text("status") == "observed") "completed" else "interrupted")
+                status = if (Json.parseToJsonElement(report).jsonObject.text("status") == "observed") "completed" else "interrupted",
+                role = job.text("role").ifEmpty { null }, rounds = job["roundLimit"]?.jsonPrimitive?.intOrNull)
             memberTurn?.let { child -> rootTurn?.event("inherit-effects",child.effects); child.close() }
             memberTurn = null; internalJob = null
         }
@@ -382,7 +383,9 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                         DeviceAgentClient.appendResult(history,connection.protocol,call,DeviceToolResult(result))
                         turn.event("feedback",buildJsonObject { put("internalRouting",true) })
                         val display = runtime.value("taskEvaluation",buildJsonObject { put("action","presentation"); put("result",result); put("locale",replyLocale) }).jsonObject
-                        journal.event("task-evaluation:$modelSequence",display.text("name"),output=display.text("output"),status=if (result["ok"]?.jsonPrimitive?.booleanOrNull == true) "completed" else "failed")
+                        // Plan C: read-only ledger view for the task space; never sent to the model.
+                        val snapshot = try { runtime.value("goal", buildJsonObject { put("action","progressSnapshot"); put("state",goalState!!) }) as? JsonObject } catch (error: Exception) { currentCoroutineContext().ensureActive(); null }
+                        journal.event("task-evaluation:$modelSequence",display.text("name"),output=display.text("output"),status=if (result["ok"]?.jsonPrimitive?.booleanOrNull == true) "completed" else "failed",evaluation=snapshot)
                         if (result["closed"]?.jsonPrimitive?.booleanOrNull == true) throw SharedTurnStopped("TASK_EVALUATION_LIMIT")
                         continue
                     }
@@ -494,12 +497,14 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
 private fun JsonObject.strings(key: String) = (get(key) as? JsonArray).orEmpty().map { it.jsonPrimitive.content }
 
 private class ChatJournal(private val runtime: SharedCoreRuntime, private var scene: JsonObject, private val save: suspend (JsonObject) -> Unit) {
-    suspend fun event(id: String, name: String, module: String = "compute", operation: Boolean = false, input: String? = null, output: String? = null, status: String = "running", model: String? = null, returnedModel: String? = null, sources: List<JsonObject> = emptyList(), durationMs: Long? = null, channel: String? = null, deviceRunId: String? = null, result: JsonObject? = null) {
+    suspend fun event(id: String, name: String, module: String = "compute", operation: Boolean = false, input: String? = null, output: String? = null, status: String = "running", model: String? = null, returnedModel: String? = null, sources: List<JsonObject> = emptyList(), durationMs: Long? = null, channel: String? = null, deviceRunId: String? = null, result: JsonObject? = null, role: String? = null, rounds: Int? = null, evaluation: JsonObject? = null) {
         update("event", buildJsonObject { put("event", buildJsonObject {
             put("id", id); put("name", name); put("module", module); put("kind", if (operation) "operation" else "pipeline"); put("status", status)
             input?.let { put("input", it) }; output?.let { put("output", it) }; model?.let { put("model", it) }; returnedModel?.let { put("returnedModel", it) }
             result?.let { put("result", it) }
             durationMs?.let { put("durationMs", it) }; channel?.let { put("channel", it) }; deviceRunId?.let { put("deviceRunId", it) }; put("sources", JsonArray(sources))
+            // Task space (plan C): the shared reducer validates and bounds these.
+            role?.let { put("role", it) }; rounds?.let { put("limits", buildJsonObject { put("rounds", it) }) }; evaluation?.let { put("evaluation", it) }
         }) })
     }
     suspend fun finish(outcome: String, reason: String?, completion: JsonObject? = null) = update("finish", buildJsonObject { put("outcome", outcome); reason?.let { put("reason", it) }; completion?.let { put("completion", it) } })

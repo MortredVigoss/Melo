@@ -19,6 +19,9 @@ const jobs = {
 export const ROUTE_NAME = 'route_task';
 export const MAX_ASSIGNMENTS = 6;
 export const MAX_MEMBER_ROUNDS = TASK_EVALUATION_POLICY.member.initialRounds;
+// Stable role IDs for scene attribution (plan C); labels stay display-only.
+export const INTERNAL_JOB_ROLES = Object.freeze(Object.keys(jobs));
+export const INTERNAL_JOB_LABELS = Object.freeze(Object.fromEntries(Object.entries(jobs).map(([role, job]) => [role, job.label])));
 // Tools no internal job may ever receive, whatever a host suggests: the router
 // itself, delegation, model escalation, development jobs, test doubles and
 // multi-step skills stay with the lead.

@@ -21,6 +21,7 @@ final class Log: @unchecked Sendable {
     var stages: [(id: String, status: String, output: String)] = []
     var records: [ExecutionToolCall] = []
     var statuses: [String] = []
+    var events: [AgentStageEvent] = []
 }
 func fc(_ id: String, _ name: String = "open_url", _ args: String = #"{"url":"https://a.example"}"#) -> ResponsesFunctionCall { ResponsesFunctionCall(callID: id, name: name, arguments: args) }
 func calls(_ list: [ResponsesFunctionCall]) -> AgentRound { AgentRound(text: "", calls: list, echo: .none, estimatedInputTokens: 100) }
@@ -187,6 +188,7 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
         do {
             let log = Log()
             var h = hooks(log); h.internalRouting = true; h.maxTaskIterations = 1
+            h.onStageEvent = { event in log.stages.append((event.id, event.status, event.output)); log.events.append(event) }
             var leads = 0, reads = 0, maths = 0
             let transport = ScriptedTransport { request in
                 if request.goalReview != nil { return answer(#"{"decision":"complete","reasonType":"fulfilled","requirements":[{"text":"forecast and conversion","status":"met","evidenceIds":["job-1:same","job-2:same"]}]}"#) }
@@ -215,6 +217,11 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             assert(outcome.completion?.outcome == "completed" && outcome.text.contains("68 °F"))
             assert(log.performed.count == 1 && leads == 3 && reads == 2 && maths == 3)
             assert(log.records.contains { $0.callId == "job-2:denied" && !$0.executed })
+            // Plan C: member stages carry their stable role and round limit.
+            let members = log.events.filter { $0.id.hasPrefix("internal:") }
+            assert(members.filter { $0.id == "internal:1" }.allSatisfy { $0.role == "research" && ($0.rounds ?? 0) > 0 } && members.contains { $0.id == "internal:1" && $0.status == "running" })
+            assert(members.filter { $0.id == "internal:2" }.allSatisfy { $0.role == "calculate" && ($0.rounds ?? 0) > 0 } && members.contains { $0.id == "internal:2" && $0.status != "running" })
+            assert(log.events.allSatisfy { $0.evaluation == nil })
         }
         // Coordinator bookkeeping is portable, persists in the receipt and
         // never dispatches a physical tool. A dishonest 8/20 complete verdict
@@ -222,6 +229,7 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
         for count in [8, 20] {
             let log = Log()
             var h = hooks(log); h.internalRouting = true; h.evaluationMode = "quick"
+            h.onStageEvent = { event in log.stages.append((event.id, event.status, event.output)); log.events.append(event) }
             var step = 0
             let source = (0..<count).map { "Product \($0), model F\($0), AU, price 100 AUD, available." }.joined(separator: "\n")
             let transport = ScriptedTransport { request in
@@ -246,6 +254,14 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             assert(log.stages.contains { $0.id.hasPrefix("task-evaluation:") && $0.output.contains("\(count)/20") })
             let receipt = String(decoding:try JSONEncoder().encode(result.completion),as:UTF8.self)
             assert(receipt.contains("\"evaluation\"") && receipt.contains("\"quick\""))
+            // Plan C: every evaluation stage carries the bounded ledger view from the shared core.
+            let snapshots = log.events.filter { $0.id.hasPrefix("task-evaluation:") }.map { $0.evaluation }
+            assert(snapshots.count == 2 && snapshots.allSatisfy { $0 != nil })
+            let last = snapshots.last!!.object
+            assert(last["v"] == .number(1) && last["summary"]?.object["verified"] == .number(Double(count)) && last["summary"]?.object["discovered"] == .number(Double(count)))
+            assert(last["candidates"]?.array.count == min(count, 24) && last["contract"]?.object["explicit"]?.object["value"] == .number(20))
+            assert(last["summary"]?.object["stop"] == .string(count == 20 ? "ready_for_review" : "continue"))
+            assert(!SyncValue.object(last).canonical.contains("price 100 AUD, available."), "no evidence text in the scene view")
         }
         do {
             var enabled = AgentLoopHooks(); enabled.internalRouting = true

@@ -23,6 +23,23 @@ import Foundation
         phone.finish("completed")
         phone.recordPhoneOperation(id: "web:late", module: "search", name: "网页 · 打开", status: "completed", summary: "")
         assert(phone.displayedToolCount == 5)
+        // Plan C: member role, round limit and evaluation snapshot stay on the
+        // local stage, survive merges and Codable, and stay out of v1 sync.
+        do {
+            var space = ExecutionRecord(chatId: "space", query: "q", requestedModel: "m")
+            let snapshot = try SyncValue.from(["v": 1, "summary": ["verified": 2, "stop": "continue"], "candidates": [["key": "a", "tier": "primary", "total": 82]]])
+            space.recordStage("internal:1", name: "检索成员", status: "running", output: "read", role: "research", rounds: 4)
+            space.recordStage("internal:1", name: "检索成员", status: "completed", output: "done")
+            space.recordStage("internal:2", name: "x", status: "running", role: "admin", rounds: 900)
+            space.recordStage("task-evaluation:3", name: "任务评估", status: "completed", output: "发现 1", evaluation: snapshot)
+            let member = space.pipeline?.first { $0.id == "internal:1" }
+            assert(member?.status == "completed" && member?.role == "research" && member?.limits == ["rounds": 4])
+            let odd = space.pipeline?.first { $0.id == "internal:2" }
+            assert(odd?.role == nil && odd?.limits == ["rounds": 100])
+            assert(space.pipeline?.first { $0.id == "task-evaluation:3" }?.evaluation == snapshot)
+            let decoded = try JSONDecoder().decode(ExecutionRecord.self, from: try JSONEncoder().encode(space))
+            assert(decoded.pipeline == space.pipeline)
+        }
         var bounds = ExecutionRecord(chatId: "bounds", query: "q", requestedModel: "m")
         let prefix = String(repeating: "x", count: 280)
         for tail in ["a", "b", "b"] {

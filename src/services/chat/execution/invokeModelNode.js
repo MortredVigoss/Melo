@@ -1,4 +1,4 @@
-import { TASK_PROGRESS_DEFINITION, TASK_PROGRESS_NAME, taskProgressPresentation } from '../../../../shared/agent/taskEvaluation.js';
+import { TASK_PROGRESS_DEFINITION, TASK_PROGRESS_NAME, taskProgressPresentation, taskEvaluationSnapshot } from '../../../../shared/agent/taskEvaluation.js';
 import { internalRouteCatalog, startInternalJob, MAX_ASSIGNMENTS, ROUTE_NAME } from '../../../../shared/agent/internalRouting.js';
 import { internalRoleSuggestions } from './internalRoles.js';
 import { runInternalMembers } from './internalMembers.js';
@@ -401,7 +401,11 @@ export function createInvokeModelNode(turn) {
         const result = coreTurn.progress(progressCalls[0].arguments, graphState.activeAgentProfile?.evaluationMode);
         coreTurn.update('feedback', { internalRouting: true });
         loopMessages = functionSession.append(loopMessages, turn, [{ call: progressCalls[0], result: { ok: result.ok, output: JSON.stringify(result) } }]);
-        sseEmitter?.('execution_event', { kind: 'pipeline', id: `task-evaluation:${iteration}`, module: 'compute', ...taskProgressPresentation(result, config.replyLanguage), status: result.ok ? 'completed' : 'failed' });
+        // Plan C: the bounded ledger view travels with the stage so the task
+        // space shows each batch live. It is derived after the update and
+        // never feeds back into the model or the ledger.
+        const evaluation = taskEvaluationSnapshot(coreTurn.goalState?.evaluation);
+        sseEmitter?.('execution_event', { kind: 'pipeline', id: `task-evaluation:${iteration}`, module: 'compute', ...taskProgressPresentation(result, config.replyLanguage), status: result.ok ? 'completed' : 'failed', ...(evaluation ? { evaluation } : {}) });
         if (result.closed) { terminalReason = 'TASK_EVALUATION_LIMIT'; break; }
         continue;
       }

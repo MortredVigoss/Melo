@@ -1,4 +1,6 @@
 import { AGENT_LOOP_CONTRACT } from './loopContract.js';
+import { INTERNAL_JOB_ROLES } from './internalRouting.js';
+import { normalizeEvaluationSnapshot } from './taskEvaluation.js';
 import { sessionContext, sessionEventId } from '../../src/shared/sessionEvents.js';
 // Portable observations using the existing ExecutionScene projection contract.
 // Hosts supply identity/time; this module has no effects or credential access.
@@ -54,6 +56,14 @@ export function executionScene({ action, scene, runId, chatId, query, at, event 
   if (!row) { row = { id: text(event.id, 256), name: text(event.name, 100), module: ['search', 'tools', 'compute', 'create', 'files'].includes(event.module) ? event.module : 'compute', status: 'running', startedAt: at }; rows.push(row); }
   if (row.status !== 'running') return next;
   for (const key of ['input', 'output', 'model', 'returnedModel', 'errorCode', 'deviceRunId', 'channel']) if (event[key] != null) row[key] = text(event[key], key === 'output' ? 6000 : ['model', 'returnedModel'].includes(key) ? 180 : 2000);
+  // Task space (plan C): member role, its round limit and the bounded
+  // evaluation snapshot. Optional fields; older scenes simply lack them.
+  if (kind === 'pipeline') {
+    if (INTERNAL_JOB_ROLES.includes(event.role)) row.role = event.role;
+    if (Number.isInteger(event.limits?.rounds)) row.limits = { rounds: Math.max(0, Math.min(100, event.limits.rounds)) };
+    const evaluation = event.evaluation ? normalizeEvaluationSnapshot(event.evaluation) : null;
+    if (evaluation) row.evaluation = evaluation;
+  }
   if (event.result) {
     const result = event.result;
     row.resultSummary = text(result.ok !== true ? result.error || result.summary || result.code || '工具未成功完成' :

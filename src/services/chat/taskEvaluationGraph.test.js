@@ -38,5 +38,15 @@ for(const count of [8,20])await test(`full graph: ${count}/20 products, real rea
  assert.equal(receipt.task.evaluation.summary.verified,count);
  assert.equal(receipt.outcome,count===20?'completed':'partial');
  assert.ok(events.some(event=>event.id?.startsWith('task-evaluation:')&&event.output.includes(`${count}/20`)));
+ // Plan C: each evaluation stage carries the bounded ledger view, built after
+ // the update and never dispatched as a tool (executions stays 1 above).
+ const snapshots=events.filter(event=>event.id?.startsWith('task-evaluation:')).map(event=>event.evaluation);
+ assert.equal(snapshots.length,2);assert.ok(snapshots.every(Boolean),'every evaluation stage carries a snapshot');
+ assert.equal(snapshots[0].contract.explicit.value,20);assert.equal(snapshots[0].summary.discovered,0);
+ const last=snapshots.at(-1);assert.equal(last.summary.verified,count);assert.equal(last.summary.discovered,count);
+ assert.equal(last.candidates.length,Math.min(count,24));assert.equal(last.summary.omitted,0);
+ assert.equal(last.summary.stop,count===20?'ready_for_review':'continue');
+ assert.ok(last.candidates.every(row=>Object.values(row.fields).every(value=>value==='verified')));
+ assert.ok(!JSON.stringify(last).includes('price 100 AUD, region AU'),'no evidence text in the scene view');
  }finally{unregisterTool(tool);}
 });

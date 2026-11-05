@@ -140,6 +140,11 @@ class ChatPhoneUseFlowTest {
             assertFalse(wires[1].toString().contains("captured-agent-marker"))
             assertTrue(wires[2].toString().contains("CAPABILITY_DENIED"))
             assertTrue(wires[4].toString().contains("job-1:actual") && wires[4].toString().contains("captured-agent-marker"))
+            // Plan C: the task space attributes the member by its stable role and round limit.
+            val scene = app.repository.data.value.runs.last { it.chatId == id }.sharedScene!!
+            val member = scene["pipeline"]!!.jsonArray.map { it.jsonObject }.first { it.text("id") == "internal:1" }
+            assertEquals("calculate", member.text("role"))
+            assertTrue((member["limits"]?.jsonObject?.get("rounds")?.jsonPrimitive?.intOrNull ?: 0) > 0)
         }
     }
 

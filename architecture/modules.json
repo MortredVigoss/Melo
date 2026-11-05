@@ -25,7 +25,7 @@
     ],
     "graph": {
       "modules": 695,
-      "edges": 2263,
+      "edges": 2266,
       "roots": [
         "src",
         "desktop-ui",
@@ -34,11 +34,11 @@
       ],
       "note": "静态 import/re-export，含 desktop-ui 对 /shared/*.js 的服务映射；不含动态 import 与外部包"
     },
-    "routes": 178,
+    "routes": 179,
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
-      "detected": 36,
+      "detected": 37,
       "unannotated": []
     }
   },
@@ -1278,6 +1278,7 @@
           "shared/agent/taskContract.test.js",
           "shared/agent/taskEvaluation.test.js",
           "shared/agent/taskReplay.test.js",
+          "shared/agent/taskSpaceSnapshot.test.js",
           "shared/agent/tools.test.js",
           "shared/agent/trace.test.js",
           "shared/agent/workflows.test.js",
@@ -3812,6 +3813,7 @@
         "GET /shared/agent/providerDefaults.js ← src/server.js",
         "GET /shared/agent/runtimeBehavior.js ← src/server.js",
         "GET /shared/agent/runtimeMessages.js ← src/server.js",
+        "GET /shared/agent/taskEvaluation.js ← src/server.js",
         "GET /shared/channelAvailability.js ← src/server.js",
         "GET /shared/conversationTopics.js ← src/server.js",
         "GET /shared/executionMetadata.js ← src/server.js",
@@ -5490,6 +5492,7 @@
         "shared/agent/locale.js",
         "shared/agent/loopContract.js",
         "shared/agent/runtimeMessages.js",
+        "shared/agent/taskEvaluation.js",
         "src/memory/offline/extractor.js",
         "src/shared/executionMetadata.js",
         "src/shared/executionScene.js",
@@ -6123,7 +6126,8 @@
       ],
       "tests": [
         "shared/agent/conformance.test.js",
-        "shared/agent/taskEvaluation.test.js"
+        "shared/agent/taskEvaluation.test.js",
+        "shared/agent/taskSpaceSnapshot.test.js"
       ],
       "note": "运行源码与隔离 bundle 对照，并校验逐源文件散列和 iOS 原样打包",
       "features": [

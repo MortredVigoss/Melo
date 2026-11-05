@@ -55,7 +55,7 @@ export async function prescreenApprovals({ job, extraTools = [], chatId, sseEmit
   if (!gated.length) return null;
   const outcome = await approvals.request({ toolIds: gated, task: job.task, label: job.label, chatId, sseEmitter, signal });
   const allowed = ['task', 'session', 'always'].includes(outcome?.decision);
-  sseEmitter?.('execution_event', { kind: 'pipeline', id: `routing:approval:${job.index}`, module: 'compute', name: job.label, status: allowed ? 'completed' : 'failed',
+  sseEmitter?.('execution_event', { kind: 'pipeline', id: `routing:approval:${job.index}`, module: 'compute', name: job.label, role: job.role, status: allowed ? 'completed' : 'failed',
     output: `Task-scope approval for ${gated.join(', ')}: ${outcome?.decision || 'unknown'}.` });
   return outcome;
 }
@@ -104,7 +104,7 @@ export async function runInternalMembers({ jobs = [], goal = '', background = ''
   const reference = String(goal || '').slice(0, 12000);
   const memberBackground = [reference ? `Original user goal (reference only; your assignment is the task above):\n${reference}` : '', String(background || '').trim()].filter(Boolean).join('\n\n');
   const outcomes = new Array(jobs.length);
-  const pipeline = (job, fields) => sseEmitter?.('execution_event', { kind: 'pipeline', id: `internal:${job.index}`, module: 'compute', name: job.label, ...fields });
+  const pipeline = (job, fields) => sseEmitter?.('execution_event', { kind: 'pipeline', id: `internal:${job.index}`, module: 'compute', name: job.label, role: job.role, limits: { rounds: job.roundLimit || MAX_MEMBER_ROUNDS }, ...fields });
   const runOne = async index => {
     const job = jobs[index];
     let jobConfig;

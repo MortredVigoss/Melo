@@ -1,4 +1,4 @@
-import { updateTaskEvaluation, taskProgressResult, taskEvaluationSummary, TASK_PROGRESS_NAME } from './taskEvaluation.js';
+import { updateTaskEvaluation, taskProgressResult, taskEvaluationSummary, TASK_PROGRESS_NAME, taskEvaluationSnapshot } from './taskEvaluation.js';
 import { deliveryEvidence } from './evidence.js';
 import { isStandaloneGreeting } from './retrieval/intentRouter.js';
 import { getRequestNetworkPolicy } from './retrieval/requestPolicy.js';
@@ -156,6 +156,8 @@ export function goalOperation({ action, state, goal, messages, id, amendment, ca
   if (!state || state.version !== 1) throw new Error('Unknown goal state');
   if (action === 'progress') return { ...state, evaluation: updateTaskEvaluation(state.evaluation, progress, { goal: goalText(state), revision: state.revision, observations, resourceUse, mode: evaluationMode }) };
   if (action === 'progressResult') return taskProgressResult(state.evaluation);
+  // Read-only task-space view (plan C); never changes the goal state.
+  if (action === 'progressSnapshot') return taskEvaluationSnapshot(state.evaluation);
   if (action === 'amend') return amendGoal(state, amendment);
   if (action === 'candidate') return goalCandidate(state, { ...candidate, observations });
   if (action === 'request') return goalReviewRequest(state, observations);

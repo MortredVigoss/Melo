@@ -1,5 +1,6 @@
 import { runtimeStageName, runtimeStageOutput } from '../../shared/agent/runtimeMessages.js';
 import { visualColor } from './visualTokens.js';
+import { normalizeEvaluationSnapshot } from '../../shared/agent/taskEvaluation.js';
 const sceneMessageParams = value => Object.fromEntries(Object.entries(value || {}).filter(([k,v])=>/^[a-zA-Z][a-zA-Z0-9_]{0,39}$/.test(k) && (typeof v === 'string' || typeof v === 'number' && Number.isFinite(v) || v && typeof v === 'object' && /^value\.[a-zA-Z0-9_]{1,40}$/.test(v.messageId))).slice(0,16).map(([k,v])=>[k,typeof v === 'string' ? v.slice(0,300) : typeof v === 'object' ? {messageId:v.messageId} : v]));
 export { sessionEvents } from './sessionEvents.js';
 import { executionMetadata, publicSummaryText } from './executionMetadata.js';
@@ -13,6 +14,10 @@ export const EXECUTION_MODULES = Object.freeze([
   { id: 'tools', name: '工具调用', color: visualColor('execution-tools'), position: [232, 54, -80] },
   { id: 'create', name: '模型与成果', color: visualColor('execution-create'), position: [142, -116, 40] },
 ]);
+// Internal routing roles (shared/agent/internalRouting.js INTERNAL_JOB_ROLES;
+// equality is asserted by executionBoard.test.js). Kept literal here so the
+// browser does not load the routing policy just to label a scene.
+export const MEMBER_ROLES = Object.freeze(['research', 'calculate', 'lookup', 'execute']);
 export const TERMINAL_SCENE_STATUSES = ['completed', 'failed', 'cancelled', 'interrupted'];
 export const sceneFinished = scene => TERMINAL_SCENE_STATUSES.includes(scene?.status);
 export const sceneText = (value, max = 1000) => String(value ?? '').slice(0, max);
@@ -172,6 +177,11 @@ export function applyExecutionEvent(scene, event) {
       if (stage.messageId) stage.name = runtimeStageName(stage, 'en');
       if (stage.outputMessageId) stage.output = runtimeStageOutput(stage, 'en');
       if(event.handoff && typeof event.handoff==='object') {stage.handoff=event.handoff;stage.agentId=sceneText(event.agentId,100);stage.memberId=sceneText(event.memberId,100);}
+      // Task space (plan C): internal member role, its round limit and the
+      // bounded evaluation snapshot. Optional; older scenes simply lack them.
+      if (MEMBER_ROLES.includes(event.role)) stage.role = event.role;
+      if (Number.isInteger(event.limits?.rounds)) stage.limits = { rounds: Math.max(0, Math.min(100, event.limits.rounds)) };
+      if (event.evaluation) { const evaluation = normalizeEvaluationSnapshot(event.evaluation); if (evaluation) stage.evaluation = evaluation; }
       // Bug audit U5: first sighting of a stage is its start, whatever status
       // it arrives with (a completed-only stage used to have no time at all).
       if (!stage.startedAt) stage.startedAt = at;

@@ -40,6 +40,13 @@ test('read-only jobs run in parallel lanes and execute jobs wait for them, one a
   assert.equal(prefixed.length, 1, 'member stage ids are prefixed with the job id');
   assert.equal(prefixed[0].actorName, '检索成员');
   assert.ok(emitted.some(event => event.id === 'internal:1' && event.status === 'running') && emitted.some(event => event.id === 'internal:1' && event.status === 'completed'));
+  // Plan C: every member stage names its stable role and round limit, so the
+  // task space attributes it without matching display labels.
+  for (const [index, role] of [[1, 'research'], [2, 'lookup'], [3, 'execute'], [4, 'research']]) {
+    const stages = emitted.filter(event => event.id === `internal:${index}`);
+    assert.ok(stages.length >= 2 && stages.every(event => event.role === role && event.limits?.rounds === jobs[index - 1].roundLimit), JSON.stringify(stages));
+  }
+  assert.ok(emitted.filter(event => String(event.id).startsWith('job-')).every(event => event.role === undefined), 'member sub-events keep their own shape');
 });
 
 test('a member gets its own budget share and the lead reserve stops new members; failures and cancellation become partial handoffs without throwing', async () => {

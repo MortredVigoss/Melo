@@ -178,7 +178,95 @@ export function taskProgressResult(state) {
     note: 'Scores rank eligible candidates; they are not probabilities. Final independent review must check source meaning and every original user requirement.' };
 }
 
+// Task-space projection (plan C, 2026-11-05). A bounded, deterministic view of
+// the ledger for the execution scene, rebuilt on every update. It carries no
+// evidence text: field states only, quotes only from the user's own contract.
+// Tiers come from taskEvaluationSummary; this view never makes a new verdict.
+export const EVALUATION_SNAPSHOT_LIMITS = Object.freeze({ candidates: 24, constraints: 8, fields: 16, coverage: 12, gaps: 4, tags: 4 });
+const SNAPSHOT_TIERS = ['primary','alternative','eligible','pending','excluded'];
+const SNAPSHOT_STATUSES = ['discovered','read','verified','excluded'];
+const SNAPSHOT_FIELD_STATES = ['verified','failed','missing'];
+const clip = (v, max) => typeof v === 'string' ? v.slice(0, max) : typeof v === 'number' && Number.isFinite(v) ? String(v).slice(0, max) : '';
+const whole = (v, max = 1e9) => Number.isFinite(Number(v)) && v !== null && v !== '' && typeof v !== 'boolean' ? Math.max(0, Math.min(max, Math.round(Number(v)))) : 0;
+const pick = (v, values, fallback) => values.includes(v) ? v : fallback;
+// qualify() records failures as text; map each to the required field it concerns.
+function failedFields(row) {
+  const names = new Set();
+  for (const text of list(row.failed).map(String)) {
+    const field = /^([^:\s]{1,60}):/.exec(text)?.[1] || (/^startsAt\b/.test(text) ? 'startsAt' : /participation/.test(text) ? 'participation' : /availability/.test(text) ? 'availability' : '');
+    if (field) names.add(field);
+  }
+  return names;
+}
+export function taskEvaluationSnapshot(state) {
+  if (!state || typeof state !== 'object') return null;
+  const p = TASK_EVALUATION_POLICY, L = EVALUATION_SNAPSHOT_LIMITS, contract = state.contract || null;
+  const summary = taskEvaluationSummary(state);
+  const primary = new Set(summary?.primary || []), alternatives = new Set(summary?.alternativeKeys || []);
+  const qualified = list(state.items).filter(row => row.eligible);
+  const required = list(contract?.requiredFields).slice(0, L.fields);
+  const rank = row => SNAPSHOT_TIERS.indexOf(row.tier);
+  const candidates = list(state.items).map(row => {
+    const failed = failedFields(row);
+    const tier = primary.has(row.key) ? 'primary' : alternatives.has(row.key) ? 'alternative' : row.eligible ? 'eligible' : row.status === 'excluded' ? 'excluded' : 'pending';
+    return { key: clip(row.key, 80), name: clip(row.fields?.name?.value, 80) || clip(row.key, 80), status: pick(row.status, SNAPSHOT_STATUSES, 'discovered'), tier,
+      total: whole(row.score?.total, 100), evidence: whole(row.score?.evidence, 100), match: whole(row.score?.match, 100), diversity: whole(row.score?.diversity, 100),
+      reason: clip(row.reason, 120), fields: Object.fromEntries(required.map(name => [clip(name, 40), !row.fields?.[name]?.verified ? 'missing' : failed.has(name) ? 'failed' : 'verified'])),
+      conflicts: list(row.conflicts).length, excludeReason: clip(row.excludeReason, 80), tags: list(row.tags).slice(0, L.tags).map(tag => clip(tag, 24)) };
+  }).sort((a, b) => rank(a) - rank(b) || b.total - a.total || a.key.localeCompare(b.key));
+  return { v: 1, update: whole(state.updates, 1000), ok: !state.error, closed: state.closed === true, ...(state.error ? { error: clip(state.error, 200) } : {}),
+    policy: { maxScore: 100, primaryScore: p.primaryScore, alternativeScore: p.alternativeScore, evidenceScore: p.evidenceScore, primaryCount: p.primaryCount,
+      alternatives: p.alternatives, checkpoint: { milliseconds: p.checkpoint.milliseconds, calls: p.checkpoint.calls }, memberCalls: p.member.calls },
+    contract: contract ? { revision: whole(contract.revision, 1000), category: pick(contract.category, Object.keys(p.fields), 'other'), unit: clip(contract.unit, 40),
+      mode: pick(contract.mode, Object.keys(p.modes), 'standard'), target: { minimum: whole(contract.target?.minimum, p.maxCandidates), maximum: whole(contract.target?.maximum, p.maxCandidates) },
+      explicit: contract.explicitCount ? { value: whole(contract.explicitCount.value, p.maxCandidates), quote: clip(contract.explicitCount.quote, 80) } : null,
+      constraints: list(contract.constraints).slice(0, L.constraints).map(rule => ({ field: clip(rule.field, 40), op: pick(rule.op, ruleOps, 'eq'),
+        value: typeof rule.value === 'number' && Number.isFinite(rule.value) ? rule.value : clip(rule.value, 60), quote: clip(rule.quote, 80) })),
+      requiredFields: required.map(name => clip(name, 40)),
+      coverage: list(contract.coverage).slice(0, L.coverage).map(tag => ({ tag: clip(tag, 32), covered: qualified.some(row => list(row.tags).includes(tag)) })) } : null,
+    summary: summary ? { discovered: whole(summary.discovered, p.maxCandidates), read: whole(summary.read, p.maxCandidates), verified: whole(summary.verified, p.maxCandidates),
+      recommended: whole(summary.recommended, p.primaryCount), alternatives: whole(summary.alternatives, p.alternatives), stop: pick(summary.stop, ['continue','ready_for_review'], 'continue'),
+      nextBatch: whole(summary.nextBatch, 100), diminishing: summary.diminishing === true, adjusted: summary.adjusted === true, checkpoint: summary.checkpoint === true,
+      gaps: list(summary.gaps).slice(0, L.gaps).map(gap => clip(gap, 160)), omitted: Math.max(0, candidates.length - L.candidates) } : null,
+    candidates: candidates.slice(0, L.candidates),
+    resource: { elapsedMs: whole(state.resourceUse?.elapsedMs), toolCalls: whole(state.resourceUse?.toolCalls), inputTokens: whole(state.resourceUse?.inputTokens) } };
+}
+// Scenes travel through history and sync; re-bound anything that arrives from
+// another host before it reaches a reducer. Bad input becomes null, never throws.
+export function normalizeEvaluationSnapshot(raw) {
+  try {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.v !== 1) return null;
+    const p = TASK_EVALUATION_POLICY, L = EVALUATION_SNAPSHOT_LIMITS, object = v => v && typeof v === 'object' && !Array.isArray(v) ? v : null;
+    const c = object(raw.contract), s = object(raw.summary), policy = object(raw.policy) || {}, resource = object(raw.resource) || {};
+    const score = (v, fallback) => Number.isFinite(Number(v)) && v !== null && typeof v !== 'boolean' ? whole(v, 100) : fallback;
+    const required = c ? list(c.requiredFields).slice(0, L.fields).map(name => clip(name, 40)).filter(Boolean) : [];
+    return { v: 1, update: whole(raw.update, 1000), ok: raw.ok !== false, closed: raw.closed === true, ...(raw.error ? { error: clip(raw.error, 200) } : {}),
+      policy: { maxScore: 100, primaryScore: score(policy.primaryScore, p.primaryScore), alternativeScore: score(policy.alternativeScore, p.alternativeScore),
+        evidenceScore: score(policy.evidenceScore, p.evidenceScore), primaryCount: whole(policy.primaryCount ?? p.primaryCount, 20), alternatives: whole(policy.alternatives ?? p.alternatives, 20),
+        checkpoint: { milliseconds: whole(object(policy.checkpoint)?.milliseconds ?? p.checkpoint.milliseconds, 86400000), calls: whole(object(policy.checkpoint)?.calls ?? p.checkpoint.calls, 10000) },
+        memberCalls: whole(policy.memberCalls ?? p.member.calls, 1000) },
+      contract: c ? { revision: whole(c.revision, 1000), category: pick(c.category, Object.keys(p.fields), 'other'), unit: clip(c.unit, 40), mode: pick(c.mode, Object.keys(p.modes), 'standard'),
+        target: { minimum: whole(object(c.target)?.minimum, p.maxCandidates), maximum: whole(object(c.target)?.maximum, p.maxCandidates) },
+        explicit: object(c.explicit) ? { value: whole(c.explicit.value, p.maxCandidates), quote: clip(c.explicit.quote, 80) } : null,
+        constraints: list(c.constraints).slice(0, L.constraints).filter(object).map(rule => ({ field: clip(rule.field, 40), op: pick(rule.op, ruleOps, 'eq'),
+          value: typeof rule.value === 'number' && Number.isFinite(rule.value) ? rule.value : clip(rule.value, 60), quote: clip(rule.quote, 80) })),
+        requiredFields: required,
+        coverage: list(c.coverage).slice(0, L.coverage).filter(object).map(row => ({ tag: clip(row.tag, 32), covered: row.covered === true })).filter(row => row.tag) } : null,
+      summary: s ? { discovered: whole(s.discovered, p.maxCandidates), read: whole(s.read, p.maxCandidates), verified: whole(s.verified, p.maxCandidates),
+        recommended: whole(s.recommended, 20), alternatives: whole(s.alternatives, 20), stop: pick(s.stop, ['continue','ready_for_review'], 'continue'), nextBatch: whole(s.nextBatch, 100),
+        diminishing: s.diminishing === true, adjusted: s.adjusted === true, checkpoint: s.checkpoint === true,
+        gaps: list(s.gaps).slice(0, L.gaps).map(gap => clip(gap, 160)).filter(Boolean), omitted: whole(s.omitted, p.maxCandidates) } : null,
+      candidates: list(raw.candidates).slice(0, L.candidates).filter(object).map(row => ({ key: clip(row.key, 80), name: clip(row.name, 80) || clip(row.key, 80),
+        status: pick(row.status, SNAPSHOT_STATUSES, 'discovered'), tier: pick(row.tier, SNAPSHOT_TIERS, 'pending'),
+        total: whole(row.total, 100), evidence: whole(row.evidence, 100), match: whole(row.match, 100), diversity: whole(row.diversity, 100), reason: clip(row.reason, 120),
+        fields: Object.fromEntries(required.map(name => [name, pick(object(row.fields)?.[name], SNAPSHOT_FIELD_STATES, 'missing')])),
+        conflicts: whole(row.conflicts, 100), excludeReason: clip(row.excludeReason, 80), tags: list(row.tags).slice(0, L.tags).map(tag => clip(tag, 24)).filter(Boolean) })).filter(row => row.key),
+      resource: { elapsedMs: whole(resource.elapsedMs), toolCalls: whole(resource.toolCalls), inputTokens: whole(resource.inputTokens) } };
+  } catch { return null; }
+}
+
 export function taskEvaluationOperation(input) {
+  if (input.action === 'snapshot') return taskEvaluationSnapshot(input.state);
   if (input.action === 'allocation') {
     const budget = input.budget, p = TASK_EVALUATION_POLICY.member;
     const remaining = budget ? Math.max(0,budget.maxInputTokens - (budget.used?.inputTokens || 0) - (budget.delivery?.inputTokens || 0) - (budget.pendingInput || 0) - p.leadInputReserve) : p.inputTokens;

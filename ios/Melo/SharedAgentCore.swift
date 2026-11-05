@@ -76,7 +76,7 @@ final class PhoneGoalState {
     @discardableResult func update(_ action: String, _ fields: [String: Any] = [:]) throws -> [String: Any] {
         var input = fields; input["action"] = action; input["state"] = state
         guard let next = SharedLoopPolicy.value("goal", input) as? [String: Any] else { throw SharedAgentCoreError.invalidReply }
-        if !["request","progressResult"].contains(action) { state = next }
+        if !["request","progressResult","progressSnapshot"].contains(action) { state = next }
         LoopTrace.emit(action == "review" ? "goal.check" : "goal.updated", ["action":action], payload:next)
         return next
     }

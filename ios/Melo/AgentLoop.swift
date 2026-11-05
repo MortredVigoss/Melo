@@ -206,6 +206,17 @@ struct PhoneReplyCursor: Codable {
     }
 }
 
+/// One pipeline stage with the optional task-space details (plan C, 2026-11-05).
+struct AgentStageEvent: Sendable {
+    var id: String
+    var name: String
+    var status: String
+    var output: String
+    var role: String? = nil
+    var rounds: Int? = nil
+    var evaluation: SyncValue? = nil
+}
+
 /// Observers; all run on the main actor.
 struct AgentLoopHooks {
     var internalRouting = false
@@ -218,6 +229,9 @@ struct AgentLoopHooks {
     var routing: PhoneRoutingHost? = nil
     var onStatus: (@MainActor (String) -> Void)? = nil
     var onStage: (@MainActor (_ id: String, _ name: String, _ status: String, _ output: String) -> Void)? = nil
+    /// Task space (plan C): the same stage with its member role, round limit and
+    /// bounded evaluation snapshot. When unset, `onStage` receives the plain stage.
+    var onStageEvent: (@MainActor (AgentStageEvent) -> Void)? = nil
     var onToolCall: (@MainActor (ExecutionToolCall) -> Void)? = nil
     /// Supplements typed while the turn runs; taken before every model call from the second on.
     var takeSupplements: (@MainActor () -> [String])? = nil
@@ -259,6 +273,10 @@ final class AgentLoop: @unchecked Sendable {
 
     // MARK: run
 
+    private func stage(_ event: AgentStageEvent) async {
+        if let detailed = hooks.onStageEvent { await detailed(event) }
+        else { await hooks.onStage?(event.id, event.name, event.status, event.output) }
+    }
     func run() async throws -> AgentLoopOutcome {
         try await LoopTrace.withRun(runID: hooks.traceRunID ?? UUID().uuidString, goal: latestUserMessage, outcome: { $0.completion?.outcome ?? "unknown" }) { try await self.runWithTrace() }
     }
@@ -375,7 +393,7 @@ final class AgentLoop: @unchecked Sendable {
             }
             member.reports.append(String(handoff.prefix(3000)))
             let status = (try? JSONSerialization.jsonObject(with: Data(handoff.utf8)) as? [String:Any])?["status"] as? String
-            await hooks.onStage?("internal:\(assignments.count)", active["label"] as? String ?? "Agent", status == "observed" ? "completed" : "interrupted", String(answer.prefix(500)))
+            await stage(AgentStageEvent(id: "internal:\(assignments.count)", name: active["label"] as? String ?? "Agent", status: status == "observed" ? "completed" : "interrupted", output: String(answer.prefix(500)), role: active["role"] as? String, rounds: (active["roundLimit"] as? NSNumber)?.intValue))
             let effects = core.effects
             core = leadCore; budget = rootBudget
             if core.active { _ = try? core.event("inherit-effects", effects) }
@@ -570,7 +588,9 @@ final class AgentLoop: @unchecked Sendable {
                 transcript.append(.toolRound(round,[AgentToolResult(call:call,modelOutput:output)]))
                 try core.event("feedback",["internalRouting":true])
                 let display = SharedLoopPolicy.value("taskEvaluation",["action":"presentation","result":result,"locale":PhoneReplyLanguage.current ?? "en"]) as? [String:String] ?? [:]
-                await hooks.onStage?("task-evaluation:\(iteration)", display["name"] ?? "Task evaluation", result["ok"] as? Bool == true ? "completed" : "failed", display["output"] ?? "")
+                // Plan C: read-only ledger view for the task space; never sent to the model.
+                let snapshot = (try? goal.update("progressSnapshot")).flatMap { try? SyncValue.from($0) }
+                await stage(AgentStageEvent(id: "task-evaluation:\(iteration)", name: display["name"] ?? "Task evaluation", status: result["ok"] as? Bool == true ? "completed" : "failed", output: display["output"] ?? "", evaluation: snapshot))
                 if result["closed"] as? Bool == true { return try await deliverLimit("TASK_EVALUATION_LIMIT",fallback:display["output"] ?? "",transport:transport,sources:sources,searched:searched,records:records,iteration:iteration) }
                 iteration += 1; continue
             }
@@ -582,7 +602,7 @@ final class AgentLoop: @unchecked Sendable {
                 member.assignments.append(next.filter { ["role","task","callId","rootCallId","roundLimit","resume"].contains($0.key) }.mapValues { String(describing:$0) })
                 try beginMember(next)
                 leadTranscript = transcript; leadAssignmentRound = round; transcript = []
-                await hooks.onStage?("internal:\(assignments.count)", next["label"] as? String ?? "Agent", "running", next["task"] as? String ?? "")
+                await stage(AgentStageEvent(id: "internal:\(assignments.count)", name: next["label"] as? String ?? "Agent", status: "running", output: next["task"] as? String ?? "", role: next["role"] as? String, rounds: (next["roundLimit"] as? NSNumber)?.intValue))
                 iteration += 1; continue
             }
             if job != nil && calls.isEmpty { try core.event("feedback"); await finishJob(round.text); iteration += 1; continue }

@@ -42,6 +42,11 @@ struct ExecutionStage: Codable, Equatable, Identifiable {
     var finishedAt: String?
     // Local API receipt; omitted from the frozen v1 sync projection.
     var api: [String: SyncValue]?
+    // Task space (plan C): internal member role, its round limit and the bounded
+    // evaluation snapshot. Local scene only; the frozen v1 sync projection omits them.
+    var role: String?
+    var limits: [String: Int]?
+    var evaluation: SyncValue?
 }
 
 struct ExecutionOperation: Codable, Equatable, Identifiable {
@@ -431,16 +436,22 @@ struct ExecutionRecord: Codable, Identifiable, Equatable {
             guard !["completed", "failed", "cancelled", "interrupted"].contains(pipeline![index].status) else { return }
             let start = pipeline![index].startedAt
             let requested = pipeline![index].model
+            let previous = pipeline![index]
             pipeline![index] = stage
             pipeline![index].startedAt = start ?? stage.startedAt
             pipeline![index].model = requested ?? stage.model
+            pipeline![index].role = stage.role ?? previous.role
+            pipeline![index].limits = stage.limits ?? previous.limits
+            pipeline![index].evaluation = stage.evaluation ?? previous.evaluation
         } else { pipeline?.append(stage) }
     }
-    mutating func recordStage(_ id: String, name: String, status: String, output: String = "", model: String? = nil) {
+    mutating func recordStage(_ id: String, name: String, status: String, output: String = "", model: String? = nil, role: String? = nil, rounds: Int? = nil, evaluation: SyncValue? = nil) {
         guard !terminal else { return }
         let module = id.hasPrefix("internal:") ? "compute" : "create"
         mergeStage(ExecutionStage(id: id, module: module, name: name, status: status, output: output, model: model,
-            startedAt: status == "running" ? timestamp() : nil, finishedAt: status == "running" ? nil : timestamp()))
+            startedAt: status == "running" ? timestamp() : nil, finishedAt: status == "running" ? nil : timestamp(),
+            role: ["research", "calculate", "lookup", "execute"].contains(role ?? "") ? role : nil,
+            limits: rounds.map { ["rounds": max(0, min(100, $0))] }, evaluation: evaluation))
         lastModule = module; sequence += 1
     }
     /// Adds one tool-call record; ignored once the run has ended.
