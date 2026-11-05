@@ -622,6 +622,8 @@ app 的 escapeHtml/showFlashToast 与授权页 formatTime 原样移至 html/feed
 用户语音授权修审计R1–R7，新任务范围/评分策略先给三方案再选择。基准431912b，独立分支codex/orchestration-review-fixes-20261105。完成整轮副作用防重、异常回执保留、交接文字不作完成凭证、旧端设置同步兼容、智能执行强档、截止时间一致、分页证据和完整岗位连接；未知岗位连接明确失败。新策略尚未启用，推荐B（需求合同+分批评估）。[方案](docs/task-completion-policy-options-20261105.md)、[修复和证据](docs/orchestration-review-fixes-20261105.md)。最终累计快速run-xPfXLt全绿：JS4882/4882、Swift38组、Android四项和设置浏览器，零跳过/复测；中间失败和修正均留档，真实模型/真机与合并前基准集成未做；不合并/推送/安装，无用户数据修改。
 
 
-### 2026-11-05 本线程：B 需求合同 / 自适应评估（实施中）
+### 2026-11-05 本线程：B 需求合同、自适应范围与最终审核
 
-用户授权实现、合并 master、推送与 Mac 覆盖安装。分支 codex/task-evaluation-b-20261105，/tmp/melo-orchestration-fixes-20261105，含 R1–R7 的 5d1a514；主线基准 cba47c9。共享 taskEvaluation、三端 task_progress、成员独立轮数/父池预算、Agent 本机检索深度设置与任务摘要已接入；详见 docs/task-evaluation-b-implementation-20261105.md。Node 端到端夹具已有 8/20 partial 和 20/20 completed 证据；组合门禁、真实模型探针、主线合并/推送及 Mac 安装尚未完成，不代表已发布。
+- 实现 201b9c9、审核协议修复 2cb936b，含内部路由 R1–R7 的 5d1a514。共享策略驱动三端任务目标、实体计数/证据、部分交付和独立成员份额；Agent 设置可选本机快速/标准/深入。
+- 基准 cba47c9，最终快速 run-BdkSW7、集成 run-b9dLLp 两档 JS 各 4927/4927、Swift 各 38 组、Android 四项、设置浏览器全绿。真实模型一次读目录，8/20 partial 与 20/20 completed；短引用、后半页证据与审核字段三处真实问题及修复见[专项记录](docs/task-evaluation-b-implementation-20261105.md)。
+- 旧 Mac 完整备份 5778 文件哈希一致，另保留外部原图；用户已授权 master 合并、推送和本地 Mac 覆盖安装，发布验收回执另列。不安装 iPhone，已验证最终 iPhone 无签名构建。
