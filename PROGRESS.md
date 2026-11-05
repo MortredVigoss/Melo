@@ -1,3 +1,7 @@
+## 2026-11-05 — Claude 复核 Codex 批次（R1–R7 修复、任务评估 B、安装回执）— 只报告
+
+Claude：复核 `afdcce1..a3817f5` 9 个提交（8 个已推送，iPhone 回执 `a3817f5` 仍在本机）。Codex 对方案 A 的 R1–R7 审计全部属实，`5d1a514` 修复方向正确；B 方案把策略数字收进共享 `taskEvaluation.js`，`task_progress` 三端同源，dist / 模块地图一致，新测试自动入门禁；在 master 隔离跑 14 个相关测试文件 291 / 291，工作树两档门禁（`run-BdkSW7`、`run-b9dLLp` 各 4 927 / 4 927）、Mac 17/17、iPhone 回执均核对无误。新发现：C1（P2）整轮副作用账本把 `unknown` 效果（`bash`、无 readOnlyHint 的 MCP 如 Playwright 点击 / 导航）相同参数的第二次调用一律拒绝，含已成功的只读命令，隔离探针复现；C2（P2）审核器被要求索取账本，但团队 / 视频 / 出图回合不提供 `task_progress`，推荐类任务只能 partial，`reviewGoal` 隔离探针复现；C3（P2）成员 90 s 切片与 4 轮额度在真实延迟下对不上，桌面探针里成员一次 60 s 的 glob 超时就耗尽整个切片，两轮后被截止只交回失败记录（模型往返仅 5–7 s）；P3：总览 §2 仍写"预算扩展"、Android 成员路径无单元测试、`...profile` 整份铺进配置、schema 仍声明 `jobModels`。未改产品、未推送。[复核记录](docs/codex-batch-review-20261105.md)。
+
 ## 2026-11-05 iPhone 覆盖安装
 - 用户授权在原 iPhone 安装主线 `a4ae796`。0.7.13（45）新签名构建已启动并进入前台。
 - 安装前两份完整备份哈希相同。两次安装后回读均保留聊天、消息、草稿、原图与账号配置。[验收回执](docs/iphone-task-evaluation-install-20261105.md)
