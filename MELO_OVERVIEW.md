@@ -629,3 +629,5 @@ app 的 escapeHtml/showFlashToast 与授权页 formatTime 原样移至 html/feed
 - 旧 Mac 完整备份 5778 文件哈希一致，另保留外部原图；用户已授权 master 合并、推送和本地 Mac 覆盖安装，发布验收回执另列。不安装 iPhone，已验证最终 iPhone 无签名构建。
 
 Mac 覆盖安装和正式首启验收均已完成。17 项发布检查通过，安装后 5,778 个原文件哈希一致。用户确认桌面文件夹授权后，已用原账号在正式应用收发测试消息，并确认回复已保存。原有 33 个聊天、752 条消息和原图均保留，新增 1 个验收对话。Agent 管理页可见本机检索深度。验收证据见[安装回执](docs/task-evaluation-b-implementation-20261105.md)。
+
+2026-11-05 用户随后授权 iPhone 覆盖安装。已将同一主线构建装入原实体 iPhone，验证 Melo 启动并进入前台。安装前完整容器两次读取一致，安装后和首启后均保留 18 个聊天、197 条消息、6 个 Agent、26 张原图及账号配置。见[手机安装回执](docs/iphone-task-evaluation-install-20261105.md)。
