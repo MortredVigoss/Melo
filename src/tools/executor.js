@@ -1,3 +1,4 @@
+import { reserveTurnEffect } from '../runtime/turnEffects.js';
 import { traceToolCall, traceToolDispatch } from '../runtime/loopTrace.js';
 import { requestAllowsTool } from '../../shared/agent/retrieval/requestPolicy.js';
 import {workspaceForTool,ownedWorkspaceSafety} from '../services/workspace/toolWorkspace.js';
@@ -110,10 +111,12 @@ async function executeScopedTool(tool,args,options) {
   observe('queued');
   try {
     const ticket = reserveTaskOperation({locale:options.config?.replyLanguage,home:requestContext?.home || options.meloHome || resolveRuntimePaths().home,taskId:options.taskId,tool,args,workspacePath:options.workspacePath,invocationId:`${requestContext?.runId || 'direct'}:${id}`});
+    const effect = reserveTurnEffect(requestContext?.turnEffects, tool, args, options.workspacePath);
     let result;
-    try { result = ticket?.result || await runObservedTool(tool, args, { ...options, sseEmitter:emit, observe }); }
-    catch(error) { ticket?.finish?.({ok:false,meta:{executionStarted}}); throw error; }
-    ticket?.finish?.({ ...result, meta: { executionStarted, ...result.meta } });
+    try { result = effect?.result || ticket?.result || await runObservedTool(tool, args, { ...options, sseEmitter:emit, observe }); }
+    catch(error) { const failed = {ok:false,meta:{executionStarted}}; ticket?.finish?.(failed); effect?.finish?.(failed); throw error; }
+    const receipt = { ...result, meta: { executionStarted: executionStarted || result.ok === true, ...result.meta } };
+    ticket?.finish?.(receipt); effect?.finish?.(receipt);
     observe(null, result);
     return result;
   } catch (error) {

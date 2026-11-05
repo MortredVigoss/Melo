@@ -48,6 +48,10 @@ export function advanceTurn(previous, event, now) {
   const state = { ...previous, lastNow: now, callIds: [...previous.callIds], pending: [...previous.pending], progressKeys: [...previous.progressKeys], phoneTasks: [...(previous.phoneTasks || [])], successfulTools: [...(previous.successfulTools || [])], pendingTools: { ...previous.pendingTools }, pendingFingerprints: { ...previous.pendingFingerprints }, pendingEffects: { ...previous.pendingEffects } };
   const stop = reason => ({ ...state, status: 'blocked', reason, awaitingModel: false, pending: [], permitted: [] });
   if (event.type === 'cancel') return { ...state, status: 'cancelled', reason: 'CANCELLED', pending: [], permitted: [], awaitingModel: false };
+  if (event.type === 'extend-deadline') {
+    if (!Number.isSafeInteger(event.deadline) || event.deadline <= now || event.deadline < state.deadline) fail('INVALID_DEADLINE', 'The Host must supply a later finite deadline.');
+    return { ...state, deadline: event.deadline };
+  }
   if (now >= state.deadline) return stop('DEADLINE_EXCEEDED');
   switch (event.type) {
     case 'request':

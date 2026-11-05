@@ -51,7 +51,7 @@ test('delivery evidence gives verified reads the body budget, keeps the ledger a
   const { deliveryEvidence } = await import('./evidence.js');
   const page = 'P'.repeat(5000), nav = 'N'.repeat(5000);
   const rows = [
-    { id: 'nav', type: 'source', name: 'fetch_url', ok: true, executed: true, url: 'https://a.example/x', text: nav.slice(0, 900) },
+    { id: 'nav', type: 'source', name: 'fetch_url', ok: true, executed: true, url: 'https://a.example/x', text: page },
     { id: 'full', type: 'source', name: 'fetch_url', ok: true, executed: true, url: 'https://a.example/x', text: page },
     { id: 'failed', type: 'tool', name: 'web_search', ok: false, executed: true, output: 'F'.repeat(3000) },
     ...Array.from({ length: 40 }, (_, i) => ({ id: 'skip' + i, type: 'tool', name: 'fetch_url', ok: false, executed: false, output: 'S'.repeat(2000) })),
@@ -60,10 +60,25 @@ test('delivery evidence gives verified reads the body budget, keeps the ledger a
   const out = deliveryEvidence(rows, 24000);
   assert.deepEqual(out.map(r => r.id), rows.map(r => r.id), 'every observation keeps its place');
   const by = Object.fromEntries(out.map(r => [r.id, r]));
-  assert.ok(by.full.text.length >= 3000 && by.other.text.length >= 3000, 'verified pages keep real bodies');
-  assert.ok(by.nav.text.length <= 160 && by.failed.text.length <= 160 && by.skip0.text.length <= 160, 'duplicates and failures keep short bodies');
+  assert.ok(by.nav.text.length >= 3000 && by.other.text.length >= 3000, 'verified pages keep real bodies');
+  assert.ok(by.full.text.length <= 160 && by.failed.text.length <= 160 && by.skip0.text.length <= 160, 'duplicates and failures keep short bodies');
   assert.ok(out.reduce((n, r) => n + r.text.length, 0) <= 24000 + 2 * 4000, 'bounded');
   assert.ok(by.full.truncated && !by.nav.ok === false);
   const tiny = deliveryEvidence(Array.from({ length: 2000 }, (_, i) => ({ id: 'r' + i, type: 'tool', ok: false, executed: false, output: 'x'.repeat(100) })), 24000);
   assert.ok(tiny.every(r => r.text.length <= 24), 'a huge failed ledger still fits');
+});
+
+test('different windows of the same URL keep their own dated facts and original truncation state',async()=>{
+ const {deliveryEvidence}=await import('./evidence.js');
+ const rows=['OCT31 activity','NOV01 activity'].map((fact,i)=>({id:'page-'+i,type:'source',name:'fetch_url',url:'https://fixture.invalid/events',ok:true,executed:true,reading:'partial',truncated:true,text:'navigation '.repeat(30)+fact}));
+ const result=deliveryEvidence(rows,48000);
+ assert.match(result[0].text,/OCT31 activity/);assert.match(result[1].text,/NOV01 activity/);
+ assert.ok(result.every(r=>r.truncated&&r.reading==='partial'));
+});
+
+test('a hard timeout during delivery remains a deadline stop and never requests a checker',async()=>{
+ const controller=new AbortController();let calls=0;
+ const result=await runLimitDelivery({task:goal,observations,reason:'BUDGET_EXHAUSTED',fallback:'Continue later.',budget:reserveDelivery(createRunBudget()),signal:controller.signal,options:{},locale:'en',
+  createReply:async()=>{calls++;controller.abort(new DOMException('hard deadline','TimeoutError'));throw controller.signal.reason;}});
+ assert.equal(calls,1);assert.equal(result.terminalReason,'DEADLINE_EXCEEDED');assert.match(result.reply,/Continue later/);
 });

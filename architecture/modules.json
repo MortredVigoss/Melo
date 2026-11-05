@@ -24,8 +24,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 693,
-      "edges": 2251,
+      "modules": 694,
+      "edges": 2256,
       "roots": [
         "src",
         "desktop-ui",
@@ -558,7 +558,7 @@
       "dependsOn": {
         "approvals": 3,
         "channels": 3,
-        "chat": 31,
+        "chat": 32,
         "desktop-shell": 9,
         "memory": 12,
         "platform": 49,
@@ -856,6 +856,7 @@
         {
           "module": "shared/agent/modelCapabilities.js",
           "importedBy": [
+            "agents",
             "media",
             "settings"
           ]
@@ -876,7 +877,8 @@
         {
           "module": "shared/agent/repeatGuard.js",
           "importedBy": [
-            "agents"
+            "agents",
+            "platform"
           ]
         },
         {
@@ -915,6 +917,12 @@
           "module": "shared/agent/tokenEstimate.js",
           "importedBy": [
             "memory"
+          ]
+        },
+        {
+          "module": "shared/agent/toolEffects.js",
+          "importedBy": [
+            "platform"
           ]
         },
         {
@@ -1120,7 +1128,7 @@
         "knowledge": 5,
         "media": 24,
         "memory": 27,
-        "platform": 67,
+        "platform": 68,
         "projects": 11,
         "settings": 11,
         "sync": 2,
@@ -1128,14 +1136,14 @@
         "voice": 3
       },
       "usedBy": {
-        "agents": 31,
+        "agents": 32,
         "approvals": 1,
         "channels": 9,
         "desktop-shell": 11,
         "development": 1,
         "media": 14,
         "memory": 12,
-        "platform": 26,
+        "platform": 28,
         "projects": 1,
         "settings": 14,
         "sync": 4,
@@ -1306,6 +1314,7 @@
           "src/services/chat/headlessApproval.test.js",
           "src/services/chat/loopTrace.integration.test.js",
           "src/services/chat/messageBuilder.test.js",
+          "src/services/chat/orchestrationReview.test.js",
           "src/services/chat/portableCompact.test.js",
           "src/services/chat/projectMemoryBook.scenario.test.js",
           "src/services/chat/promptPipeline.test.js",
@@ -2672,7 +2681,7 @@
         "knowledge": 3,
         "media": 2,
         "memory": 6,
-        "platform": 57,
+        "platform": 58,
         "projects": 5,
         "settings": 10
       },
@@ -4061,7 +4070,7 @@
         "src/**"
       ],
       "modules": {
-        "src": 60
+        "src": 61
       },
       "entryModules": [
         {
@@ -4236,6 +4245,13 @@
           ]
         },
         {
+          "module": "src/runtime/turnEffects.js",
+          "importedBy": [
+            "chat",
+            "tools"
+          ]
+        },
+        {
           "module": "src/runtime/usage.js",
           "importedBy": [
             "agents",
@@ -4402,7 +4418,7 @@
         "agents": 34,
         "approvals": 18,
         "channels": 6,
-        "chat": 26,
+        "chat": 28,
         "desktop-shell": 2,
         "development": 2,
         "knowledge": 2,
@@ -4418,7 +4434,7 @@
         "agents": 49,
         "approvals": 36,
         "channels": 22,
-        "chat": 67,
+        "chat": 68,
         "desktop-shell": 15,
         "development": 9,
         "knowledge": 2,
@@ -4427,7 +4443,7 @@
         "projects": 23,
         "settings": 26,
         "sync": 6,
-        "tools": 57,
+        "tools": 58,
         "voice": 6
       },
       "httpRoutes": [],
@@ -4479,11 +4495,13 @@
           "src/runtime/postTurnTasks.test.js",
           "src/runtime/processOwnership.test.js",
           "src/runtime/reconcileDerivedFacts.test.js",
+          "src/runtime/routingDeadline.test.js",
           "src/runtime/runDeadline.test.js",
           "src/runtime/runtimeBehavior.test.js",
           "src/runtime/searchCacheEvidence.test.js",
           "src/runtime/serverLock.test.js",
           "src/runtime/storageInventory.test.js",
+          "src/runtime/turnEffects.test.js",
           "src/runtime/usage.test.js",
           "src/server.imports.smoke.test.js",
           "src/serverGuard.test.js",

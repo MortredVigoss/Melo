@@ -1,3 +1,4 @@
+import { connectionForModel, resolvedModelCapabilities } from '../../shared/agent/modelCapabilities.js';
 import { deliveryEvidence } from '../../shared/agent/evidence.js';
 import { runLimitDelivery } from '../runtime/limitDelivery.js';
 import { budgetedMemberReply } from '../runtime/memberReply.js';
@@ -171,7 +172,7 @@ async function runSubAgentLoop({
   const allowedTools = toolsForCapabilityScope(resolveAllowedTools(allowedToolIds, agentProfile ? 0 : depth,extraTools),currentRequestContext().capabilityScope).filter(tool => requestAllowsTool(tool,currentRequestContext().requestToolPolicy)).filter(t=>!['agent','delegate'].includes(t.id)||depth<maxDepth);
   const providerConfig = delegatedConfig(config);
   const functionSession = createFunctionCallingSession(providerConfig, allowedTools);
-  const contextBudget = resolveContextBudget(requestEnvironment());
+  const contextBudget = resolveContextBudget(requestEnvironment(), { config: providerConfig });
 
   // Tool prompt is scoped to the allowed subset so the model doesn't hallucinate
   // tools it cannot actually call.
@@ -212,15 +213,17 @@ async function runSubAgentLoop({
   let iterations = 0;
   let failedTools = 0;
   let deniedTools = 0;
-  const coreTurn = createCoreTurn({ goal: task, tools: allowedTools, allowedTools: allowedTools.map(t => t.id), limits: { rounds: Math.min(20, maxIterations) } });
-  const toolResults = [];
   const runBudget = currentRequestContext().budget;
+  const coreTurn = createCoreTurn({ budget: runBudget, goal: task, tools: allowedTools, allowedTools: allowedTools.map(t => t.id), limits: { rounds: Math.min(20, maxIterations), timeoutMs: Math.max(1, Math.ceil(runBudget.deadlineAt - runBudget.now())) } });
+  const toolResults = [];
   const createReply = budgetedMemberReply(replyFn, runBudget);
   let terminalReason = '';
 
-  for (let iteration = 0; ; iteration++) {
+  try { for (let iteration = 0; ; iteration++) {
     if (signal?.aborted) {
-      return { ok: false, output: hostEvidenceReply('Sub-agent aborted.', coreTurn.observations, config.replyLanguage), meta: { aborted: true, iteration, completion: coreTurn.receipt(task, '', 'CANCELLED') } };
+      terminalReason = 'CANCELLED';
+      finalOutput = hostEvidenceReply('Sub-agent aborted.', coreTurn.observations, config.replyLanguage);
+      break;
     }
 
     if (coreTurn.reporting) { terminalReason = 'ROUND_LIMIT'; break; }
@@ -248,6 +251,7 @@ async function runSubAgentLoop({
       apiKey: providerConfig.apiKey,
       baseUrl: providerConfig.baseUrl,
       model: providerConfig.model,
+      modelCapabilities: resolvedModelCapabilities(connectionForModel(providerConfig), providerConfig.model),
       systemPrompt: review?.systemPrompt || systemPrompt,
       messages: request.messages,
       nativeWebSearchEnabled: nativeWebSearch !== false && !toolFree && nativeFeaturesForScope(currentRequestContext().capabilityScope,currentRequestContext().requestToolPolicy).nativeWebSearchEnabled,
@@ -399,6 +403,12 @@ async function runSubAgentLoop({
     if (coreTurn.results(allResults) !== 'running') break;
   }
 
+  } catch (error) {
+    terminalReason = signal?.aborted ? 'CANCELLED' : 'ERROR';
+    coreTurn.stopReview(terminalReason);
+    finalOutput = hostEvidenceReply(String(error?.message || error), coreTurn.observations, config.replyLanguage);
+  }
+
   iterations = coreTurn.routingProgress.rounds;
   terminalReason ||= coreTurn.reason;
   if (isDeliveryLimit(terminalReason)) {
@@ -424,7 +434,7 @@ async function runSubAgentLoop({
     ok: !exhausted && deniedTools === 0 && completion.outcome === 'completed',
     ...(completion.outcome !== 'completed' ? { error: terminalReason === 'BUDGET_EXHAUSTED' ? 'BUDGET_EXHAUSTED' : 'GOAL_INCOMPLETE' } : {}),
     output: finalOutput,
-    meta: { depth, iterations, toolCalls: totalToolCalls, failedTools, deniedTools, exhausted, ...(completion.outcome === 'budget_exhausted' ? { budgetExceeded: true } : {}), stopReason: terminalReason, effects: coreTurn.effects, toolResults, observations: deliveryEvidence(coreTurn.observations), completion },
+    meta: { ...(signal?.aborted ? { aborted: true } : {}), depth, iterations, toolCalls: totalToolCalls, failedTools, deniedTools, exhausted, ...(completion.outcome === 'budget_exhausted' ? { budgetExceeded: true } : {}), stopReason: terminalReason, effects: coreTurn.effects, toolResults, observations: deliveryEvidence(coreTurn.observations), completion },
   };
 }
 

@@ -1,0 +1,51 @@
+{
+  "type": "object",
+  "required": [
+    "canDelegate",
+    "delegateTargets",
+    "maxDelegationDepth",
+    "maxIterations",
+    "maxTokens",
+    "timeoutMs"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "canDelegate": {
+      "type": "boolean"
+    },
+    "delegateTargets": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      }
+    },
+    "maxDelegationDepth": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3
+    },
+    "maxIterations": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 20
+    },
+    "maxTokens": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 200000
+    },
+    "timeoutMs": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 900000
+    },
+    "maxTaskIterations": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 64
+    }
+  }
+}

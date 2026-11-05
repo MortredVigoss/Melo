@@ -45,14 +45,16 @@ export function extendForMember(budget, sseEmitter, job) {
   const tokens = Math.max(0, Math.min(MEMBER_INPUT_SHARE, ROUTING_EXTENSION_CAP - (budget.routingExtension || 0)));
   const deadline = Math.max(0, Math.min(MEMBER_DEADLINE_MS, ROUTING_DEADLINE_CAP_MS - (budget.routingDeadlineExtension || 0)));
   if (!tokens && !deadline) return null;
+  const beforeDeadline = budget.deadlineAt;
   const result = extendBudget(budget, {
     ...(tokens ? { maxInputTokens: Math.max(0, budget.maxInputTokens - budget.used.inputTokens) + tokens, maxToolCalls: Math.max(0, budget.maxToolCalls - budget.used.toolCalls) + MEMBER_TOOL_CALLS } : {}),
     ...(deadline ? { deadlineMs: remainingMs(budget) + deadline } : {}),
   });
   if (result.inputTokens) budget.routingExtension = (budget.routingExtension || 0) + tokens;
-  if (result.deadline) budget.routingDeadlineExtension = (budget.routingDeadlineExtension || 0) + deadline;
+  const addedDeadline = budget.deadlineAt - beforeDeadline;
+  if (result.deadline) budget.routingDeadlineExtension = (budget.routingDeadlineExtension || 0) + addedDeadline;
   if (result.extended) sseEmitter?.('execution_event', { kind: 'pipeline', id: `routing:budget:${job.index}`, module: 'compute', name: job.label, status: 'completed',
-    output: `Turn budget extended for this member: +${tokens} input tokens, +${Math.round(deadline / 60000)} min (total +${budget.routingExtension || 0} tokens).`,
+    output: `Turn budget extended for this member: +${tokens} input tokens, +${Math.round(addedDeadline / 60000)} min (total +${budget.routingExtension || 0} tokens).`,
     budget: { maxInputTokens: budget.maxInputTokens, deadlineAt: budget.deadlineAt, routingExtension: budget.routingExtension || 0 } });
   return result;
 }
@@ -88,8 +90,12 @@ export async function prescreenApprovals({ job, extraTools = [], chatId, sseEmit
 export function jobConnectionConfig(config, jobModels, role) {
   const id = jobModels?.[role];
   const profile = typeof id === 'string' && id ? config?.llmProfiles?.[id] : null;
-  if (!profile || !profile.model) return config;
-  return { ...config, activeLlmProfileId: id, authMode: profile.authMode, baseUrl: profile.baseUrl, model: profile.model,
+  if (!id) return config;
+  if (!profile || !profile.model) throw Object.assign(new Error(`The configured ${role} connection is unavailable. Select an available connection in Agent settings.`), { code: 'JOB_CONNECTION_UNAVAILABLE' });
+  return { ...config, ...profile, id, activeLlmProfileId: id, authMode: profile.authMode, baseUrl: profile.baseUrl, model: profile.model,
+    modelCapabilities: profile.modelCapabilities || {}, modelMetadata: profile.modelMetadata || {}, visionTest: profile.visionTest || null,
+    routingContextWindow: profile.contextWindows?.[profile.model] || 0,
+    maxOutputTokens: profile.maxOutputTokens, maxTokens: profile.maxTokens,
     apiKey: profile.apiKey || '', apiProtocol: profile.apiProtocol || 'chat-completions', modelResolvedForTurn: true };
 }
 
@@ -115,16 +121,24 @@ function limitedResult(result, signal) {
 }
 
 export async function runInternalMembers({ jobs = [], goal = '', background = '', config, extraTools = [], replyFn, signal, sseEmitter, chatId, workspacePath,
-  chatSource, projectId, onProviderResponse, run = runSubAgent, lanes = INTERNAL_PARALLEL_LANES, approvals = defaultApprovals, jobModels = null } = {}) {
+  chatSource, projectId, onProviderResponse, run = runSubAgent, lanes = INTERNAL_PARALLEL_LANES, approvals = defaultApprovals, jobModels = null, requireStrongWrites = false } = {}) {
   const context = currentRequestContext();
   const budget = context?.budget || null;
+  if (context?.turnEffects) context.turnEffects.active = true;
   const reference = String(goal || '').slice(0, 12000);
   const memberBackground = [reference ? `Original user goal (reference only; your assignment is the task above):\n${reference}` : '', String(background || '').trim()].filter(Boolean).join('\n\n');
   const outcomes = new Array(jobs.length);
   const pipeline = (job, fields) => sseEmitter?.('execution_event', { kind: 'pipeline', id: `internal:${job.index}`, module: 'compute', name: job.label, ...fields });
   const runOne = async index => {
     const job = jobs[index];
-    const jobConfig = memberConfig(jobConnectionConfig(config, jobModels, job.role));
+    let jobConfig;
+    try { jobConfig = memberConfig(requireStrongWrites && job.role === 'execute' ? config : jobConnectionConfig(config, jobModels, job.role)); }
+    catch (error) {
+      const result = { ok: false, error: error.code, output: error.message, meta: { stopReason: 'ERROR', observations: [] } };
+      outcomes[index] = { job, result, started: false, handoff: internalHandoff({ job, answer: result.output, observations: [], limited: true }) };
+      pipeline(job, { status: 'failed', output: result.output });
+      return;
+    }
     pipeline(job, { status: 'running', input: job.task, ...(jobConfig?.model ? { model: jobConfig.model } : {}) });
     extendForMember(budget, sseEmitter, job);
     const { share, reason } = memberShare(budget);

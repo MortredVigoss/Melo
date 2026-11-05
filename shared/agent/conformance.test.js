@@ -126,3 +126,12 @@ test('identical successful reads stop, new evidence allows progress, chats remai
   assert.equal(independent.rounds, 0);
   assert.equal(independent.status, 'running');
 });
+
+test('host deadline extensions replay identically without reviving closed turns',()=>{
+ const state=turn({timeoutMs:100});
+ const request={version:1,op:'advance',state,event:{type:'extend-deadline',runId:state.runId,turnId:state.turnId,deadline:2000},now:1200};
+ const native=evaluate(request);assert.equal(native.ok,true);assert.equal(native.value.deadline,2000);assert.deepEqual(bundled(request),native);
+ const closed=event(state,'cancel');
+ assert.equal(evaluate({...request,state:closed}).error.code,'TURN_CLOSED');
+ assert.equal(evaluate({...request,event:{...request.event,deadline:Infinity}}).error.code,'INVALID_DEADLINE');
+});

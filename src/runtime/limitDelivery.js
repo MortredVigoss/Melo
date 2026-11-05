@@ -9,7 +9,7 @@ export async function runLimitDelivery({ task, observations, reason, fallback, c
   let candidate = '', checkedTask = task;
   const parser = createFunctionCallingSession(options || {}, []);
   const stopped = () => ({ reply: hostEvidenceReply(candidate || fallback, observations, locale), task: checkedTask,
-    terminalReason: signal?.aborted && signal.reason?.name !== 'TimeoutError' ? 'CANCELLED' : reason });
+    terminalReason: signal?.aborted ? (signal.reason?.name === 'TimeoutError' ? 'DEADLINE_EXCEEDED' : 'CANCELLED') : reason });
   if (signal?.aborted || !budget?.delivery || budgetExhausted(budget, undefined, { phase: 'delivery' })) return stopped();
   const call = async (request, phase, maxTokens) => createReply({ ...options, ...request, signal,
     budgetPhase: phase, purpose: phase === 'delivery' ? 'limit-delivery' : 'limit-check', maxTokens,

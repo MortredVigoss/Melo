@@ -218,6 +218,25 @@ import Foundation
     assert(capPreferences.agents[0].instructions == "keep persona")
     let capAgain=try AgentSettingsProjection.refreshed(capPreferences,device:"phone")
     assert(capAgain == capWire)
+    var localCollaboration = capPreferences.agents[0].collaboration?.object ?? [:]
+    localCollaboration["jobModels"] = .object(["research":.string("phone-local")])
+    capPreferences.agents[0].collaboration = .object(localCollaboration)
+    let localWire = try AgentSettingsProjection.refreshed(capPreferences,device:"phone")
+    assert(localWire == capWire, "device connection IDs never change the v1 wire")
+    try AgentSettingsProjection.apply(capWire,preferences:&capPreferences)
+    assert(capPreferences.agents[0].collaboration?["jobModels"]["research"].string == "phone-local")
+    var oldJobWire = capWire
+    let oldVersion = oldJobWire.records[0].versions[0]
+    var oldPayload = try JSONDecoder().decode(SyncValue.self,from:Data(oldVersion.value["content"].string.utf8)).object
+    var oldCollaboration = oldPayload["collaboration"]!.object
+    oldCollaboration["jobModels"] = .object(["research":.string("desktop-local")])
+    oldPayload["collaboration"] = .object(oldCollaboration)
+    var oldEnvelope = oldVersion.value.object;oldEnvelope["content"] = .string(SyncValue.object(oldPayload).canonical)
+    oldJobWire.records[0].versions[0].value = .object(oldEnvelope)
+    let repairedJobWire = try AgentSettingsProjection.validated(oldJobWire)
+    assert(repairedJobWire.records[0].versions[0].clock["agent-settings-local-routing-v1"] == 1)
+    let repairedJobWireAgain = try AgentSettingsProjection.validated(repairedJobWire)
+    assert(repairedJobWireAgain == repairedJobWire)
     var other=capPreferences
     let otherCaps=other.agents[0].capabilities?.object ?? [:]
     other.agents[0].capabilities = .object(otherCaps.merging(["writeFiles":.bool(true)]) { _,v in v })

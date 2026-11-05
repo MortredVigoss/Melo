@@ -616,3 +616,7 @@ app 的 escapeHtml/showFlashToast 与授权页 formatTime 原样移至 html/feed
 - 基准 `54a9cac`，本地提交 `a74a90d`：恢复透明神经入口，去除旧版 overview 内边距；`workspaceLayout` 为顶部项目入口、中枢及输入 dock 预留空间。五组颜色/粒子拓扑/功能不变，未触及账户、模型或同步协议。
 - 定向回归 11/11；原生应用已加载修复、浏览器五个模块入口与持续动画已核对；截图、真实尺寸和根因见[专项记录](docs/home-ui-regression-20261027.md)。
 - 快速 `run-pGEfj5` GREEN（1 项负载超时按运行器隔离复测通过）；基准集成 `run-necJZi` JS 778/778，Android、共享渲染、设置浏览器全绿，无复测；iOS 仅共享样式生成，无手机安装/真机验收；不推送、不重装。
+
+## 2026-11-05 — Codex：内部编排缺陷修复与任务评估三方案
+
+用户语音授权修审计R1–R7，新任务范围/评分策略先给三方案再选择。基准431912b，独立分支codex/orchestration-review-fixes-20261105。完成整轮副作用防重、异常回执保留、交接文字不作完成凭证、旧端设置同步兼容、智能执行强档、截止时间一致、分页证据和完整岗位连接；未知岗位连接明确失败。新策略尚未启用，推荐B（需求合同+分批评估）。[方案](docs/task-completion-policy-options-20261105.md)、[修复和证据](docs/orchestration-review-fixes-20261105.md)。最终累计快速run-xPfXLt全绿：JS4882/4882、Swift38组、Android四项和设置浏览器，零跳过/复测；中间失败和修正均留档，真实模型/真机与合并前基准集成未做；不合并/推送/安装，无用户数据修改。

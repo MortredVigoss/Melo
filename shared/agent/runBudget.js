@@ -179,7 +179,8 @@ export function extendBudget(budget, { deadlineMs, maxInputTokens, maxToolCalls 
   if (!budget || budget.parent) return result;
   const time = currentTime(budget, now);
   const wantDeadline = positiveInt(deadlineMs);
-  if (wantDeadline && time + wantDeadline > budget.deadlineAt) { budget.deadlineAt = time + wantDeadline; result.deadline = true; }
+  const targetDeadline = Math.min(time + (wantDeadline || 0), budget.hardDeadlineAt ?? Infinity);
+  if (wantDeadline && targetDeadline > budget.deadlineAt) { budget.deadlineAt = targetDeadline; result.deadline = true; }
   const wantTokens = positiveInt(maxInputTokens);
   if (wantTokens && budget.used.inputTokens + wantTokens > budget.maxInputTokens) { budget.maxInputTokens = budget.used.inputTokens + wantTokens; result.inputTokens = true; }
   const wantCalls = positiveInt(maxToolCalls);

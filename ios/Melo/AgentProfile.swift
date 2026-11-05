@@ -358,15 +358,27 @@ enum AgentSettingsProjection {
         let key=SyncValue.array([project.map(SyncValue.string) ?? .null,.string(agent)]).canonical
         return "settings-" + SHA256.hash(data:Data(key.utf8)).map { String(format:"%02x",$0) }.joined()
     }
-    static func validated(_ workspace: SyncWorkspace) throws -> SyncWorkspace {
-        _ = try workspace.validated()
-        for row in workspace.records {
-            for version in row.versions {
+    static func portableCollaboration(_ value: SyncValue) -> SyncValue {
+        var fields = value.object; fields.removeValue(forKey: "jobModels"); return .object(fields)
+    }
+    static func validated(_ input: SyncWorkspace) throws -> SyncWorkspace {
+        var workspace = try input.validated()
+        for ri in workspace.records.indices {
+            let row = workspace.records[ri]
+            for vi in row.versions.indices {
+                let version = row.versions[vi]
                 let v=version.value
                 guard row.kind == "knowledge", v["kind"].string == "agent-settings-v1", !v["deleted"].bool, v["projectId"] == .null else { throw MeloError.message("Agent 能力同步格式无效。") }
                 let p=try JSONDecoder().decode(SyncValue.self,from:Data(v["content"].string.utf8))
                 try SyncWireContract.validate(p,definition:"agentSettings")
                 guard row.id == id(p["projectId"] == .null ? nil : p["projectId"].string,p["agentId"].string) else { throw MeloError.message("Agent 能力同步标识不匹配。") }
+                if p["collaboration"].object["jobModels"] != nil {
+                    var fields = p.object; fields["collaboration"] = portableCollaboration(p["collaboration"])
+                    var envelope = v.object; envelope["content"] = .string(SyncValue.object(fields).canonical)
+                    workspace.records[ri].versions[vi].value = .object(envelope)
+                    let revision = "agent-settings-local-routing-v1"
+                    workspace.records[ri].versions[vi].clock[revision, default: 0] += 1
+                }
             }
         }
         return workspace
@@ -375,7 +387,7 @@ enum AgentSettingsProjection {
         var workspace=try validated(preferences.agentSettingsSync ?? .init())
         func put(_ agent: AgentProfile, project: String?) throws {
             guard let capabilities=agent.capabilities else { return }
-            let p: SyncValue = .object(["agentId":.string(agent.id),"projectId":project.map(SyncValue.string) ?? .null,"capabilities":capabilities,"collaboration":agent.collaboration ?? collaboration,"contextSources":agent.contextSources ?? sources])
+            let p: SyncValue = .object(["agentId":.string(agent.id),"projectId":project.map(SyncValue.string) ?? .null,"capabilities":capabilities,"collaboration":portableCollaboration(agent.collaboration ?? collaboration),"contextSources":agent.contextSources ?? sources])
             try SyncWireContract.validate(p,definition:"agentSettings")
             workspace.put(kind:"knowledge",id:id(project,agent.id),value:.object(["title":.string("\(project ?? "global") / \(agent.id)"),"content":.string(p.canonical),"kind":.string("agent-settings-v1"),"language":.string("json"),"projectId":.null,"deleted":.bool(false)]),device:device)
         }
@@ -387,7 +399,7 @@ enum AgentSettingsProjection {
         let workspace=try validated(workspace)
         for row in workspace.records where row.versions.count == 1 {
             let p=try JSONDecoder().decode(SyncValue.self,from:Data(row.versions[0].value["content"].string.utf8)), agentID=p["agentId"].string
-            func updated(_ agent: AgentProfile) -> AgentProfile { var result=agent;result.capabilities=p["capabilities"];result.collaboration=p["collaboration"];result.contextSources=p["contextSources"];return result }
+            func updated(_ agent: AgentProfile) -> AgentProfile { var result=agent;result.capabilities=p["capabilities"];var collaboration=p["collaboration"].object;if let jobs=agent.collaboration?.object["jobModels"] { collaboration["jobModels"]=jobs };result.collaboration = .object(collaboration);result.contextSources=p["contextSources"];return result }
             if p["projectId"] == .null {
                 if let i=preferences.agents.firstIndex(where: { $0.id == agentID }) { preferences.agents[i]=updated(preferences.agents[i]) }
             } else if let agent=preferences.projectAgents?[p["projectId"].string]?[agentID] { preferences.projectAgents?[p["projectId"].string]?[agentID]=updated(agent) }

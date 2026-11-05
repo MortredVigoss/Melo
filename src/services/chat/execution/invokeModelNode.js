@@ -187,7 +187,7 @@ export function createInvokeModelNode(turn) {
     const visibleToolIds = new Set(graphState.visibleToolIds || []);
     if (routingEnabled) visibleToolIds.add('melo_escalate');
     const allowedToolIdList = [...visibleToolIds];
-    const coreTurn = createCoreTurn({ runId: String(context.requestId), turnId: chat.id,
+    const coreTurn = createCoreTurn({ budget, runId: String(context.requestId), turnId: chat.id,
       goal: graphState.searchPlan.sharedPlan?.resolvedGoal || latestUserMessage, tools: graphState.promptTools,
       allowedTools: allowedToolIdList, requiredTools: graphState.searchPlan.sharedPlan?.requiredTools, toolDependencies: graphState.searchPlan.sharedPlan?.toolDependencies, limits: { rounds: MAX_TOOL_ITERATIONS, timeoutMs: Math.max(1, Math.ceil(remainingMs(budget))) } });
     if (continuationTeam) coreTurn.observations.push(...continuationTeam.results.flatMap((member,index)=>(member.meta?.observations || []).map(row=>({...row,id:`member:${index}:${row.id}`}))));
@@ -404,6 +404,11 @@ export function createInvokeModelNode(turn) {
         for (const call of routeCalls) {
           const next = startInternalJob({ catalog, args: call.arguments, callId: call.id, assignments, goal: routeGoal });
           if (next.error) { call.rejectedResult = { ok: false, output: next.error, meta: { code: 'ROUTE_DENIED', executionStarted: false } }; continue; }
+          if (next.role === 'execute' && routingSession?.current.mode === 'smart' && routingSession.current.tier !== 'strong') {
+            routingSideEffects = true; escalationRequested = true;
+            call.rejectedResult = { ok: false, output: 'This assignment has not started. Retry after the host selects the strong tier; if unavailable, ask the user to configure it.', meta: { code: 'ROUTING_REQUIRES_STRONG', executionStarted: false } };
+            continue;
+          }
           const job = { ...next, index: assignments.length + 1, id: `job-${assignments.length + 1}` };
           assignments.push(job); started.push(job);
         }
@@ -411,6 +416,7 @@ export function createInvokeModelNode(turn) {
         const outcomes = started.length ? await runInternalMembers({ jobs: started, goal: routeGoal, background: dispatchMemberBackground,
           config: delegatedModelConfig, extraTools: [...(graphState.skillTools || []), ...(graphState.mcpTools || [])], replyFn: rawReplyProvider,
           jobModels: graphState.activeAgentProfile?.collaboration?.jobModels || null,
+          requireStrongWrites: routingSession?.current.mode === 'smart',
           signal, sseEmitter, chatId: chat.id, workspacePath: workspace?.rootPath, chatSource: chat.source || 'desktop', projectId: chat.projectId,
           onProviderResponse: receipt => { if (!signal?.aborted) modelResponses.push(receipt); } }) : [];
         for (const outcome of outcomes) {
@@ -418,8 +424,8 @@ export function createInvokeModelNode(turn) {
           // The member's own report is evidence too: a limit delivery reads observations, not the chat, and used to
           // lose everything a member had already verified (audit P2-10).
           const handoff = JSON.parse(outcome.handoff);
-          if (outcome.started && handoff.memberReport) coreTurn.observations.push({ id: `${outcome.job.id}:report`, type: 'handoff', name: outcome.job.label, ok: true,
-            executed: true, reading: handoff.status, text: `[${handoff.status}] ${handoff.memberReport}` });
+          if (outcome.started && handoff.memberReport) coreTurn.observations.push({ id: `${outcome.job.id}:report`, type: 'handoff', name: outcome.job.label, ok: outcome.result?.ok === true,
+            executed: false, reading: handoff.status, text: `[${handoff.status}] ${handoff.memberReport}` });
         }
         coreTurn.update('feedback', { internalRouting: true,
           successfulEffects: outcomes.flatMap(outcome => outcome.result?.meta?.effects?.successful || []),

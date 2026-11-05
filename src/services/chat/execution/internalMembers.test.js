@@ -147,12 +147,43 @@ test('A5-1: a job runs on its configured connection, otherwise on the conversati
   assert.equal(jobConnectionConfig(config, { research: 'fast' }, 'research').model, 'fast-model');
   assert.equal(jobConnectionConfig(config, { research: 'fast' }, 'research').apiKey, 'sk-fast');
   assert.equal(jobConnectionConfig(config, { research: 'fast' }, 'lookup').model, 'gpt-6.1-sol', 'other jobs follow the conversation');
-  assert.equal(jobConnectionConfig(config, { research: 'missing' }, 'research').model, 'gpt-6.1-sol', 'unknown ids fall back');
-  assert.equal(jobConnectionConfig(config, { research: 'empty' }, 'research').model, 'gpt-6.1-sol', 'a connection without a model falls back');
+  assert.throws(()=>jobConnectionConfig(config, { research: 'missing' }, 'research'),{code:'JOB_CONNECTION_UNAVAILABLE'});
+  assert.throws(()=>jobConnectionConfig(config, { research: 'empty' }, 'research'),{code:'JOB_CONNECTION_UNAVAILABLE'});
   assert.equal(jobConnectionConfig(config, null, 'research'), config);
   const seen = []; const events = [];
   await runInternalMembers({ jobs: [job('research', 'look', 1), job('calculate', 'sum', 2)], goal, config, jobModels: { research: 'fast' }, lanes: 1,
     run: async options => { seen.push(options.config.model); return { ok: true, output: 'ok', meta: { observations: [] } }; }, sseEmitter: (type, event) => { if (type === 'execution_event') events.push(event); } });
   assert.deepEqual(seen, ['fast-model', 'gpt-6.1-sol']);
   assert.equal(events.find(e => e.id === 'internal:1' && e.status === 'running').model, 'fast-model', 'the scene shows which model the member ran on');
+});
+
+test('job connection replaces capability/window metadata and smart write jobs retain the strong connection', async () => {
+  const { jobConnectionConfig } = await import('./internalMembers.js');
+  const { createFunctionCallingSession } = await import('../../../tools/functionCalling.js');
+  const config = { id: 'lead', activeLlmProfileId: 'lead', model: 'same-name', authMode: 'api-key', apiKey: 'lead-key', baseUrl: 'https://lead.invalid',
+    modelCapabilities: { 'same-name': {tools:true,vision:true} }, routingContextWindow: 200000,
+    llmProfiles: { narrow: { model: 'same-name', authMode: 'api-key', apiKey: 'member-key', baseUrl: 'https://member.invalid',
+      modelCapabilities: {'same-name':{tools:false,vision:false}}, contextWindows: {'same-name':32000} }, unknown: {model:'opaque',authMode:'local',baseUrl:'http://localhost:1'} } };
+  const selected = jobConnectionConfig(config,{research:'narrow'},'research');
+  assert.equal(selected.id,'narrow'); assert.equal(selected.routingContextWindow,32000);
+  assert.equal(createFunctionCallingSession(selected,[]).native,false,'tools:false really chooses XML fallback');
+  const unknown = jobConnectionConfig(config,{research:'unknown'},'research');
+  assert.deepEqual(unknown.modelCapabilities,{}); assert.equal(unknown.routingContextWindow,0);
+  const requests=[];
+  await runInternalMembers({jobs:[job('research','look',1)],goal,config,jobModels:{research:'narrow'},
+    run: options=>fixtureSubAgent({...options,replyFn:async request=>{requests.push(request);return 'No evidence available.';}})});
+  assert.ok(requests.length); assert.deepEqual(requests[0].modelCapabilities,{tools:false,vision:false});
+  assert.equal(requests[0].apiKey,'member-key'); assert.equal(requests[0].baseUrl,'https://member.invalid');
+  const models=[];
+  await runInternalMembers({jobs:[job('execute','save',2)],goal,config,jobModels:{execute:'narrow'},requireStrongWrites:true,
+    run:async options=>{models.push(options.config.apiKey);return {ok:true,output:'done',meta:{}};}});
+  assert.deepEqual(models,['lead-key'],'an explicit low job connection cannot bypass the smart write floor');
+});
+
+test('an unavailable configured connection returns a diagnosable partial handoff without starting a provider',async()=>{
+ let calls=0;const events=[];
+ const result=await runInternalMembers({jobs:[job('research','look',1)],goal,config:{model:'lead',llmProfiles:{}},jobModels:{research:'gone'},
+  run:async()=>{calls++;throw new Error('must not start');},sseEmitter:(type,event)=>events.push(event)});
+ assert.equal(calls,0);assert.equal(result[0].started,false);assert.equal(result[0].result.error,'JOB_CONNECTION_UNAVAILABLE');
+ assert.equal(JSON.parse(result[0].handoff).status,'partial');assert.ok(events.some(e=>e.status==='failed'&&/connection is unavailable/.test(e.output)));
 });

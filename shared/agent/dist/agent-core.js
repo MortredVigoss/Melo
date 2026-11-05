@@ -497,9 +497,8 @@ modules["shared/agent/evidence.js"] = (() => {
 // A delivery must retain the whole observation ledger, not only the last page.
 // Bodies go first to verified reads (ok + executed): those carry the facts the
 // answer may cite. Failed or unexecuted rows keep id, provenance and read state
-// with a short body. A URL read more than once keeps its longest body once and
-// metadata on the other rows, so a long early page never erases the final
-// result. Bodies remain untrusted evidence. (2026-11-04: the fair split used to
+// with a short body. Identical bodies at one URL share space; distinct page
+// portions retain their evidence even when they have the same URL. Bodies remain untrusted evidence. (2026-11-04: the fair split used to
 // give every row chars / N, so thirty observations left each verified page
 // with ~800 chars of navigation and the delivery called the facts unverified.)
 const SHORT_BODY = 160;
@@ -508,13 +507,17 @@ function deliveryEvidence(observations = [], chars = 24000) {
   const rows = Array.isArray(observations) ? observations : [];
   const bodies = rows.map(row => String(row.text || row.output || ''));
   const verified = rows.map(row => row.ok === true && row.executed === true);
-  const longestByUrl = new Map();
-  rows.forEach((row, index) => {
-    if (!verified[index] || !row.url) return;
-    const previous = longestByUrl.get(row.url);
-    if (previous === undefined || bodies[index].length >= bodies[previous].length) longestByUrl.set(row.url, index);
+  const duplicateBodies = new Set();
+  const primary = rows.map((row, index) => {
+    if (!verified[index]) return false;
+    // The same URL can carry different offset windows or revised contents.
+    // Only identical bodies are duplicates, never independent page portions.
+    if (!row.url) return true;
+    const key = JSON.stringify([row.url, bodies[index]]);
+    if (duplicateBodies.has(key)) return false;
+    duplicateBodies.add(key);
+    return true;
   });
-  const primary = rows.map((row, index) => verified[index] && (!row.url || longestByUrl.get(row.url) === index));
   const primaryCount = primary.filter(Boolean).length;
   const short = Math.max(24, Math.min(SHORT_BODY, Math.floor(chars / Math.max(1, rows.length))));
   const reserved = (rows.length - primaryCount) * short;
@@ -524,7 +527,7 @@ function deliveryEvidence(observations = [], chars = 24000) {
     const limit = primary[index] ? allowance : short;
     return { id: row.id, name: row.name, type: row.type, effect: row.effect,
       ok: row.ok === true, executed: row.executed === true, url: row.url,
-      reading: row.reading, text: raw.slice(0, limit), truncated: raw.length > limit };
+      reading: row.reading, text: raw.slice(0, limit), truncated: row.truncated === true || raw.length > limit };
   });
 }
 
@@ -1229,7 +1232,7 @@ function reviewGoal(state, raw, observations = []) {
   try { report = JSON.parse(String(raw).trim().replace(/^```(?:json)?\s*|\s*```$/gu, '')); } catch { return finish('partial', 'GOAL_CHECK_UNAVAILABLE'); }
   if (!report || !['complete', 'continue', 'needs_user', 'partial'].includes(report.decision) || !Array.isArray(report.requirements) || !report.requirements.length || report.requirements.length > GOAL_LIMITS.requirements || report.requirements.some(row => !row || typeof row !== 'object' || Array.isArray(row))) return finish('partial', 'GOAL_CHECK_INVALID');
   const visibleEvidence = JSON.parse(goalReviewRequest(state, observations).messages[0].content).observations;
-  const validEvidence = new Set(visibleEvidence.filter(row => row.ok === true && row.executed === true && row.text.trim()).map(row => row.id));
+  const validEvidence = new Set(visibleEvidence.filter(row => row.type !== 'handoff' && row.ok === true && row.executed === true && row.text.trim()).map(row => row.id));
   const attemptedEvidence = new Set(visibleEvidence.filter(row => row.text.trim()).map(row => row.id));
   const turnKind = ['answer', 'feedback', 'clarification'].includes(report.turnKind) ? report.turnKind : 'task';
   const requirements = report.requirements.map(row => ({ text: text(row.text), status: row.status, evidenceIds: ids(row.evidenceIds), kind: ['response', 'context', 'constraint', 'external_fact', 'external_effect'].includes(row.kind) ? row.kind : 'external_fact' }));
@@ -2778,6 +2781,10 @@ function advanceTurn(previous, event, now) {
   const state = { ...previous, lastNow: now, callIds: [...previous.callIds], pending: [...previous.pending], progressKeys: [...previous.progressKeys], phoneTasks: [...(previous.phoneTasks || [])], successfulTools: [...(previous.successfulTools || [])], pendingTools: { ...previous.pendingTools }, pendingFingerprints: { ...previous.pendingFingerprints }, pendingEffects: { ...previous.pendingEffects } };
   const stop = reason => ({ ...state, status: 'blocked', reason, awaitingModel: false, pending: [], permitted: [] });
   if (event.type === 'cancel') return { ...state, status: 'cancelled', reason: 'CANCELLED', pending: [], permitted: [], awaitingModel: false };
+  if (event.type === 'extend-deadline') {
+    if (!Number.isSafeInteger(event.deadline) || event.deadline <= now || event.deadline < state.deadline) fail('INVALID_DEADLINE', 'The Host must supply a later finite deadline.');
+    return { ...state, deadline: event.deadline };
+  }
   if (now >= state.deadline) return stop('DEADLINE_EXCEEDED');
   switch (event.type) {
     case 'request':
@@ -3116,7 +3123,8 @@ function extendBudget(budget, { deadlineMs, maxInputTokens, maxToolCalls } = {},
   if (!budget || budget.parent) return result;
   const time = currentTime(budget, now);
   const wantDeadline = positiveInt(deadlineMs);
-  if (wantDeadline && time + wantDeadline > budget.deadlineAt) { budget.deadlineAt = time + wantDeadline; result.deadline = true; }
+  const targetDeadline = Math.min(time + (wantDeadline || 0), budget.hardDeadlineAt ?? Infinity);
+  if (wantDeadline && targetDeadline > budget.deadlineAt) { budget.deadlineAt = targetDeadline; result.deadline = true; }
   const wantTokens = positiveInt(maxInputTokens);
   if (wantTokens && budget.used.inputTokens + wantTokens > budget.maxInputTokens) { budget.maxInputTokens = budget.used.inputTokens + wantTokens; result.inputTokens = true; }
   const wantCalls = positiveInt(maxToolCalls);

@@ -2,10 +2,10 @@
 import {randomUUID,createHash} from 'node:crypto';
 import {putWorkspace,stableJSON} from './workspaceProtocol.js';
 import {normalizeCapabilities,normalizeCollaboration,intersectCapabilities,intersectCollaboration} from '../src/domain/agent/capabilities.js';
-import {settingsID,settingsPayload,validateAgentSettings} from './agentSettingsProtocol.js';
+import {settingsID,settingsPayload,validateAgentSettings,portableCollaboration} from './agentSettingsProtocol.js';
 export {settingsID,settingsPayload,validateAgentSettings} from './agentSettingsProtocol.js';
 const contexts=value=>Object.fromEntries(['projects','knowledge','memory'].map(k=>[k,value?.[k]!==false]));
-const permissions=profile=>({capabilities:normalizeCapabilities(profile.capabilities),collaboration:normalizeCollaboration(profile.collaboration),contextSources:contexts(profile.contextSources)});
+const permissions=profile=>({capabilities:normalizeCapabilities(profile.capabilities),collaboration:portableCollaboration(normalizeCollaboration(profile.collaboration)),contextSources:contexts(profile.contextSources)});
 const own=(object,key)=>Object.hasOwn(object||{},key)?object[key]:null;
 function targetFor(state,projectId,agentId) {
  return projectId?own(own(state.projectAgentOverrides,projectId),agentId):own(state.agentProfiles,agentId);
@@ -48,7 +48,7 @@ export function applyAgentSettings(state,workspace) {
    const capabilities=intersectCapabilities(intersectCapabilities(before.capabilities,base.capabilities),p.capabilities);
    const collaboration=intersectCollaboration(intersectCollaboration(before.collaboration,base.collaboration),p.collaboration);
    const contextSources=Object.fromEntries(Object.keys(before.contextSources).map(k=>[k,before.contextSources[k]&&p.contextSources[k]]));
-   Object.assign(target,{capabilities,collaboration,contextSources});
+   Object.assign(target,{capabilities,collaboration:{...collaboration,...(target.collaboration?.jobModels?{jobModels:target.collaboration.jobModels}:{})},contextSources});
   }
   if(stableJSON(permissions(target))!==stableJSON(permissions(p))) {
    const pending={id:row.id,agentId:p.agentId,projectId:p.projectId,requested:permissions(p),baseline:baselineFor(state,p,target),version:row.versions[0]};
@@ -73,6 +73,7 @@ export function confirmAgentSettings(state,{id,expected,accept}) {
    requested.capabilities=intersectCapabilities(global.capabilities,requested.capabilities);
    requested.collaboration=intersectCollaboration(global.collaboration,requested.collaboration);
   }
+  if(target.collaboration?.jobModels)requested.collaboration.jobModels=target.collaboration.jobModels;
   Object.assign(target,requested);
  }
  delete state.agentSettingsPending[id];

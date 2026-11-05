@@ -8,12 +8,17 @@ import { startGoal, amendGoal, goalText, goalSnapshot, goalCandidate, goalReview
 import { toolEffect } from '../../shared/agent/toolEffects.js';
 
 /** Node Host for the same reducer packaged for Android / iOS. */
-export function createCoreTurn({ runId = currentLoopTrace()?.context.runId || randomUUID(), turnId = randomUUID(), allowedTools, requiredTools, toolDependencies, limits, goal, tools = [], hostToolSchemas = true, clock = () => performance.timeOrigin + performance.now() }) {
+export function createCoreTurn({ runId = currentLoopTrace()?.context.runId || randomUUID(), turnId = randomUUID(), allowedTools, requiredTools, toolDependencies, limits, budget, goal, tools = [], hostToolSchemas = true, clock = () => performance.timeOrigin + performance.now() }) {
   const initial = tracedStart({ runId, turnId, allowedTools, requiredTools, toolDependencies, limits: { ...limits, finalReport: typeof goal === 'string' }, hostToolSchemas, now: clock() });
   let state = initial.state;
   const observe = events => { for (const event of events) traceEvent(event.type, event.data, event.payload, { round: event.round, ...(event.spanId ? { spanId: runId + ':' + event.spanId, parentSpanId: runId } : {}) }); };
   observe(initial.events);
-  const advance = event => { const next = tracedAdvance(state, event, clock()); state = next.state; observe(next.events); };
+  const advance = event => {
+    if (state.status === 'running' && Number.isFinite(budget?.deadlineAt) && budget.deadlineAt > state.deadline && budget.deadlineAt > clock()) {
+      const extension = tracedAdvance(state, { type: 'extend-deadline', runId, turnId, deadline: Math.ceil(budget.deadlineAt) }, clock());
+      state = extension.state; observe(extension.events);
+    }
+    const next = tracedAdvance(state, event, clock()); state = next.state; observe(next.events); };
   const observations = [];
   let task = typeof goal === 'string' ? startGoal(goal, runId) : null;
   let candidateReply = '';

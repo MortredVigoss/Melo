@@ -79,7 +79,7 @@ export function reviewGoal(state, raw, observations = []) {
   try { report = JSON.parse(String(raw).trim().replace(/^```(?:json)?\s*|\s*```$/gu, '')); } catch { return finish('partial', 'GOAL_CHECK_UNAVAILABLE'); }
   if (!report || !['complete', 'continue', 'needs_user', 'partial'].includes(report.decision) || !Array.isArray(report.requirements) || !report.requirements.length || report.requirements.length > GOAL_LIMITS.requirements || report.requirements.some(row => !row || typeof row !== 'object' || Array.isArray(row))) return finish('partial', 'GOAL_CHECK_INVALID');
   const visibleEvidence = JSON.parse(goalReviewRequest(state, observations).messages[0].content).observations;
-  const validEvidence = new Set(visibleEvidence.filter(row => row.ok === true && row.executed === true && row.text.trim()).map(row => row.id));
+  const validEvidence = new Set(visibleEvidence.filter(row => row.type !== 'handoff' && row.ok === true && row.executed === true && row.text.trim()).map(row => row.id));
   const attemptedEvidence = new Set(visibleEvidence.filter(row => row.text.trim()).map(row => row.id));
   const turnKind = ['answer', 'feedback', 'clarification'].includes(report.turnKind) ? report.turnKind : 'task';
   const requirements = report.requirements.map(row => ({ text: text(row.text), status: row.status, evidenceIds: ids(row.evidenceIds), kind: ['response', 'context', 'constraint', 'external_fact', 'external_effect'].includes(row.kind) ? row.kind : 'external_fact' }));

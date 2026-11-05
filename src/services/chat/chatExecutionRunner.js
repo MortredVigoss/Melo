@@ -1,3 +1,4 @@
+import { createTurnEffects } from '../../runtime/turnEffects.js';
 import { runDeadline } from '../../runtime/runDeadline.js';
 import { endTaskPermissions } from '../../safety/fileSafetyGate.js';
 import { endTaskToolPermissions } from '../../tools/permissions.js';
@@ -71,6 +72,7 @@ export async function runChatAgentExecutionGraph({
     if (!context) throw Object.assign(new Error(missingCapabilityScope().output),{code:'CAPABILITY_SCOPE_MISSING'});
   }
   if (!context.requestToolPolicy) context = Object.freeze({ ...context, requestToolPolicy: Object.freeze(getRequestNetworkPolicy(resolvedRequestGoal(latestUserMessage, chat.messages))) });
+  if (!context.turnEffects) context = Object.freeze({ ...context, turnEffects: createTurnEffects() });
   if (currentRequestContext() !== context) return runWithRequestContext(context, () => runChatAgentExecutionGraph({ ...arguments[0], context }));
   home ||= context.home;
   if (currentLoopTrace()?.context.logicalRunId !== String(context.requestId)) return withLoopTrace({ home, runId: String(context.requestId), goal: latestUserMessage,
@@ -92,6 +94,10 @@ export async function runChatAgentExecutionGraph({
   // context was created when the request arrived; the clock starts here.
   const budget = reserveDelivery(armBudget(context.budget || null));
   const requestedTimeout = Number.isFinite(_dependencies.turnTimeoutMs) ? _dependencies.turnTimeoutMs : AGENT_LOOP_CONTRACT.loop.deepTask.deadlineMs;
+  if (budget) {
+    budget.hardDeadlineAt = budget.startedAt + Math.max(1, Math.ceil(requestedTimeout));
+    budget.deadlineAt = Math.min(budget.deadlineAt, budget.hardDeadlineAt);
+  }
   const deadline = runDeadline(budget, { maxMs: Math.max(1, Math.ceil(requestedTimeout)) });
   const userSignal = signal || context.signal;
   signal = AbortSignal.any([userSignal, deadline.signal].filter(Boolean));
