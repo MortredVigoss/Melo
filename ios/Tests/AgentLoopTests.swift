@@ -186,7 +186,7 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
         // Ordinary custom persona (no external delegation), two real member contexts.
         do {
             let log = Log()
-            var h = hooks(log); h.internalRouting = true
+            var h = hooks(log); h.internalRouting = true; h.maxTaskIterations = 1
             var leads = 0, reads = 0, maths = 0
             let transport = ScriptedTransport { request in
                 if request.goalReview != nil { return answer(#"{"decision":"complete","reasonType":"fulfilled","requirements":[{"text":"forecast and conversion","status":"met","evidenceIds":["job-1:same","job-2:same"]}]}"#) }
@@ -215,6 +215,37 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             assert(outcome.completion?.outcome == "completed" && outcome.text.contains("68 °F"))
             assert(log.performed.count == 1 && leads == 3 && reads == 2 && maths == 3)
             assert(log.records.contains { $0.callId == "job-2:denied" && !$0.executed })
+        }
+        // Coordinator bookkeeping is portable, persists in the receipt and
+        // never dispatches a physical tool. A dishonest 8/20 complete verdict
+        // cannot bypass the shared hard quantity gate on the phone either.
+        for count in [8, 20] {
+            let log = Log()
+            var h = hooks(log); h.internalRouting = true; h.evaluationMode = "quick"
+            var step = 0
+            let source = (0..<count).map { "Product \($0), model F\($0), AU, price 100 AUD, available." }.joined(separator: "\n")
+            let transport = ScriptedTransport { request in
+                if request.goalReview != nil { return answer(#"{"decision":"complete","evaluationValid":true,"reasonType":"fulfilled","requirements":[{"text":"20 products","status":"met","evidenceIds":["catalog:source:0"]}]}"#) }
+                step += 1
+                if step == 1 { return calls([fc("contract", "task_progress", #"{"action":"contract","data":"{\"category\":\"products\",\"explicitCount\":{\"value\":20,\"quote\":\"20 products\"}}"}"#)]) }
+                if step == 2 { return calls([fc("catalog")]) }
+                if step == 3 {
+                    guard case .toolRound(_, let outputs) = request.transcript.last else { preconditionFailure("Missing real read") }
+                    assert(!outputs.isEmpty)
+                    let items: [[String: Any]] = (0..<count).map { i in ["fields": ["name":"Product \(i)","model":"F\(i)","region":"AU","price":100,"currency":"AUD","availability":"available"], "evidence":[["id":"catalog:source:0","quote":"Product \(i), model F\(i), AU, price 100 AUD, available."]], "match":35,"diversity":8,"reason":"Meets the catalog request"] }
+                    let data = String(decoding: try JSONSerialization.data(withJSONObject:["items":items]),as:UTF8.self)
+                    let args = String(decoding: try JSONSerialization.data(withJSONObject:["action":"batch","data":data]),as:UTF8.self)
+                    return calls([fc("batch","task_progress",args)])
+                }
+                return answer("Found \(count) products; \(20-count) still missing.")
+            }
+            let tools = loopTools(log) { _ in PhoneToolResult(output:PhoneToolEnvelope.success(String(decoding:try! JSONSerialization.data(withJSONObject:["url":"https://fixture.invalid/catalog","text":source]),as:UTF8.self))) }
+            let result = try await AgentLoop(transport:transport,tools:tools,budget:PhoneRunBudget(),latestUserMessage:"Find 20 products in this catalog",hooks:h).run()
+            assert(log.performed.count == 1)
+            assert(result.completion?.outcome == (count == 20 ? "completed" : "partial"))
+            assert(log.stages.contains { $0.id.hasPrefix("task-evaluation:") && $0.output.contains("\(count)/20") })
+            let receipt = String(decoding:try JSONEncoder().encode(result.completion),as:UTF8.self)
+            assert(receipt.contains("\"evaluation\"") && receipt.contains("\"quick\""))
         }
         do {
             var enabled = AgentLoopHooks(); enabled.internalRouting = true

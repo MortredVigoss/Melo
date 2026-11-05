@@ -76,12 +76,13 @@ import com.melo.android.network.HostedSearchAdapter
         var name by remember(original.id) { mutableStateOf(original.name) }; var subtitle by remember(original.id) { mutableStateOf(original.subtitle) }
         var instructions by remember(original.id) { mutableStateOf(original.instructions) }; var identity by remember(original.id) { mutableStateOf(original.identity) }
         var soul by remember(original.id) { mutableStateOf(original.soul) }
+        var evaluationMode by remember(original.id) { mutableStateOf(original.evaluationMode) }
         var replyLanguage by remember(original.id) { mutableStateOf(original.replyLanguage) }
         var taskRounds by remember(original.id) { mutableIntStateOf(original.maxTaskIterations.coerceIn(AgentLoopDefaults.minIterations, AgentLoopDefaults.maxRounds)) }
         var contextSources by remember(original.id) { mutableStateOf(original.contextSources) }
         EditorDialog("编辑角色", { editing = null }, { vm.engine.work {
             require(name.isNotBlank()) { "请输入角色名称。" }
-            vm.repository.saveAgent(original.copy(name = name.take(200), subtitle = subtitle, instructions = instructions, identity = identity, soul = soul, contextSources = contextSources, replyLanguage = replyLanguage, maxTaskIterations = taskRounds)); editing = null
+            vm.repository.saveAgent(original.copy(name = name.take(200), subtitle = subtitle, instructions = instructions, identity = identity, soul = soul, contextSources = contextSources, replyLanguage = replyLanguage, evaluationMode = evaluationMode, maxTaskIterations = taskRounds)); editing = null
         } }) { Field("名称", name, { name = it }); Field("简介", subtitle, { subtitle = it }); Field("角色指令", instructions, { instructions = it }, 4); Field("身份", identity, { identity = it }, 2); Field("风格", soul, { soul = it }, 2)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("任务执行轮数（本机）：$taskRounds", Modifier.weight(1f))
@@ -89,6 +90,9 @@ import com.melo.android.network.HostedSearchAdapter
                 TextButton(onClick = { taskRounds++ }, enabled = taskRounds < AgentLoopDefaults.maxRounds) { Text("+") }
             }
             Text("检查不占执行轮数；到顶后汇报进度。")
+            Text("任务检索深度（本机）")
+            listOf("quick" to "快速", "standard" to "标准", "deep" to "深入").forEach { (value,title) -> FilterChip(selected = evaluationMode == value, onClick = { evaluationMode = value }, label = { Text(title) }) }
+            Text("调整模糊推荐的检索范围；明确数量和必要条件不变，不增加总预算。")
             Text("回复语言")
             listOf("" to "跟随用户消息", "zh" to "中文", "en" to "English", "ja" to "日本語", "ko" to "한국어", "es" to "Español").forEach { (value,title) -> FilterChip(selected = replyLanguage == value, onClick = { replyLanguage = value }, label = { Text(title) }) }
             Text("上下文来源（本机）")

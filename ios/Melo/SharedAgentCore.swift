@@ -41,6 +41,7 @@ struct AgentCompletionReceipt: Codable, Equatable, Sendable {
 struct AgentGoalSnapshot: Codable, Equatable, Sendable {
     struct Requirement: Codable, Equatable, Sendable { var text: String; var status: String; var evidenceIds: [String] }
     var version: Int; var id: String; var original: String; var amendments: [String]; var revision: Int
+    var evaluation: [String: AgentEvaluationValue]? = nil
     var limitDelivery: Bool? = nil; var limitReason: String? = nil; var deliveryCheck: String? = nil
     var corrections: Int; var requirements: [Requirement]; var decision: String?; var reason: String; var explanation: String?
 }
@@ -75,7 +76,7 @@ final class PhoneGoalState {
     @discardableResult func update(_ action: String, _ fields: [String: Any] = [:]) throws -> [String: Any] {
         var input = fields; input["action"] = action; input["state"] = state
         guard let next = SharedLoopPolicy.value("goal", input) as? [String: Any] else { throw SharedAgentCoreError.invalidReply }
-        if action != "request" { state = next }
+        if !["request","progressResult"].contains(action) { state = next }
         LoopTrace.emit(action == "review" ? "goal.check" : "goal.updated", ["action":action], payload:next)
         return next
     }
@@ -171,6 +172,7 @@ final class PhoneCoreTurn {
     }
     private var state: [String: Any]
     private static func clock() -> Double { ProcessInfo.processInfo.systemUptime * 1000 }
+    var effects: [String: Any] { ["internalRouting":true,"successfulEffects":state["successfulEffects"] ?? [],"uncertainEffects":state["uncertainEffects"] ?? []] }
     var rounds: Int { state["rounds"] as? Int ?? 0 }
     var failures: Int { state["errors"] as? Int ?? 0 }
     var completed: Bool { state["status"] as? String == "completed" }
@@ -218,4 +220,23 @@ final class PhoneCoreTurn {
     }
     func reply(_ text: String) -> String { SharedLoopPolicy.value("stopReply", ["reason": reason, "text": text, "locale": PhoneReplyLanguage.current ?? PhoneReplyLanguage.resolve(text)]) as? String ?? "共享运行策略不可用，本轮已停止。" }
     static func fingerprint(_ text: String) -> String { SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined() }
+}
+
+// Preserve the optional versioned evaluation ledger through receipt storage and
+// sync; old receipts remain decodable and unknown future fields survive.
+indirect enum AgentEvaluationValue: Codable, Equatable, Sendable {
+    case object([String: AgentEvaluationValue]), array([AgentEvaluationValue]), string(String), number(Double), bool(Bool), null
+    init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer()
+        if value.decodeNil() { self = .null }
+        else if let v = try? value.decode(Bool.self) { self = .bool(v) }
+        else if let v = try? value.decode(Double.self) { self = .number(v) }
+        else if let v = try? value.decode(String.self) { self = .string(v) }
+        else if let v = try? value.decode([AgentEvaluationValue].self) { self = .array(v) }
+        else { self = .object(try value.decode([String: AgentEvaluationValue].self)) }
+    }
+    func encode(to encoder: Encoder) throws {
+        var value = encoder.singleValueContainer()
+        switch self { case .null: try value.encodeNil(); case .bool(let v): try value.encode(v); case .number(let v): try value.encode(v); case .string(let v): try value.encode(v); case .array(let v): try value.encode(v); case .object(let v): try value.encode(v) }
+    }
 }

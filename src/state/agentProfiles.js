@@ -143,6 +143,7 @@ export function normalizeAgentProfile(agentId, profile) {
       description: typeof profile?.description === 'string' && (profile.portableIdentity || profile.description.trim()) ? profile.description : definition.description,
       instructions,
       replyLanguage: normalizeLocale(profile?.replyLanguage, ''),
+      evaluationMode: ['quick','standard','deep'].includes(profile?.evaluationMode) ? profile.evaluationMode : 'standard',
       rolePrompt: persona.rolePrompt,
       isCustom: Boolean(definition.isCustom),
       mood: MOOD_OPTION_IDS.has(profile?.mood) ? profile.mood : definition.defaultMood,
@@ -186,6 +187,7 @@ export function normalizeAgentOverride(agentId, profile) {
   }
 
   const normalized = {};
+  if (['quick','standard','deep'].includes(profile.evaluationMode)) normalized.evaluationMode = profile.evaluationMode;
   if (typeof profile.replyLanguage === 'string') normalized.replyLanguage = normalizeLocale(profile.replyLanguage, '');
   if (profile.capabilities !== undefined) normalized.capabilities = normalizeCapabilities(profile.capabilities);
   if (profile.collaboration !== undefined) normalized.collaboration = normalizeCollaboration(profile.collaboration);

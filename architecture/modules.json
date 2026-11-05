@@ -24,8 +24,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 694,
-      "edges": 2256,
+      "modules": 695,
+      "edges": 2264,
       "roots": [
         "src",
         "desktop-ui",
@@ -38,7 +38,7 @@
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
-      "detected": 35,
+      "detected": 36,
       "unannotated": []
     }
   },
@@ -744,7 +744,7 @@
       ],
       "modules": {
         "desktop-ui": 27,
-        "shared": 44,
+        "shared": 45,
         "src": 70
       },
       "entryModules": [
@@ -1276,6 +1276,7 @@
           "shared/agent/portability.test.js",
           "shared/agent/research.test.js",
           "shared/agent/taskContract.test.js",
+          "shared/agent/taskEvaluation.test.js",
           "shared/agent/taskReplay.test.js",
           "shared/agent/tools.test.js",
           "shared/agent/trace.test.js",
@@ -1324,6 +1325,7 @@
           "src/services/chat/supplementPersistence.test.js",
           "src/services/chat/supplements.test.js",
           "src/services/chat/systemPrompt.test.js",
+          "src/services/chat/taskEvaluationGraph.test.js",
           "src/services/chat/toolProtocol.integration.test.js",
           "src/services/chat/toolResultProjection.test.js",
           "src/services/chat/toolTraceReplay.test.js",
@@ -6115,10 +6117,12 @@
         "ios/Melo/AgentCore/agent-core.js",
         "shared/agent/**/*.js",
         "src/shared/replyDocument.js",
-        "src/shared/conversationTopics.js"
+        "src/shared/conversationTopics.js",
+        "shared/agent/fixtures/task-evaluation.json"
       ],
       "tests": [
-        "shared/agent/conformance.test.js"
+        "shared/agent/conformance.test.js",
+        "shared/agent/taskEvaluation.test.js"
       ],
       "note": "运行源码与隔离 bundle 对照，并校验逐源文件散列和 iOS 原样打包",
       "features": [

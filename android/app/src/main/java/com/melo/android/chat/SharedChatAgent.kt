@@ -59,6 +59,8 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
         private lateinit var leadAssignment: DeviceCall
         private var leadChainStart = -1
         private var memberRounds = 0
+        private var memberTurn: SharedCoreTurn? = null
+        private var rootTurn: SharedCoreTurn? = null
         private var memberObservations = mutableListOf<JsonElement>()
         private var assignmentLimit = 0
         private var memberLimit = 0
@@ -151,10 +153,10 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                 memberLimit = limits.getValue("rounds").jsonPrimitive.int
             }
             return SharedCoreTurn.open(context, runId, chatId, (names + if (internalCatalog != null) listOf("calculator") else emptyList()) + if (routing?.active == true) listOf("melo_escalate") else emptyList(), budget = budget, rounds = loopLimits.getValue("maxIterations").jsonPrimitive.int, finalReport = true, timeoutMs = budget.remaining().coerceAtLeast(1).toInt(), requiredTools = plan.strings("requiredTools"), toolDependencies = plan["toolDependencies"]?.jsonObject ?: buildJsonObject {}).use { turn ->
-                execute(turn)
+                try { execute(turn) } finally { memberTurn?.close(); memberTurn = null }
             }
         } catch (error: Throwable) {
-            if (::budget.isInitialized && (error is SharedBudgetExhausted || error is SharedTurnStopped && error.reason in setOf("ROUND_LIMIT", "DEADLINE_EXCEEDED", "TOKEN_LIMIT") || error is TimeoutCancellationException)) {
+            if (::budget.isInitialized && (error is SharedBudgetExhausted || error is SharedTurnStopped && error.reason in setOf("TASK_EVALUATION_LIMIT", "ROUND_LIMIT", "DEADLINE_EXCEEDED", "TOKEN_LIMIT") || error is TimeoutCancellationException)) {
                 val reason = when (error) { is SharedTurnStopped -> error.reason; is TimeoutCancellationException -> "DEADLINE_EXCEEDED"; else -> "BUDGET_EXHAUSTED" }
                 if (currentCoroutineContext().isActive) return deliverLimit(reason)
             }
@@ -279,6 +281,14 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                 put("goal",plan.text("resolvedGoal").ifBlank { goal })
             }).jsonObject
             if (next.containsKey("error")) return false
+            val allocation = budget.memberAllocation()
+            if (allocation["allowed"]?.jsonPrimitive?.booleanOrNull != true) return false
+            val childBudget = SharedRunBudget.open(runtime,parent=budget,options=allocation)
+            childBudget.reserveDelivery()
+            val child = SharedCoreTurn.open(context,runId,chatId+":member:"+call.id,next.strings("tools"),rounds=next.getValue("roundLimit").jsonPrimitive.int,
+                budget=childBudget,timeoutMs=childBudget.remaining().coerceAtLeast(1).toInt(),finalReport=true)
+            child.event("inherit-effects",rootTurn!!.effects)
+            memberTurn = child
             assignments += next; internalJob = next; memberRounds = 0; memberObservations.clear()
             leadHistory = history; leadHistory += reply.wire; leadAssignment = call; leadChainStart = currentChainStart
             history = mutableListOf(buildJsonObject { put("role","user"); put("content",next.text("input")) })
@@ -287,19 +297,32 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
             return true
         }
 
-        private suspend fun handoff(answer: String, limited: Boolean = false) {
+        private suspend fun handoff(answer: String, limited: Boolean = false, deliver: Boolean = false) {
             val job = internalJob ?: return
+            var delivered = answer
+            if (deliver && memberTurn != null) {
+                try {
+                    val state = runtime.value("goal",buildJsonObject { put("action","start"); put("goal",job.text("task")) })
+                    val prompt = runtime.value("delivery",buildJsonObject { put("action","request"); put("state",state); put("reason","ROUND_LIMIT"); put("observations",JsonArray(memberObservations)) }).jsonObject
+                    val rows = prompt.getValue("messages").jsonArray.map { it.jsonObject }; val system = prompt.text("systemPrompt")
+                    val result = memberTurn!!.budget.model(SharedRunBudget.estimateInput(rows,system),{it.inputTokens},"delivery") { transport.next(connection,key,rows,system,true,emptyList(),nativeWebSearch=false,outputLimit=8192) }
+                    if (result.calls.isEmpty() && result.text.isNotBlank()) delivered = result.text
+                } catch (error: Exception) { currentCoroutineContext().ensureActive() }
+            }
             val report = runtime.value("internalRouting", buildJsonObject {
-                put("action","handoff"); put("job",job); put("answer",answer); put("limited",limited); put("observations",JsonArray(memberObservations))
+                put("action","handoff"); put("job",job); put("answer",delivered); put("limited",limited); put("observations",JsonArray(memberObservations))
             }).jsonPrimitive.content
             history = leadHistory; currentChainStart = leadChainStart
             DeviceAgentClient.appendResult(history, connection.protocol, leadAssignment, DeviceToolResult(Json.parseToJsonElement(report).jsonObject))
-            journal.event("internal:"+assignments.size, job.text("label"), output = answer.take(500),
+            journal.event("internal:"+assignments.size, job.text("label"), output = delivered.take(500),
                 status = if (Json.parseToJsonElement(report).jsonObject.text("status") == "observed") "completed" else "interrupted")
-            internalJob = null
+            memberTurn?.let { child -> rootTurn?.event("inherit-effects",child.effects); child.close() }
+            memberTurn = null; internalJob = null
         }
 
-        private suspend fun execute(turn: SharedCoreTurn): ModelReply {
+        private suspend fun execute(lead: SharedCoreTurn): ModelReply {
+                rootTurn = lead
+                var turn = lead
                 val nativeSearch = plan["nativeSearchAvailable"]?.jsonPrimitive?.booleanOrNull == true
                 if (!nativeSearch && names.isEmpty() && routing?.active != true) {
                     journal.event("model:reply", "模型回复", model = connection.model)
@@ -316,7 +339,9 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                 val specs = runtime.value("catalog", buildJsonObject { put("names", JsonArray(names.map { JsonPrimitive(it) })) }).jsonArray.map { it.jsonObject } + if (routing?.active == true) listOf(SmartRouting.control) else emptyList()
                 val calculatorSpec = runtime.value("catalog", buildJsonObject { put("names",JsonArray(listOf(JsonPrimitive("calculator")))) }).jsonArray.first().jsonObject
                 var succeeded = plan.text("route") == "hosted-search"
-                while (turn.active) {
+                while (lead.active) {
+                    turn = memberTurn ?: lead
+                    try {
                     currentCoroutineContext().ensureActive()
                     if (internalJob != null && requestedUpgrade) handoff("Action deferred to the lead for model escalation; it has not executed.", true)
                     if (internalJob == null && routing?.escalate(turn.rounds, turn.failures, requestedUpgrade, !turn.active) == true) {
@@ -329,11 +354,12 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                         journal.event("model-routing:1", "智能升档", model = connection.model, status = "completed")
                     }
                     requestedUpgrade = false
-                    if (internalJob != null && memberRounds >= memberLimit) handoff("Member round budget reached.", true)
+                    if (internalJob != null && (turn.roundsLeft <= 0 || !turn.active || turn.budget.exhausted())) handoff("Member round budget reached.", true, true)
+                    turn = memberTurn ?: lead
                     val job = internalJob
                     val tools = job?.strings("tools")
                     val roundSpecs = if (tools != null) (specs + calculatorSpec).filter { it.text("name") in tools }
-                        else specs + listOfNotNull(internalCatalog?.get("definition") as? JsonObject).takeIf { assignments.size < assignmentLimit }.orEmpty()
+                        else specs + (if (internalCatalog != null) listOf(runtime.value("taskEvaluation", buildJsonObject { put("action","definition") }).jsonObject) else emptyList()) + listOfNotNull(internalCatalog?.get("definition") as? JsonObject).takeIf { assignments.size < assignmentLimit }.orEmpty()
                     val hosted = nativeSearch && connection.protocol == "responses" && (tools == null || "native_web_search" in tools)
                     val reply = try { next(turn, roundSpecs, hosted) } catch (failure: Exception) {
                         currentCoroutineContext().ensureActive()
@@ -345,9 +371,22 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                     if (hosted) {
                         val before = observations.size; observeHosted(reply)
                         if (job != null) memberObservations.addAll(observations.drop(before))
-                        if (observations.size > before) { turn.event("hosted-call"); budget.record(toolCalls = 1) }
+                        if (observations.size > before) { turn.event("hosted-call"); turn.budget.record(toolCalls = 1) }
                     }
-                    if (assign(reply)) { turn.event("feedback",buildJsonObject { put("internalRouting",true) }); continue }
+                    if (job == null && internalCatalog != null && reply.calls.singleOrNull()?.name == "task_progress") {
+                        val call = reply.calls.single()
+                        val resourceUse = budget.usageSnapshot()
+                        goalState = runtime.value("goal", buildJsonObject { put("action","progress"); put("state",goalState!!); put("progress",call.arguments); put("evaluationMode",config.text("evaluationMode")); put("observations",JsonArray(observations)); put("resourceUse",resourceUse) }).jsonObject
+                        val result = runtime.value("goal", buildJsonObject { put("action","progressResult"); put("state",goalState!!) }).jsonObject
+                        history += reply.wire
+                        DeviceAgentClient.appendResult(history,connection.protocol,call,DeviceToolResult(result))
+                        turn.event("feedback",buildJsonObject { put("internalRouting",true) })
+                        val display = runtime.value("taskEvaluation",buildJsonObject { put("action","presentation"); put("result",result); put("locale",replyLocale) }).jsonObject
+                        journal.event("task-evaluation:$modelSequence",display.text("name"),output=display.text("output"),status=if (result["ok"]?.jsonPrimitive?.booleanOrNull == true) "completed" else "failed")
+                        if (result["closed"]?.jsonPrimitive?.booleanOrNull == true) throw SharedTurnStopped("TASK_EVALUATION_LIMIT")
+                        continue
+                    }
+                    if (assign(reply)) { lead.event("feedback",buildJsonObject { put("internalRouting",true) }); continue }
                     if (job != null && reply.calls.isEmpty()) { turn.event("feedback"); handoff(reply.text); continue }
                     if (job != null) memberRounds++
                     if (reply.calls.isEmpty()) {
@@ -440,7 +479,11 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                             phoneFailure = result.data.text("error").ifBlank { result.data.text("summary") }
                         }
                     }
-
+                    } catch (failure: Exception) {
+                        currentCoroutineContext().ensureActive()
+                        if (internalJob == null || failure !is SharedBudgetExhausted && failure !is SharedTurnStopped && failure !is TimeoutCancellationException) throw failure
+                        handoff("Member allowance reached. Preserve observations and request only the remaining gap.",true,true)
+                    }
                 }
                 if (turn.reason in setOf("ROUND_LIMIT", "DEADLINE_EXCEEDED")) throw SharedTurnStopped(turn.reason)
                 return finish(stopped(turn.reason), connection.model, if (succeeded) "partial" else "blocked", turn.reason)

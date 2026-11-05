@@ -137,6 +137,12 @@ export function advanceTurn(previous, event, now) {
       if (state.pending.length || state.awaitingModel) fail('PENDING_EFFECT', 'Finish the current response and pair its tools before rerouting.');
       state.repairing = true;
       return state;
+    case 'inherit-effects':
+      if (state.pending.length || state.awaitingModel) fail('PENDING_EFFECT', 'Inherit member receipts only at an idle boundary.');
+      state.internalRouting = true;
+      if (Array.isArray(event.successfulEffects)) state.successfulEffects = [...new Set([...(state.successfulEffects || []), ...event.successfulEffects.filter(identity)])];
+      if (Array.isArray(event.uncertainEffects)) state.uncertainEffects = [...new Set([...(state.uncertainEffects || []), ...event.uncertainEffects.filter(identity)])];
+      return state;
     case 'feedback':
       if (!state.awaitingModel || state.pending.length) fail('PENDING_EFFECT', 'Only an unverified model answer can receive feedback.');
       state.awaitingModel = false;

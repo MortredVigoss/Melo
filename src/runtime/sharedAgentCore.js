@@ -4,7 +4,7 @@ import { turnStopReply } from '../../shared/agent/turn.js';
 import { tracedStart, tracedAdvance } from '../../shared/agent/trace.js';
 import { traceEvent, currentLoopTrace } from './loopTrace.js';
 import { completionObservation, completionResult } from '../../shared/agent/completion.js';
-import { startGoal, amendGoal, goalText, goalSnapshot, goalCandidate, goalReviewRequest, reviewGoal, stopGoal } from '../../shared/agent/goal.js';
+import { startGoal, amendGoal, goalText, goalSnapshot, goalCandidate, goalReviewRequest, reviewGoal, stopGoal, goalOperation } from '../../shared/agent/goal.js';
 import { toolEffect } from '../../shared/agent/toolEffects.js';
 
 /** Node Host for the same reducer packaged for Android / iOS. */
@@ -24,6 +24,11 @@ export function createCoreTurn({ runId = currentLoopTrace()?.context.runId || ra
   let candidateReply = '';
   const declaration = name => tools.find(tool => tool.id === name || tool.functionName === name) || {};
   return {
+    progress(args, evaluationMode) {
+      task = goalOperation({ action: 'progress', state: task, progress: args, observations, evaluationMode,
+        resourceUse: { elapsedMs: budget ? budget.now() - budget.startedAt : 0, toolCalls: budget?.used?.toolCalls || 0, inputTokens: budget?.used?.inputTokens || 0 } });
+      return goalOperation({ action: 'progressResult', state: task });
+    },
     get goalState() { return task; },
     get observations() { return observations; },
     acceptDelivery(value) { task = value; },

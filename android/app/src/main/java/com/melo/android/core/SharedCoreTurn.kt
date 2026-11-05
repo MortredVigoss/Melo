@@ -11,6 +11,7 @@ class SharedTurnStopped(val reason: String) : IllegalStateException("Shared Agen
 
 /** Transport / lifecycle only; turn decisions live in the installed JS Core. */
 class SharedCoreTurn private constructor(private val runtime: SharedCoreRuntime, private var state: JsonObject, val budget: SharedRunBudget) : AutoCloseable {
+    val effects get() = buildJsonObject { put("internalRouting",true); put("successfulEffects",state["successfulEffects"] ?: JsonArray(emptyList())); put("uncertainEffects",state["uncertainEffects"] ?: JsonArray(emptyList())) }
     val completed get() = state["status"]?.jsonPrimitive?.content == "completed"
     val active get() = state["status"]?.jsonPrimitive?.content == "running"
     val reporting get() = state.text("requestMode") == "report"

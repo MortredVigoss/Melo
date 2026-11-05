@@ -100,6 +100,12 @@ final class PhoneRunBudget: @unchecked Sendable {
             apply(Self.operation("settleModel", time: now(), fields: ["budget": snapshot(), "options": ["claim": claim], "usage": claim]) as? [String: Any])
         }
     }
+    func restoreMember(_ data: Data) throws {
+        guard parent != nil, let saved = try JSONSerialization.jsonObject(with: data) as? [String:Any] else { throw SharedAgentCoreError.invalidReply }
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        apply(saved, ancestors: false)
+        guard policyAvailable else { throw SharedAgentCoreError.invalidReply }
+    }
     func arm() {
         Self.lock.lock(); defer { Self.lock.unlock() }
         guard available, !restoredBudget else { return }

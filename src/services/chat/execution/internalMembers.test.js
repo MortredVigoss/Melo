@@ -103,7 +103,7 @@ test('through the real sub-agent loop a member keeps its full share, not the 32k
   assert.equal(requests[0].nativeImageGenerationEnabled, false);
   assert.ok(events.every(event => String(event.id).startsWith('internal:1') || String(event.id).startsWith('job-1:') || String(event.id).startsWith('routing:budget:')), JSON.stringify(events.map(e => e.id)));
 });
-test('B1/B2: a top-level turn grows by one share per member up to the cap, nested pools never widen, and members search narrower', async () => {
+test('B evaluation: every member draws from the original root pool, nested pools never widen, and members search narrower', async () => {
   const { ROUTING_EXTENSION_CAP, MEMBER_SEARCH_RESULTS, MEMBER_SEARCH_CONTENT_CHARS } = await import('./internalMembers.js');
   const budget = reserveDelivery(createRunBudget({ overrides: { maxInputTokens: 400000, deadlineMs: 30 * 60000, maxToolCalls: 200 } }));
   const configs = []; const events = [];
@@ -112,9 +112,10 @@ test('B1/B2: a top-level turn grows by one share per member up to the cap, neste
   await runWithRequestContext(Object.freeze({ budget, config: { operationalLimits: { search: { maxResults: 8, contentMaxChars: 6000 } } } }), () =>
     runInternalMembers({ jobs, goal, run, lanes: 1, config: { operationalLimits: { search: { maxResults: 8, contentMaxChars: 6000, timeoutMs: 9000 } } }, sseEmitter: (type, event) => { if (type === 'execution_event') events.push(event); } }));
   assert.equal(budget.maxInputTokens, 400000 + ROUTING_EXTENSION_CAP, 'extension capped at four shares');
-  assert.equal(budget.routingExtension, ROUTING_EXTENSION_CAP);
-  assert.ok(budget.maxToolCalls > 200 && budget.deadlineAt > budget.startedAt + 30 * 60000, 'tool calls and deadline grew');
-  assert.equal(events.filter(e => /^routing:budget:/.test(e.id)).length, 4, 'one budget event per extension');
+  assert.equal(budget.routingExtension || 0, 0);
+  assert.equal(budget.maxToolCalls, 200);
+  assert.equal(budget.deadlineAt, budget.startedAt + 30 * 60000, 'members cannot extend the root deadline');
+  assert.equal(events.filter(e => /^routing:budget:/.test(e.id)).length, 0, 'no automatic budget extension events');
   assert.deepEqual(configs[0].operationalLimits.search, { maxResults: MEMBER_SEARCH_RESULTS, contentMaxChars: MEMBER_SEARCH_CONTENT_CHARS, timeoutMs: 9000 });
   const child = narrowBudget(budget, { maxInputTokens: 200000 });
   const before = child.maxInputTokens;

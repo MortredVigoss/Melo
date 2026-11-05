@@ -625,6 +625,7 @@ import SwiftUI
             }
             let memberHooks = AgentLoopHooks(
                 maxTaskIterations: isLead ? agent.maxTaskIterations : nil,
+                evaluationMode: agent.evaluationMode ?? "standard",
                 onStage: { [weak self] id, name, status, output in
                     self?.stage(record.runId, id: "member:\(callID):\(id)", name: "\(agent.name) · \(name)", status: status, output: output)
                 },
@@ -656,6 +657,7 @@ import SwiftUI
                 current.cursor = cursor; current.supplements = supplements.queued; try self.persist(current)
             },
             maxTaskIterations: selectedAgent.maxTaskIterations,
+            evaluationMode: selectedAgent.evaluationMode ?? "standard",
             traceRunID: record.runId,
             onStage: { [weak self] id, name, status, output in if isCurrent() { self?.stage(record.runId, id: id, name: name, status: status, output: output) } },
             onToolCall: { [weak self] call in if isCurrent() { self?.recordToolCall(call, runID: record.runId) } },

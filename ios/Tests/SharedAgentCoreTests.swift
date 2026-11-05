@@ -32,6 +32,22 @@ import CryptoKit
                 assert(NSDictionary(dictionary: [key: actual]).isEqual(to: [key: expected]), "\(fixture["name"]!): \(key)")
             }
         }
+        let evaluationCases = try JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent("shared/agent/fixtures/task-evaluation.json"))) as! [[String:Any]]
+        assert(evaluationCases.count == 36)
+        for fixture in evaluationCases {
+            var state: [String:Any]?
+            for step in fixture["steps"] as! [[String:Any]] {
+                var input = step; input["version"] = 1; input["op"] = "taskEvaluation"; input["state"] = state as Any? ?? NSNull()
+                let reply = try await core.evaluate(input)
+                assert(reply["ok"] as? Bool == true, fixture["name"] as! String)
+                state = reply["value"] as? [String:Any]
+            }
+            if let expected = fixture["expected"] as? [String:Any] {
+                let actual = state?["summary"] as? [String:Any] ?? [:]
+                for (key,value) in expected { assert(NSDictionary(dictionary:[key:actual[key] as Any? ?? NSNull()]).isEqual(to:[key:value]), "\(fixture["name"]!): \(key)") }
+            }
+            if let error = fixture["expectedError"] as? String { assert((state?["error"] as? String)?.contains(error) == true) }
+        }
         let sourceURL = "https://fixture.invalid/menu"
         let source: [[String: Any]] = [["id": "read-1", "type": "source", "executed": true, "ok": true, "url": sourceURL, "reading": "extracted", "text": "A local cafe serves a morning meal including eggs and pancakes every day."]]
         let cited = AgentCompletionReceipt.make(goal: "Research Sydney brunch", reply: "A cafe serves breakfast.", observations: source, citations: [["url": sourceURL]])

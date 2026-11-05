@@ -64,12 +64,15 @@ test('Agent editor: visible creation, shared routes, saved capabilities/channels
   assert.equal(await form.locator('[name=maxTaskIterations]').getAttribute('min'),'10');
   assert.equal(await form.locator('[name=maxTaskIterations]').getAttribute('max'),'64');
   await form.locator('[name=maxTaskIterations]').fill('64');
+  await form.locator('[name=evaluationMode]').selectOption('quick');
   await form.locator('[data-action=form-settings-save]').click(); await form.locator('[data-edit-status=saved]').waitFor();
   assert.equal((await boot()).customize.agents.find(a=>a.id==='research').collaboration.maxTaskIterations,64);
+  assert.equal((await boot()).customize.agents.find(a=>a.id==='research').evaluationMode,'quick');
   assert.equal((await boot()).customize.agents.find(a=>a.id==='research').collaboration.maxIterations,initial.collaboration.maxIterations);
   await form.locator('[data-action=form-settings-edit]').click(); await form.locator('[name=maxTaskIterations]').fill('19');
   await form.locator('[data-action=form-settings-cancel]').click();
   assert.equal(await form.locator('[name=maxTaskIterations]').inputValue(),'64');
+  assert.equal(await form.locator('[name=evaluationMode]').inputValue(),'quick');
   // A failed creation does not add a phantom entry, and the button can be retried.
   const before=(await boot()).customize.agents.length;
   await page.route('**/api/agents/create-custom',route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'fixture creation unavailable'})}),{times:1});

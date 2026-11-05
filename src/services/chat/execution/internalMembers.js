@@ -1,3 +1,5 @@
+import { AGENT_LOOP_CONTRACT } from '../../../../shared/agent/loopContract.js';
+import { TASK_EVALUATION_POLICY } from '../../../../shared/agent/taskEvaluation.js';
 // Internal routing members as their own sub-agent loops (phases A2/A3, 2026-11-04).
 //
 // Until 11-04 an internal member ran inside the lead's loop by swapping the
@@ -13,51 +15,26 @@
 // decided by the executor inside the member exactly as for the lead.
 import { runSubAgent } from '../../../agents/subAgent.js';
 import { currentRequestContext, runWithRequestContext } from '../../../runtime/requestScope.js';
-import { narrowBudget, extendBudget, remainingMs } from '../../../runtime/runBudget.js';
+import { narrowBudget } from '../../../runtime/runBudget.js';
 import { internalHandoff, MAX_MEMBER_ROUNDS } from '../../../../shared/agent/internalRouting.js';
 import { checkPermissionRule, requestTaskScopeApproval } from '../../../tools/permissions.js';
 import { getTool } from '../../../tools/registryCore.js';
 
 export const READ_ONLY_JOBS = Object.freeze(['research', 'lookup', 'calculate']);
-export const INTERNAL_PARALLEL_LANES = 3;
-// Input tokens one member may draw from the turn pool, the slice the lead keeps
-// for its own rounds (the delivery reserve is separate), and the smallest share
-// still worth starting a member for.
-export const MEMBER_INPUT_SHARE = 120_000;
-export const LEAD_INPUT_RESERVE = 60_000;
-export const MIN_MEMBER_SHARE = 20_000;
+const memberPolicy = TASK_EVALUATION_POLICY.member;
+export const INTERNAL_PARALLEL_LANES = memberPolicy.parallel;
+export const MEMBER_INPUT_SHARE = memberPolicy.inputTokens;
+export const LEAD_INPUT_RESERVE = memberPolicy.leadInputReserve;
+export const MIN_MEMBER_SHARE = memberPolicy.minimumInput;
 const LIMITED_STOPS = new Set(['ROUND_LIMIT', 'BUDGET_EXHAUSTED', 'CANCELLED', 'DEADLINE_EXCEEDED', 'ERROR']);
-// B1 (2026-11-04): a top-level turn grows by one member share per dispatched
-// member, the way an explicit team plan grows it (runBudget T8), so members no
-// longer eat the lead's own allowance. Bounded per turn; a nested pool (turn
-// inside a member or skill) never widens beyond its parent.
-export const ROUTING_EXTENSION_CAP = 4 * MEMBER_INPUT_SHARE;
-export const MEMBER_TOOL_CALLS = 40;
-export const MEMBER_DEADLINE_MS = 5 * 60_000;
-export const ROUTING_DEADLINE_CAP_MS = 20 * 60_000;
-// B2: a member reads fewer and shorter search results than the lead; its
-// handoff carries the facts, not the pages.
+// Compatibility exports: internal routing no longer grows the root resource pool.
+export const ROUTING_EXTENSION_CAP = 0;
+export const MEMBER_TOOL_CALLS = memberPolicy.calls;
+export const MEMBER_DEADLINE_MS = memberPolicy.milliseconds;
+export const ROUTING_DEADLINE_CAP_MS = 0;
 export const MEMBER_SEARCH_RESULTS = 5;
 export const MEMBER_SEARCH_CONTENT_CHARS = 3000;
-
-export function extendForMember(budget, sseEmitter, job) {
-  if (!budget || budget.parent) return null;
-  const tokens = Math.max(0, Math.min(MEMBER_INPUT_SHARE, ROUTING_EXTENSION_CAP - (budget.routingExtension || 0)));
-  const deadline = Math.max(0, Math.min(MEMBER_DEADLINE_MS, ROUTING_DEADLINE_CAP_MS - (budget.routingDeadlineExtension || 0)));
-  if (!tokens && !deadline) return null;
-  const beforeDeadline = budget.deadlineAt;
-  const result = extendBudget(budget, {
-    ...(tokens ? { maxInputTokens: Math.max(0, budget.maxInputTokens - budget.used.inputTokens) + tokens, maxToolCalls: Math.max(0, budget.maxToolCalls - budget.used.toolCalls) + MEMBER_TOOL_CALLS } : {}),
-    ...(deadline ? { deadlineMs: remainingMs(budget) + deadline } : {}),
-  });
-  if (result.inputTokens) budget.routingExtension = (budget.routingExtension || 0) + tokens;
-  const addedDeadline = budget.deadlineAt - beforeDeadline;
-  if (result.deadline) budget.routingDeadlineExtension = (budget.routingDeadlineExtension || 0) + addedDeadline;
-  if (result.extended) sseEmitter?.('execution_event', { kind: 'pipeline', id: `routing:budget:${job.index}`, module: 'compute', name: job.label, status: 'completed',
-    output: `Turn budget extended for this member: +${tokens} input tokens, +${Math.round(addedDeadline / 60000)} min (total +${budget.routingExtension || 0} tokens).`,
-    budget: { maxInputTokens: budget.maxInputTokens, deadlineAt: budget.deadlineAt, routingExtension: budget.routingExtension || 0 } });
-  return result;
-}
+export function extendForMember() { return null; }
 
 // A4-1 (2026-11-04): before a member starts, every tool it may call that still
 // needs the user's approval is asked for once, on a single task-scope card,
@@ -140,7 +117,6 @@ export async function runInternalMembers({ jobs = [], goal = '', background = ''
       return;
     }
     pipeline(job, { status: 'running', input: job.task, ...(jobConfig?.model ? { model: jobConfig.model } : {}) });
-    extendForMember(budget, sseEmitter, job);
     const { share, reason } = memberShare(budget);
     if (reason === 'LEAD_RESERVE') {
       const handoff = internalHandoff({ job, answer: 'Not started: the lead keeps its remaining budget for the answer. Continue with the evidence already gathered.', observations: [], limited: true });
@@ -154,8 +130,8 @@ export async function runInternalMembers({ jobs = [], goal = '', background = ''
     const invoke = () => run({ task: job.task, roleSystem: job.system, background: memberBackground, allowedToolIds: job.tools, extraTools, config: jobConfig, nativeWebSearch: false, nativeImageGeneration: false, condenseEachRound: true,
       // runSubAgent caps a member's input tokens at maxTokens (32k by default,
       // sized for delegated members); an internal member gets its whole share.
-      ...(replyFn ? { replyFn } : {}), maxIterations: MAX_MEMBER_ROUNDS, maxTokens: share || MEMBER_INPUT_SHARE, roleId: job.id, depth: 1, signal, sseEmitter: emit, chatId, workspacePath, chatSource, projectId, onProviderResponse });
-    const child = budget ? narrowBudget(budget, share ? { maxInputTokens: share } : {}) : null;
+      ...(replyFn ? { replyFn } : {}), maxIterations: job.roundLimit || MAX_MEMBER_ROUNDS, maxTokens: share || MEMBER_INPUT_SHARE, roleId: job.id, depth: 1, signal, sseEmitter: emit, chatId, workspacePath, chatSource, projectId, onProviderResponse });
+    const child = budget ? narrowBudget(budget, { maxInputTokens: share || MEMBER_INPUT_SHARE, maxToolCalls: MEMBER_TOOL_CALLS, deadlineMs: MEMBER_DEADLINE_MS + AGENT_LOOP_CONTRACT.delivery.deadlineMs }) : null;
     await prescreenApprovals({ job, extraTools, chatId, sseEmitter, signal, approvals });
     let result;
     try { result = await (context ? runWithRequestContext(Object.freeze({ ...context, ...(child ? { budget: child } : {}) }), invoke) : invoke()); }

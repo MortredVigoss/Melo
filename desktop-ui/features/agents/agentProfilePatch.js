@@ -39,6 +39,7 @@ export function buildAgentProfilePatch(form, formData) {
   assignString('mood');
   assignString('model');
   assignString('replyLanguage');
+  assignString('evaluationMode');
   assignString('systemPrompt');
   assignString('voiceReplyMode');
   assignString('voicePersonality');

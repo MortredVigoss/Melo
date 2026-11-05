@@ -1283,7 +1283,9 @@
         "desktop-ui/neuralMotion.js",
         "desktop-ui/neuralLayout.js"
       ],
-      "tests": ["desktop-ui/neuralHome.browser.test.js"],
+      "tests": [
+        "desktop-ui/neuralHome.browser.test.js"
+      ],
       "note": "首页回归使用真实 CSS 顺序、生产导航模板和测量布局；覆盖选中/悬停/聚焦与窗口尺寸"
     },
     {
@@ -1327,10 +1329,12 @@
         "ios/Melo/AgentCore/agent-core.js",
         "shared/agent/**/*.js",
         "src/shared/replyDocument.js",
-        "src/shared/conversationTopics.js"
+        "src/shared/conversationTopics.js",
+        "shared/agent/fixtures/task-evaluation.json"
       ],
       "tests": [
-        "shared/agent/conformance.test.js"
+        "shared/agent/conformance.test.js",
+        "shared/agent/taskEvaluation.test.js"
       ],
       "note": "运行源码与隔离 bundle 对照，并校验逐源文件散列和 iOS 原样打包"
     },

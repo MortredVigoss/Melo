@@ -1,3 +1,4 @@
+import { TASK_PROGRESS_DEFINITION, TASK_PROGRESS_NAME, taskProgressPresentation } from '../../../../shared/agent/taskEvaluation.js';
 import { internalRouteCatalog, startInternalJob, MAX_ASSIGNMENTS, ROUTE_NAME } from '../../../../shared/agent/internalRouting.js';
 import { internalRoleSuggestions } from './internalRoles.js';
 import { runInternalMembers } from './internalMembers.js';
@@ -146,6 +147,7 @@ export function createInvokeModelNode(turn) {
     let catalog = !teamTask && !teamPlan && !context.requestToolPolicy?.toolsForbidden && internalRouteCatalog(routeGoal, [
       ...graphState.promptTools.map(t => t.id), ...(graphState.searchPlan.nativeWebSearchEnabled ? ['native_web_search'] : [])], internalRoleSuggestions(graphState.promptTools));
     if (catalog) graphState.promptTools = [...graphState.promptTools, { id: ROUTE_NAME, name: ROUTE_NAME, description: catalog.definition.description, parametersSchema: catalog.definition.parameters }];
+    if (catalog) graphState.promptTools.push({ id: TASK_PROGRESS_NAME, name: TASK_PROGRESS_NAME, description: TASK_PROGRESS_DEFINITION.description, parametersSchema: TASK_PROGRESS_DEFINITION.parameters });
     const assignments = [];
     let closedRouterSession;
     let escalationRequested = false;
@@ -394,6 +396,17 @@ export function createInvokeModelNode(turn) {
         break;
       }
 
+      const progressCalls = toolCalls.filter(call => call.name === TASK_PROGRESS_NAME);
+      if (catalog && progressCalls.length === 1 && toolCalls.length === 1 && !progressCalls[0].rejectedResult) {
+        const result = coreTurn.progress(progressCalls[0].arguments, graphState.activeAgentProfile?.evaluationMode);
+        coreTurn.update('feedback', { internalRouting: true });
+        loopMessages = functionSession.append(loopMessages, turn, [{ call: progressCalls[0], result: { ok: result.ok, output: JSON.stringify(result) } }]);
+        sseEmitter?.('execution_event', { kind: 'pipeline', id: `task-evaluation:${iteration}`, module: 'compute', ...taskProgressPresentation(result, config.replyLanguage), status: result.ok ? 'completed' : 'failed' });
+        if (result.closed) { terminalReason = 'TASK_EVALUATION_LIMIT'; break; }
+        continue;
+      }
+      for (const call of progressCalls) call.rejectedResult = { ok: false, output: 'task_progress must be called alone by the lead with routing available.', meta: { executionStarted: false } };
+
       // Internal routing (phases A2/A3, 2026-11-04): one response may hold several
       // route_task assignments. Each runs as its own sub-agent loop (own rounds,
       // own budget share, read-only jobs in parallel, execute jobs one at a time)
@@ -432,7 +445,7 @@ export function createInvokeModelNode(turn) {
           uncertainEffects: outcomes.flatMap(outcome => outcome.result?.meta?.effects?.uncertain || []) });
         loopMessages = functionSession.append(loopMessages, turn, routeCalls.map(call => {
           const outcome = outcomes.find(entry => entry.job.callId === call.id);
-          return { call, result: outcome ? { ok: true, output: outcome.handoff } : call.rejectedResult };
+          return { call, result: outcome ? { ok: true, output: JSON.stringify({ ...JSON.parse(outcome.handoff), evidence: JSON.parse(outcome.handoff).evidence?.map(row => ({ ...row, id: `${outcome.job.id}:${row.id}` })) }) } : call.rejectedResult };
         }));
         continue;
       }

@@ -1,3 +1,4 @@
+import { updateTaskEvaluation, taskProgressResult, taskEvaluationSummary } from './taskEvaluation.js';
 import { deliveryEvidence } from './evidence.js';
 import { isStandaloneGreeting } from './retrieval/intentRouter.js';
 import { getRequestNetworkPolicy } from './retrieval/requestPolicy.js';
@@ -19,7 +20,7 @@ export function goalText(state) {
 
 export function amendGoal(state, amendment) {
   if (!text(amendment).trim()) return state;
-  return { ...state, revision: state.revision + 1, goalTruncated: state.goalTruncated || amendment.length > 2000 || state.amendments.length >= 8 || goalText(state).length + amendment.length + 1 > GOAL_LIMITS.goalChars, amendments: [...state.amendments, text(amendment, 2000)].slice(-8), requirements: [], decision: null, reason: '' };
+  return { ...state, revision: state.revision + 1, ...(state.evaluation ? { evaluation: { ...state.evaluation, stale: true } } : {}), goalTruncated: state.goalTruncated || amendment.length > 2000 || state.amendments.length >= 8 || goalText(state).length + amendment.length + 1 > GOAL_LIMITS.goalChars, amendments: [...state.amendments, text(amendment, 2000)].slice(-8), requirements: [], decision: null, reason: '' };
 }
 
 export function goalSnapshot(state) {
@@ -64,13 +65,39 @@ const REVIEW_TURN_CONTRACT = `Classify turnKind as task, answer, feedback, or cl
 
 export function goalReviewRequest(state, observations = []) {
   let remaining = GOAL_LIMITS.evidenceChars;
+  // A page's prefix is not the evidence for all candidates on that page.
+  // Reserve actual, revalidated cited passages before generic recent previews.
+  // Never promote stored model quotes without checking the observation again.
+  const cited = new Map();
+  for (const item of state.evaluation?.items || []) for (const field of Object.values(item.fields)) for (const ref of field.evidence) {
+    const actual = observations.find(row => row.id === ref.id && row.ok === true && row.executed === true && row.type !== 'handoff');
+    const body = String(actual?.text || actual?.output || '');
+    if (!actual || !ref.quote || !body.includes(ref.quote)) continue;
+    if (!cited.has(ref.id)) cited.set(ref.id, { actual, quotes: new Set() });
+    cited.get(ref.id).quotes.add(ref.quote);
+  }
+  const pinned = [];
+  for (const { actual, quotes } of cited.values()) {
+    const body = String(actual.text || actual.output || '');
+    const ranges = [...quotes].map(quote => { const at = body.indexOf(quote); return [Math.max(0,at-120),Math.min(body.length,at+quote.length+120)]; }).sort((a,b)=>a[0]-b[0]);
+    const merged = [];
+    for (const range of ranges) { const last = merged.at(-1); if (last && range[0] <= last[1]) last[1] = Math.max(last[1],range[1]); else merged.push([...range]); }
+    const excerpt = merged.map(([start,end])=>body.slice(start,end)).join('\n[…]\n');
+    const selected = body.length <= Math.max(2000,excerpt.length+800) ? body : excerpt;
+    const visible = text(selected,remaining); remaining -= visible.length;
+    pinned.push({ id:actual.id, name:actual.name, type:actual.type, effect:actual.effect, ok:actual.ok, executed:actual.executed, url:actual.url, reading:actual.reading, text:visible,
+      excerpted:selected !== body, truncated:visible.length < selected.length || selected !== body });
+  }
+  const pinnedIds = new Set(pinned.map(row=>row.id));
   // Reserve the body budget for the newest observations first; an early long
   // page must not erase the final weather/result that closes the actual goal.
-  const evidence = state.limitDelivery ? deliveryEvidence(observations) : observations.slice(-GOAL_LIMITS.observations).reverse().map(row => {
+  const remainingRows = observations.filter(row=>!pinnedIds.has(row.id));
+  const evidence = state.limitDelivery && !pinned.length ? deliveryEvidence(observations) : remainingRows.slice(-GOAL_LIMITS.observations).reverse().map(row => {
     const body = text(row.text || row.output, Math.min(['phone_action', 'phone_workflow'].includes(row.name) ? 6000 : 2000, remaining)); remaining -= body.length;
     return { id: row.id, name: row.name, type: row.type, effect: row.effect, ok: row.ok, executed: row.executed, url: row.url, reading: row.reading, text: body, truncated: String(row.text || row.output || '').length > body.length };
   }).reverse();
-  return { systemPrompt: GOAL_REVIEW_INSTRUCTIONS + '\n' + REVIEW_TURN_CONTRACT, messages: [{ role: 'user', content: JSON.stringify({ goal: goalText(state), revision: state.revision, candidate: state.candidate, context: state.context, availableTools: state.availableTools, requirements: state.requirements, observations: evidence }) }] };
+  evidence.push(...pinned);
+  return { systemPrompt: GOAL_REVIEW_INSTRUCTIONS + '\n' + REVIEW_TURN_CONTRACT + '\nFor multi-item discovery/recommendations require a task_progress contract and candidate ledger before complete. Check that it includes every user constraint and explicit quantity; independently compare the ORIGINAL goal, each quoted field and source meaning, not just valid IDs or scores. Set needsEvaluation=true if a missing ledger must be created. Set evaluationValid=false if the contract omits or misstates a user condition or candidate facts/identity are unsupported. Low yield or a soft-target adjustment never excuses a missing explicit quantity. Recommendation scores are not probabilities. Recommend only eligible candidates; disclose excluded/pending items and scope. No fabricated completeness for an open set.', messages: [{ role: 'user', content: JSON.stringify({ goal: goalText(state), revision: state.revision, candidate: state.candidate, context: state.context, availableTools: state.availableTools, requirements: state.requirements, evaluation: state.evaluation || null, observations: evidence }) }] };
 }
 
 export function reviewGoal(state, raw, observations = []) {
@@ -86,6 +113,12 @@ export function reviewGoal(state, raw, observations = []) {
   const external = row => ['external_fact', 'external_effect'].includes(row.kind);
   if (requirements.some(row => !row.text || !['met', 'missing', 'unavailable'].includes(row.status) || row.evidenceIds.some(id => !(row.status === 'met' && external(row) ? validEvidence : attemptedEvidence).has(id)))) return finish('partial', 'GOAL_EVIDENCE_INVALID');
   let decision = report.decision;
+  const evaluation = taskEvaluationSummary(state.evaluation);
+  if (decision === 'complete' && (report.needsEvaluation === true && !evaluation || report.evaluationValid === false || evaluation && report.evaluationValid !== true || evaluation && evaluation.stop !== 'ready_for_review')) {
+    decision = 'continue';
+    report.nextStep = report.nextStep || (evaluation?.gaps?.join('; ') || 'Initialize/correct task_progress against the original requirements, then read and verify the missing candidates.');
+    report.reason = report.reason || 'Task evaluation requirements remain incomplete.';
+  }
   if (decision === 'needs_user' && report.reasonType === 'lookup_missing') decision = 'continue';
   if (decision === 'complete') {
     if (!state.evidenceRequired && report.reasonType === 'self_contained' && !observations.length &&
@@ -109,9 +142,11 @@ export function stopGoal(state, reason = 'GOAL_CHECK_UNAVAILABLE') {
   return { ...state, phase: 'finished', decision: 'partial', reason };
 }
 
-export function goalOperation({ action, state, goal, messages, id, amendment, candidate, observations, response } = {}) {
+export function goalOperation({ action, state, goal, messages, id, amendment, candidate, observations, response, progress, resourceUse, evaluationMode } = {}) {
   if (action === 'start') return startGoal(resolvedRequestGoal(goal, messages), id);
   if (!state || state.version !== 1) throw new Error('Unknown goal state');
+  if (action === 'progress') return { ...state, evaluation: updateTaskEvaluation(state.evaluation, progress, { goal: goalText(state), revision: state.revision, observations, resourceUse, mode: evaluationMode }) };
+  if (action === 'progressResult') return taskProgressResult(state.evaluation);
   if (action === 'amend') return amendGoal(state, amendment);
   if (action === 'candidate') return goalCandidate(state, { ...candidate, observations });
   if (action === 'request') return goalReviewRequest(state, observations);

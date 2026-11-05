@@ -1,3 +1,4 @@
+import { taskEvaluationOperation } from './taskEvaluation.js';
 import { calculateNumber } from './arithmetic.js';
 import { internalRouting } from './internalRouting.js';
 import { deliveryOperation } from './limitDelivery.js';
@@ -71,6 +72,7 @@ export function evaluate(input) {
       case 'phonePolicy': value = PHONE_POLICY; break;
       case 'completionObservation': value = completionObservation(input.observation); break;
       case 'calculate': value = calculateNumber(input.arguments); break;
+      case 'taskEvaluation': value = taskEvaluationOperation(input); break;
       case 'internalRouting': value = internalRouting(input); break;
       case 'plan': value = planRequest(input.request); break;
       case 'actionEvidence': value = actionEvidence(input.plan, input.urls); break;

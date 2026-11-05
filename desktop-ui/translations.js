@@ -4,6 +4,10 @@ export { INTERFACE_TERMS as interfaceTermKeys } from './interfaceLanguages.js';
 // Authored interface copy only. User messages, names and provider output never enter this catalog.
 // Columns: Chinese source / English / Japanese / Korean / Spanish.
 const rows = [
+["任务检索深度（本机）", "Research depth (this device)", "検索の深さ（このデバイス）", "검색 깊이(이 기기)", "Profundidad de búsqueda (este dispositivo)"],
+["快速", "Quick", "クイック", "빠르게", "Rápida"],
+["深入", "Deep", "詳細", "심층", "Profunda"],
+["调整模糊推荐的检索范围；明确数量和必要条件不变，不增加总预算。", "Adjusts broad recommendations; explicit quantities and requirements stay unchanged, without increasing the total budget.", "幅広いおすすめの検索範囲を調整します。明示された件数と条件、総予算は変わりません。", "일반 추천의 검색 범위를 조정합니다. 명시된 수량·필수 조건과 총예산은 바뀌지 않습니다.", "Ajusta las recomendaciones generales; mantiene las cantidades, requisitos y presupuesto total."],
 ["API Key 已保存", "API key saved", "API キーを保存済み", "API 키 저장됨", "Clave API guardada"],
 ["选择或填写模型后即可使用这条连接。", "Choose or enter a model to use this connection.", "モデルを選択または入力すると、この接続を使用できます。", "이 연결을 사용하려면 모델을 선택하거나 입력하세요.", "Elige o introduce un modelo para usar esta conexión."],
 ["模型能力", "Model capabilities", "モデルの機能", "모델 기능", "Capacidades del modelo"],

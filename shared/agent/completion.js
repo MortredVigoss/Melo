@@ -1,3 +1,4 @@
+import { taskProgressResult, taskProgressPresentation } from './taskEvaluation.js';
 import { AGENT_LOOP_CONTRACT } from './loopContract.js';
 import { resolveReplyLocale } from './locale.js';
 import { runtimeMessage } from './runtimeMessages.js';
@@ -137,6 +138,10 @@ export function teamCompletion({ locale, goal = '', reply = '', members = [], ac
 
 export function completionSummary(receipt, text = '', locale) {
   const language = locale || resolveReplyLocale({ text });
+  if (receipt?.task?.evaluation?.contract) {
+    const summary = taskProgressPresentation(taskProgressResult(receipt.task.evaluation),language).output.split('\n')[0];
+    return completionSummary({ ...receipt, task: { ...receipt.task, evaluation: undefined } },text,language) + ' · ' + summary;
+  }
   const message = key => runtimeMessage(key, language);
   const label = receipt?.outcome === 'unverified' ? message('deliveryUnverified') : message(['completed','partial','blocked','needs_user','cancelled','budget_exhausted','unverified'].includes(receipt?.outcome) ? receipt.outcome : 'unknown');
   if (receipt?.reason === 'LIMIT_DELIVERED') return label + ' · ' + message(receipt.limitReason === 'ROUND_LIMIT' ? 'deliveryRounds' : 'deliveryBudget');

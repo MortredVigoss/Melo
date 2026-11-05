@@ -15,6 +15,7 @@ struct AgentProfile: Codable, Identifiable, Equatable {
     var contextSources: SyncValue?
     var mood: String?
     var model: String?
+    var evaluationMode: String?
     var replyLanguage: String?
     // Compatibility accessors; the persisted document is the single source.
     var identity: String? { get { section("身份") } set { setSection("身份", newValue) } }
@@ -71,10 +72,11 @@ struct AgentProfile: Codable, Identifiable, Equatable {
         value.contextSources = contextSources ?? base.contextSources
         return value
     }
-    enum CodingKeys: String, CodingKey { case id, name, description, subtitle, symbol, instructions, avatarData, identity, soul, systemPrompt, mood, model, replyLanguage, personaVersion, capabilities, collaboration, contextSources }
+    enum CodingKeys: String, CodingKey { case id, name, description, subtitle, symbol, instructions, avatarData, identity, soul, systemPrompt, mood, model, replyLanguage, evaluationMode, personaVersion, capabilities, collaboration, contextSources }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.init(id:try c.decodeIfPresent(String.self,forKey:.id) ?? UUID().uuidString, name:try c.decode(String.self,forKey:.name), subtitle:try c.decodeIfPresent(String.self,forKey:.description) ?? c.decodeIfPresent(String.self,forKey:.subtitle) ?? "", symbol:try c.decode(String.self,forKey:.symbol), instructions:try c.decodeIfPresent(String.self,forKey:.instructions) ?? "", avatarData:try c.decodeIfPresent(Data.self,forKey:.avatarData), mood:try c.decodeIfPresent(String.self,forKey:.mood), model:try c.decodeIfPresent(String.self,forKey:.model))
+        evaluationMode = try c.decodeIfPresent(String.self,forKey:.evaluationMode)
         replyLanguage = try c.decodeIfPresent(String.self,forKey:.replyLanguage)
         capabilities = try c.decodeIfPresent(SyncValue.self,forKey:.capabilities)
         collaboration = try c.decodeIfPresent(SyncValue.self,forKey:.collaboration)
@@ -89,6 +91,7 @@ struct AgentProfile: Codable, Identifiable, Equatable {
     }
     func encode(to encoder: Encoder) throws {
         var c=encoder.container(keyedBy:CodingKeys.self)
+        try c.encodeIfPresent(evaluationMode,forKey:.evaluationMode)
         try c.encodeIfPresent(replyLanguage,forKey:.replyLanguage)
         try c.encodeIfPresent(capabilities,forKey:.capabilities); try c.encodeIfPresent(collaboration,forKey:.collaboration); try c.encodeIfPresent(contextSources,forKey:.contextSources)
         try c.encode(id,forKey:.id); try c.encode(name,forKey:.name); try c.encode(description,forKey:.description)
