@@ -50,3 +50,13 @@
 最终产品候选 **2cb936b**（B 主体 201b9c9，含 R1–R7 5d1a514）。两档均全绿：快速 `.tmp/test-runs/run-BdkSW7/summary.json`，基准 cba47c9 集成 `.tmp/test-runs/run-b9dLLp/summary.json`。每档 JS 4927/4927、零失败/取消/跳过/复测；Swift 38 组全部实际运行，Android JVM/Lint/Debug/Release、设置浏览器与共享渲染通过，无平台跳过。iPhone 完整 Release 无签名构建通过，产物内 agent-core.js 哈希与最终核心一致；未安装 iPhone。
 
 真实连接 gpt-6.1-sol 在隔离数据上读取封闭合成目录：只有 8 项时返回实际清单与缺 12 项，partial；最终 20 项样例仅一次读取，142 秒，20/20、零缺口、completed，实际答复逐项列出了型号/地区/价格/可购状态。历史失败与修复见上，不能将这些受控样例外推为开放网络整体推荐质量。专项目录内 live-8.json / live-20.json 为回执。36 次真实任务人工校准另计。
+
+## Mac 覆盖安装与数据回执
+
+2026-11-05：主线从 cba47c9 快进至 4ec8333，直接推送 origin/master 并以 ls-remote 核对一致，无强推、未运行 git pp。正式运行 `npm run release:verify`，17/17 GREEN，包含桌面入口与 Launchpad 入口。签名检查通过，安装位置 `~/Applications/Melo.app`，运行代码目录是主仓库而非临时工作树。
+
+实际覆盖后、首个正常启动前，原有 5,778 个文件逐个 SHA-256 完全一致，新增/改变/缺失均为 0；33 个聊天、752 条原消息、6 个 Agent、1 个项目、26 条资料/成果与账号连接配置保留。另核对外部原图文件、两个内嵌图片指纹及历史图片记录。备份为本机私有目录，具体路径见 `.tmp/task-evaluation-b-20261105/backup.json`。
+
+最终代码 2cb936b 两个真实模型边界样例：8/20 查目录 2 次、190 秒、partial，实际缺 12 个；20/20 读目录 1 次、142 秒、completed。完整回执和答案在专项目录，摘要 `final-live-probes.json`。
+
+**首次正常启动状态**：正式应用正常唤起；macOS 对新签名重新请求桌面文件夹访问，TCC 已记录 `AUTHREQ_PROMPTING / kTCCServiceSystemPolicyDesktopFolder / com.melo.desktop`。由于用户的实际工作区在桌面，正常账号首页与聊天验收等待用户在系统弹窗确认；17 项测试模式发布检查并不代替这一步。证据：`mac-release.json`、`after-install.json`、`release.log`。

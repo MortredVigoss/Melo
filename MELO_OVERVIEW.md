@@ -625,5 +625,7 @@ app 的 escapeHtml/showFlashToast 与授权页 formatTime 原样移至 html/feed
 ### 2026-11-05 本线程：B 需求合同、自适应范围与最终审核
 
 - 实现 201b9c9、审核协议修复 2cb936b，含内部路由 R1–R7 的 5d1a514。共享策略驱动三端任务目标、实体计数/证据、部分交付和独立成员份额；Agent 设置可选本机快速/标准/深入。
-- 基准 cba47c9，最终快速 run-BdkSW7、集成 run-b9dLLp 两档 JS 各 4927/4927、Swift 各 38 组、Android 四项、设置浏览器全绿。真实模型一次读目录，8/20 partial 与 20/20 completed；短引用、后半页证据与审核字段三处真实问题及修复见[专项记录](docs/task-evaluation-b-implementation-20261105.md)。
+- 基准 cba47c9，最终快速 run-BdkSW7、集成 run-b9dLLp 两档 JS 各 4927/4927、Swift 各 38 组、Android 四项、设置浏览器全绿。最终真实模型目录：8/20 partial（读 2 次）、20/20 completed（读 1 次）；短引用、后半页证据与审核字段三处真实问题及修复见[专项记录](docs/task-evaluation-b-implementation-20261105.md)。
 - 旧 Mac 完整备份 5778 文件哈希一致，另保留外部原图；用户已授权 master 合并、推送和本地 Mac 覆盖安装，发布验收回执另列。不安装 iPhone，已验证最终 iPhone 无签名构建。
+
+发布交接：GitHub master 4ec8333 已核对；Mac 正式覆盖安装 17/17 GREEN。安装后首启前原 5778 个文件逐个哈希一致（33 聊天、752 历史消息，账号及原图保留）。正常启动卡在 macOS 为新签名重新询问桌面文件夹授权，已请用户在原生弹窗允许，实际账号聊天验收待完成；不用重复安装。
