@@ -628,4 +628,4 @@ app 的 escapeHtml/showFlashToast 与授权页 formatTime 原样移至 html/feed
 - 基准 cba47c9，最终快速 run-BdkSW7、集成 run-b9dLLp 两档 JS 各 4927/4927、Swift 各 38 组、Android 四项、设置浏览器全绿。最终真实模型目录：8/20 partial（读 2 次）、20/20 completed（读 1 次）；短引用、后半页证据与审核字段三处真实问题及修复见[专项记录](docs/task-evaluation-b-implementation-20261105.md)。
 - 旧 Mac 完整备份 5778 文件哈希一致，另保留外部原图；用户已授权 master 合并、推送和本地 Mac 覆盖安装，发布验收回执另列。不安装 iPhone，已验证最终 iPhone 无签名构建。
 
-发布交接：GitHub master 4ec8333 已核对；Mac 正式覆盖安装 17/17 GREEN。安装后首启前原 5778 个文件逐个哈希一致（33 聊天、752 历史消息，账号及原图保留）。正常启动卡在 macOS 为新签名重新询问桌面文件夹授权，已请用户在原生弹窗允许，实际账号聊天验收待完成；不用重复安装。
+Mac 覆盖安装和正式首启验收均已完成。17 项发布检查通过，安装后 5,778 个原文件哈希一致。用户确认桌面文件夹授权后，已用原账号在正式应用收发测试消息，并确认回复已保存。原有 33 个聊天、752 条消息和原图均保留，新增 1 个验收对话。Agent 管理页可见本机检索深度。验收证据见[安装回执](docs/task-evaluation-b-implementation-20261105.md)。

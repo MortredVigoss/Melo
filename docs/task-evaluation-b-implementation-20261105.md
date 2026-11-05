@@ -59,4 +59,6 @@
 
 最终代码 2cb936b 两个真实模型边界样例：8/20 查目录 2 次、190 秒、partial，实际缺 12 个；20/20 读目录 1 次、142 秒、completed。完整回执和答案在专项目录，摘要 `final-live-probes.json`。
 
-**首次正常启动状态**：正式应用正常唤起；macOS 对新签名重新请求桌面文件夹访问，TCC 已记录 `AUTHREQ_PROMPTING / kTCCServiceSystemPolicyDesktopFolder / com.melo.desktop`。由于用户的实际工作区在桌面，正常账号首页与聊天验收等待用户在系统弹窗确认；17 项测试模式发布检查并不代替这一步。证据：`mac-release.json`、`after-install.json`、`release.log`。
+用户在 macOS 弹窗允许访问桌面文件夹后，已安装的 Melo 打开了原工作区。通过新对话使用已保存的 `gpt-6.1-sol` 连接发送验收消息，界面显示「Melo 本机更新验证通过」，并从新增对话的本机存档核对了同一条助手回复。在 Agent 管理页可见「任务检索深度（本机）」，当前值为「标准」。验收结束时应用已回到首页。
+
+正常聊天后再次与安装前备份比对，原有 33 个聊天、752 条消息、账号连接配置、外部原图和 2 个内嵌图片指纹均匹配。首页显示 34 个聊天，新增 1 个为验收对话。回执见专项目录的 `normal-ui-chat.json` 和 `after-normal-chat.json`。
