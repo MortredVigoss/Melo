@@ -24,8 +24,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 696,
-      "edges": 2268,
+      "modules": 697,
+      "edges": 2271,
       "roots": [
         "src",
         "desktop-ui",
@@ -34,11 +34,11 @@
       ],
       "note": "静态 import/re-export，含 desktop-ui 对 /shared/*.js 的服务映射；不含动态 import 与外部包"
     },
-    "routes": 179,
+    "routes": 180,
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
-      "detected": 37,
+      "detected": 38,
       "unannotated": []
     }
   },
@@ -743,7 +743,7 @@
         "ios/Tests/SharedAgentCoreTests.swift"
       ],
       "modules": {
-        "desktop-ui": 27,
+        "desktop-ui": 28,
         "shared": 45,
         "src": 70
       },
@@ -1131,7 +1131,7 @@
         "agents": 36,
         "approvals": 8,
         "channels": 2,
-        "desktop-shell": 20,
+        "desktop-shell": 21,
         "knowledge": 5,
         "media": 24,
         "memory": 27,
@@ -1167,6 +1167,7 @@
         "POST /api/chats/update ← src/server.js"
       ],
       "desktopUi": [
+        "desktop-ui/executionBoard.js",
         "desktop-ui/executionDetails.js",
         "desktop-ui/executionPanel.css",
         "desktop-ui/executionPanel.js",
@@ -3799,7 +3800,7 @@
       "usedBy": {
         "agents": 9,
         "approvals": 8,
-        "chat": 20,
+        "chat": 21,
         "development": 1,
         "media": 6,
         "memory": 6,
@@ -3823,6 +3824,7 @@
         "GET /shared/agent/taskEvaluation.js ← src/server.js",
         "GET /shared/channelAvailability.js ← src/server.js",
         "GET /shared/conversationTopics.js ← src/server.js",
+        "GET /shared/executionBoard.js ← src/server.js",
         "GET /shared/executionMetadata.js ← src/server.js",
         "GET /shared/executionScene.js ← src/server.js",
         "GET /shared/localPreferences.js ← src/server.js",
@@ -3930,6 +3932,7 @@
           "desktop-ui/sharedUi.test.js",
           "desktop-ui/synapticBody.test.js",
           "desktop-ui/taskPermissions.browser.test.js",
+          "desktop-ui/taskSpaceBoard.browser.test.js",
           "desktop-ui/undoToast.test.js",
           "src/index.cli.test.js",
           "src/index.memoryCli.test.js"
@@ -5471,6 +5474,7 @@
       "generator": "ios/scripts/build-scene.py",
       "inputs": [
         "desktop-ui/buttonStyles.js",
+        "desktop-ui/executionBoard.js",
         "desktop-ui/executionDetails.js",
         "desktop-ui/executionPanel.css",
         "desktop-ui/executionPanel.js",
@@ -5502,6 +5506,7 @@
         "shared/agent/runtimeMessages.js",
         "shared/agent/taskEvaluation.js",
         "src/memory/offline/extractor.js",
+        "src/shared/executionBoard.js",
         "src/shared/executionMetadata.js",
         "src/shared/executionScene.js",
         "src/shared/sessionEvents.js",
@@ -5775,6 +5780,7 @@
           "url": "/shared/executionScene.js",
           "target": "src/shared/executionScene.js",
           "importers": [
+            "desktop-ui/executionBoard.js",
             "desktop-ui/executionPanel.js",
             "desktop-ui/executionScene3D.js"
           ]
@@ -5818,6 +5824,7 @@
       ],
       "from": [
         "desktop-ui/app.js",
+        "desktop-ui/executionBoard.js",
         "desktop-ui/executionPanel.js",
         "desktop-ui/executionScene3D.js",
         "desktop-ui/localSettings.js"
@@ -6056,7 +6063,8 @@
       ],
       "tests": [
         "desktop-ui/executionTelemetry.browser.test.js",
-        "desktop-ui/executionTiming.browser.test.js"
+        "desktop-ui/executionTiming.browser.test.js",
+        "desktop-ui/taskSpaceBoard.browser.test.js"
       ],
       "note": "浏览器测试从 index.html 读取 importmap 与样式表清单；新增/改名页面模块或 CSS 时同步 index.html",
       "features": [

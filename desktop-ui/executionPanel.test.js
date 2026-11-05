@@ -8,6 +8,14 @@ import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 import { updateNeuralWorkspace } from './neuralDom.js';
 import { createExecutionScene, applyExecutionEvent, finishExecutionScene } from '../src/shared/executionScene.js';
+// The board renderer imports browser paths; point them at the source files.
+async function boardModule() {
+  const code = (await readFile(new URL('./executionBoard.js', import.meta.url), 'utf8'))
+    .replace("'./i18n.js'", JSON.stringify(new URL('./i18n.js', import.meta.url).href))
+    .replace("'/shared/executionBoard.js'", JSON.stringify(new URL('../src/shared/executionBoard.js', import.meta.url).href))
+    .replace("'/shared/executionScene.js'", JSON.stringify(new URL('../src/shared/executionScene.js', import.meta.url).href));
+  return `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`;
+}
 
 test('panel reuses its live DOM, caps sources at ten and projects selected images without new execution', async t => {
   const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost' });
@@ -24,7 +32,9 @@ test('panel reuses its live DOM, caps sources at ten and projects selected image
     .replaceAll("'./i18n.js'",JSON.stringify(new URL('./i18n.js',import.meta.url).href))
     .replace("'/shared/executionScene.js'", JSON.stringify(new URL('../src/shared/executionScene.js', import.meta.url).href))
     .replace("'./executionDetails.js'", JSON.stringify(new URL('./executionDetails.js', import.meta.url).href))
-    .replace("'./executionViewport.js'", JSON.stringify(new URL('./executionViewport.js', import.meta.url).href));
+    .replace("'./executionViewport.js'", JSON.stringify(new URL('./executionViewport.js', import.meta.url).href))
+    .replace("'/shared/executionBoard.js'", JSON.stringify(new URL('../src/shared/executionBoard.js', import.meta.url).href))
+    .replace("'./executionBoard.js'", JSON.stringify(await boardModule()));
   const panel = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
   const app = document.querySelector('#app');
   const markup = `<div>${panel.renderExecutionPanel()}</div>`;
@@ -153,7 +163,9 @@ test('U4: cancelLiveScene finishes the run locally and re-reads the chat scenes 
     .replaceAll("'./i18n.js'",JSON.stringify(new URL('./i18n.js',import.meta.url).href))
     .replace("'/shared/executionScene.js'", JSON.stringify(new URL('../src/shared/executionScene.js', import.meta.url).href))
     .replace("'./executionDetails.js'", JSON.stringify(new URL('./executionDetails.js', import.meta.url).href))
-    .replace("'./executionViewport.js'", JSON.stringify(new URL('./executionViewport.js', import.meta.url).href));
+    .replace("'./executionViewport.js'", JSON.stringify(new URL('./executionViewport.js', import.meta.url).href))
+    .replace("'/shared/executionBoard.js'", JSON.stringify(new URL('../src/shared/executionBoard.js', import.meta.url).href))
+    .replace("'./executionBoard.js'", JSON.stringify(await boardModule()));
   const panel = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
   updateNeuralWorkspace(document.querySelector('#app'), `<div>${panel.renderExecutionPanel()}</div>`);
   panel.syncExecutionPanel({ chat: { id: 'chat', messages: [] } });

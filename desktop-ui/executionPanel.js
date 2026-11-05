@@ -4,7 +4,9 @@ import { t, ui, currentLanguage, runtimeStageName, runtimeStageOutput, runtimeCo
 import { renderExecutionDetail, renderSessionEvents, executionApiLine, renderExecutionSignal, renderReasoningRecords, renderExecutionTiming } from './executionDetails.js';
 import { EXECUTION_MODULES, sessionEvents, moduleActivity, projectPhoneToolStages, sceneFinished, finishExecutionScene, visibleSceneSources, sourceReadingLabel, sceneSourceUrl } from '/shared/executionScene.js';
 
-import { bindExecutionZoom, clampZoom, wideViewport, DETAIL_ZOOM, MIN_ZOOM, MAX_ZOOM } from './executionViewport.js';
+import { bindExecutionZoom, clampZoom, wideViewport, viewMode, clampPitch, wrapYaw, FOLLOW_PITCH, DETAIL_ZOOM, MIN_ZOOM, MAX_ZOOM } from './executionViewport.js';
+import { renderViewSwitch, renderStageRail, renderNowCard, renderActorLabels, renderBoard, renderResourceLine } from './executionBoard.js';
+import { sceneHasBoard, sceneMembers, sceneEvaluation, evaluationChanges, operationVerb } from '/shared/executionBoard.js';
 
 const statusNames = { get idle() { return t('无调用记录'); }, get recorded() { return t('仅引用记录'); }, get queued() { return t('排队'); }, get running() { return t('执行中'); }, get waiting() { return t('等待许可'); }, get completed() { return t('已完成'); }, get failed() { return t('失败'); }, get cancelled() { return t('已取消'); }, get interrupted() { return t('已中断'); } };
 const scenes = new Map(), views = new Map(), delivered = new Set();
@@ -17,6 +19,26 @@ let autoRun = null, collapseTimer, pendingHandoff = null, loadedChat = null, las
 let zoom = 1, releaseZoom = null, zoomSaveTimer, layoutObserver;
 let selectionBusy = false, selectionError = '', lastSignature = '', slot = 0, closingRun = null;
 let autoCollapse = true, imageRetryHandler = null;
+// Task space (plan C): camera view and board state are per-viewer preferences,
+// kept on this device only; the scene record itself never changes.
+const VIEW_KEY = 'melo-task-space-view', BOARD_KEY = 'melo-task-space-board';
+function loadCameraView() {
+  let saved = null; try { saved = JSON.parse(localStorage.getItem(VIEW_KEY) || 'null'); } catch {}
+  return { mode: viewMode(saved?.mode), yaw: wrapYaw(Number(saved?.yaw) || 0), pitch: clampPitch(Number(saved?.pitch) || 0), followId: 'lead' };
+}
+let cameraView = loadCameraView(), boardCollapsed = false, leadName = '', lastBoardSignature = '', boardScroll = 0;
+try { boardCollapsed = localStorage.getItem(BOARD_KEY) === 'collapsed'; } catch {}
+const shownSnapshots = new Map();
+function saveCameraView() { try { localStorage.setItem(VIEW_KEY, JSON.stringify({ mode: cameraView.mode, yaw: cameraView.yaw, pitch: cameraView.pitch })); } catch {} }
+function setCameraView(next) {
+  cameraView = { ...cameraView, ...next, mode: viewMode(next.mode ?? cameraView.mode) };
+  saveCameraView(); gpu?.setView?.(cameraView); paintViewSwitch();
+}
+function paintViewSwitch() {
+  const slot = host?.querySelector('.execution-view-host'); if (!slot) return;
+  const html = renderViewSwitch(cameraView.mode, { locked: !!focus && !wideViewport(zoom) });
+  if (slot.innerHTML !== html) slot.innerHTML = html;
+}
 function scheduleCollapse(runId) {
   if (!autoCollapse) return;
   clearTimeout(collapseTimer); closingRun = runId;
@@ -98,7 +120,7 @@ function syncZoomControls() {
   if (out) out.disabled = zoom <= MIN_ZOOM; if (inside) inside.disabled = zoom >= MAX_ZOOM;
 }
 function changeZoom(value) {
-  cancelCollapse(); zoom = clampZoom(value); syncZoomControls(); sizeDetails(); gpu?.setZoom(zoom);
+  cancelCollapse(); zoom = clampZoom(value); syncZoomControls(); sizeDetails(); gpu?.setZoom(zoom); paintViewSwitch(); if (host) paintBoard(selectedScene());
   clearTimeout(zoomSaveTimer); zoomSaveTimer = setTimeout(rememberView, 180);
 }
 function showOverview() {
@@ -136,6 +158,14 @@ function headerStatus(scene) {
   if (!scene) return t("待机 · 氛围动画");
   if (sceneFinished(scene) && scene.completion?.summary) return runtimeCompletionText(scene.completion);
   if (sceneFinished(scene)) return t('{status} · 回看记录，未在执行', { status: statusNames[scene.status] });
+  const members = sceneMembers(scene).filter(member => member.running);
+  if (members.length > 1) return t('{count} 个成员并行工作', { count: members.length });
+  if (members.length === 1) {
+    const member = members[0], op = scene.operations.find(row => row.id === member.activeOperation);
+    const role = { research: t('检索成员'), lookup: t('资料读取成员'), calculate: t('计算成员'), execute: t('执行成员') }[member.role] || member.label;
+    const verb = op ? { search: t('检索'), read: t('读取'), lookup: t('查询'), compute: t('计算'), write: t('写入'), call: t('调用') }[operationVerb(op)] : t('思考中');
+    return `${role} · ${verb}`;
+  }
   const running = scene.operations.filter(op => op.status === 'running');
   if (running.length > 1) return t('{count} 项真实调用并行执行', { count: running.length });
   if (running.length === 1) return t('{module} · 执行中', { module: EXECUTION_MODULES.find(m => m.id === running[0].module)?.name });
@@ -244,7 +274,7 @@ function paint() {
     host.querySelector('.execution-labels').innerHTML = EXECUTION_MODULES.map(module => {
       const activity = moduleActivity(scene, module.id);
       return ui`<button class="execution-label execution-module" data-node-id="${module.id}" data-execution-action="focus" data-module="${module.id}" data-status="${activity.status}" aria-label="进入${escapeHtml(t(module.name))}" title="${module.id === 'search' ? '搜索和网页读取都归入网页检索' : module.id === 'compute' ? '显示模型公开摘要与实际计算；两者独立标记' : module.id === 'files' ? '显示文件读写、代码修改片段和实际结果' : module.id === 'create' ? '显示模型请求、接收、整理、保存、渲染及实际成果' : '汇总所有真实工具调用；搜索、计算、文件操作也在这里，每次仅计一次'} · ${activity.operations.length} ${['create', 'compute'].includes(module.id) ? '条执行记录' : '次工具调用'}"><i></i><strong>${escapeHtml(t(module.name))}</strong><small>${escapeHtml(statusNames[activity.status])}${module.id === 'search' && scene?.sources.length ? ` · ${t('{count} 条来源 ↗',{count:scene.sources.length})}` : module.id === 'tools' ? ` · ${t('{count} 次工具调用',{count:activity.operations.length})}` : module.id === 'create' ? ` · ${t('{count} 条记录',{count:activity.operations.length})}` : activity.running.length > 1 ? ` ×${activity.running.length}` : ''}</small></button>`;
-    }).join('') + renderDetails(scene, items);
+    }).join('') + renderDetails(scene, items) + (sceneHasBoard(scene) && (!focus || wideViewport(zoom)) ? renderActorLabels(scene, { leadName }) : '');
     const searchCounts = [t('{count} 次工具调用', { count: searchOps.length }),
       t('{count} 条来源', { count: scene?.sources.length || 0 })].join(' · ');
     host.querySelector('.execution-focus-tools').innerHTML = focus ? ui`<button data-execution-action="overview">← 整体视角</button><span title="按问题、实际搜索词与标题、网址、摘要的匹配及搜索排名排序；引用只作标记，不占用保留名额。相关性是启发式分数，不是概率">${escapeHtml(t(EXECUTION_MODULES.find(m => m.id === focus)?.name))}${focus === 'search' ? ` · ${escapeHtml(searchCounts)}` : ''}</span>${focus === 'search' && (scene?.sources.length || 0) > 5 ? ui`<button data-execution-action="more">${more ? '收起至五个' : '展开更多 · 最多十个'}</button>` : ''}` : '<span></span>';
@@ -257,30 +287,83 @@ function paint() {
   }
   const images = scene?.artifacts.filter(a => a.kind === 'image') || [];
   const deficit = scene?.operations.some(op => ['image', 'image_edit', 'native_image_generation'].includes(op.name)) && sceneFinished(scene) && images.length < scene.requestedImages ? ` · ${t('图片 {done}/{total} 张成功', { done: images.length, total: scene.requestedImages })}` : '';
-  host.querySelector('.execution-panel-footer').innerHTML = ui`<span>${escapeHtml(selectionError || scene?.persistenceError || scene?.observationNote || (sceneFinished(scene) ? t('执行已停止 · 神经脉冲是低强度氛围动画') : scene ? t('只展示已记录的执行 · 不代表模型内部思维') : t('准备就绪 · 尚未搜索、计算或调用工具')))}${escapeHtml(deficit)}</span><span>${scene?.operations.length || 0} 次工具调用 · ${scene?.pipeline?.length || 0} 条执行记录 · ${scene?.sources.length || 0} 条来源</span>`;
-  updateButtons(); syncZoomControls(); paintTiming(); applyButtonStyles(host);
+  host.querySelector('.execution-panel-footer').innerHTML = ui`<span>${escapeHtml(selectionError || scene?.persistenceError || scene?.observationNote || (sceneFinished(scene) ? t('执行已停止 · 神经脉冲是低强度氛围动画') : scene ? t('只展示已记录的执行 · 不代表模型内部思维') : t('准备就绪 · 尚未搜索、计算或调用工具')))}${escapeHtml(deficit)}</span>${sceneHasBoard(scene) ? ui`<span>${escapeHtml(renderResourceLine(scene))} · ${escapeHtml(t('{count} 条来源', { count: scene?.sources.length || 0 }))}</span>` : ui`<span>${scene?.operations.length || 0} 次工具调用 · ${scene?.pipeline?.length || 0} 条执行记录 · ${scene?.sources.length || 0} 条来源</span>`}`;
+  paintBoard(scene);
+  updateButtons(); syncZoomControls(); paintViewSwitch(); paintTiming(); applyButtonStyles(host);
   if (opened && !gpu && !loading) {
     loading = true;
     const currentHost = host;
     import('./executionScene3D.js').then(({ createExecutionScene3D }) => {
       if (host !== currentHost || !host.isConnected) return;
-      gpu = createExecutionScene3D(host.querySelector('.execution-webgl'), { onProject: projectLabels, onFailure: fallback, onSelect: focusModule, onHover: hoverModule });
-      gpu.update(selectedScene(), focus, detailsFor(selectedScene()), zoom); gpu.setStill(uiStill); gpu.setOpen(opened);
+      gpu = createExecutionScene3D(host.querySelector('.execution-webgl'), { onProject: projectLabels, onFailure: fallback, onSelect: focusModule, onHover: hoverModule,
+        onViewChange: view => { cameraView = { ...cameraView, ...view }; saveCameraView(); paintViewSwitch(); } });
+      gpu.setView?.(cameraView); gpu.update(selectedScene(), focus, detailsFor(selectedScene()), zoom); gpu.setStill(uiStill); gpu.setOpen(opened);
     }).catch(() => fallback('此设备暂不支持三维渲染，可继续检查执行记录。')).finally(() => { loading = false; });
   }
 }
+// Rail, current action and board: only when the router or evaluator ran.
+function paintBoard(scene) {
+  const board = sceneHasBoard(scene), wide = !focus || wideViewport(zoom);
+  const rail = host.querySelector('.execution-rail-host'), now = host.querySelector('.execution-now-host'), slot = host.querySelector('.execution-board-host');
+  if (!rail || !now || !slot) return;
+  const railHtml = board && wide ? renderStageRail(scene) : '', nowHtml = board && wide ? renderNowCard(scene, { leadName, mode: cameraView.mode, followId: cameraView.followId }) : '';
+  if (rail.innerHTML !== railHtml) rail.innerHTML = railHtml;
+  if (now.innerHTML !== nowHtml) now.innerHTML = nowHtml;
+  host.querySelector('.execution-panel-stage').dataset.board = String(board);
+  slot.hidden = !board;
+  if (!board) { if (slot.innerHTML) slot.innerHTML = ''; lastBoardSignature = ''; return; }
+  const signature = JSON.stringify([currentLanguage(), scene?.runId, scene?.sequence, scene?.status, boardCollapsed]);
+  if (signature === lastBoardSignature) return;
+  lastBoardSignature = signature;
+  boardScroll = slot.querySelector('.execution-log')?.scrollTop || 0;
+  slot.innerHTML = renderBoard(scene, { collapsed: boardCollapsed });
+  const log = slot.querySelector('.execution-log'); if (log) log.scrollTop = boardScroll;
+  flyCandidates(scene);
+}
+// New or promoted candidates travel from the search cluster to the cards that
+// now hold them. Never on first load of a run, never with reduced motion.
+function flyCandidates(scene) {
+  if (!scene) return;
+  const snapshot = sceneEvaluation(scene).snapshot, seen = shownSnapshots.has(scene.runId), previous = shownSnapshots.get(scene.runId);
+  shownSnapshots.set(scene.runId, snapshot);
+  if (!seen || !snapshot || !opened || uiStill || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const from = host.querySelector('[data-node-id="search"]')?.getBoundingClientRect();
+  evaluationChanges(previous, snapshot).slice(0, 6).forEach((change, i) => {
+    const target = host.querySelector(`[data-card="${['primary', 'alternative'].includes(change.tier) ? 'score' : 'heat'}"]`)?.getBoundingClientRect();
+    if (!from || !target?.height) return;
+    const node = document.createElement('span'); node.className = 'execution-handoff execution-candidate-flight'; node.dataset.tier = change.tier;
+    node.textContent = `${String(change.name).slice(0, 24)} · ${change.total}`;
+    node.style.left = `${from.x + from.width / 2}px`; node.style.top = `${from.y}px`; document.body.append(node);
+    const dx = target.x + target.width / 2 - from.x - from.width / 2, dy = target.y + 18 - from.y;
+    node.animate([{ transform: 'translate3d(0,0,0) scale(.7)', opacity: 0 }, { transform: `translate3d(${dx * .2}px,${dy * .1 - 30}px,0) scale(1.08)`, opacity: .95, offset: .3 }, { transform: `translate3d(${dx}px,${dy}px,0) scale(.6)`, opacity: 0 }],
+      { duration: 1100, delay: i * 140, easing: 'cubic-bezier(.22,.68,.2,1)', fill: 'both' }).finished.finally(() => node.remove());
+  });
+}
 function fallback(message) { host?.classList.add('is-fallback'); const el = host?.querySelector('.execution-panel-footer span'); if (el) el.textContent = message; }
+// Space labels (modules, core, members) are placed nearest first; one that
+// would cover an already placed label moves up or down to the nearest free
+// slot, so a turned view stays readable. Detail cards keep their own grid.
+const overlaps = (a, b) => a.x < b.x + b.w + 4 && b.x < a.x + a.w + 4 && a.y < b.y + b.h + 3 && b.y < a.y + a.h + 3;
 function projectLabels(labels, { width, height }) {
   if (!host || !opened) return;
   const elements = new Map([...host.querySelectorAll('[data-node-id]')].map(el => [el.dataset.nodeId, el]));
-  for (const position of labels) {
+  const placed = [];
+  const ordered = [...labels].sort((a, b) => (a.detail === true) - (b.detail === true) || (a.depth ?? 0) - (b.depth ?? 0));
+  for (const position of ordered) {
     const el = elements.get(position.id); if (!el) continue;
     const w = el.offsetWidth || 120, h = el.offsetHeight || 45;
     const moduleOffscreen = !position.detail && (position.x < 0 || position.x > width || position.y < 0 || position.y > height);
     const x = Math.min(width - w - 7, Math.max(7, position.x - w / 2));
-    const y = Math.min(height - h - 40, Math.max(position.detail ? focus === 'search' ? 88 : 42 : 9, position.y - h / 2));
+    const top = position.detail ? focus === 'search' ? 88 : 42 : 9, bottom = height - h - 40;
+    let y = Math.min(bottom, Math.max(top, position.y - h / 2));
+    if (!position.detail && position.visible && !moduleOffscreen) {
+      const free = candidate => !placed.some(other => overlaps({ x, y: candidate, w, h }, other));
+      if (!free(y)) for (const step of [1, -1, 2, -2, 3, -3]) { const next = y + step * (h * .62 + 3); if (next >= top && next <= bottom && free(next)) { y = next; break; } }
+      placed.push({ x, y, w, h });
+    }
     el.style.setProperty('--projected-transform', `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0)`);
     el.dataset.projectionVisible = String(position.visible && !moduleOffscreen);
+    if (position.far !== undefined) el.dataset.far = String(position.far);
   }
 }
 // The newest unfinished run of a chat, for the live steps shown inside the chat.
@@ -337,18 +420,18 @@ async function loadScenes(chatId, { runId, before } = {}) {
     paint(); refreshChat();
   } catch {}
 }
-export function syncExecutionPanel({ chat, still = false, autoCollapse: shouldAutoCollapse = true, onImageRetry = null, onSelectionChanged = () => {} } = {}) {
-  autoCollapse = shouldAutoCollapse; imageRetryHandler = onImageRetry;
+export function syncExecutionPanel({ chat, still = false, autoCollapse: shouldAutoCollapse = true, onImageRetry = null, onSelectionChanged = () => {}, leadName: lead = '' } = {}) {
+  autoCollapse = shouldAutoCollapse; imageRetryHandler = onImageRetry; leadName = String(lead || '').slice(0, 40);
   if (!autoCollapse) cancelCollapse();
   refreshChat = onSelectionChanged; uiStill = still;
   const next = document.querySelector('#execution-panel');
   if (next !== host) {
     releaseZoom?.(); releaseZoom = null; layoutObserver?.disconnect(); layoutObserver = null; clearTimeout(zoomSaveTimer); gpu?.dispose(); gpu = null; host = next; lastSignature = '';
-    if (host) host.innerHTML = ui`<header class="execution-panel-header"></header><div class="execution-timing-host"></div><div class="execution-panel-viewport" tabindex="0" aria-label="任务空间内容，内容较多时可滚动查看"><div class="execution-panel-stage" tabindex="0" role="group" aria-label="任务空间，滚轮或双指缩放，加减键缩放，零键返回总览"><div class="execution-webgl"></div><div class="execution-labels"></div><div class="execution-focus-tools"></div><div class="execution-extra"></div><aside class="execution-inspector" hidden></aside></div><div class="execution-zoom" aria-label="场景缩放"><span class="execution-zoom-hint">滚轮 / 双指缩放</span><button data-execution-action="zoom-out" aria-label="缩小任务空间" title="缩小，查看其他模块">−</button><output data-zoom-value aria-label="缩放比例">100%</output><button data-execution-action="zoom-in" aria-label="放大任务空间" title="放大">＋</button><button data-execution-action="overview" title="同时查看五个模块">总览</button></div></div><div class="execution-signal-host"></div><footer class="execution-panel-footer"></footer>`;
+    if (host) host.innerHTML = ui`<header class="execution-panel-header"></header><div class="execution-timing-host"></div><div class="execution-panel-viewport" tabindex="0" aria-label="任务空间内容，内容较多时可滚动查看"><div class="execution-panel-stage" tabindex="0" role="group" aria-label="任务空间，滚轮或双指缩放，加减键缩放，零键返回总览"><div class="execution-webgl"></div><div class="execution-labels"></div><div class="execution-rail-host"></div><div class="execution-now-host"></div><div class="execution-focus-tools"></div><div class="execution-extra"></div><aside class="execution-inspector" hidden></aside></div><div class="execution-zoom" aria-label="场景缩放"><div class="execution-view-host"></div><span class="execution-zoom-hint">滚轮 / 双指缩放</span><button data-execution-action="zoom-out" aria-label="缩小任务空间" title="缩小，查看其他模块">−</button><output data-zoom-value aria-label="缩放比例">100%</output><button data-execution-action="zoom-in" aria-label="放大任务空间" title="放大">＋</button><button data-execution-action="overview" title="同时查看五个模块">总览</button></div></div><section class="execution-board-host" aria-label="作战台" hidden></section><div class="execution-signal-host"></div><footer class="execution-panel-footer"></footer>`;
   }
   if (host && !releaseZoom) {
     const stage = host.querySelector('.execution-panel-stage');
-    releaseZoom = bindExecutionZoom(stage, { getZoom: () => zoom, setZoom: changeZoom, overview: showOverview });
+    releaseZoom = bindExecutionZoom(stage, { getZoom: () => zoom, setZoom: changeZoom, overview: showOverview, rotate: (yaw, pitch) => gpu?.rotate?.(yaw, pitch) ?? false });
     if (typeof ResizeObserver !== 'undefined') {
       layoutObserver = new ResizeObserver(sizeDetails);
       layoutObserver.observe(stage);
@@ -407,6 +490,18 @@ document.addEventListener('click', async event => {
   if (action === 'toggle') { cancelCollapse(); setOpen(!opened); }
   else if (action === 'focus') focusModule(trigger.dataset.module);
   else if (action === 'overview') showOverview();
+  else if (action === 'view') {
+    const mode = viewMode(trigger.dataset.view);
+    if (mode === 'global') { setCameraView({ mode, yaw: 0, pitch: 0 }); showOverview(); }
+    else if (mode === 'follow') {
+      const running = sceneMembers(selectedScene()).filter(member => member.running);
+      const followId = cameraView.followId !== 'lead' && running.some(member => 'member:' + member.index === cameraView.followId) ? cameraView.followId : running[0] ? 'member:' + running[0].index : 'lead';
+      if (focus) { focus = null; zoom = 1; rememberView(); }
+      setCameraView({ mode, followId, ...(Math.abs(cameraView.pitch) < .05 ? { pitch: FOLLOW_PITCH } : {}) }); paint();
+    } else { setCameraView({ mode }); paint(); }
+  }
+  else if (action === 'follow') { if (focus) { focus = null; zoom = 1; rememberView(); } setCameraView({ mode: 'follow', followId: trigger.dataset.follow || 'lead' }); paint(); }
+  else if (action === 'board-toggle') { boardCollapsed = !boardCollapsed; try { localStorage.setItem(BOARD_KEY, boardCollapsed ? 'collapsed' : 'open'); } catch {} lastBoardSignature = ''; paint(); }
   else if (action === 'zoom-in') changeZoom(zoom * 1.18);
   else if (action === 'zoom-out') changeZoom(zoom / 1.18);
   else if (action === 'more') { more = !more; rememberView(); paint(); }

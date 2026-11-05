@@ -1270,7 +1270,8 @@
       ],
       "tests": [
         "desktop-ui/executionTelemetry.browser.test.js",
-        "desktop-ui/executionTiming.browser.test.js"
+        "desktop-ui/executionTiming.browser.test.js",
+        "desktop-ui/taskSpaceBoard.browser.test.js"
       ],
       "note": "浏览器测试从 index.html 读取 importmap 与样式表清单；新增/改名页面模块或 CSS 时同步 index.html"
     },

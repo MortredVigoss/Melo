@@ -5351,7 +5351,8 @@ function render({ background = false, changedSections = null } = {}) {
   syncNeuralComposer(app, chatFeature.composerText());
   animateNeuralLayout(neuralBefore, uiState.neuralStill);
   syncNeuralScene(uiState.neuralStill);
-  syncExecutionPanel({ chat: activeChat(), still: uiState.neuralStill, autoCollapse: uiState.bootstrap.settings.localPreferences?.autoCollapse !== false, onImageRetry: chatFeature.retryMissingImages, onSelectionChanged: bgRender });
+  syncExecutionPanel({ chat: activeChat(), still: uiState.neuralStill, autoCollapse: uiState.bootstrap.settings.localPreferences?.autoCollapse !== false, onImageRetry: chatFeature.retryMissingImages, onSelectionChanged: bgRender,
+    leadName: agentProfileById(activeChat()?.agentId || 'main')?.name || '' });
   syncModelPickerPosition();
 
   activeEditableContextTarget = null;
