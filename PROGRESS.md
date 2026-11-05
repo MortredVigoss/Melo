@@ -1,3 +1,10 @@
+## 2026-11-05 — 任务空间 C 方案：星核主控、实时评估作战台、全局 / 跟随 / 自由视角（Claude，未合并）
+
+用户看了「星核蜘蛛」作战大屏视频，选定 C：把主 Agent 的路由与评估画进三维任务空间，评估数据实时入场景，底部面板必须对应真实数据，设计语言与现有一致。
+三端每次评估发出有上限的账本快照（分档直接取 `taskEvaluationSummary`，只含字段状态与用户合同原话），成员阶段带稳定岗位与轮数上限；可选字段，冻结的 v1 同步投影不变。作战台六卡（日志、分派、评估分、证据热力、合同覆盖、任务合同）、阶段条只列真实发生的阶段，门槛线读 policy；普通对话界面与相机逐值不变。
+与计划的一处差异：跟随视角拖动改为绕目标换角度并继续跟随。
+分支 `claude/task-space-c-20261105`：`4a85c4f` `edf6f41` `a2a8e31` `03e92a6` `8adc18c` + C5（已变基到 `d5c596e`）。集成档 `run-VHB0gX` JS 4982/4982、Swift 38、Android 四项全绿；iOS 无签名构建通过。另一线程的同文件改动已提交为 `d5c596e`，本分支已变基；Android 仪器测试与真实模型探针未执行。[链路、覆盖与证据](docs/task-space-c-20261105.md)
+
 ## 2026-11-05 — Claude 修复复核 C1–C3（整轮账本收窄、审核规则按工具门控、成员切片按轮数）并推送
 
 Claude：用户选定修全部 P2。C1 `src/runtime/turnEffects.js`：`write` 仍整轮不重复，`unknown`（bash、无 readOnlyHint 的 MCP）只拦进行中与跨执行者的重复，同一执行者结束后可重复；`bash` 的 `ls` / `cat <路径>` 不进账本。C2 共享 `goal.js` 只在本轮提供 `task_progress`（三端 candidate 追加该名字）或已有账本时要求 / 强制账本。C3 `taskEvaluation.js` 改 `roundMilliseconds` + `memberDeadlineMs(rounds)`，成员截止 = 轮数 × 90 s + 60 s，Node / iOS / Android 同一公式。新增真实主图计数测试 `turnEffectsRepeat.test.js`，定向 409 项全过；快速档 `run-alGeuV`（339 / 589 文件，JS 3 327 / 3 327，Android、22 组 Swift，892 s）；集成档 `run-RtVrtf`（`--base a4ae796`，589 / 589，JS 4 934 / 4 934，Android、设置浏览器、Swift 全绿，294 s）。[修复记录](docs/codex-batch-fixes-20261105.md)。

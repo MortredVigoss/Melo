@@ -47,7 +47,7 @@ function events(upTo = Infinity) {
 
 test('task space board, rail and views show only recorded facts, rotate without misclicks and fit a phone', { timeout: 90000 }, async () => {
   const home = await mkdtemp(join(tmpdir(), 'melo-task-space-'));
-  const proof = resolve('.tmp/task-space-c-20261105');
+  const proof = resolve('.tmp/task-space-board-20261105');
   await mkdir(proof, { recursive: true });
   const recorder = createExecutionRecorder({ home, runId: 'board-run', chatId: 'board-chat' }, goal);
   recorder.scene.startedAt = at(0);
