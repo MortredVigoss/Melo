@@ -64,6 +64,12 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
   // the war room. Switching runs, closing and disposing cancel them all.
   const rises = new Set(); let riseGeneration = 0;
   const cancelRises = () => { for (const id of rises) clearTimeout(id); rises.clear(); riseGeneration++; };
+  // Flights run only while the war room animates. The moment it cannot (closed,
+  // still, reduced motion, no renderer) every waiting row is shown, chips are
+  // removed, and nothing queued flies later.
+  function settleFlights() { cancelRises(); for (const chip of [...chips]) dropChip(chip); for (const key of [...pending.keys()]) reveal(key); }
+  // Turning on reduced motion mid-flight settles at once, not at the next update.
+  try { matchMedia('(prefers-reduced-motion: reduce)').addEventListener?.('change', () => { if (!animating()) settleFlights(); }); } catch { /* no media queries here */ }
 
   // ── 3D ────────────────────────────────────────────────────────────────
   function ensureScene() {
@@ -81,7 +87,16 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
       syncViews(gpu.view); syncZoom();
     }).catch(() => fail(t('此设备暂不支持三维渲染，可继续检查执行记录。'))).finally(() => { loading = false; });
   }
-  function fail(message) { failed = true; root.classList.add('is-fallback'); $('.war-gl').textContent = message; onFailure?.(message); }
+  // Without a renderer (no WebGL, or its context lost) the stage lists the five
+  // regions itself: the same buttons and details the captions open, so sources,
+  // summaries and results stay reachable. Flights stop at once.
+  let fallbackMessage = '';
+  function fail(message) { failed = true; fallbackMessage = message; root.classList.add('is-fallback'); settleFlights(); renderFallback(); onFailure?.(message); }
+  function renderFallback() {
+    if (!failed) return;
+    const html = `<div class="war-fallback"><p>${escapeHtml(fallbackMessage)}</p><ul class="war-regions" aria-label="${escapeHtml(t('五个区域'))}">${regionRows(regionSummary(scene))}</ul></div>`;
+    const host = $('.war-gl'); if (host.dataset.html !== html) { host.innerHTML = html; host.dataset.html = html; }
+  }
   function syncViews(view = gpu?.view) {
     if (!view) return;
     for (const button of root.querySelectorAll('[data-war-view]')) button.setAttribute('aria-checked', String(!view.region && button.dataset.warView === view.mode));
@@ -221,7 +236,7 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
       const id = setTimeout(() => {
         rises.delete(id);
         if (generation !== riseGeneration || scene?.runId !== runId) return;
-        if (!opened) { reveal(key); return; }
+        if (!animating()) { reveal(key); return; }
         const chip = makeChip(`${tierName(change.tier)} ${change.total}`, change.name, change.tier);
         Object.assign(chip, { mode: 'rise', dx: (i % 3 - 1) * 190, dy: -30 - (i % 2) * 30, rowKey: key, target: () => landing(`[data-row-key="${attrValue(key)}"]`) });
       }, 450 + i * 320);
@@ -320,10 +335,14 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
     const lines = [[t('版本'), `r${k.revision} · ${k.category || ''} · ${k.mode || ''}`], [t('目标'), target], ...(k.constraints || []).slice(0, 4).map(row => [t('硬条件'), `${fieldName(row.field)} ${row.op} ${row.value}${row.quote ? ` · “${row.quote}”` : ''}`]), [t('必填'), (k.requiredFields || []).map(fieldName).join(' · ')], [t('覆盖'), (k.coverage || []).map(row => row.tag).join('  ')]];
     fill(c, `<pre class="war-contract">${lines.map(([a, b]) => `<span><b>${escapeHtml(a)}</b>${escapeHtml(b)}</span>`).join('')}</pre>${stageId ? `<button type="button" class="war-link" data-war-record="${escapeHtml(stageId)}">${escapeHtml(t('查看评估记录'))}</button>` : ''}`);
   }
+  // One row per region: its button (opens the region's details) and its count (opens its records).
+  function regionRows(summary) {
+    return summary.map(r => `<li data-status="${escapeHtml(r.status)}"><button type="button" data-war-region="${r.id}">${dot('', r.id)}${escapeHtml(regionName(r.id))}</button>${trace(`region:${r.id}`, escapeHtml(r.calls ? t('{count} 次调用', { count: r.calls }) : r.records ? t('{count} 条记录', { count: r.records }) : t('无调用记录')))}</li>`).join('');
+  }
   function renderRegions() {
     const c = cell('regions'), summary = regionSummary(scene);
     head(c, t('区域与来源'), escapeHtml(t('每次调用只算在一个区域')));
-    fill(c, `<ul class="war-regions">${summary.map(r => `<li data-status="${escapeHtml(r.status)}"><button type="button" data-war-region="${r.id}">${dot('', r.id)}${escapeHtml(regionName(r.id))}</button>${trace(`region:${r.id}`, escapeHtml(r.calls ? t('{count} 次调用', { count: r.calls }) : r.records ? t('{count} 条记录', { count: r.records }) : t('无调用记录')))}</li>`).join('')}</ul>${(scene?.sources || []).length ? `<p class="war-sources">${trace('sources', escapeHtml(t('{count} 条来源', { count: scene.sources.length })))}</p>` : ''}`);
+    fill(c, `<ul class="war-regions">${regionRows(summary)}</ul>${(scene?.sources || []).length ? `<p class="war-sources">${trace('sources', escapeHtml(t('{count} 条来源', { count: scene.sources.length })))}</p>` : ''}`);
   }
   function renderResources() {
     const c = cell('resources'), res = sceneResources(scene, { now: Date.now() });
@@ -391,6 +410,7 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
     // A new run starts on the band, unless its remembered view was just restored.
     if (next?.runId !== scene?.runId) { if (keepDetail !== (next?.runId ?? null)) detail = null; keepDetail = null; cancelRises(); pending.clear(); for (const chip of [...chips]) dropChip(chip); }
     scene = next; ctx = context;
+    if (!animating() && (rises.size || chips.length || pending.size)) settleFlights();
     summary = new Map(regionSummary(scene).map(row => [row.id, row])); working = new Set((scene?.operations || []).filter(op => op.status === 'running').map(op => op.module));
     gateOpen = !!deliveryGate(sceneEvaluation(scene).snapshot)?.open; memberNames = new Map(sceneMembers(scene).map(m => [`member:${m.index}`, `${roleName(m.role)} #${m.index}`]));
     root.dataset.run = scene?.runId || ''; root.dataset.board = String(sceneHasBoard(scene));
@@ -398,7 +418,7 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
     if (detail) renderDetail();
     else if (sceneHasBoard(scene)) { const snapshot = sceneEvaluation(scene).snapshot; renderDispatch(); renderGate(snapshot); renderHeat(snapshot); renderCoverage(snapshot); renderContract(snapshot); }
     else { renderRegions(); renderResources(); }
-    renderStatus();
+    renderStatus(); renderFallback();
     gpu?.setStill(!!ctx.still); gpu?.update(scene);
   }
   function showDetail(next) {
@@ -445,7 +465,7 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
       opened = value; root.hidden = !value; document.documentElement.dataset.warRoom = String(value);
       clearInterval(ticker); if (value) ticker = setInterval(tick, 1000);
       if (value) { ensureScene(); render(scene, ctx); if (focus) setTimeout(() => { if (opened && !root.contains(document.activeElement)) stage.focus({ preventScroll: true }); }, 0); }
-      else { cancelRises(); for (const key of [...pending.keys()]) reveal(key); for (const chip of [...chips]) dropChip(chip); }
+      else settleFlights();
       gpu?.setOpen(value);
     },
     dispose() { clearInterval(ticker); cancelRises(); gpu?.dispose(); gpu = null; for (const chip of [...chips]) dropChip(chip); root.remove(); },

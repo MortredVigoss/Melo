@@ -420,3 +420,70 @@ test('candidate flights belong to their run and showing; coverage counts candida
   assert.match(room.querySelector('[data-cell="detail"] .war-count').textContent, /2 条记录/);
   assert.match(room.querySelector('[data-cell="detail"]').textContent, /已核实 1 \/ 2/);
 });
+
+test('without a renderer a board run still opens every region; stopping motion shows waiting rows at once and nothing flies later', async t => {
+  const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost' });
+  const originals = new Map();
+  const install = (key, value) => { originals.set(key, Object.getOwnPropertyDescriptor(globalThis, key)); Object.defineProperty(globalThis, key, { configurable: true, writable: true, value }); };
+  const timers = [], motion = []; let reducedNow = false;
+  install('document', dom.window.document); install('localStorage', dom.window.localStorage);
+  install('matchMedia', () => ({ get matches() { return reducedNow; }, addEventListener: (type, fn) => motion.push(fn) }));
+  install('setInterval', () => 0); install('clearInterval', () => {});
+  install('setTimeout', (fn, delay) => { timers.push({ fn, delay }); return timers.length; }); install('clearTimeout', id => { if (timers[id - 1]) timers[id - 1].cleared = true; });
+  install('fetch', async () => ({ ok: true, json: async () => ({ scenes: [] }) }));
+  t.after(() => { dom.window.close(); for (const [key, descriptor] of originals) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key]; } });
+  const settle = async () => { for (let i = 0; i < 6; i++) await new Promise(resolve => setImmediate(resolve)); };
+  const fire = () => { for (const timer of timers.filter(x => !x.cleared && x.delay >= 450)) { timer.cleared = true; timer.fn(); } };
+  const row = key => ({ key, name: key.toUpperCase(), status: 'verified', tier: 'eligible', total: 70, evidence: 70, match: 30, diversity: 8, reason: '', fields: { name: 'verified' }, conflicts: 0, excludeReason: '', tags: [] });
+  const evaluation = candidates => ({ v: 1, update: candidates.length, ok: true, closed: false,
+    policy: { maxScore: 100, primaryScore: 80, alternativeScore: 65, evidenceScore: 60, primaryCount: 3, alternatives: 3, checkpoint: { milliseconds: 180000, calls: 20 }, memberCalls: 6 },
+    contract: { revision: 1, category: 'events', unit: 'events', mode: 'standard', target: { minimum: 3, maximum: 5 }, explicit: null, constraints: [], requiredFields: ['name'], coverage: [] },
+    summary: { discovered: candidates.length, read: candidates.length, verified: candidates.length, recommended: 0, alternatives: 0, excluded: 0, stop: 'continue', nextBatch: 3, diminishing: false, adjusted: false, checkpoint: false, gaps: [], gapCount: 0, omitted: 0 },
+    candidates, resource: { elapsedMs: 1000, toolCalls: 1, inputTokens: 10 } });
+  const live = (id, candidates) => { const scene = createExecutionScene({ runId: id, chatId: 'chat', query: 'events' }); applyExecutionEvent(scene, { kind: 'pipeline', id: 'task-evaluation:1', module: 'compute', name: '评估', status: 'completed', evaluation: evaluation(candidates) }); return scene; };
+  const admit = (scene, candidates) => applyExecutionEvent(scene, { kind: 'pipeline', id: 'task-evaluation:2', module: 'compute', name: '评估', status: 'completed', evaluation: evaluation(candidates) });
+
+  // 1. No renderer (jsdom has no WebGL): a board run still reaches every region and its details.
+  {
+    const panel = await loadPanel();
+    updateNeuralWorkspace(document.querySelector('#app'), `<div>${panel.renderExecutionPanel()}</div>`);
+    panel.syncExecutionPanel({ chat: { id: 'chat', messages: [] } });
+    await new Promise(resolve => setImmediate(resolve));
+    const scene = live('board-fallback', [row('e0')]);
+    applyExecutionEvent(scene, { kind: 'operation', id: 'web', module: 'search', name: 'web_search', status: 'completed', query: 'melbourne events' });
+    applyExecutionEvent(scene, { sources: [{ url: 'https://whatson.example/twilight', title: 'Twilight Sessions', appeared: true }] });
+    panel.receiveExecutionScene(structuredClone(scene)); await settle();
+    const room = document.querySelector('#execution-war-room');
+    assert.equal(room.hidden, false); assert.ok(room.classList.contains('is-fallback'), 'the renderer could not start');
+    assert.equal(room.querySelector('.war-band').dataset.mode, 'board');
+    const entries = [...room.querySelectorAll('.war-gl [data-war-region]')].map(el => el.dataset.warRegion);
+    assert.deepEqual(entries.slice().sort(), ['compute', 'create', 'files', 'search', 'tools'], 'five region entries on the stage');
+    room.querySelector('.war-gl [data-war-region="search"]').click();
+    assert.match(room.querySelector('[data-cell="detail"]').textContent, /Twilight Sessions|whatson\.example/, 'the region details (its sources) open without WebGL');
+    room.querySelector('[data-war-back]').click();
+    room.remove(); document.querySelector('#app').innerHTML = '';
+  }
+  // 2. With a renderer: stopping motion while a flight waits shows the row at once; nothing flies later.
+  {
+    const panel = await loadPanel({ renderer: fakeRenderer });
+    updateNeuralWorkspace(document.querySelector('#app'), `<div>${panel.renderExecutionPanel()}</div>`);
+    panel.syncExecutionPanel({ chat: { id: 'chat2', messages: [] } });
+    await new Promise(resolve => setImmediate(resolve));
+    const a = live('motion-a', [row('a0')]); a.chatId = 'chat2';
+    panel.receiveExecutionScene(structuredClone(a)); await settle();
+    admit(a, [row('a0'), row('a1')]); panel.receiveExecutionScene(structuredClone(a));
+    assert.equal(document.querySelector('[data-row-key="cand:a1"]')?.dataset.pending, 'true', 'the admitted row waits for its flight');
+    reducedNow = true; for (const fn of motion) fn();
+    assert.equal(document.querySelector('[data-row-key="cand:a1"]')?.dataset.pending, 'false', 'reduced motion: shown at once');
+    fire(); assert.equal(document.querySelectorAll('.war-chip').length, 0, 'and it never flies afterwards');
+    reducedNow = false;
+    // The app's own "still" setting does the same.
+    const b = live('motion-b', [row('b0')]); b.chatId = 'chat2';
+    panel.receiveExecutionScene(structuredClone(b)); await settle();
+    admit(b, [row('b0'), row('b1')]); panel.receiveExecutionScene(structuredClone(b));
+    assert.equal(document.querySelector('[data-row-key="cand:b1"]')?.dataset.pending, 'true');
+    panel.syncExecutionPanel({ chat: { id: 'chat2', messages: [] }, still: true });
+    assert.equal(document.querySelector('[data-row-key="cand:b1"]')?.dataset.pending, 'false', 'still: shown at once');
+    fire(); assert.equal(document.querySelectorAll('.war-chip').length, 0);
+  }
+});

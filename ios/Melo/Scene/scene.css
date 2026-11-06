@@ -1377,6 +1377,10 @@ html[data-scene-host=phone] .war-voice { display: inline-flex; align-items: cent
 .war-gl canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
 .war-gl canvas.is-dragging { cursor: grabbing; }
 .war-room.is-fallback .war-gl { display: grid; place-items: center; font-size: 12px; color: var(--wr-muted); }
+/* No renderer: the five regions stay reachable as a list (the band's own region rows). */
+.war-fallback { display: grid; gap: 12px; justify-items: center; width: min(360px, calc(100% - 32px)); }
+.war-fallback p { margin: 0; text-align: center; }
+.war-fallback .war-regions { width: 100%; }
 .war-captions { position: absolute; inset: 0; pointer-events: none; }
 .war-caption { position: absolute; left: 0; top: 0; pointer-events: auto; border: 1px solid transparent; font-weight: 400; background: transparent; padding: 2px 7px; border-radius: 6px; text-align: left; font-size: 11px; line-height: 1.35; color: var(--wr-text-2); white-space: nowrap; text-shadow: 0 0 8px var(--wr-bg), 0 0 2px var(--wr-bg); transition: opacity .3s, background-color .2s, border-color .2s; }
 .war-caption:hover { border-color: var(--wr-line-2); background: color-mix(in srgb, var(--wr-bg) 70%, transparent); }

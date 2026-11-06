@@ -1,6 +1,41 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "五个区域": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "五个区域"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The five regions"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "5 つの領域"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다섯 영역"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las cinco regiones"
+          }
+        }
+      }
+    },
     "未排除候选中已核实的占比": {
       "extractionState": "manual",
       "localizations": {
