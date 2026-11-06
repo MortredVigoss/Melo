@@ -109,14 +109,21 @@ export async function runInternalMembers({ jobs = [], goal = '', background = ''
   const runOne = async index => {
     const job = jobs[index];
     let jobConfig;
-    try { jobConfig = memberConfig(requireStrongWrites && job.role === 'execute' ? config : jobConnectionConfig(config, jobModels, job.role)); }
+    // Hosted search is verified for the conversation's connection only. A
+    // retrieval member configured with another connection runs a hosted-search
+    // job on the conversation connection instead and says so (user decision,
+    // 2026-11-07 post-push review).
+    const hostedJob = Array.isArray(job.tools) && job.tools.includes('native_web_search');
+    const ownConnection = typeof jobModels?.[job.role] === 'string' && jobModels[job.role] && jobModels[job.role] !== config?.activeLlmProfileId;
+    const conversationForSearch = hostedJob && ownConnection;
+    try { jobConfig = memberConfig(requireStrongWrites && job.role === 'execute' || conversationForSearch ? config : jobConnectionConfig(config, jobModels, job.role)); }
     catch (error) {
       const result = { ok: false, error: error.code, output: error.message, meta: { stopReason: 'ERROR', observations: [] } };
       outcomes[index] = { job, result, started: false, handoff: internalHandoff({ job, answer: result.output, observations: [], limited: true }) };
       pipeline(job, { status: 'failed', output: result.output });
       return;
     }
-    pipeline(job, { status: 'running', input: job.task, ...(jobConfig?.model ? { model: jobConfig.model } : {}) });
+    pipeline(job, { status: 'running', input: job.task, ...(jobConfig?.model ? { model: jobConfig.model } : {}), ...(conversationForSearch ? { output: '本次改用对话连接检索：岗位连接没有验证过的原生搜索。' } : {}) });
     const { share, reason } = memberShare(budget);
     if (reason === 'LEAD_RESERVE') {
       const handoff = internalHandoff({ job, answer: 'Not started: the lead keeps its remaining budget for the answer. Continue with the evidence already gathered.', observations: [], limited: true });

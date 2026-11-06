@@ -715,6 +715,37 @@ test('retrieval members take verified hosted search over only when Melo search i
   }
 });
 
+test('a member hosted search runs end to end: receipt, member evidence, the lead check and the task space record', async () => {
+  const call = (id, name, args) => ({ type: 'function_call', id, call_id: id, name, arguments: JSON.stringify(args) });
+  const state = fixtureState(), chat = fixtureChat(); state.chats = [chat]; await saveState(state);
+  const events = []; let leadTurns = 0, memberTurns = 0, cited = null;
+  const result = await runChatAgentExecutionGraph({ config: { ...fixtureCodexConfig(), agentRuntime: { search: { backend: 'none', browserFallback: false } } }, state, chat, workspace: fixtureWorkspace(), connectors: [], skills: [],
+    latestUserMessage: '搜索 Example Cafe 现在的营业时间', agentId: 'main', sseEmitter: (type, event) => { if (type === 'execution_event') events.push(event); },
+    _dependencies: { searchCapability: { status: 'verified' }, getEmbedding: async () => null,
+      createReply: async options => {
+        if (options.systemPrompt.includes("You are Melo's task completion checker")) {
+          const request = JSON.parse(options.messages[0].content);
+          const id = (request.observations || []).map(row => row.id).find(id => /hosted:\d+$/.test(id));
+          if (/^job-1:/.test(String(id))) cited = id;
+          return JSON.stringify({ decision: id ? 'complete' : 'partial', reasonType: id ? 'fulfilled' : 'unavailable', reason: 'fixture', requirements: [{ text: 'opening hours', kind: 'external_fact', status: id ? 'met' : 'missing', evidenceIds: id ? [id] : [] }] });
+        }
+        if (options.systemPrompt.includes('You are the internal research specialist')) {
+          memberTurns++;
+          options.onExecutionEvent?.({ kind: 'operation', id: 'ws_cafe', name: 'native_web_search', module: 'search', status: 'completed', output: '' });
+          return { protocol: 'responses', text: 'Example Cafe is open 8am–4pm today.', responseItems: [
+            { type: 'web_search_call', status: 'completed', action: { sources: [{ url: 'https://cafe.example/hours', title: 'Opening hours' }] } },
+            { type: 'message', content: [{ type: 'output_text', text: 'Example Cafe is open 8am–4pm today.', annotations: [] }] }] };
+        }
+        leadTurns++;
+        return leadTurns === 1 ? { protocol: 'responses', text: '', responseItems: [call('route-1', 'route_task', { resume: null, role: 'research', task: 'Find Example Cafe opening hours today' })] }
+          : { protocol: 'responses', text: 'Example Cafe is open 8am–4pm today (https://cafe.example/hours).', responseItems: [] };
+      } } });
+  assert.ok(memberTurns >= 1);
+  assert.match(String(cited), /^job-1:.*hosted:\d+$/, 'the lead checks against the member hosted-search evidence');
+  assert.equal(result.normalizedReply.completion.outcome, 'completed');
+  assert.ok(events.some(event => /^job-1:\d+:ws_cafe$/.test(String(event.id)) && event.name === 'native_web_search'), 'the task space records the member search under its job: ' + JSON.stringify(events.map(event => event.id).filter(Boolean).slice(0, 30)));
+});
+
 test('Hosted Search final replies use the same completed/source receipt contract as Android', async () => {
   const { beginSupplements, addSupplement, endSupplements } = await import('./supplements.js');
   const search = { type: 'web_search_call', status: 'completed', action: { sources: [{ url: 'https://fixture.invalid/verified', title: 'Fixture source' }] } };

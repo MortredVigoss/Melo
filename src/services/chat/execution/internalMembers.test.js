@@ -12,6 +12,18 @@ const catalog = internalRouteCatalog(goal, tools);
 const job = (role, task, index) => ({ ...startInternalJob({ catalog, goal, args: { role, task }, callId: `call-${index}` }), index, id: `job-${index}` });
 const settle = () => new Promise(resolve => setTimeout(resolve, 5));
 
+test('a hosted-search job runs on the conversation connection when its role has another one; other jobs keep theirs', async () => {
+  const seen = [], events = [];
+  const run = async options => { seen.push({ role: options.roleId, model: options.config.model, hosted: options.nativeWebSearch }); return { ok: true, output: 'done', meta: { observations: [], effects: { successful: [], uncertain: [] } } }; };
+  const config = { authMode: 'codex', model: 'conversation-model', activeLlmProfileId: 'codex', llmProfiles: { 'chat-only': { authMode: 'api-key', apiProtocol: 'chat-completions', model: 'chat-only-model', baseUrl: 'https://chat.example/v1', apiKey: 'k' } } };
+  const hostedResearch = { ...job('research', 'find the hours', 1), tools: ['native_web_search', 'fetch_url'] };
+  const plainResearch = { ...job('research', 'read the menu', 2), tools: ['fetch_url'] };
+  await runInternalMembers({ jobs: [hostedResearch, plainResearch], goal, run, lanes: 1, config, jobModels: { research: 'chat-only' }, sseEmitter: (type, event) => { if (type === 'execution_event') events.push(event); } });
+  assert.deepEqual(seen.find(row => row.role === 'job-1'), { role: 'job-1', model: 'conversation-model', hosted: true }, 'searching on a connection with verified hosted search');
+  assert.deepEqual(seen.find(row => row.role === 'job-2'), { role: 'job-2', model: 'chat-only-model', hosted: false }, 'the role connection stays for jobs without hosted search');
+  assert.ok(events.some(event => event.id === 'internal:1' && /改用对话连接/.test(event.output || '')), 'the task space says why');
+});
+
 test('a social member reads alongside the research member', async () => {
   let active = 0, peak = 0; const release = [];
   const run = async options => {

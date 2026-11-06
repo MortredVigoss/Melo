@@ -374,6 +374,33 @@ test('T17: a member honours the MELO_FUNCTION_CALLING override from the request 
     task: 't', config: { ...validConfig(), apiProtocol: 'chat-completions', toolCalling: 'legacy' }, replyFn: async options => { seen ||= options; return 'done'; } }));
   assert.equal(seen.toolProtocol, 'chat-completions', 'native override → chat-completions protocol');
 });
+// 2026-11-07 post-push review: a member's hosted search is evidence the lead can check, and the task space sees it.
+for (const withSources of [true, false]) test(`a member's hosted search ${withSources ? 'becomes provider-marked evidence' : 'without sources is no evidence'} and its events reach the caller`, async () => {
+  const reply = makeFakeReply(), events = [];
+  reply.queue.push(async args => {
+    args.onExecutionEvent?.({ kind: 'operation', id: 'ws_1', name: 'native_web_search', module: 'search', status: 'completed', output: '' });
+    return { protocol: 'responses', text: 'Example Cafe opens at 8am.', responseItems: [
+      { type: 'web_search_call', status: 'completed', action: { sources: withSources ? [{ url: 'https://cafe.example/hours', title: 'Opening hours' }] : [] } },
+      { type: 'message', content: [{ type: 'output_text', text: 'Example Cafe opens at 8am.', annotations: [] }] }] };
+  });
+  reply.queue.push(async args => {
+    const ids = (JSON.parse(args.messages[0].content).observations || []).map(row => row.id);
+    const cited = ids.find(id => /^hosted:0/.test(id));
+    return JSON.stringify({ decision: cited ? 'complete' : 'partial', reasonType: cited ? 'fulfilled' : 'unavailable', reason: 'fixture', requirements: [{ text: 'opening hours', kind: 'external_fact', status: cited ? 'met' : 'missing', evidenceIds: cited ? [cited] : [] }] });
+  });
+  const { runWithRequestContext } = await import('../runtime/requestScope.js');
+  // Native features follow the inherited capability scope, as in a real member.
+  const result = await runWithRequestContext({ capabilityScope: { agentId: 'main', legacy: true } }, () => runSubAgent({ task: 'Find Example Cafe opening hours', allowedToolIds: ['web_search', 'native_web_search'], nativeWebSearch: true, nativeImageGeneration: false,
+    config: validConfig(), replyFn: reply, maxIterations: 2, sseEmitter: (type, event) => { if (type === 'execution_event') events.push(event); } }));
+  assert.equal(reply.callLog[0].nativeWebSearchEnabled, true);
+  assert.ok(events.some(event => event.id === '0:ws_1' && event.name === 'native_web_search'), 'the native event reaches the caller with the round prefix');
+  const hosted = result.meta.observations.filter(row => String(row.id).startsWith('hosted:0'));
+  if (withSources) {
+    assert.ok(hosted.some(row => /Provider-reported/.test(row.output || row.text || '') && /cafe\.example\/hours/.test(row.output || row.text || '')), JSON.stringify(hosted));
+    assert.ok(hosted.some(row => row.url === 'https://cafe.example/hours' && row.reading === 'provider'), 'the source keeps its provider marking');
+  } else assert.equal(hosted.length, 0, 'a hosted search without any source is no evidence');
+});
+
 test('internal routing: roleSystem is a trusted system section, instructions stay in the user turn, effects are reported', async () => {
   const reply = makeFakeReply();
   reply.queue.push('20 C is 68 F.', "{\"decision\": \"complete\", \"reasonType\": \"self_contained\", \"requirements\": [{\"text\": \"conversion\", \"status\": \"met\", \"evidenceIds\": []}]}");
