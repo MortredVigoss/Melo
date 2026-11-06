@@ -229,5 +229,16 @@ html[data-scene-host=phone] .war-voice { display: inline-flex; align-items: cent
 .war-extra { display: grid; gap: 8px; }
 .war-room .execution-label { position: static; transform: none; will-change: auto; }
 .war-room .execution-search-trail { position: static; max-height: none; flex-wrap: wrap; }
+/* The chat panel positions results and summaries over its own stage; in the
+   war room every one of them stays in the detail list, never over the space. */
+.war-room :is(.execution-candidates, .execution-outcomes, .execution-reasoning-records, .execution-empty, .execution-inspector) { position: static; inset: auto; z-index: auto; overflow: visible; max-height: none; }
+.war-room .execution-empty { text-align: left; padding: 8px 2px; }
+.war-room :is(.execution-outcomes, .execution-reasoning-records) { display: grid; gap: 6px; }
+.war-room :is(.execution-pipeline, .execution-candidates) { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+/* One card style for every record shown in a region: the band's own cell. */
+.war-room :is(.execution-search-trail button, .execution-reasoning-records button, .execution-pipeline button, .execution-candidate, .execution-delivery-details) {
+  border: 1px solid var(--wr-line-2); border-radius: 8px; background: var(--wr-panel); color: var(--wr-text); box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none;
+  padding: 8px 10px; font-size: 11px; line-height: 1.5; text-align: left; }
+.war-room :is(.execution-search-trail button, .execution-reasoning-records button, .execution-pipeline button):hover { border-color: var(--wr-line); background: var(--wr-hover); }
 .war-source-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
-.war-source-grid .execution-source { width: auto; }
+.war-source-grid .execution-source { width: auto; border: 1px solid var(--wr-line-2); border-radius: 8px; background: var(--wr-panel); }

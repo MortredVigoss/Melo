@@ -39,7 +39,7 @@ const CORE_SIZE = 1.25;
 const STAND = 4.6 * 1.5, WALK = 55, DIG = 1.35, QUICK_DIG = .8, MIN_ZOOM = .55, MAX_ZOOM = 2.8;
 export const WAR_ROOM_VIEWS = Object.freeze(['global', 'follow', 'free']);
 
-export function createWarRoomScene(host, { onProject, onSelectRegion, onHook, onRelease, onFailure, onInteract, onViewChange } = {}) {
+export function createWarRoomScene(host, { onProject, onSelectRegion, onEmptyTap, onHook, onRelease, onFailure, onInteract, onViewChange } = {}) {
   const phone = innerWidth < 700, reduced = matchMedia('(prefers-reduced-motion: reduce)');
   const canvas = document.createElement('canvas'); canvas.setAttribute('aria-hidden', 'true'); canvas.className = 'war-room-canvas';
   const renderer = new T.WebGLRenderer({ canvas, antialias: false, alpha: false, powerPreference: 'high-performance' });
@@ -242,6 +242,8 @@ export function createWarRoomScene(host, { onProject, onSelectRegion, onHook, on
     scene = next;
     const operations = new Map((next?.operations || []).map(op => [op.id, op])), projected = sceneActors(next), priming = !animate || !primed;
     for (const p of projected) {
+      // The lead routes and evaluates from the core: no spider walks for it.
+      if (p.kind === 'lead') continue;
       let a = actors.get(p.id);
       const jobs = [];
       for (const id of p.operations) {
@@ -267,7 +269,8 @@ export function createWarRoomScene(host, { onProject, onSelectRegion, onHook, on
     if (animate && !priming && gate?.open && !gateWasOpen) shockwave();
     if (animate && !priming && finished && !finishedSeen) shockwave();
     gateWasOpen = !!gate?.open; finishedSeen = finished;
-    coreTarget = (!finished && actors.size ? .45 : 0) + (gate?.open ? .55 : 0);
+    // The core pulses for as long as the run is live: the lead is routing or evaluating even when no member is out.
+    coreTarget = (!finished ? .45 : 0) + (gate?.open ? .55 : 0);
     for (const r of regions) r.target = (next?.operations || []).some(op => op.module === r.id && op.status === 'running') ? 1 : 0;
     requestFrame();
   }
@@ -362,6 +365,7 @@ export function createWarRoomScene(host, { onProject, onSelectRegion, onHook, on
     if (best) onInteract?.();
     if (best?.actor) setView('follow', { followId: best.actor });
     else if (best?.region) onSelectRegion?.(best.region);
+    else onEmptyTap?.();
   }
   const rightAxis = () => other.setFromMatrixColumn(camera.matrixWorld, 0);
 

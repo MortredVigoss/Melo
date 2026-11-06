@@ -12,7 +12,9 @@ const LEGACY_ROLE_LABELS = Object.freeze({ '检索成员': 'research', '计算�
 export const BOARD_LOG_LIMIT = 60;
 const QUALIFIED_TIERS = ['primary', 'alternative', 'eligible'];
 const memberIndex = id => { const match = /^internal:(\d{1,3})$/.exec(String(id)); return match ? Number(match[1]) : null; };
-const jobIndex = id => { const match = /^job-(\d{1,3})[:#]/.exec(String(id)); return match ? Number(match[1]) : null; };
+// A member's call carries `job-N:` in its id: first on desktop and Android
+// (`job-1:search`), after a host prefix on iPhone (`web:job-1:call_…`, `tool:job-1:…`).
+export const jobIndex = id => { const match = /(?:^|:)job-(\d{1,3})[:#]/.exec(String(id)); return match ? Number(match[1]) : null; };
 const time = value => { const parsed = Date.parse(value); return Number.isFinite(parsed) ? parsed : null; };
 
 export function memberRole(stage) {

@@ -143,8 +143,17 @@ test('war room shows only recorded facts, traces every number, opens by itself, 
       const calls = await detail.locator('.war-trace > li[data-status] button[data-war-record]').evaluateAll(rows => rows.filter(row => !/^(model|reply|task-evaluation|goal-check|internal)/.test(row.dataset.warRecord)).length);
       regionCalls.push(calls);
       await page.waitForFunction(id => document.querySelector('#execution-war-room .war-gl').dataset.view === `region:${id}`, id); // a region click focuses the camera on it
+      // Its sources, summaries and results sit in the detail list, never over the space.
+      const over = await room.evaluate(el => { const stage = el.querySelector('.war-stage').getBoundingClientRect(); return [...el.querySelectorAll('.war-extra *')].filter(n => { const r = n.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.top < stage.bottom - 1 && r.bottom > stage.top + 1; }).map(n => n.className).slice(0, 3); });
+      assert.deepEqual(over, [], `${id}: region records drawn over the space`);
       await back();
     }
+    // A tap on empty space (no region, no spider) leaves the detail.
+    await room.locator('.war-caption.is-region[data-war-region="compute"]').click();
+    await page.waitForFunction(() => document.querySelector('#execution-war-room .war-band').dataset.mode === 'detail');
+    const space = await gl.boundingBox();
+    await page.mouse.click(space.x + 14, space.y + 14);
+    await page.waitForFunction(() => document.querySelector('#execution-war-room .war-band').dataset.mode !== 'detail');
     assert.equal(regionCalls.reduce((a, b) => a + b, 0), statusCalls, 'the regions add up to the total; nothing counts twice');
     assert.equal(regionCalls[3], 0, 'no web search counts under 工具调用');
     // Views: follow, free and global; a drag rotates and never opens a region.
@@ -182,6 +191,8 @@ test('war room shows only recorded facts, traces every number, opens by itself, 
       assert.equal(await room.evaluate(el => el.hidden), true);
       const scene = createExecutionScene({ runId: reduced ? 'live-reduced' : 'live-motion', chatId: 'board-chat', query: 'live', startedAt: at(0) });
       for (const row of events(5)) applyExecutionEvent(scene, row);
+      // The lead's own call runs at the same time: the lead stays at the core.
+      applyExecutionEvent(scene, { kind: 'operation', id: 'lead-own', module: 'files', name: 'file_read', status: 'running', input: '/tmp/notes.md', at: at(5) });
       await page.evaluate(scene => window.panel.receiveExecutionScene(scene), JSON.parse(JSON.stringify(scene)));
       await page.waitForFunction(() => !document.querySelector('#execution-war-room').hidden);
       await page.waitForTimeout(1500);
@@ -194,7 +205,7 @@ test('war room shows only recorded facts, traces every number, opens by itself, 
       return { spiders, flew };
     };
     const motion = await live(false);
-    assert.ok(motion.spiders >= 1, 'the running member is out as a spider');
+    assert.equal(motion.spiders, 1, 'only the running member walks out; the lead routes from the core even while its own call runs');
     assert.equal(motion.flew, true, 'finished calls and newly admitted candidates fly to their rows');
     const still = await live(true);
     assert.equal(still.flew, false, 'reduced motion: rows appear without flights');
