@@ -667,3 +667,11 @@ app 的 escapeHtml/showFlashToast 与授权页 formatTime 原样移至 html/feed
 Mac 覆盖安装和正式首启验收均已完成。17 项发布检查通过，安装后 5,778 个原文件哈希一致。用户确认桌面文件夹授权后，已用原账号在正式应用收发测试消息，并确认回复已保存。原有 33 个聊天、752 条消息和原图均保留，新增 1 个验收对话。Agent 管理页可见本机检索深度。验收证据见[安装回执](docs/task-evaluation-b-implementation-20261105.md)。
 
 2026-11-05 用户随后授权 iPhone 覆盖安装。已将同一主线构建装入原实体 iPhone，验证 Melo 启动并进入前台。安装前完整容器两次读取一致，安装后和首启后均保留 18 个聊天、197 条消息、6 个 Agent、26 张原图及账号配置。见[手机安装回执](docs/iphone-task-evaluation-install-20261105.md)。
+
+
+### 2026-11-06 — Codex：Melo 对话归组
+
+- 本线程 `01a1b0c5-782c-7aa1-8310-3e8dffa52147` 按用户要求整理 Codex 侧栏；目标为已有本机项目 melo（`local-0e505ea558257b09e9f39cf3ad0304a1`），项目目录仍为混合工作区，不改变产品仓库。
+- 通过 Codex App 的 `list_projects`、`list_threads`、`move_thread_to_project`、`move_thread_to_sidebar_section` 操作；6 条 Melo 对话取消单独置顶，项目置顶保留。两条历史对话「melo主线（历史）」「Melo AI」恢复显示后归入项目，回读确认归属。
+- 验证层级：App 接口回执及侧栏/历史列表回读；非产品代码或运行态验收。当前活动对话移动接口成功但回读仍无归属；远端「读取 melo ui 方案」因无法安全确定来源项目未能移动，后续需用户在侧栏手动拖入。未逐条审阅无标题远端临时任务。
+- 仅本条交接为文档 WIP，不提交、不推送、不安装；无产品功能改动。
