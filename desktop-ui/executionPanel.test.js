@@ -290,3 +290,62 @@ test('the war room opens by itself at a live run\'s first observable step and ha
   panel.receiveExecutionScene(structuredClone(held));
   assert.equal(room.hidden, false, 'answered: the war room is back');
 });
+
+test('the gate, rail and log say how the run actually ended, and counts past the snapshot caps stay the evaluator totals', async t => {
+  const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost' });
+  const originals = new Map();
+  const install = (key, value) => { originals.set(key, Object.getOwnPropertyDescriptor(globalThis, key)); Object.defineProperty(globalThis, key, { configurable: true, writable: true, value }); };
+  install('document', dom.window.document); install('localStorage', dom.window.localStorage);
+  install('matchMedia', () => ({ matches: true })); install('setInterval', () => 0); install('setTimeout', () => 0); install('clearTimeout', () => {});
+  install('fetch', async () => ({ ok: true, json: async () => ({ scenes: [] }) }));
+  t.after(() => { dom.window.close(); for (const [key, descriptor] of originals) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key]; } });
+  const panel = await loadPanel();
+  updateNeuralWorkspace(document.querySelector('#app'), `<div>${panel.renderExecutionPanel()}</div>`);
+  panel.syncExecutionPanel({ chat: { id: 'chat', messages: [] } });
+  await new Promise(resolve => setImmediate(resolve));
+  const room = document.querySelector('#execution-war-room');
+  // 40 candidates: 30 qualified, 10 excluded; the snapshot carries the first 24.
+  const evaluation = { v: 1, update: 3, ok: true, closed: false,
+    policy: { maxScore: 100, primaryScore: 80, alternativeScore: 65, evidenceScore: 60, primaryCount: 3, alternatives: 3, checkpoint: { milliseconds: 180000, calls: 20 }, memberCalls: 6 },
+    contract: { revision: 1, category: 'events', unit: 'events', mode: 'standard', target: { minimum: 30, maximum: 40 }, explicit: null, constraints: [], requiredFields: ['name', 'startsAt'], coverage: [{ tag: 'music', covered: true }] },
+    summary: { discovered: 40, read: 30, verified: 30, recommended: 1, alternatives: 0, excluded: 10, stop: 'ready_for_review', nextBatch: 0, diminishing: false, adjusted: false, checkpoint: false, gaps: [], gapCount: 0, omitted: 16 },
+    candidates: Array.from({ length: 24 }, (_, i) => ({ key: `e${i}`, name: `Event ${i}`, status: 'verified', tier: i ? 'eligible' : 'primary', total: 90 - i, evidence: 70, match: 30, diversity: 8, reason: '',
+      fields: { name: 'verified', startsAt: 'verified' }, conflicts: 0, excludeReason: '', tags: [] })),
+    resource: { elapsedMs: 1000, toolCalls: 2, inputTokens: 100 } };
+  const run = id => { const scene = createExecutionScene({ runId: id, chatId: 'chat', query: 'events' }); applyExecutionEvent(scene, { kind: 'pipeline', id: 'task-evaluation:1', module: 'compute', name: '评估', status: 'completed', evaluation }); return scene; };
+  const gateState = () => room.querySelector('.war-gate-state');
+  const live = run('ended-failed');
+  panel.receiveExecutionScene(structuredClone(live));
+  assert.equal(room.hidden, false);
+  assert.equal(gateState().dataset.state, 'ready'); assert.equal(gateState().textContent, '可进入核验');
+  assert.deepEqual([...room.querySelectorAll('.war-gate li .war-num')].map(n => n.textContent.replace(' ✓', '')), ['30 / 30', '1', '1 / 1', '0'], 'counted from the evaluator totals, not the 24 rows carried');
+  const ledger = room.querySelector('.war-ledger').textContent;
+  assert.match(ledger, /发现\s*40/); assert.match(ledger, /合格\s*30/); assert.match(ledger, /排除\s*10/);
+  assert.match(room.querySelector('[data-cell="heat"] .war-omitted').textContent, /表中列出 24 条，另有 16 条未随快照记录/);
+  room.querySelector('[data-war-trace="gate:count"]').click();
+  assert.match(room.querySelector('[data-cell="detail"] .war-count').textContent, /30 条记录/);
+  assert.equal(room.querySelectorAll('[data-cell="detail"] .war-trace > li').length, 24);
+  assert.match(room.querySelector('[data-cell="detail"] .war-omitted').textContent, /另有 6 条未随快照记录/);
+  room.querySelector('[data-war-back]').click();
+  // The evaluator was ready; the run then failed. Nothing may say it was verified or delivered.
+  finishExecutionScene(live, { status: 'failed', message: { id: 'answer-failed' } });
+  panel.receiveExecutionScene(structuredClone(live));
+  assert.equal(gateState().dataset.state, 'failed'); assert.equal(gateState().textContent, '任务失败');
+  assert.match(room.querySelector('.war-rail li[data-phase="deliver"]').textContent, /失败/);
+  assert.equal(room.querySelector('.war-log li[data-verb="deliver"] b').textContent, '失败');
+  assert.doesNotMatch(room.textContent, /已核验|已交付/);
+  // Only a completion receipt can say delivered, and only its goal state can say verified.
+  for (const [id, receipt, state, text, end] of [
+    ['ended-verified', { outcome: 'completed', goalState: 'supported' }, 'delivered-verified', '已核验 · 已交付', '交付'],
+    ['ended-partial', { outcome: 'partial', goalState: 'unverified' }, 'partial', '部分完成 · 未全部交付', '部分交付'],
+    ['ended-bare', null, 'ended', '已结束 · 没有完成回执', '结束']]) {
+    const scene = run(id);
+    finishExecutionScene(scene, { status: 'completed', message: receipt ? { id: `answer-${id}`, metadata: { completion: receipt } } : { id: `answer-${id}` } });
+    panel.receiveExecutionScene(structuredClone(scene));
+    panel.openExecutionRun?.(id);
+    const select = room.querySelector('[data-execution-history]');
+    if (select && select.value !== id) { select.value = id; select.dispatchEvent(new dom.window.Event('change', { bubbles: true })); }
+    assert.equal(gateState().dataset.state, state, id); assert.equal(gateState().textContent, text, id);
+    assert.match(room.querySelector('.war-rail li[data-phase="deliver"]').textContent, new RegExp(end), id);
+  }
+});

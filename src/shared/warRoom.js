@@ -63,25 +63,31 @@ export function operationChip(op) {
 
 // The delivery gate: four rows read straight from the evaluation snapshot;
 // whether the gate is open is the evaluator's own `stop`, not recomputed.
+// Counts come from the evaluator's own totals: the snapshot carries at most
+// 24 candidates and 4 gaps, and counting those rows would undercount.
+const total = (value, rows) => Number.isInteger(value) && value >= rows ? value : rows;
 export function deliveryGate(snapshot) {
   if (!snapshot?.contract) return null;
   const summary = snapshot.summary || {}, contract = snapshot.contract, candidates = snapshot.candidates || [];
   const explicit = Number.isInteger(contract.explicit?.value) ? contract.explicit.value : null, minimum = Number.isInteger(contract.target?.minimum) ? contract.target.minimum : null;
-  const need = explicit ?? minimum ?? 1, qualified = candidates.filter(row => QUALIFIED.includes(row.tier)).length;
-  const primary = candidates.filter(row => row.tier === 'primary').length, coverage = contract.coverage || [], covered = coverage.filter(row => row.covered).length, gaps = summary.gaps || [];
+  const need = explicit ?? minimum ?? 1, qualified = total(summary.verified, candidates.filter(row => QUALIFIED.includes(row.tier)).length);
+  const primary = total(summary.recommended, candidates.filter(row => row.tier === 'primary').length), coverage = contract.coverage || [], covered = coverage.filter(row => row.covered).length;
+  const gaps = total(summary.gapCount, (summary.gaps || []).length);
   const rows = [
     { key: 'count', value: `${qualified} / ${need}`, met: qualified >= need },
     { key: 'primary', value: String(primary), met: primary > 0 },
     { key: 'coverage', value: `${covered} / ${coverage.length}`, met: covered === coverage.length },
-    { key: 'gaps', value: String(gaps.length), met: gaps.length === 0 },
+    { key: 'gaps', value: String(gaps), met: gaps === 0 },
   ];
   return { rows, met: rows.filter(row => row.met).length, open: summary.stop === 'ready_for_review', stop: summary.stop || null, nextBatch: summary.nextBatch ?? null };
 }
 
-// What a number on screen counts. `count` is the number displayed and always
-// equals `rows.length`, except the token trace, whose `total` is the sum of
-// the rows it lists. Rows point back to records: an operation or stage id
-// (opens the execution detail), a source URL, or a candidate key.
+// What a number on screen counts. `count` is the number displayed and equals
+// `rows.length + omitted`: rows are every record the scene holds; `omitted`
+// counts the ones the evaluator totalled but the snapshot did not carry
+// (it keeps at most 24 candidates and 4 gaps). The token trace's `total` is
+// the sum of the rows it lists. Rows point back to records: an operation or
+// stage id (opens the execution detail), a source URL, or a candidate key.
 const operationRow = (op, scene) => {
   const actor = operationActor(scene, op.id);
   return { kind: 'operation', id: op.id, verb: operationVerb(op), module: op.module, name: op.name || '', status: op.status, actor: actor ? { kind: actor.kind, role: actor.role, index: actor.index } : null,
@@ -92,7 +98,10 @@ const stageRow = stage => ({ kind: 'stage', id: stage.id, module: stage.module |
 const candidateRow = row => ({ kind: 'candidate', id: row.key, name: row.name, tier: row.tier, total: row.total, fields: row.fields || {}, reason: row.excludeReason || row.reason || '' });
 export function traceList(scene, key, { snapshot = sceneEvaluation(scene).snapshot, now = null } = {}) {
   const [kind, arg = ''] = String(key).split(':'), operations = scene?.operations || [], pipeline = scene?.pipeline || [];
-  const done = rows => ({ key, kind, arg, count: rows.length, rows });
+  const done = rows => ({ key, kind, arg, count: rows.length, rows, omitted: 0 });
+  // Rows the snapshot carries, counted against the evaluator's own total.
+  const counted = (rows, all) => { const count = total(all, rows.length); return { key, kind, arg, count, rows, omitted: count - rows.length }; };
+  const summary = snapshot?.summary || {}, listed = (snapshot?.candidates || []).length, everyone = listed + (Number.isInteger(summary.omitted) ? summary.omitted : 0);
   if (kind === 'calls') return done(operations.map(op => operationRow(op, scene)));
   if (kind === 'region' && EXECUTION_MODULES.some(m => m.id === arg)) {
     const calls = regionCalls(scene, arg).map(op => operationRow(op, scene)), stages = pipeline.filter(stage => (stage.module || 'create') === arg).map(stageRow);
@@ -112,17 +121,20 @@ export function traceList(scene, key, { snapshot = sceneEvaluation(scene).snapsh
   }
   if (kind === 'candidates') {
     const all = snapshot?.candidates || [];
-    const rows = arg === 'qualified' ? all.filter(row => QUALIFIED.includes(row.tier)) : arg === 'excluded' ? all.filter(row => row.tier === 'excluded') : arg === 'top' ? all.filter(row => QUALIFIED.includes(row.tier)).sort((a, b) => b.total - a.total).slice(0, 1) : all;
-    return done(rows.map(candidateRow));
+    if (arg === 'top') return done(all.filter(row => QUALIFIED.includes(row.tier)).sort((a, b) => b.total - a.total).slice(0, 1).map(candidateRow));
+    if (arg === 'qualified') return counted(all.filter(row => QUALIFIED.includes(row.tier)).map(candidateRow), summary.verified);
+    if (arg === 'excluded') return counted(all.filter(row => row.tier === 'excluded').map(candidateRow), summary.excluded);
+    return counted(all.map(candidateRow), everyone);
   }
   if (kind === 'gate') {
     const all = snapshot?.candidates || [], contract = snapshot?.contract;
-    if (arg === 'count') return done(all.filter(row => QUALIFIED.includes(row.tier)).map(candidateRow));
-    if (arg === 'primary') return done(all.filter(row => row.tier === 'primary').map(candidateRow));
+    if (arg === 'count') return counted(all.filter(row => QUALIFIED.includes(row.tier)).map(candidateRow), summary.verified);
+    if (arg === 'primary') return counted(all.filter(row => row.tier === 'primary').map(candidateRow), summary.recommended);
     if (arg === 'coverage') return done((contract?.coverage || []).map(row => ({ kind: 'coverage', id: row.tag, tag: row.tag, covered: !!row.covered })));
-    if (arg === 'gaps') return done((snapshot?.summary?.gaps || []).map((text, i) => ({ kind: 'gap', id: `gap-${i}`, text })));
+    if (arg === 'gaps') return counted((summary.gaps || []).map((text, i) => ({ kind: 'gap', id: `gap-${i}`, text })), summary.gapCount);
   }
-  if (kind === 'field') return done((snapshot?.candidates || []).filter(row => row.fields && arg in row.fields).map(candidateRow));
+  // Every candidate has every required field, so a field column counts them all.
+  if (kind === 'field') return counted((snapshot?.candidates || []).filter(row => row.fields && arg in row.fields).map(candidateRow), (snapshot?.contract?.requiredFields || []).includes(arg) ? everyone : null);
   if (kind === 'candidate') return done((snapshot?.candidates || []).filter(row => row.key === arg).map(candidateRow));
   if (kind === 'checkpoint') {
     const policy = snapshot?.policy || {}, rows = [];
@@ -144,3 +156,24 @@ export const sceneNeedsUser = scene => !!scene && !sceneFinished(scene) && ((sce
   || (scene.pipeline || []).some(stage => /^routing:approval:/.test(stage.id) && ['waiting', 'running', 'queued'].includes(stage.status)));
 export const shouldAutoOpen = (scene, { opened = false, dismissed = false, autoOpened = false } = {}) => !!scene && !sceneFinished(scene) && !opened && !dismissed && !autoOpened && sceneHasExecution(scene) && !sceneNeedsUser(scene);
 export const finishedOperations = scene => (scene?.operations || []).filter(op => TERMINAL.includes(op.status)).map(op => op.id);
+
+// Where delivery stands, from the record alone. While the run is live: the
+// evaluator's stop and the latest delivery check. Once it ends: the run's own
+// end first (failed, cancelled, interrupted), then its completion receipt
+// (outcome, goalState). A run that merely ended is never shown as delivered,
+// and only a receipt whose goal state is verified or supported reads as
+// verified.
+export const DELIVERY_STATES = Object.freeze(['continue', 'ready', 'checking', 'check-failed', 'delivered-verified', 'delivered', 'delivered-unverified', 'partial', 'needs-user', 'budget', 'blocked', 'cancelled', 'failed', 'interrupted', 'ended']);
+export function deliveryStatus(scene, snapshot = sceneEvaluation(scene).snapshot) {
+  const check = (scene?.pipeline || []).filter(stage => /^goal-check:/.test(stage.id)).at(-1) || null;
+  if (!sceneFinished(scene)) {
+    if (check?.status === 'running') return 'checking';
+    if (!deliveryGate(snapshot)?.open) return 'continue';
+    return check?.status === 'failed' ? 'check-failed' : 'ready';
+  }
+  if (['cancelled', 'failed', 'interrupted'].includes(scene.status)) return scene.status;
+  const receipt = scene.completion;
+  if (!receipt?.outcome) return 'ended';
+  if (receipt.outcome === 'completed') return ['verified', 'supported'].includes(receipt.goalState) ? 'delivered-verified' : receipt.goalState === 'not_applicable' ? 'delivered' : 'delivered-unverified';
+  return { unverified: 'delivered-unverified', partial: 'partial', needs_user: 'needs-user', budget_exhausted: 'budget', cancelled: 'cancelled' }[receipt.outcome] || 'blocked';
+}

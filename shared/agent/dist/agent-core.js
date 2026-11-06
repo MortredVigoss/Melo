@@ -252,9 +252,10 @@ function taskEvaluationSnapshot(state) {
       requiredFields: required.map(name => clip(name, 40)),
       coverage: list(contract.coverage).slice(0, L.coverage).map(tag => ({ tag: clip(tag, 32), covered: qualified.some(row => list(row.tags).includes(tag)) })) } : null,
     summary: summary ? { discovered: whole(summary.discovered, p.maxCandidates), read: whole(summary.read, p.maxCandidates), verified: whole(summary.verified, p.maxCandidates),
-      recommended: whole(summary.recommended, p.primaryCount), alternatives: whole(summary.alternatives, p.alternatives), stop: pick(summary.stop, ['continue','ready_for_review'], 'continue'),
+      recommended: whole(summary.recommended, p.primaryCount), alternatives: whole(summary.alternatives, p.alternatives), excluded: whole(candidates.filter(row => row.tier === 'excluded').length, p.maxCandidates),
+      stop: pick(summary.stop, ['continue','ready_for_review'], 'continue'),
       nextBatch: whole(summary.nextBatch, 100), diminishing: summary.diminishing === true, adjusted: summary.adjusted === true, checkpoint: summary.checkpoint === true,
-      gaps: list(summary.gaps).slice(0, L.gaps).map(gap => clip(gap, 160)), omitted: Math.max(0, candidates.length - L.candidates) } : null,
+      gaps: list(summary.gaps).slice(0, L.gaps).map(gap => clip(gap, 160)), gapCount: whole(list(summary.gaps).length, 100), omitted: Math.max(0, candidates.length - L.candidates) } : null,
     candidates: candidates.slice(0, L.candidates),
     resource: { elapsedMs: whole(state.resourceUse?.elapsedMs), toolCalls: whole(state.resourceUse?.toolCalls), inputTokens: whole(state.resourceUse?.inputTokens) } };
 }
@@ -282,7 +283,8 @@ function normalizeEvaluationSnapshot(raw) {
       summary: s ? { discovered: whole(s.discovered, p.maxCandidates), read: whole(s.read, p.maxCandidates), verified: whole(s.verified, p.maxCandidates),
         recommended: whole(s.recommended, 20), alternatives: whole(s.alternatives, 20), stop: pick(s.stop, ['continue','ready_for_review'], 'continue'), nextBatch: whole(s.nextBatch, 100),
         diminishing: s.diminishing === true, adjusted: s.adjusted === true, checkpoint: s.checkpoint === true,
-        gaps: list(s.gaps).slice(0, L.gaps).map(gap => clip(gap, 160)).filter(Boolean), omitted: whole(s.omitted, p.maxCandidates) } : null,
+        gaps: list(s.gaps).slice(0, L.gaps).map(gap => clip(gap, 160)).filter(Boolean), omitted: whole(s.omitted, p.maxCandidates),
+        ...(s.excluded == null ? {} : { excluded: whole(s.excluded, p.maxCandidates) }), ...(s.gapCount == null ? {} : { gapCount: whole(s.gapCount, 100) }) } : null,
       candidates: list(raw.candidates).slice(0, L.candidates).filter(object).map(row => ({ key: clip(row.key, 80), name: clip(row.name, 80) || clip(row.key, 80),
         status: pick(row.status, SNAPSHOT_STATUSES, 'discovered'), tier: pick(row.tier, SNAPSHOT_TIERS, 'pending'),
         total: whole(row.total, 100), evidence: whole(row.evidence, 100), match: whole(row.match, 100), diversity: whole(row.diversity, 100), reason: clip(row.reason, 120),

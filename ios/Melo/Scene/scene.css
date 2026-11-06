@@ -1449,7 +1449,12 @@ html[data-scene-host=phone] .war-voice { display: inline-flex; align-items: cent
 .war-gate ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; font-size: 10px; color: var(--wr-muted-2); }
 .war-gate li { display: flex; justify-content: space-between; gap: 6px; white-space: nowrap; }
 .war-gate li[data-met=true] .war-num { color: var(--wr-gold); }
-.war-gate-state { margin: 6px 0 0; font-size: 11px; } .war-gate[data-open=true] + .war-gate-state { color: var(--wr-gold-bright); }
+.war-gate-state { margin: 6px 0 0; font-size: 11px; }
+/* The state line's colour follows how delivery actually stands (deliveryStatus). */
+.war-gate-state[data-state=delivered-verified] { color: var(--wr-gold-bright); }
+.war-gate-state:is([data-state=ready], [data-state=checking]) { color: var(--wr-gold); }
+.war-gate-state:is([data-state=failed], [data-state=cancelled], [data-state=interrupted], [data-state=blocked], [data-state=budget], [data-state=check-failed]) { color: var(--wr-coral); }
+.war-omitted { margin: 6px 0 0; font-size: 10px; color: var(--wr-muted); }
 .war-heat { width: 100%; border-collapse: separate; border-spacing: 2px; table-layout: fixed; font-size: 10px; }
 .war-heat th { font-weight: 400; color: var(--wr-muted); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .war-heat th button { max-width: 100%; font-size: inherit; border: 0; background: transparent; padding: 0; color: inherit; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

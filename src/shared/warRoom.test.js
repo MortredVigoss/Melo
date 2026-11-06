@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createExecutionScene, applyExecutionEvent, finishExecutionScene, moduleForOperation, EXECUTION_MODULES } from './executionScene.js';
-import { regionSummary, regionCalls, sceneActors, operationChip, deliveryGate, traceList, sceneHasExecution, sceneNeedsUser, shouldAutoOpen, finishedOperations } from './warRoom.js';
+import { regionSummary, regionCalls, sceneActors, operationChip, deliveryGate, traceList, sceneHasExecution, sceneNeedsUser, shouldAutoOpen, finishedOperations, deliveryStatus, DELIVERY_STATES } from './warRoom.js';
 import { sceneResources } from './executionBoard.js';
 
 const op = (scene, id, module, name, status, extra = {}) => applyExecutionEvent(scene, { kind: 'operation', id, module, name, status, ...extra });
@@ -139,4 +139,53 @@ test('the war room opens by itself only for a live run that did something observ
   finishExecutionScene(run, { status: 'completed' });
   assert.equal(shouldAutoOpen(run), false);
   assert.deepEqual(finishedOperations(run).sort(), ['job-1:read', 'job-1:search', 'lead-calc', 'lead-notify'].sort());
+});
+
+test('past the snapshot row caps, every count stays the evaluator\'s own total and its trace says what is not listed', () => {
+  // 30 qualified, 10 excluded, 7 gaps; the snapshot carries 24 candidates and 4 gaps.
+  const rows = Array.from({ length: 24 }, (_, i) => ({ key: `q${i}`, name: `Q${i}`, tier: i === 0 ? 'primary' : 'eligible', total: 90 - i, fields: { name: 'verified', startsAt: 'verified' } }));
+  const big = { ...snapshot, summary: { discovered: 40, verified: 30, recommended: 1, excluded: 10, stop: 'ready_for_review', nextBatch: 0, gaps: ['a', 'b', 'c', 'd'], gapCount: 7, omitted: 16 },
+    contract: { ...snapshot.contract, target: { minimum: 30, maximum: 40 } }, candidates: rows };
+  const gate = deliveryGate(big);
+  assert.deepEqual(gate.rows.map(r => [r.key, r.value, r.met]), [['count', '30 / 30', true], ['primary', '1', true], ['coverage', '1 / 2', false], ['gaps', '7', false]], 'never 24 / 30 with the gate open');
+  const scene = memberRun(), trace = key => traceList(scene, key, { snapshot: big });
+  for (const [key, count, listed] of [['gate:count', 30, 24], ['candidates:qualified', 30, 24], ['candidates:excluded', 10, 0], ['candidates:all', 40, 24], ['gate:gaps', 7, 4], ['field:startsAt', 40, 24], ['gate:primary', 1, 1]]) {
+    const list = trace(key);
+    assert.equal(list.count, count, key); assert.equal(list.rows.length, listed, key); assert.equal(list.omitted, count - listed, key);
+  }
+  // An older record without the totals counts what it carries, and says nothing is missing.
+  const older = { ...big, summary: { ...big.summary, excluded: undefined, gapCount: undefined } };
+  assert.equal(deliveryGate(older).rows[3].value, '4'); assert.equal(trace('candidates:excluded').omitted, 10);
+  assert.equal(traceList(scene, 'candidates:excluded', { snapshot: older }).omitted, 0);
+});
+
+test('delivery reads the run\'s end and its completion receipt, never the bare fact that it ended', () => {
+  const open = { ...snapshot, summary: { ...snapshot.summary, stop: 'ready_for_review' } };
+  const run = (status, receipt, stages = []) => {
+    const scene = createExecutionScene({ runId: `d-${status}-${receipt?.outcome}-${receipt?.goalState}`, chatId: 'c' });
+    for (const [id, state] of stages) stage(scene, id, state);
+    if (status) finishExecutionScene(scene, { status, message: receipt ? { id: 'm', metadata: { completion: receipt } } : { id: 'm' } });
+    return deliveryStatus(scene, open);
+  };
+  // Live: the evaluator decides readiness; the delivery check decides the rest.
+  assert.equal(deliveryStatus(createExecutionScene({ runId: 'live', chatId: 'c' }), snapshot), 'continue');
+  assert.equal(run(null, null), 'ready');
+  assert.equal(run(null, null, [['goal-check:3', 'running']]), 'checking');
+  assert.equal(run(null, null, [['goal-check:3', 'failed']]), 'check-failed');
+  // Ended: the run's own end first, whatever the evaluator said.
+  for (const status of ['failed', 'cancelled', 'interrupted']) assert.equal(run(status, { outcome: 'completed', goalState: 'verified' }), status, status);
+  // Completed: only the receipt can say delivered, and only its goal state can say verified.
+  assert.equal(run('completed', { outcome: 'completed', goalState: 'verified' }), 'delivered-verified');
+  assert.equal(run('completed', { outcome: 'completed', goalState: 'supported' }), 'delivered-verified');
+  assert.equal(run('completed', { outcome: 'completed', goalState: 'unverified' }), 'delivered-unverified');
+  assert.equal(run('completed', { outcome: 'completed', goalState: 'not_applicable' }), 'delivered');
+  assert.equal(run('completed', { outcome: 'unverified' }), 'delivered-unverified');
+  assert.equal(run('completed', { outcome: 'partial', goalState: 'unverified' }), 'partial');
+  assert.equal(run('completed', { outcome: 'needs_user' }), 'needs-user');
+  assert.equal(run('completed', { outcome: 'budget_exhausted' }), 'budget');
+  assert.equal(run('completed', { outcome: 'blocked' }), 'blocked');
+  assert.equal(run('completed', { outcome: 'cancelled' }), 'cancelled');
+  assert.equal(run('completed', null), 'ended', 'no receipt: ended, nothing more is claimed');
+  assert.equal(run('completed', null, [['goal-check:3', 'completed']]), 'ended', 'a passing check is not a delivery receipt');
+  for (const value of [run('failed', null), run('completed', { outcome: 'odd' })]) assert.ok(DELIVERY_STATES.includes(value), value);
 });

@@ -5,6 +5,25 @@ export { INTERFACE_TERMS as interfaceTermKeys } from './interfaceLanguages.js';
 // Columns: Chinese source / English / Japanese / Korean / Spanish.
 const rows = [
 // War room (layout A, 2026-11-06).
+// War room delivery states and exact totals (layout A, C8, 2026-11-06).
+["中断", "Interrupted", "中断", "중단", "Interrumpido"],
+["部分交付", "Partly delivered", "一部納品", "일부 전달", "Entrega parcial"],
+["待补充", "Needs input", "補足待ち", "보충 필요", "Falta información"],
+["预算用尽", "Budget spent", "予算切れ", "예산 소진", "Presupuesto agotado"],
+["未完成", "Not finished", "未完了", "미완료", "Sin terminar"],
+["核验中", "Checking", "検証中", "검증 중", "Verificando"],
+["核验未通过 · 继续补证", "Check failed · gathering more evidence", "検証不合格 · 証拠を補強中", "검증 실패 · 근거 보강 중", "Verificación fallida · reuniendo más pruebas"],
+["已交付 · 未核验", "Delivered · not verified", "納品済み · 未検証", "전달됨 · 검증 안 됨", "Entregado · sin verificar"],
+["部分完成 · 未全部交付", "Partly done · not all delivered", "一部完了 · すべては未納品", "일부 완료 · 전부 전달되지 않음", "Parcialmente hecho · no todo entregado"],
+["等待你的补充", "Waiting for your input", "あなたの補足を待っています", "추가 입력을 기다리는 중", "Esperando tu respuesta"],
+["预算用尽 · 未完成交付", "Budget spent · delivery not finished", "予算切れ · 納品未完了", "예산 소진 · 전달 미완료", "Presupuesto agotado · entrega sin terminar"],
+["未能完成交付", "Could not deliver", "納品できませんでした", "전달하지 못함", "No se pudo entregar"],
+["任务已取消", "Task cancelled", "タスクはキャンセルされました", "작업이 취소됨", "Tarea cancelada"],
+["任务失败", "Task failed", "タスク失敗", "작업 실패", "La tarea falló"],
+["任务已中断", "Task interrupted", "タスクが中断されました", "작업이 중단됨", "Tarea interrumpida"],
+["已结束 · 没有完成回执", "Ended · no completion receipt", "終了 · 完了レシートなし", "종료 · 완료 기록 없음", "Terminado · sin comprobante de finalización"],
+["表中列出 {listed} 条，另有 {count} 条未随快照记录", "{listed} listed here; {count} more not carried by the snapshot", "表に {listed} 件、さらに {count} 件はスナップショットに含まれていません", "표에 {listed}개, 그 외 {count}개는 스냅숏에 포함되지 않음", "{listed} en la tabla; otras {count} no van en la instantánea"],
+["另有 {count} 条未随快照记录，数量取自评估器的总数", "{count} more are not carried by the snapshot; the count is the evaluator's total", "さらに {count} 件はスナップショットに含まれません。件数は評価器の合計です", "그 외 {count}개는 스냅숏에 포함되지 않으며, 개수는 평가기의 합계입니다", "Otras {count} no van en la instantánea; el número es el total del evaluador"],
 ["作战大屏","War room","作戦スクリーン","작전 화면","Sala de operaciones"],
 ["进入作战大屏","Open war room","作戦スクリーンを開く","작전 화면 열기","Abrir sala de operaciones"],
 ["执行已停止 · 回看记录","Run stopped · reviewing the record","実行は停止 · 記録を表示中","실행 중지 · 기록 보기","Ejecución detenida · revisando el registro"],

@@ -357,6 +357,9 @@ export function createWarRoomScene(host, { onProject, onSelectRegion, onHook, on
     const rect = canvas.getBoundingClientRect(); let best = null, bestD = Infinity;
     for (const a of actors.values()) { const p = project(a.pos); if (!p.visible) continue; const d = Math.hypot(rect.left + p.x - x, rect.top + p.y - y); if (d < 34 && d < bestD) { best = { actor: a.id }; bestD = d; } }
     if (!best) for (const r of regions) { const p = project(r.center), q = project(scratch.copy(r.center).addScaledVector(rightAxis(), r.body)); if (!p.visible) continue; const d = Math.hypot(rect.left + p.x - x, rect.top + p.y - y), radius = Math.hypot(q.x - p.x, q.y - p.y); if (d < radius && d / radius < bestD) { best = { region: r.id }; bestD = d / radius; } }
+    // A pick is the user's own action, as a click on any control is: an auto-opened
+    // war room must not then hand back to the chat under them.
+    if (best) onInteract?.();
     if (best?.actor) setView('follow', { followId: best.actor });
     else if (best?.region) onSelectRegion?.(best.region);
   }
@@ -419,6 +422,7 @@ export function createWarRoomScene(host, { onProject, onSelectRegion, onHook, on
     host.dataset.spiders = String(actors.size); host.dataset.view = view.region ? `region:${view.region}` : view.mode; host.dataset.zoom = view.zoom.toFixed(3);
     host.dataset.camera = camera.position.toArray().map(n => n.toFixed(0)).join(',');
     // The global view's promise, readable by tests: where the regions' outlines land on this stage.
+    host.dataset.regions = [...rects].map(([id, r]) => `${id}:${((r.x0 + r.x1) / 2).toFixed(0)},${((r.y0 + r.y1) / 2).toFixed(0)}`).join(';');
     if (view.mode === 'global' && !view.region && bx0 <= bx1) host.dataset.bounds = [bx0, by0, bx1, by1, width, height].map(n => n.toFixed(0)).join(','); else delete host.dataset.bounds;
     if (motion) raf = requestAnimationFrame(frame);
   }

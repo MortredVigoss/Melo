@@ -10,7 +10,7 @@
 import { escapeHtml, t, runtimeCompletionText } from './i18n.js';
 import { EXECUTION_MODULES, sceneFinished } from '/shared/executionScene.js';
 import { sceneMembers, sceneEvaluation, sceneStageRail, sceneLog, sceneResources, sceneHasBoard, evaluationChanges, MEMBER_ROLE_MODULE } from '/shared/executionBoard.js';
-import { regionSummary, deliveryGate, traceList, operationChip, sceneActors } from '/shared/warRoom.js';
+import { regionSummary, deliveryGate, deliveryStatus, traceList, operationChip, sceneActors } from '/shared/warRoom.js';
 
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const roleName = role => ({ research: t('检索成员'), lookup: t('资料读取成员'), calculate: t('计算成员'), execute: t('执行成员'), lead: t('主 Agent') })[role] || t('内部成员');
@@ -18,6 +18,14 @@ const verbName = verb => ({ dispatch: t('分派'), handoff: t('交接'), search:
   approval: t('审批'), evaluate: t('评估'), review: t('核验'), stop: t('停止'), deliver: t('交付') })[verb] || verb;
 const phaseName = key => ({ contract: t('合同'), dispatch: t('分派'), approval: t('审批'), evaluate: t('评估'), review: t('核验'), deliver: t('交付') })[key] || key;
 const statusText = status => ({ running: t('进行中'), waiting: t('等待'), queued: t('排队'), completed: t('完成'), failed: t('未通过'), cancelled: t('已取消'), interrupted: t('已中断') })[status] || status || '';
+// How a run ended, from its completion receipt (see deliveryStatus): the short
+// word for the rail and the log, and the gate's state line.
+const endName = state => ({ 'delivered-verified': t('交付'), delivered: t('交付'), 'delivered-unverified': t('交付'), partial: t('部分交付'), 'needs-user': t('待补充'),
+  budget: t('预算用尽'), blocked: t('未完成'), cancelled: t('已取消'), failed: t('失败'), interrupted: t('中断'), ended: t('结束') })[state] || t('结束');
+const deliveryText = (state, nextBatch) => ({ continue: nextBatch ? t('继续检索 · 下一批 {count}', { count: nextBatch }) : t('继续检索'), ready: t('可进入核验'), checking: t('核验中'),
+  'check-failed': t('核验未通过 · 继续补证'), 'delivered-verified': t('已核验 · 已交付'), delivered: t('已交付'), 'delivered-unverified': t('已交付 · 未核验'),
+  partial: t('部分完成 · 未全部交付'), 'needs-user': t('等待你的补充'), budget: t('预算用尽 · 未完成交付'), blocked: t('未能完成交付'), cancelled: t('任务已取消'),
+  failed: t('任务失败'), interrupted: t('任务已中断'), ended: t('已结束 · 没有完成回执') })[state] || '';
 const tierName = tier => ({ primary: t('主推'), alternative: t('备选'), eligible: t('合格'), pending: t('待补'), excluded: t('排除') })[tier] || tier;
 const fieldName = field => ({ name: t('名称'), startsAt: t('时间'), place: t('地点'), participation: t('参与方式'), model: t('型号'), region: t('地区'), price: t('价格'), currency: t('币种'), availability: t('在售') })[field] || String(field).slice(0, 8);
 const regionName = id => t(EXECUTION_MODULES.find(m => m.id === id)?.name || id);
@@ -239,7 +247,7 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
       keys.add(key);
       const actor = row.actor?.role === 'lead' ? (ctx.leadName || t('主 Agent')) : `${roleName(row.actor?.role)}${row.actor?.index ? ' #' + row.actor.index : ''}`;
       const text = row.verb === 'evaluate' && row.summary ? t('发现 {found} · 合格 {qualified} · 主推 {primary}', { found: row.summary.discovered ?? 0, qualified: row.summary.verified ?? 0, primary: row.summary.recommended ?? 0 }) : row.verb === 'dispatch' && row.target ? `→ ${roleName(row.target.role)} #${row.target.index} · ${row.detail}` : row.verb === 'deliver' && row.outcome ? (scene.completion?.summary ? runtimeCompletionText(scene.completion) : statusText(row.status)) : row.detail;
-      const html = `<button type="button" data-war-record="${escapeHtml(row.id === 'scene:finish' ? '' : row.id)}"><time>${clock(row.offsetMs)}</time><b>${escapeHtml(verbName(row.verb))}</b><span>${dot(row.actor?.role, row.actor?.role === 'lead' ? '' : undefined)}${escapeHtml(actor)}</span><em>${escapeHtml(String(text || '').slice(0, 200))}</em></button>`;
+      const html = `<button type="button" data-war-record="${escapeHtml(row.id === 'scene:finish' ? '' : row.id)}"><time>${clock(row.offsetMs)}</time><b>${escapeHtml(row.id === 'scene:finish' ? endName(deliveryStatus(scene)) : verbName(row.verb))}</b><span>${dot(row.actor?.role, row.actor?.role === 'lead' ? '' : undefined)}${escapeHtml(actor)}</span><em>${escapeHtml(String(text || '').slice(0, 200))}</em></button>`;
       let li = c.rows.get(key);
       if (!li) {
         li = document.createElement('li'); li.dataset.rowKey = key; li.dataset.verb = row.verb; li.innerHTML = html; li.dataset.html = html;
@@ -265,19 +273,20 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
     if (!gate) { fill(c, empty(t('建立任务合同后出现'))); return; }
     const arc = i => { const a0 = Math.PI * (1.25 - i * .5) - .08, a1 = Math.PI * (1.25 - (i + 1) * .5) + .08; const p = a => [48 + 36 * Math.cos(a), 48 - 36 * Math.sin(a)].map(v => v.toFixed(1)).join(' '); return `M${p(a0)} A36 36 0 0 1 ${p(a1)}`; };
     const names = { count: t('数量'), primary: t('主推'), coverage: t('覆盖'), gaps: t('缺口') };
-    const state = gate.open ? (sceneFinished(scene) ? t('已核验 · 已交付') : t('可进入核验')) : gate.nextBatch ? t('继续检索 · 下一批 {count}', { count: gate.nextBatch }) : t('继续检索');
-    fill(c, `<div class="war-gate" data-open="${gate.open}"><svg viewBox="0 0 96 96" role="img" aria-label="${escapeHtml(t('满足 {met} / 4 项', { met: gate.met }))}">${gate.rows.map((r, i) => `<path class="war-arc" data-met="${r.met}" d="${arc(i)}"/>`).join('')}<text x="48" y="54" text-anchor="middle">${gate.met}/4</text></svg><ul>${gate.rows.map(r => `<li data-met="${r.met}"><span>${escapeHtml(names[r.key])}</span>${trace(`gate:${r.key}`, `${escapeHtml(r.value)}${r.met ? ' ✓' : ''}`)}</li>`).join('')}</ul></div><p class="war-gate-state">${escapeHtml(state)}</p>`);
+    const status = deliveryStatus(scene, snapshot), state = deliveryText(status, gate.nextBatch);
+    fill(c, `<div class="war-gate" data-open="${gate.open}"><svg viewBox="0 0 96 96" role="img" aria-label="${escapeHtml(t('满足 {met} / 4 项', { met: gate.met }))}">${gate.rows.map((r, i) => `<path class="war-arc" data-met="${r.met}" d="${arc(i)}"/>`).join('')}<text x="48" y="54" text-anchor="middle">${gate.met}/4</text></svg><ul>${gate.rows.map(r => `<li data-met="${r.met}"><span>${escapeHtml(names[r.key])}</span>${trace(`gate:${r.key}`, `${escapeHtml(r.value)}${r.met ? ' ✓' : ''}`)}</li>`).join('')}</ul></div><p class="war-gate-state" data-state="${escapeHtml(status)}">${escapeHtml(state)}</p>`);
   }
   function renderHeat(snapshot) {
     const c = cell('heat');
     head(c, t('证据热力'), snapshot ? escapeHtml(t('候选 × 必填字段')) : '');
     if (!snapshot) { fill(c, empty(sceneEvaluation(scene).updates ? t('这条记录没有结构化评估数据') : t('还没有候选'))); return; }
     const fields = (snapshot.contract?.requiredFields || []).slice(0, 6), all = snapshot.candidates || [];
-    const qualified = all.filter(r => ['primary', 'alternative', 'eligible'].includes(r.tier)), excluded = all.filter(r => r.tier === 'excluded');
-    const top = qualified.length ? Math.max(...qualified.map(r => r.total)) : null;
+    const qualified = all.filter(r => ['primary', 'alternative', 'eligible'].includes(r.tier)), count = key => traceList(scene, key, { snapshot });
+    const top = qualified.length ? Math.max(...qualified.map(r => r.total)) : null, everyone = count('candidates:all');
     const rows = all.map(r => { const key = 'cand:' + r.key; return `<tr data-row-key="${escapeHtml(key)}" data-tier="${escapeHtml(r.tier)}" data-pending="${pending.has(key)}"><th><button type="button" data-war-trace="${escapeHtml('candidate:' + r.key)}" title="${escapeHtml(`${r.name} · ${r.total} · ${tierName(r.tier)}${r.excludeReason ? ' · ' + r.excludeReason : ''}`)}">${escapeHtml(r.name)}</button></th>${fields.map(f => `<td data-s="${escapeHtml(r.fields?.[f] || 'missing')}"></td>`).join('')}</tr>`; }).join('');
     fill(c, `<table class="war-heat"><thead><tr><th></th>${fields.map(f => `<th><button type="button" data-war-trace="${escapeHtml('field:' + f)}" title="${escapeHtml(fieldName(f))}">${escapeHtml(fieldName(f))}</button></th>`).join('')}</tr></thead><tbody>${rows || `<tr><th>${escapeHtml(t('等待主 Agent 评估…'))}</th>${fields.map(() => '<td></td>').join('')}</tr>`}</tbody></table>
-      <div class="war-ledger">${trace('candidates:all', `${escapeHtml(t('发现'))}<b>${all.length}</b>`)}${trace('candidates:qualified', `${escapeHtml(t('合格'))}<b>${qualified.length}</b>`)}${trace('candidates:excluded', `${escapeHtml(t('排除'))}<b>${excluded.length}</b>`)}${trace('candidates:top', `${escapeHtml(t('最高'))}<b>${top ?? '—'}</b>`)}</div>`);
+      ${everyone.omitted ? `<p class="war-omitted">${escapeHtml(t('表中列出 {listed} 条，另有 {count} 条未随快照记录', { listed: all.length, count: everyone.omitted }))}</p>` : ''}
+      <div class="war-ledger">${trace('candidates:all', `${escapeHtml(t('发现'))}<b>${everyone.count}</b>`)}${trace('candidates:qualified', `${escapeHtml(t('合格'))}<b>${count('candidates:qualified').count}</b>`)}${trace('candidates:excluded', `${escapeHtml(t('排除'))}<b>${count('candidates:excluded').count}</b>`)}${trace('candidates:top', `${escapeHtml(t('最高'))}<b>${top ?? '—'}</b>`)}</div>`);
   }
   function renderCoverage(snapshot) {
     const c = cell('coverage');
@@ -317,7 +326,8 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
     const title = detail.type === 'region' ? regionName(detail.id) : traceTitle(list);
     const count = list.kind === 'tokens' ? t('{count} 次模型请求 · 共 {tokens} token', { count: list.count, tokens: num(list.total) }) : list.kind === 'time' ? t('用时 {time}', { time: clock(list.elapsedMs) }) : t('{count} 条记录', { count: list.count });
     head(c, title, `<span class="war-count">${escapeHtml(count)}</span>${back}`);
-    fill(c, `${detail.type === 'region' ? regionExtra?.(detail.id) || '' : traceExtra?.(detail.key) || ''}${list.rows.length ? `<ol class="war-trace">${list.rows.map(traceRow).join('')}</ol>` : empty(t('没有对应的记录'))}`);
+    const omitted = list.omitted ? `<p class="war-omitted">${escapeHtml(t('另有 {count} 条未随快照记录，数量取自评估器的总数', { count: list.omitted }))}</p>` : '';
+    fill(c, `${detail.type === 'region' ? regionExtra?.(detail.id) || '' : traceExtra?.(detail.key) || ''}${list.rows.length ? `<ol class="war-trace">${list.rows.map(traceRow).join('')}</ol>` : list.omitted ? '' : empty(t('没有对应的记录'))}${omitted}`);
   }
   function traceTitle(list) {
     if (list.kind === 'calls') return t('全部工具调用');
@@ -350,7 +360,7 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
     const now = !scene ? t('等待任务') : sceneFinished(scene) ? (scene.completion?.summary ? runtimeCompletionText(scene.completion) : statusText(scene.status)) : latest ? [latest.actor?.role && latest.actor.role !== 'lead' ? roleName(latest.actor.role) : ctx.leadName || t('主 Agent'), current && verbName(latest.verb) === phaseName(current.key) ? '' : verbName(latest.verb), latest.detail].filter(Boolean).join(' · ') : t('等待第一条执行记录');
     const html = `<em>${String(Math.max(1, rail.findIndex(row => row.current) + 1)).padStart(2, '0')}</em>${escapeHtml(current ? phaseName(current.key) : '')}${current ? ' · ' : ''}${escapeHtml(String(now).slice(0, 160))}`;
     const el = $('.war-now'); if (el.innerHTML !== html) el.innerHTML = html;
-    const railHtml = rail.map((row, i) => `<li data-phase="${row.key}" data-current="${row.current && !sceneFinished(scene)}" data-status="${escapeHtml(row.status)}"><button type="button"${row.stageId ? ` data-war-record="${escapeHtml(row.stageId)}"` : ' disabled'}><b>${String(i + 1).padStart(2, '0')}</b>${escapeHtml(phaseName(row.key))}${row.count > 1 && row.key !== 'contract' ? ` ×${row.count}` : ''}</button></li>`).join('');
+    const railHtml = rail.map((row, i) => `<li data-phase="${row.key}" data-current="${row.current && !sceneFinished(scene)}" data-status="${escapeHtml(row.status)}"><button type="button"${row.stageId ? ` data-war-record="${escapeHtml(row.stageId)}"` : ' disabled'}><b>${String(i + 1).padStart(2, '0')}</b>${escapeHtml(row.key === 'deliver' ? (sceneFinished(scene) ? endName(deliveryStatus(scene)) : t('停止')) : phaseName(row.key))}${row.count > 1 && row.key !== 'contract' ? ` ×${row.count}` : ''}</button></li>`).join('');
     const r = $('.war-rail'); if (r.innerHTML !== railHtml) r.innerHTML = railHtml;
     const history = (ctx.history?.length > 1 ? `<select aria-label="${escapeHtml(t('选择历史任务'))}" data-execution-history>${ctx.history.map(row => `<option value="${escapeHtml(row.runId)}"${row.runId === scene?.runId ? ' selected' : ''}>${escapeHtml(row.label)}</option>`).join('')}</select>` : '')
       + (ctx.older ? `<button type="button" class="war-older" data-execution-action="older-scenes">${escapeHtml(t('更早的任务'))}</button>` : '');

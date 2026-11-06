@@ -59,17 +59,38 @@ test('snapshot is bounded: candidates, strings and omitted count', () => {
   assert.ok(JSON.stringify(snapshot).length < 16000, 'stays small enough for every SSE update');
 });
 
+test('snapshot totals stay exact past its row caps: excluded candidates and gaps', () => {
+  // The rows a snapshot carries are capped; the numbers shown from it must not
+  // be. Excluded rows sort last, so they are the first to fall past the cap.
+  const contract = { action: 'contract', data: JSON.stringify({ category: 'other', unit: 'u', coverage: Array.from({ length: 9 }, (_, i) => 'tag' + i) }) };
+  let state = updateTaskEvaluation(undefined, contract, { goal: 'find things', revision: 1, observations: [] });
+  const row = (i, status) => ({ key: 'k' + String(i).padStart(2, '0'), fields: { name: { value: 'N' + i, evidence: [], verified: false } }, match: 10, diversity: 1, reason: '', tags: [], conflicts: [],
+    excludeReason: status === 'excluded' ? 'out of range' : '', missing: ['name'], failed: [], eligible: false, status, score: { total: 11, evidence: 0, match: 10, diversity: 1 } });
+  state = { ...state, items: [...Array.from({ length: 30 }, (_, i) => row(i, 'discovered')), ...Array.from({ length: 10 }, (_, i) => row(30 + i, 'excluded'))] };
+  const snapshot = taskEvaluationSnapshot(state), summary = taskEvaluationSummary(state);
+  assert.equal(snapshot.candidates.length, EVALUATION_SNAPSHOT_LIMITS.candidates);
+  assert.equal(snapshot.candidates.filter(r => r.tier === 'excluded').length, 0, 'every excluded row fell past the cap');
+  assert.equal(snapshot.summary.excluded, 10, 'the total still counts them');
+  assert.ok(summary.gaps.length > EVALUATION_SNAPSHOT_LIMITS.gaps, 'nine uncovered tags make more gaps than the list carries');
+  assert.equal(snapshot.summary.gaps.length, EVALUATION_SNAPSHOT_LIMITS.gaps);
+  assert.equal(snapshot.summary.gapCount, summary.gaps.length);
+  assert.deepEqual(normalizeEvaluationSnapshot(JSON.parse(JSON.stringify(snapshot))), snapshot);
+  const older = structuredClone(snapshot); delete older.summary.excluded; delete older.summary.gapCount;
+  assert.deepEqual(normalizeEvaluationSnapshot(older), older, 'a record from before these totals stays without them');
+});
+
 test('normalizer drops hostile or malformed input without throwing', () => {
   for (const bad of [null, undefined, 1, 'x', [], {}, { v: 2 }, { v: '1' }]) assert.equal(normalizeEvaluationSnapshot(bad), null);
   const hostile = normalizeEvaluationSnapshot({ v: 1, update: 1e12, policy: { primaryScore: 9999, alternativeScore: -5, evidenceScore: 'x' },
     contract: { category: 'weapons', mode: 'turbo', requiredFields: ['name', 'startsAt', ...Array(40).fill('f')], constraints: Array(50).fill({ field: 'a', op: 'drop', value: { nested: true }, quote: 'q'.repeat(500) }), coverage: [{ tag: 'a', covered: 'yes' }, 'raw', null] },
-    summary: { discovered: -3, stop: 'launch', gaps: Array(50).fill('g'.repeat(900)) },
+    summary: { discovered: -3, stop: 'launch', gaps: Array(50).fill('g'.repeat(900)), excluded: 1e12, gapCount: 'many' },
     candidates: [...Array(500).fill({ key: 'k', tier: 'god', status: 'won', total: 1e9, fields: { name: 'exploded', startsAt: 'verified' } }), null, 'x'], resource: { elapsedMs: -1 } });
   assert.equal(hostile.update, 1000); assert.equal(hostile.policy.primaryScore, 100); assert.equal(hostile.policy.alternativeScore, 0); assert.equal(hostile.policy.evidenceScore, p.evidenceScore);
   assert.equal(hostile.contract.category, 'other'); assert.equal(hostile.contract.mode, 'standard'); assert.equal(hostile.contract.requiredFields.length, EVALUATION_SNAPSHOT_LIMITS.fields);
   assert.equal(hostile.contract.constraints.length, EVALUATION_SNAPSHOT_LIMITS.constraints); assert.ok(hostile.contract.constraints.every(rule => rule.op === 'eq' && rule.value === '' && rule.quote.length <= 80));
   assert.deepEqual(hostile.contract.coverage, [{ tag: 'a', covered: false }]);
   assert.equal(hostile.summary.discovered, 0); assert.equal(hostile.summary.stop, 'continue'); assert.equal(hostile.summary.gaps.length, EVALUATION_SNAPSHOT_LIMITS.gaps);
+  assert.equal(hostile.summary.excluded, p.maxCandidates); assert.equal(hostile.summary.gapCount, 0);
   assert.equal(hostile.candidates.length, EVALUATION_SNAPSHOT_LIMITS.candidates);
   assert.ok(hostile.candidates.every(row => row.tier === 'pending' && row.status === 'discovered' && row.total === 100 && row.fields.name === 'missing' && row.fields.startsAt === 'verified'));
   assert.equal(hostile.resource.elapsedMs, 0);

@@ -14,7 +14,7 @@ import { mkdir, mkdtemp, writeFile, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createExecutionRecorder } from '../src/services/chat/executionScenes.js';
-import { createExecutionScene, applyExecutionEvent } from '../src/shared/executionScene.js';
+import { createExecutionScene, applyExecutionEvent, finishExecutionScene } from '../src/shared/executionScene.js';
 import { updateTaskEvaluation, taskEvaluationSnapshot } from '../shared/agent/taskEvaluation.js';
 import { deliveryGate } from '../src/shared/warRoom.js';
 import { stageMargin } from './warRoomLayout.js';
@@ -87,11 +87,12 @@ test('war room shows only recorded facts, traces every number, opens by itself, 
       import * as panel from '/executionPanel.js'; window.panel = panel;
       const chat = new URL(location.href).searchParams.get('chat');
       document.querySelector('#fixture').innerHTML = panel.renderExecutionPanel();
-      panel.syncExecutionPanel({ chat: { id: chat, messages: [{ id: chat === 'plain-chat' ? 'plain-answer' : 'answer', role: 'assistant', content: 'x', metadata: { runId: chat === 'plain-chat' ? 'plain-run' : 'board-run' } }] }, autoCollapse: false, leadName: 'Fixture Lead' });
+      panel.syncExecutionPanel({ chat: { id: chat, messages: [{ id: chat === 'plain-chat' ? 'plain-answer' : 'answer', role: 'assistant', content: 'x', metadata: { runId: chat === 'plain-chat' ? 'plain-run' : 'board-run' } }] }, autoCollapse: new URL(location.href).searchParams.has('auto'), leadName: 'Fixture Lead' });
       window.fixtureReady = true;
     </script></body></html>` }));
-    const open = async chat => {
-      await page.goto(`${base}/task-space-fixture?chat=${chat}`); await page.waitForFunction(() => window.fixtureReady);
+    // `auto` gives the page the product's hand-back: an untouched auto-opened war room closes when its run ends.
+    const open = async (chat, auto = false) => {
+      await page.goto(`${base}/task-space-fixture?chat=${chat}${auto ? '&auto=1' : ''}`); await page.waitForFunction(() => window.fixtureReady);
       const toggle = page.locator('#execution-panel [data-execution-action="toggle"]'); await toggle.waitFor();
       if (await page.locator('#execution-war-room').evaluate(el => el.hidden)) await toggle.click();
       await page.locator('#execution-war-room .war-gl canvas').waitFor();
@@ -197,6 +198,22 @@ test('war room shows only recorded facts, traces every number, opens by itself, 
     assert.equal(motion.flew, true, 'finished calls and newly admitted candidates fly to their rows');
     const still = await live(true);
     assert.equal(still.flew, false, 'reduced motion: rows appear without flights');
+    // A pick on the canvas is the user's own action, like a click on any control:
+    // the auto-opened war room then stays when the run ends instead of handing back.
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await open('board-chat', true); await room.locator('[data-war-close]').click();
+    const picked = createExecutionScene({ runId: 'live-picked', chatId: 'board-chat', query: 'live', startedAt: at(0) });
+    for (const row of events(5)) applyExecutionEvent(picked, row);
+    await page.evaluate(scene => window.panel.receiveExecutionScene(scene), JSON.parse(JSON.stringify(picked)));
+    await page.waitForFunction(() => !document.querySelector('#execution-war-room').hidden && /files:/.test(document.querySelector('#execution-war-room .war-gl').dataset.regions || ''));
+    const centre = await gl.evaluate(el => { const [x, y] = el.dataset.regions.split(';').find(row => row.startsWith('files:')).slice(6).split(',').map(Number), box = el.getBoundingClientRect(); return { x: box.left + x, y: box.top + y }; });
+    await page.mouse.click(centre.x, centre.y);
+    await page.waitForFunction(() => document.querySelector('#execution-war-room .war-gl').dataset.view === 'region:files');
+    finishExecutionScene(picked, { status: 'completed', message: { id: 'answer' } });
+    await page.evaluate(scene => window.panel.receiveExecutionScene(scene), JSON.parse(JSON.stringify(picked)));
+    await page.waitForTimeout(3400);
+    assert.equal(await room.evaluate(el => el.hidden), false, 'picked on the canvas: the war room stays after the run ends');
+    await room.locator('[data-war-view="global"]').click();
     // Phone width: the band scrolls sideways, no horizontal page overflow.
     await page.emulateMedia({ reducedMotion: 'no-preference' });
     await page.setViewportSize({ width: 393, height: 852 });
