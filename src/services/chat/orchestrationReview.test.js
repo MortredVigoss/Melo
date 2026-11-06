@@ -12,24 +12,24 @@ const call=(name,args,id)=>'<tool_call>'+JSON.stringify({id,name,arguments:args}
 const base={replyLanguage:'en',authMode:'unset',apiKey:'',baseUrl:'',model:'opaque',toolCalling:'legacy'};
 const report=evidence=>JSON.stringify({decision:'complete',reasonType:'fulfilled',requirements:[{text:'requested outcome',kind:'external_effect',status:'met',evidenceIds:[evidence]}]});
 const results={};
-for(const mode of ['duplicate','lostReceipt','mainThenMember','smartFloor','unverifiedReport'])await test('review regression: '+mode,async()=>{
- writes=0;let lead=0,member=0;const models=[];const budgetChecks=[];let evidence=mode==='unverifiedReport'?'job-1:report':'job-1:write';
+for(const mode of ['duplicate','lostReceipt','mainThenMember','legacySmartFixed','unverifiedReport'])await test('review regression: '+mode,async()=>{
+ writes=0;let lead=0,member=0,judgments=0;const models=[];const budgetChecks=[];let evidence=mode==='unverifiedReport'?'job-1:report':'job-1:write';
  const chat={id:'audit-'+mode,title:'fixture',mode:'chat',projectId:null,agentId:'main',messages:[],sessionMemory:[]};
- const goal=mode==='smartFloor'?'Read three files and summarize the results.':'Create one fixture record then verify it.';chat.messages=[{id:'user-'+mode,role:'user',content:goal}];
- const state={projects:[],chats:[chat],tasks:[],approvals:[],artifacts:[],commandRuns:[],externalConnectors:[],agentProfiles:{main:{id:'main',name:'Audit',model:mode==='smartFloor'?'':'opaque',tools:['local-command','external-connectors'],skills:[],channels:{},collaboration:{canDelegate:false,...(mode==='smartFloor'?{jobModels:{execute:'fixture'}}:{})}}},projectAgentOverrides:{},settings:{selectedProjectId:null,selectedChatId:chat.id,selectedAgentId:'main',activeMode:'chat',promptHistory:[]}};
+ const goal=mode==='legacySmartFixed'?'Read three files and summarize the results.':'Create one fixture record then verify it.';chat.messages=[{id:'user-'+mode,role:'user',content:goal}];
+ const state={projects:[],chats:[chat],tasks:[],approvals:[],artifacts:[],commandRuns:[],externalConnectors:[],agentProfiles:{main:{id:'main',name:'Audit',model:mode==='legacySmartFixed'?'':'opaque',tools:['local-command','external-connectors'],skills:[],channels:{},collaboration:{canDelegate:false,...(mode==='legacySmartFixed'?{jobModels:{execute:'fixture'}}:{})}}},projectAgentOverrides:{},settings:{selectedProjectId:null,selectedChatId:chat.id,selectedAgentId:'main',activeMode:'chat',promptHistory:[]}};
  await saveState(state);
  const choice=model=>({connectionId:'fixture',model});
- const config=mode==='smartFloor'?{...base,activeLlmProfileId:'fixture',authMode:'api-key',apiKey:'fixture',baseUrl:'http://127.0.0.1:1',model:'lower',llmProfiles:{fixture:{authMode:'api-key',apiKey:'fixture',baseUrl:'http://127.0.0.1:1',model:'lower',models:['lower','higher']}},smartRouting:{defaultMode:'smart',allowEscalation:true,tiers:{light:[choice('lower')],standard:[choice('higher')],strong:[choice('higher')]}}}:base;
+ const config=mode==='legacySmartFixed'?{...base,activeLlmProfileId:'fixture',authMode:'api-key',apiKey:'fixture',baseUrl:'http://127.0.0.1:1',model:'lower',llmProfiles:{fixture:{authMode:'api-key',apiKey:'fixture',baseUrl:'http://127.0.0.1:1',model:'lower',models:['lower','higher']}},smartRouting:{defaultMode:'smart',allowEscalation:true,tiers:{light:[choice('lower')],standard:[choice('higher')],strong:[choice('higher')]}}}:base;
  const r=await runChatAgentExecutionGraph({config,state,chat,workspace:{rootPath:home,exists:true,entries:[],filePaths:[],fileCount:0,commandTemplates:[],commandRuns:[]},connectors:[],skills:[],latestUserMessage:goal,agentId:'main',_dependencies:{turnTimeoutMs:20*60000,getEmbedding:async()=>null,createReply:async o=>{
   const activeBudget=currentRequestContext()?.budget;if(Number.isFinite(activeBudget?.hardDeadlineAt))budgetChecks.push(activeBudget.deadlineAt<=activeBudget.hardDeadlineAt);
-  if(o.purpose==='routing-judge')return JSON.stringify({complexity:1,risk:'low',needs:{tools:true}});
+  if(o.purpose==='routing-judge'){judgments++;return JSON.stringify({complexity:1,risk:'low',needs:{tools:true}});}
   const isMember=o.systemPrompt.includes('You are the internal execute specialist');
   models.push({model:o.model,phase:isMember?'member':o.systemPrompt.startsWith("You are Melo's task completion checker")?'check':'lead'});
   if(o.systemPrompt.startsWith("You are Melo's task completion checker")){const json=JSON.stringify(o.messages);if(mode==='unverifiedReport'&&!json.includes('job-1:report'))return JSON.stringify({decision:'partial',reasonType:'unavailable',requirements:[{text:'record created',kind:'external_effect',status:'missing',evidenceIds:[]}]});return report(json.includes('job-')?evidence:'write');}
   if(isMember){member++;if(mode==='unverifiedReport')return 'Record created, but I have no receipt.';if(mode==='lostReceipt'&&member===2)throw new Error('Simulated disconnect after write');return member%2===1?call(id,{value:'same'},'write'):'Record created.';}
   lead++;
   if(mode==='mainThenMember'&&lead===1)return call(id,{value:'same'},'lead-write');
-  if(lead===1 || ['smartFloor','mainThenMember'].includes(mode)&&lead===2)return call('route_task',{role:'execute',task:'Create the single requested fixture record.'},'route1');
+  if(lead===1 || ['legacySmartFixed','mainThenMember'].includes(mode)&&lead===2)return call('route_task',{role:'execute',task:'Create the single requested fixture record.'},'route1');
   if(mode==='duplicate'&&lead===2){evidence='job-2:write';return call('route_task',{role:'execute',task:'Finish and verify the requested record.'},'route2');}
   if(mode==='lostReceipt'&&lead===2){evidence='retry-write';return call(id,{value:'same'},'retry-write');}
   return 'The requested record is created.';
@@ -37,7 +37,7 @@ for(const mode of ['duplicate','lostReceipt','mainThenMember','smartFloor','unve
  assert.ok(budgetChecks.length&&budgetChecks.every(Boolean),'the exposed budget may not exceed the host hard deadline');
  results[mode]={writes,models,outcome:r.normalizedReply?.completion?.outcome};
  if(['duplicate','lostReceipt','mainThenMember'].includes(mode))assert.equal(writes,1,'same effect must execute only once across the complete turn');
- if(mode==='smartFloor'){assert.equal(writes,1,'deferred assignment runs after escalation');assert.ok(models.filter(r=>r.phase==='member').every(r=>r.model==='higher'),'write member must not execute on the lower tier');}
+ if(mode==='legacySmartFixed'){assert.equal(writes,1,'the selected model executes the effect only once');assert.equal(judgments,0,'legacy smart settings must not send a model judgment');assert.ok(models.some(r=>r.phase==='member'),'the assignment must actually execute');assert.ok(models.every(r=>r.model==='lower'),'lead, member and completion check must keep the explicitly selected model');}
  if(mode==='unverifiedReport'){assert.equal(writes,0);assert.notEqual(r.normalizedReply?.completion?.outcome,'completed','member prose cannot prove execution');}
 });
 await test('member cancellation after a successful effect preserves its receipt and starts no further tool',async()=>{

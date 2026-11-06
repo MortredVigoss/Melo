@@ -24,7 +24,13 @@ export function routingPolicy(config) {
   if (!Object.values(policy.tiers || {}).some(a => a.length) && local.length === 1) policy.tiers = Object.fromEntries(['light','standard','strong'].map(t => [t, [{ connectionId: local[0].connectionId, model: local[0].model }]]));
   return policy;
 }
-export function publicSmartRouting(config) { return { ...routingPolicy(config), candidates: routingCandidates(config) }; }
+// Product policy: automatic selection is retired. Keep the generic router for
+// historical receipts and isolated engine verification; product turns are fixed.
+export function fixedModelRoutingConfig(config) {
+  return { ...config, conversationModelSelected: config.conversationModelMode === 'smart' ? false : config.conversationModelSelected, conversationModelMode: 'fixed', smartRouting: { ...config.smartRouting,
+    defaultMode: 'fixed', allowCrossConnection: false, allowEscalation: false } };
+}
+export function publicSmartRouting(config) { return { ...routingPolicy(fixedModelRoutingConfig(config)), enabled: false, candidates: routingCandidates(config) }; }
 
 export function routeConnection(config, route) {
   const p = route.connectionId === (config.activeLlmProfileId || '') ? config : config.llmProfiles?.[route.connectionId];

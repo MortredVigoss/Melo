@@ -723,6 +723,7 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             }
             let defaults = UserDefaults(suiteName: "routing-tests-" + UUID().uuidString)!
             defaults.set("keep-account", forKey: "account")
+            assert(!PhoneRoutingPolicy.isEnabled, "Automatic selection must remain disabled in product entry points")
             let initial = PhoneRoutingPolicy.read(defaults)
             let saved = try PhoneRoutingPolicy.save(initial, defaults: defaults)
             assert(saved.revision == 1 && defaults.string(forKey: "account") == "keep-account")

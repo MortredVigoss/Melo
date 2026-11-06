@@ -208,7 +208,6 @@ const rows = [
 ["连接名称需为 1–100 个字符。", "Use 1–100 characters for the connection name.", "接続名は 1～100 文字で入力してください。", "연결 이름은 1–100자로 입력하세요.", "Usa entre 1 y 100 caracteres para el nombre de la conexión."],
 ["无法读取安全存储。", "Secure storage could not be read.", "安全なストレージを読み込めません。", "보안 저장소를 읽을 수 없습니다.", "No se pudo leer el almacenamiento seguro."],
 ["模型提供推理；对话、Agent和执行记录由 Melo 管理。", "The model provides reasoning; Melo manages conversations, Agents and execution records.", "モデルは推論を行い、会話、Agent、実行記録は Melo が管理します。", "모델은 추론을 제공하며 대화, Agent와 실행 기록은 Melo가 관리합니다.", "El modelo aporta el razonamiento; Melo gestiona chats, Agents y registros de ejecución."],
-["连接方式", "Connection method", "接続方法", "연결 방식", "Método de conexión"],
 ["其他模型平台", "Other model providers", "その他のモデル提供元", "다른 모델 플랫폼", "Otros proveedores de modelos"],
 ["对话模型", "Chat model", "会話モデル", "대화 모델", "Modelo de conversación"],
 ["刷新可用模型", "Refresh available models", "利用可能なモデルを更新", "사용 가능한 모델 새로 고침", "Actualizar modelos disponibles"],
@@ -383,6 +382,7 @@ const rows = [
 ["此设备没有可用相机，请从相册选择图片。", "No camera is available on this device. Choose a photo from your library.", "この端末ではカメラを利用できません。写真ライブラリから選んでください。", "이 기기에서 카메라를 사용할 수 없습니다. 앨범에서 사진을 선택하세요.", "Este dispositivo no tiene una cámara disponible. Elige una foto de tu biblioteca."],
 ["允许相机后即可拍照，也可以返回选择相册。", "Allow camera access to take a photo, or go back to choose from your library.", "撮影するにはカメラを許可してください。戻って写真ライブラリから選ぶこともできます。", "사진을 촬영하려면 카메라를 허용하거나 돌아가서 앨범에서 선택하세요.", "Permite el acceso a la cámara para hacer una foto, o vuelve para elegir de tu biblioteca."],
 ["确认照片后加入草稿，点击发送才会交给模型。", "Confirmed photos join your draft. They reach the model only when you send.", "確認した写真を下書きに追加します。送信するまでモデルには渡されません。", "확인한 사진은 초안에 추가되며 전송을 눌러야 모델에 전달됩니다.", "Las fotos confirmadas se añaden al borrador. Solo se envían al modelo cuando pulsas Enviar."],
+["模型 ID", "Model ID", "モデル ID", "모델 ID", "ID del modelo"],
 ];
 if (new Set(rows.map(row => row[0])).size !== rows.length) throw new Error('Duplicate native translation key');
 export const nativeTranslations = Object.fromEntries(rows.map(([source,en,ja,ko,es]) => [source,{'zh-CN':source,en,ja,ko,es}]));

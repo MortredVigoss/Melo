@@ -1020,7 +1020,7 @@ test('L6/L7/L13: an older extractive card is upgraded from its own message range
   assert.doesNotMatch(stored.compactSummary, /抽取式摘要/);
 });
 
-test('smart routing selects the actual answer model and meters the single judgment in the same turn', async () => {
+test('retired smart routing uses only the chosen answer model and meters no judgment', async () => {
   const state = fixtureState(), chat = fixtureChat(); state.chats = [chat]; state.agentProfiles.main.model = "";
   await saveState(state);
   const choice = model => ({connectionId:'fixture-smart',model});
@@ -1034,13 +1034,13 @@ test('smart routing selects the actual answer model and meters the single judgme
       options.onProviderResponse?.({requestedModel:options.model,reportedModel:options.model,usage:{input:10,output:2,cached:0,cacheWrite:0}});
       return options.purpose==='routing-judge' ? JSON.stringify({complexity:3,risk:'low',needs:{},reason:'reasoning'}) : '可以从体验、成本和可维护性三个角度考虑。';
     }}});
-  assert.equal(requests[0].model,'opaque-light');assert.equal(requests[0].purpose,'routing-judge');
-  assert.ok(requests.slice(1).every(r=>r.model==='opaque-standard'));
+  assert.equal(requests[0].model,'opaque-light');assert.equal(requests[0].purpose,'loop');
+  assert.ok(requests.every(r=>r.model==='opaque-light' && r.purpose!=='routing-judge'));
   assert.equal(result.normalizedReply.usage.requests,requests.length);
-  assert.ok(result.normalizedReply.modelResponses.some(row=>row.routing?.tier==='standard'));
+  assert.ok(!result.normalizedReply.modelResponses.some(row=>row.routing?.tier));
 });
 
-test('smart escalation continues with prior tool results and never repeats a successful write', async()=>{
+test('retired escalation is rejected while the fixed model retains the completed write result', async()=>{
   const {registerTool,unregisterTool}=await import('../../tools/registry.js');
   const state=fixtureState(),chat=fixtureChat();state.chats=[chat];state.agentProfiles.main.model='';await saveState(state);
   let effects=0,answers=0;const requested=[];
@@ -1056,10 +1056,16 @@ test('smart escalation continues with prior tool results and never repeats a suc
       if(options.systemPrompt.includes("You are Melo's task completion checker"))return '{"decision":"completed","requirements":[{"text":"完成测试","status":"met","evidenceIds":[]}]}';
       answers++;
       if(answers===1)return {protocol:'responses',text:'',responseItems:[call('write-1','routing_write_probe',{value:'same'}),call('upgrade','melo_escalate',{reason:'need reasoning'})]};
-      if(answers===2){assert.equal(options.model,'higher');assert.ok(options.messages.some(m=>m.functionCallOutputs?.some(o=>o.call_id==='write-1')));return {protocol:'responses',text:'',responseItems:[call('write-2','routing_write_probe',{value:'same'})]};}
+      if(answers===2){
+        assert.equal(options.model,'lower');
+        const outputs=options.messages.flatMap(m=>m.functionCallOutputs || []);
+        assert.ok(outputs.some(o=>o.call_id==='write-1' && /fixture written/.test(o.output)));
+        assert.ok(outputs.some(o=>o.call_id==='upgrade' && /UNKNOWN_TOOL/.test(o.output)),JSON.stringify(outputs));
+        return {protocol:'responses',text:'已完成并保留原有结果。',responseItems:[]};
+      }
       return {protocol:'responses',text:'已完成并保留原有结果。',responseItems:[]};
     }}});
-    assert.equal(effects,1);assert.equal(requested[0],'lower');assert.ok(requested.slice(1).every(model=>model==='higher'));
+    assert.equal(effects,1);assert.equal(requested[0],'lower');assert.ok(requested.every(model=>model==='lower'));
   }finally{unregisterTool('routing_write_probe');}
 });
 
@@ -1217,4 +1223,16 @@ test('phase A3: route_task mixed with another tool is refused for that round whi
     assert.equal(reads,1,'the direct tool ran');assert.equal(memberTurns,0,'no member started');assert.equal(leadTurns,2);
     assert.equal(result.normalizedReply.completion.outcome,'completed');
   } finally {unregisterTool('fetch_url');registerTool(old);}
+});
+
+
+test('product prepare keeps the selected model when legacy smart routing and cross-account escalation are enabled', async () => {
+  const state=fixtureState(), chat=fixtureChat({messages:[{id:'fixed-route',role:'user',content:'比较几种设计方案'}]});
+  state.chats=[chat]; await saveState(state);
+  const calls=[],events=[];
+  await runChatAgentExecutionGraph({config:{...LOCAL_CONFIG,conversationModelSelected:true,conversationModelMode:'smart',smartRouting:{defaultMode:'smart',allowCrossConnection:true,allowEscalation:true,tiers:{light:[],standard:[],strong:[]}}},state,chat,workspace:fixtureWorkspace(),connectors:[],skills:[],latestUserMessage:'比较几种设计方案',agentId:'main',sseEmitter:(type,value)=>events.push({type,value}),
+    _dependencies:{getEmbedding:async()=>null,createReply:async options=>{calls.push(options);return '可以从可读性和操作步骤两方面比较。';}}});
+  assert.ok(calls.length>0,'the normal response must still execute');
+  assert.ok(calls.every(call=>call.purpose!=='routing-judge' && call.model==='local-model'));
+  assert.ok(!events.some(event=>event.value?.id?.startsWith('model-routing:')));
 });

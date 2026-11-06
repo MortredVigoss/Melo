@@ -14,7 +14,7 @@ struct ModelSettingsSection: View {
     @AppStorage("modelAuthMode") private var authMode = "chatgpt"
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            if authMode == "chatgpt" {
+            Group {
                 EditableSection("模型服务", read: ModelSettingsValue.read, commit: { value in
                     guard !value.model.isEmpty else { throw MeloError.message("请选择对话模型后保存。") }
                     guard account.models.isEmpty || account.models.contains(where: { $0.slug == value.model }) else { throw MeloError.message("该模型已不在当前账号列表，请重新选择。") }
@@ -29,12 +29,11 @@ struct ModelSettingsSection: View {
                     Toggle("联网搜索", isOn: value.webSearch)
                 }
             }
-            SmartRoutingSettings()
-            if authMode == "chatgpt" {
+            Group {
                 Button { Task { await account.loadModels() } } label: { Label("刷新可用模型", systemImage: "arrow.clockwise") }.disabled(!account.signedIn || account.busy)
                 Text("实时检索取决于所选模型与账号权限；登录不会自动导入对话记录。").font(.caption).foregroundStyle(.secondary)
             }
-        }.textInputAutocapitalization(.never).autocorrectionDisabled().meloPanel()
+        }.textInputAutocapitalization(.never).autocorrectionDisabled()
     }
 }
 struct SyncSettingsValue: Equatable, Codable {
