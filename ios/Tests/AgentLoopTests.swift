@@ -22,6 +22,7 @@ final class Log: @unchecked Sendable {
     var records: [ExecutionToolCall] = []
     var statuses: [String] = []
     var events: [AgentStageEvent] = []
+    var memberJobs: [Int?] = []
 }
 func fc(_ id: String, _ name: String = "open_url", _ args: String = #"{"url":"https://a.example"}"#) -> ResponsesFunctionCall { ResponsesFunctionCall(callID: id, name: name, arguments: args) }
 func calls(_ list: [ResponsesFunctionCall]) -> AgentRound { AgentRound(text: "", calls: list, echo: .none, estimatedInputTokens: 100) }
@@ -101,7 +102,7 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             let goal = "Create a reminder and tell me when it is saved"
             let args = #"{"title":"member reminder"}"#
             var tools = loopTools(log) { call in
-                let output = call.name == "open_url" ? #"{"url":"https://a.example","text":"lead-only-page-data"}"# : #"{"id":"saved-member-reminder"}"#
+                let output = call.name == "read_history" ? #"{"text":"lead-only-page-data"}"# : #"{"id":"saved-member-reminder"}"#
                 return PhoneToolResult(output: PhoneToolEnvelope.success(output))
             }
             tools.definitions += [DeviceToolSpec.all.first { $0.name == "reminders_create" }!.definition]
@@ -113,7 +114,8 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
                 }
             }
             let initial = ScriptedTransport { request in
-                if request.iteration == 0 { return calls([fc("lead-page")]) }
+                // The lead's own read (a tool it keeps; retrieval goes to the research member).
+                if request.iteration == 0 { return calls([fc("lead-page", "read_history", "{}")]) }
                 if request.iteration == 3 { throw URLError(.networkConnectionLost) }
                 if request.internalJob == nil { return calls([fc("route","route_task",#"{"role":"execute","task":"Create the requested reminder"}"#)]) }
                 return calls([fc("write","reminders_create",args)])
@@ -189,6 +191,7 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             let log = Log()
             var h = hooks(log); h.internalRouting = true; h.maxTaskIterations = 1
             h.onStageEvent = { event in log.stages.append((event.id, event.status, event.output)); log.events.append(event) }
+            h.onMemberJob = { log.memberJobs.append($0) }
             var leads = 0, reads = 0, maths = 0
             let transport = ScriptedTransport { request in
                 if request.goalReview != nil { return answer(#"{"decision":"complete","reasonType":"fulfilled","requirements":[{"text":"forecast and conversion","status":"met","evidenceIds":["job-1:same","job-2:same"]}]}"#) }
@@ -222,6 +225,53 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             assert(members.filter { $0.id == "internal:1" }.allSatisfy { $0.role == "research" && ($0.rounds ?? 0) > 0 } && members.contains { $0.id == "internal:1" && $0.status == "running" })
             assert(members.filter { $0.id == "internal:2" }.allSatisfy { $0.role == "calculate" && ($0.rounds ?? 0) > 0 } && members.contains { $0.id == "internal:2" && $0.status != "running" })
             assert(log.events.allSatisfy { $0.evaluation == nil })
+            // The host learns whose turn runs, so a member's native searches are tagged as its own.
+            assert(log.memberJobs == [1, nil, 2, nil], "\(log.memberJobs)")
+            // An Agent without a saved task depth uses the shared default (quick since 2026-11-07).
+            let policy = SharedLoopPolicy.value("taskEvaluation", ["action": "policy"]) as? [String: Any]
+            assert(policy?["defaultMode"] as? String == "quick" && AgentLoopHooks().evaluationMode == "quick")
+        }
+        // The lead routes, assigns, evaluates and reports (2026-11-07 review P1-2):
+        // with a research member it holds no retrieval tool and no hosted search,
+        // a direct call is refused, and closing routing (a supplement) gives them back.
+        do {
+            let log = Log()
+            var h = hooks(log); h.internalRouting = true
+            var memberDone = false, taken = false, leadRounds = 0, refused = false, restored = false
+            h.takeSupplements = { if memberDone && !taken { taken = true; return ["只要还在营业的"] }; return [] }
+            func offered(_ request: AgentLoopRequest) -> (names: [String], include: [String]) {
+                let body = request.scopedBody(["tools": [["type": "web_search"]] + WebPageToolSpec.all.map(\.definition.responsesDefinition), "include": ["web_search_call.action.sources", "reasoning.encrypted_content"]], responses: true)
+                return ((body["tools"] as? [[String: Any]] ?? []).map { $0["name"] as? String ?? $0["type"] as? String ?? "" }, body["include"] as? [String] ?? [])
+            }
+            let transport = ScriptedTransport { request in
+                if request.goalReview != nil { return answer(#"{"decision":"complete","reasonType":"fulfilled","requirements":[{"text":"venue hours","status":"met","evidenceIds":["job-1:read"]}]}"#) }
+                if request.internalJob != nil {
+                    let member = offered(request)
+                    assert(member.names.contains("open_url") && member.names.contains("web_search"), "the research member holds the retrieval tools: \(member.names)")
+                    if memberDone { return answer("The venue page lists today's hours.") }
+                    memberDone = true; return calls([fc("read")])
+                }
+                leadRounds += 1
+                let lead = offered(request)
+                if leadRounds == 1 {
+                    assert(lead.names.contains("route_task") && !lead.names.contains("open_url") && !lead.names.contains("web_screenshot") && !lead.names.contains("web_search"), "\(lead.names)")
+                    assert(lead.include == ["reasoning.encrypted_content"], "\(lead.include)")
+                    return calls([fc("direct")])
+                }
+                if leadRounds == 2 {
+                    guard case .toolRound(_, let outputs) = request.transcript.last else { preconditionFailure("Missing refusal") }
+                    refused = outputs.first?.modelOutput.contains("holds no retrieval tools") == true
+                    return calls([fc("route", "route_task", #"{"role":"research","task":"Read the venue page for today's hours"}"#)])
+                }
+                restored = lead.names.contains("open_url") && lead.names.contains("web_search") && !lead.names.contains("route_task")
+                return answer("The venue is open today.")
+            }
+            let loop = AgentLoop(transport: transport, tools: loopTools(log), budget: PhoneRunBudget(), latestUserMessage: "Check the venue page for today's opening hours", hooks: h)
+            loop.nativeSearchAvailable = true   // a Codex connection: hosted search goes to the member
+            _ = try await loop.run()
+            assert(refused, "a direct lead read is refused")
+            assert(log.performed.map(\.callID) == ["job-1:read"], "only the member read a page: \(log.performed.map(\.callID))")
+            assert(restored, "with routing closed by a supplement the lead holds its tools again")
         }
         // Coordinator bookkeeping is portable, persists in the receipt and
         // never dispatches a physical tool. A dishonest 8/20 complete verdict
@@ -230,17 +280,19 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             let log = Log()
             var h = hooks(log); h.internalRouting = true; h.evaluationMode = "quick"
             h.onStageEvent = { event in log.stages.append((event.id, event.status, event.output)); log.events.append(event) }
-            var step = 0
+            var step = 0, memberStep = 0
             let source = (0..<count).map { "Product \($0), model F\($0), AU, price 100 AUD, available." }.joined(separator: "\n")
             let transport = ScriptedTransport { request in
-                if request.goalReview != nil { return answer(#"{"decision":"complete","evaluationValid":true,"reasonType":"fulfilled","requirements":[{"text":"20 products","status":"met","evidenceIds":["catalog:source:0"]}]}"#) }
+                if request.goalReview != nil { return answer(#"{"decision":"complete","evaluationValid":true,"reasonType":"fulfilled","requirements":[{"text":"20 products","status":"met","evidenceIds":["job-1:catalog:source:0"]}]}"#) }
+                // The research member reads the catalog; the lead routes and evaluates (2026-11-07 review P1-2).
+                if request.internalJob != nil { memberStep += 1; return memberStep == 1 ? calls([fc("catalog")]) : answer("Read the catalog.") }
                 step += 1
                 if step == 1 { return calls([fc("contract", "task_progress", #"{"action":"contract","data":"{\"category\":\"products\",\"explicitCount\":{\"value\":20,\"quote\":\"20 products\"}}"}"#)]) }
-                if step == 2 { return calls([fc("catalog")]) }
+                if step == 2 { return calls([fc("route", "route_task", #"{"role":"research","task":"Read the product catalog"}"#)]) }
                 if step == 3 {
                     guard case .toolRound(_, let outputs) = request.transcript.last else { preconditionFailure("Missing real read") }
                     assert(!outputs.isEmpty)
-                    let items: [[String: Any]] = (0..<count).map { i in ["fields": ["name":"Product \(i)","model":"F\(i)","region":"AU","price":100,"currency":"AUD","availability":"available"], "evidence":[["id":"catalog:source:0","quote":"Product \(i), model F\(i), AU, price 100 AUD, available."]], "match":35,"diversity":8,"reason":"Meets the catalog request"] }
+                    let items: [[String: Any]] = (0..<count).map { i in ["fields": ["name":"Product \(i)","model":"F\(i)","region":"AU","price":100,"currency":"AUD","availability":"available"], "evidence":[["id":"job-1:catalog:source:0","quote":"Product \(i), model F\(i), AU, price 100 AUD, available."]], "match":35,"diversity":8,"reason":"Meets the catalog request"] }
                     let data = String(decoding: try JSONSerialization.data(withJSONObject:["items":items]),as:UTF8.self)
                     let args = String(decoding: try JSONSerialization.data(withJSONObject:["action":"batch","data":data]),as:UTF8.self)
                     return calls([fc("batch","task_progress",args)])

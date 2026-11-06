@@ -32,8 +32,15 @@ const TASK_EVALUATION_POLICY = Object.freeze({
   version: 1, maxCandidates: 200, maxUpdates: 64, maxInvalidUpdates: 3, maxFields: 16,
   primaryCount: 3, alternatives: 5, primaryScore: 75, alternativeScore: 60, evidenceScore: 20,
   checkpoint: { milliseconds: 180000, calls: 20 },
-  member: { initialRounds: 4, increment: 2, maxRounds: 12, calls: 8, roundMilliseconds: 90000, deliveryReserveMs: AGENT_LOOP_CONTRACT.delivery.deadlineMs,
+  // The lead only routes, assigns, evaluates and reports, so members do the
+  // retrieval and get room for it (2026-11-07 review P1-2: 4 rounds / 8 calls
+  // stopped members before they had read their pages).
+  member: { initialRounds: 6, increment: 2, maxRounds: 12, calls: 16, roundMilliseconds: 90000, deliveryReserveMs: AGENT_LOOP_CONTRACT.delivery.deadlineMs,
     inputTokens: 120000, leadInputReserve: 60000, minimumInput: 20000, parallel: 3 },
+  // Without a count in the user's words the quick target applies (2026-11-07
+  // review P1-1): three eligible entities answer the question, five at most.
+  // An Agent may ask for standard or deep in its settings.
+  defaultMode: 'quick',
   modes: { quick: { minimum: 3, maximum: 5, initial: 8 }, standard: { minimum: 5, maximum: 10, initial: 12 }, deep: { minimum: 8, maximum: 15, initial: 20 } },
   batch: { additional: 5, explicitAdditional: 10, minimumInspected: 5, lowYield: 0.2, consecutive: 2 },
   fields: { events: ['name','startsAt','place','participation'], products: ['name','model','region','price','currency','availability'], other: ['name'] },
@@ -58,14 +65,14 @@ const readObservation = row => row && row.ok === true && row.executed === true &
   !['web_search','native_web_search'].includes(row.name) && str(row.text || row.output, 200000);
 
 const TASK_PROGRESS_DEFINITION = Object.freeze({ name: TASK_PROGRESS_NAME,
-  description: `Track multi-item discovery/recommendation tasks using the original user's goal. Call alone. First action=contract; later batch after real reads, never count search hits or specialist prose. Simple facts/calculations/actions need no entity quota. data is JSON: contract {category:events|products|other,unit,mode:quick|standard|deep,explicitCount?:{value,quote},requiredFields?:[],constraints?:[{field,op:eq|includes|gte|lte|after|before,value,quote}],coverage?:[]}. Quotes must be exact user text; explicit counts/constraints cannot be lowered. Include every user condition; resolve relative dates/timezone with authorized context. Events require public participation, actual local date/place; products require model/region/price/currency/availability. batch {items:[{fields:{name:{value,evidence:[{id,quote}]},...},match:0..40,diversity:0..10,reason,tags:[],conflicts:[],excludeReason?}],gaps:[],adjustment?:{reason,evidence:[{id,quote}]}}. Prefer one item.evidence=[{id,quote}] with the full source row supporting its fields; fields can be primitive values to avoid repeating that quote. Otherwise use per-field {value,evidence}. Quote actual executed observation text supporting each field. coverage contains optional short category tags (such as outdoor or music), never full instructions; every coverage tag must appear in candidate.tags when fulfilled. Use ISO offset dates, comparable numeric price, participation=public and availability=available only when source supports it. Same event/model is one entity, even across URLs. Host returns counts, score reasons, missing fields, next batch and stop advice. Score cannot override hard conditions. At final delivery, present 3 primary options with reasons and 2–5 eligible title/link alternatives unless the user asks otherwise. Explicit counts are mandatory; insufficient results must be partial. Use returned evidence IDs in final checks.`,
+  description: `Track multi-item discovery/recommendation tasks using the original user's goal. Call alone. First action=contract; later batch after real reads, never count search hits or specialist prose. Simple facts/calculations/actions need no entity quota. data is JSON: contract {category:events|products|other,unit,mode:quick|standard|deep,explicitCount?:{value,quote},requiredFields?:[],constraints?:[{field,op:eq|includes|gte|lte|after|before,value,quote}],coverage?:[]}. Quotes must be exact user text; explicit counts/constraints cannot be lowered. Without an explicit count the target is soft: stop when the host says ready_for_review; a cited adjustment lowers it, and two batches with new reads but no new eligible entity end the search. Only a contract without an explicit count may be revised in the same turn, keeping every recorded condition. Include every user condition; resolve relative dates/timezone with authorized context. Events require public participation, actual local date/place; products require model/region/price/currency/availability. batch {items:[{fields:{name:{value,evidence:[{id,quote}]},...},match:0..40,diversity:0..10,reason,tags:[],conflicts:[],excludeReason?}],gaps:[],adjustment?:{reason,evidence:[{id,quote}]}}. Prefer one item.evidence=[{id,quote}] with the full source row supporting its fields; fields can be primitive values to avoid repeating that quote. Otherwise use per-field {value,evidence}. Quote actual executed observation text supporting each field. coverage contains optional short category tags (such as outdoor or music), never full instructions; every coverage tag must appear in candidate.tags when fulfilled. Use ISO offset dates, comparable numeric price, participation=public and availability=available only when source supports it. Same event/model is one entity, even across URLs: list a repeat again with the new site's evidence; the host keeps the first verified source (normally top-ranked), lets later sites fill only missing fields, and counts repeats as reads that added nothing. Host returns counts, score reasons, missing fields, next batch and stop advice. Score cannot override hard conditions. At final delivery, present 3 primary options with reasons and 2–5 eligible title/link alternatives unless the user asks otherwise. Explicit counts are mandatory; insufficient results must be partial. Use returned evidence IDs in final checks.`,
   parameters: { type: 'object', properties: { action: { type: 'string', enum: ['contract','batch','status'] }, data: { type: 'string', description: 'JSON object for the selected action; {} for status.' } }, required: ['action','data'], additionalProperties: false },
 });
 
 function contractFor(raw, goal, revision) {
   const p = TASK_EVALUATION_POLICY;
   if (!raw || !Object.hasOwn(p.fields, raw.category)) fail('Specify category events, products or other.');
-  const mode = Object.hasOwn(p.modes, raw.mode) ? raw.mode : 'standard';
+  const mode = Object.hasOwn(p.modes, raw.mode) ? raw.mode : p.defaultMode;
   const explicit = raw.explicitCount;
   if (explicit && /\d/.test(str(explicit.quote)) && !str(explicit.quote).match(/\d+/g)?.includes(String(explicit.value))) fail('Explicit quantity differs from the quoted number.');
   if (explicit && (!integer(explicit.value, 1, p.maxCandidates) || !str(explicit.quote) || !goal.includes(explicit.quote))) fail('Explicit quantity needs the original user quote and a supported count. Never invent a user requirement.');
@@ -126,24 +133,36 @@ function taskEvaluationSummary(state) {
   const primary = ranked.filter(row => row.score.total >= p.primaryScore && row.score.evidence >= p.evidenceScore).slice(0,p.primaryCount);
   const alternatives = ranked.filter(row => !primary.includes(row) && row.score.total >= p.alternativeScore).slice(0,p.alternatives);
   const uncovered = state.contract.coverage.filter(tag => !qualified.some(row => row.tags.includes(tag)));
+  // A batch is low-yield when it read new pages yet added no eligible entity
+  // (repeats of known entities included), or added few among many new ones.
+  // Resubmitting earlier evidence reads nothing, so it is never a sample.
+  const lowYield = row => (row.fresh ?? row.inspected) > 0 && row.newQualified === 0 ||
+    row.inspected >= p.batch.minimumInspected && row.newQualified / row.inspected < p.batch.lowYield;
   const recent = state.batches.slice(-p.batch.consecutive);
-  const diminishing = recent.length === p.batch.consecutive && recent.every(row => row.inspected >= p.batch.minimumInspected && row.newQualified / row.inspected < p.batch.lowYield);
+  const diminishing = recent.length === p.batch.consecutive && recent.every(lowYield);
   const missingCount = Math.max(0, state.contract.target.minimum - qualified.length);
-  const adjusted = !state.contract.explicitCount && qualified.length > 0 && diminishing && !!state.adjustment?.evidence?.length;
+  // Only a count in the user's words is fixed (2026-11-07 review P1-1).
+  // Otherwise the target is soft: a cited adjustment lowers it, and two
+  // low-yield batches in a row end the search with what is verified.
+  const soft = !state.contract.explicitCount;
+  const exhausted = soft && diminishing;
+  const adjusted = soft && qualified.length > 0 && (diminishing || !!state.adjustment?.evidence?.length);
   const gaps = [...(state.gaps || []), ...uncovered.map(tag => 'Coverage: ' + tag)];
-  const sufficient = !state.stale && (!missingCount || adjusted) && primary.length > 0 && !gaps.length;
+  const recommendable = primary.length > 0 || adjusted && alternatives.length > 0;
+  const sufficient = !state.stale && (!missingCount || adjusted) && recommendable && (!gaps.length || exhausted && adjusted);
   return { version: p.version, discovered: rows.length, read: rows.filter(row => row.status !== 'discovered').length,
     verified: qualified.length, recommended: primary.length, alternatives: alternatives.length,
     explicitTarget: state.contract.explicitCount?.value || null, target: state.contract.target,
     primary: primary.map(row => row.key), alternativeKeys: alternatives.map(row => row.key),
-    gaps: [...gaps, ...(missingCount && !adjusted ? [`${qualified.length}/${state.contract.target.minimum} eligible entities; ${missingCount} still missing.`] : []), ...(state.stale ? ['User amendments require a revised contract and revalidation.'] : [])],
-    stop: sufficient ? 'ready_for_review' : 'continue', diminishing, adjusted,
-    nextBatch: sufficient ? 0 : state.contract.explicitCount ? p.batch.explicitAdditional : p.batch.additional,
+    gaps: [...gaps, ...(missingCount && !adjusted ? [`${qualified.length}/${state.contract.target.minimum} eligible entities; ${missingCount} still missing.`] : []), ...(state.stale ? ['User amendments require a revised contract and revalidation.'] : []),
+      ...(exhausted && !sufficient ? ['Two batches in a row added nothing new: stop searching; deliver what is verified and state what is missing.'] : [])],
+    stop: sufficient ? 'ready_for_review' : 'continue', diminishing, adjusted, exhausted,
+    nextBatch: sufficient || exhausted ? 0 : state.contract.explicitCount ? p.batch.explicitAdditional : p.batch.additional,
     checkpoint: state.checkpoint === true, resourceUse: state.resourceUse || {},
   };
 }
 
-function updateTaskEvaluation(previous, args, { goal = '', revision = 1, observations = [], resourceUse = {}, mode = 'standard' } = {}) {
+function updateTaskEvaluation(previous, args, { goal = '', revision = 1, observations = [], resourceUse = {}, mode = TASK_EVALUATION_POLICY.defaultMode } = {}) {
   const p = TASK_EVALUATION_POLICY;
   const before = previous || { version: p.version, updates: 0, items: [], batches: [], gaps: [] };
   try {
@@ -154,12 +173,22 @@ function updateTaskEvaluation(previous, args, { goal = '', revision = 1, observa
     let state = { ...before, updates: before.updates + 1, invalidUpdates: 0, closed: before.updates + 1 >= p.maxUpdates, error: null, resourceUse,
       checkpoint: Number(resourceUse.elapsedMs) >= p.checkpoint.milliseconds || Number(resourceUse.toolCalls) >= p.checkpoint.calls };
     if (args.action === 'contract') {
-      if (before.contract && before.contract.revision === revision) fail('Contract is frozen for this user revision. Never lower the user goal.');
-      state.contract = contractFor({ ...data, mode }, goal, revision); state.stale = false; state.gaps = []; state.batches = []; state.adjustment = null;
+      // Only the user's own count is frozen (2026-11-07 review P1-1). A contract
+      // without one may be corrected in the same turn, keeping every recorded
+      // user condition; the target still comes from the host's mode.
+      const frozen = before.contract && before.contract.revision === revision;
+      if (frozen && before.contract.explicitCount) fail('Contract is frozen for this user revision: the user stated the count. Never lower the user goal.');
+      const contract = contractFor({ ...data, mode }, goal, revision);
+      const kept = rule => contract.constraints.some(next => next.field === rule.field && next.op === rule.op && next.value === rule.value);
+      if (frozen && before.contract.constraints.some(rule => !kept(rule))) fail('A revised contract must keep every recorded user condition. Never lower the user goal.');
+      state.contract = contract; state.stale = false; state.gaps = []; state.batches = []; state.adjustment = null;
       state.items = before.items.map(row => qualify(row, state.contract));
     } else if (args.action === 'batch') {
       if (!state.contract || state.contract.revision !== revision || state.stale) fail('Initialize or revise the contract before recording a batch.');
-      const rows = state.items.map(row => ({ ...row })), inspected = new Set(), newlyQualified = new Set();
+      const rows = state.items.map(row => ({ ...row })), inspected = new Set(), newlyQualified = new Set(), fresh = new Set();
+      // Every page cited by an earlier batch, kept or not: a repeat cited twice is read once.
+      const readBefore = new Set([...list(state.seenEvidence), ...state.items.flatMap(row => Object.values(row.fields).flatMap(field => field.evidence.map(ref => ref.id)))]);
+      const cites = new Set();
       if (!Array.isArray(data.items) || data.items.length > 30) fail('Submit at most 30 entity candidates per batch.');
       for (const raw of data.items) {
         if (!raw || !raw.fields || typeof raw.fields !== 'object') fail('Each candidate needs fields with cited values.');
@@ -168,21 +197,29 @@ function updateTaskEvaluation(previous, args, { goal = '', revision = 1, observa
         const key = entityKey(fields, state.contract.category);
         if (!key.replace(/\|/g,'')) fail('Entity identity is required.');
         const oldIndex = rows.findIndex(row => row.key === key), old = rows[oldIndex];
-        // Different merchants/pages merge into the same entity. Conflicts remain
-        // pending until the coordinator cites a new consistent set of fields.
-        const row = qualify({ key, fields: { ...(old?.fields || {}), ...fields }, match: integer(raw.match,0,40) ? raw.match : 0,
+        // Different merchants/pages merge into the same entity. Its first
+        // verified source is kept (normally the top-ranked result, read first);
+        // a later site only fills fields still unverified (2026-11-07 review
+        // P1-1). Conflicts stay pending until a submission no longer lists them.
+        const merged = { ...(old?.fields || {}) };
+        for (const [name, field] of Object.entries(fields)) if (!merged[name]?.verified) merged[name] = field;
+        const row = qualify({ key, fields: merged, match: integer(raw.match,0,40) ? raw.match : 0,
           diversity: integer(raw.diversity,0,10) ? raw.diversity : 0, reason: str(raw.reason),
           tags: list(raw.tags).map(x => str(x,120)).slice(0,12), conflicts: list(raw.conflicts).map(x=>str(x)).slice(0,12), excludeReason: str(raw.excludeReason) }, state.contract);
         if (!row.reason) { row.match = 0; row.diversity = 0; row.score.match = 0; row.score.diversity = 0; row.score.total = row.score.evidence + row.score.actionable; }
         if (!old && rows.length >= p.maxCandidates) fail('Candidate ledger is full. Deliver current scope or split the task.');
         if (oldIndex >= 0) rows[oldIndex] = row; else rows.push(row);
-        // Only newly read entities count as a batch sample. Failed, snippet-only
-        // and repeated reads cannot manufacture diminishing returns.
+        // `inspected` counts newly read entities; `fresh` counts candidates read
+        // from a page not cited before, repeats of known entities included.
+        // Failed, snippet-only and resubmitted reads are neither.
         if (!old && Object.values(row.fields).some(field => field.verified)) inspected.add(key);
+        if (Object.values(fields).some(field => field.verified && field.evidence.some(ref => !readBefore.has(ref.id)))) fresh.add(key);
+        for (const field of Object.values(fields)) if (field.verified) for (const ref of field.evidence) cites.add(ref.id);
         if (row.eligible && !old?.eligible) newlyQualified.add(key);
       }
       state.items = rows;
-      state.batches = [...state.batches, { inspected: inspected.size, newQualified: newlyQualified.size }].slice(-20);
+      state.batches = [...state.batches, { inspected: inspected.size, fresh: fresh.size, newQualified: newlyQualified.size }].slice(-20);
+      state.seenEvidence = [...new Set([...list(state.seenEvidence), ...cites])].slice(-400);
       state.gaps = list(data.gaps).map(x=>str(x)).filter(Boolean).slice(0,16);
       const adjustment = data.adjustment;
       if (adjustment) {
@@ -722,10 +759,15 @@ const { getRequestNetworkPolicy, requestAllowsTool } = modules["shared/agent/ret
 const { isStandaloneGreeting } = modules["shared/agent/retrieval/intentRouter.js"];
 
 const jobs = {
-  research: { label: '检索成员', tools: ['web_search','native_web_search','fetch_url','open_url','web_screenshot',
-    'mcp:melo-public-media:search_posts','mcp:melo-public-media:read_post','mcp:melo-xiaohongshu:search_feeds','mcp:melo-xiaohongshu:get_feed_detail',
-    'mcp:melo-douyin:search_videos','mcp:melo-douyin:get_video_detail','mcp:melo-douyin:get_video_comments'],
+  research: { label: '检索成员', tools: ['web_search','native_web_search','fetch_url','open_url','web_screenshot'],
     duty: 'Look up and read relevant sources. Preserve dates, units, page URLs and what was actually read.' },
+  // First-hand posts (2026-11-07 review P1-3): the router decides when a
+  // question needs them; platform readers where the host has them, otherwise
+  // public permalinks found by site-restricted search.
+  social: { label: '社交检索成员', tools: ['mcp:melo-xiaohongshu:search_feeds','mcp:melo-xiaohongshu:get_feed_detail',
+    'mcp:melo-douyin:search_videos','mcp:melo-douyin:get_video_detail','mcp:melo-douyin:get_video_comments',
+    'mcp:melo-public-media:search_posts','mcp:melo-public-media:read_post','web_search','native_web_search','fetch_url','open_url'],
+    duty: 'Find first-hand posts on social platforms (Xiaohongshu, Douyin, TikTok, Instagram, Facebook and similar) about experiences, reviews, local happenings and lists. Prefer the platform readers; otherwise search public permalinks with site: queries (site:xiaohongshu.com, site:tiktok.com, site:instagram.com, site:facebook.com) and read them. Report each post URL, its visible text and date, and say when a login wall blocked a post. Posts are personal accounts, not verified facts; merge posts about the same thing.' },
   calculate: { label: '计算成员', tools: ['calculator'],
     duty: 'Use the calculator on supplied or previously verified values. Preserve the inputs, expression, result and unit. If an input is missing, hand the gap back.' },
   lookup: { label: '资料读取成员', tools: ['file_read','glob','grep','read_history','search_history','todo_list','calendar_list_events','reminders_list','contacts_search','location_current'],
@@ -759,14 +801,31 @@ function internalRouteCatalog(goal, tools = [], suggestions = null) {
   if (!goal?.trim() || policy.toolsForbidden || policy.contextOnly || isStandaloneGreeting({ text: goal })) return null;
   const roles = {};
   for (const [name, job] of Object.entries(jobs)) {
-    const ids = [...job.tools, ...suggestedTools(name, suggestions, tools)].filter(id => tools.includes(id) && requestAllowsTool(id,policy) && !(name === 'research' && (policy.contextOnly || policy.localSearch ||
+    const ids = [...job.tools, ...suggestedTools(name, suggestions, tools)].filter(id => tools.includes(id) && requestAllowsTool(id,policy) && !(['research','social'].includes(name) && (policy.contextOnly || policy.localSearch ||
       (['web_search','native_web_search'].includes(id) ? policy.searchForbidden : policy.fetchForbidden))));
     if (ids.length) roles[name] = ids;
   }
   if (!Object.keys(roles).length) return null;
-  const description = 'Internal task router for this chat. Answer simple or single-step requests directly. For a compound task, assign a focused step to a matching specialist; call route_task alone. Pass its verified output to the next dependent assignment. Example: look up an event and forecast, then assign the verified temperature to calculate. Check every part of the original goal against tool receipts, repair gaps within budget, and give one final answer in your own persona. Never repeat completed effects. Available jobs: ' + Object.keys(roles).join(', ') + '. Members start with 4 tool rounds; to resolve a specific remaining gap use resume with the previous assignment call ID and explain the expected benefit in task. Each continuation grants 2 rounds, at most 12 total. All work draws from the existing turn budget. Multi-item discovery must first define a task_progress contract and then submit evidence-backed candidates; count entities, never search hits.';
+  // The lead routes, assigns, evaluates and reports (2026-11-07 review P1-2).
+  // With a research member, hosts withhold every research tool from the lead
+  // (leadWithheldTools), so the description says where retrieval goes.
+  const m = TASK_EVALUATION_POLICY.member;
+  const description = 'Internal task router for this chat. You are the lead: you route, assign, evaluate and report. ' +
+    (roles.research || roles.social ? 'Retrieval belongs to the members: send every web search, page read and social-platform lookup to them with route_task, even a single fact, and pass on any URL, site or platform the user named; you hold no retrieval tools. ' : '') +
+    (roles.social ? 'Decide per question whether first-hand posts help: for experiences, reviews, local happenings, recommendations and lists, also assign the social member (Xiaohongshu, Douyin, TikTok, Instagram, Facebook) alongside research; skip it for plain facts. ' : '') +
+    'Answer directly only what the conversation or gathered results already settle. For a compound task, assign a focused step to a matching specialist; call route_task alone. Pass its verified output to the next dependent assignment. Example: look up an event and forecast, then assign the verified temperature to calculate. Check every part of the original goal against tool receipts, repair gaps within budget, and give one final answer in your own persona. Never repeat completed effects. Available jobs: ' + Object.keys(roles).join(', ') +
+    `. Members start with ${m.initialRounds} tool rounds and ${m.calls} tool calls; to resolve a specific remaining gap use resume with the previous assignment call ID and explain the expected benefit in task. Each continuation grants ${m.increment} rounds, at most ${m.maxRounds} total. All work draws from the existing turn budget. Multi-item discovery must first define a task_progress contract and then submit evidence-backed candidates; count entities, never search hits.`;
   return { roles, definition: { name: ROUTE_NAME, description, parameters: { type: 'object', additionalProperties: false,
     properties: { resume: { type: 'string', description: 'Previous assignment call ID; only for a specific remaining gap, never repeat successful effects.' }, role: { type: 'string', enum: Object.keys(roles) }, task: { type: 'string', maxLength: 3000, description: 'Subtask with the necessary inputs and relevant verified findings.' } }, required: ['role','task'] } } };
+}
+
+// Tools the lead never holds while a retrieval member exists: every tool of
+// the research and social members, provider-hosted search included
+// (2026-11-07 review P1-2). Hosts drop them from the lead's requests and
+// refuse a lead call.
+function leadWithheldTools(catalog) {
+  const roles = catalog?.roles || {};
+  return [...new Set(['research', 'social'].flatMap(role => Array.isArray(roles[role]) ? roles[role] : []))];
 }
 
 function startInternalJob({ catalog, args, assignments = [], goal, callId }) {
@@ -804,11 +863,12 @@ function internalRouting(input) {
     case 'start': return startInternalJob(input);
     case 'handoff': return internalHandoff(input);
     case 'limits': return { assignments: MAX_ASSIGNMENTS, rounds: MAX_MEMBER_ROUNDS };
+    case 'withheld': return leadWithheldTools(input.catalog);
     default: throw new Error('Unknown internal routing operation');
   }
 }
 
-return { ROUTE_NAME, MAX_ASSIGNMENTS, MAX_MEMBER_ROUNDS, INTERNAL_JOB_ROLES, INTERNAL_JOB_LABELS, internalRouteCatalog, startInternalJob, internalHandoff, internalRouting };
+return { ROUTE_NAME, MAX_ASSIGNMENTS, MAX_MEMBER_ROUNDS, INTERNAL_JOB_ROLES, INTERNAL_JOB_LABELS, internalRouteCatalog, leadWithheldTools, startInternalJob, internalHandoff, internalRouting };
 })();
 
 modules["shared/agent/evidence.js"] = (() => {
@@ -1537,7 +1597,7 @@ const REVIEW_TURN_CONTRACT = `Classify turnKind as task, answer, feedback, or cl
 // The ledger rules apply only when the host offered task_progress in this turn
 // (team plans, video and image turns never do) or a ledger already exists; a
 // checker must not demand a tool the lead cannot call (2026-11-05 review C2).
-const EVALUATION_RULES = '\nFor multi-item discovery/recommendations require a task_progress contract and candidate ledger before complete. Check that it includes every user constraint and explicit quantity; independently compare the ORIGINAL goal, each quoted field and source meaning, not just valid IDs or scores. Always include the boolean evaluationValid and needsEvaluation fields in the JSON reply. If a ledger exists, set evaluationValid=true ONLY after independently validating its contract and candidate evidence; set it false when a condition or candidate is unsupported. If no ledger is needed, set evaluationValid=true and needsEvaluation=false. Set needsEvaluation=true and evaluationValid=false if a required ledger is missing. Never omit these fields, even when all requirements are met. Low yield or a soft-target adjustment never excuses a missing explicit quantity. Recommendation scores are not probabilities. Recommend only eligible candidates; disclose excluded/pending items and scope. No fabricated completeness for an open set.';
+const EVALUATION_RULES = '\nFor multi-item discovery/recommendations require a task_progress contract and candidate ledger before complete. Check that it includes every user constraint and explicit quantity; independently compare the ORIGINAL goal, each quoted field and source meaning, not just valid IDs or scores. Always include the boolean evaluationValid and needsEvaluation fields in the JSON reply. If a ledger exists, set evaluationValid=true ONLY after independently validating its contract and candidate evidence; set it false when a condition or candidate is unsupported. If no ledger is needed, set evaluationValid=true and needsEvaluation=false. Set needsEvaluation=true and evaluationValid=false if a required ledger is missing. Never omit these fields, even when all requirements are met. Low yield or a soft-target adjustment never excuses a missing explicit quantity. Without an explicit user count the target is soft: once the ledger reports ready_for_review, do not demand more candidates; judge the verified ones and the disclosed gaps. Recommendation scores are not probabilities. Recommend only eligible candidates; disclose excluded/pending items and scope. No fabricated completeness for an open set.';
 const NO_LEDGER_RULES = '\nNo task_progress tool was offered in this turn, so a candidate ledger cannot exist and must not be demanded: judge every requirement from the evidence alone and always include the boolean fields evaluationValid=true and needsEvaluation=false in the JSON reply.';
 const evaluationOffered = state => (state.availableTools || []).includes(TASK_PROGRESS_NAME);
 const evaluationRules = state => evaluationOffered(state) || state.evaluation?.contract ? EVALUATION_RULES : NO_LEDGER_RULES;

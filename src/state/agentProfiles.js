@@ -1,4 +1,5 @@
 import { normalizeLocale } from '../../shared/agent/locale.js';
+import { TASK_EVALUATION_POLICY } from '../../shared/agent/taskEvaluation.js';
 import { normalizeCapabilities, normalizeCollaboration, intersectCapabilities, intersectCollaboration } from '../domain/agent/capabilities.js';
 import { composeAgentInstructions, agentInstructionFields, mergeAgentInstructions } from '../domain/agent/agentDocument.js';
 // ─── Agent profile state normalizers ─────────────────────────────────────────
@@ -143,7 +144,7 @@ export function normalizeAgentProfile(agentId, profile) {
       description: typeof profile?.description === 'string' && (profile.portableIdentity || profile.description.trim()) ? profile.description : definition.description,
       instructions,
       replyLanguage: normalizeLocale(profile?.replyLanguage, ''),
-      evaluationMode: ['quick','standard','deep'].includes(profile?.evaluationMode) ? profile.evaluationMode : 'standard',
+      evaluationMode: Object.hasOwn(TASK_EVALUATION_POLICY.modes, profile?.evaluationMode ?? '') ? profile.evaluationMode : TASK_EVALUATION_POLICY.defaultMode,
       rolePrompt: persona.rolePrompt,
       isCustom: Boolean(definition.isCustom),
       mood: MOOD_OPTION_IDS.has(profile?.mood) ? profile.mood : definition.defaultMood,

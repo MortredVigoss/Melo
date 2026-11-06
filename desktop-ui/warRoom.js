@@ -13,7 +13,7 @@ import { sceneMembers, sceneEvaluation, sceneStageRail, sceneLog, sceneResources
 import { regionSummary, deliveryGate, deliveryStatus, fieldCoverage, traceList, operationChip, sceneActors } from '/shared/warRoom.js';
 
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
-const roleName = role => ({ research: t('检索成员'), lookup: t('资料读取成员'), calculate: t('计算成员'), execute: t('执行成员'), lead: t('主 Agent') })[role] || t('内部成员');
+const roleName = role => ({ research: t('检索成员'), social: t('社交检索成员'), lookup: t('资料读取成员'), calculate: t('计算成员'), execute: t('执行成员'), lead: t('主 Agent') })[role] || t('内部成员');
 const verbName = verb => ({ dispatch: t('分派'), handoff: t('交接'), search: t('检索'), read: t('读取'), lookup: t('查询'), compute: t('计算'), write: t('写入'), call: t('调用'),
   approval: t('审批'), evaluate: t('评估'), review: t('核验'), stop: t('停止'), deliver: t('交付') })[verb] || verb;
 const phaseName = key => ({ contract: t('合同'), dispatch: t('分派'), approval: t('审批'), evaluate: t('评估'), review: t('核验'), deliver: t('交付') })[key] || key;

@@ -62,11 +62,15 @@ struct AgentLoopRequest: @unchecked Sendable {
     var progressDefinition: PhoneToolDefinition? = nil
     var internalDefinition: PhoneToolDefinition? = nil
     var internalJob: [String: Any]? = nil
+    /// Tools the lead does not hold while a retrieval member exists
+    /// (2026-11-07 review P1-2): every research and social member tool,
+    /// hosted search included.
+    var leadWithheld: Set<String> = []
 
     // Start each member with a fresh model context. Keep provider-specific
     // function/result pairs together within that member's own transcript.
     func scopedBody(_ base: [String: Any], responses: Bool, anthropic: Bool = false) -> [String: Any] {
-        guard goalReview == nil, internalDefinition != nil || internalJob != nil || progressDefinition != nil else { return base }
+        guard goalReview == nil, internalDefinition != nil || internalJob != nil || progressDefinition != nil || !leadWithheld.isEmpty else { return base }
         var body = base
         var specs = body["tools"] as? [[String: Any]] ?? []
         func wire(_ spec: PhoneToolDefinition) -> [String: Any] {
@@ -87,7 +91,22 @@ struct AgentLoopRequest: @unchecked Sendable {
             if responses { body["instructions"] = system; body["input"] = [user]; body.removeValue(forKey:"include") }
             else if anthropic { body["system"] = system; body["messages"] = [user] }
             else { body["messages"] = [["role":"system","content":system], user] }
-        } else if let control = internalDefinition { specs.append(wire(control)) }
+        } else {
+            if !leadWithheld.isEmpty {
+                specs = specs.filter { spec in
+                    let type = spec["type"] as? String ?? ""
+                    // Hosted search is retrieval too, whether or not the member may use it.
+                    if ["web_search","web_search_preview"].contains(type) { return false }
+                    let name = spec["name"] as? String ?? (spec["function"] as? [String: Any])?["name"] as? String
+                    return name.map { !leadWithheld.contains($0) } ?? true
+                }
+                if !specs.contains(where: { ["web_search","web_search_preview"].contains($0["type"] as? String ?? "") }), let include = body["include"] as? [String] {
+                    let kept = include.filter { !$0.hasPrefix("web_search_call.") }
+                    if kept.isEmpty { body.removeValue(forKey: "include") } else { body["include"] = kept }
+                }
+            }
+            if let control = internalDefinition { specs.append(wire(control)) }
+        }
         if internalJob == nil, let progressDefinition { specs.append(wire(progressDefinition)) }
         body["tools"] = specs
         if internalJob != nil { body.removeValue(forKey:"tool_choice") }
@@ -226,7 +245,8 @@ struct AgentLoopHooks {
     var resumeCursor: PhoneReplyCursor? = nil
     var saveCursor: (@MainActor (PhoneReplyCursor) throws -> Void)? = nil
     var maxTaskIterations: Int? = nil
-    var evaluationMode: String = "standard"
+    /// The Agent's task depth; unset Agents use TASK_EVALUATION_POLICY.defaultMode.
+    var evaluationMode: String = "quick"
     var traceRunID: String? = nil
     var routing: PhoneRoutingHost? = nil
     var onStatus: (@MainActor (String) -> Void)? = nil
@@ -235,6 +255,10 @@ struct AgentLoopHooks {
     /// bounded evaluation snapshot. When unset, `onStage` receives the plain stage.
     var onStageEvent: (@MainActor (AgentStageEvent) -> Void)? = nil
     var onToolCall: (@MainActor (ExecutionToolCall) -> Void)? = nil
+    /// The internal member whose turn is running (its 1-based assignment
+    /// number), or nil when the lead's is: the host tags that turn's native
+    /// search calls with `job-N:` so the task space knows whose they are.
+    var onMemberJob: (@MainActor (Int?) -> Void)? = nil
     /// Supplements typed while the turn runs; taken before every model call from the second on.
     var takeSupplements: (@MainActor () -> [String])? = nil
     var onSupplementsJoined: (@MainActor ([String]) -> Void)? = nil
@@ -272,6 +296,12 @@ final class AgentLoop: @unchecked Sendable {
         return [instructions, PhoneUncertainty.rules].filter { !$0.isEmpty }.joined(separator: "\n\n")
     }
     static func classify(_ message: String, history: [ChatMessage]) -> PhoneIntent.Classification { PhoneIntent.classify(message, history: history) }
+    /// The retrieval members' tools, which the lead does not hold while
+    /// routing is open (shared leadWithheldTools, 2026-11-07 review P1-2).
+    static func leadWithheld(_ catalog: [String: Any]?) -> Set<String> {
+        guard let catalog else { return [] }
+        return Set(SharedLoopPolicy.value("internalRouting", ["action": "withheld", "catalog": catalog]) as? [String] ?? [])
+    }
 
     // MARK: run
 
@@ -401,6 +431,7 @@ final class AgentLoop: @unchecked Sendable {
             core = leadCore; budget = rootBudget
             if core.active { _ = try? core.event("inherit-effects", effects) }
             job = nil
+            await hooks.onMemberJob?(nil)
         }
         func beginMember(_ active: [String:Any], restoring: Bool = false) throws {
             let available = rootBudget.maxInputTokens - rootBudget.used.inputTokens - (memberPolicy["leadInputReserve"] ?? 0)
@@ -448,7 +479,7 @@ final class AgentLoop: @unchecked Sendable {
                     throw MeloError.message("恢复前请核对原对话的连接、Agent 和权限。")
                 }
                 job = current
-                try beginMember(current, restoring: true)
+                try beginMember(current, restoring: true); await hooks.onMemberJob?(assignments.count)
                 leadTranscript = transcript
                 transcript = [.userText(cursor.context(memberOffset: observationsAtStart))]
             }
@@ -507,7 +538,7 @@ final class AgentLoop: @unchecked Sendable {
             var condensed = false
             while true {
                 let review = checkingGoal ? try goal.update("request", ["observations": completionObservations]) : nil
-                let request = AgentLoopRequest(iteration: iteration, transcript: transcript, timeout: budget.requestTimeout(cap: transport.timeoutCap), remainingTokens: nil, goalReview: review, repairing: goal.repairing || hooks.routing?.session.escalated == true, progressDefinition: catalog != nil && job == nil ? progressDefinition : nil, internalDefinition: catalog != nil && job == nil && assignments.count < (routeLimits?["assignments"] ?? 0) ? definition : nil, internalJob: job)
+                let request = AgentLoopRequest(iteration: iteration, transcript: transcript, timeout: budget.requestTimeout(cap: transport.timeoutCap), remainingTokens: nil, goalReview: review, repairing: goal.repairing || hooks.routing?.session.escalated == true, progressDefinition: catalog != nil && job == nil ? progressDefinition : nil, internalDefinition: catalog != nil && job == nil && assignments.count < (routeLimits?["assignments"] ?? 0) ? definition : nil, internalJob: job, leadWithheld: job == nil ? Self.leadWithheld(catalog) : [])
                 do {
                     let roundTransport = transport
                     round = try await LoopTrace.model(purpose: checkingGoal ? "goal-check" : "loop", input: ["iteration":iteration,"toolNames":Array(offered),"loadedToolInstructions":tools?.instructionsWithContract ?? ""], snapshot: { value in
@@ -602,6 +633,7 @@ final class AgentLoop: @unchecked Sendable {
                let next = SharedLoopPolicy.value("internalRouting", ["action":"start","catalog":catalog,"args":args,"callId":localCall(call).callID,"assignments":assignments,"goal":goal.original]) as? [String: Any], next["error"] == nil {
                 try core.event("feedback", ["internalRouting":true])
                 job = next; assignments.append(next); jobRounds = 0; observationsAtStart = completionObservations.count
+                await hooks.onMemberJob?(assignments.count)
                 member.assignments.append(next.filter { ["role","task","callId","rootCallId","roundLimit","resume"].contains($0.key) }.mapValues { String(describing:$0) })
                 try beginMember(next)
                 leadTranscript = transcript; leadAssignmentRound = round; transcript = []
@@ -642,6 +674,8 @@ final class AgentLoop: @unchecked Sendable {
                     outcome = PhoneToolEnvelope.finalize(ok: false, error: "ABORTED", output: "Aborted before execution.")
                 } else if let job, !(job["tools"] as? [String] ?? []).contains(call.name) {
                     outcome = PhoneToolEnvelope.finalize(ok:false, error:"CAPABILITY_DENIED", output:"Tool outside the internal job scope.")
+                } else if job == nil, Self.leadWithheld(catalog).contains(call.name) {
+                    outcome = PhoneToolEnvelope.finalize(ok:false, error:"CAPABILITY_DENIED", output:"The lead holds no retrieval tools: assign this lookup with route_task (research for the web, social for first-hand posts).")
                 } else if call.name == "calculator" && job == nil {
                     outcome = PhoneToolEnvelope.finalize(ok:false, error:"UNKNOWN_TOOL", output:"Calculator is available through the internal calculation job.")
                 } else if !core.permits(call.callID) {

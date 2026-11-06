@@ -2,6 +2,7 @@ import {normalizeHandoff} from '../agents/handoff.js';
 import {migrateLegacyResults} from '../domain/artifact/artifactService.js';
 import { recommendedCapabilities } from '../domain/agent/capabilities.js';
 import { addSocialReads, SOCIAL_READER_VERSION } from '../mcp/socialPresets.js';
+import { TASK_EVALUATION_POLICY } from '../../shared/agent/taskEvaluation.js';
 import { usableMcpServerIds } from '../mcp/presets.js';
 import { DEFAULT_CONFIG } from '../config.js';
 import { hydrateAgentRecords, hydrateProjectAgentRecords } from '../domain/agent/agentState.js';
@@ -537,6 +538,7 @@ export function createDefaultState() {
       ],
       connectorPresetVersion: 2,
       socialReaderVersion: SOCIAL_READER_VERSION,
+      evaluationDefaultVersion: EVALUATION_DEFAULT_VERSION,
       skillPresetVersion: 1,
       promptHistory: [],
       sortProjectsBy: 'activity',
@@ -554,6 +556,14 @@ export function createDefaultState() {
     approvals: [],
   };
 }
+
+// Until 2026-11-07 hydration wrote the then-default 'standard' task depth into
+// every Agent it normalized, so a stored 'standard' from before this version
+// was never the user's choice. It becomes the shared default (quick) once;
+// any depth chosen afterwards, and every other value, is kept.
+export const EVALUATION_DEFAULT_VERSION = 1;
+const evaluationDefault = (profile, version) => version < EVALUATION_DEFAULT_VERSION && profile?.evaluationMode === 'standard'
+  ? { ...profile, evaluationMode: TASK_EVALUATION_POLICY.defaultMode } : profile;
 
 export function hydrateState(parsed = {}) {
   const defaults = createDefaultState();
@@ -625,6 +635,7 @@ export function hydrateState(parsed = {}) {
 
   const overrides=normalizeProjectAgentOverrides(hydrateProjectAgentRecords(parsed),hydrateAgentRecords(parsed));
   const readerVersion=Number(parsed.settings?.socialReaderVersion || 0);
+  const evaluationVersion=Number(parsed.settings?.evaluationDefaultVersion || 0);
   if(readerVersion<SOCIAL_READER_VERSION) {
     for(const agents of Object.values(overrides)) for(const profile of Object.values(agents)) {
       if(profile.capabilities) profile.capabilities=addSocialReads(profile,readerVersion).capabilities;
@@ -642,6 +653,7 @@ export function hydrateState(parsed = {}) {
       connectorPresetVersion: defaults.settings.connectorPresetVersion,
       enabledSkillIds,
       socialReaderVersion: SOCIAL_READER_VERSION,
+      evaluationDefaultVersion: EVALUATION_DEFAULT_VERSION,
       skillPresetVersion: defaults.settings.skillPresetVersion,
       promptHistory: normalizePromptHistory(parsed?.settings?.promptHistory),
       selectedProjectId,
@@ -657,7 +669,7 @@ export function hydrateState(parsed = {}) {
       : defaults.externalConnectors,
     externalToolRuns: normalizeExternalToolRuns(parsed.externalToolRuns),
     agentProfiles: Object.keys(parsed).length===0 ? defaults.agentProfiles : Object.fromEntries(Object.entries(normalizeAgentProfiles(hydrateAgentRecords(parsed))).map(([id,profile])=>[id,
-      readerVersion<SOCIAL_READER_VERSION ? addSocialReads(profile,readerVersion) : profile])),
+      evaluationDefault(readerVersion<SOCIAL_READER_VERSION ? addSocialReads(profile,readerVersion) : profile, evaluationVersion)])),
     projectAgentOverrides: overrides,
     tasks: normalizeTasks(parsed.tasks),
     mobileTaskSync: parsed.mobileTaskSync || null,

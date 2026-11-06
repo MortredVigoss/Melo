@@ -124,6 +124,15 @@ test('all Agent defaults; migrate once, keep revocations, network prohibitions a
  next.agentProfiles.main.capabilities.mcpServers=['manual'];assert.deepEqual(hydrateState(next).agentProfiles.main.capabilities.mcpServers,['manual']);
  const tool='mcp:melo-douyin:search_videos'; assert.equal(requestAllowsTool(tool,{fetchForbidden:true}),false);assert.equal(requestAllowsTool(tool,{searchForbidden:true}),false);assert.equal(toolCapabilityAllowed(tool,{mcpServers:socialIds,network:false}),false);
 });
+test('task depth: the system-written standard becomes the quick default once; later choices are kept',()=>{
+ const orig=createDefaultState();delete orig.settings.evaluationDefaultVersion;
+ orig.agentProfiles.main.evaluationMode='standard';orig.agentProfiles.research.evaluationMode='deep';delete orig.agentProfiles.builder.evaluationMode;
+ const next=hydrateState(orig);
+ assert.equal(next.agentProfiles.main.evaluationMode,'quick');assert.equal(next.agentProfiles.research.evaluationMode,'deep');assert.equal(next.agentProfiles.builder.evaluationMode,'quick');
+ assert.equal(next.settings.evaluationDefaultVersion,1);
+ next.agentProfiles.main.evaluationMode='standard';assert.equal(hydrateState(next).agentProfiles.main.evaluationMode,'standard','a depth chosen after the migration is kept');
+ assert.equal(createDefaultState().settings.evaluationDefaultVersion,1);
+});
 test('platform QR token stays in host memory, raw login/account contents never reach UI',async()=>{
  let token; const fake={callTool:async(name,args)=>{if(name==='check_login_qrcode')token=args.token;
  return {structuredContent:name==='get_login_qrcode'?{data:{qrcode:'iVBORw0KGgoAAA==',token:'qr-secret'}}:name==='check_login_status'?{logged_in:true,uid:'private'}:{data:{status:'confirmed'}}};}};

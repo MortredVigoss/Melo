@@ -6,9 +6,9 @@ import { MEMBER_ROLES, TERMINAL_SCENE_STATUSES, sceneFinished } from './executio
 import { normalizeEvaluationSnapshot, taskEvaluationSnapshot } from '../../shared/agent/taskEvaluation.js';
 
 // Where a member normally works when no running operation says otherwise.
-export const MEMBER_ROLE_MODULE = Object.freeze({ research: 'search', lookup: 'files', calculate: 'compute', execute: 'tools' });
+export const MEMBER_ROLE_MODULE = Object.freeze({ research: 'search', social: 'search', lookup: 'files', calculate: 'compute', execute: 'tools' });
 // Scenes recorded before stages carried a role only have the display label.
-const LEGACY_ROLE_LABELS = Object.freeze({ '检索成员': 'research', '计算成员': 'calculate', '资料读取成员': 'lookup', '执行成员': 'execute' });
+const LEGACY_ROLE_LABELS = Object.freeze({ '检索成员': 'research', '社交检索成员': 'social', '计算成员': 'calculate', '资料读取成员': 'lookup', '执行成员': 'execute' });
 export const BOARD_LOG_LIMIT = 60;
 const QUALIFIED_TIERS = ['primary', 'alternative', 'eligible'];
 const memberIndex = id => { const match = /^internal:(\d{1,3})$/.exec(String(id)); return match ? Number(match[1]) : null; };

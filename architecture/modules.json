@@ -25,7 +25,7 @@
     ],
     "graph": {
       "modules": 699,
-      "edges": 2273,
+      "edges": 2277,
       "roots": [
         "src",
         "desktop-ui",
@@ -558,7 +558,7 @@
       "dependsOn": {
         "approvals": 3,
         "channels": 3,
-        "chat": 32,
+        "chat": 34,
         "desktop-shell": 9,
         "memory": 12,
         "platform": 49,
@@ -916,6 +916,7 @@
         {
           "module": "shared/agent/taskEvaluation.js",
           "importedBy": [
+            "agents",
             "platform"
           ]
         },
@@ -1144,14 +1145,14 @@
         "voice": 3
       },
       "usedBy": {
-        "agents": 32,
+        "agents": 34,
         "approvals": 1,
         "channels": 9,
         "desktop-shell": 13,
         "development": 1,
         "media": 14,
         "memory": 12,
-        "platform": 31,
+        "platform": 33,
         "projects": 1,
         "settings": 14,
         "sync": 4,
@@ -4435,7 +4436,7 @@
         "agents": 34,
         "approvals": 18,
         "channels": 6,
-        "chat": 31,
+        "chat": 33,
         "desktop-shell": 2,
         "development": 2,
         "knowledge": 2,

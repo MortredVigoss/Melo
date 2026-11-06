@@ -197,7 +197,7 @@ test('an unavailable configured connection returns a diagnosable partial handoff
 });
 
 test('C3: a member child budget covers its whole round allowance, not a single 90 s slice', async () => {
-  const { memberDeadlineMs } = await import('../../../../shared/agent/taskEvaluation.js');
+  const { memberDeadlineMs, TASK_EVALUATION_POLICY } = await import('../../../../shared/agent/taskEvaluation.js');
   const budget = reserveDelivery(createRunBudget({ overrides: { maxInputTokens: 400000, deadlineMs: 30 * 60000, maxToolCalls: 200 } }));
   const seen = [];
   const run = async () => { const child = currentRequestContext().budget; seen.push({ deadline: child.deadlineAt - child.startedAt, calls: child.maxToolCalls }); return { ok: true, output: 'ok', meta: { observations: [] } }; };
@@ -205,6 +205,7 @@ test('C3: a member child budget covers its whole round allowance, not a single 9
   await runWithRequestContext(Object.freeze({ budget }), () => runInternalMembers({ jobs: [first, resumed], goal, run, lanes: 1 }));
   assert.equal(seen[0].deadline, memberDeadlineMs(first.roundLimit));
   assert.equal(seen[1].deadline, memberDeadlineMs(2));
-  assert.ok(seen[0].deadline > 90000 + 60000, 'four rounds get more than one slice');
-  assert.equal(seen[0].calls, 8);
+  assert.ok(seen[0].deadline > 90000 + 60000, 'a first assignment gets more than one slice');
+  // 2026-11-07 review P1-2: members do the lead's retrieval, so a member gets 16 calls.
+  assert.equal(seen[0].calls, TASK_EVALUATION_POLICY.member.calls); assert.equal(seen[0].calls, 16);
 });

@@ -57,6 +57,8 @@ import SwiftUI
     private let syncLoader: ((Data) async throws -> Data)?
     private struct ActiveRun { let runID: String; let attempt: UUID; var task: Task<Void, Never>?; let background: ReplyBackgroundLifetime }
     private var runs: [String: ActiveRun] = [:]
+    /// The internal member whose turn is running in each run (AgentLoopHooks.onMemberJob).
+    private var memberJobs: [String: Int] = [:]
     private var injectedBackground: ReplyBackgroundLifetime?
     private var expiredRuns: Set<String> = []
     private enum ApprovalItem { case device(DeviceActionRequest, CheckedContinuation<Bool, Never>), capability(CapabilityRequest) }
@@ -242,6 +244,7 @@ import SwiftUI
             saved.supportsContinuation = false
             do { try persist(saved) } catch { self.error = error.localizedDescription }
         }
+        let value = value.taggedForMember(memberJobs[runID])
         executionRecords[index].observe(value)
         if !value.operations.isEmpty || value.returnedModel != nil {
             background(forRun: runID)?.update(runID: runID, completed: 1, subtitle: "回复中")
@@ -249,6 +252,7 @@ import SwiftUI
         if Date().timeIntervalSince(lastSceneSave) > 0.5 { saveExecutionRecords() }
     }
     private func finishRun(_ runID: String, state: String, message: ChatMessage? = nil, sources: [WebSource] = [], completion: AgentCompletionReceipt? = nil) {
+        memberJobs[runID] = nil
         guard let index = executionRecords.firstIndex(where: { $0.runId == runID }) else { return }
         executionRecords[index].completion = completion ?? (["completed", "interrupted"].contains(state) ? nil : AgentCompletionReceipt.make(goal: executionRecords[index].query, reply: "", terminalReason: state == "cancelled" ? "CANCELLED" : "REQUEST_FAILED"))
         executionRecords[index].finish(state, messageID: message?.id)
@@ -625,7 +629,7 @@ import SwiftUI
             }
             let memberHooks = AgentLoopHooks(
                 maxTaskIterations: isLead ? agent.maxTaskIterations : nil,
-                evaluationMode: agent.evaluationMode ?? "standard",
+                evaluationMode: agent.evaluationMode ?? "quick",
                 onStage: { [weak self] id, name, status, output in
                     self?.stage(record.runId, id: "member:\(callID):\(id)", name: "\(agent.name) · \(name)", status: status, output: output)
                 },
@@ -660,11 +664,12 @@ import SwiftUI
                 current.cursor = cursor; current.supplements = supplements.queued; try self.persist(current)
             },
             maxTaskIterations: selectedAgent.maxTaskIterations,
-            evaluationMode: selectedAgent.evaluationMode ?? "standard",
+            evaluationMode: selectedAgent.evaluationMode ?? "quick",
             traceRunID: record.runId,
             onStage: { [weak self] id, name, status, output in if isCurrent() { self?.stage(record.runId, id: id, name: name, status: status, output: output) } },
             onStageEvent: { [weak self] event in if isCurrent() { self?.stage(record.runId, id: event.id, name: event.name, status: event.status, output: event.output, input: event.input, role: event.role, rounds: event.rounds, evaluation: event.evaluation) } },
             onToolCall: { [weak self] call in if isCurrent() { self?.recordToolCall(call, runID: record.runId) } },
+            onMemberJob: { [weak self] job in if isCurrent() { self?.memberJobs[record.runId] = job } },
             takeSupplements: { supplements.take() },
             onSupplementsJoined: { [weak self] taken in self?.supplementsJoined(taken, chatID: chatID, runID: record.runId) })
         let replyBackground = makeBackground()
@@ -767,8 +772,9 @@ import SwiftUI
                 guard let position = chats.firstIndex(where: { $0.id == chatID }) else { finishRun(record.runId, state: "interrupted"); return }
                 let message = ChatMessage(role: "assistant", content: reply.text)
                 var attachments: [LocalImage] = []
-                // Web screenshots render under the reply like generated images; a failed save never loses the answer.
-                for shot in screenshots.items + teamScreenshots.items {
+                // Web screenshots render under the reply like generated images, but only when the user asked to
+                // see a page: the ones taken to read or navigate stay with the model. A failed save never loses the answer.
+                for shot in WebPageText.userWantsScreenshot(clean) ? screenshots.items + teamScreenshots.items : [] {
                     do { attachments.append(try imageLibrary.store(shot.jpeg, title: "网页截图 " + (URL(string: shot.url)?.host ?? ""), photo: true)) }
                     catch { stage(record.runId, id: "web:save", name: "保存网页截图", status: "failed", output: String(error.localizedDescription.prefix(300))) }
                 }
@@ -1061,8 +1067,12 @@ import SwiftUI
         // Web page tools share the Agent's network switch with web search and
         // the device-wide "实时搜索与天气" switch (SettingsView webSearchEnabled); read-only, no dialog.
         let webSwitch = { UserDefaults.standard.object(forKey: "webSearchEnabled") as? Bool ?? true }
-        let web: WebToolContext? = visible.contains("network") && webSwitch() ? WebToolContext(execute: { call in
-            await WebPageToolRunner.run(call: call, allowed: { webSwitch() && allowedNow(call.name) }).phoneResult
+        let web: WebToolContext? = visible.contains("network") && webSwitch() ? WebToolContext(execute: { [weak self] call in
+            // On the record while it runs, so the task space shows the call being worked, with its start time.
+            let url = (try? JSONSerialization.jsonObject(with: Data(call.arguments.utf8)) as? [String: Any])?["url"] as? String ?? ""
+            self?.phoneOperation(runID, id: receiptID("web:\(call.callID)"), module: "search", name: WebPageToolSpec.named(call.name)?.recordName ?? "网页 · \(call.name)",
+                                 status: "running", summary: "", page: ["url": url])
+            return await WebPageToolRunner.run(call: call, allowed: { webSwitch() && allowedNow(call.name) }).phoneResult
         }, onCall: { [weak self] call, result in
             let summary = WebPageText.summary(result)
             let name = WebPageToolSpec.named(call.name)?.recordName ?? "网页 · \(call.name)"
@@ -1071,7 +1081,7 @@ import SwiftUI
             let status = PhoneToolEnvelope.parse(result.output).code == "ABORTED" ? "cancelled" : http >= 400 || !summary.ok ? "failed" : "completed"
             self?.phoneOperation(runID, id: receiptID("web:\(call.callID)"), module: "search", name: name, status: status,
                                  summary: http >= 400 ? "HTTP \(http)" : summary.text, page: page, textRead: call.name == WebPageToolSpec.openURL)
-            if let jpeg = result.imageJPEG, let screenshots { screenshots.items.append((jpeg, result.imageURL)) }
+            if let jpeg = result.imageJPEG, let screenshots, !ScreenshotQuality.isNearlyBlank(jpeg) { screenshots.items.append((jpeg, result.imageURL)) }
         }) : nil
         // read_history: only this chat's own messages, offered when the desktop summary names ranges.
         let history: HistoryToolContext? = readHistory ? chatID.map { chatID in HistoryToolContext(execute: { [weak self] call in

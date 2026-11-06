@@ -53,6 +53,9 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
         private lateinit var transport: DeviceAgentClient
         private lateinit var history: MutableList<JsonObject>
         private var internalCatalog: JsonObject? = null
+        // The retrieval members' tools (research and social), which the lead does
+        // not hold while routing is open (shared leadWithheldTools, 2026-11-07 review P1-2).
+        private var leadWithheld: Set<String> = emptySet()
         private var internalJob: JsonObject? = null
         private val assignments = mutableListOf<JsonObject>()
         private lateinit var leadHistory: MutableList<JsonObject>
@@ -147,6 +150,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                     put("action","catalog"); put("goal",plan.text("resolvedGoal").ifBlank { goal }); put("tools",JsonArray(tools.map(::JsonPrimitive)))
                 }) as? JsonObject
             }
+            leadWithheld = internalCatalog?.let { catalog -> runtime.value("internalRouting", buildJsonObject { put("action","withheld"); put("catalog", catalog) }).jsonArray.map { it.jsonPrimitive.content }.toSet() }.orEmpty()
             if (internalCatalog != null) {
                 val limits = runtime.value("internalRouting", buildJsonObject { put("action","limits") }).jsonObject
                 assignmentLimit = limits.getValue("assignments").jsonPrimitive.int
@@ -360,8 +364,9 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                     val job = internalJob
                     val tools = job?.strings("tools")
                     val roundSpecs = if (tools != null) (specs + calculatorSpec).filter { it.text("name") in tools }
-                        else specs + (if (internalCatalog != null) listOf(runtime.value("taskEvaluation", buildJsonObject { put("action","definition") }).jsonObject) else emptyList()) + listOfNotNull(internalCatalog?.get("definition") as? JsonObject).takeIf { assignments.size < assignmentLimit }.orEmpty()
-                    val hosted = nativeSearch && connection.protocol == "responses" && (tools == null || "native_web_search" in tools)
+                        else specs.filter { it.text("name") !in leadWithheld } + (if (internalCatalog != null) listOf(runtime.value("taskEvaluation", buildJsonObject { put("action","definition") }).jsonObject) else emptyList()) + listOfNotNull(internalCatalog?.get("definition") as? JsonObject).takeIf { assignments.size < assignmentLimit }.orEmpty()
+                    // Hosted search is retrieval too: the routing lead never holds it.
+                    val hosted = nativeSearch && connection.protocol == "responses" && (if (tools == null) leadWithheld.isEmpty() else "native_web_search" in tools)
                     val reply = try { next(turn, roundSpecs, hosted) } catch (failure: Exception) {
                         currentCoroutineContext().ensureActive()
                         if (job == null || failure is CancellationException || failure is SharedTurnStopped || failure is SharedBudgetExhausted ||
@@ -416,7 +421,8 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                         onPhase(when (call.name) { "phone_use", "phone_action" -> "正在执行请求的手机任务…"; "phone_workflow" -> "正在本机重放已验证子流程…"; "fetch_url" -> "正在核对来源网页…"; "read_history" -> "正在回读本对话原文…"; else -> if (call.name in organizerNames) "正在处理待办与日历…" else "正在搜索公开来源…" })
                         var executed = false
                         val organizerKey = call.name + ":" + call.arguments.toSortedMap().toString()
-                        val result = if (tools != null && call.name !in tools || job == null && call.name == "calculator")
+                        val result = if (job == null && call.name in leadWithheld)
+                            DeviceToolResult.error("The lead holds no retrieval tools: assign this lookup with route_task (research for the web, social for first-hand posts).", "CAPABILITY_DENIED") else if (tools != null && call.name !in tools || job == null && call.name == "calculator")
                             DeviceToolResult.error("Tool outside the internal job scope.", "CAPABILITY_DENIED") else if (phoneFailure != null) DeviceToolResult.error("Previous phone action failed; remaining sibling action was not executed.", "PRIOR_ACTION_FAILED") else if (call.name in organizerNames && organizerWrites.containsKey(organizerKey)) DeviceToolResult(JsonObject(organizerWrites.getValue(organizerKey).data + ("replayed" to JsonPrimitive(true)))) else if (!turn.permits(call.id)) DeviceToolResult.error("本步未执行：${turn.rejection(call.id)}；请先完成前置检索。", turn.rejection(call.id)) else if (routing?.active == true && routing!!.decision.text("tier") != "strong" && runtime.value("toolEffect", buildJsonObject { put("name", call.name); put("arguments", call.arguments) }).jsonPrimitive.content in setOf("write", "unknown")) {
                             routing!!.sideEffects = true; requestedUpgrade = true
                             DeviceToolResult.error("本步尚未执行，需要强档模型；请保留已有结果，等待升档或配置强档。", "ROUTING_REQUIRES_STRONG")

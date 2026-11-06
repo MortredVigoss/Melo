@@ -24,7 +24,7 @@ export function hasCapability(capabilities, key) { return !capabilities || capab
 // Internal routing jobs that may run on their own model connection (plan A
 // phase A5-1, 2026-11-04): the value is an llm profile id; absent means the
 // member follows the conversation's connection.
-export const INTERNAL_JOB_ROLES=Object.freeze(['research','lookup','calculate','execute']);
+export const INTERNAL_JOB_ROLES=Object.freeze(['research','social','lookup','calculate','execute']);
 function jobModels(value) {
   const out={};
   for (const role of INTERNAL_JOB_ROLES) { const id=value?.[role]; if (typeof id==='string'&&/^[a-zA-Z0-9_-]{1,100}$/.test(id)) out[role]=id; }

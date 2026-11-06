@@ -1,3 +1,4 @@
+import { TASK_EVALUATION_POLICY } from '../../../shared/agent/taskEvaluation.js';
 // Pure profile-to-draft helper for the Customize → Agents workbench.
 //
 // `app.js::agentDraftFor(agent)` used to build this draft inline, but the
@@ -90,7 +91,7 @@ export function agentDraftFromProfile(agent) {
     tools: toolIds,
     model: agent?.model || '',
     replyLanguage: agent?.replyLanguage || '',
-    evaluationMode: agent?.evaluationMode || 'standard',
+    evaluationMode: agent?.evaluationMode || TASK_EVALUATION_POLICY.defaultMode,
     systemPrompt: agent?.systemPrompt || '',
     voiceReplyMode: typeof agent?.voiceReplyMode === 'string' ? agent.voiceReplyMode : 'summary',
     edgeTtsVoice: typeof agent?.edgeTtsVoice === 'string' ? agent.edgeTtsVoice : '',
