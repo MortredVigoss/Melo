@@ -401,6 +401,24 @@ for (const withSources of [true, false]) test(`a member's hosted search ${withSo
   } else assert.equal(hosted.length, 0, 'a hosted search without any source is no evidence');
 });
 
+test('a long hosted answer stays provider-reported in the member evidence and its handoff', async () => {
+  const { internalHandoff } = await import('../../shared/agent/internalRouting.js');
+  const { runWithRequestContext } = await import('../runtime/requestScope.js');
+  const answer = 'Example Cafe opens at 8am. ' + 'detail '.repeat(3000);
+  const reply = makeFakeReply();
+  reply.queue.push({ protocol: 'responses', text: answer, responseItems: [
+    { type: 'web_search_call', status: 'completed', action: { sources: [{ url: 'https://cafe.example/hours', title: 'Opening hours' }] } },
+    { type: 'message', content: [{ type: 'output_text', text: answer, annotations: [] }] }] });
+  reply.queue.push(JSON.stringify({ decision: 'partial', reasonType: 'unavailable', reason: 'fixture', requirements: [{ text: 'hours', kind: 'external_fact', status: 'missing', evidenceIds: [] }] }));
+  const result = await runWithRequestContext({ capabilityScope: { agentId: 'main', legacy: true } }, () => runSubAgent({ task: 'Find Example Cafe opening hours', allowedToolIds: ['web_search', 'native_web_search'],
+    nativeWebSearch: true, nativeImageGeneration: false, config: validConfig(), replyFn: reply, maxIterations: 2 }));
+  const source = result.meta.observations.find(row => row.type === 'source' && row.url === 'https://cafe.example/hours');
+  assert.ok(answer.length > 16000);
+  assert.deepEqual([source.reading, source.truncated], ['provider', true]);
+  const handoff = JSON.parse(internalHandoff({ job: { role: 'research', task: 'hours', callId: 'c', tools: ['web_search', 'native_web_search'] }, answer: 'x', observations: result.meta.observations }));
+  assert.ok(handoff.evidence.filter(row => row.url === 'https://cafe.example/hours').every(row => row.reading === 'provider'), 'the lead receives it as provider-reported');
+});
+
 test('internal routing: roleSystem is a trusted system section, instructions stay in the user turn, effects are reported', async () => {
   const reply = makeFakeReply();
   reply.queue.push('20 C is 68 F.', "{\"decision\": \"complete\", \"reasonType\": \"self_contained\", \"requirements\": [{\"text\": \"conversion\", \"status\": \"met\", \"evidenceIds\": []}]}");

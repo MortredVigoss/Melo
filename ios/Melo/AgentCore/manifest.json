@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "sha256": "8f041f5bb40fe8c69b88e1ab148e0e93272798a8edea78ed27b3e483369ef567",
+  "sha256": "cb55f24efc749d343e2fdc2ced14d9032dbb3e5359b3b2b69321d1ac9d823890",
   "sources": {
     "shared/agent/index.js": "d6f84581b2efec174e261b9764427e8d11d3d59ab9df737e0b2396922f0e06ba",
     "shared/agent/taskEvaluation.js": "df881fba5c840a316e9743bd8936907565b36f7f9ca42f7813369cccaf8a25bb",
@@ -34,7 +34,7 @@
     "shared/agent/toolEffects.js": "c4a441bb4552b2b7962b78012f07eeea34ebf40f25c837bdd367218d0f126c32",
     "shared/agent/policyBridge.js": "4d6529f8d02752acaf43548b81c27e6a206843f2a7c853d4bb56c72707d71984",
     "shared/agent/runBudget.js": "32dd12ae377ddc185f3d39345e9cb65433c6ecba8d3d83c9adbe8ff56c0fcf06",
-    "shared/agent/completion.js": "1cd5b5ebdbcb427db7f51c62f9492b8150aad9d3ba0baafdb28accb288d9aa58",
+    "shared/agent/completion.js": "da298fd3904a80784387b1c7f8f8a1f943586b28db68949bf9f06d9391591aa7",
     "shared/agent/execution.js": "5b0736db07935409c19f6617b52f5fb08177fd7d1eb74220336ad43de55d1e2d",
     "src/shared/sessionEvents.js": "47ceca8f284e5c950252d1f6cb7774199d4db1343a9c47e7b01421333e268a5c",
     "shared/agent/taskScore.js": "1696892cffc9a475b22921657dbee96787c70738d62aa865a55f198a8b74b2f4",

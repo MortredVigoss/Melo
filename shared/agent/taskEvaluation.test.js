@@ -121,6 +121,21 @@ test('plan A: a same-turn revision may only add requirements',()=>{
  assert.match(recategorized.error,/may only add requirements/);assert.equal(recategorized.contract.category,'other');
 });
 
+test('plan A: a provider answer of any length is never read page text',async()=>{
+ const { completionObservation } = await import('./completion.js');
+ const f=fixtures.find(f=>f.name.includes('three eligible entities suffice'));const [contract,batch]=f.steps;
+ const pages=batch.context.observations.slice(0,3);
+ const counted=(reading,pad)=>{
+  const rows=completionObservation({id:'hosted:0',name:'web_search',ok:true,executed:true,output:'Provider-reported completed Search',sources:pages.map(row=>({url:row.url,...(reading?{reading}:{}),text:row.text+pad}))});
+  const data=JSON.parse(batch.args.data);data.items.forEach((item,index)=>{for(const field of Object.values(item.fields))field.evidence=field.evidence.map(ref=>({...ref,id:'hosted:0:source:'+index}));});
+  const state=updateTaskEvaluation(updateTaskEvaluation(null,contract.args,contract.context),{action:'batch',data:JSON.stringify(data)},{...batch.context,observations:rows});
+  return [state.summary.verified,state.summary.read,state.summary.stop];
+ };
+ assert.deepEqual(counted('provider',''),[0,0,'continue']);
+ assert.deepEqual(counted('provider',' '+'x'.repeat(17000)),[0,0,'continue'],'length alone never turns a provider answer into a read');
+ assert.deepEqual(counted(undefined,' '+'x'.repeat(17000)),[3,3,'ready_for_review'],'a partially read page still counts');
+});
+
 test('plan A: two low-yield batches stop a soft search even without a verified entity, and gaps no longer block it',()=>{
  const f=fixtures.find(f=>f.name.includes('only repeat a known entity'));const [contract,first,second,third]=f.steps;
  const pending=batch=>{const data=JSON.parse(batch.args.data);data.items[0].fields.participation.value='private';return {...batch,args:{action:'batch',data:JSON.stringify(data)}};};
