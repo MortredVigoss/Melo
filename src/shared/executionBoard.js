@@ -165,10 +165,12 @@ export function usageStages(scene) {
 }
 // Resource ledger: what was actually used, plus the soft checkpoint from the
 // evaluation policy when one exists. `now` keeps the function pure.
+// `usageRecords` is how many responses reported usage: with none, the token
+// count is unknown (a provider that reports no usage, or no reply yet), not 0.
 export function sceneResources(scene, { now = null, snapshot = null } = {}) {
-  const usage = usageStages(scene).reduce((sum, stage) => ({ input: sum.input + (Number(stage.api.usage.input) || 0), output: sum.output + (Number(stage.api.usage.output) || 0) }), { input: 0, output: 0 });
+  const stages = usageStages(scene), usage = stages.reduce((sum, stage) => ({ input: sum.input + (Number(stage.api.usage.input) || 0), output: sum.output + (Number(stage.api.usage.output) || 0) }), { input: 0, output: 0 });
   const start = time(scene?.startedAt), end = time(scene?.finishedAt) ?? (Number.isFinite(now) ? now : null);
-  return { toolCalls: (scene?.operations || []).length, inputTokens: usage.input, outputTokens: usage.output,
+  return { toolCalls: (scene?.operations || []).length, inputTokens: usage.input, outputTokens: usage.output, usageRecords: stages.length,
     elapsedMs: start !== null && end !== null ? Math.max(0, end - start) : null,
     checkpoint: snapshot?.policy?.checkpoint || null, reported: snapshot?.resource || null };
 }

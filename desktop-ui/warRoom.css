@@ -200,7 +200,7 @@ html[data-scene-host=phone] .war-voice { display: inline-flex; align-items: cent
   .war-history select { max-width: 120px; }
   .war-brand b { display: none; } .war-now { font-size: 11px; }
   .war-views button { padding: 5px 8px; }
-  .war-band { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; }
+  .war-band { display: flex; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory; scroll-padding-inline: 12px; scrollbar-width: none; }
   .war-cell { flex: 0 0 84%; scroll-snap-align: start; }
   .war-band[data-mode=detail] .war-cell[data-cell=log] { display: none; }
   .war-band[data-mode=detail] .war-cell { flex-basis: 100%; }

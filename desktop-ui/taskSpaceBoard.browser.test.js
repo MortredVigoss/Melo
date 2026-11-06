@@ -17,6 +17,7 @@ import { createExecutionRecorder } from '../src/services/chat/executionScenes.js
 import { createExecutionScene, applyExecutionEvent } from '../src/shared/executionScene.js';
 import { updateTaskEvaluation, taskEvaluationSnapshot } from '../shared/agent/taskEvaluation.js';
 import { deliveryGate } from '../src/shared/warRoom.js';
+import { stageMargin } from './warRoomLayout.js';
 
 const goal = 'Find weekend music or outdoor events in Melbourne for two people';
 const observations = [
@@ -98,7 +99,14 @@ test('war room shows only recorded facts, traces every number, opens by itself, 
     const room = page.locator('#execution-war-room'), gl = room.locator('.war-gl'), band = room.locator('.war-band'), detail = room.locator('[data-cell="detail"]');
     const count = async () => Number((await detail.locator('.war-count').innerText()).match(/\d+/)[0]);
     const back = () => detail.locator('[data-war-back]').click();
+    // The global view's promise: every region's outline on the stage, its labels' room kept.
+    const framed = async label => {
+      const value = await page.waitForFunction(() => { const el = document.querySelector('#execution-war-room .war-gl'), b = el?.dataset.bounds?.split(',').map(Number); return b && b[4] === el.clientWidth && b[5] === el.clientHeight && el.dataset.bounds; }).then(handle => handle.jsonValue());
+      const [x0, y0, x1, y1, width, height] = value.split(',').map(Number), margin = stageMargin(width, height);
+      assert.ok(x0 >= margin.x - 3 && x1 <= width - margin.x + 3 && y0 >= margin.y - 3 && y1 <= height - margin.y + 3, `${label}: outlines span ${x0},${y0} – ${x1},${y1} on a ${width}×${height} stage`);
+    };
     await open('board-chat');
+    await framed('the opening frame');
     await band.locator('[data-cell="gate"] .war-gate').waitFor();
     // Rail: only phases that happened, delivery last.
     assert.deepEqual(await room.locator('.war-rail li').evaluateAll(rows => rows.map(row => row.dataset.phase)), ['contract', 'evaluate', 'dispatch', 'review', 'deliver']);
@@ -164,6 +172,8 @@ test('war room shows only recorded facts, traces every number, opens by itself, 
     await page.keyboard.press('ArrowLeft'); await page.waitForFunction(c => document.querySelector('#execution-war-room .war-gl').dataset.camera !== c, before);
     await page.keyboard.press('0'); await page.waitForFunction(() => document.querySelector('#execution-war-room .war-gl').dataset.view === 'global');
     await page.screenshot({ path: join(proof, 'war-room-free-1280.png') });
+    // Back in the default view, any window size keeps all five regions on the stage.
+    for (const [width, height] of [[1024, 700], [1440, 900], [1920, 1080], [1280, 1000]]) { await page.setViewportSize({ width, height }); await framed(`${width}×${height}`); }
     // A live run opens the war room by itself; its spider hands each finished call to its row.
     const live = async reduced => {
       await page.emulateMedia({ reducedMotion: reduced ? 'reduce' : 'no-preference' });
@@ -192,6 +202,20 @@ test('war room shows only recorded facts, traces every number, opens by itself, 
     await page.setViewportSize({ width: 393, height: 852 });
     await page.waitForTimeout(400);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    await page.waitForTimeout(2500); // the regions glide into the tall layout
+    await framed('393×852');
+    // The band below is a row of cards swiped left and right by touch, each coming to rest whole.
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+    const strip = await band.boundingBox();
+    const shown = () => band.evaluate(el => { const box = el.getBoundingClientRect(); const seen = [...el.querySelectorAll('.war-cell')].map(cell => { const r = cell.getBoundingClientRect(); return { part: Math.max(0, Math.min(r.right, box.right) - Math.max(r.left, box.left)), width: r.width }; }); const i = seen.reduce((best, row, k) => row.part > seen[best].part ? k : best, 0); return { index: i, whole: seen[i].part >= seen[i].width - 2 }; });
+    const swipe = async dx => { await cdp.send('Input.synthesizeScrollGesture', { x: Math.round(strip.x + strip.width / 2), y: Math.round(strip.y + 40), xDistance: dx, yDistance: 0, gestureSourceType: 'touch', speed: 1400 }); await page.waitForTimeout(800); };
+    assert.deepEqual(await shown(), { index: 0, whole: true });
+    await swipe(-Math.round(strip.width * .55));
+    assert.deepEqual(await shown(), { index: 1, whole: true }, 'a swipe brings the next card in and it settles whole');
+    await swipe(Math.round(strip.width * .55));
+    assert.deepEqual(await shown(), { index: 0, whole: true }, 'and back');
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false }); await cdp.detach();
     await page.screenshot({ path: join(proof, 'war-room-393.png') });
     // An ordinary chat: no evaluation cells, no invented phases.
     await page.setViewportSize({ width: 1280, height: 1000 });

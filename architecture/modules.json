@@ -24,8 +24,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 698,
-      "edges": 2272,
+      "modules": 699,
+      "edges": 2273,
       "roots": [
         "src",
         "desktop-ui",
@@ -3681,7 +3681,7 @@
         "assets/**"
       ],
       "modules": {
-        "desktop-ui": 35,
+        "desktop-ui": 36,
         "src": 2
       },
       "entryModules": [
@@ -3880,6 +3880,7 @@
         "desktop-ui/warRoom.css",
         "desktop-ui/warRoom.js",
         "desktop-ui/warRoomCluster.js",
+        "desktop-ui/warRoomLayout.js",
         "desktop-ui/warRoomParticles.js",
         "desktop-ui/warRoomScene3D.js",
         "desktop-ui/warRoomSpider.js",
@@ -3934,6 +3935,7 @@
           "desktop-ui/taskPermissions.browser.test.js",
           "desktop-ui/taskSpaceBoard.browser.test.js",
           "desktop-ui/undoToast.test.js",
+          "desktop-ui/warRoomLayout.test.js",
           "src/index.cli.test.js",
           "src/index.memoryCli.test.js"
         ],
@@ -5492,6 +5494,7 @@
         "desktop-ui/warRoom.css",
         "desktop-ui/warRoom.js",
         "desktop-ui/warRoomCluster.js",
+        "desktop-ui/warRoomLayout.js",
         "desktop-ui/warRoomParticles.js",
         "desktop-ui/warRoomScene3D.js",
         "desktop-ui/warRoomSpider.js",

@@ -57,6 +57,7 @@ test('war room keeps the chat markup apart, caps sources at ten, traces its numb
   assert.equal(room.hidden, true, 'a run that only lists sources (no call, assignment or evaluation) does not open the war room by itself');
   document.querySelector('#execution-panel [data-execution-action="toggle"]').click();
   assert.equal(room.hidden, false);
+  assert.match(room.querySelector('.war-status [data-war-trace="tokens"]').textContent, /输入 — token/, 'no response has reported usage: unknown, never shown as 0');
   const region = id => { room.querySelector('[data-war-back]')?.click(); room.querySelector(`[data-war-region="${id}"]`).click(); return room.querySelector('[data-cell="detail"]'); };
   const regionRow = id => [...room.querySelectorAll('.war-regions li')].find(li => li.querySelector(`[data-war-region="${id}"]`));
   region('search');
@@ -106,6 +107,7 @@ test('war room keeps the chat markup apart, caps sources at ten, traces its numb
   room.querySelector('.execution-reasoning-records button').click();
   assert.match(room.querySelector('[data-cell="detail"]').textContent, /核对输入条件/);
   room.querySelector('[data-execution-action=close-inspector]').click();
+  assert.match(room.querySelector('.war-status [data-war-trace="tokens"]').textContent, /输入 1,200 token/);
   room.querySelector('.war-status [data-war-trace="tokens"]').click();
   assert.match(room.querySelector('[data-cell="detail"] .war-count').textContent, /1 次模型请求 · 共 1,200 token/);
   assert.match(room.querySelector('[data-cell="detail"]').textContent, /历史回看/);
@@ -248,6 +250,8 @@ test('the war room opens by itself at a live run\'s first observable step and ha
   applyExecutionEvent(touched, { kind: 'pipeline', id: 'task-evaluation:1', name: '评估', status: 'completed', output: '发现 0' });
   panel.receiveExecutionScene(structuredClone(touched));
   assert.equal(room.hidden, false, 'an evaluation opens it, and a new run opens it again');
+  const now = room.querySelector('.war-now').textContent;
+  assert.match(now, /评估 · 主 Agent · 发现 0$/, `the phase names the step once; the line adds who and what: ${now}`);
   room.querySelector('[data-war-trace="calls"]').click();
   finishExecutionScene(touched, { message: { id: 'answer-3' } });
   panel.receiveExecutionScene(structuredClone(touched));

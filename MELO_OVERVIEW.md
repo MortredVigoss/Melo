@@ -82,7 +82,7 @@
 ## 4. 最新交接
 
 ### 2026-11-06 — Melo 主线（Claude）— 作战大屏（布局 A）移入产品 — 分支未合并
-- 分支 `claude/task-space-c-20261105`（worktree `.tmp/task-space-c-20261105`，已变基到 `d5c596e`）：C1–C5（评估快照与成员岗位三端发出、`src/shared/executionBoard.js` 投影）之上，嵌入式任务空间换成全屏作战大屏：`desktop-ui/warRoom*.js`、`src/shared/warRoom.js`；聊天里收成一行；自动弹出与「为确认提示让开」三端同规则（桌面 `executionPanel.js`、iPhone `WarRoomPresentation` + `ContentView`、Android `WarRoomPresentation.kt` + `MainActivity`）。区域只算自己的调用，每个数字点开即其记录；修复 token 被推理摘要重复计数。[专项记录](docs/task-space-c-20261105.md)，证据 `.tmp/war-room-20261106/`。
+- 分支 `claude/task-space-c-20261105`（worktree `.tmp/task-space-c-20261105`，已变基到 `d5c596e`）：C1–C5（评估快照与成员岗位三端发出、`src/shared/executionBoard.js` 投影）之上，嵌入式任务空间换成全屏作战大屏：`desktop-ui/warRoom*.js`、`src/shared/warRoom.js`；聊天里收成一行；自动弹出与「为确认提示让开」三端同规则（桌面 `executionPanel.js`、iPhone `WarRoomPresentation` + `ContentView`、Android `WarRoomPresentation.kt` + `MainActivity`）。区域只算自己的调用，每个数字点开即其记录；修复 token 被推理摘要重复计数。C7：全局取景改由 `desktop-ui/warRoomLayout.js` 按每个区域真实外沿计算并留出标签边距，打开时相机直接就位，五个区域不再出屏；手机底部卡片可横向滑动。[专项记录](docs/task-space-c-20261105.md)，证据 `.tmp/war-room-20261106/`。
 - 下一步：合并前跑集成档 `npm test -- --base d5c596e`；真机手势与帧率、Android 仪器测试、真实模型探针未做；合并 / 推送 / 安装均未授权。
 ### 2026-11-05 — Melo 主线（Claude）— 复核 C1–C3 修复并推送
 - 线程 ID：e02f4818。C1 整轮副作用账本只对 `write` 与进行中 / 跨执行者的 `unknown` 重复拦截，`bash` 只读形式不进账本；C2 审核器只在本轮提供 `task_progress` 或已有账本时才要求账本；C3 成员子预算截止 = 轮数 × 90 s + 60 s（三端同公式）。真实主图计数测试覆盖同成员翻页 / 主→成员；快速档 `run-alGeuV`（339 / 589 文件，JS 3 327 / 3 327，Android、22 组 Swift，892 s）、集成档 `run-RtVrtf`（`--base a4ae796`，589 / 589，JS 4 934 / 4 934，Android、设置浏览器、Swift 全绿，294 s）。[修复记录](docs/codex-batch-fixes-20261105.md)。

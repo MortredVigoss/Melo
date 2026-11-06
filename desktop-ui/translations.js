@@ -24,7 +24,7 @@ const rows = [
 ["{count} 次调用 · 上限 {rounds} 轮","{count} calls · limit {rounds} rounds","{count} 回の呼び出し · 上限 {rounds} ラウンド","호출 {count}회 · 상한 {rounds}라운드","{count} llamadas · límite {rounds} rondas"],
 ["主 Agent 还没有分派成员","The lead agent hasn't assigned a member yet","主エージェントはまだメンバーを割り当てていません","주 에이전트가 아직 구성원을 배정하지 않았습니다","El agente principal aún no ha asignado miembros"],
 ["交付闸门","Delivery gate","納品ゲート","전달 게이트","Compuerta de entrega"],
-["四项全部满足才进入核验","All four must hold before review","4 項目すべてを満たすと検証へ","네 항목이 모두 충족되어야 검증으로","Las cuatro deben cumplirse antes de revisar"],
+["四项都满足才核验","Review once all four hold","4 項目を満たすと検証","네 항목 충족 시 검증","Revisión al cumplir las cuatro"],
 ["建立任务合同后出现","Appears once a task contract exists","タスク契約の作成後に表示","작업 계약이 생기면 표시됩니다","Aparece cuando existe un contrato de tarea"],
 ["缺口","Gaps","不足","부족","Faltantes"],
 ["已核验 · 已交付","Reviewed · delivered","検証済み · 納品済み","검증됨 · 전달됨","Revisado · entregado"],

@@ -24,6 +24,8 @@ const regionName = id => t(EXECUTION_MODULES.find(m => m.id === id)?.name || id)
 const num = value => new Intl.NumberFormat().format(Number(value) || 0);
 const clock = ms => { if (!Number.isFinite(ms)) return '--:--'; const s = Math.floor(ms / 1000); return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
 const tokens = value => value >= 10000 ? `${(value / 1000).toFixed(value >= 100000 ? 0 : 1)}k` : num(value);
+// No response reported usage yet: the count is unknown, not zero.
+const tokenCount = res => res.usageRecords ? tokens(res.inputTokens) : '—';
 const offset = (scene, at) => { const a = Date.parse(scene?.startedAt), b = Date.parse(at); return Number.isFinite(a) && Number.isFinite(b) ? Math.max(0, b - a) : null; };
 const dot = (role, module) => `<i class="war-dot" data-role="${escapeHtml(role || 'lead')}" data-module="${escapeHtml(module || MEMBER_ROLE_MODULE[role] || '')}"></i>`;
 const trace = (key, inner, label = '') => `<button type="button" class="war-num" data-war-trace="${escapeHtml(key)}"${label ? ` aria-label="${escapeHtml(label)}"` : ''}>${inner}</button>`;
@@ -78,6 +80,13 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
     if (!el) { el = document.createElement('button'); el.type = 'button'; el.className = `war-caption ${className}`; captionsLayer.append(el); captions.set(id, el); }
     return el;
   }
+  // How far a region's label sits from its centre along (dx, dy): the edge of
+  // the ellipse its projected outline spans on that side, else the nominal radius.
+  function reach(r, dx, dy) {
+    if (!r.rect) return r.radius * .92;
+    const ax = Math.max(1, dx >= 0 ? r.rect.x1 - r.x : r.x - r.rect.x0), ay = Math.max(1, dy >= 0 ? r.rect.y1 - r.y : r.y - r.rect.y0);
+    return .92 / Math.hypot(dx / ax, dy / ay);
+  }
   function project(labels, { width, height }) {
     const sr = stage.getBoundingClientRect(), placed = [hint, zoomBox].map(el => { const r = el.getBoundingClientRect(); return { x: r.left - sr.left, y: r.top - sr.top, w: r.width, h: r.height }; });
     for (const a of labels.actors) placed.push({ x: a.body.x - a.radius, y: a.body.y - a.radius * .8, w: 2 * a.radius, h: 1.6 * a.radius, owner: a.id });
@@ -88,7 +97,7 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
         const row = summary.get(r.id), busy = working.has(r.id);
         let dx = r.x - center.x, dy = r.y - center.y; const len = Math.hypot(dx, dy); if (len < 1) { dx = 0; dy = 1; } else { dx /= len; dy /= len; }
         const count = r.id === 'search' && row?.sources ? t('{calls} 次调用 · {sources} 条来源', { calls: row.calls, sources: row.sources }) : row?.calls ? t('{count} 次调用', { count: row.calls }) : row?.records ? t('{count} 条记录', { count: row.records }) : t('待命');
-        return { id: r.id, cls: 'is-region', attrs: { 'data-war-region': r.id }, p: r, out: { dx, dy, r: r.radius * .92 }, html: `<strong>${escapeHtml(regionName(r.id))}</strong><small>${escapeHtml(busy ? t('工作中') + ' · ' + count : count)}</small>`, active: busy, far: r.far, width, height };
+        return { id: r.id, cls: 'is-region', attrs: { 'data-war-region': r.id }, p: r, out: { dx, dy, r: reach(r, dx, dy) }, html: `<strong>${escapeHtml(regionName(r.id))}</strong><small>${escapeHtml(busy ? t('工作中') + ' · ' + count : count)}</small>`, active: busy, far: r.far, width, height };
       }),
       { id: 'core', cls: 'is-core', attrs: { 'data-war-trace': 'calls' }, p: labels.core, html: `<strong>${escapeHtml(ctx.leadName ? t('{name} · 主 Agent', { name: ctx.leadName }) : t('主 Agent'))}</strong><small>${escapeHtml(t('路由与评估'))}${gateOpen ? ' · ' + escapeHtml(t('闸门已开')) : ''}</small>` },
       ...labels.actors.filter(a => !a.holding).map(a => ({ id: a.id, cls: 'is-actor', attrs: { 'data-war-follow': a.id }, p: a, html: `<strong>${escapeHtml(actorLabel(a.id))}</strong>`, owner: a.id })),
@@ -210,7 +219,7 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
     }
     return c;
   }
-  const head = (c, title, meta = '') => { if (c.title.textContent !== title) c.title.textContent = title; if (c.meta.innerHTML !== meta) c.meta.innerHTML = meta; };
+  const head = (c, title, meta = '') => { if (c.title.textContent !== title) c.title.textContent = title; if (c.meta.innerHTML !== meta) { c.meta.innerHTML = meta; c.meta.title = c.meta.textContent; } };
   const fill = (c, html) => { if (c.html === html) return; const top = c.body.scrollTop; c.body.innerHTML = html; c.html = html; c.list = null; c.rows.clear(); c.body.scrollTop = top; };
   function layout() {
     const board = sceneHasBoard(scene), wanted = detail ? ['log', 'detail'] : board ? ['log', 'dispatch', 'gate', 'heat', 'coverage', 'contract'] : ['log', 'regions', 'resources'];
@@ -252,7 +261,7 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
   }
   function renderGate(snapshot) {
     const c = cell('gate'), gate = deliveryGate(snapshot);
-    head(c, t('交付闸门'), gate ? escapeHtml(t('四项全部满足才进入核验')) : '');
+    head(c, t('交付闸门'), gate ? escapeHtml(t('四项都满足才核验')) : '');
     if (!gate) { fill(c, empty(t('建立任务合同后出现'))); return; }
     const arc = i => { const a0 = Math.PI * (1.25 - i * .5) - .08, a1 = Math.PI * (1.25 - (i + 1) * .5) + .08; const p = a => [48 + 36 * Math.cos(a), 48 - 36 * Math.sin(a)].map(v => v.toFixed(1)).join(' '); return `M${p(a0)} A36 36 0 0 1 ${p(a1)}`; };
     const names = { count: t('数量'), primary: t('主推'), coverage: t('覆盖'), gaps: t('缺口') };
@@ -267,7 +276,7 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
     const qualified = all.filter(r => ['primary', 'alternative', 'eligible'].includes(r.tier)), excluded = all.filter(r => r.tier === 'excluded');
     const top = qualified.length ? Math.max(...qualified.map(r => r.total)) : null;
     const rows = all.map(r => { const key = 'cand:' + r.key; return `<tr data-row-key="${escapeHtml(key)}" data-tier="${escapeHtml(r.tier)}" data-pending="${pending.has(key)}"><th><button type="button" data-war-trace="${escapeHtml('candidate:' + r.key)}" title="${escapeHtml(`${r.name} · ${r.total} · ${tierName(r.tier)}${r.excludeReason ? ' · ' + r.excludeReason : ''}`)}">${escapeHtml(r.name)}</button></th>${fields.map(f => `<td data-s="${escapeHtml(r.fields?.[f] || 'missing')}"></td>`).join('')}</tr>`; }).join('');
-    fill(c, `<table class="war-heat"><thead><tr><th></th>${fields.map(f => `<th><button type="button" data-war-trace="${escapeHtml('field:' + f)}">${escapeHtml(fieldName(f))}</button></th>`).join('')}</tr></thead><tbody>${rows || `<tr><th>${escapeHtml(t('等待主 Agent 评估…'))}</th>${fields.map(() => '<td></td>').join('')}</tr>`}</tbody></table>
+    fill(c, `<table class="war-heat"><thead><tr><th></th>${fields.map(f => `<th><button type="button" data-war-trace="${escapeHtml('field:' + f)}" title="${escapeHtml(fieldName(f))}">${escapeHtml(fieldName(f))}</button></th>`).join('')}</tr></thead><tbody>${rows || `<tr><th>${escapeHtml(t('等待主 Agent 评估…'))}</th>${fields.map(() => '<td></td>').join('')}</tr>`}</tbody></table>
       <div class="war-ledger">${trace('candidates:all', `${escapeHtml(t('发现'))}<b>${all.length}</b>`)}${trace('candidates:qualified', `${escapeHtml(t('合格'))}<b>${qualified.length}</b>`)}${trace('candidates:excluded', `${escapeHtml(t('排除'))}<b>${excluded.length}</b>`)}${trace('candidates:top', `${escapeHtml(t('最高'))}<b>${top ?? '—'}</b>`)}</div>`);
   }
   function renderCoverage(snapshot) {
@@ -297,7 +306,7 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
   function renderResources() {
     const c = cell('resources'), res = sceneResources(scene, { now: Date.now() });
     head(c, t('资源账本'), '');
-    fill(c, `<dl class="war-resources"><div><dt>${escapeHtml(t('工具调用'))}</dt><dd>${trace('calls', num(res.toolCalls))}</dd></div><div><dt>${escapeHtml(t('输入 token'))}</dt><dd>${trace('tokens', tokens(res.inputTokens))}</dd></div><div><dt>${escapeHtml(t('用时'))}</dt><dd>${trace('time', `<span data-war-elapsed>${clock(res.elapsedMs)}</span>`)}</dd></div></dl>`);
+    fill(c, `<dl class="war-resources"><div><dt>${escapeHtml(t('工具调用'))}</dt><dd>${trace('calls', num(res.toolCalls))}</dd></div><div><dt>${escapeHtml(t('输入 token'))}</dt><dd>${trace('tokens', tokenCount(res))}</dd></div><div><dt>${escapeHtml(t('用时'))}</dt><dd>${trace('time', `<span data-war-elapsed>${clock(res.elapsedMs)}</span>`)}</dd></div></dl>`);
   }
   // Details: a record (its execution detail), a trace (the records behind a
   // number) or a region (its calls, plus sources, results or summaries).
@@ -338,7 +347,7 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
   }
   function renderTop() {
     const rail = sceneStageRail(scene), current = rail.find(row => row.current), latest = sceneLog(scene, { limit: 1 })[0];
-    const now = !scene ? t('等待任务') : sceneFinished(scene) ? (scene.completion?.summary ? runtimeCompletionText(scene.completion) : statusText(scene.status)) : latest ? `${latest.actor?.role && latest.actor.role !== 'lead' ? roleName(latest.actor.role) : ctx.leadName || t('主 Agent')} · ${verbName(latest.verb)}${latest.detail ? ' · ' + latest.detail : ''}` : t('等待第一条执行记录');
+    const now = !scene ? t('等待任务') : sceneFinished(scene) ? (scene.completion?.summary ? runtimeCompletionText(scene.completion) : statusText(scene.status)) : latest ? [latest.actor?.role && latest.actor.role !== 'lead' ? roleName(latest.actor.role) : ctx.leadName || t('主 Agent'), current && verbName(latest.verb) === phaseName(current.key) ? '' : verbName(latest.verb), latest.detail].filter(Boolean).join(' · ') : t('等待第一条执行记录');
     const html = `<em>${String(Math.max(1, rail.findIndex(row => row.current) + 1)).padStart(2, '0')}</em>${escapeHtml(current ? phaseName(current.key) : '')}${current ? ' · ' : ''}${escapeHtml(String(now).slice(0, 160))}`;
     const el = $('.war-now'); if (el.innerHTML !== html) el.innerHTML = html;
     const railHtml = rail.map((row, i) => `<li data-phase="${row.key}" data-current="${row.current && !sceneFinished(scene)}" data-status="${escapeHtml(row.status)}"><button type="button"${row.stageId ? ` data-war-record="${escapeHtml(row.stageId)}"` : ' disabled'}><b>${String(i + 1).padStart(2, '0')}</b>${escapeHtml(phaseName(row.key))}${row.count > 1 && row.key !== 'contract' ? ` ×${row.count}` : ''}</button></li>`).join('');
@@ -349,7 +358,7 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
   }
   function renderStatus() {
     const snapshot = sceneEvaluation(scene).snapshot, res = sceneResources(scene, { now: Date.now(), snapshot }), point = res.checkpoint;
-    const html = `<span class="war-note">${escapeHtml(ctx.note || '')}</span>${trace('calls', escapeHtml(t('工具调用 {count}', { count: res.toolCalls })))}${trace('tokens', escapeHtml(t('输入 {tokens} token', { tokens: tokens(res.inputTokens) })))}${trace('time', `${escapeHtml(t('用时'))} <span data-war-elapsed>${clock(res.elapsedMs)}</span>`)}${point ? trace('checkpoint', escapeHtml(t('软检查点 {time} / {calls} 次', { time: clock(point.milliseconds), calls: point.calls }))) : ''}`;
+    const html = `<span class="war-note">${escapeHtml(ctx.note || '')}</span>${trace('calls', escapeHtml(t('工具调用 {count}', { count: res.toolCalls })))}${trace('tokens', escapeHtml(t('输入 {tokens} token', { tokens: tokenCount(res) })))}${trace('time', `${escapeHtml(t('用时'))} <span data-war-elapsed>${clock(res.elapsedMs)}</span>`)}${point ? trace('checkpoint', escapeHtml(t('软检查点 {time} / {calls} 次', { time: clock(point.milliseconds), calls: point.calls }))) : ''}`;
     const el = $('.war-status'); if (el.dataset.html !== html) { el.innerHTML = html; el.dataset.html = html; }
   }
   function tick() { const res = sceneResources(scene, { now: Date.now() }); for (const el of root.querySelectorAll('[data-war-elapsed]')) el.textContent = clock(res.elapsedMs); }

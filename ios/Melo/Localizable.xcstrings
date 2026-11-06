@@ -666,37 +666,37 @@
         }
       }
     },
-    "四项全部满足才进入核验": {
+    "四项都满足才核验": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "四项全部满足才进入核验"
+            "value": "四项都满足才核验"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "All four must hold before review"
+            "value": "Review once all four hold"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "4 項目すべてを満たすと検証へ"
+            "value": "4 項目を満たすと検証"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "네 항목이 모두 충족되어야 검증으로"
+            "value": "네 항목 충족 시 검증"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Las cuatro deben cumplirse antes de revisar"
+            "value": "Revisión al cumplir las cuatro"
           }
         }
       }

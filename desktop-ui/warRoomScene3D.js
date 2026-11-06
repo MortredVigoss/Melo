@@ -22,6 +22,7 @@ import { sceneActors, deliveryGate } from '/shared/warRoom.js';
 import { createSpider } from './warRoomSpider.js';
 import { neuralCluster } from './warRoomCluster.js';
 import { leadCore, deepSpace, setLook } from './warRoomParticles.js';
+import { SIZE, LAYOUT, WEB, layoutFor, outline, placeLocal, frameStage } from './warRoomLayout.js';
 
 const UP = new T.Vector3(0, 1, 0), ORIGIN = new T.Vector3();
 const TERMINAL = ['completed', 'failed', 'cancelled', 'interrupted'];
@@ -30,15 +31,9 @@ const clamp01 = x => clamp(x, 0, 1);
 const smooth = (a, b, x) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); };
 const inOut = t => t < .5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
 const quadInOut = t => t < .5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
-// Regions are modelled at ~100 units and shown 2.5×; the five sit close
-// around the core in a layout shaped like the stage, wide or tall.
-const SIZE = 2.5, CORE_SIZE = 1.25;
-const LAYOUT = {
-  wide: { search: [-980, 55, 20], files: [0, 280, -370], compute: [-470, -210, 170], tools: [1010, 70, -20], create: [490, -200, 130] },
-  tall: { search: [-430, 260, 40], files: [0, 720, -300], compute: [-290, -560, 130], tools: [430, 270, -40], create: [290, -550, 110] },
-};
-const WEB = { search: { seed: 11, ganglia: 7, tilt: [.12, .35, 0] }, files: { seed: 23, ganglia: 6, tilt: [-.1, -.3, .08] }, compute: { seed: 37, ganglia: 8, tilt: [.18, .1, -.12] },
-  tools: { seed: 41, ganglia: 6, tilt: [0, .5, .08] }, create: { seed: 53, ganglia: 7, tilt: [-.12, -.2, 0] } };
+// Where the regions sit, how each is tilted and how the global view frames
+// them live in warRoomLayout.js (pure, tested without WebGL).
+const CORE_SIZE = 1.25;
 // The body rides this far above what its feet grip; along a web it walks
 // WALK units a second; a dig lasts DIG seconds (shorter when calls queue up).
 const STAND = 4.6 * 1.5, WALK = 55, DIG = 1.35, QUICK_DIG = .8, MIN_ZOOM = .55, MAX_ZOOM = 2.8;
@@ -69,16 +64,19 @@ export function createWarRoomScene(host, { onProject, onSelectRegion, onHook, on
   const regions = EXECUTION_MODULES.map(module => {
     const web = WEB[module.id], cluster = neuralCluster({ color: visualColor(`execution-${module.id}`), seed: web.seed, ganglia: web.ganglia, sprite, nodes: phone ? 560 : 1000, dust: phone ? 2400 : 6000 });
     cluster.group.scale.setScalar(SIZE); cluster.group.rotation.set(...web.tilt); world.add(cluster.group);
-    return { id: module.id, cluster, group: cluster.group, center: new T.Vector3(), home: new T.Vector3(), body: cluster.radius * SIZE * .9, activity: 0, flash: 0 };
+    // Its outermost nodes as placed (tilted, scaled, about its centre): the
+    // global view frames these and labels sit just outside them.
+    const hull = outline(cluster.positions.map(p => placeLocal([p.x, p.y, p.z], web.tilt, SIZE)));
+    return { id: module.id, cluster, group: cluster.group, center: new T.Vector3(), home: new T.Vector3(), body: cluster.radius * SIZE * .9, hull, activity: 0, flash: 0 };
   });
   const regionOf = id => regions.find(r => r.id === id) || null;
   const materials = [...space.materials, ...coreRegion.materials, ...regions.flatMap(r => r.cluster.materials)];
   // Thinning for slow devices: landmark points kept, the rest drawn in part.
   const thinnable = []; for (const r of [coreRegion, ...regions.map(r => ({ group: r.group }))]) r.group.traverse(o => { if (o.isPoints && o.userData.total) thinnable.push(o); });
   const setDensity = k => { for (const p of thinnable) p.geometry.setDrawRange(0, p.userData.kept + Math.round((p.userData.total - p.userData.kept) * k)); };
-  let layoutKey = '';
+  let layoutKey = '', settle = true;
   function placeRegions(instant) {
-    const key = camera.aspect >= 1.1 ? 'wide' : 'tall'; if (key === layoutKey) return; layoutKey = key;
+    const key = layoutFor(camera.aspect); if (key === layoutKey) return; layoutKey = key;
     for (const r of regions) { r.home.fromArray(LAYOUT[key][r.id]); if (instant) { r.center.copy(r.home); r.group.position.copy(r.center); } }
   }
 
@@ -278,29 +276,15 @@ export function createWarRoomScene(host, { onProject, onSelectRegion, onHook, on
   const view = { mode: 'global', yaw: 0, pitch: .14, zoom: 1, followId: null, region: null, dragYaw: 0, dragPitch: 0 };
   const orbit = { yaw: .35, pitch: .2, distance: 1400 }, goal = { yaw: 0, pitch: .14, distance: 1400 };
   const aim = new T.Vector3(), aimGoal = new T.Vector3(), viewDir = new T.Vector3(), offset = new T.Vector3();
-  const fitEye = new T.Vector3(), fitFwd = new T.Vector3(), fitRight = new T.Vector3(), fitUp = new T.Vector3(), fitV = new T.Vector3(), boxMin = new T.Vector3(), boxMax = new T.Vector3();
   const wrap = a => a - Math.PI * 2 * Math.floor((a + Math.PI) / (Math.PI * 2));
   const dirFrom = (yaw, pitch, out) => out.set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
-  const bodies = () => [{ c: ORIGIN, r: CORE_R }, ...regions.map(r => ({ c: r.center, r: r.body }))];
-  function fitDistance(target, dir) {
-    fitFwd.copy(dir).negate(); fitRight.crossVectors(fitFwd, UP).normalize(); fitUp.crossVectors(fitRight, fitFwd);
-    const tv = Math.tan(camera.fov * Math.PI / 360), th = tv * camera.aspect, list = bodies();
-    const fits = d => { fitEye.copy(target).addScaledVector(dir, d); for (const b of list) { fitV.subVectors(b.c, fitEye); const z = fitV.dot(fitFwd); if (z - b.r < 30) return false; if ((Math.abs(fitV.dot(fitRight)) + b.r) / (z * th) > .92 || (Math.abs(fitV.dot(fitUp)) + b.r) / (z * tv) > .86) return false; } return true; };
-    let lo = 150, hi = 9000; for (let i = 0; i < 24; i++) { const mid = (lo + hi) / 2; if (fits(mid)) hi = mid; else lo = mid; } return hi;
-  }
-  // Every body framed, its projected extents centred on the stage.
+  // Every region's outermost nodes and the core inside the stage, less the
+  // room its labels need (see warRoomLayout.js).
   function frameAll(target, dir) {
-    boxMin.set(1e9, 1e9, 1e9); boxMax.set(-1e9, -1e9, -1e9);
-    for (const b of bodies()) { boxMin.min(fitV.copy(b.c).subScalar(b.r)); boxMax.max(fitV.copy(b.c).addScalar(b.r)); }
-    target.addVectors(boxMin, boxMax).multiplyScalar(.5);
-    const tv = Math.tan(camera.fov * Math.PI / 360), th = tv * camera.aspect;
-    for (let pass = 0; pass < 3; pass++) {
-      const d = fitDistance(target, dir); let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
-      fitEye.copy(target).addScaledVector(dir, d);
-      for (const b of bodies()) { fitV.subVectors(b.c, fitEye); const z = fitV.dot(fitFwd), x = fitV.dot(fitRight) / (z * th), y = fitV.dot(fitUp) / (z * tv), rx = b.r / (z * th), ry = b.r / (z * tv); x0 = Math.min(x0, x - rx); x1 = Math.max(x1, x + rx); y0 = Math.min(y0, y - ry); y1 = Math.max(y1, y + ry); }
-      target.addScaledVector(fitRight, (x0 + x1) / 2 * d * th).addScaledVector(fitUp, (y0 + y1) / 2 * d * tv);
-    }
-    return fitDistance(target, dir);
+    if (!width || !height) return goal.distance;
+    const points = []; for (const r of regions) for (const h of r.hull) points.push([r.center.x + h[0], r.center.y + h[1], r.center.z + h[2]]);
+    const fit = frameStage({ points, spheres: [{ c: [0, 0, 0], r: CORE_R }], dir: [dir.x, dir.y, dir.z], fov: camera.fov, width, height });
+    target.fromArray(fit.target); return fit.distance;
   }
   const followed = () => { const a = actors.get(view.followId); if (a && !a.gone) return a; return [...actors.values()].filter(x => !x.retire).at(-1) || [...actors.values()].at(-1) || null; };
   function cameraGoal() {
@@ -394,6 +378,7 @@ export function createWarRoomScene(host, { onProject, onSelectRegion, onHook, on
     const dt = Math.min(.05, (now - (last || now)) / 1000), motion = !still && !reduced.matches, sim = motion ? dt : 0; perfSample(now - last); last = now; clock += sim;
     for (const r of regions) { r.center.lerp(r.home, motion ? 1 - Math.exp(-dt * 2.5) : 1); r.group.position.copy(r.center); }
     cameraGoal();
+    if (settle) { aim.copy(aimGoal); orbit.yaw = goal.yaw; orbit.pitch = goal.pitch; orbit.distance = goal.distance; settle = false; }
     const k = motion ? 1 - Math.exp(-dt * (view.mode === 'follow' ? 3.2 : 4)) : 1, turn = dragging && view.mode !== 'follow' ? 1 : k;
     aim.lerp(aimGoal, k); orbit.yaw += wrap(goal.yaw - orbit.yaw) * turn; orbit.pitch += (goal.pitch - orbit.pitch) * turn; orbit.distance += (goal.distance - orbit.distance) * k;
     camera.position.copy(dirFrom(orbit.yaw, orbit.pitch, viewDir)).multiplyScalar(orbit.distance).add(aim);
@@ -419,18 +404,27 @@ export function createWarRoomScene(host, { onProject, onSelectRegion, onHook, on
     }
     composer.render();
     const up = new T.Vector3().setFromMatrixColumn(camera.matrixWorld, 1), right = rightAxis().clone();
+    const rects = new Map(); let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
+    for (const r of regions) {
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const h of r.hull) { const p = project(scratch.set(r.center.x + h[0], r.center.y + h[1], r.center.z + h[2])); if (!p.visible) continue; x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y); }
+      if (x0 <= x1) { rects.set(r.id, { x0, y0, x1, y1 }); bx0 = Math.min(bx0, x0); by0 = Math.min(by0, y0); bx1 = Math.max(bx1, x1); by1 = Math.max(by1, y1); }
+    }
     onProject?.({
-      regions: regions.map(r => { const p = project(r.center), q = project(scratch.copy(r.center).addScaledVector(up, r.body)); return { id: r.id, ...p, radius: Math.hypot(q.x - p.x, q.y - p.y), far: (view.mode !== 'global' || !!view.region) && r.center.distanceTo(camera.position) > camera.position.distanceTo(aim) + 90 }; }),
+      regions: regions.map(r => { const p = project(r.center), q = project(scratch.copy(r.center).addScaledVector(up, r.body)); return { id: r.id, ...p, radius: Math.hypot(q.x - p.x, q.y - p.y), rect: rects.get(r.id) || null, far: (view.mode !== 'global' || !!view.region) && r.center.distanceTo(camera.position) > camera.position.distanceTo(aim) + 90 }; }),
       core: { ...project(scratch.set(0, -CORE_R * 1.2, 0)), center: project(ORIGIN) },
       actors: [...actors.values()].filter(a => a.grow > .85 && a.state !== 'merge').map(a => ({ id: a.id, kind: a.kind, ...project(scratch.copy(a.pos).addScaledVector(UP, 26)), body: project(a.pos), radius: Math.max(14, Math.hypot(project(other.copy(a.pos).addScaledVector(right, 26)).x - project(a.pos).x, 0)), holding: !!a.hooked })),
     }, { width, height });
     host.dataset.frames = String((Number(host.dataset.frames) || 0) + 1);
     host.dataset.spiders = String(actors.size); host.dataset.view = view.region ? `region:${view.region}` : view.mode; host.dataset.zoom = view.zoom.toFixed(3);
     host.dataset.camera = camera.position.toArray().map(n => n.toFixed(0)).join(',');
+    // The global view's promise, readable by tests: where the regions' outlines land on this stage.
+    if (view.mode === 'global' && !view.region && bx0 <= bx1) host.dataset.bounds = [bx0, by0, bx1, by1, width, height].map(n => n.toFixed(0)).join(','); else delete host.dataset.bounds;
     if (motion) raf = requestAnimationFrame(frame);
   }
   function requestFrame() { if (!raf && !dead && open && visible && !document.hidden) raf = requestAnimationFrame(frame); }
-  function resize() { width = host.clientWidth; height = host.clientHeight; if (!width || !height) return; renderer.setSize(width, height, false); composer.setSize(width, height); camera.aspect = width / height; camera.updateProjectionMatrix(); placeRegions(!layoutKey); requestFrame(); }
+  // A new stage size re-frames at once: the camera never trails the window.
+  function resize() { width = host.clientWidth; height = host.clientHeight; if (!width || !height) return; renderer.setSize(width, height, false); composer.setSize(width, height); camera.aspect = width / height; camera.updateProjectionMatrix(); placeRegions(!layoutKey); settle = true; requestFrame(); }
   const observer = new ResizeObserver(resize);
   const intersection = new IntersectionObserver(entries => { visible = entries[0]?.isIntersecting !== false; requestFrame(); });
   const visibility = () => requestFrame();
@@ -441,7 +435,7 @@ export function createWarRoomScene(host, { onProject, onSelectRegion, onHook, on
     update, setView, focusRegion, zoomBy, requestFrame, rotateBy: (dx, dy) => rotate(dx, dy),
     get view() { return { ...view }; },
     resetView() { setView('global'); },
-    setOpen(value) { open = value; last = 0; primed = false; if (open) { resize(); if (scene) update(scene); requestFrame(); } else { cancelAnimationFrame(raf); raf = 0; } },
+    setOpen(value) { open = value; last = 0; primed = false; if (open) { settle = true; resize(); if (scene) update(scene); requestFrame(); } else { cancelAnimationFrame(raf); raf = 0; } },
     setStill(value) { if (still === !!value) return; still = !!value; primed = false; if (scene) update(scene); requestFrame(); },
     /** Page coordinates of a spider's right claw (what it hooks), or null. */
     clawPoint(actorId) { const a = actors.get(actorId); if (!a || a.gone) return null; const rect = canvas.getBoundingClientRect(), p = project(a.spider.claw(1, probe)); return p.visible ? { x: rect.left + p.x, y: rect.top + p.y } : null; },

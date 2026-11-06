@@ -152,6 +152,8 @@ export function neuralCluster({ color, seed, nodes: N, dust: D, ganglia = 7, spr
   };
   return {
     group, materials: [nodeMaterial, dustMaterial], radius: Math.max(SHELL.x, SHELL.y, SHELL.z), update,
+    /** The nodes in the cluster's own frame (read only): framing uses the outermost. */
+    positions: P,
     /** Light the strands these world points rest on (a spider's feet, a claw), and the nodes beside them. */
     touch(points, strength = 1) {
       group.updateMatrixWorld(); inverse.copy(group.matrixWorld).invert(); const R = 4, R2 = R * R;

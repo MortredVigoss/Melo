@@ -115,6 +115,8 @@ test('tokens trace sums exactly the model calls it lists', () => {
   assert.deepEqual(trace.rows.map(r => [r.id, r.tokens]), [['model:1', 1200], ['model:2', 800], ['model:3', 500]]);
   assert.equal(trace.total, 2500); assert.equal(trace.count, 3);
   assert.equal(sceneResources(scene).inputTokens, trace.total, 'the status number and its list agree');
+  assert.equal(sceneResources(scene).usageRecords, 3);
+  assert.equal(sceneResources(memberRun()).usageRecords, 0, 'no response reported usage: the count is unknown, not 0');
 });
 
 test('the war room opens by itself only for a live run that did something observable', () => {
