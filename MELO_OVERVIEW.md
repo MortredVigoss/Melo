@@ -430,7 +430,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 10-23 [目标完成闭环综合实施](docs/agent-harness-implementation-20261023.md)：共享目标检查接主聊天/成员/技能与双端；4,544 项 JS / 37 组 Swift、浏览器和 Android 检测通过，iOS 完整构建通过；10-21 测试降本 `8304aab`、双端原生拍照 `6fba8db` 已推送；iPhone 0.7.8（40）覆盖、数据保留、用户真机拍照及回复确认（[安装回执](docs/phone-camera-install-20261021.md)）；[拆分静态核对](docs/architecture-split-review-20261021.md)；七项双端对齐、架构审计与 GitHub issue 修复；10-20 双端覆盖更新与真实使用检查 | [14 条问题实施](docs/github-issues-implementation-20261020.md)此前全部关闭，装机后 #4 重新打开并完成二次修复，见[原生验收](docs/issue-4-legacy-preview-20261020.md)；[双端更新](docs/dual-update-20261020.md)：桌面 abe1d20 / iPhone 0.7.7 (39)，数据保留、完整发布 gate 与真实回复已核对；其他线程 WIP 保留 |
 | melo主线（历史·2026-10-15） | `01a10bf2-e092-7862-87fe-2f237a8fb6a0` | 架构、审计、记忆、function calling、日常 gate 和手机 OAuth；本次只补遗漏 | 已完成补录；授权核心已提交，当时相关共享文件的他线程 WIP 已于 10-17 收入 `8cd3eff`；[build23 回执](docs/handoffs/melo-thread-backfill-20261015.md#historical)，产品任务交新主线 |
 | 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | 五语 / 图像质量 / MCP / Agent 设置已完成；10-20 测试选组审计后按用户授权完成漏选修复、功能 / 平台选组、预检去重与统一开发规范 | [实施与验证](docs/test-selection-implementation-20261020.md)：工具 29/29，隔离全日常与 32 Swift 通过；产品业务和其他线程 WIP 保留，本地提交未推送。历史 Agent 验收见 `docs/agent-settings-20261016.md` |
-| melo ui | `01a10bf3-d7b9-7832-a351-8b0f78e9c552` | 10-27 首页回归修复：透明神经入口、无多余内边距、顶部项目与中枢垂直避让；两档 GREEN，本地 `a74a90d` | 定向 11/11，集成 778/778，原生/浏览器五组入口已验；[执行链与修复记录](docs/home-ui-regression-20261027.md)，手机仅共享样式生成、未安装；历史[设计审计](docs/ui-language-audit-20261016.md)保留 |
+| melo ui | `01a10bf3-d7b9-7832-a351-8b0f78e9c552` | 11-07 模型连接结构与智能选模停用已提交 `81ae41a5`：方式切换实际表单，三端始终使用明确选择的模型；保留原账号与首页设计 | 最终快速档 `run-gaaE0q` / 集成档 `run-fO1TLM` 全绿（各 JS 5006/5006、38 组 Swift、Android 四阶段、设置浏览器）；iPhone 原生 `run-jis2byqb` 保存/重启/探测/聊天通过。未正式安装/推送；下一步按主线明确发布授权执行。[本轮记录](docs/model-settings-structure-20261107.md)、[历史首页修复](docs/home-ui-regression-20261027.md) |
 | 读取 melo ui 方案 | `01a1103d-0c3b-77d4-96dc-ea499d455020` | 2026-10-06 读取、单次成功派发、按指定 turn 只读跟进与 Library 截图交付；2026-10-15 补历史证据 | 辅助线程无产品代码/提交；288/291 项为旧轮次结果，详细边界见[辅助线程回执](docs/handoffs/melo-thread-backfill-20261015.md#ui-helper) |
 | melo iphone | `01a11116-8469-74a2-9815-8ce59b702afa` | 10-16 三线程功能/UI 对齐，Agent 首屏新建/移除旧语气、项目校验及新黑金 M，已覆盖 0.5.19 (25) | 本地 `5c975aa`；3575 JS/23 Swift/90 专项及模拟器通过；实体安装/启动/数据保留已验，实体 UI/真实模型未复验；`docs/ios-align-install-20261016.md` |
 | melo副线 | `019d5db3-d2cd-70c2-bc8f-955d36099219` | 固定源码统计口径、早期 pre-push evaluation 协议；OpenClaw/桌宠历史工作独立 | 2026-10-21 再统计 205,993 行（含空行/注释，不含 ios）；既定四目录及扩展名 `find` / `wc -l` 退出码 0；仅文档 WIP 与快照更新，无产品验收或提交；桌宠入口见[副线回执](docs/handoffs/melo-thread-backfill-20261015.md#secondary) |
@@ -553,6 +553,8 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 当前源码复核：旧 judge 有实测优先与规则短路，关闭 extraFast 后仍有独立分类请求；升档必须接续当前工具账本和总预算。补齐连接边界、流式控制、回退一致性、单模型零判断开销、跨端共享核心及 UI 验收，实际执行范围正向用户确认。未提交/推送/安装；原 Claude 方案内容保留。
 
 ### 2026-10-24 · Codex · 智能模式 P0–P3 已落地
+
+- **2026-11-07 后续决定**：用户明确要求关闭整个智能选模，始终使用自己选择的模型，并移除这组设置。三端产品源码已停用自动判型、跨连接切换与升档；旧策略和通用引擎仅保留兼容/历史回执。此处 10 月记录保留为实施历史；当前设置结构与验证见[11 月记录](docs/model-settings-structure-20261107.md)，正式安装状态单列。
 - 用户已明确授权直接实施 P0–P3，三端 UI 包含固定模型和智能模式；实现本地提交 `6f10396`，未推送/安装。另一个 agent-loop-dehardcode 方案保持未动。
 - P0 已移除旧 extraFast 判断器、设置/API、独立浏览器线和关闭开关后的隐藏分类请求；通用短请求传输用于语音/核验，保留并迁移其测试。隔离 home 专项 34/34 通过，证据 `.tmp/smart-routing-20261024/p0-targeted.log`。
 - P1/P2 已接入共享 `shared/agent/modelRouting.js`、桌面设置/选择器/循环：显式档位、同连接默认、3 秒判断和隔离缓存、预算内一次升档、动态副作用强档下限。桌面组合专项 69/69、最新增量 37/37；实际浏览器保存/重载/固定与智能切换通过，旧 API 返回 405、无页面异常。
