@@ -109,14 +109,15 @@ export async function runInternalMembers({ jobs = [], goal = '', background = ''
   const runOne = async index => {
     const job = jobs[index];
     let jobConfig;
-    // Hosted search is verified for the conversation's connection only. A
-    // retrieval member configured with another connection runs a hosted-search
-    // job on the conversation connection instead and says so (user decision,
-    // 2026-11-07 post-push review).
+    // Hosted search is verified for the conversation's exact configuration
+    // (connection, model, endpoint and credentials), not for a profile id: a
+    // role pointing at the same profile can still run another model. A
+    // hosted-search job therefore always runs on the conversation
+    // configuration, and when the role has its own connection setting the
+    // task space says why (user decision, 2026-11-07 post-push reviews).
     const hostedJob = Array.isArray(job.tools) && job.tools.includes('native_web_search');
-    const ownConnection = typeof jobModels?.[job.role] === 'string' && jobModels[job.role] && jobModels[job.role] !== config?.activeLlmProfileId;
-    const conversationForSearch = hostedJob && ownConnection;
-    try { jobConfig = memberConfig(requireStrongWrites && job.role === 'execute' || conversationForSearch ? config : jobConnectionConfig(config, jobModels, job.role)); }
+    const conversationForSearch = hostedJob && typeof jobModels?.[job.role] === 'string' && !!jobModels[job.role];
+    try { jobConfig = memberConfig(requireStrongWrites && job.role === 'execute' || hostedJob ? config : jobConnectionConfig(config, jobModels, job.role)); }
     catch (error) {
       const result = { ok: false, error: error.code, output: error.message, meta: { stopReason: 'ERROR', observations: [] } };
       outcomes[index] = { job, result, started: false, handoff: internalHandoff({ job, answer: result.output, observations: [], limited: true }) };

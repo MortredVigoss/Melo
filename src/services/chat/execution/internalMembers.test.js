@@ -22,6 +22,13 @@ test('a hosted-search job runs on the conversation connection when its role has 
   assert.deepEqual(seen.find(row => row.role === 'job-1'), { role: 'job-1', model: 'conversation-model', hosted: true }, 'searching on a connection with verified hosted search');
   assert.deepEqual(seen.find(row => row.role === 'job-2'), { role: 'job-2', model: 'chat-only-model', hosted: false }, 'the role connection stays for jobs without hosted search');
   assert.ok(events.some(event => event.id === 'internal:1' && /改用对话连接/.test(event.output || '')), 'the task space says why');
+  // Same profile, another model: the verified conversation model stays for hosted search.
+  const same = [];
+  const overridden = { ...config, model: 'agent-chosen-model', llmProfiles: { codex: { authMode: 'codex', model: 'profile-default-model' } } };
+  await runInternalMembers({ jobs: [{ ...job('research', 'find the hours again', 3), tools: ['native_web_search', 'fetch_url'] }, { ...job('research', 'read the menu again', 4), tools: ['fetch_url'] }], goal, lanes: 1, config: overridden, jobModels: { research: 'codex' },
+    run: async options => { same.push({ role: options.roleId, model: options.config.model, hosted: options.nativeWebSearch }); return { ok: true, output: 'done', meta: { observations: [], effects: { successful: [], uncertain: [] } } }; } });
+  assert.deepEqual(same.find(row => row.role === 'job-3'), { role: 'job-3', model: 'agent-chosen-model', hosted: true }, 'hosted search keeps the verified conversation model');
+  assert.deepEqual(same.find(row => row.role === 'job-4'), { role: 'job-4', model: 'profile-default-model', hosted: false });
 });
 
 test('a social member reads alongside the research member', async () => {
