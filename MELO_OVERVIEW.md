@@ -93,7 +93,9 @@
 - **主 Agent 只路由**：
   - 三端都按共享的 `leadWithheldTools`（检索与社交检索成员的全部工具）收走主 Agent 的检索工具和原生搜索；
   - 桌面在用户补充关闭路由时由 `restoreLeadRetrieval` 归还；
-  - 改动主 Agent 工具时，要同时看桌面 `invokeModelNode.js`、iOS `AgentLoopRequest.scopedBody`、Android `SharedChatAgent` 的 `roundSpecs`。
+  - 改动主 Agent 工具时，要同时看桌面 `invokeModelNode.js`、iOS `AgentLoopRequest.scopedBody`、Android `SharedChatAgent` 的 `roundSpecs`；
+  - 桌面成员默认用 Melo 自己的搜索。只有共享计划的 `availableTools` 里没有 `web_search`、且原生搜索已验证时，成员才接管原生搜索（`memberHostedSearch`）；
+  - 社交检索成员在只读并行队列里（`READ_ONLY_JOBS`）。
 - **社交检索成员**：
   - 新岗位 `social` 已加到 `INTERNAL_JOB_ROLES`、`MEMBER_ROLES`、`MEMBER_ROLE_MODULE`（归网页检索区域）、岗位模型选择和 iOS 记录；
   - 小红书 MCP 已升级到 v2.7.3，登录要用户在设置里扫码。
