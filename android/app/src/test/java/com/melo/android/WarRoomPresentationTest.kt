@@ -37,6 +37,15 @@ class WarRoomPresentationTest {
         assertFalse("already showing", rules.shouldOpen(run("other", operations = 1), presented = true))
     }
 
+    @Test fun aDelayedHandBackNeverClosesALaterShowing() {
+        val rules = WarRoomPresentation()
+        rules.showingChanged()
+        val scheduled = rules.showing
+        assertTrue(rules.isCurrent(scheduled))
+        rules.showingChanged(); rules.showingChanged() // closed, then reopened within the delay
+        assertFalse("the earlier hand-back is stale", rules.isCurrent(scheduled))
+    }
+
     @Test fun closedWhileRunningStaysClosedAndTouchedStaysOpen() {
         val rules = WarRoomPresentation()
         assertTrue(rules.shouldOpen(run("a", operations = 1), presented = false))

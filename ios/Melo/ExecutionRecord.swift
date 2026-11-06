@@ -520,4 +520,10 @@ struct WarRoomPresentation {
         aside.remove(record.runId); return true
     }
     mutating func userClosed(_ record: ExecutionRecord?) { if let record, !record.isFinished, !aside.contains(record.runId) { dismissed.insert(record.runId) } }
+    /// Every opening or closing starts a new showing. A delayed hand-back belongs to
+    /// the showing it was scheduled in: closing and reopening (a history view
+    /// included) in the meantime makes it stale, so it never closes the new page.
+    private(set) var showing = 0
+    mutating func showingChanged() { showing += 1 }
+    func isCurrent(_ scheduled: Int) -> Bool { scheduled == showing }
 }

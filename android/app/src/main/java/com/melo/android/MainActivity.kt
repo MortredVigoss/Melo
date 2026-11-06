@@ -101,9 +101,9 @@ private data class ChatTimelineItem(val id: String, val at: String, val message:
         if (executionChat != null && WarRoomPresentation.needsUser(liveRun)) { warRoom.stepAside(liveRun); executionChat = null }
         else if (executionChat == null && page == Page.Chats && chatId != null && warRoom.shouldReturn(liveRun)) executionChat = chatId
         else if (page == Page.Chats && chatId != null && warRoom.shouldOpen(liveRun, executionChat != null)) executionChat = chatId
-        else if (executionChat != null && warRoom.shouldClose(liveRun)) { delay(2600); if (warRoom.shouldClose(liveRun)) executionChat = null }
+        else if (executionChat != null && warRoom.shouldClose(liveRun)) { val scheduled = warRoom.showing; delay(2600); if (warRoom.isCurrent(scheduled) && warRoom.shouldClose(liveRun)) executionChat = null }
     }
-    LaunchedEffect(executionChat) { if (shownExecution != null && executionChat == null) warRoom.userClosed(liveRun); shownExecution = executionChat }
+    LaunchedEffect(executionChat) { warRoom.showingChanged(); if (shownExecution != null && executionChat == null) warRoom.userClosed(liveRun); shownExecution = executionChat }
     LaunchedEffect(requestedChat, runtime.initialized) {
         val target = requestedChat?.first
         if (runtime.initialized && target != null && data.chats.any { it.id == target }) { chatId = target; pageName = Page.Chats.name; showHistory = false; executionChat = null }

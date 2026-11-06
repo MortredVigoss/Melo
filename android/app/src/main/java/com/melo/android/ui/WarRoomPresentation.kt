@@ -39,6 +39,13 @@ class WarRoomPresentation {
 
     fun userClosed(run: RunRecord?) { if (run != null && !finished(run.status) && run.id !in aside) dismissed += run.id }
 
+    /** Every opening or closing starts a new showing. A delayed hand-back belongs to the showing it was
+     *  scheduled in: closing and reopening in the meantime makes it stale, so it never closes the new page. */
+    var showing = 0
+        private set
+    fun showingChanged() { showing++ }
+    fun isCurrent(scheduled: Int) = scheduled == showing
+
     companion object {
         private val terminal = setOf("completed", "failed", "cancelled", "interrupted", "stopped")
         fun finished(status: String) = status in terminal

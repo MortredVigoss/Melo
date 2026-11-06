@@ -294,6 +294,7 @@ struct ChatView: View {
     // Layout A (2026-11-06): the war room opens by itself at the live run's
     // first observable step and hands back to the chat when it ends.
     @State private var warRoom = WarRoomPresentation()
+    @State private var handBack: Task<Void, Never>?
     private var liveRecord: ExecutionRecord? { store.scenes(for: chatID).last }
     // A system prompt shown from this screen cannot appear over the war room sheet.
     private var promptPending: Bool { store.pendingDeviceAction != nil || store.pendingCapabilityRequest != nil }
@@ -473,8 +474,15 @@ struct ChatView: View {
         }
         .onChange(of: liveRecord) { _, record in
             if warRoom.shouldOpen(record, presented: showExecution, blocked: promptPending) { executionRunID = nil; showExecution = true }
-            else if showExecution, warRoom.shouldClose(record) {
-                Task { @MainActor in try? await Task.sleep(for: .seconds(2.6)); if showExecution, warRoom.shouldClose(liveRecord) { showExecution = false } }
+            else if showExecution, executionRunID == nil, warRoom.shouldClose(record) {
+                // Hand back only the live view this was scheduled for: a close or a new opening since cancels it.
+                let scheduled = warRoom.showing
+                handBack?.cancel()
+                handBack = Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(2.6))
+                    guard !Task.isCancelled, warRoom.isCurrent(scheduled), showExecution, executionRunID == nil, warRoom.shouldClose(liveRecord) else { return }
+                    showExecution = false
+                }
             }
         }
         // Never cover a prompt that needs the user; come back once it is answered.
@@ -482,7 +490,10 @@ struct ChatView: View {
             if waiting, showExecution { warRoom.stepAside(liveRecord); showExecution = false }
             else if !waiting, !showExecution, warRoom.shouldReturn(liveRecord, blocked: promptPending) { executionRunID = nil; showExecution = true }
         }
-        .onChange(of: showExecution) { wasOpen, open in if wasOpen && !open { warRoom.userClosed(liveRecord) } }
+        .onChange(of: showExecution) { wasOpen, open in
+            if wasOpen != open { warRoom.showingChanged(); handBack?.cancel(); handBack = nil }
+            if wasOpen && !open { warRoom.userClosed(liveRecord) }
+        }
         .sheet(isPresented: $showExecution) { ExecutionWorkspace(chatID: chatID, runID: executionRunID, onInteract: { warRoom.touched = true }) }
         .sheet(item: $imagePreview) { ImagePreview(image: $0, onUse: useImage, chatID: chatID) }
         .onChange(of: chatID) { _, _ in imagePreview = nil; imageImportID = nil }

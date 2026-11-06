@@ -91,7 +91,12 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
   // regions itself: the same buttons and details the captions open, so sources,
   // summaries and results stay reachable. Flights stop at once.
   let fallbackMessage = '';
-  function fail(message) { failed = true; fallbackMessage = message; root.classList.add('is-fallback'); settleFlights(); renderFallback(); onFailure?.(message); }
+  function fail(message) {
+    failed = true; fallbackMessage = message; root.classList.add('is-fallback'); settleFlights();
+    // The renderer is released (a lost context never draws again) and its labels go with it.
+    gpu?.dispose(); gpu = null; for (const el of captions.values()) el.remove(); captions.clear();
+    renderFallback(); onFailure?.(message);
+  }
   function renderFallback() {
     if (!failed) return;
     const html = `<div class="war-fallback"><p>${escapeHtml(fallbackMessage)}</p><ul class="war-regions" aria-label="${escapeHtml(t('五个区域'))}">${regionRows(regionSummary(scene))}</ul></div>`;

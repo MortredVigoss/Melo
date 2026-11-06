@@ -38,6 +38,12 @@ import Foundation
             assert(!rules.shouldClose(run), "still running")
             run.finish("completed")
             assert(rules.shouldClose(run))
+            // The hand-back belongs to the showing it was scheduled in: closed and
+            // reopened (a history view) within the delay, it must not close the new page.
+            let scheduled = rules.showing
+            assert(rules.isCurrent(scheduled))
+            rules.showingChanged(); rules.showingChanged()
+            assert(!rules.isCurrent(scheduled), "a close and a reopening make the earlier hand-back stale")
             var assigned = ExecutionRecord(chatId: "w", query: "team", requestedModel: "m")
             assigned.recordStage("internal:1", name: "检索成员", status: "running")
             assert(rules.shouldOpen(assigned, presented: false))

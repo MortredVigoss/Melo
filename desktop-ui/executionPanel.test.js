@@ -354,10 +354,10 @@ test('the gate, rail and log say how the run actually ended, and counts past the
 });
 
 // A stand-in for the WebGL scene: the calls the war room makes, nothing drawn.
-const fakeRenderer = `data:text/javascript;base64,${Buffer.from(`export function createWarRoomScene() {
-  const view = { mode: 'global', region: null, zoom: 1 };
-  return { get view() { return view; }, setStill() {}, setOpen() {}, update() {}, focusRegion(id) { view.region = id; }, setView(mode) { view.mode = mode; view.region = null; },
-    zoomBy() {}, rotateBy() {}, corePoint: () => ({ x: 400, y: 200, visible: true }), clawPoint: () => null, dispose() {} };
+const fakeRenderer = `data:text/javascript;base64,${Buffer.from(`export function createWarRoomScene(host, callbacks) {
+  const view = { mode: 'global', region: null, zoom: 1 }, record = globalThis.__fakeRenderer = { callbacks, updates: 0, disposed: false };
+  return { get view() { return view; }, setStill() {}, setOpen() {}, update() { record.updates++; }, focusRegion(id) { view.region = id; }, setView(mode) { view.mode = mode; view.region = null; },
+    zoomBy() {}, rotateBy() {}, corePoint: () => ({ x: 400, y: 200, visible: true }), clawPoint: () => null, dispose() { record.disposed = true; } };
 }`).toString('base64')}`;
 
 test('candidate flights belong to their run and showing; coverage counts candidates in play; an older iPhone dispatch shows its task', async t => {
@@ -485,5 +485,16 @@ test('without a renderer a board run still opens every region; stopping motion s
     panel.syncExecutionPanel({ chat: { id: 'chat2', messages: [] }, still: true });
     assert.equal(document.querySelector('[data-row-key="cand:b1"]')?.dataset.pending, 'false', 'still: shown at once');
     fire(); assert.equal(document.querySelectorAll('.war-chip').length, 0);
+    // The renderer loses its context: it is released, the stage lists the regions,
+    // and later updates never reach it again.
+    const renderer = globalThis.__fakeRenderer;
+    renderer.callbacks.onFailure();
+    assert.equal(renderer.disposed, true, 'released');
+    assert.ok(document.querySelector('#execution-war-room').classList.contains('is-fallback'));
+    assert.equal(document.querySelectorAll('.war-gl [data-war-region]').length, 5);
+    const updates = renderer.updates;
+    const c = live('motion-c', [row('c0')]); c.chatId = 'chat2';
+    panel.receiveExecutionScene(structuredClone(c)); await settle();
+    assert.equal(renderer.updates, updates, 'no update reaches a released renderer');
   }
 });

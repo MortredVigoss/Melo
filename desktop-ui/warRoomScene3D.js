@@ -432,7 +432,11 @@ export function createWarRoomScene(host, { onProject, onSelectRegion, onHook, on
   const observer = new ResizeObserver(resize);
   const intersection = new IntersectionObserver(entries => { visible = entries[0]?.isIntersecting !== false; requestFrame(); });
   const visibility = () => requestFrame();
-  const lost = event => { event.preventDefault(); cancelAnimationFrame(raf); raf = 0; onFailure?.(); };
+  // A lost context is final for this renderer: nothing schedules a frame again
+  // (updates, resizes and reopening included); the war room then disposes it.
+  const lost = event => { event.preventDefault(); dead = true; cancelAnimationFrame(raf); raf = 0; onFailure?.(); };
+  // Turning reduced motion off resumes drawing at once; turning it on draws one still frame.
+  const motionChange = () => requestFrame(); reduced.addEventListener?.('change', motionChange);
   canvas.addEventListener('webglcontextlost', lost); document.addEventListener('visibilitychange', visibility);
   host.prepend(canvas); observer.observe(host); intersection.observe(host); resize();
   return {
@@ -446,7 +450,7 @@ export function createWarRoomScene(host, { onProject, onSelectRegion, onHook, on
     /** Page coordinates of the core, where the lead's verdicts surface. */
     corePoint() { const rect = canvas.getBoundingClientRect(), p = project(ORIGIN); return { x: rect.left + p.x, y: rect.top + p.y, visible: p.visible }; },
     dispose() {
-      dead = true; cancelAnimationFrame(raf); observer.disconnect(); intersection.disconnect(); document.removeEventListener('visibilitychange', visibility);
+      dead = true; cancelAnimationFrame(raf); observer.disconnect(); intersection.disconnect(); document.removeEventListener('visibilitychange', visibility); reduced.removeEventListener?.('change', motionChange);
       for (const a of [...actors.values()]) removeActor(a);
       world.traverse(o => { o.geometry?.dispose?.(); if (Array.isArray(o.material)) o.material.forEach(m => m.dispose()); else o.material?.dispose?.(); });
       sprite.dispose(); composer.dispose?.(); renderer.dispose(); canvas.remove();

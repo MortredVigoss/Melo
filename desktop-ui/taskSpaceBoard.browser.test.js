@@ -251,6 +251,26 @@ test('war room shows only recorded facts, traces every number, opens by itself, 
     assert.deepEqual(await room.locator('.war-rail li').evaluateAll(rows => rows.map(row => row.dataset.phase).filter(key => key !== 'deliver')), []);
     assert.match(await band.locator('[data-cell="regions"]').innerText(), /分析与计算\s*1 次调用/);
     assert.deepEqual(errors, []);
+    // Reduced motion switched off resumes drawing by itself (a history view, no new data).
+    await open('board-chat');
+    const frames = () => gl.evaluate(el => Number(el.dataset.frames || 0));
+    await page.waitForFunction(() => Number(document.querySelector('#execution-war-room .war-gl').dataset.frames) > 5);
+    await page.emulateMedia({ reducedMotion: 'reduce' }); await page.waitForTimeout(700);
+    const stopped = await frames(); await page.waitForTimeout(500);
+    assert.equal(await frames(), stopped, 'reduced motion: the loop stops');
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await page.waitForFunction(f => Number(document.querySelector('#execution-war-room .war-gl').dataset.frames) > f + 5, stopped, { timeout: 4000 });
+    // A lost WebGL context is final: the stage lists the regions, the labels go, and no frame is drawn again whatever arrives.
+    await gl.evaluate(el => el.querySelector('canvas').getContext('webgl2')?.getExtension('WEBGL_lose_context')?.loseContext());
+    await page.waitForFunction(() => document.querySelector('#execution-war-room').classList.contains('is-fallback'));
+    assert.equal(await room.locator('.war-gl [data-war-region]').count(), 5);
+    assert.equal(await room.locator('.war-caption').count(), 0, 'the renderer\'s labels went with it');
+    const lostAt = await frames();
+    const after = createExecutionScene({ runId: 'after-loss', chatId: 'board-chat', query: 'live', startedAt: at(0) });
+    for (const row of events(5)) applyExecutionEvent(after, row);
+    await page.evaluate(scene => window.panel.receiveExecutionScene(scene), JSON.parse(JSON.stringify(after)));
+    await page.setViewportSize({ width: 1100, height: 900 }); await page.waitForTimeout(1200);
+    assert.equal(await frames(), lostAt, 'no frame after the context was lost: not on new data, not on resize');
   } finally {
     await browser?.close(); child.kill('SIGTERM');
     const timeout = setTimeout(() => child.kill('SIGKILL'), 5000);

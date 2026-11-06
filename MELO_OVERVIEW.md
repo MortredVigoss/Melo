@@ -100,6 +100,7 @@
   - C11 已修：三维不可用时舞台列出五区域入口（同一套详情）；关闭、减弱动态、静止、渲染失败时动画一律收尾，并立即显示等待中的行。
   - 集成档 `run-T16EyM`：JS 5 002 / 5 002，Swift 38 组、Android 四项全绿。
 - 本地 master 停在 `b8c89341`：主工作区有另一线程（Codex「Melo 对话归组」）未提交的 `MELO_OVERVIEW.md` 交接，快进被 git 拒绝，本线程未动它。推送改由本分支执行（上游设为 `origin/master`）。
+- 第五次 `git pp` 评级 B，已推送 `03f9db4d`。C12 按评审建议修复：WebGL 上下文丢失后释放渲染器；减弱动态关闭后恢复绘制；iPhone / Android 延迟关闭绑定展示代次。集成档 `run-BOKN5A` 全绿。
 - 未做：真机手势与帧率、Android 仪器测试、真实模型探针；覆盖安装未授权。
 ### 2026-11-05 — Melo 主线（Claude）— 复核 C1–C3 修复并推送
 - 线程 ID：e02f4818。C1 整轮副作用账本只对 `write` 与进行中 / 跨执行者的 `unknown` 重复拦截，`bash` 只读形式不进账本；C2 审核器只在本轮提供 `task_progress` 或已有账本时才要求账本；C3 成员子预算截止 = 轮数 × 90 s + 60 s（三端同公式）。真实主图计数测试覆盖同成员翻页 / 主→成员；快速档 `run-alGeuV`（339 / 589 文件，JS 3 327 / 3 327，Android、22 组 Swift，892 s）、集成档 `run-RtVrtf`（`--base a4ae796`，589 / 589，JS 4 934 / 4 934，Android、设置浏览器、Swift 全绿，294 s）。[修复记录](docs/codex-batch-fixes-20261105.md)。
