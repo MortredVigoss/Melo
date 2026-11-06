@@ -81,9 +81,13 @@
 
 ## 4. 最新交接
 
-### 2026-11-06 — Melo 主线（Claude）— 作战大屏（布局 A）移入产品 — 分支未合并
+### 2026-11-06 — Melo 主线（Claude）— 作战大屏（布局 A）移入产品 — 已合并到 master
 - 分支 `claude/task-space-c-20261105`（worktree `.tmp/task-space-c-20261105`，已变基到 `d5c596e`）：C1–C5（评估快照与成员岗位三端发出、`src/shared/executionBoard.js` 投影）之上，嵌入式任务空间换成全屏作战大屏：`desktop-ui/warRoom*.js`、`src/shared/warRoom.js`；聊天里收成一行；自动弹出与「为确认提示让开」三端同规则（桌面 `executionPanel.js`、iPhone `WarRoomPresentation` + `ContentView`、Android `WarRoomPresentation.kt` + `MainActivity`）。区域只算自己的调用，每个数字点开即其记录；修复 token 被推理摘要重复计数。C7：全局取景改由 `desktop-ui/warRoomLayout.js` 按每个区域真实外沿计算并留出标签边距，打开时相机直接就位，五个区域不再出屏；手机底部卡片可横向滑动。[专项记录](docs/task-space-c-20261105.md)，证据 `.tmp/war-room-20261106/`。
-- 下一步：合并前跑集成档 `npm test -- --base d5c596e`；真机手势与帧率、Android 仪器测试、真实模型探针未做；合并 / 推送 / 安装均未授权。
+- 用户 2026-11-06 要求合并并推送。集成档 `run-CjTZuy`（`--base d5c596e`）结果：
+  - JS 591 / 591 个文件，4 992 / 4 992 项，0 失败 0 跳过；
+  - Swift 38 组、Android 四项、设置浏览器验收、文档链接、生成器与共享渲染预检全部通过。
+  - 随后 master 快进到本分支。
+- 未做：真机手势与帧率、Android 仪器测试、真实模型探针；覆盖安装未授权。
 ### 2026-11-05 — Melo 主线（Claude）— 复核 C1–C3 修复并推送
 - 线程 ID：e02f4818。C1 整轮副作用账本只对 `write` 与进行中 / 跨执行者的 `unknown` 重复拦截，`bash` 只读形式不进账本；C2 审核器只在本轮提供 `task_progress` 或已有账本时才要求账本；C3 成员子预算截止 = 轮数 × 90 s + 60 s（三端同公式）。真实主图计数测试覆盖同成员翻页 / 主→成员；快速档 `run-alGeuV`（339 / 589 文件，JS 3 327 / 3 327，Android、22 组 Swift，892 s）、集成档 `run-RtVrtf`（`--base a4ae796`，589 / 589，JS 4 934 / 4 934，Android、设置浏览器、Swift 全绿，294 s）。[修复记录](docs/codex-batch-fixes-20261105.md)。
 - 未做：Android 成员路径单元测试、schema 的 `jobModels`、`jobConnectionConfig` 白名单（P3）；真实模型 / 真机未验收。
@@ -382,7 +386,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | 模块 | 实际文件 / 接口 | 当前边界 |
 | --- | --- | --- |
 | 公开摘要与 API 回执 | `src/providers/reasoningSummary.js`、`streams.js`、`anthropic.js`、`src/openai.js` → `src/services/chat/executionPipeline.js` → `src/shared/executionMetadata.js` / `executionScene.js`；`src/server.js` 提供 `/shared/executionMetadata.js` | 公开摘要 delta/done/part/item/terminal 去重合并，24,000 字符上限；token 缺失不补零，耗时为本机观测；不记录隐藏推理、凭证或完整响应体 |
-| 神经任务空间详情 | `desktop-ui/executionPanel.js` / `.css`、`executionDetails.js`、`executionViewport.js`；`ios/Melo/Scene/` 共享资源 | 最新回执、分轮可滚动摘要、完整详情；摘要滚轮不误触相机；历史仅读已存 sidecar，失败/取消保留已有回执；手机独立采集须另核对 |
+| 神经任务空间详情 | `desktop-ui/executionPanel.js` / `.css`、`executionDetails.js`；2026-11-06 起全屏作战大屏 `warRoom.js` / `warRoomScene3D.js` / `warRoomLayout.js`（原 `executionViewport.js` 已删除）；`ios/Melo/Scene/` 共享资源 | 最新回执、分轮可滚动摘要、完整详情；摘要滚轮不误触相机；历史仅读已存 sidecar，失败/取消保留已有回执；手机独立采集须另核对 |
 | 阅读与输入 | `desktop-ui/app.js`、`styles.css`、`localSettings.css`、`neural.css`、`neuralGlass.css`、`executionPanel.css`；`ios/Melo/ContentView.swift` / `ReplyContentView.swift` | 标准正文 14px、2–4 行后内部滚动；重绘保留草稿/滚动，窗口折行与删字回缩；移除顶部 Quick actions，快捷键及输入区角色/模型保留；手机动态字体保留 |
 | 图片预览与保存 | `desktop-ui/attachmentCards.js` → `imagePreview.js`；`localSettings.js` 的 `nativeSettings('saveImage')` → `desktop-app/main.swift`；`ios/Melo/ImageViews.swift` 的 `ImageContextActions` / `ImagePhotoExport` | 桌面原生保存面板写原始字节，取消/失败可重试；来源限主框架本机 origin，解码与 64 MB 限制；手机长按预览/保存/分享/继续修改，照片仅按需申请添加权限 |
 
@@ -434,6 +438,13 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 - 2026-10-15 用户最新决定：仅用户明确要求才运行 `git pp` 或等价脚本；不自动审查、重审或推送。测试、本地提交、已授权修复持续推进。被要求运行时仍保留推送门禁。
 - 保持现有暗色神经网络语言；“太空”增加内部密度与深度。导航悬停原位放大约 3–5% 并变亮，不偏移出屏。
 - 任务空间由真实执行事件驱动，支持并行、独立折叠和历史回看，及时展示结果。细线发光神经突触、深紫活动区、轻透来源卡片；未逐项验收的视觉目标不能写成已完成。
+- 2026-11-06 用户拍板布局 A：
+  - 任务空间展开为全屏作战大屏，聊天里收成一行。
+  - 星核是主 Agent；五个区域按 Melo 主界面配色细化。
+  - 执行由固定的低饱和紫色线框蜘蛛完成：出去就离开星核，必须碰到区域并在上面小幅移动转身，爪子扒下词条落到底部记录。
+  - 回复中有真实执行时自动弹出，遇到等待用户确认的提示让开；电脑和手机都能手动旋转、缩放。
+  - 工具调用区域只算本区域的调用，网页搜索归网页检索；屏上每个数字都能点开查看其记录。
+  - 默认画面完整显示五个区域；手机底部卡片左右滑动。
 - 搜索来源网站默认最相关 5 个，展开最多 10 个；引用是额外标记，不先排除被引用网站。区分搜索命中、实际读取、最终引用，不编造淘汰理由。
 - 手机独立聊天与跨端同步分开；对话可选角色和模型。自有账号注册等待用户配置 Supabase，区别于模型平台 OAuth。
 - 本地语义检索不要求额外软件。“额外快速”默认关闭，仅按已配置连接分配判断任务，不改变回答模型。

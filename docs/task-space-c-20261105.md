@@ -164,3 +164,23 @@ Android：`SharedChatAgent.kt` 在 `internal:N`（:296 / :317）与 `task-evalua
 - 快速档 `run-RRwgAh`（取景与滑动）：选中 142 / 591 个文件，JS 850 / 850（0 失败 0 跳过）；Android JVM / Lint / Debug / Release、设置浏览器验收全绿。摘要在 `.tmp/war-room-20261106/gates/`。
 - 审计 H1–H20 与改动前持平。H6 / H17 / H20 的命中全部在本轮未改动的文件里。
 - 产品录屏与截图在 `.tmp/war-room-20261106/screens/`：自动弹出那一帧、全局视角、追踪清单、手机默认视角、手机左滑后。
+
+### 合并（2026-11-06）
+
+用户要求合并并推送。
+
+合并前集成档 `npm test -- --base d5c596e` → `run-CjTZuy`：
+- JS 591 / 591 个文件，4 992 / 4 992 项，0 失败 0 跳过；
+- Swift 38 组全部执行通过（编译沿用缓存，C6 后 Swift 源码未变）；
+- Android JVM / Lint / Debug / Release、设置浏览器验收、文档链接、生成器与共享渲染预检全部通过。
+
+摘要在 `.tmp/war-room-20261106/gates/integration-run-CjTZuy.json`。
+
+合并时 master 与 `origin/master` 均在 `d5c596e`，本分支在其之上，快进合并。
+
+同步更新了仍描述旧文件或旧规则的现行文档：
+- `docs/execution-panel.md`：实现入口与区域计数规则；
+- `docs/mobile-desktop-alignment.md`：「工具调用汇总所有调用」改为只算本区域，以及对齐表三行；
+- `MELO_OVERVIEW.md`：模块表与保留的产品决定。
+
+`ios/VERIFICATION.md` 与带日期的审计、归档文件是历史记录，未改。
