@@ -353,7 +353,7 @@ import com.melo.android.network.HostedSearchAdapter
     }
 }
 
-@Composable fun ExecutionScreen(data: AppData, chatId: String, onOpen: (String) -> Unit) {
+@Composable fun ExecutionScreen(data: AppData, chatId: String, onOpen: (String) -> Unit, onClose: () -> Unit = {}, onInteract: () -> Unit = {}) {
     val chat = data.chats.find { it.id == chatId }
     val runs = data.runs.filter { it.chatId == chatId }
     Column(Modifier.fillMaxSize()) {
@@ -363,7 +363,7 @@ import com.melo.android.network.HostedSearchAdapter
             SharedScene(buildJsonObject {
                 put("chat", buildJsonObject { put("id", chatId); put("messages", MeloJson.encodeToJsonElement(chat?.messages.orEmpty())) })
                 put("scenes", JsonArray(runs.map { it.scene() })); put("runId", runs.last().id); put("still", data.settings.reduceMotion)
-            }, Modifier.weight(1f).fillMaxWidth(), execution = true, onOpenUrl = onOpen)
+            }, Modifier.weight(1f).fillMaxWidth(), execution = true, onOpenUrl = onOpen, onClose = onClose, onInteract = onInteract)
         }
     }
 }

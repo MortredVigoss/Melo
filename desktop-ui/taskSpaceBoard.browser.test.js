@@ -1,6 +1,9 @@
-// Plan C (2026-11-05): the task-space board, rail and camera views in a real
-// browser against a real Melo server. Every figure on the board is compared
-// with the value the shared ledger computed for the same fixture.
+// Plan C (2026-11-05), layout A (2026-11-06): the full-screen war room in a
+// real browser against a real Melo server. Every figure on the band is
+// compared with the value the shared ledger computed for the same fixture,
+// every number opens exactly the records it counts, the war room opens by
+// itself for a live run, spiders hand finished calls to their rows, and the
+// space rotates and zooms by drag, wheel, pinch, keys and buttons.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright-core';
@@ -13,6 +16,7 @@ import { join, resolve } from 'node:path';
 import { createExecutionRecorder } from '../src/services/chat/executionScenes.js';
 import { createExecutionScene, applyExecutionEvent } from '../src/shared/executionScene.js';
 import { updateTaskEvaluation, taskEvaluationSnapshot } from '../shared/agent/taskEvaluation.js';
+import { deliveryGate } from '../src/shared/warRoom.js';
 
 const goal = 'Find weekend music or outdoor events in Melbourne for two people';
 const observations = [
@@ -45,7 +49,7 @@ function events(upTo = Infinity) {
   ].slice(0, upTo);
 }
 
-test('task space board, rail and views show only recorded facts, rotate without misclicks and fit a phone', { timeout: 90000 }, async () => {
+test('war room shows only recorded facts, traces every number, opens by itself, rotates and zooms without misclicks and fits a phone', { timeout: 120000 }, async () => {
   const home = await mkdtemp(join(tmpdir(), 'melo-task-space-'));
   const proof = resolve('.tmp/task-space-board-20261105');
   await mkdir(proof, { recursive: true });
@@ -87,85 +91,116 @@ test('task space board, rail and views show only recorded facts, rotate without 
     </script></body></html>` }));
     const open = async chat => {
       await page.goto(`${base}/task-space-fixture?chat=${chat}`); await page.waitForFunction(() => window.fixtureReady);
-      const toggle = page.locator('[data-execution-action="toggle"]'); await toggle.waitFor();
-      if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
-      await page.locator('.execution-webgl canvas').waitFor();
+      const toggle = page.locator('#execution-panel [data-execution-action="toggle"]'); await toggle.waitFor();
+      if (await page.locator('#execution-war-room').evaluate(el => el.hidden)) await toggle.click();
+      await page.locator('#execution-war-room .war-gl canvas').waitFor();
     };
+    const room = page.locator('#execution-war-room'), gl = room.locator('.war-gl'), band = room.locator('.war-band'), detail = room.locator('[data-cell="detail"]');
+    const count = async () => Number((await detail.locator('.war-count').innerText()).match(/\d+/)[0]);
+    const back = () => detail.locator('[data-war-back]').click();
     await open('board-chat');
-    const board = page.locator('.execution-board-host');
-    await board.locator('[data-card="score"]').waitFor();
+    await band.locator('[data-cell="gate"] .war-gate').waitFor();
     // Rail: only phases that happened, delivery last.
-    assert.deepEqual(await page.locator('.execution-rail li').evaluateAll(rows => rows.map(row => row.dataset.phase)), ['contract', 'evaluate', 'dispatch', 'review', 'deliver']);
-    // Board figures equal the shared ledger's own numbers.
-    const last = snapshots.at(-1), top = Math.max(...last.candidates.filter(r => ['primary', 'alternative', 'eligible'].includes(r.tier)).map(r => r.total));
-    assert.deepEqual(await board.locator('.execution-board-card').evaluateAll(cards => cards.map(card => card.dataset.card)), ['log', 'dispatch', 'score', 'heat', 'coverage', 'spec']);
-    assert.equal(await board.locator('.execution-gauge .value').textContent(), String(top));
-    assert.equal(await board.locator('.execution-ledger-total dd').textContent(), String(last.summary.discovered));
-    assert.equal(await board.locator('.execution-heat tbody tr').count(), last.candidates.length);
-    assert.equal(await board.locator('.execution-heat td[data-state="verified"]').count(), last.candidates.reduce((sum, row) => sum + Object.values(row.fields).filter(v => v === 'verified').length, 0));
-    assert.match(await board.locator('[data-card="score"]').innerText(), new RegExp(`${last.policy.primaryScore}`));
-    assert.match(await board.locator('[data-card="dispatch"]').innerText(), /#1/);
-    assert.equal(await board.locator('.execution-log li').first().getAttribute('data-verb'), 'deliver');
-    assert.equal(await board.locator('.execution-log li[data-verb="evaluate"]').count(), 3);
-    assert.match(await board.locator('.execution-contract').innerText(), /name · startsAt · place · participation/);
-    assert.match(await page.locator('.execution-core').innerText(), /Fixture Lead/);
-    await page.screenshot({ path: join(proof, 'board-1280.png') });
-    // Views: follow, free and global; a drag rotates and never selects a module.
-    const webgl = page.locator('.execution-webgl');
-    await page.locator('[data-execution-action="view"][data-view="follow"]').click();
-    await page.waitForFunction(() => document.querySelector('.execution-webgl').dataset.viewMode === 'follow');
-    assert.equal(await page.locator('[data-view="follow"]').getAttribute('aria-checked'), 'true');
-    await page.locator('[data-execution-action="view"][data-view="global"]').click();
-    await page.waitForFunction(() => document.querySelector('.execution-webgl').dataset.viewMode === 'global');
-    const box = await page.locator('.execution-webgl canvas').boundingBox();
-    // Start on empty space (labels are clickable and sit above the canvas).
-    assert.equal(await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.tagName, [box.x + 60, box.y + box.height - 70]), 'CANVAS');
-    await page.mouse.move(box.x + 60, box.y + box.height - 70); await page.mouse.down();
-    await page.mouse.move(box.x + 240, box.y + box.height - 100, { steps: 10 }); await page.mouse.up();
-    await page.waitForFunction(() => document.querySelector('.execution-webgl').dataset.viewMode === 'free');
-    assert.notEqual(Number(await webgl.getAttribute('data-yaw')), 0);
-    assert.equal(await page.locator('.execution-panel-stage').getAttribute('data-focus'), '', 'a drag is not a click');
-    assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem('melo-task-space-view'))).mode, 'free', 'the view is remembered on this device');
-    await page.screenshot({ path: join(proof, 'free-1280.png') });
-    // A zoomed-in detail is locked straight on: arrows do not rotate it.
-    await page.locator('[data-execution-action="focus"][data-module="search"]').click();
-    await page.waitForFunction(() => document.querySelector('.execution-panel-stage').dataset.wide === 'false');
-    const yaw = await webgl.getAttribute('data-yaw');
-    await page.locator('.execution-panel-stage').focus(); await page.keyboard.press('ArrowLeft');
-    assert.equal(await webgl.getAttribute('data-yaw'), yaw);
-    assert.equal(await page.locator('.execution-rail').count(), 0, 'the rail steps aside for a locked detail');
-    await page.locator('[data-execution-action="view"][data-view="global"]').click();
-    assert.equal(await page.locator('.execution-panel-stage').getAttribute('data-zoom'), '1.000');
-    // Live updates: a new ledger batch flies candidates to the board; reduced motion does not.
+    assert.deepEqual(await room.locator('.war-rail li').evaluateAll(rows => rows.map(row => row.dataset.phase)), ['contract', 'evaluate', 'dispatch', 'review', 'deliver']);
+    // Band figures equal the shared ledger's own numbers.
+    const last = snapshots.at(-1), qualified = last.candidates.filter(r => ['primary', 'alternative', 'eligible'].includes(r.tier)), top = Math.max(...qualified.map(r => r.total));
+    assert.deepEqual(await band.locator('.war-cell').evaluateAll(cells => cells.map(cell => cell.dataset.cell)), ['log', 'dispatch', 'gate', 'heat', 'coverage', 'contract']);
+    const gate = deliveryGate(last);
+    assert.deepEqual(await band.locator('.war-gate li .war-num').evaluateAll(rows => rows.map(row => row.textContent.replace(' ✓', ''))), gate.rows.map(row => row.value));
+    assert.equal(await band.locator('.war-heat tbody tr[data-row-key]').count(), last.candidates.length);
+    assert.equal(await band.locator('.war-heat td[data-s="verified"]').count(), last.candidates.reduce((sum, row) => sum + Object.values(row.fields).filter(v => v === 'verified').length, 0));
+    assert.match(await band.locator('[data-war-trace="candidates:top"]').innerText(), new RegExp(String(top)));
+    assert.match(await band.locator('[data-cell="dispatch"]').innerText(), /#1/);
+    assert.equal(await band.locator('.war-log li').first().getAttribute('data-verb'), 'deliver');
+    assert.equal(await band.locator('.war-log li[data-verb="evaluate"]').count(), 3);
+    assert.match(await band.locator('.war-contract').innerText(), /名称 · 时间 · 地点 · 参与方式/);
+    await room.locator('.war-caption.is-core').waitFor();
+    assert.match(await room.locator('.war-caption.is-core').innerText(), /Fixture Lead/);
+    await page.screenshot({ path: join(proof, 'war-room-1280.png') });
+    // Every number opens exactly the records it counts.
+    const statusCalls = Number((await room.locator('.war-status [data-war-trace="calls"]').innerText()).match(/\d+/)[0]);
+    await room.locator('.war-status [data-war-trace="calls"]').click();
+    assert.equal(await count(), statusCalls); assert.equal(await detail.locator('.war-trace > li').count(), statusCalls); await back();
+    await band.locator('[data-war-trace="candidates:all"]').click();
+    assert.equal(await count(), last.candidates.length); await back();
+    await band.locator('[data-war-trace="gate:count"]').click();
+    assert.equal(await count(), qualified.length); await back();
+    const memberCalls = Number((await band.locator('[data-war-trace="member:1"]').innerText()).match(/\d+/)[0]);
+    await band.locator('[data-war-trace="member:1"]').click();
+    assert.equal(await count(), memberCalls); await back();
+    const regionCalls = [];
+    for (const id of ['search', 'files', 'compute', 'tools', 'create']) {
+      await room.locator(`.war-caption.is-region[data-war-region="${id}"]`).click();
+      const calls = await detail.locator('.war-trace > li[data-status] button[data-war-record]').evaluateAll(rows => rows.filter(row => !/^(model|reply|task-evaluation|goal-check|internal)/.test(row.dataset.warRecord)).length);
+      regionCalls.push(calls);
+      await page.waitForFunction(id => document.querySelector('#execution-war-room .war-gl').dataset.view === `region:${id}`, id); // a region click focuses the camera on it
+      await back();
+    }
+    assert.equal(regionCalls.reduce((a, b) => a + b, 0), statusCalls, 'the regions add up to the total; nothing counts twice');
+    assert.equal(regionCalls[3], 0, 'no web search counts under 工具调用');
+    // Views: follow, free and global; a drag rotates and never opens a region.
+    await room.locator('[data-war-view="follow"]').click();
+    await page.waitForFunction(() => document.querySelector('#execution-war-room .war-gl').dataset.view === 'follow');
+    await room.locator('[data-war-view="global"]').click();
+    await page.waitForFunction(() => document.querySelector('#execution-war-room .war-gl').dataset.view === 'global');
+    const box = await room.locator('.war-gl canvas').boundingBox();
+    assert.equal(await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.tagName, [box.x + 30, box.y + box.height - 40]), 'CANVAS');
+    const camera = await gl.getAttribute('data-camera');
+    await page.mouse.move(box.x + 30, box.y + box.height - 40); await page.mouse.down();
+    await page.mouse.move(box.x + 260, box.y + box.height - 90, { steps: 12 }); await page.mouse.up();
+    await page.waitForFunction(() => document.querySelector('#execution-war-room .war-gl').dataset.view === 'free');
+    await page.waitForFunction(c => document.querySelector('#execution-war-room .war-gl').dataset.camera !== c, camera);
+    assert.equal(await band.getAttribute('data-mode'), 'board', 'a drag is not a click');
+    // Wheel, trackpad pinch (ctrl + wheel), two-finger pinch, keys and buttons all zoom.
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.wheel(0, -300);
+    await page.waitForFunction(() => Number(document.querySelector('#execution-war-room .war-gl').dataset.zoom) > 1.2);
+    await page.evaluate(() => { const canvas = document.querySelector('#execution-war-room .war-gl canvas'), r = canvas.getBoundingClientRect(), y = r.top + r.height / 2;
+      const fire = (type, id, x) => canvas.dispatchEvent(new PointerEvent(type, { pointerId: id, pointerType: 'touch', clientX: x, clientY: y, bubbles: true, isPrimary: id === 11 }));
+      fire('pointerdown', 11, r.left + 300); fire('pointerdown', 12, r.left + 400); fire('pointermove', 11, r.left + 340); fire('pointermove', 12, r.left + 360); fire('pointerup', 11, r.left + 340); fire('pointerup', 12, r.left + 360); });
+    await page.waitForFunction(() => Number(document.querySelector('#execution-war-room .war-gl').dataset.zoom) < 1.2); // pinching in zooms out
+    await room.locator('[data-war-zoom="in"]').click();
+    assert.match(await room.locator('.war-zoom-value').innerText(), /%/);
+    await room.locator('.war-stage').focus(); const before = await gl.getAttribute('data-camera');
+    await page.keyboard.press('ArrowLeft'); await page.waitForFunction(c => document.querySelector('#execution-war-room .war-gl').dataset.camera !== c, before);
+    await page.keyboard.press('0'); await page.waitForFunction(() => document.querySelector('#execution-war-room .war-gl').dataset.view === 'global');
+    await page.screenshot({ path: join(proof, 'war-room-free-1280.png') });
+    // A live run opens the war room by itself; its spider hands each finished call to its row.
     const live = async reduced => {
       await page.emulateMedia({ reducedMotion: reduced ? 'reduce' : 'no-preference' });
-      await page.evaluate(() => document.querySelectorAll('.execution-candidate-flight').forEach(node => node.remove()));
+      await open('board-chat'); await room.locator('[data-war-close]').click();
+      assert.equal(await room.evaluate(el => el.hidden), true);
       const scene = createExecutionScene({ runId: reduced ? 'live-reduced' : 'live-motion', chatId: 'board-chat', query: 'live', startedAt: at(0) });
       for (const row of events(5)) applyExecutionEvent(scene, row);
       await page.evaluate(scene => window.panel.receiveExecutionScene(scene), JSON.parse(JSON.stringify(scene)));
-      await page.locator('[data-card="heat"]').waitFor();
-      await page.waitForTimeout(400);
-      applyExecutionEvent(scene, events(6)[5]);
+      await page.waitForFunction(() => !document.querySelector('#execution-war-room').hidden);
+      await page.waitForTimeout(1500);
+      const spiders = Number(await gl.getAttribute('data-spiders'));
+      for (const row of events(7).slice(5)) applyExecutionEvent(scene, row);
       await page.evaluate(scene => window.panel.receiveExecutionScene(scene), JSON.parse(JSON.stringify(scene)));
-      await page.waitForTimeout(250);
-      return page.locator('.execution-candidate-flight').count();
+      // A chip of the call's own region: from the spider's claw, not a candidate from the core.
+      const flew = await page.waitForFunction(() => document.querySelectorAll('.war-chip[data-kind="search"]').length > 0, null, { timeout: 7000 }).then(() => true, () => false);
+      await page.waitForFunction(() => document.querySelector('[data-row-key="op:job-1:f1"]')?.dataset.pending === 'false', null, { timeout: 9000 });
+      return { spiders, flew };
     };
-    assert.ok(await live(false) >= 1, 'new candidates fly to the board');
-    assert.ok(await page.locator('.execution-webgl').getAttribute('data-actors').then(v => v.includes('member:1')), 'the running member has its own actor');
-    assert.equal(await live(true), 0, 'reduced motion: no flights');
-    // Phone width: one row of cards, no horizontal page overflow.
+    const motion = await live(false);
+    assert.ok(motion.spiders >= 1, 'the running member is out as a spider');
+    assert.equal(motion.flew, true, 'finished calls and newly admitted candidates fly to their rows');
+    const still = await live(true);
+    assert.equal(still.flew, false, 'reduced motion: rows appear without flights');
+    // Phone width: the band scrolls sideways, no horizontal page overflow.
     await page.emulateMedia({ reducedMotion: 'no-preference' });
     await page.setViewportSize({ width: 393, height: 852 });
     await page.waitForTimeout(400);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
-    await page.screenshot({ path: join(proof, 'board-393.png') });
-    // An ordinary chat shows no board, rail or core label.
+    await page.screenshot({ path: join(proof, 'war-room-393.png') });
+    // An ordinary chat: no evaluation cells, no invented phases.
     await page.setViewportSize({ width: 1280, height: 1000 });
     await open('plain-chat');
-    await page.locator('.execution-module').first().waitFor();
-    assert.equal(await page.locator('.execution-board-host').isHidden(), true);
-    assert.equal(await page.locator('.execution-rail').count(), 0);
-    assert.equal(await page.locator('.execution-core').count(), 0);
+    await band.locator('[data-cell="regions"]').waitFor();
+    assert.equal(await band.getAttribute('data-mode'), 'plain');
+    assert.equal(await band.locator('[data-cell="gate"], [data-cell="heat"]').count(), 0);
+    assert.deepEqual(await room.locator('.war-rail li').evaluateAll(rows => rows.map(row => row.dataset.phase).filter(key => key !== 'deliver')), []);
+    assert.match(await band.locator('[data-cell="regions"]').innerText(), /分析与计算\s*1 次调用/);
     assert.deepEqual(errors, []);
   } finally {
     await browser?.close(); child.kill('SIGTERM');

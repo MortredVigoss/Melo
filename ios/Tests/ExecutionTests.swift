@@ -23,6 +23,45 @@ import Foundation
         phone.finish("completed")
         phone.recordPhoneOperation(id: "web:late", module: "search", name: "网页 · 打开", status: "completed", summary: "")
         assert(phone.displayedToolCount == 5)
+        // Layout A: the war room opens by itself once per live run at its first
+        // observable step, never for a plain reply, not again after the user
+        // closed it, and hands back at the end unless the user touched it.
+        do {
+            var rules = WarRoomPresentation()
+            var plain = ExecutionRecord(chatId: "w", query: "hi", requestedModel: "m")
+            plain.recordStage("model:1", name: "模型请求", status: "running")
+            assert(!plain.hasObservableExecution && !rules.shouldOpen(plain, presented: false))
+            var run = ExecutionRecord(chatId: "w", query: "find", requestedModel: "m")
+            run.recordPhoneOperation(id: "web:1", module: "search", name: "网页 · 打开", status: "running", summary: "")
+            assert(rules.shouldOpen(run, presented: false))
+            assert(!rules.shouldOpen(run, presented: false), "once per run")
+            assert(!rules.shouldClose(run), "still running")
+            run.finish("completed")
+            assert(rules.shouldClose(run))
+            var assigned = ExecutionRecord(chatId: "w", query: "team", requestedModel: "m")
+            assigned.recordStage("internal:1", name: "检索成员", status: "running")
+            assert(rules.shouldOpen(assigned, presented: false))
+            rules.userClosed(assigned)
+            assigned.recordPhoneOperation(id: "job-1:web", module: "search", name: "网页 · 打开", status: "running", summary: "")
+            assert(!rules.shouldOpen(assigned, presented: false), "closed while running stays closed")
+            var touched = ExecutionRecord(chatId: "w", query: "eval", requestedModel: "m")
+            touched.recordStage("task-evaluation:1", name: "评估", status: "completed")
+            assert(rules.shouldOpen(touched, presented: false))
+            rules.touched = true; touched.finish("completed")
+            assert(!rules.shouldClose(touched), "a touched war room stays until the user leaves")
+            assert(!rules.shouldOpen(run, presented: true))
+            // A prompt that needs the user is never covered; stepping aside is not a dismissal.
+            var held = ExecutionRecord(chatId: "w", query: "write", requestedModel: "m")
+            held.recordPhoneOperation(id: "file:1", module: "files", name: "文件 · 写入", status: "waiting", summary: "")
+            assert(held.needsUser && !rules.shouldOpen(held, presented: false), "never opens over a permission prompt")
+            var device = ExecutionRecord(chatId: "w", query: "device", requestedModel: "m")
+            device.recordPhoneOperation(id: "web:2", module: "search", name: "网页 · 打开", status: "running", summary: "")
+            assert(!rules.shouldOpen(device, presented: false, blocked: true), "never opens over a system prompt")
+            assert(rules.shouldOpen(device, presented: false))
+            rules.stepAside(device); rules.userClosed(device)
+            assert(!rules.shouldReturn(device, blocked: true))
+            assert(rules.shouldReturn(device), "comes back once the prompt is answered")
+        }
         // Plan C: member role, round limit and evaluation snapshot stay on the
         // local stage, survive merges and Codable, and stay out of v1 sync.
         do {

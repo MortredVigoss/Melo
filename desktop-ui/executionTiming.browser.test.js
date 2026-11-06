@@ -28,7 +28,7 @@ test('chat and task timers advance without events, preserve live DOM, freeze and
     await page.clock.install({ time: new Date('2026-10-15T02:00:00Z') });
     await page.clock.pauseAt(new Date('2026-10-16T02:00:00Z'));
     const importmap = (await readFile('desktop-ui/index.html', 'utf8')).match(/<script type="importmap">[\s\S]*?<\/script>/)[0];
-    await page.route('**/timing-fixture', route => route.fulfill({ contentType: 'text/html', body: `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/executionPanel.css">${importmap}<style>body{background:#090c12;color:#d8c8af;font:14px system-ui;margin:0;padding:16px;box-sizing:border-box}.message{padding:16px;border:1px solid #a4987e33;border-radius:16px;margin-top:16px}.message-scene-replay{background:none;color:#d8c8af;border:0;padding:8px 0}</style></head><body><p>计时与图片进度 · 本地验收样本</p><main></main><article class="message" data-message-id="answer"><p>这里保留回复内容和图片，不因秒表更新而重新创建。</p></article><script type="module">
+    await page.route('**/timing-fixture', route => route.fulfill({ contentType: 'text/html', body: `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/executionPanel.css"><link rel="stylesheet" href="/warRoom.css">${importmap}<style>body{background:#090c12;color:#d8c8af;font:14px system-ui;margin:0;padding:16px;box-sizing:border-box}.message{padding:16px;border:1px solid #a4987e33;border-radius:16px;margin-top:16px}.message-scene-replay{background:none;color:#d8c8af;border:0;padding:8px 0}</style></head><body><p>计时与图片进度 · 本地验收样本</p><main></main><article class="message" data-message-id="answer"><p>这里保留回复内容和图片，不因秒表更新而重新创建。</p></article><script type="module">
       import * as panel from '/executionPanel.js';
       import {createExecutionScene,applyExecutionEvent,finishExecutionScene} from '/shared/executionScene.js';
       window.panel=panel;window.apply=applyExecutionEvent;window.finish=finishExecutionScene;
@@ -46,11 +46,11 @@ test('chat and task timers advance without events, preserve live DOM, freeze and
     await page.clock.fastForward(1000);
     const timer = page.locator('.execution-timing-host');
     assert.match(await timer.innerText(), /已用时 6 秒/);
-    await page.evaluate(() => { window.originalStage = document.querySelector('.execution-panel-stage'); window.originalReply = document.querySelector('.message > p'); });
+    await page.evaluate(() => { window.originalStage = document.querySelector('#execution-war-room .war-stage'); window.originalReply = document.querySelector('.message > p'); });
     await page.clock.fastForward(4000);
     assert.match(await timer.innerText(), /已用时 10 秒/);
     assert.match(await page.locator('[data-execution-timing-run]').innerText(), /思考与回复 10 秒/);
-    assert.equal(await page.evaluate(() => originalStage === document.querySelector('.execution-panel-stage') && originalReply === document.querySelector('.message > p')), true);
+    assert.equal(await page.evaluate(() => originalStage && originalStage === document.querySelector('#execution-war-room .war-stage') && originalReply === document.querySelector('.message > p')), true);
     assert.equal(await timer.locator('progress').getAttribute('value'), '0');
     await page.evaluate(() => { apply(run,{kind:'operation',id:'image-1',status:'completed',artifacts:[{id:'saved',kind:'image',url:'https://example.test/result.png'}]}); panel.receiveExecutionScene(structuredClone(run)); });
     assert.equal(await timer.locator('progress').getAttribute('value'), '50');

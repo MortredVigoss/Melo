@@ -45,6 +45,7 @@ export function sceneKey(value) {
   for (const c of String(value)) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
   return (h >>> 0).toString(36);
 }
+const WEB_RETRIEVAL = /(^|[_.-])(web[_-]?search|search[_-]?web|fetch[_-]?(url|page|web)|browse|crawl|scrape)([_.-]|$)|(^|[_.-])(brave|tavily|exa|serper|serpapi|firecrawl|jina|perplexity|duckduckgo|bing|kagi|searxng|google[_-]?search)([_.-]|$)/i;
 // `declared` is the tool's own `uiModule` (tools/tool.js); a valid module id wins
 // over the id table below, which stays as the fallback for undeclared tools.
 export function moduleForOperation(name = '', args = {}, declared) {
@@ -54,6 +55,9 @@ export function moduleForOperation(name = '', args = {}, declared) {
   if (name === 'xlsx' || name === 'pdf' && ['write', 'structured', 'from_spec'].includes(args.action)) return 'create';
   if (name === 'native_image_generation' || name === 'image' && args.action === 'generate') return 'create';
   if (/^(file_read|file_write|file_edit|file_move|file_mkdir|file_delete|glob|grep|knowledge|search_history|media_info|read_file|write_file|edit_file|list_files|search_files|file_search|pdf|document|excel|spreadsheet|image)$/.test(name)) return 'files';
+  // External tools (MCP) declare no module. One whose name plainly says web
+  // retrieval is 网页检索, not 工具调用 (layout A, 2026-11-06).
+  if (WEB_RETRIEVAL.test(name)) return 'search';
   return 'tools';
 }
 // Older iPhones wrote local tool results to pipeline using these host-owned IDs
@@ -258,8 +262,11 @@ export function finishExecutionScene(scene, { status = 'completed', message, cit
   scene.restSeed = sceneKey(`${scene.runId}:${scene.lastModule}:${scene.sequence}`);
   return scene;
 }
+// A region's own records only. 工具调用 used to sum every call (searches,
+// calculations and file work too), so one web search showed in two regions;
+// the run's total lives in the status line instead (layout A, 2026-11-06).
 export function moduleActivity(scene, module) {
-  const ops = module === 'tools' ? (scene?.operations || []) : [
+  const ops = [
     ...(scene?.operations || []).filter(op => op.module === module),
     ...(scene?.pipeline || []).filter(stage => (stage.module || 'create') === module),
   ];

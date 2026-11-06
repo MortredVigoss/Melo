@@ -483,3 +483,39 @@ struct ExecutionViewPreference: Codable {
     var slot: Int
     var zoom: Double
 }
+
+// Layout A (2026-11-06): when the task-space screen (the war room) opens and
+// closes by itself. Same rule as desktop-ui/executionPanel.js and Android's
+// WarRoomPresentation: a live run opens it once, at its first observable
+// step (a tool call, an assignment or an evaluation); a plain reply never
+// does; a run the user closed while it ran stays closed; when the run ends it
+// hands back to the chat unless the user has touched it. It never covers a
+// prompt that needs the user (a call held for permission, a device action, a
+// capability request): it steps aside and comes back once that is answered.
+extension ExecutionRecord {
+    var hasObservableExecution: Bool { !operations.isEmpty || (pipeline ?? []).contains { $0.id.hasPrefix("internal:") || $0.id.hasPrefix("task-evaluation:") } }
+    var isFinished: Bool { ["completed", "failed", "cancelled", "interrupted", "stopped"].contains(status) }
+    var needsUser: Bool { !isFinished && (operations.contains { $0.status == "waiting" } || (pipeline ?? []).contains { $0.id.hasPrefix("routing:approval:") && ["waiting", "running", "queued"].contains($0.status) }) }
+}
+struct WarRoomPresentation {
+    private(set) var autoOpened: Set<String> = []
+    private(set) var dismissed: Set<String> = []
+    private(set) var aside: Set<String> = []
+    var touched = false
+    /// `blocked`: something outside the record needs the user (a system prompt).
+    mutating func shouldOpen(_ record: ExecutionRecord?, presented: Bool, blocked: Bool = false) -> Bool {
+        guard let record, !presented, !blocked, !record.isFinished, !record.needsUser, record.hasObservableExecution, !autoOpened.contains(record.runId), !dismissed.contains(record.runId) else { return false }
+        autoOpened.insert(record.runId); touched = false; return true
+    }
+    func shouldClose(_ record: ExecutionRecord?) -> Bool {
+        guard let record else { return false }
+        return record.isFinished && autoOpened.contains(record.runId) && !touched
+    }
+    /// The war room leaves the screen for a prompt; this is not the user closing it.
+    mutating func stepAside(_ record: ExecutionRecord?) { if let record, !record.isFinished { aside.insert(record.runId) } }
+    mutating func shouldReturn(_ record: ExecutionRecord?, blocked: Bool = false) -> Bool {
+        guard let record, !blocked, !record.needsUser, !record.isFinished, aside.contains(record.runId), !dismissed.contains(record.runId) else { return false }
+        aside.remove(record.runId); return true
+    }
+    mutating func userClosed(_ record: ExecutionRecord?) { if let record, !record.isFinished, !aside.contains(record.runId) { dismissed.insert(record.runId) } }
+}

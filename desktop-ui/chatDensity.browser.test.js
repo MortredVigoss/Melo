@@ -122,10 +122,13 @@ test('chat composer grows from two to four visual lines and scrolls without losi
     await page.locator('.image-task-options > button').click();
     await page.setViewportSize({ width: 1200, height: 850 });
     await setLines(3);
+    // Layout A: the composer's task-space button opens the full-screen war room over the chat.
     await page.locator('.atomic-button[data-execution-action=toggle]').click();
-    await page.locator('.execution-panel:not(.is-collapsed):not([hidden])').waitFor();
+    await page.locator('#execution-war-room:not([hidden])').waitFor();
     assert.equal((await metrics()).height, 68, 'task-space layout uses the same line bounds');
     assert.equal((await setLines(12)).height, 88);
+    await page.locator('#execution-war-room [data-war-close]').click();
+    await page.locator('#execution-war-room').waitFor({ state: 'hidden' });
     await page.locator('[data-action=neural-overview]').click();
     await page.locator('.neural-home-composer').waitFor();
     assert.equal((await setLines(2)).height, 48); assert.equal((await setLines(3)).height, 68);

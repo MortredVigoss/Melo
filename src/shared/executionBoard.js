@@ -150,10 +150,23 @@ export function sceneLog(scene, { limit = BOARD_LOG_LIMIT } = {}) {
   return rows.sort((a, b) => (time(b.at) ?? -1) - (time(a.at) ?? -1) || b.order - a.order).slice(0, limit).map(({ order, ...row }) => row);
 }
 
+// The stages whose API usage counts: one per model response. A public
+// reasoning summary carries its request's own `api` record (the same usage),
+// and two stages naming the same response id are one response; counting
+// either twice would double the tokens (layout A audit, 2026-11-06).
+export function usageStages(scene) {
+  const seen = new Set();
+  return (scene?.pipeline || []).filter(stage => {
+    if (!stage.api?.usage || stage.channel === 'reasoning-summary') return false;
+    const id = stage.api.responseId;
+    if (id) { if (seen.has(id)) return false; seen.add(id); }
+    return true;
+  });
+}
 // Resource ledger: what was actually used, plus the soft checkpoint from the
 // evaluation policy when one exists. `now` keeps the function pure.
 export function sceneResources(scene, { now = null, snapshot = null } = {}) {
-  const usage = (scene?.pipeline || []).reduce((sum, stage) => ({ input: sum.input + (Number(stage.api?.usage?.input) || 0), output: sum.output + (Number(stage.api?.usage?.output) || 0) }), { input: 0, output: 0 });
+  const usage = usageStages(scene).reduce((sum, stage) => ({ input: sum.input + (Number(stage.api.usage.input) || 0), output: sum.output + (Number(stage.api.usage.output) || 0) }), { input: 0, output: 0 });
   const start = time(scene?.startedAt), end = time(scene?.finishedAt) ?? (Number.isFinite(now) ? now : null);
   return { toolCalls: (scene?.operations || []).length, inputTokens: usage.input, outputTokens: usage.output,
     elapsedMs: start !== null && end !== null ? Math.max(0, end - start) : null,

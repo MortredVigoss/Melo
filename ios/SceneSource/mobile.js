@@ -1,6 +1,6 @@
 import { setLanguage } from './desktop-ui/i18n.js';
 import { renderExecutionPanel, syncExecutionPanel, receiveExecutionScene } from './desktop-ui/executionPanel.js';
-import './desktop-ui/executionScene3D.js';
+import './desktop-ui/warRoomScene3D.js';
 let previewStarted=false;
 let snapshot = { chat: {id: '', messages: []}, scenes: [] };
 const loadedSceneIDs = new Set();
@@ -38,12 +38,13 @@ const bridge = payload => window.__meloPost ? window.__meloPost(payload) : windo
 let renderAcknowledged=false;
 function acknowledgeRender(attempt=0) {
   if(renderAcknowledged) return;
-  const panel=document.querySelector('#execution-panel'), stage=document.querySelector('.execution-panel-stage');
-  const frames=document.querySelector('.execution-webgl')?.dataset.frames;
-  const fallback=panel?.classList.contains('is-fallback');
-  if(panel && !panel.hidden && stage?.clientHeight>0 && (Number(frames)>0 || fallback)) {
+  // The war room is this screen: rendered once its stage has a size and the
+  // canvas drew a frame (or the 3D renderer fell back to the records).
+  const room=document.querySelector('#execution-war-room'), stage=room?.querySelector('.war-stage');
+  const frames=room?.querySelector('.war-gl')?.dataset.frames, fallback=room?.classList.contains('is-fallback');
+  if(room && !room.hidden && stage?.clientHeight>0 && (Number(frames)>0 || fallback)) {
     renderAcknowledged=true;
-    bridge({type:'rendered',frames:frames||'0',fallback,modules:document.querySelectorAll('.execution-module').length});
+    bridge({type:'rendered',frames:frames||'0',fallback,modules:document.querySelectorAll('.war-caption.is-region').length});
   } else if(attempt<40) setTimeout(()=>acknowledgeRender(attempt+1),200);
 }
 let restoring=false;
@@ -54,35 +55,33 @@ Storage.prototype.setItem=function(key,value) {
     try { bridge({type:'view',runID:key.slice(16),value:JSON.parse(value)}); } catch {}
   }
 };
+document.documentElement.dataset.sceneHost='phone';
 document.querySelector('#app').innerHTML = renderExecutionPanel();
 window.meloReceive = value => {
   setLanguage(value.interfaceLanguage);
+  if(value.runId!==snapshot.runId) interacted=false;
   if(snapshot.chat.id!==value.chat.id) loadedSceneIDs.clear();
   snapshot = value;
   restoring=true;
   for(const [id,view] of Object.entries(value.views||{})) { try { localStorage.setItem(`melo-scene-view:${id}`,JSON.stringify(view)); } catch {} }
   restoring=false;
   // This is a full-screen workspace: keep the result visible until the user leaves.
-  syncExecutionPanel({chat: value.chat, still: value.still, autoCollapse:false});
-  // Reserve a touch-control row outside the reading viewport. On a phone a
-  // sticky overlay can cover the last source; clipping must not hide content.
-  const panel=document.querySelector('#execution-panel');
-  const zoomControls=panel.querySelector('.execution-panel-viewport > .execution-zoom');
-  if(zoomControls) panel.insertBefore(zoomControls,panel.querySelector('.execution-panel-footer'));
+  syncExecutionPanel({chat: value.chat, still: value.still, autoCollapse:false, hostManaged:true});
   historyPage(new URLSearchParams()).scenes.forEach(scene=>loadedSceneIDs.add(scene.runId));
   value.scenes.filter(scene=>scene.chatId===value.chat.id && (loadedSceneIDs.has(scene.runId) || scene.runId===value.runId || ['queued','running','waiting'].includes(scene.status))).forEach(scene=>{ loadedSceneIDs.add(scene.runId); receiveExecutionScene(scene); });
   const latest = value.runId || historyPage(new URLSearchParams()).scenes[0]?.runId;
-  if (latest && document.querySelector('#execution-panel').classList.contains('is-collapsed')) {
+  const roomHidden=()=>document.querySelector('#execution-war-room')?.hidden!==false;
+  if (latest && roomHidden()) {
     const button = document.createElement('button'); button.dataset.executionAction='replay'; button.dataset.run=latest;
     document.body.append(button); button.click(); button.remove();
-  } else if (!latest && document.querySelector('#execution-panel').classList.contains('is-collapsed')) {
+  } else if (!latest && roomHidden()) {
     document.querySelector('[data-execution-action="toggle"]')?.click();
   }
   acknowledgeRender();
   if (value.preview && !previewStarted) {
     previewStarted=true;
-    if(value.preview==='sources') setTimeout(()=>document.querySelector('[data-module="search"]')?.click(),500);
-    setTimeout(()=>bridge({type:'testReport',fallback:document.querySelector('#execution-panel').classList.contains('is-fallback'),modules:document.querySelectorAll('.execution-module').length,sources:document.querySelectorAll('.execution-source').length,frames:document.querySelector('.execution-webgl')?.dataset.frames,mode:document.querySelector('.execution-webgl')?.dataset.mode}),1800);
+    if(value.preview==='sources') setTimeout(()=>document.querySelector('[data-war-region="search"]')?.click(),500);
+    setTimeout(()=>bridge({type:'testReport',fallback:!!document.querySelector('#execution-war-room')?.classList.contains('is-fallback'),modules:document.querySelectorAll('.war-caption.is-region').length,sources:document.querySelectorAll('.execution-source').length,frames:document.querySelector('.execution-webgl')?.dataset.frames,mode:document.querySelector('.execution-webgl')?.dataset.mode}),1800);
   }
 };
 document.addEventListener('click', event => {
@@ -94,26 +93,19 @@ document.addEventListener('click', event => {
   }
   if (event.target.closest('[data-action="toggle-tts-autoplay"]')) bridge({type:'speechSettings'});
 }, true);
-// iPhone native pinch is localized to the scene, preserving result-list scrolling.
-let pinchDistance = 0, pinchZoom = 1;
-const distance = touches => Math.hypot(touches[0].clientX-touches[1].clientX,touches[0].clientY-touches[1].clientY);
-document.addEventListener('touchstart', event => {
-  if(event.touches.length===2 && event.target.closest('.execution-panel-stage') && !event.target.closest('.execution-inspector')) {
-    // A two-finger gesture must cancel the first finger's pending cluster tap,
-    // even when the fingers lift before moving far enough to trigger zoom.
-    document.querySelector('.execution-webgl canvas')?.dispatchEvent(new window.Event('pointercancel'));
-    pinchDistance=distance(event.touches); pinchZoom=Number(document.querySelector('.execution-panel-stage').dataset.zoom)||1;
-  }
-},{passive:true});
-document.addEventListener('touchmove', event => {
-  if(event.touches.length!==2 || !pinchDistance) return;
-  event.preventDefault();
-  const target=pinchZoom*distance(event.touches)/pinchDistance;
-  const current=Number(document.querySelector('.execution-panel-stage').dataset.zoom)||1;
-  document.querySelector('.execution-panel-stage').dispatchEvent(new WheelEvent('wheel',{deltaY:-Math.log(target/current)/.009,ctrlKey:true,bubbles:true,cancelable:true}));
-},{passive:false});
-document.addEventListener('touchend',()=>{pinchDistance=0;},{passive:true});
-document.addEventListener('touchcancel',()=>{pinchDistance=0;},{passive:true});
+// 回到对话 belongs to the app: the native screen closes, the war room stays
+// ready for the next presentation. The first touch tells the app the user is
+// using it, so it is not closed for them when the run ends. Rotation and
+// pinch are the war room canvas's own pointer gestures.
+let interacted=false;
+document.addEventListener('click', event => {
+  if(!event.target.closest('[data-war-close]')) return;
+  event.preventDefault(); event.stopImmediatePropagation(); bridge({type:'close'});
+}, true);
+document.addEventListener('pointerdown', event => {
+  if(interacted || !event.target.closest('#execution-war-room')) return;
+  interacted=true; bridge({type:'interacted'});
+}, true);
 window.addEventListener('error',()=>bridge({type:'renderError'}));
 window.addEventListener('unhandledrejection',()=>bridge({type:'renderError'}));
 bridge({type:'ready'});

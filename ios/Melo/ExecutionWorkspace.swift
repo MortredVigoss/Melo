@@ -45,6 +45,8 @@ struct ExecutionWorkspace: View {
     @Environment(\.scenePhase) private var phase
     let chatID: String
     var runID: String?
+    /// The war room's first touch: the chat does not close it for the user when the run ends.
+    var onInteract: () -> Void = {}
     @State private var sourcePage: SourcePage?
     @State private var showSpeechSettings = false
     @State private var renderFailed = false
@@ -75,11 +77,13 @@ struct ExecutionWorkspace: View {
                     ExecutionWebView(chatID: chatID, runID: runID, records: records, views: store.preferences.executionViews ?? [:], saveView: { id, value in
                         guard records.contains(where: { $0.runId == id }) else { return }
                         store.updatePreferences { if $0.executionViews == nil { $0.executionViews = [:] }; $0.executionViews?[id] = value }
-                    }, still: reduceMotion || phase != .active, open: { sourcePage = SourcePage(url: $0) }, speechSettings: { showSpeechSettings = true }, loaded: { loading = false }, failure: { loading = false; renderFailed = true }).id(generation)
+                    }, still: reduceMotion || phase != .active, open: { sourcePage = SourcePage(url: $0) }, speechSettings: { showSpeechSettings = true }, loaded: { loading = false }, failure: { loading = false; renderFailed = true }, close: { dismiss() }, interacted: onInteract).id(generation)
                     if loading { ProgressView("正在加载任务空间…").tint(meloAccent).padding(24).background(meloBackground.opacity(0.9), in: RoundedRectangle(cornerRadius: 18)) }
                 }
             }
             .navigationTitle("任务空间").navigationBarTitleDisplayMode(.inline)
+            // The war room has its own top bar with 回到对话; the native bar only while loading or after a render failure.
+            .toolbar(renderFailed || loading ? .visible : .hidden, for: .navigationBar)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("回到对话") { dismiss() } } }
             .sheet(item: $sourcePage) { SourceBrowser(url: $0.url).ignoresSafeArea() }
             .sheet(isPresented: $showSpeechSettings) {
@@ -105,7 +109,9 @@ struct ExecutionWebView: UIViewRepresentable {
     let speechSettings: () -> Void
     let loaded: () -> Void
     let failure: () -> Void
-    func makeCoordinator() -> Coordinator { Coordinator(open: open, loaded: loaded, failure: failure, saveView: saveView, speechSettings: speechSettings) }
+    var close: () -> Void = {}
+    var interacted: () -> Void = {}
+    func makeCoordinator() -> Coordinator { Coordinator(open: open, loaded: loaded, failure: failure, saveView: saveView, speechSettings: speechSettings, close: close, interacted: interacted) }
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .nonPersistent()
@@ -155,7 +161,9 @@ struct ExecutionWebView: UIViewRepresentable {
         let failure: () -> Void
         let saveView: (String, ExecutionViewPreference) -> Void
         let speechSettings: () -> Void
-        init(open: @escaping (URL) -> Void, loaded: @escaping () -> Void, failure: @escaping () -> Void, saveView: @escaping (String, ExecutionViewPreference) -> Void, speechSettings: @escaping () -> Void) { self.open = open; self.loaded = loaded; self.failure = failure; self.saveView = saveView; self.speechSettings = speechSettings }
+        let close: () -> Void
+        let interacted: () -> Void
+        init(open: @escaping (URL) -> Void, loaded: @escaping () -> Void, failure: @escaping () -> Void, saveView: @escaping (String, ExecutionViewPreference) -> Void, speechSettings: @escaping () -> Void, close: @escaping () -> Void = {}, interacted: @escaping () -> Void = {}) { self.open = open; self.loaded = loaded; self.failure = failure; self.saveView = saveView; self.speechSettings = speechSettings; self.close = close; self.interacted = interacted }
         private var health: [[String: Any]] = []
         func note(_ stage: String, details: [String: Any] = [:]) {
             var item = details; item["stage"] = stage; item["at"] = timestamp()
@@ -209,6 +217,8 @@ struct ExecutionWebView: UIViewRepresentable {
             case "openURL":
                 if let text = body["url"] as? String, WebSource.validated(title: "", url: text) != nil, let url = URL(string: text) { open(url) }
             case "speechSettings": speechSettings()
+            case "close": close()
+            case "interacted": interacted()
             default: break
             }
         }

@@ -91,6 +91,19 @@ private data class ChatTimelineItem(val id: String, val at: String, val message:
     var chatId by rememberSaveable { mutableStateOf<String?>(null) }
     var showHistory by rememberSaveable { mutableStateOf(false) }
     var executionChat by rememberSaveable { mutableStateOf<String?>(null) }
+    // Layout A (2026-11-06): the war room opens by itself at the live run's
+    // first observable step and hands back to the chat when it ends.
+    val warRoom = remember { WarRoomPresentation() }
+    val liveRun = data.runs.lastOrNull { it.chatId == chatId }
+    var shownExecution by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(liveRun?.id, liveRun?.status, liveRun?.sharedScene, page) {
+        // Never cover a prompt that needs the user; come back once it is answered.
+        if (executionChat != null && WarRoomPresentation.needsUser(liveRun)) { warRoom.stepAside(liveRun); executionChat = null }
+        else if (executionChat == null && page == Page.Chats && chatId != null && warRoom.shouldReturn(liveRun)) executionChat = chatId
+        else if (page == Page.Chats && chatId != null && warRoom.shouldOpen(liveRun, executionChat != null)) executionChat = chatId
+        else if (executionChat != null && warRoom.shouldClose(liveRun)) { delay(2600); if (warRoom.shouldClose(liveRun)) executionChat = null }
+    }
+    LaunchedEffect(executionChat) { if (shownExecution != null && executionChat == null) warRoom.userClosed(liveRun); shownExecution = executionChat }
     LaunchedEffect(requestedChat, runtime.initialized) {
         val target = requestedChat?.first
         if (runtime.initialized && target != null && data.chats.any { it.id == target }) { chatId = target; pageName = Page.Chats.name; showHistory = false; executionChat = null }
@@ -130,7 +143,7 @@ private data class ChatTimelineItem(val id: String, val at: String, val message:
             Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding(), contentAlignment = Alignment.TopCenter) {
             Box(Modifier.fillMaxHeight().widthIn(max = 1040.dp).fillMaxWidth()) {
                 if (!runtime.initialized) Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) { CircularProgressIndicator(); Text("载入本机资料…") }
-                else if (executionChat != null) ExecutionScreen(data, executionChat!!, onOpen = { openUrl(context, it) })
+                else if (executionChat != null) ExecutionScreen(data, executionChat!!, onOpen = { openUrl(context, it) }, onClose = { executionChat = null }, onInteract = { warRoom.touched = true })
                 else when (page) {
                     Page.Todo -> TodoScreen(organizer)
                     Page.Calendar -> CalendarScreen(organizer)

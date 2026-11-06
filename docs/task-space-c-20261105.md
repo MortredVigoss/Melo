@@ -59,3 +59,64 @@ Android：`SharedChatAgent.kt` 在 `internal:N`（:296 / :317）与 `task-evalua
 - iOS 模拟器无签名 Release 构建：BUILD SUCCEEDED，改动行无新告警。审计扫描 H1–H20 相对基线除既有 H5 外无新增（H10 / H11 / H13 / H14 均 +0）。
 - 本平台未执行：Android 仪器测试（需模拟器）；真实模型探针、安装未做（见上）。
 - 证据目录 `.tmp/task-space-board-20261105/`：`screens/`（改动前、结束、实时全局、跟随、自由旋转、作战台 4–6 卡、393 窄屏、手机打包场景两张）与 `gates/`（两次门禁摘要、Swift 38 组、iOS 构建结论）。
+
+## 布局 A：独立作战大屏移入产品（2026-11-06）
+
+用户决定：嵌在聊天里的任务空间界面不要，改为独立全屏「作战大屏」（布局 A），原型经四轮调整后确认（星核即主 Agent；成员是低饱和紫色线框蜘蛛，出星核、跳到区域、站在网上走动转身、前爪扒取，词条从爪子飞进执行日志对应行；五个区域沿用 Melo 主界面配色与神经网络画法并细化；区域放大铺满）。执行要求（用户原话要点）：界面必须和任务本身对齐（例如「工具调用」区域其实算进了网页搜索）；所有数字与记录可追踪；回复用户时自动弹出；电脑与手机都能手动旋转、缩放。
+
+### 设计（单一方案，按用户要求直接执行）
+
+- 作战大屏是任务空间的展开态：桌面是覆盖整个窗口的独立层（挂在 `document.body`，不进聊天的增量渲染），手机就是现有全屏任务空间网页（iPhone `ExecutionWorkspace`、Android `ExecutionScreen`）。聊天里的面板收成一行（状态、阶段条、历史任务、朗读设置、「进入作战大屏」）。
+- 自动弹出：当前对话的进行中任务第一次出现可观测执行（工具调用、分派或评估）时打开；纯对话回复不弹。任务结束后若是自动打开且用户没动过，约 2.6 秒回到对话（沿用现有「自动收起」设置）；任务中用户手动关掉，本任务不再自动打开。手机两端同一规则（原生侧收到首个执行阶段时弹出，结束后按同样条件收回）。
+- 分类对齐：区域计数只算本区域自己的调用（`moduleActivity('tools')` 不再汇总全部调用）；全部调用数只在状态栏，五个区域的调用数之和等于它（有测试）。没有声明 `uiModule` 的外部工具按名字识别网页检索类（`web_search` / `fetch` / `browse` / `crawl` / `scrape` 及常见检索服务名），其余仍归工具调用。蜘蛛去的是它正在执行的那次调用所在区域，不按岗位猜；成员在第一次调用前停在星核表面；主 Agent 自己调用工具时由一只标着主 Agent 名字的蜘蛛出去执行。
+- 数字可追踪：状态栏（工具调用、输入 token、用时、软检查点）、区域标签（几次调用、几条来源）、分派（每个成员的调用数）、交付闸门四项、证据热力账本与每一行、合同覆盖每个字段，点开都列出被计数的那些记录，标题里的数等于列表条数；记录再点开是现有的执行详情（输入、输出、接口用量）。
+- 作战台：有分派或评估的任务六格（执行日志、分派、交付闸门、证据热力、合同覆盖、任务合同），全部取自录下的场景与评估快照；没有的任务三格（执行日志、区域与来源、资源账本），不显示空的评估格。原展开面板的来源卡片、计算公开摘要、图片候选与选图、重试缺图、执行详情全部移到作战台的详情视图，功能不减。
+- 旋转缩放：桌面拖动旋转、滚轮与触控板双指缩放、方向键与加减键；手机单指旋转、双指缩放（指针事件，画布 `touch-action: none`），另有缩放按钮；作战台区域照常滚动。
+- 设计语言：颜色全部来自现有 token（区域 `--visual-execution-*`，蜘蛛 `--visual-agents-light` 与 `--palette-dcb6b78bdc`，星核金色沿用），不新增色值。
+
+### 执行链路（读源码得出）
+
+1. 数据不变：`invokeModelNode` / `internalMembers` → `sseEmitter('execution_event')` → `executionScenes.js createExecutionRecorder.event` → `applyExecutionEvent`（`src/shared/executionScene.js`，`moduleForOperation` 定区域）→ 原子写场景文件并经 `execution_scene` SSE 推送。
+2. 桌面前端：`app.js` → `executionPanel.js receiveExecutionScene / syncExecutionPanel` → 新 `warRoom.js`（覆盖层：顶栏、作战台、状态栏、追踪视图、词条飞行）→ 新 `warRoomScene3D.js`（星核、五个神经网络团、蜘蛛、手势与视角）。纯投影在 `src/shared/executionBoard.js`（C2）与新 `src/shared/warRoom.js`（蜘蛛位置、区域计数、追踪清单、交付闸门）。
+3. 手机：`AgentLoop` / `SharedChatAgent` 阶段 → 本机场景 → WebView `mobile.js meloReceive` → 同一套 `executionPanel.js` / `warRoom.js`（打包清单 `ios/Melo/Scene/desktop-manifest.json`）。自动弹出由 `ContentView` / `MainActivity` 观察进行中任务的首个执行阶段决定；网页内「回到对话」经桥消息 `close` 交给原生关闭。
+
+### 审计边界与停止条件
+
+- (a) 共享状态：场景记录只读，不新增字段、不改 reducer 写入；`moduleActivity` 语义改动的全部调用方（面板、旧三维场景将删除、测试）。本机偏好只用现有 `localStorage` 键。
+- (b) 异常：投影与渲染遇坏数据只跳过该项；三维初始化失败沿用现有降级文案，作战台与追踪照常可用。
+- (c) 契约：不改 sync v1、`shared/protocol`、工具结果信封；手机桥只新增两类消息（`close`、`interacted`），旧原生端忽略未知消息。
+- 停止：不进入 three.js 内部（版本钉死）；不改服务端执行与模型调用；手机原生只改「何时弹出 / 收回」与桥消息处理。
+
+### 测试计划
+
+- 纯函数（`src/shared/warRoom.test.js`）：区域计数之和等于全部调用、搜索不进工具调用；未声明模块的外部检索工具归网页检索；蜘蛛位置跟随实际调用、成员首次调用前在星核、主 Agent 调用单独成一只；追踪清单条数等于显示数字；交付闸门四项取自快照字段。
+- 浏览器（真实服务端、临时 `MELO_HOME`）：进行中任务出现首个调用时作战大屏自动打开、纯对话不弹、结束后自动回到对话、手动关闭后不再弹；所有带数字的位置点开清单条数一致；拖动旋转、滚轮与双指缩放改变相机且不误触选择；393×852 无横向溢出；减弱动态效果下不飞词条、行直接出现；控制台无错误。
+- 原有用例改到新结构后保持原意（计时、遥测、语言、密度、场景桥），不删断言。手机：Swift 测试覆盖自动弹出判定与 `close` 桥消息；Android JVM 测试覆盖同一判定；仪器测试需模拟器则记「本平台未执行」。
+
+### 实施记录（布局 A，C6）
+
+| 项 | 内容 |
+| --- | --- |
+| 共享投影 | 新 `src/shared/warRoom.js`：`regionSummary`（各区域只算自己的调用，加起来等于总数）、`sceneActors`（蜘蛛位置跟实际调用走，成员首次调用前在星核表面，主 Agent 自己的调用另成一只）、`operationChip`、`deliveryGate`（四项取自快照，开闸以评估器 `stop` 为准）、`traceList`（每个数字背后的记录，条数 = 显示数，token 为合计）、`shouldAutoOpen` |
+| 分类 | `moduleActivity('tools')` 不再汇总全部调用；`moduleForOperation` 对未声明 `uiModule` 的外部检索工具（名字含 web_search / fetch / browse / crawl / scrape 或常见检索服务名）归网页检索 |
+| 修复 | C2 `sceneResources` 把推理摘要阶段（沿用请求的 `api` 记录）的用量又算一遍，状态栏 token 翻倍；新 `usageStages` 按响应只计一次（跳过摘要阶段、按 `responseId` 去重） |
+| 三维 | `warRoomScene3D.js`（星核、五个 Melo 配色神经网络团、蜘蛛、勾取词条、全局 / 跟随 / 自由 / 区域视角、拖动旋转、滚轮 / 触控板 / 双指缩放、键盘、慢设备按帧时降密度）；`warRoomSpider.js` / `warRoomCluster.js` / `warRoomParticles.js` 自原型移入 |
+| 界面 | `warRoom.js` + `warRoom.css`：全屏层、顶栏（阶段条、历史任务、更早的任务、视角、回到对话；手机加朗读设置）、作战台（有分派或评估六格，否则三格）、追踪 / 区域 / 记录详情、状态栏、词条飞行；`executionPanel.js` 收成聊天里一行，原展开面板的来源卡片、公开摘要、图片候选与选图、重试、执行详情移入详情视图 |
+| 自动弹出 | 桌面 `executionPanel.js`；iPhone `WarRoomPresentation`（`ExecutionRecord.swift`）+ `ContentView` / `ExecutionWorkspace`（网页 `close` / `interacted` 桥消息，网页正常时隐藏原生导航栏）；Android `WarRoomPresentation.kt` + `MainActivity` / `SharedScene` |
+| 不挡确认 | 回复中出现等待用户回应的提示（被扣住待许可的调用，或聊天里带 `data-request-id` 的工具权限 / 任务授权 / 文件写入 / 能力请求），作战大屏让开、不自动弹出，答复后回来；让开不算用户关闭。自动弹出不抢键盘焦点。iPhone 另把设备操作确认与能力请求两种系统弹窗算进去（它们在弹出页之上无法显示）；Android 的确认是浮在页面上的系统对话框，只按调用状态让开 |
+| 删除 | 旧嵌入式渲染 `executionScene3D.js`、`executionBoard.js`（桌面渲染）、`executionViewport.js`、`executionPicking.js`、`synapticBody.js` 及其单测；其职责由上面的新文件承担，手势与拾取在真实浏览器验收里测 |
+
+与方案的差异：
+- 相机视角（全局 / 跟随 / 自由）不再按设备记忆（C3 的 `melo-task-space-view`）；每个任务记住的是打开的区域详情（沿用 `melo-scene-view:<runId>`，手机经桥同步到原生）。
+- `build:ios-scene` 依赖 Python ≥ 3.9（`str.removeprefix`）；本机 PATH 上的 Anaconda 3.8 会让它静默失败，变基时那次重建因此没生效，这次用 `/usr/bin/python3` 重建并已核对。
+
+覆盖：上表全部文件；纯函数 8 例（区域加和、外部检索归类、蜘蛛位置、词条、交付闸门、追踪条数、token 只计一次、自动弹出规则）；面板 3 例（来源上限与追踪；自动弹出 / 回收 / 手动关闭 / 触碰 / Esc / 不抢焦点 / 为许可与聊天提示让开再回来；停止后本地收尾）；手机场景桥（视图恢复与桥接、来源与引用、追踪、会话事件、手势控制到场景、`close` / `interacted`、历史分页、朗读设置）；真实浏览器验收（阶段条、六格数值等于账本、每个数字的清单条数、五区加和、工具调用 0、视角、拖动不误触、滚轮 / 触控板 / 双指 / 键盘 / 按钮缩放、实时任务自动弹出、蜘蛛勾取词条落行、减弱动态不飞、393 宽无溢出、普通对话三格、无控制台错误）；原有计时 / 遥测 / 语言 / 密度浏览器用例改到新结构；Swift `ExecutionTests` 自动弹出与让开规则；Android JVM `WarRoomPresentationTest`（弹出、回收、让开）。门禁首轮抓到两项真实问题并已修：作战大屏挡住文件写入许可与能力请求提示（`taskPermissions` / `capabilityElevation` 浏览器用例）、样式改动后未重新打包手机场景（渲染预检）。
+
+未覆盖与原因：真机上的手势与帧率（需要用户设备）；Android 仪器测试（需模拟器）；真实模型探针（会用用户的模型连接）；安装与合并（未授权）。
+
+回归与证据（`.tmp/war-room-20261106/`）：
+- 快速档 `run-nGv2Jp`（删除文件触发 JS 全量）：语法、文档链接、生成器、共享渲染预检、JS 4 986 / 4 986（0 失败 0 跳过）、设置浏览器验收、Swift 38 组全绿，467.7 s。摘要 `gates/quick-run-nGv2Jp.json`。
+- 审计扫描相对改动前提交：H1–H20 全部持平（H5 102、H14 5 均与改动前相同；H10 / H11 / H13 为 0）。
+- Android `npm run check:android`：JVM 209 / 209（0 失败 0 跳过，含 `WarRoomPresentationTest` 4 例）、Lint、Debug、Release 全部 BUILD SUCCESSFUL。日志 `gates/android-check.log`。
+- iOS 模拟器无签名 Release 构建：BUILD SUCCEEDED，`ContentView` / `ExecutionWorkspace` / `ExecutionRecord` 无告警。日志 `gates/ios-simulator-unsigned-build.log`。
+- 本平台未执行：Android 仪器测试、真机手势与帧率、真实模型探针；集成档 `npm test -- --base d5c596e` 留到合并前。

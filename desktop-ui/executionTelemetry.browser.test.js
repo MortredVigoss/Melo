@@ -43,7 +43,7 @@ test('real browser loads saved API telemetry through Melo routes, reads summarie
     const errors = []; page.on('pageerror', error => errors.push(error.message));
     const index = await readFile('desktop-ui/index.html', 'utf8');
     const importmap = index.match(/<script type="importmap">[\s\S]*?<\/script>/)[0];
-    await page.route('**/telemetry-fixture', route => route.fulfill({ contentType: 'text/html', body: `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/executionPanel.css"><link rel="stylesheet" href="/neuralGlass.css">${importmap}<style>body{margin:0;background:#090c12;color:#d8c8af;font-family:system-ui;padding:24px;box-sizing:border-box}h1{font-size:17px;font-weight:500}body>p{font-size:11px;color:#8b98a5}.execution-panel-stage{height:510px!important}.execution-panel{margin-top:22px}@media(max-width:500px){body{padding:10px}.execution-panel-stage{height:520px!important}}</style></head><body><h1>NEURAL / API 观察验收</h1><p>本地协议样本 · 非真实模型调用</p><main id="fixture"></main><script type="module">
+    await page.route('**/telemetry-fixture', route => route.fulfill({ contentType: 'text/html', body: `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/executionPanel.css"><link rel="stylesheet" href="/warRoom.css"><link rel="stylesheet" href="/neuralGlass.css">${importmap}<style>body{margin:0;background:#090c12;color:#d8c8af;font-family:system-ui;padding:24px;box-sizing:border-box}h1{font-size:17px;font-weight:500}body>p{font-size:11px;color:#8b98a5}.execution-panel{margin-top:22px}@media(max-width:500px){body{padding:10px}}</style></head><body><h1>NEURAL / API 观察验收</h1><p>本地协议样本 · 非真实模型调用</p><main id="fixture"></main><script type="module">
       import * as panel from '/executionPanel.js';
       document.querySelector('#fixture').innerHTML=panel.renderExecutionPanel();
       panel.syncExecutionPanel({chat:{id:'telemetry-chat',messages:[]},autoCollapse:false});
@@ -51,28 +51,31 @@ test('real browser loads saved API telemetry through Melo routes, reads summarie
     </script></body></html>` }));
     await page.goto(base + '/telemetry-fixture');
     await page.waitForFunction(() => window.fixtureReady);
-    await page.getByRole('button', { name: /展开回看/ }).click();
-    await page.locator('.execution-signal').waitFor();
-    assert.match(await page.locator('.execution-signal').innerText(), /2,840/);
-    await page.locator('.execution-webgl canvas').waitFor();
+    // Layout A: the strip opens the full-screen war room; its numbers open the records behind them.
+    await page.getByRole('button', { name: /进入作战大屏/ }).click();
+    const room = page.locator('#execution-war-room');
+    await room.locator('.war-gl canvas').waitFor();
+    assert.match(await room.locator('.war-status [data-war-trace="tokens"]').innerText(), /输入 2,840 token/);
     await page.screenshot({ path: join(proof, 'overview.png') });
-    await page.locator('.execution-signal').click();
-    await page.locator('.execution-inspector').waitFor();
-    assert.match(await page.locator('.execution-inspector').innerText(), /resp-fixture-001/);
-    assert.match(await page.locator('.execution-inspector').innerText(), /推理 token/);
+    await room.locator('.war-status [data-war-trace="tokens"]').click();
+    const detail = room.locator('[data-cell="detail"]');
+    assert.match(await detail.locator('.war-count').innerText(), /1 次模型请求 · 共 2,840 token/);
+    await detail.locator('.execution-signal').click();
+    assert.match(await detail.innerText(), /resp-fixture-001/);
+    assert.match(await detail.innerText(), /推理 token/);
     await page.screenshot({ path: join(proof, 'api-detail.png') });
     await page.getByRole('button', { name: '关闭详情', exact: true }).click();
-    await page.getByRole('button', { name: '进入分析与计算' }).click();
-    const records = page.locator('.execution-reasoning-records');
+    await room.locator('.war-regions [data-war-region="compute"]').click();
+    const records = room.locator('.execution-reasoning-records');
     await records.waitFor(); assert.match(await records.innerText(), /225/); assert.match(await records.innerText(), /15 \* 15/);
-    const zoom = await page.locator('.execution-panel-stage').getAttribute('data-zoom');
+    const zoom = await room.locator('.war-gl').getAttribute('data-zoom');
     await records.hover(); await page.mouse.wheel(0, 200);
-    assert.equal(await page.locator('.execution-panel-stage').getAttribute('data-zoom'), zoom);
+    assert.equal(await room.locator('.war-gl').getAttribute('data-zoom'), zoom, 'scrolling a reading list never zooms the space');
     await page.setViewportSize({ width: 390, height: 844 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     await page.screenshot({ path: join(proof, 'narrow-summary.png') });
     await records.getByRole('button').first().click();
-    assert.match(await page.locator('.execution-inspector').innerText(), /整理结果/);
+    assert.match(await detail.innerText(), /整理结果/);
     await page.screenshot({ path: join(proof, 'narrow-detail.png') });
     assert.deepEqual(errors, []);
   } finally {

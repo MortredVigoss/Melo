@@ -20,11 +20,13 @@ import java.io.ByteArrayInputStream
 
 /** Only packaged assets may load here. The bridge never exposes storage or credentials. */
 @SuppressLint("SetJavaScriptEnabled")
-@Composable fun SharedScene(payload: JsonObject, modifier: Modifier = Modifier, execution: Boolean = false, onOpenUrl: (String) -> Unit = {}, onSelect: (Int) -> Unit = {}) {
+@Composable fun SharedScene(payload: JsonObject, modifier: Modifier = Modifier, execution: Boolean = false, onOpenUrl: (String) -> Unit = {}, onSelect: (Int) -> Unit = {}, onClose: () -> Unit = {}, onInteract: () -> Unit = {}) {
     var failure by remember { mutableStateOf(false) }
     val latestPayload by rememberUpdatedState(payload)
     val latestOpen by rememberUpdatedState(onOpenUrl)
     val latestSelect by rememberUpdatedState(onSelect)
+    val latestClose by rememberUpdatedState(onClose)
+    val latestInteract by rememberUpdatedState(onInteract)
     var browser by remember { mutableStateOf<WebView?>(null) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle, browser) {
@@ -71,6 +73,9 @@ import java.io.ByteArrayInputStream
                             "rendered" -> failure = false
                             "select" -> item["id"]?.jsonPrimitive?.intOrNull?.let(latestSelect)
                             "openURL" -> item.text("url").takeIf { it.startsWith("https://") || it.startsWith("http://") }?.let(latestOpen)
+                            // The war room's 回到对话 and its first touch (layout A, 2026-11-06).
+                            "close" -> latestClose()
+                            "interacted" -> latestInteract()
                         }
                     }
                 }

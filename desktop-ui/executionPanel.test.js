@@ -8,16 +8,32 @@ import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 import { updateNeuralWorkspace } from './neuralDom.js';
 import { createExecutionScene, applyExecutionEvent, finishExecutionScene } from '../src/shared/executionScene.js';
-// The board renderer imports browser paths; point them at the source files.
-async function boardModule() {
-  const code = (await readFile(new URL('./executionBoard.js', import.meta.url), 'utf8'))
-    .replace("'./i18n.js'", JSON.stringify(new URL('./i18n.js', import.meta.url).href))
-    .replace("'/shared/executionBoard.js'", JSON.stringify(new URL('../src/shared/executionBoard.js', import.meta.url).href))
-    .replace("'/shared/executionScene.js'", JSON.stringify(new URL('../src/shared/executionScene.js', import.meta.url).href));
+// The panel and the war room import browser paths; point them at the source files.
+const fileUrl = path => JSON.stringify(new URL(path, import.meta.url).href);
+async function warRoomModule() {
+  const code = (await readFile(new URL('./warRoom.js', import.meta.url), 'utf8'))
+    .replace("'./i18n.js'", fileUrl('./i18n.js'))
+    .replace("'/shared/executionScene.js'", fileUrl('../src/shared/executionScene.js'))
+    .replace("'/shared/executionBoard.js'", fileUrl('../src/shared/executionBoard.js'))
+    .replace("'/shared/warRoom.js'", fileUrl('../src/shared/warRoom.js'));
   return `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`;
 }
+async function loadPanel() {
+  const source = (await readFile(new URL('./executionPanel.js', import.meta.url), 'utf8'))
+    .replace("'./buttonStyles.js'", fileUrl('./buttonStyles.js'))
+    .replace("'./html.js'", fileUrl('./html.js'))
+    .replaceAll("'./i18n.js'", fileUrl('./i18n.js'))
+    .replace("'/shared/executionScene.js'", fileUrl('../src/shared/executionScene.js'))
+    .replace("'./executionDetails.js'", fileUrl('./executionDetails.js'))
+    .replace("'/shared/executionBoard.js'", fileUrl('../src/shared/executionBoard.js'))
+    .replace("'/shared/warRoom.js'", fileUrl('../src/shared/warRoom.js'))
+    .replace("'./warRoom.js'", JSON.stringify(await warRoomModule()));
+  // A fresh module per test: the panel keeps module state (its war room) per document.
+  return import(`data:text/javascript;base64,${Buffer.from(`${source}\n// load ${++loads}`).toString('base64')}`);
+}
+let loads = 0;
 
-test('panel reuses its live DOM, caps sources at ten and projects selected images without new execution', async t => {
+test('war room keeps the chat markup apart, caps sources at ten, traces its numbers and projects selected images without new execution', async t => {
   const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost' });
   const originals = new Map();
   const install = (key, value) => { originals.set(key, Object.getOwnPropertyDescriptor(globalThis, key)); Object.defineProperty(globalThis, key, { configurable: true, writable: true, value }); };
@@ -26,16 +42,7 @@ test('panel reuses its live DOM, caps sources at ten and projects selected image
   install('matchMedia', () => ({ matches: true })); install('setInterval', () => 0);
   install('fetch', async url => { calls.push(url); return { ok: true, json: async () => ({ scenes: [] }) }; });
   t.after(() => { dom.window.close(); for (const [key, descriptor] of originals) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key]; } });
-  const source = (await readFile(new URL('./executionPanel.js', import.meta.url), 'utf8'))
-    .replace("'./buttonStyles.js'",JSON.stringify(new URL('./buttonStyles.js',import.meta.url).href))
-    .replace("'./html.js'",JSON.stringify(new URL('./html.js',import.meta.url).href))
-    .replaceAll("'./i18n.js'",JSON.stringify(new URL('./i18n.js',import.meta.url).href))
-    .replace("'/shared/executionScene.js'", JSON.stringify(new URL('../src/shared/executionScene.js', import.meta.url).href))
-    .replace("'./executionDetails.js'", JSON.stringify(new URL('./executionDetails.js', import.meta.url).href))
-    .replace("'./executionViewport.js'", JSON.stringify(new URL('./executionViewport.js', import.meta.url).href))
-    .replace("'/shared/executionBoard.js'", JSON.stringify(new URL('../src/shared/executionBoard.js', import.meta.url).href))
-    .replace("'./executionBoard.js'", JSON.stringify(await boardModule()));
-  const panel = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
+  const panel = await loadPanel();
   const app = document.querySelector('#app');
   const markup = `<div>${panel.renderExecutionPanel()}</div>`;
   updateNeuralWorkspace(app, markup);
@@ -44,66 +51,64 @@ test('panel reuses its live DOM, caps sources at ten and projects selected image
   const scene = createExecutionScene({ runId: 'sources', chatId: 'chat', query: 'source test final' });
   applyExecutionEvent(scene, { sources: Array.from({ length: 14 }, (_, i) => ({ url: `https://example.test/source-${i}`, title: `Source ${i}`, appeared: true })) });
   panel.receiveExecutionScene(structuredClone(scene));
-  document.querySelector('[data-module="search"]').click();
-  assert.equal(document.querySelectorAll('a.execution-source').length, 5);
-  assert.equal(document.querySelectorAll('a[data-priority="primary"]').length, 5);
-  document.querySelector('[data-execution-action="more"]').click();
-  assert.equal(document.querySelectorAll('a.execution-source').length, 10);
-  assert.equal(document.querySelectorAll('a[data-priority="primary"]').length, 5);
-  assert.equal(document.querySelectorAll('a[data-priority="secondary"]').length, 5);
+  // Layout A: the expanded task space is the war room, mounted once outside the chat markup.
+  const room = document.querySelector('#execution-war-room');
+  assert.ok(room);
+  assert.equal(room.hidden, true, 'a run that only lists sources (no call, assignment or evaluation) does not open the war room by itself');
+  document.querySelector('#execution-panel [data-execution-action="toggle"]').click();
+  assert.equal(room.hidden, false);
+  const region = id => { room.querySelector('[data-war-back]')?.click(); room.querySelector(`[data-war-region="${id}"]`).click(); return room.querySelector('[data-cell="detail"]'); };
+  const regionRow = id => [...room.querySelectorAll('.war-regions li')].find(li => li.querySelector(`[data-war-region="${id}"]`));
+  region('search');
+  assert.equal(room.querySelectorAll('a.execution-source').length, 5);
+  assert.equal(room.querySelectorAll('a[data-priority="primary"]').length, 5);
+  room.querySelector('[data-execution-action="more"]').click();
+  assert.equal(room.querySelectorAll('a.execution-source').length, 10);
+  assert.equal(room.querySelectorAll('a[data-priority="primary"]').length, 5);
+  assert.equal(room.querySelectorAll('a[data-priority="secondary"]').length, 5);
   assert.equal(scene.sources.length, 14);
-  const stage = document.querySelector('.execution-panel-stage');
-  assert.equal(document.querySelectorAll('.execution-module').length, 5);
-  assert.equal(stage.dataset.wide, 'false');
-  stage.dispatchEvent(new dom.window.WheelEvent('wheel', { deltaY: 160, bubbles: true, cancelable: true }));
-  assert.equal(stage.dataset.wide, 'true', 'zooming out exposes all five modules without changing the selected results');
-  assert.equal(stage.style.getPropertyValue('--detail-height'), '0px', 'the overall view fits its viewport rather than retaining a tall source-list plane');
-  assert.equal(document.querySelectorAll('a.execution-source').length, 10);
-  document.querySelector('[data-execution-action=zoom-in]').click();
-  assert.equal(stage.dataset.wide, 'false');
-  assert.notEqual(stage.style.getPropertyValue('--detail-height'), '0px', 'zooming back restores readable source rows');
-  document.querySelector('[data-execution-action=overview]').click();
-  assert.equal(stage.dataset.zoom, '1.000');
-  assert.equal(document.querySelectorAll('.execution-module').length, 5);
-  assert.equal(document.querySelector('[data-module=compute] small').textContent, '无调用记录');
-  const labels = document.querySelector('.execution-labels');
+  room.querySelector('[data-war-back]').click();
+  assert.equal(room.querySelectorAll('.war-regions li').length, 5, 'every region is listed, with its own count');
+  assert.match(regionRow('compute').textContent, /无调用记录/);
+  assert.match(room.querySelector('.war-sources').textContent, /14 条来源/);
+  room.querySelector('[data-war-trace="sources"]').click();
+  assert.equal(room.querySelectorAll('[data-cell="detail"] .war-trace li').length, 14, 'the number opens exactly the records it counts');
   updateNeuralWorkspace(app, markup);
-  assert.equal(document.querySelector('.execution-labels'), labels);
-  assert.ok([...document.querySelectorAll('a.execution-source')].every(a => a.dataset.externalUrl === a.href));
+  assert.equal(document.querySelector('#execution-war-room'), room, 're-rendering the chat leaves the war room and its WebGL alone');
+  assert.ok([...room.querySelectorAll('a[href]')].every(a => a.dataset.externalUrl === a.href));
 
   applyExecutionEvent(scene, { sources: [{ url: 'https://example.test/source-13?utm_source=openai', title: 'source test final', citationUrl: 'https://example.test/source-13?utm_source=openai', citationLabel: 'Final reference' }] });
-  applyExecutionEvent(scene, { kind: 'pipeline', id: 'model:1', name: '模型请求', status: 'completed', output: '模型返回完成', api: { reportedModel: 'fixture-model', usage: { input: 1200, output: 80, reasoning: 30 }, durationMs: 2345 } });
+  applyExecutionEvent(scene, { kind: 'pipeline', id: 'model:1', name: '模型请求', status: 'completed', output: '模型返回完成', api: { reportedModel: 'fixture-model', usage: { input: 1200, output: 80, reasoning: 30 }, durationMs: 1500 } });
   applyExecutionEvent(scene, { kind: 'pipeline', id: 'model:1:summary', module: 'compute', channel: 'reasoning-summary', name: '公开摘要', status: 'completed', output: '核对输入条件\n\n整理证据' });
   finishExecutionScene(scene, { message: { id: 'answer' }, citedUrls: ['https://example.test/source-12', 'https://example.test/source-13?utm_source=openai'] });
   panel.receiveExecutionScene(structuredClone(scene));
-  document.querySelector('[data-module="search"]').click();
-  document.querySelector('[data-execution-action="more"]').click();
-  assert.equal(document.querySelectorAll('a.execution-source').length, 5);
-  assert.equal(document.querySelectorAll('a[data-cited="true"]').length, 1, 'a relevant cited page is highlighted; a low-ranking citation does not reserve a slot');
-  const finalLink = document.querySelector('a[href="https://example.test/source-13?utm_source=openai"]');
+  region('search');
+  room.querySelector('[data-execution-action="more"]').click();
+  assert.equal(room.querySelectorAll('a.execution-source').length, 5);
+  assert.equal(room.querySelectorAll('a.execution-source[data-cited="true"]').length, 1, 'a relevant cited page is highlighted; a low-ranking citation does not reserve a slot');
+  const finalLink = room.querySelector('a.execution-source[href="https://example.test/source-13?utm_source=openai"]');
   assert.ok(finalLink); assert.equal(finalLink.dataset.externalUrl, finalLink.href);
   assert.match(finalLink.textContent, /回答引用/);
   assert.match(finalLink.title, /未记录页面读取/);
 
   const bubble = document.createElement('article'); bubble.className = 'message'; bubble.dataset.messageId = 'answer'; document.body.append(bubble);
   panel.syncExecutionPanel({ chat: { id: 'chat', messages: [{ id: 'answer', role: 'assistant', metadata: { runId: 'sources' } }] } });
-  document.querySelector('[data-module="create"]').click();
-  assert.match(document.querySelector('.execution-pipeline').textContent, /模型请求/);
-  assert.match(document.querySelector('.execution-pipeline').textContent, /本机对话渲染/);
+  region('create');
+  assert.match(room.querySelector('.execution-pipeline').textContent, /模型请求/);
+  assert.match(room.querySelector('.execution-pipeline').textContent, /本机对话渲染/);
   assert.ok(localStorage.getItem('melo-scene-presented:sources'));
-  assert.match(document.querySelector('.execution-pipeline').textContent, /1,200/);
-  document.querySelector('[data-module=compute]').click();
-  assert.match(document.querySelector('.execution-reasoning-records').textContent, /整理证据/);
-  const beforeReading = stage.dataset.zoom;
+  assert.match(room.querySelector('.execution-pipeline').textContent, /1,200/);
+  region('compute');
+  assert.match(room.querySelector('.execution-reasoning-records').textContent, /整理证据/);
   const readScroll = new dom.window.WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true });
-  document.querySelector('.execution-reasoning-records p').dispatchEvent(readScroll);
-  assert.equal(readScroll.defaultPrevented, false); assert.equal(stage.dataset.zoom, beforeReading);
-  document.querySelector('.execution-reasoning-records button').click();
-  assert.equal(document.querySelector('.execution-inspector').hidden, false);
-  assert.match(document.querySelector('.execution-inspector').textContent, /核对输入条件/);
-  document.querySelector('[data-execution-action=close-inspector]').click();
-  document.querySelector('[data-execution-action=overview]').click();
-  assert.match(document.querySelector('.execution-signal').textContent, /历史回看/);
+  room.querySelector('.execution-reasoning-records p').dispatchEvent(readScroll);
+  assert.equal(readScroll.defaultPrevented, false, 'scrolling a reading list never zooms the space');
+  room.querySelector('.execution-reasoning-records button').click();
+  assert.match(room.querySelector('[data-cell="detail"]').textContent, /核对输入条件/);
+  room.querySelector('[data-execution-action=close-inspector]').click();
+  room.querySelector('.war-status [data-war-trace="tokens"]').click();
+  assert.match(room.querySelector('[data-cell="detail"] .war-count').textContent, /1 次模型请求 · 共 1,200 token/);
+  assert.match(room.querySelector('[data-cell="detail"]').textContent, /历史回看/);
   assert.equal(scene.operations.length, 0, 'rendering and model events do not become fake tool calls');
   const imageScene = createExecutionScene({ runId: 'images', chatId: 'chat', query: '生成三张图片' });
   const artifacts = Array.from({ length: 5 }, (_, i) => ({ id: `img-${i}`, kind: 'image', url: `https://example.test/candidate-${i}.png`, title: `Candidate ${i}` }));
@@ -132,16 +137,19 @@ test('panel reuses its live DOM, caps sources at ten and projects selected image
     { id: 'model:response', module: 'create', name: '模型请求', status: 'completed' }
   ];
   panel.receiveExecutionScene(phone);
-  document.querySelector('[data-module="create"]').click();
-  assert.doesNotMatch(document.querySelector('.execution-extra').textContent, /网页 ·/);
-  document.querySelector('[data-module="search"]').click();
-  assert.equal(document.querySelectorAll('.execution-search-trail button').length, 2);
-  assert.match(document.querySelector('.execution-panel-footer').textContent, /2 次工具调用 · 2 条执行记录 · 0 条来源/);
+  assert.doesNotMatch(region('create').textContent, /网页 ·/);
+  region('search');
+  assert.equal(room.querySelectorAll('.execution-search-trail button').length, 2);
+  room.querySelector('[data-war-back]').click();
+  assert.match(room.querySelector('.war-status').textContent, /工具调用 2/);
+  assert.match(regionRow('search').textContent, /2 次调用/);
+  assert.match(regionRow('tools').textContent, /无调用记录/, 'a page read is counted under 网页检索 only');
   assert.equal(phone.pipeline.length, 4, 'replaying an old receipt leaves the stored record intact');
   finishExecutionScene(phone);
   panel.receiveExecutionScene(phone);
   assert.ok(calls.every(url => String(url).startsWith('/api/chat/scenes?')));
-  document.querySelector('[data-execution-action="toggle"]').click();
+  document.querySelector('#execution-panel [data-execution-action="toggle"]').click();
+  assert.equal(room.hidden, true);
   await new Promise(resolve => setImmediate(resolve));
 });
 
@@ -157,16 +165,7 @@ test('U4: cancelLiveScene finishes the run locally and re-reads the chat scenes 
   install('setTimeout', (fn, delay) => { timers.push({ fn, delay }); return timers.length; });
   install('fetch', async url => { calls.push(String(url)); return { ok: true, json: async () => ({ scenes: [] }) }; });
   t.after(() => { dom.window.close(); for (const [key, descriptor] of originals) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key]; } });
-  const source = (await readFile(new URL('./executionPanel.js', import.meta.url), 'utf8'))
-    .replace("'./buttonStyles.js'",JSON.stringify(new URL('./buttonStyles.js',import.meta.url).href))
-    .replace("'./html.js'",JSON.stringify(new URL('./html.js',import.meta.url).href))
-    .replaceAll("'./i18n.js'",JSON.stringify(new URL('./i18n.js',import.meta.url).href))
-    .replace("'/shared/executionScene.js'", JSON.stringify(new URL('../src/shared/executionScene.js', import.meta.url).href))
-    .replace("'./executionDetails.js'", JSON.stringify(new URL('./executionDetails.js', import.meta.url).href))
-    .replace("'./executionViewport.js'", JSON.stringify(new URL('./executionViewport.js', import.meta.url).href))
-    .replace("'/shared/executionBoard.js'", JSON.stringify(new URL('../src/shared/executionBoard.js', import.meta.url).href))
-    .replace("'./executionBoard.js'", JSON.stringify(await boardModule()));
-  const panel = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
+  const panel = await loadPanel();
   updateNeuralWorkspace(document.querySelector('#app'), `<div>${panel.renderExecutionPanel()}</div>`);
   panel.syncExecutionPanel({ chat: { id: 'chat', messages: [] } });
   await new Promise(resolve => setImmediate(resolve));
@@ -193,4 +192,97 @@ test('U4: cancelLiveScene finishes the run locally and re-reads the chat scenes 
   assert.equal(timers.length, 2);
   panel.cancelLiveScene(null, { chatId: null });
   assert.equal(timers.length, 2, 'nothing to re-read without a chat');
+});
+
+// Layout A (2026-11-06): the user asked that the war room pop up while a reply
+// is being worked on. It opens once per run, at the first observable step; a
+// plain reply never opens it; a run the user closed stays closed; at the end
+// it hands back to the chat unless the user has touched it.
+test('the war room opens by itself at a live run\'s first observable step and hands back at the end', async t => {
+  const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost' });
+  const originals = new Map();
+  const install = (key, value) => { originals.set(key, Object.getOwnPropertyDescriptor(globalThis, key)); Object.defineProperty(globalThis, key, { configurable: true, writable: true, value }); };
+  const timers = [];
+  install('document', dom.window.document); install('localStorage', dom.window.localStorage);
+  install('matchMedia', () => ({ matches: true })); install('setInterval', () => 0);
+  install('setTimeout', (fn, delay) => { timers.push({ fn, delay }); return timers.length; }); install('clearTimeout', id => { if (timers[id - 1]) timers[id - 1].cleared = true; });
+  install('fetch', async () => ({ ok: true, json: async () => ({ scenes: [] }) }));
+  t.after(() => { dom.window.close(); for (const [key, descriptor] of originals) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key]; } });
+  const panel = await loadPanel();
+  updateNeuralWorkspace(document.querySelector('#app'), `<div>${panel.renderExecutionPanel()}</div>`);
+  panel.syncExecutionPanel({ chat: { id: 'chat', messages: [] } });
+  await new Promise(resolve => setImmediate(resolve));
+  const room = document.querySelector('#execution-war-room');
+  const collapse = () => { for (const timer of timers.filter(x => x.delay === 2600 && !x.cleared)) { timer.cleared = true; timer.fn(); } };
+
+  const plain = createExecutionScene({ runId: 'plain', chatId: 'chat', query: '你好' });
+  applyExecutionEvent(plain, { kind: 'pipeline', id: 'reply:render', name: '回答', status: 'running' });
+  panel.receiveExecutionScene(structuredClone(plain));
+  assert.equal(room.hidden, true, 'a plain reply never opens the war room');
+
+  const run = createExecutionScene({ runId: 'work', chatId: 'chat', query: '查一下' });
+  panel.receiveExecutionScene(structuredClone(run));
+  assert.equal(room.hidden, true, 'nothing observable yet');
+  applyExecutionEvent(run, { kind: 'operation', id: 'search', module: 'search', name: 'web_search', status: 'running', query: 'q' });
+  panel.receiveExecutionScene(structuredClone(run));
+  assert.equal(room.hidden, false, 'the first tool call opens it');
+  assert.equal(document.documentElement.dataset.warRoom, 'true');
+  finishExecutionScene(run, { message: { id: 'answer-1' } });
+  panel.receiveExecutionScene(structuredClone(run));
+  collapse();
+  assert.equal(room.hidden, true, 'an untouched war room hands back to the chat when the run ends');
+
+  const closed = createExecutionScene({ runId: 'closed', chatId: 'chat', query: '再查' });
+  applyExecutionEvent(closed, { kind: 'pipeline', id: 'internal:1', name: '检索成员', role: 'research', status: 'running' });
+  panel.receiveExecutionScene(structuredClone(closed));
+  assert.equal(room.hidden, false, 'an assignment opens it too');
+  room.querySelector('[data-war-close]').click();
+  assert.equal(room.hidden, true);
+  applyExecutionEvent(closed, { kind: 'operation', id: 'job-1:search', module: 'search', name: 'web_search', status: 'running' });
+  panel.receiveExecutionScene(structuredClone(closed));
+  assert.equal(room.hidden, true, 'a run the user closed is not opened again by itself');
+  finishExecutionScene(closed, { message: { id: 'answer-2' } });
+  panel.receiveExecutionScene(structuredClone(closed));
+
+  const touched = createExecutionScene({ runId: 'touched', chatId: 'chat', query: '第三次' });
+  applyExecutionEvent(touched, { kind: 'pipeline', id: 'task-evaluation:1', name: '评估', status: 'completed', output: '发现 0' });
+  panel.receiveExecutionScene(structuredClone(touched));
+  assert.equal(room.hidden, false, 'an evaluation opens it, and a new run opens it again');
+  room.querySelector('[data-war-trace="calls"]').click();
+  finishExecutionScene(touched, { message: { id: 'answer-3' } });
+  panel.receiveExecutionScene(structuredClone(touched));
+  collapse();
+  assert.equal(room.hidden, false, 'once the user has used the war room it stays until they leave');
+  room.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.equal(room.hidden, false, 'Escape first leaves the detail');
+  // A prompt that needs the user (a call held for permission) is never covered:
+  // the war room steps aside, keeps the user's place in the composer, and comes
+  // back once the prompt is answered. Stepping aside is not a dismissal.
+  room.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.equal(room.hidden, true, 'then closes the war room');
+  const composer = document.createElement('textarea'); document.body.append(composer); composer.focus();
+  const held = createExecutionScene({ runId: 'held', chatId: 'chat', query: '改文件' });
+  applyExecutionEvent(held, { kind: 'operation', id: 'read', module: 'files', name: 'file_read', status: 'running' });
+  panel.receiveExecutionScene(structuredClone(held));
+  assert.equal(room.hidden, false);
+  await new Promise(resolve => setImmediate(resolve));
+  for (const timer of timers.filter(x => x.delay === 0)) timer.fn();
+  assert.equal(document.activeElement, composer, 'an automatic open never takes the keyboard');
+  applyExecutionEvent(held, { kind: 'operation', id: 'write', module: 'files', name: 'file_write', status: 'waiting' });
+  panel.receiveExecutionScene(structuredClone(held));
+  assert.equal(room.hidden, true, 'the war room steps aside for the permission prompt');
+  applyExecutionEvent(held, { kind: 'operation', id: 'write', module: 'files', name: 'file_write', status: 'running' });
+  panel.receiveExecutionScene(structuredClone(held));
+  assert.equal(room.hidden, false, 'and comes back once the prompt is answered');
+  // The same for a prompt the chat shows on its own (file safety, capability, task scope): it carries data-request-id.
+  const prompt = document.createElement('button'); prompt.dataset.requestId = 'req-1'; document.body.append(prompt);
+  applyExecutionEvent(held, { kind: 'operation', id: 'write', module: 'files', name: 'file_write', status: 'running', input: 'b.txt' });
+  panel.receiveExecutionScene(structuredClone(held));
+  assert.equal(room.hidden, true, 'a chat prompt waiting for an answer is never covered');
+  document.querySelector('#execution-panel [data-execution-action="toggle"]').click();
+  assert.equal(room.hidden, true); assert.equal(document.activeElement, prompt, 'opening by hand first takes the user to the prompt');
+  prompt.remove();
+  applyExecutionEvent(held, { kind: 'operation', id: 'write', module: 'files', name: 'file_write', status: 'completed' });
+  panel.receiveExecutionScene(structuredClone(held));
+  assert.equal(room.hidden, false, 'answered: the war room is back');
 });

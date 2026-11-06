@@ -31,13 +31,17 @@ test('non-stream calls are not switched to streaming; cancelled calls cannot fin
   assert.deepEqual(events.map(e => e.status), ['running', 'cancelled']);
 });
 
-test('tool overview reuses the same search operation, while only its search body crawls', () => {
+// Layout A (2026-11-06): the user asked that a web search no longer also
+// count under 工具调用; every region shows only its own calls.
+test('a web search belongs to 网页检索 only; 工具调用 counts its own calls', () => {
   const scene = createExecutionScene({ runId: 'aggregate' });
   applyExecutionEvent(scene, { kind: 'operation', id: 'search', module: 'search', name: 'native_web_search', status: 'running' });
+  applyExecutionEvent(scene, { kind: 'operation', id: 'notify', module: 'tools', name: 'notify', status: 'running' });
   const tools = moduleActivity(scene, 'tools'), search = moduleActivity(scene, 'search');
-  assert.equal(scene.operations.length, 1); assert.equal(tools.running.length, 1);
-  assert.equal(search.operations[0], tools.operations[0]);
-  assert.equal(tools.primaryRunning.length, 0); assert.equal(search.primaryRunning.length, 1);
+  assert.equal(scene.operations.length, 2);
+  assert.deepEqual(search.operations.map(op => op.id), ['search']); assert.deepEqual(tools.operations.map(op => op.id), ['notify']);
+  assert.equal(tools.running.length, 1); assert.equal(search.running.length, 1);
+  assert.equal(tools.primaryRunning.length, 1); assert.equal(search.primaryRunning.length, 1);
   applyExecutionEvent(scene, { kind: 'pipeline', id: 'reply:format', name: '整理回答与引用', status: 'running' });
   finishExecutionScene(scene, { status: 'cancelled' });
   assert.equal(scene.pipeline[0].status, 'cancelled');

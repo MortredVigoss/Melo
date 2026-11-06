@@ -24,8 +24,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 697,
-      "edges": 2271,
+      "modules": 698,
+      "edges": 2272,
       "roots": [
         "src",
         "desktop-ui",
@@ -34,7 +34,7 @@
       ],
       "note": "静态 import/re-export，含 desktop-ui 对 /shared/*.js 的服务映射；不含动态 import 与外部包"
     },
-    "routes": 180,
+    "routes": 181,
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
@@ -743,7 +743,7 @@
         "ios/Tests/SharedAgentCoreTests.swift"
       ],
       "modules": {
-        "desktop-ui": 28,
+        "desktop-ui": 24,
         "shared": 45,
         "src": 70
       },
@@ -1120,6 +1120,7 @@
         {
           "module": "src/shared/executionScene.js",
           "importedBy": [
+            "desktop-shell",
             "media",
             "platform",
             "sync",
@@ -1131,11 +1132,11 @@
         "agents": 36,
         "approvals": 8,
         "channels": 2,
-        "desktop-shell": 21,
+        "desktop-shell": 20,
         "knowledge": 5,
         "media": 24,
         "memory": 27,
-        "platform": 68,
+        "platform": 67,
         "projects": 11,
         "settings": 11,
         "sync": 2,
@@ -1146,11 +1147,11 @@
         "agents": 32,
         "approvals": 1,
         "channels": 9,
-        "desktop-shell": 11,
+        "desktop-shell": 13,
         "development": 1,
         "media": 14,
         "memory": 12,
-        "platform": 30,
+        "platform": 31,
         "projects": 1,
         "settings": 14,
         "sync": 4,
@@ -1167,14 +1168,10 @@
         "POST /api/chats/update ← src/server.js"
       ],
       "desktopUi": [
-        "desktop-ui/executionBoard.js",
         "desktop-ui/executionDetails.js",
         "desktop-ui/executionPanel.css",
         "desktop-ui/executionPanel.js",
-        "desktop-ui/executionPicking.js",
-        "desktop-ui/executionScene3D.js",
         "desktop-ui/executionTiming.js",
-        "desktop-ui/executionViewport.js",
         "desktop-ui/features/chat/activeToolCallsStrip.js",
         "desktop-ui/features/chat/api.js",
         "desktop-ui/features/chat/chat.css",
@@ -1248,11 +1245,9 @@
         "js": [
           "desktop-ui/chatDensity.browser.test.js",
           "desktop-ui/executionPanel.test.js",
-          "desktop-ui/executionPicking.test.js",
           "desktop-ui/executionTelemetry.browser.test.js",
           "desktop-ui/executionTiming.browser.test.js",
           "desktop-ui/executionTiming.test.js",
-          "desktop-ui/executionViewport.test.js",
           "desktop-ui/features/chat/activeToolCallsStrip.test.js",
           "desktop-ui/features/chat/controller.test.js",
           "desktop-ui/features/chat/evidenceTrailMarkup.test.js",
@@ -3686,7 +3681,7 @@
         "assets/**"
       ],
       "modules": {
-        "desktop-ui": 31,
+        "desktop-ui": 35,
         "src": 2
       },
       "entryModules": [
@@ -3763,7 +3758,7 @@
           ]
         },
         {
-          "module": "desktop-ui/synapticBody.js",
+          "module": "desktop-ui/warRoom.js",
           "importedBy": [
             "chat"
           ]
@@ -3785,7 +3780,7 @@
         "agents": 12,
         "approvals": 4,
         "channels": 2,
-        "chat": 11,
+        "chat": 13,
         "development": 1,
         "knowledge": 1,
         "media": 5,
@@ -3800,7 +3795,7 @@
       "usedBy": {
         "agents": 9,
         "approvals": 8,
-        "chat": 21,
+        "chat": 20,
         "development": 1,
         "media": 6,
         "memory": 6,
@@ -3836,6 +3831,7 @@
         "GET /shared/textUrls.js ← src/server.js",
         "GET /shared/urlDetector.js ← src/server.js",
         "GET /shared/visualTokens.js ← src/server.js",
+        "GET /shared/warRoom.js ← src/server.js",
         "GET /src/shared/localServices.js ← src/server.js",
         "GET /src/shared/visualTokens.js ← src/server.js",
         "GET /vendor/three/* ← src/server.js"
@@ -3878,10 +3874,15 @@
         "desktop-ui/sharedApi.js",
         "desktop-ui/styles.css",
         "desktop-ui/surfaceUnify.css",
-        "desktop-ui/synapticBody.js",
         "desktop-ui/tokens.css",
         "desktop-ui/translations.js",
         "desktop-ui/undoToast.js",
+        "desktop-ui/warRoom.css",
+        "desktop-ui/warRoom.js",
+        "desktop-ui/warRoomCluster.js",
+        "desktop-ui/warRoomParticles.js",
+        "desktop-ui/warRoomScene3D.js",
+        "desktop-ui/warRoomSpider.js",
         "desktop-app/NativeLocation.swift",
         "desktop-app/ProcessShutdown.swift",
         "desktop-app/StaleServer.swift",
@@ -3930,7 +3931,6 @@
           "desktop-ui/runtimeRefactor.test.js",
           "desktop-ui/searchSettings.test.js",
           "desktop-ui/sharedUi.test.js",
-          "desktop-ui/synapticBody.test.js",
           "desktop-ui/taskPermissions.browser.test.js",
           "desktop-ui/taskSpaceBoard.browser.test.js",
           "desktop-ui/undoToast.test.js",
@@ -4085,7 +4085,7 @@
         "src/**"
       ],
       "modules": {
-        "src": 62
+        "src": 63
       },
       "entryModules": [
         {
@@ -4433,7 +4433,7 @@
         "agents": 34,
         "approvals": 18,
         "channels": 6,
-        "chat": 30,
+        "chat": 31,
         "desktop-shell": 2,
         "development": 2,
         "knowledge": 2,
@@ -4449,7 +4449,7 @@
         "agents": 49,
         "approvals": 36,
         "channels": 22,
-        "chat": 68,
+        "chat": 67,
         "desktop-shell": 15,
         "development": 9,
         "knowledge": 2,
@@ -4524,6 +4524,7 @@
           "src/shared/localServices.test.js",
           "src/shared/runtimeBehavior.test.js",
           "src/shared/serverText.test.js",
+          "src/shared/warRoom.test.js",
           "src/state/architectureConcurrency.test.js",
           "src/state/chatRetention.test.js",
           "src/state/checkpointCommit.test.js",
@@ -5474,14 +5475,10 @@
       "generator": "ios/scripts/build-scene.py",
       "inputs": [
         "desktop-ui/buttonStyles.js",
-        "desktop-ui/executionBoard.js",
         "desktop-ui/executionDetails.js",
         "desktop-ui/executionPanel.css",
         "desktop-ui/executionPanel.js",
-        "desktop-ui/executionPicking.js",
-        "desktop-ui/executionScene3D.js",
         "desktop-ui/executionTiming.js",
-        "desktop-ui/executionViewport.js",
         "desktop-ui/format.js",
         "desktop-ui/html.js",
         "desktop-ui/i18n.js",
@@ -5490,9 +5487,14 @@
         "desktop-ui/neuralSatellite.js",
         "desktop-ui/neuralScene.js",
         "desktop-ui/neuralScene3D.js",
-        "desktop-ui/synapticBody.js",
         "desktop-ui/tokens.css",
         "desktop-ui/translations.js",
+        "desktop-ui/warRoom.css",
+        "desktop-ui/warRoom.js",
+        "desktop-ui/warRoomCluster.js",
+        "desktop-ui/warRoomParticles.js",
+        "desktop-ui/warRoomScene3D.js",
+        "desktop-ui/warRoomSpider.js",
         "ios/Melo/MeloTheme.swift",
         "ios/SceneSource/mobile.css",
         "ios/SceneSource/mobile.js",
@@ -5510,7 +5512,8 @@
         "src/shared/executionMetadata.js",
         "src/shared/executionScene.js",
         "src/shared/sessionEvents.js",
-        "src/shared/visualTokens.js"
+        "src/shared/visualTokens.js",
+        "src/shared/warRoom.js"
       ],
       "outputs": [
         "ios/Melo/Scene/**",
@@ -5780,9 +5783,9 @@
           "url": "/shared/executionScene.js",
           "target": "src/shared/executionScene.js",
           "importers": [
-            "desktop-ui/executionBoard.js",
             "desktop-ui/executionPanel.js",
-            "desktop-ui/executionScene3D.js"
+            "desktop-ui/warRoom.js",
+            "desktop-ui/warRoomScene3D.js"
           ]
         },
         {
@@ -5824,10 +5827,10 @@
       ],
       "from": [
         "desktop-ui/app.js",
-        "desktop-ui/executionBoard.js",
         "desktop-ui/executionPanel.js",
-        "desktop-ui/executionScene3D.js",
-        "desktop-ui/localSettings.js"
+        "desktop-ui/localSettings.js",
+        "desktop-ui/warRoom.js",
+        "desktop-ui/warRoomScene3D.js"
       ],
       "features": [
         "channels",

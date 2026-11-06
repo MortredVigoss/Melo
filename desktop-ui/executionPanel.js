@@ -3,10 +3,9 @@ import { escapeHtml } from './i18n.js';
 import { t, ui, currentLanguage, runtimeStageName, runtimeStageOutput, runtimeCompletionText } from './i18n.js';
 import { renderExecutionDetail, renderSessionEvents, executionApiLine, renderExecutionSignal, renderReasoningRecords, renderExecutionTiming } from './executionDetails.js';
 import { EXECUTION_MODULES, sessionEvents, moduleActivity, projectPhoneToolStages, sceneFinished, finishExecutionScene, visibleSceneSources, sourceReadingLabel, sceneSourceUrl } from '/shared/executionScene.js';
-
-import { bindExecutionZoom, clampZoom, wideViewport, viewMode, clampPitch, wrapYaw, FOLLOW_PITCH, DETAIL_ZOOM, MIN_ZOOM, MAX_ZOOM } from './executionViewport.js';
-import { renderViewSwitch, renderStageRail, renderNowCard, renderActorLabels, renderBoard, renderResourceLine } from './executionBoard.js';
-import { sceneHasBoard, sceneMembers, sceneEvaluation, evaluationChanges, operationVerb } from '/shared/executionBoard.js';
+import { sceneMembers, operationVerb } from '/shared/executionBoard.js';
+import { shouldAutoOpen, sceneNeedsUser } from '/shared/warRoom.js';
+import { createWarRoom } from './warRoom.js';
 
 const statusNames = { get idle() { return t('无调用记录'); }, get recorded() { return t('仅引用记录'); }, get queued() { return t('排队'); }, get running() { return t('执行中'); }, get waiting() { return t('等待许可'); }, get completed() { return t('已完成'); }, get failed() { return t('失败'); }, get cancelled() { return t('已取消'); }, get interrupted() { return t('已中断'); } };
 const scenes = new Map(), views = new Map(), delivered = new Set();
@@ -14,41 +13,47 @@ const presentations = new Map();
 const historyCursors = new Map();
 const attemptedVisibleScenes = new Set(), observedMessages = new WeakMap();
 let replayObserver;
-let host, gpu, loading = false, currentChat = null, currentRun = null, opened = false, focus = null, more = false;
+// Layout A (2026-11-06): the task space opens as the full-screen war room
+// (warRoom.js); in the chat it is one strip. `opened` is whether the war room
+// is showing. A run opens it by itself once, when it first does something
+// observable; a run the user closed while it ran stays closed; when the run
+// ends the war room hands back to the chat unless the user has touched it.
+let host, warRoom = null, currentChat = null, currentRun = null, opened = false, focus = null, more = false;
 let autoRun = null, collapseTimer, pendingHandoff = null, loadedChat = null, lastPoll = 0, refreshChat = () => {}, uiStill = false;
-let zoom = 1, releaseZoom = null, zoomSaveTimer, layoutObserver;
-let selectionBusy = false, selectionError = '', lastSignature = '', slot = 0, closingRun = null;
-let autoCollapse = true, imageRetryHandler = null;
-// Task space (plan C): camera view and board state are per-viewer preferences,
-// kept on this device only; the scene record itself never changes.
-const VIEW_KEY = 'melo-task-space-view', BOARD_KEY = 'melo-task-space-board';
-function loadCameraView() {
-  let saved = null; try { saved = JSON.parse(localStorage.getItem(VIEW_KEY) || 'null'); } catch {}
-  return { mode: viewMode(saved?.mode), yaw: wrapYaw(Number(saved?.yaw) || 0), pitch: clampPitch(Number(saved?.pitch) || 0), followId: 'lead' };
-}
-let cameraView = loadCameraView(), boardCollapsed = false, leadName = '', lastBoardSignature = '', boardScroll = 0;
-try { boardCollapsed = localStorage.getItem(BOARD_KEY) === 'collapsed'; } catch {}
-const shownSnapshots = new Map();
-function saveCameraView() { try { localStorage.setItem(VIEW_KEY, JSON.stringify({ mode: cameraView.mode, yaw: cameraView.yaw, pitch: cameraView.pitch })); } catch {} }
-function setCameraView(next) {
-  cameraView = { ...cameraView, ...next, mode: viewMode(next.mode ?? cameraView.mode) };
-  saveCameraView(); gpu?.setView?.(cameraView); paintViewSwitch();
-}
-function paintViewSwitch() {
-  const slot = host?.querySelector('.execution-view-host'); if (!slot) return;
-  const html = renderViewSwitch(cameraView.mode, { locked: !!focus && !wideViewport(zoom) });
-  if (slot.innerHTML !== html) slot.innerHTML = html;
-}
+let selectionBusy = false, selectionError = '', slot = 0, closingRun = null, renderNote = '';
+let autoCollapse = true, imageRetryHandler = null, leadName = '', touched = false, hostManaged = false;
+// `aside`: runs whose war room stepped aside for a prompt that needs the user
+// (it comes back once the prompt is answered). On a phone the native screen
+// decides all of this (`hostManaged`).
+const autoOpened = new Set(), dismissed = new Set(), aside = new Set();
 function scheduleCollapse(runId) {
-  if (!autoCollapse) return;
+  if (!autoCollapse || !autoOpened.has(runId)) return;
   clearTimeout(collapseTimer); closingRun = runId;
   collapseTimer = setTimeout(() => {
-    if (closingRun !== runId || currentRun !== runId || !sceneFinished(selectedScene())) return;
-    if (host?.matches(':focus-within,:hover')) { scheduleCollapse(runId); return; }
+    if (closingRun !== runId || currentRun !== runId || !sceneFinished(selectedScene()) || touched || !opened) return;
     closingRun = null; setOpen(false);
   }, 2600);
 }
 function cancelCollapse() { clearTimeout(collapseTimer); closingRun = null; }
+// A prompt waiting for the user's answer (tool permission, task scope, file
+// safety, capability request) carries data-request-id on its buttons, and a
+// call held for permission shows in the scene. While either is showing, the
+// war room stays out of its way and comes back once it is answered.
+const promptShowing = () => [...document.querySelectorAll('[data-request-id]')].some(el => !el.closest('#execution-war-room'));
+const blockedByUser = scene => sceneNeedsUser(scene) || promptShowing();
+let promptObserver = null, promptCheck = false;
+function reconcilePrompts(scene = selectedScene()) {
+  if (hostManaged || !scene || scene.runId !== currentRun) return false;
+  const blocked = blockedByUser(scene);
+  if (opened && blocked) { aside.add(scene.runId); setOpen(false, { stepAside: true }); return true; }
+  if (!opened && !blocked && aside.has(scene.runId) && !sceneFinished(scene) && !dismissed.has(scene.runId)) { aside.delete(scene.runId); setOpen(true); return true; }
+  return blocked;
+}
+function watchPrompts() {
+  if (promptObserver || hostManaged || typeof MutationObserver === 'undefined') return;
+  promptObserver = new MutationObserver(() => { if (promptCheck) return; promptCheck = true; queueMicrotask(() => { promptCheck = false; reconcilePrompts(); }); });
+  promptObserver.observe(document.body, { childList: true, subtree: true });
+}
 
 export const renderExecutionPanel = () => ui`<section id="execution-panel" class="execution-panel is-collapsed" data-neural-key="execution-panel" data-execution-owned="true" aria-label="三维任务空间" hidden></section>`;
 export function renderSceneReplay(message) {
@@ -99,41 +104,17 @@ function observeRenderedMessages(chat) {
 }
 function rememberView() {
   if (!currentRun) return;
-  const view = { focus, more, slot, zoom };
+  const view = { focus, more, slot, zoom: 1 };
   views.set(currentRun, view);
   try { localStorage.setItem(`melo-scene-view:${currentRun}`, JSON.stringify(view)); } catch {}
 }
 function chooseRun(runId) {
-  rememberView(); currentRun = runId; inspectedOperation = "";
-  if (host) host.querySelector('.execution-inspector').hidden = true;
+  rememberView(); currentRun = runId; renderNote = '';
   let view = views.get(runId);
   if (!view) try { view = JSON.parse(localStorage.getItem(`melo-scene-view:${runId}`) || 'null'); } catch {}
   focus = EXECUTION_MODULES.some(m => m.id === view?.focus) ? view.focus : null;
-  more = !!view?.more; slot = view?.slot || 0; zoom = clampZoom(view?.zoom ?? (focus ? DETAIL_ZOOM : 1));
-}
-function syncZoomControls() {
-  const stage = host?.querySelector('.execution-panel-stage'); if (!stage) return;
-  stage.dataset.wide = String(wideViewport(zoom));
-  stage.dataset.zoom = zoom.toFixed(3);
-  const value = host.querySelector('[data-zoom-value]'); if (value) value.textContent = `${Math.round(zoom * 100)}%`;
-  const out = host.querySelector('[data-execution-action=zoom-out]'), inside = host.querySelector('[data-execution-action=zoom-in]');
-  if (out) out.disabled = zoom <= MIN_ZOOM; if (inside) inside.disabled = zoom >= MAX_ZOOM;
-}
-function changeZoom(value) {
-  cancelCollapse(); zoom = clampZoom(value); syncZoomControls(); sizeDetails(); gpu?.setZoom(zoom); paintViewSwitch(); if (host) paintBoard(selectedScene());
-  clearTimeout(zoomSaveTimer); zoomSaveTimer = setTimeout(rememberView, 180);
-}
-function showOverview() {
-  cancelCollapse(); focus = null; zoom = 1; rememberView(); paint();
-}
-function focusModule(id) {
-  if (!EXECUTION_MODULES.some(module => module.id === id)) return;
-  cancelCollapse(); focus = id; zoom = DETAIL_ZOOM; rememberView(); paint();
-}
-function hoverModule(id) {
-  host?.querySelectorAll('.execution-module').forEach(label => {
-    label.dataset.hovered = String(label.dataset.module === id);
-  });
+  more = !!view?.more; slot = view?.slot || 0;
+  warRoom?.restore(focus, runId);
 }
 function preserveReading(action) {
   const scroller = document.querySelector('.thread-scroll-region');
@@ -142,10 +123,38 @@ function preserveReading(action) {
   action();
   if (scroller) scroller.scrollTop = bottom ? scroller.scrollHeight : top;
 }
-function setOpen(value) {
+function setOpen(value, { focus = false, stepAside = false } = {}) {
+  // Closing a run that is still working means: do not open it again by itself
+  // (stepping aside for a prompt is not the user closing it).
+  if (opened && !value && !stepAside && currentRun && !sceneFinished(selectedScene())) { dismissed.add(currentRun); aside.delete(currentRun); }
   opened = value;
-  preserveReading(() => host?.classList.toggle('is-collapsed', !opened));
-  updateButtons(); gpu?.setOpen(opened); paint();
+  // Only a user's own open moves keyboard focus; an automatic one never takes it from a prompt or the composer.
+  ensureWarRoom().setOpen(value, { focus });
+  updateButtons(); paint();
+  if (!value && pendingHandoff && [...document.querySelectorAll('.message[data-message-id]')].some(el => el.dataset.messageId === pendingHandoff.messageId)) { handoff(pendingHandoff); pendingHandoff = null; }
+}
+function ensureWarRoom() {
+  if (warRoom) return warRoom;
+  warRoom = createWarRoom({
+    onClose: () => { cancelCollapse(); setOpen(false); },
+    onInteract: () => { touched = true; cancelCollapse(); },
+    onRegionChange: id => { focus = id; rememberView(); },
+    recordDetail: id => { const scene = selectedScene(), op = [...(scene?.operations || []), ...(scene?.pipeline || [])].find(item => item.id === id); return op ? renderExecutionDetail(op, statusNames[op.status]) : ''; },
+    regionExtra,
+    traceExtra: key => key === 'calls' ? renderSessionEvents(sessionEvents(selectedScene())) : key === 'tokens' ? renderExecutionSignal(selectedScene()) : '',
+  });
+  return warRoom;
+}
+// What a region shows beyond its list of calls: the sources it found (with
+// links and whether the answer cited them), the model's public summaries, or
+// the generated results with their selection controls.
+function regionExtra(id) {
+  focus = id;
+  const scene = selectedScene();
+  if (id === 'search') return ui`<div class="war-extra">${renderSearchTrail(scene)}<div class="war-source-grid">${renderDetails(scene, detailsFor(scene))}</div>${(scene?.sources.length || 0) > 5 ? ui`<button type="button" class="war-link" data-execution-action="more">${more ? '收起至五个' : '展开更多 · 最多十个'}</button>` : ''}</div>`;
+  if (id === 'compute') return ui`<div class="war-extra">${renderReasoningRecords(scene, statusNames)}</div>`;
+  if (id === 'create') return ui`<div class="war-extra">${renderCandidates(scene)}</div>`;
+  return '';
 }
 function updateButtons() {
   document.querySelectorAll('.atomic-button').forEach(button => {
@@ -179,27 +188,6 @@ function detailsFor(scene) {
   if (focus === 'create') return [];
   if (focus === 'compute') return moduleActivity(scene, focus).operations.filter(op => op.channel !== 'reasoning-summary').map(op => ({ ...op, title: op.expression || runtimeStageName(op) }));
   return moduleActivity(scene, focus).operations.map(op => ({ ...op, title: op.expression || runtimeStageName(op) }));
-}
-function sizeDetails() {
-  const stage = host?.querySelector('.execution-panel-stage');
-  if (!stage) return;
-  // The scene scrolls within the space left by the real composer height.
-  // Four input lines, wrapped controls and translated labels must not push
-  // Send below the window. Keep a small visible portion of the conversation.
-  const thread=host.closest('.chat-thread'), footer=host.closest('.thread-footer');
-  const viewport=host.querySelector('.execution-panel-viewport');
-  if(thread?.clientHeight && footer && viewport) {
-    const fixed=[...thread.children].filter(el=>el!==footer && !el.classList.contains('thread-scroll-region')).reduce((sum,el)=>sum+el.getBoundingClientRect().height,0);
-    const gap=parseFloat(getComputedStyle(thread).rowGap)||0;
-    const controls=footer.getBoundingClientRect().height-viewport.getBoundingClientRect().height;
-    const available=Math.max(48,Math.floor(thread.clientHeight-fixed-controls-gap*(thread.children.length-1)-72));
-    const value=`${available}px`;
-    if(host.style.getPropertyValue('--scene-available-height')!==value)host.style.setProperty('--scene-available-height',value);
-  }
-  const items = wideViewport(zoom) ? [] : detailsFor(selectedScene());
-  const columns = Math.max(2, Math.min(5, Math.floor((stage.clientWidth - 24) / 140)));
-  const height = items.length ? `${Math.ceil(items.length / columns) * (focus === 'search' ? 112 : 86) + (focus === 'search' ? 140 : 90)}px` : '0px';
-  if (stage.style.getPropertyValue('--detail-height') !== height) stage.style.setProperty('--detail-height', height);
 }
 function renderDetails(scene, items) {
   if (focus === 'search') return items.map((source, index) => {
@@ -236,7 +224,6 @@ function renderCandidates(scene) {
     ${artifact.kind === 'image' && sceneFinished(scene) ? ui`<div class="execution-candidate-controls"><select aria-label="替换图片位置" data-execution-slot>${Array.from({ length: Math.min(scene.requestedImages, images.length) }, (_, i) => ui`<option value="${i}" ${i === slot ? 'selected' : ''}>第 ${i + 1} 张</option>`).join('')}</select><button data-execution-action="select-image" data-artifact="${escapeHtml(artifact.id)}" ${selectionBusy ? 'disabled' : ''}>${selected.includes(artifact.id) ? t("已选中") : t("选为展示")}</button></div>` : ''}
   </article>`).join('')}</div></div>`;
 }
-let inspectedOperation = '';
 function paintTiming(liveOnly = false) {
   if (document.hidden) return;
   const update = (node, scene) => {
@@ -247,124 +234,26 @@ function paintTiming(liveOnly = false) {
   update(host?.querySelector('.execution-timing-host'), selectedScene());
   for (const node of document.querySelectorAll('[data-execution-timing-run]')) update(node, scenes.get(node.dataset.executionTimingRun));
 }
+const imageDeficit = scene => {
+  const images = scene?.artifacts.filter(a => a.kind === 'image') || [];
+  return scene?.operations.some(op => ['image', 'image_edit', 'native_image_generation'].includes(op.name)) && sceneFinished(scene) && images.length < scene.requestedImages ? ` · ${t('图片 {done}/{total} 张成功', { done: images.length, total: scene.requestedImages })}` : '';
+};
 function paint() {
-  if (!host?.isConnected) return;
-  const scene = selectedScene(), items = detailsFor(scene);
-  if (inspectedOperation) {
-    const op = [...(scene?.operations || []), ...(scene?.pipeline || [])].find(item => item.id === inspectedOperation);
-    if (op) {
-      const inspector = host.querySelector('.execution-inspector'), html = renderExecutionDetail(op, statusNames[op.status]);
-      if (inspector.innerHTML !== html) { const top = inspector.scrollTop; inspector.innerHTML = html; inspector.scrollTop = top; }
-    }
-  }
-  const searchOps = (scene?.operations || []).filter(op => op.module === 'search');
-  host.hidden = !opened && !scene;
-  host.classList.toggle('is-collapsed', !opened);
+  const scene = selectedScene();
   const history = [...scenes.values()].filter(s => s.chatId === currentChat).sort((a, b) => b.startedAt.localeCompare(a.startedAt));
-  host.querySelector('.execution-panel-header').innerHTML = ui`<strong>NEURAL / 任务空间</strong><span class="execution-status" role="status" aria-live="polite">${escapeHtml(headerStatus(scene))}</span>
+  if (host?.isConnected) {
+    host.hidden = !scene; host.classList.add('is-collapsed');
+    const header = ui`<strong>NEURAL / 任务空间</strong><span class="execution-status" role="status" aria-live="polite">${escapeHtml(headerStatus(scene))}</span>
     ${history.length > 1 ? ui`<select aria-label="选择历史任务" data-execution-history>${history.map(s => ui`<option value="${escapeHtml(s.runId)}" ${s.runId === currentRun ? 'selected' : ''}>${escapeHtml(s.query.slice(0, 24) || t("任务"))}</option>`).join('')}</select>` : ''}
     ${historyCursors.get(currentChat) ? ui`<button data-execution-action="older-scenes">更早的任务</button>` : ''}
     <button class="execution-voice" data-action="toggle-tts-autoplay" title="朗读设置">朗读设置</button>
-    <button data-execution-action="toggle" aria-expanded="${opened}">${opened ? t("收起") : t("展开回看")} ↗</button>`;
-  const stage = host.querySelector('.execution-panel-stage'); stage.dataset.focus = focus || '';
-  sizeDetails();
-  const signature = JSON.stringify([currentLanguage(), scene?.runId, scene?.sequence, scene?.pipeline, scene?.selectionChangedAt, scene?.artifacts.map(a => a.url), focus, more, slot, selectionBusy, zoom]);
-  if (signature !== lastSignature) {
-    lastSignature = signature;
-    host.querySelector('.execution-labels').innerHTML = EXECUTION_MODULES.map(module => {
-      const activity = moduleActivity(scene, module.id);
-      return ui`<button class="execution-label execution-module" data-node-id="${module.id}" data-execution-action="focus" data-module="${module.id}" data-status="${activity.status}" aria-label="进入${escapeHtml(t(module.name))}" title="${module.id === 'search' ? '搜索和网页读取都归入网页检索' : module.id === 'compute' ? '显示模型公开摘要与实际计算；两者独立标记' : module.id === 'files' ? '显示文件读写、代码修改片段和实际结果' : module.id === 'create' ? '显示模型请求、接收、整理、保存、渲染及实际成果' : '汇总所有真实工具调用；搜索、计算、文件操作也在这里，每次仅计一次'} · ${activity.operations.length} ${['create', 'compute'].includes(module.id) ? '条执行记录' : '次工具调用'}"><i></i><strong>${escapeHtml(t(module.name))}</strong><small>${escapeHtml(statusNames[activity.status])}${module.id === 'search' && scene?.sources.length ? ` · ${t('{count} 条来源 ↗',{count:scene.sources.length})}` : module.id === 'tools' ? ` · ${t('{count} 次工具调用',{count:activity.operations.length})}` : module.id === 'create' ? ` · ${t('{count} 条记录',{count:activity.operations.length})}` : activity.running.length > 1 ? ` ×${activity.running.length}` : ''}</small></button>`;
-    }).join('') + renderDetails(scene, items) + (sceneHasBoard(scene) && (!focus || wideViewport(zoom)) ? renderActorLabels(scene, { leadName }) : '');
-    const searchCounts = [t('{count} 次工具调用', { count: searchOps.length }),
-      t('{count} 条来源', { count: scene?.sources.length || 0 })].join(' · ');
-    host.querySelector('.execution-focus-tools').innerHTML = focus ? ui`<button data-execution-action="overview">← 整体视角</button><span title="按问题、实际搜索词与标题、网址、摘要的匹配及搜索排名排序；引用只作标记，不占用保留名额。相关性是启发式分数，不是概率">${escapeHtml(t(EXECUTION_MODULES.find(m => m.id === focus)?.name))}${focus === 'search' ? ` · ${escapeHtml(searchCounts)}` : ''}</span>${focus === 'search' && (scene?.sources.length || 0) > 5 ? ui`<button data-execution-action="more">${more ? '收起至五个' : '展开更多 · 最多十个'}</button>` : ''}` : '<span></span>';
-    const extra = host.querySelector('.execution-extra'), scrollTop = extra.querySelector('.execution-reasoning-records')?.scrollTop || 0;
-    extra.innerHTML = renderSessionEvents(sessionEvents(scene)) + renderSearchTrail(scene) + (focus === 'compute' ? renderReasoningRecords(scene, statusNames) : '') + (renderCandidates(scene) || (!scene || focus && !items.length && !(focus === 'search' && searchOps.length) && !(focus === 'compute' && scene?.pipeline?.some(p => p.channel === 'reasoning-summary')) ? ui`<div class="execution-empty"><strong>${!scene ? '任务发生时，空间随之点亮' : '此区域还没有执行记录'}</strong>${!scene ? '点击区域靠近 · 电子与微光仅为氛围' : '不补造步骤、来源或进度'}</div>` : ''));
-    const records = extra.querySelector('.execution-reasoning-records'); if (records) records.scrollTop = scrollTop;
-    host.querySelector('.execution-signal-host').innerHTML = wideViewport(zoom) ? renderExecutionSignal(scene) : '';
-    host.querySelector('.execution-inspector').hidden = !inspectedOperation;
-    gpu?.update(scene, focus, items, zoom);
+    <button data-execution-action="toggle" aria-expanded="${opened}">${opened ? t("回到对话") : t("进入作战大屏")} ↗</button>`;
+    const element = host.querySelector('.execution-panel-header'); if (element && element.dataset.html !== header) { element.innerHTML = header; element.dataset.html = header; }
+    updateButtons(); paintTiming(); applyButtonStyles(host);
   }
-  const images = scene?.artifacts.filter(a => a.kind === 'image') || [];
-  const deficit = scene?.operations.some(op => ['image', 'image_edit', 'native_image_generation'].includes(op.name)) && sceneFinished(scene) && images.length < scene.requestedImages ? ` · ${t('图片 {done}/{total} 张成功', { done: images.length, total: scene.requestedImages })}` : '';
-  host.querySelector('.execution-panel-footer').innerHTML = ui`<span>${escapeHtml(selectionError || scene?.persistenceError || scene?.observationNote || (sceneFinished(scene) ? t('执行已停止 · 神经脉冲是低强度氛围动画') : scene ? t('只展示已记录的执行 · 不代表模型内部思维') : t('准备就绪 · 尚未搜索、计算或调用工具')))}${escapeHtml(deficit)}</span>${sceneHasBoard(scene) ? ui`<span>${escapeHtml(renderResourceLine(scene))} · ${escapeHtml(t('{count} 条来源', { count: scene?.sources.length || 0 }))}</span>` : ui`<span>${scene?.operations.length || 0} 次工具调用 · ${scene?.pipeline?.length || 0} 条执行记录 · ${scene?.sources.length || 0} 条来源</span>`}`;
-  paintBoard(scene);
-  updateButtons(); syncZoomControls(); paintViewSwitch(); paintTiming(); applyButtonStyles(host);
-  if (opened && !gpu && !loading) {
-    loading = true;
-    const currentHost = host;
-    import('./executionScene3D.js').then(({ createExecutionScene3D }) => {
-      if (host !== currentHost || !host.isConnected) return;
-      gpu = createExecutionScene3D(host.querySelector('.execution-webgl'), { onProject: projectLabels, onFailure: fallback, onSelect: focusModule, onHover: hoverModule,
-        onViewChange: view => { cameraView = { ...cameraView, ...view }; saveCameraView(); paintViewSwitch(); } });
-      gpu.setView?.(cameraView); gpu.update(selectedScene(), focus, detailsFor(selectedScene()), zoom); gpu.setStill(uiStill); gpu.setOpen(opened);
-    }).catch(() => fallback('此设备暂不支持三维渲染，可继续检查执行记录。')).finally(() => { loading = false; });
-  }
-}
-// Rail, current action and board: only when the router or evaluator ran.
-function paintBoard(scene) {
-  const board = sceneHasBoard(scene), wide = !focus || wideViewport(zoom);
-  const rail = host.querySelector('.execution-rail-host'), now = host.querySelector('.execution-now-host'), slot = host.querySelector('.execution-board-host');
-  if (!rail || !now || !slot) return;
-  const railHtml = board && wide ? renderStageRail(scene) : '', nowHtml = board && wide ? renderNowCard(scene, { leadName, mode: cameraView.mode, followId: cameraView.followId }) : '';
-  if (rail.innerHTML !== railHtml) rail.innerHTML = railHtml;
-  if (now.innerHTML !== nowHtml) now.innerHTML = nowHtml;
-  host.querySelector('.execution-panel-stage').dataset.board = String(board);
-  slot.hidden = !board;
-  if (!board) { if (slot.innerHTML) slot.innerHTML = ''; lastBoardSignature = ''; return; }
-  const signature = JSON.stringify([currentLanguage(), scene?.runId, scene?.sequence, scene?.status, boardCollapsed]);
-  if (signature === lastBoardSignature) return;
-  lastBoardSignature = signature;
-  boardScroll = slot.querySelector('.execution-log')?.scrollTop || 0;
-  slot.innerHTML = renderBoard(scene, { collapsed: boardCollapsed });
-  const log = slot.querySelector('.execution-log'); if (log) log.scrollTop = boardScroll;
-  flyCandidates(scene);
-}
-// New or promoted candidates travel from the search cluster to the cards that
-// now hold them. Never on first load of a run, never with reduced motion.
-function flyCandidates(scene) {
-  if (!scene) return;
-  const snapshot = sceneEvaluation(scene).snapshot, seen = shownSnapshots.has(scene.runId), previous = shownSnapshots.get(scene.runId);
-  shownSnapshots.set(scene.runId, snapshot);
-  if (!seen || !snapshot || !opened || uiStill || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  const from = host.querySelector('[data-node-id="search"]')?.getBoundingClientRect();
-  evaluationChanges(previous, snapshot).slice(0, 6).forEach((change, i) => {
-    const target = host.querySelector(`[data-card="${['primary', 'alternative'].includes(change.tier) ? 'score' : 'heat'}"]`)?.getBoundingClientRect();
-    if (!from || !target?.height) return;
-    const node = document.createElement('span'); node.className = 'execution-handoff execution-candidate-flight'; node.dataset.tier = change.tier;
-    node.textContent = `${String(change.name).slice(0, 24)} · ${change.total}`;
-    node.style.left = `${from.x + from.width / 2}px`; node.style.top = `${from.y}px`; document.body.append(node);
-    const dx = target.x + target.width / 2 - from.x - from.width / 2, dy = target.y + 18 - from.y;
-    node.animate([{ transform: 'translate3d(0,0,0) scale(.7)', opacity: 0 }, { transform: `translate3d(${dx * .2}px,${dy * .1 - 30}px,0) scale(1.08)`, opacity: .95, offset: .3 }, { transform: `translate3d(${dx}px,${dy}px,0) scale(.6)`, opacity: 0 }],
-      { duration: 1100, delay: i * 140, easing: 'cubic-bezier(.22,.68,.2,1)', fill: 'both' }).finished.finally(() => node.remove());
-  });
-}
-function fallback(message) { host?.classList.add('is-fallback'); const el = host?.querySelector('.execution-panel-footer span'); if (el) el.textContent = message; }
-// Space labels (modules, core, members) are placed nearest first; one that
-// would cover an already placed label moves up or down to the nearest free
-// slot, so a turned view stays readable. Detail cards keep their own grid.
-const overlaps = (a, b) => a.x < b.x + b.w + 4 && b.x < a.x + a.w + 4 && a.y < b.y + b.h + 3 && b.y < a.y + a.h + 3;
-function projectLabels(labels, { width, height }) {
-  if (!host || !opened) return;
-  const elements = new Map([...host.querySelectorAll('[data-node-id]')].map(el => [el.dataset.nodeId, el]));
-  const placed = [];
-  const ordered = [...labels].sort((a, b) => (a.detail === true) - (b.detail === true) || (a.depth ?? 0) - (b.depth ?? 0));
-  for (const position of ordered) {
-    const el = elements.get(position.id); if (!el) continue;
-    const w = el.offsetWidth || 120, h = el.offsetHeight || 45;
-    const moduleOffscreen = !position.detail && (position.x < 0 || position.x > width || position.y < 0 || position.y > height);
-    const x = Math.min(width - w - 7, Math.max(7, position.x - w / 2));
-    const top = position.detail ? focus === 'search' ? 88 : 42 : 9, bottom = height - h - 40;
-    let y = Math.min(bottom, Math.max(top, position.y - h / 2));
-    if (!position.detail && position.visible && !moduleOffscreen) {
-      const free = candidate => !placed.some(other => overlaps({ x, y: candidate, w, h }, other));
-      if (!free(y)) for (const step of [1, -1, 2, -2, 3, -3]) { const next = y + step * (h * .62 + 3); if (next >= top && next <= bottom && free(next)) { y = next; break; } }
-      placed.push({ x, y, w, h });
-    }
-    el.style.setProperty('--projected-transform', `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0)`);
-    el.dataset.projectionVisible = String(position.visible && !moduleOffscreen);
-    if (position.far !== undefined) el.dataset.far = String(position.far);
-  }
+  warRoom?.render(scene, { leadName, still: uiStill, older: !!historyCursors.get(currentChat),
+    history: history.map(s => ({ runId: s.runId, label: s.query.slice(0, 24) || t('任务') })),
+    note: (selectionError || scene?.persistenceError || scene?.observationNote || renderNote || (sceneFinished(scene) ? t('执行已停止 · 回看记录') : scene ? t('只展示已记录的执行 · 不代表模型内部思维') : t('准备就绪 · 尚未搜索、计算或调用工具'))) + imageDeficit(scene) });
 }
 // The newest unfinished run of a chat, for the live steps shown inside the chat.
 export function liveSceneFor(chatId) {
@@ -394,9 +283,9 @@ export function receiveExecutionScene(scene) {
   scene = projectPhoneToolStages(scene);
   scenes.set(scene.runId, scene);
   if (scene.chatId !== currentChat) return;
-  if (!sceneFinished(scene) && autoRun !== scene.runId) {
-    autoRun = scene.runId; chooseRun(scene.runId); cancelCollapse(); setOpen(true);
-  }
+  if (!sceneFinished(scene) && autoRun !== scene.runId) { autoRun = scene.runId; chooseRun(scene.runId); cancelCollapse(); }
+  if (!hostManaged && scene.runId === currentRun && !reconcilePrompts(scene) && !promptShowing()
+    && shouldAutoOpen(scene, { opened, dismissed: dismissed.has(scene.runId), autoOpened: autoOpened.has(scene.runId) })) { autoOpened.add(scene.runId); touched = false; setOpen(true); }
   if (previous && !sceneFinished(previous) && sceneFinished(scene) && currentRun === scene.runId) {
     pendingHandoff = scene;
     scheduleCollapse(scene.runId);
@@ -420,36 +309,29 @@ async function loadScenes(chatId, { runId, before } = {}) {
     paint(); refreshChat();
   } catch {}
 }
-export function syncExecutionPanel({ chat, still = false, autoCollapse: shouldAutoCollapse = true, onImageRetry = null, onSelectionChanged = () => {}, leadName: lead = '' } = {}) {
-  autoCollapse = shouldAutoCollapse; imageRetryHandler = onImageRetry; leadName = String(lead || '').slice(0, 40);
+export function syncExecutionPanel({ chat, still = false, autoCollapse: shouldAutoCollapse = true, onImageRetry = null, onSelectionChanged = () => {}, leadName: lead = '', hostManaged: managed = false } = {}) {
+  autoCollapse = shouldAutoCollapse; imageRetryHandler = onImageRetry; leadName = String(lead || '').slice(0, 40); hostManaged = !!managed;
   if (!autoCollapse) cancelCollapse();
   refreshChat = onSelectionChanged; uiStill = still;
   const next = document.querySelector('#execution-panel');
   if (next !== host) {
-    releaseZoom?.(); releaseZoom = null; layoutObserver?.disconnect(); layoutObserver = null; clearTimeout(zoomSaveTimer); gpu?.dispose(); gpu = null; host = next; lastSignature = '';
-    if (host) host.innerHTML = ui`<header class="execution-panel-header"></header><div class="execution-timing-host"></div><div class="execution-panel-viewport" tabindex="0" aria-label="任务空间内容，内容较多时可滚动查看"><div class="execution-panel-stage" tabindex="0" role="group" aria-label="任务空间，滚轮或双指缩放，加减键缩放，零键返回总览"><div class="execution-webgl"></div><div class="execution-labels"></div><div class="execution-rail-host"></div><div class="execution-now-host"></div><div class="execution-focus-tools"></div><div class="execution-extra"></div><aside class="execution-inspector" hidden></aside></div><div class="execution-zoom" aria-label="场景缩放"><div class="execution-view-host"></div><span class="execution-zoom-hint">滚轮 / 双指缩放</span><button data-execution-action="zoom-out" aria-label="缩小任务空间" title="缩小，查看其他模块">−</button><output data-zoom-value aria-label="缩放比例">100%</output><button data-execution-action="zoom-in" aria-label="放大任务空间" title="放大">＋</button><button data-execution-action="overview" title="同时查看五个模块">总览</button></div></div><section class="execution-board-host" aria-label="作战台" hidden></section><div class="execution-signal-host"></div><footer class="execution-panel-footer"></footer>`;
-  }
-  if (host && !releaseZoom) {
-    const stage = host.querySelector('.execution-panel-stage');
-    releaseZoom = bindExecutionZoom(stage, { getZoom: () => zoom, setZoom: changeZoom, overview: showOverview, rotate: (yaw, pitch) => gpu?.rotate?.(yaw, pitch) ?? false });
-    if (typeof ResizeObserver !== 'undefined') {
-      layoutObserver = new ResizeObserver(sizeDetails);
-      layoutObserver.observe(stage);
-      for(const element of [host.closest('.chat-thread'),host.closest('.thread-footer')]) if(element)layoutObserver.observe(element);
-    }
+    host = next;
+    if (host) host.innerHTML = ui`<header class="execution-panel-header"></header><div class="execution-timing-host"></div>`;
   }
   if (currentChat !== (chat?.id || null)) {
-    cancelCollapse(); selectionError = ''; rememberView(); currentChat = chat?.id || null; currentRun = null; focus = null; zoom = 1; more = false; opened = false; autoRun = null; loadedChat = null;
+    cancelCollapse(); selectionError = ''; rememberView(); currentChat = chat?.id || null; currentRun = null; focus = null; more = false; autoRun = null; loadedChat = null;
+    if (opened) setOpen(false);
   }
   if (host && loadedChat !== currentChat) { loadedChat = currentChat; void loadScenes(currentChat); }
   observeRenderedMessages(chat);
-  gpu?.setStill(still); paint();
-  if (pendingHandoff && chat?.messages.some(m => m.id === pendingHandoff.messageId)) {
+  ensureWarRoom(); watchPrompts(); paint();
+  if (pendingHandoff && !opened && chat?.messages.some(m => m.id === pendingHandoff.messageId)) {
     handoff(pendingHandoff); pendingHandoff = null;
   }
 }
 function handoff(scene, imageOnly = false) {
-  if (!opened || !host || !scene.messageId || (!imageOnly && delivered.has(scene.runId))) return;
+  // Hand-off flies from the chat's task-space strip, so only once the war room is closed.
+  if (opened || !host || !scene.messageId || (!imageOnly && delivered.has(scene.runId))) return;
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   delivered.add(scene.runId);
   const message = [...document.querySelectorAll('.message[data-message-id]')].find(el => el.dataset.messageId === scene.messageId);
@@ -462,10 +344,9 @@ function handoff(scene, imageOnly = false) {
   if (!imageOnly) for (const artifact of scene.artifacts.filter(a => a.kind === 'file')) deliveries.push({ module: 'create', label: artifact.title, target: links.find(a => [artifact.url, artifact.originalUrl].includes(a.dataset.externalUrl || a.href)) });
   for (const item of deliveries) {
     if (!item.target) continue;
-    const target = item.target.getBoundingClientRect(), stage = host.querySelector('.execution-panel-stage').getBoundingClientRect();
+    const target = item.target.getBoundingClientRect(), stage = host.getBoundingClientRect();
     if (target.bottom < 0 || target.top > innerHeight || !stage.height) continue;
-    const source = host.querySelector(`[data-node-id="${item.nodeId || item.module}"]`)?.getBoundingClientRect() || host.querySelector(`[data-node-id="${item.module}"]`)?.getBoundingClientRect();
-    const x = source?.x || stage.x + stage.width / 2, y = source?.y || stage.y + stage.height / 2;
+    const x = stage.x + Math.min(160, stage.width / 2), y = stage.y + stage.height / 2;
     const node = document.createElement('span'); node.className = 'execution-handoff'; node.textContent = String(item.label).slice(0, 32);
     node.style.left = `${x}px`; node.style.top = `${y}px`; document.body.append(node);
     const dx = target.x + Math.min(80, target.width / 2) - x, dy = target.y - y;
@@ -487,39 +368,23 @@ document.addEventListener('click', async event => {
   const trigger = event.target.closest('[data-execution-action]'); if (!trigger) return;
   const action = trigger.dataset.executionAction;
   if (sceneFinished(selectedScene())) cancelCollapse();
-  if (action === 'toggle') { cancelCollapse(); setOpen(!opened); }
-  else if (action === 'focus') focusModule(trigger.dataset.module);
-  else if (action === 'overview') showOverview();
-  else if (action === 'view') {
-    const mode = viewMode(trigger.dataset.view);
-    if (mode === 'global') { setCameraView({ mode, yaw: 0, pitch: 0 }); showOverview(); }
-    else if (mode === 'follow') {
-      const running = sceneMembers(selectedScene()).filter(member => member.running);
-      const followId = cameraView.followId !== 'lead' && running.some(member => 'member:' + member.index === cameraView.followId) ? cameraView.followId : running[0] ? 'member:' + running[0].index : 'lead';
-      if (focus) { focus = null; zoom = 1; rememberView(); }
-      setCameraView({ mode, followId, ...(Math.abs(cameraView.pitch) < .05 ? { pitch: FOLLOW_PITCH } : {}) }); paint();
-    } else { setCameraView({ mode }); paint(); }
-  }
-  else if (action === 'follow') { if (focus) { focus = null; zoom = 1; rememberView(); } setCameraView({ mode: 'follow', followId: trigger.dataset.follow || 'lead' }); paint(); }
-  else if (action === 'board-toggle') { boardCollapsed = !boardCollapsed; try { localStorage.setItem(BOARD_KEY, boardCollapsed ? 'collapsed' : 'open'); } catch {} lastBoardSignature = ''; paint(); }
-  else if (action === 'zoom-in') changeZoom(zoom * 1.18);
-  else if (action === 'zoom-out') changeZoom(zoom / 1.18);
+  // A prompt waiting for the user's answer comes first: the button takes them to it.
+  if (action === 'toggle' && !opened && promptShowing()) { [...document.querySelectorAll('[data-request-id]')].find(el => !el.closest('#execution-war-room'))?.focus(); return; }
+  if (action === 'toggle') { cancelCollapse(); setOpen(!opened, { focus: true }); }
+  else if (action === 'focus') { if (!opened) setOpen(true, { focus: true }); warRoom?.showRegion(trigger.dataset.module); }
   else if (action === 'more') { more = !more; rememberView(); paint(); }
   else if (action === 'older-scenes') { await loadScenes(currentChat, { before: historyCursors.get(currentChat) }); }
   else if (action === 'replay') {
     cancelCollapse();
     await loadScenes(currentChat, { runId: trigger.dataset.run });
-    chooseRun(trigger.dataset.run); setOpen(true);
-    if (!selectedScene()) { const el = host?.querySelector('.execution-panel-footer span'); if (el) el.textContent = '这条旧任务未保存执行场景，不会重新执行。'; }
-  } else if (action === 'inspect') {
-    const scene = selectedScene();
-    const op = [...(scene?.operations || []), ...(scene?.pipeline || [])].find(item => item.id === trigger.dataset.operation);
-    if (op) { inspectedOperation = op.id; const inspector = host.querySelector('.execution-inspector'); inspector.innerHTML = renderExecutionDetail(op, statusNames[op.status]); inspector.hidden = false; }
-  } else if (action === 'retry-images') {
+    chooseRun(trigger.dataset.run); setOpen(true, { focus: true });
+    if (!selectedScene()) { renderNote = t('这条旧任务未保存执行场景，不会重新执行。'); paint(); }
+  } else if (action === 'inspect') { if (!opened) setOpen(true, { focus: true }); warRoom?.showRecord(trigger.dataset.operation); }
+  else if (action === 'close-inspector') warRoom?.back();
+  else if (action === 'retry-images') {
     const scene=selectedScene(), count=Math.max(0,(scene?.imageTask?.count || 0)-(scene?.artifacts || []).filter(a=>a.kind==='image').length);
     if (sceneFinished(scene) && count) imageRetryHandler?.({chatId:scene.chatId,query:scene.query,task:{...scene.imageTask,count,retryOf:scene.runId}});
-  } else if (action === 'close-inspector') { inspectedOperation = ''; host.querySelector('.execution-inspector').hidden = true; }
-  else if (action === 'select-image' && !selectionBusy) {
+  } else if (action === 'select-image' && !selectionBusy) {
     const scene = selectedScene(); if (!scene) return;
     selectionError = ''; selectionBusy = true; paint();
     try {
@@ -531,7 +396,7 @@ document.addEventListener('click', async event => {
   }
 });
 document.addEventListener('change', event => {
-  if (event.target.matches('[data-execution-history]')) { cancelCollapse(); chooseRun(event.target.value); setOpen(true); }
+  if (event.target.matches('[data-execution-history]')) { cancelCollapse(); chooseRun(event.target.value); setOpen(true, { focus: true }); }
   if (event.target.matches('[data-execution-slot]')) { slot = Number(event.target.value); rememberView(); paint(); }
 });
 document.addEventListener('visibilitychange', () => { document.documentElement.dataset.executionHidden = String(document.hidden); paintTiming(); });

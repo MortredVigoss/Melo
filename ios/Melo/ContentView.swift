@@ -291,6 +291,13 @@ struct ChatView: View {
     @State private var sourcePage: SourcePage?
     @State private var showExecution = false
     @State private var executionRunID: String?
+    // Layout A (2026-11-06): the war room opens by itself at the live run's
+    // first observable step and hands back to the chat when it ends.
+    @State private var warRoom = WarRoomPresentation()
+    private var liveRecord: ExecutionRecord? { store.scenes(for: chatID).last }
+    // A system prompt shown from this screen cannot appear over the war room sheet.
+    private var promptPending: Bool { store.pendingDeviceAction != nil || store.pendingCapabilityRequest != nil }
+    private var needsUser: Bool { promptPending || (liveRecord?.needsUser ?? false) }
     @State private var renaming = false
     @State private var editedTitle = ""
     private var chat: Conversation? { store.chats.first { $0.id == chatID } }
@@ -464,7 +471,19 @@ struct ChatView: View {
             if ProcessInfo.processInfo.arguments.contains("-melo-preview-execution") { showExecution = true }
             #endif
         }
-        .sheet(isPresented: $showExecution) { ExecutionWorkspace(chatID: chatID, runID: executionRunID) }
+        .onChange(of: liveRecord) { _, record in
+            if warRoom.shouldOpen(record, presented: showExecution, blocked: promptPending) { executionRunID = nil; showExecution = true }
+            else if showExecution, warRoom.shouldClose(record) {
+                Task { @MainActor in try? await Task.sleep(for: .seconds(2.6)); if showExecution, warRoom.shouldClose(liveRecord) { showExecution = false } }
+            }
+        }
+        // Never cover a prompt that needs the user; come back once it is answered.
+        .onChange(of: needsUser) { _, waiting in
+            if waiting, showExecution { warRoom.stepAside(liveRecord); showExecution = false }
+            else if !waiting, !showExecution, warRoom.shouldReturn(liveRecord, blocked: promptPending) { executionRunID = nil; showExecution = true }
+        }
+        .onChange(of: showExecution) { wasOpen, open in if wasOpen && !open { warRoom.userClosed(liveRecord) } }
+        .sheet(isPresented: $showExecution) { ExecutionWorkspace(chatID: chatID, runID: executionRunID, onInteract: { warRoom.touched = true }) }
         .sheet(item: $imagePreview) { ImagePreview(image: $0, onUse: useImage, chatID: chatID) }
         .onChange(of: chatID) { _, _ in imagePreview = nil; imageImportID = nil }
         .sheet(item: $sourcePage) { page in SourceBrowser(url: page.url).ignoresSafeArea() }
