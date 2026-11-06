@@ -133,8 +133,8 @@ export function traceList(scene, key, { snapshot = sceneEvaluation(scene).snapsh
     if (arg === 'coverage') return done((contract?.coverage || []).map(row => ({ kind: 'coverage', id: row.tag, tag: row.tag, covered: !!row.covered })));
     if (arg === 'gaps') return counted((summary.gaps || []).map((text, i) => ({ kind: 'gap', id: `gap-${i}`, text })), summary.gapCount);
   }
-  // Every candidate has every required field, so a field column counts them all.
-  if (kind === 'field') return counted((snapshot?.candidates || []).filter(row => row.fields && arg in row.fields).map(candidateRow), (snapshot?.contract?.requiredFields || []).includes(arg) ? everyone : null);
+  // A field: the candidates its coverage share is taken over (see fieldCoverage).
+  if (kind === 'field') { const cover = fieldCoverage(snapshot, arg); return { ...done(cover.rows.map(candidateRow)), verified: cover.verified, outside: cover.outside }; }
   if (kind === 'candidate') return done((snapshot?.candidates || []).filter(row => row.key === arg).map(candidateRow));
   if (kind === 'checkpoint') {
     const policy = snapshot?.policy || {}, rows = [];
@@ -144,6 +144,17 @@ export function traceList(scene, key, { snapshot = sceneEvaluation(scene).snapsh
     return done(rows);
   }
   return done([]);
+}
+
+// A required field's coverage: of the candidates still in play (not
+// excluded) that the snapshot carries, the share with that field verified.
+// Qualified candidates alone would always read 100% (qualifying needs every
+// field verified). Candidates the snapshot did not carry are `outside` the
+// share and said so; nothing is assumed about them.
+export function fieldCoverage(snapshot, field) {
+  const rows = (snapshot?.candidates || []).filter(row => row.tier !== 'excluded' && row.fields && field in row.fields);
+  const verified = rows.filter(row => row.fields[field] === 'verified').length;
+  return { field, rows, verified, total: rows.length, share: rows.length ? verified / rows.length : 0, outside: Number.isInteger(snapshot?.summary?.omitted) ? snapshot.summary.omitted : 0 };
 }
 
 // When the war room opens by itself: the run in this chat is live and has

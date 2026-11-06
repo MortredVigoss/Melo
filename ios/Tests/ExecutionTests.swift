@@ -67,12 +67,14 @@ import Foundation
         do {
             var space = ExecutionRecord(chatId: "space", query: "q", requestedModel: "m")
             let snapshot = try SyncValue.from(["v": 1, "summary": ["verified": 2, "stop": "continue"], "candidates": [["key": "a", "tier": "primary", "total": 82]]])
-            space.recordStage("internal:1", name: "检索成员", status: "running", output: "read", role: "research", rounds: 4)
+            space.recordStage("internal:1", name: "检索成员", status: "running", input: "read the official pages", role: "research", rounds: 4)
             space.recordStage("internal:1", name: "检索成员", status: "completed", output: "done")
             space.recordStage("internal:2", name: "x", status: "running", role: "admin", rounds: 900)
             space.recordStage("task-evaluation:3", name: "任务评估", status: "completed", output: "发现 1", evaluation: snapshot)
             let member = space.pipeline?.first { $0.id == "internal:1" }
             assert(member?.status == "completed" && member?.role == "research" && member?.limits == ["rounds": 4])
+            // The task is input, as desktop and Android record it; the report does not erase it.
+            assert(member?.input == "read the official pages" && member?.output == "done")
             let odd = space.pipeline?.first { $0.id == "internal:2" }
             assert(odd?.role == nil && odd?.limits == ["rounds": 100])
             assert(space.pipeline?.first { $0.id == "task-evaluation:3" }?.evaluation == snapshot)

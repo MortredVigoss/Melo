@@ -1,6 +1,146 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "未排除候选中已核实的占比": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未排除候选中已核实的占比"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "share verified among candidates still in play"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "除外されていない候補のうち確認済みの割合"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "제외되지 않은 후보 중 확인된 비율"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "proporción verificada entre los candidatos vigentes"
+          }
+        }
+      }
+    },
+    "按快照所带的 {count} 个未排除候选计算，另有 {outside} 个候选未随快照记录": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按快照所带的 {count} 个未排除候选计算，另有 {outside} 个候选未随快照记录"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Over the {count} candidates in play that the snapshot carries; {outside} more are not in it"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スナップショットにある除外されていない候補 {count} 件で算出。ほかに {outside} 件は含まれていません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스냅숏에 있는 제외되지 않은 후보 {count}개 기준이며, 그 외 {outside}개는 포함되지 않음"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sobre los {count} candidatos vigentes de la instantánea; otros {outside} no van en ella"
+          }
+        }
+      }
+    },
+    "已核实 {verified} / {count}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已核实 {verified} / {count}"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{verified} / {count} verified"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確認済み {verified} / {count}"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "확인됨 {verified} / {count}"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{verified} / {count} verificados"
+          }
+        }
+      }
+    },
+    "另有 {count} 个候选未随快照记录，不在此统计内": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "另有 {count} 个候选未随快照记录，不在此统计内"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{count} more candidates are not in the snapshot and not in this share"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ほかに {count} 件の候補はスナップショットになく、この割合に含まれません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "그 외 후보 {count}개는 스냅숏에 없어 이 비율에 포함되지 않음"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Otros {count} candidatos no van en la instantánea ni en esta proporción"
+          }
+        }
+      }
+    },
     "中断": {
       "extractionState": "manual",
       "localizations": {

@@ -10,7 +10,7 @@
 import { escapeHtml, t, runtimeCompletionText } from './i18n.js';
 import { EXECUTION_MODULES, sceneFinished } from '/shared/executionScene.js';
 import { sceneMembers, sceneEvaluation, sceneStageRail, sceneLog, sceneResources, sceneHasBoard, evaluationChanges, MEMBER_ROLE_MODULE } from '/shared/executionBoard.js';
-import { regionSummary, deliveryGate, deliveryStatus, traceList, operationChip, sceneActors } from '/shared/warRoom.js';
+import { regionSummary, deliveryGate, deliveryStatus, fieldCoverage, traceList, operationChip, sceneActors } from '/shared/warRoom.js';
 
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const roleName = role => ({ research: t('检索成员'), lookup: t('资料读取成员'), calculate: t('计算成员'), execute: t('执行成员'), lead: t('主 Agent') })[role] || t('内部成员');
@@ -60,6 +60,10 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
   // Per-render caches the per-frame caption pass reads.
   let summary = new Map(), working = new Set(), gateOpen = false, memberNames = new Map();
   const cells = new Map(), captions = new Map(), chips = [], pending = new Map(), statuses = new Map(), shownSnapshot = new Map();
+  // Candidate rises wait on timers; each belongs to one run and one showing of
+  // the war room. Switching runs, closing and disposing cancel them all.
+  const rises = new Set(); let riseGeneration = 0;
+  const cancelRises = () => { for (const id of rises) clearTimeout(id); rises.clear(); riseGeneration++; };
 
   // ── 3D ────────────────────────────────────────────────────────────────
   function ensureScene() {
@@ -211,13 +215,17 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
     const snapshot = sceneEvaluation(next).snapshot, previous = shownSnapshot.get(next?.runId);
     if (next?.runId) shownSnapshot.set(next.runId, snapshot);
     if (!sameRun || !live || previous === undefined || !snapshot) return;
+    const generation = riseGeneration, runId = next.runId;
     evaluationChanges(previous, snapshot).forEach((change, i) => {
       const key = 'cand:' + change.key; pending.set(key, performance.now());
-      setTimeout(() => {
+      const id = setTimeout(() => {
+        rises.delete(id);
+        if (generation !== riseGeneration || scene?.runId !== runId) return;
         if (!opened) { reveal(key); return; }
         const chip = makeChip(`${tierName(change.tier)} ${change.total}`, change.name, change.tier);
         Object.assign(chip, { mode: 'rise', dx: (i % 3 - 1) * 190, dy: -30 - (i % 2) * 30, rowKey: key, target: () => landing(`[data-row-key="${attrValue(key)}"]`) });
       }, 450 + i * 320);
+      rises.add(id);
     });
   }
 
@@ -294,14 +302,15 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
   }
   function renderCoverage(snapshot) {
     const c = cell('coverage');
-    head(c, t('合同覆盖'), snapshot?.contract ? escapeHtml(t('字段已核实占比')) : '');
+    head(c, t('合同覆盖'), snapshot?.contract ? escapeHtml(t('未排除候选中已核实的占比')) : '');
     if (!snapshot?.contract) { fill(c, empty(t('建立任务合同后出现'))); return; }
-    const fields = (snapshot.contract.requiredFields || []).slice(0, 8), rows = (snapshot.candidates || []).filter(r => ['primary', 'alternative', 'eligible'].includes(r.tier));
-    const share = f => rows.length ? rows.filter(r => r.fields?.[f] === 'verified').length / rows.length : 0, n = Math.max(3, fields.length);
+    const fields = (snapshot.contract.requiredFields || []).slice(0, 8), share = f => fieldCoverage(snapshot, f).share, n = Math.max(3, fields.length);
+    const scope = fields.length ? fieldCoverage(snapshot, fields[0]) : null;
     const pt = (i, k) => { const a = -Math.PI / 2 + i * 2 * Math.PI / n; return [70 + Math.cos(a) * 34 * k, 46 + Math.sin(a) * 34 * k]; };
     const poly = k => fields.map((_, i) => pt(i, k).map(v => v.toFixed(1)).join(',')).join(' ');
     const svg = fields.length >= 3 ? `<svg class="war-radar" viewBox="0 0 140 92" aria-hidden="true"><polygon class="grid" points="${poly(1)}"/><polygon class="grid" points="${poly(.5)}"/><polygon class="value" points="${fields.map((f, i) => pt(i, Math.max(.05, share(f))).map(v => v.toFixed(1)).join(',')).join(' ')}"/></svg>` : '';
-    fill(c, `${svg}<div class="war-fields">${fields.map(f => trace(`field:${f}`, `${escapeHtml(fieldName(f))} <b>${Math.round(share(f) * 100)}%</b>`)).join('')}</div><div class="war-tags">${(snapshot.contract.coverage || []).map(row => `<button type="button" data-war-trace="gate:coverage" data-on="${row.covered}">${escapeHtml(row.tag)}${row.covered ? ' ✓' : ''}</button>`).join('')}</div>`);
+    const outside = scope?.outside ? `<p class="war-omitted">${escapeHtml(t('按快照所带的 {count} 个未排除候选计算，另有 {outside} 个候选未随快照记录', { count: scope.total, outside: scope.outside }))}</p>` : '';
+    fill(c, `${svg}${outside}<div class="war-fields">${fields.map(f => trace(`field:${f}`, `${escapeHtml(fieldName(f))} <b>${Math.round(share(f) * 100)}%</b>`)).join('')}</div><div class="war-tags">${(snapshot.contract.coverage || []).map(row => `<button type="button" data-war-trace="gate:coverage" data-on="${row.covered}">${escapeHtml(row.tag)}${row.covered ? ' ✓' : ''}</button>`).join('')}</div>`);
   }
   function renderContract(snapshot) {
     const c = cell('contract'), k = snapshot?.contract, stageId = sceneStageRail(scene).find(r => r.key === 'contract')?.stageId;
@@ -331,7 +340,8 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
     const count = list.kind === 'tokens' ? t('{count} 次模型请求 · 共 {tokens} token', { count: list.count, tokens: num(list.total) }) : list.kind === 'time' ? t('用时 {time}', { time: clock(list.elapsedMs) }) : t('{count} 条记录', { count: list.count });
     head(c, title, `<span class="war-count">${escapeHtml(count)}</span>${back}`);
     const omitted = list.omitted ? `<p class="war-omitted">${escapeHtml(t('另有 {count} 条未随快照记录，数量取自评估器的总数', { count: list.omitted }))}</p>` : '';
-    fill(c, `${detail.type === 'region' ? regionExtra?.(detail.id) || '' : traceExtra?.(detail.key) || ''}${list.rows.length ? `<ol class="war-trace">${list.rows.map(traceRow).join('')}</ol>` : list.omitted ? '' : empty(t('没有对应的记录'))}${omitted}`);
+    const field = list.kind === 'field' ? `<p class="war-omitted">${escapeHtml(t('已核实 {verified} / {count}', { verified: list.verified, count: list.count }))}${list.outside ? ' · ' + escapeHtml(t('另有 {count} 个候选未随快照记录，不在此统计内', { count: list.outside })) : ''}</p>` : '';
+    fill(c, `${detail.type === 'region' ? regionExtra?.(detail.id) || '' : traceExtra?.(detail.key) || ''}${field}${list.rows.length ? `<ol class="war-trace">${list.rows.map(traceRow).join('')}</ol>` : list.omitted ? '' : empty(t('没有对应的记录'))}${omitted}`);
   }
   function traceTitle(list) {
     if (list.kind === 'calls') return t('全部工具调用');
@@ -379,7 +389,7 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
   function render(next, context = {}) {
     noteChanges(next);
     // A new run starts on the band, unless its remembered view was just restored.
-    if (next?.runId !== scene?.runId) { if (keepDetail !== (next?.runId ?? null)) detail = null; keepDetail = null; pending.clear(); for (const chip of [...chips]) dropChip(chip); }
+    if (next?.runId !== scene?.runId) { if (keepDetail !== (next?.runId ?? null)) detail = null; keepDetail = null; cancelRises(); pending.clear(); for (const chip of [...chips]) dropChip(chip); }
     scene = next; ctx = context;
     summary = new Map(regionSummary(scene).map(row => [row.id, row])); working = new Set((scene?.operations || []).filter(op => op.status === 'running').map(op => op.module));
     gateOpen = !!deliveryGate(sceneEvaluation(scene).snapshot)?.open; memberNames = new Map(sceneMembers(scene).map(m => [`member:${m.index}`, `${roleName(m.role)} #${m.index}`]));
@@ -435,9 +445,9 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
       opened = value; root.hidden = !value; document.documentElement.dataset.warRoom = String(value);
       clearInterval(ticker); if (value) ticker = setInterval(tick, 1000);
       if (value) { ensureScene(); render(scene, ctx); if (focus) setTimeout(() => { if (opened && !root.contains(document.activeElement)) stage.focus({ preventScroll: true }); }, 0); }
-      else { for (const key of [...pending.keys()]) reveal(key); for (const chip of [...chips]) dropChip(chip); }
+      else { cancelRises(); for (const key of [...pending.keys()]) reveal(key); for (const chip of [...chips]) dropChip(chip); }
       gpu?.setOpen(value);
     },
-    dispose() { clearInterval(ticker); gpu?.dispose(); gpu = null; for (const chip of [...chips]) dropChip(chip); root.remove(); },
+    dispose() { clearInterval(ticker); cancelRises(); gpu?.dispose(); gpu = null; for (const chip of [...chips]) dropChip(chip); root.remove(); },
   };
 }

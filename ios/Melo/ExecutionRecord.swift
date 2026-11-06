@@ -443,12 +443,14 @@ struct ExecutionRecord: Codable, Identifiable, Equatable {
             pipeline![index].role = stage.role ?? previous.role
             pipeline![index].limits = stage.limits ?? previous.limits
             pipeline![index].evaluation = stage.evaluation ?? previous.evaluation
+            // A member's task arrives once, when it starts; its report must not erase it.
+            if stage.input.isEmpty { pipeline![index].input = previous.input }
         } else { pipeline?.append(stage) }
     }
-    mutating func recordStage(_ id: String, name: String, status: String, output: String = "", model: String? = nil, role: String? = nil, rounds: Int? = nil, evaluation: SyncValue? = nil) {
+    mutating func recordStage(_ id: String, name: String, status: String, output: String = "", input: String = "", model: String? = nil, role: String? = nil, rounds: Int? = nil, evaluation: SyncValue? = nil) {
         guard !terminal else { return }
         let module = id.hasPrefix("internal:") ? "compute" : "create"
-        mergeStage(ExecutionStage(id: id, module: module, name: name, status: status, output: output, model: model,
+        mergeStage(ExecutionStage(id: id, module: module, name: name, status: status, input: input, output: output, model: model,
             startedAt: status == "running" ? timestamp() : nil, finishedAt: status == "running" ? nil : timestamp(),
             role: ["research", "calculate", "lookup", "execute"].contains(role ?? "") ? role : nil,
             limits: rounds.map { ["rounds": max(0, min(100, $0))] }, evaluation: evaluation))

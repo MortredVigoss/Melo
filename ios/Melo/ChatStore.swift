@@ -257,9 +257,9 @@ import SwiftUI
     }
     func scenes(for chatID: String) -> [ExecutionRecord] { executionRecords.filter { $0.chatId == chatID } }
     func execution(for messageID: String) -> ExecutionRecord? { executionRecords.last { $0.messageId == messageID } }
-    private func stage(_ runID: String, id: String, name: String, status: String, output: String = "", model: String? = nil, role: String? = nil, rounds: Int? = nil, evaluation: SyncValue? = nil) {
+    private func stage(_ runID: String, id: String, name: String, status: String, output: String = "", input: String = "", model: String? = nil, role: String? = nil, rounds: Int? = nil, evaluation: SyncValue? = nil) {
         guard let index = executionRecords.firstIndex(where: { $0.runId == runID }) else { return }
-        executionRecords[index].recordStage(id, name: name, status: status, output: output, model: model, role: role, rounds: rounds, evaluation: evaluation)
+        executionRecords[index].recordStage(id, name: name, status: status, output: output, input: input, model: model, role: role, rounds: rounds, evaluation: evaluation)
     }
     func markRendered(_ messageID: String) {
         guard let index = executionRecords.firstIndex(where: { $0.messageId == messageID }), executionRecords[index].pipeline?.contains(where: { $0.id == "reply:render" }) != true else { return }
@@ -630,7 +630,7 @@ import SwiftUI
                     self?.stage(record.runId, id: "member:\(callID):\(id)", name: "\(agent.name) · \(name)", status: status, output: output)
                 },
                 onStageEvent: { [weak self] event in
-                    self?.stage(record.runId, id: "member:\(callID):\(event.id)", name: "\(agent.name) · \(event.name)", status: event.status, output: event.output, role: event.role, rounds: event.rounds, evaluation: event.evaluation)
+                    self?.stage(record.runId, id: "member:\(callID):\(event.id)", name: "\(agent.name) · \(event.name)", status: event.status, output: event.output, input: event.input, role: event.role, rounds: event.rounds, evaluation: event.evaluation)
                 },
                 onToolCall: { [weak self] call in
                     var scoped = call; scoped.scopeId = callID
@@ -663,7 +663,7 @@ import SwiftUI
             evaluationMode: selectedAgent.evaluationMode ?? "standard",
             traceRunID: record.runId,
             onStage: { [weak self] id, name, status, output in if isCurrent() { self?.stage(record.runId, id: id, name: name, status: status, output: output) } },
-            onStageEvent: { [weak self] event in if isCurrent() { self?.stage(record.runId, id: event.id, name: event.name, status: event.status, output: event.output, role: event.role, rounds: event.rounds, evaluation: event.evaluation) } },
+            onStageEvent: { [weak self] event in if isCurrent() { self?.stage(record.runId, id: event.id, name: event.name, status: event.status, output: event.output, input: event.input, role: event.role, rounds: event.rounds, evaluation: event.evaluation) } },
             onToolCall: { [weak self] call in if isCurrent() { self?.recordToolCall(call, runID: record.runId) } },
             takeSupplements: { supplements.take() },
             onSupplementsJoined: { [weak self] taken in self?.supplementsJoined(taken, chatID: chatID, runID: record.runId) })

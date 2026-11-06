@@ -6,6 +6,10 @@ export { INTERFACE_TERMS as interfaceTermKeys } from './interfaceLanguages.js';
 const rows = [
 // War room (layout A, 2026-11-06).
 // War room delivery states and exact totals (layout A, C8, 2026-11-06).
+["未排除候选中已核实的占比", "share verified among candidates still in play", "除外されていない候補のうち確認済みの割合", "제외되지 않은 후보 중 확인된 비율", "proporción verificada entre los candidatos vigentes"],
+["按快照所带的 {count} 个未排除候选计算，另有 {outside} 个候选未随快照记录", "Over the {count} candidates in play that the snapshot carries; {outside} more are not in it", "スナップショットにある除外されていない候補 {count} 件で算出。ほかに {outside} 件は含まれていません", "스냅숏에 있는 제외되지 않은 후보 {count}개 기준이며, 그 외 {outside}개는 포함되지 않음", "Sobre los {count} candidatos vigentes de la instantánea; otros {outside} no van en ella"],
+["已核实 {verified} / {count}", "{verified} / {count} verified", "確認済み {verified} / {count}", "확인됨 {verified} / {count}", "{verified} / {count} verificados"],
+["另有 {count} 个候选未随快照记录，不在此统计内", "{count} more candidates are not in the snapshot and not in this share", "ほかに {count} 件の候補はスナップショットになく、この割合に含まれません", "그 외 후보 {count}개는 스냅숏에 없어 이 비율에 포함되지 않음", "Otros {count} candidatos no van en la instantánea ni en esta proporción"],
 ["中断", "Interrupted", "中断", "중단", "Interrumpido"],
 ["部分交付", "Partly delivered", "一部納品", "일부 전달", "Entrega parcial"],
 ["待补充", "Needs input", "補足待ち", "보충 필요", "Falta información"],

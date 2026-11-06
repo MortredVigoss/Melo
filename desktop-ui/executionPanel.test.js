@@ -10,15 +10,18 @@ import { updateNeuralWorkspace } from './neuralDom.js';
 import { createExecutionScene, applyExecutionEvent, finishExecutionScene } from '../src/shared/executionScene.js';
 // The panel and the war room import browser paths; point them at the source files.
 const fileUrl = path => JSON.stringify(new URL(path, import.meta.url).href);
-async function warRoomModule() {
-  const code = (await readFile(new URL('./warRoom.js', import.meta.url), 'utf8'))
+// `renderer` stands in for the WebGL scene (jsdom has none, so without it the
+// war room runs in its no-3D fallback and never schedules animations).
+async function warRoomModule(renderer = null) {
+  let code = (await readFile(new URL('./warRoom.js', import.meta.url), 'utf8'))
     .replace("'./i18n.js'", fileUrl('./i18n.js'))
     .replace("'/shared/executionScene.js'", fileUrl('../src/shared/executionScene.js'))
     .replace("'/shared/executionBoard.js'", fileUrl('../src/shared/executionBoard.js'))
     .replace("'/shared/warRoom.js'", fileUrl('../src/shared/warRoom.js'));
+  if (renderer) code = code.replace("import('./warRoomScene3D.js')", `import(${JSON.stringify(renderer)})`);
   return `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`;
 }
-async function loadPanel() {
+async function loadPanel({ renderer = null } = {}) {
   const source = (await readFile(new URL('./executionPanel.js', import.meta.url), 'utf8'))
     .replace("'./buttonStyles.js'", fileUrl('./buttonStyles.js'))
     .replace("'./html.js'", fileUrl('./html.js'))
@@ -27,7 +30,7 @@ async function loadPanel() {
     .replace("'./executionDetails.js'", fileUrl('./executionDetails.js'))
     .replace("'/shared/executionBoard.js'", fileUrl('../src/shared/executionBoard.js'))
     .replace("'/shared/warRoom.js'", fileUrl('../src/shared/warRoom.js'))
-    .replace("'./warRoom.js'", JSON.stringify(await warRoomModule()));
+    .replace("'./warRoom.js'", JSON.stringify(await warRoomModule(renderer)));
   // A fresh module per test: the panel keeps module state (its war room) per document.
   return import(`data:text/javascript;base64,${Buffer.from(`${source}\n// load ${++loads}`).toString('base64')}`);
 }
@@ -348,4 +351,72 @@ test('the gate, rail and log say how the run actually ended, and counts past the
     assert.equal(gateState().dataset.state, state, id); assert.equal(gateState().textContent, text, id);
     assert.match(room.querySelector('.war-rail li[data-phase="deliver"]').textContent, new RegExp(end), id);
   }
+});
+
+// A stand-in for the WebGL scene: the calls the war room makes, nothing drawn.
+const fakeRenderer = `data:text/javascript;base64,${Buffer.from(`export function createWarRoomScene() {
+  const view = { mode: 'global', region: null, zoom: 1 };
+  return { get view() { return view; }, setStill() {}, setOpen() {}, update() {}, focusRegion(id) { view.region = id; }, setView(mode) { view.mode = mode; view.region = null; },
+    zoomBy() {}, rotateBy() {}, corePoint: () => ({ x: 400, y: 200, visible: true }), clawPoint: () => null, dispose() {} };
+}`).toString('base64')}`;
+
+test('candidate flights belong to their run and showing; coverage counts candidates in play; an older iPhone dispatch shows its task', async t => {
+  const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost' });
+  const originals = new Map();
+  const install = (key, value) => { originals.set(key, Object.getOwnPropertyDescriptor(globalThis, key)); Object.defineProperty(globalThis, key, { configurable: true, writable: true, value }); };
+  const timers = [];
+  install('document', dom.window.document); install('localStorage', dom.window.localStorage);
+  install('matchMedia', () => ({ matches: false })); install('setInterval', () => 0); install('clearInterval', () => {});
+  install('setTimeout', (fn, delay) => { timers.push({ fn, delay }); return timers.length; }); install('clearTimeout', id => { if (timers[id - 1]) timers[id - 1].cleared = true; });
+  install('fetch', async () => ({ ok: true, json: async () => ({ scenes: [] }) }));
+  t.after(() => { dom.window.close(); for (const [key, descriptor] of originals) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key]; } });
+  const panel = await loadPanel({ renderer: fakeRenderer });
+  updateNeuralWorkspace(document.querySelector('#app'), `<div>${panel.renderExecutionPanel()}</div>`);
+  panel.syncExecutionPanel({ chat: { id: 'chat', messages: [] } });
+  await new Promise(resolve => setImmediate(resolve));
+  const room = document.querySelector('#execution-war-room');
+  const settle = async () => { for (let i = 0; i < 4; i++) await new Promise(resolve => setImmediate(resolve)); };
+  const fire = () => { for (const timer of timers.filter(x => !x.cleared && x.delay >= 450)) { timer.cleared = true; timer.fn(); } };
+  const row = (key, tier, fields) => ({ key, name: key.toUpperCase(), status: 'verified', tier, total: 70, evidence: 70, match: 30, diversity: 8, reason: '', fields, conflicts: 0, excludeReason: tier === 'excluded' ? 'paid' : '', tags: [] });
+  const evaluation = candidates => ({ v: 1, update: candidates.length, ok: true, closed: false,
+    policy: { maxScore: 100, primaryScore: 80, alternativeScore: 65, evidenceScore: 60, primaryCount: 3, alternatives: 3, checkpoint: { milliseconds: 180000, calls: 20 }, memberCalls: 6 },
+    contract: { revision: 1, category: 'events', unit: 'events', mode: 'standard', target: { minimum: 3, maximum: 5 }, explicit: null, constraints: [], requiredFields: ['name', 'place'], coverage: [] },
+    summary: { discovered: candidates.length, read: candidates.length, verified: candidates.filter(r => r.tier === 'eligible').length, recommended: 0, alternatives: 0, excluded: candidates.filter(r => r.tier === 'excluded').length, stop: 'continue', nextBatch: 3, diminishing: false, adjusted: false, checkpoint: false, gaps: [], gapCount: 0, omitted: 0 },
+    candidates, resource: { elapsedMs: 1000, toolCalls: 1, inputTokens: 10 } });
+  const both = { name: 'verified', place: 'verified' };
+  const live = (id, candidates) => { const scene = createExecutionScene({ runId: id, chatId: 'chat', query: 'events' }); applyExecutionEvent(scene, { kind: 'pipeline', id: 'task-evaluation:1', module: 'compute', name: '评估', status: 'completed', evaluation: evaluation(candidates) }); return scene; };
+  const admit = (scene, candidates) => applyExecutionEvent(scene, { kind: 'pipeline', id: 'task-evaluation:2', module: 'compute', name: '评估', status: 'completed', evaluation: evaluation(candidates) });
+
+  // Run A admits a candidate; before its flight starts the user moves to run B.
+  const a = live('run-a', [row('a0', 'eligible', both)]);
+  panel.receiveExecutionScene(structuredClone(a)); await settle();
+  assert.equal(room.hidden, false); assert.equal(room.dataset.run, 'run-a');
+  admit(a, [row('a0', 'eligible', both), row('a1', 'eligible', both)]); panel.receiveExecutionScene(structuredClone(a));
+  assert.ok(timers.some(x => !x.cleared && x.delay >= 450), 'a flight for run A is waiting');
+  panel.receiveExecutionScene(structuredClone(live('run-b', [row('b0', 'eligible', both)]))); await settle();
+  assert.equal(room.dataset.run, 'run-b');
+  fire();
+  assert.equal(document.querySelectorAll('.war-chip').length, 0, 'run A\'s candidate never flies into run B');
+  // Closed while a flight waited, then reopened: the row was shown at closing; nothing flies afterwards.
+  const c = live('run-c', [row('c0', 'eligible', both)]);
+  panel.receiveExecutionScene(structuredClone(c)); await settle();
+  admit(c, [row('c0', 'eligible', both), row('c1', 'eligible', both)]); panel.receiveExecutionScene(structuredClone(c));
+  room.querySelector('[data-war-close]').click(); assert.equal(room.hidden, true);
+  document.querySelector('#execution-panel [data-execution-action="toggle"]').click(); assert.equal(room.hidden, false);
+  fire();
+  assert.equal(document.querySelectorAll('.war-chip').length, 0, 'no stale flight after reopening');
+  assert.equal(room.querySelector('[data-row-key="cand:c1"]')?.dataset.pending, 'false', 'the admitted row is shown');
+
+  // Coverage over candidates in play: a pending candidate without a place keeps 地点 below 100%.
+  const d = live('run-d', [row('q', 'eligible', both), row('p', 'pending', { name: 'verified', place: 'missing' }), row('x', 'excluded', both)]);
+  // An iPhone record from before 2026-11-06: the running member's task sits in output.
+  applyExecutionEvent(d, { kind: 'pipeline', id: 'internal:1', name: '资料读取成员', role: 'lookup', status: 'running', output: '读取两家官方页面' });
+  panel.receiveExecutionScene(structuredClone(d)); await settle();
+  assert.equal(room.dataset.run, 'run-d');
+  const fields = room.querySelector('[data-cell="coverage"] .war-fields').textContent;
+  assert.match(fields, /地点\s*50%/); assert.match(fields, /名称\s*100%/);
+  assert.match(room.querySelector('[data-cell="dispatch"]').textContent, /读取两家官方页面/, 'the dispatch card shows the member\'s task');
+  room.querySelector('[data-war-trace="field:place"]').click();
+  assert.match(room.querySelector('[data-cell="detail"] .war-count').textContent, /2 条记录/);
+  assert.match(room.querySelector('[data-cell="detail"]').textContent, /已核实 1 \/ 2/);
 });

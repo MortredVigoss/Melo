@@ -145,3 +145,17 @@ test('resources report actual usage and the policy checkpoint; the board only ex
   applyExecutionEvent(plain, { kind: 'operation', id: 'w', module: 'search', name: 'web_search', status: 'completed' });
   assert.equal(sceneHasBoard(plain), false); assert.equal(sceneHasBoard(null), false);
 });
+
+test('a member\'s task reads the same from every host, and an older iPhone record still shows it while running', () => {
+  const scene = createExecutionScene({ runId: 'hosts', chatId: 'c' });
+  // Desktop and Android (and iPhone from 2026-11-06): the task is input; the report arrives as output.
+  applyExecutionEvent(scene, { kind: 'pipeline', id: 'internal:1', name: '检索成员', role: 'research', status: 'running', input: '查找墨尔本本周末的户外音乐活动' });
+  // An iPhone record from before: a running member's task was written into output.
+  applyExecutionEvent(scene, { kind: 'pipeline', id: 'internal:2', name: '资料读取成员', role: 'lookup', status: 'running', output: '读取两家官方页面' });
+  let [first, second] = sceneMembers(scene);
+  assert.equal(first.task, '查找墨尔本本周末的户外音乐活动'); assert.equal(first.report, '');
+  assert.equal(second.task, '读取两家官方页面', 'the dispatch card is not blank'); assert.equal(second.report, '', 'and the task is not mistaken for a report');
+  applyExecutionEvent(scene, { kind: 'pipeline', id: 'internal:1', status: 'completed', output: '读到 2 个官方页面' });
+  [first] = sceneMembers(scene);
+  assert.equal(first.task, '查找墨尔本本周末的户外音乐活动', 'the report does not erase the task'); assert.equal(first.report, '读到 2 个官方页面');
+});

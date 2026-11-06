@@ -212,6 +212,8 @@ struct AgentStageEvent: Sendable {
     var name: String
     var status: String
     var output: String
+    /// What the stage was asked to do (a member's task), as desktop and Android record it.
+    var input: String = ""
     var role: String? = nil
     var rounds: Int? = nil
     var evaluation: SyncValue? = nil
@@ -275,7 +277,8 @@ final class AgentLoop: @unchecked Sendable {
 
     private func stage(_ event: AgentStageEvent) async {
         if let detailed = hooks.onStageEvent { await detailed(event) }
-        else { await hooks.onStage?(event.id, event.name, event.status, event.output) }
+        // The older four-field hook has no input: it keeps receiving a member's task as the text, as before.
+        else { await hooks.onStage?(event.id, event.name, event.status, event.output.isEmpty ? event.input : event.output) }
     }
     func run() async throws -> AgentLoopOutcome {
         try await LoopTrace.withRun(runID: hooks.traceRunID ?? UUID().uuidString, goal: latestUserMessage, outcome: { $0.completion?.outcome ?? "unknown" }) { try await self.runWithTrace() }
@@ -602,7 +605,7 @@ final class AgentLoop: @unchecked Sendable {
                 member.assignments.append(next.filter { ["role","task","callId","rootCallId","roundLimit","resume"].contains($0.key) }.mapValues { String(describing:$0) })
                 try beginMember(next)
                 leadTranscript = transcript; leadAssignmentRound = round; transcript = []
-                await stage(AgentStageEvent(id: "internal:\(assignments.count)", name: next["label"] as? String ?? "Agent", status: "running", output: next["task"] as? String ?? "", role: next["role"] as? String, rounds: (next["roundLimit"] as? NSNumber)?.intValue))
+                await stage(AgentStageEvent(id: "internal:\(assignments.count)", name: next["label"] as? String ?? "Agent", status: "running", output: "", input: next["task"] as? String ?? "", role: next["role"] as? String, rounds: (next["roundLimit"] as? NSNumber)?.intValue))
                 iteration += 1; continue
             }
             if job != nil && calls.isEmpty { try core.event("feedback"); await finishJob(round.text); iteration += 1; continue }

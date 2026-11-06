@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createExecutionScene, applyExecutionEvent, finishExecutionScene, moduleForOperation, EXECUTION_MODULES } from './executionScene.js';
-import { regionSummary, regionCalls, sceneActors, operationChip, deliveryGate, traceList, sceneHasExecution, sceneNeedsUser, shouldAutoOpen, finishedOperations, deliveryStatus, DELIVERY_STATES } from './warRoom.js';
+import { regionSummary, regionCalls, sceneActors, operationChip, deliveryGate, traceList, sceneHasExecution, sceneNeedsUser, shouldAutoOpen, finishedOperations, deliveryStatus, DELIVERY_STATES, fieldCoverage } from './warRoom.js';
 import { sceneResources } from './executionBoard.js';
 import { executionScene } from '../../shared/agent/execution.js';
 import { completionReceipt } from '../../shared/agent/completion.js';
@@ -99,7 +99,8 @@ test('every evaluation number lists exactly the records it counts', () => {
   assert.equal(traceList(scene, 'candidates:all', { snapshot }).count, 3);
   assert.deepEqual(traceList(scene, 'candidates:excluded', { snapshot }).rows.map(r => [r.id, r.reason]), [['c', '不在本周末']]);
   assert.deepEqual(traceList(scene, 'candidates:top', { snapshot }).rows.map(r => r.total), [92]);
-  assert.equal(traceList(scene, 'field:startsAt', { snapshot }).count, 3);
+  assert.deepEqual(traceList(scene, 'field:startsAt', { snapshot }).rows.map(r => r.id), ['a', 'b'], 'a field counts the candidates still in play, not the excluded');
+  assert.equal(traceList(scene, 'field:startsAt', { snapshot }).verified, 1);
   assert.deepEqual(traceList(scene, 'checkpoint', { snapshot }).rows.map(r => [r.id, r.value]), [['milliseconds', 180000], ['calls', 20], ['memberCalls', 6]]);
   assert.deepEqual(traceList(scene, 'member:1').rows.map(r => r.id), ['job-1:search', 'job-1:read']);
   assert.equal(traceList(scene, 'nonsense:x').count, 0);
@@ -151,10 +152,11 @@ test('past the snapshot row caps, every count stays the evaluator\'s own total a
   const gate = deliveryGate(big);
   assert.deepEqual(gate.rows.map(r => [r.key, r.value, r.met]), [['count', '30 / 30', true], ['primary', '1', true], ['coverage', '1 / 2', false], ['gaps', '7', false]], 'never 24 / 30 with the gate open');
   const scene = memberRun(), trace = key => traceList(scene, key, { snapshot: big });
-  for (const [key, count, listed] of [['gate:count', 30, 24], ['candidates:qualified', 30, 24], ['candidates:excluded', 10, 0], ['candidates:all', 40, 24], ['gate:gaps', 7, 4], ['field:startsAt', 40, 24], ['gate:primary', 1, 1]]) {
+  for (const [key, count, listed] of [['gate:count', 30, 24], ['candidates:qualified', 30, 24], ['candidates:excluded', 10, 0], ['candidates:all', 40, 24], ['gate:gaps', 7, 4], ['field:startsAt', 24, 24], ['gate:primary', 1, 1]]) {
     const list = trace(key);
     assert.equal(list.count, count, key); assert.equal(list.rows.length, listed, key); assert.equal(list.omitted, count - listed, key);
   }
+  assert.equal(trace('field:startsAt').outside, 16, 'candidates the snapshot did not carry are outside the field share, and said so');
   // An older record without the totals counts what it carries, and says nothing is missing.
   const older = { ...big, summary: { ...big.summary, excluded: undefined, gapCount: undefined } };
   assert.equal(deliveryGate(older).rows[3].value, '4'); assert.equal(trace('candidates:excluded').omitted, 10);
@@ -228,4 +230,18 @@ test('one reading of how a run ended on every host, from the records each host r
   ];
   for (const [host, actual, expected] of rows) assert.equal(actual, expected, `${host}: ${expected}`);
   assert.ok(rows.every(([, actual]) => DELIVERY_STATES.includes(actual)));
+});
+
+test('field coverage is taken over the candidates still in play, so a missing field shows as missing', () => {
+  // One qualified (every field verified), one still pending without a place, one excluded with a place.
+  const mixed = { ...snapshot, contract: { ...snapshot.contract, requiredFields: ['name', 'place'] }, summary: { ...snapshot.summary, omitted: 0 }, candidates: [
+    { key: 'q', name: 'Q', tier: 'eligible', total: 80, fields: { name: 'verified', place: 'verified' } },
+    { key: 'p', name: 'P', tier: 'pending', total: 60, fields: { name: 'verified', place: 'missing' } },
+    { key: 'x', name: 'X', tier: 'excluded', total: 40, fields: { name: 'verified', place: 'verified' }, excludeReason: 'paid' }] };
+  assert.equal(fieldCoverage(mixed, 'place').share, .5, 'not 100%: the pending candidate has no place yet');
+  assert.equal(fieldCoverage(mixed, 'name').share, 1);
+  const trace = traceList(memberRun(), 'field:place', { snapshot: mixed });
+  assert.deepEqual(trace.rows.map(r => r.id), ['q', 'p']); assert.equal(trace.verified, 1); assert.equal(trace.count, 2); assert.equal(trace.outside, 0);
+  // Qualified rows alone would have read 100% for every field: qualifying needs them all verified.
+  assert.ok(mixed.candidates.filter(r => r.tier === 'eligible').every(r => Object.values(r.fields).every(v => v === 'verified')));
 });

@@ -93,6 +93,9 @@
 - 用户确认修完后用 `git pp` 推送并合并到 master。第二次 `git pp` 评级 C（跨端终态与候选追踪）。
   - C9 已修：三端结束状态统一解读（映射表见专项记录）；快照候选 key 唯一；首次打开时恢复区域与相机。
   - 集成档 `run-pHTRku`：JS 4 998 / 4 998，Swift 38 组、Android 四项全绿。
+- 第三次 `git pp` 评级 C（数据展示与跨任务隔离）。
+  - C10 已修：覆盖率按未排除候选计算（`fieldCoverage`）；候选飞入随任务切换、关闭与释放取消；iPhone 成员任务改记 `input`，旧记录兼容。
+  - 集成档 `run-GagU9S`：JS 5 001 / 5 001，Swift 38 组、Android 四项全绿，iOS 无签名构建通过。
 - 未做：真机手势与帧率、Android 仪器测试、真实模型探针；覆盖安装未授权。
 ### 2026-11-05 — Melo 主线（Claude）— 复核 C1–C3 修复并推送
 - 线程 ID：e02f4818。C1 整轮副作用账本只对 `write` 与进行中 / 跨执行者的 `unknown` 重复拦截，`bash` 只读形式不进账本；C2 审核器只在本轮提供 `task_progress` 或已有账本时才要求账本；C3 成员子预算截止 = 轮数 × 90 s + 60 s（三端同公式）。真实主图计数测试覆盖同成员翻页 / 主→成员；快速档 `run-alGeuV`（339 / 589 文件，JS 3 327 / 3 327，Android、22 组 Swift，892 s）、集成档 `run-RtVrtf`（`--base a4ae796`，589 / 589，JS 4 934 / 4 934，Android、设置浏览器、Swift 全绿，294 s）。[修复记录](docs/codex-batch-fixes-20261105.md)。
