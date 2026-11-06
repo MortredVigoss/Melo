@@ -70,7 +70,11 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
       gpu = createWarRoomScene($('.war-gl'), { onProject: project, onSelectRegion: id => showDetail({ type: 'region', id }),
         onHook: hook, onRelease: release, onInteract: () => { onInteract?.(); syncZoom(); }, onViewChange: syncViews,
         onFailure: () => fail(t('三维渲染已暂停，仍可查看执行记录。')) });
-      gpu.setStill(!!ctx.still); gpu.setOpen(opened); gpu.update(scene); syncViews(gpu.view); syncZoom();
+      gpu.setStill(!!ctx.still); gpu.setOpen(opened); gpu.update(scene);
+      // A region restored before the renderer existed (first open, a remembered
+      // view) is focused now; restore() could not reach the camera then.
+      if (detail?.type === 'region') gpu.focusRegion(detail.id);
+      syncViews(gpu.view); syncZoom();
     }).catch(() => fail(t('此设备暂不支持三维渲染，可继续检查执行记录。'))).finally(() => { loading = false; });
   }
   function fail(message) { failed = true; root.classList.add('is-fallback'); $('.war-gl').textContent = message; onFailure?.(message); }

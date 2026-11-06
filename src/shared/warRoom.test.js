@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { createExecutionScene, applyExecutionEvent, finishExecutionScene, moduleForOperation, EXECUTION_MODULES } from './executionScene.js';
 import { regionSummary, regionCalls, sceneActors, operationChip, deliveryGate, traceList, sceneHasExecution, sceneNeedsUser, shouldAutoOpen, finishedOperations, deliveryStatus, DELIVERY_STATES } from './warRoom.js';
 import { sceneResources } from './executionBoard.js';
+import { executionScene } from '../../shared/agent/execution.js';
+import { completionReceipt } from '../../shared/agent/completion.js';
 
 const op = (scene, id, module, name, status, extra = {}) => applyExecutionEvent(scene, { kind: 'operation', id, module, name, status, ...extra });
 const stage = (scene, id, status, extra = {}) => applyExecutionEvent(scene, { kind: 'pipeline', id, status, ...extra });
@@ -188,4 +190,42 @@ test('delivery reads the run\'s end and its completion receipt, never the bare f
   assert.equal(run('completed', null), 'ended', 'no receipt: ended, nothing more is claimed');
   assert.equal(run('completed', null, [['goal-check:3', 'completed']]), 'ended', 'a passing check is not a delivery receipt');
   for (const value of [run('failed', null), run('completed', { outcome: 'odd' })]) assert.ok(DELIVERY_STATES.includes(value), value);
+});
+
+test('one reading of how a run ended on every host, from the records each host really writes', () => {
+  // Receipts from the shared core, as all three hosts make them.
+  const searched = [{ id: 'web:1', name: 'web_search', ok: true, executed: true }];
+  const receipt = (terminalReason, extra = {}) => ({ ...completionReceipt({ goal: 'find events', kind: 'research', reply: terminalReason ? '' : 'answer', observations: searched, terminalReason }), ...extra });
+  assert.equal(receipt('REQUEST_FAILED').outcome, 'partial', 'a failed request after real work is written as partial');
+  // Android: the portable reducer keeps the result in taskOutcome and marks every unfinished result failed.
+  const android = (outcome, reason, completion) => {
+    const created = executionScene({ action: 'create', runId: `a-${outcome}-${reason}`, chatId: 'c', query: 'q', at: '2026-11-06T00:00:00Z' });
+    return deliveryStatus(executionScene({ action: 'finish', scene: created, outcome, reason, completion, at: '2026-11-06T00:01:00Z' }), null);
+  };
+  const desktop = (status, completion) => { const scene = createExecutionScene({ runId: `d-${status}-${completion?.outcome}`, chatId: 'c' }); finishExecutionScene(scene, { status, message: completion ? { id: 'm', metadata: { completion } } : { id: 'm' } }); return deliveryStatus(scene, null); };
+  const rows = [
+    // host, how it ended, expected
+    ['android', android('completed', '', { version: 1, outcome: 'completed', goalState: 'supported', reason: 'RELEVANT_SOURCES_READ' }), 'delivered-verified'],
+    ['android', android('partial', 'TASK_INCOMPLETE', { version: 1, outcome: 'partial', goalState: 'unverified', reason: 'TASK_INCOMPLETE' }), 'partial'],
+    ['android', android('needs_user', 'NEEDS_USER', { version: 1, outcome: 'needs_user', goalState: 'unverified', reason: 'NEEDS_USER' }), 'needs-user'],
+    ['android', android('budget_exhausted', 'BUDGET_EXHAUSTED', receipt('BUDGET_EXHAUSTED')), 'budget'],
+    ['android', android('unverified', 'LIMIT_DELIVERED', { version: 1, outcome: 'unverified', goalState: 'unverified', reason: 'LIMIT_DELIVERED' }), 'delivered-unverified'],
+    ['android', android('blocked', 'NO_FINAL_ANSWER', { version: 1, outcome: 'blocked', goalState: 'unverified', reason: 'NO_FINAL_ANSWER' }), 'blocked'],
+    ['android', android('partial', 'REQUEST_FAILED', receipt('REQUEST_FAILED')), 'failed'],
+    ['android', android('partial', 'MODEL_TIMEOUT', receipt('MODEL_TIMEOUT')), 'failed'],
+    ['android', android('cancelled', 'CANCELLED', receipt('CANCELLED')), 'cancelled'],
+    ['android', android('interrupted', 'INTERRUPTED'), 'interrupted'],
+    ['android', android('mystery', ''), 'failed'],
+    // Desktop: a failed request leaves no receipt.
+    ['desktop', desktop('completed', { version: 1, outcome: 'completed', goalState: 'verified' }), 'delivered-verified'],
+    ['desktop', desktop('completed', { version: 1, outcome: 'partial', goalState: 'unverified', reason: 'TASK_INCOMPLETE' }), 'partial'],
+    ['desktop', desktop('failed', null), 'failed'],
+    ['desktop', desktop('cancelled', null), 'cancelled'],
+    // iPhone: a failed or cancelled run gets a receipt written for it.
+    ['iphone', desktop('failed', receipt('REQUEST_FAILED')), 'failed'],
+    ['iphone', desktop('cancelled', receipt('CANCELLED')), 'cancelled'],
+    ['iphone', desktop('interrupted', null), 'interrupted'],
+  ];
+  for (const [host, actual, expected] of rows) assert.equal(actual, expected, `${host}: ${expected}`);
+  assert.ok(rows.every(([, actual]) => DELIVERY_STATES.includes(actual)));
 });

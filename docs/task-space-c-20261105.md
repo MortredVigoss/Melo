@@ -221,3 +221,39 @@ Codex 的三条发现都已在代码里核实；核实时又发现两处同类�
 - Swift 38 组全部通过。编译沿用缓存，测试运行时加载的是新打包的 agent-core，日志首行为 393 635 字节，与本次构建一致。
 
 重跑 `git pp` 等用户确认：规范 §9 规定，被门禁阻止后不得自行重跑。
+
+### 第二次推送门禁评级 C 与修复（C9，2026-11-06）
+
+用户确认「修完、`git pp` 之后合并到 master」。重跑 `git pp`，评级 C（「跨端终态与候选追踪存在回归」），推送再次被阻止。三条都已复现并修复。
+
+1. 🔵 Android 的便携记录器把部分完成、需补充、预算用尽、未核验都记成 `status: failed`，C8 的 `deliveryStatus` 先看 `status`，这些在 Android 上全显示成「失败」。现在三端统一解读如下。只改解读，存量记录不动；旧的 Android 场景会按其 `taskOutcome` / 回执重新显示。
+
+| 端 | 结束方式 | `status` | 任务结果（回执 `outcome`；Android 另有 `taskOutcome`） | 显示 |
+| --- | --- | --- | --- | --- |
+| 桌面 / iPhone / Android | 正常回复 | completed | 回执 completed，看 `goalState` | 已核验 · 已交付 / 已交付 / 已交付 · 未核验 |
+| 桌面 / iPhone | 回复了但任务没做完 | completed | partial / needs_user / budget_exhausted / unverified / blocked | 部分完成 / 等待你的补充 / 预算用尽 / 已交付 · 未核验 / 未能完成交付 |
+| Android | 任务没做完 | failed（由结果推出） | 同上，原因不是请求错误 | 按回执，同上一行 |
+| 桌面 | 请求出错 | failed | 无回执（消息只带 `executionError`） | 任务失败 |
+| iPhone | 请求出错 | failed | 补写回执，原因 `REQUEST_FAILED` | 任务失败 |
+| Android | 请求出错 | failed | 原因 `REQUEST_FAILED` 或 `MODEL_*` | 任务失败 |
+| 任一端 | 取消 | cancelled，或回执为 cancelled | — | 任务已取消 |
+| 任一端 | 中断 | interrupted | — | 任务已中断 |
+| 任一端 | 回执说完成，但运行失败（矛盾） | failed | completed | 任务失败（从严） |
+| 任一端 | 结束但没有任何结果 | completed | 无 | 已结束 · 没有完成回执 |
+
+2. 🟡 快照把候选 key 直接截成 80 个字符，前缀相同的两个长 key 会成为同一个身份，点一条出两条详情，前后快照的比较也会混淆。
+   - 快照：key 不超过 80 个字符时保持原样；超长时取前 71 个字符，加 `#` 和整个 key 的 FNV-1a 哈希。展示名另行截断。
+   - 规范化：旧记录中已经相撞的 key，后出现的加编号，不丢行。
+   - 已重新打包 agent-core 与手机场景。
+3. 🟡 首次打开时，作战大屏还没创建，记住的区域没有被应用；三维场景是异步加载的，即使区域已恢复，相机也没有对准。
+   - `executionPanel.js`：作战大屏创建时立即 `restore` 当前任务记住的区域；
+   - `warRoom.js`：三维场景创建后，如果当前打开的是区域详情，补一次 `focusRegion`。
+
+测试（每条都先在修复前的代码上失败）：
+- `src/shared/warRoom.test.js`：用 Android 便携记录器、桌面 `finishExecutionScene`、iPhone 的补写回执，以及共享核心的 `completionReceipt` 生成 18 种真实结束场景，逐一核对显示。C8 版本在此用例上失败。
+- `shared/agent/taskSpaceSnapshot.test.js`：前缀相同的长 key 保持唯一、确定、不超过 80 个字符；旧记录中相撞的 key 修复后三行都在。改回直接截断时失败。
+- 浏览器验收：写入「上次看的是分析与计算」后首次打开，相机停在该区域，作战台进入详情。去掉场景加载后的对准时超时失败。
+
+门禁：
+- 快速档 `run-QtcVtL`：JS 4 998 / 4 998；Android 四项、设置浏览器验收、Swift 38 组（加载的 agent-core 为 394 617 字节）全部通过。
+- 集成档 `npm test -- --base d5c596e` → `run-pHTRku`：JS 591 / 591 个文件、4 998 / 4 998 项，0 失败 0 跳过；文档链接、生成器与共享渲染预检、Android 四项、设置浏览器验收、Swift 38 组全部通过。

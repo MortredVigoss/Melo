@@ -79,6 +79,24 @@ test('snapshot totals stay exact past its row caps: excluded candidates and gaps
   assert.deepEqual(normalizeEvaluationSnapshot(older), older, 'a record from before these totals stays without them');
 });
 
+test('two long candidate keys sharing a prefix stay two candidates, and older colliding records are told apart', () => {
+  const contract = { action: 'contract', data: JSON.stringify({ category: 'other', unit: 'u', coverage: [] }) };
+  let state = updateTaskEvaluation(undefined, contract, { goal: 'find things', revision: 1, observations: [] });
+  const prefix = 'https://example.org/events/' + 'melbourne-weekend-outdoor-music-'.repeat(4);
+  const row = suffix => ({ key: prefix + suffix, fields: { name: { value: 'Same display name', evidence: [], verified: false } }, match: 10, diversity: 1, reason: '', tags: [], conflicts: [], excludeReason: '', missing: ['name'], failed: [], eligible: false, status: 'discovered', score: { total: 11, evidence: 0, match: 10, diversity: 1 } });
+  state = { ...state, items: [row('saturday'), row('sunday'), { ...row(''), key: 'short-key' }] };
+  const snapshot = taskEvaluationSnapshot(state), keys = snapshot.candidates.map(r => r.key);
+  assert.equal(new Set(keys).size, 3, 'no two candidates share an identity');
+  assert.ok(keys.every(key => key.length <= 80));
+  assert.ok(keys.includes('short-key'), 'a key that fits is kept as it is');
+  assert.deepEqual(taskEvaluationSnapshot(structuredClone(state)).candidates.map(r => r.key), keys, 'the same key always maps to the same identity');
+  assert.deepEqual(normalizeEvaluationSnapshot(JSON.parse(JSON.stringify(snapshot))), snapshot, 'unique keys survive normalization unchanged');
+  // An older record cut both keys to the same 80 characters: the normalizer keeps both rows, apart.
+  const older = structuredClone(snapshot); older.candidates[0].key = older.candidates[1].key = prefix.slice(0, 80);
+  const repaired = normalizeEvaluationSnapshot(older).candidates.map(r => r.key);
+  assert.equal(repaired.length, 3); assert.equal(new Set(repaired).size, 3); assert.ok(repaired.every(key => key.length <= 80));
+});
+
 test('normalizer drops hostile or malformed input without throwing', () => {
   for (const bad of [null, undefined, 1, 'x', [], {}, { v: 2 }, { v: '1' }]) assert.equal(normalizeEvaluationSnapshot(bad), null);
   const hostile = normalizeEvaluationSnapshot({ v: 1, update: 1e12, policy: { primaryScore: 9999, alternativeScore: -5, evidenceScore: 'x' },

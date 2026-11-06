@@ -158,12 +158,23 @@ export const shouldAutoOpen = (scene, { opened = false, dismissed = false, autoO
 export const finishedOperations = scene => (scene?.operations || []).filter(op => TERMINAL.includes(op.status)).map(op => op.id);
 
 // Where delivery stands, from the record alone. While the run is live: the
-// evaluator's stop and the latest delivery check. Once it ends: the run's own
-// end first (failed, cancelled, interrupted), then its completion receipt
-// (outcome, goalState). A run that merely ended is never shown as delivered,
-// and only a receipt whose goal state is verified or supported reads as
-// verified.
+// evaluator's stop and the latest delivery check. Once it ends, one reading
+// for all three hosts, whose records differ:
+//   desktop  status = how the run ended; completion = the reply's receipt
+//            (a run whose request failed has no receipt);
+//   iPhone   status = how the run ended; a failed or cancelled run gets a
+//            receipt written for it (reason REQUEST_FAILED / CANCELLED);
+//   Android  the portable reducer keeps the task result in taskOutcome and
+//            sets status 'failed' for every result but completed, cancelled
+//            and interrupted; a failed request's reason is REQUEST_FAILED
+//            or a MODEL_* code.
+// So: cancelled and interrupted are read first; a run is "failed" only when
+// it has no task result or its receipt's reason is the failed request
+// itself; otherwise the receipt's outcome decides, and only a completed run
+// whose receipt says completed reads as delivered (verified only when the
+// goal state is verified or supported).
 export const DELIVERY_STATES = Object.freeze(['continue', 'ready', 'checking', 'check-failed', 'delivered-verified', 'delivered', 'delivered-unverified', 'partial', 'needs-user', 'budget', 'blocked', 'cancelled', 'failed', 'interrupted', 'ended']);
+const REQUEST_FAILURE = /^(REQUEST_FAILED|PROVIDER_ERROR|MODEL_[A-Z_]+)$/;
 export function deliveryStatus(scene, snapshot = sceneEvaluation(scene).snapshot) {
   const check = (scene?.pipeline || []).filter(stage => /^goal-check:/.test(stage.id)).at(-1) || null;
   if (!sceneFinished(scene)) {
@@ -171,9 +182,11 @@ export function deliveryStatus(scene, snapshot = sceneEvaluation(scene).snapshot
     if (!deliveryGate(snapshot)?.open) return 'continue';
     return check?.status === 'failed' ? 'check-failed' : 'ready';
   }
-  if (['cancelled', 'failed', 'interrupted'].includes(scene.status)) return scene.status;
-  const receipt = scene.completion;
-  if (!receipt?.outcome) return 'ended';
-  if (receipt.outcome === 'completed') return ['verified', 'supported'].includes(receipt.goalState) ? 'delivered-verified' : receipt.goalState === 'not_applicable' ? 'delivered' : 'delivered-unverified';
-  return { unverified: 'delivered-unverified', partial: 'partial', needs_user: 'needs-user', budget_exhausted: 'budget', cancelled: 'cancelled' }[receipt.outcome] || 'blocked';
+  const receipt = scene.completion || null, kept = scene.taskOutcome && scene.taskOutcome !== 'running' ? scene.taskOutcome : null, outcome = receipt?.outcome || kept;
+  if (scene.status === 'cancelled' || outcome === 'cancelled') return 'cancelled';
+  if (scene.status === 'interrupted' || outcome === 'interrupted') return 'interrupted';
+  if (scene.status === 'failed' && (!outcome || outcome === 'failed' || REQUEST_FAILURE.test(String(receipt?.reason || scene.stopReason || '')))) return 'failed';
+  if (!outcome) return 'ended';
+  if (outcome === 'completed') return scene.status !== 'completed' ? 'failed' : ['verified', 'supported'].includes(receipt?.goalState) ? 'delivered-verified' : receipt?.goalState === 'not_applicable' ? 'delivered' : 'delivered-unverified';
+  return { unverified: 'delivered-unverified', partial: 'partial', needs_user: 'needs-user', budget_exhausted: 'budget' }[outcome] || 'blocked';
 }

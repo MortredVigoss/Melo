@@ -234,6 +234,14 @@ test('war room shows only recorded facts, traces every number, opens by itself, 
     assert.deepEqual(await shown(), { index: 0, whole: true }, 'and back');
     await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false }); await cdp.detach();
     await page.screenshot({ path: join(proof, 'war-room-393.png') });
+    // A remembered region comes back on first open, camera and detail both, though the renderer loads after the restore.
+    await page.evaluate(() => localStorage.setItem('melo-scene-view:board-run', JSON.stringify({ focus: 'compute', more: false, slot: 0, zoom: 1 })));
+    await page.setViewportSize({ width: 1280, height: 1000 });
+    await open('board-chat');
+    await page.waitForFunction(() => document.querySelector('#execution-war-room .war-gl').dataset.view === 'region:compute');
+    assert.equal(await band.getAttribute('data-mode'), 'detail');
+    assert.match(await detail.locator('header').innerText(), /分析与计算/);
+    await page.evaluate(() => localStorage.removeItem('melo-scene-view:board-run'));
     // An ordinary chat: no evaluation cells, no invented phases.
     await page.setViewportSize({ width: 1280, height: 1000 });
     await open('plain-chat');

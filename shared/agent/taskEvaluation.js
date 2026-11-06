@@ -187,6 +187,18 @@ const SNAPSHOT_TIERS = ['primary','alternative','eligible','pending','excluded']
 const SNAPSHOT_STATUSES = ['discovered','read','verified','excluded'];
 const SNAPSHOT_FIELD_STATES = ['verified','failed','missing'];
 const clip = (v, max) => typeof v === 'string' ? v.slice(0, max) : typeof v === 'number' && Number.isFinite(v) ? String(v).slice(0, max) : '';
+// A candidate's identity in a snapshot: its ledger key when that fits in 80
+// characters, else the first 71 and a hash of the whole key (FNV-1a), so two
+// long keys sharing a prefix stay two candidates. Display text is clipped
+// separately (`name`).
+const snapshotKey = key => {
+  const whole = clip(key, Infinity); if (whole.length <= 80) return whole;
+  let hash = 0x811c9dc5; for (let i = 0; i < whole.length; i++) { hash ^= whole.charCodeAt(i); hash = Math.imul(hash, 0x01000193) >>> 0; }
+  return `${whole.slice(0, 71)}#${hash.toString(16).padStart(8, '0')}`;
+};
+// Keys arriving from an older record may already collide (they were cut at
+// 80 characters): later duplicates get a numbered suffix, no row is dropped.
+const uniqueKeys = rows => { const seen = new Set(); return rows.map(row => { let key = row.key; for (let n = 2; seen.has(key); n++) key = `${row.key.slice(0, 76)}#${n}`; seen.add(key); return key === row.key ? row : { ...row, key }; }); };
 const whole = (v, max = 1e9) => Number.isFinite(Number(v)) && v !== null && v !== '' && typeof v !== 'boolean' ? Math.max(0, Math.min(max, Math.round(Number(v)))) : 0;
 const pick = (v, values, fallback) => values.includes(v) ? v : fallback;
 // qualify() records failures as text; map each to the required field it concerns.
@@ -209,7 +221,7 @@ export function taskEvaluationSnapshot(state) {
   const candidates = list(state.items).map(row => {
     const failed = failedFields(row);
     const tier = primary.has(row.key) ? 'primary' : alternatives.has(row.key) ? 'alternative' : row.eligible ? 'eligible' : row.status === 'excluded' ? 'excluded' : 'pending';
-    return { key: clip(row.key, 80), name: clip(row.fields?.name?.value, 80) || clip(row.key, 80), status: pick(row.status, SNAPSHOT_STATUSES, 'discovered'), tier,
+    return { key: snapshotKey(row.key), name: clip(row.fields?.name?.value, 80) || clip(row.key, 80), status: pick(row.status, SNAPSHOT_STATUSES, 'discovered'), tier,
       total: whole(row.score?.total, 100), evidence: whole(row.score?.evidence, 100), match: whole(row.score?.match, 100), diversity: whole(row.score?.diversity, 100),
       reason: clip(row.reason, 120), fields: Object.fromEntries(required.map(name => [clip(name, 40), !row.fields?.[name]?.verified ? 'missing' : failed.has(name) ? 'failed' : 'verified'])),
       conflicts: list(row.conflicts).length, excludeReason: clip(row.excludeReason, 80), tags: list(row.tags).slice(0, L.tags).map(tag => clip(tag, 24)) };
@@ -258,11 +270,11 @@ export function normalizeEvaluationSnapshot(raw) {
         diminishing: s.diminishing === true, adjusted: s.adjusted === true, checkpoint: s.checkpoint === true,
         gaps: list(s.gaps).slice(0, L.gaps).map(gap => clip(gap, 160)).filter(Boolean), omitted: whole(s.omitted, p.maxCandidates),
         ...(s.excluded == null ? {} : { excluded: whole(s.excluded, p.maxCandidates) }), ...(s.gapCount == null ? {} : { gapCount: whole(s.gapCount, 100) }) } : null,
-      candidates: list(raw.candidates).slice(0, L.candidates).filter(object).map(row => ({ key: clip(row.key, 80), name: clip(row.name, 80) || clip(row.key, 80),
+      candidates: uniqueKeys(list(raw.candidates).slice(0, L.candidates).filter(object).map(row => ({ key: clip(row.key, 80), name: clip(row.name, 80) || clip(row.key, 80),
         status: pick(row.status, SNAPSHOT_STATUSES, 'discovered'), tier: pick(row.tier, SNAPSHOT_TIERS, 'pending'),
         total: whole(row.total, 100), evidence: whole(row.evidence, 100), match: whole(row.match, 100), diversity: whole(row.diversity, 100), reason: clip(row.reason, 120),
         fields: Object.fromEntries(required.map(name => [name, pick(object(row.fields)?.[name], SNAPSHOT_FIELD_STATES, 'missing')])),
-        conflicts: whole(row.conflicts, 100), excludeReason: clip(row.excludeReason, 80), tags: list(row.tags).slice(0, L.tags).map(tag => clip(tag, 24)).filter(Boolean) })).filter(row => row.key),
+        conflicts: whole(row.conflicts, 100), excludeReason: clip(row.excludeReason, 80), tags: list(row.tags).slice(0, L.tags).map(tag => clip(tag, 24)).filter(Boolean) })).filter(row => row.key)),
       resource: { elapsedMs: whole(resource.elapsedMs), toolCalls: whole(resource.toolCalls), inputTokens: whole(resource.inputTokens) } };
   } catch { return null; }
 }

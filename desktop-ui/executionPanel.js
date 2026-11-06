@@ -143,6 +143,8 @@ function ensureWarRoom() {
     regionExtra,
     traceExtra: key => key === 'calls' ? renderSessionEvents(sessionEvents(selectedScene())) : key === 'tokens' ? renderExecutionSignal(selectedScene()) : '',
   });
+  // The run was chosen before the war room existed: give it that run's remembered region now.
+  warRoom.restore(focus, currentRun);
   return warRoom;
 }
 // What a region shows beyond its list of calls: the sources it found (with

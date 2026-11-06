@@ -8,7 +8,8 @@
 C7（用户复看后）：电脑端区域出屏有两个原因，一是打开时相机从距离 1400 拉远，二是取景用 0.9 倍标称球而侧倾区域实际宽约 40%、贴边。新 `warRoomLayout.js` 改按每个区域真实外沿取景，四边给标签留空间，打开与尺寸变化时相机直接就位。手机底部卡片横向滑动补停靠边距，并加真实触摸手势验收。另修顶栏重复阶段名、无用量记录时显示 0 token、副标题截断。
 快速档 `run-nGv2Jp`：JS 4 986 / 4 986、设置浏览器、Swift 38 组全绿；Android JVM 209 / 209、Lint、Debug、Release 全绿；iOS 无签名构建通过；审计 H1–H20 相对改动前持平。合并前集成档 `run-CjTZuy`：JS 4 992 / 4 992，Swift 38 组、Android 四项全绿。用户要求合并并推送，master 已快进。
 `git pp` 推送前评估评级 C（完成状态与评估计数失真），推送被阻止。C8 已修：交付与核验状态改由完成回执决定；计数改用评估器总数（快照新增 `excluded` / `gapCount`）；画布点选算作用户操作。
-快速档 `run-jsRQQE` 全量 JS 4 996 / 4 996、Swift、Android 全绿。GitHub master 仍为 `d5c596e`，重跑 `git pp` 待用户确认。真机手势、Android 仪器测试、真实模型探针未执行。[链路、覆盖与证据](docs/task-space-c-20261105.md)
+快速档 `run-jsRQQE` 全量 JS 4 996 / 4 996、Swift、Android 全绿。
+第二次 `git pp` 仍为 C（跨端终态与候选追踪）。C9 已修：统一三端结束状态的解读（Android 把未完成结果记为 failed）；候选 key 截断后不再相撞；首次打开时恢复记住的区域与相机。集成档 `run-pHTRku` JS 4 998 / 4 998、Swift、Android 全绿。用户要求修完后用 `git pp` 推送。真机手势、Android 仪器测试、真实模型探针未执行。[链路、覆盖与证据](docs/task-space-c-20261105.md)
 
 ## 2026-11-05 — 任务空间 C 方案：星核主控、实时评估作战台、全局 / 跟随 / 自由视角（Claude，随布局 A 合并到 master）
 
