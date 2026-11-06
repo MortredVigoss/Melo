@@ -81,6 +81,26 @@
 
 ## 4. 最新交接
 
+### 2026-11-07 — Melo 主线（Claude）— 作战大屏复看修复：主 Agent 只路由、快速档停止规则、社交检索成员
+
+- 审查与落地记录：[war-room-routing-review-20261107](docs/war-room-routing-review-20261107.md)。分支 `claude/task-space-c-20261105`：第一步 `d98e7642`，第二到五步 ``bfc382b9``。
+- **停止规则**：默认快速档在 `TASK_EVALUATION_POLICY.defaultMode`。
+  - 桌面一次性迁移由 `settings.evaluationDefaultVersion` 标记；
+  - 只冻结用户原话里的数量；
+  - 账本记录所有引用过的页面（`seenEvidence`），同一页面不会被算成两次新读取。
+- **主 Agent 只路由**：
+  - 三端都按共享的 `leadWithheldTools`（检索与社交检索成员的全部工具）收走主 Agent 的检索工具和原生搜索；
+  - 桌面在用户补充关闭路由时由 `restoreLeadRetrieval` 归还；
+  - 改动主 Agent 工具时，要同时看桌面 `invokeModelNode.js`、iOS `AgentLoopRequest.scopedBody`、Android `SharedChatAgent` 的 `roundSpecs`。
+- **社交检索成员**：
+  - 新岗位 `social` 已加到 `INTERNAL_JOB_ROLES`、`MEMBER_ROLES`、`MEMBER_ROLE_MODULE`（归网页检索区域）、岗位模型选择和 iOS 记录；
+  - 小红书 MCP 已升级到 v2.7.3，登录要用户在设置里扫码。
+- **未做**：
+  - 手机把需要桌面 MCP 的检索交给 Mac：用户手机没有到 Mac 的通道，另立任务；
+  - Android 的路由行为只有编译、JVM 与 Lint 检查，没有在模拟器上跑过；
+  - 真实模型探针未跑。
+- 集成档 `run-C2AmLJ`（`--base cc115e8e`）：JS 5 023 / 5 023，Swift 38 组、Android 四项、设置浏览器验收全绿；iOS 无签名构建通过。
+
 ### 2026-11-06 — Melo 主线（Claude）— 作战大屏（布局 A）移入产品 — 已合并到 master
 - 分支 `claude/task-space-c-20261105`（worktree `.tmp/task-space-c-20261105`，已变基到 `d5c596e`）：C1–C5（评估快照与成员岗位三端发出、`src/shared/executionBoard.js` 投影）之上，嵌入式任务空间换成全屏作战大屏：`desktop-ui/warRoom*.js`、`src/shared/warRoom.js`；聊天里收成一行；自动弹出与「为确认提示让开」三端同规则（桌面 `executionPanel.js`、iPhone `WarRoomPresentation` + `ContentView`、Android `WarRoomPresentation.kt` + `MainActivity`）。区域只算自己的调用，每个数字点开即其记录；修复 token 被推理摘要重复计数。C7：全局取景改由 `desktop-ui/warRoomLayout.js` 按每个区域真实外沿计算并留出标签边距，打开时相机直接就位，五个区域不再出屏；手机底部卡片可横向滑动。[专项记录](docs/task-space-c-20261105.md)，证据 `.tmp/war-room-20261106/`。
 - 用户 2026-11-06 要求合并并推送。集成档 `run-CjTZuy`（`--base d5c596e`）结果：
