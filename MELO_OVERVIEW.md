@@ -96,7 +96,7 @@
   - 改动主 Agent 工具时，要同时看桌面 `invokeModelNode.js`、iOS `AgentLoopRequest.scopedBody`、Android `SharedChatAgent` 的 `roundSpecs`；
   - 桌面成员默认用 Melo 自己的搜索。只有共享计划的 `availableTools` 里没有 `web_search`、且原生搜索已验证时，成员才接管原生搜索（`memberHostedSearch`）；
   - 社交检索成员在只读并行队列里（`READ_ONLY_JOBS`）；
-  - 成员用原生搜索时，`runSubAgent` 把回执写进证据（`hosted:N`，服务商来源），并把原生事件转发给调用方；岗位连接和对话连接不同时，这次检索在对话连接上执行（`internalMembers.js` 的 `conversationForSearch`）；
+  - 成员用原生搜索时，`runSubAgent` 把回执写进证据（`hosted:N`，服务商来源），并把原生事件转发给调用方；原生搜索任务一律在已验证的完整对话配置上执行（连接、模型、端点、凭证，`internalMembers.js` 的 `hostedJob`），岗位另配了连接时在大屏注明；
   - 共享核心 `completionObservation` 把来源类型和截断分开：截断只加 `truncated`，只有读过的网页（`extracted`）才会变成 `partial`；`provider` 等类型无论多长都保持不变。
 - iPhone 0.7.15（47）已覆盖安装：两份安装前备份一致，安装后与首次启动后的数据核对都通过（证据在主项目 `.tmp/iphone-overwrite-20261107-review-*`）。Mac 等最后一轮 `git pp` 通过后再装（用户要求）。
 - **社交检索成员**：
