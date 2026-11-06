@@ -144,10 +144,13 @@ export function createInvokeModelNode(turn) {
     const routeGoal = graphState.searchPlan.sharedPlan?.resolvedGoal || latestUserMessage;
     // Phase A1 (2026-11-04): the host classifies every visible tool from its
     // declarations so jobs are not limited to the shared static whitelists.
-    // Desktop members never use provider-hosted search (dbf5dff4), so it is no
-    // research tool here.
+    // Desktop members search with Melo's own web search (dbf5dff4: bounded,
+    // readable evidence, far fewer tokens). Only when that is unavailable and
+    // hosted search is verified do the retrieval members take hosted search
+    // over, so the lead still only routes (user decision, 2026-11-07).
+    const memberHostedSearch = graphState.searchPlan.nativeWebSearchEnabled === true && !(graphState.searchPlan.sharedPlan?.availableTools || []).includes('web_search');
     let catalog = !teamTask && !teamPlan && !context.requestToolPolicy?.toolsForbidden && internalRouteCatalog(routeGoal,
-      graphState.promptTools.map(t => t.id), internalRoleSuggestions(graphState.promptTools));
+      [...graphState.promptTools.map(t => t.id), ...(memberHostedSearch ? ['native_web_search'] : [])], internalRoleSuggestions(graphState.promptTools));
     // The lead routes, assigns, evaluates and reports (2026-11-07 review P1-2):
     // while a retrieval member exists, the lead holds no retrieval tool and
     // no hosted search, and a lead call to one is refused. When routing closes

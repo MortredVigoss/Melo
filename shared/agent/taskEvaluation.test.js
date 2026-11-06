@@ -91,15 +91,16 @@ test('plan A: the same page read again under another call or member is one page;
  const f=fixtures.find(f=>f.name.includes('only repeat a known entity'));const [contract,first]=f.steps;
  const base=first.context.observations[0];
  const reread=(id,url,text=base.text)=>({...base,id,url,text});
- const observations=[...first.context.observations,reread('job-2:again','HTTPS://Fixture.example/s0/?utm_source=feed#top'),reread('job-3:again','https://fixture.example/s0')];
+ const observations=[...first.context.observations,reread('job-2:again','HTTPS://Fixture.example/s0/?utm_source=feed&utm_campaign=n#top'),reread('job-3:again','https://fixture.example/s0?utm_medium=a&utm_source=b&utm_term=c')];
  const via=id=>{const data=JSON.parse(first.args.data);for(const field of Object.values(data.items[0].fields))field.evidence=[{id,quote:base.text}];return {action:'batch',data:JSON.stringify(data)};};
  let state=updateTaskEvaluation(null,contract.args,contract.context);
  state=updateTaskEvaluation(state,via('s0'),{...first.context,observations});
  state=updateTaskEvaluation(state,via('job-2:again'),{...first.context,observations});assert.equal(state.batches.at(-1).fresh,0,'tracking, fragment, slash and case do not make a new page');
  state=updateTaskEvaluation(state,via('job-3:again'),{...first.context,observations});assert.equal(state.batches.at(-1).fresh,0);
  assert.equal(state.summary.diminishing,false);assert.equal(state.summary.stop,'continue','re-reading one page cannot end the search');
- const more=[...observations,reread('page-2','https://fixture.example/s0?page=2',base.text+' Second page of results.'),reread('updated','https://fixture.example/s0',base.text+' Updated listing.')];
+ const more=[...observations,reread('page-2','https://fixture.example/s0?page=2&utm_source=x',base.text+' Second page of results.'),reread('updated','https://fixture.example/s0',base.text+' Updated listing.'),reread('same-2','https://fixture.example/s0?utm_source=y&page=2',base.text+' Second page of results.')];
  const paged=updateTaskEvaluation(state,via('page-2'),{...first.context,observations:more});assert.equal(paged.batches.at(-1).fresh,1,'another result page is a new read');
+ assert.equal(updateTaskEvaluation(paged,via('same-2'),{...first.context,observations:more}).batches.at(-1).fresh,0,'the business query stays, tracking order does not matter');
  const changed=updateTaskEvaluation(state,via('updated'),{...first.context,observations:more});assert.equal(changed.batches.at(-1).fresh,1,'a changed body is a new read');
 });
 

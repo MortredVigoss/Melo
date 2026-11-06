@@ -19,7 +19,8 @@ import { internalHandoff, MAX_MEMBER_ROUNDS } from '../../../../shared/agent/int
 import { checkPermissionRule, requestTaskScopeApproval } from '../../../tools/permissions.js';
 import { getTool } from '../../../tools/registryCore.js';
 
-export const READ_ONLY_JOBS = Object.freeze(['research', 'lookup', 'calculate']);
+// Social research only reads (2026-11-07), so it shares the parallel reader lanes.
+export const READ_ONLY_JOBS = Object.freeze(['research', 'social', 'lookup', 'calculate']);
 const memberPolicy = TASK_EVALUATION_POLICY.member;
 export const INTERNAL_PARALLEL_LANES = memberPolicy.parallel;
 export const MEMBER_INPUT_SHARE = memberPolicy.inputTokens;
@@ -126,7 +127,10 @@ export async function runInternalMembers({ jobs = [], goal = '', background = ''
     // Member events keep their own ids under the job prefix (like delegated
     // members) so a member's model:N stage never merges into the lead's.
     const emit = (type, event) => sseEmitter?.(type, type === 'execution_event' ? { ...event, ...(event?.id ? { id: `${job.id}:${event.id}` } : {}), actorName: job.label } : event);
-    const invoke = () => run({ task: job.task, roleSystem: job.system, background: memberBackground, allowedToolIds: job.tools, extraTools, config: jobConfig, nativeWebSearch: false, nativeImageGeneration: false, condenseEachRound: true,
+    // Hosted search only when the host put it in this job's tools: the lead
+    // offers it to retrieval members solely when Melo's own search is
+    // unavailable (dbf5dff4; user decision 2026-11-07). Never image generation.
+    const invoke = () => run({ task: job.task, roleSystem: job.system, background: memberBackground, allowedToolIds: job.tools, extraTools, config: jobConfig, nativeWebSearch: Array.isArray(job.tools) && job.tools.includes('native_web_search'), nativeImageGeneration: false, condenseEachRound: true,
       // runSubAgent caps a member's input tokens at maxTokens (32k by default,
       // sized for delegated members); an internal member gets its whole share.
       ...(replyFn ? { replyFn } : {}), maxIterations: job.roundLimit || MAX_MEMBER_ROUNDS, maxTokens: share || MEMBER_INPUT_SHARE, roleId: job.id, depth: 1, signal, sseEmitter: emit, chatId, workspacePath, chatSource, projectId, onProviderResponse });

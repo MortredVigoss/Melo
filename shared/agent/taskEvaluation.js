@@ -86,10 +86,10 @@ function matches(actual, rule) {
 // Rows without a URL are identified by body alone. Regex only: the packaged
 // core runs where no URL global exists.
 function pageUrl(value) {
-  const match = /^(https?):\/\/([^\s/?#@]+)([^\s#]*)/iu.exec(String(value || '').trim());
+  const match = /^(https?):\/\/([^\s/?#@]+)([^\s?#]*)(\?[^\s#]*)?/iu.exec(String(value || '').trim());
   if (!match) return '';
-  const rest = (match[3] || '').replace(/([?&])utm_[^=&#]*=[^&#]*&?/giu, '$1').replace(/[?&]$/u, '').replace(/\/(?=$|\?)/u, '');
-  return match[1].toLowerCase() + '://' + match[2].toLowerCase() + rest;
+  const query = (match[4] || '').slice(1).split('&').filter(part => part && !/^utm_/iu.test(part)).join('&');
+  return match[1].toLowerCase() + '://' + match[2].toLowerCase() + (match[3] || '').replace(/\/$/u, '') + (query ? '?' + query : '');
 }
 function pageIdentity(row, fallback) {
   if (!row) return 'id:' + String(fallback);

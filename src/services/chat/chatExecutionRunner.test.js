@@ -695,6 +695,26 @@ test('authorized browser tools remain executable across search routes without ce
   } finally { unregisterTool('policy_probe'); unregisterTool('browser_open'); registerTool(original); }
 });
 
+test('retrieval members take verified hosted search over only when Melo search is unavailable; the lead never searches', async () => {
+  const call = (id, name, args) => ({ type: 'function_call', id, call_id: id, name, arguments: JSON.stringify(args) });
+  for (const [runtime, membersHosted] of [[{ search: { backend: 'none', browserFallback: false } }, true], [{ search: { backend: 'http', endpoint: 'https://fixture.invalid/search' } }, false]]) {
+    const state = fixtureState(), chat = fixtureChat(); state.chats = [chat]; await saveState(state);
+    const lead = [], member = [];
+    await runChatAgentExecutionGraph({ config: { ...fixtureCodexConfig(), agentRuntime: runtime }, state, chat, workspace: fixtureWorkspace(), connectors: [], skills: [],
+      latestUserMessage: '搜索当前 Surry Hills 餐厅', agentId: 'main',
+      _dependencies: { searchCapability: { status: 'verified' }, getEmbedding: async () => null,
+        createReply: async options => {
+          if (options.systemPrompt.includes("You are Melo's task completion checker")) return 'not json';
+          if (options.systemPrompt.includes('You are the internal research specialist')) { member.push(options.nativeWebSearchEnabled); return { protocol: 'responses', text: 'Fixture venue: https://fixture.invalid/venue', responseItems: [] }; }
+          lead.push(options.nativeWebSearchEnabled);
+          return lead.length === 1 ? { protocol: 'responses', text: '', responseItems: [call('route-1', 'route_task', { resume: null, role: 'research', task: 'Find current Surry Hills restaurants' })] }
+            : { protocol: 'responses', text: 'Fixture venue', responseItems: [] };
+        } } });
+    assert.ok(lead.length && lead.every(value => value === false), 'the lead never holds hosted search: ' + JSON.stringify(lead));
+    assert.ok(member.length && member.every(value => value === membersHosted), JSON.stringify({ runtime, member }));
+  }
+});
+
 test('Hosted Search final replies use the same completed/source receipt contract as Android', async () => {
   const { beginSupplements, addSupplement, endSupplements } = await import('./supplements.js');
   const search = { type: 'web_search_call', status: 'completed', action: { sources: [{ url: 'https://fixture.invalid/verified', title: 'Fixture source' }] } };

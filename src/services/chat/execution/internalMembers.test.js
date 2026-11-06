@@ -12,6 +12,20 @@ const catalog = internalRouteCatalog(goal, tools);
 const job = (role, task, index) => ({ ...startInternalJob({ catalog, goal, args: { role, task }, callId: `call-${index}` }), index, id: `job-${index}` });
 const settle = () => new Promise(resolve => setTimeout(resolve, 5));
 
+test('a social member reads alongside the research member', async () => {
+  let active = 0, peak = 0; const release = [];
+  const run = async options => {
+    active++; peak = Math.max(peak, active);
+    await new Promise(resolve => release.push(resolve));
+    active--;
+    return { ok: true, output: 'done', meta: { observations: [], effects: { successful: [], uncertain: [] } } };
+  };
+  const pending = runInternalMembers({ jobs: [job('research', 'official pages', 1), job('social', 'Xiaohongshu posts', 2)], goal, run, lanes: 2 });
+  await settle();
+  assert.equal(peak, 2, 'research and social run at the same time');
+  release.splice(0).forEach(fn => fn()); await pending;
+});
+
 test('read-only jobs run in parallel lanes and execute jobs wait for them, one at a time', async () => {
   let active = 0, peak = 0; const order = [];
   const release = [];
