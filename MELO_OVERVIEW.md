@@ -87,7 +87,9 @@
 - **停止规则**：默认快速档在 `TASK_EVALUATION_POLICY.defaultMode`。
   - 桌面一次性迁移由 `settings.evaluationDefaultVersion` 标记；
   - 只冻结用户原话里的数量；
-  - 账本记录所有引用过的页面（`seenEvidence`），同一页面不会被算成两次新读取。
+  - 同轮修订合同只能增加要求，类别不变；
+  - 账本按「规范化网址 + 正文」记录读过的页面（`seenPages`），同一页面换个调用或成员重读不算新读取；
+  - 桌面迁移由用户 2026-11-07 确认保留（`git pp` 第一次评级 C 的第 3 条）。
 - **主 Agent 只路由**：
   - 三端都按共享的 `leadWithheldTools`（检索与社交检索成员的全部工具）收走主 Agent 的检索工具和原生搜索；
   - 桌面在用户补充关闭路由时由 `restoreLeadRetrieval` 归还；
