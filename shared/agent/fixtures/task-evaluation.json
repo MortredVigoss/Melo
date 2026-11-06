@@ -2828,6 +2828,6 @@
         }
       }
     ],
-    "expectedError": "keep every recorded user condition"
+    "expectedError": "may only add requirements"
   }
 ]

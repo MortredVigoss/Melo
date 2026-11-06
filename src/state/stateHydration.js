@@ -559,8 +559,10 @@ export function createDefaultState() {
 
 // Until 2026-11-07 hydration wrote the then-default 'standard' task depth into
 // every Agent it normalized, so a stored 'standard' from before this version
-// was never the user's choice. It becomes the shared default (quick) once;
-// any depth chosen afterwards, and every other value, is kept.
+// is almost always that default. The settings form could also save
+// 'standard', so the origin cannot be proven; the user chose this one-time
+// conversion to the shared default (quick) on 2026-11-07 (git pp review C,
+// finding 3). Any depth chosen afterwards, and every other value, is kept.
 export const EVALUATION_DEFAULT_VERSION = 1;
 const evaluationDefault = (profile, version) => version < EVALUATION_DEFAULT_VERSION && profile?.evaluationMode === 'standard'
   ? { ...profile, evaluationMode: TASK_EVALUATION_POLICY.defaultMode } : profile;

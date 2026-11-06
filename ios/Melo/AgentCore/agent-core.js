@@ -107,6 +107,23 @@ function matches(actual, rule) {
   const a = Date.parse(actual), b = Date.parse(rule.value);
   return Number.isFinite(a) && Number.isFinite(b) && (rule.op === 'after' ? a >= b : a <= b);
 }
+// A read page's identity for low-yield sampling: normalized URL (lower-case
+// scheme and host, no fragment, no utm_* tracking, no trailing slash; the
+// query stays, so result pages differ) plus a hash of the body that was read.
+// Rows without a URL are identified by body alone. Regex only: the packaged
+// core runs where no URL global exists.
+function pageUrl(value) {
+  const match = /^(https?):\/\/([^\s/?#@]+)([^\s#]*)/iu.exec(String(value || '').trim());
+  if (!match) return '';
+  const rest = (match[3] || '').replace(/([?&])utm_[^=&#]*=[^&#]*&?/giu, '$1').replace(/[?&]$/u, '').replace(/\/(?=$|\?)/u, '');
+  return match[1].toLowerCase() + '://' + match[2].toLowerCase() + rest;
+}
+function pageIdentity(row, fallback) {
+  if (!row) return 'id:' + String(fallback);
+  const text = str(row.text || row.output, 200000);
+  let hash = 0x811c9dc5; for (let i = 0; i < text.length; i++) { hash ^= text.charCodeAt(i); hash = Math.imul(hash, 0x01000193) >>> 0; }
+  return pageUrl(row.url) + '#' + hash.toString(16).padStart(8, '0');
+}
 function entityKey(fields, category) {
   const names = category === 'events' ? ['name','startsAt','place'] : category === 'products' ? ['model'] : ['name'];
   return names.map(name => normalize(fields[name]?.value)).join('|');
@@ -174,20 +191,28 @@ function updateTaskEvaluation(previous, args, { goal = '', revision = 1, observa
       checkpoint: Number(resourceUse.elapsedMs) >= p.checkpoint.milliseconds || Number(resourceUse.toolCalls) >= p.checkpoint.calls };
     if (args.action === 'contract') {
       // Only the user's own count is frozen (2026-11-07 review P1-1). A contract
-      // without one may be corrected in the same turn, keeping every recorded
-      // user condition; the target still comes from the host's mode.
+      // without one may be corrected in the same turn by adding requirements
+      // (a condition, field, coverage tag or a missed user count); it keeps its
+      // category and every recorded condition, field and coverage tag, so a
+      // revision can never shrink what a candidate must prove. The target
+      // still comes from the host's mode.
       const frozen = before.contract && before.contract.revision === revision;
       if (frozen && before.contract.explicitCount) fail('Contract is frozen for this user revision: the user stated the count. Never lower the user goal.');
       const contract = contractFor({ ...data, mode }, goal, revision);
       const kept = rule => contract.constraints.some(next => next.field === rule.field && next.op === rule.op && next.value === rule.value);
-      if (frozen && before.contract.constraints.some(rule => !kept(rule))) fail('A revised contract must keep every recorded user condition. Never lower the user goal.');
+      if (frozen && (contract.category !== before.contract.category || before.contract.constraints.some(rule => !kept(rule)) ||
+        before.contract.requiredFields.some(field => !contract.requiredFields.includes(field)) || before.contract.coverage.some(tag => !contract.coverage.includes(tag))))
+        fail('A revised contract may only add requirements: keep the category and every recorded condition, required field and coverage tag. Never lower the user goal.');
       state.contract = contract; state.stale = false; state.gaps = []; state.batches = []; state.adjustment = null;
       state.items = before.items.map(row => qualify(row, state.contract));
     } else if (args.action === 'batch') {
       if (!state.contract || state.contract.revision !== revision || state.stale) fail('Initialize or revise the contract before recording a batch.');
       const rows = state.items.map(row => ({ ...row })), inspected = new Set(), newlyQualified = new Set(), fresh = new Set();
-      // Every page cited by an earlier batch, kept or not: a repeat cited twice is read once.
-      const readBefore = new Set([...list(state.seenEvidence), ...state.items.flatMap(row => Object.values(row.fields).flatMap(field => field.evidence.map(ref => ref.id)))]);
+      // Every page cited by an earlier batch, kept or not, by page identity:
+      // the same URL with the same body read again under another call or
+      // member is one page; another page of results or changed content is not.
+      const page = id => pageIdentity(observations.find(row => row.id === id), id);
+      const readBefore = new Set([...list(state.seenPages), ...state.items.flatMap(row => Object.values(row.fields).flatMap(field => field.evidence.map(ref => page(ref.id))))]);
       const cites = new Set();
       if (!Array.isArray(data.items) || data.items.length > 30) fail('Submit at most 30 entity candidates per batch.');
       for (const raw of data.items) {
@@ -213,13 +238,13 @@ function updateTaskEvaluation(previous, args, { goal = '', revision = 1, observa
         // from a page not cited before, repeats of known entities included.
         // Failed, snippet-only and resubmitted reads are neither.
         if (!old && Object.values(row.fields).some(field => field.verified)) inspected.add(key);
-        if (Object.values(fields).some(field => field.verified && field.evidence.some(ref => !readBefore.has(ref.id)))) fresh.add(key);
-        for (const field of Object.values(fields)) if (field.verified) for (const ref of field.evidence) cites.add(ref.id);
+        if (Object.values(fields).some(field => field.verified && field.evidence.some(ref => !readBefore.has(page(ref.id))))) fresh.add(key);
+        for (const field of Object.values(fields)) if (field.verified) for (const ref of field.evidence) cites.add(page(ref.id));
         if (row.eligible && !old?.eligible) newlyQualified.add(key);
       }
       state.items = rows;
       state.batches = [...state.batches, { inspected: inspected.size, fresh: fresh.size, newQualified: newlyQualified.size }].slice(-20);
-      state.seenEvidence = [...new Set([...list(state.seenEvidence), ...cites])].slice(-400);
+      state.seenPages = [...new Set([...list(state.seenPages), ...cites])].slice(-400);
       state.gaps = list(data.gaps).map(x=>str(x)).filter(Boolean).slice(0,16);
       const adjustment = data.adjustment;
       if (adjustment) {
