@@ -41,6 +41,7 @@ async function runStep(name, runner) {
   const startedAt = Date.now();
   try {
     const result = await runner();
+    log(`GREEN ${name} (${Date.now() - startedAt}ms)`);
     return {
       name,
       status: 'GREEN',
@@ -48,6 +49,7 @@ async function runStep(name, runner) {
       detail: result || '',
     };
   } catch (error) {
+    log(`RED ${name} (${Date.now() - startedAt}ms)\n${error.message || String(error)}`);
     return {
       name,
       status: 'RED',

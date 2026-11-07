@@ -4727,6 +4727,7 @@
           "scripts/native-shutdown.test.js",
           "scripts/native-translations.test.js",
           "scripts/release-policy.test.js",
+          "scripts/run-unit-tests.test.js",
           "scripts/scope.test.js",
           "scripts/swift-test-cache.test.js",
           "scripts/test-discovery.test.js",
