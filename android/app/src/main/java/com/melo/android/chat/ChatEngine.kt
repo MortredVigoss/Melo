@@ -40,8 +40,8 @@ class ChatEngine(private val context: Context, val repository: Repository) {
         val chat = state.chats.find { it.id == chatId }
         val connectionId = chat?.connectionId ?: state.settings.activeConnection
         val agentModel = state.agents.find { it.id == chat?.agentId }?.model.orEmpty()
-        val mode = chat?.modelMode ?: if (chat?.model != null) "fixed" else state.settings.smartRouting.text("defaultMode").ifBlank { "fixed" }
-        val fixedModel = if (mode == "smart") agentModel else chat?.model?.takeIf(String::isNotBlank) ?: agentModel
+        val mode = "fixed" // Automatic model selection is disabled, including legacy settings.
+        val fixedModel = if (chat?.modelMode == "smart" && agentModel.isNotBlank()) agentModel else chat?.model?.takeIf(String::isNotBlank) ?: agentModel
         val connection = state.settings.connections.find { it.id == connectionId }?.let { if (fixedModel.isBlank()) it else it.copy(model = fixedModel) }
         val instructions = chat?.let { repository.instructions(it, state) }.orEmpty()
         val historyEnabled = state.agents.find { it.id == chat?.agentId }?.source("memory") != false
@@ -73,10 +73,10 @@ class ChatEngine(private val context: Context, val repository: Repository) {
                 checkpoint = launch {
                     while (isActive) { delay(1000); val partial = mutable.value.turns[chatId]?.partial.orEmpty(); repository.change { current -> current.copy(runs = current.runs.map { if (it.id == run.id && it.status == "running") it.copy(partial = partial) else it }) } }
                 }
-                val routingKeys = state.settings.connections.associate { it.id to (if (it.protocol == "fixture") "" else repository.credential(it.id)) }
+                val routingKeys = mapOf(connection.id to key)
                 var executionConnection: Connection = connection
                 var executionKey = key
-                val routing = SmartRoutingConfig(mode, state.settings.smartRouting, state.settings.connections, routingKeys, fixedModel)
+                val routing = SmartRoutingConfig(mode, JsonObject(state.settings.smartRouting + mapOf("defaultMode" to JsonPrimitive("fixed"), "allowCrossConnection" to JsonPrimitive(false), "allowEscalation" to JsonPrimitive(false))), listOf(connection), routingKeys, fixedModel)
                 val selected = if (retry) chat.messages.take(chat.messages.indexOfLast { it.id == message.id } + 1) else chat.messages + message
                 val result = withContext(Dispatchers.IO) {
                     if (connection.protocol == "fixture") client.reply(connection, key, selected, instructions, repository::imageData) { partial -> updateTurn(chatId) { it.copy(partial = partial) } }

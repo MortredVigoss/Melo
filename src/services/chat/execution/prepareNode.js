@@ -1,7 +1,7 @@
 import { requestAllowsTool, getRequestNetworkPolicy } from '../../../../shared/agent/retrieval/requestPolicy.js';
 import { isRetiredAgentId } from '../../../shared/userAgents.js';
 import { isStandaloneGreeting } from '../../../../shared/agent/retrieval/intentRouter.js';
-import { createRoutingSession } from '../../modelRouting/routing.js';
+import { createRoutingSession, fixedModelRoutingConfig } from '../../modelRouting/routing.js';
 import { resolveContextBudget } from '../contextBudget.js';
 import { buildSharedSearchPlan } from '../../../retrieval/sharedSearchPlan.js';
 import { resolveHostedSearchCapability } from '../../search/hostedSearchCapability.js';
@@ -94,7 +94,7 @@ export function createPrepareNode(turn) {
     const modeDef = MODE_DEFS.find(mode => mode.id === chat.mode) || MODE_DEFS[0];
     const project = findProjectById(state, chat.projectId);
     const activeAgentProfile = effectiveAgentProfile(state, agentId, project?.id || null);
-    turn.routing = await createRoutingSession({ config, agent: activeAgentProfile, text: latestUserMessage, messages: chat.messages || [], attachments: chat.messages?.at(-1)?.attachments || [], home, signal, createReply,
+    turn.routing = await createRoutingSession({ config: fixedModelRoutingConfig(config), agent: activeAgentProfile, text: latestUserMessage, messages: chat.messages || [], attachments: chat.messages?.at(-1)?.attachments || [], home, signal, createReply,
       onDecision: decision => {
         sseEmitter?.('execution_event', { kind: 'pipeline', id: `model-routing:${decision.escalations}`, messageId: 'stage.routing', module: 'compute', status: 'completed', outputMessageId:'output.routing',outputMessageParams:{tier:{messageId:'value.routing_'+decision.tier},model:decision.model,reason:{messageId:'value.routing_'+decision.reason}}, metadata: decision });
       } });

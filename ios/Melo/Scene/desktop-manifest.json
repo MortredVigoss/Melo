@@ -10,7 +10,7 @@
   "shared/agent/taskEvaluation.js": "df881fba5c840a316e9743bd8936907565b36f7f9ca42f7813369cccaf8a25bb",
   "shared/agent/locale.js": "e3da97be8c76698536b398dab786bcee42011da35da415d83a24cfb791d12b44",
   "desktop-ui/i18n.js": "996b83b29f27aed8fb9c7956f614ea1dc8f586375ca3608d9e593ead300a2314",
-  "desktop-ui/translations.js": "518beb27f48534c2316eb02b7d293ef31cdbd3851e48f9e4a417bf46e5113c61",
+  "desktop-ui/translations.js": "f5f7ea6c36aa2d6b232a8c1a914284d473a4c666c76f7e97b9e0bcb3d327b37a",
   "desktop-ui/neuralScene3D.js": "ce30ea2ef4124cc6330f320276e7ffbff7b5a5e88dd6b952c2b873cfd740aa24",
   "desktop-ui/neuralScene.js": "a6665facb0afeafdcfece7880907abcfa9ef1abf7326e060f0ac99650b8d541e",
   "desktop-ui/neuralSatellite.js": "dce60310eda4e075b99503913484f495bb581cd70b0c588e865fffcb5ad5b54e",

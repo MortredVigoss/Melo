@@ -252,8 +252,7 @@ private data class ChatTimelineItem(val id: String, val at: String, val message:
             val agent = data.agents.find { it.id == chat.agentId }
             Text(agent?.name ?: "Melo", color = MeloGold)
             val selectedConnection = data.settings.connections.find { it.id == (chat.connectionId ?: data.settings.activeConnection.takeIf { chat.portableModel == null }) }
-            val modelLabel = if ((chat.modelMode ?: data.settings.smartRouting.text("defaultMode")) == "smart" && agent?.model.isNullOrBlank()) "智能（自动）"
-                else chat.model?.takeIf(String::isNotBlank) ?: agent?.model?.takeIf(String::isNotBlank) ?: selectedConnection?.model?.takeIf(String::isNotBlank) ?: "未配置模型"
+            val modelLabel = (if (chat.modelMode == "smart") agent?.model?.takeIf(String::isNotBlank) else null) ?: chat.model?.takeIf(String::isNotBlank) ?: agent?.model?.takeIf(String::isNotBlank) ?: selectedConnection?.model?.takeIf(String::isNotBlank) ?: "未配置模型"
             TextButton(onClick = { options = true }, enabled = !busy, modifier = Modifier.weight(1f)) {
                 Text(listOfNotNull(selectedConnection?.name, modelLabel).joinToString(" · "), color = MeloMuted, maxLines = 1)
             }

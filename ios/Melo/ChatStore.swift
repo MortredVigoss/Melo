@@ -561,7 +561,7 @@ import SwiftUI
                              deviceScope]
         let routingPolicy = PhoneRoutingPolicy.read()
         let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
-        if (choice?.mode ?? (choice == nil ? routingPolicy.defaultMode : "fixed")) == "smart", selectedAgent.model?.isEmpty != false {
+        if PhoneRoutingPolicy.isEnabled, (choice?.mode ?? (choice == nil ? routingPolicy.defaultMode : "fixed")) == "smart", selectedAgent.model?.isEmpty != false {
             do {
                 bindingFields.append(try encoder.encode(routingPolicy).base64EncodedString())
                 bindingFields.append(account.activeID ?? "")

@@ -4,7 +4,7 @@ extension ChatStore {
     @MainActor func smartRoutingHost(choice: ConversationModel?, agent: AgentProfile, messages: [ChatMessage], history: [ChatMessage], instructions: String, images: [ImageInput], phoneTools: DeviceToolContext?, chatID: String, runID: String, allowWeb: Bool, allowImages: Bool, onObservation: @escaping @MainActor (ExecutionObservation) -> Void, onSelection: @escaping @MainActor (String) -> Void) throws -> PhoneRoutingHost? {
         let policy = PhoneRoutingPolicy.read()
         let mode = choice?.mode ?? (choice == nil ? policy.defaultMode : "fixed")
-        guard mode == "smart", agent.model?.isEmpty != false else { return nil }
+        guard PhoneRoutingPolicy.isEnabled, mode == "smart", agent.model?.isEmpty != false else { return nil }
         var connections = try LLMConnection.saved()
         let defaults = UserDefaults.standard
         let defaultIsCodex = (defaults.string(forKey: "modelAuthMode") ?? "chatgpt") == "chatgpt"
