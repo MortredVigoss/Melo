@@ -81,6 +81,31 @@
 
 ## 4. 最新交接
 
+### 2026-11-07（晚）— Melo 主线（Claude）— Agent 列表、任务空间改名、静止背景、无合同任务的核验展示
+
+- 记录在 [war-room-routing-review-20261107](docs/war-room-routing-review-20261107.md) 的「用户复看后续」。分支 `claude/task-space-c-20261105`，已合并 Codex 的模型设置（`701e43f5`）。
+- **Agent 列表**（用户决定）：
+  - 列表只显示一个默认 Agent 和用户自己创建的 Agent；
+  - 内部岗位不是 Agent：桌面 research / builder / reviewer，手机自带的 writer / analyst，以及同步到手机的桌面岗位；
+  - 判断入口在桌面 `src/shared/userAgents.js`（`RETIRED_AGENT_IDS`）和手机 `AgentProfile.retiredBuiltInIDs`，两边必须一致；
+  - 已在用的不会消失：`keepId` / `keep` 保留对话、项目或新对话正在用的那个；
+  - 服务端拒绝委派给这些岗位、拒绝把它们编进团队；Agent 的委派对象里只剩它们时，不再给「委派」工具。
+- **改名**：界面上「作战大屏」改为「任务空间」，「作战台」改为「任务面板」；文件名和内部标识不变。
+- **背景**：工作面板里的银河不转动、统一调淡（`galaxyBackdrop.css`）；首页星图仍由「◈ 星空流动 / 静态模式」控制。
+- **无合同任务的核验展示**：
+  - 共享 `shared/agent/goalReview.js` 生成每次核验的有限视图（结论、原因代码、最多 12 条要求的类型、状态和引用证据），由 goal 的只读动作 `reviewSnapshot` 取出；
+  - 三端在 `goal-check:N` 阶段附带 `goalReview`，两个场景 reducer 都会规范化；它不进入 v1 同步；
+  - 投影是 `sceneGoalReview` / `goalGate`，以及 `traceList` 的 `review:*`；
+  - 没有任务合同时，交付闸门、证据热力、合同覆盖、任务合同四块显示核验。
+  - 新增浏览器可加载的共享模块时，要同时登记三处：
+    - `src/server.js` 白名单；
+    - `ios/scripts/build-scene.py` 的 `paths`；
+    - 读源文件的测试要登记到 `architecture/module-annotations.json`。
+- **未做**：
+  - Android 核验视图只有编译、JVM、Lint，没有在模拟器上跑过；
+  - 真实模型探针未跑。
+- 验证：集成 `run-pXcx6I` 全绿（JS 5059/5059、38 组 Swift、Android 四阶段、设置浏览器）；iPhone 0.7.17 (49) 已原位覆盖，三次备份一致、首启关键数据不变。
+
 ### 2026-11-07 — Melo 主线（Claude）— 作战大屏复看修复：主 Agent 只路由、快速档停止规则、社交检索成员
 
 - 审查与落地记录：[war-room-routing-review-20261107](docs/war-room-routing-review-20261107.md)。分支 `claude/task-space-c-20261105`：第一步 `d98e7642`，第二到五步 ``bfc382b9``。
