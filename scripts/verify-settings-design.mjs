@@ -7,6 +7,7 @@ import {resolve,join} from 'node:path';
 import assert from 'node:assert/strict';
 const dir=resolve('.tmp/settings-design-check');await mkdir(dir,{recursive:true});const home=await mkdtemp(join(dir,'home-'));await mkdir(join(home,'desktop'));
 await writeFile(join(home,'desktop/state.json'),JSON.stringify({chats:[{id:'fixture-chat',source:'desktop',title:'交互验收',agentId:'main',messages:[{id:'user-msg',role:'user',content:'验收',createdAt:new Date().toISOString()},{id:'assistant-msg',role:'assistant',content:'原角色的历史回复',createdAt:new Date().toISOString(),metadata:{agent:{id:'main',name:'Main agent'}}}]}],settings:{activeView:'settings'}}));
+await writeFile(join(home,'config.json'),JSON.stringify({smartRouting:{revision:0,defaultMode:'smart',allowCrossConnection:true,allowEscalation:true,tiers:{light:[],standard:[],strong:[]}}}));
 const child=spawn(process.execPath,['src/server.js','--host','127.0.0.1','--port','0'],{env:{...process.env,MELO_HOME:home,MELO_TEST_MODE:'1',MELO_MOCK_RESPONSE:'fixture response',MELO_DREAMING_ENABLED:'0',MELO_MEMORY_RUNTIME:'0',MELO_CDP_ENABLED:'false'},stdio:['ignore','pipe','pipe']});
 let logs='',browser;child.stderr.on('data',b=>logs+=b);const closed=once(child,'exit');
 try {
@@ -37,6 +38,7 @@ try {
  await page.screenshot({path:join(dir,'role-draft.png')});
  await form.locator('[data-action=form-settings-edit]').click();await toolsInput.setChecked(!out.roleDraft.edited);await form.locator('[data-action=form-settings-cancel]').click();assert.equal(await toolsInput.isChecked(),out.roleDraft.edited);
  await go({activeView:'model'});
+ await page.locator('.model-default-settings>summary').click();
  const defaults=page.locator('[data-form=default-model-config]'),modelSelect=defaults.locator('[name=model]');
  assert.equal(await modelSelect.isDisabled(),true);
  assert.ok((await modelSelect.locator('option').allTextContents()).some(s=>s.includes('Astra 6')));
@@ -47,7 +49,7 @@ try {
  assert.equal(await modelSelect.inputValue(),'gpt-6-astra','failed save keeps the selected model');
  await defaults.locator('[data-action=form-settings-save]').click();await defaults.locator('[data-edit-status=saved]').waitFor();
  assert.equal((await bootstrap()).settings.config.model,'gpt-6-astra');assert.equal(await modelSelect.isDisabled(),true);
- await go({activeView:'model'});assert.equal(await modelSelect.inputValue(),'gpt-6-astra');
+ await go({activeView:'model'});await page.locator('.model-default-settings>summary').click();assert.equal(await modelSelect.inputValue(),'gpt-6-astra');
  await defaults.locator('[data-action=form-settings-edit]').click();await modelSelect.selectOption('gpt-6.1-sol');
  await defaults.locator('[data-action=form-settings-cancel]').click();assert.equal(await modelSelect.inputValue(),'gpt-6-astra');
  await page.setViewportSize({width:390,height:844});await modelSelect.scrollIntoViewIfNeeded();
@@ -85,31 +87,25 @@ try {
  await page.screenshot({path:join(dir,'voice-readonly.png')});
  assert.deepEqual(out.voice,{openOptionsDisabled:false,configLinkDisabled:false});
  await page.locator('[data-action=select-customize-item][data-id=openai-compatible]').click();const audio=page.locator('#connector-config-form');await audio.waitFor();assert.equal(await audio.locator('[name=authMode],[name=baseUrl],[name=model],[name=systemPrompt]').count(),0);await audio.locator('[data-action=form-settings-edit]').click();await audio.locator('[name=whisperBaseUrl]').fill(base+'/whisper');await audio.locator('[data-action=form-settings-save]').click();await audio.locator('[data-edit-status=saved]').waitFor();assert.equal((await bootstrap()).settings.config.llmConnections.activeId,'local');assert.deepEqual(errors,[]);
- // Smart routing replaces the retired classifier journey inside this settings gate.
+ // Retired automatic selection is absent; old policies cannot re-enable it.
  await go({activeView:'model'});
- const smart=page.locator('[data-smart-routing]');await smart.waitFor();
- assert.equal(await smart.locator('[name=defaultMode]').isDisabled(),true);
- await smart.locator('[data-action=smart-routing-edit]').click();
- await smart.locator('[name=defaultMode]').selectOption('smart');
- await smart.locator('[data-action=smart-routing-save]').click();
- await smart.locator('[data-edit-status=saved]').waitFor();
- assert.equal((await bootstrap()).settings.config.smartRouting.defaultMode,'smart');
- await page.reload();await page.locator('[data-smart-routing] [name=defaultMode]').waitFor();
- assert.equal(await page.locator('[data-smart-routing] [name=defaultMode]').inputValue(),'smart');
+ assert.equal(await page.locator('[data-smart-routing]').count(),0);
+ const routingPolicy=(await bootstrap()).settings.config.smartRouting;
+ assert.equal(routingPolicy.enabled,false);
+ assert.equal(routingPolicy.defaultMode,'fixed');
+ assert.equal(routingPolicy.allowCrossConnection,false);
+ assert.equal(routingPolicy.allowEscalation,false);
  assert.equal(await page.locator('[data-extra-fast]').count(),0);
  const retired=await fetch(base+'/api/settings/extra-fast',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});assert.equal(retired.status,405);
  await go({activeView:'chat',selectedChatId:'fixture-chat'});
  await page.locator('[data-action=toggle-model-picker]').click();
- const auto=page.locator('[data-action=pick-default-model][data-model-mode=smart]');await auto.waitFor();await auto.click();
- await page.waitForFunction(()=>!document.querySelector('[data-action=toggle-model-picker]')?.disabled);
- assert.equal((await bootstrap()).activeChat.modelSelection.mode,'smart');
- await page.reload();await page.locator('[data-action=toggle-model-picker]').click();
+ assert.equal(await page.locator('[data-action=pick-default-model][data-model-mode=smart]').count(),0);
  const fixed=page.locator('[data-action=pick-default-model][data-model]:not([data-model=""])').first();
  const fixedID=await fixed.getAttribute('data-model');await fixed.click();
  await page.waitForFunction(()=>!document.querySelector('[data-action=toggle-model-picker]')?.disabled);
  assert.equal((await bootstrap()).activeChat.modelSelection.model,fixedID);
  assert.notEqual((await bootstrap()).activeChat.modelSelection.mode,'smart');
- out.smartRouting={saved:true,reloaded:true,retiredAPI:retired.status,fixedAndSmartPicker:true};
+ out.smartRouting={legacyDisabled:true,crossConnection:false,escalation:false,retiredAPI:retired.status,fixedPicker:true};
  assert.deepEqual(errors,[]);
 
  // Runtime flags are real saved configuration; environment overrides stay visible and locked.
@@ -158,17 +154,23 @@ try {
  await go({activeView:'settings'});
  await page.locator('.local-settings header [data-view=model]').click();
  const editor=page.locator('[data-llm-connections]');
+ await editor.locator('[data-action=llm-method]').selectOption('codex');
+ assert.equal(await editor.locator('[name=apiKey],[name=baseUrl]').count(),0);
+ await editor.locator('.llm-auth-card').waitFor();
+ await page.screenshot({path:join(dir,'connection-login.png')});
  const keyIDs=[];
  for (let n=1;n<=5;n++) {
-   await editor.locator('[data-action=llm-new]').click();
+   if(n===1) await editor.locator('[data-action=llm-method]').selectOption('api-key');
+   else await editor.locator('[data-action=llm-new]').click();
    await editor.locator('[data-action=llm-new-provider]').selectOption('custom');
    await editor.locator('[name=name]').fill('Account '+n);
    await editor.locator('[name=baseUrl]').fill('https://example.invalid/v1');
    if (n !== 1) await editor.locator('[name=model]').fill('shared-model');
    await editor.locator('[name=apiKey]').fill('fixture-key-'+n);
    await editor.locator('[data-action=llm-save]').click();
-   const button=editor.locator('[data-action=llm-use]').filter({hasText:'Account '+n});
-   await button.waitFor(); keyIDs.push(await button.getAttribute('data-profile-id'));
+   await editor.locator('[data-action=llm-select]').waitFor();
+   keyIDs.push(await editor.locator('[data-action=llm-select]').inputValue());
+   const button=editor.locator('[data-action=llm-activate]');
    if (n === 1) {
      await editor.locator('[data-saved-key]').waitFor();
      assert.equal(await button.isDisabled(),true);
@@ -179,16 +181,26 @@ try {
      assert.equal(await editor.locator('[name=apiKey]').inputValue(),'');
      await editor.locator('[name=model]').fill('shared-model');
      await editor.locator('[data-action=llm-save]').click();
-     await page.waitForFunction(id=>document.querySelector('[data-action=llm-use][data-profile-id="'+id+'"]')?.disabled === false,keyIDs[0]);
+     await page.waitForFunction(()=>document.querySelector('[data-action=llm-activate]')?.disabled === false);
    }
  }
  assert.equal(new Set(keyIDs).size,5);
  for(const id of [keyIDs[4],keyIDs[1]]) {
-   await editor.locator(`[data-action=llm-use][data-profile-id="${id}"]`).click();
-   await editor.locator(`[data-action=llm-use][data-profile-id="${id}"][aria-pressed=true]`).waitFor();
+   await editor.locator('[data-action=llm-select]').selectOption(id);
+   await editor.locator('[data-action=llm-activate]').click();
+   await editor.locator('[data-action=llm-activate][aria-pressed=true]').waitFor();
    assert.equal((await bootstrap()).settings.config.llmConnections.activeId,id);
  }
+ await editor.locator('[data-action=llm-method]').scrollIntoViewIfNeeded();
  await page.screenshot({path:join(dir,'five-key-connections.png')});
+ await page.setViewportSize({width:390,height:844});
+ await editor.locator('[data-action=llm-method]').scrollIntoViewIfNeeded();
+ const connectionOverflow=await editor.locator('input,select,button').evaluateAll(elements=>elements.filter(el=>{
+   const r=el.getBoundingClientRect();return r.width>0 && (r.left<0 || r.right>window.innerWidth);
+ }).map(el=>el.getAttribute('name') || el.getAttribute('data-action')));
+ assert.deepEqual(connectionOverflow,[],'the connection form must fit a narrow viewport');
+ await page.screenshot({path:join(dir,'connection-api-mobile.png')});
+ await page.setViewportSize({width:1440,height:1000});
  await go({activeView:'chat',selectedChatId:'fixture-chat'});
  await page.locator('[data-action=toggle-model-picker]').click();
  await page.locator(`[data-action=pick-default-model][data-profile-id="${keyIDs[2]}"][data-model="shared-model"]`).click();

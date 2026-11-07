@@ -35,7 +35,25 @@ function freshProfile(config, providerId, id) {
 }
 export function editLlmConnection(target, config) {
   if (!target.closest?.('[data-llm-connections]')) return false;
-  if (target.dataset.action === 'llm-select') { if(editSession.editing || editSession.status==='saving'){state.message=t('请先保存或取消修改，再切换连接。');target.value=state.selected;return true;} editSession.cancel(); state.selected = target.value; state.draft = null; state.message = ''; return true; }
+  if (['llm-method', 'llm-select'].includes(target.dataset.action)) {
+    const current = draftFor(config);
+    if (editSession.dirty || editSession.status === 'saving' || state.busy) {
+      state.message = t('请先保存或取消修改，再切换连接。');
+      target.value = target.dataset.action === 'llm-method' ? current.authMode : state.selected;
+      return true;
+    }
+    const data = connections(config);
+    const id = target.dataset.action === 'llm-method'
+      ? data.profiles.find(p => p.authMode === target.value)?.id || data.providers.find(p => p.authMode === target.value)?.id
+      : target.value;
+    if (!id) return true;
+    editSession.cancel(); state.returnTo = null; state.selected = id; state.draft = null; state.message = '';
+    if (!data.profiles.some(p => p.id === id) && data.providers.find(p => p.id === id)?.authMode === 'api-key') {
+      state.returnTo = id; state.selected = 'key-' + crypto.randomUUID();
+      state.draft = freshProfile(config, id, state.selected); editSession.begin();
+    }
+    return true;
+  }
   if (!editSession.editing) return true;
   if (target.dataset.action === 'llm-new-provider' && state.returnTo !== null) {
     if (state.draft.providerId !== target.value && connections(config).providers.some(p => p.id === target.value && p.authMode === 'api-key')) {
@@ -68,30 +86,34 @@ export function renderLlmConnections(config) {
   const draft = draftFor(config);
   const saved = data.profiles.find(p => p.id === draft.id);
   const provider = data.providers.find(p => p.id === draft.providerId);
-  const options = [...data.profiles.map(p => ({ id: p.id, name: `${p.nameKey ? t(p.nameKey) : p.name} · ${p.id === data.activeId ? t('当前使用') : t('已保存')}` })),
-    ...data.providers.filter(p => !data.profiles.some(s => s.id === p.id)).map(p => ({ id: p.id, name: t(p.name) }))];
+  const options = [...data.profiles.filter(p => (p.authMode || data.providers.find(v=>v.id===p.providerId)?.authMode) === provider.authMode).map(p => ({ id: p.id, name: `${p.nameKey ? t(p.nameKey) : p.name} · ${p.id === data.activeId ? t('当前使用') : t('已保存')}` })),
+    ...data.providers.filter(p => p.id === draft.id && !data.profiles.some(s => s.id === p.id)).map(p => ({ id: p.id, name: t(p.name) }))];
   const disabled = state.busy ? 'disabled' : '';
   const fieldsDisabled = state.busy || !editSession.editing ? 'disabled' : '';
   const actionDisabled = state.busy || editSession.editing || !saved ? 'disabled' : '';
+  const activateDisabled = actionDisabled || !saved?.model || provider.authMode === 'api-key' && !saved?.hasKey ? 'disabled' : '';
   const test = saved?.test;
   const creating = state.returnTo !== null;
   const active = data.activeId || (data.profiles.some(p => p.id === 'existing') ? 'existing' : '');
   const locked = state.busy || editSession.editing ? 'disabled' : '';
   return ui`<section class="surface-card llm-connections" data-llm-connections>
-    <div class="header-row"><h2 class="pane-title">模型连接</h2><span class="chip">Melo 负责记忆与工具执行</span></div>
-    <p class="page-kicker">各平台的地址、密钥和模型独立保存。连接测试会发送一次简短请求，计入对应账号用量。</p>
-    <div class="inline-actions">
-      <button type="button" class="small-button is-primary" data-action="llm-new" ${locked}>添加 API Key 连接</button>
+    <div class="header-row"><h2 class="pane-title">连接模型服务</h2></div>
+    <p class="page-kicker">先选连接方式，再配置账号和模型。保存连接后，可将它设为默认。</p>
+    <div class="llm-connection-navigation">
+      <label class="label">连接方式<select class="config-select llm-method-select" data-action="llm-method" aria-label="连接方式" ${disabled}>
+        ${[['codex','ChatGPT 账号登录'],['api-key','API Key'],['local','本地模型']].filter(([mode])=>data.providers.some(p=>p.authMode===mode)).map(([mode,label])=>`<option value="${mode}" ${provider.authMode===mode?'selected':''}>${escapeHtml(t(label))}</option>`).join('')}
+      </select></label>
+      ${provider.authMode === 'api-key' ? ui`<button type="button" class="small-button" data-action="llm-new" ${locked}>添加 API Key 连接</button>` : ''}
     </div>
-    ${data.profiles.length ? ui`<div class="config-form"><strong>切换默认连接</strong><div class="inline-actions">${data.profiles.map(p=>ui`<button type="button" class="small-button ${p.id===active?'is-primary':''}" data-action="llm-use" data-profile-id="${escapeHtml(p.id)}" aria-pressed="${p.id===active}" ${locked} ${!p.model || p.authMode==='api-key' && !p.hasKey?'disabled':''}>${p.authMode==='codex'?'Codex OAuth · ':''}${escapeHtml(p.nameKey?t(p.nameKey):p.name)} · ${escapeHtml(p.model || t('未配置'))}</button>`).join('')}</div></div>` : ''}
-    <div class="config-form">
+    <div class="config-form llm-connection-body" data-neural-key="llm-${escapeHtml(draft.id)}-${escapeHtml(provider.id)}-${provider.authMode}" data-connection-method="${provider.authMode}">
       ${creating ? ui`<label class="label">模型平台<select class="config-select" data-action="llm-new-provider">${data.providers.filter(p=>p.authMode==='api-key').map(p=>`<option value="${escapeHtml(p.id)}" ${p.id===draft.providerId?'selected':''}>${escapeHtml(t(p.name))}</option>`).join('')}</select></label>` : ui`<label class="label">选择连接<select class="config-select" data-action="llm-select" ${disabled}>${options.map(p => `<option value="${escapeHtml(p.id)}" ${p.id === draft.id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}</select></label>`}
+      ${provider.authMode === 'codex' ? ui`<div class="llm-auth-card"><strong>${config.codexAuth?.loggedIn ? t('ChatGPT 已登录') : t('使用 ChatGPT 账号连接')}</strong><p class="list-row-meta">使用账号授权，无需填写 API Key。</p><button type="button" class="small-button is-primary" data-action="llm-oauth" ${locked}>${config.codexAuth?.loggedIn ? t('重新登录 ChatGPT') : t('登录 ChatGPT')}</button></div>` : ''}
       ${renderEditActions(editSession,{prefix:'llm',disabled:state.busy,saveDisabled:state.conflict})}
       ${state.conflict ? ui`<p role="alert">此连接已在其他位置更新，当前草稿仍保留。请先载入最新配置，再重新编辑。</p><button type="button" class="small-button" data-action="llm-reload">放弃此草稿并载入最新配置</button>` : ''}
       <fieldset class="settings-connection-fields" ${fieldsDisabled}>
-      <label class="label">连接名称<input class="config-input" name="name" maxlength="100" value="${escapeHtml(draft.name || '')}"></label>
-      ${provider.authMode !== 'codex' ? ui`${saved?.hasKey ? ui`<p class="list-row-meta" data-saved-key role="status">✓ ${t('API Key 已保存')}${!saved.model ? ' · '+t('选择或填写模型后即可使用这条连接。') : ''}</p>` : ''}${(!saved?.hasKey || editSession.editing) ? ui`<label class="label">API Key${provider.authMode === 'local' ? t('（可选）') : ''}<input class="config-input" name="apiKey" type="password" autocomplete="off" value="${escapeHtml(draft.apiKey)}" placeholder="${saved?.hasKey ? t('已保存；留空保留此连接的密钥') : t('只保存到本机')}" ${disabled}></label>` : ''}${saved?.hasKey && editSession.editing ? ui`<label class="list-row-meta"><input type="checkbox" name="clearKey" ${draft.clearKey ? 'checked' : ''} ${disabled}> 清除此连接保存的密钥</label>` : ''}` : ui`<p class="list-row-meta">${config.codexAuth?.loggedIn ? t('ChatGPT 已登录') : t('需要先完成 ChatGPT 登录')}；模型请求由 Melo 直接发送。</p>`}
-      <label class="label">服务地址<input class="config-input" name="baseUrl" value="${escapeHtml(draft.baseUrl)}" ${provider.authMode === 'codex' ? 'readonly' : ''} ${disabled}></label>
+      ${provider.authMode !== 'codex' ? ui`<label class="label">连接名称<input class="config-input" name="name" maxlength="100" value="${escapeHtml(draft.name || '')}"></label>` : ''}
+      ${provider.authMode !== 'codex' ? ui`${saved?.hasKey ? ui`<p class="list-row-meta" data-saved-key role="status">✓ ${t('API Key 已保存')}${!saved.model ? ' · '+t('选择或填写模型后即可使用这条连接。') : ''}</p>` : ''}${(!saved?.hasKey || editSession.editing) ? ui`<label class="label">API Key${provider.authMode === 'local' ? t('（可选）') : ''}<input class="config-input" name="apiKey" type="password" autocomplete="off" value="${escapeHtml(draft.apiKey)}" placeholder="${saved?.hasKey ? t('已保存；留空保留此连接的密钥') : t('只保存到本机')}" ${disabled}></label>` : ''}${saved?.hasKey && editSession.editing ? ui`<label class="list-row-meta"><input type="checkbox" name="clearKey" ${draft.clearKey ? 'checked' : ''} ${disabled}> 清除此连接保存的密钥</label>` : ''}` : ''}
+      ${provider.authMode !== 'codex' ? ui`<label class="label">服务地址<input class="config-input" name="baseUrl" value="${escapeHtml(draft.baseUrl)}" ${disabled}></label>` : ''}
       ${provider.id === 'custom' ? ui`<label class="label">API 接口格式<select class="config-select" name="apiProtocol" ${disabled}><option value="chat-completions" ${!['anthropic','responses'].includes(draft.apiProtocol) ? 'selected' : ''}>OpenAI Chat Completions</option><option value="responses" ${draft.apiProtocol === 'responses' ? 'selected' : ''}>OpenAI Responses</option><option value="anthropic" ${draft.apiProtocol === 'anthropic' ? 'selected' : ''}>Anthropic Messages</option></select></label>` : ''}
       <label class="label">选择模型<select class="config-select" data-action="llm-pick-model">${connectionModelOptions(config, draft).map(m => `<option value="${escapeHtml(m)}" ${m === draft.model ? 'selected' : ''}>${escapeHtml(modelLabel(m))} · ${escapeHtml(m)}</option>`).join('')}<option value="" ${!draft.model ? 'selected' : ''}>手动填写模型 ID</option></select></label>
       <label class="label">模型 ID（可手动填写）<input class="config-input" name="model" value="${escapeHtml(draft.model)}" placeholder="${escapeHtml(t(provider.modelHint) || t('填写模型 ID，或读取模型列表'))}" ${disabled}></label>
@@ -101,16 +123,21 @@ export function renderLlmConnections(config) {
       </details></fieldset><div class="inline-actions">
         <button type="button" class="small-button" data-action="llm-models" ${actionDisabled}>加载模型列表</button>
         <button type="button" class="small-button" data-action="llm-test" ${actionDisabled}>测试实际请求</button>
-        <button type="button" class="small-button" data-action="llm-vision" ${actionDisabled}>测试图片识别</button>
-        <button type="button" class="small-button" data-action="llm-search" ${actionDisabled} ${provider.authMode !== 'codex' && draft.apiProtocol !== 'responses' ? 'disabled' : ''}>验证 Hosted Search</button>
-        <button type="button" class="small-button is-primary" data-action="llm-activate" ${actionDisabled}>设为当前模型</button>
-        ${provider.oauth ? ui`<button type="button" class="small-button" data-action="llm-oauth" ${provider.id === 'chatgpt' ? locked : actionDisabled}>${provider.id === 'openrouter' ? t('用 OpenRouter 登录') : t('登录 ChatGPT')}</button>` : ''}
+        <button type="button" class="small-button is-primary" data-action="llm-activate" aria-pressed="${draft.id===active}" ${activateDisabled}>${draft.id===active ? t('当前默认连接') : t('设为默认连接')}</button>
+        ${provider.oauth && provider.authMode !== 'codex' ? ui`<button type="button" class="small-button" data-action="llm-oauth" ${provider.id === 'chatgpt' ? locked : actionDisabled}>${provider.id === 'openrouter' ? t('用 OpenRouter 登录') : t('登录 ChatGPT')}</button>` : ''}
         ${saved && saved.id !== data.activeId ? ui`<button type="button" class="small-button" data-action="llm-remove" ${actionDisabled}>移除连接</button>` : ''}
       </div>
-      ${provider.id === 'openrouter' ? ui`<p class="list-row-meta">登录授权使用 OpenRouter 额度，也可直接填写 Key。不会使用你的 ChatGPT 或 Claude 订阅额度。</p>` : ''}
       <p role="status" aria-live="polite" class="llm-connection-status">${escapeHtml(state.message || (test ? test.ok ? t('请求成功 · {ms} ms · 请求模型：{requested} · 返回模型：{reported} · {at}', { ms: test.latencyMs, requested: test.requestedModel, reported: test.reportedModel || t('服务未提供'), at: test.testedAt }) : t('请求失败：{error} · {guidance}', { error: test.error, guidance: test.guidance || "" }) : t('尚未进行此连接的真实请求测试')))}</p>
+      <details class="llm-diagnostics"><summary>连接检查与能力说明</summary>
+      <div class="inline-actions">
+        <button type="button" class="small-button" data-action="llm-vision" ${actionDisabled}>测试图片识别</button>
+        <button type="button" class="small-button" data-action="llm-search" ${actionDisabled} ${provider.authMode !== 'codex' && draft.apiProtocol !== 'responses' ? 'disabled' : ''}>验证 Hosted Search</button>
+      </div>
+      ${provider.id === 'openrouter' ? ui`<p class="list-row-meta">登录授权使用 OpenRouter 额度，也可直接填写 Key。不会使用你的 ChatGPT 或 Claude 订阅额度。</p>` : ''}
+
       <p class="list-row-meta">图片识别：${saved?.visionTest ? saved.visionTest.ok ? escapeHtml(t('已实测 · {model} · {at}', { model: saved.visionTest.requestedModel, at: saved.visionTest.testedAt })) : escapeHtml(t('测试未通过 · {error}', { error: saved.visionTest.error })) : escapeHtml(t('尚未实测；测试会发送一张本机生成的数字图，计入模型用量'))}</p>
       <p class="list-row-meta">Hosted Search：${saved?.searchTest ? saved.searchTest.ok ? escapeHtml(t('上次验证通过 · {model} · {at}', { model: saved.searchTest.requestedModel, at: saved.searchTest.testedAt })) : escapeHtml(t('尚未验证通过 · {error}', { error: saved.searchTest.error })) : escapeHtml(t('尚未验证；按钮会发送一次真实搜索请求，计入服务用量。验证绑定当前连接与凭证。'))}</p>
+      </details>
       ${state.oauth ? ui`<div class="inline-actions"><button type="button" class="small-button" data-action="llm-open-oauth">打开授权页面</button><button type="button" class="small-button" data-action="llm-copy-oauth">复制授权链接</button><button type="button" class="small-button" data-action="llm-cancel-oauth">取消授权</button></div>` : ''}
       <details class="list-row-meta"><summary>平台能力说明</summary><p>这里连接模型接口。搜索、文件处理和其他工具仍由 Melo 调度；模型可用性以实际请求为准。Copilot、Gemini CLI、Kimi Code 的代理程序未作为模型通道接入。</p></details>
     </div>

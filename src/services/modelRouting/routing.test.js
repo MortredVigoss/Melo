@@ -47,3 +47,16 @@ test('routing judgment only sees the current task, and rerouted connections own 
  assert.equal(resolvedModelCapabilities(connectionForModel(selected),'opaque').vision,true);
  assert.equal(selected.apiKey,'b');
 });
+
+
+test('product turns ignore legacy automatic choices without judging, escalating or changing accounts', async () => {
+ const {fixedModelRoutingConfig,publicSmartRouting}=await import('./routing.js');
+ const saved={...config,conversationModelSelected:true,conversationModelMode:'smart',smartRouting:{...config.smartRouting,allowCrossConnection:true}};
+ const effective=fixedModelRoutingConfig(saved);
+ const session=await createRoutingSession({config:effective,text:'Research a complex high-risk problem',createReply:()=>{throw new Error('Automatic judge must remain disabled');}});
+ assert.equal(session.current.mode,'fixed');assert.equal(session.current.model,'one');assert.equal(session.current.connectionId,'c');
+ assert.equal(session.escalate({requested:true,rounds:10,failures:5}),false);
+ assert.equal(session.connection().apiKey,'secret');
+ assert.deepEqual([publicSmartRouting(saved).enabled,publicSmartRouting(saved).allowCrossConnection,publicSmartRouting(saved).allowEscalation],[false,false,false]);
+ assert.equal(saved.conversationModelMode,'smart','reading old settings must not destroy them');
+});

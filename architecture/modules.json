@@ -25,7 +25,7 @@
     ],
     "graph": {
       "modules": 699,
-      "edges": 2278,
+      "edges": 2277,
       "roots": [
         "src",
         "desktop-ui",
@@ -1920,12 +1920,6 @@
           ]
         },
         {
-          "module": "desktop-ui/smartRouting.js",
-          "importedBy": [
-            "desktop-shell"
-          ]
-        },
-        {
           "module": "src/codexAuth.js",
           "importedBy": [
             "chat",
@@ -2048,7 +2042,7 @@
         "approvals": 8,
         "channels": 2,
         "chat": 11,
-        "desktop-shell": 15,
+        "desktop-shell": 14,
         "development": 1,
         "knowledge": 1,
         "media": 8,
@@ -3789,7 +3783,7 @@
         "memory": 1,
         "platform": 15,
         "projects": 5,
-        "settings": 15,
+        "settings": 14,
         "sync": 2,
         "tools": 13,
         "voice": 2

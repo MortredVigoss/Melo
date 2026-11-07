@@ -7,6 +7,7 @@ struct RoutingAssignment: Codable, Equatable, Hashable {
     var vision = false
 }
 struct PhoneRoutingPolicy: Codable, Equatable {
+    static let isEnabled = false
     var revision = 0
     var defaultMode = "fixed"
     var preference = "balanced"

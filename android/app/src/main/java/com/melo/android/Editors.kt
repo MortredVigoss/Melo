@@ -40,7 +40,7 @@ import com.melo.android.network.HostedSearchAdapter
     var projectId by remember { mutableStateOf(chat.projectId) }
     var connectionId by remember { mutableStateOf(chat.connectionId) }
     var portableModel by remember { mutableStateOf(chat.portableModel) }
-    var modelMode by remember { mutableStateOf(chat.modelMode) }
+    var modelMode by remember { mutableStateOf(if (chat.modelMode == "smart") "fixed" else chat.modelMode) }
     var model by remember { mutableStateOf(chat.model) }
     var pinned by remember { mutableStateOf(chat.pinned) }
     var phoneUse by remember { mutableStateOf(chat.phoneUseEnabled) }
@@ -52,7 +52,6 @@ import com.melo.android.network.HostedSearchAdapter
         Text("模型连接"); FilterChip(selected = connectionId == null && portableModel == null, onClick = { portableModel = null; connectionId = null; modelMode = null; model = null }, label = { Text("使用全局选择") })
         data.settings.connections.forEach { connection -> FilterChip(selected = connectionId == connection.id, onClick = { portableModel = null; connectionId = connection.id; model = null }, label = { Text("${connection.name} · ${connection.model}") }) }
         Text("回答模型")
-        FilterChip(enabled = data.agents.find { it.id == agentId }?.model.isNullOrBlank(), selected = modelMode == "smart", onClick = { portableModel = null; modelMode = "smart"; model = null }, label = { Text("智能（自动）") })
         data.settings.connections.find { it.id == (connectionId ?: data.settings.activeConnection) }?.let { c -> (c.models + c.model).filter(String::isNotBlank).distinct().forEach { id ->
             FilterChip(selected = modelMode != "smart" && (model ?: c.model) == id, onClick = { portableModel = null; modelMode = "fixed"; model = id }, label = { Text(id) })
         } }
@@ -209,7 +208,6 @@ import com.melo.android.network.HostedSearchAdapter
                 RadioButton(selected = data.settings.activeConnection == connection.id, onClick = { vm.engine.work { vm.repository.change { it.copy(settings = it.settings.copy(activeConnection = connection.id)) } } })
             }, trailingContent = { IconButton(onClick = { editing = connection }) { Icon(Icons.Outlined.Edit, "编辑连接") } })
         }
-        item { SmartRoutingSettings(data, vm) }
         item {
             if (BuildConfig.DEBUG) TextButton(onClick = { vm.engine.work {
                 val fixture = data.settings.connections.find { it.protocol == "fixture" } ?: Connection(name = "本地 Fixture · 非真实模型", endpoint = "https://fixture.invalid", model = "local-fixture", protocol = "fixture")
@@ -283,14 +281,38 @@ import com.melo.android.network.HostedSearchAdapter
         var modelCapabilities by remember(original.id) { mutableStateOf(original.modelCapabilities) }
         var models by remember(original.id) { mutableStateOf(original.models.joinToString("\n")) }
         var contextTokens by remember(original.id) { mutableStateOf(original.contextTokens.toString()) }
+        var providerMenu by remember(original.id) { mutableStateOf(false) }
+        var advanced by remember(original.id) { mutableStateOf(false) }
+        val presets = listOf(
+            Triple("OpenAI API", "https://api.openai.com/v1/chat/completions", "chat-completions"),
+            Triple("DeepSeek", "https://api.deepseek.com/chat/completions", "chat-completions"),
+            Triple("Anthropic Claude", "https://api.anthropic.com/v1/messages", "anthropic"),
+            Triple("OpenRouter", "https://openrouter.ai/api/v1/chat/completions", "chat-completions"),
+            Triple("自定义兼容服务", "", "chat-completions"))
         EditorDialog("模型连接", { if (!probing) editing = null }, { vm.engine.work {
             vm.repository.saveConnection(original.copy(name = name.take(200), endpoint = endpoint.trim(), model = model.trim(), protocol = protocol, stream = stream, searchProof = searchProof, contextTokens = contextTokens.toIntOrNull() ?: 0, models = models.lines().map(String::trim).filter(String::isNotBlank).distinct(), modelCapabilities = modelCapabilities), key.takeIf(String::isNotBlank)); editing = null
         } }) {
-            Field("连接名称", name, { name = it }); Field("完整模型 Endpoint", endpoint, { endpoint = it; modelCapabilities = buildJsonObject {} })
+            Text("连接方式 · API Key", color = MeloGold)
+            Box {
+                OutlinedButton(onClick = { providerMenu = true }, enabled = key.isBlank() && !probing, modifier = Modifier.fillMaxWidth().testTag("connection-provider")) {
+                    Text(presets.firstOrNull { it.second == endpoint }?.first ?: "自定义兼容服务", Modifier.weight(1f)); Icon(Icons.Outlined.ArrowDropDown, "选择模型平台")
+                }
+                DropdownMenu(expanded = providerMenu, onDismissRequest = { providerMenu = false }) {
+                    presets.forEach { preset -> DropdownMenuItem(text = { Text(preset.first) }, onClick = {
+                        name = preset.first; endpoint = preset.second; protocol = preset.third; model = ""; models = ""; contextTokens = "160000"
+                        modelCapabilities = buildJsonObject {}; searchProof = buildJsonObject {}; providerMenu = false
+                    }) }
+                }
+            }
+            if (key.isNotBlank()) Text("先保存或取消当前密钥，再切换模型平台。", color = MeloMuted)
+            Field("连接名称", name, { name = it })
+            Field("服务地址", endpoint, { endpoint = it; modelCapabilities = buildJsonObject {} })
             Text("填写完整请求地址，例如 https://example.com/v1/chat/completions；不会自动补充路径。", color = MeloMuted)
             OutlinedTextField(key, { key = it }, label = { Text(if (hasCredential == true) "新的 API 凭证（留空保留已保存凭证）" else "API 凭证（此设备尚未保存，必填）") }, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth().testTag("connection-key"), singleLine = true)
             Text(if (hasCredential == true) "本机已有凭证。保存配置不会发送模型请求。" else "凭证只在此设备保存；已有订阅仍需填写此服务的 API Key。", color = MeloMuted)
             Field("模型名称", model, { model = it })
+            TextButton(onClick = { advanced = !advanced }) { Text(if (advanced) "收起高级设置" else "高级设置") }
+            if (advanced) {
             listOf("vision" to "图片输入", "reasoning" to "推理参数", "imageGen" to "图片输出").forEach { (capability, label) ->
                 Text(label)
                 Row { listOf("" to "自动（目录或实测）", "true" to "支持", "false" to "不支持").forEach { (value, title) ->
@@ -323,6 +345,7 @@ import com.melo.android.network.HostedSearchAdapter
                 } finally { probing = false }
             } }) { Text("验证 Hosted Search") }
             Text("Hosted Search 验证会发送一次真实搜索请求并计入服务用量；只验证当前连接与凭证，24 小时后需重新验证。", color = MeloMuted)
+            }
             probe?.let { Text(it, color = MeloGold) }
         }
     }

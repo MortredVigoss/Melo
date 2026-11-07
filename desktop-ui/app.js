@@ -6,7 +6,6 @@ import { editBehaviorSettings, handleBehaviorSettings } from './behaviorSettings
 import { escapeHtml } from './i18n.js';
 import { notify, renderNotifications } from './feedback.js';
 import { LOCAL_SERVICE_DEFAULTS, customVoiceActive } from '/shared/localServices.js';
-import { renderSmartRouting, editSmartRouting, handleSmartRouting, smartRoutingDrag } from './smartRouting.js';
 import {handleManagementAction} from './managementActions.js';
 import {askFileDecision} from './chatFiles.js';
 import { isAgentChannelAvailable } from '/shared/channelAvailability.js';
@@ -4550,12 +4549,10 @@ function renderModelPage() {
         <h1 class="page-title compact">模型与连接</h1>
       </div>
       <div class="model-connection-summary">
-        <div><small>GLOBAL DEFAULT</small><strong>${escapeHtml(modelLabel(config.model))}</strong><span>${escapeHtml(config.model)} · ${escapeHtml(config.authMode === 'codex' ? 'Codex OAuth' : config.authMode === 'local' ? '本地连接' : 'API')}</span></div>
-        <p>默认连接用于回答。Agent 指令与工具配置保持不变。每条回复的“模型记录”显示服务端实际返回的标识。</p>
+        <div><small>当前默认连接</small><strong>${escapeHtml(modelLabel(config.model))}</strong><span>${escapeHtml(config.model)} · ${escapeHtml(config.authMode === 'codex' ? 'Codex OAuth' : config.authMode === 'local' ? '本地连接' : 'API')}</span></div>
       </div>
       ${renderLlmConnections(config)}
-      ${renderDefaultModelSettings(config, escapeHtml)}
-      ${renderSmartRouting(config)}
+      <details class="model-default-settings"><summary>当前默认回答模型</summary>${renderDefaultModelSettings(config, escapeHtml)}</details>
       ${renderSearchSettings(config)}
       ${renderImageSettings(config)}
       <details class="model-prompt-settings"><summary>全局系统提示词</summary>
@@ -5752,7 +5749,6 @@ document.addEventListener('click', async event => {
   if (['new-chat', 'open-chat'].includes(action)) clearImageTask();
 
   if (action?.startsWith('behavior-settings-')) { event.preventDefault(); await handleBehaviorSettings(action,{api,render,refresh:()=>loadBootstrap(uiState.searchQuery,{quiet:true})}); return; }
-  if (action?.startsWith('smart-routing-')) { event.preventDefault(); await handleSmartRouting(action, {trigger,config:uiState.bootstrap.settings.config,api,render,refresh:()=>loadBootstrap(uiState.searchQuery,{quiet:true})}); return; }
   if (action?.startsWith('llm-') && trigger.tagName === 'BUTTON') {
     event.preventDefault();
     await handleLlmConnection(action, { trigger, config: uiState.bootstrap.settings.config, api, render, refresh: () => loadBootstrap(uiState.searchQuery, { quiet: true }), openUrl: openExternalUrl, chatgptLogin: handleStartModelOAuthLogin });
@@ -6317,7 +6313,6 @@ document.addEventListener('input', event => {
   if (memoryFeature.handleInput(target)) return;
   if (target.dataset.taskPricing) { uiState.taskPricing ||= {}; uiState.taskPricing[target.dataset.taskPricing] = target.value; return; }
   if (handleImageInput(target, uiState.bootstrap?.settings?.config || {})) return;
-  if (editSmartRouting(target)) return;
   if (editLlmConnection(target, uiState.bootstrap?.settings?.config || {})) return;
   if (editBehaviorSettings(target)) return;
   if (editSearchSettings(target)) return;
@@ -6460,7 +6455,6 @@ document.addEventListener('change', async event => {
   if (target.dataset.taskCheck) { uiState.taskChecks ||= {}; const task=activeTasks().find(t=>t.id===target.dataset.taskCheck); uiState.taskChecks[target.dataset.taskCheck] ||= {}; Object.assign(uiState.taskChecks[target.dataset.taskCheck],{runId:task?.execution?.runId,[target.dataset.criterion]:target.checked}); return; }
   if (customizeFeature.handleChange(target)) return;
   if (handleImageInput(target, uiState.bootstrap?.settings?.config || {})) { render(); return; }
-  if (editSmartRouting(target)) { render(); return; }
   if (editLlmConnection(target, uiState.bootstrap?.settings?.config || {})) { render(); return; }
   if (editBehaviorSettings(target)) return;
   if (editSearchSettings(target)) { render(); return; }
@@ -6866,5 +6860,3 @@ setInterval(() => {
   if (!chatFeature.isSending() || document.hidden) return;
   for (const node of document.querySelectorAll('.thinking-banner, .neural-activity')) node.textContent = chatFeature.thinkingLabel();
 }, 1000);
-
-for (const type of ['dragstart','dragover','drop']) document.addEventListener(type,event=>smartRoutingDrag(event,render));

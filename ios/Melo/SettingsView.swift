@@ -6,7 +6,6 @@ struct SettingsView: View {
         NavigationStack {
             ScrollView { VStack(alignment: .leading, spacing: 20) {
                 LLMConnectionsView().meloPanel()
-                ModelSettingsSection()
             }.padding() }.navigationTitle("模型连接与 API Key").background(MeloTheme.dialog)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
         }

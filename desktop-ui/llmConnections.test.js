@@ -25,12 +25,13 @@ test('legacy ChatGPT settings show Sol/Astra choices and persist only after expl
 
 test('connection UI preserves manual model IDs, keeps secrets provider-local, and activates only on request', async () => {
   const config = { authMode: 'codex', codexAuth: { loggedIn: true }, llmConnections: { providers: LLM_PROVIDERS, activeId: '', profiles: [] } };
-  let dom, modelRequests = 0, active = '', nextId = 0, saves=0;
+  let dom, modelRequests = 0, active = '', nextId = 0, saves=0, savedId;
   const render = () => { dom = new JSDOM(renderLlmConnections(config)); };
   const api = async (url, { body }) => {
     if (url.endsWith('/save')) {saves++;
       assert.equal(body.model, 'vendor/model-not-in-catalog');
       assert.equal(body.providerId, 'deepseek');
+      savedId = body.id;
       const profile = { ...body, hasKey: true, apiKey: undefined, revision: ++nextId };
       config.llmConnections.profiles = [profile]; return config.llmConnections;
     }
@@ -40,8 +41,9 @@ test('connection UI preserves manual model IDs, keeps secrets provider-local, an
   };
   const hooks = { config, api, render, refresh: async () => {}, openUrl() { throw new Error('No OAuth requested'); }, chatgptLogin() { throw new Error('No login requested'); } };
   render();
-  const select = dom.window.document.querySelector('[data-action="llm-select"]'); select.value = 'deepseek'; editLlmConnection(select, config); render();
-  assert.equal(dom.window.document.querySelector('[name=model]').matches(':disabled'),true);
+  const method = dom.window.document.querySelector('[data-action="llm-method"]'); method.value = 'api-key'; editLlmConnection(method, config); render();
+  const select = dom.window.document.querySelector('[data-action="llm-new-provider"]'); select.value = 'deepseek'; editLlmConnection(select, config); render();
+  assert.equal(dom.window.document.querySelector('[name=model]').matches(':disabled'),false);
   await handleLlmConnection('llm-edit',hooks);
   for (const [name, value] of [['model', 'vendor/model-not-in-catalog'], ['apiKey', 'user-provided-secret']]) {
     const input = dom.window.document.querySelector(`[name="${name}"]`); input.value = value; editLlmConnection(input, config);
@@ -54,8 +56,9 @@ test('connection UI preserves manual model IDs, keeps secrets provider-local, an
   await handleLlmConnection('llm-test', hooks);
   assert.equal(modelRequests, 1); assert.equal(active, '');
   assert.match(dom.window.document.querySelector('.llm-connection-status').textContent, /vendor\/actual/);
-  await handleLlmConnection('llm-activate', hooks); assert.equal(active, 'deepseek');assert.equal(saves,1);assert.equal(dom.window.document.querySelector('[name=model]').matches(':disabled'),true);
-  const provider = dom.window.document.querySelector('[data-action="llm-select"]'); provider.value = 'gemini'; editLlmConnection(provider, config); render();
+  await handleLlmConnection('llm-activate', hooks); assert.equal(active, savedId);assert.equal(saves,1);assert.equal(dom.window.document.querySelector('[name=model]').matches(':disabled'),true);
+  await handleLlmConnection('llm-new',hooks);
+  const provider = dom.window.document.querySelector('[data-action="llm-new-provider"]'); provider.value = 'gemini'; editLlmConnection(provider, config); render();
   assert.equal(dom.window.document.querySelector('[name="apiKey"]').value, '');
   assert.equal(dom.window.document.querySelector('[name="model"]').value, '');
   assert.match(dom.window.document.querySelector('[name="baseUrl"]').value, /googleapis/);
@@ -83,4 +86,41 @@ test('capability switches enable Save and persist explicit false for an opaque m
  const input=dom.window.document.querySelector('[data-model-capability=vision]');input.value='false';change(input,config);
  assert.equal(dom.window.document.querySelector('[data-action=llm-save]').disabled,false);
  await act('llm-save',hooks);assert.equal(saved.modelCapability.vision,false);assert.equal(saved.model,'opaque');dom.window.close();
+});
+
+
+test('connection method changes the whole form and never activates or leaks a different account', async () => {
+  const mod = await import('./llmConnections.js?method-switch');
+  const config = { authMode:'codex', model:'codex-model', codexAuth:{loggedIn:false}, llmConnections:{providers:LLM_PROVIDERS, profiles:[], activeId:''} };
+  const { updateNeuralWorkspace } = await import('./neuralDom.js');
+  const dom = new JSDOM('<main id="app"></main>');
+  const root = dom.window.document.querySelector('main');
+  const render = () => updateNeuralWorkspace(root, mod.renderLlmConnections(config));
+  const hooks = {config,render,refresh:async()=>{},api:()=>{throw new Error('Browsing must not save or activate');}};
+  const choose = (action, value) => { const el=root.querySelector(`[data-action=${action}]`); el.value=value; mod.editLlmConnection(el,config); render(); };
+  render();
+  assert.ok(root.querySelector('.llm-auth-card'));
+  assert.equal(root.querySelector('[name=apiKey]'), null);
+  assert.equal(root.querySelector('[name=baseUrl]'), null);
+  choose('llm-method','api-key');
+  assert.equal(root.querySelector('.llm-auth-card'), null);
+  assert.equal(root.querySelector('[name=apiKey]').matches(':disabled'), false);
+  choose('llm-new-provider','custom');
+  assert.equal(root.querySelector('[name=baseUrl]').value, '');
+  assert.ok(root.querySelector('[name=apiProtocol]'));
+  const key=root.querySelector('[name=apiKey]'); key.value='fixture-draft'; mod.editLlmConnection(key,config);
+  choose('llm-method','codex');
+  assert.equal(root.querySelector('[data-action=llm-method]').value,'api-key');
+  assert.equal(root.querySelector('[name=apiKey]').value,'fixture-draft');
+  assert.match(root.textContent,/请先保存或取消|Save or discard/);
+  choose('llm-new-provider','deepseek');
+  assert.equal(root.querySelector('[name=apiKey]').value,'','provider change must replace the live password field');
+  assert.match(root.querySelector('[name=baseUrl]').value,/deepseek/);
+  await mod.handleLlmConnection('llm-cancel',hooks);
+  choose('llm-method','codex');
+  assert.ok(root.querySelector('.llm-auth-card'));
+  assert.equal(root.querySelector('[name=apiKey]'),null);
+  choose('llm-method','api-key');
+  assert.equal(root.querySelector('[name=apiKey]').value,'');
+  dom.window.close();
 });

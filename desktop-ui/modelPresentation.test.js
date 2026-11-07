@@ -110,3 +110,10 @@ test('project role overrides retain the default and all custom role choices',()=
  data.conversationProfiles.projects.p=[];
  assert.equal(conversationAgent(data).name,'Custom');
 });
+
+
+test('retired automatic selection is absent even for a saved smart conversation',()=>{
+ const document=dom(renderModelPicker({config:{model:'fixed-model',smartRouting:{enabled:false,defaultMode:'fixed'},llmConnections:{profiles:[]}},models:['fixed-model'],selection:{mode:'smart',model:'fixed-model'},open:true},escape));
+ assert.equal(document.querySelector('[data-model-mode=smart]'),null);
+ assert.match(document.querySelector('.model-picker-trigger').textContent,/fixed-model/);
+});

@@ -8,6 +8,7 @@ export function saveSmartRouting(patch) {
     const config = await loadConfig({ skipModelNormalize: true });
     if (!Number.isSafeInteger(patch.revision) || patch.revision !== (config.smartRouting?.revision || 0)) throw new Error('智能模式设置已被更新，草稿保留；请载入最新版本。');
     if (!['fixed','smart'].includes(patch.defaultMode) || !['cost','balanced','quality'].includes(patch.preference) || typeof patch.allowCrossConnection !== 'boolean' || typeof patch.allowEscalation !== 'boolean') throw new Error('智能模式设置无效。');
+    if (patch.defaultMode !== 'fixed' || patch.allowCrossConnection || patch.allowEscalation) throw new Error('智能选模已停用，请选择具体模型。');
     const resolved = await getResolvedConfig({ skipModelNormalize: true });
     const candidates = routingCandidates(resolved);
     const tiers = {};
