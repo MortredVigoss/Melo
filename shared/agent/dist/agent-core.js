@@ -1553,12 +1553,76 @@ function planRequest(request = {}) {
 return { actionEvidence, resolvedRequestGoal, planRequest };
 })();
 
+modules["shared/agent/goalReview.js"] = (() => {
+// The delivery check as the task space shows it (review 2026-11-07): what the
+// checker decided, each requirement it checked, and the evidence ids it cited.
+// A task without a contract (a single fact, a calculation, an action) has no
+// evaluation ledger, so this is the only structured record of how its answer
+// was approved. Bounded, display-only and never sent to a model.
+//
+// Kept free of imports so the phone scene bundle can carry it.
+
+const GOAL_REVIEW_LIMITS = Object.freeze({ requirements: 12, text: 160, evidence: 8, id: 80, explanation: 240 });
+const GOAL_REVIEW_DECISIONS = Object.freeze(['complete', 'deliver', 'continue', 'needs_user', 'partial']);
+const GOAL_REQUIREMENT_KINDS = Object.freeze(['response', 'context', 'constraint', 'external_fact', 'external_effect']);
+const GOAL_REQUIREMENT_STATES = Object.freeze(['met', 'missing', 'unavailable']);
+
+const object = value => value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+const clip = (value, max) => typeof value === 'string' ? value.trim().slice(0, max) : '';
+const whole = (value, max) => Number.isInteger(value) && value >= 0 ? Math.min(value, max) : 0;
+
+/** Re-checks a review read from a record; anything malformed becomes null, never an error. */
+function normalizeGoalReview(raw) {
+  try { return normalized(raw); } catch { return null; }
+}
+function normalized(raw) {
+  const review = object(raw);
+  if (!review || review.v !== 1 || !GOAL_REVIEW_DECISIONS.includes(review.decision)) return null;
+  const L = GOAL_REVIEW_LIMITS, rows = Array.isArray(review.requirements) ? review.requirements : [];
+  const requirements = rows.slice(0, L.requirements).map(object).filter(Boolean).map(row => ({
+    text: clip(row.text, L.text),
+    kind: GOAL_REQUIREMENT_KINDS.includes(row.kind) ? row.kind : 'external_fact',
+    status: GOAL_REQUIREMENT_STATES.includes(row.status) ? row.status : 'missing',
+    evidenceIds: (Array.isArray(row.evidenceIds) ? row.evidenceIds : []).filter(id => typeof id === 'string' && id.trim()).slice(0, L.evidence).map(id => id.trim().slice(0, L.id)),
+  })).filter(row => row.text);
+  return {
+    v: 1,
+    decision: review.decision,
+    reason: typeof review.reason === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(review.reason) ? review.reason : '',
+    corrections: whole(review.corrections, 99),
+    correctionLimit: whole(review.correctionLimit, 99),
+    explanation: clip(review.explanation, L.explanation),
+    requirements,
+    omitted: whole(review.omitted, 999) + Math.max(0, rows.length - L.requirements),
+  };
+}
+
+/** The view of a reviewed goal state (shared/agent/goal.js reviewGoal); read-only. */
+function goalReviewOf(state, correctionLimit = 0) {
+  const goal = object(state);
+  if (!goal) return null;
+  return normalizeGoalReview({ v: 1, decision: goal.decision, reason: goal.reason, corrections: goal.corrections, correctionLimit,
+    explanation: goal.explanation, requirements: goal.requirements });
+}
+
+/** Counts the gate shows: requirements met, missing, unavailable, and cited evidence. */
+function goalReviewTally(review) {
+  const rows = review?.requirements || [];
+  const count = status => rows.filter(row => row.status === status).length;
+  return { total: rows.length, met: count('met'), missing: count('missing'), unavailable: count('unavailable'),
+    evidence: new Set(rows.flatMap(row => row.evidenceIds)).size, passed: ['complete', 'deliver'].includes(review?.decision) };
+}
+
+return { GOAL_REVIEW_LIMITS, GOAL_REVIEW_DECISIONS, GOAL_REQUIREMENT_KINDS, GOAL_REQUIREMENT_STATES, normalizeGoalReview, goalReviewOf, goalReviewTally };
+})();
+
 modules["shared/agent/goal.js"] = (() => {
 const { updateTaskEvaluation, taskProgressResult, taskEvaluationSummary, TASK_PROGRESS_NAME, taskEvaluationSnapshot } = modules["shared/agent/taskEvaluation.js"];
 const { deliveryEvidence } = modules["shared/agent/evidence.js"];
 const { isStandaloneGreeting } = modules["shared/agent/retrieval/intentRouter.js"];
 const { getRequestNetworkPolicy } = modules["shared/agent/retrieval/requestPolicy.js"];
 const { resolvedRequestGoal, planRequest } = modules["shared/agent/search.js"];
+const { goalReviewOf } = modules["shared/agent/goalReview.js"];
 
 // Shared by all Hosts. A review is a normal, metered model round with NO tools;
 // it can propose progress but cannot manufacture observations or permissions.
@@ -1714,6 +1778,8 @@ function goalOperation({ action, state, goal, messages, id, amendment, candidate
   if (action === 'progressResult') return taskProgressResult(state.evaluation);
   // Read-only task-space view (plan C); never changes the goal state.
   if (action === 'progressSnapshot') return taskEvaluationSnapshot(state.evaluation);
+  // Read-only delivery-check view (review 2026-11-07): what the last check decided.
+  if (action === 'reviewSnapshot') return goalReviewOf(state, GOAL_LIMITS.corrections);
   if (action === 'amend') return amendGoal(state, amendment);
   if (action === 'candidate') return goalCandidate(state, { ...candidate, observations });
   if (action === 'request') return goalReviewRequest(state, observations);
@@ -3971,6 +4037,7 @@ modules["shared/agent/execution.js"] = (() => {
 const { AGENT_LOOP_CONTRACT } = modules["shared/agent/loopContract.js"];
 const { INTERNAL_JOB_ROLES } = modules["shared/agent/internalRouting.js"];
 const { normalizeEvaluationSnapshot } = modules["shared/agent/taskEvaluation.js"];
+const { normalizeGoalReview } = modules["shared/agent/goalReview.js"];
 const { sessionContext, sessionEventId } = modules["src/shared/sessionEvents.js"];
 // Portable observations using the existing ExecutionScene projection contract.
 // Hosts supply identity/time; this module has no effects or credential access.
@@ -4033,6 +4100,9 @@ function executionScene({ action, scene, runId, chatId, query, at, event = {}, o
     if (Number.isInteger(event.limits?.rounds)) row.limits = { rounds: Math.max(0, Math.min(100, event.limits.rounds)) };
     const evaluation = event.evaluation ? normalizeEvaluationSnapshot(event.evaluation) : null;
     if (evaluation) row.evaluation = evaluation;
+    // The delivery check's requirements and cited evidence (review 2026-11-07).
+    const goalReview = event.goalReview ? normalizeGoalReview(event.goalReview) : null;
+    if (goalReview) row.goalReview = goalReview;
   }
   if (event.result) {
     const result = event.result;

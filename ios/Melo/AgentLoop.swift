@@ -236,6 +236,8 @@ struct AgentStageEvent: Sendable {
     var role: String? = nil
     var rounds: Int? = nil
     var evaluation: SyncValue? = nil
+    /// The delivery check's requirements and cited evidence (review 2026-11-07), for the task space only.
+    var goalReview: SyncValue? = nil
 }
 
 /// Observers; all run on the main actor.
@@ -587,7 +589,9 @@ final class AgentLoop: @unchecked Sendable {
             }
             if checkingGoal, let candidate = candidateRound {
                 let decision = try goal.update("review", ["response": round.calls.isEmpty ? round.text : "", "observations": completionObservations])
-                await hooks.onStage?("goal-check:\(iteration)", "核对任务交付", ["complete", "deliver"].contains(decision["decision"] as? String ?? "") ? "completed" : "failed", decision["explanation"] as? String ?? decision["reason"] as? String ?? "")
+                // Read-only view of this check for the task space; never sent to the model.
+                let review = (try? goal.update("reviewSnapshot")).flatMap { try? SyncValue.from($0) }
+                await stage(AgentStageEvent(id: "goal-check:\(iteration)", name: "核对任务交付", status: ["complete", "deliver"].contains(decision["decision"] as? String ?? "") ? "completed" : "failed", output: decision["explanation"] as? String ?? decision["reason"] as? String ?? "", goalReview: review))
                 if decision["decision"] as? String == "continue" {
                     try core.event("feedback", ["repair": true])
                     transcript.append(.userText(decision["feedback"] as? String ?? ""))

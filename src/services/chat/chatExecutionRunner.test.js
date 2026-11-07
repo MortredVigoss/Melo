@@ -1335,3 +1335,27 @@ test('product prepare keeps the selected model when legacy smart routing and cro
   assert.ok(calls.every(call=>call.purpose!=='routing-judge' && call.model==='local-model'));
   assert.ok(!events.some(event=>event.value?.id?.startsWith('model-routing:')));
 });
+
+// Review 2026-11-07: a task without a contract showed empty panels although its
+// answer was checked. The check event now carries each requirement it judged.
+test('the delivery check event carries each requirement, its status and cited evidence for the task space', async () => {
+  const {registerTool, unregisterTool} = await import('../../tools/registry.js');
+  registerTool({id:'venue_note',name:'venue_note',description:'Read the saved venue note',effect:'read',requiresPermission:false,parametersSchema:{type:'object',properties:{}},run:async()=>({ok:true,output:'Saved note: the concert venue is Hamer Hall.'})});
+  try {
+    const question='Which venue is in my saved concert note?';
+    const state=fixtureState(),chat=fixtureChat({messages:[{id:'review-user',role:'user',content:question}]});
+    state.chats=[chat];state.agentProfiles.main.collaboration={canDelegate:false,delegateTargets:[]};await saveState(state);
+    const events=[];let leadTurns=0,checks=0;
+    const result=await runChatAgentExecutionGraph({config:fixtureConfig,state,chat,workspace:fixtureWorkspace(),connectors:[],skills:[],latestUserMessage:question,agentId:'main',sseEmitter:(type,e)=>{if(type==='execution_event')events.push(e);},
+      _dependencies:{getEmbedding:async()=>null,createReply:async options=>{
+        if(options.systemPrompt.startsWith("You are Melo's task completion checker")){checks++;return JSON.stringify({decision:'complete',reasonType:'fulfilled',reason:'The saved note names the venue.',requirements:[
+          {text:'venue named in the saved note',kind:'external_fact',status:'met',evidenceIds:['direct']},{text:'answer in one sentence',kind:'response',status:'met',evidenceIds:[]}]});}
+        return ++leadTurns===1?'<tool_call>'+JSON.stringify({id:'direct',name:'venue_note',arguments:{}})+'</tool_call>':'The venue is Hamer Hall.';
+      }}});
+    const check=events.filter(e=>/^goal-check:/.test(e.id)).at(-1);
+    assert.equal(checks,1,'one check ran');assert.equal(result.normalizedReply.completion.outcome,'completed');
+    assert.equal(check.status,'completed');
+    assert.deepEqual(check.goalReview,{v:1,decision:'complete',reason:'GOAL_DELIVERY_SUPPORTED',corrections:0,correctionLimit:2,explanation:'The saved note names the venue.',omitted:0,requirements:[
+      {text:'venue named in the saved note',kind:'external_fact',status:'met',evidenceIds:['direct']},{text:'answer in one sentence',kind:'response',status:'met',evidenceIds:[]}]});
+  } finally {unregisterTool('venue_note');}
+});

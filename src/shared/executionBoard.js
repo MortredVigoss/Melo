@@ -4,6 +4,7 @@
 // progress the scene did not record; every row points back to its record.
 import { MEMBER_ROLES, TERMINAL_SCENE_STATUSES, sceneFinished } from './executionScene.js';
 import { normalizeEvaluationSnapshot, taskEvaluationSnapshot } from '../../shared/agent/taskEvaluation.js';
+import { normalizeGoalReview, goalReviewTally } from '../../shared/agent/goalReview.js';
 
 // Where a member normally works when no running operation says otherwise.
 export const MEMBER_ROLE_MODULE = Object.freeze({ research: 'search', social: 'search', lookup: 'files', calculate: 'compute', execute: 'tools' });
@@ -65,6 +66,20 @@ export function sceneEvaluation(scene) {
   const completed = evaluationFromCompletion(scene);
   if (completed) return { snapshot: completed, stageId: stages.at(-1)?.id || null, source: 'completion', updates: stages.length, series: [] };
   return { snapshot: null, stageId: stages.at(-1)?.id || null, source: stages.length ? 'text' : null, updates: stages.length, series: [] };
+}
+
+// The delivery checks (review 2026-11-07). A task without a contract has no
+// evaluation ledger; its checks are how the answer was approved. `review` is
+// the latest structured check; `history` has one row per recorded check. A
+// check recorded before reviews were kept has only its status and text: it
+// is listed, never given requirements it did not record.
+export function sceneGoalReview(scene) {
+  const rows = (scene?.pipeline || []).filter(stage => /^goal-check:/.test(stage.id))
+    .map(stage => ({ id: stage.id, status: stage.status, text: stage.output || '', at: stage.finishedAt || stage.startedAt || null, review: normalizeGoalReview(stage.goalReview) }));
+  const latest = [...rows].reverse().find(row => row.review) || null;
+  return { checks: rows.length, review: latest?.review || null, stageId: latest?.id || rows.at(-1)?.id || null, last: rows.at(-1) || null,
+    tally: latest ? goalReviewTally(latest.review) : null,
+    history: rows.map(({ review, ...row }) => ({ ...row, decision: review?.decision || null, ...(review ? { tally: goalReviewTally(review) } : {}) })) };
 }
 
 // Candidates that appeared or moved to a better tier between two snapshots;

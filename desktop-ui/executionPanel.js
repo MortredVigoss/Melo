@@ -249,7 +249,7 @@ function paint() {
     ${history.length > 1 ? ui`<select aria-label="选择历史任务" data-execution-history>${history.map(s => ui`<option value="${escapeHtml(s.runId)}" ${s.runId === currentRun ? 'selected' : ''}>${escapeHtml(s.query.slice(0, 24) || t("任务"))}</option>`).join('')}</select>` : ''}
     ${historyCursors.get(currentChat) ? ui`<button data-execution-action="older-scenes">更早的任务</button>` : ''}
     <button class="execution-voice" data-action="toggle-tts-autoplay" title="朗读设置">朗读设置</button>
-    <button data-execution-action="toggle" aria-expanded="${opened}">${opened ? t("回到对话") : t("进入作战大屏")} ↗</button>`;
+    <button data-execution-action="toggle" aria-expanded="${opened}">${opened ? t("回到对话") : t("进入任务空间")} ↗</button>`;
     const element = host.querySelector('.execution-panel-header'); if (element && element.dataset.html !== header) { element.innerHTML = header; element.dataset.html = header; }
     updateButtons(); paintTiming(); applyButtonStyles(host);
   }

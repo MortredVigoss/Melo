@@ -1,6 +1,7 @@
 import { runtimeStageName, runtimeStageOutput } from '../../shared/agent/runtimeMessages.js';
 import { visualColor } from './visualTokens.js';
 import { normalizeEvaluationSnapshot } from '../../shared/agent/taskEvaluation.js';
+import { normalizeGoalReview } from '../../shared/agent/goalReview.js';
 const sceneMessageParams = value => Object.fromEntries(Object.entries(value || {}).filter(([k,v])=>/^[a-zA-Z][a-zA-Z0-9_]{0,39}$/.test(k) && (typeof v === 'string' || typeof v === 'number' && Number.isFinite(v) || v && typeof v === 'object' && /^value\.[a-zA-Z0-9_]{1,40}$/.test(v.messageId))).slice(0,16).map(([k,v])=>[k,typeof v === 'string' ? v.slice(0,300) : typeof v === 'object' ? {messageId:v.messageId} : v]));
 export { sessionEvents } from './sessionEvents.js';
 import { executionMetadata, publicSummaryText } from './executionMetadata.js';
@@ -186,6 +187,8 @@ export function applyExecutionEvent(scene, event) {
       if (MEMBER_ROLES.includes(event.role)) stage.role = event.role;
       if (Number.isInteger(event.limits?.rounds)) stage.limits = { rounds: Math.max(0, Math.min(100, event.limits.rounds)) };
       if (event.evaluation) { const evaluation = normalizeEvaluationSnapshot(event.evaluation); if (evaluation) stage.evaluation = evaluation; }
+      // The delivery check's requirements and cited evidence (review 2026-11-07).
+      if (event.goalReview) { const goalReview = normalizeGoalReview(event.goalReview); if (goalReview) stage.goalReview = goalReview; }
       // Bug audit U5: first sighting of a stage is its start, whatever status
       // it arrives with (a completed-only stage used to have no time at all).
       if (!stage.startedAt) stage.startedAt = at;

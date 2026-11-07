@@ -202,10 +202,11 @@ test('a supplement typed during a tool step reaches the very next model request,
   assert.deepEqual(endSupplements('fixture-chat'), [], 'both supplements reached the bounded goal check');
 });
 
+// Team members are Agents the user created (the built-in lanes are no team members since 2026-11-07).
 test('manual chat team reaches real member HTTP requests with own models, persona, handoffs and inherited capabilities',async t=>{
  const cap={...emptyCapabilities(),delegate:true};
- const profiles={main:{id:'main',name:'Main',instructions:'parent',model:'parent',capabilities:cap,collaboration:{canDelegate:true,delegateTargets:['research','reviewer']}},research:{id:'research',name:'Research',instructions:'research persona',model:'research-model',capabilities:emptyCapabilities()},reviewer:{id:'reviewer',name:'Reviewer',instructions:'review persona',model:'review-model',capabilities:emptyCapabilities()}};
- const h=await harness(t,round=>done([{...message,content:[{type:'output_text',text:round<3?JSON.stringify({conclusion:'result '+round,evidence:['fixture source'],changedFiles:[],unfinished:[],review:'approve'}):'lead summary of both members',annotations:[]}]}]),{text:'比较这些选择',profiles,teamPlan:{members:['research','reviewer'],mode:'sequential'}});
+ const profiles={main:{id:'main',name:'Main',instructions:'parent',model:'parent',capabilities:cap,collaboration:{canDelegate:true,delegateTargets:['scout','critic']}},scout:{id:'scout',name:'Research',instructions:'research persona',model:'research-model',capabilities:emptyCapabilities()},critic:{id:'critic',name:'Reviewer',instructions:'review persona',model:'review-model',capabilities:emptyCapabilities()}};
+ const h=await harness(t,round=>done([{...message,content:[{type:'output_text',text:round<3?JSON.stringify({conclusion:'result '+round,evidence:['fixture source'],changedFiles:[],unfinished:[],review:'approve'}):'lead summary of both members',annotations:[]}]}]),{text:'比较这些选择',profiles,teamPlan:{members:['scout','critic'],mode:'sequential'}});
  const result=await h.run();
  // Two members, then one summary request written by the lead with its own model and persona.
  assert.equal(h.requests.length,3);
@@ -409,7 +410,7 @@ test('cancelling during a goal check cannot continue tools or publish a fabricat
 
 test('partial team member returns findings and the lead continues missing work through real HTTP', async t => {
   const cap = {...emptyCapabilities(),readFiles:true,delegate:true};
-  const profiles = {main:{id:'main',name:'Lead',model:'parent',capabilities:cap,collaboration:{canDelegate:true,delegateTargets:['research']}},research:{id:'research',name:'Research',model:'research-model',capabilities:{...emptyCapabilities(),readFiles:true},collaboration:{maxIterations:1,maxTokens:100000}}};
+  const profiles = {main:{id:'main',name:'Lead',model:'parent',capabilities:cap,collaboration:{canDelegate:true,delegateTargets:['scout']}},scout:{id:'scout',name:'Research',model:'research-model',capabilities:{...emptyCapabilities(),readFiles:true},collaboration:{maxIterations:1,maxTokens:100000}}};
   let memberWork = 0, leadWork = 0, deliveries = 0;
   const h = await harness(t, (_n, body) => {
     const member = body.model === 'research-model';
@@ -421,7 +422,7 @@ test('partial team member returns findings and the lead continues missing work t
     leadWork++;
     assert.match(JSON.stringify(body), /Found A|found A/);
     return leadWork === 1 ? done([fn('lead-gap','C')]) : textReply('A and C were read and checked.');
-  }, {profiles,toolCapability:'readFiles',text:'Read local A and C and report both findings.',teamPlan:{members:['research'],mode:'sequential'}});
+  }, {profiles,toolCapability:'readFiles',text:'Read local A and C and report both findings.',teamPlan:{members:['scout'],mode:'sequential'}});
   const result = await h.run();
   assert.equal(memberWork,1);assert.equal(deliveries,1);assert.equal(leadWork,2);
   assert.deepEqual(h.executions,['A','C'],'the lead fills the gap without repeating the member read');

@@ -1,7 +1,10 @@
 /* The working panel shares the neural field's night sky (user request
-   2026-10-21): a little more see-through, with a slowly turning spiral galaxy
-   (drawn by galaxyBackdrop.js: a bright centre and an outer ring) behind the content and a soft reading veil over
-   the text area so long settings and conversations stay as legible as before.
+   2026-10-21): a little more see-through, with a spiral galaxy (drawn by
+   galaxyBackdrop.js: a bright centre and an outer ring) behind the content and
+   a soft reading veil over the text area so long settings and conversations
+   stay as legible as before. The galaxy holds still and stays faint (user
+   request 2026-11-07: a moving, bright sky made the panel look busy); the
+   neural field outside the panel keeps its own motion setting.
    Loaded after surfaceUnify.css and replaces its near-opaque panel surface. */
 .neural-shell:not(.is-overview) .neural-dashboard.workspace {
   isolation: isolate;
@@ -11,7 +14,7 @@
 }
 
 /* The galaxy: centred a little right of and below the middle, sized so the
-   whole ring stays in view; one full turn every seven minutes. */
+   whole ring stays in view; it does not turn. */
 .neural-shell:not(.is-overview) .neural-dashboard.workspace::before {
   content: "";
   position: absolute;
@@ -23,13 +26,11 @@
   pointer-events: none;
   background: var(--melo-galaxy, none) center / contain no-repeat;
   opacity: 0;
-  transform: translate(-50%, -50%) rotate(0turn);
+  transform: translate(-50%, -50%);
   transition: opacity 1.8s ease;
-  animation: melo-galaxy-turn 420s linear infinite;
-  will-change: transform;
 }
 html[data-melo-galaxy="ready"] .neural-shell:not(.is-overview) .neural-dashboard.workspace::before {
-  opacity: .58;
+  opacity: .2;
 }
 
 /* Reading veil: darkest where most text is, fading towards the galaxy core. */
@@ -40,15 +41,4 @@ html[data-melo-galaxy="ready"] .neural-shell:not(.is-overview) .neural-dashboard
   z-index: var(--layer-minus-1);
   pointer-events: none;
   background: radial-gradient(ellipse 75% 65% at 32% 34%, var(--palette-a4e0aa33b9), var(--palette-ca18127ff8) 70%, transparent);
-}
-
-@keyframes melo-galaxy-turn {
-  to { transform: translate(-50%, -50%) rotate(1turn); }
-}
-
-/* 静态模式 (still mode) and the system's reduced-motion setting keep the sky still.
-   Same selector as the turning rule plus one more qualifier, so these always win. */
-html[data-melo-reduced="true"] .neural-shell:not(.is-overview) .neural-dashboard.workspace::before { animation: none; }
-@media (prefers-reduced-motion: reduce) {
-  :root .neural-shell:not(.is-overview) .neural-dashboard.workspace::before { animation: none; }
 }

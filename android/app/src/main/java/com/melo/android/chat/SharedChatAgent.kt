@@ -265,7 +265,9 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
             }
             goalState = runtime.value("goal", buildJsonObject { put("action", "review"); put("state", goalState!!); put("observations", JsonArray(observations)); put("response", if (review.calls.isEmpty()) review.text else "") }).jsonObject
             LoopTrace.emit("goal.check", payload = goalState)
-            journal.event("goal-check:${++modelSequence}", "核对任务交付", output = goalState!!.text("explanation").ifBlank { goalState!!.text("reason") }, status = if (goalState!!.text("decision") in setOf("complete", "deliver")) "completed" else "failed")
+            // Read-only view of this check for the task space (review 2026-11-07); never sent to the model.
+            val checkView = try { runtime.value("goal", buildJsonObject { put("action", "reviewSnapshot"); put("state", goalState!!) }) as? JsonObject } catch (error: Exception) { currentCoroutineContext().ensureActive(); null }
+            journal.event("goal-check:${++modelSequence}", "核对任务交付", output = goalState!!.text("explanation").ifBlank { goalState!!.text("reason") }, status = if (goalState!!.text("decision") in setOf("complete", "deliver")) "completed" else "failed", goalReview = checkView)
             if (goalState!!.text("decision") == "continue") {
                 turn.event("feedback", buildJsonObject { put("repair", true) })
                 history += reply.wire
@@ -503,14 +505,14 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
 private fun JsonObject.strings(key: String) = (get(key) as? JsonArray).orEmpty().map { it.jsonPrimitive.content }
 
 private class ChatJournal(private val runtime: SharedCoreRuntime, private var scene: JsonObject, private val save: suspend (JsonObject) -> Unit) {
-    suspend fun event(id: String, name: String, module: String = "compute", operation: Boolean = false, input: String? = null, output: String? = null, status: String = "running", model: String? = null, returnedModel: String? = null, sources: List<JsonObject> = emptyList(), durationMs: Long? = null, channel: String? = null, deviceRunId: String? = null, result: JsonObject? = null, role: String? = null, rounds: Int? = null, evaluation: JsonObject? = null) {
+    suspend fun event(id: String, name: String, module: String = "compute", operation: Boolean = false, input: String? = null, output: String? = null, status: String = "running", model: String? = null, returnedModel: String? = null, sources: List<JsonObject> = emptyList(), durationMs: Long? = null, channel: String? = null, deviceRunId: String? = null, result: JsonObject? = null, role: String? = null, rounds: Int? = null, evaluation: JsonObject? = null, goalReview: JsonObject? = null) {
         update("event", buildJsonObject { put("event", buildJsonObject {
             put("id", id); put("name", name); put("module", module); put("kind", if (operation) "operation" else "pipeline"); put("status", status)
             input?.let { put("input", it) }; output?.let { put("output", it) }; model?.let { put("model", it) }; returnedModel?.let { put("returnedModel", it) }
             result?.let { put("result", it) }
             durationMs?.let { put("durationMs", it) }; channel?.let { put("channel", it) }; deviceRunId?.let { put("deviceRunId", it) }; put("sources", JsonArray(sources))
             // Task space (plan C): the shared reducer validates and bounds these.
-            role?.let { put("role", it) }; rounds?.let { put("limits", buildJsonObject { put("rounds", it) }) }; evaluation?.let { put("evaluation", it) }
+            role?.let { put("role", it) }; rounds?.let { put("limits", buildJsonObject { put("rounds", it) }) }; evaluation?.let { put("evaluation", it) }; goalReview?.let { put("goalReview", it) }
         }) })
     }
     suspend fun finish(outcome: String, reason: String?, completion: JsonObject? = null) = update("finish", buildJsonObject { put("outcome", outcome); reason?.let { put("reason", it) }; completion?.let { put("completion", it) } })

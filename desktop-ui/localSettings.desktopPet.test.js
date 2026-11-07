@@ -9,7 +9,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {JSDOM} from 'jsdom';
-const source=(await readFile(new URL('./localSettings.js',import.meta.url),'utf8')).replace("'./i18n.js'",JSON.stringify(new URL('./i18n.js',import.meta.url).href)).replace("'./agentAvatar.js'",JSON.stringify(new URL('./agentAvatar.js',import.meta.url).href)).replace("'./settingsEdit.js'",JSON.stringify(new URL('./settingsEdit.js',import.meta.url).href)).replace("'/shared/localPreferences.js'",JSON.stringify(new URL('../src/services/settings/localPreferences.js',import.meta.url).href));
+const source=(await readFile(new URL('./localSettings.js',import.meta.url),'utf8')).replace("'./i18n.js'",JSON.stringify(new URL('./i18n.js',import.meta.url).href)).replace("'../src/shared/userAgents.js'",JSON.stringify(new URL('../src/shared/userAgents.js',import.meta.url).href)).replace("'./agentAvatar.js'",JSON.stringify(new URL('./agentAvatar.js',import.meta.url).href)).replace("'./settingsEdit.js'",JSON.stringify(new URL('./settingsEdit.js',import.meta.url).href)).replace("'/shared/localPreferences.js'",JSON.stringify(new URL('../src/services/settings/localPreferences.js',import.meta.url).href));
 const load=tag=>import('data:text/javascript;base64,'+Buffer.from(source).toString('base64')+'#'+tag);
 
 async function mount(tag,native) {

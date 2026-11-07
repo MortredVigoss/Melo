@@ -9,10 +9,26 @@
 // not record.
 import { escapeHtml, t, runtimeCompletionText } from './i18n.js';
 import { EXECUTION_MODULES, sceneFinished } from '/shared/executionScene.js';
-import { sceneMembers, sceneEvaluation, sceneStageRail, sceneLog, sceneResources, sceneHasBoard, evaluationChanges, MEMBER_ROLE_MODULE } from '/shared/executionBoard.js';
-import { regionSummary, deliveryGate, deliveryStatus, fieldCoverage, traceList, operationChip, sceneActors } from '/shared/warRoom.js';
+import { sceneMembers, sceneEvaluation, sceneGoalReview, sceneStageRail, sceneLog, sceneResources, sceneHasBoard, evaluationChanges, MEMBER_ROLE_MODULE } from '/shared/executionBoard.js';
+import { regionSummary, deliveryGate, goalGate, deliveryStatus, fieldCoverage, traceList, operationChip, sceneActors } from '/shared/warRoom.js';
 
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+// The delivery check of a task without a contract (review 2026-11-07).
+const decisionName = decision => ({ complete: t('核验通过'), deliver: t('直接回答'), continue: t('继续补证'), needs_user: t('等你补充'), partial: t('部分满足') })[decision] || decision || '';
+const requirementKindName = kind => ({ response: t('回答'), context: t('上下文'), constraint: t('条件'), external_fact: t('外部事实'), external_effect: t('外部操作') })[kind] || kind;
+const requirementStateName = status => ({ met: t('已满足'), missing: t('缺失'), unavailable: t('无法获取') })[status] || status;
+const reviewReason = code => ({ GOAL_DELIVERY_SUPPORTED: t('每项要求都有证据'), SELF_CONTAINED_ANSWER: t('不需要外部证据的回答'), GOAL_COVERAGE_MISSING: t('有要求缺少证据'),
+  GOAL_INCOMPLETE: t('还有要求没完成'), GOAL_CORRECTION_LIMIT: t('补证次数已用完'), GOAL_NO_NEXT_STEP: t('没有可做的下一步'), GOAL_NEEDS_USER: t('需要你提供信息'),
+  GOAL_CHECK_INVALID: t('核验结果无效'), GOAL_EVIDENCE_INVALID: t('核验引用了无效证据'), GOAL_CHECK_UNAVAILABLE: t('核验没有返回结果'), GOAL_UNAVAILABLE: t('核验未能完成') })[code] || code || '';
+const heatState = status => ({ met: 'verified', unavailable: 'failed' })[status] || 'missing';
+const shortText = (text, max) => text.length > max ? `${text.slice(0, max - 1)}…` : text;
+// A radar over three or more shares (0–1); fewer axes draw none.
+const radarSvg = shares => {
+  if (shares.length < 3) return '';
+  const pt = (i, k) => { const a = -Math.PI / 2 + i * 2 * Math.PI / shares.length; return [70 + Math.cos(a) * 34 * k, 46 + Math.sin(a) * 34 * k]; };
+  const poly = ks => ks.map((k, i) => pt(i, k).map(v => v.toFixed(1)).join(',')).join(' ');
+  return `<svg class="war-radar" viewBox="0 0 140 92" aria-hidden="true"><polygon class="grid" points="${poly(shares.map(() => 1))}"/><polygon class="grid" points="${poly(shares.map(() => .5))}"/><polygon class="value" points="${poly(shares.map(v => Math.max(.05, v)))}"/></svg>`;
+};
 const roleName = role => ({ research: t('检索成员'), social: t('社交检索成员'), lookup: t('资料读取成员'), calculate: t('计算成员'), execute: t('执行成员'), lead: t('主 Agent') })[role] || t('内部成员');
 const verbName = verb => ({ dispatch: t('分派'), handoff: t('交接'), search: t('检索'), read: t('读取'), lookup: t('查询'), compute: t('计算'), write: t('写入'), call: t('调用'),
   approval: t('审批'), evaluate: t('评估'), review: t('核验'), stop: t('停止'), deliver: t('交付') })[verb] || verb;
@@ -45,13 +61,13 @@ const attrValue = value => String(value).replace(/["\\]/g, '\\$&');
 export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, recordDetail, regionExtra, traceExtra } = {}) {
   const root = document.createElement('section');
   root.className = 'war-room'; root.id = 'execution-war-room'; root.hidden = true;
-  root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-label', t('作战大屏'));
-  root.innerHTML = `<header class="war-top"><div class="war-brand"><b>NEURAL / ${escapeHtml(t('作战大屏'))}</b><span class="war-now" role="status" aria-live="polite"></span></div><ol class="war-rail" aria-label="${escapeHtml(t('已发生的阶段'))}"></ol>
+  root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-label', t('任务空间'));
+  root.innerHTML = `<header class="war-top"><div class="war-brand"><b>NEURAL / ${escapeHtml(t('任务空间'))}</b><span class="war-now" role="status" aria-live="polite"></span></div><ol class="war-rail" aria-label="${escapeHtml(t('已发生的阶段'))}"></ol>
     <div class="war-controls"><span class="war-history"></span><div class="war-views" role="radiogroup" aria-label="${escapeHtml(t('视角'))}">${['global', 'follow', 'free'].map(id => `<button type="button" role="radio" data-war-view="${id}" aria-checked="${id === 'global'}" title="${escapeHtml({ global: t('看到全部模块与星核；缓慢环绕，拖动可接管'), follow: t('镜头跟随正在工作的成员；拖动改变角度，滚轮缩放'), free: t('拖动旋转，方向键每次 15°，滚轮缩放') }[id])}">${escapeHtml({ global: t('全局'), follow: t('跟随'), free: t('自由') }[id])}</button>`).join('')}</div><button type="button" class="war-voice" data-action="toggle-tts-autoplay">${escapeHtml(t('朗读设置'))}</button><button type="button" class="war-close" data-war-close>${escapeHtml(t('回到对话'))}</button></div></header>
     <section class="war-stage" tabindex="0" aria-label="${escapeHtml(t('三维任务空间：拖动旋转，滚轮或双指缩放，方向键旋转，加减键缩放，零键回到全局'))}"><div class="war-gl"></div><div class="war-captions"></div>
       <div class="war-zoom" aria-label="${escapeHtml(t('场景缩放'))}"><button type="button" data-war-zoom="out" aria-label="${escapeHtml(t('缩小'))}">−</button><output class="war-zoom-value">100%</output><button type="button" data-war-zoom="in" aria-label="${escapeHtml(t('放大'))}">＋</button></div>
       <span class="war-hint">${escapeHtml(t('拖动旋转 · 滚轮或双指缩放'))}</span></section>
-    <section class="war-band" aria-label="${escapeHtml(t('作战台'))}"></section>
+    <section class="war-band" aria-label="${escapeHtml(t('任务面板'))}"></section>
     <footer class="war-status"></footer>`;
   document.body.append(root);
   const $ = selector => root.querySelector(selector);
@@ -309,15 +325,69 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
   }
   function renderGate(snapshot) {
     const c = cell('gate'), gate = deliveryGate(snapshot);
-    head(c, t('交付闸门'), gate ? escapeHtml(t('四项都满足才核验')) : '');
-    if (!gate) { fill(c, empty(t('建立任务合同后出现'))); return; }
+    if (!gate) { renderReviewGate(c, snapshot); return; }
+    head(c, t('交付闸门'), escapeHtml(t('四项都满足才核验')));
     const arc = i => { const a0 = Math.PI * (1.25 - i * .5) - .08, a1 = Math.PI * (1.25 - (i + 1) * .5) + .08; const p = a => [48 + 36 * Math.cos(a), 48 - 36 * Math.sin(a)].map(v => v.toFixed(1)).join(' '); return `M${p(a0)} A36 36 0 0 1 ${p(a1)}`; };
     const names = { count: t('数量'), primary: t('主推'), coverage: t('覆盖'), gaps: t('缺口') };
     const status = deliveryStatus(scene, snapshot), state = deliveryText(status, gate.nextBatch);
     fill(c, `<div class="war-gate" data-open="${gate.open}"><svg viewBox="0 0 96 96" role="img" aria-label="${escapeHtml(t('满足 {met} / 4 项', { met: gate.met }))}">${gate.rows.map((r, i) => `<path class="war-arc" data-met="${r.met}" d="${arc(i)}"/>`).join('')}<text x="48" y="54" text-anchor="middle">${gate.met}/4</text></svg><ul>${gate.rows.map(r => `<li data-met="${r.met}"><span>${escapeHtml(names[r.key])}</span>${trace(`gate:${r.key}`, `${escapeHtml(r.value)}${r.met ? ' ✓' : ''}`)}</li>`).join('')}</ul></div><p class="war-gate-state" data-state="${escapeHtml(status)}">${escapeHtml(state)}</p>`);
   }
+  // No contract (a single fact, a calculation, an action): the gate is the
+  // delivery check itself, one arc per requirement it judged (review 2026-11-07).
+  function renderReviewGate(c, snapshot) {
+    const goal = sceneGoalReview(scene), gate = goalGate(goal);
+    head(c, t('交付闸门'), goal.checks ? escapeHtml(t('每项有证据才交付')) : '');
+    if (!goal.checks) { fill(c, empty(t('建立任务合同或完成核验后出现'))); return; }
+    const status = sceneFinished(scene) ? deliveryStatus(scene, snapshot) : goal.last?.status === 'running' ? 'checking' : goal.last?.status === 'failed' ? 'check-failed' : 'ready';
+    const stateLine = `<p class="war-gate-state" data-state="${escapeHtml(status)}">${escapeHtml(deliveryText(status, null))}</p>`;
+    if (!gate) {
+      // Checked before reviews were kept: each check's outcome, nothing more.
+      fill(c, `<div class="war-gate" data-open="${goal.last?.status === 'completed'}"><ul>${goal.history.map((row, i) => `<li data-met="${row.status === 'completed'}"><span>${escapeHtml(t('第 {count} 次核验', { count: i + 1 }))}</span>${trace('review:checks', escapeHtml(statusText(row.status)))}</li>`).join('')}</ul></div>${stateLine}`);
+      return;
+    }
+    const n = Math.max(1, gate.rows.length), gap = n > 6 ? .03 : .06, span = 2 / n;
+    const arc = i => { const a0 = Math.PI * (1.25 - i * span) - gap, a1 = Math.PI * (1.25 - (i + 1) * span) + gap; const p = a => [48 + 36 * Math.cos(a), 48 - 36 * Math.sin(a)].map(v => v.toFixed(1)).join(' '); return `M${p(a0)} A36 36 0 ${a0 - a1 > Math.PI ? 1 : 0} 1 ${p(a1)}`; };
+    const rows = [
+      { label: t('满足'), key: 'review:met', value: `${gate.met} / ${gate.total}`, met: gate.met === gate.total },
+      { label: t('缺失'), key: 'review:missing', value: String(gate.missing), met: gate.missing === 0 },
+      ...(gate.unavailable ? [{ label: t('无法获取'), key: 'review:unavailable', value: String(gate.unavailable), met: false }] : []),
+      { label: t('证据'), key: 'review:requirements', value: String(gate.evidence), met: gate.evidence > 0 },
+      { label: t('核验'), key: 'review:checks', value: t('{count} 次', { count: gate.checks }), met: gate.open },
+    ];
+    fill(c, `<div class="war-gate" data-open="${gate.open}"><svg viewBox="0 0 96 96" role="img" aria-label="${escapeHtml(t('满足 {met} / {count} 项要求', { met: gate.met, count: gate.total }))}">${gate.rows.map((r, i) => `<path class="war-arc" data-met="${r.met}" d="${arc(i)}"/>`).join('')}<text x="48" y="54" text-anchor="middle">${gate.met}/${gate.total}</text></svg><ul>${rows.map(r => `<li data-met="${r.met}"><span>${escapeHtml(r.label)}</span>${trace(r.key, `${escapeHtml(r.value)}${r.met ? ' ✓' : ''}`)}</li>`).join('')}</ul></div>${stateLine}<p class="war-omitted">${escapeHtml([decisionName(gate.decision), reviewReason(gate.reason)].filter(Boolean).join(' · '))}</p>`);
+  }
+  function renderReviewHeat(c, goal) {
+    head(c, t('证据热力'), goal.review ? escapeHtml(t('要求 × 状态与证据')) : '');
+    if (!goal.review) { fill(c, empty(t('这条记录没有逐项核验数据'))); return; }
+    const review = goal.review, tally = goal.tally;
+    const rows = review.requirements.map((row, i) => `<tr data-row-key="${escapeHtml('req:' + i)}"><th><button type="button" data-war-trace="${escapeHtml('review:req-' + i)}" title="${escapeHtml(`${row.text} · ${requirementKindName(row.kind)} · ${requirementStateName(row.status)}`)}">${escapeHtml(row.text)}</button></th><td data-s="${heatState(row.status)}" title="${escapeHtml(requirementStateName(row.status))}"></td><td data-s="${row.evidenceIds.length ? 'verified' : 'missing'}" title="${escapeHtml(t('{count} 条证据', { count: row.evidenceIds.length }))}"></td></tr>`).join('');
+    fill(c, `<table class="war-heat"><thead><tr><th></th><th>${escapeHtml(t('状态'))}</th><th>${escapeHtml(t('证据'))}</th></tr></thead><tbody>${rows}</tbody></table>
+      ${review.omitted ? `<p class="war-omitted">${escapeHtml(t('表中列出 {listed} 条，另有 {count} 条未随快照记录', { listed: review.requirements.length, count: review.omitted }))}</p>` : ''}
+      <div class="war-ledger">${trace('review:requirements', `${escapeHtml(t('要求'))}<b>${tally.total}</b>`)}${trace('review:met', `${escapeHtml(t('满足'))}<b>${tally.met}</b>`)}${trace('review:missing', `${escapeHtml(t('缺失'))}<b>${tally.missing}</b>`)}${trace('review:requirements', `${escapeHtml(t('证据'))}<b>${tally.evidence}</b>`)}</div>`);
+  }
+  function renderReviewCoverage(c, goal) {
+    head(c, t('合同覆盖'), goal.review ? escapeHtml(t('按要求类型的满足率')) : '');
+    if (!goal.checks) { fill(c, empty(t('建立任务合同后出现'))); return; }
+    if (!goal.review) { fill(c, empty(t('这条记录没有逐项核验数据'))); return; }
+    const requirements = goal.review.requirements, kinds = [...new Set(requirements.map(row => row.kind))];
+    const share = kind => { const rows = requirements.filter(row => row.kind === kind); return rows.length ? rows.filter(row => row.status === 'met').length / rows.length : 0; };
+    fill(c, `${radarSvg(kinds.map(share))}<div class="war-fields">${kinds.map(kind => trace('review:requirements', `${escapeHtml(requirementKindName(kind))} <b>${Math.round(share(kind) * 100)}%</b>`)).join('')}</div><div class="war-tags">${requirements.map((row, i) => `<button type="button" data-war-trace="${escapeHtml('review:req-' + i)}" data-on="${row.status === 'met'}" title="${escapeHtml(row.text)}">${escapeHtml(shortText(row.text, 18))}${row.status === 'met' ? ' ✓' : ''}</button>`).join('')}</div>`);
+  }
+  function renderChecklist(c) {
+    const goal = sceneGoalReview(scene), review = goal.review, none = t('这项任务没有建立合同（单一事实 / 计算 / 操作不需要）');
+    head(c, t('任务合同'), goal.checks ? escapeHtml(t('没有合同 · 以核验清单为准')) : '');
+    if (!goal.checks) { fill(c, empty(none)); return; }
+    const mark = status => ({ met: '✓', missing: '✗', unavailable: '?' })[status] || '·';
+    const lines = review
+      ? [[t('核验'), `${t('第 {count} 次', { count: goal.checks })} · ${decisionName(review.decision)}`], ...(review.reason ? [[t('依据'), reviewReason(review.reason)]] : []),
+        ...review.requirements.map(row => [`${mark(row.status)} ${requirementKindName(row.kind)}`, row.text]), ...(review.explanation ? [[t('说明'), review.explanation]] : []),
+        ...(review.correctionLimit ? [[t('补证'), `${review.corrections} / ${review.correctionLimit}`]] : [])]
+      : [[t('核验'), `${t('第 {count} 次', { count: goal.checks })} · ${statusText(goal.last?.status)}`], ...(goal.last?.text ? [[t('说明'), goal.last.text]] : [])];
+    fill(c, `<pre class="war-contract war-checklist">${lines.map(([a, b]) => `<span><b>${escapeHtml(a)}</b>${escapeHtml(b)}</span>`).join('')}</pre>${goal.stageId ? `<button type="button" class="war-link" data-war-record="${escapeHtml(goal.stageId)}">${escapeHtml(t('查看核验记录'))}</button>` : ''}`);
+  }
   function renderHeat(snapshot) {
     const c = cell('heat');
+    if (!snapshot) { const goal = sceneGoalReview(scene); if (goal.checks) { renderReviewHeat(c, goal); return; } }
     head(c, t('证据热力'), snapshot ? escapeHtml(t('候选 × 必填字段')) : '');
     if (!snapshot) { fill(c, empty(sceneEvaluation(scene).updates ? t('这条记录没有结构化评估数据') : t('还没有候选'))); return; }
     const fields = (snapshot.contract?.requiredFields || []).slice(0, 6), all = snapshot.candidates || [];
@@ -330,20 +400,18 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
   }
   function renderCoverage(snapshot) {
     const c = cell('coverage');
-    head(c, t('合同覆盖'), snapshot?.contract ? escapeHtml(t('未排除候选中已核实的占比')) : '');
-    if (!snapshot?.contract) { fill(c, empty(t('建立任务合同后出现'))); return; }
-    const fields = (snapshot.contract.requiredFields || []).slice(0, 8), share = f => fieldCoverage(snapshot, f).share, n = Math.max(3, fields.length);
+    if (!snapshot?.contract) { renderReviewCoverage(c, sceneGoalReview(scene)); return; }
+    head(c, t('合同覆盖'), escapeHtml(t('未排除候选中已核实的占比')));
+    const fields = (snapshot.contract.requiredFields || []).slice(0, 8), share = f => fieldCoverage(snapshot, f).share;
     const scope = fields.length ? fieldCoverage(snapshot, fields[0]) : null;
-    const pt = (i, k) => { const a = -Math.PI / 2 + i * 2 * Math.PI / n; return [70 + Math.cos(a) * 34 * k, 46 + Math.sin(a) * 34 * k]; };
-    const poly = k => fields.map((_, i) => pt(i, k).map(v => v.toFixed(1)).join(',')).join(' ');
-    const svg = fields.length >= 3 ? `<svg class="war-radar" viewBox="0 0 140 92" aria-hidden="true"><polygon class="grid" points="${poly(1)}"/><polygon class="grid" points="${poly(.5)}"/><polygon class="value" points="${fields.map((f, i) => pt(i, Math.max(.05, share(f))).map(v => v.toFixed(1)).join(',')).join(' ')}"/></svg>` : '';
+    const svg = radarSvg(fields.map(share));
     const outside = scope?.outside ? `<p class="war-omitted">${escapeHtml(t('按快照所带的 {count} 个未排除候选计算，另有 {outside} 个候选未随快照记录', { count: scope.total, outside: scope.outside }))}</p>` : '';
     fill(c, `${svg}${outside}<div class="war-fields">${fields.map(f => trace(`field:${f}`, `${escapeHtml(fieldName(f))} <b>${Math.round(share(f) * 100)}%</b>`)).join('')}</div><div class="war-tags">${(snapshot.contract.coverage || []).map(row => `<button type="button" data-war-trace="gate:coverage" data-on="${row.covered}">${escapeHtml(row.tag)}${row.covered ? ' ✓' : ''}</button>`).join('')}</div>`);
   }
   function renderContract(snapshot) {
     const c = cell('contract'), k = snapshot?.contract, stageId = sceneStageRail(scene).find(r => r.key === 'contract')?.stageId;
-    head(c, t('任务合同'), k ? escapeHtml(t('用户原话为准，不能下调')) : '');
-    if (!k) { fill(c, empty(t('这项任务没有建立合同（单一事实 / 计算 / 操作不需要）'))); return; }
+    if (!k) { renderChecklist(c); return; }
+    head(c, t('任务合同'), escapeHtml(t('用户原话为准，不能下调')));
     const target = k.explicit?.value ? `${k.explicit.value} ${k.unit || ''} · “${k.explicit.quote || ''}”` : `${k.target?.minimum ?? '?'}–${k.target?.maximum ?? '?'} ${k.unit || ''}`;
     const lines = [[t('版本'), `r${k.revision} · ${k.category || ''} · ${k.mode || ''}`], [t('目标'), target], ...(k.constraints || []).slice(0, 4).map(row => [t('硬条件'), `${fieldName(row.field)} ${row.op} ${row.value}${row.quote ? ` · “${row.quote}”` : ''}`]), [t('必填'), (k.requiredFields || []).map(fieldName).join(' · ')], [t('覆盖'), (k.coverage || []).map(row => row.tag).join('  ')]];
     fill(c, `<pre class="war-contract">${lines.map(([a, b]) => `<span><b>${escapeHtml(a)}</b>${escapeHtml(b)}</span>`).join('')}</pre>${stageId ? `<button type="button" class="war-link" data-war-record="${escapeHtml(stageId)}">${escapeHtml(t('查看评估记录'))}</button>` : ''}`);
@@ -365,7 +433,7 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
   // Details: a record (its execution detail), a trace (the records behind a
   // number) or a region (its calls, plus sources, results or summaries).
   function renderDetail() {
-    const c = cell('detail'), back = `<button type="button" class="war-back" data-war-back>${escapeHtml(t('返回作战台'))}</button>`;
+    const c = cell('detail'), back = `<button type="button" class="war-back" data-war-back>${escapeHtml(t('返回任务面板'))}</button>`;
     if (detail.type === 'record') { head(c, t('执行详情'), back); fill(c, recordDetail?.(detail.id) || empty(t('这条记录已不在当前任务里'))); return; }
     const list = traceList(scene, detail.type === 'region' ? `region:${detail.id}` : detail.key);
     const title = detail.type === 'region' ? regionName(detail.id) : traceTitle(list);
@@ -386,6 +454,11 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
     if (list.kind === 'field') return `${t('必填字段')} · ${fieldName(list.arg)}`;
     if (list.kind === 'candidate') return list.rows[0]?.name || t('候选');
     if (list.kind === 'checkpoint') return t('软检查点');
+    if (list.kind === 'review') {
+      const req = /^req-(\d{1,2})$/.exec(list.arg);
+      if (req) return sceneGoalReview(scene).review?.requirements[Number(req[1])]?.text || t('核验要求');
+      return `${t('核验')} · ${({ requirements: t('全部要求'), met: t('已满足'), missing: t('缺失'), unavailable: t('无法获取'), checks: t('核验记录') })[list.arg] || ''}`;
+    }
     return t('记录');
   }
   function traceRow(row) {
@@ -397,6 +470,8 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
     if (row.kind === 'candidate') return `<li data-tier="${escapeHtml(row.tier)}"><div><b>${escapeHtml(row.name)}</b><span>${escapeHtml(tierName(row.tier))} · ${escapeHtml(t('排序分 {score}，不是概率', { score: row.total }))}</span>${row.reason ? `<em>${escapeHtml(row.reason)}</em>` : ''}<small>${Object.entries(row.fields).map(([f, s]) => `${escapeHtml(fieldName(f))} ${s === 'verified' ? '✓' : s === 'failed' ? '✗' : '·'}`).join('  ')}</small></div></li>`;
     if (row.kind === 'coverage') return `<li><div><b>${escapeHtml(row.tag)}</b><span>${escapeHtml(row.covered ? t('已覆盖') : t('未覆盖'))}</span></div></li>`;
     if (row.kind === 'gap') return `<li><div><b>${escapeHtml(row.text)}</b></div></li>`;
+    if (row.kind === 'requirement') return `<li data-status="${escapeHtml(row.status === 'met' ? 'completed' : 'failed')}"><div><b>${escapeHtml(row.text)}</b><span>${escapeHtml(`${requirementKindName(row.requirementKind)} · ${requirementStateName(row.status)} · ${t('{count} 条证据', { count: row.evidence })}`)}</span></div></li>`;
+    if (row.kind === 'evidence') return `<li><div><b>${escapeHtml(row.text)}</b><span>${escapeHtml(t('证据编号，未对应到本次记录里的调用'))}</span></div></li>`;
     if (row.kind === 'moment') return `<li><div><b>${escapeHtml({ start: t('开始'), 'first-call': t('第一次调用'), 'last-call': t('最后一次调用返回'), finish: t('结束') }[row.label])}</b><span>${clock(row.offsetMs)}</span></div></li>`;
     if (row.kind === 'policy') return `<li><div><b>${escapeHtml({ milliseconds: t('软检查点时间'), calls: t('软检查点调用次数'), memberCalls: t('单个成员调用上限') }[row.id])}</b><span>${escapeHtml(row.id === 'milliseconds' ? clock(row.value) : num(row.value))}</span></div></li>`;
     return '';

@@ -52,7 +52,7 @@ test('real browser loads saved API telemetry through Melo routes, reads summarie
     await page.goto(base + '/telemetry-fixture');
     await page.waitForFunction(() => window.fixtureReady);
     // Layout A: the strip opens the full-screen war room; its numbers open the records behind them.
-    await page.getByRole('button', { name: /进入作战大屏/ }).click();
+    await page.getByRole('button', { name: /进入任务空间/ }).click();
     const room = page.locator('#execution-war-room');
     await room.locator('.war-gl canvas').waitFor();
     assert.match(await room.locator('.war-status [data-war-trace="tokens"]').innerText(), /输入 2,840 token/);

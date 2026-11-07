@@ -7,8 +7,10 @@ import Foundation
             var space = ExecutionRecord(chatId: "space", query: "q", requestedModel: "m")
             space.recordStage("internal:1", name: "检索成员", status: "running", role: "research", rounds: 4)
             space.recordStage("task-evaluation:2", name: "任务评估", status: "completed", evaluation: try SyncValue.from(["v": 1]))
+            // Review 2026-11-07: the delivery check's requirements are local-only too.
+            space.recordStage("goal-check:3", name: "核对任务交付", status: "completed", goalReview: try SyncValue.from(["v": 1, "decision": "complete"]))
             let synced = (space.pipeline ?? []).map { WorkspaceProjection.stage($0) }
-            assert(synced.count == 2 && synced.allSatisfy { $0["role"] == nil && $0["limits"] == nil && $0["evaluation"] == nil })
+            assert(synced.count == 3 && synced.allSatisfy { $0["role"] == nil && $0["limits"] == nil && $0["evaluation"] == nil && $0["goalReview"] == nil })
         }
         var agent = AgentProfile(id: "main", name: "main", subtitle: "", symbol: "star", instructions: "persona")
         let note = KnowledgeNote(id: "doc", title: "routing", content: String(repeating: "unrelated paragraph. ", count: 1000) + "\nzephyr-route FINAL_TAIL_ANSWER", updatedAt: timestamp())

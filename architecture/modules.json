@@ -24,8 +24,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 700,
-      "edges": 2286,
+      "modules": 701,
+      "edges": 2291,
       "roots": [
         "src",
         "desktop-ui",
@@ -34,11 +34,11 @@
       ],
       "note": "静态 import/re-export，含 desktop-ui 对 /shared/*.js 的服务映射；不含动态 import 与外部包"
     },
-    "routes": 182,
+    "routes": 183,
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
-      "detected": 38,
+      "detected": 39,
       "unannotated": []
     }
   },
@@ -744,7 +744,7 @@
       ],
       "modules": {
         "desktop-ui": 24,
-        "shared": 45,
+        "shared": 46,
         "src": 70
       },
       "entryModules": [
@@ -794,6 +794,12 @@
         },
         {
           "module": "shared/agent/goal.js",
+          "importedBy": [
+            "platform"
+          ]
+        },
+        {
+          "module": "shared/agent/goalReview.js",
           "importedBy": [
             "platform"
           ]
@@ -1153,7 +1159,7 @@
         "development": 1,
         "media": 14,
         "memory": 12,
-        "platform": 33,
+        "platform": 34,
         "projects": 1,
         "settings": 14,
         "sync": 4,
@@ -1273,6 +1279,7 @@
           "shared/agent/deliveryBudget.test.js",
           "shared/agent/execution.test.js",
           "shared/agent/goal.test.js",
+          "shared/agent/goalReview.test.js",
           "shared/agent/internalRouting.test.js",
           "shared/agent/limitDelivery.test.js",
           "shared/agent/loopLimits.test.js",
@@ -3807,6 +3814,7 @@
         "GET /api/diagnostics ← src/server.js",
         "GET /api/health ← src/server.js",
         "GET /api/launch/reset ← src/server.js",
+        "GET /shared/agent/goalReview.js ← src/server.js",
         "GET /shared/agent/locale.js ← src/server.js",
         "GET /shared/agent/loopContract.js ← src/server.js",
         "GET /shared/agent/providerDefaults.js ← src/server.js",
@@ -4442,7 +4450,7 @@
         "agents": 34,
         "approvals": 18,
         "channels": 6,
-        "chat": 33,
+        "chat": 34,
         "desktop-shell": 2,
         "development": 2,
         "knowledge": 2,
@@ -5514,6 +5522,7 @@
         "ios/SceneSource/neuralLayout.js",
         "ios/scripts/build-scene.py",
         "ios/scripts/sync-theme.py",
+        "shared/agent/goalReview.js",
         "shared/agent/locale.js",
         "shared/agent/loopContract.js",
         "shared/agent/runtimeMessages.js",
@@ -6157,7 +6166,8 @@
       "tests": [
         "shared/agent/conformance.test.js",
         "shared/agent/taskEvaluation.test.js",
-        "shared/agent/taskSpaceSnapshot.test.js"
+        "shared/agent/taskSpaceSnapshot.test.js",
+        "shared/agent/goalReview.test.js"
       ],
       "note": "运行源码与隔离 bundle 对照，并校验逐源文件散列和 iOS 原样打包",
       "features": [

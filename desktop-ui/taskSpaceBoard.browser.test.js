@@ -61,11 +61,26 @@ test('war room shows only recorded facts, traces every number, opens by itself, 
   const plain = createExecutionRecorder({ home, runId: 'plain-run', chatId: 'plain-chat' }, 'What is 2 + 2?');
   plain.event({ kind: 'operation', id: 'calc', module: 'compute', name: 'calculator', status: 'completed', expression: '2 + 2', result: '4' });
   await plain.finish('completed', { id: 'plain-answer' });
+  // Review 2026-11-07: a single fact (no contract), dispatched once and checked twice.
+  const requirement = (text, kind, status, evidenceIds) => ({ text, kind, status, evidenceIds });
+  const weather = createExecutionRecorder({ home, runId: 'weather-run', chatId: 'weather-chat' }, '悉尼明天天气怎么样');
+  weather.scene.startedAt = at(0);
+  for (const row of [
+    { kind: 'pipeline', id: 'internal:1', name: '检索成员', role: 'research', status: 'running', input: '读悉尼明天的预报' },
+    { kind: 'operation', id: 'job-1:forecast', module: 'search', name: 'fetch_url', status: 'completed', input: 'https://fixture.invalid/sydney', resultSummary: '已读取网页文本' },
+    { kind: 'pipeline', id: 'internal:1', status: 'completed', output: '预报已读到' },
+    { kind: 'pipeline', id: 'goal-check:2', status: 'failed', output: '缺少降雨时段', goalReview: { v: 1, decision: 'continue', reason: 'GOAL_INCOMPLETE', corrections: 1, correctionLimit: 2,
+      requirements: [requirement('明天的气温', 'external_fact', 'met', ['job-1:forecast']), requirement('下雨的时段', 'external_fact', 'missing', [])] } },
+    { kind: 'pipeline', id: 'goal-check:4', status: 'completed', output: '预报已读到', goalReview: { v: 1, decision: 'complete', reason: 'GOAL_DELIVERY_SUPPORTED', corrections: 1, correctionLimit: 2,
+      requirements: [requirement('明天的气温', 'external_fact', 'met', ['job-1:forecast']), requirement('下雨的时段', 'external_fact', 'met', ['forecast', 'hourly']), requirement('用中文回答', 'response', 'met', [])] } },
+  ]) weather.event(row);
+  await weather.finish('completed', { id: 'weather-answer' });
   await new Promise(r => setTimeout(r, 300));
   await writeFile(join(home, 'desktop/state.json'), JSON.stringify({ chats: [
     { id: 'board-chat', title: 'board', messages: [{ id: 'answer', role: 'assistant', content: 'ok', metadata: { runId: 'board-run' } }] },
-    { id: 'plain-chat', title: 'plain', messages: [{ id: 'plain-answer', role: 'assistant', content: '4', metadata: { runId: 'plain-run' } }] }],
-    chatRuns: [{ runId: 'board-run', chatId: 'board-chat', status: 'completed', createdAt: at(0) }, { runId: 'plain-run', chatId: 'plain-chat', status: 'completed', createdAt: at(0) }] }));
+    { id: 'plain-chat', title: 'plain', messages: [{ id: 'plain-answer', role: 'assistant', content: '4', metadata: { runId: 'plain-run' } }] },
+    { id: 'weather-chat', title: 'weather', messages: [{ id: 'weather-answer', role: 'assistant', content: '24 度', metadata: { runId: 'weather-run' } }] }],
+    chatRuns: [{ runId: 'board-run', chatId: 'board-chat', status: 'completed', createdAt: at(0) }, { runId: 'plain-run', chatId: 'plain-chat', status: 'completed', createdAt: at(0) }, { runId: 'weather-run', chatId: 'weather-chat', status: 'completed', createdAt: at(0) }] }));
   let browser;
   const child = spawn(process.execPath, ['src/server.js', '--host', '127.0.0.1', '--port', '0'], { cwd: resolve('.'), env: { ...process.env, MELO_HOME: home, MELO_TEST_MODE: '1', MELO_DREAMING_ENABLED: '0', MELO_MEMORY_RUNTIME: '0' }, stdio: ['ignore', 'pipe', 'pipe'] });
   const exited = once(child, 'exit');
@@ -87,7 +102,8 @@ test('war room shows only recorded facts, traces every number, opens by itself, 
       import * as panel from '/executionPanel.js'; window.panel = panel;
       const chat = new URL(location.href).searchParams.get('chat');
       document.querySelector('#fixture').innerHTML = panel.renderExecutionPanel();
-      panel.syncExecutionPanel({ chat: { id: chat, messages: [{ id: chat === 'plain-chat' ? 'plain-answer' : 'answer', role: 'assistant', content: 'x', metadata: { runId: chat === 'plain-chat' ? 'plain-run' : 'board-run' } }] }, autoCollapse: new URL(location.href).searchParams.has('auto'), leadName: 'Fixture Lead' });
+      const ids = { 'plain-chat': ['plain-answer', 'plain-run'], 'weather-chat': ['weather-answer', 'weather-run'] }[chat] || ['answer', 'board-run'];
+      panel.syncExecutionPanel({ chat: { id: chat, messages: [{ id: ids[0], role: 'assistant', content: 'x', metadata: { runId: ids[1] } }] }, autoCollapse: new URL(location.href).searchParams.has('auto'), leadName: 'Fixture Lead' });
       window.fixtureReady = true;
     </script></body></html>` }));
     // `auto` gives the page the product's hand-back: an untouched auto-opened war room closes when its run ends.
@@ -261,6 +277,30 @@ test('war room shows only recorded facts, traces every number, opens by itself, 
     assert.equal(await band.locator('[data-cell="gate"], [data-cell="heat"]').count(), 0);
     assert.deepEqual(await room.locator('.war-rail li').evaluateAll(rows => rows.map(row => row.dataset.phase).filter(key => key !== 'deliver')), []);
     assert.match(await band.locator('[data-cell="regions"]').innerText(), /分析与计算\s*1 次调用/);
+    assert.deepEqual(errors, []);
+    // Review 2026-11-07: a single fact without a contract shows its delivery checks, not four empty panels.
+    await open('weather-chat');
+    await band.locator('[data-cell="gate"] .war-gate svg').waitFor();
+    assert.equal(await band.getAttribute('data-mode'), 'board');
+    assert.equal(await band.locator('[data-cell="gate"] .war-gate text').textContent(), '3/3');
+    assert.equal(await band.locator('[data-cell="gate"] .war-arc').count(), 3, 'one arc per requirement the last check judged');
+    assert.match(await band.locator('[data-cell="gate"]').innerText(), /核验通过 · 每项要求都有证据/);
+    assert.deepEqual(await band.locator('[data-cell="heat"] tbody th').allInnerTexts(), ['明天的气温', '下雨的时段', '用中文回答']);
+    assert.match(await band.locator('[data-cell="heat"] .war-ledger').innerText(), /要求\s*3[\s\S]*满足\s*3[\s\S]*缺失\s*0[\s\S]*证据\s*3/);
+    assert.match(await band.locator('[data-cell="coverage"] .war-fields').innerText(), /外部事实\s*100%[\s\S]*回答\s*100%/);
+    const checklist = await band.locator('[data-cell="contract"]').innerText();
+    assert.match(checklist, /没有合同 · 以核验清单为准/); assert.match(checklist, /第 2 次 · 核验通过/); assert.match(checklist, /✓ 外部事实\s*下雨的时段/); assert.match(checklist, /补证\s*1 \/ 2/);
+    assert.equal(await band.locator('.war-empty').count(), 0, 'no empty panel');
+    // A requirement opens its cited evidence: the member's recorded call, and an id no call matches.
+    await band.locator('[data-cell="heat"] [data-war-trace="review:req-1"]').click();
+    assert.match(await detail.locator('header').innerText(), /下雨的时段/);
+    assert.equal(await count(), 2);
+    assert.match(await detail.locator('.war-trace').innerText(), /证据编号，未对应到本次记录里的调用/);
+    await back();
+    await band.locator('[data-cell="gate"] [data-war-trace="review:checks"]').click();
+    assert.equal(await count(), 2, 'both checks are listed');
+    await back();
+    await page.screenshot({ path: join(proof, 'no-contract-review.png') });
     assert.deepEqual(errors, []);
     // Reduced motion switched off resumes drawing by itself (a history view, no new data).
     await open('board-chat');

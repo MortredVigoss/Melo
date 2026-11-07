@@ -9,6 +9,7 @@ import { extendBudget } from '../../../runtime/runBudget.js';
 import { traceEvent } from '../../../runtime/loopTrace.js';
 import { runtimeMessage } from '../../../../shared/agent/runtimeMessages.js';
 import { turnStopReply } from '../../../../shared/agent/turn.js';
+import { goalOperation } from '../../../../shared/agent/goal.js';
 import { connectionForModel, resolvedModelCapabilities } from '../../../../shared/agent/modelCapabilities.js';
 import { toolEffect } from '../../../../shared/agent/toolEffects.js';
 import { resolveContextBudget } from '../contextBudget.js';
@@ -409,7 +410,9 @@ export function createInvokeModelNode(turn) {
 
       if (checkingGoal) {
         const decision = coreTurn.review(toolCalls.length ? '' : turn.text);
-        sseEmitter?.('execution_event', { kind: 'pipeline', id: `goal-check:${iteration}`, module: 'compute', messageId: 'stage.delivery', status: ['complete', 'deliver'].includes(decision.decision) ? 'completed' : 'failed', output: decision.explanation || decision.reason });
+        // The task space shows each checked requirement and its evidence (review 2026-11-07).
+        const goalReview = goalOperation({ action: 'reviewSnapshot', state: decision });
+        sseEmitter?.('execution_event', { kind: 'pipeline', id: `goal-check:${iteration}`, module: 'compute', messageId: 'stage.delivery', status: ['complete', 'deliver'].includes(decision.decision) ? 'completed' : 'failed', output: decision.explanation || decision.reason, ...(goalReview ? { goalReview } : {}) });
         if (decision.decision === 'continue') {
           coreTurn.update('feedback', { repair: true });
           loopMessages.push({ role: 'assistant', content: coreTurn.candidateReply }, { role: 'user', content: decision.feedback });

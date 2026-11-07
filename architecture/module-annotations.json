@@ -1337,7 +1337,8 @@
       "tests": [
         "shared/agent/conformance.test.js",
         "shared/agent/taskEvaluation.test.js",
-        "shared/agent/taskSpaceSnapshot.test.js"
+        "shared/agent/taskSpaceSnapshot.test.js",
+        "shared/agent/goalReview.test.js"
       ],
       "note": "运行源码与隔离 bundle 对照，并校验逐源文件散列和 iOS 原样打包"
     },

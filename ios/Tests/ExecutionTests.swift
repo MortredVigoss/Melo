@@ -137,6 +137,11 @@ import Foundation
             space.recordStage("internal:3", name: "社交检索成员", status: "running", role: "social", rounds: 6)
             assert(space.pipeline?.first { $0.id == "internal:3" }?.role == "social")
             assert(space.pipeline?.first { $0.id == "task-evaluation:3" }?.evaluation == snapshot)
+            // Review 2026-11-07: a delivery check keeps what it judged; a later update without one keeps it too.
+            let review = try SyncValue.from(["v": 1, "decision": "continue", "reason": "GOAL_INCOMPLETE", "requirements": [["text": "下雨的时段", "kind": "external_fact", "status": "missing", "evidenceIds": []]]])
+            space.recordStage("goal-check:4", name: "核对任务交付", status: "running", goalReview: review)
+            space.recordStage("goal-check:4", name: "核对任务交付", status: "failed", output: "缺少降雨时段")
+            assert(space.pipeline?.first { $0.id == "goal-check:4" }?.goalReview == review)
             let decoded = try JSONDecoder().decode(ExecutionRecord.self, from: try JSONEncoder().encode(space))
             assert(decoded.pipeline == space.pipeline)
         }

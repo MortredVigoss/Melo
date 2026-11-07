@@ -3,6 +3,7 @@ import { deliveryEvidence } from './evidence.js';
 import { isStandaloneGreeting } from './retrieval/intentRouter.js';
 import { getRequestNetworkPolicy } from './retrieval/requestPolicy.js';
 import { resolvedRequestGoal, planRequest } from './search.js';
+import { goalReviewOf } from './goalReview.js';
 
 // Shared by all Hosts. A review is a normal, metered model round with NO tools;
 // it can propose progress but cannot manufacture observations or permissions.
@@ -158,6 +159,8 @@ export function goalOperation({ action, state, goal, messages, id, amendment, ca
   if (action === 'progressResult') return taskProgressResult(state.evaluation);
   // Read-only task-space view (plan C); never changes the goal state.
   if (action === 'progressSnapshot') return taskEvaluationSnapshot(state.evaluation);
+  // Read-only delivery-check view (review 2026-11-07): what the last check decided.
+  if (action === 'reviewSnapshot') return goalReviewOf(state, GOAL_LIMITS.corrections);
   if (action === 'amend') return amendGoal(state, amendment);
   if (action === 'candidate') return goalCandidate(state, { ...candidate, observations });
   if (action === 'request') return goalReviewRequest(state, observations);

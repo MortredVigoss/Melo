@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createExecutionScene, applyExecutionEvent, finishExecutionScene, moduleForOperation, EXECUTION_MODULES } from './executionScene.js';
-import { regionSummary, regionCalls, sceneActors, operationChip, deliveryGate, traceList, sceneHasExecution, sceneNeedsUser, shouldAutoOpen, finishedOperations, deliveryStatus, DELIVERY_STATES, fieldCoverage } from './warRoom.js';
-import { sceneResources } from './executionBoard.js';
+import { regionSummary, regionCalls, sceneActors, operationChip, deliveryGate, goalGate, traceList, sceneHasExecution, sceneNeedsUser, shouldAutoOpen, finishedOperations, deliveryStatus, DELIVERY_STATES, fieldCoverage } from './warRoom.js';
+import { sceneResources, sceneGoalReview } from './executionBoard.js';
 import { executionScene } from '../../shared/agent/execution.js';
 import { completionReceipt } from '../../shared/agent/completion.js';
 
@@ -261,3 +261,56 @@ test('a member\'s calls are its own on every host, iPhone ids included', () => {
   assert.deepEqual(lead.operations, ['ws_native', 'web:call_lead']); assert.equal(lead.out, false);
   assert.equal(traceList(scene, 'member:1').count, 3);
 });
+
+// Review 2026-11-07: a single-fact task (no contract) showed four empty panels
+// although its answer had been checked twice. The checks are its approval record.
+function weatherRun() {
+  const scene = createExecutionScene({ runId: 'weather', chatId: 'c', query: '悉尼明天天气' });
+  stage(scene, 'internal:1', 'completed', { name: '检索成员', role: 'research', input: '读悉尼明天的预报' });
+  op(scene, 'job-1:forecast', 'search', 'fetch_url', 'completed', { input: 'https://fixture.invalid/sydney' });
+  stage(scene, 'goal-check:2', 'failed', { output: '缺少降雨时段', goalReview: { v: 1, decision: 'continue', reason: 'GOAL_INCOMPLETE', corrections: 1, correctionLimit: 2,
+    requirements: [{ text: '明天的气温', kind: 'external_fact', status: 'met', evidenceIds: ['job-1:forecast'] }, { text: '下雨的时段', kind: 'external_fact', status: 'missing', evidenceIds: [] }] } });
+  stage(scene, 'goal-check:4', 'completed', { output: '预报已读到', goalReview: { v: 1, decision: 'complete', reason: 'GOAL_DELIVERY_SUPPORTED', corrections: 1, correctionLimit: 2,
+    requirements: [{ text: '明天的气温', kind: 'external_fact', status: 'met', evidenceIds: ['job-1:forecast'] }, { text: '下雨的时段', kind: 'external_fact', status: 'met', evidenceIds: ['forecast', 'hourly'] }, { text: '用中文回答', kind: 'response', status: 'met', evidenceIds: [] }] } });
+  return scene;
+}
+
+test('without a contract the gate is the latest delivery check, one arc per requirement it judged', () => {
+  const scene = weatherRun(), goal = sceneGoalReview(scene), gate = goalGate(goal);
+  assert.equal(goal.checks, 2); assert.equal(goal.stageId, 'goal-check:4');
+  assert.deepEqual(goal.history.map(row => [row.id, row.decision, row.tally.met, row.tally.total]), [['goal-check:2', 'continue', 1, 2], ['goal-check:4', 'complete', 3, 3]]);
+  assert.deepEqual(gate.rows.map(row => [row.status, row.kind, row.evidence]), [['met', 'external_fact', 1], ['met', 'external_fact', 2], ['met', 'response', 0]]);
+  assert.equal(gate.met, 3); assert.equal(gate.total, 3); assert.equal(gate.evidence, 3, 'distinct evidence ids: job-1:forecast, forecast, hourly'); assert.equal(gate.open, true);
+  assert.equal(deliveryGate(null), null, 'the contract gate stays empty: there is no contract');
+  assert.equal(goalGate(sceneGoalReview(createExecutionScene({ runId: 'plain', chatId: 'c', query: 'hi' }))), null, 'no check, no gate');
+});
+
+test('every check number lists exactly the records it counts; cited evidence opens its recorded call', () => {
+  const scene = weatherRun();
+  assert.deepEqual(traceList(scene, 'review:requirements').rows.map(row => row.text), ['明天的气温', '下雨的时段', '用中文回答']);
+  assert.equal(traceList(scene, 'review:met').count, 3); assert.equal(traceList(scene, 'review:missing').count, 0);
+  assert.deepEqual(traceList(scene, 'review:checks').rows.map(row => [row.kind, row.id, row.status]), [['stage', 'goal-check:2', 'failed'], ['stage', 'goal-check:4', 'completed']]);
+  // `forecast` is the member's call recorded as job-1:forecast; `hourly` matches no recorded call and says so.
+  assert.deepEqual(traceList(scene, 'review:req-1').rows.map(row => [row.kind, row.id]), [['operation', 'job-1:forecast'], ['evidence', 'hourly']]);
+  assert.equal(traceList(scene, 'review:req-9').count, 0);
+});
+
+test('a check recorded before reviews were kept is listed with its outcome only, never given requirements', () => {
+  const scene = createExecutionScene({ runId: 'old', chatId: 'c', query: 'q' });
+  stage(scene, 'goal-check:3', 'completed', { output: '已核对' });
+  const goal = sceneGoalReview(scene);
+  assert.equal(goal.checks, 1); assert.equal(goal.review, null); assert.equal(goalGate(goal), null);
+  assert.deepEqual(goal.history, [{ id: 'goal-check:3', status: 'completed', text: '已核对', at: goal.history[0].at, decision: null }]);
+  assert.equal(traceList(scene, 'review:requirements').count, 0);
+});
+
+test('a review survives the desktop reducer and the portable reducer the same way', () => {
+  const review = { v: 1, decision: 'partial', reason: 'GOAL_CORRECTION_LIMIT', requirements: [{ text: '下雨的时段', kind: 'external_fact', status: 'unavailable', evidenceIds: ['x'] }] };
+  const desktop = createExecutionScene({ runId: 'r', chatId: 'c', query: 'q' });
+  stage(desktop, 'goal-check:1', 'failed', { goalReview: review });
+  let portable = executionScene({ action: 'create', runId: 'r', chatId: 'c', query: 'q', at: 't0' });
+  portable = executionScene({ action: 'event', scene: portable, at: 't1', event: { id: 'goal-check:1', name: '核对任务交付', kind: 'pipeline', status: 'failed', goalReview: review } });
+  assert.deepEqual(sceneGoalReview(desktop).review, sceneGoalReview(portable).review);
+  assert.equal(goalGate(sceneGoalReview(portable)).unavailable, 1);
+});
+

@@ -348,6 +348,20 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
         assert(plainTask.completion?.outcome == "completed")
         assert(plainLog.stages.contains { $0.id.hasPrefix("goal-check:") && $0.status == "completed" })
         assert(plainLog.performed.isEmpty)
+        // Review 2026-11-07: each check stage carries what it judged, for the task space only.
+        let reviewLog = Log()
+        var reviewHooks = hooks(reviewLog)
+        reviewHooks.onStageEvent = { event in reviewLog.stages.append((event.id, event.status, event.output)); reviewLog.events.append(event) }
+        let reviewTransport = ScriptedTransport { input in
+            input.goalReview == nil ? answer("Trees grow new cells.") : answer(#"{"decision":"complete","reasonType":"self_contained","reason":"Answered from general knowledge.","requirements":[{"text":"Explain tree growth","kind":"response","status":"met","evidenceIds":[]}]}"#)
+        }
+        _ = try await AgentLoop(transport: reviewTransport, tools: loopTools(reviewLog), budget: PhoneRunBudget(), latestUserMessage: "Explain tree growth", hooks: reviewHooks).run()
+        let checkStage = reviewLog.events.last { $0.id.hasPrefix("goal-check:") }
+        let review = checkStage?.goalReview?.object ?? [:]
+        assert(checkStage?.status == "completed" && review["v"] == .number(1) && review["decision"] == .string("deliver") && review["reason"] == .string("SELF_CONTAINED_ANSWER"), "\(String(describing: checkStage?.goalReview))")
+        let judged = review["requirements"]?.array.first?.object ?? [:]
+        assert(judged["text"] == .string("Explain tree growth") && judged["kind"] == .string("response") && judged["status"] == .string("met") && judged["evidenceIds"]?.array.isEmpty == true)
+        assert(reviewTransport.requests.allSatisfy { !String(describing: $0.transcript).contains("SELF_CONTAINED_ANSWER") }, "the view never reaches the model")
 
         // Zero-tool local work enters the same checker; reviews do not spend
         // the configured work rounds, and the final report is tool-free.

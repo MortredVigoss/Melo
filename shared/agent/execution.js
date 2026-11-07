@@ -1,6 +1,7 @@
 import { AGENT_LOOP_CONTRACT } from './loopContract.js';
 import { INTERNAL_JOB_ROLES } from './internalRouting.js';
 import { normalizeEvaluationSnapshot } from './taskEvaluation.js';
+import { normalizeGoalReview } from './goalReview.js';
 import { sessionContext, sessionEventId } from '../../src/shared/sessionEvents.js';
 // Portable observations using the existing ExecutionScene projection contract.
 // Hosts supply identity/time; this module has no effects or credential access.
@@ -63,6 +64,9 @@ export function executionScene({ action, scene, runId, chatId, query, at, event 
     if (Number.isInteger(event.limits?.rounds)) row.limits = { rounds: Math.max(0, Math.min(100, event.limits.rounds)) };
     const evaluation = event.evaluation ? normalizeEvaluationSnapshot(event.evaluation) : null;
     if (evaluation) row.evaluation = evaluation;
+    // The delivery check's requirements and cited evidence (review 2026-11-07).
+    const goalReview = event.goalReview ? normalizeGoalReview(event.goalReview) : null;
+    if (goalReview) row.goalReview = goalReview;
   }
   if (event.result) {
     const result = event.result;

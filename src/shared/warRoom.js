@@ -5,7 +5,7 @@
 // is the length (or the sum) of a list of records `traceList` can show;
 // nothing here invents a step, a region, a candidate or a score.
 import { EXECUTION_MODULES, moduleActivity, rankSceneSources, sceneFinished, sourceReadingLabel } from './executionScene.js';
-import { sceneMembers, sceneEvaluation, sceneResources, operationVerb, usageStages, jobIndex } from './executionBoard.js';
+import { sceneMembers, sceneEvaluation, sceneGoalReview, sceneResources, operationVerb, usageStages, jobIndex } from './executionBoard.js';
 
 const QUALIFIED = ['primary', 'alternative', 'eligible'];
 const TERMINAL = ['completed', 'failed', 'cancelled', 'interrupted'];
@@ -83,6 +83,18 @@ export function deliveryGate(snapshot) {
   return { rows, met: rows.filter(row => row.met).length, open: summary.stop === 'ready_for_review', stop: summary.stop || null, nextBatch: summary.nextBatch ?? null };
 }
 
+// The delivery gate of a task without a contract (review 2026-11-07): each
+// requirement the latest check judged, read straight from that check. The
+// gate is open only when the checker itself passed the answer.
+export function goalGate(goal = null) {
+  const review = goal?.review;
+  if (!review) return null;
+  const tally = goal.tally || { total: 0, met: 0, missing: 0, unavailable: 0, evidence: 0, passed: false };
+  return { rows: review.requirements.map((row, i) => ({ key: `req-${i}`, status: row.status, kind: row.kind, met: row.status === 'met', evidence: row.evidenceIds.length })),
+    met: tally.met, total: tally.total, missing: tally.missing, unavailable: tally.unavailable, evidence: tally.evidence, open: tally.passed,
+    decision: review.decision, reason: review.reason, checks: goal.checks, corrections: review.corrections, correctionLimit: review.correctionLimit };
+}
+
 // What a number on screen counts. `count` is the number displayed and equals
 // `rows.length + omitted`: rows are every record the scene holds; `omitted`
 // counts the ones the evaluator totalled but the snapshot did not carry
@@ -133,6 +145,22 @@ export function traceList(scene, key, { snapshot = sceneEvaluation(scene).snapsh
     if (arg === 'primary') return counted(all.filter(row => row.tier === 'primary').map(candidateRow), summary.recommended);
     if (arg === 'coverage') return done((contract?.coverage || []).map(row => ({ kind: 'coverage', id: row.tag, tag: row.tag, covered: !!row.covered })));
     if (arg === 'gaps') return counted((summary.gaps || []).map((text, i) => ({ kind: 'gap', id: `gap-${i}`, text })), summary.gapCount);
+  }
+  // The delivery check: its requirements, those in one state, one
+  // requirement's cited evidence (a recorded call when the id matches one),
+  // or the check records themselves.
+  if (kind === 'review') {
+    const goal = sceneGoalReview(scene), requirements = goal.review?.requirements || [];
+    const requirementRow = (row, i) => ({ kind: 'requirement', id: `req-${i}`, text: row.text, requirementKind: row.kind, status: row.status, evidence: row.evidenceIds.length });
+    if (arg === 'checks') return done(pipeline.filter(stage => /^goal-check:/.test(stage.id)).map(stageRow));
+    if (['met', 'missing', 'unavailable'].includes(arg)) return done(requirements.map(requirementRow).filter(row => row.status === arg));
+    if (arg === 'requirements') return counted(requirements.map(requirementRow), requirements.length + (goal.review?.omitted || 0));
+    const match = /^req-(\d{1,2})$/.exec(arg), row = match ? requirements[Number(match[1])] : null;
+    if (row) return done(row.evidenceIds.map(id => {
+      const op = operations.find(item => item.id === id || String(item.id).endsWith(':' + id));
+      return op ? operationRow(op, scene) : { kind: 'evidence', id, text: id };
+    }));
+    return done([]);
   }
   // A field: the candidates its coverage share is taken over (see fieldCoverage).
   if (kind === 'field') { const cover = fieldCoverage(snapshot, arg); return { ...done(cover.rows.map(candidateRow)), verified: cover.verified, outside: cover.outside }; }
