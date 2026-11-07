@@ -319,6 +319,18 @@ test('war room shows only recorded facts, traces every number, opens by itself, 
     assert.match(await band.locator('[data-cell="contract"]').innerText(), /第 1 次 · 核验通过/);
     assert.equal(await band.locator('.war-empty').count(), 0, 'no empty panel');
     await page.screenshot({ path: join(proof, 'checked-without-assignment.png') });
+    // Evidence count → requirement → the call it cites → that call's execution record.
+    await band.locator('[data-cell="gate"] [data-war-trace="review:requirements"]').click();
+    await detail.locator('.war-trace button.war-req[data-war-trace="review:req-0"]').click();
+    assert.match(await detail.locator('header').innerText(), /12 乘 7 的结果/);
+    assert.equal(await count(), 1);
+    await detail.locator('.war-trace [data-war-record="calc"]').click();
+    assert.match(await detail.locator('header').innerText(), /执行详情/);
+    await back();
+    // The check list opens the same evidence.
+    await band.locator('[data-cell="contract"] .war-checklist [data-war-trace="review:req-0"]').click();
+    assert.match(await detail.locator('header').innerText(), /12 乘 7 的结果/);
+    await back();
     assert.deepEqual(errors, []);
     // Reduced motion switched off resumes drawing by itself (a history view, no new data).
     await open('board-chat');

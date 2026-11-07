@@ -1485,6 +1485,10 @@ html[data-scene-host=phone] .war-voice { display: inline-flex; align-items: cent
 .war-contract b { font-weight: 400; color: var(--wr-muted-2); }
 /* A task without a contract lists its delivery check; labels carry a mark and a requirement type. */
 .war-checklist span { grid-template-columns: 66px minmax(0, 1fr); }
+.war-checklist button { display: grid; grid-template-columns: 66px minmax(0, 1fr); gap: 6px; width: 100%; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
+.war-checklist button:hover { background: var(--wr-hover); color: var(--wr-gold); }
+/* A requirement row in a trace list: text and its state, like a candidate row. */
+.war-trace button.war-req { grid-template-columns: minmax(0, 1fr) auto; }
 .war-link, .war-back { border: 1px solid var(--wr-line-2); background: transparent; color: var(--wr-text-2); font-size: 10px; padding: 3px 8px; border-radius: 7px; }
 .war-link { margin-top: 6px; } .war-link:hover, .war-back:hover { background: var(--wr-hover); color: var(--wr-gold); }
 .war-count { color: var(--wr-number); }

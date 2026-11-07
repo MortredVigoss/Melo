@@ -381,12 +381,13 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
     head(c, t('任务合同'), goal.checks ? escapeHtml(t('没有合同 · 以核验清单为准')) : '');
     if (!goal.checks) { fill(c, empty(none)); return; }
     const mark = status => ({ met: '✓', missing: '✗', unavailable: '?' })[status] || '·';
+    // [label, value, trace key]: a requirement line opens the evidence it cites.
     const lines = review
       ? [[t('核验'), `${t('第 {count} 次', { count: goal.checks })} · ${decisionName(review.decision)}`], ...(review.reason ? [[t('依据'), reviewReason(review.reason)]] : []),
-        ...review.requirements.map(row => [`${mark(row.status)} ${requirementKindName(row.kind)}`, row.text]), ...(review.explanation ? [[t('说明'), review.explanation]] : []),
+        ...review.requirements.map((row, i) => [`${mark(row.status)} ${requirementKindName(row.kind)}`, row.text, `review:req-${i}`]), ...(review.explanation ? [[t('说明'), review.explanation]] : []),
         ...(review.correctionLimit ? [[t('补证'), `${review.corrections} / ${review.correctionLimit}`]] : [])]
       : [[t('核验'), `${t('第 {count} 次', { count: goal.checks })} · ${statusText(goal.last?.status)}`], ...(goal.last?.text ? [[t('说明'), goal.last.text]] : [])];
-    fill(c, `<pre class="war-contract war-checklist">${lines.map(([a, b]) => `<span><b>${escapeHtml(a)}</b>${escapeHtml(b)}</span>`).join('')}</pre>${goal.stageId ? `<button type="button" class="war-link" data-war-record="${escapeHtml(goal.stageId)}">${escapeHtml(t('查看核验记录'))}</button>` : ''}`);
+    fill(c, `<pre class="war-contract war-checklist">${lines.map(([a, b, key]) => key ? `<button type="button" data-war-trace="${escapeHtml(key)}"><b>${escapeHtml(a)}</b>${escapeHtml(b)}</button>` : `<span><b>${escapeHtml(a)}</b>${escapeHtml(b)}</span>`).join('')}</pre>${goal.stageId ? `<button type="button" class="war-link" data-war-record="${escapeHtml(goal.stageId)}">${escapeHtml(t('查看核验记录'))}</button>` : ''}`);
   }
   function renderHeat(snapshot) {
     const c = cell('heat');
@@ -473,7 +474,8 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
     if (row.kind === 'candidate') return `<li data-tier="${escapeHtml(row.tier)}"><div><b>${escapeHtml(row.name)}</b><span>${escapeHtml(tierName(row.tier))} · ${escapeHtml(t('排序分 {score}，不是概率', { score: row.total }))}</span>${row.reason ? `<em>${escapeHtml(row.reason)}</em>` : ''}<small>${Object.entries(row.fields).map(([f, s]) => `${escapeHtml(fieldName(f))} ${s === 'verified' ? '✓' : s === 'failed' ? '✗' : '·'}`).join('  ')}</small></div></li>`;
     if (row.kind === 'coverage') return `<li><div><b>${escapeHtml(row.tag)}</b><span>${escapeHtml(row.covered ? t('已覆盖') : t('未覆盖'))}</span></div></li>`;
     if (row.kind === 'gap') return `<li><div><b>${escapeHtml(row.text)}</b></div></li>`;
-    if (row.kind === 'requirement') return `<li data-status="${escapeHtml(row.status === 'met' ? 'completed' : 'failed')}"><div><b>${escapeHtml(row.text)}</b><span>${escapeHtml(`${requirementKindName(row.requirementKind)} · ${requirementStateName(row.status)} · ${t('{count} 条证据', { count: row.evidence })}`)}</span></div></li>`;
+    // A requirement opens the evidence it cites (review:req-N), which opens each recorded call.
+    if (row.kind === 'requirement') return `<li data-status="${escapeHtml(row.status === 'met' ? 'completed' : 'failed')}"><button type="button" class="war-req" data-war-trace="${escapeHtml('review:' + row.id)}"><b>${escapeHtml(row.text)}</b><span>${escapeHtml(`${requirementKindName(row.requirementKind)} · ${requirementStateName(row.status)} · ${t('{count} 条证据', { count: row.evidence })}`)}</span></button></li>`;
     if (row.kind === 'evidence') return `<li><div><b>${escapeHtml(row.text)}</b><span>${escapeHtml(t('证据编号，未对应到本次记录里的调用'))}</span></div></li>`;
     if (row.kind === 'moment') return `<li><div><b>${escapeHtml({ start: t('开始'), 'first-call': t('第一次调用'), 'last-call': t('最后一次调用返回'), finish: t('结束') }[row.label])}</b><span>${clock(row.offsetMs)}</span></div></li>`;
     if (row.kind === 'policy') return `<li><div><b>${escapeHtml({ milliseconds: t('软检查点时间'), calls: t('软检查点调用次数'), memberCalls: t('单个成员调用上限') }[row.id])}</b><span>${escapeHtml(row.id === 'milliseconds' ? clock(row.value) : num(row.value))}</span></div></li>`;
