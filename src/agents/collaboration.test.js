@@ -41,6 +41,13 @@ test('forged targets, missing capability, cycle and depth cap fail without start
  const ctx={agentId:'main',capabilities:caps,collaboration:{canDelegate:true,delegateTargets:['child'],maxDelegationDepth:1},agentProfiles:{child:profile('child')},config:{}};
  for(const [args,context] of [[{agentId:'unknown'},ctx],[{agentId:'child'},{...ctx,capabilities:emptyCapabilities()}],[{agentId:'child'},{...ctx,agentDepth:1}],[{agentId:'child'},{...ctx,ancestry:['child']}]])assert.equal((await delegateTask({...args,task:'try'},context)).error,'DELEGATION_DENIED');
 });
+test('a retired built-in lane stays undelegatable even when old settings still list it',async()=>{
+ const {capabilityScopeForProfile}=await import('../domain/agent/capabilityScope.js');
+ const ctx={agentId:'main',capabilities:caps,collaboration:{canDelegate:true,delegateTargets:['research','custom-1'],maxDelegationDepth:2},agentProfiles:{research:profile('research'),'custom-1':profile('custom-1')},config:{},requestContext:{capabilityScope:capabilityScopeForProfile(profile('main'))}};
+ // Control: the same authorized context lets a user-created Agent past the delegation check (it then stops at the member run's own scope check).
+ assert.notEqual((await delegateTask({agentId:'custom-1',task:'draft it'},ctx)).error,'DELEGATION_DENIED');
+ assert.equal((await delegateTask({agentId:'research',task:'look it up'},ctx)).error,'DELEGATION_DENIED');
+});
 test('token budget prevents a provider request when required context is already too large',async()=>{
  let calls=0;const result=await runSubAgent({task:'work',agentProfile:profile('member'),maxTokens:1,config:{model:'fixture'},replyFn:async()=>{calls++;return 'should not run';}});
  assert.equal(calls,0);assert.equal(result.meta.budgetExceeded,true);assert.equal(result.meta.completion.outcome,'budget_exhausted');

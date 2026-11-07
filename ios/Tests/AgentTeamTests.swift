@@ -18,15 +18,23 @@ final class Counter: @unchecked Sendable {
 @main struct AgentTeamTests {
     static func main() async {
         // Lead rules follow the synced collaboration settings.
-        let agents = [agent("main"), agent("research"), agent("reviewer")]
+        let agents = [agent("main"), agent("scout"), agent("critic")]
         assert(AgentTeam.leadState(agent("melo"), agents: agents) == .delegateOff, "a phone-only Agent without collaboration settings cannot lead")
-        assert(AgentTeam.leadState(agent("main", canDelegate: false, targets: ["research"]), agents: agents) == .delegateOff)
+        assert(AgentTeam.leadState(agent("main", canDelegate: false, targets: ["scout"]), agents: agents) == .delegateOff)
         assert(AgentTeam.leadState(agent("main", canDelegate: true, targets: ["gone", "main"]), agents: agents) == .noTargets, "unknown targets and the lead itself are not members")
-        let lead = agent("main", canDelegate: true, targets: ["reviewer", "research"])
-        assert(AgentTeam.leadState(lead, agents: agents) == .ready(["reviewer", "research"]))
-        let plan = try! AgentTeam.validate(templateID: "research-build-review", members: ["research", "reviewer"])
+        let lead = agent("main", canDelegate: true, targets: ["critic", "scout"])
+        assert(AgentTeam.leadState(lead, agents: agents) == .ready(["critic", "scout"]))
+        let plan = try! AgentTeam.validate(templateID: "research-build-review", members: ["scout", "critic"])
         do { try AgentTeam.authorize(plan, lead: lead, agents: agents) } catch { assertionFailure("chosen members are allowed") }
-        let outsider = try! AgentTeam.validate(templateID: "research-build-review", members: ["research", "writer"])
+        // User decision 2026-11-07: retired built-in lanes synced from old settings are no team members.
+        let retiredAgents = agents + [agent("research"), agent("builder"), agent("writer")]
+        assert(AgentTeam.leadState(agent("main", canDelegate: true, targets: ["research", "builder", "writer"]), agents: retiredAgents) == .noTargets, "only retired lanes listed: nobody to lead")
+        assert(AgentTeam.leadState(agent("main", canDelegate: true, targets: ["research", "scout"]), agents: retiredAgents) == .ready(["scout"]), "a retired lane drops out, a user-created Agent stays")
+        // Lists offer the default Agent and user-created ones; the Agent a chat already uses stays visible.
+        let stored = AgentProfile.defaults + [agent("research"), agent("main"), agent("custom-1")]
+        assert(AgentProfile.userFacing(stored).map(\.id) == ["melo", "main", "custom-1"], "\(AgentProfile.userFacing(stored).map(\.id))")
+        assert(AgentProfile.userFacing(stored, keep: "writer").map(\.id) == ["melo", "writer", "main", "custom-1"])
+        let outsider = try! AgentTeam.validate(templateID: "research-build-review", members: ["scout", "writer"])
         do { try AgentTeam.authorize(outsider, lead: lead, agents: agents + [agent("writer")]); assertionFailure("unchosen member must be refused") }
         catch { assert(error.localizedDescription.contains("writer")) }
 
@@ -42,7 +50,7 @@ final class Counter: @unchecked Sendable {
             try await Task.sleep(nanoseconds: 5_000_000_000)
             return "late"
         }
-        assert(slow.calls == ["research"], "only the first member started: \(slow.calls)")
+        assert(slow.calls == ["scout"], "only the first member started: \(slow.calls)")
         assert(timed.timedOut && !timed.ok && timed.results.map(\.handoff.status) == ["budget-exceeded", "budget-exceeded"])
         assert(AgentTeam.digest(timed, name: { $0 }).hasPrefix("团队用完了总预算"))
 
@@ -88,11 +96,11 @@ final class Counter: @unchecked Sendable {
 
         // A failing member is reported, not hidden; the digest never shows raw JSON.
         let mixed = await AgentTeam.run(plan, task: "t") { call in
-            if call.memberID == "reviewer" { throw URLError(.timedOut) }
+            if call.memberID == "critic" { throw URLError(.timedOut) }
             return #"{"conclusion":"三处来源","changedFiles":["a.md"],"unfinished":[]}"#
         }
         assert(!mixed.ok && mixed.results[0].ok && !mixed.results[1].ok)
-        let digest = AgentTeam.digest(mixed, name: { $0 == "research" ? "调研员" : "复核员" })
+        let digest = AgentTeam.digest(mixed, name: { $0 == "scout" ? "调研员" : "复核员" })
         assert(digest.hasPrefix("团队未全部完成。") && digest.contains("**调研员** · 已完成") && digest.contains("三处来源") && digest.contains("a.md") && digest.contains("**复核员** · 未完成"))
         assert(!digest.contains("{") && !digest.contains("}"))
         assert(AgentTeam.summaryInput(task: "整理", outcome: mixed, name: { $0 }).contains("三处来源"))

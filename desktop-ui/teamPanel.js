@@ -2,13 +2,15 @@
 // Members are chosen by name from the lead Agent's delegation targets — the
 // same list the server enforces — so the panel never offers a team it would refuse.
 import { ui, t } from './i18n.js';
+import { isUserFacingAgent } from '../src/shared/userAgents.js';
 
 export const TEAM_TEMPLATE_IDS = Object.freeze(['research-build-review', 'parallel-research', 'review-loop']);
 
 export function teamLeadState(lead, agents = []) {
   if (!lead) return { ready: false, reason: 'no-agent' };
   if (lead.capabilities?.delegate !== true || lead.collaboration?.canDelegate !== true) return { ready: false, reason: 'delegate-off' };
-  const members = (lead.collaboration.delegateTargets || []).map(id => agents.find(agent => agent.id === id)).filter(Boolean);
+  // Retired built-in lanes are never team members (src/shared/userAgents.js).
+  const members = (lead.collaboration.delegateTargets || []).map(id => agents.find(agent => agent.id === id)).filter(agent => agent && isUserFacingAgent(agent));
   return members.length ? { ready: true, members } : { ready: false, reason: 'no-targets' };
 }
 

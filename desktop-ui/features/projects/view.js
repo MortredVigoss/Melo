@@ -197,7 +197,7 @@ function renderProjectCreateForm() {
 }
 
 function renderProjectAgentDefaults(project) {
-  const agents = conversationAgents(getBootstrap(), {overview:true,newProjectId:project.id});
+  const agents = conversationAgents(getBootstrap(), {overview:true,newProjectId:project.id,keepId:project.defaultAgentId});
   const lead = agents.find(agent => agent.id === (project.defaultAgentId || 'main')) || null;
   const options = agents.map(agent => `<option value="${escapeHtml(agent.id)}" ${project.defaultAgentId === agent.id ? 'selected' : ''}>${escapeHtml(agent.name || agent.id)}</option>`).join('');
   return ui`<section class="surface-card project-detail-panel project-agent-defaults">

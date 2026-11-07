@@ -1,4 +1,5 @@
 import { PROVIDER_DEFAULTS } from '../shared/agent/providerDefaults.js';
+import { userFacingAgents } from '../src/shared/userAgents.js';
 import { t, ui } from './i18n.js';
 const routingLabels = { light:'轻', standard:'标准', strong:'强', high_risk:'高风险任务', deep_research:'深入研究', task_shape:'任务要求', simple:'简单任务', ambiguous:'默认标准档', judgment:'任务判断', requested_escalation:'模型请求升档', repeated_failure:'重复失败', tool_rounds:'工具轮次增加', side_effect:'有副作用的操作' };
 const labels = PROVIDER_DEFAULTS.labels;
@@ -44,19 +45,23 @@ export function modelPanelPosition(anchor, panel, viewport) {
   };
 }
 
-export function conversationAgents(data, { overview = false, newProjectId = null } = {}) {
+export function conversationAgents(data, { overview = false, newProjectId = null, keepId = '' } = {}) {
   const projectId = overview ? newProjectId : data.activeChat?.projectId;
   // Project data may contain only overrides. Keep the default and custom
   // roles, then apply overrides by ID instead of replacing the whole list.
   const base = data.conversationProfiles?.global || data.customize?.agents || [];
   const merged = new Map(base.filter(a=>a?.id).map(a=>[a.id,a]));
   for(const agent of data.conversationProfiles?.projects?.[projectId] || []) if(agent?.id) merged.set(agent.id,{...merged.get(agent.id),...agent});
-  return [...merged.values()].sort((a,b)=>(a.id==='main'?-1:b.id==='main'?1:0));
+  // Only the default Agent and the user's own Agents are offered; a chat still
+  // on a retired lane keeps showing it (src/shared/userAgents.js).
+  return userFacingAgents([...merged.values()], { keepId: keepId || (overview ? '' : data.activeChat?.agentId) });
 }
 
 export function conversationAgent(data, { overview = false, newAgentId = 'main', newProjectId = null } = {}) {
   const id = (!overview && data.activeChat?.agentId) || newAgentId;
-  const agents = conversationAgents(data, {overview, newProjectId});
+  // The Agent a new chat would start with stays visible even if it is a
+  // retired lane, so the composer never shows one Agent and starts another.
+  const agents = conversationAgents(data, {overview, newProjectId, keepId: id});
   return agents.find(agent => agent.id === id) || agents.find(agent => agent.id === 'main') || null;
 }
 

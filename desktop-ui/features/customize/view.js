@@ -1,4 +1,5 @@
 import { AGENT_LOOP_CONTRACT } from '../../../shared/agent/loopContract.js';
+import { userFacingAgents } from '../../../src/shared/userAgents.js';
 import { LOCAL_SERVICE_DEFAULTS } from '../../../src/shared/localServices.js';
 import { formatTime } from '../../format.js';
 // Customize page — renderers and selectors
@@ -1037,7 +1038,7 @@ function renderCustomizePage() {
             ${(section === 'skills'
               ? filteredSkills()
               : section === 'agents'
-                ? data.customize.agents
+                ? userFacingAgents(data.customize.agents, { keepId: data.settings.selectedAgentId })
                 : (data.customize.connectors || []).filter(c => c.type !== 'external-mcp' && !['local-files','local-command'].includes(c.id)))
               .map(item => {
                 const isActive =

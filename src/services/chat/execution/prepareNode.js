@@ -1,4 +1,5 @@
 import { requestAllowsTool, getRequestNetworkPolicy } from '../../../../shared/agent/retrieval/requestPolicy.js';
+import { isRetiredAgentId } from '../../../shared/userAgents.js';
 import { isStandaloneGreeting } from '../../../../shared/agent/retrieval/intentRouter.js';
 import { createRoutingSession } from '../../modelRouting/routing.js';
 import { resolveContextBudget } from '../contextBudget.js';
@@ -379,7 +380,7 @@ export function createPrepareNode(turn) {
       const wantedGroups = wantedToolGroups({ searchPlan, env });
       const stableTools = selectStableTools(allowedTools, nextActivatedGroups([], wantedGroups))
         .filter(tool => requestAllowsTool(tool, context.requestToolPolicy || getRequestNetworkPolicy(latestUserMessage)));
-      promptTools = toolsForCapabilityScope([...stableTools, ...skillTools].filter(tool => requestAllowsTool(tool, context.requestToolPolicy || getRequestNetworkPolicy(latestUserMessage))),context.capabilityScope).filter(t=>t.id!=='delegate'||activeAgentProfile.collaboration.canDelegate&&activeAgentProfile.collaboration.delegateTargets.length>0);
+      promptTools = toolsForCapabilityScope([...stableTools, ...skillTools].filter(tool => requestAllowsTool(tool, context.requestToolPolicy || getRequestNetworkPolicy(latestUserMessage))),context.capabilityScope).filter(t=>t.id!=='delegate'||activeAgentProfile.collaboration.canDelegate&&activeAgentProfile.collaboration.delegateTargets.some(id=>!isRetiredAgentId(id)));
       visibleToolIds = new Set(promptTools.map(tool => tool.id).filter(Boolean));
     }
     toolsPrompt = buildSearchRoutingPrompt(searchPlan);

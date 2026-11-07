@@ -1,4 +1,5 @@
 import { renderAgentIdentity } from '../domain/agent/agentIdentity.js';
+import {isRetiredAgentId} from '../shared/userAgents.js';
 import {currentRequestContext,runWithRequestContext} from '../runtime/requestScope.js';
 import {resolveCapabilityContext} from '../services/agent/capabilityContext.js';
 import {narrowCapabilityScope,missingCapabilityScope} from '../domain/agent/capabilityScope.js';
@@ -59,7 +60,7 @@ export function assertTeamLead(lead,members) {
  if(!lead)return;
  const name=lead.name||lead.id, settings=normalizeCollaboration(lead.collaboration);
  if(lead.capabilities?.delegate!==true||!settings.canDelegate)throw Object.assign(new Error(`「${name}」未开启委派。请在 Agent 设置的“能力范围与协作”里开启“委派”，并勾选可以协作的 Agent。`),{code:'CAPABILITY_DENIED'});
- const outside=members.filter(id=>!settings.delegateTargets.includes(id));
+ const outside=members.filter(id=>!settings.delegateTargets.includes(id)||isRetiredAgentId(id));
  if(outside.length)throw Object.assign(new Error(`以下成员不在「${name}」的委派对象中：${outside.join('、')}。请在 Agent 设置的“委派对象”里勾选后再试。`),{code:'DELEGATION_DENIED'});
 }
 const STATUS_TEXT={completed:'已完成',failed:'未完成','budget-exceeded':'超出预算',cancelled:'已取消'};

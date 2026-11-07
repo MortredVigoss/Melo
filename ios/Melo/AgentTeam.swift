@@ -89,7 +89,8 @@ enum AgentTeam {
     enum LeadState: Equatable { case ready([String]), delegateOff, noTargets }
     static func leadState(_ lead: AgentProfile, agents: [AgentProfile]) -> LeadState {
         guard let collaboration = lead.collaboration, collaboration["canDelegate"].bool else { return .delegateOff }
-        let targets = collaboration["delegateTargets"].array.map(\.string).filter { id in id != lead.id && agents.contains { $0.id == id } }
+        // Retired built-in starters are never team members (AgentProfile.retiredBuiltInIDs).
+        let targets = collaboration["delegateTargets"].array.map(\.string).filter { id in id != lead.id && !AgentProfile.retiredBuiltInIDs.contains(id) && agents.contains { $0.id == id } }
         return targets.isEmpty ? .noTargets : .ready(targets)
     }
     static func authorize(_ plan: Plan, lead: AgentProfile, agents: [AgentProfile]) throws {

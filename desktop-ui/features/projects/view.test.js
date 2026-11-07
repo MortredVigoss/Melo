@@ -35,14 +35,14 @@ test('project detail renders its real chats, artifacts and editable goals',()=>{
 });
 
 test('project Agent defaults show the chosen Agent and the saved team, led by that Agent',()=>{
- const agents=[{id:'main',name:'Main',capabilities:{delegate:true},collaboration:{canDelegate:true,delegateTargets:['research','reviewer']}},{id:'research',name:'Research',capabilities:{delegate:false},collaboration:{canDelegate:false,delegateTargets:[]}},{id:'reviewer',name:'Reviewer'}];
+ const agents=[{id:'main',name:'Main',capabilities:{delegate:true},collaboration:{canDelegate:true,delegateTargets:['scout','critic']}},{id:'scout',name:'Research',capabilities:{delegate:false},collaboration:{canDelegate:false,delegateTargets:[]}},{id:'critic',name:'Reviewer'}];
  install({customize:{agents}},{escapeHtml:s=>String(s??'').replaceAll('<','&lt;')});
- let doc=new JSDOM(renderProjectAgentDefaults({id:'p',defaultAgentId:'',teamPlan:{templateId:'parallel-research',members:['reviewer','research']}})).window.document;
+ let doc=new JSDOM(renderProjectAgentDefaults({id:'p',defaultAgentId:'',teamPlan:{templateId:'parallel-research',members:['critic','scout']}})).window.document;
  assert.equal(doc.querySelector('[data-project-default-agent]').value,'');
- assert.deepEqual([...doc.querySelectorAll('input[name=team-member]:checked')].map(i=>[i.value,i.dataset.order]),[['research','1'],['reviewer','0']]);
+ assert.deepEqual([...doc.querySelectorAll('input[name=team-member]:checked')].map(i=>[i.value,i.dataset.order]),[['scout','1'],['critic','0']]);
  assert.equal(doc.querySelector('[data-team-template]').value,'parallel-research');
  assert.match(doc.body.textContent,/已保存默认团队：Reviewer、Research/);assert.ok(doc.querySelector('[data-action=clear-project-team]'));
- doc=new JSDOM(renderProjectAgentDefaults({id:'p',defaultAgentId:'research',teamPlan:null})).window.document;
- assert.equal(doc.querySelector('[data-project-default-agent]').value,'research');
+ doc=new JSDOM(renderProjectAgentDefaults({id:'p',defaultAgentId:'scout',teamPlan:null})).window.document;
+ assert.equal(doc.querySelector('[data-project-default-agent]').value,'scout');
  assert.match(doc.body.textContent,/「Research」未开启委派/);assert.equal(doc.querySelector('[data-action=clear-project-team]'),null);
 });

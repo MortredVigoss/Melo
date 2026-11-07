@@ -285,7 +285,8 @@ test('recovered create never auto-edits another Agent or a project override', as
 test('create flow: read-only start by default; «基于已有 Agent» sends basedOn and the persona tick', async () => {
   const h = harness({ responses: { '/api/agents/create-custom': page() } });
   let doc = new JSDOM(h.feature.renderPage()).window.document;
-  assert.deepEqual([...doc.querySelectorAll('[data-agent-create-base] option')].map(o => o.value), ['', 'main', 'research']);
+  // Retired built-in lanes are no starting point (2026-11-07); the selected one still opens.
+  assert.deepEqual([...doc.querySelectorAll('[data-agent-create-base] option')].map(o => o.value), ['', 'main']);
   assert.equal(doc.querySelector('[data-agent-create-base]').getAttribute('aria-label'), '新 Agent 的起点');
   assert.equal(doc.querySelector('[data-agent-create-persona]'), null, 'nothing to copy from a read-only start');
   assert.match(doc.querySelector('.agent-create-hint').textContent, /默认开启全部基础能力（「联网」即可网页搜索）.*已启用的技能和 MCP 服务也会默认带上/);

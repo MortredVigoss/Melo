@@ -24,8 +24,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 699,
-      "edges": 2278,
+      "modules": 700,
+      "edges": 2287,
       "roots": [
         "src",
         "desktop-ui",
@@ -34,7 +34,7 @@
       ],
       "note": "静态 import/re-export，含 desktop-ui 对 /shared/*.js 的服务映射；不含动态 import 与外部包"
     },
-    "routes": 181,
+    "routes": 182,
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
@@ -561,7 +561,7 @@
         "chat": 35,
         "desktop-shell": 9,
         "memory": 12,
-        "platform": 49,
+        "platform": 53,
         "settings": 3,
         "tools": 21
       },
@@ -1138,7 +1138,7 @@
         "knowledge": 5,
         "media": 24,
         "memory": 27,
-        "platform": 67,
+        "platform": 68,
         "projects": 11,
         "settings": 11,
         "sync": 2,
@@ -2039,7 +2039,7 @@
         "chat": 14,
         "desktop-shell": 9,
         "media": 1,
-        "platform": 26,
+        "platform": 28,
         "sync": 3,
         "tools": 2
       },
@@ -2690,7 +2690,7 @@
         "knowledge": 3,
         "media": 2,
         "memory": 6,
-        "platform": 58,
+        "platform": 59,
         "projects": 5,
         "settings": 10
       },
@@ -3787,7 +3787,7 @@
         "knowledge": 1,
         "media": 5,
         "memory": 1,
-        "platform": 15,
+        "platform": 16,
         "projects": 5,
         "settings": 15,
         "sync": 2,
@@ -3835,6 +3835,7 @@
         "GET /shared/visualTokens.js ← src/server.js",
         "GET /shared/warRoom.js ← src/server.js",
         "GET /src/shared/localServices.js ← src/server.js",
+        "GET /src/shared/userAgents.js ← src/server.js",
         "GET /src/shared/visualTokens.js ← src/server.js",
         "GET /vendor/three/* ← src/server.js"
       ],
@@ -4089,7 +4090,7 @@
         "src/**"
       ],
       "modules": {
-        "src": 63
+        "src": 64
       },
       "entryModules": [
         {
@@ -4316,6 +4317,16 @@
           ]
         },
         {
+          "module": "src/shared/userAgents.js",
+          "importedBy": [
+            "agents",
+            "chat",
+            "desktop-shell",
+            "settings",
+            "tools"
+          ]
+        },
+        {
           "module": "src/shared/visualTokens.js",
           "importedBy": [
             "chat",
@@ -4450,19 +4461,19 @@
         "voice": 2
       },
       "usedBy": {
-        "agents": 49,
+        "agents": 53,
         "approvals": 36,
         "channels": 22,
-        "chat": 67,
-        "desktop-shell": 15,
+        "chat": 68,
+        "desktop-shell": 16,
         "development": 9,
         "knowledge": 2,
         "media": 13,
         "memory": 40,
         "projects": 23,
-        "settings": 26,
+        "settings": 28,
         "sync": 6,
-        "tools": 58,
+        "tools": 59,
         "voice": 6
       },
       "httpRoutes": [],

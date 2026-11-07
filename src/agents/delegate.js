@@ -4,6 +4,7 @@ import {resolveCapabilityContext} from '../services/agent/capabilityContext.js';
 import {narrowCapabilityScope,missingCapabilityScope,scopeAllowsTool,visibleCapabilities} from '../domain/agent/capabilityScope.js';
 import {randomUUID} from 'node:crypto';
 import {runSubAgent} from './subAgent.js';
+import {isRetiredAgentId} from '../shared/userAgents.js';
 import {toolCapabilityAllowed,normalizeCapabilities,intersectCapabilities,normalizeCollaboration,filterToolsByCapabilities,emptyCapabilities} from '../domain/agent/capabilities.js';
 import {getAllTools,getTool} from '../tools/registryCore.js';
 import {currentRequestContext,runWithRequestContext} from '../runtime/requestScope.js';
@@ -73,9 +74,10 @@ export async function delegateTask(args,context={}) {
  const resolved=await resolveCapabilityContext(currentRequestContext() || context.requestContext);
  const settings=normalizeCollaboration(context.collaboration), target=context.agentProfiles?.[args.agentId];
  const depth=(context.agentDepth || 0)+1, maxDepth=Math.min(context.maxDelegationDepth ?? settings.maxDelegationDepth,settings.maxDelegationDepth);
- if(!settings.canDelegate || !scopeAllowsTool(narrowCapabilityScope(resolved?.capabilityScope,{capabilities:context.capabilities}),'delegate') || !settings.delegateTargets.includes(args.agentId) || !target || depth>maxDepth || (context.ancestry || [context.agentId]).includes(args.agentId)) return {ok:false,error:'DELEGATION_DENIED',output:serverText('delegationDenied')};
+ // Retired built-in lanes are no delegation targets (src/shared/userAgents.js).
+ if(!settings.canDelegate || !scopeAllowsTool(narrowCapabilityScope(resolved?.capabilityScope,{capabilities:context.capabilities}),'delegate') || !settings.delegateTargets.includes(args.agentId) || isRetiredAgentId(args.agentId) || !target || depth>maxDepth || (context.ancestry || [context.agentId]).includes(args.agentId)) return {ok:false,error:'DELEGATION_DENIED',output:serverText('delegationDenied')};
  const result=await runConfiguredMember({extraTools:context.extraTools,profile:target,parentCapabilities:context.capabilities,allowedToolIds:context.allowedToolIds,config:context.config,task:args.task,instructions:args.instructions,background:context.memberBackground || '',workspacePath:context.workspacePath,signal:context.signal,sseEmitter:context.sseEmitter,chatId:context.chatId,depth,maxDepth,agentProfiles:context.agentProfiles,ancestry:context.ancestry || [context.agentId],chatSource:context.chatSource,projectId:context.projectId});
  if(result.error)return result;
  return {...result,output:JSON.stringify(result.handoff),meta:{...result.meta,handoff:result.handoff,member:{agentId:result.agentId,name:result.name,memberId:result.memberId,durationMs:result.durationMs},receipts:result.receipts}};
 }
-export const delegateTool={id:'delegate',name:'Delegate',description:'Delegate a focused task to an authorized configured Agent. The member uses its own persona/model and the intersection of both capability sets. Returns a structured handoff.',category:'agent',examples:[{agentId:'research',task:'Inspect relevant sources and return findings with evidence.'}],requiresPermission:false,isConcurrencySafe:false,timeout:920000,parametersSchema:{type:'object',properties:{agentId:{type:'string'},task:{type:'string'},instructions:{type:'string'}},required:['agentId','task']},run:delegateTask};
+export const delegateTool={id:'delegate',name:'Delegate',description:'Delegate a focused task to an authorized configured Agent. The member uses its own persona/model and the intersection of both capability sets. Returns a structured handoff.',category:'agent',examples:[{agentId:'custom-1',task:'Draft the reply in your own voice from these verified findings.'}],requiresPermission:false,isConcurrencySafe:false,timeout:920000,parametersSchema:{type:'object',properties:{agentId:{type:'string'},task:{type:'string'},instructions:{type:'string'}},required:['agentId','task']},run:delegateTask};

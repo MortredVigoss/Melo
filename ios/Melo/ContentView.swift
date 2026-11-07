@@ -172,7 +172,7 @@ struct HomeView: View {
                         Button { if let id = store.newChat() { open(id) } } label: {
                             HStack { Text("从一个想法开始…").font(.subheadline).foregroundStyle(.secondary); Spacer(); Image(systemName: "arrow.up.right").font(.callout).foregroundStyle(meloAccent) }.padding(19).background(meloBackground.opacity(0.42), in: RoundedRectangle(cornerRadius: 20)).overlay(RoundedRectangle(cornerRadius: 20).stroke(meloGold.opacity(0.3), lineWidth: 0.6))
                         }.disabled(!store.storageReady)
-                        HStack { InterfaceLanguageMenu(); Spacer(); VStack(alignment: .trailing, spacing: 4) { Text("\(store.chats.count) 段对话 · \(store.preferences.agents.count) 个Agent"); Text("本机工作空间") }.font(MeloType.meta()).foregroundStyle(meloGold.opacity(0.7)) }
+                        HStack { InterfaceLanguageMenu(); Spacer(); VStack(alignment: .trailing, spacing: 4) { Text("\(store.chats.count) 段对话 · \(AgentProfile.userFacing(store.preferences.agents).count) 个Agent"); Text("本机工作空间") }.font(MeloType.meta()).foregroundStyle(meloGold.opacity(0.7)) }
                     }.padding(.horizontal, 26).padding(.bottom, 22)
                 }
             }
@@ -230,7 +230,7 @@ struct AgentsView: View {
                 PageHeading(eyebrow: "AGENTS", title: "不同Agent，同样默契。", detail: "为每一种工作，选择合适的思考方式。")
                 Button { editing = AgentStarter.newAgent() } label: { Label("创建你的Agent", systemImage: "plus").font(.subheadline.weight(.medium)).frame(maxWidth: .infinity).padding(20).background(meloAccent.opacity(0.1), in: RoundedRectangle(cornerRadius: 20)) }
                     .accessibilityIdentifier("agents.create")
-                ForEach(store.preferences.agents) { agent in
+                ForEach(AgentProfile.userFacing(store.preferences.agents)) { agent in
                     VStack(alignment: .leading, spacing: 18) {
                         HStack { AgentAvatar(agent: agent, size: 48); Spacer(); Button { editing = agent } label: { Image(systemName: "slider.horizontal.3").foregroundStyle(.secondary).padding(8) }.accessibilityLabel("查看\(agent.name)") }
                         VStack(alignment: .leading, spacing: 6) { Text(agent.name).font(.title3.weight(.medium)); Text(agent.subtitle).font(.caption).foregroundStyle(meloGold); Text(agent.instructions).font(.subheadline).foregroundStyle(.secondary).lineLimit(3).padding(.top, 4) }

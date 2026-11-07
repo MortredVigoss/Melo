@@ -136,7 +136,7 @@ struct LocalDataSettings: View {
     var body: some View {
         DisclosureGroup {
             VStack(alignment: .leading, spacing: 14) {
-                Text("\(store.chats.count) 段对话 · \(store.preferences.agents.count) 个Agent").font(.subheadline)
+                Text("\(store.chats.count) 段对话 · \(AgentProfile.userFacing(store.preferences.agents).count) 个Agent").font(.subheadline)
                 Text("可导出对话、Agent、项目、共享知识与来源记录。不包含模型密钥、原始附件、电脑文件与权限；这不是整机备份。").font(.caption).foregroundStyle(.secondary)
                 Button("导出可迁移数据") { do { document = LocalArchiveDocument(data: try store.exportLocalArchive()); exporting = true } catch { self.error = error.localizedDescription } }.disabled(store.anySending || store.syncing)
                 Button("导入数据文件") { importing = true }.disabled(store.anySending || store.syncing)

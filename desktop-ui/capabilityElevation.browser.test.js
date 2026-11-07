@@ -12,7 +12,8 @@ import { updateStateAtomically } from '../src/state/stateStore.js';
 import { capabilitiesFromAtoms } from '../src/domain/agent/capabilityElevation.js';
 
 // Capability elevation end to end (2026-10-20): Melo (main) delegates to
-// Builder; Builder needs 『知识与记忆』, which main lacks but Builder's own
+// Builder, an Agent the user created (the built-in lanes are no delegation
+// targets since 2026-11-07, src/shared/userAgents.js); Builder needs 『知识与记忆』, which main lacks but Builder's own
 // settings allow → the prompt card appears in the chat → «本对话 24 小时» →
 // the tool runs and the reply completes → the grant is listed on Builder's
 // Agent page → revoke empties the list and the ledger.
@@ -33,7 +34,7 @@ test('beyond-parent prompt → approve → tool runs → grant listed → revoke
     requests.push({ tools, outputs: outputs.length, body: raw });
     res.setHeader('content-type', 'text/event-stream');
     if (!req.url.endsWith('/responses')) { res.end('data: [DONE]\n\n'); return; }
-    if (tools.includes('delegate')) return respond(res, outputs.length ? text('主 Agent 已完成。') : call('delegate', { agentId: 'builder', task: '查一下以前的对话', instructions: null }));
+    if (tools.includes('delegate')) return respond(res, outputs.length ? text('主 Agent 已完成。') : call('delegate', { agentId: 'custom-builder', task: '查一下以前的对话', instructions: null }));
     // Builder's member loop (no delegate tool at depth 1); anything else (titles…) gets plain text.
     if (tools.includes('search_history')) return respond(res, outputs.length ? text('Builder 查完了。') : call('search_history', { query: '月亮', limit: null, after: null, chatId: null, scope: null }));
     return respond(res, text('好的'));
@@ -43,8 +44,8 @@ test('beyond-parent prompt → approve → tool runs → grant listed → revoke
   await writeFile(join(home, 'config.json'), JSON.stringify({ authMode: 'api-key', apiProtocol: 'responses', apiKey: 'fixture-key', model: 'fixture-model', baseUrl: `http://127.0.0.1:${model.address().port}/v1`, conversationModelSelected: true }));
   await updateStateAtomically(state => {
     state.agentProfiles.main.capabilities = capabilitiesFromAtoms(['readFiles', 'delegate']);
-    state.agentProfiles.main.collaboration = { ...state.agentProfiles.main.collaboration, canDelegate: true, delegateTargets: ['builder'] };
-    state.agentProfiles.builder.capabilities = capabilitiesFromAtoms(['readFiles', 'knowledgeMemory']);
+    state.agentProfiles.main.collaboration = { ...state.agentProfiles.main.collaboration, canDelegate: true, delegateTargets: ['custom-builder'] };
+    state.agentProfiles['custom-builder'] = { ...state.agentProfiles.builder, id: 'custom-builder', name: 'Builder', capabilities: capabilitiesFromAtoms(['readFiles', 'knowledgeMemory']) };
     return state;
   }, { home });
   const child = spawn(process.execPath, ['src/server.js', '--host', '127.0.0.1', '--port', '0'], { env: { ...process.env, MELO_HOME: home, MELO_TEST_MODE: '1', MELO_MEMORY_RUNTIME: '0', MELO_DREAMING_ENABLED: '0',
@@ -104,10 +105,10 @@ test('beyond-parent prompt → approve → tool runs → grant listed → revoke
   assert.equal(chat.messages.at(-1).role, 'assistant');
   let grants = (await (await fetch(`${base}/api/capability-grants`)).json()).grants;
   assert.equal(grants.length, 1);
-  assert.deepEqual([grants[0].agentId, grants[0].scope, grants[0].atoms.join()], ['builder', 'chat', 'knowledgeMemory']);
+  assert.deepEqual([grants[0].agentId, grants[0].scope, grants[0].atoms.join()], ['custom-builder', 'chat', 'knowledgeMemory']);
 
   // Builder's Agent page lists it; revoke empties the list and the ledger.
-  await post('/api/settings', { activeView: 'agent', selectedAgentId: 'builder', selectedAgentScope: 'global' });
+  await post('/api/settings', { activeView: 'agent', selectedAgentId: 'custom-builder', selectedAgentScope: 'global' });
   await page.reload();
   const row = page.locator('.capability-grant-row');
   await row.first().waitFor({ timeout: 10000 });

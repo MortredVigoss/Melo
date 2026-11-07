@@ -377,7 +377,8 @@
         "/vendor/",
         "/shared/",
         "/src/shared/visualTokens.js",
-        "/src/shared/localServices.js"
+        "/src/shared/localServices.js",
+        "/src/shared/userAgents.js"
       ],
       "testGroups": [
         "test:ui",

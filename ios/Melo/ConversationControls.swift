@@ -72,7 +72,7 @@ struct ConversationControls: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
                 Menu {
-                    ForEach(store.preferences.agents) { agent in
+                    ForEach(AgentProfile.userFacing(store.preferences.agents, keep: store.agent(for: chatID).id)) { agent in
                         Button { store.selectAgent(agent.id, chatID: chatID) } label: { Label(agent.name, systemImage: store.agent(for: chatID).id == agent.id ? "checkmark" : agent.symbol) }
                     }
                     Text("切换只影响之后的回复；历史消息保持原Agent。")

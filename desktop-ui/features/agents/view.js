@@ -1,4 +1,5 @@
 import { AGENT_LOOP_CONTRACT as C } from '../../../shared/agent/loopContract.js';
+import { userFacingAgents, isRetiredAgentId } from '../../../src/shared/userAgents.js';
 import { TASK_EVALUATION_POLICY } from '../../../shared/agent/taskEvaluation.js';
 // Agent settings renderers (architecture plan P2b, 2026-10-19): the Agent
 // page, the shared editor (workbench) with persona, capability/collaboration
@@ -144,7 +145,7 @@ function renderAgentCapabilities(selected,draft) {
     <div class="agent-settings-grid">${[['skills','技能白名单'],['mcpServers','MCP 服务白名单'],['connectors','连接器白名单']].map(([key,label])=>renderCapabilityChoices('cap_'+key,label,value(key),key==='skills'?selected.capabilityOptions:key==='mcpServers'?(getBootstrap().customize.mcpAuthSurface || []).map(o=>({...o,unavailable:!o.enabled || o.unpinned})):getBootstrap().customize.connectors.filter(o=>o.type==='external-mcp'),escapeHtml)).join('')}</div>
     <p>${escapeHtml(t('开启“委派”后，这个 Agent 可以把任务交给下面勾选的 Agent，也可以发起多 Agent 协作；没勾选的 Agent 不能被委派或组队。'))}</p>
     <div class="agent-settings-grid">
-    ${renderCapabilityChoices('delegateTargets','委派对象',draft?.delegateTargets ?? collaboration.delegateTargets,getBootstrap().customize.agents.filter(a=>a.id!==selected.id),escapeHtml)}
+    ${renderCapabilityChoices('delegateTargets','委派对象',(draft?.delegateTargets ?? collaboration.delegateTargets ?? []).filter(id=>!isRetiredAgentId(id)),userFacingAgents(getBootstrap().customize.agents).filter(a=>a.id!==selected.id),escapeHtml)}
     ${[['maxTaskIterations','任务执行轮数',C.loop.maxIterations,C.guardLimits.maxRounds],['maxDelegationDepth','委派深度',1,3],['maxIterations','成员轮数',C.delegationLimits.iterations,20],['maxTokens','成员 token 上限',32000,200000],['timeoutMs','成员超时（毫秒）',180000,900000]].map(([key,label,fallback,max])=>`<label class="label">${escapeHtml(t(label))}<input class="config-input" type="number" min="${key === 'maxTaskIterations' ? C.loop.minIterations : 1}" max="${max}" name="${key}" value="${escapeHtml(String(draft?.[key]??collaboration[key]??fallback))}"></label>`).join('')}
     </div><p>${escapeHtml(t('内部岗位模型'))}</p><p>${escapeHtml(t('按岗位选择模型连接，留空跟随对话；只影响内部成员，不改审批与能力范围。'))}</p><div class="agent-settings-grid">${renderJobModelChoices(Object.fromEntries(JOB_MODEL_ROLES.map(([role])=>[role,draft?.['jobModel_'+role] ?? collaboration.jobModels?.[role] ?? ''])),getBootstrap()?.settings?.config?.llmConnections?.profiles || [],escapeHtml)}</div><p>检查不占执行轮数；到顶后会汇报进度。时间与 token 预算仍有效。</p><p>上下文来源</p><div class="agent-capability-flags">${[['projects','项目指引'],['knowledge','共享知识'],['memory','记忆']].map(([key,label])=>`<label class="checkbox-row"><input type="checkbox" name="context_${key}" ${(draft?.['context_'+key]!==undefined?draft['context_'+key]==='on':selected.contextSources?.[key]!==false)?'checked':''}>${escapeHtml(t(label))}</label>`).join('')}
   </div></details>`;
@@ -407,12 +408,12 @@ function renderAgentPage() {
           <h1 class="page-title compact">Agent</h1>
           <div class="inline-actions">
             <select class="config-select agent-select" data-action="select-agent-profile" aria-label="选择 Agent">
-              ${(getBootstrap()?.customize?.agents || []).map(agent => ui`<option value="${agent.id}" ${selected?.id === agent.id ? 'selected' : ''}>${escapeHtml(agent.name)}${!agent.capabilities ? ' · '+t('旧版权限待迁移') : ''}</option>`).join('')}
+              ${userFacingAgents(getBootstrap()?.customize?.agents || [], { keepId: selected?.id }).map(agent => ui`<option value="${agent.id}" ${selected?.id === agent.id ? 'selected' : ''}>${escapeHtml(agent.name)}${!agent.capabilities ? ' · '+t('旧版权限待迁移') : ''}</option>`).join('')}
             </select>
             <span class="agent-create-group" role="group" aria-label="${escapeHtml(t('新增 Agent'))}">
               <select class="config-select agent-create-base" data-agent-create-base aria-label="${escapeHtml(t('新 Agent 的起点'))}">
                 <option value="" ${agentsState.agentCreateBase ? '' : 'selected'}>${escapeHtml(t('全部基础能力（推荐）'))}</option>
-                ${(getBootstrap()?.customize?.agents || []).map(agent => `<option value="${escapeHtml(agent.id)}" ${agentsState.agentCreateBase === agent.id ? 'selected' : ''}>${escapeHtml(t('基于「{name}」', { name: agent.name }))}</option>`).join('')}
+                ${userFacingAgents(getBootstrap()?.customize?.agents || []).map(agent => `<option value="${escapeHtml(agent.id)}" ${agentsState.agentCreateBase === agent.id ? 'selected' : ''}>${escapeHtml(t('基于「{name}」', { name: agent.name }))}</option>`).join('')}
               </select>
               ${agentsState.agentCreateBase ? `<label class="checkbox-row agent-create-persona"><input type="checkbox" data-agent-create-persona ${agentsState.agentCreateCopyPersona ? 'checked' : ''}>${escapeHtml(t('同时复制身份、人设与声音'))}</label>` : ''}
               <button class="small-button agent-create-button" type="button" data-action="create-custom-agent" ${agentsState.agentCreating ? 'disabled' : ''}>${agentsState.agentCreating ? t('正在创建…') : t('新增 Agent')}</button>

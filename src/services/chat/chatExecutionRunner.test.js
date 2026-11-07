@@ -1295,3 +1295,26 @@ test('phase A3: route_task mixed with another tool is refused for that round whi
     assert.equal(result.normalizedReply.completion.outcome,'completed');
   } finally {unregisterTool('fetch_url');unregisterTool('venue_note');registerTool(old);}
 });
+
+// User decision 2026-11-07: the retired built-in lanes (research / builder /
+// reviewer) are no Agents people pick. Old settings may still list them as
+// delegation targets; they must not make the delegate tool appear.
+test('the delegate tool is offered only while a user-facing Agent remains among the delegation targets', async () => {
+  const { createRequestContext } = await import('../../runtime/requestContext.js');
+  const question = 'Draft a two-line project update for the team.';
+  const offered = {};
+  for (const targets of [['research', 'builder'], ['research', 'custom-1']]) {
+    const state=fixtureState(),chat=fixtureChat({messages:[{id:'delegate-user',role:'user',content:question}]});
+    state.agentProfiles.main.capabilities={readFiles:true,delegate:true};
+    state.agentProfiles.main.collaboration={canDelegate:true,delegateTargets:targets};
+    for (const [id,name] of [['research','Research'],['builder','Builder'],['custom-1','金冬天']]) state.agentProfiles[id]={id,name,model:'gpt-4',identity:'',soulMd:'',tools:[],skills:[],channels:{}};
+    state.chats=[chat];await saveState(state);
+    const result=await runChatAgentExecutionGraph({context:createRequestContext({home:TEST_HOME,chatId:chat.id}),config:fixtureConfig,state,chat,workspace:fixtureWorkspace(),connectors:[],skills:[],latestUserMessage:question,agentId:'main',sseEmitter:()=>{},
+      _dependencies:{getEmbedding:async()=>null,createReply:async options=>options.systemPrompt.startsWith("You are Melo's task completion checker")
+        ? JSON.stringify({decision:'complete',reasonType:'fulfilled',requirements:[]}) : 'Update: on track.'}});
+    offered[targets.join('+')]=result.visibleToolIds;
+  }
+  assert.ok(offered['research+custom-1'].includes('delegate'), 'control: a user-created target keeps the delegate tool');
+  assert.ok(offered['research+builder'].length > 0, 'the turn still had a tool catalog');
+  assert.equal(offered['research+builder'].includes('delegate'), false, 'only retired lanes left: no delegate tool');
+});

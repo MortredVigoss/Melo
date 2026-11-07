@@ -98,6 +98,19 @@ struct AgentProfile: Codable, Identifiable, Equatable {
         try c.encode(symbol,forKey:.symbol); try c.encode(instructions,forKey:.instructions); try c.encode(1,forKey:.personaVersion)
         try c.encodeIfPresent(avatarData,forKey:.avatarData); try c.encodeIfPresent(mood,forKey:.mood); try c.encodeIfPresent(model,forKey:.model)
     }
+    /// Agents people see and talk to (user decision, 2026-11-07): the one
+    /// default Agent plus the Agents the user creates. The phone's other
+    /// starters and the desktop's specialist lanes (synced as workspace
+    /// records) stay stored, so old chats keep working, but no list offers
+    /// them; division of labor happens inside every Agent (internal routing).
+    /// Desktop twin: src/shared/userAgents.js RETIRED_AGENT_IDS.
+    static let retiredBuiltInIDs: Set<String> = ["writer", "analyst", "research", "builder", "reviewer"]
+    var isUserFacing: Bool { !Self.retiredBuiltInIDs.contains(id) }
+    /// The Agents a list may offer, in stored order. `keep` keeps the one
+    /// already in use so a chat on a retired starter still shows its Agent.
+    static func userFacing(_ agents: [AgentProfile], keep: String? = nil) -> [AgentProfile] {
+        agents.filter { $0.isUserFacing || $0.id == keep }
+    }
     static let defaults = [
         AgentProfile(id: "melo", name: "Melo", subtitle: "日常思考 · 清晰解答", symbol: "sparkles", instructions: "用清晰自然的中文交流，先回答重点，再补充必要细节。"),
         AgentProfile(id: "writer", name: "写作伙伴", subtitle: "表达打磨 · 灵感拓展", symbol: "pencil.line", instructions: "帮助用户构思、写作和修改文字。尊重原意，提供具体可用的文字，避免空泛修饰。"),

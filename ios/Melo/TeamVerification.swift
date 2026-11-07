@@ -9,10 +9,10 @@ import Foundation
 
     static func agents() -> [AgentProfile] {
         var lead = AgentProfile(id: "main", name: "主 Agent", subtitle: "发起与汇总", symbol: "sparkles", instructions: "负责统筹。")
-        lead.collaboration = .object(["canDelegate": .bool(true), "delegateTargets": .array([.string("research"), .string("reviewer")]), "maxDelegationDepth": .number(1), "maxIterations": .number(8), "maxTokens": .number(32000), "timeoutMs": .number(180000)])
-        let research = AgentProfile(id: "research", name: "调研员", subtitle: "查找资料", symbol: "magnifyingglass", instructions: "查找可靠资料。")
-        let reviewer = AgentProfile(id: "reviewer", name: "复核员", subtitle: "检查结论", symbol: "checkmark.seal", instructions: "检查结论是否有依据。")
-        return [lead, research, reviewer] + AgentProfile.defaults
+        lead.collaboration = .object(["canDelegate": .bool(true), "delegateTargets": .array([.string("scout"), .string("critic")]), "maxDelegationDepth": .number(1), "maxIterations": .number(8), "maxTokens": .number(32000), "timeoutMs": .number(180000)])
+        let scout = AgentProfile(id: "scout", name: "调研员", subtitle: "查找资料", symbol: "magnifyingglass", instructions: "查找可靠资料。")
+        let critic = AgentProfile(id: "critic", name: "复核员", subtitle: "检查结论", symbol: "checkmark.seal", instructions: "检查结论是否有依据。")
+        return [lead, scout, critic] + AgentProfile.defaults
     }
 
     static func store(calls: Calls, root: URL) -> ChatStore {
@@ -40,7 +40,7 @@ import Foundation
             store.selectedConversationID = chat
             // Preview only: start a slow team reply so the in-chat steps can be inspected.
             if slow {
-                store.armTeam(PhoneTeamPlan(templateID: "research-build-review", members: ["research", "reviewer"]), chatID: chat)
+                store.armTeam(PhoneTeamPlan(templateID: "research-build-review", members: ["scout", "critic"]), chatID: chat)
                 store.send("整理发布说明", chatID: chat)
             }
         }
@@ -58,12 +58,12 @@ import Foundation
             guard let chat = store.newChat(agentID: "main") else { throw MeloError.message("无法创建对话") }
             // An unchosen member is refused before any request or message.
             var refusal = ""
-            store.armTeam(PhoneTeamPlan(templateID: "research-build-review", members: ["research", "writer"]), chatID: chat)
+            store.armTeam(PhoneTeamPlan(templateID: "research-build-review", members: ["scout", "writer"]), chatID: chat)
             store.send("整理发布说明", chatID: chat, onPreflightFailure: { refusal = $0 })
             guard refusal.contains("writer"), calls.list.isEmpty, store.chats.first(where: { $0.id == chat })?.messages.isEmpty == true else { throw MeloError.message("未授权成员没有被拒绝：\(refusal)") }
             result["refusal"] = refusal
-            // Tick order reviewer → research; the lead writes the reply.
-            store.armTeam(PhoneTeamPlan(templateID: "research-build-review", members: ["reviewer", "research"]), chatID: chat)
+            // Tick order critic → scout; the lead writes the reply.
+            store.armTeam(PhoneTeamPlan(templateID: "research-build-review", members: ["critic", "scout"]), chatID: chat)
             store.send("整理发布说明", chatID: chat)
             guard store.pendingTeams[chat] == nil else { throw MeloError.message("团队没有在发送后取消") }
             await settle()
@@ -72,7 +72,7 @@ import Foundation
             guard let reply = store.chats.first(where: { $0.id == chat })?.messages.last, reply.role == "assistant", reply.content.hasPrefix("团队汇总：") else { throw MeloError.message("回复不是主 Agent 汇总") }
             guard store.preferences.messageAgents?[reply.id]?.agentID == "main" else { throw MeloError.message("回复没有归属发起者") }
             let stages = store.execution(for: reply.id)?.pipeline?.map { "\($0.id)=\($0.status)" } ?? []
-            for stage in ["team=completed", "team:reviewer:1=completed", "team:research:1=completed", "team:summary=completed"] where !stages.contains(stage) { throw MeloError.message("执行记录缺少 \(stage)：\(stages)") }
+            for stage in ["team=completed", "team:critic:1=completed", "team:scout:1=completed", "team:summary=completed"] where !stages.contains(stage) { throw MeloError.message("执行记录缺少 \(stage)：\(stages)") }
             // The next message is a normal reply again.
             store.send("谢谢", chatID: chat); await settle()
             guard calls.list.count == 4, !calls.list[3].hasPrefix("汇总") else { throw MeloError.message("普通消息不应走团队：\(calls.list)") }
