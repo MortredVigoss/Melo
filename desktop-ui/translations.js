@@ -209,6 +209,7 @@ const rows = [
 ["请输入连接名称。", "Enter a connection name.", "接続名を入力してください。", "연결 이름을 입력하세요.", "Introduce un nombre para la conexión."],
 ["此连接已不可用", "This connection is unavailable", "この接続は利用できません", "이 연결을 사용할 수 없습니다", "Esta conexión no está disponible"],
 ["检索成员", "Research specialist", "検索担当", "검색 담당", "Especialista en búsqueda"],
+["社交检索成员", "Social research specialist", "SNS 検索担当", "소셜 검색 담당", "Especialista en redes sociales"],
 ["计算成员", "Calculation specialist", "計算担当", "계산 담당", "Especialista en cálculo"],
 ["资料读取成员", "Local lookup specialist", "資料参照担当", "자료 조회 담당", "Especialista en consulta local"],
 ["执行成员", "Action specialist", "操作担当", "작업 실행 담당", "Especialista en ejecución"],

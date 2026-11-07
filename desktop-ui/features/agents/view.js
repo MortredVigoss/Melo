@@ -1,4 +1,5 @@
 import { AGENT_LOOP_CONTRACT as C } from '../../../shared/agent/loopContract.js';
+import { TASK_EVALUATION_POLICY } from '../../../shared/agent/taskEvaluation.js';
 // Agent settings renderers (architecture plan P2b, 2026-10-19): the Agent
 // page, the shared editor (workbench) with persona, capability/collaboration
 // and channel sections, and the channel runtime card. Moved out of
@@ -220,7 +221,7 @@ function renderAgentWorkbench(selected) {
         <section class="agent-settings-section agent-identity-section">
         <div class="agent-avatar-editor">${renderAgentAvatar({...selected,...draft}, escapeHtml, 40)}<label class="small-button agent-file-button">上传头像<input type="file" accept="image/png,image/jpeg,image/webp" data-agent-avatar="${escapeHtml(selected.id)}" aria-label="上传Agent头像"></label>${agentDraftFor(selected)?.avatarData?ui`<button type="button" class="small-button" data-action="clear-agent-avatar" data-agent-id="${escapeHtml(selected.id)}">恢复默认</button>`:''}<span>头像只保存在 Melo，预览后点击保存修改生效。</span></div>
         ${renderAgentPersonaFields(selected, draft)}
-        <label class="label">任务检索深度（本机）<select class="config-select" name="evaluationMode">${[['quick','快速'],['standard','标准'],['deep','深入']].map(([value,label])=>`<option value="${value}" ${(draft?.evaluationMode || 'standard')===value?'selected':''}>${escapeHtml(t(label))}</option>`).join('')}</select></label>
+        <label class="label">任务检索深度（本机）<select class="config-select" name="evaluationMode">${[['quick','快速'],['standard','标准'],['deep','深入']].map(([value,label])=>`<option value="${value}" ${(draft?.evaluationMode || TASK_EVALUATION_POLICY.defaultMode)===value?'selected':''}>${escapeHtml(t(label))}</option>`).join('')}</select></label>
         <p>${escapeHtml(t('调整模糊推荐的检索范围；明确数量和必要条件不变，不增加总预算。'))}</p>
         <label class="label">回复语言<select class="config-select" name="replyLanguage">${[['','跟随用户消息'],['zh','中文'],['en','English'],['ja','日本語'],['ko','한국어'],['es','Español']].map(([value,label])=>`<option value="${value}" ${draft?.replyLanguage===value?'selected':''}>${escapeHtml(t(label))}</option>`).join('')}</select></label>
 

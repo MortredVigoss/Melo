@@ -1,6 +1,8 @@
-import {mkdtempSync,rmSync} from 'node:fs';import {test,after} from 'node:test';import assert from 'node:assert/strict';import {tmpdir} from 'node:os';import {join} from 'node:path';import {pathToFileURL} from 'node:url';
+import {mkdtempSync,rmSync} from 'node:fs';import {test} from 'node:test';import assert from 'node:assert/strict';import {tmpdir} from 'node:os';import {join} from 'node:path';import {pathToFileURL} from 'node:url';
+
+await test('orchestration regressions stay inside their fixture home', async t => {
 const root=process.cwd();const home=mkdtempSync(join(tmpdir(),'melo-graph-review-'));
-const oldHome=process.env.MELO_HOME, oldCalling=process.env.MELO_FUNCTION_CALLING;process.env.MELO_HOME=home;process.env.MELO_FUNCTION_CALLING='legacy';after(()=>{rmSync(home,{recursive:true,force:true});if(oldHome===undefined)delete process.env.MELO_HOME;else process.env.MELO_HOME=oldHome;if(oldCalling===undefined)delete process.env.MELO_FUNCTION_CALLING;else process.env.MELO_FUNCTION_CALLING=oldCalling;});
+const oldHome=process.env.MELO_HOME, oldCalling=process.env.MELO_FUNCTION_CALLING;process.env.MELO_HOME=home;process.env.MELO_FUNCTION_CALLING='legacy';t.after(()=>{rmSync(home,{recursive:true,force:true});if(oldHome===undefined)delete process.env.MELO_HOME;else process.env.MELO_HOME=oldHome;if(oldCalling===undefined)delete process.env.MELO_FUNCTION_CALLING;else process.env.MELO_FUNCTION_CALLING=oldCalling;});
 const get=p=>import(pathToFileURL(join(root,p)));
 const {runChatAgentExecutionGraph}=await get('src/services/chat/chatExecutionRunner.js');
 const {currentRequestContext}=await get('src/runtime/requestScope.js');
@@ -12,7 +14,8 @@ const call=(name,args,id)=>'<tool_call>'+JSON.stringify({id,name,arguments:args}
 const base={replyLanguage:'en',authMode:'unset',apiKey:'',baseUrl:'',model:'opaque',toolCalling:'legacy'};
 const report=evidence=>JSON.stringify({decision:'complete',reasonType:'fulfilled',requirements:[{text:'requested outcome',kind:'external_effect',status:'met',evidenceIds:[evidence]}]});
 const results={};
-for(const mode of ['duplicate','lostReceipt','mainThenMember','legacySmartFixed','unverifiedReport'])await test('review regression: '+mode,async()=>{
+for(const mode of ['duplicate','lostReceipt','mainThenMember','legacySmartFixed','unverifiedReport'])await t.test('review regression: '+mode,async()=>{
+ assert.equal(process.env.MELO_HOME, home, 'fixture home must remain active until every child finishes');
  writes=0;let lead=0,member=0,judgments=0;const models=[];const budgetChecks=[];let evidence=mode==='unverifiedReport'?'job-1:report':'job-1:write';
  const chat={id:'audit-'+mode,title:'fixture',mode:'chat',projectId:null,agentId:'main',messages:[],sessionMemory:[]};
  const goal=mode==='legacySmartFixed'?'Read three files and summarize the results.':'Create one fixture record then verify it.';chat.messages=[{id:'user-'+mode,role:'user',content:goal}];
@@ -40,8 +43,9 @@ for(const mode of ['duplicate','lostReceipt','mainThenMember','legacySmartFixed'
  if(mode==='legacySmartFixed'){assert.equal(writes,1,'the selected model executes the effect only once');assert.equal(judgments,0,'legacy smart settings must not send a model judgment');assert.ok(models.some(r=>r.phase==='member'),'the assignment must actually execute');assert.ok(models.every(r=>r.model==='lower'),'lead, member and completion check must keep the explicitly selected model');}
  if(mode==='unverifiedReport'){assert.equal(writes,0);assert.notEqual(r.normalizedReply?.completion?.outcome,'completed','member prose cannot prove execution');}
 });
-await test('member cancellation after a successful effect preserves its receipt and starts no further tool',async()=>{
+await t.test('member cancellation after a successful effect preserves its receipt and starts no further tool',async()=>{
  const {runSubAgent}=await get('src/testSupport/directAgentFixture.js');
+ assert.equal(process.env.MELO_HOME, home, 'cancellation fixture must retain the isolated home');
  writes=0;let requests=0;const controller=new AbortController();
  const result=await runSubAgent({task:'Create one record.',allowedToolIds:[id],config:base,workspacePath:home,signal:controller.signal,
   replyFn:async()=>{requests++;if(requests===1)return call(id,{value:'cancel'},'written');controller.abort(new Error('user cancelled'));throw controller.signal.reason;}});
@@ -49,3 +53,5 @@ await test('member cancellation after a successful effect preserves its receipt 
  assert.equal(result.meta.effects.successful.length,1);assert.ok(result.meta.observations.some(row=>row.id==='written'&&row.ok&&row.executed));
 });
 unregisterTool(id);
+
+});

@@ -666,7 +666,7 @@ test('F3 MCP isolation: mcpRegistry tools reach only the whitelisted agent and d
 test('authorized browser tools remain executable across search routes without certifying unsupported claims', async () => {
   const { registerTool, unregisterTool, getTool } = await import('../../tools/registry.js');
   const { createRequestContext } = await import('../../runtime/requestContext.js');
-  const original = getTool('browser_open'); let effects = 0, calls = 0;
+  const original = getTool('browser_open'); let effects = 0, calls = 0, members = 0;
   let inherited;
   registerTool({ id: 'policy_probe', name: 'Policy Probe', description: 'Capture inherited permissions', requiresPermission: false, parametersSchema: { type: 'object', properties: {} },
     run: async (_, context) => { inherited = context.allowedToolIds; return { ok: true, output: 'Policy captured' }; } });
@@ -677,10 +677,17 @@ test('authorized browser tools remain executable across search routes without ce
   try {
     const result = await runChatAgentExecutionGraph({ context, config: { ...fixtureConfig, agentRuntime: { search: { backend: 'http', endpoint: 'https://fixture.invalid/search' } } },
       state, chat, workspace: fixtureWorkspace(), connectors: [], skills: [], latestUserMessage: '搜索 Surry Hills 餐厅', agentId: 'main',
-      _dependencies: { getEmbedding: async () => null, createReply: async () => calls++ === 0
-        ? '<tool_call>{"id":"browser-1","name":"browser_open","arguments":{"url":"https://google.com"}}</tool_call><tool_call>{"id":"probe-1","name":"policy_probe","arguments":{}}</tool_call>' : 'I searched and found the best restaurant.' } });
+      // The lead routes the browser lookup (2026-11-07 review P1-2); its own
+      // browser call is refused and the research member runs it.
+      _dependencies: { getEmbedding: async () => null, createReply: async options => {
+        if (options.systemPrompt.includes('You are the internal research')) return members++ === 0
+          ? '<tool_call>{"id":"browser-m","name":"browser_open","arguments":{"url":"https://google.com"}}</tool_call>' : 'Browser opened; nothing about restaurants.';
+        return calls++ === 0
+          ? '<tool_call>{"id":"browser-1","name":"browser_open","arguments":{"url":"https://google.com"}}</tool_call><tool_call>{"id":"probe-1","name":"policy_probe","arguments":{}}</tool_call>'
+          : calls === 2 ? '<tool_call>{"id":"route-1","name":"route_task","arguments":{"role":"research","task":"Open https://google.com in the browser and look for Surry Hills restaurants."}}</tool_call>'
+          : 'I searched and found the best restaurant.'; } } });
     assert.ok(result.visibleToolIds.includes('browser_open'), 'upstream stable definitions are preserved');
-    assert.equal(effects, 1); assert.equal(calls, 3);
+    assert.equal(effects, 1, 'only the member opened the browser'); assert.ok(members >= 2);
     assert.ok(inherited.includes('web_search')); assert.equal(inherited.includes('browser_open'), true, 'members inherit the same explicitly opted-in browser permission');
     assert.equal(result.reply, 'I searched and found the best restaurant.');
     assert.equal(result.normalizedReply.completion.outcome, 'partial');
@@ -688,14 +695,82 @@ test('authorized browser tools remain executable across search routes without ce
   } finally { unregisterTool('policy_probe'); unregisterTool('browser_open'); registerTool(original); }
 });
 
+test('retrieval members take verified hosted search over only when Melo search is unavailable; the lead never searches', async () => {
+  const call = (id, name, args) => ({ type: 'function_call', id, call_id: id, name, arguments: JSON.stringify(args) });
+  for (const [runtime, membersHosted] of [[{ search: { backend: 'none', browserFallback: false } }, true], [{ search: { backend: 'http', endpoint: 'https://fixture.invalid/search' } }, false]]) {
+    const state = fixtureState(), chat = fixtureChat(); state.chats = [chat]; await saveState(state);
+    const lead = [], member = [];
+    await runChatAgentExecutionGraph({ config: { ...fixtureCodexConfig(), agentRuntime: runtime }, state, chat, workspace: fixtureWorkspace(), connectors: [], skills: [],
+      latestUserMessage: '搜索当前 Surry Hills 餐厅', agentId: 'main',
+      _dependencies: { searchCapability: { status: 'verified' }, getEmbedding: async () => null,
+        createReply: async options => {
+          if (options.systemPrompt.includes("You are Melo's task completion checker")) return 'not json';
+          if (options.systemPrompt.includes('You are the internal research specialist')) { member.push(options.nativeWebSearchEnabled); return { protocol: 'responses', text: 'Fixture venue: https://fixture.invalid/venue', responseItems: [] }; }
+          lead.push(options.nativeWebSearchEnabled);
+          return lead.length === 1 ? { protocol: 'responses', text: '', responseItems: [call('route-1', 'route_task', { resume: null, role: 'research', task: 'Find current Surry Hills restaurants' })] }
+            : { protocol: 'responses', text: 'Fixture venue', responseItems: [] };
+        } } });
+    assert.ok(lead.length && lead.every(value => value === false), 'the lead never holds hosted search: ' + JSON.stringify(lead));
+    assert.ok(member.length && member.every(value => value === membersHosted), JSON.stringify({ runtime, member }));
+  }
+});
+
+test('a member hosted search runs end to end: receipt, member evidence, the lead check and the task space record', async () => {
+  const call = (id, name, args) => ({ type: 'function_call', id, call_id: id, name, arguments: JSON.stringify(args) });
+  const state = fixtureState(), chat = fixtureChat(); state.chats = [chat]; await saveState(state);
+  const events = []; let leadTurns = 0, memberTurns = 0, cited = null;
+  const result = await runChatAgentExecutionGraph({ config: { ...fixtureCodexConfig(), agentRuntime: { search: { backend: 'none', browserFallback: false } } }, state, chat, workspace: fixtureWorkspace(), connectors: [], skills: [],
+    latestUserMessage: '搜索 Example Cafe 现在的营业时间', agentId: 'main', sseEmitter: (type, event) => { if (type === 'execution_event') events.push(event); },
+    _dependencies: { searchCapability: { status: 'verified' }, getEmbedding: async () => null,
+      createReply: async options => {
+        if (options.systemPrompt.includes("You are Melo's task completion checker")) {
+          const request = JSON.parse(options.messages[0].content);
+          const id = (request.observations || []).map(row => row.id).find(id => /hosted:\d+$/.test(id));
+          if (/^job-1:/.test(String(id))) cited = id;
+          return JSON.stringify({ decision: id ? 'complete' : 'partial', reasonType: id ? 'fulfilled' : 'unavailable', reason: 'fixture', requirements: [{ text: 'opening hours', kind: 'external_fact', status: id ? 'met' : 'missing', evidenceIds: id ? [id] : [] }] });
+        }
+        if (options.systemPrompt.includes('You are the internal research specialist')) {
+          memberTurns++;
+          options.onExecutionEvent?.({ kind: 'operation', id: 'ws_cafe', name: 'native_web_search', module: 'search', status: 'completed', output: '' });
+          return { protocol: 'responses', text: 'Example Cafe is open 8am–4pm today.', responseItems: [
+            { type: 'web_search_call', status: 'completed', action: { sources: [{ url: 'https://cafe.example/hours', title: 'Opening hours' }] } },
+            { type: 'message', content: [{ type: 'output_text', text: 'Example Cafe is open 8am–4pm today.', annotations: [] }] }] };
+        }
+        leadTurns++;
+        return leadTurns === 1 ? { protocol: 'responses', text: '', responseItems: [call('route-1', 'route_task', { resume: null, role: 'research', task: 'Find Example Cafe opening hours today' })] }
+          : { protocol: 'responses', text: 'Example Cafe is open 8am–4pm today (https://cafe.example/hours).', responseItems: [] };
+      } } });
+  assert.ok(memberTurns >= 1);
+  assert.match(String(cited), /^job-1:.*hosted:\d+$/, 'the lead checks against the member hosted-search evidence');
+  assert.equal(result.normalizedReply.completion.outcome, 'completed');
+  assert.ok(events.some(event => /^job-1:\d+:ws_cafe$/.test(String(event.id)) && event.name === 'native_web_search'), 'the task space records the member search under its job: ' + JSON.stringify(events.map(event => event.id).filter(Boolean).slice(0, 30)));
+});
+
 test('Hosted Search final replies use the same completed/source receipt contract as Android', async () => {
+  const { beginSupplements, addSupplement, endSupplements } = await import('./supplements.js');
   const search = { type: 'web_search_call', status: 'completed', action: { sources: [{ url: 'https://fixture.invalid/verified', title: 'Fixture source' }] } };
+  const call = (id, name, args) => ({ type: 'function_call', id, call_id: id, name, arguments: JSON.stringify(args) });
   for (const [items, accepted] of [[[search], true], [[], false], [[{ ...search, action: {} }], false]]) {
     const state = fixtureState(), chat = fixtureChat(); state.chats = [chat]; await saveState(state);
+    let leadRounds = 0; beginSupplements(chat.id);
     const result = await runChatAgentExecutionGraph({ config: fixtureCodexConfig(), state, chat, workspace: fixtureWorkspace(), connectors: [], skills: [],
       latestUserMessage: '搜索当前 Surry Hills 餐厅', agentId: 'main',
       _dependencies: { searchCapability: { status: 'verified' }, getEmbedding: async () => null,
-        createReply: async () => ({ protocol: 'responses', text: 'Fixture answer', responseItems: items }) } });
+        createReply: async options => {
+          if (options.systemPrompt.includes("You are Melo's task completion checker")) return 'not json';
+          const names = (options.functionTools || []).map(tool => tool.name);
+          if (++leadRounds === 1) {
+            // A routing lead holds no retrieval tools and no hosted search (2026-11-07 review P1-2).
+            assert.equal(options.nativeWebSearchEnabled, false); assert.ok(names.includes('route_task'));
+            assert.ok(!names.includes('web_search') && !names.includes('fetch_url'), names.join());
+            addSupplement(chat.id, '只要还在营业的');
+            return { protocol: 'responses', text: '', responseItems: [call('calc-1', 'calculator', { expression: '1+1' })] };
+          }
+          // The supplement closed routing: the lead works alone again, hosted search included.
+          assert.equal(options.nativeWebSearchEnabled, true); assert.ok(!names.includes('route_task'));
+          return { protocol: 'responses', text: 'Fixture answer', responseItems: items };
+        } } });
+    endSupplements(chat.id);
     if (accepted) { assert.match(result.reply, /https:\/\/fixture.invalid\/verified/); assert.match(result.reply, /Fixture answer/); }
     else { assert.equal(result.reply, 'Fixture answer'); assert.equal(result.normalizedReply.completion.goalState, 'unverified'); assert.notEqual(result.normalizedReply.completion.outcome, 'completed'); }
   }
@@ -1202,11 +1277,13 @@ test('phase A3: one response assigns two jobs that run as parallel members and b
 test('phase A3: route_task mixed with another tool is refused for that round while the other tool still runs', async () => {
   const {registerTool, unregisterTool, getTool} = await import('../../tools/registry.js');
   const old = getTool('fetch_url');
-  let reads = 0, leadTurns = 0, memberTurns = 0;
+  let reads = 0, notes = 0, leadTurns = 0, memberTurns = 0;
   const question = 'Look up the concert forecast at https://example.org/forecast.';
   const call = (name,args,id) => '<tool_call>'+JSON.stringify({id,name,arguments:args})+'</tool_call>';
   unregisterTool('fetch_url');
   registerTool({...old,run:async()=>{reads++;return {ok:true,output:'Forecast at the venue: 20 Celsius.',meta:{url:'https://example.org/forecast',length:33}};}});
+  // A lookup tool the lead keeps: only research tools leave the lead (2026-11-07 review P1-2).
+  registerTool({id:'venue_note',name:'venue_note',description:'Read the saved venue note',effect:'read',requiresPermission:false,parametersSchema:{type:'object',properties:{}},run:async()=>{notes++;return {ok:true,output:'Saved note: forecast at the venue is 20 Celsius.'};}});
   try {
     const state=fixtureState(),chat=fixtureChat({messages:[{id:'mix-user',role:'user',content:question}]});
     state.chats=[chat];state.agentProfiles.main.collaboration={canDelegate:false,delegateTargets:[]};await saveState(state);
@@ -1216,13 +1293,13 @@ test('phase A3: route_task mixed with another tool is refused for that round whi
         if(options.systemPrompt.startsWith("You are Melo's task completion checker"))return JSON.stringify({decision:'complete',reasonType:'fulfilled',requirements:[{text:'forecast',kind:'external_fact',status:'met',evidenceIds:['direct']}]});
         if(options.systemPrompt.includes('You are the internal'))return (++memberTurns, 'should not run');
         leadTurns++;
-        if(leadTurns===1)return call('route_task',{role:'research',task:'Read the venue forecast.'},'route1')+call('fetch_url',{url:'https://example.org/forecast'},'direct');
-        assert.match(messages,/route_task on its own/);assert.match(messages,/20 Celsius/);
+        if(leadTurns===1)return call('route_task',{role:'research',task:'Read the venue forecast.'},'route1')+call('venue_note',{},'direct')+call('fetch_url',{url:'https://example.org/forecast'},'lead-read');
+        assert.match(messages,/route_task on its own/);assert.match(messages,/20 Celsius/);assert.match(messages,/holds no retrieval tools/);
         return 'The forecast is 20 °C.';
       }}});
-    assert.equal(reads,1,'the direct tool ran');assert.equal(memberTurns,0,'no member started');assert.equal(leadTurns,2);
+    assert.equal(notes,1,'the direct tool ran');assert.equal(reads,0,'the lead cannot read pages itself');assert.equal(memberTurns,0,'no member started');assert.equal(leadTurns,2);
     assert.equal(result.normalizedReply.completion.outcome,'completed');
-  } finally {unregisterTool('fetch_url');registerTool(old);}
+  } finally {unregisterTool('fetch_url');unregisterTool('venue_note');registerTool(old);}
 });
 
 

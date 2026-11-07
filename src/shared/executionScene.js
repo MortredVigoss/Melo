@@ -17,7 +17,7 @@ export const EXECUTION_MODULES = Object.freeze([
 // Internal routing roles (shared/agent/internalRouting.js INTERNAL_JOB_ROLES;
 // equality is asserted by executionBoard.test.js). Kept literal here so the
 // browser does not load the routing policy just to label a scene.
-export const MEMBER_ROLES = Object.freeze(['research', 'calculate', 'lookup', 'execute']);
+export const MEMBER_ROLES = Object.freeze(['research', 'social', 'calculate', 'lookup', 'execute']);
 export const TERMINAL_SCENE_STATUSES = ['completed', 'failed', 'cancelled', 'interrupted'];
 export const sceneFinished = scene => TERMINAL_SCENE_STATUSES.includes(scene?.status);
 export const sceneText = (value, max = 1000) => String(value ?? '').slice(0, max);

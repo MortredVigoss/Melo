@@ -60,6 +60,12 @@ async function harness(t, respond, options={}) {
   }));
   return { requests, events, executions, permissions, run };
 }
+// The lead routes, assigns, evaluates and reports (2026-11-07 review P1-2):
+// retrieval runs in a research member that calls the same metered endpoint.
+const routeCall = (id, task, role = 'research') => ({ ...fn(id, '', 'route_task'), arguments: JSON.stringify({ resume: null, role, task }) });
+const memberBody = body => JSON.stringify(body).includes('You are the internal research specialist');
+const checkerRequest = body => { try { return JSON.parse(body.input[0].content[0].text); } catch { return {}; } };
+const observedId = (body, suffix) => (checkerRequest(body).observations || []).map(row => row.id).find(id => String(id).endsWith(suffix));
 
 test('a real HTTP connectivity reply finishes as an answer with no tools or approvals', async t => {
   const text = '这是更新后的连通性检查。请只回复：更新验证通过。不要调用工具。';
@@ -112,14 +118,20 @@ test('natural recommendation reaches API-key search execution and retains return
   t.after(() => { unregisterTool('web_search'); if (original) registerTool(original); });
   const searchCall = { ...fn('search', 'Surry Hills brunch', 'web_search'),
     arguments: JSON.stringify({ query: 'Surry Hills brunch', num_results: null, noCache: null, allowBlockedDomains: null }) };
-  const h = await harness(t, round => done(round === 1 ? [searchCall]
-    : [{ ...message, content: [{ type: 'output_text', text: '[Fixture venue](https://example.com/venue)', annotations: [] }] }]),
-  { text: 'Surry Hills 有什么好吃的饭店？' });
+  const venue = [{ ...message, content: [{ type: 'output_text', text: '[Fixture venue](https://example.com/venue)', annotations: [] }] }];
+  const lead = [], member = [];
+  const h = await harness(t, (_, body) => {
+    if (JSON.stringify(body).includes("You are Melo's task completion checker")) return done(venue);
+    if (memberBody(body)) { member.push(body); return done(member.length === 1 ? [searchCall] : venue); }
+    lead.push(body); return done(lead.length === 1 ? [routeCall('route-1', 'Find well-reviewed Surry Hills restaurants and keep their source links.')] : venue);
+  }, { text: 'Surry Hills 有什么好吃的饭店？' });
   const result = await h.run();
   assert.equal(searches, 1, JSON.stringify(h.requests.at(-1)?.body.input));
-  assert.ok(h.requests[0].body.tools.some(tool => tool.name === 'web_search'));
-  assert.match(JSON.stringify(h.requests[0].body), /retrieve public evidence/);
-  assert.match(JSON.stringify(h.requests[1].body.input), /https:\/\/example.com\/venue/);
+  assert.ok(lead[0].tools.some(tool => tool.name === 'route_task') && !lead[0].tools.some(tool => tool.name === 'web_search'), 'the lead holds no search tool');
+  assert.ok(member[0].tools.some(tool => tool.name === 'web_search'), 'the research member searches');
+  assert.match(JSON.stringify(lead[0]), /retrieve public evidence/);
+  assert.match(JSON.stringify(member[1].input), /https:\/\/example.com\/venue/);
+  assert.match(JSON.stringify(lead[1].input), /https:\/\/example.com\/venue/, 'the source reaches the lead through the handoff');
   assert.match(result.normalizedReply.content, /https:\/\/example.com\/venue/);
 });
 
@@ -264,18 +276,19 @@ for (const evidence of ['read', 'snippet', 'unrelated', 'empty']) test('completi
   } });
   t.after(() => { unregisterTool('web_search'); if (original) registerTool(original); });
   const call = { ...fn('research-read', 'Sydney brunch', 'web_search'), arguments: JSON.stringify({ query: 'Sydney brunch', num_results: null, noCache: null, allowBlockedDomains: null }) };
-  let modelTurns = 0;
+  let modelTurns = 0, memberTurns = 0;
   const h = await harness(t, (_, body) => {
     if (JSON.stringify(body).includes("You are Melo's task completion checker")) {
       assert.equal(body.tools?.length || 0, 0);
-      const checked = evidence === 'read';
-      return done([{ ...message, content: [{ type: 'output_text', text: JSON.stringify({ decision: checked ? 'complete' : 'partial', reasonType: checked ? 'fulfilled' : 'unavailable', reason: 'Fixture review of supplied page evidence', requirements: [{ text: 'Research Sydney brunch', status: checked ? 'met' : 'missing', evidenceIds: checked ? ['research-read:source:0'] : [] }] }), annotations: [] }] }]);
+      const read = observedId(body, 'research-read:source:0'), checked = evidence === 'read' && !!read;
+      return done([{ ...message, content: [{ type: 'output_text', text: JSON.stringify({ decision: checked ? 'complete' : 'partial', reasonType: checked ? 'fulfilled' : 'unavailable', reason: 'Fixture review of supplied page evidence', requirements: [{ text: 'Research Sydney brunch', status: checked ? 'met' : 'missing', evidenceIds: checked ? [read] : [] }] }), annotations: [] }] }]);
     }
     if (!body.tools?.length) return done([{ ...message, content: [{ type: 'output_text', text: 'factual', annotations: [] }] }]);
-    return done(++modelTurns === 1 ? [call] : [{ ...message, content: [{ type: 'output_text', text: 'Sydney brunch: https://fixture.invalid/menu', annotations: [] }] }]);
+    if (memberBody(body)) return done(++memberTurns === 1 ? [call] : [{ ...message, content: [{ type: 'output_text', text: 'Sydney brunch: https://fixture.invalid/menu', annotations: [] }] }]);
+    return done(++modelTurns === 1 ? [routeCall('route-1', 'Research Sydney brunch and read the menu page.')] : [{ ...message, content: [{ type: 'output_text', text: 'Sydney brunch: https://fixture.invalid/menu', annotations: [] }] }]);
   }, { text: 'Research Sydney brunch' });
   const result = await h.run();
-  assert.equal(searches, 1); assert.equal(modelTurns, 2, 'the separate goal check cannot replay actions');
+  assert.equal(searches, 1); assert.equal(modelTurns, 2, 'the separate goal check cannot replay actions'); assert.equal(memberTurns, 2);
   assert.equal(result.normalizedReply.completion.outcome, evidence === 'read' ? 'completed' : 'partial');
   assert.equal(result.normalizedReply.completion.goalState, evidence === 'read' ? 'supported' : 'unverified');
   assert.equal(JSON.stringify(result.normalizedReply.completion).includes('breakfast dishes'), false);
@@ -325,19 +338,29 @@ test('calendar intermediate answer continues through venue and weather in one me
   unregisterTool('web_search');
   registerTool({ ...webSearchTool, requiresPermission: false, run: async args => { queries.push(args.query); return { ok: true, output: queries.length === 1 ? 'Official event: Example Arena, Sydney, 31 October 2026.' : 'Weather at Example Arena on 31 October 2026: 18 C, rain probability 20%.', completionSources: [{ url: `https://fixture.invalid/${queries.length === 1 ? 'venue' : 'weather'}`, reading: 'extracted', content: queries.length === 1 ? 'Official event BigBang at Example Arena, Sydney, 31 October 2026.' : 'Forecast for Sydney Example Arena on 31 October 2026: 18 C, rain probability 20%.' }] }; } });
   t.after(() => { unregisterTool('calendar_list_events'); unregisterTool('web_search'); if (original) registerTool(original); });
-  let work = 0, checks = 0;
+  let work = 0, checks = 0, memberTurns = 0, memberChecks = 0;
   const h = await harness(t, (_, body) => {
-    if (goalReviewBody(body)) { checks++; assert.equal(body.tools, undefined); assert.match(JSON.stringify(body), /下周演唱会当天/); return textReply(goalReport(checks === 1 ? 'continue' : 'complete', checks === 1 ? [] : ['weather:source:0'], checks === 1 ? 'lookup_missing' : 'fulfilled')); }
+    if (goalReviewBody(body)) {
+      assert.equal(body.tools, undefined);
+      // The member checks its own assignment; the lead checks the user's goal.
+      if (!String(checkerRequest(body).goal || '').includes('下周演唱会当天')) { memberChecks++; return textReply(goalReport('complete', [observedId(body, 'weather:source:0')].filter(Boolean), 'fulfilled')); }
+      checks++; return textReply(goalReport(checks === 1 ? 'continue' : 'complete', checks === 1 ? [] : [observedId(body, 'weather:source:0')], checks === 1 ? 'lookup_missing' : 'fulfilled'));
+    }
     if (!body.tools?.length) return textReply('factual');
+    if (memberBody(body)) {
+      memberTurns++;
+      if (memberTurns <= 2) { const first = memberTurns === 1; return done([{ ...fn(first ? 'venue' : 'weather', first ? 'BigBang 31 October official venue' : 'Example Arena Sydney 31 October weather', 'web_search'), arguments: JSON.stringify({ query: first ? 'BigBang 31 October official venue' : 'Example Arena Sydney 31 October weather', num_results: null, noCache: null, allowBlockedDomains: null }) }]); }
+      return textReply('Example Arena, Sydney; 31 October 2026: 18 C, rain probability 20%.');
+    }
     work++;
     if (work === 1) return done([fn('calendar', 'next concert', 'calendar_list_events')]);
     if (work === 2) return textReply('找到了演唱会，请告诉我场馆地址。');
-    if (work === 3 || work === 4) return done([{ ...fn(work === 3 ? 'venue' : 'weather', work === 3 ? 'BigBang 31 October official venue' : 'Example Arena Sydney 31 October weather', 'web_search'), arguments: JSON.stringify({ query: work === 3 ? 'BigBang 31 October official venue' : 'Example Arena Sydney 31 October weather', num_results: null, noCache: null, allowBlockedDomains: null }) }]);
+    if (work === 3) return done([routeCall('route-venue', 'Find the official venue of the BigBang concert on 31 October 2026, then the weather there that day.')]);
     return textReply('演唱会在 Example Arena，当天约 18 度，降雨概率 20%。');
   }, { text: '帮我看看日历，下周演唱会当天的天气怎么样？' });
   const result = await h.run();
-  assert.equal(calendars, 1); assert.equal(queries.length, 2); assert.equal(work, 5); assert.equal(checks, 2);
-  assert.equal(h.requests.length, work + checks, 'all checks use the original metered request path');
+  assert.equal(calendars, 1); assert.equal(queries.length, 2); assert.equal(work, 4); assert.equal(checks, 2); assert.equal(memberTurns, 3);
+  assert.equal(h.requests.length, work + checks + memberTurns + memberChecks, 'lead, member and every check use the original metered request path');
   assert.equal(result.normalizedReply.completion.outcome, 'completed');
   assert.equal(result.normalizedReply.completion.task.corrections, 1);
   assert.match(result.normalizedReply.content, /18 度/); assert.doesNotMatch(result.normalizedReply.content, /告诉我场馆/);

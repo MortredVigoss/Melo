@@ -75,3 +75,33 @@ test('feedback may import member effect fingerprints so the lead never repeats a
   assert.deepEqual(state.permitted,['read']);
   assert.equal(state.rejections.again,'ALREADY_EXECUTED');assert.equal(state.rejections.maybe,'ALREADY_ATTEMPTED');
 });
+
+// 2026-11-07 review P1-2/P1-3: the lead routes, assigns, evaluates and reports;
+// web retrieval belongs to the research member, first-hand posts to the social member.
+test('retrieval members own retrieval: the lead is told so and hosts withhold exactly their tools', async () => {
+  const { internalRouteCatalog, leadWithheldTools, internalRouting } = await import('./internalRouting.js');
+  const { TASK_EVALUATION_POLICY } = await import('./taskEvaluation.js');
+  const tools = ['web_search', 'native_web_search', 'fetch_url', 'mcp:melo-xiaohongshu:search_feeds', 'mcp:melo-public-media:read_post', 'calculator', 'file_read'];
+  const catalog = internalRouteCatalog('查一下墨尔本咖啡节有哪些咖啡', tools);
+  assert.deepEqual(catalog.roles.research, ['web_search', 'native_web_search', 'fetch_url']);
+  assert.deepEqual(catalog.roles.social, ['mcp:melo-xiaohongshu:search_feeds', 'mcp:melo-public-media:read_post', 'web_search', 'native_web_search', 'fetch_url']);
+  const withheld = leadWithheldTools(catalog);
+  assert.deepEqual(withheld, ['web_search', 'native_web_search', 'fetch_url', 'mcp:melo-xiaohongshu:search_feeds', 'mcp:melo-public-media:read_post']);
+  assert.deepEqual(internalRouting({ action: 'withheld', catalog }), withheld);
+  assert.ok(!withheld.includes('calculator') && !withheld.includes('file_read'));
+  assert.match(catalog.definition.description, /you hold no retrieval tools/);
+  assert.match(catalog.definition.description, /assign the social member/);
+  const m = TASK_EVALUATION_POLICY.member;
+  assert.ok(catalog.definition.description.includes(`Members start with ${m.initialRounds} tool rounds and ${m.calls} tool calls`));
+  assert.equal(m.initialRounds, 6); assert.equal(m.calls, 16);
+  assert.equal(internalRouting({ action: 'limits' }).rounds, 6);
+  // On the phone (no platform readers) the social member searches public permalinks.
+  const phone = internalRouteCatalog('小红书上大家怎么评价这家店', ['native_web_search', 'open_url', 'web_screenshot', 'calculator']);
+  assert.deepEqual(phone.roles.social, ['native_web_search', 'open_url']);
+  assert.ok(leadWithheldTools(phone).includes('web_screenshot'));
+  // Network-free requests have neither member, and the lead hears nothing about retrieval.
+  const offline = internalRouteCatalog('不要联网，把 3 和 4 相加', [...tools]);
+  assert.equal(offline.roles.research, undefined); assert.equal(offline.roles.social, undefined);
+  assert.deepEqual(leadWithheldTools(offline), []); assert.doesNotMatch(offline.definition.description, /retrieval/i);
+  assert.deepEqual(leadWithheldTools(null), []);
+});

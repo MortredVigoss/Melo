@@ -108,3 +108,21 @@ test('relevant sources can support delivery without a pasted URL; citations can 
   assert.equal(receipt({ ...input, observations: [half], reply: 'A cafe serves eggs and pancakes.' }).outcome, 'completed');
   assert.notEqual(receipt({ ...input, goal: 'Read https://other.invalid/menu', citations: [{url: source.url}] }).outcome, 'completed');
 });
+
+// 2026-11-07 review: the kind of source and how much of its text was kept are separate facts.
+test('a long provider answer stays provider-reported; only a read page becomes a partial read', async () => {
+  const { completionObservation } = await import('./completion.js');
+  const long = 'Opening hours are 8am to 4pm. ' + 'x'.repeat(16000), exact = 'y'.repeat(16000);
+  const rows = completionObservation({ id: 'hosted:0', name: 'web_search', ok: true, executed: true, output: 'Provider-reported completed Search', sources: [
+    { url: 'https://cafe.example/hours', reading: 'provider', text: long },
+    { url: 'https://cafe.example/menu', reading: 'snippet', text: long },
+    { url: 'https://cafe.example/page', text: long },
+    { url: 'https://cafe.example/exact', reading: 'provider', text: exact },
+    { url: 'https://cafe.example/whole', text: exact }] });
+  const by = Object.fromEntries(rows.filter(row => row.type === 'source').map(row => [row.url.split('/').pop(), row]));
+  assert.deepEqual([by.hours.reading, by.hours.truncated, by.hours.text.length], ['provider', true, 16000]);
+  assert.deepEqual([by.menu.reading, by.menu.truncated], ['snippet', true]);
+  assert.deepEqual([by.page.reading, by.page.truncated], ['partial', true], 'a cut page is a partial read');
+  assert.deepEqual([by.exact.reading, 'truncated' in by.exact], ['provider', false], '16 000 characters are kept whole');
+  assert.deepEqual([by.whole.reading, 'truncated' in by.whole], ['extracted', false]);
+});

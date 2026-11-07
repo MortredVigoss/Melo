@@ -19,7 +19,8 @@ import { internalHandoff, MAX_MEMBER_ROUNDS } from '../../../../shared/agent/int
 import { checkPermissionRule, requestTaskScopeApproval } from '../../../tools/permissions.js';
 import { getTool } from '../../../tools/registryCore.js';
 
-export const READ_ONLY_JOBS = Object.freeze(['research', 'lookup', 'calculate']);
+// Social research only reads (2026-11-07), so it shares the parallel reader lanes.
+export const READ_ONLY_JOBS = Object.freeze(['research', 'social', 'lookup', 'calculate']);
 const memberPolicy = TASK_EVALUATION_POLICY.member;
 export const INTERNAL_PARALLEL_LANES = memberPolicy.parallel;
 export const MEMBER_INPUT_SHARE = memberPolicy.inputTokens;
@@ -108,14 +109,22 @@ export async function runInternalMembers({ jobs = [], goal = '', background = ''
   const runOne = async index => {
     const job = jobs[index];
     let jobConfig;
-    try { jobConfig = memberConfig(requireStrongWrites && job.role === 'execute' ? config : jobConnectionConfig(config, jobModels, job.role)); }
+    // Hosted search is verified for the conversation's exact configuration
+    // (connection, model, endpoint and credentials), not for a profile id: a
+    // role pointing at the same profile can still run another model. A
+    // hosted-search job therefore always runs on the conversation
+    // configuration, and when the role has its own connection setting the
+    // task space says why (user decision, 2026-11-07 post-push reviews).
+    const hostedJob = Array.isArray(job.tools) && job.tools.includes('native_web_search');
+    const conversationForSearch = hostedJob && typeof jobModels?.[job.role] === 'string' && !!jobModels[job.role];
+    try { jobConfig = memberConfig(requireStrongWrites && job.role === 'execute' || hostedJob ? config : jobConnectionConfig(config, jobModels, job.role)); }
     catch (error) {
       const result = { ok: false, error: error.code, output: error.message, meta: { stopReason: 'ERROR', observations: [] } };
       outcomes[index] = { job, result, started: false, handoff: internalHandoff({ job, answer: result.output, observations: [], limited: true }) };
       pipeline(job, { status: 'failed', output: result.output });
       return;
     }
-    pipeline(job, { status: 'running', input: job.task, ...(jobConfig?.model ? { model: jobConfig.model } : {}) });
+    pipeline(job, { status: 'running', input: job.task, ...(jobConfig?.model ? { model: jobConfig.model } : {}), ...(conversationForSearch ? { output: '本次改用对话连接检索：岗位连接没有验证过的原生搜索。' } : {}) });
     const { share, reason } = memberShare(budget);
     if (reason === 'LEAD_RESERVE') {
       const handoff = internalHandoff({ job, answer: 'Not started: the lead keeps its remaining budget for the answer. Continue with the evidence already gathered.', observations: [], limited: true });
@@ -126,7 +135,10 @@ export async function runInternalMembers({ jobs = [], goal = '', background = ''
     // Member events keep their own ids under the job prefix (like delegated
     // members) so a member's model:N stage never merges into the lead's.
     const emit = (type, event) => sseEmitter?.(type, type === 'execution_event' ? { ...event, ...(event?.id ? { id: `${job.id}:${event.id}` } : {}), actorName: job.label } : event);
-    const invoke = () => run({ task: job.task, roleSystem: job.system, background: memberBackground, allowedToolIds: job.tools, extraTools, config: jobConfig, nativeWebSearch: false, nativeImageGeneration: false, condenseEachRound: true,
+    // Hosted search only when the host put it in this job's tools: the lead
+    // offers it to retrieval members solely when Melo's own search is
+    // unavailable (dbf5dff4; user decision 2026-11-07). Never image generation.
+    const invoke = () => run({ task: job.task, roleSystem: job.system, background: memberBackground, allowedToolIds: job.tools, extraTools, config: jobConfig, nativeWebSearch: Array.isArray(job.tools) && job.tools.includes('native_web_search'), nativeImageGeneration: false, condenseEachRound: true,
       // runSubAgent caps a member's input tokens at maxTokens (32k by default,
       // sized for delegated members); an internal member gets its whole share.
       ...(replyFn ? { replyFn } : {}), maxIterations: job.roundLimit || MAX_MEMBER_ROUNDS, maxTokens: share || MEMBER_INPUT_SHARE, roleId: job.id, depth: 1, signal, sseEmitter: emit, chatId, workspacePath, chatSource, projectId, onProviderResponse });

@@ -152,6 +152,7 @@ test('portable scene reducer keeps role, round limit and a normalized snapshot o
 });
 
 test('internal role IDs are the stable vocabulary the task space attributes', () => {
-  assert.deepEqual([...INTERNAL_JOB_ROLES].sort(), ['calculate', 'execute', 'lookup', 'research']);
-  assert.deepEqual(INTERNAL_JOB_LABELS, { research: '检索成员', calculate: '计算成员', lookup: '资料读取成员', execute: '执行成员' });
+  // The social member joined on 2026-11-07 (review P1-3).
+  assert.deepEqual([...INTERNAL_JOB_ROLES].sort(), ['calculate', 'execute', 'lookup', 'research', 'social']);
+  assert.deepEqual(INTERNAL_JOB_LABELS, { research: '检索成员', social: '社交检索成员', calculate: '计算成员', lookup: '资料读取成员', execute: '执行成员' });
 });

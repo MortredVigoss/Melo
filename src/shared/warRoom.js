@@ -5,9 +5,8 @@
 // is the length (or the sum) of a list of records `traceList` can show;
 // nothing here invents a step, a region, a candidate or a score.
 import { EXECUTION_MODULES, moduleActivity, rankSceneSources, sceneFinished, sourceReadingLabel } from './executionScene.js';
-import { sceneMembers, sceneEvaluation, sceneResources, operationVerb, usageStages } from './executionBoard.js';
+import { sceneMembers, sceneEvaluation, sceneResources, operationVerb, usageStages, jobIndex } from './executionBoard.js';
 
-const JOB = /^job-(\d{1,3})[:#]/;
 const QUALIFIED = ['primary', 'alternative', 'eligible'];
 const TERMINAL = ['completed', 'failed', 'cancelled', 'interrupted'];
 const time = value => { const parsed = Date.parse(value); return Number.isFinite(parsed) ? parsed : null; };
@@ -28,8 +27,10 @@ export function regionSummary(scene) {
 
 // Who is out in the space. A member's spider exists while its assignment
 // runs; it stands where its running call is, else where its last call was,
-// and on the core's surface before its first call (`module: null`). The
-// lead's own calls (not made inside a member job) get a spider of their own.
+// and on the core's surface before its first call (`module: null`). The lead
+// routes, assigns, evaluates and reports: it never leaves the core. Its own
+// calls (not made inside a member job) are listed for tracing, and `out` stays
+// false so no spider walks for them.
 export function sceneActors(scene) {
   const finished = sceneFinished(scene), operations = scene?.operations || [];
   const actors = sceneMembers(scene).map(member => {
@@ -38,8 +39,8 @@ export function sceneActors(scene) {
     return { id: `member:${member.index}`, kind: 'member', index: member.index, role: member.role, label: member.label,
       out: member.running, module: active?.module || own.at(-1)?.module || null, operation: active?.id || null, operations: own.map(op => op.id) };
   });
-  const lead = operations.filter(op => !JOB.test(op.id)), active = finished ? null : lead.filter(op => op.status === 'running').at(-1) || null;
-  actors.push({ id: 'lead', kind: 'lead', index: null, role: 'lead', label: '', out: !!active, module: active?.module || lead.at(-1)?.module || null,
+  const lead = operations.filter(op => jobIndex(op.id) === null), active = finished ? null : lead.filter(op => op.status === 'running').at(-1) || null;
+  actors.push({ id: 'lead', kind: 'lead', index: null, role: 'lead', label: '', out: false, module: active?.module || lead.at(-1)?.module || null,
     operation: active?.id || null, operations: lead.map(op => op.id) });
   return actors;
 }

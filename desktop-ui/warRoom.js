@@ -13,7 +13,7 @@ import { sceneMembers, sceneEvaluation, sceneStageRail, sceneLog, sceneResources
 import { regionSummary, deliveryGate, deliveryStatus, fieldCoverage, traceList, operationChip, sceneActors } from '/shared/warRoom.js';
 
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
-const roleName = role => ({ research: t('检索成员'), lookup: t('资料读取成员'), calculate: t('计算成员'), execute: t('执行成员'), lead: t('主 Agent') })[role] || t('内部成员');
+const roleName = role => ({ research: t('检索成员'), social: t('社交检索成员'), lookup: t('资料读取成员'), calculate: t('计算成员'), execute: t('执行成员'), lead: t('主 Agent') })[role] || t('内部成员');
 const verbName = verb => ({ dispatch: t('分派'), handoff: t('交接'), search: t('检索'), read: t('读取'), lookup: t('查询'), compute: t('计算'), write: t('写入'), call: t('调用'),
   approval: t('审批'), evaluate: t('评估'), review: t('核验'), stop: t('停止'), deliver: t('交付') })[verb] || verb;
 const phaseName = key => ({ contract: t('合同'), dispatch: t('分派'), approval: t('审批'), evaluate: t('评估'), review: t('核验'), deliver: t('交付') })[key] || key;
@@ -78,6 +78,8 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
     import('./warRoomScene3D.js').then(({ createWarRoomScene }) => {
       if (!root.isConnected) return;
       gpu = createWarRoomScene($('.war-gl'), { onProject: project, onSelectRegion: id => showDetail({ type: 'region', id }),
+        // A tap anywhere on the space that hits no region or spider leaves the detail.
+        onEmptyTap: () => { if (!detail) return; onInteract?.(); detail = null; gpu?.focusRegion(null); onRegionChange?.(null); render(scene, ctx); },
         onHook: hook, onRelease: release, onInteract: () => { onInteract?.(); syncZoom(); }, onViewChange: syncViews,
         onFailure: () => fail(t('三维渲染已暂停，仍可查看执行记录。')) });
       gpu.setStill(!!ctx.still); gpu.setOpen(opened); gpu.update(scene);
@@ -226,27 +228,33 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
   // candidates the lead newly admitted (or promoted) rise from the core.
   function noteChanges(next) {
     const sameRun = next?.runId === scene?.runId, live = animating() && sameRun;
-    const spiderOps = new Set(sceneActors(next).flatMap(actor => actor.operations));
+    const actors = sceneActors(next), spiderOps = new Set(actors.filter(actor => actor.kind === 'member').flatMap(actor => actor.operations));
+    const leadOps = new Set(actors.find(actor => actor.kind === 'lead')?.operations || []), fromCore = [];
     for (const op of next?.operations || []) {
-      const before = statuses.get(op.id), terminal = TERMINAL.includes(op.status);
-      if (live && terminal && before && !TERMINAL.includes(before) && spiderOps.has(op.id)) pending.set('op:' + op.id, performance.now());
+      const before = statuses.get(op.id), terminal = TERMINAL.includes(op.status), finished = live && terminal && before && !TERMINAL.includes(before);
+      if (finished && spiderOps.has(op.id)) pending.set('op:' + op.id, performance.now());
+      // The lead works from the core: its finished call rises from there to its row.
+      else if (finished && leadOps.has(op.id)) fromCore.push(op);
       statuses.set(op.id, op.status);
     }
     const snapshot = sceneEvaluation(next).snapshot, previous = shownSnapshot.get(next?.runId);
     if (next?.runId) shownSnapshot.set(next.runId, snapshot);
+    fromCore.forEach((op, i) => { const chip = operationChip(op); rise(next.runId, 'op:' + op.id, verbName(chip.verb), chip.text, chip.failed ? 'failed' : chip.verb, i, 120 + i * 260); });
     if (!sameRun || !live || previous === undefined || !snapshot) return;
-    const generation = riseGeneration, runId = next.runId;
-    evaluationChanges(previous, snapshot).forEach((change, i) => {
-      const key = 'cand:' + change.key; pending.set(key, performance.now());
-      const id = setTimeout(() => {
-        rises.delete(id);
-        if (generation !== riseGeneration || scene?.runId !== runId) return;
-        if (!animating()) { reveal(key); return; }
-        const chip = makeChip(`${tierName(change.tier)} ${change.total}`, change.name, change.tier);
-        Object.assign(chip, { mode: 'rise', dx: (i % 3 - 1) * 190, dy: -30 - (i % 2) * 30, rowKey: key, target: () => landing(`[data-row-key="${attrValue(key)}"]`) });
-      }, 450 + i * 320);
-      rises.add(id);
-    });
+    evaluationChanges(previous, snapshot).forEach((change, i) => rise(next.runId, 'cand:' + change.key, `${tierName(change.tier)} ${change.total}`, change.name, change.tier, i, 450 + i * 320));
+  }
+  // A chip rising from the core to its row, on a timer bound to this run and this showing (see cancelRises).
+  function rise(runId, key, label, text, kind, i, delay) {
+    pending.set(key, performance.now());
+    const generation = riseGeneration;
+    const id = setTimeout(() => {
+      rises.delete(id);
+      if (generation !== riseGeneration || scene?.runId !== runId) return;
+      if (!animating()) { reveal(key); return; }
+      const chip = makeChip(label, text, kind);
+      Object.assign(chip, { mode: 'rise', dx: (i % 3 - 1) * 190, dy: -30 - (i % 2) * 30, rowKey: key, target: () => landing(`[data-row-key="${attrValue(key)}"]`) });
+    }, delay);
+    rises.add(id);
   }
 
   // ── Band ──────────────────────────────────────────────────────────────

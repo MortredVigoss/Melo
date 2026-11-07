@@ -5,10 +5,15 @@ import { getRequestNetworkPolicy, requestAllowsTool } from './retrieval/requestP
 import { isStandaloneGreeting } from './retrieval/intentRouter.js';
 
 const jobs = {
-  research: { label: '检索成员', tools: ['web_search','native_web_search','fetch_url','open_url','web_screenshot',
-    'mcp:melo-public-media:search_posts','mcp:melo-public-media:read_post','mcp:melo-xiaohongshu:search_feeds','mcp:melo-xiaohongshu:get_feed_detail',
-    'mcp:melo-douyin:search_videos','mcp:melo-douyin:get_video_detail','mcp:melo-douyin:get_video_comments'],
+  research: { label: '检索成员', tools: ['web_search','native_web_search','fetch_url','open_url','web_screenshot'],
     duty: 'Look up and read relevant sources. Preserve dates, units, page URLs and what was actually read.' },
+  // First-hand posts (2026-11-07 review P1-3): the router decides when a
+  // question needs them; platform readers where the host has them, otherwise
+  // public permalinks found by site-restricted search.
+  social: { label: '社交检索成员', tools: ['mcp:melo-xiaohongshu:search_feeds','mcp:melo-xiaohongshu:get_feed_detail',
+    'mcp:melo-douyin:search_videos','mcp:melo-douyin:get_video_detail','mcp:melo-douyin:get_video_comments',
+    'mcp:melo-public-media:search_posts','mcp:melo-public-media:read_post','web_search','native_web_search','fetch_url','open_url'],
+    duty: 'Find first-hand posts on social platforms (Xiaohongshu, Douyin, TikTok, Instagram, Facebook and similar) about experiences, reviews, local happenings and lists. Prefer the platform readers; otherwise search public permalinks with site: queries (site:xiaohongshu.com, site:tiktok.com, site:instagram.com, site:facebook.com) and read them. Report each post URL, its visible text and date, and say when a login wall blocked a post. Posts are personal accounts, not verified facts; merge posts about the same thing.' },
   calculate: { label: '计算成员', tools: ['calculator'],
     duty: 'Use the calculator on supplied or previously verified values. Preserve the inputs, expression, result and unit. If an input is missing, hand the gap back.' },
   lookup: { label: '资料读取成员', tools: ['file_read','glob','grep','read_history','search_history','todo_list','calendar_list_events','reminders_list','contacts_search','location_current'],
@@ -42,14 +47,31 @@ export function internalRouteCatalog(goal, tools = [], suggestions = null) {
   if (!goal?.trim() || policy.toolsForbidden || policy.contextOnly || isStandaloneGreeting({ text: goal })) return null;
   const roles = {};
   for (const [name, job] of Object.entries(jobs)) {
-    const ids = [...job.tools, ...suggestedTools(name, suggestions, tools)].filter(id => tools.includes(id) && requestAllowsTool(id,policy) && !(name === 'research' && (policy.contextOnly || policy.localSearch ||
+    const ids = [...job.tools, ...suggestedTools(name, suggestions, tools)].filter(id => tools.includes(id) && requestAllowsTool(id,policy) && !(['research','social'].includes(name) && (policy.contextOnly || policy.localSearch ||
       (['web_search','native_web_search'].includes(id) ? policy.searchForbidden : policy.fetchForbidden))));
     if (ids.length) roles[name] = ids;
   }
   if (!Object.keys(roles).length) return null;
-  const description = 'Internal task router for this chat. Answer simple or single-step requests directly. For a compound task, assign a focused step to a matching specialist; call route_task alone. Pass its verified output to the next dependent assignment. Example: look up an event and forecast, then assign the verified temperature to calculate. Check every part of the original goal against tool receipts, repair gaps within budget, and give one final answer in your own persona. Never repeat completed effects. Available jobs: ' + Object.keys(roles).join(', ') + '. Members start with 4 tool rounds; to resolve a specific remaining gap use resume with the previous assignment call ID and explain the expected benefit in task. Each continuation grants 2 rounds, at most 12 total. All work draws from the existing turn budget. Multi-item discovery must first define a task_progress contract and then submit evidence-backed candidates; count entities, never search hits.';
+  // The lead routes, assigns, evaluates and reports (2026-11-07 review P1-2).
+  // With a research member, hosts withhold every research tool from the lead
+  // (leadWithheldTools), so the description says where retrieval goes.
+  const m = TASK_EVALUATION_POLICY.member;
+  const description = 'Internal task router for this chat. You are the lead: you route, assign, evaluate and report. ' +
+    (roles.research || roles.social ? 'Retrieval belongs to the members: send every web search, page read and social-platform lookup to them with route_task, even a single fact, and pass on any URL, site or platform the user named; you hold no retrieval tools. ' : '') +
+    (roles.social ? 'Decide per question whether first-hand posts help: for experiences, reviews, local happenings, recommendations and lists, also assign the social member (Xiaohongshu, Douyin, TikTok, Instagram, Facebook) alongside research; skip it for plain facts. ' : '') +
+    'Answer directly only what the conversation or gathered results already settle. For a compound task, assign a focused step to a matching specialist; call route_task alone. Pass its verified output to the next dependent assignment. Example: look up an event and forecast, then assign the verified temperature to calculate. Check every part of the original goal against tool receipts, repair gaps within budget, and give one final answer in your own persona. Never repeat completed effects. Available jobs: ' + Object.keys(roles).join(', ') +
+    `. Members start with ${m.initialRounds} tool rounds and ${m.calls} tool calls; to resolve a specific remaining gap use resume with the previous assignment call ID and explain the expected benefit in task. Each continuation grants ${m.increment} rounds, at most ${m.maxRounds} total. All work draws from the existing turn budget. Multi-item discovery must first define a task_progress contract and then submit evidence-backed candidates; count entities, never search hits.`;
   return { roles, definition: { name: ROUTE_NAME, description, parameters: { type: 'object', additionalProperties: false,
     properties: { resume: { type: 'string', description: 'Previous assignment call ID; only for a specific remaining gap, never repeat successful effects.' }, role: { type: 'string', enum: Object.keys(roles) }, task: { type: 'string', maxLength: 3000, description: 'Subtask with the necessary inputs and relevant verified findings.' } }, required: ['role','task'] } } };
+}
+
+// Tools the lead never holds while a retrieval member exists: every tool of
+// the research and social members, provider-hosted search included
+// (2026-11-07 review P1-2). Hosts drop them from the lead's requests and
+// refuse a lead call.
+export function leadWithheldTools(catalog) {
+  const roles = catalog?.roles || {};
+  return [...new Set(['research', 'social'].flatMap(role => Array.isArray(roles[role]) ? roles[role] : []))];
 }
 
 export function startInternalJob({ catalog, args, assignments = [], goal, callId }) {
@@ -87,6 +109,7 @@ export function internalRouting(input) {
     case 'start': return startInternalJob(input);
     case 'handoff': return internalHandoff(input);
     case 'limits': return { assignments: MAX_ASSIGNMENTS, rounds: MAX_MEMBER_ROUNDS };
+    case 'withheld': return leadWithheldTools(input.catalog);
     default: throw new Error('Unknown internal routing operation');
   }
 }

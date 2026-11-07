@@ -81,6 +81,33 @@
 
 ## 4. 最新交接
 
+### 2026-11-07 — Melo 主线（Claude）— 作战大屏复看修复：主 Agent 只路由、快速档停止规则、社交检索成员
+
+- 审查与落地记录：[war-room-routing-review-20261107](docs/war-room-routing-review-20261107.md)。分支 `claude/task-space-c-20261105`：第一步 `d98e7642`，第二到五步 ``bfc382b9``。
+- **停止规则**：默认快速档在 `TASK_EVALUATION_POLICY.defaultMode`。
+  - 桌面一次性迁移由 `settings.evaluationDefaultVersion` 标记；
+  - 只冻结用户原话里的数量；
+  - 同轮修订合同只能增加要求，类别不变；
+  - 账本按「规范化网址 + 正文」记录读过的页面（`seenPages`），同一页面换个调用或成员重读不算新读取；
+  - 桌面迁移由用户 2026-11-07 确认保留（`git pp` 第一次评级 C 的第 3 条）。
+- **主 Agent 只路由**：
+  - 三端都按共享的 `leadWithheldTools`（检索与社交检索成员的全部工具）收走主 Agent 的检索工具和原生搜索；
+  - 桌面在用户补充关闭路由时由 `restoreLeadRetrieval` 归还；
+  - 改动主 Agent 工具时，要同时看桌面 `invokeModelNode.js`、iOS `AgentLoopRequest.scopedBody`、Android `SharedChatAgent` 的 `roundSpecs`；
+  - 桌面成员默认用 Melo 自己的搜索。只有共享计划的 `availableTools` 里没有 `web_search`、且原生搜索已验证时，成员才接管原生搜索（`memberHostedSearch`）；
+  - 社交检索成员在只读并行队列里（`READ_ONLY_JOBS`）；
+  - 成员用原生搜索时，`runSubAgent` 把回执写进证据（`hosted:N`，服务商来源），并把原生事件转发给调用方；原生搜索任务一律在已验证的完整对话配置上执行（连接、模型、端点、凭证，`internalMembers.js` 的 `hostedJob`），岗位另配了连接时在大屏注明；
+  - 共享核心 `completionObservation` 把来源类型和截断分开：截断只加 `truncated`，只有读过的网页（`extracted`）才会变成 `partial`；`provider` 等类型无论多长都保持不变。
+- iPhone 0.7.15（47）已覆盖安装：两份安装前备份一致，安装后与首次启动后的数据核对都通过（证据在主项目 `.tmp/iphone-overwrite-20261107-review-*`）。Mac 等最后一轮 `git pp` 通过后再装（用户要求）。
+- **社交检索成员**：
+  - 新岗位 `social` 已加到 `INTERNAL_JOB_ROLES`、`MEMBER_ROLES`、`MEMBER_ROLE_MODULE`（归网页检索区域）、岗位模型选择和 iOS 记录；
+  - 小红书 MCP 已升级到 v2.7.3，登录要用户在设置里扫码。
+- **未做**：
+  - 手机把需要桌面 MCP 的检索交给 Mac：用户手机没有到 Mac 的通道，另立任务；
+  - Android 的路由行为只有编译、JVM 与 Lint 检查，没有在模拟器上跑过；
+  - 真实模型探针未跑。
+- 集成档 `run-C2AmLJ`（`--base cc115e8e`）：JS 5 023 / 5 023，Swift 38 组、Android 四项、设置浏览器验收全绿；iOS 无签名构建通过。
+
 ### 2026-11-06 — Melo 主线（Claude）— 作战大屏（布局 A）移入产品 — 已合并到 master
 - 分支 `claude/task-space-c-20261105`（worktree `.tmp/task-space-c-20261105`，已变基到 `d5c596e`）：C1–C5（评估快照与成员岗位三端发出、`src/shared/executionBoard.js` 投影）之上，嵌入式任务空间换成全屏作战大屏：`desktop-ui/warRoom*.js`、`src/shared/warRoom.js`；聊天里收成一行；自动弹出与「为确认提示让开」三端同规则（桌面 `executionPanel.js`、iPhone `WarRoomPresentation` + `ContentView`、Android `WarRoomPresentation.kt` + `MainActivity`）。区域只算自己的调用，每个数字点开即其记录；修复 token 被推理摘要重复计数。C7：全局取景改由 `desktop-ui/warRoomLayout.js` 按每个区域真实外沿计算并留出标签边距，打开时相机直接就位，五个区域不再出屏；手机底部卡片可横向滑动。[专项记录](docs/task-space-c-20261105.md)，证据 `.tmp/war-room-20261106/`。
 - 用户 2026-11-06 要求合并并推送。集成档 `run-CjTZuy`（`--base d5c596e`）结果：
@@ -430,7 +457,7 @@ iPhone Swift UI → ChatStore → 独立 Codex OAuth / API 连接
 | melo主线 | `01a13b2e-5446-7042-bb5e-773129746c7e` | 10-23 [目标完成闭环综合实施](docs/agent-harness-implementation-20261023.md)：共享目标检查接主聊天/成员/技能与双端；4,544 项 JS / 37 组 Swift、浏览器和 Android 检测通过，iOS 完整构建通过；10-21 测试降本 `8304aab`、双端原生拍照 `6fba8db` 已推送；iPhone 0.7.8（40）覆盖、数据保留、用户真机拍照及回复确认（[安装回执](docs/phone-camera-install-20261021.md)）；[拆分静态核对](docs/architecture-split-review-20261021.md)；七项双端对齐、架构审计与 GitHub issue 修复；10-20 双端覆盖更新与真实使用检查 | [14 条问题实施](docs/github-issues-implementation-20261020.md)此前全部关闭，装机后 #4 重新打开并完成二次修复，见[原生验收](docs/issue-4-legacy-preview-20261020.md)；[双端更新](docs/dual-update-20261020.md)：桌面 abe1d20 / iPhone 0.7.7 (39)，数据保留、完整发布 gate 与真实回复已核对；其他线程 WIP 保留 |
 | melo主线（历史·2026-10-15） | `01a10bf2-e092-7862-87fe-2f237a8fb6a0` | 架构、审计、记忆、function calling、日常 gate 和手机 OAuth；本次只补遗漏 | 已完成补录；授权核心已提交，当时相关共享文件的他线程 WIP 已于 10-17 收入 `8cd3eff`；[build23 回执](docs/handoffs/melo-thread-backfill-20261015.md#historical)，产品任务交新主线 |
 | 设计 Melo | `01a1161a-1919-79c1-9764-8709bb0e2e2d` | 五语 / 图像质量 / MCP / Agent 设置已完成；10-20 测试选组审计后按用户授权完成漏选修复、功能 / 平台选组、预检去重与统一开发规范 | [实施与验证](docs/test-selection-implementation-20261020.md)：工具 29/29，隔离全日常与 32 Swift 通过；产品业务和其他线程 WIP 保留，本地提交未推送。历史 Agent 验收见 `docs/agent-settings-20261016.md` |
-| melo ui | `01a10bf3-d7b9-7832-a351-8b0f78e9c552` | 11-07 模型连接结构与智能选模停用已提交 `81ae41a5`：方式切换实际表单，三端始终使用明确选择的模型；保留原账号与首页设计 | 最终快速档 `run-gaaE0q` / 集成档 `run-fO1TLM` 全绿（各 JS 5006/5006、38 组 Swift、Android 四阶段、设置浏览器）；iPhone 原生 `run-jis2byqb` 保存/重启/探测/聊天通过。未正式安装/推送；下一步按主线明确发布授权执行。[本轮记录](docs/model-settings-structure-20261107.md)、[历史首页修复](docs/home-ui-regression-20261027.md) |
+| melo ui | `01a10bf3-d7b9-7832-a351-8b0f78e9c552` | 11-07 用户授权推送 master 和双端覆盖；正在合入远端 `6bb8da28` 与设置 `81ae41a5`。保留固定选模及主线检索修复；iPhone 目标 0.7.16 (48) | 手机 285 文件两次全容器备份 SHA-256 一致。Mac 发布前发现状态已被测试夹具覆盖，原样备份完成；已复现并修复 orchestrationReview 顶层测试清理提前执行造成的目录逃逸（隔离红/绿证据），用户已确认并恢复 33 聊天/752 消息/6 Agent/1 项目；3 段较新运行记录单存。恢复后实界面与原配置校验通过（API Key 已保存、ChatGPT 已登录），当前连接配置未回滚。最终快速档 run-M70gm7 全绿（JS 5039/5039、38 Swift、Android、设置浏览器）；基准集成 run-paxLbP 同样全绿，源码指纹一致；正在提交推送，正式覆盖未完成。[发布回执](docs/model-settings-release-20261107.md)、[设置记录](docs/model-settings-structure-20261107.md) |
 | 读取 melo ui 方案 | `01a1103d-0c3b-77d4-96dc-ea499d455020` | 2026-10-06 读取、单次成功派发、按指定 turn 只读跟进与 Library 截图交付；2026-10-15 补历史证据 | 辅助线程无产品代码/提交；288/291 项为旧轮次结果，详细边界见[辅助线程回执](docs/handoffs/melo-thread-backfill-20261015.md#ui-helper) |
 | melo iphone | `01a11116-8469-74a2-9815-8ce59b702afa` | 10-16 三线程功能/UI 对齐，Agent 首屏新建/移除旧语气、项目校验及新黑金 M，已覆盖 0.5.19 (25) | 本地 `5c975aa`；3575 JS/23 Swift/90 专项及模拟器通过；实体安装/启动/数据保留已验，实体 UI/真实模型未复验；`docs/ios-align-install-20261016.md` |
 | melo副线 | `019d5db3-d2cd-70c2-bc8f-955d36099219` | 固定源码统计口径、早期 pre-push evaluation 协议；OpenClaw/桌宠历史工作独立 | 2026-10-21 再统计 205,993 行（含空行/注释，不含 ios）；既定四目录及扩展名 `find` / `wc -l` 退出码 0；仅文档 WIP 与快照更新，无产品验收或提交；桌宠入口见[副线回执](docs/handoffs/melo-thread-backfill-20261015.md#secondary) |

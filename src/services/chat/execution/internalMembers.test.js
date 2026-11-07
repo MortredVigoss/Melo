@@ -12,6 +12,39 @@ const catalog = internalRouteCatalog(goal, tools);
 const job = (role, task, index) => ({ ...startInternalJob({ catalog, goal, args: { role, task }, callId: `call-${index}` }), index, id: `job-${index}` });
 const settle = () => new Promise(resolve => setTimeout(resolve, 5));
 
+test('a hosted-search job runs on the conversation connection when its role has another one; other jobs keep theirs', async () => {
+  const seen = [], events = [];
+  const run = async options => { seen.push({ role: options.roleId, model: options.config.model, hosted: options.nativeWebSearch }); return { ok: true, output: 'done', meta: { observations: [], effects: { successful: [], uncertain: [] } } }; };
+  const config = { authMode: 'codex', model: 'conversation-model', activeLlmProfileId: 'codex', llmProfiles: { 'chat-only': { authMode: 'api-key', apiProtocol: 'chat-completions', model: 'chat-only-model', baseUrl: 'https://chat.example/v1', apiKey: 'k' } } };
+  const hostedResearch = { ...job('research', 'find the hours', 1), tools: ['native_web_search', 'fetch_url'] };
+  const plainResearch = { ...job('research', 'read the menu', 2), tools: ['fetch_url'] };
+  await runInternalMembers({ jobs: [hostedResearch, plainResearch], goal, run, lanes: 1, config, jobModels: { research: 'chat-only' }, sseEmitter: (type, event) => { if (type === 'execution_event') events.push(event); } });
+  assert.deepEqual(seen.find(row => row.role === 'job-1'), { role: 'job-1', model: 'conversation-model', hosted: true }, 'searching on a connection with verified hosted search');
+  assert.deepEqual(seen.find(row => row.role === 'job-2'), { role: 'job-2', model: 'chat-only-model', hosted: false }, 'the role connection stays for jobs without hosted search');
+  assert.ok(events.some(event => event.id === 'internal:1' && /改用对话连接/.test(event.output || '')), 'the task space says why');
+  // Same profile, another model: the verified conversation model stays for hosted search.
+  const same = [];
+  const overridden = { ...config, model: 'agent-chosen-model', llmProfiles: { codex: { authMode: 'codex', model: 'profile-default-model' } } };
+  await runInternalMembers({ jobs: [{ ...job('research', 'find the hours again', 3), tools: ['native_web_search', 'fetch_url'] }, { ...job('research', 'read the menu again', 4), tools: ['fetch_url'] }], goal, lanes: 1, config: overridden, jobModels: { research: 'codex' },
+    run: async options => { same.push({ role: options.roleId, model: options.config.model, hosted: options.nativeWebSearch }); return { ok: true, output: 'done', meta: { observations: [], effects: { successful: [], uncertain: [] } } }; } });
+  assert.deepEqual(same.find(row => row.role === 'job-3'), { role: 'job-3', model: 'agent-chosen-model', hosted: true }, 'hosted search keeps the verified conversation model');
+  assert.deepEqual(same.find(row => row.role === 'job-4'), { role: 'job-4', model: 'profile-default-model', hosted: false });
+});
+
+test('a social member reads alongside the research member', async () => {
+  let active = 0, peak = 0; const release = [];
+  const run = async options => {
+    active++; peak = Math.max(peak, active);
+    await new Promise(resolve => release.push(resolve));
+    active--;
+    return { ok: true, output: 'done', meta: { observations: [], effects: { successful: [], uncertain: [] } } };
+  };
+  const pending = runInternalMembers({ jobs: [job('research', 'official pages', 1), job('social', 'Xiaohongshu posts', 2)], goal, run, lanes: 2 });
+  await settle();
+  assert.equal(peak, 2, 'research and social run at the same time');
+  release.splice(0).forEach(fn => fn()); await pending;
+});
+
 test('read-only jobs run in parallel lanes and execute jobs wait for them, one at a time', async () => {
   let active = 0, peak = 0; const order = [];
   const release = [];
@@ -197,7 +230,7 @@ test('an unavailable configured connection returns a diagnosable partial handoff
 });
 
 test('C3: a member child budget covers its whole round allowance, not a single 90 s slice', async () => {
-  const { memberDeadlineMs } = await import('../../../../shared/agent/taskEvaluation.js');
+  const { memberDeadlineMs, TASK_EVALUATION_POLICY } = await import('../../../../shared/agent/taskEvaluation.js');
   const budget = reserveDelivery(createRunBudget({ overrides: { maxInputTokens: 400000, deadlineMs: 30 * 60000, maxToolCalls: 200 } }));
   const seen = [];
   const run = async () => { const child = currentRequestContext().budget; seen.push({ deadline: child.deadlineAt - child.startedAt, calls: child.maxToolCalls }); return { ok: true, output: 'ok', meta: { observations: [] } }; };
@@ -205,6 +238,7 @@ test('C3: a member child budget covers its whole round allowance, not a single 9
   await runWithRequestContext(Object.freeze({ budget }), () => runInternalMembers({ jobs: [first, resumed], goal, run, lanes: 1 }));
   assert.equal(seen[0].deadline, memberDeadlineMs(first.roundLimit));
   assert.equal(seen[1].deadline, memberDeadlineMs(2));
-  assert.ok(seen[0].deadline > 90000 + 60000, 'four rounds get more than one slice');
-  assert.equal(seen[0].calls, 8);
+  assert.ok(seen[0].deadline > 90000 + 60000, 'a first assignment gets more than one slice');
+  // 2026-11-07 review P1-2: members do the lead's retrieval, so a member gets 16 calls.
+  assert.equal(seen[0].calls, TASK_EVALUATION_POLICY.member.calls); assert.equal(seen[0].calls, 16);
 });

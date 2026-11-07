@@ -1,9 +1,11 @@
 import {PUBLIC_MEDIA_SERVER} from '../../shared/agent/media/publicPlatforms.js';
 export const socialPresets = Object.freeze({
   'melo-xiaohongshu': {
-    platform: 'xiaohongshu', flag: 'enableXiaohongshuMcp', repo: 'xpzouying/xiaohongshu-mcp', tag: 'v2.7.2',
+    platform: 'xiaohongshu', flag: 'enableXiaohongshuMcp', repo: 'xpzouying/xiaohongshu-mcp', tag: 'v2.7.3',
     description: '小红书 · 搜索笔记，打开详情和评论。', tools: ['search_feeds','get_feed_detail'],
-    hashes: { 'darwin-arm64':'e3068363fc4d6572d1e4cf2aeccda7e1d37844191aa8ce0944706f73700a4130', 'linux-amd64':'269a79a48d7310f6a2ef015f6b835af4300ae6cbfe8eb254237c3006a05869fc', 'windows-amd64.exe':'1f62e1fe137d0293595197b3a76e280e4114293b425e9c4082a334d1f7fb5316' },
+    // v2.7.3 (2026-11-06): reports risk-control and login redirects during search.
+    // Hashes checked against the release digests and a local download on 2026-11-07.
+    hashes: { 'darwin-arm64':'a699eeba78a75ab118d623aa34db95479834de0f927d83316e17adbd1e74a9a2', 'linux-amd64':'8be6657a00c1b279fdc28dca8c3c12e7d4edb9ab1490fbe82e5ac6dbef5bf159', 'windows-amd64.exe':'e8963ebc3f04b3d54e02a4c51f61e1f47eea426e55b337dc30100f64e752426f' },
   },
   'melo-douyin': {
     platform: 'douyin', flag: 'enableDouyinMcp', repo: 'yunsur/douyin-mcp', tag: 'v0.1.0',

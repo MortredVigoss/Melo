@@ -2079,5 +2079,755 @@
       }
     ],
     "expectedError": "differs"
+  },
+  {
+    "name": "mixed: without a count in the user's words three eligible entities suffice",
+    "steps": [
+      {
+        "args": {
+          "action": "contract",
+          "data": "{\"category\":\"events\",\"unit\":\"events\"}"
+        },
+        "context": {
+          "goal": "Find 20 products, RAM at least 16 and price at most 200 AUD; free Melbourne events on 2026-11-07.",
+          "revision": 1
+        }
+      },
+      {
+        "args": {
+          "action": "batch",
+          "data": "{\"items\":[{\"fields\":{\"name\":{\"value\":\"Event 0\",\"evidence\":[{\"id\":\"s0\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"startsAt\":{\"value\":\"2026-11-07T10:00:00+11:00\",\"evidence\":[{\"id\":\"s0\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"place\":{\"value\":\"Melbourne Hall\",\"evidence\":[{\"id\":\"s0\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"participation\":{\"value\":\"public\",\"evidence\":[{\"id\":\"s0\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"price\":{\"value\":0,\"evidence\":[{\"id\":\"s0\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]}},\"match\":35,\"diversity\":8,\"reason\":\"Matches the requested scope with readable evidence.\",\"tags\":[\"local\"],\"conflicts\":[]},{\"fields\":{\"name\":{\"value\":\"Event 1\",\"evidence\":[{\"id\":\"s1\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"startsAt\":{\"value\":\"2026-11-07T10:00:00+11:00\",\"evidence\":[{\"id\":\"s1\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"place\":{\"value\":\"Melbourne Hall\",\"evidence\":[{\"id\":\"s1\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"participation\":{\"value\":\"public\",\"evidence\":[{\"id\":\"s1\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"price\":{\"value\":0,\"evidence\":[{\"id\":\"s1\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]}},\"match\":35,\"diversity\":8,\"reason\":\"Matches the requested scope with readable evidence.\",\"tags\":[\"local\"],\"conflicts\":[]},{\"fields\":{\"name\":{\"value\":\"Event 2\",\"evidence\":[{\"id\":\"s2\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"startsAt\":{\"value\":\"2026-11-07T10:00:00+11:00\",\"evidence\":[{\"id\":\"s2\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"place\":{\"value\":\"Melbourne Hall\",\"evidence\":[{\"id\":\"s2\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"participation\":{\"value\":\"public\",\"evidence\":[{\"id\":\"s2\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"price\":{\"value\":0,\"evidence\":[{\"id\":\"s2\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]}},\"match\":35,\"diversity\":8,\"reason\":\"Matches the requested scope with readable evidence.\",\"tags\":[\"local\"],\"conflicts\":[]}],\"gaps\":[]}"
+        },
+        "context": {
+          "goal": "Find 20 products, RAM at least 16 and price at most 200 AUD; free Melbourne events on 2026-11-07.",
+          "revision": 1,
+          "observations": [
+            {
+              "id": "s0",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s0",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s1",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s1",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s2",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s2",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s3",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s3",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s4",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s4",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            }
+          ]
+        }
+      }
+    ],
+    "expected": {
+      "verified": 3,
+      "stop": "ready_for_review",
+      "target": {
+        "minimum": 3,
+        "maximum": 5,
+        "initial": 8
+      },
+      "nextBatch": 0
+    }
+  },
+  {
+    "name": "mixed: two batches that only repeat a known entity end a soft search",
+    "steps": [
+      {
+        "args": {
+          "action": "contract",
+          "data": "{\"category\":\"events\",\"unit\":\"events\"}"
+        },
+        "context": {
+          "goal": "Find 20 products, RAM at least 16 and price at most 200 AUD; free Melbourne events on 2026-11-07.",
+          "revision": 1
+        }
+      },
+      {
+        "args": {
+          "action": "batch",
+          "data": "{\"items\":[{\"fields\":{\"name\":{\"value\":\"Event 0\",\"evidence\":[{\"id\":\"s0\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"startsAt\":{\"value\":\"2026-11-07T10:00:00+11:00\",\"evidence\":[{\"id\":\"s0\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"place\":{\"value\":\"Melbourne Hall\",\"evidence\":[{\"id\":\"s0\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"participation\":{\"value\":\"public\",\"evidence\":[{\"id\":\"s0\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"price\":{\"value\":0,\"evidence\":[{\"id\":\"s0\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]}},\"match\":35,\"diversity\":8,\"reason\":\"Matches the requested scope with readable evidence.\",\"tags\":[\"local\"],\"conflicts\":[]}],\"gaps\":[]}"
+        },
+        "context": {
+          "goal": "Find 20 products, RAM at least 16 and price at most 200 AUD; free Melbourne events on 2026-11-07.",
+          "revision": 1,
+          "observations": [
+            {
+              "id": "s0",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s0",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s1",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s1",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s2",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s2",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s3",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s3",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s4",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s4",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            }
+          ]
+        }
+      },
+      {
+        "args": {
+          "action": "batch",
+          "data": "{\"items\":[{\"fields\":{\"name\":{\"value\":\"Event 0\",\"evidence\":[{\"id\":\"s1\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"startsAt\":{\"value\":\"2026-11-07T10:00:00+11:00\",\"evidence\":[{\"id\":\"s1\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"place\":{\"value\":\"Melbourne Hall\",\"evidence\":[{\"id\":\"s1\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"participation\":{\"value\":\"public\",\"evidence\":[{\"id\":\"s1\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"price\":{\"value\":0,\"evidence\":[{\"id\":\"s1\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]}},\"match\":35,\"diversity\":8,\"reason\":\"Matches the requested scope with readable evidence.\",\"tags\":[\"local\"],\"conflicts\":[]}],\"gaps\":[]}"
+        },
+        "context": {
+          "goal": "Find 20 products, RAM at least 16 and price at most 200 AUD; free Melbourne events on 2026-11-07.",
+          "revision": 1,
+          "observations": [
+            {
+              "id": "s0",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s0",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s1",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s1",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s2",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s2",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s3",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s3",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s4",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s4",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            }
+          ]
+        }
+      },
+      {
+        "args": {
+          "action": "batch",
+          "data": "{\"items\":[{\"fields\":{\"name\":{\"value\":\"Event 0\",\"evidence\":[{\"id\":\"s2\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"startsAt\":{\"value\":\"2026-11-07T10:00:00+11:00\",\"evidence\":[{\"id\":\"s2\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"place\":{\"value\":\"Melbourne Hall\",\"evidence\":[{\"id\":\"s2\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"participation\":{\"value\":\"public\",\"evidence\":[{\"id\":\"s2\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"price\":{\"value\":0,\"evidence\":[{\"id\":\"s2\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]}},\"match\":35,\"diversity\":8,\"reason\":\"Matches the requested scope with readable evidence.\",\"tags\":[\"local\"],\"conflicts\":[]}],\"gaps\":[]}"
+        },
+        "context": {
+          "goal": "Find 20 products, RAM at least 16 and price at most 200 AUD; free Melbourne events on 2026-11-07.",
+          "revision": 1,
+          "observations": [
+            {
+              "id": "s0",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s0",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s1",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s1",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s2",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s2",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s3",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s3",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s4",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s4",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            }
+          ]
+        }
+      }
+    ],
+    "expected": {
+      "discovered": 1,
+      "verified": 1,
+      "diminishing": true,
+      "adjusted": true,
+      "exhausted": true,
+      "stop": "ready_for_review",
+      "nextBatch": 0
+    }
+  },
+  {
+    "name": "mixed: resubmitting cited evidence never ends a soft search",
+    "steps": [
+      {
+        "args": {
+          "action": "contract",
+          "data": "{\"category\":\"events\",\"unit\":\"events\"}"
+        },
+        "context": {
+          "goal": "Find 20 products, RAM at least 16 and price at most 200 AUD; free Melbourne events on 2026-11-07.",
+          "revision": 1
+        }
+      },
+      {
+        "args": {
+          "action": "batch",
+          "data": "{\"items\":[{\"fields\":{\"name\":{\"value\":\"Event 0\",\"evidence\":[{\"id\":\"s0\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"startsAt\":{\"value\":\"2026-11-07T10:00:00+11:00\",\"evidence\":[{\"id\":\"s0\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"place\":{\"value\":\"Melbourne Hall\",\"evidence\":[{\"id\":\"s0\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"participation\":{\"value\":\"public\",\"evidence\":[{\"id\":\"s0\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"price\":{\"value\":0,\"evidence\":[{\"id\":\"s0\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]}},\"match\":35,\"diversity\":8,\"reason\":\"Matches the requested scope with readable evidence.\",\"tags\":[\"local\"],\"conflicts\":[]}],\"gaps\":[]}"
+        },
+        "context": {
+          "goal": "Find 20 products, RAM at least 16 and price at most 200 AUD; free Melbourne events on 2026-11-07.",
+          "revision": 1,
+          "observations": [
+            {
+              "id": "s0",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s0",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s1",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s1",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s2",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s2",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s3",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s3",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s4",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s4",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            }
+          ]
+        }
+      },
+      {
+        "args": {
+          "action": "batch",
+          "data": "{\"items\":[{\"fields\":{\"name\":{\"value\":\"Event 0\",\"evidence\":[{\"id\":\"s0\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"startsAt\":{\"value\":\"2026-11-07T10:00:00+11:00\",\"evidence\":[{\"id\":\"s0\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"place\":{\"value\":\"Melbourne Hall\",\"evidence\":[{\"id\":\"s0\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"participation\":{\"value\":\"public\",\"evidence\":[{\"id\":\"s0\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"price\":{\"value\":0,\"evidence\":[{\"id\":\"s0\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]}},\"match\":35,\"diversity\":8,\"reason\":\"Matches the requested scope with readable evidence.\",\"tags\":[\"local\"],\"conflicts\":[]}],\"gaps\":[]}"
+        },
+        "context": {
+          "goal": "Find 20 products, RAM at least 16 and price at most 200 AUD; free Melbourne events on 2026-11-07.",
+          "revision": 1,
+          "observations": [
+            {
+              "id": "s0",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s0",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s1",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s1",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s2",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s2",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s3",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s3",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s4",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s4",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            }
+          ]
+        }
+      },
+      {
+        "args": {
+          "action": "batch",
+          "data": "{\"items\":[{\"fields\":{\"name\":{\"value\":\"Event 0\",\"evidence\":[{\"id\":\"s0\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"startsAt\":{\"value\":\"2026-11-07T10:00:00+11:00\",\"evidence\":[{\"id\":\"s0\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"place\":{\"value\":\"Melbourne Hall\",\"evidence\":[{\"id\":\"s0\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"participation\":{\"value\":\"public\",\"evidence\":[{\"id\":\"s0\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"price\":{\"value\":0,\"evidence\":[{\"id\":\"s0\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]}},\"match\":35,\"diversity\":8,\"reason\":\"Matches the requested scope with readable evidence.\",\"tags\":[\"local\"],\"conflicts\":[]}],\"gaps\":[]}"
+        },
+        "context": {
+          "goal": "Find 20 products, RAM at least 16 and price at most 200 AUD; free Melbourne events on 2026-11-07.",
+          "revision": 1,
+          "observations": [
+            {
+              "id": "s0",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s0",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s1",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s1",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s2",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s2",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s3",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s3",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s4",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s4",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            }
+          ]
+        }
+      }
+    ],
+    "expected": {
+      "verified": 1,
+      "diminishing": false,
+      "exhausted": false,
+      "stop": "continue",
+      "nextBatch": 5
+    }
+  },
+  {
+    "name": "mixed: an explicit count keeps searching after repeats",
+    "steps": [
+      {
+        "args": {
+          "action": "contract",
+          "data": "{\"category\":\"events\",\"unit\":\"events\",\"explicitCount\":{\"value\":20,\"quote\":\"20 products\"}}"
+        },
+        "context": {
+          "goal": "Find 20 products, RAM at least 16 and price at most 200 AUD; free Melbourne events on 2026-11-07.",
+          "revision": 1
+        }
+      },
+      {
+        "args": {
+          "action": "batch",
+          "data": "{\"items\":[{\"fields\":{\"name\":{\"value\":\"Event 0\",\"evidence\":[{\"id\":\"s0\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"startsAt\":{\"value\":\"2026-11-07T10:00:00+11:00\",\"evidence\":[{\"id\":\"s0\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"place\":{\"value\":\"Melbourne Hall\",\"evidence\":[{\"id\":\"s0\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"participation\":{\"value\":\"public\",\"evidence\":[{\"id\":\"s0\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"price\":{\"value\":0,\"evidence\":[{\"id\":\"s0\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]}},\"match\":35,\"diversity\":8,\"reason\":\"Matches the requested scope with readable evidence.\",\"tags\":[\"local\"],\"conflicts\":[]}],\"gaps\":[]}"
+        },
+        "context": {
+          "goal": "Find 20 products, RAM at least 16 and price at most 200 AUD; free Melbourne events on 2026-11-07.",
+          "revision": 1,
+          "observations": [
+            {
+              "id": "s0",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s0",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s1",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s1",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s2",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s2",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s3",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s3",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s4",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s4",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            }
+          ]
+        }
+      },
+      {
+        "args": {
+          "action": "batch",
+          "data": "{\"items\":[{\"fields\":{\"name\":{\"value\":\"Event 0\",\"evidence\":[{\"id\":\"s1\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"startsAt\":{\"value\":\"2026-11-07T10:00:00+11:00\",\"evidence\":[{\"id\":\"s1\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"place\":{\"value\":\"Melbourne Hall\",\"evidence\":[{\"id\":\"s1\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"participation\":{\"value\":\"public\",\"evidence\":[{\"id\":\"s1\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"price\":{\"value\":0,\"evidence\":[{\"id\":\"s1\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]}},\"match\":35,\"diversity\":8,\"reason\":\"Matches the requested scope with readable evidence.\",\"tags\":[\"local\"],\"conflicts\":[]}],\"gaps\":[]}"
+        },
+        "context": {
+          "goal": "Find 20 products, RAM at least 16 and price at most 200 AUD; free Melbourne events on 2026-11-07.",
+          "revision": 1,
+          "observations": [
+            {
+              "id": "s0",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s0",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s1",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s1",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s2",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s2",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s3",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s3",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s4",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s4",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            }
+          ]
+        }
+      },
+      {
+        "args": {
+          "action": "batch",
+          "data": "{\"items\":[{\"fields\":{\"name\":{\"value\":\"Event 0\",\"evidence\":[{\"id\":\"s2\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"startsAt\":{\"value\":\"2026-11-07T10:00:00+11:00\",\"evidence\":[{\"id\":\"s2\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"place\":{\"value\":\"Melbourne Hall\",\"evidence\":[{\"id\":\"s2\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"participation\":{\"value\":\"public\",\"evidence\":[{\"id\":\"s2\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]},\"price\":{\"value\":0,\"evidence\":[{\"id\":\"s2\",\"quote\":\"Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM.\"}]}},\"match\":35,\"diversity\":8,\"reason\":\"Matches the requested scope with readable evidence.\",\"tags\":[\"local\"],\"conflicts\":[]}],\"gaps\":[]}"
+        },
+        "context": {
+          "goal": "Find 20 products, RAM at least 16 and price at most 200 AUD; free Melbourne events on 2026-11-07.",
+          "revision": 1,
+          "observations": [
+            {
+              "id": "s0",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s0",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s1",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s1",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s2",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s2",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s3",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s3",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            },
+            {
+              "id": "s4",
+              "type": "source",
+              "name": "fetch_url",
+              "ok": true,
+              "executed": true,
+              "reading": "extracted",
+              "url": "https://fixture.example/s4",
+              "text": "Public entry available. Date 2026-11-07T10:00:00+11:00 at Melbourne Hall. Price 0 AUD, region AU; in stock. Verified product specification 16 GB RAM."
+            }
+          ]
+        }
+      }
+    ],
+    "expected": {
+      "verified": 1,
+      "diminishing": true,
+      "adjusted": false,
+      "exhausted": false,
+      "stop": "continue",
+      "nextBatch": 10
+    }
+  },
+  {
+    "name": "mixed: a contract without a user count may be corrected but keeps every condition",
+    "steps": [
+      {
+        "args": {
+          "action": "contract",
+          "data": "{\"category\":\"events\",\"unit\":\"events\"}"
+        },
+        "context": {
+          "goal": "Find 20 products, RAM at least 16 and price at most 200 AUD; free Melbourne events on 2026-11-07.",
+          "revision": 1
+        }
+      },
+      {
+        "args": {
+          "action": "contract",
+          "data": "{\"category\":\"events\",\"unit\":\"events\",\"constraints\":[{\"field\":\"price\",\"op\":\"lte\",\"value\":0,\"quote\":\"free\"}]}"
+        },
+        "context": {
+          "goal": "Find 20 products, RAM at least 16 and price at most 200 AUD; free Melbourne events on 2026-11-07.",
+          "revision": 1
+        }
+      },
+      {
+        "args": {
+          "action": "contract",
+          "data": "{\"category\":\"events\",\"unit\":\"events\"}"
+        },
+        "context": {
+          "goal": "Find 20 products, RAM at least 16 and price at most 200 AUD; free Melbourne events on 2026-11-07.",
+          "revision": 1
+        }
+      }
+    ],
+    "expectedError": "may only add requirements"
   }
 ]

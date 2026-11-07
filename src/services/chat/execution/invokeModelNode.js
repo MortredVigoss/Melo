@@ -1,5 +1,5 @@
 import { TASK_PROGRESS_DEFINITION, TASK_PROGRESS_NAME, taskProgressPresentation, taskEvaluationSnapshot } from '../../../../shared/agent/taskEvaluation.js';
-import { internalRouteCatalog, startInternalJob, MAX_ASSIGNMENTS, ROUTE_NAME } from '../../../../shared/agent/internalRouting.js';
+import { internalRouteCatalog, startInternalJob, leadWithheldTools, MAX_ASSIGNMENTS, ROUTE_NAME } from '../../../../shared/agent/internalRouting.js';
 import { internalRoleSuggestions } from './internalRoles.js';
 import { runInternalMembers } from './internalMembers.js';
 import { runLimitDelivery } from '../../../runtime/limitDelivery.js';
@@ -144,8 +144,23 @@ export function createInvokeModelNode(turn) {
     const routeGoal = graphState.searchPlan.sharedPlan?.resolvedGoal || latestUserMessage;
     // Phase A1 (2026-11-04): the host classifies every visible tool from its
     // declarations so jobs are not limited to the shared static whitelists.
-    let catalog = !teamTask && !teamPlan && !context.requestToolPolicy?.toolsForbidden && internalRouteCatalog(routeGoal, [
-      ...graphState.promptTools.map(t => t.id), ...(graphState.searchPlan.nativeWebSearchEnabled ? ['native_web_search'] : [])], internalRoleSuggestions(graphState.promptTools));
+    // Desktop members search with Melo's own web search (dbf5dff4: bounded,
+    // readable evidence, far fewer tokens). Only when that is unavailable and
+    // hosted search is verified do the retrieval members take hosted search
+    // over, so the lead still only routes (user decision, 2026-11-07).
+    const memberHostedSearch = graphState.searchPlan.nativeWebSearchEnabled === true && !(graphState.searchPlan.sharedPlan?.availableTools || []).includes('web_search');
+    let catalog = !teamTask && !teamPlan && !context.requestToolPolicy?.toolsForbidden && internalRouteCatalog(routeGoal,
+      [...graphState.promptTools.map(t => t.id), ...(memberHostedSearch ? ['native_web_search'] : [])], internalRoleSuggestions(graphState.promptTools));
+    // The lead routes, assigns, evaluates and reports (2026-11-07 review P1-2):
+    // while a retrieval member exists, the lead holds no retrieval tool and
+    // no hosted search, and a lead call to one is refused. When routing closes
+    // mid-turn (a supplement), restoreLeadRetrieval gives the tools back.
+    let leadWithheld = new Set(leadWithheldTools(catalog || null));
+    const withheldTools = graphState.promptTools.filter(tool => leadWithheld.has(tool.id));
+    if (leadWithheld.size) graphState.promptTools = graphState.promptTools.filter(tool => !leadWithheld.has(tool.id));
+    let leadNativeSearch = graphState.searchPlan.nativeWebSearchEnabled === true && !leadWithheld.size;
+    const leadSearchPrompt = () => [buildSearchRoutingPrompt(graphState.searchPlan),
+      leadWithheld.size ? 'You hold no retrieval tools in this turn: assign the retrieval described above with route_task (research for the web, social for first-hand posts), passing on any URL, site or platform it names.' : ''].filter(Boolean).join('\n');
     if (catalog) graphState.promptTools = [...graphState.promptTools, { id: ROUTE_NAME, name: ROUTE_NAME, description: catalog.definition.description, parametersSchema: catalog.definition.parameters }];
     if (catalog) graphState.promptTools.push({ id: TASK_PROGRESS_NAME, name: TASK_PROGRESS_NAME, description: TASK_PROGRESS_DEFINITION.description, parametersSchema: TASK_PROGRESS_DEFINITION.parameters });
     const assignments = [];
@@ -155,8 +170,17 @@ export function createInvokeModelNode(turn) {
     let functionSession = createFunctionCallingSession({ ...delegatedModelConfig, ...(vision || {}),
       toolCalling: env.MELO_FUNCTION_CALLING || config.toolCalling }, graphState.promptTools);
     let loopSections = graphState.promptSections.map(section => section.id === 'tools' && graphState.promptTools.length
-      ? { ...section, text: [buildSearchRoutingPrompt(graphState.searchPlan), buildToolsSystemPrompt(graphState.promptTools,
+      ? { ...section, text: [leadSearchPrompt(), buildToolsSystemPrompt(graphState.promptTools,
         { includeExamples: false, native: functionSession.native, protocol: functionSession.protocol })].filter(Boolean).join('\n\n') } : section);
+    const restoreLeadRetrieval = () => {
+      if (!leadWithheld.size) return;
+      leadWithheld = new Set(); leadNativeSearch = graphState.searchPlan.nativeWebSearchEnabled === true;
+      graphState.promptTools = [...graphState.promptTools, ...withheldTools];
+      functionSession = createFunctionCallingSession({ ...delegatedModelConfig, ...(vision || {}), toolCalling: env.MELO_FUNCTION_CALLING || config.toolCalling }, graphState.promptTools);
+      closedRouterSession = null;
+      loopSections = loopSections.map(section => section.id === 'tools' ? { ...section, text: [leadSearchPrompt(), buildToolsSystemPrompt(graphState.promptTools,
+        { includeExamples: false, native: functionSession.native, protocol: functionSession.protocol })].filter(Boolean).join('\n\n') } : section);
+    };
     // Running message list for the tool loop — starts from the prepared window.
     let loopMessages = [...graphState.modelMessages];
     traceEvent('context.snapshot', { source: 'prepared-sections' }, { sections: graphState.promptSections, memory: graphState.memoryUsage || [], skillTools: (graphState.skillTools || []).map(tool => ({ id: tool.id, description: tool.description })) });
@@ -218,6 +242,7 @@ export function createInvokeModelNode(turn) {
         const supplements = takeSupplements(chat.id);
         if (supplements.length) {
           catalog = null; // Subsequent routing must not reuse a superseded permission/goal snapshot.
+          restoreLeadRetrieval(); // With routing closed the lead does the remaining work itself.
           coreTurn.amend(supplementMessage(supplements));
           loopMessages = [...loopMessages, { role: 'user', content: supplementMessage(supplements), isSupplement: true }];
           for (const entry of supplements) sseEmitter?.('execution_event', { kind: 'pipeline', id: `supplement:${entry.id}`, messageId: 'stage.supplement', module: 'compute', status: 'completed', output: entry.text });
@@ -233,7 +258,7 @@ export function createInvokeModelNode(turn) {
         Object.assign(contextBudget, resolveContextBudget(env, { config: selected }));
         closedRouterSession = null;
         functionSession = createFunctionCallingSession({ ...selected, toolCalling: env.MELO_FUNCTION_CALLING || selected.toolCalling }, graphState.promptTools);
-        loopSections = loopSections.map(section => section.id === 'tools' ? { ...section, text: [buildSearchRoutingPrompt(graphState.searchPlan), buildToolsSystemPrompt(graphState.promptTools, { includeExamples: false, native: functionSession.native, protocol: functionSession.protocol })].join('\n\n') } : section);
+        loopSections = loopSections.map(section => section.id === 'tools' ? { ...section, text: [leadSearchPrompt(), buildToolsSystemPrompt(graphState.promptTools, { includeExamples: false, native: functionSession.native, protocol: functionSession.protocol })].join('\n\n') } : section);
         // Rerouting never resets the budget, goal, tool IDs or successful effects.
         coreTurn.update('reroute');
       }
@@ -337,7 +362,7 @@ export function createInvokeModelNode(turn) {
         // present whenever the agent may use the network; whether to use
         // it this turn is said in the routing prompt. Only an explicit
         // user network-off or a non-Codex route keeps it off.
-        nativeWebSearchEnabled: !toolFree && nativeFeaturesForScope(context.capabilityScope,context.requestToolPolicy).nativeWebSearchEnabled && graphState.searchPlan?.nativeWebSearchEnabled === true,
+        nativeWebSearchEnabled: !toolFree && nativeFeaturesForScope(context.capabilityScope,context.requestToolPolicy).nativeWebSearchEnabled && leadNativeSearch,
         nativeImageGenerationEnabled: !context.requestToolPolicy?.toolsForbidden && (routingSession?.current.mode !== 'smart' || routingSession.current.tier === 'strong') && !toolFree && !coreTurn.repairing && scopeAllowsTool(context.capabilityScope,'image',{action:'generate'}) && imageSettings(config).engine === 'codex-oauth',
         onExecutionEvent: event => {
           const observed = { ...event, id: event.id ? `${iteration}:${event.id}` : undefined };
@@ -368,7 +393,7 @@ export function createInvokeModelNode(turn) {
         if (userSignal?.aborted) throw signal.reason;
         terminalReason = 'DEADLINE_EXCEEDED'; break;
       }
-      if (!toolFree && graphState.searchPlan?.nativeWebSearchEnabled) {
+      if (!toolFree && leadNativeSearch) {
         const items = (rawReply?.responseItems || []).filter(item => ['message', 'web_search_call'].includes(item?.type));
         hostedItems.push(...items);
         // The transport may return structured receipts without emitting SSE.
@@ -458,13 +483,13 @@ export function createInvokeModelNode(turn) {
         : 'Internal assignments are closed for this turn. Continue as the lead with the available evidence.', meta: { code: 'ROUTE_DENIED', executionStarted: false } };
       // No calls is a candidate answer, not proof that the user's goal is done.
       if (!toolCalls.length) {
-        if (coreTurn.candidate(turn.text, { context: { messages: loopMessages.filter(row => typeof row.content === 'string').slice(-8) }, research: !!graphState.searchPlan.sharedPlan?.research, nativeSearch: graphState.searchPlan?.nativeWebSearchEnabled === true, offeredTools: catalog ? [TASK_PROGRESS_NAME] : [] })) {
+        if (coreTurn.candidate(turn.text, { context: { messages: loopMessages.filter(row => typeof row.content === 'string').slice(-8) }, research: !!graphState.searchPlan.sharedPlan?.research, nativeSearch: leadNativeSearch, offeredTools: catalog ? [TASK_PROGRESS_NAME] : [] })) {
           coreTurn.update('feedback');
           continue;
         }
         coreTurn.update('complete');
         finalReply = turn.text || coreTurn.reply(latestUserMessage, config.replyLanguage);
-        if (coreTurn.status === 'completed' && graphState.searchPlan?.nativeWebSearchEnabled) {
+        if (coreTurn.status === 'completed' && leadNativeSearch) {
           const receipt = hostedSearchReceipt({ items: hostedItems, text: turn.text });
           missingHostedEvidence = !receipt.verified || !receipt.sources.length;
           if (!missingHostedEvidence) finalReply = receipt.answer;
@@ -509,7 +534,8 @@ export function createInvokeModelNode(turn) {
       const { allowedDispatchTools, dispatchAgentProfiles, dispatchMemberBackground } = dispatchConstants();
       for (const tc of toolCalls) {
         if (tc.rejectedResult) continue;
-        if (!coreTurn.permits(tc.id)) tc.rejectedResult = coreTurn.rejectionResult(tc.id);
+        if (leadWithheld.has(mcpToolsByName.get(tc.name)?.id || tc.name)) tc.rejectedResult = { ok: false, output: 'The lead holds no retrieval tools: assign this lookup with route_task (research for the web, social for first-hand posts).', meta: { code: 'CAPABILITY_DENIED', executionStarted: false } };
+        else if (!coreTurn.permits(tc.id)) tc.rejectedResult = coreTurn.rejectionResult(tc.id);
         else if (routingSession?.current.mode === 'smart' && routingSession.current.tier !== 'strong' && ['write', 'unknown'].includes(toolEffect(tc.name, tc.arguments))) {
           routingSideEffects = true; escalationRequested = true;
           tc.rejectedResult = { ok: false, output: 'This action has not executed. It requires the strong tier. Continue using previous results after the host checks the configured tier; if unavailable ask the user to configure it.', meta: { code: 'ROUTING_REQUIRES_STRONG', executionStarted: false } };

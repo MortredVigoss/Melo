@@ -41,6 +41,7 @@ import { buildToolsSystemPrompt } from '../tools/systemPrompt.js';
 import { createFunctionCallingSession, compactToolChain } from '../tools/functionCalling.js';
 import { fitRequestContext, resolveContextBudget } from '../services/chat/contextBudget.js';
 import { requestEnvironment } from '../runtime/requestScope.js';
+import { hostedSearchReceipt } from '../../shared/agent/hostedSearch.js';
 
 const MAX_SUB_AGENT_ITERATIONS = AGENT_LOOP_CONTRACT.delegationLimits.iterations;
 const SUB_AGENT_MAX_DEPTH = AGENT_LOOP_CONTRACT.delegationLimits.depth;
@@ -242,6 +243,7 @@ async function runSubAgentLoop({
       break;
     }
     let rawReply;
+    const hostedRequested = nativeWebSearch !== false && !toolFree && nativeFeaturesForScope(currentRequestContext().capabilityScope,currentRequestContext().requestToolPolicy).nativeWebSearchEnabled;
     try { rawReply = await createReply({
       ...(toolFree ? { maxTokens: 2048 } : functionSession.requestOptions()),
       ...(toolFree ? { maxTokens: 2048 } : Number(providerConfig.maxOutputTokens || providerConfig.maxTokens) > 0 ? { maxTokens: Number(providerConfig.maxOutputTokens || providerConfig.maxTokens) } : {}),
@@ -254,9 +256,16 @@ async function runSubAgentLoop({
       modelCapabilities: resolvedModelCapabilities(connectionForModel(providerConfig), providerConfig.model),
       systemPrompt: review?.systemPrompt || systemPrompt,
       messages: request.messages,
-      nativeWebSearchEnabled: nativeWebSearch !== false && !toolFree && nativeFeaturesForScope(currentRequestContext().capabilityScope,currentRequestContext().requestToolPolicy).nativeWebSearchEnabled,
+      nativeWebSearchEnabled: hostedRequested,
       nativeImageGenerationEnabled: nativeImageGeneration !== false && !toolFree && !coreTurn.repairing && nativeFeaturesForScope(currentRequestContext().capabilityScope,currentRequestContext().requestToolPolicy).nativeImageGenerationEnabled,
-      onExecutionEvent: event => { if (coreTurn.observeNative(event)) recordUsage(runBudget, { toolCalls: 1 }); },
+      // Native events carry this round's prefix and reach the task space the
+      // way the lead's do (2026-11-07 post-push review); the caller prefixes
+      // a member's ids with its job.
+      onExecutionEvent: event => {
+        const observed = { ...event, id: event?.id ? `${iteration}:${event.id}` : undefined };
+        if (coreTurn.observeNative(observed)) recordUsage(runBudget, { toolCalls: 1 });
+        if (typeof sseEmitter === 'function') sseEmitter('execution_event', observed);
+      },
       signal,
       // Native tools obey the same inherited capability snapshot as local tools.
       workspacePath: toolFree ? null : workspacePath,
@@ -271,6 +280,16 @@ async function runSubAgentLoop({
       break;
     }
 
+
+    // A hosted search becomes evidence as the lead records it: the provider's
+    // completed search with its source URLs and answer, marked as
+    // provider-reported. A search without any source is no evidence.
+    if (hostedRequested) {
+      const items = (rawReply?.responseItems || []).filter(item => ['message', 'web_search_call'].includes(item?.type));
+      const receipt = hostedSearchReceipt({ items, text: rawReply?.text });
+      if (receipt.verified && receipt.sources.length && coreTurn.observeNative({ id: `hosted:${iteration}`, name: 'native_web_search', status: 'completed', output: receipt.evidence + '\n' + receipt.answer,
+        sources: receipt.sources.map(source => ({ ...source, reading: 'provider', text: rawReply?.text || '' })) })) recordUsage(runBudget, { toolCalls: 1 });
+    }
 
     const turn = functionSession.parse(rawReply);
     const { toolCalls } = turn;

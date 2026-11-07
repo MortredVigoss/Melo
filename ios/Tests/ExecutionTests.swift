@@ -68,6 +68,56 @@ import Foundation
             assert(!rules.shouldReturn(device, blocked: true))
             assert(rules.shouldReturn(device), "comes back once the prompt is answered")
         }
+        // Calls carry their start and end times (2026-11-07); a phone call is on the
+        // record while it runs and is completed in place, never rewritten after.
+        do {
+            var timed = ExecutionRecord(chatId: "t", query: "q", requestedModel: "m")
+            var stream = ExecutionObservation()
+            stream.tool(["type": "web_search_call", "id": "ws_1", "status": "in_progress", "action": ["type": "search", "query": "melbourne"]])
+            assert(stream.operations.first?.status == "running" && stream.operations.first?.startedAt != nil && stream.operations.first?.finishedAt == nil)
+            let searchStart = stream.operations.first?.startedAt
+            timed.observe(stream)
+            stream.tool(["type": "web_search_call", "id": "ws_1", "status": "completed", "action": ["type": "search", "query": "melbourne"]])
+            assert(stream.operations.first?.finishedAt != nil && stream.operations.first?.startedAt == searchStart)
+            timed.observe(stream)
+            assert(timed.operations.first?.startedAt == searchStart && timed.operations.first?.finishedAt != nil)
+            timed.recordPhoneOperation(id: "web:job-1:call_a", module: "search", name: "网页 · 打开", status: "running", summary: "", page: ["url": "https://example.org/a"])
+            let running = timed.operations.first { $0.id == "web:job-1:call_a" }
+            assert(running?.status == "running" && running?.startedAt != nil && running?.finishedAt == nil && running?.input == "https://example.org/a")
+            // A known start, so keeping it is told apart from stamping a new one in the same second.
+            timed.operations[timed.operations.firstIndex { $0.id == "web:job-1:call_a" }!].startedAt = "2026-01-01T00:00:00Z"
+            timed.recordPhoneOperation(id: "web:job-1:call_a", module: "search", name: "网页 · 打开", status: "completed", summary: "已读取网页", page: ["url": "https://example.org/a", "title": "A"])
+            timed.recordPhoneOperation(id: "web:job-1:call_a", module: "search", name: "网页 · 打开", status: "failed", summary: "rewritten?")
+            let done = timed.operations.filter { $0.id == "web:job-1:call_a" }
+            assert(done.count == 1 && done.first?.status == "completed" && done.first?.resultSummary == "已读取网页", "completed in place, never rewritten")
+            assert(done.first?.startedAt == "2026-01-01T00:00:00Z" && done.first?.finishedAt != nil && done.first?.input == "https://example.org/a")
+            // A call that fails without a page keeps the address it was opened with.
+            timed.recordPhoneOperation(id: "web:call_b", module: "search", name: "网页 · 打开", status: "running", summary: "", page: ["url": "https://example.org/b"])
+            timed.recordPhoneOperation(id: "web:call_b", module: "search", name: "网页 · 打开", status: "failed", summary: "HTTP 503")
+            let failed = timed.operations.first { $0.id == "web:call_b" }
+            assert(failed?.status == "failed" && failed?.input == "https://example.org/b" && failed?.finishedAt != nil, "a failed call keeps its address")
+            var observed = ExecutionObservation(); observed.operations = [ExecutionOperation(id: "ws_2", status: "running")]
+            timed.observe(observed)
+            let streamed = timed.operations.firstIndex { $0.id == "ws_2" }!
+            assert(timed.operations[streamed].startedAt != nil && timed.operations[streamed].finishedAt == nil)
+            timed.operations[streamed].startedAt = "2026-01-01T00:00:01Z"
+            observed.operations = [ExecutionOperation(id: "ws_2", status: "completed")]
+            timed.observe(observed)
+            let merged = timed.operations.first { $0.id == "ws_2" }
+            assert(merged?.startedAt == "2026-01-01T00:00:01Z" && merged?.finishedAt != nil, "a streamed call keeps its start and gains its end")
+            let decoded = try JSONDecoder().decode(ExecutionRecord.self, from: try JSONEncoder().encode(timed))
+            assert(decoded.operations == timed.operations)
+            // A member's native searches are tagged with its job; the lead's and already-tagged ones are not.
+            var memberStream = ExecutionObservation()
+            memberStream.operations = [ExecutionOperation(id: "ws_9", status: "running"), ExecutionOperation(id: "web:job-2:call_c", status: "completed")]
+            memberStream.source(url: "https://example.org/c", title: "C", cited: false)
+            assert(memberStream.taggedForMember(nil) == memberStream)
+            let tagged = memberStream.taggedForMember(3)
+            assert(tagged.operations.map(\.id) == ["job-3:ws_9", "web:job-2:call_c"] && tagged.sources == memberStream.sources)
+            assert(tagged.taggedForMember(3).operations.map(\.id) == ["job-3:ws_9", "web:job-2:call_c"], "tagging twice changes nothing")
+            let legacy = try JSONDecoder().decode(ExecutionOperation.self, from: Data(#"{"id":"old","module":"search","name":"x","status":"completed","provider":"iPhone","input":"","output":"","query":"","resultSummary":""}"#.utf8))
+            assert(legacy.startedAt == nil && legacy.finishedAt == nil, "records from before keep decoding")
+        }
         // Plan C: member role, round limit and evaluation snapshot stay on the
         // local stage, survive merges and Codable, and stay out of v1 sync.
         do {
@@ -83,6 +133,9 @@ import Foundation
             assert(member?.input == "read the official pages" && member?.output == "done")
             let odd = space.pipeline?.first { $0.id == "internal:2" }
             assert(odd?.role == nil && odd?.limits == ["rounds": 100])
+            // The social member (2026-11-07) is a known role on the phone too.
+            space.recordStage("internal:3", name: "社交检索成员", status: "running", role: "social", rounds: 6)
+            assert(space.pipeline?.first { $0.id == "internal:3" }?.role == "social")
             assert(space.pipeline?.first { $0.id == "task-evaluation:3" }?.evaluation == snapshot)
             let decoded = try JSONDecoder().decode(ExecutionRecord.self, from: try JSONEncoder().encode(space))
             assert(decoded.pipeline == space.pipeline)

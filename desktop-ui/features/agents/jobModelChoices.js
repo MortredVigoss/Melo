@@ -5,7 +5,7 @@
 // exists is kept selected and marked, exactly like allow-list choices.
 import { t } from '../../i18n.js';
 
-export const JOB_MODEL_ROLES = Object.freeze([['research', '检索成员'], ['lookup', '资料读取成员'], ['calculate', '计算成员'], ['execute', '执行成员']]);
+export const JOB_MODEL_ROLES = Object.freeze([['research', '检索成员'], ['social', '社交检索成员'], ['lookup', '资料读取成员'], ['calculate', '计算成员'], ['execute', '执行成员']]);
 
 export function renderJobModelChoices(values = {}, profiles = [], esc) {
   const options = (Array.isArray(profiles) ? profiles : []).map(profile => ({ id: String(profile.id || ''), name: profile.nameKey ? t(profile.nameKey) : profile.name || profile.id, model: profile.model || '' })).filter(option => option.id);

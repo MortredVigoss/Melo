@@ -58,7 +58,7 @@ test('a spider stands where its call actually is, not where its role suggests', 
   assert.equal(lead.out, false); assert.deepEqual(lead.operations, []);
   op(scene, 'own-file', 'files', 'file_read', 'running', { input: '/Users/me/notes/plan.md' });
   const busy = sceneActors(scene).find(a => a.id === 'lead');
-  assert.equal(busy.out, true); assert.equal(busy.module, 'files'); assert.deepEqual(busy.operations, ['own-file']);
+  assert.equal(busy.out, false, 'the lead routes and evaluates from the core; it never walks out'); assert.equal(busy.module, 'files'); assert.deepEqual(busy.operations, ['own-file']);
 });
 
 test('a finished call turns into a chip naming what it touched', () => {
@@ -244,4 +244,20 @@ test('field coverage is taken over the candidates still in play, so a missing fi
   assert.deepEqual(trace.rows.map(r => r.id), ['q', 'p']); assert.equal(trace.verified, 1); assert.equal(trace.count, 2); assert.equal(trace.outside, 0);
   // Qualified rows alone would have read 100% for every field: qualifying needs them all verified.
   assert.ok(mixed.candidates.filter(r => r.tier === 'eligible').every(r => Object.values(r.fields).every(v => v === 'verified')));
+});
+
+test('a member\'s calls are its own on every host, iPhone ids included', () => {
+  // iPhone records a member's calls as `web:job-N:…` and `tool:job-N:…`; desktop and Android as `job-N:…`.
+  const scene = createExecutionScene({ runId: 'hosts', chatId: 'c' });
+  stage(scene, 'internal:1', 'running', { name: '检索成员', role: 'research' });
+  op(scene, 'web:job-1:call_open', 'search', '网页 · 打开', 'running', { input: 'https://example.org/a' });
+  op(scene, 'tool:job-1:call_more', 'search', 'open_url', 'failed');
+  op(scene, 'job-1:search', 'search', 'web_search', 'completed');
+  op(scene, 'ws_native', 'search', 'native_web_search', 'completed');
+  op(scene, 'web:call_lead', 'search', '网页 · 打开', 'completed');
+  const member = sceneActors(scene).find(a => a.id === 'member:1'), lead = sceneActors(scene).find(a => a.id === 'lead');
+  assert.deepEqual(member.operations, ['web:job-1:call_open', 'tool:job-1:call_more', 'job-1:search']);
+  assert.equal(member.out, true); assert.equal(member.module, 'search'); assert.equal(member.operation, 'web:job-1:call_open', 'it walks to its own running call');
+  assert.deepEqual(lead.operations, ['ws_native', 'web:call_lead']); assert.equal(lead.out, false);
+  assert.equal(traceList(scene, 'member:1').count, 3);
 });

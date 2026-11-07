@@ -33,7 +33,7 @@ import CryptoKit
             }
         }
         let evaluationCases = try JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent("shared/agent/fixtures/task-evaluation.json"))) as! [[String:Any]]
-        assert(evaluationCases.count == 36)
+        assert(evaluationCases.count == 41)
         for fixture in evaluationCases {
             var state: [String:Any]?
             for step in fixture["steps"] as! [[String:Any]] {

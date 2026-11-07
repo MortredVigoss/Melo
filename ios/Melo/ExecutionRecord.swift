@@ -59,6 +59,11 @@ struct ExecutionOperation: Codable, Equatable, Identifiable {
     var output = ""
     var query = ""
     var resultSummary = ""
+    /// When the call started and ended (ISO 8601). Records from before
+    /// 2026-11-07 have neither; the task space then shows no time for them.
+    var startedAt: String? = nil
+    var finishedAt: String? = nil
+    static let terminalStatuses: Set<String> = ["completed", "failed", "cancelled", "interrupted"]
 }
 struct ExecutionSource: Codable, Equatable, Identifiable {
     var id: String
@@ -196,12 +201,14 @@ struct ExecutionObservation: Equatable {
     }
     private mutating func operation(_ id: String) -> Int {
         if let index = operations.firstIndex(where: { $0.id == id }) { return index }
-        operations.append(ExecutionOperation(id: id)); return operations.count - 1
+        var op = ExecutionOperation(id: id); op.startedAt = timestamp()
+        operations.append(op); return operations.count - 1
     }
     private mutating func setStatus(_ status: String, at index: Int) {
-        let terminal = ["completed", "failed", "cancelled", "interrupted"]
+        let terminal = ExecutionOperation.terminalStatuses
         if terminal.contains(operations[index].status) && !terminal.contains(status) { return }
         operations[index].status = status
+        if terminal.contains(status), operations[index].finishedAt == nil { operations[index].finishedAt = timestamp() }
     }
     private mutating func publishSummary(_ itemID: String, status: String = "running") {
         let id = "model:summary:" + itemID
@@ -271,6 +278,23 @@ struct ExecutionObservation: Equatable {
             setStatus(status, at: index); revision += 1
         }
         if let response = event["response"] as? [String: Any] { apiReceipt(response, transport: "responses") }
+    }
+}
+extension ExecutionObservation {
+    /// A member's native searches are its own: while its turn runs (`job`, the
+    /// 1-based assignment number from AgentLoopHooks.onMemberJob) operations
+    /// that name no job are tagged `job-N:`, the prefix its tool calls carry.
+    /// Each model request streams its own observation, so the lead's earlier
+    /// calls are never retagged.
+    func taggedForMember(_ job: Int?) -> ExecutionObservation {
+        guard let job else { return self }
+        var tagged = self
+        tagged.operations = operations.map { op in
+            var op = op
+            if op.id.range(of: #"(^|:)job-[0-9]+[:#]"#, options: .regularExpression) == nil { op.id = "job-\(job):" + op.id }
+            return op
+        }
+        return tagged
     }
 }
 struct ExecutionRecord: Codable, Identifiable, Equatable {
@@ -394,15 +418,21 @@ struct ExecutionRecord: Codable, Identifiable, Equatable {
     }
     /// Tool callbacks carry a short outcome; page bodies, screenshots and device data
     /// never enter the scene. Native search snapshots may arrive again afterwards.
+    /// A call may first be recorded as running when it starts, then completed
+    /// in place; a finished call is never rewritten.
     mutating func recordPhoneOperation(id: String, module: String, name: String, status: String,
                                        summary: String, page: [String: Any] = [:], textRead: Bool = false) {
         guard !terminal else { return }
         // The v1 stage ID is bounded. Hash unusually long provider IDs without
         // aliasing two calls whose IDs have the same prefix.
         let receiptID = id.utf16.count <= 200 ? id : "phone:" + SHA256.hash(data: Data(id.utf8)).map { String(format: "%02x", $0) }.joined()
-        guard !operations.contains(where: { $0.id == receiptID }) else { return }
+        let existing = operations.firstIndex(where: { $0.id == receiptID })
+        if let existing, operations[existing].status != "running" { return }
         var op = ExecutionOperation(id: receiptID, module: module, name: name, status: status, provider: "iPhone",
                                     output: summary, resultSummary: summary)
+        op.startedAt = existing.flatMap { operations[$0].startedAt } ?? timestamp()
+        if ExecutionOperation.terminalStatuses.contains(status) { op.finishedAt = timestamp() }
+        if status == "running", let url = page["url"] as? String, let safe = WebSource.validated(title: "", url: url), safe.url.utf16.count <= 2200 { op.input = safe.url }
         if status == "completed",
            let url = (page["finalUrl"] as? String).flatMap({ $0.isEmpty ? nil : $0 }) ?? page["url"] as? String,
            let safe = WebSource.validated(title: page["title"] as? String ?? "", url: url), safe.url.utf16.count <= 4000 {
@@ -416,13 +446,22 @@ struct ExecutionRecord: Codable, Identifiable, Equatable {
             }
             ExecutionSource.merge(source, into: &sources)
         }
-        operations.append(op); lastModule = module; sequence += 1
+        if let existing { if op.input.isEmpty { op.input = operations[existing].input }; operations[existing] = op } else { operations.append(op) }
+        lastModule = module; sequence += 1
     }
     mutating func observe(_ observation: ExecutionObservation) {
         guard !terminal else { return }
-        for op in observation.operations {
-            if let index = operations.firstIndex(where: { $0.id == op.id }) { operations[index] = op }
-            else { operations.append(op) }
+        for var op in observation.operations {
+            let ended = ExecutionOperation.terminalStatuses.contains(op.status)
+            if let index = operations.firstIndex(where: { $0.id == op.id }) {
+                op.startedAt = op.startedAt ?? operations[index].startedAt
+                op.finishedAt = op.finishedAt ?? operations[index].finishedAt ?? (ended ? timestamp() : nil)
+                operations[index] = op
+            } else {
+                op.startedAt = op.startedAt ?? timestamp()
+                if ended { op.finishedAt = op.finishedAt ?? timestamp() }
+                operations.append(op)
+            }
         }
         for source in observation.sources { ExecutionSource.merge(source, into: &sources) }
         if let model = observation.returnedModel { returnedModel = model }
@@ -452,7 +491,7 @@ struct ExecutionRecord: Codable, Identifiable, Equatable {
         let module = id.hasPrefix("internal:") ? "compute" : "create"
         mergeStage(ExecutionStage(id: id, module: module, name: name, status: status, input: input, output: output, model: model,
             startedAt: status == "running" ? timestamp() : nil, finishedAt: status == "running" ? nil : timestamp(),
-            role: ["research", "calculate", "lookup", "execute"].contains(role ?? "") ? role : nil,
+            role: ["research", "social", "calculate", "lookup", "execute"].contains(role ?? "") ? role : nil,
             limits: rounds.map { ["rounds": max(0, min(100, $0))] }, evaluation: evaluation))
         lastModule = module; sequence += 1
     }

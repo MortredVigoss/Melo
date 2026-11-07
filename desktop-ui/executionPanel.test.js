@@ -498,3 +498,43 @@ test('without a renderer a board run still opens every region; stopping motion s
     assert.equal(renderer.updates, updates, 'no update reaches a released renderer');
   }
 });
+
+test('a tap on empty space leaves the detail; the lead\'s finished call rises from the core, a member\'s waits for its spider', async t => {
+  const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost' });
+  const originals = new Map();
+  const install = (key, value) => { originals.set(key, Object.getOwnPropertyDescriptor(globalThis, key)); Object.defineProperty(globalThis, key, { configurable: true, writable: true, value }); };
+  const timers = [];
+  install('document', dom.window.document); install('localStorage', dom.window.localStorage);
+  install('matchMedia', () => ({ matches: false, addEventListener() {} })); install('setInterval', () => 0); install('clearInterval', () => {});
+  install('setTimeout', (fn, delay) => { timers.push({ fn, delay }); return timers.length; }); install('clearTimeout', id => { if (timers[id - 1]) timers[id - 1].cleared = true; });
+  install('fetch', async () => ({ ok: true, json: async () => ({ scenes: [] }) }));
+  t.after(() => { dom.window.close(); for (const [key, descriptor] of originals) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key]; } });
+  const panel = await loadPanel({ renderer: fakeRenderer });
+  updateNeuralWorkspace(document.querySelector('#app'), `<div>${panel.renderExecutionPanel()}</div>`);
+  panel.syncExecutionPanel({ chat: { id: 'chat', messages: [] } });
+  await new Promise(resolve => setImmediate(resolve));
+  const settle = async () => { for (let i = 0; i < 4; i++) await new Promise(resolve => setImmediate(resolve)); };
+  const room = document.querySelector('#execution-war-room');
+  const scene = createExecutionScene({ runId: 'lead-core', chatId: 'chat', query: 'q' });
+  applyExecutionEvent(scene, { kind: 'pipeline', id: 'internal:1', name: '检索成员', role: 'research', status: 'running', input: '找资料' });
+  applyExecutionEvent(scene, { kind: 'operation', id: 'web:job-1:call_a', module: 'search', name: '网页 · 打开', status: 'running', input: 'https://example.org/a' });
+  applyExecutionEvent(scene, { kind: 'operation', id: 'lead-calc', module: 'compute', name: 'calculator', status: 'running', expression: '2 + 2' });
+  panel.receiveExecutionScene(structuredClone(scene)); await settle();
+  assert.equal(room.hidden, false);
+  // Both calls finish: the member's waits for its spider's chip; the lead's rises from the core.
+  applyExecutionEvent(scene, { kind: 'operation', id: 'web:job-1:call_a', status: 'completed', resultSummary: '已读取网页' });
+  applyExecutionEvent(scene, { kind: 'operation', id: 'lead-calc', status: 'completed', result: '4' });
+  panel.receiveExecutionScene(structuredClone(scene));
+  assert.equal(room.querySelector('[data-row-key="op:web:job-1:call_a"]')?.dataset.pending, 'true', 'the member\'s row waits for its spider');
+  assert.equal(room.querySelector('[data-row-key="op:lead-calc"]')?.dataset.pending, 'true', 'the lead\'s row waits for its rise');
+  const rise = timers.find(x => !x.cleared && x.delay < 450);
+  assert.ok(rise, 'a rise from the core is queued for the lead\'s call'); rise.cleared = true; rise.fn();
+  const chips = [...document.querySelectorAll('.war-chip')].map(el => el.textContent);
+  assert.equal(chips.length, 1); assert.match(chips[0], /2 \+ 2/);
+  // A tap on empty space leaves whatever detail is open.
+  room.querySelector('[data-war-trace="calls"]').click();
+  assert.ok(room.querySelector('[data-cell="detail"]'));
+  globalThis.__fakeRenderer.callbacks.onEmptyTap();
+  assert.equal(room.querySelector('[data-cell="detail"]'), null, 'back to the board');
+  assert.notEqual(room.querySelector('.war-band').dataset.mode, 'detail');
+});

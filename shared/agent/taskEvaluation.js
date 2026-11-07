@@ -5,8 +5,15 @@ export const TASK_EVALUATION_POLICY = Object.freeze({
   version: 1, maxCandidates: 200, maxUpdates: 64, maxInvalidUpdates: 3, maxFields: 16,
   primaryCount: 3, alternatives: 5, primaryScore: 75, alternativeScore: 60, evidenceScore: 20,
   checkpoint: { milliseconds: 180000, calls: 20 },
-  member: { initialRounds: 4, increment: 2, maxRounds: 12, calls: 8, roundMilliseconds: 90000, deliveryReserveMs: AGENT_LOOP_CONTRACT.delivery.deadlineMs,
+  // The lead only routes, assigns, evaluates and reports, so members do the
+  // retrieval and get room for it (2026-11-07 review P1-2: 4 rounds / 8 calls
+  // stopped members before they had read their pages).
+  member: { initialRounds: 6, increment: 2, maxRounds: 12, calls: 16, roundMilliseconds: 90000, deliveryReserveMs: AGENT_LOOP_CONTRACT.delivery.deadlineMs,
     inputTokens: 120000, leadInputReserve: 60000, minimumInput: 20000, parallel: 3 },
+  // Without a count in the user's words the quick target applies (2026-11-07
+  // review P1-1): three eligible entities answer the question, five at most.
+  // An Agent may ask for standard or deep in its settings.
+  defaultMode: 'quick',
   modes: { quick: { minimum: 3, maximum: 5, initial: 8 }, standard: { minimum: 5, maximum: 10, initial: 12 }, deep: { minimum: 8, maximum: 15, initial: 20 } },
   batch: { additional: 5, explicitAdditional: 10, minimumInspected: 5, lowYield: 0.2, consecutive: 2 },
   fields: { events: ['name','startsAt','place','participation'], products: ['name','model','region','price','currency','availability'], other: ['name'] },
@@ -31,14 +38,14 @@ const readObservation = row => row && row.ok === true && row.executed === true &
   !['web_search','native_web_search'].includes(row.name) && str(row.text || row.output, 200000);
 
 export const TASK_PROGRESS_DEFINITION = Object.freeze({ name: TASK_PROGRESS_NAME,
-  description: `Track multi-item discovery/recommendation tasks using the original user's goal. Call alone. First action=contract; later batch after real reads, never count search hits or specialist prose. Simple facts/calculations/actions need no entity quota. data is JSON: contract {category:events|products|other,unit,mode:quick|standard|deep,explicitCount?:{value,quote},requiredFields?:[],constraints?:[{field,op:eq|includes|gte|lte|after|before,value,quote}],coverage?:[]}. Quotes must be exact user text; explicit counts/constraints cannot be lowered. Include every user condition; resolve relative dates/timezone with authorized context. Events require public participation, actual local date/place; products require model/region/price/currency/availability. batch {items:[{fields:{name:{value,evidence:[{id,quote}]},...},match:0..40,diversity:0..10,reason,tags:[],conflicts:[],excludeReason?}],gaps:[],adjustment?:{reason,evidence:[{id,quote}]}}. Prefer one item.evidence=[{id,quote}] with the full source row supporting its fields; fields can be primitive values to avoid repeating that quote. Otherwise use per-field {value,evidence}. Quote actual executed observation text supporting each field. coverage contains optional short category tags (such as outdoor or music), never full instructions; every coverage tag must appear in candidate.tags when fulfilled. Use ISO offset dates, comparable numeric price, participation=public and availability=available only when source supports it. Same event/model is one entity, even across URLs. Host returns counts, score reasons, missing fields, next batch and stop advice. Score cannot override hard conditions. At final delivery, present 3 primary options with reasons and 2–5 eligible title/link alternatives unless the user asks otherwise. Explicit counts are mandatory; insufficient results must be partial. Use returned evidence IDs in final checks.`,
+  description: `Track multi-item discovery/recommendation tasks using the original user's goal. Call alone. First action=contract; later batch after real reads, never count search hits or specialist prose. Simple facts/calculations/actions need no entity quota. data is JSON: contract {category:events|products|other,unit,mode:quick|standard|deep,explicitCount?:{value,quote},requiredFields?:[],constraints?:[{field,op:eq|includes|gte|lte|after|before,value,quote}],coverage?:[]}. Quotes must be exact user text; explicit counts/constraints cannot be lowered. Without an explicit count the target is soft: stop when the host says ready_for_review; a cited adjustment lowers it, and two batches with new reads but no new eligible entity end the search. Only a contract without an explicit count may be revised in the same turn, keeping every recorded condition. Include every user condition; resolve relative dates/timezone with authorized context. Events require public participation, actual local date/place; products require model/region/price/currency/availability. batch {items:[{fields:{name:{value,evidence:[{id,quote}]},...},match:0..40,diversity:0..10,reason,tags:[],conflicts:[],excludeReason?}],gaps:[],adjustment?:{reason,evidence:[{id,quote}]}}. Prefer one item.evidence=[{id,quote}] with the full source row supporting its fields; fields can be primitive values to avoid repeating that quote. Otherwise use per-field {value,evidence}. Quote actual executed observation text supporting each field. coverage contains optional short category tags (such as outdoor or music), never full instructions; every coverage tag must appear in candidate.tags when fulfilled. Use ISO offset dates, comparable numeric price, participation=public and availability=available only when source supports it. Same event/model is one entity, even across URLs: list a repeat again with the new site's evidence; the host keeps the first verified source (normally top-ranked), lets later sites fill only missing fields, and counts repeats as reads that added nothing. Host returns counts, score reasons, missing fields, next batch and stop advice. Score cannot override hard conditions. At final delivery, present 3 primary options with reasons and 2–5 eligible title/link alternatives unless the user asks otherwise. Explicit counts are mandatory; insufficient results must be partial. Use returned evidence IDs in final checks.`,
   parameters: { type: 'object', properties: { action: { type: 'string', enum: ['contract','batch','status'] }, data: { type: 'string', description: 'JSON object for the selected action; {} for status.' } }, required: ['action','data'], additionalProperties: false },
 });
 
 function contractFor(raw, goal, revision) {
   const p = TASK_EVALUATION_POLICY;
   if (!raw || !Object.hasOwn(p.fields, raw.category)) fail('Specify category events, products or other.');
-  const mode = Object.hasOwn(p.modes, raw.mode) ? raw.mode : 'standard';
+  const mode = Object.hasOwn(p.modes, raw.mode) ? raw.mode : p.defaultMode;
   const explicit = raw.explicitCount;
   if (explicit && /\d/.test(str(explicit.quote)) && !str(explicit.quote).match(/\d+/g)?.includes(String(explicit.value))) fail('Explicit quantity differs from the quoted number.');
   if (explicit && (!integer(explicit.value, 1, p.maxCandidates) || !str(explicit.quote) || !goal.includes(explicit.quote))) fail('Explicit quantity needs the original user quote and a supported count. Never invent a user requirement.');
@@ -73,6 +80,23 @@ function matches(actual, rule) {
   const a = Date.parse(actual), b = Date.parse(rule.value);
   return Number.isFinite(a) && Number.isFinite(b) && (rule.op === 'after' ? a >= b : a <= b);
 }
+// A read page's identity for low-yield sampling: normalized URL (lower-case
+// scheme and host, no fragment, no utm_* tracking, no trailing slash; the
+// query stays, so result pages differ) plus a hash of the body that was read.
+// Rows without a URL are identified by body alone. Regex only: the packaged
+// core runs where no URL global exists.
+function pageUrl(value) {
+  const match = /^(https?):\/\/([^\s/?#@]+)([^\s?#]*)(\?[^\s#]*)?/iu.exec(String(value || '').trim());
+  if (!match) return '';
+  const query = (match[4] || '').slice(1).split('&').filter(part => part && !/^utm_/iu.test(part)).join('&');
+  return match[1].toLowerCase() + '://' + match[2].toLowerCase() + (match[3] || '').replace(/\/$/u, '') + (query ? '?' + query : '');
+}
+function pageIdentity(row, fallback) {
+  if (!row) return 'id:' + String(fallback);
+  const text = str(row.text || row.output, 200000);
+  let hash = 0x811c9dc5; for (let i = 0; i < text.length; i++) { hash ^= text.charCodeAt(i); hash = Math.imul(hash, 0x01000193) >>> 0; }
+  return pageUrl(row.url) + '#' + hash.toString(16).padStart(8, '0');
+}
 function entityKey(fields, category) {
   const names = category === 'events' ? ['name','startsAt','place'] : category === 'products' ? ['model'] : ['name'];
   return names.map(name => normalize(fields[name]?.value)).join('|');
@@ -99,24 +123,36 @@ export function taskEvaluationSummary(state) {
   const primary = ranked.filter(row => row.score.total >= p.primaryScore && row.score.evidence >= p.evidenceScore).slice(0,p.primaryCount);
   const alternatives = ranked.filter(row => !primary.includes(row) && row.score.total >= p.alternativeScore).slice(0,p.alternatives);
   const uncovered = state.contract.coverage.filter(tag => !qualified.some(row => row.tags.includes(tag)));
+  // A batch is low-yield when it read new pages yet added no eligible entity
+  // (repeats of known entities included), or added few among many new ones.
+  // Resubmitting earlier evidence reads nothing, so it is never a sample.
+  const lowYield = row => (row.fresh ?? row.inspected) > 0 && row.newQualified === 0 ||
+    row.inspected >= p.batch.minimumInspected && row.newQualified / row.inspected < p.batch.lowYield;
   const recent = state.batches.slice(-p.batch.consecutive);
-  const diminishing = recent.length === p.batch.consecutive && recent.every(row => row.inspected >= p.batch.minimumInspected && row.newQualified / row.inspected < p.batch.lowYield);
+  const diminishing = recent.length === p.batch.consecutive && recent.every(lowYield);
   const missingCount = Math.max(0, state.contract.target.minimum - qualified.length);
-  const adjusted = !state.contract.explicitCount && qualified.length > 0 && diminishing && !!state.adjustment?.evidence?.length;
+  // Only a count in the user's words is fixed (2026-11-07 review P1-1).
+  // Otherwise the target is soft: a cited adjustment lowers it, and two
+  // low-yield batches in a row end the search with what is verified.
+  const soft = !state.contract.explicitCount;
+  const exhausted = soft && diminishing;
+  const adjusted = soft && qualified.length > 0 && (diminishing || !!state.adjustment?.evidence?.length);
   const gaps = [...(state.gaps || []), ...uncovered.map(tag => 'Coverage: ' + tag)];
-  const sufficient = !state.stale && (!missingCount || adjusted) && primary.length > 0 && !gaps.length;
+  const recommendable = primary.length > 0 || adjusted && alternatives.length > 0;
+  const sufficient = !state.stale && (!missingCount || adjusted) && recommendable && (!gaps.length || exhausted && adjusted);
   return { version: p.version, discovered: rows.length, read: rows.filter(row => row.status !== 'discovered').length,
     verified: qualified.length, recommended: primary.length, alternatives: alternatives.length,
     explicitTarget: state.contract.explicitCount?.value || null, target: state.contract.target,
     primary: primary.map(row => row.key), alternativeKeys: alternatives.map(row => row.key),
-    gaps: [...gaps, ...(missingCount && !adjusted ? [`${qualified.length}/${state.contract.target.minimum} eligible entities; ${missingCount} still missing.`] : []), ...(state.stale ? ['User amendments require a revised contract and revalidation.'] : [])],
-    stop: sufficient ? 'ready_for_review' : 'continue', diminishing, adjusted,
-    nextBatch: sufficient ? 0 : state.contract.explicitCount ? p.batch.explicitAdditional : p.batch.additional,
+    gaps: [...gaps, ...(missingCount && !adjusted ? [`${qualified.length}/${state.contract.target.minimum} eligible entities; ${missingCount} still missing.`] : []), ...(state.stale ? ['User amendments require a revised contract and revalidation.'] : []),
+      ...(exhausted && !sufficient ? ['Two batches in a row added nothing new: stop searching; deliver what is verified and state what is missing.'] : [])],
+    stop: sufficient ? 'ready_for_review' : 'continue', diminishing, adjusted, exhausted,
+    nextBatch: sufficient || exhausted ? 0 : state.contract.explicitCount ? p.batch.explicitAdditional : p.batch.additional,
     checkpoint: state.checkpoint === true, resourceUse: state.resourceUse || {},
   };
 }
 
-export function updateTaskEvaluation(previous, args, { goal = '', revision = 1, observations = [], resourceUse = {}, mode = 'standard' } = {}) {
+export function updateTaskEvaluation(previous, args, { goal = '', revision = 1, observations = [], resourceUse = {}, mode = TASK_EVALUATION_POLICY.defaultMode } = {}) {
   const p = TASK_EVALUATION_POLICY;
   const before = previous || { version: p.version, updates: 0, items: [], batches: [], gaps: [] };
   try {
@@ -127,12 +163,30 @@ export function updateTaskEvaluation(previous, args, { goal = '', revision = 1, 
     let state = { ...before, updates: before.updates + 1, invalidUpdates: 0, closed: before.updates + 1 >= p.maxUpdates, error: null, resourceUse,
       checkpoint: Number(resourceUse.elapsedMs) >= p.checkpoint.milliseconds || Number(resourceUse.toolCalls) >= p.checkpoint.calls };
     if (args.action === 'contract') {
-      if (before.contract && before.contract.revision === revision) fail('Contract is frozen for this user revision. Never lower the user goal.');
-      state.contract = contractFor({ ...data, mode }, goal, revision); state.stale = false; state.gaps = []; state.batches = []; state.adjustment = null;
+      // Only the user's own count is frozen (2026-11-07 review P1-1). A contract
+      // without one may be corrected in the same turn by adding requirements
+      // (a condition, field, coverage tag or a missed user count); it keeps its
+      // category and every recorded condition, field and coverage tag, so a
+      // revision can never shrink what a candidate must prove. The target
+      // still comes from the host's mode.
+      const frozen = before.contract && before.contract.revision === revision;
+      if (frozen && before.contract.explicitCount) fail('Contract is frozen for this user revision: the user stated the count. Never lower the user goal.');
+      const contract = contractFor({ ...data, mode }, goal, revision);
+      const kept = rule => contract.constraints.some(next => next.field === rule.field && next.op === rule.op && next.value === rule.value);
+      if (frozen && (contract.category !== before.contract.category || before.contract.constraints.some(rule => !kept(rule)) ||
+        before.contract.requiredFields.some(field => !contract.requiredFields.includes(field)) || before.contract.coverage.some(tag => !contract.coverage.includes(tag))))
+        fail('A revised contract may only add requirements: keep the category and every recorded condition, required field and coverage tag. Never lower the user goal.');
+      state.contract = contract; state.stale = false; state.gaps = []; state.batches = []; state.adjustment = null;
       state.items = before.items.map(row => qualify(row, state.contract));
     } else if (args.action === 'batch') {
       if (!state.contract || state.contract.revision !== revision || state.stale) fail('Initialize or revise the contract before recording a batch.');
-      const rows = state.items.map(row => ({ ...row })), inspected = new Set(), newlyQualified = new Set();
+      const rows = state.items.map(row => ({ ...row })), inspected = new Set(), newlyQualified = new Set(), fresh = new Set();
+      // Every page cited by an earlier batch, kept or not, by page identity:
+      // the same URL with the same body read again under another call or
+      // member is one page; another page of results or changed content is not.
+      const page = id => pageIdentity(observations.find(row => row.id === id), id);
+      const readBefore = new Set([...list(state.seenPages), ...state.items.flatMap(row => Object.values(row.fields).flatMap(field => field.evidence.map(ref => page(ref.id))))]);
+      const cites = new Set();
       if (!Array.isArray(data.items) || data.items.length > 30) fail('Submit at most 30 entity candidates per batch.');
       for (const raw of data.items) {
         if (!raw || !raw.fields || typeof raw.fields !== 'object') fail('Each candidate needs fields with cited values.');
@@ -141,21 +195,29 @@ export function updateTaskEvaluation(previous, args, { goal = '', revision = 1, 
         const key = entityKey(fields, state.contract.category);
         if (!key.replace(/\|/g,'')) fail('Entity identity is required.');
         const oldIndex = rows.findIndex(row => row.key === key), old = rows[oldIndex];
-        // Different merchants/pages merge into the same entity. Conflicts remain
-        // pending until the coordinator cites a new consistent set of fields.
-        const row = qualify({ key, fields: { ...(old?.fields || {}), ...fields }, match: integer(raw.match,0,40) ? raw.match : 0,
+        // Different merchants/pages merge into the same entity. Its first
+        // verified source is kept (normally the top-ranked result, read first);
+        // a later site only fills fields still unverified (2026-11-07 review
+        // P1-1). Conflicts stay pending until a submission no longer lists them.
+        const merged = { ...(old?.fields || {}) };
+        for (const [name, field] of Object.entries(fields)) if (!merged[name]?.verified) merged[name] = field;
+        const row = qualify({ key, fields: merged, match: integer(raw.match,0,40) ? raw.match : 0,
           diversity: integer(raw.diversity,0,10) ? raw.diversity : 0, reason: str(raw.reason),
           tags: list(raw.tags).map(x => str(x,120)).slice(0,12), conflicts: list(raw.conflicts).map(x=>str(x)).slice(0,12), excludeReason: str(raw.excludeReason) }, state.contract);
         if (!row.reason) { row.match = 0; row.diversity = 0; row.score.match = 0; row.score.diversity = 0; row.score.total = row.score.evidence + row.score.actionable; }
         if (!old && rows.length >= p.maxCandidates) fail('Candidate ledger is full. Deliver current scope or split the task.');
         if (oldIndex >= 0) rows[oldIndex] = row; else rows.push(row);
-        // Only newly read entities count as a batch sample. Failed, snippet-only
-        // and repeated reads cannot manufacture diminishing returns.
+        // `inspected` counts newly read entities; `fresh` counts candidates read
+        // from a page not cited before, repeats of known entities included.
+        // Failed, snippet-only and resubmitted reads are neither.
         if (!old && Object.values(row.fields).some(field => field.verified)) inspected.add(key);
+        if (Object.values(fields).some(field => field.verified && field.evidence.some(ref => !readBefore.has(page(ref.id))))) fresh.add(key);
+        for (const field of Object.values(fields)) if (field.verified) for (const ref of field.evidence) cites.add(page(ref.id));
         if (row.eligible && !old?.eligible) newlyQualified.add(key);
       }
       state.items = rows;
-      state.batches = [...state.batches, { inspected: inspected.size, newQualified: newlyQualified.size }].slice(-20);
+      state.batches = [...state.batches, { inspected: inspected.size, fresh: fresh.size, newQualified: newlyQualified.size }].slice(-20);
+      state.seenPages = [...new Set([...list(state.seenPages), ...cites])].slice(-400);
       state.gaps = list(data.gaps).map(x=>str(x)).filter(Boolean).slice(0,16);
       const adjustment = data.adjustment;
       if (adjustment) {

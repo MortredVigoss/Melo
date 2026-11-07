@@ -1,4 +1,6 @@
 import Foundation
+import CoreGraphics
+import ImageIO
 
 // Offline checks for the pure half of the phone web page tools: URL policy,
 // whitespace collapsing, 12 000-character paging, result/follow-up shapes and
@@ -188,6 +190,23 @@ func json(_ text: String) -> [String: Any] {
         assert(json(WebPageText.screenshotResult(url: "u", finalURL: "u", title: "t", status: 503))["status"] as? Int == 503)
         let longTitle = json(WebPageText.openResult(url: "u", finalURL: "u", title: String(repeating: "标", count: 30_000), description: String(repeating: "d", count: 30_000), text: "body", page: 1))
         assert(longTitle["ok"] as? Bool == true && (longTitle["title"] as? String)?.count == WebPageText.maxTitleCharacters && (longTitle["description"] as? String)?.count == WebPageText.maxDescriptionCharacters && longTitle["text"] as? String == "body")
+
+        // Screenshots go under a reply only when the user asked to see a page.
+        for asked in ["帮我截图看看这个网页", "截个图", "send me a screenshot of the page", "这个页面长什么样"] { assert(WebPageText.userWantsScreenshot(asked), asked) }
+        for plain in ["查一下墨尔本的咖啡节有什么咖啡", "打开这个链接读一下", "what is on this page"] { assert(!WebPageText.userWantsScreenshot(plain), plain) }
+        // A blank capture is never shown; a page with thin text or lines is.
+        func syntheticJPEG(width: Int, height: Int, draw: (CGContext) -> Void) -> Data {
+            let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+            context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1)); context.fill(CGRect(x: 0, y: 0, width: width, height: height)); draw(context)
+            let data = NSMutableData(), destination = CGImageDestinationCreateWithData(data, "public.jpeg" as CFString, 1, nil)!
+            CGImageDestinationAddImage(destination, context.makeImage()!, nil); CGImageDestinationFinalize(destination)
+            return data as Data
+        }
+        assert(ScreenshotQuality.isNearlyBlank(syntheticJPEG(width: 932, height: 4096) { _ in }), "an all-white page is blank")
+        assert(ScreenshotQuality.isNearlyBlank(syntheticJPEG(width: 932, height: 4096) { c in c.setFillColor(CGColor(red: 0.97, green: 0.97, blue: 0.97, alpha: 1)); c.fill(CGRect(x: 40, y: 400, width: 300, height: 200)) }), "faint shapes on white are still blank")
+        assert(!ScreenshotQuality.isNearlyBlank(syntheticJPEG(width: 932, height: 4096) { c in c.setFillColor(CGColor(red: 0.1, green: 0.1, blue: 0.1, alpha: 1)); for row in stride(from: 100, to: 4000, by: 40) { c.fill(CGRect(x: 40, y: row, width: 800, height: 3)) } }), "lines of thin text are not blank")
+        assert(!ScreenshotQuality.isNearlyBlank(syntheticJPEG(width: 1280, height: 800) { c in c.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 1)); c.fill(CGRect(x: 0, y: 0, width: 1280, height: 300)) }), "a dark header is not blank")
+        assert(!ScreenshotQuality.isNearlyBlank(Data("not an image".utf8)), "an unreadable image is kept rather than silently dropped")
 
         print("Swift web page tool tests passed: URL policy incl. private hosts and literal-address bypasses, page number, pixel caps, screenshot budget/demotion, status and bounded title, whitespace, 12k paging, result and follow-up shapes, three protocol definitions, summaries")
     }

@@ -102,8 +102,14 @@ export function completionObservation({ id, name, ok, executed, output = '', dat
     : name === 'web_search' || name?.startsWith('mcp:') ? sources : [];
   for (const [index, source] of reads.slice(0, 16).entries()) {
     if (!url(source.url)) continue;
+    // What kind of source this is and how much of its text was kept are
+    // separate facts (2026-11-07 review): cutting a long text marks it
+    // truncated and turns only a read page into a partial read. A provider
+    // answer, snippet or other non-page text of any length never becomes one.
+    const text = String(source.text || source.content || ''), truncated = text.length > 16000;
+    const kind = source.reading || 'extracted';
     rows.push({ id: `${rows[0].id}:source:${index}`, type: 'source', ok: true, executed: true,
-      url: source.url, text: String(source.text || source.content || '').slice(0, 16000), reading: source.reading === 'snippet' || source.reading === 'unread' ? source.reading : String(source.text || source.content || '').length > 16000 ? 'partial' : source.reading || 'extracted' });
+      url: source.url, text: text.slice(0, 16000), reading: kind === 'extracted' && truncated ? 'partial' : kind, ...(truncated ? { truncated: true } : {}) });
   }
   return rows;
 }
