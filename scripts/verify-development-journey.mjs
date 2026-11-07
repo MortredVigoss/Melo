@@ -11,6 +11,7 @@ import { chromium } from 'playwright-core';
 import { launchTestChrome } from '../src/testSupport/testChrome.js';
 import { createGit } from '../src/development/git.js';
 import { digest } from '../src/development/runner.js';
+import { updateStateAtomically } from '../src/state/stateStore.js';
 
 const root = await mkdtemp(join(tmpdir(), 'melo-dev-journey-')), home = join(root, 'home'), repo = join(root, 'repo');
 await mkdir(repo); await mkdir(home);
@@ -40,6 +41,13 @@ const model = createServer(async (request, response) => {
   response.end(`data: ${JSON.stringify({ id: 'fixture', model: body.model, choices: [{ index: 0, delta: { content }, finish_reason: null }] })}\n\ndata: ${JSON.stringify({ id: 'fixture', model: body.model, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 10, completion_tokens: 10 } })}\n\ndata: [DONE]\n\n`);
 });
 model.listen(0, '127.0.0.1'); await once(model, 'listening');
+// The implementer and reviewer are Agents the user created (the built-in lanes
+// are not offered since 2026-11-07); each keeps the capabilities its job needs.
+await updateStateAtomically(state => {
+  state.agentProfiles['custom-builder'] = { ...state.agentProfiles.builder, id: 'custom-builder', name: '实施 Agent', isCustom: true };
+  state.agentProfiles['custom-reviewer'] = { ...state.agentProfiles.reviewer, id: 'custom-reviewer', name: '审查 Agent', isCustom: true };
+  return state;
+}, { home });
 await writeFile(join(home, 'config.json'), JSON.stringify({ authMode: 'api-key', apiKey: 'fixture-only', baseUrl: `http://127.0.0.1:${model.address().port}/v1`, model: 'fixture', apiProtocol: 'chat-completions', toolCalling: 'legacy', modelCatalogs: { 'api-key': ['fixture'] } }));
 const child = spawn(process.execPath, ['src/server.js', '--host', '127.0.0.1', '--port', '0'], { cwd: process.cwd(), env: { ...process.env, MELO_HOME: home, MELO_TEST_MODE: '1', MELO_FUNCTION_CALLING: 'legacy', MELO_MEMORY_RUNTIME: '0', MELO_DREAMING_ENABLED: '0', MELO_MOCK_RESPONSE: '', MELO_API_KEY: '', OPENAI_API_KEY: '', MELO_BASE_URL: '', OPENAI_BASE_URL: '', MELO_MODEL: '' }, stdio: ['ignore', 'pipe', 'pipe'] });
 const closed = once(child, 'exit'); let log = '', browser;
@@ -60,7 +68,8 @@ try {
   await page.locator('[data-development-panel] > details > summary').click();
   const form = page.locator('[data-development-form]');
   await form.locator('[name=repository]').fill(repo); await form.locator('[name=goal]').fill('Make the candidate return 2 and preserve the original repository');
-  await form.locator('[name=agentId]').selectOption('builder'); await form.locator('[name=reviewerId]').selectOption('reviewer');
+  await form.locator('[name=agentId]').selectOption('custom-builder'); await form.locator('[name=reviewerId]').selectOption('custom-reviewer');
+  assert.deepEqual(await form.locator('[name=agentId] option').evaluateAll(options => options.map(option => option.value).filter(Boolean).filter(value => ['research', 'builder', 'reviewer'].includes(value))), [], 'the built-in lanes are not offered');
   await form.locator('[name=commands]').fill('[["node","check.cjs"]]');
   await form.locator('[name=image]').fill('node:22-bookworm');
   await page.locator('[data-action=development-create]').click();
