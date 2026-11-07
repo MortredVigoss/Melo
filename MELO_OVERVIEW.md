@@ -96,6 +96,7 @@
   - 共享 `shared/agent/goalReview.js` 生成每次核验的有限视图（结论、原因代码、最多 12 条要求的类型、状态和引用证据），由 goal 的只读动作 `reviewSnapshot` 取出；
   - 三端在 `goal-check:N` 阶段附带 `goalReview`，两个场景 reducer 都会规范化；它不进入 v1 同步；
   - 投影是 `sceneGoalReview` / `goalGate`，以及 `traceList` 的 `review:*`；
+  - 证据编号沿用核心的上限（16 个，每个最长 256 字符），打开证据时优先精确匹配；没有分派的任务在任务空间里用 `checked` 布局；
   - 没有任务合同时，交付闸门、证据热力、合同覆盖、任务合同四块显示核验。
   - 新增浏览器可加载的共享模块时，要同时登记三处：
     - `src/server.js` 白名单；
