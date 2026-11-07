@@ -314,3 +314,26 @@ test('a review survives the desktop reducer and the portable reducer the same wa
   assert.equal(goalGate(sceneGoalReview(portable)).unavailable, 1);
 });
 
+test('cited evidence opens the call with exactly that id; a prefixed id only when it is the only one', () => {
+  const longId = 'call_' + 'x'.repeat(90);
+  const scene = createExecutionScene({ runId: 'evidence', chatId: 'c', query: 'q' });
+  op(scene, 'job-1:call-1', 'search', 'fetch_url', 'completed', { input: 'https://fixture.invalid/member' });
+  op(scene, 'call-1', 'search', 'fetch_url', 'completed', { input: 'https://fixture.invalid/lead' });
+  op(scene, 'job-1:dup', 'search', 'fetch_url', 'completed'); op(scene, 'job-2:dup', 'search', 'fetch_url', 'completed');
+  op(scene, 'job-1:' + longId, 'search', 'fetch_url', 'completed');
+  stage(scene, 'goal-check:1', 'completed', { goalReview: { v: 1, decision: 'complete', requirements: [{ text: '读到的页面', kind: 'external_fact', status: 'met', evidenceIds: ['call-1', 'dup', longId] }] } });
+  assert.equal(longId.length, 95);
+  assert.deepEqual(traceList(scene, 'review:req-0').rows.map(row => [row.kind, row.id]), [['operation', 'call-1'], ['evidence', 'dup'], ['operation', 'job-1:' + longId]],
+    'the exact call wins over job-1:call-1; two job-N:dup calls are not guessed between; a long id is kept whole and still matches');
+});
+
+test('a task checked without any assignment is listed by its check, not shown as an assignment board', async () => {
+  const { sceneHasBoard } = await import('./executionBoard.js');
+  const scene = createExecutionScene({ runId: 'checked', chatId: 'c', query: '12 * 7' });
+  op(scene, 'calc', 'compute', 'calculator', 'completed', { expression: '12 * 7', result: '84' });
+  stage(scene, 'goal-check:1', 'completed', { goalReview: { v: 1, decision: 'complete', reason: 'GOAL_DELIVERY_SUPPORTED', requirements: [{ text: '乘积', kind: 'external_fact', status: 'met', evidenceIds: ['calc'] }] } });
+  assert.equal(sceneHasBoard(scene), false, 'no assignment, no evaluation: no assignment board');
+  assert.equal(goalGate(sceneGoalReview(scene)).met, 1);
+  assert.deepEqual(traceList(scene, 'review:req-0').rows.map(row => row.id), ['calc']);
+});
+

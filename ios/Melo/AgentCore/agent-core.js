@@ -1562,7 +1562,9 @@ modules["shared/agent/goalReview.js"] = (() => {
 //
 // Kept free of imports so the phone scene bundle can carry it.
 
-const GOAL_REVIEW_LIMITS = Object.freeze({ requirements: 12, text: 160, evidence: 8, id: 80, explanation: 240 });
+// Requirements and evidence ids keep the checker's own bounds (goal.js GOAL_LIMITS.requirements
+// and ids(): 16 ids of up to 256 characters), so a cited id always still matches its call.
+const GOAL_REVIEW_LIMITS = Object.freeze({ requirements: 12, text: 160, evidence: 16, id: 256, explanation: 240 });
 const GOAL_REVIEW_DECISIONS = Object.freeze(['complete', 'deliver', 'continue', 'needs_user', 'partial']);
 const GOAL_REQUIREMENT_KINDS = Object.freeze(['response', 'context', 'constraint', 'external_fact', 'external_effect']);
 const GOAL_REQUIREMENT_STATES = Object.freeze(['met', 'missing', 'unavailable']);

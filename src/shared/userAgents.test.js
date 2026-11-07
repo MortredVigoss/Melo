@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { RETIRED_AGENT_IDS, isRetiredAgentId, isUserFacingAgent, userFacingAgents } from './userAgents.js';
 
 const stored = [
@@ -32,3 +33,14 @@ test('filtering never mutates the stored list, so old chats and settings keep th
   assert.equal(isRetiredAgentId('builder'), true);
   assert.equal(isRetiredAgentId(undefined), false);
 });
+
+test('phone starters synced to the desktop are hidden there too, and both hosts keep one list', () => {
+  const synced = [{ id: 'main' }, { id: 'writer', name: '写作伙伴' }, { id: 'analyst', name: '分析助手' }, { id: 'custom-3', name: '自定义' }];
+  assert.deepEqual(userFacingAgents(synced).map(agent => agent.id), ['main', 'custom-3']);
+  assert.equal(isRetiredAgentId('writer'), true); assert.equal(isRetiredAgentId('analyst'), true);
+  const swift = readFileSync(new URL('../../ios/Melo/AgentProfile.swift', import.meta.url), 'utf8');
+  const literal = /static let retiredBuiltInIDs: Set<String> = \[([^\]]*)\]/.exec(swift);
+  assert.ok(literal, 'the phone list is declared as a literal');
+  assert.deepEqual([...literal[1].matchAll(/"([^"]+)"/g)].map(m => m[1]).sort(), [...RETIRED_AGENT_IDS].sort());
+});
+

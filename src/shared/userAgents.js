@@ -1,10 +1,12 @@
 // Agents people see and talk to (user decision, 2026-11-07): Melo's one
 // default Agent plus the Agents the user creates. The built-in specialist
-// lanes of the first desktop (research / builder / reviewer) stay stored, so
-// old chats and settings keep working, but they are no longer offered:
-// division of labor happens inside every Agent through internal routing
-// (shared/agent/internalRouting.js), which no list shows as Agents.
-export const RETIRED_AGENT_IDS = Object.freeze(['research', 'builder', 'reviewer']);
+// lanes of the first desktop (research / builder / reviewer) and the phone's
+// extra starters (writer / analyst, which sync in as workspace records) stay
+// stored, so old chats and settings keep working, but they are no longer
+// offered: division of labor happens inside every Agent through internal
+// routing (shared/agent/internalRouting.js), which no list shows as Agents.
+// Phone twin: ios/Melo/AgentProfile.swift retiredBuiltInIDs (a test keeps them equal).
+export const RETIRED_AGENT_IDS = Object.freeze(['research', 'builder', 'reviewer', 'writer', 'analyst']);
 
 export const isUserFacingAgent = agent => typeof agent?.id === 'string' && !!agent.id && !RETIRED_AGENT_IDS.includes(agent.id);
 

@@ -38,7 +38,7 @@
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
-      "detected": 39,
+      "detected": 40,
       "unannotated": []
     }
   },
@@ -694,7 +694,8 @@
       },
       "implicit": [
         "source-tests-cross-module",
-        "source-tests-self"
+        "source-tests-self",
+        "source-tests-user-agents"
       ],
       "notes": [
         "修改入口：src/services/agent/agentMutations.js；桌面 Agent 设置页（P2b）：desktop-ui/features/agents/（controller.js 动作、草稿、保存与自动保存；view.js 渲染），app.js 只保留跨页导航 select-agent-profile 与 render() 里的捕获/恢复调用。",
@@ -4569,7 +4570,8 @@
         "gen-ios-scene",
         "gen-visual-palette",
         "served-shared-modules",
-        "source-tests-cross-module"
+        "source-tests-cross-module",
+        "source-tests-user-agents"
       ],
       "notes": [
         "src/state/stateStore.js 事务、src/runtime/requestScope.js 入口身份、src/http/routeRegistry.js 声明式路由；src/desktopStore.js 为兼容入口。"
@@ -6174,6 +6176,21 @@
       "features": [
         "chat",
         "iphone"
+      ]
+    },
+    {
+      "id": "source-tests-user-agents",
+      "kind": "source-reading-test",
+      "reads": [
+        "ios/Melo/AgentProfile.swift"
+      ],
+      "tests": [
+        "src/shared/userAgents.test.js"
+      ],
+      "note": "桌面与 iPhone 的隐藏 Agent 名单必须一致（retiredBuiltInIDs 字面量）",
+      "features": [
+        "agents",
+        "platform"
       ]
     },
     {

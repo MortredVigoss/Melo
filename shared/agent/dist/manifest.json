@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "sha256": "48936b9ccb4f9b500ef415026703bd30edcefe4f0e1e77f83534151c59ce1c56",
+  "sha256": "a024b8055892ccd71273dffa1495bf369eb0dcdd92ca1710394c7d3525906f0d",
   "sources": {
     "shared/agent/index.js": "d6f84581b2efec174e261b9764427e8d11d3d59ab9df737e0b2396922f0e06ba",
     "shared/agent/taskEvaluation.js": "df881fba5c840a316e9743bd8936907565b36f7f9ca42f7813369cccaf8a25bb",
@@ -21,7 +21,7 @@
     "shared/agent/workflows.js": "2b93d6e0d1c35fcda4224ea5f5630220ed6d4bc764912c7a3a865f25500321a3",
     "shared/agent/organizer.js": "72c3cd0e68301f59d7da791716d64ff3f8fc269c9c254b80986247f9ea4e1920",
     "shared/agent/phonePolicy.js": "b8f2309110a6c3e2ec30ec9de9be61b9908fd548526ff9eb2a7a0c3619981ef2",
-    "shared/agent/goalReview.js": "9a40c1ea8344295e448b7a73ac7cdcfb48fb0c65bb0b58b72967d226076b7ab0",
+    "shared/agent/goalReview.js": "60e5a3b203ac927250e18d76b985456a37b3071830761baf657a7f88fa9b298c",
     "shared/agent/runtimeMessages.js": "6092975776c116b95b2e4f3eb53a29df7c6fa0043672323dc16ebcb3763b7a94",
     "shared/agent/locale.js": "e3da97be8c76698536b398dab786bcee42011da35da415d83a24cfb791d12b44",
     "shared/agent/imageLanguage.js": "2c2daaf60ec60aa8c34d235999af577816831e1143083c1c03b8d9e915488b7c",

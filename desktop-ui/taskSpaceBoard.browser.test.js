@@ -75,12 +75,20 @@ test('war room shows only recorded facts, traces every number, opens by itself, 
       requirements: [requirement('明天的气温', 'external_fact', 'met', ['job-1:forecast']), requirement('下雨的时段', 'external_fact', 'met', ['forecast', 'hourly']), requirement('用中文回答', 'response', 'met', [])] } },
   ]) weather.event(row);
   await weather.finish('completed', { id: 'weather-answer' });
+  // A calculation the lead did itself and checked once: no assignment at all.
+  const checked = createExecutionRecorder({ home, runId: 'checked-run', chatId: 'checked-chat' }, '12 乘 7 是多少');
+  checked.scene.startedAt = at(0);
+  checked.event({ kind: 'operation', id: 'calc', module: 'compute', name: 'calculator', status: 'completed', expression: '12 * 7', result: '84' });
+  checked.event({ kind: 'pipeline', id: 'goal-check:1', status: 'completed', output: '乘积已算出', goalReview: { v: 1, decision: 'complete', reason: 'GOAL_DELIVERY_SUPPORTED', corrections: 0, correctionLimit: 2,
+    requirements: [requirement('12 乘 7 的结果', 'external_fact', 'met', ['calc'])] } });
+  await checked.finish('completed', { id: 'checked-answer' });
   await new Promise(r => setTimeout(r, 300));
   await writeFile(join(home, 'desktop/state.json'), JSON.stringify({ chats: [
     { id: 'board-chat', title: 'board', messages: [{ id: 'answer', role: 'assistant', content: 'ok', metadata: { runId: 'board-run' } }] },
     { id: 'plain-chat', title: 'plain', messages: [{ id: 'plain-answer', role: 'assistant', content: '4', metadata: { runId: 'plain-run' } }] },
-    { id: 'weather-chat', title: 'weather', messages: [{ id: 'weather-answer', role: 'assistant', content: '24 度', metadata: { runId: 'weather-run' } }] }],
-    chatRuns: [{ runId: 'board-run', chatId: 'board-chat', status: 'completed', createdAt: at(0) }, { runId: 'plain-run', chatId: 'plain-chat', status: 'completed', createdAt: at(0) }, { runId: 'weather-run', chatId: 'weather-chat', status: 'completed', createdAt: at(0) }] }));
+    { id: 'weather-chat', title: 'weather', messages: [{ id: 'weather-answer', role: 'assistant', content: '24 度', metadata: { runId: 'weather-run' } }] },
+    { id: 'checked-chat', title: 'checked', messages: [{ id: 'checked-answer', role: 'assistant', content: '84', metadata: { runId: 'checked-run' } }] }],
+    chatRuns: [{ runId: 'board-run', chatId: 'board-chat', status: 'completed', createdAt: at(0) }, { runId: 'plain-run', chatId: 'plain-chat', status: 'completed', createdAt: at(0) }, { runId: 'weather-run', chatId: 'weather-chat', status: 'completed', createdAt: at(0) }, { runId: 'checked-run', chatId: 'checked-chat', status: 'completed', createdAt: at(0) }] }));
   let browser;
   const child = spawn(process.execPath, ['src/server.js', '--host', '127.0.0.1', '--port', '0'], { cwd: resolve('.'), env: { ...process.env, MELO_HOME: home, MELO_TEST_MODE: '1', MELO_DREAMING_ENABLED: '0', MELO_MEMORY_RUNTIME: '0' }, stdio: ['ignore', 'pipe', 'pipe'] });
   const exited = once(child, 'exit');
@@ -102,7 +110,7 @@ test('war room shows only recorded facts, traces every number, opens by itself, 
       import * as panel from '/executionPanel.js'; window.panel = panel;
       const chat = new URL(location.href).searchParams.get('chat');
       document.querySelector('#fixture').innerHTML = panel.renderExecutionPanel();
-      const ids = { 'plain-chat': ['plain-answer', 'plain-run'], 'weather-chat': ['weather-answer', 'weather-run'] }[chat] || ['answer', 'board-run'];
+      const ids = { 'plain-chat': ['plain-answer', 'plain-run'], 'weather-chat': ['weather-answer', 'weather-run'], 'checked-chat': ['checked-answer', 'checked-run'] }[chat] || ['answer', 'board-run'];
       panel.syncExecutionPanel({ chat: { id: chat, messages: [{ id: ids[0], role: 'assistant', content: 'x', metadata: { runId: ids[1] } }] }, autoCollapse: new URL(location.href).searchParams.has('auto'), leadName: 'Fixture Lead' });
       window.fixtureReady = true;
     </script></body></html>` }));
@@ -301,6 +309,16 @@ test('war room shows only recorded facts, traces every number, opens by itself, 
     assert.equal(await count(), 2, 'both checks are listed');
     await back();
     await page.screenshot({ path: join(proof, 'no-contract-review.png') });
+    assert.deepEqual(errors, []);
+    // Checked without any assignment: regions and resources stay, the check joins them, no empty assignment panel.
+    await open('checked-chat');
+    await band.locator('[data-cell="gate"] .war-gate svg').waitFor();
+    assert.equal(await band.getAttribute('data-mode'), 'checked');
+    assert.deepEqual(await band.locator('.war-cell').evaluateAll(cells => cells.map(cell => cell.dataset.cell)), ['log', 'regions', 'resources', 'gate', 'contract']);
+    assert.equal(await band.locator('[data-cell="gate"] .war-gate text').textContent(), '1/1');
+    assert.match(await band.locator('[data-cell="contract"]').innerText(), /第 1 次 · 核验通过/);
+    assert.equal(await band.locator('.war-empty').count(), 0, 'no empty panel');
+    await page.screenshot({ path: join(proof, 'checked-without-assignment.png') });
     assert.deepEqual(errors, []);
     // Reduced motion switched off resumes drawing by itself (a history view, no new data).
     await open('board-chat');

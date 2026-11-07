@@ -157,7 +157,10 @@ export function traceList(scene, key, { snapshot = sceneEvaluation(scene).snapsh
     if (arg === 'requirements') return counted(requirements.map(requirementRow), requirements.length + (goal.review?.omitted || 0));
     const match = /^req-(\d{1,2})$/.exec(arg), row = match ? requirements[Number(match[1])] : null;
     if (row) return done(row.evidenceIds.map(id => {
-      const op = operations.find(item => item.id === id || String(item.id).endsWith(':' + id));
+      // A recorded call with exactly this id wins; a host-prefixed id
+      // (job-1:call-1 for call-1) counts only when it is the only one.
+      const exact = operations.find(item => item.id === id), prefixed = exact ? [] : operations.filter(item => String(item.id).endsWith(':' + id));
+      const op = exact || (prefixed.length === 1 ? prefixed[0] : null);
       return op ? operationRow(op, scene) : { kind: 'evidence', id, text: id };
     }));
     return done([]);

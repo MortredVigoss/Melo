@@ -1343,6 +1343,17 @@
       "note": "运行源码与隔离 bundle 对照，并校验逐源文件散列和 iOS 原样打包"
     },
     {
+      "id": "source-tests-user-agents",
+      "kind": "source-reading-test",
+      "reads": [
+        "ios/Melo/AgentProfile.swift"
+      ],
+      "tests": [
+        "src/shared/userAgents.test.js"
+      ],
+      "note": "桌面与 iPhone 的隐藏 Agent 名单必须一致（retiredBuiltInIDs 字面量）"
+    },
+    {
       "id": "tooling-ios-tests",
       "kind": "source-reading-test",
       "reads": [

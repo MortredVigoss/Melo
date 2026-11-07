@@ -286,8 +286,11 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
   const head = (c, title, meta = '') => { if (c.title.textContent !== title) c.title.textContent = title; if (c.meta.innerHTML !== meta) { c.meta.innerHTML = meta; c.meta.title = c.meta.textContent; } };
   const fill = (c, html) => { if (c.html === html) return; const top = c.body.scrollTop; c.body.innerHTML = html; c.html = html; c.list = null; c.rows.clear(); c.body.scrollTop = top; };
   function layout() {
-    const board = sceneHasBoard(scene), wanted = detail ? ['log', 'detail'] : board ? ['log', 'dispatch', 'gate', 'heat', 'coverage', 'contract'] : ['log', 'regions', 'resources'];
-    const key = `${detail ? 'detail' : board ? 'board' : 'plain'}`;
+    // A task checked without any assignment (review 2026-11-07) keeps regions
+    // and resources and adds its delivery check: no empty assignment panel.
+    const board = sceneHasBoard(scene), checked = !board && sceneGoalReview(scene).checks > 0;
+    const wanted = detail ? ['log', 'detail'] : board ? ['log', 'dispatch', 'gate', 'heat', 'coverage', 'contract'] : checked ? ['log', 'regions', 'resources', 'gate', 'contract'] : ['log', 'regions', 'resources'];
+    const key = `${detail ? 'detail' : board ? 'board' : checked ? 'checked' : 'plain'}`;
     cell('log').el.dataset.wide = String(key === 'plain');
     if (key === mode && wanted.every(id => cells.get(id)?.el.parentNode === band)) return;
     mode = key; band.dataset.mode = key; band.replaceChildren(...wanted.map(id => cell(id).el));
@@ -505,7 +508,7 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
     renderTop(); layout(); renderLog();
     if (detail) renderDetail();
     else if (sceneHasBoard(scene)) { const snapshot = sceneEvaluation(scene).snapshot; renderDispatch(); renderGate(snapshot); renderHeat(snapshot); renderCoverage(snapshot); renderContract(snapshot); }
-    else { renderRegions(); renderResources(); }
+    else { renderRegions(); renderResources(); if (sceneGoalReview(scene).checks) { const snapshot = sceneEvaluation(scene).snapshot; renderGate(snapshot); renderContract(snapshot); } }
     renderStatus(); renderFallback();
     gpu?.setStill(!!ctx.still); gpu?.update(scene);
   }
