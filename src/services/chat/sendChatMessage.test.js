@@ -187,3 +187,33 @@ test('a reply that finishes never pulls the view back after the user moved on', 
     if (previous === undefined) delete process.env.MELO_MOCK_RESPONSE; else process.env.MELO_MOCK_RESPONSE = previous;
   }
 });
+
+// Same rule on the failure branch: the failure reply is saved, and the view,
+// chat and mode the user picked while the reply was streaming all stay.
+test('a reply that fails after the user moved on saves the failure and keeps their navigation', async () => {
+  const { updateStateAtomically, loadState } = await import('../../state/stateStore.js');
+  await updateStateAtomically(state => {
+    if (!state.chats.some(chat => chat.id === 'desk-chat-2')) state.chats.push({ id: 'desk-chat-2', title: 'desk failure', mode: 'chat', projectId: null, agentId: 'main', source: 'desktop', messages: [], sessionMemory: [] });
+    return state;
+  });
+  const previous = process.env.MELO_MOCK_RESPONSE;
+  process.env.MELO_MOCK_RESPONSE = 'a partial answer that the provider drops halfway';
+  let moved = false;
+  try {
+    const outcome = await sendChatMessage({ chatId: 'desk-chat-2', content: 'please answer', mode: 'chat', skipBootstrap: true,
+      onDelta: async () => {
+        if (moved) return;
+        moved = true;
+        await updateStateAtomically(state => { state.settings.activeView = 'settings'; state.settings.selectedChatId = 'tg-chat-1'; state.settings.activeMode = 'code'; return state; });
+        throw Object.assign(new Error('provider dropped the stream'), { code: 'PROVIDER_ERROR' });
+      } }).catch(error => ({ error }));
+    assert.ok(moved, 'the reply started streaming before it failed');
+    const state = await loadState();
+    const failure = state.chats.find(chat => chat.id === 'desk-chat-2').messages.at(-1);
+    assert.equal(failure.role, 'assistant', `the failure reply was saved (${outcome.error?.message || 'resolved'})`);
+    assert.ok(failure.metadata?.executionError, 'it is marked as a failed execution');
+    assert.deepEqual([state.settings.activeView, state.settings.selectedChatId, state.settings.activeMode], ['settings', 'tg-chat-1', 'code'], 'view, chat and mode stay where the user put them');
+  } finally {
+    if (previous === undefined) delete process.env.MELO_MOCK_RESPONSE; else process.env.MELO_MOCK_RESPONSE = previous;
+  }
+});
