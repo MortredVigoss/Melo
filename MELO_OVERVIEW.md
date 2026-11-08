@@ -102,6 +102,7 @@
     - `src/server.js` 白名单；
     - `ios/scripts/build-scene.py` 的 `paths`；
     - 读源文件的测试要登记到 `architecture/module-annotations.json`。
+- **回复保存不再改界面**：`sendChatMessage` 只在发送开始时选中对话；回复保存时（成功或失败）不再把 `activeView` 和 `selectedChatId` 拉回这段对话（`6d3732c7`）。
 - **未做**：
   - Android 核验视图只有编译、JVM、Lint，没有在模拟器上跑过；
   - 真实模型探针未跑。
