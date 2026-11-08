@@ -109,8 +109,12 @@ test('chat composer grows from two to four visual lines and scrolls without losi
     await composer.dispatchEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true });
     assert.equal(await composer.inputValue(), '中文输入\n');
     await page.setViewportSize({ width: 390, height: 844 }); await setLines(12);
+    // The workspace re-lays out on the next frame after a resize (ResizeObserver,
+    // then its transition); measure once it has settled, never mid-resize.
+    // 2026-11-08: under release load a one-shot measure caught the 1600-wide layout.
+    await page.waitForFunction(() => { const r = document.querySelector('[data-form=composer] button[type=submit]')?.getBoundingClientRect(); return !!r && r.x >= 0 && r.right <= 390 && r.bottom <= 844; }, null, { timeout: 5000 }).catch(() => {});
     const send = await page.locator('[data-form=composer] button[type=submit]').boundingBox();
-    assert.ok(send.x >= 0 && send.x + send.width <= 390 && send.y + send.height <= 844);
+    assert.ok(send.x >= 0 && send.x + send.width <= 390 && send.y + send.height <= 844, JSON.stringify(send));
     await page.screenshot({ path: join(proof, 'narrow-four-lines.png') });
     // The compact image options open as a popover, keeping the reply area stable.
     const heightBeforeOptions = (await metrics()).readingHeight;
