@@ -437,11 +437,9 @@ async function executeChatTurn({
           latestProject.updatedAt = nowIso();
         }
       }
-      if (!background) {
-        latestState.settings.selectedChatId = chat.id;
-        latestState.settings.activeMode = chat.mode;
-        latestState.settings.activeView = 'chat';
-      }
+      // The send selected this chat when it started; finishing leaves where
+      // the user went meanwhile alone (2026-11-08: a finished reply pulled
+      // an open settings page back to the chat).
       return latestState;
     }, { home });
 
@@ -558,11 +556,9 @@ async function executeChatTurn({
       }
     }
 
-    if (!background) {
-      latestState.settings.selectedChatId = chat.id;
-      latestState.settings.activeMode = chat.mode;
-      latestState.settings.activeView = 'chat';
-    }
+    // The send selected this chat when it started; finishing leaves where the
+    // user went meanwhile alone (2026-11-08: a finished reply pulled an open
+    // settings page or another chat back to this one).
     return latestState;
   }, { home });
 

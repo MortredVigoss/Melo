@@ -153,3 +153,37 @@ test('sendChatMessage remote background path: imports + workspace fallback resol
     `expected non-empty assistant content, got: ${JSON.stringify(result.assistantMessage.content)}`,
   );
 });
+
+// 2026-11-08 (settings browser flake): a finished reply re-selected its chat
+// and forced activeView back to 'chat', undoing where the user had gone while
+// the reply was still being written. The send selects its chat when it
+// starts; finishing leaves the user's later navigation alone.
+test('a reply that finishes never pulls the view back after the user moved on', async () => {
+  const { updateStateAtomically, loadState } = await import('../../state/stateStore.js');
+  await updateStateAtomically(state => {
+    if (!state.chats.some(chat => chat.id === 'desk-chat-1')) state.chats.push({ id: 'desk-chat-1', title: 'desk', mode: 'chat', projectId: null, agentId: 'main', source: 'desktop', messages: [], sessionMemory: [] });
+    return state;
+  });
+  const previous = process.env.MELO_MOCK_RESPONSE;
+  process.env.MELO_MOCK_RESPONSE = 'fixture response written in several chunks';
+  let moved = false, selectedAtStart = null;
+  try {
+    const result = await sendChatMessage({ chatId: 'desk-chat-1', content: 'hello there', mode: 'chat', skipBootstrap: true,
+      onDelta: async () => {
+        if (moved) return;
+        moved = true;
+        selectedAtStart = (await loadState()).settings;
+        // The user opens settings and another chat while the reply is still streaming.
+        await updateStateAtomically(state => { state.settings.activeView = 'settings'; state.settings.selectedChatId = 'tg-chat-1'; return state; });
+      } });
+    assert.ok(moved, 'the reply streamed, so the user had time to move');
+    assert.equal(selectedAtStart.activeView, 'chat', 'sending selected its chat when it started');
+    assert.equal(selectedAtStart.selectedChatId, 'desk-chat-1');
+    assert.ok(result.assistantMessage?.content, 'the reply was saved');
+    const { settings } = await loadState();
+    assert.equal(settings.activeView, 'settings', 'finishing kept the view the user opened');
+    assert.equal(settings.selectedChatId, 'tg-chat-1', 'and the chat the user switched to');
+  } finally {
+    if (previous === undefined) delete process.env.MELO_MOCK_RESPONSE; else process.env.MELO_MOCK_RESPONSE = previous;
+  }
+});
