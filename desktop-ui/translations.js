@@ -4,6 +4,9 @@ export { INTERFACE_TERMS as interfaceTermKeys } from './interfaceLanguages.js';
 // Authored interface copy only. User messages, names and provider output never enter this catalog.
 // Columns: Chinese source / English / Japanese / Korean / Spanish.
 const rows = [
+["回复草稿 · 核验完成后保存", "Reply draft · saved after verification", "返信の下書き · 確認後に保存", "답변 초안 · 검증 후 저장", "Borrador · se guarda tras verificar"],
+["实际运行 {time}", "Active {time}", "実行 {time}", "실행 {time}", "Ejecución {time}"],
+["暂停等待 {time}", "Paused {time}", "一時停止 {time}", "일시 중지 {time}", "En pausa {time}"],
 // War room (layout A, 2026-11-06).
 // War room delivery states and exact totals (layout A, C8, 2026-11-06).
 ["五个区域", "The five regions", "5 つの領域", "다섯 영역", "Las cinco regiones"],

@@ -36,6 +36,7 @@ import SwiftUI
                     if ProcessInfo.processInfo.arguments.contains("-melo-verify-connections") { LocalSettingsVerification.connections(reopened: false) }
                     if ProcessInfo.processInfo.arguments.contains("-melo-verify-connections-reopened") { LocalSettingsVerification.connections(reopened: true) }
                     if ProcessInfo.processInfo.arguments.contains("-melo-verify-local-settings") { await LocalSettingsVerification.run() }
+                    if ProcessInfo.processInfo.arguments.contains("-melo-verify-webpage-latency") { await WebPageVerification.run() }
                     if ProcessInfo.processInfo.arguments.contains("-melo-verify-local-files") { await LocalFileVerification.run() }
                     if ProcessInfo.processInfo.arguments.contains("-melo-verify-conversation") { await ConversationVerification.run() }
                     if ProcessInfo.processInfo.arguments.contains("-melo-continuity-seed") { await ReplyBackgroundVerification.coldLaunch(resume: false) }

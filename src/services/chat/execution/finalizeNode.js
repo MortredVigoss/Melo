@@ -40,7 +40,7 @@ export function createFinalizeNode(turn) {
     let verificationRecord = null;
 
     if (shouldVerify) {
-      const verification = await verifyUncertainClaim({
+      const verification = graphState.goalVerification || await verifyUncertainClaim({
         userMessage: latestUserMessage,
         assistantReply: parsed.cleanReply,
         uncertainClaim: parsed.uncertainClaim,

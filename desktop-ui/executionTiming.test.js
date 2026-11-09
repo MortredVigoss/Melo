@@ -66,3 +66,14 @@ test('display labels distinguish whole-run and model time and localize authored 
   try { assert.match(renderExecutionTiming(run), /Total time 18 s/); }
   finally { setLanguage('zh-CN'); }
 });
+
+test('pause accounting preserves total time and unions overlapping active intervals', () => {
+  const run = { ...scene(), status: 'completed', finishedAt: at(50), activeIntervals: [
+    { startedAt: at(0), finishedAt: at(10) }, { startedAt: at(5), finishedAt: at(15) },
+    { startedAt: at(40), finishedAt: at(50) },
+  ] };
+  const timing = executionTiming(run);
+  assert.equal(timing.elapsedMs, 50000); assert.equal(timing.activeMs, 25000); assert.equal(timing.pausedMs, 25000);
+  assert.match(renderExecutionTiming(run), /暂停等待/);
+  assert.equal(executionTiming(scene()).pausedMs, null, 'Old data must not invent pause measurements');
+});

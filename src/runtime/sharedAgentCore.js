@@ -4,7 +4,7 @@ import { turnStopReply } from '../../shared/agent/turn.js';
 import { tracedStart, tracedAdvance } from '../../shared/agent/trace.js';
 import { traceEvent, currentLoopTrace } from './loopTrace.js';
 import { completionObservation, completionResult } from '../../shared/agent/completion.js';
-import { startGoal, amendGoal, goalText, goalSnapshot, goalCandidate, goalReviewRequest, reviewGoal, stopGoal, goalOperation } from '../../shared/agent/goal.js';
+import { startGoal, amendGoal, goalText, goalSnapshot, goalCandidate, goalReviewRequest, reviewGoal, stopGoal, goalOperation, goalVerification } from '../../shared/agent/goal.js';
 import { toolEffect } from '../../shared/agent/toolEffects.js';
 
 /** Node Host for the same reducer packaged for Android / iOS. */
@@ -34,6 +34,9 @@ export function createCoreTurn({ runId = currentLoopTrace()?.context.runId || ra
     acceptDelivery(value) { task = value; },
     receipt(goal, reply, terminalReason = state.reason, plan, citations = []) { return completionResult({ goal: task ? goalText(task) : goal, reply, terminalReason, plan, citations, observations, task: goalSnapshot(task) }); },
     get reporting() { return task?.phase !== 'checking' && (state.awaitingModel ? state.requestMode === 'report' : state.rounds >= state.limits.rounds && !state.reportIssued); },
+    verification(reply) { return goalVerification(task, reply); },
+    get repairPending() { return task?.phase === 'working' && task?.reviewReused === true; },
+    get repairFeedback() { return task?.feedback || ''; },
     get checking() { return task?.phase === 'checking'; },
     get repairing() { return state.repairing; },
     get candidateReply() { return candidateReply; },

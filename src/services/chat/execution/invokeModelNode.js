@@ -457,39 +457,43 @@ export function createInvokeModelNode(turn) {
           const job = { ...next, index: assignments.length + 1, id: `job-${assignments.length + 1}` };
           assignments.push(job); started.push(job);
         }
-        const { dispatchMemberBackground } = dispatchConstants();
-        const outcomes = started.length ? await runInternalMembers({ jobs: started, goal: routeGoal, background: dispatchMemberBackground,
-          config: delegatedModelConfig, extraTools: [...(graphState.skillTools || []), ...(graphState.mcpTools || [])], replyFn: rawReplyProvider,
-          jobModels: graphState.activeAgentProfile?.collaboration?.jobModels || null,
-          requireStrongWrites: routingSession?.current.mode === 'smart',
-          signal, sseEmitter, chatId: chat.id, workspacePath: workspace?.rootPath, chatSource: chat.source || 'desktop', projectId: chat.projectId,
-          onProviderResponse: receipt => { if (!signal?.aborted) modelResponses.push(receipt); } }) : [];
-        for (const outcome of outcomes) {
-          coreTurn.observations.push(...(outcome.result?.meta?.observations || []).map(row => ({ ...row, id: `${outcome.job.id}:${row.id}` })));
-          // The member's own report is evidence too: a limit delivery reads observations, not the chat, and used to
-          // lose everything a member had already verified (audit P2-10).
-          const handoff = JSON.parse(outcome.handoff);
-          if (outcome.started && handoff.memberReport) coreTurn.observations.push({ id: `${outcome.job.id}:report`, type: 'handoff', name: outcome.job.label, ok: outcome.result?.ok === true,
-            executed: false, reading: handoff.status, text: `[${handoff.status}] ${handoff.memberReport}` });
+        // A rejected-only batch must consume the ordinary failure/round guards.
+        if (started.length) {
+          const { dispatchMemberBackground } = dispatchConstants();
+          const outcomes = started.length ? await runInternalMembers({ jobs: started, goal: routeGoal, background: dispatchMemberBackground,
+            config: delegatedModelConfig, extraTools: [...(graphState.skillTools || []), ...(graphState.mcpTools || [])], replyFn: rawReplyProvider,
+            jobModels: graphState.activeAgentProfile?.collaboration?.jobModels || null,
+            requireStrongWrites: routingSession?.current.mode === 'smart',
+            signal, sseEmitter, chatId: chat.id, workspacePath: workspace?.rootPath, chatSource: chat.source || 'desktop', projectId: chat.projectId,
+            onProviderResponse: receipt => { if (!signal?.aborted) modelResponses.push(receipt); } }) : [];
+          for (const outcome of outcomes) {
+            coreTurn.observations.push(...(outcome.result?.meta?.observations || []).map(row => ({ ...row, id: `${outcome.job.id}:${row.id}` })));
+            // The member's own report is evidence too: a limit delivery reads observations, not the chat, and used to
+            // lose everything a member had already verified (audit P2-10).
+            const handoff = JSON.parse(outcome.handoff);
+            if (outcome.started && handoff.memberReport) coreTurn.observations.push({ id: `${outcome.job.id}:report`, type: 'handoff', name: outcome.job.label, ok: outcome.result?.ok === true,
+              executed: false, reading: handoff.status, text: `[${handoff.status}] ${handoff.memberReport}` });
+          }
+          coreTurn.update('feedback', { internalRouting: true,
+            successfulEffects: outcomes.flatMap(outcome => outcome.result?.meta?.effects?.successful || []),
+            uncertainEffects: outcomes.flatMap(outcome => outcome.result?.meta?.effects?.uncertain || []) });
+          loopMessages = functionSession.append(loopMessages, turn, routeCalls.map(call => {
+            const outcome = outcomes.find(entry => entry.job.callId === call.id);
+            return { call, result: outcome ? { ok: true, output: JSON.stringify({ ...JSON.parse(outcome.handoff), evidence: JSON.parse(outcome.handoff).evidence?.map(row => ({ ...row, id: `${outcome.job.id}:${row.id}` })) }) } : call.rejectedResult };
+          }));
+          continue;
         }
-        coreTurn.update('feedback', { internalRouting: true,
-          successfulEffects: outcomes.flatMap(outcome => outcome.result?.meta?.effects?.successful || []),
-          uncertainEffects: outcomes.flatMap(outcome => outcome.result?.meta?.effects?.uncertain || []) });
-        loopMessages = functionSession.append(loopMessages, turn, routeCalls.map(call => {
-          const outcome = outcomes.find(entry => entry.job.callId === call.id);
-          return { call, result: outcome ? { ok: true, output: JSON.stringify({ ...JSON.parse(outcome.handoff), evidence: JSON.parse(outcome.handoff).evidence?.map(row => ({ ...row, id: `${outcome.job.id}:${row.id}` })) }) } : call.rejectedResult };
-        }));
-        continue;
       }
-      for (const call of routeCalls) call.rejectedResult = { ok: false, output: catalog && assignments.length < MAX_ASSIGNMENTS
+      for (const call of routeCalls) call.rejectedResult ||= { ok: false, output: catalog && assignments.length < MAX_ASSIGNMENTS
         ? 'Call route_task on its own: one response may hold only route_task assignments, without other tools.'
         : 'Internal assignments are closed for this turn. Continue as the lead with the available evidence.', meta: { code: 'ROUTE_DENIED', executionStarted: false } };
       // No calls is a candidate answer, not proof that the user's goal is done.
       if (!toolCalls.length) {
-        if (coreTurn.candidate(turn.text, { context: { messages: loopMessages.filter(row => typeof row.content === 'string').slice(-8) }, research: !!graphState.searchPlan.sharedPlan?.research, nativeSearch: leadNativeSearch, offeredTools: catalog ? [TASK_PROGRESS_NAME] : [] })) {
+        if (coreTurn.candidate(turn.text, { context: { messages: [...graphState.modelMessages, ...loopMessages.filter(row => row.isSupplement)].filter(row => typeof row.content === 'string').slice(-8) }, research: !!graphState.searchPlan.sharedPlan?.research, nativeSearch: leadNativeSearch, offeredTools: catalog ? [TASK_PROGRESS_NAME] : [] })) {
           coreTurn.update('feedback');
           continue;
         }
+        if (coreTurn.repairPending) { coreTurn.update('feedback', { repair: true }); loopMessages.push({ role: 'user', content: coreTurn.repairFeedback }); continue; }
         coreTurn.update('complete');
         finalReply = turn.text || coreTurn.reply(latestUserMessage, config.replyLanguage);
         if (coreTurn.status === 'completed' && leadNativeSearch) {
@@ -729,7 +733,7 @@ export function createInvokeModelNode(turn) {
       deliveredAtLimit = true;
       sseEmitter?.('execution_event', { kind: 'pipeline', id: 'limit:delivery', module: 'compute', messageId: 'stage.delivery', status: terminalReason === 'LIMIT_DELIVERED' ? 'completed' : 'failed', output: terminalReason });
     }
-    const out = { completionForReply: (reply, citations) => coreTurn.receipt(latestUserMessage, reply, terminalReason || coreTurn.reason, undefined, citations), reply: finalReply, hadToolCalls, limitFallback: deliveredAtLimit && !userSignal?.aborted, skipVerification: deliveredAtLimit || (coreTurn.status === 'blocked' && coreTurn.reason !== 'MISSING_TOOL_EVIDENCE') || graphState.searchPlan.sharedPlan?.route === 'unavailable', toolEvidence: collectVerificationEvidence(evidencePairs, { query: latestUserMessage }), next: 'finalize' };
+    const out = { goalVerification: coreTurn.verification(finalReply), completionForReply: (reply, citations) => coreTurn.receipt(latestUserMessage, reply, terminalReason || coreTurn.reason, undefined, citations), reply: finalReply, hadToolCalls, limitFallback: deliveredAtLimit && !userSignal?.aborted, skipVerification: deliveredAtLimit || (coreTurn.status === 'blocked' && coreTurn.reason !== 'MISSING_TOOL_EVIDENCE') || graphState.searchPlan.sharedPlan?.route === 'unavailable', toolEvidence: collectVerificationEvidence(evidencePairs, { query: latestUserMessage }), next: 'finalize' };
     if (continuationTeam) out.team = continuationTeam;
     if (accumulatedToolResults.length > 0) {
       out.toolResults = accumulatedToolResults;

@@ -118,7 +118,7 @@ export function requestedImageCount(text = '') {
   return Math.max(1, count + digit);
 }
 export function createExecutionScene({ runId, requestId, chatId, query = '', startedAt = new Date().toISOString() }) {
-  return { version: 1, runId, requestId, chatId, query: sceneText(query, 4000), startedAt,
+  return { version: 1, runId, requestId, chatId, query: sceneText(query, 4000), startedAt, activeIntervals: [{ startedAt }],
     status: 'running', sequence: 0, operations: [], pipeline: [], sources: [], artifacts: [], previews: [],
     selectedImageIds: [], requestedImages: requestedImageCount(query), lastModule: null, events: [] };
 }
@@ -242,6 +242,7 @@ export function finishExecutionScene(scene, { status = 'completed', message, cit
   if (!scene || sceneFinished(scene)) return scene;
   scene.status = status;
   scene.finishedAt = at;
+  for (const interval of scene.activeIntervals || []) if (!interval.finishedAt) interval.finishedAt = at;
   scene.sequence++;
   scene.messageId = message?.id || null;
   if (message?.metadata?.completion) { scene.completion = message.metadata.completion; scene.taskOutcome = scene.completion.outcome; }

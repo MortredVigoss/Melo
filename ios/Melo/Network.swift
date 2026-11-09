@@ -56,6 +56,11 @@ enum Network {
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw MeloError.message("服务未返回有效响应。") }
         if LoopTrace.current?.model == true { LoopTrace.emit("model.provider.receipt",["httpStatus":http.statusCode],payload:(try? JSONSerialization.jsonObject(with:data))) }
+        try validateResponse(http, data: data, optionalExtension: optionalExtension)
+        guard data.count <= maxBytes else { throw MeloError.message("响应超过当前版本的容量限制。") }
+        return data
+    }
+    static func validateResponse(_ http: HTTPURLResponse, data: Data, optionalExtension: Bool = false) throws {
         if optionalExtension && http.statusCode == 404 { throw ExtensionUnavailable() }
         guard (200..<300).contains(http.statusCode) else {
             if [400, 413, 422].contains(http.statusCode), let contextError = contextLimitError(data) { throw contextError }
@@ -68,8 +73,52 @@ enum Network {
             default: throw MeloError.message("服务暂时不可用（\(http.statusCode)），记录已保存在手机。")
             }
         }
-        guard data.count <= maxBytes else { throw MeloError.message("响应超过当前版本的容量限制。") }
-        return data
+    }
+
+    /// Streaming is negotiated, with JSON fallback for compatible gateways.
+    /// No retry: a second request could repeat a hosted operation or charge.
+    static func streamPost(_ url: URL, token: String, body: Data, anthropic: Bool, session: URLSession, headers: [String: String], timeout: TimeInterval,
+                           onText: (@MainActor (String) -> Void)? = nil) async throws -> (data: Data, firstEventMs: Double?, firstTextMs: Double?) {
+        let parsed = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any] ?? [:]
+        return try await LoopTrace.model(purpose: "provider", input: parsed, snapshot: { (try? JSONSerialization.jsonObject(with: $0.data)) ?? [:] }) {
+            await LoopTrace.providerPayload(parsed)
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"; request.httpBody = body; request.timeoutInterval = timeout
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("text/event-stream, application/json", forHTTPHeaderField: "Accept")
+            if headers["x-api-key"] == nil { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+            for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
+            let started = ProcessInfo.processInfo.systemUptime
+            let (bytes, response) = try await session.bytes(for: request)
+            guard let http = response as? HTTPURLResponse else { throw MeloError.message("服务未返回有效响应。") }
+            let streaming = (http.value(forHTTPHeaderField: "Content-Type") ?? "").lowercased().contains("text/event-stream")
+            var data = Data(), parser = ModelStreamDecoder(anthropic: anthropic)
+            var firstEvent: Double?, firstText: Double?, lastSent = -1.0, lastText = "", revision = 0
+            for try await byte in bytes {
+                try Task.checkCancellation()
+                if streaming && (200..<300).contains(http.statusCode) {
+                    try parser.accept(byte)
+                    if revision != parser.revision {
+                        revision = parser.revision
+                        let elapsed = (ProcessInfo.processInfo.systemUptime - started) * 1000
+                        if firstEvent == nil { firstEvent = elapsed; LoopTrace.received(text: false) }
+                        if firstText == nil && !parser.text.isEmpty { firstText = elapsed; LoopTrace.received(text: true) }
+                        let visible = parser.hasTools ? "" : parser.text
+                        if visible != lastText && (lastSent < 0 || elapsed - lastSent >= 100 || parser.hasTools) {
+                            lastText = visible; lastSent = elapsed; await onText?(visible)
+                        }
+                    }
+                } else {
+                    data.append(byte)
+                    guard data.count <= ((200..<300).contains(http.statusCode) ? 8 * 1024 * 1024 : 16_384) else { throw MeloError.message("响应超过当前版本的容量限制。") }
+                }
+            }
+            try validateResponse(http, data: data)
+            if streaming { data = try parser.finish(); await onText?(parser.hasTools ? "" : parser.text) }
+            else { LoopTrace.received(text: true) }
+            LoopTrace.emit("model.provider.receipt", ["httpStatus": http.statusCode], payload: (try? JSONSerialization.jsonObject(with: data)))
+            return (data, firstEvent, firstText)
+        }
     }
     /// System line for API connections. Without tools it is byte-identical to
     /// the historical text; with tools it names them instead of denying them
@@ -188,23 +237,14 @@ enum Network {
         }
         let url = try self.endpoint(endpoint)
         let transport = APIChatTransport(url: url, token: token, headers: headers, session: session, anthropic: anthropic, apiProtocol: apiProtocol, model: model, base: body, offersTools: loopTools != nil, onObservation: onObservation)
-        transport.observation.stage("model:response", name: "模型请求", status: "running", output: "等待服务返回", model: model)
-        await onObservation?(transport.observation)
         var loopHooks = hooks
         if loopHooks.onStatus == nil { loopHooks.onStatus = onStatus }
         let loop = AgentLoop(transport: transport, tools: loopTools, budget: budget ?? PhoneRunBudget(), latestUserMessage: (requestHistory ?? messages).last(where: { $0.role == "user" })?.content ?? "", verification: verification, hooks: loopHooks)
         loop.goalHistory = requestHistory ?? messages
         do {
             let outcome = try await loop.run()
-            if outcome.stop != .answered {
-                transport.observation.stage("model:response", name: "模型请求", status: "completed", output: outcome.stop == .toolLimit ? "已达到工具执行上限，本轮停止" : "运行预算已用完，本轮停止")
-                await onObservation?(transport.observation)
-            }
             return ModelReply(text: outcome.text, sources: outcome.sources, searched: outcome.searched, completion: outcome.completion)
         } catch {
-            let cancelled = error is CancellationError || (error as? URLError)?.code == .cancelled
-            transport.observation.stage("model:response", name: "模型请求", status: cancelled ? "cancelled" : "failed", output: cancelled ? "请求已取消" : "未取得完整响应")
-            await onObservation?(transport.observation)
             throw error
         }
     }
@@ -223,12 +263,20 @@ final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
     let offersTools: Bool
     let timeoutCap: TimeInterval = 120
     var observation = ExecutionObservation()
+    private var requestID = ""
+    private func publish() async { await onObservation?(observation.scoped(requestID)) }
     let onObservation: (@MainActor (ExecutionObservation) -> Void)?
 
     init(url: URL, token: String, headers: [String: String], session: URLSession, anthropic: Bool, apiProtocol: String, model: String, base: [String: Any], offersTools: Bool, onObservation: (@MainActor (ExecutionObservation) -> Void)?) {
         self.url = url; self.token = token; self.headers = headers; self.session = session
         self.anthropic = anthropic; self.apiProtocol = apiProtocol; self.model = model
         self.base = base; self.offersTools = offersTools; self.onObservation = onObservation
+    }
+
+    func forkForMember(_ index: Int) -> (any AgentModelTransport)? {
+        let copy = APIChatTransport(url:url,token:token,headers:headers,session:session,anthropic:anthropic,apiProtocol:apiProtocol,model:model,base:base,offersTools:offersTools,onObservation:{ [onObservation] value in onObservation?(value.taggedForMember(index)) })
+        copy.routingContextLimit = routingContextLimit
+        return copy
     }
 
     /// Messages for one request: the base rows plus the rendered transcript.
@@ -260,10 +308,18 @@ final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
     }
 
     func round(_ input: AgentLoopRequest) async throws -> AgentRound {
-        if input.goalReview == nil && (input.iteration > 0 || routingContextLimit != nil) {
-            observation.stage("model:response", name: "模型请求", status: "running", output: "工具结果已返回，等待模型继续", model: model)
-            await onObservation?(observation)
+        requestID = UUID().uuidString
+        observation = ExecutionObservation()
+        observation.stage("model:response", name: "模型请求", status: "running", output: "等待服务返回", model: model)
+        await publish()
+        do { return try await performRound(input) }
+        catch {
+            observation.stage("model:response", name: "模型请求", status: error is CancellationError || (error as? URLError)?.code == .cancelled ? "cancelled" : "failed", output: "未取得完整响应")
+            await publish(); throw error
         }
+    }
+
+    private func performRound(_ input: AgentLoopRequest) async throws -> AgentRound {
         var body = input.scopedBody(base, responses: false, anthropic: anthropic)
         if let review = input.goalReview {
             let messages = review["messages"] as? [[String: Any]] ?? []
@@ -274,21 +330,30 @@ final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
             body["max_tokens"] = min(allowance, (body["max_tokens"] as? Int) ?? allowance)
         }
         if let limit = input.outputLimit { body["max_tokens"] = min(limit, (body["max_tokens"] as? Int) ?? limit) }
+        body["stream"] = true
         let estimated = RequestSizeEstimate.tokens(try JSONSerialization.data(withJSONObject: body))
         let allowance = PhoneExecutionScope.budget?.outputLimit(inputTokens: estimated + 32, cap: body["max_tokens"] as? Int, phase: PhoneExecutionScope.phase)
         if let allowance { guard allowance > 0 else { throw PhoneBudgetReached() }; body["max_tokens"] = allowance }
         let payload = try JSONSerialization.data(withJSONObject: body)
         if let limit = routingContextLimit, RequestSizeEstimate.tokens(payload) > limit { throw RequestTooLarge(message: "所选模型上下文容量不足；原对话和已执行结果已保留，请选择容量更大的模型。") }
         let meter = try PhoneModelMeter(estimate: RequestSizeEstimate.tokens(payload), outputLimit: allowance); defer { meter.finish() }
-        let data = try await Network.post(url, token: token, body: payload, session: session, headers: headers, timeout: max(1, min(timeoutCap, input.timeout)))
+        let streamed = try await Network.streamPost(url, token: token, body: payload, anthropic: anthropic, session: session, headers: headers, timeout: max(1, min(timeoutCap, input.timeout)), onText: { [self] text in
+            if !text.isEmpty {
+                observation.stage("model:response",name:"模型请求",status:"running",output:"正在接收模型输出",model:model)
+                onObservation?(observation.scoped(requestID))
+            }
+            input.onDraft?(text)
+        })
+        let data = streamed.data
+        observation.firstResponse(eventMs: streamed.firstEventMs, textMs: streamed.firstTextMs)
         try Task.checkCancellation()
         let receipt = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         var finishReason: String?
-        if let receipt, input.goalReview == nil {
+        if let receipt {
             let choices = receipt["choices"] as? [[String: Any]]
             finishReason = receipt["stop_reason"] as? String ?? choices?.first?["finish_reason"] as? String
             observation.apiReceipt(receipt, transport: apiProtocol, finishReason: finishReason)
-            await onObservation?(observation)
+            await publish()
         }
         let usage = Network.usageInputTokens(receipt), estimate = RequestSizeEstimate.tokens(payload)
         meter.inputTokens = usage ?? estimate
@@ -302,6 +367,8 @@ final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
             let assistantContent = receipt["content"] as? [[String: Any]] ?? []
             let calls = anthropic ? Network.anthropicToolCalls(assistantContent) : Network.chatToolCalls(assistantMessage)
             if !calls.isEmpty {
+                observation.stage("model:response", name: "模型请求", status: "completed", output: "模型文字返回完成")
+                await publish()
                 let text = anthropic ? assistantContent.filter { $0["type"] as? String == "text" }.compactMap { $0["text"] as? String }.joined() : assistantMessage["content"] as? String ?? ""
                 return AgentRound(text: text, calls: calls, echo: anthropic ? .anthropic(assistantContent) : .chat(assistantMessage), inputTokens: usage, estimatedInputTokens: estimate, outputTokens: outputTokens, budgetAccounted: meter.accounted)
             }
@@ -335,25 +402,26 @@ final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
             throw MeloError.message("模型未完成回复（\(String(reason.prefix(60)))），未保存为完整回答。")
         }
         guard let text = choice.message.content, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw MeloError.message("模型没有返回文字内容。") }
-        if input.goalReview != nil { return AgentRound(text: text, inputTokens: usage, estimatedInputTokens: estimate, outputTokens: outputTokens, budgetAccounted: meter.accounted) }
+        if input.goalReview != nil {
+            observation.stage("model:response", name: "模型请求", status: "completed", output: "模型文字返回完成")
+            await publish()
+            return AgentRound(text: text, inputTokens: usage, estimatedInputTokens: estimate, outputTokens: outputTokens, budgetAccounted: meter.accounted)
+        }
         observation.stage("model:response", name: "模型请求", status: "completed", output: "模型文字返回完成" + (observation.returnedModel.map { " · 服务返回模型：\($0)" } ?? " · 服务未报告模型标识"))
         observation.stage("reply:format", name: "整理回答与引用", status: "running", output: "处理服务返回的文字与引用标记")
-        await onObservation?(observation)
+        await publish()
         let sources = WebReplyFormatter.references(in: text)
         for source in sources { observation.source(url: source.url, title: source.title, cited: true, provider: "API 回复") }
         observation.stage("reply:format", name: "整理回答与引用", status: "completed", output: "文字与 \(sources.count) 条引用已整理；无搜索调用记录")
-        await onObservation?(observation)
+        await publish()
         return AgentRound(text: text, sources: sources, inputTokens: usage, estimatedInputTokens: estimate, outputTokens: outputTokens, budgetAccounted: meter.accounted)
     }
 
     func complete(system: String, messages: [ChatMessage], timeout: TimeInterval) async throws -> String {
-        let rows = messages.map { ["role": $0.role, "content": $0.content] as [String: Any] }
-        let body: [String: Any] = anthropic
-            ? ["model": model, "stream": false, "max_tokens": 2048, "system": system, "messages": rows]
-            : ["model": model, "stream": false, "messages": [["role": "system", "content": system]] + rows]
-        let data = try await Network.post(url, token: token, body: JSONSerialization.data(withJSONObject: body), session: session, headers: headers, timeout: max(1, min(timeoutCap, timeout)))
-        let receipt = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
-        if anthropic { return (receipt["content"] as? [[String: Any]] ?? []).filter { $0["type"] as? String == "text" }.compactMap { $0["text"] as? String }.joined() }
-        return (((receipt["choices"] as? [[String: Any]])?.first?["message"] as? [String: Any])?["content"] as? String) ?? ""
+        let review: [String: Any] = ["systemPrompt": system, "messages": messages.map { ["role": $0.role, "content": $0.content] }]
+        let request = AgentLoopRequest(iteration: 0, transcript: [], timeout: timeout, outputLimit: 2048, goalReview: review)
+        // The finalize caller meters this request. Reuse the validated streaming
+        // adapter/receipt path without charging the same request twice.
+        return try await PhoneExecutionScope.$budget.withValue(nil) { try await self.round(request).text }
     }
 }

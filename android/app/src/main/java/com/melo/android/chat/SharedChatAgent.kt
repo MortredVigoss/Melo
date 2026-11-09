@@ -85,7 +85,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
         val verifiedActions = mutableListOf<JsonElement>()
         suspend fun receipt(reply: String, reason: String? = null, plan: JsonObject? = null) = runtime.value("completion", buildJsonObject { put("completion", buildJsonObject {
             put("locale", replyLocale); put("goal", goal); put("reply", reply); put("observations", JsonArray(observations)); put("verifiedActions", JsonArray(verifiedActions))
-            goalState?.let { state -> put("task", JsonObject(state.filterKeys { it !in setOf("candidate", "phase", "feedback", "availableTools", "research", "context") })) }
+            goalState?.let { state -> put("task", JsonObject(state.filterKeys { it !in setOf("candidate", "phase", "feedback", "availableTools", "research", "context", "uncertaintyVerified", "repairReview", "reviewReused") })) }
             reason?.let { put("terminalReason", it) }; plan?.let { put("plan", it) }
         }) }).jsonObject
         private suspend fun finish(text: String, model: String?, outcome: String = "completed", reason: String? = null): ModelReply {
@@ -251,6 +251,11 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                 put("action", "candidate"); put("state", goalState!!); put("observations", JsonArray(observations))
                 put("candidate", buildJsonObject { put("context", buildJsonObject { put("messages", JsonArray(messages.takeLast(8).map { buildJsonObject { put("role", it.role); put("content", it.content) } })); put("capabilities", JsonArray(names.map(::JsonPrimitive))); put("skills", JsonArray(goalSkills)) }); put("reply", reply.text); put("roundsLeft", turn.roundsLeft); put("research", plan["research"] != null); put("tools", JsonArray((names + (if (plan["nativeSearchAvailable"]?.jsonPrimitive?.booleanOrNull == true) listOf("native_web_search") else emptyList()) + (if (internalCatalog != null && internalJob == null) listOf("task_progress") else emptyList())).map { JsonPrimitive(it) })) })
             }).jsonObject
+            if (goalState!!.text("phase") == "working" && goalState!!["reviewReused"]?.jsonPrimitive?.booleanOrNull == true) {
+                turn.event("feedback", buildJsonObject { put("repair", true) })
+                history += buildJsonObject { put("role", "user"); put("content", goalState!!.text("feedback")) }
+                return false
+            }
             if (goalState!!.text("phase") != "checking") { turn.event("complete"); return true }
             val request = runtime.value("goal", buildJsonObject { put("action", "request"); put("state", goalState!!); put("observations", JsonArray(observations)) }).jsonObject
             val reviewHistory = request.getValue("messages").jsonArray.map { it.jsonObject }

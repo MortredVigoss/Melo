@@ -162,6 +162,24 @@ test('shared Core ends the production loop after repeated permanent failure rece
   assert.match(result.normalizedReply.content, /REPEATED_TOOL_FAILURE/);
 });
 
+test('rejected-only routing batches obey the ordinary failure guard without executing tools', async t => {
+  const original = getTool('web_search');
+  let searches = 0;
+  unregisterTool('web_search');
+  registerTool({ ...webSearchTool, requiresPermission: false, run: async () => { searches++; return { ok: true, output: 'Fixture source' }; } });
+  t.after(() => { unregisterTool('web_search'); if (original) registerTool(original); });
+  const h = await harness(t, round => done(round <= 8
+    ? ['a', 'b'].map(id => ({ ...routeCall('invalid-' + id + '-' + round, 'Read source'), arguments: JSON.stringify({role:'research', task:'Read source', resume:'missing-assignment'}) }))
+    : [message]), { text: 'Search both public sources' });
+  const result = await h.run();
+  assert.ok(h.requests[0].body.tools.some(tool => tool.name === 'route_task'), 'The real router must be offered by the host');
+  assert.equal(searches, 0);
+  assert.equal(h.requests.length, 3, 'An all-rejected routing batch must not loop outside the normal failure counter');
+  assert.equal(h.executions.length, 0);
+  assert.equal(h.permissions.length, 0);
+  assert.match(result.normalizedReply.content, /REPEATED_TOOL_FAILURE/);
+});
+
 test('shared Core ends identical successful reads before the old ten-round cap', async t => {
   const h = await harness(t, round => done([fn('read-' + round, 'A')]));
   const result = await h.run();
@@ -367,24 +385,25 @@ test('calendar intermediate answer continues through venue and weather in one me
   assert.match(result.normalizedReply.content, /18 度/); assert.doesNotMatch(result.normalizedReply.content, /告诉我场馆/);
 });
 
-for (const mode of ['ambiguity', 'malformed', 'attempted-tool', 'repeated-missing']) test('goal review stops safely: ' + mode, async t => {
+for (const mode of ['ambiguity', 'malformed', 'attempted-tool', 'repeated-missing', 'changing-missing']) test('goal review stops safely: ' + mode, async t => {
   let work = 0, checks = 0;
   const h = await harness(t, (_, body) => {
     if (goalReviewBody(body)) {
       checks++; assert.equal(body.tools, undefined);
       if (mode === 'ambiguity') return textReply(goalReport('needs_user', [], 'ambiguity'));
       if (mode === 'attempted-tool') return done([fn('forbidden-review-call', 'extra')]);
-      if (mode === 'repeated-missing') return textReply(goalReport('continue'));
+      if (['repeated-missing','changing-missing'].includes(mode)) return textReply(goalReport('continue'));
       return textReply('not valid JSON');
     }
-    return ++work === 1 ? done([fn('initial', 'A')]) : textReply('已有内容保留。');
+    return ++work === 1 ? done([fn('initial', 'A')]) : textReply(mode === 'changing-missing' ? `已有内容保留。改写 ${work}` : '已有内容保留。');
   });
   const result = await h.run();
   assert.deepEqual(h.executions, ['A']); assert.equal(h.permissions.length, 1);
-  assert.equal(result.normalizedReply.content, '已有内容保留。');
-  assert.equal(checks, mode === 'repeated-missing' ? 3 : 1);
+  assert.equal(result.normalizedReply.content, mode === 'changing-missing' ? '已有内容保留。改写 4' : '已有内容保留。');
+  assert.equal(checks, mode === 'changing-missing' ? 3 : 1, 'An identical rejected candidate reuses that rejection; other cases still require a real check');
   assert.equal(result.normalizedReply.completion.outcome, mode === 'ambiguity' ? 'needs_user' : 'partial');
-  if (mode === 'repeated-missing') { assert.equal(result.normalizedReply.completion.reason, 'GOAL_CORRECTION_LIMIT'); assert.equal(h.requests.length, 7); }
+  if (mode === 'changing-missing') assert.equal(h.requests.length, 7, 'Changed wording must still be checked every time');
+  if (mode === 'repeated-missing') { assert.equal(result.normalizedReply.completion.reason, 'GOAL_CORRECTION_LIMIT'); assert.equal(h.requests.length, 5); assert.equal(work, 4, 'Original correction budget remains bounded'); }
 });
 
 test('a provider failure during the tool-free check preserves the candidate and executes nothing else', async t => {

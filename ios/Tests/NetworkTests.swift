@@ -80,7 +80,7 @@ func json(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObject(
         assert(result.text == "Hello iPhone" && !result.searched)
         assert(observations.first?.pipeline.first?.status == "running")
         assert(observations.last?.returnedModel == nil, "Missing model identity must not fall back to the requested model")
-        assert(observations.last?.pipeline.map(\.id) == ["model:response", "reply:format"])
+        assert(observations.last?.pipeline.count == 2 && observations.last?.pipeline.first?.id.hasPrefix("model:") == true && observations.last?.pipeline.last?.id.hasSuffix(":reply:format") == true)
         MockProtocol.payload = "{\"model\":\"vendor/model-v1\",\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"content\":\"参考 [来源](https://example.com/page)\"}}]}"
         let linked = try await reply()
         let observation = observations.last!

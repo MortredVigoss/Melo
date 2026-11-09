@@ -264,6 +264,7 @@ struct ChatView: View {
     @StateObject private var voiceInput = VoiceInput(engine: SystemSpeechInput())
     @AppStorage("melo.voiceLanguage") private var voiceLanguage = "system"
     @State var chatID: String
+    @State private var followReplyDraft = true
     @State private var historyVisible = ChatView.previewHistory
     private static var previewHistory: Bool {
         #if DEBUG && targetEnvironment(simulator)
@@ -373,6 +374,13 @@ struct ChatView: View {
                         .onAppear { if message.role == "assistant" { store.markRendered(message.id) } }
                         }
                     }
+                    if store.isSending(chatID), let partial = store.replyDrafts[chatID], !partial.text.isEmpty {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Label("回复草稿 · 核验完成后保存", systemImage: "text.bubble").font(.caption).foregroundStyle(.secondary)
+                            ReplyContentView(content: partial.text)
+                        }.padding(14).background(meloBackground.opacity(0.3), in: RoundedRectangle(cornerRadius: 22))
+                        .accessibilityIdentifier("chat.replyDraft")
+                    }
                     if store.isSending(chatID) { VStack(alignment: .leading, spacing: 6) {
                         HStack { ProgressView().tint(meloAccent); VStack(alignment: .leading, spacing: 5) { Text(store.activeImageAction(for: chatID).map { $0.title + "…" } ?? account.replyStatus(for: chatID)).font(.subheadline).foregroundStyle(.secondary); RunProgressList(steps: store.liveSteps(for: chatID)); ForEach(Array((store.pendingSupplements[chatID] ?? []).enumerated()), id: \.offset) { _, text in Text("补充已送达，会在下一步加入：\(text)").font(.caption2).foregroundStyle(meloGold).lineLimit(2) }; Text(store.replyBackgroundStatus).font(.caption2).foregroundStyle(meloGold) }; Spacer(); Button("停止") { store.cancel(chatID: chatID) } }
                         if let run = store.scenes(for: chatID).last { ExecutionTimingView(record: run) }
@@ -400,6 +408,9 @@ struct ChatView: View {
             .contentShape(Rectangle())
             .simultaneousGesture(TapGesture().onEnded { composerFocused = false })
             .accessibilityIdentifier("chat.messages")
+            .simultaneousGesture(DragGesture(minimumDistance: 8).onChanged { _ in followReplyDraft = false })
+            .onChange(of: store.isSending(chatID)) { _, sending in if sending { followReplyDraft = true } }
+            .onChange(of: store.replyDrafts[chatID]?.text) { _, _ in if followReplyDraft { reader.scrollTo("bottom", anchor: .bottom) } }
             .onChange(of: chat?.messages.count) { _, _ in withAnimation { reader.scrollTo("bottom", anchor: .bottom) } }
             .onAppear { reader.scrollTo("bottom", anchor: .bottom) }
         }.frame(maxWidth: .infinity, maxHeight: .infinity).clipped()

@@ -458,9 +458,11 @@ export function createPrepareNode(turn) {
       hasProjectFiles,
     });
 
-    const selectedMaterials = isRemoteChannel || activeAgentProfile.contextSources?.knowledge === false ? '' : await retrieveKnowledgeContext({state,chat,home:context.home,query:latestUserMessage,signal,onRetrieved:rows=>sseEmitter?.('execution_event',{kind:'pipeline',id:'knowledge:retrieval',module:'compute',messageId: 'stage.knowledge',status:'completed',output:rows.map(r=>`${r.title} [${r.start}-${r.end}]`).join('\n')})});
+    const [selectedMaterials, executionHistory] = await Promise.all([
+      isRemoteChannel || activeAgentProfile.contextSources?.knowledge === false ? '' : retrieveKnowledgeContext({state,chat,home:context.home,query:latestUserMessage,signal,onRetrieved:rows=>sseEmitter?.('execution_event',{kind:'pipeline',id:'knowledge:retrieval',module:'compute',messageId: 'stage.knowledge',status:'completed',output:rows.map(r=>`${r.title} [${r.start}-${r.end}]`).join('\n')})}),
+      readExecutionContext(context.home, chat, { excludedRunId: context.runId, enabled: !isRemoteChannel && activeAgentProfile.contextSources?.memory !== false }),
+    ]);
     refreshCompactContext({ readHistory: visibleToolIds.has('read_history') });
-    const executionHistory = await readExecutionContext(context.home, chat, { excludedRunId: context.runId, enabled: !isRemoteChannel && activeAgentProfile.contextSources?.memory !== false });
     const buildPromptSections = () => buildReActPromptSections({
       config,
       profile: activeAgentProfile,

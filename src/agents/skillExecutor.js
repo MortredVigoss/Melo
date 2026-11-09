@@ -316,6 +316,7 @@ async function runSkillLoop({
 
     if (!toolCalls.length) {
       if (coreTurn.candidate(turn.text, { research: true, nativeSearch: nativeFeaturesForScope(currentRequestContext().capabilityScope,currentRequestContext().requestToolPolicy).nativeWebSearchEnabled })) { coreTurn.update('feedback'); continue; }
+      if (coreTurn.repairPending) { coreTurn.update('feedback', { repair: true }); loopMessages.push({ role: 'user', content: coreTurn.repairFeedback }); continue; }
       coreTurn.update('complete');
       if (coreTurn.status !== 'completed') break;
       finalOutput = cleanReplyForParent(turn.text);

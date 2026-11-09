@@ -25,7 +25,7 @@
     ],
     "graph": {
       "modules": 701,
-      "edges": 2291,
+      "edges": 2292,
       "roots": [
         "src",
         "desktop-ui",
@@ -1282,6 +1282,7 @@
           "shared/agent/goal.test.js",
           "shared/agent/goalReview.test.js",
           "shared/agent/internalRouting.test.js",
+          "shared/agent/latencyPolicy.test.js",
           "shared/agent/limitDelivery.test.js",
           "shared/agent/loopLimits.test.js",
           "shared/agent/modelCapabilities.test.js",
@@ -2779,6 +2780,7 @@
           "ios/Melo/SourceBrowser.swift",
           "ios/Melo/WebPageText.swift",
           "ios/Melo/WebPageTools.swift",
+          "ios/Melo/WebPageVerification.swift",
           "ios/Melo/WebSources.swift"
         ],
         "counterparts": []
@@ -4050,6 +4052,7 @@
           "ios/Melo/MeloForm.swift",
           "ios/Melo/MeloTheme.swift",
           "ios/Melo/MobileStatusView.swift",
+          "ios/Melo/ModelStream.swift",
           "ios/Melo/Models.swift",
           "ios/Melo/NeuralField.swift",
           "ios/Melo/NeuralWebView.swift"
@@ -4071,6 +4074,8 @@
           "ios/Tests/CapabilityElevationTests.swift",
           "ios/Tests/LifecycleJournalTests.swift",
           "ios/Tests/LoopTraceTests.swift",
+          "ios/Tests/ModelStreamTests.swift",
+          "ios/Tests/ReplyLatencyTests.swift",
           "ios/Tests/SharedPolicyUnavailableTests.swift"
         ]
       },

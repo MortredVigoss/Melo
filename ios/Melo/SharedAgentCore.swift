@@ -60,6 +60,11 @@ final class PhoneGoalState {
               saved["version"] as? Int == 1 else { throw SharedAgentCoreError.invalidReply }
         state = saved
     }
+    var repairPending: Bool { state["phase"] as? String == "working" && state["reviewReused"] as? Bool == true }
+    var repairFeedback: String { state["feedback"] as? String ?? "" }
+    func verifiedUncertainty(_ reply: String) -> Bool {
+        (SharedLoopPolicy.value("goal", ["action":"verification", "state":state, "candidate":reply]) as? [String: Any])?["verdict"] as? String == "VERIFIED"
+    }
     var checking: Bool { state["phase"] as? String == "checking" }
     var repairing: Bool { (state["corrections"] as? Int ?? 0) > 0 }
     var snapshot: [String: Any]? { SharedLoopPolicy.value("goal", ["action": "snapshot", "state": state]) as? [String: Any] }

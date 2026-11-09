@@ -26,7 +26,7 @@ enum WebPageLoadError: Error {
 @MainActor final class WebPageLoader: NSObject, WKNavigationDelegate {
     static let viewportSize = CGSize(width: 430, height: 932)
     static let offScreenOrigin = CGPoint(x: -10_000, y: 0)
-    static let timeoutSeconds: Double = 20
+    nonisolated static let timeoutSeconds: Double = 20
     static let settleMilliseconds = 600
     /// Full-page capture height in points; at the 1× capture width this stays
     /// inside WebPageText.maxImageLongSide without rescaling.
@@ -38,6 +38,8 @@ enum WebPageLoadError: Error {
     private let webView: WKWebView
     private var continuation: CheckedContinuation<Void, Error>?
     private var attachedTo: UIWindow?
+    private var bodyWaiter: Task<Void, Never>?
+    private(set) var bodyReadyEarly = false
     /// HTTP status of the main-frame response, when the server sent one.
     private(set) var statusCode: Int?
 
@@ -70,6 +72,7 @@ enum WebPageLoadError: Error {
         return true
     }
     func detach() {
+        bodyWaiter?.cancel(); bodyWaiter = nil
         webView.stopLoading()
         webView.removeFromSuperview()
         attachedTo = nil
@@ -78,21 +81,37 @@ enum WebPageLoadError: Error {
     /// Loads the page with a 20 s budget and a 600 ms settle after didFinish.
     /// Cancelling the task resumes the wait immediately instead of waiting
     /// for didFinish or the timeout.
-    func load(_ url: URL) async throws {
+    func load(_ url: URL, textOnly: Bool = false, timeoutSeconds: Double = WebPageLoader.timeoutSeconds) async throws {
         guard attach() else { throw WebPageLoadError.failed(Self.noWindowMessage) }
         try PhoneExecutionScope.check()
         var request = URLRequest(url: url)
-        request.timeoutInterval = Self.timeoutSeconds
+        request.timeoutInterval = timeoutSeconds
         request.setValue("zh-CN,zh;q=0.9,en;q=0.8", forHTTPHeaderField: "Accept-Language")
         let timeout = Task { [weak self] in
-            try await Task.sleep(for: .seconds(Self.timeoutSeconds))
+            try await Task.sleep(for: .seconds(timeoutSeconds))
             self?.finish(.failure(WebPageLoadError.timeout))
         }
-        defer { timeout.cancel() }
+        defer { timeout.cancel(); bodyWaiter?.cancel(); bodyWaiter = nil }
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                 self.continuation = continuation
                 self.webView.load(request)
+                if textOnly {
+                    self.bodyWaiter = Task { @MainActor [weak self] in
+                        var previous = "", stable = 0
+                        while !Task.isCancelled {
+                            do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
+                            guard let self, self.continuation != nil else { return }
+                            // Do not treat body-level navigation, cookie screens or an empty
+                            // app shell as a loaded article. Only a stable semantic main region.
+                            let js = "(() => { const root=document.querySelector('article, main, [role=main]'); return document.readyState !== 'loading' && root && !root.matches('[aria-busy=true]') && !root.querySelector('[aria-busy=true]') ? (root.innerText || '').slice(0,400000) : ''; })()"
+                            let text = (try? await self.webView.evaluateJavaScript(js)) as? String ?? ""
+                            if text.count >= 200 && text == previous { stable += 1 } else { stable = 0 }
+                            previous = text
+                            if stable >= 2 { self.bodyReadyEarly = true; self.finish(.success(())); return }
+                        }
+                    }
+                }
             }
         } onCancel: {
             Task { @MainActor [weak self] in
@@ -100,7 +119,7 @@ enum WebPageLoadError: Error {
                 self?.finish(.failure(CancellationError()))
             }
         }
-        try await Task.sleep(for: .milliseconds(Self.settleMilliseconds))
+        if !textOnly { try await Task.sleep(for: .milliseconds(Self.settleMilliseconds)) }
     }
     private func finish(_ result: Result<Void, Error>) {
         guard let continuation else { return }
@@ -129,6 +148,26 @@ enum WebPageLoadError: Error {
     var finalURL: String { webView.url?.absoluteString ?? "" }
 
     struct Extracted { var title: String; var description: String; var text: String }
+
+    /// A template is inert: scripts, images and frames from the fetched HTML
+    /// are never attached or executed. Dynamic shells fall back to normal WebKit.
+    func extractHTTP(_ snapshot: PhonePageHTTP.Snapshot) async throws -> Extracted? {
+        if snapshot.mime == "text/plain" { return Extracted(title:"",description:"",text:snapshot.text) }
+        guard attach() else { return nil }
+        let literal = String(data:try JSONSerialization.data(withJSONObject:[snapshot.text]),encoding:.utf8)!
+        let script = """
+        (() => {
+          const template=document.createElement('template'); template.innerHTML=\(literal)[0];
+          const doc=template.content; const root=doc.querySelector('article, main, [role=main]');
+          if(!root || root.matches('[aria-busy=true]') || root.querySelector('[aria-busy=true],script')) return null;
+          root.querySelectorAll('script,style,nav,footer,header,noscript,template').forEach(n=>n.remove());
+          const text=(root.textContent||'').replace(/\\s+/g,' ').trim(); if(text.length<200)return null;
+          return {title:doc.querySelector('title')?.textContent||'',description:doc.querySelector('meta[name="description"]')?.content||'',text:text.slice(0,400000)};
+        })()
+        """
+        guard let value = try await webView.evaluateJavaScript(script) as? [String:Any], let text=value["text"] as? String else { return nil }
+        return Extracted(title:value["title"] as? String ?? "",description:value["description"] as? String ?? "",text:text)
+    }
 
     /// Title, meta description and the main readable text, whitespace collapsed.
     func extractText() async throws -> Extracted {
@@ -200,18 +239,43 @@ enum WebPageLoadError: Error {
         guard let url = WebPageText.validated(raw) else {
             return WebPageToolResult(output: WebPageText.failure("INVALID_URL", "Only public http or https pages can be opened.", url: String(raw.prefix(300))), url: raw)
         }
+        if spec.name == WebPageToolSpec.openURL, WebPageText.pageNumber(args["page"]) > 1,
+           let cached = PhoneExecutionScope.pageCache?.get(url.absoluteString) {
+            do { try PhoneExecutionScope.check() } catch { return WebPageToolResult(output: WebPageText.failure("ABORTED", "The request was cancelled.", url: raw), url: raw) }
+            guard allowed() else { return WebPageToolResult(output: WebPageText.failure("CAPABILITY_DENIED", "Web access was revoked.", url: raw), url: raw) }
+            return WebPageToolResult(output: WebPageText.envelope(WebPageText.openResult(url: raw, finalURL: cached.finalURL, title: cached.title, description: cached.description, text: cached.text, page: WebPageText.pageNumber(args["page"]), status: cached.status, fetchedAt: cached.fetchedAt, contentVersion: cached.version, reused: true)), url: raw)
+        }
+        if spec.name == WebPageToolSpec.openURL, WebPageText.pageNumber(args["page"]) == 1 { PhoneExecutionScope.pageCache?.invalidate(url.absoluteString) }
         let loader = WebPageLoader()
         defer { loader.detach() }
         do {
             try PhoneExecutionScope.check()
-            try await loader.load(url)
+            let started = Date()
+            if spec.name == WebPageToolSpec.openURL {
+                do {
+                    if let http = try await PhonePageHTTP.read(url), let extracted = try await loader.extractHTTP(http) {
+                        try PhoneExecutionScope.check()
+                        guard allowed() else { return WebPageToolResult(output:WebPageText.failure("CAPABILITY_DENIED","Web access was revoked.",url:raw),url:raw) }
+                        let snapshot=PhoneExecutionScope.pageCache?.store(url.absoluteString,finalURL:http.url,title:extracted.title,description:extracted.description,text:extracted.text,status:http.status,complete:true)
+                        let value=WebPageText.openResult(url:raw,finalURL:http.url,title:extracted.title,description:extracted.description,text:extracted.text,page:WebPageText.pageNumber(args["page"]),status:http.status,fetchedAt:snapshot?.fetchedAt,contentVersion:snapshot?.version,transport:"http") // Complete HTTP snapshot, not a claim of dynamic rendering.
+                        return WebPageToolResult(output:WebPageText.envelope(value),url:raw)
+                    }
+                } catch {
+                    if Task.isCancelled || error is CancellationError { throw CancellationError() }
+                    // Timeout, encoding, rejection or dynamic shell: keep the browser path.
+                }
+            }
+            try await loader.load(url, textOnly: spec.name == WebPageToolSpec.openURL, timeoutSeconds:max(0.1,WebPageLoader.timeoutSeconds - Date().timeIntervalSince(started)))
             try PhoneExecutionScope.check()
             guard allowed() else { return WebPageToolResult(output: WebPageText.failure("CAPABILITY_DENIED", "The user disabled web access during the request.", url: raw), url: raw) }
             if spec.name == WebPageToolSpec.openURL {
                 // Model-controlled number: 1e20 or NaN must not trap in Int().
                 let page = WebPageText.pageNumber(args["page"])
                 let extracted = try await loader.extractText()
-                return WebPageToolResult(output: WebPageText.envelope(WebPageText.openResult(url: url.absoluteString, finalURL: loader.finalURL, title: extracted.title, description: extracted.description, text: extracted.text, page: page, status: loader.statusCode)), url: url.absoluteString)
+                try PhoneExecutionScope.check()
+                guard allowed() else { return WebPageToolResult(output:WebPageText.failure("CAPABILITY_DENIED","Web access was revoked.",url:raw),url:raw) }
+                let snapshot = PhoneExecutionScope.pageCache?.store(url.absoluteString, finalURL: loader.finalURL, title: extracted.title, description: extracted.description, text: extracted.text, status: loader.statusCode, complete: !loader.bodyReadyEarly)
+                return WebPageToolResult(output: WebPageText.envelope(WebPageText.openResult(url: url.absoluteString, finalURL: loader.finalURL, title: extracted.title, description: extracted.description, text: extracted.text, page: page, status: loader.statusCode, documentComplete: !loader.bodyReadyEarly, fetchedAt: snapshot?.fetchedAt, contentVersion: snapshot?.version)), url: url.absoluteString)
             }
             let fullPage = args["fullPage"] as? Bool ?? false
             let image = try await loader.snapshot(fullPage: fullPage)

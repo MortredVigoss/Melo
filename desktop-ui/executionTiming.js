@@ -25,6 +25,8 @@ export function executionTiming(scene, now = Date.now()) {
   const done = terminal(scene), start = legacy ? null : instant(scene.startedAt), finished = legacy ? null : instant(scene.finishedAt);
   const end = done ? finished : now;
   const elapsedMs = start !== null && end !== null && end >= start ? end - start : null;
+  const activeMs = Array.isArray(scene.activeIntervals) ? intervalDuration(scene.activeIntervals, end) : null;
+  const pausedMs = activeMs !== null && elapsedMs !== null ? Math.max(0, elapsedMs - activeMs) : null;
   const modelMs = intervalDuration((scene.pipeline || []).filter(stage => /^model:/.test(stage.id) && stage.channel !== 'reasoning-summary' && !stage.id.endsWith(':summary')), end);
   const images = (scene.artifacts || []).filter(a => a?.kind === 'image');
   const imageOps = (scene.operations || []).filter(op => ['image_edit', 'native_image_generation'].includes(op.name) || op.name === 'image' && op.module === 'create');
@@ -42,7 +44,7 @@ export function executionTiming(scene, now = Date.now()) {
     image = { requested, saved, percent: Math.min(100, Math.floor(saved / requested * 100)), savedAt,
       elapsedMs: imageStart !== null && imageEnd !== null && imageEnd >= imageStart ? imageEnd - imageStart : null };
   }
-  return { done, elapsedMs, modelMs, finishedAt: finished, completed: scene.status === 'completed', image };
+  return { done, elapsedMs, activeMs, pausedMs, modelMs, finishedAt: finished, completed: scene.status === 'completed', image };
 }
 export function formatExecutionDuration(ms) {
   if (ms === null || !Number.isFinite(ms) || ms < 0) return t('用时未记录');
@@ -54,6 +56,8 @@ function dateText(value) {
 export function renderExecutionTiming(scene, now = Date.now()) {
   const value = executionTiming(scene, now); if (!value) return '';
   const labels = [value.elapsedMs === null ? t('用时未记录') : t(value.done ? '本轮用时 {time}' : '已用时 {time}', { time: formatExecutionDuration(value.elapsedMs) })];
+  if (value.activeMs !== null) labels.push(t('实际运行 {time}', { time: formatExecutionDuration(value.activeMs) }));
+  if (value.pausedMs >= 1000) labels.push(t('暂停等待 {time}', { time: formatExecutionDuration(value.pausedMs) }));
   if (value.modelMs !== null) labels.push(t('思考与回复 {time}', { time: formatExecutionDuration(value.modelMs) }));
   if (value.done && value.finishedAt !== null) labels.push(t(value.completed ? '完成于 {time}' : '停止于 {time}', { time: dateText(value.finishedAt) }));
   const img = value.image;

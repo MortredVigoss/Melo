@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import CoreGraphics
 import ImageIO
 
@@ -315,9 +316,13 @@ enum WebPageText {
     /// push the whole result over the output limit.
     static let maxTitleCharacters = 300
     static let maxDescriptionCharacters = 1_000
-    static func openResult(url: String, finalURL: String, title: String, description: String, text: String, page requested: Int, status: Int? = nil) -> String {
+    static func openResult(url: String, finalURL: String, title: String, description: String, text: String, page requested: Int, status: Int? = nil, documentComplete: Bool = true, fetchedAt: String? = nil, contentVersion: String? = nil, reused: Bool = false, transport: String? = nil) -> String {
         let chunk = paged(text, page: requested)
-        var object: [String: Any] = ["ok": true, "url": url, "finalUrl": finalURL, "title": String(title.prefix(maxTitleCharacters)), "text": chunk.text, "page": chunk.page, "pageCount": chunk.pageCount, "truncated": chunk.truncated]
+        var object: [String: Any] = ["ok": true, "url": url, "finalUrl": finalURL, "title": String(title.prefix(maxTitleCharacters)), "text": chunk.text, "page": chunk.page, "pageCount": chunk.pageCount, "truncated": chunk.truncated || !documentComplete, "documentComplete": documentComplete]
+        if let fetchedAt { object["fetchedAt"] = fetchedAt }
+        if let contentVersion { object["contentVersion"] = contentVersion }
+        if reused { object["reusedSourceSnapshot"] = true }
+        if let transport { object["transport"] = transport }
         if !description.isEmpty { object["description"] = String(description.prefix(maxDescriptionCharacters)) }
         if let next = chunk.nextPage { object["nextPage"] = next }
         if let status { object["status"] = status }
@@ -365,5 +370,58 @@ enum WebPageText {
         let object = PhoneToolEnvelope.payload(result.output)
         if let page = object["page"] as? Int, let count = object["pageCount"] as? Int, count > 1 { return (true, "已读取 \(page)/\(count) 页") }
         return (true, "已读取网页")
+    }
+}
+
+/// One run owns these source snapshots. Paging reuses a complete version, never
+/// a prior task's receipt or an interrupted/partial document. Page 1 is fresh.
+final class PhonePageCache: @unchecked Sendable {
+    struct Entry {
+        let finalURL: String, title: String, description: String, text: String
+        let status: Int?, fetchedAt: String, version: String, saved: Date
+    }
+    private let lock = NSLock()
+    private var entries = [String: Entry]()
+    private let lifetime: TimeInterval = 30
+    func invalidate(_ url: String) { lock.withLock { _ = entries.removeValue(forKey: url) } }
+    func get(_ url: String, now: Date = Date()) -> Entry? {
+        lock.withLock { guard let entry = entries[url], now.timeIntervalSince(entry.saved) >= 0, now.timeIntervalSince(entry.saved) <= lifetime else { return nil }; return entry }
+    }
+    func store(_ url: String, finalURL: String, title: String, description: String, text: String, status: Int?, complete: Bool, now: Date = Date()) -> Entry? {
+        guard complete, !text.isEmpty, status.map({ (200..<300).contains($0) }) != false else { return nil }
+        let entry = Entry(finalURL: finalURL, title: title, description: description, text: text, status: status, fetchedAt: ISO8601DateFormatter().string(from: now), version: SHA256.hash(data: Data((finalURL + "\n" + text).utf8)).map { String(format: "%02x", $0) }.joined(), saved: now)
+        return lock.withLock {
+            if entries[url] == nil && entries.count >= 8, let oldest = entries.min(by: { $0.value.saved < $1.value.saved })?.key { entries.removeValue(forKey: oldest) }
+            entries[url] = entry; return entry
+        }
+    }
+}
+
+/// Anonymous HTTP probe for static pages. Redirects keep the same public-URL
+/// policy as WebKit, cookies/cache are disabled, and the response is bounded.
+final class PhonePageHTTP: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    struct Snapshot: Sendable { let url: String; let text: String; let mime: String; let status: Int }
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void) {
+        completionHandler(request.url.flatMap { WebPageText.validated($0.absoluteString) } == nil ? nil : request)
+    }
+    static func read(_ url: URL, session supplied: URLSession? = nil) async throws -> Snapshot? {
+        guard WebPageText.validated(url.absoluteString) != nil else { return nil }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpCookieStorage = nil; configuration.urlCache = nil
+        configuration.timeoutIntervalForRequest = 2; configuration.timeoutIntervalForResource = 2
+        let session = supplied ?? URLSession(configuration:configuration,delegate:PhonePageHTTP(),delegateQueue:nil)
+        defer { if supplied == nil { session.invalidateAndCancel() } }
+        var request = URLRequest(url:url); request.timeoutInterval=2
+        request.setValue("text/html,text/plain;q=0.8",forHTTPHeaderField:"Accept")
+        let (bytes,response) = try await session.bytes(for:request)
+        guard let response=response as? HTTPURLResponse, (200..<300).contains(response.statusCode),
+              let final=response.url, WebPageText.validated(final.absoluteString) != nil,
+              ["text/html","text/plain"].contains(response.mimeType ?? ""), response.expectedContentLength <= 2_000_000 else { return nil }
+        var data=Data()
+        for try await byte in bytes { try Task.checkCancellation();data.append(byte);if data.count>2_000_000{return nil} }
+        // Non-UTF8 encodings use WebKit's full decoding path instead of mangling evidence.
+        guard let text=String(data:data,encoding:.utf8), !text.isEmpty else { return nil }
+        return Snapshot(url:final.absoluteString,text:text,mime:response.mimeType ?? "",status:response.statusCode)
     }
 }
