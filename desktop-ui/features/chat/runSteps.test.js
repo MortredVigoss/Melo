@@ -56,3 +56,51 @@ test('U5: applyExecutionEvent stamps startedAt on the first sighting of a stage,
   assert.equal(scene.pipeline[1].startedAt, '2026-10-18T00:00:06Z', 'a later event never moves the start');
   assert.deepEqual(sceneSteps(scene).map(s => s.id), ['stage:model:1', 'stage:model:2']);
 });
+
+// Agent audit 2026-11-10: the scene keeps an English fallback of a stage's name
+// and output next to its message id, a stop stage's output is a reason code,
+// and a refused call only says `failed`. With the names of executionText.js the
+// live steps read in the interface language; the test goes through the real
+// reducer and the names the chat view passes.
+test('live steps name stages, stop reasons, tools and refused calls in the interface language', async () => {
+  const { setLanguage } = await import('../../i18n.js');
+  const { stageName, stageOutput, toolName, callOutcome } = await import('../../executionText.js');
+  const { createExecutionScene, applyExecutionEvent } = await import('../../../src/shared/executionScene.js');
+  const text = { stageName, stageOutput, toolName, callOutcome };
+  const scene = createExecutionScene({ runId: 'r', requestId: 'q', chatId: 'c' });
+  const at = second => `2026-11-10T00:00:0${second}Z`;
+  applyExecutionEvent(scene, { kind: 'pipeline', id: 'goal-check:1', module: 'compute', messageId: 'stage.delivery', status: 'running', at: at(1) });
+  applyExecutionEvent(scene, { kind: 'operation', id: '0:a', name: 'file_write', module: 'files', status: 'failed', errorCode: 'PERMISSION_DENIED', input: 'path: notes.md', at: at(2) });
+  applyExecutionEvent(scene, { kind: 'operation', id: '0:b', name: 'load_tools', module: 'tools', status: 'completed', input: 'names: pdf', at: at(3) });
+  applyExecutionEvent(scene, { kind: 'pipeline', id: 'core:stop', module: 'compute', messageId: 'stage.stopped', status: 'failed', output: 'REPEATED_TOOL_FAILURE', at: at(4) });
+  applyExecutionEvent(scene, { kind: 'pipeline', id: 'limit:delivery', module: 'compute', messageId: 'stage.delivery', status: 'completed', output: 'LIMIT_DELIVERED', at: at(5) });
+  try {
+    setLanguage('zh-CN');
+    const rows = sceneSteps(scene, 6, text).map(step => [step.title, step.detail]);
+    assert.deepEqual(rows, [
+      ['核对任务交付', ''],
+      ['写入文件', '未获许可，没有执行 · path: notes.md'],
+      ['加载工具说明', 'names: pdf'],
+      ['执行已停止', '工具连续几轮失败'],
+      ['整理已确认的内容', '已按上限整理并交付'],
+    ]);
+    // Without those names the steps print what the scene recorded: the English fallbacks and the codes.
+    assert.deepEqual(sceneSteps(scene).map(step => [step.title, step.detail]), [
+      ['Checking task delivery', ''],
+      ['写入文件', 'path: notes.md'],
+      ['加载工具说明', 'names: pdf'],
+      ['Execution stopped', 'REPEATED_TOOL_FAILURE'],
+      ['Checking task delivery', 'LIMIT_DELIVERED'],
+    ]);
+    setLanguage('en');
+    assert.deepEqual(sceneSteps(scene, 6, text).map(step => step.title), ['Checking task delivery', 'Write file', 'Load tool definitions', 'Execution stopped', 'Wrapping up what is confirmed']);
+  } finally { setLanguage('en'); }
+});
+
+test('the chat view passes those names to the live steps and the pills', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const source = await readFile(new URL('./viewThread.js', import.meta.url), 'utf8');
+  assert.equal(source.match(/sceneSteps\(liveSceneFor\([^)]*\), 6, RUN_TEXT\)/g)?.length, 2, 'first paint and in-place update');
+  assert.match(source, /const RUN_TEXT = \{ stageName, stageOutput, toolName, callOutcome \}/);
+  assert.match(source, /terminalIcon: icon\.terminal,\s+toolName,\s+callOutcome,/);
+});

@@ -54,6 +54,18 @@ import Foundation
         assert(!exhausted.pending.contains { $0.id == first.id }, "persisted retry fuse")
         let original = PhoneReadHistory.run(arguments: #"{"fromMessageId":"m0","limit":1}"#, chatID: "c", title: "long", messages: history)
         assert(original.contains("decision-0"))
+        // 2026-11-10: the Agent's "记忆" context source no longer decides the conversation's own summary.
+        // With the source off the phone skipped the summary, so the early part of a long conversation was
+        // dropped with nothing in its place. The desktop keeps the summary with that source off.
+        let memoryOff = PhoneCompact.turnPlan(messages: history, existing: nil, budget: budget, instructions: "persona", makesImage: false, memorySource: false)
+        assert(memoryOff.value != nil && !memoryOff.pending.isEmpty, "the summary is written with the memory source off")
+        let kept = ConversationHistory.compactContext(memoryOff.value, messages: history)
+        assert(kept.messages.count < history.count && kept.summary.contains("消息 #"), "and it stands in for the early turns")
+        // A summary that already exists (synced from the desktop, or written on an earlier turn) is used too.
+        let synced = PhoneCompact.turnPlan(messages: history, existing: plan.value, budget: budget, instructions: "persona", makesImage: false, memorySource: false)
+        assert(synced.value != nil && !ConversationHistory.compactContext(synced.value, messages: history).summary.isEmpty)
+        // An image request builds its prompt from the request alone, whatever the source says.
+        assert(PhoneCompact.turnPlan(messages: history, existing: plan.value, budget: budget, instructions: "persona", makesImage: true, memorySource: true).value == nil)
 
         // A6: member priority/overrides/limits and background survive explicit chat model selection.
         var member = agent; member.id = "builder"; member.model = "member-model"; member.instructions = "global"

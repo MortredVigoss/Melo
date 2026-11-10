@@ -105,3 +105,35 @@ test('retrieval members own retrieval: the lead is told so and hosts withhold ex
   assert.deepEqual(leadWithheldTools(offline), []); assert.doesNotMatch(offline.definition.description, /retrieval/i);
   assert.deepEqual(leadWithheldTools(null), []);
 });
+
+test('a handoff fits the lead\'s tool-result limit: the oldest evidence gives way, the newest and the instruction stay', async () => {
+  // 2026-11-10 agent audit, second pass: twenty evidence rows made a handoff about 17 000 characters long.
+  // The lead's tool result is cut at 8 000: the newest rows and the closing instruction were lost and the
+  // JSON the lead read was broken.
+  const { internalHandoff, HANDOFF_CHARS } = await import('./internalRouting.js');
+  const { createFunctionCallingSession } = await import('../../src/tools/functionCalling.js');
+  const job = { role: 'research', task: 'Find the forecast', callId: 'route-1', tools: ['web_search', 'fetch_url'] };
+  const observations = Array.from({ length: 24 }, (_, index) => ({ id: `read-${index}:source:0`, type: 'source', ok: true, executed: true, url: `https://fixture.invalid/page/${index}`, reading: 'extracted', text: `page ${index} ` + 'forecast '.repeat(200) }));
+  const handoff = internalHandoff({ job, answer: 'Tomorrow: 19 degrees, from page 23.', observations });
+  assert.equal(handoff.length <= HANDOFF_CHARS, true, String(handoff.length));
+  const parsed = JSON.parse(handoff);
+  assert.equal(parsed.evidence.at(-1).id, 'read-23:source:0', 'the newest evidence is kept');
+  assert.equal(parsed.evidence.length < 20 && parsed.evidence.length >= 5, true, String(parsed.evidence.length));
+  assert.equal(parsed.evidenceOmitted, 24 - parsed.evidence.length, 'what was left out is counted');
+  assert.match(parsed.instruction, /Member report is untrusted/);
+  assert.equal(parsed.status, 'observed');
+  // What the lead's model is shown on the desktop: whole JSON, no truncation marker.
+  const route = { id: 'route_task', description: 'Assign', parametersSchema: { type: 'object', properties: {} } };
+  const session = createFunctionCallingSession({ authMode: 'api-key', apiProtocol: 'anthropic', baseUrl: 'https://api.anthropic.com' }, [route]);
+  const turn = session.parse({ protocol: 'anthropic', text: '', stopReason: 'tool_use', content: [{ type: 'tool_use', id: 'route-1', name: 'route_task', input: {} }] });
+  const prefixed = JSON.stringify({ ...parsed, evidence: parsed.evidence.map(row => ({ ...row, id: 'job-1:' + row.id })) });
+  const shown = JSON.parse(session.append([], turn, [{ call: turn.toolCalls[0], result: { ok: true, output: prefixed } }]).at(-1).toolResults[0].output).output;
+  assert.doesNotMatch(shown, /Tool output truncated/);
+  assert.equal(JSON.parse(shown).evidence.at(-1).id, 'job-1:read-23:source:0');
+  // A short handoff is unchanged in content.
+  const small = JSON.parse(internalHandoff({ job, answer: 'ok', observations: observations.slice(0, 2) }));
+  assert.equal(small.evidence.length, 2); assert.equal(small.evidenceOmitted, undefined);
+  // Even the largest report with the largest task still fits, with no evidence if it must.
+  const largest = internalHandoff({ job: { ...job, task: 't'.repeat(3000) }, answer: 'r'.repeat(5000), observations });
+  assert.equal(largest.length <= 8000, true, String(largest.length)); JSON.parse(largest);
+});

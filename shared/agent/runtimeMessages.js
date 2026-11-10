@@ -779,8 +779,147 @@ export const RUNTIME_MESSAGES = {
     "ja": "ツール呼び出し上限",
     "ko": "도구 호출 제한",
     "es": "Límite de llamadas a herramientas"
+  },
+  "stage.claimCheck": {
+    "zh": "核对不确定的内容",
+    "en": "Uncertain claim check",
+    "ja": "不確かな内容の確認",
+    "ko": "불확실한 내용 확인",
+    "es": "Verificación del dato incierto"
+  },
+  "output.claimVerified": {
+    "zh": "标注为不确定的那句已核实",
+    "en": "The sentence flagged as uncertain was verified",
+    "ja": "不確かとされた文を確認しました",
+    "ko": "불확실하다고 표시된 문장을 확인했습니다",
+    "es": "La frase marcada como incierta fue verificada"
+  },
+  "output.claimCorrected": {
+    "zh": "标注为不确定的那句已按来源更正",
+    "en": "The sentence flagged as uncertain was corrected from its source",
+    "ja": "不確かとされた文を出典に基づいて訂正しました",
+    "ko": "불확실하다고 표시된 문장을 출처에 따라 수정했습니다",
+    "es": "La frase marcada como incierta se corrigió según su fuente"
+  },
+  "output.claimUnverified": {
+    "zh": "标注为不确定的那句没有找到依据",
+    "en": "No support was found for the sentence flagged as uncertain",
+    "ja": "不確かとされた文の根拠は見つかりませんでした",
+    "ko": "불확실하다고 표시된 문장의 근거를 찾지 못했습니다",
+    "es": "No se encontró respaldo para la frase marcada como incierta"
+  },
+  "value.budget_total_tokens": {
+    "zh": "输入与输出 token 上限",
+    "en": "Input and output token limit",
+    "ja": "入力と出力トークンの上限",
+    "ko": "입력·출력 토큰 제한",
+    "es": "Límite de tokens de entrada y salida"
+  },
+  "stopReason.REPEATED_TOOL_FAILURE": {
+    "zh": "工具连续几轮失败",
+    "en": "tools failed several rounds in a row",
+    "ja": "ツールが数ラウンド続けて失敗",
+    "ko": "도구가 여러 라운드 연속 실패",
+    "es": "las herramientas fallaron varias rondas seguidas"
+  },
+  "stopReason.REPEATED_DEVICE_FAILURE": {
+    "zh": "设备操作连续失败",
+    "en": "device actions kept failing",
+    "ja": "デバイス操作が続けて失敗",
+    "ko": "기기 작업이 계속 실패",
+    "es": "las acciones en el dispositivo fallaron repetidamente"
+  },
+  "stopReason.NO_PROGRESS": {
+    "zh": "连续几轮没有新进展",
+    "en": "several rounds brought nothing new",
+    "ja": "数ラウンド続けて進展なし",
+    "ko": "여러 라운드 동안 새로운 진전 없음",
+    "es": "varias rondas sin avances"
+  },
+  "stopReason.DEADLINE_EXCEEDED": {
+    "zh": "已到时间上限",
+    "en": "the time limit was reached",
+    "ja": "時間上限に到達",
+    "ko": "시간 제한 도달",
+    "es": "se alcanzó el límite de tiempo"
+  },
+  "stopReason.ROUND_LIMIT": {
+    "zh": "已达轮数上限",
+    "en": "the round limit was reached",
+    "ja": "ラウンド上限に到達",
+    "ko": "라운드 제한 도달",
+    "es": "se alcanzó el límite de rondas"
+  },
+  "stopReason.TASK_EVALUATION_LIMIT": {
+    "zh": "任务评估次数已用完",
+    "en": "the task evaluation updates were used up",
+    "ja": "タスク評価の回数を使い切りました",
+    "ko": "작업 평가 횟수 소진",
+    "es": "se agotaron las evaluaciones de la tarea"
+  },
+  "stopReason.GOAL_CHECK_LIMIT": {
+    "zh": "核对次数已用完",
+    "en": "the checks for this turn were used up",
+    "ja": "確認回数を使い切りました",
+    "ko": "확인 횟수 소진",
+    "es": "se agotaron las verificaciones de este turno"
+  },
+  "stopReason.GOAL_CHECK_TOOLS": {
+    "zh": "核对时出现了不该有的工具调用",
+    "en": "the check tried to call a tool",
+    "ja": "確認中にツール呼び出しが発生",
+    "ko": "확인 중 도구 호출 발생",
+    "es": "la verificación intentó usar una herramienta"
+  },
+  "stopReason.UNEXPECTED_HOSTED_CALL": {
+    "zh": "模型在不该搜索的时候发起了搜索",
+    "en": "the model started a search where none was allowed",
+    "ja": "許可されていない検索が開始されました",
+    "ko": "허용되지 않은 검색이 시작됨",
+    "es": "el modelo inició una búsqueda no permitida"
+  },
+  "stopReason.MISSING_TOOL_EVIDENCE": {
+    "zh": "需要的工具没有成功执行",
+    "en": "a required tool did not succeed",
+    "ja": "必要なツールが成功していません",
+    "ko": "필요한 도구가 성공하지 못함",
+    "es": "una herramienta necesaria no tuvo éxito"
+  },
+  "stopReason.TOKEN_LIMIT": {
+    "zh": "已达 token 上限",
+    "en": "the token limit was reached",
+    "ja": "トークン上限に到達",
+    "ko": "토큰 제한 도달",
+    "es": "se alcanzó el límite de tokens"
+  },
+  "stopReason.BUDGET_EXHAUSTED": {
+    "zh": "运行预算已用完",
+    "en": "the run budget was used up",
+    "ja": "実行予算を使い切りました",
+    "ko": "실행 예산 소진",
+    "es": "se agotó el presupuesto de ejecución"
+  },
+  "stopReason.CANCELLED": {
+    "zh": "已取消",
+    "en": "cancelled",
+    "ja": "キャンセル",
+    "ko": "취소됨",
+    "es": "cancelado"
+  },
+  "stopReason.LOOP_STOPPED": {
+    "zh": "运行被中止",
+    "en": "the run was stopped",
+    "ja": "実行が停止されました",
+    "ko": "실행이 중지됨",
+    "es": "la ejecución se detuvo"
   }
 };
+// Why a turn stopped, in words. The stop reply used to carry the internal code ("本轮已停止（REPEATED_TOOL_FAILURE）");
+// a code this table does not know is shown as it is, so nothing is ever hidden.
+export function stopReasonText(code, locale = 'en') {
+  const id = 'stopReason.' + code;
+  return Object.hasOwn(RUNTIME_MESSAGES, id) ? runtimeMessage(id, locale) : String(code || '');
+}
 export function runtimeMessage(id, locale = 'en', params = {}) {
   const row = RUNTIME_MESSAGES[id];
   const text = row?.[normalizeLocale(locale)] || row?.en || id;

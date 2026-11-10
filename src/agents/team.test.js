@@ -76,6 +76,11 @@ test('the lead writes the reply from member handoffs and its request is counted 
  assert.equal(calls.length,1);assert.equal(calls[0].model,'lead-model');assert.match(calls[0].systemPrompt,/lead persona/);
  assert.match(calls[0].messages[0].content,/member finding/);assert.equal(calls[0].nativeWebSearchEnabled,false);
  assert.equal(team.summary,'Lead summary');assert.equal(team.summaryReceipts.length,1);
+ // Inside a conversation the turn has already resolved its model (the one picked for the conversation): the
+ // lead's summary is that conversation's reply and uses it, not the lead Agent's own model (2026-11-10 audit).
+ calls.length=0;
+ await runAgentTeam({plan:{members:['scout']},task:'compare',lead,config:{model:'chat-pick',modelResolvedForTurn:true},run:async()=>({ok:true,output:handoffOutput('member finding')}),replyFn:async options=>{calls.push(options);return 'Lead summary';}});
+ assert.equal(calls[0].model,'chat-pick');
 });
 test('a failed, JSON-shaped or cancelled summary falls back to a readable digest without raw JSON',async()=>{
  for(const replyFn of [async()=>{throw new Error('down');},async()=>'{"conclusion":"x"}']){

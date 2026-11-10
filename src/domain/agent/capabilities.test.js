@@ -68,3 +68,38 @@ test('collaboration.jobModels keeps only known internal jobs with valid connecti
   const { normalizeAgentProfile } = await import('../../state/agentProfiles.js');
   assert.deepEqual(normalizeAgentProfile('main', { collaboration: { canDelegate: false, jobModels: { calculate: 'cheap' } } }).collaboration.jobModels, { calculate: 'cheap' });
 });
+
+// Settings audit 2026-11-10: a member's token cap and timeout are totals, and a
+// fixed part is held back for wrapping up. A saved cap of 10 922 tokens or
+// less (or 60 000 ms or less) left the member nothing to work with: it handed
+// back without one step, and the page accepted 1. The run budget's own
+// functions say what is left; the floor keeps real work possible.
+test('a member token cap or timeout at or below the wrap-up reserve is raised to the floor', async () => {
+  const { normalizeCollaboration, intersectCollaboration, MEMBER_LIMIT_FLOORS, memberWorkTokens, memberWorkMs } = await import('./capabilities.js');
+  const { createRunBudget, memberTokenLimit, reserveDelivery, budgetExhausted, workRemainingMs } = await import('../../../shared/agent/runBudget.js');
+  for (const low of [1, 5000, 10922, 19999]) assert.equal(normalizeCollaboration({ maxTokens: low }).maxTokens, MEMBER_LIMIT_FLOORS.maxTokens, String(low));
+  for (const low of [1, 60000, 119999]) assert.equal(normalizeCollaboration({ timeoutMs: low }).timeoutMs, MEMBER_LIMIT_FLOORS.timeoutMs, String(low));
+  // Defaults, values in range and the ceilings are untouched.
+  assert.deepEqual([normalizeCollaboration({}).maxTokens, normalizeCollaboration({}).timeoutMs], [32000, 180000]);
+  assert.deepEqual([normalizeCollaboration({ maxTokens: 150000 }).maxTokens, normalizeCollaboration({ maxTokens: 999999 }).maxTokens], [150000, 200000]);
+  assert.deepEqual([normalizeCollaboration({ timeoutMs: 300000 }).timeoutMs, normalizeCollaboration({ timeoutMs: 9999999 }).timeoutMs], [300000, 900000]);
+  assert.equal(normalizeCollaboration({ maxIterations: 1 }).maxIterations, 1, 'other limits keep their own minimum');
+  // A project override below the floor cannot bring the old behaviour back.
+  assert.equal(intersectCollaboration({ maxTokens: 32000 }, { maxTokens: 3 }).maxTokens, MEMBER_LIMIT_FLOORS.maxTokens);
+  // The helper is the run budget's own arithmetic: one token less than it says still runs, exactly that many does not.
+  const member = total => reserveDelivery(memberTokenLimit(createRunBudget({ overrides: { maxInputTokens: 10_000_000 } }), total));
+  for (const total of [MEMBER_LIMIT_FLOORS.maxTokens, 32000, 200000]) {
+    const work = memberWorkTokens(total);
+    assert.equal(budgetExhausted(member(total), undefined, { phase: 'work', inputTokens: work - 1 }), null, `${total}: ${work - 1} still runs`);
+    assert.equal(budgetExhausted(member(total), undefined, { phase: 'work', inputTokens: work })?.reason, 'total-tokens', `${total}: ${work} is the limit`);
+  }
+  assert.equal(memberWorkTokens(32000), 19760);
+  assert.equal(memberWorkTokens(10922), 0, 'the old lowest accepted values left nothing');
+  assert.equal(budgetExhausted(member(10922), undefined, { phase: 'work', inputTokens: 1 })?.reason, 'total-tokens');
+  assert.equal(memberWorkTokens(MEMBER_LIMIT_FLOORS.maxTokens) >= 8000, true, 'the floor leaves room for a first request and its answer');
+  // Time: the floor leaves a minute of work after the wrap-up minute.
+  const timed = ms => reserveDelivery(createRunBudget({ now: 0, overrides: { deadlineMs: ms } }));
+  assert.equal(workRemainingMs(timed(MEMBER_LIMIT_FLOORS.timeoutMs), 0), memberWorkMs(MEMBER_LIMIT_FLOORS.timeoutMs));
+  assert.equal(memberWorkMs(MEMBER_LIMIT_FLOORS.timeoutMs), 60000);
+  assert.equal(workRemainingMs(timed(60000), 0), 0, 'the old lowest accepted timeout left no working time');
+});

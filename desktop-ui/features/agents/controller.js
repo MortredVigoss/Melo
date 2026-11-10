@@ -13,7 +13,7 @@
 import { t } from '../../i18n.js';
 import { committedSaveReceipt } from '../../bootstrapPatch.js';
 import { readAgentAvatar } from '../../agentAvatar.js';
-import { buildAgentProfilePatch } from './agentProfilePatch.js';
+import { buildAgentProfilePatch, unsavedCapabilityEdits } from './agentProfilePatch.js';
 import { agentDocumentWithPreset, agentDraftFromProfile, normalizeChannelsForDraft } from './agentDraft.js';
 import { decideAgentMcpAuthAction } from './agentMcpAuthorise.js';
 import { agentsState, resetAgentsState } from './state.js';
@@ -335,6 +335,7 @@ async function handleUpdateAgentProfile(form) {
   const draftKey = agentDraftKey(form.dataset.agentId, scope, project?.id || 'global');
   const patch = buildAgentProfilePatch(form, formData);
   const avatarDraft = agentDraftFor(agentProfileById(form.dataset.agentId));
+  const capabilityEditsLeftOut = unsavedCapabilityEdits(form, formData, agentsState.agentDrafts[draftKey]);
   if (Object.hasOwn(avatarDraft || {}, 'avatarData')) patch.avatarData=avatarDraft.avatarData;
 
   const minimumVisibleMs = 100;
@@ -355,6 +356,7 @@ async function handleUpdateAgentProfile(form) {
     delete agentsState.agentDrafts[draftKey];
     applyBootstrap(payload);
     if (payload.agentExportWarning) notify({level:'error',text:payload.agentExportWarning});
+    if (capabilityEditsLeftOut) notify({level:'error',text:t('「能力范围与协作」里的修改没有保存：这个 Agent 的旧版权限还没有迁移。请先勾选「确认应用这份能力配置」，再重新修改并保存。')});
     const activeTtsConfig = getBootstrap()?.settings?.config || {};
     const savedVoiceId = String(patch.minimaxVoiceId || '').trim();
     if (

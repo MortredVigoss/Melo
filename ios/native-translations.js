@@ -16,7 +16,6 @@ const rows = [
 ["回复中","Replying","返信中","응답 중","Respondiendo"],
 ["保存中","Saving","保存中","저장 중","Guardando"],
 ["回答已保存","Reply saved","返信を保存しました","응답 저장됨","Respuesta guardada"],
-["已停止", "Stopped", "停止済み", "중지됨", "Detenido"],
 ["排队中", "Queued", "待機中", "대기 중", "En cola"],
 ["待授权","Awaiting authorization","承認待ち","승인 대기 중","Pendiente de autorización"],
 ["已保存到本机钥匙串","Saved in this device’s keychain","この端末のキーチェーンに保存済み","이 기기의 키체인에 저장됨","Guardado en el llavero de este dispositivo"],

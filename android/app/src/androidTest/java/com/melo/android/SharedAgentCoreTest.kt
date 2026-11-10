@@ -17,6 +17,14 @@ import org.junit.Rule
 import org.junit.Test
 
 class SharedAgentCoreTest {
+    // 2026-11-10. A turn that has not stopped has no reason. The reducer keeps it as JSON null, which was
+    // read as the word "null" and reached the stop text and the receipt of a reply.
+    @Test fun aRunningTurnHasNoStopReason() = kotlinx.coroutines.runBlocking {
+        com.melo.android.core.SharedCoreTurn.open(androidx.test.core.app.ApplicationProvider.getApplicationContext(), "reason-run", "reason-turn", listOf("web_search"), rounds = 2).use { turn ->
+            org.junit.Assert.assertTrue(turn.active); org.junit.Assert.assertEquals("", turn.reason)
+            org.junit.Assert.assertEquals("", turn.rejection("missing")); org.junit.Assert.assertEquals("", turn.rejectionNote("missing"))
+        }
+    }
     private val app get() = ApplicationProvider.getApplicationContext<MeloApplication>()
     @get:Rule val service = ServiceTestRule()
 

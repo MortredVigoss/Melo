@@ -66,3 +66,28 @@ test('display labels distinguish whole-run and model time and localize authored 
   try { assert.match(renderExecutionTiming(run), /Total time 18 s/); }
   finally { setLanguage('zh-CN'); }
 });
+
+// Agent audit 2026-11-10: on the desktop a run that delivered any reply ends
+// with status `completed`; what the task came to is in its receipt. "完成于"
+// under a reply whose receipt says part done, waiting for the user, out of
+// budget or blocked said more than the record does.
+test('a run whose receipt is not complete says when it ended, not when it completed', () => {
+  const ended = extra => ({ ...scene(), status: 'completed', finishedAt: at(18), ...extra });
+  for (const outcome of ['partial', 'needs_user', 'budget_exhausted', 'blocked']) {
+    const html = renderExecutionTiming(ended({ completion: { outcome } }), now(100));
+    assert.match(html, /结束于/, outcome); assert.doesNotMatch(html, /完成于|停止于/, outcome);
+    assert.equal(executionTiming(ended({ completion: { outcome } }), now(100)).unfinished, true, outcome);
+  }
+  // The portable reducer keeps the result in taskOutcome when there is no receipt.
+  assert.match(renderExecutionTiming(ended({ taskOutcome: 'partial' }), now(100)), /结束于/);
+  // A delivered answer, verified or not, and a run recorded without a receipt keep "完成于".
+  for (const extra of [{ completion: { outcome: 'completed' } }, { completion: { outcome: 'unverified' } }, {}, { taskOutcome: 'running' }]) {
+    const html = renderExecutionTiming(ended(extra), now(100));
+    assert.match(html, /完成于/, JSON.stringify(extra)); assert.doesNotMatch(html, /结束于/);
+  }
+  // A stopped or failed run is unchanged.
+  assert.match(renderExecutionTiming({ ...scene(), status: 'cancelled', finishedAt: at(18), completion: { outcome: 'cancelled' } }, now(100)), /停止于/);
+  setLanguage('en');
+  try { assert.match(renderExecutionTiming(ended({ completion: { outcome: 'partial' } }), now(100)), /Ended at/); }
+  finally { setLanguage('zh-CN'); }
+});

@@ -225,6 +225,25 @@ func json(_ text: String) -> [String: Any] {
         assert(!ScreenshotQuality.isNearlyBlank(syntheticJPEG(width: 1280, height: 800) { c in c.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 1)); c.fill(CGRect(x: 0, y: 0, width: 1280, height: 300)) }), "a dark header is not blank")
         assert(!ScreenshotQuality.isNearlyBlank(Data("not an image".utf8)), "an unreadable image is kept rather than silently dropped")
 
+        // 2026-11-10. The screenshot result says whether the user will see the screenshot. It said
+        // "attached" for every one, so the model told the user a screenshot was attached when the reply
+        // showed none (they are attached only when the user asked to see the page).
+        let kept = json(WebPageText.screenshotResult(url: "u", finalURL: "u", title: "t", shownToUser: false))
+        assert(kept["screenshot"] as? String == "not-shown-to-user" && (kept["note"] as? String)?.contains("not shown to the user") == true && kept["ok"] as? Bool == true)
+        assert(json(WebPageText.screenshotResult(url: "u", finalURL: "u", title: "t"))["note"] == nil, "an attached, fully loaded screenshot needs no note")
+        assert(WebPageToolSpec.named(WebPageToolSpec.screenshot)?.description.contains("only when the user asked to see the page") == true && WebPageToolSpec.instructions.contains("没有附上时不要说已经附上"))
+        // A screenshot captured at the soft deadline says so, like a page read then.
+        let earlyShot = json(WebPageText.screenshotResult(url: "u", finalURL: "u", title: "t", stoppedEarly: true))
+        assert(earlyShot["loading"] as? String == "stopped-early" && earlyShot["screenshot"] as? String == "attached" && (earlyShot["note"] as? String)?.contains("still loading") == true)
+        let both = json(WebPageText.screenshotResult(url: "u", finalURL: "u", title: "t", stoppedEarly: true, shownToUser: false))["note"] as? String ?? ""
+        assert(both.contains("not shown to the user") && both.contains("still loading"))
+        // An error page is returned for the model to read, but it is not a read of the page that was asked
+        // for: the completion check must not count it as a source (the record already shows "HTTP 404").
+        let missing = json(WebPageText.openResult(url: "https://a.example/x", finalURL: "https://a.example/x", title: "Not found", description: "", text: String(repeating: "This page does not exist. ", count: 8), page: 1, status: 404))
+        assert(missing["reading"] as? String == "unread" && (missing["note"] as? String)?.contains("HTTP 404") == true && missing["ok"] as? Bool == true)
+        assert(json(WebPageText.openResult(url: "https://a.example/", finalURL: "https://a.example/", title: "A", description: "", text: "hello", page: 1, status: 200))["reading"] == nil)
+        let rows = SharedLoopPolicy.value("completionObservation", ["observation": ["id": "p", "name": "open_url", "ok": true, "executed": true, "output": WebPageText.openResult(url: "https://a.example/x", finalURL: "https://a.example/x", title: "Not found", description: "", text: String(repeating: "This page does not exist. ", count: 8), page: 1, status: 404), "declaration": ["effect": "read"]]]) as? [[String: Any]] ?? []
+        assert(rows.first { $0["type"] as? String == "source" }?["reading"] as? String == "unread", "\(rows)")
         print("Swift web page tool tests passed: URL policy incl. private hosts and literal-address bypasses, page number, pixel caps, screenshot budget/demotion, status and bounded title, whitespace, 12k paging, result and follow-up shapes, three protocol definitions, summaries")
     }
 }

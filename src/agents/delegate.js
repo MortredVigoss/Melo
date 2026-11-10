@@ -64,10 +64,15 @@ export async function runConfiguredMember({concurrentReader=false,profile,parent
  }
  catch(error){outcome={ok:false,output:error.message,meta:{aborted:controller.signal.aborted}};}
  finally {clearTimeout(timer);signal?.removeEventListener('abort',abort);controller.signal.removeEventListener('abort',stopWaiting);}
- if(controller.signal.aborted) outcome={...outcome,ok:false,meta:{...outcome.meta,aborted:true}};
+ // Reaching the member's own time limit is not a cancellation: nobody stopped it. It was reported as
+ // cancelled ("已取消") although "超出预算" exists for exactly this (2026-11-10 audit).
+ const timedOut=controller.signal.aborted&&controller.signal.reason?.code==='MEMBER_TIMEOUT'&&!signal?.aborted;
+ if(controller.signal.aborted) outcome={...outcome,ok:false,meta:{...outcome.meta,aborted:!timedOut,...(timedOut?{budgetExceeded:true}:{})}};
  const usage=summarizePricedUsage(receipts,config.modelPricing || {}),handoff=createHandoff(task,outcome,usage);
- const result={...outcome,ok:outcome.ok&&handoff.status==='completed',role:profile.id,agentId:profile.id,name:profile.name,memberId,receipts,usage,handoff,cancelled:controller.signal.aborted,durationMs:Date.now()-started};
- emit('execution_event',{kind:'pipeline',id:'handoff',messageId: 'stage.handoff',module:'compute',status:result.cancelled?'cancelled':result.ok?'completed':'failed',output:JSON.stringify(handoff),handoff,agentId:profile.id,memberId});
+ const result={...outcome,ok:outcome.ok&&handoff.status==='completed',role:profile.id,agentId:profile.id,name:profile.name,memberId,receipts,usage,handoff,cancelled:controller.signal.aborted&&!timedOut,durationMs:Date.now()-started};
+ emit('execution_event',{kind:'pipeline',id:'handoff',messageId: 'stage.handoff',module:'compute',status:result.cancelled?'cancelled':timedOut?'interrupted':result.ok?'completed':'failed',output:JSON.stringify(handoff),handoff,agentId:profile.id,memberId,
+  // Counted in the task space's token total like the member's tool calls (see internalMembers.js).
+  ...(usage.requests-usage.unknown>0?{api:{usage:{input:usage.input,output:usage.output}}}:{})});
  return result;
 }
 export async function delegateTask(args,context={}) {

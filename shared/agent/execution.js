@@ -77,8 +77,13 @@ export function executionScene({ action, scene, runId, chatId, query, at, event 
     const goalReview = event.goalReview ? normalizeGoalReview(event.goalReview) : null;
     if (goalReview) row.goalReview = goalReview;
   }
+  // Whether the call ran and whether anything came back. The session events tell "refused before it
+  // started", "returned an error" and "outcome unknown" apart by these two; a host that builds its scene
+  // here lost both, so every failed call read "结果未知，请先核对再继续", a page that answered 404 included.
+  if (typeof event.executed === 'boolean') row.executed = event.executed;
   if (event.result) {
     const result = event.result;
+    row.hasReceipt = true;
     row.resultSummary = text(result.ok !== true ? result.error || result.summary || result.code || '工具未成功完成' :
       row.name === 'web_search' ? `检索返回 ${(result.results || []).length} 条来源；搜索摘要不等于网页读取。` :
       row.name === 'fetch_url' ? fetchedSummary(result) : result.summary || '已收到成功回执。', 2000);

@@ -29,7 +29,13 @@ export function memberDeadlineMs(rounds) {
 }
 const str = (v, max = 600) => typeof v === 'string' ? v.trim().slice(0, max) : '';
 const list = v => Array.isArray(v) ? v : [];
-const normalize = v => String(v ?? '').normalize('NFKC').toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, '');
+// Spacing and punctuation never tell two names apart, with one exception: a plus or hash that ends a word is
+// part of the name ("Galaxy S24+", "C++", "C#"). Dropping it merged a model with its plus variant into one
+// ledger entity, and each then filled the other's missing fields. A sign inside a value ("19:30+11:00",
+// "UTC+8") is punctuation as before.
+const normalize = v => String(v ?? '').normalize('NFKC').toLowerCase()
+  .replace(/([\p{L}\p{N}])([+#]+)(?=$|[\s\p{P}])/gu, (match, before, marks) => before + marks.replace(/\+/g, '\u0001').replace(/#/g, '\u0002'))
+  .replace(/[\s\p{P}\p{S}]+/gu, '').replace(/\u0001/g, '+').replace(/\u0002/g, '#');
 const fail = message => { throw new Error(message); };
 const integer = (v, low, high) => Number.isInteger(v) && v >= low && v <= high;
 const ruleOps = ['eq','includes','gte','lte','after','before'];

@@ -36,6 +36,15 @@ import { AGENT_LOOP_CONTRACT, fillTemplate } from '../runtime/agentLoopContract.
 
 const DEFAULT_TOOL_TIMEOUT_MS = AGENT_LOOP_CONTRACT.executionLimits.toolTimeoutMs;
 
+// How long one call of a tool may run. A tool whose own time limits are settings (web search and page
+// reads: the user may raise them to 120 s) names the time those settings need through `timeoutFor`;
+// it can only ask for more than the general limit, never less. The general 60 s used to end such a
+// call first, so raising the search timeout produced a tool timeout instead of a longer search.
+export function toolTimeoutCeiling(tool, config) {
+  if (typeof tool?.timeoutFor === 'function') return Math.max(DEFAULT_TOOL_TIMEOUT_MS, Math.floor(Number(tool.timeoutFor(config || {})) || 0));
+  return tool?.timeout ?? DEFAULT_TOOL_TIMEOUT_MS;
+}
+
 /**
  * Execute a single tool with full permission + error handling.
  *
@@ -231,7 +240,7 @@ async function runObservedTool(tool, args, options = {}) {
 
   // ── Run with timeout wrapper ─────────────────────────────────────────────────
   // The tool's own ceiling, cut to whatever run time is left (C1).
-  const timeout = Math.max(1, Math.min(tool.timeout ?? DEFAULT_TOOL_TIMEOUT_MS, workRemainingMs(budget)));
+  const timeout = Math.max(1, Math.min(toolTimeoutCeiling(tool, config || requestContext?.config), workRemainingMs(budget)));
   let timeoutId;
 
   timeoutId = setTimeout(() => {

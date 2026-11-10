@@ -23,6 +23,7 @@ test('phone adapter replays local evidence, persists the view and opens sources 
   const file = path => JSON.stringify(new URL(path, import.meta.url).href);
   const warRoomCode = (await readFile(new URL('../../desktop-ui/warRoom.js',import.meta.url),'utf8'))
     .replace("'./i18n.js'",file('../../desktop-ui/i18n.js'))
+    .replace("'./executionText.js'",file('../../desktop-ui/executionText.js'))
     .replace("'/shared/executionScene.js'",file('../../src/shared/executionScene.js'))
     .replace("'/shared/executionBoard.js'",file('../../src/shared/executionBoard.js'))
     .replace("'/shared/warRoom.js'",file('../../src/shared/warRoom.js'))
@@ -31,6 +32,7 @@ test('phone adapter replays local evidence, persists the view and opens sources 
     .replace("'./buttonStyles.js'",file('../../desktop-ui/buttonStyles.js'))
     .replace("'./html.js'",file('../../desktop-ui/html.js'))
     .replaceAll("'./i18n.js'",file('../../desktop-ui/i18n.js'))
+    .replace("'./executionText.js'",file('../../desktop-ui/executionText.js'))
     .replace("'/shared/executionScene.js'",file('../../src/shared/executionScene.js'))
     .replace("'./executionDetails.js'",file('../../desktop-ui/executionDetails.js'))
     .replace("'/shared/executionBoard.js'",file('../../src/shared/executionBoard.js'))

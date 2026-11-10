@@ -252,6 +252,45 @@ class AndroidFlowTest {
             repository.change { recovered }
         }
     }
+    // 2026-11-10. The reply language is kept on this phone like the three settings beside it, but was the
+    // only one of them not marked.
+    @Test fun theAgentEditorMarksEverySettingThatStaysOnThisPhone() {
+        ready()
+        compose.onAllNodesWithText("角色")[0].performClick()
+        compose.waitUntil(8000) { compose.onAllNodesWithText("创建角色").fetchSemanticsNodes().isNotEmpty() }
+        compose.onAllNodesWithText(app.repository.data.value.agents.first().name)[0].performClick()
+        compose.waitUntil(8000) { compose.onAllNodesWithText("编辑角色").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("回复语言（本机）").performScrollTo().assertExists()
+        compose.onNodeWithText("上下文来源（本机）").performScrollTo().assertExists()
+        compose.onNodeWithText("取消").performClick()
+    }
+    // 2026-11-10. Opening the chat settings turned a model mode chosen on another device ("smart") into
+    // "fixed" and saved it with any other change, which changed the model that answered on this phone; the
+    // hint beside it described a mode this phone does not have.
+    @Test fun savingChatSettingsKeepsAModelModeChosenOnAnotherDevice() {
+        ready()
+        compose.onNodeWithText("开始新对话").performClick()
+        compose.waitUntil(8000) { compose.onAllNodesWithTag("composer").fetchSemanticsNodes().isNotEmpty() }
+        val chat = app.repository.data.value.chats.first()
+        val agent = app.repository.data.value.agents.first { it.id == chat.agentId }
+        try {
+            runBlocking {
+                app.repository.saveAgent(agent.copy(model = "agent-fixture-model"))
+                app.repository.editChat(chat.id) { it.copy(modelMode = "smart", model = "profile-default-model") }
+            }
+            compose.onNodeWithContentDescription("对话设置").performClick()
+            compose.waitUntil(8000) { compose.onAllNodesWithText("对话名称").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithText("这段对话在其他设备上设为自动选模；在这台手机上使用角色指定的模型。").performScrollTo().assertExists()
+            compose.onNodeWithText("智能模式下，Agent 指定的固定模型优先。").assertDoesNotExist()
+            compose.onNodeWithText("对话名称").performScrollTo().performTextReplacement("只改了标题")
+            compose.onNodeWithText("保存").performClick()
+            compose.waitUntil(8000) { app.repository.data.value.chats.first { it.id == chat.id }.title == "只改了标题" }
+            assertEquals("a setting the user did not touch is not rewritten", "smart", app.repository.data.value.chats.first { it.id == chat.id }.modelMode)
+        } finally {
+            // The agent is shared by every later test of the suite.
+            runBlocking { app.repository.saveAgent(agent); app.repository.editChat(chat.id) { it.copy(modelMode = null, model = null) } }
+        }
+    }
     @Test fun foregroundReplyContinuesWhileActivityIsStopped() {
         ready()
         val id = runBlocking {
@@ -264,8 +303,13 @@ class AndroidFlowTest {
         compose.waitUntil(5000) { app.engine.runtime.value.busyChatId == id }
         compose.runOnIdle { compose.activity.moveTaskToBack(true) }
         compose.waitUntil(15_000) { app.repository.data.value.runs.any { it.chatId == id && it.status == "completed" } }
-        // Retain ActivityScenario's launch identity when onNewIntent updates the Activity intent.
-        app.startActivity(Intent(compose.activity.intent).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
+        // Retain ActivityScenario's launch identity when onNewIntent updates the Activity intent. The
+        // scenario's own intent also carries CLEAR_TASK, which must not come along: with it the system
+        // replaced the Activity instead of bringing it forward. When the fixture reply ended before the
+        // old instance had reached STOPPED (one run in three on this emulator), the new instance was
+        // created first, the scenario kept watching the old one, and that one was destroyed:
+        // "Cannot run onActivity since Activity has been destroyed already".
+        app.startActivity(Intent(compose.activity.intent).apply { flags = flags and Intent.FLAG_ACTIVITY_CLEAR_TASK.inv() }.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
         compose.waitUntil(5000) { compose.activity.lifecycle.currentState == androidx.lifecycle.Lifecycle.State.RESUMED }
         assertEquals(1, app.repository.data.value.chats.first { it.id == id }.messages.count { it.role == "assistant" })
     }

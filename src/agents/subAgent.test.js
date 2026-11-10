@@ -468,3 +468,53 @@ test('condenseEachRound keeps what fits its size allowance and condenses the res
   assert.match(chain.messages[2].content, /condensed to fit the context budget/, 'the older result gave way');
   assert.equal(chain.messages[4].content.length > 50000, true, 'the newest result stays intact');
 });
+
+test('a result too large for a small model context is condensed and the member goes on instead of ending as an error', async () => {
+  // 2026-11-10 agent audit, second pass. The lead has had this recovery since audit C-8; a member ended with
+  // "exceed the context budget" after its tool had already run, and its work came back as a failed handoff.
+  const reply = makeFakeReply();
+  const recorder = makeRecordingTool('big_read', { isConcurrencySafe: true });
+  let reads = 0;
+  recorder.tool.run = async () => ({ ok: true, output: `read ${++reads} ` + 'word '.repeat(1500) });
+  registerTool(recorder.tool);
+  try {
+    const call = id => `<tool_call>{"id":"${id}","name":"big_read","arguments":{"q":"${id}"}}</tool_call>`;
+    reply.queue.push(call('r1'), call('r2'), 'done',
+      '{"decision": "complete", "reasonType": "self_contained", "requirements": [{"text": "x", "status": "met", "evidenceIds": []}]}');
+    // A 4 096-token model leaves about 2 700 tokens of input: one 7 500-character result does not fit.
+    const result = await runSubAgent({ task: 'read twice', allowedToolIds: ['big_read'], config: { ...validConfig(), routingContextWindow: 4096 }, replyFn: reply });
+    assert.equal(reads, 2, 'both reads ran');
+    assert.notEqual(result.meta.stopReason, 'ERROR', result.output.slice(0, 200));
+    assert.equal(result.output, 'done');
+    const sent = reply.callLog.map(request => JSON.stringify(request.messages));
+    assert.equal(sent[1].includes('condensed to fit the context budget'), true, 'the oversized result was condensed');
+    assert.equal(sent[1].includes('read 1 word'), true, 'its beginning is still readable');
+  } finally { unregisterTool('big_read'); }
+  // Keeping no result at all has to condense every one; slice(-0) used to protect them all.
+  const { compactToolChain } = await import('../tools/functionCalling.js');
+  const big = { role: 'user', content: 'word '.repeat(3000), isToolResult: true };
+  assert.equal(compactToolChain([{ role: 'user', content: 'task' }, { role: 'assistant', content: 'a' }, big], { keepRecentResults: 0 }).changed, true);
+  assert.equal(compactToolChain([{ role: 'user', content: 'task' }, { role: 'assistant', content: 'a' }, big], { keepRecentResults: 1 }).changed, false);
+});
+
+test('a member is offered delegate only when a call from it could be accepted', async () => {
+  // 2026-11-10 agent audit, second pass. The chain allowed depth 2, the member's own setting did not: it was
+  // shown the tool, the call was refused, and the refusal marked the member as failed.
+  const { bootstrapBuiltinTools } = await import('../tools/registry.js'); bootstrapBuiltinTools();
+  const { normalizeCapabilities } = await import('../domain/agent/capabilities.js');
+  const offered = async collaboration => {
+    const reply = makeFakeReply();
+    reply.queue.push('done', '{"decision": "complete", "reasonType": "self_contained", "requirements": [{"text": "x", "status": "met", "evidenceIds": []}]}');
+    await runSubAgent({ task: 'inner', config: validConfig(), depth: 1, maxDepth: 2, replyFn: reply, allowedToolIds: ['delegate', 'file_read'],
+      capabilities: normalizeCapabilities({ readFiles: true, delegate: true }),
+      agentProfile: { id: 'member', name: 'Member', instructions: 'member persona' }, collaboration });
+    const prompt = reply.callLog[0].systemPrompt;
+    assert.match(prompt, /### file_read\b/, 'the fixture lists tools');
+    return /### delegate\b/i.test(prompt);
+  };
+  assert.equal(await offered({ canDelegate: true, delegateTargets: ['other'], maxDelegationDepth: 2 }), true, 'allowed by its own settings and the chain');
+  assert.equal(await offered({ canDelegate: false, delegateTargets: ['other'], maxDelegationDepth: 2 }), false, 'delegation is off for this member');
+  assert.equal(await offered({ canDelegate: true, delegateTargets: [], maxDelegationDepth: 2 }), false, 'it has nobody to delegate to');
+  assert.equal(await offered({ canDelegate: true, delegateTargets: ['other'], maxDelegationDepth: 1 }), false, 'its own depth limit is already reached');
+  assert.equal(await offered(undefined), false);
+});

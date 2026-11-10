@@ -326,6 +326,46 @@ import Foundation
         assert(!ChatGPTRequest.requiresSearch(history + [ChatMessage(role:"user",content:"不用查了，帮我写首诗")]))
         let prohibited = ChatGPTRequest.body(messages:[ChatMessage(role:"user",content:"不要联网，帮我整理航班记录")],model:"test",instructions:"",webSearch:true)
         assert(prohibited["tools"] == nil && prohibited["include"] == nil, "Explicitly prohibited search must be unavailable, not merely optional")
+        // 2026-11-10: every model request of a reply has its own stage in the record. With one shared id
+        // the stage closed after the first response: the second request was never shown as running, and
+        // model time and token totals covered that first request only.
+        do {
+            assert(ExecutionObservation.requestKey(iteration: 0) == "" && ExecutionObservation.requestKey(iteration: 1) == "2" && ExecutionObservation.requestKey(iteration: 1, attempt: 2) == "2r2")
+            assert(ExecutionObservation.requestKey(iteration: 0, attempt: 2) == "1r2" && ExecutionObservation.requestKey(iteration: 3, continuation: "ab12cd") == "4cab12cd" && ExecutionObservation.requestKey(iteration: 0, continuation: "ab12cd") == "1cab12cd")
+            var record = ExecutionRecord(chatId: "c", query: "q", requestedModel: "m")
+            var first = ChatGPTStream()
+            try first.accept(json(["type":"response.created","response":["model":"returned-model"]]))
+            record.observe(first.observation)
+            // A response that only asks for tools: it completes its request and has nothing to format.
+            try first.accept(json(["type":"response.completed","response":["id":"resp_1","status":"completed","model":"returned-model","usage":["input_tokens":100,"output_tokens":10],"output":[["type":"function_call","call_id":"c1","name":"open_url","arguments":"{}","status":"completed"]]]]))
+            record.observe(first.observation)
+            assert(first.functionCalls.count == 1 && first.observation.pipeline.map(\.id) == ["model:response"], "a tool round has no formatting step: \(first.observation.pipeline.map(\.id))")
+            var second = ChatGPTStream(requestKey: ExecutionObservation.requestKey(iteration: 1))
+            try second.accept(json(["type":"response.created","response":["model":"returned-model"]]))
+            record.observe(second.observation)
+            assert(record.pipeline?.map(\.id) == ["model:response", "model:response:2"] && record.pipeline?.map(\.status) == ["completed", "running"], "the second request is shown while it runs: \(String(describing: record.pipeline?.map(\.status)))")
+            try second.accept(json(["type":"response.completed","response":["id":"resp_2","status":"completed","model":"returned-model","usage":["input_tokens":200,"output_tokens":20],"output":[["type":"message","content":[["type":"output_text","text":"done","annotations":[]]]]]]]))
+            record.observe(second.observation)
+            assert(record.pipeline?.map(\.id) == ["model:response", "model:response:2", "reply:format:2"] && record.pipeline?.allSatisfy { $0.status == "completed" } == true)
+            let inputs = (record.pipeline ?? []).compactMap { stage -> Double? in if let usage = stage.api?["usage"], case .number(let value) = usage["input"] { return value }; return nil }
+            assert(inputs == [100, 200], "each request keeps its own usage: \(inputs)")
+        }
+        // A stage the pause closed as "interrupted" reports again once the reply is continued (a member
+        // that goes on working); it used to stay interrupted for good. Finished stages stay final.
+        do {
+            var record = ExecutionRecord(chatId: "c", query: "q", requestedModel: "m")
+            record.recordStage("internal:1", name: "检索", status: "running", input: "读场馆页面")
+            record.recordStage("done", name: "已完成的一步", status: "completed", output: "ok")
+            record.finish("interrupted")
+            assert(record.pipeline?.map(\.status) == ["interrupted", "completed"])
+            record.status = "running"; record.finishedAt = nil      // what ChatStore does when the reply is continued
+            record.recordStage("internal:1", name: "检索", status: "running")
+            assert(record.pipeline?[0].status == "running" && record.pipeline?[0].input == "读场馆页面" && record.pipeline?[0].finishedAt == nil, "\(String(describing: record.pipeline?[0]))")
+            record.recordStage("internal:1", name: "检索", status: "completed", output: "今天营业")
+            record.recordStage("internal:1", name: "检索", status: "running")
+            record.recordStage("done", name: "已完成的一步", status: "running")
+            assert(record.pipeline?.map(\.status) == ["completed", "completed"] && record.pipeline?[0].output == "今天营业")
+        }
         print("Execution persistence, real search evidence, citation/read separation, terminal state and follow-up routing passed")
     }
 }

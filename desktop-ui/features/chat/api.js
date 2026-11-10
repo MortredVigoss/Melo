@@ -1,4 +1,4 @@
-import { currentLanguage } from '../../i18n.js';
+import { currentLanguage, t } from '../../i18n.js';
 // Chat requests (architecture plan P2c, 2026-10-19): the only requests the
 // chat feature makes. createChatApi(api) wraps app.js's shared api() (same
 // URLs and bodies as before the move); the reply stream and the supplement
@@ -81,7 +81,7 @@ async function streamApi(path, options = {}) {
 
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
-    throw chatStreamError(payload);
+    throw chatStreamError(payload, t);
   }
 
   if (!response.body) {
@@ -124,14 +124,14 @@ async function streamApi(path, options = {}) {
         if (message.event === 'done') {
           donePayload = message.payload;
         } else if (message.event === 'error') {
-          throw chatStreamError(message.payload);
+          throw chatStreamError(message.payload, t);
         } else if (message.event === 'aborted') {
           throw new DOMException('The request was stopped.', 'AbortError');
         }
       }
     }
 
-    if (!donePayload) throw chatStreamError({ code: 'STREAM_INTERRUPTED' });
+    if (!donePayload) throw chatStreamError({ code: 'STREAM_INTERRUPTED' }, t);
     return donePayload;
   } finally {
     try {

@@ -101,8 +101,10 @@ enum WebPageLoadError: Error {
             while !Task.isCancelled {
                 guard let self, self.continuation != nil else { return }
                 if await self.readableNow() {
+                    // The page may have finished loading while it was being measured: then nothing
+                    // was cut short, and the read is not marked as a partial one.
+                    guard self.finish(.success(())) else { return }
                     self.stoppedEarly = true
-                    self.finish(.success(()))
                     self.webView.stopLoading()
                     return
                 }
@@ -123,10 +125,12 @@ enum WebPageLoadError: Error {
         }
         try await Task.sleep(for: .milliseconds(Self.settleMilliseconds))
     }
-    private func finish(_ result: Result<Void, Error>) {
-        guard let continuation else { return }
+    /// True when this call ended the wait; false when it had already ended.
+    @discardableResult private func finish(_ result: Result<Void, Error>) -> Bool {
+        guard let continuation else { return false }
         self.continuation = nil
         continuation.resume(with: result)
+        return true
     }
     /// The document is parsed and already shows a real amount of text.
     private func readableNow() async -> Bool {
@@ -219,7 +223,9 @@ enum WebPageLoadError: Error {
 /// shared tool envelope; nothing loads unless the address passes
 /// WebPageText.validated and the Agent's network permission is still on.
 @MainActor enum WebPageToolRunner {
-    static func run(call: ResponsesFunctionCall, allowed: () -> Bool) async -> WebPageToolResult {
+    /// `showsScreenshots`: whether this reply attaches its screenshots for the user (ChatStore decides
+    /// that from the user's message); the result tells the model the same.
+    static func run(call: ResponsesFunctionCall, showsScreenshots: Bool = true, allowed: () -> Bool) async -> WebPageToolResult {
         guard let spec = WebPageToolSpec.named(call.name) else { return WebPageToolResult(output: WebPageText.failure("UNKNOWN_TOOL", "This phone tool does not exist.")) }
         guard allowed() else { return WebPageToolResult(output: WebPageText.failure("CAPABILITY_DENIED", "The user has not allowed web access for this Agent on this iPhone.")) }
         guard let data = call.arguments.data(using: .utf8), let args = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
@@ -247,7 +253,7 @@ enum WebPageLoadError: Error {
             try PhoneExecutionScope.check()
             guard let jpeg = await WebPageLoader.jpeg(image) else { return WebPageToolResult(output: WebPageText.failure("LOAD_FAILED", "The page rendered but the screenshot could not be encoded.", url: raw), url: raw) }
             let title = (try? await loader.extractText().title) ?? ""
-            return WebPageToolResult(output: WebPageText.envelope(WebPageText.screenshotResult(url: url.absoluteString, finalURL: loader.finalURL, title: title, status: loader.statusCode)), image: image, jpeg: jpeg, url: url.absoluteString)
+            return WebPageToolResult(output: WebPageText.envelope(WebPageText.screenshotResult(url: url.absoluteString, finalURL: loader.finalURL, title: title, status: loader.statusCode, stoppedEarly: loader.stoppedEarly, shownToUser: showsScreenshots && !ScreenshotQuality.isNearlyBlank(jpeg))), image: image, jpeg: jpeg, url: url.absoluteString)
         } catch is CancellationError {
             return WebPageToolResult(output: WebPageText.failure("ABORTED", "The request was cancelled.", url: raw), url: raw)
         } catch WebPageLoadError.timeout {

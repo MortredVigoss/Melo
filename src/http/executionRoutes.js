@@ -8,6 +8,12 @@ import { sendJson, readJsonBody } from './transport.js';
 // called when inspecting history or changing an already-generated selection.
 const selections = new Map();
 const compare = (a, b) => a === b ? 0 : a < b ? -1 : 1;
+// A `[工具轨迹]` record lists the calls of a stopped run, URLs included. It is not the run's
+// answer: taken as one, every URL it lists came back as "cited by the answer" after a reload.
+// (A trace synced from the phone has no kind and is recognised by the shared prefix.)
+export const isRunAnswer = message => message?.role === 'assistant' && message.kind !== 'tool-trace' && !String(message.content || '').startsWith(TOOL_TRACE_PREFIX);
+// The answer of one run among a chat's messages: its last reply that is not a trace, or none.
+export const runAnswer = (messages, runId) => (messages || []).findLast(message => isRunAnswer(message) && message.metadata?.runId === runId);
 export async function handleExecutionRoutes(request, response, url, home) {
   if (!['/api/chat/scenes', '/api/chat/scenes/select-image'].includes(url.pathname)) return false;
   if (url.pathname === '/api/chat/scenes' && request.method === 'GET') {
@@ -31,10 +37,7 @@ export async function handleExecutionRoutes(request, response, url, home) {
       const scene = message.metadata?.syncedExecutionScene;
       const runId = message.metadata?.runId || scene?.runId;
       if (!runId) continue;
-      // A `[工具轨迹]` record lists the calls of a stopped run, URLs included. It is not the run's
-      // answer: taken as one, every URL it lists came back as "cited by the answer" after a reload.
-      // (A trace synced from the phone has no kind and is recognised by the shared prefix.)
-      if (message.role === 'assistant' && message.kind !== 'tool-trace' && !String(message.content || '').startsWith(TOOL_TRACE_PREFIX)) assistants.set(runId, message);
+      if (isRunAnswer(message)) assistants.set(runId, message);
       if (message.role === 'user') users.set(runId, index);
       if (scene) synced.set(runId, scene);
       if (!candidates.has(runId) && (scene || requestedRun === runId)) candidates.set(runId, { runId, createdAt: scene?.startedAt || message.createdAt || '' });
@@ -65,7 +68,9 @@ export async function handleExecutionRoutes(request, response, url, home) {
       const messages = state.chats.find(chat => chat.id === body.chatId)?.messages || [];
       const index = messages.findIndex(m => m.role === 'user' && m.metadata?.runId === body.runId);
       const scene = await readExecutionScene(home, body.runId, {
-        message: messages.find(m => m.role === 'assistant' && m.metadata?.runId === body.runId),
+        // The same rule as the listing above: choosing an image of a stopped run used to save
+        // its scene with every URL of the trace marked as cited.
+        message: runAnswer(messages, body.runId),
         searchContext: index < 0 ? '' : executionSearchContext(messages.slice(0, index), messages[index].content),
       });
       if (!scene) throw Object.assign(new Error('Scene not found'), { statusCode: 404 });

@@ -70,6 +70,10 @@ export function createFinalizeNode(turn) {
       }
 
       finalReplyText = applyVerificationToReply(parsed.cleanReply, verification, { channelKind });
+      // What became of the sentence the answer flagged as uncertain is part of the run's record. It changed the
+      // reply (a correction, or a "could not verify" note) and the task space showed nothing about it.
+      const verdictOutput = { VERIFIED: 'output.claimVerified', CORRECTED: 'output.claimCorrected', UNVERIFIED: 'output.claimUnverified' }[verification.verdict];
+      if (verdictOutput) sseEmitter?.('execution_event', { kind: 'pipeline', id: 'claim:verdict', module: 'compute', messageId: 'stage.claimCheck', status: verification.verdict === 'UNVERIFIED' ? 'failed' : 'completed', outputMessageId: verdictOutput });
 
       // Persist CORRECTED verdicts so future turns can recall past mistakes.
       // UNVERIFIED is not stored — it carries no actionable information.

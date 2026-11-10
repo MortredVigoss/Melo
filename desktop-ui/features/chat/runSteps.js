@@ -1,15 +1,10 @@
 // What the running reply is doing right now, shown inside the chat (the side
 // panel keeps the full record). Same rules as RunProgress.steps on the phone:
 // only real scene steps, running ones always kept, finished ones trimmed.
-// Hand-maintained: the browser only sees scene operations (tool id + args),
-// never the tool object, so the self-description fields in src/tools/tool.js
-// (capability / needsWorkspace / uiModule / inputKeys / concurrency) cannot
-// drive these labels. Add a label here when registering a tool the user sees.
-const TOOL_NAMES = {
-  file_read: '读取文件', file_write: '写入文件', file_edit: '修改文件', file_delete: '删除文件', file_move: '移动文件', file_mkdir: '新建文件夹',
-  bash: '运行命令', glob: '查找文件', grep: '搜索代码', web_search: '联网搜索', native_web_search: '联网搜索', fetch_url: '读取网页', web_screenshot: '网页截图',
-  image: '生成图片', image_edit: '修改图片', delegate: '交给其他 Agent', search_history: '查找对话记录', calculator: '计算',
-};
+// Tool labels live in ../../executionText.js (one table for the steps, the
+// pills, the task space and the execution detail). Add a label there when
+// registering a tool the user sees.
+import { TOOL_NAMES } from '../../executionText.js';
 const oneLine = value => String(value || '').replace(/\s+/g, ' ').trim().slice(0, 90);
 
 export function stepState(status) {
@@ -18,18 +13,28 @@ export function stepState(status) {
   return 'running';
 }
 
-export function sceneSteps(scene, limit = 6) {
+// `text` is how the caller names things in the interface language
+// (executionText.js: stageName, stageOutput, toolName, callOutcome). The scene
+// keeps an English fallback of a stage's name and output next to its message
+// id, and a stop stage's output is a reason code: printed as recorded, a
+// Chinese interface showed "Checking task delivery" and "REPEATED_TOOL_FAILURE"
+// (agent audit 2026-11-10). Without `text` the recorded values are used.
+export function sceneSteps(scene, limit = 6, text = {}) {
   if (!scene) return [];
   const steps = [];
+  const stageTitle = stage => text.stageName?.(stage) || stage.name || stage.id;
+  const stageDetail = stage => (text.stageOutput ? text.stageOutput(stage) : stage.output) || stage.input;
+  const toolTitle = op => text.toolName ? text.toolName(op.name) : TOOL_NAMES[op.name] || op.name || '工具';
   for (const stage of scene.pipeline || []) {
-    const detail = stage.channel === 'reasoning-summary' ? oneLine(String(stage.output || '').split('\n').filter(Boolean).at(-1)) : oneLine(stage.output || stage.input);
+    const detail = stage.channel === 'reasoning-summary' ? oneLine(String(stage.output || '').split('\n').filter(Boolean).at(-1)) : oneLine(stageDetail(stage));
     // Bug audit U5: a stage that only ever reported `completed` has no
     // startedAt; fall back to its finish time so the list keeps its order.
-    steps.push({ id: `stage:${stage.id}`, title: stage.name || stage.id, detail, state: stepState(stage.status), at: stage.startedAt || stage.finishedAt || stage.at || '' });
+    steps.push({ id: `stage:${stage.id}`, title: stageTitle(stage), detail, state: stepState(stage.status), at: stage.startedAt || stage.finishedAt || stage.at || '' });
   }
   for (const op of scene.operations || []) {
-    const detail = oneLine(op.change?.path || op.command || op.query || op.input || op.resultSummary);
-    steps.push({ id: `op:${op.id}`, title: TOOL_NAMES[op.name] || op.name || '工具', detail, state: stepState(op.status), at: op.startedAt || op.finishedAt || op.at || '' });
+    // A call that was refused or never ran says so before what it was asked to do.
+    const detail = oneLine([text.callOutcome?.(op), op.change?.path || op.command || op.query || op.input || op.resultSummary].filter(Boolean).join(' · '));
+    steps.push({ id: `op:${op.id}`, title: toolTitle(op), detail, state: stepState(op.status), at: op.startedAt || op.finishedAt || op.at || '' });
   }
   const ordered = steps.every(step => step.at) ? [...steps].sort((a, b) => a.at.localeCompare(b.at)) : steps;
   if (ordered.length <= limit) return ordered;

@@ -159,14 +159,17 @@ test('shared Core ends the production loop after repeated permanent failure rece
   const result = await h.run();
   assert.equal(h.requests.length, 3);
   assert.equal(h.executions.length, 2, 'existing repeat guard suppresses the third identical failing effect');
-  assert.match(result.normalizedReply.content, /REPEATED_TOOL_FAILURE/);
+  // The reply says why in words; the code stays in the receipt (2026-11-10: it used to be printed in the reply).
+  assert.match(result.normalizedReply.content, /工具连续几轮失败/); assert.doesNotMatch(result.normalizedReply.content, /REPEATED_TOOL_FAILURE/);
+  assert.equal(result.normalizedReply.completion.reason, 'REPEATED_TOOL_FAILURE');
 });
 
 test('shared Core ends identical successful reads before the old ten-round cap', async t => {
   const h = await harness(t, round => done([fn('read-' + round, 'A')]));
   const result = await h.run();
   assert.equal(h.requests.length, 6); assert.equal(h.executions.length, 6);
-  assert.match(result.normalizedReply.content, /NO_PROGRESS/);
+  assert.match(result.normalizedReply.content, /连续几轮没有新进展/); assert.doesNotMatch(result.normalizedReply.content, /NO_PROGRESS/);
+  assert.equal(result.normalizedReply.completion.reason, 'NO_PROGRESS');
 });
 
 test('a turn deadline aborts an in-flight model request without executing a late tool', async t => {
@@ -179,7 +182,7 @@ test('a turn deadline aborts an in-flight model request without executing a late
 });
 
 
-test('a supplement typed during a tool step reaches the very next model request, and one typed during the final answer is handed back', async t => {
+test('a supplement typed during a tool step reaches the very next model request, and one typed while the answer is written sends the turn back to work', async t => {
   const h = await harness(t, round => {
     // The user types while the model request of this round is in flight.
     if (round === 1) addSupplement('fixture-chat', '只核对 C，不要 A');
@@ -190,7 +193,9 @@ test('a supplement typed during a tool step reaches the very next model request,
   t.after(() => endSupplements('fixture-chat'));
   const result = await h.run();
   assert.equal(result.normalizedReply.content, '核对完成。');
-  assert.equal(h.requests.length, 3);
+  // Tool round, the answer written while the second supplement arrived, the answer written with it in view,
+  // and that answer's check. The stale answer used to be sent to the check instead (2026-11-10 audit).
+  assert.equal(h.requests.length, 4);
   assert.equal(JSON.stringify(h.requests[0].body).includes('只核对 C'), false);
   const next = JSON.stringify(h.requests[1].body.input);
   assert.ok(next.includes('只核对 C，不要 A'), 'the next model request carries the supplement');
@@ -198,8 +203,10 @@ test('a supplement typed during a tool step reaches the very next model request,
   assert.deepEqual(h.executions, ['A']);
   assert.ok(h.events.some(e => e.type === 'execution_event' && e.event.id?.startsWith('supplement:') && e.event.output === '只核对 C，不要 A'));
   assert.deepEqual(usedSupplements('fixture-chat').map(e => e.text), ['只核对 C，不要 A', '最后再写个总结']);
-  assert.match(JSON.stringify(h.requests[2].body), /最后再写个总结/);
-  assert.deepEqual(endSupplements('fixture-chat'), [], 'both supplements reached the bounded goal check');
+  assert.match(JSON.stringify(h.requests[2].body.input), /最后再写个总结/, 'the work request after the second supplement carries it');
+  assert.equal(goalReviewBody(h.requests[2].body), false, 'that request is work, not the check of the stale answer');
+  assert.equal(goalReviewBody(h.requests[3].body), true);
+  assert.deepEqual(endSupplements('fixture-chat'), [], 'both supplements reached the model before the answer that was checked');
 });
 
 // Team members are Agents the user created (the built-in lanes are no team members since 2026-11-07).
@@ -210,7 +217,9 @@ test('manual chat team reaches real member HTTP requests with own models, person
  const result=await h.run();
  // Two members, then one summary request written by the lead with its own model and persona.
  assert.equal(h.requests.length,3);
- assert.deepEqual(h.requests.map(r=>r.body.model),['research-model','review-model','parent']);
+ // Members run on their own models. The lead's summary is this conversation's reply and runs on the model the
+ // turn resolved for the conversation, like every other reply of it (2026-11-10 audit; it used the lead Agent's own).
+ assert.deepEqual(h.requests.map(r=>r.body.model),['research-model','review-model','fixture-model']);
  assert.match(JSON.stringify(h.requests[2].body),/parent/);
  assert.match(JSON.stringify(h.requests[2].body),/result 1/);
  assert.match(JSON.stringify(h.requests[2].body),/result 2/);
@@ -253,7 +262,8 @@ for (const failing of [false, true]) test(`shared main loop bounds ${failing ? '
   assert.equal(h.requests.length, failing ? 3 : 6);
   assert.equal(h.executions.length, failing ? 2 : 6);
   assert.equal(h.permissions.length, failing ? 2 : 6);
-  assert.match(result.normalizedReply.content, failing ? /REPEATED_TOOL_FAILURE/ : /NO_PROGRESS/);
+  assert.match(result.normalizedReply.content, failing ? /工具连续几轮失败/ : /连续几轮没有新进展/);
+  assert.equal(result.normalizedReply.completion.reason, failing ? 'REPEATED_TOOL_FAILURE' : 'NO_PROGRESS');
   assert.equal(h.events.filter(e => e.type === 'tool_calls_done').length, failing ? 3 : 6, 'all executed and locally refused batches keep receipts');
 });
 
@@ -298,7 +308,8 @@ test('tool ok and final prose are not goal verification', async t => {
   const h = await harness(t, round => done(round === 1 ? [fn('effect', 'A')] : [message]));
   const result = await h.run();
   assert.equal(h.executions.length, 1); assert.equal(h.requests.length, 3);
-  assert.equal(result.normalizedReply.completion.outcome, 'partial');
+  // Delivered, and the check gave no verdict: never "completed", and since 2026-11-10 "unverified" rather than "partial".
+  assert.equal(result.normalizedReply.completion.outcome, 'unverified');
   assert.equal(result.normalizedReply.completion.reason, 'GOAL_CHECK_UNAVAILABLE');
 });
 
@@ -383,7 +394,8 @@ for (const mode of ['ambiguity', 'malformed', 'attempted-tool', 'repeated-missin
   assert.deepEqual(h.executions, ['A']); assert.equal(h.permissions.length, 1);
   assert.equal(result.normalizedReply.content, '已有内容保留。');
   assert.equal(checks, mode === 'repeated-missing' ? 3 : 1);
-  assert.equal(result.normalizedReply.completion.outcome, mode === 'ambiguity' ? 'needs_user' : 'partial');
+  // A check that judged the answer keeps its verdict; one that gave none (unreadable, or it tried a tool) leaves the answer unverified.
+  assert.equal(result.normalizedReply.completion.outcome, mode === 'ambiguity' ? 'needs_user' : mode === 'repeated-missing' ? 'partial' : 'unverified');
   if (mode === 'repeated-missing') { assert.equal(result.normalizedReply.completion.reason, 'GOAL_CORRECTION_LIMIT'); assert.equal(h.requests.length, 7); }
 });
 
@@ -392,7 +404,7 @@ test('a provider failure during the tool-free check preserves the candidate and 
   const h = await harness(t, (_, body) => goalReviewBody(body) ? 'data: broken-json\n\n' : ++work === 1 ? done([fn('initial', 'A')]) : textReply('已经取得的结果。'));
   const result = await h.run();
   assert.equal(result.normalizedReply.content, '已经取得的结果。');
-  assert.equal(result.normalizedReply.completion.outcome, 'partial');
+  assert.equal(result.normalizedReply.completion.outcome, 'unverified');
   assert.equal(h.executions.length, 1); assert.equal(h.requests.length, 3);
 });
 

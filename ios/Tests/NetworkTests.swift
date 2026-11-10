@@ -96,7 +96,8 @@ func json(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObject(
         assert(restored.returnedModel == "vendor/model-v1" && restored.pipeline?.allSatisfy { $0.status == "completed" } == true)
         assert(restored.sources[0].providers == ["API 回复"], "History reconciliation must not relabel an API citation as ChatGPT")
         MockProtocol.payload = "{\"choices\":[{\"finish_reason\":\"length\",\"message\":{\"content\":\"只有半段回答\"}}]}"
-        do { _ = try await reply(); fatalError("Truncated answer accepted as complete") } catch {}
+        do { _ = try await reply(); fatalError("Truncated answer accepted as complete") }
+        catch { assert(error.localizedDescription.contains("输出长度上限") && error.localizedDescription.contains("length"), "the failure says the output limit was reached: \(error.localizedDescription)") }
         assert(observations.last?.pipeline.first?.status == "failed")
         assert(observations.last?.pipeline.contains(where: { $0.id == "reply:format" }) == false)
         for reason in ["content_filter", "tool_calls"] {
@@ -128,7 +129,12 @@ func json(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObject(
         assert(observations.last?.returnedModel == "claude-reported")
         for reason in ["max_tokens", "tool_use", "pause_turn"] {
             MockProtocol.payload = "{\"stop_reason\":\"\(reason)\",\"content\":[{\"type\":\"text\",\"text\":\"unfinished\"}]}"
-            do { _ = try await Network.reply(messages: [], endpoint: "https://example.invalid/v1/messages", model: "claude", token: "test-key", apiProtocol: "anthropic", session: session); fatalError("Incomplete Anthropic answer accepted") } catch {}
+            do { _ = try await Network.reply(messages: [], endpoint: "https://example.invalid/v1/messages", model: "claude", token: "test-key", apiProtocol: "anthropic", session: session); fatalError("Incomplete Anthropic answer accepted") }
+            catch {
+                // 2026-11-10: an Anthropic reply that stopped early says why. Every such stop used to read
+                // "模型响应格式无效", a cut at the output limit included. It is still a failed request.
+                assert(!error.localizedDescription.contains("格式无效") && error.localizedDescription.contains(reason) && error.localizedDescription.contains(reason == "max_tokens" ? "输出长度上限" : "模型未完成回复"), error.localizedDescription)
+            }
         }
         let history = (0..<61).map { ChatMessage(role: $0.isMultiple(of: 2) ? "user" : "assistant", content: "message-\($0)") }
         for native in [false, true] {
@@ -180,7 +186,14 @@ func json(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObject(
             "{\"choices\":[{\"finish_reason\":\"tool_calls\",\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"id\":\"call_a\",\"type\":\"function\",\"function\":{\"name\":\"open_url\",\"arguments\":\"{\\\"url\\\":\\\"https://a.example\\\"}\"}},{\"id\":\"call_b\",\"type\":\"function\",\"function\":{\"name\":\"web_screenshot\",\"arguments\":\"{\\\"url\\\":\\\"https://a.example\\\"}\"}}]}}]}",
             "{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"role\":\"assistant\",\"content\":\"页面说 page text\"}}]}",
             String(data: try JSONSerialization.data(withJSONObject: ["choices": [["finish_reason": "stop", "message": ["content": #"{"decision":"complete","reasonType":"fulfilled","reason":"已查看页面","nextStep":"","requirements":[{"text":"查看页面","status":"met","evidenceIds":["call_a"]}]}"#]]]]), encoding: .utf8)!]
-        let chatAnswer = try await Network.reply(messages: [ChatMessage(role: "user", content: "看看 https://a.example")], endpoint: "https://example.invalid/chat", model: "fixture", token: "test-key", instructions: "Role", tools: toolSet, session: session)
+        var toolObservations: [ExecutionObservation] = []
+        let chatAnswer = try await Network.reply(messages: [ChatMessage(role: "user", content: "看看 https://a.example")], endpoint: "https://example.invalid/chat", model: "fixture", token: "test-key", instructions: "Role", tools: toolSet, session: session, onObservation: { toolObservations.append($0) })
+        // 2026-11-10: the tool round and the answer are two model requests, each with its own stage. They
+        // shared one, which stayed "running" through the tool round and closed for good with the first answer.
+        let requestStages = toolObservations.last?.pipeline ?? []
+        assert(requestStages.map(\.id) == ["model:response", "model:response:2", "reply:format:2"] && requestStages.allSatisfy { $0.status == "completed" }, "\(requestStages.map { $0.id + "=" + $0.status })")
+        assert(toolObservations.contains { $0.pipeline.map(\.status) == ["completed", "running"] }, "the first request is closed and the second shown while it runs")
+        assert(requestStages[0].output.contains("2 个工具"), requestStages[0].output)
         assert(chatAnswer.text == "页面说 page text" && performed.map(\.name) == ["open_url", "web_screenshot"] && performed.map(\.callID) == ["call_a", "call_b"])
         assert(performed[0].arguments == #"{"url":"https://a.example"}"#)
         assert(MockProtocol.requestBodies.count == 3 && chatAnswer.completion?.outcome == "completed")
@@ -237,6 +250,27 @@ func json(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObject(
         MockProtocol.payloads = ["{\"stop_reason\":\"max_tokens\",\"content\":[{\"type\":\"tool_use\",\"id\":\"t\",\"name\":\"open_url\",\"input\":{\"url\":\"https://a.example\"}}]}"]
         do { _ = try await Network.reply(messages: [ChatMessage(role: "user", content: "x")], endpoint: "https://example.invalid/v1/messages", model: "claude", token: "test-key", apiProtocol: "anthropic", tools: toolSet, session: session); fatalError("truncated tool_use executed") }
         catch { assert(performed.isEmpty && MockProtocol.requestBodies.count == 1) }
+
+        // 2026-11-10: a server that sends tool calls without ids, in two successive rounds. Such a call
+        // used to be dropped and the reply ended as "模型未完成回复（tool_calls）". Each one is given an id
+        // that is unique within the reply (counted across the rounds, as on the desktop), the call runs,
+        // and the next request pairs every result with its call.
+        MockProtocol.anthropic = false; MockProtocol.requestBodies = []; performed = []
+        func withoutID(_ url: String) -> String { "{\"choices\":[{\"finish_reason\":\"tool_calls\",\"message\":{\"role\":\"assistant\",\"content\":null,\"tool_calls\":[{\"type\":\"function\",\"function\":{\"name\":\"open_url\",\"arguments\":\"{\\\"url\\\":\\\"\(url)\\\"}\"}}]}}]}" }
+        MockProtocol.payloads = [withoutID("https://a.example"), withoutID("https://b.example"),
+            "{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"role\":\"assistant\",\"content\":\"两个页面都读了\"}}]}",
+            String(data: try JSONSerialization.data(withJSONObject: ["choices": [["finish_reason": "stop", "message": ["content": #"{"decision":"complete","reasonType":"fulfilled","reason":"已读两页","nextStep":"","requirements":[{"text":"读两个页面","status":"met","evidenceIds":["call_1","call_2"]}]}"#]]]]), encoding: .utf8)!]
+        let noIDs = try await Network.reply(messages: [ChatMessage(role: "user", content: "看看 https://a.example 和 https://b.example")], endpoint: "https://example.invalid/chat", model: "fixture", token: "test-key", tools: toolSet, session: session)
+        assert(noIDs.text == "两个页面都读了" && performed.map(\.callID) == ["call_1", "call_2"] && performed.map(\.arguments) == [#"{"url":"https://a.example"}"#, #"{"url":"https://b.example"}"#], "\(performed.map(\.callID))")
+        let afterSecondRound = MockProtocol.requestBodies[2]["messages"] as! [[String: Any]]
+        let echoedIDs = afterSecondRound.compactMap { ($0["tool_calls"] as? [[String: Any]])?.first?["id"] as? String }
+        let resultIDs = afterSecondRound.compactMap { $0["tool_call_id"] as? String }
+        assert(echoedIDs == ["call_1", "call_2"] && resultIDs == ["call_1", "call_2"], "each result follows its own call: \(echoedIDs) \(resultIDs)")
+        // Ids the server gave are kept, and a made-up one never repeats one of them.
+        var usedIDs: Set<String> = []
+        let mixed = Network.identifiedToolCalls(["tool_calls": [["function": ["name": "a"]], ["id": "call_1", "function": ["name": "b"]], ["id": " ", "function": ["name": "c"]]]], used: &usedIDs)
+        assert((mixed["tool_calls"] as? [[String: Any]])?.map { $0["id"] as? String } == ["call_2", "call_1", "call_3"], "\(String(describing: mixed["tool_calls"]))")
+        assert(usedIDs == ["call_1", "call_2", "call_3"] && Network.chatToolCalls(mixed).map(\.name) == ["a", "b", "c"])
 
         // Audit I12: the echoed assistant row carries only role/content/tool_calls (+ reasoning_content when sent).
         MockProtocol.anthropic = false; MockProtocol.requestBodies = []; performed = []

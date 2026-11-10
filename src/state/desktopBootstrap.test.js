@@ -133,3 +133,18 @@ test('getDesktopBootstrap pins agent markdown paths to the home captured at entr
     `identityPath leaked to homeB (${homeB})`,
   );
 });
+
+// Settings audit 2026-11-10: the Agent page's skill whitelist lists every skill,
+// but a ticked skill is only offered while it is also switched on for the whole
+// app. The options now carry that switch so the page can mark the ones that are off.
+test('each Agent\'s skill options say whether the skill is switched on for the whole app', async () => {
+  process.env.MELO_HOME = homeA;
+  const bootstrap = await getDesktopBootstrap();
+  const main = bootstrap.customize.agents.find(a => a.id === 'main');
+  const skills = new Map(bootstrap.customize.skills.map(skill => [skill.id, skill]));
+  assert.ok(main.capabilityOptions.length > 0, 'the fixture has skills to choose from');
+  for (const option of main.capabilityOptions) {
+    assert.equal(typeof option.enabled, 'boolean', option.id);
+    assert.equal(option.enabled, skills.get(option.id).enabled === true, option.id);
+  }
+});

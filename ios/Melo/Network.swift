@@ -92,6 +92,27 @@ enum Network {
     }
 
     /// Tool calls of one Chat Completions assistant message.
+    /// A Chat Completions assistant message whose tool calls all carry an id. Some OpenAI-compatible
+    /// servers send `tool_calls` without one. Such a call used to be dropped by `chatToolCalls`, and the
+    /// reply then ended as "模型未完成回复（tool_calls）" (2026-11-10). A missing id becomes `call_<n>`,
+    /// counted across the rounds of the reply as on the desktop (functionCalling.js `synthesizeId`), so
+    /// it is unique within the reply. The returned message is also the one the next request echoes, so
+    /// every result pairs with its call. `used` holds every id of the reply so far, given or made here.
+    static func identifiedToolCalls(_ message: [String: Any], used: inout Set<String>) -> [String: Any] {
+        guard var calls = message["tool_calls"] as? [[String: Any]], !calls.isEmpty else { return message }
+        func given(_ call: [String: Any]) -> String? {
+            guard let id = call["id"] as? String, !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            return id
+        }
+        for call in calls { if let id = given(call) { used.insert(id) } }
+        for index in calls.indices where given(calls[index]) == nil {
+            var n = used.count + 1
+            while used.contains("call_\(n)") { n += 1 }
+            calls[index]["id"] = "call_\(n)"; used.insert("call_\(n)")
+        }
+        var identified = message; identified["tool_calls"] = calls
+        return identified
+    }
     static func chatToolCalls(_ message: [String: Any]) -> [ResponsesFunctionCall] {
         ((message["tool_calls"] as? [[String: Any]]) ?? []).compactMap { call in
             guard let id = call["id"] as? String, let function = call["function"] as? [String: Any], let name = function["name"] as? String else { return nil }
@@ -188,8 +209,11 @@ enum Network {
         }
         let url = try self.endpoint(endpoint)
         let transport = APIChatTransport(url: url, token: token, headers: headers, session: session, anthropic: anthropic, apiProtocol: apiProtocol, model: model, base: body, offersTools: loopTools != nil, onObservation: onObservation)
-        transport.observation.stage("model:response", name: "模型请求", status: "running", output: "等待服务返回", model: model)
-        await onObservation?(transport.observation)
+        // A continued reply starts with the request of the pass it was paused in; its stage is opened by that request.
+        if hooks.resumeCursor == nil {
+            transport.observation.stage(transport.observation.modelStageID, name: "模型请求", status: "running", output: "等待服务返回", model: model)
+            await onObservation?(transport.observation)
+        }
         var loopHooks = hooks
         if loopHooks.onStatus == nil { loopHooks.onStatus = onStatus }
         let loop = AgentLoop(transport: transport, tools: loopTools, budget: budget ?? PhoneRunBudget(), latestUserMessage: (requestHistory ?? messages).last(where: { $0.role == "user" })?.content ?? "", verification: verification, hooks: loopHooks)
@@ -197,13 +221,16 @@ enum Network {
         do {
             let outcome = try await loop.run()
             if outcome.stop != .answered {
-                transport.observation.stage("model:response", name: "模型请求", status: "completed", output: outcome.stop == .toolLimit ? "已达到工具执行上限，本轮停止" : "运行预算已用完，本轮停止")
+                // Only a request that was still open is closed here. "Tool limit" used to be written for every
+                // stop that was not the budget, a run of failed tools included, and "budget used up" for a
+                // delivered write-up.
+                transport.observation.stage(transport.observation.modelStageID, name: "模型请求", status: "completed", output: outcome.stop == .deliveredLimit ? "已到本轮上限，现有结果已整理成回答" : outcome.stop == .toolLimit ? "执行已停止，未继续请求模型" : "运行预算已用完，本轮停止")
                 await onObservation?(transport.observation)
             }
             return ModelReply(text: outcome.text, sources: outcome.sources, searched: outcome.searched, completion: outcome.completion)
         } catch {
             let cancelled = error is CancellationError || (error as? URLError)?.code == .cancelled
-            transport.observation.stage("model:response", name: "模型请求", status: cancelled ? "cancelled" : "failed", output: cancelled ? "请求已取消" : "未取得完整响应")
+            transport.observation.stage(transport.observation.modelStageID, name: "模型请求", status: cancelled ? "cancelled" : "failed", output: cancelled ? "请求已取消" : "未取得完整响应")
             await onObservation?(transport.observation)
             throw error
         }
@@ -259,11 +286,33 @@ final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
         return rows
     }
 
+    /// The loop pass of the last observed request and how many requests that pass has made.
+    private var observedPass = -1, observedAttempt = 0
+    /// Every tool call id of this reply so far (Network.identifiedToolCalls).
+    private var toolCallIDs = Set<String>()
     func round(_ input: AgentLoopRequest) async throws -> AgentRound {
-        if input.goalReview == nil && (input.iteration > 0 || routingContextLimit != nil) {
-            observation.stage("model:response", name: "模型请求", status: "running", output: "工具结果已返回，等待模型继续", model: model)
-            await onObservation?(observation)
+        guard input.goalReview == nil else { return try await exchange(input) }
+        // Every model request of the reply has its own stage (ExecutionObservation.requestKey). They
+        // used to share one, which stayed "running" through the tool rounds and closed for good with
+        // the first answer.
+        if input.iteration == observedPass { observedAttempt += 1 } else { observedPass = input.iteration; observedAttempt = 1 }
+        let key = ExecutionObservation.requestKey(iteration: input.iteration, attempt: observedAttempt, continuation: input.continuation)
+        if key != observation.requestKey { observation.beginRequest(key) }
+        observation.stage(observation.modelStageID, name: "模型请求", status: "running", output: input.iteration > 0 ? "工具结果已返回，等待模型继续" : "等待服务返回", model: model)
+        await onObservation?(observation)
+        do { return try await exchange(input) }
+        catch {
+            // A request that ended in an error must not leave its stage "running": the loop may go on.
+            // A cancelled request and one the budget refused are closed by the way the run itself ends.
+            let cancelled = error is CancellationError || (error as? URLError)?.code == .cancelled || Task.isCancelled
+            if !cancelled && !(error is PhoneBudgetReached) && !(error is PhoneDeadline.Reached) {
+                observation.stage(observation.modelStageID, name: "模型请求", status: "failed", output: "未取得完整响应")
+                await onObservation?(observation)
+            }
+            throw error
         }
+    }
+    private func exchange(_ input: AgentLoopRequest) async throws -> AgentRound {
         var body = input.scopedBody(base, responses: false, anthropic: anthropic)
         if let review = input.goalReview {
             let messages = review["messages"] as? [[String: Any]] ?? []
@@ -298,11 +347,14 @@ final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
         // Tool round: only a completed tool turn counts; calls cut off by `length` /
         // `max_tokens` are never executed (the truncation is reported below).
         if input.goalReview == nil, (offersTools || input.internalDefinition != nil || input.internalJob != nil), let receipt, finishReason == (anthropic ? "tool_use" : "tool_calls") {
-            let assistantMessage = ((receipt["choices"] as? [[String: Any]])?.first?["message"] as? [String: Any]) ?? [:]
+            var assistantMessage = ((receipt["choices"] as? [[String: Any]])?.first?["message"] as? [String: Any]) ?? [:]
+            if !anthropic { assistantMessage = Network.identifiedToolCalls(assistantMessage, used: &toolCallIDs) }
             let assistantContent = receipt["content"] as? [[String: Any]] ?? []
             let calls = anthropic ? Network.anthropicToolCalls(assistantContent) : Network.chatToolCalls(assistantMessage)
             if !calls.isEmpty {
                 let text = anthropic ? assistantContent.filter { $0["type"] as? String == "text" }.compactMap { $0["text"] as? String }.joined() : assistantMessage["content"] as? String ?? ""
+                observation.stage(observation.modelStageID, name: "模型请求", status: "completed", output: "模型返回完成 · 请求调用 \(calls.count) 个工具")
+                await onObservation?(observation)
                 return AgentRound(text: text, calls: calls, echo: anthropic ? .anthropic(assistantContent) : .chat(assistantMessage), inputTokens: usage, estimatedInputTokens: estimate, outputTokens: outputTokens, budgetAccounted: meter.accounted)
             }
         }
@@ -323,8 +375,9 @@ final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
                     var content: [Block]; var model: String?; var stop_reason: String?
                 }
                 let native = try JSONDecoder().decode(Native.self, from: data)
-                guard ["end_turn", "stop_sequence"].contains(native.stop_reason ?? "") else { throw MeloError.message("模型未完成回复。") }
-                response = Response(model: native.model, choices: [.init(message: .init(content: native.content.filter { $0.type == "text" }.compactMap(\.text).joined()), finish_reason: "stop")])
+                // The stop reason is judged below, with the chat-completions one. Thrown from inside this `do`,
+                // its error was caught just below and reported as an invalid response format (2026-11-10).
+                response = Response(model: native.model, choices: [.init(message: .init(content: native.content.filter { $0.type == "text" }.compactMap(\.text).joined()), finish_reason: ["end_turn", "stop_sequence"].contains(native.stop_reason ?? "") ? "stop" : native.stop_reason ?? "unknown")])
             } else { response = try JSONDecoder().decode(Response.self, from: data) }
         }
         catch { throw MeloError.message("模型响应格式无效，未保存为完整回答。") }
@@ -332,16 +385,19 @@ final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
         observation.returnedModel = returned?.isEmpty == false ? returned : nil
         guard let choice = response.choices.first else { throw MeloError.message("模型没有返回文字内容。") }
         if let reason = choice.finish_reason, !reason.isEmpty, reason != "stop" {
+            // A reply cut at the output limit stays a failed request, as on the desktop: half an answer is
+            // never saved as the answer. The failure now says what happened.
+            if ["length", "max_tokens"].contains(reason) { throw MeloError.message("模型的回复达到了输出长度上限（\(reason)），未保存为完整回答。") }
             throw MeloError.message("模型未完成回复（\(String(reason.prefix(60)))），未保存为完整回答。")
         }
         guard let text = choice.message.content, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw MeloError.message("模型没有返回文字内容。") }
         if input.goalReview != nil { return AgentRound(text: text, inputTokens: usage, estimatedInputTokens: estimate, outputTokens: outputTokens, budgetAccounted: meter.accounted) }
-        observation.stage("model:response", name: "模型请求", status: "completed", output: "模型文字返回完成" + (observation.returnedModel.map { " · 服务返回模型：\($0)" } ?? " · 服务未报告模型标识"))
-        observation.stage("reply:format", name: "整理回答与引用", status: "running", output: "处理服务返回的文字与引用标记")
+        observation.stage(observation.modelStageID, name: "模型请求", status: "completed", output: "模型文字返回完成" + (observation.returnedModel.map { " · 服务返回模型：\($0)" } ?? " · 服务未报告模型标识"))
+        observation.stage(observation.formatStageID, name: "整理回答与引用", status: "running", output: "处理服务返回的文字与引用标记")
         await onObservation?(observation)
         let sources = WebReplyFormatter.references(in: text)
         for source in sources { observation.source(url: source.url, title: source.title, cited: true, provider: "API 回复") }
-        observation.stage("reply:format", name: "整理回答与引用", status: "completed", output: "文字与 \(sources.count) 条引用已整理；无搜索调用记录")
+        observation.stage(observation.formatStageID, name: "整理回答与引用", status: "completed", output: "文字与 \(sources.count) 条引用已整理；无搜索调用记录")
         await onObservation?(observation)
         return AgentRound(text: text, sources: sources, inputTokens: usage, estimatedInputTokens: estimate, outputTokens: outputTokens, budgetAccounted: meter.accounted)
     }

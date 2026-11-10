@@ -108,8 +108,13 @@ export function evaluate(input) {
   }
 }
 
+// A cut inside an emoji leaves half a surrogate pair in a string. JSON.stringify writes it as an escape that
+// the iPhone's JSON parser rejects, and the result of the whole operation was lost with it: an answer that
+// had been written could fail at its check. With the u flag the class matches only unpaired halves.
+const HALF_PAIR = /[\uD800-\uDFFF]/u, HALF_PAIRS = /[\uD800-\uDFFF]/gu;
+const wellFormed = (key, value) => typeof value === 'string' && HALF_PAIR.test(value) ? value.replace(HALF_PAIRS, '\uFFFD') : value;
 export function evaluateJSON(json) {
   if (typeof json !== 'string' || json.length > 2_000_000) return JSON.stringify({ ok: false, error: { code: 'INPUT_LIMIT', message: 'Core input exceeds its JSON budget.' } });
-  try { return JSON.stringify(evaluate(JSON.parse(json))); }
+  try { return JSON.stringify(evaluate(JSON.parse(json)), wellFormed); }
   catch { return JSON.stringify({ ok: false, error: { code: 'INVALID_JSON', message: 'Core input is not valid JSON.' } }); }
 }

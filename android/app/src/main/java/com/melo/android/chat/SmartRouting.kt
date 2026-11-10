@@ -31,7 +31,11 @@ class SmartRouting(private val runtime: SharedCoreRuntime, private val config: S
         input = buildJsonObject {
             put("mode", config.mode); put("policy", policy); put("candidates", JsonArray(candidates)); put("connectionId", current.id); put("defaultModel", current.model); put("fixedModel", config.fixedModel)
             put("text", messages.lastOrNull { it.role == "user" }?.content.orEmpty())
-            put("context", JsonArray(messages.map { buildJsonObject { put("role", it.role); put("content", it.content) } }))
+            // Only a smart choice reads the conversation (which topic the task belongs to). A fixed
+            // model is decided by the selection alone, and every chat on this phone is fixed: sending
+            // the whole conversation through the Runtime on each send and each lead round cost time
+            // on every reply and ended a long conversation with "共享 Runtime 输入超过上限".
+            if (config.mode == "smart") put("context", JsonArray(messages.map { buildJsonObject { put("role", it.role); put("content", it.content) } }))
             put("attachments", JsonArray(messages.lastOrNull { it.role == "user" }?.attachments.orEmpty().map { buildJsonObject { put("kind", if(it.mime.startsWith("image/")) "image" else "file") } }))
         }
         decision = runtime.value("modelRouting", buildJsonObject { put("routing", input) }).jsonObject
@@ -61,6 +65,8 @@ class SmartRouting(private val runtime: SharedCoreRuntime, private val config: S
         if(active) onDecision("model-routing:0", runtime.value("modelRouting", buildJsonObject { put("action", "label"); put("decision", decision) }).jsonPrimitive.content, "completed")
     }
     suspend fun escalate(rounds: Int, failures: Int, requested: Boolean, stopped: Boolean): Boolean {
+        // A fixed choice never moves to another model; the Core answers the same without being asked.
+        if (!active) return false
         val route = JsonObject(input + buildJsonObject { put("previous", decision); put("sideEffects", sideEffects); put("rounds", rounds); put("failures", failures); put("requested", requested); put("stopped", stopped) })
         val result = runtime.value("modelRouting", buildJsonObject { put("action", "escalate"); put("routing", route) }) as? JsonObject ?: return false
         decision = result; return true

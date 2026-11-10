@@ -15,6 +15,7 @@ const fileUrl = path => JSON.stringify(new URL(path, import.meta.url).href);
 async function warRoomModule(renderer = null) {
   let code = (await readFile(new URL('./warRoom.js', import.meta.url), 'utf8'))
     .replace("'./i18n.js'", fileUrl('./i18n.js'))
+    .replace("'./executionText.js'", fileUrl('./executionText.js'))
     .replace("'/shared/executionScene.js'", fileUrl('../src/shared/executionScene.js'))
     .replace("'/shared/executionBoard.js'", fileUrl('../src/shared/executionBoard.js'))
     .replace("'/shared/warRoom.js'", fileUrl('../src/shared/warRoom.js'));
@@ -26,6 +27,7 @@ async function loadPanel({ renderer = null } = {}) {
     .replace("'./buttonStyles.js'", fileUrl('./buttonStyles.js'))
     .replace("'./html.js'", fileUrl('./html.js'))
     .replaceAll("'./i18n.js'", fileUrl('./i18n.js'))
+    .replace("'./executionText.js'", fileUrl('./executionText.js'))
     .replace("'/shared/executionScene.js'", fileUrl('../src/shared/executionScene.js'))
     .replace("'./executionDetails.js'", fileUrl('./executionDetails.js'))
     .replace("'/shared/executionBoard.js'", fileUrl('../src/shared/executionBoard.js'))
@@ -537,4 +539,67 @@ test('a tap on empty space leaves the detail; the lead\'s finished call rises fr
   globalThis.__fakeRenderer.callbacks.onEmptyTap();
   assert.equal(room.querySelector('[data-cell="detail"]'), null, 'back to the board');
   assert.notEqual(room.querySelector('.war-band').dataset.mode, 'detail');
+});
+
+// Agent audit 2026-11-10: the task space printed what the record holds: the
+// English fallback of a stage name, the reason code of a stop, "未通过" for a
+// call that was never allowed to run, "已中断" for a member that handed back
+// on its own, and "N 次调用 · 上限 M 轮" as if calls were counted against rounds.
+test('the task space names stages, reasons, refused calls and member hand-offs in the interface language', async t => {
+  const dom = new JSDOM('<div id="app"></div>', { url: 'http://localhost' });
+  const originals = new Map();
+  const install = (key, value) => { originals.set(key, Object.getOwnPropertyDescriptor(globalThis, key)); Object.defineProperty(globalThis, key, { configurable: true, writable: true, value }); };
+  install('document', dom.window.document); install('localStorage', dom.window.localStorage);
+  install('matchMedia', () => ({ matches: true })); install('setInterval', () => 0); install('setTimeout', () => 0); install('clearTimeout', () => {});
+  install('fetch', async () => ({ ok: true, json: async () => ({ scenes: [] }) }));
+  t.after(() => { dom.window.close(); for (const [key, descriptor] of originals) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key]; } });
+  const panel = await loadPanel();
+  updateNeuralWorkspace(document.querySelector('#app'), `<div>${panel.renderExecutionPanel()}</div>`);
+  panel.syncExecutionPanel({ chat: { id: 'chat', messages: [] } });
+  await new Promise(resolve => setImmediate(resolve));
+  const room = document.querySelector('#execution-war-room');
+  const scene = createExecutionScene({ runId: 'names', requestId: 'q', chatId: 'chat', startedAt: '2026-11-10T00:00:00.000Z' });
+  const at = second => `2026-11-10T00:00:${String(second).padStart(2, '0')}.000Z`;
+  const member = (index, fields, second) => applyExecutionEvent(scene, { kind: 'pipeline', id: `internal:${index}`, module: 'compute', name: '检索成员', role: 'research', limits: { rounds: 6 }, ...fields, at: at(second) });
+  member(1, { status: 'running', input: '查场次' }, 1); member(2, { status: 'running', input: '查天气' }, 1); member(3, { status: 'running', input: '查路线' }, 1);
+  applyExecutionEvent(scene, { kind: 'operation', id: 'job-1:search', name: 'web_search', module: 'search', status: 'completed', query: 'tour dates', at: at(2) });
+  applyExecutionEvent(scene, { kind: 'operation', id: 'job-1:read', name: 'fetch_url', module: 'search', status: 'failed', errorCode: 'PERMISSION_DENIED', input: 'url: https://example.com', at: at(3) });
+  member(1, { status: 'completed', output: 'Found the date.', handoffStatus: 'observed' }, 4);
+  member(2, { status: 'interrupted', output: 'Nothing readable.', handoffStatus: 'unverified' }, 5);
+  member(3, { status: 'interrupted', output: 'Round limit.', handoffStatus: 'partial' }, 6);
+  member(4, { status: 'interrupted', output: 'Lead budget reserve reached; member not started.' }, 7);
+  applyExecutionEvent(scene, { kind: 'pipeline', id: 'goal-check:1', module: 'compute', messageId: 'stage.delivery', status: 'failed', output: 'GOAL_CHECK_UNAVAILABLE', at: at(8) });
+  applyExecutionEvent(scene, { kind: 'pipeline', id: 'core:stop', module: 'compute', messageId: 'stage.stopped', status: 'failed', output: 'REPEATED_TOOL_FAILURE', at: at(9) });
+  applyExecutionEvent(scene, { kind: 'pipeline', id: 'limit:delivery', module: 'compute', messageId: 'stage.delivery', status: 'completed', output: 'LIMIT_DELIVERED', at: at(10) });
+  panel.receiveExecutionScene(structuredClone(scene));
+  assert.equal(room.hidden, false, 'a live run with members opens the task space by itself');
+  // Members: what each hand-off recorded; a scene without the record keeps the stage state.
+  const members = [...room.querySelectorAll('.war-dispatch li')].map(li => li.querySelector('small').textContent);
+  assert.deepEqual(members, ['已交回', '已交回 · 没有核实到内容', '没做完 · 已交回', '已中断']);
+  const ticks = room.querySelector('.war-dispatch li .war-ticks').textContent;
+  assert.match(ticks, /已调用 2 次（成员最多做 6 轮）/); assert.doesNotMatch(ticks, /上限 6 轮/);
+  // Log: the stop and the two delivery rows say why in words.
+  const log = room.querySelector('.war-log').textContent;
+  assert.match(log, /工具连续几轮失败/); assert.match(log, /已按上限整理并交付/); assert.match(log, /核验没有返回结果/);
+  assert.doesNotMatch(log, /REPEATED_TOOL_FAILURE|LIMIT_DELIVERED|GOAL_CHECK_UNAVAILABLE/);
+  // The member's calls: the refused one is not a failed tool.
+  room.querySelector('[data-war-trace="member:1"]').click();
+  const calls = [...room.querySelectorAll('.war-trace li')].map(li => li.querySelector('small').textContent);
+  assert.deepEqual(calls, ['完成', '未获许可，没有执行']);
+  room.querySelector('[data-war-back]').click();
+  // The records of the compute region: stages by their names and outputs in Chinese.
+  // (No WebGL here: once the renderer has failed to load, the stage lists the five regions itself.)
+  for (let i = 0; i < 6; i++) await new Promise(resolve => setImmediate(resolve));
+  room.querySelector('.war-fallback [data-war-trace="region:compute"]').click();
+  const stages = [...room.querySelectorAll('.war-trace li')].map(li => `${li.querySelector('b').textContent}｜${li.querySelector('em').textContent}`);
+  assert.equal(stages.includes('执行已停止｜工具连续几轮失败'), true, stages.join(' / '));
+  assert.equal(stages.includes('整理已确认的内容｜已按上限整理并交付'), true, stages.join(' / '));
+  assert.equal(stages.includes('核对任务交付｜核验没有返回结果'), true, stages.join(' / '));
+  assert.equal(stages.some(row => /Checking task delivery|Execution stopped/.test(row)), false, 'no English fallback');
+  // Its execution detail: the title names the call and says what happened to it.
+  room.querySelector('[data-war-back]').click();
+  room.querySelector('[data-war-trace="member:1"]').click();
+  [...room.querySelectorAll('.war-trace [data-war-record]')].at(-1).click();
+  const detail = room.querySelector('[data-cell="detail"] .war-body').textContent;
+  assert.match(detail, /读取网页 · 未获许可，没有执行/);
 });

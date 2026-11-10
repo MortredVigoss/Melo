@@ -18,7 +18,9 @@ class SharedCoreTurn private constructor(private val runtime: SharedCoreRuntime,
     val roundsLeft get() = (state["limits"]?.jsonObject?.get("rounds")?.jsonPrimitive?.intOrNull ?: 0) - (state["rounds"]?.jsonPrimitive?.intOrNull ?: 0)
     val rounds get() = state["rounds"]?.jsonPrimitive?.intOrNull ?: 0
     val failures get() = state["errors"]?.jsonPrimitive?.intOrNull ?: 0
-    val reason get() = state["reason"]?.jsonPrimitive?.content.orEmpty()
+    // `reason` is JSON null until the turn stops. Read as a plain primitive that was the word "null",
+    // which then reached the stop text and the receipt of a reply ("本轮已停止（null）").
+    val reason get() = (state["reason"] as? JsonPrimitive)?.contentOrNull.orEmpty()
     suspend fun event(type: String, fields: JsonObject = buildJsonObject {}): JsonObject {
         currentCoroutineContext().ensureActive()
         val reply = runtime.evaluate(buildJsonObject {
@@ -37,6 +39,8 @@ class SharedCoreTurn private constructor(private val runtime: SharedCoreRuntime,
     suspend fun request(review: Boolean = false) { budget.check(); event("request", buildJsonObject { put("kind", if (review) "check" else "tools") }); if (!active) throw SharedTurnStopped(reason) }
     fun permits(id: String) = active && state.getValue("pending").jsonArray.any { it.jsonPrimitive.content == id } && state.getValue("permitted").jsonArray.any { it.jsonPrimitive.content == id }
     fun rejection(id: String) = state["rejections"]?.jsonObject?.text(id).orEmpty()
+    /** The Core's own account of a refusal, when it wrote one (a call that keeps failing the same way). */
+    fun rejectionNote(id: String) = ((state["rejectionResults"] as? JsonObject)?.get(id) as? JsonObject)?.text("output").orEmpty()
     suspend fun calls(calls: List<Pair<String, String>>, arguments: Map<String, JsonObject> = emptyMap(), requireAll: Boolean = true) {
         event("calls", buildJsonObject { put("calls", buildJsonArray { for ((id, name) in calls) add(buildJsonObject { put("id", id); put("name", name); arguments[id]?.let { put("arguments", it); put("fingerprint", fingerprint(name, it)) } }) }) })
         check(!requireAll || state.getValue("permitted").jsonArray.size == calls.size) { "本轮工具请求已拒绝（${state["rejections"]}），未执行。" }

@@ -46,29 +46,51 @@ export function summarizeProviderFailureDetails(raw = '') {
   return cleaned.length > 180 ? `${cleaned.slice(0, 177)}...` : cleaned;
 }
 
+// The fixed sentences a failed model request is answered with. They are stored
+// as the reply, and later prompts and memory recognise some of them by this
+// exact text (src/domain/chat/contextFilters.js), so they stay English here;
+// the desktop chat shows them in the interface language
+// (desktop-ui/features/chat/providerFailureText.js, kept equal by its test).
+// The four connection sentences named OpenAI whatever service the
+// conversation was using (agent audit 2026-11-10).
+export const PROVIDER_FAILURE_TEXT = Object.freeze({
+  quota: 'The model service is connected, but this API key currently has no available quota. Add billing or credits with your provider, then try again.',
+  key: 'The model service rejected this API key. Check the key in Melo and try again.',
+  model: 'The selected model is unavailable for this account. Choose another model and try again.',
+  rate: 'The model service rate-limited this request. Wait a moment and try again.',
+  policy: 'Codex blocked this request because the current thread context looked cybersecurity-sensitive. This is usually caused by stale technical, cookie, token, or error text in a long chat. Start a fresh chat or prune the old context, then retry.',
+  login: 'Your Codex OAuth session needs attention. Reconnect Codex in Melo’s Model settings and try again.',
+  stalled: 'The model stopped responding midway. This is usually a network hiccup or provider-side stall. Please retry in a moment.',
+  empty: 'The model connection opened, but Melo never received a final reply. This is usually a temporary provider or streaming issue. Please retry in a moment.',
+  timeout: 'This request hit Melo’s safety time cap. Longer tasks are allowed, so if this keeps happening it is likely a connectivity or provider issue rather than your prompt being too complex.',
+  backend: 'The model backend did not finish this request. This is usually temporary or provider-side. Please retry in a moment.',
+  unknown: 'Melo could not complete the model request right now. This is often temporary, so please retry in a moment.',
+  detailsPrefix: 'Melo could not complete the model request right now. Details: ',
+});
+
 export function formatProviderFailureMessage(error) {
   const raw = String(error?.message || '').trim();
   const normalized = raw.toLowerCase();
   const details = summarizeProviderFailureDetails(raw);
 
   if (normalized.includes('insufficient_quota') || (normalized.includes('429') && normalized.includes('quota'))) {
-    return 'OpenAI is connected, but this API key currently has no available quota. Add API billing or credits in the OpenAI platform, then try again.';
+    return PROVIDER_FAILURE_TEXT.quota;
   }
 
   if (normalized.includes('invalid_api_key') || normalized.includes('401 unauthorized')) {
-    return 'OpenAI rejected this API key. Check the key in Melo and try again.';
+    return PROVIDER_FAILURE_TEXT.key;
   }
 
   if (normalized.includes('model_not_found')) {
-    return 'The selected OpenAI model is unavailable for this account. Choose another model and try again.';
+    return PROVIDER_FAILURE_TEXT.model;
   }
 
   if (normalized.includes('rate_limit')) {
-    return 'OpenAI rate-limited this request. Wait a moment and try again.';
+    return PROVIDER_FAILURE_TEXT.rate;
   }
 
   if (normalized.includes('cyber_policy') || normalized.includes('possible cybersecurity risk')) {
-    return 'Codex blocked this request because the current thread context looked cybersecurity-sensitive. This is usually caused by stale technical, cookie, token, or error text in a long chat. Start a fresh chat or prune the old context, then retry.';
+    return PROVIDER_FAILURE_TEXT.policy;
   }
 
   if (
@@ -77,11 +99,11 @@ export function formatProviderFailureMessage(error) {
     normalized.includes('codex login is not available') ||
     normalized.includes('missing the chatgpt account id')
   ) {
-    return 'Your Codex OAuth session needs attention. Reconnect Codex in Melo’s Model settings and try again.';
+    return PROVIDER_FAILURE_TEXT.login;
   }
 
   if (normalized.includes('stream stalled') || normalized.includes('stopped producing output')) {
-    return 'The model stopped responding midway. This is usually a network hiccup or provider-side stall. Please retry in a moment.';
+    return PROVIDER_FAILURE_TEXT.stalled;
   }
 
   if (
@@ -89,11 +111,11 @@ export function formatProviderFailureMessage(error) {
     normalized.includes('returned no response body') ||
     normalized.includes('empty response')
   ) {
-    return 'The model connection opened, but Melo never received a final reply. This is usually a temporary provider or streaming issue. Please retry in a moment.';
+    return PROVIDER_FAILURE_TEXT.empty;
   }
 
   if (normalized.includes('timed out')) {
-    return 'This request hit Melo’s safety time cap. Longer tasks are allowed, so if this keeps happening it is likely a connectivity or provider issue rather than your prompt being too complex.';
+    return PROVIDER_FAILURE_TEXT.timeout;
   }
 
   if (
@@ -111,12 +133,12 @@ export function formatProviderFailureMessage(error) {
     normalized.includes('econnreset') ||
     normalized.includes('etimedout')
   ) {
-    return 'The model backend did not finish this request. This is usually temporary or provider-side. Please retry in a moment.';
+    return PROVIDER_FAILURE_TEXT.backend;
   }
 
   if (details) {
-    return `Melo could not complete the model request right now. Details: ${details}`;
+    return `${PROVIDER_FAILURE_TEXT.detailsPrefix}${details}`;
   }
 
-  return 'Melo could not complete the model request right now. This is often temporary, so please retry in a moment.';
+  return PROVIDER_FAILURE_TEXT.unknown;
 }

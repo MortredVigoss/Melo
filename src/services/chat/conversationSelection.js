@@ -57,3 +57,12 @@ export function selectedMaterials(state, chat) {
   const truncated=notes.length>8 || notes.reduce((sum,n)=>sum+n.content.length+n.title?.length+5,0)>budget;
   return (truncated?'[资料按上下文预算截取，全文保留；未展示的部分不能视为已经读取。]\n':'')+text;
 }
+
+// The model a turn of this conversation runs on, in the order the execution runner applies it: the model
+// picked for the conversation; without a saved connection, the environment override; the Agent's own model;
+// the connection's model. Whatever judges "can this turn's model do X" has to ask about this model. The
+// image check asked about the Agent's model first, so a conversation switched to another model was judged
+// by a model it did not run on (2026-11-10 audit).
+export function turnModel(config = {}, env = {}, agentModel = '') {
+  return (config.conversationModelSelected ? config.model : config.activeLlmProfileId ? '' : env.MELO_MODEL || '') || agentModel || config.model;
+}

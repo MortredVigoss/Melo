@@ -33,6 +33,30 @@ class ContextFlowTest {
             else -> """{"choices":[{"finish_reason":"stop","message":{"content":$encoded}}]}"""
         })
     }
+    // 2026-11-10. Every model round measured the whole chain again, one crossing of the Runtime per row.
+    @Test fun aChainIsMeasuredOnceNotOncePerRound() = runBlocking {
+        SharedCoreRuntime.open(app).use { runtime ->
+            val context = ChatContext(runtime, 160_000)
+            val history = (listOf(buildJsonObject { put("role", "user"); put("content", "question") }) + (1..60).flatMap { listOf(
+                buildJsonObject { put("role", "assistant"); put("content", "step $it") },
+                buildJsonObject { put("role", "tool"); put("tool_call_id", "c$it"); put("content", "result $it " + "page text ".repeat(200)) }) }).toMutableList()
+            val specs = listOf(buildJsonObject { put("name", "fetch_url"); put("description", "read"); put("parameters", buildJsonObject { put("type", "object") }) })
+            val start = runtime.evaluations
+            val first = context.fit(history, 0, "instructions", specs)
+            val firstRound = runtime.evaluations - start
+            assertTrue("every row is measured the first time: $firstRound", firstRound >= history.size)
+            // The next round adds a call and its result.
+            history += buildJsonObject { put("role", "assistant"); put("content", "step 61") }
+            history += buildJsonObject { put("role", "tool"); put("tool_call_id", "c61"); put("content", "result 61") }
+            val middle = runtime.evaluations
+            val second = context.fit(history, first, "instructions", specs)
+            val secondRound = runtime.evaluations - middle
+            assertEquals("the plan is the same", first, second)
+            assertTrue("only the new rows and the plan cross again: $secondRound", secondRound <= 4)
+            // The measure itself is unchanged: a text costs what it cost before.
+            assertEquals(context.cost("page text ".repeat(200)), ChatContext(runtime, 160_000).cost("page text ".repeat(200)))
+        }
+    }
     @Test fun longHistoryReadsOriginalThroughAllThreeProtocolsAndSurvivesDatabaseReopen() = runBlocking {
         val messages = transcript()
         var saved = buildJsonObject {}

@@ -281,8 +281,15 @@ final class CodexFixture: URLProtocol, @unchecked Sendable {
             executed+=1; assert(call.callID=="call_cal")
             return "{\"ok\":true,\"count\":1,\"events\":[{\"title\":\"牙医\"}]}"
         },onCall:{ _,_ in recorded+=1 })
-        let answered=try await refreshing.reply(messages:[ChatMessage(role:"user",content:"查一下我明天的日程")],model:"gpt-6.1-sol",instructions:"",deviceTools:phone)
+        var codexStages:[String:String]=[:]
+        let answered=try await refreshing.reply(messages:[ChatMessage(role:"user",content:"查一下我明天的日程")],model:"gpt-6.1-sol",instructions:"",deviceTools:phone,onObservation:{ for stage in $0.pipeline { codexStages[stage.id]=stage.status } })
         assert(answered.text=="明天 9 点看牙医。" && toolRounds==3 && executed==1 && recorded==1)
+        // 2026-11-10: the tool round and the answer each have their own "模型请求" stage, and only the
+        // answer has the formatting step. One shared stage showed both as done after the tool round.
+        assert(codexStages["model:response"]=="completed" && codexStages["model:response:2"]=="completed" && codexStages["reply:format:2"]=="completed" && codexStages["reply:format"]==nil,"\(codexStages)")
+        var keyed=ChatGPTStream(requestKey:"2")
+        try keyed.accept(String(decoding:JSONSerialization.data(withJSONObject:["type":"response.completed","response":["id":"resp_k","status":"completed","usage":["input_tokens":200,"output_tokens":20],"output":[["type":"message","content":[["type":"output_text","text":"ok","annotations":[]]]]]]]),as:UTF8.self))
+        assert(CodexResponsesTransport.inputTokens(keyed)==200 && CodexResponsesTransport.inputTokens(keyed,key:"output")==20,"usage is read from the request's own stage")
         // Contract tool rounds plus one reserved tool-free delivery. Even if the
         // provider invents a call during that report, it never executes.
         toolRounds=0; executed=0

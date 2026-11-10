@@ -8,6 +8,8 @@
 // into their row of the evidence table. Nothing is shown that the scene did
 // not record.
 import { escapeHtml, t, runtimeCompletionText } from './i18n.js';
+// Names of stages and calls, reason codes, refused calls and member hand-offs in the interface language (agent audit 2026-11-10).
+import { stageName, stageOutput, callStatus, memberState } from './executionText.js';
 import { EXECUTION_MODULES, sceneFinished } from '/shared/executionScene.js';
 import { sceneMembers, sceneEvaluation, sceneGoalReview, sceneStageRail, sceneLog, sceneResources, sceneHasBoard, evaluationChanges, MEMBER_ROLE_MODULE } from '/shared/executionBoard.js';
 import { regionSummary, deliveryGate, goalGate, deliveryStatus, fieldCoverage, traceList, operationChip, sceneActors } from '/shared/warRoom.js';
@@ -295,6 +297,10 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
     if (key === mode && wanted.every(id => cells.get(id)?.el.parentNode === band)) return;
     mode = key; band.dataset.mode = key; band.replaceChildren(...wanted.map(id => cell(id).el));
   }
+  // The record behind a log or trace row.
+  const recordOf = id => (scene?.pipeline || []).find(item => item.id === id) || (scene?.operations || []).find(item => item.id === id) || null;
+  // A check, stop or delivery row is its stage's output: localized, with a reason code spelled out.
+  const rowDetail = row => { const stage = ['review', 'stop', 'deliver'].includes(row.verb) && row.id !== 'scene:finish' ? recordOf(row.id) : null; return stage ? stageOutput(stage) : row.detail; };
   function renderLog() {
     const c = cell('log'), rows = sceneLog(scene);
     head(c, t('执行日志'), `${trace('calls', escapeHtml(t('{count} 次工具调用', { count: (scene?.operations || []).length })))}`);
@@ -305,7 +311,7 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
       const key = row.verb === 'handoff' || row.verb === 'dispatch' ? `${row.verb}:${row.id}` : ['search', 'read', 'lookup', 'compute', 'write', 'call'].includes(row.verb) ? `op:${row.id}` : `${row.verb}:${row.id}`;
       keys.add(key);
       const actor = row.actor?.role === 'lead' ? (ctx.leadName || t('主 Agent')) : `${roleName(row.actor?.role)}${row.actor?.index ? ' #' + row.actor.index : ''}`;
-      const text = row.verb === 'evaluate' && row.summary ? t('发现 {found} · 合格 {qualified} · 主推 {primary}', { found: row.summary.discovered ?? 0, qualified: row.summary.verified ?? 0, primary: row.summary.recommended ?? 0 }) : row.verb === 'dispatch' && row.target ? `→ ${roleName(row.target.role)} #${row.target.index} · ${row.detail}` : row.verb === 'deliver' && row.outcome ? (scene.completion?.summary ? runtimeCompletionText(scene.completion) : statusText(row.status)) : row.detail;
+      const text = row.verb === 'evaluate' && row.summary ? t('发现 {found} · 合格 {qualified} · 主推 {primary}', { found: row.summary.discovered ?? 0, qualified: row.summary.verified ?? 0, primary: row.summary.recommended ?? 0 }) : row.verb === 'dispatch' && row.target ? `→ ${roleName(row.target.role)} #${row.target.index} · ${row.detail}` : row.verb === 'deliver' && row.outcome ? (scene.completion?.summary ? runtimeCompletionText(scene.completion) : statusText(row.status)) : rowDetail(row);
       const html = `<button type="button" data-war-record="${escapeHtml(row.id === 'scene:finish' ? '' : row.id)}"><time>${clock(row.offsetMs)}</time><b>${escapeHtml(row.id === 'scene:finish' ? endName(deliveryStatus(scene)) : verbName(row.verb))}</b><span>${dot(row.actor?.role, row.actor?.role === 'lead' ? '' : undefined)}${escapeHtml(actor)}</span><em>${escapeHtml(String(text || '').slice(0, 200))}</em></button>`;
       let li = c.rows.get(key);
       if (!li) {
@@ -324,7 +330,7 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
   function renderDispatch() {
     const c = cell('dispatch'), members = sceneMembers(scene);
     head(c, t('分派'), escapeHtml(t('{count} 次 · {running} 进行中', { count: members.length, running: members.filter(m => m.running).length })));
-    fill(c, members.length ? `<ol class="war-dispatch">${members.map(m => `<li data-running="${m.running}"><div class="war-dispatch-head">${dot(m.role)}${escapeHtml(roleName(m.role))} #${m.index}<small>${escapeHtml(m.running ? t('进行中') : statusText(m.status))}</small></div><p>${escapeHtml(m.running ? m.task : m.report || m.task)}</p><div class="war-ticks">${(scene.operations || []).filter(op => m.operations.includes(op.id)).map(op => `<i data-status="${escapeHtml(op.status)}"></i>`).join('')}${trace(`member:${m.index}`, escapeHtml(m.rounds ? t('{count} 次调用 · 上限 {rounds} 轮', { count: m.calls, rounds: m.rounds }) : t('{count} 次调用', { count: m.calls })))}</div></li>`).join('')}</ol>` : empty(t('主 Agent 还没有分派成员')));
+    fill(c, members.length ? `<ol class="war-dispatch">${members.map(m => `<li data-running="${m.running}"><div class="war-dispatch-head">${dot(m.role)}${escapeHtml(roleName(m.role))} #${m.index}<small>${escapeHtml(memberState(m, statusText(m.status)))}</small></div><p>${escapeHtml(m.running ? m.task : m.report || m.task)}</p><div class="war-ticks">${(scene.operations || []).filter(op => m.operations.includes(op.id)).map(op => `<i data-status="${escapeHtml(op.status)}"></i>`).join('')}${trace(`member:${m.index}`, escapeHtml(m.rounds ? t('已调用 {count} 次（成员最多做 {rounds} 轮）', { count: m.calls, rounds: m.rounds }) : t('{count} 次调用', { count: m.calls })))}</div></li>`).join('')}</ol>` : empty(t('主 Agent 还没有分派成员')));
   }
   function renderGate(snapshot) {
     const c = cell('gate'), gate = deliveryGate(snapshot);
@@ -468,7 +474,9 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
   function traceRow(row) {
     if (row.kind === 'operation' || row.kind === 'stage') {
       const who = row.actor ? (row.actor.kind === 'lead' ? ctx.leadName || t('主 Agent') : `${roleName(row.actor.role)} #${row.actor.index}`) : '';
-      return `<li data-status="${escapeHtml(row.status)}"><button type="button" data-war-record="${escapeHtml(row.id)}"><time>${clock(offset(scene, row.at))}</time><b>${escapeHtml(row.kind === 'operation' ? verbName(row.verb) : row.name)}</b><span>${dot('', row.module)}${escapeHtml(regionName(row.module))}${who ? ' · ' + escapeHtml(who) : ''}${row.kind === 'stage' && row.tokens ? ' · ' + escapeHtml(t('{tokens} token', { tokens: num(row.tokens) })) : ''}</span><em>${escapeHtml(row.text)}</em><small>${escapeHtml(statusText(row.status))}</small></button></li>`;
+      const record = recordOf(row.id);
+      const text = row.kind === 'stage' && record ? shortText(String(stageOutput(record) || record.input || '').replace(/\s+/g, ' ').trim(), 160) : row.text;
+      return `<li data-status="${escapeHtml(row.status)}"><button type="button" data-war-record="${escapeHtml(row.id)}"><time>${clock(offset(scene, row.at))}</time><b>${escapeHtml(row.kind === 'operation' ? verbName(row.verb) : record ? stageName(record) : row.name)}</b><span>${dot('', row.module)}${escapeHtml(regionName(row.module))}${who ? ' · ' + escapeHtml(who) : ''}${row.kind === 'stage' && row.tokens ? ' · ' + escapeHtml(t('{tokens} token', { tokens: num(row.tokens) })) : ''}</span><em>${escapeHtml(text)}</em><small>${escapeHtml(row.kind === 'operation' && record ? callStatus(record, statusText(row.status)) : statusText(row.status))}</small></button></li>`;
     }
     if (row.kind === 'source') return `<li><a href="${escapeHtml(row.url)}" data-external-url="${escapeHtml(row.url)}" target="_blank" rel="noopener noreferrer"><b>${escapeHtml(row.title || new URL(row.url).hostname)}</b><span>${escapeHtml(new URL(row.url).hostname)}</span><em>${escapeHtml(row.reading)}</em><small>${escapeHtml(row.cited ? t('已被最终引用') : t('未被最终引用'))}</small></a></li>`;
     if (row.kind === 'candidate') return `<li data-tier="${escapeHtml(row.tier)}"><div><b>${escapeHtml(row.name)}</b><span>${escapeHtml(tierName(row.tier))} · ${escapeHtml(t('排序分 {score}，不是概率', { score: row.total }))}</span>${row.reason ? `<em>${escapeHtml(row.reason)}</em>` : ''}<small>${Object.entries(row.fields).map(([f, s]) => `${escapeHtml(fieldName(f))} ${s === 'verified' ? '✓' : s === 'failed' ? '✗' : '·'}`).join('  ')}</small></div></li>`;
@@ -483,7 +491,7 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
   }
   function renderTop() {
     const rail = sceneStageRail(scene), current = rail.find(row => row.current), latest = sceneLog(scene, { limit: 1 })[0];
-    const now = !scene ? t('等待任务') : sceneFinished(scene) ? (scene.completion?.summary ? runtimeCompletionText(scene.completion) : statusText(scene.status)) : latest ? [latest.actor?.role && latest.actor.role !== 'lead' ? roleName(latest.actor.role) : ctx.leadName || t('主 Agent'), current && verbName(latest.verb) === phaseName(current.key) ? '' : verbName(latest.verb), latest.detail].filter(Boolean).join(' · ') : t('等待第一条执行记录');
+    const now = !scene ? t('等待任务') : sceneFinished(scene) ? (scene.completion?.summary ? runtimeCompletionText(scene.completion) : statusText(scene.status)) : latest ? [latest.actor?.role && latest.actor.role !== 'lead' ? roleName(latest.actor.role) : ctx.leadName || t('主 Agent'), current && verbName(latest.verb) === phaseName(current.key) ? '' : verbName(latest.verb), rowDetail(latest)].filter(Boolean).join(' · ') : t('等待第一条执行记录');
     const html = `<em>${String(Math.max(1, rail.findIndex(row => row.current) + 1)).padStart(2, '0')}</em>${escapeHtml(current ? phaseName(current.key) : '')}${current ? ' · ' : ''}${escapeHtml(String(now).slice(0, 160))}`;
     const el = $('.war-now'); if (el.innerHTML !== html) el.innerHTML = html;
     const railHtml = rail.map((row, i) => `<li data-phase="${row.key}" data-current="${row.current && !sceneFinished(scene)}" data-status="${escapeHtml(row.status)}"><button type="button"${row.stageId ? ` data-war-record="${escapeHtml(row.stageId)}"` : ' disabled'}><b>${String(i + 1).padStart(2, '0')}</b>${escapeHtml(row.key === 'deliver' ? (sceneFinished(scene) ? endName(deliveryStatus(scene)) : t('停止')) : phaseName(row.key))}${row.count > 1 && row.key !== 'contract' ? ` ×${row.count}` : ''}</button></li>`).join('');

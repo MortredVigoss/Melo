@@ -469,9 +469,8 @@ import SwiftUI
         let memoryText = MobileMemoryRecall.instructions(recalled.facts)
         instructions += MobileMemoryRecall.instructions(recalled.facts.filter(MobileMemoryRecall.isStable))
         turnParts.append(MobileMemoryRecall.instructions(recalled.facts.filter { !MobileMemoryRecall.isStable($0) }))
-        let compactPlan = plan.makesImage || selectedAgent.contextSources?["memory"].bool == false
-            ? PhoneCompact.Plan(value: nil, pending: [])
-            : PhoneCompact.plan(messages: prospectiveMessages, existing: preferences.chatCompact?[chatID], budget: contextBudget, instructions: instructions + PhoneTurnContext.note(turnParts), attempts: preferences.compactRetryCounts ?? [:])
+        let compactPlan = PhoneCompact.turnPlan(messages: prospectiveMessages, existing: preferences.chatCompact?[chatID], budget: contextBudget, instructions: instructions + PhoneTurnContext.note(turnParts), attempts: preferences.compactRetryCounts ?? [:],
+                                                makesImage: plan.makesImage, memorySource: selectedAgent.contextSources?["memory"].bool != false)
         // The summary is rendered the same way every turn; the card most related to this question joins the turn.
         let compact = ConversationHistory.compactContext(compactPlan.value, messages: prospectiveMessages, summaryLimit: contextBudget.summaryCharacters)
         if !compact.summary.isEmpty { instructions = compact.summary + "\n\n" + instructions }
@@ -620,7 +619,7 @@ import SwiftUI
             let binding = self.elevationBinding(runID: record.runId, agent: agent, parent: agent.id == selectedAgent.id ? nil : selectedAgent, chatID: chatID,
                                                 ownSnapshot: phonePermissions.allowed(agent.id), parentSnapshot: leadSnapshot, budget: child)
             let callID = UUID().uuidString
-            let tools = self.deviceToolContext(runID: record.runId, scope: callID, binding: binding, surfaceAtStart: surfaceAtStart, chatID: chatID, screenshots: teamScreenshots,
+            let tools = self.deviceToolContext(runID: record.runId, scope: callID, binding: binding, surfaceAtStart: surfaceAtStart, chatID: chatID, screenshots: teamScreenshots, showsScreenshots: WebPageText.userWantsScreenshot(clean),
                                               readHistory: selectedAgent.contextSources?["memory"].bool != false && agent.contextSources?["memory"].bool != false)
             // Writers queue; with a surface any member may be granted a write kind the device allows.
             let deviceKinds = DeviceToolPolicy.load().enabled
@@ -750,7 +749,7 @@ import SwiftUI
                 let screenshots = CapturedScreenshots()
                 // The same phone tools (device data + web pages) on every connection.
                 let phoneTools = plan.makesImage ? nil : deviceToolContext(runID: record.runId, binding: elevationBinding(runID: record.runId, agent: selectedAgent, parent: nil, chatID: chatID, ownSnapshot: leadSnapshot, parentSnapshot: nil, budget: runBudget),
-                                                                           surfaceAtStart: surfaceAtStart, chatID: chatID, screenshots: screenshots, readHistory: selectedAgent.contextSources?["memory"].bool != false)
+                                                                           surfaceAtStart: surfaceAtStart, chatID: chatID, screenshots: screenshots, showsScreenshots: WebPageText.userWantsScreenshot(clean), readHistory: selectedAgent.contextSources?["memory"].bool != false)
                 var routedHooks = loopHooks
                 if !plan.makesImage && teamPlan == nil && replyLoader == nil {
                     routedHooks.routing = try smartRoutingHost(choice: choice, agent: selectedAgent, messages: modelHistory, history: history, instructions: instructions, images: modelImages, phoneTools: phoneTools, chatID: chatID, runID: record.runId, allowWeb: phonePermissions.allows(selectedAgent.id, .network), allowImages: resuming == nil && phonePermissions.allows(selectedAgent.id, .generateMedia), onObservation: { observation in if isCurrent() { self.observe(observation, runID: record.runId) } }, onSelection: { model in
@@ -908,7 +907,7 @@ import SwiftUI
         executionRecords[index].recordToolCall(call)
         if call.executed { background(forRun: runID)?.finishedStep(runID: runID) }
         // Calls the loop refused (repeat guard, limits, budget) never reached a tool; show them too.
-        if !call.executed { stage(runID, id: "tool:\(call.callId)", name: "工具 · \(call.toolId)", status: "failed", output: "未执行：\(call.code ?? "UNKNOWN")") }
+        if !call.executed { let row = RunProgress.unexecuted(call); stage(runID, id: "tool:\(call.callId)", name: row.name, status: row.status, output: row.output) }
         if Date().timeIntervalSince(lastSceneSave) > 0.5 { saveExecutionRecords() }
     }
     /// Cancelled or failed after tools ran: a short `[工具轨迹]` assistant message
@@ -1053,7 +1052,8 @@ import SwiftUI
         guard let index = executionRecords.firstIndex(where: { $0.runId == runID }) else { return }
         executionRecords[index].recordPhoneOperation(id: id, module: module, name: name, status: status, summary: summary, page: page, textRead: textRead)
     }
-    private func deviceToolContext(runID: String, scope: String? = nil, binding: PhoneElevationBinding, surfaceAtStart: Bool, chatID: String? = nil, screenshots: CapturedScreenshots? = nil, readHistory: Bool = false) -> DeviceToolContext? {
+    /// `showsScreenshots`: whether this reply attaches web screenshots under the answer (the user asked to see a page).
+    private func deviceToolContext(runID: String, scope: String? = nil, binding: PhoneElevationBinding, surfaceAtStart: Bool, chatID: String? = nil, screenshots: CapturedScreenshots? = nil, showsScreenshots: Bool = false, readHistory: Bool = false) -> DeviceToolContext? {
         let receiptID: (String) -> String = { id in scope.map { "member:" + $0 + ":" + id } ?? id }
         let broker = capabilityBroker
         let ceiling = binding.ceiling(), base = binding.parent.map { ceiling.intersection($0()) } ?? ceiling
@@ -1072,7 +1072,7 @@ import SwiftUI
             let url = (try? JSONSerialization.jsonObject(with: Data(call.arguments.utf8)) as? [String: Any])?["url"] as? String ?? ""
             self?.phoneOperation(runID, id: receiptID("web:\(call.callID)"), module: "search", name: WebPageToolSpec.named(call.name)?.recordName ?? "网页 · \(call.name)",
                                  status: "running", summary: "", page: ["url": url])
-            return await WebPageToolRunner.run(call: call, allowed: { webSwitch() && allowedNow(call.name) }).phoneResult
+            return await WebPageToolRunner.run(call: call, showsScreenshots: showsScreenshots, allowed: { webSwitch() && allowedNow(call.name) }).phoneResult
         }, onCall: { [weak self] call, result in
             let summary = WebPageText.summary(result)
             let name = WebPageToolSpec.named(call.name)?.recordName ?? "网页 · \(call.name)"

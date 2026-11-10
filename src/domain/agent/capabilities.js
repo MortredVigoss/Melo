@@ -30,10 +30,24 @@ function jobModels(value) {
   for (const role of INTERNAL_JOB_ROLES) { const id=value?.[role]; if (typeof id==='string'&&/^[a-zA-Z0-9_-]{1,100}$/.test(id)) out[role]=id; }
   return Object.keys(out).length?out:undefined;
 }
+// A member's token cap and timeout are totals for its whole run, and a fixed
+// part of each is held back for wrapping up (shared/agent/runBudget.js
+// reserveDelivery / budgetExhausted: floor(T/16) + the delivery and check
+// output for tokens, the delivery deadline for time). A saved value at or
+// below that reserve left the member nothing to work with: it handed back
+// without a single step, and the page accepted 1. A lower saved value is
+// raised to the floor (settings audit 2026-11-10).
+export const MEMBER_LIMIT_FLOORS=Object.freeze({maxTokens:20000,timeoutMs:120000});
+// What a member can spend on the work itself out of a total cap.
+export function memberWorkTokens(total) {
+  const held=Math.min(C.delivery.inputTokens,Math.floor(total/4),Math.floor(total/16))+C.delivery.outputTokens+C.delivery.checkOutputTokens;
+  return Math.max(0,total-held);
+}
+export const memberWorkMs=total=>Math.max(0,total-C.delivery.deadlineMs);
 export function normalizeCollaboration(value={}) {
-  const bounded=(v,f,max)=>Number.isInteger(v)&&v>=1?Math.min(v,max):f;
+  const bounded=(v,f,max,min=1)=>Number.isInteger(v)&&v>=1?Math.max(min,Math.min(v,max)):f;
   const jobs=jobModels(value.jobModels);
-  return {...(value.maxTaskIterations !== undefined ? {maxTaskIterations:bounded(value.maxTaskIterations,C.loop.maxIterations,C.guardLimits.maxRounds)} : {}),canDelegate:value.canDelegate===true,delegateTargets:list(value.delegateTargets),maxDelegationDepth:bounded(value.maxDelegationDepth,1,3),maxIterations:bounded(value.maxIterations,C.delegationLimits.iterations,20),maxTokens:bounded(value.maxTokens,32000,200000),timeoutMs:bounded(value.timeoutMs,180000,900000),...(jobs?{jobModels:jobs}:{})};
+  return {...(value.maxTaskIterations !== undefined ? {maxTaskIterations:bounded(value.maxTaskIterations,C.loop.maxIterations,C.guardLimits.maxRounds)} : {}),canDelegate:value.canDelegate===true,delegateTargets:list(value.delegateTargets),maxDelegationDepth:bounded(value.maxDelegationDepth,1,3),maxIterations:bounded(value.maxIterations,C.delegationLimits.iterations,20),maxTokens:bounded(value.maxTokens,32000,200000,MEMBER_LIMIT_FLOORS.maxTokens),timeoutMs:bounded(value.timeoutMs,180000,900000,MEMBER_LIMIT_FLOORS.timeoutMs),...(jobs?{jobModels:jobs}:{})};
 }
 export function intersectCollaboration(a,b) {
   a=normalizeCollaboration(a);b=normalizeCollaboration(b);

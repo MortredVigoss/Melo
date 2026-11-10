@@ -4,7 +4,7 @@ import { resolveReplyLocale } from './locale.js';
 import { runtimeMessage } from './runtimeMessages.js';
 import { planRequest } from './search.js';
 import { toolEffect } from './toolEffects.js';
-import { startGoal, goalSnapshot } from './goal.js';
+import { startGoal, goalSnapshot, CHECK_WITHOUT_VERDICT } from './goal.js';
 import { PAGE_WINDOW_CHARS } from './pageWindow.js';
 
 // Observable completion, separate from transport success and tool ok. Hosts
@@ -57,7 +57,11 @@ export function completionReceipt({ goal = '', kind = 'answer', reply = '', cita
     const external = row => !row.kind || ['external_fact', 'external_effect'].includes(row.kind);
     const positive = task.requirements?.some(row => external(row) && row.evidenceIds?.length && row.evidenceIds.every(id => performed.some(observation => observation.id === id)));
     const supported = task.decision === 'complete' && (positive || conversational) && (task.requirements || []).every(row => (row.evidenceIds || []).every(id => (external(row) ? performed : rows).some(observation => observation.id === id)));
-    return { ...base, outcome: supported ? 'completed' : task.decision === 'needs_user' ? 'needs_user' : performed.length ? 'partial' : 'blocked', goalState: supported ? 'supported' : 'unverified', reason: supported ? 'GOAL_DELIVERY_SUPPORTED' : task.reason || 'GOAL_COVERAGE_MISSING', evidenceIds };
+    // The answer was delivered and its check gave no verdict (the request failed, the verdict could not be
+    // read, the content was too long to check). That is "unverified", the outcome a limit delivery already
+    // uses for the same situation. It used to be recorded as blocked, or partial once any tool had run.
+    const unchecked = !supported && task.decision === 'partial' && CHECK_WITHOUT_VERDICT.test(task.reason || '');
+    return { ...base, outcome: supported ? 'completed' : task.decision === 'needs_user' ? 'needs_user' : unchecked ? 'unverified' : performed.length ? 'partial' : 'blocked', goalState: supported ? 'supported' : 'unverified', reason: supported ? 'GOAL_DELIVERY_SUPPORTED' : task.reason || 'GOAL_COVERAGE_MISSING', evidenceIds };
   }
   if (task?.decision === 'deliver' && kind === 'research' && !performed.length) return { ...base, outcome: 'completed', goalState: 'unverified', reason: 'ANSWERED_WITHOUT_SOURCES' };
   if (kind === 'answer') return { ...base, outcome: 'completed', goalState: 'not_applicable', reason: 'ANSWER_DELIVERED' };

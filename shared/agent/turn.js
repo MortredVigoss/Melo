@@ -1,5 +1,5 @@
 import { resolveReplyLocale } from './locale.js';
-import { runtimeMessage } from './runtimeMessages.js';
+import { runtimeMessage, stopReasonText } from './runtimeMessages.js';
 import { COMMON_TOOLS, validateCommonTool } from './tools.js';
 import { AGENT_LOOP_CONTRACT } from './loopContract.js';
 import { createRepeatGuard, toolCallFingerprint } from './repeatGuard.js';
@@ -52,7 +52,10 @@ export function advanceTurn(previous, event, now) {
     if (!Number.isSafeInteger(event.deadline) || event.deadline <= now || event.deadline < state.deadline) fail('INVALID_DEADLINE', 'The Host must supply a later finite deadline.');
     return { ...state, deadline: event.deadline };
   }
-  if (now >= state.deadline) return stop('DEADLINE_EXCEEDED');
+  // A result is a record of something that already happened: it is kept even when it arrives at or after the
+  // deadline, then the turn stops. Dropping it lost the success of a write that finished in the last moment,
+  // and with it the knowledge that it must not be repeated.
+  if (now >= state.deadline && !(event.type === 'result' && state.pending.includes(event.callId))) return stop('DEADLINE_EXCEEDED');
   switch (event.type) {
     case 'request':
       if (state.pending.length || state.awaitingModel) fail('PENDING_EFFECT', 'Pair every effect with a result before the next model request.');
@@ -113,12 +116,22 @@ export function advanceTurn(previous, event, now) {
           catch { state.rejections[call.id] = 'INVALID_TOOL_ARGUMENTS'; return false; }
         }
         const fingerprint = typeof call.fingerprint === 'string' && call.fingerprint ? call.fingerprint : toolCallFingerprint(call.name, call.arguments);
-        if ((state.repairing || state.internalRouting) && (state.successfulEffects || []).includes(fingerprint)) { state.rejections[call.id] = 'ALREADY_EXECUTED'; return false; }
-        const effectful = /^mcp[:_]/u.test(call.name) || !['read', 'compute'].includes(call.effect || toolEffect(call.name, call.arguments));
+        const effect = call.effect || toolEffect(call.name, call.arguments);
+        const extension = /^mcp[:_]/u.test(call.name);
+        const effectful = extension || !['read', 'compute'].includes(effect);
+        // After a correction or an assignment a completed write is never replayed. A command whose effect
+        // is unknown (a shell command, a browser action) is repeated on purpose: fix the code, run the
+        // tests again. It may run again once another effect of this turn has succeeded since its last
+        // run. Repeated with nothing changed in between, first run by a member, or an extension tool
+        // (whose effect cannot be told), it stays refused.
+        if ((state.repairing || state.internalRouting) && (state.successfulEffects || []).includes(fingerprint)) {
+          const rerun = effect === 'unknown' && !extension && (state.repeatable || []).includes(fingerprint) && state.lastEffect !== fingerprint;
+          if (!rerun) { state.rejections[call.id] = 'ALREADY_EXECUTED'; return false; }
+        }
         if (state.internalRouting && effectful && ((state.uncertainEffects || []).includes(fingerprint) ||
             Object.values(state.pendingFingerprints).includes(fingerprint))) { state.rejections[call.id] = 'ALREADY_ATTEMPTED'; return false; }
         state.pendingFingerprints[call.id] = fingerprint;
-        state.pendingEffects = { ...state.pendingEffects, [call.id]: effectful };
+        state.pendingEffects = { ...state.pendingEffects, [call.id]: effectful ? (effect === 'unknown' && !extension ? 'unknown' : 'write') : false };
         const repeated = guard.check(call.name, fingerprint);
         if (repeated) { state.rejections[call.id] = repeated.error; state.rejectionResults[call.id] = repeated; return false; }
         if (call.name === 'phone_use') {
@@ -140,7 +153,11 @@ export function advanceTurn(previous, event, now) {
     case 'inherit-effects':
       if (state.pending.length || state.awaitingModel) fail('PENDING_EFFECT', 'Inherit member receipts only at an idle boundary.');
       state.internalRouting = true;
-      if (Array.isArray(event.successfulEffects)) state.successfulEffects = [...new Set([...(state.successfulEffects || []), ...event.successfulEffects.filter(identity)])];
+      if (Array.isArray(event.successfulEffects)) {
+        const inherited = event.successfulEffects.filter(identity);
+        state.successfulEffects = [...new Set([...(state.successfulEffects || []), ...inherited])];
+        state.repeatable = (state.repeatable || []).filter(key => !inherited.includes(key));
+      }
       if (Array.isArray(event.uncertainEffects)) state.uncertainEffects = [...new Set([...(state.uncertainEffects || []), ...event.uncertainEffects.filter(identity)])];
       return state;
     case 'feedback':
@@ -151,7 +168,11 @@ export function advanceTurn(previous, event, now) {
       // A host that runs internal members on their own turns hands their effect
       // fingerprints back here, so a completed or uncertain write is never
       // repeated by the lead either. Hosts keeping members inline pass nothing.
-      if (Array.isArray(event.successfulEffects)) state.successfulEffects = [...new Set([...(state.successfulEffects || []), ...event.successfulEffects.filter(identity)])];
+      if (Array.isArray(event.successfulEffects)) {
+        const inherited = event.successfulEffects.filter(identity);
+        state.successfulEffects = [...new Set([...(state.successfulEffects || []), ...inherited])];
+        state.repeatable = (state.repeatable || []).filter(key => !inherited.includes(key));
+      }
       if (Array.isArray(event.uncertainEffects)) state.uncertainEffects = [...new Set([...(state.uncertainEffects || []), ...event.uncertainEffects.filter(identity)])];
       return state;
     case 'result': {
@@ -164,7 +185,12 @@ export function advanceTurn(previous, event, now) {
         if (state.internalRouting && !event.ok && state.pendingEffects?.[event.callId] && ['TIMEOUT','ABORTED','DEADLINE_EXCEEDED'].includes(event.code || event.error)) {
           state.uncertainEffects = [...new Set([...(state.uncertainEffects || []), state.pendingFingerprints[event.callId]])];
         }
-        if (event.ok && state.pendingEffects?.[event.callId]) state.successfulEffects = [...new Set([...(state.successfulEffects || []), state.pendingFingerprints[event.callId]])];
+        if (event.ok && state.pendingEffects?.[event.callId]) {
+          const done = state.pendingFingerprints[event.callId];
+          state.successfulEffects = [...new Set([...(state.successfulEffects || []), done])];
+          state.lastEffect = done;
+          if (state.pendingEffects[event.callId] === 'unknown') state.repeatable = [...new Set([...(state.repeatable || []), done])];
+        }
         const guard = createRepeatGuard({ entries: state.failures, fingerprint: (_name, key) => key });
         guard.record(toolName, state.pendingFingerprints[event.callId], { ok: event.ok, code: event.code, error: event.error, output: event.output });
         state.failures = guard.entries;
@@ -179,6 +205,7 @@ export function advanceTurn(previous, event, now) {
         state.stagnant = state.progressKeys.includes(event.progressKey) ? state.stagnant + 1 : 0;
         if (!state.progressKeys.includes(event.progressKey)) state.progressKeys.push(event.progressKey);
       }
+      if (now >= state.deadline) return stop('DEADLINE_EXCEEDED');
       // Let the Host drain the whole issued batch before closing the turn.
       if (!state.pending.length && state.errors >= state.limits.errors) return stop('REPEATED_TOOL_FAILURE');
       if (!state.pending.length && state.stagnant >= state.limits.stagnant) return stop('NO_PROGRESS');
@@ -208,5 +235,5 @@ export function advanceTurn(previous, event, now) {
 export function turnStopReply(reason, text = '', locale) {
   const language = locale || resolveReplyLocale({ text });
   if (reason === 'ROUND_LIMIT' && ['zh','en'].includes(language)) return AGENT_LOOP_CONTRACT.loop.toolLimitReply[language];
-  return runtimeMessage('stop', language, { reason: reason || 'LOOP_STOPPED' });
+  return runtimeMessage('stop', language, { reason: stopReasonText(reason || 'LOOP_STOPPED', language) });
 }

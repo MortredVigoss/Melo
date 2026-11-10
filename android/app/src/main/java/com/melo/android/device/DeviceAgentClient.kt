@@ -17,13 +17,12 @@ import kotlin.coroutines.resumeWithException
 
 /** A separate tool channel; ordinary streaming chat retains its original decoder. */
 class DeviceAgentClient(private val debug: Boolean, private val http: OkHttpClient = ModelClient(debug).http) {
-    suspend fun next(connection: Connection, key: String, history: List<JsonObject>, taskInstructions: String = "", chatTools: Boolean = false, toolSpecs: List<JsonObject>? = null, nativeWebSearch: Boolean = false, outputLimit: Int? = null, onProgress: (String) -> Unit = {}, onText: (String) -> Unit = {}): DeviceTurn {
+    suspend fun next(connection: Connection, key: String, history: List<JsonObject>, taskInstructions: String = "", chatTools: Boolean = false, toolSpecs: List<JsonObject>? = null, nativeWebSearch: Boolean = false, outputLimit: Int? = null, onProgress: (String) -> Unit = {}, onText: (String) -> Unit = {}, callIds: MutableSet<String>? = null): DeviceTurn {
         fun hasImage(value: JsonElement): Boolean = when(value) { is JsonObject -> value["type"]?.jsonPrimitive?.contentOrNull in setOf("image", "image_url", "input_image") || value.values.any(::hasImage); is JsonArray -> value.any(::hasImage); else -> false }
         require(connection.modelCapabilities[connection.model]?.jsonObject?.get("vision")?.jsonPrimitive?.booleanOrNull != false || history.none { hasImage(it) }) { "此模型已设为不支持图片输入，请选择视觉模型或修改能力设置。" }
         ConnectionPolicy.validate(connection, key, debug)
         require(connection.protocol in setOf("chat-completions", "responses", "anthropic")) { "手机助手需要支持 Tool Calling 的真实模型连接；自动验证使用隔离 HTTP Fixture。" }
-        val base = payload(connection, history, taskInstructions, chatTools, toolSpecs, nativeWebSearch)
-        val payload = if (outputLimit == null) base else JsonObject(base + ((if (connection.protocol == "responses") "max_output_tokens" else "max_tokens") to JsonPrimitive(outputLimit.coerceAtLeast(1))))
+        val payload = limited(connection, payload(connection, history, taskInstructions, chatTools, toolSpecs, nativeWebSearch), outputLimit)
         return LoopTrace.model(payload, snapshot = { turn: DeviceTurn -> JsonArray(turn.wire) }) {
         var providerReceipt: JsonObject? = null
         val request = Request.Builder().url(EndpointPolicy.validate(connection.endpoint, debug))
@@ -63,7 +62,8 @@ class DeviceAgentClient(private val debug: Boolean, private val http: OkHttpClie
                             catch (error: kotlinx.coroutines.CancellationException) { throw error }
                             catch (error: Exception) { throw ModelRequestFailure.invalid(error) }
                             providerReceipt = parsed
-                            try { decode(parsed, connection.protocol, if (chatTools) ChatPhoneUse.name else "android_device", toolSpecs?.map { it.text("name") }?.toSet()) }
+                            try { decode(parsed, connection.protocol, if (chatTools) ChatPhoneUse.name else "android_device", toolSpecs?.map { it.text("name") }?.toSet(), callIds) }
+                            catch (error: ModelRequestFailure) { throw error }
                             catch (error: Exception) { throw ModelRequestFailure.invalid(error) }
                         }
                         if (continuation.isActive) continuation.resume(result)
@@ -77,6 +77,30 @@ class DeviceAgentClient(private val debug: Boolean, private val http: OkHttpClie
     }
     companion object {
         fun initial(protocol: String, goal: String) = mutableListOf(buildJsonObject { put("role", "user"); put("content", goal) })
+        /**
+         * The name of the output-limit field on Chat Completions, by the desktop rule
+         * (src/shared/fastGeneration.js): the connection's declared `outputTokenParameter`, else
+         * `max_completion_tokens` on api.openai.com and `max_tokens` elsewhere. OpenAI's reasoning
+         * models reject `max_tokens`, so every limit write-up and its check failed there with HTTP 400.
+         */
+        internal fun outputLimitField(connection: Connection): String = when (connection.protocol) {
+            "responses" -> "max_output_tokens"
+            "anthropic" -> "max_tokens"
+            else -> (connection.modelCapabilities[connection.model] as? JsonObject)?.text("outputTokenParameter")?.takeIf { it in setOf("max_tokens", "max_completion_tokens") }
+                ?: if (runCatching { java.net.URI(connection.endpoint.trim()).host }.getOrNull().equals("api.openai.com", ignoreCase = true)) "max_completion_tokens" else "max_tokens"
+        }
+        /**
+         * A request with its own output limit (a limit write-up, its check). It never asks for more than
+         * the output share the context plan keeps free (a third of the model's capacity, the rule the
+         * base request uses): a fixed 8192 replaced that rule, so on a small model the write-up asked for
+         * more than could fit beside its input and was refused.
+         */
+        internal fun limited(connection: Connection, base: JsonObject, outputLimit: Int?): JsonObject {
+            if (outputLimit == null) return base
+            val field = outputLimitField(connection)
+            val ceiling = minOf(base[field]?.jsonPrimitive?.intOrNull ?: Int.MAX_VALUE, connection.contextTokens / 3)
+            return JsonObject(base + (field to JsonPrimitive(minOf(outputLimit, ceiling).coerceAtLeast(1))))
+        }
         fun payload(connection: Connection, history: List<JsonObject>, taskInstructions: String = "", chatTools: Boolean = false, toolSpecs: List<JsonObject>? = null, nativeWebSearch: Boolean = false): JsonObject = buildJsonObject {
             require(!nativeWebSearch || connection.protocol == "responses") { "当前 Adapter 尚未实现此协议的 Hosted Search。" }
             require(chatTools || taskInstructions.length <= 32_000) { "角色或项目指令超过手机任务预算，请减少资料后重试。" }
@@ -95,7 +119,11 @@ class DeviceAgentClient(private val debug: Boolean, private val http: OkHttpClie
             // fields at all, as on desktop; some compatible servers reject `tools: []`.
             when (connection.protocol) {
                 "responses" -> {
-                    put("instructions", instructions); put("max_output_tokens", minOf(8000, connection.contextTokens / 3)); put("store", false); put("input", JsonArray(history))
+                    // A device step keeps its small cap. A chat request carries none, as on desktop
+                    // (src/openai.js createApiResponsesReply): on this protocol the cap also counts the
+                    // model's reasoning, and at 8000 a reasoning model ran out before it had written its
+                    // answer; the request then failed as an invalid response.
+                    put("instructions", instructions); if (!chatTools) put("max_output_tokens", minOf(8000, connection.contextTokens / 3)); put("store", false); put("input", JsonArray(history))
                     val tools = buildJsonArray { functions.forEach { add(JsonObject(it + ("type" to "function".jp()))) }; if (nativeWebSearch) add(buildJsonObject { put("type", "web_search") }) }
                     if (tools.isNotEmpty()) { put("parallel_tool_calls", !serial); put("tools", tools) }
                     // The loop is stateless (store: false) and sends reasoning items back with the tool
@@ -117,20 +145,61 @@ class DeviceAgentClient(private val debug: Boolean, private val http: OkHttpClie
                 }
             }
         }
-        fun decode(value: JsonObject, protocol: String, toolName: String = "android_device", toolNames: Set<String>? = null): DeviceTurn {
+        /**
+         * Gives every call of a chat reply an id of its own (`used` holds the ids of the whole reply). A
+         * compatible server may send calls without an id, or start again at "call_0" in every response;
+         * the Core refuses a repeated id (DUPLICATE_CALL_ID), so such a server could not finish a reply
+         * with two tool rounds. As on desktop (src/tools/functionCalling.js, one id set per turn) a call
+         * without a usable id gets `call_<n>`, written into the provider's message so that its result can
+         * name it. An id the provider did give and had used in an earlier round stays its own on the
+         * wire; only the loop knows that call by a new one.
+         */
+        private fun identified(protocol: String, calls: List<DeviceCall>, wire: List<JsonObject>, used: MutableSet<String>): Pair<List<DeviceCall>, List<JsonObject>> {
+            val given = calls.map { it.id }.toSet()
+            val here = mutableSetOf<String>()
+            fun fresh(): String { var n = used.size + 1; var id: String; do { id = "call_${n++}" } while (id in used || id in given); used += id; return id }
+            val named = calls.map { call ->
+                val own = call.id.isNotBlank() && call.id.length <= 256 && here.add(call.id)
+                when {
+                    !own -> fresh().let { call.copy(id = it, wireId = it) }
+                    call.id in used -> call.copy(id = fresh(), wireId = call.id)
+                    else -> call.also { used += call.id }
+                }
+            }
+            if (named.indices.all { named[it].wireId == calls[it].id }) return named to wire
+            var next = 0
+            fun id() = JsonPrimitive(named[next++].wireId)
+            return named to when (protocol) {
+                "responses" -> wire.map { item -> if (item.text("type") == "function_call") JsonObject(item + ("call_id" to id())) else item }
+                "anthropic" -> wire.map { message -> JsonObject(message + ("content" to JsonArray(message.getValue("content").jsonArray.map { block -> if (block.jsonObject.text("type") == "tool_use") JsonObject(block.jsonObject + ("id" to id())) else block }))) }
+                else -> wire.map { message ->
+                    val list = message["tool_calls"]?.takeUnless { it == JsonNull }?.jsonArray
+                    if (list == null) message else JsonObject(message + ("tool_calls" to JsonArray(list.map { JsonObject(it.jsonObject + ("id" to id())) })))
+                }
+            }
+        }
+        fun decode(value: JsonObject, protocol: String, toolName: String = "android_device", toolNames: Set<String>? = null, callIds: MutableSet<String>? = null): DeviceTurn {
             require(value["error"] == null || value["error"] == JsonNull) { "模型返回错误，设备操作未继续。" }
-            val wire: List<JsonObject>
+            var wire: List<JsonObject>
             val text: String
-            val calls: List<DeviceCall>
+            var calls: List<DeviceCall>
+            // A device step is one small action; a chat call may carry a cited batch (the desktop bound).
+            val argumentLimit = if (toolNames == null) 12_000 else ToolStreamDecoder.MAX_ARGUMENT_CHARS
             when (protocol) {
                 "responses" -> {
+                    if (value.text("status") == "incomplete") ModelRequestFailure.incomplete((value["incomplete_details"] as? JsonObject)?.text("reason").orEmpty())?.let { throw it }
                     require(value.text("status") == "completed") { "模型请求尚未完成。" }
                     wire = value["output"]?.jsonArray.orEmpty().map { it.jsonObject }
-                    text = wire.filter { it.text("type") == "message" }.flatMap { it["content"]?.jsonArray.orEmpty() }.filter { it.jsonObject.text("type") == "output_text" }.joinToString("") { it.jsonObject.text("text") }
-                    calls = wire.filter { it.text("type") == "function_call" }.map { DeviceCall(it.text("call_id"), it.text("name"), arguments(it.text("arguments"))) }
+                    val parts = wire.filter { it.text("type") == "message" }.flatMap { it["content"]?.jsonArray.orEmpty() }
+                    // A completed reply whose content is the model declining is a reply: its words are the
+                    // answer. It used to fail as "模型没有返回可执行工具或回答" because they are not `output_text`.
+                    text = parts.filter { it.jsonObject.text("type") == "output_text" }.joinToString("") { it.jsonObject.text("text") }
+                        .ifBlank { parts.filter { it.jsonObject.text("type") == "refusal" }.joinToString("") { it.jsonObject.text("refusal") } }
+                    calls = wire.filter { it.text("type") == "function_call" }.map { DeviceCall(it.text("call_id"), it.text("name"), arguments(it.text("arguments"), argumentLimit)) }
                 }
                 "anthropic" -> {
-                    require(value.text("stop_reason") in setOf("end_turn", "tool_use")) { "模型请求被截断。" }
+                    ModelRequestFailure.incomplete(value.text("stop_reason"))?.let { throw it }
+                    require(value.text("stop_reason") in setOf("end_turn", "tool_use")) { "模型请求没有正常结束。" }
                     val content = value["content"]?.jsonArray ?: error("模型没有返回内容。")
                     wire = listOf(buildJsonObject { put("role", "assistant"); put("content", content) })
                     text = content.filter { it.jsonObject.text("type") == "text" }.joinToString("") { it.jsonObject.text("text") }
@@ -138,14 +207,19 @@ class DeviceAgentClient(private val debug: Boolean, private val http: OkHttpClie
                 }
                 else -> {
                     val choice = value["choices"]?.jsonArray?.firstOrNull()?.jsonObject ?: error("模型没有返回回答。")
-                    require(choice.text("finish_reason") in setOf("stop", "tool_calls")) { "模型请求被截断。" }
+                    ModelRequestFailure.incomplete(choice.text("finish_reason"))?.let { throw it }
+                    require(choice.text("finish_reason") in setOf("stop", "tool_calls")) { "模型请求没有正常结束。" }
                     val message = choice["message"]?.jsonObject ?: error("缺少模型消息。")
-                    wire = listOf(message); text = message.text("content")
+                    // A reply that ended normally and carries the model's refusal instead of content is a
+                    // reply, and those words are its answer.
+                    wire = listOf(message); text = message.text("content").ifBlank { message.text("refusal") }
                     // OpenAI-compatible proxies may explicitly return null on a final answer.
-                    calls = message["tool_calls"]?.takeUnless { it == JsonNull }?.jsonArray.orEmpty().map { val c = it.jsonObject; val f = c["function"]?.jsonObject ?: error("缺少工具函数。"); DeviceCall(c.text("id"), f.text("name"), arguments(f.text("arguments"))) }
+                    calls = message["tool_calls"]?.takeUnless { it == JsonNull }?.jsonArray.orEmpty().map { val c = it.jsonObject; val f = c["function"]?.jsonObject ?: error("缺少工具函数。"); DeviceCall(c.text("id"), f.text("name"), arguments(f.text("arguments"), argumentLimit)) }
                     require((choice.text("finish_reason") == "tool_calls") == calls.isNotEmpty()) { "工具回执不完整。" }
                 }
             }
+            // A chat reply owns the ids of all its calls; a device step keeps the provider's id as it is.
+            if (callIds != null) identified(protocol, calls, wire, callIds).let { (named, completed) -> calls = named; wire = completed }
             // Device actions remain serial single-call steps. Generic chat may return
             // 32 siblings; the shared reducer pairs unknown names with errors.
             require(calls.size <= (if (toolNames == null) 1 else 32) && calls.all { it.id.isNotBlank() && it.id.length <= 256 } && calls.map { it.id }.toSet().size == calls.size) { "模型返回了无效或过多的工具调用。" }
@@ -156,13 +230,18 @@ class DeviceAgentClient(private val debug: Boolean, private val http: OkHttpClie
             val totalInput = input?.let { it + (if (protocol == "anthropic") (usage["cache_read_input_tokens"]?.jsonPrimitive?.longOrNull ?: 0) + (usage["cache_creation_input_tokens"]?.jsonPrimitive?.longOrNull ?: 0) else 0) }
             return DeviceTurn(text, calls, wire, value.text("model").ifBlank { null }, totalInput)
         }
-        private fun arguments(raw: String): JsonObject { require(raw.length <= 12_000) { "工具参数过长。" }; return MeloJson.parseToJsonElement(raw).jsonObject }
+        private fun arguments(raw: String, limit: Int): JsonObject {
+            require(raw.length <= limit) { "工具参数过长。" }
+            // Compatible servers send "" for a call without arguments (desktop treats it as {} too,
+            // src/tools/functionSchema.js); parsing it failed the request for every argument-free tool.
+            return if (raw.isBlank()) buildJsonObject {} else MeloJson.parseToJsonElement(raw).jsonObject
+        }
         fun appendResult(history: MutableList<JsonObject>, protocol: String, call: DeviceCall, result: DeviceToolResult) {
             val text = result.data.toString()
             history += when (protocol) {
-                "responses" -> buildJsonObject { put("type", "function_call_output"); put("call_id", call.id); put("output", text) }
-                "anthropic" -> buildJsonObject { put("role", "user"); put("content", buildJsonArray { add(buildJsonObject { put("type", "tool_result"); put("tool_use_id", call.id); put("content", text); put("is_error", !result.ok) }) }) }
-                else -> buildJsonObject { put("role", "tool"); put("tool_call_id", call.id); put("content", text) }
+                "responses" -> buildJsonObject { put("type", "function_call_output"); put("call_id", call.wireId); put("output", text) }
+                "anthropic" -> buildJsonObject { put("role", "user"); put("content", buildJsonArray { add(buildJsonObject { put("type", "tool_result"); put("tool_use_id", call.wireId); put("content", text); put("is_error", !result.ok) }) }) }
+                else -> buildJsonObject { put("role", "tool"); put("tool_call_id", call.wireId); put("content", text) }
             }
             if (result.data.text("screen_id").isNotBlank()) {
                 // Never pair a new tree with pixels from an older screen, even if capture failed.

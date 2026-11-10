@@ -1,6 +1,6 @@
 import {platformSite,searchPublicIndex} from '../../services/search/publicPlatformIndex.js';
 import { captureBehavior } from '../../runtime/runtimeBehavior.js';
-import { searchLimits, scopedSearchRun } from '../../services/search/searchLimits.js';
+import { searchLimits, scopedSearchRun, normalizeSearchLimits } from '../../services/search/searchLimits.js';
 /**
  * web_search tool
  *
@@ -1862,6 +1862,8 @@ export const webSearchTool = {
   // around if callers keep refreshing the search view.
   isConcurrencySafe: false,
   requiresPermission: false,
+  // One search step and the read of its top results, each for as long as the settings allow.
+  timeoutFor: config => { const limits = normalizeSearchLimits(config); return limits.timeoutMs + limits.contentTimeoutMs + 5000; },
   // Self-description (tools/tool.js); see that file for the fallback tables.
   capability: 'network',
   needsWorkspace: false,

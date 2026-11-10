@@ -7,6 +7,21 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class DeviceWindowPolicyTest {
+    // 2026-11-10. Seen on the emulator: a window observed at y=27 during the slide that ends an app launch
+    // was at y=10 when the tap that followed was checked, and at y=0 after it. The observation had been
+    // reported as stable, and the tap was refused as stale_screen about one run in three.
+    @Test fun aScreenIsReadOnlyWhenItsWindowHasStoppedMoving() = kotlinx.coroutines.runBlocking {
+        fun rest(frames: List<Int>, generations: List<Int> = emptyList()): Pair<Int, Int> {
+            var pauses = 0; var read = 0
+            val frame = { frames[minOf(read++, frames.size - 1)] }
+            kotlinx.coroutines.runBlocking { DeviceWindowPolicy.awaitRest({ generations.getOrElse(pauses) { generations.lastOrNull() ?: 0 } }, frame) { pauses++ } }
+            return pauses to frames[minOf(read - 1, frames.size - 1)]
+        }
+        assertEquals("a window at rest costs one pause, as before", 1 to 0, rest(listOf(0, 0)))
+        assertEquals("a sliding window is waited for until two looks agree", 3 to 0, rest(listOf(27, 10, 0, 0)))
+        assertEquals("content that keeps changing is waited for too", 3, rest(listOf(0), listOf(0, 1, 2, 2, 2)).first)
+        assertEquals("the wait is bounded: a page that never rests is read after five pauses", 5, rest((0..40).toList()).first)
+    }
     @Test fun launchWaitsForDelayedAppWindowWithoutRetryingTheLaunch() = runBlocking {
         var checks = 0; var pauses = 0
         assertTrue(DeviceWindowPolicy.settleLaunch("com.tencent.mm", {

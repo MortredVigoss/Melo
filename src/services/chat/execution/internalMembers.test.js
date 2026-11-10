@@ -392,3 +392,58 @@ test('a saved search result count never lifts the member cap, and a lower one is
     assert.equal(normalizeSearchLimits(config).maxResults, lead);
   }
 });
+
+// 2026-11-10 agent audit, second pass: three readers starting together were each given a full share of
+// the same pool, so together they could spend the reserve kept for the lead's own answer.
+test('members that run side by side cannot together take the lead\'s reserve', async () => {
+  const budget = reserveDelivery(createRunBudget({ overrides: { maxInputTokens: 400000, deadlineMs: 30 * 60000, maxToolCalls: 200 } }));
+  const pool = 400000 - budget.delivery.inputTokens - LEAD_INPUT_RESERVE;
+  const shares = [], release = [];
+  // Every member holds its lane until all three have started, as three slow readers would.
+  const run = async options => { shares.push(options.maxTokens); await new Promise(resolve => release.push(resolve)); return { ok: true, output: 'ok', meta: { observations: [] } }; };
+  const jobs = [1, 2, 3].map(index => job('research', 'task ' + index, index));
+  const pending = runWithRequestContext(Object.freeze({ budget }), () => runInternalMembers({ jobs, goal, run }));
+  for (let waited = 0; shares.length < 3 && waited < 200; waited++) await settle();
+  assert.equal(shares.length, 3, 'all three lanes started');
+  assert.deepEqual(shares.slice(0, 2), [MEMBER_INPUT_SHARE, MEMBER_INPUT_SHARE]);
+  assert.equal(shares[2], pool - 2 * MEMBER_INPUT_SHARE, 'the third reader gets what is left after the two running ones');
+  assert.equal(shares.reduce((sum, share) => sum + share, 0) <= pool, true, 'together they stay inside the pool minus the lead reserve');
+  release.forEach(resolve => resolve());
+  const outcomes = await pending;
+  assert.equal(outcomes.every(outcome => outcome.started), true);
+  // What a finished member did not use is free again for the next one.
+  shares.length = 0;
+  await runWithRequestContext(Object.freeze({ budget }), () => runInternalMembers({ jobs: [job('research', 'later', 4)], goal, run: async options => { shares.push(options.maxTokens); return { ok: true, output: 'ok', meta: { observations: [] } }; } }));
+  assert.deepEqual(shares, [MEMBER_INPUT_SHARE]);
+  // A running member's remaining share counts, not what it has already used.
+  const half = { maxInputTokens: 120000, used: { inputTokens: 50000 } };
+  assert.equal(memberShare(budget, [half, half]).share, Math.min(MEMBER_INPUT_SHARE, pool - 140000));
+  // With too little left the next member is not started at all.
+  assert.deepEqual(memberShare(budget, [{ maxInputTokens: pool - MIN_MEMBER_SHARE + 1, used: { inputTokens: 0 } }]), { share: 0, reason: 'LEAD_RESERVE' });
+});
+
+test('a member\'s model requests count in the task space token total', async () => {
+  // 2026-11-10 agent audit, second pass: tool calls of members were counted, their tokens were not.
+  const { createExecutionScene, applyExecutionEvent } = await import('../../../shared/executionScene.js');
+  const { sceneResources, usageStages } = await import('../../../shared/executionBoard.js');
+  const events = [], forwarded = [];
+  const run = async options => {
+    for (const usage of [{ input: 700, output: 50, cached: 0, cacheWrite: 0 }, { input: 900, output: 30, cached: 0, cacheWrite: 0 }]) options.onProviderResponse({ requestedModel: 'm', usage });
+    return { ok: true, output: 'found', meta: { observations: [] } };
+  };
+  await runWithRequestContext(Object.freeze({ budget: reserveDelivery(createRunBudget({ overrides: { maxInputTokens: 400000 } })) }), () =>
+    runInternalMembers({ jobs: [job('research', 'forecast', 1), job('lookup', 'notes', 2)], goal, run, onProviderResponse: receipt => forwarded.push(receipt), sseEmitter: (type, event) => { if (type === 'execution_event') events.push(event); } }));
+  assert.equal(forwarded.length, 4, 'the receipts still reach the turn');
+  const finished = events.filter(event => /^internal:/.test(event.id) && event.status !== 'running');
+  assert.deepEqual(finished.map(event => event.api?.usage), [{ input: 1600, output: 80 }, { input: 1600, output: 80 }]);
+  const scene = createExecutionScene({ runId: 'run', requestId: 'request', chatId: 'chat' });
+  for (const event of events) applyExecutionEvent(scene, event);
+  const resources = sceneResources(scene);
+  assert.equal(resources.inputTokens, 3200); assert.equal(resources.outputTokens, 160);
+  assert.equal(usageStages(scene).length, 2, 'one usage record per member, however often its lane was updated');
+  // A member without any reported usage adds nothing and reports nothing.
+  events.length = 0;
+  await runWithRequestContext(Object.freeze({ budget: reserveDelivery(createRunBudget({ overrides: { maxInputTokens: 400000 } })) }), () =>
+    runInternalMembers({ jobs: [job('research', 'again', 3)], goal, run: async () => ({ ok: true, output: 'x', meta: { observations: [] } }), sseEmitter: (type, event) => { if (type === 'execution_event') events.push(event); } }));
+  assert.equal(events.some(event => event.api), false);
+});

@@ -815,6 +815,8 @@ async function handleSendMessage(prepared = null) {
               existing.status = r.ok ? 'ok' : 'error';
               existing.output = r.output;
               if (Number.isFinite(r.durationMs)) existing.durationMs = r.durationMs;
+              // Why a call did not run (not permitted, already done, budget used up): the pill says so.
+              if (!r.ok && typeof r.errorCode === 'string') existing.errorCode = r.errorCode;
               if (Array.isArray(r.evidenceTrail) && r.evidenceTrail.length > 0) {
                 existing.evidenceTrail = r.evidenceTrail;
               }

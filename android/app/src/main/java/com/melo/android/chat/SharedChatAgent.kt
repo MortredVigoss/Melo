@@ -62,11 +62,75 @@ private class PageReads(
 // Observations cross the Runtime bridge with every goal / completion / delivery call, and one
 // call accepts 2 000 000 characters. Bound their total size as well as their number: a run of
 // long page reads otherwise ends with "共享 Runtime 输入超过上限" and a closed Runtime.
-private fun trimObservations(rows: MutableList<JsonElement>) {
-    while (rows.size > 128) rows.removeAt(0)
+//
+// A row the task ledger or the last check cites is the proof of something already recorded; the check
+// reads it again by its id every time. So the oldest row nothing cites goes first, and a cited row only
+// when no other is left. Dropped by age alone, a long task lost the pages its first findings stood on,
+// and the check then counted those findings as unsupported (2026-11-10 audit, Android 6b).
+internal fun trimObservations(rows: MutableList<JsonElement>, cited: () -> Set<String> = { emptySet() }) {
     if (rows.size <= 32) return
     var total = rows.sumOf { it.toString().length }
-    while (rows.size > 1 && total > 1_200_000) total -= rows.removeAt(0).toString().length
+    if (rows.size <= 128 && total <= 1_200_000) return
+    val keep = cited()
+    fun drop(): Int {
+        // Never the newest row: it is what the model is about to read and cite.
+        val uncited = (0 until rows.size - 1).firstOrNull { (rows[it] as? JsonObject)?.text("id").orEmpty() !in keep }
+        return rows.removeAt(uncited ?: 0).toString().length
+    }
+    while (rows.size > 128) total -= drop()
+    while (rows.size > 1 && total > 1_200_000) total -= drop()
+}
+
+/** The observation ids a goal state refers to: the ledger's cited evidence and the requirements of the last check. */
+internal fun citedObservations(state: JsonElement?): Set<String> {
+    val ids = mutableSetOf<String>()
+    fun walk(value: JsonElement?, evidence: Boolean) {
+        when (value) {
+            is JsonObject -> {
+                if (evidence) value.text("id").takeIf(String::isNotBlank)?.let(ids::add)
+                for ((key, item) in value) walk(item, key == "evidence" || key == "evidenceIds")
+            }
+            is JsonArray -> for (item in value) { if (evidence && item is JsonPrimitive && item.isString) ids += item.content; walk(item, evidence) }
+            else -> Unit
+        }
+    }
+    walk(state, false)
+    return ids
+}
+
+/**
+ * What the model is told when the Core refuses one call of a batch. Each refusal names what to do
+ * next. Every one of them used to end with "请先完成前置检索", which is right for a missing
+ * prerequisite only: a call refused because it had already succeeded sent the model off to search
+ * again (2026-11-10 audit, Android 5). `note` is the Core's own text for a call that keeps failing.
+ */
+internal fun refusedCall(code: String, note: String = ""): String = when (code) {
+    "PREREQUISITE_MISSING" -> "本步未执行：PREREQUISITE_MISSING；请先完成前置检索。"
+    "ALREADY_EXECUTED" -> "Not run: this exact call already succeeded earlier in this reply (ALREADY_EXECUTED). Use that result; do not repeat it."
+    "ALREADY_ATTEMPTED" -> "Not run: this exact action was already attempted and its outcome is unknown (ALREADY_ATTEMPTED). Check the current state before acting again; never repeat it blindly."
+    "REPEATED_FAILURE" -> note.ifBlank { "Not run: this exact call already failed the same way more than once (REPEATED_FAILURE). Change the arguments or the approach, or tell the user what is blocking you." }
+    "INVALID_TOOL_ARGUMENTS" -> "Not run: the arguments do not match this tool's schema (INVALID_TOOL_ARGUMENTS). Correct them and call again."
+    "UNKNOWN_TOOL" -> "Not run: this tool is not offered in this turn (UNKNOWN_TOOL). Use only the tools listed for you."
+    "REPEATED_TASK" -> "Not run: this phone task was already requested in this reply (REPEATED_TASK). Use its result."
+    "PHONE_TASK_LIMIT" -> "Not run: this reply has reached its limit of phone tasks (PHONE_TASK_LIMIT). Answer with what was done."
+    else -> "Not run: the call was refused ($code)."
+}
+
+private fun canonicalJson(value: JsonElement): JsonElement = when (value) {
+    is JsonObject -> JsonObject(value.toSortedMap().mapValues { canonicalJson(it.value) })
+    is JsonArray -> JsonArray(value.map(::canonicalJson))
+    else -> value
+}
+
+/**
+ * What the Core compares to tell a repeated result from progress: the call, its arguments and what
+ * came back, as on desktop (src/runtime/sharedAgentCore.js) and the iPhone. Without the arguments,
+ * different searches that each found nothing counted as one repeated result, and a member that sent
+ * six of them in a single round was stopped for "no progress" after that round.
+ */
+internal fun progressKey(call: DeviceCall, result: DeviceToolResult): String {
+    val evidence = result.data["results"]?.toString() ?: if (call.name == "fetch_url") result.data.text("url") + result.data.text("text") else result.data.toString()
+    return MessageDigest.getInstance("SHA-256").digest((call.name + "\n" + canonicalJson(call.arguments) + "\n" + evidence).toByteArray()).joinToString("") { "%02x".format(it) }
 }
 
 /**
@@ -146,6 +210,8 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
         private lateinit var search: SharedSearchAdapter
         private lateinit var requestedUrls: MutableSet<String>
         private var modelSequence = 0
+        // The ids of every tool call of this reply, the lead's and the members'; see DeviceAgentClient.identified.
+        private val callIds: MutableSet<String> = java.util.Collections.synchronizedSet(mutableSetOf())
         private var anthropicModelPrefix: String? = null
         private var routing: SmartRouting? = null
         private var requestedUpgrade = false
@@ -172,7 +238,11 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
         private suspend fun stopped(reason: String) = runtime.value("stopReply", buildJsonObject { put("reason",reason); put("text",goal); put("locale",replyLocale) }).jsonPrimitive.content
         suspend fun run(): ModelReply {
             organizerNames = runtime.value("organizerNames", buildJsonObject {}).jsonArray.map { it.jsonPrimitive.content }
-            replyLocale = runtime.value("locale", buildJsonObject { put("text",goal); put("agentLanguage",config.text("replyLanguage")); put("systemLanguage",java.util.Locale.getDefault().toLanguageTag()) }).jsonPrimitive.content
+            // A message that shows no language of its own (a bare link, a number, a picture) follows the
+            // user's earlier messages in this chat, as on the iPhone. Without them it fell back to the
+            // phone's system language, so a Chinese conversation got its stop and limit notes in English.
+            replyLocale = runtime.value("locale", buildJsonObject { put("text",goal); put("agentLanguage",config.text("replyLanguage")); put("systemLanguage",java.util.Locale.getDefault().toLanguageTag())
+                put("chat", buildJsonObject { put("messages", JsonArray(messages.filter { it.role == "user" }.dropLast(1).takeLast(12).map { buildJsonObject { put("role", "user"); put("content", it.content.take(400)) } })) }) }).jsonPrimitive.content
         journal = ChatJournal.create(runtime, runId, chatId, messages.lastOrNull { it.role == "user" }?.content.orEmpty(), onScene)
         try {
             budget = SharedRunBudget.open(runtime)
@@ -261,11 +331,19 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
 
         private suspend fun deliverLimit(reason: String): ModelReply {
             currentCoroutineContext().ensureActive()
-            onPhase("已到本轮上限，正在整理已确认的内容…"); onDelta("")
+            // An answer that was written and was waiting for its check when the allowance ended is the
+            // delivery: checked if the check can still run, delivered as written either way. Asking the
+            // model to write it again from the tool results discarded it and, for an answer that had used
+            // no tools, produced an empty three-part form (2026-11-10 audit; desktop
+            // src/runtime/limitDelivery.js). The goal state keeps at most 24 000 characters of it, so the
+            // text comes from the reply itself.
+            val pending = lastCandidate?.takeIf { goalState?.text("phase") == "checking" && it.text.isNotBlank() }
+            if (pending == null) { onPhase("已到本轮上限，正在整理已确认的内容…"); onDelta("") } else onPhase("已到本轮上限，正在核对已写好的回答…")
             if (goalState == null) goalState = runtime.value("goal", buildJsonObject { put("action", "start"); put("goal", goal); put("id", runId) }).jsonObject
             suspend fun delivery(action: String, fields: JsonObject = buildJsonObject {}) = runtime.value("delivery", JsonObject(fields + buildJsonObject { put("action", action); put("state", goalState!!); put("observations", JsonArray(observations)); put("locale", replyLocale) }))
             suspend fun fallback(): ModelReply {
-                val prefix = lastCandidate?.text?.takeIf { it.isNotBlank() } ?: stopped(reason)
+                // An answer the check sent back is not a result and is never handed over as one.
+                val prefix = stopped(reason)
                 val text = delivery("fallback", buildJsonObject { put("reply", prefix) }).jsonPrimitive.content
                 return finish(text, connection.model, "partial", reason)
             }
@@ -276,7 +354,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                     transport.next(connection, key, rows, system, true, emptyList(), nativeWebSearch = false, outputLimit = output, onText = if (phase == "delivery") onDelta else { _: String -> })
                 }
             }
-            val answer = try { request(delivery("request", buildJsonObject { put("reason", reason) }).jsonObject, "delivery", 8192) }
+            val answer = pending ?: try { request(delivery("request", buildJsonObject { put("reason", reason) }).jsonObject, "delivery", 8192) }
             catch (error: Exception) { currentCoroutineContext().ensureActive(); return fallback() }
             if (answer.calls.isNotEmpty() || answer.text.isBlank()) return fallback()
             goalState = delivery("candidate", buildJsonObject { put("reply", answer.text); put("reason", reason) }).jsonObject
@@ -311,7 +389,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                     val estimate = SharedRunBudget.estimateInput(history, currentInstructions, specs)
                     // Only the lead writes the user's answer. Its text is shown while it arrives; a member's report never is.
                     val shown: (String) -> Unit = if (internalJob == null) onDelta else { _: String -> }
-                    val reply = try { turn.budget.model(estimate, { it.inputTokens }) { transport.next(connection, key, history, currentInstructions, true, specs, nativeWebSearch = nativeSearch, onProgress = onPhase, onText = shown) } }
+                    val reply = try { turn.budget.model(estimate, { it.inputTokens }) { transport.next(connection, key, history, currentInstructions, true, specs, nativeWebSearch = nativeSearch, onProgress = onPhase, onText = shown, callIds = callIds) } }
                     catch (error: Exception) {
                         if (error !is CancellationException) journal.event(id, "模型请求", model = connection.model, output = (error as? ModelRequestFailure)?.let { "${it.code} · ${it.message}" } ?: "模型请求未完成，未收到可执行回执。", status = "failed")
                         throw error
@@ -361,6 +439,9 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
             val review = try { turn.budget.model(SharedRunBudget.estimateInput(reviewHistory, system), { it.inputTokens }) { transport.next(connection, key, reviewHistory, system, true, emptyList(), nativeWebSearch = false) } }
             catch (error: Exception) {
                 if (error is CancellationException || error is SharedBudgetExhausted || error is SharedTurnStopped) throw error
+                // The check was asked for and did not come back. Without a row the card showed an answer
+                // marked 受阻 and nothing that said why.
+                journal.event("goal-check:${++modelSequence}", "核对任务交付", output = "核对请求没有完成" + ((error as? ModelRequestFailure)?.let { "（${it.code}）" } ?: "") + "；回答按原样送达，未经核对。", status = "failed")
                 goalState = runtime.value("goal", buildJsonObject { put("action", "stop"); put("state", goalState!!) }).jsonObject
                 turn.event("complete")
                 return true
@@ -408,7 +489,9 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
             return true
         }
 
-        private suspend fun handoff(answer: String, limited: Boolean = false, deliver: Boolean = false) {
+        // `shown` is what the member's row says when `answer` is a note of the host and no write-up
+        // replaced it; the note itself is for the lead and stays in English.
+        private suspend fun handoff(answer: String, limited: Boolean = false, deliver: Boolean = false, shown: String? = null) {
             val job = internalJob ?: return
             var delivered = answer
             if (deliver && memberTurn != null) {
@@ -425,8 +508,11 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
             }).jsonPrimitive.content
             history = leadHistory; currentChainStart = leadChainStart
             DeviceAgentClient.appendResult(history, connection.protocol, leadAssignment, DeviceToolResult(Json.parseToJsonElement(report).jsonObject))
-            journal.event("internal:"+assignments.size, job.text("label"), output = delivered.take(500),
-                status = if (Json.parseToJsonElement(report).jsonObject.text("status") == "observed") "completed" else "interrupted",
+            // 已中断 is for a member its allowance cut off ("partial"). A member that finished its report
+            // is 完成 whether or not a tool backed it: "unverified" (an answer without a successful call)
+            // was shown as 已中断 although nothing had interrupted it. The lead still reads the real status.
+            journal.event("internal:"+assignments.size, job.text("label"), output = (shown?.takeIf { delivered == answer } ?: delivered).take(500),
+                status = if (Json.parseToJsonElement(report).jsonObject.text("status") == "partial") "interrupted" else "completed",
                 role = job.text("role").ifEmpty { null }, rounds = job["roundLimit"]?.jsonPrimitive?.intOrNull)
             memberTurn?.let { child -> rootTurn?.event("inherit-effects",child.effects); child.close() }
             memberTurn = null; internalJob = null
@@ -455,7 +541,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                     turn = memberTurn ?: lead
                     try {
                     currentCoroutineContext().ensureActive()
-                    if (internalJob != null && requestedUpgrade) handoff("Action deferred to the lead for model escalation; it has not executed.", true)
+                    if (internalJob != null && requestedUpgrade) handoff("Action deferred to the lead for model escalation; it has not executed.", true, shown = "这一步已交回主 Agent 处理，尚未执行。")
                     if (internalJob == null && routing?.escalate(turn.rounds, turn.failures, requestedUpgrade, !turn.active) == true) {
                         val previousProtocol = connection.protocol
                         val nextConnection = routing!!.connection()
@@ -466,7 +552,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                         journal.event("model-routing:1", "智能升档", model = connection.model, status = "completed")
                     }
                     requestedUpgrade = false
-                    if (internalJob != null && (turn.roundsLeft <= 0 || !turn.active || turn.budget.exhausted())) handoff("Member round budget reached.", true, true)
+                    if (internalJob != null && (turn.roundsLeft <= 0 || !turn.active || turn.budget.exhausted())) handoff("Member round budget reached.", true, true, shown = "成员用完了这次的轮数或额度，已把查到的内容交回主 Agent。")
                     turn = memberTurn ?: lead
                     val job = internalJob
                     val tools = job?.strings("tools")
@@ -478,7 +564,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                         currentCoroutineContext().ensureActive()
                         if (job == null || failure is CancellationException || failure is SharedTurnStopped || failure is SharedBudgetExhausted ||
                             (failure !is ModelRequestFailure && failure !is java.io.IOException)) throw failure
-                        turn.event("feedback"); handoff("Member model request failed before delivery.", true); continue
+                        turn.event("feedback"); handoff("Member model request failed before delivery.", true, shown = "成员的模型请求没有完成，已把查到的内容交回主 Agent。"); continue
                     }
                     if (!turn.active) return finish(reply.text, reply.model, "budget_exhausted", turn.reason)
                     if (hosted) {
@@ -544,7 +630,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                             // "UNKNOWN_TOOL; finish the prerequisite retrieval first" while the lead holds no retrieval tool.
                             if (scopedCalls.size > 1) "route_task and task_progress are answered only when called alone, one call per response. Nothing was assigned or recorded: send that single call by itself."
                             else routeRefusal ?: "This call cannot be answered now. Continue as the lead with the gathered results.", "ROUTE_DENIED")
-                        else if (!turn.permits(call.id)) DeviceToolResult.error("本步未执行：${turn.rejection(call.id)}；请先完成前置检索。", turn.rejection(call.id)) else if (routing?.active == true && routing!!.decision.text("tier") != "strong" && runtime.value("toolEffect", buildJsonObject { put("name", call.name); put("arguments", call.arguments) }).jsonPrimitive.content in setOf("write", "unknown")) {
+                        else if (!turn.permits(call.id)) turn.rejection(call.id).ifBlank { turn.reason.ifBlank { "TURN_CLOSED" } }.let { code -> DeviceToolResult.error(refusedCall(code, turn.rejectionNote(call.id)), code) } else if (routing?.active == true && routing!!.decision.text("tier") != "strong" && runtime.value("toolEffect", buildJsonObject { put("name", call.name); put("arguments", call.arguments) }).jsonPrimitive.content in setOf("write", "unknown")) {
                             routing!!.sideEffects = true; requestedUpgrade = true
                             DeviceToolResult.error("本步尚未执行，需要强档模型；请保留已有结果，等待升档或配置强档。", "ROUTING_REQUIRES_STRONG")
                         } else if (call.name == "melo_escalate" && routing?.active == true) {
@@ -588,7 +674,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                         }) }).jsonArray
                         observations.addAll(newObservations)
                         if (job != null) memberObservations.addAll(newObservations)
-                        trimObservations(observations)
+                        trimObservations(observations) { citedObservations(goalState) }
                         // Only the native DeviceCompletion receipt can verify an action.
                         // It certifies its exact goal; a successful subtask cannot certify a broader user task.
                         if (call.name in setOf("phone_use", "phone_workflow", "phone_action") && executed && result.ok && result.data.text("status") == "achieved" && result.data.text("verification") == "visible_facts" && result.data.text("run_id").isNotBlank()) {
@@ -603,10 +689,8 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                         // reached within five or six searches; after that a member was told "只能读取…本轮 Search
                         // 实际返回的来源 URL" about results it had just received.
                         sources.mapNotNull { it["url"]?.jsonPrimitive?.content }.forEach { if (requestedUrls.size < MAX_READABLE_URLS) requestedUrls.add(it) }
-                        journal.event(call.id, call.name, module = module, operation = true, output = result.data.toString(), result = result.data, sources = sources, status = if (result.ok) "completed" else "failed", durationMs = SystemClock.elapsedRealtime() - started, deviceRunId = if (call.name in setOf("phone_use", "phone_workflow", "phone_action")) result.data.text("run_id") else null)
-                        val evidence = result.data["results"]?.toString() ?: if (call.name == "fetch_url") result.data.text("url") + result.data.text("text") else result.data.toString()
-                        val fingerprint = MessageDigest.getInstance("SHA-256").digest((call.name + "\n" + evidence).toByteArray()).joinToString("") { "%02x".format(it) }
-                        if (turn.active) turn.result(call.id, result.ok, fingerprint, result.data.text("code"), result.data.toString())
+                        journal.event(call.id, call.name, module = module, operation = true, output = result.data.toString(), result = result.data, sources = sources, status = if (result.ok) "completed" else "failed", durationMs = SystemClock.elapsedRealtime() - started, deviceRunId = if (call.name in setOf("phone_use", "phone_workflow", "phone_action")) result.data.text("run_id") else null, executed = executed)
+                        if (turn.active) turn.result(call.id, result.ok, progressKey(call, result), result.data.text("code"), result.data.toString())
                         if (turn.active && call.name == "phone_action" && call.arguments.text("action") !in setOf("finish", "checkpoint")) turn.observeDevice(call.arguments.text("action"), result.ok, DeviceProgress.fingerprint(result))
                         succeeded = succeeded || result.ok
                         LoopTrace.emit("tool.result", buildJsonObject { put("callId", call.id); put("name", call.name); put("ok", result.ok); put("effectState", if (!executed) "not_started" else if (result.ok) "returned" else "error_returned") }, result.data)
@@ -620,11 +704,13 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                     } catch (failure: Exception) {
                         currentCoroutineContext().ensureActive()
                         if (internalJob == null || failure !is SharedBudgetExhausted && failure !is SharedTurnStopped && failure !is TimeoutCancellationException) throw failure
-                        handoff("Member allowance reached. Preserve observations and request only the remaining gap.",true,true)
+                        handoff("Member allowance reached. Preserve observations and request only the remaining gap.",true,true, shown = "成员用完了这次的轮数或额度，已把查到的内容交回主 Agent。")
                     }
                 }
-                if (turn.reason in setOf("ROUND_LIMIT", "DEADLINE_EXCEEDED")) throw SharedTurnStopped(turn.reason)
-                return finish(stopped(turn.reason), connection.model, if (succeeded) "partial" else "blocked", turn.reason)
+                // The lead's turn says why the reply ended. `turn` may still be the member that ran last (the
+                // lead can stop while a member hands back); its reason is another turn's, or none at all.
+                if (lead.reason in setOf("ROUND_LIMIT", "DEADLINE_EXCEEDED")) throw SharedTurnStopped(lead.reason)
+                return finish(stopped(lead.reason), connection.model, if (succeeded) "partial" else "blocked", lead.reason)
         }
     }
 }
@@ -632,11 +718,14 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
 private fun JsonObject.strings(key: String) = (get(key) as? JsonArray).orEmpty().map { it.jsonPrimitive.content }
 
 private class ChatJournal(private val runtime: SharedCoreRuntime, private var scene: JsonObject, private val save: suspend (JsonObject) -> Unit) {
-    suspend fun event(id: String, name: String, module: String = "compute", operation: Boolean = false, input: String? = null, output: String? = null, status: String = "running", model: String? = null, returnedModel: String? = null, sources: List<JsonObject> = emptyList(), durationMs: Long? = null, channel: String? = null, deviceRunId: String? = null, result: JsonObject? = null, role: String? = null, rounds: Int? = null, evaluation: JsonObject? = null, goalReview: JsonObject? = null) {
+    suspend fun event(id: String, name: String, module: String = "compute", operation: Boolean = false, input: String? = null, output: String? = null, status: String = "running", model: String? = null, returnedModel: String? = null, sources: List<JsonObject> = emptyList(), durationMs: Long? = null, channel: String? = null, deviceRunId: String? = null, result: JsonObject? = null, role: String? = null, rounds: Int? = null, evaluation: JsonObject? = null, goalReview: JsonObject? = null, executed: Boolean? = null) {
         update("event", buildJsonObject { put("event", buildJsonObject {
             put("id", id); put("name", name); put("module", module); put("kind", if (operation) "operation" else "pipeline"); put("status", status)
             input?.let { put("input", it) }; output?.let { put("output", it) }; model?.let { put("model", it) }; returnedModel?.let { put("returnedModel", it) }
             result?.let { put("result", it) }
+            // Whether the call was started at all. The shared scene keeps it once its reducer reads it; until
+            // then the card tells a returned error from an unknown result by the row's own receipt.
+            executed?.let { put("executed", it) }
             durationMs?.let { put("durationMs", it) }; channel?.let { put("channel", it) }; deviceRunId?.let { put("deviceRunId", it) }; put("sources", JsonArray(sources))
             // Task space (plan C): the shared reducer validates and bounds these.
             role?.let { put("role", it) }; rounds?.let { put("limits", buildJsonObject { put("rounds", it) }) }; evaluation?.let { put("evaluation", it) }; goalReview?.let { put("goalReview", it) }

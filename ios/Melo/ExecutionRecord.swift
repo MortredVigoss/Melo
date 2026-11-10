@@ -116,8 +116,25 @@ struct ExecutionObservation: Equatable {
     private var summarySequences: [String: Int] = [:]
     private var requestStarted: TimeInterval
     init(requestStarted: TimeInterval = ProcessInfo.processInfo.systemUptime) { self.requestStarted = requestStarted }
+    /// Which model request of the reply this observation reports: "" for the first, otherwise the
+    /// suffix of its stage ids. Every request has its own "模型请求" stage, as on the desktop
+    /// (`model:<n>`). With one shared id the stage closed after the first response: later requests
+    /// were not shown, and model time and token totals counted that one request only (2026-11-10).
+    var requestKey = ""
+    var modelStageID: String { requestKey.isEmpty ? "model:response" : "model:response:" + requestKey }
+    var formatStageID: String { requestKey.isEmpty ? "reply:format" : "reply:format:" + requestKey }
+    /// The key of the request made in loop pass `iteration` (0-based). `attempt` counts the requests
+    /// of that same pass (a retry after condensing, or at the service's default image size).
+    /// `continuation` marks a reply that was continued after a pause: it repeats the pass it was paused
+    /// in, and that request is a new one, shown next to the one that was cut off.
+    static func requestKey(iteration: Int, attempt: Int = 1, continuation: String = "") -> String {
+        if iteration <= 0 && attempt <= 1 && continuation.isEmpty { return "" }
+        return String(max(0, iteration) + 1) + (continuation.isEmpty ? "" : "c" + continuation) + (attempt > 1 ? "r" + String(attempt) : "")
+    }
+    /// The API transports keep one observation for the whole reply: a new request starts its own stage.
+    mutating func beginRequest(_ key: String) { requestKey = key; requestStarted = ProcessInfo.processInfo.systemUptime }
     mutating func apiReceipt(_ response: [String: Any], transport: String, finishReason: String? = nil) {
-        guard let index = pipeline.firstIndex(where: { $0.id == "model:response" }) else { return }
+        guard let index = pipeline.firstIndex(where: { $0.id == modelStageID }) else { return }
         var api = pipeline[index].api ?? [:]
         func identifier(_ value: Any?) -> SyncValue? {
             guard let value = value as? String, value.range(of: #"^[A-Za-z0-9._:/-]{1,200}$"#, options: .regularExpression) != nil else { return nil }
@@ -263,14 +280,14 @@ struct ExecutionObservation: Equatable {
             if let model = response["model"] as? String, model != returnedModel { returnedModel = model; revision += 1 }
             for item in response["output"] as? [[String: Any]] ?? [] { tool(item); summaryItem(item, done: type == "response.completed" && response["status"] as? String == "completed") }
         }
-        if type == "response.created" { stage("model:response", name: "模型请求", status: "running", output: "服务已接收请求，等待输出") }
-        if type == "response.output_text.delta" { stage("model:response", name: "模型请求", status: "running", output: "正在接收模型输出") }
+        if type == "response.created" { stage(modelStageID, name: "模型请求", status: "running", output: "服务已接收请求，等待输出") }
+        if type == "response.output_text.delta" { stage(modelStageID, name: "模型请求", status: "running", output: "正在接收模型输出") }
         if type == "response.completed", let response = event["response"] as? [String: Any], response["status"] as? String == "completed" {
-            stage("model:response", name: "模型请求", status: "completed", output: "模型返回完成" + (returnedModel.map { " · 服务返回模型：\($0)" } ?? " · 服务未报告模型标识"))
+            stage(modelStageID, name: "模型请求", status: "completed", output: "模型返回完成" + (returnedModel.map { " · 服务返回模型：\($0)" } ?? " · 服务未报告模型标识"))
             for id in Array(summaryParts.keys) { publishSummary(id, status: "completed") }
         }
         if ["response.failed", "response.incomplete", "error"].contains(type) {
-            stage("model:response", name: "模型请求", status: "failed", output: "未取得完整响应")
+            stage(modelStageID, name: "模型请求", status: "failed", output: "未取得完整响应")
             for id in Array(summaryParts.keys) { publishSummary(id, status: type == "response.incomplete" ? "interrupted" : "failed") }
         }
         if let item = event["item"] as? [String: Any] { tool(item); summaryItem(item, done: type == "response.output_item.done") }
@@ -474,8 +491,12 @@ struct ExecutionRecord: Codable, Identifiable, Equatable {
     private mutating func mergeStage(_ stage: ExecutionStage) {
         if pipeline == nil { pipeline = [] }
         if let index = pipeline?.firstIndex(where: { $0.id == stage.id }) {
-            guard !["completed", "failed", "cancelled", "interrupted"].contains(pipeline![index].status) else { return }
-            let start = pipeline![index].startedAt
+            // "interrupted" is how a pause closes whatever was running. When the reply is continued the
+            // same stage reports again (a member at work, the model request that was cut off) and takes
+            // over; it used to stay "interrupted" for good. Completed, failed and cancelled stay final.
+            guard !["completed", "failed", "cancelled"].contains(pipeline![index].status) else { return }
+            // The time spent paused is not part of the stage: it restarts from the new report.
+            let start = pipeline![index].status == "interrupted" ? stage.startedAt ?? pipeline![index].startedAt : pipeline![index].startedAt
             let requested = pipeline![index].model
             let previous = pipeline![index]
             pipeline![index] = stage

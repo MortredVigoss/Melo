@@ -72,7 +72,7 @@ enum ChatGPTProtocol {
 struct ChatGPTStream {
     private let acceptImageCompletion: Bool
     private var reportedImageModel = ""
-    init(acceptImageCompletion: Bool = false, requestStarted: TimeInterval = ProcessInfo.processInfo.systemUptime) { self.acceptImageCompletion = acceptImageCompletion; observation = ExecutionObservation(requestStarted: requestStarted) }
+    init(acceptImageCompletion: Bool = false, requestStarted: TimeInterval = ProcessInfo.processInfo.systemUptime, requestKey: String = "") { self.acceptImageCompletion = acceptImageCompletion; observation = ExecutionObservation(requestStarted: requestStarted); observation.requestKey = requestKey }
     private(set) var observation = ExecutionObservation()
     private(set) var completed = false
     private(set) var text = ""
@@ -122,7 +122,10 @@ struct ChatGPTStream {
         }
         if type == "response.completed" {
             guard let response = event["response"] as? [String: Any], response["status"] as? String == "completed" else { throw MeloError.message("模型未完成回复。") }
-            observation.stage("reply:format", name: "整理回答与引用", status: "running", output: "处理服务返回的文字与引用标记")
+            // "整理回答与引用" belongs to a response that carries an answer. A response that only asks for
+            // tools has nothing to format; it used to show this step as done after the first tool round.
+            let asksForTools = ((response["output"] as? [[String: Any]]) ?? Array(streamedItems.values)).contains { $0["type"] as? String == "function_call" }
+            if !asksForTools { observation.stage(observation.formatStageID, name: "整理回答与引用", status: "running", output: "处理服务返回的文字与引用标记") }
             // Completed output is authoritative; never save an interrupted partial answer.
             if let output = response["output"] as? [[String: Any]] {
                 searched = searched || output.contains { $0["type"] as? String == "web_search_call" && $0["status"] as? String == "completed" }
@@ -161,7 +164,7 @@ struct ChatGPTStream {
             if outputItems.contains(where: { $0["type"] as? String == "function_call" && ($0["status"] as? String).map { $0 != "completed" } == true }) {
                 throw MeloError.message("模型返回了未完成的工具调用，未执行任何操作。")
             }
-            observation.stage("reply:format", name: "整理回答与引用", status: "completed", output: "回答格式与引用整理完成")
+            if !asksForTools { observation.stage(observation.formatStageID, name: "整理回答与引用", status: "completed", output: "回答格式与引用整理完成") }
             completed = true
         }
     }
@@ -178,7 +181,7 @@ struct ChatGPTSSE {
     private var previousCR = false
     private var byteCount = 0
     private let maxBytes: Int
-    init(maxBytes: Int = 8 * 1024 * 1024, acceptImageCompletion: Bool = false, requestStarted: TimeInterval = ProcessInfo.processInfo.systemUptime) { self.maxBytes = maxBytes; self.stream = ChatGPTStream(acceptImageCompletion: acceptImageCompletion, requestStarted: requestStarted) }
+    init(maxBytes: Int = 8 * 1024 * 1024, acceptImageCompletion: Bool = false, requestStarted: TimeInterval = ProcessInfo.processInfo.systemUptime, requestKey: String = "") { self.maxBytes = maxBytes; self.stream = ChatGPTStream(acceptImageCompletion: acceptImageCompletion, requestStarted: requestStarted, requestKey: requestKey) }
     private(set) var stream: ChatGPTStream
     mutating func accept(_ byte: UInt8) throws {
         byteCount += 1

@@ -80,14 +80,20 @@ function renderTrail(call, escapeHtml) {
  * (`escapeHtml` + `icon.terminal` SVG markup) so the renderer stays
  * import-free in tests.
  *
+ * `toolName` names a call in the interface language (a member's call arrives
+ * as `[agent:d1] web_search`); `callOutcome` says why a call did not run (not
+ * permitted, already done, budget used up) instead of a bare ✗. Both come from
+ * executionText.js; without them the recorded id is shown.
+ *
  * @param {ActiveCall[]} calls
- * @param {{ escapeHtml: (s:string) => string, terminalIcon: string }} deps
+ * @param {{ escapeHtml: (s:string) => string, terminalIcon: string, toolName?: (name:string) => string, callOutcome?: (call:ActiveCall) => string }} deps
  * @returns {string}
  */
-export function renderActiveToolCallsStrip(calls, { escapeHtml, terminalIcon } = {}) {
+export function renderActiveToolCallsStrip(calls, { escapeHtml, terminalIcon, toolName, callOutcome } = {}) {
   if (!Array.isArray(calls) || calls.length === 0) return '';
   const esc = typeof escapeHtml === 'function' ? escapeHtml : v => String(v ?? '');
   const iconMarkup = terminalIcon || '';
+  const nameOf = call => typeof toolName === 'function' ? toolName(call.name) : call.name;
 
   return `
     <div class="tool-calls-strip">
@@ -110,15 +116,18 @@ export function renderActiveToolCallsStrip(calls, { escapeHtml, terminalIcon } =
         const args = digest ? `<span class="tool-call-pill-args" title="${esc(digest)}">${esc(digest)}</span>` : '';
         const duration = call.status !== 'running' ? formatDuration(call.durationMs) : '';
         const timing = duration ? `<span class="tool-call-pill-duration">${esc(duration)}</span>` : '';
+        const outcome = call.status === 'error' && typeof callOutcome === 'function' ? callOutcome(call) : '';
+        const reason = outcome ? `<span class="tool-call-pill-args tool-call-pill-outcome" title="${esc(outcome)}">${esc(outcome)}</span>` : '';
         return `
         <div class="tool-call-pill ${statusClass}">
           <div class="tool-call-pill-main">
             <span class="tool-call-pill-icon">${iconMarkup}</span>
-            <span class="tool-call-pill-name">${esc(call.name)}</span>
+            <span class="tool-call-pill-name">${esc(nameOf(call))}</span>
             ${args}
             ${spinner}
             ${check}
             ${cross}
+            ${reason}
             ${timing}
           </div>
           ${renderTrail(call, esc)}

@@ -11,7 +11,19 @@ import kotlinx.serialization.json.*
 class ChatContext(private val runtime: SharedCoreRuntime, private val capacity: Int) {
     data class Prepared(val messages: List<Message>, val instructions: String, val ledger: JsonObject, val omitted: Boolean)
 
+    // Texts this reply has measured already. Every model round fits the whole chain again, and all of
+    // it but the newest rows was measured the round before: each row cost one crossing of the Runtime
+    // per round, which grew with every step of a long task (2026-11-10 audit, Android lower-priority note).
+    private val measured = HashMap<String, Int>()
     suspend fun cost(text: String): Int {
+        val key = if (text.length <= 64) text else text.length.toString() + ":" + java.security.MessageDigest.getInstance("SHA-256").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }
+        measured[key]?.let { return it }
+        val total = measure(text)
+        if (measured.size >= 4096) measured.clear()
+        measured[key] = total
+        return total
+    }
+    private suspend fun measure(text: String): Int {
         var total = 0
         // Chunking is conservative (round up per chunk), without cutting a surrogate pair.
         var offset = 0

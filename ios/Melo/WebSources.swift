@@ -157,6 +157,10 @@ enum ChatGPTRequest {
         return copy
     }
 
+    /// What the instructions say about search when the model holds hosted search itself.
+    static let searchCapability = "你可以调用 web_search 获取最新资料。天气、新闻、价格、营业时间等时效性问题必须先实际搜索，再根据结果回答并引用来源；搜索失败要如实说明，不能凭记忆编造实时数据。涉及明天、周末等日期，结合用户指定城市的时区确认具体日期。"
+    /// The same rules for a lead whose retrieval tools are with its members (AgentLoopRequest.routedLeadInstructions).
+    static let routedSearchCapability = "联网检索和打开网页在本轮由成员完成：需要最新资料或网页内容时，用 route_task 把这项查找交给负责检索的成员，并把用户给出的网址、站点或平台名一并写进任务。天气、新闻、价格、营业时间等时效性问题必须先取得成员带回的结果，再据此回答并引用来源；成员没有查到要如实说明，不能凭记忆编造实时数据。涉及明天、周末等日期，结合用户指定城市的时区确认具体日期。"
     /// The instructions stay identical from turn to turn so the provider can reuse them and the
     /// earlier history from cache; the current time rides on the newest user message instead.
     static func body(messages: [ChatMessage], requestHistory: [ChatMessage]? = nil, model: String, instructions: String, webSearch: Bool, reasoningSummary: Bool = false, now: Date = Date(), timeZone: TimeZone = .current, cacheKey: String? = nil) -> [String: Any] {
@@ -164,9 +168,7 @@ enum ChatGPTRequest {
         // Model input may also carry retrieved reference material.
         let policyHistory = requestHistory ?? messages
         let searchEnabled = webSearch && allowsSearch(policyHistory)
-        let capability = searchEnabled
-            ? "你可以调用 web_search 获取最新资料。天气、新闻、价格、营业时间等时效性问题必须先实际搜索，再根据结果回答并引用来源；搜索失败要如实说明，不能凭记忆编造实时数据。涉及明天、周末等日期，结合用户指定城市的时区确认具体日期。"
-            : "此轮未启用联网搜索，不能编造实时资料。"
+        let capability = searchEnabled ? searchCapability : "此轮未启用联网搜索，不能编造实时资料。"
         let turnNote = timeNote(now: now, timeZone: timeZone)
         var input = PhoneContextBudget.current.recent(messages, instructions: instructions + turnNote).map { ["role": $0.role, "content": $0.content] }
         if let last = input.indices.last, input[last]["role"] == "user" { input[last]["content"] = (input[last]["content"] ?? "") + turnNote }

@@ -441,8 +441,9 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
     }
     private suspend fun observe(requestedWindowId: Int? = null, requestedScreenshot: Boolean = false): DeviceObservation {
         checkSession()
-        // Bounded quiet wait: animated pages remain usable through node validation.
-        for (attempt in 0 until 5) { val before = generation; delay(120); if (generation == before) break }
+        // Bounded quiet wait: animated pages remain usable through node validation. A window the system
+        // is still sliding into place (the end of an app launch) is not at rest either.
+        DeviceWindowPolicy.awaitRest({ generation }, { runCatching { Rect().also(selectedWindow(requestedWindowId)::getBoundsInScreen) }.getOrNull() })
         checkSession(); invalidateObservation()
         val layoutAtStart = layoutKey(selectedDisplay)
         val window = selectedWindow(requestedWindowId); val root = window.root ?: error("窗口内容不可读。")

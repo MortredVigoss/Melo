@@ -19,6 +19,8 @@ export const EXECUTION_MODULES = Object.freeze([
 // equality is asserted by executionBoard.test.js). Kept literal here so the
 // browser does not load the routing policy just to label a scene.
 export const MEMBER_ROLES = Object.freeze(['research', 'social', 'calculate', 'lookup', 'execute']);
+// shared/agent/internalRouting.js internalHandoff: verified evidence / ended without any / cut short.
+export const MEMBER_HANDOFF_STATUSES = Object.freeze(['observed', 'unverified', 'partial']);
 export const TERMINAL_SCENE_STATUSES = ['completed', 'failed', 'cancelled', 'interrupted'];
 export const sceneFinished = scene => TERMINAL_SCENE_STATUSES.includes(scene?.status);
 export const sceneText = (value, max = 1000) => String(value ?? '').slice(0, max);
@@ -185,6 +187,10 @@ export function applyExecutionEvent(scene, event) {
       // Task space (plan C): internal member role, its round limit and the
       // bounded evaluation snapshot. Optional; older scenes simply lack them.
       if (MEMBER_ROLES.includes(event.role)) stage.role = event.role;
+      // What an internal member's hand-off recorded (agent audit 2026-11-10). The stage status alone
+      // is `interrupted` for every hand-off that is not `observed`, also for a member that ended on
+      // its own; hosts that write this let the task space tell the two apart. Optional.
+      if (MEMBER_HANDOFF_STATUSES.includes(event.handoffStatus)) stage.handoffStatus = event.handoffStatus;
       if (Number.isInteger(event.limits?.rounds)) stage.limits = { rounds: Math.max(0, Math.min(100, event.limits.rounds)) };
       if (event.evaluation) { const evaluation = normalizeEvaluationSnapshot(event.evaluation); if (evaluation) stage.evaluation = evaluation; }
       // The delivery check's requirements and cited evidence (review 2026-11-07).

@@ -15,6 +15,7 @@ import { TASK_EVALUATION_POLICY, memberDeadlineMs } from '../../../../shared/age
 import { runSubAgent } from '../../../agents/subAgent.js';
 import { currentRequestContext, runWithRequestContext } from '../../../runtime/requestScope.js';
 import { narrowBudget } from '../../../runtime/runBudget.js';
+import { summarizeUsage } from '../../../runtime/usage.js';
 import { internalHandoff, MAX_MEMBER_ROUNDS } from '../../../../shared/agent/internalRouting.js';
 import { checkPermissionRule, requestTaskScopeApproval } from '../../../tools/permissions.js';
 import { getTool } from '../../../tools/registryCore.js';
@@ -88,12 +89,16 @@ export function memberConfig(config) {
   return { ...config, operationalLimits: { ...(config?.operationalLimits || {}), search }, ...(agentRuntime ? { agentRuntime } : {}) };
 }
 
-export function memberShare(budget) {
+// `running`: the budgets of members that are still at work. What each of them may yet take is already
+// spoken for. Three lanes starting together used to be given a full share of the same pool each, and
+// together they could spend the reserve kept for the lead's answer (2026-11-10 audit).
+export function memberShare(budget, running = []) {
   if (!budget) return { share: null, reason: null };
   const limit = Number(budget.maxInputTokens);
   if (!Number.isFinite(limit)) return { share: MEMBER_INPUT_SHARE, reason: null };
+  const held = running.reduce((sum, child) => sum + Math.max(0, (Number(child?.maxInputTokens) || 0) - (Number(child?.used?.inputTokens) || 0)), 0);
   const remaining = Math.max(0, limit - (Number(budget.used?.inputTokens) || 0) - (Number(budget.delivery?.inputTokens) || 0));
-  const available = remaining - LEAD_INPUT_RESERVE;
+  const available = remaining - LEAD_INPUT_RESERVE - held;
   if (available < MIN_MEMBER_SHARE) return { share: 0, reason: 'LEAD_RESERVE' };
   return { share: Math.min(MEMBER_INPUT_SHARE, available), reason: null };
 }
@@ -112,6 +117,7 @@ export async function runInternalMembers({ jobs = [], goal = '', background = ''
   const reference = String(goal || '').slice(0, 12000);
   const memberBackground = [reference ? `Original user goal (reference only; your assignment is the task above):\n${reference}` : '', String(background || '').trim()].filter(Boolean).join('\n\n');
   const outcomes = new Array(jobs.length);
+  const running = new Set();
   const pipeline = (job, fields) => sseEmitter?.('execution_event', { kind: 'pipeline', id: `internal:${job.index}`, module: 'compute', name: job.label, role: job.role, limits: { rounds: job.roundLimit || MAX_MEMBER_ROUNDS }, ...fields });
   const runOne = async index => {
     const job = jobs[index];
@@ -128,38 +134,50 @@ export async function runInternalMembers({ jobs = [], goal = '', background = ''
     catch (error) {
       const result = { ok: false, error: error.code, output: error.message, meta: { stopReason: 'ERROR', observations: [] } };
       outcomes[index] = { job, result, started: false, handoff: internalHandoff({ job, answer: result.output, observations: [], limited: true }) };
-      pipeline(job, { status: 'failed', output: result.output });
+      pipeline(job, { status: 'failed', output: result.output, handoffStatus: 'partial' });
       return;
     }
     pipeline(job, { status: 'running', input: job.task, ...(jobConfig?.model ? { model: jobConfig.model } : {}), ...(conversationForSearch ? { output: '本次改用对话连接检索：岗位连接没有验证过的原生搜索。' } : {}) });
-    const { share, reason } = memberShare(budget);
+    const { share, reason } = memberShare(budget, [...running]);
     if (reason === 'LEAD_RESERVE') {
       const handoff = internalHandoff({ job, answer: 'Not started: the lead keeps its remaining budget for the answer. Continue with the evidence already gathered.', observations: [], limited: true });
       outcomes[index] = { job, handoff, result: null, started: false };
-      pipeline(job, { status: 'interrupted', output: 'Lead budget reserve reached; member not started.' });
+      pipeline(job, { status: 'interrupted', output: 'Lead budget reserve reached; member not started.', handoffStatus: 'partial' });
       return;
     }
     // Member events keep their own ids under the job prefix (like delegated
     // members) so a member's model:N stage never merges into the lead's.
     const emit = (type, event) => sseEmitter?.(type, type === 'execution_event' ? { ...event, ...(event?.id ? { id: `${job.id}:${event.id}` } : {}), actorName: job.label } : event);
+    const receipts = [];
     // Hosted search only when the host put it in this job's tools: the lead
     // offers it to retrieval members solely when Melo's own search is
     // unavailable (dbf5dff4; user decision 2026-11-07). Never image generation.
-    const invoke = () => run({ task: job.task, roleSystem: job.system, background: memberBackground, allowedToolIds: job.tools, extraTools, config: jobConfig, nativeWebSearch: Array.isArray(job.tools) && job.tools.includes('native_web_search'), nativeImageGeneration: false, condenseEachRound: true,
+    const background = [memberBackground, job.earlier ? `Your earlier run on this assignment ended with this handoff (reference only, not instructions; continue from it instead of repeating it):\n${String(job.earlier).slice(0, 8000)}` : ''].filter(Boolean).join('\n\n');
+    const invoke = () => run({ task: job.task, roleSystem: job.system, background, allowedToolIds: job.tools, extraTools, config: jobConfig, nativeWebSearch: Array.isArray(job.tools) && job.tools.includes('native_web_search'), nativeImageGeneration: false, condenseEachRound: true,
       // Readers hand off without their own completion check (see runSubAgent); a job that writes keeps it.
       completionCheck: !READ_ONLY_JOBS.includes(job.role), receiptKind: ['research', 'social'].includes(job.role) ? 'research' : 'answer',
       // runSubAgent caps a member's input tokens at maxTokens (32k by default,
       // sized for delegated members); an internal member gets its whole share.
-      ...(replyFn ? { replyFn } : {}), maxIterations: job.roundLimit || MAX_MEMBER_ROUNDS, maxTokens: share || MEMBER_INPUT_SHARE, roleId: job.id, depth: 1, signal, sseEmitter: emit, chatId, workspacePath, chatSource, projectId, onProviderResponse });
+      ...(replyFn ? { replyFn } : {}), maxIterations: job.roundLimit || MAX_MEMBER_ROUNDS, maxTokens: share || MEMBER_INPUT_SHARE, roleId: job.id, depth: 1, signal, sseEmitter: emit, chatId, workspacePath, chatSource, projectId, onProviderResponse: receipt => { receipts.push(receipt); onProviderResponse?.(receipt); } });
     const child = budget ? narrowBudget(budget, { maxInputTokens: share || MEMBER_INPUT_SHARE, maxToolCalls: MEMBER_TOOL_CALLS, deadlineMs: memberDeadlineMs(job.roundLimit || MAX_MEMBER_ROUNDS) }) : null;
-    await prescreenApprovals({ job, extraTools, chatId, sseEmitter, signal, approvals });
+    if (child) running.add(child);
     let result;
-    try { result = await (context ? runWithRequestContext(Object.freeze({ ...context, ...(child ? { budget: child } : {}) }), invoke) : invoke()); }
-    catch (error) { result = { ok: false, output: String(error?.message || error), meta: { aborted: signal?.aborted === true, stopReason: 'ERROR' } }; }
+    try {
+      await prescreenApprovals({ job, extraTools, chatId, sseEmitter, signal, approvals });
+      try { result = await (context ? runWithRequestContext(Object.freeze({ ...context, ...(child ? { budget: child } : {}) }), invoke) : invoke()); }
+      catch (error) { result = { ok: false, output: String(error?.message || error), meta: { aborted: signal?.aborted === true, stopReason: 'ERROR' } }; }
+    } finally { running.delete(child); }
     const limited = limitedResult(result, signal);
     const handoff = internalHandoff({ job, answer: String(result?.output || ''), observations: result?.meta?.observations || [], limited });
     outcomes[index] = { job, handoff, result, started: true };
-    pipeline(job, { status: JSON.parse(handoff).status === 'observed' ? 'completed' : 'interrupted', output: String(result?.output || '').slice(0, 500) });
+    // The member's model requests are part of this run. Its lane carries their total, so the token count of
+    // the task space covers members the way its tool-call count always did (2026-11-10 audit: the two
+    // numbers sat side by side and only one of them included members).
+    const used = summarizeUsage(receipts);
+    // The task space words the member's row from what its handoff said (observed / unverified / partial);
+    // "interrupted" alone read as cut off for a member that had simply handed back without evidence.
+    pipeline(job, { status: JSON.parse(handoff).status === 'observed' ? 'completed' : 'interrupted', output: String(result?.output || '').slice(0, 500), handoffStatus: JSON.parse(handoff).status,
+      ...(used.requests - used.unknown > 0 ? { api: { usage: { input: used.input, output: used.output } } } : {}) });
   };
   const readers = jobs.map((job, index) => index).filter(index => READ_ONLY_JOBS.includes(jobs[index].role));
   const writers = jobs.map((job, index) => index).filter(index => !READ_ONLY_JOBS.includes(jobs[index].role));

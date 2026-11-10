@@ -5,7 +5,7 @@ import { connectionForModel } from '../../../shared/agent/modelCapabilities.js';
 import { completionResult } from '../../../shared/agent/completion.js';
 import { usedSupplements } from './supplements.js';
 import { hasPerformanceTrace, withPerformanceTrace } from '../../runtime/performanceTrace.js';
-import { conversationConfig, selectedMaterials } from './conversationSelection.js';
+import { conversationConfig, selectedMaterials, turnModel } from './conversationSelection.js';
 import { visionConnection } from '../../images/imageSettings.js';
 import { createExecutionRecorder } from './executionScenes.js';
 import { chatWorkspacePath } from '../workspace/toolWorkspace.js';
@@ -275,7 +275,7 @@ async function executeChatTurn({
   signal?.throwIfAborted();
   chat.messages.push(userMessage);
   chat.updatedAt = nowIso();
-  const visualConnection=config.conversationModelMode==='smart' || (!config.conversationModelSelected && config.smartRouting?.defaultMode==='smart') ? config : userMessage.attachments.some(a=>a.kind==='image') ? visionConnection(config,{model:context.env.MELO_MODEL || activeAgentProfile?.model || config.model}) : config;
+  const visualConnection=config.conversationModelMode==='smart' || (!config.conversationModelSelected && config.smartRouting?.defaultMode==='smart') ? config : userMessage.attachments.some(a=>a.kind==='image') ? visionConnection(config,{model:turnModel(config,context.env,activeAgentProfile?.model)}) : config;
   const visualTest=connectionForModel(visualConnection).visionTest;
   // Re-sent file-backed attachments (image retry, API clients echoing a stored
   // URL) are read back inline so extraction sees the bytes; externalization

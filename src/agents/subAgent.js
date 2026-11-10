@@ -210,7 +210,12 @@ async function runSubAgentLoop({
     return { ok: false, output: 'Sub-agent task cannot be empty.' };
   }
 
-  const allowedTools = toolsForCapabilityScope(resolveAllowedTools(allowedToolIds, agentProfile ? 0 : depth,extraTools),currentRequestContext().capabilityScope).filter(tool => requestAllowsTool(tool,currentRequestContext().requestToolPolicy)).filter(t=>!['agent','delegate'].includes(t.id)||depth<maxDepth);
+  // A member is shown `delegate` only when a call from it could be accepted: its own settings allow
+  // delegation, name a target, and leave depth below both its own limit and the chain's. It used to be shown
+  // whenever the chain had depth left; the call was then refused, and a refused delegation marks the member
+  // as failed whatever it answers afterwards (2026-11-10 audit).
+  const mayDelegate = collaboration?.canDelegate === true && (collaboration.delegateTargets || []).length > 0 && depth < Math.min(maxDepth, Number(collaboration.maxDelegationDepth) || maxDepth);
+  const allowedTools = toolsForCapabilityScope(resolveAllowedTools(allowedToolIds, agentProfile ? 0 : depth,extraTools),currentRequestContext().capabilityScope).filter(tool => requestAllowsTool(tool,currentRequestContext().requestToolPolicy)).filter(t=>t.id==='delegate'?mayDelegate:t.id!=='agent'||depth<maxDepth);
   const providerConfig = delegatedConfig(config);
   const functionSession = createFunctionCallingSession(providerConfig, allowedTools);
   const contextBudget = resolveContextBudget(requestEnvironment(), { config: providerConfig });
@@ -277,10 +282,28 @@ async function runSubAgentLoop({
     let request;
     try { request = fitRequestContext({ sections: [{ id: 'instructions', text: review?.systemPrompt || systemPrompt, required: true }],
       messages: review?.messages || loopMessages, toolDefinitions: toolFree ? [] : functionSession.definitions, ...contextBudget }); } catch (error) {
-      if (!checkingGoal) throw error;
-      coreTurn.stopReview('GOAL_CHECK_CONTEXT'); coreTurn.update('complete');
-      finalOutput = cleanReplyForParent(coreTurn.candidateReply);
-      break;
+      if (checkingGoal) {
+        coreTurn.stopReview('GOAL_CHECK_CONTEXT'); coreTurn.update('complete');
+        finalOutput = cleanReplyForParent(coreTurn.candidateReply);
+        break;
+      }
+      // The lead's recovery (audit C-8), which a member lacked. The fitter drops older messages by itself,
+      // so what ends a member here is a result that does not fit a small model's context even alone: one
+      // page window on an 8 000-token model. The member used to end as an error after its tool had run.
+      // Condense the older results, then the newest one too, and go on with what fits; only then give up.
+      if (error?.code !== 'CONTEXT_BUDGET_EXCEEDED' || iteration === 0) throw error;
+      let fitted = null;
+      for (const keepRecentResults of [1, 0]) {
+        const condensed = compactToolChain(loopMessages, { keepRecentResults });
+        if (!condensed.changed) continue;
+        try {
+          fitted = fitRequestContext({ sections: [{ id: 'instructions', text: systemPrompt, required: true }], messages: condensed.messages, toolDefinitions: functionSession.definitions, ...contextBudget });
+          loopMessages = condensed.messages;
+          break;
+        } catch (again) { if (again?.code !== 'CONTEXT_BUDGET_EXCEEDED') throw again; }
+      }
+      if (!fitted) throw error;
+      request = fitted;
     }
     let rawReply;
     const hostedRequested = nativeWebSearch !== false && !toolFree && nativeFeaturesForScope(currentRequestContext().capabilityScope,currentRequestContext().requestToolPolicy).nativeWebSearchEnabled;
@@ -338,7 +361,8 @@ async function runSubAgentLoop({
       const decision = coreTurn.review(toolCalls.length ? '' : turn.text);
       if (decision.decision === 'continue') {
         coreTurn.update('feedback', { repair: true });
-        loopMessages.push({ role: 'assistant', content: coreTurn.candidateReply }, { role: 'user', content: decision.feedback });
+        // Part of the same turn, not a new request (see the lead loop).
+        loopMessages.push({ role: 'assistant', content: coreTurn.candidateReply }, { role: 'user', content: decision.feedback, isSupplement: true, isLoopFeedback: true });
         continue;
       }
       coreTurn.update('complete');
@@ -471,7 +495,7 @@ async function runSubAgentLoop({
   iterations = coreTurn.routingProgress.rounds;
   terminalReason ||= coreTurn.reason;
   if (isDeliveryLimit(terminalReason)) {
-    const delivery = await runLimitDelivery({ task: coreTurn.goalState, observations: coreTurn.observations, reason: terminalReason,
+    const delivery = await runLimitDelivery({ task: coreTurn.goalState, observations: coreTurn.observations, reason: terminalReason, candidate: coreTurn.pendingCandidate,
       fallback: finalOutput || coreTurn.reply(task), createReply, options: { ...providerConfig, onProviderResponse }, budget: runBudget, signal, locale: config.replyLanguage });
     coreTurn.acceptDelivery(delivery.task); finalOutput = delivery.reply; terminalReason = delivery.terminalReason;
   } else if (coreTurn.status === 'blocked') finalOutput = coreTurn.reply(task);

@@ -36,6 +36,3401 @@
         }
       }
     },
+    "「成员轮数」「成员 token 上限」「成员超时」限制的是这个 Agent 自己被委派或加入团队时的一次运行，主 Agent 自动分派的内部成员不使用这三项；「委派深度」按整条委派链计算，链上每个 Agent 的设置取最小值。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「成员轮数」「成员 token 上限」「成员超时」限制的是这个 Agent 自己被委派或加入团队时的一次运行，主 Agent 自动分派的内部成员不使用这三项；「委派深度」按整条委派链计算，链上每个 Agent 的设置取最小值。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“Member turns”, “Member token limit” and “Member timeout” limit one run of this Agent itself when it is delegated to or joins a team; the internal members the lead agent assigns on its own do not use these three. “Delegation depth” counts the whole delegation chain, and the lowest setting of any Agent on the chain applies."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「メンバーのターン数」「メンバーのトークン上限」「メンバーの制限時間」は、この Agent 自身が委任されたりチームに加わったりしたときの 1 回の実行を制限します。リードエージェントが自動で割り当てる内部メンバーはこの 3 つを使いません。「委任の深さ」は委任の連鎖全体で数え、連鎖上の各 Agent の設定のうち最小の値が適用されます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「구성원 턴 수」「구성원 토큰 한도」「구성원 시간 제한」은 이 Agent 자신이 위임받거나 팀에 참여할 때의 한 번의 실행을 제한합니다. 리드 에이전트가 자동으로 배정하는 내부 멤버는 이 세 가지를 사용하지 않습니다. 「위임 깊이」는 위임 사슬 전체로 계산하며, 사슬에 있는 각 Agent의 설정 중 가장 작은 값이 적용됩니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "«Turnos por miembro», «Límite de tokens por miembro» y «Tiempo límite por miembro» limitan una ejecución de este Agent cuando recibe una delegación o se une a un equipo; los miembros internos que el agente principal asigna por su cuenta no usan estos tres. «Profundidad de delegación» cuenta toda la cadena de delegación y se aplica el valor más bajo de los Agents de la cadena."
+          }
+        }
+      }
+    },
+    "成员 token 上限和成员超时都是整次运行的总量，其中一部分留给收尾交回：上限 {total} 时约 {work} 可用于工作本身，超时里有 {seconds} 秒留给收尾。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "成员 token 上限和成员超时都是整次运行的总量，其中一部分留给收尾交回：上限 {total} 时约 {work} 可用于工作本身，超时里有 {seconds} 秒留给收尾。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The member token limit and the member timeout are totals for the whole run, and part of each is kept for wrapping up and handing back: with a limit of {total}, about {work} are available for the work itself, and {seconds} seconds of the timeout are kept for wrapping up."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メンバーのトークン上限と制限時間は、どちらも 1 回の実行全体の合計で、その一部は締めくくりと引き渡しのために確保されます。上限 {total} の場合、作業そのものに使えるのは約 {work}、制限時間のうち {seconds} 秒は締めくくり用です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "구성원 토큰 한도와 시간 제한은 모두 한 번의 실행 전체에 대한 총량이며, 그 일부는 마무리와 인계를 위해 남겨 둡니다. 한도가 {total}이면 작업 자체에 쓸 수 있는 양은 약 {work}이고, 시간 제한 중 {seconds}초는 마무리용입니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El límite de tokens y el tiempo límite por miembro son totales para toda la ejecución, y una parte de cada uno se reserva para cerrar y entregar: con un límite de {total}, quedan unos {work} para el trabajo en sí, y {seconds} segundos del tiempo límite se reservan para el cierre."
+          }
+        }
+      }
+    },
+    "回复语言（本机）": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回复语言（本机）"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reply language (this device)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回答言語（このデバイス）"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "답변 언어(이 기기)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Idioma de respuesta (este dispositivo)"
+          }
+        }
+      }
+    },
+    "直接和这个 Agent 对话时，对话里选的模型优先；它被委派或加入团队时使用这里的模型，留空则跟随发起对话的模型。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "直接和这个 Agent 对话时，对话里选的模型优先；它被委派或加入团队时使用这里的模型，留空则跟随发起对话的模型。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When you chat with this Agent directly, the model chosen in the conversation comes first; when it is delegated to or joins a team it uses the model set here, and follows the model of the conversation that started the work when this is empty."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この Agent と直接会話するときは、会話で選んだモデルが優先されます。委任されたりチームに加わったりしたときはここで指定したモデルを使い、空欄なら依頼元の会話のモデルに従います。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Agent와 직접 대화할 때는 대화에서 선택한 모델이 우선합니다. 위임받거나 팀에 참여할 때는 여기에서 지정한 모델을 사용하며, 비워 두면 작업을 시작한 대화의 모델을 따릅니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cuando conversas directamente con este Agent, tiene prioridad el modelo elegido en la conversación; cuando recibe una delegación o se une a un equipo usa el modelo indicado aquí y, si está vacío, sigue el modelo de la conversación que inició el trabajo."
+          }
+        }
+      }
+    },
+    "在项目下保存，会为这个项目单独存一份本页的全部设置；之后再改全局默认，不会改到这个项目，点「恢复全局设置」才会重新跟随。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在项目下保存，会为这个项目单独存一份本页的全部设置；之后再改全局默认，不会改到这个项目，点「恢复全局设置」才会重新跟随。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saving under a project keeps a separate copy of every setting on this page for that project; later changes to the global defaults do not reach the project until you choose “Restore global settings”."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクトで保存すると、このページのすべての設定がそのプロジェクト用に別途保存されます。その後に全体の既定を変更してもこのプロジェクトには反映されず、「全体設定に戻す」を選ぶと再び追従します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "프로젝트에서 저장하면 이 페이지의 모든 설정이 해당 프로젝트용으로 따로 저장됩니다. 이후 전역 기본값을 바꿔도 이 프로젝트에는 반영되지 않으며, 「전역 설정 복원」을 선택해야 다시 따라갑니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Al guardar dentro de un proyecto se conserva una copia aparte de todos los ajustes de esta página para ese proyecto; los cambios posteriores en los valores globales no llegan al proyecto hasta que elijas «Restaurar ajustes globales»."
+          }
+        }
+      }
+    },
+    "全局未启用": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全局未启用"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Off for the whole app"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリ全体でオフ"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앱 전체에서 꺼짐"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desactivado en toda la app"
+          }
+        }
+      }
+    },
+    "在技能或连接器页面启用后，这里的勾选才生效": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在技能或连接器页面启用后，这里的勾选才生效"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The tick here takes effect once it is switched on in the Skills or Connectors page"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スキルまたはコネクターのページでオンにすると、ここのチェックが有効になります"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스킬 또는 커넥터 페이지에서 켜야 여기의 선택이 적용됩니다"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La marca de aquí surte efecto cuando se activa en la página de Habilidades o Conectores"
+          }
+        }
+      }
+    },
+    "「能力范围与协作」里的修改没有保存：这个 Agent 的旧版权限还没有迁移。请先勾选「确认应用这份能力配置」，再重新修改并保存。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「能力范围与协作」里的修改没有保存：这个 Agent 的旧版权限还没有迁移。请先勾选「确认应用这份能力配置」，再重新修改并保存。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The changes under “Capabilities and collaboration” were not saved: this Agent’s legacy permissions have not been migrated yet. Tick “Confirm this capability set” first, then make the changes again and save."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「機能と協働」の変更は保存されていません。この Agent の旧形式の権限はまだ移行されていません。先に「この能力設定を適用することを確認します」にチェックを入れてから、もう一度変更して保存してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「기능 및 협업」의 변경 사항이 저장되지 않았습니다. 이 Agent의 이전 권한이 아직 이전되지 않았습니다. 먼저 「이 능력 구성을 적용함을 확인합니다」를 선택한 뒤 다시 변경하고 저장하세요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los cambios de «Capacidades y colaboración» no se guardaron: los permisos antiguos de este Agent aún no se han migrado. Marca primero «Confirmar esta configuración de capacidades» y después vuelve a hacer los cambios y guarda."
+          }
+        }
+      }
+    },
+    "网页截图": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网页截图"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Web page screenshot"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ウェブページのスクリーンショット"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "웹 페이지 스크린샷"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Captura de página web"
+          }
+        }
+      }
+    },
+    "读取对话原文": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "读取对话原文"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Read earlier conversation"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "過去の会話を読む"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이전 대화 원문 읽기"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leer conversación anterior"
+          }
+        }
+      }
+    },
+    "加载工具说明": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加载工具说明"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Load tool definitions"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ツール定義を読み込む"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "도구 정의 불러오기"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cargar definiciones de herramientas"
+          }
+        }
+      }
+    },
+    "分派给成员": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分派给成员"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Assign to a member"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メンバーに割り当て"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "멤버에게 배정"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Asignar a un miembro"
+          }
+        }
+      }
+    },
+    "更新任务进度": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新任务进度"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update task progress"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タスクの進捗を更新"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 진행 상황 업데이트"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actualizar el progreso de la tarea"
+          }
+        }
+      }
+    },
+    "翻译": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "翻译"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Translate"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "翻訳"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "번역"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Traducir"
+          }
+        }
+      }
+    },
+    "剪贴板": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "剪贴板"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clipboard"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クリップボード"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "클립보드"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Portapapeles"
+          }
+        }
+      }
+    },
+    "提醒": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提醒"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reminder"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リマインダー"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "미리 알림"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recordatorio"
+          }
+        }
+      }
+    },
+    "本机定位": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本机定位"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Location of this computer"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このコンピュータの位置情報"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 컴퓨터의 위치"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ubicación de este ordenador"
+          }
+        }
+      }
+    },
+    "PDF 文档": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PDF 文档"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PDF document"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PDF ドキュメント"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PDF 문서"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Documento PDF"
+          }
+        }
+      }
+    },
+    "表格文件": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "表格文件"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Spreadsheet"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スプレッドシート"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스프레드시트"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hoja de cálculo"
+          }
+        }
+      }
+    },
+    "读取媒体信息": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "读取媒体信息"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Read media details"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メディア情報を読む"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "미디어 정보 읽기"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leer información multimedia"
+          }
+        }
+      }
+    },
+    "媒体服务": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "媒体服务"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Media service"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メディアサービス"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "미디어 서비스"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Servicio multimedia"
+          }
+        }
+      }
+    },
+    "打开网页": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开网页"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open web page"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ウェブページを開く"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "웹 페이지 열기"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir página web"
+          }
+        }
+      }
+    },
+    "读取页面内容": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "读取页面内容"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Read page content"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ページ内容を読む"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "페이지 내용 읽기"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leer el contenido de la página"
+          }
+        }
+      }
+    },
+    "点击页面": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点击页面"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Click on page"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ページをクリック"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "페이지 클릭"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hacer clic en la página"
+          }
+        }
+      }
+    },
+    "填写页面": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "填写页面"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fill in page"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ページに入力"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "페이지 입력"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rellenar la página"
+          }
+        }
+      }
+    },
+    "等待页面": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待页面"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wait for page"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ページを待機"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "페이지 대기"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esperar a la página"
+          }
+        }
+      }
+    },
+    "关闭页面": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭页面"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close page"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ページを閉じる"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "페이지 닫기"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cerrar la página"
+          }
+        }
+      }
+    },
+    "成员 · {tool}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "成员 · {tool}"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Member · {tool}"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メンバー · {tool}"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "멤버 · {tool}"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Miembro · {tool}"
+          }
+        }
+      }
+    },
+    "技能 · {tool}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "技能 · {tool}"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skill · {tool}"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スキル · {tool}"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "스킬 · {tool}"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Habilidad · {tool}"
+          }
+        }
+      }
+    },
+    "已按上限整理并交付": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已按上限整理并交付"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wrapped up at the limit and delivered"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上限に達したため整理して届けました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "한도에 도달해 정리하여 전달함"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resumido al llegar al límite y entregado"
+          }
+        }
+      }
+    },
+    "回答已送达": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回答已送达"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Answer delivered"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回答を届けました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "답변 전달됨"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Respuesta entregada"
+          }
+        }
+      }
+    },
+    "没有给出最终回答": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有给出最终回答"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No final answer was given"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最終回答がありません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최종 답변이 없음"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se dio una respuesta final"
+          }
+        }
+      }
+    },
+    "已达轮数上限": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已达轮数上限"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Round limit reached"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実行回数の上限"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행 횟수 한도 도달"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Límite de rondas alcanzado"
+          }
+        }
+      }
+    },
+    "已到时间上限": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已到时间上限"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Time limit reached"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "時間の上限に達しました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "시간 한도 도달"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Límite de tiempo alcanzado"
+          }
+        }
+      }
+    },
+    "任务评估次数已用完": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务评估次数已用完"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Task evaluations used up"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タスク評価の回数を使い切りました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 평가 횟수 소진"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Evaluaciones de la tarea agotadas"
+          }
+        }
+      }
+    },
+    "工具连续几轮失败": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工具连续几轮失败"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tools failed several rounds in a row"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ツールが数回続けて失敗しました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "도구가 여러 번 연속으로 실패함"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las herramientas fallaron varias rondas seguidas"
+          }
+        }
+      }
+    },
+    "设备操作连续失败": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设备操作连续失败"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Device actions kept failing"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デバイス操作が続けて失敗しました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기기 조작이 연속으로 실패함"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las acciones en el dispositivo fallaron repetidamente"
+          }
+        }
+      }
+    },
+    "连续几轮没有新进展": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连续几轮没有新进展"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No new progress for several rounds"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "数回続けて進展がありません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "여러 번 연속으로 진전 없음"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Varias rondas seguidas sin avances"
+          }
+        }
+      }
+    },
+    "重复分派了同一项任务": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重复分派了同一项任务"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The same task was assigned again"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同じタスクが繰り返し割り当てられました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "같은 작업이 반복 배정됨"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se asignó de nuevo la misma tarea"
+          }
+        }
+      }
+    },
+    "上一步操作的结果还没有确认": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上一步操作的结果还没有确认"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The result of the previous action is not confirmed yet"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前の操作の結果がまだ確認されていません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이전 작업의 결과가 아직 확인되지 않음"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El resultado de la acción anterior aún no está confirmado"
+          }
+        }
+      }
+    },
+    "模型请求失败": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模型请求失败"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The model request failed"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "モデルへのリクエストが失敗しました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모델 요청 실패"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La solicitud al modelo falló"
+          }
+        }
+      }
+    },
+    "核对次数已用完": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "核对次数已用完"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checks used up"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確認の回数を使い切りました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "확인 횟수 소진"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Comprobaciones agotadas"
+          }
+        }
+      }
+    },
+    "核对内容超出了模型上下文": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "核对内容超出了模型上下文"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The check did not fit the model’s context"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確認内容がモデルのコンテキストに収まりません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "확인 내용이 모델 컨텍스트를 초과함"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La comprobación no cabía en el contexto del modelo"
+          }
+        }
+      }
+    },
+    "预算不够，没有核对": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "预算不够，没有核对"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not enough budget left to check"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "予算が足りず確認していません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예산이 부족해 확인하지 못함"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin presupuesto suficiente para comprobar"
+          }
+        }
+      }
+    },
+    "核对结果被截断": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "核对结果被截断"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The check result was cut off"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確認結果が途中で切れました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "확인 결과가 잘림"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El resultado de la comprobación quedó cortado"
+          }
+        }
+      }
+    },
+    "整理已确认的内容": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "整理已确认的内容"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wrapping up what is confirmed"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確認済みの内容を整理"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "확인된 내용 정리"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resumiendo lo confirmado"
+          }
+        }
+      }
+    },
+    "未获许可，没有执行": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未获许可，没有执行"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not permitted; nothing ran"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "許可されず、実行していません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "허용되지 않아 실행하지 않음"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin permiso; no se ejecutó"
+          }
+        }
+      }
+    },
+    "无法询问许可，没有执行": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法询问许可，没有执行"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not ask for permission; nothing ran"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "許可を確認できず、実行していません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "허용 여부를 물을 수 없어 실행하지 않음"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo pedir permiso; no se ejecutó"
+          }
+        }
+      }
+    },
+    "能力没有开启，没有执行": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "能力没有开启，没有执行"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Capability is off; nothing ran"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "機能がオフのため実行していません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기능이 꺼져 있어 실행하지 않음"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Capacidad desactivada; no se ejecutó"
+          }
+        }
+      }
+    },
+    "工具说明还没加载，没有执行": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工具说明还没加载，没有执行"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tool definition not loaded yet; nothing ran"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ツール定義が未読み込みのため実行していません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "도구 정의가 로드되지 않아 실행하지 않음"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Definición de la herramienta sin cargar; no se ejecutó"
+          }
+        }
+      }
+    },
+    "没有这个工具": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有这个工具"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No such tool"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "そのツールはありません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "해당 도구 없음"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No existe esa herramienta"
+          }
+        }
+      }
+    },
+    "参数无效，没有执行": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "参数无效，没有执行"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invalid arguments; nothing ran"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "引数が無効のため実行していません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "인수가 잘못되어 실행하지 않음"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Argumentos no válidos; no se ejecutó"
+          }
+        }
+      }
+    },
+    "已经执行过，没有重复": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已经执行过，没有重复"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Already done; not repeated"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実行済みのため繰り返していません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이미 실행되어 반복하지 않음"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ya se hizo; no se repitió"
+          }
+        }
+      }
+    },
+    "这次不能分派": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这次不能分派"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cannot be assigned this time"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今回は割り当てできません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이번에는 배정할 수 없음"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se puede asignar esta vez"
+          }
+        }
+      }
+    },
+    "不允许委派": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不允许委派"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delegation not allowed"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "委任は許可されていません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "위임이 허용되지 않음"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delegación no permitida"
+          }
+        }
+      }
+    },
+    "执行超时": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "执行超时"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Timed out"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タイムアウトしました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "시간 초과"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tiempo agotado"
+          }
+        }
+      }
+    },
+    "已交回": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已交回"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Handed back"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "引き渡し済み"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "인계됨"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entregado"
+          }
+        }
+      }
+    },
+    "已交回 · 没有核实到内容": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已交回 · 没有核实到内容"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Handed back · nothing verified"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "引き渡し済み · 確認できた内容なし"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "인계됨 · 확인된 내용 없음"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entregado · nada verificado"
+          }
+        }
+      }
+    },
+    "没做完 · 已交回": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没做完 · 已交回"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not finished · handed back"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未完了 · 引き渡し済み"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "미완료 · 인계됨"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin terminar · entregado"
+          }
+        }
+      }
+    },
+    "已调用 {count} 次（成员最多做 {rounds} 轮）": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已调用 {count} 次（成员最多做 {rounds} 轮）"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{count} calls (a member works for at most {rounds} rounds)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{count} 回呼び出し（メンバーは最大 {rounds} ラウンド）"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "호출 {count}회(멤버는 최대 {rounds}라운드)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "{count} llamadas (un miembro trabaja como máximo {rounds} rondas)"
+          }
+        }
+      }
+    },
+    "本轮": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本轮"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This turn"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このターン"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이번 턴"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este turno"
+          }
+        }
+      }
+    },
+    "模型请求": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模型请求"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Model request"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "モデルリクエスト"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모델 요청"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Solicitud al modelo"
+          }
+        }
+      }
+    },
+    "没有执行": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有执行"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Did not run"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実行していません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행하지 않음"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se ejecutó"
+          }
+        }
+      }
+    },
+    "结果未知，请先核对再继续": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "结果未知，请先核对再继续"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Result unknown; check before continuing"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "結果不明。続ける前に確認してください"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "결과를 알 수 없음. 계속하기 전에 확인하세요"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resultado desconocido; compruébalo antes de continuar"
+          }
+        }
+      }
+    },
+    "归属：{module}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "归属：{module}"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Region: {module}"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "領域：{module}"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "영역: {module}"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Región: {module}"
+          }
+        }
+      }
+    },
+    "结束于 {time}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "结束于 {time}"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ended at {time}"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "終了日時 {time}"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "종료 시각 {time}"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finalizado a las {time}"
+          }
+        }
+      }
+    },
+    "这次请求没有完成": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这次请求没有完成"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This request did not finish"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このリクエストは完了しませんでした"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 요청은 완료되지 않았습니다"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta solicitud no se completó"
+          }
+        }
+      }
+    },
+    "模型服务已连接，但这个 API Key 目前没有可用额度。请到服务商处充值或开通计费后再试。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模型服务已连接，但这个 API Key 目前没有可用额度。请到服务商处充值或开通计费后再试。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The model service is connected, but this API key currently has no available quota. Add billing or credits with your provider, then try again."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "モデルサービスには接続されていますが、この API キーには現在利用できるクォータがありません。プロバイダーで課金またはクレジットを追加してから、もう一度お試しください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모델 서비스에 연결되었지만 이 API 키에는 현재 사용할 수 있는 할당량이 없습니다. 서비스 제공업체에서 결제 또는 크레딧을 추가한 뒤 다시 시도하세요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El servicio de modelos está conectado, pero esta clave API no tiene cuota disponible. Añade facturación o créditos con tu proveedor y vuelve a intentarlo."
+          }
+        }
+      }
+    },
+    "模型服务拒绝了这个 API Key。请在 Melo 里检查密钥后再试。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模型服务拒绝了这个 API Key。请在 Melo 里检查密钥后再试。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The model service rejected this API key. Check the key in Melo and try again."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "モデルサービスがこの API キーを拒否しました。Melo でキーを確認してから、もう一度お試しください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모델 서비스가 이 API 키를 거부했습니다. Melo에서 키를 확인한 뒤 다시 시도하세요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El servicio de modelos rechazó esta clave API. Comprueba la clave en Melo y vuelve a intentarlo."
+          }
+        }
+      }
+    },
+    "所选模型在这个账号下不可用。请换一个模型后再试。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所选模型在这个账号下不可用。请换一个模型后再试。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The selected model is unavailable for this account. Choose another model and try again."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選択したモデルはこのアカウントでは利用できません。別のモデルを選んでから、もう一度お試しください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "선택한 모델은 이 계정에서 사용할 수 없습니다. 다른 모델을 선택한 뒤 다시 시도하세요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El modelo seleccionado no está disponible para esta cuenta. Elige otro modelo y vuelve a intentarlo."
+          }
+        }
+      }
+    },
+    "模型服务对这次请求限流了。请稍等片刻再试。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模型服务对这次请求限流了。请稍等片刻再试。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The model service rate-limited this request. Wait a moment and try again."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "モデルサービスがこのリクエストをレート制限しました。少し待ってから、もう一度お試しください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모델 서비스가 이 요청의 속도를 제한했습니다. 잠시 후 다시 시도하세요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El servicio de modelos limitó esta solicitud. Espera un momento y vuelve a intentarlo."
+          }
+        }
+      }
+    },
+    "Codex 拦截了这次请求，因为当前对话的上下文看起来涉及网络安全敏感内容。这通常是长对话里残留的技术细节、Cookie、令牌或报错文本造成的。请新开一段对话或清理旧上下文后重试。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex 拦截了这次请求，因为当前对话的上下文看起来涉及网络安全敏感内容。这通常是长对话里残留的技术细节、Cookie、令牌或报错文本造成的。请新开一段对话或清理旧上下文后重试。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex blocked this request because the current thread context looked cybersecurity-sensitive. This is usually caused by stale technical, cookie, token, or error text in a long chat. Start a fresh chat or prune the old context, then retry."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex は、現在のスレッドのコンテキストがサイバーセキュリティ上の機微な内容に見えたため、このリクエストをブロックしました。多くの場合、長い会話に残った技術情報、Cookie、トークン、エラーテキストが原因です。新しい会話を始めるか、古いコンテキストを整理してから再試行してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex가 현재 대화의 컨텍스트를 사이버 보안상 민감한 내용으로 판단하여 이 요청을 차단했습니다. 대개 긴 대화에 남아 있는 기술 정보, 쿠키, 토큰 또는 오류 텍스트 때문입니다. 새 대화를 시작하거나 이전 컨텍스트를 정리한 뒤 다시 시도하세요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex bloqueó esta solicitud porque el contexto de la conversación parecía sensible en materia de ciberseguridad. Suele deberse a texto técnico, cookies, tokens o errores antiguos en una conversación larga. Inicia una conversación nueva o limpia el contexto anterior y vuelve a intentarlo."
+          }
+        }
+      }
+    },
+    "Codex OAuth 登录需要处理。请在 Melo 的模型设置里重新连接 Codex 后再试。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex OAuth 登录需要处理。请在 Melo 的模型设置里重新连接 Codex 后再试。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your Codex OAuth session needs attention. Reconnect Codex in Melo’s Model settings and try again."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex OAuth のセッションに対応が必要です。Melo のモデル設定で Codex を再接続してから、もう一度お試しください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex OAuth 세션을 확인해야 합니다. Melo의 모델 설정에서 Codex를 다시 연결한 뒤 다시 시도하세요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu sesión de Codex OAuth requiere atención. Vuelve a conectar Codex en los ajustes de modelo de Melo e inténtalo de nuevo."
+          }
+        }
+      }
+    },
+    "模型中途停止了响应。这通常是网络波动或服务方卡顿，请稍后重试。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模型中途停止了响应。这通常是网络波动或服务方卡顿，请稍后重试。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The model stopped responding midway. This is usually a network hiccup or provider-side stall. Please retry in a moment."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "モデルの応答が途中で止まりました。多くの場合、ネットワークの一時的な不調かプロバイダー側の停滞です。しばらくしてから再試行してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모델이 응답 도중에 멈췄습니다. 대개 일시적인 네트워크 문제나 제공업체 측 지연입니다. 잠시 후 다시 시도하세요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El modelo dejó de responder a mitad de camino. Suele ser un fallo momentáneo de red o un bloqueo del proveedor. Vuelve a intentarlo en un momento."
+          }
+        }
+      }
+    },
+    "模型连接已建立，但 Melo 没有收到最终回复。这通常是服务方或流式传输的临时问题，请稍后重试。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模型连接已建立，但 Melo 没有收到最终回复。这通常是服务方或流式传输的临时问题，请稍后重试。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The model connection opened, but Melo never received a final reply. This is usually a temporary provider or streaming issue. Please retry in a moment."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "モデルへの接続は確立されましたが、Melo は最終的な返信を受け取れませんでした。多くの場合、プロバイダーまたはストリーミングの一時的な問題です。しばらくしてから再試行してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모델 연결은 열렸지만 Melo가 최종 답변을 받지 못했습니다. 대개 제공업체 또는 스트리밍의 일시적인 문제입니다. 잠시 후 다시 시도하세요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La conexión con el modelo se abrió, pero Melo no recibió una respuesta final. Suele ser un problema temporal del proveedor o de la transmisión. Vuelve a intentarlo en un momento."
+          }
+        }
+      }
+    },
+    "这次请求达到了 Melo 的安全时间上限。较长的任务是允许的；如果反复出现，多半是网络或服务方的问题，而不是你的问题太复杂。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这次请求达到了 Melo 的安全时间上限。较长的任务是允许的；如果反复出现，多半是网络或服务方的问题，而不是你的问题太复杂。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This request hit Melo’s safety time cap. Longer tasks are allowed, so if this keeps happening it is likely a connectivity or provider issue rather than your prompt being too complex."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このリクエストは Melo の安全上の時間上限に達しました。長いタスクは許可されているため、繰り返し発生する場合は、依頼が複雑すぎるのではなく、接続またはプロバイダーの問題である可能性が高いです。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 요청이 Melo의 안전 시간 한도에 도달했습니다. 긴 작업은 허용되므로, 계속 발생한다면 요청이 너무 복잡해서가 아니라 연결 또는 제공업체 문제일 가능성이 큽니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta solicitud alcanzó el límite de tiempo de seguridad de Melo. Las tareas largas están permitidas, así que si se repite probablemente sea un problema de conexión o del proveedor, no de la complejidad de tu petición."
+          }
+        }
+      }
+    },
+    "模型后端没有完成这次请求。这通常是暂时的或服务方的问题，请稍后重试。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模型后端没有完成这次请求。这通常是暂时的或服务方的问题，请稍后重试。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The model backend did not finish this request. This is usually temporary or provider-side. Please retry in a moment."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "モデルのバックエンドがこのリクエストを完了しませんでした。多くの場合、一時的またはプロバイダー側の問題です。しばらくしてから再試行してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모델 백엔드가 이 요청을 완료하지 못했습니다. 대개 일시적이거나 제공업체 측 문제입니다. 잠시 후 다시 시도하세요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El backend del modelo no completó esta solicitud. Suele ser algo temporal o del proveedor. Vuelve a intentarlo en un momento."
+          }
+        }
+      }
+    },
+    "Melo 暂时无法完成这次模型请求。这通常是暂时的，请稍后重试。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Melo 暂时无法完成这次模型请求。这通常是暂时的，请稍后重试。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Melo could not complete the model request right now. This is often temporary, so please retry in a moment."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Melo は現在このモデルリクエストを完了できませんでした。多くの場合一時的なものですので、しばらくしてから再試行してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Melo가 지금은 이 모델 요청을 완료하지 못했습니다. 대개 일시적이므로 잠시 후 다시 시도하세요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Melo no pudo completar la solicitud al modelo en este momento. Suele ser temporal; vuelve a intentarlo en un momento."
+          }
+        }
+      }
+    },
+    "Melo 暂时无法完成这次模型请求。详情：{details}": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Melo 暂时无法完成这次模型请求。详情：{details}"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Melo could not complete the model request right now. Details: {details}"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Melo は現在このモデルリクエストを完了できませんでした。詳細：{details}"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Melo가 지금은 이 모델 요청을 완료하지 못했습니다. 세부 정보: {details}"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Melo no pudo completar la solicitud al modelo en este momento. Detalles: {details}"
+          }
+        }
+      }
+    },
+    "正在提交": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在提交"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Submitting"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "送信中"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "제출 중"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enviando"
+          }
+        }
+      }
+    },
+    "已提交 · 等待响应": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已提交 · 等待响应"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sent · waiting for a response"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "送信済み · 応答待ち"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "제출됨 · 응답 대기 중"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enviado · esperando respuesta"
+          }
+        }
+      }
+    },
+    "正在思考": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在思考"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thinking"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "考え中"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "생각 중"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pensando"
+          }
+        }
+      }
+    },
+    "正在回复": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在回复"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Replying"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返信中"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "답변 중"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Respondiendo"
+          }
+        }
+      }
+    },
+    "正在执行工具": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在执行工具"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Running tools"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ツールを実行中"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "도구 실행 중"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ejecutando herramientas"
+          }
+        }
+      }
+    },
+    "等待你的确认": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待你的确认"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for your confirmation"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確認をお待ちしています"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "확인을 기다리는 중"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esperando tu confirmación"
+          }
+        }
+      }
+    },
+    "正在核对回答": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在核对回答"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking the answer"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回答を確認中"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "답변 확인 중"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Comprobando la respuesta"
+          }
+        }
+      }
+    },
+    "正在整理回复": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在整理回复"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finishing the reply"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返信を整理中"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "답변 정리 중"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Terminando la respuesta"
+          }
+        }
+      }
+    },
+    "回复已完成": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回复已完成"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reply complete"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返信が完了しました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "답변 완료"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Respuesta completa"
+          }
+        }
+      }
+    },
+    "本次回复未完成": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本次回复未完成"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This reply did not finish"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この返信は完了しませんでした"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이번 답변은 완료되지 않았습니다"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta respuesta no se completó"
+          }
+        }
+      }
+    },
+    "已停止": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已停止"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stopped"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止済み"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "중지됨"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detenido"
+          }
+        }
+      }
+    },
+    "正在处理": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在处理"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Working"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "処理中"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "처리 중"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Procesando"
+          }
+        }
+      }
+    },
+    "同一请求仍在执行，请稍后查看结果；不会重复执行工具。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同一请求仍在执行，请稍后查看结果；不会重复执行工具。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The same request is still running. Check the result in a moment; tools are not run twice."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同じリクエストがまだ実行中です。しばらくしてから結果を確認してください。ツールが重複して実行されることはありません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "같은 요청이 아직 실행 중입니다. 잠시 후 결과를 확인하세요. 도구가 중복 실행되지는 않습니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La misma solicitud sigue en curso. Consulta el resultado en un momento; las herramientas no se ejecutan dos veces."
+          }
+        }
+      }
+    },
+    "这次提交与已有请求冲突，请先检查对话记录。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这次提交与已有请求冲突，请先检查对话记录。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This submission conflicts with an existing request. Check the conversation first."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この送信は既存のリクエストと競合しています。まず会話の記録を確認してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이번 제출이 기존 요청과 충돌합니다. 먼저 대화 기록을 확인하세요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este envío entra en conflicto con una solicitud existente. Revisa primero la conversación."
+          }
+        }
+      }
+    },
+    "上次执行已中断。请先检查已完成的操作，再明确发起新请求。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上次执行已中断。请先检查已完成的操作，再明确发起新请求。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The previous run was interrupted. Check what was already done, then start a new request explicitly."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前回の実行は中断されました。完了済みの操作を確認してから、新しいリクエストを明示的に開始してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이전 실행이 중단되었습니다. 이미 완료된 작업을 확인한 뒤 새 요청을 명시적으로 시작하세요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La ejecución anterior se interrumpió. Revisa lo que ya se hizo y después inicia una solicitud nueva de forma explícita."
+          }
+        }
+      }
+    },
+    "这次请求已完成，但对应回复已被删除。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这次请求已完成，但对应回复已被删除。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This request finished, but its reply has been deleted."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このリクエストは完了しましたが、対応する返信は削除されています。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 요청은 완료되었지만 해당 답변은 삭제되었습니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta solicitud terminó, pero su respuesta se ha eliminado."
+          }
+        }
+      }
+    },
+    "连接中断，尚未收到完成确认。请先检查对话记录，避免重复执行操作。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接中断，尚未收到完成确认。请先检查对话记录，避免重复执行操作。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The connection dropped before completion was confirmed. Check the conversation first to avoid repeating actions."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完了の確認を受け取る前に接続が切れました。操作の重複を避けるため、まず会話の記録を確認してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "완료 확인을 받기 전에 연결이 끊겼습니다. 작업이 반복되지 않도록 먼저 대화 기록을 확인하세요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La conexión se cortó antes de confirmar la finalización. Revisa primero la conversación para no repetir acciones."
+          }
+        }
+      }
+    },
+    "请求未完成，请稍后重试。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请求未完成，请稍后重试。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The request did not finish. Please try again in a moment."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リクエストは完了しませんでした。しばらくしてからもう一度お試しください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "요청이 완료되지 않았습니다. 잠시 후 다시 시도하세요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La solicitud no se completó. Vuelve a intentarlo en un momento."
+          }
+        }
+      }
+    },
     "五个区域": {
       "extractionState": "manual",
       "localizations": {
@@ -9066,37 +12461,37 @@
         }
       }
     },
-    "按岗位选择模型连接，留空跟随对话；只影响内部成员，不改审批与能力范围。": {
+    "按岗位选择模型连接，留空跟随对话；只影响内部成员，不改审批与能力范围；只保存在这台电脑上，不同步。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "按岗位选择模型连接，留空跟随对话；只影响内部成员，不改审批与能力范围。"
+            "value": "按岗位选择模型连接，留空跟随对话；只影响内部成员，不改审批与能力范围；只保存在这台电脑上，不同步。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Choose a model connection per job; leave empty to follow the conversation. Only internal members are affected; approvals and capabilities stay the same."
+            "value": "Choose a model connection per job; leave empty to follow the conversation. Only internal members are affected; approvals and capabilities stay the same. Saved on this computer only, never synced."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ジョブごとにモデル接続を選びます。空欄なら会話に従います。内部メンバーのみに影響し、承認と権限範囲は変わりません。"
+            "value": "ジョブごとにモデル接続を選びます。空欄なら会話に従います。内部メンバーのみに影響し、承認と権限範囲は変わりません。このコンピュータにのみ保存され、同期されません。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "작업별로 모델 연결을 선택합니다. 비워 두면 대화를 따릅니다. 내부 구성원에게만 적용되며 승인과 권한 범위는 바뀌지 않습니다."
+            "value": "작업별로 모델 연결을 선택합니다. 비워 두면 대화를 따릅니다. 내부 구성원에게만 적용되며 승인과 권한 범위는 바뀌지 않습니다. 이 컴퓨터에만 저장되며 동기화되지 않습니다."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Elige una conexión de modelo por trabajo; déjalo vacío para seguir la conversación. Solo afecta a los miembros internos; aprobaciones y capacidades no cambian."
+            "value": "Elige una conexión de modelo por trabajo; déjalo vacío para seguir la conversación. Solo afecta a los miembros internos; aprobaciones y capacidades no cambian. Se guarda solo en este ordenador y no se sincroniza."
           }
         }
       }
@@ -18271,37 +21666,37 @@
         }
       }
     },
-    "关闭的能力在工具执行时拒绝；MCP 服务可自行执行命令，请只授权可信服务。": {
+    "关闭的能力在需要用到时会先询问你，可以只开启这一次；没有得到允许就不会执行。MCP 服务可自行执行命令，请只授权可信服务。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "关闭的能力在工具执行时拒绝；MCP 服务可自行执行命令，请只授权可信服务。"
+            "value": "关闭的能力在需要用到时会先询问你，可以只开启这一次；没有得到允许就不会执行。MCP 服务可自行执行命令，请只授权可信服务。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Disabled capabilities are blocked during tool execution. Authorize only trusted MCP services, which can execute commands."
+            "value": "When a switched-off capability is needed, Melo asks you first, and you can allow it just this once; nothing runs without your permission. MCP services can execute commands on their own, so authorize only services you trust."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "無効な機能はツール実行時に拒否されます。MCP はコマンドを実行できるため、信頼できるサービスのみ許可してください。"
+            "value": "オフの機能が必要になると、まず確認します。今回だけ許可することもできます。許可がなければ実行されません。MCP サービスは自らコマンドを実行できるため、信頼できるサービスのみ許可してください。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "비활성화된 기능은 도구 실행 시 차단됩니다. MCP는 명령을 실행할 수 있으므로 신뢰하는 서비스만 허용하세요."
+            "value": "꺼져 있는 기능이 필요하면 먼저 묻습니다. 이번 한 번만 허용할 수도 있으며, 허용하지 않으면 실행되지 않습니다. MCP 서비스는 스스로 명령을 실행할 수 있으므로 신뢰하는 서비스만 허용하세요."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Las capacidades desactivadas se bloquean al ejecutar herramientas. Autoriza solo servicios MCP de confianza, ya que pueden ejecutar comandos."
+            "value": "Cuando hace falta una capacidad desactivada, Melo te pregunta primero y puedes permitirla solo esta vez; sin tu permiso no se ejecuta nada. Los servicios MCP pueden ejecutar comandos por su cuenta: autoriza solo los de confianza."
           }
         }
       }
@@ -52921,37 +56316,37 @@
         }
       }
     },
-    "「联网」包含网页搜索和读取网页；本机定位在下方「这台电脑上」单独开启。": {
+    "「联网」包含网页搜索和读取网页；本机定位在下方「这台电脑上」单独开启，并且需要这里的「联网」同时开启。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "「联网」包含网页搜索和读取网页；本机定位在下方「这台电脑上」单独开启。"
+            "value": "「联网」包含网页搜索和读取网页；本机定位在下方「这台电脑上」单独开启，并且需要这里的「联网」同时开启。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "“Network access” covers web search and reading web pages; this computer's location is switched on separately under “On this computer” below."
+            "value": "“Network access” covers web search and reading web pages; this computer's location is switched on separately under “On this computer” below, and it also needs “Network access” here to be on."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "「ネットワーク接続」はウェブ検索とウェブページの読み取りを含みます。このコンピュータの位置情報は下の「このコンピュータで」で別途オンにします。"
+            "value": "「ネットワーク接続」はウェブ検索とウェブページの読み取りを含みます。このコンピュータの位置情報は下の「このコンピュータで」で別途オンにし、ここの「ネットワーク接続」もオンである必要があります。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "「네트워크 접근」은 웹 검색과 웹 페이지 읽기를 포함합니다. 이 컴퓨터의 위치는 아래 「이 컴퓨터에서」에서 따로 켭니다."
+            "value": "「네트워크 접근」은 웹 검색과 웹 페이지 읽기를 포함합니다. 이 컴퓨터의 위치는 아래 「이 컴퓨터에서」에서 따로 켜며, 여기의 「네트워크 접근」도 켜져 있어야 합니다."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "«Acceso a la red» incluye la búsqueda web y la lectura de páginas; la ubicación de este ordenador se activa aparte en «En este ordenador», más abajo."
+            "value": "«Acceso a la red» incluye la búsqueda web y la lectura de páginas; la ubicación de este ordenador se activa aparte en «En este ordenador», más abajo, y además necesita que «Acceso a la red» esté activado aquí."
           }
         }
       }
@@ -52991,37 +56386,37 @@
         }
       }
     },
-    "只在这台电脑上生效，立即保存，不同步；与上方同步的能力范围无关。": {
+    "只在这台电脑上生效，立即保存，不同步；定位还需要上方能力范围里的「联网」开启。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "只在这台电脑上生效，立即保存，不同步；与上方同步的能力范围无关。"
+            "value": "只在这台电脑上生效，立即保存，不同步；定位还需要上方能力范围里的「联网」开启。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Applies only on this computer, is saved at once and never syncs; independent of the synced capabilities above."
+            "value": "Applies only on this computer, is saved at once and never syncs; location also needs “Network access” to be on in the capabilities above."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "このコンピュータでのみ有効です。すぐに保存され、同期されません。上の同期される能力範囲とは別です。"
+            "value": "このコンピュータでのみ有効です。すぐに保存され、同期されません。位置情報には、上の能力範囲の「ネットワーク接続」もオンである必要があります。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "이 컴퓨터에서만 적용되며 즉시 저장되고 동기화되지 않습니다. 위의 동기화되는 능력 범위와는 별개입니다."
+            "value": "이 컴퓨터에서만 적용되며 즉시 저장되고 동기화되지 않습니다. 위치를 쓰려면 위 능력 범위의 「네트워크 접근」도 켜져 있어야 합니다."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Solo se aplica en este ordenador, se guarda al instante y no se sincroniza; es independiente de las capacidades sincronizadas de arriba."
+            "value": "Solo se aplica en este ordenador, se guarda al instante y no se sincroniza; la ubicación necesita además que «Acceso a la red» esté activado en las capacidades de arriba."
           }
         }
       }
@@ -67932,41 +71327,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Respuesta guardada"
-          }
-        }
-      }
-    },
-    "已停止": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已停止"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Stopped"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "停止済み"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "중지됨"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Detenido"
           }
         }
       }

@@ -54,3 +54,21 @@ test('shared Markdown presentation handles emphasis, code literals, safe links a
   assert.equal(inlinePresentation('[bad](https://secret@fixture.invalid)').some(span => span.url), false);
   assert.equal(inlinePresentation('<script>unsafe()</script>')[0].text, '<script>unsafe()</script>');
 });
+
+test('a host scene keeps whether a call ran and whether it reported back', async () => {
+  // 2026-11-10 agent audit, second pass (Android finding 15): the scene built through the core dropped both
+  // facts, and the session events then called every failed call "unknown".
+  const { sessionEvents } = await import('../../src/shared/sessionEvents.js');
+  let scene = executionScene({ action: 'create', runId: 'r', chatId: 'c', query: 'q', at: '2026-11-10T10:00:00.000Z' });
+  const event = (id, fields) => { scene = executionScene({ action: 'event', scene, at: '2026-11-10T10:00:01.000Z', event: { kind: 'operation', id, name: 'fetch_url', module: 'search', ...fields } }); };
+  event('refused', { status: 'failed', executed: false, result: { ok: false, error: 'CAPABILITY_DENIED' } });
+  event('answered-404', { status: 'failed', executed: true, result: { ok: false, error: '网页返回 HTTP 404。' } });
+  event('no-word', { status: 'failed' });
+  event('fine', { status: 'completed', executed: true, result: { ok: true, text: 'page', url: 'https://fixture.invalid/' } });
+  const states = Object.fromEntries(sessionEvents(scene).filter(row => row.kind === 'tool' && row.phase === 'result').map(row => [row.operationId, row.resultState]));
+  const state = id => states[id];
+  assert.equal(state('refused'), 'not_executed');
+  assert.equal(state('answered-404'), 'error_returned');
+  assert.equal(state('no-word'), 'unknown');
+  assert.equal(state('fine'), 'returned');
+});

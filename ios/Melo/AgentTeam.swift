@@ -169,7 +169,13 @@ enum AgentTeam {
         enum Race { case done(Result<TeamReply, Error>), late }
         let outcome: Race
         do { outcome = .done(.success(try await PhoneDeadline.run(seconds: remaining) { try await call(request) })) }
-        catch is PhoneDeadline.Reached { outcome = .late }
+        catch is PhoneDeadline.Reached {
+            // The same error ends a member at its own time limit (the host runs each member under one) and
+            // at the team's. Only the team's deadline means the team is out of budget. A member that used
+            // up its own time used to be reported as "the team's budget is used up", which also skipped
+            // the lead's summary; it is one unfinished member and the team goes on (2026-11-10).
+            outcome = deadline.timeIntervalSinceNow > 1 ? .done(.failure(MemberTimeLimit())) : .late
+        }
         catch { outcome = .done(.failure(error)) }
         switch outcome {
         case .late:
@@ -185,6 +191,7 @@ enum AgentTeam {
         }
     }
 
+    private struct MemberTimeLimit: LocalizedError { var errorDescription: String? { "成员用完了自己的时限，已停止。" } }
     static func run(_ plan: Plan, task: String, deadline: Date = Date().addingTimeInterval(timeBudget), call: @escaping (TeamCall) async throws -> String, onResult: ((TeamMemberResult) -> Void)? = nil) async -> TeamOutcome {
         await runChecked(plan, task: task, deadline: deadline, call: { TeamReply(text: try await call($0)) }, onResult: onResult)
     }

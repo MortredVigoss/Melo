@@ -60,7 +60,7 @@ export async function handleChatRoutes(request, response, url) {
         }
       });
 
-      beginSupplements(body.chatId);
+      const supplementRun = beginSupplements(body.chatId);
       startSse(response);
       writeSseEvent(response, 'started', {
         ...requestIdentity(context),
@@ -83,7 +83,7 @@ export async function handleChatRoutes(request, response, url) {
           },
         });
 
-        writeSseEvent(response, 'done', { ...requestIdentity(context), ...payload, unusedSupplements: endSupplements(body.chatId).map(entry => entry.text) });
+        writeSseEvent(response, 'done', { ...requestIdentity(context), ...payload, unusedSupplements: endSupplements(body.chatId, supplementRun).map(entry => entry.text) });
         response.end();
       } catch (error) {
         if (abortController.signal.aborted) {
@@ -99,7 +99,7 @@ export async function handleChatRoutes(request, response, url) {
         response.end();
       } finally {
         // A stopped or failed turn takes no supplements with it into the next one.
-        endSupplements(body.chatId);
+        endSupplements(body.chatId, supplementRun);
       }
       return;
     }

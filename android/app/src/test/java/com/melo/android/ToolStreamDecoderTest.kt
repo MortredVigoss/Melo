@@ -82,11 +82,13 @@ class ToolStreamDecoderTest {
     }
     @Test fun terminalErrorAndOversizedArgumentsFailClosed() {
         for (protocol in protocols) assertTrue(runCatching { ToolStreamDecoder(protocol).accept("""{"error":{"message":"private-provider-data"}}""") }.isFailure)
-        val decoder = ToolStreamDecoder("chat-completions")
-        val value = buildJsonObject { put("choices", buildJsonArray { add(buildJsonObject {
-            put("index", 0); put("delta", buildJsonObject { put("tool_calls", buildJsonArray { add(buildJsonObject { put("index", 0); put("function", buildJsonObject { put("arguments", "x".repeat(12_001)) }) }) }) })
-        }) }) }
-        assertTrue(runCatching { decoder.accept(value.toString()) }.isFailure)
+        // The stream holds one call's arguments up to the desktop bound (a device step's own 12 000 is
+        // applied when the call is decoded; see ModelTransportLimitsTest).
+        fun fragment(size: Int) = buildJsonObject { put("choices", buildJsonArray { add(buildJsonObject {
+            put("index", 0); put("delta", buildJsonObject { put("tool_calls", buildJsonArray { add(buildJsonObject { put("index", 0); put("function", buildJsonObject { put("arguments", "x".repeat(size)) }) }) }) })
+        }) }) }.toString()
+        ToolStreamDecoder("chat-completions").accept(fragment(12_001))
+        assertTrue(runCatching { ToolStreamDecoder("chat-completions").accept(fragment(ToolStreamDecoder.MAX_ARGUMENT_CHARS + 1)) }.isFailure)
     }
     @Test fun compatiblePrivateReasoningIsRetainedForTheNextWireRequestAndNeverDisplayed() {
         val phases = mutableListOf<String>(); val decoder = ToolStreamDecoder("chat-completions", phases::add)
@@ -165,11 +167,16 @@ class ToolStreamDecoderTest {
             assertEquals("todo_list", call.name)
             assertEquals(deltas.toString(), if (deltas.joinToString("").contains("limit")) buildJsonObject { put("limit", 5) } else buildJsonObject {}, call.arguments)
         }
-        // Arguments that are not valid JSON still fail closed.
+        // Arguments that are not valid JSON still fail closed: the reply never becomes a call. The failure
+        // is raised when the reply ends, where its stop reason tells a reply cut at its output limit
+        // (ModelTransportLimitsTest) from a malformed one.
         val broken = ToolStreamDecoder("anthropic")
         broken.accept("""{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_1","name":"todo_list","input":{}}}""")
         broken.accept("""{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"limit\":"}}""")
-        assertTrue(runCatching { broken.accept("""{"type":"content_block_stop","index":0}""") }.isFailure)
+        broken.accept("""{"type":"content_block_stop","index":0}""")
+        assertTrue("not ready before the reply ends", runCatching { broken.finish() }.isFailure)
+        broken.accept("""{"type":"message_delta","delta":{"stop_reason":"tool_use"}}"""); broken.accept("""{"type":"message_stop"}""")
+        assertTrue(runCatching { broken.finish() }.isFailure)
     }
 
     @Test fun cancellationAfterStreamHeadersClosesTheCallInsteadOfReturningItsTool() = runBlocking {

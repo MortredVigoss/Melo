@@ -1,5 +1,5 @@
 import { updateTaskEvaluation, taskProgressResult, taskEvaluationSummary, TASK_PROGRESS_NAME, taskEvaluationSnapshot } from './taskEvaluation.js';
-import { deliveryEvidence } from './evidence.js';
+import { deliveryEvidence, DELIVERY_EVIDENCE_CHARS } from './evidence.js';
 import { isStandaloneGreeting } from './retrieval/intentRouter.js';
 import { getRequestNetworkPolicy } from './retrieval/requestPolicy.js';
 import { resolvedRequestGoal, planRequest } from './search.js';
@@ -22,13 +22,20 @@ export function goalText(state) {
 
 export function amendGoal(state, amendment) {
   if (!text(amendment).trim()) return state;
-  return { ...state, revision: state.revision + 1, ...(state.evaluation ? { evaluation: { ...state.evaluation, stale: true } } : {}), goalTruncated: state.goalTruncated || amendment.length > 2000 || state.amendments.length >= 8 || goalText(state).length + amendment.length + 1 > GOAL_LIMITS.goalChars, amendments: [...state.amendments, text(amendment, 2000)].slice(-8), requirements: [], decision: null, reason: '' };
+  // An answer that was written before the amendment and still waits for its check is superseded: checking
+  // it could pass it and close the turn, and the amendment would be recorded as used although no answer
+  // ever saw it. The turn goes back to work instead.
+  return { ...state, ...(state.phase === 'checking' ? { phase: 'working' } : {}), revision: state.revision + 1, ...(state.evaluation ? { evaluation: { ...state.evaluation, stale: true } } : {}), goalTruncated: state.goalTruncated || amendment.length > 2000 || state.amendments.length >= 8 || goalText(state).length + amendment.length + 1 > GOAL_LIMITS.goalChars, amendments: [...state.amendments, text(amendment, 2000)].slice(-8), requirements: [], decision: null, reason: '' };
 }
 
+// The ledger keeps up to 32 page excerpts (38 000 characters) so that the task_progress result can tell the
+// model what it may cite. They are the observations again: sending them with every check as well, and saving
+// them in every receipt, doubled the check prompt and grew the stored conversation for nothing.
+const ledgerView = evaluation => { if (!evaluation) return evaluation; const { availableEvidence, ...view } = evaluation; return view; };
 export function goalSnapshot(state) {
   if (!state) return undefined;
-  const { candidate, phase, feedback, availableTools, research, context, uncertainClaim, claimReview, ...snapshot } = state;
-  return snapshot;
+  const { candidate, phase, feedback, availableTools, research, context, uncertainClaim, claimReview, writtenCandidate, ...snapshot } = state;
+  return snapshot.evaluation ? { ...snapshot, evaluation: ledgerView(snapshot.evaluation) } : snapshot;
 }
 
 export function goalCandidate(state, { reply = '', observations = [], tools = [], research = false, roundsLeft = 0, context = state.context || {}, uncertainClaim = '' } = {}) {
@@ -93,8 +100,11 @@ const CLAIM_RULES = '\nThe candidate flagged one claim as uncertain; it is given
 // text, where titles and issue times are. The selection only chooses among
 // real observation text and is the same every time for the same inputs.
 const EXCERPT_SEGMENT = 500;
-const EXCERPT_TOKEN = /\d+(?:[.,:]\d+)*|[A-Za-z][A-Za-z'’-]{3,}|[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]{2,}/gu;
-const EXCERPT_CJK = /^[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/u;
+// Words of four letters or more in any alphabet; scripts written without spaces (kana, Han, Hangul, Thai) as
+// overlapping pairs. ASCII letters alone left an answer in Russian, Greek or Arabic without a single anchor,
+// and cut a Spanish word at its first accent.
+const EXCERPT_TOKEN = /\d+(?:[.,:]\d+)*|[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\u0e00-\u0e7f]{2,}|(?:(?![\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\u0e00-\u0e7f])[\p{L}\p{M}])(?:(?![\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\u0e00-\u0e7f])[\p{L}\p{M}'’-]){3,}/gu;
+const EXCERPT_CJK = /^[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\u0e00-\u0e7f]/u;
 function eachToken(value, visit) {
   for (const match of String(value).matchAll(EXCERPT_TOKEN)) {
     const token = match[0];
@@ -194,14 +204,17 @@ export function goalReviewRequest(state, observations = []) {
   // each; many still get at least that until the allowance is used up.
   const anchors = candidateAnchors(state.candidate);
   const recent = remainingRows.slice(-GOAL_LIMITS.observations).reverse();
-  const evidence = state.limitDelivery && !pinned.length ? deliveryEvidence(observations) : recent.map((row, index) => {
+  // A limit delivery is written from the beginnings of the pages, and its check reads the same beginnings.
+  // An answer written during the turn (it only waited for its check when the allowance ended) is judged like
+  // any answer: against the passages nearest to it.
+  const evidence = state.limitDelivery && !state.writtenCandidate && !pinned.length ? deliveryEvidence(observations, DELIVERY_EVIDENCE_CHARS) : recent.map((row, index) => {
     const full = String(row.text || row.output || '');
     const share = Math.max(2000, Math.min(6000, Math.floor(remaining / (recent.length - index))));
     const excerpt = evidenceExcerpt(full, Math.min(['phone_action', 'phone_workflow'].includes(row.name) ? 6000 : share, remaining), anchors); remaining -= excerpt.text.length;
     return { id: row.id, name: row.name, type: row.type, effect: row.effect, ok: row.ok, executed: row.executed, url: row.url, reading: row.reading, text: excerpt.text, truncated: full.length > excerpt.text.length, ...(excerpt.excerpted ? { excerpted: true } : {}) };
   }).reverse();
   evidence.push(...pinned);
-  return { systemPrompt: GOAL_REVIEW_INSTRUCTIONS + '\n' + REVIEW_TURN_CONTRACT + evaluationRules(state) + (state.uncertainClaim ? CLAIM_RULES : ''), messages: [{ role: 'user', content: JSON.stringify({ goal: goalText(state), revision: state.revision, candidate: state.candidate, context: state.context, availableTools: state.availableTools, requirements: state.requirements, evaluation: state.evaluation || null, ...(state.uncertainClaim ? { uncertainClaim: state.uncertainClaim } : {}), observations: evidence }) }] };
+  return { systemPrompt: GOAL_REVIEW_INSTRUCTIONS + '\n' + REVIEW_TURN_CONTRACT + evaluationRules(state) + (state.uncertainClaim ? CLAIM_RULES : ''), messages: [{ role: 'user', content: JSON.stringify({ goal: goalText(state), revision: state.revision, candidate: state.candidate, context: state.context, availableTools: state.availableTools, requirements: state.requirements, evaluation: ledgerView(state.evaluation) || null, ...(state.uncertainClaim ? { uncertainClaim: state.uncertainClaim } : {}), observations: evidence }) }] };
 }
 
 // The checker is asked for JSON only, and models still wrap it: a sentence before or after, a
@@ -264,6 +277,8 @@ export function reviewGoal(state, raw, observations = []) {
   return finish('partial', 'GOAL_UNAVAILABLE', requirements, report.reason);
 }
 
+// Reasons that mean the check itself produced no usable verdict; the answer it was meant to judge stands.
+export const CHECK_WITHOUT_VERDICT = /GOAL_CHECK_(?:UNAVAILABLE|INVALID|TRUNCATED|CONTEXT)|GOAL_EVIDENCE_INVALID/u;
 export function stopGoal(state, reason = 'GOAL_CHECK_UNAVAILABLE') {
   return { ...state, phase: 'finished', decision: 'partial', reason };
 }

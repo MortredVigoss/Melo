@@ -33,6 +33,14 @@ fun executionStatus(value: String): String = when (value) {
 internal fun visibleRunError(error: String?, summarized: Boolean): String? =
     error?.takeIf { it.isNotBlank() && !(summarized && Regex("[A-Z][A-Z0-9_]*").matches(it)) }
 
+// "结果未知，请先核对再继续" is for a call that never reported back: the reply was stopped or failed
+// while it ran, so what it did is not known. A call that returned an error, or was refused before it
+// started, did report, and its row carries that result. The shared projection cannot tell the two
+// apart on this host yet (its rows record neither "not started" nor "error returned"), so every
+// failed call, a page that answered 404 included, was marked as unknown.
+internal fun resultUnknown(event: JsonObject, operations: List<JsonObject>): Boolean =
+    event.text("resultState") == "unknown" && operations.none { it.text("id") == event.text("operationId") && it.text("resultSummary").isNotBlank() }
+
 /** The card is a projection of persisted observations, never a synthetic progress log. */
 @Composable fun ExecutionCard(run: RunRecord, phase: String = "", onDetails: () -> Unit = {}) {
     var expanded by rememberSaveable(run.id) { mutableStateOf(false) }
@@ -77,7 +85,7 @@ internal fun visibleRunError(error: String?, summarized: Boolean): String? =
                     if (canonical.isNotEmpty()) {
                         Text("执行记录标识", style = MaterialTheme.typography.labelMedium, color = MeloGold)
                         for (event in canonical) Text(
-                            event.text("eventId") + if (event.text("resultState") == "unknown") " · 结果未知，请先核对再继续" else "",
+                            event.text("eventId") + if (resultUnknown(event, operations)) " · 结果未知，请先核对再继续" else "",
                             modifier = Modifier.testTag("session-event-${event.text("eventId")}"),
                             color = MeloMuted, style = MaterialTheme.typography.labelSmall)
                     }

@@ -40,7 +40,10 @@ import com.melo.android.network.HostedSearchAdapter
     var projectId by remember { mutableStateOf(chat.projectId) }
     var connectionId by remember { mutableStateOf(chat.connectionId) }
     var portableModel by remember { mutableStateOf(chat.portableModel) }
-    var modelMode by remember { mutableStateOf(if (chat.modelMode == "smart") "fixed" else chat.modelMode) }
+    // A mode this phone does not offer ("smart", chosen on another device) is kept until the user picks a
+    // model here. Rewritten to "fixed" on open, saving any other setting (a new title) changed which model
+    // answered this chat on this phone.
+    var modelMode by remember { mutableStateOf(chat.modelMode) }
     var model by remember { mutableStateOf(chat.model) }
     var pinned by remember { mutableStateOf(chat.pinned) }
     var phoneUse by remember { mutableStateOf(chat.phoneUseEnabled) }
@@ -55,7 +58,7 @@ import com.melo.android.network.HostedSearchAdapter
         data.settings.connections.find { it.id == (connectionId ?: data.settings.activeConnection) }?.let { c -> (c.models + c.model).filter(String::isNotBlank).distinct().forEach { id ->
             FilterChip(selected = modelMode != "smart" && (model ?: c.model) == id, onClick = { portableModel = null; modelMode = "fixed"; model = id }, label = { Text(id) })
         } }
-        if (data.agents.find { it.id == agentId }?.model?.isNotBlank() == true) Text("智能模式下，Agent 指定的固定模型优先。")
+        if (data.agents.find { it.id == agentId }?.model?.isNotBlank() == true) Text(if (modelMode == "smart") "这段对话在其他设备上设为自动选模；在这台手机上使用角色指定的模型。" else "没有在这里选回答模型时，使用角色指定的模型。")
         Row(verticalAlignment = Alignment.CenterVertically) { Text("置顶", Modifier.weight(1f)); Switch(pinned, { pinned = it }) }
         Row(verticalAlignment = Alignment.CenterVertically) { Text("允许调用手机", Modifier.weight(1f)); Switch(phoneUse, { phoneUse = it }, modifier = Modifier.testTag("chat-phone-use")) }
         Text("需要时可搜索手机 App 或执行你的指令；需先开启系统辅助功能。", color = MeloMuted)
@@ -92,7 +95,7 @@ import com.melo.android.network.HostedSearchAdapter
             Text("任务检索深度（本机）")
             listOf("quick" to "快速", "standard" to "标准", "deep" to "深入").forEach { (value,title) -> FilterChip(selected = evaluationMode == value, onClick = { evaluationMode = value }, label = { Text(title) }) }
             Text("调整模糊推荐的检索范围；明确数量和必要条件不变，不增加总预算。")
-            Text("回复语言")
+            Text("回复语言（本机）")
             listOf("" to "跟随用户消息", "zh" to "中文", "en" to "English", "ja" to "日本語", "ko" to "한국어", "es" to "Español").forEach { (value,title) -> FilterChip(selected = replyLanguage == value, onClick = { replyLanguage = value }, label = { Text(title) }) }
             Text("上下文来源（本机）")
             listOf("projects" to "项目指令", "artifacts" to "项目资料", "memory" to "记忆与历史回读").forEach { (key, label) ->

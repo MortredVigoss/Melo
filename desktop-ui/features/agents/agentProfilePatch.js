@@ -1,5 +1,16 @@
 import { AGENT_LOOP_CONTRACT as C } from '../../../shared/agent/loopContract.js';
 import { jobModelsFromForm } from './jobModelChoices.js';
+// An Agent whose old permissions are not migrated yet saves its capability,
+// collaboration and context settings only together with the ticked migration
+// confirmation. Without the tick those edits are left out of the save; this
+// says whether the user had edited any of them, so the page can tell them
+// instead of losing the edits silently (settings audit 2026-11-10).
+const CAPABILITY_SECTION_FIELDS = ['delegateTargets', 'maxTaskIterations', 'maxDelegationDepth', 'maxIterations', 'maxTokens', 'timeoutMs'];
+export function unsavedCapabilityEdits(form, formData, draft = {}) {
+  const has = name => Boolean(form.elements.namedItem(name)) || formData.has(name);
+  if (!has('capabilityVersion') || !has('capabilityMigrationExpected') || formData.get('confirmCapabilityMigration') === 'on') return false;
+  return Object.keys(draft || {}).some(key => /^(cap_|context_|jobModel_)/.test(key) || CAPABILITY_SECTION_FIELDS.includes(key));
+}
 export function buildAgentProfilePatch(form, formData) {
   const hasFormField = name =>
     Boolean(form.elements.namedItem(name)) || formData.has(name);

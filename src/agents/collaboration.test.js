@@ -30,9 +30,21 @@ test('review loop consumes structured handoffs and stops at a bounded approved r
  assert.equal(team.results.length,4);assert.equal(team.accepted,true);assert.match(received[1],/"subtask"/);assert.match(received[2],/"review":"revise"/);
  assert.equal(validateTeamPlan({members:['maker','checker'],mode:'review-loop',maxRounds:999}).maxRounds,5);
 });
-test('member timeout reaches running work and cancellation stops queued members',async()=>{
- const member=await runConfiguredMember({profile:profile('slow',{timeoutMs:20}),parentCapabilities:caps,config:{},task:'slow',run:async({signal})=>{await new Promise(resolve=>signal.addEventListener('abort',resolve,{once:true}));return {ok:true,output:'late'};}});
- assert.equal(member.ok,false);assert.equal(member.handoff.status,'cancelled');
+test('member timeout reaches running work and is reported as over budget; cancellation stops queued members',async()=>{
+ const {createRequestContext}=await import('../runtime/requestContext.js');
+ const {createRunBudget}=await import('../runtime/runBudget.js');
+ const {runWithRequestContext}=await import('../runtime/requestScope.js');
+ const waits=async({signal})=>{await new Promise(resolve=>signal.addEventListener('abort',resolve,{once:true}));return {ok:true,output:'late'};};
+ // The parent has 30 ms left, so the member's time limit ends there whatever its own setting is.
+ const events=[];
+ const member=await runWithRequestContext(createRequestContext({budget:createRunBudget({overrides:{deadlineMs:30}})}),()=>runConfiguredMember({profile:profile('slow'),parentCapabilities:caps,config:{},task:'slow',sseEmitter:(type,event)=>events.push(event),run:waits}));
+ assert.equal(member.ok,false);
+ // Nobody stopped this member: it used to read "已取消" (2026-11-10 audit).
+ assert.equal(member.handoff.status,'budget-exceeded');assert.equal(member.cancelled,false);assert.equal(events.at(-1).status,'interrupted');
+ // A stop by the user is still a cancellation.
+ const stop=new AbortController();setTimeout(()=>stop.abort(),10);
+ const stopped=await runConfiguredMember({profile:profile('slow'),parentCapabilities:caps,config:{},task:'slow',signal:stop.signal,run:waits});
+ assert.equal(stopped.handoff.status,'cancelled');assert.equal(stopped.cancelled,true);
  const c=new AbortController();let calls=0;
  const result=await runAgentTeam({plan:{members:['one','two']},task:'task',config:{},signal:c.signal,capabilities:caps,agentProfiles:{one:profile('one'),two:profile('two')},run:async()=>{calls++;c.abort();return {ok:true,output:'cancel'};}});
  assert.equal(calls,1);assert.ok(result.results.every(r=>r.cancelled));

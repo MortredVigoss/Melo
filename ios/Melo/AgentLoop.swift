@@ -62,6 +62,9 @@ struct AgentLoopRequest: @unchecked Sendable {
     var progressDefinition: PhoneToolDefinition? = nil
     var internalDefinition: PhoneToolDefinition? = nil
     var internalJob: [String: Any]? = nil
+    /// Set for a reply that was continued after a pause (a few characters, the same for the whole
+    /// continuation). Only the run record uses it: ExecutionObservation.requestKey.
+    var continuation = ""
     /// Tools the lead does not hold while a retrieval member exists
     /// (2026-11-07 review P1-2): every research and social member tool,
     /// hosted search included.
@@ -76,6 +79,12 @@ struct AgentLoopRequest: @unchecked Sendable {
         func wire(_ spec: PhoneToolDefinition) -> [String: Any] {
             responses ? spec.responsesDefinition : anthropic ? spec.anthropicDefinition : spec.chatCompletionsDefinition
         }
+        // An `include` entry for hosted search is valid only while that tool is offered.
+        func dropUnusedSearchInclude() {
+            guard !specs.contains(where: { ["web_search","web_search_preview"].contains($0["type"] as? String ?? "") }), let include = body["include"] as? [String] else { return }
+            let kept = include.filter { !$0.hasPrefix("web_search_call.") }
+            if kept.isEmpty { body.removeValue(forKey: "include") } else { body["include"] = kept }
+        }
         if let job = internalJob {
             let allowed = Set(job["tools"] as? [String] ?? [])
             specs = specs.filter { spec in
@@ -88,7 +97,10 @@ struct AgentLoopRequest: @unchecked Sendable {
                 specs.append(wire(calc))
             }
             let system = job["system"] as? String ?? "", user = ["role":"user","content":job["input"] as? String ?? ""]
-            if responses { body["instructions"] = system; body["input"] = [user]; body.removeValue(forKey:"include") }
+            // The whole `include` list used to be removed here. A member's later rounds replay its own
+            // reasoning items with `store: false`, which the service accepts only with their encrypted
+            // content, so the list is kept and only the hosted-search entry follows the tool (2026-11-10).
+            if responses { body["instructions"] = system; body["input"] = [user]; dropUnusedSearchInclude() }
             else if anthropic { body["system"] = system; body["messages"] = [user] }
             else { body["messages"] = [["role":"system","content":system], user] }
         } else {
@@ -100,9 +112,13 @@ struct AgentLoopRequest: @unchecked Sendable {
                     let name = spec["name"] as? String ?? (spec["function"] as? [String: Any])?["name"] as? String
                     return name.map { !leadWithheld.contains($0) } ?? true
                 }
-                if !specs.contains(where: { ["web_search","web_search_preview"].contains($0["type"] as? String ?? "") }), let include = body["include"] as? [String] {
-                    let kept = include.filter { !$0.hasPrefix("web_search_call.") }
-                    if kept.isEmpty { body.removeValue(forKey: "include") } else { body["include"] = kept }
+                dropUnusedSearchInclude()
+                // The lead's instructions follow its tools: they must not tell it to search and open
+                // pages itself while those tools are with its members (2026-11-10).
+                if responses { if let text = body["instructions"] as? String { body["instructions"] = Self.routedLeadInstructions(text) } }
+                else if anthropic { if let text = body["system"] as? String { body["system"] = Self.routedLeadInstructions(text) } }
+                else if var rows = body["messages"] as? [[String: Any]], rows.first?["role"] as? String == "system", let text = rows[0]["content"] as? String {
+                    rows[0]["content"] = Self.routedLeadInstructions(text); body["messages"] = rows
                 }
             }
             if let control = internalDefinition { specs.append(wire(control)) }
@@ -116,6 +132,20 @@ struct AgentLoopRequest: @unchecked Sendable {
     static func definition(_ raw: [String: Any]?) -> PhoneToolDefinition? {
         guard let raw, let name = raw["name"] as? String, let description = raw["description"] as? String, let schema = raw["parameters"] as? [String: Any] else { return nil }
         return PhoneToolDefinition(name: name, description: description, parameters: schema)
+    }
+    /// The lead's instructions while retrieval is with its members. The sentences that tell it to
+    /// call web_search, open_url and web_screenshot itself are replaced by the routing rule, which
+    /// keeps the rules about time-sensitive facts, sources and dates. The rule takes the place of
+    /// the first sentence it replaces; with neither present it is added at the end.
+    static func routedLeadInstructions(_ text: String) -> String {
+        var text = text, placed = false
+        if text.contains(ChatGPTRequest.searchCapability) {
+            text = text.replacingOccurrences(of: ChatGPTRequest.searchCapability, with: ChatGPTRequest.routedSearchCapability); placed = true
+        }
+        if text.contains(WebPageToolSpec.instructions) {
+            text = text.replacingOccurrences(of: WebPageToolSpec.instructions, with: placed ? "" : ChatGPTRequest.routedSearchCapability); placed = true
+        }
+        return placed ? text : text + "\n" + ChatGPTRequest.routedSearchCapability
     }
 }
 
@@ -405,7 +435,10 @@ final class AgentLoop: @unchecked Sendable {
             observationsAtStart = max(0, observationsAtStart - dropped)
         }
         var transport = self.transport
-        if let exhausted = budget.exhausted() {
+        // A continued reply restores its observations, sources and candidate answer further down, and
+        // the loop's own budget check then stops it with that saved work. Stopping here, before the
+        // restore, wrote the limit notice from nothing and dropped all of it (2026-11-10).
+        if hooks.resumeCursor == nil, let exhausted = budget.exhausted() {
             let text = await exhaustedStop(exhausted)
             return try await deliverLimit("BUDGET_EXHAUSTED", fallback: text, transport: transport, sources: sources, searched: searched, records: records, iteration: 0)
         }
@@ -458,11 +491,15 @@ final class AgentLoop: @unchecked Sendable {
             await hooks.onMemberJob?(nil)
         }
         func beginMember(_ active: [String:Any], restoring: Bool = false) throws {
-            let available = rootBudget.maxInputTokens - rootBudget.used.inputTokens - (memberPolicy["leadInputReserve"] ?? 0)
-            let share = max(0,min(memberPolicy["inputTokens"] ?? 0,available))
-            guard share >= (memberPolicy["minimumInput"] ?? Int.max) else { return }
+            // The shared allocation rule, as on Android and the desktop: what is left after the delivery
+            // reserve, requests in flight and the lead's own reserve. The phone used to leave the delivery
+            // reserve out, so a late member could spend the tokens kept for the lead's answer (2026-11-10).
             let rounds = active["roundLimit"] as? Int ?? memberPolicy["initialRounds"] ?? 1
-            budget = rootBudget.narrowed(deadlineMs: Double(rounds * (memberPolicy["roundMilliseconds"] ?? 0) + (memberPolicy["deliveryReserveMs"] ?? 0)), maxInputTokens: share, maxToolCalls: memberPolicy["calls"] ?? 0)
+            let share = rootBudget.memberAllocation(rounds: rounds)
+            // A member that was at work before a pause was admitted then; its own saved budget is restored below.
+            guard share != nil || (restoring && member.budget != nil) else { return }
+            budget = rootBudget.narrowed(deadlineMs: share?.deadlineMs ?? Double(rounds * (memberPolicy["roundMilliseconds"] ?? 0) + (memberPolicy["deliveryReserveMs"] ?? 0)),
+                                         maxInputTokens: share?.inputTokens, maxToolCalls: share?.toolCalls ?? memberPolicy["calls"] ?? 0)
             budget.reserveDelivery()
             if restoring, let data = member.budget { try budget.restoreMember(data) }
             core = try PhoneCoreTurn(tools: active["tools"] as? [String] ?? [], rounds: active["roundLimit"] as? Int ?? 0, callsPerRound: maxCallsPerResponse, timeoutMs:budget.remainingMs())
@@ -470,6 +507,10 @@ final class AgentLoop: @unchecked Sendable {
             try core.event("inherit-effects", leadCore.effects)
         }
         var candidateRound: AgentRound?
+        // Images the model made in responses that were not the final answer (a response that also asked
+        // for tools, an answer the check sent back). They belong to the reply: only the last response's
+        // images used to be returned, so such an image was dropped without a word (2026-11-10).
+        var carriedImages: [ImagePayload] = []
         defer { if completionTerminalReason.isEmpty { completionTerminalReason = core.completed ? "" : core.reason } }
         // A resumed provider conversation can reuse wire IDs. Keep admission,
         // observations and receipts unique; pair outputs with the actual wire ID.
@@ -486,6 +527,8 @@ final class AgentLoop: @unchecked Sendable {
         }
         var cursor = hooks.resumeCursor ?? PhoneReplyCursor()
         var iteration = cursor.iteration
+        // Call ids of the earlier tool rounds of this attempt, as the loop knows them.
+        var seenCallIDs = Set<String>()
         if hooks.resumeCursor != nil {
             guard cursor.inFlightEffect == nil else { throw MeloError.message("请先核对上一步操作的结果。") }
             try leadCore.resume(cursor.core)
@@ -504,6 +547,8 @@ final class AgentLoop: @unchecked Sendable {
                 }
                 job = current
                 try beginMember(current, restoring: true); await hooks.onMemberJob?(assignments.count)
+                // The pause closed this member's stage as interrupted; it is at work again.
+                await stage(AgentStageEvent(id: "internal:\(assignments.count)", name: current["label"] as? String ?? "Agent", status: "running", output: "", input: current["task"] as? String ?? "", role: current["role"] as? String, rounds: (current["roundLimit"] as? NSNumber)?.intValue))
                 leadTranscript = transcript
                 transcript = [.userText(cursor.context(memberOffset: observationsAtStart))]
             }
@@ -541,7 +586,7 @@ final class AgentLoop: @unchecked Sendable {
             if job != nil && (budget.exhausted() != nil || core.rounds >= (job?["roundLimit"] as? Int ?? 0) || !core.active) { await finishJob("Member allowance reached. Use recorded evidence and request only a specific missing gap.", limited:true, deliver:true) }
             if let exhausted = rootBudget.exhausted() {
                 let text = await exhaustedStop(exhausted)
-                return try await deliverLimit("BUDGET_EXHAUSTED", fallback: candidateRound?.text ?? text, transport: transport, sources: sources, searched: searched, records: records, iteration: iteration)
+                return try await deliverLimit("BUDGET_EXHAUSTED", fallback: text, pending: candidateRound, transport: transport, sources: sources, searched: searched, records: records, iteration: iteration)
             }
             if job != nil && hooks.routing?.requested == true { await finishJob("Action deferred to the lead for model escalation; it has not executed.", limited:true) }
             if job == nil, !goal.checking, let routing = hooks.routing, let next = try await routing.upgrade(rounds: core.rounds, failures: core.failures, stopped: !core.active, stage: hooks.onStage) {
@@ -554,7 +599,7 @@ final class AgentLoop: @unchecked Sendable {
             try await saveBoundary()
             if try !core.event("request", goal.checking ? ["mode": "review"] : [:]) {
                 lastEvidence = evidence
-                if ["ROUND_LIMIT", "DEADLINE_EXCEEDED"].contains(core.reason) { return try await deliverLimit(core.reason, fallback: core.reply(latestUserMessage), transport: transport, sources: sources, searched: searched, records: records, iteration: iteration) }
+                if ["ROUND_LIMIT", "DEADLINE_EXCEEDED"].contains(core.reason) { return try await deliverLimit(core.reason, fallback: core.reply(latestUserMessage), pending: candidateRound, transport: transport, sources: sources, searched: searched, records: records, iteration: iteration) }
                 return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: core.reason == "DEADLINE_EXCEEDED" ? .budget : .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration)
             }
             var round = AgentRound()
@@ -562,7 +607,7 @@ final class AgentLoop: @unchecked Sendable {
             var condensed = false
             while true {
                 let review = checkingGoal ? try goal.update("request", ["observations": completionObservations]) : nil
-                let request = AgentLoopRequest(iteration: iteration, transcript: transcript, timeout: budget.requestTimeout(cap: transport.timeoutCap), remainingTokens: nil, goalReview: review, repairing: goal.repairing || hooks.routing?.session.escalated == true, progressDefinition: catalog != nil && job == nil ? progressDefinition : nil, internalDefinition: catalog != nil && job == nil && assignments.count < (routeLimits?["assignments"] ?? 0) ? definition : nil, internalJob: job, leadWithheld: job == nil ? Self.leadWithheld(catalog) : [])
+                let request = AgentLoopRequest(iteration: iteration, transcript: transcript, timeout: budget.requestTimeout(cap: transport.timeoutCap), remainingTokens: nil, goalReview: review, repairing: goal.repairing || hooks.routing?.session.escalated == true, progressDefinition: catalog != nil && job == nil ? progressDefinition : nil, internalDefinition: catalog != nil && job == nil && assignments.count < (routeLimits?["assignments"] ?? 0) ? definition : nil, internalJob: job, continuation: continuationID.map { String($0.prefix(6)).lowercased() } ?? "", leadWithheld: job == nil ? Self.leadWithheld(catalog) : [])
                 do {
                     let roundTransport = transport
                     round = try await LoopTrace.model(purpose: checkingGoal ? "goal-check" : "loop", input: ["iteration":iteration,"toolNames":Array(offered),"loadedToolInstructions":tools?.instructionsWithContract ?? ""], snapshot: { value in
@@ -577,14 +622,14 @@ final class AgentLoop: @unchecked Sendable {
                     transcript = next.transcript; condensed = true
                     await hooks.onStage?("tool-chain:condense:\(iteration)", "工具结果已压缩", "completed", "早期工具输出已压缩以继续本轮。")
                 } catch is PhoneBudgetReached {
-                    return try await deliverLimit("BUDGET_EXHAUSTED", fallback: core.reply(latestUserMessage), transport: transport, sources: sources, searched: searched, records: records, iteration: iteration)
+                    return try await deliverLimit("BUDGET_EXHAUSTED", fallback: core.reply(latestUserMessage), pending: candidateRound, transport: transport, sources: sources, searched: searched, records: records, iteration: iteration)
                 } catch is PhoneDeadline.Reached {
                     let text = await exhaustedStop(budget.exhausted(at: budget.deadlineAt) ?? PhoneRunBudget.Exhaustion(reason: "deadline", limit: budget.deadlineAt - budget.startedAt, used: budget.deadlineAt - budget.startedAt, usage: budget.used))
-                    return try await deliverLimit("BUDGET_EXHAUSTED", fallback: candidateRound?.text ?? text, transport: transport, sources: sources, searched: searched, records: records, iteration: iteration)
+                    return try await deliverLimit("BUDGET_EXHAUSTED", fallback: text, pending: candidateRound, transport: transport, sources: sources, searched: searched, records: records, iteration: iteration)
                 } catch let error as URLError where error.code == .timedOut && !Task.isCancelled && budget.workRemainingMs() <= 1000 {
                     // The deadline landed inside the request: that is the budget, not a provider failure.
                     let text = await exhaustedStop(budget.exhausted(at: budget.deadlineAt) ?? PhoneRunBudget.Exhaustion(reason: "deadline", limit: budget.deadlineAt - budget.startedAt, used: budget.deadlineAt - budget.startedAt, usage: budget.used))
-                    return try await deliverLimit("BUDGET_EXHAUSTED", fallback: candidateRound?.text ?? text, transport: transport, sources: sources, searched: searched, records: records, iteration: iteration)
+                    return try await deliverLimit("BUDGET_EXHAUSTED", fallback: text, pending: candidateRound, transport: transport, sources: sources, searched: searched, records: records, iteration: iteration)
                 } catch let error as URLError where hooks.saveCursor != nil && error.interruptsPhoneReply {
                     throw error
                 } catch {
@@ -610,7 +655,7 @@ final class AgentLoop: @unchecked Sendable {
             // allowance; only a round that asks for more work becomes a limit write-up. The answer
             // used to be discarded for a write-up built from the member's observations (2026-11-10).
             if PhoneMemberLimits.current != nil, budget.exhausted() != nil && !checkingGoal && !round.calls.isEmpty {
-                return try await deliverLimit("TOKEN_LIMIT", fallback: core.reply(latestUserMessage), transport: transport, sources: sources, searched: searched, records: records, iteration: iteration)
+                return try await deliverLimit("TOKEN_LIMIT", fallback: core.reply(latestUserMessage), pending: candidateRound, transport: transport, sources: sources, searched: searched, records: records, iteration: iteration)
             }
             if checkingGoal, let candidate = candidateRound {
                 let decision = try goal.update("review", ["response": round.calls.isEmpty ? round.text : "", "observations": completionObservations])
@@ -618,6 +663,7 @@ final class AgentLoop: @unchecked Sendable {
                 let review = (try? goal.update("reviewSnapshot")).flatMap { try? SyncValue.from($0) }
                 await stage(AgentStageEvent(id: "goal-check:\(iteration)", name: "核对任务交付", status: ["complete", "deliver"].contains(decision["decision"] as? String ?? "") ? "completed" : "failed", output: decision["explanation"] as? String ?? decision["reason"] as? String ?? "", goalReview: review))
                 if decision["decision"] as? String == "continue" {
+                    carriedImages = candidate.images
                     try core.event("feedback", ["repair": true])
                     transcript.append(.userText(decision["feedback"] as? String ?? ""))
                     iteration += 1
@@ -643,6 +689,7 @@ final class AgentLoop: @unchecked Sendable {
             if round.searched { boundObservations() }
             searched = searched || round.searched
             let calls = (transport.offersTools && (tools != nil || hooks.routing != nil) || catalog != nil) ? round.calls : []
+            if job == nil, !calls.isEmpty { carriedImages += round.images }
             if job == nil, catalog != nil, calls.count == 1, let call = calls.first, call.name == "task_progress" {
                 let args = (try? JSONSerialization.jsonObject(with: Data(call.arguments.utf8))) as? [String:Any] ?? [:]
                 try goal.update("progress", ["progress":args, "observations":completionObservations, "evaluationMode":hooks.evaluationMode,
@@ -682,6 +729,7 @@ final class AgentLoop: @unchecked Sendable {
             if job != nil && calls.isEmpty { try core.event("feedback"); await finishJob(round.text); iteration += 1; continue }
             if job != nil { jobRounds += 1 }
             if calls.isEmpty {
+                if !carriedImages.isEmpty { round.images = carriedImages + round.images }
                 candidateRound = round
                 // The completion check also judges the claim this answer flags as
                 // uncertain, as on the desktop; finalize then needs no request of its own.
@@ -692,6 +740,12 @@ final class AgentLoop: @unchecked Sendable {
                 lastEvidence = evidence
                 return AgentLoopOutcome(text: round.text, stop: .answered, finalRound: round, sources: sources, searched: searched, calls: records, iterations: iteration + 1)
             }
+            // The shared reducer refuses an oversized batch and a blank, over-long or repeated call id by
+            // throwing, which reached the user as "(Melo.SharedAgentCoreError error 2.)". The same rules
+            // are checked here first and fail with a sentence the user can read (2026-11-10).
+            let localIDs = calls.map { localCall($0) }
+            try DeviceToolLoop.validateBatch(localIDs, previousCallIDs: seenCallIDs)
+            seenCallIDs.formUnion(localIDs.map(\.callID))
             // The shared reducer validates the whole batch before any OS effect.
             try core.event("calls", ["calls": calls.map { wire -> [String: Any] in
                 let call = localCall(wire)
@@ -861,13 +915,15 @@ final class AgentLoop: @unchecked Sendable {
             // member only: the next pass hands back to the lead with what the member observed. Before
             // 2026-11-10 the whole reply ended here with the member's stop reason.
             if !core.active && job == nil {
-                await hooks.onStage?("core:stop", "执行已停止", "failed", core.reason)
+                await hooks.onStage?("core:stop", "执行已停止", "failed", RunProgress.stopReason(core.reason))
                 if ["ROUND_LIMIT", "DEADLINE_EXCEEDED"].contains(core.reason) { return try await deliverLimit(core.reason, fallback: core.reply(latestUserMessage), transport: transport, sources: sources, searched: searched, records: records, iteration: iteration) }
                 return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: core.reason == "DEADLINE_EXCEEDED" ? .budget : .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration)
             }
         }
     }
-    private func deliverLimit(_ reason: String, fallback: String, transport: AgentModelTransport, sources: [WebSource], searched: Bool, records: [ExecutionToolCall], iteration: Int) async throws -> AgentLoopOutcome {
+    /// `pending` is the answer of the round that was last taken as the candidate. It counts only while
+    /// the goal still waits for that answer's check (see below); the caller passes it at every stop.
+    private func deliverLimit(_ reason: String, fallback: String, pending: AgentRound? = nil, transport: AgentModelTransport, sources: [WebSource], searched: Bool, records: [ExecutionToolCall], iteration: Int) async throws -> AgentLoopOutcome {
         try Task.checkCancellation()
         completionTerminalReason = reason
         let locale = PhoneReplyLanguage.current ?? PhoneReplyLanguage.resolve(latestUserMessage)
@@ -876,7 +932,16 @@ final class AgentLoop: @unchecked Sendable {
             let value = SharedLoopPolicy.value("delivery", ["action": "fallback", "reply": text, "observations": completionObservations, "locale": locale]) as? String ?? text
             return AgentLoopOutcome(text: value, stop: reason == "ROUND_LIMIT" ? .toolLimit : .budget, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration)
         }
-        guard let goal = goalState, budget.exhausted(phase: "delivery") == nil else { return fallbackOutcome(defaultFallback) }
+        guard let goal = goalState else { return fallbackOutcome(defaultFallback) }
+        // An answer that was written and was still waiting for its check when the allowance ended is
+        // the delivery (audit decision D1, 2026-11-10; desktop runLimitDelivery `candidate`). It is
+        // checked if the check can still run and delivered as written either way. The model used to
+        // be asked to write it again from the tool results: the answer was discarded and, when it had
+        // used no tools, replaced by an empty three-part form. An answer the check already sent back
+        // (the goal is working again) is not pending and is never delivered as if it stood.
+        let written = goal.checking ? pending.flatMap { $0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 } : nil
+        let deliveryOpen = budget.exhausted(phase: "delivery") == nil
+        guard written != nil || deliveryOpen else { return fallbackOutcome(defaultFallback) }
         func request(_ value: [String: Any], phase: String, output: Int) async throws -> AgentRound {
             try Task.checkCancellation()
             let timeout = budget.requestTimeout(cap: transport.timeoutCap, phase: phase)
@@ -892,24 +957,48 @@ final class AgentLoop: @unchecked Sendable {
             chargedOutput = result.outputTokens ?? PhoneTokenEstimate.text(result.text)
             return result
         }
+        // The write-up is a step of its own in the run record and in the chat's progress lines: it can
+        // take a minute, and nothing used to say what the reply was doing after "budget used up".
+        let stageName = written == nil ? "整理已确认的内容" : "核对任务交付"
+        await hooks.onStage?("limit:delivery", stageName, "running", "")
+        await hooks.onStatus?(written == nil ? "正在整理已确认的内容…" : "正在核对回答是否完成…")
         var candidate: AgentRound
-        do {
-            let prompt = try goal.delivery("request", ["reason": reason, "observations": completionObservations])
-            candidate = try await request(prompt, phase: "delivery", output: 8192)
-            guard candidate.calls.isEmpty, !candidate.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return fallbackOutcome(defaultFallback) }
-        } catch {
-            try Task.checkCancellation()
-            return fallbackOutcome(defaultFallback)
+        if let written {
+            candidate = written
+            // The uncertainty marker is a note to this loop. Notes added below would leave it in the middle of the text.
+            let parsed = PhoneUncertainty.parse(written.text)
+            if parsed.source == "explicit" { candidate.text = parsed.cleanReply }
+        }
+        else {
+            do {
+                let prompt = try goal.delivery("request", ["reason": reason, "observations": completionObservations])
+                candidate = try await request(prompt, phase: "delivery", output: 8192)
+                guard candidate.calls.isEmpty, !candidate.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    await hooks.onStage?("limit:delivery", stageName, "failed", "未能整理，已列出已执行的结果")
+                    return fallbackOutcome(defaultFallback)
+                }
+            } catch {
+                try Task.checkCancellation()
+                await hooks.onStage?("limit:delivery", stageName, "failed", "未能整理，已列出已执行的结果")
+                return fallbackOutcome(defaultFallback)
+            }
         }
         try goal.delivery("candidate", ["reply": candidate.text, "reason": reason, "observations": completionObservations])
+        var reviewed: [String: Any]
         do {
+            // Without a delivery allowance the written answer goes out unchecked, with the note that says so.
+            guard deliveryOpen else { throw PhoneBudgetReached() }
             let prompt = try goal.delivery("check", ["observations": completionObservations])
+            if written == nil { await hooks.onStatus?("正在核对回答是否完成…") }
             let checked = try await request(prompt, phase: "delivery-check", output: 2048)
-            try goal.delivery("review", ["response": checked.calls.isEmpty ? checked.text : "", "observations": completionObservations])
+            reviewed = try goal.delivery("review", ["response": checked.calls.isEmpty ? checked.text : "", "observations": completionObservations])
         } catch {
             try Task.checkCancellation()
-            try goal.delivery("review", ["response": NSNull(), "observations": completionObservations])
+            reviewed = try goal.delivery("review", ["response": NSNull(), "observations": completionObservations])
         }
+        let checkedText = reviewed["deliveryCheck"] as? String == "unverified" ? "未能核对，回答按原样送达"
+            : ["complete", "deliver"].contains(reviewed["decision"] as? String ?? "") ? "已通过核对" : "仍有未完成或未核实的部分，已在回答中列出"
+        await hooks.onStage?("limit:delivery", stageName, "completed", checkedText)
         candidate.text = try goal.deliveryText(candidate.text, locale: locale)
         completionTerminalReason = "LIMIT_DELIVERED"
         return AgentLoopOutcome(text: candidate.text, stop: .deliveredLimit, finalRound: candidate, sources: sources, searched: searched, calls: records, iterations: iteration)
@@ -961,8 +1050,11 @@ final class AgentLoop: @unchecked Sendable {
     }
 
     private func finalize(_ outcome: inout AgentLoopOutcome) async throws {
-        guard outcome.stop == .answered, let verification else { return }
+        guard let verification else { return }
         let parsed = PhoneUncertainty.parse(outcome.text)
+        // The marker is a note to this loop, never text for the user. An answer delivered at a limit
+        // is cleaned of it like any other; such an answer is not verified, as on the desktop.
+        guard outcome.stop == .answered else { if parsed.source == "explicit" { outcome.text = parsed.cleanReply }; return }
         outcome.text = parsed.cleanReply
         guard parsed.hasMarker else { return }
         var classification = verification.classification

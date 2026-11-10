@@ -28,7 +28,9 @@ class SharedCoreRuntime private constructor(
     /** True once this Runtime was closed: by its owner, or because an evaluation was interrupted. */
     val isClosed: Boolean get() = closed.get()
     private val mutex = Mutex()
-    private var sequence = 0L
+    @Volatile private var sequence = 0L
+    /** How many requests this Runtime has evaluated (diagnostics and tests). */
+    val evaluations: Long get() = sequence
     /** The evaluation this isolate is running or ran last; the isolate is closed only after it has ended. */
     private val evaluation = AtomicReference<ListenableFuture<*>?>(null)
 

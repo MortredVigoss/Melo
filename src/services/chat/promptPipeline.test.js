@@ -183,7 +183,8 @@ test('unchanged successful tool loop stops without publishing XML as an answer',
     } },
   });
   assert.equal(calls, 6);
-  assert.match(result.normalizedReply.content, /NO_PROGRESS/);
+  assert.match(result.normalizedReply.content, /several rounds brought nothing new/);
+  assert.equal(result.normalizedReply.completion.reason, 'NO_PROGRESS');
   assert.doesNotMatch(result.normalizedReply.content, /<tool_call>/);
 });
 

@@ -122,6 +122,25 @@ final class Counter: @unchecked Sendable {
             return #"{"conclusion":"ok"}"#
         }
         assert(peak.peak == 2 && peak.order.last == "r" && peak.order.count == 4, "parallel bound or order wrong: \(peak.peak) \(peak.order)")
+        // 2026-11-10: a member that used up its own time limit is one unfinished member. It used to be
+        // reported as "the team's budget is used up", which also ended a review loop and skipped the
+        // lead's summary. Only the team's own deadline means that.
+        do {
+            var ran: [String] = []
+            let own = await AgentTeam.run(AgentTeam.Plan(mode: .sequential, members: ["a", "b"]), task: "t", deadline: Date().addingTimeInterval(60)) { call in
+                ran.append(call.memberID)
+                if call.memberID == "a" { throw PhoneDeadline.Reached() }   // its own limit, with the team's deadline a minute away
+                return "b is done"
+            }
+            assert(ran == ["a", "b"] && !own.timedOut, "the team goes on: \(ran) \(own.timedOut)")
+            assert(own.results[0].handoff.status == "failed" && own.results[0].output.contains("自己的时限") && own.results[1].handoff.status == "completed", "\(own.results.map(\.handoff.status))")
+            assert(!AgentTeam.digest(own, name: { $0 }).contains("总预算"))
+            // The team's deadline itself still reads as the team being out of budget.
+            let late = await AgentTeam.run(AgentTeam.Plan(mode: .sequential, members: ["a"]), task: "t", deadline: Date().addingTimeInterval(0.2)) { _ in
+                try await Task.sleep(nanoseconds: 5_000_000_000); return "too late"
+            }
+            assert(late.timedOut && late.results[0].handoff.status == "budget-exceeded")
+        }
         print("Agent team tests passed: lead rules, hints, time budget, cancellation, failure digest, parallel bound")
     }
 }

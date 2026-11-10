@@ -29,21 +29,30 @@ export function receiveTurnPresentation(turn, event, payload = {}) {
   else if (event === 'aborted') turn.phase = 'stopped';
 }
 
+// The banner's labels and the stream errors are catalog keys (Chinese source).
+// The callers translate them: the banner through `t(turnLabel(…))`, the errors
+// through the `translate` argument. Returned as written, every other interface
+// language showed these in Chinese (agent audit 2026-11-10);
+// turnPresentation.test.js keeps each of them in the catalog.
+export const TURN_LABELS = Object.freeze({ submitting: '正在提交', waiting: '已提交 · 等待响应', thinking: '正在思考', replying: '正在回复', tools: '正在执行工具', permission: '等待你的确认', checking: '正在核对回答', finishing: '正在整理回复', complete: '回复已完成', error: '本次回复未完成', stopped: '已停止' });
+export const TURN_LABEL_FALLBACK = '正在处理';
 export function turnLabel(turn, { permission = false, tools = false } = {}) {
-  if (permission) return '等待你的确认';
-  if (tools) return '正在执行工具';
-  return { submitting: '正在提交', waiting: '已提交 · 等待响应', thinking: '正在思考', replying: '正在回复', tools: '正在执行工具', permission: '等待你的确认', checking: '正在核对回答', finishing: '正在整理回复', complete: '回复已完成', error: '本次回复未完成', stopped: '已停止' }[turn?.phase] || '正在处理';
+  if (permission) return TURN_LABELS.permission;
+  if (tools) return TURN_LABELS.tools;
+  return TURN_LABELS[turn?.phase] || TURN_LABEL_FALLBACK;
 }
 
-export function chatStreamError(payload = {}) {
-  const messages = {
-    REQUEST_IN_PROGRESS: '同一请求仍在执行，请稍后查看结果；不会重复执行工具。',
-    REQUEST_ID_CONFLICT: '这次提交与已有请求冲突，请先检查对话记录。',
-    REQUEST_INTERRUPTED: '上次执行已中断。请先检查已完成的操作，再明确发起新请求。',
-    REPLY_UNAVAILABLE: '这次请求已完成，但对应回复已被删除。',
-    STREAM_INTERRUPTED: '连接中断，尚未收到完成确认。请先检查对话记录，避免重复执行操作。',
-  };
-  const error = new Error(messages[payload.code] || payload.error || '请求未完成，请稍后重试。');
+export const STREAM_ERRORS = Object.freeze({
+  REQUEST_IN_PROGRESS: '同一请求仍在执行，请稍后查看结果；不会重复执行工具。',
+  REQUEST_ID_CONFLICT: '这次提交与已有请求冲突，请先检查对话记录。',
+  REQUEST_INTERRUPTED: '上次执行已中断。请先检查已完成的操作，再明确发起新请求。',
+  REPLY_UNAVAILABLE: '这次请求已完成，但对应回复已被删除。',
+  STREAM_INTERRUPTED: '连接中断，尚未收到完成确认。请先检查对话记录，避免重复执行操作。',
+});
+export const STREAM_ERROR_FALLBACK = '请求未完成，请稍后重试。';
+export function chatStreamError(payload = {}, translate = text => text) {
+  const messages = STREAM_ERRORS;
+  const error = new Error(messages[payload.code] ? translate(messages[payload.code]) : payload.error || translate(STREAM_ERROR_FALLBACK));
   error.code = payload.code || '';
   error.requestId = payload.turnRequestId || payload.requestId || '';
   error.runId = payload.runId || '';

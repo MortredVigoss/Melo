@@ -19,6 +19,22 @@ object DeviceWindowPolicy {
         return false
     }
 
+    /**
+     * The bounded quiet wait before a screen is read: no content event, and the window frame the same
+     * across one pause. The system slides a newly launched window into place for about a third of a
+     * second and sends no content event while it does; read mid-slide, the frame differed a moment
+     * later, so the next action was refused as stale_screen (or, by coordinates, landed beside its
+     * target). Animated pages stay usable: after [attempts] pauses the screen is read as it is.
+     */
+    suspend fun awaitRest(generation: () -> Any?, frame: () -> Any?, attempts: Int = 5, pause: suspend () -> Unit = { delay(120) }) {
+        var seen = frame()
+        repeat(attempts) {
+            val before = generation(); pause(); val now = frame()
+            if (generation() == before && now == seen) return
+            seen = now
+        }
+    }
+
     /** A redacted Accessibility root is not evidence that its focused window is hidden.
      * Touch-active edge/gesture decorations must not replace the input-focused app.
      * Focused system dialogs stay eligible even when their own tree is unavailable. */

@@ -13,6 +13,13 @@ import { conversationAgent, renderModelReceipt } from '../../modelPresentation.j
 import { visibleMessageWindow, ensureMessageInThreadWindow } from './threadWindow.js';
 import { isToolTraceMessage, renderToolTraceMessage } from './messageToolTrace.js';
 import { sceneSteps, renderRunSteps } from './runSteps.js';
+import { streamingDisplayText } from './streamingText.js';
+import { isFailedRequest, failureDisplayText } from './providerFailureText.js';
+// A failed model request reads in the interface language; the stored text is untouched.
+const shownMessage = message => { const text = failureDisplayText(message); return text ? { ...message, content: text, blocks: undefined } : message; };
+import { stageName, stageOutput, toolName, callOutcome } from '../../executionText.js';
+// How the live steps and the tool pills name what the run recorded.
+const RUN_TEXT = { stageName, stageOutput, toolName, callOutcome };
 import { replyPlainText } from '../../replyDocument.js';
 import { mountVizBlocks } from '../../viz/vizRenderer.js';
 import { renderActiveToolCallsStrip as _renderActiveToolCallsStripFromModule } from './activeToolCallsStrip.js';
@@ -28,12 +35,12 @@ function renderThinkingMessage() {
 
 function renderLiveRunSteps(chat) {
   const sent = (chatState.supplementsSent || []).map(text => `<p class="run-steps-note">${escapeHtml(t('补充已送达，会在下一步加入：{text}', { text }))}</p>`).join('');
-  return `<div class="run-steps-host" data-run-steps-chat="${escapeHtml(chat?.id || '')}">${renderRunSteps(sceneSteps(liveSceneFor(chat?.id)), escapeHtml, t)}</div>${sent}`;
+  return `<div class="run-steps-host" data-run-steps-chat="${escapeHtml(chat?.id || '')}">${renderRunSteps(sceneSteps(liveSceneFor(chat?.id), 6, RUN_TEXT), escapeHtml, t)}</div>${sent}`;
 }
 
 function patchLiveRunSteps(chatId) {
   const host = document.querySelector(`[data-run-steps-chat="${CSS.escape(chatId || '')}"]`);
-  if (host) host.innerHTML = renderRunSteps(sceneSteps(liveSceneFor(chatId)), escapeHtml, t);
+  if (host) host.innerHTML = renderRunSteps(sceneSteps(liveSceneFor(chatId), 6, RUN_TEXT), escapeHtml, t);
 }
 
 function renderStreamingAssistantMessage(chat) {
@@ -55,13 +62,9 @@ function renderStreamingAssistantMessage(chat) {
   // before display — these are internal model directives, not user-visible text.
   // Also strip any <viz-spec>...</viz-spec> trailer — complete or partial — so
   // the raw JSON trailer never flashes in the streaming text on its way to
-  // being turned into a Demon viz card after the stream settles.
-  const displayText = chatState.streamingAssistantText
-    .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
-    .replace(/<tool_call>[\s\S]*$/, '')
-    .replace(/<viz-spec>[\s\S]*?<\/viz-spec>/gi, '')
-    .replace(/<viz-spec>[\s\S]*$/i, '')
-    .trim();
+  // being turned into a Demon viz card after the stream settles; and the
+  // `[UNCERTAIN: …]` marker on the last line (streamingText.js).
+  const displayText = streamingDisplayText(chatState.streamingAssistantText);
 
   const { citations: streamCitations, cleanText: streamCleanText } =
     extractSourceCitations(displayText);
@@ -115,14 +118,9 @@ function renderStreamingFast() {
   const bubble = article.querySelector('.message-bubble');
   if (!bubble) return false;
 
-  // Re-apply the same strip passes the template does so the bubble never
-  // flashes raw `<tool_call>` / `<viz-spec>` JSON mid-stream.
-  const displayText = chatState.streamingAssistantText
-    .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
-    .replace(/<tool_call>[\s\S]*$/, '')
-    .replace(/<viz-spec>[\s\S]*?<\/viz-spec>/gi, '')
-    .replace(/<viz-spec>[\s\S]*$/i, '')
-    .trim();
+  // The same strip passes the template applies, so the bubble never flashes
+  // raw `<tool_call>` / `<viz-spec>` JSON or the uncertainty marker mid-stream.
+  const displayText = streamingDisplayText(chatState.streamingAssistantText);
 
   const { citations: streamCitations, cleanText: streamCleanText } =
     extractSourceCitations(displayText);
@@ -232,8 +230,9 @@ function renderMessageList(chat) {
             } ${isToolTraceMessage(message) ? 'is-tool-trace' : ''}" data-message-id="${escapeHtml(message.id)}">
               ${isToolTraceMessage(message) ? ui`${renderToolTraceMessage(message, escapeHtml)}${renderSceneReplay(message)}` : ui`<div class="message-role">
                 ${message.role === 'assistant' ? `${renderAgentAvatar((getBootstrap().customize?.agents || []).find(a=>a.id===message.metadata?.agent?.id) || {name:message.metadata?.agent?.name || 'Melo'}, escapeHtml, 24)} ${escapeHtml(message.metadata?.agent?.name || 'Melo')}` : `${renderAgentAvatar(getBootstrap().profile, escapeHtml, 24)} ${escapeHtml(getBootstrap().profile.name)}`}
+                ${isFailedRequest(message) ? ui`<span class="chip is-muted message-failed-request">这次请求没有完成</span>` : ''}
               </div>
-              ${renderMessageBlocks(message)}
+              ${renderMessageBlocks(shownMessage(message))}
               ${renderAssistantVizMount(message)}
               ${renderMessageToolResults(message)}
               ${renderMessageRefs(message)}
@@ -381,6 +380,8 @@ function renderActiveToolCallsStrip() {
   return _renderActiveToolCallsStripFromModule(chatState.activeToolCalls, {
     escapeHtml,
     terminalIcon: icon.terminal,
+    toolName,
+    callOutcome,
   });
 }
 

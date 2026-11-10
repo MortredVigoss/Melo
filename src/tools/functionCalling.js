@@ -93,7 +93,8 @@ function resultMessageTokens(message) {
 export function compactToolChain(messages = [], { keepRecentResults = RESULT_CONTRACT.condense.keepRecentResults, keepRecentTokens = 0, maxOutputChars = RESULT_CONTRACT.condense.maxOutputChars } = {}) {
   const resultIndices = [];
   messages.forEach((message, index) => { if (message?.isToolResult) resultIndices.push(index); });
-  const protect = new Set(resultIndices.slice(-keepRecentResults));
+  // slice(-0) is the whole list: keeping none has to be said outright.
+  const protect = new Set(keepRecentResults > 0 ? resultIndices.slice(-keepRecentResults) : []);
   if (keepRecentTokens > 0) {
     let kept = 0;
     for (const index of [...resultIndices].reverse()) {
@@ -130,7 +131,10 @@ export function compactToolChain(messages = [], { keepRecentResults = RESULT_CON
 // roles or skills. Native protocol data lives only in this turn's transient
 // messages (plus the bounded, protocol-neutral `toolChain` record the runner
 // persists on the assistant message — see toolProtocol.js).
-export function createFunctionCallingSession(config, tools = []) {
+// `callIds`: the ids already used in this turn. A turn that rebuilds its session (loaded tool definitions,
+// a supplement, a model switch, the round after routing closes) passes the same set to each one, so an id
+// synthesized for a server that sends none can never repeat within the turn.
+export function createFunctionCallingSession(config, tools = [], { callIds = new Set() } = {}) {
   const protocol = toolProtocolFor(config);
   const native = protocol !== 'xml';
   const strictArgs = protocol === 'responses';
@@ -141,7 +145,7 @@ export function createFunctionCallingSession(config, tools = []) {
     if (byName.has(compiled.definition.name)) throw new Error('Tool function names collide.');
     byName.set(compiled.definition.name, { tool, ...compiled });
   }
-  const seenCallIds = new Set();
+  const seenCallIds = callIds;
   const definitions = toolDefinitionsForProtocol([...byName.values()], protocol);
   // Tool ids are the names results carry on every protocol (the text protocol included).
   const toolsById = new Map(tools.map(tool => [tool.id, tool]));
@@ -176,6 +180,16 @@ export function createFunctionCallingSession(config, tools = []) {
       if (typeof reply === 'string') {
         // Legacy transports and injected offline fixtures still return strings.
         const parsed = parseModelResponse(reply);
+        // On the text protocol the model writes the id itself, and often repeats one ("call_1" in every
+        // response) or writes a number. The execution ledger needs every call of a turn to have its own
+        // string id; a repeated or unusable one is replaced, the result still follows its call in order.
+        for (const call of parsed.toolCalls) {
+          if (typeof call.id !== 'string' || !call.id || call.id.length > 256 || seenCallIds.has(call.id)) {
+            let n = seenCallIds.size + 1;
+            do { call.id = `call_${n++}`; } while (seenCallIds.has(call.id));
+          }
+          seenCallIds.add(call.id);
+        }
         return { text: reply, ...parsed };
       }
       if (!native) throw new Error('Invalid model tool response.');

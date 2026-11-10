@@ -25,7 +25,8 @@ function thinkingLabel() {
     return '';
   }
 
-  const label = turnLabel(chatState.activeTurn, { permission: toolPermissions().length > 0, tools: chatState.activeToolCalls.some(tool => tool.status === 'running') });
+  // turnLabel returns a catalog key; shown as returned, the banner stayed Chinese in every language.
+  const label = t(turnLabel(chatState.activeTurn, { permission: toolPermissions().length > 0, tools: chatState.activeToolCalls.some(tool => tool.status === 'running') }));
   if (!chatState.thinkingSince) return label;
 
   const elapsedSeconds = Math.max(

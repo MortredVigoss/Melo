@@ -36,6 +36,8 @@ export function sceneMembers(scene) {
     // 2026-11-06 wrote a running member's task into output instead.
     const legacyTask = !stage.input && stage.status === 'running' ? stage.output || '' : '';
     return { id: stage.id, index, role, label: stage.name || '', task: stage.input || legacyTask, report: legacyTask ? '' : stage.output || '', status: stage.status, running,
+      // Present only when the host recorded it (see executionScene.js MEMBER_HANDOFF_STATUSES).
+      ...(stage.handoffStatus ? { handoff: stage.handoffStatus } : {}),
       model: stage.model || null, rounds: Number.isInteger(stage.limits?.rounds) ? stage.limits.rounds : null,
       operations: own.map(op => op.id), calls: own.length, activeOperation: active?.id || null,
       // A running member without an attributed running call stays at its role's home module.

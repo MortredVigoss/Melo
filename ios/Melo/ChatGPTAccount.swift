@@ -276,8 +276,8 @@ struct ImageSizeRejected: Error {}
             self.onObservation = onObservation; self.onReceiving = onReceiving; self.setStatus = setStatus
         }
     }
-    nonisolated static func readStream(_ bytes: URLSession.AsyncBytes, maxBytes: Int, acceptImageCompletion: Bool, requestStarted: TimeInterval, updates: StreamUpdates) async throws -> ChatGPTStream {
-        var parser = ChatGPTSSE(maxBytes: maxBytes, acceptImageCompletion: acceptImageCompletion, requestStarted: requestStarted)
+    nonisolated static func readStream(_ bytes: URLSession.AsyncBytes, maxBytes: Int, acceptImageCompletion: Bool, requestStarted: TimeInterval, requestKey: String = "", updates: StreamUpdates) async throws -> ChatGPTStream {
+        var parser = ChatGPTSSE(maxBytes: maxBytes, acceptImageCompletion: acceptImageCompletion, requestStarted: requestStarted, requestKey: requestKey)
         var revision = -1, receivedText = false, status = "正在思考…", lastSent = Date.distantPast
         func publish(force: Bool) async {
             let now = Date()
@@ -354,13 +354,35 @@ final class CodexResponsesTransport: AgentModelTransport, @unchecked Sendable {
         guard await isCurrent() else { throw CancellationError() }
     }
 
-    private func stream(_ body: [String: Any], timeout: TimeInterval, observe: Bool) async throws -> (ChatGPTStream, Int) {
-        try await LoopTrace.model(purpose:"codex-provider",input:body,snapshot:{ value in ["text":value.0.text,"output":value.0.outputItems] }) {
-            await LoopTrace.providerPayload(body)
-            return try await streamWithTrace(body,timeout:timeout,observe:observe)
+    /// The loop pass of the last observed request and how many requests that pass has made: the key
+    /// of each request's own stage in the run record (ExecutionObservation.requestKey).
+    private var observedPass = -1, observedAttempt = 0
+    private func stream(_ body: [String: Any], timeout: TimeInterval, observe: Bool, iteration: Int = 0, continuation: String = "") async throws -> (ChatGPTStream, Int) {
+        var key = ""
+        if observe {
+            if iteration == observedPass { observedAttempt += 1 } else { observedPass = iteration; observedAttempt = 1 }
+            key = ExecutionObservation.requestKey(iteration: iteration, attempt: observedAttempt, continuation: continuation)
+        }
+        do {
+            return try await LoopTrace.model(purpose:"codex-provider",input:body,snapshot:{ value in ["text":value.0.text,"output":value.0.outputItems] }) {
+                await LoopTrace.providerPayload(body)
+                return try await streamWithTrace(body,timeout:timeout,observe:observe,requestKey:key)
+            }
+        } catch {
+            // A request that ended in an error must not leave its stage "running": the loop may go on
+            // (a member whose request failed hands back to the lead). A cancelled request is left to the
+            // run's own end state: stopped by the user, paused by the system, or cut by the deadline.
+            let cancelled = error is CancellationError || (error as? URLError)?.code == .cancelled || Task.isCancelled
+            if observe && !cancelled {
+                var failed = ExecutionObservation(); failed.requestKey = key
+                failed.stage(failed.modelStageID, name: "模型请求", status: "failed", output: "未取得完整响应", model: model)
+                let updates = self.updates, snapshot = failed
+                await MainActor.run { updates.onObservation?(snapshot) }
+            }
+            throw error
         }
     }
-    private func streamWithTrace(_ body: [String: Any], timeout: TimeInterval, observe: Bool) async throws -> (ChatGPTStream, Int) {
+    private func streamWithTrace(_ body: [String: Any], timeout: TimeInterval, observe: Bool, requestKey: String = "") async throws -> (ChatGPTStream, Int) {
         try await checkCurrent()
         var request = CodexOAuth.request(path: "/responses", account: account, method: "POST")
         request.timeoutInterval = max(1, min(timeoutCap, timeout))
@@ -369,8 +391,8 @@ final class CodexResponsesTransport: AgentModelTransport, @unchecked Sendable {
         let payload = try JSONSerialization.data(withJSONObject: body)
         request.httpBody = payload
         if observe {
-            var requestObservation = ExecutionObservation()
-            requestObservation.stage("model:response", name: "模型请求", status: "running", output: "等待服务返回", model: model)
+            var requestObservation = ExecutionObservation(); requestObservation.requestKey = requestKey
+            requestObservation.stage(requestObservation.modelStageID, name: "模型请求", status: "running", output: "等待服务返回", model: model)
             let updates = self.updates, snapshot = requestObservation
             await MainActor.run { updates.onObservation?(snapshot) }
         }
@@ -394,13 +416,13 @@ final class CodexResponsesTransport: AgentModelTransport, @unchecked Sendable {
         // Read and parse off the main thread: an image reply is megabytes of
         // base64, and byte-by-byte work here would stall the interface.
         let quiet = ChatGPTAccount.StreamUpdates(onObservation: nil, onReceiving: nil, setStatus: { _ in })
-        let stream = try await ChatGPTAccount.readStream(bytes, maxBytes: imageMode ? 64 * 1024 * 1024 : 8 * 1024 * 1024, acceptImageCompletion: imageMode, requestStarted: requestStarted, updates: observe ? updates : quiet)
+        let stream = try await ChatGPTAccount.readStream(bytes, maxBytes: imageMode ? 64 * 1024 * 1024 : 8 * 1024 * 1024, acceptImageCompletion: imageMode, requestStarted: requestStarted, requestKey: requestKey, updates: observe ? updates : quiet)
         try await checkCurrent()
         return (stream, RequestSizeEstimate.tokens(payload))
     }
     /// Input tokens the service reported for this response, when it did.
     static func inputTokens(_ stream: ChatGPTStream, key: String = "input") -> Int? {
-        guard let usage = stream.observation.pipeline.first(where: { $0.id == "model:response" })?.api?["usage"], case .number(let value) = usage[key], value.isFinite, value >= 0, value < Double(Int.max) else { return nil }
+        guard let usage = stream.observation.pipeline.first(where: { $0.id == stream.observation.modelStageID })?.api?["usage"], case .number(let value) = usage[key], value.isFinite, value >= 0, value < Double(Int.max) else { return nil }
         return Network.usageNumber(NSNumber(value: value))
     }
 
@@ -419,7 +441,7 @@ final class CodexResponsesTransport: AgentModelTransport, @unchecked Sendable {
         let allowance = PhoneExecutionScope.budget?.outputLimit(inputTokens: requestEstimate, cap: input.outputLimit, phase: PhoneExecutionScope.phase)
         var meter = try PhoneModelMeter(estimate: requestEstimate, outputLimit: allowance); defer { meter.finish() }
         var result: (ChatGPTStream, Int)
-        do { result = try await stream(body, timeout: input.timeout, observe: input.goalReview == nil) }
+        do { result = try await stream(body, timeout: input.timeout, observe: input.goalReview == nil, iteration: input.iteration, continuation: input.continuation) }
         catch is ImageSizeRejected where input.goalReview == nil && input.internalJob == nil && !input.repairing {
             // Retry once at the service's default size; the reply says so.
             base["tools"] = ((base["tools"] as? [[String: Any]]) ?? []).map { var tool = $0; if tool["type"] as? String == "image_generation" { tool["size"] = nil }; return tool }
@@ -427,7 +449,7 @@ final class CodexResponsesTransport: AgentModelTransport, @unchecked Sendable {
             sizeFallback = true
             meter.finish()
             meter = try PhoneModelMeter(estimate: RequestSizeEstimate.tokens(try JSONSerialization.data(withJSONObject: body)), outputLimit: allowance)
-            result = try await stream(body, timeout: input.timeout, observe: true)
+            result = try await stream(body, timeout: input.timeout, observe: true, iteration: input.iteration, continuation: input.continuation)
         }
         let (stream, estimate) = result
         meter.inputTokens = Self.inputTokens(stream) ?? estimate

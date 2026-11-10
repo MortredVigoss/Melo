@@ -690,7 +690,8 @@ test('authorized browser tools remain executable across search routes without ce
     assert.equal(effects, 1, 'only the member opened the browser'); assert.ok(members >= 2);
     assert.ok(inherited.includes('web_search')); assert.equal(inherited.includes('browser_open'), true, 'members inherit the same explicitly opted-in browser permission');
     assert.equal(result.reply, 'I searched and found the best restaurant.');
-    assert.equal(result.normalizedReply.completion.outcome, 'partial');
+    // The answer was delivered and its check gave no verdict: "unverified", as in a limit delivery (2026-11-10).
+    assert.equal(result.normalizedReply.completion.outcome, 'unverified');
     assert.equal(result.normalizedReply.completion.reason, 'GOAL_CHECK_UNAVAILABLE');
   } finally { unregisterTool('policy_probe'); unregisterTool('browser_open'); registerTool(original); }
 });

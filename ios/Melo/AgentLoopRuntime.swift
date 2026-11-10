@@ -82,9 +82,22 @@ final class PhoneRunBudget: @unchecked Sendable {
     }
     var used: Usage { Self.lock.lock(); defer { Self.lock.unlock() }; return usedValue }
 
+    /// `savedAt` is when this snapshot was taken, on this budget's own clock. It is read back only by
+    /// `restore` / `restoreMember`; the shared policy never sees it.
     func resumeData() throws -> Data {
         Self.lock.lock(); defer { Self.lock.unlock() }
-        return try JSONSerialization.data(withJSONObject: snapshot())
+        var saved = snapshot(); saved["savedAt"] = now()
+        return try JSONSerialization.data(withJSONObject: saved)
+    }
+    /// The time a reply sat paused is not run time (2026-11-10). The deadline used to stay on the
+    /// wall clock: a reply iOS suspended and the user continued an hour later was already "out of
+    /// time", and its saved work was replaced by a budget notice. A restored budget moves its start
+    /// and deadline by the time that passed since the snapshot, so it has exactly the time it had
+    /// left. Tokens and tool calls are untouched. Snapshots written before `savedAt` keep their deadline.
+    private func skipPause(_ saved: [String: Any]) {
+        guard let savedAt = saved["savedAt"] as? Double, savedAt.isFinite else { return }
+        let paused = max(0, now() - savedAt)
+        startedAt += paused; deadlineAt += paused
     }
     func restore(_ data: Data) throws {
         let decoded = try JSONSerialization.jsonObject(with: data)
@@ -93,6 +106,7 @@ final class PhoneRunBudget: @unchecked Sendable {
         apply(saved)
         guard policyAvailable else { throw SharedAgentCoreError.invalidReply }
         restoredBudget = true
+        skipPause(saved)
         // A suspended request may never send a usage receipt. Charge its
         // outstanding reservation once rather than granting it again.
         if pendingInput > 0 || pendingOutput > 0 {
@@ -105,6 +119,7 @@ final class PhoneRunBudget: @unchecked Sendable {
         Self.lock.lock(); defer { Self.lock.unlock() }
         apply(saved, ancestors: false)
         guard policyAvailable else { throw SharedAgentCoreError.invalidReply }
+        skipPause(saved)
     }
     func arm() {
         Self.lock.lock(); defer { Self.lock.unlock() }
@@ -195,6 +210,15 @@ final class PhoneRunBudget: @unchecked Sendable {
               let limit = value["limit"] as? Double, let spent = value["used"] as? Double,
               let usage = value["usage"] as? [String: Int] else { invalidatePolicy(); return unavailable }
         return Exhaustion(reason: reason, limit: limit, used: spent, usage: Usage(inputTokens: usage["inputTokens"] ?? 0, toolCalls: usage["toolCalls"] ?? 0, providerCalls: usage["providerCalls"] ?? 0))
+    }
+    /// A member's share of this budget by the shared rule (taskEvaluation `allocation`); nil when the
+    /// rule says no member may start.
+    func memberAllocation(rounds: Int) -> (inputTokens: Int, toolCalls: Int, deadlineMs: Double)? {
+        Self.lock.lock(); defer { Self.lock.unlock() }
+        guard available, let value = SharedLoopPolicy.value("taskEvaluation", ["action": "allocation", "budget": snapshot(), "rounds": rounds]) as? [String: Any],
+              value["allowed"] as? Bool == true, let tokens = value["maxInputTokens"] as? Int, let calls = value["maxToolCalls"] as? Int,
+              let deadline = (value["deadlineMs"] as? NSNumber)?.doubleValue else { return nil }
+        return (tokens, calls, deadline)
     }
     func narrowed(deadlineMs: Double? = nil, maxInputTokens: Int? = nil, maxToolCalls: Int? = nil) -> PhoneRunBudget {
         Self.lock.lock(); defer { Self.lock.unlock() }

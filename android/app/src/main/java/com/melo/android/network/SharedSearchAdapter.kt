@@ -22,6 +22,26 @@ class SharedSearchAdapter(private val debug: Boolean, http: OkHttpClient) {
             val target = EndpointPolicy.validate(endpoint, debug).toString()
             return "search:" + MessageDigest.getInstance("SHA-256").digest(target.toByteArray()).joinToString("") { "%02x".format(it) }
         }
+        // Hops one page read follows. Each hop is a new address and is checked like the first one.
+        private const val MAX_PAGE_REDIRECTS = 5
+        private val fixtureHosts = setOf("localhost", "127.0.0.1", "10.0.2.2")
+        private fun privateAddress(address: java.net.InetAddress) = address.isAnyLocalAddress || address.isLoopbackAddress || address.isLinkLocalAddress || address.isSiteLocalAddress || address.isMulticastAddress || address.address.size == 16 && (address.address[0].toInt() and 0xfe) == 0xfc
+    }
+    /**
+     * An address a page read may open: HTTPS (plain http only for the debug fixture hosts), no
+     * credentials, and not a literal local or private address. OkHttp connects to a literal address
+     * without asking the Dns hook in [exchange], so that hook alone never saw "https://192.168.1.1/".
+     */
+    private fun pageAddress(value: String): HttpUrl? {
+        val url = runCatching { EndpointPolicy.validate(value, debug) }.getOrNull() ?: return null
+        val host = url.host.removeSurrounding("[", "]")
+        if (debug && host in fixtureHosts) return url
+        val literal = when {
+            Regex("\\d{1,3}(\\.\\d{1,3}){3}").matches(host) -> runCatching { java.net.InetAddress.getByAddress(host.split('.').map { it.toInt().also { part -> require(part in 0..255) }.toByte() }.toByteArray()) }.getOrNull() ?: return null
+            host.contains(':') -> runCatching { java.net.InetAddress.getByName(host) }.getOrNull() ?: return null
+            else -> return url
+        }
+        return url.takeUnless { privateAddress(literal) }
     }
     private val client = http.newBuilder().followRedirects(false).followSslRedirects(false).callTimeout(20, TimeUnit.SECONDS).build()
     // Page bodies of this reply (one adapter serves one reply): reading on through a long page
@@ -61,14 +81,30 @@ class SharedSearchAdapter(private val debug: Boolean, http: OkHttpClient) {
 
     /** The network half of a page read. It never touches the shared Runtime, so several may run side by side. */
     suspend fun load(args: JsonObject, requestedUrls: List<String>): DeviceToolResult {
-        val target = args.text("url")
-        if (target !in requestedUrls) return DeviceToolResult.error("只能读取用户指定或本轮 Search 实际返回的来源 URL。", "FETCH_URL_NOT_IN_EVIDENCE")
+        // "#section" names a place inside a page and is never sent to its server: the page is the same
+        // source with or without it. A link with a fragment (most documentation links) was refused as
+        // "手机只能直接读取 HTTPS 网页", because the rule for service addresses forbids fragments.
+        val target = args.text("url").substringBefore('#')
+        if (requestedUrls.none { it.substringBefore('#') == target }) return DeviceToolResult.error("只能读取用户指定或本轮 Search 实际返回的来源 URL。", "FETCH_URL_NOT_IN_EVIDENCE")
         synchronized(pages) { pages[target] }?.let { return it }
         // An address this build may not open (plain http outside the debug fixture hosts, or one OkHttp
         // cannot parse) fails this read only. Thrown from here it used to end the whole reply.
-        val url = runCatching { EndpointPolicy.validate(target, debug) }.getOrElse { return DeviceToolResult.error("手机只能直接读取 HTTPS 网页，这个地址无法读取。", "FETCH_URL_UNSUPPORTED") }
-        val request = Request.Builder().url(url).header("Accept", "text/html, text/plain, application/json").build()
-        val result = exchange(request, 1_048_576, publicPage = true)
+        var url = pageAddress(target) ?: return DeviceToolResult.error("手机只能直接读取 HTTPS 网页，这个地址无法读取。", "FETCH_URL_UNSUPPORTED")
+        fun request(address: HttpUrl) = Request.Builder().url(address).header("Accept", "text/html, text/plain, application/json").build()
+        var result = exchange(request(url), 1_048_576, publicPage = true)
+        // A page that moved (a bare host to www, a trailing slash, a new path) answers with a redirect.
+        // The client never follows one by itself, so that no credential travels to another host; a page
+        // read carries none, so it is followed here, each hop under the same address rules as the first.
+        // Until 2026-11-10 such a page could not be read at all: "检索服务返回 HTTP 301。"
+        var hops = 0
+        while (true) {
+            val location = result.data.text("location")
+            if (location.isBlank()) break
+            if (++hops > MAX_PAGE_REDIRECTS) return DeviceToolResult.error("这个网页连续跳转超过 $MAX_PAGE_REDIRECTS 次，没有读取。", "FETCH_REDIRECT_LIMIT")
+            url = url.resolve(location)?.let { pageAddress(it.toString().substringBefore('#')) }
+                ?: return DeviceToolResult.error("这个网页跳转到了手机不能直接读取的地址，没有读取。", "FETCH_URL_UNSUPPORTED")
+            result = exchange(request(url), 1_048_576, publicPage = true)
+        }
         if (!result.ok) return result
         val type = result.data.text("contentType")
         if (!type.contains("text/") && !type.contains("json")) return DeviceToolResult.error("该页面不是可直接读取的文本；尚未处理附件或动态渲染。", "FETCH_CONTENT_TYPE_UNSUPPORTED")
@@ -91,7 +127,7 @@ class SharedSearchAdapter(private val debug: Boolean, http: OkHttpClient) {
         val scopedClient = if(timeoutMs == null) client else client.newBuilder().callTimeout(timeoutMs.coerceIn(3000,120000), TimeUnit.MILLISECONDS).build()
         val pageClient = if (!publicPage) scopedClient else scopedClient.newBuilder().dns { hostname ->
             val addresses = Dns.SYSTEM.lookup(hostname)
-            if (!(debug && hostname in setOf("localhost", "127.0.0.1", "10.0.2.2")) && addresses.any { it.isAnyLocalAddress || it.isLoopbackAddress || it.isLinkLocalAddress || it.isSiteLocalAddress || it.isMulticastAddress || it.address.size == 16 && (it.address[0].toInt() and 0xfe) == 0xfc }) throw java.net.UnknownHostException("网页来源不能读取本地或私有网络地址。")
+            if (!(debug && hostname in fixtureHosts) && addresses.any(::privateAddress)) throw java.net.UnknownHostException("网页来源不能读取本地或私有网络地址。")
             addresses
         }.build()
         val call = pageClient.newCall(request)
@@ -102,7 +138,11 @@ class SharedSearchAdapter(private val debug: Boolean, http: OkHttpClient) {
             }
             override fun onResponse(call: Call, response: Response) {
                 val result = try { response.use {
-                    if (!it.isSuccessful) DeviceToolResult.error("检索服务返回 HTTP ${it.code}。", "SEARCH_HTTP_${it.code}")
+                    if (!it.isSuccessful) {
+                        val failed = DeviceToolResult.error(if (publicPage) "网页返回 HTTP ${it.code}，没有读到内容。" else "检索服务返回 HTTP ${it.code}。", "SEARCH_HTTP_${it.code}")
+                        val location = it.header("Location").orEmpty()
+                        if (publicPage && it.isRedirect && location.isNotBlank()) DeviceToolResult(JsonObject(failed.data + ("location" to JsonPrimitive(location.take(4000))))) else failed
+                    }
                     else {
                         val body = it.body ?: error("Empty response")
                         val bytes = ModelClient.readBounded(body, limit)

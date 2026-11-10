@@ -105,3 +105,30 @@ test('smart choice survives hydration and portable sync while fixed choices and 
  assert.equal(exportModelSelection(legacy,config).mode,undefined);
  assert.equal(conversationConfig(config,legacy).conversationModelMode,'fixed');
 });
+
+test('the image check asks about the model the turn runs on', async () => {
+  const { turnModel } = await import('./conversationSelection.js');
+  const { readFile } = await import('node:fs/promises');
+  // The runner's own order (chatExecutionRunner.js modelOverrides.model, then invokeModelNode.js selectedModel).
+  const runner = (config, env, agentModel) => (config.conversationModelSelected ? config.model : config.activeLlmProfileId ? '' : env.MELO_MODEL || '') || agentModel || config.model;
+  const cases = [
+    [{ model: 'chat-pick', conversationModelSelected: true, activeLlmProfileId: 'p' }, { MELO_MODEL: 'env' }, 'agent-own', 'chat-pick'],
+    [{ model: 'connection', activeLlmProfileId: 'p' }, { MELO_MODEL: 'env' }, 'agent-own', 'agent-own'],
+    [{ model: 'connection', activeLlmProfileId: 'p' }, { MELO_MODEL: 'env' }, '', 'connection'],
+    [{ model: 'connection' }, { MELO_MODEL: 'env' }, 'agent-own', 'env'],
+    [{ model: 'connection' }, {}, 'agent-own', 'agent-own'],
+    [{ model: 'connection' }, {}, '', 'connection'],
+  ];
+  for (const [config, env, agentModel, expected] of cases) {
+    assert.equal(turnModel(config, env, agentModel), expected);
+    assert.equal(turnModel(config, env, agentModel), runner(config, env, agentModel));
+  }
+  // A conversation switched to another model used to be judged by the Agent's own model.
+  assert.equal(turnModel({ model: 'sees-images', conversationModelSelected: true }, {}, 'text-only'), 'sees-images');
+  const source = await readFile(new URL('./sendChatMessage.js', import.meta.url), 'utf8');
+  assert.match(source, /visionConnection\(config,\{model:turnModel\(config,context\.env,activeAgentProfile\?\.model\)\}\)/, 'the send path uses it for the image check');
+  const node = await readFile(new URL('./execution/invokeModelNode.js', import.meta.url), 'utf8');
+  assert.match(node, /let selectedModel = modelOverrides\.model \|\| graphState\.activeAgentProfile\.model \|\| config\.model;/, 'the order above is still the runner\'s order');
+  const runnerSource = await readFile(new URL('./chatExecutionRunner.js', import.meta.url), 'utf8');
+  assert.match(runnerSource, /model: config\.conversationModelSelected \? config\.model : config\.activeLlmProfileId \? '' : env\.MELO_MODEL \|\| '',/);
+});

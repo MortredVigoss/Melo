@@ -11,7 +11,12 @@ data class DeviceToolResult(val data: JsonObject, val jpeg: String? = null) {
         fun error(message: String, code: String = "execution_error") = DeviceToolResult(buildJsonObject { put("ok", false); put("code", code); put("error", message.take(500)) })
     }
 }
-data class DeviceCall(val id: String, val name: String, val arguments: JsonObject)
+/**
+ * `id` is what the loop knows the call by and is unique within the reply. `wireId` is the id the
+ * provider's own message carries for it, which a result has to name on the wire; the two differ only
+ * when the provider reused an id it had already used earlier in the same reply.
+ */
+data class DeviceCall(val id: String, val name: String, val arguments: JsonObject, val wireId: String = id)
 data class DeviceTurn(val text: String, val calls: List<DeviceCall>, val wire: List<JsonObject>, val model: String? = null, val inputTokens: Long? = null)
 @Serializable data class DeviceStep(val action: String, val ok: Boolean, val detail: String, val at: String = now(), val callId: String = "", val durationMs: Long = 0, val code: String = "", val recoveryCount: Int = 0)
 @Serializable data class DeviceTaskContext(val chatId: String, val agentId: String, val projectId: String? = null, val connectionId: String)

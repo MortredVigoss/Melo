@@ -47,7 +47,11 @@ test('a background (Telegram-style) turn refuses an approval-gated tool at once 
   const records = await readToolInvocationRecords(result.runId, { home: TEST_HOME });
   const writes = records.filter(r => r.toolId === 'file_write');
   assert.ok(writes.length >= 1, 'the model did ask to write');
-  assert.ok(writes.every(r => r.resultEnvelope?.code === 'PERMISSION_NO_SURFACE'), JSON.stringify(writes.map(r => r.resultEnvelope)));
+  // Every attempt is refused before it starts: by the missing approval surface, then by the repeat guard once the
+  // model has asked for the same write twice. (The fixture repeats one call with one id; that id used to end the
+  // turn on its second use, so only the first refusal was ever recorded.)
+  assert.equal(writes[0].resultEnvelope?.code, 'PERMISSION_NO_SURFACE');
+  assert.ok(writes.every(r => r.resultEnvelope?.ok === false && ['PERMISSION_NO_SURFACE', 'REPEATED_FAILURE'].includes(r.resultEnvelope?.code)), JSON.stringify(writes.map(r => r.resultEnvelope)));
   assert.equal(existsSync(join(TEST_HOME, 'workspaces', 'chats', 'remote-chat', 'remote-proof.txt')), false, 'nothing was written');
 });
 

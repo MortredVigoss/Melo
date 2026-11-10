@@ -57,7 +57,10 @@ export async function handleSearchSettings(action, { api, render, refresh }) {
     await api('/api/settings/model', { method: 'POST', body: { agentRuntime: { version: 1, search: {
       backend: draft.backend || 'none', provider: draft.provider || 'custom', endpoint: draft.endpoint || '',
       credentialRef: draft.credentialRef || '', browserFallback: draft.browserFallback === true,
-      maxResults: Number(draft.maxResults || 8), timeoutMs: Number(draft.timeoutMs || 20000),
+      // Only what the user set. The two inputs show a default while nothing is saved; writing that
+      // default back changed how searches run for anyone who saved this page for another reason
+      // (the result count a search asks for by default, and the built-in search's time limit).
+      ...(draft.maxResults ? { maxResults: Number(draft.maxResults) } : {}), ...(draft.timeoutMs ? { timeoutMs: Number(draft.timeoutMs) } : {}),
     } }, searchApiKey: draft.apiKey, clearSearchKey: draft.clearKey === true } });
     session.saved(); state.message = t('Search 配置已保存，尚未验证真实服务。');
     state.draft.apiKey = ''; await refresh();

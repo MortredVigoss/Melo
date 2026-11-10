@@ -109,7 +109,9 @@ export async function runChatAgentExecutionGraph({
     }
     options.signal?.throwIfAborted();
     const phase = options.budgetPhase || 'work';
-    const estimatedInput = estimateMessagesTokens(options.messages || []) + Math.ceil(estimateTextTokens(options.systemPrompt || '') * 4 / 3) + estimateTextTokens(JSON.stringify(options.tools || []));
+    // Tool definitions travel as `functionTools` on native protocols; `tools` was never set there, so the
+    // estimate left the largest fixed part of a request out (2026-11-10 audit).
+    const estimatedInput = estimateMessagesTokens(options.messages || []) + Math.ceil(estimateTextTokens(options.systemPrompt || '') * 4 / 3) + estimateTextTokens(JSON.stringify(options.tools?.length ? options.tools : options.functionTools || []));
     const admission = admitModel(budget, { phase, inputTokens: estimatedInput });
     if (!admission.allowed) throw Object.assign(new Error('The model request would spend the reserved delivery allowance.'), { code: 'BUDGET_EXHAUSTED', exhausted: admission.exhausted });
     const endFirstToken = typeof options.onDelta === 'function' ? startStage('model.first_token') : null;

@@ -349,3 +349,42 @@ test('toolCallArgsDigest: scalars only, first two keys, bounded values', () => {
   assert.equal(toolCallArgsDigest(null), '');
   assert.equal(toolCallArgsDigest({ q: 'y'.repeat(60) }, { maxValue: 8 }), 'q=yyyyyyyy…');
 });
+
+// Agent audit 2026-11-10: the pill printed the call's id as recorded
+// (`[agent:d1] web_search`, `load_tools`) and a bare ✗ for a call that was
+// never allowed to run. With the names of executionText.js it says what was
+// called and why it did not run; without them it prints the id as before.
+test('a pill names its tool and says why a call did not run', async () => {
+  const { setLanguage } = await import('../../i18n.js');
+  const { toolName, callOutcome } = await import('../../executionText.js');
+  setLanguage('zh-CN');
+  try {
+    const calls = [
+      { id: 'a', name: '[agent:d1] web_search', status: 'running' },
+      { id: 'b', name: 'file_write', status: 'error', errorCode: 'PERMISSION_DENIED' },
+      { id: 'c', name: 'fetch_url', status: 'error', errorCode: 'ALREADY_EXECUTED' },
+      { id: 'd', name: 'bash', status: 'error', errorCode: 'TOOL_FAILED' },
+      { id: 'e', name: 'load_tools', status: 'ok', errorCode: 'PERMISSION_DENIED' },
+    ];
+    const html = renderActiveToolCallsStrip(calls, { escapeHtml, terminalIcon: TERMINAL_ICON, toolName, callOutcome });
+    const pills = html.split('<div class="tool-call-pill ').slice(1);
+    assert.equal(pills.length, 5);
+    assert.match(pills[0], /tool-call-pill-name">成员 · 联网搜索</); assert.doesNotMatch(pills[0], /\[agent:d1\]/);
+    assert.match(pills[1], /tool-call-pill-name">写入文件</); assert.match(pills[1], /tool-call-pill-outcome"[^>]*>未获许可，没有执行</);
+    assert.match(pills[2], /tool-call-pill-outcome"[^>]*>已经执行过，没有重复</);
+    assert.doesNotMatch(pills[3], /tool-call-pill-outcome/, 'a tool that ran and failed keeps the plain ✗');
+    assert.match(pills[4], /tool-call-pill-name">加载工具说明</); assert.doesNotMatch(pills[4], /tool-call-pill-outcome/, 'only a failed call carries a reason');
+    // The reason sits inside the first row, after the ✗.
+    assert.equal(pills[1].indexOf('tool-call-x') < pills[1].indexOf('tool-call-pill-outcome'), true);
+    assert.equal(pills[1].indexOf('tool-call-pill-outcome') < pills[1].indexOf('</div>'), true);
+    // Without the names the recorded id is printed, as before.
+    const plain = renderActiveToolCallsStrip(calls, { escapeHtml, terminalIcon: TERMINAL_ICON });
+    assert.match(plain, /tool-call-pill-name">\[agent:d1\] web_search</); assert.doesNotMatch(plain, /tool-call-pill-outcome/);
+  } finally { setLanguage('en'); }
+});
+
+test('the controller keeps the code of a call that did not run for its pill', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const source = await readFile(new URL('./controller.js', import.meta.url), 'utf8');
+  assert.match(source, /if \(!r\.ok && typeof r\.errorCode === 'string'\) existing\.errorCode = r\.errorCode;/);
+});

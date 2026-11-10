@@ -1,7 +1,9 @@
 import { formatNumber } from './format.js';
 import { escapeHtml } from './i18n.js';
 export { renderExecutionTiming } from './executionTiming.js';
-import { t, ui, currentLanguage, runtimeStageName, runtimeStageOutput, runtimeCompletionText } from './i18n.js';
+import { t, ui, currentLanguage, runtimeCompletionText } from './i18n.js';
+// Names of stages and calls, reason codes and refused calls in the interface language (agent audit 2026-11-10).
+import { stageName as runtimeStageName, stageOutput as runtimeStageOutput, toolName, callOutcome } from './executionText.js';
 const amount = value => Number.isSafeInteger(value) && value >= 0 ? formatNumber(value) : null;
 const seconds = value => amount(value) === null ? null : `${(value / 1000).toFixed(2)} s`;
 export function executionApiLine(op) {
@@ -58,7 +60,18 @@ export function renderExecutionDetail(op, status) {
     ${summary ? '' : output}`;
 }
 
+// One line per recorded event. A call the host refused or never started says
+// so; before, it read "failed" like a tool that broke, and names and states
+// were the record's own identifiers in every language.
+const EVENT_KINDS = { turn: '本轮', model: '模型请求', terminal: '结束' };
+const EVENT_STATES = { queued: '排队', waiting: '等待许可', running: '执行中', completed: '已完成', failed: '失败', cancelled: '已取消', interrupted: '已中断', unknown: '未知' };
+export function sessionEventLine(event) {
+  const name = event.kind === 'tool' ? toolName(event.name) : t(EVENT_KINDS[event.kind] || event.kind);
+  const refused = callOutcome({ errorCode: event.code, status: event.status });
+  const state = refused || (event.resultState === 'not_executed' ? t('没有执行') : t(EVENT_STATES[event.status] || event.status));
+  return `${name} · ${state}${event.resultState === 'unknown' ? ` · ${t('结果未知，请先核对再继续')}` : ''}`;
+}
 export function renderSessionEvents(events = []) {
   if (!events.length) return '';
-  return ui`<details class="execution-delivery-details execution-session-events"><summary>执行记录</summary>${events.map(event => `<p data-session-event-id="${escapeHtml(event.eventId)}"><b>${escapeHtml(event.name || event.kind)} · ${escapeHtml(event.status)}</b>${event.resultState === 'unknown' ? ' · 结果未知，请先核对再继续' : ''}<br><small>${escapeHtml(event.eventId)}</small></p>`).join('')}</details>`;
+  return ui`<details class="execution-delivery-details execution-session-events"><summary>执行记录</summary>${events.map(event => `<p data-session-event-id="${escapeHtml(event.eventId)}"><b>${escapeHtml(sessionEventLine(event))}</b><br><small>${escapeHtml(event.eventId)}</small></p>`).join('')}</details>`;
 }

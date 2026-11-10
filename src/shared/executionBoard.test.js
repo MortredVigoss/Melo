@@ -159,3 +159,30 @@ test('a member\'s task reads the same from every host, and an older iPhone recor
   [first] = sceneMembers(scene);
   assert.equal(first.task, '查找墨尔本本周末的户外音乐活动', 'the report does not erase the task'); assert.equal(first.report, '读到 2 个官方页面');
 });
+
+// Agent audit 2026-11-10: an internal member's stage is `interrupted` for every
+// hand-off that is not `observed`, also when the member ended on its own with
+// nothing verified. The scene keeps what the hand-off recorded when the host
+// writes it, so a task space can tell "cut short" from "handed back".
+test('a member keeps what its hand-off recorded, and only a value the routing core can produce', async () => {
+  const { createExecutionScene, applyExecutionEvent, MEMBER_HANDOFF_STATUSES } = await import('./executionScene.js');
+  const { sceneMembers } = await import('./executionBoard.js');
+  const { internalHandoff } = await import('../../shared/agent/internalRouting.js');
+  const job = { role: 'research', task: 't', callId: 'c', tools: ['web_search'] };
+  const produced = [
+    JSON.parse(internalHandoff({ job, answer: 'a', observations: [{ type: 'tool', name: 'web_search', ok: true, executed: true }] })).status,
+    JSON.parse(internalHandoff({ job, answer: 'a', observations: [] })).status,
+    JSON.parse(internalHandoff({ job, answer: 'a', observations: [], limited: true })).status,
+  ];
+  assert.deepEqual([...MEMBER_HANDOFF_STATUSES].sort(), [...produced].sort(), 'the three hand-off states of the routing core');
+  const scene = createExecutionScene({ runId: 'r', requestId: 'q', chatId: 'c' });
+  const member = (index, fields) => applyExecutionEvent(scene, { kind: 'pipeline', id: `internal:${index}`, module: 'compute', name: '检索成员', role: 'research', ...fields });
+  member(1, { status: 'running' }); member(1, { status: 'interrupted', handoffStatus: 'unverified' });
+  member(2, { status: 'running' }); member(2, { status: 'interrupted', handoffStatus: 'anything-else' });
+  member(3, { status: 'running' }); member(3, { status: 'interrupted' });
+  const rows = sceneMembers(scene);
+  assert.equal(rows[0].handoff, 'unverified');
+  assert.equal('handoff' in rows[1], false, 'an unknown value is not kept');
+  assert.equal('handoff' in rows[2], false, 'a host that does not write it changes nothing');
+  assert.deepEqual(rows.map(row => row.status), ['interrupted', 'interrupted', 'interrupted'], 'the stage state itself is untouched');
+});

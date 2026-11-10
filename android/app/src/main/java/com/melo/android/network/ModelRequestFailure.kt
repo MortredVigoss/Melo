@@ -48,5 +48,22 @@ class ModelRequestFailure(
             return ModelRequestFailure(code, phase, "$detail（$phase）。未完成的工具参数不会执行；此前已执行步骤保留。", cause = error)
         }
         fun invalid(cause: Throwable? = null) = ModelRequestFailure("MODEL_RESPONSE_INVALID", "decode-response", "模型未返回完整、有效的 Tool Calling 回执，请检查模型及接口协议。未完成的工具参数不会执行。", cause = cause)
+        /**
+         * A reply the provider ended early is not a protocol fault. Until 2026-11-10 a reply cut at its
+         * output limit and a reply the provider declined were both reported as "请检查模型及接口协议",
+         * which sent the user to the connection settings for something no setting there causes. The
+         * request still fails, as on desktop (src/openai.js chatCompletionsToolReply, src/providers/anthropic.js
+         * `completed`): what arrived is incomplete and is never used.
+         */
+        fun incomplete(reason: String): ModelRequestFailure? {
+            val named = reason.filter { it.isLetterOrDigit() || it == '_' }.take(60)
+            return when (named) {
+                "length", "max_tokens", "max_output_tokens", "model_context_window_exceeded" ->
+                    ModelRequestFailure("MODEL_OUTPUT_TRUNCATED", "decode-response", "模型的回复超过了单次输出上限，在写完之前被截断（$named）。这段回复没有采用，未完成的工具参数不会执行；可以把问题拆小后重试。")
+                "content_filter", "refusal" ->
+                    ModelRequestFailure("MODEL_REFUSED", "decode-response", "模型服务拒绝生成这次回复（$named）。这不是连接或协议问题；本次没有执行任何工具。")
+                else -> null
+            }
+        }
     }
 }

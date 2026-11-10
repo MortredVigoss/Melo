@@ -417,7 +417,8 @@ enum DeviceToolLoop {
         let limit = AgentLoopContract.shared.maxCallsPerResponse
         guard calls.count <= limit else { throw MeloError.message("模型一次请求了过多工具调用（超过 \(limit) 个），已全部拦截，未执行任何操作。") }
         var seen = Set<String>()
-        for call in calls where call.callID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || call.callID.count > 256 || previousCallIDs.contains(call.callID) || !seen.insert(call.callID).inserted {
+        // 256 UTF-16 units, as the shared reducer counts an id.
+        for call in calls where call.callID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || call.callID.utf16.count > 256 || previousCallIDs.contains(call.callID) || !seen.insert(call.callID).inserted {
             throw MeloError.message("模型返回的工具调用编号无效，已全部拦截，未执行任何操作。")
         }
     }

@@ -11,6 +11,8 @@ import { t, ui, term } from '../../i18n.js';
 import { renderAgentAvatar } from '../../agentAvatar.js';
 import { renderCapabilityChoices } from './capabilityChoices.js';
 import { renderJobModelChoices, JOB_MODEL_ROLES } from './jobModelChoices.js';
+import { MEMBER_LIMIT_FLOORS, memberWorkTokens, memberWrapUpSeconds } from './memberLimits.js';
+import { formatNumber } from '../../format.js';
 import { getBootstrap, activeProject, isAgentChannelAvailable, escapeHtml, icon, renderCapabilityGrants } from './context.js';
 // renderCapabilityGrants (the approvals feature's «临时授权» list) sits after the
 // form: the settings editor keeps form controls read-only until editing, and
@@ -125,6 +127,8 @@ function renderAgentCapabilities(selected,draft) {
   if (!c) return '';
   const value=k=>draft?.['cap_'+k] ?? c[k];
   const collaboration=draft?.collaboration || selected.collaboration || {};
+  // The saved cap, never a half-typed draft: the sentence below is not repainted while typing.
+  const memberTotal=Math.max(MEMBER_LIMIT_FLOORS.maxTokens,Number.isInteger(collaboration.maxTokens)?collaboration.maxTokens:32000);
   // One visible switch for delegation. Execution requires both stored flags, so
   // older data where they disagree shows (and behaves) as off.
   const checked=k=>(value(k)===true||value(k)==='on')&&(k!=='delegate'||draft?.['cap_delegate']!==undefined||collaboration.canDelegate===true);
@@ -136,18 +140,18 @@ function renderAgentCapabilities(selected,draft) {
     ...[['maxTaskIterations','任务执行轮数'],['delegateTargets','委派对象'],['maxDelegationDepth','委派深度'],['maxIterations','成员轮数'],['maxTokens','成员 token 上限'],['timeoutMs','成员超时（毫秒）'],['jobModels','岗位模型']].filter(([key])=>JSON.stringify(pending.baseline.current.collaboration[key])!==JSON.stringify(pending.requested.collaboration[key])).map(([key,label])=>`${t(label)}: ${settingText(pending.baseline.current.collaboration[key])} → ${settingText(pending.requested.collaboration[key])}`),
     ...[['projects','项目指引'],['knowledge','共享知识'],['memory','记忆']].filter(([key])=>pending.baseline.current.contextSources[key]!==pending.requested.contextSources[key]).map(([,label])=>`${t(label)}: ${t('开启')}`),
   ] : [];
-  return ui`<details class="agent-settings-section agent-capabilities" data-agent-section="${selected.id}:capabilities" ${pending || !selected.capabilities || agentsState.agentOpenSections[`${selected.id}:capabilities`] ? 'open' : ''}><summary>能力范围与协作</summary><p>关闭的能力在工具执行时拒绝；MCP 服务可自行执行命令，请只授权可信服务。</p><p>${escapeHtml(t('「联网」包含网页搜索和读取网页；本机定位在下方「这台电脑上」单独开启。'))}</p><p>这些能力只约束这个 Agent 在电脑上的执行。手机上的联网、生成图片和手机数据，在手机的 Agent 页“这台手机上”单独设置。</p>
+  return ui`<details class="agent-settings-section agent-capabilities" data-agent-section="${selected.id}:capabilities" ${pending || !selected.capabilities || agentsState.agentOpenSections[`${selected.id}:capabilities`] ? 'open' : ''}><summary>能力范围与协作</summary><p>关闭的能力在需要用到时会先询问你，可以只开启这一次；没有得到允许就不会执行。MCP 服务可自行执行命令，请只授权可信服务。</p><p>${escapeHtml(t('「联网」包含网页搜索和读取网页；本机定位在下方「这台电脑上」单独开启，并且需要这里的「联网」同时开启。'))}</p><p>这些能力只约束这个 Agent 在电脑上的执行。手机上的联网、生成图片和手机数据，在手机的 Agent 页“这台手机上”单独设置。</p>
     ${selected.editingScope==='project'?`<p>${escapeHtml(t('项目能力与协作设置只能收紧全局设置；需要更多能力时，请先编辑此 Agent 的全局设置。'))}</p>`:''}
     ${pending?`<section role="status" aria-live="polite"><strong>${escapeHtml(t('同步权限变更待桌面确认'))}</strong><p>${escapeHtml(t('收紧部分已生效。以下新增能力及协作、上下文变更尚未生效：'))}</p><p>${escapeHtml(pendingChanges.join('、')||t('协作或上下文设置'))}</p><button type="button" class="small-button" data-action="confirm-agent-settings" data-id="${escapeHtml(pending.id)}" data-expected="${escapeHtml(pending.fingerprint)}" data-accept="true" ${!selected.capabilities?'disabled':''}>${escapeHtml(t('确认应用同步设置'))}</button><button type="button" class="small-button" data-action="confirm-agent-settings" data-id="${escapeHtml(pending.id)}" data-expected="${escapeHtml(pending.fingerprint)}" data-accept="false">${escapeHtml(t('拒绝放宽，保留当前权限'))}</button></section>`:''}
     <input type="hidden" name="capabilityVersion" value="1">
     ${!selected.capabilities?ui`<p>迁移预览：${escapeHtml(selected.capabilityMigration.note)}</p><p>将失去的工具：${escapeHtml([...selected.capabilityMigration.lostTools,...(selected.capabilityMigration.lostActions||[])].join(', ') || t('无'))}</p><input type="hidden" name="capabilityMigrationExpected" value="${escapeHtml(selected.capabilityMigration.fingerprint)}"><label><input type="checkbox" name="confirmCapabilityMigration" ${draft?.confirmCapabilityMigration==='on'?'checked':''}>确认应用这份能力配置；保存后生效</label>`:''}
     <div class="agent-capability-flags">${Object.entries(selected.capabilityLabels || {}).map(([key,label])=>`<label class="label"><input type="checkbox" name="cap_${key}" ${checked(key)?'checked':''}>${escapeHtml(t(label))}</label>`).join('')}</div>
-    <div class="agent-settings-grid">${[['skills','技能白名单'],['mcpServers','MCP 服务白名单'],['connectors','连接器白名单']].map(([key,label])=>renderCapabilityChoices('cap_'+key,label,value(key),key==='skills'?selected.capabilityOptions:key==='mcpServers'?(getBootstrap().customize.mcpAuthSurface || []).map(o=>({...o,unavailable:!o.enabled || o.unpinned})):getBootstrap().customize.connectors.filter(o=>o.type==='external-mcp'),escapeHtml)).join('')}</div>
+    <div class="agent-settings-grid">${[['skills','技能白名单'],['mcpServers','MCP 服务白名单'],['connectors','连接器白名单']].map(([key,label])=>renderCapabilityChoices('cap_'+key,label,value(key),key==='skills'?(selected.capabilityOptions || []).map(o=>({...o,switchedOff:o.enabled===false})):key==='mcpServers'?(getBootstrap().customize.mcpAuthSurface || []).map(o=>({...o,unavailable:!o.enabled || o.unpinned})):getBootstrap().customize.connectors.filter(o=>o.type==='external-mcp').map(o=>({...o,switchedOff:o.enabled===false})),escapeHtml)).join('')}</div>
     <p>${escapeHtml(t('开启“委派”后，这个 Agent 可以把任务交给下面勾选的 Agent，也可以发起多 Agent 协作；没勾选的 Agent 不能被委派或组队。'))}</p>
     <div class="agent-settings-grid">
     ${renderCapabilityChoices('delegateTargets','委派对象',(draft?.delegateTargets ?? collaboration.delegateTargets ?? []).filter(id=>!isRetiredAgentId(id)),userFacingAgents(getBootstrap().customize.agents).filter(a=>a.id!==selected.id),escapeHtml)}
-    ${[['maxTaskIterations','任务执行轮数',C.loop.maxIterations,C.guardLimits.maxRounds],['maxDelegationDepth','委派深度',1,3],['maxIterations','成员轮数',C.delegationLimits.iterations,20],['maxTokens','成员 token 上限',32000,200000],['timeoutMs','成员超时（毫秒）',180000,900000]].map(([key,label,fallback,max])=>`<label class="label">${escapeHtml(t(label))}<input class="config-input" type="number" min="${key === 'maxTaskIterations' ? C.loop.minIterations : 1}" max="${max}" name="${key}" value="${escapeHtml(String(draft?.[key]??collaboration[key]??fallback))}"></label>`).join('')}
-    </div><p>${escapeHtml(t('内部岗位模型'))}</p><p>${escapeHtml(t('按岗位选择模型连接，留空跟随对话；只影响内部成员，不改审批与能力范围。'))}</p><div class="agent-settings-grid">${renderJobModelChoices(Object.fromEntries(JOB_MODEL_ROLES.map(([role])=>[role,draft?.['jobModel_'+role] ?? collaboration.jobModels?.[role] ?? ''])),getBootstrap()?.settings?.config?.llmConnections?.profiles || [],escapeHtml)}</div><p>检查不占执行轮数；到顶后会汇报进度。时间与 token 预算仍有效。</p><p>上下文来源</p><div class="agent-capability-flags">${[['projects','项目指引'],['knowledge','共享知识'],['memory','记忆']].map(([key,label])=>`<label class="checkbox-row"><input type="checkbox" name="context_${key}" ${(draft?.['context_'+key]!==undefined?draft['context_'+key]==='on':selected.contextSources?.[key]!==false)?'checked':''}>${escapeHtml(t(label))}</label>`).join('')}
+    ${[['maxTaskIterations','任务执行轮数',C.loop.maxIterations,C.guardLimits.maxRounds],['maxDelegationDepth','委派深度',1,3],['maxIterations','成员轮数',C.delegationLimits.iterations,20],['maxTokens','成员 token 上限',32000,200000,MEMBER_LIMIT_FLOORS.maxTokens],['timeoutMs','成员超时（毫秒）',180000,900000,MEMBER_LIMIT_FLOORS.timeoutMs]].map(([key,label,fallback,max,min])=>`<label class="label">${escapeHtml(t(label))}<input class="config-input" type="number" min="${key === 'maxTaskIterations' ? C.loop.minIterations : min || 1}" max="${max}" name="${key}" value="${escapeHtml(String(draft?.[key]??collaboration[key]??fallback))}"></label>`).join('')}
+    </div><p>${escapeHtml(t('「成员轮数」「成员 token 上限」「成员超时」限制的是这个 Agent 自己被委派或加入团队时的一次运行，主 Agent 自动分派的内部成员不使用这三项；「委派深度」按整条委派链计算，链上每个 Agent 的设置取最小值。'))}</p><p>${escapeHtml(t('成员 token 上限和成员超时都是整次运行的总量，其中一部分留给收尾交回：上限 {total} 时约 {work} 可用于工作本身，超时里有 {seconds} 秒留给收尾。', { total: formatNumber(memberTotal), work: formatNumber(memberWorkTokens(memberTotal)), seconds: memberWrapUpSeconds() }))}</p><p>${escapeHtml(t('内部岗位模型'))}</p><p>${escapeHtml(t('按岗位选择模型连接，留空跟随对话；只影响内部成员，不改审批与能力范围；只保存在这台电脑上，不同步。'))}</p><div class="agent-settings-grid">${renderJobModelChoices(Object.fromEntries(JOB_MODEL_ROLES.map(([role])=>[role,draft?.['jobModel_'+role] ?? collaboration.jobModels?.[role] ?? ''])),getBootstrap()?.settings?.config?.llmConnections?.profiles || [],escapeHtml)}</div><p>检查不占执行轮数；到顶后会汇报进度。时间与 token 预算仍有效。</p><p>上下文来源</p><div class="agent-capability-flags">${[['projects','项目指引'],['knowledge','共享知识'],['memory','记忆']].map(([key,label])=>`<label class="checkbox-row"><input type="checkbox" name="context_${key}" ${(draft?.['context_'+key]!==undefined?draft['context_'+key]==='on':selected.contextSources?.[key]!==false)?'checked':''}>${escapeHtml(t(label))}</label>`).join('')}
   </div></details>`;
 }
 
@@ -212,6 +216,7 @@ function renderAgentWorkbench(selected) {
           ${project ? ui`<button class="chip chip-button ${scope === 'project' ? 'is-accent' : ''}" type="button" data-action="switch-agent-scope" data-scope="project">${escapeHtml(project.name)}</button>` : ''}
         </div>
       </div>
+      ${scope === 'project' && project ? ui`<p class="agent-section-note">在项目下保存，会为这个项目单独存一份本页的全部设置；之后再改全局默认，不会改到这个项目，点「恢复全局设置」才会重新跟随。</p>` : ''}
 
       <form
         id="${formId}"
@@ -224,7 +229,7 @@ function renderAgentWorkbench(selected) {
         ${renderAgentPersonaFields(selected, draft)}
         <label class="label">任务检索深度（本机）<select class="config-select" name="evaluationMode">${[['quick','快速'],['standard','标准'],['deep','深入']].map(([value,label])=>`<option value="${value}" ${(draft?.evaluationMode || TASK_EVALUATION_POLICY.defaultMode)===value?'selected':''}>${escapeHtml(t(label))}</option>`).join('')}</select></label>
         <p>${escapeHtml(t('调整模糊推荐的检索范围；明确数量和必要条件不变，不增加总预算。'))}</p>
-        <label class="label">回复语言<select class="config-select" name="replyLanguage">${[['','跟随用户消息'],['zh','中文'],['en','English'],['ja','日本語'],['ko','한국어'],['es','Español']].map(([value,label])=>`<option value="${value}" ${draft?.replyLanguage===value?'selected':''}>${escapeHtml(t(label))}</option>`).join('')}</select></label>
+        <label class="label">回复语言（本机）<select class="config-select" name="replyLanguage">${[['','跟随用户消息'],['zh','中文'],['en','English'],['ja','日本語'],['ko','한국어'],['es','Español']].map(([value,label])=>`<option value="${value}" ${draft?.replyLanguage===value?'selected':''}>${escapeHtml(t(label))}</option>`).join('')}</select></label>
 
         <label class="label">
           模型覆盖
@@ -236,6 +241,7 @@ function renderAgentWorkbench(selected) {
             placeholder="留空使用全局模型"
           />
         </label>
+        <p>直接和这个 Agent 对话时，对话里选的模型优先；它被委派或加入团队时使用这里的模型，留空则跟随发起对话的模型。</p>
 
         </section>
         ${renderAgentCapabilities(selected, draft)}
@@ -393,7 +399,7 @@ function renderAgentWorkbench(selected) {
 function renderAgentDeviceSection(selected) {
   const on = getBootstrap()?.settings?.localPreferences?.agentDevice?.[selected.id]?.location === true;
   return ui`<details class="agent-settings-section agent-device-section" data-agent-section="${selected.id}:device" ${agentsState.agentOpenSections[`${selected.id}:device`] ? 'open' : ''}><summary>${term('device')}</summary>
-    <p>只在这台电脑上生效，立即保存，不同步；与上方同步的能力范围无关。</p>
+    <p>只在这台电脑上生效，立即保存，不同步；定位还需要上方能力范围里的「联网」开启。</p>
     <label class="checkbox-row"><input type="checkbox" data-action="toggle-agent-device-permission" data-agent-id="${escapeHtml(selected.id)}" data-permission="location" ${on ? 'checked' : ''}><span>定位</span></label>
     <p>需要时读取一次当前位置，用于“附近”“我在哪”这类问题；坐标取整到约 1 公里，首次使用时 macOS 会再询问一次。</p>
   </details>`;

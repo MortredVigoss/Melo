@@ -116,6 +116,24 @@ class TaskCacheFlowTest {
             assertEquals(2, server.requestCount)
         }
     }
+    // 2026-11-10. A finished task closes its trace after it has given the device back (a file listing
+    // and a Core call, longer the more runs are stored). A task started in that moment was refused with
+    // "已有手机操作任务在运行" although the screen already showed the device as free; in the full suite
+    // this failed whichever test came next (openedAppIsPublished... about one run in seven).
+    @Test fun aTaskStartsTheMomentThePreviousOneIsShownAsFinished() = runBlocking {
+        val goal = "Open the fixture settings ${newId()}"
+        app.repository.change { it.copy(deviceScripts = listOf(cached(goal))) }
+        repeat(6) { round ->
+            withContext(Dispatchers.Main.immediate) {
+                assertTrue("round $round: the device is shown as free", !app.deviceAgent.runtime.value.running)
+                assertTrue("round $round: so the next task starts · ${app.deviceAgent.runtime.value.error}", app.deviceAgent.start(goal, 0, false, FixtureDevice()))
+                // Resumes in the same main-thread turn in which the task reports that it is no longer running.
+                app.deviceAgent.runtime.first { !it.running }
+            }
+        }
+        withTimeout(10_000) { while (app.repository.data.value.deviceRuns.count { it.goal == goal && it.status == "achieved" } < 6) delay(40) }
+        assertEquals("every round replayed the cached script without a model", 0, app.repository.data.value.deviceRuns.filter { it.goal == goal }.sumOf { it.modelRequests ?: 0 })
+    }
     @Test fun checkpointPersistsReusableSubflowWhileTheRemainingTaskIsBlocked() = runBlocking {
         MockWebServer().use { server ->
             server.enqueue(call("open", args("open_app", "package_name" to "fixture.settings")))

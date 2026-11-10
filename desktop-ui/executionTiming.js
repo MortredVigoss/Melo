@@ -42,7 +42,11 @@ export function executionTiming(scene, now = Date.now()) {
     image = { requested, saved, percent: Math.min(100, Math.floor(saved / requested * 100)), savedAt,
       elapsedMs: imageStart !== null && imageEnd !== null && imageEnd >= imageStart ? imageEnd - imageStart : null };
   }
-  return { done, elapsedMs, modelMs, finishedAt: finished, completed: scene.status === 'completed', image };
+  // The run ended with a reply, but its receipt says the task did not: part done, waiting for
+  // the user, out of budget or blocked. "Completed at" would say more than the record does.
+  const outcome = scene.completion?.outcome || (scene.taskOutcome !== 'running' ? scene.taskOutcome : '') || '';
+  const unfinished = scene.status === 'completed' && !!outcome && !['completed', 'unverified'].includes(outcome);
+  return { done, elapsedMs, modelMs, finishedAt: finished, completed: scene.status === 'completed', unfinished, image };
 }
 export function formatExecutionDuration(ms) {
   if (ms === null || !Number.isFinite(ms) || ms < 0) return t('用时未记录');
@@ -55,7 +59,7 @@ export function renderExecutionTiming(scene, now = Date.now()) {
   const value = executionTiming(scene, now); if (!value) return '';
   const labels = [value.elapsedMs === null ? t('用时未记录') : t(value.done ? '本轮用时 {time}' : '已用时 {time}', { time: formatExecutionDuration(value.elapsedMs) })];
   if (value.modelMs !== null) labels.push(t('思考与回复 {time}', { time: formatExecutionDuration(value.modelMs) }));
-  if (value.done && value.finishedAt !== null) labels.push(t(value.completed ? '完成于 {time}' : '停止于 {time}', { time: dateText(value.finishedAt) }));
+  if (value.done && value.finishedAt !== null) { const time = dateText(value.finishedAt); labels.push(!value.completed ? t('停止于 {time}', { time }) : value.unfinished ? t('结束于 {time}', { time }) : t('完成于 {time}', { time })); }
   const img = value.image;
   const progress = img ? `<div class="execution-image-progress"><span>${escapeHtml(t('图片成果 {percent}% · 已保存 {saved}/{total} 张', { percent: img.percent, saved: img.saved, total: img.requested }))}</span><progress value="${img.percent}" max="100" aria-label="${escapeHtml(t('图片成果进度'))}"></progress>${img.elapsedMs !== null ? `<span>${escapeHtml(t('图片处理 {time}', { time: formatExecutionDuration(img.elapsedMs) }))}</span>` : ''}${img.savedAt !== null ? `<span>${escapeHtml(t('图片保存于 {time}', { time: dateText(img.savedAt) }))}</span>` : ''}${!value.done && img.percent < 100 ? `<small>${escapeHtml(t('按已保存张数计；单张生成进度未提供'))}</small>` : ''}</div>` : '';
   return `<div class="execution-timing"><span title="${escapeHtml(t('本轮含等待和工具执行；思考与回复为模型请求用时，并非内部推理计时'))}">${labels.map(escapeHtml).join(' · ')}</span>${progress}</div>`;

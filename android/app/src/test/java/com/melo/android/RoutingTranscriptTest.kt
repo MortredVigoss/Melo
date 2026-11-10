@@ -23,6 +23,20 @@ class RoutingTranscriptTest {
             assertTrue(back.toString().contains("original-id")); assertTrue(back.toString().contains("AAAA")); assertTrue(back.toString().contains("[ESCALATE:]"))
         }
     }
+    // 2026-11-10. Text an assistant wrote before a call was moved behind the call, between it and its result.
+    @Test fun textWrittenBeforeACallStaysBeforeItSoTheResultFollowsItsCall() {
+        val anthropic = listOf(
+            MeloJson.parseToJsonElement("""{"role":"user","content":"find it"}""").jsonObject,
+            MeloJson.parseToJsonElement("""{"role":"assistant","content":[{"type":"text","text":"Let me look."},{"type":"tool_use","id":"c1","name":"web_search","input":{"query":"x"}}]}""").jsonObject,
+            MeloJson.parseToJsonElement("""{"role":"user","content":[{"type":"tool_result","tool_use_id":"c1","content":"{\"ok\":true}"},{"type":"text","text":"and then?"}]}""").jsonObject)
+        val chat = RoutingTranscript.convert(anthropic, "anthropic", "chat-completions")
+        val call = chat.indexOfFirst { it["tool_calls"] != null }; val result = chat.indexOfFirst { it.text("role") == "tool" }
+        assertEquals("the result directly follows its call", call + 1, result)
+        assertTrue("the words come first", chat.indexOfFirst { it.toString().contains("Let me look.") } < call)
+        assertTrue("the user's words follow the result", chat.indexOfFirst { it.toString().contains("and then?") } > result)
+        val responses = RoutingTranscript.convert(anthropic, "anthropic", "responses")
+        assertEquals(responses.indexOfFirst { it.text("type") == "function_call" } + 1, responses.indexOfFirst { it.text("type") == "function_call_output" })
+    }
     @Test fun additiveModelFieldsKeepExistingAccountsAndMessages() {
         val legacy=MeloJson.decodeFromString<AppData>("""{"settings":{"connections":[{"id":"own","name":"keep","model":"opaque","endpoint":"https://example.test/v1/chat/completions"}]},"chats":[{"id":"c","messages":[{"id":"m","role":"user","content":"keep"}]}]}""")
         val updated=legacy.copy(settings=legacy.settings.copy(smartRouting=buildJsonObject { put("defaultMode","smart") }))

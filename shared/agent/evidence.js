@@ -7,6 +7,9 @@
 // with ~800 chars of navigation and the delivery called the facts unverified.)
 const SHORT_BODY = 160;
 const MAX_BODY = 4000;
+// How much of the ledger a limit delivery is written from, and how much its check reads. The check used to
+// get half, so a fact the writer took from the second half of a page came back as "unverified".
+export const DELIVERY_EVIDENCE_CHARS = 48000;
 export function deliveryEvidence(observations = [], chars = 24000) {
   const rows = Array.isArray(observations) ? observations : [];
   const bodies = rows.map(row => String(row.text || row.output || ''));

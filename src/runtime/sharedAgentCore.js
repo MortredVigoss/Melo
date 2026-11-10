@@ -23,6 +23,20 @@ export function createCoreTurn({ runId = currentLoopTrace()?.context.runId || ra
   let task = typeof goal === 'string' ? startGoal(goal, runId) : null;
   let candidateReply = '';
   const declaration = name => tools.find(tool => tool.id === name || tool.functionName === name) || {};
+  // The same refinement the host's effect ledger applies (turnEffects.js): a tool with an unknown effect
+  // may say that this call only reads (`ls`, `git status`). Without it the reducer treated a repeated
+  // listing as a repeated write and refused it after a correction.
+  const effectOf = call => {
+    const tool = declaration(call.name), effect = toolEffect(call.name, call.arguments, tool);
+    return effect === 'unknown' && typeof tool.effectFor === 'function' && tool.effectFor(call.arguments) === 'read' ? 'read' : effect;
+  };
+  // What the model is told when the reducer refuses a call; the bare code left it guessing.
+  const refusal = code => ({
+    ALREADY_EXECUTED: 'This exact operation already succeeded earlier in this turn and was not run again. Use its earlier result. If it must run again because something changed, make that change first and call it in a later response.',
+    ALREADY_ATTEMPTED: 'This exact operation was already attempted in this turn and its outcome is not known. It was not run again: inspect what it did before deciding.',
+    PREREQUISITE_MISSING: 'A step this tool depends on has not succeeded yet. Nothing was run.',
+    INVALID_TOOL_ARGUMENTS: 'The arguments do not match the parameters of this tool. Nothing was run.',
+  })[code] || '';
   return {
     progress(args, evaluationMode) {
       task = goalOperation({ action: 'progress', state: task, progress: args, observations, evaluationMode,
@@ -39,6 +53,8 @@ export function createCoreTurn({ runId = currentLoopTrace()?.context.runId || ra
     get checking() { return task?.phase === 'checking'; },
     get repairing() { return state.repairing; },
     get candidateReply() { return candidateReply; },
+    /** The answer that is written and still waits for its check; empty once a check has judged it. */
+    get pendingCandidate() { return task?.phase === 'checking' ? candidateReply : ''; },
     get task() { return goalSnapshot(task); },
     amend(text) { if (task) task = amendGoal(task, text); traceEvent('goal.updated', {}, goalSnapshot(task)); },
     candidate(reply, { research = false, nativeSearch = false, context = {}, offeredTools = [], uncertainClaim = '' } = {}) {
@@ -66,7 +82,10 @@ export function createCoreTurn({ runId = currentLoopTrace()?.context.runId || ra
     get routingProgress() { return { rounds: state.rounds, failures: state.errors, stopped: state.status !== 'running', pendingEffects: state.pending.length > 0 || state.awaitingModel }; },
     get reason() { return state.reason; },
     reply(text = '', locale) { return turnStopReply(state.reason, text, locale); },
-    rejectionResult(callId) { return state.rejectionResults?.[callId] || { ok: false, error: state.rejections?.[callId] || 'TOOL_NOT_PERMITTED', output: `Tool request rejected by the shared loop policy: ${state.rejections?.[callId] || 'TOOL_NOT_PERMITTED'}` }; },
+    rejectionResult(callId) {
+      const code = state.rejections?.[callId] || 'TOOL_NOT_PERMITTED';
+      return state.rejectionResults?.[callId] || { ok: false, error: code, output: [`Tool request rejected by the shared loop policy: ${code}`, refusal(code)].filter(Boolean).join('. ') };
+    },
     results(pairs) {
       for (const { call, result } of pairs) {
         observations.push(...completionObservation({ id: call.id, name: call.name, ok: result?.ok, executed: result?.ok === true && result?.meta?.executionStarted !== false,
@@ -82,7 +101,7 @@ export function createCoreTurn({ runId = currentLoopTrace()?.context.runId || ra
     permits(callId) { return state.status === 'running' && state.pending.includes(callId) && state.permitted.includes(callId); },
     update(type, fields = {}) {
       if (type === 'request') fields = { kind: task?.phase === 'checking' ? 'check' : 'tools', ...fields };
-      if (type === 'calls') fields = { ...fields, calls: fields.calls.map(call => ({ ...call, effect: toolEffect(call.name, call.arguments, declaration(call.name)), fingerprint: toolCallFingerprint(call.name, call.arguments) })) };
+      if (type === 'calls') fields = { ...fields, calls: fields.calls.map(call => ({ ...call, effect: effectOf(call), fingerprint: toolCallFingerprint(call.name, call.arguments) })) };
       advance({ ...fields, type, runId, turnId });
       return state.status;
     },

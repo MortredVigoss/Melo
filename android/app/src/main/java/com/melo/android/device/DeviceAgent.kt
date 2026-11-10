@@ -26,6 +26,12 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
     private val mutable = MutableStateFlow(DeviceRuntime())
     val runtime = mutable.asStateFlow()
     private var job: Job? = null
+    // The task that has given the device back. Its coroutine goes on for a moment to close its trace
+    // (a file listing and a Core call, longer the more runs are stored); it no longer holds the lease.
+    // While only `job.isActive` was asked, a task started in that moment was refused with "已有手机操作
+    // 任务在运行" although the screen already showed the device as free.
+    private var released: Job? = null
+    private val held get() = mutable.value.running || job?.isActive == true && job !== released
     private var approvalReply: CompletableDeferred<Boolean>? = null
     private var actionSession: DeviceActionSession? = null
     private var actionOwner: String? = null
@@ -44,7 +50,7 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
             mutable.update { it.copy(error = "所属对话、权限或作用域已改变。") }; return null
         }
         if (actionOwner == binding.parentRunId) return actionSession
-        if (mutable.value.running || job?.isActive == true || executor == null) { mutable.update { it.copy(error = "手机正忙或 Accessibility Service 未连接。") }; return null }
+        if (held || executor == null) { mutable.update { it.copy(error = "手机正忙或 Accessibility Service 未连接。") }; return null }
         val cacheScope = MessageDigest.getInstance("SHA-256").digest("${current.agentId}|${current.projectId.orEmpty()}|0|${binding.scopeInstructions}".toByteArray()).joinToString("") { "%02x".format(it) }
         val run = DeviceRun(goal = current.messages.lastOrNull { it.role == "user" }?.content.orEmpty(), connectionName = "Chat 主 Loop", executionMode = "unified", modelRequests = 0,
             taskContext = DeviceTaskContext(current.id, current.agentId, current.projectId, binding.connection.id), parentRunId = binding.parentRunId)
@@ -149,7 +155,7 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
 
     private fun startTask(goal: String, displayId: Int, screenshots: Boolean, executor: DeviceExecutor?, chatId: String?,
                           forceProbe: Boolean, scriptId: String?, parameters: Map<String, String>, binding: ChatDeviceContext? = null, cacheEnabled: Boolean = true): Boolean {
-        if (job?.isActive == true || mutable.value.running) { mutable.update { it.copy(error = "已有手机操作任务在运行，请先停止或等待结束；输入已保留。") }; return false }
+        if (held) { mutable.update { it.copy(error = "已有手机操作任务在运行，请先停止或等待结束；输入已保留。") }; return false }
         if (binding == null && chatId != null && (context.applicationContext as com.melo.android.MeloApplication).engine.runtime.value.turns.containsKey(chatId)) { mutable.update { it.copy(error = "这段对话正在生成，请先停止或等待结束。") }; return false }
         val state = repository.data.value
         val chat = binding?.chat ?: chatId?.let { id -> state.chats.find { it.id == id } }
@@ -163,8 +169,10 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
         val trimmed = goal.trim()
         mutable.value = DeviceRuntime(running = true, chatId = chatId)
         job = scope.launch(start = CoroutineStart.LAZY) {
+            val self = currentCoroutineContext()[Job]
             val traceRunId = newId()
-            LoopTrace.run(context, traceRunId, "device", trimmed, parent = binding?.trace, outcome = { _: Unit -> repository.data.value.deviceRuns.find { it.id == mutable.value.runId }?.status ?: "unknown" }) {
+            // The run this trace belongs to, by its own id: the shared state may already describe the next task.
+            LoopTrace.run(context, traceRunId, "device", trimmed, parent = binding?.trace, outcome = { _: Unit -> repository.data.value.deviceRuns.find { it.id == traceRunId }?.status ?: "unknown" }) {
             var run: DeviceRun? = null
             var begun = false
             var pendingCache: DeviceScript? = null
@@ -310,6 +318,7 @@ class DeviceAgent(private val context: Context, private val repository: Reposito
             } finally {
                 if (begun) executor?.end()
                 approvalReply?.cancel(); approvalReply = null
+                released = self
                 mutable.update { it.copy(running = false, phase = "", approval = null, scriptId = null) }
                 val status = repository.data.value.deviceRuns.find { it.id == run?.id }?.status
                 val notice = when (status) {

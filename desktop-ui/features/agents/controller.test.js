@@ -323,3 +323,79 @@ test('device permission: a saved switch applies the bootstrap; a failed save tur
   assert.equal(trigger.checked, false, 'the box shows what this computer saved, not the click');
   assert.deepEqual(failing.applied, [], 'nothing is applied from a failed save');
 });
+
+// ── Settings audit 2026-11-10 ──────────────────────────────────────────────
+const CAPABILITY_LABELS = { readFiles: '读取文件', writeFiles: '修改文件', runCommands: '运行命令', network: '联网', knowledgeMemory: '知识与记忆', generateMedia: '生成媒体', delegate: '委派' };
+const migrated = (id, extra = {}) => agent(id, {
+  capabilities: { version: 1, readFiles: true, writeFiles: true, runCommands: true, network: true, knowledgeMemory: true, generateMedia: true, delegate: false, mcpServers: [], skills: ['on-skill', 'off-skill'], connectors: ['off-connector'] },
+  capabilityLabels: CAPABILITY_LABELS, collaboration: { canDelegate: false, delegateTargets: [], maxDelegationDepth: 1, maxIterations: 20, maxTokens: 32000, timeoutMs: 180000 },
+  capabilityOptions: [{ id: 'on-skill', name: 'On skill', enabled: true }, { id: 'off-skill', name: 'Off skill', enabled: false }], editingScope: 'global', ...extra });
+const migratedPage = (extra = {}, agentExtra = {}) => page({ customize: { agents: [agent('main'), migrated('research', agentExtra)], mcpAuthSurface: [],
+  connectors: [{ id: 'on-connector', name: 'On connector', type: 'external-mcp', enabled: true }, { id: 'off-connector', name: 'Off connector', type: 'external-mcp', enabled: false }] }, ...extra });
+
+test('member limits: the two inputs start at the floor and the page says what the numbers mean and whom they govern', async () => {
+  const { MEMBER_LIMIT_FLOORS, memberWorkTokens } = await import('../../../src/domain/agent/capabilities.js');
+  const doc = new JSDOM(harness({ bootstrap: migratedPage() }).feature.renderPage()).window.document;
+  assert.equal(doc.querySelector('input[name=maxTokens]').min, String(MEMBER_LIMIT_FLOORS.maxTokens));
+  assert.equal(doc.querySelector('input[name=timeoutMs]').min, String(MEMBER_LIMIT_FLOORS.timeoutMs));
+  assert.equal(doc.querySelector('input[name=maxIterations]').min, '1', 'the other limits keep their minimum');
+  const text = doc.querySelector('.agent-capabilities').textContent;
+  // The numbers come from the run budget's arithmetic, not from a literal.
+  assert.match(text, new RegExp(`上限 32,000 时约 ${memberWorkTokens(32000).toLocaleString('zh-CN')} 可用于工作本身，超时里有 60 秒留给收尾`));
+  assert.match(text, /限制的是这个 Agent 自己被委派或加入团队时的一次运行，主 Agent 自动分派的内部成员不使用这三项/);
+  assert.match(text, /「委派深度」按整条委派链计算，链上每个 Agent 的设置取最小值/);
+  // A larger saved cap is what the sentence is computed for.
+  const larger = new JSDOM(harness({ bootstrap: migratedPage({}, { collaboration: { maxTokens: 100000, timeoutMs: 180000 } }) }).feature.renderPage()).window.document;
+  assert.match(larger.querySelector('.agent-capabilities').textContent, new RegExp(`上限 100,000 时约 ${memberWorkTokens(100000).toLocaleString('zh-CN')} 可用于工作本身`));
+});
+
+test('the page says what a switched-off capability does, what location needs, what stays on this computer and where the Agent\'s model applies', () => {
+  const doc = new JSDOM(harness({ bootstrap: migratedPage() }).feature.renderPage()).window.document;
+  const capabilities = doc.querySelector('.agent-capabilities').textContent;
+  assert.match(capabilities, /关闭的能力在需要用到时会先询问你，可以只开启这一次；没有得到允许就不会执行/);
+  assert.doesNotMatch(capabilities, /在工具执行时拒绝/);
+  assert.match(capabilities, /本机定位在下方「这台电脑上」单独开启，并且需要这里的「联网」同时开启/);
+  assert.match(capabilities, /只影响内部成员，不改审批与能力范围；只保存在这台电脑上，不同步/);
+  assert.match(doc.querySelector('.agent-device-section').textContent, /定位还需要上方能力范围里的「联网」开启/);
+  assert.doesNotMatch(doc.querySelector('.agent-device-section').textContent, /与上方同步的能力范围无关/);
+  assert.match(doc.querySelector('select[name=replyLanguage]').closest('label').textContent, /^回复语言（本机）/);
+  assert.match(doc.querySelector('input[name=model]').closest('label').nextElementSibling.textContent, /对话里选的模型优先；它被委派或加入团队时使用这里的模型，留空则跟随发起对话的模型/);
+});
+
+test('a ticked skill or connector that is switched off for the whole app is marked', () => {
+  const doc = new JSDOM(harness({ bootstrap: migratedPage() }).feature.renderPage()).window.document;
+  const chipOf = (name, value) => doc.querySelector(`input[name="${name}"][value="${value}"]`).closest('label').querySelector('.chip')?.textContent || '';
+  assert.equal(chipOf('cap_skills', 'off-skill'), '全局未启用');
+  assert.equal(chipOf('cap_skills', 'on-skill'), '');
+  assert.equal(chipOf('cap_connectors', 'off-connector'), '全局未启用');
+  assert.equal(chipOf('cap_connectors', 'on-connector'), '');
+});
+
+test('project scope says that a save keeps the project\'s own copy of the page', () => {
+  const note = /在项目下保存，会为这个项目单独存一份本页的全部设置/;
+  const project = { id: 'P1', name: 'Fixture' };
+  const scoped = harness({ bootstrap: migratedPage({ settings: { ...page().settings, selectedAgentScope: 'project' } }), project });
+  assert.match(new JSDOM(scoped.feature.renderPage()).window.document.body.textContent, note);
+  const global = harness({ bootstrap: migratedPage(), project });
+  assert.doesNotMatch(new JSDOM(global.feature.renderPage()).window.document.body.textContent, note);
+});
+
+test('save: capability edits on an unmigrated Agent are reported instead of vanishing', async () => {
+  const fields = '<input name="name" value="Research"><input type="hidden" name="capabilityVersion" value="1"><input type="hidden" name="capabilityMigrationExpected" value="fp"><input type="checkbox" name="confirmCapabilityMigration"><input name="maxIterations" value="9">';
+  const h = harness();
+  h.feature.getState().agentDrafts['global:global:research'] = { name: 'Research', maxIterations: '9' };
+  await h.forms.dispatch('agent-profile-update', { form: profileForm('research', fields) });
+  assert.equal('collaboration' in h.calls[0][2].patch, false, 'the section is not part of the save');
+  assert.equal(h.errors.length, 1);
+  assert.match(h.errors[0], /「能力范围与协作」里的修改没有保存.*请先勾选「确认应用这份能力配置」/);
+  // The same save without an edit in that section, and a confirmed one, say nothing.
+  const quiet = harness();
+  quiet.feature.getState().agentDrafts['global:global:research'] = { name: 'Renamed' };
+  await quiet.forms.dispatch('agent-profile-update', { form: profileForm('research', fields) });
+  assert.deepEqual(quiet.errors, []);
+  const confirmed = harness();
+  confirmed.feature.getState().agentDrafts['global:global:research'] = { maxIterations: '9' };
+  await confirmed.forms.dispatch('agent-profile-update', { form: profileForm('research', fields.replace('name="confirmCapabilityMigration"', 'name="confirmCapabilityMigration" checked')) });
+  assert.equal(confirmed.calls[0][2].patch.collaboration.maxIterations, 9);
+  assert.deepEqual(confirmed.errors, []);
+});

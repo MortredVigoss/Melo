@@ -1,6 +1,8 @@
 import { applyButtonStyles } from './buttonStyles.js';
 import { escapeHtml } from './i18n.js';
-import { t, ui, currentLanguage, runtimeStageName, runtimeStageOutput, runtimeCompletionText } from './i18n.js';
+import { t, ui, currentLanguage, runtimeCompletionText } from './i18n.js';
+// Names of stages and calls, reason codes and refused calls in the interface language (agent audit 2026-11-10).
+import { stageName as runtimeStageName, stageOutput as runtimeStageOutput, callStatus } from './executionText.js';
 import { renderExecutionDetail, renderSessionEvents, executionApiLine, renderExecutionSignal, renderReasoningRecords, renderExecutionTiming } from './executionDetails.js';
 import { EXECUTION_MODULES, sessionEvents, moduleActivity, projectPhoneToolStages, sceneFinished, finishExecutionScene, visibleSceneSources, sourceReadingLabel, sceneSourceUrl } from '/shared/executionScene.js';
 import { sceneMembers, operationVerb } from '/shared/executionBoard.js';
@@ -139,7 +141,7 @@ function ensureWarRoom() {
     onClose: () => { cancelCollapse(); setOpen(false); },
     onInteract: () => { touched = true; cancelCollapse(); },
     onRegionChange: id => { focus = id; rememberView(); },
-    recordDetail: id => { const scene = selectedScene(), op = [...(scene?.operations || []), ...(scene?.pipeline || [])].find(item => item.id === id); return op ? renderExecutionDetail(op, statusNames[op.status]) : ''; },
+    recordDetail: id => { const scene = selectedScene(), op = [...(scene?.operations || []), ...(scene?.pipeline || [])].find(item => item.id === id); return op ? renderExecutionDetail(op, callStatus(op, statusNames[op.status])) : ''; },
     regionExtra,
     traceExtra: key => key === 'calls' ? renderSessionEvents(sessionEvents(selectedScene())) : key === 'tokens' ? renderExecutionSignal(selectedScene()) : '',
   });
@@ -179,7 +181,7 @@ function headerStatus(scene) {
   }
   const running = scene.operations.filter(op => op.status === 'running');
   if (running.length > 1) return t('{count} 项真实调用并行执行', { count: running.length });
-  if (running.length === 1) return t('{module} · 执行中', { module: EXECUTION_MODULES.find(m => m.id === running[0].module)?.name });
+  if (running.length === 1) return t('{module} · 执行中', { module: t(EXECUTION_MODULES.find(m => m.id === running[0].module)?.name || '工具调用') });
   if (scene.operations.some(op => op.status === 'waiting')) return t("等待许可 · 尚未执行");
   const stage = (scene.pipeline || []).filter(item => item.status === 'running').at(-1);
   if (stage) return `${runtimeStageName(stage, currentLanguage())} · ${stage.channel === 'reasoning-summary' ? t("公开摘要更新中") : runtimeStageOutput(stage) || t("执行中")}`;
@@ -199,7 +201,7 @@ function renderDetails(scene, items) {
     const reading = sourceReadingLabel(source), citation = source.cited ? t('已被最终引用') : t('未被最终引用');
     return ui`<a class="execution-label execution-source" data-node-id="${escapeHtml(source.id)}" data-priority="${index < 5 ? 'primary' : 'secondary'}" data-cited="${source.cited}" href="${escapeHtml(linkUrl)}" data-external-url="${escapeHtml(linkUrl)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(`${source.titleProvided ? source.title : '页面标题未提供'}\n${linkUrl}\n${reading}\n${citation}\n服务：${source.providers.join('、') || '未报告'}${source.recovered ? '\n从截断记录与最终引用恢复；正文范围未知' : ''}`)}"><span class="execution-source-rank">${String(index + 1).padStart(2, '0')} · ${source.cited ? '回答引用' : index < 5 ? '相关来源' : '更多候选'}</span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(new URL(source.url).hostname)}</small><small>${escapeHtml(reading)}</small><small>${source.cited ? '✦ 已引用' : '未引用 · 点击检查'}</small></a>`;
   }).join('');
-  return items.map(op => ui`<button class="execution-label execution-source execution-operation" data-node-id="${escapeHtml(op.id)}" data-execution-action="inspect" data-operation="${escapeHtml(op.id)}" title="${escapeHtml(`${op.input || ''}\n${runtimeStageOutput(op) || ''}`)}"><strong>${escapeHtml(op.result ?? op.expression ?? runtimeStageName(op))}</strong><small>${escapeHtml(op.channel === 'reasoning-summary' ? (runtimeStageOutput(op) || '').slice(-100) : focus === 'tools' ? `归属：${EXECUTION_MODULES.find(m => m.id === op.module)?.name || t("工具调用")} · ${op.provider || op.name}` : op.expression || op.input || op.name)}</small><small>${escapeHtml(statusNames[op.status])}</small></button>`).join('');
+  return items.map(op => ui`<button class="execution-label execution-source execution-operation" data-node-id="${escapeHtml(op.id)}" data-execution-action="inspect" data-operation="${escapeHtml(op.id)}" title="${escapeHtml(`${op.input || ''}\n${runtimeStageOutput(op) || ''}`)}"><strong>${escapeHtml(op.result ?? op.expression ?? runtimeStageName(op))}</strong><small>${escapeHtml(op.channel === 'reasoning-summary' ? (runtimeStageOutput(op) || '').slice(-100) : focus === 'tools' ? `${t('归属：{module}', { module: t(EXECUTION_MODULES.find(m => m.id === op.module)?.name || '工具调用') })} · ${op.provider || runtimeStageName(op)}` : op.expression || op.input || runtimeStageName(op))}</small><small>${escapeHtml(callStatus(op, statusNames[op.status]))}</small></button>`).join('');
 }
 function renderSearchTrail(scene) {
   if (focus !== 'search') return '';

@@ -34,10 +34,14 @@ object RoutingTranscript {
             val role = row.text("role").ifBlank { "assistant" }
             val parts = (row["content"] as? JsonArray)?.toList() ?: listOfNotNull(row["content"]?.takeUnless { it == JsonNull }?.let { buildJsonObject { put("type", "text"); put("text", it) } })
             val content = mutableListOf<JsonElement>()
+            // Text an assistant wrote before a call stays before it. Collected to the end of the message
+            // it landed between the call and its result, and Chat Completions rejects a tool result that
+            // does not directly follow its call. A result keeps its place ahead of the user's text.
+            fun flush() { if (content.isNotEmpty()) { output += buildJsonObject { put("role", role); put("content", JsonArray(content.toList())) }; content.clear() } }
             for (value in parts) {
                 val part = value.jsonObject
                 when(part.text("type")) {
-                    "tool_use" -> call(part.text("id"), part.text("name"), part.getValue("input"))
+                    "tool_use" -> { flush(); call(part.text("id"), part.text("name"), part.getValue("input")) }
                     "tool_result" -> result(part.text("tool_use_id"), part.getValue("content"))
                     "text", "input_text", "output_text" -> content += buildJsonObject { put("type", if(target == "responses") if(role == "assistant") "output_text" else "input_text" else "text"); put("text", part.getValue("text")) }
                     "image", "image_url", "input_image" -> {
@@ -53,7 +57,7 @@ object RoutingTranscript {
                     else -> error("不支持的历史内容，已停止跨协议升档；原记录保留。")
                 }
             }
-            if(content.isNotEmpty()) output += buildJsonObject { put("role", role); put("content", JsonArray(content)) }
+            flush()
             (row["tool_calls"] as? JsonArray).orEmpty().forEach { value -> val c=value.jsonObject; val f=c.getValue("function").jsonObject; call(c.text("id"), f.text("name"), f.getValue("arguments")) }
         }
         // Anthropic requires adjacent blocks with the same role to share a message.

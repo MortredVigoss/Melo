@@ -85,3 +85,36 @@ test('a running delivery check is shown as checking and ends with its verdict', 
   receiveTurnPresentation(turn, 'execution_event', { kind: 'pipeline', id: 'goal-check:3', status: 'completed', turnRequestId: 'request-2' });
   assert.equal(turn.phase, 'checking');
 });
+
+// Agent audit 2026-11-10: the banner's labels and the stream errors were
+// returned as written and shown as returned, so every other interface language
+// had them in Chinese. They are catalog keys now and both call sites translate.
+test('the banner labels and the stream errors are translated where they are shown', async () => {
+  const { TURN_LABELS, TURN_LABEL_FALLBACK, STREAM_ERRORS, STREAM_ERROR_FALLBACK, turnLabel, chatStreamError } = await import('./turnPresentation.js');
+  const { translations } = await import('../../translations.js');
+  const { LANGUAGES, t, setLanguage } = await import('../../i18n.js');
+  const { readFile } = await import('node:fs/promises');
+  for (const source of [...Object.values(TURN_LABELS), TURN_LABEL_FALLBACK, ...Object.values(STREAM_ERRORS), STREAM_ERROR_FALLBACK]) {
+    for (const { id } of LANGUAGES) assert.ok(translations[source]?.[id]?.trim(), `${source} in ${id}`);
+  }
+  // Every phase the banner can be in has a label of its own.
+  for (const phase of ['submitting', 'waiting', 'thinking', 'replying', 'tools', 'permission', 'checking', 'finishing', 'complete', 'error', 'stopped']) assert.notEqual(turnLabel({ phase }), TURN_LABEL_FALLBACK, phase);
+  assert.equal(turnLabel({ phase: 'unheard-of' }), TURN_LABEL_FALLBACK);
+  try {
+    setLanguage('en');
+    assert.equal(t(turnLabel({ phase: 'checking' })), 'Checking the answer');
+    assert.equal(t(turnLabel(null, { permission: true })), 'Waiting for your confirmation');
+    assert.equal(chatStreamError({ code: 'STREAM_INTERRUPTED' }, t).message, 'The connection dropped before completion was confirmed. Check the conversation first to avoid repeating actions.');
+    assert.equal(chatStreamError({}, t).message, 'The request did not finish. Please try again in a moment.');
+    // Text the server wrote itself is passed through untouched; the code and ids are kept.
+    const error = chatStreamError({ code: 'SOMETHING_ELSE', error: 'Server said so.', turnRequestId: 'q-1', runId: 'r-1' }, t);
+    assert.deepEqual([error.message, error.code, error.requestId, error.runId], ['Server said so.', 'SOMETHING_ELSE', 'q-1', 'r-1']);
+  } finally { setLanguage('en'); }
+  assert.equal(chatStreamError({ code: 'REQUEST_INTERRUPTED' }).message, STREAM_ERRORS.REQUEST_INTERRUPTED, 'without a translator the catalog key is the message');
+  // Both call sites translate.
+  const composer = await readFile(new URL('./viewComposer.js', import.meta.url), 'utf8');
+  assert.match(composer, /const label = t\(turnLabel\(chatState\.activeTurn,/);
+  const api = await readFile(new URL('./api.js', import.meta.url), 'utf8');
+  assert.equal(api.match(/chatStreamError\([^)]*, t\)/g)?.length, 3);
+  assert.doesNotMatch(api, /chatStreamError\((payload|message\.payload|\{ code: 'STREAM_INTERRUPTED' \})\)/);
+});

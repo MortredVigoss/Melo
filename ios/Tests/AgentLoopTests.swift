@@ -44,11 +44,33 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             original.setMemberTokens(5000) // This budget meters output as well as input.
             original.arm()
             _ = try original.admitModel(estimatedInput: 43, outputTokens: 11)
+            now += 10_000                       // ten seconds of work
+            let left = original.remainingMs()
             let saved = try original.resumeData()
-            now += 5000
+            now += 3_600_000                    // an hour paused
             let restored = PhoneRunBudget(now: { now }); try restored.restore(saved); restored.arm()
-            assert(restored.deadlineAt == original.deadlineAt && restored.used.inputTokens == 43)
+            // The time a reply sat paused is not run time (2026-11-10): the restored budget has exactly
+            // the time it had left, and arm() hands out no fresh deadline. It used to keep the wall-clock
+            // deadline (this block asserted `restored.deadlineAt == original.deadlineAt`), so a reply
+            // continued after its deadline came back already out of time.
+            assert(left == 50_000 && restored.remainingMs() == left, "\(restored.remainingMs())")
+            assert(restored.deadlineAt == original.deadlineAt + 3_600_000 && restored.exhausted() == nil)
+            assert(restored.used.inputTokens == 43)
             assert(restored.used.outputTokens == 11 && restored.used.providerCalls == 1)
+            // A snapshot written before the save time was recorded keeps its deadline.
+            var legacy = try JSONSerialization.jsonObject(with: saved) as! [String: Any]; legacy.removeValue(forKey: "savedAt")
+            let old = PhoneRunBudget(now: { now }); try old.restore(JSONSerialization.data(withJSONObject: legacy))
+            assert(old.deadlineAt == original.deadlineAt)
+            // A member's own budget moves with it.
+            now = 1000
+            let root = PhoneRunBudget(deadlineMs: 600_000, now: { now }); root.arm()
+            let member = root.narrowed(deadlineMs: 120_000)
+            now += 20_000
+            let memberLeft = member.remainingMs(), memberSaved = try member.resumeData(), rootSaved = try root.resumeData()
+            now += 7_200_000
+            let rootAgain = PhoneRunBudget(now: { now }); try rootAgain.restore(rootSaved)
+            let memberAgain = rootAgain.narrowed(deadlineMs: 120_000); try memberAgain.restoreMember(memberSaved)
+            assert(memberLeft == 100_000 && memberAgain.remainingMs() == memberLeft && memberAgain.exhausted() == nil, "\(memberAgain.remainingMs())")
         }
         // Interrupt between a real tool result and the next model request.
         // A new loop uses a decoded disk cursor and the same successful effect
@@ -147,8 +169,13 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
                 handsBack = note.contains("saved-member-reminder")
                 return answer("Your reminder was saved.")
             }
+            let stagesBeforeResume = log.stages.count
             let result = try await AgentLoop(transport:resume, tools:tools, budget:PhoneRunBudget(), latestUserMessage:goal, hooks:h).run()
             assert(handsBack && result.text == "Your reminder was saved." && log.performed.map(\.callID) == ["lead-page", "job-1:write"])
+            // The pause closed the member's stage as interrupted; the continued member reports "running"
+            // again before anything else, and its report closes the stage (2026-11-10).
+            let afterResume = log.stages.dropFirst(stagesBeforeResume).filter { $0.id == "internal:1" }
+            assert(afterResume.first?.status == "running" && afterResume.count >= 2 && afterResume.last?.status != "running", "\(afterResume.map(\.status))")
         }
         let c = AgentLoopContract.shared
         assert(c.maxIterations == 40 && c.maxCallsPerResponse == 32)
@@ -433,7 +460,9 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             let result = try await AgentLoop(transport: transport, tools: loopTools(log), budget: budget, latestUserMessage: "读这个页面").run()
             assert(log.performed.count == 1 && result.text == "已有结果保留。")
             assert(checks == (mode == "limit" ? 3 : 1))
-            assert(result.completion?.outcome == (mode == "ambiguity" ? "needs_user" : "partial"))
+            // A check that judged the answer keeps its verdict; one that gave none (failed, unreadable, or it
+            // tried a tool) leaves the delivered answer "unverified" (2026-11-10, shared completion receipt).
+            assert(result.completion?.outcome == (mode == "ambiguity" ? "needs_user" : mode == "limit" ? "partial" : "unverified"), "\(mode): \(result.completion?.outcome ?? "nil")")
             assert(budget.used.providerCalls == transport.requests.count)
         }
 
@@ -498,7 +527,10 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             assert(english.text.hasPrefix(c.toolLimitReplyEN))
             // Every round after the first carries the earlier tool rounds; results are envelopes.
             if case .toolRound(_, let results)? = transport.requests[1].transcript.last { assert(object(results[0].modelOutput)["status"] as? String == "ok" && object(results[0].modelOutput)["output"] as? String == #"{"title":"page"}"#) } else { assertionFailure("tool round missing") }
-            assert(log.statuses.contains("正在打开网页…") && log.statuses.last == "正在思考…")
+            // After the last tool the status is "正在思考…"; the write-up at the round limit then says what it
+            // is doing (2026-11-10: it used to keep "正在思考…" for up to a minute with no step in the record).
+            assert(log.statuses.contains("正在打开网页…") && log.statuses.contains("正在思考…") && log.statuses.last == "正在整理已确认的内容…", "\(log.statuses.suffix(3))")
+            assert(log.stages.filter { $0.id == "limit:delivery" }.map(\.status) == ["running", "failed"], "the model answered the write-up request with tool calls: \(log.stages.filter { $0.id == "limit:delivery" })")
         }
 
         do {
@@ -506,7 +538,8 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             var n = 0
             let transport = ScriptedTransport { _ in n += 1; return calls([fc("same\(n)")]) }
             let outcome = try await AgentLoop(transport: transport, tools: loopTools(log), budget: PhoneRunBudget(), latestUserMessage: "keep reading", hooks: hooks(log)).run()
-            assert(outcome.stop == .toolLimit && outcome.text.contains("NO_PROGRESS"))
+            // The stop reply says why in words since 2026-11-10; the code is no longer printed in it.
+            assert(outcome.stop == .toolLimit && outcome.text.contains("several rounds brought nothing new") && !outcome.text.contains("NO_PROGRESS"), outcome.text)
             assert(transport.requests.count == 6 && log.performed.count == 6 && log.records.count == 6)
         }
 
@@ -519,11 +552,19 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             assert(outcome.text == "好了" && log.performed.count == 32)
             let tooMany = ScriptedTransport { _ in calls((0..<33).map { fc("m\($0)") }) }
             let log2 = Log()
-            do { _ = try await AgentLoop(transport: tooMany, tools: loopTools(log2), budget: PhoneRunBudget(), latestUserMessage: "q").run(); assertionFailure("33 calls admitted") } catch { assert(log2.performed.isEmpty) }
+            do { _ = try await AgentLoop(transport: tooMany, tools: loopTools(log2), budget: PhoneRunBudget(), latestUserMessage: "q").run(); assertionFailure("33 calls admitted") }
+            catch { assert(log2.performed.isEmpty); assert(error is MeloError && error.localizedDescription.contains("过多工具调用"), "the user reads why, not an internal error number: \(error)") }
             var round = 0
             let reused = ScriptedTransport { _ in round += 1; return calls([fc("same", "open_url", #"{"url":"https://\#(round).example"}"#)]) }
             let log3 = Log()
-            do { _ = try await AgentLoop(transport: reused, tools: loopTools(log3), budget: PhoneRunBudget(), latestUserMessage: "q").run(); assertionFailure("reused id admitted") } catch { assert(log3.performed.count == 1) }
+            do { _ = try await AgentLoop(transport: reused, tools: loopTools(log3), budget: PhoneRunBudget(), latestUserMessage: "q").run(); assertionFailure("reused id admitted") }
+            catch { assert(log3.performed.count == 1); assert(error is MeloError && error.localizedDescription.contains("工具调用编号无效"), "\(error)") }
+            for (label, batch) in [("two calls with one id", [fc("dup"), fc("dup", "open_url", #"{"url":"https://b.example"}"#)]), ("a blank id", [fc(" ")])] {
+                let log4 = Log()
+                let invalid = ScriptedTransport { _ in calls(batch) }
+                do { _ = try await AgentLoop(transport: invalid, tools: loopTools(log4), budget: PhoneRunBudget(), latestUserMessage: "q").run(); assertionFailure(label + " admitted") }
+                catch { assert(log4.performed.isEmpty && error is MeloError && error.localizedDescription.contains("工具调用编号无效"), "\(label): \(error)") }
+            }
         }
 
         // 3. Run budget on a virtual clock: deadline, input tokens and tool calls end the turn with the shared reply.
@@ -572,8 +613,11 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             var n = 0
             let transport = ScriptedTransport { _ in n += 1; return n <= 3 ? calls([fc("r\(n)")]) : answer("换个方法") }
             let outcome = try await AgentLoop(transport: transport, tools: loopTools(log) { _ in PhoneToolResult(output: PhoneToolEnvelope.failure("TIMEOUT", "slow")) }, budget: PhoneRunBudget(), latestUserMessage: "q", hooks: hooks(log)).run()
-            assert(outcome.stop == .toolLimit && outcome.text.contains("REPEATED_TOOL_FAILURE") && log.performed.count == 2 && log.records.map(\.code) == ["TIMEOUT", "TIMEOUT", "REPEATED_FAILURE"])
+            assert(outcome.stop == .toolLimit && (outcome.text.contains("工具连续几轮失败") || outcome.text.contains("tools failed several rounds in a row")) && !outcome.text.contains("REPEATED_TOOL_FAILURE"), outcome.text)
+            assert(log.performed.count == 2 && log.records.map(\.code) == ["TIMEOUT", "TIMEOUT", "REPEATED_FAILURE"])
             assert(transport.requests.count == 3, "failure termination must not spend another model request")
+            // The stop is a step of the record that says why in words; it used to show the bare code (2026-11-10).
+            assert(log.stages.last { $0.id == "core:stop" }?.output == "工具连续失败（REPEATED_TOOL_FAILURE）", "\(String(describing: log.stages.last { $0.id == "core:stop" }))")
         }
 
         // 5. Envelopes for legacy and refused calls; unknown tools and the screenshot cap never reach a tool.
@@ -1074,6 +1118,189 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             assert(result.completion?.outcome == (rounds == 6 ? "partial" : "completed"))
             if rounds == 6 { assert(reports == 1 && result.text.contains("继续") && result.completion?.reason == "LIMIT_DELIVERED") }
             else { assert(reports == 0 && result.text.contains("18:00–21:00")) }
+        }
+
+        // ---- 2026-11-10, second audit pass ----
+        // A reply the system paused and the user continued two hours later goes on with the run time it
+        // had left. Its deadline used to stay on the wall clock, so it came back as "budget used up" and
+        // the work it had saved was replaced by that notice.
+        do {
+            var now = 1_000_000.0
+            let log = Log()
+            var stored: Data?
+            var first = hooks(log)
+            first.saveCursor = { cursor in stored = try JSONEncoder().encode(cursor); if cursor.iteration == 1 { throw CancellationError() } }
+            let paused = ScriptedTransport { _ in now += 30_000; return calls([fc("read")]) }
+            do {
+                _ = try await AgentLoop(transport: paused, tools: loopTools(log), budget: PhoneRunBudget(deadlineMs: 600_000, now: { now }), latestUserMessage: "Read the page and summarise it", hooks: first).run()
+                assertionFailure("Expected the simulated pause")
+            } catch is CancellationError {}
+            let cursor = try JSONDecoder().decode(PhoneReplyCursor.self, from: stored!)
+            now += 7_200_000
+            let restored = PhoneRunBudget(now: { now }); restored.reserveDelivery(); try restored.restore(cursor.budget!)
+            assert(restored.exhausted() == nil && restored.remainingMs() == 570_000, "the pause is not run time: \(restored.remainingMs())")
+            var resumed = hooks(log); resumed.resumeCursor = cursor
+            let continued = ScriptedTransport { request in
+                if request.goalReview != nil { return answer(#"{"decision":"complete","reasonType":"fulfilled","requirements":[{"text":"summary","status":"met","evidenceIds":["read"]}]}"#) }
+                return answer("The page says hello.")
+            }
+            let outcome = try await AgentLoop(transport: continued, tools: loopTools(log), budget: restored, latestUserMessage: "Read the page and summarise it", hooks: resumed).run()
+            assert(outcome.stop == .answered && outcome.text == "The page says hello.", "\(outcome.stop) \(outcome.text)")
+            assert(log.performed.count == 1, "the saved read is not repeated")
+            // The requests of a continued reply say so: the run record shows them next to the one that was cut off.
+            assert(paused.requests.allSatisfy { $0.continuation.isEmpty } && continued.requests.first?.continuation.isEmpty == false)
+            assert(Set(continued.requests.map(\.continuation)).count == 1)
+
+            // The same reply continued with a budget that is used up stops with what it had saved: the
+            // notice lists the page it had read. The stop used to come before the saved work was restored.
+            var spentState = try JSONSerialization.jsonObject(with: cursor.budget!) as! [String: Any]
+            var used = spentState["used"] as! [String: Any]; used["inputTokens"] = spentState["maxInputTokens"]; spentState["used"] = used
+            let spent = PhoneRunBudget(now: { now }); spent.reserveDelivery(); try spent.restore(JSONSerialization.data(withJSONObject: spentState))
+            assert(spent.exhausted() != nil && spent.exhausted(phase: "delivery") != nil)
+            let silent = ScriptedTransport { _ in throw MeloError.message("no request may be sent") }
+            var again = hooks(log); again.resumeCursor = cursor
+            let stopped = try await AgentLoop(transport: silent, tools: loopTools(log), budget: spent, latestUserMessage: "Read the page and summarise it", hooks: again).run()
+            assert(stopped.stop == .budget && silent.requests.isEmpty, "\(stopped.stop)")
+            assert(stopped.text.contains("[read]") && stopped.text.contains("open_url"), "the notice lists what the paused reply had read: \(stopped.text)")
+        }
+
+        // Audit decision D1: an answer that is written when the allowance ends is delivered, not rewritten.
+        do {
+            let written = "The sky is blue because air scatters the short blue wavelengths of sunlight more than the long red ones."
+            let question = "Explain in one sentence why the sky is blue."
+            func isDelivery(_ request: AgentLoopRequest) -> Bool { (request.goalReview?["systemPrompt"] as? String ?? "").hasPrefix("The execution allowance is ending") }
+            func kinds(_ transport: ScriptedTransport) -> [String] { transport.requests.map { $0.goalReview == nil ? "loop" : isDelivery($0) ? "delivery" : "check" } }
+            func limitRun(reply: String = written, check: @escaping () throws -> AgentRound) async throws -> (AgentLoopOutcome, ScriptedTransport, Log) {
+                let log = Log()
+                let transport = ScriptedTransport { request in
+                    if request.goalReview != nil {
+                        if isDelivery(request) { return answer("Confirmed results: none.\n\nMissing: everything.\n\nNext steps: ask again.") }
+                        return try check()
+                    }
+                    // This answer uses up the allowance for work; the delivery reserve is all that is left.
+                    return AgentRound(text: reply, inputTokens: 31_000)
+                }
+                let outcome = try await AgentLoop(transport: transport, tools: loopTools(log), budget: PhoneRunBudget(maxInputTokens: 40_000), latestUserMessage: question,
+                                                  verification: AgentVerification(question: question, classification: AgentLoop.classify("东京塔有多高？", history: [])), hooks: hooks(log)).run()
+                return (outcome, transport, log)
+            }
+            let complete = #"{"decision":"complete","evaluationValid":true,"needsEvaluation":false,"turnKind":"answer","reasonType":"self_contained","reason":"Answered.","requirements":[{"text":"explanation","kind":"response","status":"met","evidenceIds":[]}]}"#
+            let (checked, checkedTransport, checkedLog) = try await limitRun { answer(complete) }
+            assert(kinds(checkedTransport) == ["loop", "check"], "no request asked the model to write the answer again: \(kinds(checkedTransport))")
+            assert(checked.text == written && checked.stop == .deliveredLimit, checked.text)
+            assert(checked.completion?.outcome == "completed" && checked.completion?.reason == "LIMIT_DELIVERED", "\(String(describing: checked.completion))")
+            // The check at the limit is a step of the record: running while it is asked, closed with its result.
+            let delivery = checkedLog.stages.filter { $0.id == "limit:delivery" }
+            assert(delivery.map(\.status) == ["running", "completed"] && delivery.last?.output == "已通过核对", "\(delivery)")
+            // When the check cannot run either, the answer is delivered as written and marked unverified.
+            let (unchecked, uncheckedTransport, uncheckedLog) = try await limitRun { throw MeloError.message("fixture: the check request failed") }
+            assert(kinds(uncheckedTransport) == ["loop", "check"], "\(kinds(uncheckedTransport))")
+            assert(unchecked.text.hasPrefix(written) && unchecked.text.count > written.count, "the answer is kept word for word, with the note: \(unchecked.text)")
+            assert(unchecked.completion?.outcome == "unverified", "\(String(describing: unchecked.completion?.outcome))")
+            assert(uncheckedLog.stages.last { $0.id == "limit:delivery" }?.output == "未能核对，回答按原样送达")
+            // A team member runs the same loop under its own token allowance: its written answer is delivered too.
+            let memberLog = Log()
+            let memberTransport = ScriptedTransport { request in
+                if request.goalReview != nil { return isDelivery(request) ? answer("Confirmed results: none.") : answer(complete) }
+                return AgentRound(text: written, inputTokens: 22_000, outputTokens: 500)   // past the member's allowance for work (about 19 760 of 32 000)
+            }
+            let member = try await PhoneMemberLimits.$current.withValue(PhoneMemberLimits(iterations: 6, tokens: 32_000, timeoutMs: 180_000)) {
+                try await AgentLoop(transport: memberTransport, tools: loopTools(memberLog), budget: PhoneRunBudget(), latestUserMessage: question, hooks: hooks(memberLog)).run()
+            }
+            assert(kinds(memberTransport) == ["loop", "check"] && member.text == written && member.stop == .deliveredLimit, "\(kinds(memberTransport)) \(member.text)")
+            // The loop's own uncertainty marker never rides along, also when a note follows the answer.
+            let (marked, _, _) = try await limitRun(reply: written + "\n[UNCERTAIN: the exact wavelengths]") { throw MeloError.message("fixture: the check request failed") }
+            assert(marked.text.hasPrefix(written) && !marked.text.contains("UNCERTAIN"), marked.text)
+        }
+        // D1, the other half: an answer the check sent back is not pending. When the allowance then ends
+        // the write-up comes from the evidence, and the rejected draft is not the fallback text.
+        do {
+            let log = Log()
+            var step = 0
+            let transport = ScriptedTransport { request in
+                if let review = request.goalReview {
+                    if (review["systemPrompt"] as? String ?? "").hasPrefix("The execution allowance is ending") { throw MeloError.message("fixture: the delivery request failed") }
+                    return answer(#"{"decision":"continue","evaluationValid":true,"needsEvaluation":false,"reasonType":"lookup_missing","reason":"The price was not read.","nextStep":"Read the catalog.","requirements":[{"text":"price","kind":"external_fact","status":"missing","evidenceIds":[]}]}"#)
+                }
+                step += 1
+                if step == 1 { return answer("REJECTED-DRAFT: Model A costs 999 AUD.") }
+                if step == 2 { return calls([fc("read-1", "open_url", #"{"url":"https://fixture.invalid/catalog"}"#)]) }
+                // The allowance for work ends with this response; the delivery reserve remains.
+                return AgentRound(text: "", calls: [fc("read-2", "open_url", #"{"url":"https://fixture.invalid/catalog?page=2"}"#)], inputTokens: 31_000)
+            }
+            let tools = loopTools(log) { _ in PhoneToolResult(output: PhoneToolEnvelope.success(#"{"url":"https://fixture.invalid/catalog","text":"Catalog page 1: Model A, price 100 AUD, region AU, available now."}"#)) }
+            let outcome = try await AgentLoop(transport: transport, tools: tools, budget: PhoneRunBudget(maxInputTokens: 40_000), latestUserMessage: "Read the catalog and tell me the price of Model A.", hooks: hooks(log)).run()
+            assert(step == 3 && log.performed.map(\.callID) == ["read-1"], "\(step) \(log.performed.map(\.callID))")
+            assert(transport.requests.contains { ($0.goalReview?["systemPrompt"] as? String ?? "").hasPrefix("The execution allowance is ending") }, "without a pending answer the delivery is written from the evidence")
+            assert(!outcome.text.contains("REJECTED-DRAFT"), "the answer the check sent back is not delivered as if it stood: \(outcome.text)")
+            assert(outcome.text.contains("Catalog page 1"), "what was read is still handed over: \(outcome.text)")
+            // The failed write-up is a step of the record too.
+            assert(log.stages.filter { $0.id == "limit:delivery" }.map(\.status) == ["running", "failed"])
+        }
+
+        // An image the model made in a response that also asked for tools belongs to the reply. Only the
+        // last response's images were returned, so such an image was dropped without a word.
+        do {
+            let image = ImagePayload(data: Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg==")!, mimeType: "image/png")
+            var n = 0
+            let transport = ScriptedTransport { request in
+                if request.goalReview != nil { return answer(#"{"decision":"complete","reasonType":"fulfilled","requirements":[{"text":"picture and page","status":"met","evidenceIds":["read"]}]}"#) }
+                n += 1
+                if n == 1 { var round = calls([fc("read")]); round.images = [image]; return round }
+                return answer("Here is the picture, and the page says hello.")
+            }
+            let outcome = try await AgentLoop(transport: transport, tools: loopTools(Log()), budget: PhoneRunBudget(), latestUserMessage: "Draw a cat and read the page").run()
+            assert(outcome.stop == .answered && outcome.finalRound?.images == [image], "\(String(describing: outcome.finalRound?.images.count))")
+        }
+
+        // A member starts only when the shared allocation rule allows it: what is left after the delivery
+        // reserve and the lead's own reserve. The phone left the delivery reserve out, so a late member
+        // could spend the tokens kept for the lead's answer.
+        do {
+            let log = Log()
+            var h = hooks(log); h.internalRouting = true
+            var leadRounds = 0, told = false
+            let transport = ScriptedTransport { request in
+                if request.goalReview != nil { return answer(#"{"decision":"complete","reasonType":"fulfilled","requirements":[{"text":"hours","status":"met","evidenceIds":[]}]}"#) }
+                assert(request.internalJob == nil, "no member may start on what is left")
+                leadRounds += 1
+                if leadRounds == 1 { return AgentRound(text: "", calls: [fc("route", "route_task", #"{"role":"research","task":"Read the venue page for today's hours"}"#)], inputTokens: 300_000) }
+                if case .toolRound(_, let outputs)? = request.transcript.last { told = outputs.first?.modelOutput.contains("did not start") == true }
+                return answer("I could not look this up within the remaining budget.")
+            }
+            _ = try await AgentLoop(transport: transport, tools: loopTools(log), budget: PhoneRunBudget(), latestUserMessage: "Check the venue page for today's opening hours", hooks: h).run()
+            assert(told && leadRounds == 2 && log.performed.isEmpty, "the lead is told the member did not start: \(leadRounds)")
+            // With room for it the member starts, as before.
+            let roomy = PhoneRunBudget(); roomy.reserveDelivery()
+            assert(roomy.memberAllocation(rounds: 6)?.inputTokens == 120_000 && roomy.memberAllocation(rounds: 6)?.toolCalls == 16)
+        }
+
+        // What each request is told to carry.
+        do {
+            let instructions = "你运行在 Melo 中，使用用户选择的Agent身份与回复要求。" + ChatGPTRequest.searchCapability + "你没有电脑操作或文件读取工具。\n人设\n" + WebPageToolSpec.instructions + "\n" + PhoneReadHistory.instructions
+            let base: [String: Any] = ["instructions": instructions, "tools": [["type": "web_search"]] + WebPageToolSpec.all.map(\.definition.responsesDefinition),
+                                       "include": ["web_search_call.action.sources", "reasoning.encrypted_content"]]
+            // A member keeps the encrypted reasoning entry: its later rounds replay its own reasoning items
+            // with `store: false`. The whole list used to be removed for members.
+            let reader = AgentLoopRequest(iteration: 1, transcript: [], timeout: 1, internalJob: ["tools": ["open_url"], "system": "member", "input": "task"]).scopedBody(base, responses: true)
+            assert(reader["include"] as? [String] == ["reasoning.encrypted_content"], "\(String(describing: reader["include"]))")
+            let searcher = AgentLoopRequest(iteration: 1, transcript: [], timeout: 1, internalJob: ["tools": ["open_url", "native_web_search"], "system": "member", "input": "task"]).scopedBody(base, responses: true)
+            assert(searcher["include"] as? [String] == ["web_search_call.action.sources", "reasoning.encrypted_content"])
+            // A lead whose retrieval tools are with its members is not told to search and open pages itself.
+            let withheld: Set<String> = ["open_url", "web_screenshot", "web_search", "native_web_search"]
+            let lead = AgentLoopRequest(iteration: 0, transcript: [], timeout: 1, leadWithheld: withheld).scopedBody(base, responses: true)["instructions"] as? String ?? ""
+            assert(!lead.contains("你可以调用 web_search") && !lead.contains("你可以调用 open_url") && lead.contains("route_task") && lead.contains("不能凭记忆编造实时数据"), lead)
+            assert(lead.contains(PhoneReadHistory.instructions) && lead.contains("人设"), "everything else stays")
+            assert(lead.components(separatedBy: ChatGPTRequest.routedSearchCapability).count == 2, "the routing rule is stated once")
+            // The same on the two API protocols, where only the page tools are named.
+            let system = Network.systemLine(toolInstructions: WebPageToolSpec.instructions) + "人设"
+            let chat = AgentLoopRequest(iteration: 0, transcript: [], timeout: 1, leadWithheld: withheld).scopedBody(["messages": [["role": "system", "content": system], ["role": "user", "content": "q"]], "tools": WebPageToolSpec.all.map(\.definition.chatCompletionsDefinition)], responses: false)
+            let chatSystem = (chat["messages"] as? [[String: Any]])?.first?["content"] as? String ?? ""
+            assert(!chatSystem.contains("你可以调用 open_url") && chatSystem.contains(ChatGPTRequest.routedSearchCapability) && (chat["messages"] as? [[String: Any]])?.count == 2, chatSystem)
+            let claude = AgentLoopRequest(iteration: 0, transcript: [], timeout: 1, leadWithheld: withheld).scopedBody(["system": system, "messages": [["role": "user", "content": "q"]], "tools": WebPageToolSpec.all.map(\.definition.anthropicDefinition)], responses: false, anthropic: true)
+            assert((claude["system"] as? String)?.contains(ChatGPTRequest.routedSearchCapability) == true && (claude["system"] as? String)?.contains("你可以调用 open_url") == false)
+            // Once the lead holds its tools again (routing closed), its instructions are the original ones.
+            assert(AgentLoopRequest(iteration: 0, transcript: [], timeout: 1).scopedBody(base, responses: true)["instructions"] as? String == instructions)
         }
 
         print("Agent loop tests passed: 10-call limit reply, 32-call batch and reused ids, budget (deadline/tokens/tool calls/timeout), repeat guard, envelopes and refusals, supplements without restart, condensation retry, cancellation trace, finalize verification, narrowed team budget, transcript rendering")

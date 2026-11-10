@@ -147,3 +147,22 @@ test('finalize: without a check verdict for this claim the verifier still runs o
   assert.equal(model.calls(), 0);
   assert.doesNotMatch(out.normalizedReply.content, /未能核实/);
 });
+
+test('finalize: the verdict on the uncertain sentence is recorded as a stage of the run', async () => {
+  // 2026-11-10 agent audit, second pass: the verdict changed the reply and the task space showed nothing of it.
+  const { runtimeMessage } = await import('../../../../shared/agent/runtimeMessages.js');
+  const stage = async (verdict, extra = {}) => {
+    const h = harness({ createReply: counting().createReply });
+    await h.finalize(factual({ claimReview: { claim: '降雨概率 10%', verdict, originalClaim: '', correction: '', evidenceId: verdict === 'UNVERIFIED' ? '' : 'job-1:read', ...extra } }));
+    return h.events.filter(event => event.type === 'execution_event' && event.value.id === 'claim:verdict').map(event => event.value);
+  };
+  assert.deepEqual(await stage('VERIFIED'), [{ kind: 'pipeline', id: 'claim:verdict', module: 'compute', messageId: 'stage.claimCheck', status: 'completed', outputMessageId: 'output.claimVerified' }]);
+  assert.deepEqual((await stage('CORRECTED', { originalClaim: '降雨概率 10%。', correction: '降雨概率 20%。' })).map(row => [row.status, row.outputMessageId]), [['completed', 'output.claimCorrected']]);
+  assert.deepEqual((await stage('UNVERIFIED')).map(row => [row.status, row.outputMessageId]), [['failed', 'output.claimUnverified']]);
+  // A reply without a flagged sentence has no such stage.
+  const plain = harness();
+  await plain.finalize(base());
+  assert.equal(plain.events.some(event => event.value?.id === 'claim:verdict'), false);
+  // The stage and its three outcomes have words in every interface language.
+  for (const id of ['stage.claimCheck', 'output.claimVerified', 'output.claimCorrected', 'output.claimUnverified']) for (const locale of ['zh', 'en', 'ja', 'ko', 'es']) assert.notEqual(runtimeMessage(id, locale), id, `${id} ${locale}`);
+});

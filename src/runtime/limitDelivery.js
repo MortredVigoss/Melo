@@ -5,22 +5,41 @@ import { requestTimeoutMs, budgetExhausted } from './runBudget.js';
 
 // No tool registry enters this function. The caller passes the same metered
 // provider used by its working loop; usage and cancellation remain Host-owned.
-export async function runLimitDelivery({ task, observations, reason, fallback, createReply, options, budget, signal, locale }) {
+//
+// `candidate` is an answer that was already written and was waiting for its check when the
+// allowance ended. It is the delivery: checked if the check can still run, delivered as written
+// either way. Asking the model to write the answer again from the tool results discarded it and,
+// for an answer that had used no tools, produced an empty three-part form (2026-11-10 audit).
+//
+// `shown` turns the written answer into what the user reads (the lead strips the uncertainty marker it
+// puts on its last line). The finalize step only finds that marker at the very end of a reply, and a
+// delivery note appended here would leave it in the middle, visible.
+export async function runLimitDelivery({ task, observations, reason, fallback, candidate: pending = '', shown = text => text, createReply, options, budget, signal, locale }) {
   let candidate = '', checkedTask = task;
+  const written = String(pending || '').trim() ? String(pending) : '';
+  const display = written ? String(shown(written) || written) : '';
   const parser = createFunctionCallingSession(options || {}, []);
   // The request carries no tools, but it must still travel on the connection's
   // own protocol. An empty tool list without a protocol is read by the provider
   // dispatcher as the OpenAI Responses protocol, which every Anthropic and
   // chat-completions connection rejects (2026-11-10 latency audit L1).
   const transport = parser.native ? { functionTools: [], toolProtocol: parser.protocol } : { functionTools: undefined, toolProtocol: undefined };
-  const stopped = () => ({ reply: hostEvidenceReply(candidate || fallback, observations, locale), task: checkedTask,
-    terminalReason: signal?.aborted ? (signal.reason?.name === 'TimeoutError' ? 'DEADLINE_EXCEEDED' : 'CANCELLED') : reason });
+  const cancelled = () => signal?.aborted && signal.reason?.name !== 'TimeoutError';
+  const stopped = () => {
+    if (written && !cancelled()) {
+      const unchecked = reviewDelivery(deliveryCandidate(task, written, observations, reason), null, observations);
+      return { reply: deliveryReply(unchecked, display, locale), task: unchecked, terminalReason: 'LIMIT_DELIVERED' };
+    }
+    return { reply: hostEvidenceReply(candidate || fallback, observations, locale), task: checkedTask,
+      terminalReason: signal?.aborted ? (signal.reason?.name === 'TimeoutError' ? 'DEADLINE_EXCEEDED' : 'CANCELLED') : reason };
+  };
   if (signal?.aborted || !budget?.delivery || budgetExhausted(budget, undefined, { phase: 'delivery' })) return stopped();
   const call = async (request, phase, maxTokens) => createReply({ ...options, ...request, signal,
     budgetPhase: phase, purpose: phase === 'delivery' ? 'limit-delivery' : 'limit-check', maxTokens,
     timeoutMs: requestTimeoutMs(budget, { phase }), kind: phase === 'delivery' ? 'delivery' : 'check', workspacePath: null, toolChoice: 'none', tools: [], functions: [], ...transport,
     nativeWebSearchEnabled: false, nativeImageGenerationEnabled: false, onDelta: undefined, onReasoningDelta: undefined, onNativeToolEvent: undefined, onExecutionEvent: undefined });
-  try {
+  if (written) candidate = written;
+  else try {
     const raw = await call(deliveryRequest(task, observations, reason), 'delivery', 8192);
     const parsed = parser.parse(raw);
     if (!parsed.text.trim() || parsed.toolCalls.length) return stopped();
@@ -39,5 +58,5 @@ export async function runLimitDelivery({ task, observations, reason, fallback, c
     if (signal?.aborted) return stopped();
     checkedTask = reviewDelivery(checkedTask, null, observations);
   }
-  return { reply: deliveryReply(checkedTask, candidate, locale), task: checkedTask, terminalReason: 'LIMIT_DELIVERED' };
+  return { reply: deliveryReply(checkedTask, written ? display : candidate, locale), task: checkedTask, terminalReason: 'LIMIT_DELIVERED' };
 }

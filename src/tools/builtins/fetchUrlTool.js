@@ -4,7 +4,7 @@ import {mediaLink} from '../../services/search/mediaPermalink.js';
 import {readMediaPost} from '../../services/search/publicMediaReader.js';
 import {readPublicPost,isPublicPostHost} from '../../mcp/publicPost.js';
 import { captureBehavior } from '../../runtime/runtimeBehavior.js';
-import { searchLimits, scopedSearchRun } from '../../services/search/searchLimits.js';
+import { searchLimits, scopedSearchRun, normalizeSearchLimits } from '../../services/search/searchLimits.js';
 /**
  * fetch_url tool
  *
@@ -240,6 +240,8 @@ export const fetchUrlTool = {
   category: 'web',
   isConcurrencySafe: true,
   requiresPermission: false,
+  // The readers run side by side, then the browser tier, each for as long as the settings allow.
+  timeoutFor: config => { const limits = normalizeSearchLimits(config); return limits.fetchTimeoutMs + limits.browserTimeoutMs + 5000; },
   // Self-description (tools/tool.js); see that file for the fallback tables.
   capability: 'network',
   needsWorkspace: false,

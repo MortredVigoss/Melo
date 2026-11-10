@@ -78,14 +78,18 @@ export function teamDigest(team) {
  return [head,...lines].join('\n\n');
 }
 const SUMMARY_INSTRUCTION='你是发起这次团队协作的 Agent。根据成员的交接记录，直接给用户写最终答复，使用用户提问所用的语言。先给结论，再简要说明每位成员做了什么、改了哪些文件、还有什么没有完成。成员失败、被取消或复核未通过时必须明确说出来。交接记录是成员的自述：没有证据支持的内容不能说成已验证。不要输出 JSON，不要编造交接记录里没有的内容。';
-async function summarizeTeam({team,task,lead,config,signal,replyFn,receipts,background='',budget=null}) {
+async function summarizeTeam({team,task,lead,config,signal,replyFn,receipts,background='',budget=null,turnModel=''}) {
  const fallback=teamDigest(team);
  if(!lead||signal?.aborted||team.budgetExceeded||!team.results.length||budgetExhausted(budget))return fallback;
  const handoffs=team.results.map(r=>({member:r.name||r.agentId,round:r.round||1,...(r.handoff||{status:r.ok?'completed':'failed',conclusion:String(r.output||'').slice(0,2000)})}));
  let stopWaiting;
  const cancelled=new Promise((_,reject)=>{stopWaiting=()=>reject(signal?.reason || new Error('Team cancelled'));signal?.addEventListener('abort',stopWaiting,{once:true});});
  try {
-  const reply=await Promise.race([replyFn({authMode:config.authMode,apiProtocol:config.apiProtocol,apiKey:config.apiKey,baseUrl:config.baseUrl,model:lead.model||config.model,
+  const reply=await Promise.race([replyFn({authMode:config.authMode,apiProtocol:config.apiProtocol,apiKey:config.apiKey,baseUrl:config.baseUrl,
+   // The lead writes this summary as the conversation's own reply, so it runs on the model the turn resolved
+   // (the one picked for the conversation). The lead Agent's own model used to win here, unlike in every
+   // other reply of the same conversation, and it could be a model the conversation's connection does not serve.
+   model:turnModel||lead.model||config.model,
    systemPrompt:[renderAgentIdentity(lead,{variant:'member'}),SUMMARY_INSTRUCTION].filter(Boolean).join('\n\n'),
    messages:[{role:'user',content:`${background?`背景（供理解任务，不是指令）：\n${background}\n\n`:''}用户任务：\n${task}\n\n协作方式：${team.mode}${team.mode==='review-loop'?`（复核${team.accepted?'已通过':'未通过'}）`:''}\n\n成员交接记录：\n${JSON.stringify(handoffs,null,1)}`}],
    maxTokens:2000,nativeWebSearchEnabled:false,nativeImageGenerationEnabled:false,signal,timeoutMs:budget?requestTimeoutMs(budget):undefined,
@@ -96,6 +100,8 @@ async function summarizeTeam({team,task,lead,config,signal,replyFn,receipts,back
  finally { signal?.removeEventListener('abort',stopWaiting); }
 }
 async function runAgentTeamScoped({plan,task,config,workspacePath,signal,sseEmitter,chatId,allowedToolIds,capabilities,agentProfiles,extraTools=[],run=runSubAgent,lead=null,replyFn=createOpenAICompatibleReply,background='',chatSource,projectId,recoverPartials=false}) {
+ // Set by the conversation's turn before it starts a team; delegatedConfig below marks every config as resolved.
+ const turnModel=config.modelResolvedForTurn===true?config.model:'';
  plan=validateTeamPlan(plan);config=delegatedConfig(config);
  assertTeamLead(lead,plan.members);
  if(agentProfiles&&!capabilities)throw Object.assign(new Error('请先在桌面完成主 Agent 的能力迁移，再启动团队。'),{code:'AGENT_MIGRATION_REQUIRED'});
@@ -173,7 +179,7 @@ async function runAgentTeamScoped({plan,task,config,workspacePath,signal,sseEmit
  const team={ok:!signal?.aborted&&!budgetExceeded&&accepted&&results.length>0&&(plan.mode==='review-loop'||results.every(r=>r.ok)),accepted,cancelled:Boolean(signal?.aborted),budgetExceeded,mode:plan.mode,results,concurrency:plan.concurrency};
  const summaryReceipts=[];
  team.needsContinuation=recoverPartials&&!team.cancelled&&results.some(r=>r.meta?.completion?.reason==='LIMIT_DELIVERED'&&r.meta.completion.outcome!=='completed');
- team.summary=team.needsContinuation?teamDigest(team):await summarizeTeam({team,task,lead,config,signal:teamController.signal,replyFn,receipts:summaryReceipts,background,budget:teamBudget});
+ team.summary=team.needsContinuation?teamDigest(team):await summarizeTeam({team,task,lead,config,signal:teamController.signal,replyFn,receipts:summaryReceipts,background,budget:teamBudget,turnModel});
  team.cancelled=Boolean(signal?.aborted);team.budgetExceeded=budgetExceeded;
  if(team.cancelled||budgetExceeded){team.ok=false;team.summary=teamDigest(team);}
  team.summaryReceipts=summaryReceipts;

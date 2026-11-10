@@ -41,6 +41,15 @@ class DeviceAgentTest {
         waitFor { DeviceAccess.service != null }
         runBlocking { withTimeout(10_000) { app.engine.runtime.first { it.initialized } } }
         app.startActivity(Intent(app, DeviceFixtureActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        // The fixture is on screen once its window has focus. `waitForIdle` alone returned during the
+        // silent part of a cold start, before the first frame: a test then observed a window that the
+        // launch animation moved a moment later, and its first coordinate tap was refused as stale_screen
+        // (about one run in three on a busy emulator).
+        waitFor {
+            var shown = false
+            instrumentation.runOnMainSync { shown = androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).any { it is DeviceFixtureActivity && it.hasWindowFocus() } }
+            shown
+        }
         automation.waitForIdle(500, 10_000)
     }
     @After fun restoreServiceSettings() {
