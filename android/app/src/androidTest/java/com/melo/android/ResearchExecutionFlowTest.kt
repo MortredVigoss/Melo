@@ -35,6 +35,13 @@ class ResearchExecutionFlowTest {
             else -> """{"choices":[{"finish_reason":"stop","message":{"content":$encoded}}]}"""
         })
     }
+    // Since 2026-11-07 the lead holds no retrieval tools: it assigns the lookup to the research member,
+    // whose rounds run on the same model connection, and continues from the member's handoff.
+    private fun route(protocol: String, task: String = "Find the requested public facts") = tool(protocol, "route_task", "route-1", buildJsonObject { put("role", "research"); put("task", task) })
+    private fun selfContained(protocol: String) = final(protocol, buildJsonObject {
+        put("decision", "complete"); put("turnKind", "answer"); put("reasonType", "self_contained"); put("reason", "Fixture answer"); put("nextStep", "")
+        put("requirements", buildJsonArray { add(buildJsonObject { put("text", "Greeting"); put("kind", "response"); put("status", "met"); put("evidenceIds", buildJsonArray {}) }) })
+    }.toString())
     private fun review(protocol: String, complete: Boolean = false, evidence: String = "") = final(protocol, buildJsonObject {
         put("decision", if (complete) "complete" else "partial"); put("reasonType", if (complete) "fulfilled" else "unavailable"); put("reason", "Fixture delivery check"); put("nextStep", "")
         put("requirements", buildJsonArray { add(buildJsonObject { put("text", "Requested delivery"); put("status", if (complete) "met" else "missing"); put("evidenceIds", buildJsonArray { if (complete) add(evidence) }) }) })
@@ -104,8 +111,10 @@ class ResearchExecutionFlowTest {
             val url = backend.url("/menu").toString()
             backend.enqueue(MockResponse().setHeader("Content-Type", "application/json").setBody("""{"results":[{"title":"Fixture A","url":"$url","snippet":"Menu needs reading"}]}"""))
             backend.enqueue(MockResponse().setHeader("Content-Type", "text/html").setBody("<h1>Fixture A</h1><p>Public menu observed</p>"))
+            model.enqueue(route(protocol))
             model.enqueue(tool(protocol, "web_search", "s", buildJsonObject { put("query", "Surry Hills brunch") }))
             model.enqueue(tool(protocol, "fetch_url", "f", buildJsonObject { put("url", url) }))
+            model.enqueue(final(protocol, "Fixture A: public menu observed at $url"))
             model.enqueue(tool(protocol, "phone_use", "p", buildJsonObject { put("goal", "Open the Fixture A navigation page, stop before starting a trip"); put("purpose", "action") }))
             model.enqueue(final(protocol)); model.enqueue(review(protocol))
             val config = buildJsonObject { put("search", buildJsonObject { put("backend", "http"); put("endpoint", backend.url("/search").toString()) }) }
@@ -131,15 +140,18 @@ class ResearchExecutionFlowTest {
                 assertTrue(events.any { it.jsonObject.text("kind") == "terminal" })
                 events.forEach { assertTrue(context.contains(it.jsonObject.text("eventId"))) }
                 assertEquals(1, phoneCalls)
-                assertEquals(5, model.requestCount); assertEquals(2, backend.requestCount)
+                assertEquals(7, model.requestCount); assertEquals(2, backend.requestCount)
             }
-            assertEquals(5, model.requestCount); assertEquals(2, backend.requestCount)
-            repeat(5) { index ->
+            assertEquals(7, model.requestCount); assertEquals(2, backend.requestCount)
+            repeat(7) { index ->
                 val request = model.takeRequest(2, TimeUnit.SECONDS)!!.body.readUtf8()
                 assertFalse(request.contains("fixture-only-key"))
-                if (index == 4) { assertTrue(request.contains("task completion checker")); assertFalse(request.contains("\"name\":\"phone_use\"")) }
+                // The lead routes and keeps the phone tool; the member reads and holds no phone tool.
+                if (index == 0) { assertTrue(request.contains("route_task")); assertTrue(request.contains("\"name\":\"phone_use\"")); assertFalse(request.contains("\"name\":\"web_search\"")); assertFalse(request.contains("\"name\":\"fetch_url\"")) }
+                if (index in 1..3) { assertTrue(request.contains("internal research specialist")); assertTrue(request.contains("\"name\":\"fetch_url\"")); assertFalse(request.contains("\"name\":\"phone_use\"")) }
+                if (index == 6) { assertTrue(request.contains("task completion checker")); assertFalse(request.contains("\"name\":\"phone_use\"")) }
             }
-            model.enqueue(final(protocol))
+            model.enqueue(final(protocol)); model.enqueue(selfContained(protocol))
             val follow = SharedChatAgent(app, ModelClient(true), true).reply(connection, "fixture-only-key",
                 listOf(Message(role = "user", content = "Write one short greeting.")), "", config, { "" }, true,
                 "follow-r", "research-c", { "" }, invokePhone = { error("History must not replay a phone action") },
@@ -147,22 +159,24 @@ class ResearchExecutionFlowTest {
             assertEquals("completed", follow.outcome)
             val followRequest = model.takeRequest(2, TimeUnit.SECONDS)!!.body.readUtf8()
             assertTrue(followRequest.contains("research-r/tool/p/result"))
-            assertEquals(1, phoneCalls); assertEquals(6, model.requestCount); assertEquals(2, backend.requestCount)
+            assertEquals(1, phoneCalls); assertEquals(9, model.requestCount); assertEquals(2, backend.requestCount)
         } }
     }
 
     @Test fun missingRequiredNavigationIsPartialAndAnUnobservedUrlCannotBeRead() = runBlocking {
         MockWebServer().use { model -> MockWebServer().use { backend ->
             model.start(); backend.start()
+            model.enqueue(route("chat-completions"))
             model.enqueue(tool("chat-completions", "web_search", "s", buildJsonObject { put("query", "brunch") }))
             model.enqueue(tool("chat-completions", "fetch_url", "bad", buildJsonObject { put("url", backend.url("/not-returned").toString()) }))
+            model.enqueue(final("chat-completions", "One result; its page could not be read."))
             model.enqueue(final("chat-completions")); model.enqueue(review("chat-completions"))
             backend.enqueue(MockResponse().setHeader("Content-Type", "application/json").setBody("""{"results":[{"url":"https://fixture.invalid/menu"}]}"""))
             val config = buildJsonObject { put("search", buildJsonObject { put("backend", "http"); put("endpoint", backend.url("/search").toString()) }) }
             val scenes=mutableListOf<JsonObject>(); var phones=0
             val result=SharedChatAgent(app, ModelClient(true), true).reply(Connection(endpoint=model.url("/model").toString(), model="fixture", stream=false), "fixture-key", listOf(Message(role="user",content="推荐 brunch 然后导航")), "", config, { "" }, true, "partial-r", "partial-c", { "" }, { phones++; error("Phone must not run") }, {}, onScene={ scenes.add(it) })
             assertEquals("partial", result.outcome); assertEquals("GOAL_UNAVAILABLE", result.stopReason)
-            assertEquals(0, phones); assertEquals(1, backend.requestCount)
+            assertEquals(0, phones); assertEquals(1, backend.requestCount); assertEquals(6, model.requestCount)
             assertTrue(scenes.last().toString().contains("FETCH_URL_NOT_IN_EVIDENCE")); assertEquals("partial", scenes.last().text("taskOutcome"))
         } }
     }
@@ -170,7 +184,9 @@ class ResearchExecutionFlowTest {
     @Test fun emptySearchDoesNotAuthorizeAnInventedNavigationDestination() = runBlocking {
         MockWebServer().use { model -> MockWebServer().use { backend ->
             model.start(); backend.start()
+            model.enqueue(route("chat-completions"))
             model.enqueue(tool("chat-completions", "web_search", "empty", buildJsonObject { put("query", "brunch") }))
+            model.enqueue(final("chat-completions", "The search returned no sources."))
             model.enqueue(tool("chat-completions", "phone_use", "nav", buildJsonObject { put("goal", "Navigate to an invented place"); put("purpose", "action") }))
             model.enqueue(final("chat-completions", "没有可核对的目的地，未开始导航。")); model.enqueue(review("chat-completions"))
             backend.enqueue(MockResponse().setHeader("Content-Type", "application/json").setBody("""{"results":[]}"""))
@@ -178,7 +194,7 @@ class ResearchExecutionFlowTest {
             var effects=0
             val result=SharedChatAgent(app,ModelClient(true),true).reply(Connection(endpoint=model.url("/model").toString(),model="fixture",stream=false),"fixture-key",listOf(Message(role="user",content="推荐 brunch 然后导航")),"",config,{ "" },true,"empty-r","empty-c",{ "" },{ effects++;error("No observed destination") },{})
             assertEquals(0,effects);assertEquals("GOAL_UNAVAILABLE",result.stopReason);assertEquals("partial",result.outcome)
-            assertEquals(4,model.requestCount);assertEquals(1,backend.requestCount)
+            assertEquals(6,model.requestCount);assertEquals(1,backend.requestCount)
         } }
     }
     @Test fun retryReevaluatesCurrentBraveConfigWithAllThreeProtocols() = runBlocking {
@@ -196,16 +212,18 @@ class ResearchExecutionFlowTest {
             assertEquals(3,model.requestCount);assertEquals(0,backend.requestCount)
             repeat(3) { index -> val body=model.takeRequest(2,TimeUnit.SECONDS)!!.body.readUtf8(); if(index == 0) { assertTrue(body.contains("todo_list")); assertFalse(body.contains("\"name\":\"web_search\"")) } }
             backend.enqueue(MockResponse().setHeader("Content-Type","application/json").setBody("""{"web":{"results":[{"title":"Fixture brunch","url":"https://fixture.invalid/menu","description":"Fixture public menu"}]}}"""))
-            model.enqueue(tool(protocol,"web_search","retry-search",buildJsonObject {put("query","Surry Hills brunch")}));model.enqueue(final(protocol));model.enqueue(review(protocol))
+            model.enqueue(route(protocol));model.enqueue(tool(protocol,"web_search","retry-search",buildJsonObject {put("query","Surry Hills brunch")}));model.enqueue(final(protocol,"Fixture brunch https://fixture.invalid/menu"));model.enqueue(final(protocol));model.enqueue(review(protocol))
             val messages=listOf(goal,Message(role="assistant",content="I have no search or phone tools."),Message(role="user",content="再试一次，只做检索并列出来源，先不要导航。"))
             val scenes=mutableListOf<JsonObject>()
             val result=agent.reply(connection,"fixture-model-key",messages,"",config(true),{"fixture-brave-key"},true,"retry-after-r","retry-c",{""},{error("Retry denied navigation")},{},onScene={scenes.add(it)})
-            assertEquals("partial",result.outcome);assertEquals("GOAL_UNAVAILABLE",result.stopReason);assertEquals(6,model.requestCount);assertEquals(1,backend.requestCount)
+            assertEquals("partial",result.outcome);assertEquals("GOAL_UNAVAILABLE",result.stopReason);assertEquals(8,model.requestCount);assertEquals(1,backend.requestCount)
             val search=backend.takeRequest(2,TimeUnit.SECONDS)!!
             assertEquals("GET",search.method);assertEquals("fixture-brave-key",search.getHeader("X-Subscription-Token"));assertNull(search.getHeader("Authorization"))
             assertTrue(search.path!!.contains("q=Surry%20Hills%20brunch"))
             val first=model.takeRequest(2,TimeUnit.SECONDS)!!.body.readUtf8()
-            assertTrue(first.contains("web_search"));assertTrue(first.contains("\"name\":\"phone_use\""))
+            assertTrue(first.contains("route_task"));assertTrue(first.contains("\"name\":\"phone_use\""));assertFalse(first.contains("\"name\":\"web_search\""))
+            val member=model.takeRequest(2,TimeUnit.SECONDS)!!.body.readUtf8()
+            assertTrue(member.contains("\"name\":\"web_search\""));assertFalse(member.contains("\"name\":\"phone_use\""))
             val scene=scenes.last();assertEquals(listOf("web_search"),scene.getValue("operations").jsonArray.map{it.jsonObject.text("name")})
             assertEquals(1,scene.getValue("sources").jsonArray.size);assertFalse(scene.toString().contains("fixture-brave-key"))
         } }

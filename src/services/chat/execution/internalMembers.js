@@ -78,7 +78,14 @@ export function jobConnectionConfig(config, jobModels, role) {
 
 export function memberConfig(config) {
   const search = { ...(config?.operationalLimits?.search || {}), maxResults: MEMBER_SEARCH_RESULTS, contentMaxChars: MEMBER_SEARCH_CONTENT_CHARS };
-  return { ...config, operationalLimits: { ...(config?.operationalLimits || {}), search } };
+  // The result count saved on the search settings page outranks operationalLimits
+  // (normalizeSearchLimits). Left as saved, the page's default of 8 lifted the member
+  // cap for everyone who had ever saved that page; a lower saved count is kept.
+  const saved = config?.agentRuntime?.search;
+  const count = Number(saved?.maxResults);
+  const agentRuntime = saved?.maxResults === undefined ? null
+    : { ...config.agentRuntime, search: { ...saved, maxResults: Number.isFinite(count) ? Math.min(Math.max(1, Math.floor(count)), MEMBER_SEARCH_RESULTS) : MEMBER_SEARCH_RESULTS } };
+  return { ...config, operationalLimits: { ...(config?.operationalLimits || {}), search }, ...(agentRuntime ? { agentRuntime } : {}) };
 }
 
 export function memberShare(budget) {

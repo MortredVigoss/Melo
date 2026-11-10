@@ -51,7 +51,11 @@ class MobileUseFlowTest {
             ready()
             MockWebServer().use { server ->
                 server.dispatcher = object : Dispatcher() {
-                    override fun dispatch(request: RecordedRequest): MockResponse = if (request.body.clone().readUtf8().contains("question-A")) reply("reply-A", 8) else reply("reply-B", 2)
+                    // An answer is followed by its completion check whenever the turn holds tools (2026-10-27).
+                    override fun dispatch(request: RecordedRequest): MockResponse = request.body.clone().readUtf8().let { body ->
+                        if (body.contains("task completion checker")) reply("""{\"decision\":\"complete\",\"turnKind\":\"answer\",\"reasonType\":\"self_contained\",\"reason\":\"Fixture answer\",\"nextStep\":\"\",\"requirements\":[{\"text\":\"answer\",\"kind\":\"response\",\"status\":\"met\",\"evidenceIds\":[]}]}""", 0)
+                        else if (body.contains("question-A")) reply("reply-A", 8) else reply("reply-B", 2)
+                    }
                 }; server.start()
                 val a = Connection(name = "Concurrent A", model = "model-A", endpoint = server.url("/chat").toString(), stream = false)
                 val b = a.copy(id = newId(), name = "Concurrent B", model = "model-B")

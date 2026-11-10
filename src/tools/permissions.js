@@ -1,4 +1,4 @@
-import { scopeMatches, hasApprovalSurface } from '../safety/permissionContext.js';
+import { scopeMatches, hasApprovalSurface, announcePromptClosed } from '../safety/permissionContext.js';
 import { recordPermission } from '../safety/permissionAudit.js';
 import { permissionReceipt, rememberPermissionDecision } from '../safety/permissionReceipts.js';
 import { currentRequestContext, runWithRequestContext } from '../runtime/requestScope.js';
@@ -61,6 +61,7 @@ function chatHas(map, chatId, toolId) {
 
 // How long (ms) to wait for user response before auto-denying
 const PERMISSION_TIMEOUT_MS = 120_000;
+
 
 // Task-scope rules (plan A phase A4-1, 2026-11-04): one card lets the user
 // allow a member's gated tools for the current turn. Keyed by home + chat +
@@ -166,6 +167,7 @@ export async function requestPermission(toolId, args, sseEmitter, signal, chatId
     const timer = setTimeout(() => {
       pendingRequests.delete(requestId);
       signal?.removeEventListener('abort', onAbort);
+      announcePromptClosed(sseEmitter, requestId, 'timeout');
       reject(new Error(`Permission request for "${toolId}" timed out after ${PERMISSION_TIMEOUT_MS / 1000}s.`));
     }, PERMISSION_TIMEOUT_MS);
 
@@ -173,6 +175,7 @@ export async function requestPermission(toolId, args, sseEmitter, signal, chatId
     const onAbort = () => {
       clearTimeout(timer);
       pendingRequests.delete(requestId);
+      announcePromptClosed(sseEmitter, requestId, 'cancelled');
       reject(new Error('Aborted.'));
     };
     signal?.addEventListener('abort', onAbort, { once: true });
@@ -235,6 +238,7 @@ export async function requestTaskScopeApproval({ toolIds = [], task = '', label 
       clearTimeout(timer);
       signal?.removeEventListener('abort', onAbort);
       pendingRequests.delete(requestId);
+      if (decision === 'timeout' || decision === 'cancelled') announcePromptClosed(sseEmitter, requestId, decision);
       resolve({ decision, toolIds: ids, requestId });
     };
     const timer = setTimeout(() => finish('timeout'), PERMISSION_TIMEOUT_MS);

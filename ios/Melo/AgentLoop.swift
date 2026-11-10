@@ -279,6 +279,20 @@ final class AgentLoop: @unchecked Sendable {
     var maxCallsPerResponse = AgentLoopContract.shared.maxCallsPerResponse
     /// Page reads of one batch that may load at the same time (one hidden web view each).
     static let parallelPageReads = 3
+    /// Failure codes a tool returns before it starts: declined, switched off, unknown, or arguments
+    /// it refused. Nothing was written, so a write call that ends with one is not left "in flight".
+    static let refusedBeforeStart: Set<String> = ["PERMISSION_DENIED", "DENIED", "NOT_ALLOWED", "INVALID_ARGS", "CAPABILITY_DENIED", "UNKNOWN_TOOL"]
+    /// Observations cross the JS bridge with every goal, completion and delivery call, and one call
+    /// accepts 2 000 000 bytes (SharedAgentCore.evaluateSync). Their number and their total size are
+    /// bounded, oldest rows first, as on Android; the result is how many leading rows to drop.
+    static func observationOverflow(_ rows: [[String: Any]], maxRows: Int = 128, maxBytes: Int = 1_200_000) -> Int {
+        var drop = max(0, rows.count - maxRows)
+        guard rows.count - drop > 32 else { return drop }
+        let sizes = rows.map { row in 200 + ["output", "text"].reduce(0) { $0 + ((row[$1] as? String)?.utf8.count ?? 0) } }
+        var total = sizes.dropFirst(drop).reduce(0, +)
+        while rows.count - drop > 1 && total > maxBytes { total -= sizes[drop]; drop += 1 }
+        return drop
+    }
     private var contract: AgentLoopContract { .shared }
     private var completionObservations: [[String: Any]] = []
     private var completionTerminalReason = ""
@@ -384,6 +398,12 @@ final class AgentLoop: @unchecked Sendable {
         var job: [String: Any]?, leadTranscript = [AgentTranscriptItem]()
         var leadAssignmentRound: AgentRound?
         var observationsAtStart = member.firstObservation, jobRounds = member.rounds
+        func boundObservations() {
+            let dropped = Self.observationOverflow(completionObservations)
+            guard dropped > 0 else { return }
+            completionObservations.removeFirst(dropped)
+            observationsAtStart = max(0, observationsAtStart - dropped)
+        }
         var transport = self.transport
         if let exhausted = budget.exhausted() {
             let text = await exhaustedStop(exhausted)
@@ -586,7 +606,10 @@ final class AgentLoop: @unchecked Sendable {
             let inputTokens = round.inputTokens ?? round.estimatedInputTokens
             if !round.budgetAccounted { budget.record(inputTokens: inputTokens, outputTokens: round.outputTokens ?? PhoneTokenEstimate.text(round.text + round.calls.map(\.arguments).joined()), providerCalls: 1) }
             spentTokens += inputTokens + (round.outputTokens ?? PhoneTokenEstimate.text(round.text + round.calls.map(\.arguments).joined()))
-            if PhoneMemberLimits.current != nil, budget.exhausted() != nil && !checkingGoal {
+            // A member's final answer stands even when the round that produced it crossed the work
+            // allowance; only a round that asks for more work becomes a limit write-up. The answer
+            // used to be discarded for a write-up built from the member's observations (2026-11-10).
+            if PhoneMemberLimits.current != nil, budget.exhausted() != nil && !checkingGoal && !round.calls.isEmpty {
                 return try await deliverLimit("TOKEN_LIMIT", fallback: core.reply(latestUserMessage), transport: transport, sources: sources, searched: searched, records: records, iteration: iteration)
             }
             if checkingGoal, let candidate = candidateRound {
@@ -617,6 +640,7 @@ final class AgentLoop: @unchecked Sendable {
                     completionObservations.append(["id": "hosted-search:\(iteration):source:\(index)", "type": "source", "ok": true, "executed": true, "url": source.url, "reading": "provider", "text": String(round.text.prefix(4000))])
                 }
             }
+            if round.searched { boundObservations() }
             searched = searched || round.searched
             let calls = (transport.offersTools && (tools != nil || hooks.routing != nil) || catalog != nil) ? round.calls : []
             if job == nil, catalog != nil, calls.count == 1, let call = calls.first, call.name == "task_progress" {
@@ -634,9 +658,18 @@ final class AgentLoop: @unchecked Sendable {
                 if result["closed"] as? Bool == true { return try await deliverLimit("TASK_EVALUATION_LIMIT",fallback:display["output"] ?? "",transport:transport,sources:sources,searched:searched,records:records,iteration:iteration) }
                 iteration += 1; continue
             }
-            if job == nil, let catalog, calls.count == 1, let call = calls.first, call.name == "route_task", assignments.count < (routeLimits?["assignments"] ?? 0),
-               let args = try? JSONSerialization.jsonObject(with: Data(call.arguments.utf8)) as? [String:Any],
-               let next = SharedLoopPolicy.value("internalRouting", ["action":"start","catalog":catalog,"args":args,"callId":localCall(call).callID,"assignments":assignments,"goal":goal.original]) as? [String: Any], next["error"] == nil {
+            // Why a route_task that cannot start is refused; the lead is told in place of "unknown tool".
+            var routeRefusal: String? = nil
+            var routed: [String: Any]? = nil
+            if job == nil, let catalog, calls.count == 1, let call = calls.first, call.name == "route_task" {
+                if assignments.count >= (routeLimits?["assignments"] ?? 0) {
+                    routeRefusal = "The assignment limit of this reply is reached. Continue as the lead with the gathered results."
+                } else if let args = try? JSONSerialization.jsonObject(with: Data(call.arguments.utf8)) as? [String:Any],
+                          let next = SharedLoopPolicy.value("internalRouting", ["action":"start","catalog":catalog,"args":args,"callId":localCall(call).callID,"assignments":assignments,"goal":goal.original]) as? [String: Any] {
+                    if next["error"] != nil { routeRefusal = next["error"] as? String } else { routed = next }
+                }
+            }
+            if let next = routed {
                 try core.event("feedback", ["internalRouting":true])
                 job = next; assignments.append(next); jobRounds = 0; observationsAtStart = completionObservations.count
                 await hooks.onMemberJob?(assignments.count)
@@ -723,6 +756,12 @@ final class AgentLoop: @unchecked Sendable {
                     outcome = PhoneToolEnvelope.finalize(ok:false, error:"CAPABILITY_DENIED", output:"The lead holds no retrieval tools: assign this lookup with route_task (research for the web, social for first-hand posts).")
                 } else if call.name == "calculator" && job == nil {
                     outcome = PhoneToolEnvelope.finalize(ok:false, error:"UNKNOWN_TOOL", output:"Calculator is available through the internal calculation job.")
+                } else if job == nil, catalog != nil, ["route_task", "task_progress"].contains(call.name) {
+                    // The router's own reason, or the one-call rule. Both came back as "This function is
+                    // not available in the current role and turn", which told the lead nothing to act on.
+                    outcome = PhoneToolEnvelope.finalize(ok: false, error: "ROUTE_DENIED", output: calls.count > 1
+                        ? "route_task and task_progress are answered only when called alone, one call per response. Nothing was assigned or recorded: send that single call by itself."
+                        : routeRefusal ?? "This call cannot be answered now. Continue as the lead with the gathered results.")
                 } else if !core.permits(call.callID) {
                     let rejected = core.rejection(call.callID)
                     outcome = PhoneToolEnvelope.finalize(ok: false, error: rejected.code, output: rejected.code == "UNKNOWN_TOOL" ? contract.unknownToolOutput : rejected.output)
@@ -785,13 +824,16 @@ final class AgentLoop: @unchecked Sendable {
                 records.append(record)
                 if let rows = SharedLoopPolicy.value("completionObservation", ["observation": ["id": call.callID, "name": call.name, "ok": outcome.ok, "executed": executed, "output": outcome.output, "declaration": ["effect": PhoneCoreTurn.effect(call.name, arguments: call.arguments)]]]) as? [[String: Any]] {
                     completionObservations.append(contentsOf: rows)
-
+                    boundObservations()
                 }
                 if hooks.saveCursor != nil, executed && outcome.ok {
                     if let spec = DeviceToolSpec.all.first(where: { $0.name == call.name }) { cursor.protectedKinds.insert(spec.kind.rawValue) }
                     cursor.receipts[key] = PhoneToolEnvelope.modelFacing(outcome, maxOutputChars: contract.maxModelFacingOutputChars)
                 }
-                if outcome.ok || !executed || capability?.allowed == false || (!cancelled && ["PERMISSION_DENIED", "DENIED", "NOT_ALLOWED"].contains(outcome.code ?? "")) {
+                // A write call the tool refused before starting is not "in flight". Left so, a create
+                // call with a missing field ended the whole reply with "请先核对上一步操作的结果" and
+                // blocked its resume, instead of letting the model correct the call (2026-11-10).
+                if outcome.ok || !executed || capability?.allowed == false || (!cancelled && Self.refusedBeforeStart.contains(outcome.code ?? "")) {
                     cursor.inFlightEffect = nil
                 }
                 try await saveBoundary()
@@ -815,7 +857,10 @@ final class AgentLoop: @unchecked Sendable {
             try Task.checkCancellation()
             lastEvidence = evidence
             iteration += 1
-            if !core.active {
+            // A member's own turn that stops (repeated failures, no progress, its deadline) ends that
+            // member only: the next pass hands back to the lead with what the member observed. Before
+            // 2026-11-10 the whole reply ended here with the member's stop reason.
+            if !core.active && job == nil {
                 await hooks.onStage?("core:stop", "执行已停止", "failed", core.reason)
                 if ["ROUND_LIMIT", "DEADLINE_EXCEEDED"].contains(core.reason) { return try await deliverLimit(core.reason, fallback: core.reply(latestUserMessage), transport: transport, sources: sources, searched: searched, records: records, iteration: iteration) }
                 return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: core.reason == "DEADLINE_EXCEEDED" ? .budget : .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration)
@@ -926,7 +971,12 @@ final class AgentLoop: @unchecked Sendable {
         guard classification.requiresVerification else { return }
         // The completion check already judged this exact claim against the
         // turn's observations: use its verdict instead of one more request.
-        if let reviewed = goalState?.claimReview, reviewed["claim"] as? String == parsed.uncertainClaim, let verdict = reviewed["verdict"] as? String {
+        // The check reads this turn's observations only. A claim it could not verify may still rest on
+        // the memory or knowledge context the answer drew on, which only the verifier below reads: with
+        // such context (and budget left) an unverified verdict goes on to it, as before the merge.
+        let hasBackground = verification.contextBlocks.contains { !JSText.trim($0).isEmpty }
+        if let reviewed = goalState?.claimReview, reviewed["claim"] as? String == parsed.uncertainClaim, let verdict = reviewed["verdict"] as? String,
+           verdict != "UNVERIFIED" || !hasBackground || budget.exhausted() != nil {
             let result = PhoneUncertainty.Verification(verdict: verdict, correction: reviewed["correction"] as? String ?? "", originalClaim: reviewed["originalClaim"] as? String ?? "",
                                                        evidenceId: reviewed["evidenceId"] as? String ?? "", reason: "completion-check")
             outcome.text = PhoneUncertainty.apply(parsed.cleanReply, result)

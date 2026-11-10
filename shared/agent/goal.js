@@ -57,8 +57,10 @@ export function goalCandidate(state, { reply = '', observations = [], tools = []
   const hint = planRequest({ text: goalText(state), capabilities: { executors: tools.map(name => name === 'phone_action' ? 'phone_use' : name), grants: tools.map(name => name === 'phone_action' ? 'phone_use' : name) } });
   const actionHint = hint.route === 'phone' || hint.reason === 'PHONE_UNAVAILABLE';
   const evidenceRequired = used || (actionHint && !policy.toolsForbidden && !policy.contextOnly) || (research && explicitEvidence && !policy.fetchForbidden && !policy.contextOnly);
+  // A greeting opens a conversation. The same word as a reply ("好的", "ok" after "要我现在创建吗？")
+  // confirms a task and is checked like one: the conversation is passed so the two can be told apart.
   const taskCandidate = tools.length > 0 && !policy.toolsForbidden && !policy.contextOnly &&
-    !isStandaloneGreeting({ text: goalText(state) });
+    !isStandaloneGreeting({ text: goalText(state), messages: boundedContext.messages });
   if (!evidenceRequired && !taskCandidate) return { ...next, phase: 'finished', decision: 'deliver', reason: '' };
   if (next.goalTruncated || next.candidateTruncated) return stopGoal(next, 'GOAL_CHECK_TRUNCATED');
   return { ...next, phase: 'checking', availableTools: [...new Set(tools.filter(name => typeof name === 'string'))].slice(0, 256), research: !!research, evidenceRequired };
@@ -131,7 +133,11 @@ export function evidenceExcerpt(body, limit, anchors) {
     chosen.add(best);
     for (const token of found[best]) covered.add(token);
   }
-  // Room left over: first the text that follows each matched passage, then the head of the page.
+  // Room left over: first the text just before each matched passage, which holds its heading or
+  // label (a forecast's district name sat fifty characters ahead of the chosen segment, and the
+  // check could not tell whose figures it was reading); then the text that follows the passage;
+  // then the head of the page.
+  for (const index of [...chosen]) if (chosen.size < room && index > 0) chosen.add(index - 1);
   for (const index of [...chosen]) if (chosen.size < room && index + 1 < count) chosen.add(index + 1);
   for (let index = 0; index < count && chosen.size < room; index++) chosen.add(index);
   const order = [...chosen].sort((a, b) => a - b);
@@ -198,11 +204,30 @@ export function goalReviewRequest(state, observations = []) {
   return { systemPrompt: GOAL_REVIEW_INSTRUCTIONS + '\n' + REVIEW_TURN_CONTRACT + evaluationRules(state) + (state.uncertainClaim ? CLAIM_RULES : ''), messages: [{ role: 'user', content: JSON.stringify({ goal: goalText(state), revision: state.revision, candidate: state.candidate, context: state.context, availableTools: state.availableTools, requirements: state.requirements, evaluation: state.evaluation || null, ...(state.uncertainClaim ? { uncertainClaim: state.uncertainClaim } : {}), observations: evidence }) }] };
 }
 
+// The checker is asked for JSON only, and models still wrap it: a sentence before or after, a
+// fence written ```JSON, text after the closing fence. Any of these used to discard the whole
+// verdict as "check unavailable". The first balanced object in the reply is the verdict.
+function parseVerdict(raw) {
+  const text = String(raw).trim();
+  try { return JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/giu, '')); } catch { /* look for the object below */ }
+  const start = text.indexOf('{');
+  if (start < 0) throw new Error('No JSON object in the check reply.');
+  let depth = 0, quoted = false, escaped = false;
+  for (let index = start; index < text.length; index++) {
+    const char = text[index];
+    if (quoted) { if (escaped) escaped = false; else if (char === '\\') escaped = true; else if (char === '"') quoted = false; continue; }
+    if (char === '"') quoted = true;
+    else if (char === '{') depth++;
+    else if (char === '}' && --depth === 0) return JSON.parse(text.slice(start, index + 1));
+  }
+  throw new Error('Unbalanced JSON object in the check reply.');
+}
+
 export function reviewGoal(state, raw, observations = []) {
   let claimReview;
   const finish = (decision, reason, requirements = state.requirements, explanation = '') => ({ ...state, phase: 'finished', decision, reason, requirements, explanation: text(explanation), ...(claimReview ? { claimReview } : {}) });
   let report;
-  try { report = JSON.parse(String(raw).trim().replace(/^```(?:json)?\s*|\s*```$/gu, '')); } catch { return finish('partial', 'GOAL_CHECK_UNAVAILABLE'); }
+  try { report = parseVerdict(raw); } catch { return finish('partial', 'GOAL_CHECK_UNAVAILABLE'); }
   if (!report || !['complete', 'continue', 'needs_user', 'partial'].includes(report.decision) || !Array.isArray(report.requirements) || !report.requirements.length || report.requirements.length > GOAL_LIMITS.requirements || report.requirements.some(row => !row || typeof row !== 'object' || Array.isArray(row))) return finish('partial', 'GOAL_CHECK_INVALID');
   const visibleEvidence = JSON.parse(goalReviewRequest(state, observations).messages[0].content).observations;
   const validEvidence = new Set(visibleEvidence.filter(row => row.type !== 'handoff' && row.ok === true && row.executed === true && row.text.trim()).map(row => row.id));

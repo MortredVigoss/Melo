@@ -18,7 +18,7 @@ import { voiceInputSupported, voiceInputActive, voiceInputLabel, renderVoiceInpu
 import { turnLabel } from './turnPresentation.js';
 import { getBootstrap, isOverview, newChatSelection, modelPicker, toolPermissions, voiceLanguage, activeChat, activeChatAgentProfile, allChatAgentProfiles, composerTeamPlan, escapeHtml, icon, modelOptionsForAuthMode, renderTtsVoicePanel, renderExecutionPanel } from './context.js';
 import { chatState } from './state.js';
-import { attachmentIcon, attachmentLabel, slashPaletteMatches } from './controller.js';
+import { attachmentIcon, attachmentLabel, slashPaletteMatches, replyRunsElsewhere } from './controller.js';
 
 function thinkingLabel() {
   if (!chatState.sending) {
@@ -115,7 +115,8 @@ function composerHintText({ inline = false } = {}) {
     return t('正在上传视频「{name}」，完成后可发送。', { name: chatState.attachmentUploading });
   }
   if (chatState.sending) {
-    return t('正在回复。可以继续输入补充要求，会在下一步加入；更换 Agent、模型或项目从下一条消息生效。');
+    return replyRunsElsewhere() ? t('另一段对话正在回复，结束后才能在这里发送；可以先写好。')
+      : t('正在回复。可以继续输入补充要求，会在下一步加入；更换 Agent、模型或项目从下一条消息生效。');
   }
   if (chatState.voice.recording) {
     return '正在听写，点击麦克风停止。文字可修改，确认后发送。';
@@ -236,7 +237,7 @@ function renderComposerCard({ inline = false } = {}) {
           : ''
       }
 
-      ${chatState.sending ? ui`<div class="thinking-banner">${escapeHtml(thinkingLabel())}</div>` : ''}
+      ${chatState.sending && !replyRunsElsewhere() ? ui`<div class="thinking-banner">${escapeHtml(thinkingLabel())}</div>` : ''}
 
       <div class="composer-card ${inline ? 'is-thread' : ''}">
         <form data-form="composer" class="composer-form">
@@ -289,7 +290,7 @@ function renderComposerCard({ inline = false } = {}) {
                 </button>
 
                 ${
-                  chatState.sending
+                  chatState.sending && !replyRunsElsewhere()
                     ? ui`
                       <button class="composer-icon-button" type="submit" title="补充到正在进行的回复">
                         <span class="toolbar-icon">${icon.send}</span>

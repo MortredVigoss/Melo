@@ -75,13 +75,21 @@ class SharedRunBudget private constructor(
             } }
         }
     }
-    suspend fun <T> effect(work: suspend () -> T): T {
-        mutex.withLock {
+    /**
+     * Admission alone, for work the caller starts itself (page reads loaded side by side):
+     * counts one tool call and returns the time that work may take, or null when the budget refuses it.
+     */
+    suspend fun admitEffect(): Long? {
+        val allowed = mutex.withLock {
             val admission = operation("admitTool").jsonObject
             apply(admission.getValue("budget").jsonObject)
-            if (!admission.getValue("allowed").jsonPrimitive.boolean) throw SharedBudgetExhausted()
+            admission.getValue("allowed").jsonPrimitive.boolean
         }
-        val left = mutex.withLock { operation("workRemaining").jsonPrimitive.double.toLong().coerceAtLeast(0) }
+        if (!allowed) return null
+        return mutex.withLock { operation("workRemaining").jsonPrimitive.double.toLong().coerceAtLeast(0) }
+    }
+    suspend fun <T> effect(work: suspend () -> T): T {
+        val left = admitEffect() ?: throw SharedBudgetExhausted()
         return withTimeout(left) { work() }
     }
     companion object {

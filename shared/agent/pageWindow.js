@@ -7,6 +7,9 @@ import { estimateTextTokens } from './tokenEstimate.js';
 // would use up a member's input share. The window is shortened in proportion,
 // and the continuation offset it reports is where the shortened window ends.
 export const PAGE_WINDOW_TOKENS = 7000;
+// The longest window in characters (the desktop default for fetch_url, and what the
+// phone reader and the completion evidence rows use).
+export const PAGE_WINDOW_CHARS = 20000;
 export function windowChars(content, offset, maxChars, maxTokens = PAGE_WINDOW_TOKENS) {
   const start = Number.isSafeInteger(offset) && offset >= 0 ? offset : 0;
   const slice = String(content).slice(start, start + maxChars);

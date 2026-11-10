@@ -47,7 +47,7 @@ class ModelClient(private val debug: Boolean, val http: OkHttpClient = OkHttpCli
                 put("role", message.role)
                 if (message.attachments.isEmpty()) put("content", message.content)
                 else put("content", buildJsonArray {
-                    add(buildJsonObject { put("type", if (connection.protocol == "responses") "input_text" else "text"); put("text", message.content) })
+                    if (message.content.isNotBlank()) add(buildJsonObject { put("type", if (connection.protocol == "responses") "input_text" else "text"); put("text", message.content) })
                     message.attachments.forEach { image ->
                         val data = imageData(image)
                         add(buildJsonObject {

@@ -3,10 +3,15 @@ package com.melo.android.network
 import com.melo.android.data.*
 import kotlinx.serialization.json.*
 
-/** Collect wire fragments; no call can be dispatched until a valid terminal receipt. */
-internal class ToolStreamDecoder(private val protocol: String, private val progress: (String) -> Unit = {}) {
+/**
+ * Collect wire fragments; no call can be dispatched until a valid terminal receipt.
+ * `onText` receives the answer text accumulated so far, so the host can show it while it
+ * arrives; it is display only and never a completed reply.
+ */
+internal class ToolStreamDecoder(private val protocol: String, private val progress: (String) -> Unit = {}, private val onText: (String) -> Unit = {}) {
     private var model = ""
     private var text = ""
+    private var streamed = ""
     private var reasoning: String? = null
     private var finishReason = ""
     private var terminal = false
@@ -29,7 +34,7 @@ internal class ToolStreamDecoder(private val protocol: String, private val progr
         when (protocol) {
             "responses" -> when (value.text("type")) {
                 "error", "response.failed", "response.incomplete" -> error("Incomplete response stream")
-                "response.output_text.delta" -> progress("模型正在返回文字…")
+                "response.output_text.delta" -> { streamed += value.text("delta"); progress("模型正在返回文字…"); onText(streamed) }
                 "response.function_call_arguments.delta" -> progress("模型正在生成工具参数，尚未执行…")
                 "response.completed" -> { response = value["response"]!!.jsonObject; terminal = true }
             }
@@ -48,7 +53,10 @@ internal class ToolStreamDecoder(private val protocol: String, private val progr
                     val index = value.index(); val block = blocks[index] ?: error("Unknown block")
                     val delta = value["delta"]!!.jsonObject
                     when (delta.text("type")) {
-                        "text_delta" -> { blocks[index] = JsonObject(block + ("text" to JsonPrimitive(block.text("text") + delta.text("text")))); progress("模型正在返回文字…") }
+                        "text_delta" -> {
+                            blocks[index] = JsonObject(block + ("text" to JsonPrimitive(block.text("text") + delta.text("text")))); progress("模型正在返回文字…")
+                            onText(blocks.values.filter { it.text("type") == "text" }.joinToString("") { it.text("text") })
+                        }
                         "input_json_delta" -> { inputs[index] = inputs[index].orEmpty() + delta.text("partial_json"); require(inputs[index]!!.length <= 12_000); progress("模型正在生成工具参数，尚未执行…") }
                         // Keep signed opaque content for subsequent provider requests. Never display it.
                         "thinking_delta" -> blocks[index] = JsonObject(block + ("thinking" to JsonPrimitive(block.text("thinking") + delta.text("thinking"))))
@@ -58,7 +66,9 @@ internal class ToolStreamDecoder(private val protocol: String, private val progr
                 "content_block_stop" -> {
                     val index = value.index(); val block = blocks[index] ?: error("Unknown block")
                     require(openBlocks.remove(index))
-                    inputs.remove(index)?.let { blocks[index] = JsonObject(block + ("input" to MeloJson.parseToJsonElement(it).jsonObject)) }
+                    // A call without arguments streams an empty partial_json: the block keeps the `{}` it
+                    // started with. Parsing "" failed the request for every argument-free tool (todo_list).
+                    inputs.remove(index)?.takeIf(String::isNotBlank)?.let { blocks[index] = JsonObject(block + ("input" to MeloJson.parseToJsonElement(it).jsonObject)) }
                 }
                 "message_delta" -> {
                     finishReason = value["delta"]!!.jsonObject.text("stop_reason")
@@ -72,7 +82,7 @@ internal class ToolStreamDecoder(private val protocol: String, private val progr
                 val delta = choice["delta"]?.takeIf { it is JsonObject }?.jsonObject
                 if (delta != null) {
                     delta["reasoning_content"]?.takeIf { it is JsonPrimitive && it != JsonNull }?.jsonPrimitive?.content?.let { reasoning = reasoning.orEmpty() + it }
-                    delta["content"]?.takeIf { it is JsonPrimitive && it != JsonNull }?.jsonPrimitive?.content?.let { text += it; progress("模型正在返回文字…") }
+                    delta["content"]?.takeIf { it is JsonPrimitive && it != JsonNull }?.jsonPrimitive?.content?.let { text += it; progress("模型正在返回文字…"); onText(text) }
                     delta["tool_calls"]?.jsonArray.orEmpty().forEach { item ->
                         val fragment = item.jsonObject; val index = fragment.index(); val prior = calls[index]
                         val oldFunction = prior?.get("function")?.jsonObject
@@ -103,7 +113,10 @@ internal class ToolStreamDecoder(private val protocol: String, private val progr
                 put("model", model); usage?.let { put("usage", it) }
                 put("choices", buildJsonArray { add(buildJsonObject {
                     put("finish_reason", finishReason); put("message", buildJsonObject {
-                        put("role", "assistant"); put("content", text); put("tool_calls", JsonArray(calls.values.toList()))
+                        // A reply without calls must not carry `tool_calls: []`: this message is sent back when
+                        // the completion check asks for another round, and Chat Completions rejects an empty
+                        // array there (HTTP 400 "empty array. Expected an array with minimum length 1").
+                        put("role", "assistant"); put("content", text); if (calls.isNotEmpty()) put("tool_calls", JsonArray(calls.values.toList()))
                         reasoning?.let { put("reasoning_content", it) }
                     })
                 }) })

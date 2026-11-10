@@ -43,7 +43,8 @@ test('a Jina read that stays silent past the grace period is replaced by the dir
   assert.equal(jinaAborted, true, 'the losing Jina request is aborted');
   assert.equal(jinaFinished, false);
   assert.equal(elapsed >= 200 && elapsed < 2000, true, `the read waits for the grace period and no longer: ${elapsed}`);
-  assert.deepEqual(tiers(result), [['jina', 'fail', 'slow'], ['direct', 'ok', undefined]]);
+  // The request Melo gave up on is recorded as aborted: the trail must not show a failed tier in the failure colour.
+  assert.deepEqual(tiers(result), [['jina', 'aborted', 'slow'], ['direct', 'ok', undefined]]);
   assert.equal(result.evidenceTrail.find(entry => entry.tier === 'direct').extra.hedged, true);
 });
 

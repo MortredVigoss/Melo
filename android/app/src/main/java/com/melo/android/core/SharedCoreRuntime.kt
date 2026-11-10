@@ -7,13 +7,14 @@ import androidx.javascriptengine.IsolateStartupParameters
 import androidx.javascriptengine.SandboxDeadException
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.*
-import kotlinx.coroutines.guava.await
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.*
 import java.security.MessageDigest
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -24,21 +25,27 @@ class SharedCoreRuntime private constructor(
     val bundleHash: String,
 ) : AutoCloseable {
     private val closed = AtomicBoolean(false)
+    /** True once this Runtime was closed: by its owner, or because an evaluation was interrupted. */
+    val isClosed: Boolean get() = closed.get()
     private val mutex = Mutex()
     private var sequence = 0L
+    /** The evaluation this isolate is running or ran last; the isolate is closed only after it has ended. */
+    private val evaluation = AtomicReference<ListenableFuture<*>?>(null)
 
     suspend fun evaluate(request: JsonObject): JsonObject = Json.parseToJsonElement(evaluateJSON(request.toString())).jsonObject
 
     suspend fun evaluateJSON(request: String): String = mutex.withLock {
         check(!closed.get()) { "共享 Runtime 已关闭；请重新开始任务。" }
         require(request.length <= 2_000_000) { "共享 Runtime 输入超过上限。" }
-        try {
-            withTimeout(5_000) {
+        val reply = try {
+            // Null is this engine's own limit. It is an engine failure, not the run's deadline: thrown on
+            // as a timeout it was read as DEADLINE_EXCEEDED and started a write-up on the closed Runtime.
+            withTimeoutOrNull(EVALUATION_LIMIT_MS) {
                 val name = "request-${sequence++}"
                 isolate.provideNamedData(name, request.toByteArray(Charsets.UTF_16LE))
                 // Only the generated numeric name enters code. UTF-16 code units
                 // preserve Chinese, emoji and escaped JSON without TextDecoder.
-                isolate.evaluateJavaScriptAsync("""android.consumeNamedDataAsArrayBuffer('$name').then(buffer => {
+                settled(isolate.evaluateJavaScriptAsync("""android.consumeNamedDataAsArrayBuffer('$name').then(buffer => {
                     const bytes = new Uint8Array(buffer), chunks = [];
                     for (let offset = 0; offset < bytes.length; offset += 8192) {
                         const units = [];
@@ -46,19 +53,58 @@ class SharedCoreRuntime private constructor(
                         chunks.push(String.fromCharCode.apply(null, units));
                     }
                     return MeloAgent.evaluate(chunks.join(''));
-                })""").await()
+                })"""))
             }
         } catch (error: Throwable) {
             close()
             if (error is SandboxDeadException) CoreEnginePool.discard(sandbox)
             if (error is CancellationException) throw error
-            throw IllegalStateException("共享 Runtime 执行中断，已停止；没有自动重放操作。", error)
+            // The cause is named: "执行中断" alone could not tell a dead sandbox from a script error.
+            throw IllegalStateException("共享 Runtime 执行中断（${error::class.java.simpleName}），已停止；没有自动重放操作。", error)
+        }
+        if (reply == null) { close(); throw IllegalStateException("共享 Runtime 执行超时，已停止；没有自动重放操作。") }
+        reply
+    }
+
+    /**
+     * Waits for an evaluation without ever cancelling it: a stop or a timeout ends the wait only.
+     * The evaluation runs on to its end in the isolate, a few milliseconds of packaged code.
+     */
+    private suspend fun <T> settled(future: ListenableFuture<T>): T {
+        evaluation.set(future)
+        return suspendCancellableCoroutine { continuation ->
+            future.addListener({
+                try { val value = future.get(); if (continuation.isActive) continuation.resume(value) }
+                catch (error: ExecutionException) { if (continuation.isActive) continuation.resumeWithException(error.cause ?: error) }
+                catch (error: Throwable) { if (continuation.isActive) continuation.resumeWithException(error) }
+            }, Executor { it.run() })
         }
     }
 
-    override fun close() { if (closed.compareAndSet(false, true)) isolate.close() }
+    /**
+     * New evaluations are refused at once; the isolate itself is closed when what it is running has
+     * ended. An isolate closed while it was still loading the packaged bundle (a reply stopped while
+     * a turn's Runtime was opening) took down the sandbox process that every isolate of the app
+     * shares: the next evaluation of any reply then failed with SandboxDeadException and that reply
+     * ended as "共享 Runtime 执行中断" (2026-11-10 on the emulator: about one stop in sixty, and two of
+     * four runs of the direct test). Evaluations are waited for in the same way, so a stop or a trace
+     * append past its limit never closes an isolate at work. One that never ends is closed after its limit.
+     */
+    override fun close() {
+        if (!closed.compareAndSet(false, true)) return
+        val running = evaluation.get()
+        if (running == null || running.isDone) { isolate.close(); return }
+        closer.launch {
+            withTimeoutOrNull(EVALUATION_LIMIT_MS) { suspendCancellableCoroutine<Unit> { continuation -> running.addListener({ if (continuation.isActive) continuation.resume(Unit) }, Executor { it.run() }) } }
+            isolate.close()
+        }
+    }
 
     companion object {
+        private const val EVALUATION_LIMIT_MS = 5_000L
+        /** Outlives any reply: an isolate whose owner was stopped is still closed once its evaluation ends. */
+        private val closer = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
         suspend fun open(context: Context): SharedCoreRuntime {
             val app = context.applicationContext
             val sandbox = CoreEnginePool.acquire(app)
@@ -75,7 +121,7 @@ class SharedCoreRuntime private constructor(
             catch (error: SandboxDeadException) { CoreEnginePool.discard(sandbox); throw error }
             val runtime = SharedCoreRuntime(sandbox, isolate, hash)
             try {
-                withTimeout(5_000) { isolate.evaluateJavaScriptAsync(bundle.toString(Charsets.UTF_8)).await() }
+                withTimeout(EVALUATION_LIMIT_MS) { runtime.settled(isolate.evaluateJavaScriptAsync(bundle.toString(Charsets.UTF_8))) }
                 val hello = runtime.evaluate(buildJsonObject { put("version", 1); put("op", "hello") })
                 check(hello["ok"]?.jsonPrimitive?.boolean == true) { "共享 Runtime 协议不兼容。" }
                 return runtime

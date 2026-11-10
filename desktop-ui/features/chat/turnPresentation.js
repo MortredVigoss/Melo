@@ -5,7 +5,8 @@ export function createTurnPresentation(requestId) {
 export function receiveTurnPresentation(turn, event, payload = {}) {
   if (!turn) return;
   // Approval requestId belongs to the approval, not the chat submission.
-  const identity = event === 'tool_permission' || event === 'capability_request' ? payload.turnRequestId : payload.turnRequestId || payload.requestId;
+  const approval = ['tool_permission', 'capability_request', 'tool_permission_closed', 'capability_request_closed'].includes(event);
+  const identity = approval ? payload.turnRequestId : payload.turnRequestId || payload.requestId;
   if (identity && identity !== turn.requestId) return;
   if (payload.runId) turn.runId = payload.runId;
   if (event === 'started') turn.phase = 'waiting';
@@ -14,6 +15,14 @@ export function receiveTurnPresentation(turn, event, payload = {}) {
   else if (event === 'tool_calls_start') turn.phase = 'tools';
   else if (event === 'tool_calls_done') turn.phase = 'thinking';
   else if (event === 'tool_permission' || event === 'capability_request') turn.phase = 'permission';
+  // The server stopped waiting for a prompt (timeout, cancel): the turn goes on. Left in
+  // 'permission', the banner kept saying "等待你的确认" with no prompt on screen (2026-11-10).
+  else if (event === 'tool_permission_closed' || event === 'capability_request_closed') { if (turn.phase === 'permission') turn.phase = 'thinking'; }
+  // The delivery check: a running `goal-check` stage until its verdict (2026-11-10).
+  else if (event === 'execution_event' && payload.kind === 'pipeline' && /^goal-check:/.test(String(payload.id || ''))) {
+    if (payload.status === 'running') turn.phase = 'checking';
+    else if (turn.phase === 'checking') turn.phase = 'thinking';
+  }
   else if (event === 'reply_text' && payload.final) turn.phase = 'finishing';
   else if (event === 'done') turn.phase = 'complete';
   else if (event === 'error') turn.phase = 'error';
@@ -23,7 +32,7 @@ export function receiveTurnPresentation(turn, event, payload = {}) {
 export function turnLabel(turn, { permission = false, tools = false } = {}) {
   if (permission) return '等待你的确认';
   if (tools) return '正在执行工具';
-  return { submitting: '正在提交', waiting: '已提交 · 等待响应', thinking: '正在思考', replying: '正在回复', tools: '正在执行工具', permission: '等待你的确认', finishing: '正在整理回复', complete: '回复已完成', error: '本次回复未完成', stopped: '已停止' }[turn?.phase] || '正在处理';
+  return { submitting: '正在提交', waiting: '已提交 · 等待响应', thinking: '正在思考', replying: '正在回复', tools: '正在执行工具', permission: '等待你的确认', checking: '正在核对回答', finishing: '正在整理回复', complete: '回复已完成', error: '本次回复未完成', stopped: '已停止' }[turn?.phase] || '正在处理';
 }
 
 export function chatStreamError(payload = {}) {

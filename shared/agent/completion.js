@@ -5,6 +5,7 @@ import { runtimeMessage } from './runtimeMessages.js';
 import { planRequest } from './search.js';
 import { toolEffect } from './toolEffects.js';
 import { startGoal, goalSnapshot } from './goal.js';
+import { PAGE_WINDOW_CHARS } from './pageWindow.js';
 
 // Observable completion, separate from transport success and tool ok. Hosts
 // supply actual receipts; model-authored claims are never verification inputs.
@@ -32,6 +33,10 @@ function relevant(source, goal) {
 export function completionReceipt({ goal = '', kind = 'answer', reply = '', citations = [], observations = [], terminalReason = '', verifiedActions = [], task } = {}) {
   // The checked speech act outranks a lexical route hint in persisted records.
   if (['answer', 'feedback', 'clarification'].includes(task?.turnKind)) kind = 'answer';
+  // So does a check that judged the answer self-contained: without this, a question that merely
+  // contains a device or file verb ("操作系统是什么？", "How do I open a file in Python?") was planned
+  // as a phone or file action, and its checked answer was recorded and shown as blocked (2026-11-10).
+  if (task?.decision === 'deliver' && task.reason === 'SELF_CONTAINED_ANSWER') kind = 'answer';
   const rows = Array.isArray(observations) ? observations.slice(0, AGENT_LOOP_CONTRACT.guardLimits.completionObservations) : [];
   const performed = rows.filter(row => row?.ok === true && row.executed === true);
   const base = { version: 1, kind, outcome: 'blocked', goalState: 'unverified', reason: '', evidenceIds: [], completedSteps: new Set(performed.map(row => String(row.id).split(':source:')[0])).size, ...(task ? { task } : {}) };
@@ -61,7 +66,10 @@ export function completionReceipt({ goal = '', kind = 'answer', reply = '', cita
   if (!needsResearch && !needsAction) return { ...base, outcome: performed.length ? 'partial' : 'blocked', reason: 'COMPLETION_CONTRACT_UNKNOWN' };
   let sources = [];
   if (needsResearch) {
-    const links = value => (String(value).match(/https?:\/\/[^\s<>"）)]+/gu) || []).map(value => value.replace(/[.,，。;；]+$/u, ''));
+    // A URL in running Chinese text ends where the CJK text or punctuation starts ("读取 https://a.b/c，总结…",
+    // "看看https://a.b/c讲了什么"). Read up to the next space, the requested URL matched no page that was
+    // read, and a member that had read exactly that page was reported as partial (2026-11-10).
+    const links = value => (String(value).match(/https?:\/\/[^\s<>"）)\u3000-\u303f\u3400-\u9fff\uff00-\uffef]+/gu) || []).map(value => value.replace(/[.,;:!?]+$/u, ''));
     const requested = links(goal);
     const cited = new Set([...links(reply), ...(Array.isArray(citations) ? citations : []).map(row => url(typeof row === 'string' ? row : row?.url || row?.sourceUrl || row?.src)).filter(Boolean)]);
     sources = rows.filter(row => row?.ok === true && row.executed === true && row.type === 'source' && typeof row.id === 'string' && row.id.length > 0 && url(row.url) &&
@@ -83,6 +91,7 @@ export function completionReceipt({ goal = '', kind = 'answer', reply = '', cita
 // Tool-specific adapters pass actual bodies, never a formatted search answer
 // (which may contain an echoed query). These bounded rows are ephemeral; only
 // the final receipt and evidence IDs may be persisted.
+export const SOURCE_TEXT_CHARS = PAGE_WINDOW_CHARS + 200;
 export function completionObservation({ id, name, ok, executed, output = '', data = {}, sources = [], arguments: args = {}, declaration = {} } = {}) {
   const effect = toolEffect(name, args, declaration);
   const effects = ['phone_action', 'phone_workflow'].includes(name) && Array.isArray(data.applied_effects) ? JSON.stringify(data.applied_effects).slice(0, 2400) : '';
@@ -106,10 +115,13 @@ export function completionObservation({ id, name, ok, executed, output = '', dat
     // separate facts (2026-11-07 review): cutting a long text marks it
     // truncated and turns only a read page into a partial read. A provider
     // answer, snippet or other non-page text of any length never becomes one.
-    const text = String(source.text || source.content || ''), truncated = text.length > 16000;
+    // A source row keeps one whole page window (plus the reader's continuation line).
+    // At 16 000 characters the last fifth of a full desktop window was invisible to the
+    // completion check, which then reported facts read there as missing (2026-11-10).
+    const text = String(source.text || source.content || ''), truncated = text.length > SOURCE_TEXT_CHARS;
     const kind = source.reading || 'extracted';
     rows.push({ id: `${rows[0].id}:source:${index}`, type: 'source', ok: true, executed: true,
-      url: source.url, text: text.slice(0, 16000), reading: kind === 'extracted' && truncated ? 'partial' : kind, ...(truncated ? { truncated: true } : {}) });
+      url: source.url, text: text.slice(0, SOURCE_TEXT_CHARS), reading: kind === 'extracted' && truncated ? 'partial' : kind, ...(truncated ? { truncated: true } : {}) });
   }
   return rows;
 }

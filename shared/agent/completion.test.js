@@ -111,8 +111,9 @@ test('relevant sources can support delivery without a pasted URL; citations can 
 
 // 2026-11-07 review: the kind of source and how much of its text was kept are separate facts.
 test('a long provider answer stays provider-reported; only a read page becomes a partial read', async () => {
-  const { completionObservation } = await import('./completion.js');
-  const long = 'Opening hours are 8am to 4pm. ' + 'x'.repeat(16000), exact = 'y'.repeat(16000);
+  // A source row keeps one whole page window (SOURCE_TEXT_CHARS; 16 000 before 2026-11-10).
+  const { completionObservation, SOURCE_TEXT_CHARS } = await import('./completion.js');
+  const long = 'Opening hours are 8am to 4pm. ' + 'x'.repeat(SOURCE_TEXT_CHARS), exact = 'y'.repeat(SOURCE_TEXT_CHARS);
   const rows = completionObservation({ id: 'hosted:0', name: 'web_search', ok: true, executed: true, output: 'Provider-reported completed Search', sources: [
     { url: 'https://cafe.example/hours', reading: 'provider', text: long },
     { url: 'https://cafe.example/menu', reading: 'snippet', text: long },
@@ -120,9 +121,54 @@ test('a long provider answer stays provider-reported; only a read page becomes a
     { url: 'https://cafe.example/exact', reading: 'provider', text: exact },
     { url: 'https://cafe.example/whole', text: exact }] });
   const by = Object.fromEntries(rows.filter(row => row.type === 'source').map(row => [row.url.split('/').pop(), row]));
-  assert.deepEqual([by.hours.reading, by.hours.truncated, by.hours.text.length], ['provider', true, 16000]);
+  assert.deepEqual([by.hours.reading, by.hours.truncated, by.hours.text.length], ['provider', true, SOURCE_TEXT_CHARS]);
   assert.deepEqual([by.menu.reading, by.menu.truncated], ['snippet', true]);
   assert.deepEqual([by.page.reading, by.page.truncated], ['partial', true], 'a cut page is a partial read');
-  assert.deepEqual([by.exact.reading, 'truncated' in by.exact], ['provider', false], '16 000 characters are kept whole');
+  assert.deepEqual([by.exact.reading, 'truncated' in by.exact], ['provider', false], 'text of exactly the limit is kept whole');
   assert.deepEqual([by.whole.reading, 'truncated' in by.whole], ['extracted', false]);
+});
+
+// 2026-11-10 agent audit. On the desktop the completion receipt planned "操作系统是什么？" as a phone
+// action (操作) and "How do I open a file in Python?" as a file action, so an answer the check had
+// judged self-contained was recorded and shown as blocked ("受阻 · 尚无目标完成证据").
+test('an answer the check judged self-contained is delivered whatever verbs the question contains', async () => {
+  const { completionResult } = await import('./completion.js');
+  const { startGoal, goalCandidate, reviewGoal, goalSnapshot } = await import('./goal.js');
+  const verdict = JSON.stringify({ decision: 'complete', turnKind: 'answer', reasonType: 'self_contained', reason: 'Explained.', nextStep: '', requirements: [{ text: 'explain', kind: 'response', status: 'met', evidenceIds: [] }] });
+  const receiptFor = (goal, tools) => {
+    const candidate = goalCandidate(startGoal(goal), { reply: 'Here is the explanation.', observations: [], tools, roundsLeft: 4 });
+    assert.equal(candidate.phase, 'checking', goal);
+    const reviewed = reviewGoal(candidate, verdict, []);
+    return { reviewed, receipt: completionResult({ goal, reply: 'Here is the explanation.', observations: [], task: goalSnapshot(reviewed), locale: 'zh' }) };
+  };
+  // The desktop's tools: no phone control, so none of these questions needs evidence of an action.
+  for (const goal of ['操作系统是什么？', 'How do I open a file in Python?', '写个脚本删除目录下的临时文件', '打开方式有哪几种，分别是什么意思？', 'Explain how a tree grows.']) {
+    const { reviewed, receipt } = receiptFor(goal, ['web_search', 'fetch_url', 'file_read', 'file_write', 'bash']);
+    assert.deepEqual([reviewed.decision, reviewed.reason], ['deliver', 'SELF_CONTAINED_ANSWER'], goal);
+    assert.deepEqual([receipt.outcome, receipt.reason, receipt.summary], ['completed', 'ANSWER_DELIVERED', '回答已交付'], goal);
+  }
+  // With phone control offered the same questions go through the evidence path; the check's own
+  // judgement that the turn is an answer still delivers them.
+  for (const goal of ['操作系统是什么？', '打开方式有哪几种，分别是什么意思？']) {
+    const { receipt } = receiptFor(goal, ['web_search', 'fetch_url', 'phone_use']);
+    assert.deepEqual([receipt.outcome, receipt.kind], ['completed', 'answer'], goal);
+  }
+  // An action request that was only talked about is still not a delivered answer.
+  const unchecked = completionResult({ goal: '打开设置', reply: '已经打开了。', observations: [], locale: 'zh' });
+  assert.equal(unchecked.outcome, 'blocked');
+  const partial = completionResult({ goal: '打开设置', reply: '已经打开了。', observations: [], locale: 'zh', task: { decision: 'partial', reason: 'GOAL_UNAVAILABLE', requirements: [{ text: 'open settings', kind: 'external_effect', status: 'missing', evidenceIds: [] }] } });
+  assert.equal(partial.outcome, 'blocked');
+});
+
+// A URL in running Chinese text was read up to the next space, so "the page the user asked for" matched
+// nothing that was read and a member that had read exactly that page was reported as partial.
+test('a requested URL ends where Chinese text or punctuation begins', async () => {
+  const { completionReceipt, completionObservation } = await import('./completion.js');
+  const read = completionObservation({ id: 'read', name: 'fetch_url', ok: true, executed: true, output: 'x', data: { url: 'https://example.com/article', text: 'The article was published on 3 March 2026 by the harbour authority.' } });
+  const receipt = goal => completionReceipt({ goal, kind: 'research', reply: 'Published on 3 March 2026.', citations: ['https://example.com/article'], observations: read });
+  for (const goal of ['Read https://example.com/article and tell me the date', '读取 https://example.com/article，总结发布日期', '看看https://example.com/article讲了什么', '（来源：https://example.com/article）请核对', '读取 https://example.com/article。'])
+    assert.deepEqual([receipt(goal).outcome, receipt(goal).reason], ['completed', 'RELEVANT_SOURCES_READ'], goal);
+  // Another requested page that was not read still leaves the receipt partial.
+  assert.equal(receipt('读取 https://other.invalid/page，总结发布日期').reason, 'RELEVANT_READ_SOURCE_MISSING');
+  assert.equal(receipt('读取 https://example.com/article 和 https://other.invalid/page').outcome, 'completed', 'one of the requested pages was read');
 });

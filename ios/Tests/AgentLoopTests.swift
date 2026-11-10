@@ -708,7 +708,7 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
         // flags as uncertain, so finalize sends no verifier request of its own.
         do {
             let factual = AgentLoop.classify("东京塔有多高？", history: [])
-            func merged(_ claim: String, reply: String = "东京塔高 330 米。\n[UNCERTAIN: 东京塔的确切高度]") async throws -> (AgentLoopOutcome, ScriptedTransport) {
+            func merged(_ claim: String, reply: String = "东京塔高 330 米。\n[UNCERTAIN: 东京塔的确切高度]", context: [String] = []) async throws -> (AgentLoopOutcome, ScriptedTransport) {
                 var n = 0
                 let transport = ScriptedTransport { input in
                     if let review = input.goalReview {
@@ -723,7 +723,7 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
                 transport.completeReply = { _, _ in #"{"verdict":"VERIFIED","evidenceId":"tool:v1","evidenceQuote":"333 米"}"# }
                 let tools = loopTools(Log()) { _ in PhoneToolResult(output: PhoneToolEnvelope.success("Tokyo Tower: 东京塔高 333 米，1958 年建成。")) }
                 let outcome = try await AgentLoop(transport: transport, tools: tools, budget: PhoneRunBudget(), latestUserMessage: "东京塔有多高？",
-                                                  verification: AgentVerification(question: "东京塔有多高？", classification: factual)).run()
+                                                  verification: AgentVerification(question: "东京塔有多高？", classification: factual, contextBlocks: context)).run()
                 return (outcome, transport)
             }
             let corrected = try await merged(#","claim":{"verdict":"CORRECTED","evidenceId":"v1","evidenceQuote":"333 米","originalClaim":"东京塔高 330 米。","correction":"东京塔高 333 米。"}"#)
@@ -734,6 +734,14 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             // A check that did not judge the claim leaves the verifier request in place.
             let unjudged = try await merged("")
             assert(unjudged.1.completions.count == 1 && unjudged.0.verification?.verdict == "VERIFIED" && unjudged.0.text == "东京塔高 330 米。")
+            // 2026-11-10 audit. The check reads this turn's observations only. A claim it could not verify
+            // may still rest on the memory or knowledge the answer drew on, which only the verifier reads:
+            // with such context the verifier is asked, as before the merge; without it nothing more is sent.
+            let unverified = #","claim":{"verdict":"UNVERIFIED","evidenceId":"","evidenceQuote":""}"#
+            let withMemory = try await merged(unverified, context: ["Memory: 东京塔高 333 米。"])
+            assert(withMemory.1.completions.count == 1 && withMemory.0.verification?.verdict == "VERIFIED" && withMemory.0.verification?.reason != "completion-check", "\(withMemory.1.completions.count) \(String(describing: withMemory.0.verification))")
+            let withoutMemory = try await merged(unverified)
+            assert(withoutMemory.1.completions.isEmpty && withoutMemory.0.verification?.verdict == "UNVERIFIED" && withoutMemory.0.verification?.reason == "completion-check")
         }
 
         // 2026-11-10 latency audit: a batch of page reads loads side by side, at most
@@ -823,6 +831,133 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             }
             assert(work == 1 && reports == 1 && checks == 1 && done.completion?.outcome == "partial" && done.completion?.reason == "LIMIT_DELIVERED")
             assert(done.text.contains("Sydney") && done.text.contains("ticket availability"))
+        }
+
+        // 2026-11-10 audit. A member's own stop ends that member, not the reply. Three failed
+        // rounds of the research member used to end the whole reply with the stop message; the
+        // lead now gets the handoff and answers.
+        do {
+            let log = Log()
+            var h = hooks(log); h.internalRouting = true
+            var leads = 0, memberRounds = 0, writeUps = 0, handoff = ""
+            let transport = ScriptedTransport { request in
+                if (request.goalReview?["systemPrompt"] as? String ?? "").contains("execution allowance is ending") { writeUps += 1; return answer("None of the venue pages could be loaded.") }
+                if request.goalReview != nil { return answer(#"{"decision":"partial","reasonType":"unavailable","requirements":[{"text":"venue hours","status":"missing","evidenceIds":[]}]}"#) }
+                if request.internalJob != nil { memberRounds += 1; return calls([fc("read-\(memberRounds)", "open_url", #"{"url":"https://a.example/page-\#(memberRounds)"}"#)]) }
+                leads += 1
+                if leads == 1 { return calls([fc("route", "route_task", #"{"role":"research","task":"Read the venue page for today's hours"}"#)]) }
+                if case .toolRound(_, let outputs)? = request.transcript.last { handoff = outputs.first?.modelOutput ?? "" }
+                return answer("I could not open the venue page, so today's hours are unconfirmed.")
+            }
+            let tools = loopTools(log) { _ in PhoneToolResult(output: PhoneToolEnvelope.failure("LOAD_FAILED", "The page could not be loaded.")) }
+            let outcome = try await AgentLoop(transport: transport, tools: tools, budget: PhoneRunBudget(), latestUserMessage: "What are the venue's hours today?", hooks: h).run()
+            assert(leads == 2 && outcome.text.contains("unconfirmed"), "the lead answers after its member stopped: leads \(leads), \(outcome.text)")
+            assert(memberRounds == 3 && log.performed.count == 3 && writeUps == 1, "three failed rounds end the member with one write-up: \(memberRounds) \(writeUps)")
+            assert(handoff.contains("partial"), "the handoff says the member did not finish: \(handoff)")
+        }
+        // A route_task the router refuses, and two routing calls in one response, come back with the
+        // reason. Both used to be answered as a function "not available in the current role and turn".
+        do {
+            let log = Log()
+            var h = hooks(log); h.internalRouting = true
+            var leads = 0, refusals: [String] = []
+            let transport = ScriptedTransport { request in
+                if request.goalReview != nil { return answer(#"{"decision":"partial","reasonType":"unavailable","requirements":[{"text":"hours","status":"missing","evidenceIds":[]}]}"#) }
+                assert(request.internalJob == nil, "a refused assignment starts no member")
+                leads += 1
+                if case .toolRound(_, let outputs)? = request.transcript.last { refusals += outputs.map(\.modelOutput) }
+                if leads == 1 { return calls([fc("r1", "route_task", #"{"role":"nobody","task":"Read the venue page"}"#)]) }
+                if leads == 2 { return calls([fc("r2", "route_task", #"{"role":"research","task":"Read the venue page"}"#), fc("r3", "route_task", #"{"role":"research","task":"Read the forecast"}"#)]) }
+                return answer("I could not assign the lookups.")
+            }
+            let outcome = try await AgentLoop(transport: transport, tools: loopTools(log), budget: PhoneRunBudget(), latestUserMessage: "Check the venue hours and the forecast", hooks: h).run()
+            assert(outcome.text.contains("could not assign") && log.performed.isEmpty, outcome.text)
+            assert(refusals.count == 3 && refusals.allSatisfy { $0.contains("ROUTE_DENIED") && !$0.contains("not available in the current role") }, "\(refusals)")
+            assert(refusals[0].contains("Invalid or unavailable internal job") && refusals[1].contains("called alone") && refusals[2].contains("called alone"), "\(refusals)")
+        }
+        // A write call its tool refused before starting (a missing field here) is not "in flight":
+        // the model corrects the call and the reply goes on. It used to end the reply with
+        // "请先核对上一步操作的结果" and to block its resume. A failure the tool cannot place
+        // before or after the write still stops the reply.
+        do {
+            let log = Log()
+            var tools = loopTools(log) { call in
+                let title = object(call.arguments)["title"] as? String ?? ""
+                return PhoneToolResult(output: title.isEmpty ? PhoneToolEnvelope.failure("INVALID_ARGS", "title is required.") : PhoneToolEnvelope.success(#"{"id":"saved","title":"Call the venue"}"#))
+            }
+            tools.definitions += [DeviceToolSpec.all.first { $0.name == "reminders_create" }!.definition]
+            var h = hooks(log)
+            var inFlight: [String?] = []
+            h.saveCursor = { cursor in inFlight.append(cursor.inFlightEffect) }
+            var rounds = 0
+            let transport = ScriptedTransport { request in
+                if request.goalReview != nil { return answer(#"{"decision":"complete","reasonType":"fulfilled","requirements":[{"text":"create reminder","status":"met","evidenceIds":["fixed"]}]}"#) }
+                rounds += 1
+                if rounds == 1 { return calls([fc("bad", "reminders_create", "{}")]) }
+                if rounds == 2 { return calls([fc("fixed", "reminders_create", #"{"title":"Call the venue"}"#)]) }
+                return answer("The reminder is saved.")
+            }
+            let outcome = try await AgentLoop(transport: transport, tools: tools, budget: PhoneRunBudget(), latestUserMessage: "Remind me to call the venue", hooks: h).run()
+            assert(outcome.text == "The reminder is saved." && log.performed.map(\.callID) == ["bad", "fixed"], "\(outcome.text) \(log.performed.map(\.callID))")
+            assert(inFlight.contains("reminders_create") && inFlight.last! == nil, "the write is marked while it runs and cleared after: \(inFlight)")
+            assert(AgentLoop.refusedBeforeStart.isSuperset(of: ["INVALID_ARGS", "CAPABILITY_DENIED", "UNKNOWN_TOOL", "PERMISSION_DENIED"]) && !AgentLoop.refusedBeforeStart.contains("UNKNOWN") && !AgentLoop.refusedBeforeStart.contains("TIMEOUT"))
+            let unknownLog = Log()
+            var unknownTools = loopTools(unknownLog) { _ in PhoneToolResult(output: PhoneToolEnvelope.failure("UNKNOWN", "The reminder store returned an error.")) }
+            unknownTools.definitions += [DeviceToolSpec.all.first { $0.name == "reminders_create" }!.definition]
+            var strict = hooks(unknownLog); strict.saveCursor = { _ in }
+            let stuck = ScriptedTransport { _ in calls([fc("w", "reminders_create", #"{"title":"x"}"#)]) }
+            do {
+                _ = try await AgentLoop(transport: stuck, tools: unknownTools, budget: PhoneRunBudget(), latestUserMessage: "Remind me", hooks: strict).run()
+                assertionFailure("a write whose result is unknown must stop the reply")
+            } catch {}
+            assert(stuck.requests.count == 1 && unknownLog.performed.count == 1)
+        }
+        // A team member's final answer stands even when the round that produced it crossed the work
+        // allowance. It used to be discarded for a limit write-up built from the member's (empty)
+        // observations. A round that still asks for work is cut off as before (the cases above).
+        do {
+            let draft = "DRAFT " + String(repeating: "paragraph ", count: 200)
+            let writer = ScriptedTransport { request in
+                if request.goalReview != nil { return answer("LIMIT WRITE-UP") }
+                var row = answer(draft); row.inputTokens = 100; row.outputTokens = 25000; return row
+            }
+            let written = try await PhoneMemberLimits.$current.withValue(.init(iterations: 8, tokens: 32000, timeoutMs: 180000)) {
+                try await AgentLoop(transport: writer, tools: nil, budget: PhoneRunBudget(), latestUserMessage: "Write the summary").run()
+            }
+            assert(written.text == draft && writer.requests.count == 1, "\(written.text.prefix(40)) after \(writer.requests.count) requests")
+            assert(written.completion?.outcome == "completed")
+        }
+        // Observations cross the JS bridge with every check, and one call accepts 2 000 000 bytes.
+        // Their number and their total size are bounded, oldest first; a short list is left alone.
+        do {
+            let page = String(repeating: "页", count: WebPageText.pageCharacters) // one full page of a Chinese site: 36 000 bytes
+            let rows: [[String: Any]] = (0..<60).map { ["id": "read-\($0):source:0", "type": "source", "text": page] }
+            let drop = AgentLoop.observationOverflow(rows)
+            let kept = rows.dropFirst(drop).reduce(0) { $0 + (($1["text"] as? String)?.utf8.count ?? 0) }
+            assert(drop > 0 && kept <= 1_200_000 && kept > 1_000_000, "the newest rows are kept up to the bound: dropped \(drop), kept \(kept) bytes")
+            assert(AgentLoop.observationOverflow(Array(rows.prefix(20))) == 0, "twenty rows are never trimmed by size")
+            assert(AgentLoop.observationOverflow((0..<200).map { ["id": "row-\($0)", "output": "ok"] }) == 72, "at most 128 rows")
+            // Through the loop, with the reader's real result shape: sixty full pages are 2.9 MB of
+            // observations, which the bridge refused; the reply then failed at its final check.
+            let log = Log()
+            var reads = 0, checked = 0
+            let transport = ScriptedTransport { request in
+                if request.goalReview != nil {
+                    checked += 1
+                    let bytes = (try? JSONSerialization.data(withJSONObject: request.goalReview ?? [:]).count) ?? 0
+                    assert(bytes < 2_000_000, "the check request stays inside the bridge limit: \(bytes)")
+                    return answer(#"{"decision":"partial","reasonType":"unavailable","requirements":[{"text":"summary","status":"missing","evidenceIds":[]}]}"#)
+                }
+                reads += 1
+                return reads <= 60 ? calls([fc("read-\(reads)", "open_url", #"{"url":"https://a.example/long-\#(reads)"}"#)]) : answer("Summary of the pages.")
+            }
+            let tools = loopTools(log) { call in
+                let url = object(call.arguments)["url"] as? String ?? ""
+                return PhoneToolResult(output: WebPageText.envelope(WebPageText.openResult(url: url, finalURL: url, title: "Long page", description: "", text: page, page: 1)))
+            }
+            var h = hooks(log); h.maxTaskIterations = 80
+            let outcome = try await AgentLoop(transport: transport, tools: tools, budget: PhoneRunBudget(), latestUserMessage: "Summarise the long pages", hooks: h).run()
+            assert(outcome.text.contains("Summary of the pages") && log.performed.count == 60 && checked >= 1, "\(outcome.text.prefix(60)) reads \(log.performed.count) checks \(checked)")
         }
 
         // 10. Team members run on a narrowed child of the turn budget; their use lands on the parent.

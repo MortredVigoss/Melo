@@ -42,13 +42,19 @@ export function createFinalizeNode(turn) {
     // The completion check already judged this exact claim against the turn's
     // observations (shared goal check, `claimReview`); only a claim no check
     // has seen still gets its own request.
-    const reviewed = graphState.claimReview?.claim === parsed.uncertainClaim ? graphState.claimReview : null;
+    const checked = graphState.claimReview?.claim === parsed.uncertainClaim ? graphState.claimReview : null;
+    // The check reads this turn's observations only. A claim it could not verify may still rest on
+    // the memory, knowledge or project context the answer drew on, which only the verifier reads:
+    // with such context an unverified verdict goes on to the verifier, as it did before the two
+    // were merged (2026-11-10 review; otherwise such answers gained a false "could not verify" note).
+    const contextBlocks = [graphState.memoryContext, graphState.dynamicContext, graphState.projectContext];
+    const reviewed = checked && (checked.verdict !== 'UNVERIFIED' || !contextBlocks.some(block => typeof block === 'string' && block.trim())) ? checked : null;
     if (shouldVerify) {
       const verification = reviewed ? { verdict: reviewed.verdict, correction: reviewed.correction, originalClaim: reviewed.originalClaim, evidenceId: reviewed.evidenceId, reason: 'completion-check' } : await verifyUncertainClaim({
         userMessage: latestUserMessage,
         assistantReply: parsed.cleanReply,
         uncertainClaim: parsed.uncertainClaim,
-        contextBlocks: [graphState.memoryContext, graphState.dynamicContext, graphState.projectContext],
+        contextBlocks,
         toolEvidence: graphState.toolEvidence || [],
         config: { ...config, apiKey: modelOverrides.apiKey, baseUrl: modelOverrides.baseUrl, ...turn.answerConnection },
         model: modelOverrides.verifier || turn.answerConnection?.model ||

@@ -34,6 +34,15 @@ function nativeSceneEvent(event) {
     ...(event.output != null ? { output: JSON.stringify({ ...safe, local_details: true }) } : {}),
     ...(event.result ? { result: { ...safe, summary: hint } } : {}) };
 }
+// What one page read covered. A windowed read says which part of the page it
+// holds and whether the rest can still be read; a result without a page length
+// (older hosts) keeps the earlier wording.
+function fetchedSummary(result) {
+  const read = String(result.text || '').length;
+  if (!result.truncated || !Number.isFinite(result.length)) return `已读取网页文本 ${read} 字符${result.truncated ? '（已截断）' : ''}。内容时效仍需核对。`;
+  const start = Number.isFinite(result.offset) ? result.offset : 0;
+  return `已读取网页文本第 ${start + 1}–${start + read} 字符，全文 ${result.length} 字符${result.nextOffset != null ? '，其余可续读' : ''}。内容时效仍需核对。`;
+}
 export function executionScene({ action, scene, runId, chatId, query, at, event = {}, outcome, reason, completion } = {}) {
   if (action === 'create') return { version: 1, runId, chatId, query: text(query, 4000), startedAt: at, status: 'running', sequence: 0, operations: [], pipeline: [], sources: [], artifacts: [], events: [], lastModule: 'compute', taskOutcome: 'running' };
   if (!scene || scene.version !== 1) throw new Error('Unknown execution scene.');
@@ -72,7 +81,7 @@ export function executionScene({ action, scene, runId, chatId, query, at, event 
     const result = event.result;
     row.resultSummary = text(result.ok !== true ? result.error || result.summary || result.code || '工具未成功完成' :
       row.name === 'web_search' ? `检索返回 ${(result.results || []).length} 条来源；搜索摘要不等于网页读取。` :
-      row.name === 'fetch_url' ? `已读取网页文本 ${String(result.text || '').length} 字符${result.truncated ? '（已截断）' : ''}。内容时效仍需核对。` : result.summary || '已收到成功回执。', 2000);
+      row.name === 'fetch_url' ? fetchedSummary(result) : result.summary || '已收到成功回执。', 2000);
   }
   if (Number.isFinite(event.durationMs)) row.durationMs = Math.max(0, event.durationMs);
   if (['completed', 'failed', 'cancelled', 'interrupted'].includes(event.status)) { row.status = event.status; row.finishedAt = at; }

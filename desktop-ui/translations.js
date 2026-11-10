@@ -4,6 +4,8 @@ export { INTERFACE_TERMS as interfaceTermKeys } from './interfaceLanguages.js';
 // Authored interface copy only. User messages, names and provider output never enter this catalog.
 // Columns: Chinese source / English / Japanese / Korean / Spanish.
 const rows = [
+// Agent audit fixes (2026-11-10).
+["另一段对话正在回复，结束后才能在这里发送；可以先写好。", "Another conversation is being answered. You can send here once it finishes; feel free to write your message now.", "別の会話に返信中です。終わり次第ここで送信できます。先に書いておけます。", "다른 대화에 답변 중입니다. 끝나면 여기서 보낼 수 있습니다. 미리 작성해 두셔도 됩니다.", "Se está respondiendo otra conversación. Podrás enviar aquí cuando termine; puedes ir escribiendo."],
 // War room (layout A, 2026-11-06).
 // War room delivery states and exact totals (layout A, C8, 2026-11-06).
 ["五个区域", "The five regions", "5 つの領域", "다섯 영역", "Las cinco regiones"],

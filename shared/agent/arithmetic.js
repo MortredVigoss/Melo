@@ -37,14 +37,14 @@ export function convertUnit(value, from, to) {
     if (tc === 'c') result = celsius;
     else if (tc === 'f') result = celsius * 9 / 5 + 32;
     else result = celsius + 273.15;
-    return { result: +result.toFixed(6), from, to, value };
+    return { result: rounded(result), from, to, value };
   }
 
   const fromU = UNIT_TABLE[fl], toU = UNIT_TABLE[tl];
   if (!Object.hasOwn(UNIT_TABLE,fl) || !Object.hasOwn(UNIT_TABLE,tl)) return { error: `Unknown unit: ${!fromU ? from : to}` };
   if (fromU.base !== toU.base) return { error: `Cannot convert ${from} (${fromU.base}) to ${to} (${toU.base})` };
   const result = value * fromU.factor / toU.factor;
-  return { result: +result.toFixed(6), from, to, value };
+  return { result: rounded(result), from, to, value };
 }
 
 // Restricted numeric grammar. A calculation can never resolve global names,
@@ -91,6 +91,12 @@ export function safeMathEval(expression) {
 export const PHONE_CALCULATOR = { name:'calculator', description:'Calculate a numeric expression or convert units, e.g. 20 celsius to fahrenheit.', parameters:{
   type:'object',additionalProperties:false,properties:{action:{type:'string',enum:['math','convert']}, expression:{type:'string',maxLength:1024},value:{type:'number'},from:{type:'string',maxLength:32},to:{type:'string',maxLength:32}},required:['action']
 } };
+// Six decimals for ordinary values; a small result keeps six significant digits instead of
+// rounding to 0 (100 kb in tb) or to a value 60% off (1 mm in mi was 0.000001).
+function rounded(value) {
+  return Math.abs(value) >= 1 || value === 0 ? +value.toFixed(6) : Number(value.toPrecision(6));
+}
+
 export function calculateNumber(args) {
   if (args?.action === 'math') return {expression:args.expression, result:safeMathEval(args.expression)};
   if (args?.action !== 'convert' || !Number.isFinite(args.value) || typeof args.from !== 'string' || typeof args.to !== 'string') throw new Error('Invalid calculation arguments');

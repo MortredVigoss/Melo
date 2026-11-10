@@ -38,7 +38,9 @@ After successful phone_use continue this same conversation with a concise useful
             put("role", message.role)
             if (message.attachments.isEmpty()) put("content", message.content)
             else put("content", buildJsonArray {
-                add(buildJsonObject { put("type", if (protocol == "responses") "input_text" else "text"); put("text", message.content) })
+                // A picture sent without words has no text part: an empty one is rejected by Anthropic
+                // ("text content blocks must be non-empty"), and the message kept failing every later turn.
+                if (message.content.isNotBlank()) add(buildJsonObject { put("type", if (protocol == "responses") "input_text" else "text"); put("text", message.content) })
                 for (image in message.attachments) add(buildJsonObject {
                     val data = imageData(image)
                     when (protocol) {

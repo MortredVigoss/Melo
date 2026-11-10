@@ -87,6 +87,55 @@ class SharedAgentCoreTest {
         SharedCoreRuntime.open(app).use { assertTrue(it.evaluateJSON("{\"version\":1,\"op\":\"hello\"}").contains("melo-local-core")) }
     }
 
+    // 2026-11-10. An isolate closed in the middle of an evaluation took down the sandbox process that
+    // every isolate of the app shares: a reply stopped while the Core was working made the next
+    // evaluation of any chat fail with SandboxDeadException ("共享 Runtime 执行中断"), about once in
+    // sixty stops on the emulator. The stops below land inside a long evaluation; the witness is
+    // another chat's Runtime, which has to keep answering.
+    @Test fun anEvaluationStoppedMidwayNeverTakesTheOtherRuntimesDown() = runBlocking {
+        val dataset = InstrumentationRegistry.getInstrumentation().context.assets.open("tasks.json").bufferedReader().use { Json.parseToJsonElement(it.readText()).jsonObject }
+        val long = buildJsonObject { put("version", 1); put("op", "taskReplay"); put("dataset", dataset) }
+        val hello = buildJsonObject { put("version", 1); put("op", "hello") }
+        SharedCoreRuntime.open(app).use { witness ->
+            var midway = 0
+            repeat(60) { round ->
+                val runtime = SharedCoreRuntime.open(app)
+                val job = launch(Dispatchers.Default) { runtime.evaluate(long) }
+                delay(1L + round % 10 * 2)
+                job.cancelAndJoin()
+                // A Runtime closes itself only when the stop interrupted its evaluation.
+                if (runtime.isClosed) midway++
+                runtime.close()
+                assertEquals("after stop $round", true, witness.evaluate(hello)["ok"]?.jsonPrimitive?.boolean)
+            }
+            assertTrue("the stops have to land inside the evaluation to prove anything: $midway of 60", midway >= 10)
+            delay(1_000) // a sandbox that is going down is reported a moment later
+            assertEquals(true, witness.evaluate(hello)["ok"]?.jsonPrimitive?.boolean)
+            SharedCoreRuntime.open(app).use { fresh -> assertEquals(true, fresh.evaluate(hello)["ok"]?.jsonPrimitive?.boolean) }
+        }
+    }
+
+    // The same for a Runtime stopped while it is still loading the packaged bundle, which is where
+    // a stop lands when a member's turn is being opened.
+    @Test fun aRuntimeStoppedWhileItOpensNeverTakesTheOtherRuntimesDown() = runBlocking {
+        val hello = buildJsonObject { put("version", 1); put("op", "hello") }
+        SharedCoreRuntime.open(app).use { witness ->
+            var unfinished = 0
+            repeat(80) { round ->
+                val opening = async(Dispatchers.Default) { SharedCoreRuntime.open(app) }
+                delay(1L + round % 20 * 3)
+                opening.cancel()
+                val opened = runCatching { opening.await() }.getOrNull()
+                if (opened == null) unfinished++ else opened.close()
+                assertEquals("after stop $round", true, witness.evaluate(hello)["ok"]?.jsonPrimitive?.boolean)
+            }
+            assertTrue("the stops have to land while a Runtime opens to prove anything: $unfinished of 80", unfinished >= 15)
+            delay(1_000)
+            assertEquals(true, witness.evaluate(hello)["ok"]?.jsonPrimitive?.boolean)
+            SharedCoreRuntime.open(app).use { fresh -> assertEquals(true, fresh.evaluate(hello)["ok"]?.jsonPrimitive?.boolean) }
+        }
+    }
+
     @Test fun serviceRunsCoreWithoutAnActivityOrVisibleWebView() = runBlocking {
         val binder = service.bindService(Intent(app, AgentCoreProbeService::class.java)) as AgentCoreProbeService.Probe
         val result = withTimeout(15_000) { binder.evaluate("{\"version\":1,\"op\":\"hello\"}").await() }

@@ -21,9 +21,17 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 fun executionStatus(value: String): String = when (value) {
-    "running" -> "进行中"; "completed", "achieved" -> "完成"; "partial" -> "部分完成"; "blocked" -> "受阻"; "needs_user" -> "需要处理"
-    "budget_exhausted" -> "预算已用完"; "cancelled" -> "已取消"; "interrupted" -> "已中断"; "failed" -> "失败"; else -> value
+    // Same words as the shared completion summary (shared/agent/runtimeMessages.js). "unverified" is the
+    // outcome of a limit write-up whose check did not pass; it used to show as the raw word.
+    "running" -> "进行中"; "completed", "achieved" -> "完成"; "partial" -> "部分完成"; "blocked" -> "受阻"; "needs_user" -> "等待补充"
+    "unverified" -> "未核验"; "budget_exhausted" -> "预算已用完"; "cancelled" -> "已取消"; "interrupted" -> "已中断"; "failed" -> "失败"; else -> value
 }
+
+// A run that ended through the loop keeps its reason code (GOAL_UNAVAILABLE, LIMIT_DELIVERED, ...) in
+// `error`. The line above already says the same thing in words (the completion summary), so the bare
+// code is not repeated in the error colour. A message from a failed request is always shown.
+internal fun visibleRunError(error: String?, summarized: Boolean): String? =
+    error?.takeIf { it.isNotBlank() && !(summarized && Regex("[A-Z][A-Z0-9_]*").matches(it)) }
 
 /** The card is a projection of persisted observations, never a synthetic progress log. */
 @Composable fun ExecutionCard(run: RunRecord, phase: String = "", onDetails: () -> Unit = {}) {
@@ -49,10 +57,11 @@ fun executionStatus(value: String): String = when (value) {
         Column(Modifier.padding(10.dp)) {
             Column(Modifier.fillMaxWidth().clickable { expanded = !expanded }.testTag("execution-toggle-${run.id}").padding(4.dp)) {
                 Text("${if (expanded) "收起" else "展开"}执行过程 · ${executionStatus(run.status)}", color = MeloGold, style = MaterialTheme.typography.labelLarge)
-                Text(scene?.get("completion")?.jsonObject?.text("summary")?.takeIf(String::isNotBlank) ?: summary, color = MeloMuted, style = MaterialTheme.typography.labelSmall)
+                val completionSummary = scene?.get("completion")?.jsonObject?.text("summary")?.takeIf(String::isNotBlank)
+                Text(completionSummary ?: summary, color = MeloMuted, style = MaterialTheme.typography.labelSmall)
                 if (run.status == "running" && phase.isNotBlank()) Text(phase, color = MeloMuted, style = MaterialTheme.typography.bodySmall)
             }
-            run.error?.takeIf(String::isNotBlank)?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("execution-error-${run.id}")) }
+            visibleRunError(run.error, scene?.get("completion")?.jsonObject?.text("summary")?.isNotBlank() == true)?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("execution-error-${run.id}")) }
             if (expanded) Column(Modifier.testTag("execution-content-${run.id}"), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 if (scene == null) Text("这条旧记录没有保存工具细节，无法据此推断是否检索或操作过手机。", color = MeloMuted)
                 else {
@@ -72,7 +81,9 @@ fun executionStatus(value: String): String = when (value) {
                             modifier = Modifier.testTag("session-event-${event.text("eventId")}"),
                             color = MeloMuted, style = MaterialTheme.typography.labelSmall)
                     }
-                    scene.text("stopReason").takeIf(String::isNotBlank)?.let { Text("停止原因：$it", color = MaterialTheme.colorScheme.error) }
+                    // A reason is a stop reason only when the run did not complete. Every finish records one, so a
+                    // delivered answer used to show "停止原因：ANSWER_DELIVERED" in the error colour.
+                    scene.text("stopReason").takeIf { it.isNotBlank() && run.status != "completed" }?.let { Text("停止原因：$it", color = MaterialTheme.colorScheme.error) }
                 }
                 TextButton(onClick = onDetails) { Text("打开任务空间") }
             }

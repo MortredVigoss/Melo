@@ -44,7 +44,7 @@ struct TeamSheet: View {
                         Picker("协作方式", selection: $templateID) { ForEach(AgentTeam.templates, id: \.id) { Text(LocalizedStringKey($0.label)).tag($0.id) } }.pickerStyle(.inline).labelsHidden()
                     }
                     Section {
-                        Text("每位成员在这台手机上单独调用一次模型，只处理文字；联网搜索需要发起者和该成员在“这台手机上”都已开启。整个团队最多 15 分钟。").font(.caption).foregroundStyle(.secondary)
+                        Text("每位成员在这台手机上各自完成自己的部分：可以多次调用模型，并使用已对它开启的手机数据和网页工具；成员只接收文字。联网搜索需要发起者和该成员在“这台手机上”都已开启。整个团队最多 15 分钟。").font(.caption).foregroundStyle(.secondary)
                         Text("只作用于下一条消息，发送后自动取消。").font(.caption).foregroundStyle(.secondary)
                         if let problem { Text(LocalizedStringKey(problem)).font(.caption).foregroundStyle(meloGold) }
                     }

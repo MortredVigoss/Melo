@@ -65,8 +65,8 @@ class AndroidFlowTest {
         ready()
         val connectionName = "Credential regression ${newId().take(8)}"
         compose.onAllNodesWithText("系统").onFirst().performClick()
-        compose.onNodeWithTag("settings-list").performScrollToNode(hasText("添加模型连接"))
-        compose.onNodeWithText("添加模型连接").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("settings-list").performScrollToNode(hasText("添加 API Key 连接"))
+        compose.onNodeWithText("添加 API Key 连接").assertIsDisplayed().performClick()
         compose.onNodeWithText("连接名称").performTextReplacement(connectionName)
         compose.onNodeWithText("模型名称").performTextInput("fixture-model")
         compose.onNodeWithText("保存").performClick()
@@ -138,6 +138,11 @@ class AndroidFlowTest {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
             server.enqueue(MockResponse().setHeader("Content-Type", "application/json").setBody("""{"model":"local-fixture","choices":[{"message":{"role":"assistant","content":"Controlled retry completed"},"finish_reason":"stop"}]}"""))
+            // An answer is followed by its completion check whenever the turn holds tools (2026-10-27).
+            server.enqueue(MockResponse().setHeader("Content-Type", "application/json").setBody(buildJsonObject { put("model", "local-fixture"); put("choices", buildJsonArray { add(buildJsonObject { put("finish_reason", "stop"); put("message", buildJsonObject { put("role", "assistant"); put("content", buildJsonObject {
+                put("decision", "complete"); put("turnKind", "answer"); put("reasonType", "self_contained"); put("reason", "Fixture answer"); put("nextStep", "")
+                put("requirements", buildJsonArray { add(buildJsonObject { put("text", "answer"); put("kind", "response"); put("status", "met"); put("evidenceIds", buildJsonArray {}) }) })
+            }.toString()) }) }) }) }.toString()))
             server.start()
             runBlocking {
                 val controlled = Connection(id = "controlled-cancellation", name = "Controlled local HTTP", endpoint = server.url("/model").toString(), model = "local-fixture", protocol = "chat-completions", stream = false)
@@ -155,7 +160,7 @@ class AndroidFlowTest {
             val final = app.repository.data.value.chats.first { it.id == chat.id }
             assertEquals(1, final.messages.count { it.content == retryPrompt })
             assertEquals(2, final.messages.count { it.role == "assistant" })
-            assertEquals(2, server.requestCount)
+            assertEquals(3, server.requestCount)
         }
     }
     @Test fun projectDeletionConfirmationRestoreAndOfflineMergePreserveOriginals() {

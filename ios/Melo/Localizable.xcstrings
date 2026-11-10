@@ -1,6 +1,41 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "另一段对话正在回复，结束后才能在这里发送；可以先写好。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "另一段对话正在回复，结束后才能在这里发送；可以先写好。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Another conversation is being answered. You can send here once it finishes; feel free to write your message now."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "別の会話に返信中です。終わり次第ここで送信できます。先に書いておけます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다른 대화에 답변 중입니다. 끝나면 여기서 보낼 수 있습니다. 미리 작성해 두셔도 됩니다."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se está respondiendo otra conversación. Podrás enviar aquí cuando termine; puedes ir escribiendo."
+          }
+        }
+      }
+    },
     "五个区域": {
       "extractionState": "manual",
       "localizations": {
@@ -79941,37 +79976,37 @@
         }
       }
     },
-    "每位成员在这台手机上单独调用一次模型，只处理文字；联网搜索需要发起者和该成员在“这台手机上”都已开启。整个团队最多 15 分钟。": {
+    "每位成员在这台手机上各自完成自己的部分：可以多次调用模型，并使用已对它开启的手机数据和网页工具；成员只接收文字。联网搜索需要发起者和该成员在“这台手机上”都已开启。整个团队最多 15 分钟。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "每位成员在这台手机上单独调用一次模型，只处理文字；联网搜索需要发起者和该成员在“这台手机上”都已开启。整个团队最多 15 分钟。"
+            "value": "每位成员在这台手机上各自完成自己的部分：可以多次调用模型，并使用已对它开启的手机数据和网页工具；成员只接收文字。联网搜索需要发起者和该成员在“这台手机上”都已开启。整个团队最多 15 分钟。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Each member calls the model once on this iPhone, text only. Web search needs both the lead and that member to have it on under “On this iPhone”. The whole team has at most 15 minutes."
+            "value": "Each member does its own part on this iPhone: it may call the model several times and use the phone data and web tools turned on for it, and it receives text only. Web search needs both the lead and that member to have it on under “On this iPhone”. The whole team has at most 15 minutes."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "各メンバーはこの iPhone で一度ずつモデルを呼び出し、テキストのみを扱います。Web 検索には、開始した Agent とそのメンバーの両方で「この iPhone」の設定がオンである必要があります。チーム全体で最大 15 分です。"
+            "value": "各メンバーはこの iPhone で自分の担当を個別に進めます。モデルを複数回呼び出し、そのメンバーに許可された iPhone のデータと Web ツールを使えますが、受け取るのはテキストのみです。Web 検索には、開始した Agent とそのメンバーの両方で「この iPhone」の設定がオンである必要があります。チーム全体で最大 15 分です。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "각 구성원은 이 iPhone에서 모델을 한 번씩 호출하며 텍스트만 처리합니다. 웹 검색은 시작한 Agent와 해당 구성원 모두 ‘이 iPhone에서’ 설정이 켜져 있어야 합니다. 팀 전체는 최대 15분입니다."
+            "value": "각 구성원은 이 iPhone에서 자신의 몫을 따로 진행합니다. 모델을 여러 번 호출하고 해당 구성원에게 켜져 있는 iPhone 데이터와 웹 도구를 사용할 수 있으며, 텍스트만 전달받습니다. 웹 검색은 시작한 Agent와 해당 구성원 모두 ‘이 iPhone에서’ 설정이 켜져 있어야 합니다. 팀 전체는 최대 15분입니다."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cada miembro llama al modelo una vez en este iPhone, solo con texto. La búsqueda web requiere que el Agent que inicia y ese miembro la tengan activada en «En este iPhone». Todo el equipo tiene como máximo 15 minutos."
+            "value": "Cada miembro hace su parte por separado en este iPhone: puede llamar al modelo varias veces y usar los datos del iPhone y las herramientas web que tenga activados, y solo recibe texto. La búsqueda web requiere que el Agent que inicia y ese miembro la tengan activada en «En este iPhone». Todo el equipo tiene como máximo 15 minutos."
           }
         }
       }

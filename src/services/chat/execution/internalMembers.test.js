@@ -322,3 +322,73 @@ test('L3: a reader that answers without reading anything is not reported as obse
   assert.equal(handoff.status, 'partial');
   assert.deepEqual(handoff.evidence, []);
 });
+
+// 2026-11-10 agent audit. A read-only member has no completion check of its own, so the lead's check
+// is the only one. The member's rows used to reach the lead cut for a prompt (3 000 characters after
+// one search and one read), and the check could not see a passage beyond the cut.
+test('L3: the lead\'s completion check sees the passage a member read, wherever it is on the page', async () => {
+  const { registerTool, unregisterTool } = await import('../../../tools/registry.js');
+  const { getTool } = await import('../../../tools/registryCore.js');
+  const { startGoal, goalCandidate, goalReviewRequest, reviewGoal } = await import('../../../../shared/agent/goal.js');
+  const { memberEvidence, MEMBER_EVIDENCE_CHARS } = await import('../../../agents/subAgent.js');
+  const filler = index => `<area description="District ${index}"><forecast-period><text type="precis">Sunny.</text><element type="air_temperature_maximum">31</element></forecast-period></area>\n`;
+  const melbourne = '<area description="Melbourne"><forecast-period start-time-local="2026-11-11"><element type="air_temperature_minimum">15</element><element type="air_temperature_maximum">19</element><text type="precis">Partly cloudy.</text></forecast-period></area>\n';
+  const page = Array.from({ length: 34 }, (_, index) => filler(index)).join('') + melbourne + Array.from({ length: 40 }, (_, index) => filler(100 + index)).join('');
+  assert.equal(page.indexOf('Melbourne') > 5000 && page.length > 12000, true, 'the passage really lies beyond the old cut');
+  const fetch = { id: 'fetch_url', name: 'Fetch URL', description: 'Read a page', requiresPermission: false, readOnly: true, capability: 'network', parametersSchema: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] },
+    run: async () => ({ ok: true, output: page + '\n\n[source: https://fixture.invalid/IDV10450.xml] [via: direct]', meta: { url: 'https://fixture.invalid/IDV10450.xml', reading: 'extracted', windowChars: page.length + 80 } }) };
+  const search = { id: 'web_search', name: 'Web search', description: 'Search', requiresPermission: false, readOnly: true, capability: 'network', parametersSchema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
+    run: async () => ({ ok: true, output: 'Five results about the Melbourne forecast.', completionSources: Array.from({ length: 5 }, (_, index) => ({ url: `https://result-${index}.invalid/`, reading: 'snippet', content: `Result ${index}: Melbourne forecast overview.` })) }) };
+  const originals = ['fetch_url', 'web_search'].map(id => getTool(id));
+  for (const id of ['fetch_url', 'web_search']) unregisterTool(id);
+  registerTool(fetch); registerTool(search);
+  try {
+    let work = 0;
+    const replyFn = async () => ++work === 1 ? `<tool_call>${JSON.stringify({ id: 'find', name: 'web_search', arguments: { query: 'Melbourne forecast' } })}</tool_call>`
+      : work === 2 ? `<tool_call>${JSON.stringify({ id: 'read', name: 'fetch_url', arguments: { url: 'https://fixture.invalid/IDV10450.xml' } })}</tool_call>`
+      : 'Melbourne tomorrow: min 15, max 19, partly cloudy. Source: https://fixture.invalid/IDV10450.xml';
+    const result = await fixtureSubAgent({ task: 'Find tomorrow\'s Melbourne forecast.', config: { authMode: 'unset', model: 'fixture', replyLanguage: 'en' }, allowedToolIds: ['web_search', 'fetch_url'], replyFn, maxTokens: 200000, completionCheck: false });
+    assert.equal(result.ok, true);
+    // What the lead loop does with a member's rows (invokeModelNode.js), then the lead's own check.
+    const lead = result.meta.observations.map(row => ({ ...row, id: `job-1:${row.id}` }));
+    const source = lead.find(row => row.type === 'source' && row.url === 'https://fixture.invalid/IDV10450.xml');
+    assert.match(source.text, /air_temperature_maximum">19</, 'the row the lead holds still has the passage');
+    const reply = '墨尔本明天最低 15°C，最高 19°C，Partly cloudy。来源：https://fixture.invalid/IDV10450.xml';
+    const state = goalCandidate(startGoal('明天墨尔本天气多少'), { reply, observations: lead, tools: ['route_task'], research: true, roundsLeft: 4 });
+    const shown = JSON.parse(goalReviewRequest(state, lead).messages[0].content).observations.find(row => row.id === source.id);
+    assert.match(shown.text, /Melbourne/); assert.match(shown.text, /air_temperature_minimum">15</); assert.match(shown.text, /Partly cloudy/);
+    const decided = reviewGoal(state, JSON.stringify({ decision: 'complete', evaluationValid: true, needsEvaluation: false, turnKind: 'task', reasonType: 'fulfilled', reason: 'ok', nextStep: '',
+      requirements: [{ text: '明天墨尔本气温', kind: 'external_fact', status: 'met', evidenceIds: [source.id] }] }), lead);
+    assert.equal(decided.decision, 'complete');
+  } finally { for (const id of ['fetch_url', 'web_search']) unregisterTool(id); for (const tool of originals) if (tool) registerTool(tool); }
+  // The total a member hands back is bounded, and the newest rows are the ones kept whole.
+  const rows = Array.from({ length: 30 }, (_, index) => ({ id: 'r' + index, type: 'source', ok: true, executed: true, url: 'https://fixture.invalid/' + index, text: String(index).padStart(2, '0') + 'x'.repeat(19998) }));
+  const kept = memberEvidence(rows);
+  assert.equal(kept.length, 30);
+  assert.equal(kept.reduce((sum, row) => sum + row.text.length, 0) <= MEMBER_EVIDENCE_CHARS, true);
+  assert.deepEqual([kept.at(-1).text.length, kept.at(-1).truncated], [20000, undefined]);
+  assert.deepEqual([kept[0].text.length <= 160, kept[0].truncated], [true, true]);
+  assert.deepEqual(memberEvidence([{ id: 't', type: 'tool', ok: true, executed: true, output: 'kept as output' }]), [{ id: 't', type: 'tool', ok: true, executed: true, output: 'kept as output' }]);
+});
+
+
+// 2026-11-10 audit. The search settings page saves a result count (8 by default) under
+// agentRuntime.search, which outranks operationalLimits. The member cap was written only to
+// operationalLimits, so it stopped applying once that page had been saved.
+test('a saved search result count never lifts the member cap, and a lower one is kept', async () => {
+  const { memberConfig, MEMBER_SEARCH_RESULTS, MEMBER_SEARCH_CONTENT_CHARS } = await import('./internalMembers.js');
+  const { normalizeSearchLimits } = await import('../../search/searchLimits.js');
+  const base = saved => Object.freeze({ model: 'opaque', agentRuntime: Object.freeze({ search: Object.freeze({ backend: 'http', timeoutMs: 20000, ...(saved === undefined ? {} : { maxResults: saved }) }) }), operationalLimits: Object.freeze({ search: Object.freeze({ timeoutMs: 9000 }) }) });
+  // saved value, what the member searches with, what the lead keeps
+  for (const [saved, expected, lead] of [[8, MEMBER_SEARCH_RESULTS, 8], [3, 3, 3], [undefined, MEMBER_SEARCH_RESULTS, 8], ['many', MEMBER_SEARCH_RESULTS, 8], [0, 1, 1]]) {
+    const config = base(saved), member = memberConfig(config);
+    const limits = normalizeSearchLimits(member);
+    assert.equal(limits.maxResults, expected, `saved ${saved}`);
+    assert.equal(limits.contentMaxChars, MEMBER_SEARCH_CONTENT_CHARS);
+    // The user's other search settings and the lead's own configuration are untouched.
+    assert.equal(member.agentRuntime.search.backend, 'http');
+    assert.equal(limits.timeoutMs, 20000);
+    assert.equal(config.agentRuntime.search.maxResults, saved);
+    assert.equal(normalizeSearchLimits(config).maxResults, lead);
+  }
+});

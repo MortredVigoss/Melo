@@ -95,6 +95,83 @@ class ToolStreamDecoderTest {
         val turn = DeviceAgentClient.decode(decoder.finish(), "chat-completions", toolNames = setOf("phone_action"))
         assertTrue(turn.wire.toString().contains("private-wire-marker")); assertFalse(turn.text.contains("private-wire-marker")); assertFalse(phases.toString().contains("private-wire-marker"))
     }
+    // 2026-11-10. A streamed answer without tool calls used to carry `tool_calls: []`; that message is sent
+    // back when the completion check asks for another round, and Chat Completions rejects the empty array.
+    private fun answerFrames(protocol: String): List<String> = when (protocol) {
+        "responses" -> listOf(
+            """{"type":"response.output_text.delta","delta":"明天"}""",
+            """{"type":"response.output_text.delta","delta":"多云"}""",
+            """{"type":"response.completed","response":{"model":"fixture-returned","status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"明天多云"}]}]}}""",
+        )
+        "anthropic" -> listOf(
+            """{"type":"message_start","message":{"model":"fixture-returned","usage":{"input_tokens":7}}}""",
+            """{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}""",
+            """{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"明天"}}""",
+            """{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"多云"}}""",
+            """{"type":"content_block_stop","index":0}""",
+            """{"type":"message_delta","delta":{"stop_reason":"end_turn"}}""",
+            """{"type":"message_stop"}""",
+        )
+        else -> listOf(
+            """{"model":"fixture-returned","choices":[{"index":0,"delta":{"role":"assistant","content":"明天"},"finish_reason":null}]}""",
+            """{"choices":[{"index":0,"delta":{"content":"多云"},"finish_reason":null}]}""",
+            """{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}""",
+            "[DONE]",
+        )
+    }
+    @Test fun aStreamedAnswerWithoutCallsCanBeSentBackOnTheNextRequest() {
+        val decoder = ToolStreamDecoder("chat-completions")
+        answerFrames("chat-completions").forEach(decoder::accept)
+        val turn = DeviceAgentClient.decode(decoder.finish(), "chat-completions", toolNames = setOf("web_search"))
+        assertEquals("明天多云", turn.text); assertTrue(turn.calls.isEmpty())
+        assertNull("a reply without calls has no tool_calls field", turn.wire.single()["tool_calls"])
+        // The follow-up request of a repair round: original question, the answer, the checker's feedback.
+        val history = DeviceAgentClient.initial("chat-completions", "明天天气") + turn.wire + buildJsonObject { put("role", "user"); put("content", "请补充降雨概率。") }
+        val body = DeviceAgentClient.payload(Connection(model = "fixture"), history, chatTools = true, toolSpecs = listOf(spec())).toString()
+        assertFalse(body.contains("\"tool_calls\":[]")); assertTrue(body.contains("明天多云"))
+        // A reply that does carry calls keeps them.
+        val calling = ToolStreamDecoder("chat-completions"); frames("chat-completions").forEach(calling::accept)
+        assertEquals(1, calling.finish().getValue("choices").jsonArray.single().jsonObject.getValue("message").jsonObject.getValue("tool_calls").jsonArray.size)
+    }
+    @Test fun answerTextReachesTheHostWhileItArrivesOnEveryProtocol() = runBlocking {
+        for (protocol in protocols) {
+            val shown = mutableListOf<String>(); val decoder = ToolStreamDecoder(protocol, onText = shown::add)
+            answerFrames(protocol).forEach(decoder::accept)
+            assertEquals(protocol, listOf("明天", "明天多云"), shown)
+            assertEquals("明天多云", DeviceAgentClient.decode(decoder.finish(), protocol, toolNames = setOf("web_search")).text)
+            // A round that only calls a tool shows no answer text.
+            val silent = mutableListOf<String>(); val calling = ToolStreamDecoder(protocol, onText = silent::add)
+            frames(protocol).forEach(calling::accept); assertTrue(protocol, silent.isEmpty())
+        }
+        // Through the real HTTP path.
+        for (protocol in protocols) MockWebServer().use { server ->
+            server.enqueue(MockResponse().setHeader("Content-Type", "text/event-stream").setBody(answerFrames(protocol).joinToString("") { "data: $it\n\n" })); server.start()
+            val shown = java.util.Collections.synchronizedList(mutableListOf<String>())
+            val turn = DeviceAgentClient(true).next(Connection(endpoint = server.url("/model").toString(), model = "fixture", protocol = protocol, stream = true), "fixture", emptyList(), chatTools = true, toolSpecs = listOf(spec()), onText = { shown.add(it) })
+            assertEquals("明天多云", turn.text); assertEquals(protocol, "明天多云", shown.last()); assertTrue(shown.size >= 2)
+        }
+    }
+    // 2026-11-10. Anthropic streams a call without arguments as one empty partial_json; parsing "" failed
+    // the whole request, so "我有哪些待办？" (todo_list takes no arguments) could not be answered.
+    @Test fun anAnthropicCallWithoutArgumentsKeepsItsEmptyInput() {
+        for (deltas in listOf(listOf(""), emptyList(), listOf("", ""), listOf("{}"), listOf("{\"limit\":", "5}"))) {
+            val decoder = ToolStreamDecoder("anthropic")
+            decoder.accept("""{"type":"message_start","message":{"model":"fixture","usage":{"input_tokens":3}}}""")
+            decoder.accept("""{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_1","name":"todo_list","input":{}}}""")
+            for (delta in deltas) decoder.accept(buildJsonObject { put("type", "content_block_delta"); put("index", 0); put("delta", buildJsonObject { put("type", "input_json_delta"); put("partial_json", delta) }) }.toString())
+            decoder.accept("""{"type":"content_block_stop","index":0}""")
+            decoder.accept("""{"type":"message_delta","delta":{"stop_reason":"tool_use"}}"""); decoder.accept("""{"type":"message_stop"}""")
+            val call = DeviceAgentClient.decode(decoder.finish(), "anthropic", toolNames = setOf("todo_list")).calls.single()
+            assertEquals("todo_list", call.name)
+            assertEquals(deltas.toString(), if (deltas.joinToString("").contains("limit")) buildJsonObject { put("limit", 5) } else buildJsonObject {}, call.arguments)
+        }
+        // Arguments that are not valid JSON still fail closed.
+        val broken = ToolStreamDecoder("anthropic")
+        broken.accept("""{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_1","name":"todo_list","input":{}}}""")
+        broken.accept("""{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"limit\":"}}""")
+        assertTrue(runCatching { broken.accept("""{"type":"content_block_stop","index":0}""") }.isFailure)
+    }
+
     @Test fun cancellationAfterStreamHeadersClosesTheCallInsteadOfReturningItsTool() = runBlocking {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setHeader("Content-Type", "text/event-stream").setBody(frames("chat-completions").joinToString("") { "data: $it\n\n" }).setBodyDelay(3, TimeUnit.SECONDS)); server.start()

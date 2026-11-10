@@ -379,5 +379,32 @@ test('self-contained delivery records a completed check instead of a failure bad
     ? JSON.stringify({ decision: 'complete', reasonType: 'self_contained', requirements: [{ text: 'Explain tree growth', status: 'met', evidenceIds: [] }] })
     : 'A tree grows by forming new cells.' } });
   assert.equal(result.normalizedReply.completion.outcome, 'completed');
-  assert.equal(stages.length, 1); assert.equal(stages[0].status, 'completed');
+  // The check is a stage from the moment it starts (2026-11-10) and ends completed, under one id.
+  assert.deepEqual(stages.map(stage => stage.status), ['running', 'completed']); assert.equal(new Set(stages.map(stage => stage.id)).size, 1);
+});
+
+// 2026-11-10 agent audit: the check was reported only after its verdict, so while it ran the chat
+// said "正在回复" and the task space could never show "核验中".
+test('the delivery check is announced before its request is sent and is closed when that request fails', async () => {
+  const log = [];
+  const emitter = (event, payload) => { if (event === 'execution_event' && payload.id?.startsWith('goal-check:')) log.push('stage:' + payload.status + (payload.output ? ':' + payload.output : '')); };
+  const answer = 'A tree grows by forming new cells.';
+  const passed = await runChatAgentExecutionGraph({ ...fixture('Explain how a tree grows.'), sseEmitter: emitter, _dependencies: { getEmbedding: async () => null, createReply: async request => {
+    if (!request.systemPrompt.includes('task completion checker')) return answer;
+    log.push('check-request');
+    return JSON.stringify({ decision: 'complete', reasonType: 'self_contained', reason: 'Explained.', requirements: [{ text: 'Explain tree growth', status: 'met', evidenceIds: [] }] });
+  } } });
+  assert.equal(passed.normalizedReply.completion.outcome, 'completed');
+  assert.deepEqual(log.map(entry => entry.split(':').slice(0, 2).join(':')), ['stage:running', 'check-request', 'stage:completed']);
+  // A check request that fails ends the stage as failed; the answer is still delivered.
+  log.length = 0;
+  const failed = await runChatAgentExecutionGraph({ ...fixture('Explain how a leaf grows.'), sseEmitter: emitter, _dependencies: { getEmbedding: async () => null, createReply: async request => {
+    if (!request.systemPrompt.includes('task completion checker')) return 'A leaf grows from a bud.';
+    log.push('check-request');
+    throw Object.assign(new Error('fixture provider failure'), { status: 503 });
+  } } });
+  assert.match(failed.normalizedReply.content, /A leaf grows from a bud\./);
+  assert.equal(log[0], 'stage:running'); assert.equal(log[1], 'check-request');
+  assert.match(log.at(-1), /^stage:failed:GOAL_CHECK_/, 'no check stage is left running');
+  assert.equal(log.filter(entry => entry.startsWith('stage:running')).length, 1);
 });

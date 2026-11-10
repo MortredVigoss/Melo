@@ -20,6 +20,7 @@ export function renderToolTraceMessage(message, escape) {
   if (!isToolTraceMessage(message)) return '';
   const header = String(message?.content || '').split('\n', 1)[0];
   const status = String(message?.metadata?.toolTrace?.status || (message?.kind !== 'tool-trace' && header.includes(FAILED_LABEL) ? 'failed' : 'cancelled'));
-  const label = status === 'failed' ? t('失败') : status === 'interrupted' ? t('已中断') : t('已取消');
+  // `completed` is written for a successful turn when successful tool records are shown (MELO_TOOL_TRACE_ALWAYS).
+  const label = status === 'failed' ? t('失败') : status === 'interrupted' ? t('已中断') : status === 'completed' ? t('已完成') : t('已取消');
   return ui`<div class="tool-trace-body"><span class="chip is-muted tool-trace-status">${escape(label)}</span><p class="tool-trace-text">${escape(message.content || '')}</p></div>`;
 }

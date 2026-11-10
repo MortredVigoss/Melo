@@ -284,11 +284,15 @@ export function createInvokeModelNode(turn) {
       let request;
       const checkingGoal = coreTurn.checking;
       const toolFree = checkingGoal;
+      // The delivery check is a stage of its own from the moment it starts. It used to be reported
+      // only after the verdict, so for its whole duration (often the longest step of a short
+      // lookup) the chat said "正在回复" and the task space could never show "核验中".
+      const checkStage = (status, output, extra = {}) => sseEmitter?.('execution_event', { kind: 'pipeline', id: `goal-check:${iteration}`, module: 'compute', messageId: 'stage.delivery', status, ...(output ? { output } : {}), ...extra });
       try {
         const review = checkingGoal ? coreTurn.reviewRequest() : null;
         request = fitRequestContext({ sections: review ? [{ id: 'goal-check', text: review.systemPrompt, required: true }] : sections, messages: review?.messages || loopMessages, toolDefinitions: toolFree ? [] : roundSession.definitions, ...contextBudget, turnContextPlacement });
       } catch (error) {
-        if (checkingGoal) { coreTurn.stopReview('GOAL_CHECK_CONTEXT'); finalReply = coreTurn.candidateReply; break; }
+        if (checkingGoal) { coreTurn.stopReview('GOAL_CHECK_CONTEXT'); checkStage('failed', 'GOAL_CHECK_CONTEXT'); finalReply = coreTurn.candidateReply; break; }
         // audit C-8: a long tool loop must not die after the tools already
         // ran. Condense older tool outputs in this turn's chain and retry
         // once; only then surface the budget error.
@@ -340,6 +344,7 @@ export function createInvokeModelNode(turn) {
       }
       if (coreTurn.update('request') !== 'running') { finalReply = coreTurn.reply(latestUserMessage, config.replyLanguage); break; }
       let rawReply;
+      if (checkingGoal) checkStage('running');
       if (!checkingGoal) privateTurn.answerConnection = {
         authMode: vision?.authMode || config.authMode, apiProtocol: vision?.apiProtocol || config.apiProtocol,
         apiKey: vision?.apiKey ?? modelOverrides.apiKey, baseUrl: vision?.baseUrl || modelOverrides.baseUrl,
@@ -395,7 +400,7 @@ export function createInvokeModelNode(turn) {
         }
         const timedOut = error?.name === 'TimeoutError' || error?.code === 'ETIMEDOUT';
         const exhaustedNow = error?.exhausted || budgetExhausted(budget) || (budget && timedOut && remainingMs(budget) <= 1000 ? budgetExhausted(budget, budget.deadlineAt) : null);
-        if (checkingGoal && !exhaustedNow) { coreTurn.stopReview(); coreTurn.update('complete'); finalReply = coreTurn.candidateReply; break; }
+        if (checkingGoal && !exhaustedNow) { coreTurn.stopReview(); checkStage('failed', coreTurn.goalState?.reason || 'GOAL_CHECK_UNAVAILABLE'); coreTurn.update('complete'); finalReply = coreTurn.candidateReply; break; }
         if (!exhaustedNow) throw error;
         emitBudgetExhausted(exhaustedNow);
         finalReply = coreTurn.candidateReply || budgetExhaustedReply(exhaustedNow, config.replyLanguage);
@@ -424,7 +429,7 @@ export function createInvokeModelNode(turn) {
         const decision = coreTurn.review(toolCalls.length ? '' : turn.text);
         // The task space shows each checked requirement and its evidence (review 2026-11-07).
         const goalReview = goalOperation({ action: 'reviewSnapshot', state: decision });
-        sseEmitter?.('execution_event', { kind: 'pipeline', id: `goal-check:${iteration}`, module: 'compute', messageId: 'stage.delivery', status: ['complete', 'deliver'].includes(decision.decision) ? 'completed' : 'failed', output: decision.explanation || decision.reason, ...(goalReview ? { goalReview } : {}) });
+        checkStage(['complete', 'deliver'].includes(decision.decision) ? 'completed' : 'failed', decision.explanation || decision.reason, goalReview ? { goalReview } : {});
         if (decision.decision === 'continue') {
           coreTurn.update('feedback', { repair: true });
           loopMessages.push({ role: 'assistant', content: coreTurn.candidateReply }, { role: 'user', content: decision.feedback });

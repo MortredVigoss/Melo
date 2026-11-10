@@ -673,3 +673,79 @@ test('a task-scope card joins the permission queue with its tools and leaves it 
   await sending;
   assert.deepEqual(h.state.permissions, []);
 });
+
+// 2026-11-10 agent audit: a prompt the server stopped waiting for leaves the queue, so the next one can be answered.
+test('tool, file and task-scope prompts leave the queue when the server closes them', async () => {
+  const sse = server();
+  const h = harness();
+  h.chat().composer = 'tidy the folder';
+  const sending = h.send();
+  await flush();
+  sse.send('tool_permission', { requestId: 'tool-1', toolId: 'bash', args: {} });
+  sse.send('tool_permission', { requestId: 'file-1', kind: 'file_safety', operation: 'delete', path: '/tmp/x' });
+  sse.send('tool_permission', { requestId: 'scope-1', kind: 'task_scope', toolIds: ['clipboard'], task: 'Save', label: '执行成员' });
+  sse.send('tool_permission', { requestId: 'tool-2', toolId: 'pdf', args: {} });
+  await flush();
+  assert.deepEqual(h.state.permissions.map(p => p.requestId), ['tool-1', 'file-1', 'scope-1', 'tool-2']);
+  sse.send('tool_permission_closed', { requestId: 'tool-1', reason: 'timeout' });
+  await flush();
+  assert.deepEqual(h.state.permissions.map(p => p.requestId), ['file-1', 'scope-1', 'tool-2'], 'the expired card no longer sits in front of the others');
+  sse.send('tool_permission_closed', { requestId: 'file-1', reason: 'timeout' });
+  sse.send('tool_permission_closed', { requestId: 'scope-1', reason: 'cancelled' });
+  sse.send('tool_permission_closed', { requestId: 'never-shown', reason: 'timeout' });
+  await flush();
+  assert.deepEqual(h.state.permissions.map(p => [p.kind, p.requestId]), [['tool', 'tool-2']]);
+  assert.equal(h.feature.thinkingLabel().startsWith('等待你的确认'), true, 'a live prompt still asks for the decision');
+  sse.send('tool_permission_closed', { requestId: 'tool-2', reason: 'timeout' });
+  await flush();
+  assert.deepEqual(h.state.permissions, []);
+  assert.equal(h.feature.thinkingLabel().startsWith('等待你的确认'), false, 'nothing is waiting for the user any more');
+  sse.send('done', {});
+  sse.close();
+  await sending;
+});
+
+// 2026-11-10 agent audit: while chat A is being answered, chat B's composer showed A's status, offered to
+// "supplement the running reply" and a stop button, and pressing send did nothing without a word.
+test('a chat that is not the one being answered neither supplements nor stops it, and says why send is unavailable', async () => {
+  const sse = server();
+  const h = harness();
+  h.chat().composer = 'question for A';
+  const sending = h.send();
+  await flush();
+  assert.equal(h.chat().streamingChatId, 'chat-a');
+  const app = document.querySelector('#app');
+  assert.ok(app.querySelector('.thinking-banner'), 'the chat being answered shows its status');
+  assert.ok(app.querySelector('[data-action="stop-send"]'));
+  assert.match(app.innerHTML, /补充到正在进行的回复/);
+
+  h.view('chat-b');
+  assert.equal(app.querySelector('.thinking-banner'), null, "another chat does not show A's status");
+  assert.equal(app.querySelector('[data-action="stop-send"]'), null, "nor a button that would stop A's reply");
+  assert.doesNotMatch(app.innerHTML, /补充到正在进行的回复|可以继续输入补充要求/);
+  assert.match(app.innerHTML, /另一段对话正在回复，结束后才能在这里发送；可以先写好。/);
+  h.chat().composer = 'question for B';
+  const streamsBefore = sse.streams.length;
+  await h.send();
+  assert.equal(sse.streams.length, streamsBefore, 'no second reply starts');
+  assert.deepEqual(sse.supplements, [], "B's text is not added to A's reply");
+  assert.deepEqual(h.errors, ['另一段对话正在回复，结束后才能在这里发送；可以先写好。'], 'the user is told instead of nothing happening');
+  assert.equal(h.chat().composer, 'question for B', 'the draft stays');
+  // An empty composer stays quiet.
+  h.chat().composer = '';
+  await h.send();
+  assert.equal(h.errors.length, 1);
+
+  // Back in A, a follow-up is a supplement as before.
+  h.view('chat-a');
+  assert.ok(app.querySelector('.thinking-banner'));
+  h.chat().composer = 'one more detail';
+  await h.send();
+  assert.deepEqual(sse.supplements.map(body => body.content ?? body.text ?? body.message), ['one more detail']);
+  sse.send('done', {});
+  sse.close();
+  await sending;
+  // Once the reply ends, B sends normally.
+  h.view('chat-b');
+  assert.doesNotMatch(app.innerHTML, /另一段对话正在回复/);
+});

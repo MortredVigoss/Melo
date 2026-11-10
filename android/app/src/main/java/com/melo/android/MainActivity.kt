@@ -281,7 +281,10 @@ private data class ChatTimelineItem(val id: String, val at: String, val message:
                 }
             }
             if (turn != null) item { Column { if (turn.partial.isNotBlank()) ReplyContent(turn.partial); Text(if (turn.phase.isBlank()) "生成中 · 尚未保存为完整回复" else turn.phase, color = MeloMuted, style = MaterialTheme.typography.labelSmall) } }
-            val failed = data.runs.lastOrNull { it.chatId == chat.id && it.status in setOf("failed", "cancelled", "interrupted") }
+            // The question is unanswered when the last message is the user's and the chat's last run has ended,
+            // whatever it ended as. A failed model request ends as "blocked" or "partial" (its receipt), which
+            // the old filter skipped: no retry was offered, or an older cancelled run's text was shown instead.
+            val failed = data.runs.lastOrNull { it.chatId == chat.id }?.takeIf { it.status != "running" }
             if (!busy && failed != null && chat.messages.lastOrNull()?.role == "user") item {
                 Column { Text(failed.error ?: "上次请求未完成。", color = MaterialTheme.colorScheme.error); if (failed.partial.isNotBlank()) Text(failed.partial, color = MeloMuted); TextButton(onClick = { vm.engine.send(chat.id, "", retry = true) }) { Text("重试这次提问") } }
             }

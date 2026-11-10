@@ -24,6 +24,9 @@ test('renders a compact status chip plus the escaped trace text, without avatar 
   assert.match(html, /tool-trace-text">\[工具轨迹\] 已取消\nfile_read &lt;a\.js&gt;；bash &quot;npm test&quot;</);
   assert.doesNotMatch(html, /message-role|model-receipt|speak-message|message-actions/);
   assert.match(renderToolTraceMessage({ ...message, metadata: { toolTrace: { status: 'failed' } } }, escape), /tool-trace-status">失败</);
+  // 2026-11-10: with successful tool records shown, the trace of a turn that finished said "已取消".
+  assert.match(renderToolTraceMessage({ ...message, content: '[工具轨迹] 本轮完成，之前已执行 1 次工具调用（可据此继续，不必重复）：\n1. file_read(path=a.js) ✓', metadata: { toolTrace: { status: 'completed' } } }, escape), /tool-trace-status">已完成</);
+  assert.match(renderToolTraceMessage({ ...message, metadata: { toolTrace: { status: 'interrupted' } } }, escape), /tool-trace-status">已中断</);
   assert.match(renderToolTraceMessage({ ...message, metadata: {} }, escape), /tool-trace-status">已取消</, 'missing status defaults to cancelled');
   assert.equal(renderToolTraceMessage({ role: 'assistant', content: 'plain reply' }, escape), '');
 });

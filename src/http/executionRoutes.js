@@ -1,6 +1,7 @@
 import { findArchivedRun, listArchivedRuns } from '../persistence/turnArchive.js';
 import { loadState } from '../state/stateStore.js';
 import { readExecutionScene, selectSceneImage, saveExecutionScene, executionSearchContext } from '../services/chat/executionScenes.js';
+import { TOOL_TRACE_PREFIX } from '../services/chat/toolTraceReplay.js';
 import { sendJson, readJsonBody } from './transport.js';
 
 // Same local-origin protection as the other chat routes. No execution API is
@@ -30,7 +31,10 @@ export async function handleExecutionRoutes(request, response, url, home) {
       const scene = message.metadata?.syncedExecutionScene;
       const runId = message.metadata?.runId || scene?.runId;
       if (!runId) continue;
-      if (message.role === 'assistant') assistants.set(runId, message);
+      // A `[工具轨迹]` record lists the calls of a stopped run, URLs included. It is not the run's
+      // answer: taken as one, every URL it lists came back as "cited by the answer" after a reload.
+      // (A trace synced from the phone has no kind and is recognised by the shared prefix.)
+      if (message.role === 'assistant' && message.kind !== 'tool-trace' && !String(message.content || '').startsWith(TOOL_TRACE_PREFIX)) assistants.set(runId, message);
       if (message.role === 'user') users.set(runId, index);
       if (scene) synced.set(runId, scene);
       if (!candidates.has(runId) && (scene || requestedRun === runId)) candidates.set(runId, { runId, createdAt: scene?.startedAt || message.createdAt || '' });

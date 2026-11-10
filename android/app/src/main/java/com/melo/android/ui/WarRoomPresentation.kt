@@ -47,8 +47,12 @@ class WarRoomPresentation {
     fun isCurrent(scheduled: Int) = scheduled == showing
 
     companion object {
-        private val terminal = setOf("completed", "failed", "cancelled", "interrupted", "stopped")
-        fun finished(status: String) = status in terminal
+        // A chat run's status is "running" until it ends and its outcome afterwards: completed, partial,
+        // blocked, needs_user, budget_exhausted, unverified, cancelled, failed or interrupted. Until
+        // 2026-11-10 only five values counted as finished, so a reply that ended partial or blocked (most
+        // lookups that could not be fully verified) opened this screen by itself whenever its chat was
+        // opened, and the screen did not hand back to the chat when such a run ended.
+        fun finished(status: String) = status != "running"
         fun needsUser(run: RunRecord?): Boolean {
             val scene = run?.sharedScene ?: return false
             if (finished(run.status)) return false

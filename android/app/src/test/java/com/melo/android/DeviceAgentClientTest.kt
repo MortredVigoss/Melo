@@ -3,6 +3,7 @@ package com.melo.android
 import com.melo.android.data.*
 import com.melo.android.device.*
 import com.melo.android.network.ModelRequestFailure
+import com.melo.android.network.SharedSearchAdapter
 import kotlinx.coroutines.*
 import kotlinx.serialization.json.*
 import okhttp3.mockwebserver.*
@@ -159,6 +160,122 @@ class DeviceAgentClientTest {
         for (protocol in protocols) for (stream in listOf(true, false)) {
             val value = DeviceAgentClient.payload(Connection(protocol = protocol, model = "fixture", stream = stream), emptyList(), chatTools = true, toolSpecs = emptyList())
             assertEquals(stream, value["stream"]!!.jsonPrimitive.boolean)
+        }
+    }
+    private fun tool(name: String) = buildJsonObject { put("name", name); put("description", "fixture"); put("parameters", buildJsonObject { put("type", "object") }) }
+    // 2026-11-10. The completion check and the limit write-up send no tools; such a request carries no tool fields.
+    @Test fun aRequestWithoutToolsCarriesNoToolFieldsOnAnyProtocol() {
+        for (protocol in protocols) {
+            val value = DeviceAgentClient.payload(Connection(protocol = protocol, model = "fixture"), DeviceAgentClient.initial(protocol, "check"), "checker", chatTools = true, toolSpecs = emptyList())
+            for (field in listOf("tools", "parallel_tool_calls", "tool_choice")) assertNull("$protocol $field", value[field])
+        }
+        // Hosted search is a tool: the request still lists it.
+        val hosted = DeviceAgentClient.payload(Connection(protocol = "responses", model = "fixture"), emptyList(), chatTools = true, toolSpecs = emptyList(), nativeWebSearch = true)
+        assertEquals("web_search", hosted.getValue("tools").jsonArray.single().jsonObject.text("type"))
+    }
+    // Phone steps stay one call per round. Any other chat round may batch independent calls on every
+    // protocol; before, the two OpenAI protocols never could, so every page read cost a model round trip.
+    @Test fun roundsWithoutPhoneToolsMayBatchCallsAndPhoneRoundsStaySerialOnEveryProtocol() {
+        fun batches(protocol: String, specs: List<JsonObject>?, chat: Boolean = true): Boolean {
+            val value = DeviceAgentClient.payload(Connection(protocol = protocol, model = "fixture"), DeviceAgentClient.initial(protocol, "goal"), chatTools = chat, toolSpecs = specs)
+            return if (protocol == "anthropic") value["tool_choice"]?.jsonObject?.get("disable_parallel_tool_use")?.jsonPrimitive?.booleanOrNull != true
+                else value.getValue("parallel_tool_calls").jsonPrimitive.boolean
+        }
+        for (protocol in protocols) {
+            assertTrue(protocol, batches(protocol, listOf(tool("web_search"), tool("fetch_url"), tool("todo_list"))))
+            for (phone in listOf("phone_action", "phone_workflow")) assertFalse("$protocol $phone", batches(protocol, listOf(tool("fetch_url"), tool(phone))))
+            assertFalse("$protocol device transport", batches(protocol, null, chat = false))
+        }
+    }
+    // 2026-11-10. The loop is stateless (store: false) and sends reasoning items back; without their
+    // encrypted content the service answers "Item with id 'rs_…' not found" on the second request.
+    @Test fun everyResponsesRequestAsksForEncryptedReasoningSoItsItemsCanBeSentBack() {
+        val connection = Connection(protocol = "responses", model = "fixture")
+        fun include(value: JsonObject) = value.getValue("include").jsonArray.map { it.jsonPrimitive.content }
+        assertEquals(listOf("reasoning.encrypted_content"), include(DeviceAgentClient.payload(connection, DeviceAgentClient.initial("responses", "goal"), chatTools = true, toolSpecs = listOf(tool("web_search")))))
+        assertEquals(listOf("reasoning.encrypted_content"), include(DeviceAgentClient.payload(connection, emptyList(), "checker", chatTools = true, toolSpecs = emptyList())))
+        assertEquals(listOf("reasoning.encrypted_content"), include(DeviceAgentClient.payload(connection, DeviceAgentClient.initial("responses", "goal"))))
+        assertEquals(listOf("reasoning.encrypted_content", "web_search_call.action.sources"), include(DeviceAgentClient.payload(connection, emptyList(), chatTools = true, toolSpecs = emptyList(), nativeWebSearch = true)))
+        assertEquals(false, DeviceAgentClient.payload(connection, emptyList()).getValue("store").jsonPrimitive.boolean)
+        // The reasoning item of a response travels back unchanged, encrypted content included.
+        val response = MeloJson.parseToJsonElement("""{"status":"completed","output":[{"type":"reasoning","id":"rs_1","encrypted_content":"opaque","summary":[]},{"type":"function_call","call_id":"c1","name":"web_search","arguments":"{\"query\":\"x\"}"}]}""").jsonObject
+        val turn = DeviceAgentClient.decode(response, "responses", toolNames = setOf("web_search"))
+        val next = DeviceAgentClient.payload(connection, DeviceAgentClient.initial("responses", "goal") + turn.wire, chatTools = true, toolSpecs = listOf(tool("web_search")))
+        assertTrue(next.getValue("input").jsonArray.any { it.jsonObject.text("type") == "reasoning" && it.jsonObject.text("encrypted_content") == "opaque" })
+        // The other protocols carry no such field.
+        for (protocol in listOf("chat-completions", "anthropic")) assertNull(DeviceAgentClient.payload(Connection(protocol = protocol, model = "fixture"), emptyList(), chatTools = true, toolSpecs = listOf(tool("web_search")))["include"])
+    }
+    // A chat answer on Anthropic may be as long as on the other hosts; a device step keeps its small cap.
+    @Test fun aChatAnswerOnAnthropicMayUseTheSameLengthAsOtherHosts() {
+        val connection = Connection(protocol = "anthropic", model = "fixture", contextTokens = 200_000)
+        assertEquals(8192, DeviceAgentClient.payload(connection, emptyList(), chatTools = true, toolSpecs = listOf(tool("web_search"))).getValue("max_tokens").jsonPrimitive.int)
+        assertEquals(4096, DeviceAgentClient.payload(connection, DeviceAgentClient.initial("anthropic", "goal")).getValue("max_tokens").jsonPrimitive.int)
+        assertEquals(4000, DeviceAgentClient.payload(connection.copy(contextTokens = 12_000), emptyList(), chatTools = true, toolSpecs = emptyList()).getValue("max_tokens").jsonPrimitive.int)
+    }
+    // A picture sent without words: Anthropic rejects an empty text block, and the message stays in the chat.
+    @Test fun anImageOnlyMessageCarriesNoEmptyTextPart() {
+        val image = Attachment(name = "fixture.jpg", mime = "image/jpeg", file = "fixture.jpg")
+        for (protocol in protocols) {
+            val lone = com.melo.android.chat.ChatPhoneUse.history(listOf(Message(role = "user", content = "", attachments = listOf(image))), protocol) { "aW1hZ2U=" }.single().getValue("content").jsonArray
+            assertEquals(protocol, 1, lone.size); assertTrue(lone.none { it.jsonObject.text("type") in setOf("text", "input_text") })
+            val captioned = com.melo.android.chat.ChatPhoneUse.history(listOf(Message(role = "user", content = "这是什么？", attachments = listOf(image))), protocol) { "aW1hZ2U=" }.single().getValue("content").jsonArray
+            assertEquals(2, captioned.size); assertEquals("这是什么？", captioned.first().jsonObject.text("text"))
+            val blank = com.melo.android.chat.ChatPhoneUse.history(listOf(Message(role = "user", content = "  \n", attachments = listOf(image))), protocol) { "aW1hZ2U=" }.single().getValue("content").jsonArray
+            assertEquals(1, blank.size)
+        }
+    }
+
+    @Test fun aPageReadFailsAloneOnAnAddressThisBuildMayNotOpenAndALoadedPageIsReused() = runBlocking {
+        val adapter = SharedSearchAdapter(true, okhttp3.OkHttpClient())
+        fun args(url: String) = buildJsonObject { put("url", url) }
+        // Plain http outside the debug fixture hosts: one failed read, not an exception that ends the reply.
+        for (address in listOf("http://example.invalid/page", "https://user:secret@example.invalid/page")) {
+            val refused = adapter.load(args(address), listOf(address))
+            assertFalse(refused.ok); assertEquals(address, "FETCH_URL_UNSUPPORTED", refused.data.text("code"))
+        }
+        assertEquals("FETCH_URL_NOT_IN_EVIDENCE", adapter.load(args("https://example.invalid/other"), emptyList()).data.text("code"))
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setHeader("Content-Type", "text/plain").setBody("page body")); server.start()
+            val page = server.url("/page").toString()
+            assertEquals("page body", adapter.load(args(page), listOf(page)).data.text("body"))
+            // Reading on (another offset) uses the body already loaded for this reply.
+            assertEquals("page body", adapter.load(buildJsonObject { put("url", page); put("offset", 7000) }, listOf(page)).data.text("body"))
+            assertEquals(1, server.requestCount)
+            // A failed load is not kept: the next read asks again.
+            server.enqueue(MockResponse().setResponseCode(503)); server.enqueue(MockResponse().setHeader("Content-Type", "text/plain").setBody("recovered"))
+            val flaky = server.url("/flaky").toString()
+            assertEquals("SEARCH_HTTP_503", adapter.load(args(flaky), listOf(flaky)).data.text("code"))
+            assertEquals("recovered", adapter.load(args(flaky), listOf(flaky)).data.text("body"))
+            assertEquals(3, server.requestCount)
+        }
+    }
+    @Test fun pageLoadsRunSideBySideAndCancellingOneClosesItsRequest() = runBlocking {
+        // The network half of a read never touches the shared Runtime, so several may be in flight together.
+        MockWebServer().use { server ->
+            val inFlight = java.util.concurrent.atomic.AtomicInteger(); val peak = java.util.concurrent.atomic.AtomicInteger()
+            server.dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    peak.accumulateAndGet(inFlight.incrementAndGet(), ::maxOf)
+                    try { Thread.sleep(400) } finally { inFlight.decrementAndGet() }
+                    return MockResponse().setHeader("Content-Type", "text/plain").setBody("body of " + request.path)
+                }
+            }
+            server.start()
+            val adapter = SharedSearchAdapter(true, okhttp3.OkHttpClient())
+            val urls = (1..3).map { server.url("/p$it").toString() }
+            val started = System.nanoTime()
+            val bodies = urls.map { url -> async(Dispatchers.IO) { adapter.load(buildJsonObject { put("url", url) }, urls) } }.awaitAll().map { it.data.text("body") }
+            val elapsed = (System.nanoTime() - started) / 1_000_000
+            assertEquals(listOf("body of /p1", "body of /p2", "body of /p3"), bodies)
+            assertEquals("all three requests were in flight together", 3, peak.get())
+            assertTrue("three 400 ms pages took $elapsed ms", elapsed < 1000)
+        }
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setHeader("Content-Type", "text/plain").setBody("late").setBodyDelay(5, TimeUnit.SECONDS)); server.start()
+            val url = server.url("/slow").toString()
+            val read = async(Dispatchers.IO) { SharedSearchAdapter(true, okhttp3.OkHttpClient()).load(buildJsonObject { put("url", url) }, listOf(url)) }
+            withContext(Dispatchers.IO) { assertNotNull(server.takeRequest(2, TimeUnit.SECONDS)) }
+            withTimeout(1000) { read.cancelAndJoin() }; assertTrue(read.isCancelled)
         }
     }
     @Test fun httpGatewayErrorsKeepSafeStatusAndRequestIdWithoutProviderBody() = runBlocking {

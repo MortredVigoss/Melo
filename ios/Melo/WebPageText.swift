@@ -322,7 +322,8 @@ enum WebPageText {
         if let next = chunk.nextPage { object["nextPage"] = next }
         if let status { object["status"] = status }
         // Read at the soft deadline: the text was there, some resources were still loading.
-        if stoppedEarly { object["loading"] = "stopped-early"; object["note"] = "The page text was read while some of its resources were still loading; parts that load late may be missing." }
+        // Such a read is a partial one for the completion check, like a page cut by its window.
+        if stoppedEarly { object["loading"] = "stopped-early"; object["reading"] = "partial"; object["note"] = "The page text was read while some of its resources were still loading; parts that load late may be missing." }
         return encode(object)
     }
 

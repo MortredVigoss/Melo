@@ -239,12 +239,13 @@ class ChatPhoneUseFlowTest {
     }
     @Test fun disabledPhoneSkillKeepsNativeOrganizerButCannotStartDeviceSession() = runBlocking {
         MockWebServer().use { server ->
-            server.enqueue(final()); server.start(); val id = chat(server, false)
+            // An answer is followed by its completion check whenever the turn holds tools (2026-10-27).
+            server.enqueue(final()); server.enqueue(review(true, conversational = true)); server.start(); val id = chat(server, false)
             withContext(Dispatchers.Main) { assertTrue(app.engine.send(id, "普通问答")) }; complete(id)
             val body = server.takeRequest(2, TimeUnit.SECONDS)!!.body.readUtf8()
             val names = MeloJson.parseToJsonElement(body).jsonObject.getValue("tools").jsonArray.map { it.jsonObject.getValue("function").jsonObject.text("name") }
             assertFalse(names.contains("phone_action")); assertFalse(names.contains("phone_use")); assertFalse(names.contains("android_device")); assertTrue(names.contains("todo_list"))
-            assertEquals(1, server.requestCount); assertTrue(app.repository.data.value.deviceRuns.none { it.taskContext?.chatId == id })
+            assertEquals(2, server.requestCount); assertTrue(app.repository.data.value.deviceRuns.none { it.taskContext?.chatId == id })
         }
     }
     @Test fun deletingChatDuringPlanningCannotStartADeviceTaskOrRestoreItsMessages() = runBlocking {

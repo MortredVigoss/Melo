@@ -133,3 +133,34 @@ test('the claim belongs to one candidate and never enters the persisted task', (
   assert.equal(more.decision, 'continue');
   assert.equal(more.claimReview, undefined);
 });
+
+// 2026-11-10 agent audit. A page window is up to 20 000 characters, but a source row kept 16 000:
+// a fact read in the last fifth of a full window was invisible to the completion check, which then
+// reported it as missing and sent the answer back.
+test('a fact near the end of a full page window is still evidence for the check', async () => {
+  const { SOURCE_TEXT_CHARS } = await import('./completion.js');
+  const { PAGE_WINDOW_CHARS } = await import('./pageWindow.js');
+  const fact = ' The ferry to Bruny Island leaves at 09:35 from Kettering. ';
+  const window = ('timetable notes and general travel advice ').repeat(600).slice(0, 18600) + fact;
+  const page = (window + 'closing remarks '.repeat(200)).slice(0, PAGE_WINDOW_CHARS);
+  assert.equal(page.indexOf('09:35') > 16000 && page.length === PAGE_WINDOW_CHARS, true, 'the fact really sits past the old row limit, inside one window');
+  // The desktop reader appends its continuation line to the window; the row holds both.
+  const desktopText = page + '\n\n[Content truncated at 20000 characters; continue with offset=20000.]';
+  assert.equal(desktopText.length <= SOURCE_TEXT_CHARS, true);
+  for (const text of [page, desktopText]) {
+    const observations = completionObservation({ id: 'ferry', name: 'fetch_url', ok: true, executed: true, output: text.slice(0, 200), data: { url: 'https://fixture.invalid/ferry', text, truncated: true } });
+    const source = observations.find(row => row.id === 'ferry:source:0');
+    assert.equal(source.text.includes('09:35'), true, 'the row keeps the whole window');
+    assert.equal(source.text.length, text.length);
+    const answer = 'The ferry to Bruny Island leaves Kettering at 09:35. Source: https://fixture.invalid/ferry';
+    const state = goalCandidate(startGoal('When does the Bruny Island ferry leave Kettering?'), { reply: answer, observations, tools: ['fetch_url'], research: true, roundsLeft: 4 });
+    const shown = JSON.parse(goalReviewRequest(state, observations).messages[0].content).observations.find(row => row.id === 'ferry:source:0');
+    assert.match(shown.text, /leaves at 09:35 from Kettering/, 'the check is shown the passage the answer relies on');
+    const decided = reviewGoal(state, JSON.stringify({ decision: 'complete', evaluationValid: true, needsEvaluation: false, turnKind: 'task', reasonType: 'fulfilled', reason: 'ok', nextStep: '',
+      requirements: [{ text: 'departure time', kind: 'external_fact', status: 'met', evidenceIds: ['ferry:source:0'] }] }), observations);
+    assert.equal(decided.decision, 'complete');
+  }
+  // Text beyond one window plus its continuation line is still bounded.
+  const huge = completionObservation({ id: 'big', name: 'fetch_url', ok: true, executed: true, output: 'x', data: { url: 'https://fixture.invalid/big', text: 'z'.repeat(SOURCE_TEXT_CHARS + 500) } }).find(row => row.type === 'source');
+  assert.deepEqual([huge.text.length, huge.truncated, huge.reading], [SOURCE_TEXT_CHARS, true, 'partial']);
+});

@@ -104,6 +104,28 @@ test('finalize: a claim the completion check could not verify gets the note with
   assert.match(out.normalizedReply.content, /未能核实/);
 });
 
+// 2026-11-10 review of the merged check: the check reads the turn's observations only.
+test('finalize: a claim the check could not verify still goes to the verifier when the answer drew on background context', async () => {
+  const unverified = { claim: '降雨概率 10%', verdict: 'UNVERIFIED', originalClaim: '', correction: '', evidenceId: '' };
+  for (const context of [{ memoryContext: '用户笔记：墨尔本明天降雨概率 10%。' }, { dynamicContext: '知识库：probability_of_precipitation 10%' }, { projectContext: '项目资料：降雨概率 10%' }]) {
+    let seen = null, calls = 0;
+    const out = await harness({ createReply: async request => { calls++; seen = JSON.stringify(request.messages); return JSON.stringify({ verdict: 'VERIFIED', evidenceId: 'context:' + ['memoryContext', 'dynamicContext', 'projectContext'].indexOf(Object.keys(context)[0]), evidenceQuote: Object.values(context)[0].slice(-8) }); } })
+      .finalize(factual({ toolEvidence: [], claimReview: unverified, ...context }));
+    assert.equal(calls, 1, 'the verifier reads the context the check never saw: ' + Object.keys(context)[0]);
+    assert.match(seen, /background-context/);
+    assert.doesNotMatch(out.normalizedReply.content, /未能核实/, 'a claim the context supports gets no note');
+    assert.equal(out.normalizedReply.content, '明天 15 到 19 度。降雨概率 10%。');
+  }
+  // Blank context is no context: the check's verdict stands and nothing more is asked.
+  const model = counting();
+  const out = await harness({ createReply: model.createReply }).finalize(factual({ claimReview: unverified, memoryContext: '  ', dynamicContext: '', projectContext: undefined }));
+  assert.equal(model.calls(), 0); assert.match(out.normalizedReply.content, /未能核实/);
+  // A verified or corrected verdict is final whatever context exists.
+  const settled = counting();
+  await harness({ createReply: settled.createReply }).finalize(factual({ memoryContext: '用户笔记', claimReview: { claim: '降雨概率 10%', verdict: 'VERIFIED', originalClaim: '', correction: '', evidenceId: 'job-1:read' } }));
+  assert.equal(settled.calls(), 0);
+});
+
 test('finalize: a correction from the completion check replaces the sentence and is recorded', async () => {
   const model = counting();
   const out = await harness({ createReply: model.createReply }).finalize(factual({ claimReview: { claim: '降雨概率 10%', verdict: 'CORRECTED', originalClaim: '降雨概率 10%。', correction: '降雨概率 20%。', evidenceId: 'job-1:read' } }));

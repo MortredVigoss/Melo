@@ -177,3 +177,27 @@ test('C2: the checker may demand a task_progress ledger only when the host offer
   // A checker that only flags evaluationValid=false without a ledger is ignored when nothing was offered.
   assert.equal(reviewGoal(plain, report('complete', ['weather:source:0'], { evaluationValid: false, needsEvaluation: false }), observations).decision, 'complete');
 });
+
+// 2026-11-10 agent audit. The checker is asked for JSON only; a sentence around it, text after the
+// fence or a fence written ```JSON used to discard the whole verdict as "check unavailable".
+test('a verdict wrapped in prose or an unusual fence is still read; a reply without one is not', () => {
+  const state = goalCandidate(startGoal('Explain how a tree grows.'), { reply: 'A tree grows by forming new cells.', observations: [], tools: ['web_search'], roundsLeft: 4 });
+  const verdict = JSON.stringify({ decision: 'complete', turnKind: 'answer', reasonType: 'self_contained', reason: 'Explained {with braces} and a "quote".', nextStep: '', requirements: [{ text: 'explain', kind: 'response', status: 'met', evidenceIds: [] }] });
+  for (const raw of [verdict, '```json\n' + verdict + '\n```', '```JSON\n' + verdict + '\n```', 'Here is my verdict:\n' + verdict, verdict + '\nLet me know if you need more.', '```json\n' + verdict + '\n```\nDone.', '  ' + verdict + '  ']) {
+    const reviewed = reviewGoal(state, raw, []);
+    assert.deepEqual([reviewed.decision, reviewed.reason], ['deliver', 'SELF_CONTAINED_ANSWER'], raw.slice(0, 30));
+    assert.equal(reviewed.explanation, 'Explained {with braces} and a "quote".');
+  }
+  for (const raw of ['The answer looks complete to me.', '', '{"decision":"complete"', '[' + verdict + ']', 'null'])
+    assert.equal(reviewGoal(state, raw, []).reason.startsWith('GOAL_CHECK_'), true, raw.slice(0, 30));
+});
+
+// "好的" opens no conversation when it answers a question: it confirms a task and is checked like one.
+test('a one-word confirmation after a question is checked; the same word as a first message is a greeting', () => {
+  const phase = messages => goalCandidate(startGoal('好的'), { reply: '已创建提醒。', observations: [], tools: ['reminders_create'], roundsLeft: 4, context: { messages } }).phase;
+  assert.equal(phase([{ role: 'assistant', content: '要我现在创建这个提醒吗？' }, { role: 'user', content: '好的' }]), 'checking');
+  assert.equal(phase([{ role: 'user', content: '好的' }]), 'finished');
+  assert.equal(phase([]), 'finished');
+  const greeting = goalCandidate(startGoal('你好'), { reply: '你好！', observations: [], tools: ['reminders_create'], roundsLeft: 4, context: { messages: [{ role: 'user', content: '你好' }] } });
+  assert.deepEqual([greeting.phase, greeting.decision], ['finished', 'deliver']);
+});

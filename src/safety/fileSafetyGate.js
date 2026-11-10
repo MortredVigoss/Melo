@@ -37,7 +37,7 @@ import { permissionReceipt, rememberPermissionDecision } from './permissionRecei
 import { currentRequestContext, runWithRequestContext } from '../runtime/requestScope.js';
 import { createRequestContext } from '../runtime/requestContext.js';
 import { resolveRuntimePaths } from '../runtime/paths.js';
-import { hasApprovalSurface } from './permissionContext.js';
+import { hasApprovalSurface, announcePromptClosed } from './permissionContext.js';
 import { randomUUID } from 'node:crypto';
 import { stat, realpath } from 'node:fs/promises';
 import { isAbsolute, normalize, resolve, sep, basename } from 'node:path';
@@ -219,6 +219,7 @@ function _prompt({ payload, sseEmitter, signal, chatId, kind, expectedConfirmati
     const timer = setTimeout(() => {
       signal?.removeEventListener('abort', onAbort);
       _pending.delete(requestId);
+      announcePromptClosed(sseEmitter, requestId, 'timeout');
       rejectFn(denyError(`File safety prompt timed out after ${REQUEST_TIMEOUT_MS / 1000}s.`));
     }, REQUEST_TIMEOUT_MS);
 
@@ -226,6 +227,7 @@ function _prompt({ payload, sseEmitter, signal, chatId, kind, expectedConfirmati
       clearTimeout(timer);
       signal?.removeEventListener('abort', onAbort);
       _pending.delete(requestId);
+      announcePromptClosed(sseEmitter, requestId, 'cancelled');
       rejectFn(denyError('File operation aborted.'));
     };
     signal?.addEventListener('abort', onAbort, { once: true });

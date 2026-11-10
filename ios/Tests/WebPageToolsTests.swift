@@ -195,6 +195,14 @@ func json(_ text: String) -> [String: Any] {
         assert(!WebPageText.readableBeforeLoadEnds(readyState: "interactive", textLength: 399) && !WebPageText.readableBeforeLoadEnds(readyState: "", textLength: 9000))
         let early = json(WebPageText.openResult(url: "u", finalURL: "u", title: "t", description: "", text: "t", page: 1, stoppedEarly: true))
         assert(early["ok"] as? Bool == true && early["loading"] as? String == "stopped-early" && (early["note"] as? String ?? "").contains("still loading"))
+        // 2026-11-10 audit: a page read at the soft deadline is a partial read for the completion check,
+        // like a page cut by its window; a page that finished loading is not marked.
+        assert(early["reading"] as? String == "partial")
+        assert(json(WebPageText.openResult(url: "u", finalURL: "u", title: "t", description: "", text: "t", page: 1))["reading"] == nil)
+        let earlyRows = SharedLoopPolicy.value("completionObservation", ["observation": ["id": "read", "name": "open_url", "ok": true, "executed": true,
+            "output": WebPageText.openResult(url: "https://a.example/p", finalURL: "https://a.example/p", title: "t", description: "", text: String(repeating: "Opening hours nine to five. ", count: 4), page: 1, stoppedEarly: true),
+            "declaration": ["effect": "read"]]]) as? [[String: Any]] ?? []
+        assert(earlyRows.last?["reading"] as? String == "partial", "\(earlyRows)")
         assert(json(WebPageText.openResult(url: "u", finalURL: "u", title: "t", description: "", text: "t", page: 1))["loading"] == nil)
         assert(json(WebPageText.screenshotResult(url: "u", finalURL: "u", title: "t", status: 503))["status"] as? Int == 503)
         let longTitle = json(WebPageText.openResult(url: "u", finalURL: "u", title: String(repeating: "标", count: 30_000), description: String(repeating: "d", count: 30_000), text: "body", page: 1))

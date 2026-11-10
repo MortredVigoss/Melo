@@ -1,5 +1,5 @@
 import { connectionForModel, resolvedModelCapabilities } from '../../shared/agent/modelCapabilities.js';
-import { deliveryEvidence } from '../../shared/agent/evidence.js';
+
 import { runLimitDelivery } from '../runtime/limitDelivery.js';
 import { budgetedMemberReply } from '../runtime/memberReply.js';
 import { isDeliveryLimit, hostEvidenceReply } from '../../shared/agent/limitDelivery.js';
@@ -50,6 +50,28 @@ const MAX_SUB_AGENT_ITERATIONS = AGENT_LOOP_CONTRACT.delegationLimits.iterations
 // read one source could no longer see it after reading the next and read it
 // again (2026-11-10 latency audit L2).
 export const MEMBER_RESULT_TOKENS = 16000;
+
+// The rows a member hands back keep their page text. They used to be cut for a prompt
+// (deliveryEvidence: at most 4 000 characters a row, 3 000 after one search and one read). Since
+// 2026-11-10 a read-only member has no completion check of its own, so the lead's check is the only
+// one, and it could not see a passage that lay beyond the cut: the answer was sent back although
+// the member had read the fact. Every consumer bounds what it shows itself (the check's excerpts,
+// the handoff's 700 characters a row, the limit write-up); here only the total is bounded, and the
+// oldest rows give way first.
+export const MEMBER_EVIDENCE_CHARS = 400000;
+export function memberEvidence(observations = [], chars = MEMBER_EVIDENCE_CHARS) {
+  const rows = Array.isArray(observations) ? observations : [];
+  const kept = new Array(rows.length);
+  let left = chars;
+  for (let index = rows.length - 1; index >= 0; index--) {
+    const row = rows[index], field = row.text !== undefined ? 'text' : 'output', body = String(row[field] ?? '');
+    if (body.length <= left) { kept[index] = { ...row }; left -= body.length; continue; }
+    const head = body.slice(0, Math.max(0, Math.min(left, 160)));
+    left -= head.length;
+    kept[index] = { ...row, [field]: head, truncated: true };
+  }
+  return kept;
+}
 const SUB_AGENT_MAX_DEPTH = AGENT_LOOP_CONTRACT.delegationLimits.depth;
 
 /**
@@ -478,7 +500,7 @@ async function runSubAgentLoop({
     ok: !exhausted && deniedTools === 0 && completion.outcome === 'completed',
     ...(completion.outcome !== 'completed' ? { error: terminalReason === 'BUDGET_EXHAUSTED' ? 'BUDGET_EXHAUSTED' : 'GOAL_INCOMPLETE' } : {}),
     output: finalOutput,
-    meta: { ...(signal?.aborted ? { aborted: true } : {}), depth, iterations, toolCalls: totalToolCalls, failedTools, deniedTools, exhausted, ...(completion.outcome === 'budget_exhausted' ? { budgetExceeded: true } : {}), stopReason: terminalReason, effects: coreTurn.effects, toolResults, observations: deliveryEvidence(coreTurn.observations), completion },
+    meta: { ...(signal?.aborted ? { aborted: true } : {}), depth, iterations, toolCalls: totalToolCalls, failedTools, deniedTools, exhausted, ...(completion.outcome === 'budget_exhausted' ? { budgetExceeded: true } : {}), stopReason: terminalReason, effects: coreTurn.effects, toolResults, observations: memberEvidence(coreTurn.observations), completion },
   };
 }
 

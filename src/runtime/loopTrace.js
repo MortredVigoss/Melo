@@ -142,9 +142,17 @@ export async function traceModelCall(options, work) {
     } catch (error) { traceEvent('model.error', { durationMs: performance.now() - started, firstEventMs: first, code: error?.code || error?.name || 'ERROR' }); throw error; }
   });
 }
-/** Returns the original serialized bytes; only the separate snapshot is redacted. */
+// A string cut inside a surrogate pair is not valid Unicode: a tool result truncated at the
+// envelope cap, a page window, or text that already came that way from a file or a terminal.
+// JSON.stringify writes the lone half as an escape that strict parsers refuse. Anthropic answers
+// 400 "The request body is not valid JSON: no low surrogate in string", and because the string
+// stays in the tool chain every later request of the run fails the same way (2026-11-10 audit).
+// The wire copy replaces a lone half with U+FFFD; the stored conversation is not changed.
+const wellFormedText = (key, value) => typeof value === 'string' && !value.isWellFormed() ? value.toWellFormed() : value;
+
+/** Returns the serialized request; only the separate snapshot is redacted. */
 export async function traceProviderPayload(payload) {
-  const body = JSON.stringify(payload);
+  const body = JSON.stringify(payload, wellFormedText);
   traceEvent('model.provider.payload', { source: 'provider-wire', model: payload.model || null }, payload);
   traceEvent('model.transport.started', { source: 'provider-wire' });
   await traceFlush(); return body;

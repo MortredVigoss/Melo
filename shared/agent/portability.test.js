@@ -39,3 +39,19 @@ test('an authored message template never translates matching user supplement tex
  const event=executionMessage({kind:'pipeline',id:'compact:x',name:'压缩早期对话',outputMessageId:'output.compactStart',outputMessageParams:{count:12},output:'legacy'});
  assert.equal(runtimeStageOutput(event,'en'),'Condensing the earliest 12 messages.');
 });
+
+// 2026-11-10 agent audit: one borrowed word decided the reply language.
+test('a quoted foreign word or an accented name does not change the reply language', () => {
+  const cases = [
+    ['What time does Café Sydney open?', 'en'], ['Tell me about Pokémon', 'en'], ['Is the jalapeño spicy?', 'en'],
+    ['鮨の匠这家店怎么样', 'zh'], ['ありがとう是什么意思', 'zh'], ['안녕是什么意思', 'zh'], ['"カタカナ" 这个词怎么读？', 'zh'], ['明天墨尔本天气多少', 'zh'],
+    ['こんにちは、元気ですか', 'ja'], ['天気を教えて', 'ja'], ['東京の明日の天気は？', 'ja'], ['ありがとう', 'ja'],
+    ['날씨 알려줘', 'ko'], ['서울 날씨는?', 'ko'],
+    ['¿Qué hora es?', 'es'], ['Hola, necesito ayuda', 'es'], ['Mañana viene Juan', 'es'], ['El niño está aquí', 'es'],
+    ['Wie spät ist es in München?', 'en'],
+  ];
+  for (const [text, expected] of cases) assert.equal(resolveReplyLocale({ text }), expected, text);
+  // A set preference still wins, and text without a language still falls back.
+  assert.equal(resolveReplyLocale({ agentLanguage: 'ja', text: 'What time does Café Sydney open?' }), 'ja');
+  assert.equal(resolveReplyLocale({ text: 'BigBang 31', interfaceLanguage: 'ko' }), 'ko');
+});

@@ -17,7 +17,7 @@ import kotlin.coroutines.resumeWithException
 
 /** A separate tool channel; ordinary streaming chat retains its original decoder. */
 class DeviceAgentClient(private val debug: Boolean, private val http: OkHttpClient = ModelClient(debug).http) {
-    suspend fun next(connection: Connection, key: String, history: List<JsonObject>, taskInstructions: String = "", chatTools: Boolean = false, toolSpecs: List<JsonObject>? = null, nativeWebSearch: Boolean = false, outputLimit: Int? = null, onProgress: (String) -> Unit = {}): DeviceTurn {
+    suspend fun next(connection: Connection, key: String, history: List<JsonObject>, taskInstructions: String = "", chatTools: Boolean = false, toolSpecs: List<JsonObject>? = null, nativeWebSearch: Boolean = false, outputLimit: Int? = null, onProgress: (String) -> Unit = {}, onText: (String) -> Unit = {}): DeviceTurn {
         fun hasImage(value: JsonElement): Boolean = when(value) { is JsonObject -> value["type"]?.jsonPrimitive?.contentOrNull in setOf("image", "image_url", "input_image") || value.values.any(::hasImage); is JsonArray -> value.any(::hasImage); else -> false }
         require(connection.modelCapabilities[connection.model]?.jsonObject?.get("vision")?.jsonPrimitive?.booleanOrNull != false || history.none { hasImage(it) }) { "此模型已设为不支持图片输入，请选择视觉模型或修改能力设置。" }
         ConnectionPolicy.validate(connection, key, debug)
@@ -47,7 +47,7 @@ class DeviceAgentClient(private val debug: Boolean, private val http: OkHttpClie
                             val body = it.body
                             val parsed = try {
                                 if (it.header("Content-Type").orEmpty().contains("text/event-stream", ignoreCase = true)) {
-                                    val decoder = ToolStreamDecoder(connection.protocol, onProgress)
+                                    val decoder = ToolStreamDecoder(connection.protocol, onProgress, onText)
                                     val source = body.source(); var frame = StringBuilder(); var bytes = 0L
                                     fun flush() { if (frame.isNotEmpty()) { decoder.accept(frame.toString().trimEnd('\n')); frame = StringBuilder() } }
                                     while (!decoder.isTerminal && !source.exhausted()) {
@@ -87,20 +87,33 @@ class DeviceAgentClient(private val debug: Boolean, private val http: OkHttpClie
             val schema = if (chatTools) ChatPhoneUse.schema else DeviceTools.schema
             val function = buildJsonObject { put("name", name); put("description", description); put("parameters", schema); put("strict", false) }
             val functions = toolSpecs?.map { JsonObject(it + ("strict" to JsonPrimitive(false))) } ?: listOf(function)
+            // Phone steps change the screen and stay one call per round. Any other chat round may
+            // batch independent calls on every protocol: until 2026-11-10 only Anthropic could, so
+            // on the two OpenAI protocols each page read cost its own model round trip.
+            val serial = !chatTools || functions.any { it.text("name") in setOf("phone_action", "phone_workflow") }
+            // A request without tools (the completion check, a limit write-up) carries no tool
+            // fields at all, as on desktop; some compatible servers reject `tools: []`.
             when (connection.protocol) {
                 "responses" -> {
                     put("instructions", instructions); put("max_output_tokens", minOf(8000, connection.contextTokens / 3)); put("store", false); put("input", JsonArray(history))
-                    put("parallel_tool_calls", false); put("tools", buildJsonArray { functions.forEach { add(JsonObject(it + ("type" to "function".jp()))) }; if (nativeWebSearch) add(buildJsonObject { put("type", "web_search") }) })
-                    if (nativeWebSearch) put("include", buildJsonArray { add("web_search_call.action.sources") })
+                    val tools = buildJsonArray { functions.forEach { add(JsonObject(it + ("type" to "function".jp()))) }; if (nativeWebSearch) add(buildJsonObject { put("type", "web_search") }) }
+                    if (tools.isNotEmpty()) { put("parallel_tool_calls", !serial); put("tools", tools) }
+                    // The loop is stateless (store: false) and sends reasoning items back with the tool
+                    // results. Without their encrypted content the service looks the item up by id and
+                    // answers "Item with id 'rs_…' not found", so the second request of every tool round on
+                    // a reasoning model failed. Desktop and iPhone have always asked for it.
+                    put("include", buildJsonArray { add("reasoning.encrypted_content"); if (nativeWebSearch) add("web_search_call.action.sources") })
                 }
                 "anthropic" -> {
-                    put("system", instructions); put("max_tokens", minOf(4096, connection.contextTokens / 3)); put("messages", JsonArray(history))
-                    if (!chatTools || functions.any { it.text("name") in setOf("phone_action", "phone_workflow") }) put("tool_choice", buildJsonObject { put("type", "auto"); put("disable_parallel_tool_use", true) })
-                    put("tools", buildJsonArray { functions.forEach { spec -> add(buildJsonObject { put("name", spec.getValue("name")); put("description", spec.getValue("description")); put("input_schema", spec.getValue("parameters")) }) } })
+                    // A chat answer may be as long as on the other hosts (8192 on desktop); 4096 was sized for
+                    // a single device action and cut long answers, which then failed as an invalid response.
+                    put("system", instructions); put("max_tokens", minOf(if (chatTools) 8192 else 4096, connection.contextTokens / 3)); put("messages", JsonArray(history))
+                    if (serial && functions.isNotEmpty()) put("tool_choice", buildJsonObject { put("type", "auto"); put("disable_parallel_tool_use", true) })
+                    if (functions.isNotEmpty()) put("tools", buildJsonArray { functions.forEach { spec -> add(buildJsonObject { put("name", spec.getValue("name")); put("description", spec.getValue("description")); put("input_schema", spec.getValue("parameters")) }) } })
                 }
                 else -> {
                     put("messages", JsonArray(listOf(buildJsonObject { put("role", "system"); put("content", instructions) }) + history))
-                    put("parallel_tool_calls", false); put("tools", buildJsonArray { functions.forEach { spec -> add(buildJsonObject { put("type", "function"); put("function", spec) }) } })
+                    if (functions.isNotEmpty()) { put("parallel_tool_calls", !serial); put("tools", buildJsonArray { functions.forEach { spec -> add(buildJsonObject { put("type", "function"); put("function", spec) }) } }) }
                 }
             }
         }

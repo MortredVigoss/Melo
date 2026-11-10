@@ -573,7 +573,18 @@ async function sendSupplement(chatId, text) {
   render();
 }
 
+// A reply runs in one chat at a time. Anywhere else (another chat, or the new-chat page) the
+// composer neither supplements nor stops a reply the user is not looking at.
+export function replyRunsElsewhere() {
+  return chatState.sending && Boolean(chatState.streamingChatId) && (isOverview() || chatState.streamingChatId !== activeChat()?.id);
+}
+
 async function handleSendMessage(prepared = null) {
+  if (!prepared && replyRunsElsewhere()) {
+    // Pressing send here used to do nothing at all while the hint offered a follow-up.
+    if (chatState.composer.trim() || chatState.composerAttachments.length) notify({ text: t('另一段对话正在回复，结束后才能在这里发送；可以先写好。') });
+    return;
+  }
   if (!prepared && chatState.sending && !voiceInputActive(chatState.voice) && chatState.composer.trim() && chatState.streamingChatId && chatState.streamingChatId === activeChat()?.id) {
     await sendSupplement(chatState.streamingChatId, chatState.composer.trim());
     return;
@@ -762,8 +773,10 @@ async function handleSendMessage(prepared = null) {
             toolPermissions().push({ ...payload, kind: 'capability' });
             render();
           }
-        } else if (message.event === 'capability_request_closed') {
-          // Timed out, cancelled, budget ended or answered: the card goes away.
+        } else if (message.event === 'capability_request_closed' || message.event === 'tool_permission_closed') {
+          // Timed out, cancelled, budget ended or answered: the card goes away. A tool, file or
+          // task-scope prompt the server stopped waiting for used to stay until the turn ended,
+          // ahead of every newer prompt, and answering it only returned "Unknown or expired request".
           const requestId = message.payload?.requestId;
           if (requestId && toolPermissions().some(p => p.requestId === requestId)) {
             setToolPermissions(toolPermissions().filter(p => p.requestId !== requestId));

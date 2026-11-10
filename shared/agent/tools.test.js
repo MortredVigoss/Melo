@@ -50,3 +50,90 @@ test('a completed phone goal cannot be reissued under a fresh call ID', () => {
   event('request'); event('calls', { calls: [{ id: 'second', name: 'phone_use', arguments: argumentsValue }] });
   assert.deepEqual(state.permitted, []); assert.equal(state.rejections.second, 'REPEATED_TASK');
 });
+
+// 2026-11-10. The phone's page reader used to return the first 32 000 characters and nothing else:
+// the rest of a long page could not be read, and one Chinese page cost about 32 000 input tokens in
+// every later request. A read now returns one window of the page and says where to read on.
+test('a page read returns one window sized by tokens and reads on from the offset it reports', async () => {
+  const { toolCatalog, validateCommonTool } = await import('./tools.js');
+  const { PAGE_WINDOW_CHARS, PAGE_WINDOW_TOKENS } = await import('./pageWindow.js');
+  const { estimateTextTokens } = await import('./tokenEstimate.js');
+  const read = (content, offset) => normalizeFetchedPage({ url: 'https://fixture.invalid/page', contentType: 'text/plain', content, ...(offset === undefined ? {} : { offset }) }, { fetchedAt: 't' });
+  // A short page is whole and unchanged in shape.
+  const short = read('Opening hours: nine to five.');
+  assert.deepEqual([short.text, short.truncated, short.length, 'nextOffset' in short, 'offset' in short], ['Opening hours: nine to five.', false, 28, false, false]);
+  // Latin text keeps the full window; the rest is reachable.
+  const english = 'forecast for the coming week '.repeat(1500).trim();
+  const first = read(english);
+  assert.deepEqual([first.text.length, first.truncated, first.nextOffset, first.length], [PAGE_WINDOW_CHARS, true, PAGE_WINDOW_CHARS, english.length]);
+  // Chinese text gets a shorter window of about the same token cost.
+  const chinese = '明天墨尔本多云转晴，气温十五到十九度。'.repeat(600);
+  const head = read(chinese);
+  assert.equal(head.text.length < 9000 && head.text.length >= 1000, true, String(head.text.length));
+  assert.equal(estimateTextTokens(head.text) <= PAGE_WINDOW_TOKENS, true);
+  assert.equal(head.nextOffset, head.text.length);
+  // Reading on from each reported offset reconstructs the page exactly, with no overlap and no gap.
+  for (const page of [english, chinese]) {
+    let offset = 0, joined = '', parts = 0;
+    for (;;) {
+      const part = read(page, offset); joined += part.text; parts += 1;
+      assert.equal(part.truncated, offset > 0 || part.nextOffset !== undefined);
+      if (offset > 0) assert.equal(part.offset, offset);
+      if (part.nextOffset === undefined) break;
+      assert.equal(part.nextOffset > offset, true, 'every part makes progress'); offset = part.nextOffset;
+      assert.equal(parts < 20, true);
+    }
+    assert.equal(joined, page); assert.equal(parts > 1, true);
+  }
+  // A window never starts or ends inside a surrogate pair, whatever offset the model sends.
+  const emoji = 'a'.repeat(PAGE_WINDOW_CHARS - 1) + '😀' + 'b'.repeat(50);
+  const cut = read(emoji);
+  assert.deepEqual([cut.text.isWellFormed(), cut.nextOffset], [true, PAGE_WINDOW_CHARS - 1]);
+  assert.equal(read(emoji, cut.nextOffset).text.startsWith('😀b'), true);
+  const inside = read(emoji, PAGE_WINDOW_CHARS);
+  assert.deepEqual([inside.text.isWellFormed(), inside.offset], [true, PAGE_WINDOW_CHARS - 1]);
+  // An offset at or past the end is an empty part with a hint, not an error and not a restart.
+  const past = read('hello world', 500);
+  assert.deepEqual([past.ok, past.text, past.offset, past.truncated, 'nextOffset' in past], [true, '', 11, true, false]);
+  assert.match(past.hint, /nothing further to read/);
+  // An unusable offset reads from the start.
+  for (const bad of [-5, 2.5, '7000', null, NaN]) assert.equal(read(english, bad).text, first.text, String(bad));
+  // An empty page is still not a successful read.
+  assert.equal(read('   ').ok, false);
+  // The tool definition tells the model how to read on, and the contract accepts only a whole, non-negative offset.
+  const spec = toolCatalog(['fetch_url'])[0];
+  assert.match(spec.description, /nextOffset/); assert.deepEqual(spec.parameters.required, ['url']);
+  assert.deepEqual(validateCommonTool('fetch_url', { url: 'https://fixture.invalid/page', offset: 7000 }), { url: 'https://fixture.invalid/page', offset: 7000 });
+  for (const args of [{ url: 'https://fixture.invalid/page', offset: -1 }, { url: 'https://fixture.invalid/page', offset: 1.5 }, { url: 'https://fixture.invalid/page', offset: '7' }, { url: 'https://fixture.invalid/page', page: 2 }, { url: 'https://fixture.invalid/page', offset: 10000001 }])
+    assert.throws(() => validateCommonTool('fetch_url', args), { code: 'INVALID_TOOL_ARGUMENTS' }, JSON.stringify(args));
+});
+
+test('the execution record says which part of a page was read', async () => {
+  const { executionScene } = await import('./execution.js');
+  let scene = executionScene({ action: 'create', runId: 'r', chatId: 'c', query: 'q', at: '2026-11-10T00:00:00Z' });
+  const record = (id, result) => { scene = executionScene({ action: 'event', scene, at: '2026-11-10T00:00:01Z', event: { kind: 'operation', id, name: 'fetch_url', module: 'search', status: 'completed', result } }); return scene.operations.find(row => row.id === id).resultSummary; };
+  const chinese = '明天墨尔本多云转晴，气温十五到十九度。'.repeat(600);
+  const head = normalizeFetchedPage({ url: 'https://fixture.invalid/p', contentType: 'text/plain', content: chinese });
+  const tail = normalizeFetchedPage({ url: 'https://fixture.invalid/p', contentType: 'text/plain', content: chinese, offset: head.nextOffset });
+  assert.equal(record('a', head), `已读取网页文本第 1–${head.text.length} 字符，全文 ${chinese.length} 字符，其余可续读。内容时效仍需核对。`);
+  assert.equal(record('b', tail), `已读取网页文本第 ${head.nextOffset + 1}–${chinese.length} 字符，全文 ${chinese.length} 字符。内容时效仍需核对。`);
+  assert.equal(record('c', normalizeFetchedPage({ url: 'https://fixture.invalid/s', contentType: 'text/plain', content: 'short page' })), '已读取网页文本 10 字符。内容时效仍需核对。');
+  // A result from a host that does not report the page length keeps the earlier wording.
+  assert.equal(record('d', { ok: true, text: 'x'.repeat(40), truncated: true }), '已读取网页文本 40 字符（已截断）。内容时效仍需核对。');
+});
+
+// 2026-11-10 agent audit: toLowerCase() can change a string's length ("İ" becomes two units), after
+// which tag names were read at shifted offsets and script bodies came out as page text.
+test('the static HTML reader removes scripts and styles after a character whose lowercase is longer', () => {
+  const page = normalizeFetchedPage({ url: 'https://fixture.invalid/tr', contentType: 'text/html', content: '<h1>İstanbul İZMİR</h1><script>var secret = 1;</script><SCRIPT>second()</SCRIPT><p>Visible</p><Style>.x{color:red}</Style><p>End</p>' });
+  assert.equal(page.text, 'İstanbul İZMİR Visible End');
+});
+
+test('unit conversions keep significant digits for small results', async () => {
+  const { calculateNumber } = await import('./arithmetic.js');
+  const convert = (value, from, to) => calculateNumber({ action: 'convert', value, from, to }).result;
+  assert.equal(convert(1, 'mm', 'mi'), 6.21371e-7); assert.equal(convert(100, 'kb', 'tb'), 9.31323e-8);
+  assert.notEqual(convert(1, 'mg', 'lb'), 0.000002);
+  // Ordinary results are unchanged.
+  assert.equal(convert(20, 'celsius', 'fahrenheit'), 68); assert.equal(convert(10, 'km', 'mi'), 6.213712); assert.equal(convert(0, 'km', 'mi'), 0);
+});

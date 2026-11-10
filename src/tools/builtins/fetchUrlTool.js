@@ -214,7 +214,8 @@ export async function hedgedRead({ jina, direct, hedgeMs, graceMs = 0, signal, l
       }
       if (usable(state.direct) && (state.direct.exact || state.graceOver || state.jina)) {
         aborts.jina.abort();
-        if (state.jina) note(state.jina, { hedged: true }); else events.push({ tier: 'jina', outcome: 'fail', reason: 'slow', latencyMs: Date.now() - started });
+        // Melo gave this request up for the direct page; the trail shows it as aborted, not as a failed tier.
+        if (state.jina) note(state.jina, { hedged: true }); else events.push({ tier: 'jina', outcome: 'aborted', reason: 'slow', latencyMs: Date.now() - started });
         note(state.direct, { hedged: true });
         return { content: state.direct.value, method: 'direct', events };
       }
