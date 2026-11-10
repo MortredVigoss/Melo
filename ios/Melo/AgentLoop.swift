@@ -277,6 +277,8 @@ final class AgentLoop: @unchecked Sendable {
     var validate: ((AgentLoopOutcome) throws -> Void)? = nil
     var maxIterations = AgentLoopContract.shared.maxIterations
     var maxCallsPerResponse = AgentLoopContract.shared.maxCallsPerResponse
+    /// Page reads of one batch that may load at the same time (one hidden web view each).
+    static let parallelPageReads = 3
     private var contract: AgentLoopContract { .shared }
     private var completionObservations: [[String: Any]] = []
     private var completionTerminalReason = ""
@@ -648,7 +650,9 @@ final class AgentLoop: @unchecked Sendable {
             if job != nil { jobRounds += 1 }
             if calls.isEmpty {
                 candidateRound = round
-                try goal.update("candidate", ["observations": completionObservations, "candidate": ["context": ["messages": goalHistory.suffix(8).map { ["role": $0.role, "content": $0.content] }, "capabilities": Array(offered)], "reply": round.text, "tools": Array(offered) + (nativeSearchAvailable ? ["native_web_search"] : []) + (catalog != nil && job == nil ? ["task_progress"] : []), "research": ChatGPTRequest.requiresSearch(latestUserMessage), "roundsLeft": maxIterations - core.rounds]])
+                // The completion check also judges the claim this answer flags as
+                // uncertain, as on the desktop; finalize then needs no request of its own.
+                try goal.update("candidate", ["observations": completionObservations, "candidate": ["context": ["messages": goalHistory.suffix(8).map { ["role": $0.role, "content": $0.content] }, "capabilities": Array(offered)], "reply": round.text, "uncertainClaim": flaggedClaim(round.text), "tools": Array(offered) + (nativeSearchAvailable ? ["native_web_search"] : []) + (catalog != nil && job == nil ? ["task_progress"] : []), "research": ChatGPTRequest.requiresSearch(latestUserMessage), "roundsLeft": maxIterations - core.rounds]])
                 if goal.checking { try core.event("feedback"); iteration += 1; continue }
                 try core.event("complete")
                 if !core.completed { return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: core.reason == "DEADLINE_EXCEEDED" ? .budget : .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration + 1) }
@@ -664,10 +668,47 @@ final class AgentLoop: @unchecked Sendable {
             if !core.active && job != nil { await finishJob("Member execution stopped: " + core.reason, limited:true); iteration += 1; continue }
             if !core.active { return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: core.reason == "DEADLINE_EXCEEDED" ? .budget : .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration + 1) }
             var results: [AgentToolResult] = []
-            for wire in calls {
+            // A batch made only of independent page reads loads them side by side,
+            // at most parallelPageReads at a time (2026-11-10 latency audit: a 20 s
+            // page held back a 1.4 s page of the same batch). The desktop executor
+            // already runs concurrency-safe tools together. Every read is admitted by
+            // the budget in call order before it starts; results are still reported in
+            // call order, and any batch holding another kind of call keeps strict order.
+            var pageReads: [String: Task<PhoneToolResult, Error>] = [:]
+            var pageReadStarted: [String: Date] = [:]
+            var nextPageRead = 0
+            let pageReadBatch = tools != nil && calls.count > 1 && calls.allSatisfy { wire in
+                let call = localCall(wire)
+                guard call.name == WebPageToolSpec.openURL, PhoneCoreTurn.effect(call.name, arguments: call.arguments) == "read", core.permits(call.callID) else { return false }
+                if let job, !(job["tools"] as? [String] ?? []).contains(call.name) { return false }
+                if job == nil, Self.leadWithheld(catalog).contains(call.name) { return false }
+                return !(offered.contains(call.name) && hooks.resumeCursor?.receipts[PhoneCoreTurn.fingerprint(call.name + OrderedJSON.arguments(call.arguments).canonicalJSON)] != nil)
+            }
+            func startPageReads(before end: Int) {
+                guard pageReadBatch, let tools, !Task.isCancelled else { return }
+                while nextPageRead < min(end, calls.count) {
+                    let call = localCall(calls[nextPageRead])
+                    // Refused by the budget: the loop below reports it for this call and the following ones.
+                    guard budget.admitTool() == nil else { nextPageRead = calls.count; return }
+                    nextPageRead += 1
+                    let scopedBudget = budget
+                    pageReadStarted[call.callID] = Date()
+                    pageReads[call.callID] = Task {
+                        try await LoopTrace.withSpan("tool:" + call.callID) {
+                            LoopTrace.emit("tool.dispatch.started",["callId":call.callID,"name":call.name,"effectState":"dispatched","dispatchLayer":"host-executor","parallel":true])
+                            await LoopTrace.current?.root.flush()
+                            try Task.checkCancellation()
+                            return try await self.withDeadline(scopedBudget) { await tools.perform(call) }
+                        }
+                    }
+                }
+            }
+            defer { for read in pageReads.values { read.cancel() } }
+            for (callIndex, wire) in calls.enumerated() {
                 let call = localCall(wire)
                 let args = OrderedJSON.arguments(call.arguments)
-                let started = Date()
+                startPageReads(before: callIndex + Self.parallelPageReads)
+                let started = pageReadStarted[call.callID] ?? Date()
                 var outcome: PhoneToolOutcome
                 var executed = false
                 var cancelled = false
@@ -696,7 +737,7 @@ final class AgentLoop: @unchecked Sendable {
                     outcome = PhoneToolEnvelope.finalize(ok: true, output: "Routing request recorded. Continue from existing results; do not repeat successful effects.")
                 } else if call.name == WebPageToolSpec.screenshot, screenshots >= WebPageText.maxScreenshotsPerReply {
                     outcome = PhoneToolEnvelope.parse(WebPageText.tooManyScreenshots(url: call.urlArgument))
-                } else if let exhausted = budget.admitTool() {
+                } else if pageReads[call.callID] == nil, let exhausted = budget.admitTool() {
                     outcome = PhoneToolEnvelope.finalize(ok: false, error: contract.budgetCode, output: AgentLoopContract.fill(contract.budgetToolSkippedTemplate, ["reason": exhausted.reason, "tool": call.name]))
                 } else if job != nil && call.name == "calculator" {
                     let value = (try? JSONSerialization.jsonObject(with: Data(call.arguments.utf8))) as? [String:Any] ?? [:]
@@ -712,11 +753,17 @@ final class AgentLoop: @unchecked Sendable {
                         }
                         await hooks.onStatus?(tools.statusText(call))
                         do {
-                            let result = try await LoopTrace.withSpan("tool:" + call.callID) {
-                                LoopTrace.emit("tool.dispatch.started",["callId":call.callID,"name":call.name,"effectState":"dispatched","dispatchLayer":"host-executor"])
-                                await LoopTrace.current?.root.flush()
-                                try Task.checkCancellation()
-                                return try await withDeadline(budget) { await tools.perform(call) }
+                            let result: PhoneToolResult
+                            if let pending = pageReads[call.callID] {
+                                // Already loading alongside the other reads of this batch.
+                                result = try await withTaskCancellationHandler { try await pending.value } onCancel: { pending.cancel() }
+                            } else {
+                                result = try await LoopTrace.withSpan("tool:" + call.callID) {
+                                    LoopTrace.emit("tool.dispatch.started",["callId":call.callID,"name":call.name,"effectState":"dispatched","dispatchLayer":"host-executor"])
+                                    await LoopTrace.current?.root.flush()
+                                    try Task.checkCancellation()
+                                    return try await withDeadline(budget) { await tools.perform(call) }
+                                }
                             }
                             capability = result.capability
                             try PhoneExecutionScope.check(deadline: budget)
@@ -858,6 +905,16 @@ final class AgentLoop: @unchecked Sendable {
 
     // MARK: finalize
 
+    /// The claim a factual answer flags as uncertain, or "" when verification does not apply.
+    private func flaggedClaim(_ text: String) -> String {
+        guard let verification else { return "" }
+        var classification = verification.classification
+        if classification.taskType == nil { classification.taskType = "factual" }
+        guard classification.requiresVerification else { return "" }
+        let parsed = PhoneUncertainty.parse(text)
+        return parsed.hasMarker ? parsed.uncertainClaim : ""
+    }
+
     private func finalize(_ outcome: inout AgentLoopOutcome) async throws {
         guard outcome.stop == .answered, let verification else { return }
         let parsed = PhoneUncertainty.parse(outcome.text)
@@ -866,7 +923,19 @@ final class AgentLoop: @unchecked Sendable {
         var classification = verification.classification
         let transport = hooks.routing?.currentTransport ?? self.transport
         if classification.taskType == nil { classification.taskType = "factual" }
-        guard classification.requiresVerification, budget.exhausted() == nil else { return }
+        guard classification.requiresVerification else { return }
+        // The completion check already judged this exact claim against the
+        // turn's observations: use its verdict instead of one more request.
+        if let reviewed = goalState?.claimReview, reviewed["claim"] as? String == parsed.uncertainClaim, let verdict = reviewed["verdict"] as? String {
+            let result = PhoneUncertainty.Verification(verdict: verdict, correction: reviewed["correction"] as? String ?? "", originalClaim: reviewed["originalClaim"] as? String ?? "",
+                                                       evidenceId: reviewed["evidenceId"] as? String ?? "", reason: "completion-check")
+            outcome.text = PhoneUncertainty.apply(parsed.cleanReply, result)
+            outcome.verification = result
+            let label = ["VERIFIED": "已核实", "CORRECTED": "已按证据更正", "UNVERIFIED": "未能核实，已标注"][result.verdict] ?? result.verdict
+            await hooks.onStage?("finalize:verify", "核实不确定内容", "completed", label)
+            return
+        }
+        guard budget.exhausted() == nil else { return }
         await hooks.onStage?("finalize:verify", "核实不确定内容", "running", parsed.uncertainClaim)
         let toolEvidence = PhoneUncertainty.collect(lastEvidence, query: latestUserMessage)
         let timeout = budget.requestTimeout(cap: transport.timeoutCap)

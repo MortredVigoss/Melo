@@ -1,17 +1,22 @@
-import { test, after } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+// One parent test owns the fixture home: its t.after runs when both subtests have ended. A root-level after()
+// next to top-level `await test()` ran when the first one ended, and the second then saved its fixture state
+// into the user's data directory (2026-11-10 incident; see src/runtime/testIsolation.test.js).
+await test('task evaluation graph stays inside its fixture home',async t=>{
 const home=mkdtempSync(join(tmpdir(),'melo-evaluation-graph-'));
 const oldHome=process.env.MELO_HOME,oldCalling=process.env.MELO_FUNCTION_CALLING;
 process.env.MELO_HOME=home;process.env.MELO_FUNCTION_CALLING='legacy';
-after(()=>{rmSync(home,{recursive:true,force:true});if(oldHome===undefined)delete process.env.MELO_HOME;else process.env.MELO_HOME=oldHome;if(oldCalling===undefined)delete process.env.MELO_FUNCTION_CALLING;else process.env.MELO_FUNCTION_CALLING=oldCalling;});
+t.after(()=>{rmSync(home,{recursive:true,force:true});if(oldHome===undefined)delete process.env.MELO_HOME;else process.env.MELO_HOME=oldHome;if(oldCalling===undefined)delete process.env.MELO_FUNCTION_CALLING;else process.env.MELO_FUNCTION_CALLING=oldCalling;});
 const {runChatAgentExecutionGraph}=await import('./chatExecutionRunner.js');
 const {saveState}=await import('../../state/stateStore.js');
 const {bootstrapBuiltinTools,registerTool,unregisterTool}=await import('../../tools/registry.js');bootstrapBuiltinTools();
 const call=(name,args,id)=>'<tool_call>'+JSON.stringify({id,name,arguments:args})+'</tool_call>';
-for(const count of [8,20])await test(`full graph: ${count}/20 products, real reads vs coordinator control calls`,async()=>{
+for(const count of [8,20])await t.test(`full graph: ${count}/20 products, real reads vs coordinator control calls`,async()=>{
+ assert.equal(process.env.MELO_HOME,home,'this test still runs inside its fixture home');
  let executions=0,lead=0,checks=0;const events=[];
  const items=Array.from({length:count},(_,i)=>{
   const quote=`Catalog model ${i}: Model ${i}, price 100 AUD, region AU, available now.`;
@@ -49,4 +54,5 @@ for(const count of [8,20])await test(`full graph: ${count}/20 products, real rea
  assert.ok(last.candidates.every(row=>Object.values(row.fields).every(value=>value==='verified')));
  assert.ok(!JSON.stringify(last).includes('price 100 AUD, region AU'),'no evidence text in the scene view');
  }finally{unregisterTool(tool);}
+});
 });

@@ -243,7 +243,11 @@ test('runSkill: reaching maxIterations reports incomplete work without raw tool 
     assert.equal(res.meta.iterations, 2);
     // Two work rounds plus exactly one tool-free progress report.
     assert.equal(reply.callLog.length, 3);
-    assert.deepEqual(reply.callLog[2].functionTools, []);
+    // Tool-free on the fixture's text protocol: no tools and no native tool list
+    // (an empty native list without a protocol sent this request down the
+    // OpenAI Responses path on every other connection, 2026-11-10 audit L1).
+    assert.deepEqual(reply.callLog[2].tools, []);
+    assert.equal(reply.callLog[2].functionTools, undefined);
     assert.equal(reply.callLog[2].nativeWebSearchEnabled, false);
     assert.equal(reply.callLog[2].nativeImageGenerationEnabled, false);
     // The final output is scrubbed (no raw <tool_call>).

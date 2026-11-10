@@ -13,7 +13,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import {agentTool} from './subAgent.js';
+import {agentTool, MEMBER_RESULT_TOKENS} from './subAgent.js';
 import {runSubAgent} from '../testSupport/directAgentFixture.js';
 import { registerTool, unregisterTool } from '../tools/registry.js';
 
@@ -438,18 +438,33 @@ test('internal routing: roleSystem is a trusted system section, instructions sta
   assert.equal(hosted.callLog[0].nativeWebSearchEnabled, false);
   assert.equal(hosted.callLog[0].nativeImageGenerationEnabled, false);
 });
-test('condenseEachRound keeps only the latest round of tool output in a member context', async () => {
-  const reply = makeFakeReply();
-  const big = 'B'.repeat(4000);
-  const recorder = makeRecordingTool('big_read', { isConcurrencySafe: true });
-  recorder.tool.run = async () => ({ ok: true, output: big });
-  registerTool(recorder.tool);
-  try {
-    reply.queue.push('<tool_call>{"id":"r1","name":"big_read","arguments":{"q":"one"}}</tool_call>', '<tool_call>{"id":"r2","name":"big_read","arguments":{"q":"two"}}</tool_call>', 'done',
-      "{\"decision\": \"complete\", \"reasonType\": \"self_contained\", \"requirements\": [{\"text\": \"x\", \"status\": \"met\", \"evidenceIds\": []}]}");
-    await runSubAgent({ task: 'read twice', allowedToolIds: ['big_read'], config: validConfig(), replyFn: reply, condenseEachRound: true });
-    const third = JSON.stringify(reply.callLog[2].messages);
-    assert.ok(third.includes('condensed to fit the context budget'), 'the first round was condensed before the third request');
-    assert.ok(third.split('B'.repeat(1000)).length - 1 === 4 || third.includes('B'.repeat(4000)), 'the latest round stays intact');
-  } finally { unregisterTool('big_read'); }
+test('condenseEachRound keeps what fits its size allowance and condenses the rest of a member context', async () => {
+  // 2026-11-10 latency audit L2: keeping only the latest result made a member
+  // forget the source it had just read; results now stay while they fit
+  // MEMBER_RESULT_TOKENS together, and the newest always stays.
+  const run = async size => {
+    const reply = makeFakeReply();
+    const recorder = makeRecordingTool('big_read', { isConcurrencySafe: true });
+    let reads = 0;
+    recorder.tool.run = async () => ({ ok: true, output: `read ${++reads} ` + 'word '.repeat(size / 5) });
+    registerTool(recorder.tool);
+    try {
+      reply.queue.push('<tool_call>{"id":"r1","name":"big_read","arguments":{"q":"one"}}</tool_call>', '<tool_call>{"id":"r2","name":"big_read","arguments":{"q":"two"}}</tool_call>', 'done',
+        "{\"decision\": \"complete\", \"reasonType\": \"self_contained\", \"requirements\": [{\"text\": \"x\", \"status\": \"met\", \"evidenceIds\": []}]}");
+      await runSubAgent({ task: 'read twice', allowedToolIds: ['big_read'], config: validConfig(), replyFn: reply, condenseEachRound: true });
+      return JSON.stringify(reply.callLog[2].messages);
+    } finally { unregisterTool('big_read'); }
+  };
+  // Two 4 000-character sources fit the allowance: both are still readable when the report is written.
+  const small = await run(4000);
+  assert.equal(small.includes('condensed to fit the context budget'), false, 'nothing was condensed');
+  assert.ok(small.includes('read 1 word') && small.includes('read 2 word'));
+  assert.equal(small.split('word '.repeat(700)).length - 1 >= 2, true, 'both results are intact');
+  // Two results of about 15 000 tokens each do not fit the allowance together: the older one gives way.
+  const { compactToolChain } = await import('../tools/functionCalling.js');
+  const result = id => ({ role: 'user', content: 'x'.repeat(10) + ' ' + 'word '.repeat(12000), isToolResult: true, id });
+  const chain = compactToolChain([{ role: 'user', content: 'task' }, { role: 'assistant', content: 'a' }, result('one'), { role: 'assistant', content: 'b' }, result('two')], { keepRecentResults: 1, keepRecentTokens: MEMBER_RESULT_TOKENS });
+  assert.equal(chain.changed, true);
+  assert.match(chain.messages[2].content, /condensed to fit the context budget/, 'the older result gave way');
+  assert.equal(chain.messages[4].content.length > 50000, true, 'the newest result stays intact');
 });

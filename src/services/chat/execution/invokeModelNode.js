@@ -47,8 +47,11 @@ import { inferImageTask, runImageTask } from '../imageTask.js';
 import { visionConnection, imageSettings } from '../../../images/imageSettings.js';
 import { prepareVisionInputs } from '../../../media/visionInputs.js';
 import { collectVerificationEvidence } from '../../../retrieval/verificationEvidence.js';
+import { parseUncertaintyMarker } from '../../../retrieval/selfVerification.js';
+import { intentRequiresVerification } from '../../../retrieval/intentRouter.js';
 import { fitRequestContext, attachTurnContextToMessages } from '../contextBudget.js';
-import { createFunctionCallingSession, compactToolChain } from '../../../tools/functionCalling.js';
+import { createFunctionCallingSession, compactToolChain, toolProtocolFor } from '../../../tools/functionCalling.js';
+import { createToolDeferral, LOAD_TOOLS_NAME } from './deferredTools.js';
 import { buildToolChainRecord } from '../../../tools/toolProtocol.js';
 
 // Stable prompt blocks rendered on every turn; reported in memoryUsage, never recall feedback (bug audit M8).
@@ -164,6 +167,14 @@ export function createInvokeModelNode(turn) {
       leadWithheld.size ? 'You hold no retrieval tools in this turn: assign the retrieval described above with route_task (research for the web, social for first-hand posts), passing on any URL, site or platform it names.' : ''].filter(Boolean).join('\n');
     if (catalog) graphState.promptTools = [...graphState.promptTools, { id: ROUTE_NAME, name: ROUTE_NAME, description: catalog.definition.description, parametersSchema: catalog.definition.parameters }];
     if (catalog) graphState.promptTools.push({ id: TASK_PROGRESS_NAME, name: TASK_PROGRESS_NAME, description: TASK_PROGRESS_DEFINITION.description, parametersSchema: TASK_PROGRESS_DEFINITION.parameters });
+    // The lead sends MCP tool definitions only once it asks for them (see
+    // deferredTools.js). Declarations for the whole turn keep every tool, so
+    // effects, scope and dispatch of a loaded tool are what they always were.
+    const sessionConfig = () => ({ ...delegatedModelConfig, ...(vision || {}), toolCalling: env.MELO_FUNCTION_CALLING || config.toolCalling });
+    const deferral = createToolDeferral(graphState.promptTools, { enabled: env.MELO_DEFERRED_TOOLS !== '0' && config.deferredTools !== false, native: toolProtocolFor(sessionConfig()) !== 'xml' });
+    const declaredTools = deferral ? [...graphState.promptTools, deferral.loaderTool] : graphState.promptTools;
+    if (deferral) graphState.promptTools = [...deferral.active, deferral.loaderTool];
+    let toolsLoaded = false;
     const assignments = [];
     let closedRouterSession;
     let escalationRequested = false;
@@ -213,9 +224,10 @@ export function createInvokeModelNode(turn) {
     const mcpToolsByName = indexMcpTools(graphState.mcpTools || []);
     const visibleToolIds = new Set(graphState.visibleToolIds || []);
     if (routingEnabled) visibleToolIds.add('melo_escalate');
+    if (deferral) visibleToolIds.add(LOAD_TOOLS_NAME);
     const allowedToolIdList = [...visibleToolIds];
     const coreTurn = createCoreTurn({ budget, runId: String(context.requestId), turnId: chat.id,
-      goal: graphState.searchPlan.sharedPlan?.resolvedGoal || latestUserMessage, tools: graphState.promptTools,
+      goal: graphState.searchPlan.sharedPlan?.resolvedGoal || latestUserMessage, tools: declaredTools,
       allowedTools: allowedToolIdList, requiredTools: graphState.searchPlan.sharedPlan?.requiredTools, toolDependencies: graphState.searchPlan.sharedPlan?.toolDependencies, limits: { rounds: MAX_TOOL_ITERATIONS, timeoutMs: Math.max(1, Math.ceil(remainingMs(budget))) } });
     if (continuationTeam) coreTurn.observations.push(...continuationTeam.results.flatMap((member,index)=>(member.meta?.observations || []).map(row=>({...row,id:`member:${index}:${row.id}`}))));
     let allowedDispatchTools = null;
@@ -486,7 +498,12 @@ export function createInvokeModelNode(turn) {
         : 'Internal assignments are closed for this turn. Continue as the lead with the available evidence.', meta: { code: 'ROUTE_DENIED', executionStarted: false } };
       // No calls is a candidate answer, not proof that the user's goal is done.
       if (!toolCalls.length) {
-        if (coreTurn.candidate(turn.text, { context: { messages: loopMessages.filter(row => typeof row.content === 'string').slice(-8) }, research: !!graphState.searchPlan.sharedPlan?.research, nativeSearch: leadNativeSearch, offeredTools: catalog ? [TASK_PROGRESS_NAME] : [] })) {
+        // The claim an answer flags as uncertain is judged by the completion
+        // check itself, against the same observations, instead of by one more
+        // model request after it (2026-11-10 latency audit L3). finalize uses
+        // that verdict and only asks the model itself when no check ran.
+        const flagged = intentRequiresVerification(graphState.classification || graphState.intent) ? parseUncertaintyMarker(turn.text) : null;
+        if (coreTurn.candidate(turn.text, { context: { messages: loopMessages.filter(row => typeof row.content === 'string').slice(-8) }, research: !!graphState.searchPlan.sharedPlan?.research, nativeSearch: leadNativeSearch, offeredTools: catalog ? [TASK_PROGRESS_NAME] : [], uncertainClaim: flagged?.hasMarker ? flagged.uncertainClaim : '' })) {
           coreTurn.update('feedback');
           continue;
         }
@@ -536,6 +553,8 @@ export function createInvokeModelNode(turn) {
       // accessible at lines 407 / 580 of this file via graphState.
       const { allowedDispatchTools, dispatchAgentProfiles, dispatchMemberBackground } = dispatchConstants();
       for (const tc of toolCalls) {
+        // A listed tool called before its definition was loaded: say how to get it.
+        if (deferral && tc.rejectedResult?.error === 'UNKNOWN_TOOL' && deferral.isPending(tc.name)) tc.rejectedResult = { ok: false, error: 'TOOL_NOT_LOADED', output: `The definition of ${tc.name} is not loaded. Call load_tools with ["${tc.name}"] first, then call it.`, meta: { code: 'TOOL_NOT_LOADED', executionStarted: false } };
         if (tc.rejectedResult) continue;
         if (leadWithheld.has(mcpToolsByName.get(tc.name)?.id || tc.name)) tc.rejectedResult = { ok: false, output: 'The lead holds no retrieval tools: assign this lookup with route_task (research for the web, social for first-hand posts).', meta: { code: 'CAPABILITY_DENIED', executionStarted: false } };
         else if (!coreTurn.permits(tc.id)) tc.rejectedResult = coreTurn.rejectionResult(tc.id);
@@ -546,6 +565,12 @@ export function createInvokeModelNode(turn) {
         else if (routingEnabled && tc.name === 'melo_escalate') {
           escalationRequested = true;
           tc.rejectedResult = { ok: true, output: 'Routing request recorded. Continue from existing results; do not repeat successful effects. The host will check the remaining budget and available tiers.', meta: { executionStarted: false } };
+        }
+        else if (deferral && tc.name === LOAD_TOOLS_NAME) {
+          // Answered by the host: nothing runs, the definitions join the next request.
+          const outcome = deferral.load(tc.arguments?.names);
+          if (outcome.loaded.length) { graphState.promptTools = [...graphState.promptTools, ...outcome.loaded]; toolsLoaded = true; }
+          tc.rejectedResult = { ok: outcome.ok, output: outcome.report, meta: { executionStarted: false } };
         }
       }
       const executableCalls = toolCalls.map(tc => {
@@ -636,6 +661,7 @@ export function createInvokeModelNode(turn) {
         const record = buildToolInvocationRecord({
           runId: context.runId, iteration, call, args: call.arguments, result,
           modelFacingOutput: modelFacingOutputs.get(wireResults[index].call.id) || '',
+          modelFacingOutputChars: roundSession.outputCap(call, result),
           startedAt: execution?.startedAt ?? batchFinishedAt, finishedAt: execution?.finishedAt ?? batchFinishedAt,
           parallelGroup: execution?.parallelGroup ?? null,
         });
@@ -690,6 +716,11 @@ export function createInvokeModelNode(turn) {
         evidencePairs.push({ call, result, receivedAt: nowIso() });
       }
       if (evidencePairs.length > 8) evidencePairs.splice(0, evidencePairs.length - 8);
+      // Definitions loaded in this batch are offered from the next request on.
+      if (toolsLoaded) {
+        toolsLoaded = false; closedRouterSession = null;
+        functionSession = createFunctionCallingSession(sessionConfig(), graphState.promptTools);
+      }
       // A cancelled turn stops here: its records are on disk for the
       // tool-trace replay (D2) and no further model request is sent.
       coreTurn.results(allResults);
@@ -729,7 +760,8 @@ export function createInvokeModelNode(turn) {
       deliveredAtLimit = true;
       sseEmitter?.('execution_event', { kind: 'pipeline', id: 'limit:delivery', module: 'compute', messageId: 'stage.delivery', status: terminalReason === 'LIMIT_DELIVERED' ? 'completed' : 'failed', output: terminalReason });
     }
-    const out = { completionForReply: (reply, citations) => coreTurn.receipt(latestUserMessage, reply, terminalReason || coreTurn.reason, undefined, citations), reply: finalReply, hadToolCalls, limitFallback: deliveredAtLimit && !userSignal?.aborted, skipVerification: deliveredAtLimit || (coreTurn.status === 'blocked' && coreTurn.reason !== 'MISSING_TOOL_EVIDENCE') || graphState.searchPlan.sharedPlan?.route === 'unavailable', toolEvidence: collectVerificationEvidence(evidencePairs, { query: latestUserMessage }), next: 'finalize' };
+    const claimReview = coreTurn.claimReview;
+    const out = { ...(claimReview ? { claimReview } : {}), completionForReply: (reply, citations) => coreTurn.receipt(latestUserMessage, reply, terminalReason || coreTurn.reason, undefined, citations), reply: finalReply, hadToolCalls, limitFallback: deliveredAtLimit && !userSignal?.aborted, skipVerification: deliveredAtLimit || (coreTurn.status === 'blocked' && coreTurn.reason !== 'MISSING_TOOL_EVIDENCE') || graphState.searchPlan.sharedPlan?.route === 'unavailable', toolEvidence: collectVerificationEvidence(evidencePairs, { query: latestUserMessage }), next: 'finalize' };
     if (continuationTeam) out.team = continuationTeam;
     if (accumulatedToolResults.length > 0) {
       out.toolResults = accumulatedToolResults;

@@ -43,6 +43,8 @@
 | MELO_MEMORY_TIERS_RECALL | 1 开启 / 0 关闭 / 空值根据已有分层数据自动启用；不把自动模式改成永久关闭 |
 | MELO_OFFLINE_DISABLE_LLM | 1 禁止离线压缩器调用本机 LLM；排障用途，保留原后备压缩逻辑 |
 | MELO_TEST_MODE | 1 启用隔离测试行为，不用于真实用户启动 |
+| MELO_ALLOW_USER_HOME_IN_TESTS | 测试进程默认不会落到用户数据目录（没有 MELO_HOME 或它指向 `.tmp/melo-home-user` 时改用本进程的临时目录）；设为 1 才放行。仓库里没有任何地方设置它，日常不要用 |
+| MELO_DEFERRED_TOOLS | 0 关闭主 Agent 的 MCP 工具定义按需加载，恢复每次请求携带全部定义；其他值为默认开启。配置键 `deferredTools: false` 等效 |
 | MELO_FIXTURE_IGNORE_TERM | 1 让专用生命周期夹具忽略正常退出信号 |
 | MELO_SKIP_NATIVE_LAUNCH | 1 仅在红绿灯脚本跳过原生启动；报告必须注明，不能当成原生验收 |
 

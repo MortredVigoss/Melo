@@ -704,6 +704,82 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             assert(lateOutcome.text == "答案" && late.completions.isEmpty)
         }
 
+        // 2026-11-10 latency audit: the completion check judges the claim an answer
+        // flags as uncertain, so finalize sends no verifier request of its own.
+        do {
+            let factual = AgentLoop.classify("东京塔有多高？", history: [])
+            func merged(_ claim: String, reply: String = "东京塔高 330 米。\n[UNCERTAIN: 东京塔的确切高度]") async throws -> (AgentLoopOutcome, ScriptedTransport) {
+                var n = 0
+                let transport = ScriptedTransport { input in
+                    if let review = input.goalReview {
+                        let payload = object((review["messages"] as? [[String: String]])?.first?["content"] ?? "{}")
+                        assert(payload["uncertainClaim"] as? String == "东京塔的确切高度", "the flagged claim travels with the check")
+                        assert((review["systemPrompt"] as? String ?? "").contains("uncertainClaim"))
+                        return answer(#"{"decision":"complete","evaluationValid":true,"needsEvaluation":false,"turnKind":"task","reasonType":"fulfilled","reason":"ok","nextStep":"","requirements":[{"text":"height","kind":"external_fact","status":"met","evidenceIds":["v1"]}]"# + claim + "}")
+                    }
+                    n += 1
+                    return n == 1 ? calls([fc("v1", "open_url", #"{"url":"https://example.com/tower"}"#)]) : answer(reply)
+                }
+                transport.completeReply = { _, _ in #"{"verdict":"VERIFIED","evidenceId":"tool:v1","evidenceQuote":"333 米"}"# }
+                let tools = loopTools(Log()) { _ in PhoneToolResult(output: PhoneToolEnvelope.success("Tokyo Tower: 东京塔高 333 米，1958 年建成。")) }
+                let outcome = try await AgentLoop(transport: transport, tools: tools, budget: PhoneRunBudget(), latestUserMessage: "东京塔有多高？",
+                                                  verification: AgentVerification(question: "东京塔有多高？", classification: factual)).run()
+                return (outcome, transport)
+            }
+            let corrected = try await merged(#","claim":{"verdict":"CORRECTED","evidenceId":"v1","evidenceQuote":"333 米","originalClaim":"东京塔高 330 米。","correction":"东京塔高 333 米。"}"#)
+            assert(corrected.0.text == "东京塔高 333 米。" && corrected.0.verification?.verdict == "CORRECTED" && corrected.0.verification?.reason == "completion-check", corrected.0.text)
+            assert(corrected.1.completions.isEmpty, "no separate verifier request")
+            let invented = try await merged(#","claim":{"verdict":"VERIFIED","evidenceId":"v1","evidenceQuote":"999 米"}"#)
+            assert(invented.0.text == "东京塔高 330 米。\n\n" + c.unverifiedNoteZH && invented.1.completions.isEmpty, "a quote that is not in the evidence leaves the claim unverified")
+            // A check that did not judge the claim leaves the verifier request in place.
+            let unjudged = try await merged("")
+            assert(unjudged.1.completions.count == 1 && unjudged.0.verification?.verdict == "VERIFIED" && unjudged.0.text == "东京塔高 330 米。")
+        }
+
+        // 2026-11-10 latency audit: a batch of page reads loads side by side, at most
+        // three at a time; results keep call order; any other batch keeps strict order.
+        do {
+            var active = 0, peak = 0, started: [String] = [], finished: [String] = []
+            func readers(_ delay: @escaping (String) -> UInt64) -> AgentLoopTools {
+                AgentLoopTools(definitions: WebPageToolSpec.all.map(\.definition) + [PhoneReadHistory.definition], instructions: "tools", perform: { call in
+                    active += 1; peak = max(peak, active); started.append(call.callID)
+                    try? await Task.sleep(nanoseconds: delay(call.callID) * 1_000_000)
+                    active -= 1; finished.append(call.callID)
+                    return PhoneToolResult(output: PhoneToolEnvelope.success("{\"title\":\"" + call.callID + "\"}"))
+                })
+            }
+            func run(_ batch: [ResponsesFunctionCall], tools: AgentLoopTools, budget: PhoneRunBudget = PhoneRunBudget()) async throws -> (AgentLoopOutcome, Double) {
+                active = 0; peak = 0; started = []; finished = []
+                var n = 0
+                let transport = ScriptedTransport { input in
+                    if input.goalReview != nil { return answer(#"{"decision":"partial","reasonType":"unavailable","requirements":[{"text":"pages","status":"missing","evidenceIds":[]}]}"#) }
+                    n += 1; return n == 1 ? calls(batch) : answer("done")
+                }
+                let begin = Date()
+                let outcome = try await AgentLoop(transport: transport, tools: tools, budget: budget, latestUserMessage: "read the pages").run()
+                return (outcome, Date().timeIntervalSince(begin))
+            }
+            let page = { (id: String) in fc(id, "open_url", "{\"url\":\"https://example.com/" + id + "\"}") }
+            // Two reads: the slow one no longer holds back the fast one.
+            let pair = try await run([page("slow"), page("fast")], tools: readers { $0 == "slow" ? 400 : 60 })
+            assert(peak == 2 && started == ["slow", "fast"] && finished == ["fast", "slow"], "\(peak) \(started) \(finished)")
+            assert(pair.0.calls.map(\.callId) == ["slow", "fast"] && pair.0.calls.allSatisfy { $0.executed && $0.code == nil }, "results keep call order")
+            assert(pair.1 < 0.75, "the batch takes about as long as its slowest page, not the sum: \(pair.1)")
+            // Five reads: never more than three at once, all performed once.
+            let five = try await run((1...5).map { page("p\($0)") }, tools: readers { _ in 120 })
+            assert(peak == AgentLoop.parallelPageReads && Set(started).count == 5 && started.count == 5 && five.0.calls.map(\.callId) == (1...5).map { "p\($0)" }, "\(peak) \(started)")
+            // A batch with another kind of call keeps strict order.
+            _ = try await run([page("a"), fc("h", "read_history", "{}"), page("b")], tools: readers { _ in 60 })
+            assert(peak == 1 && started == ["a", "h", "b"] && finished == ["a", "h", "b"], "\(peak) \(started)")
+            // A single read is dispatched as before.
+            _ = try await run([page("only")], tools: readers { _ in 20 })
+            assert(peak == 1 && started == ["only"])
+            // The budget admits reads in call order: the read it refuses never starts.
+            let capped = try await run([page("first"), page("second"), page("third")], tools: readers { _ in 40 }, budget: PhoneRunBudget(maxToolCalls: 1))
+            assert(started == ["first"], "only the admitted read was performed: \(started)")
+            assert(capped.0.calls.first { $0.callId == "second" }?.code == "BUDGET_EXHAUSTED" || capped.0.stop != .answered, "\(capped.0.calls.map { $0.code ?? "ok" })")
+        }
+
         // A3: the actual verifier request cannot recover disabled source text.
         do {
             var agent = AgentProfile(id: "main", name: "main", subtitle: "", symbol: "star", instructions: "persona")

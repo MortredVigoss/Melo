@@ -120,6 +120,41 @@ test('real runner tool loop verifies fresh evidence before emitting the only fin
   assert.equal(result.toolResults[0].ok, true);
 });
 
+test('real runner: the completion check judges the flagged claim against fresh evidence and no separate verifier request is sent', async () => {
+  // 2026-11-10 latency audit L3: one request checks the goal and the claim the
+  // answer flagged as uncertain. The verifier request of the test above is
+  // only sent when the check did not judge the claim.
+  let calls = 0, verifierCalls = 0, goalChecks = 0;
+  const events = [];
+  const result = await runChatAgentExecutionGraph({
+    ...fixture('When did the example ship?'),
+    sseEmitter: (event, payload) => events.push({ event, payload }),
+    _dependencies: { getEmbedding: async () => null, createReply: async request => {
+      if (request.systemPrompt.startsWith("You are Melo's task completion checker")) {
+        goalChecks++;
+        const input = JSON.parse(request.messages[0].content);
+        assert.equal(input.uncertainClaim, 'release year');
+        assert.match(request.systemPrompt, /uncertainClaim/);
+        assert.ok(input.observations.some(row => row.id === 'call1' && /Release year: 2024/.test(row.text)), 'the check holds the fresh tool evidence');
+        assert.equal(events.some(event => event.event === 'reply_text'), false, 'nothing final was published before the check');
+        return JSON.stringify({ decision: 'complete', evaluationValid: true, needsEvaluation: false, turnKind: 'task', reasonType: 'fulfilled', reason: 'checked', nextStep: '',
+          requirements: [{ text: 'release year', kind: 'external_fact', status: 'met', evidenceIds: ['call1'] }],
+          claim: { verdict: 'CORRECTED', evidenceId: 'call1', evidenceQuote: 'Release year: 2024.', originalClaim: 'It shipped in 2025.', correction: 'It shipped in 2024.' } });
+      }
+      if (request.systemPrompt.startsWith('Review factual claims')) { verifierCalls += 1; return JSON.stringify({ verdict: 'UNVERIFIED' }); }
+      calls += 1;
+      if (calls === 1) return '<tool_call>{"id":"call1","name":"test_reference","arguments":{}}</tool_call>';
+      return 'It shipped in 2025. Keep the receipt.\n[UNCERTAIN: release year]';
+    } },
+  });
+  assert.equal(calls, 2);
+  assert.equal(goalChecks, 1);
+  assert.equal(verifierCalls, 0, 'the check already judged the claim');
+  assert.equal(result.normalizedReply.content, 'It shipped in 2024. Keep the receipt.');
+  assert.deepEqual(result.verificationRecord, { verdict: 'CORRECTED', claim: 'release year', correction: 'It shipped in 2024.' });
+  assert.equal(events.filter(event => event.event === 'reply_text').length, 1);
+});
+
 test('greetings avoid tool prompts and verification; high-risk writing retains both axes', async () => {
   let calls = 0;
   const greeting = await runChatAgentExecutionGraph({

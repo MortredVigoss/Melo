@@ -9,7 +9,11 @@ test('memory status and config resolve the same default and explicit data homes'
   try {
     delete process.env.MELO_HOME;
     assert.equal(getMemoryHome(), getConfigHome());
-    assert.match(getMemoryHome(), /\.tmp\/melo-home-user$/);
+    // Under the test runner the default is a throwaway home, never the user's
+    // data directory (2026-11-10 incident; see testIsolation.test.js). The
+    // application default itself is pinned by the next test.
+    assert.match(getMemoryHome(), /melo-test-home-/);
+    assert.doesNotMatch(getMemoryHome(), /\.tmp\/melo-home-user$/);
     process.env.MELO_HOME = '/isolated/memory-status';
     assert.equal(getMemoryHome(), getConfigHome());
     assert.equal(getMemoryHome(), '/isolated/memory-status');

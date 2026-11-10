@@ -32,19 +32,23 @@ export function createCoreTurn({ runId = currentLoopTrace()?.context.runId || ra
     get goalState() { return task; },
     get observations() { return observations; },
     acceptDelivery(value) { task = value; },
-    receipt(goal, reply, terminalReason = state.reason, plan, citations = []) { return completionResult({ goal: task ? goalText(task) : goal, reply, terminalReason, plan, citations, observations, task: goalSnapshot(task) }); },
+    // `kind` lets a host that knows what the turn was for (an internal job's
+    // role) say so; otherwise it is inferred from the goal and the observations.
+    receipt(goal, reply, terminalReason = state.reason, plan, citations = [], kind) { return completionResult({ goal: task ? goalText(task) : goal, reply, terminalReason, plan, citations, observations, task: goalSnapshot(task), ...(kind ? { kind } : {}) }); },
     get reporting() { return task?.phase !== 'checking' && (state.awaitingModel ? state.requestMode === 'report' : state.rounds >= state.limits.rounds && !state.reportIssued); },
     get checking() { return task?.phase === 'checking'; },
     get repairing() { return state.repairing; },
     get candidateReply() { return candidateReply; },
     get task() { return goalSnapshot(task); },
     amend(text) { if (task) task = amendGoal(task, text); traceEvent('goal.updated', {}, goalSnapshot(task)); },
-    candidate(reply, { research = false, nativeSearch = false, context = {}, offeredTools = [] } = {}) {
+    candidate(reply, { research = false, nativeSearch = false, context = {}, offeredTools = [], uncertainClaim = '' } = {}) {
       candidateReply = reply;
       if (!task) return false;
-      task = goalCandidate(task, { reply, observations, research, context: { capabilities: tools, ...context }, tools: [...allowedTools, ...offeredTools, ...(nativeSearch ? ['native_web_search'] : [])], roundsLeft: state.limits.rounds - state.rounds });
+      task = goalCandidate(task, { reply, observations, research, uncertainClaim, context: { capabilities: tools, ...context }, tools: [...allowedTools, ...offeredTools, ...(nativeSearch ? ['native_web_search'] : [])], roundsLeft: state.limits.rounds - state.rounds });
       return task.phase === 'checking';
     },
+    /** The last completion check's verdict on the claim the answer flagged as uncertain, or null. */
+    get claimReview() { return task ? goalOperation({ action: 'claimReview', state: task }) : null; },
     reviewRequest() { return goalReviewRequest(task, observations); },
     review(text) { task = reviewGoal(task, text, observations); traceEvent('goal.check', {}, goalSnapshot(task)); return task; },
     stopReview(reason) { if (task) task = stopGoal(task, reason); },

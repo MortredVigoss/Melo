@@ -1689,10 +1689,13 @@ async function fetchWeatherFastPath(query, signal) {
     const output = formatWttrReport(query, data, location);
     if (!output) return null;
 
+    // The report is what the host read from this URL, so it counts as a read
+    // source with an address the answer can cite (2026-11-10 latency audit L2).
     return {
       ok: true,
       output,
       meta: { query, provider: 'wttr.in', resultCount: 1, contentFetched: 1, results: [] },
+      completionSources: [{ url, reading: 'extracted', content: output }],
     };
   } catch (error) {
     debugWarn('web_search', `wttr.in fast-path failed for "${query}":`, error?.message || error);
@@ -1849,7 +1852,9 @@ export const webSearchTool = {
   description:
     'Search the web for current information. Returns titles, URLs, snippets, and actual page content ' +
     'from the top results. Use this when you need up-to-date information, current events, facts, ' +
-    'technical documentation, or anything not in your training data.',
+    'technical documentation, or anything not in your training data. A weather question (a place with ' +
+    'weather, forecast or temperature) returns the current conditions and the forecast for today and ' +
+    'tomorrow directly, in one call.',
   category: 'web',
   // The HTTP/Jina legs are concurrent-safe, but the Playwright SERP/session is
   // intentionally single-browser. Letting the tool runner overlap web_search

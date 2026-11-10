@@ -315,13 +315,28 @@ enum WebPageText {
     /// push the whole result over the output limit.
     static let maxTitleCharacters = 300
     static let maxDescriptionCharacters = 1_000
-    static func openResult(url: String, finalURL: String, title: String, description: String, text: String, page requested: Int, status: Int? = nil) -> String {
+    static func openResult(url: String, finalURL: String, title: String, description: String, text: String, page requested: Int, status: Int? = nil, stoppedEarly: Bool = false) -> String {
         let chunk = paged(text, page: requested)
         var object: [String: Any] = ["ok": true, "url": url, "finalUrl": finalURL, "title": String(title.prefix(maxTitleCharacters)), "text": chunk.text, "page": chunk.page, "pageCount": chunk.pageCount, "truncated": chunk.truncated]
         if !description.isEmpty { object["description"] = String(description.prefix(maxDescriptionCharacters)) }
         if let next = chunk.nextPage { object["nextPage"] = next }
         if let status { object["status"] = status }
+        // Read at the soft deadline: the text was there, some resources were still loading.
+        if stoppedEarly { object["loading"] = "stopped-early"; object["note"] = "The page text was read while some of its resources were still loading; parts that load late may be missing." }
         return encode(object)
+    }
+
+    /// A page is read before its load ends once its document is parsed and it
+    /// shows a real amount of text. Trackers, long polling and media that never
+    /// finish used to hold such a page until the 20 s timeout and then fail the
+    /// read (2026-11-10 latency audit). A page that is still parsing, or whose
+    /// script has not produced its text yet, keeps waiting for the hard limit.
+    static let softTimeoutSeconds: Double = 8
+    /// The whole-page limit: a page that is not readable by then fails with TIMEOUT.
+    static let hardTimeoutSeconds: Double = 20
+    static let readableCharacters = 400
+    static func readableBeforeLoadEnds(readyState: String, textLength: Int) -> Bool {
+        ["interactive", "complete"].contains(readyState) && textLength >= readableCharacters
     }
     static func screenshotResult(url: String, finalURL: String, title: String, status: Int? = nil) -> String {
         var object: [String: Any] = ["ok": true, "url": url, "finalUrl": finalURL, "title": String(title.prefix(maxTitleCharacters)), "screenshot": "attached"]

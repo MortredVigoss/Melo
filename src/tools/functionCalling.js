@@ -1,9 +1,10 @@
 import { compileFunctionTool } from './functionSchema.js';
 import { toolCodeHint } from './toolResult.js';
-import { parseModelResponse, formatToolResultsMessage, _shouldEmitEvidenceTrail } from './parser.js';
+import { parseModelResponse, formatToolResult, _shouldEmitEvidenceTrail } from './parser.js';
 import { resolveToolProtocol, toolDefinitionsForProtocol, parseAssistantResponse, toLoopMessages, toolImagesMessage, normalizeToolImages, condenseToolImagesMessage } from './toolProtocol.js';
 import { requestEnvironment } from '../runtime/requestScope.js';
 import { AGENT_LOOP_CONTRACT } from '../runtime/agentLoopContract.js';
+import { estimateTextTokens } from '../memory/tokenEstimate.js';
 
 // Per-response call limit, envelope truncation and condensation texts are
 // shared with the iPhone loop (shared/protocol/agent-loop.json).
@@ -44,6 +45,19 @@ function toolOutput(result, maxOutputChars) {
   });
 }
 
+// A page reader returns one bounded window of its page and ends it with the
+// offset of the next one. Cutting that window again at the general result cap
+// hid most of the page and the continuation offset, so the model paged through
+// it with guessed offsets (2026-11-10 latency audit L2). A tool that declares
+// `windowedOutput` keeps the window it reports in `meta.windowChars`, as the
+// iPhone loop already does for its page tools. The ceiling is the largest page
+// window the search limits accept, plus the continuation and source lines.
+export const WINDOWED_OUTPUT_CEILING = 100000 + 1024;
+export function modelFacingCap(tool, result, maxOutputChars) {
+  const window = tool?.windowedOutput === true ? Number(result?.meta?.windowChars) : NaN;
+  return Number.isFinite(window) && window > maxOutputChars ? Math.min(Math.ceil(window), WINDOWED_OUTPUT_CEILING) : maxOutputChars;
+}
+
 const CONDENSED_MARKER = RESULT_CONTRACT.condense.marker;
 export const IMAGE_NOT_ATTACHED_NOTE = '(screenshot not attached for the model on this protocol; read the page with fetch_url)';
 
@@ -58,17 +72,36 @@ function condenseOutput(outputJson, maxChars) {
   }
 }
 
+function resultMessageTokens(message) {
+  const outputs = Array.isArray(message.functionCallOutputs) ? message.functionCallOutputs : Array.isArray(message.toolResults) ? message.toolResults : null;
+  return estimateTextTokens(outputs ? outputs.map(item => String(item.output ?? '')).join('\n') : typeof message.content === 'string' ? message.content : '');
+}
+
 /**
  * Shrink older tool results inside the current turn's chain so a long tool
  * loop can keep going instead of failing with CONTEXT_BUDGET_EXCEEDED after
  * the tools already ran (2026-10-17 audit C-8). The newest `keepRecentResults`
  * result messages are left intact; call ids are never touched so the
  * Responses chain stays valid.
+ *
+ * `keepRecentTokens` keeps results by size instead of by count: the newest
+ * result message always stays, and older ones stay while everything kept fits
+ * the allowance. A member that read two sources can then still see both when
+ * it writes its report, while a long run of full pages stays bounded
+ * (2026-11-10 latency audit L2).
  */
-export function compactToolChain(messages = [], { keepRecentResults = RESULT_CONTRACT.condense.keepRecentResults, maxOutputChars = RESULT_CONTRACT.condense.maxOutputChars } = {}) {
+export function compactToolChain(messages = [], { keepRecentResults = RESULT_CONTRACT.condense.keepRecentResults, keepRecentTokens = 0, maxOutputChars = RESULT_CONTRACT.condense.maxOutputChars } = {}) {
   const resultIndices = [];
   messages.forEach((message, index) => { if (message?.isToolResult) resultIndices.push(index); });
   const protect = new Set(resultIndices.slice(-keepRecentResults));
+  if (keepRecentTokens > 0) {
+    let kept = 0;
+    for (const index of [...resultIndices].reverse()) {
+      kept += resultMessageTokens(messages[index]);
+      if (protect.size && kept > keepRecentTokens) break;
+      protect.add(index);
+    }
+  }
   let changed = false;
   const next = messages.map((message, index) => {
     if (!message?.isToolResult || protect.has(index)) return message;
@@ -110,6 +143,9 @@ export function createFunctionCallingSession(config, tools = []) {
   }
   const seenCallIds = new Set();
   const definitions = toolDefinitionsForProtocol([...byName.values()], protocol);
+  // Tool ids are the names results carry on every protocol (the text protocol included).
+  const toolsById = new Map(tools.map(tool => [tool.id, tool]));
+  const capFor = (call, result, maxOutputChars) => modelFacingCap(toolsById.get(call?.name), result, maxOutputChars);
   /**
    * Images produced by a batch's tools (`result.meta.modelImage`, a data URL),
    * to be shown to the model: `[{ callId, name, text, dataUrl }]`. Bounded by
@@ -131,6 +167,8 @@ export function createFunctionCallingSession(config, tools = []) {
     protocol,
     get native() { return protocol !== 'xml'; },
     definitions,
+    /** Model-facing size limit of one result: the general cap, or the page window a reader declared. */
+    outputCap(call, result, maxOutputChars = 8000) { return capFor(call, result, maxOutputChars); },
     requestOptions() {
       return native ? { functionTools: this.definitions, toolProtocol: protocol } : {};
     },
@@ -182,7 +220,7 @@ export function createFunctionCallingSession(config, tools = []) {
         return [...messages,
           { role: 'assistant', content: turn.text, responseItems: turn.responseItems },
           { role: 'user', content: '', isToolResult: true,
-            functionCallOutputs: results.map(({ call, result }) => ({ type: 'function_call_output', call_id: call.id, output: toolOutput(result, maxOutputChars) })) },
+            functionCallOutputs: results.map(({ call, result }) => ({ type: 'function_call_output', call_id: call.id, output: toolOutput(result, capFor(call, result, maxOutputChars)) })) },
         ];
       }
       if (turn.protocol === 'anthropic' || turn.protocol === 'chat-completions') {
@@ -190,7 +228,7 @@ export function createFunctionCallingSession(config, tools = []) {
         return [...messages, ...toLoopMessages({
           text: turn.text,
           toolCalls: turn.protocolCalls || [],
-          toolResults: results.map(({ call, result }) => ({ callId: call.id, name: wireNames.get(call.id) || call.name, output: toolOutput(result, maxOutputChars) })),
+          toolResults: results.map(({ call, result }) => ({ callId: call.id, name: wireNames.get(call.id) || call.name, output: toolOutput(result, capFor(call, result, maxOutputChars)) })),
         }, turn.protocol)];
       }
       // XML cannot carry the tool image (T10): say so in the text result so
@@ -198,7 +236,7 @@ export function createFunctionCallingSession(config, tools = []) {
       const textOnly = results.map(({ call, result }) => (typeof result?.meta?.modelImage === 'string' && typeof result.output === 'string'
         ? { call, result: { ...result, output: `${result.output}\n${IMAGE_NOT_ATTACHED_NOTE}` } } : { call, result }));
       return [...messages, { role: 'assistant', content: turn.text },
-        { role: 'user', content: formatToolResultsMessage(textOnly, { maxOutputChars }), isToolResult: true }];
+        { role: 'user', content: textOnly.map(({ call, result }) => formatToolResult(call, result, { maxOutputChars: capFor(call, result, maxOutputChars) })).join('\n\n'), isToolResult: true }];
     },
     imagesOf,
     /**

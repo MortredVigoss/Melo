@@ -8,12 +8,17 @@ import { requestTimeoutMs, budgetExhausted } from './runBudget.js';
 export async function runLimitDelivery({ task, observations, reason, fallback, createReply, options, budget, signal, locale }) {
   let candidate = '', checkedTask = task;
   const parser = createFunctionCallingSession(options || {}, []);
+  // The request carries no tools, but it must still travel on the connection's
+  // own protocol. An empty tool list without a protocol is read by the provider
+  // dispatcher as the OpenAI Responses protocol, which every Anthropic and
+  // chat-completions connection rejects (2026-11-10 latency audit L1).
+  const transport = parser.native ? { functionTools: [], toolProtocol: parser.protocol } : { functionTools: undefined, toolProtocol: undefined };
   const stopped = () => ({ reply: hostEvidenceReply(candidate || fallback, observations, locale), task: checkedTask,
     terminalReason: signal?.aborted ? (signal.reason?.name === 'TimeoutError' ? 'DEADLINE_EXCEEDED' : 'CANCELLED') : reason });
   if (signal?.aborted || !budget?.delivery || budgetExhausted(budget, undefined, { phase: 'delivery' })) return stopped();
   const call = async (request, phase, maxTokens) => createReply({ ...options, ...request, signal,
     budgetPhase: phase, purpose: phase === 'delivery' ? 'limit-delivery' : 'limit-check', maxTokens,
-    timeoutMs: requestTimeoutMs(budget, { phase }), kind: phase === 'delivery' ? 'delivery' : 'check', workspacePath: null, toolChoice: 'none', tools: [], functions: [], functionTools: [],
+    timeoutMs: requestTimeoutMs(budget, { phase }), kind: phase === 'delivery' ? 'delivery' : 'check', workspacePath: null, toolChoice: 'none', tools: [], functions: [], ...transport,
     nativeWebSearchEnabled: false, nativeImageGenerationEnabled: false, onDelta: undefined, onReasoningDelta: undefined, onNativeToolEvent: undefined, onExecutionEvent: undefined });
   try {
     const raw = await call(deliveryRequest(task, observations, reason), 'delivery', 8192);

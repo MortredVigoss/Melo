@@ -81,6 +81,19 @@
 
 ## 4. 最新交接
 
+### 2026-11-10 — Melo 主线（Claude）— 回复延迟修复；桌面真实数据目录待恢复
+
+- **先看这条**：`.tmp/melo-home-user` 的 `state.json` 和对话文件在 11-10 12:05 左右被测试夹具覆盖（我直接运行 `node --test` 造成，根因同 11-07）。桌面 Melo 已退出。恢复脚本 `.tmp/incident-20261110/restore.py --apply` 会从 11-05 完整备份恢复 33 段对话和状态，不动 `config.json`；它改用户数据，要用户决定后再执行。恢复前不要启动正式版做验收。经过见[事故记录](docs/incident-test-isolation-20261110.md)。
+- 防护已在代码里：测试进程没有 `MELO_HOME` 或它指向用户目录时，`resolveRuntimePaths` 给一次性临时目录（`source: 'test-isolated'`）；`src/runtime/testIsolation.test.js` 拒绝"根级 `after()` + 顶层 `await test()` + 改 `MELO_HOME`"的测试写法。新写走真实执行图的测试，用一个父用例加 `t.after`。
+- 延迟修复（[记录](docs/response-latency-fixes-20261110.md)）：天气题 69–106 秒降到约 23 秒，模型请求 15–17 次降到 5 次。接手要知道的行为变化：
+  - 只读内部成员不再自查，回执看它实际读到的来源；执行成员保留自查。
+  - 完成检查读证据时按候选答案选片段；候选带不确定标记时检查会一并给出 `claimReview`，宿主拿到就不再单独核验。桌面与 iPhone 已接，Android 未接。
+  - 主 Agent 的 MCP 工具定义按需加载（`load_tools`），`MELO_DEFERRED_TOOLS=0` 或 `config.deferredTools: false` 关闭。成员不受影响。
+  - `fetch_url` 的结果是一个按 token 等价长度截的窗口，模型能看到整窗和续读偏移；Jina 3 秒不回并发直连，网页再等 Jina 5 秒。
+  - iPhone：一批全是 `open_url` 时最多三个并行；页面可读即在 8 秒软超时读取。只有源码、离线测试和无签名构建，没有装机。
+- 未做：完成检查的思考强度（需要评测）、iPhone 正文流式、Android 宿主、Codex 连接的桌面实测。记忆库自 11-07 事故后只剩 44 条（备份里 1 351 条），是否补回等用户决定。
+- 验证：快速档 `run-xDpHtY` 全绿（公共边界扩大到 601 / 601 个文件：JS 5 111 / 5 111，Android 四项、设置浏览器验收、全部 Swift 组、文档链接；426 秒）；中间一轮 `run-erW8FY` 只红了一项（新开关没登记到开关目录），补登记后通过。本机 master 领先远端，未推送、未安装。
+
 ### 2026-11-10 — Melo 主线（Claude）— 回复延迟复核与当前版本实测（只报告）
 - 线程 ID：e02f4818。桌面当前版实测：天气单事实题 68.7–105.5 秒、15–17 次模型请求，纯问答 5.4 秒。确认缺陷 L1：非 Codex 连接上成员 / 主 Agent 到上限后的收尾请求按错协议发出必失败（`src/runtime/limitDelivery.js:16` + `src/openai.js:1427`，10-27 引入）。放大项：成员读页只留最近一次正文导致翻页循环、答案后两到三道核验、主 Agent 带 82 个工具定义、Jina 优先读页。[审计记录](docs/response-latency-audit-20261110.md)，证据 `.tmp/latency-audit-20261110/`。
 - 未做：任何修复、手机当前版真机实测、Codex 登录连接的桌面实测、质量评测集。建议顺序见记录第 7 节（先修 L1，再治翻页循环和多道核验）。

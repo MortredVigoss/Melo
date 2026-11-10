@@ -81,3 +81,47 @@ test('finalize: completionForReply receives the reply text before normalization'
   assert.equal(seen, 'Done.');
   assert.deepEqual(out.normalizedReply.completion, { status: 'complete' });
 });
+
+// 2026-11-10 latency audit L3: the completion check judges the claim an answer
+// flagged as uncertain against the turn's observations; finalize uses that
+// verdict instead of sending one more model request.
+const flaggedReply = '明天 15 到 19 度。降雨概率 10%。\n[UNCERTAIN: 降雨概率 10%]';
+const factual = extra => base({ reply: flaggedReply, intent: 'factual', toolEvidence: [{ id: 'tool:1', tool: 'fetch_url', ok: true, text: 'probability_of_precipitation 10%' }], ...extra });
+const counting = () => { let calls = 0; return { calls: () => calls, createReply: async () => { calls++; return JSON.stringify({ verdict: 'VERIFIED', evidenceId: 'tool:1', evidenceQuote: 'probability_of_precipitation 10%' }); } }; };
+
+test('finalize: a claim the completion check verified needs no further request and no note', async () => {
+  const model = counting();
+  const out = await harness({ createReply: model.createReply }).finalize(factual({ claimReview: { claim: '降雨概率 10%', verdict: 'VERIFIED', originalClaim: '', correction: '', evidenceId: 'job-1:read' } }));
+  assert.equal(model.calls(), 0);
+  assert.equal(out.normalizedReply.content, '明天 15 到 19 度。降雨概率 10%。');
+  assert.equal(out.verificationRecord, null);
+});
+
+test('finalize: a claim the completion check could not verify gets the note without a further request', async () => {
+  const model = counting();
+  const out = await harness({ createReply: model.createReply }).finalize(factual({ claimReview: { claim: '降雨概率 10%', verdict: 'UNVERIFIED', originalClaim: '', correction: '', evidenceId: '' } }));
+  assert.equal(model.calls(), 0);
+  assert.match(out.normalizedReply.content, /未能核实/);
+});
+
+test('finalize: a correction from the completion check replaces the sentence and is recorded', async () => {
+  const model = counting();
+  const out = await harness({ createReply: model.createReply }).finalize(factual({ claimReview: { claim: '降雨概率 10%', verdict: 'CORRECTED', originalClaim: '降雨概率 10%。', correction: '降雨概率 20%。', evidenceId: 'job-1:read' } }));
+  assert.equal(model.calls(), 0);
+  assert.equal(out.normalizedReply.content, '明天 15 到 19 度。降雨概率 20%。');
+  assert.deepEqual(out.verificationRecord, { verdict: 'CORRECTED', claim: '降雨概率 10%', correction: '降雨概率 20%。' });
+});
+
+test('finalize: without a check verdict for this claim the verifier still runs once', async () => {
+  for (const claimReview of [undefined, { claim: '另一句话', verdict: 'VERIFIED', originalClaim: '', correction: '', evidenceId: 'x' }]) {
+    const model = counting();
+    const out = await harness({ createReply: model.createReply }).finalize(factual({ claimReview }));
+    assert.equal(model.calls(), 1, JSON.stringify(claimReview));
+    assert.equal(out.normalizedReply.content, '明天 15 到 19 度。降雨概率 10%。');
+  }
+  // A turn that asks for no verification ignores a verdict as before.
+  const model = counting();
+  const out = await harness({ createReply: model.createReply }).finalize(factual({ intent: 'chat', claimReview: { claim: '降雨概率 10%', verdict: 'UNVERIFIED', originalClaim: '', correction: '', evidenceId: '' } }));
+  assert.equal(model.calls(), 0);
+  assert.doesNotMatch(out.normalizedReply.content, /未能核实/);
+});

@@ -187,6 +187,15 @@ func json(_ text: String) -> [String: Any] {
         let notFound = json(WebPageText.openResult(url: "u", finalURL: "u", title: "Not found", description: "", text: "nothing here", page: 1, status: 404))
         assert(notFound["ok"] as? Bool == true && notFound["status"] as? Int == 404 && WebPageText.summary(PhoneToolResult(output: WebPageText.openResult(url: "u", finalURL: "u", title: "", description: "", text: "t", page: 1, status: 500))).ok)
         assert(json(WebPageText.openResult(url: "u", finalURL: "u", title: "t", description: "", text: "t", page: 1))["status"] == nil)
+        // 2026-11-10 latency audit: a page that is readable at the soft deadline is
+        // read then; one that is still parsing or has little text keeps waiting.
+        assert(WebPageText.softTimeoutSeconds < WebPageText.hardTimeoutSeconds && WebPageText.hardTimeoutSeconds == 20)
+        assert(WebPageText.readableBeforeLoadEnds(readyState: "interactive", textLength: 400) && WebPageText.readableBeforeLoadEnds(readyState: "complete", textLength: 9000))
+        assert(!WebPageText.readableBeforeLoadEnds(readyState: "loading", textLength: 9000), "a document that is still parsing is not read")
+        assert(!WebPageText.readableBeforeLoadEnds(readyState: "interactive", textLength: 399) && !WebPageText.readableBeforeLoadEnds(readyState: "", textLength: 9000))
+        let early = json(WebPageText.openResult(url: "u", finalURL: "u", title: "t", description: "", text: "t", page: 1, stoppedEarly: true))
+        assert(early["ok"] as? Bool == true && early["loading"] as? String == "stopped-early" && (early["note"] as? String ?? "").contains("still loading"))
+        assert(json(WebPageText.openResult(url: "u", finalURL: "u", title: "t", description: "", text: "t", page: 1))["loading"] == nil)
         assert(json(WebPageText.screenshotResult(url: "u", finalURL: "u", title: "t", status: 503))["status"] as? Int == 503)
         let longTitle = json(WebPageText.openResult(url: "u", finalURL: "u", title: String(repeating: "标", count: 30_000), description: String(repeating: "d", count: 30_000), text: "body", page: 1))
         assert(longTitle["ok"] as? Bool == true && (longTitle["title"] as? String)?.count == WebPageText.maxTitleCharacters && (longTitle["description"] as? String)?.count == WebPageText.maxDescriptionCharacters && longTitle["text"] as? String == "body")

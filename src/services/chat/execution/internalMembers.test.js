@@ -242,3 +242,83 @@ test('C3: a member child budget covers its whole round allowance, not a single 9
   // 2026-11-07 review P1-2: members do the lead's retrieval, so a member gets 16 calls.
   assert.equal(seen[0].calls, TASK_EVALUATION_POLICY.member.calls); assert.equal(seen[0].calls, 16);
 });
+
+// 2026-11-10 latency audit L3: a reading member used to check its own report
+// with one more model round before the lead saw it, and the lead's check then
+// covered the same observations again. Readers now hand off directly, as the
+// iPhone loop does; a job that writes keeps its own check.
+test('L3: readers hand off without their own completion check, a writing job keeps it', async () => {
+  const seen = {};
+  const kinds = {};
+  const run = async options => { seen[options.roleId] = options.completionCheck; kinds[options.roleId] = options.receiptKind; return { ok: true, output: 'done', meta: { observations: [], effects: { successful: [], uncertain: [] } } }; };
+  const everyTool = ['web_search', 'fetch_url', 'calculator', 'file_read', 'file_write', 'mcp:melo-public-media:search_posts'];
+  const all = internalRouteCatalog(goal, everyTool);
+  const jobs = ['research', 'social', 'lookup', 'calculate', 'execute'].map((role, index) => ({ ...startInternalJob({ catalog: all, goal, args: { role, task: role + ' step' }, callId: `check-${index}` }), index: index + 1, id: `job-${role}` }));
+  assert.equal(jobs.every(entry => !entry.error), true, JSON.stringify(jobs.map(entry => entry.error)));
+  await runInternalMembers({ jobs, goal, run, config: { authMode: 'codex', model: 'm' }, approvals: { tool: () => null, check: async () => 'allow', request: async () => ({ decision: 'task' }) } });
+  assert.deepEqual(seen, { 'job-research': false, 'job-social': false, 'job-lookup': false, 'job-calculate': false, 'job-execute': true });
+  // A retrieval job's receipt needs a read source; a lookup or a calculation needs its reply.
+  assert.deepEqual([kinds['job-research'], kinds['job-social'], kinds['job-lookup'], kinds['job-calculate']], ['research', 'research', 'answer', 'answer']);
+});
+
+test('L3: through the real loop a research member sends no check request and its receipt comes from the page it read', async () => {
+  const { registerTool, unregisterTool } = await import('../../../tools/registry.js');
+  let reads = 0;
+  const tool = { id: 'fetch_url', name: 'Fetch URL', description: 'Read a page', requiresPermission: false, readOnly: true, capability: 'network', parametersSchema: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] },
+    run: async () => { reads++; return { ok: true, output: 'Harbour forecast for tomorrow: 15 to 19 C, partly cloudy.\n\n[source: https://fixture.invalid/forecast] [via: direct]', meta: { url: 'https://fixture.invalid/forecast', reading: 'extracted' } }; } };
+  const { getTool } = await import('../../../tools/registryCore.js');
+  const original = getTool('fetch_url');
+  unregisterTool('fetch_url'); registerTool(tool);
+  try {
+    const run = async completionCheck => {
+      const requests = [];
+      const replyFn = async options => {
+        requests.push(/task completion checker/.test(options.systemPrompt) ? 'check' : 'work');
+        if (requests.at(-1) === 'check') return JSON.stringify({ decision: 'complete', evaluationValid: true, needsEvaluation: false, turnKind: 'task', reasonType: 'fulfilled', reason: 'ok', nextStep: '', requirements: [{ text: 'forecast', kind: 'external_fact', status: 'met', evidenceIds: ['read-1:source:0'] }] });
+        return requests.filter(kind => kind === 'work').length === 1 ? `<tool_call>${JSON.stringify({ id: 'read-1', name: 'fetch_url', arguments: { url: 'https://fixture.invalid/forecast' } })}</tool_call>`
+          : 'Tomorrow: 15 to 19 C, partly cloudy. Source: https://fixture.invalid/forecast';
+      };
+      const result = await fixtureSubAgent({ task: 'Find tomorrow\'s harbour forecast.', config: { authMode: 'unset', model: 'fixture', replyLanguage: 'en' }, allowedToolIds: ['fetch_url'], replyFn, maxTokens: 200000, ...(completionCheck === undefined ? {} : { completionCheck }) });
+      return { requests, result };
+    };
+    const direct = await run(false);
+    assert.deepEqual(direct.requests, ['work', 'work'], 'no completion check request');
+    assert.equal(direct.result.ok, true);
+    assert.equal(direct.result.meta.completion.outcome, 'completed');
+    assert.equal(direct.result.meta.completion.reason, 'RELEVANT_SOURCES_READ', 'the receipt rests on the read page');
+    assert.match(direct.result.output, /15 to 19 C/);
+    const checked = await run(undefined);
+    assert.deepEqual(checked.requests, ['work', 'work', 'check'], 'a delegated member keeps its check by default');
+    assert.equal(checked.result.meta.completion.reason, 'GOAL_DELIVERY_SUPPORTED');
+    assert.equal(reads, 2);
+  } finally { unregisterTool('fetch_url'); if (original) registerTool(original); }
+});
+
+test('L3: a source in another language than the assignment still makes the handoff observed; an unread requested URL does not', async () => {
+  const { registerTool, unregisterTool } = await import('../../../tools/registry.js');
+  const { getTool } = await import('../../../tools/registryCore.js');
+  const original = getTool('fetch_url');
+  const page = { id: 'fetch_url', name: 'Fetch URL', description: 'Read a page', requiresPermission: false, readOnly: true, capability: 'network', parametersSchema: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] },
+    run: async args => ({ ok: true, output: 'Tomorrow in Melbourne: 15 to 19 C, partly cloudy, rain 10 percent.\n\n[source: ' + args.url + '] [via: direct]', meta: { url: args.url, reading: 'extracted' } }) };
+  unregisterTool('fetch_url'); registerTool(page);
+  try {
+    const handoffFor = async task => {
+      let turns = 0;
+      const replyFn = async () => ++turns === 1 ? `<tool_call>${JSON.stringify({ id: 'read-1', name: 'fetch_url', arguments: { url: 'https://fixture.invalid/melbourne' } })}</tool_call>` : '明天 15 到 19 度，多云，降雨概率 10%。';
+      const outcomes = await runInternalMembers({ jobs: [{ ...job('research', task, 21), tools: ['fetch_url'] }], goal, config: { authMode: 'unset', model: 'fixture', replyLanguage: 'zh' }, replyFn, run: options => fixtureSubAgent(options) });
+      return JSON.parse(outcomes[0].handoff);
+    };
+    // A Chinese assignment answered from an English page, without the URL in the report.
+    assert.equal((await handoffFor('查一下明天墨尔本的天气')).status, 'observed');
+    // The assignment named a URL that was never read.
+    assert.equal((await handoffFor('读一下 https://fixture.invalid/other-page 上的明天墨尔本天气')).status, 'partial');
+  } finally { unregisterTool('fetch_url'); if (original) registerTool(original); }
+});
+
+test('L3: a reader that answers without reading anything is not reported as observed', async () => {
+  const replyFn = async () => 'Tomorrow will be 19 C.';
+  const outcomes = await runInternalMembers({ jobs: [job('research', 'Find tomorrow\'s harbour forecast', 9)], goal, config: { authMode: 'unset', model: 'fixture', replyLanguage: 'en' }, replyFn, run: options => fixtureSubAgent(options) });
+  const handoff = JSON.parse(outcomes[0].handoff);
+  assert.equal(handoff.status, 'partial');
+  assert.deepEqual(handoff.evidence, []);
+});

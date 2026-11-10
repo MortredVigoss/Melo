@@ -63,6 +63,9 @@ final class PhoneGoalState {
     var checking: Bool { state["phase"] as? String == "checking" }
     var repairing: Bool { (state["corrections"] as? Int ?? 0) > 0 }
     var snapshot: [String: Any]? { SharedLoopPolicy.value("goal", ["action": "snapshot", "state": state]) as? [String: Any] }
+    /// The last completion check's verdict on the claim the answer flagged as
+    /// uncertain; nil when no check judged one (shared goal check, 2026-11-10).
+    var claimReview: [String: Any]? { SharedLoopPolicy.value("goal", ["action": "claimReview", "state": state]) as? [String: Any] }
     @discardableResult func delivery(_ action: String, _ fields: [String: Any] = [:]) throws -> [String: Any] {
         var input = fields; input["action"] = action; input["state"] = state
         guard let next = SharedLoopPolicy.value("delivery", input) as? [String: Any] else { throw SharedAgentCoreError.invalidReply }

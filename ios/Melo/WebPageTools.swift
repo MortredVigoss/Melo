@@ -26,7 +26,7 @@ enum WebPageLoadError: Error {
 @MainActor final class WebPageLoader: NSObject, WKNavigationDelegate {
     static let viewportSize = CGSize(width: 430, height: 932)
     static let offScreenOrigin = CGPoint(x: -10_000, y: 0)
-    static let timeoutSeconds: Double = 20
+    static let timeoutSeconds: Double = WebPageText.hardTimeoutSeconds
     static let settleMilliseconds = 600
     /// Full-page capture height in points; at the 1× capture width this stays
     /// inside WebPageText.maxImageLongSide without rescaling.
@@ -40,6 +40,10 @@ enum WebPageLoadError: Error {
     private var attachedTo: UIWindow?
     /// HTTP status of the main-frame response, when the server sent one.
     private(set) var statusCode: Int?
+    /// The main frame started receiving its document.
+    private var committed = false
+    /// The text was read at the soft deadline, before the load ended.
+    private(set) var stoppedEarly = false
 
     override init() {
         let configuration = WKWebViewConfiguration()
@@ -75,7 +79,8 @@ enum WebPageLoadError: Error {
         attachedTo = nil
     }
 
-    /// Loads the page with a 20 s budget and a 600 ms settle after didFinish.
+    /// Loads the page with a 20 s budget and a 600 ms settle after didFinish;
+    /// a page that is readable at the 8 s soft deadline is not waited for longer.
     /// Cancelling the task resumes the wait immediately instead of waiting
     /// for didFinish or the timeout.
     func load(_ url: URL) async throws {
@@ -89,6 +94,22 @@ enum WebPageLoadError: Error {
             self?.finish(.failure(WebPageLoadError.timeout))
         }
         defer { timeout.cancel() }
+        // After the soft deadline a page whose text is already there is read as it
+        // is; the wait ends first, then the remaining resource loads are stopped.
+        let soft = Task { [weak self] in
+            try await Task.sleep(for: .seconds(WebPageText.softTimeoutSeconds))
+            while !Task.isCancelled {
+                guard let self, self.continuation != nil else { return }
+                if await self.readableNow() {
+                    self.stoppedEarly = true
+                    self.finish(.success(()))
+                    self.webView.stopLoading()
+                    return
+                }
+                try await Task.sleep(for: .seconds(1))
+            }
+        }
+        defer { soft.cancel() }
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                 self.continuation = continuation
@@ -107,6 +128,14 @@ enum WebPageLoadError: Error {
         self.continuation = nil
         continuation.resume(with: result)
     }
+    /// The document is parsed and already shows a real amount of text.
+    private func readableNow() async -> Bool {
+        guard committed else { return false }
+        let value = try? await webView.evaluateJavaScript("[document.readyState, ((document.querySelector('article, main') || document.body || {}).innerText || '').length]")
+        let pair = value as? [Any] ?? []
+        return WebPageText.readableBeforeLoadEnds(readyState: pair.first as? String ?? "", textLength: (pair.last as? NSNumber)?.intValue ?? 0)
+    }
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) { committed = true }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { finish(.success(())) }
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { finish(.failure(WebPageLoadError.failed(error.localizedDescription))) }
@@ -211,7 +240,7 @@ enum WebPageLoadError: Error {
                 // Model-controlled number: 1e20 or NaN must not trap in Int().
                 let page = WebPageText.pageNumber(args["page"])
                 let extracted = try await loader.extractText()
-                return WebPageToolResult(output: WebPageText.envelope(WebPageText.openResult(url: url.absoluteString, finalURL: loader.finalURL, title: extracted.title, description: extracted.description, text: extracted.text, page: page, status: loader.statusCode)), url: url.absoluteString)
+                return WebPageToolResult(output: WebPageText.envelope(WebPageText.openResult(url: url.absoluteString, finalURL: loader.finalURL, title: extracted.title, description: extracted.description, text: extracted.text, page: page, status: loader.statusCode, stoppedEarly: loader.stoppedEarly)), url: url.absoluteString)
             }
             let fullPage = args["fullPage"] as? Bool ?? false
             let image = try await loader.snapshot(fullPage: fullPage)

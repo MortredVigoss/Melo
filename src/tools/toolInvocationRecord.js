@@ -151,7 +151,9 @@ function envelopeOf(result) {
  * @param {number|string} [input.finishedAt]
  * @param {number|null} [input.parallelGroup]
  */
-export function buildToolInvocationRecord({ runId, iteration, call, args, result, modelFacingOutput, startedAt, finishedAt, parallelGroup } = {}) {
+export function buildToolInvocationRecord({ runId, iteration, call, args, result, modelFacingOutput, modelFacingOutputChars, startedAt, finishedAt, parallelGroup } = {}) {
+  // A page reader's window is larger than the general cap; the record keeps what the model saw.
+  const outputLimit = Math.max(MAX_MODEL_FACING_OUTPUT_CHARS, Number.isFinite(modelFacingOutputChars) ? modelFacingOutputChars + 2048 : 0);
   const rawArgs = args && typeof args === 'object' ? args : call?.arguments && typeof call.arguments === 'object' ? call.arguments : {};
   const startedIso = toIso(startedAt) || new Date().toISOString();
   const finishedIso = toIso(finishedAt) || startedIso;
@@ -167,13 +169,13 @@ export function buildToolInvocationRecord({ runId, iteration, call, args, result
     argsRedacted: redactToolArgs(rawArgs),
     argsHash: hashToolArgs(rawArgs),
     resultEnvelope: envelopeOf(result),
-    modelFacingOutput: output.length > MAX_MODEL_FACING_OUTPUT_CHARS ? output.slice(0, MAX_MODEL_FACING_OUTPUT_CHARS) : output,
+    modelFacingOutput: output.length > outputLimit ? output.slice(0, outputLimit) : output,
     startedAt: startedIso,
     finishedAt: finishedIso,
     durationMs,
     parallelGroup: Number.isInteger(parallelGroup) ? parallelGroup : null,
   };
-  if (output.length > MAX_MODEL_FACING_OUTPUT_CHARS) record.modelFacingOutputTruncated = true;
+  if (output.length > outputLimit) record.modelFacingOutputTruncated = true;
   return record;
 }
 

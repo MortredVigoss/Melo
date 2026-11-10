@@ -44,6 +44,12 @@ import { requestEnvironment } from '../runtime/requestScope.js';
 import { hostedSearchReceipt } from '../../shared/agent/hostedSearch.js';
 
 const MAX_SUB_AGENT_ITERATIONS = AGENT_LOOP_CONTRACT.delegationLimits.iterations;
+// What a condensing member keeps in full between rounds: the newest result
+// always, older ones while they fit together. About two full page windows of
+// Latin text or one of CJK text; with only the newest kept, a member that had
+// read one source could no longer see it after reading the next and read it
+// again (2026-11-10 latency audit L2).
+export const MEMBER_RESULT_TOKENS = 16000;
 const SUB_AGENT_MAX_DEPTH = AGENT_LOOP_CONTRACT.delegationLimits.depth;
 
 /**
@@ -131,6 +137,18 @@ async function runSubAgentLoop({
   // Condense every earlier round's tool outputs after each round so a member's
   // context stays near the latest round instead of carrying every page read.
   condenseEachRound = false,
+  // The member's own completion check before it hands off. A read-only
+  // internal routing member turns it off: the lead's check covers the same
+  // observations again, and the member's check cost a model round of its own
+  // (11 s in the 2026-11-10 probes) before the lead saw anything. The iPhone
+  // loop already hands a member's report straight to the lead. Without the
+  // check the receipt comes from what was actually read, not from a verdict.
+  completionCheck = true,
+  // With the check off, what the receipt must rest on: 'research' needs a read
+  // source, 'answer' a reply. The caller knows the job; inferring it from the
+  // observations would turn a calculation into research because the member
+  // once tried a tool outside its job.
+  receiptKind = undefined,
   background = '',
   config,
   workspacePath,
@@ -307,7 +325,7 @@ async function runSubAgentLoop({
     }
 
     if (!toolCalls.length) {
-      if (coreTurn.candidate(turn.text, { research: true, nativeSearch: nativeFeaturesForScope(currentRequestContext().capabilityScope,currentRequestContext().requestToolPolicy).nativeWebSearchEnabled })) { coreTurn.update('feedback'); continue; }
+      if (completionCheck !== false && coreTurn.candidate(turn.text, { research: true, nativeSearch: nativeFeaturesForScope(currentRequestContext().capabilityScope,currentRequestContext().requestToolPolicy).nativeWebSearchEnabled })) { coreTurn.update('feedback'); continue; }
       coreTurn.update('complete');
       if (coreTurn.status !== 'completed') break;
       finalOutput = cleanReplyForParent(turn.text);
@@ -417,7 +435,7 @@ async function runSubAgentLoop({
     // even after a prose reply, so the parent can see the attempt.
     deniedTools += allResults.filter(r=>r.result.ok === false && ['TOOL_NOT_WHITELISTED','CAPABILITY_DENIED','PERMISSION_DENIED','DELEGATION_DENIED'].includes(r.result.error)).length;
     loopMessages = functionSession.append(loopMessages, turn, allResults);
-    if (condenseEachRound) { const condensed = compactToolChain(loopMessages, { keepRecentResults: 1 }); if (condensed.changed) loopMessages = condensed.messages; }
+    if (condenseEachRound) { const condensed = compactToolChain(loopMessages, { keepRecentResults: 1, keepRecentTokens: MEMBER_RESULT_TOKENS }); if (condensed.changed) loopMessages = condensed.messages; }
     traceEvent('tool.feedback.appended', { callIds: allResults.map(pair => pair.call.id) }, loopMessages.slice(-Math.min(80, allResults.length * 2 + 1)));
     if (coreTurn.results(allResults) !== 'running') break;
   }
@@ -447,7 +465,14 @@ async function runSubAgentLoop({
   // Recoverable tool errors remain in meta; the final delivery check decides
   // whether the member actually finished. Self-reported prose cannot promote
   // an incomplete receipt to a successful handoff.
-  const completion = coreTurn.receipt(task, finalOutput, terminalReason);
+  // Without its own check a member's receipt rests on what it read: the host
+  // knows every source this run read successfully and names them, so a page in
+  // another language than the assignment still counts (the lexical relevance
+  // gate compares words and failed a Chinese assignment answered from an
+  // English page). A URL the assignment asked for and that was not read still
+  // leaves the receipt partial.
+  const readSources = completionCheck === false ? coreTurn.observations.filter(row => row.type === 'source' && row.ok === true && row.executed === true && typeof row.url === 'string').map(row => row.url) : [];
+  const completion = coreTurn.receipt(task, finalOutput, terminalReason, undefined, readSources, completionCheck === false ? receiptKind : undefined);
   const exhausted = completion.outcome !== 'completed';
   return {
     ok: !exhausted && deniedTools === 0 && completion.outcome === 'completed',

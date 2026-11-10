@@ -24,8 +24,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 701,
-      "edges": 2291,
+      "modules": 702,
+      "edges": 2298,
       "roots": [
         "src",
         "desktop-ui",
@@ -746,7 +746,7 @@
       "modules": {
         "desktop-ui": 24,
         "shared": 46,
-        "src": 70
+        "src": 71
       },
       "entryModules": [
         {
@@ -931,7 +931,8 @@
         {
           "module": "shared/agent/tokenEstimate.js",
           "importedBy": [
-            "memory"
+            "memory",
+            "tools"
           ]
         },
         {
@@ -1149,7 +1150,7 @@
         "projects": 11,
         "settings": 11,
         "sync": 2,
-        "tools": 44,
+        "tools": 45,
         "voice": 3
       },
       "usedBy": {
@@ -1164,7 +1165,7 @@
         "projects": 1,
         "settings": 14,
         "sync": 4,
-        "tools": 29,
+        "tools": 30,
         "voice": 2
       },
       "httpRoutes": [
@@ -1280,6 +1281,7 @@
           "shared/agent/deliveryBudget.test.js",
           "shared/agent/execution.test.js",
           "shared/agent/goal.test.js",
+          "shared/agent/goalEvidence.test.js",
           "shared/agent/goalReview.test.js",
           "shared/agent/internalRouting.test.js",
           "shared/agent/limitDelivery.test.js",
@@ -1316,8 +1318,10 @@
           "src/services/chat/contextGap.test.js",
           "src/services/chat/conversationSelection.test.js",
           "src/services/chat/dateContext.test.js",
+          "src/services/chat/deferredTools.graph.test.js",
           "src/services/chat/derivedState.test.js",
           "src/services/chat/dynamicContext.test.js",
+          "src/services/chat/execution/deferredTools.test.js",
           "src/services/chat/execution/finalizeNode.test.js",
           "src/services/chat/execution/internalMembers.test.js",
           "src/services/chat/execution/internalRoles.test.js",
@@ -1629,7 +1633,7 @@
         "platform": 22,
         "projects": 1,
         "sync": 5,
-        "tools": 6
+        "tools": 7
       },
       "httpRoutes": [
         "POST /api/memory/connect ← src/http/domainRoutes.js",
@@ -2582,6 +2586,12 @@
           ]
         },
         {
+          "module": "src/tools/functionSchema.js",
+          "importedBy": [
+            "chat"
+          ]
+        },
+        {
           "module": "src/tools/mcpRegistry.js",
           "importedBy": [
             "chat"
@@ -2686,12 +2696,12 @@
       "dependsOn": {
         "agents": 9,
         "approvals": 35,
-        "chat": 29,
+        "chat": 30,
         "desktop-shell": 15,
         "development": 1,
         "knowledge": 3,
         "media": 2,
-        "memory": 6,
+        "memory": 7,
         "platform": 59,
         "projects": 5,
         "settings": 10
@@ -2699,7 +2709,7 @@
       "usedBy": {
         "agents": 21,
         "approvals": 2,
-        "chat": 44,
+        "chat": 45,
         "desktop-shell": 13,
         "media": 4,
         "memory": 1,
@@ -2840,6 +2850,7 @@
           "src/tools/builtins/deviceLocationTool.test.js",
           "src/tools/builtins/fetchUrlTool.cdpChrome.test.js",
           "src/tools/builtins/fetchUrlTool.evidenceTrail.test.js",
+          "src/tools/builtins/fetchUrlTool.hedge.test.js",
           "src/tools/builtins/fetchUrlTool.socialRoute.test.js",
           "src/tools/builtins/pdfTool.actions.test.js",
           "src/tools/builtins/pdfTool.fromspec.test.js",
@@ -2870,6 +2881,7 @@
           "src/tools/functionCalling.compact.test.js",
           "src/tools/functionCalling.execution.test.js",
           "src/tools/functionCalling.test.js",
+          "src/tools/functionCalling.window.test.js",
           "src/tools/mcpRegistry.test.js",
           "src/tools/parser.evidenceTrail.test.js",
           "src/tools/permissionPersistence.test.js",
@@ -4521,6 +4533,7 @@
           "src/runtime/chatContract.http.test.js",
           "src/runtime/desktopOwner.test.js",
           "src/runtime/identity.test.js",
+          "src/runtime/limitDelivery.protocol.test.js",
           "src/runtime/loopTrace.test.js",
           "src/runtime/nativeSearchEvidence.test.js",
           "src/runtime/paths.test.js",
@@ -4534,6 +4547,7 @@
           "src/runtime/searchCacheEvidence.test.js",
           "src/runtime/serverLock.test.js",
           "src/runtime/storageInventory.test.js",
+          "src/runtime/testIsolation.test.js",
           "src/runtime/turnEffects.test.js",
           "src/runtime/usage.test.js",
           "src/server.imports.smoke.test.js",

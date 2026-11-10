@@ -39,8 +39,12 @@ export function createFinalizeNode(turn) {
     let finalReplyText = parsed.cleanReply;
     let verificationRecord = null;
 
+    // The completion check already judged this exact claim against the turn's
+    // observations (shared goal check, `claimReview`); only a claim no check
+    // has seen still gets its own request.
+    const reviewed = graphState.claimReview?.claim === parsed.uncertainClaim ? graphState.claimReview : null;
     if (shouldVerify) {
-      const verification = await verifyUncertainClaim({
+      const verification = reviewed ? { verdict: reviewed.verdict, correction: reviewed.correction, originalClaim: reviewed.originalClaim, evidenceId: reviewed.evidenceId, reason: 'completion-check' } : await verifyUncertainClaim({
         userMessage: latestUserMessage,
         assistantReply: parsed.cleanReply,
         uncertainClaim: parsed.uncertainClaim,

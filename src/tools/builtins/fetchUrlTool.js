@@ -1,4 +1,4 @@
-import {pageWindow} from '../../services/search/pageWindow.js';
+import {pageWindow, windowChars} from '../../services/search/pageWindow.js';
 import {mediaPlatformForHost} from '../../../shared/agent/media/publicPlatforms.js';
 import {mediaLink} from '../../services/search/mediaPermalink.js';
 import {readMediaPost} from '../../services/search/publicMediaReader.js';
@@ -118,7 +118,7 @@ function resolveCookiesForUrl(url, config) {
 
 // ─── Direct fetch + Readability fallback ─────────────────────────────────────
 
-async function fetchDirect(url, signal, cookieStr = '') {
+async function fetchDirect(url, signal, cookieStr = '', info = null) {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), searchLimits().fetchTimeoutMs);
   const combined = signal
@@ -137,6 +137,8 @@ async function fetchDirect(url, signal, cookieStr = '') {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
     const contentType = res.headers.get('content-type') || '';
+    // Lets the hedged read tell a resource served as is (JSON, XML, text) from an extracted HTML page.
+    if (info) info.html = contentType.includes('text/html') || contentType.includes('application/xhtml');
     if (!contentType.includes('text/html') && !contentType.includes('application/xhtml')) {
       // Apply the output window once, after extraction, so later pages remain readable.
       const text = await res.text();
@@ -158,6 +160,74 @@ async function fetchDirect(url, signal, cookieStr = '') {
   }
 }
 
+// ─── Hedged auto read ─────────────────────────────────────────────────────────
+//
+// Jina answers most pages in well under a second, but a slow one used to hold
+// the whole read until it answered or timed out: 21.7 s in the 2026-11-10
+// latency probes, on a host that answered a direct request in about a second.
+// When Jina has not answered after `hedgeMs`, the direct read starts alongside
+// it. Inside the hedge window nothing changes: Jina first, direct only when
+// Jina throws.
+//
+// Once both run, Jina's rendered page is still the better read of an HTML
+// page: a direct read of a script-driven site extracts its navigation and
+// little else, and the first live probe of this change showed exactly that. So
+// Jina keeps `graceMs` to answer; only after that, or when Jina fails, the
+// direct page is used. A direct response that is not HTML (JSON, XML, plain
+// text) is the resource itself and is used as soon as it arrives. Whichever
+// request loses is aborted.
+export async function hedgedRead({ jina, direct, hedgeMs, graceMs = 0, signal, looksEmpty }) {
+  const started = Date.now();
+  const events = [];
+  const aborts = { jina: new AbortController(), direct: new AbortController() };
+  const scoped = tier => signal ? AbortSignal.any([signal, aborts[tier].signal]) : aborts[tier].signal;
+  // A reader returns its text, or `{ text, exact }` where exact marks a non-HTML resource.
+  const settle = (tier, run, since) => Promise.resolve().then(() => run(scoped(tier)))
+    .then(raw => ({ tier, value: String((raw && typeof raw === 'object' ? raw.text : raw) ?? ''), exact: raw?.exact === true, latencyMs: Date.now() - since }), error => ({ tier, error, latencyMs: Date.now() - since }));
+  const note = (result, extra = {}) => events.push({ tier: result.tier, latencyMs: result.latencyMs,
+    ...(result.error ? { outcome: 'fail', error: result.error } : looksEmpty(result.value) ? { outcome: 'fail', reason: 'parse-empty', bytes: result.value.length } : { outcome: 'ok', bytes: result.value.length }), ...extra });
+  const usable = result => !!result && !result.error && !looksEmpty(result.value);
+  const jinaRun = settle('jina', jina, started);
+  let timer;
+  const early = await Promise.race([jinaRun, new Promise(resolve => { timer = setTimeout(() => resolve(null), hedgeMs); })]);
+  clearTimeout(timer);
+  if (early) {
+    note(early);
+    if (!early.error) return { content: early.value, method: 'jina', events };
+    const fallback = await settle('direct', direct, Date.now());
+    note(fallback);
+    return { content: fallback.error ? '' : fallback.value, method: fallback.error ? '' : 'direct', events };
+  }
+  const state = { jina: null, direct: null, graceOver: graceMs <= 0 };
+  const waits = {
+    jina: jinaRun.then(result => { state.jina = result; }),
+    direct: settle('direct', direct, Date.now()).then(result => { state.direct = result; }),
+    grace: state.graceOver ? null : new Promise(resolve => { timer = setTimeout(() => { state.graceOver = true; resolve(); }, graceMs); }),
+  };
+  try {
+    for (;;) {
+      if (usable(state.jina)) {
+        aborts.direct.abort();
+        if (state.direct) events.push({ tier: 'direct', outcome: 'skip', reason: 'jina-preferred', latencyMs: state.direct.latencyMs });
+        note(state.jina, { hedged: true });
+        return { content: state.jina.value, method: 'jina', events };
+      }
+      if (usable(state.direct) && (state.direct.exact || state.graceOver || state.jina)) {
+        aborts.jina.abort();
+        if (state.jina) note(state.jina, { hedged: true }); else events.push({ tier: 'jina', outcome: 'fail', reason: 'slow', latencyMs: Date.now() - started });
+        note(state.direct, { hedged: true });
+        return { content: state.direct.value, method: 'direct', events };
+      }
+      if (state.jina && state.direct) break;
+      await Promise.race([!state.jina && waits.jina, !state.direct && waits.direct, !state.graceOver && waits.grace].filter(Boolean));
+    }
+  } finally { clearTimeout(timer); }
+  // Neither produced a usable page: report both, and keep what the old chain kept.
+  for (const result of [state.jina, state.direct].sort((left, right) => left.latencyMs - right.latencyMs)) note(result, { hedged: true });
+  if (!state.jina.error) return { content: state.jina.value, method: 'jina', events };
+  return { content: state.direct.error ? '' : state.direct.value, method: state.direct.error ? '' : 'direct', events };
+}
+
 // ─── Tool definition ──────────────────────────────────────────────────────────
 
 export const fetchUrlTool = {
@@ -173,6 +243,9 @@ export const fetchUrlTool = {
   capability: 'network',
   needsWorkspace: false,
   uiModule: 'search',
+  // Each result is one window of the page ending with the next offset; the
+  // loop shows the model that whole window (functionCalling.modelFacingCap).
+  windowedOutput: true,
   inputKeys: ['url', 'extract_mode','offset'],
   parametersSchema: {
     type: 'object',
@@ -286,10 +359,11 @@ export const fetchUrlTool = {
     if(media && (extract_mode==='auto' || requestContext?.requestToolPolicy?.publicSocialOnly)){
       const item=await _readMediaPost(normalized,{signal});
       if(!item)return {ok:false,error:'PUBLIC_POST_UNAVAILABLE',output:'No verifiable public content was returned for this post.'};
-      const part=pageWindow(item.text,offset,searchLimits().fetchMaxChars);
+      const part=pageWindow(item.text,offset,windowChars(item.text,offset,searchLimits().fetchMaxChars));
       if(!part.body)return {ok:false,error:'OFFSET_OUT_OF_RANGE',output:'The requested offset exceeds this post.'};
       const reading=item.reading==='snippet'?'snippet':part.truncated?'partial':item.reading;
-      return {ok:true,output:'['+item.kind+'] '+part.body+part.suffix,meta:{url:item.url,reading,kind:item.kind,truncated:part.truncated,nextOffset:part.nextOffset},
+      const mediaOutput='['+item.kind+'] '+part.body+part.suffix;
+      return {ok:true,output:mediaOutput,meta:{url:item.url,reading,kind:item.kind,truncated:part.truncated,nextOffset:part.nextOffset,windowChars:mediaOutput.length},
         evidenceTrail:[{tier:'public-media',outcome:'ok',method:media.platform.id,reason:item.kind}]};
     }
     const guestOnly=requestContext?.requestToolPolicy?.publicSocialOnly && isPublicPostHost(normalized);
@@ -323,7 +397,7 @@ export const fetchUrlTool = {
         }
         if (socialResult?.body) {
           const body = socialResult.body;
-          const part = pageWindow(body,offset,searchLimits().fetchMaxChars);
+          const part = pageWindow(body,offset,windowChars(body,offset,searchLimits().fetchMaxChars));
           if(!part.body) return {ok:false,error:'OFFSET_OUT_OF_RANGE',output:'Requested offset exceeds the available page.',evidenceTrail:trail};
           const preview = socialResult.via?.startsWith('share-preview:');
           const reading = preview ? 'snippet' : socialResult.reading==='partial' || part.truncated || socialResult.via==='yt-dlp' || socialResult.via?.startsWith('browser:') ? 'partial' : 'extracted';
@@ -339,7 +413,7 @@ export const fetchUrlTool = {
             meta: {
               url: normalized,
               method: 'social-link',
-              length: body.length, reading, truncated:part.truncated,nextOffset:part.nextOffset,
+              length: body.length, reading, truncated:part.truncated,nextOffset:part.nextOffset, windowChars: truncated.length,
               // socialResult.via lets the caller see which sub-strategy
               // succeeded — 'yt-dlp' / 'browser:*' / 'share-preview:*' — useful for
               // debugging extractor health without re-running.
@@ -657,26 +731,15 @@ export const fetchUrlTool = {
             recordTrail(trail, 'jina', r.outcome, { latencyMs: Date.now() - tJ, reason: r.reason, extra: { bytes: content.length } });
           }
         } else {
-          const tJ = Date.now();
-          try {
-            content = await callJina(normalized, signal);
-            method = 'jina';
-            const r = tierOutcome(content);
-            recordTrail(trail, 'jina', r.outcome, { latencyMs: Date.now() - tJ, reason: r.reason, extra: { bytes: content.length } });
-          } catch (err) {
-            debugWarn('fetch_url', `Jina failed, falling back to direct for ${normalized}:`, err?.message || err);
-            recordTrail(trail, 'jina', 'fail', { latencyMs: Date.now() - tJ, reason: classifyFetchError(err) });
-            const tD = Date.now();
-            try {
-              content = await callDirect(normalized, signal, '');
-              method = 'direct';
-              const r = tierOutcome(content);
-              recordTrail(trail, 'direct', r.outcome, { latencyMs: Date.now() - tD, reason: r.reason, extra: { bytes: content.length } });
-            } catch (err2) {
-              debugWarn('fetch_url', `direct also failed, escalating to Playwright for ${normalized}:`, err2?.message || err2);
-              recordTrail(trail, 'direct', 'fail', { latencyMs: Date.now() - tD, reason: classifyFetchError(err2) });
-              content = '';
-            }
+          const read = await hedgedRead({ jina: scopedSignal => callJina(normalized, scopedSignal),
+            direct: async scopedSignal => { const info = {}; const text = await callDirect(normalized, scopedSignal, '', info); return { text, exact: info.html === false }; },
+            hedgeMs: searchLimits().fetchHedgeMs, graceMs: searchLimits().fetchHedgeGraceMs, signal, looksEmpty });
+          content = read.content;
+          method = read.method;
+          for (const event of read.events) {
+            if (event.error) debugWarn('fetch_url', `${event.tier} failed for ${normalized}:`, event.error?.message || event.error);
+            recordTrail(trail, event.tier, event.outcome, { latencyMs: event.latencyMs, reason: event.error ? classifyFetchError(event.error) : event.reason,
+              extra: { ...(event.bytes !== undefined ? { bytes: event.bytes } : {}), ...(event.hedged ? { hedged: true } : {}) } });
           }
         }
 
@@ -765,12 +828,12 @@ export const fetchUrlTool = {
     }
 
     // Truncate
-    const part=pageWindow(content,offset,searchLimits().fetchMaxChars);
+    const part=pageWindow(content,offset,windowChars(content,offset,searchLimits().fetchMaxChars));
     if(!part.body) return {ok:false,error:'OFFSET_OUT_OF_RANGE',output:'Requested offset exceeds the available page.',evidenceTrail:trail};
     const truncated=part.body+part.suffix;
     const output = `${truncated}\n\n[source: ${normalized}] [via: ${method}]`;
 
-    return { ok: true, output, meta: { url: normalized, method, length: content.length, truncated:part.truncated,nextOffset:part.nextOffset,reading:part.truncated?"partial":"extracted" }, evidenceTrail: trail };
+    return { ok: true, output, meta: { url: normalized, method, length: content.length, truncated:part.truncated,nextOffset:part.nextOffset,reading:part.truncated?"partial":"extracted", windowChars: output.length }, evidenceTrail: trail };
   }),
 };
 

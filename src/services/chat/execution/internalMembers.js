@@ -139,6 +139,8 @@ export async function runInternalMembers({ jobs = [], goal = '', background = ''
     // offers it to retrieval members solely when Melo's own search is
     // unavailable (dbf5dff4; user decision 2026-11-07). Never image generation.
     const invoke = () => run({ task: job.task, roleSystem: job.system, background: memberBackground, allowedToolIds: job.tools, extraTools, config: jobConfig, nativeWebSearch: Array.isArray(job.tools) && job.tools.includes('native_web_search'), nativeImageGeneration: false, condenseEachRound: true,
+      // Readers hand off without their own completion check (see runSubAgent); a job that writes keeps it.
+      completionCheck: !READ_ONLY_JOBS.includes(job.role), receiptKind: ['research', 'social'].includes(job.role) ? 'research' : 'answer',
       // runSubAgent caps a member's input tokens at maxTokens (32k by default,
       // sized for delegated members); an internal member gets its whole share.
       ...(replyFn ? { replyFn } : {}), maxIterations: job.roundLimit || MAX_MEMBER_ROUNDS, maxTokens: share || MEMBER_INPUT_SHARE, roleId: job.id, depth: 1, signal, sseEmitter: emit, chatId, workspacePath, chatSource, projectId, onProviderResponse });

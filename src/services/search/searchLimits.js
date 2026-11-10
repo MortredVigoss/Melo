@@ -6,9 +6,12 @@ const scope = new AsyncLocalStorage();
 export const SEARCH_LIMIT_DEFAULTS = Object.freeze({
   maxResults: 8, timeoutMs: 25000, contentTimeoutMs: 14000, contentMaxChars: 6000,
   fetchTimeoutMs: 30000, fetchMaxChars: 20000, browserTimeoutMs: 20000,
+  // How long the page reader waits for Jina before a direct read starts alongside it,
+  // and how much longer Jina's rendered page is still preferred over the direct one.
+  fetchHedgeMs: 3000, fetchHedgeGraceMs: 5000,
   cacheTtlMs: 7200000, freshCacheTtlMs: 900000, urlCacheTtlMs: 7200000, staleMaxMs: 86400000,
 });
-const ranges = {maxResults:[1,8],timeoutMs:[3000,120000],contentTimeoutMs:[3000,120000],contentMaxChars:[1000,50000],fetchTimeoutMs:[3000,120000],fetchMaxChars:[1000,100000],browserTimeoutMs:[3000,120000],cacheTtlMs:[0,86400000],freshCacheTtlMs:[0,3600000],urlCacheTtlMs:[0,86400000],staleMaxMs:[0,604800000]};
+const ranges = {maxResults:[1,8],timeoutMs:[3000,120000],contentTimeoutMs:[3000,120000],contentMaxChars:[1000,50000],fetchTimeoutMs:[3000,120000],fetchMaxChars:[1000,100000],fetchHedgeMs:[50,120000],fetchHedgeGraceMs:[50,120000],browserTimeoutMs:[3000,120000],cacheTtlMs:[0,86400000],freshCacheTtlMs:[0,3600000],urlCacheTtlMs:[0,86400000],staleMaxMs:[0,604800000]};
 export function normalizeSearchLimits(config = {}) {
   const values = {...config.operationalLimits?.search};
   const search = config.agentRuntime?.search || {};
