@@ -124,6 +124,8 @@ iPhone   ChatStore.send → AgentLoop.run → transport.round
 
 ### 4.2 已核实，本轮没有改
 
+> 更新（同日晚）：本节、第 4.3 节和第 4.4 节的全部条目已在[第二轮记录](agent-fixall-20261110.md)里逐条处理，以那份记录为准。
+
 | 级 | 问题 | 位置 | 没改的原因 |
 | --- | --- | --- | --- |
 | B | 预算在"回答已写出、等待核对"时用完，三端都改走上限整理，而整理请求不带这份回答，等于重写一遍；成员没用工具时整理出来的是空的三段式 | `shared/agent/limitDelivery.js` `deliveryRequest`；`AgentLoop.run`；`invokeModelNode.js` | 改的是共享的交付规则，见 4.4 第 1 项 |
