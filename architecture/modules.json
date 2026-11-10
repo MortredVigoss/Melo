@@ -24,8 +24,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 702,
-      "edges": 2298,
+      "modules": 703,
+      "edges": 2299,
       "roots": [
         "src",
         "desktop-ui",
@@ -745,7 +745,7 @@
       ],
       "modules": {
         "desktop-ui": 24,
-        "shared": 46,
+        "shared": 47,
         "src": 71
       },
       "entryModules": [
@@ -876,6 +876,12 @@
           ]
         },
         {
+          "module": "shared/agent/pageWindow.js",
+          "importedBy": [
+            "tools"
+          ]
+        },
+        {
           "module": "shared/agent/providerDefaults.js",
           "importedBy": [
             "media",
@@ -931,8 +937,7 @@
         {
           "module": "shared/agent/tokenEstimate.js",
           "importedBy": [
-            "memory",
-            "tools"
+            "memory"
           ]
         },
         {
