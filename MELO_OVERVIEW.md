@@ -13,6 +13,8 @@
 
 ## 2. 当前事实
 
+11-10 Android 已接上回复延迟修复，并修掉"停止回复会带崩内核沙箱"的缺陷；Agent 全链路审计修 43 处，6 项等用户决定，约 50 条子代理报告未核实。只有模拟器、离线测试与门禁，没有真机和真实模型验收。见[记录与审计](docs/agent-audit-20261110.md)。桌面真实数据目录仍是 11-10 中午受损的状态，等用户决定是否恢复，恢复前不要启动正式安装的桌面应用。
+
 10-28 用户反馈0.10.7首个模型请求76秒失败，截图证明13工具已注册而非Tool缺失。确认Android Tool Transport强制stream=false、错误步骤/Chat卡不显示实际原因；现修复连接Stream配置与三协议SSE完整回执、分片/断流安全、HTTP/Timeout诊断和折叠错误展示。201项JVM、Native29（含折叠错误展示/重启与SSE主Loop）已过；视觉截图已核对。用此前授权Proxy Key做单次公开合成GPT/Modal请求，13Tools+Streaming返回200/15.692秒/web_search参数校验过，未执行工具、未发送私人Trace；不等于手机全任务验收。快速/集成档均仅2素材失败；完整test:full的Android/Browser/Runtime Smoke过，素材/macOS环境仍红、Swift跳过；[0.10.8（32）Pre-release](https://github.com/MortredVigoss/Melo/releases/tag/android-v0.10.8-organizer-preview.1)已发布并匿名下载200，Tag固定8d76036，不合主线。此次用户GPT/Modal实际失败原因尚无原始记录，不能声称已证明是504或已实机修复。私人Trace仅本地、未操作手机，实际请求仅上述公开合成检查。[Transport专项](docs/android-model-transport-fix-20261028.md)。
 
 10-28 用户现授权对当前Branch单独Release，已推送codex/android-organizer-20261026并发布[Android 0.10.7 Pre-release](https://github.com/MortredVigoss/Melo/releases/tag/android-v0.10.7-organizer-preview.1)，Tag固定fd3bd0d，不合并master。APK+SHA256SUMS匿名下载200、GitHub digest一致，与0.10.6同签名。已补集成档run-dkvzlN与完整test:full：Android/Browser/Runtime Smoke通过；全量JS仍仅两项私有桌宠素材失败，macOS打包/安装/启动在Linux失败、Swift跳过，不能称完整发布Gate GREEN。私人Trace仅本地。[发布回执](docs/android-0.10.7-branch-prerelease-20261028.md)。
@@ -80,6 +82,19 @@
 基础设施另列 `platform`（`src/state/`、`src/runtime/`、`src/http/` 传输）、`channels`（已归档渠道）、`tooling`（脚本与 gate）。
 
 ## 4. 最新交接
+
+### 2026-11-10 — Melo 主线（Claude）— Android 延迟修复与 Agent 全链路审计
+
+- **仍然先看下一条交接的第一行**：`.tmp/melo-home-user` 还是被夹具覆盖的状态，桌面 Melo 保持关闭。本轮没有动它，恢复、记忆库合并、测试记录清理三件事都还等用户决定。
+- [记录与审计](docs/agent-audit-20261110.md)。Android 现已接上延迟修复：一批网页并行读取、窗口续读、回答边生成边显示、请求整形。
+- 接手要知道的行为变化：
+  - Android `SharedCoreRuntime`：求值不会被取消，`close()` 等当前求值结束后才关闭隔离环境（最多再等 5 秒）；内核自己的 5 秒上限抛"执行超时"，不再冒充运行截止时间。不要改回"取消即关闭"，那会带崩全 App 共用的沙箱进程，`SharedAgentCoreTest` 里有两项直接测试守着。
+  - Android 停止的回复一律记为 `cancelled`（`replyFailure`）；工具链超出上下文按"到达上限"收尾；`route_task` 被拒时带原因，三端都用 `ROUTE_DENIED`。
+  - 手机内核的 `fetch_url` 按窗口返回并接受 `offset`；来源行保留一个整窗（`SOURCE_TEXT_CHARS`）。
+  - iPhone：成员自己的回合停止只结束该成员；写操作在开始前被工具拒绝（`refusedBeforeStart`）不再卡住回复；观察记录有 128 行、1.2 MB 的上限。
+  - 桌面：成员读到的页面整行交给主 Agent（`memberEvidence`，总量 40 万字）；完成核对的摘录先带命中片段的前一段；权限询问被服务器关闭时发 `tool_permission_closed`；`memberConfig` 同时限制已保存的搜索条数。
+- 没做：要用户决定的 6 项在记录第 4.4 节；子代理报告里约 50 条没有核实，在第 4.3 节，带行号的原文在 `.tmp/android-agent-20261110/audit/`。
+- 验证：门禁：完整快速档 `run-bKiCRk` 全绿（603 / 603 个文件，JS 5 142 / 5 142，Android 四项，设置浏览器验收，全部 38 组 Swift，文档链接；551 秒）；集成档没有跑，推送前要跑。 设备测试（无窗口模拟器）最后一轮 128 项：本轮新增与改动的全部通过；未过的 5 项是 2 项固定的环境失败、2 项需显式开启的真实模型测试和 1 项偶发失败（单独重跑两次都通过），基线是 116 项里 20 项失败。 提交 `099a1c3b`，本机 master 领先远端 6 个提交，未推送、未安装。
 
 ### 2026-11-10 — Melo 主线（Claude）— 回复延迟修复；桌面真实数据目录待恢复
 
