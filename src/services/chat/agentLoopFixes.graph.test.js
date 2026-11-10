@@ -114,7 +114,8 @@ await test('lead loop fixes through the graph stay inside their fixture home', a
     assert.match(result.normalizedReply.content, /delivery check unavailable/i);
     assert.equal(result.normalizedReply.completion.outcome, 'unverified');
     // The marker the answer carries on its last line is internal. With a note appended after it, it was no
-    // longer at the end of the reply, where the finalize step looks for it, and stayed visible.
+    // longer at the end of the reply, where the finalize step looks for it, and stayed visible. (What becomes
+    // of the claim it flags is the last case in this file.)
     const marked = await turn('limit-marker', 'Explain in one sentence why the sky is blue.', 'legacy', request => {
       if (request.purpose === 'limit-check') throw new Error('fixture: the check request failed');
       request.onProviderResponse?.({ usage: { input_tokens: 380000 } });
@@ -223,5 +224,46 @@ await test('lead loop fixes through the graph stay inside their fixture home', a
     assert.ok(requests.some(row => row.purpose === 'limit-delivery'), 'without a pending answer the delivery is written from the evidence');
     assert.doesNotMatch(result.normalizedReply.content, /REJECTED-DRAFT/, 'the answer the check rejected is not delivered as if it stood');
     assert.match(result.normalizedReply.content, /Catalog page 1/, 'what was read is still handed over');
+  });
+
+  // 2026-11-10 pre-push review. The written answer that is delivered at a limit is checked like any answer,
+  // and that check also judges the claim the answer flagged as uncertain. The limit path removed the marker
+  // before the last step saw it and skipped that step's verification: a claim the check had just corrected
+  // reached the user uncorrected, in a reply recorded as complete.
+  await t.test('a written answer delivered at a limit keeps the verdict on the claim it flagged', async () => {
+    const goal = 'Read the local fixture catalog and tell me the price of Model A.';
+    const answered = 'Model A costs 999 AUD.\n[UNCERTAIN: the price of Model A]';
+    const check = claim => JSON.stringify({ decision: 'complete', evaluationValid: true, needsEvaluation: false, turnKind: 'task', reasonType: 'fulfilled', reason: 'checked', nextStep: '',
+      requirements: [{ text: 'price', kind: 'external_fact', status: 'met', evidenceIds: ['read-1'] }], ...(claim ? { claim } : {}) });
+    const asked = [];
+    const run = (id, limitCheck) => turn(id, goal, 'legacy', (request, step) => {
+      if (request.purpose === 'limit-check') { asked.push(JSON.parse(request.messages[0].content).uncertainClaim); return limitCheck(); }
+      if (request.purpose === 'limit-delivery') return 'Confirmed results: rewritten.';
+      if (String(request.systemPrompt).startsWith('Review factual claims')) throw new Error('fixture: an answer delivered at a limit makes no verification request of its own');
+      if (step === 1) return text(tool, { page: 1 }, 'read-1');
+      // Writing the answer uses up the allowance for work; only the delivery reserve is left for its check.
+      request.onProviderResponse?.({ usage: { input_tokens: 370000 } });
+      return answered;
+    });
+    const corrected = await run('limit-claim-corrected', () => check({ verdict: 'CORRECTED', evidenceId: 'read-1', evidenceQuote: 'price 100 AUD', originalClaim: 'Model A costs 999 AUD.', correction: 'Model A costs 100 AUD.' }));
+    assert.deepEqual(corrected.requests.map(row => row.purpose), ['loop', 'loop', 'limit-check'], 'the answer is not rewritten and nothing else is asked');
+    assert.deepEqual(asked, ['the price of Model A'], 'the delivery check is asked about the flagged claim');
+    assert.equal(corrected.result.normalizedReply.content, 'Model A costs 100 AUD.', 'the correction is applied and the marker is gone');
+    assert.deepEqual(corrected.result.verificationRecord, { verdict: 'CORRECTED', claim: 'the price of Model A', correction: 'Model A costs 100 AUD.' });
+    assert.ok(corrected.events.some(event => event.id === 'claim:verdict' && event.outputMessageId === 'output.claimCorrected'), 'the run record says what became of the claim');
+    assert.equal(corrected.result.normalizedReply.completion.reason, 'LIMIT_DELIVERED');
+    // A claim the check found no support for is marked, as on the ordinary path.
+    const unsupported = await run('limit-claim-unsupported', () => check({ verdict: 'UNVERIFIED' }));
+    assert.equal(unsupported.result.normalizedReply.content, 'Model A costs 999 AUD.\n\nNote: I could not fully verify part of this answer; it should not be treated as confirmed fact.');
+    assert.ok(unsupported.events.some(event => event.id === 'claim:verdict' && event.outputMessageId === 'output.claimUnverified'));
+    // So is a claim nothing judged because the check could not run; what the delivery adds comes after it.
+    const unchecked = await run('limit-claim-unchecked', () => { throw new Error('fixture: the check request failed'); });
+    assert.match(unchecked.result.normalizedReply.content, /^Model A costs 999 AUD\.\n\nNote: I could not fully verify part of this answer; it should not be treated as confirmed fact\.\n\n[^\n]*delivery check unavailable/iu);
+    assert.doesNotMatch(unchecked.result.normalizedReply.content, /UNCERTAIN/);
+    assert.equal(unchecked.result.normalizedReply.completion.outcome, 'unverified');
+    // A claim the check verified leaves the answer exactly as written.
+    const verified = await run('limit-claim-verified', () => check({ verdict: 'VERIFIED', evidenceId: 'read-1', evidenceQuote: 'price 100 AUD' }));
+    assert.equal(verified.result.normalizedReply.content, 'Model A costs 999 AUD.');
+    assert.equal(verified.result.verificationRecord, null);
   });
 });

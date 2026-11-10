@@ -32,7 +32,7 @@ export function createCoreTurn({ runId = currentLoopTrace()?.context.runId || ra
   };
   // What the model is told when the reducer refuses a call; the bare code left it guessing.
   const refusal = code => ({
-    ALREADY_EXECUTED: 'This exact operation already succeeded earlier in this turn and was not run again. Use its earlier result. If it must run again because something changed, make that change first and call it in a later response.',
+    ALREADY_EXECUTED: 'This exact operation already succeeded earlier in this turn and was not run again. Use its earlier result.',
     ALREADY_ATTEMPTED: 'This exact operation was already attempted in this turn and its outcome is not known. It was not run again: inspect what it did before deciding.',
     PREREQUISITE_MISSING: 'A step this tool depends on has not succeeded yet. Nothing was run.',
     INVALID_TOOL_ARGUMENTS: 'The arguments do not match the parameters of this tool. Nothing was run.',

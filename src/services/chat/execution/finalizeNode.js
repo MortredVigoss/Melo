@@ -48,9 +48,14 @@ export function createFinalizeNode(turn) {
     // with such context an unverified verdict goes on to the verifier, as it did before the two
     // were merged (2026-11-10 review; otherwise such answers gained a false "could not verify" note).
     const contextBlocks = [graphState.memoryContext, graphState.dynamicContext, graphState.projectContext];
-    const reviewed = checked && (checked.verdict !== 'UNVERIFIED' || !contextBlocks.some(block => typeof block === 'string' && block.trim())) ? checked : null;
+    // An answer delivered at a limit (`verifyWithoutRequest`) follows the same rule with what it has: the
+    // allowance is over, so no request of its own is made. Its claim keeps the verdict of the delivery
+    // check, and a claim no check judged is marked as not verified.
+    const offline = graphState.verifyWithoutRequest === true;
+    const reviewed = checked && (offline || checked.verdict !== 'UNVERIFIED' || !contextBlocks.some(block => typeof block === 'string' && block.trim())) ? checked : null;
     if (shouldVerify) {
-      const verification = reviewed ? { verdict: reviewed.verdict, correction: reviewed.correction, originalClaim: reviewed.originalClaim, evidenceId: reviewed.evidenceId, reason: 'completion-check' } : await verifyUncertainClaim({
+      const verification = reviewed ? { verdict: reviewed.verdict, correction: reviewed.correction, originalClaim: reviewed.originalClaim, evidenceId: reviewed.evidenceId, reason: 'completion-check' }
+        : offline ? { verdict: 'UNVERIFIED', correction: '', originalClaim: '', evidenceId: '', reason: 'limit-delivery' } : await verifyUncertainClaim({
         userMessage: latestUserMessage,
         assistantReply: parsed.cleanReply,
         uncertainClaim: parsed.uncertainClaim,
@@ -85,6 +90,10 @@ export function createFinalizeNode(turn) {
         };
       }
     }
+
+    // What a delivery at a limit adds after an answer that was already written (what is missing, how to
+    // continue). It comes after the verdict so that the marker was still on the answer's last line above.
+    if (typeof graphState.replyNotes === 'string' && graphState.replyNotes.trim()) finalReplyText = [finalReplyText, graphState.replyNotes].filter(part => String(part || '').trim()).join('\n\n');
 
     // Demon viz-spec extraction:
     //   - Runs BEFORE normalization so the `<viz-spec>` trailer never

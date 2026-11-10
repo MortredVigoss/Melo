@@ -963,12 +963,9 @@ final class AgentLoop: @unchecked Sendable {
         await hooks.onStage?("limit:delivery", stageName, "running", "")
         await hooks.onStatus?(written == nil ? "正在整理已确认的内容…" : "正在核对回答是否完成…")
         var candidate: AgentRound
-        if let written {
-            candidate = written
-            // The uncertainty marker is a note to this loop. Notes added below would leave it in the middle of the text.
-            let parsed = PhoneUncertainty.parse(written.text)
-            if parsed.source == "explicit" { candidate.text = parsed.cleanReply }
-        }
+        // The written answer goes to its check exactly as written: the shared core recognises it by its text,
+        // keeps the claim it flagged as uncertain and asks the check about that claim too.
+        if let written { candidate = written }
         else {
             do {
                 let prompt = try goal.delivery("request", ["reason": reason, "observations": completionObservations])
@@ -999,9 +996,33 @@ final class AgentLoop: @unchecked Sendable {
         let checkedText = reviewed["deliveryCheck"] as? String == "unverified" ? "未能核对，回答按原样送达"
             : ["complete", "deliver"].contains(reviewed["decision"] as? String ?? "") ? "已通过核对" : "仍有未完成或未核实的部分，已在回答中列出"
         await hooks.onStage?("limit:delivery", stageName, "completed", checkedText)
+        // Before the delivery's notes follow it, a written answer is treated like any other answer (desktop
+        // finalize, `verifyWithoutRequest`). The claim it flagged gets the verdict of the check above: a
+        // correction is applied, anything else is marked as not verified, and a claim no check judged is
+        // marked too, because no request of its own is made at a limit. The marker, a note to this loop, is
+        // removed. Removing it before the check dropped the claim and its verdict (2026-11-10 pre-push review).
+        var claimVerdict: PhoneUncertainty.Verification?
+        if written != nil {
+            let parsed = PhoneUncertainty.parse(candidate.text)
+            let claim = flaggedClaim(candidate.text)
+            if parsed.source == "explicit" { candidate.text = parsed.cleanReply }
+            if !claim.isEmpty {
+                var result = PhoneUncertainty.Verification(verdict: "UNVERIFIED", reason: "limit-delivery")
+                if let judged = goal.claimReview, judged["claim"] as? String == claim, let verdict = judged["verdict"] as? String {
+                    result = PhoneUncertainty.Verification(verdict: verdict, correction: judged["correction"] as? String ?? "", originalClaim: judged["originalClaim"] as? String ?? "",
+                                                           evidenceId: judged["evidenceId"] as? String ?? "", reason: "completion-check")
+                }
+                candidate.text = PhoneUncertainty.apply(parsed.cleanReply, result)
+                claimVerdict = result
+                let label = ["VERIFIED": "已核实", "CORRECTED": "已按证据更正", "UNVERIFIED": "未能核实，已标注"][result.verdict] ?? result.verdict
+                await hooks.onStage?("finalize:verify", "核实不确定内容", "completed", label)
+            }
+        }
         candidate.text = try goal.deliveryText(candidate.text, locale: locale)
         completionTerminalReason = "LIMIT_DELIVERED"
-        return AgentLoopOutcome(text: candidate.text, stop: .deliveredLimit, finalRound: candidate, sources: sources, searched: searched, calls: records, iterations: iteration)
+        var outcome = AgentLoopOutcome(text: candidate.text, stop: .deliveredLimit, finalRound: candidate, sources: sources, searched: searched, calls: records, iterations: iteration)
+        outcome.verification = claimVerdict
+        return outcome
     }
 
     private var lastEvidence: [PhoneUncertainty.ToolPair] = []
@@ -1052,8 +1073,9 @@ final class AgentLoop: @unchecked Sendable {
     private func finalize(_ outcome: inout AgentLoopOutcome) async throws {
         guard let verification else { return }
         let parsed = PhoneUncertainty.parse(outcome.text)
-        // The marker is a note to this loop, never text for the user. An answer delivered at a limit
-        // is cleaned of it like any other; such an answer is not verified, as on the desktop.
+        // The marker is a note to this loop, never text for the user. An answer delivered at a limit is
+        // cleaned of it like any other. One that was already written had its claim settled in deliverLimit;
+        // one written at the limit carries no claim.
         guard outcome.stop == .answered else { if parsed.source == "explicit" { outcome.text = parsed.cleanReply }; return }
         outcome.text = parsed.cleanReply
         guard parsed.hasMarker else { return }

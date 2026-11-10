@@ -172,3 +172,35 @@ test('a requested URL ends where Chinese text or punctuation begins', async () =
   assert.equal(receipt('读取 https://other.invalid/page，总结发布日期').reason, 'RELEVANT_READ_SOURCE_MISSING');
   assert.equal(receipt('读取 https://example.com/article 和 https://other.invalid/page').outcome, 'completed', 'one of the requested pages was read');
 });
+
+// 2026-11-10 pre-push review: the rule above was written as "an address ends at Chinese text, minus final
+// punctuation". That lost every address with Chinese in its path and every address that really ends in
+// "!". The receipt now asks whether the address of a page that was read is written in the goal.
+test('a requested URL may contain Chinese text or end in punctuation, and a longer address is a different page', async () => {
+  const { completionReceipt, completionObservation } = await import('./completion.js');
+  const page = address => completionObservation({ id: 'read', name: 'fetch_url', ok: true, executed: true, output: 'x', data: { url: address, text: 'This is the requested report. The public source content has actually been read.' } });
+  const result = (goal, address, extra = {}) => { const row = completionReceipt({ goal, kind: 'research', reply: 'Done.', observations: page(address), ...extra }); return [row.outcome, row.reason]; };
+  const read = ['completed', 'RELEVANT_SOURCES_READ'], missing = ['partial', 'RELEVANT_READ_SOURCE_MISSING'];
+  // The reviewer's case: the address itself ends in "!".
+  assert.deepEqual(result('Read https://example.com/report!', 'https://example.com/report!'), read);
+  // The same sentence when the "!" was only the end of the sentence.
+  assert.deepEqual(result('Read https://example.com/report!', 'https://example.com/report'), read);
+  // Chinese in the path: as typed, percent-encoded by the reader, with or without a space before the text that follows.
+  const melbourne = 'https://zh.wikipedia.org/wiki/墨尔本';
+  for (const goal of ['读取 ' + melbourne + ' 的简介', '读取' + melbourne + '的简介', '读取 ' + melbourne + '，总结人口'])
+    for (const address of [melbourne, encodeURI(melbourne)]) assert.deepEqual(result(goal, address), read, goal + ' / ' + address);
+  // Small differences that do not name another page.
+  assert.deepEqual(result('Read https://Example.com/report.', 'https://example.com/report'), read, 'host case and a final full stop');
+  assert.deepEqual(result('Read https://example.com', 'https://example.com/'), read, 'the slash a reader adds to a bare host');
+  assert.deepEqual(result('Read https://example.com/report#summary and sum it up', 'https://example.com/report'), read, 'a fragment is the same page');
+  assert.deepEqual(result('See [the report](https://example.com/report) please', 'https://example.com/report'), read);
+  // A page whose address is only the beginning of the requested one was not the page asked for.
+  assert.deepEqual(result('Read https://example.com/report-2 for me', 'https://example.com/report'), missing);
+  assert.deepEqual(result('Read https://example.com/report?page=2 for me', 'https://example.com/report'), missing);
+  assert.deepEqual(result('Read https://example.com.au/report for me', 'https://example.com'), missing);
+  assert.deepEqual(result('读取 https://other.invalid/page!', 'https://example.com/report!'), missing);
+  // Without an address in the goal, a page the reply cites still counts, in whichever spelling.
+  assert.deepEqual(result('墨尔本有多少人口', encodeURI(melbourne), { reply: '见 ' + melbourne + '。' }), read);
+  assert.deepEqual(result('墨尔本有多少人口', encodeURI(melbourne), { citations: [{ url: melbourne }] }), read);
+  assert.deepEqual(result('墨尔本有多少人口', encodeURI(melbourne), { reply: '见 https://zh.wikipedia.org/wiki/悉尼。' }), missing);
+});

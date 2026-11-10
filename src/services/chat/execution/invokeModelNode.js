@@ -790,18 +790,23 @@ export function createInvokeModelNode(turn) {
     // attaches it to the persisted assistantMessage.  Only emit when
     // non-empty so we don't pollute pure-text replies with empty arrays.
     const limitReason = terminalReason || coreTurn.reason;
-    let deliveredAtLimit = false;
+    let deliveredAtLimit = false, writtenAtLimit = false, limitNotes = '';
     if (isDeliveryLimit(limitReason)) {
       const delivery = await runLimitDelivery({ task: coreTurn.goalState, observations: coreTurn.observations, reason: limitReason, candidate: coreTurn.pendingCandidate,
-        shown: text => { const parsed = parseUncertaintyMarker(text); return parsed.hasMarker && parsed.source === 'explicit' ? parsed.cleanReply : text; },
         fallback: finalReply || coreTurn.reply(latestUserMessage, config.replyLanguage), createReply, budget, signal, locale: config.replyLanguage,
         options: { ...config, ...modelOverrides, model: selectedModel, ...(privateTurn.answerConnection || {}), modelCapabilities: resolvedModelCapabilities(connectionForModel(config), selectedModel) } });
-      coreTurn.acceptDelivery(delivery.task); finalReply = delivery.reply; terminalReason = delivery.terminalReason;
+      coreTurn.acceptDelivery(delivery.task); terminalReason = delivery.terminalReason;
+      // An answer that was already written goes to finalize as written, with what the delivery adds kept
+      // apart. Finalize treats it like any answer: the claim it flagged gets the verdict of the delivery
+      // check (a correction is applied, anything else is marked as not verified) and the marker is removed;
+      // then the notes follow. Removing the marker here delivered a claim the check had just corrected.
+      writtenAtLimit = typeof delivery.answer === 'string';
+      finalReply = writtenAtLimit ? delivery.answer : delivery.reply; limitNotes = writtenAtLimit ? delivery.notes || '' : '';
       deliveredAtLimit = true;
       sseEmitter?.('execution_event', { kind: 'pipeline', id: 'limit:delivery', module: 'compute', messageId: 'stage.delivery', status: terminalReason === 'LIMIT_DELIVERED' ? 'completed' : 'failed', output: terminalReason });
     }
     const claimReview = coreTurn.claimReview;
-    const out = { ...(claimReview ? { claimReview } : {}), completionForReply: (reply, citations) => coreTurn.receipt(latestUserMessage, reply, terminalReason || coreTurn.reason, undefined, citations), reply: finalReply, hadToolCalls, limitFallback: deliveredAtLimit && !userSignal?.aborted, skipVerification: deliveredAtLimit || (coreTurn.status === 'blocked' && coreTurn.reason !== 'MISSING_TOOL_EVIDENCE') || graphState.searchPlan.sharedPlan?.route === 'unavailable', toolEvidence: collectVerificationEvidence(evidencePairs, { query: latestUserMessage }), next: 'finalize' };
+    const out = { ...(claimReview ? { claimReview } : {}), completionForReply: (reply, citations) => coreTurn.receipt(latestUserMessage, reply, terminalReason || coreTurn.reason, undefined, citations), reply: finalReply, ...(writtenAtLimit ? { replyNotes: limitNotes, verifyWithoutRequest: true } : {}), hadToolCalls, limitFallback: deliveredAtLimit && !userSignal?.aborted, skipVerification: (!writtenAtLimit && (deliveredAtLimit || (coreTurn.status === 'blocked' && coreTurn.reason !== 'MISSING_TOOL_EVIDENCE'))) || graphState.searchPlan.sharedPlan?.route === 'unavailable', toolEvidence: collectVerificationEvidence(evidencePairs, { query: latestUserMessage }), next: 'finalize' };
     if (continuationTeam) out.team = continuationTeam;
     if (accumulatedToolResults.length > 0) {
       out.toolResults = accumulatedToolResults;

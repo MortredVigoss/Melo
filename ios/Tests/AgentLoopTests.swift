@@ -1211,6 +1211,46 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             // The loop's own uncertainty marker never rides along, also when a note follows the answer.
             let (marked, _, _) = try await limitRun(reply: written + "\n[UNCERTAIN: the exact wavelengths]") { throw MeloError.message("fixture: the check request failed") }
             assert(marked.text.hasPrefix(written) && !marked.text.contains("UNCERTAIN"), marked.text)
+            // 2026-11-10 pre-push review: the claim that marker flags is not dropped with it. A claim nothing
+            // judged is marked as not verified, and the delivery's own note comes after that.
+            assert(marked.text.hasPrefix(written + "\n\n" + AgentLoopContract.shared.unverifiedNoteEN + "\n\n") && marked.verification?.reason == "limit-delivery", marked.text)
+
+            // The check at the limit judges the flagged claim like any completion check, and its verdict is
+            // applied to the answer that is delivered. The marker used to be removed before the check, so the
+            // claim was never judged and a wrong figure reached the user as written.
+            let noteZH = AgentLoopContract.shared.unverifiedNoteZH
+            func claimRun(_ claim: String?) async throws -> (AgentLoopOutcome, ScriptedTransport) {
+                var step = 0
+                let transport = ScriptedTransport { request in
+                    if let review = request.goalReview {
+                        if isDelivery(request) { return answer("Confirmed results: rewritten.") }
+                        guard let claim else { throw MeloError.message("fixture: the check request failed") }
+                        let payload = object((review["messages"] as? [[String: String]])?.first?["content"] ?? "{}")
+                        assert(payload["uncertainClaim"] as? String == "东京塔的确切高度", "the delivery check is asked about the flagged claim: \(String(describing: payload["uncertainClaim"]))")
+                        return answer(#"{"decision":"complete","evaluationValid":true,"needsEvaluation":false,"turnKind":"task","reasonType":"fulfilled","reason":"ok","nextStep":"","requirements":[{"text":"height","kind":"external_fact","status":"met","evidenceIds":["v1"]}]"# + claim + "}")
+                    }
+                    step += 1
+                    if step == 1 { return AgentRound(text: "", calls: [fc("v1", "open_url", #"{"url":"https://example.com/tower"}"#)], echo: .none, inputTokens: 0) }
+                    // Writing the answer uses up the allowance for work; the delivery reserve is all that is left.
+                    return AgentRound(text: "东京塔高 330 米。\n[UNCERTAIN: 东京塔的确切高度]", inputTokens: 31_000)
+                }
+                transport.completeReply = { _, _ in #"{"verdict":"VERIFIED","evidenceId":"tool:v1","evidenceQuote":"333 米"}"# }
+                let tools = loopTools(Log()) { _ in PhoneToolResult(output: PhoneToolEnvelope.success("Tokyo Tower: 东京塔高 333 米，1958 年建成。")) }
+                let outcome = try await AgentLoop(transport: transport, tools: tools, budget: PhoneRunBudget(maxInputTokens: 40_000), latestUserMessage: "东京塔有多高？",
+                                                  verification: AgentVerification(question: "东京塔有多高？", classification: AgentLoop.classify("东京塔有多高？", history: []))).run()
+                assert(transport.completions.isEmpty, "an answer delivered at a limit makes no verification request of its own")
+                return (outcome, transport)
+            }
+            let (fixed, fixedTransport) = try await claimRun(#","claim":{"verdict":"CORRECTED","evidenceId":"v1","evidenceQuote":"333 米","originalClaim":"东京塔高 330 米。","correction":"东京塔高 333 米。"}"#)
+            assert(kinds(fixedTransport) == ["loop", "loop", "check"], "the answer is not rewritten: \(kinds(fixedTransport))")
+            assert(fixed.stop == .deliveredLimit && fixed.text == "东京塔高 333 米。", "the correction is applied and the marker is gone: \(fixed.text)")
+            assert(fixed.verification?.verdict == "CORRECTED" && fixed.verification?.reason == "completion-check" && fixed.completion?.reason == "LIMIT_DELIVERED", "\(String(describing: fixed.verification))")
+            let (doubted, _) = try await claimRun(#","claim":{"verdict":"UNVERIFIED","evidenceId":"","evidenceQuote":""}"#)
+            assert(doubted.text == "东京塔高 330 米。\n\n" + noteZH && doubted.verification?.verdict == "UNVERIFIED", doubted.text)
+            let (unjudged, _) = try await claimRun(nil)
+            assert(unjudged.text.hasPrefix("东京塔高 330 米。\n\n" + noteZH + "\n\n") && !unjudged.text.contains("UNCERTAIN") && unjudged.completion?.outcome == "unverified", unjudged.text)
+            let (sure, _) = try await claimRun(#","claim":{"verdict":"VERIFIED","evidenceId":"v1","evidenceQuote":"333 米"}"#)
+            assert(sure.text == "东京塔高 330 米。" && sure.verification?.verdict == "VERIFIED", sure.text)
         }
         // D1, the other half: an answer the check sent back is not pending. When the allowance then ends
         // the write-up comes from the evidence, and the rejected draft is not the fallback text.

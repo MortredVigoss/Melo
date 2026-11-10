@@ -11,13 +11,18 @@ import { requestTimeoutMs, budgetExhausted } from './runBudget.js';
 // either way. Asking the model to write the answer again from the tool results discarded it and,
 // for an answer that had used no tools, produced an empty three-part form (2026-11-10 audit).
 //
-// `shown` turns the written answer into what the user reads (the lead strips the uncertainty marker it
-// puts on its last line). The finalize step only finds that marker at the very end of a reply, and a
-// delivery note appended here would leave it in the middle, visible.
-export async function runLimitDelivery({ task, observations, reason, fallback, candidate: pending = '', shown = text => text, createReply, options, budget, signal, locale }) {
+// For such an answer the result also carries `answer` (the text exactly as written) and `notes` (what
+// the delivery adds after it) apart. The caller's own last step still has to treat the answer like any
+// other: the lead applies the verdict on a claim the answer flagged as uncertain and removes the marker
+// from its last line. Joined here, the notes would leave that marker in the middle of the text, and
+// removing it here dropped the verdict: a claim the check had corrected was delivered uncorrected
+// (2026-11-10 pre-push review).
+export async function runLimitDelivery({ task, observations, reason, fallback, candidate: pending = '', createReply, options, budget, signal, locale }) {
   let candidate = '', checkedTask = task;
   const written = String(pending || '').trim() ? String(pending) : '';
-  const display = written ? String(shown(written) || written) : '';
+  const delivered = state => written
+    ? { reply: deliveryReply(state, written, locale), answer: written, notes: deliveryReply(state, '', locale) }
+    : { reply: deliveryReply(state, candidate, locale) };
   const parser = createFunctionCallingSession(options || {}, []);
   // The request carries no tools, but it must still travel on the connection's
   // own protocol. An empty tool list without a protocol is read by the provider
@@ -28,7 +33,7 @@ export async function runLimitDelivery({ task, observations, reason, fallback, c
   const stopped = () => {
     if (written && !cancelled()) {
       const unchecked = reviewDelivery(deliveryCandidate(task, written, observations, reason), null, observations);
-      return { reply: deliveryReply(unchecked, display, locale), task: unchecked, terminalReason: 'LIMIT_DELIVERED' };
+      return { ...delivered(unchecked), task: unchecked, terminalReason: 'LIMIT_DELIVERED' };
     }
     return { reply: hostEvidenceReply(candidate || fallback, observations, locale), task: checkedTask,
       terminalReason: signal?.aborted ? (signal.reason?.name === 'TimeoutError' ? 'DEADLINE_EXCEEDED' : 'CANCELLED') : reason };
@@ -58,5 +63,5 @@ export async function runLimitDelivery({ task, observations, reason, fallback, c
     if (signal?.aborted) return stopped();
     checkedTask = reviewDelivery(checkedTask, null, observations);
   }
-  return { reply: deliveryReply(checkedTask, written ? display : candidate, locale), task: checkedTask, terminalReason: 'LIMIT_DELIVERED' };
+  return { ...delivered(checkedTask), task: checkedTask, terminalReason: 'LIMIT_DELIVERED' };
 }

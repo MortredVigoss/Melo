@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "sha256": "bea5823d850e1af0104826f35f59dd9d78fb3bcc47a0d07fab45b50cc3359537",
+  "sha256": "80936db81b740d2fe49b3ed66dbccc9891e66796faf9657f81fb605371cfa2cf",
   "sources": {
     "shared/agent/index.js": "d679e9b372040d6a6a787c143692eaf6f3b11e95b9c576b37a4be2c8f55de53b",
     "shared/agent/taskEvaluation.js": "b5823e0339885fbaa9cdb281a3be44464a26a38582f9964f9bba6f0b8501a8ce",
@@ -32,12 +32,12 @@
     "shared/agent/modelRouting.js": "edc79f44ecb42176baf853ea890bfaa76206477b4c90888f657f5428625d2e28",
     "src/shared/conversationTopics.js": "c8056fc9d1377e20bdbabdf060759db0ba82cafda7df4d7bb554758cfc2e3e5c",
     "shared/agent/taskReplay.js": "324d3294312b9f4e4d0d2484745e60cc0caf0360c82d9da643f1d1328431e74a",
-    "shared/agent/turn.js": "49824b8e0ec8bc229878f1e1498d95403ad9be2a78801160b73b460db37b7a3b",
+    "shared/agent/turn.js": "de348db7ae2e2b81876dd5a20a62130c8827c4a71c4aaf4880b638bc6ea89eed",
     "shared/agent/repeatGuard.js": "eca1d776e713fb7a59e05c1d16f78fb9d71877ad6ebb10cb23e2a4ad5bf78382",
     "shared/agent/toolEffects.js": "c4a441bb4552b2b7962b78012f07eeea34ebf40f25c837bdd367218d0f126c32",
     "shared/agent/policyBridge.js": "4d6529f8d02752acaf43548b81c27e6a206843f2a7c853d4bb56c72707d71984",
     "shared/agent/runBudget.js": "32dd12ae377ddc185f3d39345e9cb65433c6ecba8d3d83c9adbe8ff56c0fcf06",
-    "shared/agent/completion.js": "b5cc88cc7a4743b5664c35285beea107abb3726434f1f3c6a075c647e5d5427c",
+    "shared/agent/completion.js": "3347a9428ee946cb7944ecd9b9f743b9e2783e1dc5525a6bd51ab948108da5f1",
     "shared/agent/execution.js": "8bef605aa0a4658a9f049c6b0edcd0e43e808c65ad699bbf7551019fb97c4c7d",
     "src/shared/sessionEvents.js": "47ceca8f284e5c950252d1f6cb7774199d4db1343a9c47e7b01421333e268a5c",
     "shared/agent/taskScore.js": "1696892cffc9a475b22921657dbee96787c70738d62aa865a55f198a8b74b2f4",

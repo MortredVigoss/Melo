@@ -8,8 +8,10 @@ import { createCoreTurn } from '../../src/runtime/sharedAgentCore.js';
 // 2026-11-10 agent audit, second pass.
 
 // After a completion check sends an answer back, or once work was assigned, the reducer refuses a call
-// that already succeeded in the turn. That is right for a write. It also refused "run the tests again"
-// after the code was fixed, because a shell command has an unknown effect and was treated like a write.
+// that already succeeded in the turn: a write, and equally a call whose effect is unknown. An earlier
+// version of this round let a command run again "once something else had succeeded since". The pre-push
+// review showed what that lets through: a turn that replays its steps in order passes at every step,
+// including a command that appends to a file. Only a call the tool itself declares read-only repeats.
 function turn(tools = ['run_command', 'file_write', 'mcp:mail:send', 'file_read']) {
   let state = startTurn({ runId: 'r', turnId: 't', allowedTools: tools, now: 0, hostToolSchemas: true }), tick = 0;
   const step = (type, fields = {}) => { state = advanceTurn(state, { type, runId: 'r', turnId: 't', ...fields }, ++tick); return state; };
@@ -20,14 +22,22 @@ function turn(tools = ['run_command', 'file_write', 'mcp:mail:send', 'file_read'
 const command = (id, text = 'npm test') => ({ id, name: 'run_command', arguments: { command: text }, effect: 'unknown' });
 const write = (id, content = 'one') => ({ id, name: 'file_write', arguments: { path: 'a.txt', content }, effect: 'write' });
 
-test('after a correction a command may run again once something else has changed', () => {
+test('after a correction a command with an unknown effect is not replayed, whatever succeeded since', () => {
   const t = turn();
-  t.run([command('first')]);
+  const append = id => command(id, 'echo done >> build.log');
+  t.run([append('first')]); t.run([write('w1')]); t.run([command('tests')]);
   t.correct();
-  assert.equal(t.run([command('again-at-once')]).rejections['again-at-once'], 'ALREADY_EXECUTED', 'nothing changed in between: the earlier result still stands');
-  assert.deepEqual(t.run([write('fix')]).permitted, ['fix']);
-  assert.deepEqual(t.run([command('after-fix')]).permitted, ['after-fix'], 'fix the code, run the tests again');
-  assert.equal(t.run([command('thrice')]).rejections.thrice, 'ALREADY_EXECUTED', 'and again only after the next change');
+  assert.equal(t.run([append('again-at-once')]).rejections['again-at-once'], 'ALREADY_EXECUTED');
+  assert.deepEqual(t.run([write('fix', 'two')]).permitted, ['fix'], 'new work is still possible');
+  // The same plan again, step by step. Each step ran before and something else has succeeded since.
+  assert.equal(t.run([append('replay-1')]).rejections['replay-1'], 'ALREADY_EXECUTED', 'an append is not safe to repeat because another step succeeded in between');
+  assert.equal(t.run([write('replay-2')]).rejections['replay-2'], 'ALREADY_EXECUTED');
+  assert.equal(t.run([command('replay-3')]).rejections['replay-3'], 'ALREADY_EXECUTED', 'the reducer cannot tell a test run from an append, so both stay refused');
+  assert.deepEqual([t.state.repeatable, t.state.lastEffect], [undefined, undefined], 'no state that could let a replay through is kept');
+  // The ledger only applies once a correction or an assignment began: before that the model repeats what it likes.
+  const free = turn();
+  free.run([append('a')]);
+  assert.deepEqual(free.run([append('b')]).permitted, ['b']);
 });
 
 test('a completed write, an extension tool and a member\'s command are never repeated', () => {
@@ -59,12 +69,12 @@ test('a read is never recorded as an effect, and the desktop bridge asks the too
   const call = (id, text) => ({ id, name: 'run_command', arguments: { command: text } });
   run([call('ls-1', 'ls src'), call('test-1', 'npm test')]);
   core.update('request'); core.update('feedback', { repair: true });
-  assert.deepEqual(run([call('ls-2', 'ls src'), call('test-2', 'npm test')]), ['ls-2'], 'a listing repeats freely; the test run does not until something changed');
+  assert.deepEqual(run([call('ls-2', 'ls src'), call('test-2', 'npm test')]), ['ls-2'], 'a call the tool declares read-only repeats; a command whose effect is unknown does not');
   const refusal = core.rejectionResult('test-2');
   assert.equal(refusal.error, 'ALREADY_EXECUTED');
-  assert.match(refusal.output, /^Tool request rejected by the shared loop policy: ALREADY_EXECUTED\. This exact operation already succeeded/u, 'the model is told what happened and what to do');
+  assert.equal(refusal.output, 'Tool request rejected by the shared loop policy: ALREADY_EXECUTED. This exact operation already succeeded earlier in this turn and was not run again. Use its earlier result.', 'the model is told what happened, and is not told that it may simply try again');
   assert.deepEqual(run([{ id: 'edit', name: 'file_write', arguments: { path: 'a.js', content: 'fixed' } }]), ['edit']);
-  assert.deepEqual(run([call('test-3', 'npm test')]), ['test-3']);
+  assert.deepEqual(run([call('test-3', 'npm test'), call('ls-3', 'ls src')]), ['ls-3'], 'another effect succeeding in between changes nothing');
 });
 
 test('only an answer that still waits for its check counts as written', () => {

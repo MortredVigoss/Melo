@@ -70,14 +70,38 @@ export function completionReceipt({ goal = '', kind = 'answer', reply = '', cita
   if (!needsResearch && !needsAction) return { ...base, outcome: performed.length ? 'partial' : 'blocked', reason: 'COMPLETION_CONTRACT_UNKNOWN' };
   let sources = [];
   if (needsResearch) {
-    // A URL in running Chinese text ends where the CJK text or punctuation starts ("读取 https://a.b/c，总结…",
-    // "看看https://a.b/c讲了什么"). Read up to the next space, the requested URL matched no page that was
-    // read, and a member that had read exactly that page was reported as partial (2026-11-10).
-    const links = value => (String(value).match(/https?:\/\/[^\s<>"）)\u3000-\u303f\u3400-\u9fff\uff00-\uffef]+/gu) || []).map(value => value.replace(/[.,;:!?]+$/u, ''));
-    const requested = links(goal);
-    const cited = new Set([...links(reply), ...(Array.isArray(citations) ? citations : []).map(row => url(typeof row === 'string' ? row : row?.url || row?.sourceUrl || row?.src)).filter(Boolean)]);
+    // Which pages the goal asks for by address. An address written into running text has no reliable
+    // end: Chinese text follows it without a space ("看看https://a.b/c讲了什么"), a sentence ends right
+    // after it ("Read https://a.b/report!"), and an address may itself end in such a character or contain
+    // Chinese ("https://zh.wikipedia.org/wiki/墨尔本"). Cutting the text into addresses got one of these
+    // wrong whichever way it cut: up to the next space lost the first, stopping at Chinese text and
+    // stripping final punctuation lost the last two (2026-11-10 pre-push review). So the question is
+    // asked the other way round: is the address of a page that was read written in the text? It is when
+    // one of its spellings stands there and what follows it, up to the next space or non-ASCII character,
+    // is at most a fragment or closing punctuation. A longer address therefore never matches its prefix.
+    const spellings = address => {
+      const forms = new Set([address, address.split('#')[0]]);
+      for (const form of [...forms]) try { const plain = decodeURI(form); forms.add(plain); forms.add(encodeURI(plain)); } catch { /* not percent-encoded text */ }
+      for (const form of [...forms]) if (form.endsWith('/')) forms.add(form.slice(0, -1));
+      return [...forms].map(form => form.toLowerCase());
+    };
+    const written = (text, address) => {
+      const hay = String(text || '').toLowerCase();
+      return spellings(address).some(form => {
+        for (let at = hay.indexOf(form); at >= 0; at = hay.indexOf(form, at + 1)) {
+          if (/^(?:#[!-~]*|\/?[.,;:!?'")\]}>]*)$/u.test(/^[!-~]*/u.exec(hay.slice(at + form.length))[0])) return true;
+        }
+        return false;
+      });
+    };
+    const asksForPages = /https?:\/\/[^\s<>"]/iu.test(String(goal));
+    const listed = (Array.isArray(citations) ? citations : []).map(row => url(typeof row === 'string' ? row : row?.url || row?.sourceUrl || row?.src)).filter(Boolean).flatMap(spellings);
+    const cited = row => written(reply, row.url) || spellings(row.url).some(form => listed.includes(form));
     sources = rows.filter(row => row?.ok === true && row.executed === true && row.type === 'source' && typeof row.id === 'string' && row.id.length > 0 && url(row.url) &&
-      ['extracted', 'partial'].includes(row.reading) && String(row.text || '').trim().length >= 40 && (!requested.length || requested.includes(row.url)) && (requested.includes(row.url) || relevant(row, goal) || cited.has(row.url)));
+      ['extracted', 'partial'].includes(row.reading) && String(row.text || '').trim().length >= 40).filter(row => {
+      const requested = asksForPages && written(goal, row.url);
+      return (!asksForPages || requested) && (requested || relevant(row, goal) || cited(row));
+    });
     if (!sources.length) return { ...base, outcome: performed.length ? 'partial' : 'blocked', reason: 'RELEVANT_READ_SOURCE_MISSING' };
   }
   let actions = [];
