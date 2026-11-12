@@ -29,7 +29,7 @@
 
 import { AGENT_LOOP_CONTRACT } from '../../shared/agent/loopContract.js';
 import { TOOL_RESULT_CONTRACT_NOTE } from './toolResult.js';
-import { getToolsByCategory, getAllTools } from './registryCore.js';
+import { getAllTools } from './registryCore.js';
 
 // ─── Instruction header ───────────────────────────────────────────────────────
 

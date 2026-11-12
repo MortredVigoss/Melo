@@ -9,7 +9,7 @@ import {resolveCapabilityContext} from '../services/agent/capabilityContext.js';
 import {currentRequestContext,runWithRequestContext} from '../runtime/requestScope.js';
 import {narrowCapabilityScope,missingCapabilityScope,toolsForCapabilityScope,nativeFeaturesForScope} from '../domain/agent/capabilityScope.js';
 import {createRunBudget,reserveDelivery,budgetExhausted,narrowBudget,recordUsage} from '../runtime/runBudget.js';
-import {estimateMessagesTokens,estimateTextTokens} from '../memory/tokenEstimate.js';
+import '../memory/tokenEstimate.js'; // Preserve module initialization.
 import { delegatedConfig } from './delegatedConfig.js';
 import { redactToolArgs } from '../tools/toolInvocationRecord.js';
 /**

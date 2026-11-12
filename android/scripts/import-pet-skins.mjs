@@ -10,7 +10,7 @@
 // `bundle` zips the media and records the GitHub Release URL in the catalog so
 // the Gradle task preparePetAssets can fetch it on machines without the source.
 import { spawn } from 'node:child_process';
-import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { availableParallelism } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';

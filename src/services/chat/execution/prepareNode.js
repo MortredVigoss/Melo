@@ -20,7 +20,7 @@ import { resolveSessionFacts } from '../../../memory/factRecords.js';
 import { isLocalChat } from '../../../memory/factPolicy.js';
 import { listProjectBook, renderProjectBook } from '../../project/projectMemoryBook.js';
 import { listPersonalProfile, renderPersonalProfile } from '../../memory/personalProfile.js';
-import { persistCompactSnapshot, persistChatRuntimeFields, persistCompactFailure } from '../derivedState.js';
+import { persistCompactSnapshot, persistCompactFailure } from '../derivedState.js';
 import { requestIdentity } from '../../../runtime/requestContext.js';
 import { estimateMessagesTokens } from '../../../memory/tokenEstimate.js';
 import { randomUUID } from 'node:crypto';
@@ -88,7 +88,7 @@ const getSharedSkillIndex = createSharedSkillIndexFactory({ buildSkillIndex });
 //   3. Inline: plan-actions, optional queue-approval (early exit), then
 //      recall memory only when useful, then compose the final system prompt
 export function createPrepareNode(turn) {
-  const { _dependencies, agentId, channelContext, chat, config, connectors, context, contextBudget, createReply, embedQuery, env, home, isRemoteChannel, latestUserMessage, modelOverrides, modelResponses, promptDebug, signal, skills, sseEmitter, state, teamPlan, turnContextPlacement, workspace } = turn;
+  const { _dependencies, agentId, channelContext, chat, config, connectors, context, contextBudget, createReply, embedQuery, env, home, isRemoteChannel, latestUserMessage, modelOverrides, promptDebug, signal, skills, sseEmitter, state, turnContextPlacement, workspace } = turn;
   return async function prepare() {
     // ── 1. Sync setup ──────────────────────────────────────────────────
     const modeDef = MODE_DEFS.find(mode => mode.id === chat.mode) || MODE_DEFS[0];

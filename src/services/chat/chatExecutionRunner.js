@@ -9,11 +9,11 @@ import { resolvedRequestGoal } from '../../../shared/agent/search.js';
 import {resolveCapabilityContext} from '../agent/capabilityContext.js';
 import {missingCapabilityScope} from '../../domain/agent/capabilityScope.js';
 import { measureStage, startStage } from '../../runtime/performanceTrace.js';
-import { selectedMaterials } from './conversationSelection.js';
+import './conversationSelection.js'; // Preserve module initialization.
 import { observeModelReplies } from './executionPipeline.js';
 import { createRequestContext } from '../../runtime/requestContext.js';
-import { currentRequestContext, requestEnvironment, runWithRequestContext } from '../../runtime/requestScope.js';
-import { reserveDelivery, admitModel, settleModel, armBudget, budgetExhausted, recordUsage, receiptInputTokens, requestTimeoutMs, remainingMs } from '../../runtime/runBudget.js';
+import { currentRequestContext, runWithRequestContext } from '../../runtime/requestScope.js';
+import { reserveDelivery, admitModel, settleModel, armBudget, budgetExhausted, receiptInputTokens, requestTimeoutMs } from '../../runtime/runBudget.js';
 import { AGENT_LOOP_CONTRACT } from '../../runtime/agentLoopContract.js';
 import { estimateMessagesTokens, estimateTextTokens } from '../../memory/tokenEstimate.js';
 // Chat agent execution graph runner — sub-phase 7d-5δ commit 7b of the

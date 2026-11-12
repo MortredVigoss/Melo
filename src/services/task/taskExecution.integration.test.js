@@ -110,3 +110,32 @@ test('custom task owner survives create/update and missing owners cannot start a
  await updateStateAtomically(state=>{state.tasks.find(t=>t.id===task.id).owner='absent-agent';});
  await assert.rejects(prepareTaskExecution(task.id,{skipBootstrap:true}),{code:'TASK_OWNER_MISSING'});
 });
+
+test('task preparation preserves histories beyond the recent-chat display limit', async () => {
+  const originals = Array.from({ length: 15 }, (_, index) => ({
+    id: 'preserved-chat-' + index,
+    title: 'History ' + index,
+    agentId: 'main',
+    messages: [{ id: 'preserved-message-' + index, role: 'user', content: 'Keep history ' + index }],
+    createdAt: new Date(2026, 0, index + 1).toISOString(),
+    updatedAt: new Date(2026, 0, index + 1).toISOString(),
+  }));
+  await updateStateAtomically(state => {
+    state.chats.push(...originals);
+    state.tasks.push({ id: 'retention', title: 'Preserve existing chats', summary: 'Prepare only', owner: 'main', status: 'todo', runCount: 0 });
+  });
+  const before = await loadState();
+  const { execution } = await prepareTaskExecution('retention', { skipBootstrap: true });
+  const { execution: repeated } = await prepareTaskExecution('retention', { skipBootstrap: true });
+  const after = await loadState();
+  assert.equal(repeated.chatId, execution.chatId);
+  assert.equal(repeated.requestId, execution.requestId);
+  assert.equal(after.chats.length, before.chats.length + 1);
+  for (const original of originals) {
+    const previous = before.chats.find(chat => chat.id === original.id);
+    const retained = after.chats.find(chat => chat.id === original.id);
+    assert.deepEqual(retained, previous, 'task preparation must preserve ' + original.id);
+  }
+  const task = after.tasks.find(task => task.id === 'retention');
+  assert.equal(task.runCount, 0, 'preparation must not execute the model');
+});

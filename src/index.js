@@ -8,16 +8,7 @@ import { stdin as input, stdout as output } from 'node:process';
 import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 import { argv } from 'node:process';
-import {
-  DEFAULT_CONFIG,
-  VALID_AUTH_MODES,
-  getConfigPath,
-  getMeloHome,
-  getResolvedConfig,
-  loadConfig,
-  maskApiKey,
-  updateConfig,
-} from './config.js';
+import { VALID_AUTH_MODES, getConfigPath, getMeloHome, getResolvedConfig, maskApiKey, updateConfig } from './config.js';
 import { createOpenAICompatibleReply } from './openai.js';
 import { webSearchTool, getCacheStats, clearCache } from './tools/builtins/webSearchTool.js';
 import { searchHistoryTool } from './tools/builtins/searchHistoryTool.js';

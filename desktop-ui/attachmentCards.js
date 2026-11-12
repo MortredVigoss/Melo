@@ -1,4 +1,4 @@
-import { t, ui } from './i18n.js';
+import { ui } from './i18n.js';
 import { videoExtraction } from './videoKnowledge.js';
 export function renderAttachmentCards(message, { savedVideoKnowledge = {}, escapeHtml, truncate, icon, attachmentLabel, isPdfAttachment, describeAudioExtractionStatus, describeVideoExtractionStatus, extractTextUrls = () => [] }) {
   const attachments = Array.isArray(message?.attachments) ? message.attachments : [];

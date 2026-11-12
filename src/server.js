@@ -46,9 +46,9 @@ import { cleanupStalePlaywrightDaemons } from './web/playwrightFetcher.js';
 // cleanupStalePlaywrightDaemons without risking the rest of the shutdown
 // sequence.
 import { closeAllPages } from './services/browser/pageRegistry.js';
-import { synthesizeWithEdgeTts as _synthesizeWithEdgeTts } from './services/tts/edgeTts.js';
+import './services/tts/edgeTts.js'; // Preserve module initialization.
 import { stageChatDeletion, finishChatDeletions } from './services/chat/chatDeletion.js';
-import { purgeStaleSoftDeletes, createChat, deleteChat, getDesktopBootstrap, prepareDesktopLaunchState, processTelegramPollingCycle, processDiscordPollingCycle, streamSearchFileGroups, updateChat, updateModelConfig, initMcpServers } from './desktopStore.js';
+import { purgeStaleSoftDeletes, createChat, deleteChat, getDesktopBootstrap, prepareDesktopLaunchState, processTelegramPollingCycle, processDiscordPollingCycle, streamSearchFileGroups, updateChat, initMcpServers } from './desktopStore.js';
 import { resolvePermission, getPendingPermissions, getSessionPermissions, clearSessionPermissions } from './tools/permissions.js';
 import { resolveFileSafety } from './safety/fileSafetyGate.js';
 import { httpEndpoint } from './mcp/client.js';
@@ -301,12 +301,6 @@ function requireLocalHost(request, response) {
   sendJson(response, 403, { ok: false, error: 'FORBIDDEN_HOST', message: `Host "${request.headers?.host}" is not this Melo instance.` });
   return false;
 }
-
-
-
-
-
-
 
 function getStaticPath(urlPath) {
   if (urlPath === '/' || urlPath === '/index.html') {

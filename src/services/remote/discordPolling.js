@@ -34,7 +34,7 @@ import { currentRequestContext, runWithRequestContext } from '../../runtime/requ
 
 import { randomUUID } from 'node:crypto';
 import { appendFileSync, mkdirSync, renameSync, statSync } from 'node:fs';
-import { join, resolve, dirname } from 'node:path';
+import { join, dirname } from 'node:path';
 import { getMeloHome } from '../../config.js';
 import { getResolvedConfig } from '../../config.js';
 import { enrichMessageWithMediaContext } from '../../media/index.js';
@@ -62,11 +62,7 @@ import { buildDiscordReplyScore } from './discordReplyScore.js';
 import { getDiscordVoiceRuntime } from './discordVoiceRuntime.js';
 import { classifyGroupMessageAddressal } from './groupAddressalClassifier.js';
 import { updateGroupRelationshipGraph } from './groupRelationship.js';
-import {
-  OFFLINE_BACKLOG_THRESHOLD_MS,
-  isBacklogPollCycle,
-  passesOfflineBacklogFilter,
-} from './offlineBacklogFilter.js';
+import { isBacklogPollCycle, passesOfflineBacklogFilter } from './offlineBacklogFilter.js';
 import { renderTelegramTransportText } from './telegramPolling.js';
 import {
   replyScoreLimits,

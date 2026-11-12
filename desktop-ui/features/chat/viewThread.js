@@ -9,7 +9,7 @@
 // unchanged.
 import { t, ui } from '../../i18n.js';
 import { renderAgentAvatar } from '../../agentAvatar.js';
-import { conversationAgent, renderModelReceipt } from '../../modelPresentation.js';
+import { renderModelReceipt } from "../../modelPresentation.js";
 import { visibleMessageWindow, ensureMessageInThreadWindow } from './threadWindow.js';
 import { isToolTraceMessage, renderToolTraceMessage } from './messageToolTrace.js';
 import { sceneSteps, renderRunSteps } from './runSteps.js';
@@ -23,7 +23,7 @@ const RUN_TEXT = { stageName, stageOutput, toolName, callOutcome };
 import { replyPlainText } from '../../replyDocument.js';
 import { mountVizBlocks } from '../../viz/vizRenderer.js';
 import { renderActiveToolCallsStrip as _renderActiveToolCallsStripFromModule } from './activeToolCallsStrip.js';
-import { getBootstrap, app, activeChat, activeChatAgentProfile, newChatSelection, escapeHtml, truncate, icon, renderMessageRefs, liveSceneFor, renderSceneReplay, selectedMessagePresentation, renderWorkspaceExplorer } from './context.js';
+import { getBootstrap, app, activeChat, activeChatAgentProfile, escapeHtml, truncate, icon, renderMessageRefs, liveSceneFor, renderSceneReplay, selectedMessagePresentation, renderWorkspaceExplorer } from "./context.js";
 import { chatState } from './state.js';
 import { topicDividers } from '../../../shared/conversationTopics.js';
 import { renderComposerCard } from './viewComposer.js';
@@ -294,7 +294,6 @@ function renderThreadArtifactStrip(artifacts) {
 function renderRegularChatPage() {
   const chat = activeChat();
   const project = getBootstrap().projects.find(p=>p.id===chat?.projectId);
-  const chatAgent = conversationAgent(getBootstrap(), { newAgentId: newChatSelection().agentId, newProjectId: newChatSelection().projectId });
 
   if (!chat) {
     return ui`<section class="page is-chat neural-chat-home"><div class="neural-chat-intro"><div class="neural-overview-kicker">A NEW CONNECTION</div><h1 class="page-title">此刻，你在想什么？</h1><p>与 Melo 一起，把想法延伸下去。</p></div>${renderComposerCard()}</section>`;

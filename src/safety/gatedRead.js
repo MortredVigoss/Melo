@@ -30,7 +30,7 @@
  * Tool result so callers can early-return on failure.
  */
 
-import { fstatSync, readSync } from 'node:fs';
+import { readSync } from 'node:fs';
 
 import { requestRead } from './fileSafetyGate.js';
 import { atomicOpenLeaf, splitParentLeaf, C as DC } from './dirfdOps.js';

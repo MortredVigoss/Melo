@@ -24,8 +24,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 707,
-      "edges": 2315,
+      "modules": 690,
+      "edges": 2284,
       "roots": [
         "src",
         "desktop-ui",
@@ -107,7 +107,6 @@
         {
           "module": "src/services/project/projectContext.js",
           "importedBy": [
-            "approvals",
             "chat"
           ]
         },
@@ -181,8 +180,8 @@
         "tools": 3
       },
       "usedBy": {
-        "approvals": 4,
-        "chat": 11,
+        "approvals": 3,
+        "chat": 9,
         "desktop-shell": 5,
         "memory": 1,
         "platform": 6,
@@ -273,7 +272,7 @@
       ],
       "modules": {
         "desktop-ui": 14,
-        "src": 49
+        "src": 48
       },
       "entryModules": [
         {
@@ -433,7 +432,6 @@
         {
           "module": "src/domain/agent/agentTools.js",
           "importedBy": [
-            "approvals",
             "chat",
             "desktop-shell",
             "platform",
@@ -566,9 +564,9 @@
         "tools": 21
       },
       "usedBy": {
-        "approvals": 3,
+        "approvals": 2,
         "channels": 6,
-        "chat": 36,
+        "chat": 35,
         "desktop-shell": 12,
         "development": 4,
         "memory": 2,
@@ -749,7 +747,7 @@
       "modules": {
         "desktop-ui": 27,
         "shared": 47,
-        "src": 71
+        "src": 66
       },
       "entryModules": [
         {
@@ -1147,15 +1145,15 @@
         }
       ],
       "dependsOn": {
-        "agents": 36,
-        "approvals": 8,
+        "agents": 35,
+        "approvals": 5,
         "channels": 2,
         "desktop-shell": 22,
         "knowledge": 5,
         "media": 24,
-        "memory": 27,
-        "platform": 69,
-        "projects": 11,
+        "memory": 26,
+        "platform": 67,
+        "projects": 9,
         "settings": 11,
         "sync": 2,
         "tools": 45,
@@ -1533,8 +1531,7 @@
           "module": "src/memory/heuristics.js",
           "importedBy": [
             "agents",
-            "channels",
-            "chat"
+            "channels"
           ]
         },
         {
@@ -1647,11 +1644,11 @@
       "usedBy": {
         "agents": 12,
         "channels": 4,
-        "chat": 27,
+        "chat": 26,
         "desktop-shell": 1,
         "knowledge": 2,
         "media": 1,
-        "platform": 22,
+        "platform": 21,
         "projects": 1,
         "sync": 5,
         "tools": 7
@@ -1794,7 +1791,7 @@
       ],
       "modules": {
         "desktop-ui": 1,
-        "src": 5
+        "src": 4
       },
       "entryModules": [
         {
@@ -2959,7 +2956,7 @@
       ],
       "modules": {
         "desktop-ui": 6,
-        "src": 36
+        "src": 30
       },
       "entryModules": [
         {
@@ -3381,7 +3378,7 @@
       ],
       "modules": {
         "desktop-ui": 7,
-        "src": 34
+        "src": 31
       },
       "entryModules": [
         {
@@ -3422,7 +3419,6 @@
           "module": "src/domain/task/taskService.js",
           "importedBy": [
             "agents",
-            "chat",
             "desktop-shell",
             "memory",
             "platform"
@@ -3554,12 +3550,6 @@
           ]
         },
         {
-          "module": "src/services/task/taskPrompt.js",
-          "importedBy": [
-            "chat"
-          ]
-        },
-        {
           "module": "src/services/task/taskRunLifecycle.js",
           "importedBy": [
             "chat",
@@ -3580,18 +3570,18 @@
         }
       ],
       "dependsOn": {
-        "agents": 3,
+        "agents": 2,
         "channels": 3,
         "chat": 1,
         "desktop-shell": 8,
-        "platform": 36,
-        "projects": 4,
+        "platform": 35,
+        "projects": 3,
         "settings": 8,
         "tools": 2
       },
       "usedBy": {
         "agents": 3,
-        "chat": 8,
+        "chat": 5,
         "desktop-shell": 4,
         "knowledge": 3,
         "media": 1,
@@ -4128,7 +4118,7 @@
         "src/**"
       ],
       "modules": {
-        "src": 64
+        "src": 63
       },
       "entryModules": [
         {
@@ -4389,7 +4379,6 @@
         {
           "module": "src/state/chatPruning.js",
           "importedBy": [
-            "approvals",
             "desktop-shell"
           ]
         },
@@ -4491,7 +4480,7 @@
         "development": 2,
         "knowledge": 2,
         "media": 2,
-        "memory": 22,
+        "memory": 21,
         "projects": 6,
         "settings": 17,
         "sync": 2,
@@ -4500,9 +4489,9 @@
       },
       "usedBy": {
         "agents": 53,
-        "approvals": 36,
+        "approvals": 35,
         "channels": 22,
-        "chat": 69,
+        "chat": 67,
         "desktop-shell": 16,
         "development": 9,
         "knowledge": 2,

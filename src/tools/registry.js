@@ -22,7 +22,7 @@ import { fileMoveTool } from './builtins/fileMoveTool.js';
 import { fileMkdirTool } from './builtins/fileMkdirTool.js';
 import { globTool } from './builtins/globTool.js';
 import { grepTool } from './builtins/grepTool.js';
-import { agentTool } from '../agents/subAgent.js';
+import '../agents/subAgent.js'; // Preserve module initialization.
 import { fetchUrlTool } from './builtins/fetchUrlTool.js';
 import { webSearchTool as legacyWebSearchTool } from './builtins/webSearchTool.js';
 import { createCompatibleSearchTool } from '../services/search/sharedSearchAdapter.js';

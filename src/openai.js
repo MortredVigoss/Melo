@@ -13,15 +13,13 @@ import { readCodexSseResponse, readChatCompletionsSseResponse } from './provider
 export { readCodexSseResponse } from './providers/streams.js';
 import { normalizeMessageContent, extractAssistantText, extractProviderErrorMessage } from './providers/responseText.js';
 import { requestEnvironment } from './runtime/requestScope.js';
-import { execFile as execFileCallback } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { arch, platform, release, tmpdir } from 'node:os';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { arch, platform, release } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { createCapabilityRecorder } from './runtime/capabilities.js';
 import { resolveRuntimePaths } from './runtime/paths.js';
 import { buildPromptCacheKey } from './retrieval/promptCacheKey.js';
-import { promisify } from 'node:util';
 import { getCodexCredential } from './codexAuth.js';
 import { IMAGE_INTENT_RULES } from './images/imagePrompts.js';
 import { signWorkspaceFileUrl } from './web/urlSigning.js';
@@ -39,7 +37,6 @@ import {
   shouldUseNativeWebSearch,
 } from './retrieval/searchRouter.js';
 
-const execFile = promisify(execFileCallback);
 const DEFAULT_CODEX_REQUEST_TIMEOUT_MS = 600000;
 const DEFAULT_PROVIDER_REQUEST_TIMEOUT_MS = 600000;
 const DEFAULT_CODEX_REASONING_EFFORT = 'medium';
@@ -393,7 +390,6 @@ export function clearExtraWebSearchTriggers() {
   clearSearchTriggers();
 }
 let keepAliveSetupPromise = null;
-let ffmpegAvailabilityPromise = null;
 
 function normalizeBaseUrl(baseUrl) {
   return String(baseUrl || '').trim().replace(/\/+$/, '');
@@ -446,8 +442,6 @@ async function ensureFetchKeepAliveConfigured() {
 
   return keepAliveSetupPromise;
 }
-
-
 
 function isAbortError(error) {
   return Boolean(
@@ -738,17 +732,6 @@ async function resolveAudioAttachments(messages = [], { signal } = {}) {
   return results;
 }
 
-function inferCodexAudioFormat(attachment = {}) {
-  const extension = inferAttachmentExtension(attachment, '');
-  if (extension === 'wav') {
-    return 'wav';
-  }
-  if (extension === 'mp3') {
-    return 'mp3';
-  }
-  return '';
-}
-
 function inferImageMimeType(attachment = {}, contentType = '') {
   const normalizedContentType = String(contentType || '').toLowerCase();
   if (normalizedContentType.startsWith('image/')) {
@@ -804,97 +787,6 @@ async function buildCodexImageInputPart(item = {}) {
     type: 'input_image',
       ...(item.image_url?.detail ? { detail: item.image_url.detail } : {}),
     image_url: `data:${mimeType};base64,${resource.buffer.toString('base64')}`,
-  };
-}
-
-async function hasFfmpeg() {
-  if (ffmpegAvailabilityPromise) {
-    return ffmpegAvailabilityPromise;
-  }
-
-  ffmpegAvailabilityPromise = execFile('ffmpeg', ['-version'], {
-    timeout: 5000,
-    maxBuffer: 1024 * 1024,
-  })
-    .then(() => true)
-    .catch(() => false);
-
-  return ffmpegAvailabilityPromise;
-}
-
-async function transcodeBufferToWav(buffer, attachment = {}, signal) {
-  if (!Buffer.isBuffer(buffer) || !buffer.length) {
-    return null;
-  }
-
-  if (!(await hasFfmpeg())) {
-    return null;
-  }
-
-  const tempDir = await mkdtemp(join(tmpdir(), 'melo-codex-media-'));
-  const inputExtension = inferAttachmentExtension(attachment, 'bin');
-  const inputPath = join(tempDir, `input.${inputExtension}`);
-  const outputPath = join(tempDir, 'output.wav');
-
-  try {
-    await writeFile(inputPath, buffer);
-    await execFile(
-      'ffmpeg',
-      [
-        '-i',
-        inputPath,
-        '-vn',
-        '-ac',
-        '1',
-        '-ar',
-        '16000',
-        '-f',
-        'wav',
-        '-y',
-        outputPath,
-      ],
-      {
-        timeout: 120000,
-        killSignal: 'SIGTERM',
-        signal,
-        maxBuffer: 10 * 1024 * 1024,
-      },
-    );
-
-    return readFile(outputPath);
-  } catch {
-    return null;
-  } finally {
-    await rm(tempDir, { recursive: true, force: true }).catch(() => {});
-  }
-}
-
-async function buildCodexAudioInputPart(attachment = {}, { signal, treatAsVideo = false } = {}) {
-  const buffer = await readAttachmentBuffer(attachment?.url, {
-    timeoutMs: treatAsVideo ? 60000 : 30000,
-  });
-  if (!buffer || !buffer.length) {
-    return null;
-  }
-
-  let format = treatAsVideo ? '' : inferCodexAudioFormat(attachment);
-  let audioBuffer = buffer;
-
-  if (!format) {
-    const transcoded = await transcodeBufferToWav(buffer, attachment, signal);
-    if (!transcoded) {
-      return null;
-    }
-    audioBuffer = transcoded;
-    format = 'wav';
-  }
-
-  return {
-    type: 'input_audio',
-    input_audio: {
-      data: audioBuffer.toString('base64'),
-      format,
-    },
   };
 }
 

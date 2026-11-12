@@ -5,7 +5,6 @@ import { createRequestContext } from '../../runtime/requestContext.js';
 import { currentRequestContext, runWithRequestContext } from '../../runtime/requestScope.js';
 import { updateStateAtomically } from '../../state/stateStore.js';
 import { createChatRecord } from '../../state/conversation.js';
-import { assertCanCreateChat } from '../../state/chatPruning.js';
 import { getDesktopBootstrap } from '../desktop/bootstrap.js';
 
 export async function prepareTaskExecution(taskId, { skipBootstrap = false, teamPlan = null } = {}) {
@@ -22,7 +21,6 @@ export async function prepareTaskExecution(taskId, { skipBootstrap = false, team
     // Reassignment creates a fresh execution chat; the previous run keeps its
     // original conversation and workspace snapshot.
     if (!chat || (chat.projectId || null) !== (task.projectId || null)) {
-      assertCanCreateChat(state);
       chat = createChatRecord({ mode: 'chat', projectId: task.projectId, agentId: task.owner });
       chat.title = task.title;
       state.chats.unshift(chat);

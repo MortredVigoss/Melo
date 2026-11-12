@@ -57,9 +57,7 @@ import { requestBashOp } from '../../safety/fileSafetyGate.js';
 
 // Are all args option flags? Empty args is allowed (no-op forms
 // like `pwd`, `git status`).
-function allOptionsOnly(args, allowedPrefixes = ['-']) {
-  return args.every(arg => allowedPrefixes.some(p => arg.startsWith(p)));
-}
+
 
 // Phase 2D follow-up #6 (Codex 🔴, 2026-05-04): the silent
 // allowlist is collapsed to the absolute minimum — only commands

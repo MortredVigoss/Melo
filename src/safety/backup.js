@@ -145,14 +145,7 @@ async function assertWithinRoot(candidateDir, root) {
   }
 }
 
-async function fileSha256(absPath) {
-  try {
-    const buf = await readFile(absPath);
-    return createHash('sha256').update(buf).digest('hex');
-  } catch {
-    return null;
-  }
-}
+
 
 // ── snapshotBeforeWrite ──────────────────────────────────────────────
 //

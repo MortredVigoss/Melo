@@ -158,17 +158,7 @@ export function hasUnbalancedQuotes(s) {
 
 // Skip leading `FOO=bar` env-var assignments so `FOO=1 rm baz` is
 // parsed as `head=rm`, not `head=FOO=1`.
-function skipEnvAssignments(tokens) {
-  let i = 0;
-  while (
-    i < tokens.length &&
-    tokens[i].kind === 'word' &&
-    /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[i].text)
-  ) {
-    i++;
-  }
-  return i;
-}
+
 
 // Phase 2D follow-up #14 self-review (Codex 🟡, 2026-05-04): skip
 // the entire pre-command preamble — leading redirect+target pairs

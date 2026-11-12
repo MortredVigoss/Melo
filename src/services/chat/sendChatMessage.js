@@ -45,7 +45,7 @@ import { randomUUID } from 'node:crypto';
 import { scheduleChatTurn } from './turnScheduler.js';
 import { schedulePostTurnTask } from '../../runtime/postTurnTasks.js';
 import { join } from 'node:path';
-import { getMeloHome, getResolvedConfig } from '../../config.js';
+import { getResolvedConfig } from '../../config.js';
 import {
   loadState,
   updateStateAtomically,

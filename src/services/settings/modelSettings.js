@@ -4,8 +4,8 @@ import { imageSettings, imageConnection, visionConnection } from '../../images/i
 // Architecture migration: byte-for-byte command port.
 import { createRequestContext } from '../../runtime/requestContext.js';
 import { currentRequestContext, runWithRequestContext } from '../../runtime/requestScope.js';
-import { updateStateAtomically } from '../../state/stateStore.js';
-import { ensureSelectedEntities } from '../../state/stateSelections.js';
+import '../../state/stateStore.js'; // Preserve module initialization.
+import '../../state/stateSelections.js'; // Preserve module initialization.
 import { getDesktopBootstrap } from '../desktop/bootstrap.js';
 import { DEFAULT_CONFIG, DEFAULT_MODEL_CATALOGS, loadConfig, normalizeModelCatalogs, saveConfig, withConfigLock } from '../../config.js';
 import { discoverAvailableModels } from '../../openai.js';

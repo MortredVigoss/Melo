@@ -753,7 +753,7 @@ async function main() {
     },
   });
 
-  const laneTask = await request('/api/tasks', {
+  await request('/api/tasks', {
     method: 'POST',
     body: {
       title: laneTaskTitle,

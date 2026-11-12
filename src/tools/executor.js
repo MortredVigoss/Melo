@@ -388,7 +388,7 @@ export async function executeToolCalls(calls, options = {}) {
   }
 
   for (let i = 0; i < calls.length; i++) {
-    const { id, tool, args } = calls[i];
+    const { tool, args } = calls[i];
 
     if (toolConcurrencySafe(tool, args)) {
       parallelGroup.push(i);

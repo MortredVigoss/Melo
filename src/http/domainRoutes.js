@@ -10,21 +10,20 @@ import { listPermissionAudit } from '../safety/permissionAudit.js';
 import { removeCommandRule } from '../safety/commandRules.js';
 import { previewRestore, confirmRestore } from '../safety/restorePreview.js';
 import { loadConfig, saveConfig, withConfigLock } from '../config.js';
-import { normalizeLlmBaseUrl } from '../shared/llmProviders.js';
+import '../shared/llmProviders.js'; // Preserve module initialization.
 import { repairMemoryBatch, memoryRepairStatus, diagnoseMemory } from '../memory/repair.js';
 import { saveLlmProfile, activateLlmProfile, forgetLlmProfile, testLlmProfile } from '../services/settings/llmConnections.js';
 import { startOpenRouterOAuth, openRouterOAuthStatus } from '../providers/openRouterOAuth.js';
 import { prepareTaskExecution } from '../services/task/prepareTaskExecution.js';
-import { applyArtifactToWorkspaceFile, createCustomAgent, createArtifact, updateArtifact, deleteArtifact, restoreArtifact, createApproval, createExternalConnector, createProject, createTask, executeApproval, invokeExternalConnectorTool, pingExternalConnector, previewExternalConnectorPrompt, readExternalConnectorResource, rejectApproval, removeExternalConnector, runTask, runTaskLane, runLocalCommand, saveWorkspaceFile, selectWorkspaceFile, readWorkspaceFilePreview, createCustomSkill, updateCustomSkill, removeCustomSkill, exportSkillAsMarkdown, importSkillFromMarkdown, promoteSkillToDisk, reloadDiskSkills, scanRecentChatsForSkillProposals, applySkillProposal, draftSkillFromChat, toggleConnector, toggleSkill, testAgentChannelConnection, updateAgentProfile, updateTask, updateDesktopSettings, updateExternalConnector, updateModelConfig, updateProject, refreshModelCatalog } from '../desktopStore.js';
+import { createCustomAgent, createArtifact, updateArtifact, deleteArtifact, restoreArtifact, createApproval, createExternalConnector, createProject, createTask, executeApproval, invokeExternalConnectorTool, pingExternalConnector, previewExternalConnectorPrompt, readExternalConnectorResource, rejectApproval, removeExternalConnector, runTask, runTaskLane, selectWorkspaceFile, readWorkspaceFilePreview, createCustomSkill, updateCustomSkill, removeCustomSkill, exportSkillAsMarkdown, importSkillFromMarkdown, promoteSkillToDisk, reloadDiskSkills, scanRecentChatsForSkillProposals, applySkillProposal, draftSkillFromChat, toggleConnector, toggleSkill, testAgentChannelConnection, updateAgentProfile, updateTask, updateDesktopSettings, updateExternalConnector, updateModelConfig, updateProject, refreshModelCatalog } from '../desktopStore.js';
 import { sendJson, readJsonBody } from './transport.js';
 import { sendBootstrapAfterCommit } from './bootstrapAfterCommit.js';
 import { startCodexOAuthLogin } from '../codexAuth.js';
 import { defaultSkillProposalStore } from '../agents/skillProposals.js';
 import { getSkillRunStats } from '../agents/skillRuns.js';
 import { collectMemoryStatus, withLiveProviderModelId } from '../memory/status.js';
-import { wipeEmbeddingsForDimChange, requireEmbeddingRepair } from '../memory/store.js';
+import { wipeEmbeddingsForDimChange } from '../memory/store.js';
 import { getEmbeddingProvider } from '../memory/embedProviders/createEmbeddingProvider.js';
-
 
 const router = createRouteRegistry([
     {method:'POST',paths:['/api/settings/smart-routing'],auth:'local-write',handler:async({request,response})=>sendJson(response,200,await saveSmartRouting(await readJsonBody(request)))},

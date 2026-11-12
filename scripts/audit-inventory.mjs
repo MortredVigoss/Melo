@@ -14,7 +14,7 @@
 //   node scripts/audit-inventory.mjs [--out docs/audit] [--baseline <json>] [--json-only] [--check]
 import { readdir, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { resolve, relative, join } from 'node:path';
+import { resolve, join } from 'node:path';
 
 const root = process.cwd();
 const args = process.argv.slice(2);

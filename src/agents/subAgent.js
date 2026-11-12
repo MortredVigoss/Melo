@@ -11,7 +11,7 @@ import { renderAgentIdentity } from '../domain/agent/agentIdentity.js';
 import {resolveCapabilityContext} from '../services/agent/capabilityContext.js';
 import {currentRequestContext,runWithRequestContext} from '../runtime/requestScope.js';
 import {narrowCapabilityScope,missingCapabilityScope,toolsForCapabilityScope,nativeFeaturesForScope} from '../domain/agent/capabilityScope.js';
-import {estimateTextTokens} from '../memory/tokenEstimate.js';
+import '../memory/tokenEstimate.js'; // Preserve module initialization.
 import {memberTokenLimit,createRunBudget,narrowBudget,reserveDelivery,budgetExhausted,recordUsage} from '../runtime/runBudget.js';
 import {HANDOFF_INSTRUCTION} from './handoff.js';
 import { delegatedConfig } from './delegatedConfig.js';
@@ -34,7 +34,7 @@ import { redactToolArgs } from '../tools/toolInvocationRecord.js';
  */
 
 import { createOpenAICompatibleReply } from '../openai.js';
-import { getAllTools, getTool } from '../tools/registryCore.js';
+import { getAllTools } from '../tools/registryCore.js';
 import { executeToolCalls } from '../tools/executor.js';
 import { parseModelResponse } from '../tools/parser.js';
 import { buildToolsSystemPrompt } from '../tools/systemPrompt.js';

@@ -14,19 +14,13 @@
 // APP_ROOT is computed via four `dirname()` calls. Same value as
 // desktopStore's APP_ROOT, just different formula.
 
-import { dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import 'node:path'; // Preserve module initialization.
+import 'node:url'; // Preserve module initialization.
 import { BUILTIN_CONNECTORS } from '../../state/stateHydration.js';
 import { COMMAND_TEMPLATES } from '../command/commandTemplates.js';
 import { visibleArtifacts } from '../../domain/artifact/artifactService.js';
 import { formatUpdatedAt } from '../../shared/helpers.js';
 import { maskSecret } from './externalConnector.js';
-
-// APP_ROOT — original desktopStore.js: `dirname(dirname(fileURLToPath(import.meta.url)))`.
-// This module lives two levels deeper (`src/services/connector/`), so the
-// formula needs two extra `dirname()` calls to resolve to the same
-// project-root directory. Output identical, formula adjusted for depth.
-const APP_ROOT = dirname(dirname(dirname(dirname(fileURLToPath(import.meta.url)))));
 
 export function buildConnectors(enabledIds, config, workspace, state, project) {
   const recentCommandRun = workspace.commandRuns[0] || null;

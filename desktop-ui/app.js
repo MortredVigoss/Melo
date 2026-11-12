@@ -54,11 +54,8 @@ import {
 } from './undoToast.js';
 import { buildConnectorDraft, pickConnectorField } from './connectorDraft.js';
 import { applyFormInputToDraft } from './connectorDraftDispatch.js';
-import { CREDENTIAL_FIELDS } from './credentialChip.js';
-import {
-  decideFileSafetyPreflight,
-  decideFileSafetyResponseAction,
-} from './fileSafetyResponse.js';
+import './credentialChip.js'; // Preserve module initialization.
+import { decideFileSafetyResponseAction } from './fileSafetyResponse.js';
 import { installCustomizeFeature } from './features/customize/index.js';
 import { resolveActiveMinimaxVoiceId } from '/shared/minimaxVoiceResolver.js';
 
@@ -86,7 +83,6 @@ document.addEventListener('toggle', event => {
   memoryFeature.handleToggle(event);
 }, true);
 installUnsavedSettingsGuard(window);
-
 
 const uiState = {
   neuralGroup: null,
@@ -209,7 +205,6 @@ let activeAudioContextUrl = null;
 let lastUserKeystrokeAt = 0;
 let lastUserScrollAt = 0;
 let deferredRenderPending = false;
-let deferredRenderTimer = 0;
 const TYPING_GUARD_WINDOW_MS = 500;
 const TYPING_GUARD_DEFER_CHECK_MS = 120;
 // Scroll guard window — must cover macOS trackpad momentum scroll, which
@@ -236,18 +231,17 @@ function scheduleDeferredRender() {
   deferredRenderPending = true;
   const tick = () => {
     if (userIsActivelyTyping() || userIsActivelyScrolling()) {
-      deferredRenderTimer = window.setTimeout(tick, TYPING_GUARD_DEFER_CHECK_MS);
+      window.setTimeout(tick, TYPING_GUARD_DEFER_CHECK_MS);
       return;
     }
     deferredRenderPending = false;
-    deferredRenderTimer = 0;
     // Deferred path is itself a background render — keep recursing the same
     // guard until the user is truly idle (otherwise a sustained typing burst
     // every 400 ms would bypass the guard on the first tick we happen to
     // sample between keystrokes).
     render({ background: true });
   };
-  deferredRenderTimer = window.setTimeout(tick, TYPING_GUARD_DEFER_CHECK_MS);
+  window.setTimeout(tick, TYPING_GUARD_DEFER_CHECK_MS);
 }
 
 const icon = {
@@ -435,8 +429,6 @@ const MODEL_SETUP_DEFAULTS = {
   },
 };
 
-
-
 function truncate(value = '', max = 180) {
   return value.length > max ? `${value.slice(0, max - 1)}…` : value;
 }
@@ -612,7 +604,6 @@ function renderTtsVoicePanel() {
 
   const engine = uiState.ttsEngine;
   const browserVoices = uiState.ttsBrowserVoices;
-  const whisperBaseUrl = uiState.bootstrap?.settings?.config?.whisperBaseUrl || '';
   const ttsProvider = uiState.bootstrap?.settings?.config?.ttsProvider || '';
   const isEdgeTtsActive = engine === 'api' && ttsProvider === 'edge';
   const isCustomVoiceActive = engine === 'api' && customVoiceActive(uiState.bootstrap?.settings?.config);
@@ -773,7 +764,6 @@ function renderTtsVoicePanel() {
 
       ${(() => {
         // Build MiniMax custom voices from agent profiles that have a minimaxVoiceId
-        const SYSTEM_AGENT_IDS = new Set(['main', 'research', 'builder', 'reviewer']);
         const customVoices = allChatAgentProfiles()
           .filter(a => a.minimaxVoiceId)
           .map(a => ({ id: a.minimaxVoiceId, label: a.name, agentId: a.id }));
@@ -827,19 +817,6 @@ function renderTtsVoicePanel() {
   `;
 }
 
-function getGreeting() {
-  const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 18) return 'Good afternoon';
-  return 'Good evening';
-}
-
-function activeMode() {
-  return uiState.bootstrap?.modes.find(
-    mode => mode.id === uiState.bootstrap?.settings.activeMode,
-  );
-}
-
 function activeChat() {
   return uiState.bootstrap?.activeChat || null;
 }
@@ -862,9 +839,7 @@ function agentProfileById(agentId) {
   return uiState.bootstrap?.customize?.agents?.find(agent => agent.id === agentId) || null;
 }
 
-function mainAgentProfile() {
-  return agentProfileById('main');
-}
+
 
 // A task runs in a chat owned by the task's Agent inside the task's project,
 // so its team is led by that Agent with the project's overrides applied.
@@ -956,7 +931,6 @@ function restoreFocusedInputState(state) {
   }
 }
 
-
 function artifactShelfRows() { return (uiState.artifactCollection==='results' ? uiState.bootstrap?.results : uiState.bootstrap?.artifacts) || []; }
 function selectedArtifact() {
   const artifacts = artifactShelfRows();
@@ -986,8 +960,6 @@ function filteredChats() {
     `${chat.title}\n${chat.preview}`.toLowerCase().includes(query),
   );
 }
-
-
 
 function searchResults() {
   return (
@@ -1483,7 +1455,6 @@ function scheduleSearchRefresh() {
     loadBootstrap(uiState.searchQuery, { quiet: true });
   }, 180);
 }
-
 
 function openExternalUrl(url) {
   const normalized = String(url || '').trim();
@@ -2156,35 +2127,6 @@ const MINIMAX_TTS_PARAMS = [
   },
 ];
 
-function agentTtsParamInputValue(draft, selected, key, defaultValue) {
-  const hasDraftValue =
-    draft && Object.prototype.hasOwnProperty.call(draft, key);
-  const raw = hasDraftValue ? draft[key] : selected?.[key];
-  if (raw === null || raw === undefined || raw === '') {
-    return String(defaultValue);
-  }
-  return String(raw);
-}
-
-function coerceMiniMaxTtsParam(value, fallback, min, max) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return fallback;
-  return Math.max(min, Math.min(max, numeric));
-}
-
-function minimaxTtsParamsForAgent(agent) {
-  const params = {};
-  for (const def of MINIMAX_TTS_PARAMS) {
-    params[def.key] = coerceMiniMaxTtsParam(
-      agent?.[def.key],
-      def.defaultValue,
-      def.min,
-      def.max,
-    );
-  }
-  return params;
-}
-
 function minimaxTtsConfigPatchForVoice(voiceId) {
   const agent = allChatAgentProfiles().find(profile => profile.minimaxVoiceId === voiceId);
   // Only inherit speed / pitch / vol from the bound agent when that agent
@@ -2203,31 +2145,6 @@ function minimaxTtsConfigPatchForVoice(voiceId) {
     }
   }
   return patch;
-}
-
-function renderMinimaxTtsParameterInputs(draft, selected) {
-  return ui`
-    <div class="minimax-param-list">
-      ${MINIMAX_TTS_PARAMS.map(def => ui`
-        <label class="minimax-param-row">
-          <input
-            class="config-input minimax-param-input"
-            type="number"
-            name="${def.key}"
-            value="${escapeHtml(agentTtsParamInputValue(draft, selected, def.key, def.defaultValue))}"
-            min="${def.min}"
-            max="${def.max}"
-            step="${def.step}"
-            inputmode="decimal"
-          />
-          <span class="minimax-param-copy">
-            <span class="minimax-param-name">${escapeHtml(def.label)}</span>
-            <span class="minimax-param-note">${escapeHtml(def.note)}</span>
-          </span>
-        </label>
-      `).join('')}
-    </div>
-  `;
 }
 
 let _ttsAudio = null;
@@ -3109,7 +3026,6 @@ function clearModelFormDraft(form) {
   for (const key of keys) if (uiState.modelSetupDraft) delete uiState.modelSetupDraft[key];
 }
 
-
 async function handleStartModelOAuthLogin() {
   await api('/api/settings/model/oauth/start', {
     method: 'POST',
@@ -3117,7 +3033,6 @@ async function handleStartModelOAuthLogin() {
   });
   notify({level:'info',text:'OpenAI sign-in was opened in Terminal. Finish the browser authorization, then click Refresh status.'});
 }
-
 
 function creationContext() {
   const view=uiState.bootstrap?.settings?.activeView;
@@ -3213,35 +3128,7 @@ async function handleRejectApproval(approvalId) {
 }
 
 
-function composerCommandCatalog() {
-  const dynamicProjects = (uiState.bootstrap?.projects || []).slice(0, 5).map(project => ({
-    command: `/project ${project.name}`,
-    label: `Switch to project ${project.name}`,
-  }));
-  const dynamicFiles = (uiState.bootstrap?.workspace?.entries || [])
-    .filter(entry => entry.type === 'file')
-    .slice(0, 6)
-    .map(entry => ({
-      command: `/file ${entry.path}`,
-      label: `Open file ${entry.path}`,
-    }));
 
-  return [
-    { command: '/new', label: 'Open the New chat home' },
-    { command: '/mode chat', label: 'Switch to Chat mode' },
-    { command: '/mode cowork', label: 'Switch to Cowork mode' },
-    { command: '/mode code', label: 'Switch to Code mode' },
-    { command: '/view projects', label: 'Open the Projects workspace' },
-    { command: '/view chats', label: 'Open the chat list' },
-    { command: '/view search', label: 'Open global search' },
-    { command: '/mcp browse', label: 'Open the runtime MCP browser' },
-    { command: '/task Review the current build flow', label: 'Create a task' },
-    { command: '/agent reviewer Inspect the latest diff', label: 'Create an agent task' },
-    { command: '/run git-status', label: 'Queue the git status command' },
-    ...dynamicProjects,
-    ...dynamicFiles,
-  ];
-}
 
 // Lightweight fuzzy scorer for client-side palette/composer filtering.
 // Returns 0 when nothing matches (filters the item out).
@@ -3258,18 +3145,6 @@ function clientFuzzyScore(query, ...haystacks) {
     if (haystack[i] === q[qi]) qi++;
   }
   return qi === q.length ? 40 : 0;
-}
-
-function filteredComposerCommands() {
-  const input = chatFeature.composerText().trim();
-  if (!input.startsWith('/')) {
-    return [];
-  }
-
-  const query = input.toLowerCase();
-  return composerCommandCatalog()
-    .filter(item => clientFuzzyScore(query, item.command, item.label) > 0)
-    .slice(0, 8);
 }
 
 function openCommandPalette(initialQuery = '') {
@@ -3690,104 +3565,6 @@ async function handleApplyArtifactToSelectedFile(artifactId) {
   });
 }
 
-function navItem(action, iconMarkup, label, view, subtitle = '') {
-  const isActive = uiState.bootstrap?.settings.activeView === view;
-  return ui`
-    <button class="nav-item ${isActive ? 'is-active' : ''}" data-action="${action}" data-view="${view}">
-      <span class="nav-icon">${iconMarkup}</span>
-      <span class="nav-copy">
-        <span class="nav-title">${label}</span>
-        ${subtitle ? ui`<span class="nav-subtitle">${subtitle}</span>` : ''}
-      </span>
-    </button>
-  `;
-}
-
-function renderSidebar() {
-  const data = uiState.bootstrap;
-  const currentMode = activeMode();
-  const mainAgent = mainAgentProfile();
-  const isNewChatActive =
-    data.settings.activeView === 'chat' && !data.settings.selectedChatId;
-
-  return ui`
-    <aside class="sidebar">
-      <div class="sidebar-nav">
-        <div class="nav-group">
-          <button class="nav-item ${isNewChatActive ? 'is-active' : ''}" data-action="new-chat">
-            <span class="nav-icon">${icon.plus}</span>
-            <span class="nav-copy">
-              <span class="nav-title">新对话</span>
-            </span>
-          </button>
-          ${navItem('open-view', icon.search, 'Search', 'search')}
-          ${navItem('open-view', icon.spark, 'Agent', 'agent')}
-          ${navItem('open-view', icon.sliders, 'Model', 'model')}
-          ${navItem('open-view', icon.wand, 'Customize', 'customize')}
-          ${navItem('open-view', icon.bubble, 'Chats', 'chats')}
-          ${navItem('open-view', icon.folder, 'Projects', 'projects')}
-          ${navItem('open-view', icon.box, 'Artifacts', 'artifacts')}
-        </div>
-      </div>
-
-      <div class="sidebar-recents">
-        <div class="recent-section-title">最近</div>
-        <div class="recent-list">
-          ${
-            data.recents.length
-              ? data.recents
-                  .map(
-                    recent => ui`
-                      <button
-                        class="recent-item ${
-                          data.settings.selectedChatId === recent.id &&
-                          data.settings.activeView === 'chat'
-                            ? 'is-active'
-                            : ''
-                        }"
-                        data-action="open-chat"
-                        data-chat-id="${recent.id}"
-                      >
-                        <div class="recent-item-row">
-                          <div class="recent-item-title">
-                            ${recent.locked ? ui`<span class="recent-lock-badge" aria-label="Locked">${icon.lock}</span>` : ''}
-                            <span>${escapeHtml(recent.title)}</span>
-                          </div>
-                          ${
-                            data.settings.selectedChatId === recent.id &&
-                            data.settings.activeView === 'chat'
-                              ? ui`<span class="recent-item-more">${icon.dots}</span>`
-                              : ''
-                          }
-                        </div>
-                        <div class="recent-item-meta">${escapeHtml(recent.preview)}</div>
-                      </button>
-                    `,
-                  )
-                  .join('')
-              : ui`<div class="empty-state compact">还没有对话，从新对话开始。</div>`
-          }
-        </div>
-      </div>
-
-      <div class="sidebar-footer">
-        <div class="profile-card">
-          <div class="avatar">${escapeHtml(data.profile.initial)}</div>
-          <div class="profile-meta">
-            <div class="profile-name">${escapeHtml(data.profile.name)}</div>
-            <div class="profile-plan">${escapeHtml(data.profile.plan)}</div>
-          </div>
-        </div>
-
-        <div class="profile-hint">
-          ${escapeHtml(currentMode?.label || 'Chat')} mode is ready for the current workspace.
-
-        </div>
-      </div>
-    </aside>
-  `;
-}
-
 function syncModelPickerPosition() {
   const panel = document.querySelector('#model-picker-panel');
   const trigger = document.querySelector('.model-picker-trigger');
@@ -3833,59 +3610,6 @@ function modelOptionsForAuthMode(authMode) {
   );
 }
 
-function renderComposerCommandDeck({ inline = false } = {}) {
-  const suggestions = filteredComposerCommands();
-  const showSuggestions = chatFeature.composerText().trim().startsWith('/') && suggestions.length;
-  if (inline && !showSuggestions) {
-    return '';
-  }
-
-  return ui`
-    <div class="command-deck ${inline ? 'is-inline' : ''}">
-      ${
-        inline
-          ? ''
-          : ui`
-            <div class="chip-row command-chip-row">
-              ${HOME_PROMPT_PRESETS.map(
-                preset => ui`
-                  <button
-                    class="chip chip-button"
-                    type="button"
-                    data-action="apply-home-prompt"
-                    data-preset-id="${preset.id}"
-                  >
-                    ${escapeHtml(preset.label)}
-                  </button>
-                `,
-              ).join('')}
-            </div>
-          `
-      }
-      ${
-        showSuggestions
-          ? ui`
-            <div class="command-suggestions">
-              ${suggestions
-                .map(
-                  item => ui`
-                    <button class="command-suggestion" type="button" data-action="insert-command" data-command="${escapeHtml(
-                      item.command,
-                    )}">
-                      <span class="list-row-title mono">${escapeHtml(item.command)}</span>
-                      <span class="list-row-meta">${escapeHtml(item.label)}</span>
-                    </button>
-                  `,
-                )
-                .join('')}
-            </div>
-          `
-          : ''
-      }
-    </div>
-  `;
-}
-
 async function previewTaskBackup(operationId) {
   try { uiState.taskRestore = await api('/api/tasks/restore-preview', {method:'POST',body:{operationId}}); render(); } catch(error) { notify({level:'error',text:error.message}); }
 }
@@ -3918,7 +3642,6 @@ function renderTaskPanel({ compact = false } = {}) {
         const lanes = ['main', 'research', 'builder', 'reviewer'];
         const primary = lanes[0];
         const overflow = lanes.slice(1);
-        const primaryProfile = agentProfileById(primary);
         const overflowOpen = uiState.taskLaneOverflowOpen;
         return ui`
           <div class="chip-row task-lane-row task-lane-overflow-anchor">
@@ -3936,7 +3659,6 @@ function renderTaskPanel({ compact = false } = {}) {
             ${overflowOpen ? ui`
               <div class="task-lane-overflow-menu">
                 ${overflow.map(owner => {
-                  const ownerProfile = agentProfileById(owner);
                   return ui`
                     <button class="task-lane-overflow-item" type="button" data-action="run-task-lane" data-owner="${owner}">
                       执行下一项 · ${owner}
@@ -4002,7 +3724,6 @@ function renderTaskPanel({ compact = false } = {}) {
                 .slice(0, compact ? 4 : 24)
                 .map(
                   task => {
-                    const ownerProfile = agentProfileById(task.owner);
                     return ui`
                     <article class="run-card">
                       <div class="thread-meta">

@@ -5,12 +5,12 @@ import {narrowCapabilityScope,missingCapabilityScope,scopeAllowsTool,visibleCapa
 import {randomUUID} from 'node:crypto';
 import {runSubAgent} from './subAgent.js';
 import {isRetiredAgentId} from '../shared/userAgents.js';
-import {toolCapabilityAllowed,normalizeCapabilities,intersectCapabilities,normalizeCollaboration,filterToolsByCapabilities,emptyCapabilities} from '../domain/agent/capabilities.js';
+import { toolCapabilityAllowed, normalizeCapabilities, intersectCapabilities, normalizeCollaboration } from '../domain/agent/capabilities.js';
 import {getAllTools,getTool} from '../tools/registryCore.js';
 import {currentRequestContext,runWithRequestContext} from '../runtime/requestScope.js';
 import {summarizePricedUsage} from '../runtime/usage.js';
 import {withWorkspaceWriter} from './workspaceScheduling.js';
-import {createHandoff,HANDOFF_INSTRUCTION} from './handoff.js';
+import { createHandoff } from './handoff.js';
 import {narrowBudget,remainingMs} from '../runtime/runBudget.js';
 
 // Members researching side by side give up only what takes the workspace lease

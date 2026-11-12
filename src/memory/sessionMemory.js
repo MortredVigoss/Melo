@@ -29,7 +29,7 @@ import { captureBehavior } from '../runtime/runtimeBehavior.js';
 import { createOpenAICompatibleReply } from '../openai.js';
 import { extractFactsRuleBased } from './offline/extractor.js';
 import { factSubject } from './factPolicy.js';
-import { requestEnvironment } from '../runtime/requestScope.js';
+import '../runtime/requestScope.js'; // Preserve module initialization.
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -272,7 +272,6 @@ export function formatSessionMemoryBlock(facts = [], limit = MEMORY_INJECT_LIMIT
 export function shouldExtractMemory(chat) {
   const messages = Array.isArray(chat.messages) ? chat.messages : [];
   const assistantCount = messages.filter(m => m?.role === 'assistant').length;
-  const lastExtractedAt = chat.memoryLastExtractedAt || 0;
   const lastExtractedCount = chat.memoryLastExtractedAtCount || 0;
 
   return (

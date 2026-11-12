@@ -20,7 +20,7 @@ import { generateApiImage } from '../../images/openaiImageEngine.js';
  * preserved: write to that path, return the path as text.
  */
 
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, stat, writeFile } from 'node:fs/promises';
 import { gatedReadIntoBuffer } from '../../safety/gatedRead.js';
 import { resolve, extname, basename, join, isAbsolute } from 'node:path';
 import { randomBytes } from 'node:crypto';

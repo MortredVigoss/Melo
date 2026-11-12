@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createCoreTurn } from '../src/runtime/sharedAgentCore.js';

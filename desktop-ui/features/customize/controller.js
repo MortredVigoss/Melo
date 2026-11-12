@@ -578,7 +578,6 @@ export const customizeActions = {
     notify({level:result.connected?'success':'warning',text:t(result.connected?'已连接':'未连接')});
   },
   'manage-platform-login': async ({trigger})=>{
-    const panel=trigger.closest('[data-platform-panel]');
     const name=trigger.dataset.serverName;
     trigger.disabled=true;
     try {

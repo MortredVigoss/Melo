@@ -14,11 +14,8 @@ import { currentRequestContext, runWithRequestContext } from '../../runtime/requ
 
 import { randomUUID } from 'node:crypto';
 import { nowIso } from '../../shared/helpers.js';
-import {
-  loadState,
-  updateStateAtomically,
-} from '../../state/stateStore.js';
-import { ensureSelectedEntities } from '../../state/stateSelections.js';
+import { updateStateAtomically } from '../../state/stateStore.js';
+import '../../state/stateSelections.js'; // Preserve module initialization.
 import { findApprovalById } from '../../state/stateLookups.js';
 import { getDesktopBootstrap } from '../desktop/bootstrap.js';
 import {

@@ -118,13 +118,7 @@ function chooseRun(runId) {
   more = !!view?.more; slot = view?.slot || 0;
   warRoom?.restore(focus, runId);
 }
-function preserveReading(action) {
-  const scroller = document.querySelector('.thread-scroll-region');
-  const top = scroller?.scrollTop || 0;
-  const bottom = scroller && scroller.scrollHeight - scroller.clientHeight - top < 24;
-  action();
-  if (scroller) scroller.scrollTop = bottom ? scroller.scrollHeight : top;
-}
+
 function setOpen(value, { focus = false, stepAside = false } = {}) {
   // Closing a run that is still working means: do not open it again by itself
   // (stepping aside for a prompt is not the user closing it).

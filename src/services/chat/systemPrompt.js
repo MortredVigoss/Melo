@@ -1,4 +1,4 @@
-import { resolveReplyLocale } from '../../../shared/agent/locale.js';
+import '../../../shared/agent/locale.js'; // Preserve module initialization.
 import { isAgentChannelAvailable } from '../../shared/channelAvailability.js';
 import { DATE_CONTINUITY_RULE } from './dateContext.js';
 // System-prompt assembly — extracted from desktopStore in Phase 7d-2.

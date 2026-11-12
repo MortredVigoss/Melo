@@ -152,7 +152,6 @@ export async function runImageTask({
     });
   }
   if (task.action === 'edit' && !images.length) throw new Error('编辑图片需要附加至少一张原图。');
-  const referenceRoles = images.map(image => image.role);
   const requestModel =
     api?.model ||
     (engine === 'codex-oauth'

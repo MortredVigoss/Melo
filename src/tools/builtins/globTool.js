@@ -22,7 +22,7 @@ import {missingWorkspaceResult} from '../workspace.js';
  * recursed into).
  */
 
-import { join, relative, resolve, isAbsolute } from 'node:path';
+import { join, resolve, isAbsolute } from 'node:path';
 
 import { requestRead } from '../../safety/fileSafetyGate.js';
 import { classifyPath, PATH_CATEGORY } from '../../safety/sensitivePaths.js';

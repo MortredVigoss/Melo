@@ -3,15 +3,7 @@ import { sceneColor } from '../../../src/shared/visualTokens.js';
 //   - triangle: params a, b, c are side lengths → compute apex via law of cosines
 //   - circle:   param r is radius, draws circle + radius line
 // Spec: { shape: 'triangle' | 'circle', params: [...] }
-import {
-  bindParamSliders,
-  escapeAttr,
-  materializeParams,
-  paramValue,
-  renderCardFooter,
-  renderCardHeader,
-  renderParamsHtml,
-} from '../vizCommon.js';
+import { bindParamSliders, escapeAttr, materializeParams, paramValue, renderParamsHtml } from '../vizCommon.js';
 
 const WIDTH = 400;
 const HEIGHT = 260;

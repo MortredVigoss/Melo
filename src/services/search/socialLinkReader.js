@@ -533,11 +533,6 @@ function firstUsefulString(...values) {
   return '';
 }
 
-function firstArrayString(value) {
-  if (Array.isArray(value)) return firstUsefulString(value);
-  return firstUsefulString(value);
-}
-
 function firstUrlString(...values) {
   for (const value of values.flat(Infinity)) {
     const text = decodeHtmlEntities(value || '').trim();

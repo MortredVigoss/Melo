@@ -29,7 +29,7 @@
 // desktopStore.
 
 import { randomUUID } from 'node:crypto';
-import { nowIso, coerceIso } from '../../shared/helpers.js';
+import { coerceIso } from '../../shared/helpers.js';
 
 // titleCase stays local — it's only used here, not worth a shared-module hop.
 function titleCase(value) {

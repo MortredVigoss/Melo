@@ -64,7 +64,7 @@ import {
   normalizeAgentProfiles,
   normalizeProjectAgentOverrides,
 } from './agentProfiles.js';
-import { normalizeArtifact } from '../domain/artifact/artifactService.js';
+import '../domain/artifact/artifactService.js'; // Preserve module initialization.
 import {
   normalizeCommandRuns,
   normalizeExternalToolRuns,

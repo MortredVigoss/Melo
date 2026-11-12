@@ -8,10 +8,10 @@
 // Electron with the pet's bundle identity, ad-hoc signed). build-desktop-app.sh
 // seals the whole Melo.app afterwards; nothing here touches Melo's own signing.
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, rmSync, realpathSync, writeFileSync, readFileSync, cpSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, realpathSync, writeFileSync, readFileSync } from 'node:fs';
 import { join, resolve, relative, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { verifyAssets, PET_ROOT, STORE } from './desktop-pet-assets.js';
+import { verifyAssets, PET_ROOT } from './desktop-pet-assets.js';
 
 const RUNTIME_FILES = ['package.json', 'main.cjs', 'runtime-info.cjs', 'owner-pipe.cjs', 'melo-client.cjs', 'control-server.cjs', 'README.md', 'dialog'];
 const UPSTREAM_FILES = ['LICENSE', 'UPSTREAM-README.md', 'README.md', 'package.json', 'lib', 'runtime', 'assets/config.jsonc', 'assets/fonts', 'assets/logo.png', 'assets/memes', 'assets/pic'];

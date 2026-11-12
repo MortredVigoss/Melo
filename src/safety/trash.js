@@ -27,22 +27,8 @@ import { FileIdentityOwner } from './dirfdOps.js';
  */
 
 import { randomUUID, createHash } from 'node:crypto';
-import {
-  mkdir,
-  copyFile,
-  rm,
-  writeFile,
-  readFile,
-  readlink,
-  realpath,
-  stat,
-  lstat,
-  symlink,
-  cp,
-  readdir,
-} from 'node:fs/promises';
+import { mkdir, rm, writeFile, readFile, realpath, stat, lstat, symlink, readdir } from 'node:fs/promises';
 import { writeSync, readSync, closeSync as closeFdSync, fstatSync } from 'node:fs';
-import { constants as fsConstants } from 'node:fs';
 import { dirname, join, sep } from 'node:path';
 
 import { getMeloHome } from '../config.js';
@@ -52,17 +38,7 @@ import {
   classifyPath,
 } from './sensitivePaths.js';
 import { safeResolvePath } from './pathResolver.js';
-import {
-  atomicOpenLeaf,
-  atomicUnlink,
-  atomicSymlink,
-  unlinkatChecked,
-  symlinkatChecked,
-  openParentDirFd,
-  splitParentLeaf,
-  _raw,
-  C as DC,
-} from './dirfdOps.js';
+import { atomicOpenLeaf, unlinkatChecked, symlinkatChecked, openParentDirFd, splitParentLeaf, _raw, C as DC } from './dirfdOps.js';
 
 const TRASH_DIR_NAME = '.melo-trash';
 export const TRASH_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -150,14 +126,7 @@ function shortHash(input) {
   return createHash('sha256').update(String(input)).digest('hex').slice(0, 12);
 }
 
-async function fileSha256(absPath) {
-  try {
-    const buf = await readFile(absPath);
-    return createHash('sha256').update(buf).digest('hex');
-  } catch {
-    return null;
-  }
-}
+
 
 // ── safeDeleteToTrash (token-bound, public) ──────────────────────────
 //
@@ -354,14 +323,12 @@ async function _unsafeRawDelete(paths, ctx = {}) {
     const dest = join(filesDir, trashedAs);
     const [parent, leaf] = splitParentLeaf(absPath);
 
-    // Capture parent {dev, ino} via dirfd probe for cross-check at unlink.
+    // Validate the parent through a dirfd probe; identityOwner captures the
+    // identity used for the later unlink cross-check.
     let probefd;
-    let parentDev, parentIno;
     try {
       probefd = openParentDirFd(parent);
-      const pst = fstatSync(probefd);
-      parentDev = pst.dev;
-      parentIno = pst.ino;
+      fstatSync(probefd);
     } catch (err) {
       await rm(opDir, { recursive: true, force: true }).catch(() => {});
       throw new Error(
@@ -668,7 +635,7 @@ export async function restoreFromTrash(operationId, opts = {}) {
       let probefd;
       try {
         probefd = openParentDirFd(parentDir);
-        const st = fstatSync(probefd);
+        fstatSync(probefd);
         parentInoByLexical.set(entry.originalPath, identityOwner.capture(entry.originalPath));
       } catch (err) {
         throw new Error(

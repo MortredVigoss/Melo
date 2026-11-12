@@ -1,4 +1,4 @@
-import { t, ui } from './i18n.js';
+import { ui } from './i18n.js';
 export function createSearchPageRenderer({ uiState, escapeHtml, truncate, icon, searchResultIcon, searchBucketsForRender, currentSearchItems }) {
 function renderSearchBucket(title, itemsHtml, count) {
   return ui`

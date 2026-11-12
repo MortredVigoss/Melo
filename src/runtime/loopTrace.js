@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import 'node:url'; // Preserve module initialization.
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, appendFile, writeFile, rename, readFile, readdir, stat, rm } from 'node:fs/promises';

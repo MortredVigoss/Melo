@@ -30,12 +30,6 @@ import { getMeloHome } from '../config.js';
 import { createCapabilityRecorder, describeSearchEvidence } from './capabilities.js';
 
 const BODY_TRUNCATE_LIMIT = 500;
-// Per-host limit so a single chatty host can't bury the rest.  Soft cap
-// — if the log already has > N entries for the same canonical host
-// today, skip with a note.  Not enforced in Phase 2 v0; reserved here
-// so callers can opt in.
-const _PER_HOST_SOFT_LIMIT = 200;
-
 /**
  * @returns {boolean} true iff trail-log capture is currently enabled.
  *   Read at every call; flips when the operator toggles the env var

@@ -1,12 +1,5 @@
 import { captureBehavior } from '../runtime/runtimeBehavior.js';
-import {
-  isPlaceholderSource,
-  extractedMediaLabel,
-  normalizeExtractedMedia,
-  extractedMediaSearchText,
-  renderExtractedMediaContext,
-  memoryKindForExtractedMedia,
-} from '../domain/media/extractedMedia.js';
+import { isPlaceholderSource, normalizeExtractedMedia, extractedMediaSearchText, renderExtractedMediaContext, memoryKindForExtractedMedia } from '../domain/media/extractedMedia.js';
 export { normalizeExtractedMedia, extractedMediaSearchText, renderExtractedMediaContext, memoryKindForExtractedMedia };
 import { normalizeMediaText } from './common.js';
 import { getCachedExtraction, setCachedExtraction } from './cache.js';
@@ -48,7 +41,6 @@ export function _setMediaBudgetsForTests({
       ? socialDirectPerAttachmentMs
       : 55000;
 }
-
 
 export function shouldBypassCachedExtraction(attachment = {}, cached = {}) {
   const source = String(cached?.metadata?.source || '').trim().toLowerCase();
@@ -109,7 +101,6 @@ function withTimeoutAndAbort(workFn, ms) {
       );
   });
 }
-
 
 async function extractSocialPreviewContent(attachment, context, signal) {
   const result = await readSocialLink(attachment.url, {

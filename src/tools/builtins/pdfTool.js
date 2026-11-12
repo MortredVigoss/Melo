@@ -18,8 +18,8 @@ import { serverText } from '../../shared/serverText.js';
  */
 
 import { execFile } from 'node:child_process';
-import { mkdir, readFile, writeFile, access, stat } from 'node:fs/promises';
-import { resolve, extname, join, isAbsolute, dirname, basename } from 'node:path';
+import { mkdir, writeFile, stat } from 'node:fs/promises';
+import { resolve, join, isAbsolute, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { signWorkspaceFileUrl } from '../../web/urlSigning.js';
 import { gatedReadIntoBuffer } from '../../safety/gatedRead.js';
@@ -87,16 +87,6 @@ async function readPdfFromBuffer(buffer, source = '') {
     meta,
     formatted: metaLines.join('\n') + '\n\n---\n\n' + text.slice(0, 50_000),
   };
-}
-
-async function readPdfFromFile(filePath) {
-  const absPath = resolve(filePath);
-  await access(absPath); // throws if not found
-  const buffer = await readFile(absPath);
-  if (buffer.length > MAX_PDF_BYTES) {
-    throw new Error(`PDF too large: ${(buffer.length / 1024 / 1024).toFixed(1)}MB (max ${MAX_PDF_BYTES / 1024 / 1024}MB)`);
-  }
-  return readPdfFromBuffer(buffer, absPath);
 }
 
 async function readPdfFromUrl(url) {

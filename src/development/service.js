@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile, cp, rm, readdir } from 'node:fs/promises';
+import { readFile, cp, rm, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createJobStore, atomicJSON } from './store.js';

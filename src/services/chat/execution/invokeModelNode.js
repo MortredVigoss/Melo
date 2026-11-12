@@ -3,7 +3,7 @@ import { internalRouteCatalog, startInternalJob, leadWithheldTools, MAX_ASSIGNME
 import { internalRoleSuggestions } from './internalRoles.js';
 import { runInternalMembers } from './internalMembers.js';
 import { runLimitDelivery } from '../../../runtime/limitDelivery.js';
-import { isDeliveryLimit, hostEvidenceReply } from '../../../../shared/agent/limitDelivery.js';
+import { isDeliveryLimit } from '../../../../shared/agent/limitDelivery.js';
 import { resolveLoopLimits } from '../../../../shared/agent/loopLimits.js';
 import { extendBudget } from '../../../runtime/runBudget.js';
 import { traceEvent } from '../../../runtime/loopTrace.js';
@@ -26,8 +26,8 @@ import { scopeAllowsTool, nativeFeaturesForScope } from '../../../domain/agent/c
 import { recordMemoryFeedback } from '../../../memory/store.js';
 import { runAgentTeam } from '../../../agents/team.js';
 import { takeSupplements, supplementMessage } from '../supplements.js';
-import { budgetExhausted, budgetExhaustedReply, describeBudgetReason, recordUsage, remainingMs } from '../../../runtime/runBudget.js';
-import { AGENT_LOOP_CONTRACT, contractRegExp } from '../../../runtime/agentLoopContract.js';
+import { budgetExhausted, budgetExhaustedReply, recordUsage, remainingMs } from '../../../runtime/runBudget.js';
+import '../../../runtime/agentLoopContract.js'; // Preserve module initialization.
 import { nowIso } from '../../../shared/helpers.js';
 import { effectiveAgentProfile } from '../../../state/agentProfiles.js';
 import { filterMcpToolsForAgent } from '../../../domain/agent/agentTools.js';
@@ -433,7 +433,6 @@ export function createInvokeModelNode(turn) {
         if (receipt.verified && coreTurn.observeNative({ id: `hosted:${iteration}`, name: 'native_web_search', status: 'completed', output: receipt.evidence + '\n' + receipt.answer, sources: receipt.sources.map(source => ({ ...source, reading: 'provider', text: rawReply?.text || '' })) })) recordUsage(budget, { toolCalls: 1 });
       }
       const turn = roundSession.parse(rawReply);
-      const { thinking } = turn;
       // Provider IDs are local to a member conversation; preserve wire IDs in
       // the protocol transcript, but use unique IDs in the shared execution ledger.
       const toolCalls = turn.toolCalls;
@@ -653,7 +652,6 @@ export function createInvokeModelNode(turn) {
         },
       );
 
-      const callsById = new Map(toolCalls.map(tc => [tc.id, tc]));
       const resultsById = new Map(execResults.map(r => [r.id, r]));
       for(const execution of execResults) if(execution.result?.meta?.receipts) modelResponses.push(...execution.result.meta.receipts);
       // Also handle unresolved tool names (not in registry)

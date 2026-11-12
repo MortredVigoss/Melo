@@ -276,24 +276,7 @@ async function indexDirectory(dir, ctx = {}) {
 
 // ─── Search ──────────────────────────────────────────────────────────────────
 
-function search(query, topK = 5) {
-  const _index=indexes.get(activeIndex.getStore())||emptyIndex();
-  const queryTokens = tokenize(query);
-  if (!queryTokens.length || !_index.chunks.length) return [];
 
-  const scored = _index.chunks.map(chunk => {
-    let score = 0;
-    for (const qt of queryTokens) {
-      const tf = chunk.tf.get(qt) || 0;
-      const idf = _index.idf.get(qt) || 0;
-      score += tf * idf;
-    }
-    return { ...chunk, score };
-  });
-
-  scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, topK).filter(s => s.score > 0);
-}
 
 // ─── Tool definition ─────────────────────────────────────────────────────────
 

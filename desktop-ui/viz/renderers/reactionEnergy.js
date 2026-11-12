@@ -2,17 +2,7 @@ import { sceneColor } from '../../../src/shared/visualTokens.js';
 // Reaction energy diagram.
 // Params: E_reactants, E_products, E_activation (height of the barrier above reactants)
 // Draws a smooth potential-energy curve: flat → rise to transition state → fall to products.
-import {
-  bindParamSliders,
-  escapeAttr,
-  materializeParams,
-  paramValue,
-  renderCardFooter,
-  renderCardHeader,
-  renderParamsHtml,
-  resizeCanvas,
-  startAnimationLoop,
-} from '../vizCommon.js';
+import { bindParamSliders, materializeParams, paramValue, renderCardFooter, renderCardHeader, renderParamsHtml, resizeCanvas, startAnimationLoop } from '../vizCommon.js';
 
 const CANVAS_W = 460;
 const CANVAS_H = 260;
