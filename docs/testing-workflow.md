@@ -39,6 +39,7 @@
 | `npm test -- --base <ref>` | 指定 ref 到当前工作树，包含其他线程与未跟踪改动 |
 | `npm test -- --all` | 明确强制完整日常检查；不安装应用 |
 | `npm run test:unit` | 自动发现全部 JS；隔离 `MELO_HOME` |
+| `npm run test:tts`、`test:memory`、`test:ui` 等 29 个聚焦命令 | 只跑命令里列出的文件：经 `scripts/run-focused-tests.js` 在临时 `MELO_HOME` 里走同一个测试池，跑完删除该目录；列出的文件或通配匹配不到任何文件时直接失败。2026-11-14 之前它们是直接执行的 `node --test`（两次把夹具写进正式数据目录的事故都由此而来），现在 `package.json` 里不允许再出现这种写法（`scripts/run-focused-tests.test.js` 把关） |
 | `npm run test:ios` | 独立运行全部手机 JS、资源一致性与 Swift |
 | `python3 ios/scripts/test.py --suite EditDraftTests` | 单独调试指定 Swift 组；可重复 `--suite`；仍做手机 JS 与资源检查 |
 | `npm run test:full` / `npm run verify:red-green` | 完整验证：全 JS、浏览器、手机检查、容器隔离、语法、打包与夹具冒烟；不安装正式应用。安装与正式启动改用明确的 `npm run release:verify` |
