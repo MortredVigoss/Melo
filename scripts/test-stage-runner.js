@@ -12,12 +12,14 @@ export async function createStageRunner({root = process.cwd(), env = {...process
   await mkdir(parent, {recursive:true});
   const directory = await mkdtemp(join(parent, 'run-'));
   const records = [];
+  let sequence = 0;
   return {
     directory,
     records,
     async run(label, command, args, {allowFailure = false} = {}) {
       const started = Date.now();
-      const log = join(directory, `${records.length + 1}.log`);
+      // Reserved before the first await: two stages of one group start in the same tick.
+      const log = join(directory, `${++sequence}.log`);
       const handle = await open(log, 'w+');
       let tail = '';
       emit(`▶ ${label}`);

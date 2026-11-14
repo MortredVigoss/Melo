@@ -2,6 +2,7 @@ import { readdir, stat } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { cpus } from 'node:os';
 
 const run = promisify(execFile);
 const ROOT = process.cwd();
@@ -62,9 +63,10 @@ async function main() {
       catch (error) { errors.push(`${relative(ROOT, path)}\n${error.stderr || error.message}`); }
     }
   }
-  await Promise.all(Array.from({length: 4}, worker));
+  const workers = Math.max(4, Math.min(8, cpus().length - 2));
+  await Promise.all(Array.from({length: workers}, worker));
   if (errors.length) throw new Error(errors.join('\n'));
-  console.log(`Syntax checked ${allFiles.length} files (4 workers)`);
+  console.log(`Syntax checked ${allFiles.length} files (${workers} workers)`);
 }
 
 main().catch(error => {

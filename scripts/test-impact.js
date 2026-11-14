@@ -1,7 +1,7 @@
 // Dependency-aware daily selection. This augments (never replaces) whole-feature
 // coverage with reverse imports, source readers, generators and native bridges.
 import { readFile, readdir } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { dirname, resolve, relative } from 'node:path';
 import { buildModuleMap, ownerOf, matchesGlob, servedModules, loadAnnotations } from './generate-module-map.js';
@@ -18,7 +18,9 @@ export async function serverConsumers(root, tests) {
 
 export const IOS_JS = ['ios/Tests/SceneBridge.test.js', 'ios/Tests/NeuralLayout.test.js'];
 const CORE = /^(?:package(?:-lock)?\.json$|binding\.gyp$|native\/|src\/(?:state\/|persistence\/|runtime\/|safety\/|providers\/|server\.js$|desktopStore\.js$|config\.js$|openai\.js$|tools\/(?:executor|permissions|permissionPersistence|registry)\.|services\/chat\/(?:chatExecutionRunner|sendChatMessage|turnLifecycle|turnScheduler)\.)|shared\/(?:protocol|agent)\/|mobile-sync\/.*(?:protocol|Protocol|syncContract))/;
-const GATE = /^(?:scripts\/(?:test-(?:plan|impact|discovery|stages|stage-runner)|ci-test-plan|verify-daily|run-unit-tests|verify-red-green|generate-module-map|check-dependencies)\.js|ios\/scripts\/(?:test|swift_test_cache)\.py|\.github\/workflows\/.*\.ya?ml)$/;
+const GATE = /^(?:scripts\/(?:test-(?:plan|impact|discovery|stages|stage-runner|pool|tap-summary|run-guards)|run-test-pool|ci-test-plan|verify-daily|run-unit-tests|verify-red-green|generate-module-map|check-dependencies|check-syntax)\.js|scripts\/test-quarantine\.json|ios\/scripts\/(?:test|swift_test_cache)\.py|\.github\/workflows\/.*\.ya?ml)$/;
+// Android sources, its Gradle build and its gate scripts: built and tested by the Android stage.
+export const ANDROID_PATH = /^(android\/|scripts\/android(?:\.mjs|-target(?:\.test)?\.js)$|\.github\/workflows\/android\.yml$)/;
 const TOOLING = /^(?:docs\/audit\/(?:inventory-\d{4}-\d{2}-\d{2}|diff)\.json|architecture\/(?:modules|module-annotations)\.json|scripts\/(?:scope|boundary-report|check-doc-links)\.js)$/;
 const sorted = values => [...new Set(values)].sort();
 const list = value => Array.isArray(value) ? value : value ? [value] : [];
@@ -97,7 +99,17 @@ export async function buildTestImpact(root = process.cwd(), built = null) {
   const saved=await readFile(resolve(root,'architecture/modules.json'),'utf8').catch(()=>null);
   const problems=[...built.problems,...built.map.summary.sourceReadingTests.unannotated.map(p=>`未登记源码读取测试：${p}`),...built.map.summary.unownedFiles.map(p=>`未登记归属：${p}`)];
   const servers=await serverConsumers(root,await discoverTests(root));
-  return {root,built,reverse,opaque,swiftSources,manifest,problems,serverConsumers:servers,stale:!built.partial&&saved!==`${JSON.stringify(built.map,null,2)}\n`,exists:path=>existsSync(resolve(root,path))};
+  // Files that name a path the map does not know (a project file, a fixture, an
+  // image, a shell script): every JS file in the graph whose source contains the
+  // repository path, or the file name as a whole word. Read on first use only.
+  let texts=null;
+  const readers=path=>{
+    texts||=new Map(paths.map(file=>{try{return [file,readFileSync(resolve(root,file),'utf8')];}catch{return [file,''];}}));
+    const base=path.split('/').at(-1);
+    const word=/\.[A-Za-z0-9]+$/.test(base)&&base.length>=6?new RegExp(`(?:^|[^\\w-])${base.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}(?![\\w-])`):null;
+    return paths.filter(file=>file!==path&&(texts.get(file).includes(path)||word?.test(texts.get(file))));
+  };
+  return {root,built,reverse,opaque,swiftSources,manifest,problems,serverConsumers:servers,readers,stale:!built.partial&&saved!==`${JSON.stringify(built.map,null,2)}\n`,exists:path=>existsSync(resolve(root,path))};
 }
 
 // Two tiers (2026-10-24, user decision "改什么都要 4500 个测试"):
@@ -107,9 +119,13 @@ export async function buildTestImpact(root = process.cwd(), built = null) {
 //     feature, the reverse-import closure and the tests that start the real
 //     server instead of everything; a stale / unregistered map only runs the
 //     preflight (fail fast, fix the map) instead of 4500 tests. The gate
-//     itself, deletions and unknown paths still widen. A quick plan never
-//     proves the shared tree: `integrationRequired` says so and the merge
-//     step runs the integration tier once.
+//     itself and deletions still widen. A path the map does not know (2026-11-14:
+//     62% of the recorded quick runs ran everything, mostly for a project file,
+//     a fixture or a rebuilt bundle beside the real change) selects the files
+//     that name it and the tests beside it; only a change that selects nothing
+//     at all still widens. A quick plan never proves the shared tree:
+//     `integrationRequired` says so and the merge step runs the integration
+//     tier once, where unknown paths widen as before.
 export function impactedPlan(code, files, impact, {tier='integration'}={}) {
   const quick=tier==='quick';
   const chosen=new Set(), reasons=[], selectedFeatures=new Set(), touched=new Set(code);
@@ -123,6 +139,8 @@ export function impactedPlan(code, files, impact, {tier='integration'}={}) {
   const feature=(id,reason)=>{if(!id)return;selectedFeatures.add(id);add(built.map.features[id]?.tests.js||[],reason);};
   const toolbox=()=>add(files.filter(p=>p.startsWith('scripts/')),'开发工具：脚本测试组');
   const expand=seeds=>{const queue=[...seeds],seen=new Set(queue);for(const p of queue)for(const next of reverse.get(p)||[])if(!seen.has(next)){seen.add(next);queue.push(next);}return seen;};
+  // The tests in the nearest directory above `path` that holds any (a fixture's own tests).
+  const nearestTests=path=>{for(let dir=dirname(path);dir&&dir!=='.';dir=dirname(dir)){const here=files.filter(file=>dirname(file)===dir);if(here.length)return here;}return [];};
   // Public boundary in the quick tier: the owning feature group plus every
   // test reachable through reverse imports; the real-server tests join below.
   const boundary=(path,label)=>{
@@ -172,6 +190,35 @@ export function impactedPlan(code, files, impact, {tier='integration'}={}) {
       if(!id||['platform','tooling'].includes(id)) {if(quick)boundary(path,'未分离的公共基础设施');else widen(`${path}：未分离的公共基础设施`);}
       else {feature(id,`${path}：${id} 功能组`);if(id==='settings')browsers=true;}
       continue;
+    }
+    // The settings acceptance script is its own check: the quick tier runs the acceptance and the scripts' tests.
+    if(quick&&path==='scripts/verify-settings-design.mjs') {browsers=true;toolbox();reasons.push(`${path}：设置浏览器验收脚本 → 运行验收本身`);continue;}
+    // A developer script that is not part of the gate (a benchmark, a smoke run,
+    // a mock): in the quick tier the scripts' own tests and whatever imports it
+    // (the reverse closure below). The integration tier still treats it as unknown.
+    if(quick&&/^scripts\/[^/]+\.[cm]?js$/.test(path)) {toolbox();reasons.push(`${path}：开发脚本 → 脚本测试组与引用它的测试`);continue;}
+    // In a change that also touches JS, an Android path is still only an Android
+    // path: the Android stage builds and tests it (`plan.android`), and the gate
+    // scripts' own tests join. It used to fall through to "unknown" and run everything.
+    if(ANDROID_PATH.test(path)) {add(files.filter(p=>/^scripts\/android.*\.test\.js$/.test(p)),`${path}：Android 源码与构建，由 Android 阶段覆盖`);continue;}
+    // The output of a registered generator is not an unknown file: the generator's
+    // inputs carry the JS selection, the consistency check proves the output
+    // matches them, and a bundle the phone loads runs every Swift suite.
+    const generator=built.map.implicit.find(item=>item.kind==='generator'&&matches(path,item.outputs));
+    if(generator) {
+      add(list(generator.check).filter(check=>check.endsWith('.test.js')),`${path}：${generator.id} 的生成产物 → 一致性检查`);
+      if(path.startsWith('ios/')) {allSwift=true;reasons.push(`${path}：手机载入的生成产物 → 全部 Swift 组`);}
+      continue;
+    }
+    if(quick) {
+      if(impact.readers) {
+        if(path.startsWith('ios/')) {allSwift=true;reasons.push(`${path}：iPhone 工程 / 脚本 / 资源 → 全部 Swift 组`);}
+        const id=owner(path);
+        if(id&&!['platform','tooling'].includes(id))feature(id,`${path}：${id} 功能组`);
+        const named=impact.readers(path), beside=nearestTests(path);
+        add([...expand([...named,...beside])].filter(p=>p.endsWith('.test.js')),`${path}：功能地图未登记的文件 → 提到它的 ${named.length} 个文件、同目录的 ${beside.length} 个测试及其反向依赖`);
+        continue;
+      }
     }
     widen(`${path}：未知运行时 / 构建边界`);
   }

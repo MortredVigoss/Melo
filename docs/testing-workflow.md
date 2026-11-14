@@ -11,7 +11,7 @@
 | **完整验证** | 完整验证 | `npm run test:full` | 全部测试、容器隔离、构建及夹具冒烟；不安装正式应用 | 完整验证通过 |
 | **发布档** | 明确授权发版 | `npm run release:verify` | 完整验证后安装及正式启动检查；前置检查必须全部 GREEN | 可发布 |
 
-两档永远不替代彼此：快速档窄是为了快，集成档全是为了兜底"改 A 顺手弄坏 B"。门禁自身（`scripts/test-*.js`、`verify-*.js`、CI 工作流）、删除 / 改名、未知路径在两档都扩大到全部。`--quick` 可对 `--base` 范围使用快速档（只在排查时用，不能作为合并依据）；`--all` 永远是集成档。
+两档永远不替代彼此：快速档窄是为了快，集成档全是为了兜底"改 A 顺手弄坏 B"。门禁自身（`scripts/test-*.js`、`run-test-pool.js`、`verify-daily.js`、`verify-red-green.js`、`run-unit-tests.js`、`check-syntax.js`、Swift 测试运行器、CI 工作流）和删除 / 改名在两档都扩大到全部。功能地图没登记的路径只在集成档扩大；快速档按「选择范围的规则」里"功能地图没登记的文件"一行选测（2026-11-14：此前有记录的 122 次快速档里 76 次因此跑了全量）。`--quick` 可对 `--base` 范围使用快速档（只在排查时用，不能作为合并依据）；`--all` 永远是集成档。
 
 **机器守卫**：同一台机器同一时刻只跑一套（`os.tmpdir()/melo-test-runner.lock`，等待至多 10 分钟，死进程留下的锁自动接手）；1 分钟负载高于 1.5 × 核数时先等（至多 5 分钟）再开始，等完仍高会照常跑并写明。`MELO_TEST_LOCK_WAIT_MS` / `MELO_TEST_LOAD_MAX` / `MELO_TEST_LOAD_WAIT_MS` 可调；`MELO_TEST_NESTED=1`（门禁自己的夹具、CI）跳过守卫。
 
@@ -58,19 +58,35 @@
 | Swift 文件 | 按真实编译输入选 suite；共享契约补对应测试；未纳入独立编译组的原生源码扩大 Swift |
 | 桌面宠物 `desktop-pet/` | 整个 `desktop-pet` 测试组（`desktop-pet/tests/*.test.js`，CommonJS）加 `DesktopPet.swift` ↔ `main.cjs` 原生桥接测试；`node_modules/`、`runtime/`、皮肤动画与大肥鱼 WebM 是构建输入，不选测试。金冬天包与关键帧审计只在本机（`npm run import:pet-skin`）与发布 gate 校验，CI 没有这些媒体时 `winter-pack` 记为显式跳过 |
 | Android 本地 `.kt` / 资源 `.xml` | JVM、Lint、Debug；Manifest、构建配置、Core 或混合平台集成仍跑 Release/R8 |
+| Android 路径与其它文件一起改 | Android 阶段照常；其它文件按各自规则选测，不再因为"混合"退回全量（2026-11-14） |
+| 已登记生成器的产物（例如 `ios/Melo/AgentCore/**`） | 该生成器的一致性检查；手机载入的产物再加全部 Swift 组。JS 选测由生成器的输入文件决定（2026-11-14） |
+| `scripts/` 下不属于门禁的开发脚本 | 快速档：脚本测试组加引用它的测试；集成档仍按未知边界扩大（2026-11-14） |
+| `scripts/verify-settings-design.mjs` | 快速档：运行设置浏览器验收本身加脚本测试组；集成档仍扩大（2026-11-14） |
+| 功能地图没登记的文件（iPhone 工程文件与界面测试、`ios/scripts/*.py`、夹具、图片、桌面壳源码、Shell 脚本等） | 快速档：所属功能组（有登记时）、源码里提到它的路径或文件名的全部 JS 文件及其反向依赖测试、离它最近的含测试目录里的测试；`ios/` 下的再加全部 Swift 组。整批改动一个测试都没选中时仍扩大到全部。集成档不变，仍扩大（2026-11-14） |
 | 仅现有 `.test.js` | 改动测试文件及语法；不能用它替代同时发生的产品改动 |
 | 状态持久化、权限、执行核心、共享协议、依赖 / 构建、测试门禁自身 | 完整日常 |
-| 未知路径、删除 / 重命名、无法确认依赖、地图过期或登记不完整 | 明确说明原因并扩大；预检失败须修复，不能关掉检查 |
+| 删除 / 重命名、无法确认依赖、地图过期或登记不完整；集成档里的未知路径 | 明确说明原因并扩大；预检失败须修复，不能关掉检查 |
 
 功能地图不是仅按目录取相邻测试。执行器使用当前源码构建反向依赖，补静态 import / re-export、字面量动态 import、URL 模块引用、生成器、服务映射、原生桥及源码读取边。整功能组保留集成覆盖；无法确定目标的动态读取方保守加入，不假装它没有依赖。
 
 具体策略入口：`scripts/test-plan.js`、`scripts/test-impact.js`。依赖登记入口：`architecture/module-annotations.json`，生成结果 `architecture/modules.json`；增加路由、文件、跨功能依赖或源码读取测试后运行 `npm run generate:module-map`。新测试仍由 `scripts/test-discovery.js` 自动发现。不要把 `scope.focused` 提示或测试文件名猜测当成完整选择器。
 
-纯说明文档采用明确名单及 `docs/**/*.md` / `docs/handoffs/**`；`desktop-ui/features/README.md` 已登记。运行时技能、人设、夹具 Markdown 和任意 JSON 不因此豁免。
+纯说明文档采用明确名单及 `docs/**/*.md` / `docs/handoffs/**` / `docs/evidence/**`（回执与探针输出，没有代码或测试读取）；`desktop-ui/features/README.md`、`MELO_DEVELOPMENT_STANDARD.md` 与 `npm run progress:codex` 生成的 `codex.md` 已登记。运行时技能、人设、夹具 Markdown 和任意 JSON 不因此豁免。
 
 ## 执行顺序与去重
 
-日常依次运行：语法 → 文档链接 → 生成器 / 地图预检 → 手机资源 manifest → 按范围选择的 Android 检查 → 剩余 JS → 相关设置浏览器 → 选中的 Swift。失败立即停止；资源过期应在昂贵测试之前报错。
+日常依次运行：语法 → 文档链接 → 生成器 / 地图预检 → 手机资源 manifest → Android 检查与选中的 Swift（两者同时跑）→ 剩余 JS → 相关设置浏览器。失败立即停止；资源过期应在昂贵测试之前报错。
+
+2026-11-14 起的调度（只改顺序和并行度，不改跑哪些测试、断言和单测超时）：
+
+- **Android 与 Swift 同批执行**。两者互不读取对方的输入；一方失败时等另一方跑完、两条记录都写进摘要，再停。JS 不与它们同时跑：编译器和真实浏览器 / 真实服务测试抢 CPU 正是以前超时的来源。
+- **JS 回归走加权测试池**（`scripts/test-pool.js`，命令行 `scripts/run-test-pool.js`）。每个测试文件仍是一个独立的 `node --test --test-timeout=120000` 进程。启动真实浏览器或真实服务的文件算"重"（从测试源码识别：文件名 `*.browser.test.js`、import Playwright 或 `testChrome.js`、出现 `src/server.js`）。
+  - **位置数看机器开跑前还剩多少余量**：`max(4, min(8, 核数 − 2 − 开跑前 1 分钟负载的整数部分))`。日常运行器把它在第一个阶段之前采到的负载传给测试池（`MELO_TEST_BASELINE_LOAD`），自己的 Swift / Android 编译不会把位置数压低；其它入口读当前负载。这台 10 核机器历史运行的开跑负载中位数是 4.0，所以平时是 4 个位置，空闲时最多 8 个。`MELO_TEST_CONCURRENCY` 指定时原样采用。
+  - **重文件同时最多 2 个，8 个位置时 3 个**（`MELO_TEST_HEAVY_MAX` 可指定）。重文件每个占"位置数 ÷ 4"，它们留下的位置给其余文件。2026-11-14 实测：8 个位置、4 个浏览器测试并排、机器同时有别的负载时，`desktop-ui/executionTiming.browser.test.js` 超过了自己 45 秒的上限，`scripts/eval-loop-traces.test.js` 的落盘超过了写入时限；原来按文件名顺序的 4 并行只是偶尔出现 3–4 个浏览器并排。
+- **顺序**：重的在前、上次耗时长的在前。上次每个文件的耗时存在 `.tmp/test-runs/file-times.json`（只影响顺序，没有这份文件时按文件名）。`summary.json` 的 `slowest` 列出本次最慢的 10 个文件。
+- **编译缓存**：测试进程默认带 `NODE_COMPILE_CACHE=.tmp/node-compile-cache`（按文件内容寻址，改过的文件重新编译）；`MELO_TEST_NO_COMPILE_CACHE=1` 关闭。
+- **Swift 先并行编译、再逐组执行**。一次 `swiftc` 只用一个核，38 个测试组里有 22 个编译几乎相同的二十多份源码；冷缓存时原来串行编译要九分钟。现在同时编译至多 `min(6, 核数 − 2)` 组（`MELO_SWIFT_COMPILE_JOBS` 可指定），缓存键、产物和执行顺序都不变。
+- **语法检查**的并行进程数随核数取 4–8。
 
 每项检查只有一个执行阶段：生成器测试从后续 JS 清单移除；两份 iOS JS 在 JS 阶段执行；manifest 在预检执行；后续 Python 只执行 Swift。发布流程仅在全部 JS 已成功时省去 Python 的重复 JS，失败时仍完整执行手机阶段。独立 `test:ios` 默认不省略任何检查。
 

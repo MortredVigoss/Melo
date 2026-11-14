@@ -5,8 +5,9 @@ import { join, resolve, relative, isAbsolute } from 'node:path';
 import { discoverRunnableTests } from './test-discovery.js';
 import { currentTestPlan, planTests, isDocOnly } from './test-plan.js';
 import { buildTestImpact } from './test-impact.js';
-import { platformStages } from './test-stages.js';
+import { platformStages, stageBatches } from './test-stages.js';
 import { parseTapSummary, isolatedRerunFiles, describeFailures } from './test-tap-summary.js';
+import { poolFileTimes } from './test-pool.js';
 import { acquireTestLock, waitForLoad } from './test-run-guards.js';
 
 // Two tiers (2026-10-24): `--files` runs the quick tier (one change, its
@@ -81,19 +82,41 @@ if(preview) {
   const load=nested?{waitedMs:0,samples:[loadavg()[0]],exceeded:false}:await waitForLoad({max:number(env.MELO_TEST_LOAD_MAX,cpus().length*1.5),waitMs:number(env.MELO_TEST_LOAD_WAIT_MS,5*60_000),emit:console.log});
   const home=await mkdtemp(join(tmpdir(),'melo-daily-'));
   const started=Date.now();
-  const runner=await createStageRunner({root,env:{...env,MELO_HOME:home,MELO_TEST_MODE:'1',MELO_TEST_NESTED:'1'}});
+  // The load before this run's own stages: the JS pool sizes itself from what the machine had to spare.
+  const runner=await createStageRunner({root,env:{...env,MELO_HOME:home,MELO_TEST_MODE:'1',MELO_TEST_NESTED:'1',MELO_TEST_BASELINE_LOAD:String(load.samples.at(-1)??0)}});
   const summary={version:1,tier:plan.tier,base:plan.base,reason:plan.reason,reasons:plan.reasons||[],selected:plan.files.length,total:files.length,integrationRequired:Boolean(plan.integrationRequired),platform:{name:platform,skipped:platformSkipped},
     stages:[],js:null,flaky:null,lock:{waitedMs:lock.waitedMs,acquired:lock.acquired},load:{atStart:load.samples.at(-1),waitedMs:load.waitedMs,exceeded:load.exceeded},ok:false,elapsedSeconds:0,directory:runner.directory};
   const writeSummary=async()=>{summary.elapsedSeconds=Number(((Date.now()-started)/1000).toFixed(1));await writeFile(join(runner.directory,'summary.json'),JSON.stringify(summary,null,2)+'\n');};
   const record=stage=>summary.stages.push({label:stage.label,code:stage.code,seconds:Number(stage.seconds.toFixed(2)),log:stage.log});
   try {
     for(const [path,entry] of Object.entries(excluded))console.log(`QUARANTINED ${path}: ${entry.reason} (expires ${entry.expires})`);
-    for(const stage of stages) {
+    // Neighbouring stages of one group run together (see test-stages.js). The
+    // group is recorded whole before a failure in it stops the run.
+    for(const batch of stageBatches(stages)) {
+      if(batch.length>1) {
+        const results=await Promise.all(batch.map(stage=>runner.run(stage.label,stage.command,stage.args,{allowFailure:true})));
+        for(const result of results)record(result);
+        const failed=results.find(result=>result.code);
+        if(failed) {console.log(failed.tail);throw Error(`${failed.label} failed (${failed.code})`);}
+        continue;
+      }
+      const stage=batch[0];
       if(stage.label!=='JS 回归') {record(await runner.run(stage.label,stage.command,stage.args));continue;}
       const result=await runner.run(stage.label,stage.command,stage.args,{allowFailure:true});
       record(result);
-      const tap=parseTapSummary(await readFile(result.log,'utf8'));
+      const log=await readFile(result.log,'utf8');
+      const tap=parseTapSummary(log);
       summary.js={tests:tap.tests,pass:tap.pass,fail:tap.fail,cancelled:tap.cancelled,skipped:tap.skipped,failures:describeFailures(tap,root)};
+      // Where the stage's time went, and the order of the next run (longest first).
+      const times=poolFileTimes(log);
+      if(times.length) {
+        summary.slowest=times.slice(0,10).map(row=>({file:row.file,seconds:Number((row.ms/1000).toFixed(1))}));
+        console.log(`  JS 最慢：${summary.slowest.slice(0,3).map(row=>`${row.file} ${row.seconds}s`).join('；')}`);
+        const cache=join(root,'.tmp/test-runs/file-times.json');
+        const known=await readFile(cache,'utf8').then(JSON.parse,()=>({}));
+        for(const row of times)known[row.file]=row.ms;
+        await writeFile(cache,JSON.stringify(known)+'\n').catch(()=>{});
+      }
       if(!result.code)continue;
       // One isolated rerun, only when every failure is timeout class (load),
       // recorded as its own stage. A real failure stops here.

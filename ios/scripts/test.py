@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Offline regression gate; all responses are fixtures, no account/device access."""
 from pathlib import Path
-import argparse, hashlib, json, os, platform, subprocess, tempfile, time
-from swift_test_cache import cached_suite
+import argparse, concurrent.futures, hashlib, json, os, platform, subprocess, tempfile, time
+from swift_test_cache import prepare_suite
 root=Path(__file__).resolve().parents[2]
 
 shared=['ios/Melo/SmartRouting.swift','ios/Melo/ImageWorkflow.swift','ios/Melo/ImageLibrary.swift','ios/Melo/ImageNetwork.swift','ios/Melo/Network.swift','ios/Melo/Models.swift','ios/Melo/ConversationHistory.swift','ios/Melo/PhoneContext.swift','ios/Melo/WebSources.swift','ios/Melo/ExecutionRecord.swift','ios/Melo/ChatGPTProtocol.swift','ios/Melo/DeviceTools.swift','ios/Melo/WebPageText.swift','ios/Melo/ImageContext.swift','ios/Melo/RunProgress.swift','ios/Melo/AgentLoopContract.swift','ios/Melo/CapabilityElevation.swift','ios/Melo/AgentLoopRuntime.swift','ios/Melo/AgentLoop.swift','ios/Melo/SharedAgentCore.swift','ios/Melo/LoopTrace.swift']
@@ -51,6 +51,15 @@ def suite_sources():
         result[name] = sources + ['ios/Tests/'+name+'.swift']
     return result
 
+def compile_jobs():
+    # Leave two cores to the rest of the machine; six compilers at once is where memory starts to matter.
+    requested = os.environ.get('MELO_SWIFT_COMPILE_JOBS')
+    if requested is not None:
+        if not requested.isdigit() or int(requested) < 1:
+            raise RuntimeError('MELO_SWIFT_COMPILE_JOBS must be a positive integer')
+        return int(requested)
+    return max(1, min(6, (os.cpu_count() or 2) - 2))
+
 def check_agent_core():
     # Generated shared agent core must match its sources (build-agent-core.mjs).
     subprocess.run(['node','scripts/build-agent-core.mjs','--check'],cwd=root,check=True)
@@ -98,9 +107,40 @@ def main():
     for command in [['xcrun','--find','swiftc'], ['xcrun','swiftc','--version'],
                     ['xcrun','--show-sdk-path'], ['xcrun','--show-sdk-build-version']]:
         toolchain.append(subprocess.check_output(command, text=True).strip())
-    for name, sources in selected.items():
-        cached += cached_suite(root, root/'.tmp/ios-test-cache', name, sources, toolchain,
-                               ['xcrun','swiftc'] + (['-D','MELO_TEST'] if 'ios/Melo/SharedAgentCore.swift' in sources else []))
+    # Compile first, several suites at a time (2026-11-14): one swiftc run uses a
+    # single core and most suites compile the same two dozen sources, so compiling
+    # them one after another took nine minutes on a cold cache. The tests then run
+    # one suite after another in catalog order, exactly as before; nothing about
+    # the cache key or the binaries changes.
+    logs = {}
+    def compile_quietly(name):
+        def run(args, **kwargs):
+            done = subprocess.run(args, cwd=kwargs.get('cwd'), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            logs[name] = done.stdout
+            if done.returncode:
+                raise subprocess.CalledProcessError(done.returncode, args, output=done.stdout)
+        return run
+    def compiler(sources):
+        return ['xcrun','swiftc'] + (['-D','MELO_TEST'] if 'ios/Melo/SharedAgentCore.swift' in sources else [])
+    built = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=compile_jobs()) as pool:
+        pending = {name: pool.submit(prepare_suite, root, root/'.tmp/ios-test-cache', name, sources, toolchain, compiler(sources), compile_quietly(name))
+                   for name, sources in selected.items()}
+        try:
+            for name in selected:
+                built[name] = pending[name].result()
+        except subprocess.CalledProcessError as error:
+            for future in pending.values():
+                future.cancel()
+            print(f'{name}: compilation failed', flush=True)
+            print(error.output or '', flush=True)
+            raise
+    for name, (binary, hit) in built.items():
+        cached += hit
+        print(f'{name}: {"cached compile" if hit else "compiled"}; running tests', flush=True)
+        if logs.get(name):
+            print(logs[name], end='' if logs[name].endswith('\n') else '\n', flush=True)
+        subprocess.run([str(binary)], cwd=root, check=True)
     print(f'All {len(selected)} Swift suites passed; {cached} cached compilations; {time.monotonic()-swift_started:.2f}s',flush=True)
 
 if __name__ == '__main__':

@@ -1,14 +1,17 @@
 import { execFileSync } from 'node:child_process';
 import { realpathSync } from 'node:fs';
-import { impactedPlan } from './test-impact.js';
+import { impactedPlan, ANDROID_PATH } from './test-impact.js';
 
 // Explanation-only files registered one by one. 2026-10-19 (architecture plan
 // P0) grep: no src/, desktop-ui/, desktop-app/, ios/Melo/, mobile-sync/ or
 // build script reads, imports or bundles these paths. Markdown that runtime
 // code or tests read (skills, personas, fixtures, anything bundled into an
 // app) must never be added here; it stays a code change.
-export const DOC_ONLY_FILES = Object.freeze(['README.md','PROGRESS.md','CLAUDE.md','EVALUATION.md','MELO_OVERVIEW.md','AGENTS.md','CHANGELOG.md','ios/README.md','ios/VERIFICATION.md','desktop-ui/features/README.md','desktop-pet/README.md']);
-export const isDocOnly = path => /^docs\/.*\.md$/.test(path) || /^docs\/handoffs\//.test(path) || DOC_ONLY_FILES.includes(path);
+// codex.md is the untracked snapshot `npm run progress:codex` writes from PROGRESS.md.
+export const DOC_ONLY_FILES = Object.freeze(['README.md','PROGRESS.md','CLAUDE.md','EVALUATION.md','MELO_OVERVIEW.md','AGENTS.md','CHANGELOG.md','codex.md','MELO_DEVELOPMENT_STANDARD.md','ios/README.md','ios/VERIFICATION.md','desktop-ui/features/README.md','desktop-pet/README.md']);
+// docs/evidence/ holds receipts and probe output that documents cite; no code or test reads it
+// (2026-11-14: `git grep docs/evidence` over JS, Python, Swift, Kotlin, shell and JSON outside docs/ finds nothing).
+export const isDocOnly = path => /^docs\/.*\.md$/.test(path) || /^docs\/(?:handoffs|evidence)\//.test(path) || DOC_ONLY_FILES.includes(path);
 
 // The pure selection function also serves scope and fixture tests. Without a
 // verified dependency context, runtime changes conservatively expand the gate.
@@ -21,7 +24,7 @@ export function planTests(changed, files, impact = null, options = {}) {
   const code = paths.filter(path => !isDocOnly(path));
   const testsOnly = code.length > 0 && code.every(path => path.endsWith('.test.js'));
   const deletedTest = testsOnly && code.some(path => !files.includes(path));
-  const androidPath = path => /^(android\/|scripts\/android(?:\.mjs|-target(?:\.test)?\.js)$|\.github\/workflows\/android\.yml$)/.test(path);
+  const androidPath = path => ANDROID_PATH.test(path);
   const android = code.some(path => androidPath(path) || /^(shared\/(agent|protocol)\/|ios\/Melo\/Scene\/|src\/shared\/(replyDocument|sessionEvents)\.js$)/.test(path));
   const androidOnly = code.length > 0 && code.every(androidPath);
   let plan;

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {buildTestImpact, moduleReferences, serverConsumers, IOS_JS} from './test-impact.js';
 import {planTests} from './test-plan.js';
-import {dailyStages, platformStages} from './test-stages.js';
+import {dailyStages, platformStages, stageBatches} from './test-stages.js';
 import {discoverRunnableTests} from './test-discovery.js';
 
 const {files}=await discoverRunnableTests();
@@ -101,13 +101,98 @@ test('shared-tree union cannot remove task coverage; new registered files retain
 test('stages fail cheap first and each JS file is scheduled exactly once',()=>{
   const p=plan('shared/protocol/agent-loop.json');
   const stages=dailyStages({...p,syntax:[],docs:[]});
-  const js=stages.filter(s=>s.args.includes('--test'));
+  // The regression runs through the weighted pool (2026-11-14); the preflight stays a plain `node --test`.
+  const js=stages.filter(s=>s.args.includes('--test')||/run-test-pool\.js$/.test(s.args[0]));
   const scheduled=js.flatMap(s=>s.args.filter(arg=>arg.endsWith('.test.js')));
   assert.equal(new Set(scheduled).size,scheduled.length);
   assert.deepEqual([...scheduled].sort(),[...p.files].sort());
   assert.ok(stages.findIndex(s=>s.label==='共享渲染资源预检')<stages.findIndex(s=>s.label==='JS 回归'));
   const swift=stages.find(s=>s.label==='Swift 回归');
   assert.ok(swift.args.includes('--skip-js'));assert.ok(swift.args.includes('--skip-renderer'));
+});
+test('the two native builds run together before the JS regression; nothing else shares a batch',()=>{
+  const p=plan('shared/protocol/agent-loop.json');
+  const stages=dailyStages({...p,syntax:null,docs:['PROGRESS.md']});
+  const labels=stages.map(s=>s.label);
+  assert.deepEqual(labels,['语法检查','文档链接检查','生成器与依赖预检','共享渲染资源预检','Android JVM / Lint / Debug / Release','Swift 回归','JS 回归','设置浏览器验收']);
+  const batches=stageBatches(stages).map(batch=>batch.map(s=>s.label));
+  assert.deepEqual(batches,[['语法检查'],['文档链接检查'],['生成器与依赖预检'],['共享渲染资源预检'],['Android JVM / Lint / Debug / Release','Swift 回归'],['JS 回归'],['设置浏览器验收']]);
+  // A compiler never runs beside the JS regression, and one native stage alone is a batch of one.
+  assert.deepEqual(stageBatches(dailyStages({...p,syntax:[],docs:[],android:false})).map(batch=>batch.map(s=>s.label)).filter(batch=>batch.includes('Swift 回归')),[['Swift 回归']]);
+  assert.deepEqual(stageBatches([{label:'a',group:'x'},{label:'b'},{label:'c',group:'x'}]).map(batch=>batch.map(s=>s.label)),[['a'],['b'],['c']],'only neighbours are batched');
+});
+test('a generated bundle, an Android path beside JS and the progress snapshot are known paths, not unknown boundaries',()=>{
+  const quick=(...paths)=>planTests(paths,files,context,{tier:'quick'});
+  // The phone's copy of the shared core is the output of a registered generator.
+  const bundle=quick('ios/Melo/AgentCore/agent-core.js','ios/Melo/AgentCore/manifest.json');
+  assert.equal(bundle.fullUnit,false);
+  assert.ok(bundle.files.includes('shared/agent/conformance.test.js'),'the consistency check runs');
+  assert.equal(bundle.swift,true);assert.equal(bundle.swiftSuites,null,'every Swift suite loads the bundle');
+  // A change to the shared core with its regenerated bundles: the quick tier follows the boundary …
+  const core=['shared/agent/goal.js','shared/agent/dist/agent-core.js','shared/agent/dist/manifest.json','ios/Melo/AgentCore/agent-core.js','ios/Melo/AgentCore/manifest.json'];
+  const narrowed=quick(...core);
+  assert.equal(narrowed.fullUnit,false);assert.ok(narrowed.files.length<files.length);
+  assert.ok(planTests(['shared/agent/goal.js'],files,context,{tier:'quick'}).files.every(path=>narrowed.files.includes(path)),'nothing the sources select is lost');
+  assert.equal(narrowed.android,true);assert.equal(narrowed.swiftSuites,null);
+  // … and the integration tier still runs everything for it.
+  assert.equal(plan(...core).fullUnit,true);
+  // An Android path next to a JS change keeps both plans.
+  const ui=plan('desktop-ui/features/chat/controller.js');
+  const mixed=plan('android/scripts/import-pet-skins.mjs','desktop-ui/features/chat/controller.js');
+  assert.equal(mixed.fullUnit,false);assert.equal(mixed.android,true);
+  assert.ok(ui.files.every(path=>mixed.files.includes(path)));
+  assert.ok(mixed.files.some(path=>/^scripts\/android.*\.test\.js$/.test(path)));
+  assert.ok(dailyStages(mixed).some(stage=>stage.label.startsWith('Android ')));
+  // The snapshot `npm run progress:codex` writes is documentation.
+  const snapshot=plan('codex.md','PROGRESS.md','MELO_DEVELOPMENT_STANDARD.md');
+  assert.equal(snapshot.files.length,0);assert.equal(snapshot.fullUnit,false);
+  // A developer script outside the gate: its test group in the quick tier, everything in the integration tier.
+  const script=quick('scripts/bench-turn.js');
+  assert.equal(script.fullUnit,false);assert.ok(script.files.includes('scripts/scope.test.js'));assert.ok(script.files.every(path=>path.startsWith('scripts/')||path==='scripts/generate-module-map.test.js'),JSON.stringify(script.files.filter(path=>!path.startsWith('scripts/'))));
+  assert.equal(plan('scripts/bench-turn.js').fullUnit,true);
+  // The gate's own pieces always widen, in both tiers.
+  for(const path of ['scripts/test-pool.js','scripts/run-test-pool.js','scripts/test-tap-summary.js','scripts/check-syntax.js'])assert.equal(quick(path).fullUnit,true,path);
+  // A path nobody registered is still unknown.
+  assert.equal(plan('unknown.config').fullUnit,true);
+  assert.equal(plan('ios/Melo/unregistered.bin').fullUnit,true);
+});
+
+test('quick tier: a path the map does not know selects what names it and the tests beside it; the integration tier still widens',()=>{
+  const quick=(...paths)=>planTests(paths,files,context,{tier:'quick'});
+  // The settings acceptance script is its own check.
+  const acceptance=quick('scripts/verify-settings-design.mjs');
+  assert.equal(acceptance.fullUnit,false);assert.equal(acceptance.browsers,true);
+  assert.ok(dailyStages(acceptance).some(stage=>stage.label==='设置浏览器验收'));
+  assert.equal(plan('scripts/verify-settings-design.mjs').fullUnit,true,'the integration tier is unchanged');
+  // An iPhone project file, UI test or build script: every Swift suite instead of every JS test.
+  for(const path of ['ios/Melo.xcodeproj/project.pbxproj','ios/UITests/ConnectionSaveTests.swift','ios/scripts/generate-project.py']) {
+    const selected=quick(path);
+    assert.equal(selected.fullUnit,false,path);assert.equal(selected.swift,true,path);assert.equal(selected.swiftSuites,null,path);
+    assert.ok(selected.files.length<files.length/4,`${path}: ${selected.files.length}`);
+    assert.equal(selected.integrationRequired,true,path);
+    assert.equal(plan(path).fullUnit,true,`${path} still widens in the integration tier`);
+  }
+  // A fixture selects the tests of the directory that holds it.
+  const fixture=quick('mobile-sync/fixtures/agent-settings.json');
+  assert.equal(fixture.fullUnit,false);
+  assert.ok(files.filter(path=>/^mobile-sync\/[^/]+\.test\.js$/.test(path)).every(path=>fixture.files.includes(path)));
+  // The Mac shell source selects the tests that name it.
+  const shell=quick('desktop-app/main.swift');
+  assert.equal(shell.fullUnit,false);
+  for(const reader of ['scripts/native-shutdown.test.js','scripts/desktop-server-lifecycle.test.js'])assert.ok(shell.files.includes(reader),reader);
+  // Beside a real change nothing that change selects is lost.
+  const real=quick('src/services/chat/sendChatMessage.js'), mixed=quick('src/services/chat/sendChatMessage.js','ios/Melo.xcodeproj/project.pbxproj','assets/melo-icon.png');
+  assert.equal(mixed.fullUnit,false);assert.ok(real.files.every(path=>mixed.files.includes(path)));assert.equal(mixed.swiftSuites,null);
+  // A change that selects nothing at all, a deletion and the gate itself still run everything.
+  // (The name is assembled here: written out, this very file would name it and be selected.)
+  assert.equal(quick(['.git','ignore'].join('')).fullUnit,true,'nothing names it, so nothing would run');
+  assert.equal(quick('no/such/file.bin').fullUnit,true);
+  assert.equal(quick('scripts/test-impact.js','assets/melo-icon.png').fullUnit,true);
+  // Without the reference search (a context built by an older caller) the path is unknown as before.
+  assert.equal(planTests(['ios/Melo.xcodeproj/project.pbxproj'],files,{...context,readers:undefined},{tier:'quick'}).fullUnit,true);
+  // Receipts under docs/evidence are documentation.
+  const receipt=plan('docs/evidence/agent-core-audit-20261017.json','docs/testing-workflow.md');
+  assert.equal(receipt.files.length,0);assert.equal(receipt.fullUnit,false);
 });
 test('daily CLI rejects ambiguous task scopes and unknown flags',()=>{
   for(const args of [['--files'],['--files','../outside.js'],['--base','HEAD','--files','README.md'],['--wat'],['--all','--base','HEAD']]) {

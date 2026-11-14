@@ -19,3 +19,22 @@ test('stage runner saves complete output, reports time and executes identical in
     assert.equal(JSON.parse(await readFile(join(runner.directory,'report.json'),'utf8')).records.at(-1).code,9);
   } finally {await rm(root,{recursive:true,force:true});}
 });
+
+// 2026-11-14: the two native builds run as one batch. The log name used to be
+// taken from the number of finished stages, so two stages started together
+// wrote into the same file.
+test('two stages started together keep their own logs and both are recorded',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'melo-stage-'));
+  try {
+    const runner=await createStageRunner({root,emit:()=>{}});
+    const say=word=>['-e',`setTimeout(()=>console.log(${JSON.stringify(word)}),${word==='slow'?150:10})`];
+    const [slow,fast]=await Promise.all([runner.run('slow',process.execPath,say('slow')),runner.run('fast',process.execPath,say('fast'))]);
+    assert.notEqual(slow.log,fast.log);
+    assert.equal((await readFile(slow.log,'utf8')).trim(),'slow');assert.equal((await readFile(fast.log,'utf8')).trim(),'fast');
+    const {records}=JSON.parse(await readFile(join(runner.directory,'report.json'),'utf8'));
+    assert.deepEqual(records.map(record=>record.label).sort(),['fast','slow']);
+    // One of them failing does not hide the other; the caller decides (allowFailure).
+    const [bad,good]=await Promise.all([runner.run('bad',process.execPath,['-e','process.exit(3)'],{allowFailure:true}),runner.run('good',process.execPath,['-e','0'],{allowFailure:true})]);
+    assert.deepEqual([bad.code,good.code],[3,0]);
+  } finally {await rm(root,{recursive:true,force:true});}
+});
