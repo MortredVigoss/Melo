@@ -64,7 +64,7 @@ async function main() {
     const runner=await createStageRunner({root,env:{...env,MELO_HOME:home,MELO_TEST_MODE:'1'}});
     const stages=dailyStages({...plan,docs:[],android:false});
     for(const stage of stages) {
-      const swift=stage.label==='Swift 回归';
+      const swift=stage.label.startsWith('Swift ');
       if((mode==='swift')===swift)await runner.run(stage.label,stage.command,stage.args);
     }
     const nativeShellTests=plan.files.filter(path=>NATIVE_SHELL_TESTS.includes(path));

@@ -110,15 +110,20 @@ test('stages fail cheap first and each JS file is scheduled exactly once',()=>{
   const swift=stages.find(s=>s.label==='Swift 回归');
   assert.ok(swift.args.includes('--skip-js'));assert.ok(swift.args.includes('--skip-renderer'));
 });
-test('the two native builds run together before the JS regression; nothing else shares a batch',()=>{
+test('the Android build and the Swift compile run together; the Swift suites and the JS regression each run alone',()=>{
   const p=plan('shared/protocol/agent-loop.json');
   const stages=dailyStages({...p,syntax:null,docs:['PROGRESS.md']});
   const labels=stages.map(s=>s.label);
-  assert.deepEqual(labels,['语法检查','文档链接检查','生成器与依赖预检','共享渲染资源预检','Android JVM / Lint / Debug / Release','Swift 回归','JS 回归','设置浏览器验收']);
+  assert.deepEqual(labels,['语法检查','文档链接检查','生成器与依赖预检','共享渲染资源预检','Android JVM / Lint / Debug / Release','Swift 编译','Swift 回归','JS 回归','设置浏览器验收']);
   const batches=stageBatches(stages).map(batch=>batch.map(s=>s.label));
-  assert.deepEqual(batches,[['语法检查'],['文档链接检查'],['生成器与依赖预检'],['共享渲染资源预检'],['Android JVM / Lint / Debug / Release','Swift 回归'],['JS 回归'],['设置浏览器验收']]);
-  // A compiler never runs beside the JS regression, and one native stage alone is a batch of one.
-  assert.deepEqual(stageBatches(dailyStages({...p,syntax:[],docs:[],android:false})).map(batch=>batch.map(s=>s.label)).filter(batch=>batch.includes('Swift 回归')),[['Swift 回归']]);
+  assert.deepEqual(batches,[['语法检查'],['文档链接检查'],['生成器与依赖预检'],['共享渲染资源预检'],['Android JVM / Lint / Debug / Release','Swift 编译'],['Swift 回归'],['JS 回归'],['设置浏览器验收']]);
+  // The compile step compiles the same suites and runs none; the run step is the same command without the flag.
+  const compile=stages.find(s=>s.label==='Swift 编译'), run=stages.find(s=>s.label==='Swift 回归');
+  assert.deepEqual(compile.args,[...run.args,'--compile-only']);assert.equal(run.group,undefined,'suites that assert on timing never share the machine with a build');
+  // Without an Android build there is nothing to overlap with: no separate compile step, and the suites still run alone.
+  const alone=dailyStages({...p,syntax:[],docs:[],android:false});
+  assert.ok(!alone.some(s=>s.label==='Swift 编译'));
+  assert.deepEqual(stageBatches(alone).map(batch=>batch.map(s=>s.label)).filter(batch=>batch.includes('Swift 回归')),[['Swift 回归']]);
   assert.deepEqual(stageBatches([{label:'a',group:'x'},{label:'b'},{label:'c',group:'x'}]).map(batch=>batch.map(s=>s.label)),[['a'],['b'],['c']],'only neighbours are batched');
 });
 test('a generated bundle, an Android path beside JS and the progress snapshot are known paths, not unknown boundaries',()=>{
@@ -257,7 +262,8 @@ test('platform stages: linux reports Swift and Android as not executed, darwin k
   assert.deepEqual(darwin.skipped,[]);assert.deepEqual(darwin.stages,dailyStages({...p,syntax:[],docs:[]}));
   const linux=platformStages({...p,syntax:[],docs:[]},'linux');
   assert.ok(linux.skipped.includes('Swift 回归'));assert.ok(linux.skipped.some(label=>label.startsWith('Android ')));
-  assert.ok(!linux.stages.some(stage=>stage.label==='Swift 回归'||stage.label.startsWith('Android ')));
+  assert.ok(linux.skipped.includes('Swift 编译'),'the compile step needs Xcode as well');
+  assert.ok(!linux.stages.some(stage=>stage.label.startsWith('Swift ')||stage.label.startsWith('Android ')));
   assert.ok(linux.stages.some(stage=>stage.label==='JS 回归'),'JS still runs on linux');
   assert.equal(linux.stages.length+linux.skipped.length,darwin.stages.length);
 });

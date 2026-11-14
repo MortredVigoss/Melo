@@ -27,17 +27,19 @@ test('heavy files are recognised from their own source, not from a list', () => 
 
 test('limits follow what the machine has to spare, never drop below four slots, and explicit values win', () => {
   assert.deepEqual(poolLimits({ env: {}, cores: 10, load: 0.4 }), { slots: 8, heavyCost: 2, heavyMax: 3 }, 'an idle ten-core machine');
-  assert.deepEqual(poolLimits({ env: {}, cores: 10, load: 3.2 }), { slots: 5, heavyCost: 1.25, heavyMax: 2 }, 'three cores already busy');
-  assert.deepEqual(poolLimits({ env: {}, cores: 10, load: 6.5 }), { slots: 4, heavyCost: 1, heavyMax: 2 }, 'a busy machine keeps the four slots the suite was written for');
-  assert.deepEqual(poolLimits({ env: {}, cores: 10, load: 40 }), { slots: 4, heavyCost: 1, heavyMax: 2 });
-  assert.deepEqual(poolLimits({ env: {}, cores: 4, load: 0 }), { slots: 4, heavyCost: 1, heavyMax: 2 }, 'a four-core runner');
-  assert.deepEqual(poolLimits({ env: {}, cores: 2, load: 0 }), { slots: 4, heavyCost: 1, heavyMax: 2 });
-  assert.deepEqual(poolLimits({ env: { MELO_TEST_BASELINE_LOAD: '5.2' }, cores: 10, load: 0 }), { slots: 4, heavyCost: 1, heavyMax: 2 }, 'the load the daily runner sampled before its own stages wins over the current one');
+  assert.deepEqual(poolLimits({ env: {}, cores: 10, load: 3.2 }), { slots: 5, heavyCost: 1.25, heavyMax: 3 }, 'three cores already busy');
+  assert.deepEqual(poolLimits({ env: {}, cores: 10, load: 6.5 }), { slots: 4, heavyCost: 1, heavyMax: 3 }, 'a busy machine keeps the four slots the suite was written for');
+  assert.deepEqual(poolLimits({ env: {}, cores: 10, load: 40 }), { slots: 4, heavyCost: 1, heavyMax: 3 });
+  assert.deepEqual(poolLimits({ env: {}, cores: 4, load: 0 }), { slots: 4, heavyCost: 1, heavyMax: 3 }, 'a four-core runner: three heavy files and one light one');
+  assert.deepEqual(poolLimits({ env: {}, cores: 2, load: 0 }), { slots: 4, heavyCost: 1, heavyMax: 3 });
+  assert.deepEqual(poolLimits({ env: { MELO_TEST_BASELINE_LOAD: '5.2' }, cores: 10, load: 0 }), { slots: 4, heavyCost: 1, heavyMax: 3 }, 'the load the daily runner sampled before its own stages wins over the current one');
   assert.deepEqual(poolLimits({ env: { MELO_TEST_BASELINE_LOAD: '0.3' }, cores: 10, load: 9 }), { slots: 8, heavyCost: 2, heavyMax: 3 }, 'so the runner\'s own Swift and Android work does not shrink the pool');
   assert.deepEqual(poolLimits({ env: { MELO_TEST_BASELINE_LOAD: 'bad' }, cores: 10, load: 0 }), { slots: 8, heavyCost: 2, heavyMax: 3 }, 'an unreadable sample falls back to the current load');
   assert.deepEqual(poolLimits({ env: { MELO_TEST_CONCURRENCY: '1' }, cores: 10, load: 0 }), { slots: 1, heavyCost: 1, heavyMax: 1 }, 'serial stays serial');
-  assert.deepEqual(poolLimits({ env: { MELO_TEST_CONCURRENCY: '6' }, cores: 10, load: 9 }), { slots: 6, heavyCost: 1.5, heavyMax: 2 }, 'an explicit size is not reduced by load');
+  assert.deepEqual(poolLimits({ env: { MELO_TEST_CONCURRENCY: '6' }, cores: 10, load: 9 }), { slots: 6, heavyCost: 1.5, heavyMax: 3 }, 'an explicit size is not reduced by load');
   assert.deepEqual(poolLimits({ env: { MELO_TEST_HEAVY_MAX: '4' }, cores: 10, load: 0 }), { slots: 8, heavyCost: 2, heavyMax: 4 });
+  assert.deepEqual(poolLimits({ env: { MELO_TEST_HEAVY_MAX: '2' }, cores: 10, load: 6 }), { slots: 4, heavyCost: 1, heavyMax: 2 }, 'a lower limit can be asked for');
+  assert.deepEqual(poolLimits({ env: { MELO_TEST_CONCURRENCY: '2' }, cores: 10, load: 0 }), { slots: 2, heavyCost: 1, heavyMax: 2 }, 'never more heavy files than slots');
   assert.deepEqual(poolLimits({ env: { MELO_TEST_HEAVY_MAX: '9' }, cores: 10, load: 0 }), { slots: 8, heavyCost: 2, heavyMax: 4 }, 'never more heavy files than the slots hold');
   for (const value of ['0', '-1', '1.5', 'bad', '']) {
     assert.throws(() => poolLimits({ env: { MELO_TEST_CONCURRENCY: value } }), /MELO_TEST_CONCURRENCY must be a positive integer/, value);

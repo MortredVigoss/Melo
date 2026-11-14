@@ -15,8 +15,10 @@
 // machine that is also doing other work, eight files and four browsers pushed
 // a browser test past its own timeout and made a trace flush miss its deadline
 // (measured 2026-11-14). So the cores already busy are subtracted, the floor
-// is the four slots the suite has always had, and no more than two heavy files
-// run together below eight slots (three at eight).
+// is the four slots the suite has always had, and no more than three heavy
+// files run together. Three, not two: with four slots and a load of 9-10 on
+// ten cores the 41 heavy files alone took 87 s three at a time and 111 s two
+// at a time, all passing in both runs.
 import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { cpus, loadavg } from 'node:os';
@@ -49,7 +51,7 @@ export function poolLimits({ env = process.env, cores = cpus().length, load = lo
   const busy = Math.max(0, Math.floor(env.MELO_TEST_BASELINE_LOAD !== undefined && Number.isFinite(baseline) ? baseline : Number.isFinite(load) ? load : 0));
   const slots = requested ?? Math.max(4, Math.min(8, cores - 2 - busy));
   const heavyCost = Math.max(1, slots / 4);
-  const heavyMax = Math.max(1, Math.min(Math.floor(slots / heavyCost), asked ?? (slots >= 8 ? 3 : 2)));
+  const heavyMax = Math.max(1, Math.min(Math.floor(slots / heavyCost), asked ?? 3));
   return { slots, heavyCost, heavyMax };
 }
 

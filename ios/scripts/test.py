@@ -80,6 +80,7 @@ def main():
     parser.add_argument('--check-renderer', action='store_true')
     parser.add_argument('--skip-renderer', action='store_true')
     parser.add_argument('--skip-js', action='store_true', help='JS selection/execution is owned by the calling gate')
+    parser.add_argument('--compile-only', action='store_true', help='compile (or reuse) the selected suites and stop; a later call runs them from the cache')
     args = parser.parse_args()
     if args.list_suites:
         print(json.dumps(catalog, sort_keys=True))
@@ -135,6 +136,15 @@ def main():
             print(f'{name}: compilation failed', flush=True)
             print(error.output or '', flush=True)
             raise
+    if args.compile_only:
+        # The gate compiles beside the Android build and runs the suites afterwards, alone:
+        # several of them assert on task timing and must not share the machine with Gradle.
+        for name, (binary, hit) in built.items():
+            cached += hit
+            if logs.get(name):
+                print(logs[name], end='' if logs[name].endswith('\n') else '\n', flush=True)
+        print(f'{len(selected)} Swift suites ready; {cached} cached compilations; {time.monotonic()-swift_started:.2f}s; not run',flush=True)
+        return
     for name, (binary, hit) in built.items():
         cached += hit
         print(f'{name}: {"cached compile" if hit else "compiled"}; running tests', flush=True)
