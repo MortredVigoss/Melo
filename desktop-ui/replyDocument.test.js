@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {parseReplyDocument,renderReplyDocument,replyPlainText,tableCells} from './replyDocument.js';
-import {normalizeAssistantReplyForConversation} from '../src/services/message/messageBlocks.js';
+import {normalizeAssistantReplyForConversation} from '../src/domain/message/messageBlocks.js';
 const escape=s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
 test('copy and display preserve list ordinals, nesting, checked state and code delimiters inside tables',()=>{
  assert.equal(replyPlainText('3. 第三步\n  4. 子步骤\n- [x] 完成'),'3. 第三步\n  4. 子步骤\n☑ 完成');

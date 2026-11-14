@@ -1,5 +1,3 @@
-import Foundation
-
 /// Where a conversation moves to another topic, from the same shared rule the desktop
 /// uses (src/shared/conversationTopics.js, run in the agent core). Keyed by the user
 /// message that starts the move; a move back names the message where that topic began.

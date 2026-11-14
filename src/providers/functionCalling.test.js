@@ -7,7 +7,6 @@ import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { createCodexResponsesReply, createApiResponsesReply, buildCodexResponsesInput, latestUserMessageHasImage, extractLatestUserTextForIntent } from '../openai.js';
 import { readCodexSseResponse } from './streams.js';
-import { createFunctionCallingSession } from '../tools/functionCalling.js';
 import { createRequestContext } from '../runtime/requestContext.js';
 import { runWithRequestContext } from '../runtime/requestScope.js';
 import { registerTool, unregisterTool } from '../tools/registryCore.js';

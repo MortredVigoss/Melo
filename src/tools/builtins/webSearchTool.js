@@ -155,13 +155,6 @@ const JINA_READER_BASE = 'https://r.jina.ai/';
 
 const CONTENT_FETCH_COUNT = 4;
 
-// Base TTLs.  Intent classifier (classifyQueryIntent) may override these per
-// query — a weather/breaking-news query gets the short TTL so we don't serve
-// a two-hour-old forecast.  Use ms, not seconds.
-
-// P2-1 — how stale a row can be before we still return it and refresh in the
-// background.  Beyond this, we fetch fresh synchronously like the old path.
-
 // P1-2 — synonym / alias expansion.  Every entry is a cluster of equivalents.
 // tokenizeQuery splits CJK into single graphemes and English into word tokens,
 // so keys here are kept in the same shape.  Retry is only triggered when the
@@ -781,8 +774,6 @@ function getCachedSearch(query, intent) {
       results: JSON.parse(row.results),
       contentMap: new Map(Object.entries(JSON.parse(row.content_map))),
       createdAt: Number(row.created_at),
-      intentKind: row.intent_kind || intent?.kind || 'general',
-      fresh: true,
     };
   } catch (error) {
     debugWarn('web_search', `cache read failed for "${query}":`, error?.message || error);
@@ -811,8 +802,6 @@ function getStaleCachedSearch(query, intent) {
       results: JSON.parse(row.results),
       contentMap: new Map(Object.entries(JSON.parse(row.content_map))),
       createdAt: Number(row.created_at),
-      intentKind: row.intent_kind || intent?.kind || 'general',
-      fresh: false,
     };
   } catch (error) {
     debugWarn('web_search', `stale cache read failed for "${query}":`, error?.message || error);
@@ -1363,16 +1352,14 @@ async function fetchResultContents(urls, signal, {
     const fresh = getCachedUrlContent(url);
     if (fresh && fresh.content) {
       // Reuse cached body but still apply the hash-dedup so two different
-      // URLs with identical cached content collapse.
-      if (acceptBody(url, fresh.content, {
+      // URLs with identical cached content collapse. A hash-dup against an
+      // earlier URL needs no refetch either.
+      acceptBody(url, fresh.content, {
         fromUrlCache: true,
         etag: fresh.etag,
         lastModified: fresh.lastModified,
         contentHash: fresh.contentHash,
-      })) {
-        continue;
-      }
-      // Hash-dup against an earlier URL — no need to refetch.
+      });
       continue;
     }
     // P0-4 — even for expired rows, reuse ETag / Last-Modified so Jina can

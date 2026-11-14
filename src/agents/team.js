@@ -13,7 +13,6 @@ import {createOpenAICompatibleReply} from '../openai.js';
 import {modelReplyText} from '../tools/functionCalling.js';
 import {getAllTools,getTool} from '../tools/registryCore.js';
 import {narrowBudget,extendBudget,remainingMs,budgetExhausted,recordUsage,receiptInputTokens,requestTimeoutMs} from '../runtime/runBudget.js';
-export const TEAM_ROLES = Object.freeze({research:'调研',builder:'实施',reviewer:'复核'});
 export const TEAM_TEMPLATES = Object.freeze([
  {id:'research-build-review',name:'调研 → 实施 → 复核',roleTags:['research','implementation','review'],mode:'sequential'},
  {id:'parallel-research',name:'并行调研后复核',roleTags:['research','review'],mode:'parallel'},

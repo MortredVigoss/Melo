@@ -16,7 +16,7 @@ const INLINE_TYPES = /^(?:image\/(?:png|jpeg|webp|gif|heic|heif|bmp|tiff|avif)|a
 
 // Serve a file with ranged (206) playback so WebKit can seek audio/video and
 // resume downloads; shared by the upload and attachment routes (audit L11).
-export function serveFileWithRanges(request, response, { path, size, type, headers = {} }) {
+function serveFileWithRanges(request, response, { path, size, type, headers = {} }) {
   const range = /^bytes=(\d*)-(\d*)$/.exec(String(request.headers.range || ''));
   const base = { 'Content-Type': type, 'Accept-Ranges': 'bytes', ...headers };
   if (range && (range[1] || range[2])) {

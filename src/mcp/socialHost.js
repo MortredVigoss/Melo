@@ -11,7 +11,7 @@ import { createWriteStream } from 'node:fs';
 import { socialSpec } from './socialPresets.js';
 
 const digest = data => createHash('sha256').update(data).digest('hex');
-export async function provisionSocial(id, cwd, signal) {
+async function provisionSocial(id, cwd, signal) {
   const spec = socialSpec(id);
   const target = (process.platform === 'win32' ? 'windows' : process.platform) + '-' + (process.arch === 'x64' ? 'amd64' : process.arch) + (process.platform === 'win32' ? '.exe' : '');
   const hash = spec?.hashes[target];

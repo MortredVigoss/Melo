@@ -49,7 +49,7 @@
       detach(old);
       old.pause();
       front = 1 - front;
-      report('playing', { token: token, width: back.videoWidth, height: back.videoHeight, duration: back.duration });
+      report('playing', { token: token, width: back.videoWidth, height: back.videoHeight });
     };
     back.onended = function () { if (active && active.token === token) report('ended', { token: token }); };
     back.onerror = function () {

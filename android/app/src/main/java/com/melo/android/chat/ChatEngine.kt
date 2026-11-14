@@ -13,8 +13,6 @@ import kotlinx.coroutines.flow.*
 data class ChatTurn(val runId: String? = null, val partial: String = "", val phase: String = "")
 data class ChatRuntime(val initialized: Boolean = false, val turns: Map<String, ChatTurn> = emptyMap(), val error: String? = null, val syncStatus: String? = null) {
     val busyChatId get() = turns.keys.firstOrNull()
-    val runId get() = turns.values.firstOrNull()?.runId
-    val partial get() = turns.values.firstOrNull()?.partial.orEmpty()
 }
 
 class ChatEngine(private val context: Context, val repository: Repository) {

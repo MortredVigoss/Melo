@@ -20,7 +20,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-export const DEFAULT_BG_COLOR = 0x0a0d12;
+const DEFAULT_BG_COLOR = 0x0a0d12;
 
 export class Scene3DRenderer {
   /**
@@ -107,10 +107,6 @@ export class Scene3DRenderer {
     this.controls.autoRotateSpeed = 0.6;
     this.controls.minDistance = this.opts.minDistance;
     this.controls.maxDistance = this.opts.maxDistance;
-    // Clamp the polar angle so the user can't flip to an upside-down camera
-    // in scenes where that looks broken (globe, solar-system, etc).
-    if (this.opts.minPolarAngle != null) this.controls.minPolarAngle = this.opts.minPolarAngle;
-    if (this.opts.maxPolarAngle != null) this.controls.maxPolarAngle = this.opts.maxPolarAngle;
   }
 
   _initResizeObserver() {

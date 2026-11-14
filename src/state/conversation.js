@@ -13,9 +13,6 @@ import { chatPreviewSource } from './ownedSnapshot.js';
 //     (id/title/projectId/mode/locked/updatedAt/updatedLabel/preview/
 //     memorySummary/messageCount). Picks the most recent non-system
 //     message for the preview line.
-//   - describeChatForLimit(chat) — safe chat-title accessor used when
-//     reporting quota/limit errors; falls back to "Untitled chat" for
-//     missing or blank titles.
 //   - summarizeMessagePreview(message) — produce the short preview text
 //     shown under each chat row. Prefers the visible body text, falls back
 //     to an attachment summary ("3 attachments · image, audio"), and
@@ -80,10 +77,6 @@ export function summarizeChat(chat) {
     memorySummary: chat.memorySummary || '',
     messageCount,
   };
-}
-
-export function describeChatForLimit(chat) {
-  return String(chat?.title || 'Untitled chat').trim() || 'Untitled chat';
 }
 
 export function summarizeMessagePreview(message) {

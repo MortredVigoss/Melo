@@ -25,7 +25,6 @@ async function warRoomModule(renderer = null) {
 async function loadPanel({ renderer = null } = {}) {
   const source = (await readFile(new URL('./executionPanel.js', import.meta.url), 'utf8'))
     .replace("'./buttonStyles.js'", fileUrl('./buttonStyles.js'))
-    .replace("'./html.js'", fileUrl('./html.js'))
     .replaceAll("'./i18n.js'", fileUrl('./i18n.js'))
     .replace("'./executionText.js'", fileUrl('./executionText.js'))
     .replace("'/shared/executionScene.js'", fileUrl('../src/shared/executionScene.js'))

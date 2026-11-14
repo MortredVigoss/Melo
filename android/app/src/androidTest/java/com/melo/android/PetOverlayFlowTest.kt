@@ -1,7 +1,6 @@
 package com.melo.android
 
 import android.app.UiAutomation
-import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Handler
@@ -66,7 +65,6 @@ class PetOverlayFlowTest {
             started++
             Handler(Looper.getMainLooper()).postDelayed({ listener.onPartial("你好"); listener.onResult(text) }, 400)
         }
-        override fun cancel() {}
         override fun destroy() {}
     }
 

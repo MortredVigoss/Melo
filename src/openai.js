@@ -31,11 +31,7 @@ import {
   IMAGE_EDIT_INTENT_PATTERN,
   IMAGE_FOLLOW_UP_PATTERN,
 } from './services/chat/messageBuilder.js';
-import {
-  clearSearchTriggers,
-  registerSearchTriggers,
-  shouldUseNativeWebSearch,
-} from './retrieval/searchRouter.js';
+import { shouldUseNativeWebSearch } from './retrieval/searchRouter.js';
 
 const DEFAULT_CODEX_REQUEST_TIMEOUT_MS = 600000;
 const DEFAULT_PROVIDER_REQUEST_TIMEOUT_MS = 600000;
@@ -382,13 +378,6 @@ export async function saveCodexInlineImageItem(item, workspacePath) {
   }
   return { path, url, mimeType, bytes: buffer.length };
 }
-export function registerWebSearchTriggers(entries = []) {
-  registerSearchTriggers(entries);
-}
-
-export function clearExtraWebSearchTriggers() {
-  clearSearchTriggers();
-}
 let keepAliveSetupPromise = null;
 
 function normalizeBaseUrl(baseUrl) {
@@ -400,23 +389,7 @@ function withTimeoutSignal(timeoutMs, signal) {
     return AbortSignal.timeout(timeoutMs);
   }
 
-  if (typeof AbortSignal.any === 'function') {
-    return AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]);
-  }
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  const abort = () => controller.abort(signal.reason);
-  signal.addEventListener('abort', abort, { once: true });
-  controller.signal.addEventListener(
-    'abort',
-    () => {
-      clearTimeout(timeoutId);
-      signal.removeEventListener('abort', abort);
-    },
-    { once: true },
-  );
-  return controller.signal;
+  return AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]);
 }
 
 async function ensureFetchKeepAliveConfigured() {
@@ -487,11 +460,7 @@ function resolveCodexRequestTimeoutMs() {
 }
 
 function createCodexSessionId() {
-  if (typeof globalThis.crypto?.randomUUID === 'function') {
-    return globalThis.crypto.randomUUID();
-  }
-
-  return `melo_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  return globalThis.crypto.randomUUID();
 }
 
 function resolveCodexResponsesEndpoint(baseUrl) {

@@ -32,12 +32,11 @@ import {
   openPage,
   getPage,
   closePage,
-  peekPageInfo,
 } from '../../services/browser/pageRegistry.js';
 import { debugWarn } from '../../debug.js';
 
 // Default registry impl bundle — overridable per-call via _pageRegistry.
-const DEFAULT_REGISTRY = { openPage, getPage, closePage, peekPageInfo };
+const DEFAULT_REGISTRY = { openPage, getPage, closePage };
 
 const TEXT_CHARS_CAP = 50_000;
 
@@ -288,7 +287,6 @@ export const browserClickTool = {
     // ops — chosen over the alternative ("ABORTED but op may have
     // completed") because the latter is non-actionable for an agent.
     let abortListener = null;
-    let pageInvalidatedByAbort = false;
     // 2026-05-21 audit闭环 #8: capture the in-flight closePage Promise
     // so the outer finally can await it before returning ABORTED.
     // Pre-fix this was fire-and-forget — agent would receive `error:
@@ -299,7 +297,6 @@ export const browserClickTool = {
     let closingPromise = null;
     if (signal) {
       abortListener = () => {
-        pageInvalidatedByAbort = true;
         // Start the close — capture so finally awaits it.
         closingPromise = Promise.resolve(registry.closePage(pageId)).catch(() => {});
       };
@@ -320,7 +317,7 @@ export const browserClickTool = {
           ok: false,
           output: `browser_click aborted for ${pageId} (page handle invalidated)`,
           error: 'ABORTED',
-          meta: { pageId, pageInvalidated: pageInvalidatedByAbort || true },
+          meta: { pageId, pageInvalidated: true },
         };
       }
       debugWarn('browser_click', `failed for ${pageId} ${selector}: ${msg}`);
@@ -431,11 +428,9 @@ export const browserFillTool = {
     // contention between still-closing browser and the agent's immediate
     // re-open.
     let abortListener = null;
-    let pageInvalidatedByAbort = false;
     let closingPromise = null;
     if (signal) {
       abortListener = () => {
-        pageInvalidatedByAbort = true;
         closingPromise = Promise.resolve(registry.closePage(pageId)).catch(() => {});
       };
       signal.addEventListener('abort', abortListener, { once: true });
@@ -454,7 +449,7 @@ export const browserFillTool = {
           ok: false,
           output: `browser_fill aborted for ${pageId} (page handle invalidated)`,
           error: 'ABORTED',
-          meta: { pageId, pageInvalidated: pageInvalidatedByAbort || true },
+          meta: { pageId, pageInvalidated: true },
         };
       }
       debugWarn('browser_fill', `failed for ${pageId} ${selector}: ${msg}`);

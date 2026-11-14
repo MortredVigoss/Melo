@@ -54,7 +54,6 @@ import {
 } from './undoToast.js';
 import { buildConnectorDraft, pickConnectorField } from './connectorDraft.js';
 import { applyFormInputToDraft } from './connectorDraftDispatch.js';
-import './credentialChip.js'; // Preserve module initialization.
 import { decideFileSafetyResponseAction } from './fileSafetyResponse.js';
 import { installCustomizeFeature } from './features/customize/index.js';
 import { resolveActiveMinimaxVoiceId } from '/shared/minimaxVoiceResolver.js';
@@ -187,7 +186,6 @@ let activeSearchFileSource = null;
 let activeSearchFileSequence = 0;
 let activeEditableContextTarget = null;
 let activeCopyContextTarget = null;
-let activeRecentContextChatId = null;
 let activeAudioContextUrl = null;
 
 // ─── Global typing guard ─────────────────────────────────────────────────────
@@ -259,7 +257,6 @@ const icon = {
   send: '<svg viewBox="0 0 24 24"><path d="M4 12 20 4l-4 16-4.5-5.5Z"/><path d="M20 4 9.5 14.5"/></svg>',
   mic: '<svg viewBox="0 0 24 24"><path d="M12 4a3 3 0 0 1 3 3v5a3 3 0 1 1-6 0V7a3 3 0 0 1 3-3Z"/><path d="M19 11a7 7 0 0 1-14 0M12 18v3M8 21h8"/></svg>',
   stop: '<svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>',
-  dots: '<svg viewBox="0 0 24 24"><circle cx="6.5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="17.5" cy="12" r="1.4"/></svg>',
   lock: '<svg viewBox="0 0 24 24"><rect x="6" y="11" width="12" height="9" rx="2"/><path d="M8.5 11V8.8a3.5 3.5 0 1 1 7 0V11"/></svg>',
   chevronDown: '<svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>',
   chevronLeft: '<svg viewBox="0 0 24 24"><path d="m15 6-6 6 6 6"/></svg>',
@@ -277,7 +274,6 @@ const icon = {
   speak: '<svg viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 6a9 9 0 0 1 0 12"/></svg>',
   speakOff: '<svg viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>',
   code: '<svg viewBox="0 0 24 24"><path d="m8 8-4 4 4 4M16 8l4 4-4 4M13.5 5 10.5 19"/></svg>',
-  save: '<svg viewBox="0 0 24 24"><path d="M5 4.5h12l2.5 2.5V19A1.5 1.5 0 0 1 18 20.5H6A1.5 1.5 0 0 1 4.5 19V6A1.5 1.5 0 0 1 6 4.5Z"/><path d="M8 4.5v6h8v-6M8 20v-5.5h8V20"/></svg>',
   eye: '<svg viewBox="0 0 24 24"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="3"/></svg>',
   eyeOff:
     '<svg viewBox="0 0 24 24"><path d="M3 3 21 21"/><path d="M10.6 10.7A3 3 0 0 0 13.3 13.4"/><path d="M9.9 5.3A10.8 10.8 0 0 1 12 5c6 0 9.5 7 9.5 7a17.6 17.6 0 0 1-3.2 3.7"/><path d="M6.2 6.2A17.1 17.1 0 0 0 2.5 12s3.5 7 9.5 7c1.5 0 2.8-.3 4-.8"/></svg>',
@@ -371,7 +367,7 @@ featureForms.register(chatFeature.forms, 'chat');
 // Customize page (architecture B3): skills, connectors, safety and Tools & Tasks sections.
 const customizeFeature = installCustomizeFeature({
   agentsFeature, approvalsFeature, memoryFeature, allChatAgentProfiles, api, applyBootstrap, applyBootstrapPreservingDrafts, bgRender, render, notify, escapeHtml,
-  patchSettings, minimaxTtsConfigPatchForVoice, effectiveModelSetupDraft, resolveActiveMinimaxVoiceId, renderApprovalPanel, renderCommandRunner, renderProjectArtifactShelf, renderSelectedFilePreview, renderTaskPanel,
+  patchSettings, minimaxTtsConfigPatchForVoice, effectiveModelSetupDraft, resolveActiveMinimaxVoiceId, renderApprovalPanel, renderProjectArtifactShelf, renderTaskPanel,
   getBootstrap: () => uiState.bootstrap,
   modelSetupDraft: () => uiState.modelSetupDraft,
   refreshBootstrap: () => loadBootstrap(uiState.searchQuery, { quiet: true }),
@@ -381,38 +377,6 @@ const customizeFeature = installCustomizeFeature({
 });
 featureActions.register(customizeFeature.actions, 'customize');
 featureForms.register(customizeFeature.forms, 'customize');
-const HOME_PROMPT_PRESETS = [
-  {
-    id: 'write',
-    label: 'Write',
-    mode: 'chat',
-    prompt: 'Help me write a clear and polished message about ',
-  },
-  {
-    id: 'learn',
-    label: 'Learn',
-    mode: 'cowork',
-    prompt: 'Teach me this step by step: ',
-  },
-  {
-    id: 'code',
-    label: 'Code',
-    mode: 'code',
-    prompt: 'Help me debug, build, or explain this code task: ',
-  },
-  {
-    id: 'life',
-    label: 'Life stuff',
-    mode: 'chat',
-    prompt: 'Help me think through this practical life task: ',
-  },
-  {
-    id: 'melo-choice',
-    label: "Melo's choice",
-    mode: '',
-    prompt: 'Choose the best way to approach this and help me get started: ',
-  },
-];
 
 const MODEL_SETUP_DEFAULTS = {
   local: {
@@ -838,8 +802,6 @@ function activeProjectArtifacts() {
 function agentProfileById(agentId) {
   return uiState.bootstrap?.customize?.agents?.find(agent => agent.id === agentId) || null;
 }
-
-
 
 // A task runs in a chat owned by the task's Agent inside the task's project,
 // so its team is led by that Agent with the project's overrides applied.
@@ -1483,10 +1445,6 @@ window.addEventListener('melo-external-link', event => {
   if (event.detail?.ok === false) notify({level:'error',text:'浏览器未能打开，请点击链接旁的「复制链接」后粘贴到浏览器。'});
 });
 
-function homePromptPresetById(presetId) {
-  return HOME_PROMPT_PRESETS.find(preset => preset.id === presetId) || null;
-}
-
 function renderEditContextMenu() {
   return ui`
     <div id="edit-context-menu" class="edit-context-menu" aria-hidden="true">
@@ -1507,22 +1465,6 @@ function renderCopyContextMenu() {
       <button class="edit-context-item" type="button" data-action="copy-surface-selection">复制</button>
       <button class="edit-context-item" type="button" data-action="copy-surface-all">复制全部</button>
       <button class="edit-context-item" type="button" data-action="copy-surface-select-all">全选</button>
-    </div>
-  `;
-}
-
-function renderRecentContextMenu() {
-  const recent = (uiState.bootstrap?.recents || []).find(chat => chat.id === activeRecentContextChatId);
-  const isLocked = Boolean(recent?.locked);
-  return ui`
-    <div id="recent-context-menu" class="edit-context-menu" aria-hidden="true">
-      <button class="edit-context-item" type="button" data-action="toggle-chat-lock">
-        ${isLocked ? t('解锁') : t('锁定')}
-      </button>
-      <div class="edit-context-divider"></div>
-      <button class="edit-context-item is-danger" type="button" data-action="delete-chat">
-        删除
-      </button>
     </div>
   `;
 }
@@ -1610,17 +1552,6 @@ function closeCopyContextMenu() {
   activeCopyContextTarget = null;
 }
 
-function closeRecentContextMenu() {
-  const menu = document.querySelector('#recent-context-menu');
-  if (menu instanceof HTMLElement) {
-    menu.classList.remove('is-open');
-    menu.style.left = '-9999px';
-    menu.style.top = '-9999px';
-    menu.setAttribute('aria-hidden', 'true');
-  }
-  activeRecentContextChatId = null;
-}
-
 function openEditableContextMenu(target, x, y) {
   const menu = document.querySelector('#edit-context-menu');
   if (!(menu instanceof HTMLElement)) {
@@ -1657,44 +1588,6 @@ function openCopyContextMenu(target, x, y) {
   const top = Math.max(12, Math.min(y, window.innerHeight - rect.height - 12));
   menu.style.left = `${left}px`;
   menu.style.top = `${top}px`;
-}
-
-function openRecentContextMenu(chatId, x, y) {
-  const menu = document.querySelector('#recent-context-menu');
-  if (!(menu instanceof HTMLElement) || !chatId) {
-    return;
-  }
-
-  // Preserve the recents list scroll position — render() rebuilds the DOM and
-  // would reset scrollTop to 0 otherwise.
-  const recentList = document.querySelector('.recent-list');
-  const savedScrollTop = recentList instanceof HTMLElement ? recentList.scrollTop : 0;
-
-  activeRecentContextChatId = chatId;
-  render();
-
-  if (savedScrollTop > 0) {
-    const restoredList = document.querySelector('.recent-list');
-    if (restoredList instanceof HTMLElement) {
-      restoredList.scrollTop = savedScrollTop;
-    }
-  }
-
-  const nextMenu = document.querySelector('#recent-context-menu');
-  if (!(nextMenu instanceof HTMLElement)) {
-    return;
-  }
-
-  nextMenu.classList.add('is-open');
-  nextMenu.setAttribute('aria-hidden', 'false');
-  nextMenu.style.left = '0px';
-  nextMenu.style.top = '0px';
-
-  const rect = nextMenu.getBoundingClientRect();
-  const left = Math.max(12, Math.min(x, window.innerWidth - rect.width - 12));
-  const top = Math.max(12, Math.min(y, window.innerHeight - rect.height - 12));
-  nextMenu.style.left = `${left}px`;
-  nextMenu.style.top = `${top}px`;
 }
 
 function copyableSelectionText(target) {
@@ -1900,27 +1793,6 @@ async function handleOpenNewChatHome() {
   });
 }
 
-async function handleToggleChatLock(chatId) {
-  const recent = (uiState.bootstrap?.recents || []).find(chat => chat.id === chatId);
-  if (!recent) {
-    notify({level:'error',text:'Chat not found.'});
-    return;
-  }
-
-  applyBootstrap(
-    await api('/api/chats/update', {
-      method: 'POST',
-      body: {
-        chatId,
-        patch: {
-          locked: !recent.locked,
-        },
-      },
-    }),
-  );
-  closeRecentContextMenu();
-}
-
 let chatDeletionPending=false;
 async function handleDeleteChat(chatId) {
   if(chatDeletionPending)return;
@@ -1935,7 +1807,6 @@ async function handleDeleteChat(chatId) {
       body: { chatId, fileDecision, workspaceToken:preview.token },
     }),
   );
-  closeRecentContextMenu();
   } finally {chatDeletionPending=false;}
 }
 
@@ -1962,14 +1833,6 @@ async function handleTranscribeAudio() {
     setTimeout(() => { uiState.error = null; render(); }, 4000);
   }
 }
-
-/**
- * Lightweight one-line confirmation toast.  Used by short-lived feedback
- * like "Copied <path>" — distinct from `showTranscriptToast` (which is a
- * persistent panel with copy/close affordances).  Auto-dismisses after
- * `ms` and only ever shows one at a time.
- */
-
 
 /**
  * Soft-delete undo toast.  Bottom-centre banner with a live "Xs"
@@ -2100,37 +1963,25 @@ const EDGE_TTS_VOICES = [
 const MINIMAX_TTS_PARAMS = [
   {
     key: 'ttsSpeed',
-    label: 'Speed / 语速',
-    defaultValue: 1,
     min: 0.5,
     max: 2,
-    step: 0.1,
-    note: '默认 1.0；0.5 最慢，2.0 最快。',
   },
   {
     key: 'ttsPitch',
-    label: 'Pitch / 音高',
-    defaultValue: 0,
     min: -12,
     max: 12,
-    step: 1,
-    note: '默认 0；-12 更低沉，12 更明亮。',
   },
   {
     key: 'ttsVol',
-    label: 'Volume / 音量',
-    defaultValue: 1,
     min: 0.1,
     max: 10,
-    step: 0.1,
-    note: '默认 1.0；0.1 最小，10 最大。',
   },
 ];
 
 function minimaxTtsConfigPatchForVoice(voiceId) {
   const agent = allChatAgentProfiles().find(profile => profile.minimaxVoiceId === voiceId);
   // Only inherit speed / pitch / vol from the bound agent when that agent
-  // explicitly defines them. Falling back to the def.defaultValue would
+  // explicitly defines them. Falling back to a default value would
   // overwrite the user's manual connector-level tuning every time they
   // pick a voice, which is the bug the audit caught: the tts panel's
   // sliders kept resetting to 1.0 / 0 / 1.0 on each voice change.
@@ -2668,22 +2519,12 @@ async function _streamTtsFlush() {
 
 function _streamTtsEnqueue(sentence) {
   const useApi = uiState.ttsEngine === 'api' || uiState.ttsEngine === 'auto';
-  const useMacos = uiState.ttsEngine === 'macos';
-  const useBrowser = uiState.ttsEngine === 'browser';
 
   if (useApi) {
     api('/api/tts/queue-add', {
       method: 'POST',
       body: { text: sentence, voice: uiState.ttsApiVoice, agentId: _streamTts.agentId },
     }).catch(() => {});
-  } else if (useMacos) {
-    const lang = _detectLang(sentence);
-    api('/api/tts/native', {
-      method: 'POST',
-      body: { text: sentence, lang, voice: uiState.ttsMacosVoiceName },
-    }).catch(() => {});
-  } else if (useBrowser) {
-    speakWithBrowser(sentence);
   }
 }
 
@@ -2893,12 +2734,6 @@ function handleStartEditArtifact(artifactId) {
     kind: artifact.kind || 'note',
     content: artifact.content || '',
   };
-  render();
-}
-
-function handleCancelEditArtifact() {
-  uiState.editingArtifactId = null;
-  uiState.editingArtifactDraft = { title: '', language: '', kind: '', content: '' };
   render();
 }
 
@@ -3126,9 +2961,6 @@ async function handleRejectApproval(approvalId) {
   });
   applyBootstrap(payload);
 }
-
-
-
 
 // Lightweight fuzzy scorer for client-side palette/composer filtering.
 // Returns 0 when nothing matches (filters the item out).
@@ -3846,7 +3678,6 @@ function renderApprovalPanel({ compact = false } = {}) {
 function renderWorkspaceExplorer() {
   const workspace = uiState.bootstrap.workspace;
 
-
   if (!workspace.exists) {
     return ui`
       <div class="empty-state compact">
@@ -3913,7 +3744,6 @@ function renderSelectedFilePreview() {
   const workspace = uiState.bootstrap.workspace;
   const selectedFile = workspace.selectedFile;
 
-
   if (!selectedFile) {
     return ui`<div class="empty-state compact">选择文件以预览内容。</div>`;
   }
@@ -3941,10 +3771,7 @@ function renderSelectedFilePreview() {
       <div class="inline-actions">
         ${
           isEditing
-            ? ui`
-
-
-            `
+            ? ''
             : ui`
               <button class="small-button is-primary" data-action="start-edit-file">
                 Edit file
@@ -4290,17 +4117,6 @@ function renderModelPage() {
   `;
 }
 
-
-
-
-
-
-
-
-// ───────────────────────────────────────────────────────────────────────
-// Phase 3 — Memory panel
-// ───────────────────────────────────────────────────────────────────────
-
 async function handleKillBackgroundTask(runId) {
   if (!runId) return;
   try {
@@ -4310,42 +4126,6 @@ async function handleKillBackgroundTask(runId) {
     notify({level:'error',text:`Kill task failed: ${err?.message || err}`});
   }
 }
-
-// ── Safety allowlist (Phase 3b/3c) ─────────────────────────────────────
-//
-// Backed by the persistent fileSafetyAllowlist (config-stored).
-// pendingRemoveId is set while the DELETE is in flight so the row can
-// disable its button without flashing on optimistic re-render.
-
-
-
-// ── Domain cookies (Phase 4) ──────────────────────────────────────────
-//
-// Same shape as refreshSafetyAllowlist / removeSafetyAllowlistRule but
-// for the domainCookies map. The GET response intentionally omits the
-// cookie string so the listing UI never shows session secrets — add /
-// upsert ships the new value, remove drops it.
-
-
-
-
-
-
-// ───────────────────────────────────────────────────────────────────────
-// Phase 3 — Skill Overview | Markdown tab switcher
-// ───────────────────────────────────────────────────────────────────────
-
-
-
-
-
-
-// renderAdvancedPage moved to ./advancedPage.js so its branches can be
-// covered by node:test smoke tests.  The call site below threads the
-// runtime closures (escapeHtml, scheduleRefresh) explicitly so the
-// extracted module stays a pure function.
-
-
 
 function renderArtifactsPage() {
   const artifacts = artifactShelfRows();
@@ -4399,8 +4179,6 @@ function renderArtifactsPage() {
                   )}</textarea>
                 </label>
                 <div class="inline-actions">
-
-
                   ${
                     project ? ui`<span class="meta-label">Attached to ${escapeHtml(project.name)}</span>` : ''
                   }
@@ -4485,8 +4263,6 @@ function renderArtifactsPage() {
                         )}</textarea>
                       </label>
                       <div class="inline-actions">
-
-
                       </div>
                     </form>
                   `
@@ -5049,7 +4825,6 @@ function render({ background = false, changedSections = null } = {}) {
     ${renderCommandPalette()}
     ${renderEditContextMenu()}
     ${renderCopyContextMenu()}
-    ${renderRecentContextMenu()}
     ${renderAudioContextMenu()}
     ${renderToolPermissionDialog()}
     ${api.pendingSaves().length ? ui`<aside class="committed-save-notice surface-card" aria-live="polite">
@@ -5379,14 +5154,6 @@ document.addEventListener('click', async event => {
   ) {
     closeCopyContextMenu();
   }
-  const recentMenu = document.querySelector('#recent-context-menu');
-  if (
-    recentMenu instanceof HTMLElement &&
-    recentMenu.classList.contains('is-open') &&
-    !event.target.closest('#recent-context-menu')
-  ) {
-    closeRecentContextMenu();
-  }
   const audioMenu = document.querySelector('#audio-context-menu');
   if (
     audioMenu instanceof HTMLElement &&
@@ -5472,7 +5239,7 @@ document.addEventListener('click', async event => {
   if (action?.startsWith('behavior-settings-')) { event.preventDefault(); await handleBehaviorSettings(action,{api,render,refresh:()=>loadBootstrap(uiState.searchQuery,{quiet:true})}); return; }
   if (action?.startsWith('llm-') && trigger.tagName === 'BUTTON') {
     event.preventDefault();
-    await handleLlmConnection(action, { trigger, config: uiState.bootstrap.settings.config, api, render, refresh: () => loadBootstrap(uiState.searchQuery, { quiet: true }), openUrl: openExternalUrl, chatgptLogin: handleStartModelOAuthLogin });
+    await handleLlmConnection(action, { config: uiState.bootstrap.settings.config, api, render, refresh: () => loadBootstrap(uiState.searchQuery, { quiet: true }), openUrl: openExternalUrl, chatgptLogin: handleStartModelOAuthLogin });
     return;
   }
   if (action?.startsWith('search-settings-') && trigger.tagName === 'BUTTON') {
@@ -5560,16 +5327,6 @@ document.addEventListener('click', async event => {
       case 'editable-select-all':
         await handleEditableContextAction(action);
         break;
-      case 'toggle-chat-lock':
-        if (activeRecentContextChatId) {
-          await handleToggleChatLock(activeRecentContextChatId);
-        }
-        break;
-      case 'delete-chat':
-        if (activeRecentContextChatId) {
-          await handleDeleteChat(activeRecentContextChatId);
-        }
-        break;
       case 'transcribe-audio-message':
         await handleTranscribeAudio();
         break;
@@ -5625,54 +5382,9 @@ document.addEventListener('click', async event => {
         await handleSelectWorkspaceFile(filePath, { lineNumber });
         break;
       }
-      case 'open-command-palette':
-        uiState.shouldFocusSearch = false;
-        openCommandPalette();
-        break;
-      case 'submit-agent-profile': {
-        const formId = trigger.dataset.formId;
-        const form = formId ? document.getElementById(formId) : null;
-        if (form instanceof HTMLFormElement) {
-          if (typeof form.requestSubmit === 'function') {
-            form.requestSubmit();
-          } else {
-            form.dispatchEvent(
-              new Event('submit', {
-                bubbles: true,
-                cancelable: true,
-              }),
-            );
-          }
-        }
-        break;
-      }
       case 'close-command-palette':
         closeCommandPalette();
         break;
-      case 'switch-mode':
-        chatFeature.clearHighlightedMessage();
-        uiState.shouldFocusSearch = false;
-        await patchSettings({
-          activeMode: trigger.dataset.mode,
-          activeView: 'chat',
-        });
-        break;
-      case 'apply-home-prompt': {
-        const preset = homePromptPresetById(trigger.dataset.presetId);
-        if (!preset) {
-          break;
-        }
-        if (preset.mode) {
-          await patchSettings({
-            activeMode: preset.mode,
-            activeView: 'chat',
-          });
-        }
-        chatFeature.setComposerText(preset.prompt);
-        render();
-        chatFeature.focusComposerSoon();
-        break;
-      }
       case 'open-chat': {
         chatFeature.prepareThreadNavigation({
           highlightedMessageId: null,
@@ -5690,11 +5402,10 @@ document.addEventListener('click', async event => {
         });
         break;
       }
-      case 'select-project':
       case 'focus-project':
         await patchSettings({
           selectedProjectId: trigger.value || trigger.dataset.projectId,
-          activeView: action === 'focus-project' ? 'projects' : uiState.bootstrap.settings.activeView,
+          activeView: 'projects',
         });
         break;
       case 'resolve-sync-conflict': {
@@ -5808,24 +5519,16 @@ document.addEventListener('click', async event => {
         await patchSettings({ activeView: 'artifacts' });
         break;
       case 'select-file':
-      case 'open-file':
         await handleSelectWorkspaceFile(trigger.dataset.filePath);
         break;
       case 'start-edit-file':
         startSelectedFileEdit();
-        break;
-      case 'cancel-edit-file':
-        resetFileEditor();
-        render();
         break;
       case 'apply-artifact-to-selected-file':
         await handleApplyArtifactToSelectedFile(trigger.dataset.artifactId);
         break;
       case 'start-edit-artifact':
         handleStartEditArtifact(trigger.dataset.artifactId);
-        break;
-      case 'cancel-edit-artifact':
-        handleCancelEditArtifact();
         break;
       case 'delete-artifact':
         await handleDeleteArtifact(trigger.dataset.artifactId);
@@ -5932,10 +5635,6 @@ document.addEventListener('click', async event => {
         uiState.taskLaneOverflowOpen = !uiState.taskLaneOverflowOpen;
         render();
         break;
-      case 'insert-command':
-        chatFeature.setComposerText(trigger.dataset.command || '/');
-        render();
-        break;
       case 'toggle-tts-autoplay':
         uiState.ttsVoicePanelOpen = !uiState.ttsVoicePanelOpen;
         // Lazy-load macOS voices the first time the panel opens so users
@@ -5985,17 +5684,6 @@ document.addEventListener('click', async event => {
           method: 'POST',
           body: { ttsProvider: 'edge' },
         }).then(payload => applyBootstrapPreservingDrafts(payload)).catch(() => {});
-        render();
-        break;
-      }
-      case 'activate-local-voice-pack': {
-        uiState.ttsEngine = 'api';
-        localStorage.setItem('melo-tts-engine', 'api');
-        api('/api/settings/model', {
-          method: 'POST',
-          body: { ttsProvider: 'custom' },
-        }).then(payload => applyBootstrapPreservingDrafts(payload)).catch(() => {});
-        uiState.ttsVoicePanelOpen = false;
         render();
         break;
       }
@@ -6073,7 +5761,6 @@ document.addEventListener('input', event => {
     uiState.commandInputs[target.dataset.commandInput] = target.value;
     return;
   }
-
 
   if (projectsFeature.handleDraftInput(target)) return;
 
@@ -6189,27 +5876,11 @@ document.addEventListener('change', async event => {
 
     if (customizeFeature.handleSkillFilterStateChange(target)) return;
 
-    if (target.dataset.action === 'select-project') {
-      await patchSettings({ selectedProjectId: target.value });
-      return;
-    }
-
     if (target.dataset.action === 'select-agent-profile') {
       await patchSettings({
         activeView: 'agent',
         selectedAgentId: target.value || 'main',
       });
-      return;
-    }
-
-    if (target.dataset.action === 'save-model-select') {
-      // Changing the top-bar model select must not wipe any in-flight form drafts.
-      applyBootstrapPreservingDrafts(
-        await api('/api/settings/model', {
-          method: 'POST',
-          body: { model: target.value },
-        }),
-      );
       return;
     }
 
@@ -6428,7 +6099,6 @@ document.addEventListener('keydown', async event => {
     if (event.key === 'Escape') {
       closeEditableContextMenu();
       closeCopyContextMenu();
-      closeRecentContextMenu();
     }
     return;
   }
@@ -6492,24 +6162,13 @@ document.addEventListener('melo:viz:hydrated', () => {
 
 document.addEventListener('contextmenu', event => {
   const target = event.target;
-  const recentTarget = target instanceof Element ? target.closest('.recent-item') : null;
   const audioCardTarget = target instanceof Element ? target.closest('[data-audio-url]') : null;
   const copyableTarget =
     target instanceof Element ? target.closest('[data-copyable-surface]') : null;
-  if (recentTarget instanceof HTMLElement) {
-    event.preventDefault();
-    closeEditableContextMenu();
-    closeCopyContextMenu();
-    closeAudioContextMenu();
-    openRecentContextMenu(recentTarget.dataset.chatId, event.clientX, event.clientY);
-    return;
-  }
-
   if (audioCardTarget instanceof HTMLElement && audioCardTarget.dataset.audioUrl) {
     event.preventDefault();
     closeEditableContextMenu();
     closeCopyContextMenu();
-    closeRecentContextMenu();
     openAudioContextMenu(audioCardTarget.dataset.audioUrl, event.clientX, event.clientY);
     return;
   }
@@ -6536,7 +6195,6 @@ document.addEventListener('contextmenu', event => {
 
   closeEditableContextMenu();
   closeCopyContextMenu();
-  closeRecentContextMenu();
   closeAudioContextMenu();
 });
 

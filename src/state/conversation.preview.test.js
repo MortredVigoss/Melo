@@ -6,7 +6,7 @@ test('sidebar and project previews preserve numbered steps and code exactly once
  assert.match(summarizeMessagePreview({blocks:[{type:'code',language:'python',text:'__init__'}]}),/__init__/);
 });
 
-import {summarizeProject,normalizeProject} from '../services/project/projectService.js';
+import {summarizeProject,normalizeProject} from '../domain/project/projectService.js';
 test('shared project materials count once and deleted references disappear',()=>{
  const p={id:'p',knowledgeIds:['shared','own','gone']};
  assert.equal(summarizeProject(p,[],[{id:'shared'},{id:'own',projectId:'p'},{id:'gone',deletedAt:'2026-10-09'}]).artifactCount,2);

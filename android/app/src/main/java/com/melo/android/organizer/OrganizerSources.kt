@@ -41,7 +41,6 @@ import com.melo.android.ui.MeloMuted
 
 @Composable fun OrganizerSources(repository: OrganizerRepository, onDismiss: () -> Unit) {
     val state by repository.data.collectAsState()
-    val context = LocalContext.current
     var name by rememberSaveable { mutableStateOf("") }
     // Subscription URLs may contain secrets. Keep them in memory, never saved instance state.
     var url by remember { mutableStateOf("") }

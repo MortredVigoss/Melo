@@ -24,7 +24,6 @@ import {
   writeFile,
   unlink,
   symlink,
-  mkdir,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 

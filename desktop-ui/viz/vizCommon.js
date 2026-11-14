@@ -7,7 +7,7 @@ export function escapeAttr(str) {
   return encodeHtml(str == null ? '' : str);
 }
 
-export function formatValue(value, unit) {
+function formatValue(value, unit) {
   const n = Number(value);
   if (!Number.isFinite(n)) return '';
   const rounded = Math.abs(n) >= 100 ? n.toFixed(0) : Math.abs(n) >= 10 ? n.toFixed(1) : n.toFixed(2);

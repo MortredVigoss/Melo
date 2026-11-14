@@ -7,7 +7,7 @@
 // permission queue and the TTS state stay in app.js (features/README.md).
 import { voiceInputSupported } from '../../voiceInput.js';
 
-export function createChatState() {
+function createChatState() {
   return {
     // The running reply: one at a time across all chats.
     sending: false,

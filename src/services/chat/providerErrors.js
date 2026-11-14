@@ -27,7 +27,7 @@ export function generateChatTitle(content) {
   return words.length > 42 ? `${words.slice(0, 39)}...` : words;
 }
 
-export function summarizeProviderFailureDetails(raw = '') {
+function summarizeProviderFailureDetails(raw = '') {
   const cleaned = String(raw || '')
     .replace(/\s+/g, ' ')
     .replace(/^codex oauth request failed \([^)]*\):\s*/i, '')

@@ -26,7 +26,7 @@
 
 import { assertAgentChannelAvailable } from '../../shared/channelAvailability.js';
 
-export const DISCORD_API_VERSION = 'v10';
+const DISCORD_API_VERSION = 'v10';
 
 export function discordApiBase() {
   return String(
@@ -34,7 +34,7 @@ export function discordApiBase() {
   ).replace(/\/+$/, '');
 }
 
-export function buildDiscordUrl(path, searchParams = {}, baseUrl = discordApiBase()) {
+function buildDiscordUrl(path, searchParams = {}, baseUrl = discordApiBase()) {
   const url = new URL(`${baseUrl}${path.startsWith('/') ? '' : '/'}${path}`);
   for (const [key, value] of Object.entries(searchParams || {})) {
     if (value === undefined || value === null || value === '') {

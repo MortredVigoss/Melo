@@ -4,7 +4,7 @@
 // Moved out of desktop-ui/app.js byte-for-byte first (commit 2/5); since then
 // the bodies read the feature's own state (./state.js), the bootstrap through
 // getBootstrap() and save through ./api.js. Cross-page navigation
-// (focus-project / select-project) stays in app.js. See features/README.md.
+// (focus-project) stays in app.js. See features/README.md.
 import { t } from '../../i18n.js';
 import { collectTeamPlan } from '../../teamPanel.js';
 import { projectsState, resetProjectsState } from './state.js';
@@ -179,4 +179,4 @@ async function saveProjectDefaultAgent(target) {
   render();
 }
 
-export { filteredProjects, handleCreateProject, handleUpdateProject };
+export { filteredProjects };

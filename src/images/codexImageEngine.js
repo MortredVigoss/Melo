@@ -1047,24 +1047,8 @@ async function safeReadText(response) {
   }
 }
 
-// AbortSignal.any is Node ≥ 20.3. Older Node would land on the manual path.
 function composeSignals(userSignal, timeoutSignal) {
-  if (typeof AbortSignal.any === 'function') {
-    const signals = [timeoutSignal];
-    if (userSignal) signals.unshift(userSignal);
-    return AbortSignal.any(signals);
-  }
-  if (!userSignal) return timeoutSignal;
-
-  const controller = new AbortController();
-  const forwardAbort = signal => () => {
-    if (!controller.signal.aborted) {
-      controller.abort(signal?.reason);
-    }
-  };
-  if (userSignal.aborted) return userSignal;
-  if (timeoutSignal.aborted) return timeoutSignal;
-  userSignal.addEventListener('abort', forwardAbort(userSignal), { once: true });
-  timeoutSignal.addEventListener('abort', forwardAbort(timeoutSignal), { once: true });
-  return controller.signal;
+  const signals = [timeoutSignal];
+  if (userSignal) signals.unshift(userSignal);
+  return AbortSignal.any(signals);
 }

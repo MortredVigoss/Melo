@@ -18,8 +18,7 @@ import { escapeHtml } from '../../i18n.js';
 //   - h0     : initial height (m)
 //
 // The renderer is intentionally self-contained — no external deps, no DOM
-// outside the host element. State lives on the host via ._vizState so
-// re-rendering the same host does not lose slider values.
+// outside the host element.
 
 const DEFAULTS = {
   v0: 20,
@@ -153,7 +152,6 @@ function mountProjectile(host, spec) {
       h0: getParamValue(state.params, 'h0', DEFAULTS.h0),
     };
     state.sim = simulate(values);
-    state.values = values;
   };
   recompute();
 
@@ -225,7 +223,6 @@ function mountProjectile(host, spec) {
     },
   };
 }
-
 
 function formatValue(value, unit) {
   const n = Number(value);

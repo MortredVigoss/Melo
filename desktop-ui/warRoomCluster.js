@@ -14,7 +14,7 @@ const TAU = Math.PI * 2;
 const gauss = r => (r() + r() + r() + r() - 2) / .577;
 const clamp01 = x => Math.min(1, Math.max(0, x));
 // Melo's module shell: radius 26–83 about the depth axis, .77 as tall, 70 deep.
-export const SHELL = new T.Vector3(83, 64, 70);
+const SHELL = new T.Vector3(83, 64, 70);
 
 const NODE_VERT = /* glsl */`
 uniform float uTime;

@@ -17,8 +17,8 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { CAPABILITY_ELEVATION, isCapabilityAtom, sortAtoms } from '../domain/agent/capabilityElevation.js';
 
-export const LEDGER_VERSION = 1;
-export const LEDGER_FILE = 'capability-grants.json';
+const LEDGER_VERSION = 1;
+const LEDGER_FILE = 'capability-grants.json';
 export const MAX_GRANTS = 500;
 
 export const ledgerPath = home => join(home, 'desktop', LEDGER_FILE);

@@ -60,7 +60,7 @@ const TERMINAL = ['completed', 'failed', 'cancelled', 'interrupted'];
 // Attribute selectors here are always double-quoted; only quotes and backslashes need escaping.
 const attrValue = value => String(value).replace(/["\\]/g, '\\$&');
 
-export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, recordDetail, regionExtra, traceExtra } = {}) {
+export function createWarRoom({ onClose, onInteract, onRegionChange, recordDetail, regionExtra, traceExtra } = {}) {
   const root = document.createElement('section');
   root.className = 'war-room'; root.id = 'execution-war-room'; root.hidden = true;
   root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-label', t('任务空间'));
@@ -115,7 +115,7 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
     failed = true; fallbackMessage = message; root.classList.add('is-fallback'); settleFlights();
     // The renderer is released (a lost context never draws again) and its labels go with it.
     gpu?.dispose(); gpu = null; for (const el of captions.values()) el.remove(); captions.clear();
-    renderFallback(); onFailure?.(message);
+    renderFallback();
   }
   function renderFallback() {
     if (!failed) return;
@@ -554,10 +554,8 @@ export function createWarRoom({ onClose, onInteract, onFailure, onRegionChange, 
   });
   let ticker = 0;
   return {
-    root, render,
-    get opened() { return opened; },
+    render,
     showRecord(id) { showDetail({ type: 'record', id }); },
-    showRegion(id) { if (EXECUTION_MODULES.some(m => m.id === id)) showDetail({ type: 'region', id }); },
     back() { detail = null; gpu?.focusRegion(null); render(scene, ctx); },
     /** A run's remembered view: the region whose details were open, or none. */
     restore(region, runId = null) { detail = EXECUTION_MODULES.some(m => m.id === region) ? { type: 'region', id: region } : null; keepDetail = runId; gpu?.focusRegion(detail?.id || null); },

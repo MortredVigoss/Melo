@@ -4,16 +4,15 @@ struct NeuralModule: Identifiable {
     let id: Int
     let name: String
     let english: String
-    let symbol: String
     let x: Double
     let y: Double
     var color: Color { MeloTheme.neuralColors[Self.all.firstIndex(where: { $0.id == id }) ?? 0] }
     static let all = [
-        NeuralModule(id: 1, name: InterfaceTerm.conversation.key, english: "CONVERSATIONS", symbol: "bubble.left", x: 0.20, y: 0.22),
-        NeuralModule(id: 4, name: "项目", english: "PROJECTS", symbol: "square.stack.3d.up", x: 0.78, y: 0.24),
-        NeuralModule(id: 2, name: "Agent", english: "AGENTS", symbol: "sparkles", x: 0.85, y: 0.48),
-        NeuralModule(id: 5, name: InterfaceTerm.knowledge.key, english: "KNOWLEDGE", symbol: "point.3.connected.trianglepath.dotted", x: 0.68, y: 0.72),
-        NeuralModule(id: 3, name: "系统", english: "SYSTEM", symbol: "slider.horizontal.3", x: 0.18, y: 0.66)
+        NeuralModule(id: 1, name: InterfaceTerm.conversation.key, english: "CONVERSATIONS", x: 0.20, y: 0.22),
+        NeuralModule(id: 4, name: "项目", english: "PROJECTS", x: 0.78, y: 0.24),
+        NeuralModule(id: 2, name: "Agent", english: "AGENTS", x: 0.85, y: 0.48),
+        NeuralModule(id: 5, name: InterfaceTerm.knowledge.key, english: "KNOWLEDGE", x: 0.68, y: 0.72),
+        NeuralModule(id: 3, name: "系统", english: "SYSTEM", x: 0.18, y: 0.66)
     ]
 }
 

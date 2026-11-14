@@ -9,7 +9,6 @@ export async function beginChatRun(input, context) {
   const fingerprint = chatRequestFingerprint(input);
   let record;
   let replay = null;
-  let fresh = false;
   let turnBinding;
   await updateStateAtomically(state => {
     const chat = state.chats.find(chat => chat.id === input.chatId);
@@ -33,9 +32,8 @@ export async function beginChatRun(input, context) {
     if (!capabilityScope) throw requestError('CAPABILITY_SCOPE_MISSING','Cannot determine the executing Agent.',400);
     turnBinding=Object.freeze({...binding,capabilityScope,workspace:captureWorkspaceBinding(state,chat,binding.project)});
     state.chatRuns.push(record);
-    fresh = true;
   }, { home: context.home });
-  return { record, replay, fresh, turnBinding };
+  return { record, replay, turnBinding };
 }
 
 // Called in the SAME transaction as the assistant append, so retries can

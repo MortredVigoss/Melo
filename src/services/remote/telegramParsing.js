@@ -30,7 +30,7 @@ import {
   normalizeMessageAttachments,
 } from '../../shared/helpers.js';
 
-export async function resolveTelegramFileAttachment(channel, fileId, attachment = {}) {
+async function resolveTelegramFileAttachment(channel, fileId, attachment = {}) {
   const normalizedFileId = String(fileId || '').trim();
   if (!normalizedFileId) {
     return null;
@@ -60,7 +60,7 @@ export async function resolveTelegramFileAttachment(channel, fileId, attachment 
   }
 }
 
-export async function extractTelegramAttachments(message, channel) {
+async function extractTelegramAttachments(message, channel) {
   if (!message || !channel) {
     return [];
   }

@@ -49,11 +49,6 @@ function isMergeProtected(candidate) {
   return PROTECTED_CATEGORIES.has(category);
 }
 
-/** Test-only inspection hook. */
-export function _isMergeProtectedForTests(candidate) {
-  return isMergeProtected(candidate);
-}
-
 /**
  * @typedef {{id: string, namespace: string, kind: string, text: string,
  *           embedding: Float32Array|null, metadata: Object, updatedAt: string}} Candidate
@@ -141,5 +136,3 @@ export function planDuplicateMerges(candidates = []) {
 
   return plan;
 }
-
-export const MERGE_CONFIG = { MERGE_COSINE };

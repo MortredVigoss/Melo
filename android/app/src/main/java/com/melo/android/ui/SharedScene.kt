@@ -2,7 +2,6 @@ package com.melo.android.ui
 
 import android.annotation.SuppressLint
 import android.graphics.Color
-import android.net.Uri
 import android.webkit.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Text

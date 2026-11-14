@@ -52,7 +52,6 @@ import {
   allAgentIdsFromProfiles,
   AGENT_PRESETS,
   MOOD_OPTIONS,
-  moodOptionById,
 } from '../../domain/agent/agentLibrary.js';
 import { createAgentMarkdownFileHelpers } from '../../persistence/agentMarkdownFiles.js';
 import {
@@ -114,7 +113,6 @@ function availableModelsForConfig(config) {
 }
 
 function summarizeAgentProfile(profile) {
-  const mood = moodOptionById(profile.mood);
   const toolIds = normalizeAgentTools(profile.tools);
   const tools = summarizeAgentTools(toolIds);
   const now = Date.now();
@@ -154,7 +152,6 @@ function summarizeAgentProfile(profile) {
       ? truncateText(channel.lastReplyPreview.replace(/\s+/g, ' ').trim(), 160)
       : '',
     botLabel: channel.botUsername ? `@${channel.botUsername}` : 'Unknown bot',
-    hasActivity: Boolean(channel.lastIncomingAt || channel.lastReplyAt),
     hasCredentials: Boolean(
       channel.botToken &&
         (channel.id === 'telegram'
@@ -167,20 +164,10 @@ function summarizeAgentProfile(profile) {
   return {
     ...profile,
     toolIds,
-    moodLabel: mood.label,
-    moodDescription: mood.description,
-    moodPrompt: mood.prompt,
-    identifyPreview: (profile.identity || profile.identify).slice(0, 180),
-    soulMdPreview: profile.soulMd.slice(0, 180),
-    identityPreview: (profile.identity || profile.identify).slice(0, 180),
-    soulPreview: profile.soulMd.slice(0, 180),
     tools,
     toolCount: tools.length,
-    toolsLabel: tools.map(tool => tool.label).join(', '),
     modelLabel: profile.model || 'Inherit global model',
-    systemPromptPreview: profile.systemPrompt || '',
     channels,
-    enabledChannelCount: channels.filter(channel => channel.enabled).length,
   };
 }
 
@@ -347,6 +334,7 @@ export async function getDesktopBootstrap(query = '', { skipModelNormalize = fal
           ? `${config.whisperApiKey.slice(0, 4)}...${config.whisperApiKey.slice(-4)}`
           : '(not set)',
         whisperBaseUrl: config.whisperBaseUrl || '',
+        // Read by the UI through /shared/localServices.js (`customVoiceActive(settings.config)`), not by name.
         customVoiceBaseUrl: config.customVoiceBaseUrl,
         ttsProvider: config.ttsProvider || '',
         ttsEdgeVoice: config.ttsEdgeVoice || '',
@@ -395,13 +383,6 @@ export async function getDesktopBootstrap(query = '', { skipModelNormalize = fal
       moods: MOOD_OPTIONS,
       agentPresets: AGENT_PRESETS,
       agentTools: AGENT_TOOL_OPTIONS,
-      agentScope: activeAgentScope,
-      agentProject: activeProject
-        ? {
-            id: activeProject.id,
-            name: activeProject.name,
-          }
-        : null,
       // Background clustering proposals surfaced by Phase 3D — the UI uses
       // these to offer "save as skill" suggestions without making a
       // separate API call on every render.

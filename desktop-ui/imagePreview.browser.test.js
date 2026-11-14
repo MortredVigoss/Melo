@@ -21,7 +21,7 @@ test('image preview preserves original downloads, focus, zoom and retry feedback
     if (['/shared/agent/runtimeMessages.js','/shared/agent/locale.js'].includes(new URL(req.url,'http://fixture').pathname)) {
       res.writeHead(200, {'content-type':'text/javascript'}); res.end(await readFile(resolve('.' + new URL(req.url,'http://fixture').pathname))); return;
     }
-    if (['/html.js', '/interfaceLanguages.js', '/tokens.css', '/imagePreview.js', '/imageResource.js', '/imageZoom.js', '/i18n.js', '/translations.js', '/styles.css'].includes(req.url)) {
+    if (['/interfaceLanguages.js', '/tokens.css', '/imagePreview.js', '/imageResource.js', '/imageZoom.js', '/i18n.js', '/translations.js', '/styles.css'].includes(req.url)) {
       res.writeHead(200, { 'content-type': req.url.endsWith('.js') ? 'text/javascript' : 'text/css' });
       res.end(await readFile(resolve('desktop-ui' + req.url))); return;
     }

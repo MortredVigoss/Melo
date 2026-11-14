@@ -54,7 +54,6 @@ class GlobeFlightScene extends Scene3DRenderer {
     );
     const earth = new THREE.Mesh(earthGeo, earthMat);
     scene.add(earth);
-    this.earth = earth;
 
     // Landmass overlay: a wireframe icosahedron at 1.001× radius gives the
     // globe a stylized mesh-of-continents look without needing a texture.

@@ -1,7 +1,7 @@
 import { currentRequestContext, requestEnvironment } from '../runtime/requestScope.js';
 import { createSearchRouter } from '../../shared/agent/retrieval/searchRouter.js';
 
-export const { extractUrlsFromText, registerSearchTriggers, clearSearchTriggers, normalizeMessageContent, latestUserMessageText, isSocialLinkUrl, scoreWebSearchIntent, shouldUseNativeWebSearch, buildSearchPlan, filterToolsForSearchPlan, constrainSearchPlan, buildSearchRoutingPrompt: legacyBuildSearchRoutingPrompt } = createSearchRouter({ currentRequestContext, requestEnvironment });
+export const { registerSearchTriggers, clearSearchTriggers, shouldUseNativeWebSearch, buildSearchPlan, filterToolsForSearchPlan, constrainSearchPlan, buildSearchRoutingPrompt: legacyBuildSearchRoutingPrompt } = createSearchRouter({ currentRequestContext, requestEnvironment });
 
 export function buildSearchRoutingPrompt(plan) {
   if (!plan?.sharedPlan) return legacyBuildSearchRoutingPrompt(plan);

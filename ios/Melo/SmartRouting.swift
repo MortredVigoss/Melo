@@ -25,14 +25,13 @@ struct PhoneRoutingPolicy: Codable, Equatable {
     }
     var dictionary: [String: Any] { (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(self))) as? [String: Any] ?? [:] }
 }
-struct PhoneRoutingCandidate: Codable, Equatable, Identifiable {
+struct PhoneRoutingCandidate: Codable, Equatable {
     var connectionId: String
     var model: String
     var name: String
     var capabilities: [String: Bool] = ["tools": true]
     var contextWindow = 0
     var available = true
-    var id: String { connectionId + ":" + model }
     var assignment: RoutingAssignment { .init(connectionId: connectionId, model: model, vision: capabilities["vision"] == true) }
     var dictionary: [String: Any] { (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(self))) as? [String: Any] ?? [:] }
 }
@@ -42,7 +41,6 @@ final class PhoneRoutingSession: @unchecked Sendable {
     private var input: [String: Any]
     private(set) var decision: [String: Any]
     private(set) var escalated = false
-    var active: Bool { decision["mode"] as? String == "smart" }
     var model: String { decision["model"] as? String ?? "" }
     var connectionId: String { decision["connectionId"] as? String ?? "" }
     var cacheToken: String { String(data: (try? JSONSerialization.data(withJSONObject: input, options: [.sortedKeys])) ?? Data(), encoding: .utf8) ?? "" }

@@ -5,20 +5,6 @@
    groups with chat/artifact cards, .project-detail-panel, .mini-list…) stay
    in styles.css. */
 
-.project-list-item.is-active {
-  background: var(--palette-400734e9b3);
-  border-color: var(--palette-a93111af40);
-}
-
-.project-metrics {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-top: 12px;
-  color: var(--text-soft);
-  font-size: var(--font-size-12px);
-}
-
 /* ─────────── Claude-style Projects page ─────────── */
 
 /* Grid of project cards on the overview. Auto-fills to columns that are at

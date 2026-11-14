@@ -1,7 +1,7 @@
 import { normalizeEndpointBase, normalizeConnectorPath, maskSecret, normalizeManifestEntries, normalizeExternalConnectorManifest, normalizeExternalConnector } from '../../domain/connector/externalConnector.js';
 export { normalizeEndpointBase, normalizeConnectorPath, maskSecret, normalizeManifestEntries, normalizeExternalConnectorManifest, normalizeExternalConnector };
 
-export function externalConnectorUrl(connector, pathValue) {
+function externalConnectorUrl(connector, pathValue) {
   return `${normalizeEndpointBase(connector.endpoint)}${normalizeConnectorPath(pathValue, '/')}`;
 }
 

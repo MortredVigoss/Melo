@@ -10,7 +10,6 @@ export const MEMORY_EXTRACTION_MIN_MESSAGES = 6;
 export const FRAME_GAP_MS = 30 * 60 * 1000;
 export const FRAME_MAX_USER_TURNS = 5;
 export const FRAME_MAX_TOKENS = 2000;
-export const FRAME_DRIFT_COS = 0.35;
 export const FRAME_MIN_TURNS = 2;
 export const MAX_CONTEXT_RECENT_MESSAGES = 8;
 export const MAX_CONTEXT_MEMORY_MESSAGES = 24;

@@ -226,8 +226,7 @@ export async function probeEmbeddingProviderAvailability() {
   // Re-implement getEmbeddingProvider's loop so we can surface per-provider
   // rejection reasons. The factory registry is the same module-level Map.
   for (const name of order) {
-    const factory = providerModule.REGISTRY?.get?.(name)
-      ?? providerModule._REGISTRY?.get?.(name); // tolerate either export name
+    const factory = providerModule.REGISTRY?.get?.(name);
     if (!factory) {
       result.reasons[name] = `no factory registered for "${name}"`;
       continue;

@@ -550,7 +550,7 @@ enum PhoneTokenEstimate {
 
 enum PhoneUncertainty {
     struct Parsed: Equatable { var hasMarker: Bool; var uncertainClaim: String; var cleanReply: String; var source: String }
-    struct Verification: Equatable { var verdict: String; var correction = ""; var originalClaim = ""; var evidenceId = ""; var reason = "" }
+    struct Verification: Equatable { var verdict: String; var correction = ""; var originalClaim = ""; var reason = "" }
     struct Evidence {
         var id: String; var tool: String?; var ok: Bool; var source: String?; var fetchedAt: String?; var coverage: String; var truncated: Bool?; var text: String
         /// Same key order as the desktop's evidence objects (JSON.stringify).
@@ -647,7 +647,7 @@ enum PhoneUncertainty {
             let ok = supported(evidenceId: payload["evidenceId"] as? String, quote: payload["evidenceQuote"] as? String, evidence: evidence)
             let original = JSText.trim(payload["originalClaim"] as? String ?? ""), correction = JSText.trim(payload["correction"] as? String ?? "")
             if verdict == "CORRECTED", ok, !original.isEmpty, !correction.isEmpty, reply.contains(original) {
-                return Verification(verdict: "CORRECTED", correction: correction, originalClaim: original, evidenceId: payload["evidenceId"] as? String ?? "", reason: "context-contradicts")
+                return Verification(verdict: "CORRECTED", correction: correction, originalClaim: original, reason: "context-contradicts")
             }
             if verdict == "VERIFIED", ok { return Verification(verdict: "VERIFIED", reason: "context-supports") }
             return Verification(verdict: "UNVERIFIED", reason: "insufficient-context")
@@ -667,18 +667,6 @@ enum PhoneIntent {
         var riskLevel: String
         var requiresVerification: Bool { PhoneIntent.requiresVerification(taskType: taskType ?? "factual", riskLevel: riskLevel) }
     }
-    private static func pattern(_ name: String) -> LoopRegex { loopContract.intentPatterns[name]! }
-    /// `maskQuotedText`: quoted spans become spaces of the same UTF-16 length.
-    static func maskQuotedText(_ text: String) -> String {
-        let ns = NSMutableString(string: text)
-        for range in loopContract.quotedText.matchRanges(text).reversed() { ns.replaceCharacters(in: range, with: String(repeating: " ", count: range.length)) }
-        return ns as String
-    }
-    static func isTranslationRequest(_ text: String) -> Bool {
-        let instruction = maskQuotedText(text)
-        if pattern("translationExcluded").test(instruction) { return false }
-        return pattern("translation").test(instruction)
-    }
     /// `classifyByRules`
     static func rules(_ query: String) -> String? {
         SharedLoopPolicy.value("intent", ["action": "rules", "text": query]) as? String
@@ -696,11 +684,6 @@ enum PhoneIntent {
     /// `intentRequiresVerification`
     static func requiresVerification(taskType: String, riskLevel: String) -> Bool {
         riskLevel == "high" || taskType == "factual" || taskType == "high-stakes"
-    }
-    /// The classifier model's answer, normalised like the desktop (first word, unknown → factual).
-    static func normalize(_ reply: String) -> String {
-        let word = JSText.trim(reply.lowercased()).split(whereSeparator: { $0.isWhitespace }).first.map(String.init) ?? "factual"
-        return loopContract.intentCategories.contains(word) ? word : "factual"
     }
 }
 

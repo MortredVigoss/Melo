@@ -74,7 +74,7 @@ export const AGENT_TOOL_OPTIONS = [
 ];
 
 export const DEFAULT_AGENT_TOOL_IDS = AGENT_TOOL_OPTIONS.map(tool => tool.id);
-export const AGENT_TOOL_IDS = new Set(DEFAULT_AGENT_TOOL_IDS);
+const AGENT_TOOL_IDS = new Set(DEFAULT_AGENT_TOOL_IDS);
 
 export function normalizeAgentTools(tools) {
   if (Array.isArray(tools)) {
@@ -232,7 +232,7 @@ export function filterSkillsForAgent(skills, profile) {
 // turn messages + inverted index) into matchSkillsForMessage without
 // paying the index build cost on every turn.
 
-export function fingerprintSkillList(skills) {
+function fingerprintSkillList(skills) {
   if (!Array.isArray(skills)) return '';
   const parts = [];
   for (const s of skills) {

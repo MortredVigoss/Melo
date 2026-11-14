@@ -1,7 +1,7 @@
 import {t,ui} from './i18n.js';
 
 // Keep unsaved management input outside the polling-rendered application root.
-export function managementDialog({title,fields=[],submitLabel='保存',submit}) {
+function managementDialog({title,fields=[],submitLabel='保存',submit}) {
  const dialog=document.createElement('dialog');dialog.className='chat-file-dialog management-dialog';
  const form=document.createElement('form'),heading=document.createElement('h2');heading.textContent=t(title);form.append(heading);
  for(const field of fields) {

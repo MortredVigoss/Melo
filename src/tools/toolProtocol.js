@@ -34,8 +34,6 @@ import { booleanSetting, toolCallingOverride } from '../../shared/agent/runtimeB
 import { formatToolResultsMessage } from './parser.js';
 import { redactSecretsInText } from './secretRedaction.js';
 
-export const TOOL_PROTOCOLS = Object.freeze(['responses', 'chat-completions', 'anthropic', 'xml']);
-
 const RESPONSES_HOSTS = /^api\.openai\.com$/i;
 const ANTHROPIC_HOSTS = /^api\.anthropic\.com$/i;
 
@@ -303,7 +301,7 @@ export function toRequestMessages(messages = [], protocol) {
 
 // ─── Persistence (protocol-neutral tool chain on the assistant message) ──────
 
-export const TOOL_CHAIN_VERSION = 1;
+const TOOL_CHAIN_VERSION = 1;
 const DEFAULT_CHAIN_OUTPUT_CHARS = 1500;
 const DEFAULT_CHAIN_ARG_CHARS = 2000;
 const DEFAULT_CHAIN_MAX_CHARS = 24000;

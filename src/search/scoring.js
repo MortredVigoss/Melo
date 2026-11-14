@@ -16,7 +16,7 @@ export { normalizeSearchValue };
 // grapheme > raw-fallback.  The "position divisor" constants control how
 // quickly a match buried deep in a haystack is penalised.
 // ─────────────────────────────────────────────────────────────────────────────
-export const SEARCH_WEIGHTS = Object.freeze({
+const SEARCH_WEIGHTS = Object.freeze({
   // fuzzySubsequenceScore base (before gap + length penalties).
   FUZZY_BASE: 140,
   // Whole-haystack equality.
@@ -53,15 +53,10 @@ const SNIPPET_CONTEXT_LEAD_RATIO = 0.32;
 //
 // Insertion order of a Map is the eviction order, which gives us LRU for free:
 // `get` removes-and-re-inserts on hit, and we evict the oldest when size goes
-// over the cap.  Exported `_clearFuzzyCache` exists for tests that want a
-// clean slate between runs.
+// over the cap.
 // ─────────────────────────────────────────────────────────────────────────────
 const FUZZY_CACHE_CAPACITY = 512;
 const _fuzzyCache = new Map();
-
-export function _clearFuzzyCache() {
-  _fuzzyCache.clear();
-}
 
 export function isSubsequenceMatch(text = '', query = '') {
   let queryIndex = 0;

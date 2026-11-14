@@ -3,7 +3,7 @@
 // installAgentsFeature(context) returns what app.js composes: action/form
 // tables for the registry, listener entry points called at their original
 // positions, the settingsFormEditors ownership of agent-profile-update, the
-// render() / navigation / unload hooks and the two renderers.
+// render() hooks and the page renderer.
 import {
   installAgentsController,
   agentsActions,
@@ -22,7 +22,7 @@ import {
   discardFormDraft,
 } from './controller.js';
 import { agentsState } from './state.js';
-import { renderAgentPage, renderAgentWorkbench } from './view.js';
+import { renderAgentPage } from './view.js';
 
 export function installAgentsFeature(context) {
   installAgentsController(context);
@@ -49,8 +49,6 @@ export function installAgentsFeature(context) {
     syncRuntimeRefresh,
     restoreEditorAfterRender,
     renderPage: renderAgentPage,
-    // Customize → Agents detail (renderConnectorDetails).
-    renderWorkbench: renderAgentWorkbench,
     getState: () => agentsState,
   };
 }

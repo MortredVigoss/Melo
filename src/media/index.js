@@ -170,7 +170,6 @@ export function shouldUseLongSocialMediaBudget(attachment = {}) {
 // Uploaded videos are studied in full: frames + transcript
 // can take minutes, so they get their own budget instead of the 15 s default.
 let LOCAL_VIDEO_BUDGET_MS = 240000;
-export function _setLocalVideoBudgetForTests(ms) { LOCAL_VIDEO_BUDGET_MS = typeof ms === 'number' && ms > 0 ? ms : 240000; }
 export function isUploadedVideo(attachment = {}) {
   const url = String(attachment?.url || '');
   return attachment?.kind === 'video' && url.startsWith('/api/media/uploads/');

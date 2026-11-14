@@ -324,7 +324,7 @@ class MeloAccessibilityService : AccessibilityService(), DeviceExecutor {
                     // A repeated launch without navigation must not restart an already visible app.
                     if (lastLaunchTarget != launchTarget || identity(activeWindow()).packageName != launchTarget) {
                         val intent = packageManager.getLaunchIntentForPackage(launchTarget) ?: error("该 App 没有可启动入口。")
-                        val options = android.app.ActivityOptions.makeBasic().apply { if (Build.VERSION.SDK_INT >= 26) launchDisplayId = selectedDisplay }
+                        val options = android.app.ActivityOptions.makeBasic().apply { launchDisplayId = selectedDisplay }
                         startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), options.toBundle())
                         launchDispatched = true
                     }

@@ -91,7 +91,6 @@ class SyncSchema(private val root: JsonObject) {
                 bound(text.length.toDouble(), "x-minUtf16Length", "x-maxUtf16Length")
                 rule["pattern"]?.let { if (!Regex(it.jsonPrimitive.content).containsMatchIn(text)) fail() }
             } else value.doubleOrNull?.let { if (!it.isFinite()) fail(); bound(it, "minimum", "maximum") }
-            else -> Unit
         }
     }
 }

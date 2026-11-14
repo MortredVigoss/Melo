@@ -59,7 +59,7 @@ class Repository(private val context: Context) {
             put("connectionID", connection.id); put("name", connection.name); put("model", chat.model ?: connection.model)
             put("baseURL", com.melo.android.network.EndpointPolicy.validate(connection.endpoint, com.melo.android.BuildConfig.DEBUG).newBuilder().query(null).build().toString())
             put("authMode", "api-key"); put("apiProtocol", connection.protocol)
-        }) else put("model", chat.portableModel ?: JsonNull)
+        }) else put("model", JsonNull)
     })
     suspend fun editChat(id: String, transform: (Conversation) -> Conversation) = change { current ->
         val original = current.chats.first { it.id == id }

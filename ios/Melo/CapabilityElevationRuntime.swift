@@ -48,7 +48,6 @@ struct CapabilityRequest: Identifiable, Equatable {
     let toolID: String
     let options: [String]
     let projectOptionScope: String?
-    let alwaysUnavailable: Bool
     let runID: String
     let chatID: String?
     let projectID: String?
@@ -269,7 +268,7 @@ enum CapabilityRequestError: LocalizedError, Equatable {
             let request = CapabilityRequest(
                 id: UUID().uuidString, auditID: UUID().uuidString, decision: decision.decision, agentID: binding.agentID, agentName: binding.agentName,
                 parentAgentID: binding.parentAgentID, parentName: binding.parentName, atoms: decision.missing, toolID: toolID,
-                options: decision.options ?? [], projectOptionScope: decision.projectOptionScope, alwaysUnavailable: decision.alwaysUnavailable,
+                options: decision.options ?? [], projectOptionScope: decision.projectOptionScope,
                 runID: binding.runID, chatID: binding.chatID, projectID: binding.projectID, createdAt: now, expiresAt: now + wait,
                 prompt: CapabilityElevation.promptText(decision: decision.decision, agent: binding.agentName, parent: binding.parentName, atoms: decision.missing))
             entry = Entry(request, key: key)

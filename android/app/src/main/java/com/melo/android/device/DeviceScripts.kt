@@ -128,7 +128,7 @@ object TaskCacheRouter {
         val owned = scripts.filter { it.enabled && it.verified && !it.invalidated && it.scope == scope && runCatching { ScriptValidator.validate(it) }.isSuccess }
         val eligible = owned.filter { environment?.supports(it) == true }
         val incompatible = owned.size - eligible.size
-        val exact = eligible.filterNot { it.invalidated }.mapNotNull { script ->
+        val exact = eligible.mapNotNull { script ->
             GoalTemplate.bind(script.goalTemplate, goal)?.takeIf { bindings -> script.parameters.all { it in bindings } }?.let { CacheMatch(script, it) }
         }
         if (exact.size == 1) return CacheLookup(exact.single(), incompatible = incompatible)

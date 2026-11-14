@@ -11,7 +11,7 @@
 import { checkFeatureContext } from '../featureContext.js';
 import { createAgentsApi } from './api.js';
 
-export const AGENTS_CONTEXT = Object.freeze([
+const AGENTS_CONTEXT = Object.freeze([
   'getBootstrap', 'app', 'api', 'render', 'bgRender', 'notify',
   'patchSettings', 'applyBootstrap', 'applyBootstrapPreservingDrafts', 'refreshBootstrap',
   'activeProject', 'agentProfileById', 'minimaxTtsConfigPatchForVoice', 'beginFormEdit', 'formEditToken',

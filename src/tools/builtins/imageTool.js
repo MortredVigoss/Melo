@@ -20,7 +20,7 @@ import { generateApiImage } from '../../images/openaiImageEngine.js';
  * preserved: write to that path, return the path as text.
  */
 
-import { mkdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { gatedReadIntoBuffer } from '../../safety/gatedRead.js';
 import { resolve, extname, basename, join, isAbsolute } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -49,14 +49,11 @@ async function ocrImage(filePathOrBuffer) {
 
 // ─── Metadata via sharp ──────────────────────────────────────────────────────
 
-async function getImageMeta(filePathOrBuffer) {
+async function getImageMeta(buffer) {
   const sharp = (await import('sharp')).default;
-  const meta = await sharp(filePathOrBuffer).metadata();
-  // Phase 2C: when given a Buffer, size is buffer.length; when given
-  // a path, fall back to stat for the on-disk size.
-  const size = Buffer.isBuffer(filePathOrBuffer)
-    ? filePathOrBuffer.length
-    : (await stat(filePathOrBuffer)).size;
+  const meta = await sharp(buffer).metadata();
+  // Phase 2C: always the gate-approved Buffer, so its length is the size.
+  const size = buffer.length;
   return {
     width: meta.width,
     height: meta.height,
@@ -82,14 +79,12 @@ async function processImage(inputPathOrBuffer, outputPath, options = {}) {
     pipeline = pipeline.resize({
       width: options.width || undefined,
       height: options.height || undefined,
-      fit: options.fit || 'inside',
+      fit: 'inside',
       withoutEnlargement: true,
     });
   }
 
   if (options.rotate) pipeline = pipeline.rotate(options.rotate);
-  if (options.flip) pipeline = pipeline.flip();
-  if (options.flop) pipeline = pipeline.flop();
   if (options.grayscale) pipeline = pipeline.grayscale();
   if (options.quality) {
     const ext = extname(outputPath).toLowerCase();
@@ -594,7 +589,5 @@ export const imageTool = {
         return { ok: false, output: `Process failed: ${e.message}`, error: 'PROCESS_FAILED' };
       }
     }
-
-    return { ok: false, output: `Unknown action "${action}".`, error: 'INVALID_ACTION' };
   },
 };

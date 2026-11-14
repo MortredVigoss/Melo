@@ -14,8 +14,6 @@
 // APP_ROOT is computed via four `dirname()` calls. Same value as
 // desktopStore's APP_ROOT, just different formula.
 
-import 'node:path'; // Preserve module initialization.
-import 'node:url'; // Preserve module initialization.
 import { BUILTIN_CONNECTORS } from '../../state/stateHydration.js';
 import { COMMAND_TEMPLATES } from '../command/commandTemplates.js';
 import { visibleArtifacts } from '../../domain/artifact/artifactService.js';

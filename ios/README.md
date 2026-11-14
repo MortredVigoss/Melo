@@ -250,7 +250,7 @@ node mobile-sync/desktop-relay.js
 
 ```sh
 node --test mobile-sync/*.test.js
-node --test src/runtime/chatContract.http.test.js src/serverGuard.test.js
+node --test src/runtime/chatContract.http.test.js
 xcrun swiftc ios/Melo/Models.swift ios/Tests/main.swift -o /tmp/melo-ios-model-tests
 /tmp/melo-ios-model-tests
 xcrun swiftc -parse-as-library ios/Melo/Models.swift ios/Melo/Network.swift ios/Tests/NetworkTests.swift -o /tmp/melo-ios-network-tests

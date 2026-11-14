@@ -26,7 +26,7 @@
       ],
       "notes": [
         "修改入口：src/services/project/projectMutations.js；查询：projectService.js。P1 起项目修改返回提交回执，兼容 HTTP 适配器再组装 bootstrap。",
-        "桌面项目页（P2）：desktop-ui/features/projects/（state.js 自有状态、controller.js 动作、view.js 渲染、api.js 请求），app.js 只保留跨页导航 focus-project / select-project 与 startProjectSession。",
+        "桌面项目页（P2）：desktop-ui/features/projects/（state.js 自有状态、controller.js 动作、view.js 渲染、api.js 请求），app.js 只保留跨页导航 focus-project 与 startProjectSession。",
         "聊天工作目录生命周期在 src/services/workspace/chatWorkspaceFiles.js；手机项目页在 PersonalWorkspace.swift（ProjectsView）。"
       ]
     },
@@ -66,7 +66,6 @@
       "title": "聊天与 agent loop",
       "owns": [
         "src/services/chat/**",
-        "src/services/message/**",
         "src/domain/message/**",
         "src/domain/chat/**",
         "src/providers/**",
@@ -312,7 +311,6 @@
         "desktop-ui/{voiceInput,ttsBridgeRouter}.js",
         "desktop-ui/streamTtsOnToolCall.test.js",
         "src/desktopStore.minimaxVoiceConfig.test.js",
-        "check-voice.{js,cjs}",
         "ios/Melo/{VoiceInput,SystemSpeechInput,SpeechText,SpeechPlaybackVerification}.swift",
         "ios/Tests/{SpeechTextTests,VoiceInputTests}.swift"
       ],
@@ -595,7 +593,6 @@
       "feature": "projects",
       "desktop": [
         "src/services/project/projectMutations.js",
-        "src/services/project/projectService.js",
         "src/domain/project/projectService.js"
       ],
       "iphone": [
@@ -753,7 +750,7 @@
     {
       "feature": "approvals",
       "desktop": [
-        "src/services/approval/approvalService.js",
+        "src/domain/approval/approvalService.js",
         "src/tools/permissions.js"
       ],
       "iphone": [

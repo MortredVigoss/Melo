@@ -47,7 +47,7 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-export function writeVoiceDebugLine(line) {
+function writeVoiceDebugLine(line) {
   // §6 capture-at-entry: resolve once per call.  Sync writes follow,
   // so no async-boundary risk, but a runtime/test MELO_HOME flip will
   // now correctly route to the new home.
@@ -80,7 +80,7 @@ export function writeVoiceDebugLine(line) {
  *   4. Pick top-scored sentences up to a length budget
  *   5. Return in original order
  */
-export function extractVoiceSummary(text) {
+function extractVoiceSummary(text) {
   // Step 1: strip non-voice content
   let clean = text
     .replace(/```[\s\S]*?```/g, '')                       // code blocks

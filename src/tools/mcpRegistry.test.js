@@ -2,9 +2,18 @@ import test, { beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import {
-  mcpFunctionName, registerMcpTool, registerMcpTools, unregisterMcpServer, unregisterMcpTool,
-  getMcpTool, getAllMcpTools, resolveMcpFunctionName, functionNameFor, toolsForAgent, indexMcpTools,
-  clearMcpRegistry, MCP_FUNCTION_NAME_MAX,
+  mcpFunctionName,
+  registerMcpTool,
+  registerMcpTools,
+  unregisterMcpServer,
+  unregisterMcpTool,
+  getAllMcpTools,
+  resolveMcpFunctionName,
+  functionNameFor,
+  toolsForAgent,
+  indexMcpTools,
+  clearMcpRegistry,
+  MCP_FUNCTION_NAME_MAX,
 } from './mcpRegistry.js';
 import { getTool, getAllTools } from './registryCore.js';
 import { compileFunctionTool } from './functionSchema.js';

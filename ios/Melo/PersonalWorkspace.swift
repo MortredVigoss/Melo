@@ -1,5 +1,4 @@
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct ProjectsView: View {
     @EnvironmentObject var store: ChatStore

@@ -28,7 +28,6 @@ import {
   mkdirSync,
   writeFileSync,
   rmSync,
-  statSync,
   existsSync,
   readlinkSync,
   realpathSync,
@@ -37,7 +36,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { unlinkatChecked, symlinkatChecked, openParentDirFd, FileIdentityOwner, _raw, C } from './dirfdOps.js';
+import { unlinkatChecked, symlinkatChecked, openParentDirFd, FileIdentityOwner, _raw } from './dirfdOps.js';
 
 async function withTmpParent(fn) {
   // realpathSync canonicalizes ancestor symlinks (e.g. macOS /tmp →

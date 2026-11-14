@@ -114,13 +114,12 @@ enum WebReplyFormatter {
             let safeURL = source.url.replacingOccurrences(of: "(", with: "%28").replacingOccurrences(of: ")", with: "%29").replacingOccurrences(of: " ", with: "%20")
             replacements.append((start, end, "[\(safeLabel)](\(safeURL))"))
         }
-        var output = text
         var bound = scalars.count
         var updated = scalars
         for (start, end, replacement) in replacements.sorted(by: { $0.0 > $1.0 }) where end <= bound {
             updated.replaceSubrange(start..<end, with: replacement.unicodeScalars); bound = start
         }
-        output = String(String.UnicodeScalarView(updated))
+        let output = String(String.UnicodeScalarView(updated))
         return (output, references(in: output, annotations: sources))
     }
 }

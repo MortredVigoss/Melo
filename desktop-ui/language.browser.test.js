@@ -4,9 +4,9 @@ import { chromium } from 'playwright-core';
 import { launchTestChrome } from '../src/testSupport/testChrome.js';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdir, mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve, basename } from 'node:path';
+import { join, resolve } from 'node:path';
 
 test('interface language switches, persists, and never rewrites user content or drafts', { timeout: 90000 }, async () => {
   const home = await mkdtemp(join(tmpdir(), 'melo-language-'));

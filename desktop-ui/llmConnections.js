@@ -144,7 +144,7 @@ export function renderLlmConnections(config) {
   </section>`;
 }
 
-export async function handleLlmConnection(action, { config, api, render, refresh, openUrl, chatgptLogin, trigger }) {
+export async function handleLlmConnection(action, { config, api, render, refresh, openUrl, chatgptLogin }) {
   if (!action.startsWith('llm-')) return false;
   if (action === 'llm-open-oauth') { if (state.oauth) openUrl(state.oauth.url); return true; }
   if (action === 'llm-copy-oauth') { if (state.oauth) { try { await copyLinkText(state.oauth.url); state.message = t('授权链接已复制'); } catch { state.message = t('复制失败，请点击“打开授权页面”。'); } render(); } return true; }
@@ -162,11 +162,6 @@ export async function handleLlmConnection(action, { config, api, render, refresh
     state.selected = 'key-' + crypto.randomUUID();
     state.draft = freshProfile(config, 'openai', state.selected);
     state.conflict = false; state.message = ''; editSession.begin(); editSession.change(); render(); return true;
-  }
-  if (action === 'llm-use') {
-    const id = trigger?.dataset.profileId;
-    if (editSession.editing || !connections(config).profiles.some(p => p.id === id)) return true;
-    state.selected = id; state.draft = null; action = 'llm-activate';
   }
   if(action==='llm-edit'){draftFor(config);editSession.begin();state.conflict=false;if(!connections(config).profiles.some(p=>p.id===state.selected))editSession.change();state.message='';render();return true;}
   if(action==='llm-cancel'){if(state.returnTo!==null){state.selected=state.returnTo;state.returnTo=null;}state.conflict=false;editSession.cancel();state.draft=null;globalThis.document?.querySelector('.settings-connection-fields')?.remove();state.message=t('已取消修改');render();return true;}

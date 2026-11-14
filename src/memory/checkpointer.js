@@ -165,16 +165,6 @@ export async function saveThreadCheckpoint(threadId, payload = {}, { threadsDir 
   return clonePayload(normalized);
 }
 
-export async function deleteThreadCheckpoint(threadId, { threadsDir } = {}) {
-  const normalizedThreadId = String(threadId || '').trim();
-  if (!normalizedThreadId) {
-    return;
-  }
-
-  getCacheBucket(threadsDir).delete(normalizedThreadId);
-  await rm(checkpointPathFor(normalizedThreadId, threadsDir), { force: true });
-}
-
 /**
  * Remove on-disk thread checkpoints whose ids are NOT in `keepThreadIds`,
  * and drop their cached entries.

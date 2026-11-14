@@ -12,12 +12,11 @@ import { replyPlainText } from '../../shared/replyDocument.js';
 //   - normalizeMessageBlock(block)                — shape-coerce one block
 //   - normalizeMessageBlocks(blocks, fallback)    — list form; rebuilds from
 //                                                   fallback if blocks empty
-//   - stripMarkdownDecoratorsForConversation(v)   — light strip; desktop UI
 //   - aggressivelyStripMarkdownForPlainText(v)    — strong strip; remote/TTS
 //   - stripMarkdownLinksForPlainText(v)           — links → "text url"
 //   - stripAllMarkdownForTelegram(v)              — Telegram-specific strip
-//   - normalizeConversationTextBlockForStorage    — routes to light/aggressive
-//                                                   based on channelKind
+//   - normalizeConversationTextBlockForStorage    — strong strip for remote
+//                                                   channels only
 //   - serializeMessageBlocks(blocks)              — blocks → raw markdown
 //   - normalizeAssistantReplyForConversation      — parse+normalize+serialize
 //   - normalizePreviewPlainText(v)                — one-line preview
@@ -107,35 +106,6 @@ export function normalizeMessageBlocks(blocks, fallbackContent = '') {
     .filter(Boolean);
 }
 
-export function stripMarkdownDecoratorsForConversation(value = '') {
-  const normalized = String(value || '').replace(/\r\n/g, '\n');
-  const strippedLines = normalized
-    .split('\n')
-    .map(line =>
-      line
-        .replace(/^\s{0,3}#{1,6}\s+/, '')
-        .replace(/^\s*>\s?/, '')
-        .replace(/^\s*[-*+]\s+/, '')
-        .replace(/^\s*\d+[.)]\s+/, '')
-        .replace(/^\s*---+\s*$/, ''),
-    )
-    .join('\n');
-
-  return strippedLines
-    .replace(/\*\*([^*\n]+)\*\*/g, '$1')
-    .replace(/__([^_\n]+)__/g, '$1')
-    .replace(
-      /(^|[\s([{"'“‘（【《「『])\*([^*\n]+)\*(?=$|[\s)\]}.,!?;:'"”’）】》」』，。！？；：、])/gu,
-      '$1$2',
-    )
-    .replace(
-      /(^|[\s([{"'“‘（【《「『])_([^_\n]+)_(?=$|[\s)\]}.,!?;:'"”’）】》」』，。！？；：、])/gu,
-      '$1$2',
-    )
-    .replace(/(^|[\s([{"'“‘（【《「『])([*_#~]{1,3})(?=[\p{L}\p{N}\p{Script=Han}])/gu, '$1')
-    .replace(/(?<=[\p{L}\p{N}\p{Script=Han}])([*_#~]{1,3})(?=$|[\s)\]}.,!?;:'"”’）】》」』，。！？；：、])/gu, '');
-}
-
 export function aggressivelyStripMarkdownForPlainText(value = '') {
   let text = String(value || '').replace(/\r\n/g, '\n');
 
@@ -199,12 +169,7 @@ export function stripAllMarkdownForTelegram(value = '') {
 export function normalizeConversationTextBlockForStorage(value = '', { channelKind = 'desktop' } = {}) {
   // Preserve structure and code literals for the reading renderer; plain-text channels keep their own projection.
   if (channelKind !== 'remote') return String(value || '').replace(/\r\n/g, '\n').trim();
-  const normalizedValue =
-    channelKind === 'remote'
-      ? aggressivelyStripMarkdownForPlainText(value)
-      : stripMarkdownDecoratorsForConversation(value);
-
-  return normalizedValue
+  return aggressivelyStripMarkdownForPlainText(value)
     .replace(/`([^`\n]+)`/g, '$1')
     .replace(/\n{3,}/g, '\n\n')
     .trim();

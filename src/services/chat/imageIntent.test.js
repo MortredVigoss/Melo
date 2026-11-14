@@ -17,13 +17,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  IMAGE_GEN_INTENT_PATTERN,
-  IMAGE_EDIT_INTENT_PATTERN,
-  IMAGE_FOLLOW_UP_PATTERN,
-  detectImageGenIntent,
-  detectImageIntent,
-} from './messageBuilder.js';
+import { IMAGE_GEN_INTENT_PATTERN, detectImageGenIntent, detectImageIntent } from './messageBuilder.js';
 
 // ── 1. Generation intent (positive cases) ─────────────────────────────
 

@@ -30,7 +30,6 @@ test('phone adapter replays local evidence, persists the view and opens sources 
     .replace("'./warRoomScene3D.js'",JSON.stringify(renderer));
   const panelCode = (await readFile(new URL('../../desktop-ui/executionPanel.js',import.meta.url),'utf8'))
     .replace("'./buttonStyles.js'",file('../../desktop-ui/buttonStyles.js'))
-    .replace("'./html.js'",file('../../desktop-ui/html.js'))
     .replaceAll("'./i18n.js'",file('../../desktop-ui/i18n.js'))
     .replace("'./executionText.js'",file('../../desktop-ui/executionText.js'))
     .replace("'/shared/executionScene.js'",file('../../src/shared/executionScene.js'))

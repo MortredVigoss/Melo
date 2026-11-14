@@ -13,9 +13,9 @@ const NAME = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(?:
 const URL_PREFIX = '/api/media/uploads/';
 
 export const uploadsDir = home => join(home, 'desktop', 'media', 'uploads');
-export const uploadUrl = name => URL_PREFIX + name;
+const uploadUrl = name => URL_PREFIX + name;
 
-export function extensionFor(mimeType, fileName = '') {
+function extensionFor(mimeType, fileName = '') {
   return EXTENSIONS[mimeType] || (/\.(mp4|mov|m4v|webm|mkv)$/i.exec(fileName)?.[1]?.toLowerCase() ?? null);
 }
 

@@ -1,7 +1,7 @@
 import { booleanSetting } from '../../shared/agent/runtimeBehavior.js';
 // Catalogs follow current capability/service configuration, not keywords.
 
-export const TOOL_GROUP_IDS = Object.freeze(['browser', 'documents', 'media']);
+const TOOL_GROUP_IDS = Object.freeze(['browser', 'documents', 'media']);
 
 export function toolGroupOf(toolId) {
   const id = String(toolId || '');

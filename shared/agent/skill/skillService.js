@@ -312,7 +312,6 @@ export function buildSkills(enabledIds, customSkills = []) {
     enabled: enabledIds.includes(skill.id),
     source: 'built-in',
     sourceLabel: 'Built-in skill',
-    folderCount: skill.folders.length,
     folderSummary: skill.folders.join(', '),
   }));
   const custom = (Array.isArray(customSkills) ? customSkills : [])
@@ -323,7 +322,6 @@ export function buildSkills(enabledIds, customSkills = []) {
       enabled: enabledIds.includes(skill.id),
       source: 'custom',
       sourceLabel: 'Custom skill',
-      folderCount: skill.folders.length,
       folderSummary: skill.folders.join(', '),
     }));
   return [...builtIn, ...custom];

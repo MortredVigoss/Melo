@@ -27,7 +27,6 @@ import { recordMemoryFeedback } from '../../../memory/store.js';
 import { runAgentTeam } from '../../../agents/team.js';
 import { takeSupplements, supplementMessage } from '../supplements.js';
 import { budgetExhausted, budgetExhaustedReply, recordUsage, remainingMs } from '../../../runtime/runBudget.js';
-import '../../../runtime/agentLoopContract.js'; // Preserve module initialization.
 import { nowIso } from '../../../shared/helpers.js';
 import { effectiveAgentProfile } from '../../../state/agentProfiles.js';
 import { filterMcpToolsForAgent } from '../../../domain/agent/agentTools.js';
@@ -224,7 +223,6 @@ export function createInvokeModelNode(turn) {
     const toolChainTurns = [];
     const evidencePairs = [];
     const hostedItems = [];
-    let missingHostedEvidence = false;
     // agent-loop-audit #1: identical failing calls are answered locally
     // after two consecutive failures instead of re-executed.
     // Per-turn constants for tool dispatch (2026-10-17 tool-path
@@ -549,8 +547,7 @@ export function createInvokeModelNode(turn) {
         finalReply = turn.text || coreTurn.reply(latestUserMessage, config.replyLanguage);
         if (coreTurn.status === 'completed' && leadNativeSearch) {
           const receipt = hostedSearchReceipt({ items: hostedItems, text: turn.text });
-          missingHostedEvidence = !receipt.verified || !receipt.sources.length;
-          if (!missingHostedEvidence) finalReply = receipt.answer;
+          if (receipt.verified && receipt.sources.length) finalReply = receipt.answer;
         }
         break;
       }

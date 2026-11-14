@@ -23,11 +23,11 @@ export function isProviderFailureContextText(text = '') {
   return PROVIDER_FAILURE_PATTERN.test(String(text || '').trim());
 }
 
-export function isCodexPolicyFailureContextText(text = '') {
+function isCodexPolicyFailureContextText(text = '') {
   return CODEX_POLICY_FAILURE_PATTERN.test(String(text || '').trim());
 }
 
-export function isSocialLinkDiagnosticContextText(text = '') {
+function isSocialLinkDiagnosticContextText(text = '') {
   const normalized = String(text || '').trim();
   if (!normalized) {
     return false;

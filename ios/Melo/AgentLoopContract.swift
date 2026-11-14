@@ -349,7 +349,6 @@ struct LoopRegex {
         let ns = text as NSString
         return regex.matches(in: text, range: whole(text)).map { ns.substring(with: $0.range) }
     }
-    func matchRanges(_ text: String) -> [NSRange] { regex.matches(in: text, range: whole(text)).map(\.range) }
     /// `text.replace(re_g, jsReplacement)`
     func replacingAll(in text: String, with replacement: String) -> String {
         regex.stringByReplacingMatches(in: text, range: whole(text), withTemplate: Self.template(replacement))
@@ -401,7 +400,6 @@ final class AgentLoopContract: @unchecked Sendable {
     let deadlineMs: Double
     let maxInputTokens: Int
     let maxToolCalls: Int
-    let requestTimeoutCapMs: Double
     let budgetCode: String
     let budgetReasonText: [String: String]
     let budgetReasonFormat: [String: [String: String]]
@@ -410,12 +408,7 @@ final class AgentLoopContract: @unchecked Sendable {
     let budgetToolSkippedTemplate: String
     // repeat guard
     let repeatLimit: Int
-    let repeatCode: String
-    let repeatErrorClassMaxChars: Int
-    let repeatOutputTemplate: String
-    let repeatSameErrorFallback: String
     // tool result
-    let errorCodes: [String]
     let canonicalCode: LoopRegex
     let legacyAliases: [String: String]
     let legacyPatterns: [(LoopRegex, String)]
@@ -472,12 +465,7 @@ final class AgentLoopContract: @unchecked Sendable {
     let evidenceQuoteMinChars: Int
     let evidenceWindowBefore: Int
     // intent
-    let intentCategories: [String]
     let intentFallbackSystemPrompt: String
-    let intentShortTextChars: Int
-    let intentLongTextChars: Int
-    let intentPatterns: [String: LoopRegex]
-    let quotedText: LoopRegex
     // read_history
     let readHistoryMaxTokens: Int
     let readHistoryDefaultLimit: Int
@@ -505,14 +493,11 @@ final class AgentLoopContract: @unchecked Sendable {
         toolLimitReplyEN = object(loop["toolLimitReply"])["en"] as? String ?? ""
         cjk = LoopRegex(object(raw["cjkPattern"]))
         deadlineMs = double(budget["deadlineMs"]); maxInputTokens = int(budget["maxInputTokens"]); maxToolCalls = int(budget["maxToolCalls"])
-        requestTimeoutCapMs = double(budget["requestTimeoutCapMs"]); budgetCode = budget["code"] as? String ?? ""
+        budgetCode = budget["code"] as? String ?? ""
         budgetReasonText = strings(budget["reasonText"]); budgetReasonFormat = object(budget["reasonFormat"]).mapValues { strings($0) }
         budgetUnavailableReply = strings(budget["unavailableReply"])
         budgetReplyTemplate = strings(budget["replyTemplate"]); budgetToolSkippedTemplate = budget["toolSkippedTemplate"] as? String ?? ""
-        repeatLimit = int(guardValues["limit"]); repeatCode = guardValues["code"] as? String ?? ""
-        repeatErrorClassMaxChars = int(guardValues["errorClassMaxChars"]); repeatOutputTemplate = guardValues["outputTemplate"] as? String ?? ""
-        repeatSameErrorFallback = guardValues["sameErrorFallback"] as? String ?? ""
-        errorCodes = result["errorCodes"] as? [String] ?? []
+        repeatLimit = int(guardValues["limit"])
         canonicalCode = LoopRegex(object(result["canonicalCode"]))
         legacyAliases = strings(result["legacyAliases"])
         legacyPatterns = (result["legacyPatterns"] as? [[String: Any]] ?? []).map { (LoopRegex($0), $0["code"] as? String ?? "UNKNOWN") }
@@ -543,12 +528,7 @@ final class AgentLoopContract: @unchecked Sendable {
         unverifiedNoteZH = object(uncertainty["unverifiedNote"])["zh"] as? String ?? ""; unverifiedNoteEN = object(uncertainty["unverifiedNote"])["en"] as? String ?? ""
         evidenceMaxToolItems = int(evidence["maxToolItems"]); evidenceToolTextChars = int(evidence["toolTextChars"])
         evidenceContextTextChars = int(evidence["contextTextChars"]); evidenceQuoteMinChars = int(evidence["quoteMinChars"]); evidenceWindowBefore = int(evidence["windowBefore"])
-        intentCategories = intent["categories"] as? [String] ?? []
         intentFallbackSystemPrompt = intent["fallbackSystemPrompt"] as? String ?? ""
-        intentShortTextChars = int(intent["shortTextChars"]); intentLongTextChars = int(intent["longTextChars"])
-        let patterns = object(intent["patterns"])
-        intentPatterns = Dictionary(uniqueKeysWithValues: patterns.map { ($0.key, LoopRegex(object($0.value))) })
-        quotedText = LoopRegex(object(patterns["quotedText"]))
         readHistoryMaxTokens = int(history["maxTokens"]); readHistoryDefaultLimit = int(history["defaultLimit"]); readHistoryMaxLimit = int(history["maxLimit"])
         readHistoryDefaultNeighbours = int(history["defaultNeighbours"]); nonLatinTokensPerChar = double(history["nonLatinTokensPerChar"])
         readHistoryCutMarker = history["cutMarker"] as? String ?? ""

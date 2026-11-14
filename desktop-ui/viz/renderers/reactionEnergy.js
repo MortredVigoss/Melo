@@ -81,11 +81,6 @@ export default function mountReactionEnergy(host, spec) {
       else if (t < 0.78) {
         // Cosine bell from Er up to peak and down to Ep, centered at t=0.5.
         const u = (t - 0.22) / 0.56;
-        const bell = 0.5 - 0.5 * Math.cos(u * Math.PI);
-        const baseline = Er + (Ep - Er) * u;
-        const barrier = (peak - Math.max(Er, Ep)) * Math.sin(u * Math.PI);
-        y = baseline + barrier * bell * (1 - bell) * 4;
-        // simpler: use an explicit cosine bell for the activation barrier
         y = Er + (Ep - Er) * u + (peak - Math.max(Er, Ep)) * Math.sin(u * Math.PI);
       } else {
         y = Ep;

@@ -19,23 +19,19 @@
  *
  * Layering:
  *   - `native/dirfd_ops.cc` exposes raw POSIX `*at()` syscalls.
- *   - This module wraps them in three high-level primitives that
- *     close all fds on every exit path:
- *       - `withParentDirFd(parentPath, fn)` — opens parent (O_DIRECTORY|O_NOFOLLOW),
- *         runs fn(dirfd, parentStat), closes dirfd.
+ *   - This module wraps them in high-level primitives that close
+ *     all fds on every exit path:
  *       - `atomicOpenLeaf(parentPath, leafName, flags, mode?)` —
  *         opens parent + openat leaf with O_NOFOLLOW; returns
- *         { leafFd, leafStat, parentDev, parentIno, closeAll }.
- *       - `atomicRename(srcParent, srcName, dstParent, dstName)`,
- *         `atomicMkdir`, `atomicUnlink`, `atomicLstat` — wrapped.
+ *         { leafFd, leafStat, parentDev, parentIno, closeLeaf }.
+ *       - `unlinkatChecked`, `symlinkatChecked`, `atomicLstat` — wrapped.
  *
  * Tools must use these — never call `fs.open(absPath, ...)` for
  * the leaf, because that re-walks the parent path.
  *
  * Caller never sees raw fds for the parent — the wrappers manage
  * dirfd lifecycle. Leaf fds ARE handed out (returned) so the caller
- * can read/write/truncate, but the wrapper records the parent dirfd
- * close in `closeAll()` for cleanup.
+ * can read/write/truncate; the caller releases them with `closeLeaf()`.
  *
  * Errors: addon throws JS Error with .errno (number) + .syscall
  * (string) + .code (string). We re-throw with a small wrapper layer
@@ -79,11 +75,9 @@ export const _raw = {
   openat: addon.openat,
   openIdentityAt: addon.openIdentityAt,
   mkdirat: addon.mkdirat,
-  unlinkat: addon.unlinkat,
   renameat: addon.renameat,
   fstatat: addon.fstatat,
   readlinkat: addon.readlinkat,
-  symlinkat: addon.symlinkat,
   readdirAt: addon.readdirAt,
   closeFd: addon.closeFd,
 };
@@ -185,31 +179,6 @@ export function openParentDirFd(parentPath) {
 }
 
 /**
- * Open the parent dir, run an async callback with the dirfd, close
- * the dirfd on every exit path (success / throw).
- *
- * The callback receives (dirfd, parentStat) where parentStat comes
- * from fstatat(dirfd, "", AT_SYMLINK_NOFOLLOW)... actually we use
- * fs.fstatSync on the dirfd directly because that doesn't need the
- * "" name semantics.
- *
- * @template T
- * @param {string} parentPath
- * @param {(dirfd: number, parentStat: import('node:fs').Stats) => Promise<T> | T} fn
- * @returns {Promise<T>}
- */
-export async function withParentDirFd(parentPath, fn) {
-  const fs = requireCjs('node:fs');
-  const dirfd = openParentDirFd(parentPath);
-  try {
-    const parentStat = fs.fstatSync(dirfd);
-    return await fn(dirfd, parentStat);
-  } finally {
-    safeCloseFd(dirfd);
-  }
-}
-
-/**
  * Atomic open of a leaf file under a parent dirfd. Always uses
  * O_NOFOLLOW on the leaf so a symlink-leaf is rejected (ELOOP).
  *
@@ -218,10 +187,6 @@ export async function withParentDirFd(parentPath, fn) {
  * already closed by this function (we open + openat + close
  * dirfd, returning the leafFd whose parent inode is now anchored
  * by virtue of having been opened relative to the dirfd).
- *
- * If you need to do MORE than one op under the same parent
- * (e.g. open + later mkdirat), use `withParentDirFd` and call the
- * raw addon yourself.
  *
  * @param {string} parentPath
  * @param {string} leafName
@@ -273,94 +238,6 @@ export async function atomicOpenLeaf(parentPath, leafName, flags, mode = 0o644, 
     parentIno: parentStat.ino,
     closeLeaf: () => safeCloseFd(leafFd),
   };
-}
-
-/**
- * Atomic rename. Both src and dst parents are bound through dirfds.
- * Cross-dir rename is supported (renameat takes two dirfds).
- *
- * @param {string} srcParent
- * @param {string} srcName
- * @param {string} dstParent
- * @param {string} dstName
- */
-export async function atomicRename(srcParent, srcName, dstParent, dstName) {
-  const srcFd = openParentDirFd(srcParent);
-  let dstFd = -1;
-  try {
-    if (srcParent === dstParent) {
-      dstFd = srcFd; // reuse for same-parent rename
-    } else {
-      dstFd = openParentDirFd(dstParent);
-    }
-    try {
-      addon.renameat(srcFd, srcName, dstFd, dstName);
-    } catch (err) {
-      throw wrapErr(err, `renameat ${srcParent}/${srcName} → ${dstParent}/${dstName}`);
-    }
-  } finally {
-    safeCloseFd(srcFd);
-    if (dstFd !== -1 && dstFd !== srcFd) safeCloseFd(dstFd);
-  }
-}
-
-/**
- * Atomic mkdir of a single leaf under a parent dirfd.
- * Caller must ensure the leaf doesn't already exist (or accept
- * EEXIST being thrown).
- *
- * @param {string} parentPath
- * @param {string} leafName
- * @param {number} mode
- */
-export async function atomicMkdir(parentPath, leafName, mode = 0o755) {
-  const dirfd = openParentDirFd(parentPath);
-  try {
-    addon.mkdirat(dirfd, leafName, mode);
-  } catch (err) {
-    throw wrapErr(err, `mkdirat ${parentPath}/${leafName}`);
-  } finally {
-    safeCloseFd(dirfd);
-  }
-}
-
-/**
- * Atomic unlink of a leaf under a parent dirfd.
- *
- * @param {string} parentPath
- * @param {string} leafName
- * @param {object} [opts]
- * @param {boolean} [opts.removeDir] AT_REMOVEDIR — remove an empty dir
- */
-export async function atomicUnlink(parentPath, leafName, { removeDir = false } = {}) {
-  const dirfd = openParentDirFd(parentPath);
-  try {
-    addon.unlinkat(dirfd, leafName, removeDir ? C.AT_REMOVEDIR : 0);
-  } catch (err) {
-    throw wrapErr(err, `unlinkat ${parentPath}/${leafName}${removeDir ? ' (rmdir)' : ''}`);
-  } finally {
-    safeCloseFd(dirfd);
-  }
-}
-
-/**
- * Atomic symlink creation through a parent dirfd. The new link's
- * parent is bound by the dirfd; `target` is the link's contents
- * (kernel does not interpret it at creation time).
- *
- * @param {string} parentPath
- * @param {string} leafName  the link's own name (basename of new symlink)
- * @param {string} target    what the link points at (string contents)
- */
-export async function atomicSymlink(parentPath, leafName, target) {
-  const dirfd = openParentDirFd(parentPath);
-  try {
-    addon.symlinkat(target, dirfd, leafName);
-  } catch (err) {
-    throw wrapErr(err, `symlinkat ${parentPath}/${leafName} → ${target}`);
-  } finally {
-    safeCloseFd(dirfd);
-  }
 }
 
 /**
@@ -527,7 +404,7 @@ export function captureFileIdentity(path) {
   }
 }
 
-export function requireFileIdentity(identity, parent, leaf) {
+function requireFileIdentity(identity, parent, leaf) {
   if (!live.has(identity) || identity.parent !== parent || identity.leaf !== leaf) {
     throw denied('A live file identity for this path is required; numeric inode snapshots are not accepted.');
   }

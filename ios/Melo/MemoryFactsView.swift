@@ -25,7 +25,7 @@ struct MemoryFactsView: View {
                 }.buttonStyle(.plain)
             }
             Text(store.preferences.memorySemanticLastUsed == true ? "最近召回：系统本机语义模型 + 关键词；无需外部服务。" : "未使用系统语义模型时按关键词召回；语言模型不可用不会联网下载或阻断对话。").font(.caption2).foregroundStyle(.secondary)
-            let receipts = (store.preferences.memoryUsage ?? [:]).filter { !$0.value.isEmpty }.sorted { $0.key < $1.key }
+            let receipts = (store.preferences.memoryUsage ?? [:]).filter { !$0.value.isEmpty }
             if !receipts.isEmpty {
                 DisclosureGroup("已用于回复的记忆（当时内容）") {
                     ForEach(store.chats.flatMap(\.messages).filter { store.preferences.memoryUsage?[$0.id]?.isEmpty == false }.suffix(10).reversed()) { message in

@@ -1,5 +1,4 @@
 import { readFileSync } from 'node:fs';
-import 'node:url'; // Preserve module initialization.
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, appendFile, writeFile, rename, readFile, readdir, stat, rm } from 'node:fs/promises';
@@ -97,7 +96,7 @@ export function traceEvent(type, data = {}, payload, fields = {}) {
   const current = scope.getStore(); if (!current) return null;
   return current.root.record({ type, data, ...(payload === undefined ? {} : { payload }), ...fields }, current.context);
 }
-export async function traceFlush() { return scope.getStore()?.root.flush(); }
+async function traceFlush() { return scope.getStore()?.root.flush(); }
 export async function withLoopTrace({ home, runId = randomUUID(), kind = 'chat', goal, metadata = {} } = {}, work) {
   const inherited = scope.getStore();
   const parent = inherited?.root.closed ? null : inherited;

@@ -2,7 +2,7 @@ import { traceProviderPayload } from '../runtime/loopTrace.js';
 // Messages API only: no Anthropic agent runtime, shell, or provider tool loop.
 import { renderToolMessage, withAnthropicToolCache } from '../tools/toolProtocol.js';
 
-export function anthropicContent(content) {
+function anthropicContent(content) {
   if (typeof content === 'string') return content;
   return (Array.isArray(content) ? content : []).map(part => {
     if (part.type === 'text') return { type: 'text', text: part.text };

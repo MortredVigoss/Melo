@@ -1,6 +1,6 @@
 // Persistent Agent records do not own local channel credentials or TTS settings.
 // Runtime compatibility views keep existing channel/voice consumers working.
-export const AGENT_VOICE_FIELDS = Object.freeze(['minimaxVoiceId','voiceReplyMode','voicePersonality','edgeTtsVoice','ttsSpeed','ttsPitch','ttsVol']);
+const AGENT_VOICE_FIELDS = Object.freeze(['minimaxVoiceId','voiceReplyMode','voicePersonality','edgeTtsVoice','ttsSpeed','ttsPitch','ttsVol']);
 const PERSONA_ALIASES = ['rolePrompt','identity','identify','soulMd','soul.md','soul','systemPrompt'];
 export function hydrateAgentRecords(parsed = {}) {
   const records = {};

@@ -2065,51 +2065,6 @@ export function deleteMemoryById(id) {
   return changed > 0;
 }
 
-export function pruneMemoriesByNamespaceKind({
-  namespace = '',
-  kind = '',
-  keep = 200,
-  preservePinned = true,
-} = {}) {
-  const normalizedNamespace = String(namespace || '').trim();
-  const normalizedKind = String(kind || '').trim();
-  const keepCount = Math.max(0, Number(keep) || 0);
-  if (!normalizedNamespace || !normalizedKind) return 0;
-
-  const database = getDb();
-  try {
-    const pinnedClause = preservePinned
-      ? `AND COALESCE(json_extract(metadata_json, '$.pinned'), 0) != 1`
-      : '';
-    const rows = database.prepare(`
-      SELECT id
-      FROM memories
-      WHERE namespace = ?
-        AND kind = ?
-        ${pinnedClause}
-      ORDER BY datetime(created_at) DESC, datetime(updated_at) DESC, id DESC
-      LIMIT -1 OFFSET ?
-    `).all(normalizedNamespace, normalizedKind, keepCount);
-
-    let deleted = 0;
-    runInTransaction(() => {
-      for (const row of rows) {
-        if (!row?.id) continue;
-        const res = database.prepare('DELETE FROM memories WHERE id = ?').run(row.id);
-        if (res.changes) {
-          deleted += res.changes || 0;
-          try { database.prepare('DELETE FROM memories_fts WHERE memory_id = ?').run(row.id); } catch (err) { debugWarn('memory.store.prune', 'memories_fts delete failed', err?.message || err); }
-          try { database.prepare('DELETE FROM vec_memories WHERE memory_id = ?').run(row.id); } catch (err) { debugWarn('memory.store.prune', 'vec_memories delete failed', err?.message || err); }
-        }
-      }
-    });
-    return deleted;
-  } catch (err) {
-    debugWarn('memory.store.prune', 'pruneMemoriesByNamespaceKind failed', err?.message || err);
-    return 0;
-  }
-}
-
 /**
  * Delete memory_hits rows whose memory_id no longer exists in `memories`.
  *

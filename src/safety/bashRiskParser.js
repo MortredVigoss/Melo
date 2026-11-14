@@ -156,10 +156,6 @@ export function hasUnbalancedQuotes(s) {
   return inSingle || inDouble;
 }
 
-// Skip leading `FOO=bar` env-var assignments so `FOO=1 rm baz` is
-// parsed as `head=rm`, not `head=FOO=1`.
-
-
 // Phase 2D follow-up #14 self-review (Codex 🟡, 2026-05-04): skip
 // the entire pre-command preamble — leading redirect+target pairs
 // AND env-var assignments, in any order. bash accepts redirects

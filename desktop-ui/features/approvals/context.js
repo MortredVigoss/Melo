@@ -5,7 +5,7 @@
 import { checkFeatureContext } from '../featureContext.js';
 import { createApprovalsApi } from './api.js';
 
-export const APPROVALS_CONTEXT = Object.freeze([
+const APPROVALS_CONTEXT = Object.freeze([
   'getBootstrap', 'app', 'api', 'render', 'bgRender', 'notify', 'refreshBootstrap',
   'toolPermissions', 'setToolPermissions', 'escapeHtml', 'icon',
 ]);

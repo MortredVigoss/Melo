@@ -559,10 +559,6 @@ const TOOLS_DENIAL = /(?:不要|不用|不必|无需|禁止|别|不需要)\s*(?:
 const CONTEXT_ONLY = /(?:仅|只)(?:凭|根据|依据|基于|使用).{0,16}(?:对话|上下文|基础知识|已给出的文字|提供的文本|提供的正文)|\b(?:only (?:use|using)|based only on)\s+(?:(?:this|our)\s+(?:chat|conversation|text)|the (?:provided|supplied)\s+(?:text|transcript))\b/iu;
 const LOCAL_SEARCH = /^(?:(?:please|can you|could you)\s+)?(?:rg|grep|ripgrep)\b|\b(?:search|find)\s+(?:the |this )?(?:workspace|repo(?:sitory)?|codebase|local files)\b|\b(?:search|find)\b[^\n]*\b(?:in|within)\s+(?:the |this )?(?:workspace|repo(?:sitory)?|codebase)\b|(?:在|从|对)(?:当前|这个|本地)?(?:工作区|仓库|项目|代码库|本地文件)[^。！？\n]{0,16}(?:搜|查找|检索)|(?:搜索|查找|检索)(?:当前|这个|本地)?(?:工作区|仓库|代码库)/iu;
 
-function hasNegatedAction(text = '') {
-  return NEGATED_ACTION.test(maskQuotedText(text));
-}
-
 function isExplicitLocalSearch(text = '') {
   const instruction = maskQuotedText(text);
   return !NEGATED_ACTION.test(instruction) && LOCAL_SEARCH.test(instruction);
@@ -636,7 +632,7 @@ function requestAllowsTool(tool, policy = {}) {
   return true;
 }
 
-return { maskQuotedText, hasNegatedAction, isExplicitLocalSearch, getRequestNetworkPolicy, requestUrls, isExplicitActionRequest, isTranslationRequest, requiresSkillToolContext, selectToolContextPolicy, requestAllowsTool };
+return { maskQuotedText, isExplicitLocalSearch, getRequestNetworkPolicy, requestUrls, isExplicitActionRequest, isTranslationRequest, requiresSkillToolContext, selectToolContextPolicy, requestAllowsTool };
 })();
 
 modules["shared/agent/retrieval/intentRouter.js"] = (() => {
@@ -780,8 +776,6 @@ function isStandaloneGreeting({ text = '', messages = [], compactSummary = '' } 
 function intentOperation(input = {}) {
   if (input.action === 'rules') return classifyByRules(input.text);
   if (input.action === 'risk') return classifyRisk(input.text);
-  if (input.action === 'translation') return isTranslationRequest(input.text);
-  if (input.action === 'greeting') return isStandaloneGreeting(input);
   return classifyLocalRequest(input.text, { contextMessages: input.messages });
 }
 
@@ -1720,7 +1714,6 @@ function buildRequestPlan({ text = '', messages = [], capabilities = {}, config 
   if (research.navigate && !available('phone_use')) return { ...base, route: 'unavailable', reason: 'PHONE_UNAVAILABLE' };
   if (capabilities.hostedSearch === 'verified') return { ...searchBase, route: 'hosted-search', backend: 'hosted', tools: [...readingTools, ...phoneTools], requiredTools: phoneTools };
   if (available('web_search') && runtimeConfig.search.backend === 'http' && runtimeConfig.search.endpoint) return { ...searchBase, route: 'http-search', tools: ['web_search', ...readingTools, ...phoneTools], requiredTools: phoneTools, toolDependencies: phoneTools.length ? { phone_use: ['web_search'] } : {}, backend: 'http' };
-  if (available('web_search') && capabilities.legacyReader === true && runtimeConfig.search.backend === 'legacy-reader') return { ...base, route: 'legacy-search', tools: ['web_search'], backend: 'legacy-reader', instructions: guidance };
   if (available('web_search') && capabilities.browserSearch === true && runtimeConfig.search.browserFallback) return { ...base, route: 'browser-search', tools: ['web_search'], backend: 'browser', instructions: guidance };
   return { ...searchBase, route: 'unavailable', reason: 'SEARCH_UNAVAILABLE', instructions: 'No verified hosted search or configured search backend is available to retrieve public evidence. Explain the missing search capability. Do not invent current facts or open phone apps as a fallback.' };
 }
@@ -1746,8 +1739,7 @@ function planRequest(request = {}) {
   const executors = new Set(capabilities.executors || []);
   const available = name => grants.has(name) && executors.has(name);
   const searchBackend = runtime.search.backend === 'http' && !!runtime.search.endpoint ||
-    capabilities.browserSearch === true && runtime.search.browserFallback ||
-    capabilities.legacyReader === true && runtime.search.backend === 'legacy-reader';
+    capabilities.browserSearch === true && runtime.search.browserFallback;
   const availableTools = policy.toolsForbidden ? [] : [...new Set([
     ...(plan.tools || []),
     ...(!policy.fetchForbidden && available('fetch_url') ? ['fetch_url'] : []),
@@ -1826,7 +1818,7 @@ function goalReviewTally(review) {
     evidence: new Set(rows.flatMap(row => row.evidenceIds)).size, passed: ['complete', 'deliver'].includes(review?.decision) };
 }
 
-return { GOAL_REVIEW_LIMITS, GOAL_REVIEW_DECISIONS, GOAL_REQUIREMENT_KINDS, GOAL_REQUIREMENT_STATES, normalizeGoalReview, goalReviewOf, goalReviewTally };
+return { GOAL_REVIEW_LIMITS, normalizeGoalReview, goalReviewOf, goalReviewTally };
 })();
 
 modules["shared/agent/goal.js"] = (() => {
@@ -3234,7 +3226,7 @@ function deliveryOperation({ action, state, observations = [], reason, reply, re
   throw new Error('Unknown delivery operation');
 }
 
-return { LIMIT_REASONS, isDeliveryLimit, deliveryRequest, deliveryCandidate, reviewDelivery, deliveryReply, hostEvidenceReply, deliveryOperation };
+return { isDeliveryLimit, deliveryRequest, deliveryCandidate, reviewDelivery, deliveryReply, hostEvidenceReply, deliveryOperation };
 })();
 
 modules["shared/agent/imageLanguage.js"] = (() => {
@@ -3635,7 +3627,7 @@ function modelRoutingOperation(input) {
   return selectRouting(input.routing);
 }
 
-return { ROUTING_VERSION, ROUTING_TIERS, routingTaskContext, routingJudgmentInput, routingRules, parseRoutingJudgment, eligibleCandidates, selectRouting, escalateRouting, ROUTING_JUDGE_PROMPT, ROUTING_LABELS, routingLabel, modelRoutingOperation };
+return { ROUTING_VERSION, routingJudgmentInput, parseRoutingJudgment, selectRouting, escalateRouting, ROUTING_JUDGE_PROMPT, modelRoutingOperation };
 })();
 
 modules["shared/agent/repeatGuard.js"] = (() => {
@@ -4252,7 +4244,7 @@ return { DEFAULT_RUN_DEADLINE_MS, DEFAULT_RUN_MAX_INPUT_TOKENS, DEFAULT_RUN_MAX_
 })();
 
 modules["shared/agent/policyBridge.js"] = (() => {
-const { memberTokenLimit, modelOutputLimit, reserveDelivery, workRemainingMs, admitModel, settleModel, createRunBudget, armBudget, remainingMs, requestTimeoutMs, recordUsage, budgetExhausted, narrowBudget, extendBudget, describeBudgetReason, budgetExhaustedReply } = modules["shared/agent/runBudget.js"];
+const { memberTokenLimit, modelOutputLimit, reserveDelivery, workRemainingMs, admitModel, settleModel, createRunBudget, armBudget, remainingMs, requestTimeoutMs, recordUsage, budgetExhausted, narrowBudget, extendBudget, budgetExhaustedReply } = modules["shared/agent/runBudget.js"];
 
 // Native Hosts retain object ownership, locking and clocks. This JSON boundary
 // calls the very same budget implementation used by the Node compatibility API.
@@ -4285,7 +4277,6 @@ function budgetOperation({ action, budget = null, now, options = {}, usage = {},
     case 'exhausted': return budgetExhausted(state, now, options);
     case 'narrow': return narrowBudget(state, options);
     case 'extend': return { changes: extendBudget(state, options, now), budget: state };
-    case 'describe': return describeBudgetReason(exhausted, options.locale);
     case 'reply': return budgetExhaustedReply(exhausted, options.locale);
     default: throw Object.assign(new Error('Unknown budget operation.'), { code: 'UNKNOWN_OPERATION' });
   }
@@ -4849,349 +4840,6 @@ function runTaskReplay(dataset) {
 return { runTaskReplay };
 })();
 
-modules["shared/agent/skill/skillService.js"] = (() => {
-const { AGENT_LOOP_CONTRACT } = modules["shared/agent/loopContract.js"];
-// ─── Skill service ───────────────────────────────────────────────────────────
-// Pure data + shape helpers for the "skill" domain — the built-in skill
-// catalog, custom-skill normalization, the two-tier skill list assembled
-// for the prompt/tool-loop, and the small helpers they share.
-//
-// This module owns:
-//   - DEFAULT_SKILL_TASK_SCHEMA — parametersSchema fallback for executable
-//     skills whose author didn't supply one
-//   - BUILTIN_SKILLS — the static list of skills that ship with Melo
-//   - Hard caps on skill string fields (MAX_SKILL_SYSTEM_PROMPT_CHARS, etc.)
-//     and the prompt-injection tripwire pattern SUSPICIOUS_SKILL_PROMPT_PATTERN
-//   - normalizeSkillParametersSchema(schema) — JSON-Schema-ish clamp
-//   - normalizeBuiltinSkill(skill) — expand a terse built-in literal into
-//     the full Phase-2 schema shape
-//   - normalizeCustomSkill(skill) — canonicalize a user-authored skill,
-//     enforce caps, reject shadow-of-built-in ids, and auto-upgrade legacy
-//     prompt-only skills to executable with the default task schema
-//   - buildSkills(enabledIds, customSkills) — merge built-in + custom into
-//     the single list the UI and tool registry consume
-//   - listExecutableSkills(skills) — filter enabled executable skills for
-//     tool-loop registration (they're NOT concatenated into the system prompt)
-//
-// Extracted from desktopStore.js in the Phase 9b refactor (see
-// _refactor-backup/REFACTOR_PLAN.md). Pure module — no state, no side
-// effects, no imports beyond Node built-ins.
-
-// Default parametersSchema for executable skills that only take a free-form
-// "task" string. Most built-in skills use this shape.
-const DEFAULT_SKILL_TASK_SCHEMA = {
-  type: 'object',
-  properties: {
-    task: {
-      type: 'string',
-      description: 'The concrete thing the skill should do, in plain language.',
-    },
-  },
-  required: ['task'],
-};
-
-const BUILTIN_SKILLS = [
-  {
-    id: 'skill-creator',
-    name: 'skill-creator',
-    addedBy: 'Melo',
-    invokedBy: 'User or Melo',
-    description:
-      'Create new skills, refine prompts, and turn repeated workflows into reusable operating patterns.',
-    systemPrompt:
-      'When a request looks repetitive or process-heavy, suggest a reusable skill-shaped workflow.',
-    folders: ['SKILL.md', 'agents', 'assets', 'eval-viewer', 'references', 'scripts'],
-    type: 'executable',
-    parametersSchema: DEFAULT_SKILL_TASK_SCHEMA,
-    maxIterations: AGENT_LOOP_CONTRACT.skillLimits.iterations,
-    tags: ['meta', 'authoring', 'productivity'],
-    triggers: ['create skill', 'new skill', 'turn into a skill', 'reusable workflow', 'skill-ify', '做一个技能', '创建技能'],
-  },
-  {
-    id: 'project-planner',
-    name: 'project-planner',
-    addedBy: 'Melo',
-    invokedBy: 'User or Melo',
-    description:
-      'Break work into milestones, map features to architecture layers, and keep plans practical.',
-    systemPrompt:
-      'When the task is large, organize the answer into milestones and keep scope boundaries explicit.',
-    folders: ['README.md', 'plans', 'checklists'],
-    type: 'executable',
-    parametersSchema: DEFAULT_SKILL_TASK_SCHEMA,
-    maxIterations: AGENT_LOOP_CONTRACT.skillLimits.iterations,
-    tags: ['planning', 'project', 'productivity'],
-    triggers: ['plan', 'milestones', 'roadmap', 'break down', 'phased', '规划', '计划', '里程碑', '拆分任务'],
-  },
-  {
-    id: 'connector-builder',
-    name: 'connector-builder',
-    addedBy: 'Melo',
-    invokedBy: 'Melo',
-    description:
-      'Model how tools, APIs, and local data sources should be exposed inside the app.',
-    systemPrompt:
-      'Prefer connector-like abstractions for tools, data sources, and service integrations.',
-    folders: ['CONNECTOR.md', 'examples', 'schemas'],
-    type: 'executable',
-    parametersSchema: DEFAULT_SKILL_TASK_SCHEMA,
-    maxIterations: AGENT_LOOP_CONTRACT.skillLimits.iterations,
-    tags: ['engineering', 'integration', 'architecture'],
-    triggers: ['connector', 'integration', 'api', 'wire up', 'expose tool', '连接器', '集成'],
-  },
-  {
-    id: 'artifact-curator',
-    name: 'artifact-curator',
-    addedBy: 'Melo',
-    invokedBy: 'Melo',
-    description:
-      'Promote reusable code blocks, plans, and outputs into durable artifacts the user can revisit.',
-    systemPrompt:
-      'When you generate a durable output, make it artifact-friendly with concise titles and stable formatting.',
-    folders: ['rules.md', 'examples', 'gallery'],
-    type: 'executable',
-    parametersSchema: DEFAULT_SKILL_TASK_SCHEMA,
-    maxIterations: AGENT_LOOP_CONTRACT.skillLimits.iterations,
-    tags: ['artifacts', 'productivity'],
-    triggers: ['save as artifact', 'promote', 'make reusable', 'artifact', '沉淀', '保存'],
-  },
-];
-
-// Hard caps on custom-skill string fields. These fields end up in the system
-// prompt for every turn when enabled, so we bound them to keep context small
-// and limit prompt-injection surface. The cap is generous but firm.
-const MAX_SKILL_SYSTEM_PROMPT_CHARS = 4096;
-const MAX_SKILL_DESCRIPTION_CHARS = 512;
-const MAX_SKILL_NAME_CHARS = 80;
-const MAX_SKILL_ID_CHARS = 80;
-const MAX_SKILL_FOLDER_CHARS = 128;
-const MAX_SKILL_FOLDERS = 32;
-// Phase 3.3: classification + prefilter metadata. Tags are free-form
-// short labels for UI filtering; triggers are keywords the rule-based
-// pre-filter matches against to decide if this skill is "relevant" to a
-// given user message before we inject its index entry into the prompt.
-const MAX_SKILL_TAG_CHARS = 32;
-const MAX_SKILL_TAGS = 16;
-const MAX_SKILL_TRIGGER_CHARS = 64;
-const MAX_SKILL_TRIGGERS = 24;
-
-// Rough heuristic pattern that catches the most obvious prompt-injection
-// attempts in user-supplied skill prompts. Not a security boundary — just
-// a tripwire we can log / surface in the UI.
-const SUSPICIOUS_SKILL_PROMPT_PATTERN =
-  /(ignore (?:all )?previous (?:instructions|prompts)|disregard (?:the )?(?:system|above)|you (?:are|must) no longer|jailbreak|prompt\s*injection|act as if you have no (?:rules|limits))/i;
-
-function clampString(value, max) {
-  const s = String(value ?? '').trim();
-  if (s.length <= max) return s;
-  return s.slice(0, max);
-}
-
-function normalizeSkillParametersSchema(schema) {
-  // Only accept well-formed JSON Schema-ish objects. Fallback to an empty
-  // object schema so the wrapper tool is still valid.
-  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) {
-    return { type: 'object', properties: {}, required: [] };
-  }
-  if (schema.type !== 'object' || !schema.properties || typeof schema.properties !== 'object') {
-    return { type: 'object', properties: {}, required: [] };
-  }
-  const properties = {};
-  for (const [key, def] of Object.entries(schema.properties)) {
-    if (!def || typeof def !== 'object') continue;
-    const typeVal = typeof def.type === 'string' ? def.type : 'string';
-    properties[clampString(key, 64)] = {
-      type: typeVal,
-      description: clampString(def.description, 240),
-    };
-  }
-  const required = Array.isArray(schema.required)
-    ? schema.required.map(k => clampString(k, 64)).filter(k => k && properties[k])
-    : [];
-  return { type: 'object', properties, required };
-}
-
-// Built-in skills are defined as a terse literal for readability. This helper
-// fills in the full Phase 2 schema (type/parametersSchema/toolWhitelist/…)
-// with safe defaults so the rest of the pipeline can treat built-in and
-// custom skills uniformly.
-function normalizeBuiltinSkill(skill) {
-  const type = skill.type === 'executable' ? 'executable' : 'prompt';
-  return {
-    id: skill.id,
-    name: skill.name || skill.id,
-    addedBy: skill.addedBy || 'Melo',
-    invokedBy: skill.invokedBy || 'User or Melo',
-    description: skill.description || '',
-    systemPrompt: skill.systemPrompt || '',
-    folders: Array.isArray(skill.folders) ? skill.folders.slice() : [],
-    type,
-    parametersSchema: normalizeSkillParametersSchema(skill.parametersSchema),
-    toolWhitelist: Array.isArray(skill.toolWhitelist) ? skill.toolWhitelist.slice() : null,
-    allowedAgentIds: Array.isArray(skill.allowedAgentIds) ? skill.allowedAgentIds.slice() : null,
-    maxIterations: Number.isFinite(Number(skill.maxIterations))
-      ? Math.max(1, Math.min(AGENT_LOOP_CONTRACT.skillLimits.maxIterations, Math.floor(Number(skill.maxIterations))))
-      : AGENT_LOOP_CONTRACT.skillLimits.iterations,
-    createdFrom: null,
-    tags: Array.isArray(skill.tags) ? skill.tags.map(t => String(t).toLowerCase()).filter(Boolean) : [],
-    triggers: Array.isArray(skill.triggers) ? skill.triggers.map(t => String(t).toLowerCase()).filter(Boolean) : [],
-    origin: 'built-in',
-    diskPath: null,
-    version: 1,
-    _suspicious: false,
-  };
-}
-
-function normalizeCustomSkill(skill) {
-  const id = clampString(skill?.id, MAX_SKILL_ID_CHARS);
-  const name = clampString(skill?.name || skill?.id, MAX_SKILL_NAME_CHARS);
-  if (!id || !name) return null;
-
-  // Reject ids that would shadow a built-in skill, so the customSkills array
-  // can never contain a duplicate id and buildSkills() cannot accidentally
-  // emit two Skill: prompt blocks with the same id.
-  if (BUILTIN_SKILLS.some(b => b.id === id)) {
-    return null;
-  }
-
-  const systemPrompt = clampString(skill?.systemPrompt, MAX_SKILL_SYSTEM_PROMPT_CHARS);
-  const description = clampString(skill?.description, MAX_SKILL_DESCRIPTION_CHARS);
-
-  const suspicious = Boolean(systemPrompt) && SUSPICIOUS_SKILL_PROMPT_PATTERN.test(systemPrompt);
-
-  const folders = Array.isArray(skill?.folders)
-    ? skill.folders
-        .map(f => clampString(f, MAX_SKILL_FOLDER_CHARS))
-        .filter(Boolean)
-        .slice(0, MAX_SKILL_FOLDERS)
-    : [];
-
-  // Phase 3.3: free-form tags for UI filtering. Stored lowercased so search
-  // is case-insensitive and duplicates merge.
-  const tags = Array.isArray(skill?.tags)
-    ? Array.from(
-        new Set(
-          skill.tags
-            .map(t => clampString(t, MAX_SKILL_TAG_CHARS).toLowerCase())
-            .filter(Boolean),
-        ),
-      ).slice(0, MAX_SKILL_TAGS)
-    : [];
-
-  // Phase 3.2.2: pre-filter triggers. Used by matchSkillsForMessage to
-  // decide which skills are "hot" for the current user turn. If triggers is
-  // empty the skill matches on description/name instead (fallback).
-  const triggers = Array.isArray(skill?.triggers)
-    ? Array.from(
-        new Set(
-          skill.triggers
-            .map(t => clampString(t, MAX_SKILL_TRIGGER_CHARS).toLowerCase())
-            .filter(Boolean),
-        ),
-      ).slice(0, MAX_SKILL_TRIGGERS)
-    : [];
-
-  // Phase 3.1: source origin. 'json' = persisted in customSkills[];
-  // 'disk' = loaded from ~/.melo/desktop/skills/<id>/SKILL.md; 'built-in'
-  // is set by buildSkills, not here. Used by import/export and by the UI
-  // to show where a skill came from.
-  const origin = skill?.origin === 'disk' ? 'disk' : 'json';
-  const diskPath = origin === 'disk' && typeof skill?.diskPath === 'string'
-    ? skill.diskPath
-    : null;
-
-  // Phase 3.4.2: `source` marks skills that shipped with Melo ('melo-bundle')
-  // as read-only from the upgrade-proposal flow. User-created / user-imported
-  // skills have source=null and can be upgraded freely.
-  const source = typeof skill?.source === 'string' && skill.source.trim()
-    ? clampString(skill.source, 40).toLowerCase()
-    : null;
-
-  // Auto-upgrade path: legacy prompt-only skills (no explicit type) become
-  // executable with a default {task:string} wrapper so the model can invoke
-  // them through the tool loop. Callers who explicitly want the legacy
-  // prompt-stuffing behavior must pass type:"prompt".
-  const resolvedType = skill?.type === 'prompt' ? 'prompt' : 'executable';
-  let resolvedParamsSchema = normalizeSkillParametersSchema(skill?.parametersSchema);
-  if (
-    resolvedType === 'executable'
-    && (!resolvedParamsSchema.properties
-      || Object.keys(resolvedParamsSchema.properties).length === 0)
-  ) {
-    resolvedParamsSchema = DEFAULT_SKILL_TASK_SCHEMA;
-  }
-
-  return {
-    id,
-    name,
-    addedBy: clampString(skill?.addedBy || 'User', 40),
-    invokedBy: clampString(skill?.invokedBy || 'User or Melo', 40),
-    description,
-    systemPrompt,
-    folders,
-    type: resolvedType,
-    parametersSchema: resolvedParamsSchema,
-    toolWhitelist: Array.isArray(skill?.toolWhitelist)
-      ? skill.toolWhitelist.map(v => clampString(v, 64)).filter(Boolean).slice(0, 64)
-      : null,
-    allowedAgentIds: Array.isArray(skill?.allowedAgentIds)
-      ? skill.allowedAgentIds.map(v => clampString(v, 64)).filter(Boolean).slice(0, 64)
-      : null,
-    maxIterations: Number.isFinite(Number(skill?.maxIterations))
-      ? Math.max(1, Math.min(AGENT_LOOP_CONTRACT.skillLimits.maxIterations, Math.floor(Number(skill.maxIterations))))
-      : AGENT_LOOP_CONTRACT.skillLimits.iterations,
-    createdFrom: skill?.createdFrom && typeof skill.createdFrom === 'object'
-      ? {
-          conversationId: clampString(skill.createdFrom.conversationId, 80) || null,
-          messageId: clampString(skill.createdFrom.messageId, 80) || null,
-          autoGenerated: Boolean(skill.createdFrom.autoGenerated),
-          createdAt: clampString(skill.createdFrom.createdAt, 40) || null,
-        }
-      : null,
-    tags,
-    triggers,
-    origin,
-    diskPath,
-    source,
-    version: Number.isFinite(Number(skill?.version)) ? Math.max(1, Math.floor(Number(skill.version))) : 1,
-    _suspicious: suspicious || undefined,
-  };
-}
-
-function buildSkills(enabledIds, customSkills = []) {
-  const builtIn = BUILTIN_SKILLS.map(normalizeBuiltinSkill).map(skill => ({
-    ...skill,
-    enabled: enabledIds.includes(skill.id),
-    source: 'built-in',
-    sourceLabel: 'Built-in skill',
-    folderCount: skill.folders.length,
-    folderSummary: skill.folders.join(', '),
-  }));
-  const custom = (Array.isArray(customSkills) ? customSkills : [])
-    .map(normalizeCustomSkill)
-    .filter(Boolean)
-    .map(skill => ({
-      ...skill,
-      enabled: enabledIds.includes(skill.id),
-      source: 'custom',
-      sourceLabel: 'Custom skill',
-      folderCount: skill.folders.length,
-      folderSummary: skill.folders.join(', '),
-    }));
-  return [...builtIn, ...custom];
-}
-
-// Returns every enabled skill that should be registered as a callable tool.
-// Executable skills are routed through skillExecutor and exposed via the
-// tool-loop — they are NOT concatenated into the system prompt.
-function listExecutableSkills(skills) {
-  if (!Array.isArray(skills)) return [];
-  return skills.filter(skill => skill?.enabled && skill?.type === 'executable');
-}
-
-return { DEFAULT_SKILL_TASK_SCHEMA, BUILTIN_SKILLS, MAX_SKILL_SYSTEM_PROMPT_CHARS, MAX_SKILL_DESCRIPTION_CHARS, MAX_SKILL_NAME_CHARS, MAX_SKILL_ID_CHARS, MAX_SKILL_FOLDER_CHARS, MAX_SKILL_FOLDERS, MAX_SKILL_TAG_CHARS, MAX_SKILL_TAGS, MAX_SKILL_TRIGGER_CHARS, MAX_SKILL_TRIGGERS, SUSPICIOUS_SKILL_PROMPT_PATTERN, normalizeSkillParametersSchema, normalizeBuiltinSkill, normalizeCustomSkill, buildSkills, listExecutableSkills };
-})();
-
 modules["shared/agent/hostedSearch.js"] = (() => {
 // Credential values never enter Core. Hosts supply opaque credential/account digests.
 function connectionIdentity(input = {}) {
@@ -5529,7 +5177,7 @@ function tracedAdvance(previous, event, now) {
   return { state, events };
 }
 
-return { TRACE_LIMITS, traceText, traceSnapshot, expiredTraces, traceOperation, tracedStart, tracedAdvance };
+return { TRACE_LIMITS, traceSnapshot, expiredTraces, traceOperation, tracedStart, tracedAdvance };
 })();
 
 modules["shared/agent/contextBudget.js"] = (() => {
@@ -5954,19 +5602,17 @@ const { publicLookupRequest } = modules["shared/agent/retrieval/publicLookupInte
 const { intentOperation } = modules["shared/agent/retrieval/intentRouter.js"];
 const { multilingualImageAction } = modules["shared/agent/imageLanguage.js"];
 const { localeOperation } = modules["shared/agent/locale.js"];
-const { runtimeMessage } = modules["shared/agent/runtimeMessages.js"];
 const { modelCapabilityOperation } = modules["shared/agent/modelCapabilities.js"];
 const { PROVIDER_DEFAULTS } = modules["shared/agent/providerDefaults.js"];
 const { modelRoutingOperation } = modules["shared/agent/modelRouting.js"];
 const { runTaskReplay } = modules["shared/agent/taskReplay.js"];
 const { CORE_VERSION, startTurn, advanceTurn, turnStopReply } = modules["shared/agent/turn.js"];
 const { planRequest, actionEvidence, resolvedRequestGoal } = modules["shared/agent/search.js"];
-const { buildSkills } = modules["shared/agent/skill/skillService.js"];
 const { toolCatalog, validateCommonTool, normalizeRuntimeConfig, normalizeSearchResponse, normalizeFetchedPage, searchRequest } = modules["shared/agent/tools.js"];
 const { connectionIdentity, hostedCapability, hostedSearchReceipt, hostedSearchProof } = modules["shared/agent/hostedSearch.js"];
 const { executionScene, executionContext, publicReasoning } = modules["shared/agent/execution.js"];
 const { sessionEvents } = modules["src/shared/sessionEvents.js"];
-const { parseReplyDocument, inlineSpans, replyPresentation } = modules["src/shared/replyDocument.js"];
+const { parseReplyDocument, replyPresentation } = modules["src/shared/replyDocument.js"];
 const { topicDividers } = modules["src/shared/conversationTopics.js"];
 const { budgetOperation } = modules["shared/agent/policyBridge.js"];
 const { repeatOperation } = modules["shared/agent/repeatGuard.js"];
@@ -6008,7 +5654,6 @@ function evaluate(input) {
       case 'teamCompletion': value = teamCompletion(input.team); break;
       case 'imageLanguage': value = multilingualImageAction(input.text, input.hasInputImage); break;
       case 'locale': value = localeOperation(input); break;
-      case 'runtimeMessage': value = runtimeMessage(input.id, input.locale, input.params); break;
       case 'providerDefaults': value = PROVIDER_DEFAULTS; break;
       case 'modelCapabilities': value = modelCapabilityOperation(input); break;
       case 'modelRouting': value = modelRoutingOperation(input); break;
@@ -6023,7 +5668,6 @@ function evaluate(input) {
       case 'internalRouting': value = internalRouting(input); break;
       case 'plan': value = planRequest(input.request); break;
       case 'actionEvidence': value = actionEvidence(input.plan, input.urls); break;
-      case 'skills': value = buildSkills(input.enabledIds, input.customSkills); break;
       case 'workflowCatalog': value = workflowCatalog(input.catalog); break;
       case 'workflowCall': value = prepareWorkflowCall(input.call); break;
       case 'catalog': value = toolCatalog(input.names); break;
@@ -6036,7 +5680,6 @@ function evaluate(input) {
       case 'replyDocument': value = parseReplyDocument(input.text); break;
       case 'topicDividers': value = topicDividers(input.messages); break;
       case 'replyPresentation': value = replyPresentation(input.text); break;
-      case 'inlineSpans': value = inlineSpans(input.text); break;
       case 'searchResult': value = normalizeSearchResponse(input.result, input.observation); break;
       case 'searchRequest': value = searchRequest(input.arguments, input.config); break;
       case 'pageResult': value = normalizeFetchedPage(input.result, input.observation); break;

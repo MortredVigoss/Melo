@@ -19,7 +19,7 @@ export function isPlaceholderSource(source = '') {
   );
 }
 
-export function extractedMediaLabel(entry = {}) {
+function extractedMediaLabel(entry = {}) {
   const title = String(entry?.metadata?.title || '').trim();
   const titleSuffix = title ? ` — ${title}` : '';
   switch (entry?.kind) {

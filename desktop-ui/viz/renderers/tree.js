@@ -59,7 +59,6 @@ function layout(byId, rootId, collapsed) {
       const entry = {
         id,
         label: node.label,
-        note: node.note,
         x,
         y: PADDING_Y + depth * (NODE_H + LEVEL_GAP) + NODE_H / 2,
         width,
@@ -78,7 +77,6 @@ function layout(byId, rootId, collapsed) {
     const entry = {
       id,
       label: node.label,
-      note: node.note,
       x: centerX,
       y: PADDING_Y + depth * (NODE_H + LEVEL_GAP) + NODE_H / 2,
       width,
@@ -202,6 +200,5 @@ function mountTree(host, spec) {
     },
   };
 }
-
 
 export default mountTree;

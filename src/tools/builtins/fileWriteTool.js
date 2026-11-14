@@ -46,8 +46,8 @@ import {missingWorkspaceResult} from '../workspace.js';
  *      inode and the user-visible path no longer reflects it. Tell
  *      the caller via raceKind='post-write-orphaned' so they can
  *      retry. Backup retained.
- *  11. recordAfterDiff. finally: closeFd + (createdEmpty && stale)
- *      → atomicUnlink the empty placeholder.
+ *  11. recordAfterDiff. finally: closeFd + (createdEmpty && !stale)
+ *      → unlinkOpenedLeaf the empty placeholder.
  *
  * Threat model (round 13):
  *   - dirfd binds parent inode → parent path swap during op = no-op.
@@ -269,7 +269,7 @@ export const fileWriteTool = {
         try {
           preLeaf = await atomicOpenLeaf(parentDir, leafName, DC.O_RDONLY, 0o644, identity);
         } catch (err) {
-          if (err.code === 'ELOOP' || err.code === 'Too many levels of symbolic links') {
+          if (err.code === 'ELOOP') {
             return {
               ok: false,
               output: `Target ${realPath} became a symlink between precheck and read — kernel refused via O_NOFOLLOW.`,

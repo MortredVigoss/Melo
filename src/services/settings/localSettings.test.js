@@ -8,7 +8,7 @@ import { updateLocalProfile } from './localProfile.js';
 import { getDesktopBootstrap } from '../desktop/bootstrap.js';
 import { loadState, updateStateAtomically } from '../../state/stateStore.js';
 import { prepareDesktopLaunchState } from './desktopSettings.js';
-import { validateLocalPreferencePatch } from './localPreferences.js';
+import { validateLocalPreferencePatch } from '../../domain/settings/localPreferences.js';
 
 test('local profile and settings persist without changing roles or requiring an account', async () => {
   const home = await mkdtemp(join(tmpdir(), 'melo-local-profile-')), previous = process.env.MELO_HOME;

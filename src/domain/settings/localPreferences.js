@@ -10,7 +10,7 @@ export const LOCAL_PREFERENCE_DEFAULTS = Object.freeze({
   // values are stored, so an Agent is off until the user turns it on here.
   agentDevice: Object.freeze({}),
 });
-export const DEVICE_PERMISSION_KEYS = Object.freeze(['location']);
+const DEVICE_PERMISSION_KEYS = Object.freeze(['location']);
 const AGENT_ID = /^[A-Za-z0-9_-]{1,80}$/;
 function normalizeAgentDevice(raw) {
   const out = {};

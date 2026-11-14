@@ -122,7 +122,7 @@ export function getPluginHooks(pluginId) {
 // a handler that never settles used to hang the tool executor outside its
 // own timeout/cancel protection and, through the per-chat serial queue,
 // every later message in that chat.
-export const DEFAULT_HOOK_TIMEOUT_MS = 10_000;
+const DEFAULT_HOOK_TIMEOUT_MS = 10_000;
 
 export async function emitHook(hookName, payload = {}, { timeoutMs = DEFAULT_HOOK_TIMEOUT_MS, signal } = {}) {
   const handlers = _hooks.get(hookName);

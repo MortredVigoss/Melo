@@ -35,7 +35,7 @@
 .neural-dashboard .detail-card > :is(p,h2,h3,.quality-details,.subsection) {margin:0;}
 .neural-dashboard .detail-card > .meta-block-label {margin:8px 0 -8px;}
 .neural-dashboard .detail-card > .header-row {align-items:flex-start;}
-.neural-dashboard .detail-card > :is(.small-button,.ghost-button,.pill-button) {justify-self:start;}
+.neural-dashboard .detail-card > :is(.small-button,.ghost-button) {justify-self:start;}
 .neural-dashboard :is([class="surface-card"],[class="surface-card "],.compact-surface-card) {padding:16px;display:grid;gap:12px;align-content:start;}
 .neural-dashboard :is([class="surface-card"],[class="surface-card "],.compact-surface-card) > :is(.chip-row,.inline-actions) {justify-self:start;}
 .neural-dashboard .subsection {gap:12px;}
@@ -103,7 +103,7 @@
    import buttons were cut off. */
 .neural-dashboard .customize-layout {grid-template-columns:minmax(220px,250px) minmax(0,1fr);gap:0;}
 .neural-dashboard .customize-layout > .customize-pane:nth-child(2):not(:last-child) {border-right:1px solid var(--space-edge-soft);padding-right:16px;}
-.neural-dashboard .customize-pane :is(.chip,.pill-button,.small-button) {max-width:100%;}
+.neural-dashboard .customize-pane :is(.chip,.small-button) {max-width:100%;}
 .neural-dashboard .customize-pane :is(.chip-row,.inline-actions,.search-row) {flex-wrap:wrap;gap:6px;}
 .neural-dashboard .customize-pane .search-row > * {flex:1 1 100%;min-width:0;}
 .neural-dashboard .skill-filter-row {display:grid;grid-template-columns:minmax(0,1fr);gap:8px;}

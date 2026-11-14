@@ -1,12 +1,9 @@
 import Foundation
-import CryptoKit
 import Security
 
 // Public-client ChatGPT plan authorization. Credentials never enter chat/sync payloads.
 enum ChatGPTProtocol {
     static let issuer = "https://auth.openai.com"
-    static let resource = "https://api.openai.com/v1"
-    static let scopes = "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct"
     static func base64URL(_ data: Data) -> String {
         data.base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
     }
@@ -196,7 +193,6 @@ struct ChatGPTSSE {
         if text.isEmpty {
             if !eventLines.isEmpty {
                 do { try stream.accept(eventLines.joined(separator: "\n")) }
-                catch is DecodingError { throw MeloError.message("模型事件解析失败，请重试。") }
                 catch let error as NSError where error.domain == NSCocoaErrorDomain { throw MeloError.message("模型事件解析失败，请重试。") }
                 eventLines.removeAll(keepingCapacity: true)
             }

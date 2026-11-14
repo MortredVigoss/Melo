@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import {
   normalizeMcpServerWhitelist,
   filterMcpToolsForAgent,
-} from './agentTools.js';
+} from '../../domain/agent/agentTools.js';
 
 // ─── normalizeMcpServerWhitelist ────────────────────────────────────────────
 

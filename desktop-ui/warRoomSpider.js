@@ -261,7 +261,6 @@ export function createSpider({ color, glow, shadow, scale = 1, seed = 0, sprite,
     update,
     /** Lean in, four alternating rakes, then hook the find; hooks: onRake(side, at, pull), onHook(), onRelease(). */
     dig(seconds = 1.45, hooks = {}) { dig = { t: 0, length: seconds, hooks, rakes: 0, hooked: false }; },
-    get digging() { return !!dig; },
     /** World position of a front claw tip (side -1 left, 1 right) as of the last update. */
     claw,
     /** World positions of the feet that stand (not the front claws while they dig), as of the last update. */

@@ -59,7 +59,7 @@ export default function mountVectorField(host, spec) {
     ${renderCardFooter(spec)}
   `;
   const canvas = host.querySelector('canvas.viz-canvas');
-  bindParamSliders(host, params, () => {});
+  bindParamSliders(host, params);
 
   return startAnimationLoop(host, () => {
     const strength = paramValue(params, 'strength', 0.5);

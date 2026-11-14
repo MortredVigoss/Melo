@@ -6,10 +6,6 @@ import {constants} from 'node:fs';
 // outside the workspace root even with `..` segments.
 //
 // This module owns:
-//   - sanitizeWorkspacePath(rawPath, fallbackRoot) — normalize user input
-//     (absolute vs relative) to an absolute path, falling back to the app
-//     root when empty
-//   - toRelativePath(rootPath, filePath) — relative() + POSIX-style slashes
 //   - resolveWorkspaceFilePath(rootPath, relativePath) — throws if the
 //     resolved path escapes rootPath; used by every file operation below
 //   - extensionToLanguage(filePath) — file extension → highlight token for
@@ -38,11 +34,11 @@ import {
   resolve,
 } from 'node:path';
 
-export const MAX_TREE_ENTRIES = 160;
-export const MAX_WORKSPACE_INDEXED_FILES = 4000;
-export const MAX_FILE_PREVIEW_CHARS = 18000;
+const MAX_TREE_ENTRIES = 160;
+const MAX_WORKSPACE_INDEXED_FILES = 4000;
+const MAX_FILE_PREVIEW_CHARS = 18000;
 
-export const IGNORED_DIR_NAMES = new Set([
+const IGNORED_DIR_NAMES = new Set([
   '.git',
   '.tmp',
   'node_modules',
@@ -56,25 +52,10 @@ export const IGNORED_DIR_NAMES = new Set([
 ]);
 
 /**
- * Turn a possibly-empty / possibly-relative path into an absolute one.
- * Falls back to `fallbackRoot` when rawPath is missing — used by callers
- * that treat an unset workspace path as "use the app install directory".
- */
-export { sanitizeWorkspacePath } from '../../domain/workspacePath.js';
-
-export function toRelativePath(rootPath, filePath) {
-  const relativePath = relative(rootPath, filePath);
-  if (!relativePath || relativePath === '') {
-    return '';
-  }
-  return relativePath.split('\\').join('/');
-}
-
-/**
  * Resolve a relative path under rootPath, throwing if the result escapes
  * the workspace (defence against ../ traversal).
  */
-export function resolveWorkspaceFilePath(rootPath, relativePathValue) {
+function resolveWorkspaceFilePath(rootPath, relativePathValue) {
   const candidate = resolve(rootPath, relativePathValue || '.');
   const rel = relative(rootPath, candidate);
 
@@ -85,7 +66,7 @@ export function resolveWorkspaceFilePath(rootPath, relativePathValue) {
   return candidate;
 }
 
-export function extensionToLanguage(filePath) {
+function extensionToLanguage(filePath) {
   const ext = extname(filePath).replace(/^\./, '').toLowerCase();
   switch (ext) {
     case 'js':

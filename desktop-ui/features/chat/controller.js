@@ -690,7 +690,6 @@ async function handleSendMessage(prepared = null) {
             }
           : {}),
         mode: getBootstrap().settings.activeMode,
-
       },
       signal: chatState.sendAbortController.signal,
       onEvent: message => {
@@ -716,7 +715,6 @@ async function handleSendMessage(prepared = null) {
             typeof message.payload?.text === 'string'
               ? message.payload.text
               : `${chatState.streamingAssistantText}${delta}`;
-          // Feed incremental delta to streaming TTS
           // Fast path: during a pure-delta stream frame, patch ONLY the
           // streaming bubble instead of doing a full `app.innerHTML = ...`
           // rebuild. Falls back to render() the first time through (DOM
@@ -1624,8 +1622,7 @@ export function restoreComposerDraft(draft, sentContent) {
   }
 }
 
-// The composer draft for app.js's slash commands (handleComposerCommand), the
-// command catalog filter and the (unrendered) command deck presets.
+// The composer draft for app.js's slash commands (handleComposerCommand).
 export function composerText() {
   return chatState.composer;
 }
@@ -1644,4 +1641,4 @@ export function isSending() {
 // Tests and diagnostics.
 export const getState = () => chatState;
 
-export { isAbortError, cloneBootstrapState, optimisticMessagePreview, optimisticChatTitle, resetStreamingAssistant, prepareThreadNavigation, applyOptimisticUserMessage, parseSlashQuery, slashPaletteMatches, voiceBridgeSupported, appendComposerText, promptHistoryEntries, resetComposerHistoryNavigation, navigateComposerHistory, focusComposerSoon, syncComposerTextareaHeight, setVoiceState, isPdfAttachment, isPdfFile, attachmentIcon, attachmentLabel, formatFileSize, detectAttachmentKindFromFile, readFileAsDataUrl, queueComposerFiles, openComposerAttachmentPicker, promptComposerLinkAttachment, hasFileTransfer, composerDropTargetFromEvent, setComposerDragActive, voiceContext, voiceInput, stopVoiceCaptureIfNeeded, handleVoiceBridgeEvent, toggleVoiceInput, handleCreateChat, sendSupplement, handleSendMessage, handleStopSending, _positionAgentDropdown, updateThreadAutoFollow, syncThreadViewport, retryMissingImages };
+export { prepareThreadNavigation, slashPaletteMatches, isPdfAttachment, attachmentIcon, attachmentLabel, stopVoiceCaptureIfNeeded, handleVoiceBridgeEvent, handleCreateChat, handleSendMessage, _positionAgentDropdown, updateThreadAutoFollow, syncThreadViewport, retryMissingImages };

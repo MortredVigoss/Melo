@@ -41,43 +41,6 @@ function parseRenderableMessageBlocks(value = '') {
   return blocks;
 }
 
-function normalizeDisplayConversationText(value = '') {
-  // Defense-in-depth: the backend's extractVizSpec() strips the trailer
-  // before persisting, but if one ever slips through (old messages, a
-  // provider that returned partial text, etc.) we still don't want the
-  // raw <viz-spec>…</viz-spec> JSON blob rendered in the chat bubble.
-  const preStripped = String(value || '').replace(/<viz-spec>[\s\S]*?<\/viz-spec>/gi, '');
-  const normalized = preStripped.replace(/\r\n/g, '\n');
-  const strippedLines = normalized
-    .split('\n')
-    .map(line =>
-      line
-        .replace(/^\s{0,3}#{1,6}\s+/, '')
-        .replace(/^\s*>\s?/, '')
-        .replace(/^\s*[-*+]\s+/, '')
-        .replace(/^\s*\d+[.)]\s+/, '')
-        .replace(/^\s*---+\s*$/, ''),
-    )
-    .join('\n');
-
-  return strippedLines
-    .replace(/\*\*([^*\n]+)\*\*/g, '$1')
-    .replace(/__([^_\n]+)__/g, '$1')
-    .replace(
-      /(^|[\s([{"'“‘（【《「『])\*([^*\n]+)\*(?=$|[\s)\]}.,!?;:'"”’）】》」』，。！？；：、])/gu,
-      '$1$2',
-    )
-    .replace(
-      /(^|[\s([{"'“‘（【《「『])_([^_\n]+)_(?=$|[\s)\]}.,!?;:'"”’）】》」』，。！？；：、])/gu,
-      '$1$2',
-    )
-    .replace(/(^|[\s([{"'“‘（【《「『])([*_#~]{1,3})(?=[\p{L}\p{N}\p{Script=Han}])/gu, '$1')
-    .replace(/(?<=[\p{L}\p{N}\p{Script=Han}])([*_#~]{1,3})(?=$|[\s)\]}.,!?;:'"”’）】》」』，。！？；：、])/gu, '')
-    .replace(/`([^`\n]+)`/g, '$1')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
-
 function renderRichText(value = '') {
   return parseRenderableMessageBlocks(value)
     .map(block => {
@@ -316,4 +279,4 @@ function renderMessageToolResults(message) {
   return _renderMessageToolResultsFromModule(message, escapeHtml);
 }
 
-export { parseRenderableMessageBlocks, normalizeDisplayConversationText, renderRichText, normalizeRenderableMessageBlock, messageBlocksForRender, renderMessageBlocks, extractSourceCitations, citationHostname, renderSourceCitationCards, renderMessageAttachments, renderAssistantVizMount, renderMessageActions, renderMessageToolResults };
+export { renderRichText, renderMessageBlocks, extractSourceCitations, renderSourceCitationCards, renderMessageAttachments, renderAssistantVizMount, renderMessageActions, renderMessageToolResults };

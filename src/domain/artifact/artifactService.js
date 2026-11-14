@@ -56,7 +56,7 @@ export function normalizeArtifact(artifact) {
  * @param {Object|null|undefined} artifact
  * @returns {boolean}
  */
-export function isLiveArtifact(artifact) {
+function isLiveArtifact(artifact) {
   return Boolean(artifact) && !artifact.deletedAt;
 }
 

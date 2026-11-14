@@ -5,7 +5,7 @@ import { realpathSync } from 'node:fs';
 
 const lanes = new Map();
 
-export function canonicalHome(home) {
+function canonicalHome(home) {
   try { return realpathSync(home); } catch { return resolve(home); }
 }
 

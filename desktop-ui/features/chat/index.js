@@ -21,7 +21,6 @@ import {
   stopVoiceCaptureIfNeeded,
   voiceCaptureActive,
   resetComposerForNewChatHome,
-  focusComposerSoon,
   handleCreateChat,
   handleSendMessage,
   takeComposerDraft,
@@ -81,7 +80,6 @@ export function installChatFeature(context) {
     voiceCaptureActive,
     // handleOpenNewChatHome (new-chat navigation).
     resetComposerForNewChatHome,
-    focusComposerSoon,
     // New chats (palette, projects) and sends started outside the composer
     // (tasks keep the user's draft around their run).
     createChat: handleCreateChat,
@@ -110,8 +108,8 @@ export function installChatFeature(context) {
     // 'melo:viz:hydrated'.
     restorePendingVizAnchor,
     // What app.js asks about the chat: the running reply (render, task panel,
-    // 1 s timer), the composer draft (slash commands, command catalog, the
-    // neural composer sync) and its attachments (image task controls).
+    // 1 s timer), the composer draft (slash commands, the neural composer
+    // sync) and its attachments (image task controls).
     isSending,
     thinkingLabel,
     composerText,

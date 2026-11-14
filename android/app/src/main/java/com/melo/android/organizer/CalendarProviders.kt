@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.provider.CalendarContract
 import androidx.core.content.ContextCompat
-import com.melo.android.data.newId
 import net.fortuna.ical4j.data.CalendarBuilder
 import net.fortuna.ical4j.model.Property
 import net.fortuna.ical4j.model.Period
@@ -17,7 +16,6 @@ import net.fortuna.ical4j.model.property.DateProperty
 import okhttp3.*
 import java.io.StringReader
 import java.time.*
-import java.time.temporal.Temporal
 import java.util.concurrent.TimeUnit
 
 /** Normalized occurrences at the provider boundary; never write external calendars. */
@@ -137,7 +135,7 @@ class IcsHttp(private val debug: Boolean = false) {
                     target = normalizedUrl(next.toString(), debug)
                 } else {
                     check(response.isSuccessful) { "ICS 服务返回 HTTP ${response.code}。" }
-                    val body = response.body ?: error("ICS 返回空内容。")
+                    val body = response.body
                     check(body.contentLength() <= 5 * 1024 * 1024) { "ICS 超过 5 MiB。" }
                     val bytes = body.byteStream().use { input -> java.io.ByteArrayOutputStream().also { output -> val buffer = ByteArray(8192); while (true) { val count = input.read(buffer); if (count < 0) break; output.write(buffer, 0, count); check(output.size() <= 5 * 1024 * 1024) { "ICS 超过 5 MiB。" } } }.toByteArray() }
                     check(bytes.size <= 5 * 1024 * 1024) { "ICS 超过 5 MiB。" }

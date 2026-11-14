@@ -32,7 +32,6 @@ function fitPoints(points, targetW, targetH, padding) {
   const maxX = Math.max(...xs);
   const minY = Math.min(...ys);
   const maxY = Math.max(...ys);
-  const span = Math.max(maxX - minX, maxY - minY, 1);
   const scale = Math.min((targetW - padding * 2) / (maxX - minX || 1), (targetH - padding * 2) / (maxY - minY || 1));
   const cx = targetW / 2;
   const cy = targetH / 2;
@@ -43,8 +42,6 @@ function fitPoints(points, targetW, targetH, padding) {
       x: cx + (p.x - centerX) * scale,
       y: cy - (p.y - centerY) * scale,
     })),
-    scale,
-    span,
   };
 }
 

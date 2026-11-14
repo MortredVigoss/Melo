@@ -1,13 +1,13 @@
 import { ui } from '../../i18n.js';
-export function renderConversationContext({chat,projectId,artifactIds,projects=[],artifacts=[],disabled=false}, escape) {
+export function renderConversationContext({chat,projectId,artifactIds,projects=[],artifacts=[]}, escape) {
   const selected = new Set(chat?.contextArtifactIds || artifactIds || []);
   const currentProject = chat ? chat.projectId : projectId;
   const inherited = new Set(projects.find(p=>p.id===currentProject)?.knowledgeIds || []);
   const visibleSelected = artifacts.filter(a=>selected.has(a.id)||inherited.has(a.id)).length;
   return ui`<details class="conversation-context"><summary>项目与知识${visibleSelected ? ` · ${visibleSelected}` : ''}</summary><div class="conversation-context-menu">
-    <label class="label">归入项目<select class="input" data-chat-context="project" ${disabled?'disabled':''}><option value="">独立对话</option>${projects.filter(p=>!p.archived||p.id===currentProject).map(p=>ui`<option value="${escape(p.id)}" ${p.id===currentProject?'selected':''}>${escape(p.name)}${p.archived?'（已归档）':''}</option>`).join('')}</select></label>
+    <label class="label">归入项目<select class="input" data-chat-context="project"><option value="">独立对话</option>${projects.filter(p=>!p.archived||p.id===currentProject).map(p=>ui`<option value="${escape(p.id)}" ${p.id===currentProject?'selected':''}>${escape(p.name)}${p.archived?'（已归档）':''}</option>`).join('')}</select></label>
     ${artifacts.filter(a=>selected.has(a.id)||inherited.has(a.id)).reduce((n,a)=>n+(a.content?.length||0),0)>12000?ui`<p role="status" aria-live="polite">知识较长，将按预算选取部分内容；未选取的部分不会发送。</p>`:''}
     <strong>选用知识</strong><p>可选用任意多份知识；每轮按问题选取最相关的片段发送（最多 8 段），全文保留。</p>
-    <div class="context-materials">${artifacts.filter(a=>typeof a.content==='string' && a.content.trim()).map(a=>inherited.has(a.id)?ui`<p>✓ ${escape(a.title)} · 项目共享</p>`:ui`<label><input type="checkbox" data-chat-context="artifact" value="${escape(a.id)}" ${selected.has(a.id)?'checked':''} ${disabled?'disabled':''}><span>${escape(a.title)}</span></label>`).join('') || ui`<p>先在知识库中保存知识。</p>`}</div>
+    <div class="context-materials">${artifacts.filter(a=>typeof a.content==='string' && a.content.trim()).map(a=>inherited.has(a.id)?ui`<p>✓ ${escape(a.title)} · 项目共享</p>`:ui`<label><input type="checkbox" data-chat-context="artifact" value="${escape(a.id)}" ${selected.has(a.id)?'checked':''}><span>${escape(a.title)}</span></label>`).join('') || ui`<p>先在知识库中保存知识。</p>`}</div>
   </div></details>`;
 }

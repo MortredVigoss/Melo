@@ -39,14 +39,14 @@ test('an approval is claimed once, concurrent settings survive, and completed ap
 });
 
 test('unresolved approvals survive large completed history',async()=>{
- const {normalizeApprovals}=await import('./approvalService.js');
+ const {normalizeApprovals}=await import('../../domain/approval/approvalService.js');
  const pending=Array.from({length:30},(_,i)=>({id:`pending-${i}`,status:'pending',updatedAt:'2025-01-01T00:00:00Z'}));
  const completed=Array.from({length:30},(_,i)=>({id:`done-${i}`,status:'approved',updatedAt:'2026-01-01T00:00:00Z'}));
  const kept=normalizeApprovals([...pending,...completed]);assert.equal(kept.filter(r=>r.status==='pending').length,30);assert.equal(kept.filter(r=>r.status==='approved').length,24);
 });
 
 test('interrupted approval is recoverable for review but never automatically re-executable',async t=>{
- const {recoverApprovalRuns}=await import('./approvalService.js');const {rejectApproval}=await import('./approvalMutations.js');
+ const {recoverApprovalRuns}=await import('../../domain/approval/approvalService.js');const {rejectApproval}=await import('./approvalMutations.js');
  const home=await mkdtemp(join(tmpdir(),'melo-approval-recovery-'));process.env.MELO_HOME=home;t.after(()=>rm(home,{recursive:true,force:true}));
  await updateStateAtomically(s=>{s.approvals=[{id:'interrupted',kind:'command',status:'running',payload:{command:'must not run'}}];});
  await updateStateAtomically(recoverApprovalRuns);await assert.rejects(executeApproval('interrupted'),{code:'APPROVAL_NOT_PENDING'});

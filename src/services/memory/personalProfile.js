@@ -10,7 +10,6 @@
 import { iterateMemoryRecords, isEntryInvalidated } from '../../memory/store.js';
 import { normalizedFact } from '../../memory/factPolicy.js';
 import { estimateTextTokens } from '../../memory/tokenEstimate.js';
-import { requestEnvironment, runWithRequestContext } from '../../runtime/requestScope.js';
 
 export const PERSONAL_NAMESPACE = 'user:local';
 export const PROFILE_CATEGORIES = Object.freeze(['correction', 'identity', 'user_preference']);
@@ -22,11 +21,9 @@ export function isPersonalProfileRow(row) {
   return row?.kind === 'session-fact' && m.scope === 'personal' && m.audience === 'local' && PROFILE_CATEGORIES.includes(m.category);
 }
 
-export function listPersonalProfile({ home = null } = {}) {
-  const work = () => [...iterateMemoryRecords({ namespace: PERSONAL_NAMESPACE })]
+export function listPersonalProfile() {
+  return [...iterateMemoryRecords({ namespace: PERSONAL_NAMESPACE })]
     .filter(row => isPersonalProfileRow(row) && !isEntryInvalidated(row.metadata));
-  if (!home) return work();
-  return runWithRequestContext({ env: { ...requestEnvironment(), MELO_HOME: home } }, work);
 }
 
 export const profileLine = row => `- [${row.metadata?.category}] ${String(row.text || '').trim()}`;

@@ -1,9 +1,9 @@
 // Large photos are not refused: the browser sends a bounded copy (long edge
 // ≤ 4096 px) instead of the original. Same rule as ImageLibrary.inputs on the phone.
 export const MB = 1024 * 1024;
-export const ATTACHMENT_LIMITS = Object.freeze({ image: 100 * MB, video: 500 * MB, default: 20 * MB });
-export const TRANSFER_MAX_EDGE = 4096;
-export const TRANSFER_KEEP_BYTES = 6 * MB;
+const ATTACHMENT_LIMITS = Object.freeze({ image: 100 * MB, video: 500 * MB, default: 20 * MB });
+const TRANSFER_MAX_EDGE = 4096;
+const TRANSFER_KEEP_BYTES = 6 * MB;
 
 export function attachmentLimit(kind) {
   return ATTACHMENT_LIMITS[kind] ?? ATTACHMENT_LIMITS.default;

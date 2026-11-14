@@ -1,5 +1,4 @@
 import { MAX_CONTEXT_RECENT_MESSAGES, MAX_CONTEXT_MEMORY_MESSAGES, MAX_CONTEXT_MEMORY_ITEMS } from './limits.js';
-export { MAX_CONTEXT_RECENT_MESSAGES, MAX_CONTEXT_MEMORY_MESSAGES, MAX_CONTEXT_MEMORY_ITEMS };
 // Chat thread context — Phase 7d-5α-A1 (commit 3/9).
 //
 // This bundle holds everything desktopStore needs to derive and cache a
@@ -37,10 +36,6 @@ import { messageVisibleText } from '../domain/message/messageBlocks.js';
 import { extractedMediaPromptText } from '../domain/message/messageSearch.js';
 import { summarizeAttachmentsForPrompt } from '../domain/chat/attachmentSummary.js';
 
-
-
-
-
 export function messageTextForContext(message) {
   const attachments = normalizeMessageAttachments(message?.attachments);
   const text = messageVisibleText(message).trim();
@@ -68,7 +63,7 @@ export function setChatThreadContextCache(chat, threadContext) {
   });
 }
 
-export function getChatThreadContextCache(chat) {
+function getChatThreadContextCache(chat) {
   return chat && typeof chat === 'object' ? chat.__threadContext || null : null;
 }
 

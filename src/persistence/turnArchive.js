@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-export const RECENT_RUNS_PER_CHAT = 50;
+const RECENT_RUNS_PER_CHAT = 50;
 function open(home, create = false) {
   const path = join(home, 'desktop', 'turn-history.sqlite');
   if (!create && !existsSync(path)) return null;

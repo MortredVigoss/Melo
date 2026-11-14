@@ -146,7 +146,7 @@ class OrganizerRepository(private val context: Context) {
                 update { current ->
                     val active = current.sources.find { it.id == source.id }
                     // A removed/disabled/edited source must not be resurrected by a late fetch.
-                    if (active != source) { if (active == null && source.kind == "ics") icsCache(source.id).delete(); current } else current.copy(sources = current.sources.map { if (it.id == source.id) it.copy(lastRefresh = now, lastError = null, etag = etag, modified = modified) else it }, external = if (rows == null) current.external else current.external.filterNot { it.sourceId == source.id } + rows)
+                    if (active != source) { if (active == null && source.kind == "ics") icsCache(source.id).delete(); current } else current.copy(sources = current.sources.map { if (it.id == source.id) it.copy(lastRefresh = now, lastError = null, etag = etag, modified = modified) else it }, external = current.external.filterNot { it.sourceId == source.id } + rows)
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e

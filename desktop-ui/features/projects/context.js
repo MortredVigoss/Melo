@@ -8,7 +8,7 @@
 import { checkFeatureContext } from '../featureContext.js';
 import { createProjectsApi } from './api.js';
 
-export const PROJECTS_CONTEXT = Object.freeze([
+const PROJECTS_CONTEXT = Object.freeze([
   'getBootstrap', 'api', 'render', 'notify', 'patchSettings', 'applyBootstrap', 'applyBootstrapPreservingDrafts',
   'startProjectSession', 'activeProject', 'activeProjectChats', 'activeProjectArtifacts', 'renderMemoryBook',
   'escapeHtml', 'truncate', 'icon',

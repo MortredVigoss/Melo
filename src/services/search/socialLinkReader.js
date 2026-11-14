@@ -198,7 +198,7 @@ export const SOCIAL_HOST_SUFFIXES = Object.freeze([
   'xiaohongshu.com', 'xhslink.com', 'xhslink.cn', 'rednote.com',
 ]);
 
-export function hostnameOf(url) {
+function hostnameOf(url) {
   try {
     const u = new URL(url);
     return u.hostname.replace(/^www\./, '').toLowerCase();
@@ -1133,22 +1133,14 @@ export async function readSocialLink(url, {
   }
 
   // Step 1 — short-link resolve.
-  let canonical = url;
+  // resolveShortLink never throws: every network / URL step inside it is
+  // caught and falls back to the URL it already has.
   const tShort = Date.now();
-  try {
-    canonical = await resolveShortLink(url, { signal });
-    recordSocialTrail(trail, 'short-link-resolve', 'ok', {
-      latencyMs: Date.now() - tShort,
-      extra: { resolved: canonical !== url, canonical },
-    });
-  } catch (err) {
-    canonical = url;
-    recordSocialTrail(trail, 'short-link-resolve', 'fail', {
-      latencyMs: Date.now() - tShort,
-      reason: classifySocialError(err),
-      extra: { fallbackToOriginal: true },
-    });
-  }
+  const canonical = await resolveShortLink(url, { signal });
+  recordSocialTrail(trail, 'short-link-resolve', 'ok', {
+    latencyMs: Date.now() - tShort,
+    extra: { resolved: canonical !== url, canonical },
+  });
   if (signal?.aborted) {
     recordSocialTrail(trail, 'yt-dlp', 'skip', { reason: 'aborted-after-short-link' });
     return { body: '', via: 'aborted', canonicalUrl: canonical, evidenceTrail: trail, aborted: true };

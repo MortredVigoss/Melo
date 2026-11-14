@@ -62,7 +62,7 @@ function renderChannelRuntimeMetric(label, value) {
   `;
 }
 
-function renderChannelRuntimeCard(channel, { showRoute = false } = {}) {
+function renderChannelRuntimeCard(channel) {
   const incomingPreview = channel?.lastIncomingPreview || '';
   const replyPreview = channel?.lastReplyPreview || '';
 
@@ -84,11 +84,6 @@ function renderChannelRuntimeCard(channel, { showRoute = false } = {}) {
         ${renderChannelRuntimeMetric('Last poll', channel?.lastPolledLabel || formatRuntimeTimestamp(channel?.lastPolledAt, 'No recent poll'))}
         ${renderChannelRuntimeMetric('Last incoming', channel?.lastIncomingLabel || formatRuntimeTimestamp(channel?.lastIncomingAt, 'No incoming messages yet'))}
         ${renderChannelRuntimeMetric('Last reply', channel?.lastReplyLabel || formatRuntimeTimestamp(channel?.lastReplyAt, 'No replies sent yet'))}
-        ${
-          showRoute
-            ? renderChannelRuntimeMetric('Default route', channel?.chatId || channel?.lastRemoteChatId || 'Not pinned')
-            : ''
-        }
       </div>
       ${
         incomingPreview || replyPreview
@@ -435,4 +430,4 @@ function renderAgentPage() {
   `;
 }
 
-export { formatRuntimeTimestamp, renderChannelRuntimeMetric, renderChannelRuntimeCard, renderAgentCapabilities, renderAgentPersonaFields, renderAgentWorkbench, renderAgentPage };
+export { renderAgentPage };

@@ -448,26 +448,14 @@ async function _unsafeRawDelete(paths, ctx = {}) {
   // during backup, then unlinkat through that dirfd. Catches
   // parent-rmdir+mkdir-different-inode race during the backup→unlink
   // gap. unlinkat with flags=0 doesn't follow symlinks — symlink
-  // entries delete the link, never the target.
-  //
-  // Directory entries are no longer reachable here (the backup phase
-  // refuses them above). The wasDirectory branch is kept for legacy
-  // manifests that may have been written before round 13 follow-up #2;
-  // they're treated as failures.
+  // entries delete the link, never the target. Directories never reach
+  // this loop: the backup phase above refuses them.
   const removed = [];
   const failed = [];
   for (const entry of fileEntries) {
     try {
       const [parent, leaf] = splitParentLeaf(entry.originalPath);
       const parentSnapshot = parentInoByPath.get(entry.originalPath);
-
-      if (entry.wasDirectory) {
-        // Legacy manifest path — refuse.
-        throw new Error(
-          `wasDirectory entry no longer supported in final unlink phase ` +
-          `(directory delete is refused upstream as of round 13 follow-up #2)`,
-        );
-      }
 
       // Round 13 follow-up #5 (Codex 🔴): use unlinkatChecked so the
       // {dev, ino} check and the unlinkat syscall happen on the SAME

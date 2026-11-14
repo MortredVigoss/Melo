@@ -21,7 +21,7 @@ function deepFreeze(value) {
   return value;
 }
 
-export const AGENT_LOOP_CONTRACT_URL = new URL('../../shared/protocol/agent-loop.json', import.meta.url);
+const AGENT_LOOP_CONTRACT_URL = new URL('../../shared/protocol/agent-loop.json', import.meta.url);
 export const AGENT_LOOP_CONTRACT = deepFreeze(JSON.parse(readFileSync(AGENT_LOOP_CONTRACT_URL, 'utf8')));
 
 /** Replace `{name}` placeholders in one pass; unknown names stay verbatim. */

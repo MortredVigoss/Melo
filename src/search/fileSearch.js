@@ -38,11 +38,11 @@ export function _setRipgrepBinaryForTests(name) {
   _ripgrepBinary = typeof name === 'string' && name ? name : resolveBundledRipgrep();
 }
 
-export function normalizeRipgrepPath(filePath = '') {
+function normalizeRipgrepPath(filePath = '') {
   return String(filePath || '').replace(/^\.\//, '');
 }
 
-export function createFileSearchHit({ path = '', lineNumber = 0, text = '', query = '' } = {}) {
+function createFileSearchHit({ path = '', lineNumber = 0, text = '', query = '' } = {}) {
   const normalizedPath = normalizeRipgrepPath(path);
   const normalizedLineNumber = Number(lineNumber) || 0;
   const normalizedText = String(text || '').replace(/\s+/g, ' ').trim();
@@ -66,7 +66,7 @@ export function createFileSearchHit({ path = '', lineNumber = 0, text = '', quer
   };
 }
 
-export function parseRipgrepJsonLine(rawLine = '', query = '') {
+function parseRipgrepJsonLine(rawLine = '', query = '') {
   if (!String(rawLine || '').trim()) {
     return null;
   }

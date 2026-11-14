@@ -5,7 +5,7 @@
 // ones app.js's uiState carried before the move.
 export const customizeState = createCustomizeState();
 
-export function createCustomizeState() {
+function createCustomizeState() {
   return {
     // Phase 3.3.2 — Customize → Skills filter state. `query` is a free-form
     // search over name/description/tags/triggers. `tag` narrows to skills

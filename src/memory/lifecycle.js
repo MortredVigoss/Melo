@@ -18,13 +18,13 @@
 
 const LIFECYCLE_VERSION = 1;
 
-export const MEMORY_STATUS = Object.freeze({
+const MEMORY_STATUS = Object.freeze({
   CURRENT: 'current',
   HISTORICAL: 'historical',
   NEEDS_CONFIRMATION: 'needs_confirmation',
 });
 
-export const MEMORY_TYPE = Object.freeze({
+const MEMORY_TYPE = Object.freeze({
   IDENTITY: 'identity',
   PREFERENCE: 'preference',
   ROUTINE: 'routine',
@@ -334,9 +334,3 @@ export function applyMemoryContinuity(entries = []) {
 
   return annotated.map(entry => byId.get(entry.id) || entry);
 }
-
-export const MEMORY_LIFECYCLE_CONFIG = Object.freeze({
-  LIFECYCLE_VERSION,
-  ANCHOR_FACT_KEYS: [...ANCHOR_FACT_KEYS],
-  SINGLE_CURRENT_FACT_KEYS: [...SINGLE_CURRENT_FACT_KEYS],
-});

@@ -4,13 +4,12 @@ import Foundation
 /// capacity supplied by the connection takes precedence over the cloud default.
 struct PhoneContextBudget: Sendable {
     @TaskLocal static var current = PhoneContextBudget()
-    let total: Int
     let input: Int
     let window: Int
     let chunk: Int
     init(capacity: Int? = nil, local: Bool = false) {
         let d = AgentLoopContract.shared.raw["contextBudget"] as? [String: Int] ?? [:]
-        total = max(d["minimum"] ?? 4096, min(d["maximum"] ?? 400000, capacity ?? d[local ? "local" : "cloud"] ?? 160000))
+        let total = max(d["minimum"] ?? 4096, min(d["maximum"] ?? 400000, capacity ?? d[local ? "local" : "cloud"] ?? 160000))
         input = total - min(total / 3, d["outputReserve"] ?? 8000)
         window = max(2048, min(d["nearWindow"] ?? 64000, input * 3 / 4))
         chunk = min(d["chunkMaximum"] ?? 45000, max(d["chunkMinimum"] ?? 4000, input / 2))

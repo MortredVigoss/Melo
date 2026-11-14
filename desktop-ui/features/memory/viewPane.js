@@ -166,4 +166,4 @@ function renderMemoryPane() {
   return ui`<div class="customize-pane">${content}</div>`;
 }
 
-export { renderMemoryPane, fmtMemoryBytes, fmtMemoryRelTime };
+export { renderMemoryPane };

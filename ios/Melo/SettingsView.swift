@@ -16,7 +16,6 @@ struct SettingsContent: View {
     @EnvironmentObject var account: ChatGPTAccount
     @AppStorage("webSearchEnabled") private var webSearchEnabled = true
     @AppStorage("modelAuthMode") private var authMode = "chatgpt"
-    @State private var error: String?
     @State private var connections = false
     @State private var diagnostics = false
     @State private var sourcePage: SourcePage?
@@ -108,7 +107,7 @@ struct SettingsContent: View {
         .sheet(isPresented: $diagnostics) { RuntimeDiagnosticsView() }
         .sheet(item: $sourcePage) { SourceBrowser(url: $0.url).ignoresSafeArea() }
         .task { if account.signedIn && account.models.isEmpty { await account.loadModels() } }
-        .alert("Melo 设置", isPresented: Binding(get: { error != nil || account.error != nil }, set: { if !$0 { error = nil; account.error = nil } })) { Button("知道了") { error = nil; account.error = nil } } message: { Text(error ?? account.error ?? "") }
+        .alert("Melo 设置", isPresented: Binding(get: { account.error != nil }, set: { if !$0 { account.error = nil } })) { Button("知道了") { account.error = nil } } message: { Text(account.error ?? "") }
     }
     private func capability(_ name: String, _ status: String, _ symbol: String) -> some View {
         HStack { Label(LocalizedStringKey(name), systemImage: symbol).font(.caption); Spacer(); Text(LocalizedStringKey(status)).font(.caption2).foregroundStyle(.secondary) }

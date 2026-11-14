@@ -33,8 +33,6 @@ import {currentRequestContext} from '../runtime/requestScope.js';
 import {resolveRuntimePaths} from '../runtime/paths.js';
 
 export const getSkillsDiskRoot=()=>path.join(currentRequestContext()?.home || resolveRuntimePaths().home,'desktop','skills');
-// Compatibility export; runtime operations capture the current home at entry.
-export const SKILLS_DISK_ROOT=getSkillsDiskRoot();
 
 /**
  * Parse a YAML-frontmatter markdown file into { frontmatter, body }.

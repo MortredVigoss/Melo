@@ -1,5 +1,4 @@
-import { FRAME_GAP_MS, FRAME_MAX_USER_TURNS, FRAME_MAX_TOKENS, FRAME_DRIFT_COS, FRAME_MIN_TURNS } from './limits.js';
-export { FRAME_GAP_MS, FRAME_MAX_USER_TURNS, FRAME_MAX_TOKENS, FRAME_DRIFT_COS, FRAME_MIN_TURNS };
+import { FRAME_GAP_MS, FRAME_MAX_USER_TURNS, FRAME_MAX_TOKENS, FRAME_MIN_TURNS } from './limits.js';
 /**
  * Frame layer — the "picture" in the Scene → Frame → Content hierarchy.
  *
@@ -12,10 +11,6 @@ export { FRAME_GAP_MS, FRAME_MAX_USER_TURNS, FRAME_MAX_TOKENS, FRAME_DRIFT_COS, 
  *   1. Gap > FRAME_GAP_MS (30 minutes) between adjacent turns.
  *   2. Cumulative user-turn count ≥ FRAME_MAX_USER_TURNS (5).
  *   3. Cumulative token count ≥ FRAME_MAX_TOKENS (2000).
- *   4. (Optional, when embeddings are available) topic drift:
- *      cosine(newTurnEmbedding, frameCentroid) < FRAME_DRIFT_COS (0.35).
- *      This is handled by the caller since we don't want frame.js to own
- *      embedding IO — splitFrames is pure.
  *
  * Frame payload text  (≤ 220 chars):
  *   "<start..end> • <user's opening question>  →  <assistant's wrap-up>"
@@ -26,12 +21,6 @@ export { FRAME_GAP_MS, FRAME_MAX_USER_TURNS, FRAME_MAX_TOKENS, FRAME_DRIFT_COS, 
 
 import { createHash } from 'node:crypto';
 import { normalizeConversationSnippet } from './heuristics.js';
-
-
-
-
-
-
 
 // ─── Token estimation (shared with contextCompact.js heuristic) ──────────────
 

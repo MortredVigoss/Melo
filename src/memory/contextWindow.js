@@ -12,18 +12,6 @@ import { estimateMessageTokens } from './tokenEstimate.js';
 // chat pipeline pass the resolved values explicitly; tests and legacy
 // callers that pass nothing still get these.
 
-/** Fallback: trigger a full LLM compact when pending history exceeds this. */
-
-
-/** Fallback: maximum history tokens carried by the sliding window. */
-
-
-/** Always preserve at least this many recent messages verbatim. */
-
-
-/** Stop retrying compact after this many consecutive failures. */
-
-
 // ─── Token-bounded sliding window ─────────────────────────────────────────────
 
 /**

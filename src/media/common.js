@@ -59,24 +59,6 @@ export function combineSignals(externalSignal, timeoutMs) {
   return composeAbortSignals(externalSignal, timeoutSignal);
 }
 
-export async function fetchText(url, { timeoutMs = 10000, headers = {}, signal } = {}) {
-  if (signal?.aborted) return null;
-  const response = await fetch(url, {
-    headers,
-    redirect: 'follow',
-    signal: combineSignals(signal, timeoutMs),
-  });
-
-  if (!response.ok) {
-    return null;
-  }
-
-  return {
-    text: await response.text(),
-    contentType: String(response.headers.get('content-type') || '').toLowerCase(),
-  };
-}
-
 export async function fetchBuffer(url, { timeoutMs = 20000, headers = {}, signal } = {}) {
   if (signal?.aborted) return null;
   const response = await fetch(url, {
@@ -93,22 +75,4 @@ export async function fetchBuffer(url, { timeoutMs = 20000, headers = {}, signal
     buffer: Buffer.from(await response.arrayBuffer()),
     contentType: String(response.headers.get('content-type') || '').toLowerCase(),
   };
-}
-
-export function decodeHtmlEntities(value = '') {
-  return String(value || '')
-    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code) || 0))
-    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16) || 0))
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'");
-}
-
-export function fileExtension(value = '') {
-  const normalized = String(value || '').trim().toLowerCase();
-  const match = normalized.match(/\.([a-z0-9]+)(?:$|[?#])/i);
-  return match ? match[1] : '';
 }

@@ -123,8 +123,7 @@ function renderProjectCard(item) {
     <button class="small-button" data-action="restore-deleted-project" data-project-id="${escapeHtml(item.id)}" ${projectsState.lifecycleBusy?'disabled':''}>恢复为新项目</button>
   </section>`;
   // A single project card in the overview grid. Clicking anywhere on the
-  // card opens the detail view. Action buttons (开启项目对话 / 处理项目代码)
-  // stop propagation so they don't also trigger the card click.
+  // card opens the detail view.
   return ui`
     <button
       class="project-card"
@@ -189,8 +188,6 @@ function renderProjectCreateForm() {
         )}</textarea>
       </label>
       <div class="inline-actions">
-
-
       </div>
     </form>
   `;
@@ -205,7 +202,7 @@ function renderProjectAgentDefaults(project) {
     <label class="label">默认 Agent<select class="input" data-project-default-agent="${escapeHtml(project.id)}" ${project.archived ? 'disabled' : ''}><option value="">不指定（沿用当前选择）</option>${options}</select></label>
     <p class="meta-label">在这个项目里开启新对话时使用；团队由这个 Agent 发起。项目内的 Agent 权限只能比全局更严。</p>
     <h3 class="subsection-title">默认团队</h3>
-    ${renderTeamPanel({scope:'project',target:project.id,lead,agents,plan:project.teamPlan,disabled:project.archived,escapeHtml,open:true})}
+    ${renderTeamPanel({scope:'project',target:project.id,lead,agents,plan:project.teamPlan,disabled:project.archived,escapeHtml})}
     ${project.teamPlan ? ui`<p class="meta-label">已保存默认团队：${escapeHtml(project.teamPlan.members.map(id => agents.find(agent => agent.id === id)?.name || id).join('、'))}</p><button type="button" class="small-button is-outline" data-action="clear-project-team" data-project-id="${escapeHtml(project.id)}">清除默认团队</button>` : ''}
   </section>`;
 }
@@ -392,4 +389,4 @@ function renderProjectsDetailView(project) {
   `;
 }
 
-export { renderProjectsPage, renderProjectsOverview, renderProjectCard, renderProjectCreateForm, renderProjectAgentDefaults, renderProjectsDetailView };
+export { renderProjectsPage, renderProjectAgentDefaults, renderProjectsDetailView };

@@ -55,10 +55,6 @@ import { requestBashOp } from '../../safety/fileSafetyGate.js';
 // head + arg-shape, NOT cwd. cwd check is done separately in
 // isInAllowlist.
 
-// Are all args option flags? Empty args is allowed (no-op forms
-// like `pwd`, `git status`).
-
-
 // Phase 2D follow-up #6 (Codex 🔴, 2026-05-04): the silent
 // allowlist is collapsed to the absolute minimum — only commands
 // whose ENTIRE arg surface is path-free, expansion-free, and
@@ -141,7 +137,6 @@ function isInAllowlist(command, cwd, workspacePath) {
   if (/[`$|&;<>(){}]/.test(command)) return false;
   if (/['"\\]/.test(command)) return false;
   const parts = command.trim().split(/\s+/);
-  if (parts.length === 0) return false;
   const head = parts[0];
   const args = parts.slice(1);
   for (const entry of SILENT_ALLOWLIST) {

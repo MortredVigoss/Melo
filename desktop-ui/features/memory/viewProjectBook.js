@@ -4,8 +4,8 @@ import { escapeHtml } from '../../i18n.js';
 // ./controller.js (data-action="project-book-*").
 import { t, ui } from '../../i18n.js';
 
-export const BOOK_SECTION_LABELS = Object.freeze({ goal: '目标', convention: '约定', decision: '决定', progress: '进展', todo: '待办', file: '文件' });
-export const BOOK_SECTION_ORDER = Object.freeze(Object.keys(BOOK_SECTION_LABELS));
+const BOOK_SECTION_LABELS = Object.freeze({ goal: '目标', convention: '约定', decision: '决定', progress: '进展', todo: '待办', file: '文件' });
+const BOOK_SECTION_ORDER = Object.freeze(Object.keys(BOOK_SECTION_LABELS));
 // Bug audit U6: static labels are translated at render time (the interface
 // language is chosen after import), so the maps are read through these.
 const sectionLabel = section => ({ goal: t('目标'), convention: t('约定'), decision: t('决定'), progress: t('进展'), todo: t('待办'), file: t('文件') })[section] ?? section;

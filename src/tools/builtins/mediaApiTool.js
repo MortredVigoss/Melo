@@ -270,9 +270,6 @@ export const mediaApiTool = {
       switch (operation) {
         case 'search_track': {
           if (!query) return { ok: false, output: 'query is required for search_track.', error: 'MISSING_PARAM' };
-          if (backend === 'itunes' || (backend === 'auto' && !query.match(/[^\x00-\x7F]/))) {
-            // iTunes handles English well; use MusicBrainz for CJK/non-ASCII
-          }
           // Always try MusicBrainz first (best coverage for non-English)
           if (backend !== 'itunes') {
             results = await mbSearchTrack(query, lim, signal);

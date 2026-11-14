@@ -6,7 +6,7 @@ const id = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/u.test(
 const patterns = AGENT_LOOP_CONTRACT.redaction.patterns.map(entry => [contractRegExp(entry, 'g'), entry.replacement]);
 const sensitive = /^(?:api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|token|authorization|proxy[_-]?authorization|cookie|set-cookie|password|client[_-]?secret|secret|x-api-key)$/iu;
 const hidden = /^(?:encrypted_content|reasoning_content|thinking|b64_json|image_base64|base64|jpeg)$/iu;
-export function traceText(value) {
+function traceText(value) {
   let out = String(value);
   for (const [pattern, replacement] of patterns) out = out.replace(pattern, replacement);
   out = out.replace(/([?&])([^=&#\s]+)=([^&#\s]*)/gu, (match, separator, key) => {

@@ -1,7 +1,6 @@
 package com.melo.android.device
 
 import com.melo.android.data.*
-import kotlinx.coroutines.*
 import kotlinx.serialization.json.*
 
 /** Native effects only. The owning Chat loop is the sole model/decision loop. */

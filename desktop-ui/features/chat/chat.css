@@ -664,13 +664,6 @@
   transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 
-/* Speaking: green tint — audio is actively playing */
-.message-action-btn.is-speaking {
-  background: var(--palette-f39e02fe04);
-  border-color: var(--palette-3b1f766c7a);
-  color: var(--palette-bb60523432);
-}
-
 /* Loading: amber pulse — synthesis in progress, ~15s wait */
 @keyframes tts-pulse {
   0%, 100% { opacity: 1; }

@@ -23,7 +23,6 @@ export function createActionRegistry(kind = 'action') {
       }
     },
     has: name => handlers.has(name),
-    names: () => [...handlers.keys()],
     owner: name => handlers.get(name)?.owner || null,
     // Resolves true when a feature handled `name`; false lets the caller fall
     // through to its own switch.

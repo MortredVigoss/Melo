@@ -48,7 +48,7 @@ export function executionTiming(scene, now = Date.now()) {
   const unfinished = scene.status === 'completed' && !!outcome && !['completed', 'unverified'].includes(outcome);
   return { done, elapsedMs, modelMs, finishedAt: finished, completed: scene.status === 'completed', unfinished, image };
 }
-export function formatExecutionDuration(ms) {
+function formatExecutionDuration(ms) {
   if (ms === null || !Number.isFinite(ms) || ms < 0) return t('用时未记录');
   return t('{seconds} 秒', { seconds: Math.floor(ms / 1000).toLocaleString(currentLanguage()) });
 }

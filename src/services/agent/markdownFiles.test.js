@@ -15,7 +15,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createAgentMarkdownFileHelpers } from './markdownFiles.js';
+import { createAgentMarkdownFileHelpers } from '../../persistence/agentMarkdownFiles.js';
 
 // ─── string-form binding (literal path, never re-evaluated) ─────────────────
 

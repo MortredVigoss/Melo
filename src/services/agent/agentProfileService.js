@@ -6,16 +6,16 @@ import { estimateTextTokens } from '../../memory/tokenEstimate.js';
 // with room for the other required sections. Personas above this cannot fit
 // any request; large-but-fitting documents (e.g. the 64k-char "unsyncable to
 // mobile" case covered by agentPersona.browser.test.js) remain allowed.
-export const MAX_INSTRUCTIONS_TOKENS = 120_000;
+const MAX_INSTRUCTIONS_TOKENS = 120_000;
 // Agent-profile orchestration — pure functional core.
 //
 // Complements the data-layer modules around it:
 //   • src/state/agentProfiles.js      — normalizers (normalizeAgentProfile,
 //                                         normalizeAgentOverride, etc.)
-//   • src/services/agent/agentLibrary.js    — built-in presets + ID allocator
-//   • src/services/agent/agentChannels.js   — channel schema + normalization
-//   • src/services/agent/agentTools.js      — tool/skill/connector filters
-//   • src/services/agent/markdownFiles.js   — identity.md / soul.md I/O
+//   • src/domain/agent/agentLibrary.js      — built-in presets + ID allocator
+//   • src/domain/agent/agentChannels.js     — channel schema + normalization
+//   • src/domain/agent/agentTools.js        — tool/skill/connector filters
+//   • src/persistence/agentMarkdownFiles.js — identity.md / soul.md I/O
 //
 // This module owns the three pieces of non-trivial logic that used to live
 // inline inside `updateAgentProfile` / `createCustomAgent` in desktopStore:

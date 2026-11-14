@@ -53,7 +53,7 @@ export function galaxyParticles({ seed = 20261021, count = 19000 } = {}) {
 }
 
 // Draws the galaxy (centre + ring) into a square canvas and returns a data URL (browser only).
-export function drawGalaxy(documentRef = document, size = 1400) {
+function drawGalaxy(documentRef = document, size = 1400) {
   const canvas = documentRef.createElement('canvas');
   canvas.width = size; canvas.height = size;
   const context = canvas.getContext('2d');
@@ -83,7 +83,7 @@ export function drawGalaxy(documentRef = document, size = 1400) {
 
 // Once per launch, off the critical path: the panel shows its plain surface
 // until the image is ready, then the galaxy fades in (see the CSS).
-export function installGalaxyBackdrop(documentRef = document) {
+function installGalaxyBackdrop(documentRef = document) {
   const root = documentRef.documentElement;
   if (!root || root.style.getPropertyValue('--melo-galaxy')) return;
   const paint = () => {

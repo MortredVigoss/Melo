@@ -14,7 +14,6 @@ class SharedCoreTurn private constructor(private val runtime: SharedCoreRuntime,
     val effects get() = buildJsonObject { put("internalRouting",true); put("successfulEffects",state["successfulEffects"] ?: JsonArray(emptyList())); put("uncertainEffects",state["uncertainEffects"] ?: JsonArray(emptyList())) }
     val completed get() = state["status"]?.jsonPrimitive?.content == "completed"
     val active get() = state["status"]?.jsonPrimitive?.content == "running"
-    val reporting get() = state.text("requestMode") == "report"
     val roundsLeft get() = (state["limits"]?.jsonObject?.get("rounds")?.jsonPrimitive?.intOrNull ?: 0) - (state["rounds"]?.jsonPrimitive?.intOrNull ?: 0)
     val rounds get() = state["rounds"]?.jsonPrimitive?.intOrNull ?: 0
     val failures get() = state["errors"]?.jsonPrimitive?.intOrNull ?: 0

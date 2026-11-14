@@ -9,7 +9,7 @@ import {
   mergeChannelsWithStaleDraftGuard,
   buildNewCustomAgent,
 } from './agentProfileService.js';
-import { AGENT_CHANNEL_IDS } from './agentChannels.js';
+import { AGENT_CHANNEL_IDS } from '../../domain/agent/agentChannels.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 1. normalizeAgentUpdatePatch

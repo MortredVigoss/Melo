@@ -514,58 +514,52 @@ export const fetchUrlTool = {
       if (typeof _tryCdpChromeOverride === 'function') {
         return _tryCdpChromeOverride();
       }
-      try {
-        return await withMeloChrome(async (browser) => {
-          // Codex Stage 2b round-2 闭环 (2026-05-16): MUST reuse the
-          // CDP-attached browser's default persistent context, NOT call
-          // browser.newContext().  newContext() creates an isolated profile
-          // with no cookies / localStorage / login state — that defeats
-          // the entire point of CDP attach (the user's real Chrome session,
-          // logged in to GitHub / Twitter / Notion etc., is invisible to
-          // an isolated context).  contexts()[0] is the default persistent
-          // context that connectOverCDP gives us; it sees everything the
-          // user's Melo Chrome profile sees.
-          const contexts = typeof browser.contexts === 'function' ? browser.contexts() : [];
-          const context = (Array.isArray(contexts) && contexts[0])
-            ? contexts[0]
-            : await browser.newContext(); // defensive fallback — shouldn't fire with CDP attach
-          const page = await context.newPage();
+      return await withMeloChrome(async (browser) => {
+        // Codex Stage 2b round-2 闭环 (2026-05-16): MUST reuse the
+        // CDP-attached browser's default persistent context, NOT call
+        // browser.newContext().  newContext() creates an isolated profile
+        // with no cookies / localStorage / login state — that defeats
+        // the entire point of CDP attach (the user's real Chrome session,
+        // logged in to GitHub / Twitter / Notion etc., is invisible to
+        // an isolated context).  contexts()[0] is the default persistent
+        // context that connectOverCDP gives us; it sees everything the
+        // user's Melo Chrome profile sees.
+        const contexts = typeof browser.contexts === 'function' ? browser.contexts() : [];
+        const context = (Array.isArray(contexts) && contexts[0])
+          ? contexts[0]
+          : await browser.newContext(); // defensive fallback — shouldn't fire with CDP attach
+        const page = await context.newPage();
+        try {
+          // Codex Stage 2b round-3 闭环 (2026-05-16): `networkidle` is
+          // unreachable on most modern sites (Twitter / Slack / Discord
+          // / anything with long-polling, WebSockets, or background
+          // telemetry).  The pre-fix would 20s-timeout on those, making
+          // cdp-chrome unusable for the very sites it's most useful for.
+          // domcontentloaded + a short stability wait is the industry-
+          // standard recipe for "page is interactive enough to extract"
+          // without waiting for never-arriving network silence.
+          await page.goto(normalized, {
+            waitUntil: 'domcontentloaded',
+            timeout: searchLimits().browserTimeoutMs,
+          });
+          // Give SPAs ~1.5s to finish first-paint / hydration after DOM
+          // ready before reading innerText.  Capped — don't let a
+          // long-polling page hold us hostage past this window.
           try {
-            // Codex Stage 2b round-3 闭环 (2026-05-16): `networkidle` is
-            // unreachable on most modern sites (Twitter / Slack / Discord
-            // / anything with long-polling, WebSockets, or background
-            // telemetry).  The pre-fix would 20s-timeout on those, making
-            // cdp-chrome unusable for the very sites it's most useful for.
-            // domcontentloaded + a short stability wait is the industry-
-            // standard recipe for "page is interactive enough to extract"
-            // without waiting for never-arriving network silence.
-            await page.goto(normalized, {
-              waitUntil: 'domcontentloaded',
-              timeout: searchLimits().browserTimeoutMs,
-            });
-            // Give SPAs ~1.5s to finish first-paint / hydration after DOM
-            // ready before reading innerText.  Capped — don't let a
-            // long-polling page hold us hostage past this window.
-            try {
-              await page.waitForLoadState('load', { timeout: 3000 });
-            } catch { /* load may never fire on streamy pages — fine */ }
-            await new Promise(r => setTimeout(r, 1500));
-            const text = await page.evaluate(() => document?.body?.innerText || '');
-            return String(text || '').trim() || null;
-          } finally {
-            // Close ONLY the page we opened.  The shared persistent
-            // context stays alive — closing it would destroy the user's
-            // login state, defeating the whole CDP-attach value
-            // proposition.  Browser handle close (CDP detach) is handled
-            // by withMeloChrome's finally.
-            try { await page.close(); } catch { /* best-effort */ }
-          }
-        }, { signal });
-      } catch (err) {
-        // Bubble up — caller decides between fail+escalate vs propagate.
-        // Don't classify here; the trail recorder does it.
-        throw err;
-      }
+            await page.waitForLoadState('load', { timeout: 3000 });
+          } catch { /* load may never fire on streamy pages — fine */ }
+          await new Promise(r => setTimeout(r, 1500));
+          const text = await page.evaluate(() => document?.body?.innerText || '');
+          return String(text || '').trim() || null;
+        } finally {
+          // Close ONLY the page we opened.  The shared persistent
+          // context stays alive — closing it would destroy the user's
+          // login state, defeating the whole CDP-attach value
+          // proposition.  Browser handle close (CDP detach) is handled
+          // by withMeloChrome's finally.
+          try { await page.close(); } catch { /* best-effort */ }
+        }
+      }, { signal });
     };
 
     const tryExternalReaders = async (preferred = ['crawl4ai', 'scrapling', 'camoufox']) => {

@@ -11,9 +11,6 @@
 //   - extractedMediaPromptText(message, maxItems, maxCharsPerItem) — thin
 //     wrapper around renderExtractedMediaContext with conservative caps used
 //     when injecting media into user prompts
-//   - stripInvisibleSearchDecorators(value) — drop code fences but keep their
-//     contents, then collapse to a single-line preview (for search indexing
-//     where newlines/markdown decorators are noise)
 //   - messageSearchText(message) — full combined plain text: visible message
 //     text + attachment text + extracted media text
 //
@@ -21,10 +18,7 @@
 // _refactor-backup/REFACTOR_PLAN.md). Pure module — composition-only, just
 // wires together helpers from messageBlocks, media, and shared.
 
-import {
-  messageVisibleText,
-  normalizePreviewPlainText,
-} from './messageBlocks.js';
+import { messageVisibleText } from './messageBlocks.js';
 import {
   extractedMediaSearchText,
   renderExtractedMediaContext,
@@ -51,12 +45,6 @@ export function extractedMediaPromptText(message, maxItems = 3, maxCharsPerItem 
     maxItems,
     maxCharsPerItem,
   });
-}
-
-export function stripInvisibleSearchDecorators(value = '') {
-  return normalizePreviewPlainText(
-    String(value || '').replace(/```[\w.+-]*\n([\s\S]*?)```/g, '$1'),
-  );
 }
 
 export function messageSearchText(message) {

@@ -82,8 +82,6 @@ async function resolveLeafSymlink(absPath, depth = 0) {
   const inner = await safeResolvePath(absTarget, depth + 1);
   return {
     realPath: inner.realPath,
-    // We are unconditionally a symlink chain — depth >= 1.
-    hasSymlinkInChain: true,
     exists: inner.exists,
   };
 }
@@ -150,7 +148,7 @@ export async function safeResolvePath(absPath, _depth = 0) {
     cur = parent;
     try {
       const real = normalize(await realpath(cur));
-      const reconstructed = tail.length ? join(real, ...tail) : real;
+      const reconstructed = join(real, ...tail);
       return {
         lexicalPath: lexical,
         realPath: reconstructed,

@@ -206,21 +206,6 @@ export function indexMessage(chatId, chatTitle, message, { audience = DESKTOP_AU
 }
 
 /**
- * Bulk-index an array of messages for a chat.
- * Each message is deduped via message_id so safe to call repeatedly.
- *
- * @param {string} chatId
- * @param {string} chatTitle
- * @param {Array} messages
- */
-export function indexMessages(chatId, chatTitle, messages = []) {
-  if (!chatId || !Array.isArray(messages)) return;
-  for (const msg of messages) {
-    indexMessage(chatId, chatTitle, msg);
-  }
-}
-
-/**
  * Remove all indexed entries for a chat (e.g. when a chat is deleted).
  *
  * @param {string} chatId

@@ -96,9 +96,6 @@ async function handlePingExternalConnector(connectorId) {
   applyBootstrap(payload);
 }
 
-// Render the "skill proposals" panel on top of the skills list — a thin UI
-// surface for the Phase 3D background clusterer. Each proposal is one click
-// to either dismiss or promote into the /save-as-skill flow.
 /**
  * Phase 3.3.4 — Skill health panel. Summarises per-skill run counts,
  * success rate, P50 duration, and the most recent errors. Fetched
@@ -707,4 +704,4 @@ export const customizeForms = {
   },
 };
 
-export { handleCreateCustomSkill, handleDisconnectMcpServer, handlePingExternalConnector, handleReloadMcpServers, handleRemoveCustomSkill, handleUpdateCustomSkill, normalizeSkillFormBody, parseSkillCsvList, refreshAdvancedStatus, refreshDomainCookies, refreshSafetyAllowlist, refreshSkillMarkdown, refreshSkillRunStats, removeDomainCookie, removeSafetyAllowlistRule, upsertDomainCookie };
+export { refreshAdvancedStatus, refreshDomainCookies, refreshSafetyAllowlist, refreshSkillMarkdown };

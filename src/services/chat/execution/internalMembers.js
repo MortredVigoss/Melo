@@ -31,8 +31,6 @@ const LIMITED_STOPS = new Set(['ROUND_LIMIT', 'BUDGET_EXHAUSTED', 'CANCELLED', '
 // Compatibility exports: internal routing no longer grows the root resource pool.
 export const ROUTING_EXTENSION_CAP = 0;
 export const MEMBER_TOOL_CALLS = memberPolicy.calls;
-export const MEMBER_DEADLINE_MS = memberPolicy.roundMilliseconds; // per member round
-export const ROUTING_DEADLINE_CAP_MS = 0;
 export const MEMBER_SEARCH_RESULTS = 5;
 export const MEMBER_SEARCH_CONTENT_CHARS = 3000;
 export function extendForMember() { return null; }

@@ -2,8 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { formatTime, formatNumber } from './format.js';
-import { escapeHtml } from './html.js';
-import { setLanguage } from './i18n.js';
+import { escapeHtml, setLanguage } from './i18n.js';
 import { requestText, notify } from './feedback.js';
 test('formatting respects language and timezone and never invents invalid dates',()=>{
   const date='2026-10-24T01:00:00Z';

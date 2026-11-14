@@ -20,7 +20,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { bootstrapBuiltinTools, getAllTools, clearRegistry } from './registry.js';
+import { bootstrapBuiltinTools, getAllTools } from './registry.js';
 
 test.before(() => {
   // bootstrapBuiltinTools is idempotent — safe whether registry was

@@ -260,10 +260,6 @@ function agentPresetById(presetId) {
   return getBootstrap()?.customize?.agentPresets?.find(preset => preset.id === presetId) || null;
 }
 
-function agentToolOptions() {
-  return getBootstrap()?.customize?.agentTools || [];
-}
-
 function selectedAgentNeedsRuntimeRefresh() {
   if (getBootstrap()?.settings?.activeView !== 'agent') {
     return false;
@@ -852,7 +848,6 @@ export const restoreScrollAfterRender = () => restoreAgentScrollState();
 export const syncRuntimeRefresh = () => syncAgentRuntimeRefresh();
 export const restoreEditorAfterRender = () => restoreAgentEditorState();
 
-
 // settingsFormEditors ownership of the agent-profile-update form: this
 // feature keeps that form's draft (agentDrafts), scoped per Agent, scope and
 // project; a cancelled edit discards only that draft.
@@ -862,4 +857,4 @@ export function discardFormDraft(form) {
   delete agentsState.agentDrafts[agentDraftKey(form.dataset.agentId)];
 }
 
-export { selectedAgentProfile, selectedAgentScope, agentDraftKey, agentSaveKey, agentSecretVisibilityKey, agentDraftFor, mergeAgentDraft, updateAgentChannelDraft, currentAgentScrollKey, currentAgentEditorStateKey, captureAgentEditorState, captureAgentScrollState, restoreAgentScrollState, restoreAgentEditorState, agentPresetById, agentToolOptions, selectedAgentNeedsRuntimeRefresh, syncAgentRuntimeRefresh, handleCreateCustomAgent, handleUpdateAgentProfile, handleTestAgentChannel, handleImportAgentPreset, handleResetProjectAgentOverride };
+export { selectedAgentProfile, selectedAgentScope, agentSecretVisibilityKey, agentDraftFor };

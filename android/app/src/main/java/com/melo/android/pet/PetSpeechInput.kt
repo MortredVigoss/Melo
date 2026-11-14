@@ -16,7 +16,6 @@ interface PetSpeechListener {
 /** One listening session at a time; the Debug build can substitute a fixture for emulators without a recognizer. */
 interface PetSpeechInput {
     fun start(language: String, listener: PetSpeechListener)
-    fun cancel()
     fun destroy()
 }
 
@@ -49,7 +48,6 @@ class SystemSpeechInput(private val context: Context) : PetSpeechInput {
         if (language.isNotBlank()) intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, language)
         runCatching { instance.startListening(intent) }.onFailure { listener.onError("无法启动系统语音识别：${it.message}") }
     }
-    override fun cancel() { runCatching { recognizer?.cancel() } }
     override fun destroy() { runCatching { recognizer?.destroy() }; recognizer = null }
 
     companion object {

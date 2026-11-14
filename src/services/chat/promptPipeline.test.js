@@ -11,7 +11,7 @@ process.env.MELO_HOME = home;
 const { runChatAgentExecutionGraph } = await import('./chatExecutionRunner.js');
 const { clearRegistry, registerTool } = await import('../../tools/registry.js');
 const { enrichMessageWithMediaContext } = await import('../../media/index.js');
-const { buildSkills, BUILTIN_SKILLS } = await import('../skill/skillService.js');
+const { buildSkills, BUILTIN_SKILLS } = await import('../../domain/skill/skillService.js');
 clearRegistry();
 registerTool({
   id: 'test_reference', name: 'Test reference', description: 'Read a deterministic release note.',

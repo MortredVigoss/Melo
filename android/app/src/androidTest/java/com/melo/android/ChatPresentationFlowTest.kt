@@ -1,6 +1,5 @@
 package com.melo.android
 
-import android.content.Intent
 import android.os.Build
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.*

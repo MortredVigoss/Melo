@@ -136,10 +136,3 @@ export function verifySignedFileUrl(params) {
 
   return absPath;
 }
-
-// ─── Internal — exposed for tests only ──────────────────────────────────────
-
-/** @internal */
-export function __getSigningSecretLength() {
-  return SIGNING_SECRET.length;
-}

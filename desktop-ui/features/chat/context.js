@@ -15,7 +15,7 @@
 import { checkFeatureContext } from '../featureContext.js';
 import { createChatApi } from './api.js';
 
-export const CHAT_CONTEXT = Object.freeze([
+const CHAT_CONTEXT = Object.freeze([
   'getBootstrap', 'setBootstrap', 'app', 'api', 'render', 'bgRender', 'notify',
   'applyBootstrap', 'applyBootstrapPreservingDrafts', 'refreshBootstrap',
   'activeChat', 'isOverview', 'leaveOverview', 'newChatSelection', 'selectNewChatAgent',

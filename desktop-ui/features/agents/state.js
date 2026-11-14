@@ -2,7 +2,7 @@
 // this feature: app.js neither reads nor writes it. Field names are the ones
 // the moved code used on uiState, so `git log -L` / blame stay readable. Agent
 // profiles themselves stay in the bootstrap (read through getBootstrap()).
-export function createAgentsState() {
+function createAgentsState() {
   return {
     // Editor tab of the legacy identity / soul editor (select-agent-editor-tab).
     agentEditorTab: 'identity',

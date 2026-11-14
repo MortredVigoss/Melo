@@ -19,7 +19,7 @@ const LIST_LABELS = {
   connectors: id => t('连接器「{id}」', { id }),
 };
 
-export function atomLabel(atom) {
+function atomLabel(atom) {
   const text = String(atom || '');
   if (BOOLEAN_LABELS[text]) return BOOLEAN_LABELS[text]();
   const separator = text.indexOf(':');
@@ -122,8 +122,6 @@ export function renderCapabilityPrompt(entry) {
     </div>
   `;
 }
-
-
 
 function grantScopeText(grant) {
   if (grant.scope === 'run') return grant.kind === 'enable-own' ? t('仅本次') : t('仅本次任务');

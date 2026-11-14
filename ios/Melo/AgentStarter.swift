@@ -1,5 +1,3 @@
-import Foundation
-
 // Capability elevation rule 6 on the iPhone (2026-10-20): a new Agent starts
 // read-only, and «基于已有 Agent» copies what the desktop's
 // buildNewCustomAgent copies (src/services/agent/agentProfileService.js).

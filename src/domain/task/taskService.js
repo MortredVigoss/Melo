@@ -22,15 +22,15 @@
 import { randomUUID } from 'node:crypto';
 import { coerceIso, formatUpdatedAt } from '../../shared/helpers.js';
 
-export const taskOwners = state => Object.keys(state?.agentProfiles || {});
+const taskOwners = state => Object.keys(state?.agentProfiles || {});
 export function taskOwner(state, requested) {
   const ids = taskOwners(state);
   const id = requested || state.settings?.defaultAgentId || (ids.includes('main') ? 'main' : ids[0]);
   if (!id || !ids.includes(id)) throw Object.assign(new Error('The task owner Agent is unavailable. Choose an existing Agent.'), { code: 'TASK_OWNER_MISSING' });
   return id;
 }
-export const TASK_STATUSES = ['todo', 'running', 'blocked', 'review', 'done'];
-export const MAX_TASKS = 24;
+const TASK_STATUSES = ['todo', 'running', 'blocked', 'review', 'done'];
+const MAX_TASKS = 24;
 
 function titleCase(value) {
   return String(value || '')

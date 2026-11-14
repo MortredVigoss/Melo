@@ -6,7 +6,7 @@ import { createHash, randomUUID } from 'node:crypto';
 
 export const validRunId = value => typeof value === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(value);
 export const imageHomeScope = home => createHash('sha256').update(resolve(home)).digest('hex').slice(0, 24);
-export const imageRecordId = artifact => createHash('sha256').update(String(artifact.id)).digest('hex');
+const imageRecordId = artifact => createHash('sha256').update(String(artifact.id)).digest('hex');
 const directory = home => join(home, 'desktop', 'image-records');
 const fileFor = (home, runId) => validRunId(runId) ? join(directory(home), `${runId}.json`) : null;
 

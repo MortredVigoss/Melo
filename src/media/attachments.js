@@ -56,10 +56,6 @@ export function isFileAttachmentUrl(url) {
   return value.startsWith(URL_PREFIX) && NAME.test(value.slice(URL_PREFIX.length));
 }
 
-export function isDataUrl(url) {
-  return String(url || '').startsWith('data:');
-}
-
 export function extensionForMime(mimeType = '') {
   const normalized = String(mimeType || '').trim().toLowerCase().split(';')[0];
   if (EXTENSIONS[normalized]) return EXTENSIONS[normalized];

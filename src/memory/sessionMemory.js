@@ -1,5 +1,4 @@
 import { MEMORY_EXTRACT_INTERVAL, MEMORY_INJECT_LIMIT, MEMORY_MAX_STORED, MEMORY_EXTRACTION_MIN_MESSAGES } from './limits.js';
-export { MEMORY_EXTRACT_INTERVAL, MEMORY_INJECT_LIMIT, MEMORY_MAX_STORED };
 import { captureBehavior } from '../runtime/runtimeBehavior.js';
 /**
  * Session memory extractor.
@@ -29,7 +28,6 @@ import { captureBehavior } from '../runtime/runtimeBehavior.js';
 import { createOpenAICompatibleReply } from '../openai.js';
 import { extractFactsRuleBased } from './offline/extractor.js';
 import { factSubject } from './factPolicy.js';
-import '../runtime/requestScope.js'; // Preserve module initialization.
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -71,7 +69,7 @@ Example:
  * @param {AbortSignal} [signal]
  * @returns {Promise<Array<{ fact: string, category: string }>>}
  */
-export async function extractMemoryFacts(messages, { config, signal } = {}) {
+async function extractMemoryFacts(messages, { config, signal } = {}) {
   if (!messages || messages.length < MEMORY_EXTRACTION_MIN_MESSAGES) return [];
 
   // Offline path: rule-based extractor only, no network.
@@ -269,7 +267,7 @@ export function formatSessionMemoryBlock(facts = [], limit = MEMORY_INJECT_LIMIT
  * @param {Object} chat       - chat record
  * @returns {boolean}
  */
-export function shouldExtractMemory(chat) {
+function shouldExtractMemory(chat) {
   const messages = Array.isArray(chat.messages) ? chat.messages : [];
   const assistantCount = messages.filter(m => m?.role === 'assistant').length;
   const lastExtractedCount = chat.memoryLastExtractedAtCount || 0;

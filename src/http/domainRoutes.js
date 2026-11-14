@@ -10,7 +10,6 @@ import { listPermissionAudit } from '../safety/permissionAudit.js';
 import { removeCommandRule } from '../safety/commandRules.js';
 import { previewRestore, confirmRestore } from '../safety/restorePreview.js';
 import { loadConfig, saveConfig, withConfigLock } from '../config.js';
-import '../shared/llmProviders.js'; // Preserve module initialization.
 import { repairMemoryBatch, memoryRepairStatus, diagnoseMemory } from '../memory/repair.js';
 import { saveLlmProfile, activateLlmProfile, forgetLlmProfile, testLlmProfile } from '../services/settings/llmConnections.js';
 import { startOpenRouterOAuth, openRouterOAuthStatus } from '../providers/openRouterOAuth.js';

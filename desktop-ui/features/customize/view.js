@@ -1,5 +1,4 @@
 import { AGENT_LOOP_CONTRACT } from '../../../shared/agent/loopContract.js';
-import { userFacingAgents } from '../../../src/shared/userAgents.js';
 import { LOCAL_SERVICE_DEFAULTS } from '../../../src/shared/localServices.js';
 import { formatTime } from '../../format.js';
 // Customize page — renderers and selectors
@@ -16,17 +15,12 @@ import { t, ui } from '../../i18n.js';
 const connectorText = (connector, field) => connector?.type === 'external-mcp' ? String(connector?.[field] || '') : t(String(connector?.[field] || ''));
 import { renderAdvancedPage } from '../../advancedPage.js';
 import { credentialChipState } from '../../credentialChip.js';
-import { agentsFeature, approvalsFeature, effectiveModelSetupDraft, escapeHtml, getBootstrap, memoryFeature, modelSetupDraft, renderApprovalPanel, renderCommandRunner, renderProjectArtifactShelf, renderSelectedFilePreview, renderTaskPanel } from './context.js';
+import { agentsFeature, approvalsFeature, effectiveModelSetupDraft, escapeHtml, getBootstrap, memoryFeature, modelSetupDraft, renderApprovalPanel, renderProjectArtifactShelf, renderTaskPanel } from './context.js';
 import { customizeState } from './state.js';
 import { refreshAdvancedStatus, refreshDomainCookies, refreshSafetyAllowlist, refreshSkillMarkdown } from './controller.js';
 
 function selectedCustomizeItem() {
   if (!getBootstrap()) return null;
-  if (getBootstrap().settings.selectedCustomizeSection === 'agents') {
-    return getBootstrap().customize.agents.find(
-      agent => agent.id === getBootstrap().settings.selectedAgentId,
-    );
-  }
   if (getBootstrap().settings.selectedCustomizeSection === 'skills') {
     return getBootstrap().customize.skills.find(
       skill => skill.id === getBootstrap().settings.selectedSkillId,
@@ -99,10 +93,6 @@ function renderConnectorDetails(selected) {
   }
 
   if (getBootstrap().settings.selectedCustomizeSection==='connectors' && ['local-files','local-command'].includes(selected.id)) return ui`<section class="detail-card"><p>本地文件与命令由 Agent 能力设置控制。</p><button class="small-button" data-action="open-view" data-view="agent">查看 Agent 能力</button></section>`;
-
-  if (getBootstrap().settings.selectedCustomizeSection === 'agents') {
-    return agentsFeature.renderWorkbench(selected);
-  }
 
   if (getBootstrap().settings.selectedCustomizeSection === 'skills') {
     const isCustomSkill = selected.source === 'custom';
@@ -245,7 +235,6 @@ function renderConnectorDetails(selected) {
     `;
   }
 
-  const workspace = getBootstrap().workspace;
   let extra = '';
 
   if (selected.type === 'external-mcp') {
@@ -380,39 +369,7 @@ function renderConnectorDetails(selected) {
           </button>
           <span class="meta-label" data-tts-test-status></span>
         </div>
-
-
       </form>
-    `;
-  } else if (selected.id === 'local-files') {
-    extra = ui`
-      <div class="detail-meta">
-        <div class="meta-block-label">工作区根目录</div>
-        <div class="mono">${escapeHtml(selected.config.workspaceRoot || '(none)')}</div>
-      </div>
-      <div class="chip-row">
-        <span class="chip is-accent">${selected.config.fileCount || 0} 个文件</span>
-        <span class="chip">${selected.config.exists ? t('可用') : t('不可用')}</span>
-        ${
-          selected.config.selectedFilePath
-            ? ui`<span class="chip">${escapeHtml(selected.config.selectedFilePath)}</span>`
-            : ''
-        }
-      </div>
-      ${workspace.selectedFile ? renderSelectedFilePreview() : ''}
-    `;
-  } else if (selected.id === 'local-command') {
-    extra = ui`
-      <div class="chip-row">
-        ${(workspace.commandTemplates || [])
-          .map(
-            template => ui`
-              <span class="chip">${escapeHtml(template.label)}</span>
-            `,
-          )
-          .join('')}
-      </div>
-      ${(workspace.commandRuns || []).length ? renderCommandRunner() : `<div class="empty-state compact">${t('还没有命令运行记录。')}</div>`}
     `;
   } else if (selected.id === 'artifacts') {
     extra = ui`
@@ -964,7 +921,7 @@ function renderCustomizePage() {
               <div class="list-row-meta">塑造角色行为与提示策略。</div>
             </button>
             <button
-              class="section-button ${section === 'agents' ? 'is-active' : ''}"
+              class="section-button"
               data-action="open-customize-section"
               data-section="agents"
             >
@@ -1028,7 +985,7 @@ function renderCustomizePage() {
         <div class="customize-pane">
           <div class="customize-pane-header">
             <h2 class="pane-title">${
-              section === 'skills' ? t('技能') : section === 'agents' ? 'Agent' : t('连接器')
+              section === 'skills' ? t('技能') : t('连接器')
             }</h2>
           </div>
 
@@ -1037,16 +994,12 @@ function renderCustomizePage() {
           <div class="list-stack">
             ${(section === 'skills'
               ? filteredSkills()
-              : section === 'agents'
-                ? userFacingAgents(data.customize.agents, { keepId: data.settings.selectedAgentId })
-                : (data.customize.connectors || []).filter(c => c.type !== 'external-mcp' && !['local-files','local-command'].includes(c.id)))
+              : (data.customize.connectors || []).filter(c => c.type !== 'external-mcp' && !['local-files','local-command'].includes(c.id)))
               .map(item => {
                 const isActive =
                   section === 'skills'
                     ? data.settings.selectedSkillId === item.id
-                    : section === 'agents'
-                      ? data.settings.selectedAgentId === item.id
-                      : data.settings.selectedConnectorId === item.id;
+                    : data.settings.selectedConnectorId === item.id;
                 return ui`
                   <button
                     class="list-row ${isActive ? 'is-active' : ''}"
@@ -1056,10 +1009,9 @@ function renderCustomizePage() {
                   >
                     <div class="list-row-title">
                       ${escapeHtml(section === 'connectors' ? connectorText(item, 'name') : item.name)}
-                      ${section==='agents' && !item.capabilities ? ui`<span class="chip">旧版权限待迁移</span>` : ''}
                     </div>
                     <div class="list-row-meta">${escapeHtml(
-                      section === 'agents' ? item.laneLabel : section === 'connectors' ? connectorText(item, 'description') : item.description,
+                      section === 'connectors' ? connectorText(item, 'description') : item.description,
                     )}</div>
                   </button>
                 `;
@@ -1090,4 +1042,4 @@ function renderCustomizePage() {
   `;
 }
 
-export { allSkillTags, filteredSkills, formatDurationMs, formatLastRunAt, formatSuccessRate, renderConnectorDetails, renderCustomSkillCreateCard, renderCustomizePage, renderDomainCookiesPane, renderSafetyPane, renderSkillDetailTabs, renderSkillFilterBar, renderSkillHealthPanel, renderSkillMarkdownTab, renderSkillProposalsPanel, selectedCustomizeItem };
+export { renderCustomizePage };

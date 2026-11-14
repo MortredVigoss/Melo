@@ -31,7 +31,7 @@
 // already-normalized skill objects and a message (string | messages[])
 // and returns a filtered copy.
 
-import { buildSkillIndex, candidateSkillIdsFor } from './skillIndex.js';
+import { candidateSkillIdsFor } from './skillIndex.js';
 import { defaultSkillMatchCache } from './skillMatchCache.js';
 import { tokenizeForMatch } from './skillTokenize.js';
 import { createHash } from 'node:crypto';
@@ -394,50 +394,6 @@ export function matchSkillsForMessage(skills, messageOrMessages, options = {}) {
   // Resolve definitions from the current Registry, never cached foreign objects.
   if (cache && cacheKey) cache.set(cacheKey, result.map(skill => skill.id));
   return result;
-}
-
-/**
- * Diagnostic variant used by the health panel / debug logs. Returns the
- * same skills plus score/reason so the UI can show "this one was dropped
- * because it scored 0".
- */
-export function explainSkillMatches(skills, messageOrMessages, options = {}) {
-  if (!Array.isArray(skills) || skills.length === 0) return [];
-  const haystack = buildHaystack(messageOrMessages, options.msgWeights);
-  const keepProtected = options.keepProtected !== undefined
-    ? options.keepProtected !== false
-    : options.keepBuiltIn !== false;
-
-  return skills.map(skill => {
-    const triggers = Array.isArray(skill.triggers) ? skill.triggers : [];
-    const tags = Array.isArray(skill.tags) ? skill.tags : [];
-    const hasSignal = triggers.length > 0 || tags.length > 0;
-    if (!hasSignal) {
-      return { id: skill.id, score: Number.POSITIVE_INFINITY, reason: 'no-metadata', tier: classifySkillTier(skill) };
-    }
-    const isProtected =
-      skill.source === 'melo-bundle'
-      || skill.origin === 'built-in'
-      || skill.source === 'built-in';
-    if (keepProtected && isProtected) {
-      return { id: skill.id, score: Number.POSITIVE_INFINITY, reason: 'protected', tier: classifySkillTier(skill) };
-    }
-    if (haystack.length === 0) {
-      return { id: skill.id, score: 0, reason: 'no-message', tier: classifySkillTier(skill) };
-    }
-    const score = scoreSkill(skill, messageOrMessages, {
-      recencyByIdMap: options.recencyByIdMap,
-      now: options.now,
-      applyTierBonus: options.applyTierBonus,
-      msgWeights: options.msgWeights,
-    });
-    return {
-      id: skill.id,
-      score,
-      reason: score > 0 ? 'matched' : 'filtered-out',
-      tier: classifySkillTier(skill),
-    };
-  });
 }
 
 // Re-export helpers so callers can build an index / clear the cache via

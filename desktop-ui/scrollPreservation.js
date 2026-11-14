@@ -2,8 +2,6 @@ export function createScrollPreservation({ document, HTMLElement, HTMLTextAreaEl
 const _PRESERVED_SCROLL_SELECTORS = [
   '.customize-pane',
   '.search-panel-body',
-  '.search-results-stream',
-  '.agent-list-pane',
   '.agent-detail-column',
 ];
 

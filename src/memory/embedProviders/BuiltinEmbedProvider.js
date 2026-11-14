@@ -4,13 +4,12 @@ import { join } from 'node:path';
 import { Worker } from 'node:worker_threads';
 import { requestEnvironment } from '../../runtime/requestScope.js';
 
-export const BUILTIN_MODEL_ID='melo:multilingual-e5-small:761b726d:q8:query:pad1024';
+const BUILTIN_MODEL_ID='melo:multilingual-e5-small:761b726d:q8:query:pad1024';
 const workers=new Map();
 export class BuiltinEmbedProvider {
   constructor({modelDir=requestEnvironment().MELO_EMBED_MODEL_DIR || fileURLToPath(new URL('../../../assets/models/multilingual-e5-small',import.meta.url))}={}) {this.modelDir=modelDir;}
   get modelId(){return BUILTIN_MODEL_ID;}
   get dims(){return 1024;}
-  get nativeDims(){return 384;}
   async isAvailable(){return ['melo-manifest.json','tokenizer.json','onnx/model_quantized.onnx'].every(f=>existsSync(join(this.modelDir,f)));}
   async embed(text){
     const input=String(text || '').trim().slice(0,8192);if(!input || !await this.isAvailable()) return null;

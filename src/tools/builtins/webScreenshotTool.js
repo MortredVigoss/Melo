@@ -213,7 +213,7 @@ async function renderViaCdp(deps, options) {
 // pipes is gone — minutes while the updater runs (2026-10-19, daily gate).
 // Chrome has already been told to quit and Playwright still reaps its process
 // group, so the finished capture is not held hostage past this wait.
-export const BROWSER_CLOSE_WAIT_MS = 5_000;
+const BROWSER_CLOSE_WAIT_MS = 5_000;
 async function closeLaunchedBrowser(browser, waitMs = BROWSER_CLOSE_WAIT_MS) {
   let timer;
   const waited = new Promise(resolve => { timer = setTimeout(resolve, waitMs); });
@@ -281,7 +281,6 @@ export const webScreenshotTool = {
       settleMs: undefined,
       browserCloseWaitMs: undefined,
       ..._deps,
-      ...(context._screenshotDeps && typeof context._screenshotDeps === 'object' ? context._screenshotDeps : {}),
     };
     const checked = isPublicHttpUrl(url);
     if (!checked.ok) return fail('INVALID_URL', checked.reason);

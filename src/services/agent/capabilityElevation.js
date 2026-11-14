@@ -222,7 +222,6 @@ function awaitDecision({ scope, tool, context, signal, sseEmitter, home, clock, 
   const key = JSON.stringify([home, binding.runId, scope.agentId, decision.decision, decision.missing]);
   const existing = pending.get(collapsed.get(key));
   if (existing && !existing.settled) {
-    existing.waiters++;
     return existing.promise.then(outcome => ({ ...outcome, requestId: existing.id, collapsed: true }));
   }
   const now = clock();
@@ -234,7 +233,7 @@ function awaitDecision({ scope, tool, context, signal, sseEmitter, home, clock, 
     decision: decision.decision, atoms: decision.missing, toolId: tool.id, options: decision.options, projectOptionScope: decision.projectOptionScope || null,
     alwaysUnavailable: decision.alwaysUnavailable === true, settingsScope: info.settingsScope,
     runId: binding.runId, projectId: binding.projectId, chatId: binding.chatId, createdAt: now, prompt,
-    emit: typeof sseEmitter === 'function' ? sseEmitter : null, waiters: 1, settled: false, resolving: false, clock,
+    emit: typeof sseEmitter === 'function' ? sseEmitter : null, settled: false, resolving: false, clock,
   };
   request.promise = new Promise(resolve => { request.resolve = resolve; });
   if (budgetLeft <= 0) { request.settled = true; request.resolve({ status: 'budget' }); return request.promise.then(o => ({ ...o, requestId: id })); }

@@ -34,7 +34,7 @@ export function telegramApiBase() {
   return String(process.env.MELO_TELEGRAM_API_BASE || 'https://api.telegram.org').replace(/\/+$/, '');
 }
 
-export function buildTelegramMethodUrl(channel, method, searchParams = {}, baseUrl = telegramApiBase()) {
+function buildTelegramMethodUrl(channel, method, searchParams = {}, baseUrl = telegramApiBase()) {
   const token = String(channel?.botToken || '').trim();
   if (!token) {
     throw new Error('Telegram needs a bot token before it can be used.');
@@ -95,7 +95,7 @@ export async function telegramApiFormRequest(channel, method, formData, timeoutM
  * Telegram's sendVoice requires OGG container with OPUS codec.
  * Returns a Buffer, or throws if ffmpeg fails.
  */
-export async function convertToOggOpus(inputBuffer, inputMime) {
+async function convertToOggOpus(inputBuffer, inputMime) {
   const { execFile } = await import('node:child_process');
   const { tmpdir } = await import('node:os');
   const { join: jp } = await import('node:path');

@@ -8,14 +8,13 @@ import WebKit
 
 struct WebPageToolResult {
     var output: String
-    var image: UIImage? = nil
     var jpeg: Data? = nil
     var url: String = ""
     var phoneResult: PhoneToolResult { PhoneToolResult(output: output, imageJPEG: jpeg, imageURL: url) }
 }
 
 enum WebPageLoadError: Error {
-    case invalidURL, timeout, failed(String)
+    case timeout, failed(String)
 }
 
 /// One WKWebView per load. It is attached to the key window while loading
@@ -37,7 +36,6 @@ enum WebPageLoadError: Error {
 
     private let webView: WKWebView
     private var continuation: CheckedContinuation<Void, Error>?
-    private var attachedTo: UIWindow?
     /// HTTP status of the main-frame response, when the server sent one.
     private(set) var statusCode: Int?
     /// The main frame started receiving its document.
@@ -70,13 +68,11 @@ enum WebPageLoadError: Error {
         if webView.superview != nil { return true }
         guard let window = Self.keyWindow else { return false }
         window.insertSubview(webView, at: 0)
-        attachedTo = window
         return true
     }
     func detach() {
         webView.stopLoading()
         webView.removeFromSuperview()
-        attachedTo = nil
     }
 
     /// Loads the page with a 20 s budget and a 600 ms settle after didFinish;
@@ -253,7 +249,7 @@ enum WebPageLoadError: Error {
             try PhoneExecutionScope.check()
             guard let jpeg = await WebPageLoader.jpeg(image) else { return WebPageToolResult(output: WebPageText.failure("LOAD_FAILED", "The page rendered but the screenshot could not be encoded.", url: raw), url: raw) }
             let title = (try? await loader.extractText().title) ?? ""
-            return WebPageToolResult(output: WebPageText.envelope(WebPageText.screenshotResult(url: url.absoluteString, finalURL: loader.finalURL, title: title, status: loader.statusCode, stoppedEarly: loader.stoppedEarly, shownToUser: showsScreenshots && !ScreenshotQuality.isNearlyBlank(jpeg))), image: image, jpeg: jpeg, url: url.absoluteString)
+            return WebPageToolResult(output: WebPageText.envelope(WebPageText.screenshotResult(url: url.absoluteString, finalURL: loader.finalURL, title: title, status: loader.statusCode, stoppedEarly: loader.stoppedEarly, shownToUser: showsScreenshots && !ScreenshotQuality.isNearlyBlank(jpeg))), jpeg: jpeg, url: url.absoluteString)
         } catch is CancellationError {
             return WebPageToolResult(output: WebPageText.failure("ABORTED", "The request was cancelled.", url: raw), url: raw)
         } catch WebPageLoadError.timeout {

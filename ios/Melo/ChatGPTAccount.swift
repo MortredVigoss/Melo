@@ -23,7 +23,6 @@ struct ImageSizeRejected: Error {}
     @Published private(set) var deviceCode: CodexDeviceCode?
     @Published var status = "尚未登录 Codex"
     @Published var error: String?
-    @Published private(set) var replyStatus = "正在思考…"
     /// Status per conversation, so two replies running at once each show their own.
     @Published private(set) var replyStatuses: [String: String] = [:]
     func replyStatus(for key: String) -> String { replyStatuses[key] ?? "正在思考…" }
@@ -198,11 +197,10 @@ struct ImageSizeRejected: Error {}
         if imageTask?.makesImage != true { try ConversationHistory.validateCurrentInput(messages.last(where: { $0.role == "user" })?.content ?? "", instructions: instructions) }
         let expectedEpoch = epoch
         func setStatus(_ value: String) {
-            if replyStatus != value { replyStatus = value }
             if let statusKey, replyStatuses[statusKey] != value { replyStatuses[statusKey] = value }
         }
         setStatus("正在思考…")
-        defer { replyStatus = "正在思考…"; if let statusKey { replyStatuses[statusKey] = nil } }
+        defer { if let statusKey { replyStatuses[statusKey] = nil } }
         let account = try await credentials()
         try Task.checkCancellation()
         guard !model.isEmpty else { throw MeloError.message("请先在设置中刷新并选择 Codex 模型。") }
@@ -305,7 +303,6 @@ struct ImageSizeRejected: Error {}
         }
         // Reaching here means no completion event: finish() reports truncation.
         _ = try parser.finish()
-        await publish(force: true)
         return parser.stream
     }
 

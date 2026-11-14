@@ -18,7 +18,7 @@ export function normalizeMessageContent(content) {
     .trim();
 }
 
-export function extractChatCompletionsText(payload) {
+function extractChatCompletionsText(payload) {
   const choice = payload?.choices?.[0];
   const content = choice?.message?.content;
 

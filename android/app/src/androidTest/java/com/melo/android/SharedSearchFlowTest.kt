@@ -2,7 +2,6 @@ package com.melo.android
 
 import android.os.Build
 import androidx.test.core.app.ApplicationProvider
-import com.melo.android.core.*
 import com.melo.android.data.*
 import com.melo.android.network.SharedSearchAdapter
 import com.melo.android.network.HostedSearchAdapter

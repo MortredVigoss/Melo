@@ -11,7 +11,6 @@ struct ModelSettingsValue: Equatable, Codable {
 }
 struct ModelSettingsSection: View {
     @EnvironmentObject var account: ChatGPTAccount
-    @AppStorage("modelAuthMode") private var authMode = "chatgpt"
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Group {

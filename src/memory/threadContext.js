@@ -11,7 +11,7 @@ function defaultMessageTextResolver(message) {
   return String(message?.content || '').trim();
 }
 
-export function uniqueMemoryLines(values = [], limit = 6) {
+function uniqueMemoryLines(values = [], limit = 6) {
   const seen = new Set();
   const lines = [];
 

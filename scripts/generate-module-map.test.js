@@ -47,8 +47,10 @@ test('the map covers every requested feature with entries, routes, counterparts,
   assert.ok(chat.tests.js.includes('src/runtime/agentLoopContract.test.js'));
   const loop = map.sharedContracts.find(entry => entry.id === 'agent-loop');
   assert.equal(loop.path, 'shared/protocol/agent-loop.json');
-  // The contract import lives in the invoke-model node since architecture B2.
-  assert.ok(loop.desktopConsumers.includes('src/services/chat/execution/invokeModelNode.js'));
+  // Consumers are the modules that import the contract. On the chat loop that is the runner; the
+  // invoke-model node kept an import it no longer read anything from, removed 2026-11-14.
+  assert.ok(loop.desktopConsumers.includes('src/services/chat/chatExecutionRunner.js'));
+  assert.ok(loop.desktopConsumers.includes('src/tools/executor.js'));
   assert.ok(map.counterparts.some(entry => entry.contract === 'agent-loop' && entry.desktop.includes('src/services/chat/chatExecutionRunner.js') && entry.desktop.includes('src/services/chat/execution/invokeModelNode.js')));
   assert.ok(map.counterparts.some(entry => entry.contract === 'agent-loop' && entry.iphone.includes('ios/Melo/AgentLoop.swift')));
   for (const [id, feature] of Object.entries(map.features)) {

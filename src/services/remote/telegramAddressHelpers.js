@@ -32,7 +32,7 @@ export function hasTelegramInvokePrefix(text = '') {
   return /^\/(?:ask|melo)\b/i.test(String(text || '').trim());
 }
 
-export function escapeTelegramAliasRegex(value = '') {
+function escapeTelegramAliasRegex(value = '') {
   return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 

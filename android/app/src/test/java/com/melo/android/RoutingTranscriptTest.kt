@@ -2,7 +2,6 @@ package com.melo.android
 
 import com.melo.android.chat.RoutingTranscript
 import com.melo.android.data.*
-import com.melo.android.device.*
 import kotlinx.serialization.json.*
 import org.junit.Assert.*
 import org.junit.Test

@@ -1,9 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {emptyCapabilities,normalizeCapabilities,intersectCapabilities,toolCapabilityAllowed,migrateLegacyCapabilities} from './capabilities.js';
+import { emptyCapabilities, normalizeCapabilities, intersectCapabilities, toolCapabilityAllowed } from './capabilities.js';
 import {executeTool} from '../../testSupport/directAgentFixture.js';
 import {runSubAgent} from '../../testSupport/directAgentFixture.js';
-import {runSkill} from '../../testSupport/directAgentFixture.js';
 import {buildNewCustomAgent} from '../../services/agent/agentProfileService.js';
 import {normalizeAgentProfile,effectiveAgentProfile} from '../../state/agentProfiles.js';
 import {capabilityMigrationPreview} from '../../services/agent/capabilityMigration.js';

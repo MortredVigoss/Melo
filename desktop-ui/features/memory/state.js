@@ -1,7 +1,7 @@
 // Memory feature state (architecture plan P2, 2026-10-19). Owned by this
 // feature: app.js neither reads nor writes it. Field names are the ones the
 // moved code used on uiState, so `git log -L` / blame stay readable.
-export function createMemoryState() {
+function createMemoryState() {
   return {
     // Customize → Memory pane. Lazily populated on first open. `snapshot` is
     // the response from /api/memory/status; `wipeConfirmOpen` gates the
@@ -16,7 +16,6 @@ export function createMemoryState() {
       wipeInFlight: false,
       wipeResult: null,
     },
-    memoryConnection: null,
     // «记住的事实» list, search/paging and the single-row editor.
     memoryFacts: null,
     memoryFactQuery: '',

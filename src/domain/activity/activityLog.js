@@ -22,8 +22,8 @@ import { randomUUID } from 'node:crypto';
 import { coerceIso, nowIso } from '../../shared/helpers.js';
 
 export const MAX_COMMAND_RUNS = 16;
-export const MAX_EXTERNAL_TOOL_RUNS = 16;
-export const MAX_PROMPT_HISTORY = 40;
+const MAX_EXTERNAL_TOOL_RUNS = 16;
+const MAX_PROMPT_HISTORY = 40;
 
 export function normalizeCommandRuns(commandRuns) {
   if (!Array.isArray(commandRuns)) {

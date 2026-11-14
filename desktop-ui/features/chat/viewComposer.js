@@ -260,7 +260,7 @@ function renderComposerCard({ inline = false } = {}) {
 
               <div class="composer-bottom-right">
                 ${renderTeamPanel({scope:'chat',lead:activeChatAgentProfile(),agents:conversationAgents(data,{overview:isOverview(),newProjectId:newChatSelection().projectId}),plan:composerTeamPlan(),disabled:false,escapeHtml})}
-                ${renderConversationContext({chat:!isOverview()?activeChat():null,projectId:newChatSelection().projectId,artifactIds:newChatSelection().artifactIds,projects:data.projects,artifacts:data.artifacts,disabled:false},escapeHtml)}
+                ${renderConversationContext({chat:!isOverview()?activeChat():null,projectId:newChatSelection().projectId,artifactIds:newChatSelection().artifactIds,projects:data.projects,artifacts:data.artifacts},escapeHtml)}
                 ${renderModelPicker({
                   config: data.settings.config,
                   selection:!isOverview() && activeChat() ? activeChat().modelSelection : newChatSelection().model,
@@ -377,4 +377,4 @@ function renderAgentSelectorDropdown() {
   `;
 }
 
-export { thinkingLabel, renderAttachmentPreviewList, renderComposerAttachmentMenu, composerHintText, composerPlaceholder, renderSlashPalette, renderComposerCard, renderAgentSelectorChip, renderAgentSelectorDropdown };
+export { thinkingLabel, renderComposerCard, renderAgentSelectorDropdown };

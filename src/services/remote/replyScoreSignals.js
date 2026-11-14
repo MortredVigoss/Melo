@@ -24,7 +24,7 @@
 
 import { isLikelyContextDependentReply as isLikelyContextDependentReplyFromHeuristics } from '../../memory/heuristics.js';
 
-export const FOLLOW_UP_WINDOW_MS = 120_000; // 2 minutes
+const FOLLOW_UP_WINDOW_MS = 120_000; // 2 minutes
 
 /**
  * Compute a 0–1 follow-up confidence score (Plan C: time-decay + content continuity).
@@ -136,13 +136,13 @@ export function isEnglishOnlyPersona(profile) {
  *   0.35 — question pattern or imperative alone
  *   0.00 — no implicit signal
  */
-export const IMPLICIT_REQUEST_RE =
+const IMPLICIT_REQUEST_RE =
   /(?:帮我|帮忙|请问|请帮|麻烦|你好|在吗|在不在|能不能|可不可以|可以吗|能帮|告诉我|查一下|搜一下|搜索一下|查查|问一下|算一下|翻译一下|解释一下|你知道|你觉得|你能|你会|有没有|是不是|怎么办|怎么样|咋办|啥意思|什么意思|hey|help me|can you|could you|please|tell me|search for|look up|what is|what's|how to|how do)/i;
 
-export const IMPLICIT_IMPERATIVE_RE =
+const IMPLICIT_IMPERATIVE_RE =
   /^(?:翻译|解释|推荐|总结|分析|计算|查|搜|找|说说|讲讲|列出|对比|比较|describe|explain|translate|summarize|recommend|list|compare|find|show)/i;
 
-export const IMPLICIT_AT_OTHERS_RE = /@\w{2,}/; // mentioning someone else in group
+const IMPLICIT_AT_OTHERS_RE = /@\w{2,}/; // mentioning someone else in group
 
 export function detectImplicitAddress(text) {
   const t = String(text || '').trim();

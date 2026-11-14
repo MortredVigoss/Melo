@@ -138,7 +138,5 @@ export function isStandaloneGreeting({ text = '', messages = [], compactSummary 
 export function intentOperation(input = {}) {
   if (input.action === 'rules') return classifyByRules(input.text);
   if (input.action === 'risk') return classifyRisk(input.text);
-  if (input.action === 'translation') return isTranslationRequest(input.text);
-  if (input.action === 'greeting') return isStandaloneGreeting(input);
   return classifyLocalRequest(input.text, { contextMessages: input.messages });
 }

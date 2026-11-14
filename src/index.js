@@ -357,13 +357,7 @@ export function parseMemoryArgs(rawArgs) {
 }
 
 async function runMemoryCommand(rawArgs) {
-  let parsed;
-  try {
-    parsed = parseMemoryArgs(rawArgs);
-  } catch (err) {
-    throw err;
-  }
-  const { sub, flags, home } = parsed;
+  const { sub, flags, home } = parseMemoryArgs(rawArgs);
 
   if (!sub || sub === 'help' || sub === '--help' || sub === '-h' || flags.has('--help') || flags.has('-h')) {
     output.write(

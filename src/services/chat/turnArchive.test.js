@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { compactChatRuns, findArchivedRun, listArchivedRuns } from './turnArchive.js';
+import { compactChatRuns, findArchivedRun, listArchivedRuns } from '../../persistence/turnArchive.js';
 import { updateStateAtomically, loadState } from '../../state/stateStore.js';
 import { beginChatRun } from './turnLedger.js';
 import { chatRequestFingerprint } from './requestContract.js';

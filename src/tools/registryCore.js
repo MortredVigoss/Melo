@@ -49,20 +49,6 @@ export function getAllTools() {
 }
 
 /**
- * Return tools grouped by category.
- * @returns {Map<string, Object[]>}
- */
-export function getToolsByCategory() {
-  const groups = new Map();
-  for (const tool of _registry.values()) {
-    const cat = tool.category || 'general';
-    if (!groups.has(cat)) groups.set(cat, []);
-    groups.get(cat).push(tool);
-  }
-  return groups;
-}
-
-/**
  * Unregister a tool by id (mainly for tests).
  * @param {string} id
  */

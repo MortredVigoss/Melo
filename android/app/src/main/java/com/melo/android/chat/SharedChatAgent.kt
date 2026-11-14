@@ -200,12 +200,10 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
         private lateinit var leadHistory: MutableList<JsonObject>
         private lateinit var leadAssignment: DeviceCall
         private var leadChainStart = -1
-        private var memberRounds = 0
         private var memberTurn: SharedCoreTurn? = null
         private var rootTurn: SharedCoreTurn? = null
         private var memberObservations = mutableListOf<JsonElement>()
         private var assignmentLimit = 0
-        private var memberLimit = 0
         private var currentChainStart = -1
         private lateinit var search: SharedSearchAdapter
         private lateinit var requestedUrls: MutableSet<String>
@@ -284,7 +282,6 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
             journal.event("context", "上下文预算", output = "模型容量 ${connection.contextTokens} tokens；近窗 ${prepared.messages.size}/${messages.size} 条，原文保留；历史回读${if (historyEnabled) "开启" else "关闭"}。", status = "completed")
             names = (plan.strings("availableTools") + if (historyEnabled && prepared.omitted && plan["toolsForbidden"]?.jsonPrimitive?.booleanOrNull != true) listOf("read_history") else emptyList()).distinct()
             journal.event("tools", "本轮工具目录", output = "registeredTools=" + (names + (if (routing?.active == true) listOf("melo_escalate") else emptyList()) + (if (plan["nativeSearchAvailable"]?.jsonPrimitive?.booleanOrNull == true) listOf("native_web_search") else emptyList())).joinToString(", "), status = "completed")
-            transport = DeviceAgentClient(debug, client.http)
             history = ChatPhoneUse.history(prepared.messages, connection.protocol, imageData)
             currentChainStart = history.indexOfLast { it.text("role") == "user" }
             search = SharedSearchAdapter(debug, client.http)
@@ -299,7 +296,6 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
             if (internalCatalog != null) {
                 val limits = runtime.value("internalRouting", buildJsonObject { put("action","limits") }).jsonObject
                 assignmentLimit = limits.getValue("assignments").jsonPrimitive.int
-                memberLimit = limits.getValue("rounds").jsonPrimitive.int
             }
             return SharedCoreTurn.open(context, runId, chatId, (names + if (internalCatalog != null) listOf("calculator") else emptyList()) + if (routing?.active == true) listOf("melo_escalate") else emptyList(), budget = budget, rounds = loopLimits.getValue("maxIterations").jsonPrimitive.int, finalReport = true, timeoutMs = budget.remaining().coerceAtLeast(1).toInt(), requiredTools = plan.strings("requiredTools"), toolDependencies = plan["toolDependencies"]?.jsonObject ?: buildJsonObject {}).use { turn ->
                 try { execute(turn) } finally { memberTurn?.close(); memberTurn = null }
@@ -481,7 +477,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                 budget=childBudget,timeoutMs=childBudget.remaining().coerceAtLeast(1).toInt(),finalReport=true)
             child.event("inherit-effects",rootTurn!!.effects)
             memberTurn = child
-            assignments += next; internalJob = next; memberRounds = 0; memberObservations.clear()
+            assignments += next; internalJob = next; memberObservations.clear()
             leadHistory = history; leadHistory += reply.wire; leadAssignment = call; leadChainStart = currentChainStart
             history = mutableListOf(buildJsonObject { put("role","user"); put("content",next.text("input")) })
             currentChainStart = 0
@@ -589,7 +585,6 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                     }
                     if (assign(reply)) { lead.event("feedback",buildJsonObject { put("internalRouting",true) }); continue }
                     if (job != null && reply.calls.isEmpty()) { turn.event("feedback"); handoff(reply.text); continue }
-                    if (job != null) memberRounds++
                     if (reply.calls.isEmpty()) {
                         if (!checkCandidate(turn, reply)) continue
                         if (!turn.completed) return finish(reply.text, reply.model, if (succeeded) "partial" else "blocked", turn.reason)

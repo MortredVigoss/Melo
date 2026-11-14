@@ -24,7 +24,7 @@ function open(home,{readOnly=false}={}) {
  CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(key UNINDEXED,terms);`);
  return db;
 }
-export function knowledgeChunks(text,size=1200,overlap=150) {
+function knowledgeChunks(text,size=1200,overlap=150) {
  const chunks=[];for(let start=0;start<text.length;start+=size-overlap){let end=Math.min(text.length,start+size);if(end<text.length&&/[\uD800-\uDBFF]/.test(text[end-1]))end--;chunks.push({start,end,text:text.slice(start,end)});if(end===text.length)break;}
  return chunks;
 }

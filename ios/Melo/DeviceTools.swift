@@ -250,7 +250,6 @@ enum DeviceToolRunner {
                     isAllowed: (@MainActor () -> Bool)? = nil) async -> String {
         func encode(_ object: [String: Any]) -> String {
             var bounded = object
-            bounded.removeValue(forKey: "ok")
             let rowsKey = ["events", "reminders", "contacts"].first { bounded[$0] is [[String: Any]] }
             if let key = rowsKey, let rows = bounded[key] as? [[String: Any]] {
                 bounded["returnedCount"] = rows.count
@@ -291,7 +290,7 @@ enum DeviceToolRunner {
                 try await checkAccess()
                 if !query.isEmpty { events = events.filter { ($0.title + " " + $0.location + " " + $0.notes).lowercased().contains(query) } }
                 let rows = events.prefix(100).map { ["id": $0.id, "title": $0.title, "start": date($0.start), "end": date($0.end), "allDay": $0.allDay, "location": $0.location, "calendar": $0.calendar, "notes": String($0.notes.prefix(300))] as [String: Any] }
-                return encode(["ok": true, "count": events.count, "events": rows])
+                return encode(["count": events.count, "events": rows])
             case "calendar_create_event":
                 let title = text(args["title"], limit: 200)
                 guard !title.isEmpty, let start = parseDate(args["start"]), let end = parseDate(args["end"]), end > start else { throw DeviceToolError.invalid("title, start and end are required and end must be after start.") }
@@ -300,7 +299,7 @@ enum DeviceToolRunner {
                 guard await approve(DeviceActionRequest(tool: spec.name, title: "新建日程", detail: detail)) else { return failure("PERMISSION_DENIED", "The user declined to create this event.") }
                 try await checkAccess()
                 let event = try await source.createEvent(title: title, start: start, end: end, location: location, notes: notes)
-                return encode(["ok": true, "event": ["id": event.id, "title": event.title, "start": date(event.start), "end": date(event.end), "calendar": event.calendar]])
+                return encode(["event": ["id": event.id, "title": event.title, "start": date(event.start), "end": date(event.end), "calendar": event.calendar]])
             case "reminders_list":
                 let includeCompleted = args["includeCompleted"] as? Bool ?? false
                 let query = text(args["query"]).lowercased()
@@ -312,7 +311,7 @@ enum DeviceToolRunner {
                     if let due = item.due { row["due"] = date(due) }
                     return row
                 }
-                return encode(["ok": true, "count": items.count, "reminders": rows])
+                return encode(["count": items.count, "reminders": rows])
             case "reminders_create":
                 let title = text(args["title"], limit: 200)
                 guard !title.isEmpty else { throw DeviceToolError.invalid("title is required.") }
@@ -323,7 +322,7 @@ enum DeviceToolRunner {
                 guard await approve(DeviceActionRequest(tool: spec.name, title: "新建提醒", detail: detail)) else { return failure("PERMISSION_DENIED", "The user declined to create this reminder.") }
                 try await checkAccess()
                 let item = try await source.createReminder(title: title, due: due, notes: notes)
-                return encode(["ok": true, "reminder": ["id": item.id, "title": item.title, "list": item.list]])
+                return encode(["reminder": ["id": item.id, "title": item.title, "list": item.list]])
             case "reminders_complete":
                 let id = text(args["id"], limit: 300)
                 guard !id.isEmpty else { throw DeviceToolError.invalid("id is required.") }
@@ -333,17 +332,17 @@ enum DeviceToolRunner {
                 guard await approve(DeviceActionRequest(tool: spec.name, title: "完成提醒", detail: current.title)) else { return failure("PERMISSION_DENIED", "The user declined to complete this reminder.") }
                 try await checkAccess()
                 let item = try await source.completeReminder(id: id)
-                return encode(["ok": true, "reminder": ["id": item.id, "title": item.title, "completed": item.completed]])
+                return encode(["reminder": ["id": item.id, "title": item.title, "completed": item.completed]])
             case "contacts_search":
                 let query = text(args["query"], limit: 100)
                 guard !query.isEmpty else { throw DeviceToolError.invalid("query is required.") }
                 let people = try await source.contacts(matching: query)
                 try await checkAccess()
-                return encode(["ok": true, "count": people.count, "contacts": people.prefix(20).map { ["name": $0.name, "organization": $0.organization, "phones": $0.phones, "emails": $0.emails] as [String: Any] }])
+                return encode(["count": people.count, "contacts": people.prefix(20).map { ["name": $0.name, "organization": $0.organization, "phones": $0.phones, "emails": $0.emails] as [String: Any] }])
             case "location_current":
                 let place = try await source.currentPlace()
                 try await checkAccess()
-                return encode(["ok": true, "latitude": place.latitude, "longitude": place.longitude, "accuracyMeters": place.accuracy, "place": place.name])
+                return encode(["latitude": place.latitude, "longitude": place.longitude, "accuracyMeters": place.accuracy, "place": place.name])
             default:
                 return failure("UNKNOWN_TOOL", "This phone tool does not exist.")
             }

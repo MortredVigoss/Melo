@@ -43,7 +43,7 @@ import { getMeloHome } from '../../config.js';
 export const QUALITY_DEFAULT_THRESHOLD = 0.6;
 export const QUALITY_MIN_LENGTH = 10;
 export const QUALITY_MAX_LENGTH = 1500;
-export const QUALITY_TOP_ENTITIES = 8;
+const QUALITY_TOP_ENTITIES = 8;
 
 const CJK_RE = /[一-鿿぀-ヿ가-힯]/;
 

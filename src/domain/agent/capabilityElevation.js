@@ -25,7 +25,6 @@ import { parseMcpToolId } from '../../mcp/toolId.js';
 export const CAPABILITY_ELEVATION = AGENT_LOOP_CONTRACT.capabilityElevation;
 const BOOLEAN_KEYS = CAPABILITY_ELEVATION.booleanCapabilities;
 const LIST_KEYS = CAPABILITY_ELEVATION.listCapabilities;
-export const ELEVATION_DECISIONS = Object.freeze(Object.fromEntries(CAPABILITY_ELEVATION.decisions.map(d => [d, d])));
 const PROMPT_DECISIONS = new Set(['elevate-beyond-parent', 'enable-own']);
 
 // ── Atoms ────────────────────────────────────────────────────────────────────

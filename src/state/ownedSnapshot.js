@@ -7,7 +7,7 @@ import { measureStageSync } from '../runtime/performanceTrace.js';
 const drafts = new WeakMap();
 const deferredFields = new Set(['messages', 'sessionMemory']);
 
-export function ownChat(original) {
+function ownChat(original) {
   const small = Object.fromEntries(Object.entries(original).filter(([key]) => !deferredFields.has(key)));
   const chat = structuredClone(small);
   const unaccessed = new Set();
@@ -32,7 +32,7 @@ export function ownChat(original) {
   return chat;
 }
 
-export function chatUnchanged(chat, original) {
+function chatUnchanged(chat, original) {
   if (chat === original) return true;
   const draft = drafts.get(chat);
   if (Object.keys(chat).length !== Object.keys(original).length) return false;

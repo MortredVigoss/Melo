@@ -8,7 +8,6 @@
   --wr-muted: var(--palette-8a5135efad); --wr-muted-2: var(--palette-393a7c53be); --wr-number: var(--palette-38d39a3fa7);
   --wr-line: var(--palette-0bbef5c05f); --wr-line-2: var(--palette-12da9de42a); --wr-line-3: var(--palette-c3e6486670);
   --wr-panel: var(--palette-4fb22c9659); --wr-hover: var(--palette-ae343c3a8f); --wr-glow: var(--palette-352fc3143d);
-  --wr-agent: var(--visual-agents-light);
   position: fixed; inset: 0; z-index: var(--layer-1000); display: grid; grid-template-rows: 52px minmax(0, 1fr) 214px 30px;
   background: var(--wr-bg); color: var(--wr-text); font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", system-ui, sans-serif;
 }
@@ -238,7 +237,7 @@ html[data-scene-host=phone] .war-voice { display: inline-flex; align-items: cent
 .war-room .execution-search-trail { position: static; max-height: none; flex-wrap: wrap; }
 /* The chat panel positions results and summaries over its own stage; in the
    war room every one of them stays in the detail list, never over the space. */
-.war-room :is(.execution-candidates, .execution-outcomes, .execution-reasoning-records, .execution-empty, .execution-inspector) { position: static; inset: auto; z-index: auto; overflow: visible; max-height: none; }
+.war-room :is(.execution-candidates, .execution-outcomes, .execution-reasoning-records, .execution-empty) { position: static; inset: auto; z-index: auto; overflow: visible; max-height: none; }
 .war-room .execution-empty { text-align: left; padding: 8px 2px; }
 .war-room :is(.execution-outcomes, .execution-reasoning-records) { display: grid; gap: 6px; }
 .war-room :is(.execution-pipeline, .execution-candidates) { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }

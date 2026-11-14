@@ -4,7 +4,7 @@ import { resolveRuntimePaths } from './paths.js';
 
 const LABELS = { models: 'Local models', data: 'Chats and settings', cache: 'Rebuildable cache', logs: 'Logs', tools: 'Local tools and source', other: 'Other files' };
 
-export function storageCategory(relativePath) {
+function storageCategory(relativePath) {
   if (/^(sd-models|whisper-models|models)(\/|$)/.test(relativePath)) return 'models';
   if (/^(sd-src|sd-bin)(\/|$)/.test(relativePath)) return 'tools';
   if (/(^|\/)(media-cache|search\.sqlite(?:-wal|-shm)?|embedding-cache)(\/|$)/.test(relativePath)) return 'cache';

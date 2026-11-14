@@ -48,7 +48,7 @@ export function memoryAudienceForChat(chat, { channelId = null } = {}) {
 export function buildAgentMemoryNodeContext({
   state, chat, latestUserMessage = '', activeAgentProfile, project,
   queryEmbedding = null, includedMessageIds = [], excludedFacts = [],
-  onRecall = null, onCandidates = null, env = requestEnvironment(),
+  onRecall = null, env = requestEnvironment(),
   audience = null,
 }) {
   const recallAudience = audience ? normalizeAudience(audience) : memoryAudienceForChat(chat);
@@ -115,7 +115,6 @@ export function buildAgentMemoryNodeContext({
   const flatGroups = tieredRecall ? groups.filter(group=>group.id !== 'prompts') : groups;
   const recalled = recallMemoryGroups({groups:flatGroups,query:latestUserMessage,queryEmbedding,accept,audience:recallAudience});
   const rows = id => recalled.get(id) || [];
-  for (const group of recalled.values()) onCandidates?.(group);
   let scenes = [], frames = [], facts = [], prompts = rows('prompts');
   if (tieredRecall) {
     try {
@@ -124,12 +123,10 @@ export function buildAgentMemoryNodeContext({
       scenes = tiered.scenes || []; frames = tiered.frames || [];
       prompts = (tiered.contents || []).filter(row=>row.kind === 'prompt');
       facts = (tiered.contents || []).filter(row=>row.kind === 'fact');
-      onCandidates?.([...scenes,...frames,...prompts,...facts]);
     } catch (error) {
       console.warn(`[memory.recall.tiered] fallback to flat recall: ${error.message}`);
       const fallback = recallMemoryGroups({groups:groups.filter(group=>group.id === 'prompts'),query:latestUserMessage,queryEmbedding,accept,audience:recallAudience});
       prompts = fallback.get('prompts') || [];
-      onCandidates?.(prompts);
     }
   }
   const blocks = [], rendered = [];
@@ -151,7 +148,7 @@ export function buildAgentMemoryNodeContext({
   };
   if (atticEnabled(env)) {
     const hot = injectHotAttic({namespaces,audience:recallAudience,accept:row=>accept(row)&&!seen.has(normalizedFact(row.text)),onRecall:entries=>{
-      take(entries);rendered.push(...entries);onCandidates?.(entries);
+      take(entries);rendered.push(...entries);
     }});
     if (hot) blocks.push(hot);
   }

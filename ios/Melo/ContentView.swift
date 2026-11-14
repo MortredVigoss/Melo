@@ -179,28 +179,6 @@ struct HomeView: View {
         }
     }
 }
-struct CoreView: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 24, paused: reduceMotion)) { timeline in
-            Canvas { context, size in
-                let time = reduceMotion ? 0 : timeline.date.timeIntervalSinceReferenceDate
-                let center = CGPoint(x: size.width / 2, y: size.height / 2)
-                for index in 0..<740 {
-                    let fraction = Double(index) / 740
-                    let radius = sqrt(fraction) * min(size.width, size.height) * 0.48
-                    let angle = Double(index) * 2.399963 + time * (0.045 + fraction * 0.03)
-                    let x = center.x + cos(angle) * radius
-                    let y = center.y + sin(angle) * radius * 0.8 + sin(time * 0.5 + angle) * 7
-                    let diameter = 0.8 + (1 - fraction) * 1.8
-                    let opacity = 0.15 + (1 + sin(angle + time * 0.45)) * 0.28
-                    let color = index % 17 == 0 ? MeloTheme.phoneNeuron : index % 3 == 0 ? meloGold : meloAccent
-                    context.fill(Path(ellipseIn: CGRect(x: x, y: y, width: diameter, height: diameter)), with: .color(color.opacity(opacity)))
-                }
-            }
-        }
-    }
-}
 struct ConversationRow: View {
     let chat: Conversation
     let agent: AgentProfile
@@ -256,7 +234,6 @@ struct ConversationWorkspace: View {
 }
 struct ChatView: View {
     @AppStorage("melo.localName") private var localName = "你"
-    @AppStorage("melo.autoSpeak") private var autoSpeak = false
     @ObservedObject private var deviceSpeech = LocalDeviceServices.shared
     @EnvironmentObject var store: ChatStore
     @EnvironmentObject var account: ChatGPTAccount

@@ -365,7 +365,7 @@ export function createPrepareNode(turn) {
     // enabledMcpServerIds whitelist; the default is deny-all so a new
     // agent can't call any MCP without explicit opt-in.  Non-MCP tools
     // pass through filterMcpToolsForAgent untouched.
-    let toolsPrompt = buildSearchRoutingPrompt(searchPlan);
+    let toolsPrompt;
     let visibleToolIds = new Set();
     let promptTools = [];
     const toolContextPolicy = selectToolContextPolicy({
@@ -419,10 +419,9 @@ export function createPrepareNode(turn) {
     const inStableBlock = f => stableRenderedIds.has(f.id) || stableRenderedIds.has(`book:${f.id}`);
     const sessionFacts = skipMemory ? [] : selectSessionMemoryFacts(resolveSessionFacts(chat,activeAgentProfile?.id).filter(f => !inStableBlock(f)));
     const sessionMemoryBlock = formatSessionMemoryBlock(sessionFacts);
-    const memoryCandidates = [], memoryRendered = sessionFacts.map(f=>({
+    const memoryRendered = sessionFacts.map(f=>({
       id:f.id,text:f.fact,kind:'session-fact',renderedText:`- [${f.category}] ${f.fact}`,
     }));
-    memoryCandidates.push(...memoryRendered);
     memoryRendered.push(...stableMemoryRows);
     const excludedFacts = [...sessionFacts, ...stableMemoryRows];
     // audit C-12: bound the query embedding (worker default is 60s); recall
@@ -441,7 +440,7 @@ export function createPrepareNode(turn) {
       // audit C-12: exclude from recall only the messages that will actually
       // be sent — a preliminary history-only fit, not the wider pre-fit window.
       includedMessageIds:modelMessageSourceIds(fitRequestContext({ sections: [], messages: modelMessages, ...contextBudget }).messages), excludedFacts,
-      onRecall:rows=>memoryRendered.push(...rows),onCandidates:rows=>memoryCandidates.push(...rows),
+      onRecall:rows=>memoryRendered.push(...rows),
     }));
 
     // Demon authoring is temporarily retired (user request, 2026-10-07).
@@ -535,10 +534,8 @@ export function createPrepareNode(turn) {
       allowLiveSpeech,
       promptSections: preparedRequest.sections,
       promptDiagnostics: preparedRequest.diagnostics,
-      memoryCandidates, memoryRendered,
+      memoryRendered,
       memoryUsage: [],
-      systemPrompt: preparedRequest.systemPrompt,
-      turnContext: preparedRequest.turnContext,
       modelMessages: preparedRequest.messages,
       memoryContext,
       dynamicContext,

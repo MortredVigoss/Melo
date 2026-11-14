@@ -8,7 +8,6 @@ import {delegateTool,delegateTask} from '../agents/delegate.js';
  *
  * Handles:
  *   - Validation and normalization on registration
- *   - Category grouping for system prompt injection
  *   - Lookup by id
  */
 
@@ -22,7 +21,6 @@ import { fileMoveTool } from './builtins/fileMoveTool.js';
 import { fileMkdirTool } from './builtins/fileMkdirTool.js';
 import { globTool } from './builtins/globTool.js';
 import { grepTool } from './builtins/grepTool.js';
-import '../agents/subAgent.js'; // Preserve module initialization.
 import { fetchUrlTool } from './builtins/fetchUrlTool.js';
 import { webSearchTool as legacyWebSearchTool } from './builtins/webSearchTool.js';
 import { createCompatibleSearchTool } from '../services/search/sharedSearchAdapter.js';
@@ -49,7 +47,7 @@ import {
   browserWaitForTool,
 } from './builtins/browserTools.js';
 
-export { registerTool, registerTools, getTool, getAllTools, getToolsByCategory, unregisterTool, clearRegistry } from './registryCore.js';
+export { registerTool, registerTools, getTool, getAllTools, unregisterTool, clearRegistry } from './registryCore.js';
 
 // ─── Bootstrap built-in tools ─────────────────────────────────────────────────
 

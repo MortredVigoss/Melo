@@ -9,7 +9,7 @@ const emptyDraft = () => ({
   workspacePath: '',
 });
 
-export function createProjectsState() {
+function createProjectsState() {
   return {
     // Overview search box and archived / active switch.
     projectSearch: '',

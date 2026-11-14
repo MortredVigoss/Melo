@@ -14,18 +14,13 @@
  *
  * Exports:
  *   evaluateAtticLevel(row, nowMs)        – pure, deterministic
- *   reassessAttic({ sinceIso })           – one pass; updates metadata.attic
  *   injectHotAttic({ namespaces, limit }) – assemble the Hot block for prompts
  */
 
 import { requestEnvironment } from '../runtime/requestScope.js';
 import { estimateTextTokens } from './tokenEstimate.js';
 import { normalizedFact } from './factPolicy.js';
-import {
-  listMemoriesForAtticReassess,
-  setAtticLevels,
-  recallMemories,
-} from './store.js';
+import { recallMemories } from './store.js';
 
 // Thresholds
 const HOT_USE_COUNT = 5;
@@ -38,7 +33,6 @@ const DAY_MS = 86_400_000;
 const HOT_CATEGORIES = new Set(['correction', 'decision']);
 
 export const ATTIC_HOT_TOKEN_BUDGET = 800;
-export const ATTIC_WARM_TOKEN_BUDGET = 1600;
 
 // ─── Pure evaluation ────────────────────────────────────────────────────────
 
@@ -81,32 +75,6 @@ export function evaluateAtticLevel(row, nowMs = Date.now()) {
 
   // No clear signal — keep whatever we had, default 'cold'.
   return currentLevel === 'hot' || currentLevel === 'warm' ? currentLevel : 'cold';
-}
-
-// ─── Worker pass ─────────────────────────────────────────────────────────────
-
-/**
- * Incremental reassess.  If `sinceIso` is provided, only rows updated on/after
- * that timestamp are scanned — cheap enough to run on every write.  Without
- * `sinceIso` it scans the full store (capped by `limit`) — use for the daily
- * batch.
- *
- * @param {Object} [options]
- * @param {string} [options.sinceIso]
- * @param {number} [options.limit]
- * @param {number} [options.nowMs]  override for tests
- * @returns {{ examined: number, updated: number }}
- */
-export function reassessAttic({ sinceIso = null, limit = 2000, nowMs = Date.now() } = {}) {
-  const rows = listMemoriesForAtticReassess({ sinceIso, limit });
-  const updates = [];
-  for (const row of rows) {
-    const next = evaluateAtticLevel(row, nowMs);
-    const current = row.metadata?.attic;
-    if (next !== current) updates.push({ id: row.id, attic: next });
-  }
-  const updated = setAtticLevels(updates);
-  return { examined: rows.length, updated };
 }
 
 // ─── Hot attic injection ────────────────────────────────────────────────────

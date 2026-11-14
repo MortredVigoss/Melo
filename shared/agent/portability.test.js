@@ -4,7 +4,6 @@ import { resolveReplyLocale } from './locale.js';
 import { runtimeMessage, executionMessage, runtimeStageName, runtimeStageOutput } from './runtimeMessages.js';
 import { multilingualImageAction } from './imageLanguage.js';
 import { inferImageTask } from '../../src/services/chat/imageTask.js';
-import { completionReceipt } from './completion.js';
 
 test('reply language prioritizes Agent, user, channel and interface without treating every Han character as Chinese', () => {
   assert.equal(resolveReplyLocale({agentLanguage:'ko',text:'hello',interfaceLanguage:'en'}),'ko');

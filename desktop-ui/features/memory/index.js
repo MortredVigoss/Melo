@@ -26,7 +26,7 @@ export function installMemoryFeature(context) {
     forms: memoryForms,
     // 'input' + 'change': memory-fact editor fields (first branch, before the typing stamp).
     handleFieldInput: handleMemoryFactFieldInput,
-    // 'input': embedding connection fields and the memory-book draft.
+    // 'input': the memory-book draft.
     handleInput: handleMemoryInput,
     // 'change': memory-book section / draft. Returns false, true or a promise.
     handleChange: handleMemoryChange,

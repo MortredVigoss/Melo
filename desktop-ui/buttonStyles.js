@@ -3,7 +3,7 @@
 export const BUTTON_VARIANTS = Object.freeze(['primary','secondary','ghost','icon']);
 // These buttons are interactive content, navigation, or selection controls.
 // Their component owns the hit area and selected state, not action-button chrome.
-const CONTENT_CONTROLS = '.neural-brand,.neural-cluster,.neural-branch,.execution-label,.execution-signal,.project-card,.artifact-card,.artifact-mini-card,.chat-row,.list-row,.mini-list-item,.recent-item,.tree-row,.agent-selector-row,.model-picker-option,.composer-menu-item,.palette-item,.slash-palette-item,.command-suggestion,.edit-context-item,.message-image-preview,.toggle-switch,.tts-radio-row,.nav-item,.agent-channel-tab,.skill-tab';
+const CONTENT_CONTROLS = '.neural-brand,.neural-cluster,.neural-branch,.execution-label,.execution-signal,.project-card,.artifact-card,.artifact-mini-card,.chat-row,.list-row,.mini-list-item,.tree-row,.agent-selector-row,.model-picker-option,.composer-menu-item,.palette-item,.slash-palette-item,.edit-context-item,.message-image-preview,.toggle-switch,.tts-radio-row,.agent-channel-tab,.skill-tab';
 export function applyButtonStyles(root) {
   for (const button of root?.querySelectorAll('button') || []) {
     const classes = button.classList;

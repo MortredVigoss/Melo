@@ -144,7 +144,6 @@ function buildRequestPlan({ text = '', messages = [], capabilities = {}, config 
   if (research.navigate && !available('phone_use')) return { ...base, route: 'unavailable', reason: 'PHONE_UNAVAILABLE' };
   if (capabilities.hostedSearch === 'verified') return { ...searchBase, route: 'hosted-search', backend: 'hosted', tools: [...readingTools, ...phoneTools], requiredTools: phoneTools };
   if (available('web_search') && runtimeConfig.search.backend === 'http' && runtimeConfig.search.endpoint) return { ...searchBase, route: 'http-search', tools: ['web_search', ...readingTools, ...phoneTools], requiredTools: phoneTools, toolDependencies: phoneTools.length ? { phone_use: ['web_search'] } : {}, backend: 'http' };
-  if (available('web_search') && capabilities.legacyReader === true && runtimeConfig.search.backend === 'legacy-reader') return { ...base, route: 'legacy-search', tools: ['web_search'], backend: 'legacy-reader', instructions: guidance };
   if (available('web_search') && capabilities.browserSearch === true && runtimeConfig.search.browserFallback) return { ...base, route: 'browser-search', tools: ['web_search'], backend: 'browser', instructions: guidance };
   return { ...searchBase, route: 'unavailable', reason: 'SEARCH_UNAVAILABLE', instructions: 'No verified hosted search or configured search backend is available to retrieve public evidence. Explain the missing search capability. Do not invent current facts or open phone apps as a fallback.' };
 }
@@ -170,8 +169,7 @@ export function planRequest(request = {}) {
   const executors = new Set(capabilities.executors || []);
   const available = name => grants.has(name) && executors.has(name);
   const searchBackend = runtime.search.backend === 'http' && !!runtime.search.endpoint ||
-    capabilities.browserSearch === true && runtime.search.browserFallback ||
-    capabilities.legacyReader === true && runtime.search.backend === 'legacy-reader';
+    capabilities.browserSearch === true && runtime.search.browserFallback;
   const availableTools = policy.toolsForbidden ? [] : [...new Set([
     ...(plan.tools || []),
     ...(!policy.fetchForbidden && available('fetch_url') ? ['fetch_url'] : []),

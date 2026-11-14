@@ -9,7 +9,7 @@
 // and shuffles the rest, so a draw range can thin it evenly on a slow device.
 import * as T from 'three';
 
-export const TAU = Math.PI * 2;
+const TAU = Math.PI * 2;
 export function rng(seed) { let s = seed >>> 0 || 1; return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; }; }
 const gauss = r => (r() + r() + r() + r() - 2) / .577;
 const C = (hex, k = 1) => new T.Color(hex).multiplyScalar(k);
@@ -96,7 +96,6 @@ export class Cloud {
     const points = new T.Points(g, material); points.frustumCulled = false;
     points.userData.kept = this.kept.length; points.userData.total = n; return points;
   }
-  get count() { return this.size.length; }
 }
 const region = (group, materials, radius) => ({ group, materials, radius, spinners: [] });
 
@@ -123,7 +122,7 @@ export function leadCore(t, lod) {
 }
 
 // Background: far stars and near dust for parallax, at their own fixed look.
-export function deepSpace(t, lod, softSprite) {
+export function deepSpace(t, lod) {
   const r = rng(707), g = new T.Group(), plain = { size: 1, light: 1 }, far = new Cloud(plain), dust = new Cloud(plain), m = particleMaterial(), md = particleMaterial(.9);
   const palette = [C(t.hot, 1.3), C(t.blue, 1.4), C(t.goldBright, 1.2), C(t.hot, 1.7)];
   // Pure black sky: small sharp stars (a few brighter), and dust so faint it

@@ -105,7 +105,7 @@ const WIKI_DEFINITION_ZH = /^(什么是|谁是|定义)\s*\S/;
 // the router enough information to enforce "explicit overrides time-sensitive
 // gate" — the original boolean predicate let `what is the latest X` short-
 // circuit SERP unconditionally.
-export function wikipediaMatchKind(query) {
+function wikipediaMatchKind(query) {
   if (typeof query !== 'string') return false;
   const q = query.trim();
   if (!q) return false;

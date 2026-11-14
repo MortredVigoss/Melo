@@ -94,7 +94,7 @@ export default function mountFunctionPlot(host, spec) {
     host.appendChild(note);
   }
 
-  bindParamSliders(host, params, () => {});
+  bindParamSliders(host, params);
 
   return startAnimationLoop(host, () => {
     const ctx = resizeCanvas(canvas, CANVAS_W, CANVAS_H);

@@ -16,7 +16,6 @@ import {
   realpath,
   rm,
   writeFile,
-  mkdir,
   symlink,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

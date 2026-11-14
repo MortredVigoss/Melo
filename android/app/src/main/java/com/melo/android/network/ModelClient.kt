@@ -78,7 +78,7 @@ class ModelClient(private val debug: Boolean, val http: OkHttpClient = OkHttpCli
                     try {
                         val result = response.use {
                             require(response.isSuccessful) { statusError(response.code) }
-                            val body = response.body ?: error("模型没有返回内容。")
+                            val body = response.body
                             if (response.header("Content-Type").orEmpty().contains("text/event-stream")) {
                                 val decoder = StreamDecoder(connection.protocol)
                                 var frame = StringBuilder()
@@ -118,7 +118,7 @@ class ModelClient(private val debug: Boolean, val http: OkHttpClient = OkHttpCli
             .post(payload.toRequestBody("application/json".toMediaType())).build()
         http.newCall(request).execute().use { response ->
             require(response.isSuccessful) { statusError(response.code) }
-            val bytes = readBounded(response.body ?: error("同步服务没有返回内容。"), SyncProtocol.MAX_BYTES)
+            val bytes = readBounded(response.body, SyncProtocol.MAX_BYTES)
             MeloJson.parseToJsonElement(String(bytes)).jsonObject
         }
     }

@@ -27,9 +27,9 @@ import { createRequire } from 'node:module';
 // @discordjs/voice receiver default: 48 kHz, 2 channels, 16-bit signed little-endian
 export const DISCORD_PCM_SAMPLE_RATE = 48000;
 export const DISCORD_PCM_CHANNELS = 2;
-export const DISCORD_PCM_BYTES_PER_SAMPLE = 2;
+const DISCORD_PCM_BYTES_PER_SAMPLE = 2;
 // Whisper prefers 16 kHz mono — matches whisper.cpp + OpenAI expectation.
-export const STT_SAMPLE_RATE = 16000;
+const STT_SAMPLE_RATE = 16000;
 // 48000 / 16000 = 3 — clean integer decimation, no fractional resampler needed.
 const DECIMATION = DISCORD_PCM_SAMPLE_RATE / STT_SAMPLE_RATE;
 

@@ -64,7 +64,6 @@ import {
   normalizeAgentProfiles,
   normalizeProjectAgentOverrides,
 } from './agentProfiles.js';
-import '../domain/artifact/artifactService.js'; // Preserve module initialization.
 import {
   normalizeCommandRuns,
   normalizeExternalToolRuns,
@@ -218,7 +217,7 @@ export const BUILTIN_CONNECTORS = [
   },
 ];
 
-export const defaultProjectTime = new Date(Date.now() - ONE_DAY_MS).toISOString();
+const defaultProjectTime = new Date(Date.now() - ONE_DAY_MS).toISOString();
 
 // ID + name signature of the legacy auto-seeded example project. Earlier
 // versions of Melo shipped with a "How to use Melo" sample whose
@@ -227,10 +226,10 @@ export const defaultProjectTime = new Date(Date.now() - ONE_DAY_MS).toISOString(
 // now (empty projects list on first boot), and hydrateState() drops any
 // persisted copy that is still in its pristine form. A user who renamed the
 // project or pointed it at a different workspace keeps it.
-export const LEGACY_EXAMPLE_PROJECT_ID = 'example-project';
-export const LEGACY_EXAMPLE_PROJECT_NAME = 'How to use Melo';
+const LEGACY_EXAMPLE_PROJECT_ID = 'example-project';
+const LEGACY_EXAMPLE_PROJECT_NAME = 'How to use Melo';
 
-// normalizeProject was extracted to `src/services/project/projectService.js`
+// normalizeProject was extracted to `src/domain/project/projectService.js`
 // in Phase 9c. The local wrapper binds APP_ROOT / sanitizeWorkspacePath /
 // defaultProjectTime so the original one-arg signature keeps working.
 export function normalizeProject(project) {
@@ -563,7 +562,7 @@ export function createDefaultState() {
 // 'standard', so the origin cannot be proven; the user chose this one-time
 // conversion to the shared default (quick) on 2026-11-07 (git pp review C,
 // finding 3). Any depth chosen afterwards, and every other value, is kept.
-export const EVALUATION_DEFAULT_VERSION = 1;
+const EVALUATION_DEFAULT_VERSION = 1;
 const evaluationDefault = (profile, version) => version < EVALUATION_DEFAULT_VERSION && profile?.evaluationMode === 'standard'
   ? { ...profile, evaluationMode: TASK_EVALUATION_POLICY.defaultMode } : profile;
 

@@ -18,7 +18,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { join, basename } from 'node:path';
+import { join } from 'node:path';
 import {
   mkdtemp,
   realpath,

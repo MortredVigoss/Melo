@@ -85,7 +85,6 @@ export function createSettingsFormEditors({render, onCancel, scope=()=>'', ownsD
       let bar = form.querySelector(':scope > .settings-edit-toolbar');
       const html = renderEditActions(session,actionOptions(form));
       if(bar) bar.outerHTML=html; else form.insertAdjacentHTML('afterbegin',html);
-      for(const external of root.querySelectorAll('[data-action="submit-agent-profile"]')) if(external.dataset.formId===form.id) external.hidden=true;
     }
     mounted = current;
   }

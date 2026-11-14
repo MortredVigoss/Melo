@@ -9,7 +9,6 @@ import { resolvedRequestGoal } from '../../../shared/agent/search.js';
 import {resolveCapabilityContext} from '../agent/capabilityContext.js';
 import {missingCapabilityScope} from '../../domain/agent/capabilityScope.js';
 import { measureStage, startStage } from '../../runtime/performanceTrace.js';
-import './conversationSelection.js'; // Preserve module initialization.
 import { observeModelReplies } from './executionPipeline.js';
 import { createRequestContext } from '../../runtime/requestContext.js';
 import { currentRequestContext, runWithRequestContext } from '../../runtime/requestScope.js';

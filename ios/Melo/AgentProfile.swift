@@ -20,7 +20,6 @@ struct AgentProfile: Codable, Identifiable, Equatable {
     // Compatibility accessors; the persisted document is the single source.
     var identity: String? { get { section("身份") } set { setSection("身份", newValue) } }
     var soul: String? { get { section("风格") } set { setSection("风格", newValue) } }
-    var systemPrompt: String? { get { section("补充要求") } set { setSection("补充要求", newValue) } }
     private static let headings = ["工作要求", "身份", "风格", "补充要求"]
     static func document(_ instructions: String, identity: String? = nil, soul: String? = nil, systemPrompt: String? = nil) -> String {
         zip(headings, [instructions, identity ?? "", soul ?? "", systemPrompt ?? ""]).compactMap { title, value in

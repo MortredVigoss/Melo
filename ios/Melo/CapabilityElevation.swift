@@ -43,7 +43,6 @@ struct CapabilityElevationContract {
     let settingsScopes: [String: String]
     // phone
     let phoneBooleanKeys: [String]
-    let phoneLabels: [String: String]
     /// Atoms backed by this iPhone's per-Agent permissions (device-local, never synced).
     let phonePermissionAtoms: [String]
     /// Phone tool → atom; nil value = no capability gate; missing tool = unclassified.
@@ -70,7 +69,6 @@ struct CapabilityElevationContract {
         let phone = object(raw["phone"])
         phoneBooleanKeys = strings(phone["booleanCapabilities"])
         let phoneLabelMap = map(phone["labels"])
-        phoneLabels = phoneLabelMap
         capabilityLabels = map(labels["capabilities"]).merging(phoneLabelMap) { own, _ in own }
         phonePermissionAtoms = strings(phone["permissionAtoms"])
         phoneTools = object(phone["toolCapabilities"]).mapValues { $0 as? String }
@@ -152,8 +150,6 @@ struct CapabilityDecision: Equatable {
     var reason: String? = nil
     var missing: [String] = []
     var effective: Set<String>?
-    var base: Set<String>?
-    var ceiling: Set<String>?
     var grantIds: [String] = []
     var options: [String]? = nil
     var projectOptionScope: String? = nil
@@ -291,7 +287,7 @@ enum CapabilityElevation {
     static func decide(toolId: String, requirement: CapabilityRequirement, member: CapabilityParty, parent: CapabilityParty? = nil, base: Set<String>? = nil, grants: [CapabilityGrant] = [], context: CapabilityContext, now: Double) -> CapabilityDecision {
         let scope = effectiveScope(member: member, parent: parent, base: base, grants: grants, context: context, now: now)
         func result(_ decision: String, _ change: (inout CapabilityDecision) -> Void = { _ in }) -> CapabilityDecision {
-            var value = CapabilityDecision(decision: decision, effective: scope.capabilities, base: scope.base, ceiling: scope.ceiling, grantIds: decision == "allowed" ? scope.grantIds : [])
+            var value = CapabilityDecision(decision: decision, effective: scope.capabilities, grantIds: decision == "allowed" ? scope.grantIds : [])
             change(&value); return value
         }
         if let whitelist = context.allowedToolIds, !whitelist.contains(toolId) { return result("deny-ceiling") { $0.reason = "whitelist" } }

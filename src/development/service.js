@@ -5,8 +5,8 @@ import { createJobStore, atomicJSON } from './store.js';
 import { createGit, repositoryRules } from './git.js';
 import { createContainerRunner, commandArguments, digest } from './runner.js';
 
-export const activeStages = new Set(['implementing', 'testing', 'reviewing']);
-export const sensitiveChange = path => /(^|\/)(?:[^/]*\.(?:test|spec)\.[^/]+|tests?|__tests__|scripts|\.github|AGENTS\.md|CLAUDE\.md|package(?:-lock)?\.json|safety|development|permissions?)(\/|$)/i.test(path)
+const activeStages = new Set(['implementing', 'testing', 'reviewing']);
+const sensitiveChange = path => /(^|\/)(?:[^/]*\.(?:test|spec)\.[^/]+|tests?|__tests__|scripts|\.github|AGENTS\.md|CLAUDE\.md|package(?:-lock)?\.json|safety|development|permissions?)(\/|$)/i.test(path)
   || /^(?:src\/(?:tools\/|http\/|runtime\/|domain\/agent\/capabilit|server\.js|config\.js)|desktop-app\/|native\/)/.test(path);
 const fail = message => { throw new Error(message); };
 const plan = value => {

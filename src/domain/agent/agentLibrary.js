@@ -22,8 +22,6 @@
 //     custom ids from a persisted agentProfiles map (normalized, deduped).
 //   - nextCustomAgentId(agentProfiles) — next free `custom-agent-<N>`
 //     slot, walking 1..9999 then falling back to a timestamp.
-//   - moodOptionById(moodId) — lookup with fallback to MOOD_OPTIONS[0].
-//   - agentPresetById(presetId) — lookup, null if not found.
 //
 // Extracted from desktopStore.js in the Phase 9m refactor (see
 // _refactor-backup/REFACTOR_PLAN.md). Pure module — only depends on
@@ -31,7 +29,7 @@
 
 import { normalizeAgentStorageId } from '../../shared/helpers.js';
 
-export const WORKER_PROMPTS = {
+const WORKER_PROMPTS = {
   main:
     'You are the Melo coordinator worker. Keep plans coherent, route work sensibly, and summarize the next best move.',
   research:
@@ -152,7 +150,7 @@ export const AGENT_LIBRARY = {
   },
 };
 
-export const AGENT_IDS = Object.keys(AGENT_LIBRARY);
+const AGENT_IDS = Object.keys(AGENT_LIBRARY);
 
 export const AGENT_PRESETS = [
   {
@@ -205,7 +203,7 @@ export const AGENT_PRESETS = [
   },
 ];
 
-export function customAgentDefinition(agentId, profile = {}) {
+function customAgentDefinition(agentId, profile = {}) {
   const safeId = normalizeAgentStorageId(agentId);
   const baseName =
     typeof profile?.name === 'string' && profile.name.trim()
@@ -285,12 +283,4 @@ export function nextCustomAgentId(agentProfiles = {}) {
   }
 
   return `custom-agent-${Date.now()}`;
-}
-
-export function moodOptionById(moodId) {
-  return MOOD_OPTIONS.find(option => option.id === moodId) || MOOD_OPTIONS[0];
-}
-
-export function agentPresetById(presetId) {
-  return AGENT_PRESETS.find(preset => preset.id === presetId) || null;
 }

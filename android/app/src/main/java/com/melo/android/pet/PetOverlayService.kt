@@ -42,7 +42,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -71,7 +70,6 @@ class PetOverlayService : Service() {
     companion object {
         const val ACTION_START = "com.melo.android.pet.START"
         const val ACTION_STOP = "com.melo.android.pet.STOP"
-        const val ACTION_STOP_SPEECH = "com.melo.android.pet.STOP_SPEECH"
         const val NOTIFICATION_ID = 1301
         private const val CHANNEL = "pet"
         private const val UTTERANCE = "pet-reply"
@@ -97,7 +95,6 @@ class PetOverlayService : Service() {
     private var bubbleView: TextView? = null
     private var bubbleParams: WindowManager.LayoutParams? = null
     private var menuView: LinearLayout? = null
-    private var menuParams: WindowManager.LayoutParams? = null
     private val screen = Point()
     private var scale = 1f
     private var anchor = Point()
@@ -123,7 +120,6 @@ class PetOverlayService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> { preferences.update { it.copy(enabled = false) }; stopSelf(); return START_NOT_STICKY }
-            ACTION_STOP_SPEECH -> { stopSpeaking(); return START_STICKY }
         }
         if (!preferences.value.enabled || !canDraw(this)) { stopSelf(); return START_NOT_STICKY }
         if (petView == null) runCatching { attach() }.onFailure { failure -> setState { it.copy(error = failure.message ?: failure.toString()) }; stopSelf(); return START_NOT_STICKY }
@@ -412,12 +408,12 @@ class PetOverlayService : Service() {
         params.x = if (body.centerX() < screen.x / 2) (body.right + gap).coerceAtMost(screen.x - menu.measuredWidth) else (body.left - gap - menu.measuredWidth).coerceAtLeast(0)
         params.y = (body.top).coerceIn(0, (screen.y - menu.measuredHeight).coerceAtLeast(0))
         windowManager.addView(menu, params)
-        menuView = menu; menuParams = params
+        menuView = menu
         setState { it.copy(menu = true) }
     }
     private fun hideMenu() {
         menuView?.let { runCatching { windowManager.removeView(it) } }
-        menuView = null; menuParams = null
+        menuView = null
         setState { it.copy(menu = false) }
     }
     private fun openApp(page: String?) {

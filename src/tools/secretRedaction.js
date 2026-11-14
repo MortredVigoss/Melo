@@ -12,11 +12,9 @@
 
 import { AGENT_LOOP_CONTRACT, contractRegExp } from '../runtime/agentLoopContract.js';
 
-// The token and every pattern are shared with the iPhone run records and tool
-// traces (shared/protocol/agent-loop.json, `redaction`), so both sides redact
-// the same fragments.
-export const REDACTED = AGENT_LOOP_CONTRACT.redaction.token;
-
+// Every pattern is shared with the iPhone run records and tool traces
+// (shared/protocol/agent-loop.json, `redaction`), so both sides redact the
+// same fragments.
 const PATTERNS = AGENT_LOOP_CONTRACT.redaction.patterns.map(entry => [contractRegExp(entry, 'g'), entry.replacement]);
 
 /**
@@ -29,9 +27,4 @@ export function redactSecretsInText(text) {
   let out = text;
   for (const [pattern, replacement] of PATTERNS) out = out.replace(pattern, replacement);
   return out;
-}
-
-/** True when `redactSecretsInText` would change the text. */
-export function containsSecret(text) {
-  return typeof text === 'string' && redactSecretsInText(text) !== text;
 }

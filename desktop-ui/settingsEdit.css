@@ -18,4 +18,4 @@
 .agent-selector-dropdown header p{font-size:var(--font-size-12px);line-height:1.6;color:var(--text-secondary);margin:6px 0}
 .composer-conversation-choice{display:flex;align-items:center;gap:12px;margin-bottom:10px}
 
-[data-settings-managed] button[hidden], [data-action=submit-agent-profile][hidden]{display:none!important}
+[data-settings-managed] button[hidden]{display:none!important}

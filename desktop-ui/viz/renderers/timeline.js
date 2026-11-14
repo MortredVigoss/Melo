@@ -41,7 +41,6 @@ export default function mountTimeline(host, spec) {
   events.forEach((e, i) => {
     e.px = PADDING_X + ((e.sortKey - minKey) / span) * plotW;
     e.side = i % 2 === 0 ? 'above' : 'below';
-    e.originalIndex = i;
   });
 
   const markers = events

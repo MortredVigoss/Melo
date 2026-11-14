@@ -28,7 +28,7 @@ export function neuralEntries(data,group) {
  if(group==='knowledge')return [view(t("知识与成果"),'artifacts',t("添加知识、保存成果，在对话中选用")),section(t("记忆"),'memory',t("长期记忆与检索状态")),section(t("技能"),'skills',t("可复用的工作方法"))];
  return [view(t("系统设置"),'settings',t("个人资料、外观、语音与数据")),view(t("模型"),'model',t("模型连接与用量")),section(t("连接器"),'connectors',t("应用与工作区连接")),section(t("工具与任务"),'advanced',t("MCP、后台任务与运行状态")),section(t("安全"),'safety',t("查看文件权限与授权规则"))];
 }
-function entryButton(entry,index,selectedId) {
+function entryButton(entry,selectedId) {
  return ui`<button class="neural-branch ${(entry.selected||(entry.id&&entry.id===selectedId))?'is-active':''}" data-neural-key="${esc(entry.action+':'+(entry.id||entry.attrs))}" data-action="${entry.action}" ${entry.attrs}><i></i><span class="neural-branch-text"><strong>${esc(entry.name)}</strong><small>${esc(String(entry.description).slice(0,70))}</small></span><span class="neural-branch-arrow">↗</span></button>`;
 }
 export function renderNeuralNavigation(data,group,{overview=false,still=false}={}) {
@@ -37,10 +37,10 @@ export function renderNeuralNavigation(data,group,{overview=false,still=false}={
  const selectedId=group==='chat'?data.settings.selectedChatId:group==='projects'?data.settings.selectedProjectId:group==='agents'?data.settings.selectedAgentId:null;
  return ui`<nav class="neural-navigation" aria-label="功能星团">
     <button class="neural-brand" data-action="neural-overview" aria-label="返回星图总览"><span class="neural-brand-mark">✳</span><span>melo<small>NEURAL WORKSPACE</small></span></button>
-    <div class="neural-primary">${neuralGroups.map((g,i)=>ui`<button class="neural-cluster ${g.id===group?'is-active':''}" data-neural-key="group-${g.id}" data-action="neural-group" data-group="${g.id}" aria-pressed="${g.id===group}"><span class="neural-orb" aria-hidden="true"><span>${g.symbol}</span></span><span class="neural-cluster-copy"><strong>${g.name}</strong><small>${g.en}</small></span></button>`).join('')}</div>
+    <div class="neural-primary">${neuralGroups.map(g=>ui`<button class="neural-cluster ${g.id===group?'is-active':''}" data-neural-key="group-${g.id}" data-action="neural-group" data-group="${g.id}" aria-pressed="${g.id===group}"><span class="neural-orb" aria-hidden="true"><span>${g.symbol}</span></span><span class="neural-cluster-copy"><strong>${g.name}</strong><small>${g.en}</small></span></button>`).join('')}</div>
     <div class="neural-nav-footer">${renderLanguageControl()}<button data-action="neural-motion" aria-pressed="${still}" title="切换持续动效与静态模式">${still?t("◈ 静态模式"):t("◈ 星空流动")}</button><button class="local-profile-trigger" data-action="settings-open" title="个人资料与设置">${renderAgentAvatar(data.profile,esc,28)}<span>${esc(data.profile?.name||t("本机用户"))}</span></button></div>
   </nav>
-  <aside class="neural-branches" data-group="${selected.id}" aria-label="${selected.name}功能分支"><div class="neural-branches-heading"><span>0${neuralGroups.indexOf(selected)+1} / ${selected.en}</span><h2 class="pane-title">${selected.name}<small>${entries.length}</small></h2><p>${selected.description}</p></div><div class="neural-branch-list">${entries.map((e,i)=>entryButton(overview?{...e,selected:false}:e,i,overview?null:selectedId)).join('')}</div><span class="neural-branch-caption">选择分支，展开工作内容</span></aside>`;
+  <aside class="neural-branches" data-group="${selected.id}" aria-label="${selected.name}功能分支"><div class="neural-branches-heading"><span>0${neuralGroups.indexOf(selected)+1} / ${selected.en}</span><h2 class="pane-title">${selected.name}<small>${entries.length}</small></h2><p>${selected.description}</p></div><div class="neural-branch-list">${entries.map(e=>entryButton(overview?{...e,selected:false}:e,overview?null:selectedId)).join('')}</div><span class="neural-branch-caption">选择分支，展开工作内容</span></aside>`;
 }
 export function renderNeuralOverview(data,group,{composer=''}={}) {
  const selected=neuralGroups.find(g=>g.id===group)||neuralGroups[0];

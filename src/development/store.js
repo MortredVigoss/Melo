@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile, rename, readdir, rm } from 'node:fs/promise
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
-export const jobID = value => {
+const jobID = value => {
   if (!/^dev_[a-f0-9-]{36}$/.test(value || '')) throw new Error('Invalid development job ID');
   return value;
 };
@@ -50,10 +50,8 @@ export function createJobStore(home) {
         if (exists) throw new Error('Job lease is incomplete; inspect it before recovery');
         return;
       }
-      if (owner) {
-        try { process.kill(owner.pid, 0); throw new Error('The job controller is still running'); }
-        catch (error) { if (error.code !== 'ESRCH') throw error; }
-      }
+      try { process.kill(owner.pid, 0); throw new Error('The job controller is still running'); }
+      catch (error) { if (error.code !== 'ESRCH') throw error; }
       await rm(path, { recursive: true, force: true });
     },
   };

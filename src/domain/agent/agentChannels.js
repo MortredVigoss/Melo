@@ -33,7 +33,7 @@
 
 import { coerceIso } from '../../shared/helpers.js';
 
-export const AGENT_CHANNEL_LIBRARY = {
+const AGENT_CHANNEL_LIBRARY = {
   telegram: {
     id: 'telegram',
     label: 'Telegram',
@@ -105,7 +105,7 @@ export function normalizeAgentChannels(channels = {}) {
 // guildId, channelId, voiceReply, nicknames, etc.) and must NOT be touched
 // by the poller, or we risk clobbering a UI edit that landed between the
 // poller's read and write. See feedback_preserve_user_config.md.
-export const CHANNEL_RUNTIME_FIELDS = [
+const CHANNEL_RUNTIME_FIELDS = [
   'lastStatus',
   'lastError',
   'lastUpdateId',

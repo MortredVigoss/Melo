@@ -82,7 +82,7 @@ export function buildSkillIndex(skills) {
   return index;
 }
 
-export function addSkillToIndex(skill, index) {
+function addSkillToIndex(skill, index) {
   if (!skill || !skill.id || !index) return;
   // If already present, refresh by removing first — cheap and keeps the
   // index consistent when a skill's triggers change.
@@ -102,7 +102,7 @@ export function addSkillToIndex(skill, index) {
   }
 }
 
-export function removeSkillFromIndex(skillId, index) {
+function removeSkillFromIndex(skillId, index) {
   if (!skillId || !index) return;
   const tokens = index.skillTokens.get(skillId);
   if (!tokens) return;

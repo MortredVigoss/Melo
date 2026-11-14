@@ -201,8 +201,6 @@ struct AgentLoopOutcome {
     var sources: [WebSource]
     var searched: Bool
     var calls: [ExecutionToolCall]
-    var iterations: Int
-    var unusedSupplements: [String] = []
     var verification: PhoneUncertainty.Verification?
     var completion: AgentCompletionReceipt?
 }
@@ -404,11 +402,10 @@ final class AgentLoop: @unchecked Sendable {
         var evidence: [PhoneUncertainty.ToolPair] = []
 
         var screenshots = hooks.resumeCursor?.screenshots ?? 0
-        var spentTokens = 0
         let permittedDefinitions = (tools?.definitions ?? []).filter { ChatGPTRequest.allowsTool($0.name, messages: goalHistory.isEmpty ? [ChatMessage(role: "user", content: latestUserMessage)] : goalHistory) }
         var offered = Set(permittedDefinitions.map(\.name) + (hooks.routing == nil ? [] : ["melo_escalate"]))
         if let exhausted = budget.exhausted(), exhausted.reason == "policy-unavailable" {
-            return AgentLoopOutcome(text: await exhaustedStop(exhausted), stop: .budget, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: 0)
+            return AgentLoopOutcome(text: await exhaustedStop(exhausted), stop: .budget, finalRound: nil, sources: sources, searched: searched, calls: records)
         }
         let goal = try PhoneGoalState(latestUserMessage, history: goalHistory.map { ["role": $0.role, "content": $0.content] })
         goalState = goal
@@ -559,7 +556,6 @@ final class AgentLoop: @unchecked Sendable {
             member.active = job != nil
             member.rounds = jobRounds
             member.firstObservation = observationsAtStart
-            cursor.member = member
             cursor.candidate = candidateRound?.text
             member.core = job != nil ? try core.resumeData() : nil
             member.budget = job != nil ? try budget.resumeData() : nil
@@ -600,7 +596,7 @@ final class AgentLoop: @unchecked Sendable {
             if try !core.event("request", goal.checking ? ["mode": "review"] : [:]) {
                 lastEvidence = evidence
                 if ["ROUND_LIMIT", "DEADLINE_EXCEEDED"].contains(core.reason) { return try await deliverLimit(core.reason, fallback: core.reply(latestUserMessage), pending: candidateRound, transport: transport, sources: sources, searched: searched, records: records, iteration: iteration) }
-                return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: core.reason == "DEADLINE_EXCEEDED" ? .budget : .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration)
+                return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: core.reason == "DEADLINE_EXCEEDED" ? .budget : .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records)
             }
             var round = AgentRound()
             let checkingGoal = goal.checking
@@ -645,12 +641,11 @@ final class AgentLoop: @unchecked Sendable {
                     try goal.update("stop")
                     try core.event("complete")
                     lastEvidence = evidence
-                    return AgentLoopOutcome(text: candidate.text, stop: .answered, finalRound: candidate, sources: sources, searched: searched, calls: records, iterations: iteration + 1)
+                    return AgentLoopOutcome(text: candidate.text, stop: .answered, finalRound: candidate, sources: sources, searched: searched, calls: records)
                 }
             }
             let inputTokens = round.inputTokens ?? round.estimatedInputTokens
             if !round.budgetAccounted { budget.record(inputTokens: inputTokens, outputTokens: round.outputTokens ?? PhoneTokenEstimate.text(round.text + round.calls.map(\.arguments).joined()), providerCalls: 1) }
-            spentTokens += inputTokens + (round.outputTokens ?? PhoneTokenEstimate.text(round.text + round.calls.map(\.arguments).joined()))
             // A member's final answer stands even when the round that produced it crossed the work
             // allowance; only a round that asks for more work becomes a limit write-up. The answer
             // used to be discarded for a write-up built from the member's observations (2026-11-10).
@@ -671,7 +666,7 @@ final class AgentLoop: @unchecked Sendable {
                 }
                 try core.event("complete")
                 lastEvidence = evidence
-                return AgentLoopOutcome(text: candidate.text, stop: .answered, finalRound: candidate, sources: sources, searched: searched, calls: records, iterations: iteration + 1)
+                return AgentLoopOutcome(text: candidate.text, stop: .answered, finalRound: candidate, sources: sources, searched: searched, calls: records)
             }
             // A hosted search receipt is evidence only for a member allowed
             // to use hosted search. Local page receipts are recorded at dispatch.
@@ -736,9 +731,9 @@ final class AgentLoop: @unchecked Sendable {
                 try goal.update("candidate", ["observations": completionObservations, "candidate": ["context": ["messages": goalHistory.suffix(8).map { ["role": $0.role, "content": $0.content] }, "capabilities": Array(offered)], "reply": round.text, "uncertainClaim": flaggedClaim(round.text), "tools": Array(offered) + (nativeSearchAvailable ? ["native_web_search"] : []) + (catalog != nil && job == nil ? ["task_progress"] : []), "research": ChatGPTRequest.requiresSearch(latestUserMessage), "roundsLeft": maxIterations - core.rounds]])
                 if goal.checking { try core.event("feedback"); iteration += 1; continue }
                 try core.event("complete")
-                if !core.completed { return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: core.reason == "DEADLINE_EXCEEDED" ? .budget : .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration + 1) }
+                if !core.completed { return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: core.reason == "DEADLINE_EXCEEDED" ? .budget : .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records) }
                 lastEvidence = evidence
-                return AgentLoopOutcome(text: round.text, stop: .answered, finalRound: round, sources: sources, searched: searched, calls: records, iterations: iteration + 1)
+                return AgentLoopOutcome(text: round.text, stop: .answered, finalRound: round, sources: sources, searched: searched, calls: records)
             }
             // The shared reducer refuses an oversized batch and a blank, over-long or repeated call id by
             // throwing, which reached the user as "(Melo.SharedAgentCoreError error 2.)". The same rules
@@ -753,7 +748,7 @@ final class AgentLoop: @unchecked Sendable {
                 return ["id": call.callID, "name": call.name, "arguments":(try? JSONSerialization.jsonObject(with:Data(call.arguments.utf8))) as Any? ?? [:], "effect": PhoneCoreTurn.effect(call.name, arguments: call.arguments), "fingerprint": PhoneCoreTurn.fingerprint(call.name + args.canonicalJSON)]
             }])
             if !core.active && job != nil { await finishJob("Member execution stopped: " + core.reason, limited:true); iteration += 1; continue }
-            if !core.active { return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: core.reason == "DEADLINE_EXCEEDED" ? .budget : .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration + 1) }
+            if !core.active { return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: core.reason == "DEADLINE_EXCEEDED" ? .budget : .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records) }
             var results: [AgentToolResult] = []
             // A batch made only of independent page reads loads them side by side,
             // at most parallelPageReads at a time (2026-11-10 latency audit: a 20 s
@@ -917,7 +912,7 @@ final class AgentLoop: @unchecked Sendable {
             if !core.active && job == nil {
                 await hooks.onStage?("core:stop", "执行已停止", "failed", RunProgress.stopReason(core.reason))
                 if ["ROUND_LIMIT", "DEADLINE_EXCEEDED"].contains(core.reason) { return try await deliverLimit(core.reason, fallback: core.reply(latestUserMessage), transport: transport, sources: sources, searched: searched, records: records, iteration: iteration) }
-                return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: core.reason == "DEADLINE_EXCEEDED" ? .budget : .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration)
+                return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: core.reason == "DEADLINE_EXCEEDED" ? .budget : .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records)
             }
         }
     }
@@ -930,7 +925,7 @@ final class AgentLoop: @unchecked Sendable {
         let defaultFallback = reason == "ROUND_LIMIT" ? (SharedLoopPolicy.value("stopReply", ["reason": reason, "text": latestUserMessage, "locale": locale]) as? String ?? fallback) : fallback
         func fallbackOutcome(_ text: String) -> AgentLoopOutcome {
             let value = SharedLoopPolicy.value("delivery", ["action": "fallback", "reply": text, "observations": completionObservations, "locale": locale]) as? String ?? text
-            return AgentLoopOutcome(text: value, stop: reason == "ROUND_LIMIT" ? .toolLimit : .budget, finalRound: nil, sources: sources, searched: searched, calls: records, iterations: iteration)
+            return AgentLoopOutcome(text: value, stop: reason == "ROUND_LIMIT" ? .toolLimit : .budget, finalRound: nil, sources: sources, searched: searched, calls: records)
         }
         guard let goal = goalState else { return fallbackOutcome(defaultFallback) }
         // An answer that was written and was still waiting for its check when the allowance ended is
@@ -1010,7 +1005,7 @@ final class AgentLoop: @unchecked Sendable {
                 var result = PhoneUncertainty.Verification(verdict: "UNVERIFIED", reason: "limit-delivery")
                 if let judged = goal.claimReview, judged["claim"] as? String == claim, let verdict = judged["verdict"] as? String {
                     result = PhoneUncertainty.Verification(verdict: verdict, correction: judged["correction"] as? String ?? "", originalClaim: judged["originalClaim"] as? String ?? "",
-                                                           evidenceId: judged["evidenceId"] as? String ?? "", reason: "completion-check")
+                                                           reason: "completion-check")
                 }
                 candidate.text = PhoneUncertainty.apply(parsed.cleanReply, result)
                 claimVerdict = result
@@ -1020,7 +1015,7 @@ final class AgentLoop: @unchecked Sendable {
         }
         candidate.text = try goal.deliveryText(candidate.text, locale: locale)
         completionTerminalReason = "LIMIT_DELIVERED"
-        var outcome = AgentLoopOutcome(text: candidate.text, stop: .deliveredLimit, finalRound: candidate, sources: sources, searched: searched, calls: records, iterations: iteration)
+        var outcome = AgentLoopOutcome(text: candidate.text, stop: .deliveredLimit, finalRound: candidate, sources: sources, searched: searched, calls: records)
         outcome.verification = claimVerdict
         return outcome
     }
@@ -1092,7 +1087,7 @@ final class AgentLoop: @unchecked Sendable {
         if let reviewed = goalState?.claimReview, reviewed["claim"] as? String == parsed.uncertainClaim, let verdict = reviewed["verdict"] as? String,
            verdict != "UNVERIFIED" || !hasBackground || budget.exhausted() != nil {
             let result = PhoneUncertainty.Verification(verdict: verdict, correction: reviewed["correction"] as? String ?? "", originalClaim: reviewed["originalClaim"] as? String ?? "",
-                                                       evidenceId: reviewed["evidenceId"] as? String ?? "", reason: "completion-check")
+                                                       reason: "completion-check")
             outcome.text = PhoneUncertainty.apply(parsed.cleanReply, result)
             outcome.verification = result
             let label = ["VERIFIED": "已核实", "CORRECTED": "已按证据更正", "UNVERIFIED": "未能核实，已标注"][result.verdict] ?? result.verdict

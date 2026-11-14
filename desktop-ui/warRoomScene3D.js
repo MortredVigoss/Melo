@@ -57,7 +57,7 @@ export function createWarRoomScene(host, { onProject, onSelectRegion, onEmptyTap
   const white = sceneColor('atom-h'), gold = sceneColor('neural-light');
   setLook({ size: phone ? .85 : .66, light: 1.5 });
   const TOK = { hot: visualColor('scene-ffe4a3'), goldBright: gold, blue: visualColor('knowledge-light'), white };
-  const space = deepSpace(TOK, phone ? .6 : 1, sprite); world.add(space.group);
+  const space = deepSpace(TOK, phone ? .6 : 1); world.add(space.group);
   const coreRegion = leadCore(TOK, phone ? 2 : 6), core = coreRegion.group; core.scale.setScalar(CORE_SIZE); world.add(core);
   const CORE_R = coreRegion.radius * CORE_SIZE, SURFACE = 96 * CORE_SIZE, INSIDE = 26 * CORE_SIZE;
   const halo = new T.Sprite(new T.SpriteMaterial({ map: sprite, color: gold, transparent: true, opacity: .1, blending: T.AdditiveBlending, depthWrite: false })); halo.scale.setScalar(300); core.add(halo);
@@ -444,9 +444,8 @@ export function createWarRoomScene(host, { onProject, onSelectRegion, onEmptyTap
   canvas.addEventListener('webglcontextlost', lost); document.addEventListener('visibilitychange', visibility);
   host.prepend(canvas); observer.observe(host); intersection.observe(host); resize();
   return {
-    update, setView, focusRegion, zoomBy, requestFrame, rotateBy: (dx, dy) => rotate(dx, dy),
+    update, setView, focusRegion, zoomBy, rotateBy: (dx, dy) => rotate(dx, dy),
     get view() { return { ...view }; },
-    resetView() { setView('global'); },
     setOpen(value) { open = value; last = 0; primed = false; if (open) { settle = true; resize(); if (scene) update(scene); requestFrame(); } else { cancelAnimationFrame(raf); raf = 0; } },
     setStill(value) { if (still === !!value) return; still = !!value; primed = false; if (scene) update(scene); requestFrame(); },
     /** Page coordinates of a spider's right claw (what it hooks), or null. */

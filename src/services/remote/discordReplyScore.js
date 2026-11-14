@@ -31,7 +31,7 @@ import {
 } from './replyScoreSignals.js';
 import { normalizeMessageAttachments } from '../../shared/helpers.js';
 
-export const DISCORD_SIGNAL_WEIGHTS = {
+const DISCORD_SIGNAL_WEIGHTS = {
   isReplyToBot:    1.00,
   mentionUsername: 0.90,
   invokePrefix:    0.85,

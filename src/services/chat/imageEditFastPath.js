@@ -100,12 +100,6 @@ export function findLatestUserText(messages) {
       const parts = [];
       for (const part of content) {
         if (typeof part?.text === 'string') parts.push(part.text);
-        else if (
-          part?.type === 'text' &&
-          typeof part.text === 'string'
-        ) {
-          parts.push(part.text);
-        }
       }
       if (parts.length) return parts.join(' ').trim();
     }

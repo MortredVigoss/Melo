@@ -13,7 +13,6 @@ import { normalizeRuntimeConfig } from '../shared/agent/tools.js';
 
 export const OPENAI_API_BASE_URL = 'https://api.openai.com/v1';
 export const CODEX_OAUTH_BASE_URL = 'https://chatgpt.com/backend-api';
-export const LOCAL_MODEL_BASE_URL = LOCAL_SERVICE_DEFAULTS.ollama;
 
 export { DEFAULT_MODEL_CATALOGS, DEFAULT_MODELS_BY_AUTH_MODE, PROVIDER_DEFAULTS } from './shared/modelCatalog.js';
 export const VALID_AUTH_MODES = Object.freeze(['local', 'api-key', 'codex']);
@@ -343,7 +342,6 @@ async function readConfigJson(configPath) {
   _rawConfigCache.set(configPath, { mtimeMs: info.mtimeMs, size: info.size, ino: info.ino, parsed: structuredClone(parsed) });
   return parsed;
 }
-export function _resetConfigCacheForTests() { _rawConfigCache.clear(); }
 
 export async function saveConfig(nextConfig, options = {}) {
   // `options.skipModelNormalize` is forwarded to `normalizeConfigShape`

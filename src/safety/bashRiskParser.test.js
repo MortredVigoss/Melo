@@ -14,10 +14,6 @@ import {
   hasUnbalancedQuotes,
 } from './bashRiskParser.js';
 
-function kindsOf(cmd) {
-  return parseBashRiskyOps(cmd).risks.map(r => r.kind);
-}
-
 function findRisk(cmd, kind, pattern = null) {
   const risks = parseBashRiskyOps(cmd).risks;
   if (pattern) return risks.find(r => r.kind === kind && r.pattern === pattern);

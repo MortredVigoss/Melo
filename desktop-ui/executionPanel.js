@@ -149,7 +149,7 @@ function ensureWarRoom() {
 function regionExtra(id) {
   focus = id;
   const scene = selectedScene();
-  if (id === 'search') return ui`<div class="war-extra">${renderSearchTrail(scene)}<div class="war-source-grid">${renderDetails(scene, detailsFor(scene))}</div>${(scene?.sources.length || 0) > 5 ? ui`<button type="button" class="war-link" data-execution-action="more">${more ? '收起至五个' : '展开更多 · 最多十个'}</button>` : ''}</div>`;
+  if (id === 'search') return ui`<div class="war-extra">${renderSearchTrail(scene)}<div class="war-source-grid">${renderDetails(detailsFor(scene))}</div>${(scene?.sources.length || 0) > 5 ? ui`<button type="button" class="war-link" data-execution-action="more">${more ? '收起至五个' : '展开更多 · 最多十个'}</button>` : ''}</div>`;
   if (id === 'compute') return ui`<div class="war-extra">${renderReasoningRecords(scene, statusNames)}</div>`;
   if (id === 'create') return ui`<div class="war-extra">${renderCandidates(scene)}</div>`;
   return '';
@@ -182,28 +182,22 @@ function headerStatus(scene) {
   return scene.operations.length ? t("调用已返回 · 等待回答") : t("请求处理中 · 等待可观测工具事件");
 }
 function detailsFor(scene) {
-  if (focus === 'search') return visibleSceneSources(scene, more);
-  if (focus === 'create') return [];
-  if (focus === 'compute') return moduleActivity(scene, focus).operations.filter(op => op.channel !== 'reasoning-summary').map(op => ({ ...op, title: op.expression || runtimeStageName(op) }));
-  return moduleActivity(scene, focus).operations.map(op => ({ ...op, title: op.expression || runtimeStageName(op) }));
+  return visibleSceneSources(scene, more);
 }
-function renderDetails(scene, items) {
-  if (focus === 'search') return items.map((source, index) => {
+function renderDetails(items) {
+  return items.map((source, index) => {
     const linkUrl = source.citationUrl || source.url;
     const sourceUrl = new URL(linkUrl);
     const title = source.titleProvided ? source.title : source.citationLabel || (sourceUrl.pathname === '/' ? sourceUrl.hostname : sourceUrl.pathname.split('/').filter(Boolean).slice(-2).join('/'));
     const reading = sourceReadingLabel(source), citation = source.cited ? t('已被最终引用') : t('未被最终引用');
     return ui`<a class="execution-label execution-source" data-node-id="${escapeHtml(source.id)}" data-priority="${index < 5 ? 'primary' : 'secondary'}" data-cited="${source.cited}" href="${escapeHtml(linkUrl)}" data-external-url="${escapeHtml(linkUrl)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(`${source.titleProvided ? source.title : '页面标题未提供'}\n${linkUrl}\n${reading}\n${citation}\n服务：${source.providers.join('、') || '未报告'}${source.recovered ? '\n从截断记录与最终引用恢复；正文范围未知' : ''}`)}"><span class="execution-source-rank">${String(index + 1).padStart(2, '0')} · ${source.cited ? '回答引用' : index < 5 ? '相关来源' : '更多候选'}</span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(new URL(source.url).hostname)}</small><small>${escapeHtml(reading)}</small><small>${source.cited ? '✦ 已引用' : '未引用 · 点击检查'}</small></a>`;
   }).join('');
-  return items.map(op => ui`<button class="execution-label execution-source execution-operation" data-node-id="${escapeHtml(op.id)}" data-execution-action="inspect" data-operation="${escapeHtml(op.id)}" title="${escapeHtml(`${op.input || ''}\n${runtimeStageOutput(op) || ''}`)}"><strong>${escapeHtml(op.result ?? op.expression ?? runtimeStageName(op))}</strong><small>${escapeHtml(op.channel === 'reasoning-summary' ? (runtimeStageOutput(op) || '').slice(-100) : focus === 'tools' ? `${t('归属：{module}', { module: t(EXECUTION_MODULES.find(m => m.id === op.module)?.name || '工具调用') })} · ${op.provider || runtimeStageName(op)}` : op.expression || op.input || runtimeStageName(op))}</small><small>${escapeHtml(callStatus(op, statusNames[op.status]))}</small></button>`).join('');
 }
 function renderSearchTrail(scene) {
-  if (focus !== 'search') return '';
   const ops = (scene?.operations || []).filter(op => op.module === 'search');
   return ui`<div class="execution-search-trail" aria-label="真实检索调用">${ops.map(op => ui`<button data-execution-action="inspect" data-operation="${escapeHtml(op.id)}" title="${escapeHtml(`${op.input || ''}\n${op.resultSummary || op.status}`)}"><b>${escapeHtml(op.provider === 'iPhone' ? runtimeStageName(op) : op.provider || op.name)}</b> · ${escapeHtml((op.provider === 'iPhone' ? runtimeStageOutput(op) : op.resultSummary) || statusNames[op.status])}</button>`).join('')}</div>`;
 }
 function renderCandidates(scene) {
-  if (focus !== 'create') return '';
   const artifacts = scene?.artifacts || [];
   const stages = moduleActivity(scene, 'create').operations;
   const delivery = ui`<div class="execution-pipeline" aria-label="模型与交付记录">${stages.map(stage => ui`<button data-execution-action="inspect" data-operation="${escapeHtml(stage.id)}" data-stage-status="${escapeHtml(stage.status)}"><strong>${escapeHtml(runtimeStageName(stage, currentLanguage()))}</strong><span>${escapeHtml(statusNames[stage.status] || stage.status)}</span><small>${escapeHtml(runtimeStageOutput(stage) || stage.input || t("等待返回"))}</small>${stage.api ? ui`<small class="execution-api-line">${escapeHtml(executionApiLine(stage))}</small>` : ''}</button>`).join('')}</div>`;
@@ -369,7 +363,6 @@ document.addEventListener('click', async event => {
   // A prompt waiting for the user's answer comes first: the button takes them to it.
   if (action === 'toggle' && !opened && promptShowing()) { [...document.querySelectorAll('[data-request-id]')].find(el => !el.closest('#execution-war-room'))?.focus(); return; }
   if (action === 'toggle') { cancelCollapse(); setOpen(!opened, { focus: true }); }
-  else if (action === 'focus') { if (!opened) setOpen(true, { focus: true }); warRoom?.showRegion(trigger.dataset.module); }
   else if (action === 'more') { more = !more; rememberView(); paint(); }
   else if (action === 'older-scenes') { await loadScenes(currentChat, { before: historyCursors.get(currentChat) }); }
   else if (action === 'replay') {

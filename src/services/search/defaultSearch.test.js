@@ -2,7 +2,7 @@
 // who never saved search settings (default backend "none" since 10-18).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequestContext } from '../../runtime/requestContext.js';

@@ -13,7 +13,6 @@ import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import okhttp3.Dns
 import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
 /** HTTP / TLS / credentials only. Schema, defaults and receipts come from Core. */
 class SharedSearchAdapter(private val debug: Boolean, http: OkHttpClient) {
@@ -144,7 +143,7 @@ class SharedSearchAdapter(private val debug: Boolean, http: OkHttpClient) {
                         if (publicPage && it.isRedirect && location.isNotBlank()) DeviceToolResult(JsonObject(failed.data + ("location" to JsonPrimitive(location.take(4000))))) else failed
                     }
                     else {
-                        val body = it.body ?: error("Empty response")
+                        val body = it.body
                         val bytes = ModelClient.readBounded(body, limit)
                         DeviceToolResult(buildJsonObject { put("ok", true); put("body", bytes.toString(Charsets.UTF_8)); put("contentType", it.header("Content-Type").orEmpty()) })
                     }

@@ -21,11 +21,11 @@ struct TeamReply: Sendable {
 }
 
 struct TeamCall {
-    enum Kind { case member, summary }
+    enum Kind { case member }
     let kind: Kind
     let memberID: String
     let round: Int
-    /// Prior handoffs for a member, or every member's handoff for the summary.
+    /// Prior handoffs for a member.
     let prior: [TeamHandoff]
     /// Text handed to the member after its task, exactly as the desktop does.
     var hints: String {

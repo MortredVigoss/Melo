@@ -4,8 +4,6 @@
 import { ui, t } from './i18n.js';
 import { isUserFacingAgent } from '../src/shared/userAgents.js';
 
-export const TEAM_TEMPLATE_IDS = Object.freeze(['research-build-review', 'parallel-research', 'review-loop']);
-
 export function teamLeadState(lead, agents = []) {
   if (!lead) return { ready: false, reason: 'no-agent' };
   if (lead.capabilities?.delegate !== true || lead.collaboration?.canDelegate !== true) return { ready: false, reason: 'delegate-off' };
@@ -24,7 +22,7 @@ function templateOptions(selected) {
 }
 
 // scope: 'chat' | 'task' | 'project'; target: task or project id when relevant.
-export function renderTeamPanel({ scope, target = '', lead, agents, plan = null, disabled = false, escapeHtml, open = false }) {
+export function renderTeamPanel({ scope, target = '', lead, agents, plan = null, disabled = false, escapeHtml }) {
   const state = teamLeadState(lead, agents);
   const leadName = escapeHtml(lead?.name || lead?.id || '');
   const attrs = `data-team-scope="${scope}" data-team-target="${escapeHtml(target)}"`;
@@ -55,12 +53,12 @@ export function renderTeamPanel({ scope, target = '', lead, agents, plan = null,
   // Same shapes as the neighbouring controls: a floating menu in the composer,
   // an inline section on task cards, and a plain block on the project page.
   if (scope === 'project') return `<div class="team-panel" ${attrs}>${body}</div>`;
-  if (scope === 'task') return ui`<details class="quality-details team-panel" ${attrs} ${open ? 'open' : ''}><summary>多 Agent 协作</summary>${body}</details>`;
-  return ui`<details class="conversation-context team-panel" ${attrs} ${open ? 'open' : ''}><summary>多 Agent 协作</summary><div class="conversation-context-menu">${body}</div></details>`;
+  if (scope === 'task') return ui`<details class="quality-details team-panel" ${attrs}><summary>多 Agent 协作</summary>${body}</details>`;
+  return ui`<details class="conversation-context team-panel" ${attrs}><summary>多 Agent 协作</summary><div class="conversation-context-menu">${body}</div></details>`;
 }
 
 // Reads the panel the user acted in, in tick order.
-export const teamOrderText = names => names.length ? t('执行顺序：{0}', { 0: names.join(' → ') }) : '';
+const teamOrderText = names => names.length ? t('执行顺序：{0}', { 0: names.join(' → ') }) : '';
 
 function checkedInOrder(panel) {
   return [...panel.querySelectorAll('input[name="team-member"]')].filter(input => input.checked)

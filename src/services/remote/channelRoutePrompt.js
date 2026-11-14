@@ -8,7 +8,7 @@
 //
 // All five upstream deps the original definition referenced were already
 // in dedicated leaf modules:
-//   • normalizeAgentChannels  ← services/agent/agentChannels.js
+//   • normalizeAgentChannels  ← domain/agent/agentChannels.js
 //   • collectKnownTelegramParticipants
 //   • buildGroupRelationshipSummary
 //   • collectBystanderContext  ← services/remote/groupRelationship.js

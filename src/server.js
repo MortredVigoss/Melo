@@ -46,7 +46,6 @@ import { cleanupStalePlaywrightDaemons } from './web/playwrightFetcher.js';
 // cleanupStalePlaywrightDaemons without risking the rest of the shutdown
 // sequence.
 import { closeAllPages } from './services/browser/pageRegistry.js';
-import './services/tts/edgeTts.js'; // Preserve module initialization.
 import { stageChatDeletion, finishChatDeletions } from './services/chat/chatDeletion.js';
 import { purgeStaleSoftDeletes, createChat, deleteChat, getDesktopBootstrap, prepareDesktopLaunchState, processTelegramPollingCycle, processDiscordPollingCycle, streamSearchFileGroups, updateChat, initMcpServers } from './desktopStore.js';
 import { resolvePermission, getPendingPermissions, getSessionPermissions, clearSessionPermissions } from './tools/permissions.js';
@@ -200,15 +199,10 @@ async function _releaseServerLock() {
 {
   const lockResult = await _acquireServerLock();
   if (!lockResult.acquired) {
-    const detail = Array.isArray(lockResult.otherInstances) && lockResult.otherInstances.length
-      ? ` — detected stray node server(s): ${lockResult.otherInstances
-          .map(x => `pid ${x.pid}`)
-          .join(', ')}. Kill them (\`kill <pid>\`) before relaunching Melo.`
-      : '';
     process.stderr.write(
       `[melo-desktop] Another Melo server instance is already running` +
         (lockResult.holderPid ? ` (pid ${lockResult.holderPid})` : '') +
-        `.${detail} Exiting to avoid corrupting shared state at ${_LOCK_DIR}.\n`,
+        `. Exiting to avoid corrupting shared state at ${_LOCK_DIR}.\n`,
     );
     process.exit(0);
   }
@@ -309,17 +303,6 @@ function getStaticPath(urlPath) {
 
   return join(uiDir, urlPath.replace(/^\/+/, ''));
 }
-
-// ── Native say streaming queue (Bug 1 fix 2026-05-12) ─────────────────────────
-//
-// Sequential queue for /usr/bin/say invocations.  The streaming TTS UI used
-// to POST one /api/tts/native per detected sentence break; the old endpoint
-// kill+replaced the previous `say` process on every call, so multi-sentence
-// streams played only the last sentence.  This queue lets sentences chain
-// (next starts on previous exit), with `clear()` available for preemption
-// (Stop button / new chat send).  Spawn is injected lazily so the import
-// pulls only the pure state machine — no node:child_process needed for tests.
-
 
 const ttsRoutes = createTtsRoutes({ startVoicePackServers });
 const mediaRoutes = createMediaRoutes({ home: runtimePaths.home });
@@ -992,40 +975,6 @@ const server = createServer((request, response) => runWithRequestContext(createR
     sendJson(response, statusCode, errorPayload(error, currentRequestContext()));
   }
 }));
-
-// ── WAV buffer concatenation ──────────────────────────────────────────────────
-// Merges an array of PCM WAV buffers into a single WAV buffer.
-// All inputs must have the same sample rate / channels / bit-depth (guaranteed
-// when they all come from the same F5-TTS model).
-
-
-// ── Sentence splitter for speak-text endpoint ────────────────────────────────
-
-
-// ── Edge TTS — implementation in src/services/tts/edgeTts.js (shared with
-// src/tts.js so the inline-fallback path and the explicit speak-text path
-// can never drift). See top-of-file import for _synthesizeWithEdgeTts.
-
-// ── TTS abort registry — every in-flight synthesis fetch (MiniMax / Edge /
-// OpenAI / Fish-Speech) registers an AbortController so /api/tts/queue-clear
-// and /api/tts/speak-stop can actually halt the network call instead of
-// only invalidating the session counter. Without this, the synthesis ran
-// to its full TTS_TIMEOUT_MS=180s ignoring the user's stop click.
-
-
-
-
-// ── TTS synthesis with F5-TTS auto-recovery ───────────────────────────────────
-// Wraps synthesizeSpeech: if synthesis returns null (e.g. F5-TTS in broken state),
-// restarts the voice-pack server and retries once.
-
-
-
-
-// ── TTS helpers ───────────────────────────────────────────────────────────────
-
-
-
 
 server.listen(port, host, () => {
   runtimeIdentity.port = server.address().port;

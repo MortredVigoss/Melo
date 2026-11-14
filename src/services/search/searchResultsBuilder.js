@@ -24,7 +24,6 @@
 // search scoring, message blocks/search, conversation pruning/sort,
 // activity log, artifact / project services, shared helpers).
 
-import 'node:path'; // Preserve module initialization.
 import { searchMemories } from '../../memory/store.js';
 import {
   buildSearchSnippet,

@@ -6,7 +6,7 @@
 import { checkFeatureContext } from '../featureContext.js';
 import { createMemoryApi } from './api.js';
 
-export const MEMORY_CONTEXT = Object.freeze(['api', 'render', 'bgRender', 'notify', 'activeProject', 'escapeHtml']);
+const MEMORY_CONTEXT = Object.freeze(['api', 'render', 'bgRender', 'notify', 'activeProject', 'escapeHtml']);
 
 export let render, bgRender, notify, activeProject, escapeHtml, memoryApi;
 

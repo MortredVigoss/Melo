@@ -287,22 +287,6 @@ export async function getCodexAuthState() {
   };
 }
 
-export async function getCodexAccessToken() {
-  const credential = await getCodexCredential();
-  if (!credential.loggedIn) {
-    if (credential.expired) {
-      throw new Error(
-        'Codex login has expired. Reconnect Codex OAuth inside Melo and then retry.',
-      );
-    }
-    throw new Error(
-      'Codex login is not available. Connect Codex OAuth inside Melo and then retry.',
-    );
-  }
-
-  return credential.accessToken;
-}
-
 async function codexStarts(executable, run = execFile) {
   try {
     await run(executable, ['--version'], { timeout: 10_000 });

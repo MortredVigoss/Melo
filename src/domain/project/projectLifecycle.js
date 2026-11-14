@@ -8,7 +8,7 @@ export function moveChatProject(state, chat, projectId, timestamp) {
   invalidateProjectApprovals(state, chat.id, timestamp);
   chat.projectId = projectId || null;
 }
-export function invalidateProjectApprovals(state, chatId, timestamp) {
+function invalidateProjectApprovals(state, chatId, timestamp) {
   for (const approval of state.approvals || []) if (approval.chatId === chatId && approval.status === 'pending') {
     approval.status = 'rejected'; approval.updatedAt = timestamp;
     approval.resultSummary = '项目归属已变化，此审批失效；请按新的工作目录重新请求。';

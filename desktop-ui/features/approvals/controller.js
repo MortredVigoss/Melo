@@ -5,14 +5,14 @@ import { t } from '../../i18n.js';
 import { approvalsState, resetApprovalsState } from './state.js';
 import { bindApprovalsContext, approvalsApi, app, render, bgRender, notify, refreshBootstrap, toolPermissions, setToolPermissions } from './context.js';
 
-export const GRANTS_TTL_MS = 5000;
+const GRANTS_TTL_MS = 5000;
 
 export function installApprovalsController(context) {
   bindApprovalsContext(context);
   resetApprovalsState();
 }
 
-export async function loadGrants({ force = false } = {}) {
+async function loadGrants({ force = false } = {}) {
   if (approvalsState.grantsLoading && !force) return;
   approvalsState.grantsLoading = true;
   try {
@@ -45,7 +45,7 @@ const ERROR_TEXT = {
   CAPABILITY_DECISION_IN_PROGRESS: () => t('正在保存上一次选择，请稍候。'),
 };
 
-export async function respondCapabilityRequest(requestId, decision) {
+async function respondCapabilityRequest(requestId, decision) {
   const entry = capabilityEntry(requestId);
   if (!entry || entry.submitting) return;
   entry.submitting = true;
@@ -70,7 +70,7 @@ export async function respondCapabilityRequest(requestId, decision) {
   }
 }
 
-export async function revokeGrant(id) {
+async function revokeGrant(id) {
   if (!id || approvalsState.revoking[id]) return;
   approvalsState.revoking[id] = true;
   render();
@@ -102,7 +102,7 @@ export function focusPromptAfterRender() {
 // A member's task-scope card (A4-1, 2026-11-04): allow its gated tools for this
 // turn or this chat. Deny reuses app.js's tool-permission-deny, which the
 // server maps to the task scope for this kind of request.
-export async function respondTaskScope(requestId, granted, scope) {
+async function respondTaskScope(requestId, granted, scope) {
   const entry = toolPermissions().find(p => p.requestId === requestId && p.kind === 'task_scope');
   if (!entry || entry.submitting) return;
   entry.submitting = true;

@@ -9,9 +9,9 @@
 // Requirements and evidence ids keep the checker's own bounds (goal.js GOAL_LIMITS.requirements
 // and ids(): 16 ids of up to 256 characters), so a cited id always still matches its call.
 export const GOAL_REVIEW_LIMITS = Object.freeze({ requirements: 12, text: 160, evidence: 16, id: 256, explanation: 240 });
-export const GOAL_REVIEW_DECISIONS = Object.freeze(['complete', 'deliver', 'continue', 'needs_user', 'partial']);
-export const GOAL_REQUIREMENT_KINDS = Object.freeze(['response', 'context', 'constraint', 'external_fact', 'external_effect']);
-export const GOAL_REQUIREMENT_STATES = Object.freeze(['met', 'missing', 'unavailable']);
+const GOAL_REVIEW_DECISIONS = Object.freeze(['complete', 'deliver', 'continue', 'needs_user', 'partial']);
+const GOAL_REQUIREMENT_KINDS = Object.freeze(['response', 'context', 'constraint', 'external_fact', 'external_effect']);
+const GOAL_REQUIREMENT_STATES = Object.freeze(['met', 'missing', 'unavailable']);
 
 const object = value => value && typeof value === 'object' && !Array.isArray(value) ? value : null;
 const clip = (value, max) => typeof value === 'string' ? value.trim().slice(0, max) : '';

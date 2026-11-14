@@ -1,5 +1,3 @@
-import Foundation
-
 /// Shared with the desktop's edit/save contract: the draft is never the stored value.
 struct EditDraft<Value: Equatable>: Equatable {
     private(set) var original: Value

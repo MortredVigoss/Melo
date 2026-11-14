@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
-import { mkdtemp, rm, readdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';

@@ -7,7 +7,6 @@ import { escapeHtml } from '../../i18n.js';
 // place they noticed it. Pure renderer; actions are handled in ./controller.js.
 import { t, ui } from '../../i18n.js';
 
-
 export function renderMessageMemoryRefs(message, { feedback = null, busy = false, open = false } = {}) {
   if (message?.role !== 'assistant') return '';
   const usage = Array.isArray(message?.metadata?.memoryUsage) ? message.metadata.memoryUsage.filter(row => row && row.id) : [];

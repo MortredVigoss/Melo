@@ -17,14 +17,14 @@ import { persistCompactSnapshot, persistCompactFailure } from './derivedState.js
 import { resolveContextBudget } from './contextBudget.js';
 import { appendCompactCard } from '../../memory/compactLedger.js';
 
-export const PRECOMPACT_SHARE = 0.7;
+const PRECOMPACT_SHARE = 0.7;
 // A summarising request that never answers must not pin the chat's
 // `inFlight` slot forever (audit L15).
-export const PRECOMPACT_TIMEOUT_MS = 120_000;
+const PRECOMPACT_TIMEOUT_MS = 120_000;
 
 const inFlight = new Set(); // chatId
 
-export function hasModelForCompaction(config = {}) {
+function hasModelForCompaction(config = {}) {
   return Boolean(config.authMode === 'codex' || config.apiKey || (config.authMode === 'local' && config.baseUrl));
 }
 

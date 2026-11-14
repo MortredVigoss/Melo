@@ -14,11 +14,10 @@ const tasks = {
   daily: [':app:testDebugUnitTest', ':app:lintDebug', ':app:assembleDebug'],
   check: [':app:testDebugUnitTest', ':app:lintDebug', ':app:assembleDebug', ':app:assembleRelease'],
   connected: [':app:connectedDebugAndroidTest'],
-  release: [':app:assembleRelease'],
 };
 const selected = tasks[process.argv[2]];
 if (!selected || process.argv.length !== 3) {
-  console.error('Usage: node scripts/android.mjs build|test|daily|check|connected|release');
+  console.error('Usage: node scripts/android.mjs build|test|daily|check|connected');
   process.exit(2);
 }
 const env = { ...process.env };

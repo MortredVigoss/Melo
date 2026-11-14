@@ -16,7 +16,7 @@ import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { mkdtemp, realpath, rm, writeFile, mkdir, symlink } from 'node:fs/promises';
+import { mkdtemp, realpath, rm, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 
 let fixtureRoot;

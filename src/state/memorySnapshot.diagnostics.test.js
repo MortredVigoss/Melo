@@ -44,7 +44,7 @@ function captureConsoleLog(fn) {
 test('MELO_DEBUG_MEMORY unset → no log lines emitted', async () => {
   await withTempEnv(async () => {
     delete process.env.MELO_DEBUG_MEMORY;
-    const { syncMemoryStoreSnapshot } = await import(`./memorySnapshot.js?cb=${Date.now()}-a`);
+    const { syncMemoryStoreSnapshot } = await import('../memory/snapshotBuilder.js');
     const lines = captureConsoleLog(() => {
       syncMemoryStoreSnapshot({ chats: [] });
     });
@@ -59,7 +59,7 @@ test('MELO_DEBUG_MEMORY unset → no log lines emitted', async () => {
 test('MELO_DEBUG_MEMORY=1 + empty chats → log shows chats=0 entries>=0', async () => {
   await withTempEnv(async () => {
     process.env.MELO_DEBUG_MEMORY = '1';
-    const { syncMemoryStoreSnapshot } = await import(`./memorySnapshot.js?cb=${Date.now()}-b`);
+    const { syncMemoryStoreSnapshot } = await import('../memory/snapshotBuilder.js');
     const lines = captureConsoleLog(() => {
       syncMemoryStoreSnapshot({ chats: [] });
     });
@@ -74,7 +74,7 @@ test('MELO_DEBUG_MEMORY=1 + empty chats → log shows chats=0 entries>=0', async
 test('MELO_DEBUG_MEMORY=1 + chat with ≥3 messages → log shows frame/scene counted', async () => {
   await withTempEnv(async () => {
     process.env.MELO_DEBUG_MEMORY = '1';
-    const { syncMemoryStoreSnapshot } = await import(`./memorySnapshot.js?cb=${Date.now()}-c`);
+    const { syncMemoryStoreSnapshot } = await import('../memory/snapshotBuilder.js');
     const lines = captureConsoleLog(() => {
       // Messages MUST have createdAt — frame.startAt is built from it,
       // and groupIntoScenes filters out frames lacking startAt. Without
@@ -114,7 +114,7 @@ test('MELO_DEBUG_MEMORY=1 + no ctx.storePath → diagnostic prints resolved path
   // placeholder lights up red.
   await withTempEnv(async (dir) => {
     process.env.MELO_DEBUG_MEMORY = '1';
-    const { syncMemoryStoreSnapshot } = await import(`./memorySnapshot.js?cb=${Date.now()}-h1`);
+    const { syncMemoryStoreSnapshot } = await import('../memory/snapshotBuilder.js');
     const lines = captureConsoleLog(() => {
       syncMemoryStoreSnapshot({ chats: [] });
     });
@@ -133,7 +133,7 @@ test('MELO_DEBUG_MEMORY=1 + no ctx.storePath → diagnostic prints resolved path
 test('MELO_DEBUG_MEMORY=1 + ctx.storePath provided → diagnostic prints (ctx) tag', async () => {
   await withTempEnv(async (dir) => {
     process.env.MELO_DEBUG_MEMORY = '1';
-    const { syncMemoryStoreSnapshot } = await import(`./memorySnapshot.js?cb=${Date.now()}-h2`);
+    const { syncMemoryStoreSnapshot } = await import('../memory/snapshotBuilder.js');
     const explicit = `${dir}/some/other/store.sqlite`;
     const lines = captureConsoleLog(() => {
       syncMemoryStoreSnapshot({ chats: [] }, { ctx: { storePath: explicit } });
@@ -148,7 +148,7 @@ test('MELO_DEBUG_MEMORY=1 + ctx.storePath provided → diagnostic prints (ctx) t
 test('MELO_DEBUG_MEMORY=1 + chat with <3 messages → eligibleChats=0 and no frame/scene', async () => {
   await withTempEnv(async () => {
     process.env.MELO_DEBUG_MEMORY = '1';
-    const { syncMemoryStoreSnapshot } = await import(`./memorySnapshot.js?cb=${Date.now()}-d`);
+    const { syncMemoryStoreSnapshot } = await import('../memory/snapshotBuilder.js');
     const lines = captureConsoleLog(() => {
       syncMemoryStoreSnapshot({
         chats: [
@@ -167,7 +167,7 @@ test('MELO_DEBUG_MEMORY=1 + chat with <3 messages → eligibleChats=0 and no fra
 });
 
 test('buildMemoryStoreEntries does not index assistant diagnostics as prompt memory', async () => {
-  const { buildMemoryStoreEntries } = await import(`./memorySnapshot.js?cb=${Date.now()}-filter`);
+  const { buildMemoryStoreEntries } = await import('../memory/snapshotBuilder.js');
   const entries = buildMemoryStoreEntries({
     settings: { promptHistory: [] },
     chats: [
@@ -211,7 +211,7 @@ test('buildMemoryStoreEntries preserves normal assistant cookie explanations', a
   // Negative case: technical answers about cookies (the web concept) must
   // still be indexed into long-term memory; the filter is for social-link
   // extractor diagnostics only.
-  const { buildMemoryStoreEntries } = await import(`./memorySnapshot.js?cb=${Date.now()}-filter-neg`);
+  const { buildMemoryStoreEntries } = await import('../memory/snapshotBuilder.js');
   const entries = buildMemoryStoreEntries({
     settings: { promptHistory: [] },
     chats: [
@@ -252,7 +252,7 @@ test('buildMemoryStoreEntries preserves normal assistant cookie explanations', a
 });
 
 test('buildMemoryStoreEntries applies lifecycle continuity before writing store rows', async () => {
-  const { buildMemoryStoreEntries } = await import(`./memorySnapshot.js?cb=${Date.now()}-lifecycle`);
+  const { buildMemoryStoreEntries } = await import('../memory/snapshotBuilder.js');
   const entries = buildMemoryStoreEntries({
     settings: { promptHistory: [] },
     chats: [

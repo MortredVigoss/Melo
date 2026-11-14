@@ -4,7 +4,6 @@ import android.app.NotificationManager
 import android.content.*
 import androidx.core.content.ContextCompat
 import com.melo.android.MeloApplication
-import com.melo.android.data.*
 import kotlinx.coroutines.*
 import kotlinx.serialization.json.*
 

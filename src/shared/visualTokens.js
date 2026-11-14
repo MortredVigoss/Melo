@@ -16,17 +16,7 @@ const defaults = Object.freeze({
   "execution-tools": "#b69bcb",
   "execution-create": "#e88c62",
   "scene-060a10": "#060a10",
-  "scene-74849d": "#74849d",
-  "scene-ffce97": "#ffce97",
-  "scene-75bfd4": "#75bfd4",
-  "scene-ffbb78": "#ffbb78",
-  "scene-86cddd": "#86cddd",
-  "scene-b29d80": "#b29d80",
-  "scene-ab8955": "#ab8955",
-  "scene-dabc84": "#dabc84",
-  "scene-ffe4a3": "#ffe4a3",
-  "scene-91b4c7": "#91b4c7",
-  "scene-a88b63": "#a88b63"
+  "scene-ffe4a3": "#ffe4a3"
 });
 export function visualColor(name) {
   const authored = typeof document !== 'undefined' && typeof getComputedStyle === 'function' ? getComputedStyle(document.documentElement).getPropertyValue('--visual-'+name).trim() : '';
@@ -48,9 +38,6 @@ const sceneDefaults = Object.freeze({
   "neural-light": "#edc786",
   "neural-silver": "#91a0b3",
   "neural-shadow": "#080b13",
-  "synapse-thread": "#76419d",
-  "synapse-branch": "#9a65d3",
-  "synapse-tint": "#a66ad7",
   "atom-h": "#f0f0f0",
   "atom-c": "#c4c4c4",
   "atom-n": "#6bb0ff",

@@ -97,13 +97,9 @@ export default function mountFlowchart(host, spec) {
     });
     rowW -= 12;
     maxW = Math.max(maxW, rowW);
-    let x = PADDING_X + (maxW - rowW) / 2; // center relative to widest row so far
     row.forEach(node => {
-      node.x = x;
       node.y = y;
-      node.cx = x + node.width / 2;
       node.cy = y + NODE_H / 2;
-      x += node.width + 12;
     });
     y += NODE_H + ROW_GAP;
   });

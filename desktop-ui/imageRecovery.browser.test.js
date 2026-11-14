@@ -41,7 +41,7 @@ for (const projected of [false, true]) test(`historical ${projected ? 'scene-pro
     if (['/shared/agent/runtimeMessages.js','/shared/agent/locale.js'].includes(new URL(req.url,'http://fixture').pathname)) {
       res.writeHead(200, {'content-type':'text/javascript'}); res.end(await readFile(resolve('.' + new URL(req.url,'http://fixture').pathname))); return;
     }
-    if (['/html.js', '/interfaceLanguages.js', '/tokens.css', '/imagePreview.js', '/imageResource.js', '/imageZoom.js', '/i18n.js', '/translations.js', '/styles.css'].includes(url.pathname)) {
+    if (['/interfaceLanguages.js', '/tokens.css', '/imagePreview.js', '/imageResource.js', '/imageZoom.js', '/i18n.js', '/translations.js', '/styles.css'].includes(url.pathname)) {
       res.writeHead(200, { 'content-type': url.pathname.endsWith('.js') ? 'text/javascript' : 'text/css' });
       res.end(await readFile(resolve('desktop-ui' + url.pathname))); return;
     }

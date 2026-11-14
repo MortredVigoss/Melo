@@ -35,7 +35,6 @@ async function handleMemoryRepairAction(action) {
   const m = memoryState.memoryStatus;
   if (action === 'memory-pause') { m.pauseRepair = true; return; }
   if (m.repairBusy) return;
-  const connection = action === 'memory-connect' ? { baseUrl: document.getElementById('memory-embed-url')?.value, model: document.getElementById('memory-embed-model')?.value } : null;
   m.repairBusy = true; m.pauseRepair = false; bgRender();
   try {
     if (action === 'memory-repair') {
@@ -48,7 +47,7 @@ async function handleMemoryRepairAction(action) {
       await refreshMemoryStatus();
       m.diagnosis = null;
     } else {
-      m.diagnosis = await (connection ? memoryApi.connect(connection) : memoryApi.diagnose());
+      m.diagnosis = await memoryApi.diagnose();
     }
   } catch (error) { notify({level:'error',text:error.message}); }
   finally { m.repairBusy = false; bgRender(); }
@@ -189,7 +188,6 @@ async function refreshMemoryStatus() {
     const [response, facts] = await Promise.all([memoryApi.status(), memoryApi.facts(memoryState.memoryFactQuery, memoryState.memoryFactOffset)]);
     memoryState.memoryFacts = facts;
     memoryState.memoryStatus.snapshot = response;
-    if (!memoryState.memoryConnection && response.connection) memoryState.memoryConnection = response.connection;
     memoryState.memoryStatus.loaded = true;
   } catch (err) {
     memoryState.memoryStatus.error = err?.message || 'Failed to load memory status';
@@ -250,7 +248,6 @@ export const memoryActions = {
   'project-book-restore': projectBookCase,
   'memory-pause': memoryRepairCase,
   'memory-diagnose': memoryRepairCase,
-  'memory-connect': memoryRepairCase,
   'memory-repair': memoryRepairCase,
   'refresh-memory-status': async () => {
     // Reset cache so re-opening the panel forces a fresh collect.
@@ -287,7 +284,6 @@ export function handleMemoryFactFieldInput(target) {
 
 // 'input' listener branches that ran right after the typing-guard stamp.
 export function handleMemoryInput(target) {
-  if (target.dataset.memoryConnection) { memoryState.memoryConnection ||= {}; memoryState.memoryConnection[target.dataset.memoryConnection] = target.value; return true; }
   // Bug audit U7: capture the memory-book draft on every keystroke, not only on blur.
   if (target.form?.id === 'project-book-create' && target.name === 'text') { noteProjectBookDraft(target.form, { text: target.value }); return true; }
   return false;
@@ -306,4 +302,4 @@ export function handleMemoryChange(target) {
   return false;
 }
 
-export { handleMemoryRepairAction, handleMemoryFactAction, projectBookData, loadProjectBook, syncProjectDetailView, refreshProjectBook, noteProjectBookDraft, handleProjectBookAction, handleMemoryRefAction, refreshMemoryStatus, doWipeEmbeddings };
+export { projectBookData, syncProjectDetailView, refreshMemoryStatus };

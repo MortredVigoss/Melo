@@ -9,6 +9,6 @@
 .local-name{display:grid;gap:10px;max-width:380px}.local-import-preview{padding:16px;background:var(--palette-d2ae613fe0);border-radius:12px}.local-settings .local-error{color:var(--palette-84039d4339)}.local-settings .local-notice{color:var(--state-ok,var(--palette-d3e1c91e92))}.local-about{text-align:center;padding:20px}.local-about .neural-brand-mark{font-size:var(--font-size-40px)}
 .neural-nav-footer .local-profile-trigger{display:flex;gap:8px;align-items:center;min-height:38px;max-width:100%;text-align:left}.local-profile-trigger img{border-radius:10px;object-fit:cover}.local-profile-trigger span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 html[data-melo-text-size=small]{--melo-chat-size:13px}html[data-melo-text-size=standard]{--melo-chat-size:14px}html[data-melo-text-size=large]{--melo-chat-size:18px}html[data-melo-text-size=larger]{--melo-chat-size:20px}
-html .message-bubble,html .message-content,html .reply-document,html .message-body{font-size:var(--melo-chat-size,14px)}
+html .message-bubble{font-size:var(--melo-chat-size,14px)}
 html[data-melo-reduced=true] *,html[data-melo-reduced=true] *::before,html[data-melo-reduced=true] *::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}
 @media(max-width:1050px){.local-settings{padding:18px 14px}.local-settings-card{padding:18px}.local-setting-row{gap:10px;font-size:var(--font-size-13px)}.local-profile-edit{gap:12px}.local-settings-tabs{gap:5px}}

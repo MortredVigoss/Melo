@@ -49,8 +49,7 @@ export async function runLimitDelivery({ task, observations, reason, fallback, c
     const parsed = parser.parse(raw);
     if (!parsed.text.trim() || parsed.toolCalls.length) return stopped();
     candidate = parsed.text;
-  } catch (error) {
-    if (signal?.aborted) return stopped();
+  } catch {
     return stopped();
   }
   checkedTask = deliveryCandidate(task, candidate, observations, reason);

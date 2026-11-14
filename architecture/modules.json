@@ -24,8 +24,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 690,
-      "edges": 2284,
+      "modules": 675,
+      "edges": 2250,
       "roots": [
         "src",
         "desktop-ui",
@@ -60,7 +60,7 @@
       ],
       "modules": {
         "desktop-ui": 7,
-        "src": 17
+        "src": 16
       },
       "entryModules": [
         {
@@ -247,7 +247,7 @@
       "implicit": [],
       "notes": [
         "修改入口：src/services/project/projectMutations.js；查询：projectService.js。P1 起项目修改返回提交回执，兼容 HTTP 适配器再组装 bootstrap。",
-        "桌面项目页（P2）：desktop-ui/features/projects/（state.js 自有状态、controller.js 动作、view.js 渲染、api.js 请求），app.js 只保留跨页导航 focus-project / select-project 与 startProjectSession。",
+        "桌面项目页（P2）：desktop-ui/features/projects/（state.js 自有状态、controller.js 动作、view.js 渲染、api.js 请求），app.js 只保留跨页导航 focus-project 与 startProjectSession。",
         "聊天工作目录生命周期在 src/services/workspace/chatWorkspaceFiles.js；手机项目页在 PersonalWorkspace.swift（ProjectsView）。"
       ]
     },
@@ -272,7 +272,7 @@
       ],
       "modules": {
         "desktop-ui": 14,
-        "src": 48
+        "src": 43
       },
       "entryModules": [
         {
@@ -368,8 +368,7 @@
           "importedBy": [
             "chat",
             "development",
-            "platform",
-            "tools"
+            "platform"
           ]
         },
         {
@@ -548,8 +547,7 @@
         {
           "module": "src/services/skill/skillPrompts.js",
           "importedBy": [
-            "chat",
-            "platform"
+            "chat"
           ]
         }
       ],
@@ -558,7 +556,7 @@
         "channels": 3,
         "chat": 35,
         "desktop-shell": 10,
-        "memory": 12,
+        "memory": 10,
         "platform": 53,
         "settings": 3,
         "tools": 21
@@ -570,11 +568,11 @@
         "desktop-shell": 12,
         "development": 4,
         "memory": 2,
-        "platform": 34,
+        "platform": 32,
         "projects": 4,
         "settings": 3,
         "sync": 6,
-        "tools": 9
+        "tools": 8
       },
       "httpRoutes": [
         "POST /api/agents/channel/test ← src/http/domainRoutes.js",
@@ -650,7 +648,6 @@
           "src/agents/collaboration.test.js",
           "src/agents/memberBackground.test.js",
           "src/agents/memberHistoryScope.test.js",
-          "src/agents/pendingSkillDrafts.test.js",
           "src/agents/repeatGuard.test.js",
           "src/agents/reviewRegressions.test.js",
           "src/agents/skillDrafting.test.js",
@@ -708,7 +705,6 @@
       "kind": "feature",
       "owns": [
         "src/services/chat/**",
-        "src/services/message/**",
         "src/domain/message/**",
         "src/domain/chat/**",
         "src/providers/**",
@@ -747,7 +743,7 @@
       "modules": {
         "desktop-ui": 27,
         "shared": 47,
-        "src": 66
+        "src": 64
       },
       "entryModules": [
         {
@@ -1123,8 +1119,7 @@
         {
           "module": "src/services/chat/sendChatMessage.js",
           "importedBy": [
-            "channels",
-            "platform"
+            "channels"
           ]
         },
         {
@@ -1167,11 +1162,11 @@
         "development": 1,
         "media": 14,
         "memory": 12,
-        "platform": 34,
+        "platform": 33,
         "projects": 1,
         "settings": 14,
         "sync": 4,
-        "tools": 30,
+        "tools": 29,
         "voice": 2
       },
       "httpRoutes": [
@@ -1567,8 +1562,7 @@
         {
           "module": "src/memory/snapshotBuilder.js",
           "importedBy": [
-            "agents",
-            "platform"
+            "agents"
           ]
         },
         {
@@ -1635,20 +1629,20 @@
         "desktop-shell": 6,
         "knowledge": 3,
         "media": 1,
-        "platform": 40,
+        "platform": 38,
         "projects": 1,
         "settings": 15,
         "sync": 2,
         "tools": 1
       },
       "usedBy": {
-        "agents": 12,
+        "agents": 10,
         "channels": 4,
         "chat": 26,
         "desktop-shell": 1,
         "knowledge": 2,
         "media": 1,
-        "platform": 21,
+        "platform": 19,
         "projects": 1,
         "sync": 5,
         "tools": 7
@@ -1905,13 +1899,12 @@
       ],
       "modules": {
         "desktop-ui": 7,
-        "src": 16
+        "src": 15
       },
       "entryModules": [
         {
           "module": "desktop-ui/credentialChip.js",
           "importedBy": [
-            "desktop-shell",
             "tools"
           ]
         },
@@ -2042,8 +2035,7 @@
           "module": "src/shared/llmProviders.js",
           "importedBy": [
             "desktop-shell",
-            "media",
-            "platform"
+            "media"
           ]
         },
         {
@@ -2063,7 +2055,7 @@
         "chat": 14,
         "desktop-shell": 9,
         "media": 1,
-        "platform": 28,
+        "platform": 26,
         "sync": 3,
         "tools": 2
       },
@@ -2072,12 +2064,12 @@
         "approvals": 8,
         "channels": 2,
         "chat": 11,
-        "desktop-shell": 14,
+        "desktop-shell": 13,
         "development": 1,
         "knowledge": 1,
         "media": 8,
         "memory": 15,
-        "platform": 17,
+        "platform": 16,
         "projects": 1,
         "sync": 1,
         "tools": 10,
@@ -2138,8 +2130,7 @@
           "ios/Melo/RuntimeDiagnosticsView.swift",
           "ios/Melo/SettingsView.swift",
           "ios/Melo/SmartRouting.swift",
-          "ios/Melo/SmartRoutingIntegration.swift",
-          "ios/Melo/SmartRoutingSettings.swift"
+          "ios/Melo/SmartRoutingIntegration.swift"
         ],
         "counterparts": [
           "ios/Melo/Localizable.xcstrings"
@@ -2376,7 +2367,7 @@
       "modules": {
         "desktop-ui": 28,
         "shared": 1,
-        "src": 99
+        "src": 98
       },
       "entryModules": [
         {
@@ -2712,15 +2703,15 @@
         }
       ],
       "dependsOn": {
-        "agents": 9,
+        "agents": 8,
         "approvals": 35,
-        "chat": 30,
+        "chat": 29,
         "desktop-shell": 15,
         "development": 1,
         "knowledge": 3,
         "media": 2,
         "memory": 7,
-        "platform": 59,
+        "platform": 58,
         "projects": 5,
         "settings": 10
       },
@@ -2857,7 +2848,6 @@
           "src/services/search/searchService.test.js",
           "src/services/search/searchSettings.test.js",
           "src/services/search/searchTask.test.js",
-          "src/services/search/sharedFetchAdapter.test.js",
           "src/services/search/sharedSearchAdapter.test.js",
           "src/services/search/socialLinkReader.evidenceTrail.test.js",
           "src/services/search/socialLinkReader.test.js",
@@ -3220,7 +3210,6 @@
         "desktop-ui/{voiceInput,ttsBridgeRouter}.js",
         "desktop-ui/streamTtsOnToolCall.test.js",
         "src/desktopStore.minimaxVoiceConfig.test.js",
-        "check-voice.{js,cjs}",
         "ios/Melo/{VoiceInput,SystemSpeechInput,SpeechText,SpeechPlaybackVerification}.swift",
         "ios/Tests/{SpeechTextTests,VoiceInputTests}.swift"
       ],
@@ -3266,12 +3255,6 @@
           ]
         },
         {
-          "module": "src/services/tts/edgeTts.js",
-          "importedBy": [
-            "platform"
-          ]
-        },
-        {
           "module": "src/shared/minimaxVoiceResolver.js",
           "importedBy": [
             "desktop-shell"
@@ -3298,7 +3281,7 @@
         "chat": 3,
         "desktop-shell": 2,
         "media": 1,
-        "platform": 2
+        "platform": 1
       },
       "httpRoutes": [
         "POST /api/audio/transcribe ← src/http/ttsRoutes.js",
@@ -3378,7 +3361,7 @@
       ],
       "modules": {
         "desktop-ui": 7,
-        "src": 31
+        "src": 30
       },
       "entryModules": [
         {
@@ -3574,7 +3557,7 @@
         "channels": 3,
         "chat": 1,
         "desktop-shell": 8,
-        "platform": 35,
+        "platform": 34,
         "projects": 3,
         "settings": 8,
         "tools": 2
@@ -3709,7 +3692,7 @@
         "assets/**"
       ],
       "modules": {
-        "desktop-ui": 36,
+        "desktop-ui": 35,
         "src": 2
       },
       "entryModules": [
@@ -3816,7 +3799,7 @@
         "memory": 1,
         "platform": 16,
         "projects": 5,
-        "settings": 14,
+        "settings": 13,
         "sync": 2,
         "tools": 13,
         "voice": 2
@@ -3883,7 +3866,6 @@
         "desktop-ui/format.js",
         "desktop-ui/galaxyBackdrop.css",
         "desktop-ui/galaxyBackdrop.js",
-        "desktop-ui/html.js",
         "desktop-ui/i18n.js",
         "desktop-ui/index.html",
         "desktop-ui/interfaceLanguages.js",
@@ -4118,7 +4100,7 @@
         "src/**"
       ],
       "modules": {
-        "src": 63
+        "src": 60
       },
       "entryModules": [
         {
@@ -4350,8 +4332,7 @@
             "agents",
             "chat",
             "desktop-shell",
-            "settings",
-            "tools"
+            "settings"
           ]
         },
         {
@@ -4434,7 +4415,6 @@
           "module": "src/state/stateSelections.js",
           "importedBy": [
             "agents",
-            "approvals",
             "channels",
             "chat",
             "desktop-shell",
@@ -4472,35 +4452,35 @@
         }
       ],
       "dependsOn": {
-        "agents": 34,
+        "agents": 32,
         "approvals": 18,
         "channels": 6,
-        "chat": 34,
+        "chat": 33,
         "desktop-shell": 2,
         "development": 2,
         "knowledge": 2,
         "media": 2,
-        "memory": 21,
+        "memory": 19,
         "projects": 6,
-        "settings": 17,
+        "settings": 16,
         "sync": 2,
         "tools": 20,
-        "voice": 2
+        "voice": 1
       },
       "usedBy": {
         "agents": 53,
-        "approvals": 35,
+        "approvals": 34,
         "channels": 22,
         "chat": 67,
         "desktop-shell": 16,
         "development": 9,
         "knowledge": 2,
         "media": 13,
-        "memory": 40,
+        "memory": 38,
         "projects": 23,
-        "settings": 28,
+        "settings": 26,
         "sync": 6,
-        "tools": 59,
+        "tools": 58,
         "voice": 6
       },
       "httpRoutes": [],
@@ -4564,7 +4544,6 @@
           "src/runtime/turnEffects.test.js",
           "src/runtime/usage.test.js",
           "src/server.imports.smoke.test.js",
-          "src/serverGuard.test.js",
           "src/shared/executionBoard.test.js",
           "src/shared/localServices.test.js",
           "src/shared/runtimeBehavior.test.js",
@@ -4782,6 +4761,7 @@
           "scripts/test-discovery.test.js",
           "scripts/test-impact.test.js",
           "scripts/test-plan.test.js",
+          "scripts/test-pool.test.js",
           "scripts/test-run-guards.test.js",
           "scripts/test-stage-runner.test.js",
           "scripts/test-tap-summary.test.js",
@@ -5038,7 +5018,6 @@
       "feature": "projects",
       "desktop": [
         "src/services/project/projectMutations.js",
-        "src/services/project/projectService.js",
         "src/domain/project/projectService.js"
       ],
       "iphone": [
@@ -5233,7 +5212,7 @@
     {
       "feature": "approvals",
       "desktop": [
-        "src/services/approval/approvalService.js",
+        "src/domain/approval/approvalService.js",
         "src/tools/permissions.js"
       ],
       "iphone": [
@@ -5353,7 +5332,6 @@
         "src/retrieval/selfVerification.js",
         "src/retrieval/verificationEvidence.js",
         "src/services/chat/chatExecutionRunner.js",
-        "src/services/chat/execution/invokeModelNode.js",
         "src/services/chat/supplements.js",
         "src/services/chat/toolTraceReplay.js",
         "src/tools/builtins/readHistoryTool.js",
@@ -5529,7 +5507,6 @@
         "desktop-ui/executionText.js",
         "desktop-ui/executionTiming.js",
         "desktop-ui/format.js",
-        "desktop-ui/html.js",
         "desktop-ui/i18n.js",
         "desktop-ui/interfaceLanguages.js",
         "desktop-ui/neuralGlass.css",

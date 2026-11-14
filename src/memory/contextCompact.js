@@ -28,28 +28,13 @@ import { createOpenAICompatibleReply } from '../openai.js';
 import { compactOfflineDetailed } from './offline/compact.js';
 import { estimateMessageTokens, estimateMessagesTokens, truncateToTokens } from './tokenEstimate.js';
 import { ledgerCards, ledgerDigest } from './compactLedger.js';
-export { estimateMessageTokens, estimateMessagesTokens } from './tokenEstimate.js';
 
 // ─── Token estimation ──────────────────────────────────────────────────────────
 // Multilingual/media-aware estimates live in tokenEstimate.js and are shared
 // by the history window and the whole-request budget.
 
-import { COMPACT_TRIGGER_TOKENS, CONTEXT_WINDOW_TOKENS, COMPACT_KEEP_RECENT_MIN, MAX_COMPACT_FAILURES, buildRecentWindow } from './contextWindow.js';
-export { COMPACT_TRIGGER_TOKENS, CONTEXT_WINDOW_TOKENS, COMPACT_KEEP_RECENT_MIN, MAX_COMPACT_FAILURES, buildRecentWindow } from './contextWindow.js';
-
-// ─── Should compact? ───────────────────────────────────────────────────────────
-
-/**
- * Returns true when the full message history is large enough to warrant
- * an LLM-based compact.  Also respects the circuit-breaker failure count.
- *
- * @param {Array}  allMessages      – entire chat.messages array
- * @param {number} [compactFailures] – consecutive failures stored on chat
- */
-export function shouldCompact(allMessages = [], compactFailures = 0) {
-  if (compactFailures >= MAX_COMPACT_FAILURES) return false;
-  return estimateMessagesTokens(allMessages) >= COMPACT_TRIGGER_TOKENS;
-}
+import { COMPACT_TRIGGER_TOKENS, COMPACT_KEEP_RECENT_MIN, MAX_COMPACT_FAILURES } from './contextWindow.js';
+export { buildRecentWindow } from './contextWindow.js';
 
 /**
  * Index of the message the existing compaction ends at, or -1 when nothing

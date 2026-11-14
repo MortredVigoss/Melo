@@ -37,79 +37,6 @@ button {
   height: 100vh;
 }
 
-.sidebar {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  background: linear-gradient(180deg, var(--palette-60c07baab6), transparent 18%), var(--palette-882b466ee3);
-  border-right: 1px solid var(--border);
-  padding: calc(var(--topbar-height) + 6px) 0 14px;
-  overflow: hidden;
-}
-
-.sidebar::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-}
-
-.sidebar-nav {
-  padding: 8px 10px 0;
-  flex: 0 0 auto;
-}
-
-.sidebar-recents {
-  flex: 1 1 auto;
-  min-height: 0;
-  padding: 12px 10px 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.nav-group {
-  display: grid;
-  gap: 4px;
-  margin-bottom: 16px;
-}
-
-.nav-item,
-.recent-item {
-  width: 100%;
-  border: 0;
-  color: inherit;
-  background: transparent;
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  border-radius: 12px;
-  padding: 11px 12px;
-  text-align: left;
-  transition:
-    background 120ms ease,
-    color 120ms ease,
-    transform 120ms ease;
-}
-
-.nav-item:hover,
-.recent-item:hover {
-  background: var(--palette-9ecb532b6e);
-}
-
-.nav-item.is-active,
-.recent-item.is-active {
-  background: var(--palette-88bf600799);
-  box-shadow: inset 0 0 0 1px var(--palette-9ecb532b6e);
-}
-
-.nav-icon {
-  width: 18px;
-  height: 18px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--palette-3d604f5915);
-}
-
-.nav-icon svg,
 .toolbar-icon svg,
 .chip-icon svg {
   width: 100%;
@@ -121,243 +48,11 @@ button {
   stroke-linejoin: round;
 }
 
-.nav-copy {
-  display: grid;
-  gap: 2px;
-}
-
-.nav-title {
-  font-size: var(--font-size-14px);
-  font-weight: 500;
-}
-
-.nav-subtitle {
-  font-size: var(--font-size-12px);
-  color: var(--text-soft);
-}
-
-.recent-section-title {
-  padding: 0 12px 10px;
-  color: var(--text-soft);
-  font-size: var(--font-size-13px);
-  font-weight: 500;
-  flex: 0 0 auto;
-}
-
-.recent-list {
-  display: grid;
-  gap: 2px;
-  min-height: 0;
-  overflow-y: auto;
-  scrollbar-width: none;
-}
-
-.recent-list::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-}
-
-.recent-item {
-  display: grid;
-  gap: 4px;
-}
-
-.recent-item-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.recent-item-more {
-  width: 14px;
-  height: 14px;
-  color: var(--text-soft);
-}
-
-.recent-item-more svg {
-  width: 100%;
-  height: 100%;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.recent-item-title {
-  font-size: var(--font-size-13px);
-  color: var(--palette-14d38a2844);
-  min-width: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.recent-item-title > span:last-child {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.recent-item-meta {
-  font-size: var(--font-size-12px);
-  color: var(--text-soft);
-  line-height: 1.45;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.recent-lock-badge {
-  width: 14px;
-  height: 14px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--palette-9d76dec9ba);
-  flex: 0 0 auto;
-}
-
-.recent-lock-badge svg {
-  width: 100%;
-  height: 100%;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.profile-card {
-  margin: 14px 10px 0;
-  padding: 12px 14px;
-  border-radius: 18px;
-  background: var(--palette-14926f741f);
-  border: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.avatar {
-  width: 42px;
-  height: 42px;
-  border-radius: 999px;
-  background: linear-gradient(135deg, var(--palette-ff34edd940), var(--palette-883282064e));
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  color: var(--palette-6d4058fff9);
-}
-
-.profile-meta {
-  flex: 1;
-  min-width: 0;
-}
-
-.profile-name {
-  font-size: var(--font-size-14px);
-  font-weight: 600;
-}
-
-.profile-plan {
-  margin-top: 2px;
-  font-size: var(--font-size-12px);
-  color: var(--text-soft);
-}
-
 .workspace {
   min-width: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
-}
-
-.topbar {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center;
-  gap: 16px;
-  padding: 16px 26px 14px;
-  border-bottom: 1px solid var(--border);
-  background: var(--palette-6f7de79797);
-  backdrop-filter: blur(18px);
-}
-
-.topbar-left,
-.topbar-center,
-.topbar-right {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-}
-
-.topbar-left {
-  justify-content: flex-start;
-}
-
-.topbar-center {
-  justify-content: center;
-}
-
-.topbar-right {
-  justify-content: flex-end;
-}
-
-.topbar-right.status-group {
-  justify-content: flex-end;
-  flex-wrap: wrap;
-}
-
-.mode-switch {
-  display: inline-grid;
-  grid-auto-flow: column;
-  gap: 4px;
-  padding: 4px;
-  border-radius: 15px;
-  background: var(--palette-89a28def35);
-  border: 1px solid var(--palette-88bf600799);
-  box-shadow: inset 0 1px 0 var(--palette-3c645f796b);
-}
-
-.mode-button {
-  border: 0;
-  background: transparent;
-  color: var(--text-muted);
-  border-radius: 12px;
-  padding: 8px 16px;
-  min-width: 84px;
-  font-size: var(--font-size-14px);
-}
-
-.mode-button.is-active {
-  background: var(--palette-350ef69dbf);
-  color: var(--palette-6d4058fff9);
-}
-
-.status-pill {
-  border-radius: 999px;
-  padding: 7px 12px;
-  background: var(--palette-3c645f796b);
-  border: 1px solid var(--border);
-  font-size: var(--font-size-12px);
-  color: var(--text-muted);
-}
-
-.status-dot {
-  display: inline-block;
-  width: 9px;
-  height: 9px;
-  border-radius: 999px;
-  margin-right: 8px;
-  background: var(--teal);
-  box-shadow: 0 0 0 5px var(--palette-5bb3a997d8);
 }
 
 .content-scroll {
@@ -439,25 +134,6 @@ button {
 
 .page.page-customize {
   grid-template-rows: minmax(0, 1fr);
-}
-
-.sidebar-footer {
-  flex: 0 0 auto;
-  padding: 0 10px;
-}
-
-.profile-hint {
-  margin: 8px 10px 0;
-  padding: 0 4px;
-  color: var(--text-soft);
-  font-size: var(--font-size-12px);
-  line-height: 1.6;
-}
-
-.status-group {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
 }
 
 .palette-backdrop {
@@ -562,52 +238,6 @@ button {
   line-height: 1.6;
 }
 
-.chat-home {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-start;
-  align-items: center;
-  gap: 22px;
-  padding: clamp(42px, 8vh, 96px) 0 56px;
-  width: min(980px, 100%);
-  margin: 0 auto;
-}
-
-.greeting {
-  display: inline-flex;
-  align-items: center;
-  gap: 18px;
-  justify-content: center;
-}
-
-.chat-home .page-kicker,
-.chat-home .chip-row,
-.chat-home .composer-footer {
-  justify-content: center;
-  text-align: center;
-}
-
-.spark {
-  width: 26px;
-  height: 26px;
-  color: var(--palette-80baabb0bb);
-}
-
-.command-deck {
-  display: grid;
-  gap: 12px;
-  margin-top: 10px;
-}
-
-.command-deck.is-inline {
-  gap: 10px;
-}
-
-.command-chip-row {
-  justify-content: center;
-}
-
 .chip-button {
   cursor: pointer;
   /* Chips are pill-shaped controls for short labels; never let the label wrap
@@ -643,41 +273,6 @@ button {
   cursor: default;
 }
 
-/* Globally-disabled MCP preset chips. Visually muted but still
-   clickable so the user can revoke a stale per-agent authorisation
-   even after the global toggle goes off. The HTML `disabled`
-   attribute is intentionally NOT used — that would also block the
-   click handler. */
-.chip-button.is-disabled-preset {
-  opacity: 0.55;
-  border-style: dashed;
-}
-
-.chip-button.is-disabled-preset.is-accent {
-  /* The agent still holds an authorisation for this server. Keep
-     the accent tint so the chip looks "stale" rather than "absent". */
-  opacity: 0.7;
-}
-
-.command-suggestions {
-  display: grid;
-  gap: 8px;
-}
-
-.command-suggestion {
-  width: 100%;
-  text-align: left;
-  border-radius: 14px;
-  border: 1px solid var(--border);
-  background: var(--palette-37b0b11038);
-  color: inherit;
-  padding: 12px 14px;
-}
-
-.command-suggestion:hover {
-  background: var(--palette-9ecb532b6e);
-}
-
 .composer-textarea::placeholder,
 .search-input::placeholder,
 .input::placeholder {
@@ -698,20 +293,6 @@ button {
   justify-content: space-between;
   gap: 12px;
   padding: 0 6px;
-}
-
-.composer-model-select-wrap {
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--palette-3c645f796b);
-  min-height: 40px;
-  display: inline-flex;
-  align-items: center;
-  padding: 0 12px;
-}
-
-.composer-model-select {
-  min-width: 104px;
 }
 
 .media-caption-hint {
@@ -754,10 +335,7 @@ button {
   flex-wrap: wrap;
 }
 
-.toolbar-button,
-.ghost-button,
-.pill-button,
-.select-like {
+.ghost-button {
   border-radius: 12px;
   border: 1px solid var(--border);
   background: var(--palette-14926f741f);
@@ -769,9 +347,7 @@ button {
   min-height: 40px;
 }
 
-.toolbar-button:hover,
-.ghost-button:hover,
-.pill-button:hover {
+.ghost-button:hover {
   background: var(--palette-88bf600799);
 }
 
@@ -780,8 +356,6 @@ button {
   height: 16px;
 }
 
-.model-select,
-.sort-select,
 .config-select {
   appearance: none;
   min-width: 132px;
@@ -796,8 +370,6 @@ button {
    white system chrome when opened, clashing with the rest of the dark UI.
    Some browsers ignore these rules and fall back to system styling, which is
    harmless — this is a best-effort polish, not a load-bearing rule. */
-.model-select option,
-.sort-select option,
 .config-select option,
 select option {
   background: var(--palette-a71e9898bd);
@@ -891,35 +463,6 @@ select option {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-}
-
-.thinking-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--palette-8f9605fff7);
-}
-
-.thinking-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  background: var(--palette-1592d807af);
-  box-shadow: 0 0 0 6px var(--palette-43925f929f);
-  animation: thinkingPulse 1.2s ease-in-out infinite;
-}
-
-@keyframes thinkingPulse {
-  0%,
-  100% {
-    transform: scale(0.95);
-    opacity: 0.72;
-  }
-
-  50% {
-    transform: scale(1.08);
-    opacity: 1;
-  }
 }
 
 .message.is-highlighted .message-bubble,
@@ -1081,34 +624,6 @@ select option {
   margin-top: 2px;
 }
 
-.tts-engine-tabs {
-  display: flex;
-  gap: 4px;
-}
-
-.tts-engine-tab {
-  flex: 1;
-  padding: 6px 0;
-  border-radius: 10px;
-  border: 1px solid var(--palette-350ef69dbf);
-  background: var(--palette-14926f741f);
-  color: var(--palette-eef1b9d2d8);
-  font-size: var(--font-size-12px);
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s;
-}
-
-.tts-engine-tab.is-active {
-  background: var(--palette-cfe5a4c097);
-  border-color: var(--palette-35bcddac83);
-  color: var(--palette-711c455b3e);
-}
-
-.tts-engine-tab:hover:not(.is-active) {
-  background: var(--palette-ce7dbc6cd1);
-  color: var(--palette-36e740b5a5);
-}
-
 .tts-voice-select {
   width: 100%;
   padding: 7px 10px;
@@ -1161,39 +676,6 @@ select option {
 .tts-panel-link:focus-visible {
   color: var(--accent, var(--palette-55bb53e853));
   outline: none;
-}
-
-.tts-local-pack-btn {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  width: 100%;
-  padding: 8px 10px;
-  border-radius: 10px;
-  border: 1px solid var(--palette-883282064e);
-  background: var(--palette-b1a4dd9f1a);
-  color: var(--palette-2c5e55ac57);
-  font-size: var(--font-size-13px);
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.12s;
-}
-
-.tts-local-pack-btn.is-active {
-  background: var(--palette-de3814a129);
-  border-color: var(--palette-f89cce3868);
-  color: var(--palette-55bb53e853);
-  font-weight: 600;
-}
-
-.tts-local-pack-btn svg {
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
-}
-
-.tts-local-pack-btn:hover {
-  background: var(--palette-47641e26b0);
 }
 
 /* Radio-style engine rows */
@@ -1486,14 +968,6 @@ select option {
   padding: 0 6px;
 }
 
-.search-results-stream {
-  display: grid;
-  gap: 6px;
-  max-height: min(62vh, 620px);
-  overflow-y: auto;
-  padding-right: 4px;
-}
-
 .search-action-button {
   width: 100%;
   text-align: left;
@@ -1752,39 +1226,6 @@ select option {
   background: var(--palette-9ecb532b6e);
 }
 
-.minimax-param-list {
-  display: grid;
-  gap: 10px;
-}
-
-.minimax-param-row {
-  display: grid;
-  grid-template-columns: minmax(96px, 150px) minmax(0, 1fr);
-  gap: 14px;
-  align-items: center;
-}
-
-.minimax-param-input {
-  text-align: center;
-}
-
-.minimax-param-copy {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-}
-
-.minimax-param-name {
-  color: var(--text);
-  font-weight: 700;
-}
-
-.minimax-param-note {
-  color: var(--text-muted);
-  font-size: var(--font-size-13px);
-  line-height: 1.45;
-}
-
 /* Chats list — vertical stack of long rows.
  * Because we cap persisted chats at ~10, the grid was both overkill and made
  * each card compete visually with the sidebar. A single-column list reads
@@ -1860,9 +1301,7 @@ select option {
   white-space: nowrap;
 }
 
-.feature-card,
 .project-card,
-.chat-card,
 .artifact-card,
 .detail-card,
 .surface-card {
@@ -1873,13 +1312,11 @@ select option {
 }
 
 .project-card,
-.chat-card,
 .artifact-card {
   padding: 20px;
 }
 
 .project-card:hover,
-.chat-card:hover,
 .artifact-card:hover {
   background: var(--palette-cd1577e9e4);
 }
@@ -1896,13 +1333,6 @@ select option {
   line-height: 1.65;
   font-size: var(--font-size-15px);
   margin: 0 0 18px;
-}
-
-.card-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
 }
 
 .meta-label {
@@ -1973,7 +1403,6 @@ select option {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.project-workbench,
 .artifact-workbench {
   display: grid;
   gap: 18px;
@@ -1989,62 +1418,11 @@ select option {
   grid-template-rows: auto minmax(0, 1fr);
 }
 
-.model-page-titlebar,
-.model-page-grid {
+.model-page-titlebar {
   width: min(860px, 100%);
   margin: 0 auto;
 }
 
-.model-page-grid {
-  grid-template-columns: minmax(0, 1fr);
-  min-height: 0;
-  height: 100%;
-}
-
-.model-setup-card {
-  padding: 28px;
-  min-height: 0;
-  height: 100%;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  overflow: hidden;
-}
-
-.model-setup-header {
-  align-items: flex-start;
-}
-
-.model-setup-select {
-  gap: 12px;
-}
-
-.model-type-switch {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.model-field-select {
-  min-height: 54px;
-  padding: 0 14px;
-}
-
-.model-setup-card > .config-form {
-  min-height: 0;
-  overflow-y: auto;
-  padding-right: 4px;
-  padding-bottom: 26px;
-  margin-top: 0;
-  scrollbar-width: none;
-}
-
-.model-setup-card > .config-form::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-}
-
-.project-list-panel,
 .artifact-list-panel,
 .project-detail-panel,
 .artifact-detail-panel {
@@ -2052,7 +1430,6 @@ select option {
   min-width: 0;
 }
 
-.project-list,
 .mini-list,
 .search-list,
 .run-list {
@@ -2060,15 +1437,12 @@ select option {
   gap: 12px;
 }
 
-.project-list-panel,
 .artifact-list-panel {
   max-height: calc(100vh - 230px);
   overflow-y: auto;
 }
 
-.project-list-item,
-.mini-list-item,
-.search-result {
+.mini-list-item {
   width: 100%;
   text-align: left;
   border-radius: 18px;
@@ -2078,15 +1452,8 @@ select option {
   padding: 16px;
 }
 
-.project-list-item:hover,
-.mini-list-item:hover,
-.search-result:hover {
+.mini-list-item:hover {
   background: var(--palette-3c645f796b);
-}
-
-.mini-list-item.is-active {
-  background: var(--palette-400734e9b3);
-  border-color: var(--palette-a93111af40);
 }
 
 .chip.is-muted {
@@ -2124,13 +1491,6 @@ select option {
 
 .code-sidebar {
   display: grid;
-  gap: 18px;
-}
-
-.ops-grid {
-  margin-top: 18px;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
 }
 
@@ -2280,22 +1640,6 @@ select option {
   line-height: 1.65;
 }
 
-.editor-tab-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 12px;
-}
-
-.preset-grid {
-  margin-top: 12px;
-}
-
-.preset-card {
-  display: grid;
-  gap: 12px;
-}
-
 .patch-preview-card {
   display: grid;
   gap: 12px;
@@ -2353,17 +1697,8 @@ select option {
   background: var(--palette-62f24ad7fb);
 }
 
-.external-tool-card.is-compact {
-  padding: 14px;
-}
-
 .input.slim {
   min-height: 42px;
-}
-
-.tool-input {
-  min-height: 96px;
-  font-family: "SF Mono", "Menlo", "Monaco", monospace;
 }
 
 .run-card {
@@ -2397,10 +1732,6 @@ select option {
   margin-bottom: 12px;
 }
 
-.search-result {
-  padding: 14px 16px;
-}
-
 .empty-state.compact {
   min-height: 0;
   padding: 18px;
@@ -2412,24 +1743,11 @@ select option {
   line-height: 1.6;
 }
 
-.label {
-  display: grid;
-  gap: 8px;
-  color: var(--palette-0e8825e7fc);
-  font-size: var(--font-size-14px);
-}
-
 /* Inline-flex header for labels that pair the field name with a
    right-aligned status chip (credentials' Saved/Pending pill). */
 
 .label-row .chip {
   margin-left: auto;
-}
-
-.meta-grid {
-  display: grid;
-  gap: 16px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .meta-block-label {
@@ -2438,72 +1756,6 @@ select option {
   font-size: var(--font-size-12px);
   letter-spacing: 0.04em;
   text-transform: uppercase;
-}
-
-
-/* (Older `.toggle-row` definition removed — the pillbox style at the
-   bottom of this file is the canonical one. Keeping a stub here would
-   duplicate the cascade and cause the cramped look in the Skills
-   detail pane where the Enabled toggle visually merged with the Skill
-   health header below it.) */
-
-
-.list-row,
-.section-button {
-  width: 100%;
-  text-align: left;
-  border-radius: 18px;
-  border: 1px solid var(--border);
-  background: var(--palette-62f24ad7fb);
-  color: inherit;
-  padding: 16px;
-}
-
-.list-row.is-active,
-.section-button.is-active {
-  background: var(--palette-400734e9b3);
-  border-color: var(--palette-b1c643e495);
-}
-
-.list-row-title {
-  font-size: var(--font-size-15px);
-  font-weight: 600;
-}
-
-.list-row-meta {
-  margin-top: 4px;
-  color: var(--text-soft);
-  font-size: var(--font-size-13px);
-  line-height: 1.6;
-}
-
-/* The bordered detail card grows with its content. Setting `height: 100%`
-   here used to cap the rendered box at the column's visible height — when
-   content was taller (e.g. agent detail with Preset import + editor + form)
-   the bottom border was painted mid-column and child cards (preset-card,
-   etc.) leaked past it. Use min-height in the consolidated rule below so
-   the card still fills empty columns but stretches with tall content. */
-
-
-.loading-state {
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
-  color: var(--palette-e29c2d879d);
-  font-size: var(--font-size-18px);
-}
-
-.toast {
-  position: fixed;
-  right: 24px;
-  bottom: 24px;
-  max-width: 420px;
-  padding: 14px 16px;
-  border-radius: 18px;
-  background: var(--palette-27687e5473);
-  border: 1px solid var(--palette-3356bf5002);
-  color: var(--palette-405eacc296);
-  box-shadow: var(--shadow);
 }
 
 .committed-save-notice {
@@ -2553,10 +1805,6 @@ select option {
   background: var(--palette-88bf600799);
 }
 
-.edit-context-item.is-danger {
-  color: var(--palette-6cea0dfd47);
-}
-
 .edit-context-divider {
   height: 1px;
   margin: 4px 2px;
@@ -2565,7 +1813,6 @@ select option {
 
 @media (max-width: 1260px) {
   .code-layout,
-  .project-workbench,
   .artifact-workbench,
   .search-buckets {
     grid-template-columns: minmax(0, 1fr);
@@ -2581,16 +1828,6 @@ select option {
     grid-template-columns: 1fr;
   }
 
-  .sidebar {
-    display: none;
-  }
-
-  .topbar {
-    grid-template-columns: 1fr;
-    justify-items: stretch;
-    height: auto;
-  }
-
   .customize-layout,
   .code-sidebar {
     grid-template-columns: minmax(0, 1fr);
@@ -2601,13 +1838,6 @@ select option {
     grid-template-columns: minmax(0, 1fr);
   }
 }
-
-.two-column {
-  display: grid;
-  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
-  gap: 18px;
-}
-
 
 .customize-pane {
   padding: 24px 22px;
@@ -2621,10 +1851,6 @@ select option {
 
 .customize-pane:last-child {
   border-right: 0;
-}
-
-@media (min-width: 1101px) {
-  
 }
 
 .customize-pane::-webkit-scrollbar,
@@ -2658,13 +1884,11 @@ select option {
   color: var(--palette-511b4a27fa);
 }
 
-
 .pane-title {
   margin: 0;
   font-size: var(--font-size-16px);
   font-weight: 600;
 }
-
 
 .section-button,
 .list-row {
@@ -2690,7 +1914,6 @@ select option {
   border-color: var(--palette-cfe5a4c097);
 }
 
-
 .skill-health-error .meta-label {
   font-size: var(--font-size-11px);
 }
@@ -2712,7 +1935,6 @@ select option {
   border-color: var(--palette-35bcddac83);
   color: var(--teal);
 }
-
 
 /* Danger variant for destructive buttons (e.g. the memory wipe; memory pane
    rules live in features/memory/memory.css). */
@@ -2743,11 +1965,16 @@ select option {
   line-height: 1.45;
 }
 
+/* The bordered detail card grows with its content. Setting `height: 100%`
+   here used to cap the rendered box at the column's visible height — when
+   content was taller (e.g. agent detail with Preset import + editor + form)
+   the bottom border was painted mid-column and child cards (preset-card,
+   etc.) leaked past it. Use min-height in the consolidated rule below so
+   the card still fills empty columns but stretches with tall content. */
 .detail-card {
   padding: 24px;
   min-height: 100%;
 }
-
 
 .meta-grid {
   display: grid;
@@ -2776,7 +2003,6 @@ select option {
   border: 1px solid var(--border);
 }
 
-
 .config-form {
   display: grid;
   gap: 14px;
@@ -2790,43 +2016,9 @@ select option {
   color: var(--text-muted);
 }
 
-.artifact-layout {
-  display: grid;
-  grid-template-columns: 360px minmax(0, 1fr);
-  gap: 18px;
-}
-
-.artifact-list {
-  display: grid;
-  gap: 12px;
-}
-
 .artifact-card.is-active {
   outline: 1px solid var(--palette-883282064e);
   background: var(--palette-b1a4dd9f1a);
-}
-
-.artifact-preview {
-  padding: 24px;
-  border-radius: 22px;
-  border: 1px solid var(--border);
-  background: var(--palette-37b0b11038);
-  min-height: 520px;
-}
-
-.artifact-preview pre {
-  margin: 14px 0 0;
-  padding: 18px;
-  border-radius: 18px;
-  background: var(--palette-b1c8f573f8);
-  overflow-x: auto;
-  color: var(--palette-6765396668);
-}
-
-.results-grid {
-  display: grid;
-  gap: 22px;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
 }
 
 .empty-state {
@@ -2855,26 +2047,6 @@ select option {
   font-weight: 500;
 }
 
-.toast {
-  position: fixed;
-  right: 24px;
-  bottom: 24px;
-  max-width: 420px;
-  padding: 14px 16px;
-  border-radius: 18px;
-  background: var(--palette-85a52eeaf3);
-  border: 1px solid var(--palette-65b652b378);
-  color: var(--palette-405eacc296);
-  box-shadow: 0 18px 38px var(--palette-89a28def35);
-}
-
-.loading-state {
-  height: 100vh;
-  display: grid;
-  place-items: center;
-  color: var(--text-muted);
-}
-
 @media (min-width: 961px) and (max-width: 1100px) {
   .shell {
     grid-template-columns: 90px minmax(0, 1fr);
@@ -2882,24 +2054,7 @@ select option {
 }
 
 @media (max-width: 1100px) {
-  .nav-copy,
-  .recent-section-title,
-  .recent-item-meta,
-  .recent-item-title,
-  .profile-meta {
-    display: none;
-  }
-
-  .nav-item,
-  .recent-item,
-  .profile-card {
-    justify-content: center;
-  }
-
-  .customize-layout,
-  .artifact-layout,
-  .two-column,
-  .ops-grid {
+  .customize-layout {
     grid-template-columns: 1fr;
   }
 
@@ -2932,17 +2087,6 @@ select option {
 }
 
 @media (max-width: 820px) {
-  .topbar {
-    padding: 14px 18px 12px;
-    gap: 12px;
-  }
-
-  .topbar-left,
-  .topbar-center,
-  .topbar-right {
-    justify-content: flex-start;
-  }
-
   .page {
     padding: 24px 18px 28px;
   }
@@ -2959,13 +2103,6 @@ select option {
     grid-template-columns: 1fr;
     flex-direction: column;
     align-items: stretch;
-  }
-
-  .chat-home .page-kicker,
-  .chat-home .chip-row,
-  .chat-home .composer-footer {
-    justify-content: flex-start;
-    text-align: left;
   }
 
   .search-stage {
@@ -3050,7 +2187,6 @@ select option {
   outline: none;
 }
 
-
 .page-kicker.page-kicker-tip {
   margin-top: 6px ;
   font-size: var(--font-size-12px);
@@ -3066,7 +2202,6 @@ select option {
   background: var(--palette-88bf600799);
   font-size: var(--font-size-11_5px);
 }
-
 
 .transcript-toast {
   position: fixed;
@@ -3801,14 +2936,6 @@ select option {
   letter-spacing: 0.02em;
 }
 
-.runtime-status-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: currentColor;
-  flex: 0 0 auto;
-}
-
 .runtime-status-green { color: var(--palette-444e8548f5); }
 .runtime-status-yellow { color: var(--palette-cbe7a682c6); }
 .runtime-status-red { color: var(--palette-0fe0fe2ca1); }
@@ -3876,7 +3003,6 @@ select option {
 .reply-table { border-collapse:collapse; min-width:100%; font-size:var(--font-size-14px); }
 .reply-table :is(th,td) { padding:8px 12px; text-align:left; vertical-align:top; border-bottom:1px solid var(--palette-93f7c33522); }
 .reply-table th { color:var(--palette-1799bc4125); font-size:var(--font-size-12px); font-weight:500; background:var(--palette-5ebb8bd130); }
-.message-content .reply-heading { font-weight:600; margin-top:14px; }
 .reply-list-item { display:flex; gap:10px; align-items:baseline; }
 .reply-list-item > span { color:var(--palette-99dfd7800c); }
 .reply-list-item p { margin:5px 0; }
@@ -3915,7 +3041,6 @@ select option {
 .chat-file-dialog::backdrop { background: var(--palette-40d8cf5ce9); }
 .chat-file-dialog .mono { overflow-wrap: anywhere; }
 
-
 .input-dialog{background:var(--space-dialog);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;width:min(440px,90vw)}
 .input-dialog::backdrop{background:var(--palette-e1d0b86279)}
-.input-dialog input{width:100%}.input-dialog .inline-actions{justify-content:flex-end}.flash-toast{display:flex;align-items:center;gap:12px}.flash-toast.is-error{border-color:var(--danger);max-width:min(600px,90vw)}
+.input-dialog input{width:100%}.input-dialog .inline-actions{justify-content:flex-end}.flash-toast{display:flex;align-items:center;gap:12px}

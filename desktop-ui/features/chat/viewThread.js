@@ -29,10 +29,6 @@ import { topicDividers } from '../../../shared/conversationTopics.js';
 import { renderComposerCard } from './viewComposer.js';
 import { renderRichText, renderMessageBlocks, extractSourceCitations, renderSourceCitationCards, renderMessageAttachments, renderAssistantVizMount, renderMessageActions, renderMessageToolResults } from './viewMessage.js';
 
-function renderThinkingMessage() {
-  return '';
-}
-
 function renderLiveRunSteps(chat) {
   const sent = (chatState.supplementsSent || []).map(text => `<p class="run-steps-note">${escapeHtml(t('补充已送达，会在下一步加入：{text}', { text }))}</p>`).join('');
   return `<div class="run-steps-host" data-run-steps-chat="${escapeHtml(chat?.id || '')}">${renderRunSteps(sceneSteps(liveSceneFor(chat?.id), 6, RUN_TEXT), escapeHtml, t)}</div>${sent}`;
@@ -55,7 +51,7 @@ function renderStreamingAssistantMessage(chat) {
   const liveSteps = renderLiveRunSteps(chat);
 
   if (!chatState.streamingAssistantText) {
-    return toolStrip + renderThinkingMessage() + liveSteps;
+    return toolStrip + liveSteps;
   }
 
   // Strip any <tool_call>...</tool_call> XML blocks (and partial opening tags)
@@ -384,4 +380,4 @@ function renderActiveToolCallsStrip() {
   });
 }
 
-export { renderThinkingMessage, renderLiveRunSteps, patchLiveRunSteps, renderStreamingAssistantMessage, renderStreamingFast, syncVizBlocks, activeMessageWindow, renderThreadLoadEarlier, renderMessageList, renderThreadArtifactStrip, renderRegularChatPage, renderActiveToolCallsStrip };
+export { patchLiveRunSteps, renderStreamingFast, syncVizBlocks, renderMessageList, renderThreadArtifactStrip, renderRegularChatPage };

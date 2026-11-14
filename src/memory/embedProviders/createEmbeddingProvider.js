@@ -58,7 +58,6 @@ export function withEmbeddingCache(provider) {
     get dims() { return provider.dims; },
     get modelId() { return provider.modelId; },
     get observedDims() { return provider.observedDims ?? provider.dims; },
-    async probe(text) { return provider.embed(text); },
     async isAvailable() { return provider.isAvailable(); },
     async embed(text) {
       const key = String(text || '').trim();

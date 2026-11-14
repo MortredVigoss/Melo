@@ -121,9 +121,3 @@ export function appendDreamRecord(record) {
   appendFileSync(path, lines.join('\n'), 'utf8');
   return path;
 }
-
-// Public path accessor — kept for any external consumer.  Use a getter so
-// callers always see the current home (mirrors dreamsDir() above).
-export const DREAMS_PATHS = {
-  get DREAMS_DIR() { return dreamsDir(); },
-};

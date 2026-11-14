@@ -16,7 +16,6 @@ import {
   isProviderFailureAssistantMessage,
   IMAGE_FOLLOW_UP_PATTERN,
   AUDIO_FOLLOW_UP_PATTERN,
-  IMAGE_EDIT_INTENT_PATTERN,
   detectImageEditIntent,
   RICH_MEDIA_ATTACHMENT_KINDS,
 } from './messageBuilder.js';

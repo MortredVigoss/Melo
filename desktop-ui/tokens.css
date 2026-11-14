@@ -9,8 +9,6 @@
 :root {
   /* Black-gold palette (emerald.css) */
   --bg: #0c0b09;
-  --bg-elevated: #14120f;
-  --bg-panel: #181612;
   --bg-soft: #221e18;
   --bg-hover: #2a261e;
   --border: rgba(196,185,165,.09);
@@ -23,7 +21,6 @@
   --text: #e6e2dc;
   --text-muted: #b3a895;
   --text-soft: #9f927a;
-  --topbar-height: 66px;
 
   /* Layout and legacy palette (styles.css) */
   --danger: #ff907f;
@@ -41,8 +38,6 @@
   --state-ok: #d6c08e;
   --state-ok-soft: rgba(214,192,142,.12);
   --state-ok-edge: rgba(214,192,142,.32);
-  --state-busy: #cdbfa6;
-  --state-warn: #e2ad6a;
   --state-error: #eba092;
   --type-body: 13px;
   --type-small: 12px;
@@ -84,7 +79,6 @@
   --palette-0ae627625a: #b85c12;
   --palette-0bbef5c05f: #c4a87519;
   --palette-0bcfd889e4: #30263b8c;
-  --palette-0ce3da139e: rgba(143,122,84,.09);
   --palette-0d1ed7ec97: #08090b;
   --palette-0d62e9929a: #aaa292;
   --palette-0d96400841: rgba(255, 255, 255, 0.46);
@@ -109,16 +103,13 @@
   --palette-12b21acba3: rgba(150, 160, 180, 0.55);
   --palette-12da9de42a: #a4987e33;
   --palette-1301405bd0: rgba(32, 34, 42, 0.95);
-  --palette-138a67103d: rgba(179,143,75,.08);
   --palette-13d0c9cb18: #ffffff08;
-  --palette-1425dfe298: #080d1677;
   --palette-14926f741f: rgba(255, 255, 255, 0.03);
   --palette-14d38a2844: rgba(255, 255, 255, 0.92);
   --palette-150e633904: #10141a2e;
   --palette-154c7883c7: rgba(32,29,23, 0.96);
   --palette-155ece1386: rgba(164,122,43, 0.55);
   --palette-15627849f5: #f4cc9777;
-  --palette-1592d807af: rgba(164,122,43, 0.88);
   --palette-159e593050: #4c402d77;
   --palette-1640859975: #13120fed;
   --palette-174a0160fc: rgba(214,176,106, 0.07);
@@ -128,7 +119,6 @@
   --palette-1822c111a4: #c5bba8;
   --palette-18fb18d41e: rgba(0, 0, 0, 0.12);
   --palette-194dff8c3f: #9f854638;
-  --palette-1a4144ad23: #b095ce38;
   --palette-1b1790a45c: #bd762a;
   --palette-1b245edac7: #c8b482;
   --palette-1b54a99267: #0a1019b3;
@@ -137,7 +127,6 @@
   --palette-1bfa1b21e8: #21182d40;
   --palette-1cb1ca38d6: rgba(26,24,19, 0.96);
   --palette-1d1faff4d8: #33293e38;
-  --palette-1d577780ab: #9d95a6;
   --palette-1d6ad181c5: #a9b7c3;
   --palette-1e75e688ce: rgba(244,240,233, 0.92);
   --palette-1e90e6691f: rgba(244, 238, 222, 0.3);
@@ -164,9 +153,7 @@
   --palette-25e3354468: rgba(255, 255, 255, 0.7);
   --palette-261361d0a3: #0007;
   --palette-2659156502: rgba(38,35,30,.64);
-  --palette-269b177d55: #e9b94f;
   --palette-26a3bb028e: #11141990;
-  --palette-26ad1d8356: #0f0d0b;
   --palette-271b46433c: rgba(192,157,98,.10);
   --palette-27687e5473: rgba(255, 144, 127, 0.12);
   --palette-27b11439ee: rgba(30, 30, 40, 0.97);
@@ -185,7 +172,6 @@
   --palette-2c22251ad1: rgba(200,180,130,.25);
   --palette-2c36630246: #cc98502e;
   --palette-2c5e55ac57: rgba(164,122,43, 0.9);
-  --palette-2cc1d61d79: #0b0c1466;
   --palette-2d3f2ca619: #e7e4dd;
   --palette-2d670c2a60: #ffd0c4;
   --palette-2e94eb3ace: #c2a67320;
@@ -225,7 +211,6 @@
   --palette-3951a65b84: #17191cc4;
   --palette-3a026ced44: #a392b02b;
   --palette-3a219ab541: rgb(251, 191, 36);
-  --palette-3b1f766c7a: rgba(210,167,86, 0.4);
   --palette-3be7c79ce9: #62491a33;
   --palette-3c20c0c985: #a89c87;
   --palette-3c645f796b: rgba(255, 255, 255, 0.04);
@@ -240,13 +225,10 @@
   --palette-3e7606efd9: #f0aaa2;
   --palette-3e7eb93d48: rgba(255, 255, 255, 0.6);
   --palette-3e84f94f3c: #dac28a15;
-  --palette-3e9e1a7432: rgba(11,10,8,.68);
   --palette-3ea986d0f3: rgba(196, 198, 194, 0.82);
   --palette-3f1e2b10b8: #c1ac7b12;
   --palette-400734e9b3: rgba(164,122,43, 0.1);
   --palette-405e029dd4: #a8a091;
-  --palette-405eacc296: rgba(255, 221, 214, 0.96);
-  --palette-408bab192c: #bba98409;
   --palette-40d8cf5ce9: #0009;
   --palette-4120104e8b: #ada28e;
   --palette-4166cf48b4: #d0ac6c;
@@ -264,7 +246,6 @@
   --palette-444e8548f5: #c6ab7a;
   --palette-446751a926: #dbb773;
   --palette-449719b90e: rgba(16,19,23,.97);
-  --palette-44a4202c44: #cbbfa8;
   --palette-44a94353d3: #d1b27d99;
   --palette-4566085eb0: #0003;
   --palette-460fc4992c: #c0a17020;
@@ -278,17 +259,13 @@
   --palette-47ff94eb4a: rgba(28,26,21, 0.96);
   --palette-485ca1caad: #b4996833;
   --palette-4866bb46e3: #0004;
-  --palette-488a070778: rgba(175,157,123,.1);
   --palette-4aaa2aa518: rgba(255, 247, 232, 0.86);
   --palette-4b0c36baa7: rgba(244,240,233, 0.96);
   --palette-4c93e7e69f: #bca572;
-  --palette-4d7e0038cc: #dfca9f;
   --palette-4d7ea6b3a8: #a5a195;
-  --palette-4d88771e70: #9f927a10;
   --palette-4de8bee85e: #15171c6b;
   --palette-4e1c255a53: #b6a0710d;
   --palette-4e44c8d47e: rgba(246, 90, 96, 0.6);
-  --palette-4e4cb0a08b: #a38d6566;
   --palette-4e5bf042f0: #cbbd9f;
   --palette-4ef475e60c: rgba(173,135,64, 0.12);
   --palette-4f279b64b1: rgba(10, 11, 14, 0.55);
@@ -330,7 +307,6 @@
   --palette-5a97067def: #a4906c;
   --palette-5b39b293aa: rgba(181,145,78, 0.32);
   --palette-5b82aa8d38: #ffc879;
-  --palette-5bb3a997d8: rgba(164,122,43, 0.15);
   --palette-5bb4c09f45: rgba(30, 30, 40, 0.96);
   --palette-5be31ab860: rgba(246, 169, 107, 0.18);
   --palette-5ca343ec88: #d0bf9d;
@@ -347,7 +323,6 @@
   --palette-5f690155b3: #ced4dc;
   --palette-6021533927: #ada28d;
   --palette-604bf84478: #d5c4a1;
-  --palette-60c07baab6: rgba(255, 255, 255, 0.015);
   --palette-6183adf8ff: #7a5a20;
   --palette-61f6bf57f8: #d1bfdd;
   --palette-625669eb2d: rgba(209, 178, 125, 0.28);
@@ -361,9 +336,7 @@
   --palette-64a4a0d4f6: rgba(255, 247, 232, 0.72);
   --palette-64e89554b7: #bab4a6;
   --palette-6541c56721: rgba(232, 224, 208, 0.88);
-  --palette-6559b06bfb: #b5ab9919;
   --palette-65a507a1b7: #f4deba09;
-  --palette-65b652b378: rgba(255, 144, 127, 0.28);
   --palette-65d8fcbf78: #f3f3f3;
   --palette-6660bf0152: #bcac8e66;
   --palette-6661ad4988: #ffb078;
@@ -380,7 +353,6 @@
   --palette-6c73c0d2f3: #bda27340;
   --palette-6c9bda1420: rgba(246, 90, 96, 0.25);
   --palette-6cbc5b4dcb: rgba(9,11,15,.10);
-  --palette-6cea0dfd47: rgba(255, 173, 160, 0.96);
   --palette-6d35c399d8: rgba(7,7,6, 0.55);
   --palette-6d4058fff9: rgba(255, 255, 255, 0.96);
   --palette-6d5dfebf40: rgba(209, 178, 125, 0.14);
@@ -391,7 +363,6 @@
   --palette-6e566fe3ef: #cdb78033;
   --palette-6f4aa1670f: #a7843822;
   --palette-6f5769b04e: rgba(8,9,12,.9);
-  --palette-6f7de79797: rgba(27,24,19, 0.9);
   --palette-6f92cbcaea: rgba(235, 238, 245, 0.92);
   --palette-6fe64d710e: rgba(204,171,112,.18);
   --palette-7010e9dca8: rgba(255, 160, 160, 0.85);
@@ -417,20 +388,14 @@
   --palette-75386803da: #f5dcac22;
   --palette-762a3501a9: #c9b78f13;
   --palette-7727b7fdde: rgba(200,180,130,.07);
-  --palette-779dd1a557: #a2afbb;
-  --palette-77bcfb0899: #4f432d66;
   --palette-77fc49f925: #6153384d;
-  --palette-785877775d: #b7ad9b1b;
   --palette-78d4a6db43: #12130fbb;
   --palette-78eab87e61: rgba(0,0,0,.25);
   --palette-7989cb3b6f: rgba(194,175,138,.12);
-  --palette-7a584c2a24: #a98bb844;
   --palette-7aea1472ed: #c3b99f;
   --palette-7b5aa9b5ff: #c4b18d6e;
   --palette-7b5ddc8fc5: rgba(223,212,192, 0.9);
-  --palette-7ba695aa81: #0b121bc9;
   --palette-7bfc0222e0: #d6b4ec;
-  --palette-7cb56598dd: #2b241666;
   --palette-7cc43bedb8: #b482dc88;
   --palette-7cf44b8d24: rgba(243,239,232, 0.74);
   --palette-7d2677b058: #e0d6c4;
@@ -444,32 +409,26 @@
   --palette-7fe5131c8c: rgba(65,48,17, 0.18);
   --palette-8058296467: #b9a37b66;
   --palette-8090e8a0cf: rgba(200, 210, 225, 0.6);
-  --palette-80baabb0bb: #ff8d68;
   --palette-81123f39c0: rgba(255, 255, 255, 0.3);
   --palette-81bf63dea2: #a69983;
   --palette-81ef715e34: #000;
   --palette-820b0345a8: rgba(255, 255, 255, 0.5);
   --palette-820d59c51a: #b8ab95;
   --palette-8211f2c29d: #080d134d;
-  --palette-8273164df1: #d6a65477;
   --palette-828c048e28: rgba(164,122,43, 0.14);
   --palette-82da485829: rgba(209, 178, 125, 0.55);
   --palette-8328753247: #1c1a1924;
-  --palette-83c411f5a0: #c3af8b;
   --palette-83d3030644: rgba(42,38,31,.34);
   --palette-84039d4339: #ecaaa1;
   --palette-8415eea8a6: #00000099;
   --palette-84205f2c0a: rgba(9,12,17,.13);
   --palette-8598e83146: #cbb98644;
-  --palette-85a52eeaf3: rgba(255, 144, 127, 0.16);
   --palette-85aadb2dc8: #95876c;
   --palette-863c56beaf: #a1834824;
   --palette-8642f64a7a: #b5ab98;
   --palette-8690e5bf8f: #a3792b;
   --palette-87530a53f0: rgba(164,122,43, 0.32);
-  --palette-875d8d3f97: #c3bba8;
   --palette-87ee265fab: #b99a5f;
-  --palette-882b466ee3: #1e1b16;
   --palette-883282064e: rgba(164,122,43, 0.28);
   --palette-88671be592: #e1c48e30;
   --palette-88bf600799: rgba(255, 255, 255, 0.06);
@@ -484,12 +443,10 @@
   --palette-8bc6bc6d31: #11121b44;
   --palette-8bd7a2c8ac: rgba(164,122,43, 0.25);
   --palette-8c513d16a6: #eee;
-  --palette-8c70afee31: #c2b5a1;
   --palette-8dd0bb3d31: rgba(207,183,125,.08);
   --palette-8eb8d9bbfa: rgba(239,235,226, 0.9);
   --palette-8ef8bc74d3: #4f3d1b;
   --palette-8f3fc9bc26: rgba(246, 90, 96, 0.18);
-  --palette-8f9605fff7: rgba(248,247,244, 0.88);
   --palette-8fc68438cc: rgba(0,0,0,.38);
   --palette-8fe60fb4ed: #ead4a1;
   --palette-8ffeea28d9: #0d0c0a;
@@ -524,12 +481,10 @@
   --palette-99cc84676c: rgba(255,255,255,.025);
   --palette-99dfd7800c: #bfa87b;
   --palette-9b29c2a6fc: rgba(255, 144, 127, 0.07);
-  --palette-9b398217d0: #b8ae9c14;
   --palette-9b67ebe7ee: #a0947d;
   --palette-9bc4f65939: #333;
   --palette-9d1b112411: rgba(239,235,226, 0.85);
   --palette-9d580723f2: #aca18c;
-  --palette-9d76dec9ba: rgba(201,183,150, 0.92);
   --palette-9dbc49e3d2: rgba(0, 0, 0, 0.28);
   --palette-9e3ed7172b: rgba(248,247,244, 0.5);
   --palette-9e428af029: rgba(255, 170, 160, 0.7);
@@ -541,7 +496,6 @@
   --palette-9f32cf2166: #eee3d0;
   --palette-9fdbe6f397: rgba(255, 255, 255, 0.8);
   --palette-a025bcbd5b: rgba(255, 247, 232, 0.96);
-  --palette-a0bdf65251: #d2b78005;
   --palette-a174e16717: rgba(255, 200, 192, 0.95);
   --palette-a1ebe8553b: rgba(13,13,14,.46);
   --palette-a20b727f69: #a89d87;
@@ -551,7 +505,6 @@
   --palette-a322670bc1: #04060b;
   --palette-a394256970: #dabc85;
   --palette-a3a8162a97: #34250e88;
-  --palette-a3b0c244e6: #c5b09624;
   --palette-a3c76b8b4e: rgba(232, 224, 208, 0.2);
   --palette-a4417b65c9: #fff7e5;
   --palette-a4a997b6bb: #8f9da9;
@@ -567,7 +520,6 @@
   --palette-a6f7237ef7: rgba(10, 11, 14, 0.7);
   --palette-a71e9898bd: rgba(28,26,21, 0.98);
   --palette-a77e85b6db: #b9b0a2a8;
-  --palette-a7a6b36595: #12110f;
   --palette-a7a7163ffe: #998b7222;
   --palette-a8ae8b24a2: rgba(244,222,181,.09);
   --palette-a8e29b7d93: #807e76;
@@ -599,7 +551,6 @@
   --palette-b19c5bfa3f: #a85a20;
   --palette-b1a4dd9f1a: rgba(164,122,43, 0.08);
   --palette-b1c643e495: rgba(164,122,43, 0.22);
-  --palette-b1c8f573f8: rgba(0, 0, 0, 0.26);
   --palette-b1e6d44f4c: #a18b5e3b;
   --palette-b234a5ff22: #d4b37266;
   --palette-b24e787c87: #e1d7c6;
@@ -609,14 +560,12 @@
   --palette-b3303e07e2: #20190c77;
   --palette-b34dadfdaf: #0b0a08ed;
   --palette-b36d96bc09: #decee306;
-  --palette-b39e2b7eaa: #b49b6f66;
   --palette-b42698efef: rgba(255, 244, 214, 0.96);
   --palette-b45265002c: rgba(255, 255, 255, 0.22);
   --palette-b4972f9f1e: #c8b695;
   --palette-b4bab2afb8: #9e998e;
   --palette-b538f84e01: #cec2aa;
   --palette-b5b689b1a1: rgba(197,178,143, 0.24);
-  --palette-b6c3634dcb: rgba(15,13,11,.94);
   --palette-b6fbc3329b: #f4deba08;
   --palette-b72b901fa1: #ba9c64;
   --palette-b72da05ad9: #a69b85;
@@ -632,7 +581,6 @@
   --palette-baf04eadda: #453b2750;
   --palette-bb2ebbc560: #cbc4b7;
   --palette-bb52424d30: #a5927410;
-  --palette-bb60523432: rgb(210,167,86);
   --palette-bc068ca734: #93856b;
   --palette-bc34b408ea: rgba(255, 255, 255, 0.88);
   --palette-bc5a144f0c: #dac79d;
@@ -658,13 +606,11 @@
   --palette-c3d9777df0: rgba(234,227,215, 0.96);
   --palette-c3e6486670: #c9b17e45;
   --palette-c4167f705f: #242018;
-  --palette-c469cd689f: #171520b8;
   --palette-c4a1756025: #9d657033;
   --palette-c4bb34e4a2: #f5d9b510;
   --palette-c5651f8d3a: #988a71;
   --palette-c5ba01e39d: rgba(0, 0, 0, 0.38);
   --palette-c5c2c0e455: rgba(6,9,14,.30);
-  --palette-c5c8492e8a: #a0937c;
   --palette-c5d6ebede3: #ffe6ae;
   --palette-c6413a8e7d: rgba(35,33,30,.73);
   --palette-c663434b01: rgba(251, 191, 36, 0.35);
@@ -676,27 +622,22 @@
   --palette-c88a25c1db: #bcad9414;
   --palette-c8eff19360: #ead2a346;
   --palette-c9432d8055: #c29a4f;
-  --palette-c95dc7fec1: #785c28;
   --palette-c97211643b: rgba(30,28,25,.28);
   --palette-c9b618f877: rgba(4,6,10,.05);
   --palette-ca18127ff8: rgba(9,9,8,.14);
   --palette-ca3c869e0c: #9f927b;
-  --palette-ca65d01717: #988052;
   --palette-ca9a1b9b29: #5c451bbb;
   --palette-cb4504d0c4: rgba(237, 178, 47, 0.32);
   --palette-cb634fb13f: rgba(248,247,244, 0.65);
-  --palette-cbac18735e: rgba(150,116,53,.15);
   --palette-cbb00b93ec: #b5a68e;
   --palette-cbe7a682c6: #d7b36a;
   --palette-cc8c02f2fa: #d3bc9460;
   --palette-cd1577e9e4: rgba(255, 255, 255, 0.035);
   --palette-cd2d6bfded: #e6decf;
   --palette-cd3ec3d639: rgba(220, 120, 40, 0.45);
-  --palette-cdff3f7ee9: #7e8e9c;
   --palette-ce7dbc6cd1: rgba(255, 255, 255, 0.07);
   --palette-ce88136832: rgba(163,140,98,.4);
   --palette-cfe5a4c097: rgba(164,122,43, 0.18);
-  --palette-d0382ad2b5: #e3dac9;
   --palette-d04bc6bcf6: #9f927a26;
   --palette-d073a33ce2: #17140f;
   --palette-d0813d5b1b: rgba(194,154,79, 0.14);
@@ -714,7 +655,6 @@
   --palette-d46c1a7d35: #8c7a9c24;
   --palette-d4780dfdc1: #f5d39d;
   --palette-d4de2c6c31: rgba(30, 30, 32, 0.92);
-  --palette-d5395b69d0: #e5be7a;
   --palette-d5668785d0: #c3af8b2b;
   --palette-d5ef9d8753: #f5dcac0d;
   --palette-d678978959: #dcc18d;
@@ -733,10 +673,8 @@
   --palette-da188500d4: rgba(11,14,20,.84);
   --palette-da44f62069: #bca2712e;
   --palette-db2a203cbd: rgba(9,13,21,.78);
-  --palette-db485b7d68: #c5b49444;
   --palette-db7261794a: rgba(220,200,150,.2);
   --palette-dc24fcce4b: rgba(244, 238, 222, 0.08);
-  --palette-dc2664df28: #eddbb7;
   --palette-dc78a2784e: #ffedc929;
   --palette-dcb6b78bdc: #c8b2da;
   --palette-dcd1b067e9: #8754b71a;
@@ -758,7 +696,6 @@
   --palette-e1d0b86279: rgba(0,0,0,.55);
   --palette-e1d809ef39: #cbb6dd;
   --palette-e272e9335d: #444;
-  --palette-e29c2d879d: rgba(255, 255, 255, 0.72);
   --palette-e2fcb86ae8: rgba(0, 0, 0, 0.32);
   --palette-e3112d63b8: rgba(181,134,48, 0.92);
   --palette-e3553be187: #eed8ab0a;
@@ -767,7 +704,6 @@
   --palette-e62240a484: #f5dcac04;
   --palette-e67083513b: #201d17;
   --palette-e6fa5acb12: rgba(220, 225, 235, 0.75);
-  --palette-e71047e021: rgba(22,21,18,.39);
   --palette-e722306276: rgba(255, 210, 200, 0.9);
   --palette-e765706f54: #93722b33;
   --palette-e78bcd342f: #564c3a;
@@ -785,10 +721,8 @@
   --palette-ea9d986651: #c2b69c;
   --palette-eaf883c946: #e4c48f;
   --palette-eb014f355f: #06060533;
-  --palette-eb254302ff: #aea38f;
   --palette-eb4a610954: rgba(174,145,100,.075);
   --palette-ed14c14174: rgba(220, 120, 40, 0.06);
-  --palette-ed2d12de91: #b8b1a2;
   --palette-ed53770554: #b0a693;
   --palette-ed56acf243: #bbb19d22;
   --palette-ed5a897a62: rgba(28,27,26,.54);
@@ -797,7 +731,6 @@
   --palette-ede7b8f383: rgba(220, 170, 100, 0.16);
   --palette-eeb78a41df: #111;
   --palette-eee505fee2: #d0ac6c18;
-  --palette-eef1b9d2d8: rgba(248,247,244, 0.6);
   --palette-ef0c1ab181: rgba(163,121,43, 0.4);
   --palette-ef34ddab55: #bf876e33;
   --palette-efbd8e5769: rgba(255, 255, 255, 0.85);
@@ -809,12 +742,9 @@
   --palette-f1cf5fbfa7: #080d1426;
   --palette-f1f6f5ebce: rgba(20,19,17,.86);
   --palette-f2074b6cef: #ffffff;
-  --palette-f207b959f5: #4b3e2655;
   --palette-f2ac814486: rgba(163,121,43, 0.28);
   --palette-f2d1a8a933: rgba(223,212,192, 0.85);
-  --palette-f2e0b29e53: rgba(75,58,31,.28);
   --palette-f312dfb8a7: rgba(164,122,43, 0.26);
-  --palette-f39e02fe04: rgba(210,167,86, 0.15);
   --palette-f3a93fd3e1: #b6ac9a33;
   --palette-f3c0599b5a: rgba(23,21,18, 0.97);
   --palette-f46d27b1e6: #92a2ae;
@@ -827,12 +757,9 @@
   --palette-f763c2aea0: #d89752;
   --palette-f7a1a9e4e4: #3a342726;
   --palette-f7a33577ce: #0005;
-  --palette-f7ac2bcca5: #12111ec4;
   --palette-f80ab45ca7: #0008;
   --palette-f826f455ad: rgba(0, 0, 0, 0.22);
   --palette-f87f515161: #d1b27d77;
-  --palette-f89cce3868: rgba(164,122,43, 0.6);
-  --palette-f9e3ac808a: #dbd5c9;
   --palette-fa1145d053: rgba(26,24,19, 0.97);
   --palette-faa7f8dba9: rgba(245, 248, 255, 0.95);
   --palette-fae80aafc8: #f2b756;
@@ -842,7 +769,6 @@
   --palette-fba7df31a4: rgba(10,13,18,.28);
   --palette-fbcc32ad32: #f7c37126;
   --palette-fd2cc22d9b: rgba(164,122,43, 0.85);
-  --palette-fdd4865bcc: #c7a97988;
   --palette-fe81332e5b: rgba(204,171,99,.25);
   --palette-feabec55c5: rgba(197,178,143, 0.12);
   --palette-ff34edd940: rgba(255, 255, 255, 0.18);
@@ -884,7 +810,6 @@
   --font-size-8px: 8px;
   --font-size-9px: 9px;
   /* Layer order */
-  --layer-10: 10;
   --layer-100: 100;
   --layer-1000: 1000;
   --layer-10000: 10000;
@@ -895,9 +820,7 @@
   --layer-50: 50;
   --layer-6: 6;
   --layer-60: 60;
-  --layer-8: 8;
   --layer-80: 80;
-  --layer-9: 9;
   --layer-90: 90;
   --layer-9000: 9000;
   --layer-9999: 9999;
@@ -942,17 +865,7 @@
   --visual-execution-tools: #b69bcb;
   --visual-execution-create: #e88c62;
   --visual-scene-060a10: #060a10;
-  --visual-scene-74849d: #74849d;
-  --visual-scene-ffce97: #ffce97;
-  --visual-scene-75bfd4: #75bfd4;
-  --visual-scene-ffbb78: #ffbb78;
-  --visual-scene-86cddd: #86cddd;
-  --visual-scene-b29d80: #b29d80;
-  --visual-scene-ab8955: #ab8955;
-  --visual-scene-dabc84: #dabc84;
   --visual-scene-ffe4a3: #ffe4a3;
-  --visual-scene-91b4c7: #91b4c7;
-  --visual-scene-a88b63: #a88b63;
 }
 
 :root {
@@ -973,9 +886,6 @@
   --scene-neural-light: #edc786;
   --scene-neural-silver: #91a0b3;
   --scene-neural-shadow: #080b13;
-  --scene-synapse-thread: #76419d;
-  --scene-synapse-branch: #9a65d3;
-  --scene-synapse-tint: #a66ad7;
   --scene-atom-h: #f0f0f0;
   --scene-atom-c: #c4c4c4;
   --scene-atom-n: #6bb0ff;

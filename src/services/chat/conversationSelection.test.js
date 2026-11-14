@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import sharp from 'sharp';
 import { validateConversationSelection, conversationConfig, selectedMaterials } from './conversationSelection.js';
-import { normalizeChat, createDefaultState } from '../../state/stateHydration.js';
+import { normalizeChat } from '../../state/stateHydration.js';
 import { buildReActPromptSections } from './systemPrompt.js';
 import { normalizeAgentAvatar } from '../agent/agentAvatar.js';
 import { createRequestContext } from '../../runtime/requestContext.js';

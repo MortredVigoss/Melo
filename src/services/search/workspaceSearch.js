@@ -2,7 +2,7 @@ import { loadState } from '../../state/stateStore.js';
 import { ensureSelectedEntities } from '../../state/stateSelections.js';
 import { findProjectById } from '../../state/stateLookups.js';
 import { buildWorkspaceSnapshot } from '../workspace/workspaceSnapshot.js';
-import { streamSearchFileGroups as streamSearchFileGroupsService, streamSearchFileHits as streamSearchFileHitsService } from './searchService.js';
+import { streamSearchFileGroups as streamSearchFileGroupsService } from './searchService.js';
 
 async function resolveWorkspaceForSearch(projectId) {
   const state = ensureSelectedEntities(await loadState());
@@ -17,16 +17,6 @@ export async function streamSearchFileGroups(
   onGroup = async () => {},
 ) {
   return streamSearchFileGroupsService(query, projectId, onGroup, {
-    resolveWorkspace: resolveWorkspaceForSearch,
-  });
-}
-
-export async function streamSearchFileHits(
-  query = '',
-  projectId = '',
-  onHit = async () => {},
-) {
-  return streamSearchFileHitsService(query, projectId, onHit, {
     resolveWorkspace: resolveWorkspaceForSearch,
   });
 }

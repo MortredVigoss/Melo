@@ -24,7 +24,7 @@ export function normalizeComparablePhrase(value = '') {
     .trim();
 }
 
-export function isSubsequenceMatch(text = '', query = '') {
+function isSubsequenceMatch(text = '', query = '') {
   const haystack = String(text || '').toLowerCase();
   const needle = String(query || '').toLowerCase().replace(/\s+/g, ' ').trim();
   if (!needle) {
@@ -137,7 +137,7 @@ export function extractClarificationOptions(text = '') {
   return options.slice(0, 8);
 }
 
-export function findClarificationOptionMatch(latestText, options = []) {
+function findClarificationOptionMatch(latestText, options = []) {
   const normalizedLatest = normalizeComparablePhrase(latestText);
   if (!normalizedLatest) {
     return '';

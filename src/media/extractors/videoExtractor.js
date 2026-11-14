@@ -48,8 +48,6 @@ const KEYFRAME_JPEG_QUALITY = 4;
 // still ships its result — that's the Phase 3 contract.
 let _AUDIO_BUDGET_MS = 10000;
 let _KEYFRAME_BUDGET_MS = 5000;
-export const KEYFRAME_BUDGET_MS = 5000;
-export const AUDIO_BUDGET_MS = 10000;
 
 // Tests inject custom budgets so a "hanging audio" e2e doesn't have to
 // wait the real 10s. Pass `null` to restore defaults.
@@ -168,7 +166,7 @@ async function probeDurationSec(videoPath, { signal } = {}) {
 }
 
 // Uploaded videos are studied, not just glanced at: more and sharper frames.
-export const STUDY_FRAMES = Object.freeze({ maxFrames: 24, width: 768, secondsPerFrame: 15 });
+const STUDY_FRAMES = Object.freeze({ maxFrames: 24, width: 768, secondsPerFrame: 15 });
 
 export async function extractKeyframes(videoPath, framesDir, { signal, maxFrames = KEYFRAME_MAX_COUNT, width = KEYFRAME_WIDTH, secondsPerFrame = null, onTimes } = {}) {
   if (signal?.aborted) {

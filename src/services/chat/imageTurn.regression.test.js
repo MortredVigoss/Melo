@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
-import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import sharp from 'sharp';
@@ -10,7 +10,7 @@ import { createRequestContext } from '../../runtime/requestContext.js';
 import { runWithRequestContext } from '../../runtime/requestScope.js';
 import { sendChatMessage } from './sendChatMessage.js';
 import { drainPostTurnTasks } from '../../runtime/postTurnTasks.js';
-import { loadState, updateStateAtomically } from '../../state/stateStore.js';
+import { loadState } from '../../state/stateStore.js';
 import { readExecutionScene, saveExecutionScene, selectSceneImage } from './executionScenes.js';
 import { imageFollowUpAttachments, restoreImageRetry } from './imageTurnState.js';
 

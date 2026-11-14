@@ -38,7 +38,7 @@ function dateCalc(operation, dateStr, offsetStr) {
     else if (unit === 'week') target.setDate(target.getDate() + amount * 7);
     else if (unit === 'month') target.setMonth(target.getMonth() + amount);
     else if (unit === 'year') target.setFullYear(target.getFullYear() + amount);
-    else if (unit === 'hour' || unit === 'h') target.setHours(target.getHours() + amount);
+    else if (unit === 'hour') target.setHours(target.getHours() + amount);
     else if (unit.startsWith('min')) target.setMinutes(target.getMinutes() + amount);
     else target.setSeconds(target.getSeconds() + amount);
     return { result: target.toISOString(), date: target.toISOString().split('T')[0], time: target.toTimeString().split(' ')[0] };

@@ -19,7 +19,7 @@
 // Extracted from desktopStore.js in Phase 10b refactor (see
 // _refactor-backup/REFACTOR_PLAN.md). Pure module — no external deps.
 
-export function recoverLeadingJsonObject(raw = '') {
+function recoverLeadingJsonObject(raw = '') {
   const source = String(raw || '');
   let depth = 0;
   let inString = false;

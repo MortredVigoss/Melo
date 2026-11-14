@@ -2,7 +2,7 @@
 // feature; app.js neither reads nor writes it. The pending prompts themselves
 // stay in the shared permission queue (toolPermissions()) next to the tool
 // permission and file-safety requests the same stream delivers.
-export function createApprovalsState() {
+function createApprovalsState() {
   return {
     // GET /api/capability-grants, refreshed at most every GRANTS_TTL_MS while a
     // grant list is on screen, after every decision and every revoke.

@@ -1,4 +1,4 @@
-export const developmentStatus = {
+const developmentStatus = {
   preparing: '准备中', created: '待开始', implementing: '实施中', testing: '验证中', reviewing: '审查中', awaiting_review: '待人工核对', awaiting_merge: '待合并', blocked: '受阻', cancelled: '已停止', interrupted: '已中断',
 };
 export function developmentCheckpoint(job) {

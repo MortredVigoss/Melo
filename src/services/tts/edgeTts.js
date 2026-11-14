@@ -15,7 +15,7 @@ import { readFile, unlink } from 'node:fs/promises';
 
 const execFileAsync = promisify(execFile);
 
-export async function resolveEdgeTtsBin() {
+async function resolveEdgeTtsBin() {
   if (process.env.MELO_EDGE_TTS_BIN) return process.env.MELO_EDGE_TTS_BIN;
   const home = homedir();
   const candidates = [

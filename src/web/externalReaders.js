@@ -331,5 +331,3 @@ export async function readUrlWithExternalReaders(url, {
   }
   return null;
 }
-
-export const EXTERNAL_READER_ORDER = READER_ORDER;
