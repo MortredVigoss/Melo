@@ -6,7 +6,9 @@ import { escapeHtml } from '../../i18n.js';
 //     kind: 'tree',
 //     renderer: 'tree',
 //     title?: string,
-//     nodes: [{ id, label, children?: [ids], note?: string }, ...]
+//     nodes: [{ id, label, children?: [ids], desc?: string }, ...]
+//   (`desc` is the stored field; the hover text read `note` until 2026-11-14
+//   and never appeared.)
 //   }
 
 const LEVEL_GAP = 36;        // vertical distance between parent and child row
@@ -179,7 +181,8 @@ function mountTree(host, spec) {
     host.querySelectorAll('[data-node-id]').forEach(nodeEl => {
       const id = nodeEl.dataset.nodeId;
       const node = byId.get(id);
-      if (!node || !node.note) return;
+      const description = node?.desc || node?.note;
+      if (!description) return;
       nodeEl.addEventListener('mouseenter', () => {
         nodeEl.setAttribute('data-hovering', 'true');
       });
@@ -187,7 +190,7 @@ function mountTree(host, spec) {
         nodeEl.removeAttribute('data-hovering');
       });
       const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-      title.textContent = node.note;
+      title.textContent = description;
       nodeEl.appendChild(title);
     });
   }

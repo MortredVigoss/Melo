@@ -1,38 +1,6 @@
 import { isTranslationRequest } from './requestPolicy.js';
 import { AGENT_LOOP_CONTRACT, contractRegExp } from '../loopContract.js';
 
-// Real LRU: Map preserves insertion order, so we delete-and-reinsert on every
-// read to move the entry to the "most recently used" tail.  Without that step
-// the cache is a plain FIFO — the eviction loop at line ~110 was removing the
-// oldest *inserted* key, which in a query-repeat workload ends up evicting
-// still-hot entries.  See search audit B-1.
-const INTENT_CACHE = new Map();
-
-// Exported for unit tests.  These are generic — the intent cache just happens
-// to be the only current caller.
-export function lruGet(cache, key) {
-  if (!cache.has(key)) return undefined;
-  const value = cache.get(key);
-  cache.delete(key);
-  cache.set(key, value);
-  return value;
-}
-
-export function lruSet(cache, key, value, max) {
-  if (cache.has(key)) cache.delete(key);
-  cache.set(key, value);
-  while (cache.size > max) {
-    const oldest = cache.keys().next().value;
-    if (oldest === undefined) break;
-    cache.delete(oldest);
-  }
-}
-
-// Test-only: reset the cache between intent-router test cases.
-export function _resetIntentCacheForTests() {
-  INTENT_CACHE.clear();
-}
-
 // Rule patterns, thresholds and the classifier prompt are shared with the
 // iPhone finalize step (shared/protocol/agent-loop.json).
 const INTENT = AGENT_LOOP_CONTRACT.intent;

@@ -55,6 +55,10 @@ test('import verifies the source pack, fills the store, pins the revision and li
   assert.equal(lock.winter.revision, 'winter-2-test-aaaa');
   assert.deepEqual(Object.keys(lock.mainAnimation.files), ['原版.webm']);
   assert.deepEqual(Object.keys(lock.winterFrames.files).sort(), ['000/0.png', '000/cut.json']);
+  // The lock is committed: it must not carry where on this machine the media came from.
+  assert.equal('importedFrom' in lock, false);
+  assert.ok(!JSON.stringify(lock).includes(f.source) && !JSON.stringify(lock).includes(f.store), 'no path of the importing machine');
+  assert.match(lock.importedAt, /^\d{4}-\d{2}-\d{2}T/);
   assert.ok(!existsSync(join(f.store, 'winter-animation', '.DS_Store')));
   // Repeatable: the same revision imports again without leaving staging directories behind.
   f.module.importAssets({ from: f.source, store: f.store, petRoot: f.pet, log: f.log });

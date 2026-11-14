@@ -132,7 +132,7 @@ const VERBS = [
   [/^(fetch_url|open_url|web_screenshot|browser_open|browser_snapshot)$|read_post|get_feed_detail|get_video_detail|get_video_comments/, 'read'],
   [/^calculator$/, 'compute'],
   [/^(file_read|glob|grep|read_history|search_history|todo_list|calendar_list_events|reminders_list|contacts_search|location_current|knowledge)$/, 'lookup'],
-  [/^(file_write|file_edit|file_move|file_mkdir|file_delete|calendar_create_event|reminders_create|reminders_complete|todo_create|todo_complete)$/, 'write'],
+  [/^(file_write|file_edit|file_move|file_mkdir|file_delete|file_restore|calendar_create_event|reminders_create|reminders_complete|todo_create|todo_complete)$/, 'write'],
   [/search_posts|search_feeds|search_videos/, 'search'],
 ];
 export const operationVerb = op => VERBS.find(([pattern]) => pattern.test(String(op?.name || '')))?.[1] || 'call';

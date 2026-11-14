@@ -13,6 +13,7 @@ export function toolEffect(name, args = {}, declaration = {}) {
   if (COMPUTE.has(name)) return 'compute';
   if (WRITE.has(name)) return 'write';
   if (name === 'pdf') return args.action === 'read' ? 'read' : 'write';
+  if (name === 'file_restore') return args.action === 'list' ? 'read' : 'write';
   if (name === 'image') return ['ocr', 'info', 'analyze'].includes(args.action) ? 'read' : 'write';
   if (name === 'knowledge') return ['search', 'status'].includes(args.action) ? 'read' : 'write';
   // An MCP read-only annotation is useful for presentation, not authority.

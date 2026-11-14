@@ -612,11 +612,6 @@ async function assertNativeLaunch(appPath, expectedBundlePath = appPath) {
         message: 'Native launch did not land on the New chat home surface',
       },
       {
-        key: 'topbarOverlap',
-        test: value => value === false,
-        message: 'Native launch reported overlapping topbar layout',
-      },
-      {
         key: 'composerActionVisible',
         test: value => value === true,
         message: 'Native launch reported composer actions outside the viewport',

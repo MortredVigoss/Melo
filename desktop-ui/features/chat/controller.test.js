@@ -257,6 +257,35 @@ test('send pipeline: optimistic message, streamed deltas patch the bubble in pla
   assert.equal(document.querySelectorAll('.message-list article.message').length, 4);
 });
 
+test('streamed deltas with a source marker keep ONE source strip under the bubble', async () => {
+  const sse = server();
+  const h = harness();
+  h.chat().composer = 'what does the page say';
+  const sending = h.send();
+  await flush();
+  const body = sse.streams[0].body;
+  sse.send('started', { requestId: body.requestId, runId: 'run-1' });
+  const strips = () => document.querySelectorAll('.message.assistant.is-streaming .source-citation-strip').length;
+  sse.send('delta', { delta: 'The page says so. [source: https://example.test/a]' });
+  await flush();
+  assert.equal(strips(), 1, 'the strip appears with the first marker');
+  const rendersAfterFirstDelta = h.renders();
+  // Each later delta re-renders the strip; before the fix each one appended another.
+  for (const delta of [' More', ' text', ' arrives', ' here.']) {
+    sse.send('delta', { delta });
+    await flush();
+    assert.equal(strips(), 1, `still one strip after "${delta}"`);
+  }
+  assert.equal(h.renders(), rendersAfterFirstDelta, 'all of this happened on the in-place path, without a full render');
+  sse.send('delta', { delta: ' [source: https://example.test/b]' });
+  await flush();
+  assert.equal(strips(), 1, 'a second source goes into the same strip');
+  assert.equal(document.querySelectorAll('.message.assistant.is-streaming .source-citation-card').length, 2, 'both sources are shown, once each');
+  sse.send('done', { requestId: body.requestId, bootstrap: page({ chats: [chat('chat-a', [message('q', 'user', 'hi'), message('r', 'assistant', 'hello')]), chat('chat-b')] }) });
+  sse.close();
+  await sending;
+});
+
 test('done with unusedSupplements sends them as the next message of the same chat', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const sse = server();

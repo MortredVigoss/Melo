@@ -5,9 +5,6 @@ import {
   classifyRequest,
   intentAllowsUncertaintyMarker,
   intentRequiresVerification,
-  lruGet,
-  lruSet,
-  _resetIntentCacheForTests,
 } from './intentRouter.js';
 
 test('classifyIntent handles obvious casual and factual turns with rules only', async () => {
@@ -41,53 +38,11 @@ test('intent verification gates stay narrow', () => {
   assert.equal(intentAllowsUncertaintyMarker('factual'), true);
 });
 
-/**
- * Search audit B-1 regression: INTENT_CACHE is a real LRU — reading a key
- * moves it to the "most recently used" tail so it survives the next
- * eviction.  The old code evicted the oldest-*inserted* key regardless of
- * recency; a query repeated right before eviction would still get dropped.
- */
-test('lruGet promotes a key so it survives the next eviction', () => {
-  const cache = new Map();
-  lruSet(cache, 'a', 1, 3);
-  lruSet(cache, 'b', 2, 3);
-  lruSet(cache, 'c', 3, 3);
-  // Touch 'a' so it becomes most-recently-used.
-  assert.equal(lruGet(cache, 'a'), 1);
-  // Now insert 'd' → max is 3 so the LRU entry evicts.  With FIFO 'a' would
-  // be the one evicted (oldest inserted); with LRU semantics 'b' goes.
-  lruSet(cache, 'd', 4, 3);
-  assert.ok(cache.has('a'), 'a survives because it was just read');
-  assert.ok(!cache.has('b'), 'b is evicted (least recently used)');
-  assert.ok(cache.has('c'));
-  assert.ok(cache.has('d'));
-});
-
-test('lruSet on existing key moves it to the tail', () => {
-  const cache = new Map();
-  lruSet(cache, 'a', 1, 3);
-  lruSet(cache, 'b', 2, 3);
-  lruSet(cache, 'a', 99, 3);  // refresh
-  lruSet(cache, 'c', 3, 3);
-  lruSet(cache, 'd', 4, 3);   // should evict b, not a
-  assert.ok(cache.has('a'));
-  assert.ok(!cache.has('b'));
-  assert.equal(cache.get('a'), 99);
-});
-
-test('lruGet on missing key returns undefined and does not mutate', () => {
-  const cache = new Map();
-  lruSet(cache, 'a', 1, 3);
-  assert.equal(lruGet(cache, 'missing'), undefined);
-  assert.equal(cache.size, 1);
-});
-
-test('classifyIntent cache is isolated — _resetIntentCacheForTests clears it', async () => {
-  // Rule-classifier turns don't populate the cache at all; smoke-test the
-  // reset helper so test runs can't poison each other.
-  _resetIntentCacheForTests();
-  assert.equal(await classifyIntent('hi'), 'casual');
-});
+// 2026-11-14: four tests left here with the code they covered. The intent
+// cache had no reader and no writer since classification became rules only
+// (2026-10-24), so `lruGet` / `lruSet` had no caller either, and the test
+// "classifyIntent cache is isolated" cleared an empty map and then asserted
+// something the rules decide: it could not fail for the reason in its title.
 
 test('short task instructions and long unclassified text are never labelled casual by length', async () => {
   const { classifyByRules, isStandaloneGreeting } = await import('./intentRouter.js');

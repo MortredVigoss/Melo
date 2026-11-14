@@ -118,7 +118,8 @@ export function editMemoryFact(id, patch={}) {
     if (patch.resolveConflict==='mobile') patch={...patch,text:conflict.text,scope:conflict.scope || row.metadata.scope || 'chat'};
   }
   const text=patch.text===undefined?row.text:String(patch.text).trim();
-  if (!text || text.length>2000) throw new Error('记忆内容需要在 1–2000 字之间。');
+  // The range named is the one that applies: a row of a project's memory book holds 600 characters, any other row 2,000.
+  if (!text || text.length>2000) throw new Error(`记忆内容需要在 1–${(patch.scope || row.metadata.scope)==='project' ? BOOK_ROW_MAX_CHARS : 2000} 字之间。`);
   const scope=patch.scope || row.metadata.scope || 'chat';
   if (!['chat','project','agent','personal'].includes(scope)) throw new Error('记忆使用范围无效。');
   if (scope!=='chat' && row.metadata.audience!=='local') throw new Error('频道记忆仅用于原对话。');

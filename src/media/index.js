@@ -44,6 +44,12 @@ export function _setMediaBudgetsForTests({
 
 export function shouldBypassCachedExtraction(attachment = {}, cached = {}) {
   const source = String(cached?.metadata?.source || '').trim().toLowerCase();
+  // "Nothing could transcribe this" is not a result. Such placeholders are no
+  // longer written (see enrichMessageWithMediaContext), but a cache written
+  // before 2026-11-14 can still hold one for up to seven days.
+  if (isPlaceholderSource(source)) {
+    return true;
+  }
   if (!source.startsWith('social-link:')) {
     return false;
   }
@@ -367,7 +373,12 @@ export async function enrichMessageWithMediaContext(message, context = {}) {
         return null;
       }
 
-      await setCachedExtraction(cacheKey, result).catch(() => {});
+      // Keep real results only. A cached placeholder kept the same file
+      // without a transcript for seven days, also after the user had
+      // installed or configured what was missing.
+      if (!isPlaceholderSource(result?.metadata?.source)) {
+        await setCachedExtraction(cacheKey, result).catch(() => {});
+      }
       return {
         attachmentId: attachment.id || null,
         ...result,

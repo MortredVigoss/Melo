@@ -1,10 +1,10 @@
 // Integration tests for pdfTool.action='from_spec' — exercises the
 // full pipeline: spec validation → mode dispatch → rendering →
-// output write + URL signing. We don't run the Playwright path
-// here (would require a working browser binary in CI); the
-// rebuild-via-pdfkit path is fully covered. The Playwright path
-// has its own test that self-skips when `npx playwright` isn't
-// available, which mirrors how Batch A handled pdftoppm.
+// output write + URL signing. The rebuild-via-pdfkit path is fully
+// covered. The browser path has three tests at the end; they are
+// reported as skipped (never as passed) on a machine without the
+// Playwright CLI, and they fail when the CLI is there and no PDF
+// comes out.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -715,38 +715,50 @@ test('sectionsToHtml: legitimate CSS still passes the sanitizer cleanly', async 
   assert.match(html, /margin:\s*1in 0\.5in 1in 0\.5in/);
 });
 
-// ─── html_playwright integration smoke (self-skip) ──────────────────────────
+// ─── html_playwright: the browser really prints the document ────────────────
 //
-// Codex review's Batch C round asked for at least a generation-side
-// smoke test for the html_playwright path so a future regression on
-// the nested-doc fix gets caught. The test is self-skipping when
-// Playwright isn't available — same pattern pdfRender uses for
-// pdftoppm. When Playwright IS available, we generate a tiny CJK
-// rebuild and verify (a) we got a real PDF (b) the engine field is
-// html_playwright.
+// History, because it explains the shape of these tests. They used to end in
+// `if (!result.ok) { console.warn('… smoke skipped at runtime'); return; }`,
+// so they passed whatever happened. What happened, found on 2026-11-14: the
+// tool ran `open file://…` and `pdf <path>`; the Playwright CLI blocks
+// `file:` URLs and takes the output as `--filename`, so every render failed,
+// and each attempt left a detached daemon and a headless browser behind.
+// Now a machine without the CLI is reported as SKIPPED, and a machine with
+// it must produce a PDF that contains the document and must leave no daemon.
 
-async function probePlaywrightCli() {
+async function playwrightCliUnavailableReason() {
   try {
     const { execFile } = await import('node:child_process');
     const { promisify } = await import('node:util');
-    // We try a quick `--help` first, then a no-op `open about:blank`
-    // — if open works the rest of the pipeline likely does too.
-    await promisify(execFile)('npx', ['-y', '@playwright/cli@latest', '--help'], { timeout: 30_000 });
-    return true;
-  } catch {
-    return false;
+    await promisify(execFile)('npx', ['-y', process.env.MELO_PLAYWRIGHT_CLI_PACKAGE || '@playwright/cli@0.1.11', '--version'], { timeout: 60_000 });
+    return '';
+  } catch (error) {
+    return `the Playwright CLI cannot be started here (${String(error?.message || error).split('\n')[0].slice(0, 120)})`;
   }
 }
+// `skip` must be false or a reason. An empty string is a trap: node:test runs
+// the test and then reports it as skipped, so a failure would not count.
+const browserUnavailable = (await playwrightCliUnavailableReason()) || false;
 
-test('from_spec rebuild: real CJK content + NO language hint routes to html_playwright (skipped without Playwright)', async () => {
-  // Codex review (Batch C round 3, 2026-05-01) caught the previous
-  // smoke test was using ASCII "CJK Title" — never actually
-  // exercising the content-scan fallback that now decides
-  // CJK-without-language. This test does the real thing: Chinese
-  // characters in sections, no language field, no explicit engine.
-  // The result must be a real PDF rendered by Playwright (not pdfkit
-  // tofu).
-  if (!(await probePlaywrightCli())) return;
+// Daemons of the PDF session that belong to this test process.
+async function pdfDaemonsOfThisProcess() {
+  if (!['darwin', 'linux'].includes(process.platform)) return [];
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const { stdout } = await promisify(execFile)('ps', ['-axo', 'pid=,command='], { maxBuffer: 8 * 1024 * 1024 });
+  return stdout.split('\n').filter(line => line.includes('cliDaemon.js') && line.includes(`melo-pdf-p${process.pid}-`));
+}
+
+async function pdfText(path, ws) {
+  const read = await pdfTool.run({ action: 'read', path }, { workspacePath: ws });
+  assert.equal(read.ok, true, read.output);
+  return read.output.replace(/\s+/g, '');
+}
+
+test('from_spec rebuild: real CJK content + NO language hint is printed by the browser', { skip: browserUnavailable }, async () => {
+  // Codex review (Batch C round 3, 2026-05-01): Chinese characters in the
+  // sections, no language field, no explicit engine. The content scan must
+  // route to html_playwright, and the result must be the document itself.
   await withWorkspace(async ws => {
     const result = await pdfTool.run(
       {
@@ -758,24 +770,24 @@ test('from_spec rebuild: real CJK content + NO language hint routes to html_play
             { type: 'paragraph', text: '这是一段完整的中文段落，含有标点符号、数字 123、混合的 English 内容。' },
             { type: 'list', items: ['第一项', '第二项', '第三项'] },
           ],
-          // Intentionally NO outputStyle.language — content-scan must
-          // still route to html_playwright.
+          // Intentionally NO outputStyle.language.
         },
       },
       { workspacePath: ws },
     );
-    if (!result.ok) {
-      console.warn('html_playwright CJK smoke skipped at runtime:', result.output);
-      return;
-    }
+    assert.equal(result.ok, true, result.output);
     assert.equal(result.meta.engine, 'html_playwright', 'CJK content must route to html_playwright even without language hint');
-    const head = await readFile(result.meta.path);
-    assert.equal(head.slice(0, 5).toString(), '%PDF-');
+    const bytes = await readFile(result.meta.path);
+    assert.equal(bytes.slice(0, 5).toString(), '%PDF-');
+    const text = await pdfText(result.meta.path, ws);
+    assert.match(text, /2026年Q1报告/, 'the heading is in the PDF: the page printed is the document, not an empty tab');
+    assert.match(text, /第一项[\s\S]*第三项/);
+    assert.match(text, /English/);
+    assert.deepEqual(await pdfDaemonsOfThisProcess(), [], 'the browser session is closed after the render');
   });
 });
 
-test('from_spec rebuild html_playwright: end-to-end smoke (skipped without Playwright)', async () => {
-  if (!(await probePlaywrightCli())) return;
+test('from_spec rebuild html_playwright: explicit language and margins, end to end', { skip: browserUnavailable }, async () => {
   await withWorkspace(async ws => {
     const result = await pdfTool.run(
       {
@@ -795,19 +807,37 @@ test('from_spec rebuild html_playwright: end-to-end smoke (skipped without Playw
       },
       { workspacePath: ws },
     );
-    // We don't fail hard if Playwright errors at runtime — the
-    // melo CLI's @playwright integration has known runtime issues
-    // tracked separately from this PR. We just record the outcome.
-    if (!result.ok) {
-      // Surface the error so it's visible in test output but don't
-      // fail — the routing decision was already pinned in the
-      // pure-helper tests above.
-      console.warn('html_playwright smoke skipped at runtime:', result.output);
-      return;
-    }
+    assert.equal(result.ok, true, result.output);
     assert.equal(result.meta.engine, 'html_playwright');
-    const head = await readFile(result.meta.path);
-    assert.equal(head.slice(0, 5).toString(), '%PDF-');
+    const text = await pdfText(result.meta.path, ws);
+    assert.match(text, /CJKTitle/);
+    assert.match(text, /Bodycontentwithmargins\./);
+    assert.deepEqual(await pdfDaemonsOfThisProcess(), []);
+  });
+});
+
+test('write: Markdown becomes a PDF with its text; two renders at once do not mix their pages', { skip: browserUnavailable }, async () => {
+  await withWorkspace(async ws => {
+    const [first, second] = await Promise.all([
+      pdfTool.run({ action: 'write', format: 'markdown', content: '# 第一份文档\n\nAlpha paragraph only in one.' }, { workspacePath: ws }),
+      pdfTool.run({ action: 'write', format: 'markdown', content: '# 第二份文档\n\nBravo paragraph only in two.' }, { workspacePath: ws }),
+    ]);
+    assert.equal(first.ok, true, first.output);
+    assert.equal(second.ok, true, second.output);
+    assert.notEqual(first.meta.path, second.meta.path);
+    const one = await pdfText(first.meta.path, ws);
+    const two = await pdfText(second.meta.path, ws);
+    assert.match(one, /第一份文档/);
+    assert.match(one, /Alphaparagraphonlyinone\./);
+    assert.doesNotMatch(one, /Bravo/, 'the first PDF holds only the first document');
+    assert.match(two, /第二份文档/);
+    assert.match(two, /Bravoparagraphonlyintwo\./);
+    assert.doesNotMatch(two, /Alpha/);
+    // No `<name>.tmp.html` is written next to the output any more.
+    const { readdir } = await import('node:fs/promises');
+    const { dirname } = await import('node:path');
+    assert.deepEqual((await readdir(dirname(first.meta.path))).filter(name => name.endsWith('.html')), []);
+    assert.deepEqual(await pdfDaemonsOfThisProcess(), [], 'no browser is left behind');
   });
 });
 

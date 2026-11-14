@@ -199,6 +199,28 @@ test('cliServers render with mono name + Disconnect button', () => {
   assert.match(html, /data-action="disconnect-mcp-server"/);
 });
 
+test('each MCP service shows its own state: a failed start is not shown as merely disconnected', () => {
+  const surface = ['up', 'starting', 'failed', 'stopped', 'never'].map(id => ({ id, enabled: true }));
+  const html = renderAdvancedPage(freshState({
+    data: { customize: { mcpAuthSurface: surface } },
+    adv: {
+      cliServers: ['up'],
+      mcpStates: { up: { status: 'connected' }, starting: { status: 'connecting' }, failed: { status: 'unavailable' }, stopped: { status: 'disconnected' } },
+    },
+  }));
+  const shown = Object.fromEntries([...html.matchAll(/list-row-title mono">([a-z]+)<\/div>[\s\S]*?<div class="list-row-meta" data-mcp-status="([a-z]+)">([^<]+)<\/div>/g)].map(match => [match[1], [match[2], match[3]]]));
+  assert.deepEqual(shown, {
+    up: ['connected', '已连接'],
+    starting: ['connecting', '正在连接'],
+    failed: ['unavailable', '连接失败'],
+    stopped: ['disconnected', '未连接'],
+    never: ['disconnected', '未连接'],
+  });
+  // A failed or stopped service offers "重新连接"; a running one "断开连接".
+  assert.match(html, /data-action="manage-reconnect-mcp" data-server-name="failed"/);
+  assert.match(html, /data-action="disconnect-mcp-server" data-server-name="up"/);
+});
+
 // ─── Loading + error transitions ────────────────────────────────────────────
 
 test('loading state flips Refresh button label to "Refreshing…"', () => {

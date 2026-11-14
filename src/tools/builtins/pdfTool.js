@@ -17,10 +17,11 @@ import { serverText } from '../../shared/serverText.js';
  * write there, return the path.
  */
 
-import { execFile } from 'node:child_process';
-import { mkdir, writeFile, stat } from 'node:fs/promises';
+import { createServer } from 'node:http';
+import { mkdir, stat } from 'node:fs/promises';
 import { resolve, join, isAbsolute, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
+import { createPlaywrightSession } from '../../web/playwrightFetcher.js';
 import { signWorkspaceFileUrl } from '../../web/urlSigning.js';
 import { gatedReadIntoBuffer } from '../../safety/gatedRead.js';
 import {
@@ -41,23 +42,34 @@ import {
 } from '../../services/export/pdfEditSpec.js';
 
 const MAX_PDF_BYTES = 30 * 1024 * 1024; // 30MB
-const PW_CLI_SESSION = 'melo-search';
 
-// ─── Playwright CLI helper (shared with webSearchTool) ──────────────────────
+// ─── Browser session for HTML → PDF ─────────────────────────────────────────
+//
+// A session of its own, so printing never shares a page with web search or
+// page reading. It comes from the shared module, which brings what this file
+// used to lack: the pinned CLI version (it ran `@latest`), a lock so two
+// renders cannot interleave, and a name the shutdown and start-up clean-up
+// recognise (src/runtime/processOwnership.js).
+const pdfSession = createPlaywrightSession({ sessionName: 'melo-pdf', debugScope: 'pdf', defaultTimeoutMs: 20_000 });
 
-function runPlaywrightCli(args, timeoutMs = 30_000) {
-  return new Promise((resolve, reject) => {
-    const child = execFile(
-      'npx',
-      ['-y', '@playwright/cli@latest', `-s=${PW_CLI_SESSION}`, '--raw', ...args],
-      { timeout: timeoutMs, maxBuffer: 5 * 1024 * 1024, env: { ...process.env, NODE_NO_WARNINGS: '1' } },
-      (err, stdout) => {
-        if (err) return reject(err);
-        resolve(stdout || '');
-      },
-    );
-    child.stderr?.resume();
+// The Playwright CLI refuses `file:` URLs ("Access to "file:" protocol is
+// blocked"), so the document is handed to the browser over loopback: one
+// document, under one unguessable path, for the time of one render.
+async function serveDocumentOnce(html) {
+  const body = Buffer.from(String(html), 'utf8');
+  const route = `/${randomBytes(16).toString('hex')}/document.html`;
+  const server = createServer((request, response) => {
+    if (request.method !== 'GET' || request.url !== route) { response.writeHead(404).end(); return; }
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-length': body.length, 'cache-control': 'no-store' }).end(body);
   });
+  await new Promise((resolveListen, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolveListen);
+  });
+  return {
+    url: `http://127.0.0.1:${server.address().port}${route}`,
+    close: () => new Promise(done => { server.closeAllConnections?.(); server.close(() => done()); }),
+  };
 }
 
 // ─── Read PDF ───────────────────────────────────────────────────────────────
@@ -423,16 +435,28 @@ function markdownToHtml(md) {
 //     dead. Codex review (2026-05-01 round) flagged this.
 //   • Sharing the temp-file + spawn cleanup logic means a future
 //     fix to the Playwright invocation lives in one place.
+//
+// 2026-11-14: until now this wrote `<name>.tmp.html` next to the output and
+// ran `open file://…` then `pdf <path>`. Both had stopped working with the
+// CLI (`file:` is blocked; `pdf` takes `--filename`, a positional path only
+// prints the help), so every HTML/Markdown/CJK PDF failed, and each attempt
+// left a detached daemon and a headless browser behind because nothing
+// closed the session. Local images must be embedded in the HTML (data: URI),
+// as the tool description says: a page served over loopback cannot read files.
 async function htmlToPdfWithPlaywright(fullHtml, outputPath) {
   const absPath = resolve(outputPath);
-  const tmpHtml = absPath.replace(/\.pdf$/i, '') + '.tmp.html';
-  await writeFile(tmpHtml, fullHtml, 'utf8');
+  const served = await serveDocumentOnce(fullHtml);
   try {
-    await runPlaywrightCli(['open', `file://${tmpHtml}`], 15_000);
-    await runPlaywrightCli(['pdf', absPath], 20_000);
+    await pdfSession.withLock(async () => {
+      await pdfSession.navigate(served.url, 15_000);
+      await pdfSession.runCli(['pdf', `--filename=${absPath}`], 20_000);
+    });
   } finally {
-    const { unlink } = await import('node:fs/promises');
-    unlink(tmpHtml).catch(() => {});
+    await served.close();
+    // PDFs are occasional: do not keep a browser waiting for the next one.
+    // (close() queues behind the lock, so a render that is already waiting
+    // still gets its turn first.)
+    await pdfSession.close();
   }
   const st = await stat(absPath);
   return { path: absPath, size: st.size };

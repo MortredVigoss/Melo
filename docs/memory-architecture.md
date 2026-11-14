@@ -84,8 +84,6 @@ prompt input ──> │ Hot attic (~800) │ ──> │ L0 identity           
 | `MELO_ATTIC_ENABLED=0` | Skip the Hot attic injection | unset (enabled) |
 | `MELO_LOCAL_COMPACT_MODEL` | Local LLM model name for offline compact | `qwen2.5:3b` |
 | `MELO_DREAMING_ENABLED` | `0` disables the entire dreaming pipeline (scheduler + `triggerDreamingNow`) | `1` |
-| `MELO_DREAMING_INCREMENTAL_MS` | Incremental sweep interval | `21_600_000` (6h) |
-| `MELO_DREAMING_FULL_MS` | Full sweep interval | `86_400_000` (24h) |
 | `MELO_GATE_W_RECALL` | Promotion-gate weight for log-scaled hit count | `0.4` |
 | `MELO_GATE_W_DIVERSITY` | Promotion-gate weight for distinct-query count (saturates at 3) | `0.35` |
 | `MELO_GATE_W_OUTCOME` | Promotion-gate weight for good/hit ratio | `0.25` |

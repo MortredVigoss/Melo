@@ -823,9 +823,13 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
       let key = payload["key"] as? String ?? ""
       if key == "closeBehavior", let value = payload["value"] as? String, ["quit", "background"].contains(value) {
         UserDefaults.standard.set(value, forKey: "melo.closeBehavior"); localSettingsReply(requestID)
-      } else if key == "launchAtLogin", #available(macOS 13, *) {
+      } else if key == "launchAtLogin", #available(macOS 13, *), let enabled = DesktopPetManager.boolValue(payload["value"]) {
+        // The page sends a JS boolean, which arrives as NSNumber. Until
+        // 2026-11-14 this compared the value with the string "true", so
+        // "开启" always took the unregister branch and the login item was
+        // never registered.
         do {
-          if payload["value"] as? String == "true" { try SMAppService.mainApp.register() }
+          if enabled { try SMAppService.mainApp.register() }
           else { try SMAppService.mainApp.unregister() }
           localSettingsReply(requestID)
         } catch { localSettingsReply(requestID, extra: ["error": error.localizedDescription]) }
@@ -1043,9 +1047,6 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
           const rect = element.getBoundingClientRect();
           return rect.width > 0 && rect.height > 0 && getComputedStyle(element).visibility !== 'hidden';
         };
-        const left = document.querySelector('.topbar-left');
-        const center = document.querySelector('.topbar-center');
-        const right = document.querySelector('.topbar-right');
         const primaryNavItems = Array.from(document.querySelectorAll('.neural-cluster[data-group]'));
         const primaryNavTitle =
           primaryNavItems[0]?.dataset.group || '';
@@ -1058,14 +1059,7 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
         });
         const contentScrollbar = document.querySelector('.content-scrollbar');
         const contentScrollbarThumb = document.querySelector('.content-scrollbar-thumb');
-        let topbarOverlap = false;
         let composerActionVisible = false;
-        if (visible(left) && visible(center) && visible(right)) {
-          const l = left.getBoundingClientRect();
-          const c = center.getBoundingClientRect();
-          const r = right.getBoundingClientRect();
-          topbarOverlap = l.right > c.left - 4 || c.right > r.left - 4;
-        }
         if (sendButton) {
           const rect = sendButton.getBoundingClientRect();
           composerActionVisible = rect.width > 0 && rect.height > 0 && rect.bottom <= window.innerHeight && rect.top >= 0 && rect.left >= 0 && rect.right <= window.innerWidth;
@@ -1074,7 +1068,6 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
           pageTitle,
           hasComposer: Boolean(composer),
           homeSurfaceVisible: visible(homeSurface),
-          topbarOverlap,
           composerActionVisible,
           primaryNavCount: primaryNavItems.length,
           primaryNavTitle,

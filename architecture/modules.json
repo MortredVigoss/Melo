@@ -24,8 +24,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 664,
-      "edges": 2216,
+      "modules": 665,
+      "edges": 2220,
       "roots": [
         "src",
         "desktop-ui",
@@ -38,7 +38,7 @@
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
-      "detected": 49,
+      "detected": 50,
       "unannotated": []
     }
   },
@@ -1312,7 +1312,9 @@
           "src/providers/apiCompatibility.test.js",
           "src/providers/auxiliaryTransport.test.js",
           "src/providers/functionCalling.test.js",
+          "src/providers/helperRequests.hostedSearch.test.js",
           "src/providers/llmConnections.test.js",
+          "src/providers/streams.stall.test.js",
           "src/retrieval/intentRouter.test.js",
           "src/retrieval/naturalSearch.test.js",
           "src/retrieval/searchRouter.test.js",
@@ -2140,6 +2142,7 @@
           "desktop-ui/credentialChip.test.js",
           "desktop-ui/language.browser.test.js",
           "desktop-ui/llmConnections.test.js",
+          "desktop-ui/localSettings.launchAtLogin.test.js",
           "desktop-ui/localSettings.test.js",
           "desktop-ui/modelPresentation.test.js",
           "desktop-ui/settingsEdit.test.js",
@@ -2361,7 +2364,7 @@
       "modules": {
         "desktop-ui": 28,
         "shared": 1,
-        "src": 99
+        "src": 100
       },
       "entryModules": [
         {
@@ -2697,7 +2700,7 @@
       ],
       "dependsOn": {
         "agents": 8,
-        "approvals": 35,
+        "approvals": 36,
         "chat": 29,
         "desktop-shell": 15,
         "development": 1,
@@ -2807,6 +2810,7 @@
           "desktop-ui/features/customize/controller.test.js",
           "desktop-ui/mcpStartup.browser.test.js",
           "desktop-ui/viz/citationRenderer.test.js",
+          "desktop-ui/viz/renderers/storedShapes.test.js",
           "desktop-ui/viz/vizRenderer.test.js",
           "scripts/inspect-search-trail.test.js",
           "shared/agent/organizer.test.js",
@@ -2848,6 +2852,7 @@
           "src/tools/builtins/fetchUrlTool.evidenceTrail.test.js",
           "src/tools/builtins/fetchUrlTool.hedge.test.js",
           "src/tools/builtins/fetchUrlTool.socialRoute.test.js",
+          "src/tools/builtins/fileRestoreTool.test.js",
           "src/tools/builtins/pdfTool.actions.test.js",
           "src/tools/builtins/pdfTool.fromspec.test.js",
           "src/tools/builtins/pdfTool.output.test.js",
@@ -2898,6 +2903,7 @@
           "src/web/originCheck.test.js",
           "src/web/overlayCloser.browser.test.js",
           "src/web/overlayCloser.test.js",
+          "src/web/playwrightSockets.test.js",
           "src/web/textUrls.test.js",
           "src/web/urlSigning.test.js"
         ],
@@ -3152,6 +3158,7 @@
           "src/desktopStore.vision.test.js",
           "src/http/mediaRoutes.http.test.js",
           "src/images/codexImageEngine.test.js",
+          "src/images/imageGen.signal.test.js",
           "src/images/imageGen.validation.test.js",
           "src/images/imagePrompts.test.js",
           "src/images/imageWorkflow.test.js",
@@ -3165,6 +3172,7 @@
           "src/media/extractors/videoExtractor.test.js",
           "src/media/extractors/youtubeExtractor.resolveCookies.test.js",
           "src/media/orchestratorAbort.test.js",
+          "src/media/placeholderCache.test.js",
           "src/media/uploads.test.js",
           "src/media/urlDetector.test.js",
           "src/media/visionLargeImage.test.js",
@@ -3552,7 +3560,7 @@
         "platform": 16,
         "projects": 1,
         "settings": 1,
-        "tools": 35,
+        "tools": 36,
         "voice": 1
       },
       "httpRoutes": [
@@ -5589,6 +5597,7 @@
       ],
       "tests": [
         "desktop-ui/localSettings.test.js",
+        "desktop-ui/localSettings.launchAtLogin.test.js",
         "desktop-ui/launchScreen.test.js"
       ],
       "note": "window.webkit.messageHandlers.meloVoice（nativeSettings、保存图片、语音、回复完成通知）由 main.swift 的 WKScriptMessageHandler 处理",
@@ -5982,6 +5991,10 @@
         "desktop-ui/localSettings.desktopPet.test.js": [
           "desktop-ui/localSettings.js"
         ],
+        "desktop-ui/localSettings.launchAtLogin.test.js": [
+          "desktop-ui/localSettings.js",
+          "desktop-app/main.swift"
+        ],
         "desktop-ui/localSettings.test.js": [
           "desktop-ui/localSettings.js"
         ],
@@ -6030,6 +6043,7 @@
         "desktop-ui/features/approvals/controller.test.js",
         "desktop-ui/launchScreen.test.js",
         "desktop-ui/localSettings.desktopPet.test.js",
+        "desktop-ui/localSettings.launchAtLogin.test.js",
         "desktop-ui/localSettings.test.js",
         "scripts/desktop-pet-assets.test.js",
         "src/agents/skillRuns.crossHome.test.js",
@@ -6044,6 +6058,7 @@
         "src/web/externalReaders.test.js"
       ],
       "reads": [
+        "desktop-app/main.swift",
         "desktop-pet/assets-store.cjs",
         "desktop-ui/executionPanel.js",
         "desktop-ui/features/approvals/view.js",

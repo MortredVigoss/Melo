@@ -359,3 +359,34 @@ test('Agent capabilities control local context even when old global connector to
  const out=await buildDynamicContext(state,chatFixture({projectId:null}),workspace,connectors.map(c=>({...c,enabled:false})));
  assert.match(out,/file-secret/);assert.match(out,/command-secret/);
 });
+
+// ─── Conversation continuity reaches the prompt context ─────────────────────
+//
+// The gate's smoke run checks these four sentences too, but on
+// `buildConversationContinuityContext`, a wrapper no product code calls, so
+// it stays green if the product stops rendering them. This is the same
+// fixture on the function the turn really calls (prepareNode → here → the
+// `dynamic` part of the system prompt).
+test('buildDynamicContext carries the continuity rules of a clarification turn', async () => {
+  const chat = chatFixture({
+    messages: [
+      { role: 'user', content: 'lancelot', attachments: [] },
+      {
+        role: 'assistant',
+        content: '你是指 Lancelot 吗？可能是这些之一：\n- 亚瑟王传说中的兰斯洛特\n- (Fate) 里的 Lancelot\n- 某个游戏/角色/项目名\n\n你告诉我你想了解哪一个，我可以直接继续。',
+        attachments: [],
+      },
+      { role: 'user', content: '亚瑟王', attachments: [] },
+    ],
+  });
+  const out = await buildDynamicContext({ artifacts: [], commandRuns: [] }, chat, EMPTY_WORKSPACE, [], '亚瑟王');
+  assert.ok(out.includes('Conversation continuity rules:'));
+  assert.ok(out.includes("The assistant's previous turn was a clarification/disambiguation step:"));
+  assert.ok(out.includes('The topic being clarified came from the earlier user request: lancelot'));
+  assert.ok(out.includes('The latest user reply should be interpreted as choosing or refining that earlier topic: 亚瑟王'));
+
+  // A turn that is not an answer to a clarification gets none of the two topic lines.
+  const plain = chatFixture({ messages: [{ role: 'user', content: 'What is the capital of France?', attachments: [] }] });
+  const plainOut = await buildDynamicContext({ artifacts: [], commandRuns: [] }, plain, EMPTY_WORKSPACE, [], 'What is the capital of France?');
+  assert.ok(!plainOut.includes('The topic being clarified came from the earlier user request'));
+});

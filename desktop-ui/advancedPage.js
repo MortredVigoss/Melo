@@ -95,6 +95,11 @@ export function renderAdvancedPage({
     return escapeHtml(t(label||'未连接'))+(src?`<div><img width="200" height="200" alt="QR" src="${escapeHtml(src)}"></div>`:'');
   };
   const socialName = name=>['melo-xiaohongshu','melo-douyin'].includes(name);
+  // The server reports four states (src/mcp/manager.js). A service that failed
+  // to start used to read "未连接", the same as one the user had disconnected.
+  const mcpStatusText = name => adv.cliServers.includes(name)
+    ? t('已连接')
+    : t(({ connecting: '正在连接', unavailable: '连接失败' })[adv.mcpStates?.[name]?.status] || '未连接');
   const configuredNames=[...new Set([...adv.cliServers,...(data.customize?.mcpAuthSurface || []).filter(s=>s.enabled).map(s=>s.id)])];
   const cliServerRows = configuredNames.length === 0
     ? '<div class="empty-state compact">No active MCP servers.</div>'
@@ -105,7 +110,7 @@ export function renderAdvancedPage({
             <button type="button" class="small-button" data-action="manage-platform-login" data-server-name="${escapeHtml(name)}" data-login-action="start">扫码登录</button>
             <button type="button" class="small-button" data-action="manage-platform-login" data-server-name="${escapeHtml(name)}" data-login-action="status">检查登录状态</button>
             <div aria-live="polite" data-platform-status>${loginBlock(name)}</div></div>` : ''}
-          <div class="list-row-meta">${adv.cliServers.includes(name)?t('已连接'):t(adv.mcpStates?.[name]?.status==='connecting'?'正在连接':'未连接')}</div>
+          <div class="list-row-meta" data-mcp-status="${escapeHtml(adv.cliServers.includes(name)?'connected':(adv.mcpStates?.[name]?.status||'disconnected'))}">${mcpStatusText(name)}</div>
           ${adv.mcpStates?.[name]?.tools?.length?`<details><summary>${t('工具')} (${adv.mcpStates[name].tools.length})</summary><code>${adv.mcpStates[name].tools.map(escapeHtml).join(', ')}</code></details>`:''}
           <div class="inline-actions">
             <button class="small-button" type="button" data-action="${adv.cliServers.includes(name)?'disconnect-mcp-server':'manage-reconnect-mcp'}" data-server-name="${escapeHtml(name)}">

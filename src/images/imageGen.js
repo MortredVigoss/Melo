@@ -84,10 +84,11 @@ export function detectImageMimeFromBytes(buffer) {
  * @param {string} [opts.aspectRatio]  default "1:1"
  * @param {string} opts.apiKey
  * @param {string} [opts.groupId]      optional (TTS uses it as ?GroupId=…; unclear for image API — pass through for safety)
- * @param {AbortSignal} [opts.signal]
+ * @param {AbortSignal} [opts.signal]  the caller's cancel
+ * @param {number} [opts.timeoutMs]    test-only: limit of each of the two requests (default 90 s)
  * @returns {Promise<{ buffer: Buffer, mimeType: string, sourceUrl: string }>}
  */
-export async function generateImageViaMinimax({ prompt, aspectRatio = '1:1', apiKey, groupId, signal }) {
+export async function generateImageViaMinimax({ prompt, aspectRatio = '1:1', apiKey, groupId, signal, timeoutMs = GEN_TIMEOUT_MS }) {
   if (!prompt || typeof prompt !== 'string') {
     throw new Error('generateImageViaMinimax: prompt is required');
   }
@@ -106,9 +107,16 @@ export async function generateImageViaMinimax({ prompt, aspectRatio = '1:1', api
     ? `${MINIMAX_IMAGE_BASE}?GroupId=${encodeURIComponent(groupId)}`
     : MINIMAX_IMAGE_BASE;
 
+  // Each of the two requests ends at the time limit AND at the caller's
+  // cancel. Until 2026-11-14 it was one or the other: a caller's signal
+  // REPLACED the limit on the request (both product callers pass one, so the
+  // 90 s never applied; an image turn then waited for whatever the HTTP
+  // client gave up at), and the download had the limit but ignored the cancel.
+  const limited = () => (signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs));
+
   const res = await fetch(url, {
     method: 'POST',
-    signal: signal || AbortSignal.timeout(GEN_TIMEOUT_MS),
+    signal: limited(),
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
@@ -139,7 +147,7 @@ export async function generateImageViaMinimax({ prompt, aspectRatio = '1:1', api
   // Download the generated image. MiniMax URLs are usually pre-signed and
   // short-lived, so caching them on disk is the right move.
   const imgRes = await fetch(imageUrl, {
-    signal: AbortSignal.timeout(GEN_TIMEOUT_MS),
+    signal: limited(),
   });
   if (!imgRes.ok) {
     throw new Error(`Failed to download generated image: HTTP ${imgRes.status}`);

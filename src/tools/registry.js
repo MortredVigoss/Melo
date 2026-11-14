@@ -17,6 +17,7 @@ import { fileReadTool } from './builtins/fileReadTool.js';
 import { fileEditTool } from './builtins/fileEditTool.js';
 import { fileWriteTool } from './builtins/fileWriteTool.js';
 import { fileDeleteTool } from './builtins/fileDeleteTool.js';
+import { fileRestoreTool } from './builtins/fileRestoreTool.js';
 import { fileMoveTool } from './builtins/fileMoveTool.js';
 import { fileMkdirTool } from './builtins/fileMkdirTool.js';
 import { globTool } from './builtins/globTool.js';
@@ -61,5 +62,5 @@ export function bootstrapBuiltinTools() {
   if (_bootstrapped) return;
   _bootstrapped = true;
   registerTools([
-  developmentTool,bashTool, fileReadTool, fileEditTool, fileWriteTool, fileDeleteTool, fileMoveTool, fileMkdirTool, globTool, grepTool, delegateTool, {...delegateTool,id:'agent',name:'Agent (legacy alias)',run:delegateTask}, fetchUrlTool, webSearchTool, webScreenshotTool, mediaInfoTool, mediaApiTool, searchHistoryTool, readHistoryTool, pdfTool, xlsxTool, calculatorTool, clipboardTool, deviceLocationTool, translateTool, imageTool, reminderTool, knowledgeTool, browserOpenTool, browserSnapshotTool, browserCloseTool, browserClickTool, browserFillTool, browserWaitForTool]);
+  developmentTool,bashTool, fileReadTool, fileEditTool, fileWriteTool, fileDeleteTool, fileRestoreTool, fileMoveTool, fileMkdirTool, globTool, grepTool, delegateTool, {...delegateTool,id:'agent',name:'Agent (legacy alias)',run:delegateTask}, fetchUrlTool, webSearchTool, webScreenshotTool, mediaInfoTool, mediaApiTool, searchHistoryTool, readHistoryTool, pdfTool, xlsxTool, calculatorTool, clipboardTool, deviceLocationTool, translateTool, imageTool, reminderTool, knowledgeTool, browserOpenTool, browserSnapshotTool, browserCloseTool, browserClickTool, browserFillTool, browserWaitForTool]);
 }

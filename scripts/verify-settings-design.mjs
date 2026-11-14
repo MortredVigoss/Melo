@@ -62,6 +62,8 @@ try {
  await page.locator('.model-prompt-settings>summary').click();const legacy=page.locator('#model-config-form');await legacy.locator('[data-action=form-settings-edit]').click();
  await legacy.locator('[name=systemPrompt]').fill('只修改系统提示词');await legacy.locator('[data-action=form-settings-save]').click();await legacy.locator('[data-edit-status=saved]').waitFor();
  out.connection.afterSavedPrompt=(await bootstrap()).settings.config.model;out.connection.activeBefore='local';out.connection.activeAfterPrompt=(await bootstrap()).settings.config.llmConnections.activeId;assert.equal(out.connection.activeAfterPrompt,'local');
+ // Recorded since the script was written, never compared (2026-11-14): saving only the system prompt must leave the model alone.
+ assert.equal(out.connection.afterSavedPrompt,out.connection.before);
  // Change the same provider in another settings surface, then use the cached form.
  await post('/api/settings/model',{model:'fixture-updated'});
  await page.locator('[data-action=open-view][data-view=settings]').first().click().catch(()=>{});
@@ -75,6 +77,8 @@ try {
  await page.screenshot({path:join(dir,'connection-stale.png')});
  await go({activeView:'chat',selectedChatId:'fixture-chat'});
  out.historicalBefore=await page.locator('.message.assistant .message-role').innerText();await page.locator('[data-action=toggle-agent-selector]').click();await page.locator(`#agent-selector-panel [data-agent-id="${custom}"]`).click();await page.waitForTimeout(500);out.historicalAfter=await page.locator('.message.assistant .message-role').innerText();
+ // Also recorded and never compared: an earlier reply keeps the role name it was written under when the chat's Agent changes.
+ assert.equal(out.historicalAfter,out.historicalBefore);
  out.layout=[];
  for(const viewport of [{width:1440,height:1000},{width:900,height:660},{width:390,height:844},{width:320,height:740}]){
  await page.setViewportSize(viewport);await page.waitForTimeout(1000);

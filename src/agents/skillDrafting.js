@@ -189,6 +189,10 @@ export async function draftSkillFromConversation({
       systemPrompt: DRAFTING_SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userTurn }],
       signal,
+      // A helper request never gets the provider's hosted web search. Left
+      // out, Codex mode decides by keywords in the text (weather, prices,
+      // flights …), and here the text is a transcript to turn into a skill, not a question.
+      nativeWebSearchEnabled: false,
     });
   } catch (err) {
     return {

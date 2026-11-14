@@ -55,7 +55,7 @@ Example:
  * @param {AbortSignal} [signal]
  * @returns {Promise<Array<{ fact: string, category: string }>>}
  */
-async function extractMemoryFacts(messages, { config, signal } = {}) {
+async function extractMemoryFacts(messages, { config, signal, replyFn = createOpenAICompatibleReply } = {}) {
   if (!messages || messages.length < MEMORY_EXTRACTION_MIN_MESSAGES) return [];
 
   // Offline path: rule-based extractor only, no network.
@@ -83,7 +83,7 @@ async function extractMemoryFacts(messages, { config, signal } = {}) {
   if (!transcript.trim()) return [];
 
   try {
-    const raw = await createOpenAICompatibleReply({
+    const raw = await replyFn({
       authMode: config.authMode,
       apiProtocol: config.apiProtocol,
       apiKey: config.activeLlmProfileId ? config.apiKey : env.MELO_API_KEY || env.OPENAI_API_KEY || config.apiKey,
@@ -92,6 +92,10 @@ async function extractMemoryFacts(messages, { config, signal } = {}) {
       systemPrompt: EXTRACTION_SYSTEM_PROMPT,
       messages: [{ role: 'user', content: `Extract memory facts from:\n\n${transcript}` }],
       signal,
+      // A helper request never gets the provider's hosted web search. Left
+      // out, Codex mode decides by keywords in the text (weather, prices,
+      // flights …), and here the text is a transcript, not a question.
+      nativeWebSearchEnabled: false,
     });
 
     if (!raw?.trim()) return extractFactsRuleBased(messages);
@@ -272,9 +276,10 @@ function shouldExtractMemory(chat) {
  * @param {Object} options
  * @param {Object} options.config
  * @param {AbortSignal} [options.signal]
+ * @param {Function} [options.replyFn]  DI seam for tests (the model call)
  * @returns {Promise<boolean>}
  */
-export async function maybeExtractSessionMemory(chat, { config, signal } = {}) {
+export async function maybeExtractSessionMemory(chat, { config, signal, replyFn } = {}) {
   if (!shouldExtractMemory(chat)) return false;
 
   const messages = Array.isArray(chat.messages) ? chat.messages : [];
@@ -287,7 +292,7 @@ export async function maybeExtractSessionMemory(chat, { config, signal } = {}) {
       if (count <= (chat.memoryLastExtractedAtCount || 0)) cursor=i+1;
     }
     // Keep a small overlap for context; rule extraction itself favours newest facts.
-    const newFacts = await extractMemoryFacts(messages.slice(Math.max(0,cursor-2)), { config, signal });
+    const newFacts = await extractMemoryFacts(messages.slice(Math.max(0,cursor-2)), { config, signal, ...(replyFn ? { replyFn } : {}) });
     if (newFacts.length) {
       const existing = Array.isArray(chat.sessionMemory) ? chat.sessionMemory : [];
       chat.sessionMemory = mergeMemoryFacts(existing, newFacts);

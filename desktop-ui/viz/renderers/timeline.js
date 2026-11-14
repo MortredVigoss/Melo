@@ -1,5 +1,7 @@
 // Horizontal timeline renderer.
-// Spec: events: [{ date: string|number, label: string, note?: string }]
+// Spec: events: [{ date: string|number, title: string, note?: string }]
+// (`title` is what the server stores, src/services/viz/vizSpec.js; this file
+// read `label` until 2026-11-14 and every event was drawn without its title.)
 // The renderer sorts events chronologically, lays them out proportionally
 // across a fixed-width track, and staggers label boxes above/below the
 // axis to avoid overlap.
@@ -72,7 +74,7 @@ export default function mountTimeline(host, spec) {
             height="80">
             <div xmlns="http://www.w3.org/1999/xhtml" class="viz-timeline-card">
               <div class="viz-timeline-date">${escapeAttr(e.date)}</div>
-              <div class="viz-timeline-title">${escapeAttr(e.label)}</div>
+              <div class="viz-timeline-title">${escapeAttr(e.title ?? e.label ?? '')}</div>
               ${e.note ? `<div class="viz-timeline-note">${escapeAttr(e.note)}</div>` : ''}
             </div>
           </foreignObject>

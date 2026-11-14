@@ -121,40 +121,6 @@ import { synthesizeWithEdgeTts as _synthesizeWithEdgeTts } from "./services/tts/
 
 // ─── MiniMax T2A V2 ───────────────────────────────────────────────────────────
 
-// Unicode ranges that make up modern Korean writing:
-//   AC00–D7AF  : Hangul Syllables (가 … 힣)
-//   1100–11FF  : Hangul Jamo
-//   3130–318F  : Hangul Compatibility Jamo (ㄱ … ㆎ)
-//   A960–A97F  : Hangul Jamo Extended-A
-//   D7B0–D7FF  : Hangul Jamo Extended-B
-const _KOREAN_CHAR_RE_G = /[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F\uA960-\uA97F\uD7B0-\uD7FF]+/g;
-const _KOREAN_CHAR_RE = /[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F\uA960-\uA97F\uD7B0-\uD7FF]/;
-
-/**
- * Strip Korean character runs from text before handing it to MiniMax.
- *
- * The custom-cloned MiniMax voice (e.g. "金冬天") is trained on Chinese
- * speech and does a poor job reading mixed-in Korean — it slurs the KR
- * run into the neighbouring CN phonemes. Until we hook up a dedicated
- * KR voice, we just drop Korean characters for this path so the rest
- * of the sentence still reads cleanly. If the caller handed us pure
- * Korean, the stripped result will be empty and we signal that to the
- * outer pipeline so it can fall back to Edge TTS (ko-KR-SunHiNeural).
- *
- * Collapses any double-space / leading-space left behind by the strip.
- *
- * Exported for unit tests; production call site is `synthesizeViaMinimax`.
- */
-export function stripKoreanForMinimax(text) {
-  const src = String(text || '');
-  if (!src || !_KOREAN_CHAR_RE.test(src)) return src;
-  return src
-    .replace(_KOREAN_CHAR_RE_G, '')
-    .replace(/[ \t]{2,}/g, ' ')
-    .replace(/\s+([,.!?;:，。！？；：])/g, '$1')
-    .trim();
-}
-
 /**
  * Synthesize a one-shot MiniMax test clip from explicit credentials,
  * deliberately ignoring `process.env.MINIMAX_API_KEY` /
@@ -192,15 +158,10 @@ export function normalizeMinimaxVoiceSetting({ speed = 1.0, pitch = 0, vol = 1.0
 }
 
 async function synthesizeViaMinimax(input, apiKey, voiceId, signal, groupId, { speed = 1.0, pitch = 0, vol = 1.0 } = {}) {
-  // Pre-process: drop Korean runs entirely — the Chinese-trained custom
-  // voice (e.g. "金冬天") can't read KR well, and we don't have a
-  // dedicated KR voice yet. If nothing is left to say, signal the outer
-  // pipeline so it can fall back to Edge TTS (ko-KR-SunHiNeural).
-  // See `stripKoreanForMinimax` for the rationale.
-  const spokenText = input;
-  if (!spokenText) {
-    throw new Error('MiniMax TTS: input reduced to empty after stripping Korean');
-  }
+  // The text is sent as written, in every language. Until 2026-10-24 Korean
+  // runs were removed here for the Chinese-trained custom voice; the decision
+  // since then is that read-aloud keeps Korean (docs/portability-hardening-
+  // 20261024.md). Both callers reject empty input before they get here.
   const url = groupId
     ? `${MINIMAX_TTS_BASE}?GroupId=${encodeURIComponent(groupId)}`
     : MINIMAX_TTS_BASE;
@@ -214,7 +175,7 @@ async function synthesizeViaMinimax(input, apiKey, voiceId, signal, groupId, { s
     },
     body: JSON.stringify({
       model: MINIMAX_TTS_MODEL,
-      text: spokenText,
+      text: input,
       stream: false,
       voice_setting: {
         voice_id: voiceId,

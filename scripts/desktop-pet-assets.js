@@ -138,8 +138,9 @@ export function importAssets({ from = DEFAULT_SOURCE, store = assets.assetsStore
     winter: { revision: manifest.revision, clips: manifest.clips.length, bytes: winter.bytes, manifest: 'skins/winter/manifest.json' },
     winterFrames: { bytes: frames.bytes, files: frames.files },
     mainAnimation: { bytes: main.bytes, files: main.files },
+    // No `importedFrom`: it was the absolute path of the source on the importing
+    // machine (home directory and all), nothing read it, and this file is committed.
     importedAt: new Date().toISOString(),
-    importedFrom: from,
   };
   writeFileSync(assets.lockFile, JSON.stringify(lock, null, 2) + '\n');
   link(petRoot, store);

@@ -672,7 +672,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                         trimObservations(observations) { citedObservations(goalState) }
                         // Only the native DeviceCompletion receipt can verify an action.
                         // It certifies its exact goal; a successful subtask cannot certify a broader user task.
-                        if (call.name in setOf("phone_use", "phone_workflow", "phone_action") && executed && result.ok && result.data.text("status") == "achieved" && result.data.text("verification") == "visible_facts" && result.data.text("run_id").isNotBlank()) {
+                        if (call.name in ChatPhoneUse.actionTools && executed && result.ok && result.data.text("status") == "achieved" && result.data.text("verification") == "visible_facts" && result.data.text("run_id").isNotBlank()) {
                             verifiedActions += buildJsonObject { put("type", "device-visible-facts"); put("checked", true); put("goal", result.data.text("goal")); put("evidenceId", result.data.text("run_id")) }
                         }
                         val sources = when (call.name) {
@@ -684,14 +684,14 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                         // reached within five or six searches; after that a member was told "只能读取…本轮 Search
                         // 实际返回的来源 URL" about results it had just received.
                         sources.mapNotNull { it["url"]?.jsonPrimitive?.content }.forEach { if (requestedUrls.size < MAX_READABLE_URLS) requestedUrls.add(it) }
-                        journal.event(call.id, call.name, module = module, operation = true, output = result.data.toString(), result = result.data, sources = sources, status = if (result.ok) "completed" else "failed", durationMs = SystemClock.elapsedRealtime() - started, deviceRunId = if (call.name in setOf("phone_use", "phone_workflow", "phone_action")) result.data.text("run_id") else null, executed = executed)
+                        journal.event(call.id, call.name, module = module, operation = true, output = result.data.toString(), result = result.data, sources = sources, status = if (result.ok) "completed" else "failed", durationMs = SystemClock.elapsedRealtime() - started, deviceRunId = if (call.name in ChatPhoneUse.actionTools) result.data.text("run_id") else null, executed = executed)
                         if (turn.active) turn.result(call.id, result.ok, progressKey(call, result), result.data.text("code"), result.data.toString())
                         if (turn.active && call.name == "phone_action" && call.arguments.text("action") !in setOf("finish", "checkpoint")) turn.observeDevice(call.arguments.text("action"), result.ok, DeviceProgress.fingerprint(result))
                         succeeded = succeeded || result.ok
                         LoopTrace.emit("tool.result", buildJsonObject { put("callId", call.id); put("name", call.name); put("ok", result.ok); put("effectState", if (!executed) "not_started" else if (result.ok) "returned" else "error_returned") }, result.data)
                         DeviceAgentClient.appendResult(history, connection.protocol, reply.calls[index], result)
                         LoopTrace.emit("tool.feedback.appended", buildJsonObject { put("callId", call.id) }, JsonArray(history.takeLast(2)))
-                        if (call.name == "phone_use" && !result.ok && phoneFailure == null) {
+                        if (call.name in ChatPhoneUse.actionTools && !result.ok && phoneFailure == null) {
                             phoneFailure = result.data.text("error").ifBlank { result.data.text("summary") }
                         }
                     }

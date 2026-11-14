@@ -111,6 +111,21 @@ test('memory consolidate --json on empty store finishes with elapsedMs key', asy
   assert.notEqual(parsed.skipped, true);
 });
 
+test('memory consolidate in text mode prints all four counters of the sweep', async () => {
+  // Two of the four lines read names the sweep never returned and so never
+  // printed (fixed 2026-11-14). The JSON output is the source of the names.
+  const { stdout: json } = await runMeloCli(['memory', 'consolidate', '--full', '--json']);
+  const result = JSON.parse(json);
+  for (const key of ['examined', 'promoted', 'demoted', 'hitsPruned']) assert.equal(typeof result[key], 'number', `the sweep returns ${key}`);
+
+  const { stdout } = await runMeloCli(['memory', 'consolidate', '--full']);
+  assert.match(stdout, /Dreaming sweep finished in \d+ms \(full\)\./);
+  assert.match(stdout, /^ {2}examined {9}0$/m);
+  assert.match(stdout, /^ {2}promoted {9}0$/m);
+  assert.match(stdout, /^ {2}demoted {10}0$/m);
+  assert.match(stdout, /^ {2}hit rows pruned {2}0$/m);
+});
+
 test('memory <unknown subcommand> throws a helpful error', async () => {
   // index.js routes `main().catch(...)` to `output.write` (stdout) and
   // sets process.exitCode = 1, so execFile rejects with a non-zero exit

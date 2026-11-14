@@ -73,7 +73,6 @@ const BASELINE = {
     "toggle-task-form",
     "toggle-task-lane-overflow",
     "toggle-tts-autoplay",
-    "toggle-tts-enable",
     "tool-permission-allow-always",
     "tool-permission-allow-once",
     "tool-permission-deny",

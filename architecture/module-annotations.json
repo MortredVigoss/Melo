@@ -1002,6 +1002,7 @@
       ],
       "tests": [
         "desktop-ui/localSettings.test.js",
+        "desktop-ui/localSettings.launchAtLogin.test.js",
         "desktop-ui/launchScreen.test.js"
       ],
       "note": "window.webkit.messageHandlers.meloVoice（nativeSettings、保存图片、语音、回复完成通知）由 main.swift 的 WKScriptMessageHandler 处理"
@@ -1221,6 +1222,10 @@
         ],
         "desktop-ui/localSettings.desktopPet.test.js": [
           "desktop-ui/localSettings.js"
+        ],
+        "desktop-ui/localSettings.launchAtLogin.test.js": [
+          "desktop-ui/localSettings.js",
+          "desktop-app/main.swift"
         ],
         "desktop-ui/localSettings.test.js": [
           "desktop-ui/localSettings.js"

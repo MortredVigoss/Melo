@@ -1,6 +1,9 @@
 package com.melo.android.pet
 
 import com.melo.android.data.AppData
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 
 data class PetReply(val status: String, val text: String, val error: String?) {
     val ok get() = status == "completed" && text.isNotBlank()
@@ -48,6 +51,22 @@ object PetDialogue {
         val message = chat?.messages?.lastOrNull { it.role == "assistant" && it.runId == runId }
         return PetReply(run.status, message?.content ?: run.partial, run.error)
     }
+
+    /**
+     * The first state of [states] for which [ready] holds, or null when none came within [timeoutMs].
+     * It never throws for the timeout. `withTimeout` raises a CancellationException, and a caller that has to
+     * rethrow cancellations then ends without a word: that is how the pet stayed in "想想看…" for good.
+     */
+    suspend fun <T> awaitState(states: Flow<T>, timeoutMs: Long, ready: (T) -> Boolean): T? =
+        withTimeoutOrNull(timeoutMs) { states.first(ready) }
+
+    /**
+     * The run a turn that was just sent became: the id the live turn carries, else a run of this chat that did
+     * not exist before the send (the turn already finished). Null when the engine gave the turn up before it
+     * started a run, as it does without a usable model connection.
+     */
+    fun startedRunId(turnRunId: String?, data: AppData, chatId: String, runsBefore: Set<String>): String? =
+        turnRunId ?: data.runs.lastOrNull { it.chatId == chatId && it.id !in runsBefore }?.id
 
     fun failureText(reply: PetReply?): String = when {
         reply == null -> "这次没收到回复，再试一次吧。"

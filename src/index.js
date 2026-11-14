@@ -657,10 +657,14 @@ async function runMemoryConsolidateCommand({ full = false, json = false } = {}) 
   }
   output.write(`Dreaming sweep finished in ${elapsedMs}ms (${full ? 'full' : 'incremental'}).\n`);
   if (result && typeof result === 'object') {
-    if ('examined' in result)        output.write(`  examined         ${result.examined}\n`);
-    if ('promotedToHot' in result)   output.write(`  promoted to Hot  ${result.promotedToHot}\n`);
-    if ('demoted' in result)         output.write(`  demoted          ${result.demoted}\n`);
-    if ('hitRowsPruned' in result)   output.write(`  hit rows pruned  ${result.hitRowsPruned}\n`);
+    // The names are the sweep's own (src/memory/dreaming/sweep.js). Until
+    // 2026-11-14 two of these lines asked for `promotedToHot` and
+    // `hitRowsPruned`, which the sweep has never returned, so they never
+    // printed. `promoted` counts every move up a tier, not only into Hot.
+    if ('examined' in result)   output.write(`  examined         ${result.examined}\n`);
+    if ('promoted' in result)   output.write(`  promoted         ${result.promoted}\n`);
+    if ('demoted' in result)    output.write(`  demoted          ${result.demoted}\n`);
+    if ('hitsPruned' in result) output.write(`  hit rows pruned  ${result.hitsPruned}\n`);
   }
 }
 

@@ -639,38 +639,6 @@ modules["shared/agent/retrieval/intentRouter.js"] = (() => {
 const { isTranslationRequest } = modules["shared/agent/retrieval/requestPolicy.js"];
 const { AGENT_LOOP_CONTRACT, contractRegExp } = modules["shared/agent/loopContract.js"];
 
-// Real LRU: Map preserves insertion order, so we delete-and-reinsert on every
-// read to move the entry to the "most recently used" tail.  Without that step
-// the cache is a plain FIFO — the eviction loop at line ~110 was removing the
-// oldest *inserted* key, which in a query-repeat workload ends up evicting
-// still-hot entries.  See search audit B-1.
-const INTENT_CACHE = new Map();
-
-// Exported for unit tests.  These are generic — the intent cache just happens
-// to be the only current caller.
-function lruGet(cache, key) {
-  if (!cache.has(key)) return undefined;
-  const value = cache.get(key);
-  cache.delete(key);
-  cache.set(key, value);
-  return value;
-}
-
-function lruSet(cache, key, value, max) {
-  if (cache.has(key)) cache.delete(key);
-  cache.set(key, value);
-  while (cache.size > max) {
-    const oldest = cache.keys().next().value;
-    if (oldest === undefined) break;
-    cache.delete(oldest);
-  }
-}
-
-// Test-only: reset the cache between intent-router test cases.
-function _resetIntentCacheForTests() {
-  INTENT_CACHE.clear();
-}
-
 // Rule patterns, thresholds and the classifier prompt are shared with the
 // iPhone finalize step (shared/protocol/agent-loop.json).
 const INTENT = AGENT_LOOP_CONTRACT.intent;
@@ -779,7 +747,7 @@ function intentOperation(input = {}) {
   return classifyLocalRequest(input.text, { contextMessages: input.messages });
 }
 
-return { lruGet, lruSet, _resetIntentCacheForTests, classifyRisk, classifyLocalRequest, classifyByRules, intentRequiresVerification, intentAllowsUncertaintyMarker, isStandaloneGreeting, intentOperation };
+return { classifyRisk, classifyLocalRequest, classifyByRules, intentRequiresVerification, intentAllowsUncertaintyMarker, isStandaloneGreeting, intentOperation };
 })();
 
 modules["shared/agent/internalRouting.js"] = (() => {
@@ -3725,6 +3693,7 @@ function toolEffect(name, args = {}, declaration = {}) {
   if (COMPUTE.has(name)) return 'compute';
   if (WRITE.has(name)) return 'write';
   if (name === 'pdf') return args.action === 'read' ? 'read' : 'write';
+  if (name === 'file_restore') return args.action === 'list' ? 'read' : 'write';
   if (name === 'image') return ['ocr', 'info', 'analyze'].includes(args.action) ? 'read' : 'write';
   if (name === 'knowledge') return ['search', 'status'].includes(args.action) ? 'read' : 'write';
   // An MCP read-only annotation is useful for presentation, not authority.

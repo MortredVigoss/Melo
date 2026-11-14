@@ -13,7 +13,7 @@ import { t, runtimeStageName, runtimeStageOutput } from './i18n.js';
 
 // ── Tools ───────────────────────────────────────────────────────────────
 export const TOOL_NAMES = Object.freeze({
-  file_read: '读取文件', file_write: '写入文件', file_edit: '修改文件', file_delete: '删除文件', file_move: '移动文件', file_mkdir: '新建文件夹',
+  file_read: '读取文件', file_write: '写入文件', file_edit: '修改文件', file_delete: '删除文件', file_restore: '恢复文件', file_move: '移动文件', file_mkdir: '新建文件夹',
   bash: '运行命令', glob: '查找文件', grep: '搜索代码', web_search: '联网搜索', native_web_search: '联网搜索', fetch_url: '读取网页', web_screenshot: '网页截图',
   image: '生成图片', image_edit: '修改图片', native_image_generation: '生成图片', delegate: '交给其他 Agent', search_history: '查找对话记录', read_history: '读取对话原文', calculator: '计算',
   load_tools: '加载工具说明', route_task: '分派给成员', task_progress: '更新任务进度', knowledge: '知识库', translate: '翻译', clipboard: '剪贴板', reminder: '提醒',

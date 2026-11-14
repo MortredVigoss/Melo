@@ -18,9 +18,9 @@
 // This module used to inject Korean 语气词 (네/요/맞아요/…) into the rewritten
 // text so the 金冬天 MiniMax custom voice would sound "bilingual" when read
 // aloud. That hack has been pulled — the Chinese-trained custom voice reads
-// mixed-in Korean poorly. Until we pair it with a real Korean TTS, the
-// rewriter keeps the output pure Chinese and the TTS layer additionally
-// strips any stray Korean (see `stripKoreanForMinimax` in ../../tts.js).
+// mixed-in Korean poorly. Which language the output is in is decided by the
+// persona text alone; nothing downstream removes a script (the TTS layer
+// stopped stripping Korean on 2026-10-24).
 //
 // Extracted from desktopStore.js in the Phase 2 refactor (see
 // _refactor-backup/REFACTOR_PLAN.md).
@@ -153,9 +153,10 @@ function extractVoiceSummary(text) {
  * @param {Object} config — model config (authMode / apiKey / baseUrl / model)
  * @param {string} [voicePersonality] — persona prompt; if empty, skips LLM
  * @param {string} [senderName] — for debug log only, not sent to the model
+ * @param {{ replyFn?: Function }} [options] — DI seam for tests (the model call)
  * @returns {Promise<string>} text suitable for TTS
  */
-export async function rewriteForVoice(text, config, voicePersonality = '', senderName = '') {
+export async function rewriteForVoice(text, config, voicePersonality = '', senderName = '', { replyFn = createOpenAICompatibleReply } = {}) {
   if (!text || text.length < 30) return text;
 
   // Phase 1: rule-based extraction (instant, no API call)
@@ -193,7 +194,7 @@ export async function rewriteForVoice(text, config, voicePersonality = '', sende
       '3. Remove all @mentions. No markdown, no emoji spam, no bullet lists.',
       '4. Output only the rewritten text — no explanations, no prefixes, no suffixes.',
     ].join('\n');
-    let voiceText = await createOpenAICompatibleReply({
+    let voiceText = await replyFn({
       authMode: config.authMode,
       apiProtocol: config.apiProtocol,
       apiKey: config.apiKey,
@@ -202,14 +203,17 @@ export async function rewriteForVoice(text, config, voicePersonality = '', sende
       systemPrompt,
       messages: [{ role: 'user', content: cleaned }],
       providerProfile: 'fast',
+      // A helper request never gets the provider's hosted web search. Left
+      // out, Codex mode decides by keywords in the text (weather, prices,
+      // flights …), and here the text is the reply to restyle, not a question.
+      // A search would also append `[source: …]` lines to the text to be spoken.
+      nativeWebSearchEnabled: false,
     });
     if (typeof voiceText === 'string' && voiceText.trim()) {
       // Post-process: strip @mentions only. Language policy lives in the
       // persona text (the 金冬天 persona is Chinese-only since 2026-10-17 —
-      // the MiniMax custom voice reads mixed-in Korean badly). We do not strip
-      // scripts here because other TTS engines can read them; the MiniMax
-      // path additionally applies stripKoreanForMinimax in ../../tts.js as a
-      // safety net.
+      // the MiniMax custom voice reads mixed-in Korean badly). No script is
+      // stripped, here or in the TTS layer.
       voiceText = voiceText
         .replace(/@[\p{L}\p{N}_]+/gu, '')
         .replace(/^\s*[，,\s]+/, '')

@@ -164,7 +164,17 @@ async function externalizeAttachment(attachment, home) {
   const parsed = parseDataUrl(attachment.url);
   const bytes = Buffer.from(parsed.payload, 'base64');
   if (!bytes.length) return attachment;
-  const extension = extensionForMime(parsed.mimeType || attachment.mimeType);
+  // A data URL can arrive without a type of its own: `data:;base64,` or the
+  // generic `application/octet-stream`, which is what a browser writes for a
+  // file it could not type (a PDF recognised by its name only). parseDataUrl
+  // turns both into `application/octet-stream`; the type the attachment
+  // declares is then the better fact. Until 2026-11-14 such a file was stored
+  // as `<uuid>.bin` and lost its type.
+  const declared = String(attachment.mimeType || '').trim().toLowerCase().split(';')[0];
+  const mimeType = parsed.mimeType === 'application/octet-stream' && /^[a-z]+\/[a-z0-9.+-]+$/.test(declared)
+    ? declared
+    : parsed.mimeType;
+  const extension = extensionForMime(mimeType);
   let name = `${UUID.test(String(attachment.id || '')) ? String(attachment.id).toLowerCase() : randomUUID()}.${extension}`;
   try {
     const existing = await fileSize(join(attachmentsDir(home), name));
@@ -182,7 +192,7 @@ async function externalizeAttachment(attachment, home) {
     ...attachment,
     url: attachmentUrl(name),
     storage: 'file',
-    mimeType: parsed.mimeType || attachment.mimeType || mimeTypeForName(name),
+    mimeType,
     byteSize: bytes.length,
   };
 }

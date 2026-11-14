@@ -38,6 +38,33 @@ test('a large data URL becomes a 0o600 file under desktop/attachments and hydrat
   assert.equal(hydrated.storage, 'file', 'hydration only swaps the URL');
 });
 
+test('a data URL without a type of its own is stored under the type the attachment declares', async t => {
+  const h = await home(t);
+  const payload = Buffer.alloc(20 * 1024, 9).toString('base64');
+  const declaredPdf = { kind: 'file', mimeType: 'application/pdf', fileName: 'report.pdf' };
+  // What a browser produces for a file it could not type, and the bare form.
+  for (const prefix of ['data:application/octet-stream;base64,', 'data:;base64,']) {
+    const [stored] = await externalizeAttachments([{ ...declaredPdf, url: prefix + payload }], { home: h });
+    assert.match(stored.url, /^\/api\/media\/attachments\/[0-9a-f-]{36}\.pdf$/, prefix);
+    assert.equal(stored.mimeType, 'application/pdf', prefix);
+    const [back] = await hydrateAttachments([stored], { home: h });
+    assert.equal(back.url, 'data:application/pdf;base64,' + payload, 'the model gets the bytes back under the declared type');
+  }
+  // A type stated by the data URL itself still wins over the declaration.
+  const [typed] = await externalizeAttachments([{ ...declaredPdf, url: 'data:image/png;base64,' + payload }], { home: h });
+  assert.match(typed.url, /\.png$/);
+  assert.equal(typed.mimeType, 'image/png');
+  // Nothing usable declared: generic, as before.
+  for (const mimeType of [undefined, '', 'not a type', 'application/octet-stream']) {
+    const [generic] = await externalizeAttachments([{ kind: 'file', mimeType, url: 'data:;base64,' + payload }], { home: h });
+    assert.match(generic.url, /\.bin$/, String(mimeType));
+    assert.equal(generic.mimeType, 'application/octet-stream', String(mimeType));
+  }
+  // A declared type never chooses the file name freely: an unknown type is stored as .bin.
+  const [html] = await externalizeAttachments([{ kind: 'file', mimeType: 'text/html', url: 'data:;base64,' + payload }], { home: h });
+  assert.match(html.url, /\.bin$/);
+});
+
 test('tiny data URLs, remote URLs and already file-backed attachments are returned by identity', async t => {
   const h = await home(t);
   const small = { id: ID, kind: 'image', url: pngDataUrl(1024) };

@@ -12,6 +12,13 @@ import com.melo.android.core.SharedCoreTurn
 /** Built-in skill: instructions select a tool; only the host can grant device access. */
 object ChatPhoneUse {
     const val name = "phone_use"
+    /**
+     * Every name under which a phone action reaches the device: the chat tool, a recorded workflow, and the
+     * single-step tool the chat uses when it drives the device itself (the name the product actually sends).
+     * One set, because the rule "after a failed phone action the remaining calls of the same response are not
+     * executed" knew only `phone_use` until 2026-11-14 and so never applied.
+     */
+    val actionTools = setOf(name, "phone_workflow", "phone_action")
     val schema = buildJsonObject {
         put("type", "object"); put("additionalProperties", false)
         put("properties", buildJsonObject {

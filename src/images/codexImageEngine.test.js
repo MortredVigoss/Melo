@@ -72,6 +72,19 @@ function sseEvent(obj) {
   return `data: ${JSON.stringify(obj)}`;
 }
 
+// A response whose body sends the given events and then stays open, silent.
+function mockSilentResponseAfter(events) {
+  const encoder = new TextEncoder();
+  const state = { cancelled: false };
+  const stream = new ReadableStream({
+    start(controller) {
+      for (const ev of events) controller.enqueue(encoder.encode(ev + '\n\n'));
+    },
+    cancel() { state.cancelled = true; },
+  });
+  return { response: { ok: true, status: 200, statusText: 'OK', body: stream, text: async () => events.join('\n\n') }, state };
+}
+
 // ─── parseSseEventBlock (exported helper) ────────────────────────────────────
 
 test('parseSseEventBlock joins multi-line data: and ignores comments', () => {
@@ -938,4 +951,32 @@ test('a chosen size is requested; if the service rejects it, one retry at the de
   await assert.rejects(generateImageViaCodex({ prompt: 'a cat', size: '2560x1440', credentialProvider: async () => loggedInCredential(),
     fetchImpl: async () => { calls++; return mockResponseFromEvents(['{}'], { ok: false, status: 429 }); } }));
   assert.equal(calls, 1);
+});
+
+// ─── Stalled stream ──────────────────────────────────────────────────────────
+
+test('generateImageViaCodex: a stream that goes silent ends as "stalled", not as "completed without an image"', async () => {
+  // The watchdog cancels the reader and a cancelled read is fulfilled with
+  // done:true. Until 2026-11-14 that was taken for a normal end and the user
+  // read "completed without an image_generation_call result".
+  const { response, state } = mockSilentResponseAfter([sseEvent({ type: 'response.created', response: { id: 'r1' } })]);
+  const hold = setInterval(() => {}, 20); // the watchdog timer is unref'd
+  try {
+    await assert.rejects(
+      generateImageViaCodex({
+        prompt: 'a tabby cat',
+        fetchImpl: async () => response,
+        credentialProvider: async () => loggedInCredential(),
+        idleTimeoutMs: 120,
+      }),
+      error => {
+        assert.match(error.message, /stalled \(no SSE events for 120ms\)/);
+        assert.doesNotMatch(error.message, /completed without/);
+        return true;
+      },
+    );
+  } finally {
+    clearInterval(hold);
+  }
+  assert.equal(state.cancelled, true, 'the connection is given back');
 });

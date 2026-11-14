@@ -43,9 +43,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -443,12 +441,22 @@ class PetOverlayService : Service() {
         conversation = scope.launch {
             val app = application as MeloApplication
             try {
-                withTimeout(15_000) { app.engine.runtime.first { it.initialized } }
+                // Two bounded waits, neither with withTimeout: it throws a CancellationException, which the catch
+                // below must rethrow, so a timeout ended this coroutine silently and left the pet in "想想看…",
+                // deaf to taps until it was closed and reopened. Without a model connection that was every time.
+                if (PetDialogue.awaitState(app.engine.runtime, 15_000) { it.initialized } == null) {
+                    fail(app.engine.runtime.value.error ?: "Melo 还没准备好，请稍后再试。"); return@launch
+                }
                 val chatId = PetChat.ensure(app.repository, preferences)
                 setState { it.copy(transcript = text) }
                 play(scheduler.think()); bubble("想想看…", 0)
+                val runsBefore = app.repository.data.value.runs.filter { it.chatId == chatId }.map { it.id }.toSet()
                 if (!app.engine.send(chatId, text)) { fail(app.engine.runtime.value.error ?: "Melo 现在没法回复。"); return@launch }
-                val runId = withTimeout(10_000) { app.engine.runtime.map { it.turns[chatId]?.runId }.first { it != null } }!!
+                // The turn gets its run id, or the engine takes it away again (no connection, no credential, no
+                // model name: it fails before it starts a run and leaves its reason in runtime.error).
+                PetDialogue.awaitState(app.engine.runtime, 10_000) { runtime -> runtime.turns[chatId].let { it == null || it.runId != null } }
+                val runId = PetDialogue.startedRunId(app.engine.runtime.value.turns[chatId]?.runId, app.repository.data.value, chatId, runsBefore)
+                if (runId == null) { fail(app.engine.runtime.value.error ?: "这次没收到回复，再试一次吧。"); return@launch }
                 var streaming = false
                 app.engine.runtime.first { runtime ->
                     val turn = runtime.turns[chatId]

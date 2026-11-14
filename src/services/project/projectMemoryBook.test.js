@@ -180,7 +180,9 @@ test('hand-written rows and the management projection', async () => {
   await assert.rejects(createProjectMemoryBookEntry({projectId:'P',text:'x',section:'nope'}),/分节无效/);
   assert.equal(created.bookStatus,'user'); assert.equal(created.section,'convention'); assert.equal(created.text,'接口统一 snake_case');
   assert.throws(()=>createUserBookRow({projectId:'P',text:'接口统一 snake_case'}),/同样/);
-  assert.throws(()=>createUserBookRow({projectId:'P',text:''}),/1–2000/);
+  // The message names the real range of a hand-written row (it said 1–2000 until 2026-11-14).
+  assert.throws(()=>createUserBookRow({projectId:'P',text:''}),/记忆本手写内容需要在 1–600 字之间/);
+  assert.throws(()=>createUserBookRow({projectId:'P',text:'x'.repeat(601)}),/记忆本手写内容需要在 1–600 字之间/);
   const book=await projectMemoryBook({projectId:'P'});
   assert.equal(book.records.length,1); assert.equal(book.records[0].bookStatus,'user'); assert.equal(book.records[0].sourceTitle,'项目页手写');
   await assert.rejects(projectMemoryBook({projectId:'missing'}),/项目不存在/);

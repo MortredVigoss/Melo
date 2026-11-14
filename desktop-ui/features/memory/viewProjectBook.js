@@ -47,7 +47,7 @@ export function renderProjectMemoryBook(project, data, { busy = false, feedback 
       </article>`).join('')}
     </div>`).join('') : ui`<p>还没有记忆本内容。项目对话里的决定会自动出现在这里，也可以手写一条。</p>`}
     <form id="project-book-create" class="project-book-create" data-form="project-book-create" data-project-id="${escapeHtml(project.id)}">
-      <label class="label">手写一条<textarea class="textarea" name="text" rows="2" maxlength="2000" placeholder="例如：接口统一返回 snake_case 字段" ${busy ? 'disabled' : ''}>${escapeHtml(draft?.text ?? '')}</textarea></label>
+      <label class="label">手写一条<textarea class="textarea" name="text" rows="2" maxlength="600" placeholder="例如：接口统一返回 snake_case 字段" ${busy ? 'disabled' : ''}>${escapeHtml(draft?.text ?? '')}</textarea></label>
       <div class="inline-actions"><label class="meta-label">分节 ${sectionSelect('project-book-create-section', draft?.section || 'convention', { busy })}</label>
         </div>
     </form>

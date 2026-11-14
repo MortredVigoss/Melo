@@ -304,8 +304,9 @@ export function moveAutoBookRow(entry, chat, { nowMs = Date.now() } = {}) {
 export function createUserBookRow({ projectId, text, section, category = 'project_context', home = null } = {}) {
   const content = String(text || '').trim();
   if (!projectId) throw new Error('缺少项目。');
-  if (!content) throw new Error('记忆内容需要在 1–2000 字之间。');
-  if (content.length > BOOK_ROW_MAX_CHARS) throw new Error(`记忆本手写内容需要在 ${BOOK_ROW_MAX_CHARS} 字以内。`);
+  // One check, one range, and it is the real one. Until 2026-11-14 an empty
+  // row was answered with "1–2000 字", a range this path never accepted.
+  if (!content || content.length > BOOK_ROW_MAX_CHARS) throw new Error(`记忆本手写内容需要在 1–${BOOK_ROW_MAX_CHARS} 字之间。`);
   const now = new Date().toISOString();
   const id = `${BOOK_ID_PREFIX}user:${projectId}:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
   const row = upsertProjectBookRow({

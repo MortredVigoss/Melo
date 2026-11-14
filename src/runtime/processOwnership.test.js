@@ -10,8 +10,13 @@ test('cleanup selects this run and dead owners, never another live Melo or legac
     '104 501 /node /lib/cliDaemon.js melo-search',
     '105 502 /node /lib/cliDaemon.js melo-search-p80-1234abcd',
     '106 501 /node /other.js melo-search-p80-1234abcd',
+    // The PDF tool's session (2026-11-14): a dead owner's is an orphan like the others,
+    // a live Melo's is left alone, and a name of another shape is never touched.
+    '107 501 /node /lib/cliDaemon.js melo-pdf-p70-1234abcd',
+    '108 501 /node /lib/cliDaemon.js melo-pdf-p90-1234abcd',
+    '109 501 /node /lib/cliDaemon.js melo-other-p70-1234abcd',
   ].join('\n');
   const opts = { uid: 501, ownNames: new Set(['melo-search-p80-1234abcd']), isAlive: pid => pid !== 70 };
   assert.deepEqual(selectOwnedDaemonPids(table, opts), [101]);
-  assert.deepEqual(selectOwnedDaemonPids(table, { ...opts, includeOrphans: true }), [101, 103]);
+  assert.deepEqual(selectOwnedDaemonPids(table, { ...opts, includeOrphans: true }), [101, 103, 107]);
 });

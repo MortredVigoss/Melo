@@ -120,24 +120,6 @@ export async function getEmbedding(text, config = {}) {
 }
 
 /**
- * Check if an embedding backend is available (fast, uses cached result).
- * @param {object} [config]
- * @returns {Promise<boolean>}
- */
-export async function isEmbeddingAvailable(config = {}) {
-  try {
-    const provider = await getEmbeddingProvider();
-    if (provider && typeof provider.isAvailable === 'function') {
-      if (await provider.isAvailable()) return true;
-    }
-  } catch {
-    // fall through to legacy picker
-  }
-  const backend = await pickBackend(config);
-  return backend.type !== 'none';
-}
-
-/**
  * P2-13: report whether the active embedding provider's declared `dims`
  * match the canonical EMBEDDING_DIMS.  If they don't, using the provider
  * is not fatal (getEmbedding pads/truncates via toStandardDims), but any

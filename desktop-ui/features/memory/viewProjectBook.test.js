@@ -57,3 +57,12 @@ test('renderProjectMemoryBook handles loading, empty and busy states', () => {
   assert.match(busy, /<option value="todo" selected>/);
   assert.equal(renderProjectMemoryBook(null, { records }), '');
 });
+
+test('the hand-written row field stops at the length the server accepts', () => {
+  // BOOK_ROW_MAX_CHARS in src/memory/projectBook.js is 600. Until 2026-11-14
+  // the field allowed 2,000, so a row of 601 to 2,000 characters could be
+  // typed and was then refused on save.
+  const html = renderProjectMemoryBook(project, { records });
+  const field = /<textarea[^>]*name="text"[^>]*>/.exec(html)?.[0] || '';
+  assert.match(field, /maxlength="600"/);
+});

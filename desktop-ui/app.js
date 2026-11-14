@@ -5632,18 +5632,6 @@ document.addEventListener('click', async event => {
         }
         render();
         break;
-      case 'toggle-tts-enable':
-        uiState.ttsAutoPlay = !uiState.ttsAutoPlay;
-        localStorage.setItem('melo-tts-autoplay', uiState.ttsAutoPlay ? '1' : '0');
-        if (!uiState.ttsAutoPlay) stopCurrentTts();
-        // Sync to server config so Telegram polling can read it for voice replies.
-        // Background call — must preserve drafts so it doesn't wipe mid-typed form state.
-        api('/api/settings/model', {
-          method: 'POST',
-          body: { ttsAutoPlay: uiState.ttsAutoPlay },
-        }).then(payload => applyBootstrapPreservingDrafts(payload)).catch(() => {});
-        render();
-        break;
       case 'set-tts-engine': {
         uiState.ttsEngine = trigger.dataset.engine || 'auto';
         localStorage.setItem('melo-tts-engine', uiState.ttsEngine);
@@ -5909,6 +5897,12 @@ document.addEventListener('change', async event => {
       return;
     }
 
+    // The one handler of this checkbox. A click branch in the dispatcher above
+    // used to handle it too (removed 2026-11-14): every click saved the
+    // setting twice and rendered twice, and a scripted `.click()` flipped the
+    // value back. `change` reads the state the control really has.
+    // The server copy is what remote voice replies read; the call runs in the
+    // background and must preserve drafts.
     if (target.dataset.action === 'toggle-tts-enable') {
       uiState.ttsAutoPlay = target.checked;
       localStorage.setItem('melo-tts-autoplay', uiState.ttsAutoPlay ? '1' : '0');

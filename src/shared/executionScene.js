@@ -57,7 +57,7 @@ export function moduleForOperation(name = '', args = {}, declared) {
   if (name === 'calculator') return 'compute';
   if (name === 'xlsx' || name === 'pdf' && ['write', 'structured', 'from_spec'].includes(args.action)) return 'create';
   if (name === 'native_image_generation' || name === 'image' && args.action === 'generate') return 'create';
-  if (/^(file_read|file_write|file_edit|file_move|file_mkdir|file_delete|glob|grep|knowledge|search_history|media_info|read_file|write_file|edit_file|list_files|search_files|file_search|pdf|document|excel|spreadsheet|image)$/.test(name)) return 'files';
+  if (/^(file_read|file_write|file_edit|file_move|file_mkdir|file_delete|file_restore|glob|grep|knowledge|search_history|media_info|read_file|write_file|edit_file|list_files|search_files|file_search|pdf|document|excel|spreadsheet|image)$/.test(name)) return 'files';
   // External tools (MCP) declare no module. One whose name plainly says web
   // retrieval is 网页检索, not 工具调用 (layout A, 2026-11-06).
   if (WEB_RETRIEVAL.test(name)) return 'search';

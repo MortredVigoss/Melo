@@ -5,7 +5,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getEmbedding, isEmbeddingAvailable, EMBEDDING_DIMS } from './embeddings.js';
+import { getEmbedding, EMBEDDING_DIMS } from './embeddings.js';
 import {
   registerEmbeddingProvider,
   _resetEmbeddingProviderForTests,
@@ -55,16 +55,8 @@ test('getEmbedding routes through embedProviders when MELO_EMBED_PROVIDER is set
   }
 });
 
-test('isEmbeddingAvailable reports true when the abstraction has a usable provider', async () => {
-  _resetEmbeddingProviderForTests();
-  const saved = process.env.MELO_EMBED_PROVIDER;
-  process.env.MELO_EMBED_PROVIDER = 'p8-fake-yes';
-  registerEmbeddingProvider('p8-fake-yes', () => new FakeEmbedProvider({ available: true, label: 'yes' }));
-  try {
-    assert.equal(await isEmbeddingAvailable(), true);
-  } finally {
-    if (saved == null) delete process.env.MELO_EMBED_PROVIDER;
-    else process.env.MELO_EMBED_PROVIDER = saved;
-    _resetEmbeddingProviderForTests();
-  }
-});
+// 2026-11-14: the one test of `isEmbeddingAvailable` left with the function.
+// No product code called it, and whenever no provider was usable it called
+// `pickBackend`, which was deleted on 2026-10-14: it rejected with a
+// ReferenceError where its signature promised `false`. What the product
+// reports is probeEmbeddingProviderAvailability (src/memory/status.js).

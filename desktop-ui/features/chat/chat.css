@@ -122,7 +122,7 @@
 }
 
 .slash-palette-id {
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: ui-monospace, monospace;
   font-size: var(--font-size-13px);
   color: var(--palette-711c455b3e);
   white-space: nowrap;
@@ -948,7 +948,7 @@
   gap: 5px;
   padding: 4px 10px;
   border-radius: 20px;
-  background: var(--surface-2, var(--palette-9ecb532b6e));
+  background: var(--palette-9ecb532b6e);
   border: 1px solid var(--border, var(--palette-d371ff6396));
   text-decoration: none;
   color: var(--text-secondary, var(--palette-1bc883d299));
@@ -960,7 +960,7 @@
 }
 
 .source-citation-card:hover {
-  background: var(--surface-3, var(--palette-f0e028b927));
+  background: var(--palette-f0e028b927);
   border-color: var(--teal, var(--palette-0e237a8575));
   color: var(--teal, var(--palette-0e237a8575));
 }

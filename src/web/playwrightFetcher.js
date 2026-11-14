@@ -5,6 +5,7 @@
  *   - web_search tool   → SERP scraping + content enrichment  (session 'melo-search')
  *   - fetch_url tool    → 3rd-layer fallback for SPA / JS-rendered pages
  *                         (session 'melo-shared' — default)
+ *   - pdf tool          → HTML → PDF printing                 (session 'melo-pdf')
  *
  * Single-browser process model per named session: each session drives ONE
  * persistent browser window. All navigate→eval sequences within a session
@@ -26,6 +27,9 @@
 
 import { execFile, execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
+import { lstatSync, mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { selectOwnedDaemonPids } from '../runtime/processOwnership.js';
 import { debugWarn } from '../debug.js';
 const ownedDaemonNames = new Set();
@@ -67,6 +71,61 @@ const DEFAULT_CLOSE_TIMEOUT_MS = 5_000;
 // var is the escape hatch for ops who need to test against a newer
 // version. Bump this constant when the pin needs upgrading.
 const PLAYWRIGHT_CLI_PACKAGE = process.env.MELO_PLAYWRIGHT_CLI_PACKAGE || '@playwright/cli@0.1.11';
+
+// ─── Daemon socket directory ─────────────────────────────────────────────────
+//
+// The CLI keeps one unix socket per session at
+//   <tmpdir>/pw-<8 hex>/cli/<16 hex>-<session name>.sock
+// and does not check the length. A unix socket path holds 103 bytes on macOS
+// (107 on Linux). macOS's temp directory alone is 49, so with Melo's session
+// names (`melo-search-p<pid>-<8 hex>`) the kernel cut the path short when the
+// daemon bound it. The daemon then looked for its socket under the full name,
+// did not find it, and never removed it: every later `open` of that session
+// failed with EADDRINUSE. A browser session could be opened ONCE per Melo
+// process (after the first idle close, page reading and search lost the
+// browser for good, silently), and one dead socket file stayed behind per
+// session. Found 2026-11-14 while fixing the PDF tool, by running the CLI.
+//
+// When the default path does not fit, the CLI is pointed at a short directory
+// only this user can enter. PLAYWRIGHT_SOCKETS_DIR is the CLI's own setting;
+// a value the user has set is left alone.
+const SOCKET_PATH_LIMIT = process.platform === 'darwin' ? 103 : 107;
+
+export function defaultSocketPathLength(ownedSessionName, tempDir = tmpdir()) {
+  // pw-<8 hex> / cli / <16 hex>-<name>.sock
+  return join(tempDir, 'pw-00000000', 'cli', `0000000000000000-${ownedSessionName}.sock`).length;
+}
+
+// A directory under /tmp is only safe when it is really ours: a real
+// directory (not a link someone left there), owned by this user, closed to
+// everyone else. Anything else is refused and the CLI keeps its default.
+export function ensurePrivateSocketsDir(dir, uid = process.getuid?.()) {
+  if (typeof uid !== 'number') return null;
+  try {
+    mkdirSync(dir, { mode: 0o700 });
+  } catch (error) {
+    if (error?.code !== 'EEXIST') return null;
+  }
+  try {
+    const info = lstatSync(dir);
+    if (!info.isDirectory() || info.uid !== uid || (info.mode & 0o077) !== 0) return null;
+    return dir;
+  } catch {
+    return null;
+  }
+}
+
+let _socketsEnv;
+function playwrightSocketsEnv(ownedSessionName) {
+  if (process.platform === 'win32' || process.env.PLAYWRIGHT_SOCKETS_DIR) return {};
+  if (defaultSocketPathLength(ownedSessionName) <= SOCKET_PATH_LIMIT) return {};
+  if (_socketsEnv === undefined) {
+    const dir = ensurePrivateSocketsDir(`/tmp/melo-pw-${process.getuid?.()}`);
+    if (!dir) debugWarn('playwright', 'no private socket directory; a closed browser session may not reopen');
+    _socketsEnv = dir ? { PLAYWRIGHT_SOCKETS_DIR: dir } : {};
+  }
+  return _socketsEnv;
+}
 
 // ─── Pure helper (shared across sessions) ────────────────────────────────────
 
@@ -150,7 +209,7 @@ export function createPlaywrightSession({
       const child = execFile(
         'npx',
         ['-y', PLAYWRIGHT_CLI_PACKAGE, `-s=${ownedSessionName}`, '--raw', ...args],
-        { timeout: timeoutMs, maxBuffer: 2 * 1024 * 1024, env: { ...process.env, NODE_NO_WARNINGS: '1' } },
+        { timeout: timeoutMs, maxBuffer: 2 * 1024 * 1024, env: { ...process.env, NODE_NO_WARNINGS: '1', ...playwrightSocketsEnv(ownedSessionName) } },
         (err, stdout) => {
           runningCliChildren.delete(child);
           if (command === 'close') {

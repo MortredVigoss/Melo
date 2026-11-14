@@ -6,8 +6,9 @@ import {missingWorkspaceResult} from '../workspace.js';
  * in melo. Goes through the FileSafetyGate's two-stage approval
  * (intent confirmation + filename / "DELETE" string confirmation),
  * then moves the targets into the trash quarantine via
- * `safeDeleteToTrash`. Files can be restored from
- * `$MELO_HOME/.melo-trash/` for at least 7 days.
+ * `safeDeleteToTrash`. Files stay in `$MELO_HOME/.melo-trash/` (at least 7
+ * days, and never removed on a timer) and come back with the `file_restore`
+ * tool (fileRestoreTool.js).
  *
  * Symlinks are deleted with no-follow semantics (the link itself
  * disappears, the file the link points to is never touched). See
@@ -35,7 +36,7 @@ export const fileDeleteTool = {
     'primitive that melo does not yet implement. To remove a directory, file_delete each entry ' +
     'one at a time, or fall back to bash (Phase 2D will gate it through bashRiskParser). ' +
     'The user sees TWO confirmation dialogs: an intent prompt followed by a filename / "DELETE" string check. ' +
-    'Files land in $MELO_HOME/.melo-trash/ and can be restored for at least 7 days. ' +
+    'Files land in $MELO_HOME/.melo-trash/ and can be put back with the file_restore tool (use the operationId this call returns); they are kept for at least 7 days and never removed automatically. ' +
     'Sensitive paths (system, credential, $MELO_HOME) are hard-rejected. ' +
     'Symlinks are removed with no-follow semantics — the link disappears, never the target.',
   category: 'filesystem',
@@ -140,7 +141,7 @@ export const fileDeleteTool = {
     const removedCount = result.removed.length;
     const failedCount = result.failed.length;
     const summary = failedCount === 0
-      ? `Moved ${removedCount} item(s) to trash (operationId=${result.operationId}). Restorable from $MELO_HOME/.melo-trash/.`
+      ? `Moved ${removedCount} item(s) to trash (operationId=${result.operationId}). To put them back: file_restore with action "restore" and this operationId.`
       : `Moved ${removedCount} item(s) to trash; ${failedCount} unlink(s) failed.`;
 
     return {

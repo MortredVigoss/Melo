@@ -6,7 +6,7 @@ export function normalizeHandoff(raw) {
 }
 export function createHandoff(task,outcome,usage) {
  let supplied={};try {supplied=JSON.parse(outcome.output.replace(/^```(?:json)?\s*|\s*```$/g,''));} catch {}
- const observed=(outcome.meta?.toolResults || []).filter(r=>r.ok&&r.path&&['file_write','file_edit','file_delete','file_move','file_mkdir','xlsx','pdf'].includes(r.toolName)).map(r=>r.path);
+ const observed=(outcome.meta?.toolResults || []).filter(r=>r.ok&&r.path&&['file_write','file_edit','file_delete','file_restore','file_move','file_mkdir','xlsx','pdf'].includes(r.toolName)).map(r=>r.path);
  // A member that reached a conclusion decides its own status ('completed' or
  // 'failed'); cancellation and budget exhaustion are facts the runner knows
  // better and always win.

@@ -126,9 +126,12 @@ function renderStreamingFast() {
   bubble.innerHTML = renderRichText(streamCleanText);
   bubble.setAttribute('data-copy-text', replyPlainText(streamCleanText));
 
-  // Update / remove the citation cards under the bubble.
+  // Update / remove the citation cards under the bubble. The class is the
+  // one renderSourceCitationCards writes (viewMessage.js). Until 2026-11-14
+  // this looked for `.source-citation-cards`, which nothing renders, so the
+  // strip was never found and a new one was appended on every delta.
   const citationHtml = renderSourceCitationCards(streamCitations);
-  let citationHost = article.querySelector('.source-citation-cards');
+  let citationHost = article.querySelector('.source-citation-strip');
   if (citationHtml.trim()) {
     if (!citationHost) {
       // First time any citations appear — insert a fresh node at the end.

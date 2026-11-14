@@ -203,7 +203,10 @@ function mountProjectile(host, spec) {
       const param = state.params.find(p => p.id === id);
       if (!param) return;
       param.value = next;
-      const label = host.querySelector(`[data-param-value-for="${CSS.escapeHtml(id)}"]`);
+      // CSS.escape: a batch rename of `escape(` on 2026-10-26 turned this into
+      // `CSS.escapeHtml`, which does not exist; every slider move threw before
+      // the trajectory was recomputed.
+      const label = host.querySelector(`[data-param-value-for="${CSS.escape(id)}"]`);
       if (label) label.textContent = formatValue(next, param.unit);
       recompute();
       updateReadout();

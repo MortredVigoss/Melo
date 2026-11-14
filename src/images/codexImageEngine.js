@@ -190,6 +190,7 @@ async function consumeSseStream(response, handleEvent, { idleTimeoutMs = IDLE_TI
   let buffer = '';
   let lastActivityAt = Date.now();
   let stalled = false;
+  const stalledError = () => new Error(`Codex image generation stalled (no SSE events for ${idleTimeoutMs}ms).`);
 
   const stallChecker = setInterval(() => {
     if (Date.now() - lastActivityAt > idleTimeoutMs) {
@@ -197,14 +198,21 @@ async function consumeSseStream(response, handleEvent, { idleTimeoutMs = IDLE_TI
       void reader.cancel().catch(() => {});
       clearInterval(stallChecker);
     }
-  }, 5000);
+  }, Math.max(25, Math.min(5000, idleTimeoutMs)));
   stallChecker.unref?.();
 
   let result = null;
   try {
     while (true) {
       const { done, value } = await reader.read();
-      if (done) break;
+      if (done) {
+        // reader.cancel() fulfils the pending read with `done: true`; it does
+        // not reject. Without this check a stalled stream ended as "completed
+        // without an image_generation_call result".
+        if (stalled) throw stalledError();
+        clearInterval(stallChecker);
+        break;
+      }
       lastActivityAt = Date.now();
       buffer += decoder.decode(value, { stream: true });
 
@@ -231,9 +239,7 @@ async function consumeSseStream(response, handleEvent, { idleTimeoutMs = IDLE_TI
       }
     }
   } catch (error) {
-    if (stalled) {
-      throw new Error(`Codex image generation stalled (no SSE events for ${idleTimeoutMs}ms).`);
-    }
+    if (stalled) throw stalledError();
     throw error;
   } finally {
     clearInterval(stallChecker);
@@ -257,6 +263,7 @@ async function consumeSseStream(response, handleEvent, { idleTimeoutMs = IDLE_TI
  * @param {AbortSignal} [opts.signal]       request-level abort
  * @param {number} [opts.timeoutMs]         overall fetch timeout (default 120s)
  * @param {Function} [opts.fetchImpl]       test-only fetch override
+ * @param {number} [opts.idleTimeoutMs]     test-only: silence after which the stream counts as stalled
  * @returns {Promise<{ buffer: Buffer, mimeType: string, model: string }>}
  */
 export async function generateImageViaCodex({
@@ -271,6 +278,7 @@ export async function generateImageViaCodex({
   timeoutMs = GEN_TIMEOUT_MS,
   fetchImpl = fetch,
   credentialProvider = getCodexCredential,
+  idleTimeoutMs = IDLE_TIMEOUT_MS,
 } = {}) {
   const args = arguments[0] || {};
   if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
@@ -453,7 +461,7 @@ export async function generateImageViaCodex({
 
       return null;
     },
-    { idleTimeoutMs: IDLE_TIMEOUT_MS },
+    { idleTimeoutMs },
   ).catch(async err => {
     const tally = Array.from(eventTypeTally.entries())
       .map(([k, v]) => `${k}=${v}`)

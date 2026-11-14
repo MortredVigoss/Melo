@@ -1,7 +1,9 @@
 // Flowchart renderer — sequential steps with arrows.
-// Shape: nodes: [{id, label, shape?: 'rect'|'diamond'|'ellipse'}], edges: [{from, to, label?}]
-// Layout: simple topological sort → stacked rows, one step per row.
-// If the graph has cycles, falls back to insertion order.
+// Shape: nodes: [{id, label, children?: [ids], shape?: 'rect'|'diamond'|'ellipse'}], edges?: [{from, to, label?}]
+// A stored flowchart is a `tree` spec (src/services/viz/vizSpec.js): it has
+// `nodes[].children` and no `edges`. Until 2026-11-14 only `edges` was read,
+// so stored flowcharts were drawn without arrows, all steps in one row.
+// Layout: stacked rows by longest path from the start step (see layoutNodes).
 import { escapeAttr, renderCardFooter, renderCardHeader } from '../vizCommon.js';
 
 const NODE_H = 40;
@@ -12,40 +14,36 @@ const MIN_NODE_W = 100;
 const MAX_NODE_W = 260;
 const CHAR_W = 7;
 
+// Row of each step: the longest path from a start step. A link that leads
+// back to a step already on the current path (a loop such as "review → write")
+// is drawn, but does not count for the rows; otherwise the loop would push the
+// first step below the ones that follow it. Loops became reachable on
+// 2026-11-14, when stored flowcharts started to get their links at all.
 function layoutNodes(nodes, edges) {
   const byId = new Map(nodes.map(n => [n.id, { ...n, level: 0 }]));
+  const next = new Map(nodes.map(n => [n.id, []]));
   const inbound = new Map(nodes.map(n => [n.id, 0]));
   edges.forEach(e => {
-    if (byId.has(e.to)) inbound.set(e.to, (inbound.get(e.to) || 0) + 1);
+    if (!byId.has(e.from) || !byId.has(e.to)) return;
+    next.get(e.from).push(e.to);
+    inbound.set(e.to, inbound.get(e.to) + 1);
   });
-  // Topological-ish: level = max parent level + 1.
-  const adj = new Map(nodes.map(n => [n.id, []]));
-  edges.forEach(e => {
-    if (adj.has(e.from)) adj.get(e.from).push(e.to);
-  });
-  const queue = nodes.filter(n => (inbound.get(n.id) || 0) === 0).map(n => n.id);
-  const seen = new Set(queue);
-  while (queue.length) {
-    const id = queue.shift();
+  const state = new Map(); // id → 'open' (on the current path) | 'done'
+  const visit = (id, level) => {
     const node = byId.get(id);
-    for (const nextId of adj.get(id) || []) {
-      const next = byId.get(nextId);
-      if (!next) continue;
-      next.level = Math.max(next.level, node.level + 1);
-      if (!seen.has(nextId)) {
-        seen.add(nextId);
-        queue.push(nextId);
-      }
-    }
-  }
-  // Nodes not in any edge fall back to insertion order at the end.
-  let fallback = 0;
-  byId.forEach(node => {
-    if (!seen.has(node.id)) {
-      node.level = (nodes.length - 1 - fallback);
-      fallback += 1;
-    }
-  });
+    if (state.get(id) === 'open') return;
+    if (state.get(id) === 'done' && node.level >= level) return;
+    node.level = Math.max(node.level, level);
+    state.set(id, 'open');
+    for (const nextId of next.get(id)) visit(nextId, node.level + 1);
+    state.set(id, 'done');
+  };
+  // Start steps are those nothing points to; a chart that is one big loop
+  // starts at its first step. Steps only a separate loop reaches come last,
+  // in the order they were written.
+  const starts = nodes.filter(n => inbound.get(n.id) === 0);
+  for (const node of starts.length ? starts : nodes.slice(0, 1)) visit(node.id, 0);
+  for (const node of nodes) if (!state.has(node.id)) visit(node.id, 0);
   return byId;
 }
 
@@ -74,7 +72,9 @@ function renderNodeShape(node, x, y, width) {
 
 export default function mountFlowchart(host, spec) {
   const rawNodes = Array.isArray(spec.nodes) ? spec.nodes : [];
-  const rawEdges = Array.isArray(spec.edges) ? spec.edges : [];
+  const rawEdges = Array.isArray(spec.edges) && spec.edges.length
+    ? spec.edges
+    : rawNodes.flatMap(node => (Array.isArray(node.children) ? node.children : []).map(to => ({ from: node.id, to })));
   const byId = layoutNodes(rawNodes, rawEdges);
 
   // Group nodes by level, then measure per-row width.

@@ -167,26 +167,44 @@ async function readSseStream(
   let lastActivityAt = Date.now();
   let stalled = false;
   let normalCompletion = false;
+  // The idle clock measures the provider's silence. It stops while Melo's own
+  // callback is handling an event, and starts again when that returns: a slow
+  // consumer is not a stalled stream.
+  let handlingEvent = false;
   const stallChecker = setInterval(() => {
-    if (Date.now() - lastActivityAt > idleTimeoutMs) {
+    if (!handlingEvent && Date.now() - lastActivityAt > idleTimeoutMs) {
       stalled = true;
       void reader.cancel().catch(() => {});
       clearInterval(stallChecker);
     }
-  }, 5000);
+  }, Math.max(25, Math.min(5000, idleTimeoutMs)));
   stallChecker.unref?.();
 
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) {
+        // The watchdog stops a stalled stream with reader.cancel(), and a
+        // cancelled read is FULFILLED with `done: true`; it never rejects.
+        // Until 2026-11-14 this branch took that for a normal end, so the
+        // stall was reported as "stream ended before completion", or, on a
+        // request without tools, returned as a finished reply made of the
+        // text received so far.
+        if (stalled) throw buildStreamStalledError(idleTimeoutMs);
+        clearInterval(stallChecker);
         normalCompletion = true;
         break;
       }
 
       lastActivityAt = Date.now();
       buffer += decoder.decode(value, { stream: true });
-      buffer = await drainSseBuffer(buffer, processEventBlock);
+      handlingEvent = true;
+      try {
+        buffer = await drainSseBuffer(buffer, processEventBlock);
+      } finally {
+        handlingEvent = false;
+        lastActivityAt = Date.now();
+      }
     }
 
     buffer += decoder.decode();
