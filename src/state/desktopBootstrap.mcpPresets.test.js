@@ -1,9 +1,9 @@
-// Bootstrap-level contract for the mcpPresets array. Codex 三轮 audit
-// 2026-04-29: getBuiltinMcpPresets() now marks unpinned presets with
-// `unpinned: true` (browserless today, while its npm package is 404).
-// The Advanced UI relies on that field to disable the toggle and show
-// "unavailable · 未锁定版本" — so it MUST round-trip through the
-// bootstrap projection or the UI silently slips back to "假启用".
+// Bootstrap-level contract for the mcpPresets array the Advanced page renders.
+//
+// Until 2026-11-14 a preset could be `unpinned` (only `browserless` ever was:
+// its npm package did not exist) and the page showed it as unavailable. That
+// preset and the state are gone; what must hold now is simpler and stricter:
+// every preset the bootstrap offers names an exact release.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -16,51 +16,34 @@ process.env.MELO_HOME = TEMP_HOME;
 
 const { getDesktopBootstrap } = await import('../services/desktop/bootstrap.js');
 
-test('bootstrap.mcpPresets includes browserless with unpinned: true', async () => {
+test('bootstrap.mcpPresets offers no preset that cannot be enabled', async () => {
   const bootstrap = await getDesktopBootstrap();
   const presets = bootstrap?.customize?.mcpPresets;
   assert.ok(Array.isArray(presets) && presets.length, 'mcpPresets must be a non-empty array');
-  const browserless = presets.find(p => p.id === 'browserless');
-  assert.ok(browserless, 'browserless preset must appear in mcpPresets');
-  assert.equal(
-    browserless.unpinned,
-    true,
-    'browserless must surface unpinned:true so Advanced UI disables its toggle and shows "unavailable · 未锁定版本"',
-  );
+  assert.deepEqual(presets.map(p => p.id).sort(),
+    ['antv-chart', 'markdown2pdf', 'melo-douyin', 'melo-public-media', 'melo-xiaohongshu', 'mermaid', 'playwright']);
+  assert.equal(presets.some(p => p.id === 'browserless'), false);
+  for (const preset of presets) assert.equal('unpinned' in preset, false, `${preset.id}: the unpinned state no longer exists`);
+  for (const entry of bootstrap.customize.mcpAuthSurface) assert.equal('unpinned' in entry, false, entry.id);
 });
 
-test('bootstrap.mcpPresets pinned presets carry unpinned: false explicitly (boolean coercion)', async () => {
-  const bootstrap = await getDesktopBootstrap();
-  const presets = bootstrap?.customize?.mcpPresets;
-  // playwright + antv-chart + markdown2pdf + mermaid all have
-  // pinned versions, so unpinned must be exactly false (NOT
-  // undefined). The defensive Boolean(preset.unpinned) cast in
-  // desktopBootstrap.js relies on this — without it the UI's
-  // !preset.unpinned check would behave differently for `false`
-  // vs `undefined` if some downstream serializer dropped falsy
-  // fields.
-  for (const id of ['playwright', 'antv-chart', 'markdown2pdf', 'mermaid']) {
-    const preset = presets.find(p => p.id === id);
-    assert.ok(preset, `${id} preset must appear`);
-    assert.equal(preset.unpinned, false, `${id} must have unpinned: false (boolean), got ${preset.unpinned}`);
-  }
+test('a saved enableBrowserlessMcp flag is ignored: nothing is offered, connected or authorised for it', async () => {
+  const { buildEffectiveMcpServers, usableMcpServerIds } = await import('../mcp/presets.js');
+  assert.deepEqual(buildEffectiveMcpServers({}, { enableBrowserlessMcp: true }), {});
+  assert.deepEqual(usableMcpServerIds({ enableBrowserlessMcp: true }), []);
+  const { buildMcpFlags } = await import('../mcp/init.js');
+  assert.equal('enableBrowserlessMcp' in buildMcpFlags({ enableBrowserlessMcp: true }), false);
 });
 
-test('bootstrap.mcpPresets all enabled presets pin an exact npm or managed binary release', async () => {
-  // Catches a future addition to BUILTIN_MCP_PRESETS that forgets
-  // to register a PINNED_VERSIONS entry — the unpinned-flag would
-  // catch it server-side, but this test catches it at bootstrap
-  // boundary where most callers actually consume the data.
+test('bootstrap.mcpPresets all presets pin an exact npm or managed binary release', async () => {
   const bootstrap = await getDesktopBootstrap();
   const presets = bootstrap?.customize?.mcpPresets;
   assert.deepEqual(presets.filter(p => p.transport === 'managed-http').map(p => p.id).sort(), ['melo-douyin', 'melo-xiaohongshu']);
   for (const preset of presets) {
-    if (preset.unpinned) continue;
     if (preset.transport==='in-process'){
       assert.equal(preset.id,'melo-public-media');assert.equal(preset.command,undefined);assert.equal(preset.version,'1.0.0');continue;
     }
     if (preset.transport === 'managed-http') {
-      assert.equal(preset.unpinned, false);
       assert.match(preset.version, /^v\d+\.\d+\.\d+$/);
       assert.equal(preset.args, undefined);
       continue;
@@ -69,7 +52,7 @@ test('bootstrap.mcpPresets all enabled presets pin an exact npm or managed binar
     assert.match(
       lastArg,
       /@\d+\.\d+\.\d+$/,
-      `${preset.id} (pinned) last arg must be <package>@<semver>, got: ${lastArg}`,
+      `${preset.id} last arg must be <package>@<semver>, got: ${lastArg}`,
     );
   }
 });

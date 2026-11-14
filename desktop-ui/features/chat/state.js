@@ -51,14 +51,6 @@ function createChatState() {
     composerDragActive: false,
     // File name of a video being uploaded before it can be sent.
     attachmentUploading: null,
-    // Pending voice transcript to be pre-attached when auto-submitting a voice message.
-    // Set to null when not in a voice-submit flow.
-    composerVoiceTranscript: null,
-    // Stable id linking the voice audio attachment to its prefilled transcript
-    // entry. describeAudioExtractionStatus matches transcript→attachment by id,
-    // so without this the just-transcribed voice message would mis-render as
-    // "transcript unavailable" (2026-05-23 Codex C 闭环).
-    composerVoiceAttachmentId: null,
     // Chat-side Agent picker.
     agentSelectorOpen: false,
     agentSelectionSaving: false,

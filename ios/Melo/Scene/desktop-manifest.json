@@ -10,7 +10,7 @@
   "shared/agent/goalReview.js": "01e94e84e86f0c70a3910e0a0c78ab04f1fbf9d7502daaa97e36c6d82d80f95b",
   "shared/agent/locale.js": "9b674c4b98fad301a8afdbd27a77ed70e493500800c0347f0a5f453aae4e7980",
   "desktop-ui/i18n.js": "996b83b29f27aed8fb9c7956f614ea1dc8f586375ca3608d9e593ead300a2314",
-  "desktop-ui/translations.js": "0140aa60d11e1f67a1e66e187f646f8bf6e6cf5cd51557691352ab2ad64fcd30",
+  "desktop-ui/translations.js": "fa3281a5bcbe3b8bd0ed17c130be92482a40423b039e20cc854b0b2d72136c3e",
   "desktop-ui/neuralScene3D.js": "ce30ea2ef4124cc6330f320276e7ffbff7b5a5e88dd6b952c2b873cfd740aa24",
   "desktop-ui/neuralScene.js": "a6665facb0afeafdcfece7880907abcfa9ef1abf7326e060f0ac99650b8d541e",
   "desktop-ui/neuralSatellite.js": "dce60310eda4e075b99503913484f495bb581cd70b0c588e865fffcb5ad5b54e",

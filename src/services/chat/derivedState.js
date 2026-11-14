@@ -13,17 +13,6 @@ export async function persistSessionMemorySnapshot(snapshot, { home } = {}) {
   return applied;
 }
 
-// Persist a small set of per-chat runtime fields (e.g. activated tool groups)
-// without touching messages. Used for only-grow flags that must survive a
-// restart.
-export async function persistChatRuntimeFields(chat, keys = [], { home } = {}) {
-  await updateStateAtomically(latest => {
-    const current = latest.chats.find(entry => entry.id === chat.id);
-    if (!current) return;
-    for (const key of keys) current[key] = chat[key];
-  }, { home });
-}
-
 // Persist a compaction failure so the MAX_COMPACT_FAILURES breaker survives
 // the turn (audit L5). Merged with max(): a background pass working on a
 // stale snapshot can never lower the stored count.

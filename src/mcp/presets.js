@@ -10,16 +10,20 @@ import { isValidMcpServerId } from './toolId.js';
 // ─── First-class browser MCPs ─────────────────────────────────────────────────
 
 /**
- * Built-in MCP server presets for browser automation.
- * Enable via config flags instead of manual mcpServers config:
+ * Built-in MCP server preset for browser automation.
+ * Enable via a config flag instead of manual mcpServers config:
  *
  *   config.enablePlaywrightMcp   = true  → @playwright/mcp (official, full browser)
- *   config.enableBrowserlessMcp  = true  → @browserless/mcp (cloud, anti-bot profiles)
  *
- * These spin up via npx — no install needed (npx handles it).
- *
+ * It spins up via npx — no install needed (npx handles it).
  * Playwright covers: JS rendering, form fill, click-through, screenshot, PDF.
- * Browserless adds: cloud IP pool, stealth mode, better Cloudflare bypass rates.
+ *
+ * There used to be a second entry, `browserless` (@browserless/mcp). That npm
+ * package never existed, so the preset could not be enabled or connected and
+ * only showed an "unavailable" row; it was removed on 2026-11-14 together with
+ * the `unpinned` state it alone could be in. The hosted Browserless service is
+ * added through the HTTP MCP form. A saved `enableBrowserlessMcp` flag is
+ * left in the configuration untouched and has no effect.
  */
 const BROWSER_MCP_PRESETS = {
   playwright: {
@@ -27,30 +31,20 @@ const BROWSER_MCP_PRESETS = {
     args: ['-y', '@playwright/mcp@latest'],
     description: 'Full Chromium browser — JS rendering, form fill, screenshot, PDF export.',
   },
-  browserless: {
-    command: 'npx',
-    args: ['-y', '@browserless/mcp@latest'],
-    description: 'Cloud browser with stealth profiles — better Cloudflare bypass.',
-  },
 };
 
 // Pinned versions for the args above. We DON'T inline `@version` into
 // `args` directly because every callsite that wants to spawn one of
 // these presets reuses the array — pinning lives here so a single
 // place stays the source of truth, with a sweep applied below to
-// rewrite each `<package>@latest` (or unpinned) into `<package>@<lock>`.
+// rewrite each `<package>@latest` (or bare `<package>`) into `<package>@<lock>`.
 //
-// The `null` sentinel means "no pinned version exists yet"; the
-// preset gets marked `unpinned: true` and `connectMcpServer` refuses
-// to spawn it.  Keeping a placeholder entry here (instead of dropping
-// the preset entirely) means the UI can still surface the toggle in
-// a disabled state with an explanatory message.  Codex 二轮 audit
-// 2026-04-29: an unpinned `@latest` is the supply-chain hole the
-// pinning sweep was meant to close — letting browserless silently
-// stay on `@latest` would defeat that.
-const PINNED_VERSIONS = Object.freeze({
+// Every npm package a preset names must have an exact version here: an
+// `@latest` that reaches npx is the supply-chain hole the pinning sweep
+// closes (Codex 二轮 audit 2026-04-29). presets.test.js fails the gate for a
+// preset whose package is missing from this map or not an exact version.
+export const PINNED_VERSIONS = Object.freeze({
   '@playwright/mcp':         '0.0.71',
-  '@browserless/mcp':        null,  // package not on npm yet (404) — preset stays disabled
   '@antv/mcp-server-chart':  '0.9.10',
   '@99xio/markdown2pdf-mcp': '2.2.0',
   'mcp-mermaid':             '0.4.1',
@@ -73,55 +67,8 @@ function pinPackageArg(arg) {
   return `${baseName}@${pinned}`;
 }
 
-/**
- * Decide whether `/api/mcp/preset-toggle` should refuse a request to
- * ENABLE the preset behind `flag`. Returns a human-readable reason
- * string when the request must be refused, or `null` when it should
- * proceed. Disable requests (enabled=false) are NEVER refused —
- * users must always be able to clear a legacy `enable*Mcp:true`
- * config flag from the UI.
- *
- * Codex 四轮 audit 2026-04-29: extracted from the route handler so
- * node:test can pin the contract without booting the http server.
- *
- * @param {string} flag      one of the ALLOWED_MCP_FLAGS values
- * @param {boolean} enabled  the request body's enabled field
- * @returns {string|null}    reason when refused, null when allowed
- */
-export function mcpPresetToggleRefusalReason(flag, enabled) {
-  if (enabled !== true) return null; // disable always allowed
-  const matched = getBuiltinMcpPresets().find(p => p.flag === flag);
-  if (matched?.unpinned) {
-    return (
-      `Preset "${matched.id}" has no pinned version yet — refuse to enable. ` +
-      `(See PINNED_VERSIONS in src/mcp/manager.js. enabled:false is still allowed for cleanup.)`
-    );
-  }
-  return null;
-}
-
-function presetHasPinnedVersion(preset) {
-  // A preset is "pinned" iff every npm package name in its args is
-  // present in PINNED_VERSIONS with a non-null exact-version
-  // string. browserless deliberately maps to `null` until its npm
-  // package ships — this function returns false for it, the
-  // `unpinned` flag below records that, and `connectMcpServer`
-  // refuses to spawn it.
-  for (const arg of preset.args) {
-    if (typeof arg !== 'string') continue;
-    const atIdx = arg.lastIndexOf('@');
-    const baseName = atIdx > 0 ? arg.slice(0, atIdx) : arg;
-    if (baseName in PINNED_VERSIONS) {
-      const v = PINNED_VERSIONS[baseName];
-      if (typeof v !== 'string' || !v) return false;
-    }
-  }
-  return true;
-}
-
 for (const preset of Object.values(BROWSER_MCP_PRESETS)) {
   preset.args = preset.args.map(pinPackageArg);
-  if (!presetHasPinnedVersion(preset)) preset.unpinned = true;
 }
 
 /**
@@ -162,14 +109,10 @@ const BUILTIN_MCP_PRESETS = {
 };
 
 // Apply the same version-pin sweep as BROWSER_MCP_PRESETS (Codex
-// 2026-04-29). Keeping the pin map (PINNED_VERSIONS, defined above
-// this preset block) as the single source of truth.  Any preset
-// whose npm package isn't pinned to an exact version gets the
-// `unpinned: true` marker — `connectMcpServer` will refuse to spawn
-// such servers until the version map is updated.
+// 2026-04-29). The pin map (PINNED_VERSIONS, defined above this preset
+// block) is the single source of truth.
 for (const preset of Object.values(BUILTIN_MCP_PRESETS)) {
   preset.args = preset.args.map(pinPackageArg);
-  if (!presetHasPinnedVersion(preset)) preset.unpinned = true;
 }
 
 /**
@@ -184,11 +127,6 @@ export function getBuiltinMcpPresets() {
     id: 'playwright',
     flag: 'enablePlaywrightMcp',
     ...BROWSER_MCP_PRESETS.playwright,
-  });
-  out.push({
-    id: 'browserless',
-    flag: 'enableBrowserlessMcp',
-    ...BROWSER_MCP_PRESETS.browserless,
   });
   for (const [id, preset] of Object.entries(BUILTIN_MCP_PRESETS)) {
     out.push({ id, ...preset });
@@ -205,7 +143,6 @@ export function getBuiltinMcpPresets() {
  * @param {Object} mcpServers           - user-configured servers from config
  * @param {Object} [flags]              - feature flags from config
  * @param {boolean} [flags.enablePlaywrightMcp]
- * @param {boolean} [flags.enableBrowserlessMcp]
  * @returns {Object}  - merged server map
  */
 export function buildEffectiveMcpServers(mcpServers = {}, flags = {}) {
@@ -213,9 +150,6 @@ export function buildEffectiveMcpServers(mcpServers = {}, flags = {}) {
 
   if (flags.enablePlaywrightMcp && !effective.playwright) {
     effective.playwright = BROWSER_MCP_PRESETS.playwright;
-  }
-  if (flags.enableBrowserlessMcp && !effective.browserless) {
-    effective.browserless = BROWSER_MCP_PRESETS.browserless;
   }
 
   // Chart + document-conversion presets.  Each preset stores its own flag
@@ -240,8 +174,8 @@ export function buildEffectiveMcpServers(mcpServers = {}, flags = {}) {
 
 /**
  * Server ids an Agent can actually use under `config`: built-in presets whose
- * flag is on plus the user's own `config.mcpServers`, minus disabled entries
- * and presets `connectMcpServer` refuses (`unpinned`). New Agents start with
+ * flag is on plus the user's own `config.mcpServers`, minus disabled entries.
+ * New Agents start with
  * all of them (user decision 2026-10-22); each Agent's MCP whitelist can still
  * add or remove servers.
  *
@@ -251,7 +185,7 @@ export function buildEffectiveMcpServers(mcpServers = {}, flags = {}) {
 export function usableMcpServerIds(config = {}) {
   const user = config?.mcpServers && typeof config.mcpServers === 'object' ? config.mcpServers : {};
   return Object.entries(buildEffectiveMcpServers(user, config || {}))
-    .filter(([id, server]) => isValidMcpServerId(id) && !server?.disabled && !server?.unpinned)
+    .filter(([id, server]) => isValidMcpServerId(id) && !server?.disabled)
     .map(([id]) => id)
     .sort();
 }

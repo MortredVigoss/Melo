@@ -17,7 +17,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { IMAGE_GEN_INTENT_PATTERN, detectImageGenIntent, detectImageIntent } from './messageBuilder.js';
+import { IMAGE_GEN_INTENT_PATTERN, detectImageIntent } from './messageBuilder.js';
 
 // ── 1. Generation intent (positive cases) ─────────────────────────────
 
@@ -52,7 +52,8 @@ for (const text of GEN_POSITIVES) {
       IMAGE_GEN_INTENT_PATTERN.test(text),
       `expected "${text}" to read as image-generation intent`,
     );
-    assert.equal(detectImageGenIntent(text), true);
+    // The function the product calls (openai.js imported a private copy of it until 2026-11-14).
+    assert.equal(detectImageIntent(text), true);
   });
 }
 
@@ -104,13 +105,10 @@ for (const text of GEN_NEGATIVES) {
   });
 }
 
-test('detectImageGenIntent: handles null / undefined / non-string', () => {
-  assert.equal(detectImageGenIntent(null), false);
-  assert.equal(detectImageGenIntent(undefined), false);
-  assert.equal(detectImageGenIntent(42), false);
-  assert.equal(detectImageGenIntent({}), false);
-  assert.equal(detectImageGenIntent(''), false);
-  assert.equal(detectImageGenIntent('   '), false);
+test('detectImageIntent: handles null / undefined / non-string, with or without an input image', () => {
+  for (const hasInputImage of [false, true]) {
+    for (const value of [null, undefined, 42, {}, '', '   ']) assert.equal(detectImageIntent(value, { hasInputImage }), false);
+  }
 });
 
 // ── 3. detectImageIntent (composed gate) ──────────────────────────────

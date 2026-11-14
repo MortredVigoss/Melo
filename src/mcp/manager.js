@@ -35,7 +35,7 @@ import { registerMcpTool, unregisterMcpServer, getMcpTool, getAllMcpTools, mcpFu
 import { getMeloHome } from '../config.js';
 import { formatMcpToolId, isValidMcpServerId } from './toolId.js';
 import { buildEffectiveMcpServers } from './presets.js';
-export { mcpPresetToggleRefusalReason, getBuiltinMcpPresets, buildEffectiveMcpServers, usableMcpServerIds } from './presets.js';
+export { getBuiltinMcpPresets, buildEffectiveMcpServers, usableMcpServerIds } from './presets.js';
 
 /**
  * Resolve the **default working directory** for a per-server MCP child
@@ -138,20 +138,6 @@ export async function connectMcpServer(serverName, serverConfig) {
       disconnectMcpServer(serverName);
     }
     return { connected: false, toolCount: 0, error: 'disabled' };
-  }
-
-  if (serverConfig.unpinned) {
-    // Codex 二轮 audit 2026-04-29: a preset whose npm package isn't
-    // pinned to an exact version (browserless today) must NOT spawn —
-    // doing so would let `npx -y @pkg@latest` execute whatever the
-    // maintainer pushed up at the moment of boot, defeating the
-    // version-lock contract for automatic startup. Same disconnect-
-    // existing-then-skip dance as the `disabled` branch above so an
-    // earlier-running version doesn't linger after the contract changes.
-    if (_pending.has(serverName)) {
-      disconnectMcpServer(serverName);
-    }
-    return { connected: false, toolCount: 0, error: 'unpinned' };
   }
 
   // Disconnect existing client if re-connecting

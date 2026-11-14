@@ -39,17 +39,17 @@ test('late summaries preserve newly appended messages and cannot replace a newer
 // ─── 2026-10-18 bug audit (section 2) ────────────────────────────────────────
 
 test('T4/L2: a background compaction finishing with a stale snapshot never lowers toolGroupsActivated, attachmentsExternalized or compactUpgradeAttempts', async t => {
-  const { persistChatRuntimeFields, persistCompactFailure } = await import('./derivedState.js');
+  const { persistCompactFailure } = await import('./derivedState.js');
   const home = await mkdtemp(join(tmpdir(), 'melo-derived-stale-'));
   t.after(() => rm(home, { recursive: true, force: true }));
   const messages = Array.from({ length: 6 }, (_, i) => ({ id: `m${i}`, role: i % 2 ? 'assistant' : 'user', content: `t${i}` }));
   await updateStateAtomically(s => { s.chats = [{ id: 'bg', messages, toolGroupsActivated: [], attachmentsExternalized: false, compactUpgradeAttempts: 0 }]; }, { home });
   // Background pass takes its snapshot now (turn N).
   const stale = structuredClone((await loadState({ home })).chats[0]);
-  // Turn N+1 commits runtime flags through the real path.
-  const live = structuredClone((await loadState({ home })).chats[0]);
-  live.toolGroupsActivated = ['media']; live.attachmentsExternalized = true; live.compactUpgradeAttempts = 2;
-  await persistChatRuntimeFields(live, ['toolGroupsActivated', 'attachmentsExternalized', 'compactUpgradeAttempts'], { home });
+  // Turn N+1 commits runtime flags to the store.
+  await updateStateAtomically(s => {
+    Object.assign(s.chats.find(entry => entry.id === 'bg'), { toolGroupsActivated: ['media'], attachmentsExternalized: true, compactUpgradeAttempts: 2 });
+  }, { home });
   // Background pass completes on the stale snapshot.
   Object.assign(stale, { compactSummary: 'bg summary', compactCards: [{ id: 'c1', summary: 'bg summary', source: 'cloud' }], compactBoundaryMessageId: 'm3', compactedMessageCount: 4, compactedAt: new Date().toISOString(), compactFailures: 0, compactSummarySource: 'cloud', toolGroupsActivated: ['browser'] });
   await persistCompactSnapshot(stale, { boundaryId: 'm3', compactedCount: 4 }, { home });

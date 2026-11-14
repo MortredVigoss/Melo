@@ -53,11 +53,8 @@ import { resolveFileSafety } from './safety/fileSafetyGate.js';
 import { httpEndpoint } from './mcp/client.js';
 import { isValidMcpServerId } from './mcp/toolId.js';
 import { platformLogin, mcpConnectionStates, getBuiltinMcpPresets, buildEffectiveMcpServers, connectMcpServer, disconnectMcpServer, getActiveMcpServers, shutdownMcpServers } from './mcp/manager.js';
-import { backgroundRunner } from './tasks/backgroundRunner.js';
-import { startApprovedBackgroundTask } from './tasks/approvedBackgroundTask.js';
 import { getReminderScheduler } from './reminders/scheduler.js';
 import { createReminderDelivery } from './reminders/delivery.js';
-import { unregisterPlugin, getRegisteredPlugins, getPluginHooks } from './plugins/hooks.js';
 import { resolveRuntimePaths } from './runtime/paths.js';
 import { createRuntimeIdentity, publishRuntime, releaseRuntime } from './runtime/identity.js';
 import { collectRuntimeDiagnostics } from './runtime/diagnostics.js';
@@ -732,7 +729,7 @@ await finishChatDeletions(runtimePaths.home);
       // (or `url`): the one way to make this process start an arbitrary program
       // that appears in no configuration. No client ever sent them.
       const requested=saved;
-      if(!isValidMcpServerId(name) || !requested || requested.disabled || requested.unpinned) {sendJson(response,400,{error:'MCP server is not enabled or has no valid configuration.'});return;}
+      if(!isValidMcpServerId(name) || !requested || requested.disabled) {sendJson(response,400,{error:'MCP server is not enabled or has no valid configuration.'});return;}
       const result = await connectMcpServer(name, requested);
       sendJson(response, result.connected ? 200 : 500, { ok: result.connected, ...result });
       return;
@@ -776,23 +773,12 @@ await finishChatDeletions(runtimePaths.home);
       const ALLOWED_MCP_FLAGS = new Set([
         'enableXiaohongshuMcp','enableDouyinMcp','enablePublicMediaMcp',
         'enablePlaywrightMcp',
-        'enableBrowserlessMcp',
         'enableAntvChartMcp',
         'enableMarkdown2PdfMcp',
         'enableMermaidMcp',
       ]);
       if (!ALLOWED_MCP_FLAGS.has(flag)) {
         sendJson(response, 400, { ok: false, error: `Unknown MCP preset flag: ${flag}` });
-        return;
-      }
-      // Codex 四轮 audit 2026-04-29: enable on unpinned preset
-      // refused (would 假启用); disable always allowed for legacy
-      // cleanup. The rule lives in manager.js so it's unit-testable
-      // without spinning up the http server.
-      const { mcpPresetToggleRefusalReason } = await import('./mcp/manager.js');
-      const refusalReason = mcpPresetToggleRefusalReason(flag, enabled);
-      if (refusalReason) {
-        sendJson(response, 409, { ok: false, error: refusalReason });
         return;
       }
       const { updateConfig } = await import('./config.js');
@@ -803,119 +789,6 @@ await finishChatDeletions(runtimePaths.home);
       // write itself succeeded.
       await initMcpServers();
       sendJson(response, 200, { ok: true, flag, enabled, servers: getActiveMcpServers() });
-      return;
-    } },
-  { method: 'POST', paths: ["/api/background-tasks/run"], auth: 'local-write', handler: async ({request,response,url,requireLocalOrigin}) => {
-      const body = await readJsonBody(request);
-      const { command } = body;
-      if (!command) {
-        sendJson(response, 400, { ok: false, error: 'command is required.' });
-        return;
-      }
-
-      const abortController = new AbortController();
-      request.once('aborted', () => abortController.abort());
-      response.once('close', () => {
-        if (!response.writableFinished) abortController.abort();
-      });
-
-      startSse(response);
-
-      let runId;
-      try {
-        runId = await startApprovedBackgroundTask(backgroundRunner, body, {
-          signal: abortController.signal,
-          detachAfterApproval: true,
-          sseEmitter: (event, payload) => writeSseEvent(response, event, payload),
-          onComplete: (record) => {
-            if (response.destroyed) return;
-            writeSseEvent(response, 'done', {
-              runId: record.id,
-              status: record.status,
-              exitCode: record.exitCode,
-            });
-            response.end();
-          },
-        });
-      } catch (error) {
-        writeSseEvent(response, 'done', { status: 'denied', error: error.message });
-        response.end();
-        return;
-      }
-
-      writeSseEvent(response, 'started', { runId });
-
-      // Subscribe to output and forward as SSE chunks
-      const onOutput = chunk => { if (!response.destroyed) writeSseEvent(response, 'output', { chunk }); };
-      const catchUp = response.destroyed ? '' : backgroundRunner.subscribe(runId, onOutput);
-      response.once('close', () => backgroundRunner.unsubscribe(runId, onOutput));
-      if (catchUp) {
-        writeSseEvent(response, 'output', { chunk: catchUp });
-      }
-
-      return;
-    } },
-  { method: 'GET', paths: ["/api/background-tasks/status"], auth: 'local-read', handler: async ({request,response,url,requireLocalOrigin}) => {
-      const runId = url.searchParams.get('runId');
-      if (!runId) {
-        sendJson(response, 400, { ok: false, error: 'runId is required.' });
-        return;
-      }
-      const record = backgroundRunner.status(runId);
-      if (!record) {
-        sendJson(response, 404, { ok: false, error: 'Run not found.' });
-        return;
-      }
-      sendJson(response, 200, {
-        runId: record.id,
-        status: record.status,
-        exitCode: record.exitCode,
-        startedAt: record.startedAt,
-        endedAt: record.endedAt,
-        outputPreview: record.output.slice(-2000),
-      });
-      return;
-    } },
-  { method: 'POST', paths: ["/api/background-tasks/kill"], auth: 'local-write', handler: async ({request,response,url,requireLocalOrigin}) => {
-      const body = await readJsonBody(request);
-      const { runId } = body;
-      if (!runId) {
-        sendJson(response, 400, { ok: false, error: 'runId is required.' });
-        return;
-      }
-      backgroundRunner.kill(runId);
-      sendJson(response, 200, { ok: true });
-      return;
-    } },
-  { method: 'GET', paths: ["/api/background-tasks/list"], auth: 'local-read', handler: async ({request,response,url,requireLocalOrigin}) => {
-      const runs = backgroundRunner.list().map(r => ({
-        runId: r.id,
-        command: r.command.slice(0, 120),
-        status: r.status,
-        exitCode: r.exitCode,
-        startedAt: r.startedAt,
-        endedAt: r.endedAt,
-      }));
-      sendJson(response, 200, { runs });
-      return;
-    } },
-  { method: 'GET', paths: ["/api/plugins"], auth: 'local-read', handler: async ({request,response,url,requireLocalOrigin}) => {
-      const plugins = getRegisteredPlugins().map(id => ({
-        id,
-        hooks: getPluginHooks(id),
-      }));
-      sendJson(response, 200, { plugins });
-      return;
-    } },
-  { method: 'POST', paths: ["/api/plugins/unregister"], auth: 'local-write', handler: async ({request,response,url,requireLocalOrigin}) => {
-      const body = await readJsonBody(request);
-      const { pluginId } = body;
-      if (!pluginId) {
-        sendJson(response, 400, { ok: false, error: 'pluginId is required.' });
-        return;
-      }
-      unregisterPlugin(pluginId);
-      sendJson(response, 200, { ok: true });
       return;
     } },
 ]);
@@ -1272,7 +1145,6 @@ function shutdown() {
     isAgentChannelAvailable('discord') ? _releaseDiscordLock() : Promise.resolve(),
     voiceShutdown,
     pageRegistryShutdown,
-    backgroundRunner.shutdown(),
     reminderScheduler.stop(),
     drainPostTurnTasks(runtimePaths.home, { timeoutMs: 2000 }).catch(() => {}).then(() => derivedIndexing.stop()),
     serverClosed,

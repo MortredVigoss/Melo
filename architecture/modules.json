@@ -24,8 +24,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 667,
-      "edges": 2225,
+      "modules": 664,
+      "edges": 2216,
       "roots": [
         "src",
         "desktop-ui",
@@ -34,7 +34,7 @@
       ],
       "note": "静态 import/re-export，含 desktop-ui 对 /shared/*.js 的服务映射；不含动态 import 与外部包"
     },
-    "routes": 182,
+    "routes": 175,
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
@@ -266,12 +266,12 @@
         "desktop-ui/teamPanel.js",
         "ios/Melo/{AgentEditSession,AgentEditor,AgentProfile,AgentTeam,TeamSheet,TeamVerification}.swift",
         "ios/Tests/{AgentEditTests,AgentTeamTests}.swift",
-        "src/desktopStore.{skills,applySkillProposal,scanSkillProposals,updateAgentProfile,draftFromChat}.test.js",
+        "src/desktopStore.{skills,scanSkillProposals,updateAgentProfile,draftFromChat}.test.js",
         "src/index.saveAsSkill.test.js",
         "scripts/migrate-agent-capabilities.js"
       ],
       "modules": {
-        "desktop-ui": 14,
+        "desktop-ui": 13,
         "src": 43
       },
       "entryModules": [
@@ -577,7 +577,6 @@
         "POST /api/agents/update ← src/http/domainRoutes.js",
         "POST /api/customize/skill-toggle ← src/http/domainRoutes.js",
         "GET /api/skill-proposals ← src/http/domainRoutes.js",
-        "POST /api/skill-proposals/:seedId/apply ← src/http/domainRoutes.js",
         "POST /api/skill-proposals/dismiss ← src/http/domainRoutes.js",
         "POST /api/skill-proposals/rescan ← src/http/domainRoutes.js",
         "POST /api/skills/custom ← src/http/domainRoutes.js",
@@ -593,7 +592,6 @@
       "desktopUi": [
         "desktop-ui/agentAvatar.js",
         "desktop-ui/features/agents/agentDraft.js",
-        "desktop-ui/features/agents/agentMcpAuthorise.js",
         "desktop-ui/features/agents/agentProfilePatch.js",
         "desktop-ui/features/agents/agentSettings.css",
         "desktop-ui/features/agents/agents.css",
@@ -634,7 +632,6 @@
           "desktop-ui/agentSettingsSecurity.browser.test.js",
           "desktop-ui/agentVoice.browser.test.js",
           "desktop-ui/features/agents/agentDraft.test.js",
-          "desktop-ui/features/agents/agentMcpAuthorise.test.js",
           "desktop-ui/features/agents/agentProfilePatch.test.js",
           "desktop-ui/features/agents/capabilityChoices.test.js",
           "desktop-ui/features/agents/controller.test.js",
@@ -659,7 +656,6 @@
           "src/agents/subAgent.test.js",
           "src/agents/team.test.js",
           "src/agents/workspaceScheduling.test.js",
-          "src/desktopStore.applySkillProposal.test.js",
           "src/desktopStore.draftFromChat.test.js",
           "src/desktopStore.scanSkillProposals.test.js",
           "src/desktopStore.skills.test.js",
@@ -2459,8 +2455,7 @@
         {
           "module": "src/plugins/hooks.js",
           "importedBy": [
-            "chat",
-            "platform"
+            "chat"
           ]
         },
         {
@@ -2720,15 +2715,11 @@
         "desktop-shell": 13,
         "media": 4,
         "memory": 1,
-        "platform": 20,
+        "platform": 19,
         "projects": 3,
         "settings": 2
       },
       "httpRoutes": [
-        "POST /api/background-tasks/kill ← src/server.js",
-        "GET /api/background-tasks/list ← src/server.js",
-        "POST /api/background-tasks/run ← src/server.js",
-        "GET /api/background-tasks/status ← src/server.js",
         "POST /api/command/run ← src/http/domainRoutes.js",
         "POST /api/connectors/external ← src/http/domainRoutes.js",
         "POST /api/connectors/external/invoke ← src/http/domainRoutes.js",
@@ -2745,8 +2736,6 @@
         "POST /api/mcp/preset-toggle ← src/server.js",
         "POST /api/mcp/reload ← src/server.js",
         "GET /api/mcp/servers ← src/server.js",
-        "GET /api/plugins ← src/server.js",
-        "POST /api/plugins/unregister ← src/server.js",
         "GET /api/search/files ← src/server.js",
         "GET /api/settings/domain-cookies ← src/server.js",
         "POST /api/settings/domain-cookies/remove ← src/server.js",
@@ -3355,7 +3344,6 @@
         "src/domain/approval/**",
         "src/services/task/**",
         "src/domain/task/**",
-        "src/tasks/**",
         "src/reminders/**",
         "src/safety/**",
         "src/services/activity/**",
@@ -3365,7 +3353,7 @@
       ],
       "modules": {
         "desktop-ui": 7,
-        "src": 30
+        "src": 28
       },
       "entryModules": [
         {
@@ -3542,18 +3530,6 @@
             "chat",
             "platform"
           ]
-        },
-        {
-          "module": "src/tasks/approvedBackgroundTask.js",
-          "importedBy": [
-            "platform"
-          ]
-        },
-        {
-          "module": "src/tasks/backgroundRunner.js",
-          "importedBy": [
-            "platform"
-          ]
         }
       ],
       "dependsOn": {
@@ -3573,7 +3549,7 @@
         "knowledge": 3,
         "media": 1,
         "memory": 3,
-        "platform": 18,
+        "platform": 16,
         "projects": 1,
         "settings": 1,
         "tools": 35,
@@ -3666,9 +3642,7 @@
           "src/services/approval/approvalConcurrency.test.js",
           "src/services/task/operationLedger.regression.test.js",
           "src/services/task/taskAcceptance.test.js",
-          "src/services/task/taskExecution.integration.test.js",
-          "src/tasks/approvedBackgroundTask.test.js",
-          "src/tasks/backgroundRunner.test.js"
+          "src/services/task/taskExecution.integration.test.js"
         ],
         "swift": []
       },
@@ -4456,7 +4430,7 @@
       ],
       "dependsOn": {
         "agents": 32,
-        "approvals": 18,
+        "approvals": 16,
         "channels": 6,
         "chat": 34,
         "desktop-shell": 2,
@@ -4467,7 +4441,7 @@
         "projects": 6,
         "settings": 16,
         "sync": 2,
-        "tools": 20,
+        "tools": 19,
         "voice": 1
       },
       "usedBy": {

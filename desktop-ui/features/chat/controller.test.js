@@ -331,21 +331,17 @@ test('a stopped or failed turn returns its supplements to the composer instead o
   assert.equal(h.errors.length, 1);
 });
 
-test('a failed send restores the draft, attachments and voice ids, keeps the retry identity for that chat only', async () => {
+test('a failed send restores the draft and attachments, keeps the retry identity for that chat only', async () => {
   const sse = server();
   const h = harness();
   const attachment = { id: 'img', kind: 'image', url: 'data:image/png;base64,AAAA', title: 'a.png' };
-  Object.assign(h.chat(), { composer: 'deploy it', composerAttachments: [attachment], composerVoiceTranscript: 'spoken', composerVoiceAttachmentId: 'img' });
+  Object.assign(h.chat(), { composer: 'deploy it', composerAttachments: [attachment] });
   const sending = h.send();
   await flush();
-  assert.equal(h.chat().composerVoiceTranscript, null, 'voice ids are captured, then cleared, for the send');
-  assert.equal(h.chat().composerVoiceAttachmentId, null);
   sse.send('error', { code: 'REQUEST_INTERRUPTED', runId: 'run-1' });
   await sending;
   assert.equal(h.chat().composer, 'deploy it');
   assert.deepEqual(h.chat().composerAttachments, [attachment]);
-  assert.equal(h.chat().composerVoiceTranscript, 'spoken');
-  assert.equal(h.chat().composerVoiceAttachmentId, 'img');
   assert.equal(h.chat().composerRetry.chatId, 'chat-a');
   assert.equal(h.chat().composerRetry.interrupted, true);
   assert.equal(h.errors.length, 1);
@@ -419,25 +415,28 @@ test('capability requests join the permission queue and leave it when closed or 
   assert.deepEqual(h.state.permissions, [], 'open capability prompts end with the turn');
 });
 
-test('disconnect preserves the voice transcript; an unchanged resend reuses the request identity and transcript linkage', async () => {
+test('after a disconnect an unchanged resend reuses the request identity; a send never carries a client-made transcript', async () => {
   const sse = server();
   const h = harness();
-  Object.assign(h.chat(), { composer: 'hello', composerAttachments: [{ id: 'audio', kind: 'audio' }], composerVoiceTranscript: 'spoken text', composerVoiceAttachmentId: 'audio' });
+  Object.assign(h.chat(), { composer: 'hello', composerAttachments: [{ id: 'audio', kind: 'audio' }] });
   let sending = h.send();
   await flush();
   sse.close();
   await sending;
   assert.match(h.errors[0], /./);
-  assert.equal(h.chat().composerVoiceTranscript, 'spoken text');
-  assert.equal(h.chat().composerVoiceAttachmentId, 'audio');
+  assert.deepEqual(h.chat().composerAttachments, [{ id: 'audio', kind: 'audio' }], 'the attachment is still there to resend');
   sending = h.send();
   await flush();
   sse.close();
   await sending;
   const [first, second] = sse.streams.map(stream => stream.body);
   assert.equal(first.requestId, second.requestId);
-  assert.deepEqual(first.extractedMedia, second.extractedMedia);
-  assert.deepEqual(first.extractedMedia, [{ attachmentId: 'audio', kind: 'transcript', text: 'spoken text', metadata: { source: 'speech-recognition', fileName: 'voice-message.wav' } }]);
+  // 2026-11-14: the composer used to be able to attach a transcript of its own
+  // (`extractedMedia`); nothing set it any more since voice input writes text
+  // into the composer. Transcripts come from the server's extraction only.
+  assert.equal('extractedMedia' in first, false);
+  assert.equal('extractedMedia' in second, false);
+  assert.deepEqual(first.attachments, second.attachments);
   h.chat().composer = 'changed';
   sending = h.send();
   await flush();
@@ -511,33 +510,29 @@ test('draft isolation per chat: a supplement only goes to the chat whose reply i
   await sending;
 });
 
-test('createChat clears the draft, attachments and both voice fields only after the chat exists', async () => {
+test('createChat clears the draft and attachments only after the chat exists', async () => {
   const h = harness({ responses: { '/api/chats': new Error('offline') } });
-  Object.assign(h.chat(), { composer: 'draft', composerAttachments: [{ id: 'private-file' }], composerVoiceTranscript: 'spoken', composerVoiceAttachmentId: 'private-file' });
+  Object.assign(h.chat(), { composer: 'draft', composerAttachments: [{ id: 'private-file' }] });
   await assert.rejects(h.feature.createChat(), /offline/);
   assert.equal(h.chat().composerAttachments.length, 1);
-  assert.equal(h.chat().composerVoiceTranscript, 'spoken');
+  assert.equal(h.chat().composer, 'draft');
   h.context.api = null;
   const ok = harness({ responses: { '/api/chats': page({ marker: 'created' }) } });
-  Object.assign(ok.chat(), { composer: 'draft', composerAttachments: [{ id: 'private-file' }], composerVoiceTranscript: 'spoken', composerVoiceAttachmentId: 'private-file', composerHistoryIndex: 2 });
+  Object.assign(ok.chat(), { composer: 'draft', composerAttachments: [{ id: 'private-file' }], composerHistoryIndex: 2 });
   await ok.feature.createChat({ projectId: 'p2', mode: 'code', agentId: 'research' });
   assert.deepEqual(ok.calls[0][2], { mode: 'code', projectId: 'p2', agentId: 'research', modelSelection: null, contextArtifactIds: [] });
   assert.equal(ok.applied[0].marker, 'created');
   assert.equal(ok.chat().composer, '');
   assert.deepEqual(ok.chat().composerAttachments, []);
-  assert.equal(ok.chat().composerVoiceTranscript, null);
-  assert.equal(ok.chat().composerVoiceAttachmentId, null);
   assert.equal(ok.chat().composerHistoryIndex, -1);
 });
 
-test('the new-chat home reset clears the draft, attachments, menus and both voice fields', () => {
+test('the new-chat home reset clears the draft, attachments and menus', () => {
   const h = harness();
-  Object.assign(h.chat(), { composer: 'draft', composerAttachments: [{ id: 'audio' }], composerVoiceTranscript: 'spoken', composerVoiceAttachmentId: 'audio', composerAttachmentMenuOpen: true, composerDragActive: true });
+  Object.assign(h.chat(), { composer: 'draft', composerAttachments: [{ id: 'audio' }], composerAttachmentMenuOpen: true, composerDragActive: true });
   h.feature.resetComposerForNewChatHome();
   assert.equal(h.chat().composer, '');
   assert.deepEqual(h.chat().composerAttachments, []);
-  assert.equal(h.chat().composerVoiceTranscript, null);
-  assert.equal(h.chat().composerVoiceAttachmentId, null);
   assert.equal(h.chat().composerAttachmentMenuOpen, false);
   assert.equal(h.chat().composerDragActive, false);
   assert.equal(h.chat().voice.status, 'ready', 'the bridge supports dictation, so the mic is ready again');

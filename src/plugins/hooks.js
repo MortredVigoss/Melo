@@ -1,21 +1,21 @@
 /**
- * Plugin lifecycle hook system.
+ * Lifecycle hook points.
  *
- * Provides a simple publish/subscribe event bus for plugin hooks.
- * Hooks are named lifecycle points where plugins can observe or modify
- * the system's behavior.
- *
- * Available hooks (mirrors key events in the system):
+ * A small publish/subscribe bus: code can register handlers that run at named
+ * points of a turn. The points that are emitted:
  *
  *   'chat:message:before'   – before a user message is processed
  *   'chat:message:after'    – after the model replies
  *   'tool:before'           – before a tool is executed
  *   'tool:after'            – after a tool executes
- *   'compact:after'         – after a context compact runs
- *   'mcp:connected'         – when an MCP server connects
- *   'mcp:disconnected'      – when an MCP server disconnects
  *
- * Plugin registration:
+ * Nothing in the product registers a handler: no plugin loader was ever
+ * added, and the Advanced page list and the /api/plugins routes that showed an
+ * always-empty registry were removed on 2026-11-14. The hook points stay
+ * because the turn-lifecycle tests hold a turn at 'chat:message:before' to
+ * prove ordering, retry and cancellation.
+ *
+ * Registration:
  *   registerPlugin('my-plugin', {
  *     'chat:message:before': async ({ chat, message }) => { ... },
  *     'tool:after': async ({ toolId, result }) => { ... },
@@ -89,23 +89,6 @@ export function unregisterPlugin(pluginId) {
   _pluginHooks.delete(pluginId);
 }
 
-/**
- * Return all registered plugin ids.
- * @returns {string[]}
- */
-export function getRegisteredPlugins() {
-  return [..._pluginHooks.keys()];
-}
-
-/**
- * Return all registered hooks for a plugin.
- * @param {string} pluginId
- * @returns {string[]}
- */
-export function getPluginHooks(pluginId) {
-  return [...(_pluginHooks.get(pluginId) || [])];
-}
-
 // ─── Emit API ─────────────────────────────────────────────────────────────────
 
 /**
@@ -158,10 +141,3 @@ export async function emitHook(hookName, payload = {}, { timeoutMs = DEFAULT_HOO
   return payload;
 }
 
-/**
- * Clear all hooks (mainly for tests).
- */
-export function clearAllPlugins() {
-  _hooks.clear();
-  _pluginHooks.clear();
-}

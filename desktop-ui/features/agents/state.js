@@ -4,8 +4,6 @@
 // profiles themselves stay in the bootstrap (read through getBootstrap()).
 function createAgentsState() {
   return {
-    // Editor tab of the legacy identity / soul editor (select-agent-editor-tab).
-    agentEditorTab: 'identity',
     // Map of agentId → active channel tab ('telegram' | 'discord' | 'lark').
     // Defaults to 'telegram' on first read. Used by the channels section to
     // show one channel at a time filling the full panel width.
@@ -22,16 +20,12 @@ function createAgentsState() {
     agentCreateCopyPersona: false,
     // `${agentId}:capabilities|channels` → whether the <details> is open.
     agentOpenSections: {},
-    // Save-in-progress flags keyed like the drafts (agentSaveKey).
-    agentSaveStates: {},
     // `${agentId}:${channelId}` → whether the bot token is shown in clear.
     agentSecretVisibility: {},
     // Scroll / caret positions captured before render() rebuilds the page and
     // restored after it (captureBeforeRender / restore*AfterRender).
-    agentListScrollTop: 0,
     agentDetailScrollTops: {},
     agentEditorStates: {},
-    shouldFocusAgentEditor: false,
   };
 }
 

@@ -99,18 +99,19 @@ test('safety allowlist filter selects write feature state and re-render; other s
   assert.equal(h.feature.handleChange(el('<select name="unrelated"></select>')), false);
 });
 
-test('refreshAdvancedStatus fans out to the five endpoints, fills the cache and reports partial failures', async () => {
-  const h = harness({ responses: { '/api/mcp/servers': { servers: [{ name: 's1' }] }, '/api/plugins': { plugins: [] }, '/api/background-tasks/list': { runs: [{ id: 'r1' }] }, '/api/diagnostics': new Error('diag down'), '/api/workspace/retained': { files: [] } } });
+test('refreshAdvancedStatus fans out to the three endpoints, fills the cache and reports partial failures', async () => {
+  const h = harness({ responses: { '/api/mcp/servers': { servers: [{ name: 's1' }] }, '/api/diagnostics': new Error('diag down'), '/api/workspace/retained': { files: [] } } });
   await h.feature.refreshAdvancedStatus();
   const adv = h.feature.getState().advanced;
   assert.equal(adv.loaded, true);
   assert.deepEqual(adv.cliServers, [{ name: 's1' }]);
-  assert.deepEqual(adv.tasks, [{ id: 'r1' }]);
+  assert.deepEqual(adv.retainedFiles, { files: [] });
+  assert.equal('plugins' in adv || 'tasks' in adv, false, 'the always-empty plugin and background lists are no longer state');
   assert.equal(adv.diagnostics, null);
   assert.match(adv.error, /^Partial load: diag down$/);
   assert.equal(adv.loading, false);
   assert.ok(h.bgRenders() >= 1 && h.renders() >= 1, 'a background render while loading and a render when done');
-  assert.deepEqual(h.calls.map(c => c[0]).sort(), ['/api/background-tasks/list', '/api/diagnostics?storage=1', '/api/mcp/servers', '/api/plugins', '/api/workspace/retained']);
+  assert.deepEqual(h.calls.map(c => c[0]).sort(), ['/api/diagnostics?storage=1', '/api/mcp/servers', '/api/workspace/retained']);
 });
 
 test('skill detail tab and the SKILL.md cache are feature state; the markdown tab fetches once per skill', async () => {
@@ -135,7 +136,7 @@ test('an MCP preset toggle that fails surfaces through setError; a success refre
   await click(h, 'toggle-mcp-preset', '<button data-preset-flag="filesystem" data-next-enabled="1"></button>');
   assert.match(h.topError(), /Toggle failed: nope/);
   assert.equal(h.refreshes(), 0);
-  const ok = harness({ responses: { '/api/mcp/preset-toggle': { ok: true }, '/api/mcp/servers': { servers: [] }, '/api/plugins': { plugins: [] }, '/api/background-tasks/list': { runs: [] }, '/api/diagnostics': {}, '/api/workspace/retained': {} } });
+  const ok = harness({ responses: { '/api/mcp/preset-toggle': { ok: true }, '/api/mcp/servers': { servers: [] }, '/api/diagnostics': {}, '/api/workspace/retained': {} } });
   await click(ok, 'toggle-mcp-preset', '<button data-preset-flag="filesystem" data-next-enabled="1"></button>');
   assert.equal(ok.refreshes(), 1, 'the page data is reloaded through the context');
   assert.equal(ok.feature.getState().advanced.loaded, true, 'the Tools & Tasks cache is rebuilt');

@@ -106,11 +106,3 @@ export function agentDraftFromProfile(agent) {
     enabledMcpServerIds: Array.isArray(agent?.enabledMcpServerIds) ? [...agent.enabledMcpServerIds] : [],
   };
 }
-
-// Replace preset-owned sections while retaining the user's other instructions.
-export function agentDocumentWithPreset(document, preset) {
-  const retained = String(document || '').split(/(?=^## (?:工作要求|身份|风格|补充要求)$)/m)
-    .filter(section => !/^## (?:身份|风格)\n/.test(section));
-  return [...retained, `## 身份\n${preset.identity || preset.identify || ''}`, `## 风格\n${preset.soulMd || ''}`]
-    .map(section=>section.trim()).filter(Boolean).join('\n\n');
-}

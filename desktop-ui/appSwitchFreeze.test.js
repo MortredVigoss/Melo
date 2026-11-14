@@ -35,7 +35,6 @@ const BASELINE = {
     "file-safety-confirm-delete",
     "file-safety-deny",
     "focus-project",
-    "kill-background-task",
     "neural-back",
     "neural-group",
     "neural-motion",

@@ -280,25 +280,21 @@ async function refreshAdvancedStatus() {
   customizeState.advanced.error = null;
   bgRender();
   try {
-    // Fan out — three independent endpoints, none of which block the
+    // Fan out — independent endpoints, none of which block the
     // others, so a slow one doesn't gate the rest.
-    const [serversResp, pluginsResp, tasksResp, diagnosticsResp, retainedResp] = await Promise.all([
+    const [serversResp, diagnosticsResp, retainedResp] = await Promise.all([
       api('/api/mcp/servers').catch(err => ({ _error: err?.message || 'mcp/servers failed' })),
-      api('/api/plugins').catch(err => ({ _error: err?.message || 'plugins failed' })),
-      api('/api/background-tasks/list').catch(err => ({ _error: err?.message || 'background-tasks/list failed' })),
       api('/api/diagnostics?storage=1').catch(err => ({ _error: err?.message || 'diagnostics failed' })),
       api('/api/workspace/retained').catch(err=>({_error:err.message})),
     ]);
-    const errors = [serversResp, pluginsResp, tasksResp, diagnosticsResp, retainedResp]
+    const errors = [serversResp, diagnosticsResp, retainedResp]
       .filter(r => r && r._error)
       .map(r => r._error);
-    if (errors.length === 5) {
+    if (errors.length === 3) {
       customizeState.advanced.error = errors.join(' · ');
     } else {
       customizeState.advanced.cliServers = Array.isArray(serversResp?.servers) ? serversResp.servers : [];
       customizeState.advanced.mcpStates=serversResp?.states || {};
-      customizeState.advanced.plugins = Array.isArray(pluginsResp?.plugins) ? pluginsResp.plugins : [];
-      customizeState.advanced.tasks = Array.isArray(tasksResp?.runs) ? tasksResp.runs : [];
       customizeState.advanced.diagnostics = diagnosticsResp?._error ? null : diagnosticsResp;
       customizeState.advanced.retainedFiles = retainedResp?._error ? null : retainedResp;
       customizeState.advanced.loaded = true;

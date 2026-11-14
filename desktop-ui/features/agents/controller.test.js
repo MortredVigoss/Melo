@@ -89,11 +89,18 @@ test('the Agent feature takes a narrow context (no uiState) and starts from its 
 test('registry: every Agent action is registered once; scope switch flushes then navigates', async () => {
   const h = harness();
   assert.deepEqual(Object.keys(h.feature.actions).sort(), [
-    'clear-agent-avatar', 'confirm-agent-settings', 'create-custom-agent', 'export-agent-document', 'import-agent-preset',
-    'reset-agent-connector-whitelist', 'reset-agent-draft', 'reset-agent-skill-whitelist', 'reset-project-agent-override',
-    'select-agent-editor-tab', 'switch-agent-channel-tab', 'switch-agent-scope', 'test-agent-channel', 'toggle-agent-connector',
-    'toggle-agent-device-permission', 'toggle-agent-mcp-server', 'toggle-agent-secret', 'toggle-agent-skill', 'toggle-agent-tool',
+    'clear-agent-avatar', 'confirm-agent-settings', 'create-custom-agent', 'export-agent-document',
+    'reset-project-agent-override', 'switch-agent-channel-tab', 'switch-agent-scope', 'test-agent-channel',
+    'toggle-agent-device-permission', 'toggle-agent-secret',
   ]);
+  // 2026-11-14: nine actions that no rendered markup emitted any more were removed
+  // (preset import, the identity / soul editor tab, draft reset, and the per-Agent
+  // tool / skill / connector / MCP toggles of the old editor). They must not come back
+  // as dead handlers.
+  for (const gone of ['import-agent-preset', 'select-agent-editor-tab', 'reset-agent-draft', 'toggle-agent-tool', 'toggle-agent-skill',
+    'toggle-agent-connector', 'toggle-agent-mcp-server', 'reset-agent-skill-whitelist', 'reset-agent-connector-whitelist']) {
+    assert.equal(h.actions.has(gone), false, gone);
+  }
   assert.deepEqual(Object.keys(h.feature.forms), ['agent-profile-update']);
   assert.equal(h.actions.has('select-agent-profile'), false, 'cross-page navigation stays in app.js');
   await click(h, 'switch-agent-scope', '<button data-action="switch-agent-scope" data-scope="project"></button>');
@@ -159,7 +166,6 @@ test('save: a project override posts scope + project, clears only that draft and
   await h.forms.dispatch('agent-profile-update', { form });
   assert.deepEqual(h.calls[0], ['/api/agents/update', 'POST', { agentId: 'research', scope: 'project', projectId: 'P1', activeView: 'agent', patch: { name: 'Override name', instructions: 'Project voice' } }]);
   assert.deepEqual(Object.keys(state.agentDrafts), ['global:global:research']);
-  assert.deepEqual(state.agentSaveStates, {}, 'the saving flag is cleared afterwards');
   assert.equal(h.applied.length, 1);
   h.calls.length = 0;
   state.agentDrafts['project:P1:research'] = { name: 'again' };
@@ -180,7 +186,7 @@ test('Agent edits stay drafts until explicit Save: typing, idle time and navigat
   assert.equal(h.feature.handleInput(token), true, 'the channel field is handled by the Agent feature');
   t.mock.timers.tick(10_000);
   await click(h, 'switch-agent-scope', '<button data-scope="global"></button>');
-  await click(h, 'select-agent-editor-tab', '<button data-tab="soul"></button>');
+  await click(h, 'switch-agent-channel-tab', '<button data-agent-id="research" data-channel-tab="discord"></button>');
   t.mock.timers.tick(10_000);
   assert.deepEqual(h.calls.filter(([path]) => path.startsWith('/api/agents/update')), [], 'no Agent update leaves without the explicit Save action');
   assert.deepEqual(beacons, [], 'nothing is beaconed either');
@@ -189,9 +195,9 @@ test('Agent edits stay drafts until explicit Save: typing, idle time and navigat
   assert.equal('flushOnUnload' in h.feature, false);
 });
 
-test('render hooks: list/detail scroll and the editor caret survive a full re-render', async () => {
+test('render hooks: detail scroll and the editor caret survive a full re-render', async () => {
   const h = harness();
-  const markup = '<section class="agent-page"><div class="agent-list-pane" style="height:10px;overflow:auto"><div style="height:100px"></div></div><div class="agent-detail-column" style="height:10px;overflow:auto"><div style="height:100px"></div></div></section>';
+  const markup = '<section class="agent-page"><div class="agent-detail-column" style="height:10px;overflow:auto"><div style="height:100px"></div></div></section>';
   element(markup);
   document.querySelector('.agent-detail-column').scrollTop = 40;
   h.feature.captureBeforeRender();

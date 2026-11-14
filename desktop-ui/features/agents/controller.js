@@ -14,8 +14,7 @@ import { t } from '../../i18n.js';
 import { committedSaveReceipt } from '../../bootstrapPatch.js';
 import { readAgentAvatar } from '../../agentAvatar.js';
 import { buildAgentProfilePatch, unsavedCapabilityEdits } from './agentProfilePatch.js';
-import { agentDocumentWithPreset, agentDraftFromProfile, normalizeChannelsForDraft } from './agentDraft.js';
-import { decideAgentMcpAuthAction } from './agentMcpAuthorise.js';
+import { agentDraftFromProfile, normalizeChannelsForDraft } from './agentDraft.js';
 import { agentsState, resetAgentsState } from './state.js';
 import { bindAgentsContext, agentsApi, getBootstrap, app, render, bgRender, notify, patchSettings, applyBootstrap, applyBootstrapPreservingDrafts, refreshBootstrap, activeProject, agentProfileById, minimaxTtsConfigPatchForVoice, beginFormEdit, formEditToken, nativeSettings, isAgentChannelAvailable } from './context.js';
 
@@ -42,14 +41,6 @@ function selectedAgentScope() {
 }
 
 function agentDraftKey(agentId, scope = selectedAgentScope(), projectId = activeProject()?.id || 'global') {
-  return `${scope}:${scope === 'project' ? projectId : 'global'}:${agentId}`;
-}
-
-function agentSaveKey(
-  agentId,
-  scope = selectedAgentScope(),
-  projectId = activeProject()?.id || 'global',
-) {
   return `${scope}:${scope === 'project' ? projectId : 'global'}:${agentId}`;
 }
 
@@ -135,7 +126,7 @@ function currentAgentEditorStateKey() {
 
   const scope = selectedAgentScope();
   const projectId = scope === 'project' ? activeProject()?.id || 'global' : 'global';
-  return `${scope}:${projectId}:${selected.id}:${agentsState.agentEditorTab}`;
+  return `${scope}:${projectId}:${selected.id}`;
 }
 
 function captureAgentEditorState() {
@@ -162,11 +153,6 @@ function captureAgentScrollState() {
     return;
   }
 
-  const listPane = document.querySelector('.agent-list-pane');
-  if (listPane instanceof HTMLElement) {
-    agentsState.agentListScrollTop = listPane.scrollTop;
-  }
-
   const detailPane = document.querySelector('.agent-detail-column');
   const scrollKey = currentAgentScrollKey();
   if (detailPane instanceof HTMLElement && scrollKey) {
@@ -177,11 +163,6 @@ function captureAgentScrollState() {
 function restoreAgentScrollState() {
   if (getBootstrap()?.settings?.activeView !== 'agent' && !(getBootstrap()?.settings?.activeView === 'customize' && getBootstrap()?.settings?.selectedCustomizeSection === 'agents')) {
     return;
-  }
-
-  const listPane = document.querySelector('.agent-list-pane');
-  if (listPane instanceof HTMLElement) {
-    listPane.scrollTop = agentsState.agentListScrollTop || 0;
   }
 
   const detailPane = document.querySelector('.agent-detail-column');
@@ -202,7 +183,7 @@ function restoreAgentEditorState() {
   }
 
   const editorState = agentsState.agentEditorStates[stateKey];
-  if (!editorState && !agentsState.shouldFocusAgentEditor) {
+  if (!editorState) {
     return;
   }
 
@@ -247,17 +228,7 @@ function restoreAgentEditorState() {
         }
       }
     }
-
-    if (agentsState.shouldFocusAgentEditor) {
-      editor.focus({ preventScroll: true });
-      editor.selectionStart = editor.selectionEnd = editor.value.length;
-      agentsState.shouldFocusAgentEditor = false;
-    }
   });
-}
-
-function agentPresetById(presetId) {
-  return getBootstrap()?.customize?.agentPresets?.find(preset => preset.id === presetId) || null;
 }
 
 function selectedAgentNeedsRuntimeRefresh() {
@@ -327,7 +298,6 @@ async function handleUpdateAgentProfile(form) {
   const project = activeProject();
   const scope = selectedAgentScope();
   const projectId = scope === 'project' ? project?.id || 'global' : 'global';
-  const saveKey = agentSaveKey(form.dataset.agentId, scope, projectId);
   const draftKey = agentDraftKey(form.dataset.agentId, scope, project?.id || 'global');
   const patch = buildAgentProfilePatch(form, formData);
   const avatarDraft = agentDraftFor(agentProfileById(form.dataset.agentId));
@@ -337,7 +307,6 @@ async function handleUpdateAgentProfile(form) {
   const minimumVisibleMs = 100;
   const waitForMinimumVisibleState = new Promise(resolve => setTimeout(resolve, minimumVisibleMs));
 
-  agentsState.agentSaveStates[saveKey] = true;
   bgRender();
 
   try {
@@ -364,7 +333,6 @@ async function handleUpdateAgentProfile(form) {
     }
   } finally {
     await waitForMinimumVisibleState;
-    delete agentsState.agentSaveStates[saveKey];
     render();
   }
 }
@@ -389,23 +357,6 @@ async function handleTestAgentChannel(trigger) {
     patch,
   });
   applyBootstrap(payload);
-}
-
-async function handleImportAgentPreset(agentId, presetId) {
-  const preset = agentPresetById(presetId);
-  if (!preset) {
-    notify({level:'error',text:'Preset not found.'});
-    return;
-  }
-
-  const previous = agentDraftFor(agentProfileById(agentId));
-  const instructions = agentDocumentWithPreset(previous?.instructions, preset);
-  mergeAgentDraft(agentId, {
-    instructions,
-    identity: preset.identity || preset.identify,
-    'soul.md': preset.soulMd,
-  });
-  render();
 }
 
 async function handleResetProjectAgentOverride(agentId) {
@@ -453,142 +404,8 @@ export const agentsActions = {
     setTimeout(()=>URL.revokeObjectURL(url),1000);
     return;
   },
-  'select-agent-editor-tab': async ({ trigger }) => {
-    agentsState.agentEditorTab = trigger.dataset.tab === 'soul' ? 'soul' : 'identity';
-    agentsState.shouldFocusAgentEditor = true;
-    render();
-  },
-  'import-agent-preset': async ({ trigger }) => {
-    await handleImportAgentPreset(trigger.dataset.agentId, trigger.dataset.presetId);
-  },
-  'reset-agent-draft': ({ trigger }) => {
-    const agentId = trigger.dataset.agentId;
-    if (agentId) {
-      delete agentsState.agentDrafts[agentDraftKey(agentId)];
-      render();
-    }
-  },
   'reset-project-agent-override': async ({ trigger }) => {
     await handleResetProjectAgentOverride(trigger.dataset.agentId);
-  },
-  'toggle-agent-tool': ({ trigger }) => {
-    const agentId = trigger.dataset.agentId;
-    const toolId = trigger.dataset.toolId;
-    const draftKey = agentDraftKey(agentId);
-    const currentDraft = {
-      ...(agentsState.agentDrafts[draftKey] || agentDraftFor(agentProfileById(agentId)) || {}),
-    };
-    const nextTools = new Set(currentDraft.tools || []);
-    if (nextTools.has(toolId)) {
-      nextTools.delete(toolId);
-    } else {
-      nextTools.add(toolId);
-    }
-    currentDraft.tools = [...nextTools];
-    agentsState.agentDrafts[draftKey] = currentDraft;
-    render();
-  },
-  'toggle-agent-skill': ({ trigger }) => {
-    // Toggle a specific skill ID in the per-agent skill whitelist.
-    // null draft value means "no restriction" — first toggle initialises it to [skillId].
-    const agentId = trigger.dataset.agentId;
-    const skillId = trigger.dataset.skillId;
-    const draftKey = agentDraftKey(agentId);
-    const currentDraft = {
-      ...(agentsState.agentDrafts[draftKey] || agentDraftFor(agentProfileById(agentId)) || {}),
-    };
-    const currentIds = Array.isArray(currentDraft.enabledSkillIds)
-      ? new Set(currentDraft.enabledSkillIds)
-      : new Set(); // null → treat as empty set so first click adds the skill
-    if (currentIds.has(skillId)) {
-      currentIds.delete(skillId);
-    } else {
-      currentIds.add(skillId);
-    }
-    currentDraft.enabledSkillIds = [...currentIds];
-    agentsState.agentDrafts[draftKey] = currentDraft;
-    render();
-  },
-  'reset-agent-skill-whitelist': ({ trigger }) => {
-    // Reset to "no restriction" (null = all skills allowed)
-    const agentId = trigger.dataset.agentId;
-    const draftKey = agentDraftKey(agentId);
-    const currentDraft = {
-      ...(agentsState.agentDrafts[draftKey] || agentDraftFor(agentProfileById(agentId)) || {}),
-    };
-    currentDraft.enabledSkillIds = null;
-    agentsState.agentDrafts[draftKey] = currentDraft;
-    render();
-  },
-  'toggle-agent-connector': ({ trigger }) => {
-    // Toggle a specific external connector ID in the per-agent connector whitelist.
-    const agentId = trigger.dataset.agentId;
-    const connectorId = trigger.dataset.connectorId;
-    const draftKey = agentDraftKey(agentId);
-    const currentDraft = {
-      ...(agentsState.agentDrafts[draftKey] || agentDraftFor(agentProfileById(agentId)) || {}),
-    };
-    const currentIds = Array.isArray(currentDraft.enabledConnectorIds)
-      ? new Set(currentDraft.enabledConnectorIds)
-      : new Set();
-    if (currentIds.has(connectorId)) {
-      currentIds.delete(connectorId);
-    } else {
-      currentIds.add(connectorId);
-    }
-    currentDraft.enabledConnectorIds = [...currentIds];
-    agentsState.agentDrafts[draftKey] = currentDraft;
-    render();
-  },
-  'reset-agent-connector-whitelist': ({ trigger }) => {
-    const agentId = trigger.dataset.agentId;
-    const draftKey = agentDraftKey(agentId);
-    const currentDraft = {
-      ...(agentsState.agentDrafts[draftKey] || agentDraftFor(agentProfileById(agentId)) || {}),
-    };
-    currentDraft.enabledConnectorIds = null;
-    agentsState.agentDrafts[draftKey] = currentDraft;
-    render();
-  },
-  'toggle-agent-mcp-server': ({ trigger }) => {
-    // Toggle a specific stdio MCP server id in the per-agent whitelist.
-    // No "All servers" sentinel here — MCP defaults to deny-all, the
-    // user has to add each server explicitly.
-    //
-    // Rules:
-    //   - Removing (whitelist already contains the id) is always
-    //     allowed, even when the server is globally disabled. This
-    //     lets the user revoke stale authorisations after toggling
-    //     a server off in Advanced (without it, a re-enable later
-    //     would silently grant the old access back — Codex 🔵
-    //     2026-04-28 audit).
-    //   - Adding a new authorisation for a globally-disabled
-    //     server is refused with a flash-toast pointing the user
-    //     at Advanced. Better than failing silently.
-    const agentId = trigger.dataset.agentId;
-    const mcpServerId = trigger.dataset.mcpServerId;
-    const presetEnabled = trigger.dataset.presetEnabled === '1';
-    const presetUnpinned = trigger.dataset.presetUnpinned === '1';
-    const draftKey = agentDraftKey(agentId);
-    const currentDraft = {
-      ...(agentsState.agentDrafts[draftKey] || agentDraftFor(agentProfileById(agentId)) || {}),
-    };
-    // Decision lives in `./agentMcpAuthorise.js` so node:test
-    // can pin the remove-always-allowed / add-refused-on-disabled-or-
-    // unpinned table without simulating click events.
-    const decision = decideAgentMcpAuthAction({
-      currentIds: currentDraft.enabledMcpServerIds,
-      serverId: mcpServerId,
-      presetEnabled,
-      presetUnpinned,
-    });
-    if (decision.action.startsWith('refused-') || decision.action === 'refused-invalid') {
-      if (decision.toast) notify({level:'success',text:decision.toast});
-      return;
-    }
-    currentDraft.enabledMcpServerIds = decision.nextIds;
-    agentsState.agentDrafts[draftKey] = currentDraft;
-    render();
   },
   'toggle-agent-secret': ({ trigger }) => {
     const agentId = trigger.dataset.agentId;

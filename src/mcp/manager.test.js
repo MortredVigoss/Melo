@@ -95,7 +95,8 @@ test('getBuiltinMcpPresets exposes every built-in (browser + productivity)', () 
   const presets = getBuiltinMcpPresets();
   const ids = presets.map(p => p.id);
   assert.ok(ids.includes('playwright'));
-  assert.ok(ids.includes('browserless'));
+  // 2026-11-14: the browserless placeholder (an npm package that never existed) is gone.
+  assert.equal(ids.includes('browserless'), false);
   assert.ok(ids.includes('antv-chart'));
   assert.ok(ids.includes('markdown2pdf'));
   // mermaid was added 2026-04-29 because @99xio/markdown2pdf-mcp's
@@ -137,7 +138,7 @@ test('buildEffectiveMcpServers passes through user mcpServers as-is when no flag
 test('buildEffectiveMcpServers adds antv-chart preset when flag is set (pinned version)', () => {
   // Codex 2026-04-29 supply-chain audit: every preset args entry
   // must end in `<package>@<exact-version>`, never `@latest` or
-  // unpinned. The version sweep at the end of `manager.js`
+  // unversioned. The version sweep in `presets.js`
   // rewrites the original `'<pkg>'` literal to `'<pkg>@<lock>'`
   // before the args object is read by anyone.
   const eff = buildEffectiveMcpServers({}, { enableAntvChartMcp: true });
@@ -160,16 +161,12 @@ test('buildEffectiveMcpServers adds markdown2pdf preset when flag is set (pinned
   assert.deepEqual(eff.markdown2pdf.args, ['-y', '@99xio/markdown2pdf-mcp@2.2.0']);
 });
 
-test('every preset args entry is version-pinned (no bare package name, no @latest churn)', () => {
-  // Belt-and-suspenders: walk every preset and assert the last
-  // arg matches `<package>@<semver-or-tag>` or browserless's
-  // sentinel `@latest`. browserless is the deliberate exception
-  // because its npm package doesn't exist yet (404); when it
-  // ships, the PINNED_VERSIONS map should be updated, and this
-  // test will let `@latest` through one more release. Any other
-  // preset slipping back to `@latest` is a Codex-audit-grade
-  // regression — one click on first-boot consent and the user
-  // would be downloading whatever a hijacked maintainer publishes.
+test('every preset args entry is version-pinned (no bare package name, no @latest)', () => {
+  // Walk every preset and assert the last arg is `<package>@<exact version>`.
+  // A preset slipping back to `@latest` is a Codex-audit-grade regression —
+  // one click on first-boot consent and the user would be downloading
+  // whatever a hijacked maintainer publishes. This test is the guard now;
+  // there is no runtime "unpinned" state to fall back on.
   for (const preset of getBuiltinMcpPresets()) {
     if(preset.transport==='in-process'){
       assert.equal(preset.id,'melo-public-media');
@@ -183,70 +180,33 @@ test('every preset args entry is version-pinned (no bare package name, no @lates
     const lastArg = preset.args[preset.args.length - 1];
     assert.match(
       lastArg,
-      /@(\d+\.\d+\.\d+|latest)$/,
-      `${preset.id} args must end in '<package>@<version>' (got ${lastArg}) — the preset version sweep should rewrite all unpinned npm names`,
-    );
-    if (preset.id === 'browserless') continue; // package not yet on npm — ok to remain @latest
-    assert.doesNotMatch(
-      lastArg,
-      /@latest$/,
-      `${preset.id} must not stay on @latest after the version sweep (got ${lastArg})`,
+      /@\d+\.\d+\.\d+$/,
+      `${preset.id} args must end in '<package>@<exact version>' (got ${lastArg}) — add the package to PINNED_VERSIONS`,
     );
   }
 });
 
-// ─── mcpPresetToggleRefusalReason — route contract ─────────────────────────
-
-test('mcpPresetToggleRefusalReason — enable=false on unpinned preset is ALWAYS allowed (cleanup path)', async () => {
-  // Codex 四轮 audit 2026-04-29: a user whose config has a legacy
-  // `enableBrowserlessMcp:true` must be able to disable it from
-  // the UI. Without the cleanup path, they'd be stuck in 假启用
-  // (config says on, runtime refuses to spawn). browserless is
-  // the canonical unpinned preset right now (npm package 404).
-  const { mcpPresetToggleRefusalReason } = await import('./manager.js');
-  assert.equal(mcpPresetToggleRefusalReason('enableBrowserlessMcp', false), null);
-});
-
-test('mcpPresetToggleRefusalReason — enable=true on unpinned preset returns a refusal string', async () => {
-  const { mcpPresetToggleRefusalReason } = await import('./manager.js');
-  const reason = mcpPresetToggleRefusalReason('enableBrowserlessMcp', true);
-  assert.equal(typeof reason, 'string');
-  assert.ok(reason.includes('browserless'), `reason should name the preset, got: ${reason}`);
-  assert.ok(reason.includes('pinned'), `reason should explain the pinning rule, got: ${reason}`);
-});
-
-test('mcpPresetToggleRefusalReason — pinned presets allow both enable and disable', async () => {
-  const { mcpPresetToggleRefusalReason } = await import('./manager.js');
-  for (const flag of ['enablePlaywrightMcp', 'enableAntvChartMcp', 'enableMarkdown2PdfMcp', 'enableMermaidMcp']) {
-    assert.equal(
-      mcpPresetToggleRefusalReason(flag, true),
-      null,
-      `${flag} is pinned — enabling must NOT be refused`,
-    );
-    assert.equal(
-      mcpPresetToggleRefusalReason(flag, false),
-      null,
-      `${flag} disabling must always be allowed`,
-    );
+test('PINNED_VERSIONS holds an exact version for every package and covers every npx preset', async () => {
+  const { PINNED_VERSIONS } = await import('./presets.js');
+  for (const [name, version] of Object.entries(PINNED_VERSIONS)) {
+    assert.match(String(version), /^\d+\.\d+\.\d+$/, `${name} must be pinned to an exact version, got ${version}`);
+  }
+  for (const preset of getBuiltinMcpPresets()) {
+    if (preset.command !== 'npx') continue;
+    const spec = preset.args[preset.args.length - 1];
+    const name = spec.slice(0, spec.lastIndexOf('@'));
+    assert.ok(Object.hasOwn(PINNED_VERSIONS, name), `${preset.id}: ${name} is missing from PINNED_VERSIONS`);
+    assert.equal(spec, `${name}@${PINNED_VERSIONS[name]}`);
   }
 });
 
-test('mcpPresetToggleRefusalReason — unknown flag falls through to allow (server-side ALLOWED_MCP_FLAGS already gated)', async () => {
-  // The route handler validates `flag` against ALLOWED_MCP_FLAGS
-  // before calling this helper, so an unknown flag here is a bug,
-  // not a security boundary. We let it through — safer than
-  // claiming a refusal we can't justify.
-  const { mcpPresetToggleRefusalReason } = await import('./manager.js');
-  assert.equal(mcpPresetToggleRefusalReason('enableNonexistentMcp', true), null);
-});
-
-test('DEFAULT_CONFIG enables the four no-fee presets and leaves the cloud preset off', async () => {
+test('DEFAULT_CONFIG enables the four no-fee presets and has no flag for the removed cloud preset', async () => {
   const { DEFAULT_CONFIG } = await import('../config.js');
   assert.equal(DEFAULT_CONFIG.enableAntvChartMcp, true);
   assert.equal(DEFAULT_CONFIG.enableMarkdown2PdfMcp, true);
   assert.equal(DEFAULT_CONFIG.enableMermaidMcp, true);
   assert.equal(DEFAULT_CONFIG.enablePlaywrightMcp, true);
-  assert.equal(DEFAULT_CONFIG.enableBrowserlessMcp, false);
+  assert.equal('enableBrowserlessMcp' in DEFAULT_CONFIG, false);
   assert.equal(DEFAULT_CONFIG.productivityMcpsConsented, true);
 });
 
@@ -464,12 +424,11 @@ test('reconcileMcpLifecycle: works without a disconnect function (pure read)', (
 });
 
 // 2026-10-22: Agents start with every MCP server they could actually use.
-test('usableMcpServerIds: enabled presets and user servers, never disabled, refused (unpinned) or malformed ones', () => {
+test('usableMcpServerIds: enabled presets and user servers, never disabled or malformed ones', () => {
   assert.deepEqual(usableMcpServerIds({ enablePlaywrightMcp: true, enableAntvChartMcp: true, enableMarkdown2PdfMcp: true, enableMermaidMcp: true }),
     ['antv-chart', 'markdown2pdf', 'mermaid', 'playwright']);
   assert.deepEqual(usableMcpServerIds({ enablePlaywrightMcp: false, enableMermaidMcp: true }), ['mermaid'], 'a preset switched off is not offered');
-  const browserless = getBuiltinMcpPresets().find(preset => preset.id === 'browserless');
-  if (browserless?.unpinned) assert.deepEqual(usableMcpServerIds({ enableBrowserlessMcp: true }), [], 'connectMcpServer refuses an unpinned preset, so no Agent gets it');
+  assert.deepEqual(usableMcpServerIds({ enableBrowserlessMcp: true }), [], 'a saved flag of the removed preset offers nothing');
   assert.deepEqual(usableMcpServerIds({ mcpServers: { 'my-tool': { command: 'x' }, 'off-tool': { command: 'y', disabled: true }, 'bad id!': { command: 'z' } } }), ['my-tool']);
   assert.deepEqual(usableMcpServerIds(), []);
 });

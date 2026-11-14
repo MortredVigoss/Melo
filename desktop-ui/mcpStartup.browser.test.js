@@ -56,7 +56,7 @@ test('startup has no MCP dialog or enable requests, and manual disable survives 
     assert.equal(saved.enableAntvChartMcp, true);
     assert.equal(saved.enableMarkdown2PdfMcp, true);
     assert.equal(saved.productivityMcpsConsented, true);
-    assert.equal(saved.enableBrowserlessMcp, false);
+    assert.equal('enableBrowserlessMcp' in saved, false, 'the cloud preset removed on 2026-11-14 leaves no flag in a new configuration');
     assert.equal(saved.imageSettings.quality, 'high');
     await stop(); base = await start();
     await page.goto(base); await page.locator('#composer').waitFor();

@@ -42,22 +42,8 @@ function getCodexHome() {
   return process.env.CODEX_HOME || join(homedir(), '.codex');
 }
 
-// Legacy OpenClaw compatibility for older local installs that still store per-agent
-// OAuth profiles under ~/.openclaw. Prefer ~/.codex/auth.json whenever it exists.
-function getOpenClawHome() {
-  return process.env.OPENCLAW_HOME || join(homedir(), '.openclaw');
-}
-
 export function getCodexAuthPath() {
   return join(getCodexHome(), 'auth.json');
-}
-
-function getOpenClawAuthProfilePaths() {
-  const openClawHome = getOpenClawHome();
-  return [
-    join(openClawHome, 'agents', 'main', 'agent', 'auth-profiles.json'),
-    join(openClawHome, 'agents', 'bot-2', 'agent', 'auth-profiles.json'),
-  ];
 }
 
 function decodeJwtPayload(token) {
@@ -92,51 +78,6 @@ async function readCodexAuthFile() {
 
     throw new Error(`Failed to read Codex auth file: ${error.message}`);
   }
-}
-
-async function readOpenClawAuthProfileFile() {
-  for (const authPath of getOpenClawAuthProfilePaths()) {
-    try {
-      const raw = await readFile(authPath, 'utf8');
-      const parsed = JSON.parse(raw);
-      const profiles = parsed?.profiles && typeof parsed.profiles === 'object' ? parsed.profiles : {};
-      const profileEntries = Object.entries(profiles);
-      const prioritized = [
-        profileEntries.find(([profileId, profile]) =>
-          profileId === 'openai-codex:default' &&
-          profile?.type === 'oauth' &&
-          typeof profile?.access === 'string' &&
-          profile.access.trim(),
-        ),
-        ...profileEntries.filter(([profileId, profile]) =>
-          profileId !== 'openai-codex:default' &&
-          profile?.provider === 'openai-codex' &&
-          profile?.type === 'oauth' &&
-          typeof profile?.access === 'string' &&
-          profile.access.trim(),
-        ),
-      ].filter(Boolean);
-
-      if (!prioritized.length) {
-        continue;
-      }
-
-      const [profileId, profile] = prioritized[0];
-      return {
-        authPath,
-        profileId,
-        profile,
-      };
-    } catch (error) {
-      if (error && typeof error === 'object' && error.code === 'ENOENT') {
-        continue;
-      }
-
-      throw new Error(`Failed to read OpenClaw auth profiles: ${error.message}`);
-    }
-  }
-
-  return null;
 }
 
 function canUseCachedCredential(now = Date.now()) {
@@ -217,31 +158,6 @@ function resolveCodexFileCredential(authFile) {
   });
 }
 
-function resolveOpenClawCredential(openClawAuth) {
-  const profile = openClawAuth?.profile || {};
-  const accessToken = typeof profile.access === 'string' ? profile.access.trim() : '';
-  const payload = decodeJwtPayload(accessToken);
-  const auth = payload?.['https://api.openai.com/auth'] || {};
-  const openaiProfile = payload?.['https://api.openai.com/profile'] || {};
-  const expiresAt =
-    Number.isFinite(Number(profile.expires)) && Number(profile.expires) > 0
-      ? Number(profile.expires)
-      : payload?.exp
-        ? payload.exp * 1000
-        : null;
-
-  return resolveAuthStateShape({
-    source: 'openclaw',
-    authPath: openClawAuth?.authPath || null,
-    authMode: 'oauth',
-    accessToken,
-    accountId: profile.accountId || auth.chatgpt_account_id || null,
-    email: profile.email || openaiProfile.email || null,
-    plan: auth.chatgpt_plan_type || null,
-    expiresAt,
-  });
-}
-
 async function resolveBestCodexCredential() {
   if (canUseCachedCredential()) {
     return cachedCredential;
@@ -251,18 +167,6 @@ async function resolveBestCodexCredential() {
   const codexCredential = resolveCodexFileCredential(codexAuthFile);
   if (codexCredential.loggedIn) {
     return cacheResolvedCredential(codexCredential);
-  }
-
-  const openClawAuth = await readOpenClawAuthProfileFile();
-  if (openClawAuth) {
-    const openClawCredential = resolveOpenClawCredential(openClawAuth);
-    if (openClawCredential.loggedIn) {
-      return cacheResolvedCredential(openClawCredential);
-    }
-
-    if (!codexCredential.loggedIn && openClawCredential.accessToken) {
-      return cacheResolvedCredential(openClawCredential);
-    }
   }
 
   return cacheResolvedCredential(codexCredential);

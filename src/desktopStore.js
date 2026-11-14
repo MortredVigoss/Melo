@@ -51,7 +51,6 @@ export {
   importSkillFromMarkdown,
   promoteSkillToDisk,
   reloadDiskSkills,
-  applySkillProposal,
   draftSkillFromChat,
 } from './services/skill/skillMutations.js';
 export {

@@ -16,15 +16,16 @@ import { DATE_CONTINUITY_RULE } from './dateContext.js';
 //   detectInputLanguage            — BCP-47 dominant-language sniffer
 //   buildLanguageConstraint        — turns the sniffer's verdict into a
 //                                       overridable reply-language default
-//   buildReActSystemPrompt         — the entry point — combines all of
+//   buildReActPromptSections       — the entry point — combines all of
 //                                       the above plus injected blocks
 //                                       (memory, tools, viz, citations…)
+//                                       into sections; callers render them
+//                                       with contextBudget.renderPromptSections
 
 import { intentRequiresVerification } from '../../retrieval/intentRouter.js';
 import { buildUncertaintySignalingRules } from '../../retrieval/selfVerification.js';
 import { buildReActOperatingInstructions } from '../../prompts.js';
 import { DEFAULT_CONFIG } from '../../config.js';
-import { renderPromptSections } from './contextBudget.js';
 import { LEDGER_MAX_TOKENS } from '../../memory/compactLedger.js';
 import { CAPABILITY_LABELS } from '../../domain/agent/capabilities.js';
 import { renderAgentIdentity } from '../../domain/agent/agentIdentity.js';
@@ -274,6 +275,3 @@ export function buildReActPromptSections({
   ].filter(section => section.text);
 }
 
-export function buildReActSystemPrompt(options) {
-  return renderPromptSections(buildReActPromptSections(options));
-}

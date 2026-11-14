@@ -205,16 +205,6 @@ export const IMAGE_GEN_INTENT_PATTERN = new RegExp(
 );
 
 /**
- * Returns true when the given text reads as an image-generation request
- * (text-to-image). Independent of whether the conversation already has
- * an image attachment — `画一只猫` should fire even if no prior image.
- */
-export function detectImageGenIntent(text) {
-  if (typeof text !== 'string' || !text.trim()) return false;
-  return IMAGE_GEN_INTENT_PATTERN.test(text);
-}
-
-/**
  * Top-level image-intent detector used to gate the always-on inline
  * image_generation tool (src/openai.js buildCodexResponsesTools).
  * Image_generation belongs in the tool list when ANY of:

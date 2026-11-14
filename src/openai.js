@@ -1,6 +1,5 @@
 import { traceModelCall, traceProviderPayload, traceEvent } from './runtime/loopTrace.js';
 import { connectionForModel, resolvedModelCapabilities, normalizeModelCapabilities } from '../shared/agent/modelCapabilities.js';
-import { multilingualImageAction } from '../shared/agent/imageLanguage.js';
 import { normalizeUsage } from './runtime/usage.js';
 import { modelReplyText } from './tools/functionCalling.js';
 import { isToolProtocolMessage, renderToolMessage } from './tools/toolProtocol.js';
@@ -26,11 +25,7 @@ import { signWorkspaceFileUrl } from './web/urlSigning.js';
 import { detectImageMimeFromBytes } from './images/imageGen.js';
 // Shared message intent rules; messageBuilder depends only on the pure
 // context window, never on a provider-backed compactor.
-import {
-  IMAGE_GEN_INTENT_PATTERN,
-  IMAGE_EDIT_INTENT_PATTERN,
-  IMAGE_FOLLOW_UP_PATTERN,
-} from './services/chat/messageBuilder.js';
+import { detectImageIntent } from './services/chat/messageBuilder.js';
 import { shouldUseNativeWebSearch } from './retrieval/searchRouter.js';
 
 const DEFAULT_CODEX_REQUEST_TIMEOUT_MS = 600000;
@@ -136,19 +131,6 @@ export function withTurnGuidance(input, guidance) {
     return input.map((entry, i) => (i === index ? { ...entry, content } : entry));
   }
   return input;
-}
-
-// Inline copy of detectImageIntent (lives in services/chat/messageBuilder.js
-// alongside the regex constants we import above). See the comment on the
-// patterns import for why we don't pull the original function.
-function _detectImageIntentLocal(text, { hasInputImage = false } = {}) {
-  if (typeof text !== 'string' || !text.trim()) return false;
-  if (multilingualImageAction(text, hasInputImage)) return true;
-  if (IMAGE_GEN_INTENT_PATTERN.test(text)) return true;
-  if (!hasInputImage) return false;
-  if (IMAGE_EDIT_INTENT_PATTERN.test(text)) return true;
-  if (IMAGE_FOLLOW_UP_PATTERN.test(text)) return true;
-  return false;
 }
 
 // Pull the latest user-role message's text for image-intent detection.
@@ -978,7 +960,7 @@ export async function createCodexResponsesReply({
   // check matches imageEditFastPath's `findLatestUserImageUrl`.
   const latestUserText = extractLatestUserTextForIntent(messages);
   const latestUserHasImage = latestUserMessageHasImage(messages);
-  const hasImageIntent = _detectImageIntentLocal(latestUserText, { hasInputImage: latestUserHasImage });
+  const hasImageIntent = detectImageIntent(latestUserText, { hasInputImage: latestUserHasImage });
   // Design audit A2: function definitions first (stable per chat), native
   // provider tools after them, so an image/search-specific turn appends to
   // the cached prefix instead of shifting every function definition.

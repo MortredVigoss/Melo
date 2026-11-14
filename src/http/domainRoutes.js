@@ -14,7 +14,7 @@ import { repairMemoryBatch, memoryRepairStatus, diagnoseMemory } from '../memory
 import { saveLlmProfile, activateLlmProfile, forgetLlmProfile, testLlmProfile } from '../services/settings/llmConnections.js';
 import { startOpenRouterOAuth, openRouterOAuthStatus } from '../providers/openRouterOAuth.js';
 import { prepareTaskExecution } from '../services/task/prepareTaskExecution.js';
-import { createCustomAgent, createArtifact, updateArtifact, deleteArtifact, restoreArtifact, createApproval, createExternalConnector, createProject, createTask, executeApproval, invokeExternalConnectorTool, pingExternalConnector, previewExternalConnectorPrompt, readExternalConnectorResource, rejectApproval, removeExternalConnector, runTask, runTaskLane, selectWorkspaceFile, readWorkspaceFilePreview, createCustomSkill, updateCustomSkill, removeCustomSkill, exportSkillAsMarkdown, importSkillFromMarkdown, promoteSkillToDisk, reloadDiskSkills, scanRecentChatsForSkillProposals, applySkillProposal, draftSkillFromChat, toggleConnector, toggleSkill, testAgentChannelConnection, updateAgentProfile, updateTask, updateDesktopSettings, updateExternalConnector, updateModelConfig, updateProject, refreshModelCatalog } from '../desktopStore.js';
+import { createCustomAgent, createArtifact, updateArtifact, deleteArtifact, restoreArtifact, createApproval, createExternalConnector, createProject, createTask, executeApproval, invokeExternalConnectorTool, pingExternalConnector, previewExternalConnectorPrompt, readExternalConnectorResource, rejectApproval, removeExternalConnector, runTask, runTaskLane, selectWorkspaceFile, readWorkspaceFilePreview, createCustomSkill, updateCustomSkill, removeCustomSkill, exportSkillAsMarkdown, importSkillFromMarkdown, promoteSkillToDisk, reloadDiskSkills, scanRecentChatsForSkillProposals, draftSkillFromChat, toggleConnector, toggleSkill, testAgentChannelConnection, updateAgentProfile, updateTask, updateDesktopSettings, updateExternalConnector, updateModelConfig, updateProject, refreshModelCatalog } from '../desktopStore.js';
 import { sendJson, readJsonBody } from './transport.js';
 import { sendBootstrapAfterCommit } from './bootstrapAfterCommit.js';
 import { startCodexOAuthLogin } from '../codexAuth.js';
@@ -492,37 +492,6 @@ const router = createRouteRegistry([
         });
       } catch (err) {
         sendJson(response, 500, { error: err.message });
-      }
-      return;
-    } },
-
-    // Phase 3.4.2 — apply an upgrade proposal. The UI calls this after the
-    // user approves an upgrade card: it merges the proposed triggers into
-    // the target skill, appends the systemPrompt appendix, and writes the
-    // reference file. Create-kind proposals still go through the separate
-    // skill-drafting flow.
-    { method: 'POST', id: '/api/skill-proposals/:seedId/apply', match: url => url.pathname.startsWith('/api/skill-proposals/') && url.pathname.endsWith('/apply'), auth: 'local-write', handler: async ({ request, response, url, requireLocalOrigin }) => {
-      if (!requireLocalOrigin(request, response)) return;
-      const seedId = decodeURIComponent(
-        url.pathname.slice('/api/skill-proposals/'.length, -'/apply'.length),
-      );
-      try {
-        const result = await applySkillProposal(seedId);
-        if (result?.ok) {
-          sendJson(response, 200, result);
-        } else {
-          const status = result?.error === 'NOT_FOUND' ? 404
-            : result?.error === 'BAD_SEED_ID' ? 400
-            : result?.error === 'UNSUPPORTED_KIND' ? 400
-            : result?.error === 'BUILTIN_TARGET' ? 400
-            : result?.error === 'BUNDLED_TARGET' ? 403
-            : result?.error === 'TARGET_MISSING' ? 404
-            : result?.error === 'NO_STATE' ? 500
-            : 400;
-          sendJson(response, status, result || { ok: false, error: 'UNKNOWN' });
-        }
-      } catch (err) {
-        sendJson(response, 500, { ok: false, error: 'INTERNAL', reason: err.message });
       }
       return;
     } },

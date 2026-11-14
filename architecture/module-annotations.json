@@ -44,7 +44,7 @@
         "desktop-ui/teamPanel.js",
         "ios/Melo/{AgentEditSession,AgentEditor,AgentProfile,AgentTeam,TeamSheet,TeamVerification}.swift",
         "ios/Tests/{AgentEditTests,AgentTeamTests}.swift",
-        "src/desktopStore.{skills,applySkillProposal,scanSkillProposals,updateAgentProfile,draftFromChat}.test.js",
+        "src/desktopStore.{skills,scanSkillProposals,updateAgentProfile,draftFromChat}.test.js",
         "src/index.saveAsSkill.test.js",
         "scripts/migrate-agent-capabilities.js"
       ],
@@ -332,7 +332,6 @@
         "src/domain/approval/**",
         "src/services/task/**",
         "src/domain/task/**",
-        "src/tasks/**",
         "src/reminders/**",
         "src/safety/**",
         "src/services/activity/**",

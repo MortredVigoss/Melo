@@ -82,7 +82,6 @@ export const DEFAULT_CONFIG = Object.freeze({
   enableDouyinMcp: true,
   enablePublicMediaMcp: true,
   enablePlaywrightMcp:   true,  // local browser automation
-  enableBrowserlessMcp: false,  // cloud service; never enabled by this default
   enableAntvChartMcp:    true,  // AntV's free rendering endpoint
   enableMarkdown2PdfMcp: true,  // local Markdown → PDF
   enableMermaidMcp:      true,  // local Mermaid → PNG

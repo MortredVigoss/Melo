@@ -154,7 +154,7 @@ test('openai.js Phase 4 gate uses latestUserMessageHasImage (not history-wide)',
   // The intent gate must NOT use the history-wide flag — it has to
   // pull from the latest-turn helper.
   assert.ok(
-    /_detectImageIntentLocal\([^)]*hasInputImage:\s*latestUserHasImage/.test(openaiSrc),
+    /\bdetectImageIntent\([^)]*hasInputImage:\s*latestUserHasImage/.test(openaiSrc),
     'image-intent gate must consume latestUserHasImage, not the history-wide hasInputImage',
   );
 });
@@ -179,8 +179,14 @@ test('openai.js wires the image-intent gate into createCodexResponsesReply', () 
   const openaiSrc = readFileSync(join(repoRoot, 'src', 'openai.js'), 'utf8');
   assert.ok(/extractLatestUserTextForIntent\s*\(/.test(openaiSrc),
     'extractLatestUserTextForIntent must be called');
-  assert.ok(/_detectImageIntentLocal\s*\(/.test(openaiSrc),
-    'local image-intent detector must be called');
+  assert.ok(/\bdetectImageIntent\s*\(/.test(openaiSrc),
+    'the image-intent detector must be called');
+  // 2026-11-14: it must be THE detector (services/chat/messageBuilder.js, covered by
+  // imageIntent.test.js), not a private copy in this file that the tests never run.
+  assert.ok(/import \{ detectImageIntent \} from '\.\/services\/chat\/messageBuilder\.js';/.test(openaiSrc),
+    'openai.js must import detectImageIntent from messageBuilder.js');
+  assert.ok(!/function _?detectImageIntent\w*\s*\(/.test(openaiSrc),
+    'openai.js must not define an image-intent detector of its own');
   assert.ok(/hasImageIntent\s*[:,]/.test(openaiSrc),
     'hasImageIntent must be threaded into buildCodexResponsesTools');
   // Pin the gating condition itself so a future "always-on" reversion

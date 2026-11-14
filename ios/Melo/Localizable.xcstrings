@@ -42211,41 +42211,6 @@
         }
       }
     },
-    "假启用 · 未锁定版本": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "假启用 · 未锁定版本"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Not ready · Version not pinned"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "利用不可 · バージョン未固定"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "준비 안 됨 · 버전 미고정"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No disponible · Versión sin fijar"
-          }
-        }
-      }
-    },
     "unavailable · 未锁定版本": {
       "extractionState": "manual",
       "localizations": {
@@ -55441,181 +55406,6 @@
         }
       }
     },
-    "插件": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "插件"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Plugins"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "プラグイン"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "플러그인"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Complementos"
-          }
-        }
-      }
-    },
-    "{0} 个已注册": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "{0} 个已注册"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "{0} registered"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "{0} 件登録済み"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "{0}개 등록됨"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "{0} registrados"
-          }
-        }
-      }
-    },
-    "后台命令任务": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "后台命令任务"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Background shell tasks"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "バックグラウンドのシェルタスク"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "백그라운드 셸 작업"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tareas de shell en segundo plano"
-          }
-        }
-      }
-    },
-    "{0} 次运行": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "{0} 次运行"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "{0} runs"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "{0} 回実行"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "{0}회 실행"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "{0} ejecuciones"
-          }
-        }
-      }
-    },
-    "结束任务": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "结束任务"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Kill"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "強制終了"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "강제 종료"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Terminar"
-          }
-        }
-      }
-    },
     "复制路径": {
       "extractionState": "manual",
       "localizations": {
@@ -55717,41 +55507,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "La ruta de configuración aparecerá tras actualizar."
-          }
-        }
-      }
-    },
-    "停用（清理假启用）": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "停用（清理假启用）"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Disable (clear the stale enable)"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "無効にする（偽の有効化を解除）"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "사용 안 함(잘못된 켜짐 정리)"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Desactivar (limpiar la activación obsoleta)"
           }
         }
       }
@@ -62301,41 +62056,6 @@
         }
       }
     },
-    "不可用 · 未锁定版本": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "不可用 · 未锁定版本"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "unavailable · version not pinned"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "利用不可 · バージョン未固定"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "사용 불가 · 버전 미고정"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "no disponible · versión sin fijar"
-          }
-        }
-      }
-    },
     "成果库": {
       "extractionState": "manual",
       "localizations": {
@@ -62822,41 +62542,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Vídeo"
-          }
-        }
-      }
-    },
-    "点击「停用」清除旧的 enable*Mcp:true 配置。": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "点击「停用」清除旧的 enable*Mcp:true 配置。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Click “Disable” to clear the stale enable*Mcp:true setting."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "「無効にする」を押して古い enable*Mcp:true 設定を解除します。"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "「사용 안 함」을 눌러 오래된 enable*Mcp:true 설정을 정리하세요."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pulsa «Desactivar» para limpiar el ajuste obsoleto enable*Mcp:true."
           }
         }
       }
@@ -63452,41 +63137,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "ninguna"
-          }
-        }
-      }
-    },
-    "npm 包尚未锁定到精确版本 — {0}": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "npm 包尚未锁定到精确版本 — {0}"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "npm package not yet pinned to an exact version — {0}"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "npm パッケージのバージョンが未固定 — {0}"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "npm 패키지 버전이 고정되지 않음 — {0}"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Paquete npm sin versión exacta fijada — {0}"
           }
         }
       }

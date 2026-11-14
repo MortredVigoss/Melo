@@ -43,23 +43,22 @@ function spyBootstrap(returns = {}) {
 test('buildMcpFlags coerces every enable*Mcp field to a boolean', () => {
   const flags = buildMcpFlags({
     enablePlaywrightMcp: 1,
-    enableBrowserlessMcp: 'true',
+    enableBrowserlessMcp: 'true',   // a flag of the preset removed on 2026-11-14: ignored
     enableAntvChartMcp: undefined,
     enableMarkdown2PdfMcp: null,
     enableMermaidMcp: 'yes-truthy-string',
   });
   assert.equal(flags.enablePlaywrightMcp, true);
-  assert.equal(flags.enableBrowserlessMcp, true);
+  assert.equal('enableBrowserlessMcp' in flags, false);
   assert.equal(flags.enableAntvChartMcp, false);
   assert.equal(flags.enableMarkdown2PdfMcp, false);
   assert.equal(flags.enableMermaidMcp, true);
 });
 
-test('buildMcpFlags returns all seven flags even on an empty config', () => {
+test('buildMcpFlags returns every preset flag even on an empty config', () => {
   const flags = buildMcpFlags({});
   assert.deepEqual(Object.keys(flags).sort(), [
     'enableAntvChartMcp',
-    'enableBrowserlessMcp',
     'enableDouyinMcp',
     'enableMarkdown2PdfMcp',
     'enableMermaidMcp',

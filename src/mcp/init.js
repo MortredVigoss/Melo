@@ -34,7 +34,6 @@ export function buildMcpFlags(config = {}) {
     enablePublicMediaMcp: Boolean(config.enablePublicMediaMcp),
     enableDouyinMcp: Boolean(config.enableDouyinMcp),
     enablePlaywrightMcp:   Boolean(config.enablePlaywrightMcp),
-    enableBrowserlessMcp:  Boolean(config.enableBrowserlessMcp),
     enableAntvChartMcp:    Boolean(config.enableAntvChartMcp),
     enableMarkdown2PdfMcp: Boolean(config.enableMarkdown2PdfMcp),
     enableMermaidMcp:      Boolean(config.enableMermaidMcp),

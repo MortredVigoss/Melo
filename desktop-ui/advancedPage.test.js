@@ -28,8 +28,6 @@ function freshState(overrides = {}) {
       loading: false,
       error: null,
       cliServers: [],
-      plugins: [],
-      tasks: [],
     },
     escapeHtml,
     scheduleRefresh: () => {},
@@ -53,8 +51,10 @@ test('renderAdvancedPage shows system status and collapsed technical controls', 
   assert.match(html, /读取工具默认对所有 Agent 开放/);
   assert.match(html, /自定义 HTTP 连接器/);
   assert.match(html, /MCP 服务（stdio \/ HTTP）/);
-  assert.match(html, /插件/);
-  assert.match(html, /后台命令任务/);
+  // 2026-11-14: the plugin list and the background command list are gone. Nothing
+  // in the product registers a plugin or starts such a command, so both were
+  // always empty.
+  assert.doesNotMatch(html, /插件|后台命令任务|kill-background-task/);
 });
 
 test('renderAdvancedPage exposes the safe-ops actions used by the page', () => {
@@ -92,15 +92,13 @@ test('renderAdvancedPage escapes hostile statePathHint values', () => {
 
 // ─── Empty states ───────────────────────────────────────────────────────────
 
-test('all-empty state renders one empty-state per subsection (5 total: presets + 4 originals)', () => {
+test('all-empty state renders one empty-state per subsection (3: presets, connectors, MCP servers)', () => {
   const html = renderAdvancedPage(freshState());
   const matches = html.match(/empty-state/g) || [];
-  assert.equal(matches.length, 5);
+  assert.equal(matches.length, 3);
   assert.match(html, /No built-in MCP server presets registered/);
   assert.match(html, /尚未添加外部连接器/);
   assert.match(html, /No active MCP servers/);
-  assert.match(html, /No plugins registered/);
-  assert.match(html, /No background runs/);
 });
 
 test('renderAdvancedPage renders one toggle row per built-in MCP preset', () => {
@@ -141,75 +139,6 @@ test('renderAdvancedPage MCP presets section escapes hostile fields', () => {
 test('renderAdvancedPage shows enabled count in header even for empty presets', () => {
   const html = renderAdvancedPage(freshState({ mcpPresets: [] }));
   assert.match(html, /0 \/ 0 已启用/);
-});
-
-test('renderAdvancedPage unpinned+enabled (legacy 假启用) — chip = 假启用, button = clickable Disable (cleanup path)', () => {
-  // Codex 四轮 audit 2026-04-29 follow-up: when historic config has
-  // enableBrowserlessMcp:true (set when the package was unpinned, or
-  // back when the version-pin sweep didn't exist), Advanced must NOT
-  // render a fully-disabled button — that would strand the user in
-  // 假启用 (config says on, runtime says no). The button stays
-  // clickable but ONLY toggles to disable (data-next-enabled="0").
-  const html = renderAdvancedPage(freshState({
-    mcpPresets: [
-      {
-        id: 'browserless', flag: 'enableBrowserlessMcp', enabled: true,
-        unpinned: true,
-        command: 'npx', args: ['-y', '@browserless/mcp@latest'],
-        description: 'Cloud browser',
-      },
-    ],
-  }));
-  // The "假启用" warning chip surfaces.
-  assert.match(html, /假启用 · 未锁定版本/);
-  // Cleanup-aware label.
-  assert.match(html, /停用（清理假启用）/);
-  // Pull out the actual <button> tag for browserless and assert it
-  // is clickable AND points at disable.
-  const browserlessButton = html.match(/<button[^>]*data-preset-id="browserless"[^>]*>/);
-  assert.ok(browserlessButton, 'browserless button must render');
-  // No `disabled` attribute (must allow click).
-  assert.doesNotMatch(browserlessButton[0], /\sdisabled[\s>]/);
-  // The click must drive enabled → disabled, not the other way.
-  assert.match(browserlessButton[0], /data-next-enabled="0"/);
-  // Cleanup hint text replaces the "toggle disabled" copy.
-  assert.match(html, /点击「停用」清除旧的 enable\*Mcp:true 配置。/);
-});
-
-test('renderAdvancedPage marks unpinned preset as unavailable + disables its toggle', () => {
-  // Codex 三轮 audit 2026-04-29: when a preset has no exact-version
-  // pin (browserless today), Advanced must NOT let the user toggle
-  // it on — toggling would write the config flag true, but
-  // connectMcpServer refuses to spawn the server (returns
-  // error:'unpinned'). Show the truth at the UI boundary.
-  const html = renderAdvancedPage(freshState({
-    mcpPresets: [
-      { id: 'browserless', flag: 'enableBrowserlessMcp', enabled: false,
-        unpinned: true,
-        command: 'npx', args: ['-y', '@browserless/mcp@latest'],
-        description: 'Cloud browser' },
-      { id: 'mermaid', flag: 'enableMermaidMcp', enabled: false,
-        unpinned: false,
-        command: 'npx', args: ['-y', 'mcp-mermaid@0.4.1'],
-        description: 'Mermaid renderer' },
-    ],
-  }));
-  // Unpinned row shows the "未锁定版本" status chip and a disabled
-  // button labelled "Unavailable".
-  assert.match(html, /不可用 · 未锁定版本/);
-  assert.match(html, /data-preset-id="browserless"[^>]*disabled/);
-  assert.match(html, /不可用/);
-  assert.match(html, /npm 包尚未锁定到精确版本/);
-  // Pinned mermaid row stays normal.
-  assert.match(
-    html,
-    /data-preset-id="mermaid"[^>]*data-next-enabled="1"/,
-    'pinned preset keeps the regular toggle button',
-  );
-  // Sanity: no "disabled" attribute on the pinned row's button.
-  const mermaidButtonMatch = html.match(/data-preset-id="mermaid"[^>]*>[\s\S]*?<\/button>/);
-  assert.ok(mermaidButtonMatch);
-  assert.doesNotMatch(mermaidButtonMatch[0], /\sdisabled[\s>]/);
 });
 
 // ─── External MCP rendering ─────────────────────────────────────────────────
@@ -268,48 +197,6 @@ test('cliServers render with mono name + Disconnect button', () => {
   assert.match(html, /list-row-title mono">srv-b/);
   assert.match(html, /data-action="disconnect-mcp-server" data-server-name="srv-a"/);
   assert.match(html, /data-action="disconnect-mcp-server"/);
-});
-
-// ─── Plugins ────────────────────────────────────────────────────────────────
-
-test('plugins render with hooks list (empty hooks shows "no hooks")', () => {
-  const html = renderAdvancedPage(freshState({
-    adv: {
-      plugins: [
-        { id: 'plug-a', hooks: ['onMessage', 'onTurnEnd'] },
-        { id: 'plug-empty', hooks: [] },
-      ],
-    },
-  }));
-  assert.match(html, /plug-a/);
-  assert.match(html, /onMessage, onTurnEnd/);
-  assert.match(html, /plug-empty/);
-  assert.match(html, /no hooks/);
-});
-
-test('plugins with missing id show "(unnamed)"', () => {
-  const html = renderAdvancedPage(freshState({ adv: { plugins: [{ hooks: [] }] } }));
-  assert.match(html, /\(unnamed\)/);
-});
-
-// ─── Background tasks ───────────────────────────────────────────────────────
-
-test('running task renders the Kill button; finished task does not', () => {
-  const html = renderAdvancedPage(freshState({
-    adv: {
-      tasks: [
-        { runId: 'r1', status: 'running', command: 'sleep 100', startedAt: '2026-04-27T10:00:00Z' },
-        { runId: 'r2', status: 'exited', exitCode: 0, command: 'echo hi', startedAt: '2026-04-27T09:00:00Z' },
-      ],
-    },
-  }));
-  assert.match(html, /sleep 100/);
-  assert.match(html, /echo hi/);
-  // Kill only attached to the running run.
-  assert.match(html, /data-run-id="r1"/);
-  assert.doesNotMatch(html, /data-run-id="r2"/);
-  // exit code only on the finished one.
-  assert.match(html, /exit 0/);
 });
 
 // ─── Loading + error transitions ────────────────────────────────────────────
@@ -371,7 +258,7 @@ test('previous error short-circuits the lazy refresh', () => {
 
 // ─── Escape coverage ────────────────────────────────────────────────────────
 
-test('hostile connector / task strings are escaped through escapeHtml', () => {
+test('hostile connector and server strings are escaped through escapeHtml', () => {
   const html = renderAdvancedPage(freshState({
     data: {
       connectors: [
@@ -381,12 +268,10 @@ test('hostile connector / task strings are escaped through escapeHtml', () => {
     },
     adv: {
       cliServers: ['<srv>'],
-      tasks: [{ runId: '<r>', status: '<status>', command: '<cmd>', startedAt: '2026-04-27T10:00:00Z' }],
     },
   }));
   assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.match(html, /&lt;srv&gt;/);
-  assert.match(html, /&lt;cmd&gt;/);
   // No raw injection slipped through — the literal `<script>` tag must
   // not appear.
   assert.doesNotMatch(html, /<script>alert/);

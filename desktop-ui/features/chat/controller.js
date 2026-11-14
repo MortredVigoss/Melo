@@ -544,13 +544,6 @@ async function handleCreateChat({
   chatState.composer = '';
   chatState.composerAttachments = [];
   resetComposerHistoryNavigation();
-  // 2026-06-04 audit闭环: clear pending voice transcript + its linking id when
-  // switching chats. Without this a recorded-but-unsent voice message leaves
-  // composerVoiceTranscript/Id set; the next plain-text send would carry a
-  // stale extractedMedia transcript referencing an orphan attachmentId.
-  // Parallels the send-path reset (handleSendMessage).
-  chatState.composerVoiceTranscript = null;
-  chatState.composerVoiceAttachmentId = null;
   applyBootstrap(payload);
 }
 
@@ -610,17 +603,9 @@ async function handleSendMessage(prepared = null) {
   let sendSucceeded = false;
   const replyDelivery = createReplyDelivery();
 
-  // Capture and clear the voice transcript before resetting composer state.
-  const voiceTranscript = (prepared ? null : chatState.composerVoiceTranscript) || null;
-  if (!prepared) chatState.composerVoiceTranscript = null;
-  // Same for the linking id (2026-05-23 Codex C 闭环) — capture before reset
-  // so the prefilled transcript entry can reference the audio attachment.
-  const voiceAttachmentId = (prepared ? null : chatState.composerVoiceAttachmentId) || null;
-  if (!prepared) chatState.composerVoiceAttachmentId = null;
-
   let chatId = prepared?.chatId || (fromOverview ? null : getBootstrap()?.settings?.selectedChatId || null);
   const submissionKey = targetChatId => JSON.stringify({ chatId: targetChatId, content, attachments, imageTask, teamPlan,
-    voiceTranscript, voiceAttachmentId, mode: getBootstrap()?.settings?.activeMode,
+    mode: getBootstrap()?.settings?.activeMode,
     agentId: activeChat()?.agentId || getBootstrap()?.settings?.selectedAgentId,
     modelSelection: activeChat()?.modelSelection || null });
   const retry = !prepared && chatState.composerRetry?.key === submissionKey(chatId) ? chatState.composerRetry : null;
@@ -674,21 +659,6 @@ async function handleSendMessage(prepared = null) {
         attachments,
         ...(imageTask ? { imageTask } : {}),
         ...(teamPlan ? {teamPlan} : {}),
-        ...(voiceTranscript
-          ? {
-              extractedMedia: [
-                {
-                  // attachmentId links this transcript to the voice audio
-                  // attachment so describeAudioExtractionStatus matches them
-                  // (2026-05-23 Codex C 闭环).
-                  ...(voiceAttachmentId ? { attachmentId: voiceAttachmentId } : {}),
-                  kind: 'transcript',
-                  text: voiceTranscript,
-                  metadata: { source: 'speech-recognition', fileName: 'voice-message.wav' },
-                },
-              ],
-            }
-          : {}),
         mode: getBootstrap().settings.activeMode,
       },
       signal: chatState.sendAbortController.signal,
@@ -861,8 +831,6 @@ async function handleSendMessage(prepared = null) {
     }
     chatState.composer = content;
     chatState.composerAttachments = attachments;
-    chatState.composerVoiceTranscript = voiceTranscript;
-    chatState.composerVoiceAttachmentId = voiceAttachmentId;
     if (!prepared) chatState.composerRetry = { requestId: turnRequestId, chatId, key: submissionKey(chatId),
       interrupted: error.code === 'REQUEST_INTERRUPTED' };
     restoreImageTask(imageTask);
@@ -1593,12 +1561,6 @@ export function resetComposerForNewChatHome() {
   chatState.composer = '';
   resetComposerHistoryNavigation();
   chatState.composerAttachments = [];
-  // 2026-06-04 audit闭环: also clear pending voice transcript + linking id
-  // (same stale-transcript leak as handleCreateChat) — composerAttachments
-  // reset above drops the audio attachment but the voice fields would
-  // otherwise survive into the next send.
-  chatState.composerVoiceTranscript = null;
-  chatState.composerVoiceAttachmentId = null;
   chatState.composerAttachmentMenuOpen = false;
   chatState.composerDragActive = false;
 }

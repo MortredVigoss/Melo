@@ -24,9 +24,9 @@ test('save feedback reflects acknowledgement, prevents duplicate submissions and
 });
 test('existing settings forms lock initially, edit explicitly, cancel, and lock after acknowledged save',()=>{
  const dom=new JSDOM('<main></main>');const doc=dom.window.document;let draft='persisted';
- const render=()=>{doc.querySelector('main').innerHTML=`<form data-form="agent-profile-update" data-agent-id="main"><input name="name" value="${draft}"><button type="submit">Old save</button><button type="button" data-action="select-agent-editor-tab">tab</button></form>`;controls.decorate(doc);};
+ const render=()=>{doc.querySelector('main').innerHTML=`<form data-form="agent-profile-update" data-agent-id="main"><input name="name" value="${draft}"><button type="submit">Old save</button><button type="button" data-action="switch-agent-channel-tab">tab</button></form>`;controls.decorate(doc);};
  const controls=createSettingsFormEditors({render,onCancel(){draft='persisted';}});controls.install(doc);render();
- assert.equal(doc.querySelector('input').disabled,true);assert.equal(doc.querySelector('[data-action=select-agent-editor-tab]').disabled,false);
+ assert.equal(doc.querySelector('input').disabled,true);assert.equal(doc.querySelector('[data-action=switch-agent-channel-tab]').disabled,false);
  assert.equal(controls.start(doc.querySelector('form')),false);
  doc.querySelector('[data-action=form-settings-edit]').click();assert.equal(doc.querySelector('input').disabled,false);
  draft='draft';doc.querySelector('input').value=draft;doc.querySelector('input').dispatchEvent(new dom.window.Event('input',{bubbles:true}));assert.equal(doc.querySelector('[data-action=form-settings-save]').disabled,false);

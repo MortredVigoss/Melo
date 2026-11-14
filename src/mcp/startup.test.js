@@ -24,14 +24,14 @@ test('fresh installs start only the four no-fee built-in presets without a conse
   await inHome(null, async load => {
     const config = load();
     for (const flag of freeFlags) assert.equal(config[flag], true, flag);
-    assert.equal(config.enableBrowserlessMcp, false);
+    assert.equal(config.enableBrowserlessMcp, undefined, 'the cloud preset removed on 2026-11-14 has no flag');
     assert.equal(config.productivityMcpsConsented, true);
     let calls = 0;
     await initMcpServers({ getConfig: async () => config, bootstrap: async (servers, flags) => {
       calls++;
       assert.deepEqual(servers, {});
       for (const flag of freeFlags) assert.equal(flags[flag], true, flag);
-      assert.equal(flags.enableBrowserlessMcp, false);
+      assert.equal('enableBrowserlessMcp' in flags, false);
       return {};
     }, log: () => {} });
     assert.equal(calls, 1, 'defaults must reach runtime initialization');

@@ -50,17 +50,14 @@ function createCustomizeState() {
       addError: '',
       pendingRemoveHost: null,
     },
-    // Advanced page (developer / experimental ops). Caches CLI MCP server
-    // names, plugin registry, and background-task list — none of these
-    // ride on bootstrap, so we lazy-fetch on first navigation and keep the
-    // values around until an explicit Refresh.
+    // Advanced page (developer / experimental ops). Caches the CLI MCP server
+    // names and the diagnostics — these do not ride on bootstrap, so we
+    // lazy-fetch on first navigation and keep the values until an explicit Refresh.
     advanced: {
       loading: false,
       loaded: false,
       error: null,
       cliServers: [],
-      plugins: [],
-      tasks: [],
       diagnostics: null,
     },
     // Phase 3 — Skill detail tab: 'overview' (default) or 'markdown'.

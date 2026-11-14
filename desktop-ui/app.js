@@ -4117,16 +4117,6 @@ function renderModelPage() {
   `;
 }
 
-async function handleKillBackgroundTask(runId) {
-  if (!runId) return;
-  try {
-    await api('/api/background-tasks/kill', { method: 'POST', body: { runId } });
-    await customizeFeature.refreshAdvancedStatus();
-  } catch (err) {
-    notify({level:'error',text:`Kill task failed: ${err?.message || err}`});
-  }
-}
-
 function renderArtifactsPage() {
   const artifacts = artifactShelfRows();
   const active = selectedArtifact();
@@ -5535,9 +5525,6 @@ document.addEventListener('click', async event => {
         break;
       case 'refresh-advanced-status':
         await customizeFeature.refreshAdvancedStatus();
-        break;
-      case 'kill-background-task':
-        await handleKillBackgroundTask(trigger.dataset.runId);
         break;
       case 'execute-approval':
         await handleExecuteApproval(trigger.dataset.approvalId);

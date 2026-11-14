@@ -16,9 +16,12 @@ import {
   buildOutputHardConstraints,
   detectInputLanguage,
   buildLanguageConstraint,
-  buildReActSystemPrompt,
   buildReActPromptSections,
 } from './systemPrompt.js';
+import { renderPromptSections } from './contextBudget.js';
+
+// The prompt text as the turn assembles it: the sections, rendered.
+const buildReActSystemPrompt = options => renderPromptSections(buildReActPromptSections(options));
 
 // ═══════════════════════════════════════════════════════════════════════════
 // detectInputLanguage

@@ -58,7 +58,7 @@ export function createSettingsFormEditors({render, onCancel, scope=()=>'', ownsD
   const actionOptions = form => ({prefix:'form-settings',key:keyFor(form),submit:true,saveLabel:labels[form.dataset.form]?t(labels[form.dataset.form]):'',successLabel:['file-save','command-run'].includes(form.dataset.form)?t('请求已提交'):''});
   const selector = [...createForms,'agent-profile-update','connector-config','model-config','default-model-config','skill-custom-update','project-update','task-pricing'].map(t=>`form[data-form="${t}"]`).join(',');
   const savedActions = new Set(['test-agent-channel','confirm-agent-settings']);
-  const safeActions = new Set(['select-agent-editor-tab','switch-agent-channel-tab','toggle-agent-secret']);
+  const safeActions = new Set(['switch-agent-channel-tab','toggle-agent-secret']);
   const keyFor = form => `${form.dataset.form}:${form.dataset.agentId || form.dataset.skillId || form.dataset.projectId || form.dataset.artifactId || form.dataset.templateId || form.dataset.filePath || ''}:${scope(form)}`;
   const get = key => { if(!sessions.has(key)) sessions.set(key,new EditSession()); return sessions.get(key); };
   function decorate(root) {
