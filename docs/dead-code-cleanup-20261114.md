@@ -201,7 +201,7 @@ JS 阶段在这台机器上受后台负载限制：`run-11UkeT` 里 606 个文�
 
 ### 6.4 还能做但没做的
 
-- 最慢的单个测试 `desktop-ui/taskSpaceBoard.browser.test.js` 45 秒，里面约 10 秒是固定等待；`src/index.memoryCli.test.js` 32 秒，反复启动命令行。
+- 最慢的单个测试 `desktop-ui/taskSpaceBoard.browser.test.js` 45 秒，里面约 10 秒是固定等待；`src/index.memoryCli.test.js` 修掉定时器后仍要约 20 秒（最终校准实测 20.3 秒），因为它反复启动命令行。
 - 设置浏览器验收每次 35 秒，过去一半的运行都带着它。
 - 发布门禁在这台机器上仍用 `MELO_TEST_CONCURRENCY=1`；新的池在位置数为 1 时行为不变，是否放开需要在发布门禁里实测。
 
@@ -218,7 +218,7 @@ JS 阶段在这台机器上受后台负载限制：`run-11UkeT` 里 606 个文�
 | 中 | `src/tools/builtins/clipboardTool.js:42`（`writeClipboard`） | ES 模块里用 `require(...)`，每次写剪贴板都以"require is not defined"失败 |
 | 中 | `src/tools/builtins/fileReadTool.js:195-201` | 超过 200 KB 的文件直接拒绝，并提示"用 start_line / end_line 读一部分"，但范围参数在这之前没有被考虑，照做也读不了 |
 | 中 | `src/memory/conversationIndex.js:325-329`（`searchHistory` 的 `after`） | 时间存的是文本、比较用的是毫秒数，条件恒真。探针：`after: 2026-06-01` 仍返回 2026-01-01 的消息 |
-| 中 | `src/memory/status.js:224`（`probeEmbeddingProviderAvailability`）与 `embedProviders/OllamaEmbedProvider.js:34-38`（`isAvailable`） | `melo memory status` 探测的是 Ollama / OpenAI / 自定义 HTTP，而实际使用的只有内置模型（`getEmbeddingProvider` 的顺序是 `['builtin']`，注释写明"不自动探测外部应用"）；Ollama 探测里 2 秒的定时器不清除，命令每次多等约 2 秒。`src/index.memoryCli.test.js` 的 32 秒里有 7 个用例各 3 秒正是这个 |
+| 中 | `src/memory/status.js:224`（`probeEmbeddingProviderAvailability`）与 `embedProviders/OllamaEmbedProvider.js:34-38`（`isAvailable`） | `melo memory status` 探测的是 Ollama / OpenAI / 自定义 HTTP，而实际使用的只有内置模型（`getEmbeddingProvider` 的顺序是 `['builtin']`，注释写明"不自动探测外部应用"）。同一处还有一个已经修掉的毛病：Ollama 探测里 2 秒的定时器以前不清除，命令每次多等约 2 秒，本轮 `12ac7eee` 已修（`src/index.memoryCli.test.js` 从 32 秒降到约 20 秒）。探测对象不对这一半仍在 |
 | 低 | `src/tools/parser.js:99-105`（`safeParseToolCall`） | 参数 JSON 坏掉时退化成空参数继续执行，`_parseError` 标记没人读 |
 | 低 | `src/server.js:1248` | `_nativeSayQueue` 没有声明，退出时清朗读队列的那一行每次都抛错并被吞掉 |
 | 高 | `src/services/search/socialLinkReader.js:868`（`closePattern`）与 `src/web/camoufoxReader.py:62` 的同一份 | "关闭弹层"的匹配式末尾有一个不带边界的 `x`，而且拿元素的 `class` 一起匹配；候选是页面上所有可见的 `button`、`[role=button]` 和 `svg`。文字或类名里带字母 x 的都会被点（"Next"、"Explore"、类名 `flex`、`px-4` 等）。读取社交链接时带着用户保存的登录 Cookie，所以这些点击发生在已登录的页面里。上方注释写的是"不点击任意按钮" |
