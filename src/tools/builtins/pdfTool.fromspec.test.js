@@ -726,15 +726,19 @@ test('sectionsToHtml: legitimate CSS still passes the sanitizer cleanly', async 
 // Now a machine without the CLI is reported as SKIPPED, and a machine with
 // it must produce a PDF that contains the document and must leave no daemon.
 
+// One failed start is not "unavailable" (see playwrightSockets.test.js): tried three times before it is believed.
 async function playwrightCliUnavailableReason() {
-  try {
-    const { execFile } = await import('node:child_process');
-    const { promisify } = await import('node:util');
-    await promisify(execFile)('npx', ['-y', process.env.MELO_PLAYWRIGHT_CLI_PACKAGE || '@playwright/cli@0.1.11', '--version'], { timeout: 60_000 });
-    return '';
-  } catch (error) {
-    return `the Playwright CLI cannot be started here (${String(error?.message || error).split('\n')[0].slice(0, 120)})`;
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  let last;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt) await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
+    try {
+      await promisify(execFile)('npx', ['-y', process.env.MELO_PLAYWRIGHT_CLI_PACKAGE || '@playwright/cli@0.1.11', '--version'], { timeout: 60_000 });
+      return '';
+    } catch (error) { last = error; }
   }
+  return `the Playwright CLI cannot be started here (${String(last?.message || last).split('\n')[0].slice(0, 120)})`;
 }
 // `skip` must be false or a reason. An empty string is a trap: node:test runs
 // the test and then reports it as skipped, so a failure would not count.

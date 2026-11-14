@@ -75,13 +75,19 @@ test('ensurePrivateSocketsDir refuses anything that is not a private directory o
 
 // ─── The real thing ──────────────────────────────────────────────────────────
 
+// One failed start is not "unavailable": several test files start `npx` at the same moment, and the gate
+// run of 2026-11-14 skipped the test below because one of those starts failed while the command worked a
+// second later. A skip leaves the fix unverified, so the start is tried three times before it is believed.
 async function cliUnavailableReason() {
-  try {
-    await promisify(execFile)('npx', ['-y', process.env.MELO_PLAYWRIGHT_CLI_PACKAGE || '@playwright/cli@0.1.11', '--version'], { timeout: 60_000 });
-    return false;
-  } catch (error) {
-    return `the Playwright CLI cannot be started here (${String(error?.message || error).split('\n')[0].slice(0, 120)})`;
+  let last;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt) await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
+    try {
+      await promisify(execFile)('npx', ['-y', process.env.MELO_PLAYWRIGHT_CLI_PACKAGE || '@playwright/cli@0.1.11', '--version'], { timeout: 60_000 });
+      return false;
+    } catch (error) { last = error; }
   }
+  return `the Playwright CLI cannot be started here (${String(last?.message || last).split('\n')[0].slice(0, 120)})`;
 }
 
 async function daemonsOfThisProcess() {
