@@ -33,9 +33,11 @@ export class OllamaEmbedProvider extends EmbeddingProvider {
 
   async isAvailable() {
     if (!memoryEndpointAllowed(this.baseUrl)) return false;
+    const ac = new AbortController();
+    // Cleared on every path: a timer left pending kept `melo memory status`
+    // alive for two more seconds after the answer was already known.
+    const timer = setTimeout(() => ac.abort(), 2000);
     try {
-      const ac = new AbortController();
-      setTimeout(() => ac.abort(), 2000);
       const res = await fetch(`${this.baseUrl}/api/tags`, { signal: ac.signal });
       if (!res.ok) return false;
       const data = await res.json();
@@ -44,6 +46,8 @@ export class OllamaEmbedProvider extends EmbeddingProvider {
       );
     } catch {
       return false;
+    } finally {
+      clearTimeout(timer);
     }
   }
 

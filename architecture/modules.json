@@ -1709,6 +1709,7 @@
           "src/memory/dreaming/sweep.concurrency.test.js",
           "src/memory/dreaming/sweep.test.js",
           "src/memory/embedProviders/BuiltinEmbedProvider.test.js",
+          "src/memory/embedProviders/OllamaEmbedProvider.availability.test.js",
           "src/memory/embedProviders/OllamaEmbedProvider.truncation.test.js",
           "src/memory/embedProviders/createEmbeddingProvider.test.js",
           "src/memory/embeddings.cache.test.js",
