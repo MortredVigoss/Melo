@@ -1,6 +1,6 @@
 # Melo 总览：当前事实、功能索引与接手入口
 
-更新时间：2026-11-13（Australia/Melbourne）。这是所有 Melo 工作线程共用的人工维护入口：顶部依次是当前事实、功能索引和最新交接；按日期的阶段过程（含日期、提交与当次验证数字）在 [总览历史交接](docs/handoffs/overview-history-20261019.md)。
+更新时间：2026-11-14（Australia/Melbourne）。这是所有 Melo 工作线程共用的人工维护入口：顶部依次是当前事实、功能索引和最新交接；按日期的阶段过程（含日期、提交与当次验证数字）在 [总览历史交接](docs/handoffs/overview-history-20261019.md)。
 
 ## 1. 先看这里
 
@@ -53,11 +53,11 @@
 | 授权、审批与任务 | #1 审批期间持有文件身份，阻止 inode 复用（`47da231` 已推送，[实施](docs/github-issues-implementation-20261020.md)）； 模型 / 工具 / 授权共用截止与取消，超时后迟到批准零写入（A2）；手机权限首次迁移与撤销修正 `85c51f7`；桌面审批界面样式在 `desktop-ui/features/approvals/approvals.css`（工具/文件审批 JS 仍在 app.js，P2c）；能力请求卡片与「临时授权」列表在 `desktop-ui/features/approvals/`（10-20）；手机卡片进 `ChatStore` 审批队列，账本与判定在 `ios/Melo/CapabilityElevation{,Runtime,Views}.swift`（10-20） | [A2 回执](docs/mobile-desktop-alignment.md)、[手机权限](docs/phone-permission-fix-20261016.md) |
 | 桌面壳与界面 | 11-11 主检出 `9b070cf2`（未推送）已重建并原位覆盖，`release:verify` 17 项全 GREEN；因数据目录未恢复，装后没有正常启动，首次正常启动要用户点一次"桌面"文件夹权限（[回执](docs/agent-fixall-20261110.md)）。此前：11-07 产品主检出 `701e43f5` 已重建并原位覆盖，17 项发布检查及正常工作区 / 模型设置 / 数据回读通过，见[本次回执](docs/model-settings-release-20261107.md)。历史：10-27 安装源码 `554ce96`（10-27 壳重建覆盖，第二次 `release:verify` 17 项全绿，[回执](docs/overwrite-install-20261027.md)；10-27 晚真实多工具测试[评估](docs/live-test-bigbang-20261027.md)：壳给服务的 PATH 没有 node 使 Playwright 搜索腿不可用，当晚已修（node 目录置于服务 PATH 首位，原生启动断言 14 项），第三次 `release:verify` 17 项全绿覆盖安装；装后实测 Google 对无头浏览器出验证页、Jina 匿名 DDG 403，无 key 时搜索仍无结果，需配 key；10-26 [回执](docs/overwrite-install-20261026.md)；壳从源码目录运行，桌面即主检出代码；壳重编译后首次正常启动需用户点一次"桌面"文件夹权限）；神经总览 `22bcd1b`；双端低饱和黑金 M 图标；10-15 记录的阅读 / 预览 / 文件 WIP 已于 10-17 收入 `8cd3eff`；10-20 桌面工作面统一（`surfaceUnify.css` 最后载入：间距、13px 基准字号、控件、工作面不透明度、去旧绿色），手机未动、知识青灰身份色待用户决定 | [10-20 统一](docs/ui-unify-20261020.md)、[双端安装](docs/dual-reinstall-20261019.md)、[银河与留白](docs/galaxy-clarity-20261016.md)、[图标](docs/design/logo-muted-20261016/README.md)；`desktop-ui/app.js` 仍是中央入口（导航、组合、render() 保护、设置 / 资料 / 审批 / TTS 等页面）；记忆 / 项目页（P2a）、Agent 设置（P2b）、聊天（P2c）已拆到 `desktop-ui/features/` |
 | 桌面宠物 | 10-22 并入 `Melo.app`（方案 C）：`desktop-pet/` 独立包、仓库外媒体钉哈希、`DesktopPet.swift` 启停、系统设置「桌面宠物」开关与真实状态；真包冷启动 / 对话 / 开关 / 退出联动已验 | [并入文档](docs/desktop-pet-integration-20261022.md)、[桌宠说明](desktop-pet/README.md)；素材生产线仍在 `/Users/mortred/Documents/New project/desktop-pet` |
-| iPhone | 实体机 11-11 原位覆盖到 0.7.19 (51)（代码 `9b070cf2`，未推送），18 对话 / 205 消息 / 6 Agent / 27 图五次回读一致（[回执](docs/agent-fixall-20261110.md)）；个人签名描述文件 11-14 00:50（Melbourne）到期，到期前需再装一次。此前：11-08 覆盖到 0.7.18 (50)；10-27 原位覆盖到 0.7.13 (45)，17 对话 / 174 消息 / 6 Agent / 26 图两次回读一致（[回执](docs/overwrite-install-20261027.md)）；10-26 曾覆盖到 0.7.12 (44)，16 对话 / 169 消息 / 6 Agent / 26 图两次回读一致（[回执](docs/overwrite-install-20261026.md)）；10-24 曾覆盖到 0.7.11 (43)，16 对话 / 163 消息 / 6 Agent / 25 图两次回读一致（[回执](docs/phone-overwrite-install-20261024.md)）；10-22 曾覆盖到 0.7.9 (41)，15 对话 / 151 消息 / 6 Agent / 24 图两次回读一致（[回执](docs/phone-overwrite-install-20261022.md)）；此前 0.7.8 (40) 已覆盖并启动，原 12 对话 / 137 消息 / 6 Agent、账号偏好和 21 张原图经两次回读保留；用户确认拍照四流程与实际回复正常 | [10-21 拍照版安装](docs/phone-camera-install-20261021.md)；个人签名到期 10-28 20:52（Melbourne；10-26 构建复用同一描述文件，未续期，到期前需再装一次）；镜头切换和后台恢复另验 |
+| iPhone | 实体机 11-11 原位覆盖到 0.7.19 (51)（代码 `9b070cf2`，未推送），18 对话 / 205 消息 / 6 Agent / 27 图五次回读一致（[回执](docs/agent-fixall-20261110.md)）；个人签名描述文件已于 11-14 00:50（Melbourne）到期，手机上的 App 要重新安装才能打开（11-14 这一轮没有装）。此前：11-08 覆盖到 0.7.18 (50)；10-27 原位覆盖到 0.7.13 (45)，17 对话 / 174 消息 / 6 Agent / 26 图两次回读一致（[回执](docs/overwrite-install-20261027.md)）；10-26 曾覆盖到 0.7.12 (44)，16 对话 / 169 消息 / 6 Agent / 26 图两次回读一致（[回执](docs/overwrite-install-20261026.md)）；10-24 曾覆盖到 0.7.11 (43)，16 对话 / 163 消息 / 6 Agent / 25 图两次回读一致（[回执](docs/phone-overwrite-install-20261024.md)）；10-22 曾覆盖到 0.7.9 (41)，15 对话 / 151 消息 / 6 Agent / 24 图两次回读一致（[回执](docs/phone-overwrite-install-20261022.md)）；此前 0.7.8 (40) 已覆盖并启动，原 12 对话 / 137 消息 / 6 Agent、账号偏好和 21 张原图经两次回读保留；用户确认拍照四流程与实际回复正常 | [10-21 拍照版安装](docs/phone-camera-install-20261021.md)；个人签名到期 10-28 20:52（Melbourne；10-26 构建复用同一描述文件，未续期，到期前需再装一次）；镜头切换和后台恢复另验 |
 | Android 桌宠 | 10-22 分支 `feature/android-desktop-pet`（0.8.0 (17)）：「系统 → 桌宠」开关后金冬天 / 大肥鱼以自有前台服务常驻其他 App 之上，窗口只按当前动作的不透明包围盒布局；拖动贴边、单击换动作、双击系统语音识别 → 专用「桌宠」对话 → 朗读与气泡、长按菜单；自动动作沿用桌面「优先待机、动作后休息 30–60 秒」；素材不进 Git，`assets/pet/catalog.json` 记录 hash 与 Release `android-pet-assets-1`，Gradle `preparePetAssets` 构建时校验 / 下载 | [android/README.md → 桌宠](android/README.md)、[verification.md](android/verification.md)；JVM 144、Lint 零 Error、Debug / R8、Emulator `PetOverlayFlowTest` 2/2 通过；Fold6 真机（朋友测试）、三星省电、真实语音未验，PR 待用户决定合入 |
 | 远程渠道 | Telegram（10-16）、Discord（10-17）按用户决定归档，配置与历史保留 | [Telegram 归档](docs/telegram-archive-20261016.md)、[Discord 归档](docs/discord-archive-20261017.md) |
 | 架构维护 | B2 执行节点、B3 自定义页与桌面 token 已合入；当前拆分质量与剩余 B4/B5 见[10-21 核对](docs/architecture-split-review-20261021.md)。方案已获批执行 P0–P2；P0 已交付：生成的功能地图、`npm run scope`、`npm run boundaries`、纯文档选组纠正与本总览重整；P1 项目 / Agent 提交回执已交付；P2 完成：P2a 记忆页、项目页拆入 `desktop-ui/features/` 并补齐 `bootstrapError` 重新拉取；P2b Agent 设置；P2c 聊天状态 / 事件与其余 CSS，`render()` 只调功能钩子，共享请求层为 `sharedApi.js` | [方案与第 8 节执行修订](docs/architecture-maintainability-plan-20261019.md)；P1 / P2 状态以最新交接为准；[独立审计](docs/claude-architecture-review-20261019.md)确认的提交后刷新失败回归已在 `46554b2` 修复，日常选定范围通过 |
-| 发布 gate | 10-21 降本已本地提交 `8304aab`：[实现与校准](docs/test-cost-camera-plan-20261021.md)；纯文档 CI 先计划并省去重型任务，局部 UI 按整组和实际依赖选取，Swift 复用编译但每次执行测试；日常按功能、反向依赖、隐式边与平台选组；任务 `--files` / 集成 `--base` / 强制 `--all`；先预检、JS / 资源 / Swift 去重；公共 / 未知边界保留扩大，发布完整 gate 保留 | [统一检测规则](docs/testing-workflow.md)（AGENTS / CLAUDE 共用）、[实施验证](docs/test-selection-implementation-20261020.md)：最终工具 29/29，隔离完整日常、两项浏览器与 32 Swift 通过；本地模型资源项补测 3/3 |
+| 发布 gate | 11-14 检测提速已本地提交（`c5ee2c6b` 起）：快速档不再因生成产物、Android 混改、功能地图没登记的文件、验收脚本扩大到全量；Android 与 Swift 并行、Swift 并行编译并清理缓存、JS 测试池按机器余量取 4–8 个位置且重文件最多 3 个，见[记录第 6 节](docs/dead-code-cleanup-20261114.md)。10-21 降本已本地提交 `8304aab`：[实现与校准](docs/test-cost-camera-plan-20261021.md)；纯文档 CI 先计划并省去重型任务，局部 UI 按整组和实际依赖选取，Swift 复用编译但每次执行测试；日常按功能、反向依赖、隐式边与平台选组；任务 `--files` / 集成 `--base` / 强制 `--all`；先预检、JS / 资源 / Swift 去重；公共 / 未知边界保留扩大，发布完整 gate 保留 | [统一检测规则](docs/testing-workflow.md)（AGENTS / CLAUDE 共用）、[实施验证](docs/test-selection-implementation-20261020.md)：最终工具 29/29，隔离完整日常、两项浏览器与 32 Swift 通过；本地模型资源项补测 3/3 |
 
 ## 3. 功能索引
 
@@ -82,6 +82,16 @@
 基础设施另列 `platform`（`src/state/`、`src/runtime/`、`src/http/` 传输）、`channels`（已归档渠道）、`tooling`（脚本与 gate）。
 
 ## 4. 最新交接
+
+### 2026-11-14 — Melo 主线（Claude）— 死代码清理第二轮与检测提速
+
+用户要求逐行扫描、清掉废的空的没用的，并看检测为什么久。基准 `cc9a982e`（已含 Codex 11-12 的清理）。没有推送、没有安装、没有读写正式数据目录。
+清理：手写代码净减 3,579 行、删 23 个文件，三端都有；只删产品和测试都没有引用的。清理前后 38 张界面截图逐像素一致。没有动的 40 多项（已停用功能的整套代码、只有测试在用的代码、未引用素材）列在[记录](docs/dead-code-cleanup-20261114.md)第 5 节，等用户决定。
+检测：快速档的选择规则改了四处，过去 62% 的快速档会跑全量，回放后剩 12%；Android 与 Swift 并行，Swift 冷编译 551 → 150 秒，全量集成档 285 → 238 秒。规则写在 [docs/testing-workflow.md](docs/testing-workflow.md)。
+**接手要知道的：** (1) 第一遍曾误删仍在使用的 `probe`（`06791f79` 已恢复）。删 JS 里的名字必须整词搜索并逐条看命中，只搜调用形式不够；核对脚本在本机 `.tmp/dead-code-claude-20261114/vanished-check.cjs`。(2) 改了场景包的任何输入（包括 `desktop-ui/translations.js`）都要 `npm run build:ios-scene`，否则完整门禁的预检会红。(3) 补读确证但没有落实的小项留在本机 `.tmp/dead-code-claude-20261114/reader2-*.md` 第 2 节。
+**没有修、等安排的问题**（记录第 7 节，12 个已核实）：社交链接读取的"关闭弹层"会在已登录页面里点击几乎任意按钮；`file_edit` 单处替换会展开 `$&`；已删除的对话仍能被 `search_history` 搜到；`git pp` 脚本推送的是 `HEAD` 而不是评审过的提交；剪贴板写入必失败；超过 200 KB 的文件读不了；英文事实提取要求句末有句号；等等。
+验证：集成档 `run-11UkeT`、最终完整校准 `run-33QqEn` 全绿；Android 设备测试 144 项中 140 通过（4 项失败与 11-10 相同）。没有真机、真实模型、桌面应用启动验收。
+仍然挂着：桌面正式数据目录待用户执行恢复命令（恢复前不要启动桌面 Melo）；master 领先 `origin/master` 未推送，上次 `git pp` 评级 C 后没有重新评审；iPhone 签名已到期。
 
 ### 2026-11-12 — Codex：死代码清理与测试成本审计（隔离分支，11-13 验收完成）
 
