@@ -113,6 +113,8 @@
 
 ## 5. 没有动、需要用户决定的
 
+> 2026-11-14 当天稍后，用户对这一节和第 7 节的清单作了决定。逐项结果见本文第 11 节；下面保留当时的原文。
+
 ### 5.1 已停用或没有入口的功能（代码都还在）
 
 | 项目 | 规模 | 现状 |
@@ -207,6 +209,8 @@ JS 阶段在这台机器上受后台负载限制：`run-11UkeT` 里 606 个文�
 
 ## 7. 阅读时发现的问题（本轮未修）
 
+> 这些问题后来按第 11 节处理：7.1 的 12 项全部修复，7.2 的 29 条逐条核实后修了 23 组，4 条等用户决定。下面保留当时的原文。
+
 ### 7.1 主线程已核实（读代码，其中两项跑了隔离探针）
 
 共 12 项（后 4 项来自补读）。
@@ -239,7 +243,7 @@ JS 阶段在这台机器上受后台负载限制：`run-11UkeT` 里 606 个文�
 ## 8. 仍然挂着的事
 
 - **桌面正式数据目录还没恢复**（11-10 的事故）。恢复前不要正常启动桌面 Melo。恢复命令在[上一份修复记录](agent-fixall-20261110.md)第 5 节，需要用户自己执行。
-- master 领先 `origin/master`（`84437476`）若干提交，未推送；上一次 `git pp` 评级 C，修复后没有重新评审。
+- 第 11 节的工作完成后，按用户要求用普通的 `git push` 把 master 推到 `origin`（推送前 master 领先 `84437476` 32 个提交）。上一次 `git pp` 评级 C 之后没有重新评审，这次也没有运行评审。
 - iPhone 个人签名描述文件已于 2026-11-14 到期，手机上的 App 要重新安装才能打开。
 
 ## 9. 补读（第二遍）与最终校准
@@ -283,3 +287,148 @@ node scripts/audit-inventory.mjs --out <目录> --baseline docs/audit/inventory-
 ```
 
 证据目录（本机，未入库）：`.tmp/dead-code-claude-20261114/`。各片报告：`reader-src-*.md`、`reader-shared-scripts.md`、`ui-js-report.md`、`ui-css-report.md` 与 `ui-css-evidence.md`、`android-report.md`、`ios-report.md`、补读 `reader2-*.md`；截图 `visual/`；门禁日志 `gate-integration-1.log`；历史回放脚本与结果见该目录。门禁运行目录：`.tmp/test-runs/run-11UkeT/summary.json`（集成档）、`.tmp/test-runs/run-33QqEn/summary.json`（最终完整校准）。
+
+## 11. 第 5、7 节的落实（同日第二轮）
+
+用户看完第 5、7 节的清单后说："全按你推荐的来吧。然后直接 git push"。这一节记录每一项做了什么、哪些没做及原因。清单编号沿用当时发给用户的 A（第 5 节）、B（第 7.1 节）、C（第 7.2 节，29 条并成 27 条）、D（第 7.3 节）。
+
+**源码基准。** 起点 `67ad9457` 的上一个提交；九个提交，到 `721b5267` 为止。手写产品代码 149 个文件净减 3,379 行，测试 90 个文件净减 218 行（新增与改写 2,961 行，随代码删除 3,179 行），生成文件净减 1,281 行；删 38 个文件，新增 20 个。
+
+**方法。** C 组先由三个只读子代理逐条核实（报告在本机 `.tmp/dead-code-claude-20261114/verify-c-*.md`，29 条全部成立），我再逐条对着当前代码读一遍才动手。每个修复都带测试，并且在旧代码上跑一遍确认它会失败（变异，或换回提交里的旧文件）；旧代码里不存在被测对象的除外。删除一律先做整词搜索。界面改动用隔离数据目录起服务、真实浏览器核对。
+
+### 11.1 A：第 5 节的 18 项
+
+| 编号 | 项目 | 结果 | 提交 |
+| --- | --- | --- | --- |
+| A1 | 智能选模 | 三端全部删除，分四步：桌面、Android 与 iPhone、共享策略模块。详见 11.4 | `61ee56aa` `0024b8cf` `721b5267` |
+| A2 | 记忆提供方栈 | 删除 `src/memory/providers/` | `15a109a9` |
+| A3 | 外部向量后端 | 删除三个提供方与 `POST /api/memory/connect`；`melo memory status` 改为探测真正在用的内置模型（B7） | `15a109a9` |
+| A4 | 旧版桌面搜索规划器 | 删除；依赖它的测试改走产品实际使用的规划器（`src/testSupport/searchPlanFixture.js`） | `15a109a9` |
+| A5 | 第二套记忆状态工具 | 删除 | `15a109a9` |
+| A6 | Browserless 预设与"未锁定版本" | 删除；每个预设必须指向确切版本的规则改由测试把关 | `07ac0f63` |
+| A7 | MCP 连接接口接受任意命令 | 删除这两个分支 | `15a109a9` |
+| A8 | Agent 身份行写进记忆库 | 停写。**更正**：我当时说"已写入的数据不动"，实际上派生索引下次同步会把快照里没有的行删掉，已有的身份行会随之消失。它们没有任何读取方 | `15a109a9` |
+| A9 | 五个小功能 | 插件的两个接口、HTTP 后台命令任务、技能自升级应用接口、OpenClaw 凭证回退已删。**两处与清单不同**：插件钩子本身（`src/plugins/hooks.js`）留着，回合生命周期在用；`searchTask.js` 没动，它的失败分支在用，成功分支的清理要连同 1,100 行测试一起重构，单独做更稳妥 | `07ac0f63` |
+| A10 | 只有测试在用的代码 | `buildReActSystemPrompt`、`persistChatRuntimeFields`、`detectImageGenIntent`（`openai.js` 改用同一份实现）、九个 Agent 动作、语音转写发送路径已删 | `07ac0f63` |
+| A11 | 记忆库 Stage-4 校验 | 证实是空操作后删除 | `15a109a9` |
+| A12 | 废纸篓恢复 | 新增 `file_restore` 工具，见 11.5。清除入口没有做（C13） | `35a9dd21` |
+| A14 | 离线压缩探测本地服务 | 只使用配置里写明的本机连接 | `15a109a9` |
+| A13、A15、A17、A18 | 聊天锁定、Telegram / Discord、素材、零碎 | 没动。这四项当时没有给出建议，等用户决定 | |
+| A16 | 旧版可视化 | 保留，并修好了它的四个毛病（C9） | `35a9dd21` |
+
+A6、A9、A10 改变了界面：系统工具页少了 Browserless 一行（"7 / 8 已启用"变成"7 / 7 已启用"）和两个一直为空的分节（"插件""后台命令任务"），Agent 页的 MCP 列表少了"browserless · 当前不可用"一行。清理前后 38 张截图，34 张逐像素一致，其余 4 张只差这一行。
+
+### 11.2 B：已核实的 12 项，全部修复（`aaf3d70b`）
+
+B1 社交链接读取只按"关闭"类文字、读屏名称和浮层内的小图标关闭弹层，规则只有一份（`src/web/overlayCloser.js`），两处读取器共用；B2 文件编辑按原文写入；B3 删除对话时同步清掉搜索库里的消息，历史搜索只返回仍存在的对话；B4 剪贴板写入；B5 大文件可以按行读取一段；B6"某日期之后"筛选生效；B7 随 A3；B8 `git pp` 推送的是评审过的那个提交，评审期间的新提交留在本地并提示；B9 英文句子不带句号也能记住；B10 工具参数 JSON 损坏时不执行并告诉模型；B11 退出时停止朗读；B12"我在腾讯工作"记为工作单位。
+
+### 11.3 C：27 条里修了 23 条（`35a9dd21`）
+
+| 编号 | 问题 | 修法 |
+| --- | --- | --- |
+| C1 | 桌面"开机启动"开不了 | 原生端用能识别布尔值的解析（`desktop-app/main.swift` `handleLocalSettings`）。要重新编译桌面壳才生效 |
+| C2 | Android 桌宠停在"想想看…"；失败保护只认旧工具名 | 两处等待改为超时返回空值并报出原因（`PetOverlayService.ask`、`PetDialogue.awaitState`）；三个手机工具名共用一份集合（`ChatPhoneUse.actionTools`） |
+| C3 | 流式回复卡住后提示不对，或半截回复被当成完整 | `readSseStream` 在读到结束时先看是不是看门狗取消的；空闲时钟在自己的回调执行期间不走。生图的流同样处理 |
+| C4 | 转写失败被缓存七天 | 占位结果不写缓存，已有的占位缓存不再生效（`src/media/index.js`） |
+| C5 | 没有类型的附件存成 `.bin` | 数据里没带类型时用附件声明的类型（`externalizeAttachment`） |
+| C6 | 流式回复时来源条重复 | 选择器写错了类名（`viewThread.js`） |
+| C7 | 朗读开关点一次保存两次 | 删掉点击分支，保留读取控件真实状态的那个 |
+| C9 | 旧版可视化四处 | 抛物线滑块、时间线标题、树的悬停说明、流程图连线；流程图的排版同时支持带回路的图 |
+| C10 | 记忆本报错写 1–2000 字 | 报错与输入框都按真实上限 600 |
+| C11 | `melo memory consolidate` 少两行统计 | 读对字段名 |
+| C12 | MCP 状态只分一种 | 启动失败显示"连接失败" |
+| C14 | PDF 工具的浏览器会话没人关 | 见 11.6，实际问题比报告大 |
+| C15 | MiniMax 生图传了取消信号就没有超时 | 请求和下载都同时受时限和取消约束 |
+| C16 | 辅助请求可能带上联网搜索 | 记忆提取、朗读改写、技能起草明确关闭 |
+| C17 | 仓库里的本机路径 | 从锁文件和写入脚本里去掉。已进入 Git 历史的那一份没有清，要清需要改写历史，由用户决定 |
+| C18 | 意图路由缓存与假绿测试 | 删除缓存、只为它存在的两个辅助函数和四条测试 |
+| C19 | "顶栏重叠"检查不可能失败 | 两端一起删除 |
+| C20 | 设置验收只记录不断言 | 补上两条有意义的比较（历史回复的角色名不变、只改提示词不改模型），当前都是绿的。另两组是诊断值，仍只记录 |
+| C21 | 冒烟脚本的"连续性"检查 | 在产品实际调用的 `buildDynamicContext` 上加了同一组断言。冒烟脚本里的旧检查没有删 |
+| C22 | 判断向量可用的函数调用了不存在的函数 | 删除这个没有产品调用方的函数 |
+| C25 | 韩文剥离的注释 | 改正注释，删除没人调用的 `stripKoreanForMinimax` 和它的 17 条测试 |
+| C26 | 未定义的样式变量 | 9 处里 8 处直接写成回退值（显示不变），剩下一处随 A1 删除 |
+| C27 | 文档里两个没人读的环境变量 | 从文档删除 |
+
+没有修的 4 条，都需要用户决定：
+
+- **C8 身份类记忆"以新代旧"从不生效**（`src/memory/dreaming/sweep.js` 把不带正文的行交给 `planIdentitySupersession`）。修好等于打开一个从未运行过的功能，它会把现有记忆里较旧的身份事实标为过期。要么这样打开，要么删掉 `supersede.js`。
+- **C13 废纸篓和备份只增不减**（`src/safety/trash.js`、`backup.js`）。代码里写明了"不自动删除、由用户明确清除"，缺的是清除入口。A12 只补了恢复。
+- **C23 IDENTITY.md / SOUL.md 的引导残留**（`src/state/stateStore.js` `readSnapshot` 的 `maintenance` 分支、`markdownSync.js` 的三个成员）。在状态加载路径上，正式数据目录恢复之前我没有动。
+- **C24 技能来源一律改成"自定义"**（`shared/agent/skill/skillService.js` `buildSkills`）。现在没有任何东西产生被抹掉的那个值；是否保留"内置技能包"的设计要先定。
+
+### 11.4 A1：智能选模的删除范围
+
+产品早已固定使用所选模型，但每个回合仍在创建一个被强制为"固定"的路由会话，并在循环里 14 处查询它。
+
+- 桌面（`61ee56aa`）：`prepareNode.js` 的会话、`invokeModelNode.js` 的 14 处（`melo_escalate` 工具、回合中途换模型、写操作的"强档"拒绝、深度任务加长预算）、`src/services/modelRouting/`、设置接口与设置页模块、模型选择器里的"智能（自动）"。
+- Android（`0024b8cf`）：`SmartRouting.kt`、`RoutingTranscript.kt` 与 `SharedChatAgent.kt` 里的十多处。它在"固定"模式下每次回复都调用一次共享内核，返回的就是传进去的模型。
+- iPhone（`0024b8cf`）：开关是写死的 `false`，整套代码静态不可达。删除两个文件和 `AgentLoop.swift`、`ChatStore.swift`、`Network.swift`、`ChatGPTAccount.swift` 里的引用；工程文件由 `ios/scripts/generate-project.py` 重新生成。
+- 共享内核（`721b5267`）：`shared/agent/modelRouting.js`、内核的 `modelRouting` 操作、`resolveLoopLimits` 的 `route` 参数、`reroute` 事件。内核包从 419,656 字节减到 408,558 字节。
+
+有意保留：以前的回复记录里的"智能选模"一行和旧执行记录的阶段名仍能显示；已保存的策略和停在"智能"的对话照常读取、不改写；同步格式仍带这个字段，手机和电脑不会互相丢字段；合同里的 `loop.deepTask.deadlineMs` 仍是桌面和 Android 的整轮运行期限。
+
+一处行为变化：配置里仍写着"智能"时，收到带图消息时的看图检查以前跳过"选择看图连接"这一步，现在与其它对话一样处理。
+
+手机端要重新安装才生效。
+
+### 11.5 A12：`file_restore`
+
+`file_delete` 一直对模型和用户说"可以恢复"，而恢复函数只有测试在调用。新增工具 `file_restore`（`src/tools/builtins/fileRestoreTool.js`）：`list` 列出可恢复的删除操作，`restore` 把一次操作的文件放回原处。
+
+- 一个对话只能看到、恢复在本对话或本工作区里删除的文件。废纸篓是整个数据目录共用的，不加这条界限，任何对话都能读到别的项目删过哪些文件。别处的操作编号与不存在的编号得到同一个回答。
+- 每个文件都经过与写文件相同的审批（`FileSafetyGate.requestWrite`）。恢复函数里不经审批的那条路径是给界面按钮用的，工具不会走到。
+- 原位置已经有文件时不覆盖，除非传 `overwrite: true`。
+- 它不清除任何东西；完整恢复的那次操作由 `trash.js` 从废纸篓移走，与原来一致。
+
+### 11.6 核实过程中另外发现并修掉的两个问题（`35a9dd21`）
+
+都是实际运行浏览器命令行时发现的，不在任何报告里。
+
+1. **macOS 上一个浏览器会话每个进程只能打开一次**（`src/web/playwrightFetcher.js` `runCli`）。命令行工具把每个会话的套接字放在临时目录下，路径加上 Melo 的会话名超过 macOS 允许的 103 字节，被内核截断；守护进程关闭时找不到自己的套接字，下一次 `open` 以 EADDRINUSE 失败。结果是服务启动后第一次空闲关闭（15 秒）之后，读网页和搜索的浏览器兜底一直不可用，没有任何提示；临时目录里留下了 422 个套接字文件。现在路径放不下时改用一个只有本用户能进入的短目录（`/tmp/melo-pw-<uid>`，创建后检查是真实目录、属主和权限，不符合就不用）。
+2. **PDF 工具的浏览器路径生成不了任何 PDF**（`src/tools/builtins/pdfTool.js` `htmlToPdfWithPlaywright`）。它让命令行打开 `file://` 地址并把输出路径当位置参数传，前者被命令行禁止，后者只会打印帮助。所以文字、Markdown、中日韩内容的 PDF 一直失败，每次还留下一个守护进程和一个无头浏览器。它的两条测试以"失败就返回"结尾，所以一直是绿的。现在经本机回环地址把文档交给浏览器、用锁定版本的共享会话（原来是 `@latest`）、渲染排队、完成后关闭会话。本地图片要内嵌进 HTML（工具说明原本就这样写）。
+
+顺带记一条写测试时踩到的：`node:test` 的 `skip` 选项传空字符串时，测试会照常执行但被报告为"已跳过"，失败不计数。
+
+### 11.7 D1（`d0e97c26`）
+
+29 个 `test:*` 命令原来直接执行 `node --test`。现在都经 `scripts/run-focused-tests.js`：在临时数据目录里走门禁的测试池，结束后删除目录；命令里列的文件匹配不到就报错（发现两个命令还列着当天已删除的测试）。`scripts/run-focused-tests.test.js` 不允许 `package.json` 里再出现直接执行的写法。
+
+### 11.8 读代码时看到、没有修的
+
+每条都没有做修复，只记位置：
+
+- 不带工具的 Responses 流如果服务端没发 `response.completed` 就断开，已收到的文字会被当成完整回复（`src/providers/streams.js` `readCodexSseResponse`）。Chat Completions 的读取器会拒绝这种情况。
+- 工作区路径经过符号链接时 `file_delete` 会拒绝（`src/safety/trash.js` 的逐级不跟随打开）。数据目录在带符号链接的路径下的用户会碰到；测试里是 macOS 的临时目录触发的。
+- `src/services/chat/conversationSelection.js` 仍接受并保存 `mode: 'smart'`（同步兼容），现在没有界面会发出它。
+- 手机发起的消息不进历史搜索索引；`chat_title` 返回时带中英文间的空格；"我在想…""我是说…"会被记成说话人事实（只影响已归档的 Telegram 发送者）；给 Camoufox 包装脚本的 Cookie 经命令行参数传递。
+- 在测试里启动另一个 `node --test` 而不清掉 `NODE_TEST_CONTEXT` 时，里层不运行任何测试且退出码为 0（`scripts/test-pool.js` 由门禁在测试之外调用，不受影响；写会启动测试的测试时要注意）。
+
+### 11.9 验证
+
+```bash
+# 完整校准（门禁脚本有改动）
+npm test -- --all
+# 推送前集成档
+npm test -- --base origin/master
+# Android 设备测试（无窗口模拟器，见 android/verification.md）
+ANDROID_SERIAL=emulator-5554 npm run test:android:connected
+# iPhone：全部 Swift 测试与模拟器整包编译（不签名、不安装）
+npm run test:ios
+xcodebuild -project ios/Melo.xcodeproj -scheme Melo -sdk iphonesimulator -configuration Debug -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+# 桌面壳只做类型检查，没有重新编译或安装
+xcrun swiftc -typecheck -parse-as-library -framework Cocoa -framework AVFoundation -framework Speech -framework WebKit -framework CoreLocation desktop-app/*.swift ios/Melo/VoiceInput.swift ios/Melo/SystemSpeechInput.swift
+```
+
+- 各批的快速档都是绿的：`run-51IH0G`、`run-1TMU4A`、`run-ClIJeA`、`run-CzstBd`、`run-U61UqY`、`run-lzFDKn`、`run-Vjfm49`、`run-W4E1bd`。
+- 完整校准 `npm test -- --all`，`run-QoQUog`：JS 5,162 项全部通过、没有跳过，Android 四项、全部 38 组 Swift、设置浏览器验收通过，239.9 秒。
+- 推送前集成档 `npm test -- --base origin/master`：`run-1a76gD`，包含本记录在内的工作树，九个阶段全部通过（文档链接、JS 5,162 项、Android 四项、全部 38 组 Swift、设置浏览器验收），242 秒。
+- Android 设备测试 143 项，138 通过。另外 5 项与本轮改动无关：2 项在无窗口模拟器上一直失败（需要 WebGL 帧、桌宠第二次双击），2 项是需要手动开启的真实模型测试，`DeviceAgentTest.changingTheActiveWindowRejectsEvenAnOtherwiseValidNode` 在机器同时编译 Swift 时失败、单独重跑通过。
+- iPhone 全部 38 组 Swift 测试通过，整个 App 的模拟器编译成功。
+- "自动朗读回复"开关用真实浏览器点了三次（两次鼠标、一次键盘），每次只发一次保存请求。
+
+### 11.10 没有做的
+
+- 桌面壳没有重新编译和安装，C1 和 C19 的原生部分要等下次重编才生效；手机没有重装，A1、C2、B9 在手机上同样要等重装。
+- 没有运行 `git pp` 的评审；按用户要求直接 `git push`。
+- 正式数据目录仍是 11-10 事故后的状态，本轮没有读写它（见第 8 节）。
