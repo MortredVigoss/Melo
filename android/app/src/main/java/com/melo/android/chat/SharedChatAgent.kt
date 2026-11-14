@@ -152,7 +152,6 @@ private fun toolPhase(name: String, organizer: Boolean) = when (name) {
     "read_history" -> "正在回读本对话原文…"
     "web_search" -> "正在搜索公开来源…"
     "calculator" -> "正在计算…"
-    "melo_escalate" -> "正在申请更强的模型…"
     else -> if (organizer) "正在处理待办与日历…" else "正在处理工具请求…"
 }
 
@@ -162,8 +161,8 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                       config: JsonObject, searchCredential: suspend (JsonObject) -> String, phoneEnabled: Boolean, runId: String, chatId: String,
                       imageData: (Attachment) -> String, invokePhone: suspend (JsonObject) -> DeviceToolResult,
                       onPhase: (String) -> Unit, onScene: suspend (JsonObject) -> Unit = {}, previousScenes: List<JsonObject?> = emptyList(),
-                      onDelta: (String) -> Unit = onPhase, contextLedger: JsonObject = buildJsonObject {}, historyEnabled: Boolean = true, onContextLedger: suspend (JsonObject) -> Unit = {}, routingConfig: SmartRoutingConfig? = null, onRoutedConnection: (Connection, String) -> Unit = { _, _ -> }, workflowCatalog: suspend () -> List<JsonObject> = { emptyList() }, invokeWorkflow: (suspend (JsonObject) -> DeviceToolResult)? = null, invokeDevice: (suspend (JsonObject) -> DeviceToolResult)? = null, validateOwner: () -> Unit = {}): ModelReply = LoopTrace.run(context, runId, "chat", messages.lastOrNull { it.role == "user" }?.content.orEmpty(), outcome = { it.outcome }) { SharedCoreRuntime.open(context).use { runtime ->
-        ReplySession(runtime, connection, key, messages, instructions, config, searchCredential, phoneEnabled, runId, chatId, imageData, invokePhone, onPhase, onScene, previousScenes, onDelta, contextLedger, historyEnabled, onContextLedger, routingConfig, onRoutedConnection, workflowCatalog, invokeWorkflow, invokeDevice, validateOwner).run()
+                      onDelta: (String) -> Unit = onPhase, contextLedger: JsonObject = buildJsonObject {}, historyEnabled: Boolean = true, onContextLedger: suspend (JsonObject) -> Unit = {}, workflowCatalog: suspend () -> List<JsonObject> = { emptyList() }, invokeWorkflow: (suspend (JsonObject) -> DeviceToolResult)? = null, invokeDevice: (suspend (JsonObject) -> DeviceToolResult)? = null, validateOwner: () -> Unit = {}): ModelReply = LoopTrace.run(context, runId, "chat", messages.lastOrNull { it.role == "user" }?.content.orEmpty(), outcome = { it.outcome }) { SharedCoreRuntime.open(context).use { runtime ->
+        ReplySession(runtime, connection, key, messages, instructions, config, searchCredential, phoneEnabled, runId, chatId, imageData, invokePhone, onPhase, onScene, previousScenes, onDelta, contextLedger, historyEnabled, onContextLedger, workflowCatalog, invokeWorkflow, invokeDevice, validateOwner).run()
     } }
 
     private inner class ReplySession(
@@ -174,7 +173,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
         private val invokePhone: suspend (JsonObject) -> DeviceToolResult, private val onPhase: (String) -> Unit,
         private val onScene: suspend (JsonObject) -> Unit, private val previousScenes: List<JsonObject?>,
         private val onDelta: (String) -> Unit, private val contextLedger: JsonObject, private val historyEnabled: Boolean,
-        private val onContextLedger: suspend (JsonObject) -> Unit, private val routingConfig: SmartRoutingConfig?, private val onRoutedConnection: (Connection, String) -> Unit,
+        private val onContextLedger: suspend (JsonObject) -> Unit,
         private val workflowCatalog: suspend () -> List<JsonObject>, private val invokeWorkflow: (suspend (JsonObject) -> DeviceToolResult)?,
         private val invokeDevice: (suspend (JsonObject) -> DeviceToolResult)?,
         private val validateOwner: () -> Unit,
@@ -211,8 +210,6 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
         // The ids of every tool call of this reply, the lead's and the members'; see DeviceAgentClient.identified.
         private val callIds: MutableSet<String> = java.util.Collections.synchronizedSet(mutableSetOf())
         private var anthropicModelPrefix: String? = null
-        private var routing: SmartRouting? = null
-        private var requestedUpgrade = false
         private var replyLocale = "en"
         private var goalState: JsonObject? = null
         private var lastCandidate: DeviceTurn? = null
@@ -246,11 +243,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
             budget = SharedRunBudget.open(runtime)
             budget.reserveDelivery()
             transport = DeviceAgentClient(debug, client.http)
-            routing = routingConfig?.let { SmartRouting(runtime, it, connection, messages) }
-            routing?.prepare(transport, budget) { id, output, status -> journal.event(id, "智能选模", output = output, status = status) }
-            routing?.let { connection = it.connection(); key = it.key(); onRoutedConnection(connection, key) }
-            val loopLimits = runtime.value("loopLimits", buildJsonObject { put("limits", buildJsonObject { config["maxTaskIterations"]?.let { put("maxIterations", it) }; routing?.decision?.let { put("route", it) } }) }).jsonObject
-            if (routing?.decision?.get("deepTask")?.jsonPrimitive?.booleanOrNull == true) budget.configureDeepTask(loopLimits)
+            val loopLimits = runtime.value("loopLimits", buildJsonObject { put("limits", buildJsonObject { config["maxTaskIterations"]?.let { put("maxIterations", it) } }) }).jsonObject
             capturedConfig = runtime.value("config", buildJsonObject { put("config", config) }).jsonObject
             val hosted = if (connection.protocol == "responses") HostedSearchAdapter.capability(runtime, connection, key) else "unknown"
             plan = runtime.value("plan", buildJsonObject { put("request", buildJsonObject {
@@ -281,7 +274,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
             if (historyEnabled) onContextLedger(prepared.ledger)
             journal.event("context", "上下文预算", output = "模型容量 ${connection.contextTokens} tokens；近窗 ${prepared.messages.size}/${messages.size} 条，原文保留；历史回读${if (historyEnabled) "开启" else "关闭"}。", status = "completed")
             names = (plan.strings("availableTools") + if (historyEnabled && prepared.omitted && plan["toolsForbidden"]?.jsonPrimitive?.booleanOrNull != true) listOf("read_history") else emptyList()).distinct()
-            journal.event("tools", "本轮工具目录", output = "registeredTools=" + (names + (if (routing?.active == true) listOf("melo_escalate") else emptyList()) + (if (plan["nativeSearchAvailable"]?.jsonPrimitive?.booleanOrNull == true) listOf("native_web_search") else emptyList())).joinToString(", "), status = "completed")
+            journal.event("tools", "本轮工具目录", output = "registeredTools=" + (names + (if (plan["nativeSearchAvailable"]?.jsonPrimitive?.booleanOrNull == true) listOf("native_web_search") else emptyList())).joinToString(", "), status = "completed")
             history = ChatPhoneUse.history(prepared.messages, connection.protocol, imageData)
             currentChainStart = history.indexOfLast { it.text("role") == "user" }
             search = SharedSearchAdapter(debug, client.http)
@@ -297,7 +290,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                 val limits = runtime.value("internalRouting", buildJsonObject { put("action","limits") }).jsonObject
                 assignmentLimit = limits.getValue("assignments").jsonPrimitive.int
             }
-            return SharedCoreTurn.open(context, runId, chatId, (names + if (internalCatalog != null) listOf("calculator") else emptyList()) + if (routing?.active == true) listOf("melo_escalate") else emptyList(), budget = budget, rounds = loopLimits.getValue("maxIterations").jsonPrimitive.int, finalReport = true, timeoutMs = budget.remaining().coerceAtLeast(1).toInt(), requiredTools = plan.strings("requiredTools"), toolDependencies = plan["toolDependencies"]?.jsonObject ?: buildJsonObject {}).use { turn ->
+            return SharedCoreTurn.open(context, runId, chatId, names + if (internalCatalog != null) listOf("calculator") else emptyList(), budget = budget, rounds = loopLimits.getValue("maxIterations").jsonPrimitive.int, finalReport = true, timeoutMs = budget.remaining().coerceAtLeast(1).toInt(), requiredTools = plan.strings("requiredTools"), toolDependencies = plan["toolDependencies"]?.jsonObject ?: buildJsonObject {}).use { turn ->
                 try { execute(turn) } finally { memberTurn?.close(); memberTurn = null }
             }
         } catch (caught: Throwable) {
@@ -518,7 +511,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                 rootTurn = lead
                 var turn = lead
                 val nativeSearch = plan["nativeSearchAvailable"]?.jsonPrimitive?.booleanOrNull == true
-                if (!nativeSearch && names.isEmpty() && routing?.active != true) {
+                if (!nativeSearch && names.isEmpty()) {
                     journal.event("model:reply", "模型回复", model = connection.model)
                     onPhase(if (plan.text("reason") == "execution-explanation") "正在核对上轮执行记录…" else "正在生成回复…")
                     currentChainStart = contextPolicy.fit(history, currentChainStart, taskInstructions, emptyList())
@@ -530,24 +523,13 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                     answer.publicSummary?.takeIf(String::isNotBlank)?.let { journal.event("model:reply:summary", "模型公开摘要", output = it, status = "completed", channel = "reasoning-summary") }
                     return finish(answer.text, answer.model, answer.outcome, answer.stopReason)
                 }
-                val specs = runtime.value("catalog", buildJsonObject { put("names", JsonArray(names.map { JsonPrimitive(it) })) }).jsonArray.map { it.jsonObject } + if (routing?.active == true) listOf(SmartRouting.control) else emptyList()
+                val specs = runtime.value("catalog", buildJsonObject { put("names", JsonArray(names.map { JsonPrimitive(it) })) }).jsonArray.map { it.jsonObject }
                 val calculatorSpec = runtime.value("catalog", buildJsonObject { put("names",JsonArray(listOf(JsonPrimitive("calculator")))) }).jsonArray.first().jsonObject
                 var succeeded = plan.text("route") == "hosted-search"
                 while (lead.active) {
                     turn = memberTurn ?: lead
                     try {
                     currentCoroutineContext().ensureActive()
-                    if (internalJob != null && requestedUpgrade) handoff("Action deferred to the lead for model escalation; it has not executed.", true, shown = "这一步已交回主 Agent 处理，尚未执行。")
-                    if (internalJob == null && routing?.escalate(turn.rounds, turn.failures, requestedUpgrade, !turn.active) == true) {
-                        val previousProtocol = connection.protocol
-                        val nextConnection = routing!!.connection()
-                        if (nextConnection.protocol != previousProtocol) history = RoutingTranscript.convert(history, previousProtocol, nextConnection.protocol).toMutableList()
-                        connection = nextConnection; key = routing!!.key(); onRoutedConnection(connection, key)
-                        contextPolicy = ChatContext(runtime, connection.contextTokens)
-                        turn.event("reroute")
-                        journal.event("model-routing:1", "智能升档", model = connection.model, status = "completed")
-                    }
-                    requestedUpgrade = false
                     if (internalJob != null && (turn.roundsLeft <= 0 || !turn.active || turn.budget.exhausted())) handoff("Member round budget reached.", true, true, shown = "成员用完了这次的轮数或额度，已把查到的内容交回主 Agent。")
                     turn = memberTurn ?: lead
                     val job = internalJob
@@ -625,13 +607,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                             // "UNKNOWN_TOOL; finish the prerequisite retrieval first" while the lead holds no retrieval tool.
                             if (scopedCalls.size > 1) "route_task and task_progress are answered only when called alone, one call per response. Nothing was assigned or recorded: send that single call by itself."
                             else routeRefusal ?: "This call cannot be answered now. Continue as the lead with the gathered results.", "ROUTE_DENIED")
-                        else if (!turn.permits(call.id)) turn.rejection(call.id).ifBlank { turn.reason.ifBlank { "TURN_CLOSED" } }.let { code -> DeviceToolResult.error(refusedCall(code, turn.rejectionNote(call.id)), code) } else if (routing?.active == true && routing!!.decision.text("tier") != "strong" && runtime.value("toolEffect", buildJsonObject { put("name", call.name); put("arguments", call.arguments) }).jsonPrimitive.content in setOf("write", "unknown")) {
-                            routing!!.sideEffects = true; requestedUpgrade = true
-                            DeviceToolResult.error("本步尚未执行，需要强档模型；请保留已有结果，等待升档或配置强档。", "ROUTING_REQUIRES_STRONG")
-                        } else if (call.name == "melo_escalate" && routing?.active == true) {
-                            requestedUpgrade = true
-                            DeviceToolResult(buildJsonObject { put("ok", true); put("status", "requested"); put("summary", "Continue from existing results; do not repeat completed actions.") })
-                        } else if (prefetched != null) withContext(LoopTrace.ToolScope(call.id)) {
+                        else if (!turn.permits(call.id)) turn.rejection(call.id).ifBlank { turn.reason.ifBlank { "TURN_CLOSED" } }.let { code -> DeviceToolResult.error(refusedCall(code, turn.rejectionNote(call.id)), code) } else if (prefetched != null) withContext(LoopTrace.ToolScope(call.id)) {
                             // Already loading beside the other reads of this batch: validated, admitted and traced when it started.
                             executed = true
                             search.page(runtime, call.arguments, prefetched.await())

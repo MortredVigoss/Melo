@@ -38,7 +38,8 @@ class ChatEngine(private val context: Context, val repository: Repository) {
         val chat = state.chats.find { it.id == chatId }
         val connectionId = chat?.connectionId ?: state.settings.activeConnection
         val agentModel = state.agents.find { it.id == chat?.agentId }?.model.orEmpty()
-        val mode = "fixed" // Automatic model selection is disabled, including legacy settings.
+        // The model this chat runs on: its own choice, else its Agent's. Automatic selection between models is retired;
+        // a chat that was left on "smart" follows its Agent's model.
         val fixedModel = if (chat?.modelMode == "smart" && agentModel.isNotBlank()) agentModel else chat?.model?.takeIf(String::isNotBlank) ?: agentModel
         val connection = state.settings.connections.find { it.id == connectionId }?.let { if (fixedModel.isBlank()) it else it.copy(model = fixedModel) }
         val instructions = chat?.let { repository.instructions(it, state) }.orEmpty()
@@ -71,10 +72,6 @@ class ChatEngine(private val context: Context, val repository: Repository) {
                 checkpoint = launch {
                     while (isActive) { delay(1000); val partial = mutable.value.turns[chatId]?.partial.orEmpty(); repository.change { current -> current.copy(runs = current.runs.map { if (it.id == run.id && it.status == "running") it.copy(partial = partial) else it }) } }
                 }
-                val routingKeys = mapOf(connection.id to key)
-                var executionConnection: Connection = connection
-                var executionKey = key
-                val routing = SmartRoutingConfig(mode, JsonObject(state.settings.smartRouting + mapOf("defaultMode" to JsonPrimitive("fixed"), "allowCrossConnection" to JsonPrimitive(false), "allowEscalation" to JsonPrimitive(false))), listOf(connection), routingKeys, fixedModel)
                 val selected = if (retry) chat.messages.take(chat.messages.indexOfLast { it.id == message.id } + 1) else chat.messages + message
                 val result = withContext(Dispatchers.IO) {
                     if (connection.protocol == "fixture") client.reply(connection, key, selected, instructions, repository::imageData) { partial -> updateTurn(chatId) { it.copy(partial = partial) } }
@@ -87,7 +84,7 @@ class ChatEngine(private val context: Context, val repository: Repository) {
                                 val research = args.text("purpose") == "research"
                                 val researchInstructions = if (research) "\nThis is a live research task. Read the requested facts from current pages and return the findings, app/source, any visible useful links/addresses, and uncertainties in finish.summary (up to 2000 characters). Opening an app alone is not the research goal. Do not send messages, book, purchase or modify account/settings. Never fabricate facts or links. Current device time: ${java.time.ZonedDateTime.now()}." else ""
                                 val receipt = (context.applicationContext as com.melo.android.MeloApplication).deviceAgent.invoke(
-                                    args.text("goal"), research, ChatDeviceContext(chat, executionConnection, executionKey, instructions + researchInstructions, run.id, currentCoroutineContext()[com.melo.android.core.SharedRunBudget.Scope]?.budget, scopeInstructions = instructions))
+                                    args.text("goal"), research, ChatDeviceContext(chat, connection, key, instructions + researchInstructions, run.id, currentCoroutineContext()[com.melo.android.core.SharedRunBudget.Scope]?.budget, scopeInstructions = instructions))
                                 currentCoroutineContext().ensureActive()
                                 if (research && receipt.ok) withContext(Dispatchers.Main) {
                                     runCatching { context.startActivity(Intent(context, com.melo.android.MainActivity::class.java).putExtra("melo_chat_id", chatId).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)) }
@@ -99,21 +96,21 @@ class ChatEngine(private val context: Context, val repository: Repository) {
                             },
                             invokeDevice = { args ->
                                 (context.applicationContext as com.melo.android.MeloApplication).deviceAgent.action(args,
-                                    ChatDeviceContext(chat, executionConnection, executionKey, instructions, run.id),
+                                    ChatDeviceContext(chat, connection, key, instructions, run.id),
                                     turns.getValue(chatId))
                             },
                             workflowCatalog = {
                                 PhoneWorkflowHost(context, repository, (context.applicationContext as com.melo.android.MeloApplication).deviceAgent,
-                                    ChatDeviceContext(chat, executionConnection, executionKey, instructions, run.id)).catalog()
+                                    ChatDeviceContext(chat, connection, key, instructions, run.id)).catalog()
                             },
                             invokeWorkflow = { args ->
                                 PhoneWorkflowHost(context, repository, (context.applicationContext as com.melo.android.MeloApplication).deviceAgent,
-                                    ChatDeviceContext(chat, executionConnection, executionKey, instructions, run.id), owner = turns.getValue(chatId)).invoke(args)
+                                    ChatDeviceContext(chat, connection, key, instructions, run.id), owner = turns.getValue(chatId)).invoke(args)
                             },
                             onPhase = { phase -> updateTurn(chatId) { it.copy(phase = phase) } },
                             onDelta = { partial -> updateTurn(chatId) { it.copy(partial = partial) } },
                             previousScenes = if (historyEnabled) state.runs.filter { it.chatId == chatId }.takeLast(3).map { it.sharedScene } else emptyList(),
-                            historyEnabled = historyEnabled, contextLedger = chat.contextLedger, routingConfig = routing, onRoutedConnection = { c, k -> executionConnection = c; executionKey = k },
+                            historyEnabled = historyEnabled, contextLedger = chat.contextLedger,
                             onContextLedger = { ledger -> repository.change { current -> current.copy(chats = current.chats.map { if (it.id == chatId) it.copy(contextLedger = ledger) else it }) } },
                             onScene = { scene -> repository.change { current -> current.copy(runs = current.runs.map { if (it.id == run.id && it.status == "running") it.copy(sharedScene = scene) else it }) } },
                         )

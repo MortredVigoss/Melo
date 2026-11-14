@@ -554,21 +554,10 @@ import SwiftUI
         let isCurrent: @MainActor () -> Bool = { [weak self] in self?.runs[chatID]?.attempt == attempt }
         let requested = useChatGPT ? chatGPTModel : plan.makesImage ? plan.model : model
         let deviceScope = DeviceToolPolicy.load().enabled.map(\.rawValue).sorted().joined(separator: ",")
-        var bindingFields: [String] = [chatID, selectedAgent.id, project(for: chatID)?.id ?? "", selectedConnection?.id ?? "",
+        let bindingFields: [String] = [chatID, selectedAgent.id, project(for: chatID)?.id ?? "", selectedConnection?.id ?? "",
                              useChatGPT ? account.activeID ?? "chatgpt" : endpoint, requested, apiProtocol,
                              useChatGPT ? "" : PhoneCoreTurn.fingerprint(key), leadSnapshot.map(\.rawValue).sorted().joined(separator: ","),
                              deviceScope]
-        let routingPolicy = PhoneRoutingPolicy.read()
-        let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
-        if PhoneRoutingPolicy.isEnabled, (choice?.mode ?? (choice == nil ? routingPolicy.defaultMode : "fixed")) == "smart", selectedAgent.model?.isEmpty != false {
-            do {
-                bindingFields.append(try encoder.encode(routingPolicy).base64EncodedString())
-                bindingFields.append(account.activeID ?? "")
-                for connection in try loadConnections().sorted(by: { $0.id < $1.id }) {
-                    bindingFields += [connection.id, connection.baseURL, connection.apiProtocol, PhoneCoreTurn.fingerprint(connection.key)]
-                }
-            } catch { fail(error.localizedDescription); return }
-        }
         let binding = PhoneCoreTurn.fingerprint(bindingFields.map { String($0.utf8.count) + ":" + $0 }.joined())
         var record: ExecutionRecord
         var saved: ReplyCheckpoint
@@ -750,21 +739,15 @@ import SwiftUI
                 // The same phone tools (device data + web pages) on every connection.
                 let phoneTools = plan.makesImage ? nil : deviceToolContext(runID: record.runId, binding: elevationBinding(runID: record.runId, agent: selectedAgent, parent: nil, chatID: chatID, ownSnapshot: leadSnapshot, parentSnapshot: nil, budget: runBudget),
                                                                            surfaceAtStart: surfaceAtStart, chatID: chatID, screenshots: screenshots, showsScreenshots: WebPageText.userWantsScreenshot(clean), readHistory: selectedAgent.contextSources?["memory"].bool != false)
-                var routedHooks = loopHooks
-                if !plan.makesImage && teamPlan == nil && replyLoader == nil {
-                    routedHooks.routing = try smartRoutingHost(choice: choice, agent: selectedAgent, messages: modelHistory, history: history, instructions: instructions, images: modelImages, phoneTools: phoneTools, chatID: chatID, runID: record.runId, allowWeb: phonePermissions.allows(selectedAgent.id, .network), allowImages: resuming == nil && phonePermissions.allows(selectedAgent.id, .generateMedia), onObservation: { observation in if isCurrent() { self.observe(observation, runID: record.runId) } }, onSelection: { model in
-                        if let index = self.executionRecords.firstIndex(where: { $0.runId == record.runId }), !self.executionRecords[index].terminal { self.executionRecords[index].requestedModel = model }
-                    })
-                }
                 if plan.separately == true && plan.references.count > 1 { reply = try await editEachPhoto(plan, prompt: clean, history: modelHistory, instructions: instructions, runID: record.runId, useChatGPT: useChatGPT, codexModel: chatGPTModel, endpoint: endpoint, key: key) }
                 else if let teamPlan { reply = try await runTeam(teamPlan, task: clean, lead: selectedAgent, runID: record.runId, permissions: phonePermissions, budget: teamBudget, agents: teamAgents, context: resolvedContext, memory: memoryText, background: AgentTeam.background(messages: modelHistory, compact: ""), compact: compactSummary, ask: ask) }
                 else if let replyLoader { reply = try await replyLoader(modelHistory, instructions) }
-                else if useChatGPT { reply = try await account.reply(messages: modelHistory, requestHistory: history, model: chatGPTModel, instructions: instructions, imageInputs: modelImages, imageTask: plan, deviceTools: phoneTools, allowWebSearch: phonePermissions.allows(selectedAgent.id, .network), allowImageTool: resuming == nil && phonePermissions.allows(selectedAgent.id, .generateMedia), statusKey: chatID, cacheKey: ChatGPTRequest.cacheKey(chatID: chatID, agentID: selectedAgent.id), budget: runBudget, verification: verification, hooks: routedHooks, onObservation: { observation in if isCurrent() { self.observe(observation, runID: record.runId) } }, onReceiving: { replyBackground.update(runID: record.runId, completed: 1, subtitle: "回复中") }) }
+                else if useChatGPT { reply = try await account.reply(messages: modelHistory, requestHistory: history, model: chatGPTModel, instructions: instructions, imageInputs: modelImages, imageTask: plan, deviceTools: phoneTools, allowWebSearch: phonePermissions.allows(selectedAgent.id, .network), allowImageTool: resuming == nil && phonePermissions.allows(selectedAgent.id, .generateMedia), statusKey: chatID, cacheKey: ChatGPTRequest.cacheKey(chatID: chatID, agentID: selectedAgent.id), budget: runBudget, verification: verification, hooks: loopHooks, onObservation: { observation in if isCurrent() { self.observe(observation, runID: record.runId) } }, onReceiving: { replyBackground.update(runID: record.runId, completed: 1, subtitle: "回复中") }) }
                 else if plan.makesImage {
                     reply = try await ImageNetwork.reply(prompt: clean, task: plan, inputs: imageInputs, endpoint: endpoint, token: key, onObservation: { self.observe($0, runID: record.runId) })
                 } else {
                     defer { account.setReplyStatus(nil, for: chatID) }
-                    reply = try await Network.reply(messages: modelHistory, requestHistory: history, endpoint: endpoint, model: model, token: key, instructions: instructions, apiProtocol: apiProtocol, imageInputs: modelImages, modelCapabilities: connectionCapabilities, tools: phoneTools?.toolSet, budget: runBudget, verification: verification, hooks: routedHooks, onObservation: { observation in if isCurrent() { self.observe(observation, runID: record.runId) } }, onStatus: { status in self.account.setReplyStatus(status, for: chatID) })
+                    reply = try await Network.reply(messages: modelHistory, requestHistory: history, endpoint: endpoint, model: model, token: key, instructions: instructions, apiProtocol: apiProtocol, imageInputs: modelImages, modelCapabilities: connectionCapabilities, tools: phoneTools?.toolSet, budget: runBudget, verification: verification, hooks: loopHooks, onObservation: { observation in if isCurrent() { self.observe(observation, runID: record.runId) } }, onStatus: { status in self.account.setReplyStatus(status, for: chatID) })
                 }
                 try Task.checkCancellation()
                 replyBackground.update(runID: record.runId, completed: 2, subtitle: "保存中")

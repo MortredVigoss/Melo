@@ -278,7 +278,6 @@ struct AgentLoopHooks {
     /// The Agent's task depth; unset Agents use TASK_EVALUATION_POLICY.defaultMode.
     var evaluationMode: String = "quick"
     var traceRunID: String? = nil
-    var routing: PhoneRoutingHost? = nil
     var onStatus: (@MainActor (String) -> Void)? = nil
     var onStage: (@MainActor (_ id: String, _ name: String, _ status: String, _ output: String) -> Void)? = nil
     /// Task space (plan C): the same stage with its member role, round limit and
@@ -403,7 +402,7 @@ final class AgentLoop: @unchecked Sendable {
 
         var screenshots = hooks.resumeCursor?.screenshots ?? 0
         let permittedDefinitions = (tools?.definitions ?? []).filter { ChatGPTRequest.allowsTool($0.name, messages: goalHistory.isEmpty ? [ChatMessage(role: "user", content: latestUserMessage)] : goalHistory) }
-        var offered = Set(permittedDefinitions.map(\.name) + (hooks.routing == nil ? [] : ["melo_escalate"]))
+        var offered = Set(permittedDefinitions.map(\.name))
         if let exhausted = budget.exhausted(), exhausted.reason == "policy-unavailable" {
             return AgentLoopOutcome(text: await exhaustedStop(exhausted), stop: .budget, finalRound: nil, sources: sources, searched: searched, calls: records)
         }
@@ -431,21 +430,13 @@ final class AgentLoop: @unchecked Sendable {
             completionObservations.removeFirst(dropped)
             observationsAtStart = max(0, observationsAtStart - dropped)
         }
-        var transport = self.transport
+        let transport = self.transport
         // A continued reply restores its observations, sources and candidate answer further down, and
         // the loop's own budget check then stops it with that saved work. Stopping here, before the
         // restore, wrote the limit notice from nothing and dropped all of it (2026-11-10).
         if hooks.resumeCursor == nil, let exhausted = budget.exhausted() {
             let text = await exhaustedStop(exhausted)
             return try await deliverLimit("BUDGET_EXHAUSTED", fallback: text, transport: transport, sources: sources, searched: searched, records: records, iteration: 0)
-        }
-        if let routing = hooks.routing {
-            transport = try await routing.prepare(budget: budget, stage: hooks.onStage)
-            if PhoneMemberLimits.current == nil, routing.session.decision["deepTask"] as? Bool == true,
-               let limits = SharedLoopPolicy.value("loopLimits", ["limits": ["route": routing.session.decision]]) as? [String: Any] {
-                maxIterations = limits["maxIterations"] as? Int ?? maxIterations
-                budget.configureDeepTask(limits)
-            }
         }
 
         let leadCore = try PhoneCoreTurn(tools: Array(offered), rounds: maxIterations, callsPerRound: maxCallsPerResponse, timeoutMs: budget.remainingMs())
@@ -584,11 +575,6 @@ final class AgentLoop: @unchecked Sendable {
                 let text = await exhaustedStop(exhausted)
                 return try await deliverLimit("BUDGET_EXHAUSTED", fallback: text, pending: candidateRound, transport: transport, sources: sources, searched: searched, records: records, iteration: iteration)
             }
-            if job != nil && hooks.routing?.requested == true { await finishJob("Action deferred to the lead for model escalation; it has not executed.", limited:true) }
-            if job == nil, !goal.checking, let routing = hooks.routing, let next = try await routing.upgrade(rounds: core.rounds, failures: core.failures, stopped: !core.active, stage: hooks.onStage) {
-                transport = next
-                try core.event("reroute")
-            }
             if job == nil && core.rounds >= maxIterations && !goal.checking {
                 return try await deliverLimit("ROUND_LIMIT", fallback: core.reply(latestUserMessage), transport: transport, sources: sources, searched: searched, records: records, iteration: iteration)
             }
@@ -603,7 +589,7 @@ final class AgentLoop: @unchecked Sendable {
             var condensed = false
             while true {
                 let review = checkingGoal ? try goal.update("request", ["observations": completionObservations]) : nil
-                let request = AgentLoopRequest(iteration: iteration, transcript: transcript, timeout: budget.requestTimeout(cap: transport.timeoutCap), remainingTokens: nil, goalReview: review, repairing: goal.repairing || hooks.routing?.session.escalated == true, progressDefinition: catalog != nil && job == nil ? progressDefinition : nil, internalDefinition: catalog != nil && job == nil && assignments.count < (routeLimits?["assignments"] ?? 0) ? definition : nil, internalJob: job, continuation: continuationID.map { String($0.prefix(6)).lowercased() } ?? "", leadWithheld: job == nil ? Self.leadWithheld(catalog) : [])
+                let request = AgentLoopRequest(iteration: iteration, transcript: transcript, timeout: budget.requestTimeout(cap: transport.timeoutCap), remainingTokens: nil, goalReview: review, repairing: goal.repairing, progressDefinition: catalog != nil && job == nil ? progressDefinition : nil, internalDefinition: catalog != nil && job == nil && assignments.count < (routeLimits?["assignments"] ?? 0) ? definition : nil, internalJob: job, continuation: continuationID.map { String($0.prefix(6)).lowercased() } ?? "", leadWithheld: job == nil ? Self.leadWithheld(catalog) : [])
                 do {
                     let roundTransport = transport
                     round = try await LoopTrace.model(purpose: checkingGoal ? "goal-check" : "loop", input: ["iteration":iteration,"toolNames":Array(offered),"loadedToolInstructions":tools?.instructionsWithContract ?? ""], snapshot: { value in
@@ -683,7 +669,7 @@ final class AgentLoop: @unchecked Sendable {
             }
             if round.searched { boundObservations() }
             searched = searched || round.searched
-            let calls = (transport.offersTools && (tools != nil || hooks.routing != nil) || catalog != nil) ? round.calls : []
+            let calls = (transport.offersTools && tools != nil || catalog != nil) ? round.calls : []
             if job == nil, !calls.isEmpty { carriedImages += round.images }
             if job == nil, catalog != nil, calls.count == 1, let call = calls.first, call.name == "task_progress" {
                 let args = (try? JSONSerialization.jsonObject(with: Data(call.arguments.utf8))) as? [String:Any] ?? [:]
@@ -817,12 +803,6 @@ final class AgentLoop: @unchecked Sendable {
                 } else if offered.contains(call.name), let prior = hooks.resumeCursor?.receipts[key] {
                     // Enforce the current specialist's scope before showing a previous receipt.
                     outcome = PhoneToolEnvelope.parse(prior)
-                } else if let routing = hooks.routing, routing.session.decision["tier"] as? String != "strong", ["write", "unknown"].contains(PhoneCoreTurn.effect(call.name, arguments: call.arguments)) {
-                    routing.sideEffects = true; routing.requested = true
-                    outcome = PhoneToolEnvelope.finalize(ok: false, error: "ROUTING_REQUIRES_STRONG", output: "This action has not executed. A configured strong tier is required. Continue from existing results after routing, or ask the user to configure the strong tier.")
-                } else if call.name == "melo_escalate", let routing = hooks.routing {
-                    routing.requested = true
-                    outcome = PhoneToolEnvelope.finalize(ok: true, output: "Routing request recorded. Continue from existing results; do not repeat successful effects.")
                 } else if call.name == WebPageToolSpec.screenshot, screenshots >= WebPageText.maxScreenshotsPerReply {
                     outcome = PhoneToolEnvelope.parse(WebPageText.tooManyScreenshots(url: call.urlArgument))
                 } else if pageReads[call.callID] == nil, let exhausted = budget.admitTool() {
@@ -1075,7 +1055,7 @@ final class AgentLoop: @unchecked Sendable {
         outcome.text = parsed.cleanReply
         guard parsed.hasMarker else { return }
         var classification = verification.classification
-        let transport = hooks.routing?.currentTransport ?? self.transport
+        let transport = self.transport
         if classification.taskType == nil { classification.taskType = "factual" }
         guard classification.requiresVerification else { return }
         // The completion check already judged this exact claim against the

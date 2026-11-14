@@ -170,24 +170,6 @@ enum Network {
     /// One reply on an API-key connection (chat-completions or Anthropic). The
     /// request body without tools is unchanged; with phone tools the turn runs
     /// through AgentLoop (same limits, budget, envelopes and finalize as the desktop).
-    static func routingTransport(messages: [ChatMessage], endpoint: String, model: String, token: String, instructions: String, apiProtocol: String, imageInputs: [ImageInput], modelCapabilities: [String: Bool] = [:], tools: AgentLoopTools?, onObservation: (@MainActor (ExecutionObservation) -> Void)?) throws -> APIChatTransport {
-        var tools = tools
-        let permittedDefinitions = tools?.definitions.filter { ChatGPTRequest.allowsTool($0.name, messages: messages) } ?? []
-        tools?.definitions = permittedDefinitions
-        if !imageInputs.isEmpty, modelCapabilities["vision"] == false { throw MeloError.message("此模型已设为不支持图片输入，请选择视觉模型或修改能力设置。") }
-        let anthropic = apiProtocol == "anthropic"
-        let definitions = (tools?.definitions ?? []) + [PhoneRoutingHost.control]
-        let prompt = systemLine(toolInstructions: tools?.instructionsWithContract) + instructions
-        let rows = ImageRequestBody.chat(messages: messages, inputs: imageInputs, anthropic: anthropic, instructions: instructions)
-        var body: [String: Any] = ["model": model, "stream": false, "messages": [["role": "system", "content": prompt]] + rows, "tools": definitions.map(\.chatCompletionsDefinition), "tool_choice": "auto"]
-        var headers: [String: String] = [:]
-        if anthropic {
-            body = ["model": model, "stream": false, "max_tokens": 8192, "system": prompt, "messages": rows, "tools": definitions.map(\.anthropicDefinition)]
-            headers = ["x-api-key": token, "anthropic-version": "2023-06-01"]
-        }
-        return APIChatTransport(url: try self.endpoint(endpoint), token: token, headers: headers, session: session, anthropic: anthropic, apiProtocol: apiProtocol, model: model, base: body, offersTools: true, onObservation: onObservation)
-    }
-
     static func reply(messages: [ChatMessage], requestHistory: [ChatMessage]? = nil, endpoint: String, model: String, token: String, instructions: String = "", apiProtocol: String = "chat-completions", imageInputs: [ImageInput] = [], modelCapabilities: [String: Bool] = [:], tools: PhoneToolSet? = nil, session: URLSession = Network.session, budget: PhoneRunBudget? = nil, verification: AgentVerification? = nil, hooks: AgentLoopHooks = AgentLoopHooks(), onObservation: (@MainActor (ExecutionObservation) -> Void)? = nil, onStatus: (@MainActor (String) -> Void)? = nil) async throws -> ModelReply {
         if !imageInputs.isEmpty, modelCapabilities["vision"] == false { throw MeloError.message("此模型已设为不支持图片输入，请选择视觉模型或修改能力设置。") }
         try ConversationHistory.validateCurrentInput(messages.last(where: { $0.role == "user" })?.content ?? "", instructions: instructions)
@@ -242,7 +224,6 @@ enum Network {
 /// echo, tool results first, this round's screenshots; earlier screenshots
 /// reduced to their caption), then supplements as user text.
 final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
-    var routingContextLimit: Int? = nil
     let url: URL, token: String, headers: [String: String], session: URLSession
     let anthropic: Bool, apiProtocol: String, model: String
     let base: [String: Any]
@@ -327,7 +308,6 @@ final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
         let allowance = PhoneExecutionScope.budget?.outputLimit(inputTokens: estimated + 32, cap: body["max_tokens"] as? Int, phase: PhoneExecutionScope.phase)
         if let allowance { guard allowance > 0 else { throw PhoneBudgetReached() }; body["max_tokens"] = allowance }
         let payload = try JSONSerialization.data(withJSONObject: body)
-        if let limit = routingContextLimit, RequestSizeEstimate.tokens(payload) > limit { throw RequestTooLarge(message: "所选模型上下文容量不足；原对话和已执行结果已保留，请选择容量更大的模型。") }
         let meter = try PhoneModelMeter(estimate: RequestSizeEstimate.tokens(payload), outputLimit: allowance); defer { meter.finish() }
         let data = try await Network.post(url, token: token, body: payload, session: session, headers: headers, timeout: max(1, min(timeoutCap, input.timeout)))
         try Task.checkCancellation()

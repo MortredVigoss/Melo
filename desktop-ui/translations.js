@@ -450,7 +450,6 @@ const rows = [
 ["有副作用的操作", "Action with side effects", "副作用のある操作", "부수 효과가 있는 작업", "Acción con efectos secundarios"],
 
 ["智能模式", "Smart mode", "スマートモード", "스마트 모드", "Modo inteligente"],
-["智能（自动）", "Smart (automatic)", "スマート（自動）", "스마트(자동)", "Inteligente (automático)"],
 ["固定模型", "Fixed model", "固定モデル", "고정 모델", "Modelo fijo"],
 ["轻", "Light", "軽量", "가벼움", "Ligero"],
 ["标准", "Standard", "標準", "표준", "Estándar"],

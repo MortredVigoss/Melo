@@ -15121,41 +15121,6 @@
         }
       }
     },
-    "智能（自动）": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "智能（自动）"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Smart (automatic)"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "スマート（自動）"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "스마트(자동)"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Inteligente (automático)"
-          }
-        }
-      }
-    },
     "固定模型": {
       "extractionState": "manual",
       "localizations": {

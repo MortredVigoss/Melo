@@ -57,7 +57,6 @@ struct ConversationControls: View {
     @AppStorage("activeLLMConnection") private var activeID = ""
     private var current: ConversationModel? { store.preferences.chatModels?[chatID] }
     private var modelLabel: String {
-        if PhoneRoutingPolicy.isEnabled, (current?.mode == "smart" || (current == nil && PhoneRoutingPolicy.read().defaultMode == "smart")), store.agent(for: chatID).model?.isEmpty != false { return String(localized: "智能（自动）") }
         if current?.mode == "smart", let pinned = store.agent(for: chatID).model, !pinned.isEmpty { return pinned }
         return current?.model ?? store.agent(for: chatID).model.flatMap { $0.isEmpty ? nil : $0 } ?? (defaultMode == "chatgpt" ? defaultGPT : defaultAPI) }
     private var models: [String] { Array(Set(account.models.map(\.slug) + [defaultGPT, current?.connectionID == "chatgpt" ? current?.model ?? "" : ""])).filter { !$0.isEmpty }.sorted() }

@@ -39,12 +39,6 @@ class SharedRunBudget private constructor(
         put("toolCalls", used["toolCalls"] ?: JsonPrimitive(0)); put("inputTokens", used["inputTokens"] ?: JsonPrimitive(0))
     } }
     suspend fun reserveDelivery() = mutex.withLock { apply(operation("reserveDelivery").jsonObject) }
-    suspend fun configureDeepTask(limits: JsonObject) = mutex.withLock {
-        if (parent == null) {
-            val deadline = (state.getValue("startedAt").jsonPrimitive.double + limits.getValue("deadlineMs").jsonPrimitive.double - SystemClock.elapsedRealtime()).coerceAtLeast(0.0)
-            apply(operation("extend", buildJsonObject { put("options", buildJsonObject { put("deadlineMs", deadline); put("maxToolCalls", limits.getValue("maxToolCalls")) }) }).jsonObject.getValue("budget").jsonObject)
-        }
-    }
     suspend fun exhausted(): Boolean = mutex.withLock { operation("exhausted") != JsonNull }
     suspend fun check() = mutex.withLock {
         val exhausted = operation("exhausted")

@@ -1881,7 +1881,6 @@
         "ios/Melo/{ChatGPTAccount,CodexOAuth,CodexLoginView,OAuthLoopback,Keychain,LLMConnections,ModelSettingsSections,ConnectionProbe,SettingsView,InterfaceLanguage,LanguagePicker,RuntimeDiagnosticsView,DraftMerge,EditableSection,EditableDocument}.swift",
         "ios/Melo/LocalSettings*.swift",
         "ios/Melo/EditDraft*.swift",
-        "ios/Melo/SmartRouting*.swift",
         "ios/Melo/Localizable.xcstrings",
         "ios/Tests/{CodexOAuthTests,ConnectionProbeTests,EditDraftStorageTests,EditDraftTests,InterfaceLanguageTests}.swift"
       ],
@@ -2101,9 +2100,7 @@
           "ios/Melo/ModelSettingsSections.swift",
           "ios/Melo/OAuthLoopback.swift",
           "ios/Melo/RuntimeDiagnosticsView.swift",
-          "ios/Melo/SettingsView.swift",
-          "ios/Melo/SmartRouting.swift",
-          "ios/Melo/SmartRoutingIntegration.swift"
+          "ios/Melo/SettingsView.swift"
         ],
         "counterparts": [
           "ios/Melo/Localizable.xcstrings"
