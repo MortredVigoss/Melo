@@ -60,6 +60,68 @@ function readFromStartFd(fd) {
   return { buf: buf.subarray(0, total), size: st.size };
 }
 
+const SCAN_CHUNK_BYTES = 64 * 1024;
+const MAX_SCAN_BYTES = 64 * 1024 * 1024; // how far into a large file a line range is looked for
+
+// A line range of a file over MAX_READ_BYTES. Walks the file through the same
+// descriptor (the inode the approval was bound to), keeps only the requested
+// lines, and stops as soon as the range is complete, the output cap is reached
+// or the scan budget is spent. Lines are the pieces between '\n' bytes, numbered
+// exactly as the whole-file path numbers them.
+function readLineRangeFd(fd, size, startLine, endLine) {
+  const first = Math.max(1, Math.floor(Number(startLine ?? 1)) || 1);
+  const last = endLine == null || !Number.isFinite(Number(endLine)) ? Infinity : Math.floor(Number(endLine));
+  const chunk = Buffer.allocUnsafe(SCAN_CHUNK_BYTES);
+  const lines = [];
+  let pieces = [];            // bytes of the line being walked, when it is wanted
+  let keptBytes = 0;
+  let line = 1;
+  let position = 0;
+  let stopped = null;         // 'cap' | 'scan' — why the walk ended before the range did
+  let ended = false;          // the file itself ended
+  const wanted = () => line >= first && line <= last;
+  const finishLine = () => {
+    if (wanted()) lines.push(Buffer.concat(pieces).toString('utf8'));
+    pieces = [];
+    line += 1;
+  };
+
+  walk: while (position < size && line <= last) {
+    if (position >= MAX_SCAN_BYTES) { stopped = 'scan'; break; }
+    const read = readSync(fd, chunk, 0, SCAN_CHUNK_BYTES, position);
+    if (read === 0) { ended = true; break; }
+    position += read;
+    let offset = 0;
+    while (offset < read) {
+      const newline = chunk.indexOf(0x0A, offset);
+      const end = newline === -1 || newline >= read ? read : newline;
+      if (wanted() && end > offset) {
+        let take = end - offset;
+        if (keptBytes + take > MAX_READ_BYTES) {
+          // Cut on a character boundary; a line longer than the cap is returned in part.
+          take = MAX_READ_BYTES - keptBytes;
+          while (take > 0 && (chunk[offset + take] & 0xC0) === 0x80) take -= 1;
+          if (take > 0) pieces.push(Buffer.from(chunk.subarray(offset, offset + take)));
+          if (pieces.length) lines.push(Buffer.concat(pieces).toString('utf8'));
+          pieces = [];
+          stopped = 'cap';
+          break walk;
+        }
+        pieces.push(Buffer.from(chunk.subarray(offset, end)));
+        keptBytes += take;
+      }
+      if (end === read) break;          // the line continues in the next chunk
+      finishLine();
+      offset = end + 1;
+      if (line > last) break walk;
+    }
+  }
+  // The piece after the last '\n' is a line too (empty when the file ends with one).
+  const reachedEnd = !stopped && (ended || position >= size) && line <= last;
+  if (reachedEnd) finishLine();
+  return { lines, first, stopped, totalLines: reachedEnd ? line - 1 : null };
+}
+
 export const fileReadTool = {
   id: 'file_read',
   name: 'File Read',
@@ -194,10 +256,42 @@ export const fileReadTool = {
 
       const { buf, size, tooLarge } = readFromStartFd(openLeaf.leafFd);
       if (tooLarge) {
+        const kb = (size / 1024).toFixed(0);
+        if (start_line == null && end_line == null) {
+          return {
+            ok: false,
+            output: `File too large (${kb} KB). Use start_line/end_line to read a portion.`,
+            error: 'FILE_TOO_LARGE',
+          };
+        }
+        // The message above tells the model to ask for a range; that request
+        // used to be refused by the same size check.
+        const range = readLineRangeFd(openLeaf.leafFd, size, start_line, end_line);
+        if (!range.lines.length && range.stopped === 'scan') {
+          return {
+            ok: false,
+            output: `Line ${range.first} was not reached within the first ${MAX_SCAN_BYTES / 1024 / 1024} MB of this ${kb} KB file.`,
+            error: 'RANGE_NOT_REACHED',
+          };
+        }
+        const numbered = range.lines.map((l, i) => `${range.first + i}\t${l}`).join('\n');
+        const lastShown = range.first + range.lines.length - 1;
+        const note = range.stopped === 'cap'
+          ? `\n...(stopped at line ${lastShown}: a single read returns at most ${MAX_READ_BYTES / 1000} KB; ask for the following lines separately)`
+          : range.stopped === 'scan'
+            ? `\n...(stopped after line ${lastShown}: the first ${MAX_SCAN_BYTES / 1024 / 1024} MB of the file were searched)`
+            : '';
         return {
-          ok: false,
-          output: `File too large (${(size / 1024).toFixed(0)} KB). Use start_line/end_line to read a portion.`,
-          error: 'FILE_TOO_LARGE',
+          ok: true,
+          output: numbered + note,
+          meta: {
+            path: realPath,
+            lexicalPath: absPath,
+            lines: range.lines.length,
+            ...(range.totalLines == null ? {} : { totalLines: range.totalLines }),
+            sizeBytes: size,
+            ...(range.stopped ? { truncated: true } : {}),
+          },
         };
       }
 

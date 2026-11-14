@@ -202,6 +202,25 @@ test('fileEditTool: replace_all replaces every occurrence', async () => {
   });
 });
 
+// 2026-11-14: a single replacement went through String.prototype.replace with
+// a string, which expands `$&`, `$1`, `$$`, "$`" and `$'`.
+test('fileEditTool: a replacement containing $ patterns is written exactly as given (single and replace_all)', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const replacement = "cost $& and $1, $$ each, before $` after $'";
+    for (const replace_all of [false, true]) {
+      const target = join(ws, `price-${replace_all}.sh`);
+      await writeFile(target, 'price=OLD\n', 'utf8');
+      const result = await fileEditTool.run(
+        { path: target, old_string: 'OLD', new_string: replacement, replace_all },
+        { workspacePath: ws, sseEmitter: autoApprove(gate), chatId: 'chat-A' },
+      );
+      assert.equal(result.ok, true);
+      assert.equal(await readFile(target, 'utf8'), `price=${replacement}\n`);
+    }
+  });
+});
+
 test('fileEditTool: deny → returns DENIED, file unchanged', async () => {
   await withTempEnv(async ({ ws }) => {
     const gate = await freshGate();

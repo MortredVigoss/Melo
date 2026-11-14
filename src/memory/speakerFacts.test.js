@@ -59,3 +59,16 @@ test('getSpeakerFactStorageKey overwrites single-value facts but keeps list-like
     'likes:likes coffee',
   );
 });
+
+// 2026-11-14: the location rule `我在…` sat above the work rule `我在…工作`
+// and took its sentences.
+test('where someone works is a work fact, not a location that ends in 工作', () => {
+  const facts = text => extractSpeakerFacts(text).map(fact => `${fact.category}|${fact.text}`);
+  assert.deepEqual(facts('我在腾讯工作'), ['work|Works at: 腾讯']);
+  assert.deepEqual(facts('我在一家做地图的公司上班。'), ['work|Works at: 一家做地图的公司']);
+  assert.deepEqual(facts('我在北京'), ['location|Location: 北京']);
+  assert.deepEqual(facts('我住在杭州'), ['location|Location: 杭州']);
+  assert.deepEqual(facts('I work at Acme'), ['work|Works at: Acme']);
+  assert.deepEqual(facts('我在北京。我在腾讯工作。'), ['location|Location: 北京', 'work|Works at: 腾讯']);
+});
+

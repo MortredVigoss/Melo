@@ -18,8 +18,9 @@
 #   1. Resolve base_sha = @{upstream}, head_sha = HEAD. Parse upstream into
 #      <remote> + <remote-branch>. Fail if no upstream or no commits ahead.
 #   2. Pre-push Codex evaluation over base..head. Block on C/D or unparseable.
-#   3. git push <remote> HEAD:<remote-branch> — explicit refspec so push.default
-#      can't widen or shift the actually-pushed ref past what we evaluated.
+#   3. git push <remote> <head_sha>:refs/heads/<remote-branch> — the commit that
+#      was evaluated, by its id. Not HEAD: a commit made while the evaluation
+#      ran would otherwise be pushed without ever being reviewed (2026-11-14).
 #   4. Post-push Codex review over the SAME base..head. Best-effort backup;
 #      does not block.
 #
@@ -298,10 +299,19 @@ if [ "$pre_quality_grade" = "C" ] || [ "$pre_quality_grade" = "D" ]; then
 fi
 
 # ─── Push (explicit refspec — push.default is bypassed) ─────────────────────
-# Always push the local HEAD into the exact upstream branch we just evaluated.
-# Bare `git push` would inherit push.default semantics (matching/current/etc)
-# and could push refs the gate never reviewed.
-git push "$remote" "HEAD:$remote_branch"
+# Push exactly the commit that was evaluated into the upstream branch. Bare
+# `git push` would inherit push.default semantics (matching/current/etc) and
+# could push refs the gate never reviewed; `HEAD:<branch>` pushed whatever HEAD
+# had become by now, including commits made while the evaluation was running.
+git push "$remote" "${head_sha}:refs/heads/${remote_branch}"
+
+current_sha="$(git rev-parse HEAD)"
+if [ "$current_sha" != "$head_sha" ]; then
+  unreviewed_count="$(git rev-list --count "${head_sha}..${current_sha}" 2>/dev/null || echo "?")"
+  echo ""
+  echo "⚠️  HEAD moved while the evaluation ran: ${unreviewed_count} commit(s) after ${short_head} were NOT pushed (they were not reviewed)."
+  echo "   Run \`git pp\` again to evaluate and push them."
+fi
 
 # ─── Post-push backup review (same range) ────────────────────────────────────
 echo ""

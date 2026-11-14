@@ -58,6 +58,11 @@ test('projects are isolated by default and the desktop owner can opt into all pr
 test('the search_history tool derives scope from the execution context, not from the model', async () => {
   await withHome(async ({ indexMessage }) => {
     const { searchHistoryTool } = await import('../tools/builtins/searchHistoryTool.js');
+    // The tool only returns conversations that exist (2026-11-14), so both of these do.
+    const { updateStateAtomically } = await import('../state/stateStore.js');
+    await updateStateAtomically(state => {
+      state.chats = ['desk', 'tg'].map(id => ({ id, title: id, messages: [], mode: 'chat', projectId: null }));
+    }, { home: process.env.MELO_HOME });
     indexMessage('desk', 'Desktop', message('x', 'gamma roadmap'), { audience: 'desktop', projectId: '' });
     indexMessage('tg', 'Telegram', message('y', 'gamma roadmap'), { audience: 'telegram', projectId: '' });
     const remote = await searchHistoryTool.run({ query: 'gamma', scope: 'all' }, { chatSource: 'telegram', projectId: '' });

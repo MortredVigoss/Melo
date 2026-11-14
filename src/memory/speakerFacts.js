@@ -70,6 +70,18 @@ function extractFactFromSentence(sentence = '', facts, seen) {
     return;
   }
 
+  // Before the location rule: `我在…` there also matches `我在腾讯工作`, which
+  // was stored as "Location: 腾讯工作" and never reached this rule.
+  match =
+    text.match(/^i work at\s+(.{1,50})$/i) ||
+    text.match(/^i work on\s+(.{1,50})$/i) ||
+    text.match(/^我在(.{1,30}?)(?:工作|上班)$/u);
+  if (match?.[1]) {
+    const label = /^i work on\s+/i.test(text) ? 'Works on' : 'Works at';
+    pushFact(facts, seen, 'work', `${label}: ${cleanFactValue(match[1], 50)}`, text);
+    return;
+  }
+
   match =
     text.match(/^i live in\s+(.{1,50})$/i) ||
     text.match(/^i'?m based in\s+(.{1,50})$/i) ||
@@ -77,16 +89,6 @@ function extractFactFromSentence(sentence = '', facts, seen) {
     text.match(/^我在(.{1,30})$/u);
   if (match?.[1]) {
     pushFact(facts, seen, 'location', `Location: ${cleanFactValue(match[1], 50)}`, text);
-    return;
-  }
-
-  match =
-    text.match(/^i work at\s+(.{1,50})$/i) ||
-    text.match(/^i work on\s+(.{1,50})$/i) ||
-    text.match(/^我在(.{1,30})工作$/u);
-  if (match?.[1]) {
-    const label = /^i work on\s+/i.test(text) ? 'Works on' : 'Works at';
-    pushFact(facts, seen, 'work', `${label}: ${cleanFactValue(match[1], 50)}`, text);
     return;
   }
 

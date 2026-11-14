@@ -4,11 +4,12 @@ import { sendJson, readJsonBody } from './transport.js';
 import { synthesizeWithEdgeTts as _synthesizeWithEdgeTts } from '../services/tts/edgeTts.js';
 import { createNativeSayQueue } from '../services/tts/nativeSayQueue.js';
 
-export function createTtsRoutes({ startVoicePackServers }) {
+export function createTtsRoutes({ startVoicePackServers, spawnProcess = null }) {
 let _nativeSayQueue = null;
 async function _getNativeSayQueue() {
   if (_nativeSayQueue) return _nativeSayQueue;
-  const { spawn } = await import('node:child_process');
+  // spawnProcess: test seam, so the queue can be driven without starting `say`.
+  const spawn = spawnProcess || (await import('node:child_process')).spawn;
   _nativeSayQueue = createNativeSayQueue({
     spawn,
     stderr: line => process.stderr.write(`${line}\n`),
@@ -668,5 +669,13 @@ const router = createRouteRegistry([
       return;
     } },
 ]);
-return { handle: router.handle, matches: router.matches, inventory: router.inventory };
+return {
+  handle: router.handle,
+  matches: router.matches,
+  inventory: router.inventory,
+  // For the server's shutdown. The queue lives in this closure; server.js used
+  // to clear it by a name that does not exist in that file, which threw (and
+  // was swallowed) on every exit, leaving a sentence being spoken to finish.
+  stopSpeech() { if (_nativeSayQueue) _nativeSayQueue.clear(); },
+};
 }

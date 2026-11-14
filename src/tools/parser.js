@@ -40,6 +40,12 @@ import { randomUUID } from 'node:crypto';
 
 const TOOL_CALL_RE = /<tool_call>([\s\S]*?)<\/tool_call>/g;
 
+const UNREADABLE_ARGUMENTS = Object.freeze({
+  ok: false,
+  error: 'INVALID_TOOL_ARGUMENTS',
+  output: 'Tool arguments must be a complete JSON object within the size and nesting limits.',
+});
+
 // ─── Parser ───────────────────────────────────────────────────────────────────
 
 /**
@@ -61,11 +67,16 @@ export function parseModelResponse(text = '') {
     const inner = match[1].trim();
     const parsed = safeParseToolCall(inner);
     if (parsed) {
+      const args = parsed.arguments ?? parsed.args ?? {};
+      const usable = !parsed.unreadable && args !== null && typeof args === 'object' && !Array.isArray(args);
       toolCalls.push({
         id: parsed.id || generateCallId(),
-        name: normalizeToolName(parsed.name || parsed.tool || ''),
-        arguments: parsed.arguments ?? parsed.args ?? {},
+        name: normalizeToolName(String(parsed.name || parsed.tool || '')),
+        arguments: usable ? args : {},
         raw: inner,
+        // A call whose arguments could not be read is reported back to the
+        // model, never run. It used to be run with empty arguments instead.
+        ...(usable ? {} : { rejectedResult: { ...UNREADABLE_ARGUMENTS } }),
       });
     }
   }
@@ -89,17 +100,20 @@ export function parseModelResponse(text = '') {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
- * Attempt to parse tool call JSON.
- * Falls back to key extraction for slightly malformed JSON.
+ * Attempt to parse tool call JSON. When the JSON is broken but the tool name
+ * can still be read, the call is returned marked `unreadable`: the caller
+ * turns it into a rejected call (same code and wording as the native
+ * protocols use, tools/functionSchema.js) instead of running the tool.
  */
 function safeParseToolCall(raw) {
   try {
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
   } catch {
-    // Try to extract the name at minimum so we can report the failed call
+    // Extract the name at least, so the failed call can be reported back to the model.
     const nameMatch = raw.match(/"(?:name|tool)"\s*:\s*"([^"]+)"/);
     if (nameMatch) {
-      return { name: nameMatch[1], arguments: {}, _parseError: true };
+      return { name: nameMatch[1], unreadable: true };
     }
     return null;
   }

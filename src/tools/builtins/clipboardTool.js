@@ -5,13 +5,21 @@
  * Falls back to xclip/xsel on Linux.
  */
 
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 const MAX_CLIPBOARD = 100_000; // 100KB safety limit
 
+// Test-only seam: the commands to run instead of the platform's, so a test can
+// exercise the real pipe without replacing what the person has on their clipboard.
+let _commandsForTests = null;
+export function _setClipboardCommandsForTests(commands) {
+  _commandsForTests = commands || null;
+}
+
 function getPlatformCommands() {
+  if (_commandsForTests) return _commandsForTests;
   if (process.platform === 'darwin') {
     return { read: ['pbpaste', []], write: ['pbcopy', []] };
   }
@@ -39,12 +47,14 @@ async function readClipboard() {
 async function writeClipboard(text) {
   const { write } = getPlatformCommands();
   try {
-    const child = require('node:child_process').spawn(write[0], write[1], { timeout: 5000 });
-    child.stdin.write(text);
-    child.stdin.end();
     await new Promise((resolve, reject) => {
-      child.on('close', (code) => code === 0 ? resolve() : reject(new Error(`Exit code ${code}`)));
+      const child = spawn(write[0], write[1], { timeout: 5000, stdio: ['pipe', 'ignore', 'ignore'] });
       child.on('error', reject);
+      child.on('close', (code) => code === 0 ? resolve() : reject(new Error(`Exit code ${code}`)));
+      // The command may exit before it has read its input, or never start; without
+      // a listener that write error is an uncaught exception.
+      child.stdin.on('error', reject);
+      child.stdin.end(text);
     });
     return text.length;
   } catch (err) {

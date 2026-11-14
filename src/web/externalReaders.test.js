@@ -62,6 +62,25 @@ test('readUrlWithExternalReader: camoufox accepts JSON payload from local Python
   assert.match(result.content, /Example article/);
 });
 
+// 2026-11-14: the Python wrapper used to carry its own copy of the overlay
+// script (the one that pressed nearly every button). It now runs the script it
+// is handed, so the call must hand it the shared one.
+test('readUrlWithExternalReader: camoufox is given the shared overlay script after the cookies', async () => {
+  const { overlayCloserSource } = await import('./overlayCloser.js');
+  let wrapperArgs = null;
+  await readUrlWithExternalReader('camoufox', 'https://example.com/a', {
+    cookies: 'session=abc',
+    _runCommand: async (command, args) => {
+      if (args.some(arg => String(arg).endsWith('camoufoxReader.py'))) wrapperArgs = args;
+      return JSON.stringify({ method: 'camoufox', url: 'https://example.com/a', content: LONG_MARKDOWN });
+    },
+  });
+  assert.ok(wrapperArgs, 'the wrapper was started');
+  assert.deepEqual(wrapperArgs.slice(1, 4), ['https://example.com/a', '20000', 'session=abc']);
+  assert.equal(wrapperArgs[4], overlayCloserSource());
+  assert.equal(wrapperArgs.length, 5);
+});
+
 test('readUrlWithExternalReaders: tries readers in order and skips misses', async () => {
   const calls = [];
   const result = await readUrlWithExternalReaders('https://example.com/a', {

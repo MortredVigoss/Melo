@@ -22,11 +22,12 @@ def parse_cookie_header(cookie_header):
 
 def main():
     if len(sys.argv) < 2:
-        raise SystemExit("usage: camoufoxReader.py <url> [max_chars] [cookies]")
+        raise SystemExit("usage: camoufoxReader.py <url> [max_chars] [cookies] [overlay_script]")
 
     url = sys.argv[1]
     max_chars = int(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2].isdigit() else 20000
     cookie_header = sys.argv[3] if len(sys.argv) > 3 else ""
+    overlay_script = sys.argv[4] if len(sys.argv) > 4 else ""
 
     from camoufox.sync_api import Camoufox
 
@@ -41,59 +42,18 @@ def main():
 
         page.goto(url, wait_until="domcontentloaded", timeout=30000)
 
-        # Close common login/app overlays without clicking arbitrary CTA buttons.
+        # Close login / app-prompt overlays. The script comes from the caller
+        # (src/web/overlayCloser.js): this page carries the person's sign-in
+        # cookies, so what may be pressed is decided by one tested rule, not by a
+        # second copy here. Without it nothing is pressed.
+        if overlay_script:
+            try:
+                page.evaluate(overlay_script)
+            except Exception:
+                pass
+
         page.evaluate("""async () => {
           const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-          const visible = el => {
-            if (!el) return false;
-            const rect = el.getBoundingClientRect();
-            const style = getComputedStyle(el);
-            return rect.width > 0 && rect.height > 0 &&
-              style.display !== 'none' && style.visibility !== 'hidden' &&
-              Number(style.opacity || 1) > 0.05;
-          };
-          const textOf = el => [
-            el.innerText || '',
-            el.textContent || '',
-            el.getAttribute?.('aria-label') || '',
-            el.getAttribute?.('title') || '',
-            el.getAttribute?.('class') || '',
-          ].filter(Boolean).join(' ').trim();
-          const closePattern = /(关闭|关闭登录|暂不登录|稍后|稍后再说|取消|不登录|跳过|close|dismiss|later|not now|skip|×|✕|x)/i;
-          const selectors = [
-            '[aria-label*="关闭"]',
-            '[aria-label*="close" i]',
-            '[title*="关闭"]',
-            '[title*="close" i]',
-            '[class*="close" i]',
-            '[class*="modal" i] button',
-            '[class*="login" i] button',
-            '[role="button"]',
-            'button',
-            'svg',
-          ];
-          for (let round = 0; round < 4; round += 1) {
-            const candidates = new Set();
-            for (const selector of selectors) {
-              try {
-                document.querySelectorAll(selector).forEach(el => candidates.add(el));
-              } catch {}
-            }
-            for (const el of candidates) {
-              if (!visible(el)) continue;
-              const label = textOf(el);
-              const rect = el.getBoundingClientRect();
-              const looksLikeCornerX =
-                rect.width <= 80 && rect.height <= 80 &&
-                (label === '×' || label === 'x' || label === 'X' || /close|关闭/i.test(label)) &&
-                (rect.right > window.innerWidth * 0.45 || rect.top < window.innerHeight * 0.45);
-              if (!closePattern.test(label) && !looksLikeCornerX) continue;
-              try {
-                el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-              } catch {}
-            }
-            await sleep(550);
-          }
           for (const video of Array.from(document.querySelectorAll('video')).slice(0, 3)) {
             try {
               video.muted = true;

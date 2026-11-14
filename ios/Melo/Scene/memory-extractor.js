@@ -21,6 +21,26 @@
 
 const MAX_FACTS_PER_CALL = 12;
 
+// Sentence ends. These rules used to end in `[.!?$]`: inside a character class
+// `$` is a dollar sign, not the end of the text, and splitSentences has already
+// removed `!`, `?` and line breaks, so only a sentence that still carried an
+// ASCII full stop could match ("We decided to use Postgres" was never stored).
+// They now end at a sentence mark or at the end of the text.
+//
+// Capitalised words that open a sentence without being anyone's name. The
+// person rule ("Alice will review") takes any capitalised word followed by
+// will / is / handles / owns; with sentences now matching without a full stop,
+// questions and plain statements ("What is the plan", "This is going to be
+// hard") would otherwise be stored as facts about a person.
+const NOT_A_NAME = new Set([
+  'this', 'that', 'these', 'those', 'there', 'here', 'what', 'who', 'whom', 'whose', 'which', 'where', 'when', 'why', 'how',
+  'the', 'she', 'they', 'you', 'our', 'your', 'his', 'her', 'its', 'their', 'one', 'all', 'both', 'each', 'either', 'neither',
+  'none', 'some', 'any', 'most', 'many', 'much', 'more', 'less', 'everything', 'nothing', 'something', 'anything',
+  'everyone', 'someone', 'anyone', 'nobody', 'everybody', 'somebody', 'anybody', 'today', 'tomorrow', 'yesterday',
+  'now', 'then', 'maybe', 'perhaps', 'yes', 'not', 'but', 'and', 'also', 'just', 'still', 'currently', 'usually',
+  'whatever', 'whoever', 'whichever', 'everywhere', 'nowhere', 'somewhere',
+]);
+
 // ─── Public API ─────────────────────────────────────────────────────────────
 
 /**
@@ -86,7 +106,7 @@ function pushIfFound(target, fact) {
 function matchUserPreference(text) {
   // English
   let m =
-    text.match(/\bi (?:prefer|like|love|hate|avoid)\s+(.{3,60}?)[.!?$]/i) ||
+    text.match(/\bi (?:prefer|like|love|hate|avoid)\s+(.{3,60}?)(?:[.!?]|$)/i) ||
     text.match(/^i (?:prefer|like|love|hate|avoid)\s+(.{3,60})$/i);
   if (m?.[1]) {
     const verb = text.match(/\bi (prefer|like|love|hate|avoid)\b/i)?.[1]?.toLowerCase();
@@ -110,8 +130,11 @@ function matchUserPreference(text) {
 function matchDecision(text) {
   // English
   let m =
-    text.match(/\b(?:we|i) (?:decided|chose|went with)\s+(.{3,80}?)[.!?$]/i) ||
-    text.match(/\b(?:let'?s|we'?ll)\s+(go with|use|pick)\s+(.{3,60})[.!?$]/i);
+    text.match(/\b(?:we|i) (?:decided|chose|went with)\s+(.{3,80}?)(?:[.!?]|$)/i) ||
+    // Greedy: up to the LAST sentence mark when there is one (as it always was),
+    // and only without any mark up to the end of the text.
+    text.match(/\b(?:let'?s|we'?ll)\s+(go with|use|pick)\s+(.{3,60})[.!?]/i) ||
+    text.match(/\b(?:let'?s|we'?ll)\s+(go with|use|pick)\s+(.{3,60})$/i);
   if (m) {
     const picked = (m[2] || m[1] || '').trim();
     if (picked.length >= 3) {
@@ -136,8 +159,9 @@ function matchDecision(text) {
 function matchCorrection(text) {
   // English — phrases that flag "I was wrong earlier"
   let m =
-    text.match(/\b(?:actually|wait,|correction,|sorry,)\s+(.{5,90}?)[.!?$]/i) ||
-    text.match(/\bnot\s+(.{1,30})\s*,\s*(?:it'?s|it is)\s+(.{1,40})[.!?$]/i);
+    text.match(/\b(?:actually|wait,|correction,|sorry,)\s+(.{5,90}?)(?:[.!?]|$)/i) ||
+    text.match(/\bnot\s+(.{1,30})\s*,\s*(?:it'?s|it is)\s+(.{1,40})[.!?]/i) ||
+    text.match(/\bnot\s+(.{1,30})\s*,\s*(?:it'?s|it is)\s+(.{1,40})$/i);
   if (m) {
     const body = (m[2] ? `not ${m[1]}, it is ${m[2]}` : m[1]).trim();
     if (body.length >= 5) {
@@ -205,9 +229,9 @@ function matchProjectContext(text) {
   }
   // Named person + verb: "Alice will review", "John is blocking".
   const personMatch = text.match(
-    /\b([A-Z][a-z]{2,15})\s+(?:will|is going to|is|handles|owns)\s+(.{3,40}?)[.!?$]/,
+    /\b([A-Z][a-z]{2,15})\s+(?:will|is going to|is|handles|owns)\s+(.{3,40}?)(?:[.!?]|$)/,
   );
-  if (personMatch) {
+  if (personMatch && !NOT_A_NAME.has(personMatch[1].toLowerCase())) {
     return {
       fact: `${personMatch[1]} ${personMatch[2].trim()}`,
       category: 'project_context',

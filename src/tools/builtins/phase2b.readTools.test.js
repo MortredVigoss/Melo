@@ -243,6 +243,68 @@ test('fileReadTool: line range slicing returns correct subset', async () => {
   });
 });
 
+// 2026-11-14: the FILE_TOO_LARGE message tells the model to ask for a line
+// range, and that request was refused by the same size check.
+test('fileReadTool: a line range of a file over the size cap is returned, numbered like the whole-file path', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const ctx = { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) };
+    const target = join(ws, 'big.log');
+    // 30,000 lines, about 510 KB; a multi-byte character on every line, so read chunks end inside one.
+    const lines = Array.from({ length: 30_000 }, (_, i) => `行 ${i + 1} payload`);
+    await writeFile(target, lines.join('\n') + '\n', 'utf8');
+
+    assert.equal((await fileReadTool.run({ path: target }, ctx)).error, 'FILE_TOO_LARGE');
+
+    const middle = await fileReadTool.run({ path: target, start_line: 20_000, end_line: 20_002 }, ctx);
+    assert.equal(middle.ok, true);
+    assert.equal(middle.output, '20000\t行 20000 payload\n20001\t行 20001 payload\n20002\t行 20002 payload');
+    assert.equal(middle.meta.lines, 3);
+    assert.equal(middle.meta.truncated, undefined);
+
+    // Open-ended: to the end, including the empty piece after the final newline (as a small file returns it).
+    const tail = await fileReadTool.run({ path: target, start_line: 29_999 }, ctx);
+    assert.equal(tail.output, '29999\t行 29999 payload\n30000\t行 30000 payload\n30001\t');
+    assert.equal(tail.meta.totalLines, 30_001);
+
+    const beyond = await fileReadTool.run({ path: target, start_line: 40_000, end_line: 40_010 }, ctx);
+    assert.equal(beyond.ok, true);
+    assert.equal(beyond.output, '');
+    assert.equal(beyond.meta.totalLines, 30_001);
+  });
+});
+
+test('fileReadTool: a range larger than the cap stops at the cap and says where; a single over-long line is cut on a character boundary', async () => {
+  await withTempEnv(async ({ ws }) => {
+    const gate = await freshGate();
+    const ctx = { workspacePath: ws, chatId: 'chat-A', sseEmitter: autoApprove(gate) };
+    const target = join(ws, 'big.log');
+    const lines = Array.from({ length: 30_000 }, (_, i) => `行 ${i + 1} payload`);
+    await writeFile(target, lines.join('\n') + '\n', 'utf8');
+
+    const capped = await fileReadTool.run({ path: target, start_line: 1, end_line: 30_000 }, ctx);
+    assert.equal(capped.ok, true);
+    assert.equal(capped.meta.truncated, true);
+    const shown = capped.output.split('\n');
+    const note = shown.pop();
+    assert.match(note, /^\.\.\.\(stopped at line \d+: a single read returns at most 200 KB/);
+    assert.equal(shown[0], '1\t行 1 payload');
+    // Every line but the last one shown is complete and in order.
+    for (let i = 0; i < shown.length - 1; i += 1) assert.equal(shown[i], `${i + 1}\t${lines[i]}`);
+    assert.ok(lines[shown.length - 1].startsWith(shown.at(-1).split('\t')[1]));
+    assert.ok(Buffer.byteLength(shown.map(row => row.slice(row.indexOf('\t') + 1)).join(''), 'utf8') <= 200_000);
+    assert.ok(shown.length > 10_000, 'most of the cap is used');
+
+    const single = join(ws, 'one-line.txt');
+    await writeFile(single, '好'.repeat(100_001), 'utf8');   // 300,003 bytes, no newline
+    const cut = await fileReadTool.run({ path: single, start_line: 1, end_line: 1 }, ctx);
+    assert.equal(cut.ok, true);
+    assert.equal(cut.meta.truncated, true);
+    const [body] = cut.output.split('\n');
+    assert.equal(body, `1\t${'好'.repeat(66_666)}`, 'cut before the character that would cross the cap, never inside it');
+  });
+});
+
 // ─── globTool ────────────────────────────────────────────────────────
 
 test('globTool: workspace glob is silent and returns relative matches sorted', async () => {

@@ -10,6 +10,7 @@
  */
 
 import { searchHistory, normalizeAudience, DESKTOP_AUDIENCE } from '../../memory/conversationIndex.js';
+import { loadState } from '../../state/stateStore.js';
 
 export const searchHistoryTool = {
   id: 'search_history',
@@ -80,7 +81,17 @@ export const searchHistoryTool = {
     const projectId = String(context?.projectId || '');
     const allProjects = audience === DESKTOP_AUDIENCE && scope === 'all';
     const lim = Math.max(1, Math.min(20, Math.floor(limit) || 8));
-    const results = searchHistory(query.trim(), { limit: lim, after, chatId, audience, projectId, allProjects });
+    // Only conversations that exist now. The deleted-chat cleanup removes a
+    // chat's rows from the index, but rows of chats deleted before that cleanup
+    // existed (or whose cleanup is still pending) must not come back as results.
+    let liveChatIds;
+    try {
+      const state = await loadState({ home: context?.meloHome });
+      liveChatIds = new Set((state?.chats || []).map(chat => chat.id));
+    } catch (error) {
+      return { ok: false, output: `Could not read the conversation list: ${error.message}`, error: 'STATE_UNAVAILABLE' };
+    }
+    const results = searchHistory(query.trim(), { limit: lim, after, chatId, audience, projectId, allProjects, liveChatIds });
 
     const filterDesc = [];
     if (after) filterDesc.push(`after=${after}`);

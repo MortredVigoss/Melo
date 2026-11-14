@@ -206,33 +206,39 @@ export function indexMessage(chatId, chatTitle, message, { audience = DESKTOP_AU
 }
 
 /**
- * Remove all indexed entries for a chat (e.g. when a chat is deleted).
+ * Remove every indexed entry of the given chats. Called by the deleted-chat
+ * cleanup (services/chat/chatDeletion.js): a deleted conversation must stop
+ * being findable through search_history.
  *
- * @param {string} chatId
+ * Unlike the write path this THROWS on failure, so the caller keeps the chat
+ * on its durable pending list and retries. One pass over the index per batch
+ * however many chats are given: chat_id is not an indexed column of the FTS
+ * table.
+ *
+ * @param {string[]} chatIds
  */
-export function unindexChat(chatId) {
+export function unindexChats(chatIds) {
+  const ids = [...new Set([].concat(chatIds || []).map(id => String(id || '')).filter(Boolean))];
+  if (!ids.length) return;
+  const database = getDb();
+  database.exec('BEGIN');
   try {
-    if (!chatId) return;
-    const database = getDb();
-    // Get message_ids for this chat so we can clean indexed_message_ids too
-    const rows = database
-      .prepare('SELECT message_id FROM messages_fts WHERE chat_id = ?')
-      .all(String(chatId));
-    database.exec('BEGIN');
-    try {
-      database.prepare("DELETE FROM messages_fts WHERE chat_id = ?").run(String(chatId));
-      for (const row of rows) {
-        database
-          .prepare('DELETE FROM indexed_message_ids WHERE message_id = ?')
-          .run(row.message_id);
-      }
-      database.exec('COMMIT');
-    } catch (err) {
-      try { database.exec('ROLLBACK'); } catch {}
-      throw err;
+    for (let i = 0; i < ids.length; i += 400) {
+      const batch = ids.slice(i, i + 400);
+      const marks = batch.map(() => '?').join(',');
+      database.prepare(
+        `DELETE FROM indexed_message_ids WHERE message_id IN (SELECT message_id FROM messages_fts WHERE chat_id IN (${marks}))`,
+      ).run(...batch);
+      database.prepare(`DELETE FROM messages_fts WHERE chat_id IN (${marks})`).run(...batch);
+      database.prepare(`DELETE FROM message_scope WHERE chat_id IN (${marks})`).run(...batch);
     }
-  } catch {
-    // Best-effort
+    database.exec('COMMIT');
+  } catch (err) {
+    try { database.exec('ROLLBACK'); } catch {}
+    throw err;
+  }
+  for (const key of [..._taggedChats]) {
+    if (ids.some(id => key.startsWith(`${id}|`))) _taggedChats.delete(key);
   }
 }
 
@@ -309,10 +315,11 @@ export function coerceAfterTimestamp(value) {
  *   limit?: number,
  *   after?: string | number | Date,  // ISO date / epoch ms / epoch s / Date — only return messages created ≥ this
  *   chatId?: string,                  // restrict to a single chat
+ *   liveChatIds?: Set<string>,        // only return rows of these chats
  * }} options
  * @returns {{ chatId, chatTitle, messageId, role, snippet, createdAt, rank }[]}
  */
-export function searchHistory(query, { limit = 10, after, chatId, audience, projectId, allProjects = false } = {}) {
+export function searchHistory(query, { limit = 10, after, chatId, audience, projectId, allProjects = false, liveChatIds } = {}) {
   if (!query || !query.trim()) return [];
 
   const database = getDb();
@@ -322,9 +329,13 @@ export function searchHistory(query, { limit = 10, after, chatId, audience, proj
   const conditions = ['messages_fts MATCH ?'];
   const params = [ftsQuery];
 
+  // created_at holds the message's own ISO 8601 text. Compared with a number
+  // it is always the larger one in SQLite (any TEXT sorts after any INTEGER),
+  // which made this filter accept every row; both sides are epoch milliseconds
+  // now. A row whose timestamp cannot be read is not "after" anything.
   const afterMs = coerceAfterTimestamp(after);
   if (afterMs !== null) {
-    conditions.push('m.created_at >= ?');
+    conditions.push('CAST(ROUND((julianday(m.created_at) - 2440587.5) * 86400000.0) AS INTEGER) >= ?');
     params.push(afterMs);
   }
 
@@ -355,7 +366,13 @@ export function searchHistory(query, { limit = 10, after, chatId, audience, proj
     }
   }
 
-  params.push(Math.max(1, Math.min(50, limit || 10)));
+  const wantedRows = Math.max(1, Math.min(50, limit || 10));
+  // liveChatIds (a Set of the chats that exist now): rows of any other chat are
+  // dropped after the query, so a few more are fetched to fill the page. This is
+  // what keeps a deleted chat out of the results even when its rows are still in
+  // the index (deleted before the cleanup existed, or cleanup still pending).
+  const live = liveChatIds instanceof Set ? liveChatIds : null;
+  params.push(live ? Math.min(200, wantedRows * 5) : wantedRows);
 
   try {
     const sql = `
@@ -373,7 +390,8 @@ export function searchHistory(query, { limit = 10, after, chatId, audience, proj
       ORDER BY rank
       LIMIT ?
     `;
-    const rows = database.prepare(sql).all(...params);
+    const found = database.prepare(sql).all(...params);
+    const rows = live ? found.filter(row => live.has(row.chatId)).slice(0, wantedRows) : found;
 
     return rows.map(row => ({
       chatId: row.chatId,

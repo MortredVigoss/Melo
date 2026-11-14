@@ -39,6 +39,7 @@
 
 import { fetchPlatformMetadataViaYtdlp } from '../../media/extractors/youtubeExtractor.js';
 import { readUrlWithExternalReaders } from '../../web/externalReaders.js';
+import { overlayCloserSource } from '../../web/overlayCloser.js';
 
 // ─── Phase G-1b (2026-05-10): evidenceTrail collection for social-link ────
 //
@@ -850,64 +851,11 @@ async function fetchSocialBrowserPreview(url, { signal } = {}) {
 
       const script = `(async () => {
         const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-        const visible = el => {
-          if (!el) return false;
-          const rect = el.getBoundingClientRect();
-          const style = getComputedStyle(el);
-          return rect.width > 0 && rect.height > 0 &&
-            style.display !== 'none' && style.visibility !== 'hidden' &&
-            Number(style.opacity || 1) > 0.05;
-        };
-        const textOf = el => [
-          el.innerText || '',
-          el.textContent || '',
-          el.getAttribute?.('aria-label') || '',
-          el.getAttribute?.('title') || '',
-          el.getAttribute?.('class') || '',
-        ].filter(Boolean).join(' ').trim();
-        const closePattern = /(关闭|关闭登录|暂不登录|稍后|稍后再说|取消|不登录|跳过|close|dismiss|later|not now|skip|×|✕|x)/i;
-        const clickCloseControls = () => {
-          const candidates = new Set();
-          for (const selector of [
-            '[aria-label*="关闭"]',
-            '[aria-label*="close" i]',
-            '[title*="关闭"]',
-            '[title*="close" i]',
-            '[class*="close" i]',
-            '[class*="modal" i] button',
-            '[class*="login" i] button',
-            '[role="button"]',
-            'button',
-            'svg',
-          ]) {
-            try {
-              document.querySelectorAll(selector).forEach(el => candidates.add(el));
-            } catch {}
-          }
-          let clicked = 0;
-          for (const el of candidates) {
-            if (!visible(el)) continue;
-            const label = textOf(el);
-            const rect = el.getBoundingClientRect();
-            const looksLikeCornerX =
-              rect.width <= 80 && rect.height <= 80 &&
-              (label === '×' || label === 'x' || label === 'X' || /close|关闭/i.test(label)) &&
-              (rect.right > window.innerWidth * 0.45 || rect.top < window.innerHeight * 0.45);
-            if (!closePattern.test(label) && !looksLikeCornerX) continue;
-            try {
-              el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-              clicked += 1;
-            } catch {}
-          }
-          return clicked;
-        };
-
-        let closedOverlays = 0;
+        // The rule for what may be pressed lives in web/overlayCloser.js (shared with the
+        // Camoufox reader): only controls whose own label is a close / later phrase.
+        const closeOverlays = ${overlayCloserSource()};
         await sleep(800);
-        for (let i = 0; i < 4; i += 1) {
-          closedOverlays += clickCloseControls();
-          await sleep(550);
-        }
+        const closedOverlays = await closeOverlays();
 
         for (const video of Array.from(document.querySelectorAll('video')).slice(0, 3)) {
           try {

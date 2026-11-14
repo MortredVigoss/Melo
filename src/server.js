@@ -46,7 +46,7 @@ import { cleanupStalePlaywrightDaemons } from './web/playwrightFetcher.js';
 // cleanupStalePlaywrightDaemons without risking the rest of the shutdown
 // sequence.
 import { closeAllPages } from './services/browser/pageRegistry.js';
-import { stageChatDeletion, finishChatDeletions } from './services/chat/chatDeletion.js';
+import { stageDeletionCatchUp, finishChatDeletions } from './services/chat/chatDeletion.js';
 import { purgeStaleSoftDeletes, createChat, deleteChat, getDesktopBootstrap, prepareDesktopLaunchState, processTelegramPollingCycle, processDiscordPollingCycle, streamSearchFileGroups, updateChat, initMcpServers } from './desktopStore.js';
 import { resolvePermission, getPendingPermissions, getSessionPermissions, clearSessionPermissions } from './tools/permissions.js';
 import { resolveFileSafety } from './safety/fileSafetyGate.js';
@@ -224,10 +224,7 @@ async function _releaseServerLock() {
 
 const derivedIndexing = startDerivedIndexing({ home: runtimePaths.home, env: { ...process.env } });
 await prepareDesktopLaunchState();
-await recoverStateAtomically(state => {
-  if (!state.chatDeletionCleanupVersion) { stageChatDeletion(state, (state.mobileDeletedChats || []).map(row => row.id)); state.chatDeletionCleanupVersion = 1; }
-  return state;
-});
+await recoverStateAtomically(state => { stageDeletionCatchUp(state); return state; });
 await finishChatDeletions(runtimePaths.home);
 await recoverStateAtomically(state => { replayPortableMemory(state); return state; });
 reconcileLegacyFacts(await loadState());
@@ -471,10 +468,7 @@ const coreRoutes = createRouteRegistry([
     } },
   { method: 'GET', paths: ["/api/launch/reset"], auth: 'local-write', handler: async ({request,response,url,requireLocalOrigin}) => {
       await prepareDesktopLaunchState();
-await recoverStateAtomically(state => {
-  if (!state.chatDeletionCleanupVersion) { stageChatDeletion(state, (state.mobileDeletedChats || []).map(row => row.id)); state.chatDeletionCleanupVersion = 1; }
-  return state;
-});
+await recoverStateAtomically(state => { stageDeletionCatchUp(state); return state; });
 await finishChatDeletions(runtimePaths.home);
       sendJson(response, 200, { ok: true });
       return;
@@ -1245,7 +1239,7 @@ function shutdown() {
     discordPollTimer = null;
   }
   try { _memoryRuntime?.stop?.(); } catch {}
-  try { _nativeSayQueue?.clear?.(); } catch {}
+  try { ttsRoutes.stopSpeech(); } catch {}
   try { globalThis._meloAfplayProcess?.kill?.('SIGTERM'); } catch {}
   try { shutdownMcpServers(); } catch {}
   // Signal only this run's browser processes; low-level imports never own exit.

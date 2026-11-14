@@ -518,3 +518,31 @@ test('a member is offered delegate only when a call from it could be accepted', 
   assert.equal(await offered({ canDelegate: true, delegateTargets: ['other'], maxDelegationDepth: 1 }), false, 'its own depth limit is already reached');
   assert.equal(await offered(undefined), false);
 });
+
+// 2026-11-14: a text-protocol call whose JSON was broken used to be run with
+// empty arguments. It must not run at all; the model is told and can retry.
+test('a tool call with unreadable arguments is never run: the model gets INVALID_TOOL_ARGUMENTS and its corrected call runs once', async () => {
+  const { tool, calls } = makeRecordingTool('count_tool');
+  registerTool(tool);
+  try {
+    const reply = makeFakeReply();
+    reply.queue.push('<tool_call>{"id":"bad","name":"count_tool","arguments":{"note":"cut off</tool_call>');
+    reply.queue.push(args => {
+      assert.equal(calls.length, 0, 'nothing ran for the unreadable call');
+      const seen = JSON.stringify(args);
+      assert.match(seen, /INVALID_TOOL_ARGUMENTS|complete JSON object/, 'the model is told why');
+      return '<tool_call>{"id":"good","name":"count_tool","arguments":{"note":"complete"}}</tool_call>';
+    });
+    reply.queue.push('done');
+    await runSubAgent({
+      task: 't',
+      config: validConfig(),
+      allowedToolIds: ['count_tool'],
+      replyFn: reply,
+    });
+    assert.equal(reply.callLog.length >= 2, true, 'the loop went on after the rejection');
+    assert.deepEqual(calls.map(call => call.args), [{ note: 'complete' }]);
+  } finally {
+    unregisterTool('count_tool');
+  }
+});

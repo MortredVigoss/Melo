@@ -1185,6 +1185,14 @@
         "src/services/tts/nativeStopEndpointsGuard.test.js": [
           "src/http/ttsRoutes.js"
         ],
+        "src/http/ttsRoutes.stopSpeech.test.js": [
+          "src/server.js"
+        ],
+        "src/web/overlayCloser.test.js": [
+          "src/services/search/socialLinkReader.js",
+          "src/web/camoufoxReader.py",
+          "src/web/externalReaders.js"
+        ],
         "ios/Tests/SceneBridge.test.js": [
           "desktop-ui/executionPanel.js",
           "ios/SceneSource/mobile.js"

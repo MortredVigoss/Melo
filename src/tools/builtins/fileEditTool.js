@@ -257,9 +257,13 @@ export const fileEditTool = {
         };
       }
 
+      // The replacement is given as a function: a string there is a pattern in
+      // which `$&`, `$1`, `$$`, "$`" and `$'` are expanded, so text containing
+      // them (regular expressions, shell, prices) was written differently from
+      // what was asked for.
       const updated = replace_all
         ? original.split(old_string).join(new_string)
-        : original.replace(old_string, new_string);
+        : original.replace(old_string, () => new_string);
 
       const diffPreview = buildEditDiffPreview(old_string, new_string, count, replace_all);
 

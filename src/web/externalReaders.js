@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { debugWarn } from '../debug.js';
+import { overlayCloserSource } from './overlayCloser.js';
 
 const execFile = promisify(execFileCallback);
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -266,6 +267,9 @@ async function readWithCamoufox(url, {
     url,
     String(maxChars),
     cookieStr,
+    // The page script that closes login overlays. The Python wrapper has no copy
+    // of its own: one rule (web/overlayCloser.js) decides what may be pressed.
+    overlayCloserSource(),
   ], {
     timeoutMs: timeoutMs + 5000,
     signal,
