@@ -30,7 +30,7 @@ export const INTERNAL_JOB_LABELS = Object.freeze(Object.fromEntries(Object.entri
 // Tools no internal job may ever receive, whatever a host suggests: the router
 // itself, delegation, model escalation, development jobs, test doubles and
 // multi-step skills stay with the lead.
-const NEVER_ASSIGNED = new Set([ROUTE_NAME, 'delegate', 'agent', 'melo_escalate', 'development_job', 'fake', 'task_progress']);
+const NEVER_ASSIGNED = new Set([ROUTE_NAME, 'delegate', 'agent', 'development_job', 'fake', 'task_progress']);
 const STATIC_IDS = new Set(Object.values(jobs).flatMap(job => job.tools));
 // Host suggestions (phase A1, 2026-11-04): `{ [toolId]: jobName }` derived by the
 // host from its own tool declarations. A suggestion only adds a tool the static

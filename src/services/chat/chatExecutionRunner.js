@@ -12,7 +12,7 @@ import { measureStage, startStage } from '../../runtime/performanceTrace.js';
 import { observeModelReplies } from './executionPipeline.js';
 import { createRequestContext } from '../../runtime/requestContext.js';
 import { currentRequestContext, runWithRequestContext } from '../../runtime/requestScope.js';
-import { reserveDelivery, admitModel, settleModel, armBudget, budgetExhausted, receiptInputTokens, requestTimeoutMs } from '../../runtime/runBudget.js';
+import { reserveDelivery, admitModel, settleModel, armBudget, receiptInputTokens, requestTimeoutMs } from '../../runtime/runBudget.js';
 import { AGENT_LOOP_CONTRACT } from '../../runtime/agentLoopContract.js';
 import { estimateMessagesTokens, estimateTextTokens } from '../../memory/tokenEstimate.js';
 // Chat agent execution graph runner — sub-phase 7d-5δ commit 7b of the
@@ -101,11 +101,6 @@ export async function runChatAgentExecutionGraph({
   const userSignal = signal || context.signal;
   signal = AbortSignal.any([userSignal, deadline.signal].filter(Boolean));
   const createReply = async options => {
-    if (options.purpose === 'routing-judge') {
-      options.signal?.throwIfAborted();
-      const exhausted = budgetExhausted(budget);
-      if (exhausted) throw Object.assign(new Error('Routing judgment exceeds the remaining turn budget.'), { code: 'BUDGET_EXHAUSTED' });
-    }
     options.signal?.throwIfAborted();
     const phase = options.budgetPhase || 'work';
     // Tool definitions travel as `functionTools` on native protocols; `tools` was never set there, so the
@@ -132,10 +127,9 @@ export async function runChatAgentExecutionGraph({
           if (args[0]?.delta || args[0]?.text) endFirstToken();
           return options.onDelta(...args);
         } : options.onDelta,
-        onProviderResponse: receipt => { traceEvent('model.provider.receipt', { usageOrigin: receipt?.usage ? 'provider' : 'unknown' }, receipt); modelResponses.push({ ...receipt, ...(options.purpose ? { purpose: options.purpose } : {}), ...(options.routing ? { routing: options.routing } : {}) }); account(receipt); options.onProviderResponse?.(receipt); },
+        onProviderResponse: receipt => { traceEvent('model.provider.receipt', { usageOrigin: receipt?.usage ? 'provider' : 'unknown' }, receipt); modelResponses.push({ ...receipt, ...(options.purpose ? { purpose: options.purpose } : {}) }); account(receipt); options.onProviderResponse?.(receipt); },
       }));
     } finally {
-      if (!accounted && options.purpose === 'routing-judge') modelResponses.push({ requestedModel: options.model, reportedModel: '', purpose: options.purpose, usage: null, failed: true });
       account(null);
     }
   };

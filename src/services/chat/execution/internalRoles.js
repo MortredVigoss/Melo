@@ -8,7 +8,7 @@
 import { toolEffect } from '../../../../shared/agent/toolEffects.js';
 import { declaredCapabilityRequirement, legacyCapabilityRequirement } from '../../../domain/agent/capabilities.js';
 
-const NEVER = new Set(['route_task', 'delegate', 'agent', 'melo_escalate', 'development_job', 'fake']);
+const NEVER = new Set(['route_task', 'delegate', 'agent', 'development_job', 'fake']);
 const BROWSER_READ = new Set(['browser_open', 'browser_snapshot', 'browser_wait_for', 'browser_close']);
 const BROWSER_ACT = new Set(['browser_click', 'browser_fill']);
 // Network tools that read a fact about this device rather than a web source.

@@ -9,7 +9,6 @@ import { multilingualImageAction } from './imageLanguage.js';
 import { localeOperation } from './locale.js';
 import { modelCapabilityOperation } from './modelCapabilities.js';
 import { PROVIDER_DEFAULTS } from './providerDefaults.js';
-import { modelRoutingOperation } from './modelRouting.js';
 import { runTaskReplay } from './taskReplay.js';
 import { CORE_VERSION, startTurn, advanceTurn, turnStopReply } from './turn.js';
 import { planRequest, actionEvidence, resolvedRequestGoal } from './search.js';
@@ -61,7 +60,6 @@ export function evaluate(input) {
       case 'locale': value = localeOperation(input); break;
       case 'providerDefaults': value = PROVIDER_DEFAULTS; break;
       case 'modelCapabilities': value = modelCapabilityOperation(input); break;
-      case 'modelRouting': value = modelRoutingOperation(input); break;
       case 'loopPolicy': value = AGENT_LOOP_CONTRACT.loop; break;
       case 'delivery': value = deliveryOperation(input); break;
       case 'goal': value = goalOperation(input); break;

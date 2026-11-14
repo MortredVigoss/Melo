@@ -142,10 +142,6 @@ export function advanceTurn(previous, event, now) {
       state.awaitingModel = false;
       return state;
     }
-    case 'reroute':
-      if (state.pending.length || state.awaitingModel) fail('PENDING_EFFECT', 'Finish the current response and pair its tools before rerouting.');
-      state.repairing = true;
-      return state;
     case 'inherit-effects':
       if (state.pending.length || state.awaitingModel) fail('PENDING_EFFECT', 'Inherit member receipts only at an idle boundary.');
       state.internalRouting = true;

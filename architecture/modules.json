@@ -24,8 +24,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 662,
-      "edges": 2207,
+      "modules": 661,
+      "edges": 2205,
       "roots": [
         "src",
         "desktop-ui",
@@ -735,7 +735,7 @@
       ],
       "modules": {
         "desktop-ui": 27,
-        "shared": 47,
+        "shared": 46,
         "src": 64
       },
       "entryModules": [
@@ -1288,7 +1288,6 @@
           "shared/agent/limitDelivery.test.js",
           "shared/agent/loopLimits.test.js",
           "shared/agent/modelCapabilities.test.js",
-          "shared/agent/modelRouting.test.js",
           "shared/agent/portability.test.js",
           "shared/agent/research.test.js",
           "shared/agent/taskContract.test.js",
@@ -5407,7 +5406,6 @@
         "desktop-ui/features/chat/controller.js",
         "desktop-ui/features/chat/index.js",
         "shared/agent/index.js",
-        "shared/agent/modelRouting.js",
         "shared/conversationTopics.js"
       ],
       "features": [

@@ -5374,36 +5374,14 @@
     }
   },
   {
-    "name": "loop limits: deep",
-    "input": {
-      "version": 1,
-      "op": "loopLimits",
-      "limits": {
-        "maxIterations": 16,
-        "route": {
-          "mode": "smart",
-          "deepTask": true
-        }
-      }
-    },
-    "ok": true,
-    "expected": {
-      "maxIterations": 64,
-      "minIterations": 10,
-      "maxRounds": 64,
-      "maxToolCalls": 300,
-      "deadlineMs": 2700000
-    }
-  },
-  {
-    "name": "loop limits: fixed",
+    "name": "loop limits: a route is no input; only the configured maximum counts",
     "input": {
       "version": 1,
       "op": "loopLimits",
       "limits": {
         "maxIterations": 64,
         "route": {
-          "mode": "fixed",
+          "mode": "smart",
           "deepTask": true
         }
       }
