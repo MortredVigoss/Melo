@@ -7,6 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { upsertMemory, _resetStoreForTests } from './store.js';
 import { repairMemoryBatch, memoryRepairStatus, diagnoseMemory } from './repair.js';
 import { collectMemoryStatus } from './status.js';
+import { withEmbeddingCache } from './embedProviders/createEmbeddingProvider.js';
 let home, previous;
 test.beforeEach(async () => { previous = process.env.MELO_HOME; home = await mkdtemp(join(tmpdir(), 'melo-repair-')); process.env.MELO_HOME = home; _resetStoreForTests(); for (let i=0;i<3;i++) upsertMemory({ id:`m${i}`,namespace:'chat:repair',kind:'fact',text:`memory ${i}` }); });
 test.afterEach(async () => { _resetStoreForTests(); if (previous === undefined) delete process.env.MELO_HOME; else process.env.MELO_HOME = previous; await rm(home,{recursive:true,force:true}); });
@@ -36,6 +37,25 @@ test('diagnosis bypasses cached embeddings and reports actual returned dimension
  assert.equal((await diagnoseMemory(collectMemoryStatus({meloHome:home}),p)).available,true);
  live=false;assert.equal((await diagnoseMemory(collectMemoryStatus({meloHome:home}),p)).available,false);
  const wrong={...provider,observedDims:768};const result=await diagnoseMemory(collectMemoryStatus({meloHome:home}),wrong);assert.equal(result.available,false);assert.ok(result.issues.some(i=>i.code==='dimensions'));
+});
+// 2026-11-14: a dead-code pass removed the cache wrapper's `probe` because no code calls
+// `.probe(` directly; diagnosis and repair reach it as `provider.probe || provider.embed`.
+// The test above builds its own provider with its own probe, so it kept passing. This one goes
+// through the wrapper production uses.
+test('the production cache wrapper keeps a probe to the live provider: diagnosis and repair never read a cached vector',async()=>{
+ let live=true, calls=0;
+ const wrapped=withEmbeddingCache({...provider,embed:async text=>{calls+=1;return live ? provider.embed(text) : null;}});
+ assert.equal((await diagnoseMemory(collectMemoryStatus({meloHome:home}),wrapped)).available,true);
+ assert.equal((await diagnoseMemory(collectMemoryStatus({meloHome:home}),wrapped)).available,true);
+ assert.equal(calls,2,'the second check reached the provider instead of the cache');
+ live=false;
+ assert.equal((await diagnoseMemory(collectMemoryStatus({meloHome:home}),wrapped)).available,false,'a provider that stopped answering is reported, not hidden by the cached vector');
+ assert.equal(calls,3);
+ // Repair embeds every row through the same bypass: warm the cache, stop the provider, repair must fail.
+ live=true; for(let i=0;i<3;i++) await wrapped.embed(`memory ${i}`);
+ live=false; const before=calls;
+ const result=await repairMemoryBatch({home,providerPromise:wrapped});
+ assert.equal(result.status,'failed'); assert.ok(calls>before,'repair asked the live provider');
 });
 test('a failed final index transaction restores the existing index',async()=>{
  assert.equal((await repairMemoryBatch({home,providerPromise:provider})).status,'complete');

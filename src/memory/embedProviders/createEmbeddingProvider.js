@@ -58,6 +58,10 @@ export function withEmbeddingCache(provider) {
     get dims() { return provider.dims; },
     get modelId() { return provider.modelId; },
     get observedDims() { return provider.observedDims ?? provider.dims; },
+    // The cache bypass. Read as `provider.probe || provider.embed` by diagnosis and repair
+    // (src/memory/repair.js), never called as `.probe(`: a connection check or a rebuild
+    // answered from the cache would hide a provider that stopped working.
+    async probe(text) { return provider.embed(text); },
     async isAvailable() { return provider.isAvailable(); },
     async embed(text) {
       const key = String(text || '').trim();
