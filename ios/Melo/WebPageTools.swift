@@ -231,6 +231,18 @@ enum WebPageLoadError: Error {
         guard let url = WebPageText.validated(raw) else {
             return WebPageToolResult(output: WebPageText.failure("INVALID_URL", "Only public http or https pages can be opened.", url: String(raw.prefix(300))), url: raw)
         }
+        // A later part of a page this reply has just read in full is cut from that read. The first part
+        // is always read afresh, and what was kept of the page is dropped before the read starts, so a
+        // failed fresh read cannot leave an older text behind as "the page".
+        let page = spec.name == WebPageToolSpec.openURL ? WebPageText.pageNumber(args["page"]) : 1
+        if spec.name == WebPageToolSpec.openURL, let cache = PhoneExecutionScope.pageCache {
+            if page > 1, let kept = cache.get(url.absoluteString) {
+                do { try PhoneExecutionScope.check() } catch { return WebPageToolResult(output: WebPageText.failure("ABORTED", "The request was cancelled.", url: raw), url: raw) }
+                guard allowed() else { return WebPageToolResult(output: WebPageText.failure("CAPABILITY_DENIED", "The user disabled web access during the request.", url: raw), url: raw) }
+                return WebPageToolResult(output: WebPageText.envelope(WebPageText.openResult(url: url.absoluteString, finalURL: kept.finalURL, title: kept.title, description: kept.description, text: kept.text, page: page, status: kept.status, snapshot: kept, reused: true)), url: url.absoluteString)
+            }
+            if page == 1 { cache.invalidate(url.absoluteString) }
+        }
         let loader = WebPageLoader()
         defer { loader.detach() }
         do {
@@ -239,10 +251,11 @@ enum WebPageLoadError: Error {
             try PhoneExecutionScope.check()
             guard allowed() else { return WebPageToolResult(output: WebPageText.failure("CAPABILITY_DENIED", "The user disabled web access during the request.", url: raw), url: raw) }
             if spec.name == WebPageToolSpec.openURL {
-                // Model-controlled number: 1e20 or NaN must not trap in Int().
-                let page = WebPageText.pageNumber(args["page"])
+                // `page` is model-controlled: WebPageText.pageNumber keeps 1e20 or NaN from trapping in Int().
                 let extracted = try await loader.extractText()
-                return WebPageToolResult(output: WebPageText.envelope(WebPageText.openResult(url: url.absoluteString, finalURL: loader.finalURL, title: extracted.title, description: extracted.description, text: extracted.text, page: page, status: loader.statusCode, stoppedEarly: loader.stoppedEarly)), url: url.absoluteString)
+                // Kept for the later parts only when the whole page was read: not one cut at the soft deadline.
+                let snapshot = PhoneExecutionScope.pageCache?.store(url.absoluteString, finalURL: loader.finalURL, title: extracted.title, description: extracted.description, text: extracted.text, status: loader.statusCode, complete: !loader.stoppedEarly)
+                return WebPageToolResult(output: WebPageText.envelope(WebPageText.openResult(url: url.absoluteString, finalURL: loader.finalURL, title: extracted.title, description: extracted.description, text: extracted.text, page: page, status: loader.statusCode, stoppedEarly: loader.stoppedEarly, snapshot: snapshot)), url: url.absoluteString)
             }
             let fullPage = args["fullPage"] as? Bool ?? false
             let image = try await loader.snapshot(fullPage: fullPage)

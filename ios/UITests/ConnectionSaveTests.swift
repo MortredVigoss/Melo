@@ -82,7 +82,24 @@ final class ConnectionSaveTests: XCTestCase {
             composer.tap()
             composer.typeText("Hello")
             app.buttons["发送消息"].tap()
+            let draft = app.descendants(matching: .any)["chat.replyDraft"].firstMatch
+            XCTAssertTrue(draft.waitForExistence(timeout: 3), "Provisional text must appear before the delayed terminal frame.")
+            XCTAssertTrue(app.staticTexts["MELO_CHAT_"].firstMatch.exists)
+            capture("Live reply draft before provider completion")
+            let finished = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: draft)
+            XCTAssertEqual(XCTWaiter.wait(for: [finished], timeout: 20), .completed)
             XCTAssertTrue(app.staticTexts["MELO_CHAT_ACCEPTED"].firstMatch.waitForExistence(timeout: 35))
+            capture("Verified reply replaces provisional draft")
+            composer.tap(); composer.typeText("Hello again")
+            app.buttons["发送消息"].tap()
+            XCTAssertTrue(draft.waitForExistence(timeout: 3))
+            app.buttons["停止"].tap()
+            let cancelled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: draft)
+            XCTAssertEqual(XCTWaiter.wait(for: [cancelled], timeout: 8), .completed)
+            // Let the fixture's late terminal frame arrive; it must not commit a second reply.
+            RunLoop.current.run(until: Date().addingTimeInterval(4.5))
+            XCTAssertEqual(app.staticTexts.matching(identifier: "MELO_CHAT_ACCEPTED").count, 1)
+            capture("Cancellation clears draft and discards late reply")
         }
     }
 }

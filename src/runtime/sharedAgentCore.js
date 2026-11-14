@@ -50,6 +50,10 @@ export function createCoreTurn({ runId = currentLoopTrace()?.context.runId || ra
     // role) say so; otherwise it is inferred from the goal and the observations.
     receipt(goal, reply, terminalReason = state.reason, plan, citations = [], kind) { return completionResult({ goal: task ? goalText(task) : goal, reply, terminalReason, plan, citations, observations, task: goalSnapshot(task), ...(kind ? { kind } : {}) }); },
     get reporting() { return task?.phase !== 'checking' && (state.awaitingModel ? state.requestMode === 'report' : state.rounds >= state.limits.rounds && !state.reportIssued); },
+    /** The answer just offered is the one that was sent back, with nothing changed that its check read: the
+     *  earlier verdict stands and its feedback goes to the model again, without a check request. */
+    get repairPending() { return task?.phase === 'working' && task?.reviewReused === true; },
+    get repairFeedback() { return task?.feedback || ''; },
     get checking() { return task?.phase === 'checking'; },
     get repairing() { return state.repairing; },
     get candidateReply() { return candidateReply; },
@@ -61,6 +65,7 @@ export function createCoreTurn({ runId = currentLoopTrace()?.context.runId || ra
       candidateReply = reply;
       if (!task) return false;
       task = goalCandidate(task, { reply, observations, research, uncertainClaim, context: { capabilities: tools, ...context }, tools: [...allowedTools, ...offeredTools, ...(nativeSearch ? ['native_web_search'] : [])], roundsLeft: state.limits.rounds - state.rounds });
+      if (task.reviewReused) traceEvent('goal.check', { reused: true }, goalSnapshot(task));
       return task.phase === 'checking';
     },
     /** The last completion check's verdict on the claim the answer flagged as uncertain, or null. */

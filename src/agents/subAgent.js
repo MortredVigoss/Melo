@@ -371,6 +371,12 @@ async function runSubAgentLoop({
 
     if (!toolCalls.length) {
       if (completionCheck !== false && coreTurn.candidate(turn.text, { research: true, nativeSearch: nativeFeaturesForScope(currentRequestContext().capabilityScope,currentRequestContext().requestToolPolicy).nativeWebSearchEnabled })) { coreTurn.update('feedback'); continue; }
+      // The same answer again after it was sent back: the earlier verdict stands, without another check.
+      if (coreTurn.repairPending) {
+        coreTurn.update('feedback', { repair: true });
+        loopMessages.push({ role: 'assistant', content: coreTurn.candidateReply }, { role: 'user', content: coreTurn.repairFeedback, isSupplement: true, isLoopFeedback: true });
+        continue;
+      }
       coreTurn.update('complete');
       if (coreTurn.status !== 'completed') break;
       finalOutput = cleanReplyForParent(turn.text);

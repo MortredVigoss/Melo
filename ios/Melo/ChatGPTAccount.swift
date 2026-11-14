@@ -251,13 +251,16 @@ struct ImageSizeRejected: Error {}
         let onObservation: ((ExecutionObservation) -> Void)?
         let onReceiving: (() -> Void)?
         let setStatus: (String) -> Void
-        init(onObservation: ((ExecutionObservation) -> Void)?, onReceiving: (() -> Void)?, setStatus: @escaping (String) -> Void) {
-            self.onObservation = onObservation; self.onReceiving = onReceiving; self.setStatus = setStatus
+        /// The answer text so far, shown as a draft while it is written; empty once the reply turns out
+        /// to be tool calls. Set for the lead's own requests only (AgentLoopRequest.onDraft).
+        let onText: (@MainActor (String) -> Void)?
+        init(onObservation: ((ExecutionObservation) -> Void)?, onReceiving: (() -> Void)?, setStatus: @escaping (String) -> Void, onText: (@MainActor (String) -> Void)? = nil) {
+            self.onObservation = onObservation; self.onReceiving = onReceiving; self.setStatus = setStatus; self.onText = onText
         }
     }
     nonisolated static func readStream(_ bytes: URLSession.AsyncBytes, maxBytes: Int, acceptImageCompletion: Bool, requestStarted: TimeInterval, requestKey: String = "", updates: StreamUpdates) async throws -> ChatGPTStream {
         var parser = ChatGPTSSE(maxBytes: maxBytes, acceptImageCompletion: acceptImageCompletion, requestStarted: requestStarted, requestKey: requestKey)
-        var revision = -1, receivedText = false, status = "正在思考…", lastSent = Date.distantPast
+        var revision = -1, receivedText = false, status = "正在思考…", lastSent = Date.distantPast, lastText = ""
         func publish(force: Bool) async {
             let now = Date()
             guard force || now.timeIntervalSince(lastSent) >= 0.15 else { return }
@@ -268,8 +271,12 @@ struct ImageSizeRejected: Error {}
             let nextStatus = parser.stream.generatingImage ? "正在处理图片…" : parser.stream.searching ? "正在联网搜索…" : parser.stream.searched ? "正在整理搜索结果…" : "正在思考…"
             let statusChanged = nextStatus != status
             status = nextStatus
-            guard changed || statusChanged else { return }
+            let visible = updates.onText == nil || !parser.stream.functionCalls.isEmpty ? "" : parser.stream.text
+            let textChanged = visible != lastText
+            lastText = visible
+            guard changed || statusChanged || textChanged else { return }
             await MainActor.run {
+                if textChanged { updates.onText?(visible) }
                 if changed { updates.onObservation?(observation) }
                 if statusChanged { updates.setStatus(nextStatus) }
             }
@@ -278,7 +285,8 @@ struct ImageSizeRejected: Error {}
             try Task.checkCancellation()
             do { try parser.accept(byte) }
             catch { let observation = parser.stream.observation; await MainActor.run { updates.onObservation?(observation) }; throw error }
-            if !receivedText && !parser.stream.text.isEmpty { receivedText = true; await MainActor.run { updates.onReceiving?() } }
+            if byte == 10 && parser.stream.observation.revision > 0 { LoopTrace.received(text: false) }
+            if !receivedText && !parser.stream.text.isEmpty { receivedText = true; LoopTrace.received(text: true); await MainActor.run { updates.onReceiving?() }; await publish(force: true) }
             if parser.stream.completed { await publish(force: true); return parser.stream }
             if byte == 10 { await publish(force: false) }
         }
@@ -334,7 +342,7 @@ final class CodexResponsesTransport: AgentModelTransport, @unchecked Sendable {
     /// The loop pass of the last observed request and how many requests that pass has made: the key
     /// of each request's own stage in the run record (ExecutionObservation.requestKey).
     private var observedPass = -1, observedAttempt = 0
-    private func stream(_ body: [String: Any], timeout: TimeInterval, observe: Bool, iteration: Int = 0, continuation: String = "") async throws -> (ChatGPTStream, Int) {
+    private func stream(_ body: [String: Any], timeout: TimeInterval, observe: Bool, iteration: Int = 0, continuation: String = "", onDraft: (@MainActor (String) -> Void)? = nil) async throws -> (ChatGPTStream, Int) {
         var key = ""
         if observe {
             if iteration == observedPass { observedAttempt += 1 } else { observedPass = iteration; observedAttempt = 1 }
@@ -343,7 +351,7 @@ final class CodexResponsesTransport: AgentModelTransport, @unchecked Sendable {
         do {
             return try await LoopTrace.model(purpose:"codex-provider",input:body,snapshot:{ value in ["text":value.0.text,"output":value.0.outputItems] }) {
                 await LoopTrace.providerPayload(body)
-                return try await streamWithTrace(body,timeout:timeout,observe:observe,requestKey:key)
+                return try await streamWithTrace(body,timeout:timeout,observe:observe,requestKey:key,onDraft:onDraft)
             }
         } catch {
             // A request that ended in an error must not leave its stage "running": the loop may go on
@@ -359,7 +367,7 @@ final class CodexResponsesTransport: AgentModelTransport, @unchecked Sendable {
             throw error
         }
     }
-    private func streamWithTrace(_ body: [String: Any], timeout: TimeInterval, observe: Bool, requestKey: String = "") async throws -> (ChatGPTStream, Int) {
+    private func streamWithTrace(_ body: [String: Any], timeout: TimeInterval, observe: Bool, requestKey: String = "", onDraft: (@MainActor (String) -> Void)? = nil) async throws -> (ChatGPTStream, Int) {
         try await checkCurrent()
         var request = CodexOAuth.request(path: "/responses", account: account, method: "POST")
         request.timeoutInterval = max(1, min(timeoutCap, timeout))
@@ -393,7 +401,8 @@ final class CodexResponsesTransport: AgentModelTransport, @unchecked Sendable {
         // Read and parse off the main thread: an image reply is megabytes of
         // base64, and byte-by-byte work here would stall the interface.
         let quiet = ChatGPTAccount.StreamUpdates(onObservation: nil, onReceiving: nil, setStatus: { _ in })
-        let stream = try await ChatGPTAccount.readStream(bytes, maxBytes: imageMode ? 64 * 1024 * 1024 : 8 * 1024 * 1024, acceptImageCompletion: imageMode, requestStarted: requestStarted, requestKey: requestKey, updates: observe ? updates : quiet)
+        let shown = onDraft == nil ? updates : ChatGPTAccount.StreamUpdates(onObservation: updates.onObservation, onReceiving: updates.onReceiving, setStatus: updates.setStatus, onText: onDraft)
+        let stream = try await ChatGPTAccount.readStream(bytes, maxBytes: imageMode ? 64 * 1024 * 1024 : 8 * 1024 * 1024, acceptImageCompletion: imageMode, requestStarted: requestStarted, requestKey: requestKey, updates: observe ? shown : quiet)
         try await checkCurrent()
         return (stream, RequestSizeEstimate.tokens(payload))
     }
@@ -417,7 +426,7 @@ final class CodexResponsesTransport: AgentModelTransport, @unchecked Sendable {
         let allowance = PhoneExecutionScope.budget?.outputLimit(inputTokens: requestEstimate, cap: input.outputLimit, phase: PhoneExecutionScope.phase)
         var meter = try PhoneModelMeter(estimate: requestEstimate, outputLimit: allowance); defer { meter.finish() }
         var result: (ChatGPTStream, Int)
-        do { result = try await stream(body, timeout: input.timeout, observe: input.goalReview == nil, iteration: input.iteration, continuation: input.continuation) }
+        do { result = try await stream(body, timeout: input.timeout, observe: input.goalReview == nil, iteration: input.iteration, continuation: input.continuation, onDraft: input.onDraft) }
         catch is ImageSizeRejected where input.goalReview == nil && input.internalJob == nil && !input.repairing {
             // Retry once at the service's default size; the reply says so.
             base["tools"] = ((base["tools"] as? [[String: Any]]) ?? []).map { var tool = $0; if tool["type"] as? String == "image_generation" { tool["size"] = nil }; return tool }
@@ -425,7 +434,7 @@ final class CodexResponsesTransport: AgentModelTransport, @unchecked Sendable {
             sizeFallback = true
             meter.finish()
             meter = try PhoneModelMeter(estimate: RequestSizeEstimate.tokens(try JSONSerialization.data(withJSONObject: body)), outputLimit: allowance)
-            result = try await stream(body, timeout: input.timeout, observe: true, iteration: input.iteration, continuation: input.continuation)
+            result = try await stream(body, timeout: input.timeout, observe: true, iteration: input.iteration, continuation: input.continuation, onDraft: input.onDraft)
         }
         let (stream, estimate) = result
         meter.inputTokens = Self.inputTokens(stream) ?? estimate

@@ -136,9 +136,9 @@ export async function traceModelCall(options, work) {
     const onDelta = typeof originalDelta === 'function' ? (...args) => { if (first == null && (args[0]?.delta || args[0]?.text)) first = performance.now() - started; return originalDelta(...args); } : undefined;
     try {
       const result = await work({ ...options, onDelta });
-      traceEvent('model.response', { durationMs: performance.now() - started, firstEventMs: first, usageOrigin: 'unknown' }, result);
+      traceEvent('model.response', { durationMs: performance.now() - started, firstEventMs: first, firstTextMs: first, usageOrigin: 'unknown' }, result);
       return result;
-    } catch (error) { traceEvent('model.error', { durationMs: performance.now() - started, firstEventMs: first, code: error?.code || error?.name || 'ERROR' }); throw error; }
+    } catch (error) { traceEvent('model.error', { durationMs: performance.now() - started, firstEventMs: first, firstTextMs: first, code: error?.code || error?.name || 'ERROR' }); throw error; }
   });
 }
 // A string cut inside a surrogate pair is not valid Unicode: a tool result truncated at the

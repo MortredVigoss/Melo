@@ -106,6 +106,9 @@ const rows = [
 ["这次请求已完成，但对应回复已被删除。", "This request finished, but its reply has been deleted.", "このリクエストは完了しましたが、対応する返信は削除されています。", "이 요청은 완료되었지만 해당 답변은 삭제되었습니다.", "Esta solicitud terminó, pero su respuesta se ha eliminado."],
 ["连接中断，尚未收到完成确认。请先检查对话记录，避免重复执行操作。", "The connection dropped before completion was confirmed. Check the conversation first to avoid repeating actions.", "完了の確認を受け取る前に接続が切れました。操作の重複を避けるため、まず会話の記録を確認してください。", "완료 확인을 받기 전에 연결이 끊겼습니다. 작업이 반복되지 않도록 먼저 대화 기록을 확인하세요.", "La conexión se cortó antes de confirmar la finalización. Revisa primero la conversación para no repetir acciones."],
 ["请求未完成，请稍后重试。", "The request did not finish. Please try again in a moment.", "リクエストは完了しませんでした。しばらくしてからもう一度お試しください。", "요청이 완료되지 않았습니다. 잠시 후 다시 시도하세요.", "La solicitud no se completó. Vuelve a intentarlo en un momento."],
+// Reply latency (2026-11-09, merged 2026-11-14).
+["实际运行 {time}", "Active {time}", "実行 {time}", "실행 {time}", "Ejecución {time}"],
+["暂停等待 {time}", "Paused {time}", "一時停止 {time}", "일시 중지 {time}", "En pausa {time}"],
 // War room (layout A, 2026-11-06).
 // War room delivery states and exact totals (layout A, C8, 2026-11-06).
 ["五个区域", "The five regions", "5 つの領域", "다섯 영역", "Las cinco regiones"],

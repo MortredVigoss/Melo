@@ -118,6 +118,27 @@ class AgentAuditFlowTest {
         }
     }
 
+    // An answer the check sent back that comes in again unchanged gets the same verdict without another check
+    // request (shared goal.js, merged from codex/reply-latency-20261109 on 2026-11-14). It still counts against
+    // the correction allowance, so the turn ends after the same number of answers; an answer whose wording
+    // changed is checked every time.
+    @Test fun theSameAnswerAfterItWasSentBackIsNotCheckedAgain() = runBlocking {
+        for (reworded in listOf(false, true)) MockWebServer().use { model ->
+            val roles = Roles { role, round, _ -> when (role) { "check" -> say(sentBack); else -> say(if (reworded) "DRAFT $round：天空是绿色的。" else "DRAFT：天空是绿色的。") } }
+            model.dispatcher = roles; model.start()
+            val id = chat(model)
+            val run = send(id, "用一句话解释天空为什么是蓝色的。")
+            assertEquals(if (reworded) listOf("lead", "check", "lead", "check", "lead", "check") else listOf("lead", "check", "lead", "lead"), roles.roles())
+            assertEquals("three answers either way: the allowance is the same", 3, roles.of("lead").size)
+            // The turn ends at the correction allowance either way. Nothing was read in it, so the receipt
+            // records the unsupported answer as blocked (with a read it would be partial).
+            assertEquals("GOAL_CORRECTION_LIMIT", completion(run).text("reason")); assertEquals(run.error, "blocked", completion(run).text("outcome"))
+            val checks = stages(run).filter { it.text("id").startsWith("goal-check:") }
+            assertEquals("every verdict is shown, the two that were applied again too: " + checks.map { it.text("id") }, 3, checks.size)
+            assertTrue(checks.all { it.text("status") == "failed" })
+        }
+    }
+
     // D1 on a member's turn. A member's answer is not checked on this host: it goes to the lead as written,
     // also when the allowance ends with that very reply. Only the lead, which has written nothing yet, is
     // asked for a write-up.

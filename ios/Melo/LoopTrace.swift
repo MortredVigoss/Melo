@@ -6,6 +6,17 @@ enum LoopTrace {
     final class Scope: @unchecked Sendable {
         let root: Root, runID: String, kind: String, parentRunID: String?, spanID: String, parentSpanID: String?
         let model: Bool
+        private let timingLock = NSLock()
+        private let started = ProcessInfo.processInfo.systemUptime
+        private var firstEvent: Double?, firstText: Double?
+        func received(text: Bool) {
+            timingLock.withLock {
+                let ms = (ProcessInfo.processInfo.systemUptime - started) * 1000
+                if firstEvent == nil { firstEvent = ms }
+                if text && firstText == nil { firstText = ms }
+            }
+        }
+        var responseTiming: [String: Any] { timingLock.withLock { ["firstEventMs": firstEvent as Any? ?? NSNull(), "firstTextMs": firstText as Any? ?? NSNull()] } }
         init(root: Root, runID: String, kind: String, parentRunID: String? = nil, spanID: String? = nil, parentSpanID: String? = nil, model: Bool = false) {
             self.root = root; self.runID = runID; self.kind = kind; self.parentRunID = parentRunID; self.spanID = spanID ?? runID; self.parentSpanID = parentSpanID; self.model = model
         }
@@ -121,6 +132,7 @@ enum LoopTrace {
             await flush()
         }
     }
+    static func received(text: Bool) { if current?.model == true { current?.received(text: text) } }
     static func emit(_ type: String, _ data: [String: Any] = [:], payload: Any? = nil, round: Int? = nil) {
         guard let current else { return }
         let target: Scope
@@ -161,7 +173,7 @@ enum LoopTrace {
             emit("model.request.prepared",["purpose":purpose],payload:input)
             emit("model.request.started",["source":"model-adapter","providerDispatch":"unknown"])
             await current?.root.flush()
-            do { let result = try await work(); emit("model.response",["durationMs":(ProcessInfo.processInfo.systemUptime-started)*1000,"firstEventMs":NSNull(),"usageOrigin":"unknown"],payload:snapshot(result)); return result }
+            do { let result = try await work(); emit("model.response",["durationMs":(ProcessInfo.processInfo.systemUptime-started)*1000,"usageOrigin":"unknown"].merging(current?.responseTiming ?? [:]) { _, new in new },payload:snapshot(result)); return result }
             catch { emit("model.error",["durationMs":(ProcessInfo.processInfo.systemUptime-started)*1000,"code":String(describing:type(of:error))]); throw error }
         }
     }

@@ -4,6 +4,15 @@ export { NATIVE_INTERFACE_TERMS as interfaceTermKeys } from '../desktop-ui/inter
 // Native-only authored copy. User names, prompts and model output are never translated.
 // Chinese / English / Japanese / Korean / Spanish.
 const rows = [
+// Reply latency (2026-11-09, merged 2026-11-14): the draft shown while a reply is written, run and pause time, stream errors.
+["回复草稿 · 核验完成后保存", "Reply draft · saved after verification", "返信の下書き · 確認後に保存", "답변 초안 · 검증 후 저장", "Borrador · se guarda tras verificar"],
+["实际运行 %@","Active %@","実行 %@","실행 %@","Ejecución %@"],
+["暂停等待 %@","Paused %@","一時停止 %@","일시 중지 %@","En pausa %@"],
+["模型流中断，未保存为完整回答。", "Model stream interrupted; no complete reply was saved.", "モデルのストリームが中断され、完全な返信は保存されませんでした。", "모델 스트림이 중단되어 완전한 답변이 저장되지 않았습니다.", "Se interrumpió el flujo del modelo; no se guardó una respuesta completa."],
+["模型工具参数不完整，未执行。", "Incomplete tool arguments; nothing was executed.", "ツールの引数が不完全なため、実行されませんでした。", "도구 인수가 불완전하여 실행되지 않았습니다.", "Los argumentos de la herramienta están incompletos; no se ejecutó."],
+["模型未完成回复。", "The model did not finish its reply.", "モデルは返信を完了しませんでした。", "모델이 답변을 완료하지 않았습니다.", "El modelo no terminó su respuesta."],
+["模型响应格式无效，未保存为完整回答。", "Invalid model response; no complete reply was saved.", "モデルの応答形式が無効なため、完全な返信は保存されませんでした。", "모델 응답 형식이 잘못되어 완전한 답변이 저장되지 않았습니다.", "Respuesta del modelo no válida; no se guardó una respuesta completa."],
+
 ["保存连接","Save connection","接続を保存","연결 저장","Guardar conexión"],
 ["编辑连接","Edit connection","接続を編集","연결 편집","Editar conexión"],
 ["缺少续行记录，请先核对已执行的步骤。","No recovery checkpoint is available. Review the steps already taken.","復元記録がありません。実行済みの手順を確認してください。","복구 기록이 없습니다. 이미 실행된 단계를 확인하세요.","No hay un punto de recuperación. Revisa los pasos ya ejecutados."],

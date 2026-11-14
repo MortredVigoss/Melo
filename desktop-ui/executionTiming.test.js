@@ -91,3 +91,23 @@ test('a run whose receipt is not complete says when it ended, not when it comple
   try { assert.match(renderExecutionTiming(ended({ completion: { outcome: 'partial' } }), now(100)), /Ended at/); }
   finally { setLanguage('zh-CN'); }
 });
+
+test('pause accounting preserves total time and unions overlapping active intervals', () => {
+  const run = { ...scene(), status: 'completed', finishedAt: at(50), activeIntervals: [
+    { startedAt: at(0), finishedAt: at(10) }, { startedAt: at(5), finishedAt: at(15) },
+    { startedAt: at(40), finishedAt: at(50) },
+  ] };
+  const timing = executionTiming(run);
+  assert.equal(timing.elapsedMs, 50000); assert.equal(timing.activeMs, 25000); assert.equal(timing.pausedMs, 25000);
+  assert.match(renderExecutionTiming(run), /实际运行 25 秒 · 暂停等待 25 秒/);
+  assert.equal(executionTiming(scene()).pausedMs, null, 'Old data must not invent pause measurements');
+  assert.doesNotMatch(renderExecutionTiming({ ...scene(), status: 'completed', finishedAt: at(18) }), /实际运行|暂停等待/);
+  // A run without a pause: the time at work equals the total, and saying it twice adds nothing.
+  const steady = { ...scene(), status: 'completed', finishedAt: at(18), activeIntervals: [{ startedAt: at(0), finishedAt: at(18) }] };
+  assert.equal(executionTiming(steady).pausedMs, 0);
+  assert.doesNotMatch(renderExecutionTiming(steady), /实际运行|暂停等待/);
+  // The stretch that is still open ends now while the run is going, and with the run once it has ended.
+  const open = { ...scene(), activeIntervals: [{ startedAt: at(0), finishedAt: at(4) }, { startedAt: at(10) }] };
+  assert.equal(executionTiming(open, now(16)).activeMs, 10000); assert.equal(executionTiming(open, now(16)).pausedMs, 6000);
+  assert.equal(executionTiming({ ...open, status: 'interrupted', finishedAt: at(12) }).activeMs, 6000);
+});

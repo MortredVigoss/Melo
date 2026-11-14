@@ -12,6 +12,25 @@ import SwiftUI
     private var draftsFile: URL { file.deletingLastPathComponent().appendingPathComponent("composer-drafts.json") }
     /// Conversations with a reply in progress. Each conversation runs on its own;
     /// a reply in one never blocks sending, cancelling or editing another.
+    /// The answer a reply is writing, by conversation, shown under the messages until the reply ends
+    /// (from codex/reply-latency-20261109). It is never saved and is not the reply: the message that is
+    /// saved is the one the loop returns after its checks, and the draft is gone when the reply ends, is
+    /// stopped or fails.
+    @Published private(set) var replyDrafts: [String: String] = [:]
+    private var replyDraftShownAt: [String: Date] = [:]
+    /// How long to wait before a draft of this length is drawn again. Every update lays the whole text
+    /// out anew, so a long answer is updated less often; the whole text is always shown at the end.
+    static func replyDraftInterval(characters: Int) -> TimeInterval { characters < 2_000 ? 0 : characters < 8_000 ? 0.3 : 0.6 }
+    func showReplyDraft(_ text: String, chatID: String, whole: Bool, now: Date = Date()) {
+        guard !text.isEmpty else { clearReplyDraft(chatID); return }
+        if !whole, let last = replyDraftShownAt[chatID], now.timeIntervalSince(last) < Self.replyDraftInterval(characters: text.utf16.count) { return }
+        replyDraftShownAt[chatID] = now
+        if replyDrafts[chatID] != text { replyDrafts[chatID] = text }
+    }
+    func clearReplyDraft(_ chatID: String) {
+        replyDraftShownAt[chatID] = nil
+        if replyDrafts[chatID] != nil { replyDrafts[chatID] = nil }
+    }
     @Published private(set) var sendingChats: Set<String> = []
     func isSending(_ chatID: String?) -> Bool { chatID.map { sendingChats.contains($0) } ?? false }
     var anySending: Bool { !sendingChats.isEmpty }
@@ -572,10 +591,10 @@ import SwiftUI
             }
             saved = prior; saved.automatic = false; saved.attempts += 1
             do { try persist(saved) } catch { fail(error.localizedDescription); return }
-            record = executionRecords[idx]; record.status = "running"; record.finishedAt = nil; record.completion = nil
+            record = executionRecords[idx]; record.status = "running"; record.finishedAt = nil; record.completion = nil; record.beginActivity()
             executionRecords[idx] = record
         } else {
-            record = ExecutionRecord(chatId: chatID, query: history.last?.content ?? "", requestedModel: requested)
+            record = ExecutionRecord(chatId: chatID, query: history.last?.content ?? "", requestedModel: requested); record.beginActivity(newRun: true)
             if plan.makesImage { record.imageProgress = ExecutionImageProgress(startedAt: record.startedAt) }
             saved = ReplyCheckpoint(runID: record.runId, chatID: chatID, questionID: history.last!.id, binding: binding,
                                     supportsContinuation: teamPlan == nil && video == nil && !plan.makesImage)
@@ -643,6 +662,10 @@ import SwiftUI
         let verification = classification.map { AgentVerification(question: clean, classification: $0, contextBlocks: [memoryText] + resolvedContext.evidence) }
         let loopHooks = AgentLoopHooks(
             internalRouting: teamPlan == nil && video == nil && !plan.makesImage,
+            onDraft: { [weak self] text, whole in
+                guard isCurrent() else { return }
+                self?.showReplyDraft(text, chatID: chatID, whole: whole)
+            },
             onCalculation: { [weak self] id, ok, output in guard isCurrent() else { return }; self?.phoneOperation(record.runId, id:"calculate:"+id, module:"compute", name:"计算", status:ok ? "completed" : "failed", summary:output) },
             resumeCursor: resuming?.cursor,
             saveCursor: { [weak self] cursor in
@@ -678,7 +701,7 @@ import SwiftUI
             defer {
                 replyBackground.finish(runID: record.runId, success: completed)
                 if runs[chatID]?.runID == record.runId { runs[chatID] = nil }
-                sendingChats.remove(chatID); activeImageActions[chatID] = nil; expiredRuns.remove(record.runId)
+                sendingChats.remove(chatID); clearReplyDraft(chatID); activeImageActions[chatID] = nil; expiredRuns.remove(record.runId)
                 if completed && !isBackground { scheduleAutomaticSync() }
                 if !completed, checkpoint(record.runId)?.canContinue == true,
                    scenes(for: chatID).last?.status == "interrupted" {

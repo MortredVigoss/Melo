@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import CoreGraphics
 import ImageIO
 
@@ -315,9 +316,14 @@ enum WebPageText {
     /// push the whole result over the output limit.
     static let maxTitleCharacters = 300
     static let maxDescriptionCharacters = 1_000
-    static func openResult(url: String, finalURL: String, title: String, description: String, text: String, page requested: Int, status: Int? = nil, stoppedEarly: Bool = false) -> String {
+    /// `snapshot`: the read of this page that the reply keeps for its later parts (PhonePageCache); the
+    /// result then says when the page was read and which version of its text this is. `reused`: this part
+    /// comes from that earlier read, the page was not loaded again.
+    static func openResult(url: String, finalURL: String, title: String, description: String, text: String, page requested: Int, status: Int? = nil, stoppedEarly: Bool = false, snapshot: PhonePageCache.Entry? = nil, reused: Bool = false) -> String {
         let chunk = paged(text, page: requested)
         var object: [String: Any] = ["ok": true, "url": url, "finalUrl": finalURL, "title": String(title.prefix(maxTitleCharacters)), "text": chunk.text, "page": chunk.page, "pageCount": chunk.pageCount, "truncated": chunk.truncated]
+        if let snapshot { object["fetchedAt"] = snapshot.fetchedAt; object["contentVersion"] = snapshot.version }
+        if reused { object["reusedSourceSnapshot"] = true }
         if !description.isEmpty { object["description"] = String(description.prefix(maxDescriptionCharacters)) }
         if let next = chunk.nextPage { object["nextPage"] = next }
         if let status { object["status"] = status }
@@ -395,5 +401,39 @@ enum WebPageText {
         let object = PhoneToolEnvelope.payload(result.output)
         if let page = object["page"] as? Int, let count = object["pageCount"] as? Int, count > 1 { return (true, "已读取 \(page)/\(count) 页") }
         return (true, "已读取网页")
+    }
+}
+
+/// The pages one reply has read in full, so that a later part of a page (`page` 2 and up) is cut from
+/// the text already read instead of loading the page again (from codex/reply-latency-20261109).
+/// One reply owns it (PhoneExecutionScope.pageCache): nothing is kept between replies or conversations.
+/// Only a complete, successful read is kept, for 30 seconds, for at most 8 pages. The first part of a
+/// page is always read afresh, and that read replaces what was kept, or removes it when it fails.
+final class PhonePageCache: @unchecked Sendable {
+    struct Entry {
+        let finalURL: String, title: String, description: String, text: String
+        let status: Int?, fetchedAt: String, version: String, saved: Date
+    }
+    static let lifetime: TimeInterval = 30
+    static let capacity = 8
+    private let lock = NSLock()
+    private var entries = [String: Entry]()
+    func invalidate(_ url: String) { lock.withLock { _ = entries.removeValue(forKey: url) } }
+    func get(_ url: String, now: Date = Date()) -> Entry? {
+        lock.withLock {
+            guard let entry = entries[url], now.timeIntervalSince(entry.saved) >= 0, now.timeIntervalSince(entry.saved) <= Self.lifetime else { return nil }
+            return entry
+        }
+    }
+    /// Keeps the read and returns it; nil (and nothing kept) for a read that is not whole or not a success.
+    @discardableResult func store(_ url: String, finalURL: String, title: String, description: String, text: String, status: Int?, complete: Bool, now: Date = Date()) -> Entry? {
+        guard complete, !text.isEmpty, status.map({ (200..<300).contains($0) }) != false else { return nil }
+        let version = SHA256.hash(data: Data((finalURL + "\n" + text).utf8)).map { String(format: "%02x", $0) }.joined()
+        let entry = Entry(finalURL: finalURL, title: title, description: description, text: text, status: status, fetchedAt: ISO8601DateFormatter().string(from: now), version: version, saved: now)
+        return lock.withLock {
+            if entries[url] == nil && entries.count >= Self.capacity, let oldest = entries.min(by: { $0.value.saved < $1.value.saved })?.key { entries.removeValue(forKey: oldest) }
+            entries[url] = entry
+            return entry
+        }
     }
 }

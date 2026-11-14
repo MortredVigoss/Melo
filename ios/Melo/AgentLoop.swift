@@ -69,6 +69,9 @@ struct AgentLoopRequest: @unchecked Sendable {
     /// (2026-11-07 review P1-2): every research and social member tool,
     /// hosted search included.
     var leadWithheld: Set<String> = []
+    /// The answer text of this request while it is being written: the lead's own requests only, never a
+    /// member's report, a check's verdict or tool arguments. The text is a draft until the reply is saved.
+    var onDraft: (@MainActor (String) -> Void)? = nil
 
     // Start each member with a fresh model context. Keep provider-specific
     // function/result pairs together within that member's own transcript.
@@ -271,6 +274,10 @@ struct AgentStageEvent: Sendable {
 /// Observers; all run on the main actor.
 struct AgentLoopHooks {
     var internalRouting = false
+    /// The answer as far as it is written, for showing as a draft; empty when there is none to show (a
+    /// new request started, the response turned out to be tool calls). `whole` is false while the text
+    /// is still arriving. A draft is not the reply: only what the loop returns is saved.
+    var onDraft: (@MainActor (_ text: String, _ whole: Bool) -> Void)? = nil
     var onCalculation: (@MainActor (String, Bool, String) -> Void)? = nil
     var resumeCursor: PhoneReplyCursor? = nil
     var saveCursor: (@MainActor (PhoneReplyCursor) throws -> Void)? = nil
@@ -356,7 +363,20 @@ final class AgentLoop: @unchecked Sendable {
         else { await hooks.onStage?(event.id, event.name, event.status, event.output.isEmpty ? event.input : event.output) }
     }
     func run() async throws -> AgentLoopOutcome {
-        try await LoopTrace.withRun(runID: hooks.traceRunID ?? UUID().uuidString, goal: latestUserMessage, outcome: { $0.completion?.outcome ?? "unknown" }) { try await self.runWithTrace() }
+        // One reply shares the pages it has read in full (PhonePageCache): a later part of the same page
+        // does not load the page again.
+        try await PhoneExecutionScope.$pageCache.withValue(PhoneExecutionScope.pageCache ?? PhonePageCache()) {
+            try await LoopTrace.withRun(runID: hooks.traceRunID ?? UUID().uuidString, goal: latestUserMessage, outcome: { $0.completion?.outcome ?? "unknown" }) { try await self.runWithTrace() }
+        }
+    }
+    /// An answer as it is shown while it is written: without the `[UNCERTAIN: …]` note the model may put
+    /// at its end for the check, whether that note is complete or still arriving.
+    static func draftText(_ text: String) -> String {
+        guard let open = text.range(of: "[UNCERTAIN:", options: [.backwards, .caseInsensitive]) else { return text }
+        let rest = text[open.upperBound...]
+        if rest.contains("\n") { return text }
+        if let close = rest.firstIndex(of: "]"), !rest[rest.index(after: close)...].trimmingCharacters(in: .whitespaces).isEmpty { return text }
+        return String(text[..<open.lowerBound])
     }
     private func runWithTrace() async throws -> AgentLoopOutcome {
         if let value = hooks.maxTaskIterations { maxIterations = min(contract.maxRounds, max(1, value)) }
@@ -589,12 +609,18 @@ final class AgentLoop: @unchecked Sendable {
             var condensed = false
             while true {
                 let review = checkingGoal ? try goal.update("request", ["observations": completionObservations]) : nil
-                let request = AgentLoopRequest(iteration: iteration, transcript: transcript, timeout: budget.requestTimeout(cap: transport.timeoutCap), remainingTokens: nil, goalReview: review, repairing: goal.repairing, progressDefinition: catalog != nil && job == nil ? progressDefinition : nil, internalDefinition: catalog != nil && job == nil && assignments.count < (routeLimits?["assignments"] ?? 0) ? definition : nil, internalJob: job, continuation: continuationID.map { String($0.prefix(6)).lowercased() } ?? "", leadWithheld: job == nil ? Self.leadWithheld(catalog) : [])
+                var request = AgentLoopRequest(iteration: iteration, transcript: transcript, timeout: budget.requestTimeout(cap: transport.timeoutCap), remainingTokens: nil, goalReview: review, repairing: goal.repairing, progressDefinition: catalog != nil && job == nil ? progressDefinition : nil, internalDefinition: catalog != nil && job == nil && assignments.count < (routeLimits?["assignments"] ?? 0) ? definition : nil, internalJob: job, continuation: continuationID.map { String($0.prefix(6)).lowercased() } ?? "", leadWithheld: job == nil ? Self.leadWithheld(catalog) : [])
+                // The lead's own answer is shown while it is written. A new request starts with no draft;
+                // while its answer is being checked, the answer that was offered stays on screen.
+                if job == nil && !checkingGoal {
+                    await hooks.onDraft?("", true)
+                    request.onDraft = { [hooks] text in hooks.onDraft?(Self.draftText(text), false) }
+                } else if job == nil { await hooks.onDraft?(Self.draftText(candidateRound?.text ?? ""), true) }
                 do {
-                    let roundTransport = transport
+                    let roundTransport = transport, roundRequest = request
                     round = try await LoopTrace.model(purpose: checkingGoal ? "goal-check" : "loop", input: ["iteration":iteration,"toolNames":Array(offered),"loadedToolInstructions":tools?.instructionsWithContract ?? ""], snapshot: { value in
                         ["text":value.text,"calls":value.calls.map { ["id":$0.callID,"name":$0.name,"arguments":$0.arguments] },"inputTokens":value.inputTokens as Any? ?? NSNull(),"outputTokens":value.outputTokens as Any? ?? NSNull(),"usageOrigin":value.inputTokens == nil ? "unknown" : "provider"]
-                    }) { try await withDeadline(budget) { try await roundTransport.round(request) } }
+                    }) { try await withDeadline(budget) { try await roundTransport.round(roundRequest) } }
                     break
                 } catch let error as RequestTooLarge where !checkingGoal {
                     // audit C-8 parity: condense older tool outputs once and retry; never on the first call.
@@ -670,6 +696,7 @@ final class AgentLoop: @unchecked Sendable {
             if round.searched { boundObservations() }
             searched = searched || round.searched
             let calls = (transport.offersTools && tools != nil || catalog != nil) ? round.calls : []
+            if job == nil, !checkingGoal { await hooks.onDraft?(calls.isEmpty ? Self.draftText(round.text) : "", true) }
             if job == nil, !calls.isEmpty { carriedImages += round.images }
             if job == nil, catalog != nil, calls.count == 1, let call = calls.first, call.name == "task_progress" {
                 let args = (try? JSONSerialization.jsonObject(with: Data(call.arguments.utf8))) as? [String:Any] ?? [:]
@@ -716,6 +743,20 @@ final class AgentLoop: @unchecked Sendable {
                 // uncertain, as on the desktop; finalize then needs no request of its own.
                 try goal.update("candidate", ["observations": completionObservations, "candidate": ["context": ["messages": goalHistory.suffix(8).map { ["role": $0.role, "content": $0.content] }, "capabilities": Array(offered)], "reply": round.text, "uncertainClaim": flaggedClaim(round.text), "tools": Array(offered) + (nativeSearchAvailable ? ["native_web_search"] : []) + (catalog != nil && job == nil ? ["task_progress"] : []), "research": ChatGPTRequest.requiresSearch(latestUserMessage), "roundsLeft": maxIterations - core.rounds]])
                 if goal.checking { try core.event("feedback"); iteration += 1; continue }
+                // The same answer again after its check sent it back, with nothing changed that the check
+                // read: the verdict stands (shared goal.js) and is shown, and no check request is made.
+                // It counts against the correction allowance like a check, and ends the turn at its limit.
+                if goal.verdictReused {
+                    let review = (try? goal.update("reviewSnapshot")).flatMap { try? SyncValue.from($0) }
+                    await stage(AgentStageEvent(id: "goal-check:\(iteration)", name: "核对任务交付", status: "failed", output: goal.verdictText, goalReview: review))
+                }
+                if goal.repairPending {
+                    carriedImages = round.images
+                    try core.event("feedback", ["repair": true])
+                    transcript.append(.userText(goal.repairFeedback))
+                    iteration += 1
+                    continue
+                }
                 try core.event("complete")
                 if !core.completed { return AgentLoopOutcome(text: core.reply(latestUserMessage), stop: core.reason == "DEADLINE_EXCEEDED" ? .budget : .toolLimit, finalRound: nil, sources: sources, searched: searched, calls: records) }
                 lastEvidence = evidence
@@ -1095,6 +1136,8 @@ final class AgentLoop: @unchecked Sendable {
 enum PhoneExecutionScope {
     @TaskLocal static var budget: PhoneRunBudget?
     @TaskLocal static var phase = "work"
+    /// The pages this reply has read in full (WebPageText.swift); nil outside a reply.
+    @TaskLocal static var pageCache: PhonePageCache?
     static func check(deadline: PhoneRunBudget? = nil) throws {
         try Task.checkCancellation()
         if let budget = deadline ?? budget, budget.workRemainingMs() <= 0 { throw PhoneDeadline.Reached() }

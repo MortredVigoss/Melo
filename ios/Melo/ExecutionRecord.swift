@@ -133,6 +133,16 @@ struct ExecutionObservation: Equatable {
     }
     /// The API transports keep one observation for the whole reply: a new request starts its own stage.
     mutating func beginRequest(_ key: String) { requestKey = key; requestStarted = ProcessInfo.processInfo.systemUptime }
+    /// When the first event and the first text of this request arrived, measured by the transport that
+    /// streamed it. Not set for a request that was not streamed: its receipt then records the whole
+    /// duration as the time to the first event, as before.
+    mutating func firstResponse(eventMs: Double?, textMs: Double?) {
+        guard let index = pipeline.firstIndex(where: { $0.id == modelStageID }) else { return }
+        var api = pipeline[index].api ?? [:]
+        if let eventMs, eventMs.isFinite, eventMs >= 0, api["firstEventMs"] == nil { api["firstEventMs"] = .number(eventMs.rounded()) }
+        if let textMs, textMs.isFinite, textMs >= 0, api["firstTextMs"] == nil { api["firstTextMs"] = .number(textMs.rounded()) }
+        if api != pipeline[index].api { pipeline[index].api = api; revision += 1 }
+    }
     mutating func apiReceipt(_ response: [String: Any], transport: String, finishReason: String? = nil) {
         guard let index = pipeline.firstIndex(where: { $0.id == modelStageID }) else { return }
         var api = pipeline[index].api ?? [:]
@@ -282,6 +292,10 @@ struct ExecutionObservation: Equatable {
         }
         if type == "response.created" { stage(modelStageID, name: "模型请求", status: "running", output: "服务已接收请求，等待输出") }
         if type == "response.output_text.delta" { stage(modelStageID, name: "模型请求", status: "running", output: "正在接收模型输出") }
+        if type.hasPrefix("response.") {
+            let elapsed = (ProcessInfo.processInfo.systemUptime - requestStarted) * 1000
+            firstResponse(eventMs: elapsed, textMs: type == "response.output_text.delta" && !(event["delta"] as? String ?? "").isEmpty ? elapsed : nil)
+        }
         if type == "response.completed", let response = event["response"] as? [String: Any], response["status"] as? String == "completed" {
             stage(modelStageID, name: "模型请求", status: "completed", output: "模型返回完成" + (returnedModel.map { " · 服务返回模型：\($0)" } ?? " · 服务未报告模型标识"))
             for id in Array(summaryParts.keys) { publishSummary(id, status: "completed") }
@@ -316,6 +330,11 @@ extension ExecutionObservation {
         return tagged
     }
 }
+struct ExecutionActivity: Codable, Equatable {
+    var startedAt: String
+    var finishedAt: String?
+}
+
 struct ExecutionRecord: Codable, Identifiable, Equatable {
     var id: String { runId }
     var version = 1
@@ -325,6 +344,8 @@ struct ExecutionRecord: Codable, Identifiable, Equatable {
     var query: String
     var startedAt = timestamp()
     var finishedAt: String?
+    /// Local attempt intervals. Old records stay unknown instead of inventing pause time.
+    var activeIntervals: [ExecutionActivity]?
     var status = "running"
     var completion: AgentCompletionReceipt?
     var sequence = 0
@@ -372,6 +393,21 @@ struct ExecutionRecord: Codable, Identifiable, Equatable {
     func elapsedMilliseconds(now: Date = Date()) -> Double? {
         guard !runId.hasPrefix("legacy-") else { return nil }
         return ExecutionClock.elapsed(startedAt, end: terminal ? ExecutionClock.date(finishedAt) : now)
+    }
+    mutating func beginActivity(at: String = timestamp(), newRun: Bool = false) {
+        if activeIntervals == nil { guard newRun else { return }; activeIntervals = [] }
+        guard activeIntervals?.last?.finishedAt != nil || activeIntervals?.isEmpty == true else { return }
+        activeIntervals?.append(ExecutionActivity(startedAt: at))
+    }
+    func activeMilliseconds(now: Date = Date()) -> Double? {
+        guard let intervals = activeIntervals, !intervals.isEmpty else { return nil }
+        return intervals.reduce(0) { total, item in
+            total + (ExecutionClock.elapsed(item.startedAt, end: ExecutionClock.date(item.finishedAt) ?? (terminal ? ExecutionClock.date(finishedAt) : now)) ?? 0)
+        }
+    }
+    func pausedMilliseconds(now: Date = Date()) -> Double? {
+        guard let elapsed = elapsedMilliseconds(now: now), let active = activeMilliseconds(now: now) else { return nil }
+        return max(0, elapsed - active)
     }
     func modelMilliseconds(now: Date = Date()) -> Double? {
         let end = terminal ? ExecutionClock.date(finishedAt) : now
@@ -533,6 +569,7 @@ struct ExecutionRecord: Codable, Identifiable, Equatable {
     mutating func finish(_ state: String, messageID: String? = nil) {
         guard !terminal else { return }
         status = state; finishedAt = timestamp(); messageId = messageID; sequence += 1
+        if let index = activeIntervals?.indices.last, activeIntervals?[index].finishedAt == nil { activeIntervals?[index].finishedAt = finishedAt }
         for index in operations.indices where ["running", "queued", "in_progress"].contains(operations[index].status) { operations[index].status = state == "cancelled" ? "cancelled" : "interrupted" }
         for index in (pipeline ?? []).indices where ["running", "queued"].contains(pipeline![index].status) {
             pipeline![index].status = state == "cancelled" ? "cancelled" : state == "failed" ? "failed" : "interrupted"

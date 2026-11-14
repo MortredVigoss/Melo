@@ -8,6 +8,7 @@ import ssl
 import subprocess
 import tempfile
 import threading
+import time
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -29,6 +30,18 @@ class Provider(http.server.BaseHTTPRequestHandler):
         probe = any('2 + 2' in str(m.get('content')) for m in messages)
         answer = 'MELO_KEY_ACCEPTED' if probe else 'MELO_CHAT_ACCEPTED'
         self.server.receipts.append(('probe' if probe else 'chat', allowed))
+        if allowed and body.get('stream') and not probe:
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/event-stream')
+            self.end_headers()
+            def event(value):
+                self.wfile.write(('data: '+json.dumps(value)+'\n\n').encode())
+                self.wfile.flush()
+            event({'model':'melo-ui-fixture','choices':[{'index':0,'delta':{'content':'MELO_CHAT_'},'finish_reason':None}]})
+            time.sleep(4)  # UI must expose the draft while the response is unfinished.
+            event({'choices':[{'index':0,'delta':{'content':'ACCEPTED'},'finish_reason':'stop'}]})
+            self.wfile.write(b'data: [DONE]\n\n'); self.wfile.flush()
+            return
         payload = json.dumps({'model': 'melo-ui-fixture', 'choices':[{'message':{'role':'assistant','content':answer},'finish_reason':'stop'}]}).encode() if allowed else b'{}'
         self.send_response(200 if allowed else 401)
         self.send_header('Content-Type', 'application/json')

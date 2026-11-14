@@ -14,6 +14,12 @@ struct ExecutionTimingView: View {
                 if record.terminal { Text("本轮用时 \(duration(elapsed))") }
                 else { Text("已用时 \(duration(elapsed))") }
             } else { Text("用时未记录") }
+            // A reply that was paused and continued shows how long it ran and how long it waited. Without
+            // a pause both would repeat the total above, so they are not shown.
+            if let paused = record.pausedMilliseconds(now: now), paused >= 1000, let active = record.activeMilliseconds(now: now) {
+                Text("实际运行 \(duration(active))")
+                Text("暂停等待 \(duration(paused))")
+            }
             if let model = record.modelMilliseconds(now: now) { Text("思考与回复 \(duration(model))") }
             if record.terminal, !record.runId.hasPrefix("legacy-"), let end = ExecutionClock.date(record.finishedAt) {
                 if record.status == "completed" { Text("完成于 \(clock(end))") }

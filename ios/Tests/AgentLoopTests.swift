@@ -431,9 +431,14 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
             assert(result.text.contains("18 度") && result.completion?.outcome == "completed")
             assert(result.completion?.task?.original == "下周演唱会当天的天气如何？" && result.completion?.task?.corrections == 1)
         }
-        for mode in ["ambiguity", "invalid", "tool-attempt", "failure", "limit"] {
+        // "limit": the check sends the same answer back until the correction allowance is used up. The
+        // answer comes in again unchanged, so its verdict is applied again without a check request
+        // (shared goal.js, merged from codex/reply-latency-20261109): one request where there were three.
+        // "limit-reworded": an answer whose wording changes is checked every time, three requests.
+        for mode in ["ambiguity", "invalid", "tool-attempt", "failure", "limit", "limit-reworded"] {
             let log = Log(), budget = PhoneRunBudget()
-            var checks = 0
+            var checks = 0, answers = 0
+            let limited = mode.hasPrefix("limit")
             let transport = ScriptedTransport { input in
                 if input.goalReview != nil {
                     checks += 1
@@ -442,14 +447,17 @@ func object(_ text: String) -> [String: Any] { (try? JSONSerialization.jsonObjec
                     if mode == "invalid" { return answer("invalid JSON") }
                     return answer(mode == "ambiguity" ? #"{"decision":"needs_user","reasonType":"ambiguity","reason":"同日有两场，请选择","requirements":[{"text":"场次天气","status":"missing","evidenceIds":[]}]}"# : #"{"decision":"continue","reasonType":"lookup_missing","nextStep":"核对剩余事实","requirements":[{"text":"完整回答","status":"missing","evidenceIds":[]}]}"#)
                 }
-                return input.iteration == 0 ? calls([fc("initial")]) : answer("已有结果保留。")
+                if input.iteration == 0 { return calls([fc("initial")]) }
+                answers += 1
+                return answer(mode == "limit-reworded" ? "已有结果保留。（第 \(answers) 稿）" : "已有结果保留。")
             }
             let result = try await AgentLoop(transport: transport, tools: loopTools(log), budget: budget, latestUserMessage: "读这个页面").run()
-            assert(log.performed.count == 1 && result.text == "已有结果保留。")
-            assert(checks == (mode == "limit" ? 3 : 1))
+            assert(log.performed.count == 1 && result.text == (mode == "limit-reworded" ? "已有结果保留。（第 3 稿）" : "已有结果保留。"))
+            assert(checks == (mode == "limit-reworded" ? 3 : 1), "\(mode): \(checks) checks")
+            assert(answers == (limited ? 3 : 1), "\(mode): \(answers) answers; the correction allowance is the same either way")
             // A check that judged the answer keeps its verdict; one that gave none (failed, unreadable, or it
             // tried a tool) leaves the delivered answer "unverified" (2026-11-10, shared completion receipt).
-            assert(result.completion?.outcome == (mode == "ambiguity" ? "needs_user" : mode == "limit" ? "partial" : "unverified"), "\(mode): \(result.completion?.outcome ?? "nil")")
+            assert(result.completion?.outcome == (mode == "ambiguity" ? "needs_user" : limited ? "partial" : "unverified"), "\(mode): \(result.completion?.outcome ?? "nil")")
             assert(budget.used.providerCalls == transport.requests.count)
         }
 

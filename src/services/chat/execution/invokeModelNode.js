@@ -510,6 +510,20 @@ export function createInvokeModelNode(turn) {
           coreTurn.update('feedback');
           continue;
         }
+        // The answer is the one the check sent back, and nothing the check read has changed: its verdict
+        // stands (goal.js) and its feedback goes to the model again, as after a check, without asking for
+        // the same verdict a second time. It counts against the correction allowance like a check, ends the
+        // turn at the allowance's limit, and is shown in the task space like the check it stands for.
+        if (coreTurn.goalState?.reviewReused === true) {
+          const reused = coreTurn.goalState;
+          const goalReview = goalOperation({ action: 'reviewSnapshot', state: reused });
+          checkStage('failed', reused.explanation || reused.reason, goalReview ? { goalReview } : {});
+        }
+        if (coreTurn.repairPending) {
+          coreTurn.update('feedback', { repair: true });
+          loopMessages.push({ role: 'assistant', content: coreTurn.candidateReply }, { role: 'user', content: coreTurn.repairFeedback, isSupplement: true, isLoopFeedback: true });
+          continue;
+        }
         coreTurn.update('complete');
         finalReply = turn.text || coreTurn.reply(latestUserMessage, config.replyLanguage);
         if (coreTurn.status === 'completed' && leadNativeSearch) {

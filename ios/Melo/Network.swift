@@ -56,6 +56,12 @@ enum Network {
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw MeloError.message("服务未返回有效响应。") }
         if LoopTrace.current?.model == true { LoopTrace.emit("model.provider.receipt",["httpStatus":http.statusCode],payload:(try? JSONSerialization.jsonObject(with:data))) }
+        try validateResponse(http, data: data, optionalExtension: optionalExtension)
+        guard data.count <= maxBytes else { throw MeloError.message("响应超过当前版本的容量限制。") }
+        return data
+    }
+    /// What an HTTP status means for a request, with the server's own explanation where it gave one.
+    static func validateResponse(_ http: HTTPURLResponse, data: Data, optionalExtension: Bool = false) throws {
         if optionalExtension && http.statusCode == 404 { throw ExtensionUnavailable() }
         guard (200..<300).contains(http.statusCode) else {
             if [400, 413, 422].contains(http.statusCode), let contextError = contextLimitError(data) { throw contextError }
@@ -68,8 +74,73 @@ enum Network {
             default: throw MeloError.message("服务暂时不可用（\(http.statusCode)），记录已保存在手机。")
             }
         }
-        guard data.count <= maxBytes else { throw MeloError.message("响应超过当前版本的容量限制。") }
-        return data
+    }
+
+    /// One model request that asks for a streamed reply, so its text can be shown while it is written
+    /// (from codex/reply-latency-20261109). A server that answers with plain JSON is read as before.
+    /// The stream is put together again as the JSON of a non-streamed reply (ModelStreamDecoder), so
+    /// the caller handles both the same way. `onText` receives the text so far, at most ten times a
+    /// second, and an empty string once a tool call starts. Never retried: a second request could be
+    /// charged twice.
+    static func streamPost(_ url: URL, token: String, body: Data, anthropic: Bool, session: URLSession = Network.session, headers: [String: String] = [:], timeout: TimeInterval = 120,
+                           onText: (@MainActor (String) -> Void)? = nil) async throws -> (data: Data, firstEventMs: Double?, firstTextMs: Double?) {
+        let parsed = LoopTrace.current == nil ? nil : (try? JSONSerialization.jsonObject(with: body)) as? [String: Any]
+        if let parsed, parsed["model"] != nil {
+            return try await LoopTrace.model(purpose: "provider", input: parsed, snapshot: { (try? JSONSerialization.jsonObject(with: $0.data)) ?? ["unparsed": true] }) {
+                await LoopTrace.providerPayload(parsed)
+                return try await streamWithTrace(url, token: token, body: body, anthropic: anthropic, session: session, headers: headers, timeout: timeout, onText: onText)
+            }
+        }
+        return try await streamWithTrace(url, token: token, body: body, anthropic: anthropic, session: session, headers: headers, timeout: timeout, onText: onText)
+    }
+    private static func streamWithTrace(_ url: URL, token: String, body: Data, anthropic: Bool, session: URLSession, headers: [String: String], timeout: TimeInterval,
+                                        onText: (@MainActor (String) -> Void)?) async throws -> (data: Data, firstEventMs: Double?, firstTextMs: Double?) {
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = timeout
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("text/event-stream, application/json", forHTTPHeaderField: "Accept")
+        if headers["x-api-key"] == nil { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
+        request.httpBody = body
+        let started = ProcessInfo.processInfo.systemUptime
+        let (bytes, response) = try await session.bytes(for: request)
+        guard let http = response as? HTTPURLResponse else { throw MeloError.message("服务未返回有效响应。") }
+        let succeeded = (200..<300).contains(http.statusCode)
+        let streaming = succeeded && (http.value(forHTTPHeaderField: "Content-Type") ?? "").lowercased().contains("text/event-stream")
+        var data = Data(), decoder = ModelStreamDecoder(anthropic: anthropic)
+        var firstEvent: Double?, firstText: Double?, lastSent = -1.0, lastText = "", revision = 0
+        for try await byte in bytes {
+            try Task.checkCancellation()
+            guard streaming else {
+                data.append(byte)
+                // An error page is read only as far as its explanation can reach.
+                guard data.count <= (succeeded ? 8 * 1024 * 1024 : 16_384) else {
+                    if succeeded { throw MeloError.message("响应超过当前版本的容量限制。") }
+                    break
+                }
+                continue
+            }
+            try decoder.accept(byte)
+            guard revision != decoder.revision else { continue }
+            revision = decoder.revision
+            let elapsed = (ProcessInfo.processInfo.systemUptime - started) * 1000
+            if firstEvent == nil { firstEvent = elapsed; LoopTrace.received(text: false) }
+            if firstText == nil && !decoder.text.isEmpty { firstText = elapsed; LoopTrace.received(text: true) }
+            let visible = decoder.hasTools ? "" : decoder.text
+            if visible != lastText && (lastSent < 0 || elapsed - lastSent >= 100 || decoder.hasTools) {
+                lastText = visible; lastSent = elapsed
+                await onText?(visible)
+            }
+        }
+        if !streaming, LoopTrace.current?.model == true { LoopTrace.emit("model.provider.receipt", ["httpStatus": http.statusCode], payload: (try? JSONSerialization.jsonObject(with: data))) }
+        try validateResponse(http, data: data)
+        guard streaming else { return (data, nil, nil) }
+        data = try decoder.finish()
+        let visible = decoder.hasTools ? "" : decoder.text
+        if visible != lastText { await onText?(visible) }
+        if LoopTrace.current?.model == true { LoopTrace.emit("model.provider.receipt", ["httpStatus": http.statusCode, "streamed": true], payload: (try? JSONSerialization.jsonObject(with: data))) }
+        return (data, firstEvent, firstText)
     }
     /// System line for API connections. Without tools it is byte-identical to
     /// the historical text; with tools it names them instead of denying them
@@ -304,12 +375,28 @@ final class APIChatTransport: AgentModelTransport, @unchecked Sendable {
             body["max_tokens"] = min(allowance, (body["max_tokens"] as? Int) ?? allowance)
         }
         if let limit = input.outputLimit { body["max_tokens"] = min(limit, (body["max_tokens"] as? Int) ?? limit) }
+        // Every request asks for a stream: the answer's text is shown as a draft while it is written
+        // (`input.onDraft`, set by the loop for the lead's own requests only), and each request records
+        // when its first text arrived. A server that does not stream answers with JSON as before.
+        body["stream"] = true
         let estimated = RequestSizeEstimate.tokens(try JSONSerialization.data(withJSONObject: body))
         let allowance = PhoneExecutionScope.budget?.outputLimit(inputTokens: estimated + 32, cap: body["max_tokens"] as? Int, phase: PhoneExecutionScope.phase)
         if let allowance { guard allowance > 0 else { throw PhoneBudgetReached() }; body["max_tokens"] = allowance }
         let payload = try JSONSerialization.data(withJSONObject: body)
         let meter = try PhoneModelMeter(estimate: RequestSizeEstimate.tokens(payload), outputLimit: allowance); defer { meter.finish() }
-        let data = try await Network.post(url, token: token, body: payload, session: session, headers: headers, timeout: max(1, min(timeoutCap, input.timeout)))
+        // A check has no stage of its own (see `round`): it neither moves a stage nor shows a draft.
+        let observed = input.goalReview == nil
+        let streamed = try await Network.streamPost(url, token: token, body: payload, anthropic: anthropic, session: session, headers: headers, timeout: max(1, min(timeoutCap, input.timeout)), onText: { [self] text in
+            if observed, !text.isEmpty {
+                // `stage` changes nothing when the stage already says so: this publishes once per request.
+                let before = observation.revision
+                observation.stage(observation.modelStageID, name: "模型请求", status: "running", output: "正在接收模型输出", model: model)
+                if observation.revision != before { onObservation?(observation) }
+            }
+            input.onDraft?(text)
+        })
+        let data = streamed.data
+        if observed { observation.firstResponse(eventMs: streamed.firstEventMs, textMs: streamed.firstTextMs) }
         try Task.checkCancellation()
         let receipt = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         var finishReason: String?

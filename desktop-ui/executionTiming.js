@@ -25,6 +25,11 @@ export function executionTiming(scene, now = Date.now()) {
   const done = terminal(scene), start = legacy ? null : instant(scene.startedAt), finished = legacy ? null : instant(scene.finishedAt);
   const end = done ? finished : now;
   const elapsedMs = start !== null && end !== null && end >= start ? end - start : null;
+  // The stretches a run was at work, recorded by a host that can pause a reply (the iPhone). Records
+  // without them say nothing about pauses, and none is made up for them.
+  // A stretch that is still open ends now while the run is going, and with the run once it has ended.
+  const activeMs = Array.isArray(scene.activeIntervals) ? intervalDuration(scene.activeIntervals.map(item => ({ startedAt: item?.startedAt, finishedAt: item?.finishedAt })), end) : null;
+  const pausedMs = activeMs !== null && elapsedMs !== null ? Math.max(0, elapsedMs - activeMs) : null;
   const modelMs = intervalDuration((scene.pipeline || []).filter(stage => /^model:/.test(stage.id) && stage.channel !== 'reasoning-summary' && !stage.id.endsWith(':summary')), end);
   const images = (scene.artifacts || []).filter(a => a?.kind === 'image');
   const imageOps = (scene.operations || []).filter(op => ['image_edit', 'native_image_generation'].includes(op.name) || op.name === 'image' && op.module === 'create');
@@ -46,7 +51,7 @@ export function executionTiming(scene, now = Date.now()) {
   // the user, out of budget or blocked. "Completed at" would say more than the record does.
   const outcome = scene.completion?.outcome || (scene.taskOutcome !== 'running' ? scene.taskOutcome : '') || '';
   const unfinished = scene.status === 'completed' && !!outcome && !['completed', 'unverified'].includes(outcome);
-  return { done, elapsedMs, modelMs, finishedAt: finished, completed: scene.status === 'completed', unfinished, image };
+  return { done, elapsedMs, activeMs, pausedMs, modelMs, finishedAt: finished, completed: scene.status === 'completed', unfinished, image };
 }
 function formatExecutionDuration(ms) {
   if (ms === null || !Number.isFinite(ms) || ms < 0) return t('用时未记录');
@@ -58,6 +63,9 @@ function dateText(value) {
 export function renderExecutionTiming(scene, now = Date.now()) {
   const value = executionTiming(scene, now); if (!value) return '';
   const labels = [value.elapsedMs === null ? t('用时未记录') : t(value.done ? '本轮用时 {time}' : '已用时 {time}', { time: formatExecutionDuration(value.elapsedMs) })];
+  // A reply that was paused and continued (an iPhone reply that went to the background) shows how long it
+  // ran and how long it waited. Without a pause the two add nothing to the total, so they are not shown.
+  if (value.pausedMs >= 1000) labels.push(t('实际运行 {time}', { time: formatExecutionDuration(value.activeMs) }), t('暂停等待 {time}', { time: formatExecutionDuration(value.pausedMs) }));
   if (value.modelMs !== null) labels.push(t('思考与回复 {time}', { time: formatExecutionDuration(value.modelMs) }));
   if (value.done && value.finishedAt !== null) { const time = dateText(value.finishedAt); labels.push(!value.completed ? t('停止于 {time}', { time }) : value.unfinished ? t('结束于 {time}', { time }) : t('完成于 {time}', { time })); }
   const img = value.image;

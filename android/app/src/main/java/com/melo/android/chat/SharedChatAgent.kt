@@ -221,7 +221,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
         val verifiedActions = mutableListOf<JsonElement>()
         suspend fun receipt(reply: String, reason: String? = null, plan: JsonObject? = null, core: SharedCoreRuntime = runtime) = core.value("completion", buildJsonObject { put("completion", buildJsonObject {
             put("locale", replyLocale); put("goal", goal); put("reply", reply); put("observations", JsonArray(observations)); put("verifiedActions", JsonArray(verifiedActions))
-            goalState?.let { state -> put("task", JsonObject(state.filterKeys { it !in setOf("candidate", "phase", "feedback", "availableTools", "research", "context") })) }
+            goalState?.let { state -> put("task", JsonObject(state.filterKeys { it !in setOf("candidate", "phase", "feedback", "availableTools", "research", "context", "sentBack", "reviewReused") })) }
             reason?.let { put("terminalReason", it) }; plan?.let { put("plan", it) }
         }) }).jsonObject
         private suspend fun finish(text: String, model: String?, outcome: String = "completed", reason: String? = null): ModelReply {
@@ -419,6 +419,21 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                 put("action", "candidate"); put("state", goalState!!); put("observations", JsonArray(observations))
                 put("candidate", buildJsonObject { put("context", buildJsonObject { put("messages", JsonArray(messages.takeLast(8).map { buildJsonObject { put("role", it.role); put("content", it.content) } })); put("capabilities", JsonArray(names.map(::JsonPrimitive))); put("skills", JsonArray(goalSkills)) }); put("reply", reply.text); put("roundsLeft", turn.roundsLeft); put("research", plan["research"] != null); put("tools", JsonArray((names + (if (plan["nativeSearchAvailable"]?.jsonPrimitive?.booleanOrNull == true) listOf("native_web_search") else emptyList()) + (if (internalCatalog != null && internalJob == null) listOf("task_progress") else emptyList())).map { JsonPrimitive(it) })) })
             }).jsonObject
+            // The same answer again after its check sent it back, with nothing changed that the check read:
+            // the verdict stands (shared goal.js), is shown like a check, and no check request is made. It
+            // counts against the correction allowance like a check and ends the turn at its limit.
+            if (goalState!!["reviewReused"]?.jsonPrimitive?.booleanOrNull == true) {
+                LoopTrace.emit("goal.check", buildJsonObject { put("reused", true) }, JsonObject(goalState!!.filterKeys { it != "sentBack" }))
+                val checkView = try { runtime.value("goal", buildJsonObject { put("action", "reviewSnapshot"); put("state", goalState!!) }) as? JsonObject } catch (error: Exception) { currentCoroutineContext().ensureActive(); null }
+                journal.event("goal-check:${++modelSequence}", "核对任务交付", output = goalState!!.text("explanation").ifBlank { goalState!!.text("reason") }, status = "failed", goalReview = checkView)
+                if (goalState!!.text("phase") == "working") {
+                    onDelta(""); onPhase("核对后继续补充…")
+                    turn.event("feedback", buildJsonObject { put("repair", true) })
+                    history += reply.wire
+                    history += buildJsonObject { put("role", "user"); put("content", goalState!!.text("feedback")) }
+                    return false
+                }
+            }
             if (goalState!!.text("phase") != "checking") { turn.event("complete"); return true }
             val request = runtime.value("goal", buildJsonObject { put("action", "request"); put("state", goalState!!); put("observations", JsonArray(observations)) }).jsonObject
             val reviewHistory = request.getValue("messages").jsonArray.map { it.jsonObject }
@@ -436,7 +451,7 @@ class SharedChatAgent(private val context: Context, private val client: ModelCli
                 return true
             }
             goalState = runtime.value("goal", buildJsonObject { put("action", "review"); put("state", goalState!!); put("observations", JsonArray(observations)); put("response", if (review.calls.isEmpty()) review.text else "") }).jsonObject
-            LoopTrace.emit("goal.check", payload = goalState)
+            LoopTrace.emit("goal.check", payload = JsonObject(goalState!!.filterKeys { it != "sentBack" }))
             // Read-only view of this check for the task space (review 2026-11-07); never sent to the model.
             val checkView = try { runtime.value("goal", buildJsonObject { put("action", "reviewSnapshot"); put("state", goalState!!) }) as? JsonObject } catch (error: Exception) { currentCoroutineContext().ensureActive(); null }
             journal.event("goal-check:${++modelSequence}", "核对任务交付", output = goalState!!.text("explanation").ifBlank { goalState!!.text("reason") }, status = if (goalState!!.text("decision") in setOf("complete", "deliver")) "completed" else "failed", goalReview = checkView)

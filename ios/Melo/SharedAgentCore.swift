@@ -60,6 +60,13 @@ final class PhoneGoalState {
               saved["version"] as? Int == 1 else { throw SharedAgentCoreError.invalidReply }
         state = saved
     }
+    /// The answer just offered is the one a check sent back, with nothing changed that the check read: its
+    /// verdict was applied again (shared goal.js) and no check request is made for it.
+    var verdictReused: Bool { state["reviewReused"] as? Bool == true }
+    /// That verdict sent the answer back once more: its feedback goes to the model again.
+    var repairPending: Bool { verdictReused && state["phase"] as? String == "working" }
+    var repairFeedback: String { state["feedback"] as? String ?? "" }
+    var verdictText: String { (state["explanation"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? state["reason"] as? String ?? "" }
     var checking: Bool { state["phase"] as? String == "checking" }
     var repairing: Bool { (state["corrections"] as? Int ?? 0) > 0 }
     var snapshot: [String: Any]? { SharedLoopPolicy.value("goal", ["action": "snapshot", "state": state]) as? [String: Any] }
@@ -80,7 +87,9 @@ final class PhoneGoalState {
         var input = fields; input["action"] = action; input["state"] = state
         guard let next = SharedLoopPolicy.value("goal", input) as? [String: Any] else { throw SharedAgentCoreError.invalidReply }
         if !["request","progressResult","progressSnapshot","reviewSnapshot"].contains(action) { state = next }
-        LoopTrace.emit(action == "review" ? "goal.check" : "goal.updated", ["action":action], payload:next)
+        // `sentBack` is the whole input of the last check that sent an answer back (shared goal.js keeps it
+        // to recognise the same answer again): the state needs it, the trace does not need a copy per update.
+        LoopTrace.emit(action == "review" ? "goal.check" : "goal.updated", ["action":action], payload:next.filter { $0.key != "sentBack" })
         return next
     }
 }
