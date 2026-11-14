@@ -5,14 +5,11 @@ import { runInternalMembers } from './internalMembers.js';
 import { runLimitDelivery } from '../../../runtime/limitDelivery.js';
 import { isDeliveryLimit } from '../../../../shared/agent/limitDelivery.js';
 import { resolveLoopLimits } from '../../../../shared/agent/loopLimits.js';
-import { extendBudget } from '../../../runtime/runBudget.js';
 import { traceEvent } from '../../../runtime/loopTrace.js';
 import { runtimeMessage } from '../../../../shared/agent/runtimeMessages.js';
 import { turnStopReply } from '../../../../shared/agent/turn.js';
 import { goalOperation } from '../../../../shared/agent/goal.js';
 import { connectionForModel, resolvedModelCapabilities } from '../../../../shared/agent/modelCapabilities.js';
-import { toolEffect } from '../../../../shared/agent/toolEffects.js';
-import { resolveContextBudget } from '../contextBudget.js';
 import { teamCompletion } from '../../../../shared/agent/completion.js';
 import { hostedSearchReceipt } from '../../../../shared/agent/hostedSearch.js';
 // Chat execution graph — `invoke-model` node (architecture B2, 2026-10-20).
@@ -69,8 +66,7 @@ export function createInvokeModelNode(turn) {
   // requests against the member's own child pool (charged to this turn's pool).
   const rawReplyProvider = turn._dependencies?.createReply;
   return async function invokeModel(graphState) {
-    const routingSession = turn.routing;
-    let selectedModel = modelOverrides.model || graphState.activeAgentProfile.model || config.model;
+    const selectedModel = modelOverrides.model || graphState.activeAgentProfile.model || config.model;
     const delegatedModelConfig = { ...config, ...modelOverrides, model: selectedModel, modelResolvedForTurn: true,
       toolCalling: env.MELO_FUNCTION_CALLING || config.toolCalling };
     let continuationTeam = null;
@@ -126,7 +122,7 @@ export function createInvokeModelNode(turn) {
       graphState.modelMessages = await prepareVisionInputs(decorated,{signal,detail:task.detail,onObservation:e=>sseEmitter?.('execution_event',{kind:'pipeline',id:`vision-prepare:${++serial}`,module:'compute',status:'completed',...e})});
     }
     const latestParts=graphState.modelMessages.filter(m=>m.role==='user').at(-1)?.content;
-    let vision = routingSession?.current.mode === 'smart' ? null : Array.isArray(latestParts) && latestParts.some(p=>p.type==='image_url') ? visionConnection(config,{...modelOverrides,model:selectedModel}) : null;
+    let vision = Array.isArray(latestParts) && latestParts.some(p=>p.type==='image_url') ? visionConnection(config,{...modelOverrides,model:selectedModel}) : null;
     const fastPathReply = context.requestToolPolicy?.toolsForbidden || task?.action === 'analyze' || !scopeAllowsTool(context.capabilityScope,'image',{action:'generate'}) ? null : await tryImageEditFastPath({
       config: { ...config, model:selectedModel },
       messages: graphState.modelMessages,
@@ -140,13 +136,8 @@ export function createInvokeModelNode(turn) {
     }
 
     // Shared with the iPhone loop (shared/protocol/agent-loop.json).
-    const loopLimits = resolveLoopLimits({ maxIterations: graphState.activeAgentProfile?.collaboration?.maxTaskIterations, route: routingSession?.current });
+    const loopLimits = resolveLoopLimits({ maxIterations: graphState.activeAgentProfile?.collaboration?.maxTaskIterations });
     const MAX_TOOL_ITERATIONS = loopLimits.maxIterations;
-    if (budget && routingSession?.current.deepTask) extendBudget(budget, { deadlineMs: Math.max(0, budget.startedAt + loopLimits.deadlineMs - budget.now()), maxToolCalls: loopLimits.maxToolCalls });
-    const escalationTool = { id: 'melo_escalate', name: 'melo_escalate', description: 'Request one higher configured model tier when the task needs more reasoning. This continues the same task with all results preserved. Do not repeat completed actions.', effect: 'compute', requiresPermission: false,
-      parametersSchema: { type: 'object', properties: { reason: { type: 'string', description: 'Why this task requires a stronger model.' } }, required: ['reason'], additionalProperties: false } };
-    const routingEnabled = routingSession?.current.mode === 'smart' && config.smartRouting?.allowEscalation !== false;
-    if (routingEnabled) graphState.promptTools = [...graphState.promptTools, escalationTool];
     const routeGoal = graphState.searchPlan.sharedPlan?.resolvedGoal || latestUserMessage;
     // Phase A1 (2026-11-04): the host classifies every visible tool from its
     // declarations so jobs are not limited to the shared static whitelists.
@@ -186,8 +177,6 @@ export function createInvokeModelNode(turn) {
     // in the shared loop, so a model that kept sending one could spend the whole allowance on refusals.
     let refusedRouteRounds = 0;
     let closedRouterSession;
-    let escalationRequested = false;
-    let routingSideEffects = false;
     // One id space for every session of this turn (see createFunctionCallingSession).
     const turnCallIds = new Set(), callIdScope = { callIds: turnCallIds };
     let functionSession = createFunctionCallingSession({ ...delegatedModelConfig, ...(vision || {}),
@@ -233,7 +222,6 @@ export function createInvokeModelNode(turn) {
     // MCP tools resolve by id (`mcp:s:t`, XML prompt) or wire name (`mcp__s__t`).
     const mcpToolsByName = indexMcpTools(graphState.mcpTools || []);
     const visibleToolIds = new Set(graphState.visibleToolIds || []);
-    if (routingEnabled) visibleToolIds.add('melo_escalate');
     if (deferral) visibleToolIds.add(LOAD_TOOLS_NAME);
     const allowedToolIdList = [...visibleToolIds];
     const coreTurn = createCoreTurn({ budget, runId: String(context.requestId), turnId: chat.id,
@@ -273,20 +261,6 @@ export function createInvokeModelNode(turn) {
         }
       }
 
-      if (!coreTurn.checking && routingSession?.escalate({ ...coreTurn.routingProgress, requested: escalationRequested, sideEffects: routingSideEffects })) {
-        const selected = routingSession.connection();
-        selectedModel = selected.model;
-        Object.assign(config, selected);
-        Object.assign(modelOverrides, { model: selected.model, verifier: selected.model, apiKey: selected.apiKey, baseUrl: selected.baseUrl });
-        Object.assign(delegatedModelConfig, selected, { modelResolvedForTurn: true });
-        Object.assign(contextBudget, resolveContextBudget(env, { config: selected }));
-        closedRouterSession = null;
-        functionSession = createFunctionCallingSession({ ...selected, toolCalling: env.MELO_FUNCTION_CALLING || selected.toolCalling }, graphState.promptTools, callIdScope);
-        loopSections = loopSections.map(section => section.id === 'tools' ? { ...section, text: [leadSearchPrompt(), buildToolsSystemPrompt(graphState.promptTools, { includeExamples: false, native: functionSession.native, protocol: functionSession.protocol })].join('\n\n') } : section);
-        // Rerouting never resets the budget, goal, tool IDs or successful effects.
-        coreTurn.update('reroute');
-      }
-      escalationRequested = false;
       const routerClosed = assignments.length >= MAX_ASSIGNMENTS || !catalog;
       const phaseTools = routerClosed ? graphState.promptTools.filter(t => t.id !== ROUTE_NAME) : graphState.promptTools;
       const roundSession = routerClosed && phaseTools.length !== graphState.promptTools.length
@@ -378,7 +352,6 @@ export function createInvokeModelNode(turn) {
         onDelta: !checkingGoal ? onDelta : undefined,
         onReasoningDelta: checkingGoal ? undefined : onReasoningDelta,
         providerProfile,
-        routing: routingSession?.current.mode === 'smart' ? { ...routingSession.current, judge: undefined } : undefined,
         // Workspace path enables inline image generation through the
         // Codex OAuth chat stream (createCodexResponsesReply adds the
         // image_generation tool when this is truthy and writes the
@@ -392,7 +365,7 @@ export function createInvokeModelNode(turn) {
         // it this turn is said in the routing prompt. Only an explicit
         // user network-off or a non-Codex route keeps it off.
         nativeWebSearchEnabled: !toolFree && nativeFeaturesForScope(context.capabilityScope,context.requestToolPolicy).nativeWebSearchEnabled && leadNativeSearch,
-        nativeImageGenerationEnabled: !context.requestToolPolicy?.toolsForbidden && (routingSession?.current.mode !== 'smart' || routingSession.current.tier === 'strong') && !toolFree && !coreTurn.repairing && scopeAllowsTool(context.capabilityScope,'image',{action:'generate'}) && imageSettings(config).engine === 'codex-oauth',
+        nativeImageGenerationEnabled: !context.requestToolPolicy?.toolsForbidden && !toolFree && !coreTurn.repairing && scopeAllowsTool(context.capabilityScope,'image',{action:'generate'}) && imageSettings(config).engine === 'codex-oauth',
         onExecutionEvent: event => {
           const observed = { ...event, id: event.id ? `${iteration}:${event.id}` : undefined };
           if (coreTurn.observeNative(observed)) recordUsage(budget, { toolCalls: 1 });
@@ -479,11 +452,6 @@ export function createInvokeModelNode(turn) {
         for (const call of routeCalls) {
           const next = startInternalJob({ catalog, args: call.arguments, callId: call.id, assignments, goal: routeGoal });
           if (next.error) { call.rejectedResult = { ok: false, output: next.error, meta: { code: 'ROUTE_DENIED', executionStarted: false } }; continue; }
-          if (next.role === 'execute' && routingSession?.current.mode === 'smart' && routingSession.current.tier !== 'strong') {
-            routingSideEffects = true; escalationRequested = true;
-            call.rejectedResult = { ok: false, output: 'This assignment has not started. Retry after the host selects the strong tier; if unavailable, ask the user to configure it.', meta: { code: 'ROUTING_REQUIRES_STRONG', executionStarted: false } };
-            continue;
-          }
           // A continuation used to start from nothing: it was given two more rounds and none of what the
           // earlier run had read. It now gets that run's handoff as reference.
           const earlier = next.resume ? assignments.find(entry => entry.callId === next.resume)?.handoff : null;
@@ -498,7 +466,6 @@ export function createInvokeModelNode(turn) {
         const outcomes = started.length ? await runInternalMembers({ jobs: started, goal: routeGoal, background: dispatchMemberBackground,
           config: delegatedModelConfig, extraTools: [...(graphState.skillTools || []), ...(graphState.mcpTools || [])], replyFn: rawReplyProvider,
           jobModels: graphState.activeAgentProfile?.collaboration?.jobModels || null,
-          requireStrongWrites: routingSession?.current.mode === 'smart',
           signal, sseEmitter, chatId: chat.id, workspacePath: workspace?.rootPath, chatSource: chat.source || 'desktop', projectId: chat.projectId,
           onProviderResponse: receipt => { if (!signal?.aborted) modelResponses.push(receipt); } }) : [];
         for (const outcome of outcomes) {
@@ -593,14 +560,6 @@ export function createInvokeModelNode(turn) {
         if (tc.rejectedResult) continue;
         if (leadWithheld.has(mcpToolsByName.get(tc.name)?.id || tc.name)) tc.rejectedResult = { ok: false, output: 'The lead holds no retrieval tools: assign this lookup with route_task (research for the web, social for first-hand posts).', meta: { code: 'CAPABILITY_DENIED', executionStarted: false } };
         else if (!coreTurn.permits(tc.id)) tc.rejectedResult = coreTurn.rejectionResult(tc.id);
-        else if (routingSession?.current.mode === 'smart' && routingSession.current.tier !== 'strong' && ['write', 'unknown'].includes(toolEffect(tc.name, tc.arguments))) {
-          routingSideEffects = true; escalationRequested = true;
-          tc.rejectedResult = { ok: false, output: 'This action has not executed. It requires the strong tier. Continue using previous results after the host checks the configured tier; if unavailable ask the user to configure it.', meta: { code: 'ROUTING_REQUIRES_STRONG', executionStarted: false } };
-        }
-        else if (routingEnabled && tc.name === 'melo_escalate') {
-          escalationRequested = true;
-          tc.rejectedResult = { ok: true, output: 'Routing request recorded. Continue from existing results; do not repeat successful effects. The host will check the remaining budget and available tiers.', meta: { executionStarted: false } };
-        }
         else if (deferral && tc.name === LOAD_TOOLS_NAME) {
           // Answered by the host: nothing runs, the definitions join the next request.
           const outcome = deferral.load(tc.arguments?.names);

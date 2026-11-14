@@ -5270,7 +5270,7 @@ document.addEventListener('click', async event => {
       case 'pick-default-model': {
         if (uiState.modelPickerSaving) break;
         const model = trigger.dataset.model;
-        const selection = trigger.dataset.modelMode === 'smart' ? {mode:'smart', model:'', profileId:trigger.dataset.profileId || ''} : model ? {model, profileId:trigger.dataset.profileId || ''} : null;
+        const selection = model ? {model, profileId:trigger.dataset.profileId || ''} : null;
         uiState.modelPickerSaving = true;
         render();
         try {

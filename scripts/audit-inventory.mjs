@@ -141,7 +141,6 @@ const LEDGER = [
   { id: 'L14', title: '空回复兜底只有英文', file: 'src/services/chat/execution/finalizeNode.js', pattern: /I wasn't able to generate a response/ },
   { id: 'L15', title: '预算用完模板只有中文', file: 'shared/protocol/agent-loop.json', pattern: /"replyTemplate":\s*"这轮对话已达到运行预算/ },
   { id: 'L16', title: '纠正事实主题只认三种', file: 'src/memory/factPolicy.js', pattern: /deployment\.port/ },
-  { id: 'L17', title: '智能模式档位表存在（设计落地探针，open = 未落地）', file: 'desktop-ui/smartRouting.js', pattern: /./, open: 'missing' },
 ];
 
 // ─── Scan ────────────────────────────────────────────────────────────────────
@@ -205,7 +204,6 @@ for (const item of LEDGER) {
   const exists = existsSync(path);
   let open;
   if (item.open === 'exists') open = exists;
-  else if (item.open === 'missing') open = !exists;
   else open = exists && item.pattern.test(await readFile(path, 'utf8'));
   inventory.ledger.push({ id: item.id, title: item.title, file: item.file, status: open ? 'open' : 'closed' });
 }

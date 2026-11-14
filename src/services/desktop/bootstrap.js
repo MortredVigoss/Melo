@@ -1,7 +1,6 @@
 import { toolCallingOverride } from '../../../shared/agent/runtimeBehavior.js';
 import { requestEnvironment } from '../../runtime/requestScope.js';
 import { behaviorStatus } from '../../runtime/runtimeBehavior.js';
-import { publicSmartRouting } from '../modelRouting/routing.js';
 import {projectWorkspaceStatus} from '../workspace/workspacePolicy.js';
 import { isAgentChannelAvailable } from '../../shared/channelAvailability.js';
 import {projectText} from '../../domain/project/projectService.js';
@@ -307,7 +306,6 @@ export async function getDesktopBootstrap(query = '', { skipModelNormalize = fal
         provider: config.provider,
         imageSettings: resolvedImageSettings(config),
         llmConnections: publicLlmConnections(config),
-        smartRouting: publicSmartRouting(config),
         agentRuntime: config.agentRuntime,
         behavior: config.behavior,
         behaviorStatus: behaviorStatus(config, ctx.env),

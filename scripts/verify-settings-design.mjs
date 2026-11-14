@@ -93,11 +93,9 @@ try {
  // Retired automatic selection is absent; old policies cannot re-enable it.
  await go({activeView:'model'});
  assert.equal(await page.locator('[data-smart-routing]').count(),0);
- const routingPolicy=(await bootstrap()).settings.config.smartRouting;
- assert.equal(routingPolicy.enabled,false);
- assert.equal(routingPolicy.defaultMode,'fixed');
- assert.equal(routingPolicy.allowCrossConnection,false);
- assert.equal(routingPolicy.allowEscalation,false);
+ // This home's config.json holds a policy with defaultMode 'smart' (written at the top): it is not served, and its settings API is gone.
+ assert.equal('smartRouting' in (await bootstrap()).settings.config,false);
+ const retiredRouting=await fetch(base+'/api/settings/smart-routing',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});assert.equal(retiredRouting.status,405);
  assert.equal(await page.locator('[data-extra-fast]').count(),0);
  const retired=await fetch(base+'/api/settings/extra-fast',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});assert.equal(retired.status,405);
  await go({activeView:'chat',selectedChatId:'fixture-chat'});
@@ -108,7 +106,7 @@ try {
  await page.waitForFunction(()=>!document.querySelector('[data-action=toggle-model-picker]')?.disabled);
  assert.equal((await bootstrap()).activeChat.modelSelection.model,fixedID);
  assert.notEqual((await bootstrap()).activeChat.modelSelection.mode,'smart');
- out.smartRouting={legacyDisabled:true,crossConnection:false,escalation:false,retiredAPI:retired.status,fixedPicker:true};
+ out.smartRouting={served:false,retiredRoutingAPI:retiredRouting.status,retiredAPI:retired.status,fixedPicker:true};
  assert.deepEqual(errors,[]);
 
  // Runtime flags are real saved configuration; environment overrides stay visible and locked.

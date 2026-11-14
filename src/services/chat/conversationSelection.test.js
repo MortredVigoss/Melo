@@ -128,7 +128,8 @@ test('the image check asks about the model the turn runs on', async () => {
   const source = await readFile(new URL('./sendChatMessage.js', import.meta.url), 'utf8');
   assert.match(source, /visionConnection\(config,\{model:turnModel\(config,context\.env,activeAgentProfile\?\.model\)\}\)/, 'the send path uses it for the image check');
   const node = await readFile(new URL('./execution/invokeModelNode.js', import.meta.url), 'utf8');
-  assert.match(node, /let selectedModel = modelOverrides\.model \|\| graphState\.activeAgentProfile\.model \|\| config\.model;/, 'the order above is still the runner\'s order');
+  // `const` since 2026-11-14: nothing reassigns it now that a turn cannot be rerouted to another model.
+  assert.match(node, /const selectedModel = modelOverrides\.model \|\| graphState\.activeAgentProfile\.model \|\| config\.model;/, 'the order above is still the runner\'s order');
   const runnerSource = await readFile(new URL('./chatExecutionRunner.js', import.meta.url), 'utf8');
   assert.match(runnerSource, /model: config\.conversationModelSelected \? config\.model : config\.activeLlmProfileId \? '' : env\.MELO_MODEL \|\| '',/);
 });

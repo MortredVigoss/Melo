@@ -66,9 +66,10 @@ export function conversationAgent(data, { overview = false, newAgentId = 'main',
 }
 
 export function renderModelPicker({ config, models, agent, selection, open, saving }, escape) {
-  const smart = config.smartRouting?.enabled !== false && (selection?.mode === 'smart' || (!selection && config.smartRouting?.defaultMode === 'smart'));
-  const effectiveSelection = selection?.mode === 'smart' && !smart && agent?.model ? { ...selection, model: agent.model } : selection;
-  const current = smart ? agent?.model || t('智能（自动）') : effectiveSelection?.model || agent?.model || config.model;
+  // A conversation saved while automatic selection existed can still carry
+  // `mode: 'smart'`. It runs on the Agent's model, else on the one it stored.
+  const effectiveSelection = selection?.mode === 'smart' && agent?.model ? { ...selection, model: agent.model } : selection;
+  const current = effectiveSelection?.model || agent?.model || config.model;
   const profiles = config.llmConnections?.profiles || [];
   const activeID = config.llmConnections?.activeId || '';
   const activeProfile = profiles.find(p => p.id === activeID);
@@ -84,7 +85,6 @@ export function renderModelPicker({ config, models, agent, selection, open, savi
       <p class="model-picker-context">这里选择文字对话模型；图片理解与生成可在系统中另行配置。网页搜索、文件及电脑工具由 Melo 按 Agent 权限执行，网页搜索无需额外配置。</p>
       <div class="model-picker-options" role="group" aria-label="可选模型">
         <button type="button" class="model-picker-option ${!selection?'is-selected':''}" data-action="pick-default-model" data-model="" aria-pressed="${!selection}" ${saving?'disabled':''}>沿用Agent / 系统默认</button>
-        ${config.smartRouting?.enabled !== false ? ui`<button type="button" class="model-picker-option ${selection?.mode==='smart'?'is-selected':''}" data-action="pick-default-model" data-model-mode="smart" data-profile-id="${escape(selection?.profileId || activeID)}" aria-pressed="${selection?.mode==='smart'}" ${saving||agent?.model?'disabled':''}>智能（自动）</button>` : ''}
         ${choices.map(profile=>ui`<small>${escape(profile.name)}</small>${profile.models.map(model=>ui`<button type="button" class="model-picker-option ${selection?.mode!=='smart'&&selection?.model===model&&selection?.profileId===profile.id?'is-selected':''}" data-action="pick-default-model" data-model="${escape(model)}" data-profile-id="${escape(profile.id)}" aria-pressed="${selection?.mode!=='smart'&&selection?.model===model&&selection?.profileId===profile.id}" ${saving?'disabled':''}><span><strong>${escape(modelLabel(model))}</strong><small>${escape(model)}</small></span></button>`).join('')}`).join('')}
       </div><footer><span>${saving?t("正在保存…"):'其他对话和系统默认不变；实际返回模型仍在每条回复下记录。'}</span><button type="button" data-action="open-view" data-view="model">管理连接 ↗</button></footer>
     </section>` : ''}

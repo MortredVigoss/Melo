@@ -198,7 +198,7 @@ test('A5-1: a job runs on its configured connection, otherwise on the conversati
   assert.equal(events.find(e => e.id === 'internal:1' && e.status === 'running').model, 'fast-model', 'the scene shows which model the member ran on');
 });
 
-test('job connection replaces capability/window metadata and smart write jobs retain the strong connection', async () => {
+test('job connection replaces capability/window metadata, for a writing job like for any other', async () => {
   const { jobConnectionConfig } = await import('./internalMembers.js');
   const { createFunctionCallingSession } = await import('../../../tools/functionCalling.js');
   const config = { id: 'lead', activeLlmProfileId: 'lead', model: 'same-name', authMode: 'api-key', apiKey: 'lead-key', baseUrl: 'https://lead.invalid',
@@ -215,10 +215,13 @@ test('job connection replaces capability/window metadata and smart write jobs re
     run: options=>fixtureSubAgent({...options,replyFn:async request=>{requests.push(request);return 'No evidence available.';}})});
   assert.ok(requests.length); assert.deepEqual(requests[0].modelCapabilities,{tools:false,vision:false});
   assert.equal(requests[0].apiKey,'member-key'); assert.equal(requests[0].baseUrl,'https://member.invalid');
+  // Until 2026-11-14 a `requireStrongWrites` option kept a writing job on the lead's connection while automatic
+  // model selection was active. That mode was retired and the option went with it: the connection the user
+  // set for the job is the one it runs on.
   const models=[];
-  await runInternalMembers({jobs:[job('execute','save',2)],goal,config,jobModels:{execute:'narrow'},requireStrongWrites:true,
+  await runInternalMembers({jobs:[job('execute','save',2)],goal,config,jobModels:{execute:'narrow'},
     run:async options=>{models.push(options.config.apiKey);return {ok:true,output:'done',meta:{}};}});
-  assert.deepEqual(models,['lead-key'],'an explicit low job connection cannot bypass the smart write floor');
+  assert.deepEqual(models,['member-key'],'the job runs on the connection configured for it');
 });
 
 test('an unavailable configured connection returns a diagnosable partial handoff without starting a provider',async()=>{

@@ -24,8 +24,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 665,
-      "edges": 2220,
+      "modules": 662,
+      "edges": 2207,
       "roots": [
         "src",
         "desktop-ui",
@@ -34,7 +34,7 @@
       ],
       "note": "静态 import/re-export，含 desktop-ui 对 /shared/*.js 的服务映射；不含动态 import 与外部包"
     },
-    "routes": 175,
+    "routes": 174,
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
@@ -860,12 +860,6 @@
           ]
         },
         {
-          "module": "shared/agent/modelRouting.js",
-          "importedBy": [
-            "settings"
-          ]
-        },
-        {
           "module": "shared/agent/pageWindow.js",
           "importedBy": [
             "tools"
@@ -1148,7 +1142,7 @@
         "memory": 27,
         "platform": 67,
         "projects": 9,
-        "settings": 11,
+        "settings": 10,
         "sync": 2,
         "tools": 45,
         "voice": 3
@@ -1163,7 +1157,7 @@
         "memory": 12,
         "platform": 34,
         "projects": 1,
-        "settings": 14,
+        "settings": 12,
         "sync": 4,
         "tools": 29,
         "voice": 2
@@ -1883,9 +1877,7 @@
         "desktop-ui/settingsEdit.*",
         "desktop-ui/modelPresentation.*",
         "desktop-ui/language*.*",
-        "desktop-ui/{llmConnections,smartRouting,credentialChip}.js",
-        "src/services/modelRouting/**",
-        "src/services/settings/smartRouting*",
+        "desktop-ui/{llmConnections,credentialChip}.js",
         "ios/Melo/{ChatGPTAccount,CodexOAuth,CodexLoginView,OAuthLoopback,Keychain,LLMConnections,ModelSettingsSections,ConnectionProbe,SettingsView,InterfaceLanguage,LanguagePicker,RuntimeDiagnosticsView,DraftMerge,EditableSection,EditableDocument}.swift",
         "ios/Melo/LocalSettings*.swift",
         "ios/Melo/EditDraft*.swift",
@@ -1894,8 +1886,8 @@
         "ios/Tests/{CodexOAuthTests,ConnectionProbeTests,EditDraftStorageTests,EditDraftTests,InterfaceLanguageTests}.swift"
       ],
       "modules": {
-        "desktop-ui": 7,
-        "src": 15
+        "desktop-ui": 6,
+        "src": 13
       },
       "entryModules": [
         {
@@ -1979,13 +1971,6 @@
           ]
         },
         {
-          "module": "src/services/modelRouting/routing.js",
-          "importedBy": [
-            "chat",
-            "desktop-shell"
-          ]
-        },
-        {
           "module": "src/services/settings/desktopSettings.js",
           "importedBy": [
             "platform"
@@ -2011,12 +1996,6 @@
         },
         {
           "module": "src/services/settings/modelSettings.js",
-          "importedBy": [
-            "platform"
-          ]
-        },
-        {
-          "module": "src/services/settings/smartRouting.js",
           "importedBy": [
             "platform"
           ]
@@ -2048,10 +2027,10 @@
       "dependsOn": {
         "agents": 3,
         "approvals": 1,
-        "chat": 14,
-        "desktop-shell": 9,
+        "chat": 12,
+        "desktop-shell": 8,
         "media": 1,
-        "platform": 26,
+        "platform": 24,
         "sync": 3,
         "tools": 2
       },
@@ -2059,13 +2038,13 @@
         "agents": 3,
         "approvals": 8,
         "channels": 2,
-        "chat": 11,
-        "desktop-shell": 13,
+        "chat": 10,
+        "desktop-shell": 12,
         "development": 1,
         "knowledge": 1,
         "media": 8,
         "memory": 14,
-        "platform": 16,
+        "platform": 15,
         "projects": 1,
         "sync": 1,
         "tools": 10,
@@ -2088,8 +2067,7 @@
         "POST /api/settings/local ← src/http/domainRoutes.js",
         "POST /api/settings/model ← src/http/domainRoutes.js",
         "POST /api/settings/model/oauth/start ← src/http/domainRoutes.js",
-        "POST /api/settings/model/options ← src/http/domainRoutes.js",
-        "POST /api/settings/smart-routing ← src/http/domainRoutes.js"
+        "POST /api/settings/model/options ← src/http/domainRoutes.js"
       ],
       "desktopUi": [
         "desktop-ui/credentialChip.js",
@@ -2101,8 +2079,7 @@
         "desktop-ui/modelPresentation.css",
         "desktop-ui/modelPresentation.js",
         "desktop-ui/settingsEdit.css",
-        "desktop-ui/settingsEdit.js",
-        "desktop-ui/smartRouting.js"
+        "desktop-ui/settingsEdit.js"
       ],
       "iphone": {
         "owned": [
@@ -2146,14 +2123,11 @@
           "desktop-ui/localSettings.test.js",
           "desktop-ui/modelPresentation.test.js",
           "desktop-ui/settingsEdit.test.js",
-          "desktop-ui/smartRouting.test.js",
           "src/codexAuth.executable.test.js",
           "src/config.codexCatalogMigration.test.js",
-          "src/services/modelRouting/routing.test.js",
           "src/services/settings/agentDevicePermissions.test.js",
           "src/services/settings/localData.test.js",
-          "src/services/settings/localSettings.test.js",
-          "src/services/settings/smartRouting.test.js"
+          "src/services/settings/localSettings.test.js"
         ],
         "swift": [
           "ios/Tests/CodexOAuthTests.swift",
@@ -3785,7 +3759,7 @@
         "memory": 1,
         "platform": 16,
         "projects": 5,
-        "settings": 13,
+        "settings": 12,
         "sync": 2,
         "tools": 13,
         "voice": 2
@@ -3799,7 +3773,7 @@
         "memory": 6,
         "platform": 2,
         "projects": 5,
-        "settings": 9,
+        "settings": 8,
         "sync": 1,
         "tools": 15,
         "voice": 1
@@ -4447,7 +4421,7 @@
         "media": 2,
         "memory": 19,
         "projects": 6,
-        "settings": 16,
+        "settings": 15,
         "sync": 2,
         "tools": 19,
         "voice": 1
@@ -4463,7 +4437,7 @@
         "media": 13,
         "memory": 28,
         "projects": 23,
-        "settings": 26,
+        "settings": 24,
         "sync": 6,
         "tools": 59,
         "voice": 6

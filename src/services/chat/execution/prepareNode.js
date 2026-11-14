@@ -1,8 +1,6 @@
 import { requestAllowsTool, getRequestNetworkPolicy } from '../../../../shared/agent/retrieval/requestPolicy.js';
 import { isRetiredAgentId } from '../../../shared/userAgents.js';
 import { isStandaloneGreeting } from '../../../../shared/agent/retrieval/intentRouter.js';
-import { createRoutingSession, fixedModelRoutingConfig } from '../../modelRouting/routing.js';
-import { resolveContextBudget } from '../contextBudget.js';
 import { buildSharedSearchPlan } from '../../../retrieval/sharedSearchPlan.js';
 import { resolveHostedSearchCapability } from '../../search/hostedSearchCapability.js';
 // Chat execution graph — `prepare` node (architecture B2, 2026-10-20).
@@ -94,16 +92,13 @@ export function createPrepareNode(turn) {
     const modeDef = MODE_DEFS.find(mode => mode.id === chat.mode) || MODE_DEFS[0];
     const project = findProjectById(state, chat.projectId);
     const activeAgentProfile = effectiveAgentProfile(state, agentId, project?.id || null);
-    turn.routing = await createRoutingSession({ config: fixedModelRoutingConfig(config), agent: activeAgentProfile, text: latestUserMessage, messages: chat.messages || [], attachments: chat.messages?.at(-1)?.attachments || [], home, signal, createReply,
-      onDecision: decision => {
-        sseEmitter?.('execution_event', { kind: 'pipeline', id: `model-routing:${decision.escalations}`, messageId: 'stage.routing', module: 'compute', status: 'completed', outputMessageId:'output.routing',outputMessageParams:{tier:{messageId:'value.routing_'+decision.tier},model:decision.model,reason:{messageId:'value.routing_'+decision.reason}}, metadata: decision });
-      } });
-    if (turn.routing.current.mode === 'smart') {
-      const selected = turn.routing.connection();
-      Object.assign(config, selected);
-      Object.assign(modelOverrides, { model: selected.model, verifier: selected.model, apiKey: selected.apiKey, baseUrl: selected.baseUrl });
-      Object.assign(contextBudget, resolveContextBudget(env, { config: selected }));
-    }
+    // The turn runs on the model the conversation or its Agent names. Automatic
+    // selection between models was retired by product decision; until
+    // 2026-11-14 a routing session was still created here on every turn, forced
+    // to "fixed", and consulted in fourteen places of the loop that could not
+    // act on it. A saved `smartRouting` policy or a chat left on "smart" is
+    // ignored (chatExecutionRunner.test.js keeps three cases of that).
+    signal?.throwIfAborted();
     const agentConnectors = filterConnectorsForAgent(connectors, activeAgentProfile);
     const agentScopedSkills = filterSkillsForAgent(skills, activeAgentProfile);
     // Phase 3.2.2 — rule-based pre-filter. Shrinks both the system prompt

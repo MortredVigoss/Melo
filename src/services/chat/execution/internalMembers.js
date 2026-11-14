@@ -108,7 +108,7 @@ function limitedResult(result, signal) {
 }
 
 export async function runInternalMembers({ jobs = [], goal = '', background = '', config, extraTools = [], replyFn, signal, sseEmitter, chatId, workspacePath,
-  chatSource, projectId, onProviderResponse, run = runSubAgent, lanes = INTERNAL_PARALLEL_LANES, approvals = defaultApprovals, jobModels = null, requireStrongWrites = false } = {}) {
+  chatSource, projectId, onProviderResponse, run = runSubAgent, lanes = INTERNAL_PARALLEL_LANES, approvals = defaultApprovals, jobModels = null } = {}) {
   const context = currentRequestContext();
   const budget = context?.budget || null;
   if (context?.turnEffects) context.turnEffects.active = true;
@@ -128,7 +128,7 @@ export async function runInternalMembers({ jobs = [], goal = '', background = ''
     // task space says why (user decision, 2026-11-07 post-push reviews).
     const hostedJob = Array.isArray(job.tools) && job.tools.includes('native_web_search');
     const conversationForSearch = hostedJob && typeof jobModels?.[job.role] === 'string' && !!jobModels[job.role];
-    try { jobConfig = memberConfig(requireStrongWrites && job.role === 'execute' || hostedJob ? config : jobConnectionConfig(config, jobModels, job.role)); }
+    try { jobConfig = memberConfig(hostedJob ? config : jobConnectionConfig(config, jobModels, job.role)); }
     catch (error) {
       const result = { ok: false, error: error.code, output: error.message, meta: { stopReason: 'ERROR', observations: [] } };
       outcomes[index] = { job, result, started: false, handoff: internalHandoff({ job, answer: result.output, observations: [], limited: true }) };

@@ -66,7 +66,6 @@ test('rules count known hits, honour allowlists, translation rows, docs and comm
     const ledger = Object.fromEntries(inv.ledger.map(item => [item.id, item.status]));
     assert.equal(ledger.L5, 'open', 'the URL-in-reply probe sees the fixture line');
     assert.equal(ledger.L1, 'closed', 'a missing file closes an existence probe');
-    assert.equal(ledger.L17, 'open', 'a missing design module keeps the landing probe open');
     const report = await readFile(join(root, 'audit-out', `report-${inv.date}.md`), 'utf8');
     assert.match(report, /\| H1 /); assert.match(report, /L5 .*open/);
   } finally { await rm(root, { recursive: true, force: true }); }
