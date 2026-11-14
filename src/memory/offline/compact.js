@@ -1,10 +1,11 @@
 import { PROVIDER_DEFAULTS } from '../../shared/modelCatalog.js';
-import { LOCAL_SERVICE_DEFAULTS, localServiceUrl } from '../../shared/localServices.js';
+import { localServiceUrl } from '../../shared/localServices.js';
 /**
  * Offline-capable conversation compactor.
  *
  * Layered fallback:
- *   1. Local OAI-compatible LLM (Ollama / LM Studio / llama.cpp server)
+ *   1. A local OpenAI-compatible model server the person has set up as a
+ *      model connection (see configuredLocalServers)
  *   2. Pure rule-based TextRank summariser — no network, no LLM
  *
  * The rule fallback produces a shorter, less nuanced summary than an LLM but
@@ -21,12 +22,36 @@ import { LOCAL_SERVICE_DEFAULTS, localServiceUrl } from '../../shared/localServi
 import { createOpenAICompatibleReply } from '../../openai.js';
 import { auditSummary, QUALITY_DEFAULT_THRESHOLD } from '../dreaming/summaryQuality.js';
 
-const LOCAL_LLM_CANDIDATES = [
-  // Order matters — first reachable endpoint wins.
-  { name: 'ollama',    baseUrl: LOCAL_SERVICE_DEFAULTS.ollama },
-  { name: 'lmstudio',  baseUrl: LOCAL_SERVICE_DEFAULTS.lmstudio },
-  { name: 'llamacpp',  baseUrl: LOCAL_SERVICE_DEFAULTS.llamacpp },
-];
+/**
+ * The local model servers this compactor may use: the model connections in
+ * the configuration whose address is this machine, the one in use first.
+ *
+ * Nothing else is contacted. Until 2026-11-14 the compactor tried Ollama,
+ * LM Studio and llama.cpp on their default ports (11434, 1234, 8080) whether
+ * or not any of them had been set up, and sent the conversation to the first
+ * one that answered `/models` — on a machine where one of those ports belongs
+ * to something else, to that. It runs not only in offline-only mode but
+ * whenever the cloud summary fails.
+ *
+ * @param {Object} config
+ * @returns {Array<{name: string, baseUrl: string, model: string, apiKey: string}>}
+ */
+export function configuredLocalServers(config = {}) {
+  const servers = [];
+  const seen = new Set();
+  const consider = (name, connection) => {
+    if (!connection || typeof connection !== 'object') return;
+    if (connection.apiProtocol && connection.apiProtocol !== 'chat-completions') return;
+    let baseUrl;
+    try { baseUrl = localServiceUrl(connection.baseUrl); } catch { return; }   // not an address on this machine
+    if (seen.has(baseUrl)) return;
+    seen.add(baseUrl);
+    servers.push({ name: String(name), baseUrl, model: String(connection.model || ''), apiKey: String(connection.apiKey || '') });
+  };
+  consider('active', config);   // the connection in use; also the shape of a configuration saved before profiles existed
+  for (const [id, profile] of Object.entries(config?.llmProfiles || {})) consider(profile?.name || id, profile);
+  return servers;
+}
 
 
 const LOCAL_LLM_TIMEOUT_MS = 15_000;
@@ -83,8 +108,8 @@ function compactQualityThreshold() {
 
 // ─── Test injection (Bug-D / fallback-mode coverage) ─────────────────────────
 //
-// Production callers go straight through `callLocalLlm`, which probes the
-// candidate's `/models` endpoint and then drives `createOpenAICompatibleReply`.
+// Production callers go straight through `callLocalLlm`, which checks that the
+// configured server answers `/models` and then drives `createOpenAICompatibleReply`.
 // Tests need a way to simulate "LLM is reachable, returned a string" without
 // running an actual model — the cleanest answer is a single DI hook that
 // stand-ins for the entire `callLocalLlm` invocation.  When unset (the
@@ -135,12 +160,13 @@ export async function compactOfflineDetailed(messages = [], { config = {}, signa
   const qualityMode = compactQualityMode();
   const qualityThreshold = compactQualityThreshold();
 
-  // Try local LLM first — skip if MELO_OFFLINE_ONLY is set AND the user has
-  // asked us not to touch any model.  (Local LLMs are still considered
-  // "offline" by our definition.)
+  // Try a configured local model first — skip if the user has asked us not to
+  // touch any model.  (Local LLMs are still considered "offline" by our
+  // definition.)  With no local connection configured this is an empty list and
+  // the rule summary below is the answer: no port is probed.
   if (process.env.MELO_OFFLINE_DISABLE_LLM !== '1') {
-    const model = process.env.MELO_LOCAL_COMPACT_MODEL || config.offlineCompactModel || PROVIDER_DEFAULTS.media.offlineCompact;
-    const candidates = LOCAL_LLM_CANDIDATES.map(candidate => ({ ...candidate, baseUrl: localServiceUrl(config.localServices?.[candidate.name], candidate.baseUrl), model }));
+    const override = process.env.MELO_LOCAL_COMPACT_MODEL || config.offlineCompactModel;
+    const candidates = configuredLocalServers(config).map(candidate => ({ ...candidate, model: override || candidate.model || PROVIDER_DEFAULTS.media.offlineCompact }));
     for (const candidate of candidates) {
       try {
         const summary = await _invokeLocalLlm(candidate, transcript, signal);
@@ -193,7 +219,7 @@ async function callLocalLlm(candidate, transcript, signal) {
 
   return createOpenAICompatibleReply({
     authMode: 'local',
-    apiKey: 'sk-local-no-auth',
+    apiKey: candidate.apiKey || 'sk-local-no-auth',
     baseUrl: candidate.baseUrl,
     model: candidate.model || PROVIDER_DEFAULTS.media.offlineCompact,
     systemPrompt:

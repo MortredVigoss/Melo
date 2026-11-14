@@ -49,7 +49,7 @@ export function syncDerivedSnapshot(state, ctx, { throwOnError = false } = {}) {
       return buildMemoryStoreEntries({...state,chats:[chat]}, {includeGlobals:false,continuity:false});
     });
   }
-  const globals = {promptHistory:state.settings?.promptHistory,tasks:state.tasks,approvals:state.approvals,agentProfiles:state.agentProfiles,
+  const globals = {promptHistory:state.settings?.promptHistory,tasks:state.tasks,approvals:state.approvals,
     chatProjects:state.chats.map(chat=>[chat.id,chat.projectId])};
   segment('global',hash(globals),()=>buildMemoryStoreEntries(state,{includeChats:false,continuity:false}));
   for (const [key,prior] of old?.segments || []) if (!segments.has(key)) {

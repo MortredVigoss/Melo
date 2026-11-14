@@ -70,17 +70,9 @@ import {
 import {
   normalizeTasks,
 } from '../domain/task/taskService.js';
-import {
-  allAgentIdsFromProfiles,
-} from '../domain/agent/agentLibrary.js';
-import {
-  normalizeAgentProfile,
-} from '../state/agentProfiles.js';
-import { renderAgentIdentity } from '../domain/agent/agentIdentity.js';
 import { isLocalChat } from './factPolicy.js';
 import {
   normalizeAgentStorageId,
-  nowIso,
 } from '../shared/helpers.js';
 
 export function buildSpeakerMemoryNamespace({ chat, message, agentId = '' } = {}) {
@@ -430,26 +422,6 @@ export function buildMemoryStoreEntries(state, {includeChats = true, includeGlob
         },
       });
     }
-  }
-
-  for (const agentId of (includeGlobals ? allAgentIdsFromProfiles(state.agentProfiles) : [])) {
-    const profile = normalizeAgentProfile(agentId, state.agentProfiles?.[agentId]);
-    entries.push({
-      id: `identity:agent:${agentId}`,
-      namespace: `agent:${agentId}`,
-      kind: 'identity',
-      sourceId: agentId,
-      // Persona text for the identity row. The pure domain renderer keeps the
-      // memory layer independent of services/ (audit A-4); identity rows are
-      // no longer recalled into prompts (audit B-1), they only feed dedupe.
-      text: renderAgentIdentity(profile, { variant: 'chat' }),
-      createdAt: nowIso(),
-      updatedAt: nowIso(),
-      metadata: {
-        agentId,
-        name: profile.name,
-      },
-    });
   }
 
   // Scene + frame layers — built on top of the already-indexed messages.

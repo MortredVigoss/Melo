@@ -24,8 +24,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 676,
-      "edges": 2254,
+      "modules": 667,
+      "edges": 2225,
       "roots": [
         "src",
         "desktop-ui",
@@ -34,7 +34,7 @@
       ],
       "note": "静态 import/re-export，含 desktop-ui 对 /shared/*.js 的服务映射；不含动态 import 与外部包"
     },
-    "routes": 183,
+    "routes": 182,
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
@@ -406,8 +406,7 @@
           "module": "src/domain/agent/agentIdentity.js",
           "importedBy": [
             "channels",
-            "chat",
-            "memory"
+            "chat"
           ]
         },
         {
@@ -416,7 +415,6 @@
             "channels",
             "chat",
             "desktop-shell",
-            "memory",
             "platform",
             "projects",
             "sync"
@@ -567,7 +565,6 @@
         "chat": 35,
         "desktop-shell": 12,
         "development": 4,
-        "memory": 2,
         "platform": 32,
         "projects": 4,
         "settings": 3,
@@ -1036,6 +1033,12 @@
           ]
         },
         {
+          "module": "src/retrieval/sharedSearchPlan.js",
+          "importedBy": [
+            "platform"
+          ]
+        },
+        {
           "module": "src/runtime/agentLoopContract.js",
           "importedBy": [
             "agents",
@@ -1162,7 +1165,7 @@
         "development": 1,
         "media": 14,
         "memory": 12,
-        "platform": 33,
+        "platform": 34,
         "projects": 1,
         "settings": 14,
         "sync": 4,
@@ -1416,12 +1419,12 @@
         "desktop-ui/features/memory/**",
         "ios/Melo/MemoryFacts*.swift",
         "ios/Tests/MemoryFactsTests.swift",
-        "scripts/{memory-status,bench-memory,prepare-memory-model}.js",
+        "scripts/{bench-memory,prepare-memory-model}.js",
         "bench/**"
       ],
       "modules": {
         "desktop-ui": 9,
-        "src": 58
+        "src": 48
       },
       "entryModules": [
         {
@@ -1623,15 +1626,14 @@
         }
       ],
       "dependsOn": {
-        "agents": 2,
         "approvals": 3,
         "chat": 12,
         "desktop-shell": 6,
         "knowledge": 3,
         "media": 1,
-        "platform": 38,
+        "platform": 28,
         "projects": 1,
-        "settings": 15,
+        "settings": 14,
         "sync": 2,
         "tools": 1
       },
@@ -1648,7 +1650,6 @@
         "tools": 7
       },
       "httpRoutes": [
-        "POST /api/memory/connect ← src/http/domainRoutes.js",
         "GET /api/memory/diagnose ← src/http/domainRoutes.js",
         "GET /api/memory/facts ← src/http/domainRoutes.js",
         "POST /api/memory/facts/update ← src/http/domainRoutes.js",
@@ -1710,8 +1711,6 @@
           "src/memory/dreaming/sweep.concurrency.test.js",
           "src/memory/dreaming/sweep.test.js",
           "src/memory/embedProviders/BuiltinEmbedProvider.test.js",
-          "src/memory/embedProviders/OllamaEmbedProvider.availability.test.js",
-          "src/memory/embedProviders/OllamaEmbedProvider.truncation.test.js",
           "src/memory/embedProviders/createEmbeddingProvider.test.js",
           "src/memory/embeddings.cache.test.js",
           "src/memory/embeddings.dimcheck.test.js",
@@ -1727,7 +1726,6 @@
           "src/memory/memoryPromotion.test.js",
           "src/memory/offline/compact.test.js",
           "src/memory/offline/extractor.test.js",
-          "src/memory/providers/createProvider.test.js",
           "src/memory/recallAudit.test.js",
           "src/memory/repair.test.js",
           "src/memory/runtime.test.js",
@@ -1736,7 +1734,6 @@
           "src/memory/speakerFacts.test.js",
           "src/memory/speakerProfile.test.js",
           "src/memory/status.test.js",
-          "src/memory/statusFormat.test.js",
           "src/memory/store.embedCacheModelId.test.js",
           "src/memory/store.fkcascade.test.js",
           "src/memory/store.ftsSync.test.js",
@@ -1754,7 +1751,6 @@
           "src/memory/store.scoreParts.test.js",
           "src/memory/store.searchFallback.test.js",
           "src/memory/store.snapshotVectors.test.js",
-          "src/memory/store.validateContext.test.js",
           "src/memory/store.vecRewrite.test.js",
           "src/memory/storeSchema.test.js",
           "src/memory/threadContext.test.js",
@@ -2070,7 +2066,7 @@
         "development": 1,
         "knowledge": 1,
         "media": 8,
-        "memory": 15,
+        "memory": 14,
         "platform": 16,
         "projects": 1,
         "sync": 1,
@@ -4108,7 +4104,7 @@
         "src/**"
       ],
       "modules": {
-        "src": 60
+        "src": 61
       },
       "entryModules": [
         {
@@ -4360,7 +4356,6 @@
             "chat",
             "desktop-shell",
             "development",
-            "memory",
             "sync",
             "voice"
           ]
@@ -4463,7 +4458,7 @@
         "agents": 32,
         "approvals": 18,
         "channels": 6,
-        "chat": 33,
+        "chat": 34,
         "desktop-shell": 2,
         "development": 2,
         "knowledge": 2,
@@ -4484,7 +4479,7 @@
         "development": 9,
         "knowledge": 2,
         "media": 13,
-        "memory": 38,
+        "memory": 28,
         "projects": 23,
         "settings": 26,
         "sync": 6,

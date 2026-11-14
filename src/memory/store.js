@@ -1075,16 +1075,11 @@ function _runReplaceMemoriesOn(database, incomingEntries, vecLoaded, runTx, {del
       const lastUsedAt = prior?.last_used_at || row.lastUsedAt || null;
       const textChanged = !prior || prior.search_text !== row.searchText;
       const indexChanged = textChanged || prior.namespace !== row.namespace || prior.kind !== row.kind;
-      // Profile snapshots have no source timestamp. Do not manufacture a new
-      // modification time on every unrelated global settings update.
-      const sameIdentity = prior && row.kind === 'identity' && prior.text === row.text && prior.metadata_json === metadataJson;
-      const createdAt = row.kind === 'identity' && prior ? prior.created_at : row.createdAt;
-      const updatedAt = sameIdentity ? prior.updated_at : row.updatedAt;
       const same = prior && prior.namespace === row.namespace && prior.kind === row.kind && prior.source_id === row.sourceId &&
         prior.text === row.text && prior.search_text === row.searchText && prior.tokens_estimate === row.tokensEstimate &&
-        prior.created_at === createdAt && prior.updated_at === updatedAt && prior.last_used_at === lastUsedAt && prior.metadata_json === metadataJson;
+        prior.created_at === row.createdAt && prior.updated_at === row.updatedAt && prior.last_used_at === lastUsedAt && prior.metadata_json === metadataJson;
       if (same) continue;
-      save.run(row.id,row.namespace,row.kind,row.sourceId,row.text,row.searchText,row.tokensEstimate,createdAt,updatedAt,lastUsedAt,metadataJson);
+      save.run(row.id,row.namespace,row.kind,row.sourceId,row.text,row.searchText,row.tokensEstimate,row.createdAt,row.updatedAt,lastUsedAt,metadataJson);
       if (indexChanged) { removeFts.run(row.id); insertFts.run(row.id,row.namespace,row.kind,toCjkSpaced(row.searchText)); }
       if (textChanged) {
         const cached = getCachedEmbedding(row.searchText, null, database);
@@ -1362,286 +1357,32 @@ function fetchByIds(ids, extraClause = '', extraArgs = []) {
   }
 }
 
-// ─── Stage 4 — context validation ───────────────────────────────────────────
-//
-// The first three tiers (scene → frame → content) answer "what is most likely
-// relevant?"  They do NOT answer "is the relevant set internally consistent?"
-// A pure ANN recall will happily surface an old claim and its own correction
-// side-by-side, or two contradictory "role" facts the user asserted at
-// different times.  That's the gap Stage 4 closes — the missing loop of the
-// inverted pyramid.
-//
-// The pass is deliberately annotate-don't-delete: rows stay in the returned
-// tier arrays (callers might still want to show "X was corrected to Y"), but
-// each contested/superseded/orphan row is flagged so the prompt-builder can
-// either drop it or phrase around it.  A `conflicts` report is also attached
-// so telemetry can track how often the validator fires.
-//
-// The detector uses signals that are already present on every memory row — no
-// extra embedding queries, no extra DB round-trips.
-//
-// Signals (ordered cheapest → strongest):
-//   A. validTo re-check  — fires late so validity windows that lapsed between
-//      Stage 0 and now still get caught.
-//   B. explicit correction vs. older peer on the same topic — kind=
-//      'verification-correction' or metadata.category='correction' dominates.
-//   C. single-value category collision — name/role/location/work/identity
-//      can only have one live answer, so the newer wins.
-//   D. cross-tier orphan — a content row whose metadata.frameId doesn't
-//      appear in the recalled frame set means scene→frame narrowing did not
-//      ratify it; downgrade.
-//   E. lifecycle status — rows marked needs_confirmation stay visible but
-//      get an explicit flag so prompt builders phrase them as stale/contextual.
-
-const STAGE4_SINGLE_VALUE_CATEGORIES = new Set([
-  'name',
-  'role',
-  'location',
-  'work',
-  'identity',
-]);
-
-function _stage4NormalizeText(value) {
-  return String(value || '')
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function _stage4IsCorrection(row) {
-  if (!row) return false;
-  if (String(row.kind || '').toLowerCase() === 'verification-correction') return true;
-  const category = String(row.metadata?.category || '').toLowerCase();
-  return category === 'correction';
-}
-
-// Topic key used to detect "same-subject" peers.  Prefers an explicit
-// extractor-supplied key; otherwise falls back to category + normalized text
-// (same shape as speakerFacts.getSpeakerFactStorageKey) so the key is stable
-// across the offline extractor, the session-memory merger, and this
-// retrieval-time validator.
-function _stage4TopicKey(row) {
-  if (!row) return '';
-  const explicit =
-    row.metadata?.factKey ||
-    row.metadata?.topic ||
-    row.metadata?.subject ||
-    null;
-  if (explicit) return _stage4NormalizeText(explicit);
-  const category = String(row.metadata?.category || row.kind || '').toLowerCase();
-  const text = _stage4NormalizeText(row.text || '');
-  if (!category || !text) return '';
-  if (STAGE4_SINGLE_VALUE_CATEGORIES.has(category)) {
-    // Single-value categories: the category alone is the topic — any two
-    // rows with the same category collide, even if their text differs.
-    return category;
-  }
-  return `${category}:${text}`;
-}
-
-function _stage4UpdatedAt(row) {
-  const candidates = [row?.updated_at, row?.metadata?.updatedAt, row?.created_at];
-  for (const c of candidates) {
-    if (typeof c === 'number' && Number.isFinite(c)) return c;
-    if (typeof c === 'string' && c) {
-      const parsed = Date.parse(c);
-      if (Number.isFinite(parsed)) return parsed;
-    }
-  }
-  return 0;
-}
-
 /**
- * Stage 4 of the tiered recall — runs coherence checks over the union of
- * scene + frame + content rows returned by the first three stages.  Emits
- * a `conflicts` report and annotates contested/superseded/orphan/expired
- * rows; it never drops rows silently.
+ * Tiered scene → frame → content recall.  Returns the three tier arrays:
+ *   { scenes, frames, contents }
  *
- * Exported so unit tests and the prompt-builder can drive it independently
- * of `recallMemoriesTiered`.
- *
- * @param   {{scenes: Array, frames: Array, contents: Array}} tiers
- * @param   {Object}   [options]
- * @param   {number}   [options.nowMs]         default Date.now()
- * @param   {boolean}  [options.dropContested] if true, contested/expired
- *                                             rows are filtered out of
- *                                             the returned tier arrays
- * @returns {{scenes: Array, frames: Array, contents: Array, conflicts: Array}}
- */
-export function validateContext(
-  { scenes = [], frames = [], contents = [] } = {},
-  { nowMs = Date.now(), dropContested = false } = {},
-) {
-  const conflicts = [];
-  const all = [...scenes, ...frames, ...contents];
-  if (!all.length) {
-    return { scenes, frames, contents, conflicts };
-  }
-
-  // ── A. Temporal safety net — re-apply isEntryInvalidated with a fresh
-  //        `now`.  Stage 0 filters ran with an older timestamp; a validTo
-  //        that lapsed in between still slips through without this.
-  const invalidated = new Set();
-  for (const row of all) {
-    if (row?._invalidated) {
-      // Already flagged by an earlier tier — keep the flag, don't duplicate
-      // it in the conflict report.
-      invalidated.add(row.id);
-      continue;
-    }
-    if (isEntryInvalidated(row?.metadata || {}, nowMs)) {
-      invalidated.add(row.id);
-      conflicts.push({
-        type: 'expired',
-        loserId: row.id,
-        reason: 'validTo <= now',
-      });
-    }
-  }
-
-  // ── B. Explicit corrections beat older peers on the same topic.
-  const contested = new Map(); // id -> winnerId
-  const corrections = all.filter(_stage4IsCorrection);
-  for (const c of corrections) {
-    const key = _stage4TopicKey(c);
-    if (!key) continue;
-    const cTs = _stage4UpdatedAt(c);
-    for (const peer of all) {
-      if (peer.id === c.id) continue;
-      if (_stage4IsCorrection(peer)) continue;
-      if (invalidated.has(peer.id)) continue;
-      if (_stage4TopicKey(peer) !== key) continue;
-      if (_stage4UpdatedAt(peer) >= cTs) continue;
-      contested.set(peer.id, c.id);
-      conflicts.push({
-        type: 'correction',
-        winnerId: c.id,
-        loserId: peer.id,
-        reason: 'newer correction on same topic',
-      });
-    }
-  }
-
-  // ── C. Single-value category collision — only the newest value is live.
-  const byCategory = new Map();
-  for (const row of all) {
-    const cat = String(row.metadata?.category || row.kind || '').toLowerCase();
-    if (!STAGE4_SINGLE_VALUE_CATEGORIES.has(cat)) continue;
-    if (invalidated.has(row.id) || contested.has(row.id)) continue;
-    const list = byCategory.get(cat) || [];
-    list.push(row);
-    byCategory.set(cat, list);
-  }
-  for (const [cat, list] of byCategory) {
-    if (list.length < 2) continue;
-    list.sort((a, b) => _stage4UpdatedAt(b) - _stage4UpdatedAt(a));
-    const winner = list[0];
-    const winnerText = _stage4NormalizeText(winner.text || '');
-    for (let i = 1; i < list.length; i++) {
-      const loser = list[i];
-      // If the stored texts normalize to the same value, they're not in
-      // conflict — two writes of the same fact.  Skip to avoid bogus
-      // conflict noise.
-      if (_stage4NormalizeText(loser.text || '') === winnerText) continue;
-      contested.set(loser.id, winner.id);
-      conflicts.push({
-        type: 'superseded',
-        winnerId: winner.id,
-        loserId: loser.id,
-        reason: `newer value in single-value category '${cat}'`,
-      });
-    }
-  }
-
-  // ── D. Cross-tier orphan — content whose frame wasn't ratified by
-  //        Stage 2 is weakly supported.  Flag, don't drop.
-  const orphans = new Set();
-  const frameIdSet = new Set(
-    frames.map(f => f.metadata?.frameId).filter(Boolean),
-  );
-  if (frameIdSet.size) {
-    for (const row of contents) {
-      const fid = row.metadata?.frameId;
-      if (fid && !frameIdSet.has(fid)) {
-        orphans.add(row.id);
-        conflicts.push({
-          type: 'orphan',
-          loserId: row.id,
-          reason: 'content frameId is outside the recalled frame set',
-        });
-      }
-    }
-  }
-
-  // ── E. Lifecycle uncertainty — these are not "wrong" rows; they are
-  //        routines/derived memories whose anchor facts changed later.
-  const needsConfirmation = new Set();
-  for (const row of all) {
-    if (row?.metadata?.status === 'needs_confirmation') {
-      needsConfirmation.add(row.id);
-      conflicts.push({
-        type: 'needs_confirmation',
-        loserId: row.id,
-        winnerId: row.metadata?.staleBecause?.anchorId || null,
-        reason: `depends on changed '${row.metadata?.staleBecause?.changedFactKey || 'fact'}'`,
-      });
-    }
-  }
-
-  const annotate = (row) => {
-    const flags = {};
-    if (invalidated.has(row.id)) flags._invalidated = true;
-    if (contested.has(row.id)) {
-      flags._contested = true;
-      flags._contestedBy = contested.get(row.id);
-    }
-    if (orphans.has(row.id)) flags._orphan = true;
-    if (needsConfirmation.has(row.id)) flags._needsConfirmation = true;
-    return Object.keys(flags).length ? { ...row, ...flags } : row;
-  };
-
-  const keep = (row) => {
-    if (!dropContested) return true;
-    if (invalidated.has(row.id)) return false;
-    if (contested.has(row.id)) return false;
-    return true;
-  };
-
-  return {
-    scenes: scenes.filter(keep).map(annotate),
-    frames: frames.filter(keep).map(annotate),
-    contents: contents.filter(keep).map(annotate),
-    conflicts,
-  };
-}
-
-/**
- * Tiered scene → frame → content recall.  Returns:
- *   { scenes, frames, contents, conflicts }   – tier arrays plus a Stage-4
- *                                                coherence report.
+ * There used to be a fourth stage here ("Stage 4", `validateContext`): after
+ * the recall it marked expired, corrected, superseded and orphaned rows with
+ * `_contested` / `_orphan` / … flags and returned a `conflicts` report. Nothing
+ * ever read the flags or the report, and the default mode removed no row, so it
+ * was about 250 lines of work per recall with no effect; removed 2026-11-14.
+ * Facts are reconciled when they are written (factRecords.js), not at recall.
  *
  * @param {Object}         options
  * @param {string[]}       [options.namespaces]   fallback namespace filter
  * @param {string}         [options.query]        raw query text
  * @param {Float32Array}   [options.queryEmbedding]
  * @param {Object}         [options.limits]       { scenes, frames, contents }
- * @param {string[]}       [options.atticLevels]  filter (e.g. ['warm','cold'])
- * @param {boolean}        [options.validate]     run Stage 4 (default true)
- * @param {boolean}        [options.dropContested] Stage-4 filter mode
- *                                                 (default false — annotate)
  * @param {string}         [options.audience]     'desktop' (default) sees every
  *                                                 row; a remote channel name
  *                                                 drops audience=local rows in SQL
- * @returns {{ scenes: Array, frames: Array, contents: Array, conflicts: Array }}
+ * @returns {{ scenes: Array, frames: Array, contents: Array }}
  */
 export function recallMemoriesTiered({
   namespaces = [],
   query = '',
   queryEmbedding = null,
   limits = {},
-  atticLevels = null,
-  validate = true,
-  dropContested = false,
   accept = () => true,
   audience = DESKTOP_MEMORY_AUDIENCE,
 } = {}) {
@@ -1653,18 +1394,11 @@ export function recallMemoriesTiered({
   const audienceClause = memoryAudienceSQL(recallAudience);
   const audienceSQL = audienceClause ? ` AND ${audienceClause}` : '';
 
-  // ─── Helper: attic filter ───────────────────────────────────────────────
-  const atticOk = (row) => {
-    if (!atticLevels || !atticLevels.length) return true;
-    const level = row.metadata?.attic || 'cold';
-    return atticLevels.includes(level);
-  };
-
-  if (!normalizedNs.length) return {scenes:[],frames:[],contents:[],conflicts:[]};
+  if (!normalizedNs.length) return {scenes:[],frames:[],contents:[]};
   const mergeTier = (semantic, kinds, limit) => {
     if (!String(query).trim() && semantic.length) return semantic.filter(row=>accept(materializeMemoryRows([row])[0])).slice(0,limit);
     const built = buildRecallQuery({namespaces:normalizedNs,kinds,allowGlobal:false,audience:recallAudience});
-    const lexical=keywordRecallRows(built,query,{limit:limit*4,accept:row=>atticOk(row) && accept(row)});
+    const lexical=keywordRecallRows(built,query,{limit:limit*4,accept});
     const fused=new Map();
     semantic.filter(row=>accept(materializeMemoryRows([row])[0])).forEach((row,i)=>fused.set(row.id,{...row,score:1/(61+i)}));
     lexical.forEach((row,i)=>{
@@ -1690,7 +1424,7 @@ export function recallMemoriesTiered({
         normalizedNs,
       );
       const distMap = new Map(knn.map(r => [r.memory_id, r.distance]));
-      scenes = scoreAnn(sceneRows, distMap, now).filter(atticOk).slice(0, sLim);
+      scenes = scoreAnn(sceneRows, distMap, now).slice(0, sLim);
     } catch (err) {
       debugWarn('memory.recall.tiered', 'scene ANN failed', err?.message || err);
       scenes = [];
@@ -1715,7 +1449,7 @@ export function recallMemoriesTiered({
         normalizedNs,
       );
       const distMap = new Map(knn.map(r => [r.memory_id, r.distance]));
-      let scored = scoreAnn(frameRows, distMap, now).filter(atticOk);
+      let scored = scoreAnn(frameRows, distMap, now);
       if (sceneIds.length) {
         // Prefer frames that belong to the recovered scenes.
         scored = scored.sort((a, b) => {
@@ -1750,7 +1484,7 @@ export function recallMemoriesTiered({
         normalizedNs,
       );
       const distMap = new Map(knn.map(r => [r.memory_id, r.distance]));
-      let scored = scoreAnn(rows, distMap, now).filter(atticOk);
+      let scored = scoreAnn(rows, distMap, now);
       if (frameIds.length) {
         scored = scored.sort((a, b) => {
           const aIn = frameIds.includes(a.metadata?.frameId) ? 1 : 0;
@@ -1773,29 +1507,7 @@ export function recallMemoriesTiered({
   const framesOut = frames.map(f => byId.get(f.id) || f);
   const contentsOut = contents.map(c => byId.get(c.id) || c);
 
-  if (!validate) {
-    return {
-      scenes: scenesOut,
-      frames: framesOut,
-      contents: contentsOut,
-      conflicts: [],
-    };
-  }
-
-  try {
-    return validateContext(
-      { scenes: scenesOut, frames: framesOut, contents: contentsOut },
-      { nowMs: now, dropContested },
-    );
-  } catch (err) {
-    debugWarn('memory.recall.validate', 'Stage 4 validation failed, returning un-validated tiers', err?.message || err);
-    return {
-      scenes: scenesOut,
-      frames: framesOut,
-      contents: contentsOut,
-      conflicts: [],
-    };
-  }
+  return { scenes: scenesOut, frames: framesOut, contents: contentsOut };
 }
 
 /**
@@ -2488,34 +2200,6 @@ export function setValidTo(ids = [], validToIso = new Date().toISOString()) {
     }
   });
   return n;
-}
-
-/**
- * Extended memoryStats: adds hit counts + merge counts for the dreaming UI.
- */
-export function memoryStatsExtended() {
-  const base = memoryStats();
-  const database = getDb();
-  try {
-    const hitRow = database.prepare(`SELECT COUNT(*) AS n FROM memory_hits`).get();
-    const mergedRow = database.prepare(
-      `SELECT COUNT(*) AS n FROM memories WHERE json_extract(metadata_json, '$.mergedInto') IS NOT NULL`,
-    ).get();
-    const expiredRow = database.prepare(
-      `SELECT COUNT(*) AS n FROM memories
-       WHERE json_extract(metadata_json, '$.validTo') IS NOT NULL
-         AND json_extract(metadata_json, '$.validTo') < ?`,
-    ).get(new Date().toISOString());
-    return {
-      ...base,
-      totalHits: hitRow?.n || 0,
-      mergedCount: mergedRow?.n || 0,
-      expiredCount: expiredRow?.n || 0,
-    };
-  } catch (err) {
-    debugWarn('memory.store.stats', 'memoryStatsExtended failed', err?.message || err);
-    return base;
-  }
 }
 
 export function searchMemories({query = '', kinds = [], limit = 20} = {}) {

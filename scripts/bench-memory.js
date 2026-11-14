@@ -13,7 +13,6 @@
  *   node scripts/bench-memory.js                       # default golden + markdown report
  *   node scripts/bench-memory.js --golden path/to.json
  *   node scripts/bench-memory.js --no-embed            # force keyword fallback
- *   node scripts/bench-memory.js --validate            # run Stage-4 validator too
  *   node scripts/bench-memory.js --threshold-recall5 0.85  # CI gate
  *   node scripts/bench-memory.js --json                # JSON instead of markdown
  *   node scripts/bench-memory.js --out path/to.md      # override output path
@@ -48,7 +47,6 @@ function parseArgs(argv) {
     out: null,
     json: false,
     noEmbed: false,
-    validate: false,
     thresholdRecall5: null,
     ks: [1, 5, 10],
     sceneLimit: 3,
@@ -63,7 +61,6 @@ function parseArgs(argv) {
     if (a === '-h' || a === '--help') args.help = true;
     else if (a === '--json') args.json = true;
     else if (a === '--no-embed') args.noEmbed = true;
-    else if (a === '--validate') args.validate = true;
     else if (a === '--golden') args.golden = eat();
     else if (a.startsWith('--golden=')) args.golden = a.slice('--golden='.length);
     else if (a === '--out') args.out = eat();
@@ -94,7 +91,6 @@ Options:
   --out <path>               Markdown output (default: bench/memory/results-YYYY-MM-DD.md)
   --json                     Print machine-readable JSON to stdout instead of markdown
   --no-embed                 Skip embeddings; force the keyword fallback path
-  --validate                 Run Stage-4 validation (default: bypass to isolate recall layer)
   --ks 1,5,10                Comma-separated k values for Recall@k (default: 1,5,10)
   --rank tier|global         How to merge scene/frame/content for top-k.
                              tier (default) mirrors the production injection
@@ -256,7 +252,6 @@ async function main() {
         query: q.query,
         queryEmbedding,
         limits: { scenes: args.sceneLimit, frames: args.frameLimit, contents: args.contentLimit },
-        validate: args.validate,
       });
     } catch (err) {
       perQuery.push({
@@ -334,7 +329,6 @@ async function main() {
     config: {
       ks,
       limits: { scenes: args.sceneLimit, frames: args.frameLimit, contents: args.contentLimit },
-      validate: args.validate,
       offlineOnly: ENV.offlineOnly,
       rank: args.rank,
     },
@@ -397,7 +391,7 @@ function renderMarkdown(report) {
     recallPath = 'keyword fallback';
   }
   lines.push(`Recall path: **${recallPath}**${recallNote ? ` — ${recallNote}` : ''}`);
-  lines.push(`Limits: scenes=${report.config.limits.scenes}, frames=${report.config.limits.frames}, contents=${report.config.limits.contents} · validate=${report.config.validate} · rank=${report.config.rank}`);
+  lines.push(`Limits: scenes=${report.config.limits.scenes}, frames=${report.config.limits.frames}, contents=${report.config.limits.contents} · rank=${report.config.rank}`);
   lines.push('');
   lines.push('## Recall@k');
   lines.push('');

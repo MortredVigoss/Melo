@@ -270,7 +270,7 @@ test('SQL audience: recallMemories for a remote channel never returns audience=l
     ] });
     for (const rows of groups.values()) for (const row of rows) assert.match(row.text, /REMOTE_/, `group recall leaked ${row.id}`);
     assert.equal(groups.get('tasks').length, 0, 'desktop tasks/approvals (no audience, project namespace) are invisible to the channel');
-    const tiered = store.recallMemoriesTiered({ namespaces: ALL_NAMESPACES, query: 'alpha', audience: 'telegram', validate: false });
+    const tiered = store.recallMemoriesTiered({ namespaces: ALL_NAMESPACES, query: 'alpha', audience: 'telegram' });
     for (const row of [...tiered.scenes, ...tiered.frames, ...tiered.contents]) assert.match(row.text, /REMOTE_/, `tiered recall leaked ${row.id}`);
     assert.ok(tiered.contents.some(row => row.id === `prompt:chat:${TG}:r1`));
   });

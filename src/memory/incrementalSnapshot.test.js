@@ -76,3 +76,23 @@ test('persisting extracted facts creates canonical rows; recall is indexed and r
  const plan=conn.prepare("EXPLAIN QUERY PLAN SELECT * FROM memories WHERE json_extract(metadata_json,'$.chatId')=? AND kind='session-fact'").all('a');
  assert.match(JSON.stringify(plan),/idx_memories_chat_kind/);
 });
+
+// 2026-11-14: every Agent's persona used to be written into the memory index
+// (and embedded) as a row of kind `identity`. Nothing read those rows: the
+// persona reaches the model through the system prompt.
+test('an Agent profile is not copied into the memory index; rows left by older builds go with the next sync',()=>{
+ const s=state();
+ s.agentProfiles={main:{name:'Melo',personality:'calm and exact'},researcher:{name:'Reader',personality:'curious'}};
+ assert.ok(buildMemoryStoreEntries(s).every(row=>row.kind!=='identity'&&!String(row.id).startsWith('identity:')));
+ assert.equal(syncDerivedSnapshot(s,ctx),true);
+ conn=new DatabaseSync(ctx.storePath);
+ assert.equal(conn.prepare("SELECT COUNT(*) AS n FROM memories WHERE kind='identity'").get().n,0);
+ // A profile edit alone is no longer a reason to rebuild the index.
+ s.agentProfiles.main.personality='changed';
+ assert.equal(syncDerivedSnapshot(s,ctx),false);
+ // A row an older build wrote is derived data: the next full sync drops it.
+ conn.prepare("INSERT INTO memories (id,namespace,kind,source_id,text,search_text,tokens_estimate,created_at,updated_at,metadata_json) VALUES ('identity:agent:main','agent:main','identity','main','old persona','old persona',2,'2026-01-01T00:00:00Z','2026-01-01T00:00:00Z','{}')").run();
+ resetDerivedMemoryCacheForTests();
+ assert.equal(syncDerivedSnapshot(s,ctx),true);
+ assert.equal(conn.prepare("SELECT COUNT(*) AS n FROM memories WHERE kind='identity'").get().n,0);
+});

@@ -5,24 +5,22 @@ import {
   _resetMemoryRuntimeForTests,
   getMemoryRuntime,
 } from './runtime.js';
-import { _resetProviderForTests } from './providers/createProvider.js';
 import { _resetEmbeddingProviderForTests } from './embedProviders/createEmbeddingProvider.js';
 
 function resetAll() {
   _resetMemoryRuntimeForTests();
-  _resetProviderForTests();
   _resetEmbeddingProviderForTests();
 }
 
-test('startMemoryRuntime resolves a provider and returns a handle', async () => {
+test('startMemoryRuntime returns one handle with the embedder and a stop function', async () => {
   resetAll();
   delete process.env.MELO_MEMORY_RUNTIME;
   process.env.MELO_DREAMING_ENABLED = '0'; // don't actually arm timers
-  process.env.MELO_MEMORY_PROVIDER = 'sqlite-vec';
 
   const handle = await startMemoryRuntime({ skipScheduler: true });
   assert.ok(handle, 'handle returned');
-  assert.ok(handle.provider, 'provider resolved');
+  // 2026-11-14: the handle used to carry a `provider` that nothing read.
+  assert.deepEqual(Object.keys(handle).sort(), ['embedder', 'schedulerStarted', 'stop']);
   assert.equal(typeof handle.stop, 'function');
   assert.equal(handle.schedulerStarted, false, 'scheduler skipped by option');
 
@@ -38,7 +36,6 @@ test('startMemoryRuntime short-circuits when MELO_MEMORY_RUNTIME=0', async () =>
   process.env.MELO_MEMORY_RUNTIME = '0';
 
   const handle = await startMemoryRuntime();
-  assert.equal(handle.provider, null, 'provider not resolved');
   assert.equal(handle.embedder, null, 'embedder not resolved');
   assert.equal(handle.schedulerStarted, false);
 
@@ -46,32 +43,23 @@ test('startMemoryRuntime short-circuits when MELO_MEMORY_RUNTIME=0', async () =>
   handle.stop();
 });
 
-test('startMemoryRuntime tolerates provider init failure', async () => {
+test('startMemoryRuntime still returns a handle when the embedding model cannot be resolved', async () => {
   resetAll();
   delete process.env.MELO_MEMORY_RUNTIME;
   process.env.MELO_DREAMING_ENABLED = '0';
 
-  // Force an unknown provider name — should still boot, with provider=null.
-  process.env.MELO_MEMORY_PROVIDER = 'this-does-not-exist';
+  // A provider name nothing registered: there is no embedder, and the runtime boots anyway.
+  process.env.MELO_EMBED_PROVIDER = 'this-does-not-exist';
   const logs = [];
-  const handle = await startMemoryRuntime({
-    log: (msg) => logs.push(msg),
-    skipScheduler: true,
-  });
-
-  assert.ok(handle, 'handle returned');
-  // The factory falls back to sqlite-vec on unknown primary, so provider
-  // should still be non-null even with a bogus env var.  If it does fail,
-  // we at least expect a log entry.
-  if (!handle.provider) {
-    assert.ok(
-      logs.some(l => /provider init failed/.test(l)),
-      'init failure logged',
-    );
+  try {
+    const handle = await startMemoryRuntime({ log: msg => logs.push(msg), skipScheduler: true });
+    assert.ok(handle, 'handle returned');
+    assert.equal(handle.embedder, null);
+    assert.equal(typeof handle.stop, 'function');
+    handle.stop();
+  } finally {
+    delete process.env.MELO_EMBED_PROVIDER;
   }
-
-  delete process.env.MELO_MEMORY_PROVIDER;
-  handle.stop();
 });
 
 test('getMemoryRuntime returns null until started', () => {

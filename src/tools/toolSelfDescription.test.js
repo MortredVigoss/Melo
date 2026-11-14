@@ -15,7 +15,7 @@ import { toolCapabilityAllowed, normalizeCapabilities, filterToolsByCapabilities
 import { scopeAllowsTool, normalizeCapabilityScope } from '../domain/agent/capabilityScope.js';
 import { toolNeedsWorkspace } from '../services/workspace/toolWorkspace.js';
 import { reserveTaskOperation, listTaskOperations } from '../services/task/operationLedger.js';
-import { filterToolsForSearchPlan } from '../retrieval/searchRouter.js';
+import { getRequestNetworkPolicy, requestAllowsTool } from '../retrieval/requestPolicy.js';
 import { inheritableReadToolIds } from '../agents/team.js';
 import { executeToolCalls, executeTool, withLegacyAgentFixture } from '../testSupport/directAgentFixture.js';
 import { createRequestContext } from '../runtime/requestContext.js';
@@ -216,13 +216,20 @@ test('search routing and team read inheritance read the declaration before their
   const tool = withFixture(t);
   const webTool = { id: 'custom_web', capability: 'network', uiModule: 'search' };
   const otherTool = { id: 'custom_api', capability: 'network', uiModule: 'tools' };
-  const exposed = filterToolsForSearchPlan([webTool, otherTool, { id: 'web_search' }, { id: 'calculator' }], { exposedNetworkTools: ['web_search'] });
-  assert.deepEqual(exposed.map(t => t.id), ['custom_api', 'web_search', 'calculator']);
-  assert.deepEqual(filterToolsForSearchPlan([webTool], { exposedNetworkTools: ['custom_web'] }).map(t => t.id), ['custom_web']);
-  // web_screenshot is never "exposed" by a route; it only drops out when the user turned networking off.
+  // What a turn may use is decided by the request's own restrictions
+  // (requestAllowsTool), from the tool's declaration first: a tool that declares
+  // `capability: 'network'` is a network tool whatever its id is. (The old
+  // per-route filter, filterToolsForSearchPlan, went with the planner the
+  // product no longer ran, 2026-11-14.)
   const shot = { id: 'web_screenshot', capability: 'network', uiModule: 'search' };
-  assert.deepEqual(filterToolsForSearchPlan([shot, webTool], { route: 'none', reason: 'no-web-intent', exposedNetworkTools: [] }).map(t => t.id), ['web_screenshot']);
-  assert.deepEqual(filterToolsForSearchPlan([shot], { route: 'none', reason: 'user-disabled-network', exposedNetworkTools: [] }), []);
+  const catalog = [webTool, otherTool, shot, { id: 'web_search' }, { id: 'calculator' }];
+  const allowed = text => catalog.filter(entry => requestAllowsTool(entry, getRequestNetworkPolicy(text))).map(entry => entry.id);
+  assert.deepEqual(allowed('今天有什么新闻'), ['custom_web', 'custom_api', 'web_screenshot', 'web_search', 'calculator']);
+  // Networking turned off: every declared network tool drops out, undeclared ids by their name.
+  assert.deepEqual(allowed('不要联网，2+2 等于几'), ['calculator']);
+  // Only searching ruled out: the search tool goes, readers and other network tools stay.
+  assert.deepEqual(allowed('不要搜索，打开我给的页面'), ['custom_web', 'custom_api', 'web_screenshot', 'calculator']);
+  assert.deepEqual(allowed('不要调用任何工具，直接回答'), []);
   const readIds = inheritableReadToolIds([
     { id: 'notes_lookup', capability: 'knowledgeMemory' },
     { id: 'poster_maker', capability: 'generateMedia' },

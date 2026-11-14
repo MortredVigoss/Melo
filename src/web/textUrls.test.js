@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { extractTextUrls } from '../media/textUrls.js';
 import { requestUrls } from '../retrieval/requestPolicy.js';
-import { buildSearchPlan } from '../retrieval/searchRouter.js';
+import { productSearchPlan } from '../testSupport/searchPlanFixture.js';
 
 test('prose delimiters do not become URL paths; valid URL characters survive', () => {
   for (const tail of ['。', '，帮我总结', '；然后回答', '”', '」']) {
@@ -22,7 +22,7 @@ test('quoted data, translation and access denial never schedule URL reads', () =
     '解释这段代码：`fetch("https://example.com")`',
   ]) {
     assert.deepEqual(requestUrls(text), [], text);
-    assert.equal(buildSearchPlan({ latestUserMessage: text }).route, 'none', text);
+    assert.equal(productSearchPlan(text).route, 'none', text);
   }
 });
 
@@ -34,7 +34,7 @@ test('requested quoted URLs, bare URLs and no-search link reads still work', () 
     '请打开 https://example.com 并翻译页面',
   ]) {
     assert.deepEqual(requestUrls(text), ['https://example.com'], text);
-    assert.equal(buildSearchPlan({ latestUserMessage: text }).route, 'fetch-url', text);
+    assert.equal(productSearchPlan(text).route, 'fetch-url', text);
   }
 });
 

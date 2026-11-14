@@ -408,15 +408,6 @@ const router = createRouteRegistry([
     { method: 'GET', paths: ["/api/memory/diagnose"], auth: 'local-read', handler: async ({ request, response, url, requireLocalOrigin }) => {
       sendJson(response, 200, await diagnoseMemory(collectMemoryStatus())); return;
     } },
-    { method: 'POST', paths: ["/api/memory/connect"], auth: 'local-write', handler: async ({ request, response, url, requireLocalOrigin }) => {
-      const body = await readJsonBody(request);
-      if (body.provider && body.provider !== 'builtin') throw new Error('本地记忆使用 Melo 内置模型。');
-      await withConfigLock(async () => {
-        const config = await loadConfig();
-        await saveConfig({ ...config, embeddingConnection: { provider: 'builtin' } });
-      });
-      sendJson(response, 200, await diagnoseMemory(collectMemoryStatus())); return;
-    } },
     { method: 'GET', paths: ["/api/memory/status"], auth: 'local-read', handler: async ({ request, response, url, requireLocalOrigin }) => {
       try {
         const base = collectMemoryStatus();
@@ -428,8 +419,7 @@ const router = createRouteRegistry([
           // Provider init failure is non-fatal for the status view — the
           // snapshot still shows stored state, just without the live check.
         }
-        const connection = (await loadConfig()).embeddingConnection;
-        sendJson(response, 200, { ...withLiveProviderModelId(base, providerModelId), repair: memoryRepairStatus(), connection: connection?.provider === 'ollama' ? { baseUrl: connection.baseUrl, model: connection.model } : null });
+        sendJson(response, 200, { ...withLiveProviderModelId(base, providerModelId), repair: memoryRepairStatus() });
       } catch (err) {
         sendJson(response, 500, { error: err?.message || String(err) });
       }

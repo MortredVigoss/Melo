@@ -50,12 +50,12 @@ prompt input ──> │ Hot attic (~800) │ ──> │ L0 identity           
 
 ## 2 · Key modules
 
-> 2026-10-17 核对：下列 provider（Chroma / LanceDB / HttpProxy / Router）不在聊天读写路径上——`agentMemoryContext.js` 与 `derivedIndex.js` 直接使用 `store.js`（内置 SQLite + sqlite-vec）。它们只能通过 CLI / 测试显式选用。
+> 2026-11-14：可插拔的记忆后端（Chroma / LanceDB / HttpProxy / Router，`src/memory/providers/`）和外部向量适配器（Ollama / OpenAI / 自定义 HTTP）已删除。它们从不在聊天读写路径上：`agentMemoryContext.js` 与 `derivedIndex.js` 一直直接使用 `store.js`（内置 SQLite + sqlite-vec），向量只由随 Melo 分发的模型生成。
 
 | File | Responsibility |
 |------|----------------|
 | `src/memory/store.js` | sqlite-vec + FTS5 persistence; `recallMemories`, `recallMemoriesTiered`, `memoryStats`, attic-level persistence |
-| `src/memory/embeddings.js` | Ollama bge-m3 primary, OpenAI text-embedding-3-large fallback; `MELO_OFFLINE_ONLY` gate |
+| `src/memory/embeddings.js` | Text embeddings from the bundled model through `getEmbeddingProvider`; a failure returns null so recall falls back to keywords |
 | `src/memory/contextCompact.js` | L1 compactor; falls back to `offline/compact.js` on cloud-LLM failure or offline mode |
 | `src/memory/sessionMemory.js` | L2 fact extractor with `validFrom/validTo` + LLM + rule-based union |
 | `src/memory/speakerProfile.js` | L4 speaker facts, identity line, compaction |
@@ -70,17 +70,9 @@ prompt input ──> │ Hot attic (~800) │ ──> │ L0 identity           
 | `src/memory/dreaming/diary.js` | Append-only Markdown audit diary in `~/.melo/desktop/dreams/YYYY-MM-DD.md` |
 | `src/memory/dreaming/sweep.js` | Orchestrator: attic reassess → gate filter → merge → backfill → hit prune → diary |
 | `src/memory/dreaming/scheduler.js` | `startDreamingScheduler` (incremental + full) and `triggerDreamingNow` |
-| `src/memory/providers/MemoryProvider.js` | Abstract backend interface + `ensureProviderShape` validator |
-| `src/memory/providers/SqliteVecProvider.js` | Default adapter — forwards to `store.js` (zero-regression path) |
-| `src/memory/providers/ChromaProvider.js` | REST adapter for a local/remote Chroma collection |
-| `src/memory/providers/LanceDbProvider.js` | Soft-dep adapter using `@lancedb/lancedb` when present |
-| `src/memory/providers/HttpProxyProvider.js` | Minimal REST adapter for a user-hosted proxy |
-| `src/memory/providers/createProvider.js` | Factory registry + `RouterProvider` (shadow-write + prefix routing) + `buildProviderFromEnv` |
 | `src/memory/embedProviders/EmbeddingProvider.js` | Abstract embedding interface + `l2Normalize` / `toDims` helpers |
-| `src/memory/embedProviders/OllamaEmbedProvider.js` | Default local embedder (bge-m3 via `/api/embed`) |
-| `src/memory/embedProviders/OpenAIEmbedProvider.js` | Cloud fallback (`text-embedding-3-large`), disabled under `MELO_OFFLINE_ONLY` |
-| `src/memory/embedProviders/CustomHttpEmbedProvider.js` | User-hosted embedding endpoint |
-| `src/memory/embedProviders/createEmbeddingProvider.js` | Registry + LRU cache wrapper + `getEmbeddingProvider` singleton |
+| `src/memory/embedProviders/BuiltinEmbedProvider.js` | The bundled multilingual-e5-small model, run in a worker thread |
+| `src/memory/embedProviders/createEmbeddingProvider.js` | `embeddingProviderOrder` (the one place that decides which provider is tried), LRU cache wrapper, `getEmbeddingProvider` singleton |
 
 ## 3 · Environment switches
 
@@ -101,22 +93,8 @@ prompt input ──> │ Hot attic (~800) │ ──> │ L0 identity           
 | `MELO_MERGE_COSINE` | Cosine threshold for duplicate merger | `0.92` |
 | `MELO_STALE_AGE_DAYS` | Minimum age (days) before a row is eligible for temporal backfill | `90` |
 | `MELO_STALE_FORCE_DAYS` | Age (days) at which a version-string match auto-expires | `180` |
-| `MELO_MEMORY_PROVIDER` | Primary memory backend name (see §10) | `sqlite-vec` |
-| `MELO_MEMORY_SHADOW` | Secondary backend name; writes are mirrored (read path untouched) | unset |
-| `MELO_MEMORY_ROUTING` | Per-namespace overrides, e.g. `chat:*=sqlite-vec;skill:*=chroma` | unset |
-| `MELO_CHROMA_URL` | Base URL of the Chroma server | `http://localhost:8000` |
-| `MELO_CHROMA_COLLECTION` | Chroma collection name | `melo_memory` |
-| `MELO_LANCE_DIR` | Directory for the LanceDB database | `~/.melo/desktop/lance` |
-| `MELO_LANCE_TABLE` | LanceDB table name | `memory` |
-| `MELO_MEMORY_HTTP_URL` | Base URL of a user-hosted memory proxy | unset (provider errors if selected) |
-| `MELO_MEMORY_HTTP_TOKEN` | Optional bearer token for the proxy | unset |
-| `MELO_EMBED_PROVIDER` | Embedding backend name override | auto (ollama → openai → http) |
-| `MELO_OLLAMA_URL` | Ollama base URL | `http://localhost:11434` |
-| `MELO_OLLAMA_EMBED_MODEL` | Ollama embedding model | `bge-m3` |
-| `MELO_EMBED_MODEL` | OpenAI embedding model | `text-embedding-3-large` |
-| `MELO_EMBED_DIMS` | Target dimensionality for pad/trim (`toDims`) | provider-native |
-| `MELO_EMBED_HTTP_URL` | Base URL for the custom HTTP embedder | unset |
-| `MELO_EMBED_HTTP_TOKEN` | Optional bearer token for the custom HTTP embedder | unset |
+| `MELO_EMBED_PROVIDER` | Name of a provider registered in code with `registerEmbeddingProvider` (the tests use it to stand in for the model) | `builtin` |
+| `MELO_EMBED_MODEL_DIR` | Directory of the bundled embedding model | `assets/models/multilingual-e5-small` |
 
 ## 4 · Write path
 
@@ -154,7 +132,6 @@ const { scenes, frames, contents } = recallMemoriesTiered({
   query,
   queryEmbedding,
   limits: { scenes: 3, frames: 8, contents: 12 },
-  atticLevels: ['warm', 'hot'], // optional
 });
 ```
 
@@ -174,10 +151,13 @@ ranges.
 
 ## 8 · Offline readiness
 
-- Embeddings: `ollama pull bge-m3` is the only prereq.  With
-  `MELO_OFFLINE_ONLY=1`, cloud paths are skipped entirely.
-- Compact: tries Ollama → LM Studio → llama.cpp → rule-based TextRank.  The
-  rule summariser never needs the network.
+- Embeddings: the bundled model; nothing to install and no network.
+- Compact: when the cloud summary is unavailable (or `MELO_OFFLINE_ONLY=1`),
+  a local model server is used only if it has been set up as a model
+  connection (an address on this machine in the model settings), then the
+  rule-based TextRank summariser.  No port is probed that was not configured
+  (until 2026-11-14 Ollama, LM Studio and llama.cpp were tried on their
+  default ports).  The rule summariser never needs the network.
 - Session memory: rule extractor covers all 5 fact categories.  When the
   LLM is available its output is unioned with the rule output.
 
@@ -239,47 +219,20 @@ entry with all-zero counts.  Every pure planner (gates / merge / backfill /
 diary) is unit-tested; the orchestrator is covered by
 `scheduler.test.js` and an integration smoke-test.
 
-## 10 · Provider / Embedding abstraction
+## 10 · Storage and embeddings
 
-The memory store is now backend-agnostic behind `MemoryProvider`.  The
-abstract interface is:
+Memory is stored in `store.js` (SQLite with sqlite-vec and FTS5) and read
+from there directly.  The `MemoryProvider` abstraction that used to sit in
+front of it (Chroma, LanceDB, an HTTP proxy, shadow writes and per-namespace
+routing) was removed on 2026-11-14: the server resolved a provider at start
+and nothing ever used it.
 
-```
-upsert(entry) · replaceAll(entries) · search(opts) · searchTiered(opts)
-stats() · listForReassess(opts) · setAtticLevels(ids, level)
-recordHit({memoryId, queryHash, rank, outcome}) · close()
-```
-
-`SqliteVecProvider` is the default and just forwards to `store.js`, so
-turning the abstraction on with no env vars is a no-op.  The other
-built-in adapters are:
-
-| Provider | When to use | Notes |
-|----------|-------------|-------|
-| `sqlite-vec` | Single-user desktop (default) | Full tiered recall, FTS5 keyword path, local only |
-| `chroma` | You already run Chroma | REST to `MELO_CHROMA_URL`; `searchTiered` approximated as three kind-filtered queries |
-| `lancedb` | You want an embedded columnar store | Soft dep via dynamic import — provider is `null` if `@lancedb/lancedb` is missing |
-| `http-proxy` | You want a team-shared server | Minimal REST (`/upsert`, `/search`, `/search_tiered`, `/stats`, `/attic_update`, `/reassess`) |
-
-`RouterProvider` wraps any primary with two extra behaviours:
-
-- **Shadow-write.**  Every `upsert` / `replaceAll` is mirrored to the
-  provider named in `MELO_MEMORY_SHADOW`.  Reads never hit the shadow.
-  Use this to validate a new backend against production traffic before
-  flipping the primary.
-- **Namespace routing.**  `MELO_MEMORY_ROUTING=chat:*=sqlite-vec;skill:*=chroma`
-  parses into `[{prefix, provider}]`; any entry whose `namespace` starts
-  with a prefix is redirected to that provider instead of the primary.
-  The matching is longest-prefix-wins in declaration order.
-
-Embeddings follow the same pattern in `embedProviders/`.
-`getEmbeddingProvider()` returns a singleton that tries
-`MELO_EMBED_PROVIDER` first, otherwise falls back in order
-`ollama → openai → custom-http`.  Every provider is wrapped in an LRU
-cache (`withEmbeddingCache`, 512 entries) so repeated `embed(text)` calls
-inside the same process are free.  `l2Normalize` + `toDims` make it safe
-to mix providers with different native dimensionality — set
-`MELO_EMBED_DIMS` to force a common width.
+`getEmbeddingProvider()` returns a singleton for the bundled model
+(`BuiltinEmbedProvider`), wrapped in an LRU cache (`withEmbeddingCache`, 512
+entries) so repeated `embed(text)` calls inside the same process are free.
+`embeddingProviderOrder()` is the one place that decides which provider is
+tried; `melo memory status` and `melo memory fill-embeddings` ask it too, so
+what they report is what the product uses.
 
 ## 11 · Operational notes
 
@@ -306,10 +259,6 @@ MELO_MEMORY_TIERS=          # disable scene + frame writes
 MELO_ATTIC_ENABLED=0        # skip Hot attic injection
 MELO_OFFLINE_ONLY=           # re-enable cloud fallback
 MELO_DREAMING_ENABLED=0     # freeze dreaming (scheduler + triggerDreamingNow no-op)
-MELO_MEMORY_PROVIDER=sqlite-vec  # force default backend
-MELO_MEMORY_SHADOW=         # drop shadow mirror
-MELO_MEMORY_ROUTING=        # clear per-namespace overrides
-MELO_EMBED_PROVIDER=        # fall back to auto-detect (ollama → openai → http)
 ```
 
 The original `recallMemories` path is preserved so desktopStore code that

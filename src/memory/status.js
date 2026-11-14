@@ -1,5 +1,4 @@
-import { LOCAL_SERVICE_DEFAULTS } from '../shared/localServices.js';
-import { captureBehavior } from '../runtime/runtimeBehavior.js';
+import { requestEnvironment } from '../runtime/requestScope.js';
 import { createRequire } from 'node:module';
 /**
  * src/memory/status.js
@@ -7,8 +6,8 @@ import { createRequire } from 'node:module';
  * Phase 3 — shared read-only snapshot of the memory subsystem.
  *
  * Used by:
- *   • scripts/memory-status.js   (CLI, human + JSON output)
- *   • src/server.js              (GET /api/memory/status, fed to the UI)
+ *   • src/index.js               (`melo memory status`, human + JSON output)
+ *   • src/http/domainRoutes.js   (GET /api/memory/status, fed to the UI)
  *
  * Must stay read-only: no writes to _meta, no mutations to embedding_cache,
  * no touching state.json.  Anyone adding fields here should keep that
@@ -113,7 +112,7 @@ export function collectMemoryStatus({ meloHome = getMeloHome() } = {}) {
     embedding: {
       provider: process.env.MELO_EMBED_PROVIDER || 'builtin',
       cacheRows: null,
-      dimsConfigured: Number(process.env.MELO_EMBED_DIMS || 1024),
+      dimsConfigured: 1024,   // the width of the bundled model; no setting changes it
       storedModelId: null,
       // probeAttempted distinguishes "user didn't ask to probe" from
       // "user asked but the provider was unavailable" — both end with
@@ -183,30 +182,26 @@ export function collectMemoryStatus({ meloHome = getMeloHome() } = {}) {
 }
 
 /**
- * Probe the live embedding provider chain (Ollama → OpenAI → CustomHttp)
- * and report which one (if any) is available + why the others failed.
+ * Check the embedding provider the product would use right now and report
+ * whether it is available and, if not, why.
  *
- * Phase F-2 (2026-05-05) follow-up: production diagnosis revealed the
- * symptom "vec_memories empty + embedding_cache=0" boils down to NO
- * provider being available — Ollama installed but not running, no
- * OPENAI_API_KEY, no MELO_EMBED_HTTP_URL — and the user had no way to
- * see this from `melo memory status`. The recall path falls back to
- * keyword cleanly so chat keeps working, but vector ANN is dead. This
- * helper surfaces the failure mode so users know what to fix.
+ * It asks createEmbeddingProvider for the order instead of keeping a list of
+ * its own. Until 2026-11-14 it probed Ollama, OpenAI and a custom HTTP
+ * endpoint — none of which the product uses — so `melo memory status` said
+ * "no provider" on every machine and `melo memory fill-embeddings` refused to
+ * run while the bundled model was working.
  *
  * Returns:
  *   {
- *     available: 'ollama' | 'openai' | 'http' | null,
+ *     available: string | null,           // provider name, e.g. 'builtin'
  *     modelId:   string | null,
  *     dims:      number | null,
- *     reasons:   { [provider]: string }   // per-provider rejection note
+ *     reasons:   { [provider]: string }   // why a provider was not usable
  *   }
  *
- * Bounded — total wall time ≤ ~3s (each provider's isAvailable has its
- * own internal timeout; Ollama uses 2s).
+ * Reads the file system only: no network request.
  */
 export async function probeEmbeddingProviderAvailability() {
-  const behavior = captureBehavior();
   const result = {
     available: null,
     modelId: null,
@@ -220,12 +215,9 @@ export async function probeEmbeddingProviderAvailability() {
     result.reasons._import = err?.message || String(err);
     return result;
   }
-  const explicit = String(process.env.MELO_EMBED_PROVIDER || '').trim().toLowerCase();
-  const order = explicit ? [explicit] : ['ollama', 'openai', 'http'];
+  const env = { ...requestEnvironment() };
 
-  // Re-implement getEmbeddingProvider's loop so we can surface per-provider
-  // rejection reasons. The factory registry is the same module-level Map.
-  for (const name of order) {
+  for (const name of providerModule.embeddingProviderOrder(env)) {
     const factory = providerModule.REGISTRY?.get?.(name);
     if (!factory) {
       result.reasons[name] = `no factory registered for "${name}"`;
@@ -233,7 +225,7 @@ export async function probeEmbeddingProviderAvailability() {
     }
     let p;
     try {
-      p = factory();
+      p = factory({ env });
     } catch (err) {
       result.reasons[name] = `factory threw: ${err?.message || err}`;
       continue;
@@ -251,23 +243,10 @@ export async function probeEmbeddingProviderAvailability() {
       result.dims = typeof p?.dims === 'number' ? p.dims : null;
       return result;
     }
-    // Per-provider explanation — what would a user need to fix?
-    if (name === 'ollama') {
-      result.reasons.ollama =
-        `Ollama HTTP API at MELO_OLLAMA_URL (default ${LOCAL_SERVICE_DEFAULTS.ollama.replace(/\/v1$/, '')}) not reachable, ` +
-        'or the configured embed model (MELO_OLLAMA_EMBED_MODEL, default bge-m3) is not pulled. ' +
-        'Run `ollama serve` and `ollama pull bge-m3` to enable.';
-    } else if (name === 'openai') {
-      const offline = behavior.MELO_OFFLINE_ONLY === '1';
-      result.reasons.openai = offline
-        ? 'MELO_OFFLINE_ONLY=1 explicitly disables the OpenAI embed provider.'
-        : 'Neither OPENAI_API_KEY nor MELO_API_KEY (sk-...) set — set one to enable.';
-    } else if (name === 'http') {
-      result.reasons.http =
-        'MELO_EMBED_HTTP_URL not set — point this at a custom embed-server endpoint to enable.';
-    } else {
-      result.reasons[name] = 'isAvailable returned false';
-    }
+    result.reasons[name] = name === 'builtin'
+      ? `The embedding model that ships with Melo was not found in ${p.modelDir}. ` +
+        'Reinstall Melo, or point MELO_EMBED_MODEL_DIR at a directory that holds it.'
+      : 'isAvailable returned false';
   }
   return result;
 }

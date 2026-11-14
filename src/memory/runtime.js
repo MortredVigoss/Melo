@@ -6,27 +6,26 @@ import { stopBuiltinEmbeddings } from './embedProviders/BuiltinEmbedProvider.js'
  * This module is the single place the desktop server (or any other host)
  * calls at startup to:
  *
- *   1. Resolve the configured memory provider (sqlite-vec / chroma / lancedb /
- *      http-proxy, with optional shadow + per-namespace routes) so that any
- *      misconfigured env var fails fast.
- *   2. Resolve the bundled embedding model (or an explicit integration override)
- *      and rebuild old vectors in verified, staged batches when needed.
- *   3. Register the dreaming scheduler timers (incremental + full sweeps).
+ *   1. Resolve the bundled embedding model and rebuild old vectors in
+ *      verified, staged batches when needed.
+ *   2. Register the dreaming scheduler timers (incremental + full sweeps).
+ *
+ * Memory is stored in `store.js` (SQLite) and read from there directly. The
+ * pluggable "memory provider" layer that used to be resolved here first
+ * (sqlite-vec / chroma / lancedb / http-proxy with shadow writes and
+ * per-namespace routing) was removed on 2026-11-14: the resolved provider was
+ * kept on the handle and never read by anything.
  *
  * The returned handle exposes `stop()` so the host can release timers on
- * shutdown (SIGINT / SIGTERM).  All three phases are wrapped in individual
- * try/catch blocks because a memory-subsystem failure must never take the
- * server down — the core chat path uses `store.js` directly and tolerates a
- * missing dreaming worker.
+ * shutdown (SIGINT / SIGTERM).  Each phase is wrapped in its own try/catch
+ * because a memory-subsystem failure must never take the server down — the
+ * core chat path tolerates a missing dreaming worker.
  *
  * Enable / disable flags (env):
  *   • MELO_MEMORY_RUNTIME=0        skip the whole runtime (tests, paranoid users)
  *   • MELO_DREAMING_ENABLED=0      scheduler no-ops (see dreaming/sweep.js)
- *   • MELO_MEMORY_PROVIDER=…       picks primary provider (see createProvider.js)
- *   • MELO_EMBED_PROVIDER=…        picks embedding backend
  */
 
-import { getMemoryProvider } from './providers/createProvider.js';
 import { getEmbeddingProvider } from './embedProviders/createEmbeddingProvider.js';
 import { checkEmbeddingDimensions, EMBEDDING_DIMS } from './embeddings.js';
 import {
@@ -49,7 +48,6 @@ let _runtimeHandle = null;
  * @param {boolean}  [opts.skipScheduler]      true in tests that don't want timers
  * @returns {Promise<{
  *   stop: () => void,
- *   provider: any | null,
  *   embedder: any | null,
  *   schedulerStarted: boolean,
  * }>}
@@ -63,22 +61,13 @@ export async function startMemoryRuntime({
   if (process.env.MELO_MEMORY_RUNTIME === '0') {
     _runtimeHandle = {
       stop: () => {},
-      provider: null,
       embedder: null,
       schedulerStarted: false,
     };
     return _runtimeHandle;
   }
 
-  // Phase 1 — memory provider singleton (router + shadow + routes).
-  let provider = null;
-  try {
-    provider = await getMemoryProvider();
-  } catch (err) {
-    log(`[memory.runtime] provider init failed: ${err?.message || err}`);
-  }
-
-  // Phase 2 — embedding provider singleton.  Null is OK — the recall path has
+  // Phase 1 — embedding provider singleton.  Null is OK — the recall path has
   // a keyword fallback when no embedder is configured.
   let embedder = null;
   try {
@@ -168,7 +157,6 @@ export async function startMemoryRuntime({
 
   const maintenance = !skipScheduler ? startBuiltinMaintenance(embedder,{log}) : null;
   _runtimeHandle = {
-    provider,
     embedder,
     schedulerStarted,
     stop() {

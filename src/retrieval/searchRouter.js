@@ -1,10 +1,12 @@
-import { currentRequestContext, requestEnvironment } from '../runtime/requestScope.js';
+import { currentRequestContext } from '../runtime/requestScope.js';
 import { createSearchRouter } from '../../shared/agent/retrieval/searchRouter.js';
 
-export const { registerSearchTriggers, clearSearchTriggers, shouldUseNativeWebSearch, buildSearchPlan, filterToolsForSearchPlan, constrainSearchPlan, buildSearchRoutingPrompt: legacyBuildSearchRoutingPrompt } = createSearchRouter({ currentRequestContext, requestEnvironment });
+export const { registerSearchTriggers, clearSearchTriggers, shouldUseNativeWebSearch } = createSearchRouter({ currentRequestContext });
 
+// `plan` is what buildSharedSearchPlan returns (retrieval/sharedSearchPlan.js);
+// every plan the product builds carries `sharedPlan`.
 export function buildSearchRoutingPrompt(plan) {
-  if (!plan?.sharedPlan) return legacyBuildSearchRoutingPrompt(plan);
+  if (!plan?.sharedPlan) return '';
   const shared = plan.sharedPlan;
   // Capability guidance can be non-empty while retrieval is unavailable. Keep
   // the actual status instead of treating any instruction text as availability.

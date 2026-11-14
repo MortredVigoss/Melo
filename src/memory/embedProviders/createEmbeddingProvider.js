@@ -1,20 +1,19 @@
 import { BuiltinEmbedProvider } from './BuiltinEmbedProvider.js';
-import { readFileSync } from 'node:fs';
 import { getConfigPath } from '../../config.js';
 import { requestEnvironment } from '../../runtime/requestScope.js';
 /**
- * Factory for EmbeddingProvider.  Resolution order:
+ * Factory for EmbeddingProvider.
  *
- *   MELO_EMBED_PROVIDER env var — explicit integration override.
- *   Otherwise use only Melo's bundled local model. Never auto-probe external
- *   applications or silently send memory text to a cloud embedding service.
+ * Memory text is embedded by the model that ships with Melo and by nothing
+ * else: no other application is probed and nothing is sent to a cloud
+ * embedding service. The Ollama / OpenAI / custom-HTTP adapters that used to
+ * sit beside it were removed on 2026-11-14 (no setting ever selected them).
+ *
+ * MELO_EMBED_PROVIDER names a provider registered with
+ * registerEmbeddingProvider; the tests use it to stand in for the model.
  *
  * Returns a thin wrapper with an LRU cache so repeated embeds are free.
  */
-
-import { OllamaEmbedProvider } from './OllamaEmbedProvider.js';
-import { OpenAIEmbedProvider } from './OpenAIEmbedProvider.js';
-import { CustomHttpEmbedProvider } from './CustomHttpEmbedProvider.js';
 
 const CACHE_SIZE = 512;
 
@@ -41,11 +40,18 @@ function makeCache() {
 // per-provider rejection reasons without booting the singleton.
 export const REGISTRY = new Map();
 REGISTRY.set('builtin', () => new BuiltinEmbedProvider());
-REGISTRY.set('ollama', options => new OllamaEmbedProvider(options));
-REGISTRY.set('openai', options => new OpenAIEmbedProvider(options));
-REGISTRY.set('http', options => new CustomHttpEmbedProvider(options));
 
 export function registerEmbeddingProvider(name, factory) { REGISTRY.set(name, factory); }
+
+/**
+ * Which providers are tried, in order. The one place that decides it: the
+ * status probe used to keep its own list (ollama, openai, http) and reported
+ * "no provider" on every machine while the bundled model was working.
+ */
+export function embeddingProviderOrder(env = requestEnvironment()) {
+  const explicit = String(env?.MELO_EMBED_PROVIDER || '').trim().toLowerCase();
+  return explicit ? [explicit] : ['builtin'];
+}
 
 /**
  * Wrap a provider with an LRU cache so repeated embed() calls for the same
@@ -83,15 +89,10 @@ let _singletonKey = null;
 export async function getEmbeddingProvider() {
   const configPath = getConfigPath();
   const env = { ...requestEnvironment() };
-  let connection = null;
-  try { connection = JSON.parse(readFileSync(configPath, 'utf8')).embeddingConnection; } catch {}
-  const key = JSON.stringify([configPath, connection, env.MELO_EMBED_PROVIDER, env.MELO_EMBED_MODEL_DIR, env.MELO_OLLAMA_URL, env.MELO_OLLAMA_EMBED_MODEL, env.MELO_EMBED_DIMS, env.MELO_OLLAMA_MAX_INPUT_CHARS, env.MELO_EMBED_HTTP_URL, env.MELO_EMBED_HTTP_TOKEN, env.MELO_EMBED_MODEL, env.OPENAI_API_KEY, env.MELO_API_KEY]);
+  const key = JSON.stringify([configPath, env.MELO_EMBED_PROVIDER, env.MELO_EMBED_MODEL_DIR]);
   if (_singleton && _singletonKey === key) return _singleton;
   _singleton = null; _singletonKey = key;
-  const explicit = String(env.MELO_EMBED_PROVIDER || '').trim().toLowerCase();
-  // Local semantic retrieval is owned by Melo. No probing of other apps or
-  // automatic cloud fallback; external adapters remain explicit integrations.
-  const order = explicit ? [explicit] : ['builtin'];
+  const order = embeddingProviderOrder(env);
 
   const candidates = order.map(name => REGISTRY.get(name)?.({ env })).filter(Boolean);
   for (const p of candidates) {

@@ -126,7 +126,7 @@
         "desktop-ui/features/memory/**",
         "ios/Melo/MemoryFacts*.swift",
         "ios/Tests/MemoryFactsTests.swift",
-        "scripts/{memory-status,bench-memory,prepare-memory-model}.js",
+        "scripts/{bench-memory,prepare-memory-model}.js",
         "bench/**"
       ],
       "routes": [

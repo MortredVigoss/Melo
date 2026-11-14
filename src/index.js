@@ -455,11 +455,9 @@ async function maybeWarnDifferentHome() {
 async function runMemoryStatusCommand({ json = false } = {}) {
   const { collectMemoryStatus, probeEmbeddingProviderAvailability } = await import('./memory/status.js');
   const snapshot = collectMemoryStatus();
-  // Phase F-2 (2026-05-05): probe live embedder so users can see why
+  // Phase F-2 (2026-05-05): check the embedder so users can see why
   // vec_memories / embedding_cache are empty without grepping logs.
-  // Bounded — Ollama isAvailable times out at 2s, OpenAI/HTTP are
-  // env-only checks. Wrapped in try/catch so a network glitch never
-  // breaks the status output.
+  // A file-system check of the bundled model; no network request.
   let embedderProbe = null;
   try {
     embedderProbe = await probeEmbeddingProviderAvailability();
@@ -535,7 +533,7 @@ async function runMemoryStatusCommand({ json = false } = {}) {
     if (embedderProbe.available) {
       output.write(`  live provider  ${embedderProbe.available} (model=${embedderProbe.modelId || '?'}, dims=${embedderProbe.dims ?? '?'})\n`);
     } else {
-      output.write(`  live provider  none — vec_memories will stay empty until a provider is set up\n`);
+      output.write(`  live provider  none — vec_memories will stay empty until the model is available\n`);
       const reasons = embedderProbe.reasons || {};
       for (const [name, why] of Object.entries(reasons)) {
         output.write(`    - ${name.padEnd(8)} ${why}\n`);
@@ -552,8 +550,8 @@ async function runMemoryFillEmbeddingsCommand({ json = false } = {}) {
   // Phase F-2b (2026-05-05): manual trigger for the same backfill loop
   // sendChatMessage runs after each chat (scheduleEmbeddingFillIn).
   // Useful when:
-  //   • user just stood up Ollama / set OPENAI_API_KEY and wants to
-  //     embed the existing 1099 rows without waiting for the next chat
+  //   • the model has just become available and the user wants to embed
+  //     the existing rows without waiting for the next chat
   //   • diagnosing whether embedder is actually working — runs synchronously
   //     and reports rows-attempted vs rows-embedded
   // No-op when the embedder is unavailable; reports zero filled.
@@ -565,7 +563,7 @@ async function runMemoryFillEmbeddingsCommand({ json = false } = {}) {
       output.write(JSON.stringify({ ok: false, reason: 'no-embedder', probe }, null, 2) + '\n');
     } else {
       output.write('No live embedder available; nothing to fill.\n');
-      output.write('Run `melo memory status` for the per-provider rejection reasons.\n');
+      output.write('Run `melo memory status` for the reason.\n');
     }
     return;
   }

@@ -80,7 +80,7 @@ test('scoped filtering occurs before the limit and tiered empty scope never sear
   store.upsertMemory({id:'allowed',namespace:'chat:x',kind:'fact',text:'coffee with milk',metadata:{chatId:'right'}});
   assert.equal(store.recallMemories({namespaces:['chat:x'],query:'coffee',limit:1,sideEffects:false,accept:r=>r.metadata.chatId==='right'})[0].id,'allowed');
   const v=new Float32Array(1024);v[0]=1;store.saveMemoryEmbedding('allowed','coffee with milk',v);
-  assert.deepEqual(store.recallMemoriesTiered({namespaces:[],queryEmbedding:v,query:'coffee'}),{scenes:[],frames:[],contents:[],conflicts:[]});
+  assert.deepEqual(store.recallMemoriesTiered({namespaces:[],queryEmbedding:v,query:'coffee'}),{scenes:[],frames:[],contents:[]});
 });
 test('tiered retrieval also includes fresh unembedded content',()=>{
   store.upsertMemory({id:'old',namespace:'chat:a',kind:'prompt',text:'coffee preference'});

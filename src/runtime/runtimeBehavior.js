@@ -17,8 +17,3 @@ export function captureBehavior(config, environment = requestEnvironment()) {
 }
 export function behaviorStatus(config, env = requestEnvironment()) { return resolveBehavior(config, env); }
 
-export function memoryEndpointAllowed(url, env = captureBehavior()) {
-  if (env.MELO_OFFLINE_ONLY !== '1') return true;
-  try { const parsed = new URL(url); return ['http:','https:'].includes(parsed.protocol) && ['localhost','127.0.0.1','[::1]'].includes(parsed.hostname) && !parsed.username && !parsed.password; }
-  catch { return false; }
-}

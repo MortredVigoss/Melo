@@ -7,8 +7,17 @@ import {
   ruleBasedCompact,
   extractKeySentences,
   compactOffline,
+  compactOfflineDetailed,
+  configuredLocalServers,
   _setCallLocalLlmForTests,
 } from './compact.js';
+
+// A configuration in which the person has set up a local model connection.
+// Without one the compactor contacts nothing (2026-11-14), so the tests that
+// stand in for "the local model answered" need it.
+const LOCAL_CONFIG = Object.freeze({
+  llmProfiles: { local: { name: 'Local model', authMode: 'local', baseUrl: 'http://127.0.0.1:11434/v1', model: 'fixture-model' } },
+});
 
 // Helper: run `fn` with MELO_HOME pointed at a tmp dir + arbitrary env
 // overrides, restoring the original values + cleaning the dir afterwards.
@@ -111,7 +120,7 @@ test('quality gate=fallback skips a hallucinated LLM summary and rule-falls-back
       _setCallLocalLlmForTests(async () =>
         'Carol decided to use Redis with TTL 30 minutes for sessions tomorrow.');
       try {
-        const summary = await compactOffline(FIXTURE_MESSAGES, { config: {} });
+        const summary = await compactOffline(FIXTURE_MESSAGES, { config: LOCAL_CONFIG });
         // Rule fallback always emits the "Primary Request" header — that's
         // our fingerprint that the LLM result was rejected.
         assert.ok(summary.includes('Primary Request'));
@@ -131,7 +140,7 @@ test('quality gate=fallback keeps a grounded LLM summary', async () => {
       _setCallLocalLlmForTests(async () =>
         'User asked about bun versus npm; assistant confirmed bun was previously decided for this project build.');
       try {
-        const summary = await compactOffline(FIXTURE_MESSAGES, { config: {} });
+        const summary = await compactOffline(FIXTURE_MESSAGES, { config: LOCAL_CONFIG });
         assert.ok(summary.includes('bun'));
         // Not the 6-section rule template.
         assert.ok(!summary.includes('Primary Request'));
@@ -149,7 +158,7 @@ test('quality gate=audit (default) keeps even low-quality LLM output (diary-only
       _setCallLocalLlmForTests(async () =>
         'Carol decided to use Redis with TTL 30 minutes for sessions tomorrow.');
       try {
-        const summary = await compactOffline(FIXTURE_MESSAGES, { config: {} });
+        const summary = await compactOffline(FIXTURE_MESSAGES, { config: LOCAL_CONFIG });
         // Audit mode never rewrites the LLM output — it just records the
         // score in DREAMS.md.  So we should still see the (bad) LLM text.
         assert.ok(summary.includes('Carol'));
@@ -175,7 +184,7 @@ test('quality gate=fallback treats MELO_SUMMARY_QUALITY_THRESHOLD="" as unset (n
       _setCallLocalLlmForTests(async () =>
         'Carol decided to use Redis with TTL 30 minutes for sessions tomorrow.');
       try {
-        const summary = await compactOffline(FIXTURE_MESSAGES, { config: {} });
+        const summary = await compactOffline(FIXTURE_MESSAGES, { config: LOCAL_CONFIG });
         // Default threshold should still apply → low-quality summary rejected
         // → rule fallback emits the "Primary Request" header.
         assert.ok(summary.includes('Primary Request'));
@@ -197,7 +206,7 @@ test('quality gate=fallback honours MELO_SUMMARY_QUALITY_THRESHOLD whitespace as
       _setCallLocalLlmForTests(async () =>
         'Carol decided to use Redis with TTL 30 minutes for sessions.');
       try {
-        const summary = await compactOffline(FIXTURE_MESSAGES, { config: {} });
+        const summary = await compactOffline(FIXTURE_MESSAGES, { config: LOCAL_CONFIG });
         assert.ok(summary.includes('Primary Request'));
       } finally {
         _setCallLocalLlmForTests(null);
@@ -227,7 +236,7 @@ test('compactOffline captures threshold at entry — mid-call env mutation does 
         return 'Carol decided to use Redis with TTL 30 minutes for sessions.';
       });
       try {
-        const summary = await compactOffline(FIXTURE_MESSAGES, { config: {} });
+        const summary = await compactOffline(FIXTURE_MESSAGES, { config: LOCAL_CONFIG });
         // If the contract holds, the captured 0.6 default still rejects
         // the hallucinated summary → rule fallback fires.
         assert.ok(summary.includes('Primary Request'));
@@ -246,7 +255,7 @@ test('quality gate=disabled skips audit + always returns LLM output unchanged', 
       _setCallLocalLlmForTests(async () =>
         'Some entirely unrelated string that should still be returned.');
       try {
-        const summary = await compactOffline(FIXTURE_MESSAGES, { config: {} });
+        const summary = await compactOffline(FIXTURE_MESSAGES, { config: LOCAL_CONFIG });
         assert.equal(summary, 'Some entirely unrelated string that should still be returned.');
       } finally {
         _setCallLocalLlmForTests(null);
@@ -270,3 +279,79 @@ test('compactOfflineDetailed reports the rule fallback when no local model answe
     if (previous === undefined) delete process.env.MELO_OFFLINE_DISABLE_LLM; else process.env.MELO_OFFLINE_DISABLE_LLM = previous;
   }
 });
+
+// ─── 2026-11-14: only configured local servers are used ──────────────────────
+//
+// The compactor used to try Ollama, LM Studio and llama.cpp on their default
+// ports whether or not any had been set up, and sent the conversation to the
+// first that answered `/models`.
+
+test('configuredLocalServers lists the model connections on this machine, the one in use first, and nothing else', () => {
+  assert.deepEqual(configuredLocalServers({}), []);
+  assert.deepEqual(configuredLocalServers(undefined), []);
+  const config = {
+    baseUrl: 'http://localhost:1234/v1/', model: 'active-model', apiKey: 'k1',
+    llmProfiles: {
+      cloud: { name: 'Cloud', baseUrl: 'https://api.example.com/v1', model: 'gpt' },
+      same: { name: 'Same server again', baseUrl: 'http://localhost:1234/v1', model: 'other' },
+      ollama: { name: 'Ollama', baseUrl: 'http://127.0.0.1:11434/v1', model: 'qwen', apiKey: '' },
+      claude: { name: 'Local Anthropic proxy', apiProtocol: 'anthropic', baseUrl: 'http://127.0.0.1:9000/v1', model: 'c' },
+      lan: { name: 'LAN box', baseUrl: 'http://192.168.1.20:11434/v1', model: 'q' },
+      broken: { name: 'Broken', baseUrl: 'not a url' },
+      empty: null,
+    },
+  };
+  assert.deepEqual(configuredLocalServers(config), [
+    { name: 'active', baseUrl: 'http://localhost:1234/v1', model: 'active-model', apiKey: 'k1' },
+    { name: 'Ollama', baseUrl: 'http://127.0.0.1:11434/v1', model: 'qwen', apiKey: '' },
+  ]);
+  // A cloud connection in use is not a local server.
+  assert.deepEqual(configuredLocalServers({ baseUrl: 'https://chatgpt.com/backend-api', model: 'x' }), []);
+});
+
+test('with no local connection configured nothing is contacted: no model call and no network request', async () => {
+  let modelCalls = 0;
+  let requests = 0;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (...args) => { requests += 1; return realFetch(...args); };
+  try {
+    for (const config of [{}, { baseUrl: 'https://api.example.com/v1', model: 'gpt', llmProfiles: { cloud: { baseUrl: 'https://api.example.com/v1', model: 'gpt' } } }]) {
+      // First through the stand-in (would count a call per candidate)...
+      _setCallLocalLlmForTests(async () => { modelCalls += 1; return 'a summary from a server nobody configured'; });
+      const stubbed = await compactOfflineDetailed(FIXTURE_MESSAGES, { config });
+      assert.equal(stubbed.source, 'rule');
+      // ...then through the real path, which is the one that used to probe three ports.
+      _setCallLocalLlmForTests(null);
+      const real = await compactOfflineDetailed(FIXTURE_MESSAGES, { config });
+      assert.equal(real.source, 'rule');
+      assert.ok(real.summary.includes('Primary Request'));
+    }
+    assert.equal(modelCalls, 0);
+    assert.equal(requests, 0);
+  } finally {
+    globalThis.fetch = realFetch;
+    _setCallLocalLlmForTests(null);
+  }
+});
+
+test('a configured local connection is used with its own address and model; an explicit compact model overrides it', async () => {
+  await withIsolatedEnv({ MELO_COMPACT_QUALITY_GATE: 'disabled' }, async () => {
+    const seen = [];
+    _setCallLocalLlmForTests(async candidate => { seen.push(candidate); return 'bun stays for the build script'; });
+    try {
+      const config = {
+        baseUrl: 'https://api.example.com/v1', model: 'cloud-model',
+        llmProfiles: { box: { name: 'My box', baseUrl: 'http://127.0.0.1:8123/v1', model: 'box-model', apiKey: 'box-key' } },
+      };
+      const result = await compactOfflineDetailed(FIXTURE_MESSAGES, { config });
+      assert.equal(result.source, 'local');
+      assert.deepEqual(seen, [{ name: 'My box', baseUrl: 'http://127.0.0.1:8123/v1', model: 'box-model', apiKey: 'box-key' }]);
+      seen.length = 0;
+      await compactOfflineDetailed(FIXTURE_MESSAGES, { config: { ...config, offlineCompactModel: 'small-model' } });
+      assert.equal(seen[0].model, 'small-model');
+    } finally {
+      _setCallLocalLlmForTests(null);
+    }
+  });
+});
+

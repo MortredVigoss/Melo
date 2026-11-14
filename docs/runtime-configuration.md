@@ -17,7 +17,7 @@
 
 ## 服务、预算与安装
 
-- 本机 LLM 地址保存于 localServices，默认集中于 src/shared/localServices.js；自定义声音为 customVoiceBaseUrl，界面依据服务身份/地址，不猜端口。向量集成可显式用 MELO_EMBED_PROVIDER、MELO_OLLAMA_URL、MELO_EMBED_HTTP_URL；构造时捕获请求配置，连接/凭据变化不复用旧实例。
+- 本机模型服务只使用模型设置里保存的连接（地址是本机的连接）；离线压缩不再探测 Ollama / LM Studio / llama.cpp 的默认端口。默认地址集中于 src/shared/localServices.js；自定义声音为 customVoiceBaseUrl，界面依据服务身份/地址，不猜端口。记忆向量只由随 Melo 分发的模型生成（2026-11-14 删除了 Ollama / OpenAI / 自定义 HTTP 向量适配器和 MELO_OLLAMA_URL、MELO_EMBED_HTTP_URL）；MELO_EMBED_PROVIDER 只用于选择代码里注册的提供方（测试用）。
 - 搜索数量、正文预算、超时、缓存时限使用 operationalLimits.search 及现有搜索设置。共享循环、委派、工具保护在 shared/protocol/agent-loop.json；记忆算法默认值集中于 src/memory/limits.js。实时预算与入口选项优先，安全边界不开放无限执行。
 - 后台 scheduler 通过构造参数注入间隔；纯算法、绘图坐标、协议容量不全部塞进设置页。Telegram 已归档，不重新开放其轮询设置。
 - 桌面安装默认 ~/Applications/Melo.app，快捷入口为产品仓库父目录；MELO_DESKTOP_INSTALL_DIR、MELO_DESKTOP_SHORTCUT_DIR 可指定绝对目录。拒绝覆盖非 Melo 应用和源构建目录，保留账号数据。

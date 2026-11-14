@@ -727,7 +727,11 @@ await finishChatDeletions(runtimePaths.home);
       const {name}=body;
       const config=await loadConfig();
       const saved=buildEffectiveMcpServers(config.mcpServers,config)[name];
-      const requested=body.url ? {url:body.url} : body.command ? {command:body.command,args:body.args,env:body.env} : saved;
+      // Only a server that is in the saved configuration can be connected, by name.
+      // The request body used to be able to carry its own `command` / `args` / `env`
+      // (or `url`): the one way to make this process start an arbitrary program
+      // that appears in no configuration. No client ever sent them.
+      const requested=saved;
       if(!isValidMcpServerId(name) || !requested || requested.disabled || requested.unpinned) {sendJson(response,400,{error:'MCP server is not enabled or has no valid configuration.'});return;}
       const result = await connectMcpServer(name, requested);
       sendJson(response, result.connected ? 200 : 500, { ok: result.connected, ...result });

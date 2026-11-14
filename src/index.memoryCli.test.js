@@ -123,45 +123,52 @@ test('memory <unknown subcommand> throws a helpful error', async () => {
 
 // ── fill-embeddings + embedder probe (Phase F-2) ──────────────────────
 
-test('fill-embeddings without an available embedder reports no-embedder, does not throw', async () => {
-  // Default test env has no Ollama / no API key / no HTTP URL —
-  // probeEmbeddingProviderAvailability returns available=null, the CLI
-  // must short-circuit cleanly with reason='no-embedder'.
+// The probe reports the provider the product really uses (the model that ships
+// with Melo). Until 2026-11-14 it probed Ollama / OpenAI / a custom HTTP
+// endpoint instead, so both commands below said "no embedder" on every machine.
+async function modelDirectory(t, { complete }) {
+  const { mkdtemp, mkdir, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = await mkdtemp(join(tmpdir(), 'melo-cli-embed-model-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  if (complete) {
+    await mkdir(join(dir, 'onnx'));
+    for (const file of ['melo-manifest.json', 'tokenizer.json', 'onnx/model_quantized.onnx']) await writeFile(join(dir, file), '');
+  }
+  return dir;
+}
+
+test('fill-embeddings without the bundled model reports no-embedder with the reason, does not throw', async t => {
+  const missing = await modelDirectory(t, { complete: false });
   const { stdout } = await runMeloCli(['memory', 'fill-embeddings', '--json'], {
-    env: {
-      // Force all three providers unavailable.
-      MELO_EMBED_PROVIDER: '', // accept default chain ollama→openai→http
-      MELO_OLLAMA_URL: 'http://127.0.0.1:1', // unreachable port
-      OPENAI_API_KEY: '',
-      MELO_API_KEY: '',
-      MELO_EMBED_HTTP_URL: '',
-    },
+    env: { MELO_EMBED_PROVIDER: '', MELO_EMBED_MODEL_DIR: missing },
   });
   const parsed = JSON.parse(stdout);
   assert.equal(parsed.ok, false);
   assert.equal(parsed.reason, 'no-embedder');
-  // Per-provider reasons must propagate so the user knows what to fix.
-  assert.ok(parsed.probe?.reasons?.ollama);
-  assert.ok(parsed.probe?.reasons?.openai);
-  assert.ok(parsed.probe?.reasons?.http);
+  assert.deepEqual(Object.keys(parsed.probe.reasons), ['builtin'], 'only the provider the product uses is checked');
+  assert.ok(parsed.probe.reasons.builtin.includes(missing), 'the reason names the directory that was looked in');
 });
 
-test('memory status --json includes embedder probe with per-provider reasons when none available', async () => {
-  const { stdout } = await runMeloCli(['memory', 'status', '--json'], {
-    env: {
-      MELO_OLLAMA_URL: 'http://127.0.0.1:1',
-      OPENAI_API_KEY: '',
-      MELO_API_KEY: '',
-      MELO_EMBED_HTTP_URL: '',
-    },
-  });
-  const parsed = JSON.parse(stdout);
-  assert.equal(parsed.embedder?.available, null,
-    'embedder.available must be null when no provider is reachable');
-  assert.ok(typeof parsed.embedder?.reasons === 'object');
-  assert.ok(parsed.embedder.reasons.ollama, 'ollama reason must be surfaced');
-  // Reason text must be actionable — pin the "ollama serve" hint.
-  assert.match(parsed.embedder.reasons.ollama, /ollama serve/i);
+test('memory status --json reports the bundled model as the live provider when it is installed, and why not when it is missing', async t => {
+  const installed = await modelDirectory(t, { complete: true });
+  const present = JSON.parse((await runMeloCli(['memory', 'status', '--json'], {
+    // Addresses of services the old probe went to: they must make no difference now.
+    env: { MELO_EMBED_PROVIDER: '', MELO_EMBED_MODEL_DIR: installed, MELO_OLLAMA_URL: 'http://127.0.0.1:1', OPENAI_API_KEY: '', MELO_API_KEY: '' },
+  })).stdout);
+  assert.equal(present.embedder.available, 'builtin');
+  assert.match(present.embedder.modelId, /^melo:multilingual-e5-small:/);
+  assert.equal(present.embedder.dims, 1024);
+  assert.deepEqual(present.embedder.reasons, {});
+
+  const missing = await modelDirectory(t, { complete: false });
+  const absent = JSON.parse((await runMeloCli(['memory', 'status', '--json'], {
+    env: { MELO_EMBED_PROVIDER: '', MELO_EMBED_MODEL_DIR: missing },
+  })).stdout);
+  assert.equal(absent.embedder.available, null);
+  assert.match(absent.embedder.reasons.builtin, /MELO_EMBED_MODEL_DIR/, 'the reason says what to do');
+  assert.equal(absent.embedder.reasons.ollama, undefined);
 });
 
 // ── --home flag + auto-warn hint (Phase F home-resolution gap) ──────

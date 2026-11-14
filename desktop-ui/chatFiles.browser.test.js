@@ -73,5 +73,11 @@ test('chat files, explicit deletion decisions and management actions work throug
  await dialog.getByRole('button',{name:'撤销此对话的临时授权',exact:true}).click();assert.equal(new URL((await revoked).url()).searchParams.get('chatId'),permissionChat.activeChat.id);
  await dialog.getByRole('button',{name:'关闭',exact:true}).click();
  await post('/api/mcp/connect',{name:'unknown-fixture'},400);
+ // 2026-11-14: the body cannot bring its own program or address; only saved servers connect.
+ const marker=join(home,'mcp-inline-marker');
+ await post('/api/mcp/connect',{name:'inline-fixture',command:'/usr/bin/touch',args:[marker],env:{}},400);
+ await post('/api/mcp/connect',{name:'inline-url-fixture',url:`http://127.0.0.1:${external.address().port}/mcp`},400);
+ await new Promise(resolve=>setTimeout(resolve,300));
+ await assert.rejects(access(marker),{code:'ENOENT'},'no program named in a request body was started');
  assert.deepEqual(errors,[]);
 });

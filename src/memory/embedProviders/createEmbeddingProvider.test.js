@@ -83,21 +83,30 @@ test('EmbeddingProvider abstract methods throw by default', () => {
   assert.rejects(() => ep.embed('x'));
 });
 
-test('adapter factory binds each endpoint and credentials to the current request snapshot', async t => {
+test('the provider is bound to the model directory of the request that asked for it', async t => {
   const { runWithRequestContext } = await import('../../runtime/requestScope.js');
   const { createRequestContext } = await import('../../runtime/requestContext.js');
-  const { OllamaEmbedProvider } = await import('./OllamaEmbedProvider.js');
+  const { mkdtemp, mkdir, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
   _resetEmbeddingProviderForTests(); t.after(_resetEmbeddingProviderForTests);
-  const inHome = (url, token, callback) => runWithRequestContext(createRequestContext({
-    env: { MELO_EMBED_PROVIDER: 'http', MELO_EMBED_HTTP_URL: url, MELO_EMBED_HTTP_TOKEN: token, MELO_EMBED_DIMS: '4' },
-    config: { behavior: { offlineMemory: false } }
-  }), callback);
-  const a = await inHome('https://a.example/embed', 'token-a', getEmbeddingProvider);
-  const b = await inHome('https://b.example/embed', 'token-b', getEmbeddingProvider);
-  assert.equal(a.url, 'https://a.example/embed'); assert.equal(a.token, 'token-a');
-  assert.equal(b.url, 'https://b.example/embed'); assert.equal(b.token, 'token-b');
-  assert.notEqual(a,b);
-  const env = { MELO_OLLAMA_URL: 'http://127.0.0.1:23456', MELO_OLLAMA_EMBED_MODEL: 'local-test' };
-  const local = new OllamaEmbedProvider({env}); env.MELO_OLLAMA_URL = 'http://127.0.0.1:33333';
-  assert.equal(local.baseUrl, 'http://127.0.0.1:23456'); assert.equal(local.modelId, 'local-test');
+  const modelDir = async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'melo-embed-model-'));
+    t.after(() => rm(dir, { recursive: true, force: true }));
+    await mkdir(join(dir, 'onnx'));
+    for (const file of ['melo-manifest.json', 'tokenizer.json', 'onnx/model_quantized.onnx']) await writeFile(join(dir, file), '');
+    return dir;
+  };
+  const inRequest = (dir, callback) => runWithRequestContext(createRequestContext({ env: { MELO_EMBED_PROVIDER: '', MELO_EMBED_MODEL_DIR: dir } }), callback);
+  const [dirA, dirB] = [await modelDir(), await modelDir()];
+  const a = await inRequest(dirA, getEmbeddingProvider);
+  const b = await inRequest(dirB, getEmbeddingProvider);
+  assert.equal(a.modelDir, dirA);
+  assert.equal(b.modelDir, dirB);
+  assert.notEqual(a, b);
+  assert.equal(await inRequest(dirB, getEmbeddingProvider), b, 'the same request environment reuses the instance');
+  // A directory without the model: no provider, and nothing else is tried in its place.
+  const empty = await mkdtemp(join(tmpdir(), 'melo-embed-empty-'));
+  t.after(() => rm(empty, { recursive: true, force: true }));
+  assert.equal(await inRequest(empty, getEmbeddingProvider), null);
 });
