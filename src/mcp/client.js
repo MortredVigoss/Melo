@@ -15,7 +15,6 @@ export function httpEndpoint(input) {
 // The official SDK owns framing, negotiation, cancellation, and cursor traversal.
 export class McpStdioClient {
   constructor({ command, args = [], env = {}, cwd, name = 'mcp-server', url, headers, onClose, onToolsChanged, localTransport, managed = false }) {
-    this.name = name;
     this.transportKind = localTransport ? 'in-process' : url ? 'http' : 'stdio';
     this.client = new Client({ name: 'melo', version: '1.0' }, {
       versionNegotiation: { mode: url && !managed ? 'auto' : 'legacy' },
@@ -32,26 +31,19 @@ export class McpStdioClient {
         stderr: 'pipe' });
       this.transport.stderr?.on('data', chunk => process.stderr.write(`[mcp:${name}] ${chunk}`));
     }
-    this.client.onclose = () => { this.connected = false; onClose?.(); };
+    this.client.onclose = () => onClose?.();
     this.client.setNotificationHandler('notifications/tools/list_changed', () => onToolsChanged?.());
   }
   async connect() {
     await this.client.connect(this.transport, { timeout: 15000 });
-    this.connected = true;
     return this.client.getServerCapabilities();
   }
   async listTools() { return (await this.client.listTools(undefined, { timeout: 15000, cache: 'refresh' })).tools; }
-  async listResources() {
-    if (!this.client.getServerCapabilities()?.resources) return [];
-    return (await this.client.listResources()).resources;
-  }
-  readResource(uri) { return this.client.readResource({ uri }); }
   callTool(name, args = {}, signal) {
     signal?.throwIfAborted();
     return this.client.callTool({ name, arguments: args }, { signal, timeout: 60000 });
   }
   async disconnect() {
-    this.connected = false;
     let timer;
     try {
       if(this.transport.terminateSession) await Promise.race([this.transport.terminateSession(),

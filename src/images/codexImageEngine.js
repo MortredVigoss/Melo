@@ -294,9 +294,7 @@ export async function generateImageViaCodex({
     throw err;
   }
 
-  const sessionId = typeof globalThis.crypto?.randomUUID === 'function'
-    ? globalThis.crypto.randomUUID()
-    : randomUUID();
+  const sessionId = randomUUID();
 
   // Keep the tool config minimal — only forward keys the user actually set,
   // so we don't accidentally pin a default that upstream may want to evolve.
@@ -924,10 +922,7 @@ export async function editImageViaCodex({
     throw err;
   }
 
-  const sessionId =
-    typeof globalThis.crypto?.randomUUID === 'function'
-      ? globalThis.crypto.randomUUID()
-      : randomUUID();
+  const sessionId = randomUUID();
   const tracePrefix = `[codex-edit sid=${sessionId.slice(0, 8)} model=${model}]`;
   const sourceDataUri = `data:${sourceImageMime};base64,${sourceImageBytes.toString('base64')}`;
 

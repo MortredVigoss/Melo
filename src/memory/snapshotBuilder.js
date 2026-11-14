@@ -544,7 +544,6 @@ export function syncMemoryStoreSnapshot(state, { ctx } = {}) {
         ? `${ctx.storePath} (ctx)`
         : `${join(getMeloHome(), 'desktop', 'store.sqlite')} (default)`;
       const summary = Object.entries(byKind).map(([k, n]) => `${k}=${n}`).join(' ') || '(empty)';
-      // eslint-disable-next-line no-console
       console.log(
         `[memory.snapshot] chats=${chats} eligibleChats=${eligibleChats} entries=${entries.length} ${summary} ${tiers} storePath=${storePath}`,
       );

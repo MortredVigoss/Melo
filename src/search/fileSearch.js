@@ -18,7 +18,6 @@ import { debugWarn } from '../debug.js';
 function resolveBundledRipgrep() {
   try {
     const require = createRequire(import.meta.url);
-    // eslint-disable-next-line import/no-unresolved -- dynamically resolved.
     const mod = require('@vscode/ripgrep');
     if (mod?.rgPath && existsSync(mod.rgPath)) {
       return mod.rgPath;

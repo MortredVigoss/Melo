@@ -22,7 +22,6 @@ try {
  const out={};
  async function go(settings){await post('/api/settings',settings);await page.reload();await page.locator('#app').waitFor();await page.waitForTimeout(900);}
  await page.goto(base);await page.locator('.local-settings').waitFor();
- const consent=page.getByRole('dialog',{name:'Productivity MCP consent'});if(await consent.isVisible())await consent.getByRole('button',{name:/暂不启用/}).click();
  await page.locator('[data-action=settings-edit]').click();await page.locator('[name=localName]').fill('未保存昵称');let dialogs=0;page.on('dialog',async d=>{dialogs++;await d.dismiss();});await page.reload({timeout:2000}).catch(e=>{if(dialogs!==1)throw e;});await page.locator('[name=localName]').waitFor();out.reloadDraft={dialogs,value:await page.locator('[name=localName]').inputValue()};
  assert.equal(out.reloadDraft.dialogs,1);assert.equal(out.reloadDraft.value,'未保存昵称');await page.locator('[data-action=settings-cancel]').click();
  await go({activeView:'agent',selectedAgentId:custom});

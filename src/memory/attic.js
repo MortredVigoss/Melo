@@ -108,7 +108,6 @@ export function injectHotAttic({ namespaces = [], limit = 8, tokenBudget = ATTIC
     namespaces: namespaces.filter(ns => !String(ns).startsWith('project:')),
     kinds: ['fact', 'session-fact', 'verification-correction'],
     limit: limit * 4,
-    sideEffects: false,
     accept,
     // Remote audience boundary (design §3.4 M7): applied in SQL next to
     // forgotten/validTo, so a remote chat's Hot Attic can never surface a

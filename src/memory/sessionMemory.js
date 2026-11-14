@@ -29,20 +29,6 @@ import { createOpenAICompatibleReply } from '../openai.js';
 import { extractFactsRuleBased } from './offline/extractor.js';
 import { factSubject } from './factPolicy.js';
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-/** Extract memory after every this many assistant turns. */
-
-
-/** Maximum facts injected into system prompt per request. */
-
-
-/** Maximum total stored facts per chat. */
-
-
-/** Minimum messages in the window to attempt extraction. */
-
-
 // ─── Extraction ───────────────────────────────────────────────────────────────
 
 const EXTRACTION_SYSTEM_PROMPT = `\

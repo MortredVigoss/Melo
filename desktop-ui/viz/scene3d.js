@@ -60,7 +60,6 @@ export class Scene3DRenderer {
       try {
         this.build();
       } catch (err) {
-        // eslint-disable-next-line no-console
         console.warn('[scene3d] build() failed:', err);
       }
       this._start();
@@ -131,7 +130,6 @@ export class Scene3DRenderer {
         this.onFrame(t);
       } catch (err) {
         // Never let a buggy frame callback take down the whole session.
-        // eslint-disable-next-line no-console
         console.warn('[scene3d] onFrame threw, pausing animation:', err);
         this.dispose();
         return;

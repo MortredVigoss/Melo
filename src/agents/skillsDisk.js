@@ -222,7 +222,6 @@ export async function loadSkillsFromDisk(root = getSkillsDiskRoot()) {
       out.push(skillFromMarkdown(skillId, raw, dir));
     } catch (err) {
       if (err && err.code === 'ENOENT') continue;
-      // eslint-disable-next-line no-console
       console.warn(`[skillsDisk] failed to load ${skillId}: ${err.message}`);
     }
   }

@@ -169,7 +169,6 @@ export function logSearchTrail({ source, input = {}, result } = {}) {
     // directly (not debugWarn) so the warning doesn't get filtered by
     // MELO_DEBUG flags — the operator who turned trail-log ON wants
     // to know if it's silently broken.
-    // eslint-disable-next-line no-console
     console.warn(`[trail-log] write failed (path=${path || '<unresolved>'}): ${err?.message || err}`);
   }
 }

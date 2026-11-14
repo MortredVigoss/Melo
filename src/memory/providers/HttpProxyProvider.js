@@ -82,7 +82,6 @@ export class HttpProxyProvider extends MemoryProvider {
     } catch {
       // If /replace_all is not implemented, fall back to upserts.
       for (const e of entries) {
-        // eslint-disable-next-line no-await-in-loop
         await this.upsert(e);
       }
     }

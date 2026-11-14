@@ -1242,9 +1242,6 @@ export function recallMemories({
             .filter(row => !row._invalidated && accept(materializeMemoryRows([row])[0]))
             .sort((a, b) => b.score - a.score);
 
-          // Phase 1 #1: MMR diversity rerank. Uses row.embedding which the
-          // SELECT above explicitly fetches. Falls back to score-order slice
-          // when embeddings are missing.
           // Fuse both candidate sets. New/unembedded exact matches must compete
           // even when ANN found unrelated rows. Reciprocal rank avoids mixing
           // raw keyword scores (hundreds) with cosine scores (0..1).
@@ -1973,14 +1970,6 @@ export function recordMemoryFeedback({ candidates = [], usedIds = [], requestId,
 }
 
 /**
- * Aggregate hit stats per memory row over the last `windowDays`.  Returns rows:
- *   { memoryId, hits, distinctQueries, avgRank, goodOutcomes }
- *
- * @param {Object} [opts]
- * @param {string[]} [opts.memoryIds]   if provided, restrict to these ids
- * @param {number}   [opts.windowDays]  default 14
- */
-/**
  * Negative feedback (design audit M6): the user stopped using a fact. Recorded
  * as a hit with outcome 'rejected' so dreaming's outcome gate sees it; the
  * gate reads goodOutcomes = used − rejected.
@@ -1998,6 +1987,14 @@ export function recordMemoryRejection(memoryId, { requestId = 'user:forget' } = 
   }
 }
 
+/**
+ * Aggregate hit stats per memory row over the last `windowDays`.  Returns rows:
+ *   { memoryId, hits, distinctQueries, avgRank, goodOutcomes }
+ *
+ * @param {Object} [opts]
+ * @param {string[]} [opts.memoryIds]   if provided, restrict to these ids
+ * @param {number}   [opts.windowDays]  default 14
+ */
 export function getHitStats({ memoryIds = null, windowDays = 14 } = {}) {
   const database = getDb();
   const sinceIso = new Date(Date.now() - windowDays * 86_400_000).toISOString();
@@ -2520,8 +2517,6 @@ export function memoryStatsExtended() {
     return base;
   }
 }
-
-// ─── End tiered recall additions ─────────────────────────────────────────────
 
 export function searchMemories({query = '', kinds = [], limit = 20} = {}) {
   const built = buildRecallQuery({kinds,allowGlobal:true});

@@ -157,7 +157,6 @@ function* readEntries(files) {
     try {
       raw = readFileSync(file, 'utf8');
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.warn(`[inspect] failed to read ${file}: ${err.message}`);
       continue;
     }
@@ -361,7 +360,6 @@ function main() {
   try {
     opts = parseArgs(process.argv);
   } catch (err) {
-    // eslint-disable-next-line no-console
     console.error(err.message);
     process.exit(2);
   }
@@ -374,7 +372,6 @@ function main() {
   try {
     files = pickDayFiles(opts);
   } catch (err) {
-    // eslint-disable-next-line no-console
     console.error(err.message);
     process.exit(1);
   }

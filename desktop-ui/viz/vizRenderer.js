@@ -123,7 +123,6 @@ function mountGlobeFlightLazy(host, viz) {
           throw new Error('globeFlight.js did not export a mount function');
         }
       } catch (err) {
-        // eslint-disable-next-line no-console
         console.warn('[viz] globe-flight mount failed:', err);
         _renderGlobeFlightError(host, 'mount', err);
       }
@@ -138,7 +137,6 @@ function mountGlobeFlightLazy(host, viz) {
     })
     .catch(err => {
       if (state.disposed) return;
-      // eslint-disable-next-line no-console
       console.warn('[viz] globe-flight lazy import failed:', err);
       const stage = (err && err._stage) || 'import';
       _renderGlobeFlightError(host, stage, err);
@@ -307,7 +305,6 @@ export function mountVizBlocks(rootEl, specsById) {
       instanceById.set(messageId, { signature, host, handle });
     } catch (err) {
       // Never let a renderer bug take down the surrounding chat UI.
-      // eslint-disable-next-line no-console
       console.warn('[viz] renderer failed:', err);
       host.classList.add('viz-card', 'viz-card-error');
       host.textContent = 'Visualization failed to load.';

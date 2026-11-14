@@ -88,7 +88,6 @@ export class LanceDbProvider extends MemoryProvider {
       const table = await this._openTable();
       await table.delete('1=1');
       for (const e of entries) {
-        // eslint-disable-next-line no-await-in-loop
         await this.upsert(e);
       }
     } catch {

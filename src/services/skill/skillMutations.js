@@ -97,7 +97,6 @@ export async function createCustomSkill(skillData = {}) {
       try {
         await saveSkillToDisk(skill);
       } catch (err) {
-        // eslint-disable-next-line no-console
         console.warn(`[desktopStore] createCustomSkill disk mirror failed: ${err.message}`);
       }
     }
@@ -138,7 +137,6 @@ export async function updateCustomSkill(skillId, patch = {}) {
       try {
         await saveSkillToDisk(updated);
       } catch (err) {
-        // eslint-disable-next-line no-console
         console.warn(`[desktopStore] updateCustomSkill disk mirror failed: ${err.message}`);
       }
     }
@@ -165,7 +163,6 @@ export async function removeCustomSkill(skillId) {
       try {
         await removeSkillFromDisk(skillId);
       } catch (err) {
-        // eslint-disable-next-line no-console
         console.warn(`[desktopStore] removeCustomSkill disk cleanup failed: ${err.message}`);
       }
     }

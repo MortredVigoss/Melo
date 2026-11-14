@@ -63,7 +63,6 @@ function buildEvaluator(expr, paramIds) {
   const safe = sanitizeExpression(expr, paramIds);
   if (!safe) return null;
   try {
-    // eslint-disable-next-line no-new-func
     return new Function('M', 'x', ...paramIds, `return (${safe});`);
   } catch {
     return null;

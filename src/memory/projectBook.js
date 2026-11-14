@@ -171,7 +171,7 @@ function truncateRowToBudget(row, budget, measure) {
     if (used <= budget) return candidate;
     const ratio = Math.min(0.9, Math.max(0.1, budget / used));
     text = text.slice(0, Math.max(20, Math.floor(text.length * ratio))).trimEnd();
-    candidate = { ...row, text: `${text}…`, truncated: true };
+    candidate = { ...row, text: `${text}…` };
   }
   return candidate;
 }

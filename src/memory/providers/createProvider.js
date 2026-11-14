@@ -100,7 +100,6 @@ class RouterProvider {
       byProv.get(p).push(e);
     }
     for (const [prov, list] of byProv) {
-      // eslint-disable-next-line no-await-in-loop
       await prov.replaceAll(list);
     }
     if (this.shadow) {

@@ -82,7 +82,6 @@ export class ChromaProvider extends MemoryProvider {
       // Older Chroma versions may reject collection-wide delete.
     }
     for (const e of entries) {
-      // eslint-disable-next-line no-await-in-loop
       await this.upsert(e);
     }
   }

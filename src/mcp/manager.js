@@ -256,8 +256,6 @@ export function disconnectMcpServer(serverName) {
 
 // ─── Bootstrap all servers from config ───────────────────────────────────────
 
-// ─── Presets: src/mcp/presets.js ──────────────────────────────────────────────
-
 /**
  * Pure half of the bootstrap reconciler.  Decides which currently-active
  * server names should be disconnected because they're no longer in the

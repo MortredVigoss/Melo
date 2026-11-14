@@ -396,7 +396,6 @@ test('withAudioBudget: fast successful work returns its value', async () => {
 
 test('withAudioBudget: parent abort reaches work even when AbortSignal.any is unavailable (Node 18 fallback)', async () => {
   const original = AbortSignal.any;
-  // eslint-disable-next-line no-global-assign
   AbortSignal.any = undefined;
   try {
     const parent = new AbortController();
@@ -425,7 +424,6 @@ test('withAudioBudget: parent abort reaches work even when AbortSignal.any is un
 
 test('withKeyframeBudget: parent abort reaches work even when AbortSignal.any is unavailable (Node 18 fallback)', async () => {
   const original = AbortSignal.any;
-  // eslint-disable-next-line no-global-assign
   AbortSignal.any = undefined;
   try {
     const parent = new AbortController();

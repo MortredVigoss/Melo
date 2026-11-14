@@ -95,7 +95,6 @@ export async function getEmbeddingProvider() {
 
   const candidates = order.map(name => REGISTRY.get(name)?.({ env })).filter(Boolean);
   for (const p of candidates) {
-    // eslint-disable-next-line no-await-in-loop
     if (await p.isAvailable()) {
       const instance = withEmbeddingCache(p);
       if (_singletonKey === key) _singleton = instance;

@@ -25,7 +25,6 @@ export async function mergeDiskSkillsIntoState(state) {
   try {
     diskSkills = await loadSkillsFromDisk();
   } catch (err) {
-    // eslint-disable-next-line no-console
     console.warn(`[desktopStore] skill disk load failed: ${err.message}`);
     return;
   }
