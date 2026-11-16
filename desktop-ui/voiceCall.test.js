@@ -2,7 +2,7 @@ import { setLanguage } from './i18n.js';
 setLanguage('zh-CN');
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createVoiceCall, voiceCallActive, voiceCallSupported, renderVoiceCall } from './voiceCall.js';
+import { createVoiceCall, voiceCallActive, voiceCallSupported, renderVoiceCall, renderVoiceCallToggle } from './voiceCall.js';
 import { VOICE_TURN, voiceCallPhrase } from '../shared/agent/voiceTurn.js';
 
 // Live voice call on the desktop page (2026-11-16). The native engine is a
@@ -12,8 +12,8 @@ import { VOICE_TURN, voiceCallPhrase } from '../shared/agent/voiceTurn.js';
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 
-function fixture({ native = true, serverVoice = true, engine = 'auto', replying = false, speech } = {}) {
-  let context = 'chat|p|c1|agent-a', id = 0;
+function fixture({ native = true, serverVoice = true, engine = 'auto', replying = false, speech, chatId = 'c1', sendTurn } = {}) {
+  let context = 'chat|p|c1|agent-a', id = 0, pageChat = chatId;
   const posted = [], turns = [], supplements = [], stops = [], others = [], plans = [], requests = [], changes = [];
   const state = { replying };
   const timers = [], cleared = new Set();
@@ -26,15 +26,15 @@ function fixture({ native = true, serverVoice = true, engine = 'auto', replying 
   const call = createVoiceCall({
     env,
     getContext: () => context,
-    getChatId: () => 'c1',
+    getChatId: () => pageChat,
     getAgentId: () => 'agent-a',
     isReplying: () => state.replying,
     // Like handleSendMessage: resolves once the turn has settled (its finally calls onSettled).
-    sendTurn: (text, observer) => new Promise(resolve => {
+    sendTurn: sendTurn || ((text, observer, callChat) => new Promise(resolve => {
       const settle = observer.onSettled;
       observer.onSettled = result => { settle(result); resolve(); };
-      turns.push({ text, observer });
-    }),
+      turns.push({ text, observer, chatId: callChat });
+    })),
     sendSupplement: async text => { supplements.push(text); },
     stopReply: () => { stops.push('stop'); },
     stopOtherAudio: () => { others.push('stopped'); },
@@ -48,7 +48,7 @@ function fixture({ native = true, serverVoice = true, engine = 'auto', replying 
     onChange: next => changes.push(next),
   });
   const native_ = detail => call.receive({ sessionID: call.state.sessionID, ...detail });
-  return { call, posted, turns, supplements, stops, others, plans, requests, changes, state, timers, cleared, native: native_, setContext: value => { context = value; } };
+  return { call, posted, turns, supplements, stops, others, plans, requests, changes, state, timers, cleared, native: native_, setContext: value => { context = value; }, setChatId: value => { pageChat = value; } };
 }
 
 function started(options) {
@@ -341,7 +341,8 @@ test('the panel: controls while live, escaped words, explanations', () => {
   const live = renderVoiceCall({ phase: 'speaking', echoCancellation: true, muted: false, replying: false, partial: '<b>你好</b>', lines: [{ user: true, text: '<img src=x>' }, { user: false, text: '好的' }], error: '', notice: 'half-duplex' }, escapeHtml, { endpointMs: 1200 });
   assert.match(live, /data-action="interrupt-voice-call"/);
   assert.match(live, /data-action="mute-voice-call"/);
-  assert.match(live, /data-action="toggle-voice-call"/);
+  assert.doesNotMatch(live, /data-action="toggle-voice-call"/, 'hang-up lives on the composer toggle, not twice');
+  assert.match(live, /class="voice-call-dot"/, 'a live call shows the breathing dot');
   assert.match(live, /<option value="1200" selected>/);
   assert.match(live, /直接开口可以打断/);
   assert.match(live, /没有回声消除/);
@@ -353,4 +354,115 @@ test('the panel: controls while live, escaped words, explanations', () => {
   assert.match(failed, /通话已结束/);
   assert.match(failed, /麦克风未获授权/);
   assert.doesNotMatch(failed, /data-action/);
+});
+
+// 2026-11-16 entry redesign (option A): the call starts on any composer. Without a chat, the
+// first sentence creates one and the call moves into it instead of hanging up on that change.
+test('a call started without a chat: the first sentence creates it, the call moves in and stays', async () => {
+  let f;
+  const created = [];
+  f = fixture({ chatId: null, sendTurn: (text, observer, chatId) => new Promise(resolve => {
+    f.turns.push({ text, observer, chatId });
+    if (chatId !== null) { observer.onSettled({ ok: true }); resolve(); return; }
+    // What handleSendMessage does: create the chat (the page now shows it), then adopt it.
+    f.setContext('chat|p|new-chat|agent-a');
+    f.setChatId('new-chat');
+    f.call.checkContext();
+    created.push(voiceCallActive(f.call.state));
+    // A native event arriving in that moment does not hang up either.
+    f.native({ type: 'state', phase: 'listening', echoCancellation: true });
+    created.push(voiceCallActive(f.call.state));
+    f.call.adoptChat('new-chat');
+    observer.onSettled({ ok: true });
+    resolve();
+  }) });
+  f.setContext('chat|p||agent-a');
+  f.call.start();
+  f.native({ type: 'state', phase: 'listening', echoCancellation: true });
+  f.native({ type: 'utterance', text: '今天几号' });
+  await flush();
+  assert.equal(f.turns[0].chatId, null, 'the first sentence asks for a new chat');
+  assert.deepEqual(created, [true, true], 'creating the chat neither hangs up nor ends on a native event');
+  assert.equal(byAction(f.posted, 'callEnd').length, 0);
+  assert.equal(f.call.activeFor('new-chat'), true, 'the call now belongs to the chat it created');
+  assert.ok(f.call.observerFor('new-chat'), 'typed replies there are read by the call');
+  f.native({ type: 'utterance', text: '再说一遍' });
+  await flush();
+  assert.equal(f.turns[1].chatId, 'new-chat', 'later sentences go to that chat');
+  f.setContext('chat|p|other-chat|agent-a');
+  f.call.checkContext();
+  assert.equal(byAction(f.posted, 'callEnd').length, 1, 'leaving the adopted chat hangs up as usual');
+});
+
+test('creating the chat fails: nothing is adopted; a page that moved meanwhile hangs up, an unchanged one keeps the call', async () => {
+  let f;
+  f = fixture({ chatId: null, sendTurn: async (text, observer, chatId) => {
+    f.turns.push({ text, observer, chatId });
+    f.call.checkContext();
+    throw new Error('offline');
+  } });
+  f.call.start();
+  f.native({ type: 'state', phase: 'listening', echoCancellation: true });
+  f.native({ type: 'utterance', text: '今天几号' });
+  await flush(); await flush();
+  assert.equal(voiceCallActive(f.call.state), true, 'same page: the call keeps listening');
+  assert.match(f.call.state.error, /offline/);
+  assert.equal(f.call.activeFor('new-chat'), false);
+
+  let g;
+  g = fixture({ chatId: null, sendTurn: async (text, observer, chatId) => {
+    g.turns.push({ text, observer, chatId });
+    g.setContext('projects|p||agent-a');
+    g.call.checkContext();
+    assert.equal(voiceCallActive(g.call.state), true, 'still creating: the change is not judged yet');
+    throw new Error('offline');
+  } });
+  g.call.start();
+  g.native({ type: 'state', phase: 'listening', echoCancellation: true });
+  g.native({ type: 'utterance', text: '今天几号' });
+  await flush(); await flush();
+  assert.equal(byAction(g.posted, 'callEnd').length, 1, 'the page moved and no chat was created: hang up');
+});
+
+test('a second sentence while the chat is being created does not take over or end the creation', async () => {
+  let f;
+  let finishFirst;
+  f = fixture({ chatId: null, sendTurn: (text, observer, chatId) => new Promise(resolve => {
+    f.turns.push({ text, observer, chatId });
+    if (f.turns.length === 1) { finishFirst = () => { f.call.adoptChat('new-chat'); observer.onSettled({ ok: true }); resolve(); }; return; }
+    resolve(); // refused while the first send runs: never settled
+  }) });
+  f.call.start();
+  f.native({ type: 'state', phase: 'listening', echoCancellation: true });
+  f.native({ type: 'utterance', text: '第一句' });
+  await flush();
+  f.setContext('chat|p|new-chat|agent-a');
+  f.setChatId('new-chat');
+  f.native({ type: 'utterance', text: '第二句' });
+  await flush(); await flush();
+  assert.equal(f.turns.length, 2);
+  assert.match(f.call.state.error, /没有发出去/, 'the refused second sentence is explained');
+  assert.equal(voiceCallActive(f.call.state), true, 'the refused sentence did not end the creation');
+  finishFirst();
+  await flush();
+  assert.equal(f.call.activeFor('new-chat'), true);
+  assert.equal(byAction(f.posted, 'callEnd').length, 0);
+});
+
+test('the composer toggle: a labelled pill to start, a breathing "Hang up" while live', () => {
+  const idle = renderVoiceCallToggle({ phase: 'idle' }, escapeHtml, { icon: '<svg id="wave"></svg>', liveIcon: '<svg id="stop"></svg>' });
+  assert.match(idle, /class="voice-call-toggle "/);
+  assert.match(idle, /data-action="toggle-voice-call"/);
+  assert.match(idle, /aria-pressed="false"/);
+  assert.match(idle, />通话</);
+  assert.match(idle, /id="wave"/);
+  assert.doesNotMatch(idle, /voice-call-dot/);
+  const live = renderVoiceCallToggle({ phase: 'listening' }, escapeHtml, { icon: '<svg id="wave"></svg>', liveIcon: '<svg id="stop"></svg>' });
+  assert.match(live, /voice-call-toggle is-live/);
+  assert.match(live, /aria-pressed="true"/);
+  assert.match(live, />挂断</);
+  assert.match(live, /voice-call-dot/);
+  assert.match(live, /id="stop"/);
+  assert.match(live, /aria-label="挂断语音通话"/);
+  assert.match(renderVoiceCallToggle({ phase: 'idle' }, escapeHtml, { disabled: true }), /disabled/, 'off while dictation holds the microphone');
 });

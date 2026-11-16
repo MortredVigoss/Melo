@@ -95,8 +95,8 @@
 行为：输入区新增通话按钮。开始后一直听，说完（默认 0.8 秒，可选较快 / 标准 / 较慢）自动作为语音轮发出；这一轮带上口语化回答的要求（桌面还带 Agent 卡片的说话风格）；核对后的回答按句读出（桌面 Agent 服务端音色，没有可用音色时系统声音；iPhone 系统声音）；用工具时说"我查一下"，等确认时说"请在屏幕上确认"；朗读中开口即打断；回复进行中说的话作为补充；整句是停止词时取消回复。听写与通话互斥；通话期间平时的自动朗读不触发。
 文件 / 接口：`shared/protocol/agent-loop.json`（`voiceTurn` 节与夹具，已重生成三端副本与核心包）、`shared/agent/voiceTurn.js`、`ios/Melo/{VoiceCall,SystemVoiceCallAudio,VoiceTurnRules,VoiceCallController}.swift`、`desktop-app/VoiceCallBridge.swift`、`desktop-ui/voiceCall.js`；`/api/chat/send/stream` 新增可选布尔 `voiceTurn`，新路由 `POST /api/voice-call/speech-plan`、`POST /api/voice-call/speech`；`ChatStore.send(…, voiceTurn:)`。不改同步 v1 线协议、不新增消息字段；Android 只多一段契约数据。
 验证：快速档因改到共享契约与公共边界扩为全量，`run-AosjeK` 全绿（JS 5,201 项 0 失败 0 跳过、Android 四项、Swift 编译与全部 41 组、渲染预检、设置浏览器验收，239 秒）；面板提示的追加修正 `run-pUhuXa`（347 项）；Swift `VoiceCallTests`（含 30 条与桌面相同的夹具）、iPhone 模拟器整包编译、桌面壳编译；修复类测试都在去掉修复后确认会红。
-接手要知道的：(1) 两端已装：iPhone 0.7.20 (52) 已首启，签名 11-23 到期；电脑已覆盖但没有正常启动，数据目录恢复后由用户打开并允许"桌面"文件夹权限。本机 Docker 是 colima，虚拟机会悄悄死掉、让 `docker` 命令全部挂起，`release:verify` 前先在后台探一次 `docker info`。(2) 改了 `desktop-ui/translations.js` 一定要 `npm run build:ios-scene`，本次第一次快速档就因此停在预检。(3) 真机验收要看：Mac 外放时开口能打断、Melo 不会被自己的声音打断；中文端上识别；MiniMax / Edge 音色读回答；工具与确认的占位句；挂断后麦克风指示灯熄灭；iPhone 来电时挂断。
-仍然挂着：两端还没真正打过一次语音通话（麦克风、回声消除、识别、真实模型，要用户在场）；SpeechAnalyzer 未接（见方案第 10.2 节）；桌面正式数据目录待用户恢复；本次提交都只在本地，未推送（开工时 master 与 `origin/master` 同为 `f75f139a`）。
+接手要知道的：(1) 两端已装：iPhone 0.7.20 (52) 已首启，签名 11-23 到期；电脑已覆盖但没有正常启动，数据目录恢复后由用户打开并允许"桌面"文件夹权限。本机 Docker 是 colima，虚拟机会悄悄死掉、让 `docker` 命令全部挂起，`release:verify` 前先在后台探一次 `docker info`。(2) 改了 `desktop-ui/translations.js` 一定要 `npm run build:ios-scene`，本次第一次快速档就因此停在预检。(3) 真机验收要看：Mac 外放时开口能打断、Melo 不会被自己的声音打断；中文端上识别；MiniMax / Edge 音色读回答；工具与确认的占位句；挂断后麦克风指示灯熄灭；iPhone 来电时挂断。(4) 11-16 晚用户找不到桌面通话入口，按方案 A 改成总览、新对话页、对话页输入区都有带文字的「通话」按钮；没有对话时第一句话新建对话、通话跟着移进去（方案第 12 节）。iPhone 入口没改。
+仍然挂着：两端还没真正打过一次语音通话（麦克风、回声消除、识别、真实模型，要用户在场）；SpeechAnalyzer 未接（见方案第 10.2 节）；桌面正式数据目录待用户恢复（用户 11-16 晚以为已恢复，核对后没有生效：主 Agent 仍叫 Fixture、没有恢复记录）；本次提交都只在本地，未推送（开工时 master 与 `origin/master` 同为 `f75f139a`）。
 
 ### 2026-11-14 — Melo 主线（Claude）— 死代码清理第二轮与检测提速
 

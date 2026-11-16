@@ -24,6 +24,7 @@ const rows = [
 ["静音", "Mute", "ミュート", "음소거", "Silenciar"],
 ["取消静音", "Unmute", "ミュート解除", "음소거 해제", "Activar sonido"],
 ["挂断", "Hang up", "通話終了", "통화 종료", "Colgar"],
+["通话", "Call", "通話", "통화", "Llamar"],
 ["说完后等待", "Wait after speech", "話し終えた後の待ち時間", "말을 마친 뒤 대기", "Espera tras hablar"],
 ["较快", "Shorter", "短め", "짧게", "Más corta"],
 ["较慢", "Longer", "長め", "길게", "Más larga"],

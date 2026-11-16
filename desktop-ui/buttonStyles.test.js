@@ -13,7 +13,7 @@ test('buttons share four visual variants without changing action or layout hooks
  dom.window.close();
 });
 test('canvas hit areas and selectable content keep their component appearance',()=>{
- const dom=new JSDOM('<main><button class="neural-cluster button-secondary" data-group="chat">Chat</button><button class="execution-label is-active">Tool</button><button class="model-picker-option is-selected">Model</button></main>');
+ const dom=new JSDOM('<main><button class="neural-cluster button-secondary" data-group="chat">Chat</button><button class="execution-label is-active">Tool</button><button class="voice-call-toggle is-live" aria-pressed="true">Hang up</button><button class="model-picker-option is-selected">Model</button></main>');
  const root=dom.window.document.querySelector('main');applyButtonStyles(root);
  for(const button of root.querySelectorAll('button')) assert.ok(BUTTON_VARIANTS.every(v=>!button.classList.contains('button-'+v)));
  assert.equal(root.firstChild.dataset.group,'chat');assert.ok(root.lastChild.classList.contains('is-selected'));

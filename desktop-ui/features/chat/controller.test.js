@@ -86,8 +86,9 @@ function harness({ bootstrap = page(), responses = {}, overview = false } = {}) 
     render: () => { renders++; paint(); },
     bgRender: () => { renders++; paint(); },
     notify: ({text}) => errors.push(text),
-    applyBootstrap: payload => { applied.push(payload); state.bootstrap = payload; },
-    applyBootstrapPreservingDrafts: payload => { preserved.push(payload); state.bootstrap = payload; },
+    // Like app.js: new page data lets a live call check that its page is still there.
+    applyBootstrap: payload => { applied.push(payload); state.bootstrap = payload; feature.checkVoiceCallContext(); },
+    applyBootstrapPreservingDrafts: payload => { preserved.push(payload); state.bootstrap = payload; feature.checkVoiceCallContext(); },
     refreshBootstrap: async () => { refreshes++; if (refreshError) throw refreshError; },
     activeChat: () => state.bootstrap?.activeChat || null,
     isOverview: () => state.overview,
@@ -773,6 +774,58 @@ test('a chat that is not the one being answered neither supplements nor stops it
   // Once the reply ends, B sends normally.
   h.view('chat-b');
   assert.doesNotMatch(app.innerHTML, /另一段对话正在回复/);
+});
+
+test('live voice call from the overview: the first sentence creates a new chat and the call moves into it', async t => {
+  const sse = server();
+  const created = page({ chats: [chat('created-chat'), chat('chat-a')], selected: 'created-chat' });
+  // The overview, with an older chat still selected underneath it.
+  const h = harness({ overview: true, responses: {
+    '/api/chats': created,
+    '/api/voice-call/speech-plan': options => ({ ok: true, sentences: [options.body.text], serverVoice: false, condensed: false, language: 'zh' }),
+  } });
+  // One call engine serves every page: never leave it live for the next test.
+  t.after(() => h.feature.endVoiceCall());
+  const toggle = document.querySelector('.voice-call-toggle');
+  assert.ok(toggle, 'the call toggle is on the overview composer too');
+  assert.match(toggle.textContent, /通话/, 'it says what it does');
+  bridgeMessages.length = 0;
+  await h.click('toggle-voice-call');
+  const sessionID = bridgeMessages.find(message => message.action === 'callStart').sessionID;
+  const ends = () => bridgeMessages.filter(message => message.action === 'callEnd' && message.sessionID === sessionID).length;
+  const spoken = text => bridgeMessages.some(message => message.action === 'callSpeak' && message.text === text);
+  h.feature.handleVoiceCallBridgeEvent({ sessionID, type: 'state', phase: 'listening', echoCancellation: true });
+  assert.match(document.querySelector('.voice-call-toggle.is-live')?.textContent || '', /挂断/, 'the toggle hangs up during the call');
+  h.feature.handleVoiceCallBridgeEvent({ sessionID, type: 'utterance', text: '今天几号' });
+  await flush();
+  assert.deepEqual(h.calls.filter(([path]) => path === '/api/chats').map(([, method]) => method), ['POST'], 'one new chat, like a typed first message');
+  assert.equal(sse.streams.length, 1);
+  assert.equal(sse.streams[0].body.chatId, 'created-chat', 'not the chat selected under the overview');
+  assert.equal(sse.streams[0].body.voiceTurn, true);
+  assert.equal(ends(), 0, 'creating the chat did not hang up');
+  sse.send('reply_text', { text: '今天是十六号。', final: true });
+  sse.send('done', {});
+  sse.close();
+  await flush(12);
+  assert.ok(spoken('今天是十六号。'), 'the answer is read in the call');
+  assert.equal(ends(), 0, 'after its first turn the call still runs, now in the new chat');
+  assert.ok(document.querySelector('.voice-call-toggle.is-live'));
+  // A typed message in that chat is read by the call too: the call belongs to the new chat.
+  h.chat().composer = '再详细一点';
+  const typed = h.send();
+  await flush();
+  assert.equal(sse.streams[1].body.chatId, 'created-chat');
+  sse.send('reply_text', { text: '十一月十六号，星期一。', final: true });
+  sse.send('done', {});
+  sse.close();
+  await typed;
+  await flush(12);
+  assert.ok(spoken('十一月十六号，星期一。'), 'the typed reply is read by the call');
+  // Another chat: the call hangs up.
+  h.view('chat-a');
+  h.feature.checkVoiceCallContext();
+  assert.equal(ends(), 1);
+  assert.equal(document.querySelector('.voice-call-toggle.is-live'), null);
 });
 
 test('live voice call: a spoken turn keeps the typed draft, carries voiceTurn and is read by the call, not by read-aloud', async () => {

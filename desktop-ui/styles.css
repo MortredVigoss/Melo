@@ -340,6 +340,19 @@ button {
 .voice-call-line.is-user { color: var(--palette-31fd99ecad); }
 .voice-call-line span { margin-right: 6px; color: var(--palette-7cf44b8d24); }
 .voice-call-error { color: var(--danger); font-size: var(--font-size-12px); overflow-wrap: anywhere; }
+.voice-call-status { display: inline-flex; align-items: center; gap: 8px; }
+/* Composer call toggle (redesign, option A): a labelled pill beside dictation, the same pill shape as
+   "Multi-Agent collaboration"; during a call it reads "Hang up" in the danger colour with a breathing dot. */
+.voice-call-toggle { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; min-height: 36px; padding: 0 13px 0 11px; border: 1px solid var(--space-edge-raised); border-radius: 18px; background: var(--palette-7727b7fdde); color: var(--space-gold); font: inherit; font-size: var(--font-size-13px); line-height: 1; white-space: nowrap; cursor: pointer; }
+.voice-call-toggle:hover:not(:disabled) { border-color: var(--space-gold); }
+.voice-call-toggle:focus-visible { outline: 2px solid var(--space-gold); outline-offset: 2px; }
+.voice-call-toggle:disabled { opacity: 0.45; cursor: not-allowed; }
+.voice-call-toggle.is-live { border-color: var(--danger); color: var(--danger); }
+.voice-call-toggle.is-live:hover:not(:disabled) { border-color: var(--danger); background: var(--palette-88bf600799); }
+.voice-call-dot { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; background: currentColor; animation: voice-call-breathe 1.6s ease-in-out infinite; }
+.voice-call-status .voice-call-dot { color: var(--space-gold); }
+@keyframes voice-call-breathe { 50% { opacity: 0.35; transform: scale(0.8); } }
+@media (prefers-reduced-motion: reduce) { .voice-call-dot { animation: none; } }
 .composer-footer {
   display: flex;
   flex-wrap: wrap;

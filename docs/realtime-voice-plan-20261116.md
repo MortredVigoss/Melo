@@ -180,3 +180,35 @@
 **Android**：不在本次平台范围，没有安装。
 
 证据：`.tmp/iphone-overwrite-20261116-2229/`（五次读取的清单与比对、`phone-install-receipt.json`、构建与安装日志），手机数据完整副本在 `~/Library/Application Support/MeloDeviceBackups/update-20261116-2229/`；`.tmp/desktop-install-20261116/`（发布检查日志、数据目录前后快照与比对、colima 启动日志）。
+
+## 12. 桌面通话入口改版（2026-11-16 晚，用户选方案 A）
+
+用户反馈："数据恢复好了，桌面已打开，但是实时对话的按钮在哪，这个ui设计还是有问题。"截图核对后有两个原因：(1) 打开 Melo 停在"新对话"页，`viewComposer.js` 只在已有对话里画通话按钮（`!isOverview() && activeChat()`），首页和新对话页没有入口；(2) 对话页里也只是麦克风左边一个 40 px 的无字图标，用的是朗读那个"音频"竖条图标，看不出是通话。给了三个入口方案（A 麦克风旁带文字的「通话」按钮 8.5 / B Agent 选择旁 7.6 / C 发送键兼作通话键 7.4），用户选 A。
+
+### 12.1 执行链路（动工前）
+
+1. 画入口：`desktop-ui/features/chat/viewComposer.js:renderComposerCard`。只要有桌面壳的 `meloVoice` 通道（`voiceCall.js:voiceCallSupported`）就画「通话」按钮，三个有输入区的页面都有：星图总览（`app.js:renderNeuralOverview` → `chatFeature.renderComposer`）、新对话页（`viewThread.js:renderRegularChatPage` 没有当前对话的分支）、对话页。读 `chatState.voiceCall`、`chatState.voice`。
+2. 点按钮：`app.js` 动作分发 → `controller.js:chatActions['toggle-voice-call']` → `voiceCall.js:start()`：先停朗读和听写，`owner` 记下页面上下文（`controller.js:voiceCallContext`：视图 | 项目 | 对话 | Agent），`chatId = getChatId()`（总览和新对话页为空），发 `callStart` → `desktop-app/main.swift` → `VoiceCallBridge.start` → `VoiceCall.start` 立即发出 `starting` 状态（在系统权限弹窗之前，所以 5 秒"旧版本"判断不会被第一次的权限弹窗误触发）→ `melo-voice-call` 事件 → `controller.handleVoiceCallBridgeEvent` → `voiceCall.receive`。
+3. 说完一句：`receive('utterance')` → `handleUtterance` → `sendTurn(text, watcher, chatId)` → `controller.handleSendMessage({ content, chatId, newChat: !chatId, voiceTurn, observer })` → `leaveOverview` → 没有对话时 `handleCreateChat` → `chatApi.createChat`（`POST /api/chats`，与打字发第一句相同，写 state.json）→ `app.js:applyBootstrap` → `checkVoiceCallContext` → `voiceCall.checkContext`（这次上下文变化是通话自己的第一句在建对话，不挂断）→ `voiceCall.adoptChat(新对话)`：通话的 `owner` 与 `chatId` 移到新对话 → `POST /api/chat/send/stream` 带 `voiceTurn` → 观察者读出回答。
+4. 挂断：输入区按钮（通话中显示「挂断」）→ `voiceCall.end()` → `callEnd`；切到别的对话 / 视图 / 项目 / Agent → `checkContext` → `end()`。
+
+共享状态：`chatState.voiceCall`（界面）、`chatState.sending` / `streamingChatId`（是否在回复）、引导数据的 `selectedChatId` / `activeView` / `selectedProjectId`、`uiState.neuralOverview`；服务端只经过已有的建对话与发送路由。异常：建对话失败 → `handleSendMessage` 的 catch → 观察者 `onSettled({ ok: false })`，通话说"出错"短句；`sendTurn` 结束后清掉"正在建对话"标记并重新核对上下文（页面已经换了就挂断）。
+
+### 12.2 审计边界与停止条件
+
+- 纳入：`voiceCall.js` 状态机（`start` / `end` / `checkContext` / `receive` / `handleUtterance` / 新增 `adoptChat`）；`controller.js` 的通话接线、`handleSendMessage`、`handleCreateChat`、动作表；`app.js` 的 `applyBootstrap` / `applyBootstrapPreservingDrafts`（`checkVoiceCallContext` 的两个调用点）、`isOverview` / `leaveOverview`、图标表；`viewComposer.js`、`viewThread.js` 新对话页；输入区相关样式；`translations.js`。
+- 停止：服务端路由（`/api/chats`、`/api/chat/send/stream`）没有改，由既有路由与控制器测试覆盖；原生桥与通话引擎没有改，由 Swift `VoiceCallTests` 覆盖；共享契约不变。
+- 未覆盖：iPhone（用户这次只选了桌面入口，iPhone 仍是输入区的波形圆按钮）；真实麦克风与系统权限弹窗（要用户在场）。
+
+### 12.3 做了什么
+
+- `desktop-ui/voiceCall.js`：新增 `renderVoiceCallToggle`。输入区按钮写着「通话」，配波形图标（新图标 `callWave`，不再借用朗读的竖条图标）；通话中变成「挂断」，提示色描边加呼吸点，带 `aria-pressed`。面板标题前加呼吸点，面板里不再重复放「挂断」。状态机新增"正在建对话"标记和 `adoptChat`：没有对话时开始的通话，第一句话建好对话后，通话移到这个新对话；建对话期间的页面变化和原生事件都不会挂断；建对话期间又说了一句、被拒发送时，这一句不会抢走标记；建对话失败或发送被拒后重新核对页面，页面已经换了就挂断。
+- `desktop-ui/features/chat/controller.js`：`sendTurn` 带上通话自己的对话；还没有对话时标 `newChat`，像打字发第一句一样新建，不会发进总览底下仍选着的旧对话；建好后 `adoptChat`。
+- `desktop-ui/features/chat/viewComposer.js`：只要在桌面壳里，总览、新对话页、对话页的输入区都有这个按钮。`desktop-ui/buttonStyles.js` 把它登记为自带外观的控件，形状与输入区"多 Agent 协作 / 项目与知识"一致，统一按钮样式不再把它改成方角灰按钮。`styles.css` 只用已有 token，减弱动态时呼吸点不动。`translations.js` 新增"通话"（五种语言），重新生成 iPhone 词条和场景包（iPhone 界面没有变化）。
+
+### 12.4 验证
+
+- 门禁快速档 `run-SmJAlo` 全绿：语法、文档链接、生成器与依赖预检、共享渲染资源预检、Android JVM / Lint / Debug / Release、JS 回归 851 项（0 失败、0 跳过）、设置页浏览器验收。
+- 新增测试：`voiceCall.test.js` 新增 4 项，共 20 项（没有对话时通话移进新建的对话、建对话失败、建对话期间又说一句、输入区按钮的两种状态）；`controller.test.js` 新增从总览开始通话的整条路径，共 27 项；测试桩的 `applyBootstrap` 现在和 `app.js` 一样核对通话。`buttonStyles.test.js` 覆盖通话按钮保留自己的外观。分别去掉五处新逻辑后，对应测试都会红：建对话期间不挂断、只有建对话的那一句持有标记、建对话期间原生事件不挂断、控制器的 `newChat`、控制器的 `adoptChat`。
+- 隔离预览：临时数据目录、模拟回复，在页面里模拟原生通话通道。核对了三处：总览、新对话页、对话页都显示「通话」。在新对话页开始通话并说一句，会新建对话，通话不断，回答被读出。在总览开始通话时，底下还选着旧对话，说一句后新建了"今天几号"，旧对话的消息数不变；切到别的对话自动挂断。1080 px 最小窗口下工具栏不溢出。预览结束后已停掉服务、删掉临时数据目录。
+- 没有验证：真机麦克风与系统权限弹窗，要用户在场。界面文件由桌面壳直接从源码目录读取，**不需要重新编译安装**，重开 Melo 即可看到。

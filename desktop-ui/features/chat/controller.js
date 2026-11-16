@@ -563,7 +563,8 @@ const voiceCall = createVoiceCall({
   getChatId: () => (isOverview() ? null : activeChat()?.id || null),
   getAgentId: () => activeChatAgentProfile()?.id || '',
   isReplying: () => chatState.sending && Boolean(chatState.streamingChatId) && chatState.streamingChatId === activeChat()?.id,
-  sendTurn: (text, observer) => handleSendMessage({ content: text, chatId: activeChat()?.id || null, voiceTurn: true, observer }),
+  // The call's own chat; none yet (started on the overview or the new-chat page): this turn creates one.
+  sendTurn: (text, observer, chatId) => handleSendMessage({ content: text, chatId: chatId || null, newChat: !chatId, voiceTurn: true, observer }),
   sendSupplement: text => sendSupplement(chatState.streamingChatId, text, { voiceTurn: true }),
   stopReply: () => handleStopSending(),
   stopOtherAudio: () => { stopCurrentTts(); stopVoiceCaptureIfNeeded(); },
@@ -659,7 +660,8 @@ async function handleSendMessage(prepared = null) {
   let sendSucceeded = false;
   const replyDelivery = createReplyDelivery();
 
-  let chatId = prepared?.chatId || (fromOverview ? null : getBootstrap()?.settings?.selectedChatId || null);
+  // prepared.newChat: a voice call started without a chat; like a typed first message, it creates one.
+  let chatId = prepared?.chatId || (fromOverview || prepared?.newChat ? null : getBootstrap()?.settings?.selectedChatId || null);
   // Live voice call: a spoken turn carries voiceTurn and keeps the typed draft;
   // while a call listens in this chat it reads the reply itself (no read-aloud).
   const voiceTurn = prepared?.voiceTurn === true;
@@ -696,6 +698,8 @@ async function handleSendMessage(prepared = null) {
     if (!chatId) {
       await handleCreateChat();
       chatId = getBootstrap().settings.selectedChatId;
+      // The call that spoke this first sentence moves into the chat it created.
+      if (voiceTurn) voiceCall.adoptChat(chatId);
       previousBootstrap = cloneBootstrapState(getBootstrap());
       applyOptimisticUserMessage({
         chatId,
