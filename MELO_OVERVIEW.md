@@ -1,6 +1,6 @@
 # Melo 总览：当前事实、功能索引与接手入口
 
-更新时间：2026-11-14（Australia/Melbourne）。这是所有 Melo 工作线程共用的人工维护入口：顶部依次是当前事实、功能索引和最新交接；按日期的阶段过程（含日期、提交与当次验证数字）在 [总览历史交接](docs/handoffs/overview-history-20261019.md)。
+更新时间：2026-11-16（Australia/Melbourne）。这是所有 Melo 工作线程共用的人工维护入口：顶部依次是当前事实、功能索引和最新交接；按日期的阶段过程（含日期、提交与当次验证数字）在 [总览历史交接](docs/handoffs/overview-history-20261019.md)。
 
 ## 1. 先看这里
 
@@ -12,6 +12,8 @@
 - 本文不是自动监控：各线程必须在实际改动后主动更新。未更新的线程或未记录的 diff 应标为“待归属/待核对”。
 
 ## 2. 当前事实
+
+11-16：新增实时语音对话（方案 A 级联全双工；用户在 A/B/C 三方案中选定，平台"桌面 + iPhone 一起"）。聊天输入区点通话按钮后一直听，说完自动作为语音轮发出，回复按句读出，朗读时开口即打断，回复进行中说的话作为补充，说"停 / 算了"取消；审批只在屏幕上点。语音轮提示、读出规则、停止词与时长在 agent-loop.json 的 `voiceTurn` 节，桌面与 iPhone 跑同一份夹具；Mac 与 iPhone 共用 Swift 通话引擎。只有离线测试、编译与门禁（快速档扩为全量 `run-AosjeK` 全绿，追加修正 `run-pUhuXa`），没有真机麦克风和真实模型验收；**桌面壳要重编并覆盖安装、手机要重装后才能用**（旧桌面壳会在 5 秒后提示更新）。见[方案与实施记录](docs/realtime-voice-plan-20261116.md)。
 
 11-14 第四轮：本机 12 个没有并入 master 的分支全部并入，`git branch --no-merged master` 为空。11 个的内容 master 早已有，只记录、不改文件。`codex/reply-latency-20261109` 带进来 7 项并按 master 现在的代码改写：iPhone 回答草稿（API 密钥连接改为流式）、相同的被拒答案不重复核对（三端）、同一网页后续分页不重新加载、运行与暂停时间等；master 已有自己做法的 8 项保留 master 的；并入时修掉分支流式解码器的 4 处问题和"不重复核对在 iPhone 上从不生效"。**iPhone 两个只读成员同时运行没有启用**，要在 master 现在的成员机制上重新设计，等用户决定。只有离线测试、模拟器和门禁（`run-NIhf3d`、`run-eZv89f`），没有真实模型验收；手机要重装才有这些变化。见[合并记录](docs/unmerged-branches-merge-20261114.md)。
 
@@ -53,7 +55,7 @@
 | 工具、MCP 与网页 | 桌面支持 stdio / 标准 HTTP；12 类社交与视频链接的只读检索默认对现有与新 Agent 开放，可逐个撤销；手机设备数据仍为独立权限 | [Instagram、YouTube 等 10 类平台](docs/public-media-readers-20261104.md)、[站内检索、登录与验收](docs/mcp-retrieval-audit-20261104.md)、[既有 MCP](docs/mcp-startup-20261015.md)、[手机系统数据](docs/ios-device-data-20261016.md) |
 | 搜索路由 | 自然餐饮/住宿/产品推荐与相关追问进入搜索；禁止联网、引用、闲聊、本地/App 边界保留，按当前能力说明不可用 | [#3 实施](docs/github-issues-implementation-20261020.md)；受控 HTTP 测试，真实供应商另验 |
 | 图片、视频与附件 | 10-21 双端已接应用内拍照、确认进入草稿、原件与传输副本分开；[实现与验收](docs/test-cost-camera-plan-20261021.md)，实时会话暂缓；iPhone 后置拍照四流程已由用户真机确认，见[装机回执](docs/phone-camera-install-20261021.md)。桌面/手机请求 `quality: high`，10-15 单次实测 Codex 服务回报 low；手机图片链与保存防重复已接生产入口；多图逐张、2K/4K、视频抽帧已合入主线 | 10-20 #4 二次修复旧工作区归属与回看图片引用；原生预览/原尺寸/保存/冷启动重开均通过，原件 SHA 不变；[修复回执](docs/issue-4-legacy-preview-20261020.md)、[实施证据](docs/github-issues-implementation-20261020.md)；见[图片承载计划](docs/image-capacity-plan-20261015.md)；[图片体验](docs/image-ux-20261016.md)、[多图与视频](docs/image-video-plan-20261016.md)；真实账号画质待验 |
-| 语音 | TTS 路由与停止修复（10-17 审计）；手机朗读要点化并按回复语种选声（10-18）；桌面朗读按 Agent 卡片模式 / 音色 / 风格，已知 Agent 默认概要（10-22） | [审计与实施状态](docs/architecture-agent-context-audit-20261017.md)；真机朗读待验 |
+| 语音 | TTS 路由与停止修复（10-17 审计）；手机朗读要点化并按回复语种选声（10-18）；桌面朗读按 Agent 卡片模式 / 音色 / 风格，已知 Agent 默认概要（10-22）；11-16 实时语音通话（方案 A）：桌面与 iPhone 输入区的通话按钮，语音轮提示 / 读出规则三端同源（agent-loop.json `voiceTurn`），Mac 与 iPhone 共用 `VoiceCall.swift` / `SystemVoiceCallAudio.swift`；桌面编排 `desktop-ui/voiceCall.js`，iPhone `VoiceCallController.swift` | [审计与实施状态](docs/architecture-agent-context-audit-20261017.md)；真机朗读待验；[实时语音方案与实施](docs/realtime-voice-plan-20261116.md)：真机麦克风、回声消除、识别准确率待验，需重编桌面壳与重装手机 |
 | 授权、审批与任务 | #1 审批期间持有文件身份，阻止 inode 复用（`47da231` 已推送，[实施](docs/github-issues-implementation-20261020.md)）； 模型 / 工具 / 授权共用截止与取消，超时后迟到批准零写入（A2）；手机权限首次迁移与撤销修正 `85c51f7`；桌面审批界面样式在 `desktop-ui/features/approvals/approvals.css`（工具/文件审批 JS 仍在 app.js，P2c）；能力请求卡片与「临时授权」列表在 `desktop-ui/features/approvals/`（10-20）；手机卡片进 `ChatStore` 审批队列，账本与判定在 `ios/Melo/CapabilityElevation{,Runtime,Views}.swift`（10-20） | [A2 回执](docs/mobile-desktop-alignment.md)、[手机权限](docs/phone-permission-fix-20261016.md) |
 | 桌面壳与界面 | 11-11 主检出 `9b070cf2`（未推送）已重建并原位覆盖，`release:verify` 17 项全 GREEN；因数据目录未恢复，装后没有正常启动，首次正常启动要用户点一次"桌面"文件夹权限（[回执](docs/agent-fixall-20261110.md)）。此前：11-07 产品主检出 `701e43f5` 已重建并原位覆盖，17 项发布检查及正常工作区 / 模型设置 / 数据回读通过，见[本次回执](docs/model-settings-release-20261107.md)。历史：10-27 安装源码 `554ce96`（10-27 壳重建覆盖，第二次 `release:verify` 17 项全绿，[回执](docs/overwrite-install-20261027.md)；10-27 晚真实多工具测试[评估](docs/live-test-bigbang-20261027.md)：壳给服务的 PATH 没有 node 使 Playwright 搜索腿不可用，当晚已修（node 目录置于服务 PATH 首位，原生启动断言 14 项），第三次 `release:verify` 17 项全绿覆盖安装；装后实测 Google 对无头浏览器出验证页、Jina 匿名 DDG 403，无 key 时搜索仍无结果，需配 key；10-26 [回执](docs/overwrite-install-20261026.md)；壳从源码目录运行，桌面即主检出代码；壳重编译后首次正常启动需用户点一次"桌面"文件夹权限）；神经总览 `22bcd1b`；双端低饱和黑金 M 图标；10-15 记录的阅读 / 预览 / 文件 WIP 已于 10-17 收入 `8cd3eff`；10-20 桌面工作面统一（`surfaceUnify.css` 最后载入：间距、13px 基准字号、控件、工作面不透明度、去旧绿色），手机未动、知识青灰身份色待用户决定 | [10-20 统一](docs/ui-unify-20261020.md)、[双端安装](docs/dual-reinstall-20261019.md)、[银河与留白](docs/galaxy-clarity-20261016.md)、[图标](docs/design/logo-muted-20261016/README.md)；`desktop-ui/app.js` 仍是中央入口（导航、组合、render() 保护、设置 / 资料 / 审批 / TTS 等页面）；记忆 / 项目页（P2a）、Agent 设置（P2b）、聊天（P2c）已拆到 `desktop-ui/features/` |
 | 桌面宠物 | 10-22 并入 `Melo.app`（方案 C）：`desktop-pet/` 独立包、仓库外媒体钉哈希、`DesktopPet.swift` 启停、系统设置「桌面宠物」开关与真实状态；真包冷启动 / 对话 / 开关 / 退出联动已验 | [并入文档](docs/desktop-pet-integration-20261022.md)、[桌宠说明](desktop-pet/README.md)；素材生产线仍在 `/Users/mortred/Documents/New project/desktop-pet` |
@@ -78,7 +80,7 @@
 | `sync` | `mobile-sync/`、`src/services/remote/mobileSync.js`、`src/http/mobileSyncRoutes.js` | `SyncWorkspace.swift`（含生成段）、`WorkspaceProjection.swift` | sync-schema · `test:mobile-sync`、`test:sync-contract` |
 | `tools` | `src/tools/executor.js`、`registry.js`、`src/mcp/`、`src/services/connector/` | `DeviceTools.swift`、`WebPageTools.swift`、`LocalFileAccess.swift` | agent-loop（工具信封）· `test:tools-evidence-trail` |
 | `media` | `src/images/`、`src/media/`、`src/services/chat/image*.js`；`desktop-ui/imagePreview.js` | `ImageWorkflow.swift`、`ImageViews.swift`、`VideoStudy.swift` | `test:image-workflow` |
-| `voice` | `src/services/tts/`、`src/http/ttsRoutes.js`、`src/services/media/voiceRewrite.js` | `VoiceInput.swift`、`SpeechText.swift` | `test:tts` |
+| `voice` | `src/services/tts/`、`src/http/ttsRoutes.js`（含 `/api/voice-call/*`）、`src/services/media/voiceRewrite.js`；`desktop-ui/voiceCall.js`、`desktop-app/VoiceCallBridge.swift` | `VoiceInput.swift`、`SpeechText.swift`、`VoiceCall.swift`、`SystemVoiceCallAudio.swift`、`VoiceTurnRules.swift`、`VoiceCallController.swift` | agent-loop（`voiceTurn`）· `test:tts` |
 | `approvals` | `src/services/approval/`、`src/services/task/`、`src/safety/`；`desktop-ui/features/approvals/approvals.css` | `ChatStore.swift`（审批队列） | `test:audit-fixes` |
 | `desktop-shell` | `desktop-ui/app.js`、`neural*.js`、`src/services/desktop/bootstrap.js`、`desktop-app/main.swift` | 场景经 `ios/scripts/build-scene.py` 打包 | `test:ui` |
 | `iphone` | — | `ChatStore.swift`、`ContentView.swift`、`MeloApp.swift` | `test:ios` |
@@ -86,6 +88,15 @@
 基础设施另列 `platform`（`src/state/`、`src/runtime/`、`src/http/` 传输）、`channels`（已归档渠道）、`tooling`（脚本与 gate）。
 
 ## 4. 最新交接
+
+### 2026-11-16 — Melo 主线（Claude）— 实时语音对话（方案 A，桌面 + iPhone）
+
+用户要"增加实时语音对话系统"；按规范先出三方案并评分（A 级联全双工 8.2 / B GPT-Live 6.5 / C 双引擎 7.7），用户选 A、平台"桌面 + iPhone 一起"。基准 `f75f139a`，已提交 `adbb6145`。没有推送、没有安装、没有读写正式数据目录。
+行为：输入区新增通话按钮。开始后一直听，说完（默认 0.8 秒，可选较快 / 标准 / 较慢）自动作为语音轮发出；这一轮带上口语化回答的要求（桌面还带 Agent 卡片的说话风格）；核对后的回答按句读出（桌面 Agent 服务端音色，没有可用音色时系统声音；iPhone 系统声音）；用工具时说"我查一下"，等确认时说"请在屏幕上确认"；朗读中开口即打断；回复进行中说的话作为补充；整句是停止词时取消回复。听写与通话互斥；通话期间平时的自动朗读不触发。
+文件 / 接口：`shared/protocol/agent-loop.json`（`voiceTurn` 节与夹具，已重生成三端副本与核心包）、`shared/agent/voiceTurn.js`、`ios/Melo/{VoiceCall,SystemVoiceCallAudio,VoiceTurnRules,VoiceCallController}.swift`、`desktop-app/VoiceCallBridge.swift`、`desktop-ui/voiceCall.js`；`/api/chat/send/stream` 新增可选布尔 `voiceTurn`，新路由 `POST /api/voice-call/speech-plan`、`POST /api/voice-call/speech`；`ChatStore.send(…, voiceTurn:)`。不改同步 v1 线协议、不新增消息字段；Android 只多一段契约数据。
+验证：快速档因改到共享契约与公共边界扩为全量，`run-AosjeK` 全绿（JS 5,201 项 0 失败 0 跳过、Android 四项、Swift 编译与全部 41 组、渲染预检、设置浏览器验收，239 秒）；面板提示的追加修正 `run-pUhuXa`（347 项）；Swift `VoiceCallTests`（含 30 条与桌面相同的夹具）、iPhone 模拟器整包编译、桌面壳编译；修复类测试都在去掉修复后确认会红。
+接手要知道的：(1) 桌面壳必须重编并覆盖安装才有通话（`npm run release:verify`，须用户授权，跑之前确认数据目录已恢复）；手机签名 11-14 已到期，要重装。(2) 改了 `desktop-ui/translations.js` 一定要 `npm run build:ios-scene`，本次第一次快速档就因此停在预检。(3) 真机验收要看：Mac 外放时开口能打断、Melo 不会被自己的声音打断；中文端上识别；MiniMax / Edge 音色读回答；工具与确认的占位句；挂断后麦克风指示灯熄灭；iPhone 来电时挂断。
+仍然挂着：真机、真实模型验收；SpeechAnalyzer 未接（见方案第 10.2 节）；桌面正式数据目录待用户恢复；本次提交只在本地，未推送（开工时 master 与 `origin/master` 同为 `f75f139a`）。
 
 ### 2026-11-14 — Melo 主线（Claude）— 死代码清理第二轮与检测提速
 
