@@ -63,6 +63,7 @@ export async function runChatAgentExecutionGraph({
   onReasoningDelta,
   sseEmitter,
   providerProfile = 'default',
+  voiceTurn = false,
   _dependencies = {},
 }) {
   context ||= createRequestContext({ home, chatId: chat.id, signal, config, workspacePath: workspace?.rootPath });
@@ -179,6 +180,7 @@ export async function runChatAgentExecutionGraph({
    * @property {*} onReasoningDelta streaming reasoning callback
    * @property {*} sseEmitter (type, value) => void progress / reply event sink
    * @property {*} providerProfile provider tuning profile name
+   * @property {*} voiceTurn true when the turn was spoken in a live voice call
    * @property {*} _dependencies test injection: createReply, getEmbedding
    * @property {*} budget armed run budget shared by the whole turn
    * @property {*} createReply metered model call (budget accounting, first-token timer, receipts into modelResponses)
@@ -215,6 +217,7 @@ export async function runChatAgentExecutionGraph({
     onReasoningDelta,
     sseEmitter,
     providerProfile,
+    voiceTurn: voiceTurn === true,
     _dependencies,
     budget,
     createReply,

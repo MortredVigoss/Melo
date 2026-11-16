@@ -17,6 +17,7 @@ suites['EditDraftStorageTests']=['ios/Melo/EditDraft.swift','ios/Melo/EditDraftS
 suites['AgentEditTests']=shared+['ios/Melo/AgentProfile.swift','ios/Melo/AgentEditSession.swift']
 suites['LifecycleJournalTests']=['ios/Melo/Models.swift','ios/Melo/LifecycleJournal.swift']
 suites['VoiceInputTests']=['ios/Melo/VoiceInput.swift']
+suites['VoiceCallTests']=['ios/Melo/VoiceCall.swift','ios/Melo/VoiceTurnRules.swift','ios/Melo/SpeechText.swift','ios/Melo/AgentLoopContract.swift']  # live voice call: turn-taking engine + rules against fixtures.voiceTurn (reads shared/protocol/agent-loop.json)
 suites['ReplyBackgroundTests']=['ios/Melo/ReplyBackgroundLifetime.swift']
 suites['ImageWorkflowTests']=shared
 suites['CodexOAuthTests']=shared+['ios/Melo/CodexOAuth.swift','ios/Melo/ChatGPTAccount.swift','ios/Melo/Keychain.swift']

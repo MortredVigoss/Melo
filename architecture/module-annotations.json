@@ -298,28 +298,33 @@
       ]
     },
     "voice": {
-      "title": "语音输入与朗读",
+      "title": "语音输入、朗读与实时语音通话",
       "owns": [
         "src/tts.js",
         "src/services/tts/**",
         "src/services/media/**",
         "src/http/ttsRoutes.js",
         "src/shared/minimaxVoiceResolver.js",
-        "desktop-ui/{voiceInput,ttsBridgeRouter}.js",
-        "desktop-ui/streamTtsOnToolCall.test.js",
+        "desktop-ui/{voiceInput,voiceCall,ttsBridgeRouter}.js",
+        "desktop-ui/{streamTtsOnToolCall,voiceCall}.test.js",
         "src/desktopStore.minimaxVoiceConfig.test.js",
-        "ios/Melo/{VoiceInput,SystemSpeechInput,SpeechText,SpeechPlaybackVerification}.swift",
-        "ios/Tests/{SpeechTextTests,VoiceInputTests}.swift"
+        "ios/Melo/{VoiceInput,SystemSpeechInput,SpeechText,SpeechPlaybackVerification,VoiceCall,SystemVoiceCallAudio,VoiceTurnRules,VoiceCallController}.swift",
+        "ios/Tests/{SpeechTextTests,VoiceInputTests,VoiceCallTests}.swift",
+        "desktop-app/VoiceCallBridge.swift",
+        "shared/agent/voiceTurn.js",
+        "shared/agent/voiceTurn.test.js"
       ],
       "routes": [
         "/api/tts/",
-        "/api/audio/"
+        "/api/audio/",
+        "/api/voice-call/"
       ],
       "testGroups": [
         "test:tts"
       ],
       "notes": [
-        "朗读要点化：桌面 src/services/media/voiceRewrite.js 的 extractVoiceSummary，手机 SpeechText.swift 按同一规则。"
+        "朗读要点化：桌面 src/services/media/voiceRewrite.js 的 extractVoiceSummary，手机 SpeechText.swift 按同一规则。",
+        "实时语音通话（2026-11-16，方案 A，docs/realtime-voice-plan-20261116.md）：桌面壳与 iPhone 共用 ios/Melo/VoiceCall.swift（端点 / 打断 / 回声过滤）与 SystemVoiceCallAudio.swift（音频引擎）；语音轮提示、读出规则与停止词在 shared/protocol/agent-loop.json voiceTurn 节（桌面 shared/agent/voiceTurn.js，手机 VoiceTurnRules.swift，同一份夹具）。桌面由 desktop-ui/voiceCall.js 编排，iPhone 由 VoiceCallController.swift 接 ChatStore。"
       ]
     },
     "approvals": {
@@ -992,17 +997,22 @@
         "desktop-ui/localSettings.js",
         "desktop-ui/voiceInput.js",
         "desktop-ui/launchScreen.js",
-        "desktop-ui/app.js"
+        "desktop-ui/app.js",
+        "desktop-ui/voiceCall.js"
       ],
       "to": [
-        "desktop-app/main.swift"
+        "desktop-app/main.swift",
+        "desktop-app/VoiceCallBridge.swift",
+        "ios/Melo/VoiceCall.swift",
+        "ios/Melo/SystemVoiceCallAudio.swift"
       ],
       "tests": [
         "desktop-ui/localSettings.test.js",
         "desktop-ui/localSettings.launchAtLogin.test.js",
-        "desktop-ui/launchScreen.test.js"
+        "desktop-ui/launchScreen.test.js",
+        "desktop-ui/voiceCall.test.js"
       ],
-      "note": "window.webkit.messageHandlers.meloVoice（nativeSettings、保存图片、语音、回复完成通知）由 main.swift 的 WKScriptMessageHandler 处理"
+      "note": "window.webkit.messageHandlers.meloVoice（nativeSettings、保存图片、语音、回复完成通知）由 main.swift 的 WKScriptMessageHandler 处理；实时语音通话的 call* 消息转给 VoiceCallBridge.swift（与 iPhone 共用 VoiceCall / SystemVoiceCallAudio），事件以 melo-voice-call 回到页面"
     },
     {
       "id": "bridge-process-shutdown",

@@ -330,6 +330,16 @@ button {
 }
 
 .voice-preview small { color: var(--palette-637fa44d42); font-size: var(--font-size-11px); }
+/* Live voice call (2026-11-16): the dictation preview card with call controls. */
+.voice-call .voice-preview-title { gap: 10px; flex-wrap: wrap; }
+.voice-call-actions { display: inline-flex; align-items: center; gap: 6px; text-transform: none; letter-spacing: 0; }
+.voice-call-endpoint { display: inline-flex; align-items: center; gap: 4px; color: var(--palette-637fa44d42); font-size: var(--font-size-11px); }
+.voice-call-endpoint select { font: inherit; }
+.voice-call-lines { display: grid; gap: 4px; }
+.voice-call-line { color: var(--text-soft); font-size: var(--font-size-12px); line-height: 1.5; overflow-wrap: anywhere; }
+.voice-call-line.is-user { color: var(--palette-31fd99ecad); }
+.voice-call-line span { margin-right: 6px; color: var(--palette-7cf44b8d24); }
+.voice-call-error { color: var(--danger); font-size: var(--font-size-12px); overflow-wrap: anywhere; }
 .composer-footer {
   display: flex;
   flex-wrap: wrap;

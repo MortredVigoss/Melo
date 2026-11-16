@@ -103,6 +103,7 @@ function harness({ bootstrap = page(), responses = {}, overview = false } = {}) 
     setToolPermissions: list => { state.permissions = list; },
     commandPaletteOpen: () => false,
     voiceLanguage: () => 'zh-CN',
+    voiceCallSettings: () => ({ engine: 'auto', systemVoice: '' }),
     handleComposerCommand: async () => false,
     handleSpeakMessage: async trigger => { spoken.push(trigger.dataset.messageId); },
     handleDeleteChat: async chatId => { deleted.push(chatId); },
@@ -171,10 +172,10 @@ test('the chat feature takes a narrow context (no uiState) and starts from its o
 test('registry: chat actions and the composer form are registered once; cross-page navigation stays in app.js', async () => {
   const h = harness();
   assert.deepEqual(Object.keys(h.feature.actions).sort(), [
-    'add-link-attachment', 'cancel-voice-input', 'delete-active-chat', 'jump-to-topic', 'pick-composer-attachment', 'pick-slash-skill',
+    'add-link-attachment', 'cancel-voice-input', 'delete-active-chat', 'interrupt-voice-call', 'jump-to-topic', 'mute-voice-call', 'pick-composer-attachment', 'pick-slash-skill',
     'remove-composer-attachment', 'restart-interrupted-send', 'run-chat-team', 'save-video-knowledge', 'scroll-thread-to-bottom',
     'select-chat-agent', 'speak-message', 'stop-send', 'thread-load-earlier', 'toggle-agent-selector', 'toggle-composer-attachment-menu',
-    'toggle-voice-input',
+    'toggle-voice-call', 'toggle-voice-input',
   ]);
   assert.deepEqual(Object.keys(h.feature.forms), ['composer']);
   for (const name of ['open-chat', 'new-chat', 'select-agent-profile', 'select-project', 'toggle-model-picker', 'toggle-chat-files']) {
@@ -772,4 +773,55 @@ test('a chat that is not the one being answered neither supplements nor stops it
   // Once the reply ends, B sends normally.
   h.view('chat-b');
   assert.doesNotMatch(app.innerHTML, /另一段对话正在回复/);
+});
+
+test('live voice call: a spoken turn keeps the typed draft, carries voiceTurn and is read by the call, not by read-aloud', async () => {
+  const sse = server();
+  const h = harness({ responses: {
+    '/api/voice-call/speech-plan': { ok: true, sentences: ['明天晴。'], serverVoice: true, condensed: false, language: 'zh' },
+    '/api/voice-call/speech': { ok: true, audio: Buffer.from('mp3').toString('base64'), mimeType: 'audio/mpeg' },
+  } });
+  h.chat().composer = '还没写完的草稿';
+  h.context.render();
+  assert.ok(document.querySelector('[data-action="toggle-voice-call"]'), 'the call button sits beside dictation in the desktop app');
+  bridgeMessages.length = 0;
+  await h.click('toggle-voice-call');
+  const start = bridgeMessages.find(message => message.action === 'callStart');
+  assert.ok(start, 'the native call engine is asked to start');
+  const sessionID = start.sessionID;
+  h.feature.handleVoiceCallBridgeEvent({ sessionID, type: 'state', phase: 'listening', echoCancellation: true });
+  assert.ok(document.querySelector('.voice-call'), 'the call panel is shown');
+  assert.ok(document.querySelector('[data-action="toggle-voice-input"]').disabled, 'dictation is off while the call owns the microphone');
+
+  h.feature.handleVoiceCallBridgeEvent({ sessionID, type: 'utterance', text: '明天天气怎么样' });
+  await flush();
+  assert.equal(sse.streams.length, 1);
+  const body = sse.streams[0].body;
+  assert.equal(body.voiceTurn, true);
+  assert.equal(body.content, '明天天气怎么样');
+  assert.equal(h.chat().composer, '还没写完的草稿', 'the typed draft is not taken by a spoken turn');
+  sse.send('started', { requestId: body.requestId, runId: 'run-voice' });
+  sse.send('tool_calls_start', { calls: [{ id: 't1', name: 'web_search' }] });
+  sse.send('reply_text', { text: '明天晴。', final: true });
+  await flush();
+  assert.ok(bridgeMessages.some(message => message.action === 'callSpeak' && message.text === '我查一下。'), 'the call says it is checking');
+  sse.send('done', { requestId: body.requestId, bootstrap: page() });
+  sse.close();
+  await flush(12);
+  assert.ok(h.calls.some(([path, method, payload]) => path === '/api/voice-call/speech-plan' && method === 'POST' && payload.text === '明天晴。' && payload.agentId === 'main'));
+  const play = bridgeMessages.find(message => message.action === 'callPlay');
+  assert.equal(play?.text, '明天晴。', 'the reply goes to the call engine in the Agent voice');
+  assert.equal(h.spoken.includes('stop'), true, 'read-aloud was stopped when the call started');
+
+  await h.click('toggle-voice-call');
+  assert.ok(bridgeMessages.some(message => message.action === 'callEnd' && message.sessionID === sessionID), 'hang-up reaches the engine');
+  // After the call, a typed send is an ordinary turn again.
+  h.chat().composer = 'typed after the call';
+  const sending = h.send();
+  await flush();
+  assert.equal(sse.streams.at(-1).body.voiceTurn, undefined);
+  assert.equal(h.chat().composer, '');
+  sse.send('done', {});
+  sse.close();
+  await sending;
 });

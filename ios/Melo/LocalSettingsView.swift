@@ -169,6 +169,8 @@ import WebKit
     @Published private(set) var speechStatus = ""
     @Published private(set) var speechFailed = false
     @Published private(set) var speechActive = false
+    /// A live voice call reads its own replies (VoiceCallController); auto-read stays quiet meanwhile.
+    var callActive = false
     private var currentUtterance: AVSpeechUtterance?
     private var startTimeout: Task<Void, Never>?
 
@@ -220,7 +222,7 @@ import WebKit
             guard UserDefaults.standard.bool(forKey: "melo.notifications") else { return }
             let content = UNMutableNotificationContent(); content.title = "Melo 回复已完成"; content.body = "打开 Melo 查看结果。"; content.sound = .default
             UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
-        } else if UserDefaults.standard.bool(forKey: "melo.autoSpeak") { speak(text) }
+        } else if UserDefaults.standard.bool(forKey: "melo.autoSpeak"), !callActive { speak(text) }
     }
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
         Task { @MainActor [weak self] in

@@ -4,6 +4,33 @@ export { INTERFACE_TERMS as interfaceTermKeys } from './interfaceLanguages.js';
 // Authored interface copy only. User messages, names and provider output never enter this catalog.
 // Columns: Chinese source / English / Japanese / Korean / Spanish.
 const rows = [
+// Live voice call (2026-11-16, docs/realtime-voice-plan-20261116.md): desktop call panel and the iPhone call controls.
+["语音通话", "Voice call", "音声通話", "음성 통화", "Llamada de voz"],
+["开始语音通话", "Start voice call", "音声通話を開始", "음성 통화 시작", "Iniciar llamada de voz"],
+["挂断语音通话", "End voice call", "音声通話を終了", "음성 통화 종료", "Terminar llamada de voz"],
+["语音通话 · 说完自动发送，Melo 会读出回答", "Voice call · sent when you stop talking, Melo reads the answer aloud", "音声通話 · 話し終えると送信され、Melo が回答を読み上げます", "음성 통화 · 말을 마치면 전송되고 Melo가 답변을 읽어 줍니다", "Llamada de voz · se envía al dejar de hablar y Melo lee la respuesta"],
+["语音通话需要 Melo 桌面版，浏览器里无法使用。", "Voice calls need the Melo desktop app; they are not available in a browser.", "音声通話には Melo デスクトップ版が必要です。ブラウザーでは使えません。", "음성 통화는 Melo 데스크톱 앱이 필요하며 브라우저에서는 사용할 수 없습니다.", "Las llamadas de voz requieren la app de escritorio de Melo; no funcionan en un navegador."],
+["当前安装的 Melo 还不支持语音通话，更新 Melo 后再试。", "This installed Melo does not support voice calls yet. Update Melo and try again.", "インストール済みの Melo はまだ音声通話に対応していません。Melo を更新してからお試しください。", "설치된 Melo는 아직 음성 통화를 지원하지 않습니다. Melo를 업데이트한 뒤 다시 시도하세요.", "Esta versión instalada de Melo aún no admite llamadas de voz. Actualiza Melo e inténtalo de nuevo."],
+["这句话没有发出去，请再说一次。", "That was not sent. Please say it again.", "送信されませんでした。もう一度話してください。", "전송되지 않았습니다. 다시 말씀해 주세요.", "No se envió. Dilo otra vez, por favor."],
+["正在接通…", "Connecting…", "接続中…", "연결 중…", "Conectando…"],
+["正在听你说", "Listening to you", "聞き取り中", "듣는 중", "Escuchándote"],
+["在听，请说", "Listening, go ahead", "聞いています。どうぞ", "듣고 있어요. 말씀하세요", "Te escucho, adelante"],
+["正在思考…", "Thinking…", "考え中…", "생각하는 중…", "Pensando…"],
+["Melo 正在说 · 直接开口可以打断", "Melo is speaking · just talk to interrupt", "Melo が話しています · 話しかければ中断できます", "Melo가 말하는 중 · 말을 걸면 끊을 수 있습니다", "Melo está hablando · habla para interrumpir"],
+["Melo 正在说 · 点「打断」可以插话", "Melo is speaking · tap Interrupt to cut in", "Melo が話しています · 「中断」で割り込めます", "Melo가 말하는 중 · '끼어들기'를 눌러 말할 수 있습니다", "Melo está hablando · pulsa Interrumpir para intervenir"],
+["已静音", "Muted", "ミュート中", "음소거됨", "Silenciado"],
+["通话已结束", "Call ended", "通話が終了しました", "통화가 종료되었습니다", "Llamada terminada"],
+["打断", "Interrupt", "中断", "끼어들기", "Interrumpir"],
+["静音", "Mute", "ミュート", "음소거", "Silenciar"],
+["取消静音", "Unmute", "ミュート解除", "음소거 해제", "Activar sonido"],
+["挂断", "Hang up", "通話終了", "통화 종료", "Colgar"],
+["说完后等待", "Wait after speech", "話し終えた後の待ち時間", "말을 마친 뒤 대기", "Espera tras hablar"],
+["较快", "Shorter", "短め", "짧게", "Más corta"],
+["较慢", "Longer", "長め", "길게", "Más larga"],
+["你", "You", "あなた", "나", "Tú"],
+["没有回声消除：Melo 说话时不会被打断，可以点「打断」。", "No echo cancellation: Melo cannot be interrupted by voice while speaking; tap Interrupt.", "エコーキャンセルがありません。Melo が話している間は声で中断できないため、「中断」を押してください。", "에코 제거가 없어 Melo가 말하는 동안 목소리로 끼어들 수 없습니다. '끼어들기'를 누르세요.", "Sin cancelación de eco: no puedes interrumpir a Melo con la voz mientras habla; pulsa Interrumpir."],
+["这次回答没能读出来，内容在聊天里。", "This answer could not be read aloud; it is in the chat.", "この回答は読み上げられませんでした。内容はチャットにあります。", "이번 답변은 읽어 드리지 못했습니다. 내용은 채팅에 있습니다.", "No se pudo leer esta respuesta; está en el chat."],
+["通话中说的话会作为消息发出；需要确认的操作请在屏幕上点；系统语音识别可能需要联网。", "What you say in the call is sent as messages; confirm actions on the screen; system speech recognition may need the internet.", "通話中に話した内容はメッセージとして送信されます。確認が必要な操作は画面でタップしてください。システムの音声認識にはネット接続が必要な場合があります。", "통화 중에 한 말은 메시지로 전송됩니다. 확인이 필요한 작업은 화면에서 눌러 주세요. 시스템 음성 인식은 인터넷이 필요할 수 있습니다.", "Lo que dices en la llamada se envía como mensajes; confirma las acciones en la pantalla; el reconocimiento de voz del sistema puede necesitar internet."],
 // Agent audit fixes (2026-11-10).
 ["另一段对话正在回复，结束后才能在这里发送；可以先写好。", "Another conversation is being answered. You can send here once it finishes; feel free to write your message now.", "別の会話に返信中です。終わり次第ここで送信できます。先に書いておけます。", "다른 대화에 답변 중입니다. 끝나면 여기서 보낼 수 있습니다. 미리 작성해 두셔도 됩니다.", "Se está respondiendo otra conversación. Podrás enviar aquí cuando termine; puedes ir escribiendo."],
 // Settings audit fixes (2026-11-10): what the member limits mean and whom they govern, what stays on this computer, what a project-scope save does.

@@ -29,6 +29,8 @@ export function validateChatRequest(input) {
   if (!input.content?.trim() && !input.attachments?.length) throw requestError('EMPTY_MESSAGE', 'Message cannot be empty.');
   if (input.imageTask != null) { try { validateImageTask(input.imageTask); } catch(error) { throw requestError('INVALID_IMAGE_TASK',error.message); } }
   if(input.teamPlan!=null) {try {validateTeamPlan(input.teamPlan);}catch(error){throw requestError('INVALID_TEAM_PLAN',error.message);}}
+  // Live voice call turn (2026-11-16): adds the spoken-answer instruction to this turn only.
+  if (input.voiceTurn != null && typeof input.voiceTurn !== 'boolean') throw requestError('INVALID_VOICE_TURN', 'voiceTurn must be a boolean.');
   return input;
 }
 
@@ -47,6 +49,8 @@ export function chatRequestFingerprint(input) {
     demonMode: Boolean(input.demonMode),
     ...(input.teamPlan ? {teamPlan:validateTeamPlan(input.teamPlan)} : {}),
     ...(input.imageTask ? { imageTask: validateImageTask(input.imageTask) } : {}),
+    // Only a voice turn adds the key, so every earlier request keeps its fingerprint.
+    ...(input.voiceTurn === true ? { voiceTurn: true } : {}),
   }))).digest('hex');
 }
 

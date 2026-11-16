@@ -1,0 +1,356 @@
+import { setLanguage } from './i18n.js';
+setLanguage('zh-CN');
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createVoiceCall, voiceCallActive, voiceCallSupported, renderVoiceCall } from './voiceCall.js';
+import { VOICE_TURN, voiceCallPhrase } from '../shared/agent/voiceTurn.js';
+
+// Live voice call on the desktop page (2026-11-16). The native engine is a
+// message log; sending, supplements and the two speech requests are fakes
+// with counters, so each test checks what really happened underneath.
+
+const flush = () => new Promise(resolve => setTimeout(resolve, 0));
+const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+
+function fixture({ native = true, serverVoice = true, engine = 'auto', replying = false, speech } = {}) {
+  let context = 'chat|p|c1|agent-a', id = 0;
+  const posted = [], turns = [], supplements = [], stops = [], others = [], plans = [], requests = [], changes = [];
+  const state = { replying };
+  const timers = [], cleared = new Set();
+  const env = {
+    crypto: { randomUUID: () => `session-${++id}` },
+    setTimeout: (work, ms) => { timers.push({ work, ms }); return timers.length; },
+    clearTimeout: handle => { cleared.add(handle); },
+    ...(native ? { webkit: { messageHandlers: { meloVoice: { postMessage: message => posted.push(message) } } } } : {}),
+  };
+  const call = createVoiceCall({
+    env,
+    getContext: () => context,
+    getChatId: () => 'c1',
+    getAgentId: () => 'agent-a',
+    isReplying: () => state.replying,
+    // Like handleSendMessage: resolves once the turn has settled (its finally calls onSettled).
+    sendTurn: (text, observer) => new Promise(resolve => {
+      const settle = observer.onSettled;
+      observer.onSettled = result => { settle(result); resolve(); };
+      turns.push({ text, observer });
+    }),
+    sendSupplement: async text => { supplements.push(text); },
+    stopReply: () => { stops.push('stop'); },
+    stopOtherAudio: () => { others.push('stopped'); },
+    requestSpeechPlan: async (body, signal) => {
+      plans.push({ body, signal });
+      const sentences = body.text.split('|');
+      return { ok: true, sentences, serverVoice, condensed: false, language: 'zh' };
+    },
+    requestSpeech: speech || (async (body, signal) => { requests.push({ body, signal }); return { ok: true, audio: Buffer.from(body.text).toString('base64'), mimeType: 'audio/mpeg' }; }),
+    readSettings: () => ({ endpointMs: 1200, language: 'zh-CN', engine, systemVoice: 'Tingting' }),
+    onChange: next => changes.push(next),
+  });
+  const native_ = detail => call.receive({ sessionID: call.state.sessionID, ...detail });
+  return { call, posted, turns, supplements, stops, others, plans, requests, changes, state, timers, cleared, native: native_, setContext: value => { context = value; } };
+}
+
+function started(options) {
+  const f = fixture(options);
+  f.call.start();
+  f.native({ type: 'state', phase: 'listening', echoCancellation: true });
+  return f;
+}
+
+const byAction = (posted, action) => posted.filter(message => message.action === action);
+
+test('start opens the native call with the contract timings and the chosen end-of-speech wait', () => {
+  const f = fixture();
+  assert.equal(voiceCallSupported({}), false);
+  f.call.start();
+  assert.deepEqual(f.others, ['stopped'], 'read-aloud and dictation stop before the microphone opens');
+  const [startMessage] = f.posted;
+  assert.equal(startMessage.action, 'callStart');
+  assert.equal(startMessage.sessionID, 'session-1');
+  assert.equal(startMessage.language, 'zh-CN');
+  assert.equal(startMessage.endpointMs, 1200);
+  assert.equal(startMessage.bargeInMs, VOICE_TURN.timing.bargeInMs);
+  assert.equal(startMessage.utteranceLimitMs, VOICE_TURN.timing.utteranceLimitMs);
+  assert.equal(f.call.state.phase, 'starting');
+  f.call.start();
+  assert.equal(byAction(f.posted, 'callStart').length, 1, 'one call at a time');
+  f.native({ type: 'state', phase: 'listening' });
+  assert.ok(voiceCallActive(f.call.state));
+});
+
+test('a shell built before calls existed never answers: the call gives up after five seconds and says why', () => {
+  const silent = fixture();
+  silent.call.start();
+  assert.equal(silent.timers.length, 1);
+  assert.equal(silent.timers[0].ms, 5000);
+  silent.timers[0].work();
+  assert.equal(silent.call.state.phase, 'failed');
+  assert.match(silent.call.state.error, /还不支持语音通话/);
+  assert.equal(byAction(silent.posted, 'callEnd').length, 1, 'the request is withdrawn');
+  // A current shell answers at once (its first state is "starting"): the timer is cleared and does nothing.
+  const answered = fixture();
+  answered.call.start();
+  answered.native({ type: 'state', phase: 'starting' });
+  assert.ok(answered.cleared.has(1), 'the first event clears the timer');
+  answered.timers[0].work();
+  assert.equal(answered.call.state.phase, 'starting', 'a late timer cannot fail a call that answered');
+});
+
+test('outside the desktop app there is no call, only an explanation', () => {
+  const f = fixture({ native: false });
+  f.call.start();
+  assert.equal(f.call.state.phase, 'failed');
+  assert.match(f.call.state.error, /桌面版/);
+  assert.equal(f.posted.length, 0);
+});
+
+test('an utterance becomes a voice turn; tools, approvals and the final reply are spoken in order', async () => {
+  const f = started();
+  f.native({ type: 'utterance', text: '明天天气怎么样' });
+  await flush();
+  assert.equal(f.turns.length, 1);
+  assert.equal(f.turns[0].text, '明天天气怎么样');
+  assert.ok(byAction(f.posted, 'callStopPlayback').length >= 1, 'a new question replaces the rest of the last answer');
+  assert.equal(f.call.state.replying, true);
+  assert.deepEqual(f.call.state.lines, [{ user: true, text: '明天天气怎么样' }]);
+  const { observer } = f.turns[0];
+  observer.onEvent('tool_calls_start', { calls: [] });
+  observer.onEvent('tool_calls_start', { calls: [] });
+  observer.onEvent('tool_permission', { requestId: 'r1' });
+  const phrases = byAction(f.posted, 'callSpeak').map(message => message.text);
+  assert.deepEqual(phrases, [voiceCallPhrase('tools', 'zh'), voiceCallPhrase('approval', 'zh')], 'each placeholder once');
+  observer.onEvent('reply_text', { text: '明天晴。|最高十八度。|适合出门。', final: true });
+  await flush(); await flush(); await flush();
+  assert.equal(f.plans.length, 1);
+  assert.deepEqual(f.plans[0].body, { text: '明天晴。|最高十八度。|适合出门。', agentId: 'agent-a' }, 'the replying Agent voices the reply');
+  const plays = byAction(f.posted, 'callPlay');
+  assert.deepEqual(plays.map(message => message.text), ['明天晴。', '最高十八度。', '适合出门。'], 'clips reach the native queue in order');
+  assert.deepEqual(plays.map(message => Buffer.from(message.data, 'base64').toString()), ['明天晴。', '最高十八度。', '适合出门。']);
+  assert.equal(new Set(plays.map(message => message.id)).size, 3);
+  assert.deepEqual(f.call.state.lines.at(-1), { user: false, text: '明天晴。 最高十八度。 适合出门。' });
+  observer.onSettled({ ok: true });
+  assert.equal(f.call.state.replying, false);
+});
+
+test('synthesis runs at most two sentences ahead of playback', async () => {
+  let inFlight = 0, peak = 0;
+  const releases = [];
+  const f = started({
+    speech: (body) => new Promise(resolve => {
+      inFlight += 1; peak = Math.max(peak, inFlight);
+      releases.push(() => { inFlight -= 1; resolve({ ok: true, audio: Buffer.from(body.text).toString('base64'), mimeType: 'audio/mpeg' }); });
+    }),
+  });
+  f.native({ type: 'utterance', text: '讲一下' });
+  await flush();
+  f.turns[0].observer.onEvent('reply_text', { text: '一。|二。|三。|四。', final: true });
+  await flush(); await flush();
+  assert.equal(releases.length, 2, 'two requests before the first answer');
+  while (releases.length) { releases.shift()(); await flush(); await flush(); }
+  assert.ok(peak <= 2, `peak ${peak}`);
+  assert.deepEqual(byAction(f.posted, 'callPlay').map(message => message.text), ['一。', '二。', '三。', '四。']);
+});
+
+test('an interruption aborts the sentences being synthesized and none of them is played afterwards', async () => {
+  const pending = [];
+  const f = started({ speech: (body, signal) => new Promise(resolve => pending.push({ body, signal, resolve })) });
+  f.native({ type: 'utterance', text: '讲个长一点的' });
+  await flush();
+  f.turns[0].observer.onEvent('reply_text', { text: '第一句。|第二句。|第三句。', final: true });
+  await flush(); await flush();
+  assert.equal(pending.length, 2);
+  f.native({ type: 'bargeIn' });
+  assert.ok(pending.every(request => request.signal.aborted), 'the requests behind the sentences are aborted');
+  for (const request of pending) request.resolve({ ok: true, audio: 'bGF0ZQ==', mimeType: 'audio/mpeg' });
+  await flush(); await flush();
+  assert.equal(byAction(f.posted, 'callPlay').length, 0, 'a late synthesis result is never handed to the speaker');
+  assert.equal(pending.length, 2, 'no further sentence was requested');
+});
+
+test('a stop phrase cancels the running reply; while idle it only stops playback', async () => {
+  const f = started({ replying: true });
+  f.native({ type: 'utterance', text: '算了吧。' });
+  await flush();
+  assert.deepEqual(f.stops, ['stop']);
+  assert.equal(f.turns.length, 0);
+  assert.equal(f.supplements.length, 0);
+  assert.equal(byAction(f.posted, 'callSpeak').at(-1).text, voiceCallPhrase('stopped', 'zh'));
+  f.state.replying = false;
+  const stopsBefore = byAction(f.posted, 'callStopPlayback').length;
+  f.native({ type: 'utterance', text: 'stop' });
+  await flush();
+  assert.deepEqual(f.stops, ['stop'], 'nothing to cancel');
+  assert.equal(byAction(f.posted, 'callStopPlayback').length, stopsBefore + 1);
+  assert.equal(f.turns.length, 0, 'a stop phrase is never sent to the model');
+});
+
+test('while a reply runs, what the user says joins it as a supplement', async () => {
+  const f = started({ replying: true });
+  f.native({ type: 'utterance', text: '顺便查一下后天' });
+  await flush();
+  assert.deepEqual(f.supplements, ['顺便查一下后天']);
+  assert.equal(f.turns.length, 0);
+});
+
+test('without a server voice, or with the macOS engine, the system voice reads every sentence', async () => {
+  for (const options of [{ serverVoice: false }, { engine: 'macos' }]) {
+    const f = started(options);
+    f.native({ type: 'utterance', text: '你好' });
+    await flush();
+    f.turns[0].observer.onEvent('reply_text', { text: '你好呀。|有什么事？', final: true });
+    await flush(); await flush();
+    assert.equal(f.requests.length, 0, 'no server synthesis');
+    const spoken = byAction(f.posted, 'callSpeak').map(message => message.text);
+    assert.deepEqual(spoken, ['你好呀。', '有什么事？']);
+    if (options.engine === 'macos') assert.ok(byAction(f.posted, 'callSpeak').every(message => message.voice === 'Tingting'));
+  }
+});
+
+test('a sentence the server voice cannot read falls back to the system voice instead of being skipped', async () => {
+  let attempt = 0;
+  const f = started({ speech: async body => (++attempt === 2 ? Promise.reject(new Error('502')) : { ok: true, audio: Buffer.from(body.text).toString('base64'), mimeType: 'audio/mpeg' }) });
+  f.native({ type: 'utterance', text: '说三句' });
+  await flush();
+  f.turns[0].observer.onEvent('reply_text', { text: 'A。|B。|C。', final: true });
+  for (let i = 0; i < 6; i += 1) await flush();
+  assert.deepEqual(byAction(f.posted, 'callPlay').map(message => message.text), ['A。', 'C。']);
+  assert.deepEqual(byAction(f.posted, 'callSpeak').map(message => message.text), ['B。']);
+  // A clip the engine could not decode is read by the system voice too.
+  const played = byAction(f.posted, 'callPlay')[0];
+  f.native({ type: 'clipFailed', id: played.id, reason: '这句语音无法解码' });
+  assert.equal(byAction(f.posted, 'callSpeak').at(-1).text, 'A。');
+});
+
+test('a reply that could not be planned is explained once; the next turn clears the note', async () => {
+  const f = fixture();
+  let failPlan = true;
+  const call = createVoiceCall({
+    env: { crypto: { randomUUID: () => 'plan' }, setTimeout: () => 1, clearTimeout: () => {}, webkit: { messageHandlers: { meloVoice: { postMessage: message => f.posted.push(message) } } } },
+    getContext: () => 'same', getChatId: () => 'c1', getAgentId: () => 'agent-a', isReplying: () => false,
+    sendTurn: (text, observer) => new Promise(resolve => { f.turns.push({ text, observer, resolve }); }),
+    sendSupplement: async () => {}, stopReply: () => {}, stopOtherAudio: () => {},
+    requestSpeechPlan: async () => { if (failPlan) throw new Error('offline'); return { sentences: ['好的。'], serverVoice: false }; },
+    requestSpeech: async () => null, readSettings: () => ({}), onChange: () => {},
+  });
+  call.start();
+  call.receive({ sessionID: 'plan', type: 'state', phase: 'listening' });
+  call.receive({ sessionID: 'plan', type: 'utterance', text: '第一问' });
+  await flush();
+  f.turns[0].observer.onEvent('reply_text', { text: '答案一。', final: true });
+  await flush(); await flush();
+  assert.equal(call.state.notice, 'speech-failed');
+  assert.match(renderVoiceCall(call.state, escapeHtml), /没能读出来/);
+  f.turns[0].observer.onSettled({ ok: true }); f.turns[0].resolve();
+  failPlan = false;
+  call.receive({ sessionID: 'plan', type: 'utterance', text: '第二问' });
+  await flush();
+  assert.equal(call.state.notice, '', 'the note belonged to the previous answer');
+  f.turns[1].observer.onEvent('reply_text', { text: '好的。', final: true });
+  await flush(); await flush();
+  assert.equal(byAction(f.posted, 'callSpeak').at(-1).text, '好的。');
+});
+
+test('a failed or refused turn is said and shown; an aborted one is not', async () => {
+  const f = started();
+  f.native({ type: 'utterance', text: '第一问' });
+  await flush();
+  f.turns[0].observer.onSettled({ ok: false, error: '模型连接失败' });
+  assert.equal(f.call.state.error, '模型连接失败');
+  assert.equal(byAction(f.posted, 'callSpeak').at(-1).text, voiceCallPhrase('failed', 'zh'));
+  const spokenBefore = byAction(f.posted, 'callSpeak').length;
+  f.native({ type: 'utterance', text: '第二问' });
+  await flush();
+  f.turns[1].observer.onSettled({ ok: false, aborted: true });
+  assert.equal(byAction(f.posted, 'callSpeak').length, spokenBefore, 'Stop is not a failure');
+  // The send never started (another reply was running, an Agent switch): the call still says so.
+  const refused = fixture();
+  refused.call.start();
+  refused.native({ type: 'state', phase: 'listening' });
+  const call = createVoiceCall({
+    env: { crypto: { randomUUID: () => 'x' }, webkit: { messageHandlers: { meloVoice: { postMessage: message => refused.posted.push(message) } } } },
+    getContext: () => 'same', getChatId: () => 'c1', getAgentId: () => '', isReplying: () => false,
+    sendTurn: async () => {}, sendSupplement: async () => {}, stopReply: () => {}, stopOtherAudio: () => {},
+    requestSpeechPlan: async () => ({ sentences: [] }), requestSpeech: async () => null, readSettings: () => ({}), onChange: () => {},
+  });
+  call.start();
+  call.receive({ sessionID: 'x', type: 'state', phase: 'listening' });
+  call.receive({ sessionID: 'x', type: 'utterance', text: '你好' });
+  await flush(); await flush();
+  assert.match(call.state.error, /没有发出去/);
+  assert.equal(call.state.replying, false);
+});
+
+test('another chat, Agent or view hangs up; so does end(); late events of the old session change nothing', async () => {
+  const f = started();
+  f.native({ type: 'utterance', text: '讲个故事' });
+  await flush();
+  f.turns[0].observer.onEvent('reply_text', { text: '很久以前。|有一座山。', final: true });
+  f.setContext('chat|p|c2|agent-a');
+  f.call.checkContext();
+  assert.equal(byAction(f.posted, 'callEnd').length, 1);
+  assert.equal(f.call.state.phase, 'ended');
+  await flush(); await flush();
+  assert.equal(byAction(f.posted, 'callPlay').length, 0, 'nothing is played after the hang-up');
+  assert.ok(f.plans.every(plan => plan.signal.aborted), 'the speech plan request was aborted');
+  f.native({ type: 'utterance', text: '挂断后的话' });
+  await flush();
+  assert.equal(f.turns.length, 1, 'no turn after the call ended');
+  f.call.end();
+  assert.equal(byAction(f.posted, 'callEnd').length, 1, 'a second hang-up sends nothing');
+
+  const g = started();
+  g.call.end();
+  assert.equal(byAction(g.posted, 'callEnd').length, 1);
+  g.call.start();
+  const old = 'session-1';
+  g.call.receive({ sessionID: old, type: 'utterance', text: '旧会话' });
+  await flush();
+  assert.equal(g.turns.length, 0, 'events of an earlier session are ignored');
+
+  const h = started();
+  h.setContext('chat|p|c1|agent-b');
+  h.native({ type: 'utterance', text: '换了 Agent 之后' });
+  await flush();
+  assert.equal(h.turns.length, 0);
+  assert.equal(byAction(h.posted, 'callEnd').length, 1, 'any event after a context change hangs up');
+});
+
+test('observerFor gives typed replies in the call chat a reader, and nothing elsewhere', () => {
+  const f = started();
+  assert.ok(f.call.observerFor('c1'));
+  assert.equal(f.call.observerFor('c2'), null);
+  assert.equal(f.call.activeFor('c1'), true);
+  f.call.end();
+  assert.equal(f.call.observerFor('c1'), null);
+  assert.equal(f.call.activeFor('c1'), false);
+});
+
+test('mute, interrupt and the end-of-speech wait reach the native engine', async () => {
+  const f = started();
+  f.call.setMuted(true);
+  f.call.interrupt();
+  f.call.setEndpoint(600);
+  assert.deepEqual(byAction(f.posted, 'callMute')[0].muted, true);
+  assert.equal(byAction(f.posted, 'callInterrupt').length, 1);
+  assert.equal(byAction(f.posted, 'callTiming')[0].endpointMs, 600);
+});
+
+test('the panel: controls while live, escaped words, explanations', () => {
+  assert.equal(renderVoiceCall({ phase: 'idle', lines: [] }, escapeHtml), '');
+  const live = renderVoiceCall({ phase: 'speaking', echoCancellation: true, muted: false, replying: false, partial: '<b>你好</b>', lines: [{ user: true, text: '<img src=x>' }, { user: false, text: '好的' }], error: '', notice: 'half-duplex' }, escapeHtml, { endpointMs: 1200 });
+  assert.match(live, /data-action="interrupt-voice-call"/);
+  assert.match(live, /data-action="mute-voice-call"/);
+  assert.match(live, /data-action="toggle-voice-call"/);
+  assert.match(live, /<option value="1200" selected>/);
+  assert.match(live, /直接开口可以打断/);
+  assert.match(live, /没有回声消除/);
+  assert.doesNotMatch(live, /<img src=x>|<b>你好<\/b>/, 'user words are escaped');
+  const listening = renderVoiceCall({ phase: 'listening', echoCancellation: true, muted: false, replying: true, partial: '', lines: [], error: '', notice: '' }, escapeHtml);
+  assert.match(listening, /正在思考/);
+  assert.doesNotMatch(listening, /interrupt-voice-call/);
+  const failed = renderVoiceCall({ phase: 'failed', lines: [], error: '麦克风未获授权' }, escapeHtml);
+  assert.match(failed, /通话已结束/);
+  assert.match(failed, /麦克风未获授权/);
+  assert.doesNotMatch(failed, /data-action/);
+});

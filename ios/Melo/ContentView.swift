@@ -240,6 +240,9 @@ struct ChatView: View {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var voiceInput = VoiceInput(engine: SystemSpeechInput())
     @AppStorage("melo.voiceLanguage") private var voiceLanguage = "system"
+    // Live voice call (2026-11-16): VoiceCallController; the end-of-speech wait in milliseconds.
+    @StateObject private var voiceCall = VoiceCallController()
+    @AppStorage("melo.voiceCallEndpoint") private var voiceCallEndpoint = 800.0
     @State var chatID: String
     @State private var followReplyDraft = true
     @State private var historyVisible = ChatView.previewHistory
@@ -397,11 +400,25 @@ struct ChatView: View {
                 ImageComposerBar(plan: Binding(get: { imagePlan }, set: { imagePlan = $0 }), importID: $imageImportID, chatID: chatID, onPreview: { imagePreview = $0 }).id(chatID)
                     .simultaneousGesture(TapGesture().onEnded { composerFocused = false })
                 voiceInputPanel
+                voiceCallPanel
                 HStack(alignment: .bottom, spacing: 8) {
                     if deviceSpeech.speechFailed { Text(deviceSpeech.speechStatus).font(.caption2).foregroundStyle(.red) }
                     if deviceSpeech.speechActive { Button { LocalDeviceServices.shared.stopSpeech() } label: { Image(systemName: "speaker.slash") }.accessibilityLabel("停止朗读") }
                     AtomicButton(busy: store.isSending(chatID)) { executionRunID = nil; showExecution = true }
                     TextField(store.isSending(chatID) ? "输入补充要求" : "给\(store.agent(for: chatID).name)发消息", text: Binding(get: { draft }, set: { draft = $0 }), axis: .vertical).focused($composerFocused).accessibilityIdentifier("chat.composer").font(.subheadline).lineLimit(2...4).padding(.horizontal, 10).padding(.vertical, 8).background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 18))
+                    Button {
+                        composerFocused = false
+                        if voiceCall.active { voiceCall.end() }
+                        else {
+                            voiceInput.cancel()
+                            voiceCall.start(chatID: chatID, store: store, locale: voiceLanguage, endpointMs: voiceCallEndpoint)
+                        }
+                    } label: {
+                        Image(systemName: voiceCall.active ? "phone.down.fill" : "waveform")
+                            .font(MeloType.control()).foregroundStyle(voiceCall.active ? meloGold : meloAccent)
+                            .frame(width: 44, height: 44).background(.white.opacity(0.05), in: Circle())
+                    }.disabled(chat == nil || voiceInput.state.active || !store.storageReady)
+                     .accessibilityLabel(voiceCall.active ? InterfaceCopy.localized("挂断语音通话") : InterfaceCopy.localized("开始语音通话"))
                     Button {
                         composerFocused = false
                         if voiceInput.state.active { voiceInput.stop() }
@@ -416,7 +433,7 @@ struct ChatView: View {
                         Image(systemName: voiceInput.state.recording ? "stop.fill" : "mic.fill")
                             .font(MeloType.control()).foregroundStyle(voiceInput.state.active ? meloGold : meloAccent)
                             .frame(width: 44, height: 44).background(.white.opacity(0.05), in: Circle())
-                    }.disabled(voiceInput.state.status == "stopping")
+                    }.disabled(voiceInput.state.status == "stopping" || voiceCall.active)
                      .accessibilityLabel(voiceInput.state.active ? "停止语音输入" : "语音输入，转为文字后确认发送")
                     Button { let text = draft; if store.isSending(chatID) { store.supplement(text, chatID: chatID); draft = ""; return }; store.send(text, chatID: chatID, imageTask: imagePlan); if store.isSending(chatID) { composerFocused = false; draft = ""; imagePlan = ImageTaskPlan(model: imagePlan.model, size: imagePlan.size, quality: imagePlan.quality, connectionID: imagePlan.connectionID) } } label: { Image(systemName: store.isSending(chatID) ? "text.badge.plus" : "arrow.up").font(.headline).frame(width: 44, height: 44).background(meloAccent, in: Circle()).foregroundStyle(.black) }.disabled(chat == nil || imageImportID != nil || voiceInput.state.active || (draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (store.isSending(chatID) || ((imagePlan.references.isEmpty || imagePlan.makesImage) && store.pendingVideos[chatID] == nil))) || !store.storageReady).accessibilityLabel(store.isSending(chatID) ? "补充到正在进行的回复" : "发送消息")
                 }
@@ -436,14 +453,17 @@ struct ChatView: View {
             }.padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 6).background(meloBackground.opacity(0.65))
         }
         .onAppear { store.selectedConversationID = chatID }
-        .onDisappear { voiceInput.cancel(); store.flushDrafts() }
+        .onDisappear { voiceInput.cancel(); voiceCall.end(); store.flushDrafts() }
         .onChange(of: scenePhase) { _, phase in
             // Permission sheets briefly make the app inactive; keep that request alive.
             if phase == .background || (phase == .inactive && voiceInput.state.recording) { voiceInput.cancel() }
+            // A call has no background audio mode: leaving the app hangs up.
+            if phase == .background { voiceCall.end() }
         }
-        .onChange(of: chatID) { _, _ in store.selectedConversationID = chatID; voiceInput.cancel(); composerFocused = false }
-        .onChange(of: historyVisible) { _, open in if open { voiceInput.cancel(); composerFocused = false } }
-        .onChange(of: settings) { _, open in if open { voiceInput.cancel(); composerFocused = false } }
+        .onChange(of: chatID) { _, _ in store.selectedConversationID = chatID; voiceInput.cancel(); voiceCall.end(); composerFocused = false }
+        .onChange(of: historyVisible) { _, open in if open { voiceInput.cancel(); voiceCall.end(); composerFocused = false } }
+        .onChange(of: settings) { _, open in if open { voiceInput.cancel(); voiceCall.end(); composerFocused = false } }
+        .onChange(of: voiceCallEndpoint) { _, value in voiceCall.updateEndpoint(value) }
         .onChange(of: showExecution) { _, open in if open { voiceInput.cancel(); composerFocused = false } }
         .onChange(of: sourcePage?.id) { _, _ in voiceInput.cancel() }
         .alert("重命名对话", isPresented: $renaming) {
@@ -507,6 +527,48 @@ struct ChatView: View {
         }
     }
     private func useImage(_ image: LocalImage) { imagePlan.action = .auto; imagePlan.references = [ImageReference(id: image.id)] }
+    // Live voice call: status, what was just said, call controls. The war room may
+    // open over it during a reply; the call keeps listening underneath.
+    @ViewBuilder private var voiceCallPanel: some View {
+        let call = voiceCall.state
+        if voiceCall.active || (call.phase == "failed" && !voiceCall.message.isEmpty) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 10) {
+                    Text(voiceCallTitle).font(.caption).foregroundStyle(meloGold).lineLimit(2)
+                    Spacer()
+                    if voiceCall.active {
+                        if call.phase == "speaking" { Button("打断") { voiceCall.interrupt() }.font(.caption).frame(minHeight: 32) }
+                        Button(call.muted ? InterfaceCopy.localized("取消静音") : InterfaceCopy.localized("静音")) { voiceCall.toggleMute() }.font(.caption).frame(minHeight: 32)
+                        Menu {
+                            Picker("说完后等待", selection: $voiceCallEndpoint) {
+                                Text("较快").tag(600.0); Text("标准").tag(800.0); Text("较慢").tag(1200.0)
+                            }
+                        } label: { Image(systemName: "timer").frame(minWidth: 32, minHeight: 32) }.accessibilityLabel("说完后等待")
+                        Button("挂断") { voiceCall.end() }.font(.caption).frame(minHeight: 32)
+                    }
+                }
+                if !call.partial.isEmpty { Text(call.partial).font(.subheadline).frame(maxWidth: .infinity, alignment: .leading) }
+                ForEach(voiceCall.lines.suffix(2)) { line in
+                    (Text(line.fromUser ? InterfaceCopy.localized("你") : "Melo").foregroundStyle(meloGold) + Text("  " + line.text))
+                        .font(.caption).foregroundStyle(line.fromUser ? .primary : .secondary).lineLimit(3)
+                }
+                if !voiceCall.message.isEmpty { Text(voiceCall.message).font(.caption).foregroundStyle(meloGold) }
+                if voiceCall.active && call.noticeCode == "half-duplex" { Text("没有回声消除：Melo 说话时不会被打断，可以点「打断」。").font(MeloType.caption()).foregroundStyle(.secondary) }
+                if voiceCall.active { Text("通话中说的话会作为消息发出；需要确认的操作请在屏幕上点；系统语音识别可能需要联网。").font(MeloType.caption()).foregroundStyle(.secondary) }
+            }.padding(10).background(meloGold.opacity(0.045), in: RoundedRectangle(cornerRadius: 14))
+        }
+    }
+    private var voiceCallTitle: String {
+        let call = voiceCall.state
+        switch call.phase {
+        case "starting": return InterfaceCopy.localized("正在接通…")
+        case "hearing": return InterfaceCopy.localized("正在听你说")
+        case "speaking": return call.echoCancellation ? InterfaceCopy.localized("Melo 正在说 · 直接开口可以打断") : InterfaceCopy.localized("Melo 正在说 · 点「打断」可以插话")
+        case "listening": return call.muted ? InterfaceCopy.localized("已静音") : voiceCall.thinking ? InterfaceCopy.localized("正在思考…") : InterfaceCopy.localized("在听，请说")
+        case "failed": return InterfaceCopy.localized("通话已结束")
+        default: return InterfaceCopy.localized("语音通话")
+        }
+    }
     @ViewBuilder private var voiceInputPanel: some View {
         let state = voiceInput.state
         if state.active || !state.error.isEmpty || !state.notice.isEmpty {

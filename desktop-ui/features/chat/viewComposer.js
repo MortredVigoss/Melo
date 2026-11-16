@@ -15,10 +15,11 @@ import { renderConversationContext } from './conversationContext.js';
 import { renderImageTaskControls } from '../../imageControls.js';
 import { renderTeamPanel } from '../../teamPanel.js';
 import { voiceInputSupported, voiceInputActive, voiceInputLabel, renderVoiceInput } from '../../voiceInput.js';
+import { voiceCallActive, voiceCallSupported, voiceCallLabel, renderVoiceCall } from '../../voiceCall.js';
 import { turnLabel } from './turnPresentation.js';
 import { getBootstrap, isOverview, newChatSelection, modelPicker, toolPermissions, voiceLanguage, activeChat, activeChatAgentProfile, allChatAgentProfiles, composerTeamPlan, escapeHtml, icon, modelOptionsForAuthMode, renderTtsVoicePanel, renderExecutionPanel } from './context.js';
 import { chatState } from './state.js';
-import { attachmentIcon, attachmentLabel, slashPaletteMatches, replyRunsElsewhere } from './controller.js';
+import { attachmentIcon, attachmentLabel, slashPaletteMatches, replyRunsElsewhere, voiceCallEndpoint } from './controller.js';
 
 function thinkingLabel() {
   if (!chatState.sending) {
@@ -200,6 +201,10 @@ function renderComposerCard({ inline = false } = {}) {
   const voiceSupported = voiceInputSupported();
   const isHomeComposer = !inline;
   const voicePreviewMarkup = renderVoiceInput(chatState.voice, escapeHtml);
+  // Live voice call (desktop app only): the panel sits where the dictation preview does.
+  const callLive = voiceCallActive(chatState.voiceCall);
+  const callAvailable = voiceCallSupported() && !isOverview() && Boolean(activeChat());
+  const voiceCallMarkup = renderVoiceCall(chatState.voiceCall, escapeHtml, { endpointMs: voiceCallEndpoint() });
   const footerMarkup =
     isHomeComposer || selectedFile
       ? ui`
@@ -278,11 +283,22 @@ function renderComposerCard({ inline = false } = {}) {
                 <select class="voice-language" aria-label="语音识别语言" data-voice-language ${voiceInputActive(chatState.voice) || chatState.agentSelectionSaving ? 'disabled' : ''}>
                   ${[['zh-CN', t("中文")], ['en-US', 'English'], ['system', t("系统语言")]].map(([value, label]) => ui`<option value="${value}" ${(voiceLanguage() || 'system') === value ? 'selected' : ''}>${label}</option>`).join('')}
                 </select>
+                ${callAvailable || callLive ? ui`<button
+                  class="composer-icon-button ${callLive ? 'is-recording' : ''}"
+                  type="button"
+                  data-action="toggle-voice-call"
+                  ${voiceInputActive(chatState.voice) ? 'disabled' : ''}
+                  aria-label="${escapeHtml(voiceCallLabel(chatState.voiceCall))}"
+                  aria-pressed="${callLive}"
+                  title="${escapeHtml(voiceCallLabel(chatState.voiceCall))}"
+                >
+                  <span class="toolbar-icon">${callLive ? icon.stop : icon.audio}</span>
+                </button>` : ''}
                 <button
                   class="composer-icon-button ${chatState.voice.recording ? 'is-recording' : ''}"
                   type="button"
                   data-action="toggle-voice-input"
-                  ${chatState.voice.status !== 'stopping' ? '' : 'disabled'}
+                  ${chatState.voice.status !== 'stopping' && !callLive ? '' : 'disabled'}
                   aria-label="${escapeHtml(voiceInputLabel(chatState.voice))}"
                   aria-pressed="${voiceInputActive(chatState.voice)}"
                   title="${voiceSupported ? escapeHtml(voiceInputLabel(chatState.voice)) : '当前浏览器不支持语音识别，点击查看说明'}"
@@ -310,6 +326,7 @@ function renderComposerCard({ inline = false } = {}) {
             </div>
 
             ${voicePreviewMarkup}
+            ${voiceCallMarkup}
 
             <div
               class="composer-input-frame ${chatState.voice.recording ? 'is-recording' : ''} ${

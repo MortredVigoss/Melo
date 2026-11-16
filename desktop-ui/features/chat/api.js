@@ -19,6 +19,9 @@ export function createChatApi(api) {
     // A stopped or failed reply silences the TTS it started.
     clearSpeechQueue: () => api('/api/tts/queue-clear', { method: 'POST', body: {} }),
     stopSpeech: () => api('/api/tts/speak-stop', { method: 'POST', body: {} }),
+    // Live voice call: the sentences a reply reads aloud, and one sentence in the Agent's voice.
+    voiceCallSpeechPlan: (body, signal) => api('/api/voice-call/speech-plan', { method: 'POST', body, signal }),
+    voiceCallSpeech: (body, signal) => api('/api/voice-call/speech', { method: 'POST', body, signal }),
     // A supplement for the running reply; the caller reads response.ok.
     postSupplement: (chatId, content) => fetch('/api/chat/supplement', { method: 'POST', headers: { 'content-type': 'application/json', 'x-melo-interface-language': currentLanguage() }, body: JSON.stringify({ chatId, content }) }),
   };

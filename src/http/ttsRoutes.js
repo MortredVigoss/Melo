@@ -4,7 +4,9 @@ import { sendJson, readJsonBody } from './transport.js';
 import { synthesizeWithEdgeTts as _synthesizeWithEdgeTts } from '../services/tts/edgeTts.js';
 import { createNativeSayQueue } from '../services/tts/nativeSayQueue.js';
 
-export function createTtsRoutes({ startVoicePackServers, spawnProcess = null }) {
+// voiceCall: test seams for the live-call routes — configFor(body) and
+// synthesize(text, config, { signal }); production uses the real ones below.
+export function createTtsRoutes({ startVoicePackServers, spawnProcess = null, voiceCall = {} }) {
 let _nativeSayQueue = null;
 async function _getNativeSayQueue() {
   if (_nativeSayQueue) return _nativeSayQueue;
@@ -113,6 +115,9 @@ async function _synthesizeWithRecovery(text, config, opts = {}) {
   const { synthesizeSpeech } = await import('../tts.js');
   let result = await synthesizeSpeech(text, config, opts);
   if (result) return result;
+  // A cancelled synthesis (Stop, a new reply, a voice-call interruption) is not
+  // a voice-pack failure and must not restart the local voice service.
+  if (opts.signal?.aborted) return null;
 
   // Synthesis returned null — check if this is a local F5-TTS endpoint
   if (!customVoiceActive(config)) return null;
@@ -137,6 +142,15 @@ async function _synthesizeWithRecovery(text, config, opts = {}) {
   }
   return result;
 }
+
+// Live voice call (2026-11-16): one sentence in the Agent's voice. The same
+// engines as read-aloud; edge-tts keeps its own subprocess path.
+async function _synthesizeForCall(text, config, { signal }) {
+  if (config.ttsProvider === 'edge') return _synthesizeWithEdgeTts(text, config, { signal });
+  return _synthesizeWithRecovery(text, config, { signal });
+}
+const _callConfigFor = voiceCall.configFor || _ttsConfigFor;
+const _callSynthesize = voiceCall.synthesize || _synthesizeForCall;
 
 async function _waitForF5Tts(timeoutMs, healthUrl) {
   const deadline = Date.now() + timeoutMs;
@@ -666,6 +680,42 @@ const router = createRouteRegistry([
       } catch (err) {
         sendJson(response, 500, { ok: false, error: err?.message || 'Transcription failed.' });
       }
+      return;
+    } },
+
+    // ── Live voice call (2026-11-16, docs/realtime-voice-plan-20261116.md) ──
+    // speech-plan: the sentences a call reads for this reply
+    // (shared/agent/voiceTurn.js) and whether a server voice can read them;
+    // without one the page has the native system voice read them instead.
+    { method: 'POST', paths: ["/api/voice-call/speech-plan"], auth: 'local-write', handler: async ({ request, response }) => {
+      const body = await readJsonBody(request);
+      const { voiceCallSpeech } = await import('../../shared/agent/voiceTurn.js');
+      const speech = voiceCallSpeech(String(body?.text || '').slice(0, 20000));
+      const { getTtsUnavailableReason } = await import('../tts.js');
+      const unavailable = speech.sentences.length ? getTtsUnavailableReason(await _callConfigFor(body)) : null;
+      sendJson(response, 200, { ok: true, sentences: speech.sentences, condensed: speech.condensed, language: speech.language,
+        serverVoice: !unavailable, ...(unavailable ? { reason: unavailable } : {}) });
+      return;
+    } },
+    // speech: one sentence synthesized in the Agent's voice. An interruption
+    // drops the request; the synthesis it started is aborted with it (no
+    // finished audio is produced for a sentence nobody will hear).
+    { method: 'POST', paths: ["/api/voice-call/speech"], auth: 'local-write', handler: async ({ request, response }) => {
+      const body = await readJsonBody(request);
+      const text = String(body?.text || '').trim().slice(0, 1000);
+      if (!text) { sendJson(response, 400, { ok: false, error: 'text is required.' }); return; }
+      const config = await _callConfigFor(body);
+      const { getTtsUnavailableReason } = await import('../tts.js');
+      const unavailable = getTtsUnavailableReason(config);
+      if (unavailable) { sendJson(response, 422, { ok: false, error: unavailable }); return; }
+      // Owned by this request alone: only the page dropping it (an interruption, a
+      // hang-up) aborts it. Read-aloud's global stop does not reach a call's sentence.
+      const ctrl = new AbortController();
+      response.once('close', () => { if (!response.writableFinished) ctrl.abort(); });
+      const result = await _callSynthesize(text, config, { signal: ctrl.signal });
+      if (ctrl.signal.aborted) return; // the page dropped the request; nobody is waiting
+      if (!result?.buffer) { sendJson(response, 502, { ok: false, error: 'Speech synthesis failed for this sentence.' }); return; }
+      sendJson(response, 200, { ok: true, audio: result.buffer.toString('base64'), mimeType: result.mimeType });
       return;
     } },
 ]);

@@ -364,10 +364,12 @@ import SwiftUI
             return true
         } catch { self.error = error.localizedDescription; return false }
     }
-    func send(_ text: String, chatID: String, retry: Bool = false, imageTask: ImageTaskPlan? = nil, onPreflightFailure: ((String) -> Void)? = nil) {
-        startReply(text, chatID: chatID, retry: retry, imageTask: imageTask, resuming: nil, onPreflightFailure: onPreflightFailure)
+    /// `voiceTurn`: the message was spoken in a live voice call (VoiceCallController);
+    /// the turn then carries the shared spoken-answer instruction (VoiceTurnRules).
+    func send(_ text: String, chatID: String, retry: Bool = false, imageTask: ImageTaskPlan? = nil, voiceTurn: Bool = false, onPreflightFailure: ((String) -> Void)? = nil) {
+        startReply(text, chatID: chatID, retry: retry, imageTask: imageTask, resuming: nil, voiceTurn: voiceTurn, onPreflightFailure: onPreflightFailure)
     }
-    private func startReply(_ text: String, chatID: String, retry: Bool, imageTask: ImageTaskPlan? = nil, resuming: ReplyCheckpoint?, onPreflightFailure: ((String) -> Void)? = nil) {
+    private func startReply(_ text: String, chatID: String, retry: Bool, imageTask: ImageTaskPlan? = nil, resuming: ReplyCheckpoint?, voiceTurn: Bool = false, onPreflightFailure: ((String) -> Void)? = nil) {
         func fail(_ reason: String) { if let onPreflightFailure { onPreflightFailure(reason) } else { self.error = reason } }
         guard !isSending(chatID), storageReady, let index = chats.firstIndex(where: { $0.id == chatID }) else { onPreflightFailure?("当前无法发送，请确认对话存在，且这个对话没有正在进行的回复。"); return }
         if retry, resuming == nil, let saved = recovery(for: chatID) {
@@ -482,6 +484,8 @@ import SwiftUI
         let runsLoop = replyLoader == nil && teamPlan == nil && !plan.makesImage && !(plan.separately == true && plan.references.count > 1)
         let classification = runsLoop ? AgentLoop.classify(clean, history: prospectiveMessages) : nil
         turnParts.append(AgentLoop.prepareInstructions("", classification: classification))
+        // Live voice call (2026-11-16): this turn only, the same text as the desktop's "voice-turn" section.
+        if voiceTurn, !plan.makesImage { turnParts.append(VoiceTurnRules.instruction(for: clean)) }
         var recalled: (facts: [MobileMemoryFact], semantic: Bool) = (plan.makesImage || selectedAgent.contextSources?["memory"].bool == false) ? ([], false) : MobileMemoryRecall.recall(preferences.memoryFacts ?? [], query: clean, chatID: chatID, projectID: project(for: chatID)?.id, agentID: selectedAgent.id, liveChats: Set(chats.map(\.id)), liveProjects: Set((preferences.projects ?? []).map(\.id)), conflicts: Set((preferences.workspaceSync?.conflicts ?? []).filter { $0.kind == "memory" }.map(\.id) + (preferences.projectMemorySync?.conflicts ?? []).map(\.id)), hasAttachments: !plan.references.isEmpty)
         let memoryBudget = max(0, contextBudget.input * 2 - ConversationHistory.instructionReserve - clean.utf8.count - instructions.utf8.count - PhoneTurnContext.note(turnParts).utf8.count - 64)
         recalled.facts = plan.makesImage ? [] : MobileMemoryRecall.withinBudget(recalled.facts, remainingBytes: memoryBudget)
@@ -706,7 +710,7 @@ import SwiftUI
                 if !completed, checkpoint(record.runId)?.canContinue == true,
                    scenes(for: chatID).last?.status == "interrupted" {
                     _ = supplements.end(); supplementQueues[chatID] = nil; pendingSupplements[chatID] = nil
-                } else { endSupplements(supplements, chatID: chatID, finished: completed) }
+                } else { endSupplements(supplements, chatID: chatID, finished: completed, voiceTurn: voiceTurn) }
                 // Run grants end with the run; its open cards close.
                 capabilityBroker.releaseRun(record.runId)
                 if completed { discardCheckpoint(record.runId) }
@@ -895,11 +899,12 @@ import SwiftUI
         pendingSupplements[chatID] = supplementQueues[chatID]?.queued
         for text in taken { stage(runID, id: "supplement:\(UUID().uuidString)", name: "收到补充", status: "completed", output: String(text.prefix(200))) }
     }
-    private func endSupplements(_ queue: PhoneSupplements, chatID: String, finished: Bool) {
+    private func endSupplements(_ queue: PhoneSupplements, chatID: String, finished: Bool, voiceTurn: Bool = false) {
         let unused = queue.end()
         if supplementQueues[chatID] === queue { supplementQueues[chatID] = nil; pendingSupplements[chatID] = nil }
         if finished {
-            if !unused.isEmpty { send(unused.joined(separator: "\n"), chatID: chatID) }
+            // A follow-up of a spoken turn is spoken too.
+            if !unused.isEmpty { send(unused.joined(separator: "\n"), chatID: chatID, voiceTurn: voiceTurn) }
             return
         }
         let returned = queue.used + unused

@@ -348,6 +348,8 @@ const chatFeature = installChatFeature({
   setToolPermissions: list => { uiState.pendingToolPermissions = list; },
   commandPaletteOpen: () => uiState.commandPalette.open,
   voiceLanguage: () => uiState.voiceLanguage,
+  // The live voice call reads replies with the read-aloud engine the user picked.
+  voiceCallSettings: () => ({ engine: uiState.ttsEngine, systemVoice: uiState.ttsMacosVoiceName }),
   handleComposerCommand, handleSpeakMessage, handleDeleteChat,
   speakingState: () => ({ messageId: uiState.ttsSpeakingMessageId, loadingId: uiState.ttsSpeakingLoadingId }),
   stopCurrentTts, _isTtsActive, _streamTtsStart, _streamTtsPushChunk, _streamTtsOnToolCall, _streamTtsReset, _streamTtsFlush,
@@ -1734,6 +1736,7 @@ function applyBootstrap(payload) {
   const prevProjectId = uiState.bootstrap?.settings?.selectedProjectId || null;
   const nextProjectId = payload?.settings?.selectedProjectId || null;
   uiState.bootstrap = payload;
+  chatFeature.checkVoiceCallContext();
   memoryFeature.onBootstrap(uiState.bootstrap);
   // Drafts belong to each role and scope; only save/cancel may discard them.
   syncSelectedArtifact();
@@ -1753,6 +1756,7 @@ function applyBootstrapPreservingDrafts(payload, { background = false } = {}) {
   if (olderBootstrap(payload, uiState.bootstrap)) return;
   const changedSections = changedBootstrapSections(uiState.bootstrap, payload);
   uiState.bootstrap = payload;
+  chatFeature.checkVoiceCallContext();
   memoryFeature.onBootstrap(uiState.bootstrap);
   syncSelectedArtifact();
   if (payload?.settings?.activeView !== 'search' || !uiState.searchQuery.trim()) {
@@ -6123,6 +6127,11 @@ window.addEventListener('melo-voice', event => {
   chatFeature.handleVoiceBridgeEvent(event.detail || {});
 });
 
+// Live voice call events from the native call engine (desktop-app/VoiceCallBridge.swift).
+window.addEventListener('melo-voice-call', event => {
+  chatFeature.handleVoiceCallBridgeEvent(event.detail || {});
+});
+
 // TTS playback events from Swift's AVAudioPlayerDelegate / `say` exit.
 // Routing decision delegated to selectTtsBridgeCallback (see
 // ttsBridgeRouter.js + .test.js) so the cross-engine stale-event guard is
@@ -6200,13 +6209,16 @@ loadBootstrap();
 initBrowserVoices();
 
 // Stop capture when the page leaves; reopening a chat never restarts listening.
-window.addEventListener('pagehide', () => chatFeature.stopVoiceCapture());
+// A live call outlives a hidden window (the user may talk while working
+// elsewhere) but not the page itself.
+window.addEventListener('pagehide', () => { chatFeature.stopVoiceCapture(); chatFeature.endVoiceCall(); });
 document.addEventListener('visibilitychange', () => { if (document.hidden) chatFeature.stopVoiceCapture(); });
 document.addEventListener('change', event => {
   if (event.target.matches?.('[data-voice-language]')) {
     uiState.voiceLanguage = event.target.value;
     api('/api/settings/local',{method:'POST',body:{preferences:{voiceLanguage:event.target.value}}}).then(data=>applyBootstrapPreservingDrafts(data)).catch(error=>notify({level:'error',text:error.message}));
   }
+  if (event.target.matches?.('[data-voice-call-endpoint]')) chatFeature.setVoiceCallEndpoint(event.target.value);
 });
 
 installLanguageControls({api,applyBootstrap,render});

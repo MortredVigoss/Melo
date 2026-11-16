@@ -68,6 +68,11 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
     input.onUpdate = { [weak self] state in self?.emitVoiceEvent(state) }
     return input
   }()
+  // Live voice call (2026-11-16): the page runs the conversation, the bridge the
+  // microphone / recognizer / playback engine shared with the iPhone.
+  private lazy var voiceCall = VoiceCallBridge { [weak self] json in
+    self?.webView?.evaluateJavaScript("window.dispatchEvent(new CustomEvent('melo-voice-call', { detail: \(json) }));", completionHandler: nil)
+  }
 
   // Multilingual recognizer pool for batch file transcription (Telegram voice notes etc.).
   // Tries all available recognizers in parallel and picks the highest-confidence result.
@@ -224,6 +229,7 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
 
   private func releaseNativeResources() {
     voiceInput.cancel()
+    voiceCall.end()
     launchRequest?.cancel()
     // Without these calls a `say` child or AVAudioPlayer can keep playing for
     // several seconds after the app window has closed, until the OS reaps the
@@ -663,6 +669,22 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
             url.scheme == "http", url.host == host, url.port == port else { return }
       handleLocalSettings(payload, action: action); return
     }
+    // Live voice call: it opens the microphone, so only Melo's own page may drive it.
+    let callActions = ["callStart", "callEnd", "callPlay", "callSpeak", "callStopPlayback", "callInterrupt", "callMute", "callTiming"]
+    if callActions.contains(action) {
+      guard message.frameInfo.isMainFrame, let url = message.frameInfo.request.url,
+            url.scheme == "http", url.host == host, url.port == port else { return }
+      if action == "callStart" {
+        // One owner of the microphone and the speakers at a time.
+        voiceInput.cancel()
+        ttsAudioPlayer?.stop()
+        ttsAudioPlayer = nil
+        speechSynthesizer.stopSpeaking(at: .immediate)
+        sayProcess?.terminate()
+        sayProcess = nil
+      }
+      voiceCall.handle(payload, action: action); return
+    }
     switch action {
     case "retryLaunch":
       guard !hasLoadedServer else { return }
@@ -672,6 +694,7 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
     case "toggle":
       if voiceInput.state.active { voiceInput.stop() }
       else {
+        voiceCall.end()
         voiceInput.start(id: payload["sessionID"] as? String ?? UUID().uuidString,
                          locale: payload["language"] as? String ?? Locale.current.identifier)
       }
@@ -1315,6 +1338,15 @@ final class MeloAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, 
 
   func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
     if (error as NSError).code != NSURLErrorCancelled { loadErrorPage(message: error.localizedDescription) }
+  }
+
+  // A reload, a new page or a crashed web process can no longer drive a call: hang up.
+  func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+    voiceCall.end()
+  }
+
+  func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+    voiceCall.end()
   }
 
   func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {

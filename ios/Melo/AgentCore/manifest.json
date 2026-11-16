@@ -1,10 +1,10 @@
 {
   "version": 1,
-  "sha256": "bdddf4f2c1008bec7f61fc90a21bf3cf71d54109731d3a8cd0ab8e1162e1be40",
+  "sha256": "8a01f9f76520a35a9ca755b318adc6144a47f555e40a236390a6e539e59a1716",
   "sources": {
     "shared/agent/index.js": "18ce281ede3908119c807e46410154dd35137e8b7cc27cf632d1404764570eed",
     "shared/agent/taskEvaluation.js": "b5823e0339885fbaa9cdb281a3be44464a26a38582f9964f9bba6f0b8501a8ce",
-    "shared/agent/loopContract.js": "07bfdb0097d402d94acb4c706c2db43793a5531d672a217a51a70e78c2076d06",
+    "shared/agent/loopContract.js": "0cbf08a227531132d7d76619ab47a733def97f03a82b956dad6bfd5ca5176ef5",
     "shared/agent/arithmetic.js": "75ca6d76f16c4d4bb5d9302e1db0f1d63c8c5f75ce33cbbe3008c9536272d77e",
     "shared/agent/internalRouting.js": "c92ac4f4b709ee1dfee43f1e3f15e7e9f6ac15bc93d4077ec4a5ef7efb0577dd",
     "shared/agent/retrieval/requestPolicy.js": "4636ec86ca3e5a05d8ef73000dd6ef6819634d9cdd411db3862c33a36954a047",

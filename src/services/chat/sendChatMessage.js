@@ -195,7 +195,7 @@ async function executeChatTurn({
   skipBootstrap = false,
   channelContext = null,
   providerProfile = 'default',
-
+  voiceTurn = false,
 }) {
   const [defaultConfig, rawState] = await Promise.all([configPromise, loadState({ home })]);
   const state = ensureSelectedEntities(rawState);
@@ -382,6 +382,7 @@ async function executeChatTurn({
       onReasoningDelta,
       sseEmitter,
       providerProfile,
+      voiceTurn: voiceTurn === true,
     }));
     signal?.throwIfAborted();
     normalizedReply = graphResult.normalizedReply;

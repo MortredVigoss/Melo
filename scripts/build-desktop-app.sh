@@ -34,6 +34,10 @@ swiftc \
   "$PROJECT_DIR/desktop-app/DesktopPet.swift" \
   "$PROJECT_DIR/ios/Melo/VoiceInput.swift" \
   "$PROJECT_DIR/ios/Melo/SystemSpeechInput.swift" \
+  "$PROJECT_DIR/desktop-app/VoiceCallBridge.swift" \
+  "$PROJECT_DIR/ios/Melo/VoiceCall.swift" \
+  "$PROJECT_DIR/ios/Melo/SystemVoiceCallAudio.swift" \
+  "$PROJECT_DIR/ios/Melo/SpeechText.swift" \
   -o "$BUILD_DIR/$BIN_NAME"
 
 rm -rf "$APP_DIR"
@@ -73,9 +77,9 @@ cat > "$APP_DIR/Contents/Info.plist" <<'PLIST'
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Melo uses the microphone when you choose voice input in the desktop composer.</string>
+    <string>Melo uses the microphone when you choose voice input in the desktop composer, and throughout a voice call until you hang up.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
-    <string>Melo uses speech recognition to turn your voice into chat input.</string>
+    <string>Melo uses speech recognition to turn your voice into chat input and voice call messages.</string>
     <key>NSLocationUsageDescription</key>
     <string>Melo uses your location only when you ask about something near you, such as local weather or nearby places.</string>
     <key>NSLocationWhenInUseUsageDescription</key>

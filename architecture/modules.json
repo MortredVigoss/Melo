@@ -24,8 +24,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 661,
-      "edges": 2205,
+      "modules": 663,
+      "edges": 2211,
       "roots": [
         "src",
         "desktop-ui",
@@ -34,7 +34,7 @@
       ],
       "note": "静态 import/re-export，含 desktop-ui 对 /shared/*.js 的服务映射；不含动态 import 与外部包"
     },
-    "routes": 174,
+    "routes": 177,
     "unassignedRoutes": [],
     "unownedFiles": [],
     "sourceReadingTests": {
@@ -830,7 +830,8 @@
           "importedBy": [
             "agents",
             "memory",
-            "tools"
+            "tools",
+            "voice"
           ]
         },
         {
@@ -1145,7 +1146,7 @@
         "settings": 10,
         "sync": 2,
         "tools": 45,
-        "voice": 3
+        "voice": 6
       },
       "usedBy": {
         "agents": 35,
@@ -1160,7 +1161,7 @@
         "settings": 12,
         "sync": 4,
         "tools": 29,
-        "voice": 2
+        "voice": 3
       },
       "httpRoutes": [
         "GET /api/chat/scenes ← src/http/executionRoutes.js",
@@ -1358,6 +1359,7 @@
           "src/services/chat/turnEffectsRepeat.test.js",
           "src/services/chat/turnLifecycle.test.js",
           "src/services/chat/turnScheduler.test.js",
+          "src/services/chat/voiceTurn.graph.test.js",
           "src/shared/conversationTopics.test.js",
           "src/shared/sessionEvents.test.js"
         ],
@@ -3170,7 +3172,7 @@
       ]
     },
     "voice": {
-      "title": "语音输入与朗读",
+      "title": "语音输入、朗读与实时语音通话",
       "kind": "feature",
       "owns": [
         "src/tts.js",
@@ -3178,14 +3180,18 @@
         "src/services/media/**",
         "src/http/ttsRoutes.js",
         "src/shared/minimaxVoiceResolver.js",
-        "desktop-ui/{voiceInput,ttsBridgeRouter}.js",
-        "desktop-ui/streamTtsOnToolCall.test.js",
+        "desktop-ui/{voiceInput,voiceCall,ttsBridgeRouter}.js",
+        "desktop-ui/{streamTtsOnToolCall,voiceCall}.test.js",
         "src/desktopStore.minimaxVoiceConfig.test.js",
-        "ios/Melo/{VoiceInput,SystemSpeechInput,SpeechText,SpeechPlaybackVerification}.swift",
-        "ios/Tests/{SpeechTextTests,VoiceInputTests}.swift"
+        "ios/Melo/{VoiceInput,SystemSpeechInput,SpeechText,SpeechPlaybackVerification,VoiceCall,SystemVoiceCallAudio,VoiceTurnRules,VoiceCallController}.swift",
+        "ios/Tests/{SpeechTextTests,VoiceInputTests,VoiceCallTests}.swift",
+        "desktop-app/VoiceCallBridge.swift",
+        "shared/agent/voiceTurn.js",
+        "shared/agent/voiceTurn.test.js"
       ],
       "modules": {
-        "desktop-ui": 2,
+        "desktop-ui": 3,
+        "shared": 1,
         "src": 9
       },
       "entryModules": [
@@ -3196,7 +3202,19 @@
           ]
         },
         {
+          "module": "desktop-ui/voiceCall.js",
+          "importedBy": [
+            "chat"
+          ]
+        },
+        {
           "module": "desktop-ui/voiceInput.js",
+          "importedBy": [
+            "chat"
+          ]
+        },
+        {
+          "module": "shared/agent/voiceTurn.js",
           "importedBy": [
             "chat"
           ]
@@ -3240,8 +3258,8 @@
       ],
       "dependsOn": {
         "approvals": 1,
-        "chat": 2,
-        "desktop-shell": 1,
+        "chat": 3,
+        "desktop-shell": 2,
         "media": 1,
         "platform": 6,
         "projects": 1,
@@ -3249,7 +3267,7 @@
       },
       "usedBy": {
         "channels": 5,
-        "chat": 3,
+        "chat": 6,
         "desktop-shell": 2,
         "media": 1,
         "platform": 1
@@ -3267,18 +3285,26 @@
         "POST /api/tts/speak-stop ← src/http/ttsRoutes.js",
         "POST /api/tts/speak-text ← src/http/ttsRoutes.js",
         "POST /api/tts/test-minimax ← src/http/ttsRoutes.js",
-        "POST /api/tts/voice-text ← src/http/ttsRoutes.js"
+        "POST /api/tts/voice-text ← src/http/ttsRoutes.js",
+        "POST /api/voice-call/speech ← src/http/ttsRoutes.js",
+        "POST /api/voice-call/speech-plan ← src/http/ttsRoutes.js"
       ],
       "desktopUi": [
         "desktop-ui/ttsBridgeRouter.js",
-        "desktop-ui/voiceInput.js"
+        "desktop-ui/voiceCall.js",
+        "desktop-ui/voiceInput.js",
+        "desktop-app/VoiceCallBridge.swift"
       ],
       "iphone": {
         "owned": [
           "ios/Melo/SpeechPlaybackVerification.swift",
           "ios/Melo/SpeechText.swift",
           "ios/Melo/SystemSpeechInput.swift",
-          "ios/Melo/VoiceInput.swift"
+          "ios/Melo/SystemVoiceCallAudio.swift",
+          "ios/Melo/VoiceCall.swift",
+          "ios/Melo/VoiceCallController.swift",
+          "ios/Melo/VoiceInput.swift",
+          "ios/Melo/VoiceTurnRules.swift"
         ],
         "counterparts": []
       },
@@ -3290,10 +3316,13 @@
         "js": [
           "desktop-ui/streamTtsOnToolCall.test.js",
           "desktop-ui/ttsBridgeRouter.test.js",
+          "desktop-ui/voiceCall.test.js",
           "desktop-ui/voiceInput.test.js",
+          "shared/agent/voiceTurn.test.js",
           "src/desktopStore.minimaxVoiceConfig.test.js",
           "src/http/ttsRoutes.http.test.js",
           "src/http/ttsRoutes.stopSpeech.test.js",
+          "src/http/ttsRoutes.voiceCall.test.js",
           "src/services/media/agentVoice.test.js",
           "src/services/tts/nativeSayQueue.test.js",
           "src/services/tts/nativeStopEndpointsGuard.test.js",
@@ -3302,6 +3331,7 @@
         ],
         "swift": [
           "ios/Tests/SpeechTextTests.swift",
+          "ios/Tests/VoiceCallTests.swift",
           "ios/Tests/VoiceInputTests.swift"
         ]
       },
@@ -3312,7 +3342,8 @@
         "source-tests-cross-module"
       ],
       "notes": [
-        "朗读要点化：桌面 src/services/media/voiceRewrite.js 的 extractVoiceSummary，手机 SpeechText.swift 按同一规则。"
+        "朗读要点化：桌面 src/services/media/voiceRewrite.js 的 extractVoiceSummary，手机 SpeechText.swift 按同一规则。",
+        "实时语音通话（2026-11-16，方案 A，docs/realtime-voice-plan-20261116.md）：桌面壳与 iPhone 共用 ios/Melo/VoiceCall.swift（端点 / 打断 / 回声过滤）与 SystemVoiceCallAudio.swift（音频引擎）；语音轮提示、读出规则与停止词在 shared/protocol/agent-loop.json voiceTurn 节（桌面 shared/agent/voiceTurn.js，手机 VoiceTurnRules.swift，同一份夹具）。桌面由 desktop-ui/voiceCall.js 编排，iPhone 由 VoiceCallController.swift 接 ChatStore。"
       ]
     },
     "approvals": {
@@ -3773,7 +3804,7 @@
         "settings": 8,
         "sync": 1,
         "tools": 15,
-        "voice": 1
+        "voice": 2
       },
       "httpRoutes": [
         "GET /api/bootstrap ← src/server.js",
@@ -3787,6 +3818,7 @@
         "GET /shared/agent/runtimeBehavior.js ← src/server.js",
         "GET /shared/agent/runtimeMessages.js ← src/server.js",
         "GET /shared/agent/taskEvaluation.js ← src/server.js",
+        "GET /shared/agent/voiceTurn.js ← src/server.js",
         "GET /shared/channelAvailability.js ← src/server.js",
         "GET /shared/conversationTopics.js ← src/server.js",
         "GET /shared/executionBoard.js ← src/server.js",
@@ -5564,17 +5596,22 @@
         "desktop-ui/localSettings.js",
         "desktop-ui/voiceInput.js",
         "desktop-ui/launchScreen.js",
-        "desktop-ui/app.js"
+        "desktop-ui/app.js",
+        "desktop-ui/voiceCall.js"
       ],
       "to": [
-        "desktop-app/main.swift"
+        "desktop-app/main.swift",
+        "desktop-app/VoiceCallBridge.swift",
+        "ios/Melo/VoiceCall.swift",
+        "ios/Melo/SystemVoiceCallAudio.swift"
       ],
       "tests": [
         "desktop-ui/localSettings.test.js",
         "desktop-ui/localSettings.launchAtLogin.test.js",
-        "desktop-ui/launchScreen.test.js"
+        "desktop-ui/launchScreen.test.js",
+        "desktop-ui/voiceCall.test.js"
       ],
-      "note": "window.webkit.messageHandlers.meloVoice（nativeSettings、保存图片、语音、回复完成通知）由 main.swift 的 WKScriptMessageHandler 处理",
+      "note": "window.webkit.messageHandlers.meloVoice（nativeSettings、保存图片、语音、回复完成通知）由 main.swift 的 WKScriptMessageHandler 处理；实时语音通话的 call* 消息转给 VoiceCallBridge.swift（与 iPhone 共用 VoiceCall / SystemVoiceCallAudio），事件以 melo-voice-call 回到页面",
       "features": [
         "desktop-shell",
         "settings",

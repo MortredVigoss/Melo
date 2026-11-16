@@ -59,4 +59,23 @@ test('POST /api/tts/* reaches its handler through the real server dispatch', { t
   // A local-read voice route keeps working too.
   const voices = await fetch(base + '/api/tts/say-voices', { signal: AbortSignal.timeout(10000) });
   assert.equal(voices.status, 200);
+
+  // Live voice call (2026-11-16): the call routes and the shared rules module the
+  // page imports are wired into the real server, not only declared.
+  const plan = await fetch(base + '/api/voice-call/speech-plan', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: '好的，明天上午十点提醒你。' }),
+    signal: AbortSignal.timeout(10000),
+  });
+  assert.equal(plan.status, 200);
+  const planned = await plan.json();
+  assert.deepEqual(planned.sentences, ['好的，明天上午十点提醒你。']);
+  assert.equal(typeof planned.serverVoice, 'boolean');
+  const rules = await fetch(base + '/shared/agent/voiceTurn.js', { signal: AbortSignal.timeout(10000) });
+  assert.equal(rules.status, 200);
+  assert.match(rules.headers.get('content-type') || '', /javascript/);
+  assert.match(await rules.text(), /export function voiceCallSpeech/);
+  const emptySentence = await fetch(base + '/api/voice-call/speech', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}', signal: AbortSignal.timeout(10000),
+  });
+  assert.equal(emptySentence.status, 400);
 });

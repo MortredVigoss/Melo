@@ -1,6 +1,7 @@
 import { requestAllowsTool, getRequestNetworkPolicy } from '../../../../shared/agent/retrieval/requestPolicy.js';
 import { isRetiredAgentId } from '../../../shared/userAgents.js';
 import { isStandaloneGreeting } from '../../../../shared/agent/retrieval/intentRouter.js';
+import { voiceTurnInstruction } from '../../../../shared/agent/voiceTurn.js';
 import { buildSharedSearchPlan } from '../../../retrieval/sharedSearchPlan.js';
 import { resolveHostedSearchCapability } from '../../search/hostedSearchCapability.js';
 // Chat execution graph — `prepare` node (architecture B2, 2026-10-20).
@@ -86,7 +87,7 @@ const getSharedSkillIndex = createSharedSkillIndexFactory({ buildSkillIndex });
 //   3. Inline: plan-actions, optional queue-approval (early exit), then
 //      recall memory only when useful, then compose the final system prompt
 export function createPrepareNode(turn) {
-  const { _dependencies, agentId, channelContext, chat, config, connectors, context, contextBudget, createReply, embedQuery, env, home, isRemoteChannel, latestUserMessage, modelOverrides, promptDebug, signal, skills, sseEmitter, state, turnContextPlacement, workspace } = turn;
+  const { _dependencies, agentId, channelContext, chat, config, connectors, context, contextBudget, createReply, embedQuery, env, home, isRemoteChannel, latestUserMessage, modelOverrides, promptDebug, signal, skills, sseEmitter, state, turnContextPlacement, voiceTurn, workspace } = turn;
   return async function prepare() {
     // ── 1. Sync setup ──────────────────────────────────────────────────
     const modeDef = MODE_DEFS.find(mode => mode.id === chat.mode) || MODE_DEFS[0];
@@ -482,7 +483,10 @@ export function createPrepareNode(turn) {
       kind: 'chat',
       isRemoteChannel,
       intent: classification,
-    }).concat(executionHistory ? [{ id: 'execution-history', text: executionHistory, required: false, placement: 'turn', priority: 95, maxTokens: 4000 }] : []);
+    }).concat(executionHistory ? [{ id: 'execution-history', text: executionHistory, required: false, placement: 'turn', priority: 95, maxTokens: 4000 }] : [])
+      // Live voice call (2026-11-16): this turn only, beside the user's words, in the
+      // Agent's speaking style when its card sets one (shared/agent/voiceTurn.js).
+      .concat(voiceTurn ? [{ id: 'voice-turn', text: voiceTurnInstruction(latestUserMessage, { style: activeAgentProfile.voicePersonality }), required: true, placement: 'turn' }] : []);
     let promptSections = buildPromptSections();
     // Budget math (audit L4): measure what the request needs before any
     // history — required sections plus tool definitions — and shrink the

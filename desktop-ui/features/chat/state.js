@@ -46,6 +46,8 @@ function createChatState() {
       preview: '',
       error: '',
     },
+    // Live voice call (desktop-ui/voiceCall.js); the native shell owns the audio.
+    voiceCall: { sessionID: '', phase: 'idle', partial: '', muted: false, echoCancellation: true, onDevice: false, replying: false, lines: [], error: '', notice: '' },
     composerAttachments: [],
     composerAttachmentMenuOpen: false,
     composerDragActive: false,

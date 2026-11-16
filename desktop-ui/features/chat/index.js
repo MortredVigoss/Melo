@@ -20,6 +20,10 @@ import {
   handleVoiceBridgeEvent,
   stopVoiceCaptureIfNeeded,
   voiceCaptureActive,
+  handleVoiceCallBridgeEvent,
+  endVoiceCall,
+  checkVoiceCallContext,
+  setVoiceCallEndpoint,
   resetComposerForNewChatHome,
   handleCreateChat,
   handleSendMessage,
@@ -78,6 +82,12 @@ export function installChatFeature(context) {
     handleVoiceBridgeEvent,
     stopVoiceCapture: stopVoiceCaptureIfNeeded,
     voiceCaptureActive,
+    // Live voice call: 'melo-voice-call' bridge events, hang-up on page hide,
+    // the context check after page data changes, the end-of-speech wait select.
+    handleVoiceCallBridgeEvent,
+    endVoiceCall,
+    checkVoiceCallContext,
+    setVoiceCallEndpoint,
     // handleOpenNewChatHome (new-chat navigation).
     resetComposerForNewChatHome,
     // New chats (palette, projects) and sends started outside the composer

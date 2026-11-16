@@ -21,12 +21,13 @@ import { consumeImageTask, restoreImageTask } from '../../imageControls.js';
 import { createReplyDelivery, receiveReplyDelivery } from '../../replyDelivery.js';
 import { createTurnPresentation, receiveTurnPresentation } from './turnPresentation.js';
 import { createVoiceInput, voiceInputActive } from '../../voiceInput.js';
+import { createVoiceCall, voiceCallActive, VOICE_CALL_ENDPOINTS } from '../../voiceCall.js';
 import { modelPanelPosition } from '../../modelPresentation.js';
 import { isRenderableViz } from '../../viz/vizRenderer.js';
 import { collectTeamPlan } from '../../teamPanel.js';
 import { streamApi } from './api.js';
 import { renderStreamingFast, patchLiveRunSteps } from './viewThread.js';
-import { bindChatContext, chatApi, getBootstrap, setBootstrap, render, bgRender, notify, applyBootstrap, applyBootstrapPreservingDrafts, refreshBootstrap, activeChat, isOverview, leaveOverview, newChatSelection, selectNewChatAgent, allChatAgentProfiles, closeModelPicker, toolPermissions, setToolPermissions, commandPaletteOpen, voiceLanguage, handleComposerCommand, handleSpeakMessage, handleDeleteChat, stopCurrentTts, _isTtsActive, _streamTtsStart, _streamTtsPushChunk, setStreamTtsBuffer, _streamTtsOnToolCall, _streamTtsReset, _streamTtsFlush, notifyLocalCompletion, shouldSendOnEnter, promoteTextUrlsToAttachments, receiveExecutionScene, cancelLiveScene, captureThreadAnchor, restoreThreadAnchor, truncate, icon } from './context.js';
+import { bindChatContext, chatApi, getBootstrap, setBootstrap, render, bgRender, notify, applyBootstrap, applyBootstrapPreservingDrafts, refreshBootstrap, activeChat, isOverview, leaveOverview, newChatSelection, selectNewChatAgent, activeChatAgentProfile, allChatAgentProfiles, closeModelPicker, toolPermissions, setToolPermissions, commandPaletteOpen, voiceLanguage, handleComposerCommand, handleSpeakMessage, handleDeleteChat, stopCurrentTts, _isTtsActive, _streamTtsStart, _streamTtsPushChunk, setStreamTtsBuffer, _streamTtsOnToolCall, _streamTtsReset, _streamTtsFlush, notifyLocalCompletion, shouldSendOnEnter, promoteTextUrlsToAttachments, receiveExecutionScene, cancelLiveScene, captureThreadAnchor, restoreThreadAnchor, truncate, icon, voiceCallSettings } from './context.js';
 import { chatState, resetChatState } from './state.js';
 
 // Binds the narrow context and starts from fresh feature state. app.js calls
@@ -531,8 +532,62 @@ function handleVoiceBridgeEvent(detail = {}) { voiceInput.receive(detail); }
 
 function toggleVoiceInput() {
   if (voiceInputActive(chatState.voice)) { voiceInput.stop(); return; }
+  if (voiceCallActive(chatState.voiceCall)) voiceCall.end();
   stopCurrentTts();
   voiceInput.start(voiceLanguage() || currentLanguage());
+}
+
+// Live voice call (2026-11-16, desktop-ui/voiceCall.js). Dictation's context
+// rule plus the chat's own Agent: another view, project, chat or Agent hangs up.
+function voiceCallContext() {
+  const settings = getBootstrap()?.settings || {};
+  const agentId = (!isOverview() && activeChat()?.agentId) || newChatSelection().agentId;
+  return [settings.activeView, settings.selectedProjectId, settings.selectedChatId, agentId].join('|');
+}
+
+const VOICE_CALL_ENDPOINT_KEY = 'melo-voice-call-endpoint';
+export function voiceCallEndpoint() {
+  try {
+    const value = Number(localStorage.getItem(VOICE_CALL_ENDPOINT_KEY));
+    return VOICE_CALL_ENDPOINTS.includes(value) ? value : 800;
+  } catch { return 800; }
+}
+
+// Partial words change only the transcript line; anything else re-renders.
+function voiceCallOnlyPartialChanged(next, previous) {
+  return ['sessionID', 'phase', 'muted', 'replying', 'lines', 'error', 'notice', 'echoCancellation'].every(key => next[key] === previous[key]);
+}
+
+const voiceCall = createVoiceCall({
+  getContext: voiceCallContext,
+  getChatId: () => (isOverview() ? null : activeChat()?.id || null),
+  getAgentId: () => activeChatAgentProfile()?.id || '',
+  isReplying: () => chatState.sending && Boolean(chatState.streamingChatId) && chatState.streamingChatId === activeChat()?.id,
+  sendTurn: (text, observer) => handleSendMessage({ content: text, chatId: activeChat()?.id || null, voiceTurn: true, observer }),
+  sendSupplement: text => sendSupplement(chatState.streamingChatId, text, { voiceTurn: true }),
+  stopReply: () => handleStopSending(),
+  stopOtherAudio: () => { stopCurrentTts(); stopVoiceCaptureIfNeeded(); },
+  requestSpeechPlan: (body, signal) => chatApi.voiceCallSpeechPlan(body, signal),
+  requestSpeech: (body, signal) => chatApi.voiceCallSpeech(body, signal),
+  readSettings: () => ({ endpointMs: voiceCallEndpoint(), language: voiceLanguage() || currentLanguage(), ...(voiceCallSettings() || {}) }),
+  onChange: state => {
+    const partialOnly = voiceCallOnlyPartialChanged(state, chatState.voiceCall);
+    chatState.voiceCall = state;
+    const transcript = document.querySelector('.voice-call .voice-preview-body');
+    if (partialOnly && transcript && state.partial) { transcript.textContent = state.partial; return; }
+    render();
+  },
+});
+
+function handleVoiceCallBridgeEvent(detail = {}) { voiceCall.receive(detail); }
+export function endVoiceCall() { voiceCall.end(); }
+// app.js after page data changed: a different view, chat, project or Agent hangs up.
+export function checkVoiceCallContext() { voiceCall.checkContext(); }
+export function setVoiceCallEndpoint(value) {
+  const endpoint = Number(value);
+  if (!VOICE_CALL_ENDPOINTS.includes(endpoint)) return;
+  try { localStorage.setItem(VOICE_CALL_ENDPOINT_KEY, String(endpoint)); } catch {}
+  voiceCall.setEndpoint(endpoint);
 }
 
 async function handleCreateChat({
@@ -549,8 +604,8 @@ async function handleCreateChat({
 
 // A supplement for the reply running in this chat. The server adds it before the
 // next model step; if the turn has no further step it comes back and is sent next.
-async function sendSupplement(chatId, text) {
-  chatState.composer = '';
+async function sendSupplement(chatId, text, { voiceTurn = false } = {}) {
+  if (!voiceTurn) chatState.composer = '';
   try {
     const response = await chatApi.postSupplement(chatId, text);
     if (response.ok) (chatState.supplementsSent ||= []).push(text);
@@ -560,7 +615,7 @@ async function sendSupplement(chatId, text) {
   if (!chatState.sending && chatState.supplementsAfterTurn?.length) {
     const queued = chatState.supplementsAfterTurn.splice(0);
     chatState.supplementsSent = [];
-    await handleSendMessage({ chatId, content: queued.join('\n') });
+    await handleSendMessage({ chatId, content: queued.join('\n'), ...(voiceTurn || voiceCall.activeFor(chatId) ? { voiceTurn: true } : {}) });
     return;
   }
   render();
@@ -600,10 +655,15 @@ async function handleSendMessage(prepared = null) {
   const imageTask = prepared?.imageTask || consumeImageTask();
   const teamPlan = prepared?.teamPlan || null;
   let sendWasAborted = false;
+  let sendError = '';
   let sendSucceeded = false;
   const replyDelivery = createReplyDelivery();
 
   let chatId = prepared?.chatId || (fromOverview ? null : getBootstrap()?.settings?.selectedChatId || null);
+  // Live voice call: a spoken turn carries voiceTurn and keeps the typed draft;
+  // while a call listens in this chat it reads the reply itself (no read-aloud).
+  const voiceTurn = prepared?.voiceTurn === true;
+  const callObserver = prepared?.observer || voiceCall.observerFor(chatId);
   const submissionKey = targetChatId => JSON.stringify({ chatId: targetChatId, content, attachments, imageTask, teamPlan,
     mode: getBootstrap()?.settings?.activeMode,
     agentId: activeChat()?.agentId || getBootstrap()?.settings?.selectedAgentId,
@@ -617,10 +677,12 @@ async function handleSendMessage(prepared = null) {
   let previousBootstrap = cloneBootstrapState(getBootstrap());
   const turnRequestId = chatState.activeTurn.requestId;
   resetStreamingAssistant();
-  chatState.composer = '';
-  resetComposerHistoryNavigation();
-  chatState.composerAttachments = [];
-  chatState.composerAttachmentMenuOpen = false;
+  if (!voiceTurn) {
+    chatState.composer = '';
+    resetComposerHistoryNavigation();
+    chatState.composerAttachments = [];
+    chatState.composerAttachmentMenuOpen = false;
+  }
   if (chatId) {
     applyOptimisticUserMessage({
       chatId,
@@ -648,7 +710,7 @@ async function handleSendMessage(prepared = null) {
     render();
 
     // Start streaming TTS session
-    if (_isTtsActive()) await _streamTtsStart();
+    if (_isTtsActive() && !callObserver) await _streamTtsStart();
 
     const result = await streamApi('/api/chat/send/stream', {
       method: 'POST',
@@ -659,17 +721,19 @@ async function handleSendMessage(prepared = null) {
         attachments,
         ...(imageTask ? { imageTask } : {}),
         ...(teamPlan ? {teamPlan} : {}),
+        ...(voiceTurn ? { voiceTurn: true } : {}),
         mode: getBootstrap().settings.activeMode,
       },
       signal: chatState.sendAbortController.signal,
       onEvent: message => {
+        callObserver?.onEvent(message.event, message.payload);
         if (message.event === 'execution_scene') { receiveExecutionScene(message.payload?.scene); patchLiveRunSteps(message.payload?.scene?.chatId); }
         const previousPhase = chatState.activeTurn?.phase;
         receiveTurnPresentation(chatState.activeTurn, message.event, message.payload);
         if (previousPhase !== chatState.activeTurn?.phase) render();
         const delivery = receiveReplyDelivery(replyDelivery, message.event, message.payload);
-        if (delivery.speechDelta) _streamTtsPushChunk(delivery.speechDelta);
-        if (typeof delivery.finalSpeechText === 'string' && _isTtsActive()) {
+        if (delivery.speechDelta && !callObserver) _streamTtsPushChunk(delivery.speechDelta);
+        if (typeof delivery.finalSpeechText === 'string' && _isTtsActive() && !callObserver) {
           setStreamTtsBuffer(delivery.finalSpeechText);
         }
         if (message.event === 'delta') {
@@ -758,7 +822,7 @@ async function handleSendMessage(prepared = null) {
             .replace(/<tool_call>[\s\S]*$/, '')
             .trim();
           // Discard intermediate TTS text ("我正在搜索...")
-          _streamTtsOnToolCall();
+          if (!callObserver) _streamTtsOnToolCall();
           // Mark as running
           const calls = message.payload?.calls || [];
           for (const c of calls) {
@@ -810,6 +874,7 @@ async function handleSendMessage(prepared = null) {
       await refreshBootstrap();
     }
   } catch (error) {
+    sendError = error?.message || '';
     if (isAbortError(error)) {
       sendWasAborted = true;
       // Bug audit U4: no more scene events arrive after Stop — finish the
@@ -829,8 +894,11 @@ async function handleSendMessage(prepared = null) {
         setBootstrap(previousBootstrap);
       }
     }
-    chatState.composer = content;
-    chatState.composerAttachments = attachments;
+    // A spoken turn that failed stays in the call panel; the typed draft is not replaced.
+    if (!voiceTurn) {
+      chatState.composer = content;
+      chatState.composerAttachments = attachments;
+    }
     if (!prepared) chatState.composerRetry = { requestId: turnRequestId, chatId, key: submissionKey(chatId),
       interrupted: error.code === 'REQUEST_INTERRUPTED' };
     restoreImageTask(imageTask);
@@ -845,7 +913,7 @@ async function handleSendMessage(prepared = null) {
     chatState.supplementsSent = [];
     chatState.supplementsAfterTurn = [];
     if (returned.length) chatState.composer = [chatState.composer.trim(), ...returned.map(text => t('补充：{text}', { text }))].filter(Boolean).join('\n');
-    if (followUp.length && chatId) setTimeout(() => handleSendMessage({ chatId, content: followUp.join('\n') }), 0);
+    if (followUp.length && chatId) setTimeout(() => handleSendMessage({ chatId, content: followUp.join('\n'), ...(voiceTurn || voiceCall.activeFor(chatId) ? { voiceTurn: true } : {}) }), 0);
     chatState.activeTurn = null;
     chatState.sendAbortController = null;
     chatState.thinkingSince = 0;
@@ -861,13 +929,14 @@ async function handleSendMessage(prepared = null) {
       try { await chatApi.clearSpeechQueue(); } catch {}
       try { await chatApi.stopSpeech(); } catch {}
       _streamTtsReset();
-    } else if (_isTtsActive()) {
+    } else if (_isTtsActive() && !callObserver) {
       await _streamTtsFlush(); // sends accumulated text / remaining tail to TTS
     } else {
       _streamTtsReset();
     }
     resetStreamingAssistant();
     render();
+    callObserver?.onSettled({ ok: sendSucceeded, aborted: sendWasAborted, error: sendError });
   }
 }
 
@@ -1105,6 +1174,16 @@ export const chatActions = {
   },
   'toggle-voice-input': () => {
     toggleVoiceInput();
+  },
+  'toggle-voice-call': () => {
+    if (voiceCallActive(chatState.voiceCall)) voiceCall.end();
+    else voiceCall.start();
+  },
+  'mute-voice-call': () => {
+    voiceCall.setMuted(!chatState.voiceCall.muted);
+  },
+  'interrupt-voice-call': () => {
+    voiceCall.interrupt();
   },
   'speak-message': async ({ trigger }) => {
     await handleSpeakMessage(trigger);
@@ -1603,4 +1682,4 @@ export function isSending() {
 // Tests and diagnostics.
 export const getState = () => chatState;
 
-export { prepareThreadNavigation, slashPaletteMatches, isPdfAttachment, attachmentIcon, attachmentLabel, stopVoiceCaptureIfNeeded, handleVoiceBridgeEvent, handleCreateChat, handleSendMessage, _positionAgentDropdown, updateThreadAutoFollow, syncThreadViewport, retryMissingImages };
+export { prepareThreadNavigation, slashPaletteMatches, isPdfAttachment, attachmentIcon, attachmentLabel, stopVoiceCaptureIfNeeded, handleVoiceBridgeEvent, handleVoiceCallBridgeEvent, handleCreateChat, handleSendMessage, _positionAgentDropdown, updateThreadAutoFollow, syncThreadViewport, retryMissingImages };
