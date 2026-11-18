@@ -61,6 +61,7 @@ struct Harness {
         call.onBargeIn = { box.bargeIns += 1 }
         call.onPlaybackIdle = { box.idles += 1 }
         call.onClipFailed = { id, _ in box.failed.append(id) }
+        call.isStopPhrase = VoiceTurnRules.isStopPhrase
         call.start(id: "call", locale: "zh-CN")
         audio.send(.ready(echoCancellation: echoCancellation, onDevice: true))
     }
@@ -71,6 +72,7 @@ struct Harness {
     static func main() {
         endpointing()
         bargeInAndEcho()
+        audibleClipsAndMetrics()
         halfDuplexAndMute()
         failuresAndHangUp()
         energyDetector()
@@ -169,6 +171,52 @@ struct Harness {
         h.call.speak(h.clip("f", "第三句"))
         h.audio.send(.playbackFailed("f", reason: "decode"))
         check(h.box.failed == ["f"] && h.idles == 3, "failed clips are reported and end playback")
+    }
+
+    static func audibleClipsAndMetrics() {
+        for words in ["停", "明天下雨"] {
+            let h = Harness()
+            h.call.speak(h.clip("a", "今天是晴天")); h.call.speak(h.clip("b", "明天下雨"))
+            h.audio.send(.playbackStarted("a"))
+            h.audio.send(.transcript(words, final: true))
+            check(h.utterances == [words] && h.bargeIns == 1, "a confirmed stop and unplayed words reach the user turn")
+            h.audio.send(.playbackStarted("b")); h.audio.send(.playbackFinished("b"))
+            check(h.call.state.phase == "listening" && h.idles == 0, "late acknowledgements do nothing")
+            h.audio.send(.transcript("明天下雨", final: true))
+            check(h.utterances.count == 2, "a dropped queued clip leaves no echo tail")
+        }
+        let delayed = Harness()
+        var endpointTimes: [Int] = []
+        delayed.call.onMetric = { _, stage, ms in if stage == "voiceEndToCommit" { endpointTimes.append(ms) } }
+        for index in 1...2 {
+            delayed.audio.send(.voiceActivity(true)); delayed.audio.send(.voiceActivity(false))
+            delayed.clock.advance(Double(index) / 10)
+            delayed.audio.send(.transcript("测试", final: true))
+        }
+        delayed.clock.advance(0.1)
+        delayed.call.mark("voiceTurn", turn: "late", utterance: 1)
+        check(endpointTimes == [100], "a delayed bridge measures the matching utterance")
+        delayed.audio.send(.ready(echoCancellation: false, onDevice: false))
+        check(!delayed.call.state.echoCancellation && delayed.call.state.noticeCode == "half-duplex", "a rebuilt route updates duplex status")
+        let h = Harness()
+        var metrics: [(String, Int)] = []
+        h.call.onMetric = { _, stage, ms in metrics.append((stage, ms)) }
+        h.call.mark("typedTurn", turn: "r")
+        var first = h.clip("a", "记得停一下")
+        first.answerTurn = "r"
+        h.call.speak(first)
+        h.call.speak(h.clip("b", "第二句")); h.call.speak(h.clip("c", "第三句"))
+        check(h.audio.played.map(\.id) == ["a", "b"], "only two clips submitted to player")
+        h.clock.advance(0.125)
+        h.audio.send(.playbackStarted("a"))
+        h.audio.send(.transcript("停", final: true))
+        check(h.utterances.isEmpty && h.call.isSpeaking, "a stop word actually being read remains echo")
+        h.audio.send(.playbackFinished("a"))
+        check(h.audio.played.map(\.id) == ["a", "b", "c"], "completion opens one slot")
+        check(metrics.contains { $0 == ("firstBuffer", 125) }, "first answer buffer uses the monotonic clock")
+        h.call.stopSpeaking()
+        h.audio.send(.transcript("停", final: true))
+        check(h.utterances.isEmpty, "short echo tail also suppressed")
     }
 
     static func halfDuplexAndMute() {

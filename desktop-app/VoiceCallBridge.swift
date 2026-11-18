@@ -22,19 +22,22 @@ final class VoiceCallBridge {
         switch action {
         case "callEnd":
             end()
+        case "callMark":
+            if let turn = payload["turn"] as? String, let stage = payload["stage"] as? String,
+               ["voiceTurn", "typedTurn", "firstText", "finalAnswer"].contains(stage) { call.mark(stage, turn: turn, utterance: payload["utterance"] as? Int) }
         case "callPlay":
             let id = payload["id"] as? String ?? ""
             guard !id.isEmpty, let base64 = payload["data"] as? String, let data = Data(base64Encoded: base64), !data.isEmpty else {
                 emit(sessionID, ["type": "clipFailed", "id": id, "reason": "这句语音的数据无效"]); return
             }
             call.speak(VoiceCallClip(id: id, text: payload["text"] as? String ?? "",
-                                     source: .audio(data, mimeType: payload["mimeType"] as? String ?? "audio/mpeg")))
+                                     source: .audio(data, mimeType: payload["mimeType"] as? String ?? "audio/mpeg"), answerTurn: payload["answerTurn"] as? String))
         case "callSpeak":
             let id = payload["id"] as? String ?? "", text = payload["text"] as? String ?? ""
             guard !id.isEmpty, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 emit(sessionID, ["type": "clipFailed", "id": id, "reason": "没有要朗读的文字"]); return
             }
-            call.speak(VoiceCallClip(id: id, text: text, source: .speech(voice: payload["voice"] as? String, language: payload["language"] as? String)))
+            call.speak(VoiceCallClip(id: id, text: text, source: .speech(voice: payload["voice"] as? String, language: payload["language"] as? String), answerTurn: payload["answerTurn"] as? String))
         case "callStopPlayback":
             call.stopSpeaking()
         case "callInterrupt":
@@ -59,6 +62,9 @@ final class VoiceCallBridge {
         end()
         guard let id = payload["sessionID"] as? String, !id.isEmpty else { return }
         let call = VoiceCall(audio: SystemVoiceCallAudio(), timing: Self.timing(payload))
+        let stopWords = Set((payload["stopPhrases"] as? [String] ?? []).map { String(VoiceCallText.normalized($0)) })
+        call.isStopPhrase = { stopWords.contains(String(VoiceCallText.normalized($0))) }
+        call.onMetric = SystemVoiceCallAudio.recordTiming
         sessionID = id
         call.onUpdate = { [weak self, weak call] state in
             guard let self else { return }
@@ -67,7 +73,10 @@ final class VoiceCallBridge {
                            "error": state.error, "notice": state.noticeCode])
             if ["ended", "failed"].contains(state.phase), let call, self.call === call { self.call = nil }
         }
-        call.onUtterance = { [weak self] text in self?.emit(id, ["type": "utterance", "text": text]) }
+        call.onUtterance = { [weak self, weak call] text in
+            guard let call else { return }
+            self?.emit(id, ["type": "utterance", "text": text, "utteranceID": call.utteranceNumber])
+        }
         call.onBargeIn = { [weak self] in self?.emit(id, ["type": "bargeIn"]) }
         call.onPlaybackIdle = { [weak self] in self?.emit(id, ["type": "playbackIdle"]) }
         call.onClipFinished = { [weak self] clip in self?.emit(id, ["type": "clipFinished", "id": clip]) }

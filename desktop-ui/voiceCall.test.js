@@ -60,6 +60,18 @@ function started(options) {
 
 const byAction = (posted, action) => posted.filter(message => message.action === action);
 
+function finishClip(f, clip) { f.native({ type: 'clipFinished', id: clip.id }); }
+
+async function finishSentences(f, count) {
+  for (let i = 0; i < count; i += 1) {
+    await flush();
+    const clip = f.posted.filter(item => ['callSpeak', 'callPlay'].includes(item.action)).at(-1);
+    assert.ok(clip);
+    finishClip(f, clip);
+  }
+}
+
+
 test('start opens the native call with the contract timings and the chosen end-of-speech wait', () => {
   const f = fixture();
   assert.equal(voiceCallSupported({}), false);
@@ -122,8 +134,13 @@ test('an utterance becomes a voice turn; tools, approvals and the final reply ar
   assert.deepEqual(phrases, [voiceCallPhrase('tools', 'zh'), voiceCallPhrase('approval', 'zh')], 'each placeholder once');
   observer.onEvent('reply_text', { text: '明天晴。|最高十八度。|适合出门。', final: true });
   await flush(); await flush(); await flush();
+  const firstAnswer = f.posted.findIndex(message => message.action === 'callPlay');
+  const lastPrompt = f.posted.findLastIndex(message => message.action === 'callSpeak');
+  assert.ok(f.posted.slice(lastPrompt + 1, firstAnswer).some(message => message.action === 'callStopPlayback'), 'final answer supersedes progress audio');
   assert.equal(f.plans.length, 1);
   assert.deepEqual(f.plans[0].body, { text: '明天晴。|最高十八度。|适合出门。', agentId: 'agent-a' }, 'the replying Agent voices the reply');
+  await finishSentences(f, 2);
+  await flush();
   const plays = byAction(f.posted, 'callPlay');
   assert.deepEqual(plays.map(message => message.text), ['明天晴。', '最高十八度。', '适合出门。'], 'clips reach the native queue in order');
   assert.deepEqual(plays.map(message => Buffer.from(message.data, 'base64').toString()), ['明天晴。', '最高十八度。', '适合出门。']);
@@ -147,7 +164,16 @@ test('synthesis runs at most two sentences ahead of playback', async () => {
   f.turns[0].observer.onEvent('reply_text', { text: '一。|二。|三。|四。', final: true });
   await flush(); await flush();
   assert.equal(releases.length, 2, 'two requests before the first answer');
-  while (releases.length) { releases.shift()(); await flush(); await flush(); }
+  releases[1](); await flush();
+  assert.equal(byAction(f.posted, 'callPlay').length, 0, 'slow first sentence keeps order');
+  releases[0](); await flush();
+  assert.equal(releases.length, 2, 'fast synthesis cannot run ahead of slow playback');
+  for (let index = 0; index < 3; index += 1) {
+    finishClip(f, byAction(f.posted, 'callPlay').at(-1));
+    await flush();
+    if (releases[index + 2]) releases[index + 2]();
+    await flush();
+  }
   assert.ok(peak <= 2, `peak ${peak}`);
   assert.deepEqual(byAction(f.posted, 'callPlay').map(message => message.text), ['一。', '二。', '三。', '四。']);
 });
@@ -198,9 +224,12 @@ test('without a server voice, or with the macOS engine, the system voice reads e
     const f = started(options);
     f.native({ type: 'utterance', text: '你好' });
     await flush();
-    f.turns[0].observer.onEvent('reply_text', { text: '你好呀。|有什么事？', final: true });
+    f.turns[0].observer.onEvent('reply_text', { text: options.engine === 'macos' ? '你好呀。有什么事？' : '你好呀。|有什么事？', final: true });
     await flush(); await flush();
     assert.equal(f.requests.length, 0, 'no server synthesis');
+    await finishSentences(f, 1);
+    await flush();
+    assert.equal(f.plans.length, options.engine === 'macos' ? 0 : 1);
     const spoken = byAction(f.posted, 'callSpeak').map(message => message.text);
     assert.deepEqual(spoken, ['你好呀。', '有什么事？']);
     if (options.engine === 'macos') assert.ok(byAction(f.posted, 'callSpeak').every(message => message.voice === 'Tingting'));
@@ -214,12 +243,16 @@ test('a sentence the server voice cannot read falls back to the system voice ins
   await flush();
   f.turns[0].observer.onEvent('reply_text', { text: 'A。|B。|C。', final: true });
   for (let i = 0; i < 6; i += 1) await flush();
-  assert.deepEqual(byAction(f.posted, 'callPlay').map(message => message.text), ['A。', 'C。']);
-  assert.deepEqual(byAction(f.posted, 'callSpeak').map(message => message.text), ['B。']);
-  // A clip the engine could not decode is read by the system voice too.
   const played = byAction(f.posted, 'callPlay')[0];
   f.native({ type: 'clipFailed', id: played.id, reason: '这句语音无法解码' });
-  assert.equal(byAction(f.posted, 'callSpeak').at(-1).text, 'A。');
+  await flush();
+  assert.deepEqual(byAction(f.posted, 'callSpeak').map(message => message.text), ['A。']);
+  finishClip(f, played); // old completion cannot release the fallback
+  await flush();
+  assert.equal(attempt, 2);
+  await finishSentences(f, 2);
+  await flush();
+  assert.deepEqual(f.posted.filter(item => ['callPlay', 'callSpeak'].includes(item.action)).map(item => item.text), ['A。', 'A。', 'B。', 'C。']);
 });
 
 test('a reply that could not be planned is explained once; the next turn clears the note', async () => {
@@ -372,7 +405,7 @@ test('a call started without a chat: the first sentence creates it, the call mov
     // A native event arriving in that moment does not hang up either.
     f.native({ type: 'state', phase: 'listening', echoCancellation: true });
     created.push(voiceCallActive(f.call.state));
-    f.call.adoptChat('new-chat');
+    f.call.adoptChat('new-chat', observer);
     observer.onSettled({ ok: true });
     resolve();
   }) });
@@ -385,7 +418,9 @@ test('a call started without a chat: the first sentence creates it, the call mov
   assert.deepEqual(created, [true, true], 'creating the chat neither hangs up nor ends on a native event');
   assert.equal(byAction(f.posted, 'callEnd').length, 0);
   assert.equal(f.call.activeFor('new-chat'), true, 'the call now belongs to the chat it created');
-  assert.ok(f.call.observerFor('new-chat'), 'typed replies there are read by the call');
+  const typed = f.call.observerFor('new-chat');
+  assert.ok(typed, 'typed replies there are read by the call');
+  typed.onSettled({ ok: true });
   f.native({ type: 'utterance', text: '再说一遍' });
   await flush();
   assert.equal(f.turns[1].chatId, 'new-chat', 'later sentences go to that chat');
@@ -429,7 +464,7 @@ test('a second sentence while the chat is being created does not take over or en
   let finishFirst;
   f = fixture({ chatId: null, sendTurn: (text, observer, chatId) => new Promise(resolve => {
     f.turns.push({ text, observer, chatId });
-    if (f.turns.length === 1) { finishFirst = () => { f.call.adoptChat('new-chat'); observer.onSettled({ ok: true }); resolve(); }; return; }
+    if (f.turns.length === 1) { finishFirst = () => { f.call.adoptChat('new-chat', observer); observer.onSettled({ ok: true }); resolve(); }; return; }
     resolve(); // refused while the first send runs: never settled
   }) });
   f.call.start();
@@ -440,7 +475,7 @@ test('a second sentence while the chat is being created does not take over or en
   f.setChatId('new-chat');
   f.native({ type: 'utterance', text: '第二句' });
   await flush(); await flush();
-  assert.equal(f.turns.length, 2);
+  assert.equal(f.turns.length, 1, 'creation is owned by the first sentence');
   assert.match(f.call.state.error, /没有发出去/, 'the refused second sentence is explained');
   assert.equal(voiceCallActive(f.call.state), true, 'the refused sentence did not end the creation');
   finishFirst();
@@ -465,4 +500,64 @@ test('the composer toggle: a labelled pill to start, a breathing "Hang up" while
   assert.match(live, /id="stop"/);
   assert.match(live, /aria-label="挂断语音通话"/);
   assert.match(renderVoiceCallToggle({ phase: 'idle' }, escapeHtml, { disabled: true }), /disabled/, 'off while dictation holds the microphone');
+});
+
+test('same-chat redial isolates late stream events, settlement and terminal native states', async () => {
+  const f = started();
+  const old = f.call.observerFor('c1');
+  f.call.end();
+  f.native({ type: 'state', phase: 'listening' });
+  assert.equal(f.call.state.phase, 'ended');
+  f.call.start();
+  f.native({ type: 'utterance', text: '新问题' });
+  for (const event of ['tool_permission', 'tool_calls_start', 'reply_text']) {
+    old.onEvent(event, { final: true, text: '上次通话' });
+  }
+  old.onSettled({ error: '旧失败' });
+  await flush();
+  assert.equal(f.call.state.replying, true);
+  assert.equal(f.call.state.error, '');
+  assert.equal(f.plans.length + f.requests.length, 0);
+  assert.equal(byAction(f.posted, 'callSpeak').length, 0);
+});
+
+test('superseded or settled observers cannot deliver; drafts and duplicate finals do not speak', async () => {
+  const f = started({ engine: 'macos' });
+  const old = f.call.observerFor('c1');
+  const active = f.call.observerFor('c1');
+  old.onEvent('reply_text', { final: true, text: '旧回答。' });
+  old.onSettled({ error: 'old' });
+  active.onEvent('reply_text', { text: '候选句子' });
+  for (let i = 0; i < 2; i++) active.onEvent('reply_text', { final: true, text: '已确定。' });
+  active.onSettled({ ok: true });
+  active.onEvent('tool_permission');
+  await flush();
+  assert.deepEqual(byAction(f.posted, 'callSpeak').map(c => c.text), ['已确定。']);
+  assert.equal(f.requests.length + f.plans.length, 0);
+  assert.equal(f.call.state.error, '');
+});
+
+test('hanging up while waiting for playback does not prepare another sentence', async () => {
+  const f = started();
+  f.call.observerFor('c1').onEvent('reply_text', { final: true, text: 'A|B|C|D' });
+  await flush();
+  const [first] = byAction(f.posted, 'callPlay');
+  assert.equal(f.requests.length, 2);
+  f.call.end();
+  f.call.start();
+  finishClip(f, first);
+  await flush();
+  assert.equal(f.requests.length, 2);
+  assert.equal(byAction(f.posted, 'callPlay').length, 1);
+});
+
+test('a second utterance before streaming begins preserves the first observer and its answer', async () => {
+  const f = started();
+  f.native({ type: 'utterance', text: '第一问' });
+  f.native({ type: 'utterance', text: '第二问' });
+  assert.equal(f.turns.length, 1);
+  assert.match(f.call.state.error, /没有发出去/);
+  f.turns[0].observer.onEvent('reply_text', { final: true, text: '第一问的回答' });
+  await flush();
+  assert.deepEqual(byAction(f.posted, 'callPlay').map(clip => clip.text), ['第一问的回答']);
 });

@@ -4,18 +4,17 @@
 // (ios/Melo/VoiceCall.swift through desktop-app/VoiceCallBridge.swift, events
 // arrive as `melo-voice-call`). This module runs the conversation: a finished
 // utterance becomes a voice turn, a supplement to the running reply or a stop;
-// a finished reply is planned by the server (/api/voice-call/speech-plan) and
-// read sentence by sentence in the Agent's voice (/api/voice-call/speech →
+// a finished reply is planned locally for explicit system voices or by the server
+// (/api/voice-call/speech-plan) and read sentence by sentence in the Agent's voice (/api/voice-call/speech →
 // callPlay) or by the system voice (callSpeak). Approvals stay on screen.
 import { t, ui } from './i18n.js';
-import { voiceCallPhrase, voiceTurnLanguage, isVoiceStopPhrase, voiceCallTiming } from '../shared/agent/voiceTurn.js';
+import { VOICE_TURN, voiceCallSpeech, voiceCallPhrase, voiceTurnLanguage, isVoiceStopPhrase, voiceCallTiming } from '../shared/agent/voiceTurn.js';
 
 const LIVE_PHASES = ['starting', 'listening', 'hearing', 'speaking'];
 export const voiceCallActive = state => LIVE_PHASES.includes(state?.phase);
 export const voiceCallSupported = (env = globalThis) => Boolean(env.webkit?.messageHandlers?.meloVoice);
 export const VOICE_CALL_ENDPOINTS = Object.freeze([600, 800, 1200]);
 const LINE_LIMIT = 6;
-const PREFETCH = 2;
 // The native engine reports its first state at once; silence means a shell built before calls existed.
 const START_TIMEOUT_MS = 5000;
 
@@ -42,15 +41,15 @@ export function createVoiceCall({ env = globalThis, getContext, getChatId, getAg
   let state = idleState();
   let owner = '';
   let chatId = null;
-  let speech = null; // { controller, token }
-  let speechToken = 0;
+  let speech = null;
   let clipNumber = 0;
   let startTimer = null;
   let answered = false;
   // The turn that is creating the call's chat (a call started without one). Until adoptChat()
   // or the end of that turn, the page change it causes is expected and does not hang up.
   let creating = null;
-  const clipText = new Map();
+  let activeTurn = null;
+  let turnNumber = 0;
   const setTimer = (work, ms) => (env.setTimeout || globalThis.setTimeout)(work, ms);
   const clearTimer = () => { if (startTimer !== null) (env.clearTimeout || globalThis.clearTimeout)(startTimer); startTimer = null; };
   const bridge = () => env.webkit?.messageHandlers?.meloVoice;
@@ -62,17 +61,15 @@ export function createVoiceCall({ env = globalThis, getContext, getChatId, getAg
 
   /** Drops the sentences being synthesized or waiting; the native queue is stopped separately. */
   function abortSpeech() {
-    speechToken += 1;
     speech?.controller.abort();
+    speech?.finishClip?.();
     speech = null;
-    clipText.clear();
   }
 
   function sayPhrase(key, language) {
     if (!voiceCallActive(state)) return;
     const text = voiceCallPhrase(key, language);
     const id = nextClipId();
-    clipText.set(id, text);
     post({ action: 'callSpeak', sessionID: state.sessionID, id, text });
   }
 
@@ -87,12 +84,13 @@ export function createVoiceCall({ env = globalThis, getContext, getChatId, getAg
     chatId = getChatId();
     const settings = readSettings() || {};
     const id = env.crypto.randomUUID();
+    activeTurn = null;
     clipNumber = 0;
     answered = false;
     creating = null;
     state = { ...idleState(), sessionID: id, phase: 'starting' };
     onChange(state);
-    post({ action: 'callStart', sessionID: id, language: settings.language || 'system', ...voiceCallTiming({ endpointMs: settings.endpointMs }) });
+    post({ action: 'callStart', sessionID: id, language: settings.language || 'system', stopPhrases: VOICE_TURN.stopPhrases, ...voiceCallTiming({ endpointMs: settings.endpointMs }) });
     clearTimer();
     startTimer = setTimer(() => {
       startTimer = null;
@@ -136,70 +134,104 @@ export function createVoiceCall({ env = globalThis, getContext, getChatId, getAg
 
   /** The first turn of a call started without a chat created this one: the call moves into it.
    *  If the page is not showing that chat any more, the call hangs up. */
-  function adoptChat(id) {
-    if (!creating) return;
+  function adoptChat(id, watcher) {
+    if (!creating || creating !== watcher || activeTurn !== watcher.turn) return;
     creating = null;
     if (!voiceCallActive(state)) return;
     if (id && chatId === null && getChatId() === id) { chatId = id; owner = getContext(); return; }
     checkContext();
   }
 
-  /** Reads a finished reply: the server plans the sentences; each is synthesized ahead of playback. */
-  async function speakReply(text) {
-    if (!voiceCallActive(state) || !String(text || '').trim()) return;
+  /** Keep one sentence playing and at most one prepared. Only a native acknowledgement
+   * releases the next slot, including when a server clip needs a system-voice retry. */
+  async function speakReply(text, turn) {
+    if (!voiceCallActive(state) || !text.trim()) return;
     abortSpeech();
-    const controller = new AbortController();
-    const token = speechToken;
-    speech = { controller, token };
-    const current = () => speechToken === token && voiceCallActive(state);
+    if (turn.toolSpoken || turn.promptSpoken) post({ action: 'callStopPlayback', sessionID: state.sessionID });
+    const job = { controller: new AbortController(), id: '', finishClip: null };
+    const sessionID = state.sessionID;
+    const current = () => speech === job && state.sessionID === sessionID && voiceCallActive(state);
+    speech = job;
     const agentId = getAgentId();
     const settings = readSettings() || {};
+    const system = ['macos', 'browser'].includes(settings.engine);
+    const voice = settings.engine === 'macos' ? settings.systemVoice || '' : '';
     let plan;
     try {
-      plan = await requestSpeechPlan({ text, agentId }, controller.signal);
+      plan = system ? voiceCallSpeech(text) : await requestSpeechPlan({ text, agentId }, job.controller.signal);
     } catch {
       if (current()) emit({ notice: 'speech-failed' });
       return;
     }
-    if (!current() || !Array.isArray(plan?.sentences) || !plan.sentences.length) return;
+    if (!current() || !plan?.sentences?.length) return;
     remember({ user: false, text: plan.sentences.join(' ') });
-    const serverVoice = plan.serverVoice === true && !['macos', 'browser'].includes(settings.engine);
-    const systemVoice = settings.engine === 'macos' ? settings.systemVoice || '' : '';
-    const speakNatively = (id, sentence) => post({ action: 'callSpeak', sessionID: state.sessionID, id, text: sentence, ...(systemVoice ? { voice: systemVoice } : {}) });
-    const synthesize = sentence => Promise.resolve().then(() => requestSpeech({ text: sentence, agentId }, controller.signal))
-      .then(result => (result?.ok && result.audio ? result : null), () => null);
-    // Up to PREFETCH sentences are synthesized at once; clips are handed over in order.
-    const pending = [];
-    const ensure = index => { if (index < plan.sentences.length && !pending[index]) pending[index] = synthesize(plan.sentences[index]); };
-    for (let index = 0; index < plan.sentences.length; index += 1) {
-      const sentence = plan.sentences[index];
-      const id = nextClipId();
-      clipText.set(id, sentence);
-      if (!serverVoice) { speakNatively(id, sentence); continue; }
-      for (let ahead = 0; ahead < PREFETCH; ahead += 1) ensure(index + ahead);
-      const audio = await pending[index];
-      if (!current()) return;
-      // No server voice for this sentence (provider error): the system voice reads it instead of skipping it.
-      if (audio) post({ action: 'callPlay', sessionID: state.sessionID, id, data: audio.audio, mimeType: audio.mimeType, text: sentence });
-      else speakNatively(id, sentence);
+    async function prepare(sentence) {
+      if (!plan.serverVoice) return null;
+      try {
+        const result = await requestSpeech({ text: sentence, agentId }, job.controller.signal);
+        return result?.ok && result.audio ? result : null;
+      } catch { return null; }
     }
+    function play(sentence, audio, index) {
+      return new Promise(resolve => {
+        job.id = nextClipId();
+        job.finishClip = resolve;
+        const clip = { sessionID, id: job.id, text: sentence, ...(index === 0 ? { answerTurn: turn.id } : {}) };
+        if (audio) post({ ...clip, action: 'callPlay', data: audio.audio, mimeType: audio.mimeType });
+        else post({ ...clip, action: 'callSpeak', ...(voice ? { voice } : {}) });
+      });
+    }
+    const sentences = plan.sentences;
+    let prepared = prepare(sentences[0]);
+    for (let index = 0; index < sentences.length; index += 1) {
+      const next = index + 1 < sentences.length ? prepare(sentences[index + 1]) : null;
+      const audio = await prepared;
+      if (!current()) return;
+      const result = await play(sentences[index], audio, index);
+      if (!current()) return;
+      if (audio && result?.type === 'clipFailed' && /解码|数据无效/.test(result.reason || '')) {
+        const fallback = await play(sentences[index], null, index);
+        if (!current()) return;
+        if (fallback?.type === 'clipFailed') emit({ notice: 'speech-failed' });
+      } else if (result?.type === 'clipFailed') emit({ notice: 'speech-failed' });
+      prepared = next;
+    }
+    if (current()) speech = null;
   }
 
   /** What the call does with the events of a reply it is listening to. */
-  function observer() {
-    const turn = { toolSpoken: false, promptSpoken: false, language: 'zh', spoke: false, settled: false };
+  function observer(spoken = false, utterance) {
+    const sessionID = state.sessionID;
+    const turn = { id: String(++turnNumber), screenText: false, toolSpoken: false, promptSpoken: false, language: 'zh', spoke: false, settled: false };
+    if (speech || (!spoken && activeTurn)) {
+      abortSpeech();
+      post({ action: 'callStopPlayback', sessionID });
+    }
+    activeTurn = turn;
+    if (!spoken) emit({ replying: true });
+    const ownsTurn = () => {
+      if (activeTurn !== turn || state.sessionID !== sessionID || !voiceCallActive(state)) return false;
+      if (!creating && owner !== getContext()) { end(); return false; }
+      return true;
+    };
+    const mark = stage => post({ action: 'callMark', sessionID, turn: turn.id, stage, ...(utterance ? { utterance } : {}) });
+    mark(spoken ? 'voiceTurn' : 'typedTurn');
     return {
       turn,
       onEvent(event, payload = {}) {
-        if (!voiceCallActive(state)) return;
+        if (!ownsTurn() || turn.settled) return;
+        if (!turn.screenText && (event === 'delta' || event === 'reply_text') && (payload.delta || payload.text)) {
+          turn.screenText = true;
+          mark('firstText');
+        }
         if (event === 'tool_calls_start' && !turn.toolSpoken && !turn.spoke) { turn.toolSpoken = true; sayPhrase('tools', turn.language); }
         else if ((event === 'tool_permission' || event === 'capability_request') && !turn.promptSpoken) { turn.promptSpoken = true; sayPhrase('approval', turn.language); }
-        else if (event === 'reply_text' && payload.final === true) { turn.spoke = true; speakReply(String(payload.text || '')); }
+        else if (event === 'reply_text' && payload.final === true && !turn.spoke && payload.text?.trim()) { turn.spoke = true; mark('finalAnswer'); speakReply(payload.text, turn); }
       },
       onSettled({ ok = false, aborted = false, error = '' } = {}) {
         if (turn.settled) return;
         turn.settled = true;
-        if (!state.sessionID) return;
+        if (!ownsTurn()) return;
         emit({ replying: false, ...(ok || aborted ? {} : { error: String(error || '') }) });
         if (!ok && !aborted && voiceCallActive(state)) sayPhrase('failed', turn.language);
       },
@@ -216,25 +248,28 @@ export function createVoiceCall({ env = globalThis, getContext, getChatId, getAg
     return activeFor(id) ? observer() : null;
   }
 
-  async function handleUtterance(text) {
+  async function handleUtterance(text, utterance) {
     const language = voiceTurnLanguage(text);
     if (isVoiceStopPhrase(text)) {
+      activeTurn = null;
+      abortSpeech();
+      post({ action: 'callStopPlayback', sessionID: state.sessionID });
+      emit({ replying: false });
       if (isReplying()) { stopReply(); sayPhrase('stopped', language); }
-      else { abortSpeech(); post({ action: 'callStopPlayback', sessionID: state.sessionID }); }
       return;
     }
     remember({ user: true, text });
     if (isReplying()) { await sendSupplement(text); return; }
+    if (creating || state.replying) { emit({ error: t('这句话没有发出去，请再说一次。') }); return; }
     // A new question replaces whatever is left of the previous answer.
     abortSpeech();
     post({ action: 'callStopPlayback', sessionID: state.sessionID });
-    const watcher = observer();
+    const watcher = observer(true, utterance);
     watcher.turn.language = language;
     // A new turn: last answer's "could not be read" note no longer applies.
     emit({ replying: true, error: '', ...(state.notice === 'speech-failed' ? { notice: '' } : {}) });
     // A call without a chat yet: this turn creates it (a later sentence during creation does not).
-    const token = {};
-    if (chatId === null && !creating) creating = token;
+    if (chatId === null) creating = watcher;
     try {
       await sendTurn(text, watcher, chatId);
     } catch (error) {
@@ -243,11 +278,11 @@ export function createVoiceCall({ env = globalThis, getContext, getChatId, getAg
     // The send was refused before it started (another reply, an Agent switch): nothing will settle it.
     if (!watcher.turn.settled) watcher.onSettled({ ok: false, error: t('这句话没有发出去，请再说一次。') });
     // No chat was adopted (the send was refused or creating the chat failed): look at the page again.
-    if (creating === token) { creating = null; checkContext(); }
+    if (creating === watcher) { creating = null; checkContext(); }
   }
 
   function receive(detail = {}) {
-    if (!detail.sessionID || detail.sessionID !== state.sessionID) return;
+    if (!detail.sessionID || detail.sessionID !== state.sessionID || !voiceCallActive(state)) return;
     answered = true;
     clearTimer();
     if (voiceCallActive(state) && !creating && owner !== getContext()) { end(); return; }
@@ -256,29 +291,22 @@ export function createVoiceCall({ env = globalThis, getContext, getChatId, getAg
         const phase = String(detail.phase || state.phase);
         if (['ended', 'failed'].includes(phase)) abortSpeech();
         emit({ phase, partial: String(detail.partial || ''), muted: Boolean(detail.muted), echoCancellation: detail.echoCancellation !== false,
-          onDevice: Boolean(detail.onDevice), notice: String(detail.notice || state.notice || ''), ...(detail.error ? { error: String(detail.error) } : {}) });
+          onDevice: Boolean(detail.onDevice), notice: String(detail.notice || (state.notice === 'speech-failed' ? state.notice : '')), ...(detail.error ? { error: String(detail.error) } : {}) });
         if (['ended', 'failed'].includes(phase)) emit({ replying: false });
         break;
       }
       case 'utterance':
-        if (voiceCallActive(state) && String(detail.text || '').trim()) handleUtterance(String(detail.text).trim());
+        if (voiceCallActive(state) && String(detail.text || '').trim()) handleUtterance(String(detail.text).trim(), detail.utteranceID);
         break;
       case 'bargeIn':
         abortSpeech();
         break;
-      case 'clipFailed': {
-        // A server clip that could not be decoded is read by the system voice instead.
-        const text = clipText.get(detail.id);
-        clipText.delete(detail.id);
-        if (text && voiceCallActive(state) && String(detail.reason || '').includes('解码')) {
-          const id = nextClipId();
-          clipText.set(id, text);
-          post({ action: 'callSpeak', sessionID: state.sessionID, id, text });
-        }
-        break;
-      }
+      case 'clipFailed':
       case 'clipFinished':
-        clipText.delete(detail.id);
+        if (speech?.id && detail.id === speech.id) {
+          speech.id = '';
+          speech.finishClip?.(detail);
+        }
         break;
       default:
         break;

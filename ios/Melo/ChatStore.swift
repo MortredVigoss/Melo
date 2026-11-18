@@ -1,6 +1,10 @@
 import SwiftUI
+import Combine
 
 @MainActor final class ChatStore: ObservableObject {
+    enum CallReplyEvent { case started(voice: Bool), saved(String), finished }
+    let callReplies = PassthroughSubject<(chat: String, attempt: UUID, event: CallReplyEvent), Never>()
+    var approvalChatID: String? { approvalQueue.first?.chatID }
     @Published var taskCheckpoints: [TaskCheckpoint] = []
     @Published var taskHandoffs: [TaskHandoff] = []
     @Published var chats: [Conversation] = []
@@ -611,6 +615,7 @@ import SwiftUI
         if teamPlan != nil { pendingTeams[chatID] = nil }
         if video != nil { pendingVideos[chatID] = nil }
         sendingChats.insert(chatID)
+        callReplies.send((chatID, attempt, .started(voice: voiceTurn)))
         let supplements = PhoneSupplements()
         for text in saved.supplements { _ = supplements.add(text) }
         supplementQueues[chatID] = supplements; pendingSupplements[chatID] = supplements.queued
@@ -705,6 +710,7 @@ import SwiftUI
             defer {
                 replyBackground.finish(runID: record.runId, success: completed)
                 if runs[chatID]?.runID == record.runId { runs[chatID] = nil }
+                callReplies.send((chatID, attempt, .finished))
                 sendingChats.remove(chatID); clearReplyDraft(chatID); activeImageActions[chatID] = nil; expiredRuns.remove(record.runId)
                 if completed && !isBackground { scheduleAutomaticSync() }
                 if !completed, checkpoint(record.runId)?.canContinue == true,
@@ -803,6 +809,7 @@ import SwiftUI
                 chats[position].messages.append(message)
                 chats[position].updatedAt = timestamp()
                 do { try save() } catch { chats[position] = original; throw error }
+                callReplies.send((chatID, attempt, .saved(message.content)))
                 stage(record.runId, id: "reply:save", name: "保存回答", status: "completed", output: "回答已保存到本机")
                 updatePreferences { preferences in
                     if preferences.memoryUsage == nil { preferences.memoryUsage = [:] }

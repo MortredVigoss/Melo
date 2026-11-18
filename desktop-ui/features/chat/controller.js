@@ -699,7 +699,7 @@ async function handleSendMessage(prepared = null) {
       await handleCreateChat();
       chatId = getBootstrap().settings.selectedChatId;
       // The call that spoke this first sentence moves into the chat it created.
-      if (voiceTurn) voiceCall.adoptChat(chatId);
+      if (voiceTurn) voiceCall.adoptChat(chatId, callObserver);
       previousBootstrap = cloneBootstrapState(getBootstrap());
       applyOptimisticUserMessage({
         chatId,

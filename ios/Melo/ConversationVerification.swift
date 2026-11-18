@@ -82,9 +82,64 @@ import Foundation
             let recovered = ChatStore(directory: journalRoot)
             guard recovered.storageReady, recovered.chats.first?.id == chatID, !FileManager.default.fileExists(atPath: journalRoot.appendingPathComponent("pending-sync.json").path) else { throw MeloError.message("sync journal recovery failed") }
             result["recovery"] = "pending sync journal restored chats, preferences and execution records together"
+            try await checkCallRedial(root: root)
+            result["voiceCallRedial"] = "same-chat redial suppressed the old answer; the next voice turn saved and read its own reply once"
             result["passed"] = true
         } catch { result["error"] = error.localizedDescription }
         if let data = try? JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys]) { try? BackgroundReplyStorage.write(data, to: support.appendingPathComponent("conversation-verification.json")) }
     }
+    private final class Audio: VoiceCallAudio {
+        var receive: ((VoiceCallAudioEvent) -> Void)?
+        var played: [VoiceCallClip] = []
+        func start(locale: String, receive: @escaping (VoiceCallAudioEvent) -> Void) {
+            self.receive = receive
+            receive(.ready(echoCancellation: true, onDevice: true))
+        }
+        func restartRecognition() {}
+        func play(_ clip: VoiceCallClip) { played.append(clip) }
+        func stopPlayback() {}
+        func setMuted(_ muted: Bool) {}
+        func stop() { receive = nil }
+    }
+
+    private static func checkCallRedial(root: URL) async throws {
+        var requests = 0
+        var release: CheckedContinuation<Void, Never>?
+        let store = ChatStore(directory: root.appendingPathComponent("call-redial"), replyLoader: { _, _ in
+            requests += 1
+            if requests == 1 { await withCheckedContinuation { release = $0 } }
+            return ModelReply(text: requests == 1 ? "上一通的答案。" : "这一通的答案。", sources: [], searched: false)
+        })
+        guard let id = store.newChat() else { throw MeloError.message("voice fixture chat missing") }
+        let a = Audio(), b = Audio()
+        var devices = [a, b]
+        let call = VoiceCallController { devices.removeFirst() }
+        defer { release?.resume(); call.end() }
+        func wait(_ check: () -> Bool) async throws {
+            for _ in 0..<400 {
+                if check() { return }
+                try await Task.sleep(for: .milliseconds(25))
+            }
+            throw MeloError.message("voice redial fixture timed out")
+        }
+        call.start(chatID: id, store: store, locale: "zh-CN", endpointMs: nil)
+        a.receive?(.transcript("第一个问题", final: true))
+        try await wait { release != nil }
+        call.end()
+        call.start(chatID: id, store: store, locale: "zh-CN", endpointMs: nil)
+        release?.resume(); release = nil
+        try await wait { !store.isSending(id) }
+        guard a.played.isEmpty, b.played.isEmpty, !call.thinking,
+              store.chats.first?.messages.last?.content == "上一通的答案。" else {
+            throw MeloError.message("late saved reply reached the new call or was lost from history")
+        }
+        b.receive?(.transcript("第二个问题", final: true))
+        try await wait { !store.isSending(id) && !b.played.isEmpty }
+        guard requests == 2, b.played.map(\.text) == ["这一通的答案。"],
+              store.chats.first?.messages.last?.content == "这一通的答案。" else {
+            throw MeloError.message("current saved answer not delivered exactly once")
+        }
+    }
+
 }
 #endif

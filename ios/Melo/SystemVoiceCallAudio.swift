@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import AVFoundation
 import Speech
 
@@ -132,7 +133,7 @@ final class SystemVoiceCallAudio: NSObject, VoiceCallAudio, AVSpeechSynthesizerD
         }
     }
 
-    private func begin(token: UUID) {
+    private func begin(token: UUID, enableVoiceProcessing: Bool = true) {
         let language = locale == "system" ? (Locale.preferredLanguages.first ?? Locale.current.identifier) : locale
         guard let recognizer = SFSpeechRecognizer(locale: Locale(identifier: language)), recognizer.isAvailable else {
             emit(.failure("当前语言的语音识别暂不可用，请检查网络或更换语言。", recoverable: false)); return
@@ -154,7 +155,9 @@ final class SystemVoiceCallAudio: NSObject, VoiceCallAudio, AVSpeechSynthesizerD
             })
             #endif
             let input = engine.inputNode
-            do { try input.setVoiceProcessingEnabled(true); voiceProcessing = true } catch { voiceProcessing = false }
+            if enableVoiceProcessing {
+                do { try input.setVoiceProcessingEnabled(true); voiceProcessing = true } catch { voiceProcessing = false }
+            }
             if voiceProcessing, #available(macOS 14.0, iOS 17.0, *) {
                 // Keep music and other apps audible during the call.
                 input.voiceProcessingOtherAudioDuckingConfiguration = AVAudioVoiceProcessingOtherAudioDuckingConfiguration(enableAdvancedDucking: false, duckingLevel: .min)
@@ -176,7 +179,15 @@ final class SystemVoiceCallAudio: NSObject, VoiceCallAudio, AVSpeechSynthesizerD
             }
             tapInstalled = true
             engine.prepare()
-            try engine.start()
+            do { try engine.start() }
+            catch where voiceProcessing {
+                // Some devices accept voice processing at configuration time but
+                // reject this graph at start. Rebuild once using the half-duplex path.
+                teardown()
+                guard session == token else { return }
+                begin(token: token, enableVoiceProcessing: false)
+                return
+            }
             player.play()
             running = true
             observers.append(NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self] _ in
@@ -196,7 +207,6 @@ final class SystemVoiceCallAudio: NSObject, VoiceCallAudio, AVSpeechSynthesizerD
     private func configurationChanged(token: UUID) {
         let lost = (current.map { [$0] } ?? []) + queue
         resetPlayback()
-        for clip in lost { emit(.playbackFailed(clip.id, reason: "音频设备发生变化")) }
         teardown()
         let now = Date()
         rebuilds = rebuilds.filter { now.timeIntervalSince($0) < 10 } + [now]
@@ -204,6 +214,7 @@ final class SystemVoiceCallAudio: NSObject, VoiceCallAudio, AVSpeechSynthesizerD
             emit(.failure("音频设备反复变化，通话已挂断，可以重新开始。", recoverable: false)); return
         }
         begin(token: token)
+        for clip in lost { emit(.playbackFailed(clip.id, reason: "音频设备发生变化")) }
     }
 
     func stop() {
@@ -317,6 +328,11 @@ final class SystemVoiceCallAudio: NSObject, VoiceCallAudio, AVSpeechSynthesizerD
 
     // MARK: Playback
 
+    private static let metrics = Logger(subsystem: "com.melo.voice", category: "turn-timing")
+    static func recordTiming(turn: Int, stage: String, elapsedMs: Int) {
+        metrics.info("turn=\(turn) stage=\(stage, privacy: .public) ms=\(elapsedMs)")
+    }
+
     func play(_ clip: VoiceCallClip) {
         guard running else { emit(.playbackFailed(clip.id, reason: "通话音频没有运行")); return }
         queue.append(clip)
@@ -390,10 +406,8 @@ final class SystemVoiceCallAudio: NSObject, VoiceCallAudio, AVSpeechSynthesizerD
     }
 
     private func schedule(_ buffer: AVAudioPCMBuffer, clip: VoiceCallClip, token: UUID, last: Bool) {
-        if !currentScheduled {
-            currentScheduled = true
-            emit(.playbackStarted(clip.id))
-        }
+        let firstBuffer = !currentScheduled
+        currentScheduled = true
         player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [weak self] _ in
             guard last else { return }
             DispatchQueue.main.async {
@@ -402,6 +416,7 @@ final class SystemVoiceCallAudio: NSObject, VoiceCallAudio, AVSpeechSynthesizerD
             }
         }
         if engine.isRunning, !player.isPlaying { player.play() }
+        if firstBuffer { emit(.playbackStarted(clip.id)) }
     }
 
     /// The system voice finished rendering: a one-frame marker after the last

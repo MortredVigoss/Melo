@@ -75,6 +75,7 @@ struct VoiceCallClip: Equatable {
     /// What the clip says: spoken by `.speech`, compared with the microphone to recognize echo.
     let text: String
     let source: Source
+    var answerTurn: String? = nil
 }
 
 enum VoiceCallAudioEvent: Equatable {
@@ -130,7 +131,7 @@ enum VoiceCallText {
     static func isEcho(_ heard: String, of spoken: [String], threshold: Double, shortIsEcho: Bool) -> Bool {
         let probe = normalized(heard)
         guard !spoken.isEmpty, !probe.isEmpty else { return false }
-        if probe.count < 2 { return shortIsEcho }
+        if probe.count < 2 { return shortIsEcho || spoken.contains { normalized($0).contains(probe[0]) } }
         let probeText = String(probe)
         let pairs = zip(probe, probe.dropFirst()).map { String([$0, $1]) }
         for candidate in spoken {
@@ -206,6 +207,17 @@ final class VoiceCall {
     var onClipFinished: ((String) -> Void)?
     var onClipFailed: ((String, String) -> Void)?
 
+    var onMetric: ((Int, String, Int) -> Void)?
+    var isStopPhrase: (String) -> Bool = { _ in false }
+    private var metricTurn = ""
+    private var metricSequence = 0
+    private var metricStart: TimeInterval = 0
+    private var measured: Set<String> = []
+    private var lastVoiceEnd: TimeInterval?
+    private var measureVoiceEnd = false
+    private(set) var utteranceNumber = 0
+    private var commits: [(id: Int, committed: TimeInterval, voiceEnd: TimeInterval?)] = []
+    private var voiceOnset: TimeInterval?
     private let audio: VoiceCallAudio
     private let scheduler: VoiceCallScheduling
     private(set) var timing: VoiceCallTiming
@@ -216,6 +228,8 @@ final class VoiceCall {
     private var endpointExtendedAt: TimeInterval?
     private var userSpeaking = false
     private var queued: [VoiceCallClip] = []
+    private var submitted: Set<String> = []
+    private var playing: VoiceCallClip?
     private var recentlySpoken: [(text: String, until: TimeInterval)] = []
     private var lastEchoRestart: TimeInterval = -.infinity
     private var recoveries: [TimeInterval] = []
@@ -258,11 +272,38 @@ final class VoiceCall {
 
     func updateTiming(_ next: VoiceCallTiming) { timing = next }
 
-    /// Queues a clip; clips play in order.
+    /// Hosts only mark the turn that owns a reply. Metrics carry elapsed time and a
+    /// local sequence number; the chat, recognized words and audio stay out of logs.
+    func mark(_ stage: String, turn: String, utterance: Int? = nil) {
+        guard activeID != nil, !turn.isEmpty else { return }
+        if stage == "voiceTurn" || stage == "typedTurn" {
+            metricTurn = turn
+            metricSequence += 1
+            measured.removeAll()
+            let commit = stage == "voiceTurn" ? commits.first { $0.id == (utterance ?? utteranceNumber) } : nil
+            metricStart = commit?.committed ?? scheduler.now
+            if let end = commit?.voiceEnd, end <= metricStart {
+                onMetric?(metricSequence, "voiceEndToCommit", milliseconds(metricStart - end))
+            }
+        }
+        guard metricTurn == turn, measured.insert(stage).inserted else { return }
+        onMetric?(metricSequence, stage, milliseconds(scheduler.now - metricStart))
+    }
+
+    private func milliseconds(_ time: TimeInterval) -> Int { Int((max(0, time) * 1000).rounded()) }
+
     func speak(_ clip: VoiceCallClip) {
         guard activeID != nil, state.active else { return }
         queued.append(clip)
-        audio.play(clip)
+        submitAvailable()
+    }
+
+    private func submitAvailable() {
+        while submitted.count < 2, let clip = queued.first(where: { !submitted.contains($0.id) }) {
+            submitted.insert(clip.id)
+            if let turn = clip.answerTurn { mark("submitted", turn: turn) }
+            audio.play(clip)
+        }
     }
 
     /// Stops playback without treating it as an interruption by the user.
@@ -286,8 +327,7 @@ final class VoiceCall {
         guard activeID == id else { return }
         switch event {
         case .ready(let echoCancellation, let onDevice):
-            guard state.phase == "starting" else { state.echoCancellation = echoCancellation; return }
-            state.phase = isSpeaking ? "speaking" : "listening"
+            if state.phase == "starting" { state.phase = isSpeaking ? "speaking" : "listening" }
             state.echoCancellation = echoCancellation
             state.onDeviceRecognition = onDevice
             state.noticeCode = echoCancellation ? "" : "half-duplex"
@@ -295,16 +335,27 @@ final class VoiceCall {
         case .transcript(let raw, let final):
             heard(raw.trimmingCharacters(in: .whitespacesAndNewlines), final: final)
         case .voiceActivity(let speaking):
+            if speaking {
+                voiceOnset = scheduler.now
+                measureVoiceEnd = true
+                lastVoiceEnd = nil
+            } else if userSpeaking {
+                if measureVoiceEnd { lastVoiceEnd = scheduler.now }
+                voiceOnset = nil
+            }
             userSpeaking = speaking
             if !speaking { cancelBargeIn() }
             else if isSpeaking, state.echoCancellation, !state.muted, state.phase == "speaking" { armBargeIn() }
-        case .playbackStarted:
+        case .playbackStarted(let clipID):
+            guard submitted.contains(clipID), let clip = queued.first(where: { $0.id == clipID }) else { return }
+            playing = clip
+            if let turn = clip.answerTurn { mark("firstBuffer", turn: turn) }
             if state.phase == "listening" { state.phase = "speaking"; publish() }
         case .playbackFinished(let clipID):
-            clipEnded(clipID)
+            guard clipEnded(clipID) else { return }
             onClipFinished?(clipID)
         case .playbackFailed(let clipID, let reason):
-            clipEnded(clipID)
+            guard clipEnded(clipID) else { return }
             onClipFailed?(clipID, reason)
         case .failure(let message, let recoverable):
             if recoverable, allowRecovery() {
@@ -326,7 +377,9 @@ final class VoiceCall {
         if isSpeaking {
             // Half duplex: what the microphone hears while Melo talks is Melo.
             guard state.echoCancellation else { return }
-            if VoiceCallText.isEcho(text, of: queued.map(\.text) + echoTail(), threshold: timing.echoSimilarity, shortIsEcho: true) {
+            let audible = (playing.map { [$0.text] } ?? []) + echoTail()
+            let confirmedStop = (final || userSpeaking) && isStopPhrase(text)
+            if VoiceCallText.isEcho(text, of: audible, threshold: timing.echoSimilarity, shortIsEcho: !confirmedStop) {
                 discardEchoWords()
                 return
             }
@@ -382,7 +435,14 @@ final class VoiceCall {
         state.phase = isSpeaking ? "speaking" : "listening"
         audio.restartRecognition()
         publish()
-        if !text.isEmpty { onUtterance?(text) }
+        if !text.isEmpty {
+            utteranceNumber += 1
+            commits.append((utteranceNumber, scheduler.now, lastVoiceEnd))
+            if commits.count > 8 { commits.removeFirst() }
+            measureVoiceEnd = false
+            onUtterance?(text)
+            lastVoiceEnd = nil
+        }
     }
 
     // MARK: Playback
@@ -400,7 +460,10 @@ final class VoiceCall {
     private func cancelBargeIn() { bargeInTimer?.cancel(); bargeInTimer = nil }
 
     private func bargeIn() {
+        let start = voiceOnset ?? scheduler.now
+        let stage = voiceOnset == nil ? "interruptToStop" : "voiceOnsetToStop"
         dropPlayback()
+        onMetric?(metricSequence, stage, milliseconds(scheduler.now - start))
         state.phase = "hearing"
         // No words may follow (a cough): the endpoint then returns to listening.
         armEndpoint()
@@ -411,20 +474,27 @@ final class VoiceCall {
 
     private func dropPlayback() {
         cancelBargeIn()
-        let now = scheduler.now
-        for clip in queued { recentlySpoken.append((clip.text, now + timing.echoTail)) }
+        retainEchoTail()
+        submitted.removeAll()
         queued.removeAll()
         audio.stopPlayback()
     }
 
-    private func clipEnded(_ clipID: String) {
-        guard let index = queued.firstIndex(where: { $0.id == clipID }) else { return }
-        let clip = queued.remove(at: index)
-        recentlySpoken.append((clip.text, scheduler.now + timing.echoTail))
-        guard queued.isEmpty else { return }
+    private func retainEchoTail() {
+        recentlySpoken.removeAll { $0.until < scheduler.now }
+        if let clip = playing { recentlySpoken.append((clip.text, scheduler.now + timing.echoTail)) }
+        playing = nil
+    }
+
+    private func clipEnded(_ clipID: String) -> Bool {
+        guard submitted.remove(clipID) != nil, let index = queued.firstIndex(where: { $0.id == clipID }) else { return false }
+        queued.remove(at: index)
+        if playing?.id == clipID { retainEchoTail() }
+        if !queued.isEmpty { submitAvailable(); return true }
         cancelBargeIn()
         if state.phase == "speaking" { state.phase = "listening"; publish() }
         onPlaybackIdle?()
+        return true
     }
 
     private func echoTail() -> [String] {
@@ -453,7 +523,9 @@ final class VoiceCall {
         endpointTimer?.cancel(); limitTimer?.cancel(); cancelBargeIn()
         endpointTimer = nil; limitTimer = nil
         endpointExtendedAt = nil
-        queued.removeAll(); recentlySpoken.removeAll()
+        queued.removeAll(); submitted.removeAll(); recentlySpoken.removeAll(); playing = nil
+        recoveries.removeAll(); lastEchoRestart = -.infinity
+        commits.removeAll(); measureVoiceEnd = false; voiceOnset = nil; lastVoiceEnd = nil; metricTurn = ""; measured.removeAll()
         userSpeaking = false
         audio.stop()
         state.phase = phase
