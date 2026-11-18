@@ -303,7 +303,7 @@ function renderRegularChatPage() {
       <div class="chat-thread">
         <div class="thread-header">
           <div>
-            <h1 class="page-title compact">
+            <h1 class="page-title compact" title="${escapeHtml(chat.title)}">
               ${escapeHtml(chat.title)}
               <span class="thread-title-caret">${icon.chevronDown}</span>
             </h1>

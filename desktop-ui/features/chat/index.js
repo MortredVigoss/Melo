@@ -54,8 +54,11 @@ import {
 import { renderRegularChatPage, renderMessageList, renderThreadArtifactStrip, syncVizBlocks } from './viewThread.js';
 import { renderComposerCard, renderAgentSelectorDropdown, thinkingLabel } from './viewComposer.js';
 
+import { installComposerOverlays } from './composerOverlays.js';
+
 export function installChatFeature(context) {
   installChatController(context);
+  const overlays = installComposerOverlays();
   return {
     actions: chatActions,
     forms: chatForms,
@@ -110,7 +113,10 @@ export function installChatFeature(context) {
     captureThreadBeforeRender,
     restoreThreadScrollAfterRender,
     syncThreadViewport,
-    restoreComposerAfterRender,
+    restoreComposerAfterRender(...args) {
+      restoreComposerAfterRender(...args);
+      overlays.sync();
+    },
     positionAgentDropdown: _positionAgentDropdown,
     syncVizBlocks,
     restoreVizAnchorAfterRender,

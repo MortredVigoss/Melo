@@ -24,8 +24,8 @@
       "tooling"
     ],
     "graph": {
-      "modules": 663,
-      "edges": 2211,
+      "modules": 664,
+      "edges": 2213,
       "roots": [
         "src",
         "desktop-ui",
@@ -734,7 +734,7 @@
         "ios/Tests/SharedAgentCoreTests.swift"
       ],
       "modules": {
-        "desktop-ui": 27,
+        "desktop-ui": 28,
         "shared": 46,
         "src": 64
       },
@@ -1143,7 +1143,7 @@
         "memory": 27,
         "platform": 67,
         "projects": 9,
-        "settings": 10,
+        "settings": 11,
         "sync": 2,
         "tools": 45,
         "voice": 6
@@ -1181,6 +1181,7 @@
         "desktop-ui/features/chat/activeToolCallsStrip.js",
         "desktop-ui/features/chat/api.js",
         "desktop-ui/features/chat/chat.css",
+        "desktop-ui/features/chat/composerOverlays.js",
         "desktop-ui/features/chat/context.js",
         "desktop-ui/features/chat/controller.js",
         "desktop-ui/features/chat/conversationContext.js",
@@ -2039,7 +2040,7 @@
         "agents": 3,
         "approvals": 8,
         "channels": 2,
-        "chat": 10,
+        "chat": 11,
         "desktop-shell": 12,
         "development": 1,
         "knowledge": 1,
@@ -3917,6 +3918,7 @@
           "desktop-ui/capabilityElevation.browser.test.js",
           "desktop-ui/committedSave.browser.test.js",
           "desktop-ui/committedSave.test.js",
+          "desktop-ui/desktopReachability.browser.test.js",
           "desktop-ui/features/registry.test.js",
           "desktop-ui/feedback.test.js",
           "desktop-ui/galaxyBackdrop.browser.test.js",

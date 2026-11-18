@@ -64,7 +64,7 @@ function readRoutes() {
  const portRadii=orbs.map(el=>el.getBoundingClientRect().width*.47);
  const core=center(root.querySelector('.neural-core-anchor'));
  const list=root.querySelector('.neural-branch-list'),bounds=list.getBoundingClientRect();
- const branches=root.dataset.neuralStage==='overview'?[]:[...root.querySelectorAll('.neural-branch')].filter(el=>{const r=el.getBoundingClientRect();return r.top>=bounds.top&&r.bottom<=bounds.bottom;});
+ const branches=root.dataset.neuralStage==='overview'?[]:[...root.querySelectorAll('.neural-branch')].filter(el=>{const r=el.getBoundingClientRect();return r.width>0&&r.height>0&&r.top>=bounds.top&&r.bottom<=bounds.bottom;});
  const opened=branches.find(el=>el.classList.contains('is-active'));
  const highlighted=branches.find(el=>el.matches(':hover,:focus-visible'))||opened;
  const routes=branches.map(el=>[ports[active],center(el.querySelector('i')),el===highlighted]);
