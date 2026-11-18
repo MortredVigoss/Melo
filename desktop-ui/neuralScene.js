@@ -76,7 +76,7 @@ export function createNeuralScene(initialHost) {
    return [core[0]+(n.x*Math.cos(angle)+n.z*Math.sin(angle)*.12)*radius*scale+pointerX*5,
      core[1]+(n.y*radius+Math.sin(time*.16+n.phase)*1.4)*scale+pointerY*4,scale];
  }
- function coreRadius(){return network?.stage==='overview'?(network.brainScale?network.brainScale*1.22:Math.min(width*.25,height*.30,210)):width<1100?62:110;}
+ function coreRadius(){return network?.brainScale?network.brainScale*1.22:network?.stage==='overview'?Math.min(width*.25,height*.30,210):width<1100?62:110;}
  function topology(value){
    network=Array.isArray(value)?null:value;
    routes=network?.routes||value||[];

@@ -30,13 +30,13 @@ function createGpuScene(T,initialHost,onLost) {
  void main(){vec4 mv=modelViewMatrix*vec4(position,1.0);gl_Position=projectionMatrix*mv;float selected=1.0-step(.4,abs(aModule-uFocus));float pulse=.92+.08*sin(uTime*.65+position.x*.05);vColor=color;vSpark=uStellar*smoothstep(3.5,7.0,aSize);vAlpha=aAlpha*pulse*clamp(1100.0/-mv.z,.58,1.12)*(aModule<0.0?1.0:(.64+selected*.48+uActivity*.12));gl_PointSize=clamp(aSize*uDpr*900.0/-mv.z,1.0,100.0);}`;
  // Stars have a compact, readable core; clouds keep the soft kernel. This
  // separates detail from haze without a higher render resolution or bloom pass.
- const fragment=`uniform float uCrisp;varying vec3 vColor;varying float vAlpha;varying float vSpark;void main(){vec2 p=gl_PointCoord*2.0-1.0;float r=dot(p,p);if(r>1.0)discard;float halo=exp(-r*5.0);float core=1.0-smoothstep(.04,.30,r);float glow=mix(halo,min(1.0,.45*halo+.95*core),uCrisp);glow+=vSpark*.16*(exp(-abs(p.x)*65.0-abs(p.y)*3.0)+exp(-abs(p.y)*65.0-abs(p.x)*3.0));gl_FragColor=vec4(pow(vColor,vec3(.4545)),vAlpha*glow);}`;
+ const fragment=`uniform float uCrisp;uniform float uOpacity;varying vec3 vColor;varying float vAlpha;varying float vSpark;void main(){vec2 p=gl_PointCoord*2.0-1.0;float r=dot(p,p);if(r>1.0)discard;float halo=exp(-r*5.0);float core=1.0-smoothstep(.04,.30,r);float glow=mix(halo,min(1.0,.45*halo+.95*core),uCrisp);glow+=vSpark*.16*(exp(-abs(p.x)*65.0-abs(p.y)*3.0)+exp(-abs(p.y)*65.0-abs(p.x)*3.0));gl_FragColor=vec4(pow(vColor,vec3(.4545)),vAlpha*glow*uOpacity);}`;
  function points(items,{additive=true,dynamic=false,stellar=false,crisp=stellar}={}){
    const g=new T.BufferGeometry(),pos=new Float32Array(items.length*3),colors=new Float32Array(items.length*3),sizes=new Float32Array(items.length),alphas=new Float32Array(items.length),modules=new Float32Array(items.length);
    items.forEach((p,i)=>{pos.set(p.pos,i*3);(p.color||palette[0]).toArray(colors,i*3);sizes[i]=p.size;alphas[i]=p.alpha;modules[i]=p.module??-1;});
    g.setAttribute('position',new T.BufferAttribute(pos,3).setUsage(dynamic?T.DynamicDrawUsage:T.StaticDrawUsage));
    g.setAttribute('color',new T.BufferAttribute(colors,3));g.setAttribute('aSize',new T.BufferAttribute(sizes,1));g.setAttribute('aAlpha',new T.BufferAttribute(alphas,1));g.setAttribute('aModule',new T.BufferAttribute(modules,1));
-   const m=new T.ShaderMaterial({vertexShader:vertex,fragmentShader:fragment,uniforms:{uDpr:{value:1},uTime:{value:0},uFocus:{value:0},uActivity:{value:0},uStellar:{value:stellar?1:0},uCrisp:{value:crisp?1:0}},vertexColors:true,transparent:true,depthWrite:false,blending:additive?T.AdditiveBlending:T.NormalBlending});
+   const m=new T.ShaderMaterial({vertexShader:vertex,fragmentShader:fragment,uniforms:{uOpacity:{value:1},uDpr:{value:1},uTime:{value:0},uFocus:{value:0},uActivity:{value:0},uStellar:{value:stellar?1:0},uCrisp:{value:crisp?1:0}},vertexColors:true,transparent:true,depthWrite:false,blending:additive?T.AdditiveBlending:T.NormalBlending});
    const mesh=new T.Points(g,m);mesh.frustumCulled=false;disposables.push(g,m);return mesh;
  }
  // Three independent depth populations, with a curved dust lane and dark gaps.
@@ -118,7 +118,8 @@ function createGpuScene(T,initialHost,onLost) {
  const satelliteMotion=neuralIdentities.map((_,i)=>createSatelliteMotion(i)),rotated=[0,0,0],anamorphic=[0,0,0];
  const lobeLift=new Float32Array(5),lobeZ=new Float32Array(5),coreRegions=Array.from({length:5},()=>({x:0,y:0,rx:0,ry:0}));
  const deformLayers=[cortexPoints,tissue,innerLight].map(mesh=>({mesh,base:mesh.geometry.attributes.position.array.slice()}));
- const pointLayers=[cortexPoints,tissue,innerLight,nucleus,impulses,arrivals,stars,clouds,foreground,dust,pulses,satellitePoints,satelliteSignals,glyphPoints];
+ const corePointLayers=[cortexPoints,tissue,innerLight,nucleus,impulses,arrivals];
+ const pointLayers=[...corePointLayers,stars,clouds,foreground,dust,pulses,satellitePoints,satelliteSignals,glyphPoints];
  const routePool=Array.from({length:routeLimit},()=>({a:new T.Vector3(),b:new T.Vector3(),lit:false,group:0}));
  let coloredFocus=-2;
  const vector=new T.Vector3(),a=new T.Vector3(),b=new T.Vector3(),out=new T.Vector3();
@@ -146,6 +147,11 @@ function createGpuScene(T,initialHost,onLost) {
      for(let i=0;i<groups.length;i++)positions[i*3+2]=base[i*3+2]+(groups[i]<0?0:lobeZ[groups[i]]);
      g.attributes.position.needsUpdate=true;
    }
+   // A compact core has the same topology in less screen area; reduce its
+   // additive density so the working rail never becomes a white hotspot.
+   const coreOpacity=home?1:Math.min(1,(scale/48)**2);
+   for(const obj of corePointLayers)obj.material.uniforms.uOpacity.value=coreOpacity;
+   em.opacity=.20*Math.max(.35,coreOpacity);
    cortexPoints.material.uniforms.uFocus.value=focus;
    for(const obj of pointLayers){obj.material.uniforms.uTime.value=time;obj.material.uniforms.uFocus.value=focus;obj.material.uniforms.uActivity.value=network?.permission?0:network?.busy?1:activation;}
    stars.rotation.z=Math.sin(time*.015)*.007;stars.position.set(px*8,py*-5,0);clouds.position.set(px*14,py*-10,0);foreground.position.set(px*32,py*-23,0);dust.position.set(px*19,py*-14,0);

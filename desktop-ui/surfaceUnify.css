@@ -187,3 +187,98 @@
 #app :is(.page,.local-settings,.surface-card) h3.subsection-title{font-size:var(--type-body);line-height:1.4;font-weight:600}
 
 .content-shell:has(>[data-page-notice]){grid-template-rows:auto minmax(0,1fr)}
+
+/* The work surface is a clip, not a second scroll container. Focus on an
+   overflowing child used to scroll this shell sideways and crop later pages. */
+.neural-dashboard.workspace { overflow: clip; }
+
+/* Size against the reading surface, not the window: its navigation takes
+   290–422px before the composer even starts. Never shrink a hit target into
+   the next one or wrap a short label into one character per line. */
+:is(.neural-dashboard,.neural-home-composer) .composer-actions { flex-wrap:wrap; align-items:flex-end; }
+:is(.neural-dashboard,.neural-home-composer) .composer-bottom-right {
+ flex:1 1 0; min-width:0; max-width:100%; flex-wrap:wrap; justify-content:flex-end; gap:6px;
+}
+:is(.neural-dashboard,.neural-home-composer) .composer-bottom-right > * { flex-shrink:0; max-width:100%; }
+:is(.neural-dashboard,.neural-home-composer) .conversation-context > summary { white-space:nowrap; }
+:is(.neural-dashboard,.neural-home-composer) .model-picker-trigger { max-width:180px; }
+:is(.neural-dashboard,.neural-home-composer) .model-picker-trigger small { white-space:nowrap; }
+:is(.neural-dashboard,.neural-home-composer) .composer-bottom-left { flex:0 0 40px; }
+.neural-dashboard .chat-thread { grid-template-rows:auto auto minmax(0,1fr) auto; min-height:0; }
+.neural-dashboard .chat-files-panel { max-height:min(180px,25vh); }
+:is(.neural-dashboard,.neural-home-composer) .tts-voice-panel-anchor { display:flex; flex:0 0 40px; }
+.neural-dashboard .thread-header { flex-direction:row; align-items:center; flex-wrap:wrap; gap:8px 12px; }
+.neural-dashboard .thread-header > div:first-child { flex:1 1 180px; min-width:0; }
+.neural-dashboard .thread-header .page-title { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.neural-dashboard .thread-header > .inline-actions { flex:0 0 auto; flex-wrap:wrap; max-width:100%; }
+.neural-dashboard .thread-header .small-button { white-space:nowrap; }
+.message-block-stack,.message-bubble,.message-code-block { min-width:0; max-width:100%; }
+.message-bubble { overflow-wrap:anywhere; }
+.message-code-block pre { max-width:100%; overscroll-behavior-x:contain; }
+
+/* The same glass material, promoted above the transformed reading surface.
+   Geometry is clamped by composerOverlays; the menu alone owns its scroll. */
+body .composer-overlay[popover] {
+ position:fixed; inset:auto; margin:0; box-sizing:border-box;
+ max-width:calc(100vw - 32px); max-height:min(360px,calc(100dvh - 32px));
+ overflow:auto; overscroll-behavior:contain;
+ color:var(--space-text); background:var(--space-floating);
+ border:1px solid var(--space-edge-raised); border-radius:var(--space-radius-card);
+ box-shadow:var(--space-shadow-raised); backdrop-filter:blur(var(--space-blur));
+}
+body .composer-overlay::backdrop { background:transparent; }
+@media (max-height:660px) {
+ .neural-shell.is-working .neural-navigation { transform:none; }
+ .neural-shell:not([data-neural-stage=overview]) .neural-cluster {
+  width:104px; min-height:40px; flex-direction:row; gap:4px; justify-content:center;
+ }
+ .neural-shell:not([data-neural-stage=overview]) .neural-primary .neural-orb { width:28px; height:28px; }
+ .neural-shell:not([data-neural-stage=overview]) .neural-cluster-copy { padding:4px; }
+ .neural-shell:not([data-neural-stage=overview]) .neural-cluster-copy strong { font-size:var(--font-size-11px); white-space:nowrap; }
+ .neural-shell:not([data-neural-stage=overview]) .neural-cluster-copy small { display:none; }
+ .neural-shell:not([data-neural-stage=overview]) .neural-nav-footer { left:12px; bottom:16px; padding:0; gap:6px; }
+}
+
+/* Compact working windows keep the primary rail and give reading priority.
+   The existing Back to branches button restores the complete secondary list. */
+@media (max-width:1000px) {
+ .neural-shell[data-neural-stage=detail] .neural-branches { display:none; }
+ /* The branch heading already names and describes this module. A second
+    summary in the reading plane can overlap its entries in WKWebView. */
+ .neural-shell[data-neural-stage=module] .neural-dashboard { display:none; }
+}
+
+@media (max-height:550px) {
+ .neural-dashboard .chat-thread { gap:8px; }
+ .neural-dashboard .chat-files-panel:not([open]) { padding:0 4px; min-height:24px; }
+ .neural-dashboard .composer-textarea { max-height:68px; }
+}
+@media (max-height:660px) and (min-width:701px) {
+ /* A completed task summary shares the Agent row on short windows. Its
+    records and timing stay available without consuming another reading row. */
+ .neural-dashboard .composer-shell:has(>.execution-panel:not([hidden])) {
+  display:grid; grid-template-columns:180px minmax(0,1fr); gap:6px 8px;
+ }
+ .neural-dashboard .composer-shell:has(>.execution-panel:not([hidden])) > * { grid-column:1/-1; }
+ .neural-dashboard .composer-shell:has(>.execution-panel:not([hidden])) > .composer-conversation-choice {
+  grid-column:1; grid-row:1; padding-right:0; margin:0; max-width:100%;
+ }
+ .neural-dashboard .composer-shell > .execution-panel:not([hidden]) {
+  grid-column:2; grid-row:1; margin:0 80px 0 0;
+ }
+ .neural-dashboard .execution-panel.is-collapsed .execution-panel-header { flex-wrap:nowrap; gap:6px; padding:3px 6px; min-height:32px; }
+ .neural-dashboard .execution-panel.is-collapsed .execution-panel-header strong { display:none; }
+ .neural-dashboard .execution-panel.is-collapsed .execution-status { flex:1; order:0; }
+ .neural-dashboard .execution-timing-host { padding:0 6px 4px; }
+ .neural-dashboard .execution-timing { font-size:var(--font-size-10px); line-height:1.4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+}
+@media (max-height:550px) and (min-width:701px) {
+ .neural-dashboard .composer-shell:has(>.execution-panel:not([hidden])) .composer-textarea { max-height:48px; }
+}
+
+@media (max-width:1000px) {
+ .neural-shell.is-working .neural-navigation { transform:none; opacity:1; filter:none; }
+ .neural-shell:not([data-neural-stage=overview]) .neural-cluster:not(:hover) { opacity:1; filter:none; transform:translate(-50%,-50%) scale(.94); }
+ .neural-shell:not([data-neural-stage=overview]) .neural-cluster-copy { background:var(--space-floating); border-color:var(--space-edge-raised); }
+ .neural-shell:not([data-neural-stage=overview]) .neural-cluster-copy strong { color:var(--space-text); }
+}

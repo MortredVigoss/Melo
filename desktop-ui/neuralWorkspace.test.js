@@ -32,7 +32,8 @@ test('spatial hierarchy leaves separate navigation, branch and reading areas acr
   assert.ok(overview.coreSize>detail.coreSize,'the core recedes in the reading stage');
   assert.ok(overview.ports[0][0]>=80&&overview.ports[2][0]<=w-80,'enlarged module targets retain a screen edge gutter');
   assert.ok(detail.ports[0][0]+50<=detail.branch[0],'module targets do not overlap branch targets');
-  assert.ok(detail.branch[0]+detail.branch[2]+16<=detail.panel[0],'reading surface has its own gutter');
+  if(w>1000) assert.ok(detail.branch[0]+detail.branch[2]+16<=detail.panel[0],'reading surface has its own gutter');
+  else assert.ok(detail.panel[0]>=detail.ports[0][0]+50,'compact reading surface leaves the primary rail usable');
   assert.ok(detail.panel[2]>=570,'usable detail width');
   assert.ok(detail.panel[0]+detail.panel[2]<=w-16);
   assert.ok(module.branch[0]>detail.branch[0],'the same branch column travels inward');
@@ -58,5 +59,15 @@ test('overview separates the top project volume from the brain even with a tall 
   const orb=Math.max(44,Math.min(96,w*.064,h*.103));
   assert.ok(layout.core[1]-layout.brainScale*1.08>=layout.ports[1][1]+orb*.54+15.9,'project tissue has its own space above the hovered upper lobe');
   assert.ok(layout.core[1]+layout.brainScale*.88<=h-dock-45.9,'lower lobes stay above the measured dock');
+ }
+});
+
+test('compact working rail reserves footer and keeps its core left of the module labels',()=>{
+ for(const [w,h] of [[800,500],[900,600],[1000,640]])for(const stage of ['module','detail']){
+  const layout=workspaceLayout(w,h,stage);
+  assert.ok(layout.ports[4][1]+28<h-146,'system target clears the footer controls');
+  assert.ok(layout.core[0]+layout.brainScale*1.5<50,'compact core stays in the connection gutter');
+  assert.ok(layout.ports.every(([,y],i,ports)=>!i||y-ports[i-1][1]>=50),'short rail retains distinct hit targets');
+  if(stage==='detail')assert.ok(layout.panel[2]>=w-140,'compact reading uses the collapsed branch space');
  }
 });
